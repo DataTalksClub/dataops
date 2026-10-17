@@ -78,35 +78,32 @@ export function createSponsorCompanyDetail({
     onEditCompany,
   });
 
-  async function defaultLoadArchive(dealId) {
+  async function defaultLoadArchive(dealId, { cursor = "", limit = 50 } = {}) {
     // B-preserved read path (GET deals/:id/communications, body-free),
-    // projected to the archive shape E confirmed. Read-only: no
+    // projected to the archive shape E confirmed. One bounded page per
+    // call — no silent multi-page fan-out, no fake totals (the endpoint
+    // provides no total, so none is claimed). Read-only: no
     // draft/approve/cancel/reconcile affordances are produced or consumed.
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (cursor) query.set("cursor", cursor);
+    const result = await api(`/deals/${encodeURIComponent(dealId)}/communications?${query}`);
     const items = [];
-    let cursor = "";
-    for (let page = 0; page < 20; page += 1) {
-      const query = new URLSearchParams({ limit: "50" });
-      if (cursor) query.set("cursor", cursor);
-      const result = await api(`/deals/${encodeURIComponent(dealId)}/communications?${query}`);
-      for (const item of result.items || []) {
-        if (item.recordType !== "communication-draft-version" && item.recordType !== "sponsor-send-attempt") continue;
-        items.push({
-          id: String(item.communicationId || item.id),
-          kind: item.recordType,
-          label: item.recordType === "communication-draft-version"
-            ? `Archived draft v${item.version ?? "?"}`
-            : `Delivery ${item.derivedStatus || item.status || "record"}`,
-          preview: item.safeReason || item.derivedStatus || item.status || "",
-          detail: typeof item.snippet === "string" ? item.snippet : undefined,
-          createdAt: item.createdAt || item.updatedAt || null,
-          version: item.version,
-          reviewable: Boolean(item.reviewable),
-        });
-      }
-      cursor = result.nextCursor || "";
-      if (!cursor) break;
+    for (const item of result.items || []) {
+      if (item.recordType !== "communication-draft-version" && item.recordType !== "sponsor-send-attempt") continue;
+      items.push({
+        id: String(item.communicationId || item.id),
+        kind: item.recordType,
+        label: item.recordType === "communication-draft-version"
+          ? `Archived draft v${item.version ?? "?"}`
+          : `Delivery ${item.derivedStatus || item.status || "record"}`,
+        preview: item.safeReason || item.derivedStatus || item.status || "",
+        detail: typeof item.snippet === "string" ? item.snippet : undefined,
+        createdAt: item.createdAt || item.updatedAt || null,
+        version: item.version,
+        reviewable: Boolean(item.reviewable),
+      });
     }
-    return { items, total: items.length, hasMore: Boolean(cursor) };
+    return { items, nextCursor: result.nextCursor || null, total: null };
   }
 
   async function onReviewDraftDefault(communicationId, version) {

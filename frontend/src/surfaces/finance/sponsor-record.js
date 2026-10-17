@@ -91,59 +91,81 @@ export function emptyMarkup(title, hint, context = {}) {
  */
 export function archiveDisclosureMarkup(archive, context = {}) {
   const escape = esc(context);
-  const count = typeof archive?.total === "number" ? archive.total : archive?.items?.length || 0;
-  if (archive?.status === "loading") {
+  const loaded = archive?.items?.length || 0;
+  // No fake totals: show the server total only when provided, otherwise the
+  // honestly loaded count.
+  const count = archive && typeof archive.total === "number" ? String(archive.total) : `${loaded} loaded`;
+  const canReview = typeof context?.onReviewDraft === "function";
+  if (!archive || archive.status === "idle") {
+    return html`<details data-record-archive>
+      <summary>Archived drafts and delivery history</summary>
+    </details>`;
+  }
+  if (archive.status === "loading" && !loaded) {
     return html`<details data-record-archive open>
-      <summary>Archived drafts and delivery history${count ? html` (${escape(String(count))})` : ""}</summary>
+      <summary>Archived drafts and delivery history</summary>
       ${loadingMarkup("Loading archive", context)}
     </details>`;
   }
-  if (archive?.status === "error") {
-    return html`<details data-record-archive open>
-      <summary>Archived drafts and delivery history</summary>
-      ${errorMarkup(archive.error, context)}
-    </details>`;
-  }
-  if (archive?.status === "ready") {
-    const items = archive.items || [];
-    const canReview = typeof context?.onReviewDraft === "function";
-    return html`<details data-record-archive open>
-      <summary>Archived drafts and delivery history${count ? html` (${escape(String(count))})` : ""}</summary>
-      ${items.length
-        ? html`<ul class="crm-activity-list">
-            ${items.map((item) => html`<li class="crm-activity-item">
-              <div class="crm-activity-head">
-                <strong>${escape(item.label || item.kind || "Record")}</strong>
-                <span>${escape(formatBerlinDate(item.createdAt))}</span>
-              </div>
-              ${item.preview ? html`<p>${escape(item.preview)}</p>` : ""}
-              ${item.detail ? html`<details><summary>Full text</summary><p>${escape(item.detail)}</p></details>` : ""}
-              ${canReview && item.reviewable
-                ? html`<button type="button" data-archive-review="${escape(item.id)}" data-archive-version="${escape(String(item.version ?? ""))}">Review exact draft</button>`
-                : ""}
-            </li>`).join("")}
-          </ul>`
-        : html`<div class="honest-state">
-            <strong>No archived messages</strong>
-            <p>Drafts and delivery history for this deal will appear here.</p>
-          </div>`}
-    </details>`;
-  }
-  return html`<details data-record-archive>
-    <summary>Archived drafts and delivery history${count ? html` (${escape(String(count))})` : ""}</summary>
+  const items = archive.items || [];
+  return html`<details data-record-archive open>
+    <summary>Archived drafts and delivery history (${escape(count)})</summary>
+    ${items.length
+      ? html`<ul class="crm-activity-list">
+          ${items.map((item) => html`<li class="crm-activity-item">
+            <div class="crm-activity-head">
+              <strong>${escape(item.label || item.kind || "Record")}</strong>
+              <span>${escape(formatBerlinDate(item.createdAt))}</span>
+            </div>
+            ${item.preview ? html`<p>${escape(item.preview)}</p>` : ""}
+            ${item.detail ? html`<details><summary>Full text</summary><p>${escape(item.detail)}</p></details>` : ""}
+            ${canReview && item.reviewable
+              ? html`<button type="button" data-archive-review="${escape(item.id)}" data-archive-version="${escape(String(item.version ?? ""))}">Review exact draft</button>`
+              : ""}
+          </li>`).join("")}
+        </ul>`
+      : ""}
+    ${archive.status === "error"
+      ? html`<div class="honest-state">
+          <strong>Archive unavailable</strong>
+          <p>${escape(archive.error || "Could not load the archive.")}</p>
+          <button type="button" data-archive-retry>Retry</button>
+        </div>`
+      : ""}
+    ${archive.status !== "error" && !items.length
+      ? html`<div class="honest-state">
+          <strong>No archived messages</strong>
+          <p>Drafts and delivery history for this deal will appear here.</p>
+        </div>`
+      : ""}
+    ${archive.nextCursor && archive.status === "ready"
+      ? html`<button type="button" data-archive-more>Load older (${escape(count)})</button>`
+      : ""}
+    ${archive.status === "loading-more"
+      ? html`<button type="button" disabled>Loading older…</button>`
+      : ""}
   </details>`;
 }
 
-export function createArchiveLoader({ loadArchive, dealId }) {
+/**
+ * Bounded archive pager. One explicit page per call — no silent multi-page
+ * fan-out, no fake totals (`total` stays null unless the server provides
+ * one), no dedupe (distinct draft versions are preserved even when they
+ * share a communication id). Failed continuations keep the visible rows;
+ * `retry()` resumes from the failed page.
+ */
+export function createArchiveLoader({ loadArchive, dealId, limit = 50 }) {
   if (typeof loadArchive !== "function") throw new Error("createArchiveLoader requires loadArchive (E-wired B read path)");
-  const state = { status: "idle", items: [], total: 0, error: "" };
+  const state = { status: "idle", items: [], nextCursor: null, total: null, error: "" };
   async function open() {
-    if (state.status === "ready" || state.status === "loading") return state;
+    if (state.status === "loading" || state.status === "ready") return state;
     state.status = "loading";
+    state.error = "";
     try {
-      const result = await loadArchive(dealId);
+      const result = await loadArchive(dealId, { limit });
       state.items = result.items || [];
-      state.total = typeof result.total === "number" ? result.total : state.items.length;
+      state.nextCursor = result.nextCursor ?? null;
+      state.total = typeof result.total === "number" ? result.total : null;
       state.status = "ready";
     } catch (error) {
       state.status = "error";
@@ -151,7 +173,29 @@ export function createArchiveLoader({ loadArchive, dealId }) {
     }
     return state;
   }
-  return { state, open };
+  async function loadMore() {
+    if (!state.nextCursor || state.status === "loading" || state.status === "loading-more") return state;
+    const cursor = state.nextCursor;
+    state.status = "loading-more";
+    state.error = "";
+    try {
+      const result = await loadArchive(dealId, { cursor, limit });
+      state.items = [...state.items, ...(result.items || [])];
+      state.nextCursor = result.nextCursor ?? null;
+      if (typeof result.total === "number") state.total = result.total;
+      state.status = "ready";
+    } catch (error) {
+      state.status = "error";
+      state.error = error?.message || "Could not load older messages";
+    }
+    return state;
+  }
+  async function retry() {
+    if (state.items.length && state.nextCursor) return loadMore();
+    state.status = "idle";
+    return open();
+  }
+  return { state, open, loadMore, retry };
 }
 
 export function recordHeaderMarkup(company, options = {}, context = {}) {
@@ -590,26 +634,60 @@ export function createSponsorRecord(context) {
     // Listeners live on the persistent host: paintArchive replaces the
     // disclosure node on every state change, so node-level listeners
     // would be lost after the first render.
+    const fail = typeof context.safe === "function" ? context.safe : async (action) => action();
+    // Current generation + selected-deal identity are captured before every
+    // await; a late response paints only when the same deal is still
+    // selected in the same record generation — never under deal B.
+    const guard = (mine, dealId, loader) =>
+      mine === token && record && record.selectedDeal?.id === dealId && archiveLoaderFor() === loader;
     host.addEventListener("toggle", async (event) => {
       const disclosure = event.target.closest("[data-record-archive]");
       if (!disclosure || !disclosure.open) return;
       const loader = archiveLoaderFor();
       if (!loader || loader.state.status !== "idle") return;
+      const mine = token;
+      const dealId = record.selectedDeal.id;
       paintArchive(target, loader);
-      const fail = typeof context.safe === "function" ? context.safe : async (action) => action();
       await fail(async () => {
         await loader.open();
+        if (!guard(mine, dealId, loader)) return;
         paintArchive(target, loader);
       }, "Could not load the archive");
     }, true);
     host.addEventListener("click", async (event) => {
+      const more = event.target.closest("[data-archive-more]");
+      if (more) {
+        const loader = archiveLoaderFor();
+        if (!loader) return;
+        const mine = token;
+        const dealId = record.selectedDeal.id;
+        await fail(async () => {
+          await loader.loadMore();
+          if (!guard(mine, dealId, loader)) return;
+          paintArchive(target, loader);
+        }, "Could not load older messages");
+        return;
+      }
+      const retry = event.target.closest("[data-archive-retry]");
+      if (retry) {
+        const loader = archiveLoaderFor();
+        if (!loader) return;
+        const mine = token;
+        const dealId = record.selectedDeal.id;
+        await fail(async () => {
+          await loader.retry();
+          if (!guard(mine, dealId, loader)) return;
+          paintArchive(target, loader);
+        }, "Could not load the archive");
+        return;
+      }
       const review = event.target.closest("[data-archive-review]");
       if (!review || typeof context.onReviewDraft !== "function") return;
-      const fail = typeof context.safe === "function" ? context.safe : async (action) => action();
-      await fail(
-        () => context.onReviewDraft(review.dataset.archiveReview, Number(review.dataset.archiveVersion)),
-        "Could not open the exact preview",
-      );
+      const dealId = record?.selectedDeal?.id;
+      await fail(async () => {
+        if (record?.selectedDeal?.id !== dealId) return;
+        return context.onReviewDraft(review.dataset.archiveReview, Number(review.dataset.archiveVersion));
+      }, "Could not open the exact preview");
     });
   }
 

@@ -414,6 +414,60 @@ test("activity tab exposes the archive lazily per selected deal", async () => {
   assert.deepEqual(archives, ["d1", "d2"], "the new deal archives lazily on open");
 });
 
+test("archive loader pages explicitly without dedupe or fake totals", async () => {
+  const calls = [];
+  const api = async (path, options = {}) => {
+    calls.push({ path, body: options.body ? JSON.parse(options.body) : undefined });
+    if (path === "/notes/x") throw new Error("unexpected");
+    return null;
+  };
+  const pages = {
+    "": { items: [{ id: "m1", kind: "communication-draft-version", label: "Archived draft v1", version: 1 }, { id: "m1", kind: "communication-draft-version", label: "Archived draft v2", version: 2 }], nextCursor: "c2", total: null },
+    c2: { items: [{ id: "m2", kind: "sponsor-send-attempt", label: "Delivery delivered" }], nextCursor: null, total: null },
+  };
+  const seen = [];
+  const loader = createArchiveLoader({
+    loadArchive: async (dealId, { cursor = "", limit = 50 } = {}) => {
+      seen.push({ dealId, cursor, limit });
+      assert.equal(limit, 50);
+      return pages[cursor];
+    },
+    dealId: "d1",
+  });
+  await loader.open();
+  assert.equal(loader.state.items.length, 2, "one bounded first page, no silent fan-out");
+  assert.equal(loader.state.nextCursor, "c2");
+  assert.equal(loader.state.total, null, "no fake total when the server provides none");
+  await loader.loadMore();
+  assert.equal(loader.state.items.length, 3, "continuation appends");
+  assert.deepEqual(loader.state.items.map((item) => item.label), ["Archived draft v1", "Archived draft v2", "Delivery delivered"], "distinct draft versions preserved, never deduped by id");
+  assert.equal(loader.state.nextCursor, null);
+  assert.deepEqual(seen, [{ dealId: "d1", cursor: "", limit: 50 }, { dealId: "d1", cursor: "c2", limit: 50 }], "cursor contract honored");
+  void calls;
+});
+
+test("archive retry resumes the failed page and keeps visible rows", async () => {
+  let attempts = 0;
+  const loader = createArchiveLoader({
+    loadArchive: async (dealId, { cursor = "" } = {}) => {
+      attempts += 1;
+      if (!cursor) return { items: [{ id: "m1", label: "Archived draft v1" }], nextCursor: "c2", total: null };
+      if (attempts === 2) throw new Error("page lost");
+      return { items: [{ id: "m2", label: "Delivery delivered" }], nextCursor: null, total: null };
+    },
+    dealId: "d1",
+  });
+  await loader.open();
+  await loader.loadMore();
+  assert.equal(loader.state.status, "error");
+  assert.equal(loader.state.items.length, 1, "failed continuation retains visible rows");
+  assert.equal(loader.state.nextCursor, "c2", "cursor retained for resume");
+  await loader.retry();
+  assert.equal(loader.state.status, "ready");
+  assert.equal(loader.state.items.length, 2);
+  assert.equal(attempts, 3);
+});
+
 test("reviewable archive drafts open the exact preview read-only", async () => {
   const reviewed = [];
   const { host, record } = recordHarness({
@@ -529,6 +583,50 @@ test("rapid activity clicks share one loader and one fetch", async () => {
   release();
   await Promise.all([first, second]);
   assert.equal(fetches, 1, "one bounded fetch for two rapid tab clicks");
+});
+
+test("late archive responses never paint under a newly selected deal", async () => {
+  let releaseA;
+  const gateA = new Promise((resolve) => { releaseA = resolve; });
+  const archiveCalls = [];
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /activity/organization/c1?limit=3": preview,
+      "GET /deals?organizationId=c1&limit=50": {
+        items: [
+          { id: "d1", organizationId: "c1", status: "open", productKind: "one-off" },
+          { id: "d2", organizationId: "c1", status: "open", productKind: "package" },
+        ],
+        nextCursor: null,
+      },
+      "GET /activity/organization/c1?limit=30": preview,
+    },
+    context: {
+      loadArchive: async (dealId) => {
+        archiveCalls.push(dealId);
+        if (dealId === "d1") {
+          await gateA;
+          return { items: [{ id: "a1", label: "Archived draft v1 (deal one)" }], nextCursor: null, total: null };
+        }
+        return { items: [{ id: "b1", label: "Archived draft v1 (deal two)" }], nextCursor: null, total: null };
+      },
+    },
+  });
+  const panels = seedPanels(host);
+  await record.openCompany("c1");
+  await record.switchTab("deals");
+  await record.switchTab("activity");
+  const archiveHost = panels.activity.querySelector("[data-record-archive-host]");
+  const disclosure = archiveHost.querySelector("[data-record-archive]");
+  disclosure.open = true;
+  const pendingA = archiveHost.dispatch("toggle", { closestPatch: { "[data-record-archive]": disclosure } });
+  // Select deal two while deal one's archive is still in flight.
+  await host.dispatch("click", { closestPatch: { "[data-select-deal]": { dataset: { selectDeal: "d2" } } } });
+  releaseA();
+  await pendingA;
+  assert.ok(!archiveHost.innerHTML.includes("deal one"), "stale A history never paints under B");
+  assert.deepEqual(archiveCalls, ["d1"], "no duplicate A fetch, no eager B fetch");
 });
 
 test("failed explicit selections never fall back to unrelated finance", async () => {
