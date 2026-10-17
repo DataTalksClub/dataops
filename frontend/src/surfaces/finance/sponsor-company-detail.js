@@ -149,7 +149,7 @@ export function createSponsorCompanyDetail({
     await reopenCompanyDetail({ id: deal.organizationId }, deal);
   }
 
-  async function reopenCompanyDetail(organization, highlightedDeal = null) {
+  async function reopenCompanyDetail(organization, highlightedDeal = null, { isCurrent = null } = {}) {
     const split = surface.querySelector("[data-crm-split]");
     surface.classList.add("has-booking-detail");
     // The queue marks this company as the selected row; on a phone the split
@@ -167,6 +167,7 @@ export function createSponsorCompanyDetail({
     await record.openCompany(organization.id, {
       dealId,
       returnLabel: "CRM",
+      isCurrent,
     });
     if (sponsorCommunications) sponsorCommunications.selectedBookingId = dealId;
     globalThis.dakitSplit?.show(split, "detail");

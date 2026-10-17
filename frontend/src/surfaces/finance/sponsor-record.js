@@ -151,6 +151,15 @@ export function createSponsorRecord(context) {
   let token = 0;
   let closer = (...args) => closeRecord(...args);
 
+  // Per-invocation render guard (E page-generation/isCurrent seam): the
+  // token covers same-controller races; the injected predicate covers
+  // cross-page navigation that leaves this controller alive. Every async
+  // continuation checks current() after each await and before shared
+  // flags/error/DOM/focus writes.
+  const current = (mine) =>
+    mine === undefined ||
+    (mine === token && record && (!record.isCurrent || record.isCurrent() !== false));
+
   function closeWith(next) {
     if (typeof next === "function") closer = next;
   }
@@ -204,12 +213,13 @@ export function createSponsorRecord(context) {
     }
   }
 
-  async function openCompany(companyId, { dealId = null, returnLabel = "Back" } = {}) {
+  async function openCompany(companyId, { dealId = null, returnLabel = "Back", isCurrent = null } = {}) {
     const mine = ++token;
     const host = root();
     if (!host) throw new Error("createSponsorRecord: missing [data-crm-record] mount (E integration)");
     record = {
       companyId, company: null, deals: [], selectedDealId: dealId,
+      isCurrent: typeof isCurrent === "function" ? isCurrent : null,
       selectedDeal: null, activeTab: "overview", returnLabel,
       loaded: new Set(), cursors: {}, people: [], dealsLoaded: false,
       preview: { items: [], relatedWork: [] },
@@ -223,13 +233,13 @@ export function createSponsorRecord(context) {
     try {
       company = await api(`/directory/companies/${encodeURIComponent(companyId)}`);
     } catch (error) {
-      if (mine !== token) return record;
+      if (!current(mine)) return record;
       host.innerHTML = error?.status === 404
         ? emptyMarkup("Company not found", "It may have been archived or removed.", context)
         : errorMarkup(error?.message, context);
       return record;
     }
-    if (mine !== token) return record;
+    if (!current(mine)) return record;
     record.company = company || {};
     host.innerHTML = html`<div data-record-header>${recordHeaderMarkup(record.company, headerOptions(), context)}</div>
       ${recordTabsMarkup("overview", context)}
@@ -243,7 +253,7 @@ export function createSponsorRecord(context) {
   }
 
   async function loadOverview(mine) {
-    if (mine !== undefined && mine !== token) return;
+    if (!current(mine)) return;
     const target = panel("overview");
     if (!target || !record) return;
     target.innerHTML = loadingMarkup("Loading overview", context);
@@ -251,7 +261,7 @@ export function createSponsorRecord(context) {
       api, targetType: "organization", targetId: record.companyId, limit: 3,
     });
     await loader.load();
-    if ((mine !== undefined && mine !== token) || !record) return;
+    if (!current(mine) || !record) return;
     if (loader.state.status === "error") {
       // Unknown, not empty: render no content claims, only the error.
       target.innerHTML = overviewMarkup({
@@ -281,7 +291,7 @@ export function createSponsorRecord(context) {
       const append = Boolean(record.cursors.people);
       if (append) query.set("cursor", record.cursors.people);
       const result = await api(`/directory/people?${query}`);
-      if (mine !== undefined && mine !== token) return;
+      if (!current(mine)) return;
       const items = append ? [...(record.people || []), ...(result.items || [])] : (result.items || []);
       record.people = items;
       record.cursors.people = result.nextCursor ?? null;
@@ -291,7 +301,7 @@ export function createSponsorRecord(context) {
           : "");
       record.loaded.add("people");
     } catch (error) {
-      if (mine !== undefined && mine !== token) return;
+      if (!current(mine)) return;
       target.innerHTML = errorMarkup(error?.message, context);
     }
   }
@@ -322,7 +332,7 @@ export function createSponsorRecord(context) {
     record.activityLoading = true;
     record.activityWired.paint();
     await record.activityLoader.load();
-    if (mine !== undefined && mine !== token) return;
+    if (!current(mine)) return;
     record.activityLoading = false;
     record.activityWired.paint();
     if (record.activityLoader.state.status === "ready") record.loaded.add("activity");
@@ -370,7 +380,7 @@ export function createSponsorRecord(context) {
     // await; a late response paints only when the same deal is still
     // selected in the same record generation — never under deal B.
     const guard = (mine, dealId, loader) =>
-      mine === token && record && record.selectedDeal?.id === dealId && archiveLoaderFor() === loader;
+      current(mine) && record.selectedDeal?.id === dealId && archiveLoaderFor() === loader;
     host.addEventListener("toggle", async (event) => {
       const disclosure = event.target.closest("[data-record-archive]");
       if (!disclosure || !disclosure.open) return;
@@ -439,13 +449,13 @@ export function createSponsorRecord(context) {
         const append = Boolean(record.cursors.deals);
         if (append) query.set("cursor", record.cursors.deals);
         const result = await api(`/deals?${query}`);
-        if (mine !== undefined && mine !== token) return;
+        if (!current(mine)) return;
         record.deals = append ? [...(record.deals || []), ...(result.items || [])] : (result.items || []);
         record.cursors.deals = result.nextCursor ?? null;
         if (!record.cursors.deals) record.dealsLoaded = true;
       }
       await resolveSelection(mine);
-      if (mine !== undefined && mine !== token) return;
+      if (!current(mine)) return;
       paintDeals(target);
       record.loaded.add("deals");
       if (record.loaded.has("activity") && typeof context.loadArchive === "function") {
@@ -456,7 +466,7 @@ export function createSponsorRecord(context) {
         }
       }
     } catch (error) {
-      if (mine !== undefined && mine !== token) return;
+      if (!current(mine)) return;
       target.innerHTML = errorMarkup(error?.message, context);
     }
   }
@@ -480,7 +490,7 @@ export function createSponsorRecord(context) {
       }
       try {
         const deal = await api(`/deals/${encodeURIComponent(record.selectedDealId)}`);
-        if (mine !== undefined && mine !== token) return;
+        if (!current(mine)) return;
         if (deal && deal.organizationId === record.companyId) {
           record.selectedDeal = deal;
           record.selectionError = null;
@@ -488,12 +498,12 @@ export function createSponsorRecord(context) {
         }
         record.selectionError = `Deal ${record.selectedDealId} does not belong to this company.`;
       } catch (error) {
-        if (mine !== undefined && mine !== token) return;
+        if (!current(mine)) return;
         record.selectionError = error?.status === 404
           ? `Deal ${record.selectedDealId} was not found.`
           : `Deal ${record.selectedDealId} could not be loaded: ${error?.message || "unknown error"}.`;
       }
-      if (mine !== undefined && mine !== token) return;
+      if (!current(mine)) return;
       record.selectedDeal = null;
       return;
     }
@@ -531,7 +541,7 @@ export function createSponsorRecord(context) {
       // Selection is deal-driven; without the Deals tab there may be no
       // selection yet — resolve it cheaply here without a full load.
       await loadDeals(mine);
-      if ((mine !== undefined && mine !== token) || !record?.selectedDeal) {
+      if (!current(mine) || !record?.selectedDeal) {
         if (!record) return;
         // A failed explicit selection is an error, never a fallback deal's
         // finance: errorMarkup carries the record-retry hook which
@@ -551,10 +561,10 @@ export function createSponsorRecord(context) {
     target.innerHTML = html`<div data-booking-panel="finance">${loadingMarkup("Loading finance", context)}</div>`;
     try {
       await loadFinance(deal);
-      if (mine !== undefined && mine !== token) return;
+      if (!current(mine)) return;
       record.loaded.add(cacheKey);
     } catch (error) {
-      if (mine !== undefined && mine !== token) return;
+      if (!current(mine)) return;
       target.innerHTML = errorMarkup(error?.message, context);
     }
   }
@@ -660,7 +670,7 @@ export function createSponsorRecord(context) {
         const deal = (record?.deals || []).find((item) => item.id === editDeal.dataset.editDeal);
         if (!deal) return;
         await fail(async () => {
-          if (mine !== token || !record) return;
+          if (!current(mine) || !record) return;
           await context.onEditDeal(deal);
         }, "Could not open the deal editor");
         return;
@@ -673,7 +683,7 @@ export function createSponsorRecord(context) {
         const companyId = record?.companyId;
         if (!companyId) return;
         await fail(async () => {
-          if (mine !== token || record?.companyId !== companyId) return;
+          if (!current(mine) || record?.companyId !== companyId) return;
           await context.onAddDeal(companyId);
         }, "Could not open the deal editor");
         return;

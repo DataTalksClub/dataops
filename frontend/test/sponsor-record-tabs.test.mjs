@@ -802,6 +802,48 @@ test("add deal preassociates the loaded company and respects generation", async 
   assert.deepEqual(added, ["c1"], "stale panel cannot open the editor after navigation");
 });
 
+test("a stale record open never paints or focuses after navigation", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let current = true;
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": async () => { await gate; return company; },
+    },
+  });
+  seedPanels(host);
+  const pending = record.openCompany("c1", { isCurrent: () => current });
+  current = false;
+  release();
+  await pending;
+  assert.match(host.innerHTML, /Loading company/, "no shell paint after navigation");
+  assert.ok(!host.querySelector("[data-record-title]").focused, "no focus steal");
+  current = true;
+  await record.openCompany("c1", { isCurrent: () => current });
+  assert.match(host.innerHTML, /Acme/, "newer open still succeeds");
+});
+
+test("a rejected record open never paints the error into a new page", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let current = true;
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": async () => { await gate; throw httpError(503, "gone"); },
+      "GET /directory/companies/c2": { ...company, id: "c2", displayName: "Beta" },
+    },
+  });
+  seedPanels(host);
+  const pending = record.openCompany("c1", { isCurrent: () => current });
+  current = false;
+  release();
+  await pending;
+  assert.match(host.innerHTML, /Loading company/, "stale rejection paints nothing");
+  current = true;
+  await record.openCompany("c2", { isCurrent: () => current });
+  assert.match(host.innerHTML, /Beta/, "newer open still succeeds");
+});
+
 test("failed explicit selections never fall back to unrelated finance", async () => {
   const page = [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off" }];
   for (const [name, dealId, byId, message] of [

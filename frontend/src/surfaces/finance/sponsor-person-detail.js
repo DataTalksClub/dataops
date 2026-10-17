@@ -148,6 +148,16 @@ export function createSponsorPersonDetail(context) {
   let activityLoaded = false;
   let token = 0;
 
+  // Per-invocation render guard (E page-generation/isCurrent seam): captured
+  // per openPerson call, checked after every await and before shared
+  // flags/error/DOM/focus writes. The raw token covers same-controller
+  // races; the predicate covers cross-page navigation.
+  let currentGuard = null;
+  let currentOpts = null;
+  const current = (mine) =>
+    mine === undefined ||
+    (mine === token && (!currentGuard || currentGuard() !== false));
+
   function root() {
     return surface.querySelector("[data-crm-person]");
   }
@@ -177,8 +187,10 @@ export function createSponsorPersonDetail(context) {
     paintTabs();
   }
 
-  async function openPerson(personId, { returnLabel = "Back" } = {}) {
+  async function openPerson(personId, { returnLabel = "Back", isCurrent = null } = {}) {
     const mine = ++token;
+    currentGuard = typeof isCurrent === "function" ? isCurrent : currentGuard;
+    currentOpts = { returnLabel, isCurrent: currentGuard };
     const host = root();
     if (!host) throw new Error("createSponsorPersonDetail: missing [data-crm-person] mount (E integration)");
     person = null;
@@ -194,24 +206,24 @@ export function createSponsorPersonDetail(context) {
     try {
       record = await api(`/contacts/${encodeURIComponent(personId)}`);
     } catch (error) {
-      if (mine !== token) return null;
+      if (!current(mine)) return null;
       host.innerHTML = error?.status === 404
         ? emptyMarkup("Person not found", "They may have been archived or removed.", context)
         : errorMarkup(error?.message, context);
       return null;
     }
-    if (mine !== token) return null;
+    if (!current(mine)) return null;
     person = record || {};
     let companyName = person.organizationId ? null : "";
     if (person.organizationId && typeof context.openCompanyRecord === "function") {
       try {
         const company = await api(`/directory/companies/${encodeURIComponent(person.organizationId)}`);
-        if (mine !== token) return null;
+        if (!current(mine)) return null;
         companyName = company?.displayName || null;
       } catch {
         // Guard after catch as well: a stale rejected company request must
         // never repaint the record of the person switched to meanwhile.
-        if (mine !== token) return null;
+        if (!current(mine)) return null;
         // The company link degrades to plain text; the person stays usable.
         companyName = null;
       }
@@ -245,7 +257,7 @@ export function createSponsorPersonDetail(context) {
     // Stale-generation check BEFORE mutating shared flags: a deferred load
     // from the previously opened person must never clear the current
     // person's single-flight flag (or paint into its panel).
-    if (mine !== undefined && mine !== token) return;
+    if (!current(mine)) return;
     activityLoading = false;
     activityPanelCtl.paint();
     if (activityLoader.state.status === "ready") activityLoaded = true;
@@ -284,8 +296,10 @@ export function createSponsorPersonDetail(context) {
       }
       // Person-load failures render data-record-retry: retry the same
       // person from scratch (fresh generation, no duplicate loaders).
+      // Person-load failures render a working retry of the same person with
+      // the same invocation options (generation + captured guard preserved).
       if (event.target.closest("[data-record-retry]") && currentPersonId) {
-        await fail(() => openPerson(currentPersonId), "Could not load person");
+        await fail(() => openPerson(currentPersonId, currentOpts || {}), "Could not load person");
         return;
       }
       if (event.target.closest("[data-edit-person]") && canEdit && person) {

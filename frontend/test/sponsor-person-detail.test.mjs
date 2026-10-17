@@ -277,6 +277,35 @@ test("tab switching updates buttons in place without nesting tablists", async ()
   assert.doesNotMatch(tabs.innerHTML, /data-person-tabs/, "no nested tablist markup");
 });
 
+test("a stale person open never paints or focuses after tab navigation", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let current = true;
+  const api = async (path) => {
+    if (path === "/contacts/p1") {
+      await gate;
+      return person;
+    }
+    if (path === "/contacts/p2") return { ...person, id: "p2", name: "Bo", organizationId: "" };
+    throw new Error(`Unexpected: ${path}`);
+  };
+  const surface = new FakeNode("section");
+  const host = surface.setQuery("[data-crm-person]", new FakeNode("article"));
+  host.setQuery('[data-person-panel="overview"]', new FakeNode("section"));
+  host.setQuery('[data-person-panel="activity"]', new FakeNode("section"));
+  const detail = createSponsorPersonDetail({ api, surface, escapeHtml, closeRecord: () => {} });
+  detail.wire(host);
+  const pending = detail.openPerson("p1", { isCurrent: () => current });
+  current = false;
+  release();
+  await pending;
+  assert.match(host.innerHTML, /Loading person/, "no stale paint");
+  assert.ok(!host.querySelector("[data-person-title]").focused, "no focus steal");
+  current = true;
+  await detail.openPerson("p2", { isCurrent: () => current });
+  assert.match(host.innerHTML, /Bo</, "newer open still succeeds");
+});
+
 test("missing people degrade honestly", async () => {
   const { host, detail } = personHarness({
     routes: { "GET /contacts/gone": httpError(404, "Not found") },
