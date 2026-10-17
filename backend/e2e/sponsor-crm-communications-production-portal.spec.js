@@ -85,7 +85,6 @@ test.describe('production sponsor CRM communications portal', () => {
     const presentationCalls = { operator: 0, admin: 0 };
     let nextPresentation = 1;
     let failNextRevoke = false;
-    let failNextApprove = false;
     let suppressedRequest = null;
 
     const preview = {
@@ -139,8 +138,6 @@ test.describe('production sponsor CRM communications portal', () => {
           const permissions = {
             role,
             canApprove: role === 'admin',
-            canCancel: role === 'admin',
-            canReconcile: role === 'admin',
           };
           const draftDtos = drafts.map((draft) => ({
             id: `suggestion-1#${draft.version}`,
@@ -218,44 +215,6 @@ test.describe('production sponsor CRM communications portal', () => {
           }
           presentation.state = 'revoked';
           return route.fulfill({ json: { state: 'revoked' } });
-        }
-        if (pathname.endsWith('/communications/suggestion-1/approve')) {
-          const body = JSON.parse(request.postData());
-          const presentation = presentations.get(body.presentationId);
-          if (
-            role !== 'admin'
-            || !presentation
-            || presentation.role !== 'admin'
-            || presentation.token !== body.token
-          ) {
-            return route.fulfill({ status: 403, json: { error: 'Forbidden' } });
-          }
-          if (failNextApprove) {
-            failNextApprove = false;
-            presentation.state = 'revoked';
-            return route.fulfill({ status: 409, json: { error: 'Review changed; generate a fresh preview' } });
-          }
-          if (!attempts.some((item) => item.id === 'attempt-new')) {
-            attempts.push({
-              id: 'attempt-new',
-              recordType: 'sponsor-send-attempt',
-              status: 'queued',
-              derivedStatus: 'queued',
-            });
-          }
-          drafts.find((item) => item.version === body.version).claimed = true;
-          suggestion.status = 'dismissed';
-          presentation.state = 'consumed';
-          return route.fulfill({
-            status: 202,
-            json: { attemptId: 'attempt-new', status: 'queued', derivedStatus: 'queued' },
-          });
-        }
-        if (pathname.endsWith('/communications/attempts/attempt-queued-control/cancel')) {
-          const queued = attempts.find((item) => item.id === 'attempt-queued-control');
-          queued.status = 'cancelled';
-          queued.derivedStatus = 'cancelled';
-          return route.fulfill({ json: { status: 'cancelled' } });
         }
         if (pathname.endsWith('/contacts/contact-2/suppressions')) {
           suppressedRequest = JSON.parse(request.postData());
@@ -349,8 +308,9 @@ test.describe('production sponsor CRM communications portal', () => {
     await routeRole(adminPage, 'admin');
     await openBooking(adminPage);
     await expect(adminPage.getByRole('button', { name: 'Review exact draft' })).toBeVisible();
-    await expect(adminPage.getByRole('button', { name: 'Cancel before dispatch' })).toBeVisible();
-    await expect(adminPage.getByRole('button', { name: 'Reconcile outcome' })).toBeVisible();
+    await expect(adminPage.getByRole('button', { name: 'Approve and queue' })).toHaveCount(0);
+    await expect(adminPage.getByRole('button', { name: 'Cancel before dispatch' })).toHaveCount(0);
+    await expect(adminPage.getByRole('button', { name: 'Reconcile outcome' })).toHaveCount(0);
     await expect(adminPage.locator('[data-crm-communications]')).toContainText('Waiting for a trusted provider fact');
     await captureCommunications(
       adminPage,
@@ -369,7 +329,8 @@ test.describe('production sponsor CRM communications portal', () => {
     await adminPage.getByRole('button', { name: 'Review exact draft' }).click();
     await expect(adminPage.getByRole('heading', { name: preview.subject })).toBeVisible();
     await expect(adminPage.locator('[data-review-body]')).toHaveText(preview.body);
-    await expect(adminPage.getByRole('button', { name: 'Approve and queue' })).toBeVisible();
+    await expect(adminPage.getByRole('button', { name: 'Approve and queue' })).toHaveCount(0);
+    await expect(adminPage.locator('[data-review-warning]')).toContainText('no longer sends sponsor email');
     await adminPage.locator('[data-communication-review-dialog]').screenshot({
       path: '.tmp/sponsor-communications-admin-exact-preview-desktop.png',
     });
@@ -416,43 +377,13 @@ test.describe('production sponsor CRM communications portal', () => {
     await expect(adminPage.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
     await adminPage.locator('[data-crm-bookings]').getByRole('button', { name: 'Open deal' }).first().click();
     await adminPage.getByRole('button', { name: 'Review exact draft' }).click();
-    failNextApprove = true;
-    await adminPage.getByRole('button', { name: 'Approve and queue' }).click();
-    await expect(adminPage.locator('[data-communication-review-dialog]')).toBeVisible();
-    await expect(adminPage.locator('[data-review-status]')).toContainText('Approval was not applied');
-    await adminPage.getByRole('button', { name: 'Reject / close' }).click();
-    await expect(adminPage.locator('[data-communication-review-dialog]')).not.toBeVisible();
-
-    await adminPage.getByRole('button', { name: 'Review exact draft' }).click();
     await adminPage.setViewportSize({ width: 390, height: 844 });
     await adminPage.evaluate(() => dakitShell.toggleDrawer(document.querySelector(".dk-shell"), false));
     expect(await adminPage.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     await adminPage.locator('[data-communication-review-dialog]').screenshot({
       path: '.tmp/sponsor-communications-admin-exact-preview-mobile.png',
     });
-    const queuedCards = adminPage.locator('[data-crm-communications] [data-communication-state="queued"]');
-    const queuedBeforeApproval = await queuedCards.count();
-    const mutationPaths = [];
-    const recordMutation = (request) => {
-      if (request.method() !== 'GET') mutationPaths.push(new URL(request.url()).pathname);
-    };
-    adminPage.on('request', recordMutation);
-    const approvalResponse = adminPage.waitForResponse((response) =>
-      response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/approve'),
-    );
-    await adminPage.getByRole('button', { name: 'Approve and queue' }).click();
-    expect((await approvalResponse).status()).toBe(202);
-    adminPage.off('request', recordMutation);
-    expect(mutationPaths).toHaveLength(1);
-    expect(mutationPaths[0]).toMatch(/\/approve$/);
-    await expect(queuedCards).toHaveCount(queuedBeforeApproval + 1);
-    const claimedDraft = adminPage.locator('[data-crm-communications] [data-communication-state="claimed"]');
-    await expect(claimedDraft).toContainText('Draft version 1');
-    const queuedAttempts = attempts.filter((item) => item.status === 'queued');
-    expect(queuedAttempts).toHaveLength(2);
-    expect(queuedAttempts.filter((item) => item.id !== 'attempt-queued-control')).toHaveLength(1);
-    expect(drafts.find((item) => item.version === 1).claimed).toBe(true);
-    expect(presentationCalls.admin).toBeGreaterThanOrEqual(5);
+    expect(presentationCalls.admin).toBeGreaterThanOrEqual(4);
 
     await operatorContext.close();
     await adminContext.close();
@@ -474,7 +405,7 @@ test.describe('production sponsor CRM communications portal', () => {
         return route.fulfill({
           json: {
             config: { configured: true, enabled: false },
-            permissions: { role: 'operator', canApprove: false, canCancel: false, canReconcile: false },
+            permissions: { role: 'operator', canApprove: false },
             items: attempts,
             nextCursor: null,
           },
@@ -486,8 +417,8 @@ test.describe('production sponsor CRM communications portal', () => {
     await disabledPage.getByRole('link', { name: 'Sponsors' }).click();
     await expect(disabledPage.locator('[data-crm-orgs]')).toContainText('Synthetic Sponsor');
     await disabledPage.locator('[data-crm-bookings]').getByRole('button', { name: 'Open deal' }).click();
-    await expect(disabledPage.getByText('Reviewed sending is disabled')).toBeVisible();
-    await expect(disabledPage.locator('[data-communication-state="disabled"]')).toContainText('History remains available. Ask an administrator to enable reviewed sending before approving new messages.');
+    await expect(disabledPage.getByText('DataOps no longer sends sponsor email')).toBeVisible();
+    await expect(disabledPage.locator('[data-communication-state="disabled"]')).toContainText('History remains available. Drafts can still be saved and previewed, but nothing is queued or sent from here.');
     await captureCommunications(
       disabledPage,
       '.tmp/sponsor-communications-disabled-desktop.png',

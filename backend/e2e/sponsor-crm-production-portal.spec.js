@@ -364,8 +364,6 @@ test.describe("production sponsor CRM portal", () => {
             permissions: {
               role: "operator",
               canApprove: false,
-              canCancel: false,
-              canReconcile: false,
             },
             items: cursor
               ? [

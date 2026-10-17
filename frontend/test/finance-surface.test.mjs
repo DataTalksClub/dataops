@@ -766,8 +766,6 @@ describe("Finance surface boundary", () => {
             permissions: {
               role: "operator",
               canApprove: false,
-              canCancel: false,
-              canReconcile: false,
             },
           };
         throw new Error(`Unexpected request: ${url}`);
@@ -803,7 +801,7 @@ describe("Finance surface boundary", () => {
     ).innerHTML;
     assert.match(communications, /Materials deadline needs operator review/);
     assert.match(communications, /Draft saved\. Awaiting administrator review/);
-    assert.match(communications, /administrator must reconcile it/);
+    assert.match(communications, /never resent automatically/);
     assert.doesNotMatch(communications, /Review exact draft/);
     assert.doesNotMatch(communications, /DO NOT RENDER/);
   });
@@ -850,8 +848,6 @@ describe("Finance surface boundary", () => {
             permissions: {
               role: "admin",
               canApprove: true,
-              canCancel: true,
-              canReconcile: true,
             },
           };
         if (path.endsWith("/communications/message-1/presentations"))
@@ -920,10 +916,10 @@ describe("Finance surface boundary", () => {
       dialog.querySelector("[data-review-status]").textContent,
       /sha256:exact-preview/,
     );
-    assert.equal(dialog.querySelector("[data-approve-message]").hidden, false);
+    assert.doesNotMatch(dialog.innerHTML, /data-approve-message/);
     assert.match(
       dialog.querySelector("[data-review-warning]").textContent,
-      /exactly this one-recipient plain-text message/,
+      /no longer sends sponsor email/,
     );
 
     assert.equal(await finance.canLeaveFinanceSurface("navigation"), true);

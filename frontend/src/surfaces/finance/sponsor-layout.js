@@ -367,8 +367,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
           ><label>Public link <input name="publicLink" type="url" /></label>
           <p class="muted">
             Choose one verified active contact address. The selection is bound
-            into the immutable preview and cannot change at approval or
-            dispatch.
+            into the immutable preview.
           </p>
           <p role="alert"></p>
         </div>
@@ -399,14 +398,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel) {
           <p data-review-status role="status"></p>
         </div>
         <footer>
-          <button
-            type="button"
-            class="primary-button"
-            data-approve-message
-            hidden
-          >
-            Approve and queue</button
-          ><button type="button" data-review-close>Reject / close</button>
+          <button type="button" data-review-close>Reject / close</button>
         </footer>
       </form>
     </dialog>

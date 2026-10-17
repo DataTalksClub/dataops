@@ -16,8 +16,6 @@ export function createSponsorCommunications(context) {
   let communicationPermissions = {
     role: "operator",
     canApprove: false,
-    canCancel: false,
-    canReconcile: false,
   };
   let currentReview = null;
   function drawCommunications() {
@@ -39,10 +37,10 @@ export function createSponsorCommunications(context) {
       : "";
     const disabledBanner = !communicationConfig?.enabled
       ? html`<div class="honest-state" data-communication-state="disabled">
-          <strong>Reviewed sending is disabled</strong>
+          <strong>DataOps no longer sends sponsor email</strong>
           <p>
-            History remains available. Ask an administrator to enable reviewed
-            sending before approving new messages.
+            History remains available. Drafts can still be saved and
+            previewed, but nothing is queued or sent from here.
           </p>
         </div>`
       : "";
@@ -119,37 +117,20 @@ export function createSponsorCommunications(context) {
         const state = item.derivedStatus || item.status;
         const guidance =
           item.status === "outcome_unknown"
-            ? isAdmin
-              ? "Provider outcome is unknown. This attempt will never be resent automatically; reconcile it only after provider investigation."
-              : "Provider outcome is unknown. This attempt will never be resent automatically; an administrator must reconcile it."
+            ? "Provider outcome was never resolved. Kept as immutable history; it was never resent automatically."
             : state === "delayed"
               ? "SES accepted the message but delivery is delayed."
               : state === "rejected"
-                ? "The provider rejected this message. Draft and approve a new version only after resolving the cause."
+                ? "The provider rejected this message."
                 : state === "delivered"
                   ? "Provider delivery fact recorded. This does not prove the recipient read it."
                   : state === "pending_event"
-                    ? "Dispatch started. Waiting for a trusted provider fact; this message will not be sent again automatically."
+                    ? "Dispatch started. Waiting for a trusted provider fact; this message was never sent again automatically."
                     : state === "accepted"
                       ? "SES accepted the immutable message. Awaiting later delivery evidence."
                       : state === "queued"
-                        ? isAdmin
-                          ? "Approved and queued. You may cancel only before dispatch reaches its point of no return."
-                          : "Approved and queued. An administrator may cancel only before dispatch starts."
+                        ? "Approved and queued before DataOps stopped sending sponsor email. Kept as immutable history."
                         : "Current immutable execution history.";
-        const cancel =
-          item.status === "queued" && communicationPermissions.canCancel
-            ? html`<button data-cancel-attempt="${escapeHtml(item.id)}">
-                Cancel before dispatch
-              </button>`
-            : "";
-        const reconcile =
-          item.status === "outcome_unknown" &&
-          communicationPermissions.canReconcile
-            ? html`<button data-reconcile-attempt="${escapeHtml(item.id)}">
-                Reconcile outcome
-              </button>`
-            : "";
         return html`<article
           class="crm-card"
           data-communication-state="${escapeHtml(state)}"
@@ -160,7 +141,6 @@ export function createSponsorCommunications(context) {
             ><span>${escapeHtml(humanizeOptionLabel(state))}</span>
           </header>
           <p>${guidance}</p>
-          ${cancel}${reconcile}
         </article>`;
       })
       .join("");
@@ -207,15 +187,7 @@ export function createSponsorCommunications(context) {
       "[data-communication-review-dialog]",
     );
     reviewDialog.querySelector("[data-review-warning]").textContent =
-      communicationPermissions.canApprove
-        ? [
-            "Approval queues exactly this one-recipient plain-text message.",
-            "It never sends inline; the worker rechecks authority, source revisions, suppression, and the kill switch.",
-          ].join(" ")
-        : [
-            "This is an exact private preview.",
-            "Save the draft for an administrator; this review cannot approve or send.",
-          ].join(" ");
+      "This is an exact private preview. DataOps no longer sends sponsor email: nothing here approves, queues, or sends.";
     reviewDialog.querySelector("[data-review-addresses]").innerHTML = html`<dt>
         From
       </dt>
@@ -240,8 +212,6 @@ export function createSponsorCommunications(context) {
       .join("");
     reviewDialog.querySelector("[data-review-status]").textContent =
       `Exact preview hash: ${presentation.previewHash}`;
-    reviewDialog.querySelector("[data-approve-message]").hidden =
-      !communicationPermissions.canApprove;
     reviewDialog.showModal();
   }
   async function revokeCurrentReview(reason = "close") {
@@ -253,9 +223,7 @@ export function createSponsorCommunications(context) {
       return true;
     }
     const closeButton = reviewDialog.querySelector("[data-review-close]");
-    const approveButton = reviewDialog.querySelector("[data-approve-message]");
     closeButton.disabled = true;
-    approveButton.disabled = true;
     reviewDialog.querySelector("[data-review-status]").textContent =
       "Revoking this one-time review…";
     try {
@@ -280,7 +248,6 @@ export function createSponsorCommunications(context) {
       return false;
     } finally {
       closeButton.disabled = false;
-      approveButton.disabled = false;
     }
   }
   return {

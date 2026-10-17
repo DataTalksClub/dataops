@@ -670,34 +670,6 @@ export function createSponsorCrmSurface(context) {
         openDialog(dialog);
         return;
       }
-      const cancelAttempt = event.target.closest("[data-cancel-attempt]")
-        ?.dataset.cancelAttempt;
-      if (cancelAttempt) {
-        safe(async () => {
-          await api(`/communications/attempts/${cancelAttempt}/cancel`, {
-            method: "POST",
-            body: "{}",
-          });
-          await loadCommunications(sponsorCommunications.selectedBookingId);
-        }, "Could not cancel before dispatch");
-        return;
-      }
-      const reconcileAttempt = event.target.closest("[data-reconcile-attempt]")
-        ?.dataset.reconcileAttempt;
-      if (reconcileAttempt) {
-        const reason = window.prompt(
-          "Record why this provider outcome is considered no effect. This never resends the message.",
-        );
-        if (!reason) return;
-        safe(async () => {
-          await api(`/communications/attempts/${reconcileAttempt}/reconcile`, {
-            method: "POST",
-            body: JSON.stringify({ resolution: "no_effect", reason }),
-          });
-          await loadCommunications(sponsorCommunications.selectedBookingId);
-        }, "Could not reconcile provider uncertainty");
-        return;
-      }
       const reviewDraft = event.target.closest("[data-review-draft]");
       if (reviewDraft) {
         safe(
@@ -887,36 +859,6 @@ export function createSponsorCrmSurface(context) {
           message.textContent = `Draft version ${draft.version} saved. Awaiting administrator review; no message was approved or sent.`;
         }
       }, "Could not save sponsor message draft");
-    };
-    surface.querySelector("[data-approve-message]").onclick = (event) => {
-      event.preventDefault();
-      if (!sponsorCommunications.currentReview) return;
-      const reviewDialog = surface.querySelector("[data-communication-review-dialog]");
-      safe(async () => {
-        const oneTimeReview = sponsorCommunications.currentReview;
-        if (!oneTimeReview || !sponsorCommunications.communicationPermissions.canApprove)
-          throw new Error("A fresh administrator review is required");
-        try {
-          await api(`/communications/${oneTimeReview.communicationId}/approve`, {
-            method: "POST",
-            body: JSON.stringify({
-              version: oneTimeReview.version,
-              presentationId: oneTimeReview.presentationId,
-              token: oneTimeReview.token,
-            }),
-          });
-        } catch (error) {
-          reviewDialog.querySelector("[data-review-status]").textContent =
-            `Approval was not applied: ${error.message}. Keep this review open to retry, or revoke it before leaving.`;
-          throw error;
-        }
-        sponsorCommunications.currentReview = null;
-        reviewDialog.close();
-        message.hidden = false;
-        message.textContent =
-          "Approved immutable message queued for dispatch. No provider call occurred in this request.";
-        await loadCommunications(sponsorCommunications.selectedBookingId);
-      }, "Approval was not applied");
     };
     setView(initialTab, false);
     try {
