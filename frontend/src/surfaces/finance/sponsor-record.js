@@ -158,6 +158,8 @@ export function recordHeaderMarkup(company, options = {}, context = {}) {
   const escape = esc(context);
   const { selectedDeal = null, returnLabel = "Back", canArchive = false } = options;
   const primary = company?.primaryPerson;
+  const showPrimary = primary !== undefined
+    || (company != null && Object.prototype.hasOwnProperty.call(company, "primaryPerson"));
   const archived = Boolean(company?.archivedAt) || company?.active === false;
   return html`<header class="dk-split__head">
     <button type="button" class="dk-split__back" data-record-back>${escape(returnLabel)}</button>
@@ -170,8 +172,8 @@ export function recordHeaderMarkup(company, options = {}, context = {}) {
         ${selectedDeal ? html`<span class="status-label" data-status="${escape(selectedDeal.status)}">${escape(humanize(selectedDeal.status, context))}</span>` : ""}
       </p>
       <p class="crm-record-sub">
-        ${primary ? html`Primary: ${escape(primary.name || "Unnamed")}${primary.email ? html` · ${escape(primary.email)}` : ""}` : "No primary person yet"}
-        ${company?.lastTouch ? html` · Last touch ${escape(formatBerlinDate(company.lastTouch))}` : ""}
+        ${showPrimary ? (primary ? html`Primary: ${escape(primary.name || "Unnamed")}${primary.email ? html` · ${escape(primary.email)}` : ""}` : "No primary person yet") : ""}
+        ${showPrimary && company?.lastTouch ? " · " : ""}${company?.lastTouch ? html`Last touch ${escape(formatBerlinDate(company.lastTouch))}` : ""}
       </p>
     </div>
     ${canArchive ? (archived
@@ -203,7 +205,11 @@ export function recordShellMarkup(company, options = {}, context = {}) {
 
 export function overviewMarkup({ company, primaryPerson, nextTask, recent }, context = {}) {
   const escape = esc(context);
-  const person = primaryPerson || company?.primaryPerson;
+  // D's final summary may omit primaryPerson (pure org Get + notes/stamps):
+  // an absent key omits the section instead of faking a no-contact claim.
+  const showPrimary = primaryPerson !== undefined
+    || (company != null && Object.prototype.hasOwnProperty.call(company, "primaryPerson"));
+  const person = primaryPerson !== undefined ? primaryPerson : company?.primaryPerson;
   return html`<div class="crm-record-overview">
     <section aria-label="Next action">
       <h3>Next action</h3>
@@ -213,12 +219,14 @@ export function overviewMarkup({ company, primaryPerson, nextTask, recent }, con
           ${nextTask.taskId ? html`<button type="button" data-open-task="${escape(nextTask.taskId)}">Open task</button>` : ""}`
         : html`<p>No open task. Nothing is due for this company.</p>`}
     </section>
-    <section aria-label="Primary person">
+    ${showPrimary
+      ? html`<section aria-label="Primary person">
       <h3>Primary person</h3>
       ${person
         ? html`<p>${escape(person.name || "Unnamed")}${person.email ? html` · ${escape(person.email)}` : ""}</p>`
         : html`<p>No primary person yet.</p>`}
-    </section>
+    </section>`
+      : ""}
     ${company?.notes
       ? html`<section aria-label="Company summary">
           <h3>Company summary</h3>
@@ -412,14 +420,14 @@ export function createSponsorRecord(context) {
     if (loader.state.status === "error") {
       // Overview degrades honestly: identity + summary stay, activity errors inline.
       target.innerHTML = overviewMarkup({
-        company: record.company, primaryPerson: null, nextTask: null, recent: [],
+        company: record.company, nextTask: null, recent: [],
       }, context) + errorMarkup(loader.state.error, context);
       return;
     }
     record.preview = { items: loader.state.items, relatedWork: loader.state.relatedWork };
     target.innerHTML = overviewMarkup({
       company: record.company,
-      primaryPerson: record.company.primaryPerson || null,
+      primaryPerson: record.company.primaryPerson,
       // Canonical next task (D rev 4): relatedWork is ordered eligible by
       // effectiveDate, so [0] is the next eligible action. Rows without an
       // eligibility flag (older shapes) count as eligible; explicit

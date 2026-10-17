@@ -60,6 +60,7 @@ test("migration mounts the record shell and preserves back behavior", async () =
   const rendered = surface.querySelector("[data-crm-record]");
   assert.match(rendered.innerHTML, /Acme/);
   assert.match(rendered.innerHTML, /role="tablist"/);
+  assert.match(rendered.innerHTML, /Companies/, "back names the origin view, never a hardcoded destination");
   await wired.dispatch("click", { closestPatch: { "[data-record-back]": new FakeNode("button") } });
   assert.deepEqual(navigated.map(([path]) => path), ["/sponsors/companies"]);
   assert.equal(surface.querySelector("[data-crm-list-scroll]").scrollTop, 42, "list position restored");

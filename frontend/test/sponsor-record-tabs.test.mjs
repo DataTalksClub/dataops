@@ -237,6 +237,20 @@ test("Back closes through E integration and tabs are keyboard reachable", async 
   assert.equal(record.getSelectedDealId(), null, "Back destroys the record state");
 });
 
+test("overview omits the primary section when D sends no primaryPerson", async () => {
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": { id: "c1", displayName: "Acme", notes: "Warm." },
+      "GET /activity/organization/c1?limit=3": preview,
+    },
+  });
+  const panels = seedPanels(host);
+  await record.openCompany("c1");
+  assert.doesNotMatch(panels.overview.innerHTML, /Primary person|No primary person yet/, "no fake no-contact claim");
+  assert.doesNotMatch(host.querySelector("[data-record-header]").innerHTML, /No primary person yet/);
+  assert.match(panels.overview.innerHTML, /Warm\./);
+});
+
 test("record shell is accessible and honest states escape content", () => {  const shell = recordShellMarkup({ displayName: "<Acme>" }, { returnLabel: "Companies" }, context);
   assert.match(shell, /&lt;Acme&gt;/);
   assert.match(shell, /role="tablist"/);

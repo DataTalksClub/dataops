@@ -14,12 +14,13 @@ import { createSponsorRecord } from "./sponsor-record.js";
  * reuses the canonical loader through its own hook; the archive disclosure
  * reads B-preserved communications (read-only).
  *
- * E owns the surrounding integration (routes, mount, list refresh): this
- * module mounts into the existing [data-crm-detail] pane and replicates the
- * previous Back/scroll/split behavior. New optional ctx (E one-line hunks):
- * openTaskPanel, openContactEditor (from the sponsors.js editor instance),
- * loadArchive override. Until E passes openContactEditor, person edit
- * affordances stay hidden and Add contact uses the legacy dialog preset.
+ * E owns the surrounding integration (routes, mount, list refresh, final
+ * Back restoration): this module mounts into the existing [data-crm-detail]
+ * pane and replicates the previous Back/scroll/split behavior with the
+ * origin view label (Companies/Pipeline/CRM). New optional ctx (E one-line
+ * hunks): openTaskPanel, openContactEditor (from the sponsors.js editor
+ * instance), loadArchive/onReviewDraft overrides. Until E passes
+ * openContactEditor, person edit affordances stay hidden.
  */
 export function createSponsorCompanyDetail({
   api,
@@ -136,6 +137,19 @@ export function createSponsorCompanyDetail({
     await reopenCompanyDetail({ id: deal.organizationId }, deal);
   }
 
+  // E owns final Back restoration; the label only names the origin view.
+  // Never hardcode a destination name here.
+  function originLabel() {
+    try {
+      const path = typeof listPath === "function" ? listPath() : "";
+      if (String(path).includes("/companies")) return "Companies";
+      if (String(path).includes("/pipeline")) return "Pipeline";
+    } catch {
+      // fall through to the workspace label
+    }
+    return "CRM";
+  }
+
   async function reopenCompanyDetail(organization, highlightedDeal = null) {
     const split = surface.querySelector("[data-crm-split]");
     const listScroller = surface.querySelector("[data-crm-list-scroll]");
@@ -165,7 +179,7 @@ export function createSponsorCompanyDetail({
       : highlightedDeal?.id || null;
     await record.openCompany(organization.id, {
       dealId,
-      returnLabel: "Sponsors",
+      returnLabel: originLabel(),
     });
     if (sponsorCommunications) sponsorCommunications.selectedBookingId = dealId;
     globalThis.dakitSplit?.show(split, "detail");

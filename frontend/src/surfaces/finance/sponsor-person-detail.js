@@ -33,8 +33,14 @@ function esc(context) {
 export function personHeaderMarkup(person, options = {}, context = {}) {
   const escape = esc(context);
   const { companyName = null, returnLabel = "Back", canEdit = false } = options;
+  // The company link is a real canonical anchor so modified clicks and
+  // open-in-new-tab keep working natively; only unmodified primary clicks
+  // are intercepted for in-place navigation (same rule as the directories).
+  const companyHref = person?.organizationId
+    ? `/sponsors/companies/${encodeURIComponent(person.organizationId)}`
+    : "";
   const companyLink = companyName
-    ? html`<button type="button" data-open-company="${escape(person?.organizationId || "")}">${escape(companyName)}</button>`
+    ? html`<a href="${escape(companyHref)}" data-open-company="${escape(person?.organizationId || "")}">${escape(companyName)}</a>`
     : person?.organizationId
       ? "Company unavailable"
       : "No company link";
@@ -160,9 +166,11 @@ export function createSponsorPersonDetail(context) {
         return;
       }
       const company = event.target.closest("[data-open-company]");
-      if (company?.dataset.openCompany && typeof context.openCompanyRecord === "function") {
-        context.openCompanyRecord(company.dataset.openCompany);
-      }
+      if (!company?.dataset.openCompany || typeof context.openCompanyRecord !== "function") return;
+      // Modified clicks (new tab/window) keep their native anchor behavior.
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button > 0) return;
+      event.preventDefault();
+      context.openCompanyRecord(company.dataset.openCompany);
     });
   }
 

@@ -119,6 +119,8 @@ test("edit, company link and back route through E/A integration", async () => {
   assert.deepEqual(edited.map((record) => record.id), ["p1"]);
   await host.dispatch("click", { closestPatch: { "[data-open-company]": { dataset: { openCompany: "c1" } } } });
   assert.deepEqual(companies, ["c1"]);
+  await host.dispatch("click", { metaKey: true, closestPatch: { "[data-open-company]": { dataset: { openCompany: "c1" } } } });
+  assert.deepEqual(companies, ["c1"], "modified clicks keep native new-tab behavior");
   await host.dispatch("click", { closestPatch: { "[data-person-back]": new FakeNode("button") } });
   assert.deepEqual(closed, [true]);
 });
@@ -128,6 +130,7 @@ test("person markup escapes content and hides edit without an editor", () => {
   assert.match(header, /&lt;Bo&gt;/);
   assert.match(header, /&lt;x&gt;/);
   assert.match(header, /data-open-company="c1"/);
+  assert.match(header, /href="\/sponsors\/companies\/c1"/, "company link is a real canonical anchor");
   assert.match(header, /data-edit-person/);
   const plain = personHeaderMarkup({ name: "Bo" }, {}, context);
   assert.match(plain, /No company link/);
