@@ -51,6 +51,7 @@ test.describe('reviewed Card Template updates', () => {
       { refId: 'removed', description: 'Remove this incomplete step', offsetDays: -1 },
     ], {
       cardLinkDefinitions: [{ name: 'Synthetic output' }],
+      references: [{ name: 'Synthetic process doc', url: 'https://example.test/synthetic-process-doc' }],
     });
     const { card, tasks } = await createCard(request, template.id, 'Synthetic reviewed single Card');
     const completed = tasks.find(({ templateTaskRef }) => templateTaskRef === 'completed');
@@ -67,19 +68,34 @@ test.describe('reviewed Card Template updates', () => {
     const panel = page.locator('#card-panel');
     await expect(panel).toBeVisible();
     await expect(panel).toContainText('Update available: Template v1 → v2');
+    const beforeCancelCard = (await json(await request.get(`/api/cards/${card.id}`))).card;
+    const beforeCancelTasks = (await json(await request.get(`/api/tasks?cardId=${card.id}`))).tasks;
     await panel.getByRole('button', { name: 'Review template update' }).click();
     await expect(panel).toContainText('Retain completed task: Changed completed step');
     await expect(panel).toContainText('Skip removed task: Remove this incomplete step');
     await expect(panel).toContainText('Add New reviewed step');
     await panel.getByRole('button', { name: 'Cancel' }).click();
     await expect(panel.getByRole('button', { name: 'Review template update' })).toBeVisible();
+    const afterCancelCard = (await json(await request.get(`/api/cards/${card.id}`))).card;
+    expect(afterCancelCard.templateVersion).toBe(beforeCancelCard.templateVersion);
+    expect(afterCancelCard.templateSourceRevision).toBe(beforeCancelCard.templateSourceRevision);
+    const afterCancelTasks = (await json(await request.get(`/api/tasks?cardId=${card.id}`))).tasks;
+    expect(afterCancelTasks.map(({ id, description, status }) => ({ id, description, status }))).toEqual(
+      beforeCancelTasks.map(({ id, description, status }) => ({ id, description, status })),
+    );
+    expect((await json(await request.get(`/api/cards/${card.id}/template-update`))).preview.state).toBe('update-available');
 
     await panel.getByRole('button', { name: 'Review template update' }).click();
-    await panel.getByText('+ Add process reference', { exact: true }).click();
-    const draftReference = panel.locator('.card-ref-name');
-    const draftReferenceUrl = panel.locator('.card-ref-url');
-    await draftReference.fill('Public-safe typed reference');
-    await draftReferenceUrl.fill('https://example.test/public-safe-draft');
+    await expect(panel.locator('.workflow-references-section')).toContainText('Synthetic process doc');
+    await expect(panel.locator('.workflow-references-section').getByRole('link', { name: 'Synthetic process doc' })).toHaveAttribute('href', 'https://example.test/synthetic-process-doc');
+    await expect(panel.getByText('+ Add process reference', { exact: true })).toHaveCount(0);
+    await expect(panel.locator('.card-ref-name')).toHaveCount(0);
+    await expect(panel.locator('.card-ref-url')).toHaveCount(0);
+    const linksSection = panel.locator('.workflow-links-section');
+    await expect(linksSection).toContainText('1 missing');
+    await linksSection.getByRole('button', { name: 'Add Synthetic output' }).click();
+    const draftLink = linksSection.locator('.link-row__input');
+    await draftLink.fill('https://example.test/public-safe-output');
     expect((await request.put(`/api/tasks/${removed.id}`, {
       data: {
         comment: 'Public-safe concurrent operator note',
@@ -93,15 +109,14 @@ test.describe('reviewed Card Template updates', () => {
     await panel.getByRole('button', { name: 'Apply reviewed update' }).click();
     expect((await staleApply).status()).toBe(409);
     await expect(panel).toContainText('Your review is retained');
-    await expect(draftReference).toHaveValue('Public-safe typed reference');
-    await expect(draftReferenceUrl).toHaveValue('https://example.test/public-safe-draft');
+    await expect(draftLink).toHaveValue('https://example.test/public-safe-output');
 
     await panel.getByRole('button', { name: 'Reload latest preview' }).click();
-    await expect(draftReference).toHaveValue('Public-safe typed reference');
-    await expect(draftReferenceUrl).toHaveValue('https://example.test/public-safe-draft');
+    await expect(draftLink).toHaveValue('https://example.test/public-safe-output');
     await panel.getByRole('button', { name: 'Apply reviewed update' }).click();
     await expect(panel).not.toContainText('Update available:');
     await expect(panel).not.toContainText('Template definition');
+    await expect(panel.locator('.workflow-links-section')).toContainText('1 missing');
 
     const appliedTasks = (await json(await request.get(`/api/tasks?cardId=${card.id}`))).tasks;
     expect(appliedTasks.find(({ id }) => id === completed.id)).toMatchObject({
