@@ -256,6 +256,8 @@ export interface Task {
   snoozedUntil?: string;
   /** Why the Task was snoozed; present exactly when snoozedUntil is set. */
   snoozeReason?: string;
+  /** UTC instant the Task must not surface before; hidden from queue views until then. */
+  notBeforeAt?: string;
   completedBy?: string;
   completedAt?: string;
   /** Why the Task does not apply; present exactly when status is `skipped`. */

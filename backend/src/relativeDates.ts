@@ -16,8 +16,13 @@ const WEEKDAY_INDEX: Record<string, number> = {
 };
 
 export function berlinToday(now = new Date()): string {
+  return todayIn('Europe/Berlin', now);
+}
+
+/** Civil date (YYYY-MM-DD) in `tz` for `now` (default: this instant). */
+export function todayIn(tz: string, now = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Berlin',
+    timeZone: tz,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -56,8 +61,8 @@ export function resolveRelativeDateWord(value: string, today: string): string | 
 }
 
 /**
- * Accept an absolute date (passed through) or a relative word (resolved
- * against the Berlin today). Returns null when the value is neither.
+ * Accept an absolute date or a relative word (`+7d`, `tomorrow`, `mon`)
+ * resolved against the Berlin today. Returns null when the value is neither.
  */
 export function resolveTaskDate(value: unknown, today: string = berlinToday()): string | null {
   if (typeof value !== 'string') return null;
@@ -65,4 +70,67 @@ export function resolveTaskDate(value: unknown, today: string = berlinToday()): 
   if (isCalendarDate(text)) return text;
   if (!isCalendarDate(today)) return null;
   return resolveRelativeDateWord(text, today);
+}
+
+/** True when `tz` names a real IANA timezone. */
+export function isValidTimezone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function tzOffsetMs(tz: string, utcMs: number): number {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(utcMs));
+  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+  return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second')) - utcMs;
+}
+
+/** A civil `YYYY-MM-DD` + `HH:mm:ss` in `tz` as a UTC ISO instant. */
+export function civilToUtc(day: string, time: string, tz: string): string {
+  const [year, month, date] = day.split('-').map(Number);
+  const [hour, minute, second] = time.split(':').map(Number);
+  const civilAsUtc = Date.UTC(year, month - 1, date, hour, minute, second || 0);
+  let guess = civilAsUtc - tzOffsetMs(tz, civilAsUtc);
+  for (let round = 0; round < 3; round += 1) {
+    const next = civilAsUtc - tzOffsetMs(tz, guess);
+    if (next === guess) break;
+    guess = next;
+  }
+  return new Date(guess).toISOString();
+}
+
+const CIVIL_DATETIME = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/;
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:?\d{2})$/;
+
+/**
+ * Resolve a "not before" moment: an ISO instant with an offset (kept as UTC),
+ * a civil `YYYY-MM-DD HH:mm` in `tz`, a plain date (midnight in `tz`), or a
+ * relative word (`+7d`, `tomorrow`, `mon` — midnight that day in `tz`).
+ * Returns the UTC ISO instant, or null when the value has no reading.
+ */
+export function resolveTaskDateTime(value: unknown, tz = 'Europe/Berlin', today: string = todayIn(tz)): string | null {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (ISO_INSTANT.test(text)) {
+    const ms = Date.parse(text);
+    return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+  }
+  const civil = CIVIL_DATETIME.exec(text);
+  if (civil) {
+    const [, day, hour, minute, second] = civil;
+    const validTime = Number(hour) <= 23 && Number(minute) <= 59 && (second === undefined || Number(second) <= 59);
+    if (!isCalendarDate(day) || !validTime) return null;
+    return civilToUtc(day, `${hour}:${minute}:${second || '00'}`, tz);
+  }
+  if (isCalendarDate(text)) return civilToUtc(text, '00:00:00', tz);
+  if (!isCalendarDate(today)) return null;
+  const relative = resolveRelativeDateWord(text, today);
+  if (relative) return civilToUtc(relative, '00:00:00', tz);
+  return null;
 }

@@ -33,7 +33,7 @@ import { matchesBrowserRequirementFilter, parseBrowserRequirementFilter } from '
 import type { BrowserRequirementFilter } from '../browserRequirement';
 import type { LambdaEvent, LambdaResponse, Task, TaskHistoryEvent } from '../types';
 import { mergeMaterials } from '../taskMaterials';
-import { resolveTaskDate } from '../relativeDates';
+import { resolveTaskDate, resolveTaskDateTime, isValidTimezone } from '../relativeDates';
 import {
   ALLOWED_UPDATE_FIELDS,
   INVALID_STATUS_ERROR,
@@ -90,6 +90,28 @@ function resolveDateInput(value: unknown, fieldName: string): { date: string } |
   if (resolved) return { date: resolved };
   if (!Number.isNaN(Date.parse(value.trim()))) return { date: value.trim() };
   return { error: `${fieldName} ${RELATIVE_DATE_ERROR}` };
+}
+
+/** Resolve a write-time timezone name, defaulting to Europe/Berlin. */
+function resolveTimezoneInput(value: unknown): { timezone: string } | { error: string } {
+  if (value === undefined) return { timezone: 'Europe/Berlin' };
+  if (typeof value !== 'string' || !isValidTimezone(value.trim())) {
+    return { error: 'timezone must be an IANA timezone like Europe/Berlin' };
+  }
+  return { timezone: value.trim() };
+}
+
+/**
+ * Accept a "not before" moment: an ISO instant with an offset, a civil
+ * `YYYY-MM-DD HH:mm` in `tz`, a plain date, or a relative word.
+ */
+function resolveDateTimeInput(value: unknown, fieldName: string, tz: string): { date: string } | { error: string } {
+  if (typeof value !== 'string') {
+    return { error: `${fieldName} must be an ISO instant, "YYYY-MM-DD HH:mm", a date, or a relative word like +7d` };
+  }
+  const resolved = resolveTaskDateTime(value, tz);
+  if (resolved) return { date: resolved };
+  return { error: `${fieldName} must be an ISO instant, "YYYY-MM-DD HH:mm" with --tz ${tz}, a date, or a relative word like +7d` };
 }
 
 function jsonResponse(statusCode: number, body: unknown): LambdaResponse {
@@ -166,6 +188,13 @@ export async function handleTaskRoutes(
       const resolved = resolveDateInput(body.followUpAt, 'followUpAt');
       if ('error' in resolved) return jsonResponse(400, { error: resolved.error });
       taskData.followUpAt = resolved.date;
+    }
+    if (body.notBeforeAt !== undefined) {
+      const timezone = resolveTimezoneInput(body.timezone);
+      if ('error' in timezone) return jsonResponse(400, { error: timezone.error });
+      const resolved = resolveDateTimeInput(body.notBeforeAt, 'notBeforeAt', timezone.timezone);
+      if ('error' in resolved) return jsonResponse(400, { error: resolved.error });
+      taskData.notBeforeAt = resolved.date;
     }
     if (body.followUpChannel !== undefined) taskData.followUpChannel = body.followUpChannel;
     if (body.proofRequirement !== undefined) taskData.proofRequirement = body.proofRequirement;
@@ -853,6 +882,13 @@ export async function handleTaskRoutes(
         if ('error' in resolved) return jsonResponse(400, { error: resolved.error });
         updates[field] = resolved.date;
       }
+    }
+    if (updates.notBeforeAt !== undefined && updates.notBeforeAt !== null) {
+      const timezone = resolveTimezoneInput(body.timezone);
+      if ('error' in timezone) return jsonResponse(400, { error: timezone.error });
+      const resolved = resolveDateTimeInput(updates.notBeforeAt, 'notBeforeAt', timezone.timezone);
+      if ('error' in resolved) return jsonResponse(400, { error: resolved.error });
+      updates.notBeforeAt = resolved.date;
     }
     if (updates.status !== undefined && !isTaskStatus(updates.status)) {
       return jsonResponse(400, { error: INVALID_STATUS_ERROR });

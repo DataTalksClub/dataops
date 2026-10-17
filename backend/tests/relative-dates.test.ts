@@ -4,9 +4,13 @@ import assert from 'node:assert';
 import {
   addDays,
   berlinToday,
+  civilToUtc,
   isCalendarDate,
+  isValidTimezone,
   resolveRelativeDateWord,
   resolveTaskDate,
+  resolveTaskDateTime,
+  todayIn,
 } from '../src/relativeDates';
 
 describe('relative dates', () => {
@@ -47,5 +51,35 @@ describe('relative dates', () => {
   it('computes the Berlin today and adds days across month ends', () => {
     assert.match(berlinToday(new Date('2026-10-17T00:30:00Z')), /^\d{4}-\d{2}-\d{2}$/);
     assert.strictEqual(addDays('2026-10-31', 1), '2026-11-01');
+  });
+
+  it('converts civil datetimes in a timezone to UTC instants', () => {
+    assert.strictEqual(civilToUtc('2026-10-23', '19:00:00', 'Europe/Berlin'), '2026-10-23T17:00:00.000Z');
+    assert.strictEqual(civilToUtc('2026-01-23', '19:00:00', 'Europe/Berlin'), '2026-01-23T18:00:00.000Z');
+    assert.ok(isValidTimezone('Europe/Berlin'));
+    assert.ok(!isValidTimezone('Mars/Base'));
+    assert.strictEqual(todayIn('Europe/Berlin', new Date('2026-10-17T00:30:00Z')), '2026-10-17');
+  });
+
+  it('resolves not-before moments: ISO instants, civil datetimes, dates, words', () => {
+    assert.strictEqual(
+      resolveTaskDateTime('2026-10-23T19:00:00+02:00', 'Europe/Berlin'),
+      '2026-10-23T17:00:00.000Z',
+    );
+    assert.strictEqual(
+      resolveTaskDateTime('2026-10-23 19:00', 'Europe/Berlin'),
+      '2026-10-23T17:00:00.000Z',
+    );
+    assert.strictEqual(
+      resolveTaskDateTime('2026-10-23', 'Europe/Berlin'),
+      '2026-10-22T22:00:00.000Z',
+    );
+    assert.strictEqual(
+      resolveTaskDateTime('+7d', 'Europe/Berlin', '2026-10-17'),
+      '2026-10-23T22:00:00.000Z',
+    );
+    assert.strictEqual(resolveTaskDateTime('someday', 'Europe/Berlin', '2026-10-17'), null);
+    assert.strictEqual(resolveTaskDateTime('2026-10-23 25:00', 'Europe/Berlin'), null);
+    assert.strictEqual(resolveTaskDateTime(undefined, 'Europe/Berlin'), null);
   });
 });

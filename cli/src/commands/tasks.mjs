@@ -3,7 +3,7 @@ import { basename } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { UsageError } from "../errors.mjs";
-import { enc, fields, integer, isoDate, list as csv, optionalString, positional, required, table } from "../format.mjs";
+import { enc, fields, integer, isoDate, isValidTimezone, list as csv, optionalString, positional, required, resolveDateTime, table } from "../format.mjs";
 import { apiFor, today } from "../session.mjs";
 
 export const summary = "List, inspect, create, complete, skip, and follow up Tasks";
@@ -19,6 +19,7 @@ Usage
       [--requires youtube,luma] [--browser required|headless] [--depends-on ID,ID]
   dataops tasks update <task-id> [--description D] [--date D] [--comment C] [--link URL]
       [--subject-type sponsor-deal|sponsor-company --subject-id ID | --clear-subject]
+      [--at "2026-10-23 19:00" --tz Europe/Berlin | --at +7d | --at none]
       [--external-status S] [--tags a,b] [--card ID|none] [--instruction-doc DOC-ID]
       [--requires a,b|none] [--browser required|headless|none] [--depends-on ID,ID|none]
       --comment appends to the notes log (the old comment becomes its first entry)
@@ -56,6 +57,11 @@ Dates (Europe/Berlin)
   Every date flag also takes +7d (days ahead), tomorrow, or a weekday name
   (mon is the next Monday, strictly after today): --date, --from, --to,
   --as-of, create --date, wait --follow-up, followed-up --next.
+
+Timed tasks
+  --at "2026-10-23 19:00" --tz Europe/Berlin (the default tz), --at +7d, or an
+  ISO instant sets the moment a Task may surface; until then it stays out of
+  the queue, then it is due like any other Task. --at none clears it.
 
 Dependencies
   --depends-on ID,ID       Prerequisite Tasks on the same Card; the Task cannot be completed
@@ -179,11 +185,17 @@ export function isSnoozed(task, day) {
   return Boolean(until) && until > day;
 }
 
+/** A scheduled Task stays out of the queue while its moment is in the future. */
+export function isScheduled(task, nowIso) {
+  return typeof task.notBeforeAt === "string" && task.notBeforeAt > nowIso;
+}
+
 /** The web queue's urgency segment for one open Task. */
-export function queueSegment(task, day) {
+export function queueSegment(task, day, nowIso = new Date().toISOString()) {
   const due = String(task.date || "").slice(0, 10);
   const followUp = String(task.followUpAt || "").slice(0, 10);
   if (!OPEN.has(task.status)) return "";
+  if (isScheduled(task, nowIso)) return "scheduled";
   if (isSnoozed(task, day)) return "snoozed";
   if (due && due < day) return "overdue";
   if (isWaitingOrFollowUp(task) && followUp && followUp <= day) return "follow-up";
@@ -192,11 +204,11 @@ export function queueSegment(task, day) {
   return "open";
 }
 
-const SEGMENT_ORDER = ["overdue", "follow-up", "today", "waiting", "open", "snoozed"];
+const SEGMENT_ORDER = ["overdue", "follow-up", "today", "waiting", "open", "snoozed", "scheduled"];
 
-export function orderQueue(tasks, day) {
+export function orderQueue(tasks, day, nowIso = new Date().toISOString()) {
   const seen = new Set();
-  const unique = tasks.filter((task) => task && OPEN.has(task.status) && !isSnoozed(task, day) && !seen.has(task.id) && seen.add(task.id));
+  const unique = tasks.filter((task) => task && OPEN.has(task.status) && !isSnoozed(task, day) && !isScheduled(task, nowIso) && !seen.has(task.id) && seen.add(task.id));
   return unique
     .map((task) => ({ ...task, queueSegment: queueSegment(task, day) }))
     .sort(
@@ -220,6 +232,9 @@ export async function list(args, io) {
   const from = isoDate(args.from, "from");
   const to = isoDate(args.to, "to");
   if (Boolean(from) !== Boolean(to)) throw new UsageError("--from and --to go together.");
+  // Timed tasks surface at their moment: with --as-of the queue pretends the
+  // day just started, otherwise it uses this instant.
+  const nowIso = args.asOf ? `${day}T00:00:00Z` : new Date().toISOString();
   const status = optionalString(args, "status");
   const card = optionalString(args, "card");
   const resources = requiresQuery(args);
@@ -241,7 +256,7 @@ export async function list(args, io) {
       waiting: { status: "waiting" },
     };
     const pages = await Promise.all(lanes.map((lane) => api.get("/api/tasks", { query: { ...queries[lane], owner, ...resources, ...browser } })));
-    tasks = orderQueue(pages.flatMap(tasksOf), day);
+    tasks = orderQueue(pages.flatMap(tasksOf), day, nowIso);
     if (view === "overdue") tasks = tasks.filter((task) => task.queueSegment === "overdue");
     if (view === "today") tasks = tasks.filter((task) => String(task.date || "").slice(0, 10) === day);
     if (view === "waiting") tasks = tasks.filter(isWaitingOrFollowUp);
@@ -302,6 +317,7 @@ export async function show(args, io) {
     ["follow up", task.followUpAt],
     ["snoozed until", task.snoozedUntil],
     ["snooze reason", task.snoozeReason],
+    ["not before", task.notBeforeAt],
     ["external status", task.externalStatus],
     ["instruction doc", task.instructionDocId],
     ["source docs", task.sourceDocIds],
@@ -352,6 +368,21 @@ function writableFields(args) {
   if (description !== undefined) body.description = description;
   const date = isoDate(args.date, "date");
   if (date) body.date = date;
+  if (args.at !== undefined || args.tz !== undefined) {
+    const at = optionalString(args, "at");
+    if (at === undefined) throw new UsageError("--tz needs --at: the moment is set with --at.");
+    if (at === "none" || at === "") body.notBeforeAt = null;
+    else {
+      const tz = optionalString(args, "tz") || "Europe/Berlin";
+      if (!isValidTimezone(tz)) throw new UsageError(`--tz must be an IANA timezone like Europe/Berlin, not ${tz}.`);
+      const resolved = resolveDateTime(at, tz);
+      if (!resolved) {
+        throw new UsageError(`--at must be an ISO instant, "YYYY-MM-DD HH:mm", a date, or a relative word like +7d.`);
+      }
+      body.notBeforeAt = resolved;
+      body.timezone = tz;
+    }
+  }
   const comment = optionalString(args, "comment");
   if (comment !== undefined) body.comment = comment;
   const link = optionalString(args, "link") ?? optionalString(args, "proofUrl");
