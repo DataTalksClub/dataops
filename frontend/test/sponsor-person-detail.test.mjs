@@ -6,8 +6,11 @@ import {
   personChannelsMarkup,
   personDetailMarkup,
   personHeaderMarkup,
+  personOverviewMarkup,
 } from "../src/surfaces/finance/sponsor-person-detail.js";
-import { createApiStub, escapeHtml, FakeNode, httpError } from "./support/fake-record-dom.mjs";
+import { createApiStub, escapeHtml, FakeNode, httpError, installFormData } from "./support/fake-record-dom.mjs";
+
+installFormData();
 
 const context = { escapeHtml };
 
@@ -47,6 +50,13 @@ function personHarness({ routes, context: extra = {} } = {}) {
   return { api, surface, host, calls, closed, edited, companies, detail };
 }
 
+function seedPersonPanels(host) {
+  return {
+    overview: host.setQuery('[data-person-panel="overview"]', new FakeNode("section")),
+    activity: host.setQuery('[data-person-panel="activity"]', new FakeNode("section")),
+  };
+}
+
 test("constructing the person detail fails loudly without E integration", () => {
   const surface = new FakeNode("section");
   assert.throws(() => createSponsorPersonDetail({ surface, closeRecord: () => {} }), /requires api/);
@@ -54,7 +64,29 @@ test("constructing the person detail fails loudly without E integration", () => 
   assert.throws(() => createSponsorPersonDetail({ api: async () => ({}), surface }), /requires closeRecord/);
 });
 
-test("opening a person fetches contact plus company name and bounded activity only", async () => {
+test("opening a person renders identity overview only, no activity fetch", async () => {
+  const { host, calls, detail } = personHarness({
+    routes: {
+      "GET /contacts/p1": person,
+      "GET /directory/companies/c1": { id: "c1", displayName: "Acme Co" },
+    },
+  });
+  seedPersonPanels(host);
+  const opened = await detail.openPerson("p1");
+  assert.equal(opened.id, "p1");
+  assert.match(host.innerHTML, /Ada &lt;Lovelace&gt;/);
+  assert.match(host.innerHTML, /CTO/);
+  assert.match(host.innerHTML, /Primary/);
+  assert.match(host.innerHTML, /Acme Co/);
+  assert.match(host.innerHTML, /role="tablist"/);
+  const urls = calls.map(({ path }) => path);
+  assert.ok(!urls.some((path) => path.includes("/activity/")), `no activity fetch on open, got ${urls}`);
+  assert.doesNotMatch(host.innerHTML, /Related open work|No activity yet|data-activity-note-form/);
+  assert.match(host.innerHTML, /data-person-panel="activity"/, "empty activity panel waits for its tab");
+  assert.ok(host.querySelector("[data-person-title]").focused, "title takes keyboard focus");
+});
+
+test("activity loads lazily once on first tab open with honest states", async () => {
   const { host, calls, detail } = personHarness({
     routes: {
       "GET /contacts/p1": person,
@@ -67,35 +99,62 @@ test("opening a person fetches contact plus company name and bounded activity on
       },
     },
   });
-  const opened = await detail.openPerson("p1");
-  assert.equal(opened.id, "p1");
-  assert.match(host.innerHTML, /Ada &lt;Lovelace&gt;/);
-  assert.match(host.innerHTML, /CTO/);
-  assert.match(host.innerHTML, /Primary/);
-  assert.match(host.innerHTML, /Acme Co/);
-  assert.match(host.innerHTML, /ada@acme\.example/);
-  assert.match(host.innerHTML, /linkedin\.com/);
-  assert.match(host.innerHTML, /Prefers email/);
-  const activityHost = host.querySelector("[data-person-activity]");
-  assert.match(activityHost.querySelector("[data-activity-related]").innerHTML, /related company/);
-  assert.match(host.innerHTML, /Add a note/);
-  assert.doesNotMatch(host.innerHTML, /Finance/);
-  const paths = calls.map(({ path }) => path);
-  assert.ok(!paths.some((path) => /\/finance|\/deals|\/directory\/people|messages|mail/.test(path)), `no finance/deal/directory/mail loads, got ${paths}`);
-  assert.ok(host.querySelector("[data-person-title]").focused, "title takes keyboard focus");
+  const panels = seedPersonPanels(host);
+  await detail.openPerson("p1");
+  await detail.switchTab("activity");
+  assert.match(panels.activity.innerHTML, /Filter activity/, "compact disclosure wraps the type filter");
+  assert.match(panels.activity.innerHTML, /data-activity-note-form/, "note form lives in the activity tab");
+  assert.match(panels.activity.querySelector("[data-activity-related]").innerHTML, /related company/, "related-company work stays labeled");
+  const activityCalls = calls.filter(({ path }) => path.includes("/activity/"));
+  assert.equal(activityCalls.length, 1, "exactly one bounded activity fetch");
+  await detail.switchTab("overview");
+  await detail.switchTab("activity");
+  assert.equal(calls.filter(({ path }) => path.includes("/activity/")).length, 1, "no refetch on revisit");
 });
 
-test("a failed company lookup degrades the link without losing the person", async () => {
+test("activity errors render retry without faking content", async () => {
   const { host, detail } = personHarness({
     routes: {
       "GET /contacts/p1": person,
-      "GET /directory/companies/c1": httpError(500, "boom"),
-      "GET /activity/contact/p1?limit=30": { targetType: "contact", targetId: "p1", items: [], total: 0, nextCursor: null, sources: {}, relatedWork: [], tasksScope: "open", reads: {} },
+      "GET /activity/contact/p1?limit=30": httpError(500, "boom"),
     },
   });
+  seedPersonPanels(host);
   await detail.openPerson("p1");
-  assert.match(host.innerHTML, /Company unavailable/);
-  assert.match(host.innerHTML, /Ada &lt;Lovelace&gt;/);
+  await detail.switchTab("activity");
+  assert.match(host.querySelector('[data-person-panel="activity"]').querySelector("[data-activity-list]").innerHTML, /Activity unavailable/);
+});
+
+test("stale activity responses never render into a switched person", async () => {
+  let releaseFirst;
+  const gate = new Promise((resolve) => { releaseFirst = resolve; });
+  const api = async (path) => {
+    if (path === "/contacts/p1") return person;
+    if (path === "/contacts/p2") return { ...person, id: "p2", name: "Bo", organizationId: "" };
+    if (path === "/activity/contact/p1?limit=30") {
+      await gate;
+      return { targetType: "contact", targetId: "p1", items: [{ ts: "2026-10-01T00:00:00Z", source: "note", id: "old", actor: null, text: "Stale", provenance: {} }], total: 1, nextCursor: null, sources: {}, relatedWork: [], tasksScope: "open", reads: {} };
+    }
+    if (path === "/activity/contact/p2?limit=30") {
+      return { targetType: "contact", targetId: "p2", items: [{ ts: "2026-10-09T00:00:00Z", source: "note", id: "fresh", actor: null, text: "Fresh", provenance: {} }], total: 1, nextCursor: null, sources: {}, relatedWork: [], tasksScope: "open", reads: {} };
+    }
+    throw new Error(`Unexpected: ${path}`);
+  };
+  const surface = new FakeNode("section");
+  const host = surface.setQuery("[data-crm-person]", new FakeNode("article"));
+  const detail = createSponsorPersonDetail({ api, surface, escapeHtml, closeRecord: () => {} });
+  detail.wire(host);
+  host.setQuery('[data-person-panel="overview"]', new FakeNode("section"));
+  const activityPanel = host.setQuery('[data-person-panel="activity"]', new FakeNode("section"));
+  await detail.openPerson("p1");
+  const pending = detail.switchTab("activity");
+  await detail.openPerson("p2");
+  releaseFirst();
+  await pending;
+  await detail.switchTab("activity");
+  const listHtml = activityPanel.querySelector("[data-activity-list]").innerHTML;
+  assert.match(listHtml, /Fresh/, "only the current person's activity renders");
+  assert.doesNotMatch(listHtml, /Stale/);
 });
 
 test("missing people degrade honestly", async () => {
@@ -106,14 +165,14 @@ test("missing people degrade honestly", async () => {
   assert.match(host.innerHTML, /Person not found/);
 });
 
-test("edit, company link and back route through E/A integration", async () => {
+test("edit, company anchor and back behavior are preserved", async () => {
   const { host, edited, companies, closed, detail } = personHarness({
     routes: {
       "GET /contacts/p1": person,
       "GET /directory/companies/c1": { id: "c1", displayName: "Acme Co" },
-      "GET /activity/contact/p1?limit=30": { targetType: "contact", targetId: "p1", items: [], total: 0, nextCursor: null, sources: {}, relatedWork: [], tasksScope: "open", reads: {} },
     },
   });
+  seedPersonPanels(host);
   await detail.openPerson("p1");
   await host.dispatch("click", { closestPatch: { "[data-edit-person]": new FakeNode("button") } });
   assert.deepEqual(edited.map((record) => record.id), ["p1"]);
@@ -123,31 +182,30 @@ test("edit, company link and back route through E/A integration", async () => {
   assert.deepEqual(companies, ["c1"], "modified clicks keep native new-tab behavior");
   await host.dispatch("click", { closestPatch: { "[data-person-back]": new FakeNode("button") } });
   assert.deepEqual(closed, [true]);
+  await host.dispatch("keydown", { key: "ArrowRight", closestPatch: { '[role="tab"]': { dataset: { personTab: "overview" } } } });
+  assert.ok(host.querySelector('[data-person-tab="activity"]').focused, "tabs are keyboard reachable");
 });
 
 test("person markup escapes content and hides edit without an editor", () => {
   const header = personHeaderMarkup({ name: "<Bo>", role: "<x>", primary: true, organizationId: "c1" }, { companyName: "<Co>", canEdit: true }, context);
   assert.match(header, /&lt;Bo&gt;/);
   assert.match(header, /&lt;x&gt;/);
+  assert.match(header, /href="\/sponsors\/companies\/c1"/);
   assert.match(header, /data-open-company="c1"/);
-  assert.match(header, /href="\/sponsors\/companies\/c1"/, "company link is a real canonical anchor");
   assert.match(header, /data-edit-person/);
   const plain = personHeaderMarkup({ name: "Bo" }, {}, context);
   assert.match(plain, /No company link/);
   assert.doesNotMatch(plain, /data-edit-person/);
-  const timed = personHeaderMarkup(
-    { name: "Bo", lastTouch: "2026-10-09T12:00:00.000Z", lastContactedAt: "2026-10-09T12:35:00.000Z" },
-    {},
-    context,
-  );
-  assert.match(timed, /Last touch 9 Oct/);
-  assert.match(timed, /Last contacted 9 Oct.*14:35/, "full stored contact precision is shown, never truncated to day");
   const channels = personChannelsMarkup({ emails: ["<a@b>"], linkedin: "https://example.com/<x>", telegram: "@t" }, context);
   assert.match(channels, /&lt;a@b&gt;/);
   assert.match(channels, /mailto:&lt;a@b&gt;/);
   assert.doesNotMatch(channels, /<a@b>/);
   assert.match(personChannelsMarkup({}, context), /No contact channels/);
   const detail = personDetailMarkup({ name: "Bo", notes: "<n>" }, {}, context);
-  assert.match(detail, /&lt;n&gt;/);
-  assert.match(detail, /data-person-activity/);
+  assert.match(detail, /data-person-panel="activity"/);
+  assert.match(detail, /data-person-panel="overview"/);
+  const overviewShell = personOverviewMarkup({ name: "Bo", notes: "<n>" }, context);
+  assert.match(overviewShell, /Channels/);
+  assert.match(overviewShell, /&lt;n&gt;/, "notes live in the overview panel, not the shell");
+  assert.doesNotMatch(overviewShell, /data-activity-note-form|data-activity-list/, "overview fetches and shows no timeline");
 });

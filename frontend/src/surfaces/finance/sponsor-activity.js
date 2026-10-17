@@ -137,17 +137,27 @@ export function relatedWorkMarkup(items, context = {}) {
   </section>`;
 }
 
-export function activityPanelMarkup({ targetType, types = [] } = {}) {
+export function activityPanelMarkup({ targetType, types = [], collapsibleFilters = false } = {}) {
   const selected = new Set(types.length ? types : ACTIVITY_TYPES);
   const options = ACTIVITY_TYPES.map(
     (type) => html`<option value="${type}"${selected.has(type) ? " selected" : ""}>${ACTIVITY_TYPE_LABELS[type]}</option>`,
   ).join("");
-  return html`<div class="crm-activity-panel" data-activity-panel="${targetType}">
-    <div class="crm-activity-tools">
+  // Compact native disclosure keeps dense record pages scannable; the
+  // select itself keeps native control semantics.
+  const tools = collapsibleFilters
+    ? html`<details class="crm-activity-tools">
+        <summary>Filter activity</summary>
+        <label>Show
+          <select data-activity-types multiple size="5">${options}</select>
+        </label>
+      </details>`
+    : html`<div class="crm-activity-tools">
       <label>Show
         <select data-activity-types multiple size="5">${options}</select>
       </label>
-    </div>
+    </div>`;
+  return html`<div class="crm-activity-panel" data-activity-panel="${targetType}">
+    ${tools}
     <div data-activity-list aria-live="polite"></div>
     <div data-activity-pager></div>
     <section aria-label="Related open work"><div data-activity-related></div></section>
