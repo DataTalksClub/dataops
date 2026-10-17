@@ -4,6 +4,11 @@
  *
  * Creates a sample only when no schedule with that description exists, and
  * never edits, re-enables or recreates one that is there.
+ *
+ * Reminder jobs whose Card is created automatically are deliberately absent:
+ * "Ensure newsletter for next week is prepared" (the newsletter issue Card)
+ * and "Check bookkeeping, invoices, and receipts" (the monthly tax-report
+ * Card). Seeding them would nag about work the daily job already created.
  */
 import { getClient } from '../src/db/client';
 import { createRecurringConfig, listRecurringConfigs } from '../src/db/recurring';
@@ -16,14 +21,12 @@ const SAMPLE_RECURRING_CONFIGS = [
     requires: ['airtable', 'slack'],
     tags: ['community', 'book-of-the-week', 'airtable', 'slack'],
   },
-  { description: 'Ensure newsletter for next week is prepared', cronExpression: '0 9 * * 2' },
   {
     description: 'Create Slack dump',
     cronExpression: '0 9 1 * *',
     instructionDocId: 'sop.community.slack.export-create-a-dump-of-slack-data',
     requires: ['slack'],
   },
-  { description: 'Check bookkeeping, invoices, and receipts', cronExpression: '0 9 1 * *' },
 ] as const;
 
 async function seed(): Promise<{ created: number }> {

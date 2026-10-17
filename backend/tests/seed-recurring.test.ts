@@ -20,8 +20,18 @@ describe('Local sample recurring schedules', () => {
     await stopLocal();
   });
 
-  it('creates each sample once and never touches a schedule that already exists', async () => {
-    assert.deepStrictEqual(await seedRecurring(), { created: SAMPLE_RECURRING_CONFIGS.length });
+  it('does not seed reminder jobs whose card is created automatically', async () => {
+    const descriptions = SAMPLE_RECURRING_CONFIGS.map((sample) => sample.description);
+    for (const removed of [
+      'Ensure newsletter for next week is prepared',
+      'Prepare a bookkeeping report',
+      'Check bookkeeping, invoices, and receipts',
+    ]) {
+      assert.equal(descriptions.includes(removed), false, `${removed} must stay unseeded`);
+    }
+  });
+
+  it('creates each sample once and never touches a schedule that already exists', async () => {    assert.deepStrictEqual(await seedRecurring(), { created: SAMPLE_RECURRING_CONFIGS.length });
     const seeded = await listRecurringConfigs(client);
     assert.strictEqual(seeded.length, SAMPLE_RECURRING_CONFIGS.length);
     assert.ok(seeded.every((config) => config.assigneeId === undefined), 'no person is seeded onto a schedule');
