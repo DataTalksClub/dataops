@@ -26,7 +26,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = (value)
   // Pipeline list head, Add sponsor on the Companies header. Refresh
   // suggestions trails the list head. The page header holds no actions.
   return html`${renderPageHeaderMarkup({
-    title: "Sponsors",
+    title: "CRM",
     className: "crm-header",
   })}
     <p data-crm-message class="surface-status" role="status">

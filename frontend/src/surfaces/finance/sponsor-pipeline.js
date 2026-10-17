@@ -49,12 +49,8 @@ export function renderSponsorPipelineList({ items, ...context }) {
 // URL/filter/saved-view lifecycle (E): the view reads its filters from the
 // pipeline controls, but the effective state lives in the URL. Pure mapping
 // between saved-view vocabulary (sort next|recent) and control values
-// (next-action|recent); the list endpoint keeps receiving control values, and
-// sponsors.js owns URL read/write around load().
-export function pipelineUiSort(viewSort) {
-  return viewSort === 'recent' ? 'recent' : 'next-action';
-}
-
+// (next-action|recent) end to end: saved views store control values, the list
+// endpoint receives them, and sponsors.js owns URL read/write around load().
 // Effective saved-view filters onto control values. organizationId has no
 // control: it rides as an extra API param through load() instead.
 export function pipelineControlsFromFilters(filters = {}, sort = 'next') {
@@ -63,7 +59,7 @@ export function pipelineControlsFromFilters(filters = {}, sort = 'next') {
     stage: filters.stage || '',
     search: filters.search || '',
     owner: filters.owner || '',
-    sort: pipelineUiSort(sort),
+    sort: sort === 'recent' ? 'recent' : 'next-action',
     ...(filters.organizationId ? { organizationId: filters.organizationId } : {}),
   };
 }

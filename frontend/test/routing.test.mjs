@@ -90,7 +90,7 @@ describe("canonical workspace routing", () => {
     assert.equal(WORKSPACE_PATH_BY_VIEW.sponsors, "/sponsors/pipeline");
     for (const [kind, param, tab] of [
       ["deal", "dealId", "pipeline"],
-      ["company", "companyId", "pipeline"],
+      ["company", "companyId", "companies"],
       ["person", "personId", "people"],
       ["lead", "leadId", "leads"],
       ["newsletter", "newsletterId", "newsletters"],

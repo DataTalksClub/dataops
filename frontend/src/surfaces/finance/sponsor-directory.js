@@ -118,13 +118,15 @@ export function directoryStateFromUrl(url, entity) {
 }
 
 // Builds the API query from validated state. Only contract keys are emitted;
-// view ids and UI-only keys never leave the browser.
+// view ids and UI-only keys never leave the browser. Direction is explicit
+// (name/asc, lastTouch/desc — the contract's execution defaults).
 export function directoryQueryFromState(entity, state) {
   const query = {};
   for (const key of DIRECTORY_FILTER_KEYS[entity] || []) {
     if (state?.[key] !== undefined) query[key] = String(state[key]);
   }
   query.sort = state?.sort || "name";
+  query.direction = query.sort === "lastTouch" ? "desc" : "asc";
   query.limit = String(state?.limit || DIRECTORY_PAGE_SIZE_DEFAULT);
   if (state?.cursor) query.cursor = String(state.cursor);
   return query;
@@ -145,51 +147,17 @@ export function firstPage(state) {
 // Canonical URL always carries the effective filters explicitly, so a copied
 // link stays meaningful even when the referenced personal view is unavailable
 // to the reader. viewId is included only when the filters still match it.
-// Relative windows ({daysAgo}) are resolved to absolute Berlin dates: the
-// reader replays the same window the writer saw.
+// Filters are absolute server-resolved values; no client date math exists.
 export function directoryUrl(entity, { viewId, filters, sort, limit } = {}) {
   const params = new URLSearchParams();
   if (viewId) params.set("view", viewId);
-  const absolute = resolveRelativeFilters(filters);
   for (const key of DIRECTORY_FILTER_KEYS[entity] || []) {
-    if (absolute?.[key] !== undefined) params.set(key, String(absolute[key]));
+    if (filters?.[key] !== undefined) params.set(key, String(filters[key]));
   }
   if (sort && sort !== "name") params.set("sort", sort);
   if (limit && Number(limit) !== DIRECTORY_PAGE_SIZE_DEFAULT) params.set("limit", String(limit));
   const query = params.toString();
   return `${sponsorsPath(entity)}${query ? `?${query}` : ""}`;
-}
-
-// Absolute dates pass through; {daysAgo} windows resolve against Berlin
-// today. SINGLE canonical client resolver (review correction): nothing else
-// in E modules reimplements Berlin-day math.
-// INTEGRATION-TODO(D resolvedFilters): once every view carries server
-// resolvedFilters, resolveEffectiveFilters already prefers them and this
-// client fallback (plus its re-export in sponsor-saved-views.js) is deleted.
-export function berlinTodayString(now = new Date()) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(now);
-}
-
-export function resolveRelativeDay(value, today = berlinTodayString()) {
-  if (typeof value === "string") return value;
-  const daysAgo = value?.daysAgo;
-  if (!Number.isInteger(daysAgo) || daysAgo < 1 || daysAgo > 730) {
-    throw new Error("Invalid relative day: expected {daysAgo: 1..730}");
-  }
-  const midnight = Date.parse(`${today}T00:00:00Z`);
-  if (Number.isNaN(midnight)) throw new Error("Invalid today date");
-  return new Date(midnight - daysAgo * 86400000).toISOString().slice(0, 10);
-}
-
-export function resolveRelativeFilters(filters, today = berlinTodayString()) {
-  if (!filters) return filters;
-  const resolved = {};
-  for (const [key, value] of Object.entries(filters)) {
-    resolved[key] = (key === "lastTouchAfter" || key === "lastTouchBefore") && typeof value !== "string"
-      ? resolveRelativeDay(value, today)
-      : value;
-  }
-  return resolved;
 }
 
 function humanTouch(value, humanDate) {

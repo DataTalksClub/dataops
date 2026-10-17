@@ -1,4 +1,5 @@
 import { createSponsorContactEditor } from "./sponsor-contacts.js";
+import { createSponsorPersonDetail } from "./sponsor-person-detail.js";
 import { createSponsorOwnerDirectory, populateSponsorDealForm } from "./sponsor-deal-form.js";
 import { createSponsorCommunications } from "./sponsor-communications.js";
 import { createSponsorFinance } from "./sponsor-finance.js";
@@ -113,7 +114,7 @@ export function createSponsorCrmSurface(context) {
     surface.querySelector("[data-crm-status]").innerHTML = html`<option value="">All stages</option>${
       SPONSOR_PIPELINE_STAGES.map(({ id, label }) => html`<option value="${id}">${label}</option>`).join("")
     }`;
-    setRouteTitle("Sponsors");
+    setRouteTitle("CRM");
     const api = (path, options = {}) =>
         request(workApiUrl(`/api/sponsor-crm${path}`), {
           headers: {
@@ -253,7 +254,7 @@ export function createSponsorCrmSurface(context) {
       if (selectedId) form.elements.primaryContactId.value = selectedId;
     }
     // E directory pages: bounded directories, pipeline URL lifecycle,
-    // saved-view dialogs, add-person wiring, person interim, Back context.
+    // saved-view dialogs, add-person wiring, Back context, archive loader.
     const directoryPages = createSponsorDirectoryPages({
       api,
       surface,
@@ -262,10 +263,7 @@ export function createSponsorCrmSurface(context) {
       safe,
       openDialog,
       navigateCanonicalWorkspace,
-      getContacts: () => contacts,
-      mergeContact: (contact) => {
-        contacts = [...contacts.filter((value) => value.id !== contact.id), contact];
-      },
+      openContactEditor: (target, options) => contactEditor.open(target, options),
       reloadPipeline: (reset, extra) => pipeline.load(reset, extra),
       showView: (view, redraw) => setView(view, redraw),
     });
@@ -313,6 +311,18 @@ export function createSponsorCrmSurface(context) {
         : "Money";
       if (redraw) draw();
     }
+    const contactEditor = createSponsorContactEditor({ api, surface, getContacts: () => contacts,
+      getOrganizations: () => organizations, safe, openDialog,
+      afterSave: async (organizationId) => { await refresh(); await reopenCompanyDetail(await loadCompany(organizationId)); } });
+    const personDetail = createSponsorPersonDetail({
+      api,
+      surface,
+      escapeHtml,
+      safe,
+      closeRecord: () => directoryPages.closeRecord(),
+      openCompanyRecord: (organizationId) => openRecord("company", organizationId, undefined, { keepContext: true }),
+      openContactEditor: (target, options) => contactEditor.open(target, options),
+    });
     const { reopenDealDetail, reopenCompanyDetail } = createSponsorCompanyDetail({
       api,
       surface,
@@ -332,6 +342,9 @@ export function createSponsorCrmSurface(context) {
       loadFinance,
       loadCommunications,
       safe,
+      openTaskPanel,
+      openCompanyRecord: (organizationId) => openRecord("company", organizationId),
+      openContactEditor: (target, options) => contactEditor.open(target, options),
     });
     sponsorFinance.setReopenBookingDetail(async (booking) => {
       if (
@@ -471,23 +484,35 @@ export function createSponsorCrmSurface(context) {
         if (PAGE_VIEWS.has(currentView)) {
           setView("pipeline");
         }
-        safe(() => directoryPages.reopenPersonDetail(personId), "Could not open person");
+        safe(async () => {
+          const detail = surface.querySelector("[data-crm-detail]");
+          surface.classList.add("has-booking-detail");
+          const split = surface.querySelector("[data-crm-split]");
+          if (split) {
+            split.dataset.view = "detail";
+            globalThis.dakitSplit?.show(split, "detail");
+          }
+          detail.innerHTML = `<div data-crm-person></div>`;
+          const host = detail.querySelector("[data-crm-person]");
+          personDetail.wire(host);
+          await personDetail.openPerson(personId);
+        }, "Could not open person");
         return true;
       }
       return false;
     }
     // An in-place open records the record path; an unknown record renders it.
-    function openRecord(kind, id, focusSelector) {
+    // keepContext preserves the existing Back origin for nested opens
+    // (person → company) instead of chaining a new one.
+    function openRecord(kind, id, focusSelector, { keepContext = false } = {}) {
       safe(async () => {
-        directoryPages.captureReturnContext(kind, id, currentView);
+        if (!keepContext) directoryPages.captureReturnContext(kind, id, currentView);
         if (kind === "deal") {
           const item = await api(`/deals/${encodeURIComponent(id)}`);
           await loadCompany(item.organizationId);
           deals = [...deals.filter((value) => value.id !== id), item];
           showRecord({ dealId: id });
         } else if (kind === "person") {
-          const contact = await api(`/contacts/${encodeURIComponent(id)}`);
-          contacts = [...contacts.filter((value) => value.id !== id), contact];
           showRecord({ personId: id });
         } else {
           await loadCompany(id);
@@ -707,8 +732,6 @@ export function createSponsorCrmSurface(context) {
         await refresh();
       }, "Could not save sponsor");
     };
-    createSponsorContactEditor({ api, surface, getContacts: () => contacts, safe, openDialog,
-      afterSave: async (organizationId) => { await refresh(); await reopenCompanyDetail(await loadCompany(organizationId)); } });
     surface.querySelector("[data-deal-save]").onclick = (event) => {
       event.preventDefault();
       const dialog = surface.querySelector("[data-deal-dialog]"),
@@ -828,7 +851,10 @@ export function createSponsorCrmSurface(context) {
         [requestedCompanyId, "company", "[data-crm-detail]", "pipeline", async (id) => reopenCompanyDetail(
           await loadCompany(id),
         )],
-        [requestedPersonId, "person", "[data-crm-detail]", "people", async (id) => directoryPages.reopenPersonDetail(id)],
+        [requestedPersonId, "person", "[data-crm-detail]", "people", async (id) => {
+          directoryPages.captureReturnContext("person", id, currentView);
+          showRecord({ personId: id });
+        }],
         [requestedLeadId, "lead", "[data-crm-leads]", "leads", (id) => sponsorLeads.focusLead(id)],
       ].find(([id]) => id);
       if (record) {
@@ -853,7 +879,7 @@ export function createSponsorCrmSurface(context) {
     } catch (error) {
       surface.querySelector("[data-crm-bookings]").textContent = "Could not load deals.";
       message.hidden = false;
-      message.textContent = `Permission or API error: ${error.message}. Reopen Sponsors to retry.`;
+      message.textContent = `Permission or API error: ${error.message}. Reopen CRM to retry.`;
     }
   }
 

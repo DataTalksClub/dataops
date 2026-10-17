@@ -22,12 +22,10 @@ import {
   renderDirectoryPagination,
   renderDirectoryStatus,
   renderPersonRow,
-  resolveRelativeFilters,
   validateDirectoryState,
 } from "../src/surfaces/finance/sponsor-directory.js";
 import {
   archiveSavedView,
-  berlinTodayString,
   defaultViewForEntity,
   fetchViews,
   isBuiltinView,
@@ -35,8 +33,6 @@ import {
   renderSavedViewBar,
   renderSavedViewManageList,
   resolveEffectiveFilters,
-  resolveRelativeDay,
-  resolveViewFiltersForQuery,
   saveView,
   updateSavedView,
   validateViewFilters,
@@ -76,7 +72,7 @@ test("every existing canonical URL stays reachable and maps to a tab", async () 
     "/sponsors/newsletters": "newsletters",
     "/sponsors/money": "money",
     "/sponsors/deals/deal-1": "pipeline",
-    "/sponsors/companies/company-1": "pipeline",
+    "/sponsors/companies/company-1": "companies",
     "/sponsors/people/person-1": "people",
     "/sponsors/leads/lead-1": "leads",
     "/sponsors/newsletters/news-1": "newsletters",
@@ -140,58 +136,67 @@ test("URL state round-trips through the canonical URL with effective filters", (
 test("API queries emit only contract keys with bounded paging", () => {
   const query = directoryQueryFromState("companies",
     { relationship: "talking", view: "builtin:x", cursor: "bound-cursor", limit: 30 });
-  assert.deepEqual(query, { relationship: "talking", sort: "name", limit: "30", cursor: "bound-cursor" });
+  assert.deepEqual(query, { relationship: "talking", sort: "name", direction: "asc", limit: "30", cursor: "bound-cursor" });
   const people = directoryQueryFromState("people", { unlinked: "true" });
-  assert.deepEqual(people, { unlinked: "true", sort: "name", limit: "30" });
+  assert.deepEqual(people, { unlinked: "true", sort: "name", direction: "asc", limit: "30" });
+  assert.deepEqual(directoryQueryFromState("companies", { sort: "lastTouch" }),
+    { sort: "lastTouch", direction: "desc", limit: "30" });
   // Changing filters drops the bound cursor instead of paging a stale query.
   assert.deepEqual(dropCursor({ search: "acme", cursor: "abc" }), { search: "acme" });
   assert.equal(firstPage({ search: "acme", cursor: "abc", sort: "lastTouch" }).cursor, undefined);
 });
 
 // --- Builtins are server-provided and consumed, never duplicated ---
-// Fixture mirrors the D contract's builtin shapes (not a second store): the
-// UI must accept and execute whatever the API returns.
+// Fixture mirrors the D rev4 builtin shapes (resolvedFilters universal).
 
 const SERVER_VIEWS = [
   { id: "builtin:companies:active", entity: "companies", name: "Active", builtin: true,
-    filters: { active: "true" }, sort: { field: "name", direction: "asc" } },
+    filters: { active: "true" }, resolvedFilters: { active: "true" },
+    sort: { field: "name", direction: "asc" } },
   { id: "builtin:companies:all", entity: "companies", name: "All", builtin: true,
-    filters: { active: "all" }, sort: { field: "name", direction: "asc" } },
+    filters: { active: "all" }, resolvedFilters: { active: "all" },
+    sort: { field: "name", direction: "asc" } },
   { id: "builtin:companies:recent", entity: "companies", name: "Recently contacted", builtin: true,
     filters: { active: "true", lastTouchAfter: { daysAgo: 30 } },
+    resolvedFilters: { active: "true", lastTouchAfter: "2026-09-17" },
     sort: { field: "lastTouch", direction: "desc" } },
   { id: "builtin:companies:stale", entity: "companies", name: "No recent contact", builtin: true,
     filters: { active: "true", lastTouchBefore: { daysAgo: 30 } },
+    resolvedFilters: { active: "true", lastTouchBefore: "2026-09-17" },
     sort: { field: "lastTouch", direction: "desc" } },
   { id: "builtin:companies:archived", entity: "companies", name: "Archived", builtin: true,
-    filters: { active: "false" }, sort: { field: "name", direction: "asc" } },
+    filters: { active: "false" }, resolvedFilters: { active: "false" },
+    sort: { field: "name", direction: "asc" } },
   { id: "builtin:people:active", entity: "people", name: "Active", builtin: true,
-    filters: { active: "true" }, sort: { field: "name", direction: "asc" } },
+    filters: { active: "true" }, resolvedFilters: { active: "true" },
+    sort: { field: "name", direction: "asc" } },
   { id: "builtin:people:all", entity: "people", name: "All", builtin: true,
-    filters: { active: "all" }, sort: { field: "name", direction: "asc" } },
+    filters: { active: "all" }, resolvedFilters: { active: "all" },
+    sort: { field: "name", direction: "asc" } },
   { id: "builtin:people:primary", entity: "people", name: "Primary only", builtin: true,
-    filters: { active: "true", primary: "true" }, sort: { field: "name", direction: "asc" } },
+    filters: { active: "true", primary: "true" }, resolvedFilters: { active: "true", primary: "true" },
+    sort: { field: "name", direction: "asc" } },
   { id: "builtin:people:unlinked", entity: "people", name: "Unlinked", builtin: true,
-    filters: { active: "true", unlinked: "true" }, sort: { field: "name", direction: "asc" } },
+    filters: { active: "true", unlinked: "true" }, resolvedFilters: { active: "true", unlinked: "true" },
+    sort: { field: "name", direction: "asc" } },
   { id: "builtin:people:archived", entity: "people", name: "Archived", builtin: true,
-    filters: { active: "false" }, sort: { field: "name", direction: "asc" } },
+    filters: { active: "false" }, resolvedFilters: { active: "false" },
+    sort: { field: "name", direction: "asc" } },
 ];
 
-test("every server builtin executes as a directory query", () => {
+test("every server builtin executes its resolvedFilters as a directory query", () => {
   const ids = new Set();
   for (const view of SERVER_VIEWS) {
     assert.ok(view.id && !ids.has(view.id), `duplicate builtin ${view.id}`);
     ids.add(view.id);
-    for (const key of Object.keys(view.filters)) {
+    assert.ok(view.resolvedFilters, `${view.id} carries resolvedFilters`);
+    for (const key of Object.keys(view.resolvedFilters)) {
       assert.ok(DIRECTORY_FILTER_KEYS[view.entity].includes(key), `${view.id} uses ${key}`);
     }
-    assert.equal(validateViewFilters(view.entity, view.filters), "", view.id);
-    const absolute = resolveViewFiltersForQuery(view.filters, "2026-10-17");
-    assert.equal(validateDirectoryState(view.entity, { ...absolute, sort: view.sort.field }), "", view.id);
+    assert.equal(validateDirectoryState(view.entity, { ...view.resolvedFilters, sort: view.sort.field }), "", view.id);
   }
   const recent = SERVER_VIEWS.find((view) => view.id === "builtin:companies:recent");
-  assert.deepEqual(resolveViewFiltersForQuery(recent.filters, "2026-10-17"),
-    { active: "true", lastTouchAfter: "2026-09-17" });
+  assert.deepEqual(recent.resolvedFilters, { active: "true", lastTouchAfter: "2026-09-17" });
 });
 
 test("the default selection is the server's Active builtin, else its first builtin", () => {
@@ -207,7 +212,9 @@ test("the default selection is the server's Active builtin, else its first built
 const views = [
   ...SERVER_VIEWS,
   { id: "view-1", entity: "companies", name: "My patch", builtin: false,
-    filters: { active: "true", relationship: "talking" }, sort: { field: "name", direction: "asc" }, version: 2 },
+    filters: { active: "true", relationship: "talking" },
+    resolvedFilters: { active: "true", relationship: "talking" },
+    sort: { field: "name", direction: "asc" }, version: 2 },
   { id: "view-2", entity: "companies", name: "Server resolved", builtin: false,
     filters: { active: "true", lastTouchAfter: { daysAgo: 30 } },
     resolvedFilters: { active: "true", lastTouchAfter: "2026-09-17" },
@@ -234,12 +241,11 @@ test("explicit URL filters override the view and unpin its id", () => {
   assert.equal(resolved.modified, true);
 });
 
-test("relative builtin windows stay selected across refresh but freeze in copied links", () => {
-  const today = berlinTodayString();
+test("resolved builtin windows stay selected across refresh but freeze in copied links", () => {
   const selected = resolveEffectiveFilters({
     entity: "companies", views,
     selectedViewId: "builtin:companies:recent",
-    urlState: { active: "true", lastTouchAfter: resolveRelativeDay({ daysAgo: 30 }, today) },
+    urlState: { active: "true", lastTouchAfter: "2026-09-17" },
   });
   assert.equal(selected.viewId, "builtin:companies:recent");
   assert.equal(selected.modified, false);
@@ -254,6 +260,16 @@ test("relative builtin windows stay selected across refresh but freeze in copied
     entity: "companies", views, selectedViewId: "missing-view", urlState: {},
   });
   assert.match(lost.error, /not available/);
+});
+
+test("a view without server resolvedFilters fails honestly instead of guessing", () => {
+  const unresolved = resolveEffectiveFilters({
+    entity: "companies",
+    views: [{ id: "view-x", entity: "companies", name: "X", filters: { active: "true" } }],
+    selectedViewId: "view-x",
+    urlState: {},
+  });
+  assert.match(unresolved.error, /could not be resolved/);
 });
 
 test("default with no selection is the Active builtin behavior", () => {
@@ -424,10 +440,12 @@ test("views client hits the workspace endpoints with the contract shapes", async
   assert.equal(JSON.parse(calls[2].body).version, 2);
   await archiveSavedView(api, "view-1");
   assert.equal(calls[3].method, "DELETE");
-  // Relative windows are stored unresolved; the server floats them.
+  // Saved filters are absolute server-resolved values; the server floats
+  // relative windows from the stored form.
   await saveView(api, { entity: "companies", name: "Recent",
-    filters: { active: "true", lastTouchAfter: { daysAgo: 30 } } });
-  assert.match(calls[4].body, /"daysAgo":30/);
+    filters: { active: "true", lastTouchAfter: "2026-09-17" },
+    sort: { field: "lastTouch", direction: "desc" } });
+  assert.match(calls[4].body, /"lastTouchAfter":"2026-09-17"/);
 });
 
 test("builtins cannot be written and bad input fails before the network", async () => {
@@ -463,31 +481,15 @@ test("saved view bar groups builtins and personal views with save/update afforda
   assert.doesNotMatch(manage, /builtin:companies:active/);
 });
 
-// --- Berlin-relative helpers ---
+// --- No client date math: resolution is the server's job ---
 
-test("berlin days resolve against the Berlin calendar day", () => {
-  assert.match(berlinTodayString(new Date("2026-10-17T12:00:00Z")), /^\d{4}-\d{2}-\d{2}$/);
-  assert.equal(resolveRelativeDay({ daysAgo: 30 }, "2026-10-17"), "2026-09-17");
-  assert.equal(resolveRelativeDay("2026-01-05", "2026-10-17"), "2026-01-05");
-  assert.throws(() => resolveRelativeDay({ daysAgo: 0 }, "2026-10-17"), /daysAgo/);
-  assert.deepEqual(resolveRelativeFilters({ active: "true", lastTouchAfter: { daysAgo: 1 } }, "2026-10-17"),
-    { active: "true", lastTouchAfter: "2026-10-16" });
-});
-
-// --- Archive mapping for F's Activity disclosure ---
-
-test("communications history maps onto the read-only archive shape", async () => {
-  const { mapArchiveItems } = await import("../src/surfaces/finance/sponsor-directory-pages.js");
-  const items = mapArchiveItems([
-    { id: "c-1", recordType: "sponsor-send-attempt", status: "sent", createdAt: "2026-10-01T00:00:00Z" },
-    { id: "c-2", recordType: "communication-suggestion", communicationType: "follow_up", safeReason: "Due date near",
-      createdAt: "2026-10-02T00:00:00Z" },
-  ]);
-  assert.deepEqual(items[0], {
-    id: "c-1", kind: "sponsor-send-attempt", label: "sent", preview: "sent",
-    detail: "sent · Recorded 2026-10-01T00:00:00Z", createdAt: "2026-10-01T00:00:00Z",
-  });
-  assert.equal(items[1].label, "follow_up");
-  assert.equal(items[1].preview, "Due date near");
-  assert.deepEqual(mapArchiveItems([]), []);
+test("stored relative windows still validate, but never resolve client-side", () => {
+  assert.equal(
+    validateViewFilters("companies", { active: "true", lastTouchAfter: { daysAgo: 30 } }),
+    "",
+  );
+  assert.match(
+    validateViewFilters("companies", { active: "true", lastTouchAfter: { daysAgo: 0 } }),
+    /daysAgo/,
+  );
 });

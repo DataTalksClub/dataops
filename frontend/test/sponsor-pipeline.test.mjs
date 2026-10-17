@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { pipelineControlsFromFilters, pipelineUiSort, renderSponsorPipelineList, renderSponsorPipelineFilters } from "../src/surfaces/finance/sponsor-pipeline.js";
+import { pipelineControlsFromFilters, renderSponsorPipelineList, renderSponsorPipelineFilters } from "../src/surfaces/finance/sponsor-pipeline.js";
 
 const escapeHtml = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
 
@@ -98,15 +98,13 @@ test('newer inbound stays the visible attention reason while a task is deferred'
 });
 
 test("saved-view sorts map onto pipeline controls without changing the list endpoint vocabulary", () => {
-  assert.equal(pipelineUiSort("next"), "next-action");
-  assert.equal(pipelineUiSort("recent"), "recent");
   assert.deepEqual(
     pipelineControlsFromFilters({ view: "closed", stage: "lost", search: "acme", owner: "op-1" }, "recent"),
     { view: "closed", stage: "lost", search: "acme", owner: "op-1", sort: "recent" },
   );
-  assert.deepEqual(pipelineControlsFromFilters({}, "next"), {
+  assert.deepEqual(pipelineControlsFromFilters({}, "next-action"), {
     view: "actionable", stage: "", search: "", owner: "", sort: "next-action",
   });
-  const scoped = pipelineControlsFromFilters({ organizationId: "org-1" }, "next");
+  const scoped = pipelineControlsFromFilters({ organizationId: "org-1" }, "next-action");
   assert.equal(scoped.organizationId, "org-1");
 });

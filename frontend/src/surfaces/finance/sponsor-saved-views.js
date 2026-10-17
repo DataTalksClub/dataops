@@ -1,28 +1,20 @@
 import { html } from "./shared.js";
 import {
   DIRECTORY_FILTER_KEYS,
-  berlinTodayString,
-  resolveRelativeDay,
-  resolveRelativeFilters,
   validateDirectoryState,
 } from "./sponsor-directory.js";
-
-// Re-exported from the single canonical resolver in sponsor-directory.js
-// (review correction: no duplicated client date math). resolveViewFiltersForQuery
-// stays as the view-execution entry point; resolveEffectiveFilters already
-// prefers server resolvedFilters, so this client fallback disappears once D
-// ships resolvedFilters on every view.
-export { berlinTodayString, resolveRelativeDay };
 
 // Package E persisted saved views: personal views stored server-side through
 // the D workspace API, builtins as shared immutable definitions. No
 // browser-only storage anywhere: the URL always carries the effective filters
 // explicitly, so refresh, back navigation and copied links replay the same
-// query even when a personal view id is unavailable to the reader.
+// query even when a personal view id is unavailable to the reader. Effective
+// filters always come from the server's resolvedFilters (Berlin-resolved);
+// there is no client date math anywhere.
 //
-// Endpoint paths default to the D contract mount and stay injectable until D
-// confirms the exact wiring; every client below takes an optional paths
-// override. Nothing here touches the DOM or the network directly.
+// Endpoint paths default to the D contract mount and stay injectable;
+// every client below takes an optional paths override. Nothing here touches
+// the DOM or the network directly.
 
 export const VIEW_ENTITIES = Object.freeze(["companies", "people", "pipeline"]);
 
@@ -32,7 +24,7 @@ export const VIEW_ENTITIES = Object.freeze(["companies", "people", "pipeline"]);
 export const PIPELINE_VIEW_FILTER_KEYS = Object.freeze(["view", "stage", "search", "organizationId", "owner"]);
 const PIPELINE_VIEWS = Object.freeze(["actionable", "active", "all", "closed", "unscheduled"]);
 const PIPELINE_STAGES = Object.freeze(["open", "agreed", "invoiced", "running", "closed", "lost"]);
-const PIPELINE_SORTS = Object.freeze(["next", "recent"]);
+const PIPELINE_SORTS = Object.freeze(["next-action", "recent"]);
 
 export const DEFAULT_WORKSPACE_PATHS = Object.freeze({
   views: "/api/sponsor-crm/views",
@@ -152,7 +144,7 @@ export function validateViewSort(entity, sort) {
     if (!sort || typeof sort !== "object" || Array.isArray(sort) || typeof sort.field !== "string") {
       return "sort must be {field}";
     }
-    if (!PIPELINE_SORTS.includes(sort.field)) return "pipeline sort must be next or recent";
+    if (!PIPELINE_SORTS.includes(sort.field)) return "pipeline sort must be next-action or recent";
     return "";
   }
   if (!["name", "lastTouch"].includes(sort.field)) return "sort field must be name or lastTouch";
@@ -160,19 +152,12 @@ export function validateViewSort(entity, sort) {
   return "";
 }
 
-// View-execution entry point: thin wrapper over the single canonical
-// resolver in sponsor-directory.js. Deleted with the client fallback once D
-// ships resolvedFilters on every view.
-export function resolveViewFiltersForQuery(filters, today = berlinTodayString()) {
-  return resolveRelativeFilters(filters, today);
-}
-
 function defaultFiltersFor(entity) {
   return entity === "pipeline" ? {} : { active: "true" };
 }
 
 function defaultSortFor(entity) {
-  return entity === "pipeline" ? "next" : "name";
+  return entity === "pipeline" ? "next-action" : "name";
 }
 
 // Combines the selected view (builtin or personal, server-provided) with
@@ -181,8 +166,8 @@ function defaultSortFor(entity) {
 // Unknown view ids fall back to the URL filters when present, and fail
 // honestly otherwise. A failed views fetch (viewsError) is never papered
 // over: without usable URL filters the caller gets an error for its honest
-// error state. Prefers the server's resolvedFilters when present so relative
-// windows resolve Europe/Berlin consistently with the API.
+// error state. Effective filters always come from the server's resolvedFilters;
+// a view without them fails honestly instead of client-side guessing.
 export function resolveEffectiveFilters({ entity, views, viewsError, selectedViewId, urlState }) {
   const url = urlState || {};
   const allowedKeys = entity === "pipeline" ? PIPELINE_VIEW_FILTER_KEYS : DIRECTORY_FILTER_KEYS[entity] || [];
@@ -201,28 +186,25 @@ export function resolveEffectiveFilters({ entity, views, viewsError, selectedVie
   if (!view && viewsError && !Object.keys(urlFilters).length && !urlSort) {
     return { error: viewsError };
   }
-  const storedFilters = view ? (view.resolvedFilters || view.filters || {}) : defaultFiltersFor(entity);
-  const baseFilters = { ...storedFilters };
+  if (view && !view.resolvedFilters) {
+    return { error: "That saved view could not be resolved. Reload the directory and retry." };
+  }
+  const baseFilters = view ? { ...view.resolvedFilters } : { ...defaultFiltersFor(entity) };
   const baseSort = view?.sort?.field || defaultSortFor(entity);
-  // URL dates are absolute while stored views may float ({daysAgo}): a URL
-  // key that matches the view's resolved value is the same window, not a
+  // A URL key matching the resolved value is the same window, not a
   // modification, so builtins stay selected across refresh while copied links
   // without the view id still replay the frozen window.
-  const resolvedBase = resolveViewFiltersForQuery(baseFilters);
   const overlaid = Object.keys(urlFilters).filter(
-    (key) => String(urlFilters[key]) !== String(resolvedBase[key]),
+    (key) => String(urlFilters[key]) !== String(baseFilters[key]),
   );
   const filters = { ...baseFilters, ...urlFilters };
   const sort = urlSort || baseSort;
   const modified = !!view && (overlaid.length > 0 || (!!urlSort && urlSort !== baseSort));
   const sortError = entity === "pipeline"
-    ? (PIPELINE_SORTS.includes(sort) ? "" : "sort must be next or recent")
+    ? (PIPELINE_SORTS.includes(sort) ? "" : "sort must be next-action or recent")
     : (sort !== baseSort || !view ? validateDirectoryState(entity, { sort }) : "");
   const error = validateViewFilters(entity, filters) || sortError;
   if (error) return { error };
-  // filters keep their stored form ({daysAgo} stays relative): call
-  // resolveViewFiltersForQuery before directoryQueryFromState, and pass them
-  // as-is to directoryUrl (it resolves while serializing).
   return { filters, sort, viewId: modified ? null : view?.id || null, modified };
 }
 

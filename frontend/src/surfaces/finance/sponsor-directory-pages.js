@@ -1,6 +1,6 @@
 import { sponsorRecordPath, sponsorsPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
-import { pipelineControlsFromFilters, pipelineUiSort } from "./sponsor-pipeline.js";
+import { pipelineControlsFromFilters } from "./sponsor-pipeline.js";
 import {
   archiveSavedView,
   defaultViewForEntity,
@@ -9,7 +9,6 @@ import {
   renderSavedViewBar,
   renderSavedViewManageList,
   resolveEffectiveFilters,
-  resolveViewFiltersForQuery,
   saveView,
   updateSavedView,
   validateViewName,
@@ -41,25 +40,6 @@ const WORKSPACE_API = {
   people: "/directory/people",
 };
 
-// Maps B-preserved read-only communications history onto F's archive shape.
-// Bodies were never stored: preview/detail carry status metadata only.
-export function mapArchiveItems(items) {
-  return (items || []).map((entry) => {
-    const kind = String(entry.recordType || "unknown");
-    const label = String(entry.communicationType || entry.status || entry.derivedStatus || kind);
-    const preview = String(entry.safeReason || entry.status || entry.derivedStatus || "");
-    return {
-      id: String(entry.id || ""),
-      kind,
-      label,
-      preview,
-      detail: [preview, entry.createdAt ? `Recorded ${entry.createdAt}` : ""].filter(Boolean).join(" · "),
-      createdAt: entry.createdAt,
-    };
-  });
-}
-
-// Directory sorts are fixed-direction: name ascends, last touch descends.
 function viewSortFor(sort) {
   return { field: sort === "lastTouch" ? "lastTouch" : "name", direction: sort === "lastTouch" ? "desc" : "asc" };
 }
@@ -81,8 +61,7 @@ export function createSponsorDirectoryPages({
   safe,
   openDialog,
   navigateCanonicalWorkspace,
-  getContacts,
-  mergeContact,
+  openContactEditor,
   reloadPipeline,
   showView,
 }) {
@@ -144,7 +123,9 @@ export function createSponsorDirectoryPages({
     returnContext = null;
     navigateCanonicalWorkspace(path, params, { render: false, history: "replace" });
     showView(view, false);
-    if ((view === "companies" || view === "people") && !directories[view].state.initialized) {
+    // The record may have archived/restored/edited its company: the list
+    // behind it reloads so flags stay honest. (F also re-opens via D.)
+    if (view === "companies" || view === "people") {
       safe(() => directories[view].refresh(), "Could not load directory");
     }
     surface.classList.remove("has-booking-detail");
@@ -245,7 +226,7 @@ export function createSponsorDirectoryPages({
     function writeUrl(resolved) {
       const params = {};
       if (resolved.viewId) params.view = resolved.viewId;
-      const absolute = resolveViewFiltersForQuery(resolved.filters);
+      const absolute = resolved.filters;
       for (const [key, value] of Object.entries(absolute)) params[key] = String(value);
       if (resolved.sort && resolved.sort !== "name") params.sort = resolved.sort;
       if (state.cursor) params.cursor = state.cursor;
@@ -272,7 +253,7 @@ export function createSponsorDirectoryPages({
       showMessage("Loading…");
       rowsEl.setAttribute("aria-busy", "true");
       const query = directoryQueryFromState(entity, {
-        ...resolveViewFiltersForQuery(resolved.filters),
+        ...resolved.filters,
         sort: resolved.sort,
         ...(state.cursor ? { cursor: state.cursor } : {}),
       });
@@ -283,7 +264,7 @@ export function createSponsorDirectoryPages({
         state.items = result.items || [];
         state.total = Number(result.total || 0);
         rememberCompanyNames(state.items);
-        const absoluteFilters = resolveViewFiltersForQuery(resolved.filters);
+        const absoluteFilters = resolved.filters;
         const hasFilters = Object.keys(absoluteFilters)
           .some((key) => key !== "active" || absoluteFilters[key] !== "true");
         rowsEl.innerHTML = state.items.length
@@ -329,7 +310,7 @@ export function createSponsorDirectoryPages({
         if (!resolved.error) {
           state.selectedViewId = resolved.viewId;
           state.modified = resolved.modified;
-          applyToControls(resolveViewFiltersForQuery(resolved.filters), resolved.sort);
+          applyToControls({ ...resolved.filters }, resolved.sort);
         }
         if (entity === "people") await refillCompanyFilter();
         renderViews();
@@ -364,7 +345,7 @@ export function createSponsorDirectoryPages({
         urlState: {},
       });
       if (!resolved.error) {
-        applyToControls(resolveViewFiltersForQuery(resolved.filters), resolved.sort);
+        applyToControls({ ...resolved.filters }, resolved.sort);
       }
       await loadDirectory();
     }
@@ -425,7 +406,7 @@ export function createSponsorDirectoryPages({
       if (!current) throw new Error("Select one of your views to update it");
       const resolved = effectiveFromControls();
       if (resolved.error) throw new Error(resolved.error);
-      const absolute = resolveViewFiltersForQuery(resolved.filters);
+      const absolute = resolved.filters;
       await updateSavedView(api, current.id, {
         name: current.name,
         filters: absolute,
@@ -518,7 +499,7 @@ export function createSponsorDirectoryPages({
         if (controls.search) filters.search = controls.search;
         if (controls.owner) filters.owner = controls.owner;
         if (pipeline.getOrg()) filters.organizationId = pipeline.getOrg();
-        const sort = { field: controls.sort === "recent" ? "recent" : "next" };
+        const sort = { field: controls.sort === "recent" ? "recent" : "next-action" };
         const saved = mode === "rename"
           ? await updateSavedView(api, viewId, { name, filters, sort, version }, { paths: WORKSPACE_API })
           : await saveView(api, { entity, name, filters, sort, sourceKey: newViewSourceKey() }, { paths: WORKSPACE_API });
@@ -533,10 +514,10 @@ export function createSponsorDirectoryPages({
       const resolved = controller.state.lastResolved || { filters: {}, sort: "name" };
       const saved = mode === "rename"
         ? await updateSavedView(api, viewId, {
-          name, filters: resolveViewFiltersForQuery(resolved.filters), sort: viewSortFor(resolved.sort), version,
+          name, filters: { ...resolved.filters }, sort: viewSortFor(resolved.sort), version,
         }, { paths: WORKSPACE_API })
         : await saveView(api, {
-          entity, name, filters: resolveViewFiltersForQuery(resolved.filters),
+          entity, name, filters: { ...resolved.filters },
           sort: viewSortFor(resolved.sort), sourceKey: newViewSourceKey(),
         }, { paths: WORKSPACE_API });
       dialog.close();
@@ -549,7 +530,7 @@ export function createSponsorDirectoryPages({
   // the selected saved view live in the URL (?view ?stage ?search ?owner
   // ?sort ?cursor ?savedView). `view` is the D pipeline filter here; the
   // saved-view id travels as `savedView`. Sort in the URL uses control values
-  // (next-action|recent); saved-view sorts (next|recent) map onto controls.
+  // (next-action|recent) end to end.
   const pipeline = {
     org: null,
     savedViewId: null,
@@ -572,7 +553,7 @@ export function createSponsorDirectoryPages({
       if (stage !== undefined) surface.querySelector("[data-crm-status]").value = stage;
       if (search !== undefined) surface.querySelector("[data-crm-search]").value = search;
       if (owner !== undefined) surface.querySelector("[data-pipeline-owner]").value = owner;
-      if (sort !== undefined) surface.querySelector("[data-pipeline-sort]").value = pipelineUiSort(sort);
+      if (sort !== undefined) surface.querySelector("[data-pipeline-sort]").value = sort === "recent" ? "recent" : "next-action";
       pipeline.org = organizationId || null;
     },
     writeUrl(cursor) {
@@ -650,7 +631,7 @@ export function createSponsorDirectoryPages({
         stage: p.stage || "",
         search: p.search || "",
         owner: p.owner || "",
-        sort: p.sort === "recent" ? "recent" : "next",
+        sort: p.sort === "recent" ? "recent" : "next-action",
       });
       await pipeline.ensureViews();
       if (p.savedView) await pipeline.applySavedView(p.savedView);
@@ -684,104 +665,29 @@ export function createSponsorDirectoryPages({
   }
 
   // Add-person entries (E-owned selectors, agreed with F): [data-add-contact]
-  // opens the dialog with the explicit company association chooser;
+  // opens the shared editor with the explicit company association chooser
+  // (bounded company options supplement the in-memory organizations);
   // [data-contact-org="<id>"] presets the company and hides the chooser.
-  async function openContactDialog(organizationId) {
-    const dialog = surface.querySelector("[data-contact-dialog]");
-    const form = dialog.querySelector("form");
-    form.reset();
-    const picker = form.querySelector("[data-contact-org-picker]");
-    const wrap = form.querySelector("[data-contact-org-picker-wrap]");
-    if (organizationId) {
-      form.elements.organizationId.value = organizationId;
-      if (wrap) wrap.hidden = true;
-    } else {
-      form.elements.organizationId.value = "";
-      if (wrap) wrap.hidden = false;
-      if (picker) {
-        picker.innerHTML = `<option value="">Select a company</option>`;
-        try {
-          const options = await fetchCompanyOptions({ limit: 50 });
-          picker.innerHTML = `<option value="">Select a company</option>` + options
-            .map((entry) => html`<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)}</option>`)
-            .join("");
-        } catch {
-          // The dialog still opens; saving without a company fails honestly.
-        }
-      }
-    }
-    openDialog(dialog);
-  }
+  // Behavior (chooser, versions, precision-safe save) is F's editor.
   surface.addEventListener("click", (event) => {
     if (event.target.closest("[data-add-contact]")) {
-      safe(() => openContactDialog(null), "Could not open contact editor");
+      safe(async () => {
+        const options = await fetchCompanyOptions({ limit: 50 }).catch(() => []);
+        await openContactEditor({}, { companies: options });
+      }, "Could not open contact editor");
       return;
     }
     const preset = event.target.closest("[data-contact-org]")?.dataset.contactOrg;
-    if (preset) safe(() => openContactDialog(preset), "Could not open contact editor");
+    if (preset) safe(() => openContactEditor({ organizationId: preset }), "Could not open contact editor");
   });
-  surface.querySelector("[data-contact-dialog] [data-contact-org-picker]")?.addEventListener("change", (event) => {
-    const form = surface.querySelector("[data-contact-dialog] form");
-    form.elements.organizationId.value = event.target.value;
-  });
-
-  // INTERIM-F: minimal person record until F's sponsor-person-detail lands.
-  // Bounded single-record fetch (existing contacts/:id), company link,
-  // edit via the shared contact editor, E-owned Back. F's module takes over
-  // this mount without changing routes or returnContext.
-  async function reopenPersonDetail(personId) {
-    const known = getContacts().find((item) => item.id === personId);
-    const contact = known || await api(`/contacts/${encodeURIComponent(personId)}`);
-    if (!known) mergeContact(contact);
-    const detail = surface.querySelector("[data-crm-detail]");
-    const companyName = contact.organizationId
-      ? companyNames.get(contact.organizationId) || "Linked company"
-      : null;
-    surface.classList.add("has-booking-detail");
-    const split = surface.querySelector("[data-crm-split]");
-    if (split) {
-      split.dataset.view = "detail";
-      globalThis.dakitSplit?.show(split, "detail");
-    }
-    const companyHref = contact.organizationId
-      ? sponsorRecordPath("company", contact.organizationId)
-      : "";
-    detail.innerHTML = html`<article class="crm-person-pane" data-person-pane="${escapeHtml(contact.id)}">
-      <button type="button" class="dk-split__back" data-close-record>Back</button>
-      <h3>${escapeHtml(contact.name || "Unnamed person")}</h3>
-      <p>${contact.organizationId
-        ? html`<a href="${escapeHtml(companyHref)}" data-open-company="${escapeHtml(contact.organizationId)}">${escapeHtml(companyName)}</a>`
-        : "Unlinked"}</p>
-      <p>${escapeHtml(contact.role || "No role recorded")}</p>
-      <p>${escapeHtml((contact.emails || []).join(", ") || "No email")}</p>
-      <p>Full record tabs land with the record worker; this summary stays available.</p>
-      <div class="row-actions">
-        <button type="button" data-edit-contact="${escapeHtml(contact.id)}">Edit person</button>
-      </div>
-    </article>`;
-    detail.querySelector("[data-close-record]").addEventListener("click", closeRecord);
-  }
-
-  // Archive loader for F's record Activity disclosure (B-preserved read-only
-  // communications path; bodies were never stored, previews only).
-  async function loadArchive(dealId) {
-    const result = await api(`/deals/${encodeURIComponent(dealId)}/communications?limit=50`);
-    return {
-      items: mapArchiveItems(result.items || []),
-      total: (result.items || []).length,
-      hasMore: result.nextCursor != null,
-    };
-  }
 
   return {
     directories,
     pipeline,
     seedListParams,
-    openContactDialog,
-    reopenPersonDetail,
+    fetchCompanyOptions,
     closeRecord,
     listPath,
     captureReturnContext,
-    loadArchive,
   };
 }
