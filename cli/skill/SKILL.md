@@ -201,7 +201,8 @@ It links to its subject, is assigned to you, and shows in that day's queue.
 Follow-ups live in DataOps, not in any agent's memory, so any agent can pick
 up any queue:
 
-1. Look at their queue: `dataops tasks list --owner <agent-id> --queue --json`.
+1. Look at their queue: `dataops tasks list --owner <agent-id> --queue --json`
+   (an id, email, or name — `dataops tasks list --owner orin`).
    (`--mine` is shorthand for `--owner me`.)
 2. Take it over: `dataops tasks handover --from <agent-id> --to <agent-id>`
    for the whole open queue, or `dataops tasks handover <task-id> --to <agent-id>`
@@ -210,6 +211,30 @@ up any queue:
 3. Work from your own queue from then on: `dataops tasks list --mine --queue`.
    Read each Task's notes log (`tasks show`) for the context so far, and keep
    appending to it as you go.
+
+## The Orin operator account
+
+Agents sign in as Orin (`orin@datatalks.club`), never on someone's personal
+credentials. One-time setup by an admin:
+
+```bash
+dataops team add-user --email orin@datatalks.club --name Orin   # role is operator unless said otherwise
+```
+
+then Orin signs in on its host with Google SSO:
+
+```bash
+dataops login --label "orin@<host>"
+```
+
+Orin is an `operator`: it does all execution work — list, create, update,
+complete with proof, wait, follow-ups, snooze, notes — on its own, a
+teammate's, or unassigned Tasks, and new Tasks default to assigning to it.
+It cannot do administration: user/team management, the secrets store
+(admin-only, so Orin never touches secrets), deleting Tasks, or changing
+assignees (`tasks assign`, `tasks handover` need an admin — ask Alexey).
+Viewing another queue (`tasks list --owner orin`, or the web queue's Assignee
+filter) is read-only: it only changes what is listed, never who acts.
 
 ## Anything else
 

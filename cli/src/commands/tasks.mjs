@@ -44,9 +44,11 @@ List views (default: --queue)
   --today      Due today          --overdue    Open and past due     --waiting   Waiting on someone
   --status S   todo|waiting|done|skipped       --date D    One day     --from D --to D   A range
   --card ID    Every Task of a Card
-  --owner me|team|unassigned|<user-id>, or --mine for --owner me
+  --owner me|team|unassigned|<member>, or --mine for --owner me
+  --assignee <member>   Same filter as --owner (use one of them)
   --as-of YYYY-MM-DD   Treat this date as today (default: the local date)
 
+<member> is a user id, an email, or a name: --owner orin shows Orin's work.
 The starting point for any agent is \`dataops tasks list --mine --queue\`:
 your open work in urgency order (overdue, follow-ups due, today, waiting).
 
@@ -109,7 +111,12 @@ function tasksOf(payload) {
 
 function ownerOf(args) {
   if (args.mine) return "me";
-  return optionalString(args, "owner");
+  const owner = optionalString(args, "owner");
+  const assignee = optionalString(args, "assignee");
+  if (owner !== undefined && assignee !== undefined) {
+    throw new UsageError("Use --owner or --assignee, not both: they filter the same work.");
+  }
+  return owner ?? assignee;
 }
 
 /**
