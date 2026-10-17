@@ -168,6 +168,66 @@ test("stale activity never clears the new person's single-flight flag", async ()
   assert.equal(fetches.p1, 1);
 });
 
+test("deferred company lookup waits until A actually reaches the company API", async () => {
+  let releaseCompany;
+  const gate = new Promise((resolve) => { releaseCompany = resolve; });
+  let aInCompanyFetch = false;
+  const api = async (path) => {
+    if (path === "/contacts/p1") return person;
+    if (path === "/contacts/p2") return { ...person, id: "p2", name: "Bo", organizationId: "c9" };
+    if (path === "/directory/companies/c1") {
+      aInCompanyFetch = true;
+      await gate;
+      return { id: "c1", displayName: "Acme Co" };
+    }
+    if (path === "/directory/companies/c9") return { id: "c9", displayName: "Beta Inc" };
+    throw new Error(`Unexpected: ${path}`);
+  };
+  const surface = new FakeNode("section");
+  const host = surface.setQuery("[data-crm-person]", new FakeNode("article"));
+  host.setQuery('[data-person-panel="overview"]', new FakeNode("section"));
+  host.setQuery('[data-person-panel="activity"]', new FakeNode("section"));
+  const detail = createSponsorPersonDetail({ api, surface, escapeHtml, closeRecord: () => {}, openCompanyRecord: () => {} });
+  detail.wire(host);
+  const pendingA = detail.openPerson("p1");
+  for (let spin = 0; spin < 100 && !aInCompanyFetch; spin += 1) {
+    await new Promise((resolve) => { setImmediate(resolve); });
+  }
+  assert.ok(aInCompanyFetch, "B opens only after A entered the company fetch (not just the contact token)");
+  await detail.openPerson("p2");
+  releaseCompany();
+  await pendingA;
+  assert.match(host.innerHTML, /Beta Inc/, "only the newer person's company renders");
+  assert.doesNotMatch(host.innerHTML, /Acme Co/, "stale company lookup paints nothing");
+});
+
+test("stale rejected open paints no error into the newer person", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let current = true;
+  const api = async (path) => {
+    if (path === "/contacts/p1") {
+      await gate;
+      throw httpError(503, "workspace unavailable");
+    }
+    if (path === "/contacts/p2") return { ...person, id: "p2", name: "Bo", organizationId: "" };
+    throw new Error(`Unexpected: ${path}`);
+  };
+  const surface = new FakeNode("section");
+  const host = surface.setQuery("[data-crm-person]", new FakeNode("article"));
+  host.setQuery('[data-person-panel="overview"]', new FakeNode("section"));
+  host.setQuery('[data-person-panel="activity"]', new FakeNode("section"));
+  const detail = createSponsorPersonDetail({ api, surface, escapeHtml, closeRecord: () => {} });
+  detail.wire(host);
+  const pendingA = detail.openPerson("p1", { isCurrent: () => current });
+  await detail.openPerson("p2", { isCurrent: () => current });
+  current = false;
+  release();
+  await pendingA;
+  assert.match(host.innerHTML, /Bo</, "newer open renders");
+  assert.doesNotMatch(host.innerHTML, /unavailable|No person found/, "stale rejection paints no error into the new page");
+});
+
 test("stale activity responses never render into a switched person", async () => {
   let releaseFirst;
   const gate = new Promise((resolve) => { releaseFirst = resolve; });
