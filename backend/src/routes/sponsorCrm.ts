@@ -1,3 +1,4 @@
+import { berlinDate } from '../sponsorFinance/core';
 import { sponsorPipeline, PIPELINE_STAGES } from '../sponsorCrm/pipeline';
 import { getNewsletterIssue } from '../db/newsletterIssues';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -51,7 +52,7 @@ const page = (items: unknown[], event: LambdaEvent) => {
 };
 const todayOf = (event: LambdaEvent) => {
   const query = event.queryStringParameters || {};
-  return realDate(query.today) ? String(query.today) : new Date().toISOString().slice(0, 10);
+  return realDate(query.today) ? String(query.today) : berlinDate();
 };
 
 function validateList(event: LambdaEvent) {

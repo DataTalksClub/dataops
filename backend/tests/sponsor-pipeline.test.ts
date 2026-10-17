@@ -6,7 +6,7 @@ import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 const now = '2026-10-17T00:00:00Z';
 const record = (kind: string, id: string, fields: Record<string, unknown>) => ({ PK: `${kind}#${id}`, SK: `${kind}#${id}`, id, version: 1, createdAt: now, updatedAt: now, ...fields });
 const items = [
-  record('ORGANIZATION', 'org', { displayName: 'Synthetic company', lastInboundAt: '2026-10-16' }),
+  record('ORGANIZATION', 'org', { displayName: 'Synthetic company', lastInboundAt: '2026-10-16', lastOutboundAt: '2026-10-10' }),
   record('CONTACT', 'person', { organizationId: 'org', name: 'Synthetic Person', primary: true, emails: ['person@example.test'] }),
   ...Array.from({ length: 75 }, (_, i) => record('DEAL', `deal-${String(i).padStart(3, '0')}`, { organizationId: 'org', status: i === 74 ? 'lost' : i < 4 ? 'agreed' : 'open', notes: 'Private long details' })),
 ];
@@ -52,7 +52,7 @@ describe('bounded sponsor funnel', () => {
   }
 });
 
-import { pipelineTaskDate, pipelineTaskDeferred } from '../src/sponsorCrm/pipeline';
+import { pipelineTaskDate, pipelineTaskDeferred, needsInboundReview } from '../src/sponsorCrm/pipeline';
 import type { Task } from '../src/types';
 it('uses queue eligibility and waiting follow-up dates rather than the original date', () => {
   const task = { id: 'task', date: '2026-10-10', status: 'todo' } as Task;
@@ -78,4 +78,23 @@ it('filters owner by next Task and keeps undated/deferred work out of the due vi
   assert.equal((await get({ view: 'all', owner: 'owner-a' }, tasks, rows)).body.total, 5);
   assert.equal((await get({ view: 'all', owner: 'owner-b' }, tasks, rows)).body.total, 0);
   assert.equal((await get({ view: 'unscheduled' }, tasks, rows)).body.total, 70);
+});
+
+it('only infers a recent inbound review from an established exchange, never old or one-way mail', () => {
+  assert.equal(needsInboundReview('2026-10-16', '2026-10-10', '2026-10-17'), true);
+  assert.equal(needsInboundReview('2022-10-16', '2022-10-10', '2026-10-17'), false);
+  assert.equal(needsInboundReview('2026-10-16', null, '2026-10-17'), false);
+  assert.equal(needsInboundReview('2026-10-16', '2026-10-17', '2026-10-17'), false);
+  assert.equal(needsInboundReview('2026-10-18', '2026-10-10', '2026-10-17'), false);
+});
+
+it('excludes inactive people from primary summaries', async () => {
+  const records = items.map((item) => item.PK.startsWith('CONTACT#') ? { ...item, active: false } : item);
+  assert.equal((await get({}, [], records)).body.items[0].primaryContact, null);
+});
+it('uses the Berlin civil day across the UTC date boundary', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-17T22:30:00Z') });
+  const f = fake();
+  const response = await route({ httpMethod: 'GET', path: '/api/sponsor-crm/pipeline', headers: {}, body: null, queryStringParameters: {} }, f.client);
+  assert.equal(JSON.parse(response.body).today, '2026-10-18');
 });

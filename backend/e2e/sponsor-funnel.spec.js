@@ -1,3 +1,4 @@
+const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolated-capability-server');
 let server, company, contact;
@@ -8,12 +9,16 @@ test.beforeAll(async () => {
     if (!response.ok) throw new Error(await response.text());
     return response.json();
   };
-  company = await create('organizations', { displayName: 'Synthetic Analytics', domain: 'synthetic.example.test', lastInboundAt: '2026-10-17' });
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date());
+  const yesterday = new Date(`${today}T12:00:00Z`); yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  company = await create('organizations', { displayName: 'Synthetic Analytics', domain: 'synthetic.example.test', lastInboundAt: today, lastOutboundAt: yesterday.toISOString().slice(0, 10) });
   contact = await create('contacts', { organizationId: company.id, name: 'Synthetic Person', role: 'Partnerships', emails: ['person@synthetic.example.test'], primary: true });
   for (let index = 0; index < 65; index++) await create('deals', { organizationId: company.id, status: index === 64 ? 'lost' : index < 3 ? 'agreed' : 'open', title: `Synthetic opportunity ${index}`, amountEur: 1500 });
 });
 test.afterAll(async () => stopOwnedTestServer(server));
-test('funnel stays bounded, loads details on demand and edits a company person', async ({ browser }) => {
+test('funnel stays bounded, loads details on demand and edits a company person', async ({ browser }, testInfo) => {
+  const screenshot = (name) => process.env.DATAOPS_SCREENSHOT_DIR
+    ? path.join(process.env.DATAOPS_SCREENSHOT_DIR, name) : testInfo.outputPath(name);
   const context = await browser.newContext({ baseURL: server.baseURL });
   const page = await context.newPage();
   const requests = [];
@@ -26,7 +31,7 @@ test('funnel stays bounded, loads details on demand and edits a company person',
   await expect(page.locator('[data-crm-message]')).toBeHidden();
   await expect(page.locator('[data-pipeline-status="open"]')).toContainText('61');
   await expect(page.locator('[data-crm-bookings]')).toContainText('person@synthetic.example.test');
-  await page.screenshot({ path: '/home/alexey/tmp/agent-reports/dataops-sponsor-pipeline-after-local-desktop.png', fullPage: true });
+  await page.screenshot({ path: screenshot('dataops-sponsor-pipeline-after-local-desktop.png'), fullPage: true });
   await page.getByRole('button', { name: 'Next', exact: true }).click();
   await expect(page.locator('.crm-funnel-pages')).toContainText('31–60 of 64');
   await page.getByRole('button', { name: 'Next', exact: true }).click();
@@ -40,7 +45,7 @@ test('funnel stays bounded, loads details on demand and edits a company person',
   await page.evaluate(() => globalThis.dakitShell?.toggleDrawer(document.querySelector('.dk-shell'), false));
   await page.waitForTimeout(250);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await page.screenshot({ path: '/home/alexey/tmp/agent-reports/dataops-sponsor-pipeline-after-local-mobile.png', fullPage: true });
+  await page.screenshot({ path: screenshot('dataops-sponsor-pipeline-after-local-mobile.png'), fullPage: true });
   await page.locator('[data-open-deal]').first().click();
   await expect(page.locator('.crm-contact-person')).toContainText('Synthetic Person');
   await page.getByRole('button', { name: 'Edit contact', exact: true }).click();

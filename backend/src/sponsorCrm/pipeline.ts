@@ -10,6 +10,12 @@ export const PIPELINE_STAGES = ['open', 'agreed', 'invoiced', 'running', 'closed
 export type PipelineStage = typeof PIPELINE_STAGES[number];
 const latest = (...values: unknown[]) => values.filter((value): value is string => typeof value === 'string' && Boolean(value)).sort().at(-1) || null;
 
+export function needsInboundReview(inbound: unknown, outbound: unknown, today: string): boolean {
+  if (typeof inbound !== 'string' || typeof outbound !== 'string' || !inbound || !outbound || inbound <= outbound) return false;
+  const age = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${inbound.slice(0, 10)}T00:00:00Z`)) / 86400000;
+  return Number.isFinite(age) && age >= 0 && age <= 30;
+}
+
 export function pipelineTaskDate(task: Task): string {
   return String(task.status === 'waiting' || task.waitingFor || task.followUpAt ? task.followUpAt || '' : task.date || '').slice(0, 10);
 }
@@ -36,8 +42,8 @@ export async function sponsorPipeline(client: DynamoDBDocumentClient, query: Rec
   ]);
   const facts = await dealMoneyFacts(client, today, { organizations, deals, deliverables });
   const orgs = new Map(organizations.map((item) => [item.id, item]));
-  const people = new Map(contacts.filter((item) => !item.archivedAt).map((item) => [item.id, item]));
-  const primary = new Map(contacts.filter((item) => item.primary && !item.archivedAt).map((item) => [String(item.organizationId), item]));
+  const people = new Map(contacts.filter((item) => !item.archivedAt && item.active !== false).map((item) => [item.id, item]));
+  const primary = new Map(contacts.filter((item) => item.primary && !item.archivedAt && item.active !== false).map((item) => [String(item.organizationId), item]));
   const kids = new Map<string, CrmRecord[]>();
   for (const item of deliverables.filter((item) => !item.archivedAt)) {
     const id = String(item.dealId); kids.set(id, [...(kids.get(id) || []), item]);
@@ -58,15 +64,17 @@ export async function sponsorPipeline(client: DynamoDBDocumentClient, query: Rec
     const attentionDate = task ? pipelineTaskDate(task) : '';
     const deferred = Boolean(task && pipelineTaskDeferred(task, today));
     const lastContacted = latest(organization?.lastInboundAt, organization?.lastOutboundAt, contact?.lastInboundAt, contact?.lastOutboundAt, contact?.lastContactedAt);
-    const replyNeeded = Boolean(organization?.lastInboundAt && String(organization.lastInboundAt) > String(organization.lastOutboundAt || ''));
+    const inboundAt = latest(organization?.lastInboundAt, contact?.lastInboundAt);
+    const outboundAt = latest(organization?.lastOutboundAt, contact?.lastOutboundAt, contact?.lastContactedAt);
+    const replyReview = needsInboundReview(inboundAt, outboundAt, today);
     return {
       id: deal.id, organizationId: deal.organizationId, organizationName: organization?.displayName || 'Unknown company',
       title: deal.title, status: deal.status, stage, money, fulfillment, amountEur: deal.amountEur,
-      updatedAt: deal.updatedAt, lastContacted, replyNeeded,
+      updatedAt: deal.updatedAt, lastContacted, replyReview, inboundAt, outboundAt,
       primaryContact: contact ? { id: contact.id, name: contact.name, email: Array.isArray(contact.emails) ? contact.emails[0] : undefined, role: contact.role } : null,
       nextTask: task ? { id: task.id, description: task.description, date: attentionDate || null, deferred, assigneeId: task.assigneeId, status: task.status } : null,
       unscheduled: !task || !attentionDate,
-      actionable: !['closed', 'lost'].includes(stage) && (replyNeeded || Boolean(task && !deferred && attentionDate && attentionDate <= through)),
+      actionable: !['closed', 'lost'].includes(stage) && (replyReview || Boolean(task && !deferred && attentionDate && attentionDate <= through)),
     };
   });
   const search = String(query.search || '').trim().toLowerCase();

@@ -7,7 +7,7 @@ const escapeHtml = (value) => String(value).replaceAll("&", "&amp;").replaceAll(
 test("funnel renders compact rows grouped by commitments and opportunities, with escaped primary people and actions", () => {
   const items = [
     { id: "open", organizationName: "Synthetic <Sponsor>", stage: "open", primaryContact: { name: "Test Person", email: "test@example.test" }, nextTask: { description: "Confirm the date", date: "2026-10-20" }, amountEur: 1500 },
-    { id: "agreed", organizationName: "Agreed Sponsor", stage: "agreed", primaryContact: null, replyNeeded: true },
+    { id: "agreed", organizationName: "Agreed Sponsor", stage: "agreed", primaryContact: null, replyReview: true },
   ];
   const before = structuredClone(items);
   const markup = renderSponsorPipelineList({ items, escapeHtml, humanSponsorDate: (value) => value, ownerName: () => "Synthetic owner" });
@@ -16,7 +16,7 @@ test("funnel renders compact rows grouped by commitments and opportunities, with
   assert.match(markup, /Synthetic &lt;Sponsor>/);
   assert.match(markup, /Test Person · test@example.test/);
   assert.match(markup, /Confirm the date/);
-  assert.match(markup, /Reply needed/);
+  assert.match(markup, /Review newer inbound/);
   assert.match(markup, /data-open-deal="agreed"/);
   assert.doesNotMatch(markup, /crm-pipeline-card/);
   assert.deepEqual(items, before);

@@ -21,8 +21,8 @@ function row(item, { escapeHtml: e, humanSponsorDate: date, ownerName }) {
       <small>${contact ? e([contact.name, contact.email].filter(Boolean).join(' · ')) : 'No primary contact'}</small>
       <small class="crm-phone-stage">${e(item.stage)}</small></td>
     <td>${e(SPONSOR_PIPELINE_STAGES.find(({ id }) => id === item.stage)?.label || item.stage)}</td>
-    <td>${e(item.nextTask?.description || (item.replyNeeded ? 'Reply needed' : 'No open task'))}
-      <small>${e(item.nextTask?.date ? date(item.nextTask.date) : '')}</small></td>
+    <td>${e(item.nextTask?.description || (item.replyReview ? 'Review newer inbound' : 'No open task'))}
+      <small>${e(item.nextTask?.date ? date(item.nextTask.date) : item.replyReview ? `Inbound ${date(item.inboundAt)}` : '')}</small></td>
     <td>${e(ownerName(item.nextTask?.assigneeId))}</td>
     <td>${e(item.lastContacted ? date(item.lastContacted) : 'Never')}</td>
     <td>${e(amount)}</td>
