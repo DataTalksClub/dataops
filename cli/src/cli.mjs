@@ -79,7 +79,6 @@ export const FAMILIES = {
   notifications: { group: "Work", summary: notifications.summary, help: notifications.help, commands: notifications.commands },
   files: { group: "Work", summary: files.filesSummary, help: files.filesHelp, commands: files.filesCommands },
   artifacts: { group: "Work", summary: files.artifactsSummary, help: files.artifactsHelp, commands: files.artifactsCommands },
-  "sponsor-docs": { group: "Work", summary: sponsorDocs.summary, help: sponsorDocs.help, commands: sponsorDocs.commands },
   kb: { group: "Knowledge", summary: kb.summary, help: kb.help, commands: kb.commands },
   newsletter: { group: "Planning", summary: newsletter.summary, help: newsletter.help, commands: newsletter.commands },
   podcast: { group: "Planning", summary: podcast.summary, help: podcast.help, commands: podcast.commands },
@@ -142,6 +141,14 @@ export const FAMILIES = {
       io.print(text);
       return undefined;
     },
+  },
+};
+
+const DEPRECATED_FAMILIES = {
+  "sponsor-docs": {
+    summary: sponsorDocs.summary,
+    help: sponsorDocs.help,
+    commands: sponsorDocs.commands,
   },
 };
 
@@ -236,12 +243,12 @@ export async function run(argv, io = console) {
     return EXIT.ok;
   }
   if (commandName === "help") {
-    const family = FAMILIES[rest[0]];
+    const family = FAMILIES[rest[0]] || DEPRECATED_FAMILIES[rest[0]];
     print(family ? family.help : usage());
     return EXIT.ok;
   }
 
-  const family = FAMILIES[commandName];
+  const family = FAMILIES[commandName] || DEPRECATED_FAMILIES[commandName];
   if (!family) {
     io.error(`Unknown command: ${commandName}. Run \`dataops --help\`.`);
     return EXIT.usage;
@@ -261,10 +268,28 @@ export async function run(argv, io = console) {
       io.error(`Unknown subcommand: ${commandName} ${subcommandName}. One of: ${Object.keys(family.commands).join(", ")}.`);
       return EXIT.usage;
     }
+    if (commandName === "sponsor-docs") {
+      const parsedSub = parseArgs(subRest);
+      const isPodcast = parsedSub.template === "podcast";
+      const newCmd = isPodcast
+        ? `dataops podcast doc ${subcommandName}`
+        : `dataops newsletter doc ${subcommandName}`;
+      const notice = `Deprecated: 'dataops sponsor-docs' is deprecated; use '${newCmd}' (or 'dataops podcast doc ${subcommandName}').`;
+      if (wantsJson) io.error(notice);
+      else print(notice);
+    }
   }
 
   const args = parseArgs(commandArgs);
   if (args.help || commandArgs.includes("-h")) {
+    if (commandName === "newsletter" && rest[0] === "doc") {
+      print(sponsorDocs.newsletterDocHelp);
+      return EXIT.ok;
+    }
+    if (commandName === "podcast" && rest[0] === "doc") {
+      print(sponsorDocs.podcastDocHelp);
+      return EXIT.ok;
+    }
     print(family.help);
     return EXIT.ok;
   }

@@ -3,7 +3,7 @@ import { enc, fields, isoDate, optionalString, positional, table } from "../form
 import { apiFor } from "../session.mjs";
 import { rewriteVerificationUri } from "./auth.mjs";
 
-export const summary = "Create, share, and export sponsor content documents for Cards";
+export const summary = "Deprecated alias for `dataops newsletter doc` and `dataops podcast doc`";
 
 export const TEMPLATES = [
   "newsletter-main",
@@ -12,42 +12,61 @@ export const TEMPLATES = [
   "podcast",
 ];
 
-export const help = `dataops sponsor-docs - portal-hosted sponsor content documents
-
-Each sponsor document is created from a template for a Card, linked on the
-Card's "Sponsorship document" slot, and gated by an 80-bit access code.
-Sponsors can open the shareable link (/sponsor-docs/<id>?code=XXXX-XXXX-XXXX-XXXX)
-directly in their browser without a Google account or DataOps login, or type
-their access code on /sponsor-docs/<id>. Authenticated DataOps staff can view
-and edit any sponsor document without a code.
+export const newsletterDocHelp = `dataops newsletter doc - portal-hosted newsletter sponsor content documents
 
 Usage
-  dataops sponsor-docs create <card-id> [--template ${TEMPLATES.join("|")}]
-      [--slot primary|secondary] [--title T] [--sponsor NAME] [--date YYYY-MM-DD]
-      [--link-type NAME] [--email]
-                                  Creates the doc for the Card (auto-detecting the
-                                  template from the Card/issue when --template is
-                                  omitted), links it on the Card's "Sponsorship
-                                  document" field, and prints the shareable link
-                                  with the access code
-  dataops sponsor-docs list [--card <card-id>]
-  dataops sponsor-docs show <doc-id>
-  dataops sponsor-docs update <doc-id> [--title T] [--sponsor NAME] [--date YYYY-MM-DD]
-      [--status draft|submitted] [--field KEY=VALUE ...]
-  dataops sponsor-docs submit <doc-id>            Mark the document as submitted/ready
-  dataops sponsor-docs reopen <doc-id>            Move a submitted document back to draft
-  dataops sponsor-docs export <doc-id>            Print the read-only Markdown export
-  dataops sponsor-docs email <doc-id>             Print the ready-to-send sponsor email draft
-  dataops sponsor-docs rotate-code <doc-id>       Issue a new access code (invalidates old code)
-  dataops sponsor-docs templates                  List available sponsor doc templates
-  dataops sponsor-docs delete <doc-id> --yes      Delete the sponsor document
-
-Examples
-  dataops sponsor-docs create 542df0a6-...
-  dataops sponsor-docs create 542df0a6-... --template newsletter-secondary --sponsor "Acme AI" --email
-  dataops sponsor-docs show 8b91c02e-...
-  dataops sponsor-docs export 8b91c02e-...
+  dataops newsletter doc create <issue-id|card-id> [--slot primary|secondary] [--standalone]
+      [--title T] [--sponsor NAME] [--date YYYY-MM-DD] [--link-type NAME] [--email]
+  dataops newsletter doc show <doc-id>
+  dataops newsletter doc export <doc-id>
+  dataops newsletter doc delete <doc-id> --yes
+  dataops newsletter doc list [--card <card-id>]
+  dataops newsletter doc update <doc-id> [--status draft|submitted] [--field KEY=VALUE ...]
+  dataops newsletter doc submit <doc-id>
+  dataops newsletter doc reopen <doc-id>
+  dataops newsletter doc email <doc-id>
+  dataops newsletter doc rotate-code <doc-id>
 `;
+
+export const podcastDocHelp = `dataops podcast doc - portal-hosted podcast sponsor content documents
+
+Usage
+  dataops podcast doc create <card-id> [--title T] [--sponsor NAME] [--date YYYY-MM-DD]
+      [--link-type NAME] [--email]
+  dataops podcast doc show <doc-id>
+  dataops podcast doc export <doc-id>
+  dataops podcast doc delete <doc-id> --yes
+  dataops podcast doc list [--card <card-id>]
+  dataops podcast doc update <doc-id> [--status draft|submitted] [--field KEY=VALUE ...]
+  dataops podcast doc submit <doc-id>
+  dataops podcast doc reopen <doc-id>
+  dataops podcast doc email <doc-id>
+  dataops podcast doc rotate-code <doc-id>
+`;
+
+export const help = `Deprecated: \`dataops sponsor-docs\` has moved under the domain commands:
+
+  dataops newsletter doc create <issue-id|card-id> [--slot primary|secondary] [--standalone] [--email]
+  dataops newsletter doc show <doc-id>
+  dataops newsletter doc export <doc-id>
+  dataops newsletter doc delete <doc-id> --yes
+
+  dataops podcast doc create <card-id> [--sponsor NAME] [--date YYYY-MM-DD] [--email]
+  dataops podcast doc show <doc-id>
+  dataops podcast doc export <doc-id>
+  dataops podcast doc delete <doc-id> --yes
+`;
+
+export function extractDocId(raw) {
+  const text = String(raw || "").trim();
+  const match = text.match(/\/sponsor-docs\/([^/?#]+)/);
+  if (match) return decodeURIComponent(match[1]);
+  return text;
+}
+
+function commandPrefix(args) {
+  return args?._commandPrefix || "dataops newsletter doc";
+}
 
 function normalizeDocUrls(doc, baseUrl) {
   if (!doc || !baseUrl) return doc;
@@ -87,28 +106,76 @@ function parseFieldFlags(rawFieldFlag) {
 }
 
 export async function create(args, io) {
-  const cardId = positional(
-    args,
-    0,
-    "dataops sponsor-docs create <card-id> [--template newsletter-main|newsletter-secondary|newsletter-standalone|podcast]",
-  );
-  const api = apiFor(args);
-  const body = { cardId };
+  const domain = args._domain;
+  const prefix = commandPrefix(args);
+  const createUsage =
+    domain === "podcast"
+      ? `${prefix} create <card-id> [--sponsor NAME] [--date YYYY-MM-DD] [--email]`
+      : `${prefix} create <issue-id|card-id> [--slot primary|secondary] [--standalone] [--email]`;
 
-  const template = optionalString(args, "template");
-  if (template !== undefined) {
-    if (!TEMPLATES.includes(template)) {
-      throw new UsageError(`--template must be one of: ${TEMPLATES.join(", ")}.`);
+  // Defensive recovery if a boolean flag (--standalone or --email) was placed immediately before the positional ID
+  const positionals = [...(args._ || [])];
+  let standalone = false;
+  if (args.standalone !== undefined) {
+    if (args.standalone === true || args.standalone === "true") {
+      standalone = true;
+    } else if (args.standalone === false || args.standalone === "false") {
+      standalone = false;
+    } else if (typeof args.standalone === "string") {
+      standalone = true;
+      positionals.unshift(args.standalone);
     }
-    body.template = template;
+  }
+  let wantsEmail = false;
+  if (args.email !== undefined) {
+    if (args.email === true || args.email === "true") {
+      wantsEmail = true;
+    } else if (args.email === false || args.email === "false") {
+      wantsEmail = false;
+    } else if (typeof args.email === "string") {
+      wantsEmail = true;
+      positionals.unshift(args.email);
+    }
   }
 
+  const targetId = positional({ _: positionals }, 0, createUsage);
+  const api = apiFor(args);
+  const body = { cardId: targetId };
+
+  const template = optionalString(args, "template");
   const slot = optionalString(args, "slot");
-  if (slot !== undefined) {
-    if (!["primary", "secondary", "main", "standalone"].includes(slot)) {
-      throw new UsageError("--slot must be primary, secondary, or standalone.");
+
+  if (domain === "podcast") {
+    if (slot !== undefined || standalone) {
+      throw new UsageError(`--slot and --standalone apply to \`dataops newsletter doc create\`, not \`${prefix} create\`.`);
     }
-    body.slot = slot;
+    if (template !== undefined && template !== "podcast") {
+      throw new UsageError(`\`${prefix} create\` only creates podcast documents.`);
+    }
+    body.template = "podcast";
+  } else {
+    if (slot !== undefined) {
+      if (!["primary", "secondary", "main", "standalone"].includes(slot)) {
+        throw new UsageError("--slot must be primary or secondary.");
+      }
+      body.slot = slot;
+    }
+    if (standalone) {
+      if (slot === "secondary") {
+        throw new UsageError("--standalone cannot be combined with --slot secondary.");
+      }
+      body.standalone = true;
+      body.template = "newsletter-standalone";
+    } else if (template !== undefined) {
+      if (!TEMPLATES.includes(template)) {
+        throw new UsageError(`--template must be one of: ${TEMPLATES.join(", ")}.`);
+      }
+      body.template = template;
+    } else if (slot === "secondary") {
+      body.template = "newsletter-secondary";
+    } else if (slot === "standalone") {
+      body.template = "newsletter-standalone";
+    }
   }
 
   const title = optionalString(args, "title");
@@ -134,11 +201,16 @@ export async function create(args, io) {
 
   const doc = result.doc;
   const card = result.card;
-  io.print(`Created sponsor doc ${doc.id} (${doc.template}) for Card "${card?.title || cardId}".`);
+  const targetLabel = card?.title
+    ? `Card "${card.title}"`
+    : result.issue?.publicationDate
+      ? `issue ${result.issue.publicationDate} (${targetId})`
+      : targetId;
+  io.print(`Created sponsor doc ${doc.id} (${doc.template}) for ${targetLabel}.`);
   io.print(`Card link (${doc.linkType}): ${doc.docUrl}`);
   io.print(`Shareable link (with code): ${doc.shareUrl}`);
   io.print(`Access code: ${doc.accessCode}`);
-  if (args.email && doc.emailDraft) {
+  if (wantsEmail && doc.emailDraft) {
     io.print("");
     io.print(`Subject: ${doc.emailDraft.subject}`);
     io.print("");
@@ -152,7 +224,12 @@ export async function list(args, io) {
   const cardId = optionalString(args, "card");
   const query = cardId ? { cardId } : {};
   const result = await api.get("/api/sponsor-docs", { query });
-  const docs = (result.docs || []).map((d) => normalizeDocUrls(d, api.base));
+  let docs = (result.docs || []).map((d) => normalizeDocUrls(d, api.base));
+  if (args._domain === "podcast") {
+    docs = docs.filter((d) => d.template === "podcast");
+  } else if (args._domain === "newsletter") {
+    docs = docs.filter((d) => d.template !== "podcast");
+  }
   const payload = { ...result, docs };
   if (args.json) return payload;
 
@@ -174,7 +251,8 @@ export async function list(args, io) {
 }
 
 export async function show(args, io) {
-  const id = positional(args, 0, "dataops sponsor-docs show <doc-id>");
+  const prefix = commandPrefix(args);
+  const id = extractDocId(positional(args, 0, `${prefix} show <doc-id>`));
   const api = apiFor(args);
   const result = await api.get(`/api/sponsor-docs/${enc(id)}`);
   const doc = normalizeDocUrls(result.doc, api.base);
@@ -210,7 +288,8 @@ export async function show(args, io) {
 }
 
 export async function update(args, io) {
-  const id = positional(args, 0, "dataops sponsor-docs update <doc-id> [--status draft|submitted] [--field KEY=VALUE ...]");
+  const prefix = commandPrefix(args);
+  const id = extractDocId(positional(args, 0, `${prefix} update <doc-id> [--status draft|submitted] [--field KEY=VALUE ...]`));
   const api = apiFor(args);
   const body = {};
 
@@ -250,17 +329,20 @@ export async function update(args, io) {
 }
 
 export async function submit(args, io) {
-  const id = positional(args, 0, "dataops sponsor-docs submit <doc-id>");
+  const prefix = commandPrefix(args);
+  const id = extractDocId(positional(args, 0, `${prefix} submit <doc-id>`));
   return update({ ...args, _: [id], status: "submitted" }, io);
 }
 
 export async function reopen(args, io) {
-  const id = positional(args, 0, "dataops sponsor-docs reopen <doc-id>");
+  const prefix = commandPrefix(args);
+  const id = extractDocId(positional(args, 0, `${prefix} reopen <doc-id>`));
   return update({ ...args, _: [id], status: "draft" }, io);
 }
 
 export async function exportMarkdown(args, io) {
-  const id = positional(args, 0, "dataops sponsor-docs export <doc-id>");
+  const prefix = commandPrefix(args);
+  const id = extractDocId(positional(args, 0, `${prefix} export <doc-id>`));
   const api = apiFor(args);
   const result = await api.get(`/api/sponsor-docs/${enc(id)}/export`);
   if (args.json) return result;
@@ -269,7 +351,8 @@ export async function exportMarkdown(args, io) {
 }
 
 export async function email(args, io) {
-  const id = positional(args, 0, "dataops sponsor-docs email <doc-id>");
+  const prefix = commandPrefix(args);
+  const id = extractDocId(positional(args, 0, `${prefix} email <doc-id>`));
   const api = apiFor(args);
   const result = await api.get(`/api/sponsor-docs/${enc(id)}`);
   const doc = normalizeDocUrls(result.doc, api.base);
@@ -285,7 +368,8 @@ export async function email(args, io) {
 }
 
 export async function rotateCode(args, io) {
-  const id = positional(args, 0, "dataops sponsor-docs rotate-code <doc-id>");
+  const prefix = commandPrefix(args);
+  const id = extractDocId(positional(args, 0, `${prefix} rotate-code <doc-id>`));
   const api = apiFor(args);
   const result = await api.post(`/api/sponsor-docs/${enc(id)}/rotate-code`, {});
   const doc = normalizeDocUrls(result.doc, api.base);
@@ -324,9 +408,10 @@ export async function templates(args, io) {
 }
 
 export async function remove(args, io) {
-  const id = positional(args, 0, "dataops sponsor-docs delete <doc-id> --yes");
+  const prefix = commandPrefix(args);
+  const id = extractDocId(positional(args, 0, `${prefix} delete <doc-id> --yes`));
   if (!args.yes) {
-    throw new UsageError(`Re-run with --yes to confirm deletion: dataops sponsor-docs delete ${id} --yes`);
+    throw new UsageError(`Re-run with --yes to confirm deletion: ${prefix} delete ${id} --yes`);
   }
   const api = apiFor(args);
   const result = await api.delete(`/api/sponsor-docs/${enc(id)}`);
@@ -348,3 +433,39 @@ export const commands = {
   templates,
   delete: remove,
 };
+
+/**
+ * Handler for `dataops newsletter doc <action> ...` and `dataops podcast doc <action> ...`.
+ */
+export function domainDocCommand(domain) {
+  const prefix = `dataops ${domain} doc`;
+  return async function docHandler(args, io) {
+    const [action, ...rest] = args._ || [];
+    if (!action || action === "help") {
+      if (!action) {
+        const usageLine =
+          domain === "podcast"
+            ? `${prefix} <create|show|export|delete|list|update|submit|reopen|email|rotate-code> ...`
+            : `${prefix} <create|show|export|delete|list|update|submit|reopen|email|rotate-code> ...`;
+        throw new UsageError(`Missing doc action. Usage: ${usageLine}`);
+      }
+      io.print(domain === "podcast" ? podcastDocHelp : newsletterDocHelp);
+      return undefined;
+    }
+    const fn = commands[action];
+    if (!fn) {
+      throw new UsageError(
+        `Unknown subcommand: ${prefix} ${action}. One of: ${Object.keys(commands).join(", ")}.`,
+      );
+    }
+    return fn(
+      {
+        ...args,
+        _: rest,
+        _domain: domain,
+        _commandPrefix: prefix,
+      },
+      io,
+    );
+  };
+}

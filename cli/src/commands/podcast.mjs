@@ -2,6 +2,7 @@ import { UsageError } from "../errors.mjs";
 import { readFileSync } from "node:fs";
 import { enc, fields, integer, isoDate, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
+import { domainDocCommand } from "./sponsorDocs.mjs";
 
 export const summary = "Plan podcast episodes and create their Cards";
 
@@ -35,6 +36,14 @@ Usage
   dataops podcast create-card <episode-id>
                                    Create the episode Card from the podcast Template and link it
                                    (the episode needs a recording date)
+  dataops podcast doc create <card-id> [--sponsor NAME] [--date YYYY-MM-DD] [--email]
+                                   Create the portal sponsor content document for the
+                                   podcast Card (or episode), link it on the Card's
+                                   "Sponsorship document" field, and print the shareable
+                                   link with the access code
+  dataops podcast doc show <doc-id>
+  dataops podcast doc export <doc-id>
+  dataops podcast doc delete <doc-id> --yes
   dataops podcast next-slot [--count N]
                                    Next free release slots and the next season/episode
                                    number (stacking rule: next free Friday 19:00
@@ -67,6 +76,7 @@ Examples
   dataops podcast create --guests "Jane Doe:jane-doe" --title "Shipping ML" --recording-date 2026-11-04
   dataops podcast update 6f1c... --status cancelled
   dataops podcast create-card 6f1c...
+  dataops podcast doc create <card-id> --sponsor "Acme AI" --email
 `;
 
 const NULLABLE = new Set(["season", "episode", "recordingDate", "releaseDate", "websiteSlug", "cardId", "notes", "title", "short", "description", "intro", "topics", "duration", "imageUrl", "transcript", "clips", "resources"]);
@@ -408,6 +418,8 @@ export async function cadence(args, io) {
   return result;
 }
 
+export const doc = domainDocCommand("podcast");
+
 export const commands = {
   list,
   show,
@@ -415,6 +427,7 @@ export const commands = {
   create,
   update,
   "create-card": createCard,
+  doc,
   "next-slot": nextSlot,
   cadence,
 };

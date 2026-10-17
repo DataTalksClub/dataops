@@ -160,14 +160,14 @@ booking records a deliverable on the deal and adds the slot's Tasks to the Card.
 `dataops newsletter release <issue-id> <slot>` frees it again.
 `dataops newsletter list --card <card-id>` finds the issue a Card belongs to.
 
-For a sponsored newsletter or podcast Card: `dataops sponsor-docs create <card-id>`
+For a sponsored newsletter issue or Card: `dataops newsletter doc create <issue-id|card-id> [--slot primary|secondary] [--standalone] [--email]`
 creates the portal-hosted sponsor content document from the right template
-(`newsletter-main`, `newsletter-secondary`, `newsletter-standalone`, or `podcast`),
+(`newsletter-main`, `newsletter-secondary`, or `newsletter-standalone`),
 links it on the Card's `"Sponsorship document"` field, and prints the shareable
 link with the 80-bit access code (`/sponsor-docs/<id>?code=XXXX-XXXX-XXXX-XXXX`).
-Pass `--email` (or run `dataops sponsor-docs email <doc-id>`) to print the ready-to-send
-sponsor email draft, and `dataops sponsor-docs export <doc-id>` to read the Markdown
-export when building the newsletter issue.
+Use `dataops newsletter doc show <doc-id>`, `dataops newsletter doc export <doc-id>`,
+and `dataops newsletter doc delete <doc-id> --yes` (and the matching
+`dataops podcast doc create <card-id> [--email]`, `show`, `export`, `delete` for podcast sponsorships).
 
 For a podcast episode: `dataops podcast list --status booked` (or `--season N`),
 `dataops podcast create --guests "Name[:slug]" --title "..." --recording-date YYYY-MM-DD`,

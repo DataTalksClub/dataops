@@ -596,8 +596,8 @@ describe("command dispatch", () => {
   });
 });
 
-describe("sponsor-docs commands", () => {
-  test("creates a sponsor doc for a card, prints the shareable link with code, and supports export/email/submit", async () => {
+describe("newsletter doc and podcast doc commands", () => {
+  test("creates a sponsor doc via newsletter doc and podcast doc, supports show/export/delete, and keeps sponsor-docs as a deprecated alias", async () => {
     saveProfile("https://ops.dtcdev.click", { token: "dops_abc", tokenId: "id-1" });
     const sent = [];
     const fetch = fakeFetch({
@@ -659,6 +659,14 @@ describe("sponsor-docs commands", () => {
         },
       },
       "/api/sponsor-docs/doc-123": (options) => {
+        if (options.method === "DELETE") {
+          sent.push({ deleted: "doc-123" });
+          return {
+            body: {
+              deleted: { id: "doc-123", cardId: "card-1", title: "2026-11-15 - Acme AI" },
+            },
+          };
+        }
         if (options.method === "PUT") {
           const parsed = JSON.parse(options.body);
           sent.push(parsed);
@@ -705,10 +713,12 @@ describe("sponsor-docs commands", () => {
 
     const ioCreate = captureIo();
     assert.equal(
-      await run(["sponsor-docs", "create", "card-1", "--email", "--url", "https://ops.dtcdev.click"], ioCreate),
+      await run(["newsletter", "doc", "create", "issue-1", "--slot", "secondary", "--email", "--url", "https://ops.dtcdev.click"], ioCreate),
       0,
     );
-    assert.equal(sent[0].cardId, "card-1");
+    assert.equal(sent[0].cardId, "issue-1");
+    assert.equal(sent[0].slot, "secondary");
+    assert.equal(sent[0].template, "newsletter-secondary");
     assert.match(
       ioCreate.text(),
       /Shareable link \(with code\): https:\/\/ops\.dtcdev\.click\/sponsor-docs\/doc-123\?code=BCDF-GHJK-MNPR-STVW/,
@@ -719,20 +729,53 @@ describe("sponsor-docs commands", () => {
     );
     assert.doesNotMatch(ioCreate.text(), /internal\.lambda-url/);
 
-    const ioSubmit = captureIo();
+    const ioStandalone = captureIo();
     assert.equal(
-      await run(["sponsor-docs", "submit", "doc-123", "--url", "https://ops.dtcdev.click"], ioSubmit),
+      await run(["newsletter", "doc", "create", "issue-2", "--standalone", "--url", "https://ops.dtcdev.click"], ioStandalone),
       0,
     );
-    assert.equal(sent[1].status, "submitted");
+    assert.equal(sent[1].cardId, "issue-2");
+    assert.equal(sent[1].standalone, true);
+    assert.equal(sent[1].template, "newsletter-standalone");
+
+    const ioPodcast = captureIo();
+    assert.equal(
+      await run(["podcast", "doc", "create", "card-pod-1", "--sponsor", "PodCorp", "--email", "--url", "https://ops.dtcdev.click"], ioPodcast),
+      0,
+    );
+    assert.equal(sent[2].cardId, "card-pod-1");
+    assert.equal(sent[2].template, "podcast");
+    assert.equal(sent[2].sponsorName, "PodCorp");
+
+    const ioSubmit = captureIo();
+    assert.equal(
+      await run(["newsletter", "doc", "submit", "doc-123", "--url", "https://ops.dtcdev.click"], ioSubmit),
+      0,
+    );
+    assert.equal(sent[3].status, "submitted");
     assert.match(ioSubmit.text(), /Updated sponsor doc doc-123 \[submitted\]/);
 
     const ioExport = captureIo();
     assert.equal(
-      await run(["sponsor-docs", "export", "doc-123", "--url", "https://ops.dtcdev.click"], ioExport),
+      await run(["newsletter", "doc", "export", "doc-123", "--url", "https://ops.dtcdev.click"], ioExport),
       0,
     );
     assert.match(ioExport.text(), /Acme Launch/);
+
+    const ioDelete = captureIo();
+    assert.equal(
+      await run(["podcast", "doc", "delete", "doc-123", "--yes", "--url", "https://ops.dtcdev.click"], ioDelete),
+      0,
+    );
+    assert.deepEqual(sent[4], { deleted: "doc-123" });
+    assert.match(ioDelete.text(), /Deleted sponsor doc doc-123/);
+
+    const ioDeprecated = captureIo();
+    assert.equal(
+      await run(["sponsor-docs", "show", "doc-123", "--url", "https://ops.dtcdev.click"], ioDeprecated),
+      0,
+    );
+    assert.match(ioDeprecated.text(), /Deprecated: 'dataops sponsor-docs' is deprecated; use 'dataops newsletter doc show'/);
 
     globalThis.fetch = globalFetch;
   });

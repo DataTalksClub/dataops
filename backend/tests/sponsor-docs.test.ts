@@ -329,4 +329,42 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.strictEqual(delCardRes.statusCode, 200, delCardRes.body);
     assert.strictEqual(await getSponsorDoc(client, doc.id), null);
   });
+
+  it('creates a sponsor doc directly from a newsletter issue ID and supports --slot secondary and --standalone', async () => {
+    const issueRes = await staffReq('POST', '/api/newsletter-issues', {
+      kind: 'weekly',
+      publicationDate: '2026-12-07',
+      issueNumber: 310,
+      status: 'planned',
+      slots: {
+        primary: { sponsor: 'PrimarySponsor' },
+        secondary: { sponsor: 'SecondarySponsor' },
+      },
+    });
+    assert.strictEqual(issueRes.statusCode, 201, issueRes.body);
+    const issue = JSON.parse(issueRes.body);
+
+    const createSecondaryRes = await staffReq('POST', '/api/sponsor-docs', {
+      cardId: issue.id,
+      slot: 'secondary',
+    });
+    assert.strictEqual(createSecondaryRes.statusCode, 201, createSecondaryRes.body);
+    const secondaryPayload = JSON.parse(createSecondaryRes.body);
+    assert.strictEqual(secondaryPayload.doc.template, 'newsletter-secondary');
+    assert.strictEqual(secondaryPayload.doc.sponsorName, 'SecondarySponsor');
+    assert.strictEqual(secondaryPayload.doc.publicationDate, '2026-12-07');
+    assert.strictEqual(
+      secondaryPayload.issue?.slots?.secondary?.documentUrl,
+      secondaryPayload.doc.docUrl,
+    );
+
+    const createStandaloneRes = await staffReq('POST', '/api/sponsor-docs', {
+      cardId: issue.id,
+      standalone: true,
+    });
+    assert.strictEqual(createStandaloneRes.statusCode, 201, createStandaloneRes.body);
+    const standalonePayload = JSON.parse(createStandaloneRes.body);
+    assert.strictEqual(standalonePayload.doc.template, 'newsletter-standalone');
+    assert.strictEqual(standalonePayload.doc.sponsorName, 'PrimarySponsor');
+  });
 });

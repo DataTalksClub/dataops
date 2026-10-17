@@ -5,7 +5,14 @@ import { normalizeCardLinks } from '../artifactLinks';
 import { cardTemplateType, hydrateStructuredCardFields } from '../cards/cardTitleStructure';
 import { getTemplateIdByType } from '../cards/createCard';
 import { getCardConsistent, updateCard } from '../db/cards';
-import { listNewsletterIssuesByCardId } from '../db/newsletterIssues';
+import {
+  getNewsletterIssue,
+  listNewsletterIssuesByCardId,
+  updateNewsletterIssue,
+  type NewsletterIssue,
+  type NewsletterSlotPosition,
+} from '../db/newsletterIssues';
+import { getPodcastEpisode, type PodcastEpisode } from '../db/podcastEpisodes';
 import {
   checkSponsorDocRateLimit,
   clearSponsorDocRateLimit,
@@ -365,19 +372,53 @@ export async function handleSponsorDocRoutes(
         const body = parseBody(event.body);
         if (!body) return json(400, { error: 'Invalid JSON body' });
 
-        const cardId = typeof body.cardId === 'string' ? body.cardId.trim() : '';
-        if (!cardId) {
+        const rawTargetId = typeof body.cardId === 'string' && body.cardId.trim()
+          ? body.cardId.trim()
+          : typeof body.issueId === 'string' && body.issueId.trim()
+            ? body.issueId.trim()
+            : typeof body.episodeId === 'string' && body.episodeId.trim()
+              ? body.episodeId.trim()
+              : '';
+        if (!rawTargetId) {
           return json(400, { error: 'cardId is required', code: 'missing_card_id' });
         }
 
-        const existingCard = await getCardConsistent(client, cardId);
-        if (!existingCard) {
+        let existingCard = await getCardConsistent(client, rawTargetId);
+        let existingIssue: NewsletterIssue | null = null;
+        let existingEpisode: PodcastEpisode | null = null;
+
+        if (existingCard) {
+          const issues = await listNewsletterIssuesByCardId(client, existingCard.id);
+          if (issues.length > 0) existingIssue = issues[0];
+        } else {
+          existingIssue = await getNewsletterIssue(client, rawTargetId);
+          if (existingIssue && existingIssue.cardId) {
+            existingCard = await getCardConsistent(client, existingIssue.cardId);
+          }
+          if (!existingIssue) {
+            existingEpisode = await getPodcastEpisode(client, rawTargetId);
+            if (existingEpisode && existingEpisode.cardId) {
+              existingCard = await getCardConsistent(client, existingEpisode.cardId);
+            }
+          }
+        }
+
+        if (!existingCard && !existingIssue && !existingEpisode) {
           return json(404, { error: 'Card not found', code: 'card_not_found' });
         }
 
         const templateIdByType = await getTemplateIdByType(client);
-        const hydratedCard: Card = { ...existingCard };
-        hydrateStructuredCardFields(hydratedCard, templateIdByType);
+        let hydratedCard: Card | null = null;
+        if (existingCard) {
+          hydratedCard = { ...existingCard };
+          hydrateStructuredCardFields(hydratedCard, templateIdByType);
+        }
+
+        const slotHint = typeof body.slot === 'string' ? body.slot.trim().toLowerCase() : undefined;
+        const standaloneFlag = body.standalone === true
+          || body.standalone === 'true'
+          || slotHint === 'standalone'
+          || slotHint === 'stand-alone';
 
         let template: SponsorDocTemplateKey;
         if (body.template !== undefined && body.template !== null && String(body.template).trim() !== '') {
@@ -389,34 +430,66 @@ export async function handleSponsorDocRoutes(
             });
           }
           template = requested;
-        } else {
-          const slotHint = typeof body.slot === 'string' ? body.slot.trim().toLowerCase() : undefined;
+        } else if (standaloneFlag) {
+          template = 'newsletter-standalone';
+        } else if (slotHint === 'secondary') {
+          template = 'newsletter-secondary';
+        } else if (slotHint === 'primary' || slotHint === 'main') {
+          template = existingIssue?.kind === 'standalone' ? 'newsletter-standalone' : 'newsletter-main';
+        } else if (existingEpisode) {
+          template = 'podcast';
+        } else if (existingIssue && !existingCard) {
+          if (existingIssue.kind === 'standalone') {
+            template = 'newsletter-standalone';
+          } else if (!existingIssue.slots?.primary?.sponsor && existingIssue.slots?.secondary?.sponsor) {
+            template = 'newsletter-secondary';
+          } else {
+            template = 'newsletter-main';
+          }
+        } else if (existingCard) {
           template = await inferTemplateForCard(client, existingCard, slotHint);
+        } else {
+          template = 'newsletter-main';
         }
 
         const publicationDate = typeof body.publicationDate === 'string' && body.publicationDate.trim()
           ? body.publicationDate.trim()
-          : (hydratedCard.anchorDate ? String(hydratedCard.anchorDate).slice(0, 10) : null);
+          : existingIssue?.publicationDate
+            || existingEpisode?.releaseDate
+            || existingEpisode?.recordingDate
+            || (hydratedCard?.anchorDate ? String(hydratedCard.anchorDate).slice(0, 10) : null);
 
         let sponsorName: string | null = null;
         if (typeof body.sponsorName === 'string' && body.sponsorName.trim()) {
           sponsorName = body.sponsorName.trim();
         } else if (template === 'newsletter-secondary') {
-          sponsorName = hydratedCard.secondarySponsors?.[0] || hydratedCard.sponsor || null;
+          sponsorName = existingIssue?.slots?.secondary?.sponsor
+            || hydratedCard?.secondarySponsors?.[0]
+            || hydratedCard?.sponsor
+            || existingIssue?.slots?.primary?.sponsor
+            || null;
         } else if (template === 'podcast') {
-          sponsorName = hydratedCard.people?.[0] || hydratedCard.sponsor || null;
+          sponsorName = hydratedCard?.sponsor
+            || hydratedCard?.people?.[0]
+            || existingEpisode?.guests?.[0]?.name
+            || null;
         } else {
-          sponsorName = hydratedCard.sponsor || hydratedCard.people?.[0] || null;
+          sponsorName = existingIssue?.slots?.primary?.sponsor
+            || hydratedCard?.sponsor
+            || hydratedCard?.people?.[0]
+            || null;
         }
 
         let title = typeof body.title === 'string' ? body.title.trim() : '';
         if (!title) {
           if (publicationDate && sponsorName) {
             title = `${publicationDate} - ${sponsorName}`;
-          } else if (publicationDate && hydratedCard.title) {
+          } else if (publicationDate && hydratedCard?.title) {
             title = `${publicationDate} - ${hydratedCard.title}`;
+          } else if (publicationDate && existingEpisode?.title) {
+            title = `${publicationDate} - ${existingEpisode.title}`;
           } else {
-            title = hydratedCard.title || getSponsorDocTemplate(template).label;
+            title = hydratedCard?.title || existingEpisode?.title || getSponsorDocTemplate(template).label;
           }
         }
 
@@ -426,9 +499,10 @@ export async function handleSponsorDocRoutes(
 
         const directory = new TeamDirectory(client);
         const staffProj = actor.actor.id ? await directory.project(actor.actor.id) : null;
+        const ownerRecordId = existingCard?.id || existingIssue?.id || existingEpisode!.id;
 
         const { doc, accessCode } = await createSponsorDoc(client, {
-          cardId: existingCard.id,
+          cardId: ownerRecordId,
           template,
           title,
           sponsorName,
@@ -443,29 +517,48 @@ export async function handleSponsorDocRoutes(
 
         const base = sponsorDocPortalBaseUrl(event);
         const docUrl = `${base}/sponsor-docs/${encodeURIComponent(doc.id)}`;
-        const currentLinks = Array.isArray(existingCard.cardLinks) ? existingCard.cardLinks : [];
-        let matchedSlot = false;
-        const updatedLinks = currentLinks.map((item) => {
-          if (String(item.name || '').toLowerCase() === linkType.toLowerCase()) {
-            matchedSlot = true;
-            return { ...item, name: item.name || linkType, url: docUrl };
-          }
-          return item;
-        });
-        if (!matchedSlot) {
-          updatedLinks.push({ name: linkType, url: docUrl });
-        }
-        const nextCardLinks = normalizeCardLinks(updatedLinks) as Card['cardLinks'];
 
-        const updatedCard = await updateCard(client, existingCard.id, {
-          expectedVersion: existingCard.version,
-          patch: { cardLinks: nextCardLinks },
-        });
-        const projectedCard = await projectCard(directory, updatedCard, undefined, templateIdByType);
+        let projectedCard = null;
+        if (existingCard) {
+          const currentLinks = Array.isArray(existingCard.cardLinks) ? existingCard.cardLinks : [];
+          let matchedSlot = false;
+          const updatedLinks = currentLinks.map((item) => {
+            if (String(item.name || '').toLowerCase() === linkType.toLowerCase()) {
+              matchedSlot = true;
+              return { ...item, name: item.name || linkType, url: docUrl };
+            }
+            return item;
+          });
+          if (!matchedSlot) {
+            updatedLinks.push({ name: linkType, url: docUrl });
+          }
+          const nextCardLinks = normalizeCardLinks(updatedLinks) as Card['cardLinks'];
+
+          const updatedCard = await updateCard(client, existingCard.id, {
+            expectedVersion: existingCard.version,
+            patch: { cardLinks: nextCardLinks },
+          });
+          projectedCard = await projectCard(directory, updatedCard, undefined, templateIdByType);
+        }
+
+        let updatedIssue: NewsletterIssue | null = null;
+        if (existingIssue && docUrl.startsWith('https://')) {
+          const slotPos: NewsletterSlotPosition =
+            template === 'newsletter-secondary' && existingIssue.kind === 'weekly'
+              ? 'secondary'
+              : 'primary';
+          const currentSlot = existingIssue.slots?.[slotPos] || {};
+          const nextSlots = {
+            ...(existingIssue.slots || {}),
+            [slotPos]: { ...currentSlot, documentUrl: docUrl },
+          };
+          updatedIssue = await updateNewsletterIssue(client, existingIssue, { slots: nextSlots }).catch(() => existingIssue);
+        }
 
         return json(201, {
           doc: buildDocResponsePayload(doc, event, { viewerRole: 'staff', accessCode }),
           card: projectedCard,
+          ...(updatedIssue ? { issue: updatedIssue } : {}),
         });
       }
 

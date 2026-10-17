@@ -2,6 +2,7 @@ import { UsageError } from "../errors.mjs";
 import { enc, fields, integer, isoDate, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { fetchNewsletterTab, planNewsletterSync, readNewsletterCsv, sheetIssues } from "../newsletterSheet.mjs";
+import { domainDocCommand } from "./sponsorDocs.mjs";
 
 export const summary = "Plan newsletter issues, their sponsor slots, and their Cards";
 
@@ -44,6 +45,13 @@ Usage
                                   organization without a live deal gets a new open deal
   dataops newsletter release <issue-id> <primary|secondary> [--confirm]
                                   Frees the slot; its deliverable is marked withdrawn
+  dataops newsletter doc create <issue-id|card-id> [--slot primary|secondary] [--standalone] [--email]
+                                  Create the portal sponsor content document for the issue
+                                  or Card, link it on the Card's "Sponsorship document"
+                                  field, and print the shareable link with the access code
+  dataops newsletter doc show <doc-id>
+  dataops newsletter doc export <doc-id>
+  dataops newsletter doc delete <doc-id> --yes
   dataops newsletter stats <issue-id> [primary|secondary]
       [--deliveries N] [--opens N] [--clicks N] [--unique-clicks N]
       [--open-rate PCT] [--click-rate PCT]
@@ -81,6 +89,7 @@ the issue's current version.
 
 Examples
   dataops newsletter list --from 2026-11-01 --to 2026-11-30 --booked false
+  dataops newsletter doc create <issue-id|card-id> --slot primary --email
   dataops newsletter stats <issue-id> primary --deliveries 99714 --opens 34886 --clicks 831 --unique-clicks 651
   dataops newsletter report <issue-id> primary --contact "Alex"
 `;
@@ -705,11 +714,14 @@ export async function cardLeadDays(args, io) {
   return result;
 }
 
+export const doc = domainDocCommand("newsletter");
+
 export const commands = {
   list,
   show,
   create,
   update,
+  doc,
   stats,
   report,
   delete: remove,
