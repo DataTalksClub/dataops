@@ -755,6 +755,26 @@ test("deals list edits through the loaded object with its version", async () => 
   assert.doesNotMatch(plainPanels.deals.innerHTML, /data-edit-deal/, "no edit affordance without an editor callback");
 });
 
+test("add deal preassociates the loaded company and respects generation", async () => {
+  const added = [];
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /activity/organization/c1?limit=3": preview,
+      "GET /deals?organizationId=c1&limit=50": { items: [], nextCursor: null },
+    },
+    context: { onAddDeal: async (organizationId) => added.push(organizationId) },
+  });
+  const panels = seedPanels(host);
+  await record.openCompany("c1");
+  await record.switchTab("deals");
+  await host.dispatch("click", { closestPatch: { "[data-add-deal]": new FakeNode("button") } });
+  assert.deepEqual(added, ["c1"], "company id preassociated");
+  record.destroy();
+  await host.dispatch("click", { closestPatch: { "[data-add-deal]": new FakeNode("button") } });
+  assert.deepEqual(added, ["c1"], "stale panel cannot open the editor after navigation");
+});
+
 test("failed explicit selections never fall back to unrelated finance", async () => {
   const page = [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off" }];
   for (const [name, dealId, byId, message] of [

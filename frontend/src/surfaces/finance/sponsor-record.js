@@ -936,7 +936,16 @@ export function createSponsorRecord(context) {
         return;
       }
       if (event.target.closest("[data-add-deal]") && typeof context.onAddDeal === "function") {
-        context.onAddDeal();
+        // Preassociate the new deal with the currently loaded company; the
+        // generation guard keeps a stale panel from opening a dialog for a
+        // record that has since navigated away.
+        const mine = token;
+        const companyId = record?.companyId;
+        if (!companyId) return;
+        await fail(async () => {
+          if (mine !== token || record?.companyId !== companyId) return;
+          await context.onAddDeal(companyId);
+        }, "Could not open the deal editor");
         return;
       }
       const archive = event.target.closest("[data-archive-company]");
