@@ -44,11 +44,11 @@ test.beforeAll(async () => {
   await api('POST', '/api/tasks', { description: PLAIN, date: isoDate(-65), cardId: card.id });
   await api('POST', '/api/tasks', {
     description: WAITING,
-    date: isoDate(1),
+    date: isoDate(-1),
     cardId: card.id,
     status: 'waiting',
     waitingFor: WAITING_FOR,
-    followUpAt: `${isoDate(1)}T09:00:00Z`,
+    followUpAt: `${isoDate(-1)}T09:00:00Z`,
     comment: 'Synthetic waiting fixture',
   });
   const needy = await api('POST', '/api/tasks', { description: NEEDY, date: isoDate(2), cardId: card.id });
