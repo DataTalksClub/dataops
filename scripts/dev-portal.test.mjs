@@ -341,6 +341,14 @@ test('representative child environment is visibly labeled and fail-closed', () =
   );
 });
 
+test('default child environment configures portal auth mode', () => {
+  const config = readDevConfig({}, ROOT);
+  const child = buildChildEnvironment(config, {});
+  assert.equal(child.WORK_ENGINE_AUTH_MODE, 'portal');
+  assert.equal(child.DATAOPS_DEV_SEED_MODE, 'default');
+  assert.equal(child.DATAOPS_DOCS_DOMAIN, '1');
+});
+
 test('rewrites only internal backend redirects to the browser origin', () => {
   const config = readDevConfig({}, ROOT);
   assert.equal(rewriteInternalLocation('http://127.0.0.1:3001/tasks?x=1#row', config), '/tasks?x=1#row');

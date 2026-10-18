@@ -168,6 +168,7 @@ async function main(): Promise<void> {
     await seedRecurring();
   }
 
+  process.env.WORK_ENGINE_AUTH_MODE ||= 'portal';
   const broker = await resolvePortalBroker();
   const { handler } = await import('../src/handler');
 
@@ -188,21 +189,14 @@ async function main(): Promise<void> {
         .filter((entry): entry is [string, string | string[]] => entry[1] !== undefined)
         .map(([key, value]) => [key, Array.isArray(value) ? value.join(', ') : value]),
     );
-    if (REPRESENTATIVE_MODE) {
+    delete headers.cookie;
+    delete headers['x-user-id'];
+    delete headers['x-portal-auth'];
+    delete headers['x-portal-secret'];
+    if (broker) {
       delete headers.authorization;
-      delete headers.cookie;
-      delete headers['x-user-id'];
-      delete headers['x-portal-auth'];
-      delete headers['x-portal-secret'];
-      if (broker) {
-        headers['x-portal-auth'] = 'true';
-        headers['x-portal-secret'] = broker.secret;
-        headers['x-user-id'] = broker.userId;
-      }
-    } else if (broker) {
-      // Seeded mode runs the API with SKIP_AUTH, which takes the actor from
-      // x-user-id; the broker supplies it, as the portal does in production.
-      delete headers.authorization;
+      headers['x-portal-auth'] = 'true';
+      headers['x-portal-secret'] = broker.secret;
       headers['x-user-id'] = broker.userId;
     }
     const event: LambdaEvent = {

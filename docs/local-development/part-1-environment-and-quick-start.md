@@ -147,9 +147,14 @@ the dashboard falls back to doc-based lanes.
 
 ## Auth In Local Dev
 
-The work-engine dev server runs with `IS_LOCAL=true`, which enables `SKIP_AUTH`.
-The portal local server does not enforce session auth. These bypasses are only
-for local development and tests.
+Local development runs with `WORK_ENGINE_AUTH_MODE=portal`. The development
+server plays the deployed portal broker, asserting the operator identity
+(the seeded admin Alexey, or `DATAOPS_DEV_ACTOR_EMAIL`) with a per-process portal
+secret across all proxied `/api/*` and `/work/api/*` routes. When
+`DATAOPS_DEV_ACTOR_EMAIL` is unset in representative mode or anonymous requests
+are made, interactive requests fail closed unless accompanied by a valid
+non-browser Bearer session token. The `SKIP_AUTH=true` bypass remains strictly
+confined to `NODE_ENV=test` automated test runs.
 
 `IS_LOCAL=true` also enables local filesystem file storage for uploads and
 local-dev artifact paths. Production work-engine runs must not use Lambda local

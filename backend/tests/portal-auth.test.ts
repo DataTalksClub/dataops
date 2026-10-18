@@ -547,4 +547,83 @@ describe('Portal broker authentication', () => {
       }
     }
   });
+
+  it('authorizes interactive routes through the development portal broker without SKIP_AUTH', async () => {
+    // Local development shape with development portal broker: WORK_ENGINE_AUTH_MODE=portal,
+    // broker asserts x-portal-auth, x-portal-secret, x-user-id with a per-process secret.
+    // Must authorize without NODE_ENV=test or SKIP_AUTH=true bypass (#227).
+    const savedDocsDomain = process.env.DATAOPS_DOCS_DOMAIN;
+    const savedAuthMode = process.env.WORK_ENGINE_AUTH_MODE;
+    const savedSecret = process.env.WORK_ENGINE_PORTAL_SECRET;
+    const savedNodeEnv = process.env.NODE_ENV;
+    const savedSkipAuth = process.env.SKIP_AUTH;
+
+    const secret = 'dev-portal-test-secret';
+    process.env.DATAOPS_DOCS_DOMAIN = 'true';
+    process.env.WORK_ENGINE_AUTH_MODE = 'portal';
+    process.env.WORK_ENGINE_PORTAL_SECRET = secret;
+    process.env.NODE_ENV = 'development';
+    process.env.SKIP_AUTH = 'false';
+
+    try {
+      const response = await handler(
+        {
+          httpMethod: 'GET',
+          path: '/api/tasks',
+          queryStringParameters: { date: '2028-10-04' },
+          headers: {
+            'x-portal-auth': 'true',
+            'x-portal-secret': secret,
+            'x-user-id': 'ops-admin',
+          },
+        },
+        {},
+      );
+      assert.strictEqual(response.statusCode, 200);
+      assert.ok(Array.isArray(JSON.parse(response.body).tasks));
+
+      const meResponse = await handler(
+        {
+          httpMethod: 'GET',
+          path: '/api/me',
+          headers: {
+            'x-portal-auth': 'true',
+            'x-portal-secret': secret,
+            'x-user-id': 'ops-admin',
+          },
+        },
+        {},
+      );
+      assert.strictEqual(meResponse.statusCode, 200);
+      assert.strictEqual(JSON.parse(meResponse.body).user.id, 'ops-admin');
+
+      // Invalid secret fails closed
+      const badSecretResponse = await handler(
+        {
+          httpMethod: 'GET',
+          path: '/api/tasks',
+          queryStringParameters: { date: '2028-10-04' },
+          headers: {
+            'x-portal-auth': 'true',
+            'x-portal-secret': 'wrong-secret',
+            'x-user-id': 'ops-admin',
+          },
+        },
+        {},
+      );
+      assert.strictEqual(badSecretResponse.statusCode, 401);
+    } finally {
+      if (savedDocsDomain === undefined) delete process.env.DATAOPS_DOCS_DOMAIN;
+      else process.env.DATAOPS_DOCS_DOMAIN = savedDocsDomain;
+      if (savedAuthMode === undefined) delete process.env.WORK_ENGINE_AUTH_MODE;
+      else process.env.WORK_ENGINE_AUTH_MODE = savedAuthMode;
+      if (savedSecret === undefined) delete process.env.WORK_ENGINE_PORTAL_SECRET;
+      else process.env.WORK_ENGINE_PORTAL_SECRET = savedSecret;
+      if (savedNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = savedNodeEnv;
+      if (savedSkipAuth === undefined) delete process.env.SKIP_AUTH;
+      else process.env.SKIP_AUTH = savedSkipAuth;
+    }
+  });
 });
+

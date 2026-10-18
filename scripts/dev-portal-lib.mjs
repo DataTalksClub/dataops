@@ -346,10 +346,10 @@ export function buildChildEnvironment(config, parentEnv = process.env) {
     // Sponsor finance is off unless the developer opts in the same way the
     // deployed Lambda does: SPONSOR_FINANCE_ENABLED=true in the environment.
     SPONSOR_FINANCE_ENABLED: parentEnv.SPONSOR_FINANCE_ENABLED === 'true' ? 'true' : 'false',
+    WORK_ENGINE_AUTH_MODE: 'portal',
   });
   if (config.representative) {
     env.DATAOPS_AUTO_CREATE_TABLES = 'false';
-    env.WORK_ENGINE_AUTH_MODE = 'portal';
     for (const key of EXTERNAL_ENV_KEYS) delete env[key];
   }
   return env;
