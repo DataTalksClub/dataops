@@ -24,6 +24,10 @@ import { RUNTIME_ROOT } from '../runtimePaths';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { isAnonymousDeviceRequest } from '../routes/cliAuth';
 import { isAnonymousSponsorDocAsset, isAnonymousSponsorDocRequest } from '../routes/sponsorDocs';
+import {
+  isAnonymousNewsletterPreviewAsset,
+  isAnonymousNewsletterPreviewRequest,
+} from '../newsletter/markdownPreview';
 import { handleDocsRoutes, isDocsRoute } from './contentApi';
 import { DEPLOYED_FRONTEND_FILES } from './frontendAssets';
 import {
@@ -162,6 +166,7 @@ function serveFrontend(event: LambdaEvent, method: string, path: string): Lambda
 
   if (path === '/device' || path === '/device/sessions') return serveIndex('src/device.html');
   if (/^\/sponsor-docs\/[^/]+\/?$/.test(path)) return serveIndex('src/sponsor-doc.html');
+  if (/^\/newsletter-issues\/[^/]+\/preview\/?$/.test(path)) return serveIndex('src/newsletter-preview.html');
   if (path === '/' || path === '/index.html') return serveIndex();
 
   const firstSegment = path.replace(/^\/+/, '').split('/')[0].toLowerCase();
@@ -312,11 +317,11 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
       const returnTo = code ? `/device?code=${encodeURIComponent(code)}` : '/device';
       return { response: redirectToLogin(returnTo), authorized: false };
     }
-    if (isAnonymousSponsorDocAsset(method, path)) {
+    if (isAnonymousSponsorDocAsset(method, path) || isAnonymousNewsletterPreviewAsset(method, path)) {
       const fe = serveFrontend(event, method, path);
       if (fe) return { response: fe, authorized: false };
     }
-    if (isAnonymousSponsorDocRequest(method, path)) {
+    if (isAnonymousSponsorDocRequest(method, path) || isAnonymousNewsletterPreviewRequest(method, path)) {
       return { authorized: false };
     }
     // Existing non-browser bearer clients continue through the router's own

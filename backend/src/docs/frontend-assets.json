@@ -194,6 +194,10 @@
     "src/sponsor-doc.html",
     "src/sponsor-doc-page.js",
     "src/surfaces/operations/sponsor-docs.js",
-    "src/styles/sponsor-docs.css"
+    "src/styles/sponsor-docs.css",
+    "src/newsletter-preview.html",
+    "src/newsletter-preview-page.js",
+    "src/surfaces/operations/newsletter-preview.js",
+    "src/styles/newsletter-preview.css"
   ]
 }

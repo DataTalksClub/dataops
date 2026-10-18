@@ -23,6 +23,7 @@ export function renderNewsletterDialogMarkup(newsletterStatusOptions) {
             <div class="planner-field-wide newsletter-campaign-field">
               <label>Public campaign URL <input name="publicUrl" type="url"></label>
               <a data-campaign-link target="_blank" rel="noreferrer" hidden>Open campaign</a>
+              <a data-markdown-preview-link target="_blank" rel="noreferrer" hidden>Open Markdown &amp; HTML preview</a>
             </div>
             <label class="planner-field-wide">Planning note <textarea name="planningNote" rows="4"></textarea></label>
           </div>
@@ -63,6 +64,12 @@ export function setupNewsletterDialog(options) {
       campaignLink.hidden = !item?.publicUrl;
       if (item?.publicUrl) campaignLink.href = item.publicUrl;
       else campaignLink.removeAttribute?.("href");
+    }
+    const mdPreviewLink = dialog.querySelector("[data-markdown-preview-link]");
+    if (mdPreviewLink) {
+      mdPreviewLink.hidden = !item?.id;
+      if (item?.id) mdPreviewLink.href = `/newsletter-issues/${encodeURIComponent(item.id)}/preview`;
+      else mdPreviewLink.removeAttribute?.("href");
     }
     if (dialog.showModal) {
       dialog.showModal();

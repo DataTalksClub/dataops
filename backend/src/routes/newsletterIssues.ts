@@ -73,6 +73,10 @@ import {
   buildIssueStatsReports,
   filterSponsorStatsReports,
 } from '../newsletter/statsReport';
+import {
+  handleNewsletterMarkdownRoutes,
+  publicNewsletterIssueFields,
+} from '../newsletter/markdownPreview';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
   statusCode,
@@ -412,11 +416,12 @@ async function withCardSummaries(
   items: NewsletterIssue[],
   cards: Map<string, Card | null>,
   schedule: CardSchedule,
+  event?: LambdaEvent,
 ) {
   const summaries = new Map<string, CardSummary>();
   for (const [id, card] of cards) if (card) summaries.set(id, await summarizeCard(client, card));
   return items.map((item) => ({
-    ...item,
+    ...publicNewsletterIssueFields(item, event),
     label: issueLabel(item),
     card: item.cardId ? summaries.get(item.cardId) || null : null,
     cardDueDate: dueDateOf(item, schedule),
@@ -459,7 +464,7 @@ async function listRoute(event: LambdaEvent, client: DynamoDBDocumentClient) {
     if (!ID.test(query.cardId)) return json(400, { error: 'Invalid cardId' });
     const linked = await listNewsletterIssuesByCardId(client, query.cardId);
     const schedule = await loadCardSchedule(client);
-    return json(200, { items: await withCardSummaries(client, linked, await linkedCards(client, linked), schedule) });
+    return json(200, { items: await withCardSummaries(client, linked, await linkedCards(client, linked), schedule, event) });
   }
   const from = query.from || new Date().toISOString().slice(0, 10);
   const to = query.to || '9999-12-31';
@@ -482,7 +487,7 @@ async function listRoute(event: LambdaEvent, client: DynamoDBDocumentClient) {
     ...cardAlerts(items, cards, schedule, day),
   ];
   return json(200, {
-    items: await withCardSummaries(client, items, cards, schedule),
+    items: await withCardSummaries(client, items, cards, schedule, event),
     alerts: await recordAlerts(client, current),
   });
 }
@@ -685,10 +690,10 @@ async function deleteRoute(id: string, body: Body, event: LambdaEvent, client: D
 }
 
 /** The issue as the routes return it: label, Card summary and Card due date attached. */
-async function issueView(client: DynamoDBDocumentClient, issue: NewsletterIssue, extra: Body = {}) {
+async function issueView(client: DynamoDBDocumentClient, issue: NewsletterIssue, extra: Body = {}, event?: LambdaEvent) {
   const card = issue.cardId ? await getCard(client, issue.cardId) : null;
   return {
-    ...issue,
+    ...publicNewsletterIssueFields(issue, event),
     label: issueLabel(issue),
     card: card ? await summarizeCard(client, card) : null,
     cardDueDate: dueDateOf(issue, await loadCardSchedule(client)),
@@ -704,7 +709,7 @@ async function issueView(client: DynamoDBDocumentClient, issue: NewsletterIssue,
 async function cardRoute(id: string, method: string, body: Body, event: LambdaEvent, client: DynamoDBDocumentClient) {
   const existing = await getNewsletterIssue(client, id);
   if (!existing) return json(404, { error: 'Not found' });
-  if (method === 'POST' && existing.cardId) return json(200, await issueView(client, existing));
+  if (method === 'POST' && existing.cardId) return json(200, await issueView(client, existing, {}, event));
   if (body.version !== existing.version) return json(409, { error: 'Issue changed; reload and retry' });
   const resolved = await resolveInteractiveActor(client, event, 'work-write');
   if (!resolved.ok) return resolved.response;
@@ -715,7 +720,7 @@ async function cardRoute(id: string, method: string, body: Body, event: LambdaEv
     try {
       const created = await createIssueCard(client, resolved.actor, existing);
       if (!created.ok) return created.response;
-      return json(201, await issueView(client, created.issue));
+      return json(201, await issueView(client, created.issue, {}, event));
     } catch (failure) {
       if ((failure as Error).name === 'TransactionCanceledException') return json(409, { error: 'Issue changed; reload and retry' });
       throw failure;
@@ -736,7 +741,7 @@ async function cardRoute(id: string, method: string, body: Body, event: LambdaEv
   return json(200, {
     ...plan,
     removed: removed.removed,
-    issue: removed.removed ? await issueView(client, next) : await issueView(client, existing),
+    issue: removed.removed ? await issueView(client, next, {}, event) : await issueView(client, existing, {}, event),
   });
 }
 
@@ -815,7 +820,7 @@ async function slotRoute(
     const written = await writeSlotChange(client, existing, slots, actorId, body.confirmSlotRemoval === true);
     if (!written.ok) return written.response;
     const withdrawn = await withdrawSlotDeliverables(client, written.issue, slotPosition, actorId);
-    return json(200, await issueView(client, written.issue, { cardSync: written.cardSync, withdrawnDeliverables: withdrawn }));
+    return json(200, await issueView(client, written.issue, { cardSync: written.cardSync, withdrawnDeliverables: withdrawn }, event));
   }
 
   const choice: SponsorChoice | null = typeof body.dealId === 'string' && ID.test(body.dealId)
@@ -847,7 +852,7 @@ async function slotRoute(
     deliverableId: deliverable.id,
     dealId: sponsor.deal.id,
     withdrawnDeliverables: withdrawn,
-  }));
+  }, event));
 }
 
 async function sponsorReportRoute(event: LambdaEvent, client: DynamoDBDocumentClient) {
@@ -925,6 +930,21 @@ export async function handleNewsletterIssueRoutes(
     if (method !== 'GET') return json(405, { error: 'Method not allowed' });
     return issueReportRoute(issueReport[1], event, client);
   }
+  const rotateMdCode = path.match(/^\/api\/newsletter-issues\/([^/]+)\/markdown\/rotate-code\/?$/);
+  if (rotateMdCode) {
+    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+    return handleNewsletterMarkdownRoutes(decodeURIComponent(rotateMdCode[1]), 'rotate-code', event, client);
+  }
+  const mdRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/(?:markdown|preview)\/?$/);
+  if (mdRoute) {
+    if (method !== 'GET' && method !== 'PUT') return json(405, { error: 'Method not allowed' });
+    return handleNewsletterMarkdownRoutes(
+      decodeURIComponent(mdRoute[1]),
+      method === 'GET' ? 'get' : 'put',
+      event,
+      client,
+    );
+  }
   const card = path.match(/^\/api\/newsletter-issues\/([^/]+)\/card$/);
   if (card) {
     if (method !== 'POST' && method !== 'DELETE') return json(405, { error: 'Method not allowed' });
@@ -950,7 +970,7 @@ export async function handleNewsletterIssueRoutes(
   if (method === 'GET') {
     const item = await getNewsletterIssue(client, id);
     if (!item) return json(404, { error: 'Not found' });
-    return json(200, await issueView(client, item));
+    return json(200, await issueView(client, item, {}, event));
   }
   const body = parse(event);
   if (!body) return json(400, { error: 'Invalid JSON' });

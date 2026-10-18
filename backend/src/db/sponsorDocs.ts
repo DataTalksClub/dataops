@@ -102,13 +102,15 @@ function encryptionKeyForDoc(docId: string): Buffer {
   return createHash('sha256').update(`sponsor-doc-cipher-v1:${secret}:${docId}`).digest();
 }
 
-function encryptAccessCode(docId: string, formattedCode: string): string {
+export function encryptSponsorDocAccessCode(docId: string, formattedCode: string): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', encryptionKeyForDoc(docId), iv);
   const encrypted = Buffer.concat([cipher.update(formattedCode, 'utf-8'), cipher.final()]);
   const tag = cipher.getAuthTag();
   return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
 }
+
+const encryptAccessCode = encryptSponsorDocAccessCode;
 
 export function decryptSponsorDocAccessCode(docId: string, ciphertext: string | undefined): string | null {
   if (!ciphertext || typeof ciphertext !== 'string') return null;

@@ -50,6 +50,7 @@ import { handleInvoiceReader } from './auth/invoiceReader';
 import { handleKnowledgePublisher } from './auth/knowledgePublisher';
 import { handleCliAuthRoutes, isAnonymousDeviceRequest } from './routes/cliAuth';
 import { handleSponsorDocRoutes, isAnonymousSponsorDocRequest } from './routes/sponsorDocs';
+import { isAnonymousNewsletterPreviewRequest } from './newsletter/markdownPreview';
 import type { LambdaEvent, LambdaResponse } from './types';
 import { recordRequestError } from './requestErrorLog';
 
@@ -66,6 +67,7 @@ const AUTH_EXEMPT_PATHS = new Set([
 function isAuthExempt(method: string, path: string): boolean {
   if (isAnonymousDeviceRequest(method, path)) return true;
   if (isAnonymousSponsorDocRequest(method, path)) return true;
+  if (isAnonymousNewsletterPreviewRequest(method, path)) return true;
   if (AUTH_EXEMPT_PATHS.has(path)) return true;
   if (method === 'POST' && path === '/api/v1/intake/email-documents') return true;
   if (method === 'POST' && path === '/api/v1/intake/leads') return true;

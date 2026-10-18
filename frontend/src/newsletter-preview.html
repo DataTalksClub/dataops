@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <title>Newsletter Issue Preview · DataTalks.Club</title>
+  <script>
+    (() => { let theme; try { theme = localStorage.getItem('dakit-theme'); } catch {}
+      document.documentElement.dataset.theme = theme === 'dark' || theme === 'light' ? theme : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; })();
+  </script>
+  <link rel="stylesheet" href="/src/dakit/dakit.css">
+  <link rel="stylesheet" href="/src/styles/sponsor-docs.css">
+  <link rel="stylesheet" href="/src/styles/newsletter-preview.css">
+</head>
+<body class="dk-auth-page sponsor-doc-page newsletter-preview-page">
+  <header class="dk-auth-page__bar">
+    <a class="dk-brand" href="/"><span class="dk-brand__name">DataTalks.Club · Newsletter Preview</span></a>
+    <span id="newsletter-preview-identity" class="dk-auth-page__identity" role="status">Checking access…</span>
+  </header>
+  <main class="dk-auth-page__main sponsor-doc-page__main">
+    <section id="newsletter-preview-root" class="sponsor-doc-shell newsletter-preview-shell" aria-label="Newsletter issue preview"></section>
+  </main>
+  <div id="dk-live" class="dk-visually-hidden" aria-live="polite"></div>
+  <script type="module" src="/src/newsletter-preview-page.js"></script>
+</body>
+</html>

@@ -66,6 +66,17 @@ export interface NewsletterIssueLink {
   url: string;
 }
 
+export type NewsletterMarkdownKind = 'issue' | 'sources' | 'brief';
+
+export interface NewsletterMarkdownPackage {
+  issue?: string;
+  sources?: string;
+  brief?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+  updatedByName?: string | null;
+}
+
 export type NewsletterIssue = {
   id: string;
   kind: NewsletterIssueKind;
@@ -78,6 +89,9 @@ export type NewsletterIssue = {
   stats?: NewsletterIssueStats;
   cardId?: string;
   links?: NewsletterIssueLink[];
+  markdown?: NewsletterMarkdownPackage;
+  previewAccessCodeHash?: string;
+  previewAccessCodeCiphertext?: string;
   publicUrl?: string;
   planningNote?: string;
   sourceType?: string;
