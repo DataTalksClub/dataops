@@ -779,5 +779,112 @@ describe("newsletter doc and podcast doc commands", () => {
 
     globalThis.fetch = globalFetch;
   });
+
+  test("newsletter markdown set, show, preview, and rotate-code store and print shareable preview links", async () => {
+    const { writeFileSync } = await import("node:fs");
+    const issuePath = path.join(configDir, "issue.md");
+    const sourcesPath = path.join(configDir, "sources.md");
+    const briefPath = path.join(configDir, "brief.md");
+    writeFileSync(issuePath, "Subject: PhoenixAI\n\n# Next Query 2026\n", "utf-8");
+    writeFileSync(sourcesPath, "# Sources\n- Card 2fe23a82\n", "utf-8");
+    writeFileSync(briefPath, "# Brief\n- Stand-alone\n", "utf-8");
+
+    const sent = [];
+    const fetch = fakeFetch({
+      "/api/newsletter-issues/issue-phx/markdown": (options) => {
+        if (options.method === "PUT") {
+          sent.push(JSON.parse(options.body));
+        }
+        return {
+          status: 200,
+          body: {
+            issueId: "issue-phx",
+            cardId: "card-phx",
+            label: "Stand-alone newsletter",
+            publicationDate: "2026-10-21",
+            status: "planned",
+            viewerRole: "staff",
+            previewUrl: "https://internal.lambda-url.eu-central-1.on.aws/newsletter-issues/issue-phx/preview",
+            shareUrl:
+              "https://internal.lambda-url.eu-central-1.on.aws/newsletter-issues/issue-phx/preview?code=2345-6789-ABCD-EFGH",
+            accessCode: "2345-6789-ABCD-EFGH",
+            markdown: {
+              issue: "Subject: PhoenixAI\n\n# Next Query 2026\n",
+              sources: "# Sources\n- Card 2fe23a82\n",
+              brief: "# Brief\n- Stand-alone\n",
+              updatedAt: "2026-10-18T16:00:00.000Z",
+              updatedByName: "Alexey Staff",
+            },
+          },
+        };
+      },
+      "/api/newsletter-issues/issue-phx/markdown/rotate-code": () => ({
+        status: 200,
+        body: {
+          issueId: "issue-phx",
+          label: "Stand-alone newsletter",
+          publicationDate: "2026-10-21",
+          previewUrl: "https://ops.dtcdev.click/newsletter-issues/issue-phx/preview",
+          shareUrl: "https://ops.dtcdev.click/newsletter-issues/issue-phx/preview?code=WXYZ-2345-6789-ABCD",
+          accessCode: "WXYZ-2345-6789-ABCD",
+        },
+      }),
+    });
+    globalThis.fetch = fetch;
+
+    const ioSet = captureIo();
+    assert.equal(
+      await run(
+        [
+          "newsletter",
+          "markdown",
+          "set",
+          "issue-phx",
+          "--issue-file",
+          issuePath,
+          "--sources-file",
+          sourcesPath,
+          "--brief-file",
+          briefPath,
+          "--url",
+          "https://ops.dtcdev.click",
+        ],
+        ioSet,
+      ),
+      0,
+    );
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].issue, /Next Query 2026/);
+    assert.match(sent[0].sources, /Card 2fe23a82/);
+    assert.match(sent[0].brief, /Stand-alone/);
+    assert.match(
+      ioSet.text(),
+      /Shareable preview link \(with code\): https:\/\/ops\.dtcdev\.click\/newsletter-issues\/issue-phx\/preview\?code=2345-6789-ABCD-EFGH/,
+    );
+
+    const ioShowKind = captureIo();
+    assert.equal(
+      await run(["newsletter", "markdown", "show", "issue-phx", "issue", "--url", "https://ops.dtcdev.click"], ioShowKind),
+      0,
+    );
+    assert.match(ioShowKind.text(), /Subject: PhoenixAI/);
+
+    const ioPreview = captureIo();
+    assert.equal(
+      await run(["newsletter", "markdown", "preview", "issue-phx", "--url", "https://ops.dtcdev.click"], ioPreview),
+      0,
+    );
+    assert.match(ioPreview.text(), /Access code: 2345-6789-ABCD-EFGH/);
+
+    const ioRotate = captureIo();
+    assert.equal(
+      await run(["newsletter", "markdown", "rotate-code", "issue-phx", "--url", "https://ops.dtcdev.click"], ioRotate),
+      0,
+    );
+    assert.match(ioRotate.text(), /WXYZ-2345-6789-ABCD/);
+
+    globalThis.fetch = globalFetch;
+  });
 });
+
 

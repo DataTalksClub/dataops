@@ -169,6 +169,16 @@ Use `dataops newsletter doc show <doc-id>`, `dataops newsletter doc export <doc-
 and `dataops newsletter doc delete <doc-id> --yes` (and the matching
 `dataops podcast doc create <card-id> [--email]`, `show`, `export`, `delete` for podcast sponsorships).
 
+For a newsletter issue's Markdown package (`issue.md`, `sources.md`, `brief.md`):
+store it in DataOps on the newsletter issue — never commit it to Git:
+`dataops newsletter markdown set <issue-id> --issue-file issue.md --sources-file sources.md --brief-file brief.md`
+(or one file at a time with `dataops newsletter markdown set <issue-id> [issue|sources|brief] --file <path>`).
+It automatically populates the `"Newsletter Markdown"` link on the issue and its Card
+and prints the shareable HTML preview link (`/newsletter-issues/<id>/preview?code=XXXX-XXXX-XXXX-XXXX`).
+Use `dataops newsletter markdown show <issue-id> [issue|sources|brief]` to read it,
+`dataops newsletter markdown preview <issue-id>` to print the shareable link, and
+`dataops newsletter markdown rotate-code <issue-id>` to rotate the preview access code.
+
 For a podcast episode: `dataops podcast list --status booked` (or `--season N`),
 `dataops podcast create --guests "Name[:slug]" --title "..." --recording-date YYYY-MM-DD`,
 then `dataops podcast create-card <episode-id>` creates the episode Card from the

@@ -1,7 +1,10 @@
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import { UsageError } from "../errors.mjs";
 import { enc, fields, integer, isoDate, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { fetchNewsletterTab, planNewsletterSync, readNewsletterCsv, sheetIssues } from "../newsletterSheet.mjs";
+import { rewriteVerificationUri } from "./auth.mjs";
 import { domainDocCommand } from "./sponsorDocs.mjs";
 
 export const summary = "Plan newsletter issues, their sponsor slots, and their Cards";
@@ -52,6 +55,14 @@ Usage
   dataops newsletter doc show <doc-id>
   dataops newsletter doc export <doc-id>
   dataops newsletter doc delete <doc-id> --yes
+  dataops newsletter markdown set <issue-id> [issue|sources|brief] --file <path>
+  dataops newsletter markdown set <issue-id> [--issue-file <path>] [--sources-file <path>] [--brief-file <path>]
+                                  Store the Newsletter Markdown package (issue.md, sources.md,
+                                  brief.md) on the issue in DataOps, link the HTML preview on
+                                  the Card, and print the shareable preview link (?code=)
+  dataops newsletter markdown show <issue-id> [issue|sources|brief]
+  dataops newsletter markdown preview <issue-id>
+  dataops newsletter markdown rotate-code <issue-id>
   dataops newsletter stats <issue-id> [primary|secondary]
       [--deliveries N] [--opens N] [--clicks N] [--unique-clicks N]
       [--open-rate PCT] [--click-rate PCT]
@@ -235,6 +246,15 @@ export async function show(args, io) {
   if (issue.card) io.print(`card: ${issue.card.id} ${issue.card.title} (${issue.card.openTaskCount}/${issue.card.taskCount} open)`);
   else if (issue.cardDueDate) io.print(`card: none yet; the daily run creates it on ${issue.cardDueDate}`);
   for (const link of issue.links || []) io.print(`link: ${link.name} ${link.url}`);
+  if (issue.markdown) {
+    const present = ["issue", "sources", "brief"].filter((k) => issue.markdown[k]);
+    if (present.length) {
+      io.print(`markdown: ${present.join(", ")}${issue.markdown.updatedAt ? ` (updated ${issue.markdown.updatedAt})` : ""}`);
+    }
+  }
+  if (issue.previewShareUrl || issue.previewUrl) {
+    io.print(`preview link: ${rewriteVerificationUri(issue.previewShareUrl || issue.previewUrl, apiFor(args).base)}`);
+  }
   return issue;
 }
 
@@ -716,12 +736,194 @@ export async function cardLeadDays(args, io) {
 
 export const doc = domainDocCommand("newsletter");
 
+const MARKDOWN_KINDS = ["issue", "sources", "brief"];
+
+export const newsletterMarkdownHelp = `dataops newsletter markdown - store and preview Newsletter Markdown packages in DataOps
+
+Newsletter Markdown packages (issue.md, sources.md, brief.md) live directly on the
+newsletter issue in DataOps and are never committed to Git.
+
+Usage
+  dataops newsletter markdown set <issue-id> [issue|sources|brief] --file <path>
+  dataops newsletter markdown set <issue-id> [--issue-file <path>] [--sources-file <path>] [--brief-file <path>]
+  dataops newsletter markdown show <issue-id> [issue|sources|brief]
+  dataops newsletter markdown preview <issue-id>
+  dataops newsletter markdown rotate-code <issue-id>
+`;
+
+function normalizeMarkdownPayloadUrls(payload, baseUrl) {
+  if (!payload || !baseUrl) return payload;
+  const next = { ...payload };
+  if (next.previewUrl) next.previewUrl = rewriteVerificationUri(next.previewUrl, baseUrl);
+  if (next.shareUrl) next.shareUrl = rewriteVerificationUri(next.shareUrl, baseUrl);
+  return next;
+}
+
+function readMarkdownFileArg(filePath, flagName) {
+  try {
+    return readFileSync(String(filePath), "utf-8");
+  } catch (err) {
+    throw new UsageError(`Could not read ${flagName} "${filePath}": ${err.message}`);
+  }
+}
+
+function inferKindFromPath(filePath) {
+  const base = basename(String(filePath || "")).toLowerCase();
+  if (base === "issue.md") return "issue";
+  if (base === "sources.md") return "sources";
+  if (base === "brief.md") return "brief";
+  return null;
+}
+
+async function markdownSet(args, io) {
+  const usage =
+    "dataops newsletter markdown set <issue-id> [issue|sources|brief] (--file <path> | --issue-file <path> [--sources-file <path>] [--brief-file <path>])";
+  const id = positional(args, 0, usage);
+  const posKind = args._?.[1] !== undefined ? String(args._[1]).trim() : optionalString(args, "kind");
+  if (posKind !== undefined && !MARKDOWN_KINDS.includes(posKind)) {
+    throw new UsageError(`Markdown kind must be one of: ${MARKDOWN_KINDS.join(", ")}.`);
+  }
+
+  const body = {};
+  for (const kind of MARKDOWN_KINDS) {
+    const fileFlag = optionalString(args, `${kind}File`);
+    const contentFlag = optionalString(args, kind);
+    if (fileFlag !== undefined) {
+      body[kind] = readMarkdownFileArg(fileFlag, `--${kind}-file`);
+    } else if (contentFlag !== undefined) {
+      body[kind] = contentFlag;
+    }
+  }
+
+  const singleFile = optionalString(args, "file");
+  const singleContent = optionalString(args, "content");
+  if (singleFile !== undefined || singleContent !== undefined) {
+    const targetKind = posKind || (singleFile ? inferKindFromPath(singleFile) : null) || "issue";
+    if (!MARKDOWN_KINDS.includes(targetKind)) {
+      throw new UsageError(`Specify which markdown kind to set: ${MARKDOWN_KINDS.join(", ")}.`);
+    }
+    body[targetKind] = singleFile !== undefined
+      ? readMarkdownFileArg(singleFile, "--file")
+      : singleContent;
+  }
+
+  if (Object.keys(body).length === 0) {
+    throw new UsageError(`Provide --file <path> or --issue-file / --sources-file / --brief-file. Usage: ${usage}`);
+  }
+
+  const api = apiFor(args);
+  const rawResult = await api.put(`/api/newsletter-issues/${enc(id)}/markdown`, body);
+  const result = normalizeMarkdownPayloadUrls(rawResult, api.base);
+  if (args.json) return result;
+
+  const updatedKinds = Object.keys(body).join(", ");
+  io.print(`Stored Newsletter Markdown (${updatedKinds}) on ${result.label} (${result.publicationDate}).`);
+  io.print(`Preview link: ${result.previewUrl}`);
+  if (result.shareUrl) io.print(`Shareable preview link (with code): ${result.shareUrl}`);
+  if (result.accessCode) io.print(`Access code: ${result.accessCode}`);
+  return result;
+}
+
+async function markdownShow(args, io) {
+  const usage = "dataops newsletter markdown show <issue-id> [issue|sources|brief]";
+  const id = positional(args, 0, usage);
+  const kind = args._?.[1] !== undefined ? String(args._[1]).trim() : optionalString(args, "kind");
+  if (kind !== undefined && !MARKDOWN_KINDS.includes(kind)) {
+    throw new UsageError(`Markdown kind must be one of: ${MARKDOWN_KINDS.join(", ")}.`);
+  }
+
+  const api = apiFor(args);
+  const rawResult = await api.get(`/api/newsletter-issues/${enc(id)}/markdown`);
+  const result = normalizeMarkdownPayloadUrls(rawResult, api.base);
+  if (args.json) return result;
+
+  if (kind) {
+    io.print(result.markdown?.[kind] || "");
+    return result;
+  }
+
+  fields(io, [
+    ["issueId", result.issueId],
+    ["cardId", result.cardId],
+    ["label", result.label],
+    ["publicationDate", result.publicationDate],
+    ["status", result.status],
+    ["previewUrl", result.previewUrl],
+    ["shareUrl", result.shareUrl],
+    ["accessCode", result.accessCode],
+    ["updatedAt", result.markdown?.updatedAt || "never"],
+    ["updatedBy", result.markdown?.updatedByName || result.markdown?.updatedBy || "never"],
+  ]);
+  for (const k of MARKDOWN_KINDS) {
+    const content = result.markdown?.[k] || "";
+    io.print(`\n--- ${k}.md (${content.length} chars) ---`);
+    io.print(content || "(empty)");
+  }
+  return result;
+}
+
+async function markdownPreview(args, io) {
+  const usage = "dataops newsletter markdown preview <issue-id>";
+  const id = positional(args, 0, usage);
+  const api = apiFor(args);
+  const rawResult = await api.get(`/api/newsletter-issues/${enc(id)}/markdown`);
+  const result = normalizeMarkdownPayloadUrls(rawResult, api.base);
+  if (args.json) return result;
+  io.print(`${result.label} (${result.publicationDate})`);
+  io.print(`Preview link: ${result.previewUrl}`);
+  if (result.shareUrl) io.print(`Shareable preview link (with code): ${result.shareUrl}`);
+  if (result.accessCode) io.print(`Access code: ${result.accessCode}`);
+  return result;
+}
+
+async function markdownRotateCode(args, io) {
+  const usage = "dataops newsletter markdown rotate-code <issue-id>";
+  const id = positional(args, 0, usage);
+  const api = apiFor(args);
+  const rawResult = await api.post(`/api/newsletter-issues/${enc(id)}/markdown/rotate-code`, {});
+  const result = normalizeMarkdownPayloadUrls(rawResult, api.base);
+  if (args.json) return result;
+  io.print(`Rotated preview access code for ${result.label} (${result.publicationDate}).`);
+  io.print(`Shareable preview link (with code): ${result.shareUrl}`);
+  io.print(`Access code: ${result.accessCode}`);
+  return result;
+}
+
+const markdownSubcommands = {
+  set: markdownSet,
+  show: markdownShow,
+  preview: markdownPreview,
+  link: markdownPreview,
+  "rotate-code": markdownRotateCode,
+};
+
+export async function markdown(args, io) {
+  const [action, ...rest] = args._ || [];
+  if (!action || action === "help") {
+    if (!action) {
+      throw new UsageError(
+        "Missing markdown action. Usage: dataops newsletter markdown <set|show|preview|rotate-code> <issue-id> ...",
+      );
+    }
+    io.print(newsletterMarkdownHelp);
+    return undefined;
+  }
+  const fn = markdownSubcommands[action];
+  if (!fn) {
+    throw new UsageError(
+      `Unknown subcommand: dataops newsletter markdown ${action}. One of: ${Object.keys(markdownSubcommands).join(", ")}.`,
+    );
+  }
+  return fn({ ...args, _: rest }, io);
+}
+
 export const commands = {
   list,
   show,
   create,
   update,
   doc,
+  markdown,
   stats,
   report,
   delete: remove,
@@ -735,3 +937,4 @@ export const commands = {
   "dismiss-alert": dismissAlert,
   "card-lead-days": cardLeadDays,
 };
+
