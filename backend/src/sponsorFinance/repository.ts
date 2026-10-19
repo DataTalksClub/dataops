@@ -34,6 +34,7 @@ import {
   boundedText,
 } from './core';
 import { daysBetween, deriveFollowUp, deriveStates } from './followUp';
+import { evaluateDealVat, type OrganizationVatEvaluation } from '../vies/service';
 import {
   EVIDENCE_KINDS,
   RECORDED_PAYMENT_METHODS,
@@ -58,6 +59,36 @@ const userKey = (id: string) => ({ PK: `USER#${id}`, SK: `USER#${id}` });
 const dealKey = (id: string) => singleton(`DEAL#${id}`);
 const nowIso = () => new Date().toISOString();
 export const safeConflict = () => Object.assign(new Error('Finance state changed; reload and retry'), { statusCode: 409 });
+
+/**
+ * An outbound B2B EU invoice carries the customer's VAT ID; an invalid or
+ * unregistered ID is how a reverse-charge invoice ends up flagged by the
+ * Finanzamt. A blocking evaluation stops the invoice before it is recorded;
+ * VIES being unavailable degrades to a warning on the projection, never a
+ * validity answer.
+ */
+async function blockOnCustomerVat(client: DynamoDBDocumentClient, dealId: string) {
+  const evaluation = await evaluateDealVat(client, dealId);
+  if (evaluation?.blocking) {
+    throw Object.assign(new Error(evaluation.blocking.message), { statusCode: 422 });
+  }
+}
+
+function vatView(evaluation: OrganizationVatEvaluation): NonNullable<FinanceProjection['vat']> {
+  return {
+    required: true,
+    ...(evaluation.vatId ? { vatId: evaluation.vatId } : {}),
+    ...(evaluation.country ? { country: evaluation.country } : {}),
+    ...(evaluation.check ? {
+      check: {
+        status: evaluation.check.status, checkedAt: evaluation.check.checkedAt,
+        ...(evaluation.check.name ? { name: evaluation.check.name } : {}),
+      },
+    } : {}),
+    ...(evaluation.blocking ? { blocking: evaluation.blocking } : {}),
+    ...(evaluation.warning ? { warning: evaluation.warning } : {}),
+  };
+}
 const DISCOVERY_MAX_ITEMS = 5_000;
 const DISCOVERY_MAX_PAGES = 100;
 const DISCOVERY_DEADLINE_MS = 2_000;
@@ -472,6 +503,7 @@ export async function linkInvoice(
     || state.voidedAt || !source || invoiceIdentity(source) !== input.identityToken
     || (!dated && !state.issuedOn)
   ) throw safeConflict();
+  await blockOnCustomerVat(client, input.dealId);
   const id = linkKey(input.dealId, 'document', input.sourceId);
   const nextVersion = state.version + 1;
   const now = nowIso();
@@ -553,6 +585,7 @@ export async function issueInvoice(
   if (replay) return replay;
   const state = await getFinanceState(client, input.dealId);
   if (!state || state.version !== input.expectedVersion || state.invoiceRequirement !== 'required' || state.voidedAt) throw safeConflict();
+  await blockOnCustomerVat(client, input.dealId);
   const now = nowIso();
   return executeMutation(client, {
     actorId: input.actorId, operation: 'issue-invoice', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
@@ -1366,12 +1399,12 @@ export async function projectFinance(
       || JSON.stringify(state.paymentLinkIds) !== JSON.stringify(discovered.paymentLinkIds)
       || JSON.stringify(state.recordedPaymentIds || []) !== JSON.stringify(recordedIds)
       || state.invoiceLinkId !== discovered.invoiceLinkId
-    ) continue;
+    ) { console.error('VIESDEBUG state-mismatch', JSON.stringify({ hasState: !!state, sv: state?.version, dv: discovered.version, pl: state?.paymentLinkIds, dpl: discovered.paymentLinkIds, rp: state?.recordedPaymentIds, drp: recordedIds, il: state?.invoiceLinkId, dil: discovered.invoiceLinkId })); continue; }
     const confirmedClaims = await discoverFinanceClaims(client, dealId);
     if (
       !confirmedClaims.complete
       || JSON.stringify(confirmedClaims.keys) !== JSON.stringify(orphanDiscovery.keys)
-    ) continue;
+    ) { console.error('VIESDEBUG claims-mismatch', JSON.stringify({ complete: confirmedClaims.complete, keys: confirmedClaims.keys, okeys: orphanDiscovery.keys })); continue; }
     let coherent = !!booking && !booking.archivedAt && booking.active === true && !['cancelled', 'complete'].includes(String(booking.status));
     const payments: FinancePayment[] = [];
     let invoice: FinanceProjection['invoice'];
@@ -1452,6 +1485,7 @@ export async function projectFinance(
       expectedInvoiceBy: state.expectedInvoiceBy,
       dueOn: state.dueOn, sentOn: state.sentOn, waitingOn: state.waitingOn, deliveredOn: context.deliveredOn,
     }, today);
+    const vat = await evaluateDealVat(client, dealId, { cachedOnly: true });
     return {
       enabled: true, classified: true, dealId, role,
       finance: {
@@ -1474,6 +1508,7 @@ export async function projectFinance(
         ...(state.settlementAdjustment ? { settlementAdjustment: state.settlementAdjustment } : {}),
       },
       invoiceState, paymentState, timingState,
+      ...(vat?.required ? { vat: vatView(vat) } : {}),
       ...(state.amountDue && coherent ? { outstanding: displayMoney(outstandingValue), paid: displayMoney(total), adjusted: displayMoney(settlement.adjusted) } : {}),
       ...(timingState === 'overdue' && state.dueOn ? { daysOverdue: daysBetween(state.dueOn, today) } : {}),
       ...(lastPaymentOn ? { lastPaymentOn } : {}),

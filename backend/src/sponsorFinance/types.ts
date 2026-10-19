@@ -169,6 +169,15 @@ export type FinanceProjection = {
   invoice?: { id: string; label: string; uploadedAt: string };
   payments: FinancePayment[];
   followUp: FollowUp;
+  /** Customer VAT (VIES) state for EU B2B deals; present when the deal is in scope. */
+  vat?: {
+    required: true;
+    vatId?: string;
+    country?: string;
+    check?: { status: string; checkedAt: string; name?: string };
+    blocking?: { reason: string; message: string };
+    warning?: { reason: string; message: string };
+  };
   reconciliationStatus: 'coherent' | 'reconciliation-required';
   paymentLinkCount: number;
   paymentLinkLimit: number;
