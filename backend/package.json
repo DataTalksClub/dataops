@@ -14,6 +14,7 @@
     "test:sponsor-communications-transaction": "bash scripts/test-sponsor-communications-transaction.sh",
     "test:task-card-transaction": "bash scripts/test-task-card-transaction.sh",
     "test:e2e": "DATAOPS_CAPABILITY_COVERAGE=1 npx playwright test",
+    "test:vies:live": "VIES_LIVE_SMOKE=1 node --import tsx --test tests/vies-live-smoke.test.ts",
     "test:frontend-artifact": "make -C .. sam-build && node --test scripts/frontend-artifact.test.mjs",
     "test:e2e:frontend-parity": "node scripts/frontend-parity.mjs",
     "test:integration": "bash scripts/integration-test.sh",
