@@ -375,8 +375,8 @@ describe('contentApi - docs listing content-root contract (offline)', () => {
 describe('docs search ranking, snippets and the per-publication index',()=>{
  let dir:string;
  const files={
-  'content/a/sops/title-match.md':['---','title: Sponsor invoice checklist','summary: Send the sponsor invoice','doc_type: sop','---','','# Steps','','Prepare the sponsor invoice and email it.'].join('\n'),
-  'content/a/reference/body-match.md':['---','title: Alpha reference','summary: Unrelated summary','doc_type: reference','---','','# Notes','','<!-- note -->Some text. Later the [sponsor](https://example.test) pays the invoice in full.'].join('\n'),
+  'content/a/sops/title-match.md':['---','title: Sponsor invoice checklist','summary: Send the sponsor invoice','doc_type: sop','tags: [ops]','---','','# Steps','','Prepare the sponsor invoice and email it.'].join('\n'),
+  'content/a/reference/body-match.md':['---','title: Alpha reference','summary: Unrelated summary','doc_type: reference','tags: [finance]','---','','# Notes','','<!-- note -->Some text. Later the [sponsor](https://example.test) pays the invoice in full.'].join('\n'),
   'content/a/reference/no-match.md':['---','title: Zebra','summary: Nothing relevant','doc_type: reference','---','','Plain body.'].join('\n'),
  };
  beforeEach(()=>{mkdirSync(resolve('../.tmp'),{recursive:true});dir=mkdtempSync(resolve('../.tmp/search-rank-'));});
@@ -394,6 +394,11 @@ describe('docs search ranking, snippets and the per-publication index',()=>{
  it('filters by doc_type inside the index so the limit counts matching documents',async()=>{
   configureDocsRuntime(syntheticKnowledge(files,dir).store);
   const search=await call(ev('GET','/search',{query:{q:'sponsor invoice',doc_type:'reference',limit:'1'}}));
+  assert.deepEqual(search.body.results.map((r:any)=>r.path),['content/a/reference/body-match.md']);
+ });
+ it('retains lower-ranked matches when post-filtering by tag within a small limit',async()=>{
+  configureDocsRuntime(syntheticKnowledge(files,dir).store);
+  const search=await call(ev('GET','/search',{query:{q:'sponsor invoice',tag:'finance',limit:'1'}}));
   assert.deepEqual(search.body.results.map((r:any)=>r.path),['content/a/reference/body-match.md']);
  });
  it('reuses one index across requests for a publication and rebuilds after a new one',async()=>{

@@ -34,7 +34,13 @@ export async function search(rt: DocsRuntime, event: LambdaEvent): Promise<Lambd
 
   if (sourceEnabled(params, 'docs')) {
     await rt.ensureSearch();
-    const matches = rt.index!.search(query, { filter: filters, numResults: limit });
+    const hasPostFilter = Boolean(
+      (params.type || params.result_type || '').trim() ||
+      (params.tag || '').trim() ||
+      (params.system || '').trim(),
+    );
+    const searchLimit = hasPostFilter ? MAX_SEARCH_LIMIT : limit;
+    const matches = rt.index!.search(query, { filter: filters, numResults: searchLimit });
     let docResults = matches.map((match) => formatDocResult(match, query));
     docResults = docResults.filter((result) => resultMatchesFilters(result, params));
     results.push(...docResults);
