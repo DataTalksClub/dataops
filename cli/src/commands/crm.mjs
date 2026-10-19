@@ -39,6 +39,9 @@ Usage
       [--limit N] [--cursor C]
   dataops crm notes list <organization|contact|deal> <id> [--limit N] [--cursor C]
   dataops crm note add <organization|contact|deal> <id> --body TEXT [--source-key KEY]
+  dataops crm note show <organization|contact|deal> <id> <note-id>
+  dataops crm note update <organization|contact|deal> <id> <note-id> --body TEXT [--version N]
+  dataops crm note delete <organization|contact|deal> <id> <note-id>
   dataops crm touch <organization|contact> <id> --channel email|call|meeting|linkedin|other
       [--note TEXT] [--date YYYY-MM-DD]
   dataops crm views list [--entity companies|people|pipeline] [--all]
@@ -49,7 +52,7 @@ Usage
   dataops crm views unarchive <id>
 
 Directories return summaries only (no finance, mail or note bodies per row).
-Notes are append-only and attributed to you; retry safely with --source-key.
+Notes are attributed to you; update/delete notes with version check; retry safely with --source-key.
 Views are personal: builtins are read-only, yours are versioned, archive keeps the record.
 
 Examples
@@ -62,8 +65,9 @@ Examples
 const TARGETS = ["organization", "contact", "deal"];
 
 function targetOf(args, index = 0) {
-  const target = positional(args, index, `dataops crm <activity|notes|note> <${TARGETS.join("|")}> <id>`);
-  if (!TARGETS.includes(target)) throw new UsageError(`Target must be one of: ${TARGETS.join(", ")}.`);
+  const rawTarget = positional(args, index, `dataops crm <activity|notes|note> <${TARGETS.join("|")}> <id>`);
+  const target = rawTarget === "company" ? "organization" : rawTarget === "person" ? "contact" : rawTarget;
+  if (!TARGETS.includes(target)) throw new UsageError(`Target must be one of: ${TARGETS.join(", ")}, company, person (not "${rawTarget}").`);
   return target;
 }
 
@@ -351,6 +355,39 @@ export async function noteAdd(args, io) {
   return result;
 }
 
+export async function noteShow(args, io) {
+  const target = targetOf(args);
+  const id = idOf(args);
+  const noteId = positional(args, 2, "Note id is required.");
+  const result = await apiFor(args).get(`/api/sponsor-crm/notes/${target}/${enc(id)}/${enc(noteId)}`);
+  if (!args.json) {
+    io.print(`Note ${result.id} (${result.authorId || "unknown"}, ${String(result.createdAt || "").slice(0, 10)}):\n${result.body}`);
+  }
+  return result;
+}
+
+export async function noteUpdate(args, io) {
+  const target = targetOf(args);
+  const id = idOf(args);
+  const noteId = positional(args, 2, "Note id is required.");
+  const body = optionalString(args, "body");
+  if (!body) throw new UsageError("--body is required.");
+  const ver = integer(args.version, "version");
+  const payload = { body, ...(ver !== undefined ? { version: ver } : {}) };
+  const result = await apiFor(args).put(`/api/sponsor-crm/notes/${target}/${enc(id)}/${enc(noteId)}`, payload);
+  if (!args.json) io.print(`Updated note ${noteId} on ${target} ${id}.`);
+  return result;
+}
+
+export async function noteDelete(args, io) {
+  const target = targetOf(args);
+  const id = idOf(args);
+  const noteId = positional(args, 2, "Note id is required.");
+  const result = await apiFor(args).delete(`/api/sponsor-crm/notes/${target}/${enc(id)}/${enc(noteId)}`);
+  if (!args.json) io.print(`Deleted note ${noteId} from ${target} ${id}.`);
+  return result;
+}
+
 const TOUCH_CHANNELS = ["email", "call", "meeting", "linkedin", "other"];
 
 export async function touch(args, io) {
@@ -457,7 +494,9 @@ export const commands = {
   archive,
   activity,
   notes: (args, io) => dispatch(args, io, { list: notesList }, "dataops crm notes list <target> <id> [...]"),
-  note: (args, io) => dispatch(args, io, { add: noteAdd }, "dataops crm note add <target> <id> --body TEXT [...]"),
+  note: (args, io) => dispatch(args, io,
+    { add: noteAdd, show: noteShow, update: noteUpdate, edit: noteUpdate, delete: noteDelete, remove: noteDelete },
+    "dataops crm note <add|show|update|delete> <target> <id> [...]"),
   touch,
   touches: touch,
   views: (args, io) => dispatch(args, io,

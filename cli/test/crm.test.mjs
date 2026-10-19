@@ -239,6 +239,60 @@ describe("CLI crm workspace", () => {
     }
   });
 
+  test("note show, update, and delete reach note item endpoints with aliases and versioning", async () => {
+    const io = captureIo();
+    const { calls, restore } = fake({
+      "GET /api/sponsor-crm/notes/organization/o1/n1": {
+        status: 200,
+        body: { id: "n1", targetType: "organization", targetId: "o1", authorId: "u1", body: "Initial note text", createdAt: "2026-10-19T10:00:00Z", version: 1 },
+      },
+      "PUT /api/sponsor-crm/notes/organization/o1/n1": (call) => ({
+        status: 200,
+        body: { id: "n1", targetType: "organization", targetId: "o1", authorId: "u1", body: call.body.body, version: 2, updatedAt: "2026-10-19T11:00:00Z" },
+      }),
+      "DELETE /api/sponsor-crm/notes/organization/o1/n1": {
+        status: 200,
+        body: { id: "n1", deleted: true },
+      },
+      "DELETE /api/sponsor-crm/notes/contact/c1/n2": {
+        status: 200,
+        body: { id: "n2", deleted: true },
+      },
+    });
+    try {
+      // Usage errors
+      assert.equal(await run(["crm", "note", "show"], io), EXIT.usage);
+      assert.equal(await run(["crm", "note", "show", "organization", "o1"], io), EXIT.usage);
+      assert.equal(await run(["crm", "note", "update", "organization", "o1", "n1"], io), EXIT.usage);
+      assert.equal(await run(["crm", "note", "delete", "organization", "o1"], io), EXIT.usage);
+
+      // note show (JSON and human)
+      assert.equal(await run(["crm", "note", "show", "organization", "o1", "n1", "--json"], io), EXIT.ok);
+      assert.equal(calls[0].route, "/api/sponsor-crm/notes/organization/o1/n1");
+      io.out.length = 0;
+      assert.equal(await run(["crm", "note", "show", "company", "o1", "n1"], io), EXIT.ok);
+      assert.ok(io.text().includes("Note n1"));
+      assert.ok(io.text().includes("Initial note text"));
+
+      // note update (JSON, version, and edit alias)
+      assert.equal(await run(["crm", "note", "update", "organization", "o1", "n1", "--body", "Updated text", "--version", "1", "--json"], io), EXIT.ok);
+      assert.deepEqual(calls[2].body, { body: "Updated text", version: 1 });
+      io.out.length = 0;
+      assert.equal(await run(["crm", "note", "edit", "company", "o1", "n1", "--body", "Updated text 2"], io), EXIT.ok);
+      assert.ok(io.text().includes("Updated note n1 on organization o1."));
+
+      // note delete (JSON, remove alias, person alias)
+      assert.equal(await run(["crm", "note", "delete", "organization", "o1", "n1", "--json"], io), EXIT.ok);
+      assert.equal(calls[4].route, "/api/sponsor-crm/notes/organization/o1/n1");
+      io.out.length = 0;
+      assert.equal(await run(["crm", "note", "remove", "person", "c1", "n2"], io), EXIT.ok);
+      assert.equal(calls[5].route, "/api/sponsor-crm/notes/contact/c1/n2");
+      assert.ok(io.text().includes("Deleted note n2 from contact c1."));
+    } finally {
+      restore();
+    }
+  });
+
   test("touch requires valid target, channel and logs outreach with human and json output", async () => {
     const io = captureIo();
     const { calls, restore } = fake({

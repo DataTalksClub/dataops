@@ -4,7 +4,7 @@ import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
 import { listCompanies, listPeople, getCompanySummary, resolveToday } from '../crmWorkspace/directory';
 import { archiveView, unarchiveView, createView, getViewOne, listViews, resolveView, updateView } from '../crmWorkspace/views';
 import { workspaceErrorOf } from '../crmWorkspace/reads';
-import { createNote, listNotes, type NoteTarget } from '../crmWorkspace/notes';
+import { createNote, deleteNote, getNote, listNotes, updateNote, type NoteTarget } from '../crmWorkspace/notes';
 import { readActivity, type ActivityTarget } from '../crmWorkspace/activity';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
@@ -196,6 +196,36 @@ export async function handleCrmWorkspaceRoutes(
       const body = parse(event);
       if (!body) return json(400, { error: 'Invalid JSON' });
       const result = await createNote(client, user, target, targetId, body);
+      return json(result.status, result.body);
+    }
+    return json(405, { error: 'Method not allowed' });
+  }
+
+  const noteItemMatch = path.match(/^\/api\/sponsor-crm\/notes\/(organization|contact|deal)\/([^/]+)\/([^/]+)$/);
+  if (noteItemMatch) {
+    const decodedTarget = pathId(noteItemMatch[2]);
+    if ('error' in decodedTarget) return json(400, { error: decodedTarget.error });
+    const decodedNote = pathId(noteItemMatch[3]);
+    if ('error' in decodedNote) return json(400, { error: decodedNote.error });
+    const target = noteItemMatch[1] as NoteTarget;
+    const targetId = decodedTarget.id;
+    const noteId = decodedNote.id;
+    if (method === 'GET') {
+      const result = await getNote(client, target, targetId, noteId);
+      return json(result.status, result.body);
+    }
+    if (method === 'PUT' || method === 'PATCH') {
+      const user = actor(event) || (await resolveDefaultAssigneeId(client)) || '';
+      if (!user) return json(401, { error: 'Unauthorized' });
+      const body = parse(event);
+      if (!body) return json(400, { error: 'Invalid JSON' });
+      const result = await updateNote(client, user, target, targetId, noteId, body);
+      return json(result.status, result.body);
+    }
+    if (method === 'DELETE') {
+      const user = actor(event) || (await resolveDefaultAssigneeId(client)) || '';
+      if (!user) return json(401, { error: 'Unauthorized' });
+      const result = await deleteNote(client, target, targetId, noteId);
       return json(result.status, result.body);
     }
     return json(405, { error: 'Method not allowed' });

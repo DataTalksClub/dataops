@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { PutCommand, QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DeleteCommand, PutCommand, QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { deterministicCrmId, getCrmRecord } from '../db/sponsorCrm';
 import { TABLE_SPONSOR_CRM } from '../db/tableNames';
 import { collectBoundedPages } from '../db/boundedPagination';
@@ -26,6 +26,7 @@ const publicNote = (note: Record<string, unknown>) => ({
   authorId: note.authorId,
   body: note.body,
   createdAt: note.createdAt,
+  ...(typeof note.updatedAt === 'string' && note.updatedAt ? { updatedAt: note.updatedAt } : {}),
   version: note.version,
 });
 
@@ -195,3 +196,127 @@ export async function listNotes(
     },
   };
 }
+
+async function findNoteItem(
+  client: DynamoDBDocumentClient,
+  target: NoteTarget,
+  id: string,
+  noteId: string,
+): Promise<Record<string, unknown> | null> {
+  const result = await client.send(
+    new QueryCommand({
+      TableName: TABLE_SPONSOR_CRM,
+      KeyConditionExpression: 'PK = :pk',
+      FilterExpression: '#id = :noteId',
+      ExpressionAttributeNames: { '#id': 'id' },
+      ExpressionAttributeValues: {
+        ':pk': notePk(target, id),
+        ':noteId': noteId,
+      },
+    }),
+  );
+  return (result.Items?.[0] as Record<string, unknown>) || null;
+}
+
+export async function getNote(
+  client: DynamoDBDocumentClient,
+  target: NoteTarget,
+  id: string,
+  noteId: string,
+): Promise<{ status: number; body: unknown }> {
+  const record = await getCrmRecord(client, KIND_OF[target], id);
+  if (!record || (target === 'contact' && record.archivedAt)) {
+    return { status: 404, body: { error: 'Not found' } };
+  }
+  let existing: Record<string, unknown> | null;
+  try {
+    existing = await findNoteItem(client, target, id, noteId);
+  } catch (error) {
+    const err = workspaceErrorOf(error, 'notes');
+    return { status: (err as { statusCode?: number }).statusCode || 500, body: { error: err.message } };
+  }
+  if (!existing) return { status: 404, body: { error: 'Note not found' } };
+  return { status: 200, body: publicNote(clean(existing)) };
+}
+
+export async function updateNote(
+  client: DynamoDBDocumentClient,
+  authorId: string,
+  target: NoteTarget,
+  id: string,
+  noteId: string,
+  body: Record<string, unknown>,
+): Promise<{ status: number; body: unknown }> {
+  if (typeof body.body !== 'string' || !body.body.trim() || body.body.length > 2000) {
+    return { status: 400, body: { error: 'body must be 1..2000 characters' } };
+  }
+  const resolved = await resolveTarget(client, target, id);
+  if (!('record' in resolved)) return { status: resolved.status, body: resolved.body };
+  let existing: Record<string, unknown> | null;
+  try {
+    existing = await findNoteItem(client, target, id, noteId);
+  } catch (error) {
+    const err = workspaceErrorOf(error, 'notes');
+    return { status: (err as { statusCode?: number }).statusCode || 500, body: { error: err.message } };
+  }
+  if (!existing) return { status: 404, body: { error: 'Note not found' } };
+  if (body.version !== undefined && body.version !== existing.version) {
+    return { status: 409, body: { error: 'Note was changed; reload and retry' } };
+  }
+  const next = {
+    ...existing,
+    body: body.body,
+    updatedAt: new Date().toISOString(),
+    version: (Number(existing.version) || 1) + 1,
+    editedBy: authorId,
+  };
+  try {
+    await client.send(
+      new PutCommand({
+        TableName: TABLE_SPONSOR_CRM,
+        Item: next,
+        ConditionExpression: '#version = :expected',
+        ExpressionAttributeNames: { '#version': 'version' },
+        ExpressionAttributeValues: { ':expected': existing.version },
+      }),
+    );
+    return { status: 200, body: publicNote(clean(next)) };
+  } catch (error) {
+    if ((error as Error).name === 'ConditionalCheckFailedException') {
+      return { status: 409, body: { error: 'Conflicting update; reload and retry' } };
+    }
+    const err = workspaceErrorOf(error, 'notes');
+    return { status: (err as { statusCode?: number }).statusCode || 500, body: { error: err.message } };
+  }
+}
+
+export async function deleteNote(
+  client: DynamoDBDocumentClient,
+  target: NoteTarget,
+  id: string,
+  noteId: string,
+): Promise<{ status: number; body: unknown }> {
+  const resolved = await resolveTarget(client, target, id);
+  if (!('record' in resolved)) return { status: resolved.status, body: resolved.body };
+  let existing: Record<string, unknown> | null;
+  try {
+    existing = await findNoteItem(client, target, id, noteId);
+  } catch (error) {
+    const err = workspaceErrorOf(error, 'notes');
+    return { status: (err as { statusCode?: number }).statusCode || 500, body: { error: err.message } };
+  }
+  if (!existing) return { status: 404, body: { error: 'Note not found' } };
+  try {
+    await client.send(
+      new DeleteCommand({
+        TableName: TABLE_SPONSOR_CRM,
+        Key: { PK: existing.PK, SK: existing.SK },
+      }),
+    );
+    return { status: 200, body: { ...publicNote(clean(existing)), deleted: true } };
+  } catch (error) {
+    const err = workspaceErrorOf(error, 'notes');
+    return { status: (err as { statusCode?: number }).statusCode || 500, body: { error: err.message } };
+  }
+}
+

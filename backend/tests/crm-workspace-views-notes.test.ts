@@ -315,4 +315,60 @@ describe('crm workspace views and notes', () => {
     await invoke('DELETE', `/api/sponsor-crm/organizations/${org.id}`);
     assert.equal((await invoke('POST', `/api/sponsor-crm/notes/organization/${org.id}`, { body: 'late' }, as(ALICE))).statusCode, 422);
   });
+
+  it('supports get, update, and delete for target notes with version checks', async () => {
+    const suffix = String(seedCount++);
+    const org = await seedOrg(`edit-${suffix}`);
+    const createdRes = await invoke('POST', `/api/sponsor-crm/notes/organization/${org.id}`, { body: 'Initial note text.' }, as(ALICE));
+    assert.equal(createdRes.statusCode, 201);
+    const createdNote = data(createdRes);
+    assert.equal(createdNote.version, 1);
+
+    // Get note by id
+    const gotRes = await invoke('GET', `/api/sponsor-crm/notes/organization/${org.id}/${createdNote.id}`);
+    assert.equal(gotRes.statusCode, 200);
+    assert.equal(data(gotRes).id, createdNote.id);
+    assert.equal(data(gotRes).body, 'Initial note text.');
+    assert.equal(data(gotRes).version, 1);
+
+    // Update note with invalid body
+    assert.equal((await invoke('PUT', `/api/sponsor-crm/notes/organization/${org.id}/${createdNote.id}`, { body: '' }, as(ALICE))).statusCode, 400);
+    assert.equal((await invoke('PUT', `/api/sponsor-crm/notes/organization/${org.id}/${createdNote.id}`, { body: 'x'.repeat(2001) }, as(ALICE))).statusCode, 400);
+
+    // Update note with version conflict
+    assert.equal((await invoke('PUT', `/api/sponsor-crm/notes/organization/${org.id}/${createdNote.id}`, { body: 'New text', version: 99 }, as(ALICE))).statusCode, 409);
+
+    // Update note successfully
+    const updateRes = await invoke('PUT', `/api/sponsor-crm/notes/organization/${org.id}/${createdNote.id}`, { body: 'Updated note text.', version: 1 }, as(BOB));
+    assert.equal(updateRes.statusCode, 200);
+    const updated = data(updateRes);
+    assert.equal(updated.id, createdNote.id);
+    assert.equal(updated.body, 'Updated note text.');
+    assert.equal(updated.version, 2);
+    assert.ok(updated.updatedAt);
+
+    // Verify GET returns updated body and version
+    const reGot = data(await invoke('GET', `/api/sponsor-crm/notes/organization/${org.id}/${createdNote.id}`));
+    assert.equal(reGot.body, 'Updated note text.');
+    assert.equal(reGot.version, 2);
+
+    // Delete note successfully
+    const delRes = await invoke('DELETE', `/api/sponsor-crm/notes/organization/${org.id}/${createdNote.id}`, undefined, as(ALICE));
+    assert.equal(delRes.statusCode, 200);
+    assert.equal(data(delRes).deleted, true);
+    assert.equal(data(delRes).id, createdNote.id);
+
+    // Subsequent GET and DELETE return 404
+    assert.equal((await invoke('GET', `/api/sponsor-crm/notes/organization/${org.id}/${createdNote.id}`)).statusCode, 404);
+    assert.equal((await invoke('DELETE', `/api/sponsor-crm/notes/organization/${org.id}/${createdNote.id}`, undefined, as(ALICE))).statusCode, 404);
+
+    // Notes list is now empty
+    const listRes = data(await invoke('GET', `/api/sponsor-crm/notes/organization/${org.id}`));
+    assert.equal(listRes.total, 0);
+
+    // Nonexistent target returns 404
+    assert.equal((await invoke('GET', `/api/sponsor-crm/notes/organization/does-not-exist/${createdNote.id}`)).statusCode, 404);
+    assert.equal((await invoke('PUT', `/api/sponsor-crm/notes/organization/does-not-exist/${createdNote.id}`, { body: 'text' }, as(ALICE))).statusCode, 404);
+    assert.equal((await invoke('DELETE', `/api/sponsor-crm/notes/organization/does-not-exist/${createdNote.id}`, undefined, as(ALICE))).statusCode, 404);
+  });
 });
