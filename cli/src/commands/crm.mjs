@@ -1,8 +1,8 @@
 import { UsageError } from "../errors.mjs";
-import { enc, integer, optionalString, positional, table, jsonData } from "../format.mjs";
+import { enc, integer, isoDate, optionalString, positional, table, jsonData } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 
-export const summary = "CRM workspace: company/people directories, activity, notes, saved views";
+export const summary = "CRM workspace: company/people directories, activity, notes, touches, saved views";
 
 export const help = `dataops crm - bounded CRM directories, record activity, notes and saved views
 
@@ -39,6 +39,8 @@ Usage
       [--limit N] [--cursor C]
   dataops crm notes list <organization|contact|deal> <id> [--limit N] [--cursor C]
   dataops crm note add <organization|contact|deal> <id> --body TEXT [--source-key KEY]
+  dataops crm touch <organization|contact> <id> --channel email|call|meeting|linkedin|other
+      [--note TEXT] [--date YYYY-MM-DD]
   dataops crm views list [--entity companies|people|pipeline] [--all]
   dataops crm views show <id>               A view with server-resolved filters
   dataops crm views create --data '{...}'
@@ -54,6 +56,7 @@ Examples
   dataops crm companies list --json | jq '.items[] | {displayName, relationship}'
   dataops crm activity contact abc123 --types note,touch,mail
   dataops crm note add organization abc123 --body "Called; send deck next week" --source-key call-2026-10-17
+  dataops crm touch contact abc123 --channel email --note "Sent deck"
 `;
 
 const TARGETS = ["organization", "contact", "deal"];
@@ -348,6 +351,38 @@ export async function noteAdd(args, io) {
   return result;
 }
 
+const TOUCH_CHANNELS = ["email", "call", "meeting", "linkedin", "other"];
+
+export async function touch(args, io) {
+  let rest = args._;
+  if (rest[0] === "add" || rest[0] === "log") rest = rest.slice(1);
+  const usage = "dataops crm touch <organization|contact> <id> --channel email|call|meeting|linkedin|other [--note TEXT] [--date YYYY-MM-DD]";
+  const rawTarget = positional({ ...args, _: rest }, 0, usage);
+  const target = rawTarget === "company" ? "organization" : rawTarget === "person" ? "contact" : rawTarget;
+  if (!["organization", "contact"].includes(target)) {
+    throw new UsageError(`Target must be "organization" or "contact", not "${rawTarget}".`);
+  }
+  const id = positional({ ...args, _: rest }, 1, usage);
+  const channel = optionalString(args, "channel");
+  if (!channel) throw new UsageError("--channel is required (email, call, meeting, linkedin, other).");
+  if (!TOUCH_CHANNELS.includes(channel)) {
+    throw new UsageError(`--channel must be one of: ${TOUCH_CHANNELS.join(", ")}.`);
+  }
+  const note = optionalString(args, "note");
+  const date = isoDate(optionalString(args, "date"), "date");
+  const result = await apiFor(args).post("/api/sponsor-crm/touches", {
+    targetType: target,
+    targetId: id,
+    channel,
+    ...(note !== undefined ? { note } : {}),
+    ...(date !== undefined ? { touchedAt: date } : {}),
+  });
+  if (!args.json) {
+    io.print(`Logged ${channel} touch for ${target} ${id}${date ? ` on ${date}` : ""}.`);
+  }
+  return result;
+}
+
 export async function viewsList(args, io) {
   const query = {};
   const entity = optionalString(args, "entity");
@@ -423,6 +458,8 @@ export const commands = {
   activity,
   notes: (args, io) => dispatch(args, io, { list: notesList }, "dataops crm notes list <target> <id> [...]"),
   note: (args, io) => dispatch(args, io, { add: noteAdd }, "dataops crm note add <target> <id> --body TEXT [...]"),
+  touch,
+  touches: touch,
   views: (args, io) => dispatch(args, io,
     { list: viewsList, show: viewsShow, create: viewsCreate, update: viewsUpdate, archive: viewsArchive, unarchive: viewsUnarchive },
     "dataops crm views <list|show|create|update|archive|unarchive> [...]"),

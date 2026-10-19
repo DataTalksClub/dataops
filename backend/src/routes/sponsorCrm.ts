@@ -332,7 +332,8 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
 
   if (path === '/api/sponsor-crm/touches' && method === 'POST') {
     if (!body) return json(400, { error: 'Invalid JSON' });
-    const targetType = String(body.targetType || body.kind || '');
+    const rawTarget = String(body.targetType || body.kind || '');
+    const targetType = rawTarget === 'company' ? 'organization' : rawTarget === 'person' ? 'contact' : rawTarget;
     const targetId = String(body.targetId || body.id || '');
     const channel = String(body.channel || '');
     if (!['organization', 'contact'].includes(targetType) || !ID.test(targetId)) return json(400, { error: 'targetType must be organization or contact with a record id in targetId' });

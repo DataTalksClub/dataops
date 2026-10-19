@@ -528,4 +528,21 @@ describe('sponsor CRM', () => {
     const unknown = await invoke('POST', '/api/sponsor-crm/messages', { personEmail: 'nobody@unknown.example.invalid', direction: 'inbound', threadId: 'thread-2' });
     assert.equal(unknown.statusCode, 422);
   });
+
+  it('logs touches with target aliases (company, person) and updates outbound stamps', async () => {
+    const org = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Touch Alias Org', sourceKey: 'touch-alias-org' }));
+    const contact = data(await invoke('POST', '/api/sponsor-crm/contacts', { organizationId: org.id, name: 'Touch Alias Person', emails: ['alias@example.invalid'], sourceKey: 'touch-alias-contact' }));
+
+    const resOrg = await invoke('POST', '/api/sponsor-crm/touches', {
+      targetType: 'company', targetId: org.id, channel: 'email', note: 'Outreach via company alias', touchedAt: '2026-10-18T12:00:00Z',
+    });
+    assert.equal(resOrg.statusCode, 201);
+    assert.equal(data(resOrg).organization.lastOutboundAt, '2026-10-18T12:00:00Z');
+
+    const resPerson = await invoke('POST', '/api/sponsor-crm/touches', {
+      targetType: 'person', targetId: contact.id, channel: 'call', note: 'Call via person alias', touchedAt: '2026-10-18T14:00:00Z',
+    });
+    assert.equal(resPerson.statusCode, 201);
+    assert.equal(data(resPerson).contact.lastOutboundAt, '2026-10-18T14:00:00Z');
+  });
 });

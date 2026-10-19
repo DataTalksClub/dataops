@@ -239,6 +239,47 @@ describe("CLI crm workspace", () => {
     }
   });
 
+  test("touch requires valid target, channel and logs outreach with human and json output", async () => {
+    const io = captureIo();
+    const { calls, restore } = fake({
+      "POST /api/sponsor-crm/touches": (call) => ({
+        status: 201,
+        body: { organization: { id: "org1", lastOutboundAt: "2026-10-18" }, messageId: "msg1", ...call.body },
+      }),
+    });
+    try {
+      assert.equal(await run(["crm", "touch"], io), EXIT.usage);
+      assert.equal(await run(["crm", "touch", "deal", "d1", "--channel", "email"], io), EXIT.usage);
+      assert.equal(await run(["crm", "touch", "contact", "c1"], io), EXIT.usage);
+      assert.equal(await run(["crm", "touch", "contact", "c1", "--channel", "invalid"], io), EXIT.usage);
+
+      // contact touch with note, date, json
+      assert.equal(await run(["crm", "touch", "contact", "c1", "--channel", "email", "--note", "Sent deck", "--date", "2026-10-18", "--json"], io), EXIT.ok);
+      assert.equal(calls[0].route, "/api/sponsor-crm/touches");
+      assert.deepEqual(calls[0].body, { targetType: "contact", targetId: "c1", channel: "email", note: "Sent deck", touchedAt: "2026-10-18" });
+
+      // organization touch with human output
+      io.out.length = 0;
+      assert.equal(await run(["crm", "touch", "organization", "org1", "--channel", "call"], io), EXIT.ok);
+      assert.equal(calls[1].body.targetType, "organization");
+      assert.equal(calls[1].body.channel, "call");
+      assert.ok(io.text().includes("Logged call touch for organization org1."));
+
+      // company/person aliases
+      assert.equal(await run(["crm", "touch", "company", "org1", "--channel", "meeting", "--json"], io), EXIT.ok);
+      assert.equal(calls[2].body.targetType, "organization");
+      assert.equal(await run(["crm", "touch", "person", "c1", "--channel", "linkedin", "--json"], io), EXIT.ok);
+      assert.equal(calls[3].body.targetType, "contact");
+
+      // subverb alias (touch add / touch log)
+      assert.equal(await run(["crm", "touch", "add", "contact", "c1", "--channel", "other", "--json"], io), EXIT.ok);
+      assert.equal(calls[4].body.targetType, "contact");
+      assert.equal(calls[4].body.channel, "other");
+    } finally {
+      restore();
+    }
+  });
+
   test("views list/create/update/archive hit the views endpoints", async () => {
     const io = captureIo();
     const { calls, restore } = fake({
