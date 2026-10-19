@@ -64,7 +64,7 @@ function validateList(event: LambdaEvent) {
   if (query.from && !realDate(query.from)) return 'Invalid from date';
   if (query.to && !realDate(query.to)) return 'Invalid to date';
   if (query.from && query.to && query.from > query.to) return 'Invalid date range';
-  if (query.organizationId && !ID.test(query.organizationId)) return 'Invalid organizationId filter';
+  if ((query.organizationId || query.company) && !ID.test(query.organizationId || query.company)) return 'Invalid organizationId filter';
   if (query.dealId && !ID.test(query.dealId)) return 'Invalid dealId filter';
   if (query.active && !['true', 'false'].includes(query.active)) return 'Invalid active filter';
   if (query.status && !DEAL_STATUSES.has(query.status)) return 'Invalid status filter';
@@ -396,7 +396,8 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     if (listError) return json(400, { error: listError });
     let items = await listCrmRecords(client, kind);
     const query = event.queryStringParameters || {};
-    if (query.organizationId) items = items.filter((item) => item.organizationId === query.organizationId);
+    const orgFilter = query.organizationId || query.company;
+    if (orgFilter) items = items.filter((item) => item.organizationId === orgFilter);
     if (query.dealId) items = items.filter((item) => item.dealId === query.dealId);
     if (query.status) items = items.filter((item) => item.status === query.status);
     if (query.active) items = items.filter((item) => String(item.archivedAt ? false : true) === query.active);
@@ -404,7 +405,7 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     if (query.to) items = items.filter((item) => !item.plannedPublicationDate || String(item.plannedPublicationDate) <= query.to!);
     if (query.search) {
       const q = query.search.toLowerCase();
-      items = items.filter((item) => [item.displayName, item.name, item.status, item.domain].some((value) => String(value || '').toLowerCase().includes(q)));
+      items = items.filter((item) => [item.displayName, item.name, item.title, item.status, item.domain].some((value) => String(value || '').toLowerCase().includes(q)));
     }
     if (kind === 'deal') return json(200, page(await decorateDeals(client, items, today), event));
     if (kind === 'organization') {

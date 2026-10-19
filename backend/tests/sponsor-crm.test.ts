@@ -291,6 +291,27 @@ describe('sponsor CRM', () => {
     }
   });
 
+  it('lists deals filtered by company, status, and title search', async () => {
+    const org = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Filter Deal Org', sourceKey: 'filter-deal-org' }));
+    const deal1 = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: org.id, title: 'Summer Sponsorship Deal', status: 'open', sourceKey: 'filter-deal-1' }));
+    const deal2 = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: org.id, title: 'Fall Campaign Package', status: 'agreed', sourceKey: 'filter-deal-2' }));
+
+    // Filter by company/organizationId
+    const byCompany = data(await invoke('GET', `/api/sponsor-crm/deals?company=${org.id}`));
+    assert.ok(byCompany.items.some((d: any) => d.id === deal1.id));
+    assert.ok(byCompany.items.some((d: any) => d.id === deal2.id));
+
+    // Filter by status
+    const byStatus = data(await invoke('GET', `/api/sponsor-crm/deals?company=${org.id}&status=agreed`));
+    assert.equal(byStatus.items.length, 1);
+    assert.equal(byStatus.items[0].id, deal2.id);
+
+    // Search by title
+    const bySearch = data(await invoke('GET', `/api/sponsor-crm/deals?search=summer`));
+    assert.ok(bySearch.items.some((d: any) => d.id === deal1.id));
+    assert.ok(!bySearch.items.some((d: any) => d.id === deal2.id));
+  });
+
   it('provides authenticated safe newsletter lookup, attach and detach', async () => {
     const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Contract Sponsor', notes: 'private org note', sourceKey: 'contract-org' }));
     const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'open', sourceKey: 'contract-deal' }));

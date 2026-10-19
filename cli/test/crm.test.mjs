@@ -138,6 +138,47 @@ describe("CLI crm workspace", () => {
     }
   });
 
+  test("deals list maps flags to deals query and pages", async () => {
+    const io = captureIo();
+    const { calls, restore } = fake({
+      "GET /api/sponsor-crm/deals": (call) => ({
+        status: 200,
+        body: { items: [{ id: "d1", title: "Q4 Sponsorship", organizationId: "org1", status: "agreed", money: "paid" }], nextCursor: "2" },
+      }),
+    });
+    try {
+      const code = await run(["crm", "deals", "list", "--company", "org1", "--status", "agreed", "--search", "sponsorship", "--json"], io);
+      assert.equal(code, EXIT.ok);
+      assert.equal(calls[0].query.organizationId, "org1");
+      assert.equal(calls[0].query.status, "agreed");
+      assert.equal(calls[0].query.search, "sponsorship");
+      const body = io.json();
+      assert.equal(body.items[0].id, "d1");
+      assert.equal(body.items[0].title, "Q4 Sponsorship");
+    } finally {
+      restore();
+    }
+  });
+
+  test("deals list human output formatting", async () => {
+    const io = captureIo();
+    const { restore } = fake({
+      "GET /api/sponsor-crm/deals": {
+        status: 200,
+        body: { items: [{ id: "d1", title: "Q4 Sponsorship", organizationId: "org1", status: "agreed", money: "paid" }], nextCursor: "10" },
+      },
+    });
+    try {
+      assert.equal(await run(["crm", "deals", "list"], io), EXIT.ok);
+      assert.ok(io.text().includes("Q4 Sponsorship"));
+      assert.ok(io.text().includes("agreed"));
+      assert.ok(io.text().includes("paid"));
+      assert.ok(io.text().includes("More: --cursor 10."));
+    } finally {
+      restore();
+    }
+  });
+
   test("activity, notes list and note add map target, types and source key", async () => {
     const io = captureIo();
     const { calls, restore } = fake({

@@ -13,6 +13,8 @@ Usage
   dataops crm people list [--search Q] [--company ID] [--primary true|false]
       [--unlinked true|false] [--active true|false|all] [--sort name|lastTouch]
       [--direction asc|desc] [--saved-view ID] [--limit N] [--cursor C]
+  dataops crm deals list [--search Q] [--company ID] [--status open|agreed|lost]
+      [--active true|false] [--limit N] [--cursor C]
   dataops crm pipeline list [--saved-view ID] [--view actionable|active|unscheduled|closed|all|early|overdue|reply]
       [--stage STAGE] [--owner ID] [--search Q] [--sort next-action|recent] [--limit N] [--cursor C]
       [--next-action-from YYYY-MM-DD] [--next-action-before YYYY-MM-DD]  Inclusive bounds
@@ -66,6 +68,7 @@ function queryArgs(args) {
     ["company", "company"], ["primary", "primary"], ["unlinked", "unlinked"],
     ["sort", "sort"], ["direction", "direction"], ["types", "types"],
     ["view", "view"], ["stage", "stage"], ["owner", "owner"],
+    ["status", "status"],
     ["nextActionFrom", "nextActionFrom"], ["nextActionBefore", "nextActionBefore"],
     ["lastTouchAfter", "lastTouchAfter"], ["lastTouchBefore", "lastTouchBefore"],
   ]) {
@@ -191,6 +194,26 @@ export async function dealUpdate(args, io) {
   const result = await apiFor(args).put(`/api/sponsor-crm/deals/${enc(id)}`, jsonData(args));
   if (!args.json) io.print(`Updated deal ${id}.`);
   return result;
+}
+
+export async function dealsList(args, io) {
+  const api = apiFor(args);
+  const query = queryArgs(args);
+  if (args.company !== undefined) {
+    query.organizationId = args.company;
+    delete query.company;
+  }
+  const result = await api.get("/api/sponsor-crm/deals", { query });
+  if (args.json) return result;
+  table(io, result.items || [], [
+    ["ID", (item) => item.id || ""],
+    ["TITLE", (item) => item.title || "—"],
+    ["COMPANY", (item) => item.organizationId || ""],
+    ["STATUS", (item) => item.status || ""],
+    ["MONEY", (item) => item.money || "none"],
+  ], "No deals.");
+  if (result.nextCursor) io.print(`More: --cursor ${result.nextCursor}.`);
+  return pagedResult(result);
 }
 
 export async function pipelineList(args, io) {
@@ -335,6 +358,7 @@ export const commands = {
   person: (args, io) => dispatch(args, io,
     { show: personShow, create: personCreate, update: personUpdate },
     "dataops crm person <show|create|update> [...]"),
+  deals: (args, io) => dispatch(args, io, { list: dealsList }, "dataops crm deals list [...]"),
   deal: (args, io) => dispatch(args, io,
     { show: dealShow, create: dealCreate, update: dealUpdate },
     "dataops crm deal <show|create|update> [...]"),
