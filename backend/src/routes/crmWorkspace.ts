@@ -2,7 +2,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
 import { listCompanies, listPeople, getCompanySummary, resolveToday } from '../crmWorkspace/directory';
-import { archiveView, createView, getViewOne, listViews, resolveView, updateView } from '../crmWorkspace/views';
+import { archiveView, unarchiveView, createView, getViewOne, listViews, resolveView, updateView } from '../crmWorkspace/views';
 import { workspaceErrorOf } from '../crmWorkspace/reads';
 import { createNote, listNotes, type NoteTarget } from '../crmWorkspace/notes';
 import { readActivity, type ActivityTarget } from '../crmWorkspace/activity';
@@ -127,9 +127,10 @@ export async function handleCrmWorkspaceRoutes(
     return json(result.status, result.body);
   }
 
-  const viewMatch = path.match(/^\/api\/sponsor-crm\/views(?:\/([^/]+))?$/);
+  const viewMatch = path.match(/^\/api\/sponsor-crm\/views(?:\/([^/]+))?(\/unarchive)?$/);
   if (viewMatch) {
     const id = viewMatch[1];
+    const isUnarchive = Boolean(viewMatch[2]);
     const user = actor(event) || (await resolveDefaultAssigneeId(client)) || '';
     if (!user) return json(401, { error: 'Unauthorized' });
     if (!id && method === 'GET') {
@@ -146,6 +147,11 @@ export async function handleCrmWorkspaceRoutes(
       const decoded = pathId(id);
       if ('error' in decoded) return json(400, { error: decoded.error });
       const viewId = decoded.id;
+      if (isUnarchive) {
+        if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+        const result = await unarchiveView(client, user, viewId);
+        return json(result.status, result.body);
+      }
       if (method === 'GET') {
         const result = await getViewOne(client, user, viewId, query);
         return json(result.status, result.body);

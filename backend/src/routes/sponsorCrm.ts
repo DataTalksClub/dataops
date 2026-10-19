@@ -374,6 +374,24 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     catch (error) { if ((error as Error).name.includes('Transaction') || (error as Error).name.includes('Conditional')) return json(409, { error: 'Schedule entry is already linked' }); throw error; }
   }
 
+  const unarchiveMatch = path.match(/^\/api\/sponsor-crm\/(organizations|contacts|deals)\/([^/]+)\/unarchive$/);
+  if (unarchiveMatch) {
+    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+    const plural = unarchiveMatch[1], id = unarchiveMatch[2];
+    const kind = plural === 'contacts' ? 'contact' : plural === 'deals' ? 'deal' : 'organization';
+    if (!ID.test(id)) return json(400, { error: 'Invalid ID' });
+    const existing = await getCrmRecord(client, kind, id);
+    if (!existing) return json(404, { error: 'Not found' });
+    if (!existing.archivedAt) return json(200, kind === 'deal' ? publicDeal(existing) : existing);
+    if (kind === 'contact' || kind === 'deal') {
+      const organization = await getCrmRecord(client, 'organization', String(existing.organizationId));
+      if (!organization || organization.archivedAt) return json(422, { error: 'Cannot unarchive when organization is archived' });
+    }
+    if (kind === 'contact') return json(200, await updateContactAtomic(client, existing, { archivedAt: null, active: true }, user, 'unarchived'));
+    if (kind === 'deal') return json(200, publicDeal(await updateDealAtomic(client, existing, { archivedAt: null, active: true }, user)));
+    return json(200, await updateOrganizationAtomic(client, existing, { archivedAt: null, active: true }, user, 'unarchived'));
+  }
+
   const match = path.match(/^\/api\/sponsor-crm\/(organizations|contacts|deals|deliverables)(?:\/([^/]+))?$/);
   if (!match) return json(404, { error: 'Not found' });
   const plural = match[1], id = match[2];

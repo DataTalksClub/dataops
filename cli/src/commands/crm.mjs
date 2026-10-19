@@ -24,14 +24,17 @@ Usage
   dataops crm company create --data '{...}'      Through the canonical organization record
   dataops crm company update <id> --data '{...}'  Must include the current version
   dataops crm company archive <id>
+  dataops crm company unarchive <id>
   dataops crm person show <id>
   dataops crm person create --data '{...}'      Through the canonical contact record
   dataops crm person update <id> --data '{...}'  Must include the current version
   dataops crm person archive <id>
+  dataops crm person unarchive <id>
   dataops crm deal show <id>
   dataops crm deal create --data '{...}'        Through the canonical deal record
   dataops crm deal update <id> --data '{...}'    Must include the current version
   dataops crm deal archive <id>
+  dataops crm deal unarchive <id>
   dataops crm activity <organization|contact|deal> <id> [--types note,touch,mail,history,deal-history]
       [--limit N] [--cursor C]
   dataops crm notes list <organization|contact|deal> <id> [--limit N] [--cursor C]
@@ -41,6 +44,7 @@ Usage
   dataops crm views create --data '{...}'
   dataops crm views update <id> --data '{...}'  Must include the current version
   dataops crm views archive <id>                Archive affects view metadata only
+  dataops crm views unarchive <id>
 
 Directories return summaries only (no finance, mail or note bodies per row).
 Notes are append-only and attributed to you; retry safely with --source-key.
@@ -151,6 +155,13 @@ export async function companyArchive(args, io) {
   return result;
 }
 
+export async function companyUnarchive(args, io) {
+  const id = positional(args, 0, "dataops crm company unarchive <id>");
+  const result = await apiFor(args).post(`/api/sponsor-crm/organizations/${enc(id)}/unarchive`);
+  if (!args.json) io.print(`Unarchived company ${id}.`);
+  return result;
+}
+
 export async function peopleList(args, io) {
   const api = apiFor(args);
   const result = await api.get("/api/sponsor-crm/directory/people", { query: await directoryQuery(api, args, "people") });
@@ -193,6 +204,13 @@ export async function personArchive(args, io) {
   return result;
 }
 
+export async function personUnarchive(args, io) {
+  const id = positional(args, 0, "dataops crm person unarchive <id>");
+  const result = await apiFor(args).post(`/api/sponsor-crm/contacts/${enc(id)}/unarchive`);
+  if (!args.json) io.print(`Unarchived person ${id}.`);
+  return result;
+}
+
 export async function dealShow(args, io) {
   const id = positional(args, 0, "dataops crm deal show <id>");
   const result = await apiFor(args).get(`/api/sponsor-crm/deals/${enc(id)}`);
@@ -217,6 +235,13 @@ export async function dealArchive(args, io) {
   const id = positional(args, 0, "dataops crm deal archive <id>");
   const result = await apiFor(args).delete(`/api/sponsor-crm/deals/${enc(id)}`);
   if (!args.json) io.print(`Archived deal ${id}.`);
+  return result;
+}
+
+export async function dealUnarchive(args, io) {
+  const id = positional(args, 0, "dataops crm deal unarchive <id>");
+  const result = await apiFor(args).post(`/api/sponsor-crm/deals/${enc(id)}/unarchive`);
+  if (!args.json) io.print(`Unarchived deal ${id}.`);
   return result;
 }
 
@@ -359,6 +384,13 @@ export async function viewsArchive(args, io) {
   return result;
 }
 
+export async function viewsUnarchive(args, io) {
+  const id = positional(args, 0, "dataops crm views unarchive <id>");
+  const result = await apiFor(args).post(`/api/sponsor-crm/views/${enc(id)}/unarchive`);
+  if (!args.json) io.print(`Unarchived view ${id}.`);
+  return result;
+}
+
 export async function viewsShow(args, io) {
   const id = positional(args, 0, "dataops crm views show <id>");
   const result = await apiFor(args).get(`/api/sponsor-crm/views/${enc(id)}`);
@@ -376,22 +408,22 @@ async function dispatch(args, io, verbs, usage) {
 export const commands = {
   companies: (args, io) => dispatch(args, io, { list: companiesList }, "dataops crm companies list [...]"),
   company: (args, io) => dispatch(args, io,
-    { show: companyShow, create: companyCreate, update: companyUpdate, archive: companyArchive },
-    "dataops crm company <show|create|update|archive> [...]"),
+    { show: companyShow, create: companyCreate, update: companyUpdate, archive: companyArchive, unarchive: companyUnarchive },
+    "dataops crm company <show|create|update|archive|unarchive> [...]"),
   people: (args, io) => dispatch(args, io, { list: peopleList }, "dataops crm people list [...]"),
   person: (args, io) => dispatch(args, io,
-    { show: personShow, create: personCreate, update: personUpdate, archive: personArchive },
-    "dataops crm person <show|create|update|archive> [...]"),
+    { show: personShow, create: personCreate, update: personUpdate, archive: personArchive, unarchive: personUnarchive },
+    "dataops crm person <show|create|update|archive|unarchive> [...]"),
   deals: (args, io) => dispatch(args, io, { list: dealsList }, "dataops crm deals list [...]"),
   deal: (args, io) => dispatch(args, io,
-    { show: dealShow, create: dealCreate, update: dealUpdate, archive: dealArchive },
-    "dataops crm deal <show|create|update|archive> [...]"),
+    { show: dealShow, create: dealCreate, update: dealUpdate, archive: dealArchive, unarchive: dealUnarchive },
+    "dataops crm deal <show|create|update|archive|unarchive> [...]"),
   pipeline: (args, io) => dispatch(args, io, { list: pipelineList }, "dataops crm pipeline list [...]"),
   archive,
   activity,
   notes: (args, io) => dispatch(args, io, { list: notesList }, "dataops crm notes list <target> <id> [...]"),
   note: (args, io) => dispatch(args, io, { add: noteAdd }, "dataops crm note add <target> <id> --body TEXT [...]"),
   views: (args, io) => dispatch(args, io,
-    { list: viewsList, show: viewsShow, create: viewsCreate, update: viewsUpdate, archive: viewsArchive },
-    "dataops crm views <list|show|create|update|archive> [...]"),
+    { list: viewsList, show: viewsShow, create: viewsCreate, update: viewsUpdate, archive: viewsArchive, unarchive: viewsUnarchive },
+    "dataops crm views <list|show|create|update|archive|unarchive> [...]"),
 };

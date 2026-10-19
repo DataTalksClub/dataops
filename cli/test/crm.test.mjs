@@ -38,7 +38,7 @@ describe("CLI crm workspace", () => {
     }
   });
 
-  test("people list, person show/create/update/archive reach canonical contact endpoints", async () => {
+  test("people list, person show/create/update/archive/unarchive reach canonical contact endpoints", async () => {
     const io = captureIo();
     const { calls, restore } = fake({
       "GET /api/sponsor-crm/directory/people": { status: 200, body: { items: [], total: 0, nextCursor: null } },
@@ -46,6 +46,7 @@ describe("CLI crm workspace", () => {
       "POST /api/sponsor-crm/contacts": (call) => ({ status: 201, body: { id: "p2", ...call.body } }),
       "PUT /api/sponsor-crm/contacts/p2": (call) => ({ status: 200, body: { id: "p2", ...call.body } }),
       "DELETE /api/sponsor-crm/contacts/p2": { status: 200, body: { id: "p2", archivedAt: "2026-10-19" } },
+      "POST /api/sponsor-crm/contacts/p2/unarchive": { status: 200, body: { id: "p2", active: true } },
     });
     try {
       assert.equal(await run(["crm", "people", "list", "--unlinked", "true", "--json"], io), EXIT.ok);
@@ -60,6 +61,11 @@ describe("CLI crm workspace", () => {
       io.out.length = 0;
       assert.equal(await run(["crm", "person", "archive", "p2"], io), EXIT.ok);
       assert.ok(io.text().includes("Archived person p2."));
+      assert.equal(await run(["crm", "person", "unarchive", "p2", "--json"], io), EXIT.ok);
+      assert.equal(calls[6].route, "/api/sponsor-crm/contacts/p2/unarchive");
+      io.out.length = 0;
+      assert.equal(await run(["crm", "person", "unarchive", "p2"], io), EXIT.ok);
+      assert.ok(io.text().includes("Unarchived person p2."));
     } finally {
       restore();
     }
@@ -72,6 +78,7 @@ describe("CLI crm workspace", () => {
       "POST /api/sponsor-crm/organizations": (call) => ({ status: 201, body: { id: "org2", ...call.body } }),
       "PUT /api/sponsor-crm/organizations/org2": (call) => ({ status: 200, body: { id: "org2", ...call.body } }),
       "DELETE /api/sponsor-crm/organizations/org2": { status: 200, body: { id: "org2", archivedAt: "2026-10-19" } },
+      "POST /api/sponsor-crm/organizations/org2/unarchive": { status: 200, body: { id: "org2", active: true } },
     });
     try {
       assert.equal(await run(["crm", "company", "show", "org1", "--json"], io), EXIT.ok);
@@ -82,6 +89,8 @@ describe("CLI crm workspace", () => {
       assert.equal(calls[2].body.displayName, "Beta 2");
       assert.equal(await run(["crm", "company", "archive", "org2", "--json"], io), EXIT.ok);
       assert.equal(calls[3].route, "/api/sponsor-crm/organizations/org2");
+      assert.equal(await run(["crm", "company", "unarchive", "org2", "--json"], io), EXIT.ok);
+      assert.equal(calls[4].route, "/api/sponsor-crm/organizations/org2/unarchive");
     } finally {
       restore();
     }
@@ -94,6 +103,7 @@ describe("CLI crm workspace", () => {
       "POST /api/sponsor-crm/organizations": { status: 201, body: { id: "org2", displayName: "Beta" } },
       "PUT /api/sponsor-crm/organizations/org2": { status: 200, body: { id: "org2", displayName: "Beta 2" } },
       "DELETE /api/sponsor-crm/organizations/org2": { status: 200, body: { id: "org2", archivedAt: "2026-10-19" } },
+      "POST /api/sponsor-crm/organizations/org2/unarchive": { status: 200, body: { id: "org2", active: true } },
     });
     try {
       assert.equal(await run(["crm", "company", "show", "org1"], io), EXIT.ok);
@@ -107,6 +117,9 @@ describe("CLI crm workspace", () => {
       io.out.length = 0;
       assert.equal(await run(["crm", "company", "archive", "org2"], io), EXIT.ok);
       assert.ok(io.text().includes("Archived company org2."));
+      io.out.length = 0;
+      assert.equal(await run(["crm", "company", "unarchive", "org2"], io), EXIT.ok);
+      assert.ok(io.text().includes("Unarchived company org2."));
     } finally {
       restore();
     }
@@ -119,6 +132,7 @@ describe("CLI crm workspace", () => {
       "POST /api/sponsor-crm/deals": (call) => ({ status: 201, body: { id: "deal2", ...call.body } }),
       "PUT /api/sponsor-crm/deals/deal2": (call) => ({ status: 200, body: { id: "deal2", ...call.body } }),
       "DELETE /api/sponsor-crm/deals/deal2": { status: 200, body: { id: "deal2", archivedAt: "2026-10-19" } },
+      "POST /api/sponsor-crm/deals/deal2/unarchive": { status: 200, body: { id: "deal2", active: true } },
     });
     try {
       assert.equal(await run(["crm", "deal", "show", "deal1", "--json"], io), EXIT.ok);
@@ -129,6 +143,8 @@ describe("CLI crm workspace", () => {
       assert.equal(calls[2].body.title, "Updated Deal");
       assert.equal(await run(["crm", "deal", "archive", "deal2", "--json"], io), EXIT.ok);
       assert.equal(calls[3].route, "/api/sponsor-crm/deals/deal2");
+      assert.equal(await run(["crm", "deal", "unarchive", "deal2", "--json"], io), EXIT.ok);
+      assert.equal(calls[4].route, "/api/sponsor-crm/deals/deal2/unarchive");
     } finally {
       restore();
     }
@@ -141,6 +157,7 @@ describe("CLI crm workspace", () => {
       "POST /api/sponsor-crm/deals": { status: 201, body: { id: "deal2", title: "New Deal" } },
       "PUT /api/sponsor-crm/deals/deal2": { status: 200, body: { id: "deal2", title: "Updated Deal" } },
       "DELETE /api/sponsor-crm/deals/deal2": { status: 200, body: { id: "deal2", archivedAt: "2026-10-19" } },
+      "POST /api/sponsor-crm/deals/deal2/unarchive": { status: 200, body: { id: "deal2", active: true } },
     });
     try {
       assert.equal(await run(["crm", "deal", "show", "deal1"], io), EXIT.ok);
@@ -154,6 +171,9 @@ describe("CLI crm workspace", () => {
       io.out.length = 0;
       assert.equal(await run(["crm", "deal", "archive", "deal2"], io), EXIT.ok);
       assert.ok(io.text().includes("Archived deal deal2."));
+      io.out.length = 0;
+      assert.equal(await run(["crm", "deal", "unarchive", "deal2"], io), EXIT.ok);
+      assert.ok(io.text().includes("Unarchived deal deal2."));
     } finally {
       restore();
     }
@@ -226,6 +246,7 @@ describe("CLI crm workspace", () => {
       "POST /api/sponsor-crm/views": (call) => ({ status: 201, body: { id: "v1", ...call.body } }),
       "PUT /api/sponsor-crm/views/v1": (call) => ({ status: 200, body: { id: "v1", ...call.body } }),
       "DELETE /api/sponsor-crm/views/v1": { status: 200, body: { id: "v1", archivedAt: "2026-10-17" } },
+      "POST /api/sponsor-crm/views/v1/unarchive": { status: 200, body: { id: "v1" } },
     });
     try {
       assert.equal(await run(["crm", "views", "list", "--entity", "companies", "--json"], io), EXIT.ok);
@@ -233,6 +254,10 @@ describe("CLI crm workspace", () => {
       assert.equal(await run(["crm", "views", "create", "--data", '{"entity":"companies","name":"Mine","filters":{}}', "--json"], io), EXIT.ok);
       assert.equal(await run(["crm", "views", "update", "v1", "--data", '{"name":"Mine2","filters":{},"version":1}', "--json"], io), EXIT.ok);
       assert.equal(await run(["crm", "views", "archive", "v1", "--json"], io), EXIT.ok);
+      assert.equal(await run(["crm", "views", "unarchive", "v1", "--json"], io), EXIT.ok);
+      io.out.length = 0;
+      assert.equal(await run(["crm", "views", "unarchive", "v1"], io), EXIT.ok);
+      assert.ok(io.text().includes("Unarchived view v1."));
     } finally {
       restore();
     }

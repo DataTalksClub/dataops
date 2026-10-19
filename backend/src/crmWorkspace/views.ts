@@ -457,3 +457,37 @@ export async function archiveView(
     return { status: 500, body: { error: (error as Error).message } };
   }
 }
+
+export async function unarchiveView(
+  client: DynamoDBDocumentClient,
+  ownerId: string,
+  id: string,
+): Promise<{ status: number; body: unknown }> {
+  const existing = await getView(client, ownerId, id);
+  if (!existing) return { status: 404, body: { error: 'Not found' } };
+  if (!existing.archivedAt) return { status: 200, body: publicView(existing) };
+  const next: Record<string, unknown> = {
+    ...existing,
+    PK: viewPk(ownerId),
+    SK: id,
+    updatedAt: new Date().toISOString(),
+    version: existing.version + 1,
+  };
+  delete next.archivedAt;
+  try {
+    await client.send(
+      new PutCommand({
+        TableName: TABLE_SPONSOR_CRM,
+        Item: next,
+        ConditionExpression: '#version = :expected',
+        ExpressionAttributeNames: { '#version': 'version' },
+        ExpressionAttributeValues: { ':expected': existing.version },
+      }),
+    );
+    return { status: 200, body: publicView(next as StoredView) };
+  } catch (error) {
+    // 409 only for a lost version race; outages and storage failures are 5xx.
+    if (isConditionalConflict(error)) return { status: 409, body: { error: 'Conflicting update; reload and retry' } };
+    return { status: 500, body: { error: (error as Error).message } };
+  }
+}

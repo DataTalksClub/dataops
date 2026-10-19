@@ -187,24 +187,29 @@ describe('crm workspace views and notes', () => {
   });
 
   it('maps view write failures by cause: conflict 409, outage 500', async () => {
-    const { updateView, archiveView } = await import('../src/crmWorkspace/views.js');
+    const { updateView, archiveView, unarchiveView } = await import('../src/crmWorkspace/views.js');
     const { GetCommand } = await import('@aws-sdk/lib-dynamodb');
     const stored = {
       PK: 'SAVEDVIEW#alice', SK: 'v1', id: 'v1', ownerId: 'alice', entity: 'companies',
       name: 'V', filters: {}, version: 1, createdAt: '2026-10-17T00:00:00Z', updatedAt: '2026-10-17T00:00:00Z',
     };
-    const fakeWith = (putError: unknown) => ({
+    const storedArchived = { ...stored, archivedAt: '2026-10-17T01:00:00Z' };
+    const fakeWith = (putError: unknown, item: any = stored) => ({
       send: async (command: any) => {
-        if (command instanceof GetCommand) return { Item: { ...stored } };
+        if (command instanceof GetCommand) return { Item: { ...item } };
         throw putError;
       },
     }) as any;
     const outage = fakeWith(new Error('storage down'));
+    const outageArchived = fakeWith(new Error('storage down'), storedArchived);
     assert.equal((await updateView(outage, 'alice', 'v1', { name: 'V2', filters: {}, version: 1 })).status, 500);
     assert.equal((await archiveView(outage, 'alice', 'v1')).status, 500);
+    assert.equal((await unarchiveView(outageArchived, 'alice', 'v1')).status, 500);
     const conflict = fakeWith(Object.assign(new Error('condition'), { name: 'ConditionalCheckFailedException' }));
+    const conflictArchived = fakeWith(Object.assign(new Error('condition'), { name: 'ConditionalCheckFailedException' }), storedArchived);
     assert.equal((await updateView(conflict, 'alice', 'v1', { name: 'V2', filters: {}, version: 1 })).status, 409);
     assert.equal((await archiveView(conflict, 'alice', 'v1')).status, 409);
+    assert.equal((await unarchiveView(conflictArchived, 'alice', 'v1')).status, 409);
   });
 
   it('isolates views per owner and versions concurrent updates', async () => {
@@ -233,6 +238,17 @@ describe('crm workspace views and notes', () => {
     const shown = data(await invoke('GET', '/api/sponsor-crm/views?entity=companies&includeArchived=true', undefined, as(ALICE)));
     assert.ok(shown.items.some((item: any) => item.id === created.id && item.archivedAt));
     assert.equal((await invoke('PUT', `/api/sponsor-crm/views/${created.id}`, { name: 'Edit archived', filters: {}, version: 3 }, as(ALICE))).statusCode, 422);
+
+    // Unarchive restores the view: visible again in default list
+    const unarchived = data(await invoke('POST', `/api/sponsor-crm/views/${created.id}/unarchive`, undefined, as(ALICE)));
+    assert.equal(unarchived.archivedAt, undefined);
+    assert.equal(unarchived.version, 4);
+    const restoredList = data(await invoke('GET', '/api/sponsor-crm/views?entity=companies', undefined, as(ALICE)));
+    assert.ok(restoredList.items.some((item: any) => item.id === created.id));
+
+    // Idempotent unarchive of active view
+    const idempotentView = data(await invoke('POST', `/api/sponsor-crm/views/${created.id}/unarchive`, undefined, as(ALICE)));
+    assert.equal(idempotentView.id, created.id);
   });
 
   it('scopes note idempotency keys by author and target', async () => {

@@ -146,6 +146,7 @@ export async function createOrganizationAtomic(client:DynamoDBDocumentClient,val
 
 export async function updateOrganizationAtomic(client:DynamoDBDocumentClient,existing:CrmRecord,value:Record<string,unknown>,actorId:string,action='updated'){
   const next={...existing,...value,id:existing.id,createdAt:existing.createdAt,updatedAt:new Date().toISOString(),version:existing.version+1} as CrmRecord;
+  if(value.archivedAt === null || (value.archivedAt === undefined && 'archivedAt' in value)) delete next.archivedAt;
   const items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('organization',next),ConditionExpression:'#version=:version',ExpressionAttributeNames:{'#version':'version'},ExpressionAttributeValues:{':version':existing.version}}},historyPut(`organization:${existing.id}`,{actorId,entityKind:'organization',entityId:existing.id,action})];
   const previous=String(existing.domain||''),target=String(next.domain||'');
   if(target&&target!==previous)items.push(domainLock(target, existing.id));
@@ -162,9 +163,11 @@ export async function createDealAtomic(client:DynamoDBDocumentClient,value:Recor
 
 export async function updateDealAtomic(client:DynamoDBDocumentClient,existing:CrmRecord,value:Record<string,unknown>,actorId:string){
   const {historyNote,...changes}=value,now=new Date().toISOString(),next={...existing,...changes,id:existing.id,createdAt:existing.createdAt,updatedAt:now,version:existing.version+1} as CrmRecord;
+  if(changes.archivedAt === null || (changes.archivedAt === undefined && 'archivedAt' in changes)) delete next.archivedAt;
   const items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('deal',next),ConditionExpression:'#version = :version',ExpressionAttributeNames:{'#version':'version'},ExpressionAttributeValues:{':version':existing.version}}}];
   if(next.status!==existing.status)items.push(historyPut(existing.id,{actorId,oldStatus:existing.status,newStatus:next.status,note:typeof historyNote==='string'?String(historyNote).slice(0,500):undefined}));
   else if(next.archivedAt&&!existing.archivedAt)items.push(historyPut(existing.id,{actorId,entityKind:'deal',entityId:existing.id,action:'archived'}));
+  else if(!next.archivedAt&&existing.archivedAt)items.push(historyPut(existing.id,{actorId,entityKind:'deal',entityId:existing.id,action:'unarchived'}));
   await transact(client,items);return next;
 }
 
@@ -194,8 +197,10 @@ export async function createContactAtomic(client:DynamoDBDocumentClient,value:Re
   try{await transact(client,items);return{item,duplicate:false};}catch(error){if(sourceKey){const existing=await getCrmRecord(client,'contact',id);if(existing){if(sameStored(existing,value))return{item:existing,duplicate:true};throw replayConflict();}}throw error;}
 }
 
-export async function updateContactAtomic(client:DynamoDBDocumentClient,existing:CrmRecord,value:Record<string,unknown>,actorId:string){
-  const next={...existing,...value,id:existing.id,createdAt:existing.createdAt,updatedAt:new Date().toISOString(),version:existing.version+1} as CrmRecord,oldPrimary=!!existing.primary,newPrimary=!!next.primary,oldOrg=String(existing.organizationId),newOrg=String(next.organizationId),items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('contact',next),ConditionExpression:'#version=:version',ExpressionAttributeNames:{'#version':'version'},ExpressionAttributeValues:{':version':existing.version}}},historyPut(`contact:${existing.id}`,{actorId,entityKind:'contact',entityId:existing.id,action:'updated'})];
+export async function updateContactAtomic(client:DynamoDBDocumentClient,existing:CrmRecord,value:Record<string,unknown>,actorId:string,action='updated'){
+  const next={...existing,...value,id:existing.id,createdAt:existing.createdAt,updatedAt:new Date().toISOString(),version:existing.version+1} as CrmRecord,oldPrimary=!!existing.primary,newPrimary=!!next.primary,oldOrg=String(existing.organizationId),newOrg=String(next.organizationId);
+  if(value.archivedAt === null || (value.archivedAt === undefined && 'archivedAt' in value)) delete next.archivedAt;
+  const items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('contact',next),ConditionExpression:'#version=:version',ExpressionAttributeNames:{'#version':'version'},ExpressionAttributeValues:{':version':existing.version}}},historyPut(`contact:${existing.id}`,{actorId,entityKind:'contact',entityId:existing.id,action})];
   if(newPrimary&&(!oldPrimary||oldOrg!==newOrg))items.push({Put:{TableName:TABLE_SPONSOR_CRM,Item:{PK:key('primary',newOrg),SK:key('primary',newOrg),contactId:existing.id},ConditionExpression:'attribute_not_exists(PK)'}});
   if(oldPrimary&&(!newPrimary||oldOrg!==newOrg))items.push({Delete:{TableName:TABLE_SPONSOR_CRM,Key:{PK:key('primary',oldOrg),SK:key('primary',oldOrg)},ConditionExpression:'contactId=:contactId',ExpressionAttributeValues:{':contactId':existing.id}}});
   await transact(client,items);return next;

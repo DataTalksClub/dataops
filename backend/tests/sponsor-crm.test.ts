@@ -336,6 +336,52 @@ describe('sponsor CRM', () => {
     assert.ok(inactiveList.items.some((d: any) => d.id === deal.id));
   });
 
+  it('unarchives organization, contact, and deal via POST unarchive and PUT archivedAt:null', async () => {
+    const org = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Unarchive Org', sourceKey: 'unarchive-org' }));
+    const contact = data(await invoke('POST', '/api/sponsor-crm/contacts', { organizationId: org.id, name: 'Unarchive Contact', sourceKey: 'unarchive-contact' }));
+    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: org.id, title: 'Unarchive Deal', status: 'open', sourceKey: 'unarchive-deal' }));
+
+    // Archive all three
+    await invoke('DELETE', `/api/sponsor-crm/contacts/${contact.id}`);
+    await invoke('DELETE', `/api/sponsor-crm/deals/${deal.id}`);
+    await invoke('DELETE', `/api/sponsor-crm/organizations/${org.id}`);
+
+    // Cannot unarchive contact or deal when organization is archived
+    const contactFail = await invoke('POST', `/api/sponsor-crm/contacts/${contact.id}/unarchive`);
+    assert.equal(contactFail.statusCode, 422);
+    const dealFail = await invoke('POST', `/api/sponsor-crm/deals/${deal.id}/unarchive`);
+    assert.equal(dealFail.statusCode, 422);
+
+    // Unarchive organization
+    const unarchivedOrg = data(await invoke('POST', `/api/sponsor-crm/organizations/${org.id}/unarchive`));
+    assert.equal(unarchivedOrg.id, org.id);
+    assert.equal(unarchivedOrg.active, true);
+    assert.equal(unarchivedOrg.archivedAt, undefined);
+
+    // Idempotent unarchive of active org
+    const idempotentOrg = data(await invoke('POST', `/api/sponsor-crm/organizations/${org.id}/unarchive`));
+    assert.equal(idempotentOrg.id, org.id);
+
+    // Unarchive contact and deal
+    const unarchivedContact = data(await invoke('POST', `/api/sponsor-crm/contacts/${contact.id}/unarchive`));
+    assert.equal(unarchivedContact.id, contact.id);
+    assert.equal(unarchivedContact.active, true);
+    assert.equal(unarchivedContact.archivedAt, undefined);
+
+    const unarchivedDeal = data(await invoke('POST', `/api/sponsor-crm/deals/${deal.id}/unarchive`));
+    assert.equal(unarchivedDeal.id, deal.id);
+    assert.equal(unarchivedDeal.active, true);
+    assert.equal(unarchivedDeal.archivedAt, undefined);
+
+    // Re-archive deal and unarchive via PUT with archivedAt: null (frontend pattern)
+    await invoke('DELETE', `/api/sponsor-crm/deals/${deal.id}`);
+    const fetchedDeal = data(await invoke('GET', `/api/sponsor-crm/deals/${deal.id}`));
+    assert.ok(fetchedDeal.archivedAt);
+    const restoredDeal = data(await invoke('PUT', `/api/sponsor-crm/deals/${deal.id}`, { archivedAt: null, active: true, version: fetchedDeal.version }));
+    assert.equal(restoredDeal.active, true);
+    assert.equal(restoredDeal.archivedAt, undefined);
+  });
+
   it('provides authenticated safe newsletter lookup, attach and detach', async () => {
     const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Contract Sponsor', notes: 'private org note', sourceKey: 'contract-org' }));
     const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'open', sourceKey: 'contract-deal' }));
