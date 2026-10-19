@@ -18,6 +18,9 @@ Usage
       [--next-action-from YYYY-MM-DD] [--next-action-before YYYY-MM-DD]  Inclusive bounds
       Read-only pipeline rows through the canonical pipeline endpoint
   dataops crm archive <deal-id>             Read-only post-send archive for a deal (drafts/attempts)
+  dataops crm company show <id>
+  dataops crm company create --data '{...}'      Through the canonical organization record
+  dataops crm company update <id> --data '{...}'  Must include the current version
   dataops crm person show <id>
   dataops crm person create --data '{...}'      Through the canonical contact record
   dataops crm person update <id> --data '{...}'  Must include the current version
@@ -110,6 +113,26 @@ export async function companiesList(args, io) {
   ], "No companies.");
   if (result.nextCursor) io.print(`More: --cursor ${result.nextCursor} (total ${result.total}).`);
   return pagedResult(result);
+}
+
+export async function companyShow(args, io) {
+  const id = positional(args, 0, "dataops crm company show <id>");
+  const result = await apiFor(args).get(`/api/sponsor-crm/directory/companies/${enc(id)}`);
+  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  return result;
+}
+
+export async function companyCreate(args, io) {
+  const result = await apiFor(args).post("/api/sponsor-crm/organizations", jsonData(args));
+  if (!args.json) io.print(`Created company ${result?.id || ""}.`.replace(" .", "."));
+  return result;
+}
+
+export async function companyUpdate(args, io) {
+  const id = positional(args, 0, "dataops crm company update <id> --data '{...}'");
+  const result = await apiFor(args).put(`/api/sponsor-crm/organizations/${enc(id)}`, jsonData(args));
+  if (!args.json) io.print(`Updated company ${id}.`);
+  return result;
 }
 
 export async function peopleList(args, io) {
@@ -282,6 +305,9 @@ async function dispatch(args, io, verbs, usage) {
 
 export const commands = {
   companies: (args, io) => dispatch(args, io, { list: companiesList }, "dataops crm companies list [...]"),
+  company: (args, io) => dispatch(args, io,
+    { show: companyShow, create: companyCreate, update: companyUpdate },
+    "dataops crm company <show|create|update> [...]"),
   people: (args, io) => dispatch(args, io, { list: peopleList }, "dataops crm people list [...]"),
   person: (args, io) => dispatch(args, io,
     { show: personShow, create: personCreate, update: personUpdate },
