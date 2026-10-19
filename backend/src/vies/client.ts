@@ -40,7 +40,7 @@ const SERVICE_TROUBLE = new Set([
 
 export async function lookupVies(country: string, number: string, options: ViesLookupOptions = {}): Promise<ViesAnswer> {
   const fetchImpl = options.fetchImpl || (globalThis.fetch as unknown as ViesFetch);
-  const url = `${options.baseUrl || VIES_REST_BASE}/ms/${viesMemberState(country)}/vat/${encodeURIComponent(number)}`;
+  const url = `${options.baseUrl || process.env.VIES_BASE_URL || VIES_REST_BASE}/ms/${viesMemberState(country)}/vat/${encodeURIComponent(number)}`;
   let response: { ok: boolean; status: number; json: () => Promise<unknown> };
   try {
     response = await fetchImpl(url, { signal: AbortSignal.timeout(options.timeoutMs || 10_000) });

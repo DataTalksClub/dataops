@@ -19,6 +19,7 @@ import { handleNotificationRoutes } from './routes/notifications';
 import { handleCronRoutes } from './routes/cron';
 import { handleBookkeepingRoutes } from './routes/bookkeeping';
 import { handleReconcileRoutes } from './routes/reconcile';
+import { handleViesRoutes } from './routes/vies';
 import { handleSponsorCrmRoutes } from './routes/sponsorCrm';
 import { handleCrmWorkspaceRoutes } from './routes/crmWorkspace';
 import { handleSponsorLeadIntake, handleSponsorLeadRoutes } from './routes/sponsorLeads';
@@ -314,6 +315,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       return await handleBookkeepingRoutes(reqPath, method, event, client, skipAuth || !!portalUserId || portalAuthorized || !!headerValue(event.headers, 'x-user-id'));
     }
 
+    if (reqPath === '/api/vies/check' || reqPath === '/api/vies/preflight') {
+      const vies = await handleViesRoutes(reqPath, method, event, client);
+      if (vies) return vies;
+    }
     if (reqPath.startsWith('/api/reconcile')) {
       return await handleReconcileRoutes(reqPath, method, event, client);
     }

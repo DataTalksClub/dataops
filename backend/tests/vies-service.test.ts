@@ -95,7 +95,7 @@ describe('VAT validation service', () => {
     assert.equal(await listViesChecks(client).then((items) => items.length), 1);
   });
   it('records not-found and invalid outcomes and re-checks unavailable ones', async () => {
-    const notFound = await checkVatId(client, 'DK87654321', { lookup: async () => ({ kind: 'not-found', error: 'INVALID_NUMBER' }) });
+    const notFound = await checkVatId(client, 'DK87654321', { lookup: async () => ({ kind: 'not-found', error: 'INVALID' }) });
     assert.equal(notFound.status, 'not-found');
     let calls = 0;
     const unavailable = await checkVatId(client, 'DK11223344', { lookup: async () => { calls += 1; return { kind: 'unavailable', error: 'vies-http-503' }; } });

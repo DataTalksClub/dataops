@@ -25,6 +25,7 @@ import * as secrets from "./commands/secrets.mjs";
 import * as sponsors from "./commands/sponsors.mjs";
 import * as sponsorDocs from "./commands/sponsorDocs.mjs";
 import * as crm from "./commands/crm.mjs";
+import * as vies from "./commands/vies.mjs";
 import * as tasks from "./commands/tasks.mjs";
 import * as templates from "./commands/templates.mjs";
 import { EXIT, UsageError, errorPayload, exitCodeFor, hintFor } from "./errors.mjs";
@@ -105,6 +106,7 @@ export const FAMILIES = {
   tuition: { group: "Finance", summary: tuition.summary, help: tuition.help, commands: tuition.commands },
   sponsors: { group: "Finance", summary: sponsors.summary, help: sponsors.help, commands: sponsors.commands },
   crm: { group: "Finance", summary: crm.summary, help: crm.help, commands: crm.commands },
+  vies: { group: "Finance", summary: vies.summary, help: vies.help, commands: { check: vies.check, preflight: vies.preflight } },
   invoices: {
     group: "Finance",
     summary: invoices.summary,

@@ -43,6 +43,8 @@ import {
   registrableDomain,
   relationshipTag,
 } from '../sponsorCrm/model';
+import { splitVatId } from '../vies/format';
+import { lastViesCheck } from '../vies/service';
 import { recordRequestError } from '../requestErrorLog';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -80,6 +82,11 @@ function validateOrganization(body: Record<string, unknown>, partial = false) {
   if ((!partial && !text(body.displayName, 200)) || (body.displayName !== undefined && !text(body.displayName, 200))) return 'Invalid organization fields';
   if (body.notes !== undefined && typeof body.notes !== 'string') return 'Invalid organization fields';
   if (body.domain !== undefined && body.domain !== '' && !registrableDomain(String(body.domain))) return 'Invalid domain';
+  if (body.country !== undefined && body.country !== null && body.country !== '' && !/^[A-Za-z]{2}$/.test(String(body.country))) return 'Invalid country';
+  if (body.vatId !== undefined && body.vatId !== null && body.vatId !== '') {
+    const split = splitVatId(String(body.vatId));
+    if ('error' in split) return split.error === 'missing-country-prefix' ? 'Invalid vatId: missing EU member-state prefix (a register number like a bare CVR is not a VAT ID)' : 'Invalid vatId format';
+  }
   if (!validStamp(body.lastOutboundAt)) return 'Invalid lastOutboundAt';
   if (!validStamp(body.lastInboundAt)) return 'Invalid lastInboundAt';
   return '';
@@ -430,7 +437,11 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     if (kind === 'deal') return json(200, (await decorateDeals(client, [record], today))[0]);
     if (kind === 'organization') {
       const moneyDeals = (await organizationMoney(client, today)).filter((item) => item.organizationId === record.id);
-      return json(200, { ...record, relationship: relationshipTag(record, moneyDeals, today), deals: moneyDeals });
+      const viesCheck = await lastViesCheck(client, record);
+      return json(200, {
+        ...record, relationship: relationshipTag(record, moneyDeals, today), deals: moneyDeals,
+        ...(viesCheck ? { viesCheck } : {}),
+      });
     }
     return json(200, record);
   }
