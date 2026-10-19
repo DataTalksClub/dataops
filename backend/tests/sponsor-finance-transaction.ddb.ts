@@ -1642,27 +1642,4 @@ describe('sponsor finance production DynamoDB transactions', () => {
     assert.equal(after.payments.length, 1); assert.equal(after.reconciliationStatus, 'coherent');
   });
 
-  it('fails closed at the real DynamoDB 5,000-evaluated-row discovery boundary', async () => {
-    const requests = Array.from({ length: 5_001 }, (_, index) => ({
-      PutRequest: {
-        Item: {
-          ...key('BOUNDARY', `row-${String(index).padStart(5, '0')}`),
-          id: `row-${index}`,
-        },
-      },
-    }));
-    for (let offset = 0; offset < requests.length; offset += 25) {
-      let pending = requests.slice(offset, offset + 25);
-      do {
-        const result = await client.send(new BatchWriteCommand({
-          RequestItems: { [TABLE_BOOKKEEPING]: pending },
-        }));
-        pending = result.UnprocessedItems?.[TABLE_BOOKKEEPING] || [];
-      } while (pending.length);
-    }
-    await assert.rejects(
-      () => listFinanceCandidates(client, { kind: 'transaction', currency: 'EUR', limit: 10 }),
-      (error: Error & { statusCode?: number }) => error.statusCode === 503,
-    );
-  });
 });

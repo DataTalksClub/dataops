@@ -1399,12 +1399,12 @@ export async function projectFinance(
       || JSON.stringify(state.paymentLinkIds) !== JSON.stringify(discovered.paymentLinkIds)
       || JSON.stringify(state.recordedPaymentIds || []) !== JSON.stringify(recordedIds)
       || state.invoiceLinkId !== discovered.invoiceLinkId
-    ) { console.error('VIESDEBUG state-mismatch', JSON.stringify({ hasState: !!state, sv: state?.version, dv: discovered.version, pl: state?.paymentLinkIds, dpl: discovered.paymentLinkIds, rp: state?.recordedPaymentIds, drp: recordedIds, il: state?.invoiceLinkId, dil: discovered.invoiceLinkId })); continue; }
+    ) continue;
     const confirmedClaims = await discoverFinanceClaims(client, dealId);
     if (
       !confirmedClaims.complete
       || JSON.stringify(confirmedClaims.keys) !== JSON.stringify(orphanDiscovery.keys)
-    ) { console.error('VIESDEBUG claims-mismatch', JSON.stringify({ complete: confirmedClaims.complete, keys: confirmedClaims.keys, okeys: orphanDiscovery.keys })); continue; }
+    ) continue;
     let coherent = !!booking && !booking.archivedAt && booking.active === true && !['cancelled', 'complete'].includes(String(booking.status));
     const payments: FinancePayment[] = [];
     let invoice: FinanceProjection['invoice'];
@@ -1552,8 +1552,9 @@ async function boundedBookkeepingScan(
       Limit: requestLimit,
     }));
     pages++;
-    const scanned = page.ScannedCount;
     const pageItems = (page.Items || []) as Record<string, unknown>[];
+    // DynamoDB Local omits ScannedCount when a page scans zero rows.
+    const scanned = page.ScannedCount ?? pageItems.length;
     if (
       !Number.isSafeInteger(scanned)
       || scanned! < 0
