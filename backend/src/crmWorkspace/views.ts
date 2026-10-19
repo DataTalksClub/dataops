@@ -253,8 +253,12 @@ export async function resolveView(
 ): Promise<{ view: Record<string, unknown>; entity: ViewEntity } | { archived: true } | null> {
   const builtin = BUILTINS.find((view) => view.id === id);
   if (builtin) return { view: withResolved(builtin, today, true), entity: builtin.entity };
-  const personal = await queryPersonalViews(client, ownerId);
-  const stored = personal.find((view) => view.id === id);
+  let stored: StoredView | null;
+  try {
+    stored = await getView(client, ownerId, id);
+  } catch (error) {
+    throw workspaceErrorOf(error, 'saved views');
+  }
   if (!stored) return null;
   if (stored.archivedAt && !opts?.allowArchived) return { archived: true };
   return { view: withResolved(stored, today, false), entity: stored.entity as ViewEntity };

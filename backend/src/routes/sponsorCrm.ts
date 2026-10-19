@@ -1,6 +1,8 @@
 import { berlinDate } from '../sponsorFinance/core';
 import { isIndividualTuition } from '../tuition/classification';
 import { sponsorPipeline, PIPELINE_STAGES, PIPELINE_VIEWS, pipelineDateRangeError } from '../sponsorCrm/pipeline';
+import { resolveView } from '../crmWorkspace/views';
+import { workspaceErrorOf } from '../crmWorkspace/reads';
 import { getNewsletterIssue } from '../db/newsletterIssues';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse, Task } from '../types';
@@ -199,9 +201,34 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
   if (body && 'rehomedTo' in body) return json(400, { error: 'Archival provenance is read-only' });
 
   if (path === '/api/sponsor-crm/pipeline' && method === 'GET') {
-    const query = event.queryStringParameters || {};
+    let query = event.queryStringParameters || {};
     const error = validateList(event);
     if (error) return json(400, { error });
+    if (query.savedView) {
+      if (!user && !query.savedView.startsWith('builtin:')) return json(401, { error: 'Unauthorized' });
+      let resolved: Awaited<ReturnType<typeof resolveView>>;
+      try {
+        resolved = await resolveView(client, user, query.savedView, today);
+      } catch (err) {
+        const errorObj = workspaceErrorOf(err, 'saved views');
+        return json((errorObj as { statusCode?: number }).statusCode || 500, { error: errorObj.message });
+      }
+      if (!resolved) return json(404, { error: 'View not found' });
+      if ('archived' in resolved) return json(422, { error: 'View is archived' });
+      if (resolved.entity !== 'pipeline') return json(400, { error: 'View entity mismatch' });
+      const stored = (resolved.view.resolvedFilters || {}) as Record<string, unknown>;
+      const baseFilters = Object.fromEntries(
+        Object.entries(stored).map(([k, v]) => [k, String(v)]),
+      );
+      const viewSort = (resolved.view.sort || {}) as Record<string, string>;
+      const { savedView, ...explicit } = query;
+      void savedView;
+      query = {
+        ...baseFilters,
+        ...(viewSort.field ? { sort: viewSort.field } : {}),
+        ...explicit,
+      };
+    }
     if (query.view && !(PIPELINE_VIEWS as readonly string[]).includes(query.view)) return json(400, { error: 'Invalid pipeline view' });
     if (query.stage && !(PIPELINE_STAGES as readonly string[]).includes(query.stage)) return json(400, { error: 'Invalid pipeline stage' });
     if (query.sort && !['next-action', 'recent'].includes(query.sort)) return json(400, { error: 'Invalid pipeline sort' });

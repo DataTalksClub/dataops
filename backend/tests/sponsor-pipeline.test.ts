@@ -204,3 +204,55 @@ it('overdue uses Berlin today across the UTC day boundary', async (t) => {
   assert.equal(body.today, '2026-10-18');
   assert.deepEqual(ids(body), ['deal-000', 'deal-001', 'deal-007']);
 });
+
+it('server-side savedView query parameter resolves built-ins and personal views directly on the pipeline endpoint', async () => {
+  const f = fake(filterTasks);
+  const invoke = async (method: string, path: string, body?: unknown, query = {}, headers = { 'x-user-id': 'owner-a' }) => {
+    const response = await route({ httpMethod: method, path, headers,
+      body: body === undefined ? null : JSON.stringify(body), queryStringParameters: { today: '2026-10-17', ...query } }, f.client);
+    return { status: response.statusCode, body: JSON.parse(response.body) };
+  };
+
+  // Built-in saved view executes directly
+  const early = await invoke('GET', '/api/sponsor-crm/pipeline', undefined, { savedView: 'builtin:pipeline:early' });
+  assert.equal(early.status, 200);
+  assert.equal(early.body.view, 'early');
+  assert.equal(early.body.total, 70);
+
+  // Explicit query parameters override or narrow the saved view
+  const earlyAgreed = await invoke('GET', '/api/sponsor-crm/pipeline', undefined, { savedView: 'builtin:pipeline:early', stage: 'agreed' });
+  assert.equal(earlyAgreed.status, 200);
+  assert.equal(earlyAgreed.body.total, 0);
+
+  // Personal saved view executes directly
+  const created = await invoke('POST', '/api/sponsor-crm/views', {
+    entity: 'pipeline', name: 'My Overdue View', filters: { view: 'overdue' },
+  });
+  assert.equal(created.status, 201);
+
+  const personalExecuted = await invoke('GET', '/api/sponsor-crm/pipeline', undefined, { savedView: created.body.id });
+  assert.equal(personalExecuted.status, 200);
+  assert.equal(personalExecuted.body.view, 'overdue');
+  assert.deepEqual(ids(personalExecuted.body), ['deal-000', 'deal-007']);
+
+  // Error handling: not found
+  const notFound = await invoke('GET', '/api/sponsor-crm/pipeline', undefined, { savedView: 'non-existent-view' });
+  assert.equal(notFound.status, 404);
+  assert.equal(notFound.body.error, 'View not found');
+
+  // Error handling: entity mismatch (e.g. companies view passed to pipeline)
+  const mismatch = await invoke('GET', '/api/sponsor-crm/pipeline', undefined, { savedView: 'builtin:companies:active' });
+  assert.equal(mismatch.status, 400);
+  assert.equal(mismatch.body.error, 'View entity mismatch');
+
+  // Error handling: archived view
+  await invoke('DELETE', `/api/sponsor-crm/views/${created.body.id}`);
+  const archived = await invoke('GET', '/api/sponsor-crm/pipeline', undefined, { savedView: created.body.id });
+  assert.equal(archived.status, 422);
+  assert.equal(archived.body.error, 'View is archived');
+
+  // Error handling: unauthorized for personal view without user header
+  const unauthed = await invoke('GET', '/api/sponsor-crm/pipeline', undefined, { savedView: created.body.id }, {});
+  assert.equal(unauthed.status, 401);
+});
+
