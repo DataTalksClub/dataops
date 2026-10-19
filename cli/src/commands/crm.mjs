@@ -23,12 +23,15 @@ Usage
   dataops crm company show <id>
   dataops crm company create --data '{...}'      Through the canonical organization record
   dataops crm company update <id> --data '{...}'  Must include the current version
+  dataops crm company archive <id>
   dataops crm person show <id>
   dataops crm person create --data '{...}'      Through the canonical contact record
   dataops crm person update <id> --data '{...}'  Must include the current version
+  dataops crm person archive <id>
   dataops crm deal show <id>
   dataops crm deal create --data '{...}'        Through the canonical deal record
   dataops crm deal update <id> --data '{...}'    Must include the current version
+  dataops crm deal archive <id>
   dataops crm activity <organization|contact|deal> <id> [--types note,touch,mail,history,deal-history]
       [--limit N] [--cursor C]
   dataops crm notes list <organization|contact|deal> <id> [--limit N] [--cursor C]
@@ -141,6 +144,13 @@ export async function companyUpdate(args, io) {
   return result;
 }
 
+export async function companyArchive(args, io) {
+  const id = positional(args, 0, "dataops crm company archive <id>");
+  const result = await apiFor(args).delete(`/api/sponsor-crm/organizations/${enc(id)}`);
+  if (!args.json) io.print(`Archived company ${id}.`);
+  return result;
+}
+
 export async function peopleList(args, io) {
   const api = apiFor(args);
   const result = await api.get("/api/sponsor-crm/directory/people", { query: await directoryQuery(api, args, "people") });
@@ -176,6 +186,13 @@ export async function personUpdate(args, io) {
   return result;
 }
 
+export async function personArchive(args, io) {
+  const id = positional(args, 0, "dataops crm person archive <id>");
+  const result = await apiFor(args).delete(`/api/sponsor-crm/contacts/${enc(id)}`);
+  if (!args.json) io.print(`Archived person ${id}.`);
+  return result;
+}
+
 export async function dealShow(args, io) {
   const id = positional(args, 0, "dataops crm deal show <id>");
   const result = await apiFor(args).get(`/api/sponsor-crm/deals/${enc(id)}`);
@@ -193,6 +210,13 @@ export async function dealUpdate(args, io) {
   const id = positional(args, 0, "dataops crm deal update <id> --data '{...}'");
   const result = await apiFor(args).put(`/api/sponsor-crm/deals/${enc(id)}`, jsonData(args));
   if (!args.json) io.print(`Updated deal ${id}.`);
+  return result;
+}
+
+export async function dealArchive(args, io) {
+  const id = positional(args, 0, "dataops crm deal archive <id>");
+  const result = await apiFor(args).delete(`/api/sponsor-crm/deals/${enc(id)}`);
+  if (!args.json) io.print(`Archived deal ${id}.`);
   return result;
 }
 
@@ -352,16 +376,16 @@ async function dispatch(args, io, verbs, usage) {
 export const commands = {
   companies: (args, io) => dispatch(args, io, { list: companiesList }, "dataops crm companies list [...]"),
   company: (args, io) => dispatch(args, io,
-    { show: companyShow, create: companyCreate, update: companyUpdate },
-    "dataops crm company <show|create|update> [...]"),
+    { show: companyShow, create: companyCreate, update: companyUpdate, archive: companyArchive },
+    "dataops crm company <show|create|update|archive> [...]"),
   people: (args, io) => dispatch(args, io, { list: peopleList }, "dataops crm people list [...]"),
   person: (args, io) => dispatch(args, io,
-    { show: personShow, create: personCreate, update: personUpdate },
-    "dataops crm person <show|create|update> [...]"),
+    { show: personShow, create: personCreate, update: personUpdate, archive: personArchive },
+    "dataops crm person <show|create|update|archive> [...]"),
   deals: (args, io) => dispatch(args, io, { list: dealsList }, "dataops crm deals list [...]"),
   deal: (args, io) => dispatch(args, io,
-    { show: dealShow, create: dealCreate, update: dealUpdate },
-    "dataops crm deal <show|create|update> [...]"),
+    { show: dealShow, create: dealCreate, update: dealUpdate, archive: dealArchive },
+    "dataops crm deal <show|create|update|archive> [...]"),
   pipeline: (args, io) => dispatch(args, io, { list: pipelineList }, "dataops crm pipeline list [...]"),
   archive,
   activity,

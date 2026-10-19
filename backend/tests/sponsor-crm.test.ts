@@ -312,6 +312,30 @@ describe('sponsor CRM', () => {
     assert.ok(!bySearch.items.some((d: any) => d.id === deal2.id));
   });
 
+  it('archives a deal via DELETE, marking it inactive and excluded from active listings', async () => {
+    const org = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Archive Deal Org', sourceKey: 'archive-deal-org' }));
+    const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: org.id, title: 'Archivable Deal', status: 'open', sourceKey: 'archivable-deal' }));
+
+    const archived = data(await invoke('DELETE', `/api/sponsor-crm/deals/${deal.id}`));
+    assert.equal(archived.id, deal.id);
+    assert.equal(archived.active, false);
+    assert.ok(archived.archivedAt);
+
+    // GET by ID returns the archived record
+    const fetched = data(await invoke('GET', `/api/sponsor-crm/deals/${deal.id}`));
+    assert.equal(fetched.id, deal.id);
+    assert.equal(fetched.active, false);
+    assert.ok(fetched.archivedAt);
+
+    // Excluded from active deal listing
+    const activeList = data(await invoke('GET', `/api/sponsor-crm/deals?company=${org.id}&active=true`));
+    assert.ok(!activeList.items.some((d: any) => d.id === deal.id));
+
+    // Included in inactive deal listing
+    const inactiveList = data(await invoke('GET', `/api/sponsor-crm/deals?company=${org.id}&active=false`));
+    assert.ok(inactiveList.items.some((d: any) => d.id === deal.id));
+  });
+
   it('provides authenticated safe newsletter lookup, attach and detach', async () => {
     const organization = data(await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Contract Sponsor', notes: 'private org note', sourceKey: 'contract-org' }));
     const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: organization.id, status: 'open', sourceKey: 'contract-deal' }));

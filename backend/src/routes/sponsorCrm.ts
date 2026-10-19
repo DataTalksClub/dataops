@@ -501,10 +501,11 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     }
   }
 
-  if (method === 'DELETE' && id && kind !== 'deal' && kind !== 'deliverable') {
+  if (method === 'DELETE' && id && kind !== 'deliverable') {
     const existing = await getCrmRecord(client, kind, id);
     if (!existing) return json(404, { error: 'Not found' });
     if (kind === 'contact') return json(200, await updateContactAtomic(client, existing, { archivedAt: new Date().toISOString(), active: false, primary: false }, user));
+    if (kind === 'deal') return json(200, publicDeal(await updateDealAtomic(client, existing, { archivedAt: new Date().toISOString(), active: false }, user)));
     return json(200, await updateOrganizationAtomic(client, existing, { archivedAt: new Date().toISOString(), active: false }, user, 'archived'));
   }
   return json(405, { error: 'Method not allowed' });

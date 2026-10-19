@@ -164,6 +164,7 @@ export async function updateDealAtomic(client:DynamoDBDocumentClient,existing:Cr
   const {historyNote,...changes}=value,now=new Date().toISOString(),next={...existing,...changes,id:existing.id,createdAt:existing.createdAt,updatedAt:now,version:existing.version+1} as CrmRecord;
   const items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('deal',next),ConditionExpression:'#version = :version',ExpressionAttributeNames:{'#version':'version'},ExpressionAttributeValues:{':version':existing.version}}}];
   if(next.status!==existing.status)items.push(historyPut(existing.id,{actorId,oldStatus:existing.status,newStatus:next.status,note:typeof historyNote==='string'?String(historyNote).slice(0,500):undefined}));
+  else if(next.archivedAt&&!existing.archivedAt)items.push(historyPut(existing.id,{actorId,entityKind:'deal',entityId:existing.id,action:'archived'}));
   await transact(client,items);return next;
 }
 

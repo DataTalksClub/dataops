@@ -38,13 +38,14 @@ describe("CLI crm workspace", () => {
     }
   });
 
-  test("people list, person show/create/update reach canonical contact endpoints", async () => {
+  test("people list, person show/create/update/archive reach canonical contact endpoints", async () => {
     const io = captureIo();
     const { calls, restore } = fake({
       "GET /api/sponsor-crm/directory/people": { status: 200, body: { items: [], total: 0, nextCursor: null } },
       "GET /api/sponsor-crm/contacts/p1": { status: 200, body: { id: "p1", name: "Ada" } },
       "POST /api/sponsor-crm/contacts": (call) => ({ status: 201, body: { id: "p2", ...call.body } }),
       "PUT /api/sponsor-crm/contacts/p2": (call) => ({ status: 200, body: { id: "p2", ...call.body } }),
+      "DELETE /api/sponsor-crm/contacts/p2": { status: 200, body: { id: "p2", archivedAt: "2026-10-19" } },
     });
     try {
       assert.equal(await run(["crm", "people", "list", "--unlinked", "true", "--json"], io), EXIT.ok);
@@ -53,17 +54,24 @@ describe("CLI crm workspace", () => {
       assert.equal(await run(["crm", "person", "create", "--data", '{"name":"Bo"}', "--json"], io), EXIT.ok);
       assert.equal(calls[2].body.name, "Bo");
       assert.equal(await run(["crm", "person", "update", "p2", "--data", '{"name":"Bo2","version":1}', "--json"], io), EXIT.ok);
+      assert.equal(calls[3].body.name, "Bo2");
+      assert.equal(await run(["crm", "person", "archive", "p2", "--json"], io), EXIT.ok);
+      assert.equal(calls[4].route, "/api/sponsor-crm/contacts/p2");
+      io.out.length = 0;
+      assert.equal(await run(["crm", "person", "archive", "p2"], io), EXIT.ok);
+      assert.ok(io.text().includes("Archived person p2."));
     } finally {
       restore();
     }
   });
 
-  test("company show/create/update reach canonical directory and organization endpoints", async () => {
+  test("company show/create/update/archive reach canonical directory and organization endpoints", async () => {
     const io = captureIo();
     const { calls, restore } = fake({
       "GET /api/sponsor-crm/directory/companies/org1": { status: 200, body: { id: "org1", displayName: "Acme", version: 1 } },
       "POST /api/sponsor-crm/organizations": (call) => ({ status: 201, body: { id: "org2", ...call.body } }),
       "PUT /api/sponsor-crm/organizations/org2": (call) => ({ status: 200, body: { id: "org2", ...call.body } }),
+      "DELETE /api/sponsor-crm/organizations/org2": { status: 200, body: { id: "org2", archivedAt: "2026-10-19" } },
     });
     try {
       assert.equal(await run(["crm", "company", "show", "org1", "--json"], io), EXIT.ok);
@@ -72,6 +80,8 @@ describe("CLI crm workspace", () => {
       assert.equal(calls[1].body.displayName, "Beta");
       assert.equal(await run(["crm", "company", "update", "org2", "--data", '{"displayName":"Beta 2","version":1}', "--json"], io), EXIT.ok);
       assert.equal(calls[2].body.displayName, "Beta 2");
+      assert.equal(await run(["crm", "company", "archive", "org2", "--json"], io), EXIT.ok);
+      assert.equal(calls[3].route, "/api/sponsor-crm/organizations/org2");
     } finally {
       restore();
     }
@@ -83,6 +93,7 @@ describe("CLI crm workspace", () => {
       "GET /api/sponsor-crm/directory/companies/org1": { status: 200, body: { id: "org1", displayName: "Acme" } },
       "POST /api/sponsor-crm/organizations": { status: 201, body: { id: "org2", displayName: "Beta" } },
       "PUT /api/sponsor-crm/organizations/org2": { status: 200, body: { id: "org2", displayName: "Beta 2" } },
+      "DELETE /api/sponsor-crm/organizations/org2": { status: 200, body: { id: "org2", archivedAt: "2026-10-19" } },
     });
     try {
       assert.equal(await run(["crm", "company", "show", "org1"], io), EXIT.ok);
@@ -93,17 +104,21 @@ describe("CLI crm workspace", () => {
       io.out.length = 0;
       assert.equal(await run(["crm", "company", "update", "org2", "--data", '{"displayName":"Beta 2","version":1}'], io), EXIT.ok);
       assert.ok(io.text().includes("Updated company org2."));
+      io.out.length = 0;
+      assert.equal(await run(["crm", "company", "archive", "org2"], io), EXIT.ok);
+      assert.ok(io.text().includes("Archived company org2."));
     } finally {
       restore();
     }
   });
 
-  test("deal show/create/update reach canonical deal endpoints", async () => {
+  test("deal show/create/update/archive reach canonical deal endpoints", async () => {
     const io = captureIo();
     const { calls, restore } = fake({
       "GET /api/sponsor-crm/deals/deal1": { status: 200, body: { id: "deal1", title: "Q4 Sponsorship", status: "agreed", version: 1 } },
       "POST /api/sponsor-crm/deals": (call) => ({ status: 201, body: { id: "deal2", ...call.body } }),
       "PUT /api/sponsor-crm/deals/deal2": (call) => ({ status: 200, body: { id: "deal2", ...call.body } }),
+      "DELETE /api/sponsor-crm/deals/deal2": { status: 200, body: { id: "deal2", archivedAt: "2026-10-19" } },
     });
     try {
       assert.equal(await run(["crm", "deal", "show", "deal1", "--json"], io), EXIT.ok);
@@ -112,6 +127,8 @@ describe("CLI crm workspace", () => {
       assert.equal(calls[1].body.title, "New Deal");
       assert.equal(await run(["crm", "deal", "update", "deal2", "--data", '{"title":"Updated Deal","version":1}', "--json"], io), EXIT.ok);
       assert.equal(calls[2].body.title, "Updated Deal");
+      assert.equal(await run(["crm", "deal", "archive", "deal2", "--json"], io), EXIT.ok);
+      assert.equal(calls[3].route, "/api/sponsor-crm/deals/deal2");
     } finally {
       restore();
     }
@@ -123,6 +140,7 @@ describe("CLI crm workspace", () => {
       "GET /api/sponsor-crm/deals/deal1": { status: 200, body: { id: "deal1", title: "Q4 Sponsorship", status: "agreed" } },
       "POST /api/sponsor-crm/deals": { status: 201, body: { id: "deal2", title: "New Deal" } },
       "PUT /api/sponsor-crm/deals/deal2": { status: 200, body: { id: "deal2", title: "Updated Deal" } },
+      "DELETE /api/sponsor-crm/deals/deal2": { status: 200, body: { id: "deal2", archivedAt: "2026-10-19" } },
     });
     try {
       assert.equal(await run(["crm", "deal", "show", "deal1"], io), EXIT.ok);
@@ -133,6 +151,9 @@ describe("CLI crm workspace", () => {
       io.out.length = 0;
       assert.equal(await run(["crm", "deal", "update", "deal2", "--data", '{"title":"Updated Deal","version":1}'], io), EXIT.ok);
       assert.ok(io.text().includes("Updated deal deal2."));
+      io.out.length = 0;
+      assert.equal(await run(["crm", "deal", "archive", "deal2"], io), EXIT.ok);
+      assert.ok(io.text().includes("Archived deal deal2."));
     } finally {
       restore();
     }
