@@ -98,6 +98,46 @@ describe("CLI crm workspace", () => {
     }
   });
 
+  test("deal show/create/update reach canonical deal endpoints", async () => {
+    const io = captureIo();
+    const { calls, restore } = fake({
+      "GET /api/sponsor-crm/deals/deal1": { status: 200, body: { id: "deal1", title: "Q4 Sponsorship", status: "agreed", version: 1 } },
+      "POST /api/sponsor-crm/deals": (call) => ({ status: 201, body: { id: "deal2", ...call.body } }),
+      "PUT /api/sponsor-crm/deals/deal2": (call) => ({ status: 200, body: { id: "deal2", ...call.body } }),
+    });
+    try {
+      assert.equal(await run(["crm", "deal", "show", "deal1", "--json"], io), EXIT.ok);
+      assert.equal(calls[0].route, "/api/sponsor-crm/deals/deal1");
+      assert.equal(await run(["crm", "deal", "create", "--data", '{"organizationId":"org1","status":"open","title":"New Deal"}', "--json"], io), EXIT.ok);
+      assert.equal(calls[1].body.title, "New Deal");
+      assert.equal(await run(["crm", "deal", "update", "deal2", "--data", '{"title":"Updated Deal","version":1}', "--json"], io), EXIT.ok);
+      assert.equal(calls[2].body.title, "Updated Deal");
+    } finally {
+      restore();
+    }
+  });
+
+  test("deal human output formatting", async () => {
+    const io = captureIo();
+    const { restore } = fake({
+      "GET /api/sponsor-crm/deals/deal1": { status: 200, body: { id: "deal1", title: "Q4 Sponsorship", status: "agreed" } },
+      "POST /api/sponsor-crm/deals": { status: 201, body: { id: "deal2", title: "New Deal" } },
+      "PUT /api/sponsor-crm/deals/deal2": { status: 200, body: { id: "deal2", title: "Updated Deal" } },
+    });
+    try {
+      assert.equal(await run(["crm", "deal", "show", "deal1"], io), EXIT.ok);
+      assert.ok(io.text().includes("Q4 Sponsorship"));
+      io.out.length = 0;
+      assert.equal(await run(["crm", "deal", "create", "--data", '{"organizationId":"org1","status":"open"}'], io), EXIT.ok);
+      assert.ok(io.text().includes("Created deal deal2."));
+      io.out.length = 0;
+      assert.equal(await run(["crm", "deal", "update", "deal2", "--data", '{"title":"Updated Deal","version":1}'], io), EXIT.ok);
+      assert.ok(io.text().includes("Updated deal deal2."));
+    } finally {
+      restore();
+    }
+  });
+
   test("activity, notes list and note add map target, types and source key", async () => {
     const io = captureIo();
     const { calls, restore } = fake({
