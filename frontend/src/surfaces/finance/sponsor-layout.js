@@ -9,6 +9,10 @@ const DEAL_STATUSES = ["open", "agreed", "lost"];
 const PRODUCT_KINDS = ["one-off", "package", "course"];
 const CHANNELS = ["main", "secondary", "standalone", "social", "workshop", "course", "other"];
 const LOST_REASONS = ["no_budget", "no_reply", "wrong_fit", "timing", "other"];
+/** Airtable Content "Source" / "Content Type" / Relevancy — mirrors backend PROMOTION_SOURCES. */
+const PROMOTION_SOURCES = ["Influencer Marketing", "Paid Marketing", "Newsletter", "LinkedIn", "Organic", "Conference", "Other"];
+const CONTENT_TYPES = ["X post", "LinkedIn post", "Newsletter", "Event", "Ebook", "Webinar", "Workshop", "Podcast", "Article", "Other"];
+const RELEVANCY = ["high", "medium", "low"];
 
 
 function options(values, humanize) {
@@ -21,6 +25,9 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = (value)
   const dealStatusOptions = options(DEAL_STATUSES, humanizeOptionLabel);
   const productOptions = options(PRODUCT_KINDS, (kind) => ({ "one-off": "One-off", package: "Package", course: "Course" })[kind]);
   const channelOptions = options(CHANNELS, humanizeOptionLabel);
+  const promotionSourceOptions = html`<option value="">Select source</option>` + options(PROMOTION_SOURCES, (v) => v);
+  const contentTypeOptions = html`<option value="">Select type</option>` + options(CONTENT_TYPES, (v) => v);
+  const relevancyOptions = html`<option value="">Select relevancy</option>` + options(RELEVANCY, humanizeOptionLabel);
   const lostOptions = options(LOST_REASONS, humanizeOptionLabel);
   // Each create rides on the collection it creates into: Add deal on the
   // Pipeline list head, Add sponsor on the Companies header. Refresh
@@ -343,6 +350,32 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = (value)
           ><label
             >Material deadline
             <input name="materialDeadline" type="date" /></label
+          ><input name="deliverableId" type="hidden" /><input name="deliverableVersion" type="hidden" /><label
+            >Title <input name="title" placeholder="Content title / Name" /></label
+          ><label
+            >Link
+            <input name="requiredLinkUrl" type="url" placeholder="https://…" /></label
+          ><label
+            >Content type
+            <select name="contentType">
+              ${contentTypeOptions}
+            </select></label
+          ><label
+            >Source
+            <select name="promotionSource">
+              ${promotionSourceOptions}
+            </select></label
+          ><label
+            >Relevancy
+            <select name="relevancy">
+              ${relevancyOptions}
+            </select></label
+          ><label
+            >Influencer handle
+            <input name="influencerHandle" placeholder="@handle" /></label
+          ><label
+            >Published at
+            <input name="publishedAt" type="datetime-local" /></label
           ><label class="span-all"
             >Status note <input name="historyNote"
           /></label>

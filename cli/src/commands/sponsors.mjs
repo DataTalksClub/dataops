@@ -16,7 +16,8 @@ Usage
       [--next-action-from YYYY-MM-DD] [--next-action-before YYYY-MM-DD]  Inclusive bounds
   dataops sponsors contact <list|add|update> [ID] --company ID [--data @person.json]
       Fields: name, role, emails, linkedin, telegram, primary, notes, lastContactedAt.
-  dataops sponsors list <kind> [--limit N]             kind: ${KINDS.join(", ")}
+  dataops sponsors list <kind> [--limit N] [--source TEXT] [--content-type TEXT] [--channel TEXT] [--deal-id ID]
+                                                      kind: ${KINDS.join(", ")}; deliverables filter by Airtable Content source
   dataops sponsors show <kind> <id>
   dataops sponsors create <kind> --data '{...}'        Fields as the web form sends them
   dataops sponsors update <kind> <id> --data '{...}'
@@ -99,7 +100,15 @@ export async function list(args, io) {
   let cursor;
   let last;
   do {
-    last = await api.get(`/api/sponsor-crm/${kind}`, { query: { cursor, limit: Math.min(100, max - items.length), organizationId: args.company || args.organizationId, search: args.search, status: args.status, active: args.active } });
+    last = await api.get(`/api/sponsor-crm/${kind}`, { query: {
+      cursor, limit: Math.min(100, max - items.length),
+      organizationId: args.company || args.organizationId,
+      search: args.search, status: args.status, active: args.active,
+      dealId: args["deal-id"] || args.dealId,
+      promotionSource: args.source || args["promotion-source"] || args.promotionSource,
+      contentType: args["content-type"] || args.contentType,
+      channel: args.channel,
+    } });
     items.push(...itemsOf(last));
     cursor = last?.nextCursor;
   } while (cursor && items.length < max);

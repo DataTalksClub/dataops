@@ -545,4 +545,35 @@ describe('sponsor CRM', () => {
     assert.equal(resPerson.statusCode, 201);
     assert.equal(data(resPerson).contact.lastOutboundAt, '2026-10-18T14:00:00Z');
   });
+
+  it("accepts Airtable Content fields on deliverables and filters by promotionSource", async () => {
+    const organization = data(await invoke("POST", "/api/sponsor-crm/organizations", {
+      displayName: "Nebius", domain: "nebius.com", relevancy: "high",
+    }));
+    const deal = data(await invoke("POST", "/api/sponsor-crm/deals", {
+      organizationId: organization.id, status: "open", title: "Nebius influencer",
+    }));
+    const created = await invoke("POST", "/api/sponsor-crm/deliverables", {
+      dealId: deal.id,
+      channel: "social",
+      title: "Santiago Nebius mention",
+      requiredLinkUrl: "https://x.com/svpino/status/2112122612101070934",
+      contentType: "X post",
+      promotionSource: "Influencer Marketing",
+      relevancy: "high",
+      influencerHandle: "@svpino",
+      publishedAt: "2026-10-19T10:04:06Z",
+    });
+    assert.equal(created.statusCode, 201);
+    const item = data(created);
+    assert.equal(item.promotionSource, "Influencer Marketing");
+    assert.equal(item.contentType, "X post");
+    assert.equal(item.influencerHandle, "@svpino");
+    const listed = data(await invoke("GET", "/api/sponsor-crm/deliverables?promotionSource=Influencer%20Marketing"));
+    assert.ok((listed.items || []).some((row: any) => row.id === item.id));
+    const bad = await invoke("POST", "/api/sponsor-crm/deliverables", {
+      dealId: deal.id, channel: "social", promotionSource: "Not A Source",
+    });
+    assert.equal(bad.statusCode, 400);
+  });
 });

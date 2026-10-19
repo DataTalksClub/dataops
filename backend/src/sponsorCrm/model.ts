@@ -1,6 +1,30 @@
 export const DEAL_STATUSES = new Set(['open', 'agreed', 'lost']);
 export const PRODUCT_KINDS = new Set(['one-off', 'package', 'course']);
 export const CHANNELS = new Set(['main', 'secondary', 'standalone', 'social', 'podcast', 'webinar', 'workshop', 'course', 'other']);
+/** Airtable Content "Source" values ported for promoted / influencer / paid posts. */
+export const PROMOTION_SOURCES = new Set([
+  'Influencer Marketing',
+  'Paid Marketing',
+  'Newsletter',
+  'LinkedIn',
+  'Organic',
+  'Conference',
+  'Other',
+]);
+/** Airtable Content "Content Type" values used in sponsorship CRM SOPs. */
+export const CONTENT_TYPES = new Set([
+  'X post',
+  'LinkedIn post',
+  'Newsletter',
+  'Event',
+  'Ebook',
+  'Webinar',
+  'Workshop',
+  'Podcast',
+  'Article',
+  'Other',
+]);
+export const RELEVANCY = new Set(['high', 'medium', 'low']);
 /** Channels that are a newsletter slot: their deliverable links its issue (`newsletterIssueId`), never a Card. */
 export const NEWSLETTER_CHANNELS = new Set(['main', 'secondary', 'standalone']);
 export const LOST_REASONS = new Set(['no_budget', 'no_reply', 'wrong_fit', 'timing', 'other']);

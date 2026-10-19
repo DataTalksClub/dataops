@@ -30,6 +30,9 @@ import { dealMoneyFacts } from '../sponsorFinance/ledger';
 import {
   CHANNELS,
   NEWSLETTER_CHANNELS,
+  PROMOTION_SOURCES,
+  CONTENT_TYPES,
+  RELEVANCY,
   DEAL_STATUSES,
   LOST_REASONS,
   PRODUCT_KINDS,
@@ -122,6 +125,28 @@ function validateDeliverable(body: Record<string, unknown>, partial = false, exi
   if (NEWSLETTER_CHANNELS.has(channel) && next('cardId') != null) return 'A newsletter deliverable links its issue (newsletterIssueId), not a Card';
   if (!NEWSLETTER_CHANNELS.has(channel) && next('newsletterIssueId') != null) return 'Only a newsletter deliverable links a newsletter issue';
   if (body.artifactUrls !== undefined && (!Array.isArray(body.artifactUrls) || body.artifactUrls.length > 20 || body.artifactUrls.some((url) => { try { const parsed = new URL(String(url)); return parsed.protocol !== 'https:'; } catch { return true; } }))) return 'Invalid artifactUrls';
+  if (body.title !== undefined && body.title !== '' && !text(body.title, 300)) return 'Invalid title';
+  if (body.requiredLinkUrl !== undefined && body.requiredLinkUrl !== null && body.requiredLinkUrl !== '') {
+    try {
+      if (new URL(String(body.requiredLinkUrl)).protocol !== 'https:') return 'Invalid requiredLinkUrl';
+    } catch {
+      return 'Invalid requiredLinkUrl';
+    }
+  }
+  // promotionSource mirrors Airtable Content "Source" (Influencer Marketing, Paid Marketing, …)
+  if (body.promotionSource !== undefined && body.promotionSource !== null && body.promotionSource !== ''
+      && !PROMOTION_SOURCES.has(String(body.promotionSource))) return 'Invalid promotionSource';
+  if (body.contentType !== undefined && body.contentType !== null && body.contentType !== ''
+      && !CONTENT_TYPES.has(String(body.contentType))) return 'Invalid contentType';
+  if (body.relevancy !== undefined && body.relevancy !== null && body.relevancy !== ''
+      && !RELEVANCY.has(String(body.relevancy))) return 'Invalid relevancy';
+  if (body.influencerHandle !== undefined && body.influencerHandle !== null && body.influencerHandle !== '') {
+    const handle = String(body.influencerHandle).trim();
+    if (handle.length > 100 || /\s/.test(handle)) return 'Invalid influencerHandle';
+  }
+  if (body.publishedAt !== undefined && body.publishedAt !== null && body.publishedAt !== '') {
+    if (Number.isNaN(Date.parse(String(body.publishedAt)))) return 'Invalid publishedAt';
+  }
   return '';
 }
 
@@ -418,13 +443,19 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     const orgFilter = query.organizationId || query.company;
     if (orgFilter) items = items.filter((item) => item.organizationId === orgFilter);
     if (query.dealId) items = items.filter((item) => item.dealId === query.dealId);
+    if (query.promotionSource || query.source) {
+      const source = String(query.promotionSource || query.source);
+      items = items.filter((item) => item.promotionSource === source);
+    }
+    if (query.contentType) items = items.filter((item) => item.contentType === query.contentType);
+    if (query.channel) items = items.filter((item) => item.channel === query.channel);
     if (query.status) items = items.filter((item) => item.status === query.status);
     if (query.active) items = items.filter((item) => String(item.archivedAt ? false : true) === query.active);
     if (query.from) items = items.filter((item) => !item.plannedPublicationDate || String(item.plannedPublicationDate) >= query.from!);
     if (query.to) items = items.filter((item) => !item.plannedPublicationDate || String(item.plannedPublicationDate) <= query.to!);
     if (query.search) {
       const q = query.search.toLowerCase();
-      items = items.filter((item) => [item.displayName, item.name, item.title, item.status, item.domain].some((value) => String(value || '').toLowerCase().includes(q)));
+      items = items.filter((item) => [item.displayName, item.name, item.title, item.status, item.domain, item.promotionSource, item.contentType, item.influencerHandle, item.requiredLinkUrl].some((value) => String(value || '').toLowerCase().includes(q)));
     }
     if (kind === 'deal') return json(200, page(await decorateDeals(client, items, today), event));
     if (kind === 'organization') {

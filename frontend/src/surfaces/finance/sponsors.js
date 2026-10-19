@@ -807,16 +807,36 @@ export function createSponsorCrmSurface(context) {
         if (raw.version) payload.version = Number(raw.version);
         if (raw.amountEur) payload.amountEur = Number(raw.amountEur);
         if (raw.lostReason) payload.lostReason = raw.lostReason;
-        if (!id && (raw.channel || raw.plannedPublicationDate || raw.materialDeadline)) {
-          payload.deliverable = {
+        const hasPromo = raw.title || raw.requiredLinkUrl || raw.contentType || raw.promotionSource
+          || raw.relevancy || raw.influencerHandle || raw.publishedAt;
+        const deliverableFields = () => {
+          const body = {
             channel: raw.channel || "main",
-            plannedPublicationDate: raw.plannedPublicationDate,
-            materialDeadline: raw.materialDeadline,
+            plannedPublicationDate: raw.plannedPublicationDate || undefined,
+            materialDeadline: raw.materialDeadline || undefined,
           };
+          if (raw.title) body.title = raw.title;
+          if (raw.requiredLinkUrl) body.requiredLinkUrl = raw.requiredLinkUrl;
+          if (raw.contentType) body.contentType = raw.contentType;
+          if (raw.promotionSource) body.promotionSource = raw.promotionSource;
+          if (raw.relevancy) body.relevancy = raw.relevancy;
+          if (raw.influencerHandle) body.influencerHandle = raw.influencerHandle;
+          if (raw.publishedAt) {
+            const iso = new Date(raw.publishedAt).toISOString();
+            if (!Number.isNaN(Date.parse(iso))) body.publishedAt = iso;
+          }
+          return body;
+        };
+        if (!id && (raw.channel || raw.plannedPublicationDate || raw.materialDeadline || hasPromo)) {
+          payload.deliverable = deliverableFields();
         }
         let saved;
         try {
           saved = await api(`/deals${id ? `/${id}` : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(payload) });
+          if (id && raw.deliverableId && (raw.channel || raw.plannedPublicationDate || raw.materialDeadline || hasPromo)) {
+            const delivBody = { ...deliverableFields(), version: Number(raw.deliverableVersion || 1) };
+            await api(`/deliverables/${raw.deliverableId}`, { method: "PUT", body: JSON.stringify(delivBody) });
+          }
           if (raw.taskDescription) {
             await request(workApiUrl("/api/tasks"), {
               method: "POST", headers: { "content-type": "application/json" },
