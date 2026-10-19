@@ -16,6 +16,7 @@ import {
   removeDocumentReportReference,
   type BookkeepingItem,
 } from "../db/bookkeeping";
+import { preflightOrganizations } from '../vies/service';
 import {
   headDocumentObject,
   json,
@@ -28,6 +29,28 @@ import {
 } from "./bookkeepingShared";
 
 const csvCell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+
+/**
+ * Customer VAT report for the monthly pack (ZM / Mandantenserver upload):
+ * every EU B2B customer's last known VIES state, cached-only so assembling
+ * a pack never waits on the network. Reporting only — the blocking gate is
+ * the invoice issue path and `dataops vies preflight`.
+ */
+async function vatPreflightSummary(client: DynamoDBDocumentClient) {
+  const { scanned, entries } = await preflightOrganizations(client);
+  const flagged = entries.filter((entry) => entry.flags.length > 0);
+  return {
+    scanned,
+    issueCount: flagged.length,
+    issues: flagged.map((entry) => ({
+      organizationId: entry.organizationId,
+      ...(entry.displayName ? { displayName: entry.displayName } : {}),
+      ...(entry.country ? { country: entry.country } : {}),
+      ...(entry.vatId ? { vatId: entry.vatId } : {}),
+      flags: entry.flags,
+    })),
+  };
+}
 
 export async function handleBookkeepingReportRoutes(
   path: string,
@@ -44,7 +67,7 @@ export async function handleBookkeepingReportRoutes(
       (r) =>
         r.month === month && ["ready", "generated"].includes(String(r.status)),
     );
-    if (existing) return json(200, { report: existing, duplicate: true });
+    if (existing) return json(200, { report: existing, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
     const accounts = (await listBookkeepingItems(client, "account")).filter(
       (a) => a.kind === "business" && a.active !== false,
     );
@@ -134,6 +157,7 @@ export async function handleBookkeepingReportRoutes(
     }
     return json(201, {
       report,
+      vatPreflight: await vatPreflightSummary(client),
       warnings: {
         missingEvidence: transactions.filter(
           (t) =>
@@ -208,7 +232,7 @@ export async function handleBookkeepingReportRoutes(
           }),
           { expiresIn: 300 },
         );
-        return json(200, { downloadUrl: url, expiresIn: 300, duplicate: true });
+        return json(200, { downloadUrl: url, expiresIn: 300, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
       }
     }
     const transactionIds = Array.isArray(report.transactionIds)
@@ -359,7 +383,7 @@ export async function handleBookkeepingReportRoutes(
       }),
       { expiresIn: 300 },
     );
-    return json(201, { downloadUrl: url, expiresIn: 300 });
+    return json(201, { downloadUrl: url, expiresIn: 300, vatPreflight: await vatPreflightSummary(client) });
   }
   return null;
 }
