@@ -297,8 +297,10 @@ filter) is read-only: it only changes what is listed, never who acts.
 
 ## Anything else
 
-Sponsors (`dataops sponsors`), calendar, recurring schedules, automations
-(`dataops automations`), invoices, files and artifacts have their own families. For a web view without a command, call its
+Sponsors (`dataops sponsors`), reconciliation (`dataops reconcile`), calendar, recurring schedules, automations
+(`dataops automations`), invoices, files and artifacts have their own families.
+Whenever a sponsor payment is resolved or marked paid (`sponsors receive-payment`, `sponsors link-payment`, `sponsors approve-settlement`, `sponsors correct-payment`, or `reconcile confirm`), the CLI and `--json` response surface `thankYou` (and `nextStep` when `thankYou.status === "required"`), referencing `template.finance.bookkeeping.email-to-sponsor-when-payment-has-been-received` (SOP step 9). Always prepare the thank-you reply as a **draft only** (never send email — Alexey reviews and sends it himself) using the `<NAME>`, `<WHAT_WAS_PAID>`, and `<SENDER_NAME>` placeholders, then record the message reference with `dataops sponsors record-thank-you <deal-id> --ref THREAD_REF --apply`.
+For a web view without a command, call its
 route directly: `dataops api GET /api/<route>` (see `dataops api --help`).
 
 ## Rules

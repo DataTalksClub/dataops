@@ -95,6 +95,11 @@ test("confirm links an unclaimed ledger row the way sponsors link-payment does, 
     const applied = await confirm({ ...args, _: ["abc123def4567890"], period: "2026-10", apply: true }, {});
     assert.equal(applied.mode, "apply");
     assert.equal(applied.paymentState, "paid");
+    assert.equal(applied.thankYou?.status, "required");
+    assert.equal(applied.thankYou?.sendPolicy, "draft-only");
+    assert.equal(applied.thankYou?.templateId, "template.finance.bookkeeping.email-to-sponsor-when-payment-has-been-received");
+    assert.equal(applied.thankYou?.context?.whatWasPaid, "invoice 202610/12");
+    assert.equal(applied.nextStep?.code, "thank-sponsor");
     const post = calls.filter((call) => call.method === "POST").at(-1);
     assert.ok(post.url.endsWith("/deals/deal-one/finance/payments"));
     assert.deepEqual(JSON.parse(post.body), { dealVersion: 3, expectedVersion: 7, sourceId: "ledger-1", identityToken: "payment-identity" });

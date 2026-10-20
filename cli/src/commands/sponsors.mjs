@@ -3,6 +3,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { UsageError } from "../errors.mjs";
 import { enc, integer, isoDate, jsonData, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
+import {
+  THANK_YOU_EVIDENCE_LABEL,
+  attachThankYouResult,
+  findThankYouEvidence,
+  printThankYouHint,
+} from "../thank-you.mjs";
 
 export const summary = "Sponsor CRM: organizations, contacts, deals, deliverables, leads, finance";
 
@@ -55,6 +61,9 @@ Usage
       Link a bookkeeping transaction to the deal as its payment. A payment the deal
       recorded before the row existed (same amount, within 14 days) is replaced by
       the link. Prints what it would do unless --apply is given.
+  dataops sponsors record-thank-you <deal-id> --ref THREAD_REF [--label TEXT] [--date YYYY-MM-DD] [--apply]
+      Idempotently record the drafted/sent payment-received thank-you email reference
+      on the deal's Finance evidence (draft-only policy: Alexey reviews and sends).
 
 Invoice drafts: use dataops invoices. To find invoice evidence for a sponsor deal,
 use dataops sponsors finance <deal-id> candidates/invoices.
@@ -309,13 +318,28 @@ export async function linkPayment(args, io) {
   };
   const plan = `${candidate.effectiveDate} ${candidate.amount} ${candidate.currency}${replaced ? `, replacing the payment recorded on ${replaced.effectiveDate}` : ""}`;
   const result = { mode: args.apply ? "apply" : "dry-run", dealId, transactionId, replacesPaymentId: replaced?.id || null };
+  let afterProjection;
   if (args.apply) {
     const response = await api.post(`/api/sponsor-crm/deals/${enc(dealId)}/finance/payments`, body, {
-      headers: { "Idempotency-Key": randomUUID() },
+      headers: { "Idempotency-Key": args.idempotencyKey || randomUUID() },
     });
-    result.paymentState = response?.projection?.paymentState;
+    afterProjection = response?.projection;
+    result.paymentState = afterProjection?.paymentState;
+    if (afterProjection) result.projection = afterProjection;
   }
-  if (!args.json) io.print(`${result.mode}: link ${plan}${result.paymentState ? ` (deal is now ${result.paymentState})` : ""}`);
+  attachThankYouResult(result, {
+    projection: afterProjection,
+    beforeProjection: projection,
+    fallbackPaymentState: args.apply ? undefined : "paid",
+    dealTitle: deal?.title,
+    amount: candidate.amount,
+    currency: candidate.currency,
+    receivedOn: candidate.effectiveDate,
+  });
+  if (!args.json) {
+    io.print(`${result.mode}: link ${plan}${result.paymentState ? ` (deal is now ${result.paymentState})` : ""}`);
+    printThankYouHint(io, result.thankYou);
+  }
   return result;
 }
 
@@ -404,7 +428,19 @@ export async function approveSettlement(args, io) {
   let result = { mode: args.apply ? "apply" : "dry-run", dealId: id, noncashAdjustment: body };
   if (args.apply) result = { ...result, ...await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/settlement-adjustment`, body,
     { headers: { "Idempotency-Key": args.idempotencyKey || randomUUID() } }) };
-  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  attachThankYouResult(result, {
+    projection: result.projection,
+    beforeProjection: projection,
+    fallbackPaymentState: args.apply ? undefined : "paid",
+    dealTitle: deal?.title,
+    amount: data.amount,
+    currency: data.currency,
+    receivedOn: data.approvedOn,
+  });
+  if (!args.json) {
+    io.print(JSON.stringify(result, null, 2));
+    printThankYouHint(io, result.thankYou);
+  }
   return result;
 }
 
@@ -468,9 +504,27 @@ export async function receivePayment(args, io) {
   if (!projection.finance) throw new UsageError("Classify and issue the invoice before recording a receipt.");
   const body = { ...data, dealVersion: deal.version, expectedVersion: projection.finance.version };
   let result = { mode: args.apply ? "apply" : "dry-run", dealId: id, receipt: body };
-  if (args.apply) result = { ...result, ...await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/receipts`, body,
-    { headers: { "Idempotency-Key": args.idempotencyKey || randomUUID() } }) };
-  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  if (args.apply) {
+    const response = await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/receipts`, body,
+      { headers: { "Idempotency-Key": args.idempotencyKey || randomUUID() } });
+    result = { ...result, ...response };
+    if (response?.projection?.paymentState && !result.paymentState) {
+      result.paymentState = response.projection.paymentState;
+    }
+  }
+  attachThankYouResult(result, {
+    projection: result.projection,
+    beforeProjection: projection,
+    fallbackPaymentState: args.apply ? undefined : "paid",
+    dealTitle: deal?.title,
+    amount: data.amount,
+    currency: data.currency,
+    receivedOn: data.receivedOn,
+  });
+  if (!args.json) {
+    io.print(JSON.stringify(result, null, 2));
+    printThankYouHint(io, result.thankYou);
+  }
   return result;
 }
 
@@ -484,10 +538,85 @@ export async function correctPayment(args, io) {
   if (!projection.finance) throw new UsageError("No finance record exists.");
   const body = { ...data, dealVersion: deal.version, expectedVersion: projection.finance.version };
   let result = { mode: args.apply ? "apply" : "dry-run", dealId: id, transactionId: sourceId, correction: body };
-  if (args.apply) result = { ...result, ...await api.put(`/api/sponsor-crm/deals/${enc(id)}/finance/receipts/${enc(sourceId)}`, body,
-    { headers: { "Idempotency-Key": args.idempotencyKey || randomUUID() } }) };
-  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  if (args.apply) {
+    const response = await api.put(`/api/sponsor-crm/deals/${enc(id)}/finance/receipts/${enc(sourceId)}`, body,
+      { headers: { "Idempotency-Key": args.idempotencyKey || randomUUID() } });
+    result = { ...result, ...response };
+    if (response?.projection?.paymentState && !result.paymentState) {
+      result.paymentState = response.projection.paymentState;
+    }
+  }
+  attachThankYouResult(result, {
+    projection: result.projection,
+    beforeProjection: projection,
+    fallbackPaymentState: args.apply ? undefined : "paid",
+    dealTitle: deal?.title,
+    amount: data.amount,
+    currency: data.currency,
+    receivedOn: data.receivedOn,
+  });
+  if (!args.json) {
+    io.print(JSON.stringify(result, null, 2));
+    printThankYouHint(io, result.thankYou);
+  }
   return result;
 }
 
-export const commands = { pipeline, contact, list, show, create, update, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification };
+export async function recordThankYou(args, io) {
+  const usage = "dataops sponsors record-thank-you <deal-id> --ref THREAD_REF [--label TEXT] [--date YYYY-MM-DD] [--apply]";
+  const id = positional(args, 0, usage);
+  const ref = optionalString(args, "ref");
+  if (!ref) throw new UsageError(`--ref is required. Usage: ${usage}`);
+  const label = optionalString(args, "label") || THANK_YOU_EVIDENCE_LABEL;
+  const on = isoDate(args.date, "date") || new Date().toISOString().slice(0, 10);
+  const api = apiFor(args);
+  const [deal, projection] = await Promise.all([
+    api.get(`/api/sponsor-crm/deals/${enc(id)}`),
+    api.get(`/api/sponsor-crm/deals/${enc(id)}/finance`),
+  ]);
+  if (!projection?.finance) throw new UsageError(`Deal ${id} has no finance record.`);
+  const existingEvidence = Array.isArray(projection.finance.evidence) ? projection.finance.evidence : [];
+  const existingThankYou = existingEvidence.find((item) => item.kind === "email" && item.ref === ref)
+    || findThankYouEvidence(existingEvidence, projection.lastPaymentOn);
+  const entry = existingThankYou || { kind: "email", ref, label, on };
+  const nextEvidence = existingThankYou ? existingEvidence : [...existingEvidence, entry];
+  let result = {
+    mode: args.apply ? "apply" : "dry-run",
+    dealId: id,
+    alreadyRecorded: Boolean(existingThankYou),
+    evidenceEntry: entry,
+  };
+  let afterProjection = projection;
+  if (args.apply && !existingThankYou) {
+    const response = await api.put(`/api/sponsor-crm/deals/${enc(id)}/finance/follow-through`, {
+      dealVersion: deal.version,
+      expectedVersion: projection.finance.version,
+      evidence: nextEvidence,
+    }, {
+      headers: { "Idempotency-Key": args.idempotencyKey || `thank-you-${id}-${createHash("sha256").update(ref).digest("hex").slice(0, 24)}` },
+    });
+    result = { ...result, ...response };
+    afterProjection = response?.projection || {
+      ...projection,
+      finance: { ...projection.finance, evidence: nextEvidence },
+    };
+  } else if (!existingThankYou) {
+    afterProjection = {
+      ...projection,
+      finance: { ...projection.finance, evidence: nextEvidence },
+    };
+  }
+  attachThankYouResult(result, {
+    projection: afterProjection,
+    beforeProjection: projection,
+    fallbackPaymentState: afterProjection?.paymentState || "paid",
+    dealTitle: deal?.title,
+  });
+  if (!args.json) {
+    io.print(`${result.mode}: ${result.alreadyRecorded ? "thank-you email already recorded" : "record thank-you email draft/thread"} ${entry.ref}`);
+    printThankYouHint(io, result.thankYou);
+  }
+  return result;
+}
+
+export const commands = { pipeline, contact, list, show, create, update, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification, "record-thank-you": recordThankYou };

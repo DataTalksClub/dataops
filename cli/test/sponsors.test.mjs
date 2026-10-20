@@ -4,7 +4,7 @@ import { run } from "../src/cli.mjs";
 import { mkdtemp, writeFile, unlink, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { attachInvoice, attachPaymentEvidence, receivePayment, correctPayment, approveSettlement, reverseSettlement, clearProposalClassification, list } from "../src/commands/sponsors.mjs";
+import { attachInvoice, attachPaymentEvidence, receivePayment, correctPayment, approveSettlement, reverseSettlement, clearProposalClassification, recordThankYou, list } from "../src/commands/sponsors.mjs";
 
 test("proposal correction previews first and applies with fresh versions and a stable retry key", async () => {
   const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
@@ -233,6 +233,8 @@ test("sponsors link-payment links a transaction and replaces the payment recorde
     const post = calls.find((call) => call.method === "POST");
     assert.deepEqual(post.body, { dealVersion: 2, expectedVersion: 4, sourceId: "tx-demo", identityToken: "token-demo", replacesPaymentId: "a".repeat(32) });
     assert.match(post.headers["Idempotency-Key"], /^[A-Za-z0-9_-]{16,128}$/);
+    assert.match(out.join("\n"), /next-step: draft thank-you email using template\.finance\.bookkeeping\.email-to-sponsor-when-payment-has-been-received/);
+    assert.match(out.join("\n"), /draft-only — Alexey reviews and sends/);
   } finally {
     globalThis.fetch = originalFetch;
     if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
@@ -376,3 +378,92 @@ for (const view of ['early', 'overdue', 'reply']) {
     }
   });
 }
+
+test("receive-payment and record-thank-you surface the draft-only thank-you contract and record evidence idempotently", async () => {
+  const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
+  process.env.DATAOPS_TOKEN = "sanitized-test-token";
+  const calls = [];
+  let storedEvidence = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const body = options.body && JSON.parse(options.body);
+    calls.push({ url: String(url), method: options.method || "GET", body, headers: options.headers });
+    if (String(url).endsWith("/finance")) {
+      return new Response(JSON.stringify({
+        finance: { version: 4, invoiceNumber: "202610/37", amountDue: "500", currency: "EUR", evidence: storedEvidence },
+        paymentState: "paid",
+        lastPaymentOn: "2026-10-05",
+      }));
+    }
+    if (String(url).endsWith("/finance/receipts")) {
+      return new Response(JSON.stringify({
+        projection: {
+          finance: { version: 5, invoiceNumber: "202610/37", amountDue: "500", currency: "EUR", evidence: storedEvidence },
+          paymentState: "paid",
+          paid: "500",
+          lastPaymentOn: "2026-10-05",
+        },
+      }));
+    }
+    if (String(url).endsWith("/finance/follow-through")) {
+      storedEvidence = body.evidence || [];
+      return new Response(JSON.stringify({
+        projection: {
+          finance: { version: 6, invoiceNumber: "202610/37", amountDue: "500", currency: "EUR", evidence: storedEvidence },
+          paymentState: "paid",
+          paid: "500",
+          lastPaymentOn: "2026-10-05",
+        },
+      }));
+    }
+    return new Response(JSON.stringify({ id: "deal-demo", title: "Newsletter Sponsorship", version: 2 }));
+  };
+  try {
+    const receipt = await receivePayment({
+      _: ["deal-demo"],
+      data: JSON.stringify({
+        receivedOn: "2026-10-05",
+        amount: "500",
+        currency: "EUR",
+        counterparty: "Synthetic Sponsor",
+        reference: "bank:revolut:tx-37",
+      }),
+      url: "https://portal.example.test",
+      apply: true,
+      json: true,
+    }, {});
+    assert.equal(receipt.thankYou?.status, "required");
+    assert.equal(receipt.thankYou?.sendPolicy, "draft-only");
+    assert.equal(receipt.thankYou?.templateId, "template.finance.bookkeeping.email-to-sponsor-when-payment-has-been-received");
+    assert.equal(receipt.thankYou?.context?.whatWasPaid, "invoice 202610/37");
+    assert.equal(receipt.nextStep?.code, "thank-sponsor");
+
+    const recorded = await recordThankYou({
+      _: ["deal-demo"],
+      ref: "thread:invoice-202610-37-thank-you",
+      date: "2026-10-05",
+      url: "https://portal.example.test",
+      apply: true,
+      json: true,
+    }, {});
+    assert.equal(recorded.alreadyRecorded, false);
+    assert.equal(recorded.thankYou?.status, "recorded");
+    assert.equal(recorded.nextStep, undefined);
+    const putCalls = calls.filter((call) => call.method === "PUT");
+    assert.equal(putCalls.length, 1);
+
+    const replay = await recordThankYou({
+      _: ["deal-demo"],
+      ref: "thread:invoice-202610-37-thank-you",
+      date: "2026-10-05",
+      url: "https://portal.example.test",
+      apply: true,
+      json: true,
+    }, {});
+    assert.equal(replay.alreadyRecorded, true);
+    assert.equal(replay.thankYou?.status, "recorded");
+    assert.equal(calls.filter((call) => call.method === "PUT").length, 1, "idempotent replay does not write duplicate evidence");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
+  }
+});

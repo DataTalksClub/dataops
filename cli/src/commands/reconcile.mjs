@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { UsageError } from "../errors.mjs";
 import { enc, optionalString, positional } from "../format.mjs";
 import { apiFor } from "../session.mjs";
+import { attachThankYouResult, printThankYouHint } from "../thank-you.mjs";
 
 export const summary = "Month-end reconciliation: bank statements, matching, payment confirm";
 
@@ -216,16 +217,30 @@ export async function confirm(args, io) {
     paymentMode: plan.mode,
     plan: plan.description,
   };
+  let afterProjection;
   if (args.apply) {
     // Deterministic key: the same match id replays to the same write.
     const response = await api.post(plan.endpoint, body, {
       headers: { "Idempotency-Key": `reconcile-${matchId}-${plan.mode === "link" ? "link" : "rcpt"}` },
     });
-    result.paymentState = response?.projection?.paymentState ?? response?.paymentState;
+    afterProjection = response?.projection;
+    result.paymentState = afterProjection?.paymentState ?? response?.paymentState;
+    if (afterProjection) result.projection = afterProjection;
   }
+  attachThankYouResult(result, {
+    projection: afterProjection,
+    beforeProjection: projection,
+    fallbackPaymentState: args.apply ? undefined : "paid",
+    dealName: match.dealName,
+    invoiceNumber: match.invoiceNumber,
+    amount: match.row?.amount?.replace("-", ""),
+    currency: match.row?.currency,
+    receivedOn: match.row?.date,
+  });
   if (!args.json) {
     io.print(`${result.mode}: ${plan.mode === "link" ? "link ledger row" : "record receipt"} ${plan.description}`);
     io.print(`  for ${match.dealName}${match.invoiceNumber ? ` (invoice ${match.invoiceNumber})` : ""}${result.paymentState ? ` — deal is now ${result.paymentState}` : ""}`);
+    printThankYouHint(io, result.thankYou);
     if (!args.apply) io.print("Re-run with --apply to write.");
   }
   return result;
