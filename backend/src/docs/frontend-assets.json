@@ -199,6 +199,7 @@
     "src/newsletter-preview-page.js",
     "src/surfaces/operations/newsletter-preview.js",
     "src/styles/newsletter-preview.css",
-    "src/template-placeholders.js"
+    "src/template-placeholders.js",
+    "src/surfaces/knowledge/template-view.js"
   ]
 }

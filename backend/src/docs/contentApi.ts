@@ -1,3 +1,4 @@
+import { templateParser } from './templatePlaceholders';
 /**
  * Docs content API.
  *
@@ -578,6 +579,10 @@ async function createDoc(rt: DocsRuntime, body: Record<string, unknown>, actor:s
   const parent = typeof body.parent === 'string' && body.parent.trim() ? body.parent.trim() : undefined;
 
   const content = typeof body.content === 'string' ? body.content : newDocContent(title, docType, summary, scaffold, parent);
+  if (docType === 'template') {
+    const {issues} = (await templateParser()).parseTemplatePlaceholders(content);
+    if (issues.length) throw new BadRequest(`${repoPath}: ${issues.map(issue => issue.message).join(' ')}`);
+  }
   mkdirSync(dirname(filePath), { recursive: true });
   if(body.absent !== true) throw new BadRequest('Creation requires absent: true');
   await rt.store.publish([{path:repoPath,bytes:content,absent:true}],String(body.expectedRevision || ''),actor,`Create ${repoPath}`);

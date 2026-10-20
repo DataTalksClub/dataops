@@ -23,3 +23,14 @@ test('editor template scaffold satisfies the convention',async()=>{
  const {templateParser}=await import('../src/docs/templatePlaceholders');
  assert.deepEqual((await templateParser()).parseTemplatePlaceholders(newDocContent('Example','template','','full')).issues,[]);
 });
+test('API create validates explicit template type even when supplied content lacks frontmatter',async()=>{
+ const {configureDocsRuntime,resetDocsRuntime,handleDocsRoutes}=await import('../src/docs/contentApi');
+ const {store,publication}=syntheticKnowledge({});
+ configureDocsRuntime(store);
+ try {
+  const response=await handleDocsRoutes({httpMethod:'POST',path:'/docs',headers:{},queryStringParameters:null,body:JSON.stringify({path:'content/example.md',doc_type:'template',content:'No template body',absent:true,expectedRevision:publication.revision})},'actor');
+  assert.equal(response?.statusCode,400);
+  assert.match(response?.body || '',/fenced body/);
+  assert.equal((await store.pin()).revision,publication.revision);
+ } finally {resetDocsRuntime();}
+});

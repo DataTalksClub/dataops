@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { RUNTIME_ROOT } from '../runtimePaths';
 
 interface TemplateDocument { path?: string; id?: string; doc_type?: string; }
@@ -10,7 +10,9 @@ interface Parser {
 let parser: Promise<Parser> | undefined;
 export function templateParser(): Promise<Parser> {
   if (!parser) {
-    const root = process.env.FRONTEND_ROOT ? resolve(process.env.FRONTEND_ROOT) : resolve(RUNTIME_ROOT, 'frontend');
+    // The parser is a runtime dependency, independent of the portal's optional
+    // frontend override. tsx runs from backend/src; deployed code runs from dist.
+    const root = basename(RUNTIME_ROOT) === 'src' ? resolve(RUNTIME_ROOT, '../../frontend') : resolve(RUNTIME_ROOT, 'frontend');
     const source = readFileSync(resolve(root, 'src/template-placeholders.js'), 'utf8');
     // Preserve native ESM loading in the CommonJS backend; data URLs also work
     // in the Lambda artifact, where frontend assets have no package.json.
