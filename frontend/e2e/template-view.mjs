@@ -128,6 +128,9 @@ try {
   await portal.locator("#editor-view").evaluate(node => { node.scrollTop = 0; });
   await portal.screenshot({ path: path.join(screenshots, "local-portal-template-desktop.png"), fullPage: true });
   await portal.setViewportSize({ width: 390, height: 844 });
+  await portal.keyboard.press("Escape");
+  await portal.waitForFunction(() => document.querySelector("#sidebar").getBoundingClientRect().right <= 0);
+  assert.equal(await portal.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await portal.locator("#editor-view").evaluate(node => { node.scrollTop = 0; });
   await portal.screenshot({ path: path.join(screenshots, "local-portal-template-mobile.png"), fullPage: true });
   assert.deepEqual(errors, []);
