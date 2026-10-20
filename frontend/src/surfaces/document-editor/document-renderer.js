@@ -14,6 +14,7 @@ import { makeBlock, parseMarkdownBlocks, serializeBlocksToMarkdown } from "./blo
 import { focusEditable, neighbourEditable } from "./editable.js";
 import { installSelectionToolbar } from "./selection-toolbar.js";
 import { createCodeViewSurface } from "../knowledge/code-view.js";
+import { createTemplateViewSurface } from "../knowledge/template-view.js";
 
 export function createDocumentRenderer(context, services) {
   const {
@@ -75,6 +76,7 @@ export function createDocumentRenderer(context, services) {
   ];
 
   const codeViewSurface = createCodeViewSurface({});
+  const templateViewSurface = createTemplateViewSurface({ clipboard: context.clipboard });
   let codeViewRequest = 0;
 
   async function fetchCodeViewPayload(codeViewPath) {
@@ -119,7 +121,7 @@ export function createDocumentRenderer(context, services) {
       }
     }
     renderedView.replaceChildren();
-    renderedView.classList.remove("code-view");
+    renderedView.classList.remove("code-view", "template-view");
     renderedView.dataset.editorRoot = "";
     if (payload && !problem) {
       codeViewSurface.renderCodeView(renderedView, payload, { renderMarkdown });
@@ -221,7 +223,7 @@ export function createDocumentRenderer(context, services) {
   }
 
   function renderParsedDocument(options = {}) {
-    renderedView.classList.remove("code-view");
+    renderedView.classList.remove("code-view", "template-view");
     // A code-view document renders as its Gist-style body — files in author
     // order, read-only — instead of the SOP block view.
     if (
@@ -236,6 +238,15 @@ export function createDocumentRenderer(context, services) {
       });
       updateViewToggleAvailability();
       return;
+    }
+    if (documentState.currentDoc?.docType === "template") {
+      const markdown = stripFrontmatter(editor.value || "");
+      if (templateViewSurface.renderTemplateView(renderedView, markdown, { renderMarkdown })) {
+        editorView.dataset.mode = "rendered";
+        renderedView.dataset.editorRoot = "";
+        updateViewToggleAvailability();
+        return;
+      }
     }
     const { bodyBlocks, focusBlockIndex = -1, focus = null } = options;
     const sections = (documentState.currentParsed && documentState.currentParsed.sections) || {};

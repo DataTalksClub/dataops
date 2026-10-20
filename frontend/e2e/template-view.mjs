@@ -1,0 +1,101 @@
+// Run from repository root: node frontend/e2e/template-view.mjs
+// Integrated renderer, real Markdown and clipboard, synthetic content only.
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { mkdir, readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import path from "node:path";
+const require = createRequire(path.resolve("backend/package.json"));
+const { chromium } = require("playwright");
+const root = path.resolve("frontend");
+const screenshots = process.env.KBP_SCREENSHOTS || ".tmp/screenshots/kbp";
+await mkdir(screenshots, { recursive: true });
+const body = "Subject: Review for <RECIPIENT_NAME>\n\nHello <RECIPIENT_NAME>,\n\nPlease review the draft at <REVIEW_URL>.\n\nThanks,\nThe example team";
+const markdown = `# Synthetic review message\n\n## Template\n\n\`\`\`text\n${body}\n\`\`\`\n\n## Placeholders\n\n| Placeholder | What to put there | Example |\n| --- | --- | --- |\n| \`<RECIPIENT_NAME>\` | The recipient's first name | Taylor |\n| \`<REVIEW_URL>\` | Link to the draft for review | https://example.test/draft |\n\n## How to send\n\nRead [the review guide](https://example.test/guide) before sending.\n\n## Sent example\n\nHello Taylor, please review the example draft.\n`;
+const server = createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url, "http://localhost");
+    if (url.pathname === "/fixture") {
+      const index = await readFile(path.join(root, "index.html"), "utf8");
+      const styles = index.match(/<link rel="stylesheet"[^>]*>/g).join("\n");
+      res.setHeader("content-type", "text/html");
+      res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Local synthetic KB template fixture</title>${styles}</head><body data-workspace-view="docs"><main style="max-width: 1080px; margin: 32px auto; padding: 16px"><p>LOCAL · SYNTHETIC FIXTURE</p><h1>Synthetic review message</h1><section id="viewer"></section></main></body></html>`);
+      return;
+    }
+    const file = path.resolve(root, `.${url.pathname}`);
+    if (!file.startsWith(root + path.sep)) throw new Error("Invalid path");
+    res.setHeader("content-type", file.endsWith(".js") ? "text/javascript" : file.endsWith(".css") ? "text/css" : "application/octet-stream");
+    res.end(await readFile(file));
+  } catch { res.writeHead(404); res.end(); }
+});
+await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+const browser = await chromium.launch({ headless: true });
+try {
+  const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"], viewport: { width: 1440, height: 1000 } });
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto(`http://127.0.0.1:${server.address().port}/fixture`);
+  await page.evaluate(async (markdown) => {
+    const { createDocumentRenderer } = await import("/src/surfaces/document-editor/document-renderer.js");
+    const { createEditorMarkdown } = await import("/src/surfaces/document-editor/markdown.js");
+    const state = { currentDoc: { docType: "template", path: "content/synthetic/templates/review.md" } };
+    const text = document.createElement("textarea");
+    text.value = markdown;
+    const editorView = document.createElement("div");
+    editorView.dataset.mode = "rendered";
+    const markdownServices = createEditorMarkdown({ documentState: state, resolveMarkdownDocLink: () => null }, {
+      escapeHtmlAttr: value => String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;"),
+    });
+    const renderer = createDocumentRenderer({
+      documentState: state, editor: text, editorView,
+      renderedView: document.querySelector("#viewer"), viewToggleButton: document.createElement("button"),
+    }, markdownServices);
+    window.renderTemplateFixture = (source) => { text.value = source; renderer.renderParsedDocument(); };
+    renderer.renderParsedDocument();
+  }, markdown);
+  const chips = page.locator(".template-placeholder-chip");
+  assert.equal(await chips.count(), 3);
+  assert.equal(await page.locator(".template-view-body").textContent(), body);
+  await chips.first().focus();
+  assert.match(await page.getByRole("complementary", { name: "Placeholder details" }).innerText(), /recipient's first name[\s\S]*Taylor/);
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  assert.equal(await chips.last().evaluate(node => node === document.activeElement), true);
+  assert.match(await page.locator(".template-placeholder-panel").innerText(), /draft for review[\s\S]*https:\/\/example.test\/draft/);
+  await page.screenshot({ path: path.join(screenshots, "local-template-desktop.png"), fullPage: true });
+  await page.getByRole("button", { name: "Copy template", exact: true }).click();
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), body);
+  assert.equal(await page.getByRole("status").innerText(), "Template copied");
+  await page.getByText("Full document and sending instructions", { exact: true }).click();
+  assert.ok(await page.getByRole("link", { name: "the review guide" }).isVisible());
+  assert.ok(await page.getByRole("heading", { name: "Sent example" }).isVisible());
+  await page.screenshot({ path: path.join(screenshots, "local-template-instructions.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await chips.last().click();
+  assert.ok(await page.locator(".template-placeholder-panel").isVisible());
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.screenshot({ path: path.join(screenshots, "local-template-mobile.png"), fullPage: true });
+  await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("denied"); } } }));
+  await page.getByRole("button", { name: "Copy template", exact: true }).click();
+  assert.match(await page.getByRole("status").innerText(), /Copy failed/);
+  await page.evaluate(() => delete navigator.clipboard);
+  const multi = markdown.replace("## Template\n\n", "## Template\n\n### Initial request\n\n")
+    .replace("\n## Placeholders", "\n### Follow-up\n\nUse after the initial message.\n\n```text\nReminder for <RECIPIENT_NAME>: <REVIEW_URL>\n```\n\n## Placeholders");
+  await page.evaluate(source => window.renderTemplateFixture(source), multi);
+  assert.equal(await page.locator(".template-variant").count(), 2);
+  await page.getByRole("button", { name: "Copy Follow-up", exact: true }).click();
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), "Reminder for <RECIPIENT_NAME>: <REVIEW_URL>");
+  await page.getByRole("button", { name: "Copy Initial request", exact: true }).click();
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), body);
+  await page.locator(".template-variant").last().getByRole("button", { name: "Explain <REVIEW_URL>" }).focus();
+  await page.screenshot({ path: path.join(screenshots, "local-template-variants-mobile.png"), fullPage: true });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.screenshot({ path: path.join(screenshots, "local-template-variants-desktop.png"), fullPage: true });
+  assert.deepEqual(errors, []);
+  console.log(`PASS: integrated template viewer desktop/mobile, keyboard, exact clipboard, supplemental links, copy failure. Local screenshots: ${screenshots}`);
+} finally {
+  await browser.close();
+  await new Promise(resolve => server.close(resolve));
+}
