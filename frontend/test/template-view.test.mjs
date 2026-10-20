@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { createTemplateViewSurface } from "../src/surfaces/knowledge/template-view.js";
-import { createDocumentRenderer } from "../src/surfaces/document-editor/document-renderer.js";
 import { FakeDocument, FakeElement } from "./support/fake-dom.mjs";
 
 const originalDocument = globalThis.document;
@@ -58,29 +57,6 @@ test("invalid definitions show parser findings without injecting HTML", () => {
   assert.match(h.root.querySelector('[role="alert"]').textContent, /NAME/);
   assert.equal(h.root.querySelectorAll("script").length, 0);
   assert.equal(h.root.querySelector(".template-view-body").textContent, body);
-});
-test("document renderer uses the current template draft and clears template styles on navigation", () => {
-  const h = setup();
-  const state = { currentDoc: { docType: "template", path: "synthetic/templates/demo.md" } };
-  const editorView = new FakeElement();
-  editorView.dataset.mode = "rendered";
-  const context = {
-    documentState: state, renderedView: h.root, editor: { value: markdown },
-    editorView, viewToggleButton: new FakeElement("button"),
-  };
-  const renderer = createDocumentRenderer(context, {
-    stripFrontmatter: (text) => text,
-    renderMarkdown: (md) => { const node = new FakeElement(); node.textContent = md; return node; },
-  });
-  renderer.renderParsedDocument();
-  assert.ok(h.root.classList.contains("template-view"));
-  assert.equal(h.root.querySelector(".template-view-body").textContent, body);
-  // Navigating to another supported viewer must remove the template layout.
-  state.currentDoc.docType = "code-view";
-  state.currentParsedCodeView = { files: [], blocks: [] };
-  renderer.renderParsedDocument();
-  assert.equal(h.root.classList.contains("template-view"), false);
-  assert.ok(h.root.classList.contains("code-view"));
 });
 
 test("variants have separate copy actions and never copy labels, instructions, or other alternatives", async () => {

@@ -239,13 +239,11 @@ export function createDocumentRenderer(context, services) {
       updateViewToggleAvailability();
       return;
     }
+    let templatePreview = null;
     if (documentState.currentDoc?.docType === "template") {
-      const markdown = stripFrontmatter(editor.value || "");
-      if (templateViewSurface.renderTemplateView(renderedView, markdown, { renderMarkdown })) {
-        editorView.dataset.mode = "rendered";
-        renderedView.dataset.editorRoot = "";
-        updateViewToggleAvailability();
-        return;
+      const preview = document.createElement("section");
+      if (templateViewSurface.renderTemplateView(preview, stripFrontmatter(editor.value || ""))) {
+        templatePreview = preview;
       }
     }
     const { bodyBlocks, focusBlockIndex = -1, focus = null } = options;
@@ -262,6 +260,22 @@ export function createDocumentRenderer(context, services) {
     blocks.push(renderTitleBlock(fm));
     blocks.push(renderFrontmatterBlock());
     blocks.push(renderWarningsBlock());
+    const headerLength = blocks.length;
+    const keepDocumentOpen = renderedView.querySelector(".template-document")?.open ||
+      options.focusBlockIndex >= 0 || !!options.focus;
+    const commitBlocks = () => {
+      if (!templatePreview) {
+        renderedView.replaceChildren(...blocks.filter(Boolean));
+        return;
+      }
+      const supplemental = document.createElement("details");
+      supplemental.className = "template-document";
+      supplemental.open = keepDocumentOpen;
+      const summary = document.createElement("summary");
+      summary.textContent = "Full document and sending instructions";
+      supplemental.append(summary, ...blocks.slice(headerLength).filter(Boolean));
+      renderedView.replaceChildren(...blocks.slice(0, headerLength).filter(Boolean), templatePreview, supplemental);
+    };
     if (Object.keys(sections).length === 0) {
       const rawFull = editor.value || "";
       const body = stripFrontmatter(rawFull);
@@ -308,7 +322,7 @@ export function createDocumentRenderer(context, services) {
       const subpages = renderSubpagesBlock(documentState.currentDoc?.path);
       if (subpages) blocks.push(subpages);
 
-      renderedView.replaceChildren(...blocks.filter(Boolean));
+      commitBlocks();
       return;
     }
 
@@ -343,7 +357,7 @@ export function createDocumentRenderer(context, services) {
     const subpages = renderSubpagesBlock(documentState.currentDoc?.path);
     if (subpages) blocks.push(subpages);
 
-    renderedView.replaceChildren(...blocks.filter(Boolean));
+    commitBlocks();
     // Async-fetch backlinks separately so the main render isn't blocked.
     fetchBacklinksForCurrentDoc();
   }

@@ -42,7 +42,7 @@ try {
   page.on("pageerror", error => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.address().port}/fixture`);
   await page.evaluate(async (markdown) => {
-    const { createDocumentRenderer } = await import("/src/surfaces/document-editor/document-renderer.js");
+    const { createTemplateViewSurface } = await import("/src/surfaces/knowledge/template-view.js");
     const { createEditorMarkdown } = await import("/src/surfaces/document-editor/markdown.js");
     const state = { currentDoc: { docType: "template", path: "content/synthetic/templates/review.md" } };
     const text = document.createElement("textarea");
@@ -52,12 +52,9 @@ try {
     const markdownServices = createEditorMarkdown({ documentState: state, resolveMarkdownDocLink: () => null }, {
       escapeHtmlAttr: value => String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;"),
     });
-    const renderer = createDocumentRenderer({
-      documentState: state, editor: text, editorView,
-      renderedView: document.querySelector("#viewer"), viewToggleButton: document.createElement("button"),
-    }, markdownServices);
-    window.renderTemplateFixture = (source) => { text.value = source; renderer.renderParsedDocument(); };
-    renderer.renderParsedDocument();
+    const surface = createTemplateViewSurface();
+    window.renderTemplateFixture = (source) => surface.renderTemplateView(document.querySelector("#viewer"), source, markdownServices);
+    window.renderTemplateFixture(markdown);
   }, markdown);
   const chips = page.locator(".template-placeholder-chip");
   assert.equal(await chips.count(), 3);
@@ -120,11 +117,18 @@ try {
   await portal.locator(".template-variant").first().waitFor();
   assert.equal(await portal.locator(".template-variant").count(), 2);
   assert.equal(await portal.locator("#document-path").textContent(), "content/synthetic/templates/review.md");
+  assert.ok(await portal.getByRole("heading", { name: "Synthetic review message", exact: true }).isVisible());
+  await portal.getByText("Full document and sending instructions", { exact: true }).click();
+  assert.ok(await portal.getByRole("link", { name: "the review guide" }).isVisible());
+  assert.ok(await portal.locator(".template-document [contenteditable=true]").count() > 0);
+  await portal.getByText("Full document and sending instructions", { exact: true }).click();
   await portal.getByRole("button", { name: "Copy Follow-up", exact: true }).click();
   assert.equal(await portal.evaluate(() => navigator.clipboard.readText()), "Reminder for <RECIPIENT_NAME>: <REVIEW_URL>");
   await portal.locator(".template-variant").first().getByRole("button", { name: "Explain <RECIPIENT_NAME>" }).first().focus();
+  await portal.locator("#editor-view").evaluate(node => { node.scrollTop = 0; });
   await portal.screenshot({ path: path.join(screenshots, "local-portal-template-desktop.png"), fullPage: true });
   await portal.setViewportSize({ width: 390, height: 844 });
+  await portal.locator("#editor-view").evaluate(node => { node.scrollTop = 0; });
   await portal.screenshot({ path: path.join(screenshots, "local-portal-template-mobile.png"), fullPage: true });
   assert.deepEqual(errors, []);
   console.log(`PASS: integrated template viewer desktop/mobile, keyboard, exact clipboard, supplemental links, copy failure. Local screenshots: ${screenshots}`);
