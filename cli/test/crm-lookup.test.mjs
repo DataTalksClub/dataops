@@ -178,6 +178,35 @@ describe("CLI crm lookup", () => {
     }
   });
 
+  test("a waiting marker outranks a closed stage, including on its revisit day", async () => {
+    const io = captureIo();
+    // Live MeritMap shape: delivered but not invoiced, so the stage math says
+    // closed while the billing task still waits with today as its date.
+    const live = { ...WAITING_DEAL, stage: "closed", money: "none", nextTask: { ...WAITING_DEAL.nextTask, date: "2026-10-20" } };
+    const { restore } = fake({ ...meritmapRoutes(), "GET /api/sponsor-crm/pipeline": { status: 200, body: { items: [live], total: 1, nextCursor: null } } });
+    try {
+      assert.equal(await run(["crm", "lookup", "--email", "angela@meritmap.ai", "--json"], io), EXIT.ok);
+      const decision = io.json().decision;
+      assert.equal(decision.action, "waiting");
+      assert.equal(decision.until, "2026-10-20");
+      assert.match(decision.reason, /revisit 2026-10-20/);
+    } finally {
+      restore();
+    }
+
+    const io2 = captureIo();
+    const overdue = { ...live, nextTask: { ...live.nextTask, date: "2026-10-01" } };
+    const { restore: restore2 } = fake({ ...meritmapRoutes(), "GET /api/sponsor-crm/pipeline": { status: 200, body: { items: [overdue], total: 1, nextCursor: null } } });
+    try {
+      assert.equal(await run(["crm", "lookup", "--email", "angela@meritmap.ai", "--json"], io2), EXIT.ok);
+      const decision = io2.json().decision;
+      assert.equal(decision.action, "proceed");
+      assert.match(decision.reason, /waiting overdue since 2026-10-01/);
+    } finally {
+      restore2();
+    }
+  });
+
   test("an archived deal with no note listing still resolves", async () => {
     const io = captureIo();
     const { restore } = fake({

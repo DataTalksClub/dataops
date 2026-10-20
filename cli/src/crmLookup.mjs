@@ -141,18 +141,27 @@ function publicDeal(row, notes) {
   };
 }
 
-/** One deal's verdict against today: waiting beats an inbound-reply nudge — the marker is the decision. */
+/**
+ * One deal's verdict against today. A waiting/deferred marker is the
+ * operator's explicit "return later" and outranks everything — including a
+ * closed stage (delivered + not-yet-invoiced deals stage as closed while the
+ * billing task still pends). The revisit date itself counts as waiting; once
+ * it passes the marker is overdue and the deal needs attention.
+ */
 function dealDecision(deal, today) {
+  const closed = ["closed", "lost"].includes(deal.stage);
   const task = deal.nextTask;
   const date = task?.date ? String(task.date).slice(0, 10) : null;
   const marked = task && (task.status === "waiting" || task.deferred === true);
-  if (task && date && date > today && marked) {
+  if (marked && date && date >= today) {
     return { state: "waiting", until: date, reason: `${task.deferred ? "deferred" : "waiting"}: ${task.description || "return later"} (revisit ${date})` };
   }
+  if (closed && !marked) return { state: "skip", reason: "closed or lost" };
   if (deal.replyReview) return { state: "proceed", reason: "inbound reply may be needed" };
   if (!task || !date) return { state: "proceed", reason: task ? "next action has no date" : "no dated next action" };
-  if (date <= today) return { state: "proceed", reason: `next action due ${date}` };
-  return { state: "waiting", until: date, reason: `scheduled: ${task.description || "next action"} (due ${date})` };
+  if (marked) return { state: "proceed", reason: `waiting overdue since ${date}: ${task.description || "return later"}` };
+  if (date >= today) return { state: "waiting", until: date, reason: `scheduled: ${task.description || "next action"} (due ${date})` };
+  return { state: "proceed", reason: `next action due ${date}` };
 }
 
 export function decide({ people, organization, deals }, today) {
@@ -166,19 +175,20 @@ export function decide({ people, organization, deals }, today) {
       reason: organization ? "no CRM deals; treat as new outreach" : "matched person has no linked organization or deals",
     };
   }
-  const active = deals.filter((deal) => !["closed", "lost"].includes(deal.stage));
-  if (!active.length) return { action: "skip", until: null, reason: "all deals closed or lost" };
-  const judged = active.map((deal) => ({ deal, ...dealDecision(deal, today) }));
+  const judged = deals.map((deal) => ({ deal, ...dealDecision(deal, today) }));
   const proceed = judged.find((entry) => entry.state === "proceed");
   if (proceed) {
     return { action: "proceed", until: null, reason: `${proceed.deal.title || proceed.deal.id}: ${proceed.reason}` };
   }
   const waits = judged.filter((entry) => entry.state === "waiting");
-  return {
-    action: "waiting",
-    until: waits.map((entry) => entry.until).sort()[0] || null,
-    reason: waits[0].reason,
-  };
+  if (waits.length) {
+    return {
+      action: "waiting",
+      until: waits.map((entry) => entry.until).sort()[0] || null,
+      reason: waits[0].reason,
+    };
+  }
+  return { action: "skip", until: null, reason: "all deals closed or lost" };
 }
 
 export async function runLookup(api, { email, domain } = {}) {
