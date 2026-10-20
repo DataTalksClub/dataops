@@ -1,6 +1,7 @@
 import { UsageError } from "../errors.mjs";
 import { enc, integer, isoDate, optionalString, positional, table, jsonData } from "../format.mjs";
 import { apiFor } from "../session.mjs";
+import { runLookup, runSetWait } from "../crmLookup.mjs";
 
 export const summary = "CRM workspace: company/people directories, activity, notes, touches, saved views";
 
@@ -20,6 +21,13 @@ Usage
       [--next-action-from YYYY-MM-DD] [--next-action-before YYYY-MM-DD]  Inclusive bounds
       Read-only pipeline rows through the canonical pipeline endpoint
   dataops crm archive <deal-id>             Read-only post-send archive for a deal (drafts/attempts)
+  dataops crm lookup --email ADDRESS [--domain DOMAIN]
+      Match a sender to CRM people, company and deals. Prints JSON with matched people
+      (colleagues included), the organization, deals with stage/money/fulfillment,
+      nextTask and recent notes, plus decision: proceed | waiting (until DATE) | skip | no_match.
+  dataops crm lookup --email ADDRESS --set-wait --until YYYY-MM-DD --reason TEXT [--deal-id ID]
+      Mark the deal "wait, revisit later": open Tasks go waiting until DATE (a waiting
+      Task is created when the deal has none), then the fresh state is printed.
   dataops crm company show <id>
   dataops crm company create --data '{...}'      Through the canonical organization record
   dataops crm company update <id> --data '{...}'  Must include the current version
@@ -60,6 +68,7 @@ Examples
   dataops crm activity contact abc123 --types note,touch,mail
   dataops crm note add organization abc123 --body "Called; send deck next week" --source-key call-2026-10-17
   dataops crm touch contact abc123 --channel email --note "Sent deck"
+  dataops crm lookup --email angela@meritmap.ai --json | jq .decision
 `;
 
 const TARGETS = ["organization", "contact", "deal"];
@@ -470,6 +479,23 @@ export async function viewsShow(args, io) {
   return result;
 }
 
+export async function lookup(args, io) {
+  const api = apiFor(args);
+  const email = optionalString(args, "email");
+  const domain = optionalString(args, "domain");
+  if (!email && !domain) throw new UsageError("Pass --email ADDRESS or --domain DOMAIN.");
+  if (email && !email.includes("@")) throw new UsageError(`--email must be a full address like name@company.com (got "${email}").`);
+  let result;
+  if (args.setWait) {
+    const setWait = await runSetWait(api, { email, domain, until: args.until, reason: args.reason, dealId: args.dealId });
+    result = { ...(await runLookup(api, { email, domain })), setWait };
+  } else {
+    result = await runLookup(api, { email, domain });
+  }
+  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  return result;
+}
+
 async function dispatch(args, io, verbs, usage) {
   const [verb, ...rest] = args._;
   const handler = verbs[verb];
@@ -492,6 +518,7 @@ export const commands = {
     "dataops crm deal <show|create|update|archive|unarchive> [...]"),
   pipeline: (args, io) => dispatch(args, io, { list: pipelineList }, "dataops crm pipeline list [...]"),
   archive,
+  lookup,
   activity,
   notes: (args, io) => dispatch(args, io, { list: notesList }, "dataops crm notes list <target> <id> [...]"),
   note: (args, io) => dispatch(args, io,
