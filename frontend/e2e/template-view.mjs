@@ -22,6 +22,11 @@ const server = createServer(async (req, res) => {
       res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Local synthetic KB template fixture</title>${styles}</head><body data-workspace-view="docs"><main style="max-width: 1080px; margin: 32px auto; padding: 16px"><p>LOCAL · SYNTHETIC FIXTURE</p><h1>Synthetic review message</h1><section id="viewer"></section></main></body></html>`);
       return;
     }
+    if (url.pathname === "/synthetic/templates/review.md") {
+      res.setHeader("content-type", "text/html; charset=utf-8");
+      res.end(await readFile(path.join(root, "index.html")));
+      return;
+    }
     const file = path.resolve(root, `.${url.pathname}`);
     if (!file.startsWith(root + path.sep)) throw new Error("Invalid path");
     res.setHeader("content-type", file.endsWith(".js") ? "text/javascript" : file.endsWith(".css") ? "text/css" : "application/octet-stream");
@@ -93,6 +98,34 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.screenshot({ path: path.join(screenshots, "local-template-variants-desktop.png"), fullPage: true });
+  // Actual application shell and document routing, with every API response sanitized.
+  const portal = await context.newPage();
+  portal.on("pageerror", error => errors.push(error.message));
+  await portal.addInitScript(() => {
+    localStorage.setItem("dataops_token", "synthetic-fixture-token");
+    localStorage.setItem("dataops_user", JSON.stringify({ id: "synthetic-user", name: "Synthetic Operator", email: "operator@example.test" }));
+  });
+  await portal.route("**/*", route => {
+    if (!["fetch", "xhr"].includes(route.request().resourceType())) return route.continue();
+    const url = new URL(route.request().url());
+    const document = { path: "content/synthetic/templates/review.md", title: "Synthetic review message", doc_type: "template", systems: [], tags: [] };
+    if (url.pathname === "/docs") return route.fulfill({ json: url.searchParams.has("path") ? {
+      ...document, content: multi, revision: "synthetic-r1", parsed: { frontmatter: { title: document.title }, sections: {} },
+    } : { documents: [document] } });
+    if (url.pathname === "/parse") return route.fulfill({ json: { parsed: { frontmatter: { title: document.title }, sections: {} } } });
+    if (url.pathname === "/api/me") return route.fulfill({ json: { user: { id: "synthetic-user", name: "Synthetic Operator", email: "operator@example.test" } } });
+    return route.fulfill({ json: { items: [], cards: [], tasks: [], templates: [], people: [], users: [], findings: [], counts: {}, revision: "synthetic-r1" } });
+  });
+  await portal.goto(`http://127.0.0.1:${server.address().port}/synthetic/templates/review.md`);
+  await portal.locator(".template-variant").first().waitFor();
+  assert.equal(await portal.locator(".template-variant").count(), 2);
+  assert.equal(await portal.locator("#document-path").textContent(), "content/synthetic/templates/review.md");
+  await portal.getByRole("button", { name: "Copy Follow-up", exact: true }).click();
+  assert.equal(await portal.evaluate(() => navigator.clipboard.readText()), "Reminder for <RECIPIENT_NAME>: <REVIEW_URL>");
+  await portal.locator(".template-variant").first().getByRole("button", { name: "Explain <RECIPIENT_NAME>" }).first().focus();
+  await portal.screenshot({ path: path.join(screenshots, "local-portal-template-desktop.png"), fullPage: true });
+  await portal.setViewportSize({ width: 390, height: 844 });
+  await portal.screenshot({ path: path.join(screenshots, "local-portal-template-mobile.png"), fullPage: true });
   assert.deepEqual(errors, []);
   console.log(`PASS: integrated template viewer desktop/mobile, keyboard, exact clipboard, supplemental links, copy failure. Local screenshots: ${screenshots}`);
 } finally {
