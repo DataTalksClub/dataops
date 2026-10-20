@@ -107,7 +107,7 @@ try {
     const url = new URL(route.request().url());
     const document = { path: "content/synthetic/templates/review.md", title: "Synthetic review message", doc_type: "template", systems: [], tags: [] };
     if (url.pathname === "/docs") return route.fulfill({ json: url.searchParams.has("path") ? {
-      ...document, content: multi, revision: "synthetic-r1", parsed: { frontmatter: { title: document.title }, sections: {} },
+      ...document, content: `---\ndoc_type: template\ntitle: Synthetic review message\n---\n\n${multi}`, revision: "synthetic-r1", parsed: { frontmatter: { title: document.title, doc_type: "template" }, sections: {} },
     } : { documents: [document] } });
     if (url.pathname === "/parse") return route.fulfill({ json: { parsed: { frontmatter: { title: document.title }, sections: {} } } });
     if (url.pathname === "/api/me") return route.fulfill({ json: { user: { id: "synthetic-user", name: "Synthetic Operator", email: "operator@example.test" } } });
