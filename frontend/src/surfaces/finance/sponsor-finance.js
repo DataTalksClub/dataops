@@ -1,12 +1,15 @@
 import { html } from "./shared.js";
 import { formatAmount, ledgerDate } from "./bookkeeping-format.js";
+import { createTemplateViewSurface } from "../knowledge/template-view.js";
 import {
   EVIDENCE_KIND_LABELS,
   PAYMENT_SOURCE_LABELS,
+  THANK_YOU_EVIDENCE_LABEL,
   WAITING_REASON_LABELS,
   createFinanceRecordForms,
   followUpSummary,
   replaceablePayment,
+  resolveThankYou,
 } from "./sponsor-finance-records.js";
 
 export function createSponsorFinance(context) {
@@ -228,6 +231,7 @@ export function createSponsorFinance(context) {
       reopenBookingDetail: (booking) => reopenBookingDetail(booking),
       safe,
     });
+  const templateViewSurface = createTemplateViewSurface();
   function financeMarkup(projection) {
     const admin = projection.role === "admin";
     if (!projection.classified) {
@@ -266,14 +270,19 @@ export function createSponsorFinance(context) {
     const required = finance.invoiceRequirement === "required";
     const coherent = projection.reconciliationStatus === "coherent";
     const next = followUpSummary(projection.followUp);
+    const thankYou = resolveThankYou(projection);
+    const nextDetail = next.detail
+      || (thankYou?.status === "required"
+        ? "Payment received — draft the thank-you email to the sponsor (draft only; Alexey reviews and sends)."
+        : "");
     const nextStep = html`<div
-      class="dk-callout dk-callout--${next.tone} finance-next-step"
+      class="dk-callout dk-callout--${thankYou?.status === "required" && (projection.followUp?.code || "none") === "none" ? "info" : next.tone} finance-next-step"
       role="status"
       data-finance-next-step="${escapeHtml(projection.followUp?.code || "none")}"
     >
       <div class="dk-callout__body">
         <div class="dk-callout__title">${escapeHtml(next.title)}</div>
-        ${next.detail ? html`<p>${escapeHtml(next.detail)}</p>` : ""}
+        ${nextDetail ? html`<p>${escapeHtml(nextDetail)}</p>` : ""}
       </div>
     </div>`;
     const waiting = finance.waitingOn;
@@ -506,6 +515,35 @@ export function createSponsorFinance(context) {
         ? html`<ul class="finance-evidence-list">${evidence.map(evidenceRow).join("")}</ul>`
         : html`<p class="dk-muted">No mail thread, invoice PDF or bookkeeping row linked yet.</p>`}
     </div>`;
+    const thankYouMarkup = thankYou
+      ? html`<div class="finance-thank-you" data-finance-thank-you="${escapeHtml(thankYou.status)}">
+          <header class="crm-company-section-header">
+            <h4>Thank the sponsor</h4>
+            <span class="dk-muted" data-finance-thank-you-policy="draft-only">Draft only — Alexey reviews and sends</span>
+            ${live && thankYou.status === "required"
+              ? html`<button type="button" data-finance-thank-you-record>Record thank-you email</button>`
+              : ""}
+          </header>
+          ${thankYou.status === "recorded"
+            ? html`<p data-finance-thank-you-recorded>
+                Thank-you email recorded: <strong>${escapeHtml(thankYou.recordedEvidence?.label || "Mail thread")}</strong>
+                · <span class="dk-mono">${escapeHtml(thankYou.recordedEvidence?.ref || "")}</span>
+                ${thankYou.recordedEvidence?.on ? html` · ${escapeHtml(ledgerDate(thankYou.recordedEvidence.on))}` : ""}
+              </p>`
+            : html`<p>
+                Reply in the sponsor's invoice or payment email thread using
+                <a href="/?doc=${encodeURIComponent(thankYou.templateId)}" data-finance-thank-you-doc="${escapeHtml(thankYou.templateId)}">
+                  <code>${escapeHtml(thankYou.templateId)}</code>
+                </a>
+                (SOP Step ${escapeHtml(thankYou.sopStep || 9)}). Keep the thread's CC list.
+                <strong>Do not send the email</strong> — prepare a draft for Alexey to review and send.
+                Suggested <code>&lt;WHAT_WAS_PAID&gt;</code>: <strong>${escapeHtml(thankYou.context?.whatWasPaid || "")}</strong>.
+              </p>`}
+          <div data-finance-thank-you-template>
+            <pre class="template-view-body">${escapeHtml(thankYou.templateBody || "")}</pre>
+          </div>
+        </div>`
+      : "";
     return html`<section class="finance-panel" data-finance-panel>
       <span hidden
         >${escapeHtml(`${projection.invoiceState} ${projection.paymentState} ${projection.timingState} ${projection.reconciliationStatus}`)}</span
@@ -560,7 +598,7 @@ export function createSponsorFinance(context) {
           Payment reported, awaiting verification. Outstanding is the amount not yet verified in bookkeeping.
           Check these reports before chasing.</p>` : ""}${paymentMarkup}
       </div>
-      ${paymentLimitWarning} ${paymentFollowUpSection} ${evidenceMarkup} ${actions}
+      ${paymentLimitWarning} ${thankYouMarkup} ${paymentFollowUpSection} ${evidenceMarkup} ${actions}
     </section>`;
   }
   async function loadFinance(booking, { isCurrent } = {}) {
@@ -757,6 +795,22 @@ export function createSponsorFinance(context) {
     panel
       .querySelector("[data-finance-evidence-add]")
       ?.addEventListener("click", () => openAddEvidence(booking, projection));
+    const thankYou = resolveThankYou(projection);
+    if (thankYou?.templateMarkdown) {
+      const templateContainer = panel.querySelector("[data-finance-thank-you-template]");
+      if (templateContainer) {
+        templateViewSurface.renderTemplateView(templateContainer, thankYou.templateMarkdown);
+      }
+    }
+    panel
+      .querySelector("[data-finance-thank-you-record]")
+      ?.addEventListener("click", () =>
+        openAddEvidence(booking, projection, {
+          kind: "email",
+          label: THANK_YOU_EVIDENCE_LABEL,
+          on: thankYou?.context?.lastPaymentOn || new Date().toISOString().slice(0, 10),
+        }),
+      );
     panel.querySelectorAll("[data-finance-evidence-remove]").forEach((button) =>
       button.addEventListener("click", () =>
         safe(async () => {

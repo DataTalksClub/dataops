@@ -2858,3 +2858,96 @@ describe("CRM directory controllers", () => {
   });
 });
 
+test("resolved sponsor payment renders the draft-only thank-you template with interactive placeholder chips and idempotent evidence recording", async () => {
+  createHarness();
+  const surface = new FakeElement("section");
+  const panel = surface.querySelector('[data-booking-panel="finance"]');
+  const financePanel = surface.querySelector("[data-finance-panel]");
+  const templateContainer = new FakeElement("div");
+  financePanel.setQuery("[data-finance-thank-you-template]", templateContainer);
+  const recordButton = new FakeElement("button");
+  financePanel.setQuery("[data-finance-thank-you-record]", recordButton);
+  const sponsorFinance = createSponsorFinance({
+    surface,
+    escapeHtml,
+    humanizeOptionLabel,
+    message: new FakeElement("p"),
+    request: async () => ({}),
+    workApiUrl: (path) => path,
+  });
+  const paidProjection = (evidence = []) => ({
+    enabled: true,
+    classified: true,
+    dealId: "deal-paid-1",
+    role: "admin",
+    finance: {
+      version: 5,
+      invoiceRequirement: "required",
+      amountDue: "2500.00",
+      currency: "EUR",
+      taxMode: "included",
+      invoiceNumber: "202610/37",
+      issuedOn: "2026-09-01",
+      sentOn: "2026-09-02",
+      dueOn: "2026-09-30",
+      evidence,
+    },
+    invoiceState: "issued",
+    paymentState: "paid",
+    timingState: "settled",
+    outstanding: "0",
+    paid: "2500.00",
+    lastPaymentOn: "2026-10-05",
+    payments: [
+      { id: "ledger-tx-1", effectiveDate: "2026-10-05", amount: "2500.00", currency: "EUR", source: "ledger", reference: "bank:revolut:tx-37" },
+    ],
+    followUp: { code: "none", party: "none" },
+    reconciliationStatus: "coherent",
+    paymentLinkCount: 1,
+    paymentLinkLimit: 10,
+  });
+  const requests = [];
+  let currentEvidence = [];
+  globalThis.fetch = async (url, options = {}) => {
+    if (options.method && options.method !== "GET") {
+      const body = JSON.parse(options.body);
+      requests.push({ url: String(url), method: options.method, body });
+      currentEvidence = body.evidence || currentEvidence;
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => paidProjection(currentEvidence),
+    };
+  };
+  await sponsorFinance.loadFinance({ id: "deal-paid-1", version: 3 });
+  assert.match(panel.innerHTML, /data-finance-thank-you="required"/);
+  assert.match(panel.innerHTML, /Draft only — Alexey reviews and sends/);
+  assert.match(panel.innerHTML, /template\.finance\.bookkeeping\.email-to-sponsor-when-payment-has-been-received/);
+  assert.match(panel.innerHTML, /invoice 202610\/37/);
+  assert.equal(templateContainer.classList.contains("template-view"), true);
+
+  await recordButton.dispatch("click", {});
+  const evidenceDialog = surface.children.find((child) => "financeEvidenceDialog" in child.dataset);
+  const evidenceForm = evidenceDialog.querySelector("form");
+  assert.equal(evidenceForm.elements.kind.value, "email");
+  assert.equal(evidenceForm.elements.label.value, "Payment received thank-you email");
+  evidenceForm.formEntries = [
+    ["kind", "email"],
+    ["ref", "thread:thank-you-202610-37"],
+    ["label", "Payment received thank-you email"],
+    ["on", "2026-10-05"],
+  ];
+  evidenceForm.onsubmit({ preventDefault() {} });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0].body.evidence, [
+    { kind: "email", ref: "thread:thank-you-202610-37", label: "Payment received thank-you email", on: "2026-10-05" },
+  ]);
+
+  await sponsorFinance.loadFinance({ id: "deal-paid-1", version: 3 });
+  assert.match(panel.innerHTML, /data-finance-thank-you="recorded"/);
+  assert.match(panel.innerHTML, /thread:thank-you-202610-37/);
+});
+
+

@@ -192,6 +192,11 @@ test.describe('Sponsors Money', () => {
       await expect(dialog).toBeHidden();
       await expect(panel).not.toContainText('Reported, unverified');
       await expect(panel.locator('header h3').first()).toHaveText('Paid');
+      await expect(panel.locator('[data-finance-thank-you="required"]')).toBeVisible();
+      await expect(panel.locator('[data-finance-thank-you="required"]')).toContainText('Draft only — Alexey reviews and sends');
+      await expect(panel.locator('[data-finance-thank-you="required"] .template-placeholder-chip').filter({ hasText: '<WHAT_WAS_PAID>' })).toBeVisible();
+      await panel.locator('[data-finance-thank-you="required"] .template-placeholder-chip').filter({ hasText: '<WHAT_WAS_PAID>' }).click();
+      await expect(panel.locator('[data-finance-thank-you="required"] .template-placeholder-panel')).toContainText('<WHAT_WAS_PAID>');
       expect(bookkeeping.size).toBe(2); expect(evidenceLinks.size).toBe(2);
     });
     expect(requests.map((entry) => `${entry.method} ${entry.suffix}`)).toEqual([

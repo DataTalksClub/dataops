@@ -69,11 +69,12 @@ export function createTemplateViewSurface({ clipboard } = {}) {
     };
     panel.append(make("p", "", "Placeholder explanations and examples appear here."));
     const tokens = new Set(templateTokens(variant.body));
+    const textNode = (value) => (typeof doc.createTextNode === "function" ? doc.createTextNode(value) : value);
     let offset = 0;
     for (const match of variant.body.matchAll(/<[A-Z][A-Z0-9_]*>/g)) {
       if (!tokens.has(match[0])) continue;
       const entry = definitions.get(match[0]);
-      body.append(doc.createTextNode(variant.body.slice(offset, match.index)));
+      body.append(textNode(variant.body.slice(offset, match.index)));
       const chip = make("button", "template-placeholder-chip", match[0]);
       chip.type = "button";
       chip.setAttribute("aria-label", `Explain ${match[0]}`);
@@ -84,7 +85,7 @@ export function createTemplateViewSurface({ clipboard } = {}) {
       body.append(chip);
       offset = match.index + match[0].length;
     }
-    body.append(doc.createTextNode(variant.body.slice(offset)));
+    body.append(textNode(variant.body.slice(offset)));
     layout.append(body, panel);
     section.append(header, layout);
     return section;
