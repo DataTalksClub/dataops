@@ -14,6 +14,13 @@ import { handleSponsorFinanceRoutes } from '../src/routes/sponsorFinance';
 import { ENTITY_SPECS, OMITTED_ENTITIES } from '../src/export/portable';
 import { classifyFinance, listFinanceCandidates, validateEvidence, validateWaitingOn } from '../src/sponsorFinance/repository';
 import { deriveFollowUp, deriveStates } from '../src/sponsorFinance/followUp';
+import {
+  THANK_YOU_SOP_ID,
+  THANK_YOU_TEMPLATE_ID,
+  THANK_YOU_TEMPLATE_MARKDOWN,
+  deriveThankYou,
+} from '../src/sponsorFinance/thankYou';
+import { templateParser } from '../src/docs/templatePlaceholders';
 
 describe('sponsor finance contracts', () => {
   it('uses exact four-place scaled integer money arithmetic', () => {
@@ -271,5 +278,72 @@ describe('sponsor finance contracts', () => {
     assert.throws(() => validateEvidence([{ kind: 'url', ref: 'javascript:alert(1)' }]));
     assert.throws(() => validateEvidence([{ kind: 'email', ref: 'line\nbreak' }]));
     assert.throws(() => validateEvidence(Array.from({ length: 21 }, () => ({ kind: 'note', ref: 'x' }))));
+  });
+
+  it('derives the draft-only payment thank-you contract when payment resolves and marks it recorded idempotently', async () => {
+    const parser = await templateParser();
+    const parsed = parser.parseTemplatePlaceholders(THANK_YOU_TEMPLATE_MARKDOWN);
+    assert.deepEqual(parsed.issues, []);
+
+    assert.equal(
+      deriveThankYou({
+        dealId: 'deal-unpaid',
+        hasVerifiedPayment: false,
+        paymentState: 'unpaid',
+        reconciliationStatus: 'coherent',
+      }),
+      undefined,
+    );
+    assert.equal(
+      deriveThankYou({
+        dealId: 'deal-unverified-report',
+        hasVerifiedPayment: false,
+        paymentState: 'partially-paid',
+        reconciliationStatus: 'coherent',
+      }),
+      undefined,
+    );
+
+    const required = deriveThankYou({
+      dealId: 'deal-paid',
+      dealTitle: 'Q4 Sponsorship',
+      invoiceNumber: '202610/12',
+      currency: 'EUR',
+      paid: '2500',
+      lastPaymentOn: '2026-10-05',
+      hasVerifiedPayment: true,
+      paymentState: 'paid',
+      reconciliationStatus: 'coherent',
+      evidence: [{ kind: 'email', ref: 'thread:invoice-sent', label: 'Invoice thread' }],
+    });
+    assert.ok(required);
+    assert.equal(required.status, 'required');
+    assert.equal(required.sendPolicy, 'draft-only');
+    assert.equal(required.templateId, THANK_YOU_TEMPLATE_ID);
+    assert.equal(required.sopId, THANK_YOU_SOP_ID);
+    assert.equal(required.sopStep, 9);
+    assert.equal(required.context.whatWasPaid, 'invoice 202610/12');
+    assert.equal(
+      required.placeholders.find((item) => item.name === '<WHAT_WAS_PAID>')?.suggestedValue,
+      'invoice 202610/12',
+    );
+
+    const recorded = deriveThankYou({
+      dealId: 'deal-paid',
+      invoiceNumber: '202610/12',
+      currency: 'EUR',
+      paid: '2500',
+      lastPaymentOn: '2026-10-05',
+      hasVerifiedPayment: true,
+      paymentState: 'paid',
+      reconciliationStatus: 'coherent',
+      evidence: [
+        { kind: 'email', ref: 'thread:invoice-sent', label: 'Invoice thread' },
+        { kind: 'email', ref: 'thread:thank-you-draft', label: 'Payment received thank-you email', on: '2026-10-05' },
+      ],
+    });
+    assert.ok(recorded);
+    assert.equal(recorded.status, 'recorded');
+    assert.equal(recorded.recordedEvidence?.ref, 'thread:thank-you-draft');
   });
 });

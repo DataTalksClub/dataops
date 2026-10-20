@@ -34,6 +34,7 @@ import {
   boundedText,
 } from './core';
 import { daysBetween, deriveFollowUp, deriveStates } from './followUp';
+import { deriveThankYou } from './thankYou';
 import { evaluateDealVat, type OrganizationVatEvaluation } from '../vies/service';
 import {
   EVIDENCE_KINDS,
@@ -1486,6 +1487,21 @@ export async function projectFinance(
       dueOn: state.dueOn, sentOn: state.sentOn, waitingOn: state.waitingOn, deliveredOn: context.deliveredOn,
     }, today);
     const vat = await evaluateDealVat(client, dealId, { cachedOnly: true });
+    const paidDisplay = state.amountDue && coherent ? displayMoney(total) : undefined;
+    const adjustedDisplay = state.amountDue && coherent ? displayMoney(settlement.adjusted) : undefined;
+    const thankYou = deriveThankYou({
+      dealId,
+      ...(typeof booking?.title === 'string' && booking.title ? { dealTitle: booking.title } : {}),
+      ...(state.invoiceNumber ? { invoiceNumber: state.invoiceNumber } : {}),
+      ...(state.currency ? { currency: state.currency } : {}),
+      ...(paidDisplay ? { paid: paidDisplay } : {}),
+      ...(adjustedDisplay ? { adjusted: adjustedDisplay } : {}),
+      ...(lastPaymentOn ? { lastPaymentOn } : {}),
+      hasVerifiedPayment: total > 0n,
+      paymentState,
+      reconciliationStatus: coherent ? 'coherent' : 'reconciliation-required',
+      evidence: state.evidence,
+    });
     return {
       enabled: true, classified: true, dealId, role,
       finance: {
@@ -1509,12 +1525,13 @@ export async function projectFinance(
       },
       invoiceState, paymentState, timingState,
       ...(vat?.required ? { vat: vatView(vat) } : {}),
-      ...(state.amountDue && coherent ? { outstanding: displayMoney(outstandingValue), paid: displayMoney(total), adjusted: displayMoney(settlement.adjusted) } : {}),
+      ...(state.amountDue && coherent ? { outstanding: displayMoney(outstandingValue), paid: paidDisplay, adjusted: adjustedDisplay } : {}),
       ...(timingState === 'overdue' && state.dueOn ? { daysOverdue: daysBetween(state.dueOn, today) } : {}),
       ...(lastPaymentOn ? { lastPaymentOn } : {}),
       ...(invoice ? { invoice } : {}),
       payments: visiblePayments,
       followUp,
+      ...(thankYou ? { thankYou } : {}),
       reconciliationStatus: coherent ? 'coherent' : 'reconciliation-required',
       paymentLinkCount: state.paymentLinkIds.length + recordedIds.length,
       paymentLinkLimit: PAYMENT_LINK_LIMIT,
