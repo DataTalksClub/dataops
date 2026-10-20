@@ -1,3 +1,4 @@
+import { templateParser } from './templatePlaceholders';
 /** Private S3 knowledge: immutable blobs/manifests and one conditional publication pointer. */
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, statSync } from 'node:fs';
@@ -221,6 +222,22 @@ export class KnowledgeStore {
     const previous=await this.pin();
     if(expectedRevision!==previous.revision) throw new RevisionConflict();
     if(!this.pointerEtag) throw new KnowledgeError('Active knowledge pointer has no concurrency token');
+    // Validate the whole request before writing any objects, including prior
+    // identity so stripping frontmatter cannot bypass the template convention.
+    for (const mutation of mutations) {
+      const path = normalizeRepoPath(mutation.path);
+      if (!path.endsWith('.md') || (mutation.bytes === undefined && !mutation.sourcePath && !mutation.restoreRevision)) continue;
+      const bytes = mutation.bytes !== undefined ? mutation.bytes
+        : mutation.sourcePath ? await this.blobBytes(previous.entries[normalizeRepoPath(mutation.sourcePath)]?.sha || '')
+        : await this.versionBytes(path, mutation.restoreRevision!);
+      const content = typeof bytes === 'string' ? bytes : Buffer.from(bytes).toString('utf8');
+      const parser = await templateParser();
+      const old = previous.entries[path] ? (await this.blobBytes(previous.entries[path].sha)).toString('utf8') : '';
+      if (parser.isTemplateDocument(content, {path}) || (!/^---\r?\n[\s\S]*?^doc_type:/m.test(content) && parser.isTemplateDocument(old, {path}))) {
+        const {issues} = parser.parseTemplatePlaceholders(content);
+        if (issues.length) throw new KnowledgeError(`${path}: ${issues.map(issue => issue.message).join(' ')}`);
+      }
+    }
     const entries={...previous.entries};const changes:KnowledgeChange[]=[];
     for(const mutation of mutations) {
       const path=normalizeRepoPath(mutation.path);

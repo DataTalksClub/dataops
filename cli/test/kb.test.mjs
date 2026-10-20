@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -298,7 +301,21 @@ describe("kb write", () => {
     assert.equal(await run(["kb", "write", "new/doc.md", "--file", file], captureIo()), 2);
     assert.equal(await run(["kb", "write", "new/doc.md", "--file", file, "--create", "--title", "New"], captureIo()), 0);
     const post = calls.find((call) => call.method === "POST");
-    assert.deepEqual(post.body, { path: "content/new/doc.md", absent: true, expectedRevision: "rev-head", title: "New" });
+    assert.deepEqual(post.body, { path: "content/new/doc.md", absent: true, expectedRevision: "rev-head", title: "New", content: readFileSync(file, "utf8") });
     assert.equal(calls.at(-1).body.expectedRevision, "rev-new");
+  });
+});
+
+describe('kb template validation before mutation', () => {
+  test('rejects invalid new template before create', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'kb-placeholder-'));
+    try {
+      const file = path.join(dir, 'body.md'); writeFileSync(file, '## Template\n```\nHello <NAME>\n```');
+      const calls = fakePortal({});
+      const io = captureIo();
+      assert.equal(await run(['kb','write','example/templates/mail.md','--file',file,'--create'],io),2);
+      assert.equal(calls.length,0);
+      assert.match(io.errors.join("\n"), /Missing explanation/);
+    } finally { rmSync(dir,{recursive:true,force:true}); }
   });
 });

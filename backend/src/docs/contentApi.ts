@@ -577,7 +577,7 @@ async function createDoc(rt: DocsRuntime, body: Record<string, unknown>, actor:s
   const scaffold = body.scaffold === 'minimal' ? 'minimal' : 'full';
   const parent = typeof body.parent === 'string' && body.parent.trim() ? body.parent.trim() : undefined;
 
-  const content = newDocContent(title, docType, summary, scaffold, parent);
+  const content = typeof body.content === 'string' ? body.content : newDocContent(title, docType, summary, scaffold, parent);
   mkdirSync(dirname(filePath), { recursive: true });
   if(body.absent !== true) throw new BadRequest('Creation requires absent: true');
   await rt.store.publish([{path:repoPath,bytes:content,absent:true}],String(body.expectedRevision || ''),actor,`Create ${repoPath}`);

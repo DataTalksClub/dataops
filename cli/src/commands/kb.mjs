@@ -1,3 +1,4 @@
+const templateParser = () => import("../../../frontend/src/template-placeholders.js");
 import { readFileSync } from "node:fs";
 
 import { ApiError } from "../api.mjs";
@@ -307,16 +308,27 @@ export async function recent(args, io) {
   return result;
 }
 
+async function validateTemplate(content, document) {
+  const { isTemplateDocument, parseTemplatePlaceholders } = await templateParser();
+  if (!isTemplateDocument(content, document)) return;
+  const { issues } = parseTemplatePlaceholders(content);
+  if (issues.length) throw new UsageError(`${document.path}: ${issues.map(issue => issue.message).join(" ")}`);
+}
+
 export async function write(args, io) {
   const usage = "dataops kb write <path> --file F [--create] [--title T] [--type T]";
   const raw = positional(args, 0, usage);
   if (args.file === undefined || args.file === true) throw new UsageError(`--file is required. ${usage}`);
   const path = raw.startsWith(CONTENT) ? raw : `${CONTENT}${raw.replace(/^\/+/, "")}`;
   const content = String(args.file) === "-" ? readFileSync(0, "utf8") : readFileSync(String(args.file), "utf8");
+  await validateTemplate(content, { path, doc_type: optionalString(args, "type") });
   const api = apiFor(args);
   let revision;
   try {
-    revision = (await api.get("/docs", { query: { path } })).revision;
+    const existing = await api.get("/docs", { query: { path } });
+    const { isTemplateDocument } = await templateParser();
+    await validateTemplate(content, { path, ...(!/^---\r?\n[\s\S]*?^doc_type:/m.test(content) && isTemplateDocument(existing.content || "", existing) ? { doc_type: "template" } : {}) });
+    revision = existing.revision;
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 404) throw error;
     if (!args.create) throw new UsageError(`${path} does not exist. Pass --create to add it.`);
@@ -327,6 +339,7 @@ export async function write(args, io) {
       expectedRevision: head,
       title: optionalString(args, "title"),
       doc_type: optionalString(args, "type"),
+      content,
     });
     revision = created.revision;
   }
@@ -350,6 +363,9 @@ export async function publish(args, io) {
   const api = apiFor(args);
   const manifest = await api.get("/knowledge/manifest");
   const files = commitFiles(repo, head, manifest.roots);
+  for (const [path, file] of files) {
+    if (path.endsWith(".md")) await validateTemplate(file.bytes.toString("utf8"), { path });
+  }
   const diverged = [...new Set([...files.keys(), ...Object.keys(manifest.entries)])]
     .filter((file) => (manifest.entries[file]?.sha256 ?? null) !== (files.get(file)?.sha ?? null));
   const recorded = recordedStates(repo, head, manifest.roots, diverged);

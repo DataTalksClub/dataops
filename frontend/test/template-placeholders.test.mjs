@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { parseTemplatePlaceholders, isTemplateDocument } from '../src/template-placeholders.js';
 const doc = (body, rows = '| `<NAME>` | Recipient name | Alex |') => `## Template\n\n\`\`\`text\n${body}\n\`\`\`\n\n## Placeholders\n\n| Placeholder | What to put there | Example |\n| --- | --- | --- |\n${rows}\n`;
 test('extracts fenced copy and strict definitions with bracketed names', () => {
-  assert.deepEqual(parseTemplatePlaceholders(doc('Hello <NAME>')), { body: 'Hello <NAME>', placeholders: [{name:'<NAME>',description:'Recipient name',example:'Alex'}], issues:[] });
+  assert.deepEqual(parseTemplatePlaceholders(doc('Hello <NAME>')), { body: 'Hello <NAME>', variants:[{label:'Template',body:'Hello <NAME>'}], placeholders: [{name:'<NAME>',description:'Recipient name',example:'Alex'}], issues:[] });
 });
 test('body boundaries exclude how-to and sent examples; headings inside fence are body', () => {
   const result = parseTemplatePlaceholders(doc('## Subject\nHello <NAME>') + '## How to send\nUse <OTHER>\n```text\nSent <SENT>\n```');
@@ -26,4 +26,10 @@ test('identifies by type, id, path or frontmatter but leaves SOPs alone', () => 
   for (const metadata of [{doc_type:'template'},{id:'template.example'},{path:'content/example/templates/mail.md'}]) assert.equal(isTemplateDocument('',metadata),true);
   assert.equal(isTemplateDocument('---\ndoc_type: template\n---\n'),true);
   assert.equal(isTemplateDocument('## Template\n```\n<NAME>\n```',{doc_type:'sop'}),false);
+});
+test('joins variant fences and checks tokens across all variants', () => {
+ const markdown = doc('Hello <NAME>').replace('## Placeholders', '### Alternate\n```text\nGoodbye <NAME>\n```\n## Placeholders');
+ assert.equal(parseTemplatePlaceholders(markdown).body, null);
+ assert.deepEqual(parseTemplatePlaceholders(markdown).variants,[{label:'Template',body:'Hello <NAME>'},{label:'Alternate',body:'Goodbye <NAME>'}]);
+ assert.deepEqual(parseTemplatePlaceholders(markdown).issues,[]);
 });

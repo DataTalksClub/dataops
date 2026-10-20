@@ -15,6 +15,9 @@ export function newDocContent(
       ? minimalSopTemplate(title, docType, summary, parent)
       : fullSopTemplate(title, docType, summary, parent);
   }
+  if (docType === 'template') {
+    return `---\ntitle: ${JSON.stringify(title)}\nsummary: ${JSON.stringify(summary)}\ndoc_type: template\n---\n\n# ${title}\n\n## Template\n\n\`\`\`text\nWrite reusable copy here.\n\`\`\`\n`;
+  }
   if (docType === 'code-view') {
     return codeViewTemplate(title, summary, parent);
   }

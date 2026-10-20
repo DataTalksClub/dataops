@@ -227,6 +227,19 @@ describe("kb publish from a Git checkout", () => {
     assert.equal(calls.filter((call) => call.method === "POST").length, 0);
   });
 
+  test("invalid template aborts all publishes, including dry run", async () => {
+    write("content/first.md", "ordinary SOP");
+    write("content/example/templates/mail.md", "## Template\n```text\nHi <NAME>\n```");
+    commit("invalid template");
+    for (const flags of [[], ["--dry-run"]]) {
+      const calls = portal({});
+      const io = captureIo();
+      assert.equal(await run(["kb", "publish", "--repo", repo, ...flags], io), 2);
+      assert.equal(calls.filter(call => call.method === "POST").length, 0);
+      assert.match(io.errors.join("\n"), /Missing explanation for <NAME>/);
+    }
+  });
+
   test("rejects an unresolvable commit and the retired --base", async () => {
     write("content/a.md", "a1");
     commit("base");
