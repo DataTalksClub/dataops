@@ -133,6 +133,24 @@ try {
   assert.equal(await portal.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await portal.locator("#editor-view").evaluate(node => { node.scrollTop = 0; });
   await portal.screenshot({ path: path.join(screenshots, "local-portal-template-mobile.png"), fullPage: true });
+  // Inline source edits must refresh the preview without rebuilding the active editor.
+  await portal.getByText("Full document and sending instructions", { exact: true }).click();
+  const sourceCode = portal.locator(".template-document .notion-text-content.code").first();
+  await sourceCode.fill("```text\nUPDATED <RECIPIENT_NAME>\n```");
+  await portal.waitForFunction(() => document.querySelector(".template-view-body")?.textContent === "UPDATED <RECIPIENT_NAME>");
+  assert.equal(await sourceCode.evaluate(node => node === document.activeElement), true);
+  await sourceCode.press("Tab");
+  assert.equal(await portal.locator(".template-view-body").first().textContent(), "UPDATED <RECIPIENT_NAME>");
+  await portal.getByRole("button", { name: "Copy Initial request", exact: true }).click();
+  assert.equal(await portal.evaluate(() => navigator.clipboard.readText()), "UPDATED <RECIPIENT_NAME>");
+  // Removing the body fence must remove its copy action rather than retaining stale content.
+  const followupCode = portal.locator(".template-document .notion-text-content.code").last();
+  await followupCode.fill("No fenced template body");
+  await followupCode.press("Tab");
+  await sourceCode.fill("No fenced template body");
+  await sourceCode.press("Tab");
+  assert.equal(await portal.locator(".template-view .template-variant").count(), 0);
+  assert.match(await portal.locator(".template-view").innerText(), /Template preview unavailable/);
   assert.deepEqual(errors, []);
   console.log(`PASS: integrated template viewer desktop/mobile, keyboard, exact clipboard, supplemental links, copy failure. Local screenshots: ${screenshots}`);
 } finally {

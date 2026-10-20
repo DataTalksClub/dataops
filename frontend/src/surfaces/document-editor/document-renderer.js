@@ -362,6 +362,18 @@ export function createDocumentRenderer(context, services) {
     fetchBacklinksForCurrentDoc();
   }
 
+  function refreshTemplatePreview() {
+    if (documentState.currentDoc?.docType !== "template") return;
+    const preview = renderedView.querySelector(".template-view");
+    if (!preview) return;
+    if (!templateViewSurface.renderTemplateView(preview, stripFrontmatter(editor.value || ""))) {
+      const note = document.createElement("p");
+      note.setAttribute("role", "status");
+      note.textContent = "Template preview unavailable. Check the Template fence in the full document.";
+      preview.replaceChildren(note);
+    }
+  }
+
   function applyBlocksChange(newBlocks, { rerender = true, focusBlockIndex = -1, focus = null } = {}) {
     const rawFull = editor.value || "";
     const fmRange = frontmatterRange(rawFull);
@@ -378,6 +390,7 @@ export function createDocumentRenderer(context, services) {
     storeDraft();
     updateSaveState();
     if (rerender) renderParsedDocument({ bodyBlocks: newBlocks, focusBlockIndex, focus });
+    else refreshTemplatePreview();
   }
 
   function renderDocHierarchyTrail() {
@@ -849,6 +862,7 @@ export function createDocumentRenderer(context, services) {
     editor.value = updated;
     storeDraft();
     updateSaveState();
+    refreshTemplatePreview();
   }
 
   function applySectionBodyEdit(name, section, newBody, isRaw) {
@@ -874,6 +888,7 @@ export function createDocumentRenderer(context, services) {
     editor.value = updated;
     storeDraft();
     updateSaveState();
+    refreshTemplatePreview();
   }
 
   function humanSectionName(name) {
