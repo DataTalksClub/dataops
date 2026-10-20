@@ -16,10 +16,15 @@ export function templateTokens(body) {
   return [...new Set((body.match(TOKEN) || []).filter(name => !HTML.has(name.slice(1, -1))))];
 }
 
+export function documentType(markdown) {
+  const frontmatter = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1] || '';
+  return frontmatter.match(/^doc_type:\s*['"]?([a-z-]+)['"]?\s*$/m)?.[1];
+}
+
 /** Identity is independent of body headings, so ordinary SOPs remain unaffected. */
 export function isTemplateDocument(markdown, document = {}) {
   const frontmatter = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1] || '';
-  const declaredType = document.doc_type || frontmatter.match(/^doc_type:\s*['"]?([a-z-]+)['"]?\s*$/m)?.[1];
+  const declaredType = document.doc_type || documentType(markdown);
   if (declaredType) return declaredType === 'template';
   return document.doc_type === 'template' || /^template[.]/.test(document.id || '')
     || /(?:^|\/)templates\//.test(document.path || '')

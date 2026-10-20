@@ -4,6 +4,7 @@ import { RUNTIME_ROOT } from '../runtimePaths';
 
 interface TemplateDocument { path?: string; id?: string; doc_type?: string; }
 interface Parser {
+  documentType(markdown: string): string | undefined;
   isTemplateDocument(markdown: string, document: TemplateDocument): boolean;
   parseTemplatePlaceholders(markdown: string): { issues: {code: string; message: string}[] };
 }

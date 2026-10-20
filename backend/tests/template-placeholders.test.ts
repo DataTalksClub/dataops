@@ -7,6 +7,7 @@ test('publication rejects malformed templates before any mutation and protects e
  const {store,s3,publication}=syntheticKnowledge({'content/mail.md':valid,'content/sop.md':'old'});
  const before=[...s3.objects.keys()];
  await assert.rejects(()=>store.publish([{path:'content/sop.md',bytes:'changed'},{path:'content/mail.md',bytes:'## Template\n```\nHello <NAME>\n```'}],publication.revision,'actor','Edit'),/Missing explanation/);
+ await assert.rejects(()=>store.publish([{path:'content/mail.md',bytes:'---\ntitle: Example\n---\ndoc_type: reference\n## Template\n```\nHello <NAME>\n```'}],publication.revision,'actor','Edit'),/Missing explanation/);
  assert.deepEqual([...s3.objects.keys()],before);
  assert.equal((await store.pin()).revision,publication.revision);
  const saved=await store.publish([{path:'content/mail.md',bytes:valid.replace('Hello','Welcome')}],publication.revision,'actor','Edit');

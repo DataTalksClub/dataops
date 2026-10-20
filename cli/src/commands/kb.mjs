@@ -326,8 +326,8 @@ export async function write(args, io) {
   let revision;
   try {
     const existing = await api.get("/docs", { query: { path } });
-    const { isTemplateDocument } = await templateParser();
-    await validateTemplate(content, { path, ...(!/^---\r?\n[\s\S]*?^doc_type:/m.test(content) && isTemplateDocument(existing.content || "", existing) ? { doc_type: "template" } : {}) });
+    const { isTemplateDocument, documentType } = await templateParser();
+    await validateTemplate(content, { path, ...(!documentType(content) && isTemplateDocument(existing.content || "", existing) ? { doc_type: "template" } : {}) });
     revision = existing.revision;
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 404) throw error;

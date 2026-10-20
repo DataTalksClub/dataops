@@ -233,7 +233,7 @@ export class KnowledgeStore {
       const content = typeof bytes === 'string' ? bytes : Buffer.from(bytes).toString('utf8');
       const parser = await templateParser();
       const old = previous.entries[path] ? (await this.blobBytes(previous.entries[path].sha)).toString('utf8') : '';
-      if (parser.isTemplateDocument(content, {path}) || (!/^---\r?\n[\s\S]*?^doc_type:/m.test(content) && parser.isTemplateDocument(old, {path}))) {
+      if (parser.isTemplateDocument(content, {path}) || (!parser.documentType(content) && parser.isTemplateDocument(old, {path}))) {
         const {issues} = parser.parseTemplatePlaceholders(content);
         if (issues.length) throw new KnowledgeError(`${path}: ${issues.map(issue => issue.message).join(' ')}`);
       }
