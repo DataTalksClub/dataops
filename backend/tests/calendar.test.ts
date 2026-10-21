@@ -241,8 +241,9 @@ describe("operations calendar", () => {
     assert.deepEqual(parse(response).sources["newsletter-issues-readonly"], { state: "connected" });
     assert.ok(parse(response).sources["owner-calendar"].state);
     // A past range still shows newsletter issues but never reads the owner's calendar.
+    // Calendar holds are DataOps-owned, so their layer is present in every range.
     response = await invoke("GET", "/api/calendar-items/overlays", undefined, {}, { from: "2020-01-01", to: "2020-01-31" });
-    assert.deepEqual(Object.keys(parse(response).sources), ["newsletter-issues-readonly"]);
+    assert.deepEqual(Object.keys(parse(response).sources), ["newsletter-issues-readonly", "calendar-holds"]);
     assert.ok(!parse(response).items.some((i: any) => i.isAvailableSlot && i.provider === "owner-calendar"));
     const template = await createTemplate(client, { name: "Workshop", type: "workshop", taskDefinitions: [] });
     // Whit Monday 2030, a Berlin public holiday.
