@@ -42,6 +42,14 @@ describe("calendar holds web parity", () => {
     assert.match(dialogs, /onHoldsChanged/);
   });
 
+  test("portal day dialog records the intended episode topic at propose time", async () => {
+    const dialogs = read("frontend/src/surfaces/planning-calendar-dialogs.js");
+    assert.match(dialogs, /name="topic"/);
+    assert.match(dialogs, /Intended episode topic/);
+    assert.match(dialogs, /topic: String\(data\.get\("topic"\)/);
+    assert.match(dialogs, /Topic: /);
+  });
+
   test("backend exposes /api/calendar-holds and projects holds into overlays", async () => {
     const router = read("backend/src/router.ts");
     assert.match(router, /api\/calendar-holds/);
@@ -55,7 +63,7 @@ describe("calendar holds web parity", () => {
 
   test("CLI documents propose/confirm-hold/release-hold/holds", async () => {
     const help = read("cli/src/commands/calendar.mjs");
-    assert.match(help, /calendar propose --date D --window evening\|midday --duration N --title T/);
+    assert.match(help, /calendar propose --date D --window evening\|midday --duration N --title T --topic TOPIC/);
     assert.match(help, /calendar confirm-hold <id>/);
     assert.match(help, /calendar release-hold <id> \[--reason manual\]/);
     assert.match(help, /calendar holds \[/);

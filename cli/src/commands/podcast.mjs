@@ -24,6 +24,7 @@ Usage
       [--short T] [--description T] [--intro T] [--topics "a,b"] [--duration PT..]
       [--image-url URL] [--transcript-file F] [--clips-file F] [--resources-file F]
                                   --status defaults to booked; a title or a guest is required
+                                   --title is the intended episode topic: set it at invite time
   dataops podcast update <episode-id> [same flags as create]
                                   "none" clears a date, link, slug, card, notes or episode number
                                   Page content (what the website page renders):

@@ -31,6 +31,8 @@ export const HOLD_WINDOW_START: Record<CalendarHoldWindow, string> = {
 export interface CalendarHold {
   id: string;
   title: string;
+  /** Intended episode topic, recorded at invite/propose time (required on new holds). */
+  topic: string;
   date: string;
   window: CalendarHoldWindow;
   durationMinutes: number;
@@ -62,6 +64,7 @@ export interface CalendarHoldInput {
   duration?: unknown;
   durationMinutes?: unknown;
   title: string;
+  topic?: unknown;
   cardId?: string;
   guestRef?: string;
   organizationId?: string;
@@ -161,6 +164,14 @@ export function parseHoldTitle(raw: unknown): string {
   return v;
 }
 
+/** The intended episode topic, recorded at invite/propose time. Required on new holds. */
+export function parseHoldTopic(raw: unknown): string {
+  const v = String(raw ?? '').trim();
+  if (!v) throw new Error('A hold needs a topic: record the intended episode topic at invite/propose time (--topic).');
+  if (v.length > 300) throw new Error('Invalid --topic: keep it under 300 characters.');
+  return v;
+}
+
 export function parseHoldCalendars(raw: unknown): string[] | undefined {
   if (raw === undefined || raw === null || raw === '') return undefined;
   const list = Array.isArray(raw) ? raw : String(raw).split(',');
@@ -175,6 +186,7 @@ export function buildHold(input: CalendarHoldInput, actor: string, nowIso?: stri
   const window = parseHoldWindow(input.window);
   const durationMinutes = parseHoldDurationMinutes(input.duration ?? input.durationMinutes);
   const title = parseHoldTitle(input.title);
+  const topic = parseHoldTopic(input.topic);
   const expiresDays = parseHoldExpiresDays(input.expiresDays);
   const { startIso, endIso } = holdInterval(date, window, durationMinutes);
   const now = nowIso || new Date().toISOString();
@@ -182,6 +194,7 @@ export function buildHold(input: CalendarHoldInput, actor: string, nowIso?: stri
   return {
     id,
     title,
+    topic,
     date,
     window,
     durationMinutes,

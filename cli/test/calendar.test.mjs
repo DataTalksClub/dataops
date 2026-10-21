@@ -475,12 +475,12 @@ describe("Calendar hold CLI commands", () => {
         { status: 201 },
       );
     };
-    const code = await run(["calendar", "propose", "--date", "2026-10-27", "--title", "GraphRAG workshop"], io);
+    const code = await run(["calendar", "propose", "--date", "2026-10-27", "--title", "GraphRAG workshop", "--topic", "Adopting GraphRAG in production"], io);
     assert.equal(code, 0);
     assert.match(seen.url, /\/api\/calendar-holds$/);
     assert.deepEqual(seen.body, {
       date: "2026-10-27", window: "evening", durationMinutes: 60,
-      title: "GraphRAG workshop", expiresDays: 7,
+      title: "GraphRAG workshop", topic: "Adopting GraphRAG in production", expiresDays: 7,
     });
     assert.match(io.text(), /Proposed hold hold_abc123/);
     assert.match(io.text(), /Google sync deferred/);
@@ -497,7 +497,7 @@ describe("Calendar hold CLI commands", () => {
       );
     };
     const code = await run(
-      ["calendar", "propose", "--date", "2026-10-27", "--window", "evening", "--duration", "90", "--title", "Workshop", "--card", "card-1"],
+      ["calendar", "propose", "--date", "2026-10-27", "--window", "evening", "--duration", "90", "--title", "Workshop", "--topic", "Workshop topic", "--card", "card-1"],
       io,
     );
     assert.equal(code, 0);
@@ -508,10 +508,11 @@ describe("Calendar hold CLI commands", () => {
 
   test("calendar propose validates before sending", async () => {
     for (const argv of [
-      ["calendar", "propose", "--title", "No date"],
+      ["calendar", "propose", "--title", "No date", "--topic", "T"],
       ["calendar", "propose", "--date", "2026-10-27"],
-      ["calendar", "propose", "--date", "2026-10-27", "--title", "x", "--window", "any"],
-      ["calendar", "propose", "--date", "2026-10-27", "--title", "x", "--duration", "0"],
+      ["calendar", "propose", "--date", "2026-10-27", "--title", "x"],
+      ["calendar", "propose", "--date", "2026-10-27", "--title", "x", "--topic", "T", "--window", "any"],
+      ["calendar", "propose", "--date", "2026-10-27", "--title", "x", "--topic", "T", "--duration", "0"],
     ]) {
       const io = captureIo();
       globalThis.fetch = async () => { throw new Error("no request expected"); };

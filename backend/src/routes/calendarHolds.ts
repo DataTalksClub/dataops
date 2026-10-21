@@ -90,6 +90,7 @@ async function createRoute(event: LambdaEvent, client: DynamoDBDocumentClient): 
         duration: body.duration ?? body.durationMinutes,
         durationMinutes: body.durationMinutes,
         title: body.title,
+        topic: body.topic,
         cardId: body.cardId,
         guestRef: body.guestRef,
         organizationId: body.organizationId,

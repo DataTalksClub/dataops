@@ -779,6 +779,13 @@ a.calendar-day-timeline-title:hover {
   text-decoration: underline;
   color: var(--dk-accent-default);
 }
+.calendar-day-timeline-topic {
+  font-size: var(--dk-text-xs);
+  color: var(--dk-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .calendar-day-timeline-tags {
   display: flex;
   align-items: center;

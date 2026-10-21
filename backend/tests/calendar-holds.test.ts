@@ -41,11 +41,12 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
   after(stopLocal);
 
   it("creates a tentative hold with defaults (60 min, evening, +7d TTL, Proposal title)", async () => {
-    const r = await invoke("POST", "/api/calendar-holds", { date: "2026-10-26", title: "GraphRAG workshop" });
+    const r = await invoke("POST", "/api/calendar-holds", { date: "2026-10-26", title: "GraphRAG workshop", topic: "Adopting GraphRAG in production" });
     assert.equal(r.statusCode, 201, r.body);
     const { hold } = parse(r);
     assert.match(hold.id, /^hold_/);
     assert.equal(hold.status, "tentative");
+    assert.equal(hold.topic, "Adopting GraphRAG in production");
     assert.equal(hold.durationMinutes, 60);
     assert.equal(hold.window, "evening");
     assert.equal(hold.timeZone, "Europe/Berlin");
@@ -65,6 +66,7 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
       window: "evening",
       duration: 90,
       title: "Evening workshop",
+      topic: "Evening workshop topic",
     });
     assert.equal(r.statusCode, 201, r.body);
     const { hold } = parse(r);
@@ -78,7 +80,7 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
 
   it("occupies the slot search: held windows read as busy in overlays", async () => {
     const created = parse(
-      await invoke("POST", "/api/calendar-holds", { date: "2026-10-26", window: "midday", title: "Lunch recording" }),
+      await invoke("POST", "/api/calendar-holds", { date: "2026-10-26", window: "midday", title: "Lunch recording", topic: "Lunch recording topic" }),
     ).hold;
     const overlays = parse(
       await invoke("GET", "/api/calendar-items/overlays", undefined, { from: "2026-10-26", to: "2026-10-26" }),
@@ -102,7 +104,7 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
 
   it("confirms a hold: Proposal prefix drops, status confirmed", async () => {
     const created = parse(
-      await invoke("POST", "/api/calendar-holds", { date: "2026-10-28", title: "Confirm me" }),
+      await invoke("POST", "/api/calendar-holds", { date: "2026-10-28", title: "Confirm me", topic: "Confirm me topic" }),
     ).hold;
     const r = await invoke("POST", `/api/calendar-holds/${created.id}/confirm`);
     assert.equal(r.statusCode, 200, r.body);
@@ -114,7 +116,7 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
 
   it("releases a hold: slot frees up, release recorded as manual", async () => {
     const created = parse(
-      await invoke("POST", "/api/calendar-holds", { date: "2026-10-29", window: "midday", title: "Release me" }),
+      await invoke("POST", "/api/calendar-holds", { date: "2026-10-29", window: "midday", title: "Release me", topic: "Release me topic" }),
     ).hold;
     const r = await invoke("POST", `/api/calendar-holds/${created.id}/release`, { reason: "manual" });
     assert.equal(r.statusCode, 200, r.body);
@@ -132,7 +134,7 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
 
   it("expires tentative holds past TTL: released in DataOps, Orin follow-up, never a guest email", async () => {
     const created = parse(
-      await invoke("POST", "/api/calendar-holds", { date: "2026-11-02", title: "Stale proposal" }),
+      await invoke("POST", "/api/calendar-holds", { date: "2026-11-02", title: "Stale proposal", topic: "Stale proposal topic" }),
     ).hold;
     const stored = await getCalendarHold(client, created.id);
     assert.ok(stored);
@@ -172,7 +174,7 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     });
     try {
       const created = parse(
-        await invoke("POST", "/api/calendar-holds", { date: "2026-11-03", title: "Synced workshop" }),
+        await invoke("POST", "/api/calendar-holds", { date: "2026-11-03", title: "Synced workshop", topic: "Synced workshop topic" }),
       ).hold;
       assert.deepEqual(created.googleEventIds, { "dtc-events": "gev-1", "personal-alexey": "gev-2" });
       assert.equal(created.googleSync.state, "synced");
@@ -194,10 +196,13 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
   });
 
   it("validates input and list filters", async () => {
-    assert.equal((await invoke("POST", "/api/calendar-holds", { date: "not-a-date", title: "x" })).statusCode, 400);
-    assert.equal((await invoke("POST", "/api/calendar-holds", { date: "2026-10-26", title: "" })).statusCode, 400);
-    assert.equal((await invoke("POST", "/api/calendar-holds", { date: "2026-10-26", title: "x", window: "any" })).statusCode, 400);
-    assert.equal((await invoke("POST", "/api/calendar-holds", { date: "2026-10-26", title: "x", duration: 0 })).statusCode, 400);
+    assert.equal((await invoke("POST", "/api/calendar-holds", { date: "not-a-date", title: "x", topic: "t" })).statusCode, 400);
+    assert.equal((await invoke("POST", "/api/calendar-holds", { date: "2026-10-26", title: "", topic: "t" })).statusCode, 400);
+    assert.equal((await invoke("POST", "/api/calendar-holds", { date: "2026-10-26", title: "x", topic: "t", window: "any" })).statusCode, 400);
+    assert.equal((await invoke("POST", "/api/calendar-holds", { date: "2026-10-26", title: "x", topic: "t", duration: 0 })).statusCode, 400);
+    assert.equal((await invoke("POST", "/api/calendar-holds", { date: "2026-10-26", title: "x" })).statusCode, 400);
+    assert.equal((await invoke("POST", "/api/calendar-holds", { date: "2026-10-26", title: "x", topic: "" })).statusCode, 400);
+    assert.equal((await invoke("POST", "/api/calendar-holds", { date: "2026-10-26", title: "x", topic: "t".repeat(301) })).statusCode, 400);
     assert.equal((await invoke("GET", "/api/calendar-holds/does-not-exist")).statusCode, 404);
     assert.equal((await invoke("GET", "/api/calendar-holds", undefined, { status: "bogus" })).statusCode, 400);
     assert.equal((await invoke("GET", "/api/calendar-holds", undefined, { from: "2026-10-30", to: "2026-10-01" })).statusCode, 400);

@@ -248,11 +248,13 @@ export function setupDayScheduleDialog(options) {
                <button type="button" data-hold-release="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Release</button>`
             : `<button type="button" data-hold-release="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Release</button>`;
         const title = hold.status === "tentative" ? `(Proposal) ${hold.title}` : hold.title;
+        const topic = hold.topic ? `<span class="calendar-day-timeline-topic">Topic: ${escapeHtml(hold.topic)}</span>` : "";
         return `
           <div class="calendar-day-timeline-row">
             <div class="calendar-day-timeline-main">
               <span class="calendar-day-timeline-time">${escapeHtml(hold.window)} · ${escapeHtml(String(hold.durationMinutes))} min</span>
               <span class="calendar-day-timeline-title">${escapeHtml(title)}</span>
+              ${topic}
             </div>
             <div class="calendar-day-timeline-tags">${actions}</div>
           </div>
@@ -270,6 +272,8 @@ export function setupDayScheduleDialog(options) {
         ${isPast ? "" : `
         <form data-hold-propose>
           <input name="title" type="text" placeholder="Hold title" required maxlength="200" aria-label="Hold title"${state.busy ? " disabled" : ""}>
+          <input name="topic" type="text" placeholder="Intended episode topic (agreed at invite time)" required maxlength="300"
+            aria-label="Intended episode topic"${state.busy ? " disabled" : ""}>
           <select name="window" aria-label="Hold window">
             <option value="evening">Evening 16:30</option>
             <option value="midday">Midday 12:00</option>
@@ -313,6 +317,7 @@ export function setupDayScheduleDialog(options) {
           body: JSON.stringify({
             date: dateIso,
             title: String(data.get("title") || ""),
+            topic: String(data.get("topic") || ""),
             window: String(data.get("window") || "evening"),
             duration: Number(data.get("duration") || 60),
           }),

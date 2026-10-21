@@ -12,7 +12,7 @@ function buildDialog(documentRef) {
   const title = element(documentRef, "h2", "", "New episode");
   title.id = "podcast-create-title";
   dialog.setAttribute("aria-labelledby", title.id);
-  heading.append(title, element(documentRef, "p", "", "Book a guest now; add links and the release date as the episode moves along."));
+  heading.append(title, element(documentRef, "p", "", "Book a guest now with the agreed episode topic; add links and the release date as the episode moves along."));
   head.append(heading);
   const body = element(documentRef, "div", "dk-dialog__body");
   const foot = element(documentRef, "div", "dk-dialog__foot");
@@ -65,7 +65,7 @@ export function openCreateEpisodeDialog({ documentRef, trigger, load, create, on
     error.hidden = true;
     form.append(
       field(documentRef, "Guests", controls.guests, "Comma-separated names."),
-      field(documentRef, "Title", controls.title),
+      field(documentRef, "Episode topic / working title", controls.title, "Set at invite time — the theme agreed with the guest."),
       numbers,
       timing,
       error,

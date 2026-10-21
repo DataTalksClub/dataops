@@ -16,7 +16,7 @@ Usage
   dataops calendar list [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--type KIND]
   dataops calendar day <date> [--duration MINUTES] [--window evening|midday|any]
   dataops calendar slots [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--all] [--duration MINUTES] [--window evening|midday|any]
-  dataops calendar propose --date D --window evening|midday --duration N --title T [--card ID] [--expires-days 7]
+  dataops calendar propose --date D --window evening|midday --duration N --title T --topic TOPIC [--card ID] [--expires-days 7]
   dataops calendar confirm-hold <id>
   dataops calendar release-hold <id> [--reason manual]
   dataops calendar holds [--status tentative|confirmed|released|expired] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
@@ -44,6 +44,8 @@ Holds
   confirmed holds occupy their window (hard occupancy); a tentative hold
   expires after --expires-days (default 7) unless confirmed. Expiry frees
   the slot and leaves Orin follow-up; it never emails the guest.
+  --topic records the intended episode topic at invite/propose time and is
+  required on every new hold (guests are invited to a specific theme).
 `; 
 export const DEFAULT_SLOT_DURATION_MINUTES = 60;
 export const DEFAULT_SLOT_WINDOW = "any";
@@ -578,8 +580,9 @@ function holdId(args) {
 }
 
 function proposeArgs(args) {
-  if (!args.date) throw new UsageError("Usage: dataops calendar propose --date YYYY-MM-DD --title T [--window evening|midday] [--duration N] [--card ID] [--expires-days 7].");
+  if (!args.date) throw new UsageError("Usage: dataops calendar propose --date YYYY-MM-DD --title T --topic TOPIC [--window evening|midday] [--duration N] [--card ID] [--expires-days 7].");
   if (!args.title) throw new UsageError("A hold needs --title.");
+  if (!args.topic) throw new UsageError("A hold needs --topic: record the intended episode topic at invite/propose time.");
   const window = String(args.window ?? "evening").trim().toLowerCase();
   if (!HOLD_WINDOWS.includes(window)) {
     throw new UsageError("Invalid --window for propose: must be one of 'evening', 'midday' (a hold reserves one operational window).");
@@ -596,6 +599,7 @@ function proposeArgs(args) {
     window,
     durationMinutes: duration,
     title: args.title,
+    topic: args.topic,
     ...(args.card ? { cardId: args.card } : {}),
     ...(args.cardId ? { cardId: args.cardId } : {}),
     ...(args.guestRef ? { guestRef: args.guestRef } : {}),
@@ -605,7 +609,9 @@ function proposeArgs(args) {
 }
 
 function formatHold(hold) {
-  const bits = [`${hold.date}`, `[${hold.status}]`, `(${hold.window}, ${hold.durationMinutes} min)`, hold.title, `(${hold.id})`];
+  const bits = [`${hold.date}`, `[${hold.status}]`, `(${hold.window}, ${hold.durationMinutes} min)`, hold.title];
+  if (hold.topic) bits.push(`topic: ${hold.topic}`);
+  bits.push(`(${hold.id})`);
   if (hold.expiresAt && hold.status === "tentative") bits.push(`expires ${String(hold.expiresAt).slice(0, 10)}`);
   return bits.join(" ");
 }
