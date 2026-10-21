@@ -6,6 +6,8 @@ export function setupDayScheduleDialog(options) {
     escapeHtml,
     todayIsoDate,
     getCalendarState,
+    holdsApi,
+    onHoldsChanged,
   } = options;
 
   const dayDialog = surface.querySelector("[data-day-dialog]"),
@@ -17,9 +19,16 @@ export function setupDayScheduleDialog(options) {
 
   let selectedDayIso = "";
   const dayOverlayCache = new Map();
+  let lastOverlayItems;
+  let lastOverlayError = "";
+  let holdsForDay = { date: "", holds: null, error: "", busy: "" };
 
-  function renderDaySchedule(dateIso, overlayItems, errorMessage) {
+  function renderDaySchedule(dateIso, nextOverlays, nextError) {
+    if (nextOverlays !== undefined) lastOverlayItems = nextOverlays;
+    if (nextError !== undefined) lastOverlayError = nextError;
     if (!dayBody) return;
+    const overlayItems = lastOverlayItems;
+    const errorMessage = lastOverlayError;
     if (errorMessage) {
       dayBody.innerHTML = `
         <div class="honest-state planner-failure">
@@ -29,7 +38,7 @@ export function setupDayScheduleDialog(options) {
       `;
       return;
     }
-    if (overlayItems === null) {
+    if (overlayItems === undefined || overlayItems === null) {
       dayBody.innerHTML = `<p class="planner-load-state">Loading full day schedule…</p>`;
       return;
     }
@@ -203,6 +212,7 @@ export function setupDayScheduleDialog(options) {
         <h3 class="calendar-day-section-title">Operational Slot Availability</h3>
         ${slotCardsHtml}
       </div>`}
+      ${holdsSectionHtml(dateIso)}
       <div>
         <h3 class="calendar-day-section-title">
           <span>Full Schedule & Other Events</span>
@@ -215,9 +225,131 @@ export function setupDayScheduleDialog(options) {
     `;
   }
 
+  function holdsSectionHtml(dateIso) {
+    if (typeof holdsApi !== "function") return "";
+    const isPast = dateIso < todayIsoDate();
+    const state = holdsForDay.date === dateIso
+      ? holdsForDay
+      : { holds: null, error: "", busy: "" };
+    let listHtml;
+    if (state.error && state.holds === null) {
+      listHtml = `<p class="planner-form-error" role="alert">${escapeHtml(state.error)}</p>`;
+    } else if (state.holds === null) {
+      listHtml = `<p class="planner-load-state">Loading holds…</p>`;
+    } else if (state.holds.length === 0) {
+      listHtml = `<p class="planner-empty-hint">No holds on this date. Propose one to reserve the window.</p>`;
+    } else {
+      listHtml = state.holds.map((hold) => {
+        const active = hold.status === "tentative" || hold.status === "confirmed";
+        const actions = !active
+          ? `<span class="calendar-slot-tag">${escapeHtml(hold.status)}</span>`
+          : hold.status === "tentative"
+            ? `<button type="button" data-hold-confirm="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Confirm</button>
+               <button type="button" data-hold-release="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Release</button>`
+            : `<button type="button" data-hold-release="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Release</button>`;
+        const title = hold.status === "tentative" ? `(Proposal) ${hold.title}` : hold.title;
+        return `
+          <div class="calendar-day-timeline-row">
+            <div class="calendar-day-timeline-main">
+              <span class="calendar-day-timeline-time">${escapeHtml(hold.window)} · ${escapeHtml(String(hold.durationMinutes))} min</span>
+              <span class="calendar-day-timeline-title">${escapeHtml(title)}</span>
+            </div>
+            <div class="calendar-day-timeline-tags">${actions}</div>
+          </div>
+        `;
+      }).join("");
+    }
+    const count = state.holds === null ? "" : `${state.holds.length} ${state.holds.length === 1 ? "hold" : "holds"}`;
+    return `
+      <div>
+        <h3 class="calendar-day-section-title">
+          <span>Calendar holds</span>
+          <small style="font-size: 11px; font-weight: normal; color: var(--dk-text-muted);">${escapeHtml(count)}</small>
+        </h3>
+        <div data-holds-list>${listHtml}</div>
+        ${isPast ? "" : `
+        <form data-hold-propose>
+          <input name="title" type="text" placeholder="Hold title" required maxlength="200" aria-label="Hold title"${state.busy ? " disabled" : ""}>
+          <select name="window" aria-label="Hold window">
+            <option value="evening">Evening 16:30</option>
+            <option value="midday">Midday 12:00</option>
+          </select>
+          <select name="duration" aria-label="Hold duration">
+            <option value="60">60 min</option>
+            <option value="90">90 min</option>
+          </select>
+          <button type="submit"${state.busy ? " disabled" : ""}>Propose hold</button>
+        </form>`}
+        ${state.error && state.holds !== null ? `<p class="planner-form-error" role="alert">${escapeHtml(state.error)}</p>` : ""}
+        ${state.busy ? `<p class="planner-load-state">${escapeHtml(state.busy)}</p>` : ""}
+      </div>
+    `;
+  }
+
+  async function refreshHolds(dateIso) {
+    if (typeof holdsApi !== "function" || selectedDayIso !== dateIso) return;
+    try {
+      const res = await holdsApi(`?from=${dateIso}&to=${dateIso}`);
+      if (selectedDayIso !== dateIso) return;
+      holdsForDay = { date: dateIso, holds: res.holds || [], error: "", busy: "" };
+    } catch (err) {
+      if (selectedDayIso !== dateIso) return;
+      holdsForDay = { date: dateIso, holds: holdsForDay.holds, error: err.message, busy: "" };
+    }
+    renderDaySchedule(dateIso);
+  }
+
+  async function holdAction(kind, id, form) {
+    if (typeof holdsApi !== "function") return;
+    const dateIso = selectedDayIso;
+    if (!dateIso) return;
+    holdsForDay = { ...holdsForDay, date: dateIso, error: "", busy: kind === "propose" ? "Proposing hold…" : "Updating hold…" };
+    renderDaySchedule(dateIso);
+    try {
+      if (kind === "propose") {
+        const data = new FormData(form);
+        await holdsApi("", {
+          method: "POST",
+          body: JSON.stringify({
+            date: dateIso,
+            title: String(data.get("title") || ""),
+            window: String(data.get("window") || "evening"),
+            duration: Number(data.get("duration") || 60),
+          }),
+        });
+      } else if (kind === "confirm") {
+        await holdsApi(`/${encodeURIComponent(id)}/confirm`, { method: "POST", body: "{}" });
+      } else {
+        await holdsApi(`/${encodeURIComponent(id)}/release`, {
+          method: "POST",
+          body: JSON.stringify({ reason: "manual" }),
+        });
+      }
+      dayOverlayCache.delete(dateIso);
+      holdsForDay = { date: dateIso, holds: holdsForDay.holds, error: "", busy: "" };
+      renderDaySchedule(dateIso);
+      await refreshHolds(dateIso);
+      try {
+        const res = dateIso < todayIsoDate()
+          ? { items: [] }
+          : await api(`/overlays?from=${dateIso}&to=${dateIso}&includeAll=true`);
+        dayOverlayCache.set(dateIso, res.items || []);
+        if (selectedDayIso === dateIso) renderDaySchedule(dateIso, res.items || []);
+      } catch {
+        // Holds already refreshed; the overlay reload can retry on reopen.
+      }
+      if (typeof onHoldsChanged === "function") onHoldsChanged();
+    } catch (err) {
+      if (selectedDayIso !== dateIso) return;
+      holdsForDay = { date: dateIso, holds: holdsForDay.holds, error: err.message, busy: "" };
+      renderDaySchedule(dateIso);
+    }
+  }
+
   async function openDayDialog(dateIso) {
     if (!dayDialog || !dateIso) return;
     selectedDayIso = dateIso;
+    holdsForDay = { date: dateIso, holds: null, error: "", busy: "" };
 
     const formattedHeading = new Date(`${dateIso}T12:00:00Z`).toLocaleDateString("en-GB", {
       weekday: "long",
@@ -235,6 +367,7 @@ export function setupDayScheduleDialog(options) {
 
     renderDaySchedule(dateIso, null);
     dayDialog.showModal();
+    refreshHolds(dateIso);
 
     try {
       // The owner's calendar is not read for past days, so there is nothing
@@ -257,6 +390,20 @@ export function setupDayScheduleDialog(options) {
 
   if (dayCloseBtn) dayCloseBtn.onclick = () => dayDialog.close();
   if (dayCloseFootBtn) dayCloseFootBtn.onclick = () => dayDialog.close();
+  if (dayBody) {
+    dayBody.addEventListener("click", (event) => {
+      const confirmBtn = event.target.closest("[data-hold-confirm]");
+      const releaseBtn = event.target.closest("[data-hold-release]");
+      if (confirmBtn) holdAction("confirm", confirmBtn.dataset.holdConfirm);
+      else if (releaseBtn) holdAction("release", releaseBtn.dataset.holdRelease);
+    });
+    dayBody.addEventListener("submit", (event) => {
+      const form = event.target.closest("[data-hold-propose]");
+      if (!form) return;
+      event.preventDefault();
+      holdAction("propose", "", form);
+    });
+  }
   return {
     openDayDialog,
     clearCache: () => dayOverlayCache.clear(),

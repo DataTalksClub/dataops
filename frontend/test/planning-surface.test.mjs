@@ -1014,11 +1014,12 @@ describe("Planning surface production behavior", () => {
     });
     await harness.surface.renderCalendarSurface();
     await nextTicks();
-    const before = harness.requests.length;
+    const overlayRequests = () => harness.requests.filter((url) => String(url).includes("/overlays")).length;
+    const before = overlayRequests();
     await dom.grid.onclick({ target: { closest: (sel) => sel === "[data-open-day]" ? { dataset: { openDay: "2026-08-13" } } : null } });
     await nextTicks();
     assert.equal(dom.dayDialog.open, true);
-    assert.equal(harness.requests.length, before, "a past day makes no overlay request");
+    assert.equal(overlayRequests(), before, "a past day makes no overlay request");
     assert.match(dom.dayBody.innerHTML, /Past webinar/);
     assert.doesNotMatch(dom.dayBody.innerHTML, /Event Slot|Available/);
   });

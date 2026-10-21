@@ -120,6 +120,19 @@ export function createPlanningSurface(context) {
                 ${eventKindOptions}
               </select>
             </label>
+            <label class="calendar-select-label" title="Free block length for open slots">
+              <select data-slot-duration aria-label="Slot duration">
+                <option value="60" selected>60 min</option>
+                <option value="90">90 min</option>
+              </select>
+            </label>
+            <label class="calendar-select-label" title="Which operational windows to check">
+              <select data-slot-window aria-label="Slot window">
+                <option value="any" selected>Any window</option>
+                <option value="midday">Midday</option>
+                <option value="evening">Evening</option>
+              </select>
+            </label>
           </div>
           <div class="calendar-layers" role="toolbar" aria-label="Show on calendar">
             <span class="calendar-control-label">Show:</span>
@@ -284,7 +297,9 @@ export function createPlanningSurface(context) {
       holidays = [],
       overlays = [],
       overlaySources = {},
-      overlaysFailed = false;
+      overlaysFailed = false,
+      slotDuration = "60",
+      slotWindow = "any";
     const api = (path, options = {}) =>
       request(workApiUrl(`/api/calendar-items${path}`), {
         headers: { "content-type": "application/json", ...(options.headers || {}) },
@@ -444,10 +459,13 @@ export function createPlanningSurface(context) {
           `).join(""),
           overlayMarkup = dayOverlays.map((overlay) => {
             const isOwnerCalendar = overlay.provider === "owner-calendar";
+            const isHold = overlay.provider === "calendar-holds";
             const isAvailable = isAvailableOverlay(overlay);
-            const category = isAvailable
-              ? (isOwnerCalendar ? "Open event slot" : "Free newsletter slot")
-              : overlay.category || "Newsletter";
+            const category = isHold
+              ? "Calendar hold"
+              : isAvailable
+                ? (isOwnerCalendar ? "Open event slot" : "Free newsletter slot")
+                : overlay.category || "Newsletter";
             const hrefAttr = overlay.href ? `href="${escapeHtml(overlay.href)}"` : "";
             const tag = overlay.href ? "a" : (isAvailable ? "button type=\"button\"" : "span");
             const conflict = isAvailable && blockingHoliday;
@@ -466,8 +484,11 @@ export function createPlanningSurface(context) {
               ? `<a class="calendar-overlay-card" href="/cards?cardId=${encodeURIComponent(issueCard.cardId)}"
                   title="${escapeHtml(`Open the card of ${overlay.label}`)}">Card</a>`
               : "";
+            const overlayClass = isOwnerCalendar
+              ? "is-owner-calendar"
+              : isHold ? "is-hold" : "is-newsletter";
             return `
-              <${tag} class="calendar-overlay ${isOwnerCalendar ? "is-owner-calendar" : "is-newsletter"}${slotClass}" ${hrefAttr}${openDayAttr} title="${escapeHtml(title)}">
+              <${tag} class="calendar-overlay ${overlayClass}${slotClass}" ${hrefAttr}${openDayAttr} title="${escapeHtml(title)}">
                 <small>${conflict ? "Blocked" : escapeHtml(category)}</small>
                 <span>${escapeHtml(overlay.label)}</span>
                 ${cardDue}
@@ -587,7 +608,9 @@ export function createPlanningSurface(context) {
       try {
         // External overlays can wait on the calendar broker. Show owned planning
         // data immediately and add overlays when ready instead of blocking the grid.
-        const overlayPromise = api(`/overlays?from=${from}&to=${to}`).then(
+        // The same backend query the CLI slot search uses: duration 60|90
+        // (default 60), window evening|midday|any (default any).
+        const overlayPromise = api(`/overlays?from=${from}&to=${to}&duration=${slotDuration}&window=${slotWindow}`).then(
           (value) => ({ status: "fulfilled", value }),
           (reason) => ({ status: "rejected", reason }),
         );
@@ -696,6 +719,15 @@ export function createPlanningSurface(context) {
     };
     surface.querySelector("[data-view]").onchange = load;
     surface.querySelector("[data-type]").onchange = render;
+    surface.querySelector("[data-slot-duration]").onchange = (event) => {
+      slotDuration = event.target.value === "90" ? "90" : "60";
+      load();
+    };
+    surface.querySelector("[data-slot-window]").onchange = (event) => {
+      const value = event.target.value;
+      slotWindow = value === "midday" || value === "evening" ? value : "any";
+      load();
+    };
     surface.querySelectorAll("[data-layer]").forEach((control) => {
       control.onchange = () => {
         render();
@@ -708,6 +740,12 @@ export function createPlanningSurface(context) {
       escapeHtml,
       todayIsoDate,
       getCalendarState: () => ({ items, holidays, overlays }),
+      holdsApi: (path, options = {}) =>
+        request(workApiUrl(`/api/calendar-holds${path}`), {
+          headers: { "content-type": "application/json", ...(options.headers || {}) },
+          ...options,
+        }),
+      onHoldsChanged: () => load(),
     });
 
     const openDayDialog = daySchedule.openDayDialog;
