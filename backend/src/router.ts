@@ -28,6 +28,7 @@ import { handleSponsorFinanceRoutes } from './routes/sponsorFinance';
 import { handleSponsorCommunicationRoutes } from './routes/sponsorCommunications';
 import { handleNewsletterIssueRoutes } from './routes/newsletterIssues';
 import { handlePodcastEpisodeRoutes } from './routes/podcastEpisodes';
+import { handlePodcastFirstContactRoutes } from './routes/podcastFirstContact';
 import { handlePeopleRoutes } from './routes/people';
 import { handleBookRoutes } from './routes/books';
 import { handleCalendarRoutes } from './routes/calendar';
@@ -331,6 +332,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
     if (reqPath.startsWith('/api/newsletter-issues')) return await handleNewsletterIssueRoutes(reqPath,method,event,client);
     if (reqPath === '/api/podcast-episodes' || reqPath.startsWith('/api/podcast-episodes/')) return await handlePodcastEpisodeRoutes(reqPath, method, event, client);
+    if (reqPath.startsWith('/api/podcast-first-contact')) return await handlePodcastFirstContactRoutes(reqPath, method, event, client);
     if (reqPath === '/api/people' || reqPath.startsWith('/api/people/')) return await handlePeopleRoutes(reqPath, method, event, client);
     if (reqPath === '/api/books' || reqPath.startsWith('/api/books/')) return await handleBookRoutes(reqPath, method, event, client);
     if (reqPath.startsWith('/api/calendar-holds')) {
