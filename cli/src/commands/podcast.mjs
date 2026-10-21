@@ -14,6 +14,14 @@ export const help = `dataops podcast - the podcast episode register (the web Ope
 Usage
   dataops podcast list [--season N] [--status S] [--card <card-id>] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
   dataops podcast show <episode-id>
+  dataops podcast invite --guest "Full Name" --email guest@example.com --date YYYY-MM-DD --topic TOPIC
+      [--title T] [--window evening|midday] [--duration N]
+                                   First contact: tentative Google "(Proposal)"
+                                   hold for one slot, a standalone follow-up
+                                   Task (no Card), and the send-ready email
+                                   from orin@ (one slot, no topic ask, docs
+                                   page link). Send it from Orin's mailbox;
+                                   nothing is mailed automatically.
   dataops podcast schedule [--season N] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
                                   Publication schedule: audio time and timezone, Spotify
                                   public check, transcript review, website readiness
@@ -74,6 +82,7 @@ edited, scheduled and published. --status corrects or cancels an episode.
 
 Examples
   dataops podcast list --status booked
+  dataops podcast invite --guest "Sofiia" --email sofiia@example.com --date 2026-11-04 --topic "LLM evals in production"
   dataops podcast create --guests "Jane Doe:jane-doe" --title "Shipping ML" --recording-date 2026-11-04
   dataops podcast update 6f1c... --status cancelled
   dataops podcast create-card 6f1c...
@@ -421,9 +430,123 @@ export async function cadence(args, io) {
 
 export const doc = domainDocCommand("podcast");
 
+export const PODCAST_DOCS_URL = "https://datatalksclub.github.io/docs/activities/podcast/";
+export const PODCAST_FIRST_CONTACT_FROM = "orin@datatalks.club";
+
+/** Berlin wall-clock label for a hold instant, mirroring the backend renderer. */
+export function formatInviteSlotLabel(startIso) {
+  const instant = Date.parse(startIso);
+  if (Number.isNaN(instant)) throw new UsageError("--date must be a real calendar date.");
+  const date = new Intl.DateTimeFormat("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "Europe/Berlin",
+  }).format(new Date(instant));
+  const time = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Europe/Berlin",
+    timeZoneName: "short",
+  }).format(new Date(instant));
+  return `${date} at ${time}`;
+}
+
+/**
+ * First contact for a podcast guest (Orin's ask).
+ *
+ * One command, three DataOps writes, zero Cards:
+ *  1. POST /api/calendar-holds — tentative hold; the backend mirrors it as a
+ *     Google "(Proposal)" event (or reports Google sync deferred).
+ *  2. POST /api/tasks — standalone follow-up Task (no cardId): the Task half
+ *     of the Task+template pair. No draft Card is created; the episode Card
+ *     comes only after the recording date is confirmed (create-card).
+ *  3. POST /api/podcast-first-contact/email — the template half: send-ready
+ *     copy from orin@ with exactly one proposed slot, no topic ask, and the
+ *     public podcast docs page link.
+ *
+ * The operator sends the printed email from Orin's mailbox; DataOps never
+ * mails the guest automatically (hold expiry says so explicitly too).
+ */
+export async function invite(args, io) {
+  const guest = optionalString(args, "guest");
+  if (!guest) throw new UsageError('Usage: dataops podcast invite --guest "Full Name" --email guest@example.com --date YYYY-MM-DD --topic TOPIC [--title T] [--window evening|midday] [--duration N].');
+  const email = optionalString(args, "email");
+  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    throw new UsageError("A guest --email address is required so the follow-up Task names its recipient.");
+  }
+  const date = optionalString(args, "date");
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) {
+    throw new UsageError("--date must be YYYY-MM-DD.");
+  }
+  const topic = optionalString(args, "topic");
+  if (!topic) throw new UsageError("A hold needs --topic: record the intended episode topic at invite time (the email itself never asks the guest for topics).");
+  const window = String(args.window ?? "evening").trim().toLowerCase();
+  if (window !== "evening" && window !== "midday") {
+    throw new UsageError("Invalid --window for invite: must be 'evening' (default) or 'midday' (only if the guest asks).");
+  }
+  const rawDuration = args.duration ?? args.durationMinutes;
+  const durationMinutes = rawDuration === undefined ? 60 : Number(rawDuration);
+  if (!Number.isInteger(durationMinutes) || durationMinutes <= 0) {
+    throw new UsageError("--duration must be a positive integer number of minutes (podcasts use 60).");
+  }
+  const title = optionalString(args, "title") || `Podcast with ${guest}`;
+
+  const api = apiFor(args);
+  const holdRes = await api.post("/api/calendar-holds", {
+    date,
+    window,
+    durationMinutes,
+    title,
+    topic,
+    guestRef: email,
+    expiresDays: 7,
+  });
+  const hold = holdRes.hold || holdRes;
+
+  const task = await api.post("/api/tasks", {
+    description: `Podcast first-contact to ${guest} — await reply`,
+    date,
+    comment: `First-contact email to ${email} for "${title}". Proposed slot ${date} (${window}); hold ${hold.id}. No Card until the recording date is confirmed.`,
+    materials: [{ url: PODCAST_DOCS_URL, label: "Podcast docs page" }],
+  });
+
+  let slotLabel = `${date} (${window}, Europe/Berlin)`;
+  if (hold.startIso) {
+    try {
+      slotLabel = formatInviteSlotLabel(hold.startIso);
+    } catch {
+      // Keep the date+window fallback; never fail the invite on a label.
+    }
+  }
+  const firstName = guest.split(/\s+/)[0];
+  const rendered = await api.post("/api/podcast-first-contact/email", {
+    guestFirstName: firstName,
+    slotLabel,
+  });
+
+  if (args.json) return { hold, task, email: rendered };
+  io.print(`Proposed hold ${hold.id}: ${hold.date} [${hold.status}] (${hold.window}, ${hold.durationMinutes} min) ${hold.title} (${hold.id})`);
+  if (hold.googleSync?.state === "deferred") {
+    io.print(`Google sync deferred: ${hold.googleSync.reason || "broker unavailable"}`);
+  }
+  io.print(`Created Task ${task.id} - ${task.description} (due ${task.date}). No Card created.`);
+  io.print("");
+  io.print(`From: ${rendered.from}`);
+  io.print(`To: ${email}`);
+  io.print(`Subject: ${rendered.subject}`);
+  io.print("");
+  io.print(rendered.body);
+  io.print("");
+  io.print(`Send the email above from Orin's mailbox (${PODCAST_FIRST_CONTACT_FROM}); nothing was mailed automatically.`);
+  return { hold, task, email: rendered };
+}
+
 export const commands = {
   list,
   show,
+  invite,
   schedule,
   create,
   update,

@@ -203,6 +203,19 @@ with `dataops podcast cadence --weekday 5 --time 19:00 --timezone Europe/Berlin
 --episodes-per-season 9`. Then record it before scheduling:
 `dataops podcast update <episode-id> --season S --episode E --release-date YYYY-MM-DD`.
 
+For first contact with a new guest: `dataops podcast invite --guest "Full Name"
+--email guest@example.com --date YYYY-MM-DD --topic "Intended topic"
+[--title T] [--window evening|midday] [--duration 60]` proposes one tentative
+hold (the backend mirrors it as a Google "(Proposal)" event, or reports Google
+sync deferred), creates a standalone follow-up Task (no Card — the episode Card
+comes only after the recording date is confirmed), and prints the send-ready
+email from orin@datatalks.club with exactly one proposed slot, no topic ask,
+and the public podcast docs page link
+(`https://datatalksclub.github.io/docs/activities/podcast/`). Topics are
+collected later via the optional guest materials form, which has its own
+alternate-slot picker. Send the printed email from Orin's mailbox; DataOps
+never mails the guest automatically.
+
 For website content: `dataops speakers list` (speaker/author profiles for
 `_people` pages; `--name/--slug/--bio/--photo-url/--github/--twitter/--linkedin/--website`)
 and `dataops books list` (Book of the Week entries for `_books` pages;

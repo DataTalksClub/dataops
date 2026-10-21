@@ -328,4 +328,73 @@ describe("podcast publication evidence flags", () => {
     assert.equal(put.body.publication.websiteObserved.proofUrl, "https://example.com/live");
     assert.equal(put.body.version, 4);
   });
+
+  test("invite proposes one hold, creates a standalone task, and prints the orin@ email; no card", async () => {
+    const hold = {
+      id: "hold_inv1",
+      date: "2026-11-04",
+      window: "evening",
+      durationMinutes: 60,
+      title: "Podcast with Sofiia",
+      status: "tentative",
+      startIso: "2026-11-04T15:30:00.000Z",
+      endIso: "2026-11-04T16:30:00.000Z",
+      googleSync: { state: "synced" },
+    };
+    const email = {
+      from: "orin@datatalks.club",
+      subject: "Sofiia at DataTalks.Club Podcast",
+      body: "Hi Sofiia,\n\nFor the interview, will Wednesday 4 November at 16:30 CET work for you?\n\nhttps://datatalksclub.github.io/docs/activities/podcast/",
+      docsUrl: "https://datatalksclub.github.io/docs/activities/podcast/",
+    };
+    const calls = fakePortal({
+      "POST /api/calendar-holds": { hold },
+      "POST /api/tasks": ({ body }) => ({ id: "task-1", version: 1, ...body }),
+      "POST /api/podcast-first-contact/email": email,
+    });
+    const io = captureIo();
+    const code = await run(
+      ["podcast", "invite", "--guest", "Sofiia", "--email", "sofiia@example.com", "--date", "2026-11-04", "--topic", "LLM evals in production"],
+      io,
+    );
+    assert.equal(code, 0);
+    const routes = calls.map((call) => `${call.method} ${call.route}`);
+    assert.deepEqual(routes, [
+      "POST /api/calendar-holds",
+      "POST /api/tasks",
+      "POST /api/podcast-first-contact/email",
+    ]);
+    // The hold carries the internal topic; the email call carries one slot label.
+    assert.equal(calls[0].body.topic, "LLM evals in production");
+    assert.equal(calls[0].body.guestRef, "sofiia@example.com");
+    const taskBody = calls[1].body;
+    assert.match(taskBody.description, /Sofiia/);
+    assert.ok(!("cardId" in taskBody), "invite creates a standalone Task, never a Card");
+    assert.equal(calls[2].body.guestFirstName, "Sofiia");
+    assert.match(calls[2].body.slotLabel, /16:30/);
+    // Printed email: from orin@, one slot, docs URL, send reminder.
+    assert.match(io.text(), /From: orin@datatalks\.club/);
+    assert.match(io.text(), /To: sofiia@example\.com/);
+    assert.match(io.text(), /Sofiia at DataTalks\.Club Podcast/);
+    assert.match(io.text(), /datatalksclub\.github\.io\/docs\/activities\/podcast\//);
+    assert.match(io.text(), /No Card created/);
+    assert.match(io.text(), /nothing was mailed automatically/);
+  });
+
+  test("invite validates before sending anything", async () => {
+    for (const argv of [
+      ["podcast", "invite", "--email", "s@example.com", "--date", "2026-11-04", "--topic", "T"],
+      ["podcast", "invite", "--guest", "Sofiia", "--date", "2026-11-04", "--topic", "T"],
+      ["podcast", "invite", "--guest", "Sofiia", "--email", "not-an-email", "--date", "2026-11-04", "--topic", "T"],
+      ["podcast", "invite", "--guest", "Sofiia", "--email", "s@example.com", "--topic", "T"],
+      ["podcast", "invite", "--guest", "Sofiia", "--email", "s@example.com", "--date", "2026-11-04"],
+      ["podcast", "invite", "--guest", "Sofiia", "--email", "s@example.com", "--date", "2026-11-04", "--topic", "T", "--window", "any"],
+      ["podcast", "invite", "--guest", "Sofiia", "--email", "s@example.com", "--date", "2026-11-04", "--topic", "T", "--duration", "0"],
+    ]) {
+      const calls = fakePortal({});
+      const code = await run(argv, captureIo());
+      assert.notEqual(code, 0, argv.join(" "));
+      assert.equal(calls.length, 0, argv.join(" "));
+    }
+  });
 });
