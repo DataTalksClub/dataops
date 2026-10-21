@@ -726,6 +726,11 @@
   align-items: center;
   justify-content: space-between;
 }
+.calendar-day-section-count {
+  font-size: var(--dk-text-xs);
+  font-weight: 400;
+  color: var(--dk-text-muted);
+}
 .calendar-day-timeline-list {
   display: flex;
   flex-direction: column;

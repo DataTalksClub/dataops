@@ -216,7 +216,7 @@ export function setupDayScheduleDialog(options) {
       <div>
         <h3 class="calendar-day-section-title">
           <span>Full Schedule & Other Events</span>
-          <small style="font-size: 11px; font-weight: normal; color: var(--dk-text-muted);">${timelineEntries.length} ${timelineEntries.length === 1 ? "entry" : "entries"}</small>
+          <small class="calendar-day-section-count">${timelineEntries.length} ${timelineEntries.length === 1 ? "entry" : "entries"}</small>
         </h3>
         <div class="calendar-day-timeline-list">
           ${timelineRowsHtml}
@@ -264,7 +264,7 @@ export function setupDayScheduleDialog(options) {
       <div>
         <h3 class="calendar-day-section-title">
           <span>Calendar holds</span>
-          <small style="font-size: 11px; font-weight: normal; color: var(--dk-text-muted);">${escapeHtml(count)}</small>
+          <small class="calendar-day-section-count">${escapeHtml(count)}</small>
         </h3>
         <div data-holds-list>${listHtml}</div>
         ${isPast ? "" : `
