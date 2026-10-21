@@ -167,7 +167,9 @@ links it on the Card's `"Sponsorship document"` field, and prints the shareable
 link with the 80-bit access code (`/sponsor-docs/<id>?code=XXXX-XXXX-XXXX-XXXX`).
 Use `dataops newsletter doc show <doc-id>`, `dataops newsletter doc export <doc-id>`,
 and `dataops newsletter doc delete <doc-id> --yes` (and the matching
-`dataops podcast doc create <card-id> [--email]`, `show`, `export`, `delete` for podcast sponsorships).
+`dataops podcast doc create <card-id> [--email]`, `show`, `export`, `delete` for podcast sponsorships;
+prep docs use `--template podcast-guest-research|podcast-run-sheet|podcast-episode-brief` for
+guest research, host run sheet, and episode planning brief (no Google Docs needed).
 
 For a newsletter issue's Markdown package (`issue.md`, `sources.md`, `brief.md`):
 store it in DataOps on the newsletter issue — never commit it to Git:

@@ -10,6 +10,16 @@ export const TEMPLATES = [
   "newsletter-secondary",
   "newsletter-standalone",
   "podcast",
+  "podcast-guest-research",
+  "podcast-run-sheet",
+  "podcast-episode-brief",
+];
+
+export const PODCAST_TEMPLATES = [
+  "podcast",
+  "podcast-guest-research",
+  "podcast-run-sheet",
+  "podcast-episode-brief",
 ];
 
 export const newsletterDocHelp = `dataops newsletter doc - portal-hosted newsletter sponsor content documents
@@ -28,11 +38,11 @@ Usage
   dataops newsletter doc rotate-code <doc-id>
 `;
 
-export const podcastDocHelp = `dataops podcast doc - portal-hosted podcast sponsor content documents
+export const podcastDocHelp = `dataops podcast doc - portal-hosted podcast documents (guest materials + prep docs)
 
 Usage
-  dataops podcast doc create <card-id> [--title T] [--sponsor NAME] [--date YYYY-MM-DD]
-      [--link-type NAME] [--email]
+  dataops podcast doc create <card-id> [--template podcast|podcast-guest-research|podcast-run-sheet|podcast-episode-brief]
+      [--title T] [--sponsor NAME] [--date YYYY-MM-DD] [--link-type NAME] [--email]
   dataops podcast doc show <doc-id>
   dataops podcast doc export <doc-id>
   dataops podcast doc delete <doc-id> --yes
@@ -42,6 +52,13 @@ Usage
   dataops podcast doc reopen <doc-id>
   dataops podcast doc email <doc-id>
   dataops podcast doc rotate-code <doc-id>
+  dataops podcast doc templates
+
+Prep templates (default: podcast):
+  podcast                  guest-facing materials from the guest (default)
+  podcast-guest-research   internal source-backed guest research (staff-only)
+  podcast-run-sheet        internal one-page host run sheet (staff-only)
+  podcast-episode-brief    episode planning brief (replaces Google Doc brief)
 `;
 
 export const help = `Deprecated: \`dataops sponsor-docs\` has moved under the domain commands:
@@ -110,7 +127,7 @@ export async function create(args, io) {
   const prefix = commandPrefix(args);
   const createUsage =
     domain === "podcast"
-      ? `${prefix} create <card-id> [--sponsor NAME] [--date YYYY-MM-DD] [--email]`
+      ? `${prefix} create <card-id> [--template ${PODCAST_TEMPLATES.join("|")}] [--sponsor NAME] [--date YYYY-MM-DD] [--email]`
       : `${prefix} create <issue-id|card-id> [--slot primary|secondary] [--standalone] [--email]`;
 
   // Defensive recovery if a boolean flag (--standalone or --email) was placed immediately before the positional ID
@@ -149,10 +166,10 @@ export async function create(args, io) {
     if (slot !== undefined || standalone) {
       throw new UsageError(`--slot and --standalone apply to \`dataops newsletter doc create\`, not \`${prefix} create\`.`);
     }
-    if (template !== undefined && template !== "podcast") {
-      throw new UsageError(`\`${prefix} create\` only creates podcast documents.`);
+    if (template !== undefined && !PODCAST_TEMPLATES.includes(template)) {
+      throw new UsageError(`--template must be one of: ${PODCAST_TEMPLATES.join(", ")}.`);
     }
-    body.template = "podcast";
+    body.template = template || "podcast";
   } else {
     if (slot !== undefined) {
       if (!["primary", "secondary", "main", "standalone"].includes(slot)) {
@@ -226,9 +243,9 @@ export async function list(args, io) {
   const result = await api.get("/api/sponsor-docs", { query });
   let docs = (result.docs || []).map((d) => normalizeDocUrls(d, api.base));
   if (args._domain === "podcast") {
-    docs = docs.filter((d) => d.template === "podcast");
+    docs = docs.filter((d) => d.template === "podcast" || String(d.template || "").startsWith("podcast-"));
   } else if (args._domain === "newsletter") {
-    docs = docs.filter((d) => d.template !== "podcast");
+    docs = docs.filter((d) => d.template !== "podcast" && !String(d.template || "").startsWith("podcast-"));
   }
   const payload = { ...result, docs };
   if (args.json) return payload;
