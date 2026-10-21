@@ -74,12 +74,20 @@ async function createBrowserSession(
  * Get a session by token. Returns null if not found.
  */
 async function getSession(client: DynamoDBDocumentClient, token: string, now = new Date()): Promise<Session | null> {
-  const result = await client.send(
-    new GetCommand({
-      TableName: TABLE_SESSIONS,
-      Key: { PK: `SESSION#${token}`, SK: `SESSION#${token}` },
-    })
-  );
+  let result;
+  try {
+    result = await client.send(
+      new GetCommand({
+        TableName: TABLE_SESSIONS,
+        Key: { PK: `SESSION#${token}`, SK: `SESSION#${token}` },
+      })
+    );
+  } catch (err: unknown) {
+    // A missing credential table means no credential exists: fail closed to
+    // unauthenticated instead of turning every bearer lookup into a 500.
+    if (err && typeof err === 'object' && (err as { name?: string }).name === 'ResourceNotFoundException') return null;
+    throw err;
+  }
 
   const session = result.Item ? cleanItem(result.Item as Record<string, unknown>) : null;
   if (!session) return null;

@@ -274,12 +274,20 @@ export async function getApiToken(
 ): Promise<ApiToken | null> {
   if (!String(token || '').startsWith('dops_')) return null;
   const id = hashSecret(token);
-  const result = await client.send(
-    new GetCommand({
-      TableName: TABLE_SESSIONS,
-      Key: { PK: `APITOKEN#${id}`, SK: `APITOKEN#${id}` },
-    }),
-  );
+  let result;
+  try {
+    result = await client.send(
+      new GetCommand({
+        TableName: TABLE_SESSIONS,
+        Key: { PK: `APITOKEN#${id}`, SK: `APITOKEN#${id}` },
+      }),
+    );
+  } catch (err: unknown) {
+    // A missing credential table means no credential exists: fail closed to
+    // unauthenticated instead of turning every bearer lookup into a 500.
+    if (err && typeof err === 'object' && (err as { name?: string }).name === 'ResourceNotFoundException') return null;
+    throw err;
+  }
   const apiToken = cleanItem<ApiToken>(result.Item as Record<string, unknown> | undefined);
   if (!apiToken) return null;
   if (Date.parse(apiToken.expiresAt) <= now.getTime()) {
