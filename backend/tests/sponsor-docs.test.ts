@@ -94,7 +94,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     );
   }
 
-  it('creates a sponsor doc from the right template, links it on the Card, and supports all 4 templates', async () => {
+  it('creates a sponsor doc from the right template, links it on the Card, and supports all templates', async () => {
     const card = await createCard(client, {
       ...templateLink(),
       title: '[Newsletter] (02 NOV 2026) #310 - Astronomer',
@@ -140,14 +140,48 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.strictEqual(created.card.sponsorDocs[0].id, created.doc.id);
     assert.strictEqual(created.card.sponsorDocs[0].status, 'draft');
 
-    // Verify all 4 templates are available
+    // Verify all 7 templates are available
     const templatesRes = await staffReq('GET', '/api/sponsor-docs/templates');
     assert.strictEqual(templatesRes.statusCode, 200, templatesRes.body);
     const { templates } = JSON.parse(templatesRes.body);
     assert.deepStrictEqual(
       templates.map((t: { key: string }) => t.key),
-      ['newsletter-main', 'newsletter-secondary', 'newsletter-standalone', 'podcast'],
+      ['newsletter-main', 'newsletter-secondary', 'newsletter-standalone', 'podcast', 'podcast-guest-research', 'podcast-run-sheet', 'podcast-episode-brief'],
     );
+  });
+
+  it('creates podcast prep docs (guest research, run sheet, episode brief) with internal export and email drafts', async () => {
+    const card = await createCard(client, {
+      ...templateLink(),
+      title: '[Podcast] 2026-12-01 - Jane Doe',
+      anchorDate: '2026-12-01',
+      people: ['Jane Doe'],
+    });
+
+    for (const template of ['podcast-guest-research', 'podcast-run-sheet', 'podcast-episode-brief'] as const) {
+      const createRes = await staffReq('POST', '/api/sponsor-docs', {
+        cardId: card.id,
+        template,
+      });
+      assert.strictEqual(createRes.statusCode, 201, `${template}: ${createRes.body}`);
+      const created = JSON.parse(createRes.body);
+      assert.strictEqual(created.doc.template, template);
+      assert.strictEqual(created.doc.cardId, card.id);
+      assert.ok(created.doc.docUrl.includes('/sponsor-docs/'));
+      assert.ok(created.doc.emailDraft?.subject.includes('Podcast'));
+      const exportRes = await staffReq('GET', `/api/sponsor-docs/${created.doc.id}/export`, undefined, {
+        format: 'markdown',
+      });
+      assert.strictEqual(exportRes.statusCode, 200);
+      assert.ok(exportRes.body.includes(created.doc.title));
+    }
+
+    const badRes = await staffReq('POST', '/api/sponsor-docs', {
+      cardId: card.id,
+      template: 'google-doc',
+    });
+    assert.strictEqual(badRes.statusCode, 400, badRes.body);
+    assert.strictEqual(JSON.parse(badRes.body).code, 'invalid_template');
   });
 
   it('gates anonymous sponsor access by access code (query or header), allows sponsor edits & submission, and lets staff edit without a code', async () => {

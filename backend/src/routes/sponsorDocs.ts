@@ -425,7 +425,7 @@ export async function handleSponsorDocRoutes(
           const requested = String(body.template).trim();
           if (!isSponsorDocTemplateKey(requested)) {
             return json(400, {
-              error: `Invalid template "${requested}". Must be one of: newsletter-main, newsletter-secondary, newsletter-standalone, podcast`,
+              error: `Invalid template "${requested}". Must be one of: newsletter-main, newsletter-secondary, newsletter-standalone, podcast, podcast-guest-research, podcast-run-sheet, podcast-episode-brief`,
               code: 'invalid_template',
             });
           }
@@ -468,7 +468,7 @@ export async function handleSponsorDocRoutes(
             || hydratedCard?.sponsor
             || existingIssue?.slots?.primary?.sponsor
             || null;
-        } else if (template === 'podcast') {
+        } else if (template === 'podcast' || template.startsWith('podcast-')) {
           sponsorName = hydratedCard?.sponsor
             || hydratedCard?.people?.[0]
             || existingEpisode?.guests?.[0]?.name

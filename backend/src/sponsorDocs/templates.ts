@@ -2,7 +2,10 @@ export type SponsorDocTemplateKey =
   | 'newsletter-main'
   | 'newsletter-secondary'
   | 'newsletter-standalone'
-  | 'podcast';
+  | 'podcast'
+  | 'podcast-guest-research'
+  | 'podcast-run-sheet'
+  | 'podcast-episode-brief';
 
 export interface SponsorDocFieldDefinition {
   key: string;
@@ -38,6 +41,9 @@ export const SPONSOR_DOC_TEMPLATE_KEYS: readonly SponsorDocTemplateKey[] = [
   'newsletter-secondary',
   'newsletter-standalone',
   'podcast',
+  'podcast-guest-research',
+  'podcast-run-sheet',
+  'podcast-episode-brief',
 ] as const;
 
 const VISUAL_GUIDELINES_URL = 'https://drive.google.com/file/d/1M_jEzcb1IWJmolx9N7e08gfdbctjcLH2/view?usp=sharing';
@@ -511,6 +517,304 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
       },
     ],
   },
+
+  'podcast-guest-research': {
+    key: 'podcast-guest-research',
+    label: 'Podcast — Guest Research (internal)',
+    shortLabel: 'Guest Research',
+    defaultLinkType: 'Guest research',
+    intro: 'Internal source-backed research for a podcast guest. Staff-only: do not share this document with the guest. Keep guest-facing questions in the episode brief or guest materials doc.',
+    sections: [
+      {
+        id: 'guest-identity',
+        title: '1) Guest Identity',
+        description: 'Who the guest is and why they are a good fit.',
+        fields: [
+          {
+            key: 'guestName',
+            label: 'Guest Name & Role / Company',
+            type: 'text',
+            placeholder: 'e.g. Jane Doe, VP of Data Engineering at Acme',
+          },
+          {
+            key: 'bio',
+            label: 'Bio (confirmed with sources)',
+            type: 'textarea',
+            rows: 3,
+            placeholder: 'Short bio with source links where possible.',
+          },
+          {
+            key: 'currentFocus',
+            label: 'Current Focus',
+            type: 'textarea',
+            rows: 3,
+            placeholder: 'Projects, problems, or themes the guest is working on now.',
+          },
+        ],
+      },
+      {
+        id: 'links',
+        title: '2) Profile & Source Links',
+        description: 'Links for the episode brief and show notes, plus research sources.',
+        fields: [
+          {
+            key: 'linkedinUrl',
+            label: 'LinkedIn',
+            type: 'text',
+            placeholder: 'https://www.linkedin.com/in/...',
+          },
+          {
+            key: 'twitterUrl',
+            label: 'X (Twitter)',
+            type: 'text',
+            placeholder: 'https://x.com/...',
+          },
+          {
+            key: 'githubUrl',
+            label: 'GitHub',
+            type: 'text',
+            placeholder: 'https://github.com/...',
+          },
+          {
+            key: 'websiteUrl',
+            label: 'Website / Blog',
+            type: 'text',
+            placeholder: 'https://...',
+          },
+          {
+            key: 'sourceLinks',
+            label: 'Research Sources (talks, posts, papers)',
+            type: 'textarea',
+            rows: 4,
+            placeholder: 'One link per line, with a one-line note on what each source supports.',
+          },
+        ],
+      },
+      {
+        id: 'research',
+        title: '3) Research Findings',
+        description: 'Source-backed findings the host can rely on during the interview.',
+        fields: [
+          {
+            key: 'keyInsights',
+            label: 'Key Insights & Milestones',
+            type: 'textarea',
+            rows: 4,
+            placeholder: 'What should the host know? Career story, key results, stumbles, lessons.',
+          },
+          {
+            key: 'openQuestions',
+            label: 'Open Questions / Angles to Explore',
+            type: 'textarea',
+            rows: 4,
+            placeholder: 'Candidate question angles, each tied to a source where possible.',
+          },
+          {
+            key: 'topicsToAvoid',
+            label: 'Topics to Avoid',
+            type: 'textarea',
+            rows: 2,
+            placeholder: 'Anything off-limits or sensitive.',
+          },
+        ],
+      },
+      {
+        id: 'internal',
+        title: '4) Host-Only Notes (Internal)',
+        fields: [
+          {
+            key: 'hostOnlyNotes',
+            label: 'Host-Only Notes',
+            type: 'textarea',
+            rows: 3,
+            placeholder: 'Uncertainty, source extracts, or review notes. Never paste into the guest-shared doc.',
+          },
+        ],
+      },
+    ],
+  },
+
+  'podcast-run-sheet': {
+    key: 'podcast-run-sheet',
+    label: 'Podcast — Host Run Sheet (internal)',
+    shortLabel: 'Host Run Sheet',
+    defaultLinkType: 'Host run sheet',
+    intro: 'One-page live sheet for the host during recording. Staff-only: keep internal notes here, not in the guest-shared document.',
+    sections: [
+      {
+        id: 'setup',
+        title: '1) Setup',
+        fields: [
+          {
+            key: 'episodeTitle',
+            label: 'Episode Title (working)',
+            type: 'text',
+            placeholder: 'e.g. Shipping ML features without the platform team',
+          },
+          {
+            key: 'guestName',
+            label: 'Guest Name & Role / Company',
+            type: 'text',
+            placeholder: 'e.g. Jane Doe, VP of Data Engineering at Acme',
+          },
+          {
+            key: 'recordingDate',
+            label: 'Recording Date',
+            type: 'text',
+            placeholder: 'YYYY-MM-DD HH:MM (Europe/Berlin)',
+          },
+          {
+            key: 'durationMinutes',
+            label: 'Planned Duration (minutes)',
+            type: 'text',
+            placeholder: 'e.g. 45',
+          },
+        ],
+      },
+      {
+        id: 'flow',
+        title: '2) Live Flow',
+        description: 'Read top to bottom during the recording.',
+        fields: [
+          {
+            key: 'coldOpen',
+            label: 'Cold Open (first 10 seconds)',
+            type: 'textarea',
+            rows: 2,
+            placeholder: 'Hook: vivid fact, stat, problem, or provocative question.',
+          },
+          {
+            key: 'introScript',
+            label: 'Intro Script',
+            type: 'textarea',
+            rows: 3,
+            placeholder: 'How to introduce the guest on air.',
+          },
+          {
+            key: 'questionBlocks',
+            label: 'Question Blocks (in order)',
+            type: 'textarea',
+            rows: 8,
+            placeholder: 'Block 1 — ...\nBlock 2 — ...\nFollow-ups marked with →',
+          },
+          {
+            key: 'closingScript',
+            label: 'Closing Script',
+            type: 'textarea',
+            rows: 3,
+            placeholder: 'Wrap-up, takeaway question, where to find the guest, outro.',
+          },
+        ],
+      },
+      {
+        id: 'host-only',
+        title: '3) Host-Only Notes (Internal)',
+        fields: [
+          {
+            key: 'hostNotes',
+            label: 'Host Notes & Follow-ups',
+            type: 'textarea',
+            rows: 4,
+            placeholder: 'Timing cues, fallback questions, things to double-check live.',
+          },
+        ],
+      },
+    ],
+  },
+
+  'podcast-episode-brief': {
+    key: 'podcast-episode-brief',
+    label: 'Podcast — Episode Planning Brief',
+    shortLabel: 'Episode Brief',
+    defaultLinkType: 'Episode brief',
+    intro: 'Planning brief for the episode: goal, audience, structure, and logistics. This replaces the Google Doc episode brief; guest-facing questions stay here or in the guest materials doc.',
+    sections: [
+      {
+        id: 'overview',
+        title: '1) Overview',
+        fields: [
+          {
+            key: 'episodeTitle',
+            label: 'Episode Title (working)',
+            type: 'text',
+            placeholder: 'e.g. Shipping ML features without the platform team',
+          },
+          {
+            key: 'guestName',
+            label: 'Guest Name & Role / Company',
+            type: 'text',
+            placeholder: 'e.g. Jane Doe, VP of Data Engineering at Acme',
+          },
+          {
+            key: 'recordingDate',
+            label: 'Recording Date',
+            type: 'text',
+            placeholder: 'YYYY-MM-DD HH:MM (Europe/Berlin)',
+          },
+          {
+            key: 'goal',
+            label: 'Episode Goal',
+            type: 'textarea',
+            rows: 3,
+            placeholder: 'What should listeners be able to do or understand after this episode?',
+          },
+          {
+            key: 'audience',
+            label: 'Target Audience',
+            type: 'text',
+            placeholder: 'e.g. Data engineers running Airflow in production',
+          },
+        ],
+      },
+      {
+        id: 'content',
+        title: '2) Content Plan',
+        fields: [
+          {
+            key: 'keyMessages',
+            label: 'Key Messages / Takeaways',
+            type: 'textarea',
+            rows: 4,
+            placeholder: '3–5 takeaways the episode must land.',
+          },
+          {
+            key: 'structure',
+            label: 'Episode Structure',
+            type: 'textarea',
+            rows: 5,
+            placeholder: 'Segments in order, with rough timings.',
+          },
+          {
+            key: 'guestBio',
+            label: 'Guest Bio (for intro & show notes)',
+            type: 'textarea',
+            rows: 3,
+            placeholder: 'Confirmed bio, pasted here once the guest provides it.',
+          },
+        ],
+      },
+      {
+        id: 'logistics',
+        title: '3) Logistics',
+        fields: [
+          {
+            key: 'linksAssets',
+            label: 'Links & Assets',
+            type: 'textarea',
+            rows: 3,
+            placeholder: 'Schedule links, assets, and related research/run-sheet doc links.',
+          },
+          {
+            key: 'nextSteps',
+            label: 'Next Steps & Owners',
+            type: 'textarea',
+            rows: 3,
+            placeholder: 'Who does what before recording.',
+          },
+        ],
+      },
+    ],
+  },
 };
 
 export function isSponsorDocTemplateKey(value: unknown): value is SponsorDocTemplateKey {
@@ -676,7 +980,7 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '',
       valOrPlaceholder(c.twitterPost),
     );
-  } else {
+  } else if (doc.template === 'podcast') {
     lines.push(
       '## 1) Materials from the Guest',
       '',
@@ -710,6 +1014,87 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '',
       '### Actionable First Step & Resources',
       valOrPlaceholder(c.actionableTakeaway),
+    );
+  } else if (doc.template === 'podcast-guest-research') {
+    lines.push(
+      '## 1) Guest Identity',
+      '',
+      `**Guest:** ${valOrPlaceholder(c.guestName)}`,
+      '',
+      '### Bio',
+      valOrPlaceholder(c.bio),
+      '',
+      '### Current Focus',
+      valOrPlaceholder(c.currentFocus),
+      '',
+      '## 2) Profile & Source Links',
+      `- **LinkedIn:** ${valOrPlaceholder(c.linkedinUrl)}`,
+      `- **X (Twitter):** ${valOrPlaceholder(c.twitterUrl)}`,
+      `- **GitHub:** ${valOrPlaceholder(c.githubUrl)}`,
+      `- **Website:** ${valOrPlaceholder(c.websiteUrl)}`,
+      '',
+      '### Research Sources',
+      valOrPlaceholder(c.sourceLinks),
+      '',
+      '## 3) Research Findings',
+      '',
+      '### Key Insights & Milestones',
+      valOrPlaceholder(c.keyInsights),
+      '',
+      '### Open Questions / Angles',
+      valOrPlaceholder(c.openQuestions),
+      '',
+      '### Topics to Avoid',
+      valOrPlaceholder(c.topicsToAvoid, '_[None specified]_'),
+      '',
+      '## 4) Host-Only Notes (Internal)',
+      valOrPlaceholder(c.hostOnlyNotes),
+    );
+  } else if (doc.template === 'podcast-run-sheet') {
+    lines.push(
+      `**Guest:** ${valOrPlaceholder(c.guestName)}`,
+      `**Recording:** ${valOrPlaceholder(c.recordingDate)} (${valOrPlaceholder(c.durationMinutes, '_[duration]_')} min)`,
+      '',
+      '## Cold Open',
+      valOrPlaceholder(c.coldOpen),
+      '',
+      '## Intro Script',
+      valOrPlaceholder(c.introScript),
+      '',
+      '## Question Blocks',
+      valOrPlaceholder(c.questionBlocks),
+      '',
+      '## Closing Script',
+      valOrPlaceholder(c.closingScript),
+      '',
+      '## Host Notes (Internal)',
+      valOrPlaceholder(c.hostNotes),
+    );
+  } else {
+    lines.push(
+      `**Guest:** ${valOrPlaceholder(c.guestName)}`,
+      `**Recording:** ${valOrPlaceholder(c.recordingDate)}`,
+      '',
+      '## Goal',
+      valOrPlaceholder(c.goal),
+      '',
+      '## Target Audience',
+      valOrPlaceholder(c.audience),
+      '',
+      '## Key Messages / Takeaways',
+      valOrPlaceholder(c.keyMessages),
+      '',
+      '## Episode Structure',
+      valOrPlaceholder(c.structure),
+      '',
+      '## Guest Bio',
+      valOrPlaceholder(c.guestBio),
+      '',
+      '## Links & Assets',
+      valOrPlaceholder(c.linksAssets),
+      '',
+      '## Next Steps & Owners',
+      valOrPlaceholder(c.nextSteps),
     );
   }
 
@@ -761,6 +1146,12 @@ export function renderSponsorEmailDraft(options: {
     subjectSuffix = 'DataTalks.Club Newsletter (Stand-alone)';
   } else if (options.template === 'podcast') {
     subjectSuffix = 'DataTalks.Club Podcast';
+  } else if (options.template === 'podcast-guest-research') {
+    subjectSuffix = 'DataTalks.Club Podcast (Guest Research)';
+  } else if (options.template === 'podcast-run-sheet') {
+    subjectSuffix = 'DataTalks.Club Podcast (Host Run Sheet)';
+  } else if (options.template === 'podcast-episode-brief') {
+    subjectSuffix = 'DataTalks.Club Podcast (Episode Brief)';
   }
 
   const subject = `${company} + ${subjectSuffix} - ${pubDate}`;
@@ -779,6 +1170,26 @@ export function renderSponsorEmailDraft(options: {
       `Please fill in your notes and mark the document as Submitted by ${deadline} so we can prepare the interview questions and episode description.`,
       '',
       'Looking forward to the conversation!',
+      '',
+      'Thank you!',
+    ].join('\n');
+    return { subject, body };
+  }
+
+  if (
+    options.template === 'podcast-guest-research'
+    || options.template === 'podcast-run-sheet'
+    || options.template === 'podcast-episode-brief'
+  ) {
+    const body = [
+      'Hi team,',
+      '',
+      `Internal podcast prep document (${options.template}) for ${company} — ${pubDate}:`,
+      '',
+      options.shareUrl,
+      `(Access code if prompted: ${options.accessCode})`,
+      '',
+      'This is a staff-only working document in the DataOps portal. Please keep host-only notes here, not in the guest-shared document.',
       '',
       'Thank you!',
     ].join('\n');
