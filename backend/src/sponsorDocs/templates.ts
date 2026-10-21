@@ -400,7 +400,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
     label: 'Podcast — Materials from the Guest',
     shortLabel: 'Podcast',
     defaultLinkType: 'Sponsorship document',
-    intro: 'These notes help us draft focused interview questions and an episode description for your DataTalks.Club podcast episode. Write in plain text — feel free to fill in as much or as little as you like.',
+    intro: 'This form is optional: share as much or as little as you like, or skip it entirely and reply to our email in a couple of sentences instead — either way works. These notes help us draft focused interview questions and an episode description for your DataTalks.Club podcast episode. Write in plain text.',
     sections: [
       {
         id: 'general-questions',
@@ -1167,7 +1167,7 @@ export function renderSponsorEmailDraft(options: {
       options.shareUrl,
       `(Access code if prompted: ${options.accessCode})`,
       '',
-      `Please fill in your notes and mark the document as Submitted by ${deadline} so we can prepare the interview questions and episode description.`,
+      `Please fill in your notes and mark the document as Submitted by ${deadline} so we can prepare the interview questions and episode description. This form is optional — if it is easier, just reply to this email in a couple of sentences instead; either way works.`,
       '',
       'Looking forward to the conversation!',
       '',

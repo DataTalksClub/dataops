@@ -55,10 +55,13 @@ Usage
   dataops podcast doc templates
 
 Prep templates (default: podcast):
-  podcast                  guest-facing materials from the guest (default)
-  podcast-guest-research   internal source-backed guest research (staff-only)
-  podcast-run-sheet        internal one-page host run sheet (staff-only)
+  podcast                  guest-facing materials from the guest (default, optional for the guest —
+                           a short email reply works instead of filling the form)
+  podcast-guest-research   internal source-backed guest research (staff-only, after date confirm)
+  podcast-run-sheet        internal one-page host run sheet (staff-only, after date confirm)
   podcast-episode-brief    episode planning brief (replaces Google Doc brief)
+Research and run sheets start only after the recording date is confirmed
+(dataops podcast update <episode-id> --recording-date YYYY-MM-DD).
 `;
 
 export const help = `Deprecated: \`dataops sponsor-docs\` has moved under the domain commands:

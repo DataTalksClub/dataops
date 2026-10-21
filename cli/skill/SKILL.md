@@ -170,6 +170,11 @@ and `dataops newsletter doc delete <doc-id> --yes` (and the matching
 `dataops podcast doc create <card-id> [--email]`, `show`, `export`, `delete` for podcast sponsorships;
 prep docs use `--template podcast-guest-research|podcast-run-sheet|podcast-episode-brief` for
 guest research, host run sheet, and episode planning brief (no Google Docs needed).
+The guest materials form (`podcast`) is optional for the guest — a short email
+reply works instead of filling it. Guest research and the host run sheet start
+only after the recording date is confirmed
+(`dataops podcast update <episode-id> --recording-date YYYY-MM-DD`); the episode
+brief is available before confirm.
 
 For a newsletter issue's Markdown package (`issue.md`, `sources.md`, `brief.md`):
 store it in DataOps on the newsletter issue — never commit it to Git:

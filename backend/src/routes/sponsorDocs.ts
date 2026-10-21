@@ -12,7 +12,7 @@ import {
   type NewsletterIssue,
   type NewsletterSlotPosition,
 } from '../db/newsletterIssues';
-import { getPodcastEpisode, type PodcastEpisode } from '../db/podcastEpisodes';
+import { getPodcastEpisode, listPodcastEpisodes, type PodcastEpisode } from '../db/podcastEpisodes';
 import {
   checkSponsorDocRateLimit,
   clearSponsorDocRateLimit,
@@ -450,6 +450,25 @@ export async function handleSponsorDocRoutes(
           template = await inferTemplateForCard(client, existingCard, slotHint);
         } else {
           template = 'newsletter-main';
+        }
+
+        // Guest research and host run sheets start only after the date is
+        // confirmed (a recording date on the owning episode). The guest
+        // materials doc and the episode brief stay available before confirm.
+        if (template === 'podcast-guest-research' || template === 'podcast-run-sheet') {
+          const datedOwner = existingEpisode?.recordingDate
+            ? existingEpisode
+            : existingCard
+              ? (await listPodcastEpisodes(client)).find(
+                (episode) => episode.cardId === existingCard.id && episode.recordingDate,
+              )
+              : undefined;
+          if (!datedOwner) {
+            return json(422, {
+              error: 'Guest research and run sheets start only after the date is confirmed: set the episode recording date first (dataops podcast update <episode-id> --recording-date YYYY-MM-DD).',
+              code: 'date_not_confirmed',
+            });
+          }
         }
 
         const publicationDate = typeof body.publicationDate === 'string' && body.publicationDate.trim()

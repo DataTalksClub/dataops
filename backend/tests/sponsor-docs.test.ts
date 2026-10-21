@@ -5,6 +5,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createCard } from '../src/db/cards';
+import { createPodcastEpisode } from '../src/db/podcastEpisodes';
 import { createUser } from '../src/db/users';
 import { createSession } from '../src/db/sessions';
 import { getSponsorDoc } from '../src/db/sponsorDocs';
@@ -157,6 +158,15 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       anchorDate: '2026-12-01',
       people: ['Jane Doe'],
     });
+    // Post-confirm state: the episode carries the agreed recording date and
+    // links the Card. Research and run sheets are only available from here.
+    const datedEpisode = await createPodcastEpisode(client, {
+      title: 'Shipping ML features',
+      guests: [{ name: 'Jane Doe' }],
+      status: 'booked',
+      recordingDate: '2026-12-01',
+      cardId: card.id,
+    });
 
     for (const template of ['podcast-guest-research', 'podcast-run-sheet', 'podcast-episode-brief'] as const) {
       const createRes = await staffReq('POST', '/api/sponsor-docs', {
@@ -176,12 +186,65 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       assert.ok(exportRes.body.includes(created.doc.title));
     }
 
+    // Episode-owned research doc works too once the date is confirmed.
+    const episodeOwned = await staffReq('POST', '/api/sponsor-docs', {
+      cardId: datedEpisode.id,
+      template: 'podcast-guest-research',
+    });
+    assert.strictEqual(episodeOwned.statusCode, 201, episodeOwned.body);
+
+    // The guest materials doc is explicitly optional for the guest.
+    const guestDoc = await staffReq('POST', '/api/sponsor-docs', {
+      cardId: datedEpisode.id,
+      template: 'podcast',
+    });
+    assert.strictEqual(guestDoc.statusCode, 201, guestDoc.body);
+    const guestCreated = JSON.parse(guestDoc.body);
+    assert.match(guestCreated.doc.emailDraft?.body || '', /optional/i);
+
     const badRes = await staffReq('POST', '/api/sponsor-docs', {
       cardId: card.id,
       template: 'google-doc',
     });
     assert.strictEqual(badRes.statusCode, 400, badRes.body);
     assert.strictEqual(JSON.parse(badRes.body).code, 'invalid_template');
+  });
+
+  it('holds guest research and run sheets until the recording date is confirmed', async () => {
+    const card = await createCard(client, {
+      ...templateLink(),
+      title: '[Podcast] 2026-12-02 - John Roe',
+      anchorDate: '2026-12-02',
+      people: ['John Roe'],
+    });
+    // A bare Card (invite sent, date not confirmed yet): research blocked,
+    // brief and guest materials stay available.
+    for (const template of ['podcast-guest-research', 'podcast-run-sheet'] as const) {
+      const blocked = await staffReq('POST', '/api/sponsor-docs', {
+        cardId: card.id,
+        template,
+      });
+      assert.strictEqual(blocked.statusCode, 422, `${template}: ${blocked.body}`);
+      assert.strictEqual(JSON.parse(blocked.body).code, 'date_not_confirmed');
+    }
+    const briefOk = await staffReq('POST', '/api/sponsor-docs', {
+      cardId: card.id,
+      template: 'podcast-episode-brief',
+    });
+    assert.strictEqual(briefOk.statusCode, 201, briefOk.body);
+
+    // A dateless episode (no confirmed recording date yet) is blocked too.
+    const dateless = await createPodcastEpisode(client, {
+      title: 'TBA topic',
+      guests: [{ name: 'John Roe' }],
+      status: 'booked',
+    });
+    const blockedEpisode = await staffReq('POST', '/api/sponsor-docs', {
+      cardId: dateless.id,
+      template: 'podcast-run-sheet',
+    });
+    assert.strictEqual(blockedEpisode.statusCode, 422, blockedEpisode.body);
+    assert.strictEqual(JSON.parse(blockedEpisode.body).code, 'date_not_confirmed');
   });
 
   it('gates anonymous sponsor access by access code (query or header), allows sponsor edits & submission, and lets staff edit without a code', async () => {
