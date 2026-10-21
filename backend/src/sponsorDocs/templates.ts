@@ -413,11 +413,24 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
     label: 'Podcast — Materials from the Guest',
     shortLabel: 'Podcast',
     defaultLinkType: 'Sponsorship document',
-    intro: 'This form is optional: share as much or as little as you like, or skip it entirely and reply to our email in a couple of sentences instead — either way works. These notes help us draft focused interview questions and an episode description for your DataTalks.Club podcast episode. Write in plain text.',
+    intro: 'This form is optional: share as much or as little as you like, or skip it entirely and reply to our email in a couple of sentences instead — either way works. These notes help us draft focused interview questions and an episode description for your DataTalks.Club podcast episode. Write in plain text. The invite email proposes a single recording time; if it does not work, suggest an alternate below and tell us the topics you would most enjoy covering.',
     sections: [
       {
+        id: 'scheduling',
+        title: '1) Recording Time',
+        description: 'The invite email proposes one recording time. Confirm it here or suggest an alternate that works for you.',
+        fields: [
+          {
+            key: 'alternateSlot',
+            label: 'If the proposed time does not work, which alternate day/time works for you?',
+            type: 'text',
+            placeholder: 'e.g. Confirmed, or: Wednesday after 16:30, or Friday morning (Europe/Berlin)',
+          },
+        ],
+      },
+      {
         id: 'general-questions',
-        title: '1) General Questions',
+        title: '2) General Questions',
         description: 'Core context about you and what you would most enjoy discussing on the episode.',
         fields: [
           {
@@ -458,7 +471,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
       },
       {
         id: 'social-links',
-        title: '2) Social Media & Profile Links',
+        title: '3) Social Media & Profile Links',
         description: 'Links to include in the episode description and show notes.',
         fields: [
           {
@@ -489,7 +502,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
       },
       {
         id: 'detailed-questions',
-        title: '3) Episode Story & Practical Takeaways (Optional Guide)',
+        title: '4) Episode Story & Practical Takeaways (Optional Guide)',
         description: 'Use any of the prompts below that help structure your practical takeaways or personal story. We will craft the final description and questions from whatever you provide.',
         fields: [
           {
@@ -517,7 +530,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
       },
       {
         id: 'notes',
-        title: '4) Additional Notes (Optional)',
+        title: '5) Additional Notes (Optional)',
         fields: [
           {
             key: 'sponsorNotes',
@@ -1008,6 +1021,8 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '## 1) Materials from the Guest',
       '',
       `**Guest:** ${valOrPlaceholder(c.guestName)}`,
+      '',
+      `**Recording time:** ${valOrPlaceholder(c.alternateSlot, '_[Proposed time confirmed]_')}`,
       '',
       '### Introduction / Bio',
       valOrPlaceholder(c.introduction),
