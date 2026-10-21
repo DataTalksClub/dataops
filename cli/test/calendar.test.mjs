@@ -172,10 +172,10 @@ describe("Calendar CLI commands", () => {
 
     const text = io.text();
     // Midday is busy because of "Podcast with Guest"
-    assert.match(text, /Midday Event Slot \(11:30–14:00\):\s+BUSY/);
+    assert.match(text, /Midday Event Slot \(11:30–14:00[^)]*\):\s+BUSY/);
     assert.match(text, /Podcast with Guest/);
     // Evening is available because there are no evening blockers
-    assert.match(text, /Evening Event Slot \(16:30–18:30\):\s+AVAILABLE/);
+    assert.match(text, /Evening Event Slot \(16:30–18:30[^)]*\):\s+AVAILABLE/);
     // Full schedule lists both overlay and activity items
     assert.match(text, /Team sync/);
     assert.match(text, /MLOps live demonstration/);
@@ -351,5 +351,109 @@ describe("Calendar CLI commands", () => {
       requests[1].url,
       "https://portal.test/work/api/calendar-items/holidays/sync",
     );
+  });
+
+  test("calendar slots defaults to duration 60 and window any", async () => {
+    const io = captureIo();
+    let seenUrl = "";
+    globalThis.fetch = async (url) => {
+      seenUrl = String(url);
+      return new Response(JSON.stringify({ items: [], sources: {} }), { status: 200 });
+    };
+    const code = await run(["calendar", "slots", "--from", "2026-08-10", "--to", "2026-08-14"], io);
+    assert.equal(code, 0);
+    assert.match(seenUrl, /duration=60/);
+    assert.match(seenUrl, /window=any/);
+    assert.match(io.text(), /\[60 min, any\]/);
+  });
+
+  test("calendar slots workshop case wires duration 90 and window evening", async () => {
+    const io = captureIo();
+    let seenUrl = "";
+    globalThis.fetch = async (url) => {
+      seenUrl = String(url);
+      return new Response(
+        JSON.stringify({
+          items: [
+            { provider: "owner-calendar", category: "Available slot", label: "17:00 Available", startDate: "2026-10-13", slot: "evening", isAvailableSlot: true },
+          ],
+          sources: {},
+        }),
+        { status: 200 },
+      );
+    };
+    const code = await run(
+      ["calendar", "slots", "--from", "2026-10-13", "--to", "2026-10-13", "--duration", "90", "--window", "evening"],
+      io,
+    );
+    assert.equal(code, 0);
+    assert.match(seenUrl, /duration=90/);
+    assert.match(seenUrl, /window=evening/);
+    assert.match(io.text(), /evening AVAILABLE/);
+  });
+
+  test("calendar day honors duration 90 evening fit rule (16:30-18:00 must be free)", async () => {
+    // 17:30-18:30 blocks the 90-min preferred block 16:30-18:00 but leaves a 60-min center free.
+    const mkFetch = () => async (url) => {
+      if (String(url).includes("/overlays")) {
+        return new Response(
+          JSON.stringify({
+            items: [
+              { provider: "owner-calendar", label: "17:30–18:30 Late call", startDate: "2026-08-13", endDate: "2026-08-13", slot: "evening" },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ items: [], holidays: [] }), { status: 200 });
+    };
+    const io60 = captureIo();
+    globalThis.fetch = mkFetch();
+    assert.equal(await run(["calendar", "day", "2026-08-13", "--duration", "60", "--window", "evening"], io60), 0);
+    assert.match(io60.text(), /Evening Event Slot \(16:30–18:30[^)]*\):\s+AVAILABLE/);
+
+    const io90 = captureIo();
+    globalThis.fetch = mkFetch();
+    assert.equal(await run(["calendar", "day", "2026-08-13", "--duration", "90", "--window", "evening"], io90), 0);
+    assert.match(io90.text(), /Evening Event Slot \(16:30–18:30[^)]*\):\s+BUSY/);
+  });
+
+  test("calendar day midday window prefers 12:00 start", async () => {
+    // 13:30-14:00 is inside the midday band but outside the preferred 12:00-13:00 block.
+    const mkFetch = () => async (url) => {
+      if (String(url).includes("/overlays")) {
+        return new Response(
+          JSON.stringify({
+            items: [
+              { provider: "owner-calendar", label: "13:30–14:00 Wrap-up", startDate: "2026-08-13", endDate: "2026-08-13", slot: "midday" },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ items: [], holidays: [] }), { status: 200 });
+    };
+    const io = captureIo();
+    globalThis.fetch = mkFetch();
+    assert.equal(await run(["calendar", "day", "2026-08-13", "--duration", "60", "--window", "midday"], io), 0);
+    assert.match(io.text(), /Midday Event Slot \(11:30–14:00[^)]*\):\s+AVAILABLE/);
+    assert.match(io.text(), /\[60 min, midday\]/);
+    // Window filter hides the evening line.
+    assert.doesNotMatch(io.text(), /Evening Event Slot/);
+  });
+
+  test("calendar slots and day reject invalid duration and window", async () => {
+    for (const argv of [
+      ["calendar", "slots", "--duration", "0"],
+      ["calendar", "slots", "--duration", "abc"],
+      ["calendar", "slots", "--window", "night"],
+      ["calendar", "day", "2026-08-13", "--duration", "-5"],
+      ["calendar", "day", "2026-08-13", "--window", "morning"],
+    ]) {
+      const io = captureIo();
+      globalThis.fetch = async () => { throw new Error("no request expected"); };
+      const code = await run(argv, io);
+      assert.notEqual(code, 0, argv.join(" "));
+    }
   });
 });
