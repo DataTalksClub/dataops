@@ -10,12 +10,16 @@ export type SponsorDocTemplateKey =
 export interface SponsorDocFieldDefinition {
   key: string;
   label: string;
-  type: 'text' | 'textarea';
+  type: 'text' | 'textarea' | 'bullets';
   placeholder: string;
   helpText?: string;
   maxCharsHint?: number;
   maxWordsHint?: number;
   rows?: number;
+  minItems?: number;
+  maxItems?: number;
+  bulletMarker?: string;
+  allowVisualUpload?: boolean;
 }
 
 export interface SponsorDocSectionDefinition {
@@ -88,7 +92,8 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             key: 'graphicsUrl',
             label: 'Graphics (Link to cloud storage or image URL)',
             type: 'text',
-            placeholder: 'https://... (or note if sending the file by email)',
+            placeholder: 'https://... (or upload your visual below)',
+            allowVisualUpload: true,
           },
           {
             key: 'intro',
@@ -100,9 +105,11 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
           {
             key: 'bullets',
             label: 'Bullet Points (3 bullets)',
-            type: 'textarea',
-            rows: 4,
-            placeholder: '• Bullet point 1\n• Bullet point 2\n• Bullet point 3',
+            type: 'bullets',
+            minItems: 3,
+            maxItems: 5,
+            bulletMarker: '•',
+            placeholder: 'Bullet point',
           },
           {
             key: 'closing',
@@ -188,7 +195,8 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             key: 'graphicsUrl',
             label: 'Graphics (Optional — link to cloud storage or image URL)',
             type: 'text',
-            placeholder: 'https://...',
+            placeholder: 'https://... (or upload your visual below)',
+            allowVisualUpload: true,
           },
           {
             key: 'intro',
@@ -200,9 +208,11 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
           {
             key: 'bullets',
             label: 'Bullet Points (3 bullets)',
-            type: 'textarea',
-            rows: 4,
-            placeholder: '→ Key takeaway 1\n→ Key takeaway 2\n→ Key takeaway 3',
+            type: 'bullets',
+            minItems: 3,
+            maxItems: 5,
+            bulletMarker: '→',
+            placeholder: 'Key takeaway',
           },
           {
             key: 'closing',
@@ -301,7 +311,8 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             key: 'graphicsUrl',
             label: 'Graphics (Link to cloud storage or image URL)',
             type: 'text',
-            placeholder: 'https://...',
+            placeholder: 'https://... (or upload your visual below)',
+            allowVisualUpload: true,
           },
           {
             key: 'intro',
@@ -332,9 +343,11 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
           {
             key: 'bullets',
             label: 'Main Body — Bulleted List (3–4 bullets)',
-            type: 'textarea',
-            rows: 5,
-            placeholder: '• Takeaway or highlight 1\n• Takeaway or highlight 2\n• Takeaway or highlight 3\n• Takeaway or highlight 4',
+            type: 'bullets',
+            minItems: 3,
+            maxItems: 6,
+            bulletMarker: '•',
+            placeholder: 'Takeaway or highlight',
           },
           {
             key: 'closing',
@@ -847,7 +860,8 @@ export function sanitizeTemplateContent(
     for (const field of section.fields) {
       if (Object.hasOwn(raw, field.key)) {
         const val = raw[field.key];
-        next[field.key] = val === null || val === undefined ? '' : String(val).slice(0, 20000);
+        const maxLen = field.key === 'graphicsUrl' || field.allowVisualUpload ? 300000 : 20000;
+        next[field.key] = val === null || val === undefined ? '' : String(val).slice(0, maxLen);
       }
     }
   }
@@ -869,6 +883,15 @@ export interface SponsorDocExportInput {
 function valOrPlaceholder(value: string | undefined, placeholder = '_[Not provided]_'): string {
   const trimmed = (value || '').trim();
   return trimmed.length > 0 ? trimmed : placeholder;
+}
+
+function formatGraphicsExportLines(rawUrl: string | undefined): string[] {
+  const trimmed = (rawUrl || '').trim();
+  if (!trimmed) return [];
+  if (/^data:image\//i.test(trimmed)) {
+    return ['**Graphics:** [Uploaded visual image]', ''];
+  }
+  return [`**Graphics:** ${trimmed}`, ''];
 }
 
 /**
@@ -899,7 +922,7 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '',
       `### ${valOrPlaceholder(c.title, '[Title]')}`,
       '',
-      ...(c.graphicsUrl?.trim() ? [`**Graphics:** ${c.graphicsUrl.trim()}`, ''] : []),
+      ...formatGraphicsExportLines(c.graphicsUrl),
       valOrPlaceholder(c.intro, '_[Intro]_'),
       '',
       valOrPlaceholder(c.bullets, '_[Bullet points]_'),
@@ -926,7 +949,7 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '',
       `### ${valOrPlaceholder(c.title, '[Title]')}`,
       '',
-      ...(c.graphicsUrl?.trim() ? [`**Graphics:** ${c.graphicsUrl.trim()}`, ''] : []),
+      ...formatGraphicsExportLines(c.graphicsUrl),
       valOrPlaceholder(c.intro, '_[Intro]_'),
       '',
       valOrPlaceholder(c.bullets, '_[Bullet points]_'),
@@ -955,7 +978,7 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '',
       `### ${valOrPlaceholder(c.title, '[Title]')}`,
       '',
-      ...(c.graphicsUrl?.trim() ? [`**Graphics:** ${c.graphicsUrl.trim()}`, ''] : []),
+      ...formatGraphicsExportLines(c.graphicsUrl),
       valOrPlaceholder(c.intro, '_[Intro]_'),
       '',
       `**Early CTA:** [${valOrPlaceholder(c.earlyCtaText, 'CTA Text')}](${valOrPlaceholder(c.earlyCtaUrl, '#')})`,

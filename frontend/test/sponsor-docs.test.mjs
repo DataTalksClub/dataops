@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { linkService } from "../src/core/links.js";
-import { createSponsorDocPage } from "../src/surfaces/operations/sponsor-docs.js";
+import {
+  createSponsorDocPage,
+  parseSponsorBulletItems,
+  serializeSponsorBulletItems,
+} from "../src/surfaces/operations/sponsor-docs.js";
 import { renderCardSponsorDocsSection } from "../src/surfaces/work-detail/card-summary.js";
 import { FakeDocument, FakeElement, findByText, nextTicks } from "./support/fake-dom.mjs";
 
@@ -270,4 +274,199 @@ test("Card sponsor docs section and linkService render status and last-edited in
   assert.match(section.textContent, /Submitted \/ Ready/);
   assert.match(section.textContent, /Last edited 2026-10-17 20:30 by sponsor/);
   assert.match(section.textContent, /Markdown export/);
+});
+
+test("keeps structured Main Body Opening, Bulleted List, and Closing fields and updates live preview on typing and visual upload", async () => {
+  const standaloneTemplateDefinition = {
+    key: "newsletter-standalone",
+    label: "Stand-Alone Newsletter Specs",
+    intro: "Dedicated stand-alone newsletter blast.",
+    sections: [
+      {
+        id: "standalone-placement",
+        title: "1) Stand-Alone Newsletter Copy",
+        fields: [
+          { key: "subjectLine", label: "Email Subject Line (≤ 65 characters)", type: "text", maxCharsHint: 65 },
+          { key: "previewText", label: "Email Preview Text (≤ 140 characters)", type: "text", maxCharsHint: 140 },
+          { key: "title", label: "Title (≤ 12 words)", type: "text", maxWordsHint: 12 },
+          {
+            key: "graphicsUrl",
+            label: "Graphics (Link to cloud storage or image URL)",
+            type: "text",
+            allowVisualUpload: true,
+          },
+          { key: "intro", label: "Intro (2 sentences)", type: "textarea", rows: 3 },
+          { key: "earlyCtaText", label: "CTA Button — Early Placement (Text)", type: "text" },
+          { key: "earlyCtaUrl", label: "CTA Button — Early Placement (Link)", type: "text" },
+          {
+            key: "mainBodyOpening",
+            label: "Main Body — Opening (1–2 sentences)",
+            type: "textarea",
+            rows: 3,
+          },
+          {
+            key: "bullets",
+            label: "Main Body — Bulleted List (3–4 bullets)",
+            type: "bullets",
+            minItems: 3,
+            maxItems: 5,
+            bulletMarker: "•",
+            placeholder: "Takeaway or highlight",
+          },
+          { key: "closing", label: "Closing (1–2 sentences)", type: "textarea", rows: 2 },
+          { key: "closingCtaText", label: "CTA Button — Closing Placement (Text)", type: "text" },
+          { key: "closingCtaUrl", label: "CTA Button — Closing Placement (Link)", type: "text" },
+        ],
+      },
+    ],
+  };
+
+  const h = harness({
+    docOverrides: {
+      template: "newsletter-standalone",
+      templateDefinition: standaloneTemplateDefinition,
+      content: {
+        subjectLine: "",
+        previewText: "",
+        title: "",
+        graphicsUrl: "",
+        intro: "",
+        earlyCtaText: "",
+        earlyCtaUrl: "",
+        mainBodyOpening: "",
+        bullets: "",
+        closing: "",
+        closingCtaText: "",
+        closingCtaUrl: "",
+      },
+    },
+  });
+  await h.controller.start();
+
+  // 1. All three structured body fields exist separately (never merged into one textarea)
+  const openingInput = h.root.querySelector("#sponsor-field-mainBodyOpening");
+  const bulletsField = h.root.querySelector('[data-sponsor-bullets="bullets"]');
+  const closingInput = h.root.querySelector("#sponsor-field-closing");
+  assert.ok(openingInput, "Main Body Opening textarea is present");
+  assert.ok(bulletsField, "Structured Bulleted List editor is present");
+  assert.ok(closingInput, "Closing textarea is present");
+
+  // 2. Bulleted list renders 3 structured item inputs (CMP learning-in-public links style)
+  let bulletInputs = bulletsField.querySelectorAll("[data-sponsor-bullet-input]");
+  assert.equal(bulletInputs.length, 3);
+
+  // 3. Live preview pane is present on the right side of the workspace
+  const preview = h.root.querySelector("[data-sponsor-live-preview]");
+  assert.ok(preview, "Live preview pane is rendered");
+  assert.match(preview.textContent, /Live Preview/);
+  assert.match(preview.textContent, /Stand-Alone Blast/);
+
+  // 4. Typing into structured fields updates the live preview immediately
+  const titleInput = h.root.querySelector("#sponsor-field-title");
+  titleInput.value = "Real-time CDC & streaming pipelines";
+  await titleInput.dispatch("input");
+  assert.equal(
+    preview.querySelector("[data-sponsor-preview-title]").textContent,
+    "Real-time CDC & streaming pipelines",
+  );
+
+  openingInput.value = "Here is what you will learn in our architecture deep dive:";
+  await openingInput.dispatch("input");
+  assert.equal(
+    preview.querySelector("[data-sponsor-preview-opening]").textContent,
+    "Here is what you will learn in our architecture deep dive:",
+  );
+
+  bulletInputs[0].value = "Sub-second CDC from Postgres and Snowflake";
+  await bulletInputs[0].dispatch("input");
+  bulletInputs[1].value = "Zero-maintenance schema evolution";
+  await bulletInputs[1].dispatch("input");
+  bulletInputs[2].value = "Declarative transformations in SQL";
+  await bulletInputs[2].dispatch("input");
+
+  // Add a 4th bullet using "+ Add bullet" button
+  const addBulletBtn = bulletsField.querySelector('[data-sponsor-action="add-bullet"]');
+  await addBulletBtn.click();
+  bulletInputs = bulletsField.querySelectorAll("[data-sponsor-bullet-input]");
+  assert.equal(bulletInputs.length, 4);
+  bulletInputs[3].value = "SOC2 Type II and HIPAA ready";
+  await bulletInputs[3].dispatch("input");
+
+  const previewBullets = preview.querySelectorAll("[data-sponsor-preview-bullet]");
+  assert.equal(previewBullets.length, 4);
+  assert.deepEqual(
+    previewBullets.map((li) => li.textContent),
+    [
+      "Sub-second CDC from Postgres and Snowflake",
+      "Zero-maintenance schema evolution",
+      "Declarative transformations in SQL",
+      "SOC2 Type II and HIPAA ready",
+    ],
+  );
+
+  closingInput.value = "Join the live engineering session on Thursday.";
+  await closingInput.dispatch("input");
+  assert.equal(
+    preview.querySelector("[data-sponsor-preview-closing]").textContent,
+    "Join the live engineering session on Thursday.",
+  );
+
+  // 5. Uploading a visual file updates the live preview image right away
+  const visualFileInput = h.root.querySelector('[data-sponsor-visual-upload="graphicsUrl"]');
+  assert.ok(visualFileInput, "Visual upload input is present");
+  const fakePngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  visualFileInput.files = [
+    {
+      name: "acme-architecture.png",
+      type: "image/png",
+      arrayBuffer: async () => fakePngBytes.buffer,
+    },
+  ];
+  await visualFileInput.dispatch("change");
+  await nextTicks();
+
+  const previewImg = preview.querySelector("img[data-sponsor-preview-image]");
+  assert.ok(previewImg, "Preview image element is rendered after visual upload");
+  assert.match(previewImg.src, /^data:image\/png;base64,/);
+  assert.match(
+    preview.querySelector("[data-sponsor-preview-visual-caption]").textContent,
+    /acme-architecture\.png/,
+  );
+
+  // 6. Saving sends structured fields + serialized bullets + uploaded visual
+  const saveDraftBtn = h.root.querySelector('[data-sponsor-action="save-draft"]');
+  await saveDraftBtn.click();
+  await nextTicks();
+
+  const putCall = h.calls.find(([, opts]) => opts.method === "PUT");
+  assert.ok(putCall);
+  const savedBody = JSON.parse(putCall[1].body);
+  assert.equal(
+    savedBody.content.mainBodyOpening,
+    "Here is what you will learn in our architecture deep dive:",
+  );
+  assert.equal(
+    savedBody.content.bullets,
+    [
+      "- Sub-second CDC from Postgres and Snowflake",
+      "- Zero-maintenance schema evolution",
+      "- Declarative transformations in SQL",
+      "- SOC2 Type II and HIPAA ready",
+    ].join("\n"),
+  );
+  assert.equal(savedBody.content.closing, "Join the live engineering session on Thursday.");
+  assert.match(savedBody.content.graphicsUrl, /^data:image\/png;base64,/);
+  h.controller.destroy();
+});
+
+test("parseSponsorBulletItems and serializeSponsorBulletItems strip bullet prefixes cleanly", () => {
+  assert.deepEqual(parseSponsorBulletItems("", 3), ["", "", ""]);
+  assert.deepEqual(
+    parseSponsorBulletItems("• First point\n- Second point\n→ Third point", 3),
+    ["First point", "Second point", "Third point"],
+  );
+  assert.equal(
+    serializeSponsorBulletItems(["• First point", "Second point", "  ", "→ Third point"]),
+    "- First point\n- Second point\n- Third point",
+  );
 });

@@ -201,4 +201,99 @@ test.describe("sponsor newsletter catalog", () => {
     await page.goto(`${server.baseURL}/sponsors/newsletters/missing-newsletter`);
     await expect(page.locator(".entity-route-not-found:visible")).toContainText("missing-newsletter");
   });
+
+  test("sponsor newsletter content form keeps structured Opening / Bullets / Closing fields and updates live preview on typing and visual upload", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    const issueRes = await fetch(`${server.baseURL}/api/newsletter-issues`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "standalone",
+        publicationDate: "2026-12-14",
+        status: "planned",
+        slots: {
+          primary: { sponsor: "Estuary" },
+        },
+      }),
+    });
+    expect(issueRes.ok).toBeTruthy();
+    const issue = await issueRes.json();
+
+    const docRes = await fetch(`${server.baseURL}/api/sponsor-docs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        cardId: issue.id,
+        standalone: true,
+      }),
+    });
+    expect(docRes.ok).toBeTruthy();
+    const { doc } = await docRes.json();
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${server.baseURL}/sponsor-docs/${doc.id}?code=${encodeURIComponent(doc.accessCode)}`);
+
+    const preview = page.locator("[data-sponsor-live-preview]");
+    await expect(preview).toBeVisible();
+    await expect(preview).toContainText("Live Preview");
+    await expect(preview).toContainText("Stand-Alone Blast");
+
+    // Structured fields remain distinct (Opening, Bulleted List, Closing)
+    const openingField = page.locator("#sponsor-field-mainBodyOpening");
+    const bulletsField = page.locator('[data-sponsor-bullets="bullets"]');
+    const closingField = page.locator("#sponsor-field-closing");
+    await expect(openingField).toBeVisible();
+    await expect(bulletsField).toBeVisible();
+    await expect(closingField).toBeVisible();
+
+    // Bullets field renders 3 structured list inputs + "+ Add bullet" button
+    await expect(bulletsField.locator("[data-sponsor-bullet-input]")).toHaveCount(3);
+    await page.locator("#sponsor-field-title").fill("Real-Time CDC Pipelines Without Ops Overhead");
+    await expect(preview.locator("[data-sponsor-preview-title]")).toHaveText(
+      "Real-Time CDC Pipelines Without Ops Overhead",
+    );
+
+    await openingField.fill("See how engineering teams unify streaming and batch in one declarative pipeline:");
+    await expect(preview.locator("[data-sponsor-preview-opening]")).toHaveText(
+      "See how engineering teams unify streaming and batch in one declarative pipeline:",
+    );
+
+    await bulletsField.locator('[data-sponsor-bullet-input="0"]').fill("Sub-second Postgres and MySQL CDC");
+    await bulletsField.locator('[data-sponsor-bullet-input="1"]').fill("Automatic schema evolution");
+    await bulletsField.locator('[data-sponsor-bullet-input="2"]').fill("Exactly-once delivery to Snowflake and BigQuery");
+    await bulletsField.locator('[data-sponsor-action="add-bullet"]').click();
+    await expect(bulletsField.locator("[data-sponsor-bullet-input]")).toHaveCount(4);
+    await bulletsField.locator('[data-sponsor-bullet-input="3"]').fill("Deploy in cloud or BYOC in 5 minutes");
+
+    await expect(preview.locator("[data-sponsor-preview-bullet]")).toHaveCount(4);
+    await expect(preview.locator("[data-sponsor-preview-bullets]")).toContainText(
+      "Deploy in cloud or BYOC in 5 minutes",
+    );
+
+    await closingField.fill("Join our live engineering workshop this Thursday.");
+    await expect(preview.locator("[data-sponsor-preview-closing]")).toHaveText(
+      "Join our live engineering workshop this Thursday.",
+    );
+
+    // Upload a 1x1 PNG visual and verify live preview renders the uploaded image immediately
+    const onePixelPng = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    await page.locator('[data-sponsor-visual-upload="graphicsUrl"]').setInputFiles({
+      name: "estuary-banner.png",
+      mimeType: "image/png",
+      buffer: onePixelPng,
+    });
+
+    const previewImg = preview.locator("img[data-sponsor-preview-image]");
+    await expect(previewImg).toBeVisible();
+    await expect(previewImg).toHaveAttribute("src", /^data:image\/png;base64,/);
+    await expect(preview.locator("[data-sponsor-preview-visual-caption]")).toContainText("estuary-banner.png");
+
+    await page.locator('[data-sponsor-action="submit-ready"]').click();
+    await expect(page.locator('[data-sponsor-doc-status="submitted"]')).toHaveText("Submitted / Ready");
+  });
 });

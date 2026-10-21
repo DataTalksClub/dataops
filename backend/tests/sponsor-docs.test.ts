@@ -463,5 +463,12 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     const standalonePayload = JSON.parse(createStandaloneRes.body);
     assert.strictEqual(standalonePayload.doc.template, 'newsletter-standalone');
     assert.strictEqual(standalonePayload.doc.sponsorName, 'PrimarySponsor');
+    const placementFields = standalonePayload.doc.templateDefinition.sections[0].fields;
+    const fieldKeys = placementFields.map((f: { key: string }) => f.key);
+    assert.ok(fieldKeys.includes('mainBodyOpening'));
+    assert.ok(fieldKeys.includes('bullets'));
+    assert.ok(fieldKeys.includes('closing'));
+    const bulletsDef = placementFields.find((f: { key: string }) => f.key === 'bullets');
+    assert.strictEqual(bulletsDef.type, 'bullets');
   });
 });
