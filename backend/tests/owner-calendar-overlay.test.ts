@@ -746,4 +746,75 @@ describe('owner calendar overlay and filtering', () => {
       assert.deepEqual(urls, [], 'a past week makes no broker or Google request');
     });
   });
+
+  describe('duration and window', () => {
+    it('parses duration and window with 60/any defaults', async () => {
+      const { parseDurationMinutes, parseSlotWindow } = await import('../src/calendar/ownerCalendarOverlay');
+      assert.equal(parseDurationMinutes(undefined), 60);
+      assert.equal(parseDurationMinutes(''), 60);
+      assert.equal(parseDurationMinutes('90'), 90);
+      assert.equal(parseSlotWindow(undefined), 'any');
+      assert.equal(parseSlotWindow(''), 'any');
+      assert.equal(parseSlotWindow('evening'), 'evening');
+      assert.equal(parseSlotWindow('midday'), 'midday');
+      assert.throws(() => parseDurationMinutes('0'), /positive integer/);
+      assert.throws(() => parseDurationMinutes('abc'), /positive integer/);
+      assert.throws(() => parseDurationMinutes('-5'), /positive integer/);
+      assert.throws(() => parseSlotWindow('night'), /evening.*midday.*any/);
+    });
+
+    it('requires the preferred evening block 16:30-18:00 for 90 minutes', async () => {
+      const { isWindowFreeForDuration } = await import('../src/calendar/ownerCalendarOverlay');
+      // Late call blocks the 90-min preferred block but leaves a 60-min center free.
+      const busy = [{ start: '17:30', end: '18:30' }];
+      assert.equal(isWindowFreeForDuration('evening', busy, 60), true);
+      assert.equal(isWindowFreeForDuration('evening', busy, 90), false);
+      // Free evening fits both.
+      assert.equal(isWindowFreeForDuration('evening', [], 60), true);
+      assert.equal(isWindowFreeForDuration('evening', [], 90), true);
+      // 90 minutes do not fit outside the band and never fit a 60-min window overflow.
+      assert.equal(isWindowFreeForDuration('evening', [], 121), false);
+    });
+
+    it('anchors midday availability at the 12:00 preferred start', async () => {
+      const { isWindowFreeForDuration } = await import('../src/calendar/ownerCalendarOverlay');
+      // 13:30-14:00 is inside the band but outside the preferred 12:00-13:00 block.
+      assert.equal(isWindowFreeForDuration('midday', [{ start: '13:30', end: '14:00' }], 60), true);
+      assert.equal(isWindowFreeForDuration('midday', [{ start: '12:30', end: '13:30' }], 60), false);
+      assert.equal(isWindowFreeForDuration('midday', [], 90), true);
+    });
+
+    it('projects only the requested window and duration-sized slots', async () => {
+      const mockFetch: typeof fetch = async (input) => {
+        const url = String(input);
+        if (url.endsWith('/api/agent/token')) {
+          return new Response(JSON.stringify({ access_token: 'g' }), { status: 200 });
+        }
+        if (url.includes('googleapis.com')) {
+          return new Response(
+            JSON.stringify({
+              items: [
+                // Monday 2026-10-12: late evening call blocks 90-min but not 60-min.
+                { id: 'evt-late', summary: 'Late call', status: 'confirmed', start: { dateTime: '2026-10-12T17:30:00+02:00' }, end: { dateTime: '2026-10-12T18:30:00+02:00' } },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response('Not found', { status: 404 });
+      };
+      setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
+
+      const monday60: any = await ownerCalendarOverlay({ today: TODAY, brokerCredential: 't', durationMinutes: 60, window: 'any' }).project('2026-10-12', '2026-10-12');
+      assert.ok(monday60.items.some((i: any) => i.id === 'owner-slot:2026-10-12:evening'), '60-min evening fits');
+
+      const monday90: any = await ownerCalendarOverlay({ today: TODAY, brokerCredential: 't', durationMinutes: 90, window: 'evening' }).project('2026-10-12', '2026-10-12');
+      assert.equal(monday90.items.some((i: any) => i.id === 'owner-slot:2026-10-12:evening'), false, '90-min evening needs 16:30-18:00 free');
+      assert.equal(monday90.items.some((i: any) => i.slot === 'midday'), false, 'window=evening projects no midday slots');
+
+      const mondayMid: any = await ownerCalendarOverlay({ today: TODAY, brokerCredential: 't', durationMinutes: 60, window: 'midday' }).project('2026-10-12', '2026-10-12');
+      assert.ok(mondayMid.items.some((i: any) => i.id === 'owner-slot:2026-10-12:midday'), 'midday still projected');
+      assert.equal(mondayMid.items.some((i: any) => i.slot === 'evening'), false, 'window=midday projects no evening slots');
+    });
+  });
 });

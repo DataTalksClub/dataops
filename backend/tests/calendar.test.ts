@@ -198,8 +198,7 @@ describe("operations calendar", () => {
       before?.generationId,
     );
   });
-  it("shows a weekly issue with primary and secondary slots as one calendar item", async () => {
-    const issue = buildNewsletterIssue({
+  it("shows a weekly issue with primary and secondary slots as one calendar item", async () => {    const issue = buildNewsletterIssue({
       kind: "weekly",
       publicationDate: "2027-04-12",
       issueNumber: 402,
@@ -258,6 +257,17 @@ describe("operations calendar", () => {
     const moved = await invoke("PUT", `/api/cards/${card.id}`, { expectedVersion: card.version, anchorDate: "2030-12-25" });
     assert.equal(moved.statusCode, 200, moved.body);
     assert.equal((await alerts()).length, 1);
+  });
+  it("overlays accept duration and window and reject invalid values", async () => {
+    const ok = await invoke("GET", "/api/calendar-items/overlays", undefined, {}, { from: "2027-04-12", to: "2027-04-12", duration: "90", window: "evening" });
+    assert.equal(ok.statusCode, 200, ok.body);
+    assert.equal(parse(ok).durationMinutes, 90);
+    assert.equal(parse(ok).window, "evening");
+    const def = await invoke("GET", "/api/calendar-items/overlays", undefined, {}, { from: "2027-04-12", to: "2027-04-12" });
+    assert.equal(parse(def).durationMinutes, 60);
+    assert.equal(parse(def).window, "any");
+    assert.equal((await invoke("GET", "/api/calendar-items/overlays", undefined, {}, { from: "2027-04-12", to: "2027-04-12", duration: "0" })).statusCode, 400);
+    assert.equal((await invoke("GET", "/api/calendar-items/overlays", undefined, {}, { from: "2027-04-12", to: "2027-04-12", window: "night" })).statusCode, 400);
   });
   it("ships week/month UI, independent layers, accessible status, and API seam", async () => {
     const frontend = path.resolve(__dirname, "../../frontend"),
