@@ -457,3 +457,105 @@ describe("Calendar CLI commands", () => {
     }
   });
 });
+
+describe("Calendar hold CLI commands", () => {
+  test("calendar propose posts a tentative hold with evening/60/+7d defaults", async () => {
+    const io = captureIo();
+    let seen = null;
+    globalThis.fetch = async (url, options = {}) => {
+      seen = { url: String(url), body: JSON.parse(options.body) };
+      return new Response(
+        JSON.stringify({
+          hold: {
+            id: "hold_abc123", date: "2026-10-27", window: "evening", durationMinutes: 60,
+            title: "GraphRAG workshop", status: "tentative", expiresAt: "2026-11-03T00:00:00.000Z",
+            googleSync: { state: "deferred", reason: "dry-run" },
+          },
+        }),
+        { status: 201 },
+      );
+    };
+    const code = await run(["calendar", "propose", "--date", "2026-10-27", "--title", "GraphRAG workshop"], io);
+    assert.equal(code, 0);
+    assert.match(seen.url, /\/api\/calendar-holds$/);
+    assert.deepEqual(seen.body, {
+      date: "2026-10-27", window: "evening", durationMinutes: 60,
+      title: "GraphRAG workshop", expiresDays: 7,
+    });
+    assert.match(io.text(), /Proposed hold hold_abc123/);
+    assert.match(io.text(), /Google sync deferred/);
+  });
+
+  test("calendar propose wires workshop flags: 90 min evening with card", async () => {
+    const io = captureIo();
+    let seen = null;
+    globalThis.fetch = async (url, options = {}) => {
+      seen = { url: String(url), body: JSON.parse(options.body) };
+      return new Response(
+        JSON.stringify({ hold: { id: "hold_w9", date: "2026-10-27", window: "evening", durationMinutes: 90, title: "Workshop", status: "tentative" } }),
+        { status: 201 },
+      );
+    };
+    const code = await run(
+      ["calendar", "propose", "--date", "2026-10-27", "--window", "evening", "--duration", "90", "--title", "Workshop", "--card", "card-1"],
+      io,
+    );
+    assert.equal(code, 0);
+    assert.equal(seen.body.durationMinutes, 90);
+    assert.equal(seen.body.window, "evening");
+    assert.equal(seen.body.cardId, "card-1");
+  });
+
+  test("calendar propose validates before sending", async () => {
+    for (const argv of [
+      ["calendar", "propose", "--title", "No date"],
+      ["calendar", "propose", "--date", "2026-10-27"],
+      ["calendar", "propose", "--date", "2026-10-27", "--title", "x", "--window", "any"],
+      ["calendar", "propose", "--date", "2026-10-27", "--title", "x", "--duration", "0"],
+    ]) {
+      const io = captureIo();
+      globalThis.fetch = async () => { throw new Error("no request expected"); };
+      const code = await run(argv, io);
+      assert.notEqual(code, 0, argv.join(" "));
+    }
+  });
+
+  test("calendar confirm-hold and release-hold hit their endpoints", async () => {
+    const requests = [];
+    globalThis.fetch = async (url, options = {}) => {
+      requests.push({ url: String(url), body: options.body ? JSON.parse(options.body) : undefined });
+      const u = String(url);
+      if (u.endsWith("/confirm")) return new Response(JSON.stringify({ hold: { id: "hold_1", title: "T" } }), { status: 200 });
+      return new Response(JSON.stringify({ hold: { id: "hold_1", title: "T" } }), { status: 200 });
+    };
+    assert.equal(await run(["calendar", "confirm-hold", "hold_1"], captureIo()), 0);
+    assert.equal(await run(["calendar", "release-hold", "hold_1"], captureIo()), 0);
+    assert.equal(requests[0].url, "https://portal.test/work/api/calendar-holds/hold_1/confirm");
+    assert.equal(requests[1].url, "https://portal.test/work/api/calendar-holds/hold_1/release");
+    assert.deepEqual(requests[1].body, { reason: "manual" });
+
+    const io = captureIo();
+    globalThis.fetch = async () => { throw new Error("no request expected"); };
+    assert.notEqual(await run(["calendar", "release-hold", "hold_1", "--reason", "bogus"], io), 0);
+    assert.notEqual(await run(["calendar", "confirm-hold"], captureIo()), 0);
+  });
+
+  test("calendar holds lists and filters by status", async () => {
+    const io = captureIo();
+    let seenUrl = "";
+    globalThis.fetch = async (url) => {
+      seenUrl = String(url);
+      return new Response(
+        JSON.stringify({ holds: [{ id: "hold_1", date: "2026-10-27", window: "evening", durationMinutes: 60, title: "T", status: "tentative", expiresAt: "2026-11-03T00:00:00Z" }] }),
+        { status: 200 },
+      );
+    };
+    assert.equal(await run(["calendar", "holds", "--status", "tentative"], io), 0);
+    assert.match(seenUrl, /\/api\/calendar-holds\?status=tentative/);
+    assert.match(io.text(), /hold_1/);
+
+    const bad = captureIo();
+    globalThis.fetch = async () => { throw new Error("no request expected"); };
+    assert.notEqual(await run(["calendar", "holds", "--status", "bogus"], bad), 0);
+  });
+});

@@ -1,4 +1,5 @@
 import { apiFor } from "../session.mjs";
+import { UsageError } from "../errors.mjs";
 
 const client = apiFor;
 
@@ -15,6 +16,10 @@ Usage
   dataops calendar list [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--type KIND]
   dataops calendar day <date> [--duration MINUTES] [--window evening|midday|any]
   dataops calendar slots [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--all] [--duration MINUTES] [--window evening|midday|any]
+  dataops calendar propose --date D --window evening|midday --duration N --title T [--card ID] [--expires-days 7]
+  dataops calendar confirm-hold <id>
+  dataops calendar release-hold <id> [--reason manual]
+  dataops calendar holds [--status tentative|confirmed|released|expired] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
   dataops calendar settings [--connection ID] [--filter-busy true|false] ...
   dataops calendar dismiss-alert <fingerprint>
   dataops calendar sync-holidays
@@ -32,6 +37,13 @@ Operational windows (Europe/Berlin)
   midday  11:30–14:00, start 12:00 when the guest asks.
   Availability = a contiguous free block of at least --duration inside the
   chosen window(s). Single-day range implies --all (full event listing).
+
+Holds
+  A hold is a tentative event reservation: DataOps plus a Google
+  "(Proposal)" event on the DTC and personal calendars. Tentative and
+  confirmed holds occupy their window (hard occupancy); a tentative hold
+  expires after --expires-days (default 7) unless confirmed. Expiry frees
+  the slot and leaves Orin follow-up; it never emails the guest.
 `; 
 export const DEFAULT_SLOT_DURATION_MINUTES = 60;
 export const DEFAULT_SLOT_WINDOW = "any";
@@ -553,5 +565,116 @@ export async function syncHolidays(args, io) {
   if (args.json) return result;
 
   io.print(`Synced holidays: ${result.count || 0} holidays fresh as of ${result.freshAsOf || "today"}`);
+  return result;
+}
+
+const HOLD_WINDOWS = ["evening", "midday"];
+const HOLD_STATUSES = ["tentative", "confirmed", "released", "expired"];
+
+function holdId(args) {
+  const id = args._[0] || args.id || args.hold;
+  if (!id) throw new UsageError("A hold id is required: dataops calendar confirm-hold <id>.");
+  return String(id);
+}
+
+function proposeArgs(args) {
+  if (!args.date) throw new UsageError("Usage: dataops calendar propose --date YYYY-MM-DD --title T [--window evening|midday] [--duration N] [--card ID] [--expires-days 7].");
+  if (!args.title) throw new UsageError("A hold needs --title.");
+  const window = String(args.window ?? "evening").trim().toLowerCase();
+  if (!HOLD_WINDOWS.includes(window)) {
+    throw new UsageError("Invalid --window for propose: must be one of 'evening', 'midday' (a hold reserves one operational window).");
+  }
+  const duration = parseDurationMinutes(args.duration ?? args.durationMinutes);
+  let expiresDays = 7;
+  if (args.expiresDays !== undefined || args.expires_days !== undefined) {
+    const n = Number(args.expiresDays ?? args.expires_days);
+    if (!Number.isInteger(n) || n <= 0) throw new UsageError("Invalid --expires-days: must be a positive integer number of days.");
+    expiresDays = n;
+  }
+  return {
+    date: args.date,
+    window,
+    durationMinutes: duration,
+    title: args.title,
+    ...(args.card ? { cardId: args.card } : {}),
+    ...(args.cardId ? { cardId: args.cardId } : {}),
+    ...(args.guestRef ? { guestRef: args.guestRef } : {}),
+    ...(args.organizationId ? { organizationId: args.organizationId } : {}),
+    expiresDays,
+  };
+}
+
+function formatHold(hold) {
+  const bits = [`${hold.date}`, `[${hold.status}]`, `(${hold.window}, ${hold.durationMinutes} min)`, hold.title, `(${hold.id})`];
+  if (hold.expiresAt && hold.status === "tentative") bits.push(`expires ${String(hold.expiresAt).slice(0, 10)}`);
+  return bits.join(" ");
+}
+
+/**
+ * Propose a tentative hold: DataOps + Google "(Proposal)" events.
+ */
+export async function propose(args, io) {
+  const payload = proposeArgs(args);
+  const result = await client(args).post("/api/calendar-holds", payload);
+  if (args.json) return result;
+  const hold = result.hold || result;
+  io.print(`Proposed hold ${hold.id}: ${formatHold(hold)}`);
+  if (hold.googleSync?.state === "deferred") {
+    io.print(`Google sync deferred: ${hold.googleSync.reason || "broker unavailable"}`);
+  }
+  return result;
+}
+
+/**
+ * Confirm a tentative hold: Proposal prefix drops.
+ */
+export async function confirmHold(args, io) {
+  const id = holdId(args);
+  const result = await client(args).post(`/api/calendar-holds/${encodeURIComponent(id)}/confirm`, {});
+  if (args.json) return result;
+  io.print(`Confirmed hold ${id}: ${(result.hold || {}).title || ""}`);
+  return result;
+}
+
+/**
+ * Release an active hold: cancel Google Proposal, free the slot.
+ */
+export async function releaseHold(args, io) {
+  const id = holdId(args);
+  const reason = String(args.reason || "manual").toLowerCase();
+  if (reason !== "manual" && reason !== "confirmed") {
+    throw new UsageError("Invalid --reason: must be 'manual' (default) or 'confirmed'.");
+  }
+  const result = await client(args).post(`/api/calendar-holds/${encodeURIComponent(id)}/release`, { reason });
+  if (args.json) return result;
+  io.print(`Released hold ${id} (${reason}).`);
+  return result;
+}
+
+/**
+ * List holds, optionally filtered by status and range.
+ */
+export async function holds(args, io) {
+  if (args.status !== undefined) {
+    const v = String(args.status).toLowerCase();
+    if (!HOLD_STATUSES.includes(v)) {
+      throw new UsageError("Invalid --status: must be one of 'tentative', 'confirmed', 'released', 'expired'.");
+    }
+    args.status = v;
+  }
+  const query = new URLSearchParams();
+  if (args.status) query.set("status", args.status);
+  if (args.from) query.set("from", args.from);
+  if (args.to) query.set("to", args.to);
+  const suffix = query.toString() ? `?${query}` : "";
+  const result = await client(args).get(`/api/calendar-holds${suffix}`);
+  if (args.json) return result;
+  const list = result.holds || [];
+  if (list.length === 0) {
+    io.print("No calendar holds.");
+  } else {
+    io.print(`Calendar holds (${list.length}):`);
+    for (const hold of list) io.print(`  ${formatHold(hold)}`);
+  }
   return result;
 }
