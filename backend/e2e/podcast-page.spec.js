@@ -174,9 +174,9 @@ test('New episode loads before it opens and lands on the created episode', async
   const dialog = page.getByRole('dialog', { name: 'New episode' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel('Season')).toHaveValue('25');
-  await expect(dialog.getByLabel('Episode')).toHaveValue('6');
+  await expect(dialog.getByLabel('Episode', { exact: true })).toHaveValue('6');
   await dialog.getByLabel('Guests').fill('Gil Synthetic');
-  await dialog.getByLabel('Title', { exact: true }).fill('Synthetic created episode');
+  await dialog.getByLabel('Episode topic / working title').fill('Synthetic created episode');
   await dialog.getByRole('button', { name: 'Create episode' }).click();
   await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/\/podcast\/[^/]+$/);
