@@ -7,7 +7,7 @@ import { builtInHolidayGeneration,holidayMetadata,holidaySnapshot } from '../cal
 import { persistHolidayGeneration,readHolidayGeneration } from '../db/calendarHolidays';
 import { projectCalendarOverlays } from '../calendar/overlays';
 import { newsletterCalendarOverlay } from '../calendar/newsletterOverlay';
-import { berlinToday, ownerCalendarOverlay, ownerCalendarRange, fetchDapierConnections } from '../calendar/ownerCalendarOverlay';
+import { berlinToday, ownerCalendarOverlay, ownerCalendarRange, fetchDapierConnections, parseDurationMinutes, parseSlotWindow } from '../calendar/ownerCalendarOverlay';
 const json=(statusCode:number,body:unknown):LambdaResponse=>({statusCode,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
 const DATE=/^\d{4}-\d{2}-\d{2}$/;
 const realDate=(v:any)=>typeof v==='string'&&DATE.test(v)&&new Date(`${v}T00:00:00Z`).toISOString().slice(0,10)===v;
@@ -27,8 +27,9 @@ export async function handleCalendarRoutes(path:string,method:string,event:Lambd
  }
  const r=range(event);
  if(path==='/api/calendar-items/overlays'){if(method!=='GET')return json(405,{error:'Method not allowed'});if(!r)return json(400,{error:'Invalid or unbounded range'});const q=event.queryStringParameters||{},includeAll=q.all==='true'||q.includeAll==='true'||r.from===r.to;
+ let durationMinutes: number; let slotWindow: 'midday'|'evening'|'any'; try{durationMinutes=parseDurationMinutes((q as any).duration);slotWindow=parseSlotWindow((q as any).window);}catch(e:any){return json(400,{error:String(e?.message||'Invalid duration or window')});}
  // Past days get no open slots, so the owner's calendar is read only for a range that reaches today.
- const providers=[newsletterCalendarOverlay(client)];if(ownerCalendarRange(r.from,r.to))providers.push(ownerCalendarOverlay({ client, includeAll }));return json(200,await projectCalendarOverlays(r.from,r.to,providers));}
+ const providers=[newsletterCalendarOverlay(client)];if(ownerCalendarRange(r.from,r.to))providers.push(ownerCalendarOverlay({ client, includeAll, durationMinutes, window: slotWindow }));const projected=await projectCalendarOverlays(r.from,r.to,providers);return json(200,{...projected,durationMinutes,window:slotWindow});}
  if(path!=='/api/calendar-items')return json(404,{error:'Not found'});
  if(method!=='GET')return json(405,{error:'Method not allowed'});
  if(!r)return json(400,{error:'Invalid or unbounded range'});

@@ -18,6 +18,99 @@ export interface OwnerCalendarConfig {
   includeAll?: boolean;
   /** Berlin date the overlay counts as today; defaults to the current one. */
   today?: string;
+  /** Free contiguous block length in minutes. Default 60; workshops use 90. */
+  durationMinutes?: number;
+  /** Which operational window(s) to project. Default 'any'. */
+  window?: SlotWindow;
+}
+
+export type SlotWindow = 'midday' | 'evening' | 'any';
+
+export const DEFAULT_SLOT_DURATION_MINUTES = 60;
+export const DEFAULT_SLOT_WINDOW: SlotWindow = 'any';
+
+/** Operational windows in Europe/Berlin, with preferred start for bookings. */
+export const MIDDAY_WINDOW = { start: '11:30', end: '14:00', preferStart: '12:00' } as const;
+export const EVENING_WINDOW = { start: '16:30', end: '18:30', preferStart: '16:30' } as const;
+
+export function parseDurationMinutes(raw: unknown, def = DEFAULT_SLOT_DURATION_MINUTES): number {
+  if (raw === undefined || raw === null || raw === '') return def;
+  const n = typeof raw === 'number' ? raw : Number(String(raw).trim());
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error('Invalid duration: must be a positive integer number of minutes.');
+  }
+  return n;
+}
+
+export function parseSlotWindow(raw: unknown, def: SlotWindow = DEFAULT_SLOT_WINDOW): SlotWindow {
+  if (raw === undefined || raw === null || raw === '') return def;
+  const v = String(raw).trim().toLowerCase();
+  if (v === 'midday' || v === 'evening' || v === 'any') return v;
+  throw new Error("Invalid window: must be one of 'evening', 'midday', 'any'.");
+}
+
+function timeToMinutes(t: string): number {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function minutesToTime(n: number): string {
+  return `${String(Math.floor(n / 60)).padStart(2, '0')}:${String(n % 60).padStart(2, '0')}`;
+}
+
+function windowDef(window: 'midday' | 'evening') {
+  return window === 'midday' ? MIDDAY_WINDOW : EVENING_WINDOW;
+}
+
+export function windowFitsDuration(window: 'midday' | 'evening', durationMinutes: number): boolean {
+  const def = windowDef(window);
+  return durationMinutes <= timeToMinutes(def.end) - timeToMinutes(def.start);
+}
+
+/**
+ * Availability = a contiguous free block of at least `durationMinutes`
+ * inside the chosen window. The preferred block starts at the window's
+ * preferred start (midday 12:00, evening 16:30), so a 90-min evening
+ * workshop needs 16:30–18:00 free, not just any 60-min center.
+ */
+export function isWindowFreeForDuration(
+  window: 'midday' | 'evening',
+  busy: Array<{ start: string; end: string }>,
+  durationMinutes: number = DEFAULT_SLOT_DURATION_MINUTES,
+): boolean {
+  if (!windowFitsDuration(window, durationMinutes)) return false;
+  const def = windowDef(window);
+  const preferMinutes = timeToMinutes(def.preferStart);
+  const blockStart = minutesToTime(preferMinutes);
+  const blockEnd = minutesToTime(preferMinutes + durationMinutes);
+  // The preferred block must itself sit inside the operational band.
+  if (blockStart < def.start || blockEnd > def.end) return false;
+  for (const b of busy) {
+    if (b.start < blockEnd && b.end > blockStart) return false;
+  }
+  return true;
+}
+
+/** Busy Berlin HH:MM intervals clipped to a window, for duration checks. */
+export function busyIntervalsInWindow(
+  window: 'midday' | 'evening',
+  events: Array<{ startIso?: string; endIso?: string }>,
+): Array<{ start: string; end: string }> {
+  const def = windowDef(window);
+  const out: Array<{ start: string; end: string }> = [];
+  for (const e of events) {
+    if (!e.startIso || !e.endIso) continue;
+    try {
+      const s = formatBerlinTime(e.startIso);
+      const t = formatBerlinTime(e.endIso);
+      if (s < def.end && t > def.start) {
+        out.push({ start: s < def.start ? def.start : s, end: t > def.end ? def.end : t });
+      }
+    } catch {
+      // Unparseable times count as blocking elsewhere; ignore here.
+    }
+  }
+  return out;
 }
 
 export interface DapierConnectionOption {
@@ -474,7 +567,15 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
         (e) => e.isAllDay || e.slot === 'all-day' || (/vacation|holiday|flight|conference|trip/i.test(e.summary) && e.isSlotEvent),
       );
 
-      // Project available slots across all weekdays in the range
+      // Project available slots across all weekdays in the range.
+      // Availability = a contiguous free block of at least `durationMinutes`
+      // inside the chosen window(s), anchored at the preferred start
+      // (midday 12:00, evening 16:30). A 90-min evening workshop needs
+      // 16:30–18:00 free, not just a 60-min center.
+      const durationMinutes = config?.durationMinutes ?? DEFAULT_SLOT_DURATION_MINUTES;
+      const window = config?.window ?? DEFAULT_SLOT_WINDOW;
+      const wantMidday = window === 'any' || window === 'midday';
+      const wantEvening = window === 'any' || window === 'evening';
       const timedEvents = validEvents.filter((e) => !allDayBlockers.includes(e));
       const dates = eachDayOfInterval(from, to);
 
@@ -492,39 +593,29 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
         // Timed events on this day
         const dayTimedEvents = timedEvents.filter((e) => e.startDate <= curDate && curDate <= e.endDate);
 
-        // Check Midday Slot (12:30, operational window 11:30–14:00 Berlin time)
-        const hasMiddayConflict = dayTimedEvents.some((e) => {
-          if (!e.startIso || !e.endIso) return false;
-          const startTime = formatBerlinTime(e.startIso);
-          const endTime = formatBerlinTime(e.endIso);
-          return startTime < '14:00' && endTime > '11:30';
-        });
-
-        if (!hasMiddayConflict) {
-          result.push({
-            provider: 'owner-calendar',
-            id: `owner-slot:${curDate}:midday`,
-            startDate: curDate,
-            endDate: curDate,
-            label: '12:30 Available',
-            category: 'Available slot',
-            slot: 'midday',
-            isSlotEvent: true,
-            isAvailableSlot: true,
-          });
+        // Check Midday Slot (operational window 11:30–14:00, preferred start 12:00 Berlin time)
+        if (wantMidday) {
+          const busy = busyIntervalsInWindow('midday', dayTimedEvents);
+          if (isWindowFreeForDuration('midday', busy, durationMinutes)) {
+            result.push({
+              provider: 'owner-calendar',
+              id: `owner-slot:${curDate}:midday`,
+              startDate: curDate,
+              endDate: curDate,
+              label: '12:30 Available',
+              category: 'Available slot',
+              slot: 'midday',
+              isSlotEvent: true,
+              isAvailableSlot: true,
+            });
+          }
         }
 
-        // Check Evening Slot (17:00, operational window 16:30–18:30 Berlin time)
+        // Check Evening Slot (operational window 16:30–18:30, preferred start 16:30 Berlin time)
         // Per SOP: offered on Monday and Tuesday only (US guests)
-        if (dayOfWeek === 1 || dayOfWeek === 2) {
-          const hasEveningConflict = dayTimedEvents.some((e) => {
-            if (!e.startIso || !e.endIso) return false;
-            const startTime = formatBerlinTime(e.startIso);
-            const endTime = formatBerlinTime(e.endIso);
-            return startTime < '18:30' && endTime > '16:30';
-          });
-
-          if (!hasEveningConflict) {
+        if (wantEvening && (dayOfWeek === 1 || dayOfWeek === 2)) {
+          const busy = busyIntervalsInWindow('evening', dayTimedEvents);
+          if (isWindowFreeForDuration('evening', busy, durationMinutes)) {
             result.push({
               provider: 'owner-calendar',
               id: `owner-slot:${curDate}:evening`,
