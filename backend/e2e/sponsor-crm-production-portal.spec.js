@@ -845,7 +845,12 @@ test.describe("production sponsor CRM portal", () => {
     await expect(
       page.getByRole("button", { name: "Download invoice" }),
     ).toBeVisible();
-    await expect(page.locator("[data-finance-panel] button")).toHaveCount(1);
+    await expect(
+      page.locator('[data-finance-thank-you="required"]'),
+    ).toBeVisible();
+    await expect(page.locator("[data-finance-panel]")).toContainText(
+      "Draft only",
+    );
     await expect(statusMessage).not.toContainText(
       /Could not|Synthetic route missing/,
     );

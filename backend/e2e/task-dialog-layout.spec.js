@@ -9,11 +9,25 @@ async function api(method, route, body) {
   expect(response.ok, `${method} ${route}: ${response.status} ${await response.clone().text()}`).toBeTruthy();
   return response.status === 204 ? null : response.json();
 }
+function isoDate(offsetDays) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
+}
+// The waiting section only lists tasks whose follow-up is still ahead of
+// today, so the fixture floats a few days out instead of naming a fixed date.
+const TASK_DATE = isoDate(2);
+const FOLLOW_UP_ISO = isoDate(5);
+function dayMonthLabel(iso) {
+  const date = new Date(`${iso}T00:00:00Z`);
+  const short = `${date.getUTCDate()} ${date.toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' })}`;
+  return iso.slice(0, 4) === new Date().toISOString().slice(0, 4) ? short : `${short} ${iso.slice(0, 4)}`;
+}
 test.beforeAll(async () => {
   server = await startOwnedTestServer({ environment: { DTC_CACHE_ROOT: createDocsCacheRoot('task-dialog-layout') } });
   const { template } = await api('POST', '/__e2e__/template-fixtures', { name: 'Synthetic newsletter', type: 'synthetic-newsletter', sourcePath: 'workflow-templates/synthetic-newsletter.yaml', taskDefinitions: [] });
-  ({ card } = await api('POST', '/api/cards', { title: 'Newsletter sponsor · Example Company', anchorDate: '2026-10-20', stage: 'announced', templateId: template.id }));
-  task = await api('POST', '/api/tasks', { description: 'Prepare the sponsor invoice', date: '2026-10-20', cardId: card.id, status: 'waiting', waitingFor: 'Example Company: legal billing details requested in the existing thread', followUpAt: '2026-10-20T09:00:00Z', comment: 'Synthetic waiting fixture', requiresFile: true, assigneeId: '00000000-0000-0000-0000-000000000004' });
+  ({ card } = await api('POST', '/api/cards', { title: 'Newsletter sponsor · Example Company', anchorDate: isoDate(10), stage: 'announced', templateId: template.id }));
+  task = await api('POST', '/api/tasks', { description: 'Prepare the sponsor invoice', date: TASK_DATE, cardId: card.id, status: 'waiting', waitingFor: 'Example Company: legal billing details requested in the existing thread', followUpAt: `${TASK_DATE}T09:00:00Z`, comment: 'Synthetic waiting fixture', requiresFile: true, assigneeId: '00000000-0000-0000-0000-000000000004' });
   task = await api('PUT', `/api/tasks/${task.id}`, { requires: ['finom'], browserRequirement: 'headless', expectedVersion: task.version });
 });
 test.afterAll(async () => stopOwnedTestServer(server));
@@ -45,9 +59,9 @@ for (const variant of [{ name: 'dark-desktop', width: 1280, height: 1000, theme:
     await panel.locator('.task-follow-up-disclosure > summary').focus();
     await page.keyboard.press('Enter');
     await expect(panel.getByLabel('Next follow-up')).toBeVisible();
-    await panel.getByLabel('Next follow-up').fill('2026-10-23');
+    await panel.getByLabel('Next follow-up').fill(FOLLOW_UP_ISO);
     await panel.getByRole('button', { name: 'Follow-up sent', exact: true }).click();
-    await expect(panel).toContainText('23 Oct');
+    await expect(panel).toContainText(dayMonthLabel(FOLLOW_UP_ISO));
     await panel.locator('.task-requires-edit').click();
     await expect(panel.locator('.task-requires-editor')).toBeAttached();
     await panel.locator('.task-requires-actions').getByRole('button', { name: 'Cancel' }).click();
