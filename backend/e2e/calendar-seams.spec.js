@@ -489,5 +489,7 @@ test("open event slots show only from today and a past week never waits on the o
 test("the API never reads the owner's calendar for a past range", async ({ request }) => {
   const past = await request.get("/api/calendar-items/overlays?from=2020-01-06&to=2020-01-12");
   expect(past.ok()).toBe(true);
-  expect(Object.keys((await past.json()).sources)).toEqual(["newsletter-issues-readonly"]);
+  // Calendar holds are DataOps-owned, so their layer is present in every
+  // range; only the owner's calendar must stay out of a past range.
+  expect(Object.keys((await past.json()).sources)).toEqual(["newsletter-issues-readonly", "calendar-holds"]);
 });
