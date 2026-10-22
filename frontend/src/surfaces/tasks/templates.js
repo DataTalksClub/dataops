@@ -489,19 +489,19 @@ export function createTemplatesSurface(context) {
       } catch (error) {
         runtimeState.editorMessage = `Invalid JSON: ${error.message || "parse failed"}`;
         runtimeState.editorOpen = true;
-        renderTasksSurface();
+        renderTasksSurface(getAllDocuments(), "templates");
         return;
       }
       if (!definition || typeof definition !== "object" || Array.isArray(definition)) {
         runtimeState.editorMessage = "Definition must be a JSON object.";
         runtimeState.editorOpen = true;
-        renderTasksSurface();
+        renderTasksSurface(getAllDocuments(), "templates");
         return;
       }
       runtimeState.editorBusy = true;
       runtimeState.editorMessage = "Saving pin…";
       runtimeState.editorOpen = true;
-      renderTasksSurface();
+      renderTasksSurface(getAllDocuments(), "templates");
       try {
         const payload = await request(workApiUrl(`/api/templates/${encodeURIComponent(template.id)}`), {
           method: "PUT",
@@ -518,12 +518,12 @@ export function createTemplatesSurface(context) {
         await refreshRuntimeTemplates({ force: true });
         if (next?.id) runtimeState.selectedId = next.id;
         runtimeState.editorOpen = true;
-        renderTasksSurface();
+        renderTasksSurface(getAllDocuments(), "templates");
       } catch (error) {
         runtimeState.editorBusy = false;
         runtimeState.editorMessage = `Save failed: ${error.message || "request failed"}`;
         runtimeState.editorOpen = true;
-        renderTasksSurface();
+        renderTasksSurface(getAllDocuments(), "templates");
       }
     });
 
@@ -532,7 +532,7 @@ export function createTemplatesSurface(context) {
       runtimeState.editorBusy = true;
       runtimeState.editorMessage = "Resetting to Git base…";
       runtimeState.editorOpen = true;
-      renderTasksSurface();
+      renderTasksSurface(getAllDocuments(), "templates");
       try {
         const payload = await request(workApiUrl(`/api/templates/${encodeURIComponent(template.id)}/reset`), {
           method: "POST",
@@ -548,12 +548,12 @@ export function createTemplatesSurface(context) {
         runtimeState.editorBusy = false;
         await refreshRuntimeTemplates({ force: true });
         runtimeState.editorOpen = true;
-        renderTasksSurface();
+        renderTasksSurface(getAllDocuments(), "templates");
       } catch (error) {
         runtimeState.editorBusy = false;
         runtimeState.editorMessage = `Reset failed: ${error.message || "request failed"}`;
         runtimeState.editorOpen = true;
-        renderTasksSurface();
+        renderTasksSurface(getAllDocuments(), "templates");
       }
     });
 

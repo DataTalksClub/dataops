@@ -2268,6 +2268,72 @@ describe("Tasks surface boundary", () => {
     }
   });
 
+  test("pins JSON definition edits and stays on the template", async () => {
+    const template = {
+      id: "template-1",
+      name: "Synthetic Git-authored workflow",
+      type: "synthetic-git-workflow",
+      version: 2,
+      revision: "rev-2",
+      origin: "git",
+      sourcePath: "workflow-templates/synthetic-git-workflow.yaml",
+      sourceRevision: "rev-2",
+      taskDefinitions: [
+        { refId: "prepare-output", description: "Prepare a synthetic output", offsetDays: 0 },
+      ],
+    };
+    let current = template;
+    const writes = [];
+    const harness = createHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === "/api/templates") return { templates: [current] };
+        if (url === "/api/templates/template-1" && requestOptions.method === "PUT") {
+          writes.push(JSON.parse(requestOptions.body));
+          current = {
+            ...current,
+            version: 3,
+            revision: "rev-3",
+            pinned: true,
+            taskDefinitions: writes.at(-1).definition.taskDefinitions,
+          };
+          return { template: current };
+        }
+        throw new Error(`Unexpected request ${url} ${requestOptions.method || ""}`);
+      },
+    });
+    await harness.api.refreshRuntimeTemplates();
+    harness.api.setRuntimeTemplateRoute(
+      {
+        tasksSection: "templates",
+        params: new URLSearchParams({ templateId: "template-1" }),
+      },
+      { templateId: "template-1" },
+    );
+    harness.api.renderTasksSurface([], "templates");
+
+    const editor = harness.documentList.querySelector(".runtime-template-editor");
+    assert.ok(editor, "JSON editor renders on the template detail");
+    const textarea = editor.querySelector("textarea");
+    const definition = JSON.parse(textarea.value);
+    definition.taskDefinitions[0].description = "Prepare a synthetic output (pinned)";
+    textarea.value = JSON.stringify(definition, null, 2);
+    await findByText(editor, "Save pin", "button").dispatch("click");
+
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].expectedVersion, 2);
+    assert.equal(writes[0].revision, "rev-2");
+    for (const owned of ["id", "version", "revision", "origin", "pinned", "base", "sourcePath", "sourceRevision"]) {
+      assert.equal(writes[0].definition[owned], undefined, `${owned} is server-owned`);
+    }
+    // The save confirms in place: still the template detail, showing the pin.
+    assert.match(harness.documentList.textContent, /Pinned synthetic-git-workflow to version 3/);
+    assert.match(harness.documentList.textContent, /New cards use this definition/);
+    assert.ok(
+      harness.documentList.querySelector(".runtime-template-projection"),
+      "save stays on the template instead of dropping to the queue",
+    );
+  });
+
   test("keeps one stable Templates shell from loading through ready", async () => {
     const template = {
       id: "template-1",
