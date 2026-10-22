@@ -24,6 +24,10 @@ describe('podcast guest form (slot picker + topics; email stays one slot)', () =
     assert.ok(keys.includes('topicsToAvoid'));
     assert.ok(keys.includes('currentFocus'));
     assert.ok(keys.includes('introduction'));
+    assert.ok(!/couple of sentences/i.test(template.intro));
+    assert.ok(!/either way works/i.test(template.intro));
+    assert.ok(!/reply to our email/i.test(template.intro));
+    assert.ok(/confirm or change the recording slot/i.test(template.intro));
   });
 
   it('hydrates ordinary free podcast slots into the select options', () => {

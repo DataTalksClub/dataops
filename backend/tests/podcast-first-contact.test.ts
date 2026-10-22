@@ -134,8 +134,23 @@ describe('podcast first-contact email (Orin ask)', () => {
     assert.ok(email.body.includes('building developer platforms'));
     assert.ok(email.body.includes('https://ops.dtcdev.click/sponsor-docs/abc?code=CODE'));
     assert.ok(/do not invent alternate/i.test(email.body));
+    assert.ok(!/couple of sentences/i.test(email.body));
+    assert.ok(!/either way works/i.test(email.body));
+    assert.ok(!/reply to this email/i.test(email.body));
     assert.equal(email.formUrl, 'https://ops.dtcdev.click/sponsor-docs/abc?code=CODE');
     assert.equal(email.topicSeed, 'building developer platforms');
+  });
+
+  it('form-only path: no reply-instead wording without formUrl either', () => {
+    const email = renderPodcastFirstContactEmail({
+      guestFirstName: 'Sofiia',
+      slotLabel: 'Tuesday, November 4 at 12:30 CET',
+    });
+    assert.ok(!/couple of sentences/i.test(email.body));
+    assert.ok(!/either way works/i.test(email.body));
+    assert.ok(!/reply to this email/i.test(email.body));
+    assert.ok(/via the form/i.test(email.body));
+    assert.ok(/do not invent alternate/i.test(email.body));
   });
 
   it('POST /api/podcast-first-contact/email 400s without a slot', async () => {

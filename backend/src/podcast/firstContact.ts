@@ -12,8 +12,8 @@
  * - exactly one proposed slot (no slot list, no alternate picker in email);
  * - do NOT ask the guest to invent alternate times in email — slot changes
  *   go through the guest materials form (confirm / free slots / none-fit);
- * - topics/bio via the form (optional short couple-sentences reply still ok);
- * - if a topic is already known, the email can seed from that topic;
+ * - topics/bio/slot confirm via the guest form only (no email reply-instead path);
+ * - if a topic is already known, seed the email from that topic and do not ask for topic ideas;
  * - links the public podcast docs page and (when available) the guest form;
  * - mentions no Card and returns no card reference.
  */
@@ -120,16 +120,14 @@ export function renderPodcastFirstContactEmail(
 
   if (formUrl) {
     lines.push(
-      'Please use this short optional form to confirm that time, pick another free recording slot if needed, share a bio, and (if we have not already agreed) the topics you would most enjoy covering:',
+      'Please use this form to confirm that time, pick another free recording slot if needed, share a bio, and (if we have not already set a topic) the topics you would most enjoy covering. Do not invent alternate times in email — the form lists ordinary free slots and has a “none fit / custom” option:',
       '',
       formUrl,
-      '',
-      'Or you can just reply to this email in a couple of sentences instead — either way works. Please do not invent alternate times in email; the form lists ordinary free slots and has a “none fit / custom” option.',
       '',
     );
   } else {
     lines.push(
-      'Once we have a guest form link for you, you can confirm the time, pick another free recording slot, share a bio, and topics there — or just reply to this email in a couple of sentences. Please do not invent alternate days/times in email; we will share free ordinary slots (midday 12:30 or evening 17:00 Europe/Berlin) via the form.',
+      'Once we have a guest form link for you, please use it to confirm the time, pick another free recording slot if needed, share a bio, and (if we have not already set a topic) the topics you would most enjoy covering. Please do not invent alternate days/times in email; we will share free ordinary slots (midday 12:30 or evening 17:00 Europe/Berlin) via the form.',
       '',
     );
   }

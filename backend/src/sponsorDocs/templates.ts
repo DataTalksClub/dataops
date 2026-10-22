@@ -420,7 +420,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
     label: 'Podcast — Materials from the Guest',
     shortLabel: 'Podcast',
     defaultLinkType: 'Sponsorship document',
-    intro: 'This form is optional: share as much or as little as you like, or skip it and reply to our email in a couple of sentences instead — either way works. Use it to confirm or change the recording slot, share your bio, and (if we have not already agreed) the topics you would most enjoy covering. Write in plain text.',
+    intro: 'Use this form to confirm or change the recording slot, share your bio, and (if we have not already agreed) the topics you would most enjoy covering. Share as much or as little as you like. Write in plain text.',
     sections: [
       {
         id: 'scheduling',
@@ -1278,7 +1278,7 @@ export function renderSponsorEmailDraft(options: {
       options.shareUrl,
       `(Access code if prompted: ${options.accessCode})`,
       '',
-      `Please fill in your notes and mark the document as Submitted by ${deadline} so we can prepare the interview questions and episode description. This form is optional — if it is easier, just reply to this email in a couple of sentences instead; either way works.`,
+      `Please fill in your notes and mark the document as Submitted by ${deadline} so we can prepare the interview questions and episode description. Use the form to confirm or change the recording slot, share your bio, and topics — do not invent alternate times in email.`,
       '',
       'Looking forward to the conversation!',
       '',
