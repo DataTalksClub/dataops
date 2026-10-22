@@ -207,6 +207,7 @@ export async function createSponsorDoc(
   const content = input.content
     ? sanitizeTemplateContent(input.template, input.content)
     : defaultContentForTemplate(input.template);
+  const defaultLinkType = input.template === 'podcast' ? 'Guest materials' : 'Sponsorship document';
 
   const doc: SponsorDoc = {
     id,
@@ -215,7 +216,7 @@ export async function createSponsorDoc(
     title: input.title.trim(),
     sponsorName: input.sponsorName?.trim() || null,
     publicationDate: input.publicationDate?.trim() || null,
-    linkType: (input.linkType || 'Sponsorship document').trim(),
+    linkType: (input.linkType || defaultLinkType).trim(),
     status: 'draft',
     submittedAt: null,
     submittedBy: null,

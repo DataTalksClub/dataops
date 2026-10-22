@@ -82,6 +82,15 @@ function requestIp(event: LambdaEvent): string {
   return forwarded.split(',')[0].trim() || 'unknown';
 }
 
+/**
+ * Guest-facing path for a doc: the podcast guest form lives under
+ * `/podcast-docs/` (with `/guest-docs/` as a second alias); everything else
+ * stays under `/sponsor-docs/`. Old `/sponsor-docs/` links keep working.
+ */
+export function sponsorDocPathForTemplate(template: string | null | undefined): string {
+  return template === 'podcast' ? '/podcast-docs' : '/sponsor-docs';
+}
+
 export function sponsorDocPortalBaseUrl(event: LambdaEvent): string {
   const browserOrigin = browserAuthOrigin();
   if (browserOrigin) return browserOrigin.replace(/\/$/, '');
@@ -120,10 +129,14 @@ export function isAnonymousSponsorDocRequest(method: string, path: string): bool
  */
 export function isAnonymousSponsorDocAsset(method: string, path: string): boolean {
   if (method.toUpperCase() !== 'GET') return false;
-  if (/^\/sponsor-docs\/[^/]+\/?$/.test(path)) return true;
+  if (/^\/(sponsor-docs|podcast-docs|guest-docs)\/[^/]+\/?$/.test(path)) return true;
   return (
     path === '/src/sponsor-doc-page.js'
     || path === '/src/surfaces/operations/sponsor-docs.js'
+    || path === '/src/surfaces/operations/sponsor-doc-gate.js'
+    || path === '/src/surfaces/operations/sponsor-doc-select.js'
+    || path === '/src/surfaces/operations/sponsor-doc-radio.js'
+    || path === '/src/surfaces/operations/sponsor-doc-bullets.js'
     || path === '/src/styles/sponsor-docs.css'
     || path.startsWith('/src/dakit/')
   );
@@ -190,7 +203,8 @@ async function buildDocResponsePayload(
   },
 ) {
   const base = sponsorDocPortalBaseUrl(event);
-  const docUrl = `${base}/sponsor-docs/${encodeURIComponent(doc.id)}`;
+  const docPath = sponsorDocPathForTemplate(doc.template);
+  const docUrl = `${base}${docPath}/${encodeURIComponent(doc.id)}`;
   let templateDefinition = getSponsorDocTemplate(doc.template);
   if (doc.template === 'podcast') {
     try {
@@ -306,7 +320,7 @@ async function verifyExternalCodeForDoc(
     return {
       ok: false,
       response: json(401, {
-        error: 'Access code is required to view or edit this sponsor document.',
+        error: 'Access code is required to view or edit this document.',
         code: 'access_code_required',
       }),
     };
@@ -377,7 +391,7 @@ export async function handleSponsorDocRoutes(
         return json(200, {
           docs: docs.map((d) => ({
             ...d,
-            docUrl: `${base}/sponsor-docs/${encodeURIComponent(d.id)}`,
+            docUrl: `${base}${sponsorDocPathForTemplate(d.template)}/${encodeURIComponent(d.id)}`,
           })),
         });
       }
@@ -551,7 +565,7 @@ export async function handleSponsorDocRoutes(
         });
 
         const base = sponsorDocPortalBaseUrl(event);
-        const docUrl = `${base}/sponsor-docs/${encodeURIComponent(doc.id)}`;
+        const docUrl = `${base}${sponsorDocPathForTemplate(template)}/${encodeURIComponent(doc.id)}`;
 
         let projectedCard = null;
         if (existingCard) {
@@ -609,7 +623,7 @@ export async function handleSponsorDocRoutes(
       let doc: SponsorDoc;
       if (access.isStaff) {
         const loaded = await getSponsorDocWithAuthMaterial(client, docId);
-        if (!loaded) return json(404, { error: 'Sponsor document not found', code: 'sponsor_doc_not_found' });
+        if (!loaded) return json(404, { error: 'Document not found', code: 'sponsor_doc_not_found' });
         doc = loaded.doc;
       } else {
         const verified = await verifyExternalCodeForDoc(
@@ -656,7 +670,7 @@ export async function handleSponsorDocRoutes(
       const docId = decodeURIComponent(rotateMatch[1]);
       const rotated = await rotateSponsorDocAccessCode(client, docId);
       if (!rotated) {
-        return json(404, { error: 'Sponsor document not found', code: 'sponsor_doc_not_found' });
+        return json(404, { error: 'Document not found', code: 'sponsor_doc_not_found' });
       }
       return json(200, {
         doc: await buildDocResponsePayload(rotated.doc, event, client, {
@@ -676,7 +690,7 @@ export async function handleSponsorDocRoutes(
         if (access.isStaff) {
           const loaded = await getSponsorDocWithAuthMaterial(client, docId);
           if (!loaded) {
-            return json(404, { error: 'Sponsor document not found', code: 'sponsor_doc_not_found' });
+            return json(404, { error: 'Document not found', code: 'sponsor_doc_not_found' });
           }
           const accessCode = decryptSponsorDocAccessCode(docId, loaded.accessCodeCiphertext);
           return json(200, {
@@ -720,7 +734,7 @@ export async function handleSponsorDocRoutes(
         if (access.isStaff) {
           const loaded = await getSponsorDocWithAuthMaterial(client, docId);
           if (!loaded) {
-            return json(404, { error: 'Sponsor document not found', code: 'sponsor_doc_not_found' });
+            return json(404, { error: 'Document not found', code: 'sponsor_doc_not_found' });
           }
           const updated = await updateSponsorDoc(client, docId, {
             title: typeof body.title === 'string' ? body.title : undefined,
@@ -764,15 +778,20 @@ export async function handleSponsorDocRoutes(
         if (!actor.ok) return actor.response;
         const deleted = await deleteSponsorDoc(client, docId);
         if (!deleted) {
-          return json(404, { error: 'Sponsor document not found', code: 'sponsor_doc_not_found' });
+          return json(404, { error: 'Document not found', code: 'sponsor_doc_not_found' });
         }
         // Clean up the Card's link if it points at this sponsor doc
         const card = await getCardConsistent(client, deleted.cardId);
         if (card && Array.isArray(card.cardLinks)) {
-          const suffixPath = `/sponsor-docs/${encodeURIComponent(deleted.id)}`;
+          const encodedId = encodeURIComponent(deleted.id);
           let changed = false;
           const nextLinks = card.cardLinks.map((item) => {
-            if (String(item.url || '').endsWith(suffixPath)) {
+            const url = String(item.url || '');
+            if (
+              url.endsWith(`/sponsor-docs/${encodedId}`)
+              || url.endsWith(`/podcast-docs/${encodedId}`)
+              || url.endsWith(`/guest-docs/${encodedId}`)
+            ) {
               changed = true;
               return { ...item, url: '' };
             }

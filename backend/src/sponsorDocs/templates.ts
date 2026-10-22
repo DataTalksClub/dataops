@@ -17,7 +17,7 @@ export interface SponsorDocFieldOption {
 export interface SponsorDocFieldDefinition {
   key: string;
   label: string;
-  type: 'text' | 'textarea' | 'bullets' | 'select';
+  type: 'text' | 'textarea' | 'bullets' | 'select' | 'radio';
   placeholder: string;
   helpText?: string;
   maxCharsHint?: number;
@@ -27,7 +27,7 @@ export interface SponsorDocFieldDefinition {
   maxItems?: number;
   bulletMarker?: string;
   allowVisualUpload?: boolean;
-  /** For type=select: static choices. Podcast guest forms also get free-slot options hydrated at read time. */
+  /** For type=select/radio: static choices. Podcast guest forms also get free-slot options hydrated at read time. */
   options?: SponsorDocFieldOption[];
 }
 
@@ -35,6 +35,8 @@ export interface SponsorDocSectionDefinition {
   id: string;
   title: string;
   description?: string;
+  /** Rendered as a collapsed <details> (open when it already has content). */
+  collapsible?: boolean;
   fields: SponsorDocFieldDefinition[];
 }
 
@@ -421,13 +423,13 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
     key: 'podcast',
     label: 'Podcast — Materials from the Guest',
     shortLabel: 'Podcast',
-    defaultLinkType: 'Sponsorship document',
+    defaultLinkType: 'Guest materials',
     intro: 'Use this form to confirm or change the recording slot, share your bio, and (if we have not already agreed) the topics you would most enjoy covering. Share as much or as little as you like. Write in plain text.',
     sections: [
       {
         id: 'scheduling',
         title: '1) Recording Time',
-        description: 'The invite proposes one recording time (Europe/Berlin podcast windows: midday 12:30–13:30, evening 17:00–18:00). Confirm it, pick another free ordinary slot, or say none fit — do not invent times in email; use this form.',
+        description: 'The invite proposes one recording time (Europe/Berlin podcast windows: midday 12:30–13:30, evening 17:00–18:00). Confirm it, pick another free slot, or reply to the invite email if none fit — do not invent times here.',
         fields: [
           {
             key: 'proposedSlotLabel',
@@ -439,26 +441,20 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
           {
             key: 'slotChoice',
             label: 'Recording slot',
-            type: 'select',
+            type: 'radio',
             placeholder: 'Choose one',
-            helpText: 'Ordinary free podcast slots (midday 12:30 / evening 17:00) appear below when available.',
+            helpText: 'One choice only — each option is a full date and time. Free slots are Mon/Tue only.',
             options: [
               { value: 'confirm_proposed', label: 'Yes — the proposed time in the invite works for me' },
-              { value: 'none_fit', label: 'None of these fit / I need something custom' },
+              { value: 'none_fit', label: 'None of these work — just reply to the invite email and we’ll find an alternative' },
             ],
-          },
-          {
-            key: 'customSlot',
-            label: 'If none fit, what custom day/time works? (Europe/Berlin)',
-            type: 'text',
-            placeholder: 'Only if you chose “none fit / custom” — e.g. Thu 6 Nov after 15:00',
           },
         ],
       },
       {
-        id: 'general-questions',
-        title: '2) General Questions',
-        description: 'Core context about you and what you would most enjoy discussing on the episode.',
+        id: 'who-you-are',
+        title: '2) Who You Are',
+        description: 'How to introduce you on the episode.',
         fields: [
           {
             key: 'guestName',
@@ -473,6 +469,13 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             rows: 3,
             placeholder: 'Short bio and career background for the episode introduction.',
           },
+        ],
+      },
+      {
+        id: 'topics',
+        title: '3) Topics',
+        description: 'What you would most enjoy discussing on the episode.',
+        fields: [
           {
             key: 'currentFocus',
             label: 'What are you currently focused on — projects or themes you’d enjoy discussing?',
@@ -498,7 +501,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
       },
       {
         id: 'social-links',
-        title: '3) Social Media & Profile Links',
+        title: '4) Social Media & Profile Links',
         description: 'Links to include in the episode description and show notes.',
         fields: [
           {
@@ -529,8 +532,9 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
       },
       {
         id: 'detailed-questions',
-        title: '4) Episode Story & Practical Takeaways (Optional Guide)',
-        description: 'Use any of the prompts below that help structure your practical takeaways or personal story. We will craft the final description and questions from whatever you provide.',
+        title: '5) Episode Story & Practical Takeaways (Optional)',
+        description: 'Only if you enjoy this format — pick any prompt that helps structure your takeaways or story. We will craft the final description and questions from whatever you provide.',
+        collapsible: true,
         fields: [
           {
             key: 'hookAndPainPoint',
@@ -557,11 +561,12 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
       },
       {
         id: 'notes',
-        title: '5) Additional Notes (Optional)',
+        title: '6) Additional Notes (Optional)',
+        collapsible: true,
         fields: [
           {
             key: 'sponsorNotes',
-            label: 'Extra Context or Links',
+            label: 'Anything else for the DataTalks.Club team?',
             type: 'textarea',
             rows: 3,
             placeholder: 'Any extra anecdotes, links, or notes for Alexey and the DataTalks.Club team.',
@@ -887,8 +892,24 @@ export interface PodcastFreeSlotOption {
 
 /**
  * Guest materials form: confirm proposed OR pick a free ordinary podcast slot
- * OR none-fit/custom. Free slots are injected at read time (not emailed).
+ * OR reply by email. Free slots are injected at read time (not emailed).
+ * Each option is one radio: a full datetime window in a single human label
+ * (never a raw `slot:DATE:window` value or a separate day/time choice).
  */
+export const PODCAST_NONE_FIT_VALUE = 'none_fit';
+export const PODCAST_CONFIRM_VALUE = 'confirm_proposed';
+export const PODCAST_NONE_FIT_LABEL =
+  'None of these work — just reply to the invite email and we’ll find an alternative';
+
+/** Human slot label: `Mon 26 Oct · 12:30–13:30 Berlin`. */
+export function formatGuestSlotLabel(date: string, window: string): string {
+  const range = window === 'evening' ? '17:00–18:00' : '12:30–13:30';
+  const parsed = new Date(`${date}T12:00:00Z`);
+  const weekday = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', weekday: 'short' }).format(parsed);
+  const dayMonth = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', day: 'numeric', month: 'short' }).format(parsed);
+  return `${weekday} ${dayMonth} · ${range} Berlin`;
+}
+
 export function hydratePodcastGuestSlotOptions(
   template: SponsorDocTemplateDefinition,
   freeSlots: PodcastFreeSlotOption[],
@@ -908,12 +929,12 @@ export function hydratePodcastGuestSlotOptions(
       && isOrdinaryRecordingDay(slot.date),
   );
   const slotOptions = [
-    { value: 'confirm_proposed', label: confirmLabel },
+    { value: PODCAST_CONFIRM_VALUE, label: confirmLabel },
     ...ordinary.slice(0, 8).map((slot) => ({
       value: `slot:${slot.date}:${slot.window}`,
-      label: slot.label || `${slot.date} ${slot.window} ~${slot.localTime} Europe/Berlin`,
+      label: formatGuestSlotLabel(slot.date, slot.window),
     })),
-    { value: 'none_fit', label: 'None of these fit / I need something custom' },
+    { value: PODCAST_NONE_FIT_VALUE, label: PODCAST_NONE_FIT_LABEL },
   ];
   return {
     ...template,
@@ -927,6 +948,20 @@ export function hydratePodcastGuestSlotOptions(
       };
     }),
   };
+}
+
+/** Staff-readable rendering of a stored slotChoice (never a raw slot:… value). */
+export function humanizePodcastSlotChoice(value: string | undefined, proposedLabel?: string): string {
+  const raw = (value || '').trim();
+  if (!raw) return '_[Not selected]_';
+  if (raw === PODCAST_CONFIRM_VALUE) {
+    const proposed = (proposedLabel || '').trim();
+    return proposed ? `Confirmed — ${proposed}` : 'Confirmed the proposed time';
+  }
+  if (raw === PODCAST_NONE_FIT_VALUE) return 'None fit — guest will reply to the invite email';
+  const slotMatch = /^slot:(\d{4}-\d{2}-\d{2}):(midday|evening)$/.exec(raw);
+  if (slotMatch) return formatGuestSlotLabel(slotMatch[1], slotMatch[2]);
+  return raw;
 }
 
 
@@ -996,7 +1031,7 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
     `# ${doc.title}`,
     '',
     `- **Template**: ${SPONSOR_DOC_TEMPLATES[doc.template].label}`,
-    ...(doc.sponsorName ? [`- **Sponsor**: ${doc.sponsorName}`] : []),
+    ...(doc.sponsorName ? [`- **${doc.template === 'podcast' ? 'Guest' : 'Sponsor'}**: ${doc.sponsorName}`] : []),
     ...(doc.publicationDate ? [`- **Publication Date**: ${doc.publicationDate}`] : []),
     `- **Status**: ${doc.status === 'submitted' ? 'Submitted / Ready' : 'Draft'}`,
     `- **Last Edited**: ${doc.lastEditedAt} (${doc.lastEditedBy})`,
@@ -1097,18 +1132,20 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
     );
   } else if (doc.template === 'podcast') {
     lines.push(
-      '## 1) Materials from the Guest',
-      '',
-      `**Guest:** ${valOrPlaceholder(c.guestName)}`,
+      '## 1) Recording Slot',
       '',
       `**Proposed time:** ${valOrPlaceholder(c.proposedSlotLabel, '_[Not set]_')}`,
       '',
-      `**Recording slot choice:** ${valOrPlaceholder(c.slotChoice, '_[Not selected]_')}`,
+      `**Choice:** ${humanizePodcastSlotChoice(c.slotChoice, c.proposedSlotLabel)}`,
       '',
-      `**Custom slot (if none fit):** ${valOrPlaceholder(c.customSlot, '_[n/a]_')}`,
+      '## 2) Guest',
+      '',
+      `**Guest:** ${valOrPlaceholder(c.guestName)}`,
       '',
       '### Introduction / Bio',
       valOrPlaceholder(c.introduction),
+      '',
+      '## 3) Topics',
       '',
       '### Current Focus',
       valOrPlaceholder(c.currentFocus),
@@ -1119,13 +1156,13 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '### Topics to Avoid',
       valOrPlaceholder(c.topicsToAvoid, '_[None specified]_'),
       '',
-      '## 2) Social Media & Links',
+      '## 4) Social Media & Links',
       `- **LinkedIn:** ${valOrPlaceholder(c.linkedinUrl)}`,
       `- **X (Twitter):** ${valOrPlaceholder(c.twitterUrl)}`,
       `- **GitHub:** ${valOrPlaceholder(c.githubUrl)}`,
       `- **Website:** ${valOrPlaceholder(c.websiteUrl)}`,
       '',
-      '## 3) Episode Story & Practical Takeaways',
+      '## 5) Episode Story & Practical Takeaways',
       '',
       '### Hook & Pain Point',
       valOrPlaceholder(c.hookAndPainPoint),
@@ -1220,11 +1257,12 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
   }
 
   if (c.sponsorNotes?.trim()) {
+    const notesHeading = doc.template === 'podcast' ? '## Notes from the Guest' : '## Notes from Sponsor';
     lines.push(
       '',
       '---',
       '',
-      '## Notes from Sponsor / Guest',
+      notesHeading,
       '',
       c.sponsorNotes.trim(),
     );

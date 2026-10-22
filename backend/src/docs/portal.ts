@@ -165,7 +165,7 @@ function serveFrontend(event: LambdaEvent, method: string, path: string): Lambda
   if (method !== 'GET') return null;
 
   if (path === '/device' || path === '/device/sessions') return serveIndex('src/device.html');
-  if (/^\/sponsor-docs\/[^/]+\/?$/.test(path)) return serveIndex('src/sponsor-doc.html');
+  if (/^\/(sponsor-docs|podcast-docs|guest-docs)\/[^/]+\/?$/.test(path)) return serveIndex('src/sponsor-doc.html');
   if (/^\/newsletter-issues\/[^/]+\/preview\/?$/.test(path)) return serveIndex('src/newsletter-preview.html');
   if (path === '/' || path === '/index.html') return serveIndex();
 

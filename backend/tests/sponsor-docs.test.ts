@@ -200,6 +200,11 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     });
     assert.strictEqual(guestDoc.statusCode, 201, guestDoc.body);
     const guestCreated = JSON.parse(guestDoc.body);
+    assert.ok(
+      guestCreated.doc.docUrl.includes('/podcast-docs/'),
+      `podcast guest form lives under /podcast-docs/: ${guestCreated.doc.docUrl}`,
+    );
+    assert.strictEqual(guestCreated.doc.linkType, 'Guest materials');
     const guestBody = guestCreated.doc.emailDraft?.body || '';
     assert.match(guestBody, /use the form/i);
     assert.match(guestBody, /do not invent alternate times/i);
