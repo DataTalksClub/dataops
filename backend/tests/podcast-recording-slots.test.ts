@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   heldWindows,
+  isOrdinaryRecordingDay,
   isoWeekday,
   nextRecordingSlot,
   nextRecordingSlots,
@@ -70,6 +71,14 @@ describe("podcast recording slots", () => {
     assert.ok(held.has("2026-10-26#midday"));
     assert.ok(held.has("2026-10-26#evening"));
     assert.ok(!held.has("2026-10-27#midday"));
+  });
+
+  it("isOrdinaryRecordingDay admits Mon/Tue only (shared with guest-form hydrate)", () => {
+    assert.equal(isOrdinaryRecordingDay("2026-10-26"), true); // Mon
+    assert.equal(isOrdinaryRecordingDay("2026-10-27"), true); // Tue
+    for (const date of ["2026-10-28", "2026-10-29", "2026-10-30", "2026-10-31", "2026-11-01"]) {
+      assert.equal(isOrdinaryRecordingDay(date), false);
+    }
   });
 
   it("does not offer evening on Wed–Fri when midday is busy", () => {

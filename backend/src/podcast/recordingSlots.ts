@@ -105,6 +105,16 @@ export function heldWindows(
   return held;
 }
 
+/**
+ * Ordinary free recording days: Mon/Tue only (weekends + Wed–Fri out).
+ * Single source of truth for the ordinary-day filter — shared by
+ * nextRecordingSlots and the podcast guest-form hydrate path.
+ */
+export function isOrdinaryRecordingDay(date: string): boolean {
+  const dow = isoWeekday(date);
+  return dow === 1 || dow === 2;
+}
+
 function slotLabel(date: string, window: RecordingWindow, localTime: string): string {
   return `${date} ${window} ${localTime} ${RECORDING_TIME_ZONE}`;
 }
@@ -140,9 +150,8 @@ export function nextRecordingSlots(input: NextRecordingSlotsInput): NextRecordin
   const slots: RecordingSlot[] = [];
   for (let i = 0; i < horizon && slots.length < count; i += 1) {
     const date = addDays(input.fromDate, i);
-    const dow = isoWeekday(date);
-    // Ordinary free recording days: Mon/Tue only (weekends + Wed–Fri out).
-    if (dow !== 1 && dow !== 2) continue;
+    // Ordinary free recording days: Mon/Tue only (see isOrdinaryRecordingDay).
+    if (!isOrdinaryRecordingDay(date)) continue;
     if (taken.has(date)) continue;
 
     const tryWindow = (window: RecordingWindow): boolean => {

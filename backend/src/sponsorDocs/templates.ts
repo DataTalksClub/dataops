@@ -1,3 +1,5 @@
+import { isOrdinaryRecordingDay } from '../podcast/recordingSlots';
+
 export type SponsorDocTemplateKey =
   | 'newsletter-main'
   | 'newsletter-secondary'
@@ -897,9 +899,17 @@ export function hydratePodcastGuestSlotOptions(
   const confirmLabel = proposed
     ? `Yes — ${proposed} works for me`
     : 'Yes — the proposed time in the invite works for me';
+  // Ordinary free slots are Mon/Tue midday/evening only (shared filter with
+  // nextRecordingSlots): never offer Wed–Fri free slots here, even if the
+  // caller passes them. Filter before the cap so stale days can't crowd out
+  // real Mon/Tue windows.
+  const ordinary = freeSlots.filter(
+    (slot) => (slot.window === 'midday' || slot.window === 'evening')
+      && isOrdinaryRecordingDay(slot.date),
+  );
   const slotOptions = [
     { value: 'confirm_proposed', label: confirmLabel },
-    ...freeSlots.slice(0, 8).map((slot) => ({
+    ...ordinary.slice(0, 8).map((slot) => ({
       value: `slot:${slot.date}:${slot.window}`,
       label: slot.label || `${slot.date} ${slot.window} ~${slot.localTime} Europe/Berlin`,
     })),

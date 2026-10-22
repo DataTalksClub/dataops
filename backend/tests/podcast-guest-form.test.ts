@@ -54,6 +54,60 @@ describe('podcast guest form (slot picker + topics; email stays one slot)', () =
     assert.ok(labels.some((label) => label.includes('17:00')));
   });
 
+  it('never hydrates Wed–Fri free slots: Mon/Tue ordinary windows only', () => {
+    const template = getSponsorDocTemplate('podcast');
+    const hydrated = hydratePodcastGuestSlotOptions(
+      template,
+      [
+        { date: '2026-10-28', window: 'midday', localTime: '12:30' },
+        { date: '2026-10-29', window: 'midday', localTime: '12:30' },
+        { date: '2026-10-30', window: 'evening', localTime: '17:00' },
+        { date: '2026-10-31', window: 'midday', localTime: '12:30' },
+        { date: '2026-11-02', window: 'midday', localTime: '12:30' },
+        { date: '2026-11-03', window: 'evening', localTime: '17:00' },
+      ],
+      null,
+    );
+    const slotChoice = hydrated.sections
+      .flatMap((section) => section.fields)
+      .find((field) => field.key === 'slotChoice');
+    const values = (slotChoice?.options || []).map((opt) => opt.value);
+    assert.deepEqual(values, [
+      'confirm_proposed',
+      'slot:2026-11-02:midday',
+      'slot:2026-11-03:evening',
+      'none_fit',
+    ]);
+  });
+
+  it('filters Wed–Fri before the option cap so Mon/Tue are not crowded out', () => {
+    const template = getSponsorDocTemplate('podcast');
+    const stale = [
+      '2026-10-28',
+      '2026-10-29',
+      '2026-10-30',
+      '2026-11-04',
+      '2026-11-05',
+      '2026-11-06',
+      '2026-11-11',
+      '2026-11-12',
+    ].map((date) => ({ date, window: 'midday', localTime: '12:30' }));
+    const hydrated = hydratePodcastGuestSlotOptions(
+      template,
+      [...stale, { date: '2026-11-02', window: 'midday', localTime: '12:30' }],
+      null,
+    );
+    const slotChoice = hydrated.sections
+      .flatMap((section) => section.fields)
+      .find((field) => field.key === 'slotChoice');
+    const values = (slotChoice?.options || []).map((opt) => opt.value);
+    assert.deepEqual(values, [
+      'confirm_proposed',
+      'slot:2026-11-02:midday',
+      'none_fit',
+    ]);
+  });
+
   it('guest materials export carries the slot choice answer', () => {
     const exported = renderSponsorDocMarkdownExport({
       id: 'doc-1',
