@@ -2,18 +2,16 @@
  * Shared Dapier calendar-broker credential resolution.
  *
  * Used by the owner-calendar free/busy overlay and by CalendarHold Google
- * Proposal mirroring. Product path is **through Dapier** (same machine-agent
- * pattern as other headless consumers):
+ * Proposal mirroring. Product path is **through Dapier**:
  *
- *   1. explicit credential (tests / injected only)
- *   2. AWS Secrets Manager secret `personal-scheduler/dapier-api-token`
- *      — the Dapier machine API token (`dap_…`) for agent `personal-scheduler`
+ *   Day-to-day (Orin): pick a google-calendar Dapier connection in DataOps
+ *   Planning → calendar settings (or `dataops calendar settings --connection <id>`).
+ *   Propose / podcast invite mint Google tokens for that stored connectionId.
  *
- * Google OAuth refresh tokens and connection grants live in Dapier. DataOps
- * never asks operators to put PERSONAL_SCHEDULER_TOKEN / DATAOPS_HOLD_BROKER_TOKEN
- * in Coolify or DataOps env. Operator path: dapier auth + connect/grant
- * google-calendar for personal-scheduler; keep the machine token in the SM
- * secret the Lambda already may read (infra/template.full.yaml).
+ *   Platform (once): Lambda uses machine agent `personal-scheduler` via AWS SM
+ *   `personal-scheduler/dapier-api-token` to call Dapier `/api/agent/token`.
+ *   Google OAuth grants live in Dapier — never Coolify/DataOps env tokens, and
+ *   Orin does not stuff `dap_…` into SM as a day-to-day step.
  */
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 
@@ -33,14 +31,15 @@ export const DEFAULT_HOLD_GOOGLE_CALENDARS = [
   'f8qidjnq0jhscp8809k1eghs60@group.calendar.google.com',
 ] as const;
 
-/** Operator path when the Dapier machine credential is missing or unusable. */
+/** Orin day-to-day path when Google sync cannot mint a token. */
 export const CREDENTIAL_OPERATOR_HINT =
-  `Through Dapier (not DataOps/Coolify env): ` +
-  `dapier auth login → ensure connection "${DEFAULT_CALENDAR_CONNECTION}" is connected with calendar event write scopes → ` +
-  `dapier tokens create --name personal-scheduler --agent personal-scheduler (once) → ` +
-  `dapier grants save with subject "token:personal-scheduler", agent "${DAPIER_AGENT}", connection_id "${DEFAULT_CALENDAR_CONNECTION}", operations ["use"] → ` +
-  `store the dap_… value in AWS Secrets Manager secret "${DAPIER_SECRET_NAME}" (JSON {api_token} or raw) for the DataOps Lambda. ` +
-  `Google refresh tokens stay in Dapier.`;
+  `In DataOps Planning → calendar settings (or \`dataops calendar settings\`), pick a suitable Dapier google-calendar connection — propose/invite uses it automatically. ` +
+  `No Coolify env tokens and no day-to-day SM dap_ stuffing. ` +
+  `If the connection is already selected and sync still defers: the selected connection needs a Dapier \`use\` grant for agent "${DAPIER_AGENT}" (platform keeps the machine token in SM "${DAPIER_SECRET_NAME}" once). Google refresh tokens stay in Dapier.`;
+
+/** When settings have no usable connection id (should not happen with defaults). */
+export const CONNECTION_OPERATOR_HINT =
+  `Pick a Dapier google-calendar connection in DataOps Planning → calendar settings (or \`dataops calendar settings --connection <id>\`). Propose/invite use that connection automatically.`;
 
 export type DapierCredential =
   | { credential: string; problem?: undefined }

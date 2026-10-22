@@ -187,14 +187,14 @@ export function createPlanningSurface(context) {
       <dialog class="dk-dialog calendar-settings-dialog" data-settings-dialog style="--dk-dialog-width: 520px">
         <form data-settings-form>
           <div class="dk-dialog__head"><div>
-            <h2>Alexey's calendar overlay settings</h2>
-            <p>Configure which Google Calendar connection to use and filter out personal routines.</p>
+            <h2>Alexey's calendar settings</h2>
+            <p>Pick the Dapier Google Calendar connection for free/busy and for propose/invite Proposal holds. Filter personal routines below.</p>
           </div></div>
           <div class="dk-dialog__body">
             <div class="calendar-settings-group">
               <label class="calendar-settings-field">
                 <strong>Dapier calendar connection</strong>
-                <span class="calendar-settings-hint">Select a connected calendar or enter a custom connection ID</span>
+                <span class="calendar-settings-hint">Used for overlay free/busy and for calendar propose / podcast invite Google Proposal writes. Pick a suitable google-calendar connection — nothing else to wire.</span>
                 <input name="connectionId" list="dapier-calendar-connections" required autocomplete="off" placeholder="google-calendar">
                 <datalist id="dapier-calendar-connections"></datalist>
               </label>

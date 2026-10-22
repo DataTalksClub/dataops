@@ -8,6 +8,7 @@ import { setCalendarHoldGoogleDepsForTests } from "../src/routes/calendarHolds";
 import { setDapierBrokerClientsForTests, DEFAULT_HOLD_GOOGLE_CALENDARS, resolveHoldGoogleCalendars } from "../src/calendar/dapierBroker";
 import { createHoldGoogleEvents } from "../src/calendar/holdGoogleSync";
 import { getCalendarHold, putCalendarHold } from "../src/db/calendarHolds";
+import { saveCalendarOverlaySettings } from "../src/db/calendar";
 import {
   berlinOffsetSuffix,
   confirmHoldRecord,
@@ -229,6 +230,49 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
       DEFAULT_HOLD_GOOGLE_CALENDARS.some((id) => id.includes("group.calendar.google.com")),
       "DTC events calendar id present",
     );
+  });
+
+  it("propose uses the Dapier connectionId stored in calendar settings", async () => {
+    await saveCalendarOverlaySettings(client, { connectionId: "orin-picked-google-calendar" }, "test-operator");
+    const tokenBodies: any[] = [];
+    const fakeJson = (payload: any, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => payload });
+    let seq = 0;
+    setCalendarHoldGoogleDepsForTests({
+      credential: "test-broker-token",
+      // connectionId intentionally omitted — must come from settings
+      calendarIds: ["primary", "dtc-events"],
+      fetchImpl: (async (url: any, init: any) => {
+        const u = String(url);
+        const method = init?.method || "GET";
+        if (u.includes("/api/agent/token")) {
+          tokenBodies.push(JSON.parse(String(init.body)));
+          return fakeJson({ access_token: "google-at" });
+        }
+        if (method === "POST" && u.includes("/calendar/v3/")) {
+          seq += 1;
+          return fakeJson({ id: `gev-pick-${seq}` });
+        }
+        throw new Error(`unexpected ${method} ${u}`);
+      }) as any,
+    });
+    try {
+      const created = parse(
+        await invoke("POST", "/api/calendar-holds", {
+          date: "2026-11-12",
+          title: "Picker proof",
+          topic: "connection picker",
+        }),
+      ).hold;
+      assert.equal(created.googleSync.state, "synced");
+      assert.equal(tokenBodies.length, 1);
+      assert.deepEqual(tokenBodies[0], {
+        connection_id: "orin-picked-google-calendar",
+        agent: "personal-scheduler",
+      });
+    } finally {
+      setCalendarHoldGoogleDepsForTests({});
+      await saveCalendarOverlaySettings(client, { connectionId: "google-calendar" }, "test-operator");
+    }
   });
 
   it("reads the Dapier machine token from Secrets Manager (no Coolify env) and syncs both calendars", async () => {

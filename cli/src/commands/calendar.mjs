@@ -527,7 +527,7 @@ export async function settings(args, io) {
     const saved = await api.put("/api/calendar-items/settings", payload);
     if (args.json) return saved;
 
-    io.print("Saved calendar overlay settings:");
+    io.print("Saved calendar settings (connection drives propose/invite Google sync):");
     io.print(JSON.stringify(saved.settings || saved, null, 2));
     return saved;
   }
@@ -538,7 +538,7 @@ export async function settings(args, io) {
   const s = result.settings || {};
   const connections = result.connections || [];
 
-  io.print("Calendar Overlay Settings:");
+  io.print("Calendar settings (Dapier connection used for overlay + propose/invite):");
   io.print(`  Connection ID:               ${s.connectionId || "default"}`);
   io.print(`  Filter Non-Slot Hours:       ${s.filterNonSlotHours !== false}`);
   io.print(`  Filter DTC Placeholders:     ${s.filterDtcPlaceholders !== false}`);
@@ -553,8 +553,10 @@ export async function settings(args, io) {
   if (connections.length > 0) {
     io.print(`\nAvailable Dapier Calendar Connections (${connections.length}):`);
     for (const c of connections) {
-      const active = c.id === s.connectionId ? " (current)" : "";
-      io.print(`  - ${c.id}: ${c.label || c.accountEmail || "Calendar"}${active}`);
+      const id = c.connectionId || c.id;
+      const label = c.title || c.label || c.accountEmail || "Calendar";
+      const active = id === s.connectionId ? " (current)" : "";
+      io.print(`  - ${id}: ${label}${active}`);
     }
   }
 

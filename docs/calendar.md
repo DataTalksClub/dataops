@@ -20,30 +20,25 @@ DataOps is the source of truth: when the Dapier calendar broker is not ready, th
 
 ### Google calendar broker (through Dapier — required for Proposal mirrors)
 
-Propose / podcast invite call Dapier like other headless agents: `POST https://dapier.dtcdev.click/api/agent/token` with agent `personal-scheduler` and connection `google-calendar`, then create `(Proposal)` events on **both** calendars required by SOP `sop.events.calendar.creating-tentative-event-on-google-calendar`:
+**Orin day-to-day:** In Planning → calendar settings (or `dataops calendar settings`), pick a suitable Dapier `google-calendar` connection. Propose / podcast invite automatically mint a Google token for that stored connection and create `(Proposal)` events — nothing else for Orin to wire (no Coolify env tokens, no stuffing `dap_…` into AWS SM).
+
+```bash
+dataops calendar settings                         # list connections + current pick
+dataops calendar settings --connection google-calendar
+dataops calendar propose --date <future> --window midday --duration 60 \
+  --title "Throwaway broker proof" --topic "broker proof" --expires-days 1
+# Expect googleSync.state=synced and googleEventIds for both SOP calendars
+```
+
+Runtime path: DataOps reads `connectionId` from calendar settings, calls Dapier `POST /api/agent/token` with agent `personal-scheduler` and that connection, then writes `(Proposal)` on **both** calendars required by SOP `sop.events.calendar.creating-tentative-event-on-google-calendar`:
 
 - Alexey's personal calendar (`primary`)
 - DataTalks.Club events (`f8qidjnq0jhscp8809k1eghs60@group.calendar.google.com`)
 
-Defaults are those two ids. Override only with `DATAOPS_HOLD_GOOGLE_CALENDARS` (comma-separated calendar ids) when the calendar list itself is wrong — never put Dapier API tokens in Coolify or DataOps env.
+Defaults are those two Google calendar ids. Override only with `DATAOPS_HOLD_GOOGLE_CALENDARS` (comma-separated calendar ids) when the calendar list itself is wrong.
 
-**Where credentials live:** Google OAuth refresh tokens and connection grants live in **Dapier**. DataOps Lambda reads only the Dapier machine API token from AWS Secrets Manager secret `personal-scheduler/dapier-api-token` (same pattern as the owner-calendar overlay; IAM is already on the backend). Do **not** configure `PERSONAL_SCHEDULER_TOKEN` / `DATAOPS_HOLD_BROKER_TOKEN` on Coolify.
+**Where credentials live:** Google OAuth refresh tokens and connection grants live in **Dapier**. The DataOps Lambda uses a platform machine token (AWS Secrets Manager `personal-scheduler/dapier-api-token`, same as the owner-calendar overlay) only to call Dapier — that is **not** an Orin day-to-day step. Do **not** configure `PERSONAL_SCHEDULER_TOKEN` / `DATAOPS_HOLD_BROKER_TOKEN` on Coolify or DataOps env.
 
-**Operator path (full operator; Orin runs propose after this works):**
-
-```bash
-dapier auth login
-dapier connections list                    # need google-calendar connected
-# If missing / expired:
-dapier connections connect google-calendar --agent personal-scheduler
-# Machine token for DataOps (once; value shown once):
-dapier tokens create --name personal-scheduler --agent personal-scheduler
-# Grant use (subject from create output is token:personal-scheduler):
-printf '%s\n' '{"connection_id":"google-calendar","subject":"token:personal-scheduler","agent":"personal-scheduler","operations":["use"]}' > /tmp/grant-calendar-hold.json
-dapier grants save /tmp/grant-calendar-hold.json
-# Store the dap_… value in AWS SM personal-scheduler/dapier-api-token (JSON {api_token} or raw) in the account that hosts dataops-v1.
-```
-
-Then `dataops calendar propose …` / `dataops podcast invite …` should return `googleSync.state=synced` with `googleEventIds` for both calendars. Missing broker readiness must never be silent: the deferred reason points at this Dapier path.
+If sync still defers after a connection is selected, the deferred reason names the gap (missing Dapier `use` grant for `personal-scheduler` on that connection, or platform machine token). Missing broker readiness must never be silent.
 
 Active holds project hard occupancy onto the overlays (`backend/src/calendar/holdOverlay.ts`, `calendar-holds` layer): covered owner-calendar available slots are suppressed, so a proposed podcast evening (17:00 Berlin, 60 min) cannot be double-booked. A 90-min evening hold is the workshop shape and starts 16:30. `--topic` is required on every new hold: the intended episode topic is recorded in DataOps at invite/propose time. `dataops podcast invite` uses the same endpoint for its one proposed slot (midday by default).

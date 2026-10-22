@@ -16,12 +16,14 @@ import {
   updateHoldGoogleEvents,
   type HoldGoogleDeps,
 } from '../calendar/holdGoogleSync';
+import { DEFAULT_CALENDAR_CONNECTION } from '../calendar/dapierBroker';
 import {
   expireCalendarHolds,
   getCalendarHold,
   listCalendarHolds,
   putCalendarHold,
 } from '../db/calendarHolds';
+import { getCalendarOverlaySettings } from '../db/calendar';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
   statusCode,
@@ -51,7 +53,13 @@ let googleDeps: HoldGoogleDeps = {};
 export function setCalendarHoldGoogleDepsForTests(deps: HoldGoogleDeps): void {
   googleDeps = deps;
 }
-function depsFor(body: any): HoldGoogleDeps {
+
+/**
+ * Resolve hold Google deps: calendars from the request (optional), Dapier
+ * connectionId from DataOps calendar settings (Orin-picked). Explicit
+ * googleDeps.connectionId (tests) wins over settings.
+ */
+async function depsFor(body: any, client: DynamoDBDocumentClient): Promise<HoldGoogleDeps> {
   const calendars = (() => {
     try {
       return parseHoldCalendars(body?.googleCalendars);
@@ -59,10 +67,17 @@ function depsFor(body: any): HoldGoogleDeps {
       return undefined;
     }
   })();
-  // Credential resolution (env + Secrets Manager personal-scheduler/dapier-api-token)
-  // lives in holdGoogleSync via dapierBroker. Tests inject googleDeps.credential.
+  let connectionId = googleDeps.connectionId;
+  if (!connectionId) {
+    const settings = await getCalendarOverlaySettings(client);
+    const picked = (settings.connectionId || '').trim();
+    connectionId = picked || DEFAULT_CALENDAR_CONNECTION;
+  }
+  // Machine credential resolution lives in holdGoogleSync via dapierBroker
+  // (SM personal-scheduler/dapier-api-token). Tests inject googleDeps.credential.
   return {
     ...googleDeps,
+    connectionId,
     ...(calendars ? { calendarIds: calendars } : {}),
   };
 }
@@ -101,7 +116,7 @@ async function createRoute(event: LambdaEvent, client: DynamoDBDocumentClient): 
   }
   const sync = await createHoldGoogleEvents(
     googlePayload(hold, proposalTitle(hold.title), hold.startIso, hold.endIso),
-    depsFor(body),
+    await depsFor(body, client),
   );
   const stored = {
     ...hold,
@@ -147,7 +162,7 @@ async function confirmRoute(id: string, client: DynamoDBDocumentClient): Promise
   } catch (e: any) {
     return json(409, { error: String(e?.message || 'Cannot confirm hold'), code: e?.code || 'hold_state' });
   }
-  const sync = await updateHoldGoogleEvents(existing.googleEventIds, confirmedTitle(existing.title), depsFor({}));
+  const sync = await updateHoldGoogleEvents(existing.googleEventIds, confirmedTitle(existing.title), await depsFor({}, client));
   await putCalendarHold(client, {
     ...next,
     googleTitle: confirmedTitle(existing.title),
@@ -175,7 +190,7 @@ async function releaseRoute(
   } catch (e: any) {
     return json(409, { error: String(e?.message || 'Cannot release hold'), code: e?.code || 'hold_state' });
   }
-  const sync = await deleteHoldGoogleEvents(existing.googleEventIds, depsFor(body));
+  const sync = await deleteHoldGoogleEvents(existing.googleEventIds, await depsFor(body, client));
   await putCalendarHold(client, {
     ...next,
     ...(sync.state === 'synced' ? { googleSync: { state: 'synced' as const } } : {}),
@@ -186,7 +201,7 @@ async function releaseRoute(
 async function expireRoute(client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const { expired, followUps } = await expireCalendarHolds(client);
   for (const hold of expired) {
-    await deleteHoldGoogleEvents(hold.googleEventIds, depsFor({}));
+    await deleteHoldGoogleEvents(hold.googleEventIds, await depsFor({}, client));
   }
   return json(200, {
     expired,
