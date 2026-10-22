@@ -15,6 +15,7 @@ import {
   TABLE_TEMPLATES,
 } from './tableNames';
 import type { AuditEventRef, Card, Task, Template } from '../types';
+import { resolveTemplateConditionalValidation } from '../cards/conditionalRequired';
 import { usesLocalTransactionEmulation } from './client';
 import {
   applyCardAggregateDelta,
@@ -433,6 +434,12 @@ export async function applyCardTemplateUpdate(
   actorId: string,
   requestedGroups?: unknown,
 ): Promise<AppliedCardTemplateUpdate> {
+  // Conditional requiredness (`validation.requiredWhen`) resolves against the
+  // Card's anchor date before the plan is built, so the preview an operator
+  // confirms and the applied Tasks carry the same required/optional outcome.
+  if (card.anchorDate) {
+    template = await resolveTemplateConditionalValidation(client, template, card.anchorDate);
+  }
   const priorAudit = await existingAudit(client, card.id, previewToken);
   const plan = buildCardTemplateUpdatePlan(card, tasks, template, requestedGroups);
   if (priorAudit) {

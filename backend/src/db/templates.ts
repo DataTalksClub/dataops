@@ -14,6 +14,7 @@ import { usesLocalTransactionEmulation } from './client';
 import type { PlannedWrite } from './plannedWrite';
 import { createTask, listTasksByCard } from './tasks';
 import type { Card, Template, Task } from '../types';
+import { resolveTemplateConditionalValidation } from '../cards/conditionalRequired';
 import { templateLinkage, templateTaskProjection } from '../templates/cardTemplateProjection';
 import { prerequisitesFirst, templateDependencyIssues } from '../templates/taskDependencyGraph';
 import { DEFINITION_FIELDS, TemplateDefinitionInvalidError, validateEffectiveDefinition } from '../templates/templateEdits';
@@ -873,10 +874,11 @@ async function instantiateTemplate(
   anchorDate: string,
   selectedGroups?: string[],
 ): Promise<Task[]> {
-  const template = await getTemplate(client, templateId);
-  if (!template) {
+  const stored = await getTemplate(client, templateId);
+  if (!stored) {
     throw new Error(`Template not found: ${templateId}`);
   }
+  const template = await resolveTemplateConditionalValidation(client, stored, anchorDate);
 
   let groups = selectedGroups;
   if (groups === undefined) {
@@ -934,8 +936,9 @@ async function createCardFromTemplate(
   selectedGroups?: string[],
   companions: (card: Card) => PlannedWrite[] = () => [],
 ): Promise<{ card: Card; tasks: Task[] }> {
-  const definitions = selectTaskDefinitions(template.taskDefinitions, selectedGroups);
-  Object.assign(cardData, templateLinkage(template, selectedGroups || []));
+  const resolved = await resolveTemplateConditionalValidation(client, template, anchorDate);
+  const definitions = selectTaskDefinitions(resolved.taskDefinitions, selectedGroups);
+  Object.assign(cardData, templateLinkage(resolved, selectedGroups || []));
   const card = buildCard(cardData, {
     taskCount: definitions.length,
     openTaskCount: definitions.length,
@@ -949,7 +952,7 @@ async function createCardFromTemplate(
     taskHistory: [],
     createdAt: now,
     updatedAt: now,
-    ...templateTaskProjection(template, definition, order, anchorDate, card.id, assignment, idsByRef),
+    ...templateTaskProjection(resolved, definition, order, anchorDate, card.id, assignment, idsByRef),
   }) as Task);
 
   const companionWrites = companions(card);
@@ -964,7 +967,7 @@ async function createCardFromTemplate(
   }
 
   if (usesLocalTransactionEmulation()) {
-    await emulateTemplateCardCreation(client, template, card, tasks, companionWrites);
+    await emulateTemplateCardCreation(client, resolved, card, tasks, companionWrites);
     return { card, tasks };
   }
 

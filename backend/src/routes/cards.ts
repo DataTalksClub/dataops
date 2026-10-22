@@ -26,6 +26,7 @@ import {
   validateCardPeople,
   validateCardRefs,
 } from '../cards/createCard';
+import { resolveTemplateConditionalValidation } from '../cards/conditionalRequired';
 import { listAllTasks, listTasksByCard, listTasksByCardConsistent } from '../db/tasks';
 import {
   applyCardTemplateUpdate,
@@ -98,8 +99,13 @@ async function loadTemplateUpdate(cardId: string, client: DynamoDBDocumentClient
   // than the version the update will be conditioned on.
   const card = await getCardConsistent(client, cardId);
   if (!card) throw new CardTemplateUpdateRequestError(404, 'card-not-found', 'Card not found');
-  const template = await getTemplate(client, card.templateId);
-  if (!template) throw new CardTemplateUpdateRequestError(409, 'template-not-found', 'Card Template projection no longer exists');
+  const stored = await getTemplate(client, card.templateId);
+  if (!stored) throw new CardTemplateUpdateRequestError(409, 'template-not-found', 'Card Template projection no longer exists');
+  // Same resolution the apply path performs, so the preview an operator
+  // reviews already carries the required/optional outcome being confirmed.
+  const template = card.anchorDate
+    ? await resolveTemplateConditionalValidation(client, stored, card.anchorDate)
+    : stored;
   const tasks = await listTasksByCardConsistent(client, card.id);
   try {
     return { card, template, tasks, plan: buildCardTemplateUpdatePlan(card, tasks, template) };
