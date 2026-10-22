@@ -878,3 +878,36 @@ def test_sponsor_private_archive_is_isolated_retained_and_kms_encrypted():
     assert "VersioningConfiguration: { Status: Enabled }" in bucket
     assert "DeletionPolicy: Retain" in key
     assert "EnableKeyRotation: true" in key
+
+
+# Stable KMS identity (Hub intake aa147e14-78d1-4086-8e2a-b9ea332f041d).
+# Renaming a customer-managed key logical ID replaces the physical key, and
+# UpdateReplacePolicy Retain orphans the old one ($1/month each). Deploys
+# orphaned 12 CMKs before 2026-10-22. Keep exactly these four logical IDs so
+# stack updates happen in place and never replace+retain orphans.
+EXPECTED_DATAOPS_KMS_KEYS = {
+    "BookkeepingDocumentsKey",
+    "EmailDocumentsKey",
+    "SecretsStoreKey",
+    "SponsorCommunicationPrivateArchiveKey",
+}
+
+
+def test_dataops_kms_keys_keep_stable_logical_ids_and_retain():
+    template = _load_template()
+    actual = {
+        name
+        for name, resource in template["Resources"].items()
+        if resource.get("Type") == "AWS::KMS::Key"
+    }
+    assert actual == EXPECTED_DATAOPS_KMS_KEYS
+
+    raw = TEMPLATE.read_text(encoding="utf-8")
+    for logical_id in EXPECTED_DATAOPS_KMS_KEYS:
+        block = _resource_block(raw, logical_id)
+        assert "DeletionPolicy: Retain" in block
+        assert "UpdateReplacePolicy: Retain" in block
+        assert "EnableKeyRotation: true" in block
+        # Defined once, referenced at least once: an unreferenced key is a
+        # rename/orphan waiting to happen.
+        assert raw.count(logical_id) >= 2, logical_id
