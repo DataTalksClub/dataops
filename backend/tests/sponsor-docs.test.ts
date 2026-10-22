@@ -193,14 +193,18 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     });
     assert.strictEqual(episodeOwned.statusCode, 201, episodeOwned.body);
 
-    // The guest materials doc is explicitly optional for the guest.
+    // Guest materials share email: form path only (no reply-instead wording).
     const guestDoc = await staffReq('POST', '/api/sponsor-docs', {
       cardId: datedEpisode.id,
       template: 'podcast',
     });
     assert.strictEqual(guestDoc.statusCode, 201, guestDoc.body);
     const guestCreated = JSON.parse(guestDoc.body);
-    assert.match(guestCreated.doc.emailDraft?.body || '', /optional/i);
+    const guestBody = guestCreated.doc.emailDraft?.body || '';
+    assert.match(guestBody, /use the form/i);
+    assert.match(guestBody, /do not invent alternate times/i);
+    assert.ok(!/couple of sentences/i.test(guestBody));
+    assert.ok(!/either way works/i.test(guestBody));
 
     const badRes = await staffReq('POST', '/api/sponsor-docs', {
       cardId: card.id,
