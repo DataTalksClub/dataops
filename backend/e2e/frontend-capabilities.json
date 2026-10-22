@@ -437,7 +437,15 @@
         {
           "id": "templates.read-only",
           "kind": "ready",
-          "description": "Operators and admins inspect the same read-only authored runtime projection.",
+          "description": "Operators and admins inspect the same authored runtime projection and pin step edits over its Git base.",
+          "coverage": {
+            "status": "runtime"
+          }
+        },
+        {
+          "id": "templates.step-edits",
+          "kind": "ready",
+          "description": "Step edits pin the effective definition new cards use; a save conflict reloads the latest instead of overwriting.",
           "coverage": {
             "status": "runtime"
           }
@@ -469,7 +477,7 @@
         {
           "id": "templates.method-not-allowed",
           "kind": "permission",
-          "description": "Template POST, PUT, and DELETE are unavailable for every role without side effects.",
+          "description": "Template PATCH and collection DELETE stay unavailable, and Git rows stay undeletable.",
           "coverage": {
             "status": "runtime"
           }

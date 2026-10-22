@@ -48,7 +48,7 @@ const REQUIRED = {
   },
   templates: {
     route: "/templates?templateId=<id>",
-    states: ["read-only", "source-revision", "create-card", "reviewed-card-batch", "method-not-allowed", "failure", "stale-not-found"],
+    states: ["read-only", "step-edits", "source-revision", "create-card", "reviewed-card-batch", "method-not-allowed", "failure", "stale-not-found"],
   },
   recurring: {
     route: "/recurring",

@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 const { recordCapabilityEvidence } = require('./helpers/capability-evidence');
 
 test.describe('Git-authored runtime templates', () => {
-  test('keeps Git-authored templates read-only and creates cards from their deployed projections', async ({ page, request }, testInfo) => {
+  test('pins template step edits over the Git base and creates cards from the pin', async ({ page, request }, testInfo) => {
     const list = await request.get('/api/templates');
     expect(list.status()).toBe(200);
     const templates = (await list.json()).templates;
@@ -29,25 +29,47 @@ test.describe('Git-authored runtime templates', () => {
     await definitionDetails.getByText('Definition details', { exact: true }).click();
     await expect(page.getByText('workflow-templates/synthetic-git-workflow.yaml')).toBeVisible();
     await expect(page.getByText('0123456789ab')).toBeVisible();
-    await expect(page.getByText('This definition is projected from reviewed YAML.')).toBeVisible();
+    await expect(page.getByText(/Git seed lives in dataops-knowledge/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'New runtime template' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Save template' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Delete template' })).toHaveCount(0);
 
-    await page.locator('.runtime-template-projection').getByRole('button', { name: 'Start card' }).click();
+    // Edit definition pins the effective definition: the save is a
+    // compare-and-swap PUT carrying the fetched version pair, so a stale form
+    // cannot overwrite a newer pin or Git base.
+    const projection = page.locator('.runtime-template-projection');
+    await projection.getByText('Edit definition (web)', { exact: true }).click();
+    const editor = projection.locator('.runtime-template-editor');
+    const textarea = editor.locator('textarea');
+    const definition = JSON.parse(await textarea.inputValue());
+    definition.taskDefinitions[0].description = 'Prepare a synthetic output (pinned)';
+    await textarea.fill(JSON.stringify(definition, null, 2));
+    const savedResponse = page.waitForResponse((response) => (
+      response.request().method() === 'PUT'
+      && new URL(response.url()).pathname.endsWith(`/api/templates/${template.id}`)
+    ));
+    await editor.getByRole('button', { name: 'Save pin' }).click();
+    expect((await savedResponse).status()).toBe(200);
+    await expect(editor.getByText(/Pinned synthetic-git-workflow to version/)).toBeVisible();
+
+    await projection.getByRole('button', { name: 'Start card' }).click();
     const form = page.locator('.quick-form-overlay');
     await expect(form.locator('.quick-form-select')).toHaveValue(template.id);
-    await form.getByLabel('Card title').fill('Synthetic projection card');
+    await form.getByLabel('Card title').fill('Synthetic pinned card');
     const createdResponse = page.waitForResponse((response) => (
       response.request().method() === 'POST'
       && new URL(response.url()).pathname.endsWith('/api/cards')
     ));
     await form.getByRole('button', { name: 'Create card' }).click();
-    expect((await createdResponse).status()).toBe(201);
+    const createdReply = await createdResponse;
+    expect(createdReply.status()).toBe(201);
+    const created = await createdReply.json();
+    const cardTasks = await (await request.get(`/api/tasks?cardId=${encodeURIComponent(created.card.id)}`)).json();
+    expect(cardTasks.tasks.map((task) => task.description)).toContain('Prepare a synthetic output (pinned)');
     recordCapabilityEvidence(testInfo, [{
       route: '/templates?templateId=<id>',
       roleId: 'admin',
-      stateIds: ['templates.read-only', 'templates.source-revision', 'templates.create-card', 'templates.method-not-allowed'],
+      stateIds: ['templates.read-only', 'templates.step-edits', 'templates.source-revision', 'templates.create-card', 'templates.method-not-allowed'],
     }]);
   });
 

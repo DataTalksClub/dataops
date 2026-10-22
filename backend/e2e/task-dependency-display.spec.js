@@ -1,8 +1,10 @@
 // Task dependencies: on the card checklist a task waiting on a prerequisite
-// has a dashed box, a muted "after X" line and no urgency colour, and never
+// has a dashed box, a muted unlock line and no urgency colour, and never
 // sits above its prerequisite; the task dialog shows "Waiting on" and
-// "Unblocks" only when there are edges. The work queue leaves waiting tasks
-// out: one appears there as soon as its prerequisites are done or skipped.
+// "Unblocks" only when there are edges, and names each blocking prerequisite
+// beside Mark done as a button that opens it. The work queue lists
+// actionable work first with a Waiting on other steps section, so
+// assigned-but-blocked tasks stay visible with their unlock condition.
 const { test, expect } = require('@playwright/test');
 const { setupPageWithAuth } = require('./helpers/auth');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
@@ -83,8 +85,14 @@ test('task dialog: Waiting on and Unblocks only when there are edges', async ({ 
   await expect(page.locator('#task-panel-title')).toContainText(SECOND, { timeout: 20000 });
   await expect(panel.locator('.task-prerequisites .task-dependency-name')).toHaveText([FIRST]);
   await expect(panel.locator('.task-dependents .task-dependency-name')).toHaveText([THIRD]);
-  await expect(panel.getByText('Waiting on 1 task above')).toBeVisible();
+  // The unlock condition is named beside Mark done, and each blocker opens:
+  // the button carries the blocking prerequisite's name and status.
+  const why = panel.locator('[data-blocked="true"]');
+  await expect(why).toContainText('Waiting on');
+  await expect(why.getByRole('button', { name: FIRST })).toBeVisible();
   await expect(panel.getByRole('button', { name: 'Mark done' })).toBeDisabled();
+  await why.getByRole('button', { name: FIRST }).click();
+  await expect(page).toHaveURL(new RegExp(`taskId=${ids.first}`));
 
   await page.goto(`${server.baseURL}/cards?cardId=${card.id}&taskId=${ids.plain}`);
   await expect(page.locator('#task-panel-title')).toContainText(PLAIN, { timeout: 20000 });
