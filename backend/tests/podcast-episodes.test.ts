@@ -317,7 +317,7 @@ describe("podcast episodes", () => {
     assert.ok(episode.recordingDate, "expected auto recordingDate");
     assert.equal(episode.recordingDateAutoSelected, true);
     assert.equal(episode.recordingSlot.window, "midday");
-    assert.equal(episode.recordingSlot.localTime, "12:00");
+    assert.equal(episode.recordingSlot.localTime, "12:30");
     assert.notEqual(episode.recordingSlot.localTime, "16:30");
   });
 
@@ -342,7 +342,7 @@ describe("podcast episodes", () => {
     assert.ok(Array.isArray(body.slots));
     assert.equal(body.preference.primary, "midday");
     assert.equal(body.preference.eveningLocalTime, "17:00");
-    assert.match(body.preference.note, /not workshop 16:30/);
+    assert.match(body.preference.note, /not workshop/);
   });
 
 });

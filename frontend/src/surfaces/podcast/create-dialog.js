@@ -71,7 +71,7 @@ export function openCreateEpisodeDialog({ documentRef, trigger, load, create, on
         documentRef,
         "Recording date",
         controls.recordingDate,
-        "Optional. Leave empty to auto-pick the next free slot (prefer midday ~12:00 Europe/Berlin, else evening ~17:00 — not workshop 16:30).",
+        "Optional. Leave empty to auto-pick the next free slot (prefer midday ~12:30 Europe/Berlin, else evening ~17:00 — not workshop 16:30).",
       ),
       field(documentRef, "Status", controls.status),
     );

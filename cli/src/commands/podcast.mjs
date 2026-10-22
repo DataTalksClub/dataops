@@ -20,7 +20,7 @@ Usage
                                    hold for one slot, a standalone follow-up
                                    Task (no Card), and the send-ready email
                                    from orin@ (one slot, no topic ask, docs
-                                   page link). Midday (~12:00) by default;
+                                   page link). Midday (~12:30) by default;
                                    evening fallback ~17:00 (workshop 16:30
                                    never used for podcasts). Send it from
                                    Orin's mailbox; nothing is mailed
