@@ -24,6 +24,75 @@ export const HOLD_DEFAULT_DURATION_MINUTES = 60;
 export const HOLD_DEFAULT_WINDOW: CalendarHoldWindow = 'evening';
 export const HOLD_DEFAULT_TTL_DAYS = 7;
 
+/**
+ * Guest invite rules (Hub intake 0346e79b): confirming a hold puts the guest
+ * on the Google invite immediately — Zoom location, Zoom in the description,
+ * required attendees. Never Google Meet (no conferenceData is ever sent) and
+ * never a deny-listed address. The invite window starts
+ * HOLD_INVITE_LEAD_MINUTES before the slot and ends with the slot
+ * (recording 12:30–13:30 → invite 12:25–13:30). A guest RSVP/acceptance in
+ * Google Calendar counts as the time confirmation; proposals stay
+ * attendee-free.
+ */
+export const HOLD_ZOOM_LOCATION = 'https://zoom.us/j/94755324762';
+export const HOLD_REQUIRED_ATTENDEES: readonly string[] = [
+  'alexey@datatalks.club',
+  'alexey.s.grigoriev@gmail.com',
+];
+export const HOLD_ATTENDEE_DENY_LIST: readonly string[] = ['valeriia@datatalks.club'];
+export const HOLD_INVITE_LEAD_MINUTES = 5;
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Attendees for the confirmed invite: the guest (when guestRef parses as an
+ * email) plus every required address, deduped case-insensitively, with
+ * deny-listed addresses removed. A non-email guestRef still confirms — the
+ * required addresses are invited regardless.
+ */
+export function holdGuestAttendees(guestRef?: string): string[] {
+  const guest = guestRef?.trim().toLowerCase();
+  const deny = HOLD_ATTENDEE_DENY_LIST.map((d) => d.toLowerCase());
+  const emails = [
+    ...(guest && EMAIL.test(guest) ? [guest] : []),
+    ...HOLD_REQUIRED_ATTENDEES.map((a) => a.toLowerCase()),
+  ];
+  return [...new Set(emails)].filter((email) => !deny.includes(email));
+}
+
+/** Confirmed description: hold provenance plus the Zoom link. */
+export function confirmedHoldDescription(holdId: string): string {
+  return `DataOps calendar hold ${holdId} (confirmed)\n\nZoom link: ${HOLD_ZOOM_LOCATION}`;
+}
+
+/** Slot start − HOLD_INVITE_LEAD_MINUTES: recording 12:30 → invite 12:25. */
+export function inviteStartIso(slotStartIso: string): string {
+  return new Date(Date.parse(slotStartIso) - HOLD_INVITE_LEAD_MINUTES * 60000).toISOString();
+}
+
+/** The confirmed mirror IS the guest invite: Zoom + attendees, start −5 min. */
+export function confirmedHoldInvite(
+  hold: Pick<CalendarHold, 'id' | 'title' | 'guestRef' | 'startIso' | 'endIso'>,
+): {
+  summary: string;
+  description: string;
+  location: string;
+  attendees: string[];
+  startIso: string;
+  endIso: string;
+  timeZone: typeof HOLD_TIME_ZONE;
+} {
+  return {
+    summary: confirmedTitle(hold.title),
+    description: confirmedHoldDescription(hold.id),
+    location: HOLD_ZOOM_LOCATION,
+    attendees: holdGuestAttendees(hold.guestRef),
+    startIso: inviteStartIso(hold.startIso),
+    endIso: hold.endIso,
+    timeZone: HOLD_TIME_ZONE,
+  };
+}
+
 export const HOLD_WINDOW_START: Record<CalendarHoldWindow, string> = {
   midday: '12:30', // podcast/webinar 60 → 12:30–13:30
   evening: '17:00', // podcast/webinar 60 → 17:00–18:00

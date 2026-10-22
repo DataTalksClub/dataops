@@ -3,8 +3,10 @@
  * `sop.events.calendar.creating-tentative-event-on-google-calendar`.
  *
  * A tentative hold creates `(Proposal) {title}` on each configured Google
- * calendar (DTC events + personal Alexey); confirm renames it to drop the
- * prefix; release deletes it. DataOps is the source of truth: when the broker
+ * calendar (DTC events + personal Alexey); confirm turns the mirror into the
+ * guest invite — Zoom location + description, required attendees, window
+ * start −5 min, `sendUpdates=all`; never Google Meet (no conferenceData is
+ * ever sent). Release deletes it. DataOps is the source of truth: when the broker
  * credential is unavailable the hold is still created locally and the Google
  * leg stays `deferred` instead of failing the request — with an operator path
  * in the reason (env token or Secrets Manager secret).
@@ -25,6 +27,10 @@ export interface HoldGoogleEvent {
   endIso: string;
   timeZone: string;
   description: string;
+  /** Zoom meeting room (confirmed invites). Never Google Meet. */
+  location?: string;
+  /** Emails invited when the hold confirms; proposals stay attendee-free. */
+  attendees?: string[];
 }
 
 export interface HoldGoogleDeps {
@@ -100,13 +106,16 @@ export async function createHoldGoogleEvents(event: HoldGoogleEvent, deps: HoldG
   for (const calendarId of resolveHoldGoogleCalendars(deps.calendarIds)) {
     const res = await googleFetch(
       deps,
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events${event.attendees?.length ? '?sendUpdates=all' : ''}`,
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${resolved.token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           summary: event.summary,
           description: event.description,
+          // Zoom, not Google Meet: conferenceData is never sent for holds.
+          ...(event.location ? { location: event.location } : {}),
+          ...(event.attendees?.length ? { attendees: event.attendees.map((email) => ({ email })) } : {}),
           start: { dateTime: event.startIso, timeZone: event.timeZone },
           end: { dateTime: event.endIso, timeZone: event.timeZone },
         }),
@@ -121,10 +130,15 @@ export async function createHoldGoogleEvents(event: HoldGoogleEvent, deps: HoldG
   return { state: 'synced', eventIds };
 }
 
-/** Rename the mirrored events (confirm drops the Proposal prefix). */
+/**
+ * Push the full mirrored payload. On confirm this turns the mirror into the
+ * guest invite: confirmed title, Zoom location + description, required
+ * attendees, window start −5 min. `sendUpdates=all` emails the invitation
+ * when attendees are set. Never sends conferenceData — Zoom, not Meet.
+ */
 export async function updateHoldGoogleEvents(
   eventIds: Record<string, string>,
-  summary: string,
+  event: HoldGoogleEvent,
   deps: HoldGoogleDeps,
 ): Promise<HoldGoogleResult> {
   const ids = Object.entries(eventIds);
@@ -134,11 +148,18 @@ export async function updateHoldGoogleEvents(
   for (const [calendarId, eventId] of ids) {
     const res = await googleFetch(
       deps,
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}${event.attendees?.length ? '?sendUpdates=all' : ''}`,
       {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${resolved.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ summary }),
+        body: JSON.stringify({
+          summary: event.summary,
+          description: event.description,
+          ...(event.location ? { location: event.location } : {}),
+          ...(event.attendees?.length ? { attendees: event.attendees.map((email) => ({ email })) } : {}),
+          start: { dateTime: event.startIso, timeZone: event.timeZone },
+          end: { dateTime: event.endIso, timeZone: event.timeZone },
+        }),
         signal: AbortSignal.timeout(15000),
       },
     );

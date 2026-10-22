@@ -3,6 +3,7 @@ import type { LambdaEvent, LambdaResponse } from '../types';
 import {
   buildHold,
   confirmHoldRecord,
+  confirmedHoldInvite,
   confirmedTitle,
   parseHoldCalendars,
   proposalTitle,
@@ -166,11 +167,13 @@ async function confirmRoute(id: string, client: DynamoDBDocumentClient): Promise
   const deps = await depsFor({}, client);
   // Propose may have deferred while the broker credential was unavailable,
   // leaving googleEventIds empty. Confirm must still mirror Google: PATCH
-  // when mirrors exist, otherwise CREATE with the confirmed title so a
-  // confirm after a deferred propose syncs instead of staying deferred.
+  // when mirrors exist, otherwise CREATE. Either way the mirror becomes the
+  // guest invite immediately: confirmed title, Zoom location + description,
+  // required attendees (never Meet, never deny-listed), window start −5 min.
+  const invite = confirmedHoldInvite(next);
   const sync = Object.keys(existing.googleEventIds || {}).length
-    ? await updateHoldGoogleEvents(existing.googleEventIds, confirmed, deps)
-    : await createHoldGoogleEvents(googlePayload(next, confirmed, next.startIso, next.endIso), deps);
+    ? await updateHoldGoogleEvents(existing.googleEventIds, invite, deps)
+    : await createHoldGoogleEvents(invite, deps);
   const stored = {
     ...next,
     googleTitle: confirmed,

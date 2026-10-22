@@ -16,6 +16,12 @@ import {
   isHoldActive,
   proposalTitle,
   confirmedTitle,
+  HOLD_ZOOM_LOCATION,
+  HOLD_REQUIRED_ATTENDEES,
+  HOLD_ATTENDEE_DENY_LIST,
+  holdGuestAttendees,
+  confirmedHoldDescription,
+  confirmedHoldInvite,
 } from "../src/calendar/holds";
 import { suppressHeldSlots } from "../src/calendar/holdOverlay";
 
@@ -432,5 +438,155 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     assert.ok(!isHoldActive({ status: "expired" }));
     const bad: any = { status: "released", version: 2 };
     assert.throws(() => confirmHoldRecord(bad), /Only a tentative hold/);
+  });
+
+  it("guest invite rules: required attendees, deduped, deny-listed, Zoom in description", () => {
+    assert.equal(HOLD_ZOOM_LOCATION, "https://zoom.us/j/94755324762");
+    assert.deepEqual(holdGuestAttendees("sofiia@example.com"), [
+      "sofiia@example.com",
+      ...HOLD_REQUIRED_ATTENDEES,
+    ]);
+    // Case-insensitive dedup: a required address never repeats.
+    assert.deepEqual(holdGuestAttendees("ALEXEY@DATATALKS.CLUB"), [...HOLD_REQUIRED_ATTENDEES]);
+    // A non-email guestRef (slug, url) cannot be invited; required only.
+    assert.deepEqual(holdGuestAttendees("not-an-email"), [...HOLD_REQUIRED_ATTENDEES]);
+    assert.deepEqual(holdGuestAttendees(), [...HOLD_REQUIRED_ATTENDEES]);
+    // Deny-list: valeriia is never added, not even as the guestRef.
+    assert.deepEqual(holdGuestAttendees("valeriia@datatalks.club"), [...HOLD_REQUIRED_ATTENDEES]);
+    assert.ok(!HOLD_REQUIRED_ATTENDEES.some((a) => HOLD_ATTENDEE_DENY_LIST.includes(a)));
+    assert.match(confirmedHoldDescription("hold_abc123"), /Zoom link:/);
+    assert.ok(confirmedHoldDescription("hold_abc123").includes("Zoom link: https://zoom.us/j/94755324762"));
+  });
+
+  it("invite window: start = slot start − 5 min, end = slot end (12:30–13:30 → 12:25–13:30)", () => {
+    const midday = holdInterval("2026-11-16", "midday", 60); // 12:30–13:30 Berlin (CET, +01:00)
+    assert.equal(midday.startIso, "2026-11-16T11:30:00.000Z");
+    const invite = confirmedHoldInvite({
+      id: "hold_window1",
+      title: "(Proposal) Podcast recording",
+      startIso: midday.startIso,
+      endIso: midday.endIso,
+    });
+    assert.equal(invite.summary, "Podcast recording");
+    assert.equal(invite.location, HOLD_ZOOM_LOCATION);
+    assert.equal(invite.startIso, "2026-11-16T11:25:00.000Z");
+    assert.equal(invite.endIso, "2026-11-16T12:30:00.000Z");
+  });
+
+  it("confirm sends the guest invite: Zoom + attendees, no Meet, proposals stay attendee-free", async () => {
+    const calls: Array<{ url: string; method: string; body?: any }> = [];
+    const fakeJson = (payload: any, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => payload });
+    let seq = 0;
+    setCalendarHoldGoogleDepsForTests({
+      credential: "test-broker-token",
+      calendarIds: ["dtc-events", "personal-alexey"],
+      fetchImpl: (async (url: any, init: any) => {
+        const u = String(url);
+        const method = init?.method || "GET";
+        calls.push({ url: u, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        if (u.includes("/api/agent/token")) return fakeJson({ access_token: "google-at" });
+        if (method === "POST" && u.includes("/calendar/v3/")) {
+          seq += 1;
+          return fakeJson({ id: `gev-guest-${seq}` });
+        }
+        if (method === "PATCH") return fakeJson({ id: "gev-guest-x" });
+        throw new Error(`unexpected ${method} ${u}`);
+      }) as any,
+    });
+    try {
+      const created = parse(
+        await invoke("POST", "/api/calendar-holds", {
+          date: "2026-11-16",
+          window: "midday",
+          title: "Guest recording",
+          topic: "Guest recording topic",
+          guestRef: "sofiia@example.com",
+        }),
+      ).hold;
+      const proposals = calls.filter((c) => c.method === "POST" && c.url.includes("/calendar/v3/"));
+      assert.equal(proposals.length, 2);
+      for (const p of proposals) {
+        assert.ok(!("attendees" in p.body), "proposal stays attendee-free");
+        assert.ok(!("location" in p.body), "proposal carries no Zoom location");
+        assert.ok(!("conferenceData" in p.body), "never Google Meet");
+        assert.ok(!p.url.includes("sendUpdates"), "proposal sends no invites");
+      }
+      calls.length = 0;
+      const r = await invoke("POST", `/api/calendar-holds/${created.id}/confirm`);
+      assert.equal(r.statusCode, 200, r.body);
+      const patches = calls.filter((c) => c.method === "PATCH");
+      assert.equal(patches.length, 2);
+      for (const c of patches) {
+        assert.equal(c.body.summary, "Guest recording");
+        assert.equal(c.body.location, HOLD_ZOOM_LOCATION);
+        assert.ok(c.body.description.includes("Zoom link: https://zoom.us/j/94755324762"));
+        assert.deepEqual(c.body.attendees, [
+          { email: "sofiia@example.com" },
+          { email: "alexey@datatalks.club" },
+          { email: "alexey.s.grigoriev@gmail.com" },
+        ]);
+        assert.ok(!("conferenceData" in c.body), "never Google Meet");
+        assert.ok(c.url.includes("sendUpdates=all"), "the guest is invited (notification sent)");
+        // Invite window: slot 12:30–13:30 Berlin → invite 12:25–13:30.
+        assert.equal(c.body.start.dateTime, "2026-11-16T11:25:00.000Z");
+        assert.equal(c.body.end.dateTime, "2026-11-16T12:30:00.000Z");
+      }
+      assert.ok(!calls.some((c) => String(c.url).includes("conferenceDataVersion")));
+    } finally {
+      setCalendarHoldGoogleDepsForTests({});
+    }
+  });
+
+  it("confirm after a deferred propose creates the full guest invite (deny-listed guestRef dropped)", async () => {
+    setCalendarHoldGoogleDepsForTests({});
+    const created = parse(
+      await invoke("POST", "/api/calendar-holds", {
+        date: "2026-11-17",
+        window: "midday",
+        title: "Deferred guest",
+        topic: "Deferred guest topic",
+        guestRef: "valeriia@datatalks.club",
+      }),
+    ).hold;
+    assert.deepEqual(created.googleEventIds, {});
+    const calls: Array<{ url: string; method: string; body?: any }> = [];
+    const fakeJson = (payload: any, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => payload });
+    let seq = 0;
+    setCalendarHoldGoogleDepsForTests({
+      credential: "test-broker-token",
+      calendarIds: ["dtc-events"],
+      fetchImpl: (async (url: any, init: any) => {
+        const u = String(url);
+        const method = init?.method || "GET";
+        calls.push({ url: u, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        if (u.includes("/api/agent/token")) return fakeJson({ access_token: "google-at" });
+        if (method === "POST" && u.includes("/calendar/v3/")) {
+          seq += 1;
+          return fakeJson({ id: `gev-deferred-${seq}` });
+        }
+        throw new Error(`unexpected ${method} ${u}`);
+      }) as any,
+    });
+    try {
+      const r = await invoke("POST", `/api/calendar-holds/${created.id}/confirm`);
+      assert.equal(r.statusCode, 200, r.body);
+      const creates = calls.filter((c) => c.method === "POST" && c.url.includes("/calendar/v3/"));
+      assert.equal(creates.length, 1);
+      const body = creates[0].body;
+      assert.equal(body.summary, "Deferred guest");
+      assert.equal(body.location, HOLD_ZOOM_LOCATION);
+      assert.ok(body.description.includes("Zoom link: https://zoom.us/j/94755324762"));
+      // Deny-listed guestRef never lands on the invite; required attendees do.
+      assert.deepEqual(body.attendees, [
+        { email: "alexey@datatalks.club" },
+        { email: "alexey.s.grigoriev@gmail.com" },
+      ]);
+      assert.ok(!("conferenceData" in body), "never Google Meet");
+      assert.ok(creates[0].url.includes("sendUpdates=all"));
+      assert.equal(body.start.dateTime, "2026-11-17T11:25:00.000Z");
+      assert.equal(body.end.dateTime, "2026-11-17T12:30:00.000Z");
+    } finally {
+      setCalendarHoldGoogleDepsForTests({});
+    }
   });
 });
