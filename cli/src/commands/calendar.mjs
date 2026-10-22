@@ -29,11 +29,12 @@ Slot options
                        compatible). Workshops use 90. Accepts positive integers;
                        the usual values are 60 and 90.
   --window WINDOW      Which operational window(s) to check: evening, midday or
-                       any. Default any. Workshop SOP: --window evening.
+                       any. Default any. Workshops pass --window evening
+                       --duration 90 explicitly (16:30 start, 90 min).
 
 Operational windows (Europe/Berlin)
-  evening 16:30–18:30, preferred start 16:30. A 90-min workshop needs
-          16:30–18:00 free, not just a 60-min center.
+  evening 16:30–18:30 band. Podcast/recording (and 60-min webinar) preferred
+          start 17:00; 16:30 is workshop-only (90 min, needs 16:30–18:00 free).
   midday  11:30–14:00, start 12:00 when the guest asks.
   Availability = a contiguous free block of at least --duration inside the
   chosen window(s). Single-day range implies --all (full event listing).
@@ -46,6 +47,8 @@ Holds
   the slot and leaves Orin follow-up; it never emails the guest.
   --topic records the intended episode topic at invite/propose time and is
   required on every new hold (guests are invited to a specific theme).
+  Evening podcast/webinar holds start 17:00 (60 min); workshops pass
+  --duration 90 explicitly and start 16:30.
 `; 
 export const DEFAULT_SLOT_DURATION_MINUTES = 60;
 export const DEFAULT_SLOT_WINDOW = "any";
@@ -67,7 +70,11 @@ export function parseSlotWindow(raw) {
 }
 
 const MIDDAY_WINDOW = { start: "11:30", end: "14:00", preferStart: "12:00" };
-const EVENING_WINDOW = { start: "16:30", end: "18:30", preferStart: "16:30" };
+// Evening band 16:30–18:30: podcast/recording (60 min) starts 17:00, 16:30 is workshop-only.
+const EVENING_WINDOW = { start: "16:30", end: "18:30", preferStart: "17:00" };
+const WORKSHOP_WINDOW = { start: "16:30", end: "18:30", preferStart: "16:30" };
+// 90 = workshop only; 60 = webinar AND podcast.
+const WORKSHOP_DURATION_MINUTES = 90;
 
 function toMinutes(t) {
   const [h, m] = t.split(":").map(Number);
@@ -94,11 +101,18 @@ function eventTimes(o) {
   return null;
 }
 
+function preferStartFor(window, durationMinutes) {
+  if (window === "evening" && durationMinutes === WORKSHOP_DURATION_MINUTES) {
+    return WORKSHOP_WINDOW.preferStart;
+  }
+  return (window === "midday" ? MIDDAY_WINDOW : EVENING_WINDOW).preferStart;
+}
+
 export function isWindowFreeForDuration(window, busy, durationMinutes = DEFAULT_SLOT_DURATION_MINUTES) {
   const def = window === "midday" ? MIDDAY_WINDOW : EVENING_WINDOW;
   if (durationMinutes > toMinutes(def.end) - toMinutes(def.start)) return false;
-  const blockStart = def.preferStart;
-  const blockEnd = toTime(toMinutes(def.preferStart) + durationMinutes);
+  const blockStart = preferStartFor(window, durationMinutes);
+  const blockEnd = toTime(toMinutes(preferStartFor(window, durationMinutes)) + durationMinutes);
   if (blockStart < def.start || blockEnd > def.end) return false;
   for (const b of busy) {
     if (b.start < blockEnd && b.end > blockStart) return false;
@@ -346,8 +360,9 @@ export async function day(args, io) {
   }
 
   if (showEvening) {
+    const eveningStart = preferStartFor("evening", durationMinutes);
     io.print(
-      `  ● Evening Event Slot (16:30–18:30, start 16:30): ${isEveningAvailable ? "AVAILABLE" : "BUSY / RESERVED"}`,
+      `  ● Evening Event Slot (16:30–18:30, start ${eveningStart}): ${isEveningAvailable ? "AVAILABLE" : "BUSY / RESERVED"}`,
     );
     if (isEveningAvailable) {
       io.print("    No conflicts. Preferred operational window for workshops, live Q&As and webinars.");

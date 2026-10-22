@@ -15,13 +15,16 @@ Usage
   dataops podcast list [--season N] [--status S] [--card <card-id>] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
   dataops podcast show <episode-id>
   dataops podcast invite --guest "Full Name" --email guest@example.com --date YYYY-MM-DD --topic TOPIC
-      [--title T] [--window evening|midday] [--duration N]
+      [--title T] [--window midday|evening] [--duration N]
                                    First contact: tentative Google "(Proposal)"
                                    hold for one slot, a standalone follow-up
                                    Task (no Card), and the send-ready email
                                    from orin@ (one slot, no topic ask, docs
-                                   page link). Send it from Orin's mailbox;
-                                   nothing is mailed automatically.
+                                   page link). Midday (~12:00) by default;
+                                   evening fallback ~17:00 (workshop 16:30
+                                   never used for podcasts). Send it from
+                                   Orin's mailbox; nothing is mailed
+                                   automatically.
   dataops podcast schedule [--season N] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
                                   Publication schedule: audio time and timezone, Spotify
                                   public check, transcript review, website readiness
@@ -504,7 +507,7 @@ export function formatInviteSlotLabel(startIso) {
  */
 export async function invite(args, io) {
   const guest = optionalString(args, "guest");
-  if (!guest) throw new UsageError('Usage: dataops podcast invite --guest "Full Name" --email guest@example.com --date YYYY-MM-DD --topic TOPIC [--title T] [--window evening|midday] [--duration N].');
+  if (!guest) throw new UsageError('Usage: dataops podcast invite --guest "Full Name" --email guest@example.com --date YYYY-MM-DD --topic TOPIC [--title T] [--window midday|evening] [--duration N].');
   const email = optionalString(args, "email");
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     throw new UsageError("A guest --email address is required so the follow-up Task names its recipient.");
@@ -515,9 +518,9 @@ export async function invite(args, io) {
   }
   const topic = optionalString(args, "topic");
   if (!topic) throw new UsageError("A hold needs --topic: record the intended episode topic at invite time (the email itself never asks the guest for topics).");
-  const window = String(args.window ?? "evening").trim().toLowerCase();
+  const window = String(args.window ?? "midday").trim().toLowerCase();
   if (window !== "evening" && window !== "midday") {
-    throw new UsageError("Invalid --window for invite: must be 'evening' (default) or 'midday' (only if the guest asks).");
+    throw new UsageError("Invalid --window for invite: must be 'midday' (default) or 'evening' (fallback ~17:00; workshops never use invite).");
   }
   const rawDuration = args.duration ?? args.durationMinutes;
   const durationMinutes = rawDuration === undefined ? 60 : Number(rawDuration);

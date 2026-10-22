@@ -275,7 +275,7 @@ export function setupDayScheduleDialog(options) {
           <input name="topic" type="text" placeholder="Intended episode topic (agreed at invite time)" required maxlength="300"
             aria-label="Intended episode topic"${state.busy ? " disabled" : ""}>
           <select name="window" aria-label="Hold window">
-            <option value="evening">Evening 16:30</option>
+            <option value="evening">Evening 17:00 (90-min workshop starts 16:30)</option>
             <option value="midday">Midday 12:00</option>
           </select>
           <select name="duration" aria-label="Hold duration">

@@ -418,6 +418,9 @@ describe("podcast publication evidence flags", () => {
     // The hold carries the internal topic; the email call carries one slot label.
     assert.equal(calls[0].body.topic, "LLM evals in production");
     assert.equal(calls[0].body.guestRef, "sofiia@example.com");
+    // Invite defaults: midday window, 60 min (podcast); evening fallback is ~17:00, never workshop 16:30.
+    assert.equal(calls[0].body.window, "midday");
+    assert.equal(calls[0].body.durationMinutes, 60);
     const taskBody = calls[1].body;
     assert.match(taskBody.description, /Sofiia/);
     assert.ok(!("cardId" in taskBody), "invite creates a standalone Task, never a Card");
@@ -430,6 +433,37 @@ describe("podcast publication evidence flags", () => {
     assert.match(io.text(), /datatalksclub\.github\.io\/docs\/activities\/podcast\//);
     assert.match(io.text(), /No Card created/);
     assert.match(io.text(), /nothing was mailed automatically/);
+  });
+
+  test("invite evening path posts an evening hold (backend starts it ~17:00)", async () => {
+    const hold = {
+      id: "hold_inv2",
+      date: "2026-11-04",
+      window: "evening",
+      durationMinutes: 60,
+      title: "Podcast with Sofiia",
+      status: "tentative",
+      startIso: "2026-11-04T16:00:00.000Z",
+      endIso: "2026-11-04T17:00:00.000Z",
+      googleSync: { state: "synced" },
+    };
+    const calls = fakePortal({
+      "POST /api/calendar-holds": { hold },
+      "POST /api/tasks": ({ body }) => ({ id: "task-2", version: 1, ...body }),
+      "POST /api/podcast-first-contact/email": {
+        from: "orin@datatalks.club",
+        subject: "Sofiia at DataTalks.Club Podcast",
+        body: "Hi Sofiia,",
+        docsUrl: "https://datatalksclub.github.io/docs/activities/podcast/",
+      },
+    });
+    const code = await run(
+      ["podcast", "invite", "--guest", "Sofiia", "--email", "sofiia@example.com", "--date", "2026-11-04", "--topic", "LLM evals", "--window", "evening"],
+      captureIo(),
+    );
+    assert.equal(code, 0);
+    assert.equal(calls[0].body.window, "evening");
+    assert.equal(calls[0].body.durationMinutes, 60);
   });
 
   test("invite validates before sending anything", async () => {

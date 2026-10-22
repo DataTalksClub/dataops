@@ -175,7 +175,7 @@ describe("Calendar CLI commands", () => {
     assert.match(text, /Midday Event Slot \(11:30–14:00[^)]*\):\s+BUSY/);
     assert.match(text, /Podcast with Guest/);
     // Evening is available because there are no evening blockers
-    assert.match(text, /Evening Event Slot \(16:30–18:30[^)]*\):\s+AVAILABLE/);
+    assert.match(text, /Evening Event Slot \(16:30–18:30, start 17:00\):\s+AVAILABLE/);
     // Full schedule lists both overlay and activity items
     assert.match(text, /Team sync/);
     assert.match(text, /MLOps live demonstration/);
@@ -392,14 +392,14 @@ describe("Calendar CLI commands", () => {
     assert.match(io.text(), /evening AVAILABLE/);
   });
 
-  test("calendar day honors duration 90 evening fit rule (16:30-18:00 must be free)", async () => {
-    // 17:30-18:30 blocks the 90-min preferred block 16:30-18:00 but leaves a 60-min center free.
+  test("calendar day splits evening anchors: 60 min starts 17:00, 90 min workshop starts 16:30", async () => {
+    // 16:30-17:00 blocks the 90-min workshop block 16:30-18:00 but leaves the 60-min 17:00-18:00 block free.
     const mkFetch = () => async (url) => {
       if (String(url).includes("/overlays")) {
         return new Response(
           JSON.stringify({
             items: [
-              { provider: "owner-calendar", label: "17:30–18:30 Late call", startDate: "2026-08-13", endDate: "2026-08-13", slot: "evening" },
+              { provider: "owner-calendar", label: "16:30–17:00 Early call", startDate: "2026-08-13", endDate: "2026-08-13", slot: "evening" },
             ],
           }),
           { status: 200 },
@@ -410,12 +410,12 @@ describe("Calendar CLI commands", () => {
     const io60 = captureIo();
     globalThis.fetch = mkFetch();
     assert.equal(await run(["calendar", "day", "2026-08-13", "--duration", "60", "--window", "evening"], io60), 0);
-    assert.match(io60.text(), /Evening Event Slot \(16:30–18:30[^)]*\):\s+AVAILABLE/);
+    assert.match(io60.text(), /Evening Event Slot \(16:30–18:30, start 17:00\):\s+AVAILABLE/);
 
     const io90 = captureIo();
     globalThis.fetch = mkFetch();
     assert.equal(await run(["calendar", "day", "2026-08-13", "--duration", "90", "--window", "evening"], io90), 0);
-    assert.match(io90.text(), /Evening Event Slot \(16:30–18:30[^)]*\):\s+BUSY/);
+    assert.match(io90.text(), /Evening Event Slot \(16:30–18:30, start 16:30\):\s+BUSY/);
   });
 
   test("calendar day midday window prefers 12:00 start", async () => {
