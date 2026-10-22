@@ -1717,3 +1717,31 @@ body[data-workspace-view="tasks"] .task-prerequisite-status {
     max-height: 100dvh;
   }
 }
+
+.runtime-template-editor-help,
+.runtime-template-editor-message {
+  margin: 0.5rem 0;
+  color: var(--dk-text-muted, #667);
+  font-size: 0.92rem;
+}
+
+.runtime-template-editor-json {
+  width: 100%;
+  font-family: var(--dk-mono, ui-monospace, monospace);
+  font-size: 0.85rem;
+  min-height: 16rem;
+  white-space: pre;
+}
+
+.runtime-template-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.ops-queue-blocked-hint {
+  margin: 0.35rem 0 0.6rem;
+  color: var(--dk-text-muted, #667);
+  font-size: 0.9rem;
+}

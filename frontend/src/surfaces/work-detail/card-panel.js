@@ -1,5 +1,5 @@
 import { documentHref, opensInNewTab } from "../../core/links.js";
-import { afterText, blockedReason, blockingPrerequisites } from "../../core/task-dependencies.js";
+import { afterText, blockedReason, blockingPrerequisites, prerequisiteStatusLabel } from "../../core/task-dependencies.js";
 import { taskTitleParts } from "../../core/task-display.js";
 import { cardLinkUrlForTask, isCanonicalWorkTask } from "../../core/workspace.js";
 import { createCardActions } from "./card-actions.js";
@@ -747,13 +747,19 @@ export function createCardPanel(context) {
       body.append(note);
     }
 
-    // What it waits on: "after A and B", each name opening that task.
+    // Unlock condition: name the blocking steps and how to free this checkbox.
+    // "after A" alone was opaque when the top step looked done but dependents stayed grey.
     if (isBlocked) {
       const after = document.createElement("small");
       after.className = "card-checklist-after";
       after.id = `card-checklist-after-${task.id}`;
-      after.title = afterText(blocking);
-      after.append("after ");
+      const unlock = blockedBy || afterText(blocking);
+      after.title = unlock;
+      const kind = document.createElement("span");
+      kind.className = "card-checklist-after-kind";
+      kind.textContent = "Blocked until you complete or skip";
+      after.append(kind);
+      after.append(" ");
       blocking.forEach((entry, index) => {
         if (index > 0) after.append(index === blocking.length - 1 ? " and " : ", ");
         const entryTitle = taskTitleParts(entry.description || "", []).title;
@@ -765,6 +771,7 @@ export function createCardPanel(context) {
         link.className = "card-checklist-after-link";
         link.href = `/cards?cardId=${encodeURIComponent(cardId)}&taskId=${encodeURIComponent(entry.id)}`;
         link.textContent = entryTitle;
+        link.title = `Open to complete or skip · currently ${prerequisiteStatusLabel?.(entry.status) || entry.status || "open"}`;
         link.addEventListener("click", (event) => {
           if (event.metaKey || event.ctrlKey || event.shiftKey) return;
           event.preventDefault();

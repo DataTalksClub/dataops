@@ -2,7 +2,7 @@ import { createQueueHistory } from "./queue-history.js";
 import { isTaskDeferred, taskAttentionDate } from "../../core/task-attention.js";
 import { cardKind } from "../../core/card-kind.js";
 import { personAvatar } from "../../core/identity.js";
-import { blockingPrerequisites, prerequisiteResolved } from "../../core/task-dependencies.js";
+import { blockedReason, blockingPrerequisites, prerequisiteResolved } from "../../core/task-dependencies.js";
 import { browserRequirementParts, taskMaterials, taskTitleParts } from "../../core/task-display.js";
 import { formatDayLabel } from "../../core/dates.js";
 import { isCanonicalWorkTask } from "../../core/workspace.js";
@@ -175,10 +175,15 @@ export function createTaskQueue(context) {
     const today = taskRouteContext.date || todayIsoDate();
     // The same task reaches this list through its lane query and its card's
     // checklist; deduplicate by id so the single queue never double-counts.
-    // A task still waiting on a prerequisite is left out: nobody can do it
-    // yet. It stays on its card's checklist and joins the queue once every
-    // prerequisite is done or skipped.
-    const tasks = withoutWaitingOnPrerequisites(dedupeQueueTasks(routeTasks(taskRouteContext)));
+    // Actionable work (no open prerequisites) is the main queue. Tasks still
+    // waiting on a prerequisite stay visible under "Waiting on other steps"
+    // when Assignee is Mine/someone, so operators see their full plate and
+    // the unlock condition — not a single mysterious leftover.
+    const routedTasks = dedupeQueueTasks(routeTasks(taskRouteContext));
+    const tasks = withoutWaitingOnPrerequisites(routedTasks);
+    const blockedRoutedTasks = routedTasks.filter((task) =>
+      isOpenWorkTask(task) && !tasks.some((open) => open.id === task.id) &&
+      blockingPrerequisites(task).length > 0);
     for (const task of tasks) {
       const retained = completedThisSession.get(task.id);
       if (!retained || task.version <= retained.version) continue;
@@ -290,9 +295,15 @@ export function createTaskQueue(context) {
           ...[resourceFilter, browserFilter].filter(Boolean),
         );
 
+        const blockedForScope = blockedRoutedTasks.filter((task) =>
+          taskMatchesAssignee(task, target) &&
+          taskMatchesResource(task, activeResourceFilter) &&
+          taskMatchesBrowser(task, activeBrowserFilter) &&
+          !isTaskDeferred(task, today));
+
         if (visibleOpen.length > 0) {
           board.append(renderQueueTotalLine(visibleOpen.filter(({ task }) => task.status !== "done").length, scope,
-            visibleOpen.filter(({ task }) => task.status === "done").length));
+            visibleOpen.filter(({ task }) => task.status === "done").length, blockedForScope.length));
           board.append(renderQueueRows(visibleOpen, today, cardsById));
           const expander = renderQueueExpander(visibleOpen.length);
           if (expander) board.append(expander);
@@ -315,10 +326,19 @@ export function createTaskQueue(context) {
         } else if (scope) {
           const emptyMsg = document.createElement("p");
           emptyMsg.className = "ops-empty ops-queue-assignee-empty";
-          emptyMsg.textContent = target
-            ? `No open tasks ${scope.phrase} right now.`
-            : "Your signed-in identity is not known, so Mine cannot be shown. Choose a person or All.";
+          if (!target) {
+            emptyMsg.textContent = "Your signed-in identity is not known, so Mine cannot be shown. Choose a person or All.";
+          } else if (blockedForScope.length > 0) {
+            emptyMsg.textContent =
+              `No actionable tasks ${scope.phrase} right now — ${blockedForScope.length} still wait on other steps (see below).`;
+          } else {
+            emptyMsg.textContent = `No open tasks ${scope.phrase} right now.`;
+          }
           board.append(emptyMsg);
+        }
+
+        if (blockedForScope.length > 0) {
+          board.append(renderBlockedPrerequisiteSection(blockedForScope, today, cardsById));
         }
 
       }
@@ -414,14 +434,17 @@ export function createTaskQueue(context) {
 
   // How much of the scoped work is on screen. The scope rides in the same
   // sentence as the count, so "25 of 40" always says whose 40.
-  function renderQueueTotalLine(count, scope, completed = 0) {
+  function renderQueueTotalLine(count, scope, completed = 0, blockedCount = 0) {
     const total = document.createElement("p");
     total.className = "ops-queue-total";
     const whose = scope ? ` ${scope.phrase}` : "";
     total.textContent =
       count > QUEUE_VISIBLE_LIMIT
-        ? `Showing ${QUEUE_VISIBLE_LIMIT} of ${count} open${whose}, most urgent first`
-        : `${count} open${whose}, most urgent first`;
+        ? `Showing ${QUEUE_VISIBLE_LIMIT} of ${count} actionable${whose}, most urgent first`
+        : `${count} actionable${whose}, most urgent first`;
+    if (blockedCount) {
+      total.textContent += ` · ${blockedCount} waiting on other steps`;
+    }
     if (completed) total.textContent += ` · ${completed} completed this session`;
     const copy = total.textContent;
     total.textContent = "";

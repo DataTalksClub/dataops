@@ -1194,6 +1194,11 @@
 .card-checklist-item.is-linked {
   background: var(--dk-bg-hover);
 }
+.card-checklist-after-kind {
+  font-weight: 600;
+  color: var(--dk-text-muted, #667);
+}
+
 .card-checklist-after {
   display: block;
   min-width: 0;
