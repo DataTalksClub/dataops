@@ -103,7 +103,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     const retainedTask = await taskResponse.json();
     await page.reload();
     await expect(queueSummary).toHaveCount(0);
-    await expect(page.locator('.ops-queue-total')).toContainText('1 open');
+    await expect(page.locator('.ops-queue-total')).toContainText('1 actionable');
     await setFaults(context.request, [{ method: 'GET', path: '/api/cards', status: 503, remaining: 20 }]);
     await page.reload();
     await expect(queueSummary).toHaveAttribute('data-summary-state', 'partial');
@@ -151,7 +151,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     expect(healthyResponse.status()).toBe(200);
     await expect(queueSummary).toHaveCount(0);
     await expect(page.locator('.ops-queue-row strong')).toHaveText('Retained work during a source outage');
-    await expect(page.locator('.ops-queue-total')).toContainText('1 open');
+    await expect(page.locator('.ops-queue-total')).toContainText('1 actionable');
     await shot(page, 'queue-recovered-desktop-1440x900');
 
     await clearFaults(context.request);
@@ -162,7 +162,7 @@ test.describe('issue 204 owning-surface feedback', () => {
     // Reload after clearing faults to prove the fresh mobile work presentation.
     await page.reload();
     await expect(queueSummary).toHaveCount(0);
-    await expect(page.locator('.ops-queue-total')).toContainText('1 open');
+    await expect(page.locator('.ops-queue-total')).toContainText('1 actionable');
     await expectNoHorizontalOverflow(page);
     await shot(page, 'queue-ready-mobile-390x844');
     await expectNoHorizontalOverflow(page);

@@ -65,7 +65,7 @@ test('opens on Mine, switches to a teammate and All, and round-trips through the
   await expect(page).toHaveURL(`${server.baseURL}/tasks?assignee=${VALERIIA_ID}`);
   await expect(row(page, THEIRS)).toBeVisible();
   await expect(row(page, MINE)).toHaveCount(0);
-  await expect(page.locator('.ops-queue-total')).toContainText('1 open assigned to Valeriia');
+  await expect(page.locator('.ops-queue-total')).toContainText('1 actionable assigned to Valeriia');
 
   await page.getByRole('combobox', { name: 'Filter queue by assignee' }).selectOption('all');
   await expect(page).toHaveURL(`${server.baseURL}/tasks?assignee=all`);

@@ -29,17 +29,17 @@ test('completion stays struck through, supports reopening, and survives reload i
   const firstIndex = await row.evaluate((node) => [...node.parentNode.children].indexOf(node));
   await row.locator('.ops-queue-check').click();
   await expect(row).toHaveAttribute('data-completed', 'true');
-  await expect(page.locator('.ops-queue-total')).toContainText(/0 open.*1 completed this session/);
+  await expect(page.locator('.ops-queue-total')).toContainText(/0 actionable.*1 completed this session/);
   await expect(row.getByRole('checkbox')).toBeChecked();
   expect(await row.evaluate((node) => [...node.parentNode.children].indexOf(node))).toBe(firstIndex);
   await expect(row.locator('.ops-queue-title-row > strong')).toHaveCSS('text-decoration-line', /line-through/);
   await row.locator('.ops-queue-check').click();
   await expect(row).toHaveAttribute('data-completed', 'false');
-  await expect(page.locator('.ops-queue-total')).toContainText('1 open');
+  await expect(page.locator('.ops-queue-total')).toContainText('1 actionable');
   await expect(page.locator('.ops-queue-total')).not.toContainText('completed this session');
   await row.locator('.ops-queue-check').click();
   await expect(row).toHaveAttribute('data-completed', 'true');
-  await expect(page.locator('.ops-queue-total')).toContainText(/0 open.*1 completed this session/);
+  await expect(page.locator('.ops-queue-total')).toContainText(/0 actionable.*1 completed this session/);
   const shots = process.env.QUEUE_COMPLETION_SHOT_DIR;
   if (shots) {
     fs.mkdirSync(shots, { recursive: true });

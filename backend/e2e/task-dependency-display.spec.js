@@ -69,7 +69,7 @@ test('card checklist: prerequisites first, after lines, no red on a waiting task
   await expect(rows.locator('.card-checklist-label')).toHaveText([FIRST, SECOND, THIRD, PLAIN]);
   const second = rows.nth(1);
   await expect(second).toHaveClass(/is-blocked/);
-  await expect(second.locator('.card-checklist-after')).toHaveText(`after ${FIRST}`);
+  await expect(second.locator('.card-checklist-after')).toHaveText(`Blocked until you complete or skip ${FIRST}`);
   await expect(second.locator('.card-checklist-day')).not.toHaveClass(/is-overdue/);
   await expect(rows.nth(0).locator('.card-checklist-day')).toHaveClass(/is-overdue/);
   // The title keeps its width: one line, not one word per line.
@@ -118,7 +118,7 @@ test('queue: a waiting task stays out until its prerequisite is done', async ({ 
   await expect(page.locator('.ops-queue-note', { hasText: /^after / })).toHaveCount(0);
   const total = page.locator('.ops-queue-total');
   const before = await openRows.count();
-  await expect(total).toContainText(`${before} open`);
+  await expect(total).toContainText(`${before} actionable`);
 
   // Completed elsewhere (another tab, the CLI): the next background refresh
   // brings the newly unblocked task in, still overdue, and the count follows.
@@ -128,7 +128,7 @@ test('queue: a waiting task stays out until its prerequisite is done', async ({ 
   await expect(row(SECOND)).toBeVisible({ timeout: 20000 });
   await expect(row(SECOND)).toHaveAttribute('data-urgency', 'overdue');
   await expect(row(THIRD)).toHaveCount(0);
-  await expect(total).toContainText(`${before} open`);
+  await expect(total).toContainText(`${before} actionable`);
 
   // Ticked here: its own dependent joins the queue at once.
   await row(SECOND).locator('.ops-queue-check').click();

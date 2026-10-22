@@ -41,7 +41,7 @@ async function seedCard(request, label) {
 
 async function openCount(page) {
   const text = await page.locator('.ops-queue-total').textContent();
-  return Number(/(\d+) open/.exec(text)[1]);
+  return Number(/(\d+)\s+actionable/.exec(text)[1]);
 }
 
 async function scrollPosition(page) {

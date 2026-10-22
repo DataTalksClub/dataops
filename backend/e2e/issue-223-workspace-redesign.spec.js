@@ -58,7 +58,7 @@ test('the queue caps its list, expands in place, and returns focus to the exact 
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await queue(page);
   // The queue states how much work exists once, then shows a capped list.
-  await expect(page.locator('.ops-queue-total')).toContainText('8 open');
+  await expect(page.locator('.ops-queue-total')).toContainText('8 actionable');
   await expect(page.locator('.ops-queue-row')).toHaveCount(8);
   await expect(page.locator('.surface-summary[data-summary-state="ready"]')).toHaveCount(0);
   const firstIds = await page.locator('.ops-queue-row').evaluateAll((rows) => rows.map((row) => row.dataset.taskId));
