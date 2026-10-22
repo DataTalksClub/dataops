@@ -1645,6 +1645,23 @@ body[data-workspace-view="tasks"] .task-prerequisite-status {
   border-radius: 0;
   background: transparent;
 }
+#task-panel .task-proof-hint {
+  margin: var(--dk-space-1) 0 0;
+  font-size: var(--dk-text-xs);
+  color: var(--dk-text-muted);
+}
+#task-panel .task-optional-note {
+  margin: var(--dk-space-2) 0 0;
+  font-size: var(--dk-text-sm);
+  color: var(--dk-text-muted);
+}
+.work-dialog-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dk-space-2);
+  align-items: center;
+  margin-top: var(--dk-space-2);
+}
 #task-panel .task-file-drop-zone {
   gap: var(--dk-space-2);
   padding: var(--dk-space-3);

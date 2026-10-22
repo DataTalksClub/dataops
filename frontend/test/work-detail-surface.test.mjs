@@ -2494,6 +2494,149 @@ describe("Work Detail surface boundary", () => {
     );
   });
 
+  test("collects external-status proof in the Task panel and sends it with Done", async () => {
+    const task = {
+      id: "sponsored-task",
+      version: 1,
+      taskHistory: [],
+      description: 'Fill up "Sponsored" block',
+      date: "2026-08-12",
+      status: "todo",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+      proofRequirement: {
+        type: "external-status",
+        required: true,
+        label: "Sponsored block filled or issue confirmed unsponsored",
+      },
+      validation: {
+        skipClosure: { allowedStatuses: ["not sponsored this week"] },
+      },
+    };
+    const writes = [];
+    const harness = createHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === "/api/tasks/sponsored-task" && !requestOptions.method) {
+          return task;
+        }
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        if (url === "/api/tasks/sponsored-task" && requestOptions.method === "PUT") {
+          writes.push(jsonBody({ options: requestOptions }));
+          return { ...task, ...writes.at(-1), status: "done", version: 2 };
+        }
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    const field = harness.taskPanelBody.querySelector('[data-panel-field="proof-externalStatus"]');
+    assert.ok(field, "the external-status proof field renders beside Mark done");
+    const complete = findByText(harness.taskPanelBody, "Mark done", "button");
+    assert.equal(complete.disabled, true);
+    assert.equal(
+      complete.title,
+      "Set external status: Sponsored block filled or issue confirmed unsponsored (external status)",
+    );
+    field.value = "Sponsored block filled";
+    await field.dispatch("input");
+    assert.equal(
+      findByText(harness.taskPanelBody, "Mark done", "button").disabled,
+      false,
+    );
+    await findByText(harness.taskPanelBody, "Mark done", "button").click();
+    assert.deepEqual(writes, [{
+      status: "done",
+      externalStatus: "Sponsored block filled",
+      expectedVersion: 1,
+    }]);
+  });
+
+  test("closes an optional step with no proof fields and no forced comment", async () => {
+    const task = {
+      id: "book-task",
+      version: 1,
+      taskHistory: [],
+      description: 'Fill up "Book of the week" block',
+      date: "2026-08-12",
+      status: "todo",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+      proofRequirement: {
+        type: "comment",
+        required: false,
+        label: 'Fill up "Book of the week" block confirmed',
+      },
+      validation: {
+        optional: true,
+        requiredProof: "None",
+        skipClosure: { allowedStatuses: ["no book this week"] },
+      },
+    };
+    const writes = [];
+    const harness = createHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === "/api/tasks/book-task" && !requestOptions.method) {
+          return task;
+        }
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        if (url === "/api/tasks/book-task" && requestOptions.method === "PUT") {
+          writes.push(jsonBody({ options: requestOptions }));
+          return { ...task, status: "done", version: 2 };
+        }
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    assert.equal(harness.taskPanelBody.querySelector('[data-panel-field="proof-comment"]'), null);
+    assert.equal(harness.taskPanelBody.querySelector('[data-panel-field="proof-externalStatus"]'), null);
+    assert.match(harness.taskPanelBody.textContent, /Optional step/);
+    const complete = findByText(harness.taskPanelBody, "Mark done", "button");
+    assert.equal(complete.disabled, false);
+    await complete.click();
+    assert.deepEqual(writes, [{ status: "done", expectedVersion: 1 }]);
+  });
+
+  test("offers a conditionally required step with its reason and no N/A shortcut", async () => {
+    const task = {
+      id: "podcast-task",
+      version: 1,
+      taskHistory: [],
+      description: 'Fill up "Podcast" block',
+      date: "2026-08-12",
+      status: "todo",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+      proofRequirement: {
+        type: "comment",
+        required: false,
+        label: 'Fill up "Podcast" block confirmed',
+      },
+      validation: {
+        optional: false,
+        requiredReason: "Podcast released last week",
+        requiredProof: "None",
+      },
+    };
+    const harness = createHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === "/api/tasks/podcast-task" && !requestOptions.method) {
+          return task;
+        }
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        return {};
+      },
+    });
+
+    await hydrateTask(harness, task);
+    assert.match(harness.taskPanelBody.textContent, /Required step — Podcast released last week/);
+    assert.doesNotMatch(harness.taskPanelBody.textContent, /Optional step/);
+    assert.equal(findByText(harness.taskPanelBody, "Mark done", "button").disabled, false);
+  });
+
   test("names each prerequisite with its status and disables completion until all are done", async () => {
     const task = {
       id: "dependent-task",
@@ -2533,7 +2676,7 @@ describe("Work Detail surface boundary", () => {
     const why = harness.taskPanelBody.querySelector('[data-blocked="true"]');
     // The unlock condition is named beside the button, not counted: the one
     // open prerequisite opens, resolved ones stay out.
-    assert.match(why.textContent, /Waiting on /);
+    assert.match(why.textContent, /Blocked: complete or skip /);
     assert.match(why.textContent, /Review transcript/);
     assert.doesNotMatch(why.textContent, /Verify Spotify episode/);
     const openBlocker = why.querySelector("button.task-dependency-name");
@@ -4272,6 +4415,57 @@ describe("Work Detail surface boundary", () => {
       const close = harness.navigations.at(-1);
       assert.equal(close.path, "/tasks");
       assert.equal(close.params.toString(), "assignee=all");
+    } finally {
+      dialogs.restore();
+    }
+  });
+
+  test("offers Template N/A reasons as one-click Skip picks", async () => {
+    const task = {
+      id: "task-book-skip",
+      version: 1,
+      taskHistory: [],
+      description: 'Fill up "Book of the week" block',
+      status: "todo",
+      validation: {
+        optional: true,
+        skipClosure: { allowedStatuses: ["no book this week"] },
+      },
+    };
+    const skipped = {
+      ...task,
+      version: 2,
+      status: "skipped",
+      skipReason: "no book this week",
+      skippedAt: "2026-08-12T10:00:00.000Z",
+      skippedBy: "alexey",
+    };
+    const harness = createHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url.endsWith("/actions/skip")) return skipped;
+        if (url === `/api/tasks/${task.id}`) return task;
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        return requestOptions.method ? {} : {};
+      },
+    });
+    const dialogs = withDialogs(harness);
+    try {
+      await hydrateTask(harness, task);
+      harness.setRoute({ path: "/tasks", params: new URLSearchParams(`assignee=all&taskId=${task.id}`), invalid: false });
+      await findByText(harness.taskPanelBody, "Skip…", "button").click();
+      const dialog = dialogs.dialog("skip-task");
+      assert.ok(dialog?.open, "the reason dialog opens at once");
+      const pick = findByText(dialog, "no book this week", "button");
+      assert.ok(pick, "the Template N/A reason is one click away");
+      await pick.click();
+      const confirm = findByText(dialog, "Skip task", "button");
+      assert.equal(confirm.disabled, false);
+      await dialog.querySelector("form").dispatch("submit");
+      await nextTicks();
+      const posted = harness.requests.find(({ url }) => url.endsWith("/actions/skip"));
+      assert.deepEqual(jsonBody(posted), { reason: "no book this week", expectedVersion: 1 });
+      assert.equal(dialog.open, false);
     } finally {
       dialogs.restore();
     }

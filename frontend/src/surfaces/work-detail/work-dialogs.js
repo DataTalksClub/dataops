@@ -41,7 +41,7 @@ function mount(dialog, trigger) {
  * memory, so the dialog opens at once. A failed skip keeps the dialog open
  * with the server's message; a successful one closes it, then `onSkipped()`.
  */
-export function openSkipTaskDialog({ taskTitle, trigger, onSkip, onSkipped }) {
+export function openSkipTaskDialog({ taskTitle, trigger, onSkip, onSkipped, suggestions = [] }) {
   const { dialog, body, foot } = buildDialog("Skip task", "480px");
   dialog.dataset.workDialog = "skip-task";
   const form = element("form", "work-dialog-form");
@@ -67,7 +67,29 @@ export function openSkipTaskDialog({ taskTitle, trigger, onSkip, onSkipped }) {
   const error = element("p", "dk-field-error work-dialog-error");
   error.setAttribute("role", "alert");
   error.hidden = true;
-  form.append(lead, label, error);
+  form.append(lead, label);
+  // Template-named N/A reasons (a block fill that is simply absent this
+  // week) skip in one click instead of asking for free text.
+  const picks = Array.isArray(suggestions) ? suggestions.filter((entry) => typeof entry === "string" && entry.trim()) : [];
+  if (picks.length > 0) {
+    const quick = element("div", "work-dialog-suggestions");
+    const quickLabel = element("span", "dk-label", "Common reasons");
+    quick.append(quickLabel);
+    for (const pick of picks) {
+      const choice = element("button", "dk-button dk-button--secondary dk-button--sm", pick);
+      choice.type = "button";
+      choice.addEventListener("click", () => {
+        reason.value = pick;
+        submit.disabled = false;
+        error.hidden = true;
+        reason.removeAttribute("aria-invalid");
+        reason.focus();
+      });
+      quick.append(choice);
+    }
+    form.append(quick);
+  }
+  form.append(error);
   body.append(form);
 
   const cancel = element("button", "dk-button dk-button--secondary", "Cancel");

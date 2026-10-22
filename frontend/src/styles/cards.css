@@ -1207,6 +1207,17 @@
   line-height: 18px;
   overflow-wrap: anywhere;
 }
+/* Required-vs-optional markers share the quiet line style: optionality is
+   expected template shape, not a problem. */
+.card-checklist-optional,
+.card-checklist-required {
+  display: block;
+  min-width: 0;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
 .card-checklist-after-link {
   color: inherit;
   font: inherit;

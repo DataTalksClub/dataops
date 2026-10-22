@@ -5,7 +5,7 @@ import { personAvatar } from "../../core/identity.js";
 import { blockedReason, blockingPrerequisites, prerequisiteResolved } from "../../core/task-dependencies.js";
 import { browserRequirementParts, taskMaterials, taskTitleParts } from "../../core/task-display.js";
 import { formatDayLabel } from "../../core/dates.js";
-import { isCanonicalWorkTask } from "../../core/workspace.js";
+import { describeMissingProof, isCanonicalWorkTask } from "../../core/workspace.js";
 import { createQueueAssigneeFilter } from "./queue-assignee.js";
 import { createCardHovercards } from "./card-hovercard.js";
 import { renderQueueMaterials } from "./queue-materials.js";
@@ -623,12 +623,7 @@ export function createTaskQueue(context) {
     }
     const proof = taskProofState(task);
     if (proof.ok) return reasons;
-    for (const missing of proof.missing) {
-      if (missing === "required file") reasons.push("Upload required file");
-      else if (missing === "approved artifact")
-        reasons.push("Approve an attached artifact");
-      else reasons.push(`Fill in ${missing}`);
-    }
+    for (const missing of proof.missing) reasons.push(describeMissingProof(missing));
     return reasons;
   }
 

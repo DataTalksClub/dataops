@@ -6,6 +6,7 @@ import {
   berlinIsoDate,
   compareIsoDate,
   deriveScopedWorkState,
+  describeMissingProof,
   formatCardMonthLabel,
   formatShortDate,
   groupCardItemsByStage,
@@ -14,6 +15,7 @@ import {
   isCanonicalWorkTask,
   isFollowUpDueTask,
   isOpenWorkTask,
+  isOptionalWorkTask,
   isParkedWorkCard,
   isTaskDueToday,
   isTaskOverdue,
@@ -21,6 +23,8 @@ import {
   isoDayDistance,
   parseIsoDateValue,
   partitionCardsByArchive,
+  requiredReasonOf,
+  skipClosureStatuses,
   summarizeCardProgress,
   taskProofState,
   tasksFromWorkPayload,
@@ -291,6 +295,76 @@ describe("frontend work model", () => {
       label: "Proof ready",
       missing: [],
     });
+  });
+
+  test("reports url, comment, external-status, and file proof requirements", () => {
+    assert.deepEqual(
+      taskProofState({
+        proofRequirement: { required: true, type: "external-status", label: "Sponsored block filled" },
+      }),
+      {
+        ok: false,
+        label: "Missing proof: Sponsored block filled (external status)",
+        missing: ["Sponsored block filled (external status)"],
+      },
+    );
+    assert.deepEqual(
+      taskProofState({
+        proofRequirement: { required: true, type: "comment" },
+      }),
+      { ok: false, label: "Missing proof: comment", missing: ["comment"] },
+    );
+    assert.deepEqual(
+      taskProofState({
+        proofRequirement: { required: true, type: "url", label: "Mailchimp newsletter" },
+      }),
+      {
+        ok: false,
+        label: "Missing proof: Mailchimp newsletter (link)",
+        missing: ["Mailchimp newsletter (link)"],
+      },
+    );
+    assert.ok(
+      taskProofState({
+        proofRequirement: { required: true, type: "external-status" },
+        externalStatus: "Sponsored block filled",
+      }).ok,
+    );
+    assert.ok(
+      taskProofState({
+        proofRequirement: { required: true, type: "comment" },
+        comment: "Filled the block",
+      }).ok,
+    );
+    // A non-required proof never blocks completion.
+    assert.deepEqual(
+      taskProofState({ proofRequirement: { required: false, type: "comment" } }),
+      { ok: true, label: "No proof required", missing: [] },
+    );
+  });
+
+  test("names missing proof and optional steps for the UI", () => {
+    assert.equal(
+      describeMissingProof("Sponsored block filled (external status)"),
+      "Set external status: Sponsored block filled (external status)",
+    );
+    assert.equal(describeMissingProof("comment"), "Add comment: comment");
+    assert.equal(describeMissingProof("required file"), "Upload required file");
+    assert.equal(describeMissingProof("approved artifact"), "Approve an attached artifact");
+    assert.equal(describeMissingProof("Public URL"), "Fill in Public URL");
+    assert.equal(isOptionalWorkTask({ validation: { optional: true } }), true);
+    assert.equal(isOptionalWorkTask({ validation: { optional: false } }), false);
+    assert.equal(isOptionalWorkTask({}), false);
+    assert.deepEqual(
+      skipClosureStatuses({ validation: { skipClosure: { allowedStatuses: ["no book this week", "  ", 7] } } }),
+      ["no book this week"],
+    );
+    assert.deepEqual(skipClosureStatuses({}), []);
+    assert.equal(
+      requiredReasonOf({ validation: { requiredReason: "Podcast released last week" } }),
+      "Podcast released last week",
+    );
+    assert.equal(requiredReasonOf({}), "");
   });
 
   test("never names a task still waiting on a prerequisite as next", () => {

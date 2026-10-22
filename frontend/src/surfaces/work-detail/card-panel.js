@@ -1,7 +1,8 @@
 import { documentHref, opensInNewTab } from "../../core/links.js";
 import { afterText, blockedReason, blockingPrerequisites, prerequisiteStatusLabel } from "../../core/task-dependencies.js";
 import { taskTitleParts } from "../../core/task-display.js";
-import { cardLinkUrlForTask, isCanonicalWorkTask } from "../../core/workspace.js";
+import { cardLinkUrlForTask, describeMissingProof, isCanonicalWorkTask, taskProofState } from "../../core/workspace.js";
+import { appendChecklistOptionality } from "./task-completion.js";
 import { createCardActions } from "./card-actions.js";
 import { renderCardTemplateUpdate } from "./card-template-review.js";
 import {
@@ -662,6 +663,14 @@ export function createCardPanel(context) {
       !isDone &&
       taskRequiresApprovedArtifact(task) &&
       !hasApprovedArtifactEvidence(task, cardArtifacts);
+    // Proof the task panel collects (url/comment/external-status/file): the
+    // checkbox stays off until it exists, and the row names it, so Done from
+    // here is never a dead click that fails server-side.
+    const missingProof = !isDone
+      ? taskProofState(task, activeCard).missing.filter(
+        (entry) => entry !== task.requiredLinkName && entry !== "required file" && entry !== "approved artifact",
+      )
+      : [];
 
     const siblingTasks = detail.activeCardPanelData?.tasks || [];
     const blockedBy = blockedReason(task, siblingTasks);
@@ -678,7 +687,8 @@ export function createCardPanel(context) {
       !isBlocked &&
       missingLink &&
       !missingFile &&
-      !missingArtifact;
+      !missingArtifact &&
+      missingProof.length === 0;
 
     // A skipped Task is resolved without being done: a dash mark instead of
     // a checked box, a muted title that is not struck through, and its reason
@@ -704,13 +714,14 @@ export function createCardPanel(context) {
       checkbox.disabled =
         mutationBusy ||
         isWaiting || Boolean(blockedBy) ||
-        missingLink || missingFile || missingArtifact;
+        missingLink || missingFile || missingArtifact || missingProof.length > 0;
       if (checkbox.disabled && !isDone) {
         const reasons = [];
         if (blockedBy) reasons.push(blockedBy);
         if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
         if (missingFile) reasons.push("Upload required file");
         if (missingArtifact) reasons.push("Approve an attached artifact");
+        for (const entry of missingProof) reasons.push(describeMissingProof(entry));
         if (isWaiting) reasons.push("Waiting task");
         checkbox.title = reasons.join("; ");
       }
@@ -783,6 +794,9 @@ export function createCardPanel(context) {
       if (control.tagName === "INPUT") control.setAttribute("aria-describedby", after.id);
     }
 
+    // Required-vs-optional from the Template config, in the row's voice.
+    if (!isDone && !isWaiting) appendChecklistOptionality(body, task);
+
     if (canInlineCompleteWithLink) {
       const promptKey = `${cardId}\u0000${task.id}`;
       const isEditingLink = openTaskLinkPrompts.has(promptKey);
@@ -848,7 +862,7 @@ export function createCardPanel(context) {
         });
         body.append(trigger);
       }
-    } else if (!isDone && !isBlocked && !isWaiting && (missingFile || missingArtifact)) {
+    } else if (!isDone && !isBlocked && !isWaiting && (missingFile || missingArtifact || missingProof.length > 0)) {
       const flags = document.createElement("div");
       flags.className = "card-checklist-flags";
       const missing = [];
@@ -857,6 +871,12 @@ export function createCardPanel(context) {
       }
       if (missingFile) missing.push("Needs file");
       if (missingArtifact) missing.push("Needs artifact");
+      for (const entry of missingProof) {
+        if (entry === "external status" || entry.endsWith("(external status)")) missing.push("Needs external status");
+        else if (entry === "comment" || entry.endsWith("(comment)")) missing.push("Needs comment");
+        else if (entry === "proof link" || entry.endsWith("(link)")) missing.push("Needs proof link");
+        else missing.push(`Needs ${entry}`);
+      }
       if (missing.length > 0) {
         const badge = document.createElement("span");
         badge.className = "card-checklist-evidence workflow-card-flag";

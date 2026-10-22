@@ -1,9 +1,11 @@
 import { documentHref, opensInNewTab } from "../../core/links.js";
 import { cardLinkUrlForTask, isCanonicalWorkTask, isTaskOverdue } from "../../core/workspace.js";
+import { skipClosureStatuses } from "../../core/task-proof.js";
+import { renderTaskCompletion } from "./task-completion.js";
 import { displayCardDescription } from "./card-summary.js";
 import { renderTaskContext, renderTaskInstructions, taskDisplayParts } from "./task-overview.js";
 import { openSkipTaskDialog } from "./work-dialogs.js";
-import { blockedReason, blockingPrerequisites, prerequisiteStatusLabel } from "../../core/task-dependencies.js";
+import { blockingPrerequisites } from "../../core/task-dependencies.js";
 import { renderAddPrerequisite, renderTaskDependencies } from "./task-prerequisites.js";
 import { createTaskRequires } from "./task-requires.js";
 import { createTaskBrowser } from "./task-browser.js";
@@ -544,6 +546,7 @@ export function createTaskPanel(context) {
         openSkipTaskDialog({
           taskTitle: workTaskTitle(task),
           trigger: skip,
+          suggestions: skipClosureStatuses(task),
           onSkip: (reason) => skipTask(task.id, reason, task.version),
           // A skipped Task is finished: back to where it was opened from.
           onSkipped: () => closeTaskPanel(),
@@ -609,89 +612,27 @@ export function createTaskPanel(context) {
       followDetails.append(followRow);
       actions.append(followDetails, skipButton());
     } else if (status === "todo") {
-      const completionProofState = () => {
-        const missingLink = task.requiredLinkName && !cardLinkUrlForTask(parentCard, task);
-        const missingFile =
-          task.requiresFile && !detail.activeTaskPanelTask?._hasFiles;
-        const missingArtifact =
-          taskRequiresApprovedArtifact(task) &&
-          !hasApprovedArtifactEvidence(task, detail.activeTaskPanelArtifacts);
-        return {
-          missingLink,
-          missingFile,
-          missingArtifact,
-          blockedBy: blockedReason(task),
-          canComplete:
-            !blockedReason(task) && !missingLink && !missingFile && !missingArtifact,
-        };
-      };
-      // Done finishes the Task: back to where it was opened from.
-      const complete = createTaskActionButton("Mark done", async () => {
-        if (await updateTaskStatus(task.id, "done", task.version)) await closeTaskPanel();
+      const { syncCompletion } = renderTaskCompletion({
+        actions,
+        busy: panelMutationBusy,
+        closeTaskPanel,
+        createTaskActionButton,
+        evidence: {
+          hasFiles: () => Boolean(detail.activeTaskPanelTask?._hasFiles),
+          artifacts: () => detail.activeTaskPanelArtifacts,
+        },
+        hasApprovedArtifactEvidence,
+        markTaskWaiting,
+        openTaskPanel,
+        parentCard,
+        renderSkipButton: skipButton,
+        siblingTasks: cardTasksAtHand,
+        stateSection,
+        task,
+        taskRequiresApprovedArtifact,
+        updateTaskStatus,
       });
-      // A blocked task's Mark done is not the next action, so it is not primary.
-      if (blockingPrerequisites(task).length === 0) complete.classList.add("is-primary");
-
-      syncCompletionForFiles = () => {
-        const {
-          missingLink,
-          missingFile,
-          missingArtifact,
-          blockedBy,
-          canComplete,
-        } = completionProofState();
-        complete.disabled = panelMutationBusy || !canComplete;
-        if (canComplete) {
-          complete.title = "";
-          return;
-        }
-        const reasons = [];
-        if (blockedBy) reasons.push(blockedBy);
-        if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
-        if (missingFile) reasons.push("Upload required file");
-        if (missingArtifact) reasons.push("Approve an attached artifact");
-        complete.title = reasons.join("; ");
-      };
-      syncCompletionForFiles();
-      // Why Mark done is off, named beside it instead of only in a tooltip:
-      // each blocking prerequisite opens, so the unlock condition is an
-      // action, not a riddle. The full Waiting-on section above stays the
-      // reference; this line is the short path from the button.
-      const blockers = blockingPrerequisites(task);
-      if (blockers.length > 0) {
-        const why = document.createElement("span");
-        why.className = "task-actions-why";
-        why.dataset.blocked = "true";
-        why.append(document.createTextNode("Waiting on "));
-        blockers.forEach((entry, index) => {
-          if (index > 0) {
-            why.append(document.createTextNode(
-              index === blockers.length - 1 ? " and " : ", ",
-            ));
-          }
-          if (entry.status === "missing") {
-            const missing = document.createElement("span");
-            missing.textContent = entry.description;
-            missing.title = "This prerequisite is missing from the card — remove the dependency to unblock";
-            why.append(missing);
-          } else {
-            const open = document.createElement("button");
-            open.type = "button";
-            open.className = "task-dependency-name";
-            open.textContent = entry.description;
-            open.title = `Open “${entry.description}” (${prerequisiteStatusLabel(entry.status)})`;
-            open.addEventListener("click", () => openTaskPanel(entry.id));
-            why.append(open);
-          }
-        });
-        actions.append(why);
-      }
-      actions.append(complete);
-
-      const markWaiting = createTaskActionButton("Mark waiting", () =>
-        markTaskWaiting(task.id),
-      );
-      actions.append(markWaiting, skipButton());
+      syncCompletionForFiles = syncCompletion;
     }
     for (const button of actions.querySelectorAll("button")) {
       if (panelMutationBusy) button.disabled = true;

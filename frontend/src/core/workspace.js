@@ -2,6 +2,23 @@ import { cardParamOf, concreteRoutePath, matchRoutePath, MODAL_TASK_PARAM, route
 import { formatDayLabel } from "./dates.js";
 import { orderAfterPrerequisites, taskIsBlocked } from "./task-dependencies.js";
 import { isTaskActionable, isTaskDeferred, hasTaskFollowUp } from "./task-attention.js";
+import { cardLinkUrlForTask, hasTaskFileEvidence, taskProofState } from "./task-proof.js";
+
+// Proof helpers live in `./task-proof.js`; they are re-exported here so
+// existing import sites keep working.
+export {
+  cardLinkUrlForTask,
+  describeMissingProof,
+  hasApprovedArtifactEvidence,
+  hasTaskFileEvidence,
+  isOptionalWorkTask,
+  proofRequirementLabel,
+  requiredReasonOf,
+  skipClosureStatuses,
+  taskOptionality,
+  taskProofState,
+  taskRequiresApprovedArtifact,
+} from "./task-proof.js";
 
 export const WORKSPACE_PATH_BY_VIEW = Object.freeze({
   "operating-model": "/operating-model",
@@ -837,54 +854,6 @@ export function cardsHeaderViewModel({
     archiveRoute: archiveVisible ? "/cards" : "/cards/archive",
     createVisible: !archiveVisible,
   };
-}
-
-export function taskRequiresApprovedArtifact(task) {
-  const proof = task?.proofRequirement;
-  return Boolean(
-    proof && proof.required !== false && proof.type === "artifact",
-  );
-}
-
-export function hasApprovedArtifactEvidence(task, artifacts) {
-  const direct = (artifacts || []).some(
-    (artifact) => artifact && artifact.status === "approved",
-  );
-  if (direct) return true;
-  const refs = Array.isArray(task?.artifactRefs) ? task.artifactRefs : [];
-  return refs.some((reference) => reference && reference.status === "approved");
-}
-
-export function hasTaskFileEvidence(task) {
-  if (!task || typeof task !== "object") return false;
-  if (task._hasFiles) return true;
-  if (Number(task.fileCount || 0) > 0) return true;
-  if (Array.isArray(task.files) && task.files.length > 0) return true;
-  return Array.isArray(task.fileRefs) && task.fileRefs.length > 0;
-}
-
-export function cardLinkUrlForTask(card, task) {
-  const required = String(task?.requiredLinkName || "").trim();
-  if (!required) return String(task?.link || "").trim();
-  const direct = String(task?.link || "").trim();
-  if (direct || !Array.isArray(card?.cardLinks)) return direct;
-  const needle = required.toLowerCase();
-  const match = card.cardLinks.find(
-    (entry) => entry && typeof entry === "object" && String(entry.name || entry.label || "").trim().toLowerCase() === needle,
-  );
-  return String(match?.url || "").trim();
-}
-
-export function taskProofState(task, card = null) {
-  const missing = [];
-  if (task?.requiredLinkName && !cardLinkUrlForTask(card, task)) missing.push(task.requiredLinkName);
-  if (task?.requiresFile && !hasTaskFileEvidence(task)) missing.push("required file");
-  if (taskRequiresApprovedArtifact(task) && !hasApprovedArtifactEvidence(task, [])) missing.push("approved artifact");
-  if (missing.length > 0) return { ok: false, label: `Missing proof: ${missing.join(", ")}`, missing };
-  if (task?.requiredLinkName || task?.requiresFile || taskRequiresApprovedArtifact(task)) {
-    return { ok: true, label: "Proof ready", missing: [] };
-  }
-  return { ok: true, label: "No proof required", missing: [] };
 }
 
 export function missingCardLinks(card) {
