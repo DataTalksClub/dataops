@@ -784,6 +784,38 @@ export function createSponsorDocPage({
         updateCount(currentVal);
         top.append(label, countEl);
 
+        if (fieldDef.type === "select") {
+          const control = el("select", "dk-input sponsor-doc-select");
+          control.id = inputId;
+          control.dataset.sponsorField = fieldDef.key;
+          const options = Array.isArray(fieldDef.options) ? fieldDef.options : [];
+          const blank = el("option");
+          blank.value = "";
+          blank.textContent = fieldDef.placeholder || "Choose one";
+          if (!currentVal) blank.selected = true;
+          control.append(blank);
+          for (const opt of options) {
+            const value = String(opt?.value ?? "");
+            const label = String(opt?.label ?? value);
+            if (!value) continue;
+            const option = el("option");
+            option.value = value;
+            option.textContent = label;
+            if (value === currentVal) option.selected = true;
+            control.append(option);
+          }
+          control.disabled = busy;
+          control.addEventListener("change", () => {
+            draftContent[fieldDef.key] = control.value;
+            updateCount(control.value);
+            updateLivePreview();
+          });
+          fieldWrap.append(top, control);
+          if (fieldDef.helpText) fieldWrap.append(el("p", "dk-hint", fieldDef.helpText));
+          sectionWrap.append(fieldWrap);
+          continue;
+        }
+
         const isMultiline = fieldDef.type === "textarea" || Boolean(fieldDef.multiline);
         const control = isMultiline ? el("textarea", "sponsor-doc-textarea") : el("input", "dk-input");
         if (isMultiline) control.rows = fieldDef.rows || 5;

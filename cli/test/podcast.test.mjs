@@ -384,19 +384,21 @@ describe("podcast publication evidence flags", () => {
     const hold = {
       id: "hold_inv1",
       date: "2026-11-04",
-      window: "evening",
+      window: "midday",
       durationMinutes: 60,
       title: "Podcast with Sofiia",
       status: "tentative",
-      startIso: "2026-11-04T15:30:00.000Z",
-      endIso: "2026-11-04T16:30:00.000Z",
+      startIso: "2026-11-04T11:30:00.000Z",
+      endIso: "2026-11-04T12:30:00.000Z",
       googleSync: { state: "synced" },
     };
     const email = {
       from: "orin@datatalks.club",
       subject: "Sofiia at DataTalks.Club Podcast",
-      body: "Hi Sofiia,\n\nFor the interview, will Wednesday 4 November at 16:30 CET work for you?\n\nhttps://datatalksclub.github.io/docs/activities/podcast/",
+      body: "Hi Sofiia,\n\nFor the interview, will Wednesday 4 November at 12:30 CET work for you?\n\nPlease do not invent alternate times in email.\n\nhttps://datatalksclub.github.io/docs/activities/podcast/",
       docsUrl: "https://datatalksclub.github.io/docs/activities/podcast/",
+      formUrl: null,
+      topicSeed: "LLM evals in production",
     };
     const calls = fakePortal({
       "POST /api/calendar-holds": { hold },
@@ -425,7 +427,8 @@ describe("podcast publication evidence flags", () => {
     assert.match(taskBody.description, /Sofiia/);
     assert.ok(!("cardId" in taskBody), "invite creates a standalone Task, never a Card");
     assert.equal(calls[2].body.guestFirstName, "Sofiia");
-    assert.match(calls[2].body.slotLabel, /16:30/);
+    assert.match(calls[2].body.slotLabel, /12:30/);
+    assert.equal(calls[2].body.topicSeed, "LLM evals in production");
     // Printed email: from orin@, one slot, docs URL, send reminder.
     assert.match(io.text(), /From: orin@datatalks\.club/);
     assert.match(io.text(), /To: sofiia@example\.com/);

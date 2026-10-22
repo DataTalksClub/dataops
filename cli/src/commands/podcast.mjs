@@ -15,16 +15,15 @@ Usage
   dataops podcast list [--season N] [--status S] [--card <card-id>] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
   dataops podcast show <episode-id>
   dataops podcast invite --guest "Full Name" --email guest@example.com --date YYYY-MM-DD --topic TOPIC
-      [--title T] [--window midday|evening] [--duration N]
+      [--title T] [--window midday|evening] [--duration N] [--form-url URL]
                                    First contact: tentative Google "(Proposal)"
                                    hold for one slot, a standalone follow-up
                                    Task (no Card), and the send-ready email
-                                   from orin@ (one slot, no topic ask, docs
-                                   page link). Midday (~12:30) by default;
-                                   evening fallback ~17:00 (workshop 16:30
-                                   never used for podcasts). Send it from
-                                   Orin's mailbox; nothing is mailed
-                                   automatically.
+                                   from orin@ (one slot, form link, no invent-
+                                   alternate ask). Midday 12:30–13:30 by default;
+                                   evening 17:00–18:00 (workshop 12:00/16:30+90
+                                   never used for podcasts). Send from Orin's
+                                   mailbox; nothing is mailed automatically.
   dataops podcast schedule [--season N] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
                                   Publication schedule: audio time and timezone, Spotify
                                   public check, transcript review, website readiness
@@ -507,7 +506,7 @@ export function formatInviteSlotLabel(startIso) {
  */
 export async function invite(args, io) {
   const guest = optionalString(args, "guest");
-  if (!guest) throw new UsageError('Usage: dataops podcast invite --guest "Full Name" --email guest@example.com --date YYYY-MM-DD --topic TOPIC [--title T] [--window midday|evening] [--duration N].');
+  if (!guest) throw new UsageError('Usage: dataops podcast invite --guest "Full Name" --email guest@example.com --date YYYY-MM-DD --topic TOPIC [--title T] [--window midday|evening] [--duration N] [--form-url URL].');
   const email = optionalString(args, "email");
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     throw new UsageError("A guest --email address is required so the follow-up Task names its recipient.");
@@ -557,9 +556,15 @@ export async function invite(args, io) {
     }
   }
   const firstName = guest.split(/\s+/)[0];
+  const formUrl = optionalString(args, "form-url") || optionalString(args, "formUrl") || undefined;
+  if (formUrl && !/^https:\/\//.test(formUrl)) {
+    throw new UsageError("--form-url must be an https URL (guest materials share link).");
+  }
   const rendered = await api.post("/api/podcast-first-contact/email", {
     guestFirstName: firstName,
     slotLabel,
+    formUrl,
+    topicSeed: topic,
   });
 
   if (args.json) return { hold, task, email: rendered };

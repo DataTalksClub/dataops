@@ -58,12 +58,12 @@ describe('podcast first-contact email (Orin ask)', () => {
   it('sends from orin@ with one proposed slot, the docs URL, and no card', async () => {
     const email = renderPodcastFirstContactEmail({
       guestFirstName: 'Sofiia',
-      slotLabel: 'Tuesday, November 4 at 16:30 CET',
+      slotLabel: 'Tuesday, November 4 at 12:30 CET',
     });
     assert.strictEqual(email.from, PODCAST_FIRST_CONTACT_FROM);
     assert.strictEqual(email.from, 'orin@datatalks.club');
     assert.strictEqual(email.subject, 'Sofiia at DataTalks.Club Podcast');
-    assert.ok(email.body.includes('Tuesday, November 4 at 16:30 CET'));
+    assert.ok(email.body.includes('Tuesday, November 4 at 12:30 CET'));
     assert.ok(email.body.includes(PODCAST_DOCS_URL));
     assert.strictEqual(
       PODCAST_DOCS_URL,
@@ -76,13 +76,13 @@ describe('podcast first-contact email (Orin ask)', () => {
     assert.ok(!/card/i.test(email.body));
     assert.ok(!('cardId' in email));
     // Exactly one slot: the single label appears once, no slot list.
-    assert.strictEqual(email.body.split('Tuesday, November 4 at 16:30 CET').length - 1, 1);
+    assert.strictEqual(email.body.split('Tuesday, November 4 at 12:30 CET').length - 1, 1);
   });
 
   it('links the public docs page, never the old Google Doc', () => {
     const email = renderPodcastFirstContactEmail({
       guestFirstName: 'Jane',
-      slotLabel: 'Monday, November 3 at 12:00 CET',
+      slotLabel: 'Monday, November 3 at 12:30 CET',
     });
     assert.ok(!/docs\.google\.com/.test(email.body));
     assert.ok(email.body.includes('https://datatalksclub.github.io/docs/activities/podcast/'));
@@ -111,16 +111,31 @@ describe('podcast first-contact email (Orin ask)', () => {
   it('POST /api/podcast-first-contact/email renders the same copy over HTTP', async () => {
     const res = await staffReq('POST', '/api/podcast-first-contact/email', {
       guestFirstName: 'Sofiia',
-      slotLabel: 'Tuesday, November 4 at 16:30 CET',
+      slotLabel: 'Tuesday, November 4 at 12:30 CET',
     });
     assert.strictEqual(res.statusCode, 200, res.body);
     const payload = JSON.parse(res.body);
     assert.strictEqual(payload.from, 'orin@datatalks.club');
     assert.strictEqual(payload.subject, 'Sofiia at DataTalks.Club Podcast');
-    assert.ok(payload.body.includes('Tuesday, November 4 at 16:30 CET'));
+    assert.ok(payload.body.includes('Tuesday, November 4 at 12:30 CET'));
     assert.ok(payload.body.includes('https://datatalksclub.github.io/docs/activities/podcast/'));
     assert.ok(!('cardId' in payload));
     assert.ok(!('card' in payload));
+  });
+
+
+  it('does not ask the guest to invent alternate times; points at the form when given', () => {
+    const email = renderPodcastFirstContactEmail({
+      guestFirstName: 'Ian',
+      slotLabel: 'Monday, November 3 at 12:30 CET',
+      formUrl: 'https://ops.dtcdev.click/sponsor-docs/abc?code=CODE',
+      topicSeed: 'building developer platforms',
+    });
+    assert.ok(email.body.includes('building developer platforms'));
+    assert.ok(email.body.includes('https://ops.dtcdev.click/sponsor-docs/abc?code=CODE'));
+    assert.ok(/do not invent alternate/i.test(email.body));
+    assert.equal(email.formUrl, 'https://ops.dtcdev.click/sponsor-docs/abc?code=CODE');
+    assert.equal(email.topicSeed, 'building developer platforms');
   });
 
   it('POST /api/podcast-first-contact/email 400s without a slot', async () => {

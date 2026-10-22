@@ -50,6 +50,8 @@ export async function handlePodcastFirstContactRoutes(
     const email = renderPodcastFirstContactEmail({
       guestFirstName: body.guestFirstName as string,
       slotLabel: body.slotLabel as string,
+      formUrl: typeof body.formUrl === 'string' ? body.formUrl : undefined,
+      topicSeed: typeof body.topicSeed === 'string' ? body.topicSeed : undefined,
     });
     return json(200, { ...email, docsPage: PODCAST_DOCS_URL });
   } catch (error) {

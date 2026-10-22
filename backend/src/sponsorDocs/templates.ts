@@ -7,10 +7,15 @@ export type SponsorDocTemplateKey =
   | 'podcast-run-sheet'
   | 'podcast-episode-brief';
 
+export interface SponsorDocFieldOption {
+  value: string;
+  label: string;
+}
+
 export interface SponsorDocFieldDefinition {
   key: string;
   label: string;
-  type: 'text' | 'textarea' | 'bullets';
+  type: 'text' | 'textarea' | 'bullets' | 'select';
   placeholder: string;
   helpText?: string;
   maxCharsHint?: number;
@@ -20,6 +25,8 @@ export interface SponsorDocFieldDefinition {
   maxItems?: number;
   bulletMarker?: string;
   allowVisualUpload?: boolean;
+  /** For type=select: static choices. Podcast guest forms also get free-slot options hydrated at read time. */
+  options?: SponsorDocFieldOption[];
 }
 
 export interface SponsorDocSectionDefinition {
@@ -413,18 +420,36 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
     label: 'Podcast — Materials from the Guest',
     shortLabel: 'Podcast',
     defaultLinkType: 'Sponsorship document',
-    intro: 'This form is optional: share as much or as little as you like, or skip it entirely and reply to our email in a couple of sentences instead — either way works. These notes help us draft focused interview questions and an episode description for your DataTalks.Club podcast episode. Write in plain text. The invite email proposes a single recording time; if it does not work, suggest an alternate below and tell us the topics you would most enjoy covering.',
+    intro: 'This form is optional: share as much or as little as you like, or skip it and reply to our email in a couple of sentences instead — either way works. Use it to confirm or change the recording slot, share your bio, and (if we have not already agreed) the topics you would most enjoy covering. Write in plain text.',
     sections: [
       {
         id: 'scheduling',
         title: '1) Recording Time',
-        description: 'The invite email proposes one recording time. Confirm it here or suggest an alternate that works for you.',
+        description: 'The invite proposes one recording time (Europe/Berlin podcast windows: midday 12:30–13:30, evening 17:00–18:00). Confirm it, pick another free ordinary slot, or say none fit — do not invent times in email; use this form.',
         fields: [
           {
-            key: 'alternateSlot',
-            label: 'If the proposed time does not work, which alternate day/time works for you?',
+            key: 'proposedSlotLabel',
+            label: 'Proposed time from the invite',
             type: 'text',
-            placeholder: 'e.g. Confirmed, or: Wednesday after 16:30, or Friday morning (Europe/Berlin)',
+            placeholder: 'Pre-filled by Orin (Europe/Berlin)',
+            helpText: 'The single time proposed in your invite — confirm it below or pick another free slot.',
+          },
+          {
+            key: 'slotChoice',
+            label: 'Recording slot',
+            type: 'select',
+            placeholder: 'Choose one',
+            helpText: 'Ordinary free podcast slots (midday 12:30 / evening 17:00) appear below when available.',
+            options: [
+              { value: 'confirm_proposed', label: 'Yes — the proposed time in the invite works for me' },
+              { value: 'none_fit', label: 'None of these fit / I need something custom' },
+            ],
+          },
+          {
+            key: 'customSlot',
+            label: 'If none fit, what custom day/time works? (Europe/Berlin)',
+            type: 'text',
+            placeholder: 'Only if you chose “none fit / custom” — e.g. Thu 6 Nov after 15:00',
           },
         ],
       },
@@ -851,6 +876,50 @@ export function getSponsorDocTemplate(key: SponsorDocTemplateKey): SponsorDocTem
   return SPONSOR_DOC_TEMPLATES[key];
 }
 
+export interface PodcastFreeSlotOption {
+  date: string;
+  window: string;
+  localTime: string;
+  label?: string;
+}
+
+/**
+ * Guest materials form: confirm proposed OR pick a free ordinary podcast slot
+ * OR none-fit/custom. Free slots are injected at read time (not emailed).
+ */
+export function hydratePodcastGuestSlotOptions(
+  template: SponsorDocTemplateDefinition,
+  freeSlots: PodcastFreeSlotOption[],
+  proposedSlotLabel?: string | null,
+): SponsorDocTemplateDefinition {
+  if (template.key !== 'podcast') return template;
+  const proposed = (proposedSlotLabel || '').trim();
+  const confirmLabel = proposed
+    ? `Yes — ${proposed} works for me`
+    : 'Yes — the proposed time in the invite works for me';
+  const slotOptions = [
+    { value: 'confirm_proposed', label: confirmLabel },
+    ...freeSlots.slice(0, 8).map((slot) => ({
+      value: `slot:${slot.date}:${slot.window}`,
+      label: slot.label || `${slot.date} ${slot.window} ~${slot.localTime} Europe/Berlin`,
+    })),
+    { value: 'none_fit', label: 'None of these fit / I need something custom' },
+  ];
+  return {
+    ...template,
+    sections: template.sections.map((section) => {
+      if (section.id !== 'scheduling') return section;
+      return {
+        ...section,
+        fields: section.fields.map((field) =>
+          field.key === 'slotChoice' ? { ...field, options: slotOptions } : field,
+        ),
+      };
+    }),
+  };
+}
+
+
 export function defaultContentForTemplate(key: SponsorDocTemplateKey): Record<string, string> {
   const def = SPONSOR_DOC_TEMPLATES[key];
   const content: Record<string, string> = {};
@@ -1022,7 +1091,11 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '',
       `**Guest:** ${valOrPlaceholder(c.guestName)}`,
       '',
-      `**Recording time:** ${valOrPlaceholder(c.alternateSlot, '_[Proposed time confirmed]_')}`,
+      `**Proposed time:** ${valOrPlaceholder(c.proposedSlotLabel, '_[Not set]_')}`,
+      '',
+      `**Recording slot choice:** ${valOrPlaceholder(c.slotChoice, '_[Not selected]_')}`,
+      '',
+      `**Custom slot (if none fit):** ${valOrPlaceholder(c.customSlot, '_[n/a]_')}`,
       '',
       '### Introduction / Bio',
       valOrPlaceholder(c.introduction),

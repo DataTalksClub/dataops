@@ -36,11 +36,13 @@ import { recordRequestError } from '../requestErrorLog';
 import {
   SPONSOR_DOC_TEMPLATES,
   getSponsorDocTemplate,
+  hydratePodcastGuestSlotOptions,
   isSponsorDocTemplateKey,
   renderSponsorDocMarkdownExport,
   renderSponsorEmailDraft,
   type SponsorDocTemplateKey,
 } from '../sponsorDocs/templates';
+import { listNextRecordingSlots } from '../podcast/resolveRecordingSlot';
 import type { Card, LambdaEvent, LambdaResponse } from '../types';
 
 const JSON_HEADERS: Record<string, string> = {
@@ -178,9 +180,10 @@ async function inferTemplateForCard(
   return 'newsletter-main';
 }
 
-function buildDocResponsePayload(
+async function buildDocResponsePayload(
   doc: SponsorDoc,
   event: LambdaEvent,
+  client: DynamoDBDocumentClient,
   options: {
     viewerRole: 'staff' | 'sponsor';
     accessCode?: string | null;
@@ -188,7 +191,20 @@ function buildDocResponsePayload(
 ) {
   const base = sponsorDocPortalBaseUrl(event);
   const docUrl = `${base}/sponsor-docs/${encodeURIComponent(doc.id)}`;
-  const templateDefinition = getSponsorDocTemplate(doc.template);
+  let templateDefinition = getSponsorDocTemplate(doc.template);
+  if (doc.template === 'podcast') {
+    try {
+      const next = await listNextRecordingSlots(client, 6);
+      const proposedLabel = String(doc.content?.proposedSlotLabel || '').trim() || null;
+      templateDefinition = hydratePodcastGuestSlotOptions(
+        templateDefinition,
+        next.slots || [],
+        proposedLabel,
+      );
+    } catch {
+      // Keep static confirm/none-fit options if occupancy load fails.
+    }
+  }
   const markdownExport = renderSponsorDocMarkdownExport(doc);
 
   if (options.viewerRole === 'staff') {
@@ -575,7 +591,7 @@ export async function handleSponsorDocRoutes(
         }
 
         return json(201, {
-          doc: buildDocResponsePayload(doc, event, { viewerRole: 'staff', accessCode }),
+          doc: await buildDocResponsePayload(doc, event, client, { viewerRole: 'staff', accessCode }),
           card: projectedCard,
           ...(updatedIssue ? { issue: updatedIssue } : {}),
         });
@@ -643,7 +659,7 @@ export async function handleSponsorDocRoutes(
         return json(404, { error: 'Sponsor document not found', code: 'sponsor_doc_not_found' });
       }
       return json(200, {
-        doc: buildDocResponsePayload(rotated.doc, event, {
+        doc: await buildDocResponsePayload(rotated.doc, event, client, {
           viewerRole: 'staff',
           accessCode: rotated.accessCode,
         }),
@@ -664,7 +680,7 @@ export async function handleSponsorDocRoutes(
           }
           const accessCode = decryptSponsorDocAccessCode(docId, loaded.accessCodeCiphertext);
           return json(200, {
-            doc: buildDocResponsePayload(loaded.doc, event, {
+            doc: await buildDocResponsePayload(loaded.doc, event, client, {
               viewerRole: 'staff',
               accessCode,
             }),
@@ -679,7 +695,7 @@ export async function handleSponsorDocRoutes(
         );
         if (!verified.ok) return verified.response;
         return json(200, {
-          doc: buildDocResponsePayload(verified.doc, event, { viewerRole: 'sponsor' }),
+          doc: await buildDocResponsePayload(verified.doc, event, client, { viewerRole: 'sponsor' }),
         });
       }
 
@@ -718,7 +734,7 @@ export async function handleSponsorDocRoutes(
           });
           const accessCode = decryptSponsorDocAccessCode(docId, loaded.accessCodeCiphertext);
           return json(200, {
-            doc: buildDocResponsePayload(updated!, event, {
+            doc: await buildDocResponsePayload(updated!, event, client, {
               viewerRole: 'staff',
               accessCode,
             }),
@@ -739,7 +755,7 @@ export async function handleSponsorDocRoutes(
           actorKind: 'sponsor',
         });
         return json(200, {
-          doc: buildDocResponsePayload(updated!, event, { viewerRole: 'sponsor' }),
+          doc: await buildDocResponsePayload(updated!, event, client, { viewerRole: 'sponsor' }),
         });
       }
 
