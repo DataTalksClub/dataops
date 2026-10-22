@@ -1303,3 +1303,67 @@ body[data-workspace-view="tasks"] .ops-queue-row[data-completed="true"] .ops-que
 body[data-workspace-view="tasks"] .ops-queue-row[data-completed="true"] .ops-queue-due {
   color: var(--dk-text-muted);
 }
+
+/* Web editor for pinning a template definition over the Git seed. */
+body[data-workspace-view="tasks"] .runtime-template-editor {
+  display: grid;
+  gap: var(--dk-space-3);
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .runtime-template-editor-help,
+body[data-workspace-view="tasks"] .runtime-template-editor-message {
+  margin: 0;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  line-height: 1.5;
+}
+body[data-workspace-view="tasks"] .runtime-template-editor-json {
+  width: 100%;
+  min-height: 16rem;
+  font-family: var(--dk-font-mono, ui-monospace, monospace);
+  font-size: var(--dk-text-sm);
+  white-space: pre;
+}
+body[data-workspace-view="tasks"] .runtime-template-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dk-space-2);
+}
+body[data-workspace-view="tasks"] .ops-queue-blocked {
+  display: grid;
+  gap: var(--dk-space-2);
+  margin-top: var(--dk-space-4);
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .ops-queue-blocked-title {
+  margin: 0;
+  color: var(--dk-text-heading);
+  font-size: var(--dk-text-md);
+  font-weight: var(--dk-weight-semibold);
+}
+body[data-workspace-view="tasks"] .ops-queue-blocked-list {
+  display: grid;
+  gap: var(--dk-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+body[data-workspace-view="tasks"] .ops-queue-blocked-item {
+  display: grid;
+  gap: 0.15rem;
+}
+body[data-workspace-view="tasks"] .ops-queue-blocked-open {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dk-text-link, var(--dk-text-heading));
+  font: inherit;
+  font-weight: var(--dk-weight-semibold);
+  cursor: pointer;
+  text-align: left;
+}
+body[data-workspace-view="tasks"] .ops-queue-blocked-reason {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}

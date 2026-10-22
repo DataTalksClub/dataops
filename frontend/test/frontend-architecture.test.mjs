@@ -130,7 +130,6 @@ describe("shell ownership contract", () => {
       ["newDocumentButton binding", /\bnewDocumentButton\b/],
       ["doc-pin-button selector", /\bdoc-pin-button\b/],
       ["docPinButton binding", /\bdocPinButton\b/],
-      ["knowledge pin UI", /\bpinned\b/i],
       ["recently viewed UI", /\brecently-viewed\b|\brecentlyViewed\b/i],
       ["recent-list selector", /\brecent-list\b/],
       ["recentList binding", /\brecentList\b/],

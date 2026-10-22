@@ -12,7 +12,14 @@ function buildDialog(documentRef) {
   const title = element(documentRef, "h2", "", "New episode");
   title.id = "podcast-create-title";
   dialog.setAttribute("aria-labelledby", title.id);
-  heading.append(title, element(documentRef, "p", "", "Book a guest now with the agreed episode topic. Leave recording date empty to auto-pick the next free midday/~17:00 Europe/Berlin slot; override when you already agreed a time."));
+  const blurb = element(
+    documentRef,
+    "p",
+    "",
+    "Book a guest now with the agreed episode topic. Leave recording date empty to auto-pick "
+      + "the next free midday/~17:00 Europe/Berlin slot; override when you already agreed a time.",
+  );
+  heading.append(title, blurb);
   head.append(heading);
   const body = element(documentRef, "div", "dk-dialog__body");
   const foot = element(documentRef, "div", "dk-dialog__foot");

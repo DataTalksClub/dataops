@@ -2608,7 +2608,7 @@ describe("Work Detail surface boundary", () => {
     assert.equal(box.title, 'Complete or skip "Verify Spotify episode" first');
     assert.equal(blocked.classList.contains("is-blocked"), true);
     const after = blocked.querySelector(".card-checklist-after");
-    assert.equal(after.textContent, "after Verify Spotify episode");
+    assert.equal(after.textContent, "Blocked until you complete or skip Verify Spotify episode");
     assert.equal(box.getAttribute("aria-describedby"), after.id);
     // The blocker's name links to it.
     const link = after.querySelector(".card-checklist-after-link");

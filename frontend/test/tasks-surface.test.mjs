@@ -501,7 +501,7 @@ describe("Tasks surface boundary", () => {
       const main = note.closest(".ops-queue-task").querySelector(".ops-queue-main");
       assert.equal(main.getAttribute("aria-describedby"), note.id);
     }
-    assert.match(board.textContent, /4 open, most urgent first/);
+    assert.match(board.textContent, /4 actionable, most urgent first/);
     const history = findAllByClass(documentList, "ops-queue-history").find((entry) => !entry.className.includes("ops-queue-waiting"));
     assert.equal(history.tagName, "DETAILS");
     assert.match(history.textContent, /Completed history/);
@@ -552,12 +552,12 @@ describe("Tasks surface boundary", () => {
     api.renderTasksSurface([], "queue");
     const board = documentList.querySelector(".ops-queue-board");
     assert.equal(findAllByClass(board, "ops-queue-row").length, 25);
-    assert.match(board.textContent, /Showing 25 of 30 open/);
+    assert.match(board.textContent, /Showing 25 of 30 actionable/);
     const more = findByText(board, "Show all 30", "button");
     more.dispatch("click");
     assert.equal(findAllByClass(board, "ops-queue-row").length, 30);
     assert.equal(board.querySelector(".ops-queue-more-wrap"), null);
-    assert.match(board.textContent, /Showing 25 of 30 open/);
+    assert.match(board.textContent, /Showing 25 of 30 actionable/);
     assert.deepEqual(queueRowTitles(board).slice(-2), [
       "Task 28",
       "Task 29",
@@ -699,7 +699,7 @@ describe("Tasks surface boundary", () => {
     harness.api.renderTasksSurface([], "queue");
     assert.deepEqual(queueRowTitles(harness.documentList), ["A", "B", "C", "D"]);
     assert.equal(harness.documentList.querySelector(".ops-queue-resource-filter").querySelector("select").value, "mail");
-    assert.match(harness.documentList.querySelector(".ops-queue-total").textContent, /2 open.*2 completed this session/);
+    assert.match(harness.documentList.querySelector(".ops-queue-total").textContent, /2 actionable.*2 completed this session/);
   });
 
   test("queue chronology uses next action dates across states and waiting wakeups", (t) => {
@@ -863,7 +863,7 @@ describe("Tasks surface boundary", () => {
 
     api.renderTasksSurface([], "queue");
     const titles = findAllByClass(documentList, "ops-queue-row")
-      .filter((row) => !row.closest(".ops-queue-history"))
+      .filter((row) => !row.closest(".ops-queue-history") && !row.closest(".ops-queue-blocked"))
       .map((row) => row.querySelector(".ops-queue-main strong").textContent);
     assert.deepEqual(titles.sort(), [
       "Announce the episode",
@@ -871,7 +871,7 @@ describe("Tasks surface boundary", () => {
       "Reply to the sponsor",
       "Review transcript",
     ]);
-    assert.match(findAllByClass(documentList, "ops-queue-total")[0].textContent, /^4 open/);
+    assert.match(findAllByClass(documentList, "ops-queue-total")[0].textContent, /^4 actionable/);
     assert.equal(findAllByClass(documentList, "ops-queue-note").some((note) => /^after /.test(note.textContent)), false);
     assert.equal(requests.length, 0);
   });
@@ -1111,7 +1111,7 @@ describe("Tasks surface boundary", () => {
     );
     assert.equal(queueRowTitles(documentList).length, 25);
     assert.ok(queueRowTitles(documentList).every((title) => title.startsWith("Mine")));
-    assert.equal(total(), "Showing 25 of 27 open assigned to you, most urgent first");
+    assert.equal(total(), "Showing 25 of 27 actionable assigned to you, most urgent first");
     await findByText(documentList, "Show all 27", "button").dispatch("click");
     assert.equal(queueRowTitles(documentList).length, 27);
     assert.ok(queueRowTitles(documentList).every((title) => title.startsWith("Mine")));
@@ -1127,16 +1127,16 @@ describe("Tasks surface boundary", () => {
     api.renderTasksSurface([], "queue");
     assert.equal(assigneeSelect().value, "user-sam");
     assert.deepEqual(queueRowTitles(documentList), ["Sam's task"]);
-    assert.equal(total(), "1 open assigned to Sam, most urgent first");
+    assert.equal(total(), "1 actionable assigned to Sam, most urgent first");
 
     harness.setRoute({ path: "/tasks", params: new URLSearchParams("assignee=unassigned") });
     api.renderTasksSurface([], "queue");
     assert.deepEqual(queueRowTitles(documentList), ["Nobody's task"]);
-    assert.equal(total(), "1 open unassigned, most urgent first");
+    assert.equal(total(), "1 actionable unassigned, most urgent first");
 
     harness.setRoute({ path: "/tasks", params: new URLSearchParams("assignee=all&taskId=sam") });
     api.renderTasksSurface([], "queue");
-    assert.equal(total(), "Showing 25 of 30 open, most urgent first");
+    assert.equal(total(), "Showing 25 of 30 actionable, most urgent first");
     // Back to Mine drops the parameter (a bare /tasks is Mine) and the open task.
     assigneeSelect().value = "me";
     await assigneeSelect().dispatch("change");
@@ -2215,15 +2215,18 @@ describe("Tasks surface boundary", () => {
     assert.match(harness.documentList.textContent, /Authored templates/);
     assert.match(
       harness.documentList.textContent,
-      /This definition is projected from reviewed YAML/,
-      "provenance note; mutation controls stay out of the Templates page",
+      /Edit definition \(web\)/,
+      "Valeria AC: templates editable via web",
     );
     assert.match(
       harness.documentList.textContent,
       /workflow-templates\/newsletter.yaml/,
     );
     assert.match(harness.documentList.textContent, /1234567890ab/);
+    assert.match(harness.documentList.textContent, /Git seed/);
     assert.ok(findByText(harness.documentList, "Start card", "button"));
+    assert.ok(findByText(harness.documentList, "Save pin", "button"));
+    assert.ok(findByText(harness.documentList, "Reset to Git base", "button"));
     assert.equal(findByText(harness.documentList, "Create card", "button"), undefined);
     for (const mutation of [
       "New runtime template",
