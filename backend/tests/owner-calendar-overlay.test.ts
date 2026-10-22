@@ -763,12 +763,18 @@ describe('owner calendar overlay and filtering', () => {
       assert.throws(() => parseSlotWindow('night'), /evening.*midday.*any/);
     });
 
-    it('requires the preferred evening block 16:30-18:00 for 90 minutes', async () => {
-      const { isWindowFreeForDuration } = await import('../src/calendar/ownerCalendarOverlay');
-      // Late call blocks the 90-min preferred block but leaves a 60-min center free.
-      const busy = [{ start: '17:30', end: '18:30' }];
-      assert.equal(isWindowFreeForDuration('evening', busy, 60), true);
-      assert.equal(isWindowFreeForDuration('evening', busy, 90), false);
+    it('splits evening anchors: podcast/recording 17:00, 90-min workshop 16:30', async () => {
+      const { isWindowFreeForDuration, EVENING_WINDOW, WORKSHOP_WINDOW } = await import('../src/calendar/ownerCalendarOverlay');
+      assert.equal(EVENING_WINDOW.preferStart, '17:00');
+      assert.equal(WORKSHOP_WINDOW.preferStart, '16:30');
+      // Early call blocks the 90-min workshop block 16:30-18:00 but leaves the 60-min 17:00-18:00 block free.
+      const earlyBusy = [{ start: '16:30', end: '17:00' }];
+      assert.equal(isWindowFreeForDuration('evening', earlyBusy, 60), true);
+      assert.equal(isWindowFreeForDuration('evening', earlyBusy, 90), false);
+      // Late call blocks both the 60-min 17:00-18:00 block and the workshop block.
+      const lateBusy = [{ start: '17:30', end: '18:30' }];
+      assert.equal(isWindowFreeForDuration('evening', lateBusy, 60), false);
+      assert.equal(isWindowFreeForDuration('evening', lateBusy, 90), false);
       // Free evening fits both.
       assert.equal(isWindowFreeForDuration('evening', [], 60), true);
       assert.equal(isWindowFreeForDuration('evening', [], 90), true);
@@ -794,8 +800,9 @@ describe('owner calendar overlay and filtering', () => {
           return new Response(
             JSON.stringify({
               items: [
-                // Monday 2026-10-12: late evening call blocks 90-min but not 60-min.
-                { id: 'evt-late', summary: 'Late call', status: 'confirmed', start: { dateTime: '2026-10-12T17:30:00+02:00' }, end: { dateTime: '2026-10-12T18:30:00+02:00' } },
+                // Monday 2026-10-12: early evening call blocks the 90-min workshop
+                // block 16:30-18:00 but leaves the 60-min 17:00-18:00 block free.
+                { id: 'evt-early', summary: 'Early call', status: 'confirmed', start: { dateTime: '2026-10-12T16:30:00+02:00' }, end: { dateTime: '2026-10-12T17:00:00+02:00' } },
               ],
             }),
             { status: 200 },

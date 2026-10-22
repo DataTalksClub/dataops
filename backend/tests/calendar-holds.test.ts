@@ -51,8 +51,9 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     assert.equal(hold.window, "evening");
     assert.equal(hold.timeZone, "Europe/Berlin");
     assert.equal(hold.googleTitle, "(Proposal) GraphRAG workshop");
-    assert.equal(hold.startIso, "2026-10-26T15:30:00.000Z");
-    assert.equal(hold.endIso, "2026-10-26T16:30:00.000Z");
+    // Evening 60-min (podcast/webinar) starts 17:00 Berlin; 2026-10-26 is CET (+01:00).
+    assert.equal(hold.startIso, "2026-10-26T16:00:00.000Z");
+    assert.equal(hold.endIso, "2026-10-26T17:00:00.000Z");
     assert.equal(
       Date.parse(hold.expiresAt) - Date.parse(hold.proposedAt),
       7 * 86400000,
@@ -71,6 +72,7 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     assert.equal(r.statusCode, 201, r.body);
     const { hold } = parse(r);
     assert.equal(hold.durationMinutes, 90);
+    // Workshop shape: 90-min evening starts 16:30 Berlin; 2026-10-27 is CET (+01:00).
     assert.equal(hold.startIso, "2026-10-27T15:30:00.000Z");
     assert.equal(hold.endIso, "2026-10-27T17:00:00.000Z");
     const detail = await invoke("GET", `/api/calendar-holds/${hold.id}`);
@@ -215,6 +217,12 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     const evening90 = holdInterval("2026-10-27", "evening", 90);
     assert.equal(evening90.startLocal, "16:30");
     assert.equal(evening90.endLocal, "18:00");
+    const evening60 = holdInterval("2026-10-26", "evening", 60);
+    assert.equal(evening60.startLocal, "17:00");
+    assert.equal(evening60.endLocal, "18:00");
+    const midday60 = holdInterval("2026-10-26", "midday", 60);
+    assert.equal(midday60.startLocal, "12:00");
+    assert.equal(midday60.endLocal, "13:00");
     assert.equal(proposalTitle("Talk"), "(Proposal) Talk");
     assert.equal(proposalTitle("(Proposal) Talk"), "(Proposal) Talk");
     assert.equal(confirmedTitle("(Proposal) Talk"), "Talk");

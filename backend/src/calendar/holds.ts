@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { WORKSHOP_DURATION_MINUTES } from './ownerCalendarOverlay';
 
 /**
  * Calendar holds: tentative event reservations (DataOps + Google) with a 7d
@@ -25,8 +26,14 @@ export const HOLD_DEFAULT_TTL_DAYS = 7;
 
 export const HOLD_WINDOW_START: Record<CalendarHoldWindow, string> = {
   midday: '12:00',
-  evening: '16:30',
+  evening: '17:00',
 };
+/**
+ * Workshop-only evening start (16:30). Evening holds with the workshop
+ * duration (90 min) start here; all other evening holds (podcast, webinar,
+ * 60 min) start at HOLD_WINDOW_START.evening (17:00).
+ */
+export const HOLD_WORKSHOP_START = '16:30';
 
 export interface CalendarHold {
   id: string;
@@ -107,7 +114,10 @@ export function holdInterval(date: string, window: CalendarHoldWindow, durationM
   startIso: string;
   endIso: string;
 } {
-  const startLocal = HOLD_WINDOW_START[window];
+  // The 90-min evening shape is the workshop (16:30 start); every other
+  // evening hold (podcast, webinar, 60 min) starts at 17:00.
+  const startLocal =
+    window === 'evening' && durationMinutes === WORKSHOP_DURATION_MINUTES ? HOLD_WORKSHOP_START : HOLD_WINDOW_START[window];
   const endLocal = addMinutes(startLocal, durationMinutes);
   const suffix = berlinOffsetSuffix(date);
   const startIso = new Date(`${date}T${startLocal}:00${suffix}`).toISOString();

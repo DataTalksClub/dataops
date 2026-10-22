@@ -31,7 +31,15 @@ export const DEFAULT_SLOT_WINDOW: SlotWindow = 'any';
 
 /** Operational windows in Europe/Berlin, with preferred start for bookings. */
 export const MIDDAY_WINDOW = { start: '11:30', end: '14:00', preferStart: '12:00' } as const;
-export const EVENING_WINDOW = { start: '16:30', end: '18:30', preferStart: '16:30' } as const;
+/**
+ * Evening band 16:30–18:30. Preferred start is 17:00 for podcasts/recordings
+ * (and 60-min webinars); 16:30 is workshop-only (see WORKSHOP_WINDOW).
+ */
+export const EVENING_WINDOW = { start: '16:30', end: '18:30', preferStart: '17:00' } as const;
+/** Workshop-only evening anchor: 16:30 start + 90 min. Never the podcast default. */
+export const WORKSHOP_WINDOW = { start: '16:30', end: '18:30', preferStart: '16:30' } as const;
+/** Workshop duration (minutes). 90 = workshop only; 60 = webinar AND podcast. */
+export const WORKSHOP_DURATION_MINUTES = 90;
 
 export function parseDurationMinutes(raw: unknown, def = DEFAULT_SLOT_DURATION_MINUTES): number {
   if (raw === undefined || raw === null || raw === '') return def;
@@ -62,6 +70,18 @@ function windowDef(window: 'midday' | 'evening') {
   return window === 'midday' ? MIDDAY_WINDOW : EVENING_WINDOW;
 }
 
+/**
+ * Preferred start for a booking: the evening 90-min shape is the workshop
+ * (16:30 start); everything else anchors at the window preferStart
+ * (evening podcast/recording 17:00, midday 12:00).
+ */
+export function preferStartFor(window: 'midday' | 'evening', durationMinutes: number): string {
+  if (window === 'evening' && durationMinutes === WORKSHOP_DURATION_MINUTES) {
+    return WORKSHOP_WINDOW.preferStart;
+  }
+  return windowDef(window).preferStart;
+}
+
 export function windowFitsDuration(window: 'midday' | 'evening', durationMinutes: number): boolean {
   const def = windowDef(window);
   return durationMinutes <= timeToMinutes(def.end) - timeToMinutes(def.start);
@@ -70,8 +90,9 @@ export function windowFitsDuration(window: 'midday' | 'evening', durationMinutes
 /**
  * Availability = a contiguous free block of at least `durationMinutes`
  * inside the chosen window. The preferred block starts at the window's
- * preferred start (midday 12:00, evening 16:30), so a 90-min evening
- * workshop needs 16:30–18:00 free, not just any 60-min center.
+ * preferred start (midday 12:00, evening podcast/recording 17:00), so a
+ * 60-min evening booking needs 17:00–18:00 free. The 90-min evening shape
+ * is the workshop and anchors at 16:30 (needs 16:30–18:00 free).
  */
 export function isWindowFreeForDuration(
   window: 'midday' | 'evening',
@@ -80,7 +101,7 @@ export function isWindowFreeForDuration(
 ): boolean {
   if (!windowFitsDuration(window, durationMinutes)) return false;
   const def = windowDef(window);
-  const preferMinutes = timeToMinutes(def.preferStart);
+  const preferMinutes = timeToMinutes(preferStartFor(window, durationMinutes));
   const blockStart = minutesToTime(preferMinutes);
   const blockEnd = minutesToTime(preferMinutes + durationMinutes);
   // The preferred block must itself sit inside the operational band.
@@ -570,8 +591,8 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
       // Project available slots across all weekdays in the range.
       // Availability = a contiguous free block of at least `durationMinutes`
       // inside the chosen window(s), anchored at the preferred start
-      // (midday 12:00, evening 16:30). A 90-min evening workshop needs
-      // 16:30–18:00 free, not just a 60-min center.
+      // (midday 12:00, evening podcast/recording 17:00). The 90-min evening
+      // workshop shape anchors at 16:30 (needs 16:30–18:00 free).
       const durationMinutes = config?.durationMinutes ?? DEFAULT_SLOT_DURATION_MINUTES;
       const window = config?.window ?? DEFAULT_SLOT_WINDOW;
       const wantMidday = window === 'any' || window === 'midday';
@@ -611,7 +632,8 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
           }
         }
 
-        // Check Evening Slot (operational window 16:30–18:30, preferred start 16:30 Berlin time)
+        // Check Evening Slot (operational band 16:30–18:30, podcast/recording
+        // preferred start 17:00; 90-min workshop shape anchors at 16:30)
         // Per SOP: offered on Monday and Tuesday only (US guests)
         if (wantEvening && (dayOfWeek === 1 || dayOfWeek === 2)) {
           const busy = busyIntervalsInWindow('evening', dayTimedEvents);
