@@ -3,9 +3,10 @@
  *
  * Distinct from releaseSlots (Friday 19:00 release cadence). A recording slot is
  * one midday or evening operational window in Europe/Berlin. Preference for
- * podcasts (Alexey / Orin t1050u):
- *   1) midday first (~12:30)
- *   2) evening fallback labeled ~17:00 (Mon/Tue only, matching owner overlay)
+ * podcasts (Alexey / Orin t1050u / t554u):
+ *   1) midday first (~12:30) — ordinary free: Mon/Tue only
+ *   2) evening fallback labeled ~17:00 — ordinary free: Mon/Tue only
+ * Weekends never. Wed–Fri are not ordinary free recording days.
  * Never treat the workshop evening preferStart 16:30 as the podcast default.
  *
  * Occupancy (hard):
@@ -121,7 +122,9 @@ function makeSlot(date: string, window: RecordingWindow): RecordingSlot {
 
 /**
  * Next free recording slots preferring midday, then evening ~17:00.
- * Scans weekdays chronologically; on each day tries midday before evening.
+ * Ordinary free windows are Mon/Tue only (same for midday and evening);
+ * weekends and Wed–Fri are never offered. On each Mon/Tue tries midday
+ * before evening.
  */
 export function nextRecordingSlots(input: NextRecordingSlotsInput): NextRecordingSlotsResult {
   const count = Math.max(1, Math.min(MAX_NEXT_RECORDING_SLOT_COUNT, input.count ?? 1));
@@ -138,11 +141,11 @@ export function nextRecordingSlots(input: NextRecordingSlotsInput): NextRecordin
   for (let i = 0; i < horizon && slots.length < count; i += 1) {
     const date = addDays(input.fromDate, i);
     const dow = isoWeekday(date);
-    if (dow < 1 || dow > 5) continue; // weekends never
+    // Ordinary free recording days: Mon/Tue only (weekends + Wed–Fri out).
+    if (dow !== 1 && dow !== 2) continue;
     if (taken.has(date)) continue;
 
     const tryWindow = (window: RecordingWindow): boolean => {
-      if (window === 'evening' && dow !== 1 && dow !== 2) return false; // Mon/Tue only
       const key = `${date}#${window}`;
       if (held.has(key)) return false;
       if (owner && !owner.has(key)) return false;
@@ -161,7 +164,7 @@ export function nextRecordingSlots(input: NextRecordingSlotsInput): NextRecordin
       primary: 'midday',
       fallback: 'evening',
       eveningLocalTime: RECORDING_EVENING_LOCAL,
-      note: 'Podcasts prefer midday (~12:30 Europe/Berlin, 12:30–13:30); evening fallback is ~17:00–18:00 (not workshop 12:00/16:30).',
+      note: 'Ordinary free podcast slots are Mon/Tue only: midday (~12:30 Europe/Berlin, 12:30–13:30) preferred; evening fallback ~17:00–18:00 (not workshop 12:00/16:30).',
     },
     slots,
     takenDates: [...taken].sort(),

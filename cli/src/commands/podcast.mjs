@@ -36,9 +36,10 @@ Usage
                                   --status defaults to booked; a title or a guest is required
                                    --title is the intended episode topic: set it at invite time
                                    omit --recording-date to auto-pick the next free recording
-                                   slot (prefer midday ~12:30 Europe/Berlin, else evening ~17:00;
-                                   not the workshop 16:30 window). Occupancy: CalendarHolds +
-                                   episodes + event Cards. Pass --recording-date to override.
+                                   slot (ordinary free: Mon/Tue only; prefer midday ~12:30
+                                   Europe/Berlin, else evening ~17:00; not workshop 16:30).
+                                   Occupancy: CalendarHolds + episodes + event Cards.
+                                   Pass --recording-date to override.
   dataops podcast update <episode-id> [same flags as create]
                                   "none" clears a date, link, slug, card, notes or episode number
                                   Page content (what the website page renders):

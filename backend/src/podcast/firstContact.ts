@@ -127,7 +127,7 @@ export function renderPodcastFirstContactEmail(
     );
   } else {
     lines.push(
-      'Once we have a guest form link for you, please use it to confirm the time, pick another free recording slot if needed, share a bio, and (if we have not already set a topic) the topics you would most enjoy covering. Please do not invent alternate days/times in email; we will share free ordinary slots (midday 12:30 or evening 17:00 Europe/Berlin) via the form.',
+      'Once we have a guest form link for you, please use it to confirm the time, pick another free recording slot if needed, share a bio, and (if we have not already set a topic) the topics you would most enjoy covering. Please do not invent alternate days/times in email; we will share free ordinary slots (Mon/Tue midday 12:30 or evening 17:00 Europe/Berlin) via the form.',
       '',
     );
   }
