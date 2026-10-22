@@ -12,7 +12,7 @@ function buildDialog(documentRef) {
   const title = element(documentRef, "h2", "", "New episode");
   title.id = "podcast-create-title";
   dialog.setAttribute("aria-labelledby", title.id);
-  heading.append(title, element(documentRef, "p", "", "Book a guest now with the agreed episode topic; add links and the release date as the episode moves along."));
+  heading.append(title, element(documentRef, "p", "", "Book a guest now with the agreed episode topic. Leave recording date empty to auto-pick the next free midday/~17:00 Europe/Berlin slot; override when you already agreed a time."));
   head.append(heading);
   const body = element(documentRef, "div", "dk-dialog__body");
   const foot = element(documentRef, "div", "dk-dialog__foot");
@@ -59,7 +59,15 @@ export function openCreateEpisodeDialog({ documentRef, trigger, load, create, on
     const numbers = element(documentRef, "div", "podcast-form-pair");
     numbers.append(field(documentRef, "Season", controls.season), field(documentRef, "Episode", controls.episode));
     const timing = element(documentRef, "div", "podcast-form-pair");
-    timing.append(field(documentRef, "Recording date", controls.recordingDate), field(documentRef, "Status", controls.status));
+    timing.append(
+      field(
+        documentRef,
+        "Recording date",
+        controls.recordingDate,
+        "Optional. Leave empty to auto-pick the next free slot (prefer midday ~12:00 Europe/Berlin, else evening ~17:00 — not workshop 16:30).",
+      ),
+      field(documentRef, "Status", controls.status),
+    );
     const error = element(documentRef, "p", "dk-field-error podcast-dialog-error");
     error.setAttribute("role", "alert");
     error.hidden = true;

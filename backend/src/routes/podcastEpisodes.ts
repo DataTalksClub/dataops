@@ -31,6 +31,13 @@ import {
   MAX_NEXT_SLOT_COUNT,
   nextReleaseSlots,
 } from "../podcast/releaseSlots";
+import {
+  MAX_NEXT_RECORDING_SLOT_COUNT,
+} from "../podcast/recordingSlots";
+import {
+  listNextRecordingSlots,
+  pickNextRecordingSlot,
+} from "../podcast/resolveRecordingSlot";
 import { getWorkspaceSettings } from "../db/workspaceSettings";
 import { resolveInteractiveActor } from "../identity/actor";
 import { podcastEpisodeTitleValues, recordTemplateTypes } from "../cards/cardTitlePattern";
@@ -367,6 +374,16 @@ export async function handlePodcastEpisodeRoutes(
     }));
   }
 
+  // Next free recording windows (midday preferred, evening ~17:00 fallback).
+  // Distinct from next-slot (release Fridays).
+  if (method === "GET" && id === "next-recording-slot") {
+    const query = event.queryStringParameters || {};
+    const count = query.count === undefined ? 4 : Number(query.count);
+    if (!Number.isInteger(count) || count < 1 || count > MAX_NEXT_RECORDING_SLOT_COUNT)
+      return json(400, { error: `Invalid count: name 1 to ${MAX_NEXT_RECORDING_SLOT_COUNT}` });
+    return json(200, await listNextRecordingSlots(client, count));
+  }
+
   if (method === "GET" && !id) {
     const query = event.queryStringParameters || {};
     for (const name of ["from", "to"] as const)
@@ -403,6 +420,17 @@ export async function handlePodcastEpisodeRoutes(
   if (method === "POST" && !id) {
     if (Object.hasOwn(body, "version")) return json(400, { error: "version is system-owned" });
     const candidate = { guests: [], ...body } as Record<string, any>;
+    const recordingDateProvided = Object.hasOwn(body, "recordingDate") && body.recordingDate != null && body.recordingDate !== "";
+    let autoRecordingSlot = null;
+    if (!recordingDateProvided) {
+      autoRecordingSlot = await pickNextRecordingSlot(client);
+      if (!autoRecordingSlot) {
+        return json(422, {
+          error: "No free recording slot in the next 60 weekdays (CalendarHolds + episodes + event Cards). Pass recordingDate to override.",
+        });
+      }
+      candidate.recordingDate = autoRecordingSlot.date;
+    }
     const error = validate(candidate) || applyPublication(candidate, true);
     if (error) return json(400, { error });
     const episodes = await listPodcastEpisodes(client);
@@ -416,9 +444,10 @@ export async function handlePodcastEpisodeRoutes(
       client,
       candidate as Parameters<typeof createPodcastEpisode>[1],
     );
+    const autoMeta = autoRecordingSlot ? { recordingSlot: autoRecordingSlot, recordingDateAutoSelected: true } : {};
     if (created.cardId)
-      return json(201, { ...(await presented(client, created)), cardSync: await pushEpisodeToCard(client, created) });
-    return json(201, await presented(client, created));
+      return json(201, { ...(await presented(client, created)), cardSync: await pushEpisodeToCard(client, created), ...autoMeta });
+    return json(201, { ...(await presented(client, created)), ...autoMeta });
   }
 
   if (!id) return json(405, { error: "Method not allowed" });
@@ -503,9 +532,22 @@ async function createEpisodeCard(
     return json(409, { error: "Episode changed; reload and retry" });
   if (episode.cardId)
     return json(409, { error: "Episode already has a Card", cardId: episode.cardId });
-  if (!episode.recordingDate)
-    return json(422, { error: "Episode needs a recordingDate before it gets a Card" });
-  const guests = episode.guests.map((guest) => guest.name);
+  let working = episode;
+  let autoRecordingSlot = null;
+  if (!working.recordingDate) {
+    autoRecordingSlot = await pickNextRecordingSlot(client, { excludeEpisodeId: working.id });
+    if (!autoRecordingSlot) {
+      return json(422, {
+        error: "Episode needs a recordingDate before it gets a Card, and no free recording slot was available to auto-select",
+      });
+    }
+    try {
+      working = await updatePodcastEpisode(client, working, { recordingDate: autoRecordingSlot.date });
+    } catch {
+      return json(409, { error: "Episode changed; reload and retry" });
+    }
+  }
+  const guests = working.guests.map((guest) => guest.name);
   let linked: PodcastEpisode | null = null;
   try {
     const created = await createLinkedCard(
@@ -513,19 +555,21 @@ async function createEpisodeCard(
       actor,
       "podcast",
       {
-        title: episode.title || `Podcast with ${guests.join(" & ")}`,
-        anchorDate: episode.recordingDate,
+        title: working.title || `Podcast with ${guests.join(" & ")}`,
+        anchorDate: working.recordingDate,
         ...(guests.length ? { people: guests } : {}),
       },
-      podcastEpisodeTitleValues(episode),
+      podcastEpisodeTitleValues(working),
       async (card) => {
-        linked = await updatePodcastEpisode(client, episode, { cardId: card.id });
+        linked = await updatePodcastEpisode(client, working, { cardId: card.id });
       },
     );
     if (!created.ok) return created.response;
+    const autoMeta = autoRecordingSlot ? { recordingSlot: autoRecordingSlot, recordingDateAutoSelected: true } : {};
     return json(201, {
       episode: linked && (await presented(client, linked)),
       card: await summarizeCard(client, created.card),
+      ...autoMeta,
     });
   } catch (error) {
     if ((error as Error).name === "ConditionalCheckFailedException")

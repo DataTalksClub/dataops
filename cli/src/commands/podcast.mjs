@@ -33,6 +33,10 @@ Usage
       [--image-url URL] [--transcript-file F] [--clips-file F] [--resources-file F]
                                   --status defaults to booked; a title or a guest is required
                                    --title is the intended episode topic: set it at invite time
+                                   omit --recording-date to auto-pick the next free recording
+                                   slot (prefer midday ~12:00 Europe/Berlin, else evening ~17:00;
+                                   not the workshop 16:30 window). Occupancy: CalendarHolds +
+                                   episodes + event Cards. Pass --recording-date to override.
   dataops podcast update <episode-id> [same flags as create]
                                   "none" clears a date, link, slug, card, notes or episode number
                                   Page content (what the website page renders):
@@ -43,8 +47,9 @@ Usage
                                   JSON files hold the website front-matter arrays;
                                   "none" clears one
   dataops podcast create-card <episode-id>
-                                   Create the episode Card from the podcast Template and link it
-                                   (the episode needs a recording date)
+                                   Create the episode Card from the podcast Template and link it.
+                                   If the episode has no recording date, auto-picks the next free
+                                   recording slot (same preference as create) then creates the Card
   dataops podcast doc create <card-id> [--sponsor NAME] [--date YYYY-MM-DD] [--email]
                                    Create the portal sponsor content document for the
                                    podcast Card (or episode), link it on the Card's
@@ -57,6 +62,11 @@ Usage
                                    Next free release slots and the next season/episode
                                    number (stacking rule: next free Friday 19:00
                                    Europe/Berlin, 9 episodes per season)
+  dataops podcast next-recording-slot [--count N]
+                                   Next free recording windows (prefer midday ~12:00
+                                   Europe/Berlin, else evening ~17:00 Mon/Tue; not
+                                   workshop 16:30). Occupancy: CalendarHolds + episodes
+                                   + event Cards
   dataops podcast cadence [--weekday N] [--time HH:MM] [--timezone TZ]
                           [--episodes-per-season N]
                                    Show the release cadence, or set it (admin)
@@ -313,6 +323,10 @@ export async function create(args, io) {
   const episode = await apiFor(args).post("/api/podcast-episodes", body);
   if (args.json) return episode;
   io.print(`Created episode ${episode.id}: ${describe(episode)} [${episode.status}].`);
+  if (episode.recordingDateAutoSelected && episode.recordingSlot) {
+    const slot = episode.recordingSlot;
+    io.print(`Auto-selected recording slot: ${slot.label} (override with --recording-date).`);
+  }
   return episode;
 }
 
@@ -348,11 +362,11 @@ export async function createCard(args, io) {
   const api = apiFor(args);
   const episode = await api.get(`/api/podcast-episodes/${enc(id)}`);
   if (episode.cardId) throw new UsageError(`Episode ${id} is already linked to Card ${episode.cardId}.`);
-  if (!episode.recordingDate) {
-    throw new UsageError(`Episode ${id} has no recording date; set one with \`dataops podcast update ${id} --recording-date YYYY-MM-DD\`.`);
-  }
   const result = await api.post(`/api/podcast-episodes/${enc(id)}/card`, { version: episode.version });
   if (args.json) return result;
+  if (result.recordingDateAutoSelected && result.recordingSlot) {
+    io.print(`Auto-selected recording slot: ${result.recordingSlot.label} before creating the Card.`);
+  }
   io.print(`Created Card ${result.card.id} - ${result.card.title} and linked it to episode ${id}.`);
   return result;
 }
@@ -380,6 +394,25 @@ export async function nextSlot(args, io) {
   if ((result.takenDates || []).length) io.print(`Taken: ${result.takenDates.join(", ")}`);
   const first = (result.slots || [])[0];
   if (first) io.print(`To book one: dataops podcast update <episode-id> --season ${result.season} --episode ${result.episode} --release-date ${first.date}`);
+  return result;
+}
+
+/** Next free recording windows (midday preferred; evening ~17:00 fallback). */
+export async function nextRecordingSlot(args, io) {
+  const count = args.count === undefined ? 4 : integer(args.count, "count");
+  if (count < 1 || count > 52) throw new UsageError("--count must be 1 to 52.");
+  const result = await apiFor(args).get("/api/podcast-episodes/next-recording-slot", { query: { count: String(count) } });
+  if (args.json) return result;
+  io.print(`Recording slot preference: midday ~12:00 Europe/Berlin, else evening ~17:00 (not workshop 16:30).`);
+  table(io, result.slots || [], [
+    ["DATE", (slot) => slot.date],
+    ["WINDOW", (slot) => slot.window],
+    ["LOCAL", (slot) => `${slot.localTime} ${slot.timezone}`],
+    ["LABEL", (slot) => slot.label],
+  ], "No free recording slots in range.");
+  if ((result.takenDates || []).length) io.print(`Taken recording dates: ${result.takenDates.slice(0, 12).join(", ")}${result.takenDates.length > 12 ? "…" : ""}`);
+  const first = (result.slots || [])[0];
+  if (first) io.print(`To book one: dataops podcast create --guests "Name" --title "Topic" --recording-date ${first.date}`);
   return result;
 }
 
@@ -553,5 +586,6 @@ export const commands = {
   "create-card": createCard,
   doc,
   "next-slot": nextSlot,
+  "next-recording-slot": nextRecordingSlot,
   cadence,
 };

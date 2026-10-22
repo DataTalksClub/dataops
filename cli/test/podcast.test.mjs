@@ -61,6 +61,59 @@ describe("podcast", () => {
     assert.equal(json.json().card.id, "c-1");
   });
 
+  test("create without --recording-date prints auto-selected slot from API", async () => {
+    fakePortal({
+      "POST /api/podcast-episodes": ({ body }) => ({
+        status: 201,
+        body: {
+          id: "ep-auto",
+          version: 1,
+          ...body,
+          recordingDate: "2026-11-03",
+          recordingDateAutoSelected: true,
+          recordingSlot: { date: "2026-11-03", window: "midday", localTime: "12:00", timezone: "Europe/Berlin", label: "2026-11-03 midday 12:00 Europe/Berlin" },
+        },
+      }),
+    });
+    const io = captureIo();
+    assert.equal(await run(["podcast", "create", "--guests", "Auto Guest", "--title", "Auto topic"], io), 0);
+    assert.match(io.text(), /Auto-selected recording slot: 2026-11-03 midday 12:00 Europe\/Berlin/);
+  });
+
+  test("create-card works when episode had no recording date after auto-pick", async () => {
+    fakePortal({
+      "GET /api/podcast-episodes/ep-undated": episode({ recordingDate: null, cardId: null }),
+      "POST /api/podcast-episodes/ep-undated/card": {
+        status: 201,
+        body: {
+          episode: episode({ recordingDate: "2026-11-03", cardId: "c-auto" }),
+          card: { id: "c-auto", title: "Podcast with Test Guest" },
+          recordingDateAutoSelected: true,
+          recordingSlot: { date: "2026-11-03", window: "midday", localTime: "12:00", timezone: "Europe/Berlin", label: "2026-11-03 midday 12:00 Europe/Berlin" },
+        },
+      },
+    });
+    const io = captureIo();
+    assert.equal(await run(["podcast", "create-card", "ep-undated"], io), 0);
+    assert.match(io.text(), /Auto-selected recording slot/);
+    assert.match(io.text(), /Created Card c-auto/);
+  });
+
+  test("next-recording-slot prints midday preference and rows", async () => {
+    fakePortal({
+      "GET /api/podcast-episodes/next-recording-slot": {
+        preference: { primary: "midday", fallback: "evening", eveningLocalTime: "17:00", note: "not workshop 16:30" },
+        slots: [{ date: "2026-11-03", window: "midday", localTime: "12:00", timezone: "Europe/Berlin", label: "2026-11-03 midday 12:00 Europe/Berlin" }],
+        takenDates: [],
+      },
+    });
+    const io = captureIo();
+    assert.equal(await run(["podcast", "next-recording-slot", "--count", "1"], io), 0);
+    assert.match(io.text(), /midday ~12:00/);
+    assert.match(io.text(), /not workshop 16:30/);
+    assert.match(io.text(), /2026-11-03/);
+  });
+
   test("create sends guests, links and booked status; needs a title or guest", async () => {
     const calls = fakePortal({
       "POST /api/podcast-episodes": ({ body }) => ({ status: 201, body: { id: "ep-9", version: 1, ...body } }),
@@ -181,7 +234,7 @@ describe("podcast", () => {
     assert.equal(await run(["podcast", "update", "ep-1", "--status", "edited"], captureIo()), 5);
   });
 
-  test("create-card posts the episode version and refuses linked or undated episodes", async () => {
+  test("create-card posts the episode version and refuses already-linked episodes", async () => {
     const calls = fakePortal({
       "GET /api/podcast-episodes/ep-1": episode({}),
       "POST /api/podcast-episodes/ep-1/card": ({ body }) => ({
@@ -189,14 +242,12 @@ describe("podcast", () => {
         body: { episode: episode({ cardId: "c-2", version: body.version + 1 }), card: { id: "c-2", title: "Synthetic episode" } },
       }),
       "GET /api/podcast-episodes/ep-2": episode({ id: "ep-2", cardId: "c-0" }),
-      "GET /api/podcast-episodes/ep-3": episode({ id: "ep-3", recordingDate: null }),
     });
     const io = captureIo();
     assert.equal(await run(["podcast", "create-card", "ep-1"], io), 0);
     assert.deepEqual(calls[1].body, { version: 4 });
     assert.match(io.text(), /Created Card c-2/);
     assert.equal(await run(["podcast", "create-card", "ep-2"], captureIo()), 2);
-    assert.equal(await run(["podcast", "create-card", "ep-3"], captureIo()), 2);
     assert.equal(calls.filter((call) => call.method === "POST").length, 1);
   });
 });

@@ -214,8 +214,13 @@ describe("podcast episodes", () => {
     assert.equal((await listTasksByCard(client, newCard.id)).length, 2);
     assert.equal((await invoke("POST", `/api/podcast-episodes/${b.id}/card`, {})).statusCode, 409);
 
+    // Create without recordingDate auto-picks a slot; create-card then succeeds.
     const undated = data(await invoke("POST", "/api/podcast-episodes", { title: "Synthetic Undated", guests: [], status: "booked" }));
-    assert.equal((await invoke("POST", `/api/podcast-episodes/${undated.id}/card`, {})).statusCode, 422);
+    assert.ok(undated.recordingDateAutoSelected);
+    assert.ok(undated.recordingDate);
+    const undatedCard = await invoke("POST", `/api/podcast-episodes/${undated.id}/card`, { version: undated.version });
+    assert.equal(undatedCard.statusCode, 201, undatedCard.body);
+    assert.equal(data(undatedCard).card.anchorDate || data(undatedCard).episode.recordingDate, undated.recordingDate);
 
     const doomed = data(await invoke("POST", "/api/podcast-episodes", { ...booked, title: "Synthetic Doomed Episode", recordingDate: "2027-07-05" }));
     const originalSend = client.send.bind(client);
@@ -300,4 +305,44 @@ describe("podcast episodes", () => {
     assert.equal(statusFromCard("booked", {}, done(STAGE_REFS.recorded)), "booked", "a Template that marks no stages moves nothing");
     assert.equal(statusFromCard("booked", { recorded: "renamed-stream" }, done("renamed-stream")), "recorded", "the snapshot names the stage Task");
   });
+
+  it("auto-picks midday recordingDate when omitted on create", async () => {
+    const created = await invoke("POST", "/api/podcast-episodes", {
+      title: "Auto slot episode",
+      guests: [{ name: "Auto Guest" }],
+      status: "booked",
+    });
+    assert.equal(created.statusCode, 201, created.body);
+    const episode = data(created);
+    assert.ok(episode.recordingDate, "expected auto recordingDate");
+    assert.equal(episode.recordingDateAutoSelected, true);
+    assert.equal(episode.recordingSlot.window, "midday");
+    assert.equal(episode.recordingSlot.localTime, "12:00");
+    assert.notEqual(episode.recordingSlot.localTime, "16:30");
+  });
+
+  it("honors explicit recordingDate override", async () => {
+    const created = await invoke("POST", "/api/podcast-episodes", {
+      title: "Override slot episode",
+      guests: [{ name: "Override Guest" }],
+      status: "booked",
+      recordingDate: "2027-06-15",
+    });
+    assert.equal(created.statusCode, 201, created.body);
+    const episode = data(created);
+    assert.equal(episode.recordingDate, "2027-06-15");
+    assert.equal(episode.recordingDateAutoSelected, undefined);
+    assert.equal(episode.recordingSlot, undefined);
+  });
+
+  it("lists next-recording-slot separately from release next-slot", async () => {
+    const recording = await invoke("GET", "/api/podcast-episodes/next-recording-slot", undefined, { count: "2" });
+    assert.equal(recording.statusCode, 200, recording.body);
+    const body = data(recording);
+    assert.ok(Array.isArray(body.slots));
+    assert.equal(body.preference.primary, "midday");
+    assert.equal(body.preference.eveningLocalTime, "17:00");
+    assert.match(body.preference.note, /not workshop 16:30/);
+  });
+
 });
