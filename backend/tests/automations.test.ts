@@ -76,7 +76,7 @@ describe('automation card schedules', () => {
 
 describe('automation schedules', () => {
   it('reads EventBridge and GitHub daily crons', () => {
-    assert.deepStrictEqual(dailyCronTime('cron(0 8 * * ? *)'), { hour: 8, minute: 0 });
+    assert.deepStrictEqual(dailyCronTime('cron(0 6 * * ? *)'), { hour: 6, minute: 0 });
     assert.deepStrictEqual(dailyCronTime('17 3 * * *'), { hour: 3, minute: 17 });
     assert.strictEqual(dailyCronTime('0 9 * * 1'), null);
   });
@@ -161,7 +161,7 @@ describe('GET /api/automations', () => {
       { ok: false, summary: 'Failed: finance offline' },
     );
     assert.strictEqual(byId.get('recurring-tasks')!.lastRun?.at, '2026-10-16T08:00:00.000Z');
-    assert.strictEqual(byId.get('recurring-tasks')!.nextRunAt, '2026-10-17T08:00:00.000Z');
+    assert.strictEqual(byId.get('recurring-tasks')!.nextRunAt, '2026-10-17T06:00:00.000Z');
     assert.strictEqual(byId.get('knowledge-mirror')!.lastRun?.source, 'knowledge-checkpoint');
     assert.strictEqual(byId.get('knowledge-backup')!.lastRun, null);
     assert.deepStrictEqual(byId.get('newsletter-cards')!.settings.map(({ key, value }) => ({ key, value })), [{ key: 'newsletterCardLeadDays', value: 21 }]);
@@ -230,7 +230,7 @@ describe('GET /api/automations', () => {
     assert.strictEqual(weekly.scheduleLabel, 'Every morning (Europe/Berlin)');
     assert.match(weekly.leadTime, /21 days before the send date/);
     assert.strictEqual(weekly.skipRule, 'One Card per issue; skipped when the issue already has one');
-    assert.strictEqual(weekly.nextRunAt, '2026-10-17T08:00:00.000Z');
+    assert.strictEqual(weekly.nextRunAt, '2026-10-17T06:00:00.000Z');
     assert.strictEqual(weekly.lastRun?.summary, '0 cards created');
     assert.strictEqual(weekly.templateLink, `/templates?templateId=${newsletter.id}`);
     assert.strictEqual(taxCard.name, 'Tax Report card');
@@ -238,7 +238,7 @@ describe('GET /api/automations', () => {
     assert.strictEqual(taxCard.leadTime, 'Created on the scheduled date');
     assert.match(taxCard.skipRule, /One Card per anchor date/);
     // 2026-11-01 is a Sunday, so the anchor (and its creation pass) moves to Monday.
-    assert.strictEqual(taxCard.nextRunAt, '2026-11-02T08:00:00.000Z');
+    assert.strictEqual(taxCard.nextRunAt, '2026-11-02T06:00:00.000Z');
     assert.strictEqual(taxCard.lastRun?.summary, '0 cards created');
     assert.strictEqual(taxCard.templateLink, `/templates?templateId=${tax.id}`);
     const byId = new Map(overview.automations.map((automation) => [automation.id, automation]));

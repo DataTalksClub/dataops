@@ -120,6 +120,11 @@ Recommended key:
 
 Recurring configs are schedules that create repeated tasks or cards.
 
+Generation is day-granular: the daily EventBridge job
+(`BackendFunctionDailyBackendCron`, `cron(0 6 * * ? *)` UTC ≈ 08:00
+Europe/Berlin in summer) decides the wall-clock moment work appears. The hour
+in `cron_expression` is a label for people and UI, not the AWS trigger.
+
 Application fields:
 
 - `recurring_config_id`

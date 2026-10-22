@@ -1275,8 +1275,8 @@ Resources:
   BackendFunctionDailyBackendCron:
     Type: AWS::Events::Rule
     Properties:
-      Description: Run DataOps recurring task and automatic template generation once per day.
-      ScheduleExpression: cron(0 8 * * ? *)
+      Description: Run DataOps recurring task and automatic template generation once per day at 06:00 UTC (08:00 Europe/Berlin CEST).
+      ScheduleExpression: cron(0 6 * * ? *)
       State: ENABLED
       Targets:
         - Arn: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${BackendTargetFunctionName}

@@ -52,7 +52,7 @@ export interface AutomationDefinition {
 }
 
 const DAILY_JOB = 'Daily job (backend Lambda)';
-export const DAILY_JOB_SCHEDULE: AutomationSchedule = { kind: 'cron', expression: 'cron(0 8 * * ? *)' };
+export const DAILY_JOB_SCHEDULE: AutomationSchedule = { kind: 'cron', expression: 'cron(0 6 * * ? *)' };
 /** Shared by the sponsor alerts and the email suggestions, which chase on the same days. */
 const SPONSOR_REMINDER_SETTINGS: AutomationSettingSpec[] = [
   {

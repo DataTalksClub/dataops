@@ -64,6 +64,20 @@ process. The Lambda Function URL is public at the AWS edge, but the app
 requires its own basic-auth session before serving internal docs or work
 routes. The password is stored in AWS Secrets Manager.
 
+## Daily backend cron (recurring generate)
+
+EventBridge rule `BackendFunctionDailyBackendCron` fires the backend Lambda on
+`cron(0 6 * * ? *)` UTC (08:00 Europe/Berlin in CEST, 07:00 in CET). That wall
+clock is what makes today's recurring Tasks and automatic template Cards
+available in the portal.
+
+Recurring-config and template cron expressions are **day-granular** for
+generation: the hour/minute in a config is a **label** for humans and for
+display, not the EventBridge trigger. Changing when work appears in the morning
+means changing the EventBridge schedule (and the matching
+`DAILY_JOB_SCHEDULE` in `backend/src/automations/registry.ts`), not the hour on
+each recurring config.
+
 ## Content Save Lifecycle
 
 When a user edits a page in the deployed app, the content path is:

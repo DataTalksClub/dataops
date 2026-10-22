@@ -251,8 +251,8 @@ def test_backend_schedules_are_explicit_identity_stable_resources_with_exact_beh
     schedules = {
         "BackendFunctionDailyBackendCron": {
             "target": "BackendTargetFunctionName",
-            "description": "Run DataOps recurring task and automatic template generation once per day.",
-            "expression": "cron(0 8 * * ? *)",
+            "description": "Run DataOps recurring task and automatic template generation once per day at 06:00 UTC (08:00 Europe/Berlin CEST).",
+            "expression": "cron(0 6 * * ? *)",
             "state": "ENABLED",
             "target_id": "BackendFunctionDailyBackendCronLambdaTarget",
             "input": None,
