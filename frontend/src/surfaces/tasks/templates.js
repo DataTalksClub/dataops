@@ -28,6 +28,9 @@ export function createTemplatesSurface(context) {
     batchBusy: false,
     batchMessage: "",
     batchApplyResults: null,
+    editorBusy: false,
+    editorMessage: "",
+    editorOpen: false,
   };
 
   // Selecting a Template re-renders the whole surface (route change plus a
@@ -304,7 +307,7 @@ export function createTemplatesSurface(context) {
 
     const facts = templateFacts(selected);
     const detail = document.createElement("article");
-    detail.className = "dk-split__scroll runtime-template-preview runtime-template-readonly";
+    detail.className = "dk-split__scroll runtime-template-preview";
     const back = document.createElement("button");
     back.type = "button";
     back.className = "dk-split__back";
@@ -375,7 +378,9 @@ export function createTemplatesSurface(context) {
     definitionSummary.textContent = "Definition details";
     const provenanceNote = document.createElement("p");
     provenanceNote.textContent =
-      "This definition is projected from reviewed YAML. Changes take effect through the deployment workflow.";
+      "Git seed lives in dataops-knowledge at workflow-templates/<type>.yaml (see Source). "
+      + "Saving below pins the whole definition over that seed; new cards use the pin immediately. "
+      + "Reset restores the Git base. CLI: dataops templates update|reset.";
     const definition = document.createElement("dl");
     definition.className = "runtime-template-definition";
     // Provenance only. Steps and trigger are already stated in the fact strip
@@ -401,12 +406,162 @@ export function createTemplatesSurface(context) {
     );
     definitionSection.append(definitionSummary, definition, provenanceNote);
 
-    detail.append(guidance, stepsSection, cardUpdates, definitionSection);
+    const editorSection = renderTemplateEditor(selected);
+
+    detail.append(guidance, stepsSection, cardUpdates, editorSection, definitionSection);
     pane.append(header, detail);
     return pane;
   }
 
+  const TEMPLATE_EDITOR_SERVER_FIELDS = new Set([
+    "id", "version", "revision", "origin", "pinned", "base", "baseSourceRevision",
+    "sourcePath", "sourceRevision", "createdAt", "updatedAt", "PK", "SK",
+  ]);
+
+  function definitionPayloadFromTemplate(template) {
+    const clean = { ...template };
+    for (const field of TEMPLATE_EDITOR_SERVER_FIELDS) delete clean[field];
+    return clean;
+  }
+
+  function renderTemplateEditor(template) {
+    const section = document.createElement("details");
+    section.className = "runtime-template-block runtime-template-editor";
+    section.open = Boolean(runtimeState.editorOpen && runtimeState.selectedId === template.id);
+    const summary = document.createElement("summary");
+    summary.textContent = "Edit definition (web)";
+    section.append(summary);
+
+    const help = document.createElement("p");
+    help.className = "runtime-template-editor-help";
+    const gitPath = template.sourcePath
+      || `workflow-templates/${template.type || "template"}.yaml`;
+    help.textContent =
+      `Edit the JSON definition and Save to pin it in DataOps (durable). `
+      + `Git seed path: ${gitPath}. Push that YAML in dataops-knowledge when you want the seed updated; `
+      + `pin wins for new cards until you Reset to Git base. Same payload as `
+      + `dataops templates update --file.`;
+    section.append(help);
+
+    const textarea = document.createElement("textarea");
+    textarea.className = "dk-input runtime-template-editor-json";
+    textarea.rows = 18;
+    textarea.spellcheck = false;
+    textarea.setAttribute("aria-label", "Template definition JSON");
+    textarea.value = JSON.stringify(definitionPayloadFromTemplate(template), null, 2);
+    textarea.disabled = runtimeState.editorBusy;
+    section.append(textarea);
+
+    const actions = document.createElement("div");
+    actions.className = "runtime-template-editor-actions";
+    const save = document.createElement("button");
+    save.type = "button";
+    save.className = "primary-button";
+    save.textContent = runtimeState.editorBusy ? "Saving…" : "Save pin";
+    save.disabled = runtimeState.editorBusy;
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "dk-button";
+    reset.textContent = "Reset to Git base";
+    reset.disabled = runtimeState.editorBusy || template.origin !== "git";
+    reset.title = template.origin === "git"
+      ? "Drop the pin and restore the authored YAML seed"
+      : "Only Git-origin templates can be reset";
+    actions.append(save, reset);
+    section.append(actions);
+
+    if (runtimeState.editorMessage) {
+      const msg = document.createElement("p");
+      msg.className = "runtime-template-editor-message";
+      msg.setAttribute("role", "status");
+      msg.textContent = runtimeState.editorMessage;
+      section.append(msg);
+    }
+
+    section.addEventListener("toggle", () => {
+      runtimeState.editorOpen = section.open;
+    });
+
+    save.addEventListener("click", async () => {
+      let definition;
+      try {
+        definition = JSON.parse(textarea.value);
+      } catch (error) {
+        runtimeState.editorMessage = `Invalid JSON: ${error.message || "parse failed"}`;
+        runtimeState.editorOpen = true;
+        renderTasksSurface();
+        return;
+      }
+      if (!definition || typeof definition !== "object" || Array.isArray(definition)) {
+        runtimeState.editorMessage = "Definition must be a JSON object.";
+        runtimeState.editorOpen = true;
+        renderTasksSurface();
+        return;
+      }
+      runtimeState.editorBusy = true;
+      runtimeState.editorMessage = "Saving pin…";
+      runtimeState.editorOpen = true;
+      renderTasksSurface();
+      try {
+        const payload = await request(workApiUrl(`/api/templates/${encodeURIComponent(template.id)}`), {
+          method: "PUT",
+          body: JSON.stringify({
+            definition,
+            expectedVersion: template.version,
+            revision: template.revision,
+          }),
+        });
+        const next = payload?.template || payload;
+        runtimeState.editorMessage =
+          `Pinned ${next?.type || template.type} to version ${next?.version ?? "?"}. New cards use this definition.`;
+        runtimeState.editorBusy = false;
+        await refreshRuntimeTemplates({ force: true });
+        if (next?.id) runtimeState.selectedId = next.id;
+        runtimeState.editorOpen = true;
+        renderTasksSurface();
+      } catch (error) {
+        runtimeState.editorBusy = false;
+        runtimeState.editorMessage = `Save failed: ${error.message || "request failed"}`;
+        runtimeState.editorOpen = true;
+        renderTasksSurface();
+      }
+    });
+
+    reset.addEventListener("click", async () => {
+      if (!window.confirm("Reset this template to the Git YAML seed and drop the pin?")) return;
+      runtimeState.editorBusy = true;
+      runtimeState.editorMessage = "Resetting to Git base…";
+      runtimeState.editorOpen = true;
+      renderTasksSurface();
+      try {
+        const payload = await request(workApiUrl(`/api/templates/${encodeURIComponent(template.id)}/reset`), {
+          method: "POST",
+          body: JSON.stringify({
+            expectedVersion: template.version,
+            revision: template.revision,
+          }),
+        });
+        const next = payload?.template || payload;
+        runtimeState.editorMessage = payload?.applied === false
+          ? "Already on the Git base."
+          : `Reset ${next?.type || template.type} to the Git seed.`;
+        runtimeState.editorBusy = false;
+        await refreshRuntimeTemplates({ force: true });
+        runtimeState.editorOpen = true;
+        renderTasksSurface();
+      } catch (error) {
+        runtimeState.editorBusy = false;
+        runtimeState.editorMessage = `Reset failed: ${error.message || "request failed"}`;
+        runtimeState.editorOpen = true;
+        renderTasksSurface();
+      }
+    });
+
+    return section;
+  }
+
   function cardsForTemplate(templateId) {
+
     return (state.workSnapshot?.cards || [])
       .filter((card) => card.templateId === templateId && card.status !== "archived");
   }

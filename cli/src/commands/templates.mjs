@@ -22,7 +22,9 @@ Usage
 Create a Card from one with: dataops cards create --title T --date D --template <id|type|name>
 
 Writes pin (PUT) or restore (reset) the whole effective definition: Git stays
-the canonical default and a seed never half-applies a pin. The
+the canonical default (dataops-knowledge/workflow-templates/<type>.yaml) and a
+seed never half-applies a pin. The same pin is available from the web Templates
+page (Edit definition). The
 --expected-version/--revision pair defaults to the currently fetched values,
 except a definition file carrying its own version/revision (for example a
 saved GET response) supplies them instead; explicit flags always win. Only a
