@@ -37,7 +37,7 @@ Usage
                                   --status defaults to booked; a title or a guest is required
                                    --title is the intended episode topic: set it at invite time
                                    omit --recording-date to auto-pick the next free recording
-                                   slot (prefer midday ~12:00 Europe/Berlin, else evening ~17:00;
+                                   slot (prefer midday ~12:30 Europe/Berlin, else evening ~17:00;
                                    not the workshop 16:30 window). Occupancy: CalendarHolds +
                                    episodes + event Cards. Pass --recording-date to override.
   dataops podcast update <episode-id> [same flags as create]
@@ -66,7 +66,7 @@ Usage
                                    number (stacking rule: next free Friday 19:00
                                    Europe/Berlin, 9 episodes per season)
   dataops podcast next-recording-slot [--count N]
-                                   Next free recording windows (prefer midday ~12:00
+                                   Next free recording windows (prefer midday ~12:30
                                    Europe/Berlin, else evening ~17:00 Mon/Tue; not
                                    workshop 16:30). Occupancy: CalendarHolds + episodes
                                    + event Cards
@@ -406,7 +406,7 @@ export async function nextRecordingSlot(args, io) {
   if (count < 1 || count > 52) throw new UsageError("--count must be 1 to 52.");
   const result = await apiFor(args).get("/api/podcast-episodes/next-recording-slot", { query: { count: String(count) } });
   if (args.json) return result;
-  io.print(`Recording slot preference: midday ~12:00 Europe/Berlin, else evening ~17:00 (not workshop 16:30).`);
+  io.print(`Recording slot preference: midday ~12:30 Europe/Berlin, else evening ~17:00 (not workshop 16:30).`);
   table(io, result.slots || [], [
     ["DATE", (slot) => slot.date],
     ["WINDOW", (slot) => slot.window],

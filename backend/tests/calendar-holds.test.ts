@@ -221,8 +221,11 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     assert.equal(evening60.startLocal, "17:00");
     assert.equal(evening60.endLocal, "18:00");
     const midday60 = holdInterval("2026-10-26", "midday", 60);
-    assert.equal(midday60.startLocal, "12:00");
-    assert.equal(midday60.endLocal, "13:00");
+    assert.equal(midday60.startLocal, "12:30");
+    assert.equal(midday60.endLocal, "13:30");
+    const midday90 = holdInterval("2026-10-26", "midday", 90);
+    assert.equal(midday90.startLocal, "12:00");
+    assert.equal(midday90.endLocal, "13:30");
     assert.equal(proposalTitle("Talk"), "(Proposal) Talk");
     assert.equal(proposalTitle("(Proposal) Talk"), "(Proposal) Talk");
     assert.equal(confirmedTitle("(Proposal) Talk"), "Talk");

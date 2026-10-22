@@ -25,15 +25,15 @@ export const HOLD_DEFAULT_WINDOW: CalendarHoldWindow = 'evening';
 export const HOLD_DEFAULT_TTL_DAYS = 7;
 
 export const HOLD_WINDOW_START: Record<CalendarHoldWindow, string> = {
-  midday: '12:00',
-  evening: '17:00',
+  midday: '12:30', // podcast/webinar 60 → 12:30–13:30
+  evening: '17:00', // podcast/webinar 60 → 17:00–18:00
 };
 /**
- * Workshop-only evening start (16:30). Evening holds with the workshop
- * duration (90 min) start here; all other evening holds (podcast, webinar,
- * 60 min) start at HOLD_WINDOW_START.evening (17:00).
+ * Workshop-only starts. Duration 90 selects these; 60 stays on HOLD_WINDOW_START
+ * (podcast/webinar midday 12:30, evening 17:00).
  */
 export const HOLD_WORKSHOP_START = '16:30';
+export const HOLD_WORKSHOP_MIDDAY_START = '12:00';
 
 export interface CalendarHold {
   id: string;
@@ -114,10 +114,12 @@ export function holdInterval(date: string, window: CalendarHoldWindow, durationM
   startIso: string;
   endIso: string;
 } {
-  // The 90-min evening shape is the workshop (16:30 start); every other
-  // evening hold (podcast, webinar, 60 min) starts at 17:00.
-  const startLocal =
-    window === 'evening' && durationMinutes === WORKSHOP_DURATION_MINUTES ? HOLD_WORKSHOP_START : HOLD_WINDOW_START[window];
+  // Workshop (90) anchors: midday 12:00 / evening 16:30.
+  // Podcast/webinar (60): midday 12:30 / evening 17:00.
+  let startLocal = HOLD_WINDOW_START[window];
+  if (durationMinutes === WORKSHOP_DURATION_MINUTES) {
+    startLocal = window === 'evening' ? HOLD_WORKSHOP_START : HOLD_WORKSHOP_MIDDAY_START;
+  }
   const endLocal = addMinutes(startLocal, durationMinutes);
   const suffix = berlinOffsetSuffix(date);
   const startIso = new Date(`${date}T${startLocal}:00${suffix}`).toISOString();

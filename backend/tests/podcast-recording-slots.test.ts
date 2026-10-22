@@ -23,7 +23,7 @@ describe("podcast recording slots", () => {
     assert.equal(result.slots[0].window, "midday");
     assert.equal(result.slots[0].localTime, RECORDING_MIDDAY_LOCAL);
     assert.equal(result.preference.eveningLocalTime, RECORDING_EVENING_LOCAL);
-    assert.match(result.preference.note, /not workshop 16:30/);
+    assert.match(result.preference.note, /not workshop 12:00\/16:30/);
   });
 
   it("falls back to evening ~17:00 when midday is held (Mon/Tue)", () => {

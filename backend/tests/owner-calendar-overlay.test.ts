@@ -782,9 +782,9 @@ describe('owner calendar overlay and filtering', () => {
       assert.equal(isWindowFreeForDuration('evening', [], 121), false);
     });
 
-    it('anchors midday availability at the 12:00 preferred start', async () => {
+    it('anchors midday availability at the 12:30 preferred start for 60-min', async () => {
       const { isWindowFreeForDuration } = await import('../src/calendar/ownerCalendarOverlay');
-      // 13:30-14:00 is inside the band but outside the preferred 12:00-13:00 block.
+      // 13:30-14:00 is inside the band but outside the preferred 12:30-13:30 block.
       assert.equal(isWindowFreeForDuration('midday', [{ start: '13:30', end: '14:00' }], 60), true);
       assert.equal(isWindowFreeForDuration('midday', [{ start: '12:30', end: '13:30' }], 60), false);
       assert.equal(isWindowFreeForDuration('midday', [], 90), true);

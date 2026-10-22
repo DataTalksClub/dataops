@@ -71,13 +71,13 @@ describe("podcast", () => {
           ...body,
           recordingDate: "2026-11-03",
           recordingDateAutoSelected: true,
-          recordingSlot: { date: "2026-11-03", window: "midday", localTime: "12:00", timezone: "Europe/Berlin", label: "2026-11-03 midday 12:00 Europe/Berlin" },
+          recordingSlot: { date: "2026-11-03", window: "midday", localTime: "12:30", timezone: "Europe/Berlin", label: "2026-11-03 midday 12:30 Europe/Berlin" },
         },
       }),
     });
     const io = captureIo();
     assert.equal(await run(["podcast", "create", "--guests", "Auto Guest", "--title", "Auto topic"], io), 0);
-    assert.match(io.text(), /Auto-selected recording slot: 2026-11-03 midday 12:00 Europe\/Berlin/);
+    assert.match(io.text(), /Auto-selected recording slot: 2026-11-03 midday 12:30 Europe\/Berlin/);
   });
 
   test("create-card works when episode had no recording date after auto-pick", async () => {
@@ -89,7 +89,7 @@ describe("podcast", () => {
           episode: episode({ recordingDate: "2026-11-03", cardId: "c-auto" }),
           card: { id: "c-auto", title: "Podcast with Test Guest" },
           recordingDateAutoSelected: true,
-          recordingSlot: { date: "2026-11-03", window: "midday", localTime: "12:00", timezone: "Europe/Berlin", label: "2026-11-03 midday 12:00 Europe/Berlin" },
+          recordingSlot: { date: "2026-11-03", window: "midday", localTime: "12:30", timezone: "Europe/Berlin", label: "2026-11-03 midday 12:30 Europe/Berlin" },
         },
       },
     });
@@ -103,13 +103,13 @@ describe("podcast", () => {
     fakePortal({
       "GET /api/podcast-episodes/next-recording-slot": {
         preference: { primary: "midday", fallback: "evening", eveningLocalTime: "17:00", note: "not workshop 16:30" },
-        slots: [{ date: "2026-11-03", window: "midday", localTime: "12:00", timezone: "Europe/Berlin", label: "2026-11-03 midday 12:00 Europe/Berlin" }],
+        slots: [{ date: "2026-11-03", window: "midday", localTime: "12:30", timezone: "Europe/Berlin", label: "2026-11-03 midday 12:30 Europe/Berlin" }],
         takenDates: [],
       },
     });
     const io = captureIo();
     assert.equal(await run(["podcast", "next-recording-slot", "--count", "1"], io), 0);
-    assert.match(io.text(), /midday ~12:00/);
+    assert.match(io.text(), /midday ~12:30/);
     assert.match(io.text(), /not workshop 16:30/);
     assert.match(io.text(), /2026-11-03/);
   });

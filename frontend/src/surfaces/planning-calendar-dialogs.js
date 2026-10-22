@@ -276,7 +276,7 @@ export function setupDayScheduleDialog(options) {
             aria-label="Intended episode topic"${state.busy ? " disabled" : ""}>
           <select name="window" aria-label="Hold window">
             <option value="evening">Evening 17:00 (90-min workshop starts 16:30)</option>
-            <option value="midday">Midday 12:00</option>
+            <option value="midday">Midday 12:30 (workshop 12:00 @ 90 min)</option>
           </select>
           <select name="duration" aria-label="Hold duration">
             <option value="60">60 min</option>

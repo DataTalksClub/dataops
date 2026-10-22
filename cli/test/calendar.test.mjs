@@ -418,8 +418,8 @@ describe("Calendar CLI commands", () => {
     assert.match(io90.text(), /Evening Event Slot \(16:30–18:30, start 16:30\):\s+BUSY/);
   });
 
-  test("calendar day midday window prefers 12:00 start", async () => {
-    // 13:30-14:00 is inside the midday band but outside the preferred 12:00-13:00 block.
+  test("calendar day midday window prefers 12:30 start for 60-min", async () => {
+    // 13:30-14:00 is inside the midday band but outside the preferred 12:30-13:30 block.
     const mkFetch = () => async (url) => {
       if (String(url).includes("/overlays")) {
         return new Response(
@@ -436,7 +436,7 @@ describe("Calendar CLI commands", () => {
     const io = captureIo();
     globalThis.fetch = mkFetch();
     assert.equal(await run(["calendar", "day", "2026-08-13", "--duration", "60", "--window", "midday"], io), 0);
-    assert.match(io.text(), /Midday Event Slot \(11:30–14:00[^)]*\):\s+AVAILABLE/);
+    assert.match(io.text(), /Midday Event Slot \(11:30–14:00, start 12:30\):\s+AVAILABLE/);
     assert.match(io.text(), /\[60 min, midday\]/);
     // Window filter hides the evening line.
     assert.doesNotMatch(io.text(), /Evening Event Slot/);

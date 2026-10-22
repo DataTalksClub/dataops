@@ -35,7 +35,7 @@ Slot options
 Operational windows (Europe/Berlin)
   evening 16:30–18:30 band. Podcast/recording (and 60-min webinar) preferred
           start 17:00; 16:30 is workshop-only (90 min, needs 16:30–18:00 free).
-  midday  11:30–14:00, start 12:00 when the guest asks.
+  midday  11:30–14:00; podcast/webinar start 12:30 (60), workshop start 12:00 (90).
   Availability = a contiguous free block of at least --duration inside the
   chosen window(s). Single-day range implies --all (full event listing).
 
@@ -69,7 +69,8 @@ export function parseSlotWindow(raw) {
   throw new Error("Invalid --window: must be one of 'evening', 'midday', 'any'.");
 }
 
-const MIDDAY_WINDOW = { start: "11:30", end: "14:00", preferStart: "12:00" };
+const MIDDAY_WINDOW = { start: "11:30", end: "14:00", preferStart: "12:30" };
+const WORKSHOP_MIDDAY_WINDOW = { start: "11:30", end: "14:00", preferStart: "12:00" };
 // Evening band 16:30–18:30: podcast/recording (60 min) starts 17:00, 16:30 is workshop-only.
 const EVENING_WINDOW = { start: "16:30", end: "18:30", preferStart: "17:00" };
 const WORKSHOP_WINDOW = { start: "16:30", end: "18:30", preferStart: "16:30" };
@@ -104,6 +105,9 @@ function eventTimes(o) {
 function preferStartFor(window, durationMinutes) {
   if (window === "evening" && durationMinutes === WORKSHOP_DURATION_MINUTES) {
     return WORKSHOP_WINDOW.preferStart;
+  }
+  if (window === "midday" && durationMinutes === WORKSHOP_DURATION_MINUTES) {
+    return WORKSHOP_MIDDAY_WINDOW.preferStart;
   }
   return (window === "midday" ? MIDDAY_WINDOW : EVENING_WINDOW).preferStart;
 }
@@ -350,7 +354,7 @@ export async function day(args, io) {
   io.print(`\nOperational Slot Availability (${durationMinutes} min):`);
   if (showMidday) {
     io.print(
-      `  ● Midday Event Slot (11:30–14:00, start 12:00):  ${isMiddayAvailable ? "AVAILABLE" : "BUSY / RESERVED"}`,
+      `  ● Midday Event Slot (11:30–14:00, start ${preferStartFor("midday", durationMinutes)}):  ${isMiddayAvailable ? "AVAILABLE" : "BUSY / RESERVED"}`,
     );
     if (isMiddayAvailable) {
       io.print("    No conflicts. Preferred operational window for podcasts and lunch discussions.");

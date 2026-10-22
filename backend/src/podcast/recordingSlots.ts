@@ -4,7 +4,7 @@
  * Distinct from releaseSlots (Friday 19:00 release cadence). A recording slot is
  * one midday or evening operational window in Europe/Berlin. Preference for
  * podcasts (Alexey / Orin t1050u):
- *   1) midday first (~12:00)
+ *   1) midday first (~12:30)
  *   2) evening fallback labeled ~17:00 (Mon/Tue only, matching owner overlay)
  * Never treat the workshop evening preferStart 16:30 as the podcast default.
  *
@@ -21,7 +21,7 @@
 export type RecordingWindow = 'midday' | 'evening';
 
 export const RECORDING_TIME_ZONE = 'Europe/Berlin';
-export const RECORDING_MIDDAY_LOCAL = '12:00';
+export const RECORDING_MIDDAY_LOCAL = '12:30';
 /** Podcast evening label (~17:00); not workshop preferStart 16:30. */
 export const RECORDING_EVENING_LOCAL = '17:00';
 export const DEFAULT_RECORDING_HORIZON_DAYS = 60;
@@ -161,7 +161,7 @@ export function nextRecordingSlots(input: NextRecordingSlotsInput): NextRecordin
       primary: 'midday',
       fallback: 'evening',
       eveningLocalTime: RECORDING_EVENING_LOCAL,
-      note: 'Podcasts prefer midday (~12:00 Europe/Berlin); evening fallback is ~17:00 (not workshop 16:30).',
+      note: 'Podcasts prefer midday (~12:30 Europe/Berlin, 12:30–13:30); evening fallback is ~17:00–18:00 (not workshop 12:00/16:30).',
     },
     slots,
     takenDates: [...taken].sort(),
