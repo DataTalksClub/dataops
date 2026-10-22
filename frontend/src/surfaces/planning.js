@@ -194,7 +194,11 @@ export function createPlanningSurface(context) {
             <div class="calendar-settings-group">
               <label class="calendar-settings-field">
                 <strong>Dapier calendar connection</strong>
-                <span class="calendar-settings-hint">Used for overlay free/busy and for calendar propose / podcast invite Google Proposal writes. Pick a suitable google-calendar connection — nothing else to wire.</span>
+                <span class="calendar-settings-hint">
+                  Used for overlay free/busy and for calendar propose / podcast invite
+                  Google Proposal writes. Pick a suitable google-calendar connection —
+                  nothing else to wire.
+                </span>
                 <input name="connectionId" list="dapier-calendar-connections" required autocomplete="off" placeholder="google-calendar">
                 <datalist id="dapier-calendar-connections"></datalist>
               </label>
