@@ -147,6 +147,18 @@ dataops cards show <card-id>                  # the generated Tasks
 `--title` may be left out when the Template has a `card_title` pattern; the
 Card is then named from the pattern.
 
+Edit a Template (pins the effective definition new Cards use; a deploy
+refreshes the Git base but never overwrites a pin):
+
+```bash
+dataops templates update <type> --task <ref> --offset-days -3 --task-name "New step name"
+dataops templates update <type> --file edited-definition.json [--dry-run]
+dataops templates reset <type>          # restore the Git base
+```
+
+The same edit is available in the portal under Tasks > Templates > Edit
+definition. Canonical source: `DataTalksClub/dataops-knowledge/workflow-templates/*.yaml`.
+
 For a one-off Task: `dataops tasks create --description "..." --date 2026-11-02 [--card <card-id>]`.
 
 For a newsletter issue: `dataops newsletter list`. An issue is planned without a Card;

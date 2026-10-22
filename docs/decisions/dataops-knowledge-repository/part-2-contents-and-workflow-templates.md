@@ -108,12 +108,23 @@ process context by resolving the stable ID or one of its aliases.
 
 Runtime behavior:
 
-- The work engine loads or syncs runtime template records from the Git-backed
-  YAML source.
-- DynamoDB may cache the current runtime template version for fast execution and
-  historical task creation.
-- DynamoDB is not the source of truth for canonical template definitions.
-- Runtime tasks and cards should store the template ID and template version
+- The work engine loads runtime template records from the Git-backed
+  YAML source on every deploy (seed).
+- Canonical Git location: `DataTalksClub/dataops-knowledge/workflow-templates/*.yaml`.
+- Operators edit the effective definition in the DataOps portal
+  (Tasks > Templates > Edit definition) or with the CLI
+  (`dataops templates update <type> --task <ref> ...`,
+  `--file <definition>`, `dataops templates reset <type>`).
+  Both write through the same `PUT /api/templates/:id` compare-and-swap
+  API, validated by the same shared validators the knowledge repo's CI
+  enforces, so the portal, the CLI, and Git reject the same definitions.
+- An edit pins the whole effective definition over the Git base. A later
+  deploy (Git push) refreshes the pinned row's Git base but never
+  overwrites the pin, and `reset` restores the Git base. A full DynamoDB
+  rebuild restores Git definitions plus runtime pins from deployment
+  exports; it must not silently drop a pin.
+- New Cards always instantiate from the effective (pinned, when present)
+  definition, so the next run uses the edited template without waiting
+  for a knowledge-repo change.
+- Runtime tasks and cards store the template ID and template version
   used to create them so old executions remain explainable after template edits.
-- A full DynamoDB rebuild must be able to restore template definitions from Git
-  plus runtime execution exports.
