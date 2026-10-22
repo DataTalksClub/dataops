@@ -2531,7 +2531,17 @@ describe("Work Detail surface boundary", () => {
     // Nothing waits on this task, so there is no Unblocks section.
     assert.equal(harness.taskPanelBody.querySelector(".task-dependents"), null);
     const why = harness.taskPanelBody.querySelector('[data-blocked="true"]');
-    assert.equal(why.textContent, "Waiting on 1 task above");
+    // The unlock condition is named beside the button, not counted: the one
+    // open prerequisite opens, resolved ones stay out.
+    assert.match(why.textContent, /Waiting on /);
+    assert.match(why.textContent, /Review transcript/);
+    assert.doesNotMatch(why.textContent, /Verify Spotify episode/);
+    const openBlocker = why.querySelector("button.task-dependency-name");
+    assert.equal(openBlocker.textContent, "Review transcript");
+    assert.match(openBlocker.title, /To do/);
+    await openBlocker.dispatch("click");
+    assert.equal(harness.navigations.at(-1).path, "/tasks");
+    assert.equal(harness.navigations.at(-1).params.get("taskId"), "transcript");
 
     const complete = findByText(harness.taskPanelBody, "Mark done", "button");
     assert.equal(complete.disabled, true);

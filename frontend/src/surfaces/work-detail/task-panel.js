@@ -3,7 +3,7 @@ import { cardLinkUrlForTask, isCanonicalWorkTask, isTaskOverdue } from "../../co
 import { displayCardDescription } from "./card-summary.js";
 import { renderTaskContext, renderTaskInstructions, taskDisplayParts } from "./task-overview.js";
 import { openSkipTaskDialog } from "./work-dialogs.js";
-import { blockedReason, blockingPrerequisites } from "../../core/task-dependencies.js";
+import { blockedReason, blockingPrerequisites, prerequisiteStatusLabel } from "../../core/task-dependencies.js";
 import { renderAddPrerequisite, renderTaskDependencies } from "./task-prerequisites.js";
 import { createTaskRequires } from "./task-requires.js";
 import { createTaskBrowser } from "./task-browser.js";
@@ -653,13 +653,37 @@ export function createTaskPanel(context) {
         complete.title = reasons.join("; ");
       };
       syncCompletionForFiles();
-      // Why Mark done is off, in words beside it rather than in a tooltip.
-      const waitingOn = blockingPrerequisites(task).length;
-      if (waitingOn > 0) {
+      // Why Mark done is off, named beside it instead of only in a tooltip:
+      // each blocking prerequisite opens, so the unlock condition is an
+      // action, not a riddle. The full Waiting-on section above stays the
+      // reference; this line is the short path from the button.
+      const blockers = blockingPrerequisites(task);
+      if (blockers.length > 0) {
         const why = document.createElement("span");
         why.className = "task-actions-why";
         why.dataset.blocked = "true";
-        why.textContent = `Waiting on ${waitingOn} ${waitingOn === 1 ? "task" : "tasks"} above`;
+        why.append(document.createTextNode("Waiting on "));
+        blockers.forEach((entry, index) => {
+          if (index > 0) {
+            why.append(document.createTextNode(
+              index === blockers.length - 1 ? " and " : ", ",
+            ));
+          }
+          if (entry.status === "missing") {
+            const missing = document.createElement("span");
+            missing.textContent = entry.description;
+            missing.title = "This prerequisite is missing from the card — remove the dependency to unblock";
+            why.append(missing);
+          } else {
+            const open = document.createElement("button");
+            open.type = "button";
+            open.className = "task-dependency-name";
+            open.textContent = entry.description;
+            open.title = `Open “${entry.description}” (${prerequisiteStatusLabel(entry.status)})`;
+            open.addEventListener("click", () => openTaskPanel(entry.id));
+            why.append(open);
+          }
+        });
         actions.append(why);
       }
       actions.append(complete);
