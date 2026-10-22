@@ -5,6 +5,8 @@ import { handler } from "../src/handler";
 import { createTables, startLocal, stopLocal } from "../scripts/local-dynamodb";
 import { getClient } from "../src/db/client";
 import { setCalendarHoldGoogleDepsForTests } from "../src/routes/calendarHolds";
+import { setDapierBrokerClientsForTests, DEFAULT_HOLD_GOOGLE_CALENDARS, resolveHoldGoogleCalendars } from "../src/calendar/dapierBroker";
+import { createHoldGoogleEvents } from "../src/calendar/holdGoogleSync";
 import { getCalendarHold, putCalendarHold } from "../src/db/calendarHolds";
 import {
   berlinOffsetSuffix,
@@ -37,6 +39,15 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     const port = await startLocal();
     client = await getClient(port);
     await createTables(client);
+    // Holds resolve the Dapier machine token via Secrets Manager (no Coolify env).
+    // Keep unit tests offline: pretend the secret is unreadable unless a test injects a credential.
+    setDapierBrokerClientsForTests({
+      secrets: {
+        send: async () => {
+          throw Object.assign(new Error('no aws in unit test'), { name: 'CredentialsProviderError' });
+        },
+      } as any,
+    });
   });
   after(stopLocal);
 
@@ -208,6 +219,83 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     assert.equal((await invoke("GET", "/api/calendar-holds/does-not-exist")).statusCode, 404);
     assert.equal((await invoke("GET", "/api/calendar-holds", undefined, { status: "bogus" })).statusCode, 400);
     assert.equal((await invoke("GET", "/api/calendar-holds", undefined, { from: "2026-10-30", to: "2026-10-01" })).statusCode, 400);
+  });
+
+
+  it("defaults Proposal mirrors to personal + DTC events calendars (SOP)", () => {
+    assert.deepEqual(resolveHoldGoogleCalendars(undefined), [...DEFAULT_HOLD_GOOGLE_CALENDARS]);
+    assert.ok(DEFAULT_HOLD_GOOGLE_CALENDARS.includes("primary"));
+    assert.ok(
+      DEFAULT_HOLD_GOOGLE_CALENDARS.some((id) => id.includes("group.calendar.google.com")),
+      "DTC events calendar id present",
+    );
+  });
+
+  it("reads the Dapier machine token from Secrets Manager (no Coolify env) and syncs both calendars", async () => {
+    setDapierBrokerClientsForTests({
+      secrets: {
+        send: async () => ({ SecretString: JSON.stringify({ api_token: "dap_test_machine" }) }),
+      } as any,
+    });
+    const calls: Array<{ url: string; method: string; auth?: string; body?: any }> = [];
+    const fakeJson = (payload: any, status = 200) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => payload,
+    });
+    let seq = 0;
+    try {
+      const sync = await createHoldGoogleEvents(
+        {
+          summary: "(Proposal) SM hold",
+          startIso: "2026-11-10T11:00:00.000Z",
+          endIso: "2026-11-10T12:00:00.000Z",
+          timeZone: "Europe/Berlin",
+          description: "unit",
+        },
+        {
+          fetchImpl: (async (url: any, init: any) => {
+            const u = String(url);
+            const method = init?.method || "GET";
+            calls.push({
+              url: u,
+              method,
+              auth: init?.headers?.Authorization,
+              body: init?.body ? JSON.parse(String(init.body)) : undefined,
+            });
+            if (u.includes("/api/agent/token")) {
+              assert.equal(init.headers.Authorization, "Bearer dap_test_machine");
+              assert.deepEqual(JSON.parse(String(init.body)), {
+                connection_id: "google-calendar",
+                agent: "personal-scheduler",
+              });
+              return fakeJson({ access_token: "google-at" });
+            }
+            if (method === "POST" && u.includes("/calendar/v3/")) {
+              seq += 1;
+              return fakeJson({ id: `gev-sm-${seq}` });
+            }
+            throw new Error(`unexpected ${method} ${u}`);
+          }) as any,
+        },
+      );
+      assert.equal(sync.state, "synced");
+      if (sync.state === "synced") {
+        assert.equal(Object.keys(sync.eventIds).length, 2);
+        assert.ok(sync.eventIds.primary);
+        assert.ok(Object.keys(sync.eventIds).some((k) => k.includes("group.calendar.google.com")));
+      }
+      assert.equal(calls.filter((c) => c.url.includes("/api/agent/token")).length, 1);
+      assert.equal(calls.filter((c) => c.method === "POST" && c.url.includes("/calendar/v3/")).length, 2);
+    } finally {
+      setDapierBrokerClientsForTests({
+        secrets: {
+          send: async () => {
+            throw Object.assign(new Error("no aws in unit test"), { name: "CredentialsProviderError" });
+          },
+        } as any,
+      });
+    }
   });
 
   it("domain helpers: Berlin offsets, intervals, titles, transitions", () => {

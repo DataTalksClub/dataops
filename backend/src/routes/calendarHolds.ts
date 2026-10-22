@@ -59,13 +59,10 @@ function depsFor(body: any): HoldGoogleDeps {
       return undefined;
     }
   })();
+  // Credential resolution (env + Secrets Manager personal-scheduler/dapier-api-token)
+  // lives in holdGoogleSync via dapierBroker. Tests inject googleDeps.credential.
   return {
     ...googleDeps,
-    credential:
-      googleDeps.credential ||
-      process.env.PERSONAL_SCHEDULER_TOKEN ||
-      process.env.DATAOPS_HOLD_BROKER_TOKEN ||
-      undefined,
     ...(calendars ? { calendarIds: calendars } : {}),
   };
 }

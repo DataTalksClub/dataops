@@ -1,4 +1,3 @@
-import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { CalendarOverlayConnection, CalendarOverlayItem, CalendarOverlayProjection, CalendarOverlayProvider } from './overlays';
 import {
@@ -6,6 +5,14 @@ import {
   DEFAULT_CALENDAR_OVERLAY_SETTINGS,
   getCalendarOverlaySettings,
 } from '../db/calendar';
+import {
+  DAPIER_AGENT,
+  DAPIER_BASE_URL,
+  DEFAULT_CALENDAR_CONNECTION,
+  readDapierCredential,
+  resolveDapierCredential,
+  setDapierBrokerClientsForTests,
+} from './dapierBroker';
 
 export interface OwnerCalendarConfig {
   client?: DynamoDBDocumentClient;
@@ -335,52 +342,14 @@ function adjustAllDayEndDate(start: string, end?: string): string {
   return adjusted < start ? start : adjusted;
 }
 
-let secretClient = new SecretsManagerClient({});
 let fetcher: typeof fetch = fetch;
 
-export function setOwnerCalendarProviderClientsForTests(value: { secrets?: SecretsManagerClient; fetch?: typeof fetch }) {
-  if (value.secrets) secretClient = value.secrets;
+export function setOwnerCalendarProviderClientsForTests(value: {
+  secrets?: Parameters<typeof setDapierBrokerClientsForTests>[0]['secrets'];
+  fetch?: typeof fetch;
+}) {
+  if (value.secrets) setDapierBrokerClientsForTests({ secrets: value.secrets });
   fetcher = value.fetch || fetch;
-}
-
-const DAPIER_BASE_URL = 'https://dapier.dtcdev.click';
-const DAPIER_AGENT = 'personal-scheduler';
-const DAPIER_SECRET_NAME = 'personal-scheduler/dapier-api-token';
-const DEFAULT_CALENDAR_CONNECTION = 'google-calendar';
-
-type DapierCredential = { credential: string; problem?: undefined } | { credential?: undefined; problem: string };
-
-async function readDapierCredential(explicit?: string): Promise<DapierCredential> {
-  if (explicit) return { credential: explicit };
-  try {
-    const res = await secretClient.send(new GetSecretValueCommand({ SecretId: DAPIER_SECRET_NAME }));
-    if (res.SecretString) {
-      try {
-        const parsed = JSON.parse(res.SecretString);
-        return { credential: parsed.api_token || parsed.token || res.SecretString };
-      } catch {
-        return { credential: res.SecretString };
-      }
-    }
-    return { problem: `The calendar broker secret ${DAPIER_SECRET_NAME} is empty.` };
-  } catch (error) {
-    const name = (error as { name?: string })?.name || 'Error';
-    if (name === 'ResourceNotFoundException') {
-      return { problem: `The calendar broker secret ${DAPIER_SECRET_NAME} does not exist in this environment.` };
-    }
-    if (name === 'UnrecognizedClientException' || name === 'CredentialsProviderError' || name === 'InvalidSignatureException') {
-      return { problem: 'This environment has no AWS credentials that can read the calendar broker secret.' };
-    }
-    if (name === 'AccessDeniedException') {
-      return { problem: `This environment is not allowed to read the calendar broker secret ${DAPIER_SECRET_NAME}.` };
-    }
-    const detail = String((error as { message?: string })?.message || '').trim().slice(0, 160);
-    return { problem: `The calendar broker secret could not be read in this environment (${detail ? `${name}: ${detail}` : name}).` };
-  }
-}
-
-async function resolveDapierCredential(explicit?: string): Promise<string | undefined> {
-  return (await readDapierCredential(explicit)).credential;
 }
 
 export async function fetchDapierConnections(config?: OwnerCalendarConfig): Promise<DapierConnectionOption[]> {
