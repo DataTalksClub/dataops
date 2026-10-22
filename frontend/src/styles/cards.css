@@ -1196,7 +1196,7 @@
 }
 .card-checklist-after-kind {
   font-weight: 600;
-  color: var(--dk-text-muted, #667);
+  color: var(--dk-text-muted);
 }
 
 .card-checklist-after {

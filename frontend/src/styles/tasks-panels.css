@@ -1721,7 +1721,7 @@ body[data-workspace-view="tasks"] .task-prerequisite-status {
 .runtime-template-editor-help,
 .runtime-template-editor-message {
   margin: 0.5rem 0;
-  color: var(--dk-text-muted, #667);
+  color: var(--dk-text-muted);
   font-size: 0.92rem;
 }
 
@@ -1742,6 +1742,6 @@ body[data-workspace-view="tasks"] .task-prerequisite-status {
 
 .ops-queue-blocked-hint {
   margin: 0.35rem 0 0.6rem;
-  color: var(--dk-text-muted, #667);
+  color: var(--dk-text-muted);
   font-size: 0.9rem;
 }
