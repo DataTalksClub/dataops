@@ -209,6 +209,73 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     }
   });
 
+  it("confirm mirrors Google when propose deferred (empty event ids create with confirmed title)", async () => {
+    // Propose with no broker credential: hold stores deferred with empty ids.
+    setCalendarHoldGoogleDepsForTests({});
+    const created = parse(
+      await invoke("POST", "/api/calendar-holds", { date: "2026-11-04", title: "Late sync", topic: "Late sync topic" }),
+    ).hold;
+    assert.equal(created.googleSync.state, "deferred");
+    assert.deepEqual(created.googleEventIds, {});
+    // Broker recovers before confirm: confirm must CREATE mirrors (not PATCH
+    // nothing) and persist the synced state + ids.
+    const calls: Array<{ url: string; method: string; body?: any }> = [];
+    const fakeJson = (payload: any, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => payload });
+    let seq = 0;
+    setCalendarHoldGoogleDepsForTests({
+      credential: "test-broker-token",
+      calendarIds: ["dtc-events", "personal-alexey"],
+      fetchImpl: (async (url: any, init: any) => {
+        const u = String(url);
+        const method = init?.method || "GET";
+        calls.push({ url: u, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        if (u.includes("/api/agent/token")) return fakeJson({ access_token: "google-at" });
+        if (method === "POST" && u.includes("/calendar/v3/")) {
+          seq += 1;
+          return fakeJson({ id: `gev-late-${seq}` });
+        }
+        throw new Error(`unexpected ${method} ${u}`);
+      }) as any,
+    });
+    try {
+      const r = await invoke("POST", `/api/calendar-holds/${created.id}/confirm`);
+      assert.equal(r.statusCode, 200, r.body);
+      const { hold } = parse(r);
+      assert.equal(hold.status, "confirmed");
+      assert.equal(hold.googleTitle, "Late sync");
+      assert.equal(hold.googleSync.state, "synced");
+      assert.deepEqual(hold.googleEventIds, { "dtc-events": "gev-late-1", "personal-alexey": "gev-late-2" });
+      const creates = calls.filter((c) => c.method === "POST" && c.url.includes("/calendar/v3/"));
+      assert.equal(creates.length, 2);
+      assert.ok(creates.every((c) => c.body.summary === "Late sync"));
+      assert.equal(calls.filter((c) => c.method === "PATCH").length, 0);
+      const stored = await getCalendarHold(client, created.id);
+      assert.equal(stored?.googleSync.state, "synced");
+      assert.deepEqual(stored?.googleEventIds, { "dtc-events": "gev-late-1", "personal-alexey": "gev-late-2" });
+    } finally {
+      setCalendarHoldGoogleDepsForTests({});
+    }
+  });
+
+  it("confirm persists the fresh deferred reason when Google sync still fails", async () => {
+    setCalendarHoldGoogleDepsForTests({});
+    const created = parse(
+      await invoke("POST", "/api/calendar-holds", { date: "2026-11-05", title: "Still stuck", topic: "Still stuck topic" }),
+    ).hold;
+    const staleReason = created.googleSync.reason;
+    const r = await invoke("POST", `/api/calendar-holds/${created.id}/confirm`);
+    assert.equal(r.statusCode, 200, r.body);
+    const { hold } = parse(r);
+    assert.equal(hold.status, "confirmed");
+    assert.equal(hold.googleSync.state, "deferred");
+    assert.ok(hold.googleSync.reason, "deferred reason persisted on confirm");
+    assert.notEqual(hold.googleSync.reason, "no mirrored Google events to update");
+    const stored = await getCalendarHold(client, created.id);
+    assert.equal(stored?.googleSync.state, "deferred");
+    assert.equal(stored?.googleSync.reason, hold.googleSync.reason);
+    assert.ok(!staleReason || stored?.googleSync.reason !== staleReason || staleReason.includes("broker"));
+  });
+
   it("validates input and list filters", async () => {
     assert.equal((await invoke("POST", "/api/calendar-holds", { date: "not-a-date", title: "x", topic: "t" })).statusCode, 400);
     assert.equal((await invoke("POST", "/api/calendar-holds", { date: "2026-10-26", title: "", topic: "t" })).statusCode, 400);

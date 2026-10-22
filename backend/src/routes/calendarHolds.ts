@@ -162,13 +162,24 @@ async function confirmRoute(id: string, client: DynamoDBDocumentClient): Promise
   } catch (e: any) {
     return json(409, { error: String(e?.message || 'Cannot confirm hold'), code: e?.code || 'hold_state' });
   }
-  const sync = await updateHoldGoogleEvents(existing.googleEventIds, confirmedTitle(existing.title), await depsFor({}, client));
-  await putCalendarHold(client, {
+  const confirmed = confirmedTitle(existing.title);
+  const deps = await depsFor({}, client);
+  // Propose may have deferred while the broker credential was unavailable,
+  // leaving googleEventIds empty. Confirm must still mirror Google: PATCH
+  // when mirrors exist, otherwise CREATE with the confirmed title so a
+  // confirm after a deferred propose syncs instead of staying deferred.
+  const sync = Object.keys(existing.googleEventIds || {}).length
+    ? await updateHoldGoogleEvents(existing.googleEventIds, confirmed, deps)
+    : await createHoldGoogleEvents(googlePayload(next, confirmed, next.startIso, next.endIso), deps);
+  const stored = {
     ...next,
-    googleTitle: confirmedTitle(existing.title),
-    ...(sync.state === 'synced' ? { googleSync: { state: 'synced' as const } } : {}),
-  });
-  return json(200, { hold: { ...next, googleTitle: confirmedTitle(existing.title) } });
+    googleTitle: confirmed,
+    ...(sync.state === 'synced'
+      ? { googleEventIds: sync.eventIds, googleSync: { state: 'synced' as const } }
+      : { googleSync: { state: 'deferred' as const, reason: sync.reason } }),
+  };
+  await putCalendarHold(client, stored);
+  return json(200, { hold: stored });
 }
 
 async function releaseRoute(
@@ -191,11 +202,14 @@ async function releaseRoute(
     return json(409, { error: String(e?.message || 'Cannot release hold'), code: e?.code || 'hold_state' });
   }
   const sync = await deleteHoldGoogleEvents(existing.googleEventIds, await depsFor(body, client));
-  await putCalendarHold(client, {
+  const stored = {
     ...next,
-    ...(sync.state === 'synced' ? { googleSync: { state: 'synced' as const } } : {}),
-  });
-  return json(200, { hold: next });
+    ...(sync.state === 'synced'
+      ? { googleSync: { state: 'synced' as const } }
+      : { googleSync: { state: 'deferred' as const, reason: sync.reason } }),
+  };
+  await putCalendarHold(client, stored);
+  return json(200, { hold: stored });
 }
 
 async function expireRoute(client: DynamoDBDocumentClient): Promise<LambdaResponse> {
