@@ -150,6 +150,8 @@
     "src/surfaces/operations/device.js",
     "src/surfaces/operations/index.js",
     "src/surfaces/operations/newsletter-preview.js",
+    "src/surfaces/operations/sponsor-doc-bullets.js",
+    "src/surfaces/operations/sponsor-doc-select.js",
     "src/surfaces/operations/sponsor-docs.js",
     "src/surfaces/operations/user-lifecycle-dialog.js",
     "src/surfaces/period-nav.js",

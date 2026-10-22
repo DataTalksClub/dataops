@@ -1,25 +1,10 @@
 import { bindCodeInput, describeUserCodeError, formatUserCode, normalizeUserCode } from "../../dakit/device-code.js";
+import { appendSponsorDocSelectField } from "./sponsor-doc-select.js";
+import { parseSponsorBulletItems, serializeSponsorBulletItems } from "./sponsor-doc-bullets.js";
+export { parseSponsorBulletItems, serializeSponsorBulletItems };
 
 export const SPONSOR_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ23456789";
 export const SPONSOR_CODE_LENGTH = 16;
-
-function stripBulletPrefix(line) {
-  return String(line || "").trim().replace(/^(?:[-*•→🔸▪▸]|\d+[.)])\s*/, "").trim();
-}
-
-export function parseSponsorBulletItems(rawValue, minItems = 3) {
-  const cleaned = String(rawValue || "").replace(/\r\n/g, "\n").split("\n").map((line) => stripBulletPrefix(line));
-  while (cleaned.length > minItems && cleaned.at(-1) === "") cleaned.pop();
-  const items = cleaned.some((item) => item.length > 0) ? cleaned : [];
-  while (items.length < minItems) items.push("");
-  return items;
-}
-
-export function serializeSponsorBulletItems(items, bulletPrefix = "-") {
-  if (!Array.isArray(items)) return "";
-  const nonEmpty = items.map((item) => stripBulletPrefix(item)).filter((item) => item.length > 0);
-  return nonEmpty.length === 0 ? "" : nonEmpty.map((item) => `${bulletPrefix} ${item}`).join("\n");
-}
 
 function bytesToDataUrl(bytes, mimeType = "image/png") {
   let binary = "";
@@ -785,33 +770,18 @@ export function createSponsorDocPage({
         top.append(label, countEl);
 
         if (fieldDef.type === "select") {
-          const control = el("select", "dk-input sponsor-doc-select");
-          control.id = inputId;
-          control.dataset.sponsorField = fieldDef.key;
-          const options = Array.isArray(fieldDef.options) ? fieldDef.options : [];
-          const blank = el("option");
-          blank.value = "";
-          blank.textContent = fieldDef.placeholder || "Choose one";
-          if (!currentVal) blank.selected = true;
-          control.append(blank);
-          for (const opt of options) {
-            const value = String(opt?.value ?? "");
-            const label = String(opt?.label ?? value);
-            if (!value) continue;
-            const option = el("option");
-            option.value = value;
-            option.textContent = label;
-            if (value === currentVal) option.selected = true;
-            control.append(option);
-          }
-          control.disabled = busy;
-          control.addEventListener("change", () => {
-            draftContent[fieldDef.key] = control.value;
-            updateCount(control.value);
-            updateLivePreview();
+          appendSponsorDocSelectField({
+            el,
+            fieldWrap,
+            fieldDef,
+            inputId,
+            currentVal,
+            busy,
+            draftContent,
+            updateCount,
+            updateLivePreview,
+            top,
           });
-          fieldWrap.append(top, control);
-          if (fieldDef.helpText) fieldWrap.append(el("p", "dk-hint", fieldDef.helpText));
           sectionWrap.append(fieldWrap);
           continue;
         }
