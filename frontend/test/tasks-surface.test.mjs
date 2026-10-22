@@ -747,6 +747,34 @@ describe("Tasks surface boundary", () => {
     );
   });
 
+  test("marks rows assigned outside the roster as unknown, not as a teammate", async () => {
+    const tasks = [
+      canonicalTask({ id: "stale", description: "Stale assignment", date: "2026-08-12", assigneeId: "stale-user" }),
+      canonicalTask({ id: "named", description: "Named work", date: "2026-08-12", assigneeId: "sam" }),
+    ];
+    const harness = createHarness({
+      route: { path: "/tasks", params: new URLSearchParams("assignee=all") },
+      userNames: { sam: "Sam" },
+      workSnapshot: {
+        users: [{ id: "sam", name: "Sam" }],
+        usersById: new Map([["sam", { id: "sam", name: "Sam" }]]),
+      },
+      taskRouteContext: {
+        date: "", tasks, cardId: "", filterCard: null, contextCardId: "", contextCard: null, failures: [],
+      },
+    });
+    harness.api.renderTasksSurface([], "queue");
+    const owners = findAllByClass(harness.documentList, "ops-queue-owner");
+    assert.equal(owners.length, 2);
+    const byLabel = new Map(owners.map((cell) => [cell.getAttribute("aria-label"), cell]));
+    const stale = byLabel.get("Assigned to unknown user stale-user");
+    const named = byLabel.get("Assigned to Sam");
+    assert.ok(stale, "stale assignment is marked unknown");
+    assert.ok(named, "roster assignment stays named");
+    assert.equal(stale.dataset.assignee, "unknown");
+    assert.equal(named.dataset.assignee, "named");
+  });
+
   test("a failed queue tick restores the checkbox and names the failure", async () => {
     const task = canonicalTask({
       id: "flaky",

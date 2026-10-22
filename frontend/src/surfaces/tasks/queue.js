@@ -742,6 +742,19 @@ export function createTaskQueue(context) {
     }
     const name = resolveAssigneeLabel(task.assigneeId);
     const person = state.workSnapshot.usersById?.get(task.assigneeId);
+    const unresolved = !name || name === "—" || name === String(task.assigneeId);
+    if (!person && unresolved) {
+      // Assigned to somebody outside the workspace roster (a stale template
+      // ref, never a teammate): a "?" avatar instead of a UUID monogram, so
+      // the row reads as misassigned, not as someone's work.
+      cell.dataset.assignee = "unknown";
+      const unknownAvatar = personAvatar({ name: "?", picture: undefined }, { size: "xs", className: "ops-queue-avatar" });
+      cell.append(unknownAvatar);
+      cell.title = `Assigned to unknown user ${task.assigneeId}`;
+      cell.setAttribute("role", "img");
+      cell.setAttribute("aria-label", `Assigned to unknown user ${task.assigneeId}`);
+      return cell;
+    }
     const avatar = personAvatar({ name, picture: person?.picture }, { size: "xs", className: "ops-queue-avatar" });
     cell.dataset.assignee = "named";
     cell.append(avatar);
