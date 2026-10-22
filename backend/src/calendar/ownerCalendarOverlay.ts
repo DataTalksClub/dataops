@@ -592,7 +592,7 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
         // Timed events on this day
         const dayTimedEvents = timedEvents.filter((e) => e.startDate <= curDate && curDate <= e.endDate);
 
-        // Check Midday Slot (operational window 11:30–14:00, preferred start 12:00 Berlin time)
+        // Check Midday Slot (operational window 11:30–14:00, preferred start 12:30 Berlin time)
         if (wantMidday) {
           const busy = busyIntervalsInWindow('midday', dayTimedEvents);
           if (isWindowFreeForDuration('midday', busy, durationMinutes)) {
