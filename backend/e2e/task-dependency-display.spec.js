@@ -1,8 +1,9 @@
 // Task dependencies: on the card checklist a task waiting on a prerequisite
 // has a dashed box, a muted unlock line and no urgency colour, and never
 // sits above its prerequisite; the task dialog shows "Waiting on" and
-// "Unblocks" only when there are edges, and names each blocking prerequisite
-// beside Mark done as a button that opens it. The work queue lists
+// "Unblocks" sections only when there are edges, plus a "Blocked: complete
+// or skip … first" line beside Mark done that names each blocking prerequisite
+// as a button that opens it. The work queue lists
 // actionable work first with a Waiting on other steps section, so
 // assigned-but-blocked tasks stay visible with their unlock condition.
 const { test, expect } = require('@playwright/test');
@@ -88,7 +89,7 @@ test('task dialog: Waiting on and Unblocks only when there are edges', async ({ 
   // The unlock condition is named beside Mark done, and each blocker opens:
   // the button carries the blocking prerequisite's name and status.
   const why = panel.locator('[data-blocked="true"]');
-  await expect(why).toContainText('Waiting on');
+  await expect(why).toContainText(`Blocked: complete or skip ${FIRST} first`);
   await expect(why.getByRole('button', { name: FIRST })).toBeVisible();
   await expect(panel.getByRole('button', { name: 'Mark done' })).toBeDisabled();
   await why.getByRole('button', { name: FIRST }).click();
