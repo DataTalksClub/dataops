@@ -141,6 +141,25 @@ describe('podcast first-contact email (Orin ask)', () => {
     assert.equal(email.topicSeed, 'building developer platforms');
   });
 
+  it('keeps example publication bullets consecutive (no blank line between items)', () => {
+    const email = renderPodcastFirstContactEmail({
+      guestFirstName: 'Sofiia',
+      slotLabel: 'Tuesday, November 4 at 12:30 CET',
+    });
+    // Valeria/Orin: Gmail showed extra blank lines between "- Blog posts" items
+    // when the renderer joined with empty string lines. Tight list = single \n.
+    assert.ok(
+      email.body.includes(
+        '- Blog posts\n- Talks and podcast interviews\n- Social media posts\n- Github repositories\n\n',
+      ),
+      'expected tight bullet block with single newlines between items',
+    );
+    assert.ok(
+      !email.body.includes('- Blog posts\n\n- Talks'),
+      'must not insert a blank line between consecutive list items',
+    );
+  });
+
   it('form-only path: no reply-instead wording without formUrl either', () => {
     const email = renderPodcastFirstContactEmail({
       guestFirstName: 'Sofiia',
