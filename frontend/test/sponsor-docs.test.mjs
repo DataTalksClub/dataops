@@ -194,8 +194,11 @@ test("wrong code is refused with an alert and typing the valid 16-char code unlo
   });
   await h.controller.start();
 
-  assert.match(h.root.textContent, /Enter sponsor access code/);
+  assert.match(h.root.textContent, /Enter access code/);
   assert.match(h.root.textContent, /Invalid access code/);
+  assert.match(h.root.textContent, /DataTalks\.Club email/);
+  assert.ok(!/sponsor/i.test(h.root.textContent), "gate copy is sponsor-free");
+  assert.ok(!/sponsor/i.test(h.identity.textContent), "gate identity is sponsor-free");
 
   const codeInput = h.root.querySelector("#sponsor-doc-code-input");
   codeInput.value = "bcdfghjklmnpqrst";
@@ -210,7 +213,7 @@ test("wrong code is refused with an alert and typing the valid 16-char code unlo
 
   const lockBtn = h.identity.querySelector('[data-sponsor-action="lock"]');
   await lockBtn.click();
-  assert.match(h.root.textContent, /Enter sponsor access code/);
+  assert.match(h.root.textContent, /Enter access code/);
   h.controller.destroy();
 });
 
@@ -254,6 +257,8 @@ test("authenticated DataOps staff can view, copy share links, rotate codes, and 
 
 test("Card sponsor docs section and linkService render status and last-edited info", () => {
   assert.equal(linkService("https://ops.dtcdev.click/sponsor-docs/doc-abc").id, "sponsordoc");
+  assert.equal(linkService("https://ops.dtcdev.click/podcast-docs/doc-abc").id, "sponsordoc");
+  assert.equal(linkService("https://ops.dtcdev.click/guest-docs/doc-abc").id, "sponsordoc");
 
   const doc = new FakeDocument();
   globalThis.document = doc;
@@ -274,6 +279,27 @@ test("Card sponsor docs section and linkService render status and last-edited in
   assert.match(section.textContent, /Submitted \/ Ready/);
   assert.match(section.textContent, /Last edited 2026-10-17 20:30 by sponsor/);
   assert.match(section.textContent, /Markdown export/);
+
+  const guestSection = renderCardSponsorDocsSection({
+    id: "card-2",
+    sponsorDocs: [
+      {
+        id: "doc-pod",
+        title: "Podcast — Materials from the Guest",
+        template: "podcast",
+        status: "draft",
+        lastEditedAt: "2026-10-17T20:30:00.000Z",
+        lastEditedBy: "guest",
+      },
+    ],
+  });
+  assert.ok(guestSection);
+  assert.match(guestSection.textContent, /Guest materials/);
+  assert.ok(!/Sponsor/i.test(guestSection.textContent), "no sponsor wording for podcast guest docs");
+  const guestLink = guestSection.querySelector("a");
+  assert.ok(guestLink.href.startsWith("/podcast-docs/"), `podcast doc links under /podcast-docs/: ${guestLink.href}`);
+  const guestMeta = [...guestSection.querySelectorAll("small")].map((node) => node.textContent).join(" ");
+  assert.match(guestMeta, /podcast · Last edited 2026-10-17 20:30 by guest/);
 });
 
 test("keeps structured Main Body Opening, Bulleted List, and Closing fields and updates live preview on typing and visual upload", async () => {
@@ -469,4 +495,153 @@ test("parseSponsorBulletItems and serializeSponsorBulletItems strip bullet prefi
     serializeSponsorBulletItems(["• First point", "Second point", "  ", "→ Third point"]),
     "- First point\n- Second point\n- Third point",
   );
+});
+
+function podcastTemplateDefinition() {
+  return {
+    key: "podcast",
+    label: "Podcast — Materials from the Guest",
+    intro: "Use this form to confirm or change the recording slot.",
+    sections: [
+      {
+        id: "scheduling",
+        title: "1) Recording Time",
+        description: "The invite proposes one recording time.",
+        fields: [
+          {
+            key: "proposedSlotLabel",
+            label: "Proposed time from the invite",
+            type: "text",
+            placeholder: "Pre-filled by Orin (Europe/Berlin)",
+          },
+          {
+            key: "slotChoice",
+            label: "Recording slot",
+            type: "radio",
+            placeholder: "Choose one",
+            helpText: "One choice only — each option is a full date and time.",
+            options: [
+              { value: "confirm_proposed", label: "Yes — Mon 26 Oct · 12:30–13:30 Berlin works for me" },
+              { value: "slot:2026-10-26:evening", label: "Mon 26 Oct · 17:00–18:00 Berlin" },
+              { value: "slot:2026-10-27:midday", label: "Tue 27 Oct · 12:30–13:30 Berlin" },
+              { value: "none_fit", label: "None of these work — just reply to the invite email and we’ll find an alternative" },
+            ],
+          },
+        ],
+      },
+      {
+        id: "who-you-are",
+        title: "2) Who You Are",
+        fields: [
+          { key: "guestName", label: "Guest Name & Role / Company", type: "text" },
+          { key: "introduction", label: "How would you like us to introduce you? (Bio)", type: "textarea", rows: 3 },
+        ],
+      },
+      {
+        id: "topics",
+        title: "3) Topics",
+        fields: [
+          { key: "currentFocus", label: "What are you currently focused on?", type: "textarea", rows: 3 },
+          { key: "topicsToCover", label: "Which topics are you most keen to cover?", type: "textarea", rows: 4 },
+        ],
+      },
+      {
+        id: "social-links",
+        title: "4) Social Media & Profile Links",
+        fields: [{ key: "linkedinUrl", label: "LinkedIn", type: "text" }],
+      },
+      {
+        id: "detailed-questions",
+        title: "5) Episode Story & Practical Takeaways (Optional)",
+        collapsible: true,
+        fields: [{ key: "hookAndPainPoint", label: "Hook & Listener Pain Point", type: "textarea", rows: 3 }],
+      },
+      {
+        id: "notes",
+        title: "6) Additional Notes (Optional)",
+        collapsible: true,
+        fields: [{ key: "sponsorNotes", label: "Anything else for the DataTalks.Club team?", type: "textarea", rows: 3 }],
+      },
+    ],
+  };
+}
+
+test("podcast guest form renders radios with human slot labels, ordered sections, and no sponsor wording", async () => {
+  const h = harness({
+    href: "https://ops.example.test/podcast-docs/doc-pod?code=bcdfghjklmnpqrst",
+    pathname: "/podcast-docs/doc-pod",
+    docOverrides: {
+      template: "podcast",
+      title: "Podcast — Materials from the Guest",
+      sponsorName: "Jane Doe",
+      templateDefinition: podcastTemplateDefinition(),
+      content: { guestName: "Jane Doe" },
+    },
+  });
+  await h.controller.start();
+
+  // /podcast-docs/ prefix is preserved in history (old /sponsor-docs/ still works for existing links)
+  assert.deepEqual(h.history, [[null, "", "/podcast-docs/doc-pod"]]);
+
+  // Section order: scheduling first, identity/topics/links, optional story + notes last
+  const titles = h.root
+    .querySelectorAll(".sponsor-doc-section__title")
+    .map((node) => node.textContent);
+  assert.deepEqual(titles, [
+    "1) Recording Time",
+    "2) Who You Are",
+    "3) Topics",
+    "4) Social Media & Profile Links",
+    "5) Episode Story & Practical Takeaways (Optional)",
+    "6) Additional Notes (Optional)",
+  ]);
+
+  // Slot picker is radios: one choice, each a full human datetime label
+  const radios = h.root.querySelectorAll('[data-sponsor-radios="slotChoice"] input');
+  assert.equal(radios.length, 4);
+  const radioLabels = h.root
+    .querySelectorAll('[data-sponsor-radios="slotChoice"] .sponsor-doc-radio__text')
+    .map((node) => node.textContent);
+  assert.ok(radioLabels[0].includes("Mon 26 Oct · 12:30–13:30 Berlin"));
+  assert.deepEqual(radioLabels.slice(1, 3), [
+    "Mon 26 Oct · 17:00–18:00 Berlin",
+    "Tue 27 Oct · 12:30–13:30 Berlin",
+  ]);
+  assert.match(radioLabels[3], /reply to the invite email/);
+  assert.ok(!radioLabels.some((label) => /slot:/.test(label)), "no raw slot: values in radio labels");
+  assert.ok(
+    h.root.querySelector('[data-sponsor-radio-band="free"]'),
+    "free slots are banded under their own caption",
+  );
+  assert.match(
+    h.root.querySelector('[data-sponsor-radio-band="free"]').textContent,
+    /Or pick another free slot/,
+  );
+
+  // No custom-slot text input anywhere
+  assert.equal(h.root.querySelector("#sponsor-field-customSlot"), null);
+
+  // Optional sections render collapsed when empty (noise hidden, still expandable)
+  const story = h.root.querySelector('[data-sponsor-collapsible="detailed-questions"]');
+  assert.ok(story);
+  assert.equal(story.tagName, "DETAILS");
+  assert.equal(story.open, false);
+  const notes = h.root.querySelector('[data-sponsor-collapsible="notes"]');
+  assert.ok(notes);
+  assert.equal(notes.open, false);
+
+  // Guest-visible copy never says sponsor/sponsorship
+  assert.ok(!/sponsor/i.test(h.root.textContent), `guest UI is sponsor-free: ${h.root.textContent}`);
+  assert.ok(!/sponsor/i.test(h.identity.textContent));
+  assert.match(h.root.textContent, /Guest: Jane Doe/);
+
+  // Picking a radio saves the stored value, not the label
+  await radios[2].dispatch("change");
+  const saveDraftBtn = h.root.querySelector('[data-sponsor-action="save-draft"]');
+  await saveDraftBtn.click();
+  await nextTicks();
+  const putCall = h.calls.find(([, opts]) => opts.method === "PUT");
+  assert.ok(putCall);
+  assert.equal(JSON.parse(putCall[1].body).content.slotChoice, "slot:2026-10-27:midday");
+  h.controller.destroy();
 });

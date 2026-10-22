@@ -6,6 +6,7 @@
 
 .sponsor-doc-shell {
   width: min(var(--dk-size-measure), 100%);
+  min-width: 0;
   display: grid;
   gap: var(--dk-space-5);
 }
@@ -109,8 +110,15 @@
   font-weight: var(--dk-weight-semibold);
 }
 
+.sponsor-doc-form-card,
+.sponsor-doc-card {
+  min-width: 0;
+}
+
 .sponsor-doc-textarea {
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   min-height: var(--dk-size-control-lg);
   padding: var(--dk-space-3);
   border: 1px solid var(--dk-border-default);
@@ -121,6 +129,98 @@
   font-size: var(--dk-text-body);
   line-height: var(--dk-leading-normal);
   resize: vertical;
+}
+
+.sponsor-doc-card .dk-input,
+.sponsor-doc-card select {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-size: var(--dk-text-body);
+}
+
+/* Radio groups (podcast slot picker): one full-width thumb-friendly option
+   per row, each a single full datetime label. */
+.sponsor-doc-radios {
+  display: grid;
+  gap: var(--dk-space-3);
+  min-width: 0;
+}
+
+.sponsor-doc-radios__band {
+  display: grid;
+  gap: var(--dk-space-2);
+  min-width: 0;
+}
+
+.sponsor-doc-radios__caption {
+  margin: 0;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  font-weight: var(--dk-weight-semibold);
+}
+
+.sponsor-doc-radio {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--dk-space-3);
+  padding: var(--dk-space-3);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background-color: var(--dk-bg-surface);
+  color: var(--dk-text-primary);
+  font-size: var(--dk-text-body);
+  line-height: var(--dk-leading-normal);
+  cursor: pointer;
+  min-height: var(--dk-size-control-lg);
+  overflow-wrap: anywhere;
+}
+
+.sponsor-doc-radio.is-checked {
+  border-color: var(--dk-border-strong);
+  background-color: var(--dk-accent-soft);
+}
+
+.sponsor-doc-radio__input {
+  flex: none;
+  width: var(--dk-space-5);
+  height: var(--dk-space-5);
+  margin: 0;
+  accent-color: var(--dk-accent-default);
+}
+
+.sponsor-doc-radio__text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Collapsible optional sections (episode story, notes): closed hides the
+   empty noise, open when the guest already filled something in. */
+.sponsor-doc-details {
+  padding-bottom: var(--dk-space-1);
+}
+
+.sponsor-doc-details__summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--dk-space-3);
+  cursor: pointer;
+  list-style: none;
+}
+
+.sponsor-doc-details__summary::-webkit-details-marker {
+  display: none;
+}
+
+.sponsor-doc-details__hint {
+  flex: none;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}
+
+.sponsor-doc-details[open] .sponsor-doc-details__hint {
+  display: none;
 }
 
 .sponsor-doc-textarea:focus {
@@ -152,6 +252,7 @@
   padding: var(--dk-space-4);
   display: grid;
   gap: var(--dk-space-3);
+  min-width: 0;
 }
 
 .sponsor-doc-staff-bar__row {
@@ -160,6 +261,17 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--dk-space-3);
+  min-width: 0;
+}
+
+.sponsor-doc-staff-bar__row > * {
+  min-width: 0;
+}
+
+.sponsor-doc-staff-bar code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .sponsor-doc-export-pre {
@@ -449,4 +561,60 @@
   font-size: var(--dk-text-sm);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* Phone viewport (~390px): no horizontal scroll, tappable controls,
+   readable intro/sections, reachable submit. */
+@media (max-width: 640px) {
+  .sponsor-doc-page__main {
+    padding: var(--dk-space-4) var(--dk-space-3);
+  }
+
+  .sponsor-doc-card {
+    padding: var(--dk-space-4) var(--dk-space-3);
+    min-width: 0;
+  }
+
+  .sponsor-doc-title {
+    font-size: var(--dk-text-lg);
+    overflow-wrap: anywhere;
+  }
+
+  .sponsor-doc-meta {
+    font-size: var(--dk-text-sm);
+  }
+
+  .sponsor-doc-card .dk-input,
+  .sponsor-doc-card select,
+  .sponsor-doc-textarea {
+    font-size: var(--dk-text-lg);
+  }
+
+  .sponsor-doc-bullets__row {
+    gap: var(--dk-space-2);
+  }
+
+  .sponsor-doc-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sponsor-doc-actions__buttons {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sponsor-doc-actions__buttons .dk-button {
+    width: 100%;
+  }
+
+  .sponsor-doc-staff-bar__row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sponsor-doc-export-pre {
+    font-size: var(--dk-text-sm);
+    overflow-x: auto;
+  }
 }

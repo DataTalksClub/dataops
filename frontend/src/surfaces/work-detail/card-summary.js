@@ -154,9 +154,14 @@ export function renderCardSponsorDocsSection(card) {
   section.className = "task-history workflow-detail-section card-sponsor-docs-section";
   section.dataset.cardSponsorDocs = "";
 
+  const allGuestMaterials = docs.every((doc) => String(doc.template || "") === "podcast");
   const heading = document.createElement("div");
   heading.className = "task-history-label";
-  heading.textContent = docs.length === 1 ? "Sponsorship document" : "Sponsorship documents";
+  if (allGuestMaterials) {
+    heading.textContent = "Guest materials";
+  } else {
+    heading.textContent = docs.length === 1 ? "Sponsorship document" : "Sponsorship documents";
+  }
   section.append(heading);
 
   const list = document.createElement("div");
@@ -165,13 +170,14 @@ export function renderCardSponsorDocsSection(card) {
     const item = document.createElement("div");
     item.className = "task-history-event card-sponsor-doc-row";
     item.dataset.sponsorDocId = doc.id;
+    const isGuestMaterials = String(doc.template || "") === "podcast";
 
     const topRow = document.createElement("div");
     topRow.className = "card-newsletter-slot__row";
 
     const openLink = document.createElement("a");
-    openLink.href = `/sponsor-docs/${encodeURIComponent(doc.id)}`;
-    openLink.textContent = doc.title || doc.sponsorName || "Sponsor document";
+    openLink.href = `/${isGuestMaterials ? "podcast-docs" : "sponsor-docs"}/${encodeURIComponent(doc.id)}`;
+    openLink.textContent = doc.title || doc.sponsorName || (isGuestMaterials ? "Guest materials" : "Sponsor document");
     opensInNewTab(openLink);
 
     const statusBadge = document.createElement("span");
@@ -429,7 +435,8 @@ export function createCardSummary(context) {
     const isSubmitted = sdoc.status === "submitted";
     chip.className = `workflow-card-flag is-${isSubmitted ? "success" : "info"}`;
     chip.dataset.cardSponsorDocStatus = sdoc.status;
-    chip.textContent = isSubmitted ? "Sponsor doc: Submitted / Ready" : "Sponsor doc: Draft";
+    const kindLabel = String(sdoc.template || "") === "podcast" ? "Guest materials" : "Sponsor doc";
+    chip.textContent = isSubmitted ? `${kindLabel}: Submitted / Ready` : `${kindLabel}: Draft`;
     flagRow.append(chip);
   }
   summaryTop.append(countRow);

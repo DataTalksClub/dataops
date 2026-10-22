@@ -6,7 +6,14 @@
 const MARKDOWN_ESCAPE = /\\([\\`*_{}[\]()#+\-.!~|])/g;
 
 const SERVICES = [
-  { id: "sponsordoc", name: "Sponsor Doc", icon: "doc", group: "documents", test: (_h, p) => p.startsWith("/sponsor-docs/") },
+  {
+    id: "sponsordoc",
+    name: "Sponsor Doc",
+    icon: "doc",
+    group: "documents",
+    test: (_h, p) =>
+      p.startsWith("/sponsor-docs/") || p.startsWith("/podcast-docs/") || p.startsWith("/guest-docs/"),
+  },
   { id: "gdoc", name: "Google Doc", icon: "doc", group: "documents", test: (h, p) => h === "docs.google.com" && p.startsWith("/document/") },
   { id: "gsheet", name: "Google Sheet", icon: "sheet", group: "documents", test: (h, p) => h === "docs.google.com" && p.startsWith("/spreadsheets/") },
   { id: "gslides", name: "Google Slides", icon: "slides", group: "documents", test: (h, p) => h === "docs.google.com" && p.startsWith("/presentation/") },

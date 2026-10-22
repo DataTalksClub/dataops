@@ -1,4 +1,6 @@
-import { bindCodeInput, describeUserCodeError, formatUserCode, normalizeUserCode } from "../../dakit/device-code.js";
+import { formatUserCode } from "../../dakit/device-code.js";
+import { renderSponsorDocGate } from "./sponsor-doc-gate.js";
+import { appendSponsorDocRadioField } from "./sponsor-doc-radio.js";
 import { appendSponsorDocSelectField } from "./sponsor-doc-select.js";
 import { parseSponsorBulletItems, serializeSponsorBulletItems } from "./sponsor-doc-bullets.js";
 export { parseSponsorBulletItems, serializeSponsorBulletItems };
@@ -44,9 +46,22 @@ function safePreviewHref(rawUrl) {
   return /^https?:\/\//i.test(trimmed) ? trimmed : "#";
 }
 
+export const SPONSOR_DOC_PATH_PREFIXES = ["/podcast-docs", "/guest-docs", "/sponsor-docs"];
+
 function extractDocId(pathname) {
-  const match = /^\/sponsor-docs\/([^/?#]+)/.exec(String(pathname || ""));
-  return match ? decodeURIComponent(match[1]) : "";
+  const match = /^\/(sponsor-docs|podcast-docs|guest-docs)\/([^/?#]+)/.exec(String(pathname || ""));
+  if (!match) return { id: "", prefix: "/sponsor-docs" };
+  return { id: decodeURIComponent(match[2]), prefix: `/${match[1]}` };
+}
+
+/** Podcast guest form reads as guest materials everywhere, never sponsor. */
+function isPodcastGuestDoc(doc) {
+  return String(doc?.template || doc?.templateDefinition?.key || "") === "podcast"
+    || String(doc?.templateDefinition?.key || "") === "podcast";
+}
+
+function guestRoleLabel(doc) {
+  return isPodcastGuestDoc(doc) ? "guest" : "sponsor";
 }
 
 function formatEditedTimestamp(iso) {
@@ -57,7 +72,7 @@ function formatEditorLabel(doc) {
   if (!doc?.lastEditedAt) return "Not edited yet";
   const who = doc.lastEditedBy === "staff"
     ? (doc.lastEditedByName ? `staff (${doc.lastEditedByName})` : "staff")
-    : "sponsor";
+    : guestRoleLabel(doc);
   return `Last edited ${formatEditedTimestamp(doc.lastEditedAt)} by ${who}`;
 }
 
@@ -74,6 +89,7 @@ export function createSponsorDocPage({
   const live = documentRef.querySelector("#dk-live");
 
   let docId = "";
+  let docPathPrefix = "/sponsor-docs";
   let accessCode = "";
   let doc = null;
   let draftContent = {};
@@ -131,7 +147,7 @@ export function createSponsorDocPage({
       if (doc.viewerRole === "staff") {
         identity.append(el("span", "", "DataOps Staff · Full access"));
       } else {
-        identity.append(el("span", "", "Sponsor access · Code verified"));
+        identity.append(el("span", "", `${isPodcastGuestDoc(doc) ? "Guest" : "Sponsor"} access · Code verified`));
         const lockBtn = el("button", "dk-button dk-button--secondary dk-button--sm", "Lock");
         lockBtn.type = "button";
         lockBtn.dataset.sponsorAction = "lock";
@@ -148,7 +164,7 @@ export function createSponsorDocPage({
       return;
     }
     const signInLink = el("a", "", "Staff sign in");
-    const nextPath = `/sponsor-docs/${encodeURIComponent(docId)}`;
+    const nextPath = `${docPathPrefix}/${encodeURIComponent(docId)}`;
     signInLink.href = `/login?return_to=${encodeURIComponent(nextPath)}`;
     identity.append(el("span", "", "Access code protected · "), signInLink);
   }
@@ -193,7 +209,7 @@ export function createSponsorDocPage({
         gateError = "";
       } else {
         phase = "gate";
-        gateError = err.message || "Could not load the sponsor document.";
+        gateError = err.message || "Could not load the document.";
       }
       render();
     }
@@ -261,84 +277,26 @@ export function createSponsorDocPage({
   }
 
   function renderGate() {
-    const card = el("div", "dk-auth-card sponsor-doc-card");
-    card.dataset.sponsorView = "gate";
-    const head = el("header", "dk-auth-card__head");
-    const ledeText =
-      "Enter the 16-character access code from your DataTalks.Club sponsorship email, or open the full link with ?code= included.";
-    head.append(el("h1", "dk-auth-card__title", "Enter sponsor access code"), el("p", "dk-auth-card__lede", ledeText));
-    card.append(head);
-
-    if (gateError) {
-      const alert = el("div", "dk-callout dk-callout--danger");
-      alert.setAttribute("role", "alert");
-      alert.dataset.sponsorGateError = "";
-      alert.append(el("div", "dk-callout__body", gateError));
-      card.append(alert);
-    }
-
-    const form = el("form", "dk-auth-card__form");
-    form.noValidate = true;
-    const field = el("div", "dk-field");
-    const label = el("label", "dk-label", "Access code");
-    label.setAttribute("for", "sponsor-doc-code-input");
-
-    const input = el("input", "dk-code-input");
-    input.id = "sponsor-doc-code-input";
-    input.type = "text";
-    input.autocomplete = "off";
-    input.autocapitalize = "characters";
-    input.spellcheck = false;
-    input.placeholder = "XXXX-XXXX-XXXX-XXXX";
-    input.value = formatUserCode(accessCode);
-
-    const hint = el("p", "dk-hint", "16 characters (letters and digits, hyphens optional).");
-    hint.id = "sponsor-doc-code-hint";
-    const errText = el("p", "dk-error");
-    errText.id = "sponsor-doc-code-error";
-    errText.hidden = true;
-
-    const submitBtn = el("button", "dk-button dk-button--lg dk-button--primary", "Continue");
-    submitBtn.type = "submit";
-    submitBtn.dataset.sponsorAction = "unlock";
-
-    const codeOpts = { alphabet: SPONSOR_CODE_ALPHABET, length: SPONSOR_CODE_LENGTH };
-    const syncValidation = (result) => {
-      accessCode = input.value;
-      const msg = describeUserCodeError(result, codeOpts);
-      const showError = Boolean(msg) && result.error !== "too_short";
-      errText.textContent = showError ? msg : "";
-      errText.hidden = !showError;
-      submitBtn.disabled = !result.ok;
-    };
-
-    input.addEventListener("dk-code-change", (event) => syncValidation(event.detail));
-    unbindCode = bindCodeInput(input, codeOpts);
-    syncValidation(normalizeUserCode(input.value, codeOpts));
-
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const check = normalizeUserCode(input.value, codeOpts);
-      if (!check.ok) {
-        errText.textContent = describeUserCodeError(check, codeOpts);
-        errText.hidden = false;
-        return;
-      }
-      accessCode = check.display;
-      loadDoc();
+    unbindCode = renderSponsorDocGate({
+      el,
+      root,
+      initialCode: accessCode,
+      gateError,
+      onUnlock: (displayCode) => {
+        accessCode = displayCode;
+        loadDoc();
+      },
     });
-
-    field.append(label, input, hint, errText);
-    const actionsWrap = el("div", "dk-auth-card__actions");
-    actionsWrap.append(submitBtn);
-    form.append(field, actionsWrap);
-    card.append(form);
-    root.append(card);
   }
 
   function renderEditor() {
     const tDef = doc.templateDefinition || { label: doc.template, fields: [], guidelines: [] };
     const isSubmitted = doc.status === "submitted";
+    try {
+      documentRef.title = `${doc.title || (isPodcastGuestDoc(doc) ? "Guest Materials" : "Sponsorship Document")} · DataTalks.Club`;
+    } catch {
+      // Non-browser test doubles may not support setting the title
+    }
 
     // 1. Header & guidelines card
     const headerCard = el("div", "sponsor-doc-card");
@@ -349,12 +307,12 @@ export function createSponsorDocPage({
     const badgeClass = isSubmitted ? "dk-badge dk-badge--success" : "dk-badge";
     const badge = el("span", badgeClass, isSubmitted ? "Submitted / Ready" : "Draft");
     badge.dataset.sponsorDocStatus = doc.status;
-    titleRow.append(el("h1", "sponsor-doc-title", doc.title || "Sponsorship Document"), badge);
+    titleRow.append(el("h1", "sponsor-doc-title", doc.title || (isPodcastGuestDoc(doc) ? "Guest Materials" : "Sponsorship Document")), badge);
 
     const metaRow = el("div", "sponsor-doc-meta");
     metaRow.append(el("span", "dk-badge", tDef.label || doc.template));
     if (doc.publicationDate) metaRow.append(el("span", "", `Publication date: ${doc.publicationDate}`));
-    if (doc.sponsorName) metaRow.append(el("span", "", `Sponsor: ${doc.sponsorName}`));
+    if (doc.sponsorName) metaRow.append(el("span", "", `${isPodcastGuestDoc(doc) ? "Guest" : "Sponsor"}: ${doc.sponsorName}`));
     const editedSpan = el("span", "", formatEditorLabel(doc));
     editedSpan.dataset.sponsorDocLastEdited = "";
     metaRow.append(editedSpan);
@@ -616,8 +574,27 @@ export function createSponsorDocPage({
     form.noValidate = true;
 
     for (const sectionDef of sections) {
-      const sectionWrap = el("div", "sponsor-doc-section");
-      if (sectionDef.title) sectionWrap.append(el("h2", "sponsor-doc-section__title", sectionDef.title));
+      const collapsible = Boolean(sectionDef.collapsible);
+      const sectionWrap = collapsible
+        ? el("details", "sponsor-doc-section sponsor-doc-details")
+        : el("div", "sponsor-doc-section");
+      if (collapsible) {
+        sectionWrap.dataset.sponsorCollapsible = sectionDef.id;
+        const filled = (sectionDef.fields || []).some(
+          (field) => String(draftContent[field.key] ?? "").trim().length > 0,
+        );
+        if (filled) sectionWrap.open = true;
+        const summary = el("summary", "sponsor-doc-details__summary");
+        if (sectionDef.title) {
+          summary.append(
+            el("span", "sponsor-doc-section__title", sectionDef.title),
+            el("span", "sponsor-doc-details__hint", "Optional — tap to expand"),
+          );
+        }
+        sectionWrap.append(summary);
+      } else if (sectionDef.title) {
+        sectionWrap.append(el("h2", "sponsor-doc-section__title", sectionDef.title));
+      }
       if (sectionDef.description) sectionWrap.append(el("p", "dk-hint", sectionDef.description));
 
       for (const fieldDef of sectionDef.fields || []) {
@@ -769,6 +746,22 @@ export function createSponsorDocPage({
         updateCount(currentVal);
         top.append(label, countEl);
 
+        if (fieldDef.type === "radio") {
+          appendSponsorDocRadioField({
+            el,
+            fieldWrap,
+            fieldDef,
+            inputId,
+            currentVal,
+            busy,
+            draftContent,
+            updateLivePreview,
+            top,
+          });
+          sectionWrap.append(fieldWrap);
+          continue;
+        }
+
         if (fieldDef.type === "select") {
           appendSponsorDocSelectField({
             el,
@@ -913,7 +906,7 @@ export function createSponsorDocPage({
       root.append(formCard);
     }
 
-    // 3. Read-only Newsletter Markdown Export card
+    // 3. Read-only Markdown Export card
     if (doc.markdownExport) {
       const exportCard = el("div", "sponsor-doc-card");
       exportCard.dataset.sponsorExport = "";
@@ -940,7 +933,7 @@ export function createSponsorDocPage({
 
     if (phase === "loading") {
       const card = el("div", "dk-auth-card sponsor-doc-card");
-      card.append(el("p", "dk-auth-card__lede", "Loading sponsor document…"));
+      card.append(el("p", "dk-auth-card__lede", "Loading document…"));
       root.append(card);
       return;
     }
@@ -950,7 +943,7 @@ export function createSponsorDocPage({
       card.dataset.sponsorView = "notfound";
       const head = el("header", "dk-auth-card__head");
       head.append(
-        el("h1", "dk-auth-card__title", "Sponsor document not found"),
+        el("h1", "dk-auth-card__title", "Document not found"),
         el("p", "dk-auth-card__lede", "Check that you opened the full link from your DataTalks.Club email."),
       );
       card.append(head);
@@ -968,12 +961,14 @@ export function createSponsorDocPage({
 
   async function start() {
     const url = new URL(locationRef.href);
-    docId = extractDocId(url.pathname);
+    const extracted = extractDocId(url.pathname);
+    docId = extracted.id;
+    docPathPrefix = SPONSOR_DOC_PATH_PREFIXES.includes(extracted.prefix) ? extracted.prefix : "/sponsor-docs";
     const queryCode = url.searchParams.get("code");
     if (queryCode !== null) {
       accessCode = formatUserCode(queryCode);
       saveStoredCode(docId, accessCode);
-      historyRef.replaceState(null, "", `/sponsor-docs/${encodeURIComponent(docId)}`);
+      historyRef.replaceState(null, "", `${docPathPrefix}/${encodeURIComponent(docId)}`);
     } else {
       accessCode = readStoredCode(docId);
     }
