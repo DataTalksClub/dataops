@@ -415,6 +415,88 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     }
   });
 
+  it("confirm resolves the SM machine credential and selected connection for both missing and existing mirrors", async () => {
+    await saveCalendarOverlaySettings(client, { connectionId: "selected-confirm-calendar" }, "test-operator");
+    try {
+      for (const hasMirrors of [false, true]) {
+        setCalendarHoldGoogleDepsForTests({});
+        const created = parse(await invoke("POST", "/api/calendar-holds", {
+          date: "2026-11-16",
+          title: "Confirm broker regression",
+          topic: "Confirm credential resolution",
+        })).hold;
+        assert.equal(created.googleSync.state, "deferred");
+        const eventIds = { primary: "existing-primary", "dtc-events": "existing-dtc" };
+        if (hasMirrors) await putCalendarHold(client, { ...created, googleEventIds: eventIds });
+
+        let secretReads = 0;
+        setDapierBrokerClientsForTests({
+          secrets: {
+            send: async (command: any) => {
+              assert.equal(command.input.SecretId, "personal-scheduler/dapier-api-token");
+              secretReads += 1;
+              return { SecretString: JSON.stringify({ api_token: "test-confirm-machine" }) };
+            },
+          } as any,
+        });
+        const calls: Array<{ url: string; method: string }> = [];
+        setCalendarHoldGoogleDepsForTests({
+          // No injected credential or connectionId: exercise the production
+          // route -> settings -> Secrets Manager -> Dapier resolution chain.
+          calendarIds: ["primary", "dtc-events"],
+          fetchImpl: (async (url: any, init: any) => {
+            const u = String(url);
+            calls.push({ url: u, method: init.method });
+            if (u.endsWith("/api/agent/token")) {
+              assert.equal(init.headers.Authorization, "Bearer test-confirm-machine");
+              assert.deepEqual(JSON.parse(init.body), {
+                connection_id: "selected-confirm-calendar",
+                agent: "personal-scheduler",
+              });
+              return { ok: true, json: async () => ({ access_token: "test-google-access" }) };
+            }
+            assert.ok(u.includes("/calendar/v3/calendars/"));
+            assert.equal(init.headers.Authorization, "Bearer test-google-access");
+            assert.equal(init.method, hasMirrors ? "PATCH" : "POST");
+            return { ok: true, json: async () => ({ id: `created-${calls.length}` }) };
+          }) as any,
+        });
+        try {
+          const response = await invoke("POST", `/api/calendar-holds/${created.id}/confirm`);
+          assert.equal(response.statusCode, 200, response.body);
+          const { hold } = parse(response);
+          assert.equal(secretReads, 1);
+          assert.equal(calls.length, 3, "one broker call and two Google writes");
+          assert.deepEqual(hold.googleSync, { state: "synced" });
+          assert.deepEqual(Object.keys(hold.googleEventIds).sort(), ["dtc-events", "primary"]);
+          if (hasMirrors) assert.deepEqual(hold.googleEventIds, eventIds);
+          const stored = await getCalendarHold(client, created.id);
+          assert.deepEqual(stored, hold, "response includes the persisted sync state and ids");
+
+          // Reconfirming an already confirmed/reconciled hold must not send
+          // another invite or even ask the broker for a token.
+          calls.length = 0;
+          const repeat = await invoke("POST", `/api/calendar-holds/${created.id}/confirm`);
+          assert.equal(repeat.statusCode, 409);
+          assert.equal(calls.length, 0);
+          assert.equal(secretReads, 1);
+          assert.deepEqual(await getCalendarHold(client, created.id), stored);
+        } finally {
+          setCalendarHoldGoogleDepsForTests({});
+          setDapierBrokerClientsForTests({
+            secrets: {
+              send: async () => {
+                throw Object.assign(new Error("no aws in unit test"), { name: "CredentialsProviderError" });
+              },
+            } as any,
+          });
+        }
+      }
+    } finally {
+      await saveCalendarOverlaySettings(client, { connectionId: "google-calendar" }, "test-operator");
+    }
+  });
+
   it("domain helpers: Berlin offsets, intervals, titles, transitions", () => {
     assert.equal(berlinOffsetSuffix("2026-10-20"), "+02:00");
     assert.equal(berlinOffsetSuffix("2026-10-26"), "+01:00");
