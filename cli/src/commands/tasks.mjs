@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { UsageError } from "../errors.mjs";
 import { enc, fields, integer, isoDate, isValidTimezone, list as csv, optionalString, positional, required, resolveDateTime, table } from "../format.mjs";
 import { apiFor, today } from "../session.mjs";
+import { hasTaskFollowUp, isTaskActionable, isTaskSnoozed, taskAttentionDate } from "../../../frontend/src/core/task-attention.js";
 
 export const summary = "List, inspect, create, complete, skip, and follow up Tasks";
 
@@ -42,19 +43,22 @@ Usage
   dataops tasks delete <task-id>                                (admin)
 
 List views (default: --queue)
-  --queue      Open work in the web queue's order: overdue, follow-ups due, today, waiting
-  --today      Due today          --overdue    Open and past due     --waiting   Waiting on someone
+  --queue      Overdue work, follow-ups due today or earlier, and today todos
+  --today      Due today          --overdue    Open and past due     --waiting   All waiting, including future follow-ups
   --status S   todo|waiting|done|skipped       --date D    One day     --from D --to D   A range
   --card ID    Every Task of a Card
   --batches    Group Tasks due on the same day for the same Card/subject into one sitting
                (also \`dataops tasks batches [view] [filters]\`)
   --owner me|team|unassigned|<member>, or --mine for --owner me
   --assignee <member>   Same filter as --owner (use one of them)
-  --as-of YYYY-MM-DD   Treat this date as today (default: the local date)
+  --as-of YYYY-MM-DD   Treat this date as today (default: Europe/Berlin date)
 
 <member> is a user id, an email, or a name: --owner orin shows Orin's work.
 The starting point for any agent is \`dataops tasks list --mine --queue\`:
-your open work in urgency order (overdue, follow-ups due, today, waiting).
+your work needing attention today. Future follow-ups stay hidden even when the
+original deadline is overdue. Use \`tasks list --mine --waiting\` to inspect parked
+waits, like expanding "Waiting & snoozed" in the web queue. Snoozed and timed
+Tasks still wait for their wakeup; --status waiting lists the full inventory.
 
 Dates (Europe/Berlin)
   Every date flag also takes +7d (days ahead), tomorrow, or a weekday name
@@ -183,13 +187,12 @@ export function browserMark(value) {
 }
 
 function isWaitingOrFollowUp(task) {
-  return OPEN.has(task.status) && (task.status === "waiting" || Boolean(task.waitingFor) || Boolean(task.followUpAt));
+  return OPEN.has(task.status) && hasTaskFollowUp(task);
 }
 
 /** A snoozed Task stays out of the queue while its date is in the future. */
 export function isSnoozed(task, day) {
-  const until = String(task.snoozedUntil || "").slice(0, 10);
-  return Boolean(until) && until > day;
+  return isTaskSnoozed(task, day);
 }
 
 /** A scheduled Task stays out of the queue while its moment is in the future. */
@@ -199,29 +202,29 @@ export function isScheduled(task, nowIso) {
 
 /** The web queue's urgency segment for one open Task. */
 export function queueSegment(task, day, nowIso = new Date().toISOString()) {
-  const due = String(task.date || "").slice(0, 10);
-  const followUp = String(task.followUpAt || "").slice(0, 10);
+  const due = taskAttentionDate(task);
   if (!OPEN.has(task.status)) return "";
   if (isScheduled(task, nowIso)) return "scheduled";
   if (isSnoozed(task, day)) return "snoozed";
+  if (isWaitingOrFollowUp(task)) return due && due <= day ? "follow-up" : "waiting";
   if (due && due < day) return "overdue";
-  if (isWaitingOrFollowUp(task) && followUp && followUp <= day) return "follow-up";
   if (due === day) return "today";
-  if (isWaitingOrFollowUp(task)) return "waiting";
   return "open";
 }
 
 const SEGMENT_ORDER = ["overdue", "follow-up", "today", "waiting", "open", "snoozed", "scheduled"];
 
-export function orderQueue(tasks, day, nowIso = new Date().toISOString()) {
+// The web queue uses the same attention/deferral helper. Only the explicit
+// --waiting view includes upcoming follow-ups; snooze and exact-time gates remain.
+export function orderQueue(tasks, day, nowIso = new Date().toISOString(), { includeUpcomingWaiting = false } = {}) {
   const seen = new Set();
-  const unique = tasks.filter((task) => task && OPEN.has(task.status) && !isSnoozed(task, day) && !isScheduled(task, nowIso) && !seen.has(task.id) && seen.add(task.id));
+  const unique = tasks.filter((task) => task && OPEN.has(task.status) && !isSnoozed(task, day) && !isScheduled(task, nowIso) && (includeUpcomingWaiting || isTaskActionable(task, day, nowIso)) && !seen.has(task.id) && seen.add(task.id));
   return unique
-    .map((task) => ({ ...task, queueSegment: queueSegment(task, day) }))
+    .map((task) => ({ ...task, queueSegment: queueSegment(task, day, nowIso) }))
     .sort(
       (a, b) =>
         SEGMENT_ORDER.indexOf(a.queueSegment) - SEGMENT_ORDER.indexOf(b.queueSegment) ||
-        String(a.date || "").localeCompare(String(b.date || "")),
+        taskAttentionDate(a).localeCompare(taskAttentionDate(b)),
     );
 }
 
@@ -450,7 +453,7 @@ export async function list(args, io) {
     tasks = tasksOf(await api.get("/api/tasks", { query }));
   } else {
     const wanted = ["today", "overdue", "waiting"].filter((name) => args[name]);
-    view = wanted.length === 1 ? wanted[0] : "queue";
+    view = !args.queue && wanted.length === 1 ? wanted[0] : "queue";
     const lanes = wanted.length && !args.queue ? wanted : ["today", "overdue", "waiting"];
     const queries = {
       today: { date: day },
@@ -458,7 +461,7 @@ export async function list(args, io) {
       waiting: { status: "waiting" },
     };
     const pages = await Promise.all(lanes.map((lane) => api.get("/api/tasks", { query: { ...queries[lane], owner, ...resources, ...browser } })));
-    tasks = orderQueue(pages.flatMap(tasksOf), day, nowIso);
+    tasks = orderQueue(pages.flatMap(tasksOf), day, nowIso, { includeUpcomingWaiting: view === "waiting" });
     if (view === "overdue") tasks = tasks.filter((task) => task.queueSegment === "overdue");
     if (view === "today") tasks = tasks.filter((task) => String(task.date || "").slice(0, 10) === day);
     if (view === "waiting") tasks = tasks.filter(isWaitingOrFollowUp);

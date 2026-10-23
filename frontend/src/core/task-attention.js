@@ -1,5 +1,15 @@
 // Queue dates are civil days in the operator's Europe/Berlin calendar.
 const dayOf = (value) => String(value || "").slice(0, 10);
+const berlinDay = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit",
+});
+
+// Date-only follow-ups are civil days; timestamps belong to their Berlin day.
+function followUpDay(value) {
+  if (!value || /^\d{4}-\d{2}-\d{2}$/.test(value)) return dayOf(value);
+  const instant = new Date(value);
+  return Number.isFinite(instant.getTime()) ? berlinDay.format(instant) : "";
+}
 
 export function hasTaskFollowUp(task) {
   return task?.status === "waiting" || Boolean(task?.waitingFor) || Boolean(task?.followUpAt);
@@ -7,7 +17,7 @@ export function hasTaskFollowUp(task) {
 
 /** A waiting task's next action is its follow-up, rather than its original deadline. */
 export function taskAttentionDate(task) {
-  return dayOf(hasTaskFollowUp(task) ? task?.followUpAt : task?.date);
+  return hasTaskFollowUp(task) ? followUpDay(task?.followUpAt) : dayOf(task?.date);
 }
 
 export function isTaskSnoozed(task, today) {
@@ -17,7 +27,7 @@ export function isTaskSnoozed(task, today) {
 /** Waiting and snooze dates resume on their calendar day; notBeforeAt is an exact moment. */
 export function isTaskDeferred(task, today, now = new Date()) {
   return isTaskSnoozed(task, today) ||
-    (hasTaskFollowUp(task) && dayOf(task?.followUpAt) > today) ||
+    (hasTaskFollowUp(task) && taskAttentionDate(task) > today) ||
     (Boolean(task?.notBeforeAt) && Date.parse(task.notBeforeAt) > new Date(now).getTime());
 }
 

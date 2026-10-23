@@ -238,9 +238,19 @@ The website script generates the pages from these registers plus the episode reg
 
 ```bash
 dataops tasks list --mine --queue   # the starting point: your open queue
+dataops tasks list --mine --waiting # inspect waiting, including future follow-ups
 dataops tasks list --overdue --json
 dataops notifications list
 ```
+
+The default list and `--queue` show overdue work, follow-ups due today or earlier,
+and today's todos, using the Europe/Berlin day. A future `followUpAt` hides a
+waiting Task even if its original deadline is overdue. `--waiting` opts into
+future waits (the web queue's collapsed "Waiting & snoozed" section); snoozed
+Tasks and future `--at` moments remain hidden until their wakeup. Use
+`--status waiting` for the full waiting inventory, including those gates.
+CLI and web share `frontend/src/core/task-attention.js` for follow-up dates and
+deferral rules. An undated wait stays visible so it can receive a follow-up date.
 
 Dates take `+7d`, `tomorrow`, or a weekday (`mon` is the next Monday,
 Europe/Berlin) everywhere: `tasks create --date +3d`, `tasks wait --follow-up fri`.

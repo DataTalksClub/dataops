@@ -78,7 +78,7 @@ describe("tasks", () => {
     }
     assert.equal(calls.length, 0);
   });
-  test("queue segments follow the web order: overdue, follow-up due, today, waiting", () => {
+  test("queue hides future waits and orders overdue, follow-up due, today", () => {
     const day = "2026-10-14";
     const ordered = orderQueue(
       [
@@ -95,7 +95,6 @@ describe("tasks", () => {
       ["o", "overdue"],
       ["f", "follow-up"],
       ["t", "today"],
-      ["w", "waiting"],
     ]);
     assert.equal(queueSegment(task({ status: "done" }), day), "");
   });

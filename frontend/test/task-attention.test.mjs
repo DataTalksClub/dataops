@@ -57,3 +57,16 @@ test("known deferred members are removed from raw counts without losing unseen-p
   assert.equal(paginated.counts.overdue, 99);
   assert.deepEqual(paginated.tasks.overdue.map((item) => item.id), ["active"]);
 });
+
+for (const [day, midnightUtc] of [["2026-10-23", "2026-10-23T22:00:00Z"], ["2026-12-23", "2026-12-23T23:00:00Z"]]) {
+  test(`follow-ups use the Berlin civil day across midnight: ${day}`, () => {
+    const future = task({ followUpAt: midnightUtc });
+    assert.equal(taskAttentionDate(future), day.slice(0, 8) + "24");
+    assert.equal(isTaskActionable(future, day), false);
+    assert.equal(isFollowUpDueTask(future, day), false);
+    const due = task({ followUpAt: new Date(Date.parse(midnightUtc) - 1).toISOString() });
+    assert.equal(taskAttentionDate(due), day);
+    assert.equal(isTaskActionable(due, day), true);
+    assert.equal(isFollowUpDueTask(due, day), true);
+  });
+}

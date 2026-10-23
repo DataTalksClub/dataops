@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, test } from "node:test";
@@ -12,14 +12,20 @@ const repoCli = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
  * The knowledge publish job runs this CLI from a checkout without installed
  * dependencies, so no CLI module may resolve a third-party package at
  * import time. These tests recreate that environment: an isolated temp dir
- * holding only bin/, src/ and package.json (deliberately NO node_modules,
+ * holding the CLI and its shared queue helper (deliberately NO node_modules,
  * and nothing resolvable from parent directories), then spawn a real
  * `node` child process in it.
  */
 describe("CLI without installed dependencies", () => {
   function cleanCheckout(t) {
-    const dir = mkdtempSync(path.join(tmpdir(), "dataops-clean-cli-"));
-    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const root = mkdtempSync(path.join(tmpdir(), "dataops-clean-cli-"));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const dir = path.join(root, "cli");
+    mkdirSync(dir);
+    const frontend = path.join(root, "frontend");
+    mkdirSync(path.join(frontend, "src", "core"), { recursive: true });
+    cpSync(path.join(repoCli, "../frontend/package.json"), path.join(frontend, "package.json"));
+    cpSync(path.join(repoCli, "../frontend/src/core/task-attention.js"), path.join(frontend, "src/core/task-attention.js"));
     for (const entry of ["bin", "src"]) {
       cpSync(path.join(repoCli, entry), path.join(dir, entry), { recursive: true });
     }

@@ -161,7 +161,13 @@ describe("dataops CLI against a local backend", () => {
     const waiting = cli("tasks", "wait", taskId, "--for", "Synthetic sponsor", "--follow-up", "2026-10-30", "--channel", "email", "--note", "Asked for a logo", "--json");
     assert.equal(waiting.code, 0, waiting.stderr);
     assert.equal(waiting.json.status, "waiting");
-    const queue = cli("tasks", "list", "--waiting", "--json");
+    const beforeDue = cli("tasks", "list", "--queue", "--as-of", "2026-10-29", "--json");
+    assert.equal(beforeDue.code, 0, beforeDue.stderr);
+    assert.ok(!beforeDue.json.tasks.some((task) => task.id === taskId));
+    const dueToday = cli("tasks", "list", "--queue", "--as-of", "2026-10-30", "--json");
+    assert.equal(dueToday.code, 0, dueToday.stderr);
+    assert.ok(dueToday.json.tasks.some((task) => task.id === taskId));
+    const queue = cli("tasks", "list", "--waiting", "--as-of", "2026-10-29", "--json");
     assert.ok(queue.json.tasks.some((task) => task.id === taskId));
     const unblocked = cli("tasks", "unblock", taskId, "--note", "Logo received", "--json");
     assert.equal(unblocked.json.status, "todo");
