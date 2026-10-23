@@ -523,4 +523,15 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.ok(!JSON.parse(reloaded.body).card.cardLinks.some((link: { url: string }) => link.url === doc.docUrl));
   });
 
+  it('uses the card kind when its description mentions another event format', async () => {
+    for (const [kind, other] of [['podcast', 'webinar'], ['webinar', 'podcast']]) {
+      const card = await createCard(client, {
+        ...templateLink(), title: `[${kind}] Synthetic event`, description: `Follow up after the ${other}.`,
+      });
+      const response = await staffReq('POST', '/api/sponsor-docs', { cardId: card.id });
+      assert.equal(response.statusCode, 201, response.body);
+      assert.equal(JSON.parse(response.body).doc.template, kind);
+    }
+  });
+
 });

@@ -165,9 +165,10 @@ async function inferTemplateForCard(
   const cType = cardTemplateType(card, templateIdByType);
   const combinedText = `${card.title || ''} ${(card.tags || []).join(' ')} ${card.description || ''}`.toLowerCase();
 
-  if (cType === 'webinar' || /\bwebinar\b/.test(combinedText)) return 'webinar';
+  if (cType === 'webinar' || cType === 'podcast') return cType;
+  if (/\bwebinar\b/.test(combinedText)) return 'webinar';
 
-  if (cType === 'podcast' || /\bpodcast\b/.test(combinedText)) {
+  if (/\bpodcast\b/.test(combinedText)) {
     return 'podcast';
   }
 
