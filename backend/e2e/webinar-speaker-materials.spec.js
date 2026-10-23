@@ -49,6 +49,8 @@ test('webinar workflow creates a form; speaker saves, validates and submits link
   await page.locator('[data-sponsor-action="submit-ready"]').click();
   await expect(page.locator('[data-sponsor-feedback]')).toContainText('non-empty bullets');
   await bullets.nth(2).fill('Monitor');
+  await page.locator('#sponsor-field-linkedinUrl').fill('https://example.test/linkedin');
+  await page.locator('#sponsor-field-githubUrl').fill('https://example.test/github');
   await page.locator('#sponsor-field-websiteUrl').fill('https://example.test/speaker');
   await page.locator('[data-sponsor-action="submit-ready"]').click();
   await expect(page.locator('[data-sponsor-feedback]')).toContainText('Submitted and marked ready');
@@ -61,4 +63,17 @@ test('webinar workflow creates a form; speaker saves, validates and submits link
   expect(saved.doc.cardId).toBe(card.id);
   expect(saved.doc.status).toBe('submitted');
   expect(saved.doc.content.outline).toContain('Monitor');
+
+  await page.setExtraHTTPHeaders({});
+  await page.goto(`${server.baseURL}/cards?cardId=${card.id}`);
+  const materials = page.locator('[data-card-sponsor-docs]');
+  await expect(materials).toContainText('Submitted / Ready');
+  await expect(materials.getByRole('link', { name: doc.title })).toHaveAttribute('href', new URL(doc.docUrl).pathname);
+  const exportPath = await materials.getByRole('link', { name: /^Markdown export/ }).getAttribute('href');
+  const exported = await request.get(`${server.baseURL}${exportPath}`);
+  expect(exported.status()).toBe(200);
+  const markdown = await exported.text();
+  for (const value of ['Practical pipelines', 'Lessons from building pipelines', 'Design', 'Build', 'Monitor', 'A data engineer.', '/linkedin', '/github', '/speaker']) {
+    expect(markdown).toContain(value);
+  }
 });
