@@ -527,7 +527,7 @@ export async function invite(args, io) {
   if (!Number.isInteger(durationMinutes) || durationMinutes <= 0) {
     throw new UsageError("--duration must be a positive integer number of minutes (podcasts use 60).");
   }
-  const title = optionalString(args, "title") || `Podcast with ${guest}`;
+  const title = optionalString(args, "title") || `${guest} at DataTalks.Club Podcast`;
 
   const api = apiFor(args);
   const holdRes = await api.post("/api/calendar-holds", {
@@ -537,6 +537,7 @@ export async function invite(args, io) {
     title,
     topic,
     guestRef: email,
+    ...(args.documentUrl ? { documentUrl: args.documentUrl } : {}),
     expiresDays: 7,
   });
   const hold = holdRes.hold || holdRes;

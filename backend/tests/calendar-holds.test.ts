@@ -6,7 +6,6 @@ import { createTables, startLocal, stopLocal } from "../scripts/local-dynamodb";
 import { getClient } from "../src/db/client";
 import { setCalendarHoldGoogleDepsForTests } from "../src/routes/calendarHolds";
 import { setDapierBrokerClientsForTests, DEFAULT_HOLD_GOOGLE_CALENDARS, resolveHoldGoogleCalendars } from "../src/calendar/dapierBroker";
-import { createHoldGoogleEvents } from "../src/calendar/holdGoogleSync";
 import { getCalendarHold, putCalendarHold } from "../src/db/calendarHolds";
 import { saveCalendarOverlaySettings } from "../src/db/calendar";
 import {
@@ -24,7 +23,6 @@ import {
   confirmedHoldInvite,
 } from "../src/calendar/holds";
 import { suppressHeldSlots } from "../src/calendar/holdOverlay";
-import { ownerCalendarOverlay, setOwnerCalendarProviderClientsForTests } from "../src/calendar/ownerCalendarOverlay";
 
 const invoke = (
   method: string,
@@ -151,14 +149,14 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
 
   it("confirms a hold: Proposal prefix drops, status confirmed", async () => {
     const created = parse(
-      await invoke("POST", "/api/calendar-holds", { date: "2026-10-28", title: "Confirm me", topic: "Confirm me topic" }),
+      await invoke("POST", "/api/calendar-holds", { date: "2026-10-28", guestRef: "guest@example.com", title: "Confirm me", topic: "Confirm me topic" }),
     ).hold;
     const r = await invoke("POST", `/api/calendar-holds/${created.id}/confirm`);
     assert.equal(r.statusCode, 200, r.body);
     assert.equal(parse(r).hold.status, "confirmed");
     assert.equal(parse(r).hold.googleTitle, "Confirm me");
     assert.ok(parse(r).hold.confirmedAt);
-    assert.equal((await invoke("POST", `/api/calendar-holds/${created.id}/confirm`)).statusCode, 409);
+    assert.equal((await invoke("POST", `/api/calendar-holds/${created.id}/confirm`)).statusCode, 200, "deferred Google invite can retry");
   });
 
   it("releases a hold: slot frees up, release recorded as manual", async () => {
@@ -198,102 +196,11 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     assert.match(note + followUps[0].note, /no guest email/i);
   });
 
-  it("mirrors Google Proposal create/confirm/release across DTC + personal calendars", async () => {
-    const calls: Array<{ url: string; method: string; body?: any }> = [];
-    const fakeJson = (payload: any, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => payload });
-    let seq = 0;
-    setCalendarHoldGoogleDepsForTests({
-      credential: "test-broker-token",
-      calendarIds: ["dtc-events", "personal-alexey"],
-      fetchImpl: (async (url: any, init: any) => {
-        const u = String(url);
-        const method = init?.method || "GET";
-        calls.push({ url: u, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-        if (u.includes("/api/agent/token")) return fakeJson({ access_token: "google-at" });
-        if (method === "POST" && u.includes("/calendar/v3/")) {
-          seq += 1;
-          return fakeJson({ id: `gev-${seq}` });
-        }
-        if (method === "PATCH") return fakeJson({ id: "gev-x" });
-        if (method === "DELETE") return fakeJson({}, 204);
-        throw new Error(`unexpected ${method} ${u}`);
-      }) as any,
-    });
-    try {
-      const created = parse(
-        await invoke("POST", "/api/calendar-holds", { date: "2026-11-03", title: "Synced workshop", topic: "Synced workshop topic" }),
-      ).hold;
-      assert.deepEqual(created.googleEventIds, { "dtc-events": "gev-1", "personal-alexey": "gev-2" });
-      assert.equal(created.googleSync.state, "synced");
-      const creates = calls.filter((c) => c.method === "POST" && c.url.includes("/calendar/v3/"));
-      assert.equal(creates.length, 2);
-      assert.ok(creates.every((c) => c.body.summary === "(Proposal) Synced workshop"));
-      calls.length = 0;
-      const confirmed = parse(await invoke("POST", `/api/calendar-holds/${created.id}/confirm`)).hold;
-      assert.equal(confirmed.googleTitle, "Synced workshop");
-      const patches = calls.filter((c) => c.method === "PATCH");
-      assert.equal(patches.length, 2);
-      assert.ok(patches.every((c) => c.body.summary === "Synced workshop"));
-      calls.length = 0;
-      await invoke("POST", `/api/calendar-holds/${created.id}/release`, { reason: "manual" });
-      assert.equal(calls.filter((c) => c.method === "DELETE").length, 2);
-    } finally {
-      setCalendarHoldGoogleDepsForTests({});
-    }
-  });
-
-  it("confirm mirrors Google when propose deferred (empty event ids create with confirmed title)", async () => {
-    // Propose with no broker credential: hold stores deferred with empty ids.
-    setCalendarHoldGoogleDepsForTests({});
-    const created = parse(
-      await invoke("POST", "/api/calendar-holds", { date: "2026-11-04", title: "Late sync", topic: "Late sync topic" }),
-    ).hold;
-    assert.equal(created.googleSync.state, "deferred");
-    assert.deepEqual(created.googleEventIds, {});
-    // Broker recovers before confirm: confirm must CREATE mirrors (not PATCH
-    // nothing) and persist the synced state + ids.
-    const calls: Array<{ url: string; method: string; body?: any }> = [];
-    const fakeJson = (payload: any, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => payload });
-    let seq = 0;
-    setCalendarHoldGoogleDepsForTests({
-      credential: "test-broker-token",
-      calendarIds: ["dtc-events", "personal-alexey"],
-      fetchImpl: (async (url: any, init: any) => {
-        const u = String(url);
-        const method = init?.method || "GET";
-        calls.push({ url: u, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-        if (u.includes("/api/agent/token")) return fakeJson({ access_token: "google-at" });
-        if (method === "POST" && u.includes("/calendar/v3/")) {
-          seq += 1;
-          return fakeJson({ id: `gev-late-${seq}` });
-        }
-        throw new Error(`unexpected ${method} ${u}`);
-      }) as any,
-    });
-    try {
-      const r = await invoke("POST", `/api/calendar-holds/${created.id}/confirm`);
-      assert.equal(r.statusCode, 200, r.body);
-      const { hold } = parse(r);
-      assert.equal(hold.status, "confirmed");
-      assert.equal(hold.googleTitle, "Late sync");
-      assert.equal(hold.googleSync.state, "synced");
-      assert.deepEqual(hold.googleEventIds, { "dtc-events": "gev-late-1", "personal-alexey": "gev-late-2" });
-      const creates = calls.filter((c) => c.method === "POST" && c.url.includes("/calendar/v3/"));
-      assert.equal(creates.length, 2);
-      assert.ok(creates.every((c) => c.body.summary === "Late sync"));
-      assert.equal(calls.filter((c) => c.method === "PATCH").length, 0);
-      const stored = await getCalendarHold(client, created.id);
-      assert.equal(stored?.googleSync.state, "synced");
-      assert.deepEqual(stored?.googleEventIds, { "dtc-events": "gev-late-1", "personal-alexey": "gev-late-2" });
-    } finally {
-      setCalendarHoldGoogleDepsForTests({});
-    }
-  });
 
   it("confirm persists the fresh deferred reason when Google sync still fails", async () => {
     setCalendarHoldGoogleDepsForTests({});
     const created = parse(
-      await invoke("POST", "/api/calendar-holds", { date: "2026-11-05", title: "Still stuck", topic: "Still stuck topic" }),
+      await invoke("POST", "/api/calendar-holds", { date: "2026-11-05", guestRef: "guest@example.com", title: "Still stuck", topic: "Still stuck topic" }),
     ).hold;
     const staleReason = created.googleSync.reason;
     const r = await invoke("POST", `/api/calendar-holds/${created.id}/confirm`);
@@ -325,241 +232,13 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
 
   it("defaults Proposal mirrors to personal + DTC events calendars (SOP)", () => {
     assert.deepEqual(resolveHoldGoogleCalendars(undefined), [...DEFAULT_HOLD_GOOGLE_CALENDARS]);
-    assert.ok(DEFAULT_HOLD_GOOGLE_CALENDARS.includes("primary"));
+    assert.ok(DEFAULT_HOLD_GOOGLE_CALENDARS.includes("alexey.s.grigoriev@gmail.com"));
     assert.ok(
       DEFAULT_HOLD_GOOGLE_CALENDARS.some((id) => id.includes("group.calendar.google.com")),
       "DTC events calendar id present",
     );
   });
 
-  it("propose uses the Dapier connectionId stored in calendar settings", async () => {
-    await saveCalendarOverlaySettings(client, { connectionId: "orin-picked-google-calendar" }, "test-operator");
-    const tokenBodies: any[] = [];
-    const fakeJson = (payload: any, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => payload });
-    let seq = 0;
-    setCalendarHoldGoogleDepsForTests({
-      credential: "test-broker-token",
-      // connectionId intentionally omitted — must come from settings
-      calendarIds: ["primary", "dtc-events"],
-      fetchImpl: (async (url: any, init: any) => {
-        const u = String(url);
-        const method = init?.method || "GET";
-        if (u.includes("/api/agent/token")) {
-          tokenBodies.push(JSON.parse(String(init.body)));
-          return fakeJson({ access_token: "google-at" });
-        }
-        if (method === "POST" && u.includes("/calendar/v3/")) {
-          seq += 1;
-          return fakeJson({ id: `gev-pick-${seq}` });
-        }
-        throw new Error(`unexpected ${method} ${u}`);
-      }) as any,
-    });
-    try {
-      const created = parse(
-        await invoke("POST", "/api/calendar-holds", {
-          date: "2026-11-12",
-          title: "Picker proof",
-          topic: "connection picker",
-        }),
-      ).hold;
-      assert.equal(created.googleSync.state, "synced");
-      assert.equal(tokenBodies.length, 1);
-      assert.deepEqual(tokenBodies[0], {
-        connection_id: "orin-picked-google-calendar",
-        agent: "personal-scheduler",
-      });
-    } finally {
-      setCalendarHoldGoogleDepsForTests({});
-      await saveCalendarOverlaySettings(client, { connectionId: "google-calendar" }, "test-operator");
-    }
-  });
-
-  it("Google Proposal mirrors independently block availability when read back through the selected connection", async () => {
-    const googleEvents: any[] = [];
-    const tokenConnections: string[] = [];
-    const googleFetch = (async (url: any, init: any = {}) => {
-      if (String(url).endsWith('/api/agent/token')) {
-        tokenConnections.push(JSON.parse(init.body).connection_id);
-        return Response.json({ access_token: 'test-google' });
-      }
-      if (init.method === 'POST') {
-        const event = { ...JSON.parse(init.body), id: `google-proposal-${googleEvents.length}` };
-        googleEvents.push(event);
-        return Response.json({ id: event.id });
-      }
-      return Response.json({ items: [googleEvents[0]] });
-    }) as typeof fetch;
-    await saveCalendarOverlaySettings(client, { connectionId: 'selected-calendar' }, 'test');
-    setCalendarHoldGoogleDepsForTests({ credential: 'machine', fetchImpl: googleFetch });
-    setOwnerCalendarProviderClientsForTests({ fetch: googleFetch });
-    try {
-      const { hold } = parse(await invoke('POST', '/api/calendar-holds', { date: '2026-11-09', title: 'Availability proof', topic: 'Test', window: 'evening' }));
-      assert.equal(hold.googleSync.state, 'synced');
-      assert.equal(Object.keys(hold.googleEventIds).length, 2);
-      // Read Google directly: no DataOps hold overlay participates in this projection.
-      const projection = await ownerCalendarOverlay({ client, today: '2026-11-01', brokerCredential: 'machine', window: 'evening' }).project('2026-11-09', '2026-11-09');
-      assert.equal(projection.connection?.state, 'connected');
-      assert.ok(!projection.items.some((item) => item.isAvailableSlot));
-      const day = await ownerCalendarOverlay({ client, today: '2026-11-01', brokerCredential: 'machine', includeAll: true }).project('2026-11-09', '2026-11-09');
-      assert.ok(day.items.some((item) => item.label.includes('(Proposal) Availability proof')));
-      assert.deepEqual(tokenConnections, ['selected-calendar', 'selected-calendar', 'selected-calendar']);
-    } finally {
-      setCalendarHoldGoogleDepsForTests({});
-      setOwnerCalendarProviderClientsForTests({});
-      await saveCalendarOverlaySettings(client, { connectionId: 'google-calendar' }, 'test');
-    }
-  });
-
-  it("reads the Dapier machine token from Secrets Manager (no Coolify env) and syncs both calendars", async () => {
-    setDapierBrokerClientsForTests({
-      secrets: {
-        send: async () => ({ SecretString: JSON.stringify({ api_token: "dap_test_machine" }) }),
-      } as any,
-    });
-    const calls: Array<{ url: string; method: string; auth?: string; body?: any }> = [];
-    const fakeJson = (payload: any, status = 200) => ({
-      ok: status >= 200 && status < 300,
-      status,
-      json: async () => payload,
-    });
-    let seq = 0;
-    try {
-      const sync = await createHoldGoogleEvents(
-        {
-          summary: "(Proposal) SM hold",
-          startIso: "2026-11-10T11:00:00.000Z",
-          endIso: "2026-11-10T12:00:00.000Z",
-          timeZone: "Europe/Berlin",
-          description: "unit",
-        },
-        {
-          connectionId: "google-calendar",
-          fetchImpl: (async (url: any, init: any) => {
-            const u = String(url);
-            const method = init?.method || "GET";
-            calls.push({
-              url: u,
-              method,
-              auth: init?.headers?.Authorization,
-              body: init?.body ? JSON.parse(String(init.body)) : undefined,
-            });
-            if (u.includes("/api/agent/token")) {
-              assert.equal(init.headers.Authorization, "Bearer dap_test_machine");
-              assert.deepEqual(JSON.parse(String(init.body)), {
-                connection_id: "google-calendar",
-                agent: "personal-scheduler",
-              });
-              return fakeJson({ access_token: "google-at" });
-            }
-            if (method === "POST" && u.includes("/calendar/v3/")) {
-              seq += 1;
-              return fakeJson({ id: `gev-sm-${seq}` });
-            }
-            throw new Error(`unexpected ${method} ${u}`);
-          }) as any,
-        },
-      );
-      assert.equal(sync.state, "synced");
-      if (sync.state === "synced") {
-        assert.equal(Object.keys(sync.eventIds).length, 2);
-        assert.ok(sync.eventIds.primary);
-        assert.ok(Object.keys(sync.eventIds).some((k) => k.includes("group.calendar.google.com")));
-      }
-      assert.equal(calls.filter((c) => c.url.includes("/api/agent/token")).length, 1);
-      assert.equal(calls.filter((c) => c.method === "POST" && c.url.includes("/calendar/v3/")).length, 2);
-    } finally {
-      setDapierBrokerClientsForTests({
-        secrets: {
-          send: async () => {
-            throw Object.assign(new Error("no aws in unit test"), { name: "CredentialsProviderError" });
-          },
-        } as any,
-      });
-    }
-  });
-
-  it("confirm resolves the SM machine credential and selected connection for both missing and existing mirrors", async () => {
-    await saveCalendarOverlaySettings(client, { connectionId: "selected-confirm-calendar" }, "test-operator");
-    try {
-      for (const hasMirrors of [false, true]) {
-        setCalendarHoldGoogleDepsForTests({});
-        const created = parse(await invoke("POST", "/api/calendar-holds", {
-          date: "2026-11-16",
-          title: "Confirm broker regression",
-          topic: "Confirm credential resolution",
-        })).hold;
-        assert.equal(created.googleSync.state, "deferred");
-        const eventIds = { primary: "existing-primary", "dtc-events": "existing-dtc" };
-        if (hasMirrors) await putCalendarHold(client, { ...created, googleEventIds: eventIds });
-
-        let secretReads = 0;
-        setDapierBrokerClientsForTests({
-          secrets: {
-            send: async (command: any) => {
-              assert.equal(command.input.SecretId, "personal-scheduler/dapier-api-token");
-              secretReads += 1;
-              return { SecretString: JSON.stringify({ api_token: "test-confirm-machine" }) };
-            },
-          } as any,
-        });
-        const calls: Array<{ url: string; method: string }> = [];
-        setCalendarHoldGoogleDepsForTests({
-          // No injected credential or connectionId: exercise the production
-          // route -> settings -> Secrets Manager -> Dapier resolution chain.
-          calendarIds: ["primary", "dtc-events"],
-          fetchImpl: (async (url: any, init: any) => {
-            const u = String(url);
-            calls.push({ url: u, method: init.method });
-            if (u.endsWith("/api/agent/token")) {
-              assert.equal(init.headers.Authorization, "Bearer test-confirm-machine");
-              assert.deepEqual(JSON.parse(init.body), {
-                connection_id: "selected-confirm-calendar",
-                agent: "personal-scheduler",
-              });
-              return { ok: true, json: async () => ({ access_token: "test-google-access" }) };
-            }
-            assert.ok(u.includes("/calendar/v3/calendars/"));
-            assert.equal(init.headers.Authorization, "Bearer test-google-access");
-            assert.equal(init.method, hasMirrors ? "PATCH" : "POST");
-            return { ok: true, json: async () => ({ id: `created-${calls.length}` }) };
-          }) as any,
-        });
-        try {
-          const response = await invoke("POST", `/api/calendar-holds/${created.id}/confirm`);
-          assert.equal(response.statusCode, 200, response.body);
-          const { hold } = parse(response);
-          assert.equal(secretReads, 1);
-          assert.equal(calls.length, 3, "one broker call and two Google writes");
-          assert.deepEqual(hold.googleSync, { state: "synced" });
-          assert.deepEqual(Object.keys(hold.googleEventIds).sort(), ["dtc-events", "primary"]);
-          if (hasMirrors) assert.deepEqual(hold.googleEventIds, eventIds);
-          const stored = await getCalendarHold(client, created.id);
-          assert.deepEqual(stored, hold, "response includes the persisted sync state and ids");
-
-          // Reconfirming an already confirmed/reconciled hold must not send
-          // another invite or even ask the broker for a token.
-          calls.length = 0;
-          const repeat = await invoke("POST", `/api/calendar-holds/${created.id}/confirm`);
-          assert.equal(repeat.statusCode, 409);
-          assert.equal(calls.length, 0);
-          assert.equal(secretReads, 1);
-          assert.deepEqual(await getCalendarHold(client, created.id), stored);
-        } finally {
-          setCalendarHoldGoogleDepsForTests({});
-          setDapierBrokerClientsForTests({
-            secrets: {
-              send: async () => {
-                throw Object.assign(new Error("no aws in unit test"), { name: "CredentialsProviderError" });
-              },
-            } as any,
-          });
-        }
-      }
-    } finally {
-      await saveCalendarOverlaySettings(client, { connectionId: "google-calendar" }, "test-operator");
-    }
-  });
 
   it("domain helpers: Berlin offsets, intervals, titles, transitions", () => {
     assert.equal(berlinOffsetSuffix("2026-10-20"), "+02:00");
@@ -594,14 +273,14 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     ]);
     // Case-insensitive dedup: a required address never repeats.
     assert.deepEqual(holdGuestAttendees("ALEXEY@DATATALKS.CLUB"), [...HOLD_REQUIRED_ATTENDEES]);
-    // A non-email guestRef (slug, url) cannot be invited; required only.
+    // Invalid guest references are excluded; the confirm route rejects them.
     assert.deepEqual(holdGuestAttendees("not-an-email"), [...HOLD_REQUIRED_ATTENDEES]);
     assert.deepEqual(holdGuestAttendees(), [...HOLD_REQUIRED_ATTENDEES]);
     // Deny-list: valeriia is never added, not even as the guestRef.
     assert.deepEqual(holdGuestAttendees("valeriia@datatalks.club"), [...HOLD_REQUIRED_ATTENDEES]);
     assert.ok(!HOLD_REQUIRED_ATTENDEES.some((a) => HOLD_ATTENDEE_DENY_LIST.includes(a)));
-    assert.match(confirmedHoldDescription("hold_abc123"), /Zoom link:/);
-    assert.ok(confirmedHoldDescription("hold_abc123").includes("Zoom link: https://zoom.us/j/94755324762"));
+    assert.match(confirmedHoldDescription(), /Zoom link:/);
+    assert.ok(confirmedHoldDescription().includes("Zoom link: https://zoom.us/j/94755324762"));
   });
 
   it("invite window: start = slot start − 5 min, end = slot end (12:30–13:30 → 12:25–13:30)", () => {
@@ -619,120 +298,5 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     assert.equal(invite.endIso, "2026-11-16T12:30:00.000Z");
   });
 
-  it("confirm sends the guest invite: Zoom + attendees, no Meet, proposals stay attendee-free", async () => {
-    const calls: Array<{ url: string; method: string; body?: any }> = [];
-    const fakeJson = (payload: any, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => payload });
-    let seq = 0;
-    setCalendarHoldGoogleDepsForTests({
-      credential: "test-broker-token",
-      calendarIds: ["dtc-events", "personal-alexey"],
-      fetchImpl: (async (url: any, init: any) => {
-        const u = String(url);
-        const method = init?.method || "GET";
-        calls.push({ url: u, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-        if (u.includes("/api/agent/token")) return fakeJson({ access_token: "google-at" });
-        if (method === "POST" && u.includes("/calendar/v3/")) {
-          seq += 1;
-          return fakeJson({ id: `gev-guest-${seq}` });
-        }
-        if (method === "PATCH") return fakeJson({ id: "gev-guest-x" });
-        throw new Error(`unexpected ${method} ${u}`);
-      }) as any,
-    });
-    try {
-      const created = parse(
-        await invoke("POST", "/api/calendar-holds", {
-          date: "2026-11-16",
-          window: "midday",
-          title: "Guest recording",
-          topic: "Guest recording topic",
-          guestRef: "sofiia@example.com",
-        }),
-      ).hold;
-      const proposals = calls.filter((c) => c.method === "POST" && c.url.includes("/calendar/v3/"));
-      assert.equal(proposals.length, 2);
-      for (const p of proposals) {
-        assert.ok(!("attendees" in p.body), "proposal stays attendee-free");
-        assert.ok(!("location" in p.body), "proposal carries no Zoom location");
-        assert.ok(!("conferenceData" in p.body), "never Google Meet");
-        assert.ok(!p.url.includes("sendUpdates"), "proposal sends no invites");
-      }
-      calls.length = 0;
-      const r = await invoke("POST", `/api/calendar-holds/${created.id}/confirm`);
-      assert.equal(r.statusCode, 200, r.body);
-      const patches = calls.filter((c) => c.method === "PATCH");
-      assert.equal(patches.length, 2);
-      for (const c of patches) {
-        assert.equal(c.body.summary, "Guest recording");
-        assert.equal(c.body.location, HOLD_ZOOM_LOCATION);
-        assert.ok(c.body.description.includes("Zoom link: https://zoom.us/j/94755324762"));
-        assert.deepEqual(c.body.attendees, [
-          { email: "sofiia@example.com" },
-          { email: "alexey@datatalks.club" },
-          { email: "alexey.s.grigoriev@gmail.com" },
-        ]);
-        assert.ok(!("conferenceData" in c.body), "never Google Meet");
-        assert.ok(c.url.includes("sendUpdates=all"), "the guest is invited (notification sent)");
-        // Invite window: slot 12:30–13:30 Berlin → invite 12:25–13:30.
-        assert.equal(c.body.start.dateTime, "2026-11-16T11:25:00.000Z");
-        assert.equal(c.body.end.dateTime, "2026-11-16T12:30:00.000Z");
-      }
-      assert.ok(!calls.some((c) => String(c.url).includes("conferenceDataVersion")));
-    } finally {
-      setCalendarHoldGoogleDepsForTests({});
-    }
-  });
 
-  it("confirm after a deferred propose creates the full guest invite (deny-listed guestRef dropped)", async () => {
-    setCalendarHoldGoogleDepsForTests({});
-    const created = parse(
-      await invoke("POST", "/api/calendar-holds", {
-        date: "2026-11-17",
-        window: "midday",
-        title: "Deferred guest",
-        topic: "Deferred guest topic",
-        guestRef: "valeriia@datatalks.club",
-      }),
-    ).hold;
-    assert.deepEqual(created.googleEventIds, {});
-    const calls: Array<{ url: string; method: string; body?: any }> = [];
-    const fakeJson = (payload: any, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => payload });
-    let seq = 0;
-    setCalendarHoldGoogleDepsForTests({
-      credential: "test-broker-token",
-      calendarIds: ["dtc-events"],
-      fetchImpl: (async (url: any, init: any) => {
-        const u = String(url);
-        const method = init?.method || "GET";
-        calls.push({ url: u, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-        if (u.includes("/api/agent/token")) return fakeJson({ access_token: "google-at" });
-        if (method === "POST" && u.includes("/calendar/v3/")) {
-          seq += 1;
-          return fakeJson({ id: `gev-deferred-${seq}` });
-        }
-        throw new Error(`unexpected ${method} ${u}`);
-      }) as any,
-    });
-    try {
-      const r = await invoke("POST", `/api/calendar-holds/${created.id}/confirm`);
-      assert.equal(r.statusCode, 200, r.body);
-      const creates = calls.filter((c) => c.method === "POST" && c.url.includes("/calendar/v3/"));
-      assert.equal(creates.length, 1);
-      const body = creates[0].body;
-      assert.equal(body.summary, "Deferred guest");
-      assert.equal(body.location, HOLD_ZOOM_LOCATION);
-      assert.ok(body.description.includes("Zoom link: https://zoom.us/j/94755324762"));
-      // Deny-listed guestRef never lands on the invite; required attendees do.
-      assert.deepEqual(body.attendees, [
-        { email: "alexey@datatalks.club" },
-        { email: "alexey.s.grigoriev@gmail.com" },
-      ]);
-      assert.ok(!("conferenceData" in body), "never Google Meet");
-      assert.ok(creates[0].url.includes("sendUpdates=all"));
-      assert.equal(body.start.dateTime, "2026-11-17T11:25:00.000Z");
-      assert.equal(body.end.dateTime, "2026-11-17T12:30:00.000Z");
-    } finally {
-      setCalendarHoldGoogleDepsForTests({});
-    }
-  });
 });

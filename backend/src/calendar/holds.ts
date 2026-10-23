@@ -47,8 +47,8 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /**
  * Attendees for the confirmed invite: the guest (when guestRef parses as an
  * email) plus every required address, deduped case-insensitively, with
- * deny-listed addresses removed. A non-email guestRef still confirms — the
- * required addresses are invited regardless.
+ * deny-listed addresses removed. Confirmation validates that a permitted guest
+ * email is present before calling this helper.
  */
 export function holdGuestAttendees(guestRef?: string): string[] {
   const guest = guestRef?.trim().toLowerCase();
@@ -60,9 +60,11 @@ export function holdGuestAttendees(guestRef?: string): string[] {
   return [...new Set(emails)].filter((email) => !deny.includes(email));
 }
 
-/** Confirmed description: hold provenance plus the Zoom link. */
-export function confirmedHoldDescription(holdId: string): string {
-  return `DataOps calendar hold ${holdId} (confirmed)\n\nZoom link: ${HOLD_ZOOM_LOCATION}`;
+/** Only guest-facing meeting information belongs in Google descriptions. */
+export function confirmedHoldDescription(documentUrl?: string, title = ''): string {
+  documentUrl = parseHoldDocumentUrl(documentUrl);
+  return `Zoom link: ${HOLD_ZOOM_LOCATION}` + (documentUrl
+    ? `\n\n${/workshop/i.test(title) ? 'Outline document' : 'Podcast document'}: ${documentUrl}` : '');
 }
 
 /** Slot start − HOLD_INVITE_LEAD_MINUTES: recording 12:30 → invite 12:25. */
@@ -72,9 +74,10 @@ export function inviteStartIso(slotStartIso: string): string {
 
 /** The confirmed mirror IS the guest invite: Zoom + attendees, start −5 min. */
 export function confirmedHoldInvite(
-  hold: Pick<CalendarHold, 'id' | 'title' | 'guestRef' | 'startIso' | 'endIso'>,
+  hold: Pick<CalendarHold, 'id' | 'title' | 'guestRef' | 'startIso' | 'endIso' | 'documentUrl'>,
 ): {
   summary: string;
+  eventKey: string;
   description: string;
   location: string;
   attendees: string[];
@@ -83,8 +86,9 @@ export function confirmedHoldInvite(
   timeZone: typeof HOLD_TIME_ZONE;
 } {
   return {
+    eventKey: hold.id,
     summary: confirmedTitle(hold.title),
-    description: confirmedHoldDescription(hold.id),
+    description: confirmedHoldDescription(hold.documentUrl, hold.title),
     location: HOLD_ZOOM_LOCATION,
     attendees: holdGuestAttendees(hold.guestRef),
     startIso: inviteStartIso(hold.startIso),
@@ -121,6 +125,7 @@ export interface CalendarHold {
   googleSync: { state: 'synced' | 'deferred'; reason?: string };
   cardId?: string;
   guestRef?: string;
+  documentUrl?: string;
   organizationId?: string;
   proposedAt: string;
   proposedBy: string;
@@ -143,6 +148,7 @@ export interface CalendarHoldInput {
   topic?: unknown;
   cardId?: string;
   guestRef?: string;
+  documentUrl?: unknown;
   organizationId?: string;
   expiresDays?: unknown;
   googleCalendars?: unknown;
@@ -197,11 +203,11 @@ export function holdInterval(date: string, window: CalendarHoldWindow, durationM
 }
 
 export function proposalTitle(title: string): string {
-  return title.startsWith(HOLD_PROPOSAL_PREFIX) ? title : `${HOLD_PROPOSAL_PREFIX}${title}`;
+  return `${HOLD_PROPOSAL_PREFIX}${confirmedTitle(title)}`;
 }
 
 export function confirmedTitle(title: string): string {
-  return title.startsWith(HOLD_PROPOSAL_PREFIX) ? title.slice(HOLD_PROPOSAL_PREFIX.length) : title;
+  return title.replace(/^(?:(?:\(Proposal\)|Proposed\s*[-–—:]?)\s*)+/i, '').trim();
 }
 
 export function parseHoldWindow(raw: unknown): CalendarHoldWindow {
@@ -239,10 +245,20 @@ export function parseHoldDate(raw: unknown): string {
 }
 
 export function parseHoldTitle(raw: unknown): string {
-  const v = String(raw ?? '').trim();
+  const v = confirmedTitle(String(raw ?? '').trim());
   if (!v) throw new Error('A hold needs --title.');
   if (v.length > 200) throw new Error('Invalid --title: keep it under 200 characters.');
   return v;
+}
+
+export function parseHoldDocumentUrl(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const value = String(raw).trim();
+  const url = new URL(value);
+  if (url.protocol !== 'https:' || url.username || url.password || /[\r\n]/.test(value)) {
+    throw new Error('The guest document must be an HTTPS URL.');
+  }
+  return url.href;
 }
 
 /** The intended episode topic, recorded at invite/propose time. Required on new holds. */
@@ -269,6 +285,7 @@ export function buildHold(input: CalendarHoldInput, actor: string, nowIso?: stri
   const title = parseHoldTitle(input.title);
   const topic = parseHoldTopic(input.topic);
   const expiresDays = parseHoldExpiresDays(input.expiresDays);
+  const documentUrl = parseHoldDocumentUrl(input.documentUrl);
   const { startIso, endIso } = holdInterval(date, window, durationMinutes);
   const now = nowIso || new Date().toISOString();
   const id = `hold_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
@@ -286,6 +303,7 @@ export function buildHold(input: CalendarHoldInput, actor: string, nowIso?: stri
     googleTitle: proposalTitle(title),
     googleEventIds: {},
     googleSync: { state: 'deferred', reason: 'not-synced-yet' },
+    ...(documentUrl ? { documentUrl } : {}),
     ...(typeof input.cardId === 'string' && input.cardId.trim() ? { cardId: input.cardId.trim() } : {}),
     ...(typeof input.guestRef === 'string' && input.guestRef.trim() ? { guestRef: input.guestRef.trim() } : {}),
     ...(typeof input.organizationId === 'string' && input.organizationId.trim()

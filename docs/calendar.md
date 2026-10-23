@@ -18,26 +18,15 @@ The private schedule workbook is no longer imported into the calendar. `backend/
 
 DataOps is the source of truth: when the Dapier calendar broker is not ready, the hold is still stored and the response reports `googleSync: { state: "deferred", reason }` instead of failing — the CLI prints `Google sync deferred: <reason>` with the Dapier operator path. Expiry frees the slot and leaves Orin follow-up; it never emails the guest.
 
-### Google calendar broker (through Dapier — required for Proposal mirrors)
+### Google calendar broker
 
-**Orin day-to-day:** In Planning → calendar settings (or `dataops calendar settings`), pick a suitable Dapier `google-calendar` connection. Propose / podcast invite automatically mint a Google token for that stored connection and create `(Proposal)` events — nothing else for Orin to wire (no Coolify env tokens, no stuffing `dap_…` into AWS SM).
+The selected Dapier connection must authenticate the configured invitation organizer. Google writes verify the primary calendar identity before creating events. The organizer owns one source event; the two explicit target calendars receive copies with the same `iCalUID`, following Google's [documented calendar-copy mechanism](https://developers.google.com/workspace/calendar/api/concepts/inviting-attendees-to-events). The target list never uses `primary`, because that resolves to the connected account rather than the intended recipient calendar. Availability also reads the explicit owner calendar independently of the connected account.
 
-The picker lists connected Google accounts with Calendar event write scopes and a `use` grant for the calendar machine agent. Discovery failures and empty grant lists show an actionable message; they never invent a connection. An unselected connection is stored as empty and both availability reads and Proposal writes explain that a selection is required. Previously selected connections remain selected when a grant becomes unavailable, so changing unrelated filter settings cannot silently switch accounts.
+Proposal copies have no attendees and an empty description. DataOps stores the plain title, Google shows `(Proposal) {title}`, and confirmation removes either documented proposal spelling. Confirmation requires a valid permitted guest email, adds the guest and required host addresses, enables guest modifications, sets Zoom location and description, and starts five minutes before the slot while keeping its end. A supplied `documentUrl` (or an explicitly named Podcast document / Outline document Card link) is added to the description. Internal hold provenance is never sent as a description. Only the organizer update sends notifications (`sendUpdates=all`); local calendar-copy updates send none. No conference data is supplied.
 
-```bash
-dataops calendar settings                         # list connections + current pick
-dataops calendar settings --connection google-calendar
-dataops calendar propose --date <future> --window midday --duration 60 \
-  --title "Throwaway broker proof" --topic "broker proof" --expires-days 1
-# Expect googleSync.state=synced and googleEventIds for both SOP calendars
-```
+The existing propose form and CLI accept guest email and document URL. The podcast invitation command generates the process title from the guest name. `confirm-hold` can retry a deferred confirmation; stable opaque event UIDs, retained partial event ids, and live organizer readback prevent duplicate imports and repeat notification after a lost provider response. Already-synced confirmations reject a repeat. Existing independent events with another organizer require explicit reconciliation before invitation; the application does not silently duplicate or impersonate their organizer.
 
-Runtime path: DataOps reads `connectionId` from calendar settings, calls Dapier `POST /api/agent/token` with agent `personal-scheduler` and that connection, then writes `(Proposal)` on **both** calendars required by SOP `sop.events.calendar.creating-tentative-event-on-google-calendar`:
-
-- Alexey's personal calendar (`primary`)
-- DataTalks.Club events (`f8qidjnq0jhscp8809k1eghs60@group.calendar.google.com`)
-
-Defaults are those two Google calendar ids. Override only with `DATAOPS_HOLD_GOOGLE_CALENDARS` (comma-separated calendar ids) when the calendar list itself is wrong.
+`googleEventIds` includes the organizer source and both target copies. A deferred sync is visible in the web surface and CLI; it is not proof of invitation delivery. The connection picker and grants continue to use the existing settings API.
 
 **Where credentials live:** Google OAuth refresh tokens and connection grants live in **Dapier**. The DataOps Lambda uses a platform machine token (AWS Secrets Manager `personal-scheduler/dapier-api-token`, same as the owner-calendar overlay) only to call Dapier — that is **not** an Orin day-to-day step. Do **not** configure `PERSONAL_SCHEDULER_TOKEN` / `DATAOPS_HOLD_BROKER_TOKEN` on Coolify or DataOps env.
 

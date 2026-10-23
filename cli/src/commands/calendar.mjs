@@ -16,8 +16,8 @@ Usage
   dataops calendar list [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--type KIND]
   dataops calendar day <date> [--duration MINUTES] [--window evening|midday|any]
   dataops calendar slots [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--all] [--duration MINUTES] [--window evening|midday|any]
-  dataops calendar propose --date D --window evening|midday --duration N --title T --topic TOPIC [--card ID] [--expires-days 7]
-  dataops calendar confirm-hold <id>
+  dataops calendar propose --date D --window evening|midday --duration N --title T --topic TOPIC [--guest-ref EMAIL] [--document-url URL] [--card ID] [--expires-days 7]
+  dataops calendar confirm-hold <id> [--guest-ref EMAIL] [--document-url URL]
   dataops calendar release-hold <id> [--reason manual]
   dataops calendar holds [--status tentative|confirmed|released|expired] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
   dataops calendar settings [--connection ID] [--filter-busy true|false] ...
@@ -47,6 +47,10 @@ Holds
   the slot and leaves Orin follow-up; it never emails the guest.
   --topic records the intended episode topic at invite/propose time and is
   required on every new hold (guests are invited to a specific theme).
+  --title is plain: <NAME> at DataTalks.Club Podcast (or Webinar / Workshop).
+  Google adds (Proposal) until confirmation. --guest-ref supplies the guest
+  email required to confirm; --document-url links the guest podcast/outline
+  document. Invites are sent by the system through Orin's Calendar identity.
   Evening podcast/webinar holds start 17:00 (60 min); workshops pass
   --duration 90 explicitly and start 16:30.
 `; 
@@ -625,6 +629,7 @@ function proposeArgs(args) {
     ...(args.card ? { cardId: args.card } : {}),
     ...(args.cardId ? { cardId: args.cardId } : {}),
     ...(args.guestRef ? { guestRef: args.guestRef } : {}),
+    ...(args.documentUrl ? { documentUrl: args.documentUrl } : {}),
     ...(args.organizationId ? { organizationId: args.organizationId } : {}),
     expiresDays,
   };
@@ -658,9 +663,15 @@ export async function propose(args, io) {
  */
 export async function confirmHold(args, io) {
   const id = holdId(args);
-  const result = await client(args).post(`/api/calendar-holds/${encodeURIComponent(id)}/confirm`, {});
+  const result = await client(args).post(`/api/calendar-holds/${encodeURIComponent(id)}/confirm`, {
+    ...(args.guestRef ? { guestRef: args.guestRef } : {}),
+    ...(args.documentUrl ? { documentUrl: args.documentUrl } : {}),
+  });
   if (args.json) return result;
   io.print(`Confirmed hold ${id}: ${(result.hold || {}).title || ""}`);
+  if (result.hold?.googleSync?.state === "deferred") {
+    io.print(`Google sync deferred: ${result.hold.googleSync.reason || "broker unavailable"}`);
+  }
   return result;
 }
 

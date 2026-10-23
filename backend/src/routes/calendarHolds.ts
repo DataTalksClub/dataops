@@ -5,6 +5,8 @@ import {
   confirmHoldRecord,
   confirmedHoldInvite,
   confirmedTitle,
+  holdGuestAttendees,
+  parseHoldDocumentUrl,
   parseHoldCalendars,
   proposalTitle,
   releaseHoldRecord,
@@ -23,6 +25,7 @@ import {
   listCalendarHolds,
   putCalendarHold,
 } from '../db/calendarHolds';
+import { getCard } from '../db/cards';
 import { getCalendarOverlaySettings } from '../db/calendar';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
@@ -82,12 +85,13 @@ async function depsFor(body: any, client: DynamoDBDocumentClient): Promise<HoldG
   };
 }
 
-const googlePayload = (hold: { id: string; status: string }, summary: string, startIso: string, endIso: string) => ({
+const googlePayload = (hold: { id: string }, summary: string, startIso: string, endIso: string) => ({
+  eventKey: hold.id,
   summary,
   startIso,
   endIso,
   timeZone: 'Europe/Berlin' as const,
-  description: `DataOps calendar hold ${hold.id} (${hold.status})`,
+  description: '',
 });
 
 async function createRoute(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
@@ -105,6 +109,7 @@ async function createRoute(event: LambdaEvent, client: DynamoDBDocumentClient): 
         topic: body.topic,
         cardId: body.cardId,
         guestRef: body.guestRef,
+        documentUrl: body.documentUrl,
         organizationId: body.organizationId,
         expiresDays: body.expiresDays ?? body.expires_days,
         googleCalendars: body.googleCalendars,
@@ -122,7 +127,7 @@ async function createRoute(event: LambdaEvent, client: DynamoDBDocumentClient): 
     ...hold,
     ...(sync.state === 'synced'
       ? { googleEventIds: sync.eventIds, googleSync: { state: 'synced' as const } }
-      : { googleSync: { state: 'deferred' as const, reason: sync.reason } }),
+      : { googleEventIds: sync.eventIds, googleSync: { state: 'deferred' as const, reason: sync.reason } }),
   };
   await putCalendarHold(client, stored);
   return json(201, { hold: stored });
@@ -153,17 +158,42 @@ async function listRoute(event: LambdaEvent, client: DynamoDBDocumentClient): Pr
   return json(200, { holds, timeZone: 'Europe/Berlin' });
 }
 
-async function confirmRoute(id: string, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
-  const existing = await getCalendarHold(client, id);
+async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+  let existing = await getCalendarHold(client, id);
   if (!existing) return json(404, { error: 'Hold not found' });
+  const body = parse(event);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return json(400, { error: 'Invalid confirmation body' });
+  try {
+    existing = {
+      ...existing,
+      ...(typeof body.guestRef === 'string' ? { guestRef: body.guestRef.trim() } : {}),
+      ...(body.documentUrl !== undefined ? { documentUrl: parseHoldDocumentUrl(body.documentUrl) } : {}),
+    };
+  } catch {
+    return json(400, { error: 'The guest document must be an HTTPS URL.' });
+  }
+  if (!existing.guestRef || !holdGuestAttendees(existing.guestRef).includes(existing.guestRef.trim().toLowerCase())) {
+    return json(422, { error: 'A guest email is required before sending the calendar invite.', code: 'guest_required' });
+  }
   let next;
   try {
-    next = confirmHoldRecord(existing);
+    next = existing.status === 'confirmed' && existing.googleSync.state === 'deferred'
+      ? existing : confirmHoldRecord(existing);
   } catch (e: any) {
     return json(409, { error: String(e?.message || 'Cannot confirm hold'), code: e?.code || 'hold_state' });
   }
   const confirmed = confirmedTitle(existing.title);
   const deps = await depsFor({}, client);
+  if (existing.cardId && !next.documentUrl) {
+    const card = await getCard(client, existing.cardId);
+    // Explicit guest document links only; never internal research or run sheets.
+    const document = card?.cardLinks?.find((link) => /^(Podcast document|Outline document|Episode brief)$/i.test(link.name))
+      || card?.cardLinks?.find((link) => /^Guest materials$/i.test(link.name));
+    if (document) {
+      try { next = { ...next, documentUrl: parseHoldDocumentUrl(document.url) }; }
+      catch { return json(422, { error: 'The Card guest document must be an HTTPS URL.' }); }
+    }
+  }
   // Propose may have deferred while the broker credential was unavailable,
   // leaving googleEventIds empty. Confirm must still mirror Google: PATCH
   // when mirrors exist, otherwise CREATE. Either way the mirror becomes the
@@ -178,7 +208,7 @@ async function confirmRoute(id: string, client: DynamoDBDocumentClient): Promise
     googleTitle: confirmed,
     ...(sync.state === 'synced'
       ? { googleEventIds: sync.eventIds, googleSync: { state: 'synced' as const } }
-      : { googleSync: { state: 'deferred' as const, reason: sync.reason } }),
+      : { googleEventIds: sync.eventIds, googleSync: { state: 'deferred' as const, reason: sync.reason } }),
   };
   await putCalendarHold(client, stored);
   return json(200, { hold: stored });
@@ -244,7 +274,7 @@ export async function handleCalendarHoldRoutes(
   const confirm = path.match(/^\/api\/calendar-holds\/([^/]+)\/confirm$/);
   if (confirm) {
     if (method !== 'POST') return json(405, { error: 'Method not allowed' });
-    return confirmRoute(decodeURIComponent(confirm[1]), client);
+    return confirmRoute(decodeURIComponent(confirm[1]), event, client);
   }
   const release = path.match(/^\/api\/calendar-holds\/([^/]+)\/release$/);
   if (release) {

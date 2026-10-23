@@ -456,7 +456,7 @@ describe('owner calendar overlay and filtering', () => {
           );
         }
 
-        if (url.includes('googleapis.com/calendar/v3/calendars/primary/events')) {
+        if (url.includes('googleapis.com/calendar/v3/calendars/alexey.s.grigoriev%40gmail.com/events')) {
           return new Response(
             JSON.stringify({
               items: [
@@ -573,7 +573,7 @@ describe('owner calendar overlay and filtering', () => {
           );
         }
 
-        if (url.includes('googleapis.com/calendar/v3/calendars/primary/events')) {
+        if (url.includes('googleapis.com/calendar/v3/calendars/alexey.s.grigoriev%40gmail.com/events')) {
           return new Response(
             JSON.stringify({
               items: [
@@ -689,7 +689,7 @@ describe('owner calendar overlay and filtering', () => {
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           );
         }
-        if (url.includes('googleapis.com/calendar/v3/calendars/primary/events')) {
+        if (url.includes('googleapis.com/calendar/v3/calendars/alexey.s.grigoriev%40gmail.com/events')) {
           return new Response(
             JSON.stringify({
               items: [

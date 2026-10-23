@@ -246,7 +246,7 @@ export function setupDayScheduleDialog(options) {
           : hold.status === "tentative"
             ? `<button type="button" data-hold-confirm="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Confirm</button>
                <button type="button" data-hold-release="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Release</button>`
-            : `<button type="button" data-hold-release="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Release</button>`;
+            : `${hold.status === "confirmed" && hold.googleSync?.state === "deferred" ? `<button type="button" data-hold-confirm="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Retry invite</button>` : ""}<button type="button" data-hold-release="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Release</button>`;
         const title = hold.status === "tentative" ? `(Proposal) ${hold.title}` : hold.title;
         const topic = hold.topic ? `<span class="calendar-day-timeline-topic">Topic: ${escapeHtml(hold.topic)}</span>` : "";
         return `
@@ -274,9 +274,11 @@ export function setupDayScheduleDialog(options) {
         <div data-holds-list>${listHtml}</div>
         ${isPast ? "" : `
         <form data-hold-propose>
-          <input name="title" type="text" placeholder="Hold title" required maxlength="200" aria-label="Hold title"${state.busy ? " disabled" : ""}>
+          <input name="title" type="text" placeholder="Name at DataTalks.Club Podcast / Webinar / Workshop" required maxlength="200" aria-label="Hold title"${state.busy ? " disabled" : ""}>
           <input name="topic" type="text" placeholder="Intended episode topic (agreed at invite time)" required maxlength="300"
             aria-label="Intended episode topic"${state.busy ? " disabled" : ""}>
+          <input name="guestRef" type="email" placeholder="Guest email" required aria-label="Guest email"${state.busy ? " disabled" : ""}>
+          <input name="documentUrl" type="url" placeholder="Podcast or outline document URL" aria-label="Guest document URL"${state.busy ? " disabled" : ""}>
           <select name="window" aria-label="Hold window">
             <option value="evening">Evening 17:00 (90-min workshop starts 16:30)</option>
             <option value="midday">Midday 12:30 (workshop 12:00 @ 90 min)</option>
@@ -321,6 +323,8 @@ export function setupDayScheduleDialog(options) {
             date: dateIso,
             title: String(data.get("title") || ""),
             topic: String(data.get("topic") || ""),
+            guestRef: String(data.get("guestRef") || ""),
+            documentUrl: String(data.get("documentUrl") || ""),
             window: String(data.get("window") || "evening"),
             duration: Number(data.get("duration") || 60),
           }),

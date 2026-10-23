@@ -26,7 +26,7 @@ export const DAPIER_SECRET_NAME = 'personal-scheduler/dapier-api-token';
  * (comma-separated calendar ids) only when the defaults are wrong.
  */
 export const DEFAULT_HOLD_GOOGLE_CALENDARS = [
-  'primary',
+  'alexey.s.grigoriev@gmail.com',
   'f8qidjnq0jhscp8809k1eghs60@group.calendar.google.com',
 ] as const;
 

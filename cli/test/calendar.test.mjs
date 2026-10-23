@@ -505,13 +505,15 @@ describe("Calendar hold CLI commands", () => {
       );
     };
     const code = await run(
-      ["calendar", "propose", "--date", "2026-10-27", "--window", "evening", "--duration", "90", "--title", "Workshop", "--topic", "Workshop topic", "--card", "card-1"],
+      ["calendar", "propose", "--date", "2026-10-27", "--window", "evening", "--duration", "90", "--title", "Workshop", "--topic", "Workshop topic", "--guest-ref", "guest@example.com", "--document-url", "https://example.com/outline", "--card", "card-1"],
       io,
     );
     assert.equal(code, 0);
     assert.equal(seen.body.durationMinutes, 90);
     assert.equal(seen.body.window, "evening");
     assert.equal(seen.body.cardId, "card-1");
+    assert.equal(seen.body.guestRef, "guest@example.com");
+    assert.equal(seen.body.documentUrl, "https://example.com/outline");
   });
 
   test("calendar propose validates before sending", async () => {
@@ -547,6 +549,18 @@ describe("Calendar hold CLI commands", () => {
     globalThis.fetch = async () => { throw new Error("no request expected"); };
     assert.notEqual(await run(["calendar", "release-hold", "hold_1", "--reason", "bogus"], io), 0);
     assert.notEqual(await run(["calendar", "confirm-hold"], captureIo()), 0);
+  });
+
+  test("confirm-hold passes guest details and reports a deferred invite", async () => {
+    const io = captureIo();
+    let body;
+    globalThis.fetch = async (_url, options) => {
+      body = JSON.parse(options.body);
+      return Response.json({ hold: { title: "Guest at DataTalks.Club Podcast", googleSync: { state: "deferred", reason: "Orin connection required" } } });
+    };
+    assert.equal(await run(["calendar", "confirm-hold", "hold-1", "--guest-ref", "guest@example.com", "--document-url", "https://example.com/podcast"], io), 0);
+    assert.deepEqual(body, { guestRef: "guest@example.com", documentUrl: "https://example.com/podcast" });
+    assert.match(io.text(), /Google sync deferred: Orin connection required/);
   });
 
   test("calendar holds lists and filters by status", async () => {
