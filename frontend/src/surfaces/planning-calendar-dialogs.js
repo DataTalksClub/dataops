@@ -241,12 +241,15 @@ export function setupDayScheduleDialog(options) {
     } else {
       listHtml = state.holds.map((hold) => {
         const active = hold.status === "tentative" || hold.status === "confirmed";
+        const retryInvite = hold.status === "confirmed" && hold.googleSync?.state === "deferred"
+          ? `<button type="button" data-hold-confirm="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Retry invite</button>`
+          : "";
         const actions = !active
           ? `<span class="calendar-slot-tag">${escapeHtml(hold.status)}</span>`
           : hold.status === "tentative"
             ? `<button type="button" data-hold-confirm="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Confirm</button>
                <button type="button" data-hold-release="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Release</button>`
-            : `${hold.status === "confirmed" && hold.googleSync?.state === "deferred" ? `<button type="button" data-hold-confirm="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Retry invite</button>` : ""}<button type="button" data-hold-release="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Release</button>`;
+            : `${retryInvite}<button type="button" data-hold-release="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Release</button>`;
         const title = hold.status === "tentative" ? `(Proposal) ${hold.title}` : hold.title;
         const topic = hold.topic ? `<span class="calendar-day-timeline-topic">Topic: ${escapeHtml(hold.topic)}</span>` : "";
         return `
@@ -274,7 +277,8 @@ export function setupDayScheduleDialog(options) {
         <div data-holds-list>${listHtml}</div>
         ${isPast ? "" : `
         <form data-hold-propose>
-          <input name="title" type="text" placeholder="Name at DataTalks.Club Podcast / Webinar / Workshop" required maxlength="200" aria-label="Hold title"${state.busy ? " disabled" : ""}>
+          <input name="title" type="text" placeholder="Name at DataTalks.Club Podcast / Webinar / Workshop" required maxlength="200"
+            aria-label="Hold title"${state.busy ? " disabled" : ""}>
           <input name="topic" type="text" placeholder="Intended episode topic (agreed at invite time)" required maxlength="300"
             aria-label="Intended episode topic"${state.busy ? " disabled" : ""}>
           <input name="guestRef" type="email" placeholder="Guest email" required aria-label="Guest email"${state.busy ? " disabled" : ""}>
