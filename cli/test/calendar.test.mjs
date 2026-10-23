@@ -254,6 +254,14 @@ describe("Calendar CLI commands", () => {
     assert.match(io.text(), /16:30–18:30 Available event slot/);
   });
 
+  test("calendar settings explains missing connection selection and discovery grants", async () => {
+    globalThis.fetch = async () => Response.json({ settings: { connectionId: "" }, connections: [], connectionProblem: "Grant personal-scheduler the use operation in Dapier" });
+    const io = captureIo();
+    assert.equal(await run(["calendar", "settings"], io), 0);
+    assert.match(io.text(), /none selected.*--connection/);
+    assert.match(io.text(), /Grant personal-scheduler the use operation/);
+  });
+
   test("calendar settings gets and updates overlay configuration", async () => {
     const ioGet = captureIo();
     let savedSettings = null;

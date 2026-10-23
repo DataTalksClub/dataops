@@ -286,7 +286,7 @@ describe("operations calendar", () => {
     assert.equal(response.statusCode, 200);
     const initial = parse(response);
     assert.ok(initial.settings);
-    assert.equal(initial.settings.connectionId, "google-calendar");
+    assert.equal(initial.settings.connectionId, "");
     assert.equal(initial.settings.filterLunch, true);
     assert.ok(Array.isArray(initial.connections));
 

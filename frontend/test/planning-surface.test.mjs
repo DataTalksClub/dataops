@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
 import { createPlanningSurface } from "../src/surfaces/planning.js";
+import { setupCalendarSettingsDialog, setupDayScheduleDialog } from "../src/surfaces/planning-calendar-dialogs.js";
 
 const originalDocument = globalThis.document;
 const originalFormData = globalThis.FormData;
@@ -217,7 +218,7 @@ function createCalendarDom() {
   const settingsForm = settingsDialog.setQuery("form", new TestElement("form"));
   settingsForm.setQuery('[data-settings-error]', new TestElement("p"));
   const settingsCancel = settingsDialog.setQuery("[data-settings-cancel]", new TestElement("button"));
-  const connectionsDatalist = settingsDialog.setQuery("#dapier-calendar-connections", new TestElement("datalist"));
+  const connectionsPicker = settingsDialog.setQuery("#dapier-calendar-connections", new TestElement("select"));
   const dayDialog = surface.setQuery("[data-day-dialog]", new TestElement("dialog"));
   const dayTitle = dayDialog.setQuery("[data-day-title]", new TestElement("h2"));
   const daySubtitle = dayDialog.setQuery("[data-day-subtitle]", new TestElement("p"));
@@ -332,6 +333,40 @@ function calendarEntry({ id, title, date, kind = "webinar", kindLabel = "Webinar
 }
 
 describe("Planning surface production behavior", () => {
+  test("day schedule exposes a deferred Google sync reason on its saved hold", async () => {
+    const dom = createCalendarDom();
+    const dialog = setupDayScheduleDialog({
+      surface: dom.surface, api: async () => ({ items: [] }), escapeHtml: (s) => s,
+      todayIsoDate: () => '2026-08-13', getCalendarState: () => ({ items: [] }),
+      holdsApi: async () => ({ holds: [{ id: 'proof', title: 'Test', status: 'tentative', window: 'evening', durationMinutes: 60, googleSync: { state: 'deferred', reason: 'No Dapier calendar connection selected' } }] }),
+    });
+    await dialog.openDayDialog('2026-08-13');
+    await nextTicks();
+    assert.match(dom.dayBody.innerHTML, /role="alert">Google sync deferred: No Dapier calendar connection selected/);
+  });
+
+  test("calendar settings exposes discovery failures and preserves an unavailable selection without inventing one", async () => {
+    const dom = createCalendarDom();
+    const error = dom.settingsDialog.querySelector("[data-settings-error]");
+    const picker = dom.settingsDialog.querySelector("#dapier-calendar-connections");
+    let selected = "";
+    let saved;
+    setupCalendarSettingsDialog({ surface: dom.surface, escapeHtml: (s) => s, api: async (_path, options) => {
+      if (options?.method === "PUT") { saved = JSON.parse(options.body); return {}; }
+      return { settings: { connectionId: selected }, connections: [], connectionProblem: "Calendar connection needs a Dapier use grant" };
+    } });
+    await dom.settingsBtn.onclick();
+    assert.equal(dom.settingsForm.elements.connectionId.value, "");
+    assert.match(error.textContent, /Dapier use grant/);
+    assert.doesNotMatch(picker.innerHTML, /value="google-calendar"/);
+    await dom.settingsForm.onsubmit({ preventDefault() {} });
+    assert.equal(saved.connectionId, "");
+    selected = "selected-calendar";
+    await dom.settingsBtn.onclick();
+    assert.equal(dom.settingsForm.elements.connectionId.value, selected);
+    assert.match(picker.innerHTML, /unavailable — check Dapier grant/);
+  });
+
   test("renders Calendar activities, holiday layers, overlays, and alerts honestly", async () => {
     const dom = createCalendarDom();
     const harness = createPlanningHarness({

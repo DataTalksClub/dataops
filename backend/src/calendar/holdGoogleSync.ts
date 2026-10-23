@@ -9,14 +9,15 @@
  * ever sent). Release deletes it. DataOps is the source of truth: when the broker
  * credential is unavailable the hold is still created locally and the Google
  * leg stays `deferred` instead of failing the request — with an operator path
- * in the reason (env token or Secrets Manager secret).
+ * in the reason (connection selection, Dapier grant or machine credential).
  */
 
 import {
   CREDENTIAL_OPERATOR_HINT,
   DAPIER_AGENT,
   DAPIER_BASE_URL,
-  DEFAULT_CALENDAR_CONNECTION,
+  CONNECTION_OPERATOR_HINT,
+  dapierTokenProblem,
   readDapierCredential,
   resolveHoldGoogleCalendars,
 } from './dapierBroker';
@@ -36,13 +37,11 @@ export interface HoldGoogleEvent {
 export interface HoldGoogleDeps {
   fetchImpl?: typeof fetch;
   brokerUrl?: string;
-  /** When set (including via tests), skips env + Secrets Manager lookup. */
+  /** When set (via tests), skips Secrets Manager lookup. */
   credential?: string;
   agent?: string;
   connectionId?: string;
   calendarIds?: string[];
-  /** Skip Secrets Manager / env resolution (tests inject credential only). */
-  resolveCredential?: boolean;
 }
 
 export type HoldGoogleResult =
@@ -59,8 +58,10 @@ async function accessToken(deps: HoldGoogleDeps): Promise<{ token: string } | { 
   const {
     brokerUrl = DAPIER_BASE_URL,
     agent = DAPIER_AGENT,
-    connectionId = DEFAULT_CALENDAR_CONNECTION,
+    connectionId = '',
   } = deps;
+
+  if (!connectionId.trim()) return { problem: `No Dapier calendar connection selected. ${CONNECTION_OPERATOR_HINT}` };
 
   let credential = deps.credential;
   let problem: string | undefined;
@@ -87,7 +88,7 @@ async function accessToken(deps: HoldGoogleDeps): Promise<{ token: string } | { 
   } catch {
     return { problem: 'the calendar broker could not be reached' };
   }
-  if (!tokenRes.ok) return { problem: `the calendar broker refused the token request (HTTP ${tokenRes.status})` };
+  if (!tokenRes.ok) return { problem: dapierTokenProblem(tokenRes.status, connectionId, agent) };
   const data = (await tokenRes.json()) as { access_token?: string };
   if (!data.access_token) return { problem: 'the calendar broker returned no access token' };
   return { token: data.access_token };

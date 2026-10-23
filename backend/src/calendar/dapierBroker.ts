@@ -18,7 +18,6 @@ import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-sec
 export const DAPIER_BASE_URL = 'https://dapier.dtcdev.click';
 export const DAPIER_AGENT = 'personal-scheduler';
 export const DAPIER_SECRET_NAME = 'personal-scheduler/dapier-api-token';
-export const DEFAULT_CALENDAR_CONNECTION = 'google-calendar';
 
 /**
  * SOP `sop.events.calendar.creating-tentative-event-on-google-calendar`:
@@ -37,13 +36,22 @@ export const CREDENTIAL_OPERATOR_HINT =
   `No Coolify env tokens and no day-to-day SM dap_ stuffing. ` +
   `If the connection is already selected and sync still defers: the selected connection needs a Dapier \`use\` grant for agent "${DAPIER_AGENT}" (platform keeps the machine token in SM "${DAPIER_SECRET_NAME}" once). Google refresh tokens stay in Dapier.`;
 
-/** When settings have no usable connection id (should not happen with defaults). */
+/** When the operator has not selected a connection. */
 export const CONNECTION_OPERATOR_HINT =
   `Pick a Dapier google-calendar connection in DataOps Planning → calendar settings (or \`dataops calendar settings --connection <id>\`). Propose/invite use that connection automatically.`;
 
 export type DapierCredential =
   | { credential: string; problem?: undefined }
   | { credential?: undefined; problem: string };
+
+/** Do not echo broker response bodies: they can contain provider details. */
+export function dapierTokenProblem(status: number, connectionId: string, agent = DAPIER_AGENT): string {
+  if (status === 403) return `Dapier denied access to calendar connection "${connectionId}". A Dapier operator must grant agent "${agent}" and its machine identity the \`use\` operation on this connection.`;
+  if (status === 401) return 'Dapier rejected the calendar machine credential. A platform operator must repair the machine credential; Google tokens stay in Dapier.';
+  if (status === 404) return `The selected Dapier calendar connection "${connectionId}" no longer exists. ${CONNECTION_OPERATOR_HINT}`;
+  if (status === 409 || status === 502) return `Dapier cannot obtain a Google token for calendar connection "${connectionId}". Reconnect that connection in Dapier and check its Google Calendar permissions.`;
+  return `The calendar broker refused the token request (HTTP ${status}).`;
+}
 
 let secretClient = new SecretsManagerClient({});
 
@@ -102,10 +110,6 @@ export async function readDapierCredential(explicit?: string): Promise<DapierCre
       fromSecret.problem ||
       `No calendar broker credential in this environment. ${CREDENTIAL_OPERATOR_HINT}`,
   };
-}
-
-export async function resolveDapierCredential(explicit?: string): Promise<string | undefined> {
-  return (await readDapierCredential(explicit)).credential;
 }
 
 /** Calendar ids for hold Proposal mirrors (SOP: personal + DTC events). */

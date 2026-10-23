@@ -8,9 +8,9 @@ import {
 import {
   DAPIER_AGENT,
   DAPIER_BASE_URL,
-  DEFAULT_CALENDAR_CONNECTION,
+  CONNECTION_OPERATOR_HINT,
+  dapierTokenProblem,
   readDapierCredential,
-  resolveDapierCredential,
   setDapierBrokerClientsForTests,
 } from './dapierBroker';
 
@@ -352,16 +352,12 @@ export function setOwnerCalendarProviderClientsForTests(value: {
   fetcher = value.fetch || fetch;
 }
 
-export async function fetchDapierConnections(config?: OwnerCalendarConfig): Promise<DapierConnectionOption[]> {
+export async function fetchDapierConnections(config?: OwnerCalendarConfig): Promise<{ connections: DapierConnectionOption[]; connectionProblem?: string }> {
   const brokerUrl = (config?.brokerUrl || DAPIER_BASE_URL).replace(/\/$/, '');
-  const credential = await resolveDapierCredential(config?.brokerCredential);
-
-  const fallback: DapierConnectionOption[] = [
-    { connectionId: DEFAULT_CALENDAR_CONNECTION, provider: 'google', title: DEFAULT_CALENDAR_CONNECTION },
-  ];
+  const { credential, problem } = await readDapierCredential(config?.brokerCredential);
 
   if (!credential) {
-    return fallback;
+    return { connections: [], connectionProblem: problem };
   }
 
   try {
@@ -369,16 +365,22 @@ export async function fetchDapierConnections(config?: OwnerCalendarConfig): Prom
       headers: { Authorization: `Bearer ${credential}` },
       signal: AbortSignal.timeout(5000),
     });
-    if (!res.ok) return fallback;
-    const data = (await res.json()) as { connections?: Array<{ connection_id: string; provider: string; account_title?: string; verified_account_id?: string }> };
-    if (!data.connections || !Array.isArray(data.connections)) return fallback;
-    return data.connections.map((c) => ({
+    if (!res.ok) return { connections: [], connectionProblem: dapierTokenProblem(res.status, 'calendar discovery', config?.agent) };
+    const data = (await res.json()) as { connections?: Array<{ connection_id: string; provider: string; agent: string; operations: string[]; status: string; scopes?: string[]; granted_scopes?: string[]; account_title?: string; verified_account_id?: string }> };
+    if (!Array.isArray(data.connections)) return { connections: [], connectionProblem: 'Dapier returned an invalid calendar connection list.' };
+    const writableScopes = new Set(['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar.events.owned']);
+    const connections = data.connections.filter((c) =>
+      c.provider === 'google' && c.status === 'connected' &&
+      c.agent === (config?.agent || DAPIER_AGENT) && c.operations?.includes('use') &&
+      (c.granted_scopes?.length ? c.granted_scopes : c.scopes || []).some((scope) => writableScopes.has(scope)),
+    ).map((c) => ({
       connectionId: c.connection_id,
       provider: c.provider,
       title: `${c.connection_id}${c.verified_account_id || c.account_title ? ` (${c.verified_account_id || c.account_title})` : ''}`,
     }));
+    return { connections, ...(!connections.length ? { connectionProblem: `No writable Google Calendar connections are available to agent "${config?.agent || DAPIER_AGENT}". A Dapier operator must connect Google Calendar and grant this machine identity and agent the \`use\` operation.` } : {}) };
   } catch {
-    return fallback;
+    return { connections: [], connectionProblem: 'The calendar broker could not be reached to list Google Calendar connections.' };
   }
 }
 
@@ -407,7 +409,8 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
 
       const brokerUrl = (config?.brokerUrl || DAPIER_BASE_URL).replace(/\/$/, '');
       const agent = config?.agent || DAPIER_AGENT;
-      const connectionId = config?.connectionId || activeSettings.connectionId || DEFAULT_CALENDAR_CONNECTION;
+      const connectionId = (config?.connectionId ?? activeSettings.connectionId).trim();
+      if (!connectionId) return blank({ state: 'not-configured', reason: `No Dapier calendar connection selected. ${CONNECTION_OPERATOR_HINT}` });
       const { credential, problem } = await readDapierCredential(config?.brokerCredential);
 
       if (!credential) {
@@ -431,7 +434,7 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
       }
 
       if (!tokenRes.ok) {
-        return blank({ state: 'unavailable', reason: `The calendar broker refused the token request (HTTP ${tokenRes.status}).` });
+        return blank({ state: 'unavailable', reason: dapierTokenProblem(tokenRes.status, connectionId, agent) });
       }
 
       const tokenData = (await tokenRes.json()) as { access_token?: string; provider_account_id?: string };

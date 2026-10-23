@@ -255,6 +255,9 @@ export function setupDayScheduleDialog(options) {
               <span class="calendar-day-timeline-time">${escapeHtml(hold.window)} · ${escapeHtml(String(hold.durationMinutes))} min</span>
               <span class="calendar-day-timeline-title">${escapeHtml(title)}</span>
               ${topic}
+              ${hold.googleSync?.state === "deferred"
+                ? `<span class="planner-form-error" role="alert">Google sync deferred: ${escapeHtml(hold.googleSync.reason || "Calendar connection unavailable")}</span>`
+                : hold.googleSync?.state === "synced" ? '<span>Google Calendar synced</span>' : ""}
             </div>
             <div class="calendar-day-timeline-tags">${actions}</div>
           </div>
@@ -427,7 +430,7 @@ export function setupCalendarSettingsDialog(options) {
     settingsForm = settingsDialog?.querySelector("form"),
     settingsBtn = surface.querySelector("[data-calendar-settings]"),
     settingsError = settingsDialog?.querySelector("[data-settings-error]"),
-    connectionsDatalist = settingsDialog?.querySelector("#dapier-calendar-connections");
+    connectionsPicker = settingsDialog?.querySelector("#dapier-calendar-connections");
 
   if (!settingsBtn || !settingsDialog || !settingsForm) return;
 
@@ -436,15 +439,20 @@ export function setupCalendarSettingsDialog(options) {
     settingsBtn.disabled = true;
     try {
       const res = await api("/settings");
-      if (connectionsDatalist && Array.isArray(res.connections)) {
-        connectionsDatalist.innerHTML = res.connections
+      if (connectionsPicker && Array.isArray(res.connections)) {
+        connectionsPicker.innerHTML = '<option value="">Choose a Google Calendar connection</option>' + res.connections
           .map((c) => `<option value="${escapeHtml(c.connectionId)}">${escapeHtml(c.title)}</option>`)
           .join("");
       }
+      if (settingsError) settingsError.textContent = res.connectionProblem || "";
       if (res.settings) {
         const s = res.settings;
         if (settingsForm.elements.connectionId) {
-          settingsForm.elements.connectionId.value = s.connectionId || "google-calendar";
+          const selected = s.connectionId || "";
+          if (selected && !res.connections?.some((c) => c.connectionId === selected) && connectionsPicker) {
+            connectionsPicker.innerHTML += `<option value="${escapeHtml(selected)}">${escapeHtml(selected)} (unavailable — check Dapier grant)</option>`;
+          }
+          settingsForm.elements.connectionId.value = selected;
         }
         if (settingsForm.elements.filterNonSlotHours) {
           settingsForm.elements.filterNonSlotHours.checked = s.filterNonSlotHours !== false;
@@ -500,7 +508,7 @@ export function setupCalendarSettingsDialog(options) {
         .map((k) => k.trim())
         .filter(Boolean);
       const body = {
-        connectionId: settingsForm.elements.connectionId?.value?.trim() || "google-calendar",
+        connectionId: settingsForm.elements.connectionId?.value?.trim() || "",
         filterNonSlotHours: Boolean(settingsForm.elements.filterNonSlotHours?.checked),
         filterDtcPlaceholders: Boolean(settingsForm.elements.filterDtcPlaceholders?.checked),
         filterTransparent: Boolean(settingsForm.elements.filterTransparent?.checked),

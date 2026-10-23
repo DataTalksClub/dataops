@@ -17,7 +17,6 @@ import {
   updateHoldGoogleEvents,
   type HoldGoogleDeps,
 } from '../calendar/holdGoogleSync';
-import { DEFAULT_CALENDAR_CONNECTION } from '../calendar/dapierBroker';
 import {
   expireCalendarHolds,
   getCalendarHold,
@@ -72,7 +71,7 @@ async function depsFor(body: any, client: DynamoDBDocumentClient): Promise<HoldG
   if (!connectionId) {
     const settings = await getCalendarOverlaySettings(client);
     const picked = (settings.connectionId || '').trim();
-    connectionId = picked || DEFAULT_CALENDAR_CONNECTION;
+    connectionId = picked;
   }
   // Machine credential resolution lives in holdGoogleSync via dapierBroker
   // (SM personal-scheduler/dapier-api-token). Tests inject googleDeps.credential.

@@ -24,6 +24,7 @@ import {
   confirmedHoldInvite,
 } from "../src/calendar/holds";
 import { suppressHeldSlots } from "../src/calendar/holdOverlay";
+import { ownerCalendarOverlay, setOwnerCalendarProviderClientsForTests } from "../src/calendar/ownerCalendarOverlay";
 
 const invoke = (
   method: string,
@@ -46,6 +47,7 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     const port = await startLocal();
     client = await getClient(port);
     await createTables(client);
+    await saveCalendarOverlaySettings(client, { connectionId: "google-calendar" }, "test-operator");
     // Holds resolve the Dapier machine token via Secrets Manager (no Coolify env).
     // Keep unit tests offline: pretend the secret is unreadable unless a test injects a credential.
     setDapierBrokerClientsForTests({
@@ -57,6 +59,31 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     });
   });
   after(stopLocal);
+
+  it("requires an explicit connection and explains a missing machine-agent use grant", async () => {
+    let calls = 0;
+    setCalendarHoldGoogleDepsForTests({ credential: "test-machine", fetchImpl: (async () => {
+      calls += 1;
+      return new Response('{}', { status: 403 });
+    }) as typeof fetch });
+    try {
+      await saveCalendarOverlaySettings(client, { connectionId: "" }, "test");
+      const missing = parse(await invoke("POST", "/api/calendar-holds", { date: "2026-11-12", title: "Unselected", topic: "Test" })).hold;
+      assert.equal(missing.googleSync.state, "deferred");
+      assert.match(missing.googleSync.reason, /No Dapier calendar connection selected/);
+      assert.equal(calls, 0);
+      await saveCalendarOverlaySettings(client, { connectionId: "selected-calendar" }, "test");
+      const denied = parse(await invoke("POST", "/api/calendar-holds", { date: "2026-11-12", title: "Denied", topic: "Test" })).hold;
+      assert.equal(denied.googleSync.state, "deferred");
+      assert.match(denied.googleSync.reason, /selected-calendar/);
+      assert.match(denied.googleSync.reason, /personal-scheduler/);
+      assert.match(denied.googleSync.reason, /`use`/);
+      assert.equal(calls, 1);
+    } finally {
+      setCalendarHoldGoogleDepsForTests({});
+      await saveCalendarOverlaySettings(client, { connectionId: "google-calendar" }, "test");
+    }
+  });
 
   it("creates a tentative hold with defaults (60 min, evening, +7d TTL, Proposal title)", async () => {
     const r = await invoke("POST", "/api/calendar-holds", { date: "2026-10-26", title: "GraphRAG workshop", topic: "Adopting GraphRAG in production" });
@@ -348,6 +375,42 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     }
   });
 
+  it("Google Proposal mirrors independently block availability when read back through the selected connection", async () => {
+    const googleEvents: any[] = [];
+    const tokenConnections: string[] = [];
+    const googleFetch = (async (url: any, init: any = {}) => {
+      if (String(url).endsWith('/api/agent/token')) {
+        tokenConnections.push(JSON.parse(init.body).connection_id);
+        return Response.json({ access_token: 'test-google' });
+      }
+      if (init.method === 'POST') {
+        const event = { ...JSON.parse(init.body), id: `google-proposal-${googleEvents.length}` };
+        googleEvents.push(event);
+        return Response.json({ id: event.id });
+      }
+      return Response.json({ items: [googleEvents[0]] });
+    }) as typeof fetch;
+    await saveCalendarOverlaySettings(client, { connectionId: 'selected-calendar' }, 'test');
+    setCalendarHoldGoogleDepsForTests({ credential: 'machine', fetchImpl: googleFetch });
+    setOwnerCalendarProviderClientsForTests({ fetch: googleFetch });
+    try {
+      const { hold } = parse(await invoke('POST', '/api/calendar-holds', { date: '2026-11-09', title: 'Availability proof', topic: 'Test', window: 'evening' }));
+      assert.equal(hold.googleSync.state, 'synced');
+      assert.equal(Object.keys(hold.googleEventIds).length, 2);
+      // Read Google directly: no DataOps hold overlay participates in this projection.
+      const projection = await ownerCalendarOverlay({ client, today: '2026-11-01', brokerCredential: 'machine', window: 'evening' }).project('2026-11-09', '2026-11-09');
+      assert.equal(projection.connection?.state, 'connected');
+      assert.ok(!projection.items.some((item) => item.isAvailableSlot));
+      const day = await ownerCalendarOverlay({ client, today: '2026-11-01', brokerCredential: 'machine', includeAll: true }).project('2026-11-09', '2026-11-09');
+      assert.ok(day.items.some((item) => item.label.includes('(Proposal) Availability proof')));
+      assert.deepEqual(tokenConnections, ['selected-calendar', 'selected-calendar', 'selected-calendar']);
+    } finally {
+      setCalendarHoldGoogleDepsForTests({});
+      setOwnerCalendarProviderClientsForTests({});
+      await saveCalendarOverlaySettings(client, { connectionId: 'google-calendar' }, 'test');
+    }
+  });
+
   it("reads the Dapier machine token from Secrets Manager (no Coolify env) and syncs both calendars", async () => {
     setDapierBrokerClientsForTests({
       secrets: {
@@ -371,6 +434,7 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
           description: "unit",
         },
         {
+          connectionId: "google-calendar",
           fetchImpl: (async (url: any, init: any) => {
             const u = String(url);
             const method = init?.method || "GET";

@@ -7,10 +7,12 @@ import {
   shouldFilterOwnerCalendarEvent,
   ownerCalendarRange,
 } from '../src/calendar/ownerCalendarOverlay';
-import { DEFAULT_CALENDAR_OVERLAY_SETTINGS } from '../src/db/calendar';
+import { DEFAULT_CALENDAR_OVERLAY_SETTINGS as UNSELECTED_CALENDAR_SETTINGS } from '../src/db/calendar';
 
 // Every fixture range starts on or after this day, so none of it is clipped as past.
 const TODAY = '2026-10-01';
+const DEFAULT_CALENDAR_OVERLAY_SETTINGS = { ...UNSELECTED_CALENDAR_SETTINGS, connectionId: 'google-calendar' };
+const selectedOwnerCalendarOverlay = (config: Parameters<typeof ownerCalendarOverlay>[0]) => ownerCalendarOverlay({ settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS, ...config });
 
 describe('owner calendar overlay and filtering', () => {
 
@@ -263,6 +265,43 @@ describe('owner calendar overlay and filtering', () => {
   });
 
   describe('fetchDapierConnections and configurable provider', () => {
+    it('lists only writable connected Google calendars granted to the machine agent', async () => {
+      const { fetchDapierConnections } = await import('../src/calendar/ownerCalendarOverlay');
+      const suitable = { connection_id: 'calendar', provider: 'google', status: 'connected', agent: 'personal-scheduler', operations: ['use'], granted_scopes: ['https://www.googleapis.com/auth/calendar.events.owned'] };
+      setOwnerCalendarProviderClientsForTests({ fetch: async () => Response.json({ connections: [
+        suitable,
+        { ...suitable, connection_id: 'gmail', granted_scopes: ['https://www.googleapis.com/auth/gmail.send'] },
+        { ...suitable, connection_id: 'read-only', granted_scopes: ['https://www.googleapis.com/auth/calendar.readonly'] },
+        { ...suitable, connection_id: 'wrong-agent', agent: 'other' },
+        { ...suitable, connection_id: 'no-use', operations: ['read'] },
+        { ...suitable, connection_id: 'revoked', status: 'revoked' },
+        { ...suitable, connection_id: 'not-google', provider: 'slack' },
+      ] }) });
+      const result = await fetchDapierConnections({ brokerCredential: 'machine' });
+      assert.deepEqual(result.connections.map((c) => c.connectionId), ['calendar']);
+      assert.equal(result.connectionProblem, undefined);
+      setOwnerCalendarProviderClientsForTests({ fetch: async () => Response.json({ connections: [] }) });
+      const empty = await fetchDapierConnections({ brokerCredential: 'machine' });
+      assert.deepEqual(empty.connections, []);
+      assert.match(empty.connectionProblem!, /grant.*`use`/);
+      setOwnerCalendarProviderClientsForTests({ fetch: async () => new Response('', { status: 401 }) });
+      const denied = await fetchDapierConnections({ brokerCredential: 'machine' });
+      assert.deepEqual(denied.connections, []);
+      assert.match(denied.connectionProblem!, /machine credential/);
+    });
+
+    it('reports an unselected connection before calling the broker and names a missing use grant', async () => {
+      let calls = 0;
+      setOwnerCalendarProviderClientsForTests({ fetch: async () => { calls += 1; return new Response('', { status: 403 }); } });
+      const missing = await ownerCalendarOverlay({ today: TODAY, brokerCredential: 'machine' }).project(TODAY, TODAY);
+      assert.equal(missing.connection?.state, 'not-configured');
+      assert.match(missing.connection?.reason || '', /No Dapier calendar connection selected/);
+      assert.equal(calls, 0);
+      const denied = await selectedOwnerCalendarOverlay({ today: TODAY, brokerCredential: 'machine' }).project(TODAY, TODAY);
+      assert.match(denied.connection?.reason || '', /grant.*personal-scheduler.*`use`/);
+      assert.equal(calls, 1);
+    });
+
     it('discovers Dapier calendar connections using token', async () => {
       const { fetchDapierConnections } = await import('../src/calendar/ownerCalendarOverlay');
       const mockFetch: typeof fetch = async (input) => {
@@ -272,12 +311,14 @@ describe('owner calendar overlay and filtering', () => {
               connections: [
                 {
                   connection_id: 'google-calendar',
-                  provider: 'google',
+                  provider: 'google', status: 'connected', agent: 'personal-scheduler', operations: ['use'],
+                  granted_scopes: ['https://www.googleapis.com/auth/calendar.events'],
                   account_title: 'alexey.s.grigoriev@gmail.com',
                 },
                 {
                   connection_id: 'work-calendar',
-                  provider: 'google',
+                  provider: 'google', status: 'connected', agent: 'personal-scheduler', operations: ['use'],
+                  granted_scopes: ['https://www.googleapis.com/auth/calendar.events'],
                   account_title: 'alexey@datatalks.club',
                 },
               ],
@@ -289,7 +330,7 @@ describe('owner calendar overlay and filtering', () => {
       };
 
       setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
-      const conns = await fetchDapierConnections({ brokerCredential: 'token' });
+      const { connections: conns } = await fetchDapierConnections({ brokerCredential: 'token' });
       assert.equal(conns.length, 2);
       assert.equal(conns[0].connectionId, 'google-calendar');
       assert.equal(conns[1].connectionId, 'work-calendar');
@@ -334,7 +375,7 @@ describe('owner calendar overlay and filtering', () => {
       };
 
       setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
-      const provider = ownerCalendarOverlay({
+      const provider = selectedOwnerCalendarOverlay({
         today: TODAY,
         brokerCredential: 'test-token',
         includeAll: true,
@@ -367,7 +408,7 @@ describe('owner calendar overlay and filtering', () => {
         } as any,
       });
 
-      const provider = ownerCalendarOverlay({ today: TODAY, brokerCredential: '' });
+      const provider = selectedOwnerCalendarOverlay({ today: TODAY, brokerCredential: '' });
       const { items, connection } = await provider.project('2026-10-01', '2026-10-31');
       assert.deepEqual(items, []);
       assert.equal(connection.state, 'not-configured');
@@ -382,7 +423,7 @@ describe('owner calendar overlay and filtering', () => {
           },
         } as any,
       });
-      const { connection } = await ownerCalendarOverlay({ today: TODAY, settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS }).project('2026-10-01', '2026-10-31');
+      const { connection } = await selectedOwnerCalendarOverlay({ today: TODAY, settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS }).project('2026-10-01', '2026-10-31');
       assert.deepEqual(connection, {
         state: 'not-configured',
         reason: 'This environment is not allowed to read the calendar broker secret personal-scheduler/dapier-api-token.',
@@ -393,10 +434,10 @@ describe('owner calendar overlay and filtering', () => {
       setOwnerCalendarProviderClientsForTests({
         fetch: (async () => new Response('Unauthorized', { status: 401 })) as typeof fetch,
       });
-      const provider = ownerCalendarOverlay({ today: TODAY, brokerCredential: 'test-token', settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS });
+      const provider = selectedOwnerCalendarOverlay({ today: TODAY, brokerCredential: 'test-token', settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS });
       const { items, connection } = await provider.project('2026-10-01', '2026-10-31');
       assert.deepEqual(items, []);
-      assert.deepEqual(connection, { state: 'unavailable', reason: 'The calendar broker refused the token request (HTTP 401).' });
+      assert.deepEqual(connection, { state: 'unavailable', reason: 'Dapier rejected the calendar machine credential. A platform operator must repair the machine credential; Google tokens stay in Dapier.' });
     });
 
     it('fetches Google access token via Dapier and lists filtered raw events for the day schedule', async () => {
@@ -473,7 +514,7 @@ describe('owner calendar overlay and filtering', () => {
 
       setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
 
-      const provider = ownerCalendarOverlay({
+      const provider = selectedOwnerCalendarOverlay({
         today: TODAY,
         brokerUrl: 'https://dapier.dtcdev.click',
         brokerCredential: 'dap_synthetic_token',
@@ -587,7 +628,7 @@ describe('owner calendar overlay and filtering', () => {
 
       setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
 
-      const provider = ownerCalendarOverlay({
+      const provider = selectedOwnerCalendarOverlay({
         today: TODAY,
         brokerCredential: 'synthetic-token',
       });
@@ -678,7 +719,7 @@ describe('owner calendar overlay and filtering', () => {
 
       // Without includeAll (the calendar grid): only open slots, never the events.
       // The 12:30 podcast takes the midday slot; the Tuesday evening slot stays open.
-      const defaultProvider = ownerCalendarOverlay({
+      const defaultProvider = selectedOwnerCalendarOverlay({
         today: TODAY,
         brokerCredential: 'token',
         includeAll: false,
@@ -698,7 +739,7 @@ describe('owner calendar overlay and filtering', () => {
       assert.deepEqual(defaultItems.map((item) => item.id), ['owner-slot:2026-10-13:evening']);
 
       // With includeAll: morning meeting is kept and tagged with slot: outside
-      const allProvider = ownerCalendarOverlay({
+      const allProvider = selectedOwnerCalendarOverlay({
         today: TODAY,
         brokerCredential: 'token',
         includeAll: true,
@@ -734,7 +775,7 @@ describe('owner calendar overlay and filtering', () => {
         }) as typeof fetch,
       });
       // Wednesday 14 October 2026 is today; the week runs Mon 12 to Sun 18.
-      const provider = ownerCalendarOverlay({ today: '2026-10-14', brokerCredential: 'token', settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS });
+      const provider = selectedOwnerCalendarOverlay({ today: '2026-10-14', brokerCredential: 'token', settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS });
       const { items } = await provider.project('2026-10-12', '2026-10-18');
       assert.deepEqual([...new Set(items.map((item) => item.startDate))], ['2026-10-14', '2026-10-15', '2026-10-16']);
       const googleUrl = new URL(urls.find((url) => url.includes('googleapis.com'))!);
@@ -812,14 +853,14 @@ describe('owner calendar overlay and filtering', () => {
       };
       setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
 
-      const monday60: any = await ownerCalendarOverlay({ today: TODAY, brokerCredential: 't', durationMinutes: 60, window: 'any' }).project('2026-10-12', '2026-10-12');
+      const monday60: any = await selectedOwnerCalendarOverlay({ today: TODAY, brokerCredential: 't', durationMinutes: 60, window: 'any' }).project('2026-10-12', '2026-10-12');
       assert.ok(monday60.items.some((i: any) => i.id === 'owner-slot:2026-10-12:evening'), '60-min evening fits');
 
-      const monday90: any = await ownerCalendarOverlay({ today: TODAY, brokerCredential: 't', durationMinutes: 90, window: 'evening' }).project('2026-10-12', '2026-10-12');
+      const monday90: any = await selectedOwnerCalendarOverlay({ today: TODAY, brokerCredential: 't', durationMinutes: 90, window: 'evening' }).project('2026-10-12', '2026-10-12');
       assert.equal(monday90.items.some((i: any) => i.id === 'owner-slot:2026-10-12:evening'), false, '90-min evening needs 16:30-18:00 free');
       assert.equal(monday90.items.some((i: any) => i.slot === 'midday'), false, 'window=evening projects no midday slots');
 
-      const mondayMid: any = await ownerCalendarOverlay({ today: TODAY, brokerCredential: 't', durationMinutes: 60, window: 'midday' }).project('2026-10-12', '2026-10-12');
+      const mondayMid: any = await selectedOwnerCalendarOverlay({ today: TODAY, brokerCredential: 't', durationMinutes: 60, window: 'midday' }).project('2026-10-12', '2026-10-12');
       assert.ok(mondayMid.items.some((i: any) => i.id === 'owner-slot:2026-10-12:midday'), 'midday still projected');
       assert.equal(mondayMid.items.some((i: any) => i.slot === 'evening'), false, 'window=midday projects no evening slots');
     });

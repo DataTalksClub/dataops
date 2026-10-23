@@ -199,8 +199,9 @@ export function createPlanningSurface(context) {
                   Google Proposal writes. Pick a suitable google-calendar connection —
                   nothing else to wire.
                 </span>
-                <input name="connectionId" list="dapier-calendar-connections" required autocomplete="off" placeholder="google-calendar">
-                <datalist id="dapier-calendar-connections"></datalist>
+                <select name="connectionId" id="dapier-calendar-connections">
+                  <option value="">Choose a Google Calendar connection</option>
+                </select>
               </label>
             </div>
             <div class="calendar-settings-group">

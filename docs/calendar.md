@@ -22,6 +22,8 @@ DataOps is the source of truth: when the Dapier calendar broker is not ready, th
 
 **Orin day-to-day:** In Planning → calendar settings (or `dataops calendar settings`), pick a suitable Dapier `google-calendar` connection. Propose / podcast invite automatically mint a Google token for that stored connection and create `(Proposal)` events — nothing else for Orin to wire (no Coolify env tokens, no stuffing `dap_…` into AWS SM).
 
+The picker lists connected Google accounts with Calendar event write scopes and a `use` grant for the calendar machine agent. Discovery failures and empty grant lists show an actionable message; they never invent a connection. An unselected connection is stored as empty and both availability reads and Proposal writes explain that a selection is required. Previously selected connections remain selected when a grant becomes unavailable, so changing unrelated filter settings cannot silently switch accounts.
+
 ```bash
 dataops calendar settings                         # list connections + current pick
 dataops calendar settings --connection google-calendar

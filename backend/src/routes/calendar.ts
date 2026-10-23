@@ -23,7 +23,7 @@ export async function handleCalendarRoutes(path:string,method:string,event:Lambd
  if(path==='/api/calendar-items/holidays/sync'){if(method!=='POST')return json(405,{error:'Method not allowed'});try{const generation=await persistHolidayGeneration(client,builtInHolidayGeneration());return json(200,{generationId:generation.generationId,revision:generation.revision,freshAsOf:generation.freshAsOf,count:generation.occurrences.length})}catch{return json(503,{error:'Holiday refresh failed; last-known-good retained'})}}
  const dismissal=path.match(/^\/api\/calendar-items\/alerts\/([^/]+)\/dismiss$/);if(dismissal){if(method!=='POST')return json(405,{error:'Method not allowed'});const fingerprint=decodeURIComponent(dismissal[1]);if(!fingerprint||fingerprint.length>1000)return json(400,{error:'Invalid alert fingerprint'});await dismissCalendarAlert(client,fingerprint,actor(event));return json(200,{dismissed:true});}
  if(path==='/api/calendar-items/settings'){
-  if(method==='GET'){const settings=await getCalendarOverlaySettings(client),connections=await fetchDapierConnections();return json(200,{settings,connections});}
+  if(method==='GET'){const settings=await getCalendarOverlaySettings(client),discovery=await fetchDapierConnections();return json(200,{settings,...discovery});}
   if(method==='PUT'){const body=parse(event);if(!body||typeof body!=='object'||Array.isArray(body))return json(400,{error:'Request body is required'});const settings=await saveCalendarOverlaySettings(client,body,actor(event));return json(200,{settings});}
   return json(405,{error:'Method not allowed'});
  }

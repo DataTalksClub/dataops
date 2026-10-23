@@ -539,7 +539,7 @@ export async function settings(args, io) {
   const connections = result.connections || [];
 
   io.print("Calendar settings (Dapier connection used for overlay + propose/invite):");
-  io.print(`  Connection ID:               ${s.connectionId || "default"}`);
+  io.print(`  Connection ID:               ${s.connectionId || "(none selected — use --connection <id>)"}`);
   io.print(`  Filter Non-Slot Hours:       ${s.filterNonSlotHours !== false}`);
   io.print(`  Filter DTC Placeholders:     ${s.filterDtcPlaceholders !== false}`);
   io.print(`  Filter Transparent Events:   ${s.filterTransparent !== false}`);
@@ -550,6 +550,7 @@ export async function settings(args, io) {
   io.print(`  Filter Busy:                 ${Boolean(s.filterBusy)}`);
   io.print(`  Custom Keywords:             ${(s.customKeywords || []).join(", ") || "(none)"}`);
 
+  if (result.connectionProblem) io.print(`\nGoogle Calendar connection: ${result.connectionProblem}`);
   if (connections.length > 0) {
     io.print(`\nAvailable Dapier Calendar Connections (${connections.length}):`);
     for (const c of connections) {
