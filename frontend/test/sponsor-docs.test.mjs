@@ -645,3 +645,28 @@ test("podcast guest form renders radios with human slot labels, ordered sections
   assert.equal(JSON.parse(putCall[1].body).content.slotChoice, "slot:2026-10-27:midday");
   h.controller.destroy();
 });
+
+test("webinar speaker form preserves its invite path, required labels and speaker wording", async () => {
+  const h = harness({
+    href: "https://ops.example.test/webinar-docs/doc-abc?code=bcdfghjklmnpqrst",
+    docOverrides: { template: "webinar", title: "Speaker materials", sponsorName: "Test Speaker", markdownExport: "# Speaker materials", templateDefinition: { key: "webinar", label: "Webinar — Speaker Materials", sections: [{ id: "talk", title: "Your talk", fields: [
+      { key: "talkTitle", label: "Talk title", type: "text", required: true },
+      { key: "bio", label: "Speaker bio", type: "textarea", required: true },
+      { key: "outline", label: "Outline (3–4 bullets)", type: "bullets", required: true, minItems: 3, maxItems: 4 },
+    ] }] } },
+  });
+  await h.controller.start();
+  assert.deepEqual(h.history, [[null, "", "/webinar-docs/doc-abc"]]);
+  assert.match(h.identity.textContent, /Speaker access/);
+  assert.match(h.root.textContent, /Speaker: Test Speaker/);
+  assert.match(h.root.textContent, /Talk title \*/);
+  assert.match(h.root.textContent, /Speaker bio \*/);
+  assert.match(h.root.textContent, /Outline \(3–4 bullets\) \*/);
+  assert.doesNotMatch(h.root.textContent, /sponsor|\bhub\b/i);
+  assert.equal(h.root.querySelector("#sponsor-field-talkTitle").getAttribute("aria-required"), "true");
+  const section = renderCardSponsorDocsSection({ sponsorDocs: [{ id: "doc-abc", template: "webinar", status: "submitted" }] });
+  assert.match(section.textContent, /Speaker materials/);
+  assert.equal(section.querySelector("a").href, "/webinar-docs/doc-abc");
+  assert.equal(linkService("https://example.test/webinar-docs/doc-abc").id, "webinardoc");
+  h.controller.destroy();
+});

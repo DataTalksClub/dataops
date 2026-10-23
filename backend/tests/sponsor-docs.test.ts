@@ -141,13 +141,13 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.strictEqual(created.card.sponsorDocs[0].id, created.doc.id);
     assert.strictEqual(created.card.sponsorDocs[0].status, 'draft');
 
-    // Verify all 7 templates are available
+    // Verify all templates are available
     const templatesRes = await staffReq('GET', '/api/sponsor-docs/templates');
     assert.strictEqual(templatesRes.statusCode, 200, templatesRes.body);
     const { templates } = JSON.parse(templatesRes.body);
     assert.deepStrictEqual(
       templates.map((t: { key: string }) => t.key),
-      ['newsletter-main', 'newsletter-secondary', 'newsletter-standalone', 'podcast', 'podcast-guest-research', 'podcast-run-sheet', 'podcast-episode-brief'],
+      ['newsletter-main', 'newsletter-secondary', 'newsletter-standalone', 'webinar', 'podcast', 'podcast-guest-research', 'podcast-run-sheet', 'podcast-episode-brief'],
     );
   });
 
@@ -480,4 +480,47 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     const bulletsDef = placementFields.find((f: { key: string }) => f.key === 'bullets');
     assert.strictEqual(bulletsDef.type, 'bullets');
   });
+  it('links webinar materials, saves speaker drafts, validates submission and exposes the saved export on the card', async () => {
+    const card = await createCard(client, { ...templateLink(), title: '[Webinar] Synthetic talk', people: ['Test Speaker'] });
+    const created = await staffReq('POST', '/api/sponsor-docs', { cardId: card.id });
+    assert.equal(created.statusCode, 201, created.body);
+    const { doc, card: linkedCard } = JSON.parse(created.body);
+    assert.equal(doc.template, 'webinar');
+    assert.equal(doc.linkType, 'Speaker materials');
+    assert.ok(doc.docUrl.includes('/webinar-docs/'));
+    assert.ok(doc.emailDraft.body.includes(doc.shareUrl));
+    assert.ok(linkedCard.cardLinks.some((link: { name: string; url: string }) => link.name === 'Speaker materials' && link.url === doc.docUrl));
+    assert.equal((await anonReq('GET', `/webinar-docs/${doc.id}`)).statusCode, 200);
+    assert.equal((await anonReq('PUT', `/api/sponsor-docs/${doc.id}`, { body: { status: 'submitted' } })).statusCode, 401);
+    const save = (body: unknown) => anonReq('PUT', `/api/sponsor-docs/${doc.id}`, { codeHeader: doc.accessCode, body });
+    const draft = await save({ content: { talkTitle: 'Data pipelines' } });
+    assert.equal(draft.statusCode, 200, draft.body);
+    const invalid = await save({ status: 'submitted' });
+    assert.equal(invalid.statusCode, 422, invalid.body);
+    assert.deepEqual(Object.keys(JSON.parse(invalid.body).fields), ['outline', 'bio']);
+    assert.equal((await getSponsorDoc(client, doc.id))?.status, 'draft');
+    const content = { outline: '- Design\n- Build\n- Monitor', bio: 'A data engineer.', summary: 'Practical lessons', linkedinUrl: 'https://example.test/linkedin', githubUrl: 'https://example.test/github', websiteUrl: 'https://example.test/site' };
+    const submitted = await save({ content, status: 'submitted' });
+    assert.equal(submitted.statusCode, 200, submitted.body);
+    const saved = JSON.parse(submitted.body).doc;
+    assert.equal(saved.content.talkTitle, 'Data pipelines');
+    assert.equal(saved.content.bio, content.bio);
+    assert.equal(saved.status, 'submitted');
+    assert.equal(saved.accessCode, undefined);
+    assert.ok(saved.markdownExport.includes(content.summary));
+    const invalidEdit = await staffReq('PUT', `/api/sponsor-docs/${doc.id}`, { content: { talkTitle: '' } });
+    assert.equal(invalidEdit.statusCode, 422, invalidEdit.body);
+    assert.equal((await getSponsorDoc(client, doc.id))?.content.talkTitle, 'Data pipelines');
+    const listed = await staffReq('GET', '/api/sponsor-docs', undefined, { cardId: card.id });
+    assert.ok(JSON.parse(listed.body).docs.some((item: { id: string; status: string }) => item.id === doc.id && item.status === 'submitted'));
+    const exported = await staffReq('GET', `/api/sponsor-docs/${doc.id}/export`);
+    assert.equal(exported.statusCode, 200, exported.body);
+    assert.ok(exported.body.includes('Data pipelines'));
+    assert.ok(exported.body.includes(content.githubUrl));
+    const deleted = await staffReq('DELETE', `/api/sponsor-docs/${doc.id}`);
+    assert.equal(deleted.statusCode, 200, deleted.body);
+    const reloaded = await staffReq('GET', `/api/cards/${card.id}`);
+    assert.ok(!JSON.parse(reloaded.body).card.cardLinks.some((link: { url: string }) => link.url === doc.docUrl));
+  });
+
 });

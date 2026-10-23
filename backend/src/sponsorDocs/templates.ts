@@ -4,6 +4,7 @@ export type SponsorDocTemplateKey =
   | 'newsletter-main'
   | 'newsletter-secondary'
   | 'newsletter-standalone'
+  | 'webinar'
   | 'podcast'
   | 'podcast-guest-research'
   | 'podcast-run-sheet'
@@ -19,6 +20,8 @@ export interface SponsorDocFieldDefinition {
   label: string;
   type: 'text' | 'textarea' | 'bullets' | 'select' | 'radio';
   placeholder: string;
+  required?: boolean;
+  format?: 'url';
   helpText?: string;
   maxCharsHint?: number;
   maxWordsHint?: number;
@@ -55,6 +58,7 @@ export const SPONSOR_DOC_TEMPLATE_KEYS: readonly SponsorDocTemplateKey[] = [
   'newsletter-main',
   'newsletter-secondary',
   'newsletter-standalone',
+  'webinar',
   'podcast',
   'podcast-guest-research',
   'podcast-run-sheet',
@@ -414,6 +418,42 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             rows: 3,
             placeholder: 'Any special instructions or questions for our team.',
           },
+        ],
+      },
+    ],
+  },
+
+  webinar: {
+    key: 'webinar',
+    label: 'Webinar — Speaker Materials',
+    shortLabel: 'Webinar',
+    defaultLinkType: 'Speaker materials',
+    intro: 'Share your talk materials so we can prepare the event description. Talk title, 3–4 outline bullets, and speaker bio are required to submit. Summary and links are optional. You can save a draft and return using the same link.',
+    sections: [
+      {
+        id: 'talk',
+        title: '1) Your Talk',
+        fields: [
+          { key: 'talkTitle', label: 'Talk title', type: 'text', required: true, placeholder: 'Title for the event description' },
+          { key: 'summary', label: 'Subtitle / short summary (optional)', type: 'textarea', rows: 3, placeholder: 'A short introduction to your talk' },
+          { key: 'outline', label: 'Outline (3–4 bullets)', type: 'bullets', required: true, minItems: 3, maxItems: 4, placeholder: 'Topic or takeaway' },
+        ],
+      },
+      {
+        id: 'speaker',
+        title: '2) About You',
+        fields: [
+          { key: 'bio', label: 'Speaker bio', type: 'textarea', rows: 4, required: true, placeholder: 'How should we introduce you in the event description?' },
+        ],
+      },
+      {
+        id: 'links',
+        title: '3) Links (optional)',
+        description: 'Public profile links to include in the event description. Use a full link beginning with https:// or http://.',
+        fields: [
+          { key: 'linkedinUrl', label: 'LinkedIn', type: 'text', format: 'url', placeholder: 'https://www.linkedin.com/in/...' },
+          { key: 'githubUrl', label: 'GitHub', type: 'text', format: 'url', placeholder: 'https://github.com/...' },
+          { key: 'websiteUrl', label: 'Website', type: 'text', format: 'url', placeholder: 'https://...' },
         ],
       },
     ],
@@ -995,6 +1035,37 @@ export function sanitizeTemplateContent(
   return next;
 }
 
+export class SponsorDocValidationError extends Error {
+  constructor(public readonly fields: Record<string, string>) {
+    super(Object.values(fields).join(' '));
+  }
+}
+
+/** Drafts may be incomplete; ready documents must satisfy their template. */
+export function validateSubmittedContent(key: SponsorDocTemplateKey, content: Record<string, string>): void {
+  const errors: Record<string, string> = {};
+  for (const field of getSponsorDocTemplate(key).sections.flatMap((section) => section.fields)) {
+    const value = (content[field.key] || '').trim();
+    if (field.required && !value) {
+      errors[field.key] = `${field.label} is required.`;
+    } else if (field.required && field.type === 'bullets') {
+      const bullets = value.split(/\r?\n/).map((line) => line.replace(/^(?:[-*•→]|\d+[.)])\s*/, '').trim()).filter(Boolean);
+      if (bullets.length < (field.minItems || 1) || bullets.length > (field.maxItems || Infinity)) {
+        errors[field.key] = `${field.label} must contain ${field.minItems}–${field.maxItems} non-empty bullets.`;
+      }
+    }
+    if (value && field.format === 'url') {
+      try {
+        const url = new URL(value);
+        if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) throw new Error();
+      } catch {
+        errors[field.key] = `${field.label} must be a full http:// or https:// link.`;
+      }
+    }
+  }
+  if (Object.keys(errors).length) throw new SponsorDocValidationError(errors);
+}
+
 export interface SponsorDocExportInput {
   id: string;
   title: string;
@@ -1031,10 +1102,10 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
     `# ${doc.title}`,
     '',
     `- **Template**: ${SPONSOR_DOC_TEMPLATES[doc.template].label}`,
-    ...(doc.sponsorName ? [`- **${doc.template === 'podcast' ? 'Guest' : 'Sponsor'}**: ${doc.sponsorName}`] : []),
+    ...(doc.sponsorName ? [`- **${doc.template === 'webinar' ? 'Speaker' : doc.template === 'podcast' ? 'Guest' : 'Sponsor'}**: ${doc.sponsorName}`] : []),
     ...(doc.publicationDate ? [`- **Publication Date**: ${doc.publicationDate}`] : []),
     `- **Status**: ${doc.status === 'submitted' ? 'Submitted / Ready' : 'Draft'}`,
-    `- **Last Edited**: ${doc.lastEditedAt} (${doc.lastEditedBy})`,
+    `- **Last Edited**: ${doc.lastEditedAt} (${doc.template === 'webinar' && doc.lastEditedBy === 'sponsor' ? 'speaker' : doc.lastEditedBy})`,
     '',
     '---',
     '',
@@ -1129,6 +1200,17 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '### X (Twitter) Post',
       '',
       valOrPlaceholder(c.twitterPost),
+    );
+  } else if (doc.template === 'webinar') {
+    lines.push(
+      '## Talk title', '', valOrPlaceholder(c.talkTitle), '',
+      '## Subtitle / short summary', '', valOrPlaceholder(c.summary), '',
+      '## Outline', '', valOrPlaceholder(c.outline), '',
+      '## Speaker bio', '', valOrPlaceholder(c.bio), '',
+      '## Links for the event description', '',
+      `- LinkedIn: ${valOrPlaceholder(c.linkedinUrl)}`,
+      `- GitHub: ${valOrPlaceholder(c.githubUrl)}`,
+      `- Website: ${valOrPlaceholder(c.websiteUrl)}`,
     );
   } else if (doc.template === 'podcast') {
     lines.push(
@@ -1294,6 +1376,20 @@ export function renderSponsorEmailDraft(options: {
   shareUrl: string;
   accessCode: string;
 }): SponsorEmailDraft {
+  if (options.template === 'webinar') {
+    return {
+      subject: 'Your DataTalks.Club webinar speaker materials',
+      body: [
+        'Hi,', '',
+        'Please share your talk materials for your DataTalks.Club webinar using this form:', '',
+        options.shareUrl,
+        `(Access code if prompted: ${options.accessCode})`, '',
+        'Add your talk title, 3–4 outline bullets, and speaker bio. A subtitle or short summary and profile links are optional.',
+        'You can save a draft and return using the same link. When ready, mark it as Submitted / Ready so we can prepare the event description.', '',
+        'Thank you!',
+      ].join('\n'),
+    };
+  }
   const company = options.sponsorName?.trim() || '<COMPANY>';
   const pubDate = options.publicationDate?.trim() || '<PUBLICATION DATE>';
   const deadline = computeCopyDeadline(options.publicationDate);

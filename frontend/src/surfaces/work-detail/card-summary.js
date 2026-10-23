@@ -157,7 +157,9 @@ export function renderCardSponsorDocsSection(card) {
   const allGuestMaterials = docs.every((doc) => String(doc.template || "") === "podcast");
   const heading = document.createElement("div");
   heading.className = "task-history-label";
-  if (allGuestMaterials) {
+  if (docs.every((doc) => doc.template === "webinar")) {
+    heading.textContent = "Speaker materials";
+  } else if (allGuestMaterials) {
     heading.textContent = "Guest materials";
   } else {
     heading.textContent = docs.length === 1 ? "Sponsorship document" : "Sponsorship documents";
@@ -176,8 +178,8 @@ export function renderCardSponsorDocsSection(card) {
     topRow.className = "card-newsletter-slot__row";
 
     const openLink = document.createElement("a");
-    openLink.href = `/${isGuestMaterials ? "podcast-docs" : "sponsor-docs"}/${encodeURIComponent(doc.id)}`;
-    openLink.textContent = doc.title || doc.sponsorName || (isGuestMaterials ? "Guest materials" : "Sponsor document");
+    openLink.href = `/${doc.template === "webinar" ? "webinar-docs" : isGuestMaterials ? "podcast-docs" : "sponsor-docs"}/${encodeURIComponent(doc.id)}`;
+    openLink.textContent = doc.title || doc.sponsorName || (doc.template === "webinar" ? "Speaker materials" : isGuestMaterials ? "Guest materials" : "Sponsor document");
     opensInNewTab(openLink);
 
     const statusBadge = document.createElement("span");
@@ -435,7 +437,7 @@ export function createCardSummary(context) {
     const isSubmitted = sdoc.status === "submitted";
     chip.className = `workflow-card-flag is-${isSubmitted ? "success" : "info"}`;
     chip.dataset.cardSponsorDocStatus = sdoc.status;
-    const kindLabel = String(sdoc.template || "") === "podcast" ? "Guest materials" : "Sponsor doc";
+    const kindLabel = sdoc.template === "webinar" ? "Speaker materials" : String(sdoc.template || "") === "podcast" ? "Guest materials" : "Sponsor doc";
     chip.textContent = isSubmitted ? `${kindLabel}: Submitted / Ready` : `${kindLabel}: Draft`;
     flagRow.append(chip);
   }

@@ -9,6 +9,7 @@ export const TEMPLATES = [
   "newsletter-main",
   "newsletter-secondary",
   "newsletter-standalone",
+  "webinar",
   "podcast",
   "podcast-guest-research",
   "podcast-run-sheet",
@@ -64,6 +65,27 @@ Research and run sheets start only after the recording date is confirmed
 (dataops podcast update <episode-id> --recording-date YYYY-MM-DD).
 `;
 
+export const webinarDocHelp = `dataops webinar doc - webinar speaker materials
+
+Usage
+  dataops webinar doc create <card-id> [--speaker NAME] [--date YYYY-MM-DD] [--email]
+  dataops webinar doc show <doc-id>
+  dataops webinar doc list [--card <card-id>]
+  dataops webinar doc update <doc-id> [--field KEY=VALUE ...]
+  dataops webinar doc submit <doc-id>
+  dataops webinar doc reopen <doc-id>
+  dataops webinar doc export <doc-id>
+  dataops webinar doc email <doc-id>
+  dataops webinar doc rotate-code <doc-id>
+  dataops webinar doc delete <doc-id> --yes
+  dataops webinar doc templates
+
+Required to submit: talkTitle, outline (3–4 newline-separated bullets), bio.
+Optional: summary, linkedinUrl, githubUrl, websiteUrl.
+Create links the form to the webinar card. Copy the share link or invitation
+with email; these commands do not send messages.
+`;
+
 export const help = `Deprecated: \`dataops sponsor-docs\` has moved under the domain commands:
 
   dataops newsletter doc create <issue-id|card-id> [--slot primary|secondary] [--standalone] [--email]
@@ -79,7 +101,7 @@ export const help = `Deprecated: \`dataops sponsor-docs\` has moved under the do
 
 export function extractDocId(raw) {
   const text = String(raw || "").trim();
-  const match = text.match(/\/sponsor-docs\/([^/?#]+)/);
+  const match = text.match(/\/(?:sponsor-docs|podcast-docs|guest-docs|webinar-docs)\/([^/?#]+)/);
   if (match) return decodeURIComponent(match[1]);
   return text;
 }
@@ -129,7 +151,9 @@ export async function create(args, io) {
   const domain = args._domain;
   const prefix = commandPrefix(args);
   const createUsage =
-    domain === "podcast"
+    domain === "webinar"
+      ? `${prefix} create <card-id> [--speaker NAME] [--date YYYY-MM-DD] [--email]`
+      : domain === "podcast"
       ? `${prefix} create <card-id> [--template ${PODCAST_TEMPLATES.join("|")}] [--sponsor NAME] [--date YYYY-MM-DD] [--email]`
       : `${prefix} create <issue-id|card-id> [--slot primary|secondary] [--standalone] [--email]`;
 
@@ -165,7 +189,12 @@ export async function create(args, io) {
   const template = optionalString(args, "template");
   const slot = optionalString(args, "slot");
 
-  if (domain === "podcast") {
+  if (domain === "webinar") {
+    if (slot !== undefined || standalone || (template !== undefined && template !== "webinar")) {
+      throw new UsageError("Webinar speaker materials use the webinar template; newsletter slot flags do not apply.");
+    }
+    body.template = "webinar";
+  } else if (domain === "podcast") {
     if (slot !== undefined || standalone) {
       throw new UsageError(`--slot and --standalone apply to \`dataops newsletter doc create\`, not \`${prefix} create\`.`);
     }
@@ -201,7 +230,7 @@ export async function create(args, io) {
   const title = optionalString(args, "title");
   if (title !== undefined) body.title = title;
 
-  const sponsorName = optionalString(args, "sponsor");
+  const sponsorName = optionalString(args, domain === "webinar" ? "speaker" : "sponsor");
   if (sponsorName !== undefined) body.sponsorName = sponsorName;
 
   const date = isoDate(optionalString(args, "date"), "date");
@@ -226,7 +255,7 @@ export async function create(args, io) {
     : result.issue?.publicationDate
       ? `issue ${result.issue.publicationDate} (${targetId})`
       : targetId;
-  io.print(`Created sponsor doc ${doc.id} (${doc.template}) for ${targetLabel}.`);
+  io.print(`Created ${domain === "webinar" ? "speaker materials" : "sponsor doc"} ${doc.id} (${doc.template}) for ${targetLabel}.`);
   io.print(`Card link (${doc.linkType}): ${doc.docUrl}`);
   io.print(`Shareable link (with code): ${doc.shareUrl}`);
   io.print(`Access code: ${doc.accessCode}`);
@@ -245,10 +274,12 @@ export async function list(args, io) {
   const query = cardId ? { cardId } : {};
   const result = await api.get("/api/sponsor-docs", { query });
   let docs = (result.docs || []).map((d) => normalizeDocUrls(d, api.base));
-  if (args._domain === "podcast") {
+  if (args._domain === "webinar") {
+    docs = docs.filter((d) => d.template === "webinar");
+  } else if (args._domain === "podcast") {
     docs = docs.filter((d) => d.template === "podcast" || String(d.template || "").startsWith("podcast-"));
   } else if (args._domain === "newsletter") {
-    docs = docs.filter((d) => d.template !== "podcast" && !String(d.template || "").startsWith("podcast-"));
+    docs = docs.filter((d) => d.template !== "webinar" && d.template !== "podcast" && !String(d.template || "").startsWith("podcast-"));
   }
   const payload = { ...result, docs };
   if (args.json) return payload;
@@ -316,7 +347,7 @@ export async function update(args, io) {
   const title = optionalString(args, "title");
   if (title !== undefined) body.title = title;
 
-  const sponsor = optionalString(args, "sponsor");
+  const sponsor = optionalString(args, args._domain === "webinar" ? "speaker" : "sponsor");
   if (sponsor !== undefined) body.sponsorName = sponsor === "none" ? null : sponsor;
 
   const date = optionalString(args, "date");
@@ -469,7 +500,7 @@ export function domainDocCommand(domain) {
             : `${prefix} <create|show|export|delete|list|update|submit|reopen|email|rotate-code> ...`;
         throw new UsageError(`Missing doc action. Usage: ${usageLine}`);
       }
-      io.print(domain === "podcast" ? podcastDocHelp : newsletterDocHelp);
+      io.print(domain === "webinar" ? webinarDocHelp : domain === "podcast" ? podcastDocHelp : newsletterDocHelp);
       return undefined;
     }
     const fn = commands[action];

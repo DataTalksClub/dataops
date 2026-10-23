@@ -1,0 +1,64 @@
+const { test, expect } = require('@playwright/test');
+const { createDocsCacheRoot } = require('./helpers/docs-content-root');
+const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolated-capability-server');
+let server;
+test.use({ screenshot: 'off', trace: 'off', video: 'off' });
+test.beforeAll(async () => {
+  server = await startOwnedTestServer({ environment: { DTC_CACHE_ROOT: createDocsCacheRoot('webinar-speaker-materials') } });
+});
+test.afterAll(async () => { await stopOwnedTestServer(server); });
+
+test('webinar workflow creates a form; speaker saves, validates and submits linked materials', async ({ page, request }) => {
+  test.setTimeout(90_000);
+  const fixture = await request.post(`${server.baseURL}/__e2e__/template-fixtures`, { data: {
+    name: 'Synthetic webinar', type: 'webinar', sourcePath: 'workflow-templates/synthetic-webinar.yaml', taskDefinitions: [],
+  } });
+  expect(fixture.status()).toBe(201);
+  const { template } = await fixture.json();
+  const created = await request.post(`${server.baseURL}/api/cards`, { data: { templateId: template.id, title: 'Synthetic webinar talk', people: ['Test Speaker'] } });
+  expect(created.status()).toBe(201);
+  const { card } = await created.json();
+  await page.goto(`${server.baseURL}/cards?cardId=${card.id}`);
+  await page.getByRole('button', { name: 'Create speaker materials form', exact: true }).click();
+  await expect(page.locator('[data-card-sponsor-docs]')).toContainText('Speaker materials');
+  await expect(page.getByRole('button', { name: 'Create speaker materials form', exact: true })).toHaveCount(0);
+  const listing = await (await request.get(`${server.baseURL}/api/sponsor-docs?cardId=${card.id}`)).json();
+  expect(listing.docs).toHaveLength(1);
+  const { doc } = await (await request.get(`${server.baseURL}/api/sponsor-docs/${listing.docs[0].id}`)).json();
+  expect(doc.template).toBe('webinar');
+  expect(doc.emailDraft.body).toContain(doc.shareUrl);
+  await page.setExtraHTTPHeaders({ 'x-sponsor-doc-anonymous': 'true' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${server.baseURL}/webinar-docs/${doc.id}?code=${encodeURIComponent(doc.accessCode)}`);
+  await expect(page.locator('[data-sponsor-view="editor"]')).toBeVisible();
+  expect(new URL(page.url()).search).toBe('');
+  await expect(page.locator('#sponsor-doc-identity')).toContainText('Speaker access');
+  expect(await page.locator('main').innerText()).not.toMatch(/sponsor|\bhub\b/i);
+  await page.locator('[data-sponsor-action="submit-ready"]').click();
+  await expect(page.locator('[data-sponsor-feedback]')).toContainText('Talk title is required');
+  await page.locator('#sponsor-field-talkTitle').fill('Practical pipelines');
+  await page.locator('[data-sponsor-action="save-draft"]').click();
+  await expect(page.locator('[data-sponsor-feedback]')).toContainText('Saved draft');
+  await page.reload();
+  await expect(page.locator('#sponsor-field-talkTitle')).toHaveValue('Practical pipelines');
+  await page.locator('#sponsor-field-summary').fill('Lessons from building pipelines');
+  await page.locator('#sponsor-field-bio').fill('A data engineer.');
+  const bullets = page.locator('[data-sponsor-bullets="outline"] input');
+  await bullets.nth(0).fill('Design');
+  await bullets.nth(1).fill('Build');
+  await page.locator('[data-sponsor-action="submit-ready"]').click();
+  await expect(page.locator('[data-sponsor-feedback]')).toContainText('non-empty bullets');
+  await bullets.nth(2).fill('Monitor');
+  await page.locator('#sponsor-field-websiteUrl').fill('https://example.test/speaker');
+  await page.locator('[data-sponsor-action="submit-ready"]').click();
+  await expect(page.locator('[data-sponsor-feedback]')).toContainText('Submitted and marked ready');
+  await page.reload();
+  await expect(page.locator('[data-sponsor-doc-status]')).toHaveText('Submitted / Ready');
+  await expect(page.locator('[data-sponsor-export]')).toContainText('Lessons from building pipelines');
+  await expect(page.locator('[data-sponsor-export]')).toContainText('A data engineer.');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  const saved = await (await request.get(`${server.baseURL}/api/sponsor-docs/${doc.id}`)).json();
+  expect(saved.doc.cardId).toBe(card.id);
+  expect(saved.doc.status).toBe('submitted');
+  expect(saved.doc.content.outline).toContain('Monitor');
+});

@@ -17,7 +17,9 @@ import {
 import { TABLE_ARTIFACTS, TABLE_SESSIONS } from './tableNames';
 import {
   defaultContentForTemplate,
+  getSponsorDocTemplate,
   sanitizeTemplateContent,
+  validateSubmittedContent,
   type SponsorDocTemplateKey,
 } from '../sponsorDocs/templates';
 
@@ -207,7 +209,7 @@ export async function createSponsorDoc(
   const content = input.content
     ? sanitizeTemplateContent(input.template, input.content)
     : defaultContentForTemplate(input.template);
-  const defaultLinkType = input.template === 'podcast' ? 'Guest materials' : 'Sponsorship document';
+  const defaultLinkType = getSponsorDocTemplate(input.template).defaultLinkType;
 
   const doc: SponsorDoc = {
     id,
@@ -309,6 +311,8 @@ export async function updateSponsorDoc(
   const nextContent = input.content
     ? sanitizeTemplateContent(doc.template, input.content, doc.content)
     : doc.content;
+
+  if (nextStatus === 'submitted') validateSubmittedContent(doc.template, nextContent);
 
   const updated: SponsorDoc = {
     ...doc,

@@ -35,6 +35,7 @@ import { projectCard } from '../identity/projections';
 import { recordRequestError } from '../requestErrorLog';
 import {
   SPONSOR_DOC_TEMPLATES,
+  SponsorDocValidationError,
   getSponsorDocTemplate,
   hydratePodcastGuestSlotOptions,
   isSponsorDocTemplateKey,
@@ -82,12 +83,9 @@ function requestIp(event: LambdaEvent): string {
   return forwarded.split(',')[0].trim() || 'unknown';
 }
 
-/**
- * Guest-facing path for a doc: the podcast guest form lives under
- * `/podcast-docs/` (with `/guest-docs/` as a second alias); everything else
- * stays under `/sponsor-docs/`. Old `/sponsor-docs/` links keep working.
- */
+/** Canonical public materials page for each event or sponsorship template. */
 export function sponsorDocPathForTemplate(template: string | null | undefined): string {
+  if (template === 'webinar') return '/webinar-docs';
   return template === 'podcast' ? '/podcast-docs' : '/sponsor-docs';
 }
 
@@ -129,7 +127,7 @@ export function isAnonymousSponsorDocRequest(method: string, path: string): bool
  */
 export function isAnonymousSponsorDocAsset(method: string, path: string): boolean {
   if (method.toUpperCase() !== 'GET') return false;
-  if (/^\/(sponsor-docs|podcast-docs|guest-docs)\/[^/]+\/?$/.test(path)) return true;
+  if (/^\/(sponsor-docs|podcast-docs|guest-docs|webinar-docs)\/[^/]+\/?$/.test(path)) return true;
   return (
     path === '/src/sponsor-doc-page.js'
     || path === '/src/surfaces/operations/sponsor-docs.js'
@@ -166,6 +164,8 @@ async function inferTemplateForCard(
   const templateIdByType = await getTemplateIdByType(client);
   const cType = cardTemplateType(card, templateIdByType);
   const combinedText = `${card.title || ''} ${(card.tags || []).join(' ')} ${card.description || ''}`.toLowerCase();
+
+  if (cType === 'webinar' || /\bwebinar\b/.test(combinedText)) return 'webinar';
 
   if (cType === 'podcast' || /\bpodcast\b/.test(combinedText)) {
     return 'podcast';
@@ -455,7 +455,7 @@ export async function handleSponsorDocRoutes(
           const requested = String(body.template).trim();
           if (!isSponsorDocTemplateKey(requested)) {
             return json(400, {
-              error: `Invalid template "${requested}". Must be one of: newsletter-main, newsletter-secondary, newsletter-standalone, podcast, podcast-guest-research, podcast-run-sheet, podcast-episode-brief`,
+              error: `Invalid template "${requested}". Must be one of: newsletter-main, newsletter-secondary, newsletter-standalone, webinar, podcast, podcast-guest-research, podcast-run-sheet, podcast-episode-brief`,
               code: 'invalid_template',
             });
           }
@@ -517,6 +517,8 @@ export async function handleSponsorDocRoutes(
             || hydratedCard?.sponsor
             || existingIssue?.slots?.primary?.sponsor
             || null;
+        } else if (template === 'webinar') {
+          sponsorName = hydratedCard?.people?.[0] || null;
         } else if (template === 'podcast' || template.startsWith('podcast-')) {
           sponsorName = hydratedCard?.sponsor
             || hydratedCard?.people?.[0]
@@ -789,6 +791,7 @@ export async function handleSponsorDocRoutes(
             const url = String(item.url || '');
             if (
               url.endsWith(`/sponsor-docs/${encodedId}`)
+              || url.endsWith(`/webinar-docs/${encodedId}`)
               || url.endsWith(`/podcast-docs/${encodedId}`)
               || url.endsWith(`/guest-docs/${encodedId}`)
             ) {
@@ -812,6 +815,9 @@ export async function handleSponsorDocRoutes(
 
     return json(404, { error: 'Not found' });
   } catch (err: unknown) {
+    if (err instanceof SponsorDocValidationError) {
+      return json(422, { error: err.message, code: 'invalid_content', fields: err.fields });
+    }
     recordRequestError(err);
     return json(500, { error: 'Internal server error' });
   }

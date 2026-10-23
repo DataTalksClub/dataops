@@ -17,6 +17,7 @@ import {
   renderCardSponsorDocsSection,
   renderCardTemplateLink,
 } from "./card-summary.js";
+import { renderWebinarMaterialsAction } from "./webinar-materials.js";
 import { renderLinkRow, renderLinkList } from "./link-rows.js";
 
 export function createCardPanel(context) {
@@ -389,6 +390,8 @@ export function createCardPanel(context) {
     );
     main.append(meta);
     main.append(renderCardNewsletterIssue({ request, workApiUrl, reload: reloadCardIntent }, card));
+    const materialsAction = renderWebinarMaterialsAction({ request, workApiUrl, reload: reloadCardIntent }, card, state.workSnapshot.templates);
+    if (materialsAction) main.append(materialsAction);
     const sponsorDocsSection = renderCardSponsorDocsSection(card);
     if (sponsorDocsSection) main.append(sponsorDocsSection);
     const templateUpdate = renderCardTemplateUpdate(card, data, {
