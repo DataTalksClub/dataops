@@ -15,8 +15,8 @@ test('webinar workflow creates a form; speaker saves, validates and submits link
   } });
   expect(fixture.status()).toBe(201);
   const { template } = await fixture.json();
-  const created = await request.post(`${server.baseURL}/api/cards`, { data: { templateId: template.id, title: 'Synthetic webinar talk', people: ['Test Speaker'] } });
-  expect(created.status()).toBe(201);
+  const created = await request.post(`${server.baseURL}/api/cards`, { data: { templateId: template.id, title: 'Synthetic webinar talk', anchorDate: '2026-11-17', people: ['Test Speaker'] } });
+  expect(created.status(), await created.text()).toBe(201);
   const { card } = await created.json();
   await page.goto(`${server.baseURL}/cards?cardId=${card.id}`);
   await page.getByRole('button', { name: 'Create speaker materials form', exact: true }).click();
