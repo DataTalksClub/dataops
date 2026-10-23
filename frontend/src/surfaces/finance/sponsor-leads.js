@@ -174,7 +174,8 @@ export function createSponsorLeads(context) {
     const link = sponsor.url
       ? html`<a href="${escapeHtml(sponsor.url)}">${escapeHtml(sponsor.url)}</a>`
       : "";
-    const source = [link, escapeHtml(newsletter.name || "Unknown newsletter"), seenDate(newsletter.receivedAt)]
+    const origin = newsletter.name || (item.source ? `Outbound · ${item.source}` : "Unknown newsletter");
+    const source = [link, escapeHtml(origin), seenDate(newsletter.receivedAt || item.observedAt)]
       .filter(Boolean)
       .join(" · ");
     const focused = item.id === focusedLeadId ? ' aria-current="true"' : "";

@@ -26,6 +26,10 @@ Usage
                                                       kind: ${KINDS.join(", ")}; deliverables filter by Airtable Content source
   dataops sponsors show <kind> <id>
   dataops sponsors create <kind> --data '{...}'        Fields as the web form sends them
+  dataops sponsors create leads --data '{"source":"newsletter","url":"https://…","summary":"…","observedAt":"ISO"}'
+      Record one outbound lead sighting. source: newsletter|social|influencer|paid;
+      optional organizationId links a known company. Never creates a deal:
+      a deal only exists once a sale closes.
   dataops sponsors update <kind> <id> --data '{...}'
   dataops sponsors update leads <id> --data '{"status":"ignored","version":N}' [--reason TEXT]
   dataops sponsors messages <organization-id>          Communications with an organization

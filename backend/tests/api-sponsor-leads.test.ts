@@ -6,7 +6,7 @@ import { getClient } from '../src/db/client';
 import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
-import { getCrmRecord } from '../src/db/sponsorCrm';
+import { getCrmRecord, listCrmRecords } from '../src/db/sponsorCrm';
 import { handler } from '../src/handler';
 import {
   leadSourceKey,
@@ -488,5 +488,67 @@ describe('sponsor lead intake and review', () => {
       ['Tracker #1', 'inbox', []],
       ['Tracker #0', 'inbox', []],
     ]);
+  });
+
+  it('creates an outbound lead through the review API and never creates a deal', async () => {
+    process.env.SKIP_AUTH = 'true';
+    const orgResponse = await review('POST', '/api/sponsor-crm/organizations', { displayName: 'Outbound Target Co', sourceKey: 'outbound-target-org' });
+    assert.strictEqual(orgResponse.statusCode, 201, orgResponse.body);
+    const org = JSON.parse(orgResponse.body);
+    const payload = {
+      organizationId: org.id,
+      source: 'newsletter',
+      url: 'https://outbound-target.example.test/',
+      summary: 'Runs sponsored segments in a peer newsletter.',
+      observedAt: '2026-10-20T09:30:00Z',
+    };
+    const created = await review('POST', '/api/sponsor-crm/leads', payload);
+    assert.strictEqual(created.statusCode, 201, created.body);
+    const lead = JSON.parse(created.body);
+    assert.strictEqual(lead.status, 'new');
+    assert.strictEqual(lead.source, 'newsletter');
+    assert.strictEqual(lead.observedAt, payload.observedAt);
+    assert.strictEqual(lead.organizationId, org.id);
+    assert.strictEqual(lead.sponsor.url, 'https://outbound-target.example.test/');
+    assert.strictEqual(lead.sponsor.normalizedUrl, 'outbound-target.example.test');
+    assert.strictEqual(lead.sponsor.name, 'outbound-target.example.test');
+    assert.strictEqual(lead.sponsor.blurb, payload.summary);
+    assert.strictEqual(lead.sourceType, 'portal');
+    assert.strictEqual(lead.newsletter, undefined);
+    assert.strictEqual(lead.messageId, undefined);
+
+    // An identical re-file is the same lead, not a second record.
+    const replay = await review('POST', '/api/sponsor-crm/leads', payload);
+    assert.strictEqual(replay.statusCode, 200, replay.body);
+    assert.strictEqual(JSON.parse(replay.body).id, lead.id);
+
+    const listed = JSON.parse((await review('GET', '/api/sponsor-crm/leads', undefined, { search: 'outbound-target.example.test' })).body);
+    assert.ok(listed.items.some((item: Record<string, unknown>) => item.id === lead.id));
+    const stored = await getCrmRecord(await getClient(), 'lead', lead.id);
+    assert.strictEqual(stored?.sourceType, 'portal');
+
+    const deals = await listCrmRecords(await getClient(), 'deal');
+    assert.ok(!deals.some((deal) => deal.organizationId === org.id), 'lead create must not create a tracking deal');
+  });
+
+  it('rejects invalid outbound lead payloads without persisting', async () => {
+    process.env.SKIP_AUTH = 'true';
+    const base = { source: 'social', url: 'https://social.example.test/', summary: 'Seen promoting peer events.', observedAt: '2026-10-21T08:00:00Z' };
+    const invalid: Array<[string, Record<string, unknown>]> = [
+      ['unsupported source', { ...base, source: 'podcast' }],
+      ['missing source', { ...base, source: undefined }],
+      ['non-https url', { ...base, url: 'http://social.example.test/' }],
+      ['missing url', { ...base, url: '' }],
+      ['missing summary', { ...base, summary: '' }],
+      ['date-only observedAt', { ...base, observedAt: '2026-10-21' }],
+      ['future observedAt', { ...base, observedAt: '2099-01-01T00:00:00Z' }],
+      ['unknown field', { ...base, dealId: 'should-not-exist' }],
+    ];
+    for (const [label, payload] of invalid) {
+      const result = await review('POST', '/api/sponsor-crm/leads', payload);
+      assert.strictEqual(result.statusCode, 400, `${label}: ${result.body}`);
+    }
+    const unlinked = await review('POST', '/api/sponsor-crm/leads', { ...base, organizationId: 'no-such-organization' });
+    assert.strictEqual(unlinked.statusCode, 422, unlinked.body);
   });
 });

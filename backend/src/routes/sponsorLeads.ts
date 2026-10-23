@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from 'crypto';
 import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { DynamoDBDocumentClient, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
-import { deterministicCrmId, getCrmRecord, listCrmRecords, updateCrmRecord, type CrmRecord } from '../db/sponsorCrm';
+import { createCrmRecord, deterministicCrmId, getCrmRecord, listCrmRecords, updateCrmRecord, type CrmRecord } from '../db/sponsorCrm';
 import { convertLead } from '../sponsorCrm/convertLead';
 import { recordInboxIssue } from '../sponsorCrm/newsletterIssues';
 import { TABLE_AUDIT_EVENTS, TABLE_SPONSOR_CRM } from '../db/tableNames';
@@ -18,6 +18,9 @@ const TOP_LEVEL_FIELDS = new Set(['version', 'messageId', 'newsletter', 'sponsor
 const NEWSLETTER_FIELDS = new Set(['name', 'sender', 'subject', 'receivedAt']);
 const SPONSOR_FIELDS = new Set(['name', 'url', 'category', 'blurb', 'context']);
 const LEAD_STATUSES = new Set(['new', 'triaged', 'converted', 'ignored']);
+// Where an outbound lead was observed: recorded by an operator through the
+// portal/CLI, in contrast to leads extracted from newsletter intake.
+const LEAD_SOURCES = new Set(['newsletter', 'social', 'influencer', 'paid']);
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 let secretsClient: SecretsManagerClient | null = null;
@@ -155,14 +158,14 @@ function onlyFields(value: Record<string, unknown>, fields: Set<string>, path: s
   if (unknown) throw new Error(`${path} contains unknown fields`);
 }
 
-function utcTimestamp(value: unknown): string {
-  const result = text(value, 'newsletter.receivedAt', 40);
+function utcTimestamp(value: unknown, field: string): string {
+  const result = text(value, field, 40);
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z$/.exec(result);
-  if (!match) throw new Error('newsletter.receivedAt must be a valid UTC ISO timestamp');
+  if (!match) throw new Error(`${field} must be a valid UTC ISO timestamp`);
   const normalized = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}.${(match[7] || '').padEnd(3, '0')}Z`;
   const parsed = new Date(result);
-  if (Number.isNaN(parsed.getTime()) || parsed.toISOString() !== normalized) throw new Error('newsletter.receivedAt must be a real UTC calendar timestamp');
-  if (parsed.getTime() > Date.now() + 5 * 60_000) throw new Error('newsletter.receivedAt must not be in the future');
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString() !== normalized) throw new Error(`${field} must be a real UTC calendar timestamp`);
+  if (parsed.getTime() > Date.now() + 5 * 60_000) throw new Error(`${field} must not be in the future`);
   return result;
 }
 
@@ -190,7 +193,7 @@ function parseNewsletter(value: unknown): LeadNewsletter {
     name: text(newsletter.name, 'newsletter.name', 200),
     sender: text(newsletter.sender, 'newsletter.sender', 320),
     subject: text(newsletter.subject, 'newsletter.subject', 500),
-    receivedAt: utcTimestamp(newsletter.receivedAt),
+    receivedAt: utcTimestamp(newsletter.receivedAt, 'newsletter.receivedAt'),
   };
 }
 
@@ -463,6 +466,9 @@ function publicLead(lead: CrmRecord): Record<string, unknown> {
     sponsor: lead.sponsor,
     status: lead.status,
     ...(lead.statusReason ? { statusReason: lead.statusReason } : {}),
+    ...(lead.source ? { source: lead.source } : {}),
+    ...(lead.observedAt ? { observedAt: lead.observedAt } : {}),
+    ...(lead.organizationId ? { organizationId: lead.organizationId } : {}),
     active: lead.active,
     sourceType: lead.sourceType,
     version: lead.version,
@@ -537,9 +543,10 @@ function leadNewsletter(item: CrmRecord): Record<string, unknown> {
   return (item.newsletter || {}) as Record<string, unknown>;
 }
 
-/** When the sponsor was seen: the issue's date, else when the lead landed. */
+/** When the sponsor was seen: outbound observation date, else the issue's date, else when the lead landed. */
 function leadSeenAt(item: CrmRecord): string {
-  return String(leadNewsletter(item).receivedAt || item.createdAt || '');
+  const observedAt = typeof item.observedAt === 'string' ? item.observedAt : '';
+  return String(observedAt || leadNewsletter(item).receivedAt || item.createdAt || '');
 }
 
 function leadSponsorKey(item: CrmRecord): string {
@@ -618,6 +625,71 @@ export async function handleSponsorLeadRoutes(path: string, method: string, even
     if (!ID.test(id)) return response(400, { error: 'Invalid ID' });
     const lead = await getCrmRecord(client, 'lead', id);
     return lead ? response(200, publicLead(lead)) : response(404, { error: 'Not found' });
+  }
+
+  // Outbound lead create (portal/CLI): one sighting of a potential sponsor,
+  // observed on a newsletter, social media, an influencer or a paid placement.
+  // It records reviewable lead evidence only — a deal exists once a sale
+  // closes, never at sighting time.
+  if (method === 'POST' && !id) {
+    const body = parseBody(event);
+    if (!body) return response(400, { error: 'Invalid JSON' });
+    const unknown = Object.keys(body).find((key) => !['organizationId', 'source', 'url', 'summary', 'observedAt'].includes(key));
+    if (unknown) return response(400, { error: `Unknown field: ${unknown}` });
+    if (typeof body.source !== 'string' || !LEAD_SOURCES.has(body.source)) return response(400, { error: 'Invalid source: one of newsletter, social, influencer, paid' });
+    if (body.url === undefined || body.url === null || body.url === '') return response(400, { error: 'url is required' });
+    let url: string;
+    try {
+      url = validatedUrl(body.url, 'url');
+    } catch (error) {
+      return response(400, { error: error instanceof Error ? error.message : 'Invalid url' });
+    }
+    let summary: string;
+    let observedAt: string;
+    try {
+      summary = text(body.summary, 'summary', 2000, true);
+      observedAt = utcTimestamp(body.observedAt, 'observedAt');
+    } catch (error) {
+      return response(400, { error: error instanceof Error ? error.message : 'Invalid lead fields' });
+    }
+    const organizationId = typeof body.organizationId === 'string' ? body.organizationId.trim() : '';
+    if (body.organizationId !== undefined && body.organizationId !== null && body.organizationId !== '' && !organizationId) {
+      return response(400, { error: 'Invalid organizationId' });
+    }
+    if (organizationId) {
+      const organization = await getCrmRecord(client, 'organization', organizationId);
+      if (!organization || organization.archivedAt) return response(422, { error: 'Invalid organization reference' });
+    }
+    const normalizedUrl = normalizeLeadUrl(url);
+    // Without a provided sponsor name the hostname is the honest display name.
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    const value: Record<string, unknown> = {
+      // Same sighting re-filed identically stays one lead; changed content conflicts.
+      sourceKey: `manual:${body.source}:${normalizedUrl}:${observedAt}`,
+      source: body.source,
+      observedAt,
+      ...(organizationId ? { organizationId } : {}),
+      sponsor: {
+        name: host,
+        url,
+        category: '',
+        blurb: summary,
+        context: '',
+        normalizedName: normalizeLeadName(host),
+        normalizedUrl,
+      },
+      status: 'new',
+      active: true,
+      sourceType: 'portal',
+    };
+    let created: { item: CrmRecord; duplicate: boolean };
+    try {
+      created = await createCrmRecord(client, 'lead', value);
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode === 409) return response(409, { error: 'This lead was already recorded with different content' });
+      throw error;
+    }
+    return response(created.duplicate ? 200 : 201, publicLead(created.item));
   }
 
   if ((method === 'PATCH' || method === 'PUT') && id) {

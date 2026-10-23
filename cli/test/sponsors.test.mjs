@@ -4,7 +4,7 @@ import { run } from "../src/cli.mjs";
 import { mkdtemp, writeFile, unlink, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { attachInvoice, attachPaymentEvidence, receivePayment, correctPayment, approveSettlement, reverseSettlement, clearProposalClassification, recordThankYou, list } from "../src/commands/sponsors.mjs";
+import { attachInvoice, attachPaymentEvidence, receivePayment, correctPayment, approveSettlement, reverseSettlement, clearProposalClassification, recordThankYou, list, create } from "../src/commands/sponsors.mjs";
 
 test("proposal correction previews first and applies with fresh versions and a stable retry key", async () => {
   const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
@@ -462,6 +462,28 @@ test("receive-payment and record-thank-you surface the draft-only thank-you cont
     assert.equal(replay.alreadyRecorded, true);
     assert.equal(replay.thankYou?.status, "recorded");
     assert.equal(calls.filter((call) => call.method === "PUT").length, 1, "idempotent replay does not write duplicate evidence");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
+  }
+});
+
+test("sponsors create leads posts the outbound sighting to the CRM leads collection", async () => {
+  const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
+  process.env.DATAOPS_TOKEN = "sanitized-test-token";
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), method: options?.method, body: options?.body });
+    return new Response(JSON.stringify({ id: "lead-new", status: "new", source: "newsletter" }), { status: 201 });
+  };
+  const data = { organizationId: "org-1", source: "newsletter", url: "https://acme.example.test/", summary: "Runs sponsored segments.", observedAt: "2026-10-20T09:30:00Z" };
+  try {
+    const result = await create({ _: ["leads"], data: JSON.stringify(data), json: true, url: "https://portal.example.test" }, { print() {} });
+    assert.equal(result.id, "lead-new");
+    const post = calls.find((call) => call.method === "POST");
+    assert.ok(post, "expected a POST call");
+    assert.ok(post.url.endsWith("/api/sponsor-crm/leads"), post.url);
+    assert.deepEqual(JSON.parse(post.body), data);
   } finally {
     globalThis.fetch = originalFetch;
     if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
