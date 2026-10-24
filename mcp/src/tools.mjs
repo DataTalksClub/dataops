@@ -43,7 +43,7 @@ export const GUIDE = {
     '/api/cards',
     '/api/templates',
     '/api/calendar-items',
-    '/api/invoices',
+    '/api/bookkeeping/invoices',
     '/api/sponsor-crm',
     '/api/users',
     '/api/team-members',
@@ -135,6 +135,6 @@ export const POCKETSHELL_PARITY = Object.freeze({
   'team/list': '/api/team-members',
   'calendar/list': '/api/calendar-items',
   'calendar/get': '/api/calendar-items',
-  'invoices/list': '/api/invoices',
-  'invoices/detail': '/api/invoices',
+  'invoices/list': '/api/bookkeeping/invoices',
+  'invoices/detail': '/api/bookkeeping/invoices',
 });

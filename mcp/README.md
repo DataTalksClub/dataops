@@ -8,8 +8,8 @@ the API: contract changes land in one commit in this repo.
 Home of the DataOps tools after the PocketShell separation (F10): the
 DataOps/Dapier/AISL namespaces previously lived in
 `PocketShell-io/pocketshell-mcp` behind the PocketShell EC2 gateway. DataOps
-tools move here; Dapier and AISL move nowhere (removed); PocketShell agent
-tools stay with PocketShell.
+tools move here; Dapier, AISL and PocketShell agent tools are retired from
+the old MCP surface after consumer verification.
 
 ## Two ways to serve it
 
@@ -31,8 +31,9 @@ Present your DataOps API token as `Authorization: Bearer <token>` — the
 same credential the CLI holds after `dataops login` (device flow, browser
 approval). The server validates it against `/api/me` (standalone) or the
 portal session/token tables (Lambda) on every request and forwards it
-unchanged. It never mints, stores or logs credentials. Auth and
-token-management routes are not exposed as tools.
+unchanged. Deployment-managed service credentials retain their existing API
+route restrictions for every tool call. It never mints, stores or logs
+credentials. Auth and token-management routes are not exposed as tools.
 
 ## Consumer config
 
@@ -50,8 +51,10 @@ url = "https://ops.dtcdev.click/mcp"
 bearer_token_env_var = "DATAOPS_TOKEN"
 ```
 
-Set `DATAOPS_TOKEN` from `dataops tokens list` (or run `dataops login`).
-Verify with a read call: `dataops_read` route `/api/tasks?owner=me`.
+Set `DATAOPS_TOKEN` to the credential issued by `dataops login` or a
+deployment-managed service token. `dataops tokens list` shows metadata, not
+the token value. Configure the same Authorization header in Claude Code.
+Verify with a read call: `dataops_read` route `/api/tasks?status=todo&limit=1`.
 
 ## Tests
 

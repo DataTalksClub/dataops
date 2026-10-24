@@ -77,7 +77,7 @@ export const MCP_GUIDE = {
     '/api/cards',
     '/api/templates',
     '/api/calendar-items',
-    '/api/invoices',
+    '/api/bookkeeping/invoices',
     '/api/sponsor-crm',
     '/api/users',
     '/api/team-members',
@@ -170,7 +170,7 @@ async function callTool(
     const { path, query } = splitRoute(route);
     const headers: Record<string, string> = {};
     for (const [key, value] of Object.entries(event.headers || {})) {
-      if (['authorization', 'x-user-id', 'x-portal-auth', 'x-portal-secret'].includes(key.toLowerCase())) {
+      if (['authorization', 'cookie', 'x-user-id', 'x-portal-auth', 'x-portal-secret'].includes(key.toLowerCase())) {
         headers[key] = String(value);
       }
     }
@@ -272,6 +272,7 @@ export async function handleMcp(
   event: LambdaEvent,
   client: DynamoDBDocumentClient,
   dispatch: McpDispatch,
+  options: { serviceAuthenticated?: boolean } = {},
 ): Promise<LambdaResponse | null> {
   const path = event.path || '/';
   if (path !== '/mcp' && !path.startsWith('/mcp/')) return null;
@@ -295,7 +296,7 @@ export async function handleMcp(
     const match = Object.entries(event.headers || {}).find(([key]) => key.toLowerCase() === name.toLowerCase());
     return match ? String(match[1]) : '';
   };
-  if (!skipAuth && !headerValue('x-user-id')) {
+  if (!skipAuth && !options.serviceAuthenticated && !headerValue('x-user-id')) {
     return jsonResponse(401, { error: 'Unauthorized' });
   }
   let message: JsonRpcRequest | JsonRpcRequest[];

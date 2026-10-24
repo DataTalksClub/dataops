@@ -1,5 +1,9 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
+import { createHash } from 'node:crypto';
+import { createUserWithId } from '../src/db/users';
+import { createBrowserSession } from '../src/db/sessions';
+import { createApiToken } from '../src/db/cliAuth';
 
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
@@ -122,6 +126,78 @@ describe('API — DataOps MCP (POST /mcp)', () => {
       assert.strictEqual(res.statusCode, 401);
     } finally {
       if (saved !== undefined) process.env.SKIP_AUTH = saved;
+    }
+  });
+
+  it('keeps service credential route restrictions on every MCP call', async () => {
+    const savedSkip = process.env.SKIP_AUTH;
+    const savedDigest = process.env.INVOICE_READER_TOKEN_SHA256;
+    const token = `dops_svc_${'a'.repeat(64)}`;
+    delete process.env.SKIP_AUTH;
+    process.env.INVOICE_READER_TOKEN_SHA256 = createHash('sha256').update(token).digest('hex');
+    const headers = { Authorization: `Bearer ${token}`, 'x-user-id': 'spoofed-admin' };
+    const call = (name: string, args: Record<string, unknown>) => mcp({
+      jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name, arguments: args },
+    }, headers);
+    try {
+      const list = await mcp({ jsonrpc: '2.0', id: 10, method: 'tools/list' }, headers);
+      assert.strictEqual(list.status, 200);
+      assert.strictEqual(list.json.result.tools.length, 3);
+      for (const route of ['/api/tasks?status=todo', '/api/bookkeeping/invoices']) {
+        const read = await call('dataops_read', { route });
+        assert.strictEqual(read.status, 200);
+        assert.ok(!read.json.result.isError, `${route}: ${read.json.result.content[0].text}`);
+        assert.doesNotThrow(() => JSON.parse(read.json.result.content[0].text));
+      }
+      for (const [name, args] of [
+        ['dataops_read', { route: '/api/users' }],
+        ['dataops_read', { route: '/api/templates' }],
+        ['dataops_write', { method: 'POST', route: '/api/bookkeeping/invoices', body: {} }],
+      ] as const) {
+        const denied = await call(name, args);
+        assert.strictEqual(denied.json.result.isError, true);
+        assert.match(denied.json.result.content[0].text, /refused the credential/);
+      }
+      // Revocation applies to MCP as soon as it applies to the direct API.
+      delete process.env.INVOICE_READER_TOKEN_SHA256;
+      assert.strictEqual((await call('dataops_read', { route: '/api/tasks' })).status, 401);
+    } finally {
+      if (savedSkip === undefined) delete process.env.SKIP_AUTH; else process.env.SKIP_AUTH = savedSkip;
+      if (savedDigest === undefined) delete process.env.INVOICE_READER_TOKEN_SHA256;
+      else process.env.INVOICE_READER_TOKEN_SHA256 = savedDigest;
+    }
+  });
+
+  it('retains API token and browser session identity through nested reads', async () => {
+    const config = {
+      SKIP_AUTH: 'false', DATAOPS_DOCS_DOMAIN: 'true', WORK_ENGINE_AUTH_MODE: 'portal',
+      AUTH_BASE_URL: 'https://auth.example.test', AUTH_ISSUER: 'https://issuer.example.test/pool',
+      AUTH_CLIENT_ID: 'synthetic', AUTH_CALLBACK_URL: 'https://ops.example.test/auth/callback',
+      AUTH_LOGOUT_URL: 'https://ops.example.test/',
+    };
+    const saved = Object.fromEntries(Object.keys(config).map((key) => [key, process.env[key]]));
+    Object.assign(process.env, config);
+    try {
+      const client = await getClient();
+      await createUserWithId(client, 'mcp-operator', { name: 'MCP Operator', email: 'mcp@example.test', role: 'operator' });
+      const api = await createApiToken(client, { userId: 'mcp-operator', label: 'MCP test', source: 'manual' });
+      const session = await createBrowserSession(client, 'mcp-operator', { lifetimeSeconds: 3600 });
+      for (const headers of [
+        { Authorization: `Bearer ${api.token}` },
+        { cookie: `dataops_session=${session.token}` },
+      ]) {
+        const read = await mcp({
+          jsonrpc: '2.0', id: 11, method: 'tools/call',
+          params: { name: 'dataops_read', arguments: { route: '/api/me' } },
+        }, headers as Record<string, string>);
+        assert.strictEqual(read.status, 200);
+        assert.ok(!read.json.result.isError, read.json.result.content[0].text);
+        assert.match(read.json.result.content[0].text, /mcp-operator/);
+      }
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
     }
   });
 });
