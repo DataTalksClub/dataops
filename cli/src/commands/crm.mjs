@@ -29,13 +29,13 @@ Usage
       Mark the deal "wait, revisit later": open Tasks go waiting until DATE (a waiting
       Task is created when the deal has none), then the fresh state is printed.
   dataops crm company show <id>
-  dataops crm company create [--tags a,b] --data '{...}'      Through the canonical organization record
-  dataops crm company update <id> [--tags a,b] --data '{...}'  Must include the current version
+  dataops crm company create [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'      Through the canonical organization record
+  dataops crm company update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'  Must include the current version
   dataops crm company archive <id>
   dataops crm company unarchive <id>
   dataops crm person show <id>
-  dataops crm person create [--tags a,b] --data '{...}'      Through the canonical contact record
-  dataops crm person update <id> [--tags a,b] --data '{...}'  Must include the current version
+  dataops crm person create [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'      Through the canonical contact record
+  dataops crm person update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'  Must include the current version
   dataops crm person archive <id>
   dataops crm person unarchive <id>
   dataops crm deal show <id>
@@ -158,8 +158,12 @@ export async function companyCreate(args, io) {
   if (args.tags !== undefined) {
     payload.tags = typeof args.tags === "string" ? args.tags.split(",").map((t) => t.trim()).filter(Boolean) : args.tags;
   }
+  const firstContactAt = args.firstContactAt ?? args.first_contact_at;
+  if (firstContactAt !== undefined) payload.first_contact_at = firstContactAt;
+  const lastContactAt = args.lastContactAt ?? args.last_contact_at;
+  if (lastContactAt !== undefined) payload.last_contact_at = lastContactAt;
   if (Object.keys(payload).length === 0) {
-    throw new UsageError("Pass --data '{...}' or flags like --tags.");
+    throw new UsageError("Pass --data '{...}' or flags like --tags, --first-contact-at, --last-contact-at.");
   }
   const result = await apiFor(args).post("/api/sponsor-crm/organizations", payload);
   if (!args.json) io.print(`Created company ${result?.id || ""}.`.replace(" .", "."));
@@ -167,13 +171,17 @@ export async function companyCreate(args, io) {
 }
 
 export async function companyUpdate(args, io) {
-  const id = positional(args, 0, "dataops crm company update <id> [--tags a,b] --data '{...}'");
+  const id = positional(args, 0, "dataops crm company update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'");
   const payload = { ...(args.data !== undefined ? jsonData(args) : {}) };
   if (args.tags !== undefined) {
     payload.tags = typeof args.tags === "string" ? args.tags.split(",").map((t) => t.trim()).filter(Boolean) : args.tags;
   }
+  const firstContactAt = args.firstContactAt ?? args.first_contact_at;
+  if (firstContactAt !== undefined) payload.first_contact_at = firstContactAt;
+  const lastContactAt = args.lastContactAt ?? args.last_contact_at;
+  if (lastContactAt !== undefined) payload.last_contact_at = lastContactAt;
   if (Object.keys(payload).length === 0) {
-    throw new UsageError("Pass --data '{...}' or flags like --tags.");
+    throw new UsageError("Pass --data '{...}' or flags like --tags, --first-contact-at, --last-contact-at.");
   }
   const result = await apiFor(args).put(`/api/sponsor-crm/organizations/${enc(id)}`, payload);
   if (!args.json) io.print(`Updated company ${id}.`);
@@ -222,8 +230,12 @@ export async function personCreate(args, io) {
   if (args.tags !== undefined) {
     payload.tags = typeof args.tags === "string" ? args.tags.split(",").map((t) => t.trim()).filter(Boolean) : args.tags;
   }
+  const firstContactAt = args.firstContactAt ?? args.first_contact_at;
+  if (firstContactAt !== undefined) payload.first_contact_at = firstContactAt;
+  const lastContactAt = args.lastContactAt ?? args.last_contact_at;
+  if (lastContactAt !== undefined) payload.last_contact_at = lastContactAt;
   if (Object.keys(payload).length === 0) {
-    throw new UsageError("Pass --data '{...}' or flags like --tags.");
+    throw new UsageError("Pass --data '{...}' or flags like --tags, --first-contact-at, --last-contact-at.");
   }
   const result = await apiFor(args).post("/api/sponsor-crm/contacts", payload);
   if (!args.json) io.print(`Created person ${result?.id || ""}.`.replace(" .", "."));
@@ -231,13 +243,17 @@ export async function personCreate(args, io) {
 }
 
 export async function personUpdate(args, io) {
-  const id = positional(args, 0, "dataops crm person update <id> [--tags a,b] --data '{...}'");
+  const id = positional(args, 0, "dataops crm person update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'");
   const payload = { ...(args.data !== undefined ? jsonData(args) : {}) };
   if (args.tags !== undefined) {
     payload.tags = typeof args.tags === "string" ? args.tags.split(",").map((t) => t.trim()).filter(Boolean) : args.tags;
   }
+  const firstContactAt = args.firstContactAt ?? args.first_contact_at;
+  if (firstContactAt !== undefined) payload.first_contact_at = firstContactAt;
+  const lastContactAt = args.lastContactAt ?? args.last_contact_at;
+  if (lastContactAt !== undefined) payload.last_contact_at = lastContactAt;
   if (Object.keys(payload).length === 0) {
-    throw new UsageError("Pass --data '{...}' or flags like --tags.");
+    throw new UsageError("Pass --data '{...}' or flags like --tags, --first-contact-at, --last-contact-at.");
   }
   const result = await apiFor(args).put(`/api/sponsor-crm/contacts/${enc(id)}`, payload);
   if (!args.json) io.print(`Updated person ${id}.`);

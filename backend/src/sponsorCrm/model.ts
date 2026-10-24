@@ -36,7 +36,8 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function realDate(value: unknown): value is string {
   if (typeof value !== 'string' || !DATE.test(value)) return false;
-  return new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 export function dayDiff(from: string, to: string): number {

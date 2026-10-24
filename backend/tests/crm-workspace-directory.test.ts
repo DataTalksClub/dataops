@@ -9,6 +9,7 @@ import { handler } from '../src/handler';
 import { createTables } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
+import { extractEmails, parseMessageDate, minDate, maxDate } from '../scripts/crm-contact-dates';
 
 const GRACE_USER_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -317,6 +318,86 @@ describe('crm workspace directory', () => {
       organizationId: org.id, name: 'Bad Contact', emails: ['bad@example.com'], tags: [123],
     });
     assert.equal(badContact.statusCode, 400);
+  });
+
+  it('supports first_contact_at and last_contact_at on organizations and contacts with validation', async () => {
+    const org = data(await invoke('POST', '/api/sponsor-crm/organizations', {
+      displayName: 'Contact Dates Org',
+      domain: 'contact-dates.example',
+      first_contact_at: '2026-01-15T10:00:00Z',
+      last_contact_at: '2026-09-20T14:30:00Z',
+      sourceKey: 'ws-org-contact-dates',
+    }));
+    assert.equal(org.first_contact_at, '2026-01-15T10:00:00Z');
+    assert.equal(org.last_contact_at, '2026-09-20T14:30:00Z');
+
+    const summary = data(await invoke('GET', `/api/sponsor-crm/directory/companies/${org.id}`));
+    assert.equal(summary.first_contact_at, '2026-01-15T10:00:00Z');
+    assert.equal(summary.last_contact_at, '2026-09-20T14:30:00Z');
+
+    const listCompanies = data(await invoke('GET', '/api/sponsor-crm/directory/companies?search=Contact%20Dates'));
+    const companyRow = listCompanies.items.find((item: any) => item.id === org.id);
+    assert.ok(companyRow);
+    assert.equal(companyRow.first_contact_at, '2026-01-15T10:00:00Z');
+    assert.equal(companyRow.last_contact_at, '2026-09-20T14:30:00Z');
+
+    const contact = data(await invoke('POST', '/api/sponsor-crm/contacts', {
+      organizationId: org.id,
+      name: 'Contact Person',
+      emails: ['person@contact-dates.example'],
+      first_contact_at: '2026-02-01T08:00:00Z',
+      last_contact_at: '2026-08-15T12:00:00Z',
+      sourceKey: 'ws-contact-dates-person',
+    }));
+    assert.equal(contact.first_contact_at, '2026-02-01T08:00:00Z');
+    assert.equal(contact.last_contact_at, '2026-08-15T12:00:00Z');
+
+    const listPeople = data(await invoke('GET', '/api/sponsor-crm/directory/people?search=Contact%20Person'));
+    const personRow = listPeople.items.find((item: any) => item.id === contact.id);
+    assert.ok(personRow);
+    assert.equal(personRow.first_contact_at, '2026-02-01T08:00:00Z');
+    assert.equal(personRow.last_contact_at, '2026-08-15T12:00:00Z');
+
+    // Update fields
+    const updatedContact = data(await invoke('PUT', `/api/sponsor-crm/contacts/${contact.id}`, {
+      version: contact.version,
+      last_contact_at: '2026-10-10T16:00:00Z',
+    }));
+    assert.equal(updatedContact.last_contact_at, '2026-10-10T16:00:00Z');
+    assert.equal(updatedContact.first_contact_at, '2026-02-01T08:00:00Z');
+
+    const updatedOrg = data(await invoke('PUT', `/api/sponsor-crm/organizations/${org.id}`, {
+      version: org.version,
+      last_contact_at: '2026-10-10T18:00:00Z',
+    }));
+    assert.equal(updatedOrg.last_contact_at, '2026-10-10T18:00:00Z');
+
+    // Validation: invalid date stamps rejected
+    const badOrg = await invoke('POST', '/api/sponsor-crm/organizations', {
+      displayName: 'Bad Date Org',
+      first_contact_at: 'not-a-date',
+    });
+    assert.equal(badOrg.statusCode, 400);
+
+    const badContact = await invoke('POST', '/api/sponsor-crm/contacts', {
+      organizationId: org.id,
+      name: 'Bad Date Contact',
+      emails: ['baddate@example.com'],
+      last_contact_at: '2026-13-45',
+    });
+    assert.equal(badContact.statusCode, 400);
+
+    // Helpers test
+    assert.deepEqual(
+      extractEmails('Alexey Grigorev <alexey@datatalks.club>, "Smith, John" <John.Smith@Example.COM>'),
+      ['alexey@datatalks.club', 'john.smith@example.com']
+    );
+    assert.equal(
+      parseMessageDate({ date: '2026-10-09T15:13:12+00:00' }),
+      '2026-10-09T15:13:12.000Z'
+    );
+    assert.equal(minDate('2026-01-01T00:00:00Z', '2026-05-01T00:00:00Z'), '2026-01-01T00:00:00Z');
+    assert.equal(maxDate('2026-01-01T00:00:00Z', '2026-05-01T00:00:00Z'), '2026-05-01T00:00:00Z');
   });
 
   it('requires auth for workspace routes', async () => {

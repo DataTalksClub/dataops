@@ -145,6 +145,8 @@ export type CompanyItem = {
   lastTouch: string | null;
   lastInboundAt?: string;
   lastOutboundAt?: string;
+  first_contact_at?: string;
+  last_contact_at?: string;
   openDealCount: number;
   version: number;
   updatedAt: string;
@@ -166,6 +168,8 @@ export type PersonItem = {
   lastInboundAt?: string;
   lastOutboundAt?: string;
   lastContactedAt?: string;
+  first_contact_at?: string;
+  last_contact_at?: string;
   active: boolean;
   version: number;
   updatedAt: string;
@@ -205,6 +209,8 @@ function companyRow(org: CrmRecord, ctx: CompanyContext): CompanyItem {
     lastTouch: lastTouchOf(org),
     ...(typeof org.lastInboundAt === 'string' ? { lastInboundAt: org.lastInboundAt } : {}),
     ...(typeof org.lastOutboundAt === 'string' ? { lastOutboundAt: org.lastOutboundAt } : {}),
+    ...(typeof org.first_contact_at === 'string' ? { first_contact_at: org.first_contact_at } : {}),
+    ...(typeof org.last_contact_at === 'string' ? { last_contact_at: org.last_contact_at } : {}),
     openDealCount: orgDeals.filter((deal) => deal.status === 'open' && !deal.archivedAt).length,
     version: org.version,
     updatedAt: String(org.updatedAt),
@@ -318,6 +324,8 @@ export type CompanySummary = {
   lastTouch: string | null;
   lastInboundAt?: string;
   lastOutboundAt?: string;
+  first_contact_at?: string;
+  last_contact_at?: string;
   version: number;
   updatedAt: string;
   notes?: string;
@@ -338,6 +346,8 @@ export async function getCompanySummary(
     lastTouch: lastTouchOf(org),
     ...(typeof org.lastInboundAt === 'string' ? { lastInboundAt: org.lastInboundAt } : {}),
     ...(typeof org.lastOutboundAt === 'string' ? { lastOutboundAt: org.lastOutboundAt } : {}),
+    ...(typeof org.first_contact_at === 'string' ? { first_contact_at: org.first_contact_at } : {}),
+    ...(typeof org.last_contact_at === 'string' ? { last_contact_at: org.last_contact_at } : {}),
     version: org.version,
     updatedAt: String(org.updatedAt),
     ...(typeof org.notes === 'string' && org.notes ? { notes: org.notes } : {}),
@@ -404,6 +414,8 @@ export async function listPeople(
       ...(typeof contact.lastInboundAt === 'string' ? { lastInboundAt: contact.lastInboundAt } : {}),
       ...(typeof contact.lastOutboundAt === 'string' ? { lastOutboundAt: contact.lastOutboundAt } : {}),
       ...(typeof contact.lastContactedAt === 'string' ? { lastContactedAt: contact.lastContactedAt } : {}),
+      ...(typeof contact.first_contact_at === 'string' ? { first_contact_at: contact.first_contact_at } : {}),
+      ...(typeof contact.last_contact_at === 'string' ? { last_contact_at: contact.last_contact_at } : {}),
       active: activeOf(contact),
       version: contact.version,
       updatedAt: String(contact.updatedAt),

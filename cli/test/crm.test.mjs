@@ -54,11 +54,14 @@ describe("CLI crm workspace", () => {
       assert.equal(calls[0].query.unlinked, "true");
       assert.equal(calls[0].query.tag, "inbound");
       assert.equal(await run(["crm", "person", "show", "p1", "--json"], io), EXIT.ok);
-      assert.equal(await run(["crm", "person", "create", "--data", '{"name":"Bo"}', "--tags", "inbound", "--json"], io), EXIT.ok);
+      assert.equal(await run(["crm", "person", "create", "--data", '{"name":"Bo"}', "--tags", "inbound", "--first-contact-at", "2026-08-01T00:00:00Z", "--last-contact-at", "2026-09-01T00:00:00Z", "--json"], io), EXIT.ok);
       assert.equal(calls[2].body.name, "Bo");
       assert.deepEqual(calls[2].body.tags, ["inbound"]);
-      assert.equal(await run(["crm", "person", "update", "p2", "--data", '{"name":"Bo2","version":1}', "--json"], io), EXIT.ok);
+      assert.equal(calls[2].body.first_contact_at, "2026-08-01T00:00:00Z");
+      assert.equal(calls[2].body.last_contact_at, "2026-09-01T00:00:00Z");
+      assert.equal(await run(["crm", "person", "update", "p2", "--data", '{"name":"Bo2","version":1}', "--first-contact-at", "2026-08-05T00:00:00Z", "--json"], io), EXIT.ok);
       assert.equal(calls[3].body.name, "Bo2");
+      assert.equal(calls[3].body.first_contact_at, "2026-08-05T00:00:00Z");
       assert.equal(await run(["crm", "person", "archive", "p2", "--json"], io), EXIT.ok);
       assert.equal(calls[4].route, "/api/sponsor-crm/contacts/p2");
       io.out.length = 0;
@@ -86,11 +89,14 @@ describe("CLI crm workspace", () => {
     try {
       assert.equal(await run(["crm", "company", "show", "org1", "--json"], io), EXIT.ok);
       assert.equal(calls[0].route, "/api/sponsor-crm/directory/companies/org1");
-      assert.equal(await run(["crm", "company", "create", "--data", '{"displayName":"Beta"}', "--tags", "inbound", "--json"], io), EXIT.ok);
+      assert.equal(await run(["crm", "company", "create", "--data", '{"displayName":"Beta"}', "--tags", "inbound", "--first-contact-at", "2026-07-01T00:00:00Z", "--last-contact-at", "2026-09-01T00:00:00Z", "--json"], io), EXIT.ok);
       assert.equal(calls[1].body.displayName, "Beta");
       assert.deepEqual(calls[1].body.tags, ["inbound"]);
-      assert.equal(await run(["crm", "company", "update", "org2", "--data", '{"displayName":"Beta 2","version":1}', "--json"], io), EXIT.ok);
+      assert.equal(calls[1].body.first_contact_at, "2026-07-01T00:00:00Z");
+      assert.equal(calls[1].body.last_contact_at, "2026-09-01T00:00:00Z");
+      assert.equal(await run(["crm", "company", "update", "org2", "--data", '{"displayName":"Beta 2","version":1}', "--last-contact-at", "2026-10-01T00:00:00Z", "--json"], io), EXIT.ok);
       assert.equal(calls[2].body.displayName, "Beta 2");
+      assert.equal(calls[2].body.last_contact_at, "2026-10-01T00:00:00Z");
       assert.equal(await run(["crm", "company", "archive", "org2", "--json"], io), EXIT.ok);
       assert.equal(calls[3].route, "/api/sponsor-crm/organizations/org2");
       assert.equal(await run(["crm", "company", "unarchive", "org2", "--json"], io), EXIT.ok);

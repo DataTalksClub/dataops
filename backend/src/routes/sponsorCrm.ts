@@ -101,6 +101,8 @@ function validateOrganization(body: Record<string, unknown>, partial = false) {
   }
   if (!validStamp(body.lastOutboundAt)) return 'Invalid lastOutboundAt';
   if (!validStamp(body.lastInboundAt)) return 'Invalid lastInboundAt';
+  if (!validStamp(body.first_contact_at)) return 'Invalid first_contact_at';
+  if (!validStamp(body.last_contact_at)) return 'Invalid last_contact_at';
   if (body.tags !== undefined) {
     const error = validateTags(body.tags);
     if (error) return error;
@@ -121,6 +123,8 @@ function validateContact(body: Record<string, unknown>, partial = false) {
   if (!validStamp(body.lastContactedAt)) return 'Invalid lastContactedAt';
   if (!validStamp(body.lastOutboundAt)) return 'Invalid lastOutboundAt';
   if (!validStamp(body.lastInboundAt)) return 'Invalid lastInboundAt';
+  if (!validStamp(body.first_contact_at)) return 'Invalid first_contact_at';
+  if (!validStamp(body.last_contact_at)) return 'Invalid last_contact_at';
   if (body.tags !== undefined) {
     const error = validateTags(body.tags);
     if (error) return error;
