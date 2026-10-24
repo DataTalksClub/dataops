@@ -33,11 +33,13 @@ Usage
   dataops crm company update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'  Must include the current version
   dataops crm company archive <id>
   dataops crm company unarchive <id>
+  dataops crm company delete <id> --yes [--expected-version N]  Permanently delete (admin only)
   dataops crm person show <id>
   dataops crm person create [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'      Through the canonical contact record
   dataops crm person update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'  Must include the current version
   dataops crm person archive <id>
   dataops crm person unarchive <id>
+  dataops crm person delete <id> --yes [--expected-version N]   Permanently delete (admin only)
   dataops crm deal show <id>
   dataops crm deal create --data '{...}'        Through the canonical deal record
   dataops crm deal update <id> --data '{...}'    Must include the current version
@@ -62,6 +64,8 @@ Usage
 Directories return summaries only (no finance, mail or note bodies per row).
 Notes are attributed to you; update/delete notes with version check; retry safely with --source-key.
 Views are personal: builtins are read-only, yours are versioned, archive keeps the record.
+Hard delete refuses deals, linked contacts, notes and human touches; delete people before their company.
+Hard-delete errors: exit 4 = not found; exit 5 = guard/version conflict (reason in error).
 
 Examples
   dataops crm companies list --json | jq '.items[] | {displayName, relationship}'
@@ -273,6 +277,21 @@ export async function personUnarchive(args, io) {
   if (!args.json) io.print(`Unarchived person ${id}.`);
   return result;
 }
+
+async function deleteDirectoryRecord(args, io, entity, plural) {
+  const id = positional(args, 0, `dataops crm ${entity} delete <id> --yes [--expected-version N]`);
+  if (args.yes !== true) throw new UsageError('Permanent deletion requires --yes. Read the record before deleting it.');
+  const expectedVersion = integer(optionalString(args, 'expectedVersion'), 'expected-version');
+  if (expectedVersion !== undefined && !Number.isSafeInteger(expectedVersion)) throw new UsageError('expected-version must be a safe positive integer.');
+  const result = await apiFor(args).delete(`/api/sponsor-crm/${plural}/${enc(id)}`, undefined, {
+    query: { hard: 'true', expectedVersion },
+  });
+  if (!args.json) io.print(`Deleted ${entity} ${id}.`);
+  return result;
+}
+
+export const companyDelete = (args, io) => deleteDirectoryRecord(args, io, 'company', 'organizations');
+export const personDelete = (args, io) => deleteDirectoryRecord(args, io, 'person', 'contacts');
 
 export async function dealShow(args, io) {
   const id = positional(args, 0, "dataops crm deal show <id>");
@@ -553,12 +572,12 @@ async function dispatch(args, io, verbs, usage) {
 export const commands = {
   companies: (args, io) => dispatch(args, io, { list: companiesList }, "dataops crm companies list [...]"),
   company: (args, io) => dispatch(args, io,
-    { show: companyShow, create: companyCreate, update: companyUpdate, archive: companyArchive, unarchive: companyUnarchive },
-    "dataops crm company <show|create|update|archive|unarchive> [...]"),
+    { show: companyShow, create: companyCreate, update: companyUpdate, archive: companyArchive, unarchive: companyUnarchive, delete: companyDelete },
+    "dataops crm company <show|create|update|archive|unarchive|delete> [...]"),
   people: (args, io) => dispatch(args, io, { list: peopleList }, "dataops crm people list [...]"),
   person: (args, io) => dispatch(args, io,
-    { show: personShow, create: personCreate, update: personUpdate, archive: personArchive, unarchive: personUnarchive },
-    "dataops crm person <show|create|update|archive|unarchive> [...]"),
+    { show: personShow, create: personCreate, update: personUpdate, archive: personArchive, unarchive: personUnarchive, delete: personDelete },
+    "dataops crm person <show|create|update|archive|unarchive|delete> [...]"),
   deals: (args, io) => dispatch(args, io, { list: dealsList }, "dataops crm deals list [...]"),
   deal: (args, io) => dispatch(args, io,
     { show: dealShow, create: dealCreate, update: dealUpdate, archive: dealArchive, unarchive: dealUnarchive },

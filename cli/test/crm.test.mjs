@@ -493,3 +493,44 @@ describe("CLI crm workspace", () => {
     assert.equal(code, EXIT.usage);
   });
 });
+
+describe('CLI CRM hard delete', () => {
+  beforeEach(isolateConfig);
+  for (const [entity, plural] of [['company', 'organizations'], ['person', 'contacts']]) {
+    test(`${entity} delete requires confirmation and reports API exit codes`, async () => {
+      let status = 200;
+      const calls = fakePortal({
+        [`DELETE /api/sponsor-crm/${plural}/fixture`]: () => ({ status, body: status === 200 ? { id: 'fixture', deleted: true } : { error: status === 404 ? 'Not found' : 'Record has notes' } }),
+      });
+      try {
+        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--json'], captureIo()), EXIT.usage);
+        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes=false', '--json'], captureIo()), EXIT.usage);
+        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes', '--expected-version', '--json'], captureIo()), EXIT.usage);
+        for (const version of ['0', '-1', '1.5', 'invalid', '9007199254740992']) {
+          assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes', '--expected-version', version, '--json'], captureIo()), EXIT.usage);
+        }
+        assert.equal(calls.length, 0);
+        const io = captureIo();
+        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes', '--expected-version', '3', '--json'], io), EXIT.ok);
+        assert.deepEqual(io.json(), { id: 'fixture', deleted: true });
+        assert.equal(calls[0].query.hard, 'true'); assert.equal(calls[0].query.expectedVersion, '3');
+        const human = captureIo();
+        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes'], human), EXIT.ok);
+        assert.match(human.text(), /Deleted/);
+        status = 404;
+        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes', '--json'], captureIo()), 4);
+        status = 409;
+        const conflict = captureIo();
+        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes', '--json'], conflict), 5);
+        assert.match(JSON.parse(conflict.errors.join('\n')).error.message, /notes/);
+      } finally { delete globalThis.fetch; }
+    });
+  }
+  test('help and agent guide document permanent deletion', async () => {
+    for (const argv of [['crm', '--help'], ['agent-guide']]) {
+      const io = captureIo(); assert.equal(await run(argv, io), EXIT.ok);
+      assert.match(io.text(), /crm company delete/); assert.match(io.text(), /crm person delete/);
+      assert.match(io.text(), /--yes/); assert.match(io.text(), /expected-version/);
+    }
+  });
+});

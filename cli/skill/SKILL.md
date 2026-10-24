@@ -339,6 +339,21 @@ filter) is read-only: it only changes what is listed, never who acts.
 
 ## Anything else
 
+CRM directory hard deletion is admin-only and permanent:
+`dataops crm person delete <id> --yes [--expected-version N]` and
+`dataops crm company delete <id> --yes [--expected-version N]`.
+Read the record first. The API refuses organizations with any deals or any
+remaining contacts (archived rows count), contacts linked as a primary or other
+contact on a deal/deliverable, and records with notes or human touches. Inline
+notes have no author provenance, so all nonempty inline notes are protected.
+Delete eligible people before their company; there is no cascading deletion.
+Success removes the record, its history and owned domain/primary/message target index entries;
+subsequent reads return 404. Other records are unchanged. Exit 4 means not found;
+exit 5 means a guard or version conflict; read the error reason before retrying.
+The API is `DELETE /api/sponsor-crm/organizations/<id>?hard=true` or
+`DELETE /api/sponsor-crm/contacts/<id>?hard=true`, optionally with
+`&expectedVersion=N`. Without `hard=true`, DELETE still archives.
+
 Sponsors (`dataops sponsors`), reconciliation (`dataops reconcile`), calendar, recurring schedules, automations
 (`dataops automations`), invoices, files and artifacts have their own families.
 Whenever a sponsor payment is resolved or marked paid (`sponsors receive-payment`, `sponsors link-payment`, `sponsors approve-settlement`, `sponsors correct-payment`, or `reconcile confirm`), the CLI and `--json` response surface `thankYou` (and `nextStep` when `thankYou.status === "required"`), referencing `template.finance.bookkeeping.email-to-sponsor-when-payment-has-been-received` (SOP step 9). Always prepare the thank-you reply as a **draft only** (never send email — Alexey reviews and sends it himself) using the `<NAME>`, `<WHAT_WAS_PAID>`, and `<SENDER_NAME>` placeholders, then record the message reference with `dataops sponsors record-thank-you <deal-id> --ref THREAD_REF --apply`.
