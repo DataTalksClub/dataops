@@ -34,6 +34,7 @@ import { handleBookRoutes } from './routes/books';
 import { handleCalendarRoutes } from './routes/calendar';
 import { handleCalendarHoldRoutes } from './routes/calendarHolds';
 import { handleOperatingModelRoutes } from './routes/operatingModel';
+import { handleMcp } from './mcp';
 import { handleAuthRoutes, extractToken } from './routes/auth';
 import { handleTeamMemberRoutes } from './routes/teamMembers';
 import { handleWorkspaceSettingsRoutes } from './routes/workspaceSettings';
@@ -257,7 +258,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     // API-only/local configurations still expose the same canonical frontend;
     // full portal mode serves it earlier after browser authentication.
-    if (!portalMode && method === 'GET' && !/^\/(?:api|work|docs|knowledge|content|auth|login|logout)(?:\/|$)/.test(reqPath)) {
+    if (!portalMode && method === 'GET' && !/^\/(?:api|work|docs|knowledge|content|auth|login|logout|mcp)(?:\/|$)/.test(reqPath)) {
       const frontend = serveCanonicalFrontend(event);
       if (frontend) return frontend;
     }
@@ -270,7 +271,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // A portal pass without an identity (local development with browser auth
     // unconfigured) must not skip bearer validation: without it no x-user-id
     // is ever established and every interactive route fails closed.
-    if (!skipAuth && !verifiedInteractiveUserId && (reqPath.startsWith('/api/') || isDocsRoute(reqPath))) {
+    if (!skipAuth && !verifiedInteractiveUserId && (reqPath.startsWith('/api/') || reqPath === '/mcp' || reqPath.startsWith('/mcp/') || isDocsRoute(reqPath))) {
       const token = extractToken(event);
       const exempt = isAuthExempt(method, reqPath);
       if (!token) {
@@ -298,6 +299,15 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // GET /api/health — health check
     if (method === 'GET' && reqPath === '/api/health') {
       return jsonResponse(200, { status: 'ok' });
+    }
+
+    // ── DataOps MCP ───────────────────────────────────────────────
+    // POST /mcp serves the DataOps MCP tools in-process through the same
+    // route handlers as the CLI and portal, so the contract cannot drift.
+    // The bearer middleware above establishes the caller identity.
+    if (reqPath === '/mcp' || reqPath.startsWith('/mcp/')) {
+      const mcp = await handleMcp(event, client, (subEvent) => route(subEvent, client));
+      if (mcp) return mcp;
     }
 
     // ── Safe team directory ───────────────────────────────────────

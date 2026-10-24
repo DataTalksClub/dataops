@@ -1,0 +1,15 @@
+{
+  "name": "dataops-mcp",
+  "version": "0.1.0",
+  "description": "DataOps MCP server: Model Context Protocol tools for the DataOps portal API. Same repo, auth and release cadence as the API it wraps.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "start": "node src/standalone.mjs"
+  },
+  "license": "ISC"
+}

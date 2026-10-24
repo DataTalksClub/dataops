@@ -60,6 +60,9 @@ jobs:
       - name: Run backend tests
         run: npm --prefix backend test
 
+      - name: Run DataOps MCP tests
+        run: npm run test:mcp
+
       - name: Gate all backend DynamoDB transactions
         run: npm run test:backend:transactions
 
