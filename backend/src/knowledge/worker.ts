@@ -1,9 +1,14 @@
 /** Independent AWS knowledge backups and one daily GitHub mirror; never called by HTTP reads. */
 import {createHash,randomUUID} from 'node:crypto';
-import {CopyObjectCommand,DeleteObjectCommand,GetObjectCommand,HeadObjectCommand,PutObjectCommand,S3Client} from '@aws-sdk/client-s3';
+import {createReadStream} from 'node:fs';
+import {mkdtemp,open,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {CopyObjectCommand,HeadObjectCommand,PutObjectCommand} from '@aws-sdk/client-s3';
 import {GetSecretValueCommand,SecretsManagerClient} from '@aws-sdk/client-secrets-manager';
 import {KnowledgeStore,bounded,checksum,isManagedKnowledgePath,type Publication} from '../docs/knowledgeStore';
 import {writeEmbeddedMetric} from '../embeddedMetrics';
+import {withKnowledgeJobLease} from './lease';
 
 export interface RecoverySnapshot {schemaVersion:1; revision:string; createdAt:string; publications:Publication[]; payloads:{sha:string;size:number;key:string}[];}
 export class GitHubMirrorError extends Error {constructor(readonly status:number,message:string){super(message);}}
@@ -21,7 +26,7 @@ export class KnowledgeJobs {
     const queued=this.writeQueue.then(async()=>{const delay=Math.max(0,1000-(Date.now()-this.lastWrite));if(delay)await this.pause(delay);this.lastWrite=Date.now();});
     this.writeQueue=queued;await queued;
   }
-  constructor(readonly store=new KnowledgeStore(),readonly backupBucket=process.env.KNOWLEDGE_BACKUP_BUCKET||'',readonly fetchImpl:typeof fetch=fetch) {}
+  constructor(readonly store=new KnowledgeStore(),readonly backupBucket=process.env.KNOWLEDGE_BACKUP_BUCKET||'',readonly fetchImpl:typeof fetch=fetch,readonly signal?:AbortSignal) {}
   async chain(published?:Publication):Promise<Publication[]> {
     const publications:Publication[]=[];let p=published||await this.store.pin();const seen=new Set<string>();
     while(p) {
@@ -33,26 +38,57 @@ export class KnowledgeJobs {
   }
   async backup():Promise<{revision:string;key:string}> {
     if(!this.backupBucket) throw new Error('KNOWLEDGE_BACKUP_BUCKET is not configured');
-    const publications=await this.chain();
-    const entries=new Map(publications.flatMap(p=>Object.values(p.entries)).map(e=>[e.sha,e]));
-    const payloads=[...entries.values()].map(e=>({sha:e.sha,size:e.size,key:`objects/${e.sha}`}));
-    await bounded(payloads,async payload=>{
-      let exists=false;
+    // Each publication repeats the full tree. Never retain the chain or serialize
+    // its combined manifest in memory; disk and the S3 request provide backpressure.
+    const directory=await mkdtemp(join(tmpdir(),'knowledge-backup-'));
+    const path=join(directory,'snapshot.json');
+    try {
+      const head=await this.store.pin();const createdAt=new Date().toISOString();
+      const file=await open(path,'wx');const hash=createHash('sha256');let size=0;
+      const write=async(text:string)=>{this.signal?.throwIfAborted();const bytes=Buffer.from(text);await file.writeFile(bytes);hash.update(bytes);size+=bytes.length;};
+      const payloads=new Map<string,RecoverySnapshot['payloads'][number]>();const seen=new Set<string>();
       try {
-        const old=await this.store.client.send(new HeadObjectCommand({Bucket:this.backupBucket,Key:payload.key}));
-        if(old.ContentLength!==payload.size) throw new Error('Backup payload size mismatch');exists=true;
-      } catch(err) {if(!['NotFound','NoSuchKey'].includes((err as {name?:string}).name||'')) throw err;}
-      if(!exists) await this.store.client.send(new CopyObjectCommand({Bucket:this.backupBucket,Key:payload.key,CopySource:`${this.store.bucket}/${payload.key}`}));
-    });
-    const snapshot:RecoverySnapshot={schemaVersion:1,revision:publications[0].revision,createdAt:new Date().toISOString(),publications,payloads};
-    const body=JSON.stringify(snapshot);const key=`snapshots/${snapshot.createdAt.slice(0,10)}/${randomUUID()}.json`;
-    await this.store.client.send(new PutObjectCommand({Bucket:this.backupBucket,Key:key,Body:body,ContentType:'application/json',Metadata:{sha256:checksum(body)},IfNoneMatch:'*'}));
-    return {revision:snapshot.revision,key};
+        await write(JSON.stringify({schemaVersion:1,revision:head.revision,createdAt}).slice(0,-1)+',"publications":[');
+        let revision:string|null=head.revision;
+        while(revision) {
+          this.signal?.throwIfAborted();
+          if(seen.has(revision)) throw new Error('Invalid knowledge publication chain');
+          const publication:Publication=revision===head.revision?head:(await this.store.json<Publication>(`publications/${revision}.json`)).value;
+          if(publication.revision!==revision) throw new Error('Invalid knowledge publication');
+          await write((seen.size?',':'')+JSON.stringify(publication));seen.add(revision);
+          await bounded(Object.values(publication.entries),async entry=>{
+            this.signal?.throwIfAborted();
+            if(payloads.has(entry.sha)) return;
+            const payload={sha:entry.sha,size:entry.size,key:`objects/${entry.sha}`};payloads.set(entry.sha,payload);
+            let exists=false;
+            try {
+              const old=await this.store.client.send(new HeadObjectCommand({Bucket:this.backupBucket,Key:payload.key}),{abortSignal:this.signal});
+              if(old.ContentLength!==payload.size) throw new Error('Backup payload size mismatch');exists=true;
+            } catch(err) {if(!['NotFound','NoSuchKey'].includes((err as {name?:string}).name||'')) throw err;}
+            if(!exists) await this.store.client.send(new CopyObjectCommand({Bucket:this.backupBucket,Key:payload.key,CopySource:`${this.store.bucket}/${payload.key}`}),{abortSignal:this.signal});
+          });
+          revision=publication.parent;
+        }
+        await write('],"payloads":[');let first=true;
+        for(const payload of payloads.values()) {await write((first?'':',')+JSON.stringify(payload));first=false;}
+        await write(']}');
+      } finally {await file.close();}
+      this.signal?.throwIfAborted();
+      const key=`snapshots/${createdAt.slice(0,10)}/${randomUUID()}.json`;
+      const body=createReadStream(path);
+      try {
+        await this.store.client.send(new PutObjectCommand({Bucket:this.backupBucket,Key:key,Body:body,ContentLength:size,ContentType:'application/json',Metadata:{sha256:hash.digest('hex')},IfNoneMatch:'*'}),{abortSignal:this.signal});
+      } finally {body.destroy();}
+      return {revision:head.revision,key};
+    } finally {await rm(directory,{recursive:true,force:true});}
   }
+
   async github(method:string,path:string,body?:unknown):Promise<any> {
+    this.signal?.throwIfAborted();
     if(this.blocked)throw this.blocked;
     if(Date.now()>this.deadline)throw new Error('Mirror deferred: invocation budget exhausted');
     if(method!=='GET')await this.pacedWrite();
+    this.signal?.throwIfAborted();
     if(this.blocked)throw this.blocked;
     if(Date.now()>this.deadline)throw new Error('Mirror deferred: invocation budget exhausted');
     if(this.primaryRemaining!==undefined) {
@@ -73,6 +109,7 @@ export class KnowledgeJobs {
     return response.json();
   }
   async mirror():Promise<{revision:string;commit:string;unchanged:boolean}> {
+    this.signal?.throwIfAborted();
     const p=await this.store.pin();const branch=encodeURIComponent(process.env.GITHUB_BRANCH||'main');
     const ref=await this.github('GET',`/git/ref/heads/${branch}`);
     const head=ref.object.sha;
@@ -86,6 +123,7 @@ export class KnowledgeJobs {
     const cachedKeys=new Set<string>();
     for(const path of owned) if(!p.entries[path] && old.has(path)) changes.push({path,mode:'100644',type:'blob',sha:null});
     await bounded(Object.values(p.entries).filter(entry=>isManagedKnowledgePath(entry.path)),async entry=>{
+      this.signal?.throwIfAborted();
       const bytes=await this.store.blobBytes(entry.sha);
       const gitSha=createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
       if(old.get(entry.path)===gitSha) return;
@@ -133,22 +171,17 @@ function metric(job:string,success:number):void {
 export async function handler(event:{detail?:{dataopsAction?:string}}):Promise<unknown> {
   const job=event.detail?.dataopsAction;
   if(job!=='knowledge-backup' && job!=='knowledge-mirror') throw new Error('Unknown knowledge job');
-  const store=new KnowledgeStore();const key=`jobs/${job}/lease.json`;const owner=randomUUID();
-  let etag:string|undefined;
+  const store=new KnowledgeStore();
   try {
-    const lock=await store.json<{expiresAt:number}>(key);
-    if(lock.value.expiresAt>Date.now()) throw new Error('Knowledge job already running');etag=lock.etag;
-  } catch(err) {if(!['NoSuchKey','NotFound'].includes((err as {name?:string}).name||'')) throw err;}
-  const lease=await store.client.send(new PutObjectCommand({Bucket:store.bucket,Key:key,Body:JSON.stringify({owner,expiresAt:Date.now()+16*60_000}),...(etag?{IfMatch:etag}:{IfNoneMatch:'*'})}));
-  try {
-    const jobs=new KnowledgeJobs(store);
-    const result=job==='knowledge-backup'?await jobs.backup():await jobs.mirror();
-    await store.client.send(new PutObjectCommand({Bucket:store.bucket,Key:`jobs/${job}/success.json`,Body:JSON.stringify({...result,at:new Date().toISOString()})}));
+    const result=await withKnowledgeJobLease(store,job,async signal=>{
+      const jobs=new KnowledgeJobs(store,undefined,undefined,signal);
+      const result=job==='knowledge-backup'?await jobs.backup():await jobs.mirror();
+      signal.throwIfAborted();
+      await store.client.send(new PutObjectCommand({Bucket:store.bucket,Key:`jobs/${job}/success.json`,Body:JSON.stringify({...result,at:new Date().toISOString()})}),{abortSignal:signal});
+      return result;
+    });
     metric(job,1);return result;
   } catch(err) {
     metric(job,0);throw err;
-  } finally {
-    // Lease is CAS-released, so an expired worker cannot release its successor's lease.
-    await store.client.send(new PutObjectCommand({Bucket:store.bucket,Key:key,Body:JSON.stringify({owner,expiresAt:0}),IfMatch:lease.ETag}));
   }
 }

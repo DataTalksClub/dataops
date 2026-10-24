@@ -15,7 +15,11 @@ export class MemoryS3 {
     if(name==='HeadObjectCommand') {if(!old) throw Object.assign(new Error('Missing object'),{name:'NotFound'});return{ETag:etag,ContentLength:old.length};}
     if(name==='PutObjectCommand' || name==='CopyObjectCommand') {
       if((i.IfNoneMatch==='*' && old) || (i.IfMatch && i.IfMatch!==etag)) throw Object.assign(new Error('Conditional conflict'),{name:'PreconditionFailed'});
-      const bytes=name==='CopyObjectCommand'?this.objects.get(i.CopySource):Buffer.from(i.Body);
+      let bytes:Buffer|undefined;
+      if(name==='CopyObjectCommand') bytes=this.objects.get(i.CopySource);
+      else if(i.Body && typeof i.Body[Symbol.asyncIterator]==='function') {
+        const chunks:Buffer[]=[];for await(const chunk of i.Body) chunks.push(Buffer.from(chunk));bytes=Buffer.concat(chunks);
+      } else bytes=Buffer.from(i.Body);
       if(!bytes) throw new Error('Missing copy source');this.objects.set(key,bytes);const next=`"${randomUUID()}"`;this.etags.set(key,next);return{ETag:next};
     }
     throw new Error(`Unexpected command ${name}`);
