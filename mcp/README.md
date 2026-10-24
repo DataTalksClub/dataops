@@ -11,13 +11,23 @@ DataOps/Dapier/AISL namespaces previously lived in
 tools move here; Dapier, AISL and PocketShell agent tools are retired from
 the old MCP surface after consumer verification.
 
-## Two ways to serve it
+## Deployment and runtimes
 
-1. **In the portal Lambda (production).** `POST /mcp` on the portal host
+1. **Current interim endpoint in the portal Lambda.** `POST /mcp` on the portal host
    (e.g. `https://ops.dtcdev.click/mcp`) is handled in-process by
    `backend/src/mcp.ts` through the same route handlers as the CLI and
    portal. Shipped by the normal dataops deploy, no extra infrastructure.
-2. **Standalone proxy (local dev, self-host).** `mcp/src/standalone.mjs`
+2. **Dedicated Lambda runtime, prepared for activation.** `mcp/src/lambda.mjs`
+   adapts Lambda Function URL events to the same standalone proxy. The SAM
+   make target `build-McpFunction` packages its three dependency-free modules;
+   its handler is `src/lambda.handler` and `DATAOPS_URL` names the portal API.
+   Integration into the app stack waits for the dedicated deploy permissions
+   in `aws-infra/sandbox/dataops/template.github-actions.yaml` to be applied
+   by an operator. Activate through the normal DataOps pipeline and replace
+   the interim portal endpoint in that same change. The separate runtime has
+   no DataOps database credentials; every request validates the caller token
+   with `/api/me` and tool calls retain the API's authorization rules.
+3. **Standalone proxy (local dev, self-host).** `mcp/src/standalone.mjs`
    forwards MCP calls to any portal URL. Used for the Inspector check and
    for consumers that want their own endpoint:
 
@@ -29,8 +39,9 @@ node mcp/src/standalone.mjs --upstream https://ops.dtcdev.click --port 8080
 
 Present your DataOps API token as `Authorization: Bearer <token>` — the
 same credential the CLI holds after `dataops login` (device flow, browser
-approval). The server validates it against `/api/me` (standalone) or the
-portal session/token tables (Lambda) on every request and forwards it
+approval). The proxy and dedicated Lambda validate it against `/api/me` on
+every MCP request. The interim portal handler uses its session/token tables.
+The proxy forwards the credential
 unchanged. Deployment-managed service credentials retain their existing API
 route restrictions for every tool call. It never mints, stores or logs
 credentials. Auth and token-management routes are not exposed as tools.

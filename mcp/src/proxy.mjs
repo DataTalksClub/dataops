@@ -125,7 +125,7 @@ export function createProxyHandler({ upstreamBase }) {
     return '2025-11-25';
   }
 
-  async function handleMessage(message, authHeader) {
+  async function handleMessage(message, caller) {
     if (!message || typeof message !== 'object' || message.jsonrpc !== '2.0') {
       return rpcError(message?.id, -32600, 'Invalid JSON-RPC request');
     }
@@ -158,8 +158,6 @@ export function createProxyHandler({ upstreamBase }) {
       };
     }
     if (method === 'tools/call') {
-      const caller = await validateCaller(base, authHeader);
-      if (!caller) return rpcError(id, -32001, 'Unauthorized: present a valid DataOps Bearer token');
       const toolName = params?.name;
       if (!TOOL_DEFINITIONS.some((t) => t.name === toolName)) return rpcError(id, -32602, `Unknown tool: ${toolName}`);
       try {
@@ -188,6 +186,10 @@ export function createProxyHandler({ upstreamBase }) {
       res.writeHead(405, { Allow: 'POST', 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ error: 'method_not_allowed' }));
     }
+    const caller = await validateCaller(base, req.headers.authorization);
+    if (!caller) {
+      return sendJson(res, 401, { error: 'Unauthorized' }, { 'WWW-Authenticate': 'Bearer realm="DataOps"' });
+    }
     let raw;
     try {
       raw = await readBody(req);
@@ -204,7 +206,7 @@ export function createProxyHandler({ upstreamBase }) {
       if (Array.isArray(message)) {
         const out = [];
         for (const item of message) {
-          const r = await handleMessage(item, req.headers.authorization);
+          const r = await handleMessage(item, caller);
           if (r !== null) out.push(r);
         }
         if (!out.length) {
@@ -213,7 +215,7 @@ export function createProxyHandler({ upstreamBase }) {
         }
         return sendJson(res, 200, out);
       }
-      const response = await handleMessage(message, req.headers.authorization);
+      const response = await handleMessage(message, caller);
       if (response === null) {
         res.writeHead(202);
         return res.end();

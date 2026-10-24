@@ -96,19 +96,23 @@ async function rpc(handler, body, headers = {}) {
 }
 
 describe('DataOps MCP proxy protocol', () => {
-  it('answers initialize and tools/list without credentials', async () => {
+  it('authenticates initialize and tools/list with the DataOps credential', async () => {
     const upstream = await startFakeUpstream((_req, res) => {
-      res.writeHead(500);
-      res.end('must not be called');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ user: { id: 'u1' } }));
     });
     try {
       const handler = createProxyHandler({ upstreamBase: `http://127.0.0.1:${upstream.address().port}` });
-      const init = await rpc(handler, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } }, { authorization: '' });
+      const init = await rpc(handler, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
       assert.strictEqual(init.status, 200);
       assert.strictEqual(init.json.result.serverInfo.name, 'dataops-mcp');
       assert.strictEqual(init.json.result.protocolVersion, '2025-06-18');
-      const list = await rpc(handler, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }, { authorization: '' });
+      const list = await rpc(handler, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
       assert.deepStrictEqual(list.json.result.tools.map((t) => t.name).sort(), ['dataops_guide', 'dataops_read', 'dataops_write']);
+      for (const method of ['initialize', 'tools/list']) {
+        const denied = await rpc(handler, { jsonrpc: '2.0', id: 2, method }, { authorization: '' });
+        assert.strictEqual(denied.status, 401);
+      }
     } finally {
       upstream.close();
     }
@@ -122,7 +126,7 @@ describe('DataOps MCP proxy protocol', () => {
     try {
       const handler = createProxyHandler({ upstreamBase: `http://127.0.0.1:${upstream.address().port}` });
       const out = await rpc(handler, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'dataops_read', arguments: { route: '/api/tasks' } } });
-      assert.strictEqual(out.json.error.code, -32001);
+      assert.strictEqual(out.status, 401);
     } finally {
       upstream.close();
     }
@@ -171,14 +175,14 @@ describe('DataOps MCP proxy protocol', () => {
     }
   });
 
-  it('rejects oversized and malformed bodies', async () => {
+  it('rejects unknown protocol methods', async () => {
     const upstream = await startFakeUpstream((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end('{}');
     });
     try {
       const handler = createProxyHandler({ upstreamBase: `http://127.0.0.1:${upstream.address().port}` });
-      const out = await rpc(handler, { jsonrpc: '2.0', id: 7, method: 'nope', params: {} }, { authorization: '' });
+      const out = await rpc(handler, { jsonrpc: '2.0', id: 7, method: 'nope', params: {} });
       assert.strictEqual(out.json.error.code, -32601);
     } finally {
       upstream.close();
