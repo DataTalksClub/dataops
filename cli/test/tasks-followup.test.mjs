@@ -72,6 +72,32 @@ describe("tasks followup", () => {
     assert.equal(calls.at(-1).body.assigneeId, "u-orin");
   });
 
+  test("about a company or person links the corresponding subject", async () => {
+    let calls = fakePortal({
+      "GET /api/sponsor-crm/directory/companies/org-1": { id: "org-1", displayName: "Fabi.ai" },
+      "POST /api/tasks": ({ body }) => ({ status: 201, body: task({ id: "f-5", ...body }) }),
+    });
+    let io = captureIo();
+    assert.equal(
+      await run(["tasks", "followup", "--about", "org-1", "--on", "2026-10-25", "--description", "check pricing"], io),
+      0,
+    );
+    assert.deepEqual(calls.at(-1).body.subject, { type: "sponsor-company", id: "org-1" });
+    assert.match(io.text(), /about company Fabi\.ai/);
+
+    calls = fakePortal({
+      "GET /api/sponsor-crm/contacts/cnt-1": { id: "cnt-1", name: "Allie Beazell" },
+      "POST /api/tasks": ({ body }) => ({ status: 201, body: task({ id: "f-6", ...body }) }),
+    });
+    io = captureIo();
+    assert.equal(
+      await run(["tasks", "followup", "--about", "cnt-1", "--on", "2026-10-25", "--description", "ping on slack"], io),
+      0,
+    );
+    assert.deepEqual(calls.at(-1).body.subject, { type: "sponsor-person", id: "cnt-1" });
+    assert.match(io.text(), /about person Allie Beazell/);
+  });
+
   test("missing flags are usage errors before anything is sent", async () => {
     const calls = fakePortal({});
     const io = captureIo();

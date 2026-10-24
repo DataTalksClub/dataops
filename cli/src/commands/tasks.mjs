@@ -16,11 +16,11 @@ Usage
   dataops tasks batches [view] [filters]
   dataops tasks show <task-id>
   dataops tasks create --description D [--date YYYY-MM-DD] [--card ID] [--assignee ID|me]
-      [--subject-type sponsor-deal|sponsor-company|tuition-agreement --subject-id ID]
+      [--subject-type sponsor-deal|sponsor-company|sponsor-person|tuition-agreement --subject-id ID]
       [--comment C] [--link URL] [--tags a,b] [--required-link-name NAME] [--instruction-doc DOC-ID]
       [--requires youtube,luma] [--browser required|headless] [--depends-on ID,ID]
   dataops tasks update <task-id> [--description D] [--date D] [--comment C] [--link URL]
-      [--subject-type sponsor-deal|sponsor-company|tuition-agreement --subject-id ID | --clear-subject]
+      [--subject-type sponsor-deal|sponsor-company|sponsor-person|tuition-agreement --subject-id ID | --clear-subject]
       [--at "2026-10-23 19:00" --tz Europe/Berlin | --at +7d | --at none]
       [--external-status S] [--tags a,b] [--card ID|none] [--instruction-doc DOC-ID]
       [--requires a,b|none] [--browser required|headless|none] [--depends-on ID,ID|none]
@@ -31,7 +31,7 @@ Usage
   dataops tasks unskip <task-id>                 Back to todo
   dataops tasks wait <task-id> --for WHO --follow-up YYYY-MM-DD --channel CHANNEL --note NOTE
   dataops tasks followed-up <task-id> --channel CHANNEL --note NOTE [--next YYYY-MM-DD]
-  dataops tasks followup --about <task|card|sponsor-deal id> --on +7d --description "check X" [--note "context"]
+  dataops tasks followup --about <task|card|sponsor-deal|company|person id> --on +7d --description "check X" [--note "context"]
       Linked to its subject, assigned to you, due that day
   dataops tasks snooze <task-id> --until +7d --reason R   Hide from today/overdue until then
   dataops tasks unsnooze <task-id>                       Back in the queue now
@@ -612,7 +612,7 @@ function writableFields(args) {
   } else if (args.subjectType !== undefined || args.subjectId !== undefined) {
     const type = required(args, "subjectType", "subject-type");
     const id = required(args, "subjectId", "subject-id");
-    if (!["sponsor-deal", "sponsor-company", "tuition-agreement"].includes(type)) throw new UsageError("--subject-type must be sponsor-deal, sponsor-company or tuition-agreement.");
+    if (!["sponsor-deal", "sponsor-company", "sponsor-person", "tuition-agreement"].includes(type)) throw new UsageError("--subject-type must be sponsor-deal, sponsor-company, sponsor-person or tuition-agreement.");
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id)) throw new UsageError("--subject-id must be a record id.");
     if (args.card && args.card !== "none") throw new UsageError("A Task has a Card or a subject, not both.");
     body.subject = { type, id };
@@ -805,6 +805,18 @@ async function resolveAbout(api, about) {
     const card = await api.get(`/api/cards/${enc(about)}`);
     const id = card?.card?.id || card?.id;
     if (id) return { cardId: id, label: `card ${about}` };
+  } catch (error) {
+    if (error?.status !== 404) throw error;
+  }
+  try {
+    const company = await api.get(`/api/sponsor-crm/directory/companies/${enc(about)}`);
+    if (company?.id) return { subject: { type: "sponsor-company", id: about }, label: `company ${company.displayName || about}` };
+  } catch (error) {
+    if (error?.status !== 404) throw error;
+  }
+  try {
+    const contact = await api.get(`/api/sponsor-crm/contacts/${enc(about)}`);
+    if (contact?.id) return { subject: { type: "sponsor-person", id: about }, label: `person ${contact.name || about}` };
   } catch (error) {
     if (error?.status !== 404) throw error;
   }

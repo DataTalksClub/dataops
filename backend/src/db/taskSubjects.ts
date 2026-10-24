@@ -13,6 +13,7 @@ import { listTasksByStatus } from './tasks';
 const SUBJECT_KINDS: Record<TaskSubjectType, string> = {
   'sponsor-deal': 'deal',
   'sponsor-company': 'organization',
+  'sponsor-person': 'contact',
   'tuition-agreement': 'tuition',
 };
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -25,6 +26,7 @@ function isSubjectType(value: unknown): value is TaskSubjectType {
 
 function subjectHref(subject: TaskSubject): string {
   if (subject.type === 'tuition-agreement') return `/bookkeeping?view=tuition&agreement=${encodeURIComponent(subject.id)}`;
+  if (subject.type === 'sponsor-person') return `/sponsors/people?search=${encodeURIComponent(subject.id)}`;
   const family = subject.type === 'sponsor-deal' ? 'deals' : 'companies';
   return `/sponsors/${family}/${encodeURIComponent(subject.id)}`;
 }
@@ -71,6 +73,9 @@ export async function attachSubjects<T extends Task>(client: DynamoDBDocumentCli
       label = agreement ? `${agreement.studentName} · ${agreement.title}` : 'Tuition agreement';
     } else if (subject.type === 'sponsor-company') {
       label = await companyName(subject.id);
+    } else if (subject.type === 'sponsor-person') {
+      const contact = await load('contact', subject.id);
+      label = contact ? String(contact.name || '') : 'Person';
     } else {
       const deal = await load('deal', subject.id);
       label = deal ? await companyName(deal.organizationId) : '';
@@ -78,7 +83,7 @@ export async function attachSubjects<T extends Task>(client: DynamoDBDocumentCli
     const projected: ProjectedTaskSubject = {
       type: subject.type,
       id: subject.id,
-      label: label || (subject.type === 'sponsor-deal' ? 'Sponsor deal' : 'Sponsor'),
+      label: label || (subject.type === 'sponsor-deal' ? 'Sponsor deal' : subject.type === 'sponsor-person' ? 'Person' : 'Sponsor'),
       href: subjectHref(subject),
     };
     return { ...task, subject: projected };

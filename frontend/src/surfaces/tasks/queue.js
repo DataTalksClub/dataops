@@ -691,7 +691,9 @@ export function createTaskQueue(context) {
     // Work outside a Card opens its sponsor relationship or tuition agreement.
     if (task.subject?.href) {
       const type = task.subject.type === "tuition-agreement" ? "Tuition agreement"
-        : task.subject.type === "sponsor-company" ? "Sponsor" : "Sponsor deal";
+        : task.subject.type === "sponsor-company" ? "Sponsor"
+        : task.subject.type === "sponsor-person" ? "Person"
+        : "Sponsor deal";
       const label = task.subject.label || type;
       return {
         label,

@@ -60,7 +60,9 @@ export function renderTaskContext(task, view, deps) {
   // Work outside a Card names its sponsor relationship or tuition agreement.
   if (task.subject?.href) {
     const type = task.subject.type === "tuition-agreement" ? "Tuition agreement"
-      : task.subject.type === "sponsor-company" ? "Sponsor" : "Sponsor deal";
+      : task.subject.type === "sponsor-company" ? "Sponsor"
+      : task.subject.type === "sponsor-person" ? "Person"
+      : "Sponsor deal";
     const subjectRow = document.createElement("button");
     subjectRow.type = "button";
     subjectRow.className = "task-context-card";
@@ -78,7 +80,9 @@ export function renderTaskContext(task, view, deps) {
     const open = document.createElement("span");
     open.className = "task-context-card-open";
     open.textContent = task.subject.type === "tuition-agreement" ? "Open agreement"
-      : task.subject.type === "sponsor-company" ? "Open company" : "Open deal";
+      : task.subject.type === "sponsor-company" ? "Open company"
+      : task.subject.type === "sponsor-person" ? "Open person"
+      : "Open deal";
     subjectRow.append(icon, text, open);
     subjectRow.addEventListener("click", () => deps.openSubject(task.subject));
     context.append(subjectRow);
