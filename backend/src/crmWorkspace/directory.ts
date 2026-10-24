@@ -11,6 +11,7 @@ export const DIRECTORY_RELATIONSHIPS = ['customer', 'talking', 'dormant', 'prosp
 export type CompanyFilters = {
   search?: string;
   relationship?: string;
+  tag?: string;
   active: 'true' | 'false' | 'all';
   lastTouchAfter?: string;
   lastTouchBefore?: string;
@@ -21,6 +22,7 @@ export type CompanyFilters = {
 export type PersonFilters = {
   search?: string;
   company?: string;
+  tag?: string;
   primary?: 'true' | 'false';
   unlinked?: 'true' | 'false';
   active: 'true' | 'false' | 'all';
@@ -93,6 +95,7 @@ export function parseCompanyFilters(
     filters: {
       ...(query.search ? { search: query.search } : {}),
       ...(query.relationship ? { relationship: query.relationship } : {}),
+      ...(query.tag ? { tag: query.tag.trim() } : {}),
       active,
       ...(after.day ? { lastTouchAfter: after.day } : {}),
       ...(before.day ? { lastTouchBefore: before.day } : {}),
@@ -121,6 +124,7 @@ export function parsePersonFilters(
     filters: {
       ...(query.search ? { search: query.search } : {}),
       ...(query.company ? { company: query.company } : {}),
+      ...(query.tag ? { tag: query.tag.trim() } : {}),
       ...(query.primary ? { primary: query.primary as 'true' | 'false' } : {}),
       ...(query.unlinked ? { unlinked: query.unlinked as 'true' | 'false' } : {}),
       active,
@@ -134,6 +138,7 @@ export type CompanyItem = {
   id: string;
   displayName: string;
   domain?: string;
+  tags?: string[];
   relationship: string;
   active: boolean;
   primaryPerson: { id: string; name: string; email?: string } | null;
@@ -151,6 +156,7 @@ export type PersonItem = {
   companyName: string | null;
   name: string;
   emails: string[];
+  tags?: string[];
   primary: boolean;
   role?: string;
   linkedin?: string;
@@ -190,6 +196,7 @@ function companyRow(org: CrmRecord, ctx: CompanyContext): CompanyItem {
     id: org.id,
     displayName: String(org.displayName || ''),
     ...(org.domain ? { domain: String(org.domain) } : {}),
+    ...(Array.isArray(org.tags) && org.tags.length ? { tags: org.tags.map(String) } : {}),
     relationship: relationshipTag(org, orgDeals, ctx.today),
     active: activeOf(org),
     primaryPerson: primary
@@ -279,6 +286,7 @@ export async function listCompanies(
   const items: CompanyItem[] = [];
   for (const org of ctx.organizations) {
     if (filters.active !== 'all' && activeOf(org) !== (filters.active === 'true')) continue;
+    if (filters.tag && (!Array.isArray(org.tags) || !org.tags.map(String).includes(filters.tag))) continue;
     if (q && ![org.displayName, org.domain].some((value) => String(value || '').toLowerCase().includes(q))) continue;
     const row = companyRow(org, ctx);
     if (filters.relationship && row.relationship !== filters.relationship) continue;
@@ -305,6 +313,7 @@ export type CompanySummary = {
   id: string;
   displayName: string;
   domain?: string;
+  tags?: string[];
   active: boolean;
   lastTouch: string | null;
   lastInboundAt?: string;
@@ -324,6 +333,7 @@ export async function getCompanySummary(
     id: org.id,
     displayName: String(org.displayName || ''),
     ...(org.domain ? { domain: String(org.domain) } : {}),
+    ...(Array.isArray(org.tags) && org.tags.length ? { tags: org.tags.map(String) } : {}),
     active: activeOf(org),
     lastTouch: lastTouchOf(org),
     ...(typeof org.lastInboundAt === 'string' ? { lastInboundAt: org.lastInboundAt } : {}),
@@ -363,6 +373,7 @@ export async function listPeople(
     if (filters.active !== 'all' && activeOf(contact) !== (filters.active === 'true')) continue;
     if (filters.company && String(contact.organizationId || '') !== filters.company) continue;
     if (filters.primary && String(!!contact.primary) !== filters.primary) continue;
+    if (filters.tag && (!Array.isArray(contact.tags) || !contact.tags.map(String).includes(filters.tag))) continue;
     const org = contact.organizationId ? orgById.get(String(contact.organizationId)) : undefined;
     const linked = !!org;
     if (filters.unlinked === 'true' && linked) continue;
@@ -382,6 +393,7 @@ export async function listPeople(
       companyName,
       name: String(contact.name || ''),
       emails: Array.isArray(contact.emails) ? contact.emails.map(String) : [],
+      ...(Array.isArray(contact.tags) && contact.tags.length ? { tags: contact.tags.map(String) } : {}),
       primary: !!contact.primary,
       ...(optionalText(contact.role) ? { role: optionalText(contact.role)! } : {}),
       ...(optionalText(contact.linkedin) ? { linkedin: optionalText(contact.linkedin)! } : {}),

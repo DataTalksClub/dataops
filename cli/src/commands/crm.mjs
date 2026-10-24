@@ -8,10 +8,10 @@ export const summary = "CRM workspace: company/people directories, activity, not
 export const help = `dataops crm - bounded CRM directories, record activity, notes and saved views
 
 Usage
-  dataops crm companies list [--search Q] [--relationship R] [--active true|false|all]
+  dataops crm companies list [--search Q] [--relationship R] [--tag TAG] [--active true|false|all]
       [--last-touch-after YYYY-MM-DD] [--last-touch-before YYYY-MM-DD]
       [--sort name|lastTouch] [--direction asc|desc] [--saved-view ID] [--limit N] [--cursor C]
-  dataops crm people list [--search Q] [--company ID] [--primary true|false]
+  dataops crm people list [--search Q] [--company ID] [--tag TAG] [--primary true|false]
       [--unlinked true|false] [--active true|false|all] [--sort name|lastTouch]
       [--direction asc|desc] [--saved-view ID] [--limit N] [--cursor C]
   dataops crm deals list [--search Q] [--company ID] [--status open|agreed|lost]
@@ -29,13 +29,13 @@ Usage
       Mark the deal "wait, revisit later": open Tasks go waiting until DATE (a waiting
       Task is created when the deal has none), then the fresh state is printed.
   dataops crm company show <id>
-  dataops crm company create --data '{...}'      Through the canonical organization record
-  dataops crm company update <id> --data '{...}'  Must include the current version
+  dataops crm company create [--tags a,b] --data '{...}'      Through the canonical organization record
+  dataops crm company update <id> [--tags a,b] --data '{...}'  Must include the current version
   dataops crm company archive <id>
   dataops crm company unarchive <id>
   dataops crm person show <id>
-  dataops crm person create --data '{...}'      Through the canonical contact record
-  dataops crm person update <id> --data '{...}'  Must include the current version
+  dataops crm person create [--tags a,b] --data '{...}'      Through the canonical contact record
+  dataops crm person update <id> [--tags a,b] --data '{...}'  Must include the current version
   dataops crm person archive <id>
   dataops crm person unarchive <id>
   dataops crm deal show <id>
@@ -89,6 +89,7 @@ function queryArgs(args) {
   for (const [option, param] of [
     ["search", "search"], ["relationship", "relationship"], ["active", "active"],
     ["company", "company"], ["primary", "primary"], ["unlinked", "unlinked"],
+    ["tag", "tag"],
     ["sort", "sort"], ["direction", "direction"], ["types", "types"],
     ["view", "view"], ["stage", "stage"], ["owner", "owner"],
     ["status", "status"],
@@ -136,6 +137,7 @@ export async function companiesList(args, io) {
   table(io, result.items || [], [
     ["NAME", (item) => item.displayName || ""],
     ["REL", (item) => item.relationship || ""],
+    ["TAGS", (item) => (item.tags || []).join(", ")],
     ["PERSON", (item) => item.primaryPerson?.name || "—"],
     ["LAST TOUCH", (item) => String(item.lastTouch || "—").slice(0, 10)],
     ["DEALS", (item) => String(item.openDealCount ?? 0)],
@@ -152,14 +154,28 @@ export async function companyShow(args, io) {
 }
 
 export async function companyCreate(args, io) {
-  const result = await apiFor(args).post("/api/sponsor-crm/organizations", jsonData(args));
+  const payload = { ...(args.data !== undefined ? jsonData(args) : {}) };
+  if (args.tags !== undefined) {
+    payload.tags = typeof args.tags === "string" ? args.tags.split(",").map((t) => t.trim()).filter(Boolean) : args.tags;
+  }
+  if (Object.keys(payload).length === 0) {
+    throw new UsageError("Pass --data '{...}' or flags like --tags.");
+  }
+  const result = await apiFor(args).post("/api/sponsor-crm/organizations", payload);
   if (!args.json) io.print(`Created company ${result?.id || ""}.`.replace(" .", "."));
   return result;
 }
 
 export async function companyUpdate(args, io) {
-  const id = positional(args, 0, "dataops crm company update <id> --data '{...}'");
-  const result = await apiFor(args).put(`/api/sponsor-crm/organizations/${enc(id)}`, jsonData(args));
+  const id = positional(args, 0, "dataops crm company update <id> [--tags a,b] --data '{...}'");
+  const payload = { ...(args.data !== undefined ? jsonData(args) : {}) };
+  if (args.tags !== undefined) {
+    payload.tags = typeof args.tags === "string" ? args.tags.split(",").map((t) => t.trim()).filter(Boolean) : args.tags;
+  }
+  if (Object.keys(payload).length === 0) {
+    throw new UsageError("Pass --data '{...}' or flags like --tags.");
+  }
+  const result = await apiFor(args).put(`/api/sponsor-crm/organizations/${enc(id)}`, payload);
   if (!args.json) io.print(`Updated company ${id}.`);
   return result;
 }
@@ -185,6 +201,7 @@ export async function peopleList(args, io) {
   table(io, result.items || [], [
     ["NAME", (item) => item.name || ""],
     ["COMPANY", (item) => item.companyName || "—"],
+    ["TAGS", (item) => (item.tags || []).join(", ")],
     ["ROLE", (item) => item.role || ""],
     ["PRIMARY", (item) => (item.primary ? "yes" : "")],
     ["LAST TOUCH", (item) => String(item.lastTouch || "—").slice(0, 10)],
@@ -201,14 +218,28 @@ export async function personShow(args, io) {
 }
 
 export async function personCreate(args, io) {
-  const result = await apiFor(args).post("/api/sponsor-crm/contacts", jsonData(args));
+  const payload = { ...(args.data !== undefined ? jsonData(args) : {}) };
+  if (args.tags !== undefined) {
+    payload.tags = typeof args.tags === "string" ? args.tags.split(",").map((t) => t.trim()).filter(Boolean) : args.tags;
+  }
+  if (Object.keys(payload).length === 0) {
+    throw new UsageError("Pass --data '{...}' or flags like --tags.");
+  }
+  const result = await apiFor(args).post("/api/sponsor-crm/contacts", payload);
   if (!args.json) io.print(`Created person ${result?.id || ""}.`.replace(" .", "."));
   return result;
 }
 
 export async function personUpdate(args, io) {
-  const id = positional(args, 0, "dataops crm person update <id> --data '{...}'");
-  const result = await apiFor(args).put(`/api/sponsor-crm/contacts/${enc(id)}`, jsonData(args));
+  const id = positional(args, 0, "dataops crm person update <id> [--tags a,b] --data '{...}'");
+  const payload = { ...(args.data !== undefined ? jsonData(args) : {}) };
+  if (args.tags !== undefined) {
+    payload.tags = typeof args.tags === "string" ? args.tags.split(",").map((t) => t.trim()).filter(Boolean) : args.tags;
+  }
+  if (Object.keys(payload).length === 0) {
+    throw new UsageError("Pass --data '{...}' or flags like --tags.");
+  }
+  const result = await apiFor(args).put(`/api/sponsor-crm/contacts/${enc(id)}`, payload);
   if (!args.json) io.print(`Updated person ${id}.`);
   return result;
 }

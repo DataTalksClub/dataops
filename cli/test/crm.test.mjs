@@ -26,10 +26,11 @@ describe("CLI crm workspace", () => {
       }),
     });
     try {
-      const code = await run(["crm", "companies", "list", "--search", "acme", "--relationship", "talking", "--json"], io);
+      const code = await run(["crm", "companies", "list", "--search", "acme", "--relationship", "talking", "--tag", "inbound", "--json"], io);
       assert.equal(code, EXIT.ok);
       assert.equal(calls[0].query.search, "acme");
       assert.equal(calls[0].query.relationship, "talking");
+      assert.equal(calls[0].query.tag, "inbound");
       const body = io.json();
       assert.equal(body.total, 1);
       assert.equal(body.items[0].displayName, "Acme");
@@ -49,11 +50,13 @@ describe("CLI crm workspace", () => {
       "POST /api/sponsor-crm/contacts/p2/unarchive": { status: 200, body: { id: "p2", active: true } },
     });
     try {
-      assert.equal(await run(["crm", "people", "list", "--unlinked", "true", "--json"], io), EXIT.ok);
+      assert.equal(await run(["crm", "people", "list", "--unlinked", "true", "--tag", "inbound", "--json"], io), EXIT.ok);
       assert.equal(calls[0].query.unlinked, "true");
+      assert.equal(calls[0].query.tag, "inbound");
       assert.equal(await run(["crm", "person", "show", "p1", "--json"], io), EXIT.ok);
-      assert.equal(await run(["crm", "person", "create", "--data", '{"name":"Bo"}', "--json"], io), EXIT.ok);
+      assert.equal(await run(["crm", "person", "create", "--data", '{"name":"Bo"}', "--tags", "inbound", "--json"], io), EXIT.ok);
       assert.equal(calls[2].body.name, "Bo");
+      assert.deepEqual(calls[2].body.tags, ["inbound"]);
       assert.equal(await run(["crm", "person", "update", "p2", "--data", '{"name":"Bo2","version":1}', "--json"], io), EXIT.ok);
       assert.equal(calls[3].body.name, "Bo2");
       assert.equal(await run(["crm", "person", "archive", "p2", "--json"], io), EXIT.ok);
@@ -83,8 +86,9 @@ describe("CLI crm workspace", () => {
     try {
       assert.equal(await run(["crm", "company", "show", "org1", "--json"], io), EXIT.ok);
       assert.equal(calls[0].route, "/api/sponsor-crm/directory/companies/org1");
-      assert.equal(await run(["crm", "company", "create", "--data", '{"displayName":"Beta"}', "--json"], io), EXIT.ok);
+      assert.equal(await run(["crm", "company", "create", "--data", '{"displayName":"Beta"}', "--tags", "inbound", "--json"], io), EXIT.ok);
       assert.equal(calls[1].body.displayName, "Beta");
+      assert.deepEqual(calls[1].body.tags, ["inbound"]);
       assert.equal(await run(["crm", "company", "update", "org2", "--data", '{"displayName":"Beta 2","version":1}', "--json"], io), EXIT.ok);
       assert.equal(calls[2].body.displayName, "Beta 2");
       assert.equal(await run(["crm", "company", "archive", "org2", "--json"], io), EXIT.ok);

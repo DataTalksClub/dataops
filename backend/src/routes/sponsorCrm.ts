@@ -78,6 +78,18 @@ function validateList(event: LambdaEvent) {
 
 const validStamp = (value: unknown) => value === undefined || value === null || (typeof value === 'string' && realDate(value.slice(0, 10)) && !Number.isNaN(Date.parse(value)));
 
+function validateTags(tags: unknown): string | null {
+  if (tags === undefined || tags === null) return null;
+  if (!Array.isArray(tags)) return 'Invalid tags';
+  if (tags.length > 20) return 'Invalid tags: maximum 20 tags';
+  for (const tag of tags) {
+    if (typeof tag !== 'string' || !tag.trim() || tag.trim().length > 60) {
+      return 'Invalid tags';
+    }
+  }
+  return null;
+}
+
 function validateOrganization(body: Record<string, unknown>, partial = false) {
   if ((!partial && !text(body.displayName, 200)) || (body.displayName !== undefined && !text(body.displayName, 200))) return 'Invalid organization fields';
   if (body.notes !== undefined && typeof body.notes !== 'string') return 'Invalid organization fields';
@@ -89,6 +101,10 @@ function validateOrganization(body: Record<string, unknown>, partial = false) {
   }
   if (!validStamp(body.lastOutboundAt)) return 'Invalid lastOutboundAt';
   if (!validStamp(body.lastInboundAt)) return 'Invalid lastInboundAt';
+  if (body.tags !== undefined) {
+    const error = validateTags(body.tags);
+    if (error) return error;
+  }
   return '';
 }
 
@@ -105,6 +121,10 @@ function validateContact(body: Record<string, unknown>, partial = false) {
   if (!validStamp(body.lastContactedAt)) return 'Invalid lastContactedAt';
   if (!validStamp(body.lastOutboundAt)) return 'Invalid lastOutboundAt';
   if (!validStamp(body.lastInboundAt)) return 'Invalid lastInboundAt';
+  if (body.tags !== undefined) {
+    const error = validateTags(body.tags);
+    if (error) return error;
+  }
   return '';
 }
 
@@ -505,6 +525,7 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     }
     if (kind === 'deal') body.productKind = body.productKind || 'one-off';
     if (kind === 'organization' && body.domain) body.domain = registrableDomain(String(body.domain));
+    if (Array.isArray(body.tags)) body.tags = body.tags.map((t) => String(t).trim());
     try {
       const values = { ...body, active: body.active !== false, sourceType: body.sourceType || 'portal' };
       const created = kind === 'deal' ? await createDealAtomic(client, values, user)
@@ -551,6 +572,7 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
       return json(422, { error: 'Invalid newsletter issue reference' });
     }
     if (kind === 'organization' && body.domain) body.domain = registrableDomain(String(body.domain));
+    if (Array.isArray(body.tags)) body.tags = body.tags.map((t) => String(t).trim());
     try {
       if (kind === 'deal') return json(200, publicDeal(await updateDealAtomic(client, existing, body, user)));
       if (kind === 'deliverable') return json(200, await updateDeliverableAtomic(client, existing, body, user));

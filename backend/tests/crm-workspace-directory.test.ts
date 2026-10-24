@@ -285,6 +285,40 @@ describe('crm workspace directory', () => {
     assert.equal((await invoke('GET', '/api/sponsor-crm/directory/people?company=!!!')).statusCode, 400);
   });
 
+  it('supports tags on organizations and contacts with filtering and validation', async () => {
+    const org = data(await invoke('POST', '/api/sponsor-crm/organizations', {
+      displayName: 'Tagged Org', domain: 'tagged-org.example', tags: ['inbound', 'vip'], sourceKey: 'ws-org-tagged',
+    }));
+    assert.deepEqual(org.tags, ['inbound', 'vip']);
+
+    const summary = data(await invoke('GET', `/api/sponsor-crm/directory/companies/${org.id}`));
+    assert.deepEqual(summary.tags, ['inbound', 'vip']);
+
+    const contact = data(await invoke('POST', '/api/sponsor-crm/contacts', {
+      organizationId: org.id, name: 'Tagged Person', emails: ['tagged@tagged-org.example'], tags: ['inbound'], sourceKey: 'ws-contact-tagged',
+    }));
+    assert.deepEqual(contact.tags, ['inbound']);
+
+    const listOrgs = data(await invoke('GET', '/api/sponsor-crm/directory/companies?tag=inbound'));
+    assert.ok(listOrgs.items.some((item: any) => item.id === org.id));
+    const listOther = data(await invoke('GET', '/api/sponsor-crm/directory/companies?tag=nonexistent'));
+    assert.ok(!listOther.items.some((item: any) => item.id === org.id));
+
+    const listPeople = data(await invoke('GET', '/api/sponsor-crm/directory/people?tag=inbound'));
+    assert.ok(listPeople.items.some((item: any) => item.id === contact.id));
+
+    // Validation: invalid tags rejected
+    const badOrg = await invoke('POST', '/api/sponsor-crm/organizations', {
+      displayName: 'Bad Tags Org', tags: 'not-an-array',
+    });
+    assert.equal(badOrg.statusCode, 400);
+
+    const badContact = await invoke('POST', '/api/sponsor-crm/contacts', {
+      organizationId: org.id, name: 'Bad Contact', emails: ['bad@example.com'], tags: [123],
+    });
+    assert.equal(badContact.statusCode, 400);
+  });
+
   it('requires auth for workspace routes', async () => {
     process.env.SKIP_AUTH = 'false';
     try {
