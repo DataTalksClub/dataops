@@ -191,9 +191,10 @@ validation, revision checks, verification, and provider reconciliation.
 payment evidence; it triggers automatic publication only if required evidence
 is complete.
 
-Invoice-reader service credentials are separate:
-`dataops login --service-token-stdin --url URL` configures the restricted
-`invoices:read` service identity.
+Agent and invoice-reader service credentials are separate:
+`dataops login --service-token-stdin --url URL` configures the service identity
+holding `invoices:read`, `crm:read`, and `crm:write` scopes, enabling automated
+invoice ingestion, CRM operations, and task management on remote runners.
 
 ## Tests
 

@@ -103,6 +103,10 @@ function publicOrg(organization) {
     name: organization.displayName || organization.name || "",
     ...(organization.domain ? { domain: organization.domain } : {}),
     ...(organization.relationship ? { relationship: organization.relationship } : {}),
+    ...(Array.isArray(organization.tags) && organization.tags.length ? { tags: organization.tags } : {}),
+    ...(organization.first_contact_at ? { first_contact_at: organization.first_contact_at } : {}),
+    ...(organization.last_contact_at ? { last_contact_at: organization.last_contact_at } : {}),
+    ...(organization.doNotContact !== undefined ? { doNotContact: organization.doNotContact } : {}),
   };
 }
 
@@ -115,6 +119,10 @@ function publicPerson(person) {
     primary: !!person.primary,
     ...(person.companyName ? { companyName: person.companyName } : {}),
     matched: !!person.matched,
+    ...(Array.isArray(person.tags) && person.tags.length ? { tags: person.tags } : {}),
+    ...(person.first_contact_at ? { first_contact_at: person.first_contact_at } : {}),
+    ...(person.last_contact_at ? { last_contact_at: person.last_contact_at } : {}),
+    ...(person.doNotContact !== undefined ? { doNotContact: person.doNotContact } : {}),
   };
 }
 
@@ -165,6 +173,14 @@ function dealDecision(deal, today) {
 }
 
 export function decide({ people, organization, deals }, today) {
+  const isDnc = Boolean(
+    organization?.doNotContact ||
+    (Array.isArray(organization?.tags) && organization.tags.includes('do-not-contact')) ||
+    people.some((p) => p.doNotContact || (Array.isArray(p.tags) && p.tags.includes('do-not-contact')))
+  );
+  if (isDnc) {
+    return { action: "skip", until: null, reason: "do-not-contact" };
+  }
   if (!people.length && !organization) {
     return { action: "no_match", until: null, reason: "no person or organization matches this address" };
   }

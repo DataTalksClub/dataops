@@ -155,6 +155,23 @@ describe("CLI crm lookup", () => {
       restore();
     }
 
+    const ioDnc = captureIo();
+    const dncOrg = { ...MERITMAP, doNotContact: true, tags: ["do-not-contact"] };
+    const { restore: restoreDnc } = fake({
+      ...meritmapRoutes(),
+      "GET /api/sponsor-crm/directory/companies/o1": { status: 200, body: dncOrg },
+    });
+    try {
+      assert.equal(await run(["crm", "lookup", "--email", "angela@meritmap.ai", "--json"], ioDnc), EXIT.ok);
+      const res = ioDnc.json();
+      assert.equal(res.decision.action, "skip");
+      assert.equal(res.decision.reason, "do-not-contact");
+      assert.equal(res.organization.doNotContact, true);
+      assert.deepEqual(res.organization.tags, ["do-not-contact"]);
+    } finally {
+      restoreDnc();
+    }
+
     const io2 = captureIo();
     const due = { ...WAITING_DEAL, nextTask: { id: "t1", description: "nudge", date: "2026-01-01", deferred: false, assigneeId: "alexey", status: "todo" } };
     const { restore: restore2 } = fake({ ...meritmapRoutes(), "GET /api/sponsor-crm/pipeline": { status: 200, body: { items: [due], total: 1, nextCursor: null } } });

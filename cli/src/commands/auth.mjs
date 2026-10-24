@@ -94,11 +94,11 @@ export async function login(args, io) {
     if (!/^dops_svc_[a-f0-9]{64}$/.test(token)) throw new Error("Invalid service credential.");
     const serviceClient = createClient({ url, token });
     const identity = await serviceClient.get("/api/me");
-    if (identity.service?.id !== "invoice-reader" || identity.service.scopes?.join(" ") !== "invoices:read") {
+    if (identity.service?.id !== "invoice-reader" || !Array.isArray(identity.service.scopes) || !identity.service.scopes.includes("invoices:read")) {
       throw new Error("The credential is not an invoice reader service credential.");
     }
     saveProfile(serviceClient.base, { token, kind: "service", label: identity.service.id, expiresAt: null });
-    io.print(`Service credential configured for ${serviceClient.base} (invoices:read).`);
+    io.print(`Service credential configured for ${serviceClient.base} (${identity.service.scopes.join(", ")}).`);
     return identity;
   }
   const client = createClient({ url });

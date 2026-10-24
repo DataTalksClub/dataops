@@ -10,10 +10,17 @@ export const help = `dataops crm - bounded CRM directories, record activity, not
 Usage
   dataops crm companies list [--search Q] [--relationship R] [--tag TAG] [--active true|false|all]
       [--last-touch-after YYYY-MM-DD] [--last-touch-before YYYY-MM-DD]
+      [--first-contact-after YYYY-MM-DD] [--first-contact-before YYYY-MM-DD]
+      [--last-contact-after YYYY-MM-DD] [--last-contact-before YYYY-MM-DD]
+      [--dnc true|false]
       [--sort name|lastTouch] [--direction asc|desc] [--saved-view ID] [--limit N] [--cursor C]
   dataops crm people list [--search Q] [--company ID] [--tag TAG] [--primary true|false]
-      [--unlinked true|false] [--active true|false|all] [--sort name|lastTouch]
+      [--unlinked true|false] [--active true|false|all] [--sort name|lastTouch|lastContact]
+      [--first-contact-after YYYY-MM-DD] [--first-contact-before YYYY-MM-DD]
+      [--last-contact-after YYYY-MM-DD] [--last-contact-before YYYY-MM-DD]
+      [--dnc true|false] [--no-deal true|false]
       [--direction asc|desc] [--saved-view ID] [--limit N] [--cursor C]
+  dataops crm followups [--due] [--overdue]
   dataops crm deals list [--search Q] [--company ID] [--status open|agreed|lost]
       [--active true|false] [--limit N] [--cursor C]
   dataops crm pipeline list [--saved-view ID] [--view actionable|active|unscheduled|closed|all|early|overdue|reply]
@@ -31,12 +38,14 @@ Usage
   dataops crm company show <id>
   dataops crm company create [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'      Through the canonical organization record
   dataops crm company update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'  Must include the current version
+  dataops crm company dnc <id> [--unset] [--note TEXT]
   dataops crm company archive <id>
   dataops crm company unarchive <id>
   dataops crm company delete <id> --yes [--expected-version N]  Permanently delete (admin only)
   dataops crm person show <id>
   dataops crm person create [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'      Through the canonical contact record
   dataops crm person update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'  Must include the current version
+  dataops crm person dnc <id> [--unset] [--note TEXT]
   dataops crm person archive <id>
   dataops crm person unarchive <id>
   dataops crm person delete <id> --yes [--expected-version N]   Permanently delete (admin only)
@@ -99,6 +108,12 @@ function queryArgs(args) {
     ["status", "status"],
     ["nextActionFrom", "nextActionFrom"], ["nextActionBefore", "nextActionBefore"],
     ["lastTouchAfter", "lastTouchAfter"], ["lastTouchBefore", "lastTouchBefore"],
+    ["firstContactAfter", "firstContactAfter"], ["first-contact-after", "firstContactAfter"],
+    ["firstContactBefore", "firstContactBefore"], ["first-contact-before", "firstContactBefore"],
+    ["lastContactAfter", "lastContactAfter"], ["last-contact-after", "lastContactAfter"],
+    ["lastContactBefore", "lastContactBefore"], ["last-contact-before", "lastContactBefore"],
+    ["dnc", "dnc"],
+    ["noDeal", "noDeal"], ["no-deal", "noDeal"],
   ]) {
     const value = optionalString(args, option);
     if (value !== undefined) query[param] = value;
@@ -562,6 +577,58 @@ export async function lookup(args, io) {
   return result;
 }
 
+export async function followups(args, io) {
+  const api = apiFor(args);
+  const query = {};
+  if (args.due) query.due = "true";
+  if (args.overdue) query.overdue = "true";
+  const result = await api.get("/api/sponsor-crm/followups", { query });
+  const items = Array.isArray(result?.items) ? result.items : [];
+  if (args.json) return result;
+  table(
+    io,
+    items,
+    [
+      ["TASK ID", (item) => item.task?.id || ""],
+      ["DUE", (item) => item.task?.date || ""],
+      ["STATUS", (item) => item.task?.status || ""],
+      ["SUBJECT TYPE", (item) => item.subjectType || ""],
+      ["SUBJECT", (item) => item.subjectName || ""],
+      ["DESCRIPTION", (item) => item.task?.description || item.task?.title || ""],
+    ],
+    "No follow-up tasks found.",
+  );
+  return result;
+}
+
+export async function companyDnc(args, io) {
+  const id = idOf(args, 0);
+  const unset = Boolean(args.unset);
+  const note = optionalString(args, "note");
+  const api = apiFor(args);
+  const result = await api.post(`/api/sponsor-crm/organizations/${enc(id)}/dnc`, {
+    doNotContact: !unset,
+    ...(note ? { note } : {}),
+  });
+  if (args.json) return result;
+  io.print(`Company ${id} marked ${unset ? "contactable" : "do-not-contact"}.${note ? ` Note: "${note}"` : ""}`);
+  return result;
+}
+
+export async function personDnc(args, io) {
+  const id = idOf(args, 0);
+  const unset = Boolean(args.unset);
+  const note = optionalString(args, "note");
+  const api = apiFor(args);
+  const result = await api.post(`/api/sponsor-crm/contacts/${enc(id)}/dnc`, {
+    doNotContact: !unset,
+    ...(note ? { note } : {}),
+  });
+  if (args.json) return result;
+  io.print(`Person ${id} marked ${unset ? "contactable" : "do-not-contact"}.${note ? ` Note: "${note}"` : ""}`);
+  return result;
+}
+
 async function dispatch(args, io, verbs, usage) {
   const [verb, ...rest] = args._;
   const handler = verbs[verb];
@@ -572,17 +639,25 @@ async function dispatch(args, io, verbs, usage) {
 export const commands = {
   companies: (args, io) => dispatch(args, io, { list: companiesList }, "dataops crm companies list [...]"),
   company: (args, io) => dispatch(args, io,
-    { show: companyShow, create: companyCreate, update: companyUpdate, archive: companyArchive, unarchive: companyUnarchive, delete: companyDelete },
-    "dataops crm company <show|create|update|archive|unarchive|delete> [...]"),
+    {
+      show: companyShow, create: companyCreate, update: companyUpdate, archive: companyArchive, unarchive: companyUnarchive, delete: companyDelete,
+      dnc: companyDnc, "set-dnc": companyDnc, "unset-dnc": (a, o) => companyDnc({ ...a, unset: true }, o),
+    },
+    "dataops crm company <show|create|update|archive|unarchive|delete|dnc> [...]"),
   people: (args, io) => dispatch(args, io, { list: peopleList }, "dataops crm people list [...]"),
   person: (args, io) => dispatch(args, io,
-    { show: personShow, create: personCreate, update: personUpdate, archive: personArchive, unarchive: personUnarchive, delete: personDelete },
-    "dataops crm person <show|create|update|archive|unarchive|delete> [...]"),
+    {
+      show: personShow, create: personCreate, update: personUpdate, archive: personArchive, unarchive: personUnarchive, delete: personDelete,
+      dnc: personDnc, "set-dnc": personDnc, "unset-dnc": (a, o) => personDnc({ ...a, unset: true }, o),
+    },
+    "dataops crm person <show|create|update|archive|unarchive|delete|dnc> [...]"),
   deals: (args, io) => dispatch(args, io, { list: dealsList }, "dataops crm deals list [...]"),
   deal: (args, io) => dispatch(args, io,
     { show: dealShow, create: dealCreate, update: dealUpdate, archive: dealArchive, unarchive: dealUnarchive },
     "dataops crm deal <show|create|update|archive|unarchive> [...]"),
   pipeline: (args, io) => dispatch(args, io, { list: pipelineList }, "dataops crm pipeline list [...]"),
+  followups,
+  "follow-ups": followups,
   archive,
   lookup,
   activity,

@@ -17,8 +17,10 @@ const repoCli = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
  * `node` child process in it.
  */
 describe("CLI without installed dependencies", () => {
+  const tmpBase = process.platform === "win32" ? tmpdir() : "/tmp";
+
   function cleanCheckout(t) {
-    const root = mkdtempSync(path.join(tmpdir(), "dataops-clean-cli-"));
+    const root = mkdtempSync(path.join(tmpBase, "dataops-clean-cli-"));
     t.after(() => rmSync(root, { recursive: true, force: true }));
     const dir = path.join(root, "cli");
     mkdirSync(dir);
@@ -34,7 +36,7 @@ describe("CLI without installed dependencies", () => {
   }
 
   function runCli(t, dir, argv, extraEnv = {}) {
-    const configDir = mkdtempSync(path.join(tmpdir(), "dataops-cli-isolated-"));
+    const configDir = mkdtempSync(path.join(tmpBase, "dataops-cli-isolated-"));
     t.after(() => rmSync(configDir, { recursive: true, force: true }));
     // The child must resolve modules exactly as the checkout lays them out:
     // NODE_PATH is stripped so no parent-process lookup can leak in
