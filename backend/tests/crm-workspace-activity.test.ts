@@ -5,7 +5,7 @@ import assert from 'node:assert';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { handler } from '../src/handler';
 import { appendBookingHistory } from '../src/db/sponsorCrm';
-import { scanTargetMessages } from '../src/crmWorkspace/reads';
+import { queryTargetMessages } from '../src/crmWorkspace/reads';
 import { createTables } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
@@ -124,7 +124,7 @@ describe('crm workspace activity', () => {
     assert.ok(messageQuery);
     assert.ok(messageQuery.scanned >= messageQuery.matched, 'scanned counts rows evaluated, matched rows kept');
     assert.equal(messageQuery.matched, body.sources.touch + body.sources.mail);
-    assert.ok(messageQuery.scanned > messageQuery.matched, 'unrelated org mail is evaluated but not kept');
+    assert.equal(messageQuery.scanned, messageQuery.matched, 'keyed query reads only target messages without whole-table scan');
     void second;
   });
 
@@ -164,32 +164,50 @@ describe('crm workspace activity', () => {
     void org;
   });
 
-  it('fails loudly past the history bound instead of trimming', async () => {
+  it('paginates smoothly past the previous history bound without erroring', async () => {
     const { deal } = await seed(String(seedCount++));
     for (let index = 0; index < 501; index++) {
       await appendBookingHistory(client, deal.id, { actorId: 'workspace-seeder', action: 'updated', note: `bulk ${index}` });
     }
-    const res = await invoke('GET', `/api/sponsor-crm/activity/deal/${deal.id}`);
-    assert.equal(res.statusCode, 500);
-    assert.equal(data(res).code, 'workspace_source_too_large');
+    const res = await invoke('GET', `/api/sponsor-crm/activity/deal/${deal.id}?limit=30`);
+    assert.equal(res.statusCode, 200);
+    const body = data(res);
+    assert.equal(body.items.length, 30);
+    assert.ok(body.nextCursor);
+    const page2 = data(await invoke('GET', `/api/sponsor-crm/activity/deal/${deal.id}?limit=30&cursor=${encodeURIComponent(body.nextCursor)}`));
+    assert.equal(page2.items.length, 30);
+    assert.notEqual(page2.items[0].id, body.items[0].id);
   });
 
-  it('fails loudly past the message match bound on real storage', async () => {
+  it('queries messages via keyed target query and paginates without whole-table scans', async () => {
     const { org } = await seed(String(seedCount++));
-    const full = await scanTargetMessages(client, { targetType: 'organization', targetId: org.id }, 'messages');
+    const full = await queryTargetMessages(client, { targetType: 'organization', targetId: org.id }, 'messages');
     assert.ok(full.matched >= 1);
-    let thrown: unknown = null;
-    try {
-      await scanTargetMessages(client, { targetType: 'organization', targetId: org.id }, 'messages', {
-        maxScanned: 1_000_000,
-        maxMatched: 0,
-        deadlineMs: 10_000,
-        pageSize: 200,
+    assert.equal(full.scanned, full.matched);
+    const paged = await queryTargetMessages(client, { targetType: 'organization', targetId: org.id }, 'messages', 1);
+    assert.equal(paged.items.length, 1);
+    assert.ok(paged.hasMore);
+  });
+
+  it('paginates message sources smoothly with limit and cursor', async () => {
+    const { org } = await seed(String(seedCount++));
+    for (let index = 0; index < 15; index++) {
+      await invoke('POST', '/api/sponsor-crm/messages', {
+        personEmail: `bulk-${index}@${org.domain}`,
+        direction: 'inbound',
+        threadId: `thread-bulk-${index}`,
+        snippet: `Bulk message ${index}`,
+        sentAt: `2026-10-01T${String(index % 24).padStart(2, '0')}:00:00Z`,
       });
-    } catch (error) {
-      thrown = error;
     }
-    assert.equal((thrown as { code?: string } | null)?.code, 'workspace_source_too_large');
+    const res = await invoke('GET', `/api/sponsor-crm/activity/organization/${org.id}?types=mail&limit=5`);
+    assert.equal(res.statusCode, 200);
+    const body = data(res);
+    assert.equal(body.items.length, 5);
+    assert.ok(body.nextCursor);
+    const page2 = data(await invoke('GET', `/api/sponsor-crm/activity/organization/${org.id}?types=mail&limit=5&cursor=${encodeURIComponent(body.nextCursor)}`));
+    assert.equal(page2.items.length, 5);
+    assert.notEqual(page2.items[0].id, body.items[0].id);
   });
 
   it('orders related work by eligibility, never manufacturing urgency', async () => {

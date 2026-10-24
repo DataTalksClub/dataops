@@ -238,8 +238,10 @@ describe("CLI crm workspace", () => {
       "POST /api/sponsor-crm/notes/organization/o1": (call) => ({ status: 201, body: { id: "n1", ...call.body } }),
     });
     try {
-      assert.equal(await run(["crm", "activity", "contact", "c1", "--types", "note,mail", "--json"], io), EXIT.ok);
+      assert.equal(await run(["crm", "activity", "contact", "c1", "--types", "note,mail", "--limit", "10", "--cursor", "c_1", "--json"], io), EXIT.ok);
       assert.equal(calls[0].query.types, "note,mail");
+      assert.equal(calls[0].query.limit, "10");
+      assert.equal(calls[0].query.cursor, "c_1");
       assert.equal(await run(["crm", "notes", "list", "organization", "o1", "--json"], io), EXIT.ok);
       assert.equal(await run(["crm", "note", "add", "organization", "o1", "--body", "Called", "--source-key", "k1", "--json"], io), EXIT.ok);
       assert.equal(calls[2].body.body, "Called");

@@ -9,11 +9,9 @@ import { cursorBinding, decodeCursor, encodeCursor, pageLimit } from './cursor';
 import { queryTargetNotes } from './notes';
 import {
   queryHistoryEvents,
-  scanTargetMessages,
-  MAX_ORG_DEAL_HISTORY,
-  sourceTooLarge,
+  queryTargetMessages,
   workspaceErrorOf,
-  type MessageScanTarget,
+  type MessageQueryTarget,
 } from './reads';
 
 export const ACTIVITY_TARGETS = ['organization', 'contact', 'deal'] as const;
@@ -127,10 +125,13 @@ export async function readActivity(
   const queries: Array<{ kind: string; scanned: number; matched: number }> = [];
   const historyReads: Array<{ booking: string; itemsRead: number }> = [];
   const relatedWork: RelatedWork[] = [];
+  let anySourceHasMore = false;
+  const fetchLimit = offset + limit.limit + 1;
 
   try {
     if (wanted.has('note')) {
-      const { items: notes, scanned, matched } = await queryTargetNotes(client, target, id);
+      const { items: notes, scanned, matched, hasMore } = await queryTargetNotes(client, target, id, fetchLimit);
+      if (hasMore) anySourceHasMore = true;
       queries.push({ kind: 'note', scanned, matched });
       for (const note of notes) {
         const body = String(note.body || '');
@@ -148,9 +149,7 @@ export async function readActivity(
     }
 
     if (wanted.has('touch') || wanted.has('mail')) {
-      // MESSAGE# is an existing kind this package must not rekey: an owned
-      // Scan with a server-side target filter, reporting scanned vs matched.
-      const scanTarget: MessageScanTarget =
+      const scanTarget: MessageQueryTarget =
         target === 'contact'
           ? {
             targetType: 'contact',
@@ -159,7 +158,8 @@ export async function readActivity(
             emails: Array.isArray(record.emails) ? record.emails.map((address) => String(address).toLowerCase()) : [],
           }
           : { targetType: target, targetId: id };
-      const { items: messages, scanned, matched } = await scanTargetMessages(client, scanTarget, 'messages');
+      const { items: messages, scanned, matched, hasMore } = await queryTargetMessages(client, scanTarget, 'messages', fetchLimit);
+      if (hasMore) anySourceHasMore = true;
       queries.push({ kind: 'message', scanned, matched });
       for (const message of messages) {
         const isTouch = message.sourceType === 'touch';
@@ -188,7 +188,8 @@ export async function readActivity(
 
     if (wanted.has('history')) {
       const booking = target === 'deal' ? id : `${target}:${id}`;
-      const { items: events, itemsRead } = await queryHistoryEvents(client, booking, 'history');
+      const { items: events, itemsRead, hasMore } = await queryHistoryEvents(client, booking, 'history', fetchLimit);
+      if (hasMore) anySourceHasMore = true;
       historyReads.push({ booking, itemsRead });
       for (const event of events) {
         if (DEDUPED_HISTORY_ACTIONS.has(String(event.action || ''))) continue;
@@ -212,12 +213,10 @@ export async function readActivity(
 
     if (wanted.has('deal-history') && target === 'organization') {
       const deals = (await listCrmRecords(client, 'deal')).filter((deal) => String(deal.organizationId) === id);
-      let read = 0;
       for (const deal of deals) {
-        const { items: events, itemsRead } = await queryHistoryEvents(client, deal.id, 'deal history');
+        const { items: events, itemsRead, hasMore } = await queryHistoryEvents(client, deal.id, 'deal history', fetchLimit);
+        if (hasMore) anySourceHasMore = true;
         historyReads.push({ booking: deal.id, itemsRead });
-        read += itemsRead;
-        if (read > MAX_ORG_DEAL_HISTORY) throw sourceTooLarge('deal history');
         for (const event of events) {
           if (event.oldStatus === undefined && event.newStatus === undefined) continue;
           items.push({
@@ -298,15 +297,17 @@ export async function readActivity(
   }
 
   items.sort((a, b) => b.ts.localeCompare(a.ts) || a.source.localeCompare(b.source) || a.id.localeCompare(b.id));
-  const total = items.length;
+  const pagedItems = items.slice(offset, offset + limit.limit);
+  const hasMore = items.length > offset + limit.limit || anySourceHasMore;
+  const total = hasMore ? Math.max(items.length, offset + limit.limit + 1) : items.length;
   return {
     status: 200,
     body: {
       targetType: target,
       targetId: id,
-      items: items.slice(offset, offset + limit.limit),
+      items: pagedItems,
       total,
-      nextCursor: offset + limit.limit < total ? encodeCursor(binding, offset + limit.limit) : null,
+      nextCursor: hasMore ? encodeCursor(binding, offset + limit.limit) : null,
       sources,
       relatedWork,
       tasksScope: 'open',

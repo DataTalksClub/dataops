@@ -128,29 +128,40 @@ export async function queryTargetNotes(
   client: DynamoDBDocumentClient,
   target: NoteTarget,
   id: string,
-): Promise<{ items: Record<string, unknown>[]; scanned: number; matched: number }> {
-  let raw: Record<string, unknown>[];
-  try {
-    raw = await collectBoundedPages<Record<string, unknown>>({
-      limits: { maxPages: 20, maxItems: MAX_TARGET_NOTES, maxBytes: 4 * 1024 * 1024, deadlineMs: 10_000 },
-      loadPage: async (ExclusiveStartKey, abortSignal) =>
-        client.send(
-          new QueryCommand({
-            TableName: TABLE_SPONSOR_CRM,
-            KeyConditionExpression: 'PK = :pk',
-            ExpressionAttributeValues: { ':pk': notePk(target, id) },
-            ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
-          }),
-          { abortSignal },
-        ),
-    });
-  } catch (error) {
-    throw workspaceErrorOf(error, 'notes');
+  limit?: number,
+): Promise<{ items: Record<string, unknown>[]; scanned: number; matched: number; hasMore?: boolean }> {
+  if (limit !== undefined && limit > 0) {
+    const result = await client.send(
+      new QueryCommand({
+        TableName: TABLE_SPONSOR_CRM,
+        KeyConditionExpression: 'PK = :pk',
+        ExpressionAttributeValues: { ':pk': notePk(target, id) },
+        ScanIndexForward: false,
+        Limit: limit,
+      }),
+    );
+    const items = (result.Items || []).map(clean);
+    return { items, scanned: items.length, matched: items.length, hasMore: !!result.LastEvaluatedKey };
   }
+  let raw: Record<string, unknown>[] = [];
+  let cursor: Record<string, unknown> | undefined;
+  do {
+    const result = await client.send(
+      new QueryCommand({
+        TableName: TABLE_SPONSOR_CRM,
+        KeyConditionExpression: 'PK = :pk',
+        ExpressionAttributeValues: { ':pk': notePk(target, id) },
+        ScanIndexForward: false,
+        ...(cursor ? { ExclusiveStartKey: cursor } : {}),
+      }),
+    );
+    raw.push(...(result.Items || []));
+    cursor = result.LastEvaluatedKey;
+  } while (cursor);
   const items = raw
     .map(clean)
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || String(a.id).localeCompare(String(b.id)));
-  return { items, scanned: items.length, matched: items.length };
+  return { items, scanned: items.length, matched: items.length, hasMore: false };
 }
 
 export async function listNotes(

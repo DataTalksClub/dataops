@@ -110,6 +110,52 @@ export async function listCrmRecords(
     a.id.localeCompare(b.id));
 }
 
+export async function indexMessageTargets(client: DynamoDBDocumentClient, message: Record<string, unknown>) {
+  const messageId = String(message.id);
+  const sentAt = String(message.sentAt || message.createdAt || new Date().toISOString());
+  const sk = `${sentAt}#${messageId}`;
+  const targets: Array<{ type: 'organization' | 'contact' | 'deal'; id: string }> = [];
+
+  if (message.organizationId) {
+    targets.push({ type: 'organization', id: String(message.organizationId) });
+  }
+  if (message.contactId) {
+    targets.push({ type: 'contact', id: String(message.contactId) });
+  }
+  if (message.dealId) {
+    targets.push({ type: 'deal', id: String(message.dealId) });
+  }
+
+  for (const target of targets) {
+    const targetItem = compact({
+      PK: `MESSAGE_TARGET#${target.type}:${target.id}`,
+      SK: sk,
+      GSI1PK: `MESSAGE#${target.type}:${target.id}`,
+      GSI1SK: sk,
+      ...(target.type === 'contact' ? { GSI4PK: `MESSAGE#contact:${target.id}`, GSI4SK: sk } : {}),
+      ...(target.type === 'deal' ? { GSI2PK: `MESSAGE#deal:${target.id}`, GSI2SK: sk } : {}),
+      id: messageId,
+      messageId,
+      targetType: target.type,
+      targetId: target.id,
+      organizationId: message.organizationId,
+      contactId: message.contactId,
+      dealId: message.dealId,
+      personEmail: message.personEmail,
+      threadId: message.threadId,
+      direction: message.direction,
+      channel: message.channel,
+      snippet: message.snippet,
+      sentAt,
+      sourceType: message.sourceType,
+      createdAt: message.createdAt,
+      updatedAt: message.updatedAt,
+      version: message.version,
+    });
+    await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: targetItem }));
+  }
+}
+
 export async function createCrmRecord(client: DynamoDBDocumentClient, kind: string, value: Record<string, unknown>) {
   const sourceKey = typeof value.sourceKey === 'string' ? value.sourceKey : '';
   const id = sourceKey ? deterministicCrmId(kind, sourceKey) : randomUUID();
@@ -117,11 +163,17 @@ export async function createCrmRecord(client: DynamoDBDocumentClient, kind: stri
   const item = compact({ PK: key(kind, id), SK: key(kind, id), ...value, id, version: 1, createdAt: now, updatedAt: now });
   try {
     await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: item, ConditionExpression: 'attribute_not_exists(PK)' }));
+    if (kind === 'message') {
+      await indexMessageTargets(client, item);
+    }
     return { item: clean(item)!, duplicate: false };
   } catch (error) {
     if ((error as Error).name !== 'ConditionalCheckFailedException' || !sourceKey) throw error;
     const existing = await getCrmRecord(client, kind, id);
     if (!existing || !sameStored(existing, value)) throw replayConflict();
+    if (kind === 'message') {
+      await indexMessageTargets(client, existing);
+    }
     return { item: existing!, duplicate: true };
   }
 }

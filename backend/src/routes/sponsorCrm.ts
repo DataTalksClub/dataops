@@ -2,7 +2,7 @@ import { berlinDate } from '../sponsorFinance/core';
 import { isIndividualTuition } from '../tuition/classification';
 import { sponsorPipeline, PIPELINE_STAGES, PIPELINE_VIEWS, pipelineDateRangeError } from '../sponsorCrm/pipeline';
 import { resolveView } from '../crmWorkspace/views';
-import { workspaceErrorOf } from '../crmWorkspace/reads';
+import { queryTargetMessages, workspaceErrorOf } from '../crmWorkspace/reads';
 import { getNewsletterIssue } from '../db/newsletterIssues';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse, Task } from '../types';
@@ -342,7 +342,8 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     const organization = await getCrmRecord(client, 'organization', orgMessages[1]);
     if (!organization) return json(404, { error: 'Not found' });
     const query = (event.queryStringParameters || {}).q?.toLowerCase() || '';
-    let items = (await listCrmRecords(client, 'message')).filter((item) => item.organizationId === organization.id);
+    const { items: orgMsgItems } = await queryTargetMessages(client, { targetType: 'organization', targetId: organization.id }, 'messages');
+    let items = orgMsgItems;
     if (query) items = items.filter((item) => String(item.snippet || '').toLowerCase().includes(query) || String(item.threadId || '').toLowerCase().includes(query));
     items.sort((a, b) => String(b.sentAt || '').localeCompare(String(a.sentAt || '')));
     return json(200, { items: items.slice(0, 20), nextCursor: items.length > 20 ? '20' : null });

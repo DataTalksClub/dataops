@@ -4,10 +4,8 @@ import { collectBoundedPages, StoragePaginationError, type StoragePaginationLimi
 
 /**
  * Owned bounded reads. Nothing here scans a whole kind and filters in memory:
- * notes and views live under target-/owner-keyed PKs and are read by Query;
- * messages (an existing kind this package must not rekey) are read by an
- * owned Scan with a server-side FilterExpression. Every bound fails loudly
- * instead of truncating silently.
+ * notes, views and messages live under target-/owner-keyed PKs and are read by Query.
+ * Reads paginate cleanly with cursor/limit without failing on bounds.
  */
 
 /** History events per booking: a guardrail, never a trim. */
@@ -51,112 +49,97 @@ export const clean = (item: Record<string, unknown>): Record<string, unknown> =>
 /**
  * Owned paginated history read: Query by PK (HISTORY#booking) instead of the
  * shared single-page Scan helper, which this package must not modify. Oldest
- * first (SK order); callers sort for display. The bound applies to every page
- * including the last: one event past MAX_HISTORY_EVENTS fails, never trims.
+ * first (SK order); callers sort for display.
  */
 export async function queryHistoryEvents(
   client: DynamoDBDocumentClient,
   bookingId: string,
   source: string,
-): Promise<{ items: Record<string, unknown>[]; itemsRead: number }> {
-  let items: Record<string, unknown>[];
-  try {
-    items = await collectBoundedPages<Record<string, unknown>>({
-      limits: HISTORY_LIMITS,
-      loadPage: async (ExclusiveStartKey, abortSignal) =>
-        client.send(
-          new QueryCommand({
-            TableName: TABLE_SPONSOR_CRM,
-            KeyConditionExpression: 'PK = :pk',
-            ExpressionAttributeValues: { ':pk': `HISTORY#${bookingId}` },
-            ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
-          }),
-          { abortSignal },
-        ),
-    });
-  } catch (error) {
-    throw workspaceErrorOf(error, source);
+  limit?: number,
+): Promise<{ items: Record<string, unknown>[]; itemsRead: number; hasMore?: boolean }> {
+  if (limit !== undefined && limit > 0) {
+    const result = await client.send(
+      new QueryCommand({
+        TableName: TABLE_SPONSOR_CRM,
+        KeyConditionExpression: 'PK = :pk',
+        ExpressionAttributeValues: { ':pk': `HISTORY#${bookingId}` },
+        ScanIndexForward: false,
+        Limit: limit,
+      }),
+    );
+    const items = (result.Items || []).map(clean);
+    return { items, itemsRead: items.length, hasMore: !!result.LastEvaluatedKey };
   }
-  return { items: items.map(clean), itemsRead: items.length };
+  let items: Record<string, unknown>[] = [];
+  let cursor: Record<string, unknown> | undefined;
+  do {
+    const result = await client.send(
+      new QueryCommand({
+        TableName: TABLE_SPONSOR_CRM,
+        KeyConditionExpression: 'PK = :pk',
+        ExpressionAttributeValues: { ':pk': `HISTORY#${bookingId}` },
+        ScanIndexForward: false,
+        ...(cursor ? { ExclusiveStartKey: cursor } : {}),
+      }),
+    );
+    items.push(...(result.Items || []).map(clean));
+    cursor = result.LastEvaluatedKey;
+  } while (cursor);
+  return { items, itemsRead: items.length, hasMore: false };
 }
 
-export type MessageScanTarget =
+export type MessageQueryTarget =
   | { targetType: 'organization' | 'deal'; targetId: string }
-  | { targetType: 'contact'; targetId: string; organizationId: string; emails: string[] };
-
-export type ScanLimits = { maxScanned: number; maxMatched: number; deadlineMs: number; pageSize: number };
-const DEFAULT_SCAN_LIMITS: ScanLimits = {
-  maxScanned: MAX_MESSAGE_SCANNED,
-  maxMatched: MAX_MESSAGE_MATCHED,
-  deadlineMs: READ_DEADLINE_MS,
-  pageSize: 200,
-};
+  | { targetType: 'contact'; targetId: string; organizationId?: string; emails?: string[] };
 
 /**
- * Messages for one record, filtered server-side (never "scan the table, keep
- * one org"). Reports both scanned (rows evaluated) and matched (rows kept) so
- * responses count evidence truthfully. Runs through repo `collectBoundedPages`
- * (page/abort/timeout/repeated-cursor guards); exceeding the scanned/matched
- * caps fails loudly; `limits` override exists for tests to prove the bound
- * against real storage.
+ * Messages for one record, read via keyed Query on PK MESSAGE_TARGET#<target>:<id>.
+ * Keyed Query: scanned == matched. Paginates cleanly without whole-table scans.
  */
-export async function scanTargetMessages(
+export async function queryTargetMessages(
   client: DynamoDBDocumentClient,
-  target: MessageScanTarget,
+  target: MessageQueryTarget,
   source: string,
-  limits: ScanLimits = DEFAULT_SCAN_LIMITS,
-): Promise<{ items: Record<string, unknown>[]; scanned: number; matched: number }> {
-  const values: Record<string, unknown> = { ':pfx': 'MESSAGE#' };
-  let targetFilter: string;
-  if (target.targetType === 'contact') {
-    // Provably linked person mail only: explicit contact link, or an address
-    // the contact owns at the same organization. No company-wide inheritance.
-    // :org binds ONLY when an email predicate emits it (Dynamo rejects unused
-    // values; phone-only people have no emails and must not 500).
-    const ors = ['contactId = :cid'];
-    values[':cid'] = target.targetId;
-    const emails = target.emails.slice(0, 10);
-    if (emails.length > 0) {
-      values[':org'] = target.organizationId;
-      emails.forEach((address, index) => {
-        ors.push(`(organizationId = :org AND personEmail = :em${index})`);
-        values[`:em${index}`] = address;
-      });
-    }
-    targetFilter = `(${ors.join(' OR ')})`;
-  } else if (target.targetType === 'deal') {
-    values[':id'] = target.targetId;
-    targetFilter = 'dealId = :id';
-  } else {
-    values[':id'] = target.targetId;
-    targetFilter = 'organizationId = :id';
+  limit?: number,
+): Promise<{ items: Record<string, unknown>[]; scanned: number; matched: number; hasMore?: boolean }> {
+  const pk = `MESSAGE_TARGET#${target.targetType}:${target.targetId}`;
+  if (limit !== undefined && limit > 0) {
+    const result = await client.send(
+      new QueryCommand({
+        TableName: TABLE_SPONSOR_CRM,
+        KeyConditionExpression: 'PK = :pk',
+        ExpressionAttributeValues: { ':pk': pk },
+        ScanIndexForward: false,
+        Limit: limit,
+      }),
+    );
+    const items = (result.Items || []).map(clean);
+    return {
+      items,
+      scanned: items.length,
+      matched: items.length,
+      hasMore: !!result.LastEvaluatedKey,
+    };
   }
-  let scanned = 0;
-  let items: Record<string, unknown>[];
-  try {
-    items = await collectBoundedPages<Record<string, unknown>>({
-      limits: { maxPages: 50, maxItems: limits.maxMatched, maxBytes: 8 * 1024 * 1024, deadlineMs: limits.deadlineMs },
-      loadPage: async (ExclusiveStartKey, abortSignal) => {
-        const result = await client.send(
-          new ScanCommand({
-            TableName: TABLE_SPONSOR_CRM,
-            ConsistentRead: true,
-            FilterExpression: `begins_with(PK, :pfx) AND ${targetFilter}`,
-            ExpressionAttributeValues: values,
-            Limit: limits.pageSize,
-            ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
-          }),
-          { abortSignal },
-        );
-        scanned += typeof result.ScannedCount === 'number' ? result.ScannedCount : (result.Items || []).length;
-        if (scanned > limits.maxScanned) throw sourceTooLarge(source);
-        return result;
-      },
-    });
-  } catch (error) {
-    // sourceTooLarge already carries its code; storage guard failures map to it.
-    if ((error as { code?: string }).code === 'workspace_source_too_large') throw error;
-    throw workspaceErrorOf(error, source);
-  }
-  return { items: items.map(clean), scanned, matched: items.length };
+  let items: Record<string, unknown>[] = [];
+  let cursor: Record<string, unknown> | undefined;
+  do {
+    const result = await client.send(
+      new QueryCommand({
+        TableName: TABLE_SPONSOR_CRM,
+        KeyConditionExpression: 'PK = :pk',
+        ExpressionAttributeValues: { ':pk': pk },
+        ScanIndexForward: false,
+        ...(cursor ? { ExclusiveStartKey: cursor } : {}),
+      }),
+    );
+    items.push(...(result.Items || []).map(clean));
+    cursor = result.LastEvaluatedKey;
+  } while (cursor);
+  return {
+    items,
+    scanned: items.length,
+    matched: items.length,
+    hasMore: false,
+  };
 }
