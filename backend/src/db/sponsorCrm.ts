@@ -184,6 +184,77 @@ export async function updateCrmRecord(client: DynamoDBDocumentClient, kind: stri
   return next;
 }
 
+const deleteConflict = (message: string) => Object.assign(new Error(message), { statusCode: 409 });
+
+/** Delete only an unreferenced directory record and its own audit/index rows. */
+export async function hardDeleteCrmRecord(
+  client: DynamoDBDocumentClient,
+  kind: 'organization' | 'contact',
+  id: string,
+  expectedVersion?: number,
+) {
+  // Include archived rows: archiving never removes a relationship. Fully
+  // paginate consistent reads and fail closed if a storage bound is exceeded.
+  const rows = await scanCrmTable(client, [
+    'ORGANIZATION#', 'CONTACT#', 'DEAL#', 'DELIVERABLE#',
+    'HISTORY#', 'NOTE#', 'MESSAGE#', 'MESSAGE_TARGET#', 'DOMAIN#', 'PRIMARY#',
+  ]);
+  const pk = key(kind, id);
+  const existing = rows.find(row => row.PK === pk && row.SK === pk);
+  if (!existing) throw Object.assign(new Error('Not found'), { statusCode: 404 });
+  if (expectedVersion !== undefined && expectedVersion !== existing.version) {
+    throw deleteConflict('Record was changed; reload and retry');
+  }
+  const isKind = (row: Record<string, unknown>, prefix: string) => String(row.PK).startsWith(`${prefix}#`);
+  if (kind === 'organization') {
+    if (rows.some(row => isKind(row, 'DEAL') && row.organizationId === id)) {
+      throw deleteConflict('Organization has deals, including archived deals');
+    }
+    if (rows.some(row => isKind(row, 'CONTACT') && row.organizationId === id)) {
+      throw deleteConflict('Organization has linked contacts; hard-delete them first (archived contacts still count)');
+    }
+  } else if (rows.some(row => (isKind(row, 'DEAL') || isKind(row, 'DELIVERABLE')) &&
+    (row.primaryContactId === id || row.contactId === id || (Array.isArray(row.contactIds) && row.contactIds.includes(id))))) {
+    throw deleteConflict('Contact is primary or linked on a deal or deliverable, including archived records');
+  }
+  const historyPk = key('history', `${kind}:${id}`);
+  const notePk = key('note', `${kind}:${id}`);
+  const history = rows.filter(row => row.PK === historyPk);
+  // Inline/imported notes have no reliable author provenance. Protect all
+  // nonempty notes rather than guessing whether they were human-authored.
+  if (String(existing.notes || '').trim() || rows.some(row => row.PK === notePk) ||
+    history.some(row => String(row.note || row.body || '').trim())) {
+    throw deleteConflict('Record has notes; hard delete is refused');
+  }
+  const emails = Array.isArray(existing.emails) ? existing.emails : [];
+  const messageTargetPk = `MESSAGE_TARGET#${kind}:${id}`;
+  if (history.some(row => row.action === 'touch') || rows.some(row => (isKind(row, 'MESSAGE') || row.PK === messageTargetPk) && row.sourceType === 'touch' &&
+    (kind === 'organization' ? row.organizationId === id : row.contactId === id ||
+      (row.organizationId === existing.organizationId && emails.includes(row.personEmail))))) {
+    throw deleteConflict('Record has human-authored touches; hard delete is refused');
+  }
+  const indexes = rows.filter(row => row.PK === messageTargetPk || (kind === 'organization'
+    ? (isKind(row, 'DOMAIN') && row.organizationId === id) || row.PK === key('primary', id)
+    : isKind(row, 'PRIMARY') && row.contactId === id));
+  const owned = [existing, ...history, ...indexes];
+  // Keep cleanup atomic; never leave a half-deleted record when history is
+  // too large for DynamoDB's transaction limit.
+  if (owned.length > 100) throw deleteConflict('Record history exceeds the atomic hard-delete limit');
+  await transact(client, owned.map(row => ({ Delete: {
+    TableName: TABLE_SPONSOR_CRM,
+    Key: { PK: row.PK, SK: row.SK },
+    ...(row === existing ? {
+      ConditionExpression: '#version = :version',
+      ExpressionAttributeNames: { '#version': 'version' },
+      ExpressionAttributeValues: { ':version': existing.version },
+    } : indexes.includes(row) ? {
+      ConditionExpression: row.PK === messageTargetPk ? 'targetId = :owner' : isKind(row, 'DOMAIN') ? 'organizationId = :owner' : 'contactId = :owner',
+      ExpressionAttributeValues: { ':owner': row.PK === messageTargetPk || isKind(row, 'DOMAIN') ? id : row.contactId },
+    } : {}),
+  } })));
+  return { id, deleted: true };
+}
+
 function domainLock(domain: string, organizationId: string) {
   return { Put: { TableName: TABLE_SPONSOR_CRM, Item: { PK: key('domain', domain), SK: key('domain', domain), organizationId }, ConditionExpression: 'attribute_not_exists(PK) OR organizationId = :organizationId', ExpressionAttributeValues: { ':organizationId': organizationId } } };
 }

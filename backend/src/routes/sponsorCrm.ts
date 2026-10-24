@@ -13,6 +13,7 @@ import {
   createDeliverableAtomic,
   createOrganizationAtomic,
   getCrmRecord,
+  hardDeleteCrmRecord,
   listBookingHistory,
   listCrmRecords,
   updateContactAtomic,
@@ -46,6 +47,7 @@ import {
 import { splitVatId } from '../vies/format';
 import { lastViesCheck } from '../vies/service';
 import { recordRequestError } from '../requestErrorLog';
+import { resolveInteractiveActor } from '../identity/actor';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -590,6 +592,30 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
   }
 
   if (method === 'DELETE' && id && kind !== 'deliverable') {
+    if (event.queryStringParameters?.hard !== undefined) {
+      if (event.queryStringParameters.hard !== 'true' || (kind !== 'organization' && kind !== 'contact')) {
+        return json(400, { error: 'hard=true is supported only for organizations and contacts' });
+      }
+      const auth = await resolveInteractiveActor(client, event, 'work-write');
+      if (!auth.ok) return auth.response;
+      if (!auth.actor.isAdmin) return json(403, { error: 'Hard delete requires an active admin' });
+      const rawVersion = event.queryStringParameters.expectedVersion;
+      const expectedVersion = rawVersion === undefined ? undefined : Number(rawVersion);
+      if (expectedVersion !== undefined && (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1)) {
+        return json(400, { error: 'expectedVersion must be a positive integer' });
+      }
+      try {
+        return json(200, await hardDeleteCrmRecord(client, kind, id, expectedVersion));
+      } catch (error) {
+        const status = (error as { statusCode?: number }).statusCode;
+        if (status) return json(status, { error: (error as Error).message });
+        if ((error as Error).name.includes('Transaction') || (error as Error).name.includes('Conditional')) {
+          return json(409, { error: 'Conflicting delete; reload and retry' });
+        }
+        recordRequestError(error);
+        return json(500, { error: 'Could not confirm hard deletion; reload before retrying' });
+      }
+    }
     const existing = await getCrmRecord(client, kind, id);
     if (!existing) return json(404, { error: 'Not found' });
     if (kind === 'contact') return json(200, await updateContactAtomic(client, existing, { archivedAt: new Date().toISOString(), active: false, primary: false }, user));
