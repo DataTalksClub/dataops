@@ -65,7 +65,7 @@ export function personHeaderMarkup(person, options = {}, context = {}) {
         ${person?.role ? html`<span class="status-label" data-status="role">${escape(person.role)}</span>` : ""}
         ${person?.primary ? html`<span class="status-label" data-status="primary">Primary</span>` : ""}
         ${person?.active === false ? html`<span class="status-label" data-status="archived">Archived</span>` : ""}
-        ${isDnc ? html`<span class="status-label" data-status="dnc" style="background:#fee2e2;color:#991b1b;border:1px solid #f87171;">Do Not Contact</span>` : ""}
+        ${isDnc ? html`<span class="status-label" data-status="dnc">Do Not Contact</span>` : ""}
       </p>
       <p class="crm-record-sub">
         ${companyLink}

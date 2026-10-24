@@ -118,7 +118,7 @@ export function recordHeaderMarkup(company, options = {}, context = {}) {
         ${company?.domain ? html`<span class="status-label" data-status="domain">${escape(company.domain)}</span>` : ""}
         ${company?.relationship ? html`<span class="status-label" data-status="${escape(company.relationship)}">${escape(humanize(company.relationship, context))}</span>` : ""}
         ${archived ? html`<span class="status-label" data-status="archived">Archived</span>` : ""}
-        ${isDnc ? html`<span class="status-label" data-status="dnc" style="background:#fee2e2;color:#991b1b;border:1px solid #f87171;">Do Not Contact</span>` : ""}
+        ${isDnc ? html`<span class="status-label" data-status="dnc">Do Not Contact</span>` : ""}
         ${selectedDeal ? html`<span class="status-label" data-status="${escape(selectedDeal.status)}">${escape(humanize(selectedDeal.status, context))}</span>` : ""}
       </p>
       <p class="crm-record-sub">
