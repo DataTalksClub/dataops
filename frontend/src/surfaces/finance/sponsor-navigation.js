@@ -10,10 +10,10 @@ export const CRM_PRIMARY_TABS = Object.freeze([
   Object.freeze({ id: "pipeline", label: "Pipeline" }),
   Object.freeze({ id: "companies", label: "Companies" }),
   Object.freeze({ id: "people", label: "People" }),
-  Object.freeze({ id: "followups", label: "Follow-ups" }),
 ]);
 
 export const CRM_MORE_LINKS = Object.freeze([
+  Object.freeze({ id: "followups", label: "Follow-ups" }),
   Object.freeze({ id: "leads", label: "Lead discovery" }),
   Object.freeze({ id: "newsletters", label: "Newsletter sources" }),
   Object.freeze({ id: "money", label: "Money" }),

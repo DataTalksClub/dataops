@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { SPONSORS_TABS, sponsorsPath } from "../src/core/sponsor-routes.js";
-import { CRM_PRIMARY_TABS, crmNavModel } from "../src/surfaces/finance/sponsor-navigation.js";
+import { CRM_MORE_LINKS, CRM_PRIMARY_TABS, crmNavModel } from "../src/surfaces/finance/sponsor-navigation.js";
 import { DIRECTORY_FILTER_KEYS, validateDirectoryState } from "../src/surfaces/finance/sponsor-directory.js";
 import { validateViewFilters } from "../src/surfaces/finance/sponsor-saved-views.js";
 import { personHeaderMarkup } from "../src/surfaces/finance/sponsor-person-detail.js";
@@ -12,10 +12,11 @@ describe("CRM follow-ups and DNC frontend surface components", () => {
   it("registers followups tab in sponsor routes and navigation", () => {
     assert.equal(sponsorsPath("followups"), "/sponsors/followups");
     assert.ok(SPONSORS_TABS.some(([id, label]) => id === "followups" && label === "Follow-ups"));
-    assert.ok(CRM_PRIMARY_TABS.some((tab) => tab.id === "followups" && tab.label === "Follow-ups"));
+    assert.ok(CRM_MORE_LINKS.some((tab) => tab.id === "followups" && tab.label === "Follow-ups"));
     const nav = crmNavModel("followups");
-    const current = nav.primary.find((t) => t.id === "followups");
+    const current = nav.more.find((t) => t.id === "followups");
     assert.ok(current?.current);
+    assert.ok(nav.moreCurrent);
   });
 
   it("directory filter keys and validation support tag, contact dates, dnc, and noDeal", () => {
