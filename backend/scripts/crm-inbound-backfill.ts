@@ -12,7 +12,8 @@
  *
  * Idempotent:
  * - Upserts companies deduped by domain (ignoring generic domains like gmail.com).
- * - Upserts people deduped by email (case-insensitive).
+ * - Upserts people by normalized email and normalized name plus email domain.
+ * - Skips records marked needs-review, including contacts at reviewed companies.
  * - Matches existing records first (e.g. Kastra / Carlos).
  * - Adds "inbound" tag to new and existing records without clobbering other fields/tags.
  * - In --dry-run mode, computes counts and writes report without mutating CRM.
@@ -57,15 +58,111 @@ const COMMUNITY_PATTERNS = /\b(machine learning bookcamp|reading your book|love 
 const PUBLISHER_PATTERNS = /\b(manning\.com|packtpub\.com|packt\.com|book proposal|review proposal|review manuscript|technical reviewer for|reviewing our new book|endorse my book)\b/i;
 const COLD_SERVICE_SPAM = /\b(improve your seo|website redesign|audit of datatalks\.club|hire offshore developers|lead generation list|b2b email list|verified emails of|app development services|outsource your|offshore engineering)\b/i;
 
-const ASK_PATTERNS = [
-  { type: "podcast_guest_pitch", pat: /\b(podcast guest|be a guest on your podcast|guest on datatalks|guest on the datatalks\.club podcast|pitch for your podcast|suggest a guest|podcast interview|recommend as a guest|pitching [A-Za-z0-9]+ for your podcast|feature on your podcast|appear on your podcast|guest speaker on your podcast|guest on your show|interview on your podcast)\b/i },
-  { type: "newsletter_slot", pat: /\b(newsletter slot|primary slot|secondary slot|standalone newsletter|sponsor your newsletter|newsletter sponsor|sponsor the newsletter|feature in your newsletter|ad in your newsletter|newsletter ad|advertise in your newsletter|newsletter sponsorship)\b/i },
-  { type: "sponsored_workshop_webinar", pat: /\b(hands-on workshop|sponsor(?:ed)? workshop|host a workshop|co-host a (?:webinar|workshop)|webinar sponsorship|partner on a workshop|workshop sponsor|co-host a workshop|sponsor an event|event sponsorship)\b/i },
-  { type: "paid_placement", pat: /\b(media kit|mediakit|sponsorship opportunities|sponsorship deck|sponsorship rate|advertising rates|sponsorship packages|interested in sponsoring|partnership opportunities|sponsor datatalks|commercial partnership|paid partnership|paid placement|paid collaboration|promotional packages|ad rates|rates for sponsoring|sponsorship pricing|sponsorship inquiry|sponsor inquiry)\b/i },
-  { type: "share_promote", pat: /\b(share with your community|share with datatalks|share this with your community|promote our|feature our tool|amplify our|cross-promote|partner to promote|share our launch|share our project|share our dataset|share in your slack|post in your community|share on your socials|promote this launch|share it with your community|feature this in datatalks)\b/i },
+// Add private domain/alias lists with --exclude-config, or comma-separated
+// --own-domains / --own-emails. Config lists extend these defaults.
+export const DEFAULT_OWN_DOMAINS = [
+  "datatalks.club", "mail.grokbot.com", "grokbot.com", "dtcdev.click", "aishippinglabs.com",
 ];
 
-interface RawMailMessage {
+export function normalizeEmail(value: string): string {
+  const email = value.trim().normalize("NFKC").toLowerCase();
+  const [local, rawDomain] = email.split("@");
+  const domain = rawDomain === "googlemail.com" ? "gmail.com" : rawDomain;
+  // Gmail dots and plus suffixes are aliases, not separate people.
+  return domain === "gmail.com" ? `${local.split("+")[0].replace(/\./g, "")}@${domain}` : email;
+}
+
+export function personKey(name: string, domain: string): string {
+  return `${name.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()}@${domain.toLowerCase()}`;
+}
+
+export function dedupePeople(candidates: ClassifiedCandidate[]): ClassifiedCandidate[] {
+  const emails = new Set<string>();
+  const names = new Set<string>();
+  return candidates.filter(candidate => {
+    const email = normalizeEmail(candidate.email);
+    const key = personKey(candidate.name, email.split("@")[1]);
+    const duplicate = emails.has(email) || names.has(key);
+    emails.add(email);
+    names.add(key);
+    return !duplicate;
+  });
+}
+
+export function authoredText(message: RawMailMessage): string {
+  // Only classify the initiating sender's words. Replies, forwarded text and
+  // signatures frequently contain our media-kit link without an inbound ask.
+  let body = message.body || message.snippet || "";
+  body = body.replace(/<(?:script|style)\b[^>]*>[\s\S]*?<\/(?:script|style)>/gi, " ")
+    .replace(/<br\s*\/?[^>]*>|<\/(?:p|div)>/gi, "\n").replace(/<[^>]*>/g, " ");
+  body = body.split(/\n\s*(?:On .{0,200}wrote:|From:|>+|--\s*$|---+\s*(?:Forwarded|original)|_{3,})/im)[0];
+  body = body.split(/\n\s*(?:Best(?: regards)?|Kind regards|Warm(?:est)? regards|Cheers|Regards|Sincerely|Looking Forward)[,!]?(?:\s*\n|\s*$)/im)[0];
+  body = body.replace(/https?:\/\/[^\s<>]+/gi, " ").replace(/&(?:nbsp|amp|quot|#39);/g, " ");
+  return `${message.subject || ""}\n${body}`;
+}
+
+export function classifyThread(
+  threadId: string, messages: RawMailMessage[],
+  ownDomains = DEFAULT_OWN_DOMAINS, ownEmails = [...INTERNAL_EMAILS],
+): {candidate?: ClassifiedCandidate; exclusion?: string} {
+  const first = [...messages].sort((a, b) => Number(a.internalDate || 0) - Number(b.internalDate || 0))[0];
+  if (!first) return {exclusion: "no_sponsorship_ask"};
+  const {name, email: rawEmail} = parseEmail(first.from);
+  const email = normalizeEmail(rawEmail);
+  const domain = email.split("@")[1] || "";
+  if (!domain || ownEmails.some(e => normalizeEmail(e) === email)
+    || ownDomains.some(d => domain === d.trim().toLowerCase() || domain.endsWith(`.${d.trim().toLowerCase()}`))) {
+    return {exclusion: "alexey_outbound_or_internal"};
+  }
+  if (NOISE_DOMAINS.has(domain) || NOISE_SENDER_PATTERNS.test(email)) return {exclusion: "transactional_system_sender"};
+  const text = authoredText(first).replace(/[’‘]/g, "'");
+  if (/manning\.com$/.test(domain)) return {exclusion: "publisher_inquiry"};
+  if (/\b(?:out of (?:the )?office|back on (?:mon|tue|wed|thu|fri)|automatic reply|auto.reply|invitation from an unknown sender|registration confirmed|you.re in!|thanks for (?:having|attending)|ticket#)\b/i.test(first.subject || "")
+    || /\b(?:in this week's issue|sponsorships we hunted down|learn directly with|you (?:are|'re) receiving this (?:email|message) because)\b/i.test(text)) return {exclusion: "transactional_system_sender"};
+  if (/\b(?:not requesting (?:a )?paid placement|not (?:a |requesting a )?sponsor(?:ship)?|not a product pitch)\b/i.test(text)) return {exclusion: "community_question"};
+  for (const [pattern, exclusion] of [
+    [STUDENT_PATTERNS, "student_inquiry"], [RECRUITER_PATTERNS, "recruiter_pitch"],
+    [COMMUNITY_PATTERNS, "community_question"], [PUBLISHER_PATTERNS, "publisher_inquiry"],
+    [COLD_SERVICE_SPAM, "cold_service_spam"],
+  ] as const) {
+    if (pattern.test(text)) return {exclusion};
+  }
+  if (/^(?:Re:\s*)?(?:Updated invitation:|Invitation:.*@|Invitation from an unknown sender:|Accepted:|Declined:)|\b(?:invoice|payment reminder|wire initiated|payment.*processed)\b/i.test(first.subject || "")) {
+    return {exclusion: "transactional_system_sender"};
+  }
+  if (/\b(?:invite you for a session|interested in (?:giving a talk|holding the workshop)|guest session committee|invitation.*our students|thank you for the enquiry|(?:from my side|what I saw).{0,200}campaign)\b/i.test(text)
+    || /\b(?:our sponsorship opportunities|our sponsorships|we(?:'re| are) putting together the newsletters we'll pitch|bring vetted.{0,60}sponsors|(?:gets?|getting) you newsletter sponsors)\b/i.test(text)) return {exclusion: "no_sponsorship_ask"};
+  // A topic word alone (media kit, workshop, podcast guest) is insufficient.
+  const request = /\b(?:could you|can you|would you|would love|we'd love|I'd love|I would like|we would like|interested in|looking for|looking to|like to|want to|wanted to|please|let(?:'s| us)|propos(?:e|ing)|pitch(?:ing)?|request(?:ing)?|inquiry|invite|invitation|suggest|recommend|offer|reach(?:ing)? out|open to|happy to collaborate|seeking|keen to|hope to)\b/i.test(text);
+  const target = /\b(?:your (?:podcast|show|newsletter|community|audience|channel)|datatalks|data talks|DataTalksClub|creators?|influencers?)\b/i.test(text);
+  const commercial = /\b(?:sponsor(?:ship|ed|ing)?|paid|advertis(?:e|ing|ement)|rates?|pricing|budget|media\s?kit|affiliate|commission|partnership|collaborat(?:e|ion)|campaign|promot(?:e|ion|ing)|cross.promot(?:e|ion)|placement)\b/i.test(text);
+  const guest = /\b(?:guest|interview|speaker)\b/i.test(text) && /\b(?:podcast|your show)\b/i.test(text);
+  const newsletter = /\bnewsletter\b/i.test(text);
+  const workshop = /\b(?:workshop|webinar|event)\b/i.test(text);
+  const share = /\b(?:share|feature|promote|post|coverage|highlight|mention|introduce)\b/i.test(text);
+  const explicit = /\b(?:sponsorship inquiry|paid collaboration|podcast guest pitch|guest pitch for|sponsor your newsletter|like to sponsor|interested in sponsoring|be a guest on your podcast|pitch(?:ing)?\b.{0,60}(?:your podcast|DataTalks)|share (?:this |it )?with your community)\b/i.test(text);
+  const guestRequest = /\b(?:(?:like|love|want|keen) to.{0,100}(?:join|guest|interview|pitch)|(?:suggest(?:ion|ing)?|recommend(?:ation|ing)?|offer(?:ing)?|propos(?:e|ing|al)|pitch(?:ing)?)\b.{0,150}(?:guest|podcast|interview)|would you.{0,80}(?:booking|guest|interview)|(?:guest|podcast).{0,60}(?:pitch|suggestion|proposal|recommendation)|be a (?:great|good|potential|useful|perfect) guest)\b/is.test(text);
+  const directGuest = request && target && guest && guestRequest;
+  const promoRequest = /\b(?:(?:like|love|want|looking|interested|explore|offer|seek|happy|could|can|would).{0,100}(?:sponsor|paid |advertis|promot|affiliate)|(?:paid|sponsored) (?:collab|partner|post|video)|cross.promot|affiliate partnership)\b/i.test(text);
+  const placementRequest = /\b(?:could you share|can you (?:send|share)|share your|send (?:me |us )?(?:a |your )?(?:media kit|rates)|what (?:are|is) (?:your|the) (?:rates|pricing|cost)|current (?:rates|openings)|availability|available slots|slots available)\b/i.test(text);
+  const placement = /\b(?:your (?:podcast|show|newsletter|community|audience|channel)|datatalks|data talks|DataTalksClub|X (?:post|video)|YouTube|LinkedIn)\b/i.test(text);
+  const directPromotion = placement && request && target && commercial && (newsletter || workshop || share) && (promoRequest || placementRequest);
+  if (!(explicit && request && target) && !directGuest && !directPromotion) {
+    return {exclusion: "no_sponsorship_ask"};
+  }
+  const askType = guest ? "podcast_guest_pitch" : newsletter ? "newsletter_slot"
+    : workshop ? "sponsored_workshop_webinar" : commercial ? "paid_placement" : "share_promote";
+  return {candidate: {
+    threadId, name: cleanPersonName(name, email), email,
+    domain: GENERIC_DOMAINS.has(domain) ? null : domain,
+    askType, subject: first.subject || "",
+    date: first.internalDate ? new Date(Number(first.internalDate)).toISOString().slice(0, 10) : "",
+    reason: explicit ? `Explicit ${askType} ask in initiating sender's message`
+      : `Request plus audience and ${askType} signals in initiating sender's message`,
+  }};
+}
+
+export interface RawMailMessage {
   id: string;
   threadId?: string;
   from?: string;
@@ -76,7 +173,7 @@ interface RawMailMessage {
   internalDate?: string;
 }
 
-interface ClassifiedCandidate {
+export interface ClassifiedCandidate {
   threadId: string;
   name: string;
   email: string;
@@ -94,6 +191,7 @@ interface ExistingOrganization {
   domains?: string[];
   tags?: string[];
   version: number;
+  archivedAt?: string;
 }
 
 interface ExistingContact {
@@ -103,9 +201,10 @@ interface ExistingContact {
   emails?: string[];
   tags?: string[];
   version: number;
+  archivedAt?: string;
 }
 
-function parseEmail(from?: string): { name: string; email: string } {
+export function parseEmail(from?: string): { name: string; email: string } {
   if (!from) return { name: "", email: "" };
   const match = from.match(/^(.*?)(?:<([^>]+)>)?$/);
   if (!match) return { name: "", email: from.trim().toLowerCase() };
@@ -200,6 +299,8 @@ export async function main(argv = process.argv.slice(2)) {
   let reportPath = "";
   let reportTitle = "";
   let outJsonPath = "";
+  let ownDomains = [...DEFAULT_OWN_DOMAINS];
+  let ownEmails = [...INTERNAL_EMAILS];
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -210,6 +311,17 @@ export async function main(argv = process.argv.slice(2)) {
     else if (arg === "--mail-root" && argv[i + 1]) mailRoot = argv[++i];
     else if (arg === "--report" && argv[i + 1]) reportPath = argv[++i];
     else if (arg === "--report-title" && argv[i + 1]) reportTitle = argv[++i];
+    else if (arg === "--exclude-config" && argv[i + 1]) {
+      const config = JSON.parse(await fs.readFile(argv[++i], "utf8")) as {ownDomains?: string[]; ownEmails?: string[]};
+      if ((config.ownDomains && !config.ownDomains.every(d => typeof d === "string" && d.trim()))
+        || (config.ownEmails && !config.ownEmails.every(e => typeof e === "string" && e.includes("@")))) {
+        throw new Error("Invalid exclusion config: expected nonempty ownDomains and email ownEmails arrays");
+      }
+      ownDomains.push(...(config.ownDomains || []));
+      ownEmails.push(...(config.ownEmails || []));
+    }
+    else if (arg === "--own-domains" && argv[i + 1]) ownDomains.push(...argv[++i].split(",").filter(d => d.trim()));
+    else if (arg === "--own-emails" && argv[i + 1]) ownEmails.push(...argv[++i].split(",").filter(e => e.trim()));
     else if (arg === "--out-json" && argv[i + 1]) outJsonPath = argv[++i];
   }
 
@@ -273,83 +385,9 @@ export async function main(argv = process.argv.slice(2)) {
   const candidates: ClassifiedCandidate[] = [];
 
   for (const [tid, msgs] of threads.entries()) {
-    msgs.sort((a, b) => Number(a.internalDate || 0) - Number(b.internalDate || 0));
-    const first = msgs[0];
-    const { name: rawName, email } = parseEmail(first.from);
-    if (!email || !email.includes("@")) continue;
-    const domain = email.split("@")[1].toLowerCase();
-    const subject = first.subject || "";
-
-    if (INTERNAL_EMAILS.has(email) || email.endsWith("@datatalks.club")) {
-      exclusions.alexey_outbound_or_internal++;
-      continue;
-    }
-    if (NOISE_DOMAINS.has(domain) || NOISE_SENDER_PATTERNS.test(email)) {
-      exclusions.transactional_system_sender++;
-      continue;
-    }
-
-    const firstSnippet = first.snippet || "";
-    if (STUDENT_PATTERNS.test(subject) || STUDENT_PATTERNS.test(firstSnippet)) {
-      exclusions.student_inquiry++;
-      continue;
-    }
-    if (RECRUITER_PATTERNS.test(subject) || RECRUITER_PATTERNS.test(firstSnippet)) {
-      exclusions.recruiter_pitch++;
-      continue;
-    }
-    if (COMMUNITY_PATTERNS.test(subject) || COMMUNITY_PATTERNS.test(firstSnippet)) {
-      exclusions.community_question++;
-      continue;
-    }
-    if (PUBLISHER_PATTERNS.test(subject) || PUBLISHER_PATTERNS.test(firstSnippet)) {
-      exclusions.publisher_inquiry++;
-      continue;
-    }
-    if (COLD_SERVICE_SPAM.test(subject) || COLD_SERVICE_SPAM.test(firstSnippet)) {
-      exclusions.cold_service_spam++;
-      continue;
-    }
-
-    const threadText = msgs.map((m) => `${m.subject || ""} ${m.snippet || ""} ${(m.body || "").slice(0, 3000)}`).join(" ");
-
-    let matchedAsk: string | null = null;
-    let matchedReason = "";
-    for (const ask of ASK_PATTERNS) {
-      const match = ask.pat.exec(threadText);
-      if (match) {
-        matchedAsk = ask.type;
-        matchedReason = `Matched pattern "${match[0]}" for ${ask.type}`;
-        break;
-      }
-    }
-    if (!matchedAsk) {
-      exclusions.no_sponsorship_ask++;
-      continue;
-    }
-    if (STUDENT_PATTERNS.test(threadText)) {
-      exclusions.student_inquiry++;
-      continue;
-    }
-    if (RECRUITER_PATTERNS.test(threadText)) {
-      exclusions.recruiter_pitch++;
-      continue;
-    }
-
-    const date = first.internalDate ? new Date(Number(first.internalDate)).toISOString().slice(0, 10) : "";
-    const cleanName = cleanPersonName(rawName, email);
-    const validDomain = GENERIC_DOMAINS.has(domain) ? null : domain;
-
-    candidates.push({
-      threadId: tid,
-      name: cleanName,
-      email,
-      domain: validDomain,
-      askType: matchedAsk,
-      subject,
-      date,
-      reason: matchedReason,
-    });
+    const result = classifyThread(tid, msgs, ownDomains, ownEmails);
+    if (result.candidate) candidates.push(result.candidate);
+    else exclusions[result.exclusion!] = (exclusions[result.exclusion!] || 0) + 1;
   }
 
   // Sort candidates by date desc
@@ -360,7 +398,7 @@ export async function main(argv = process.argv.slice(2)) {
   const peopleToUpsert = new Map<string, ClassifiedCandidate>();
   const companiesToUpsert = new Map<string, { domain: string; displayName: string; askType: string; date: string }>();
 
-  for (const c of candidates) {
+  for (const c of dedupePeople(candidates)) {
     if (!peopleToUpsert.has(c.email)) {
       peopleToUpsert.set(c.email, c);
     }
@@ -398,22 +436,37 @@ export async function main(argv = process.argv.slice(2)) {
   const existingContactsByEmail = new Map<string, ExistingContact>();
   for (const contact of existingContacts) {
     if (Array.isArray(contact.emails)) {
-      for (const e of contact.emails) existingContactsByEmail.set(e.toLowerCase(), contact);
+      for (const e of contact.emails) existingContactsByEmail.set(normalizeEmail(e), contact);
     }
+  }
+
+  const orgDomainById = new Map(existingOrgs.map(org => [org.id, org.domain || org.domains?.[0] || ""]));
+  const existingContactsByNameDomain = new Map<string, ExistingContact>();
+  for (const contact of existingContacts) {
+    const domains = new Set((contact.emails || []).map(e => normalizeEmail(e).split("@")[1]));
+    const orgDomain = orgDomainById.get(contact.organizationId);
+    if (orgDomain) domains.add(orgDomain.toLowerCase());
+    for (const domain of domains) existingContactsByNameDomain.set(personKey(contact.name, domain), contact);
   }
 
   // 5. Plan Mutations & Actions
   const newCompanies: { domain: string; displayName: string }[] = [];
   const existingCompaniesToTag: { org: ExistingOrganization; domain: string }[] = [];
   const companiesAlreadyTagged: string[] = [];
+  const suppressedCompanies: string[] = [];
 
+  const plannedOrgIds = new Set<string>();
   for (const [dom, info] of companiesToUpsert.entries()) {
     const existing = existingOrgsByDomain.get(dom);
     if (!existing) {
       newCompanies.push({ domain: dom, displayName: info.displayName });
     } else {
+      if (plannedOrgIds.has(existing.id)) continue;
+      plannedOrgIds.add(existing.id);
       const currentTags = existing.tags || [];
-      if (!currentTags.includes("inbound")) {
+      if (currentTags.includes("needs-review") || existing.archivedAt) {
+        suppressedCompanies.push(existing.id);
+      } else if (!currentTags.includes("inbound")) {
         existingCompaniesToTag.push({ org: existing, domain: dom });
       } else {
         companiesAlreadyTagged.push(dom);
@@ -424,14 +477,25 @@ export async function main(argv = process.argv.slice(2)) {
   const newPeople: ClassifiedCandidate[] = [];
   const existingPeopleToTag: { contact: ExistingContact; candidate: ClassifiedCandidate }[] = [];
   const peopleAlreadyTagged: string[] = [];
+  const suppressedPeople: string[] = [];
+  const plannedContactIds = new Set<string>();
 
   for (const [email, candidate] of peopleToUpsert.entries()) {
-    const existing = existingContactsByEmail.get(email);
+    const existing = existingContactsByEmail.get(normalizeEmail(email))
+      || existingContactsByNameDomain.get(personKey(candidate.name, email.split("@")[1]));
+    if (existing && plannedContactIds.has(existing.id)) continue;
+    if (existing) plannedContactIds.add(existing.id);
+    if (candidate.domain && existingOrgsByDomain.get(candidate.domain)?.tags?.includes("needs-review")) {
+      suppressedPeople.push(existing?.id || email);
+      continue;
+    }
     if (!existing) {
       newPeople.push(candidate);
     } else {
       const currentTags = existing.tags || [];
-      if (!currentTags.includes("inbound")) {
+      if (currentTags.includes("needs-review") || existing.archivedAt || (candidate.domain && existingOrgsByDomain.get(candidate.domain)?.tags?.includes("needs-review"))) {
+        suppressedPeople.push(existing.id);
+      } else if (!currentTags.includes("inbound")) {
         existingPeopleToTag.push({ contact: existing, candidate });
       } else {
         peopleAlreadyTagged.push(email);
@@ -444,6 +508,9 @@ export async function main(argv = process.argv.slice(2)) {
   const carlosMatch = existingContactsByEmail.get("carlos@kastra.ai");
 
   const summaryCounts = {
+    newIndividualShells: newPeople.filter(p => !p.domain).length,
+    suppressedCompanies: suppressedCompanies.length,
+    suppressedPeople: suppressedPeople.length,
     newCompanies: newCompanies.length,
     newPeople: newPeople.length,
     existingCompaniesToTag: existingCompaniesToTag.length,
@@ -530,7 +597,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
 
   // 7. Generate Reports
-  const samples = candidates.slice(0, 16).map((c) => ({
+  const samples = dedupePeople(candidates).slice(0, 16).map((c) => ({
     name: c.name,
     email: c.email,
     company: c.domain ? deriveCompanyName(c.domain) : "Individual",
@@ -579,6 +646,13 @@ export async function main(argv = process.argv.slice(2)) {
         appliedTaggedPeople,
       } : undefined,
       samples,
+      candidates: dedupePeople(candidates),
+      plannedActions: {
+        newCompanies, newPeople,
+        companiesToTag: existingCompaniesToTag.map(({org}) => org.id),
+        peopleToTag: existingPeopleToTag.map(({contact}) => contact.id),
+        suppressedCompanies, suppressedPeople,
+      },
     };
     await fs.mkdir(path.dirname(outJsonPath), { recursive: true });
     await fs.writeFile(outJsonPath, JSON.stringify(jsonOutput, null, 2), "utf8");
