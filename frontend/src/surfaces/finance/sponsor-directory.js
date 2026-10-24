@@ -30,14 +30,26 @@ export const DIRECTORY_RELATIONSHIPS = Object.freeze([
 export const DIRECTORY_SORTS = Object.freeze([
   Object.freeze({ id: "name", label: "Name" }),
   Object.freeze({ id: "lastTouch", label: "Last touch" }),
+  Object.freeze({ id: "lastContact", label: "Last contact" }),
 ]);
 
 // Allowed query keys per entity, mirroring the D contract. Used to keep
 // builtins, saved views and URL state executable: anything outside these sets
 // is rejected before it reaches the API.
 export const DIRECTORY_FILTER_KEYS = Object.freeze({
-  companies: Object.freeze(["search", "relationship", "active", "lastTouchAfter", "lastTouchBefore"]),
-  people: Object.freeze(["search", "company", "primary", "unlinked", "active"]),
+  companies: Object.freeze([
+    "search", "relationship", "active", "tag",
+    "lastTouchAfter", "lastTouchBefore",
+    "firstContactAfter", "firstContactBefore",
+    "lastContactAfter", "lastContactBefore",
+    "dnc",
+  ]),
+  people: Object.freeze([
+    "search", "company", "primary", "unlinked", "active", "tag",
+    "firstContactAfter", "firstContactBefore",
+    "lastContactAfter", "lastContactBefore",
+    "dnc", "noDeal",
+  ]),
 });
 
 const ACTIVE_VALUES = ["true", "false", "all"];
@@ -59,6 +71,20 @@ export function validateDirectoryState(entity, state) {
   if (value.active !== undefined && !ACTIVE_VALUES.includes(value.active)) {
     return invalid("active must be true, false or all");
   }
+  if (value.tag !== undefined && (typeof value.tag !== "string" || !value.tag || value.tag.length > 100)) {
+    return invalid("tag must be 1..100 characters");
+  }
+  for (const key of ["firstContactAfter", "firstContactBefore", "lastContactAfter", "lastContactBefore"]) {
+    if (value[key] !== undefined && (typeof value[key] !== "string" || !DAY.test(value[key]))) {
+      return invalid(`${key} must be YYYY-MM-DD`);
+    }
+  }
+  if (value.dnc !== undefined && !BOOLEAN_VALUES.includes(value.dnc)) {
+    return invalid("dnc must be true or false");
+  }
+  if (value.noDeal !== undefined && !BOOLEAN_VALUES.includes(value.noDeal)) {
+    return invalid("noDeal must be true or false");
+  }
   if (entity === "companies") {
     if (value.relationship !== undefined &&
         !DIRECTORY_RELATIONSHIPS.some((entry) => entry.id === value.relationship)) {
@@ -69,7 +95,7 @@ export function validateDirectoryState(entity, state) {
         return invalid(`${key} must be YYYY-MM-DD`);
       }
     }
-    for (const key of ["company", "primary", "unlinked"]) {
+    for (const key of ["company", "primary", "unlinked", "noDeal"]) {
       if (value[key] !== undefined) return invalid(`Unknown companies filter: ${key}`);
     }
   } else {
@@ -88,7 +114,7 @@ export function validateDirectoryState(entity, state) {
   if (value.sort !== undefined) {
     const field = typeof value.sort === "string" ? value.sort : value.sort?.field;
     if (!DIRECTORY_SORTS.some((entry) => entry.id === field)) {
-      return invalid("sort must be name or lastTouch");
+      return invalid("sort must be name, lastTouch or lastContact");
     }
   }
   if (value.dir !== undefined && value.dir !== "asc" && value.dir !== "desc") {

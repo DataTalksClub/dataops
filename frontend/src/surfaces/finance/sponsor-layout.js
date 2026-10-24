@@ -118,6 +118,26 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = (value)
       escapeHtml,
       createHtml: globalThis.dakitCollection.createButtonMarkup({ label: "Add person", attributes: "data-add-contact" }),
     })}
+    <section class="crm-followups" hidden aria-labelledby="crm-followups-heading">
+      <header class="section-header">
+        <div>
+          <p class="section-kicker">Tasks &amp; follow-ups</p>
+          <h3 id="crm-followups-heading">Follow-ups</h3>
+        </div>
+        <div class="crm-followups-toolbar" data-crm-followups-toolbar style="display:flex;gap:12px;align-items:center;">
+          <label>Filter
+            <select data-crm-followups-filter>
+              <option value="all">All open follow-ups</option>
+              <option value="due">Due today or overdue</option>
+              <option value="overdue">Overdue only</option>
+            </select>
+          </label>
+        </div>
+      </header>
+      <div class="crm-followups-content" data-crm-followups-content>
+        <p>Loading follow-ups…</p>
+      </div>
+    </section>
     <section class="crm-newsletters" hidden aria-labelledby="crm-newsletters-heading">
       <header class="section-header">
         <div>

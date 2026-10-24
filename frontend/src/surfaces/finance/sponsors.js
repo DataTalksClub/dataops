@@ -14,6 +14,7 @@ import { createCollectionLoader } from "../../core/collection-loader.js";
 import { sponsorRecordPath, sponsorsPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
 import { createSponsorDirectoryPages } from "./sponsor-directory-pages.js";
+import { createFollowupsController } from "./sponsor-followups.js";
 
 export async function readSponsorDirectory(api, collection) {
   const items = new Map();
@@ -54,7 +55,7 @@ function focusFirstUsableControl(dialog) {
   control?.focus();
 }
 
-const PAGE_VIEWS = new Set(["companies", "people", "leads", "newsletters", "money"]); // full-width pages, no split
+const PAGE_VIEWS = new Set(["companies", "people", "followups", "leads", "newsletters", "money"]); // full-width pages, no split
 
 function openDialog(dialog) {
   dialog.showModal();
@@ -274,6 +275,8 @@ export function createSponsorCrmSurface(context) {
           .join("")}`;
       if (selectedId) form.elements.primaryContactId.value = selectedId;
     }
+    const { loadFollowups } = createFollowupsController({ surface, api, escapeHtml });
+
     // E directory pages factory is constructed after the record modules
     // below: it receives them directly instead of lazy closures.
     function setView(view, redraw = true) {
@@ -299,12 +302,15 @@ export function createSponsorCrmSurface(context) {
       const pipeline = surface.querySelector("[data-crm-bookings]");
       const companies = surface.querySelector('[data-dir-root="companies"]');
       const people = surface.querySelector('[data-dir-root="people"]');
+      const followups = surface.querySelector(".crm-followups");
       pipeline.hidden = view !== "pipeline";
       companies.hidden = view !== "companies";
       people.hidden = view !== "people";
+      if (followups) followups.hidden = view !== "followups";
       surface.querySelector(".crm-leads").hidden = view !== "leads";
       surface.querySelector(".crm-newsletters").hidden = view !== "newsletters";
       if (!(surface.querySelector(".crm-money").hidden = view !== "money")) sponsorMoney.loadMoney();
+      if (view === "followups") loadFollowups();
       surface.querySelector(".crm-layout").hidden = PAGE_VIEWS.has(view);
       // Pipeline fills the content area; the other views scroll the page.
       surface.classList.toggle("dk-fill", !surface.querySelector(".crm-layout").hidden);
@@ -317,6 +323,7 @@ export function createSponsorCrmSurface(context) {
         view === "pipeline" ? "Pipeline"
         : view === "companies" ? "Companies"
         : view === "people" ? "People"
+        : view === "followups" ? "Follow-ups"
         : view === "leads" ? "Leads"
         : view === "newsletters" ? "Newsletters"
         : "Money";

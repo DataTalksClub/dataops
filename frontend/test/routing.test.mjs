@@ -58,6 +58,7 @@ describe("canonical workspace routing", () => {
       "/sponsors/pipeline",
       "/sponsors/companies",
       "/sponsors/people",
+      "/sponsors/followups",
       "/sponsors/leads",
       "/sponsors/newsletters",
       "/sponsors/money",

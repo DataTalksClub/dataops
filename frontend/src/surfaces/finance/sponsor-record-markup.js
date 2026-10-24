@@ -109,6 +109,7 @@ export function recordHeaderMarkup(company, options = {}, context = {}) {
   const showPrimary = primary !== undefined
     || (company != null && Object.prototype.hasOwnProperty.call(company, "primaryPerson"));
   const archived = Boolean(company?.archivedAt) || company?.active === false;
+  const isDnc = Boolean(company?.doNotContact || (Array.isArray(company?.tags) && company.tags.includes("do-not-contact")));
   return html`<header class="dk-split__head">
     <button type="button" class="dk-split__back" data-record-back>${escape(returnLabel)}</button>
     <div class="booking-detail-title">
@@ -117,6 +118,7 @@ export function recordHeaderMarkup(company, options = {}, context = {}) {
         ${company?.domain ? html`<span class="status-label" data-status="domain">${escape(company.domain)}</span>` : ""}
         ${company?.relationship ? html`<span class="status-label" data-status="${escape(company.relationship)}">${escape(humanize(company.relationship, context))}</span>` : ""}
         ${archived ? html`<span class="status-label" data-status="archived">Archived</span>` : ""}
+        ${isDnc ? html`<span class="status-label" data-status="dnc" style="background:#fee2e2;color:#991b1b;border:1px solid #f87171;">Do Not Contact</span>` : ""}
         ${selectedDeal ? html`<span class="status-label" data-status="${escape(selectedDeal.status)}">${escape(humanize(selectedDeal.status, context))}</span>` : ""}
       </p>
       <p class="crm-record-sub">
@@ -124,10 +126,15 @@ export function recordHeaderMarkup(company, options = {}, context = {}) {
         ${showPrimary && company?.lastTouch ? " · " : ""}${company?.lastTouch ? html`Last touch ${escape(formatBerlinDate(company.lastTouch))}` : ""}
       </p>
     </div>
-    ${canEdit ? html`<button type="button" data-edit-company>Edit company</button>` : ""}
-    ${canArchive ? (archived
-      ? html`<button type="button" data-restore-company>Restore</button>`
-      : html`<button type="button" data-archive-company>Archive</button>`) : ""}
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button type="button" data-toggle-company-dnc class="button button--secondary">
+        ${isDnc ? "Remove DNC" : "Mark Do-Not-Contact"}
+      </button>
+      ${canEdit ? html`<button type="button" data-edit-company>Edit company</button>` : ""}
+      ${canArchive ? (archived
+        ? html`<button type="button" data-restore-company>Restore</button>`
+        : html`<button type="button" data-archive-company>Archive</button>`) : ""}
+    </div>
   </header>`;
 }
 

@@ -45,6 +45,7 @@ function esc(context) {
 export function personHeaderMarkup(person, options = {}, context = {}) {
   const escape = esc(context);
   const { companyName = null, returnLabel = "Back", canEdit = false } = options;
+  const isDnc = Boolean(person?.doNotContact || (Array.isArray(person?.tags) && person.tags.includes("do-not-contact")));
   // The company link is a real canonical anchor so modified clicks and
   // open-in-new-tab keep working natively; only unmodified primary clicks
   // are intercepted for in-place navigation (same rule as the directories).
@@ -64,6 +65,7 @@ export function personHeaderMarkup(person, options = {}, context = {}) {
         ${person?.role ? html`<span class="status-label" data-status="role">${escape(person.role)}</span>` : ""}
         ${person?.primary ? html`<span class="status-label" data-status="primary">Primary</span>` : ""}
         ${person?.active === false ? html`<span class="status-label" data-status="archived">Archived</span>` : ""}
+        ${isDnc ? html`<span class="status-label" data-status="dnc" style="background:#fee2e2;color:#991b1b;border:1px solid #f87171;">Do Not Contact</span>` : ""}
       </p>
       <p class="crm-record-sub">
         ${companyLink}
@@ -71,7 +73,12 @@ export function personHeaderMarkup(person, options = {}, context = {}) {
         ${person?.lastContactedAt ? html` · Last contacted ${escape(formatBerlinDateTime(person.lastContactedAt))}` : ""}
       </p>
     </div>
-    ${canEdit ? html`<button type="button" data-edit-person> Edit </button>` : ""}
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button type="button" data-toggle-person-dnc class="button button--secondary">
+        ${isDnc ? "Remove DNC" : "Mark Do-Not-Contact"}
+      </button>
+      ${canEdit ? html`<button type="button" data-edit-person> Edit </button>` : ""}
+    </div>
   </header>`;
 }
 
@@ -307,6 +314,23 @@ export function createSponsorPersonDetail(context) {
       }
       if (event.target.closest("[data-edit-person]") && canEdit && person) {
         context.openContactEditor(person);
+        return;
+      }
+      const toggleDnc = event.target.closest("[data-toggle-person-dnc]");
+      if (toggleDnc && person) {
+        const isDnc = Boolean(person.doNotContact || (Array.isArray(person.tags) && person.tags.includes("do-not-contact")));
+        let note;
+        if (!isDnc) {
+          note = window.prompt("Reason / note for Do-Not-Contact (optional):");
+          if (note === null) return;
+        }
+        await fail(async () => {
+          await api(`/contacts/${encodeURIComponent(person.id)}/dnc`, {
+            method: "POST",
+            body: JSON.stringify({ doNotContact: !isDnc, ...(note ? { note } : {}) }),
+          });
+          await openPerson(person.id, currentOpts || {});
+        }, "Could not update do-not-contact status");
         return;
       }
       const company = event.target.closest("[data-open-company]");

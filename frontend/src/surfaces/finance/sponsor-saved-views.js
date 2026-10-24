@@ -84,6 +84,20 @@ export function validateViewFilters(entity, filters) {
       (typeof filters.search !== "string" || !filters.search || filters.search.length > 200)) {
     return "Invalid search filter";
   }
+  if (filters.tag !== undefined &&
+      (typeof filters.tag !== "string" || !filters.tag || filters.tag.length > 100)) {
+    return "Invalid tag filter";
+  }
+  for (const key of ["firstContactAfter", "firstContactBefore", "lastContactAfter", "lastContactBefore"]) {
+    if (filters[key] !== undefined && !absoluteOrRelative(filters[key])) {
+      return `Invalid ${key} filter: YYYY-MM-DD or {daysAgo: 1..730}`;
+    }
+  }
+  for (const key of ["dnc", "noDeal"]) {
+    if (filters[key] !== undefined && !["true", "false"].includes(String(filters[key]))) {
+      return `Invalid ${key} filter`;
+    }
+  }
   if (entity === "companies") {
     if (filters.relationship !== undefined &&
         !["customer", "talking", "dormant", "prospect"].includes(String(filters.relationship))) {

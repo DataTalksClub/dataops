@@ -49,14 +49,14 @@ const rows = { escapeHtml, humanDate: (value) => String(value).slice(0, 10) };
 
 // --- Navigation: Pipeline · Companies · People primary, More secondary ---
 
-test("primary navigation is Pipeline, Companies, People with canonical list paths", async () => {
-  assert.deepEqual(CRM_PRIMARY_TABS.map(({ id }) => id), ["pipeline", "companies", "people"]);
+test("primary navigation is Pipeline, Companies, People, Follow-ups with canonical list paths", async () => {
+  assert.deepEqual(CRM_PRIMARY_TABS.map(({ id }) => id), ["pipeline", "companies", "people", "followups"]);
   assert.deepEqual(CRM_MORE_LINKS.map(({ label }) => label),
     ["Lead discovery", "Newsletter sources", "Money"]);
   const routes = await import("../src/core/sponsor-routes.js");
   const model = crmNavModel("people");
   assert.deepEqual(model.primary.map(({ href }) => href),
-    ["pipeline", "companies", "people"].map((tab) => routes.sponsorsPath(tab)));
+    ["pipeline", "companies", "people", "followups"].map((tab) => routes.sponsorsPath(tab)));
   assert.equal(routes.sponsorsPath("people"), "/sponsors/people");
   assert.equal(routes.sponsorRecordPath("person", "person-1"), "/sponsors/people/person-1");
 });

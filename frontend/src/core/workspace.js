@@ -65,9 +65,19 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/sponsors/pipeline": { view: "sponsors", tasksSection: "queue", sponsorsTab: "pipeline",
     params: ["view", "stage", "search", "owner", "organizationId", "sort", "cursor", "savedView", "nextActionFrom", "nextActionBefore"] },
   "/sponsors/companies": { view: "sponsors", tasksSection: "queue", sponsorsTab: "companies",
-    params: ["view", "search", "relationship", "active", "lastTouchAfter", "lastTouchBefore", "sort", "dir", "limit", "cursor"] },
+    params: [
+      "view", "search", "relationship", "active", "tag", "lastTouchAfter", "lastTouchBefore",
+      "firstContactAfter", "firstContactBefore", "lastContactAfter", "lastContactBefore",
+      "dnc", "sort", "dir", "limit", "cursor"
+    ] },
   "/sponsors/people": { view: "sponsors", tasksSection: "queue", sponsorsTab: "people",
-    params: ["view", "search", "company", "primary", "unlinked", "active", "sort", "dir", "limit", "cursor"] },
+    params: [
+      "view", "search", "company", "primary", "unlinked", "active", "tag",
+      "firstContactAfter", "firstContactBefore", "lastContactAfter", "lastContactBefore",
+      "dnc", "noDeal", "sort", "dir", "limit", "cursor"
+    ] },
+  "/sponsors/followups": { view: "sponsors", tasksSection: "queue", sponsorsTab: "followups",
+    params: ["filter", "cursor"] },
   "/sponsors/leads": { view: "sponsors", tasksSection: "queue", sponsorsTab: "leads", params: [] },
   "/sponsors/newsletters": { view: "sponsors", tasksSection: "queue", sponsorsTab: "newsletters", params: [] },
   "/sponsors/money": { view: "sponsors", tasksSection: "queue", sponsorsTab: "money", params: [] },

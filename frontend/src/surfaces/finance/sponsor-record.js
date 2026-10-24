@@ -710,6 +710,28 @@ export function createSponsorRecord(context) {
         }, "Could not open the company editor");
         return;
       }
+      const toggleDnc = event.target.closest("[data-toggle-company-dnc]");
+      if (toggleDnc) {
+        const company = record?.company;
+        if (!company?.id) return;
+        const isDnc = Boolean(company.doNotContact || (Array.isArray(company.tags) && company.tags.includes("do-not-contact")));
+        let note;
+        if (!isDnc) {
+          note = window.prompt("Reason / note for Do-Not-Contact (optional):");
+          if (note === null) return;
+        }
+        await fail(async () => {
+          await api(`/organizations/${encodeURIComponent(company.id)}/dnc`, {
+            method: "POST",
+            body: JSON.stringify({ doNotContact: !isDnc, ...(note ? { note } : {}) }),
+          });
+          if (typeof context.onRecordChanged === "function") {
+            context.onRecordChanged({ ...company, doNotContact: !isDnc });
+          }
+          await openRecord(company.id, { activeTab: currentTab });
+        }, "Could not update do-not-contact status");
+        return;
+      }
       const archive = event.target.closest("[data-archive-company]");
       if (archive && typeof context.onArchiveCompany === "function") {
         await fail(() => context.onArchiveCompany(), "Could not archive company");

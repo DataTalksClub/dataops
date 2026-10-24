@@ -3,6 +3,7 @@ export const SPONSORS_TABS = Object.freeze([
   Object.freeze(["pipeline", "Pipeline"]),
   Object.freeze(["companies", "Companies"]),
   Object.freeze(["people", "People"]),
+  Object.freeze(["followups", "Follow-ups"]),
   Object.freeze(["leads", "Leads"]),
   Object.freeze(["newsletters", "Newsletters"]),
   Object.freeze(["money", "Money"]),
