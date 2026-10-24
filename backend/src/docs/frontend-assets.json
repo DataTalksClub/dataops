@@ -120,6 +120,7 @@
     "src/surfaces/finance/sponsor-directory.js",
     "src/surfaces/finance/sponsor-finance-records.js",
     "src/surfaces/finance/sponsor-finance.js",
+    "src/surfaces/finance/sponsor-followups.js",
     "src/surfaces/finance/sponsor-layout.js",
     "src/surfaces/finance/sponsor-leads.js",
     "src/surfaces/finance/sponsor-money.js",
