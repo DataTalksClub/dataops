@@ -90,6 +90,32 @@ describe('authored YAML dependencies', () => {
     tasks[0].depends_on = 'not-a-list';
     assert.match(validateAuthoredTemplate(authored).map(({ message }) => message).join(), /depends_on must be a string list/);
   });
+
+  it('rejects authored template where ungrouped task depends on an optional group task', () => {
+    const authored = syntheticAuthoredTemplate();
+    const tasks = authored.tasks as Record<string, unknown>[];
+    // Place tasks[0] in optional group 'primary-slot'
+    tasks[0].optional_group = 'primary-slot';
+    // Add a second task that is ungrouped and depends on tasks[0]
+    tasks.push({
+      ...structuredClone(tasks[0]),
+      id: 'dependent-task',
+      name: 'Dependent',
+      depends_on: [tasks[0].id],
+    });
+    delete tasks[1].optional_group;
+
+    const issues = validateAuthoredTemplate(authored);
+    assert.strictEqual(issues.length, 1);
+    assert.match(
+      issues[0].message,
+      new RegExp(`task '${tasks[1].id}' depends on '${tasks[0].id}' from optional group 'primary-slot'`),
+    );
+
+    // When both tasks are in the same optional group, validation passes
+    tasks[1].optional_group = 'primary-slot';
+    assert.deepEqual(validateAuthoredTemplate(authored), []);
+  });
 });
 
 function withoutId(template: Template): Record<string, unknown> {

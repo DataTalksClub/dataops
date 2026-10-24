@@ -370,6 +370,74 @@ describe('API — CRUD for tasks', () => {
         snapshot, 'listing must not alter persisted provenance');
     });
 
+    it('paginates large task sets within response size budget and returns all items across pages', async () => {
+      const client = await getClient(port);
+      const date = '2099-11-20';
+      const createdIds: string[] = [];
+      for (let index = 0; index < 150; index++) {
+        const task = await createTask(client, {
+          description: `Large dataset task ${index}`,
+          date,
+          comment: `Testing pagination budget ${index}`,
+        });
+        createdIds.push(task.id);
+      }
+
+      // Default limit is 100
+      const page1Res = await handler({
+        httpMethod: 'GET',
+        path: '/api/tasks',
+        queryStringParameters: { date },
+      }, {});
+      assert.strictEqual(page1Res.statusCode, 200);
+      assert.ok(Buffer.byteLength(page1Res.body) < 100_000, 'Page 1 must stay well within size budget');
+      const page1 = JSON.parse(page1Res.body);
+      assert.strictEqual(page1.tasks.length, 100);
+      assert.ok(page1.nextCursor, 'Page 1 must return nextCursor');
+
+      // Fetch page 2 using cursor
+      const page2Res = await handler({
+        httpMethod: 'GET',
+        path: '/api/tasks',
+        queryStringParameters: { date, cursor: page1.nextCursor },
+      }, {});
+      assert.strictEqual(page2Res.statusCode, 200);
+      assert.ok(Buffer.byteLength(page2Res.body) < 100_000, 'Page 2 must stay well within size budget');
+      const page2 = JSON.parse(page2Res.body);
+      assert.strictEqual(page2.tasks.length, 50);
+      assert.strictEqual(page2.nextCursor, undefined);
+
+      const allFetchedIds = [...page1.tasks, ...page2.tasks].map((t: { id: string }) => t.id);
+      assert.strictEqual(allFetchedIds.length, 150);
+      assert.deepStrictEqual(new Set(allFetchedIds), new Set(createdIds), 'All items returned across pages without loss or duplication');
+
+      // Custom limit
+      const customRes = await handler({
+        httpMethod: 'GET',
+        path: '/api/tasks',
+        queryStringParameters: { date, limit: '25' },
+      }, {});
+      assert.strictEqual(customRes.statusCode, 200);
+      const customBody = JSON.parse(customRes.body);
+      assert.strictEqual(customBody.tasks.length, 25);
+      assert.ok(customBody.nextCursor);
+
+      // Rejects invalid limit and invalid cursor
+      const invalidLimitRes = await handler({
+        httpMethod: 'GET',
+        path: '/api/tasks',
+        queryStringParameters: { date, limit: '-5' },
+      }, {});
+      assert.strictEqual(invalidLimitRes.statusCode, 400);
+
+      const invalidCursorRes = await handler({
+        httpMethod: 'GET',
+        path: '/api/tasks',
+        queryStringParameters: { date, cursor: 'not-valid' },
+      }, {});
+      assert.strictEqual(invalidCursorRes.statusCode, 400);
+    });
+
     it('intersects date, range, card and status filters', async () => {
       const client = await getClient(port);
       const card = await createCard(client, { ...templateLink(), title: 'Combined filters', anchorDate: '2099-02-10' });

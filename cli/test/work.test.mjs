@@ -126,6 +126,33 @@ describe("tasks", () => {
     assert.deepEqual(calls.map((call) => call.query), [{ cardId: "c-1", status: "done" }]);
   });
 
+  test("tasks list supports limit, cursor, and --all pagination", async () => {
+    const calls = fakePortal({
+      "GET /api/tasks": ({ query }) => {
+        if (query.cursor === "cur-2") {
+          return { tasks: [task({ id: "t-3" })] };
+        }
+        return { tasks: [task({ id: "t-1" }), task({ id: "t-2" })], nextCursor: "cur-2" };
+      },
+    });
+
+    // Explicit limit and cursor
+    let io = captureIo();
+    assert.equal(await run(["tasks", "list", "--status", "todo", "--limit", "2", "--cursor", "cur-1", "--json"], io), 0);
+    assert.deepEqual(calls.at(-1).query, { status: "todo", limit: "2", cursor: "cur-1" });
+    let jsonResult = io.json();
+    assert.equal(jsonResult.nextCursor, "cur-2");
+    assert.equal(jsonResult.tasks.length, 2);
+
+    // --all loops through nextCursor
+    io = captureIo();
+    assert.equal(await run(["tasks", "list", "--status", "todo", "--all", "--json"], io), 0);
+    jsonResult = io.json();
+    assert.equal(jsonResult.tasks.length, 3);
+    assert.deepEqual(jsonResult.tasks.map((t) => t.id), ["t-1", "t-2", "t-3"]);
+    assert.equal(jsonResult.nextCursor, undefined);
+  });
+
   test("done saves the proof and the status in one versioned write", async () => {
     const calls = fakePortal({
       "GET /api/tasks/t-1": task({ id: "t-1", version: 7 }),

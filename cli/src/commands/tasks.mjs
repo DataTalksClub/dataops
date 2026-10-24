@@ -444,13 +444,32 @@ export async function list(args, io) {
   const card = optionalString(args, "card");
   const resources = requiresQuery(args);
   const browser = browserQuery(args);
+  const limit = args.limit !== undefined ? integer(args.limit, "limit") : undefined;
+  const cursor = optionalString(args, "cursor");
 
   let tasks;
   let view;
+  let nextCursor;
   if (date || from || status || card) {
     view = "filter";
-    const query = { owner, cardId: card, status, date, startDate: from, endDate: to, ...resources, ...browser };
-    tasks = tasksOf(await api.get("/api/tasks", { query }));
+    const query = {
+      owner, cardId: card, status, date, startDate: from, endDate: to, ...resources, ...browser,
+      ...(limit !== undefined ? { limit } : {}),
+      ...(cursor !== undefined ? { cursor } : {}),
+    };
+    if (args.all) {
+      tasks = [];
+      let currentCursor = cursor;
+      do {
+        const page = await api.get("/api/tasks", { query: { ...query, ...(currentCursor ? { cursor: currentCursor } : {}) } });
+        tasks.push(...tasksOf(page));
+        currentCursor = page?.nextCursor;
+      } while (currentCursor);
+    } else {
+      const page = await api.get("/api/tasks", { query });
+      tasks = tasksOf(page);
+      nextCursor = page?.nextCursor;
+    }
   } else {
     const wanted = ["today", "overdue", "waiting"].filter((name) => args[name]);
     view = !args.queue && wanted.length === 1 ? wanted[0] : "queue";
@@ -482,7 +501,14 @@ export async function list(args, io) {
     return batchResult;
   }
 
-  const result = { view, today: day, owner: owner || null, ...(resources.canDo !== undefined ? { canDo: csv(resources.canDo) } : {}), tasks };
+  const result = {
+    view,
+    today: day,
+    owner: owner || null,
+    ...(resources.canDo !== undefined ? { canDo: csv(resources.canDo) } : {}),
+    tasks,
+    ...(nextCursor ? { nextCursor } : {}),
+  };
   if (args.json) return result;
   table(
     io,
@@ -500,6 +526,9 @@ export async function list(args, io) {
     ],
     "No Tasks match.",
   );
+  if (nextCursor) {
+    io.print(`More tasks available: pass --cursor ${nextCursor}`);
+  }
   return result;
 }
 

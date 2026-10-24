@@ -11,6 +11,9 @@ export async function portalRuntimeSecret(): Promise<string> {
   if (process.env.WORK_ENGINE_PORTAL_SECRET) return process.env.WORK_ENGINE_PORTAL_SECRET;
   const secretName = process.env.WORK_ENGINE_PORTAL_SECRET_NAME;
   if (!secretName) {
+    if (process.env.NODE_ENV === 'test' || process.env.IS_LOCAL === 'true') {
+      return 'dataops-test-portal-runtime-secret';
+    }
     return '';
   }
 

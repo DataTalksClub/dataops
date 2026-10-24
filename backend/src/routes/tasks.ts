@@ -25,6 +25,13 @@ import {
   TaskVersionConflictError,
 } from '../db/tasks';
 import type { TaskPatch } from '../db/tasks';
+import {
+  CollectionCursorError,
+  decodeCollectionCursor,
+  encodeCollectionCursor,
+  parseCollectionLimit,
+  type CursorBinding,
+} from '../db/collectionPagination';
 import { getCard } from '../db/cards';
 import { listFilesByTask } from '../db/files';
 import { getTemplate } from '../db/templates';
@@ -474,10 +481,53 @@ export async function handleTaskRoutes(
       browserFilter = parsed.filter;
     }
 
+    let limit: number;
+    try {
+      limit = parseCollectionLimit(params.limit);
+    } catch (err) {
+      if (err instanceof CollectionCursorError) {
+        return jsonResponse(400, { error: 'Invalid pagination input', code: 'invalid_pagination_input' });
+      }
+      throw err;
+    }
+
     if (!date && !startDate && !endDate && !cardId && !cardIds && !status && !ownerFilter) {
       return jsonResponse(400, {
         error: 'At least one filter is required: owner, date, startDate+endDate, cardId, cardIds, or status',
       });
+    }
+
+    const binding: CursorBinding = {
+      collection: 'tasks',
+      filters: {
+        cardId,
+        cardIds,
+        date,
+        startDate,
+        endDate,
+        status,
+        owner: ownerFilter,
+        requires: requiresFilter,
+        blocked: blockedFilter,
+        browser: browserFilter,
+      },
+      principal: listActor.actor.id || 'test-bypass',
+    };
+
+    let offset = 0;
+    if (params.cursor !== undefined) {
+      try {
+        const decoded = await decodeCollectionCursor(binding, params.cursor);
+        offset = Number(decoded.offset ?? 0);
+        if (!Number.isSafeInteger(offset) || offset < 0) {
+          return jsonResponse(400, { error: 'Invalid pagination input', code: 'invalid_pagination_input' });
+        }
+      } catch (err) {
+        if (err instanceof CollectionCursorError) {
+          return jsonResponse(400, { error: 'Invalid pagination input', code: 'invalid_pagination_input' });
+        }
+        throw err;
+      }
     }
 
     const directory = new TeamDirectory(client);
@@ -497,15 +547,57 @@ export async function handleTaskRoutes(
         && matchesRequiresFilter(task.requires, requiresFilter)
         && matchesBrowserRequirementFilter(task.browserRequirement, browserFilter)
       ));
-      // Frozen Template definitions are detail-only provenance. Repeating
-      // them on every row can exceed Lambda's response limit even when each
-      // DynamoDB item is valid. History and operational fields remain here;
-      // GET /api/tasks/:id returns the complete stored snapshot.
-      const withPrerequisites = (await attachPrerequisites(client, visible))
-        .filter((task) => blockedFilter === null || Boolean(task.blocked) === blockedFilter);
-      const projected = await projectTasks(directory, await attachSubjects(client, withPrerequisites));
-      const listTasks = projected.map(({ templateDefinitionSnapshot: _snapshot, ...task }) => task);
+
+      let matchingTasks: Task[];
+      let prereqsAttached = false;
+      let withPrereqs: Awaited<ReturnType<typeof attachPrerequisites<Task>>> = [];
+
+      if (blockedFilter !== null) {
+        withPrereqs = (await attachPrerequisites(client, visible))
+          .filter((task) => Boolean(task.blocked) === blockedFilter);
+        matchingTasks = withPrereqs;
+        prereqsAttached = true;
+      } else {
+        matchingTasks = visible;
+      }
+
+      matchingTasks.sort((left, right) => {
+        if (status === 'done') {
+          const leftComp = String(left.completedAt || left.updatedAt || left.date || '');
+          const rightComp = String(right.completedAt || right.updatedAt || right.date || '');
+          const comp = rightComp.localeCompare(leftComp);
+          if (comp !== 0) return comp;
+          return String(left.id || '').localeCompare(String(right.id || ''));
+        }
+        const dateComp = String(left.date || '').localeCompare(String(right.date || ''));
+        if (dateComp !== 0) return dateComp;
+        return String(left.id || '').localeCompare(String(right.id || ''));
+      });
+
+      const totalMatching = matchingTasks.length;
+      const pageSlice = matchingTasks.slice(offset, offset + limit);
+
+      const pageWithPrereqs = prereqsAttached
+        ? (pageSlice as typeof withPrereqs)
+        : await attachPrerequisites(client, pageSlice);
+
+      const projected = await projectTasks(directory, await attachSubjects(client, pageWithPrereqs));
+
+      // Frozen Template definitions and heavy audit collections are detail-only
+      // provenance. Repeating them on every row in list responses can exceed Lambda's
+      // 6 MB response limit. GET /api/tasks/:id returns the complete stored snapshot.
+      const listTasks = projected.map(({
+        templateDefinitionSnapshot: _snapshot,
+        historyActors: _ha,
+        ...task
+      }) => task);
+
       const responseBody: Record<string, unknown> = { tasks: listTasks };
+
+      if (offset + limit < totalMatching) {
+        responseBody.nextCursor = await encodeCollectionCursor(binding, { offset: offset + limit });
+      }
+
       const ownerReference = ownerFilterUserId(ownerFilter);
       // A concrete reference always answers with its honest availability,
       // including for a disabled or missing teammate, so a deep link never
