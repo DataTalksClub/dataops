@@ -1,3 +1,4 @@
+import { createNote } from '../crmWorkspace/notes';
 import { berlinDate } from '../sponsorFinance/core';
 import { isIndividualTuition } from '../tuition/classification';
 import { sponsorPipeline, PIPELINE_STAGES, PIPELINE_VIEWS, pipelineDateRangeError } from '../sponsorCrm/pipeline';
@@ -24,6 +25,7 @@ import {
   type CrmRecord,
 } from '../db/sponsorCrm';
 import { listOpenDealTasks } from '../db/taskSubjects';
+import { listTasksByStatus } from '../db/tasks';
 import { getWorkspaceSettings, resolveDefaultAssigneeId } from '../db/workspaceSettings';
 import { importCrmSnapshot } from '../sponsorCrm/importSnapshot';
 import { listColdEntries, remindColdEntries, touchTarget, TOUCH_CHANNELS } from '../sponsorCrm/coldContacts';
@@ -105,6 +107,8 @@ function validateOrganization(body: Record<string, unknown>, partial = false) {
   if (!validStamp(body.lastInboundAt)) return 'Invalid lastInboundAt';
   if (!validStamp(body.first_contact_at)) return 'Invalid first_contact_at';
   if (!validStamp(body.last_contact_at)) return 'Invalid last_contact_at';
+  if (body.doNotContact !== undefined && typeof body.doNotContact !== 'boolean') return 'Invalid doNotContact flag';
+  if (body.dnc !== undefined && typeof body.dnc !== 'boolean') return 'Invalid dnc flag';
   if (body.tags !== undefined) {
     const error = validateTags(body.tags);
     if (error) return error;
@@ -113,9 +117,9 @@ function validateOrganization(body: Record<string, unknown>, partial = false) {
 }
 
 function validateContact(body: Record<string, unknown>, partial = false) {
-  if ((!partial && (!ID.test(String(body.organizationId || '')) || !text(body.name, 200))) || (body.name !== undefined && !text(body.name, 200))) return 'Invalid contact fields';
+  if ((!partial && !text(body.name, 200)) || (body.name !== undefined && !text(body.name, 200))) return 'Invalid contact fields';
   if (body.emails !== undefined && (!Array.isArray(body.emails) || body.emails.length < 1 || body.emails.length > 10 || body.emails.some((email) => typeof email !== 'string' || !EMAIL.test(email) || email.length > 254))) return 'Invalid contact channels';
-  if (body.organizationId !== undefined && !ID.test(String(body.organizationId))) return 'Invalid organizationId';
+  if (body.organizationId !== undefined && body.organizationId !== null && body.organizationId !== '' && !ID.test(String(body.organizationId))) return 'Invalid organizationId';
   for (const field of ['role', 'notes', 'telegram']) if (body[field] !== undefined && (typeof body[field] !== 'string' || String(body[field]).length > (field === 'notes' ? 2000 : 200))) return `Invalid ${field}`;
   if (body.primary !== undefined && typeof body.primary !== 'boolean') return 'Invalid primary flag';
   if (body.linkedin !== undefined && body.linkedin !== '') {
@@ -127,6 +131,8 @@ function validateContact(body: Record<string, unknown>, partial = false) {
   if (!validStamp(body.lastInboundAt)) return 'Invalid lastInboundAt';
   if (!validStamp(body.first_contact_at)) return 'Invalid first_contact_at';
   if (!validStamp(body.last_contact_at)) return 'Invalid last_contact_at';
+  if (body.doNotContact !== undefined && typeof body.doNotContact !== 'boolean') return 'Invalid doNotContact flag';
+  if (body.dnc !== undefined && typeof body.dnc !== 'boolean') return 'Invalid dnc flag';
   if (body.tags !== undefined) {
     const error = validateTags(body.tags);
     if (error) return error;
@@ -295,6 +301,152 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     return json(200, await sponsorPipeline(client, query, today));
   }
 
+  if (path === '/api/sponsor-crm/followups' && method === 'GET') {
+    const query = event.queryStringParameters || {};
+    const dueOnly = query.due === 'true';
+    const overdueOnly = query.overdue === 'true';
+    const openTasks = [
+      ...(await listTasksByStatus(client, 'todo')),
+      ...(await listTasksByStatus(client, 'waiting')),
+    ];
+    const sponsorTasks = openTasks.filter(
+      (t) =>
+        t.subject?.type === 'sponsor-deal' ||
+        t.subject?.type === 'sponsor-company' ||
+        t.subject?.type === 'sponsor-person',
+    );
+    const matchingTasks = sponsorTasks.filter((t) => {
+      const taskDate = String(t.date || '');
+      if (overdueOnly) return taskDate < today;
+      if (dueOnly) return taskDate <= today;
+      return true;
+    });
+
+    const orgCache = new Map<string, any>();
+    const contactCache = new Map<string, any>();
+    const dealCache = new Map<string, any>();
+
+    const getOrg = async (id: string) => {
+      if (!orgCache.has(id)) orgCache.set(id, await getCrmRecord(client, 'organization', id));
+      return orgCache.get(id);
+    };
+    const getContact = async (id: string) => {
+      if (!contactCache.has(id)) contactCache.set(id, await getCrmRecord(client, 'contact', id));
+      return contactCache.get(id);
+    };
+    const getDeal = async (id: string) => {
+      if (!dealCache.has(id)) dealCache.set(id, await getCrmRecord(client, 'deal', id));
+      return dealCache.get(id);
+    };
+
+    const isRecordDnc = (record: any) => {
+      if (!record) return false;
+      return Boolean(record.doNotContact || (Array.isArray(record.tags) && record.tags.includes('do-not-contact')));
+    };
+
+    const items: Array<{
+      task: any;
+      subjectType: string;
+      subjectId: string;
+      subjectName: string;
+      organizationId?: string;
+      organizationName?: string;
+      contactId?: string;
+      contactName?: string;
+      dealId?: string;
+      dealTitle?: string;
+      isDue: boolean;
+      isOverdue: boolean;
+    }> = [];
+
+    for (const task of matchingTasks) {
+      const subjectType = task.subject!.type;
+      const subjectId = task.subject!.id;
+      let subjectName = subjectId;
+      let orgId: string | undefined;
+      let orgName: string | undefined;
+      let cntId: string | undefined;
+      let cntName: string | undefined;
+      let dlId: string | undefined;
+      let dlTitle: string | undefined;
+      let excluded = false;
+
+      if (subjectType === 'sponsor-company') {
+        const org = await getOrg(subjectId);
+        if (isRecordDnc(org)) {
+          excluded = true;
+        } else if (org) {
+          orgId = org.id;
+          orgName = org.displayName || org.name;
+          subjectName = orgName || subjectId;
+        }
+      } else if (subjectType === 'sponsor-person') {
+        const contact = await getContact(subjectId);
+        if (isRecordDnc(contact)) {
+          excluded = true;
+        } else if (contact) {
+          cntId = contact.id;
+          cntName = contact.name;
+          subjectName = cntName || subjectId;
+          if (contact.organizationId) {
+            const org = await getOrg(String(contact.organizationId));
+            if (isRecordDnc(org)) {
+              excluded = true;
+            } else if (org) {
+              orgId = org.id;
+              orgName = org.displayName || org.name;
+            }
+          }
+        }
+      } else if (subjectType === 'sponsor-deal') {
+        const deal = await getDeal(subjectId);
+        if (deal) {
+          dlId = deal.id;
+          dlTitle = deal.name || deal.title;
+          subjectName = dlTitle || subjectId;
+          if (deal.organizationId) {
+            const org = await getOrg(String(deal.organizationId));
+            if (isRecordDnc(org)) {
+              excluded = true;
+            } else if (org) {
+              orgId = org.id;
+              orgName = org.displayName || org.name;
+            }
+          }
+        }
+      }
+
+      if (excluded) continue;
+
+      const taskDate = String(task.date || '');
+      items.push({
+        task: {
+          id: task.id,
+          description: task.description,
+          status: task.status,
+          date: task.date,
+          assigneeId: task.assigneeId,
+          subject: task.subject,
+        },
+        subjectType,
+        subjectId,
+        subjectName,
+        ...(orgId ? { organizationId: orgId, organizationName: orgName } : {}),
+        ...(cntId ? { contactId: cntId, contactName: cntName } : {}),
+        ...(dlId ? { dealId: dlId, dealTitle: dlTitle } : {}),
+        isDue: taskDate <= today,
+        isOverdue: taskDate < today,
+      });
+    }
+
+    items.sort(
+      (a, b) =>
+        String(a.task.date || '').localeCompare(String(b.task.date || '')) ||
+        a.task.id.localeCompare(b.task.id),
+    );
+    return json(200, { items, total: items.length });
+  }
+
   if (path === '/api/sponsor-crm/imports' && method === 'POST') {
     if (!body) return json(400, { error: 'Invalid JSON' });
     try {
@@ -322,9 +474,17 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     const stamp = body.direction === 'outbound' ? { lastOutboundAt: sentAt } : { lastInboundAt: sentAt };
     if (contact && !contact.archivedAt) {
       const fresh = await getCrmRecord(client, 'contact', contact.id);
-      if (fresh && !fresh.archivedAt) await updateContactAtomic(client, fresh, stamp, user);
+      if (fresh && !fresh.archivedAt) {
+        const contactUpdates: Record<string, unknown> = { ...stamp, last_contact_at: sentAt };
+        if (!fresh.first_contact_at) contactUpdates.first_contact_at = sentAt;
+        await updateContactAtomic(client, fresh, contactUpdates, user);
+      }
     }
-    await updateOrganizationAtomic(client, organization, stamp, user, 'mail');
+    const freshOrg = await getCrmRecord(client, 'organization', organization.id);
+    const orgTarget = freshOrg || organization;
+    const orgUpdates: Record<string, unknown> = { ...stamp, last_contact_at: sentAt };
+    if (!orgTarget.first_contact_at) orgUpdates.first_contact_at = sentAt;
+    await updateOrganizationAtomic(client, orgTarget, orgUpdates, user, 'mail');
     const created = await createCrmRecord(client, 'message', {
       organizationId: organization.id,
       contactId: contact?.id,
@@ -452,6 +612,26 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     return json(200, await updateOrganizationAtomic(client, existing, { archivedAt: null, active: true }, user, 'unarchived'));
   }
 
+  const dncMatch = path.match(/^\/api\/sponsor-crm\/(organizations|contacts)\/([^/]+)\/dnc$/);
+  if (dncMatch) {
+    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+    const plural = dncMatch[1], id = dncMatch[2];
+    const kind = plural === 'contacts' ? 'contact' : 'organization';
+    if (!ID.test(id)) return json(400, { error: 'Invalid ID' });
+    const existing = await getCrmRecord(client, kind, id);
+    if (!existing) return json(404, { error: 'Not found' });
+    const dncValue = body?.doNotContact !== undefined ? Boolean(body.doNotContact)
+      : body?.dnc !== undefined ? Boolean(body.dnc)
+      : true;
+    const updated = kind === 'organization'
+      ? await updateOrganizationAtomic(client, existing, { doNotContact: dncValue }, user)
+      : await updateContactAtomic(client, existing, { doNotContact: dncValue }, user);
+    if (typeof body?.note === 'string' && body.note.trim()) {
+      await createNote(client, user, kind, id, { body: body.note.trim() });
+    }
+    return json(200, updated);
+  }
+
   const match = path.match(/^\/api\/sponsor-crm\/(organizations|contacts|deals|deliverables)(?:\/([^/]+))?$/);
   if (!match) return json(404, { error: 'Not found' });
   const plural = match[1], id = match[2];
@@ -514,7 +694,7 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
       : kind === 'deal' ? validateDeal(body)
       : validateDeliverable(body);
     if (error) return json(400, { error });
-    if (kind === 'contact' || kind === 'deal') {
+    if ((kind === 'contact' && body.organizationId) || kind === 'deal') {
       const organization = await getCrmRecord(client, 'organization', String(body.organizationId));
       if (!organization || organization.archivedAt) return json(422, { error: 'Invalid organization reference' });
     }
@@ -563,8 +743,8 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
       : kind === 'deal' ? validateDeal(body, true, existing)
       : validateDeliverable(body, true, existing);
     if (error) return json(400, { error });
-    const nextOrganizationId = String(body.organizationId || existing.organizationId || '');
-    if (kind === 'contact' || kind === 'deal') {
+    const nextOrganizationId = body.organizationId !== undefined ? String(body.organizationId || '') : String(existing.organizationId || '');
+    if ((kind === 'contact' && nextOrganizationId) || kind === 'deal') {
       const organization = await getCrmRecord(client, 'organization', nextOrganizationId);
       if (!organization || organization.archivedAt) return json(422, { error: 'Invalid organization reference' });
     }

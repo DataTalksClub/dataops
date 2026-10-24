@@ -13,8 +13,16 @@ const config = {
   INVOICE_READER_TOKEN_SHA256: createHash('sha256').update(token).digest('hex'),
 };
 const saved = Object.fromEntries(Object.keys(config).map(key => [key, process.env[key]]));
-const request = (method: string, path: string, credential = token) => handler({ httpMethod: method, path,
-  headers: { Authorization: `Bearer ${credential}`, 'x-user-id': 'spoofed-admin' }, body: '{}' }, {});
+const request = (method: string, path: string, credential = token) => {
+  const [cleanPath, query] = path.split('?');
+  const queryStringParameters = query
+    ? Object.fromEntries(new URLSearchParams(query).entries())
+    : null;
+  return handler({
+    httpMethod: method, path: cleanPath, queryStringParameters,
+    headers: { Authorization: `Bearer ${credential}`, 'x-user-id': 'spoofed-admin' }, body: '{}',
+  }, {});
+};
 
 describe('deployment-managed invoice reader through the configured portal', () => {
   before(async () => { Object.assign(process.env, config); await useTestDatabase(); });
@@ -25,16 +33,22 @@ describe('deployment-managed invoice reader through the configured portal', () =
     for (const prefix of ['', '/work']) {
       const identity = await request('GET', `${prefix}/api/me`);
       assert.equal(identity.statusCode, 200);
-      assert.deepEqual(JSON.parse(identity.body), { service: { id: 'invoice-reader', scopes: ['invoices:read'], expiresAt: null } });
+      assert.deepEqual(JSON.parse(identity.body), { service: { id: 'invoice-reader', scopes: ['invoices:read', 'crm:read', 'crm:write'], expiresAt: null } });
       const list = await request('GET', `${prefix}/api/bookkeeping/invoices`);
       assert.equal(list.statusCode, 200);
       assert.deepEqual(JSON.parse(list.body), { items: [] });
       assert.equal((await request('GET', `${prefix}/api/bookkeeping/invoices/${'b'.repeat(64)}`)).statusCode, 404);
       assert.equal((await request('GET', `${prefix}/api/bookkeeping/invoices/${'b'.repeat(64)}/document`)).statusCode, 404);
+
+      // CRM directory and tasks are accessible under crm:read
+      const crmCompanies = await request('GET', `${prefix}/api/sponsor-crm/directory/companies`);
+      assert.equal(crmCompanies.statusCode, 200);
+      const tasksList = await request('GET', `${prefix}/api/tasks?status=todo`);
+      assert.equal(tasksList.statusCode, 200);
     }
   });
   it('refuses every mutation, unrelated API and path lookalike', async () => {
-    for (const prefix of ['', '/work']) for (const path of ['/api/me', '/api/tasks', '/api/users', '/api/tokens',
+    for (const prefix of ['', '/work']) for (const path of ['/api/me', '/api/users', '/api/tokens',
       '/api/templates',
       '/api/auth/device/approve', '/api/bookkeeping', '/api/bookkeeping/invoices/',
       '/api/bookkeeping/invoices/process', `/api/bookkeeping/invoices/${'b'.repeat(64)}/verify`]) {

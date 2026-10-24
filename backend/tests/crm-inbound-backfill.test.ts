@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { classifyThread, dedupePeople, main, normalizeEmail, type RawMailMessage } from '../scripts/crm-inbound-backfill';
+import { classifyThread, dedupePeople, main, normalizeEmail, resolveCandidateOrgId, type RawMailMessage } from '../scripts/crm-inbound-backfill';
 
 function message(overrides: Partial<RawMailMessage> = {}): RawMailMessage {
   return { id: 'm1', from: 'Pat Example <pat@vendor.example>', internalDate: '1000',
@@ -98,8 +98,8 @@ test('dry-run matches name/domain and suppresses needs-review records without wr
     const report = path.join(root, 'report.json');
     const result = await main(['--dry-run', '--mail-root', root, '--exclude-config', configPath, '--out-json', report]);
     assert.equal(reads, 2);
-    assert.equal(result.summaryCounts.newIndividualShells, 1);
-    assert.equal(result.summaryCounts.totalTaggedInbound, 4);
+    assert.equal(result.summaryCounts.newIndividualShells, 0);
+    assert.equal(result.summaryCounts.totalTaggedInbound, 3);
     assert.equal(result.summaryCounts.newPeople, 1);
     assert.equal(result.summaryCounts.existingPeopleToTag, 1);
     assert.equal(result.summaryCounts.suppressedCompanies, 1);
@@ -112,4 +112,20 @@ test('dry-run matches name/domain and suppresses needs-review records without wr
     if (originalToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = originalToken;
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('links sender with personal email to known org via thread colleague', () => {
+  const msgs: RawMailMessage[] = [
+    message({ from: 'Allie Beazell <allie@gmail.com>', threadId: 't-allie', body: 'Fabi.ai sponsorship' }),
+    message({ from: 'Marc Dupuis <marc@fabi.ai>', threadId: 't-allie' }),
+  ];
+  const orgs = new Map([['fabi.ai', { id: 'org-fabi', displayName: 'Fabi.ai', version: 1 }]]);
+  const orgId = resolveCandidateOrgId(
+    { name: 'Allie Beazell', email: 'allie@gmail.com', threadId: 't-allie', domain: null, askType: 'sponsorship', subject: 'Hi', date: '2026-10-01', reason: '' },
+    msgs,
+    [],
+    orgs as any,
+    new Map([['fabi.ai', 'org-fabi']]),
+  );
+  assert.equal(orgId, 'org-fabi');
 });

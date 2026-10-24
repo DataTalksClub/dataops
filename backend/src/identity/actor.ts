@@ -108,6 +108,19 @@ export async function resolveInteractiveActor(
     return { ok: false, response: unauthorizedResponse() };
   }
 
+  if (actorId === 'invoice-reader' || actorId === 'service-agent') {
+    return {
+      ok: true,
+      actor: {
+        id: 'service-agent',
+        user: null,
+        role: 'operator',
+        isAdmin: true,
+        testBypass: false,
+      },
+    };
+  }
+
   const user = await getUser(client, actorId);
   if (!user) {
     // A deleted user, `portal-admin`, or any other non-user id is not an

@@ -64,6 +64,61 @@ export const DEFAULT_OWN_DOMAINS = [
   "datatalks.club", "mail.grokbot.com", "grokbot.com", "dtcdev.click", "aishippinglabs.com",
 ];
 
+export function domainOf(email: string): string {
+  const at = String(email || "").lastIndexOf("@");
+  return at === -1 ? "" : String(email).slice(at + 1).toLowerCase();
+}
+
+export function extractEmails(header: unknown): string[] {
+  if (typeof header !== "string" || !header.trim()) return [];
+  const matches = header.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
+  if (!matches) return [];
+  return matches.map((e) => e.toLowerCase().trim());
+}
+
+export function resolveCandidateOrgId(
+  candidate: ClassifiedCandidate,
+  threadMsgs: RawMailMessage[],
+  existingContacts: ExistingContact[],
+  existingOrgsByDomain: Map<string, ExistingOrganization>,
+  orgIdMap: Map<string, string>,
+): string | undefined {
+  if (candidate.domain && !GENERIC_DOMAINS.has(candidate.domain)) {
+    const id = orgIdMap.get(candidate.domain) || existingOrgsByDomain.get(candidate.domain)?.id;
+    if (id) return id;
+  }
+
+  const normEmail = normalizeEmail(candidate.email);
+  const matchedContact = existingContacts.find((c) =>
+    c.organizationId &&
+    (Array.isArray(c.emails) && c.emails.map(normalizeEmail).includes(normEmail))
+  );
+  if (matchedContact?.organizationId) return matchedContact.organizationId;
+
+  for (const msg of threadMsgs) {
+    const allEmails = [
+      ...extractEmails(msg.from),
+      ...extractEmails(msg.to),
+      ...extractEmails(msg.cc),
+    ];
+    for (const addr of allEmails) {
+      const dom = domainOf(addr);
+      if (dom && !GENERIC_DOMAINS.has(dom)) {
+        const id = orgIdMap.get(dom) || existingOrgsByDomain.get(dom)?.id;
+        if (id) return id;
+      }
+    }
+    const text = (msg.body || msg.snippet || "").toLowerCase();
+    for (const [dom, org] of existingOrgsByDomain.entries()) {
+      if (dom && dom.length > 3 && text.includes(dom)) {
+        return orgIdMap.get(dom) || org.id;
+      }
+    }
+  }
+
+  return undefined;
+}
+
 export function normalizeEmail(value: string): string {
   const email = value.trim().normalize("NFKC").toLowerCase();
   const [local, rawDomain] = email.split("@");
@@ -507,16 +562,15 @@ export async function main(argv = process.argv.slice(2)) {
   const kastraMatch = existingOrgsByDomain.get("kastra.ai");
   const carlosMatch = existingContactsByEmail.get("carlos@kastra.ai");
 
-  const newIndividualShells = newPeople.filter(p => !p.domain).length;
   const summaryCounts = {
-    newIndividualShells,
+    newIndividualShells: 0,
     suppressedCompanies: suppressedCompanies.length,
     suppressedPeople: suppressedPeople.length,
     newCompanies: newCompanies.length,
     newPeople: newPeople.length,
     existingCompaniesToTag: existingCompaniesToTag.length,
     existingPeopleToTag: existingPeopleToTag.length,
-    totalTaggedInbound: newCompanies.length + newIndividualShells + newPeople.length + existingCompaniesToTag.length + existingPeopleToTag.length,
+    totalTaggedInbound: newCompanies.length + newPeople.length + existingCompaniesToTag.length + existingPeopleToTag.length,
     alreadyTaggedInboundCompanies: companiesAlreadyTagged.length,
     alreadyTaggedInboundPeople: peopleAlreadyTagged.length,
   };
@@ -564,21 +618,11 @@ export async function main(argv = process.argv.slice(2)) {
 
     // C. Create new people
     for (const person of newPeople) {
-      let orgId = person.domain ? orgIdMap.get(person.domain) : undefined;
-      if (!orgId) {
-        // Individual shell required by contact API
-        const shellOrg = await apiCreate(origin, token, "organizations", {
-          displayName: person.name,
-          tags: ["inbound"],
-          notes: "Individual contact shell required by contact API",
-        });
-        orgId = shellOrg.id;
-        appliedNewIndividualShells++;
-        if (person.domain) orgIdMap.set(person.domain, orgId);
-      }
+      const threadMsgs = threads.get(person.threadId) || [];
+      const orgId = resolveCandidateOrgId(person, threadMsgs, existingContacts, existingOrgsByDomain, orgIdMap);
 
       await apiCreate(origin, token, "contacts", {
-        organizationId: orgId,
+        ...(orgId ? { organizationId: orgId } : {}),
         name: person.name,
         emails: [person.email],
         tags: ["inbound"],
@@ -596,7 +640,7 @@ export async function main(argv = process.argv.slice(2)) {
       appliedTaggedPeople++;
     }
 
-    console.log(`[crm-inbound-backfill] Apply complete: created ${appliedNewCompanies} companies, created ${appliedNewIndividualShells} individual shells, created ${appliedNewPeople} people, tagged ${appliedTaggedCompanies} existing companies, tagged ${appliedTaggedPeople} existing people.`);
+    console.log(`[crm-inbound-backfill] Apply complete: created ${appliedNewCompanies} companies, created ${appliedNewPeople} people, tagged ${appliedTaggedCompanies} existing companies, tagged ${appliedTaggedPeople} existing people.`);
   }
 
   // 7. Generate Reports

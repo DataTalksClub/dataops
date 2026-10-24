@@ -246,9 +246,13 @@ export async function touchTarget(
     if (!contact || contact.archivedAt) throw Object.assign(new Error('Contact not found'), { statusCode: 404 });
     const organization = await getCrmRecord(client, 'organization', String(contact.organizationId));
     if (!organization || organization.archivedAt) throw Object.assign(new Error('Contact organization is archived'), { statusCode: 422 });
+    const contactUpdates: Record<string, unknown> = { lastOutboundAt: stamp, last_contact_at: stamp };
+    if (!contact.first_contact_at) contactUpdates.first_contact_at = stamp;
+    const orgUpdates: Record<string, unknown> = { lastOutboundAt: stamp, last_contact_at: stamp };
+    if (!organization.first_contact_at) orgUpdates.first_contact_at = stamp;
     const [nextContact, nextOrg] = await Promise.all([
-      updateContactAtomic(client, contact, { lastOutboundAt: stamp }, input.actorId),
-      updateOrganizationAtomic(client, organization, { lastOutboundAt: stamp }, input.actorId, 'touch'),
+      updateContactAtomic(client, contact, contactUpdates, input.actorId),
+      updateOrganizationAtomic(client, organization, orgUpdates, input.actorId, 'touch'),
     ]);
     const message = await fileTouchMessage(client, {
       organizationId: organization.id,
@@ -262,7 +266,9 @@ export async function touchTarget(
   }
   const organization = await getCrmRecord(client, 'organization', target.targetId);
   if (!organization || organization.archivedAt) throw Object.assign(new Error('Organization not found'), { statusCode: 404 });
-  const nextOrg = await updateOrganizationAtomic(client, organization, { lastOutboundAt: stamp }, input.actorId, 'touch');
+  const orgUpdates: Record<string, unknown> = { lastOutboundAt: stamp, last_contact_at: stamp };
+  if (!organization.first_contact_at) orgUpdates.first_contact_at = stamp;
+  const nextOrg = await updateOrganizationAtomic(client, organization, orgUpdates, input.actorId, 'touch');
   const message = await fileTouchMessage(client, {
     organizationId: organization.id,
     snippet,

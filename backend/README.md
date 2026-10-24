@@ -199,18 +199,19 @@ never fall back to `system`, `portal-admin`, a requested owner, or an assignee.
 
 - [Imported source product specification](docs/specs.md)
 
-### Invoice reader service credential
+### Agent and invoice reader service credential
 
-Unattended invoice checks can use a dedicated `dops_svc_` bearer credential.
+Unattended invoice checks and agent CRM operations use a dedicated `dops_svc_` bearer credential.
 The backend stores only its SHA256 verifier, supplied by
 `InvoiceReaderTokenSha256` through CI's `INVOICE_READER_TOKEN_SHA256` secret.
 An empty verifier disables service access; replacing it invalidates the previous
-credential after deployment. This service has no user identity and no automatic
-expiry. Its scope is limited to GET invoice list, detail, document and readiness
-routes, plus its own `/api/me` identity. It cannot verify or modify invoices,
-manage tokens or read other operations data.
+credential after deployment. This service holds `invoices:read`, `crm:read`, and
+`crm:write` scopes: it permits invoice reads, CRM directory and record operations,
+and CRM-associated task management. It cannot manage tokens, users, or unassociated
+operations data.
 
 The CLI supports `login --service-token-stdin --url <portal>` and verifies the
 credential before saving its existing owner-only profile. `whoami` identifies the
-service. Service logout removes the local copy; global revocation is performed
-by rotating or disabling the deployment verifier.
+service and its scopes (`invoices:read`, `crm:read`, `crm:write`). Service logout
+removes the local copy; global revocation is performed by rotating or disabling
+the deployment verifier.

@@ -49,10 +49,19 @@ function absoluteOrRelative(value: unknown): boolean {
 }
 
 function validateCompanyFilters(filters: Filters): string {
-  const allowed = ['search', 'relationship', 'active', 'lastTouchAfter', 'lastTouchBefore'];
+  const allowed = [
+    'search', 'relationship', 'tag', 'active',
+    'lastTouchAfter', 'lastTouchBefore',
+    'firstContactAfter', 'firstContactBefore',
+    'lastContactAfter', 'lastContactBefore',
+    'dnc',
+  ];
   for (const key of Object.keys(filters)) if (!allowed.includes(key)) return `Unknown companies filter: ${key}`;
   if (filters.search !== undefined && (typeof filters.search !== 'string' || !filters.search || filters.search.length > 200)) {
     return 'Invalid search filter';
+  }
+  if (filters.tag !== undefined && (typeof filters.tag !== 'string' || !filters.tag || filters.tag.length > 100)) {
+    return 'Invalid tag filter';
   }
   if (filters.relationship !== undefined && !(DIRECTORY_RELATIONSHIPS as readonly string[]).includes(String(filters.relationship))) {
     return 'Invalid relationship filter';
@@ -60,7 +69,14 @@ function validateCompanyFilters(filters: Filters): string {
   if (filters.active !== undefined && !['true', 'false', 'all'].includes(String(filters.active))) {
     return 'Invalid active filter';
   }
-  for (const name of ['lastTouchAfter', 'lastTouchBefore'] as const) {
+  if (filters.dnc !== undefined && !['true', 'false'].includes(String(filters.dnc))) {
+    return 'Invalid dnc filter';
+  }
+  for (const name of [
+    'lastTouchAfter', 'lastTouchBefore',
+    'firstContactAfter', 'firstContactBefore',
+    'lastContactAfter', 'lastContactBefore',
+  ] as const) {
     if (filters[name] !== undefined && !absoluteOrRelative(filters[name])) {
       return `Invalid ${name} filter: YYYY-MM-DD or {daysAgo: 1..730}`;
     }
@@ -69,20 +85,36 @@ function validateCompanyFilters(filters: Filters): string {
 }
 
 function validatePeopleFilters(filters: Filters): string {
-  const allowed = ['search', 'company', 'primary', 'unlinked', 'active'];
+  const allowed = [
+    'search', 'company', 'tag', 'primary', 'unlinked', 'active',
+    'firstContactAfter', 'firstContactBefore',
+    'lastContactAfter', 'lastContactBefore',
+    'dnc', 'noDeal',
+  ];
   const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
   for (const key of Object.keys(filters)) if (!allowed.includes(key)) return `Unknown people filter: ${key}`;
   if (filters.search !== undefined && (typeof filters.search !== 'string' || !filters.search || filters.search.length > 200)) {
     return 'Invalid search filter';
   }
+  if (filters.tag !== undefined && (typeof filters.tag !== 'string' || !filters.tag || filters.tag.length > 100)) {
+    return 'Invalid tag filter';
+  }
   if (filters.company !== undefined && (typeof filters.company !== 'string' || !ID.test(filters.company))) {
     return 'Invalid company filter';
   }
-  for (const name of ['primary', 'unlinked', 'active'] as const) {
+  for (const name of ['primary', 'unlinked', 'active', 'dnc', 'noDeal'] as const) {
     if (name === 'active') {
       if (filters[name] !== undefined && !['true', 'false', 'all'].includes(String(filters[name]))) return 'Invalid active filter';
     } else if (filters[name] !== undefined && !['true', 'false'].includes(String(filters[name]))) {
       return `Invalid ${name} filter`;
+    }
+  }
+  for (const name of [
+    'firstContactAfter', 'firstContactBefore',
+    'lastContactAfter', 'lastContactBefore',
+  ] as const) {
+    if (filters[name] !== undefined && !absoluteOrRelative(filters[name])) {
+      return `Invalid ${name} filter: YYYY-MM-DD or {daysAgo: 1..730}`;
     }
   }
   return '';
@@ -159,6 +191,7 @@ const BUILTINS: Builtin[] = [
   { id: 'builtin:people:primary', entity: 'people', name: 'Primary only', filters: { active: 'true', primary: 'true' }, sort: { field: 'name', direction: 'asc' } },
   { id: 'builtin:people:unlinked', entity: 'people', name: 'Unlinked', filters: { active: 'true', unlinked: 'true' }, sort: { field: 'name', direction: 'asc' } },
   { id: 'builtin:people:archived', entity: 'people', name: 'Archived', filters: { active: 'false' }, sort: { field: 'name', direction: 'asc' } },
+  { id: 'builtin:people:inbound-followups', entity: 'people', name: 'Inbound follow-up candidates', filters: { tag: 'inbound', lastContactBefore: { daysAgo: 21 }, noDeal: 'true', dnc: 'false', active: 'true' }, sort: { field: 'lastContact', direction: 'desc' } },
   { id: 'builtin:pipeline:attention', entity: 'pipeline', name: 'Needs attention', filters: { view: 'actionable' }, sort: { field: 'next-action' } },
   { id: 'builtin:pipeline:active', entity: 'pipeline', name: 'Active', filters: { view: 'active' }, sort: { field: 'next-action' } },
   { id: 'builtin:pipeline:early', entity: 'pipeline', name: 'Early prospects', filters: { view: 'early' }, sort: { field: 'next-action' } },
@@ -219,7 +252,9 @@ export function resolveFilters(filters: Filters, today: string): Filters {
   const resolved: Filters = {};
   for (const [key, value] of Object.entries(filters)) {
     const relative = relativeDay(value);
-    if ((key === 'lastTouchAfter' || key === 'lastTouchBefore') && relative) {
+    if ((key === 'lastTouchAfter' || key === 'lastTouchBefore' ||
+         key === 'firstContactAfter' || key === 'firstContactBefore' ||
+         key === 'lastContactAfter' || key === 'lastContactBefore') && relative) {
       resolved[key] = berlinDaysBefore(today, relative.daysAgo);
     } else {
       resolved[key] = value;

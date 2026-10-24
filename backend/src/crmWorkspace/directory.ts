@@ -15,6 +15,11 @@ export type CompanyFilters = {
   active: 'true' | 'false' | 'all';
   lastTouchAfter?: string;
   lastTouchBefore?: string;
+  firstContactAfter?: string;
+  firstContactBefore?: string;
+  lastContactAfter?: string;
+  lastContactBefore?: string;
+  dnc?: 'true' | 'false';
   sort: 'name' | 'lastTouch';
   direction: 'asc' | 'desc';
 };
@@ -26,7 +31,13 @@ export type PersonFilters = {
   primary?: 'true' | 'false';
   unlinked?: 'true' | 'false';
   active: 'true' | 'false' | 'all';
-  sort: 'name' | 'lastTouch';
+  firstContactAfter?: string;
+  firstContactBefore?: string;
+  lastContactAfter?: string;
+  lastContactBefore?: string;
+  dnc?: 'true' | 'false';
+  noDeal?: 'true' | 'false';
+  sort: 'name' | 'lastTouch' | 'lastContact';
   direction: 'asc' | 'desc';
 };
 
@@ -75,6 +86,14 @@ function parseDirection(query: Record<string, string | undefined>, sort: 'name' 
   return { direction };
 }
 
+function parsePersonDirection(query: Record<string, string | undefined>, sort: 'name' | 'lastTouch' | 'lastContact'):
+  { direction: 'asc' | 'desc' } | { error: string } {
+  const fallback = sort === 'name' ? 'asc' : 'desc';
+  const direction = query.direction === undefined ? fallback : query.direction;
+  if (direction !== 'asc' && direction !== 'desc') return bad('direction must be asc or desc');
+  return { direction };
+}
+
 export function parseCompanyFilters(
   query: Record<string, string | undefined>,
 ): { filters: CompanyFilters } | { error: string } {
@@ -87,6 +106,15 @@ export function parseCompanyFilters(
   if ('error' in after) return after;
   const before = parseDay(query.lastTouchBefore, 'lastTouchBefore');
   if ('error' in before) return before;
+  const firstContactAfter = parseDay(query.firstContactAfter ?? query.first_contact_after, 'firstContactAfter');
+  if ('error' in firstContactAfter) return firstContactAfter;
+  const firstContactBefore = parseDay(query.firstContactBefore ?? query.first_contact_before, 'firstContactBefore');
+  if ('error' in firstContactBefore) return firstContactBefore;
+  const lastContactAfter = parseDay(query.lastContactAfter ?? query.last_contact_after, 'lastContactAfter');
+  if ('error' in lastContactAfter) return lastContactAfter;
+  const lastContactBefore = parseDay(query.lastContactBefore ?? query.last_contact_before, 'lastContactBefore');
+  if ('error' in lastContactBefore) return lastContactBefore;
+  if (query.dnc !== undefined && query.dnc !== 'true' && query.dnc !== 'false') return bad('dnc must be true or false');
   const sort = query.sort === undefined ? 'name' : query.sort;
   if (sort !== 'name' && sort !== 'lastTouch') return bad('sort must be name or lastTouch');
   const direction = parseDirection(query, sort);
@@ -99,6 +127,11 @@ export function parseCompanyFilters(
       active,
       ...(after.day ? { lastTouchAfter: after.day } : {}),
       ...(before.day ? { lastTouchBefore: before.day } : {}),
+      ...(firstContactAfter.day ? { firstContactAfter: firstContactAfter.day } : {}),
+      ...(firstContactBefore.day ? { firstContactBefore: firstContactBefore.day } : {}),
+      ...(lastContactAfter.day ? { lastContactAfter: lastContactAfter.day } : {}),
+      ...(lastContactBefore.day ? { lastContactBefore: lastContactBefore.day } : {}),
+      ...(query.dnc ? { dnc: query.dnc as 'true' | 'false' } : {}),
       sort,
       direction: direction.direction,
     },
@@ -111,14 +144,22 @@ export function parsePersonFilters(
   const active = parseActive(query.active);
   if (!active) return bad('active must be true, false or all');
   if (query.company !== undefined && !ID.test(query.company)) return bad('Invalid company filter');
-  for (const name of ['primary', 'unlinked'] as const) {
+  for (const name of ['primary', 'unlinked', 'dnc', 'noDeal'] as const) {
     if (query[name] !== undefined && query[name] !== 'true' && query[name] !== 'false') {
       return bad(`${name} must be true or false`);
     }
   }
+  const firstContactAfter = parseDay(query.firstContactAfter ?? query.first_contact_after, 'firstContactAfter');
+  if ('error' in firstContactAfter) return firstContactAfter;
+  const firstContactBefore = parseDay(query.firstContactBefore ?? query.first_contact_before, 'firstContactBefore');
+  if ('error' in firstContactBefore) return firstContactBefore;
+  const lastContactAfter = parseDay(query.lastContactAfter ?? query.last_contact_after, 'lastContactAfter');
+  if ('error' in lastContactAfter) return lastContactAfter;
+  const lastContactBefore = parseDay(query.lastContactBefore ?? query.last_contact_before, 'lastContactBefore');
+  if ('error' in lastContactBefore) return lastContactBefore;
   const sort = query.sort === undefined ? 'name' : query.sort;
-  if (sort !== 'name' && sort !== 'lastTouch') return bad('sort must be name or lastTouch');
-  const direction = parseDirection(query, sort);
+  if (sort !== 'name' && sort !== 'lastTouch' && sort !== 'lastContact') return bad('sort must be name, lastTouch or lastContact');
+  const direction = parsePersonDirection(query, sort);
   if ('error' in direction) return direction;
   return {
     filters: {
@@ -127,6 +168,12 @@ export function parsePersonFilters(
       ...(query.tag ? { tag: query.tag.trim() } : {}),
       ...(query.primary ? { primary: query.primary as 'true' | 'false' } : {}),
       ...(query.unlinked ? { unlinked: query.unlinked as 'true' | 'false' } : {}),
+      ...(firstContactAfter.day ? { firstContactAfter: firstContactAfter.day } : {}),
+      ...(firstContactBefore.day ? { firstContactBefore: firstContactBefore.day } : {}),
+      ...(lastContactAfter.day ? { lastContactAfter: lastContactAfter.day } : {}),
+      ...(lastContactBefore.day ? { lastContactBefore: lastContactBefore.day } : {}),
+      ...(query.dnc ? { dnc: query.dnc as 'true' | 'false' } : {}),
+      ...(query.noDeal ? { noDeal: query.noDeal as 'true' | 'false' } : {}),
       active,
       sort,
       direction: direction.direction,
@@ -148,6 +195,7 @@ export type CompanyItem = {
   first_contact_at?: string;
   last_contact_at?: string;
   openDealCount: number;
+  doNotContact?: boolean;
   version: number;
   updatedAt: string;
 };
@@ -170,6 +218,9 @@ export type PersonItem = {
   lastContactedAt?: string;
   first_contact_at?: string;
   last_contact_at?: string;
+  doNotContact?: boolean;
+  lastSender?: 'us' | 'them';
+  lastMessageState?: string;
   active: boolean;
   version: number;
   updatedAt: string;
@@ -184,6 +235,12 @@ function touchDay(record: CrmRecord): string | null {
 function passesTouchWindow(day: string | null, filters: { lastTouchAfter?: string; lastTouchBefore?: string }): boolean {
   if (filters.lastTouchAfter && (day === null || day < filters.lastTouchAfter)) return false;
   if (filters.lastTouchBefore && day !== null && day > filters.lastTouchBefore) return false;
+  return true;
+}
+
+function passesContactWindow(day: string | null, filters: { after?: string; before?: string }): boolean {
+  if (filters.after && (!day || day < filters.after)) return false;
+  if (filters.before && (!day || day > filters.before)) return false;
   return true;
 }
 
@@ -203,6 +260,7 @@ function companyRow(org: CrmRecord, ctx: CompanyContext): CompanyItem {
     ...(Array.isArray(org.tags) && org.tags.length ? { tags: org.tags.map(String) } : {}),
     relationship: relationshipTag(org, orgDeals, ctx.today),
     active: activeOf(org),
+    ...(typeof org.doNotContact === 'boolean' ? { doNotContact: org.doNotContact } : {}),
     primaryPerson: primary
       ? { id: primary.id, name: String(primary.name || ''), ...(emailOf(primary) ? { email: emailOf(primary)! } : {}) }
       : null,
@@ -297,6 +355,13 @@ export async function listCompanies(
     const row = companyRow(org, ctx);
     if (filters.relationship && row.relationship !== filters.relationship) continue;
     if (!passesTouchWindow(touchDay(org), filters)) continue;
+    const firstContact = org.first_contact_at ? String(org.first_contact_at).slice(0, 10) : null;
+    const lastContact = org.last_contact_at ? String(org.last_contact_at).slice(0, 10) : null;
+    if (!passesContactWindow(firstContact, { after: filters.firstContactAfter, before: filters.firstContactBefore })) continue;
+    if (!passesContactWindow(lastContact, { after: filters.lastContactAfter, before: filters.lastContactBefore })) continue;
+    const isDnc = Boolean(org.doNotContact || (Array.isArray(org.tags) && org.tags.map(String).includes('do-not-contact')));
+    if (filters.dnc === 'true' && !isDnc) continue;
+    if (filters.dnc === 'false' && isDnc) continue;
     items.push(row);
   }
   applyCompanyDirection(items, filters);
@@ -321,6 +386,7 @@ export type CompanySummary = {
   domain?: string;
   tags?: string[];
   active: boolean;
+  doNotContact?: boolean;
   lastTouch: string | null;
   lastInboundAt?: string;
   lastOutboundAt?: string;
@@ -343,6 +409,7 @@ export async function getCompanySummary(
     ...(org.domain ? { domain: String(org.domain) } : {}),
     ...(Array.isArray(org.tags) && org.tags.length ? { tags: org.tags.map(String) } : {}),
     active: activeOf(org),
+    ...(typeof org.doNotContact === 'boolean' ? { doNotContact: org.doNotContact } : {}),
     lastTouch: lastTouchOf(org),
     ...(typeof org.lastInboundAt === 'string' ? { lastInboundAt: org.lastInboundAt } : {}),
     ...(typeof org.lastOutboundAt === 'string' ? { lastOutboundAt: org.lastOutboundAt } : {}),
@@ -372,11 +439,20 @@ export async function listPeople(
     offset = cursor.offset;
   }
 
-  const [organizations, contacts] = await Promise.all([
+  const [organizations, contacts, deals] = await Promise.all([
     listCrmRecords(client, 'organization'),
     listCrmRecords(client, 'contact'),
+    listCrmRecords(client, 'deal'),
   ]);
   const orgById = new Map(organizations.map((org) => [org.id, org]));
+  const dealsByOrg = new Map<string, CrmRecord[]>();
+  for (const deal of deals) {
+    if (deal.archivedAt) continue;
+    const orgId = String(deal.organizationId || '');
+    if (orgId) {
+      dealsByOrg.set(orgId, [...(dealsByOrg.get(orgId) || []), deal]);
+    }
+  }
   const q = (filters.search || '').toLowerCase();
   const items: PersonItem[] = [];
   for (const contact of contacts) {
@@ -388,6 +464,22 @@ export async function listPeople(
     const linked = !!org;
     if (filters.unlinked === 'true' && linked) continue;
     if (filters.unlinked === 'false' && !linked) continue;
+    const firstContact = contact.first_contact_at ? String(contact.first_contact_at).slice(0, 10) : null;
+    const lastContact = contact.last_contact_at ? String(contact.last_contact_at).slice(0, 10) : null;
+    if (!passesContactWindow(firstContact, { after: filters.firstContactAfter, before: filters.firstContactBefore })) continue;
+    if (!passesContactWindow(lastContact, { after: filters.lastContactAfter, before: filters.lastContactBefore })) continue;
+    const isDnc = Boolean(
+      contact.doNotContact ||
+      (Array.isArray(contact.tags) && contact.tags.map(String).includes('do-not-contact')) ||
+      org?.doNotContact ||
+      (Array.isArray(org?.tags) && org.tags.map(String).includes('do-not-contact'))
+    );
+    if (filters.dnc === 'true' && !isDnc) continue;
+    if (filters.dnc === 'false' && isDnc) continue;
+    const orgDeals = contact.organizationId ? dealsByOrg.get(String(contact.organizationId)) || [] : [];
+    const hasDeal = orgDeals.length > 0;
+    if (filters.noDeal === 'true' && hasDeal) continue;
+    if (filters.noDeal === 'false' && !hasDeal) continue;
     const companyName = org ? String(org.displayName || '') : null;
     if (
       q &&
@@ -397,6 +489,9 @@ export async function listPeople(
     ) {
       continue;
     }
+    const lastIn = typeof contact.lastInboundAt === 'string' ? contact.lastInboundAt : '';
+    const lastOut = typeof contact.lastOutboundAt === 'string' ? contact.lastOutboundAt : '';
+    const lastSender = lastIn && lastOut ? (lastOut >= lastIn ? 'us' : 'them') : lastOut ? 'us' : lastIn ? 'them' : undefined;
     items.push({
       id: contact.id,
       ...(contact.organizationId ? { organizationId: String(contact.organizationId) } : {}),
@@ -416,6 +511,8 @@ export async function listPeople(
       ...(typeof contact.lastContactedAt === 'string' ? { lastContactedAt: contact.lastContactedAt } : {}),
       ...(typeof contact.first_contact_at === 'string' ? { first_contact_at: contact.first_contact_at } : {}),
       ...(typeof contact.last_contact_at === 'string' ? { last_contact_at: contact.last_contact_at } : {}),
+      ...(typeof contact.doNotContact === 'boolean' ? { doNotContact: contact.doNotContact } : {}),
+      ...(lastSender ? { lastSender, lastMessageState: lastSender } : {}),
       active: activeOf(contact),
       version: contact.version,
       updatedAt: String(contact.updatedAt),
@@ -425,7 +522,9 @@ export async function listPeople(
     const ascending =
       filters.sort === 'name'
         ? a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id)
-        : String(a.lastTouch || '').localeCompare(String(b.lastTouch || '')) || a.id.localeCompare(b.id);
+        : filters.sort === 'lastContact'
+          ? String(a.last_contact_at || '').localeCompare(String(b.last_contact_at || '')) || a.id.localeCompare(b.id)
+          : String(a.lastTouch || '').localeCompare(String(b.lastTouch || '')) || a.id.localeCompare(b.id);
     return filters.direction === 'desc' ? -ascending : ascending;
   });
   return { status: 200, body: pageItems(items, offset, limit.limit, binding) };
