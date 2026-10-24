@@ -77,6 +77,7 @@ test('dry-run matches name/domain and suppresses needs-review records without wr
         message({ id: '2', threadId: '2', from: 'Review Person <person@review.example>' }),
         message({ id: '3', threadId: '3', from: 'New Person <new@review.example>' }),
         message({ id: '4', threadId: '4', from: 'Private Staff <staff@private.example>' }),
+        message({ id: '5', threadId: '5', from: 'Independent Example <independent@gmail.com>' }),
       ].map(x => JSON.stringify(x)).join('\n') : '');
     }
     const configPath = path.join(root, 'exclude.json');
@@ -97,7 +98,9 @@ test('dry-run matches name/domain and suppresses needs-review records without wr
     const report = path.join(root, 'report.json');
     const result = await main(['--dry-run', '--mail-root', root, '--exclude-config', configPath, '--out-json', report]);
     assert.equal(reads, 2);
-    assert.equal(result.summaryCounts.newPeople, 0);
+    assert.equal(result.summaryCounts.newIndividualShells, 1);
+    assert.equal(result.summaryCounts.totalTaggedInbound, 4);
+    assert.equal(result.summaryCounts.newPeople, 1);
     assert.equal(result.summaryCounts.existingPeopleToTag, 1);
     assert.equal(result.summaryCounts.suppressedCompanies, 1);
     assert.equal(result.summaryCounts.suppressedPeople, 2);

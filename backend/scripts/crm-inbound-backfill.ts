@@ -507,15 +507,16 @@ export async function main(argv = process.argv.slice(2)) {
   const kastraMatch = existingOrgsByDomain.get("kastra.ai");
   const carlosMatch = existingContactsByEmail.get("carlos@kastra.ai");
 
+  const newIndividualShells = newPeople.filter(p => !p.domain).length;
   const summaryCounts = {
-    newIndividualShells: newPeople.filter(p => !p.domain).length,
+    newIndividualShells,
     suppressedCompanies: suppressedCompanies.length,
     suppressedPeople: suppressedPeople.length,
     newCompanies: newCompanies.length,
     newPeople: newPeople.length,
     existingCompaniesToTag: existingCompaniesToTag.length,
     existingPeopleToTag: existingPeopleToTag.length,
-    totalTaggedInbound: newCompanies.length + newPeople.length + existingCompaniesToTag.length + existingPeopleToTag.length,
+    totalTaggedInbound: newCompanies.length + newIndividualShells + newPeople.length + existingCompaniesToTag.length + existingPeopleToTag.length,
     alreadyTaggedInboundCompanies: companiesAlreadyTagged.length,
     alreadyTaggedInboundPeople: peopleAlreadyTagged.length,
   };
@@ -526,6 +527,7 @@ export async function main(argv = process.argv.slice(2)) {
 
   // 6. Execute Mutations if Mode == 'apply'
   let appliedNewCompanies = 0;
+  let appliedNewIndividualShells = 0;
   let appliedNewPeople = 0;
   let appliedTaggedCompanies = 0;
   let appliedTaggedPeople = 0;
@@ -571,6 +573,7 @@ export async function main(argv = process.argv.slice(2)) {
           notes: "Individual contact shell required by contact API",
         });
         orgId = shellOrg.id;
+        appliedNewIndividualShells++;
         if (person.domain) orgIdMap.set(person.domain, orgId);
       }
 
@@ -593,7 +596,7 @@ export async function main(argv = process.argv.slice(2)) {
       appliedTaggedPeople++;
     }
 
-    console.log(`[crm-inbound-backfill] Apply complete: created ${appliedNewCompanies} companies, created ${appliedNewPeople} people, tagged ${appliedTaggedCompanies} existing companies, tagged ${appliedTaggedPeople} existing people.`);
+    console.log(`[crm-inbound-backfill] Apply complete: created ${appliedNewCompanies} companies, created ${appliedNewIndividualShells} individual shells, created ${appliedNewPeople} people, tagged ${appliedTaggedCompanies} existing companies, tagged ${appliedTaggedPeople} existing people.`);
   }
 
   // 7. Generate Reports
@@ -617,6 +620,7 @@ export async function main(argv = process.argv.slice(2)) {
     summaryCounts,
     applied: mode === "apply" ? {
       appliedNewCompanies,
+      appliedNewIndividualShells,
       appliedNewPeople,
       appliedTaggedCompanies,
       appliedTaggedPeople,
@@ -641,6 +645,7 @@ export async function main(argv = process.argv.slice(2)) {
       summaryCounts,
       applied: mode === "apply" ? {
         appliedNewCompanies,
+        appliedNewIndividualShells,
         appliedNewPeople,
         appliedTaggedCompanies,
         appliedTaggedPeople,
@@ -664,6 +669,7 @@ export async function main(argv = process.argv.slice(2)) {
     summaryCounts,
     applied: mode === "apply" ? {
       appliedNewCompanies,
+      appliedNewIndividualShells,
       appliedNewPeople,
       appliedTaggedCompanies,
       appliedTaggedPeople,
@@ -712,13 +718,14 @@ ${Object.entries(data.mailboxStats).map(([mb, s]) => `| \`${mb}\` | ${s.count} |
 ## 3. Backfill Action Counts
 | Metric | Planned Count | ${data.applied ? "Applied Count |" : ""}
 | --- | ---: | ${data.applied ? "---: |" : ""}
+| **New Individual Shell Organizations** | ${data.summaryCounts.newIndividualShells} | ${data.applied ? `${data.applied.appliedNewIndividualShells} |` : ""}
 | **New Companies** | ${data.summaryCounts.newCompanies} | ${data.applied ? `${data.applied.appliedNewCompanies} |` : ""}
 | **New People** | ${data.summaryCounts.newPeople} | ${data.applied ? `${data.applied.appliedNewPeople} |` : ""}
 | **Existing Companies Tagged \`inbound\`** | ${data.summaryCounts.existingCompaniesToTag} | ${data.applied ? `${data.applied.appliedTaggedCompanies} |` : ""}
 | **Existing People Tagged \`inbound\`** | ${data.summaryCounts.existingPeopleToTag} | ${data.applied ? `${data.applied.appliedTaggedPeople} |` : ""}
 | **Already Tagged Companies** | ${data.summaryCounts.alreadyTaggedInboundCompanies} | ${data.applied ? "- |" : ""}
 | **Already Tagged People** | ${data.summaryCounts.alreadyTaggedInboundPeople} | ${data.applied ? "- |" : ""}
-| **Total Inbound Records (New + Existing Tagged)** | ${data.summaryCounts.totalTaggedInbound} | ${data.applied ? `${data.applied.appliedNewCompanies + data.applied.appliedNewPeople + data.applied.appliedTaggedCompanies + data.applied.appliedTaggedPeople} |` : ""}
+| **Total Inbound Records (New + Existing Tagged)** | ${data.summaryCounts.totalTaggedInbound} | ${data.applied ? `${data.applied.appliedNewCompanies + data.applied.appliedNewIndividualShells + data.applied.appliedNewPeople + data.applied.appliedTaggedCompanies + data.applied.appliedTaggedPeople} |` : ""}
 
 ## 4. Existing Records Verification (Kastra / Carlos)
 - **Kastra Org**: ${data.kastraMatch ? `Matched existing record ID \`${data.kastraMatch.id}\` (\`${data.kastraMatch.displayName}\`). Not duplicated.` : "Not found in CRM"}
