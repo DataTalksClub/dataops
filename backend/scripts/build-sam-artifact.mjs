@@ -29,6 +29,7 @@ const staleLockGraceMs = 10_000;
 const shutdownGraceMs = 2_000;
 const buildFormatVersion = 'dataops-sam-esbuild-v3-identity-stable';
 const esbuildTarget = 'node24';
+const invoiceRuntimePackages = ['pdfjs-dist', 'tesseract.js', '@tesseract.js-data/eng', '@napi-rs/canvas'];
 const samCacheEnv = 'DATAOPS_SAM_CACHE_ROOT';
 
 export function requiredNodeVersion(root = repoRoot) {
@@ -68,6 +69,7 @@ const inputFiles = [
   'backend/scripts/verify-frontend-artifact.mjs',
   'backend/scripts/verify-runtime-boundary.mjs',
   'backend/scripts/verify-invoice-pdf-artifact.mjs',
+  'backend/tests/fixtures/contabo/outline-invoice.pdf',
   'infra/sam-build/Makefile',
   nodeVersionFile,
 ];
@@ -503,6 +505,7 @@ async function buildSharedArtifact(destination, fingerprint) {
       outdir: dist,
       platform: 'node',
       target: esbuildTarget,
+      external: invoiceRuntimePackages,
     });
     // PDF.js runs as native ESM with its adjacent worker. Preserve only the
     // library runtime and installed platform canvas packages in the payload,
@@ -513,9 +516,29 @@ async function buildSharedArtifact(destination, fingerprint) {
     mkdirSync(join(pdfTarget, 'legacy', 'build'), { recursive: true });
     cpSync(join(pdfRoot, 'package.json'), join(pdfTarget, 'package.json'));
     for (const filename of ['pdf.mjs', 'pdf.worker.mjs']) cpSync(join(pdfRoot, 'legacy', 'build', filename), join(pdfTarget, 'legacy', 'build', filename));
+    cpSync(join(pdfRoot, 'standard_fonts'), join(pdfTarget, 'standard_fonts'), { recursive: true });
     const canvasRoot = join(dirname(pdfRoot), '@napi-rs');
     if (existsSync(canvasRoot)) for (const name of readdirSync(canvasRoot)) if (name === 'canvas' || name.startsWith('canvas-')) cpSync(join(canvasRoot, name), join(payload, 'node_modules', '@napi-rs', name), { recursive: true });
+    // Worker threads and WASM must remain real files. Copy the OCR package's
+    // dependency closure, including local language data, into the Lambda root.
+    const copied = new Set();
+    function copyRuntimePackage(name, resolver = requireInWorkspace) {
+      if (copied.has(name)) return;
+      copied.add(name);
+      const manifest = resolver.resolve(`${name}/package.json`);
+      const root = dirname(manifest);
+      cpSync(root, join(payload, 'node_modules', name), { recursive: true });
+      const dependencies = JSON.parse(readFileSync(manifest, 'utf8')).dependencies || {};
+      for (const dependency of Object.keys(dependencies)) copyRuntimePackage(dependency, createRequire(manifest));
+    }
+    copyRuntimePackage('tesseract.js');
+    copyRuntimePackage('@tesseract.js-data/eng');
+    const verificationModule = join(payload, 'verify-invoice-extraction.cjs');
+    await build({ absWorkingDir: workspace, bundle: true, entryPoints: ['backend/src/invoices/extract.ts'],
+      format: 'cjs', outfile: verificationModule, platform: 'node', target: esbuildTarget,
+      external: invoiceRuntimePackages });
     await runOwnedCommand(process.execPath, ['backend/scripts/verify-invoice-pdf-artifact.mjs', payload], { cwd:workspace, phase:'packaged invoice PDF verification', env:{...process.env,NODE_PATH:''} });
+    rmSync(verificationModule);
     phaseMessage(fingerprint, 'bundle-complete');
     throwIfCancelled();
 

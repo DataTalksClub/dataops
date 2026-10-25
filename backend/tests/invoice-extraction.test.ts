@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { extractInvoiceText, normalizeSubject, pdfText } from '../src/invoices/extract';
 import { missingEvidence, validateFields } from '../src/invoices/model';
 import { sheetValues, validateHeaders } from '../src/invoices/providers';
@@ -25,6 +26,37 @@ test('German invoice date and legal issuer before a footer address are extracted
   assert.equal(parsed.fields.counterparty,'Example Handel GmbH & Co. KG');
   assert.equal(parsed.fields.transactionDate,'2026-10-13');
   assert.equal(extractInvoiceText('Rechnungsdatum: 31.02.2026').fields.transactionDate,undefined);
+});
+test('Contabo outline PDF uses local OCR for proforma number, date, gross total and customer VAT', async () => {
+  const bytes = readFileSync(new URL('./fixtures/contabo/outline-invoice.pdf', import.meta.url));
+  const load = new Function('return import("pdfjs-dist/legacy/build/pdf.mjs")') as () => Promise<typeof import('pdfjs-dist')>;
+  const task = (await load()).getDocument({ data: new Uint8Array(bytes), verbosity: 0 });
+  try {
+    const page = await (await task.promise).getPage(1);
+    const content = await page.getTextContent();
+    assert.equal(content.items.map(item => 'str' in item ? item.str : '').join('').trim(), 'VAT-ID: DE123456789');
+  } finally { await task.destroy(); }
+  const parsed = extractInvoiceText(await pdfText(bytes));
+  assert.equal(parsed.extraction.method, 'deterministic-contabo');
+  assert.equal(parsed.fields.counterparty, 'Contabo');
+  assert.equal(parsed.fields.amount, '70.44');
+  assert.equal(parsed.fields.currency, 'EUR');
+  assert.equal(parsed.fields.transactionDate, '2026-10-21');
+  assert.equal(parsed.fields.invoiceNumber, '900001000P261021');
+  assert.equal(parsed.fields.vatId, 'DE123456789');
+  assert.ok(parsed.extraction.evidence.some(item => item.includes('customer VAT-ID')));
+  assert.equal(parsed.fields.amountEur, undefined);
+  assert.equal(parsed.fields.paymentEvidence, undefined);
+});
+test('Contabo gross total wins over net, tax and line amounts; partial anchors stay unfilled', () => {
+  const text = 'VAT-ID: DE123456789\nContabo GmbH\nProforma-Rechnung: 900001000P261021\nDatum: 21.10.2026\nZwischensumme 70,44 €\nGesamt netto 59,19 €\n19.0% Umsatzsteuer 11,25 €\nGesamt brutto 70,44 €\nUSt-IdNr: DE267602842';
+  const parsed = extractInvoiceText(text);
+  assert.equal(parsed.fields.amount, '70.44');
+  assert.equal(parsed.fields.vatId, 'DE123456789');
+  assert.equal(extractInvoiceText(text.replace('Gesamt brutto 70,44 €', '')).fields.amount, undefined);
+  assert.equal(extractInvoiceText(text.replace('Gesamt brutto 70,44 €', 'Gesamt brutto 7044 €')).fields.amount, undefined);
+  assert.equal(extractInvoiceText(text.replace('Gesamt brutto 70,44 €', 'Gesamt brutto 1700,44 EUR')).fields.amount, '1700.44');
+  assert.equal(extractInvoiceText(text.replace('21.10.2026', '31.02.2026')).fields.transactionDate, undefined);
 });
 test('body prose and a customer VAT footer do not become company names',()=>{
   const parsed=extractInvoiceText('Thank you for choosing our service\nVAT/GST Number DE000000000\nContact support for help');

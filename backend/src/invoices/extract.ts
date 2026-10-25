@@ -1,4 +1,5 @@
 import type { InvoiceFields } from './model';
+import { dirname, join } from 'node:path';
 export interface InvoiceHints { subject?: string; sender?: string }
 const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const monthIndex = new Map<string, number>();
@@ -35,6 +36,7 @@ const PROVIDER_RULES: Array<{ match: RegExp; name: string; description?: string 
   { match: /google\s+play/i, name: 'Google Play' },
   { match: /google\s+one/i, name: 'Google', description: 'Google One' },
   { match: /hetzner/i, name: 'Hetzner Online GmbH', description: 'Dedicated server' },
+  { match: /\bcontabo\b/i, name: 'Contabo' },
   { match: /luma\s+(?:labs|ai)/i, name: 'Luma Labs, Inc.' },
   { match: /eleven\s?labs/i, name: 'ElevenLabs' },
   { match: /substack/i, name: 'Substack' },
@@ -170,6 +172,24 @@ export function extractInvoiceText(text: string, hints: InvoiceHints = {}): { fi
   const vat = /\b(?:VAT[ \-]*(?:ID|number|no\.?)|USt[. \-]*IdNr\.?)\s*[:#]?\s*([A-Z]{2}[A-Z0-9]{2,14})\b/i.exec(text);
   if (vat) { fields.vatId = vat[1].toUpperCase(); evidence.push('labeled VAT identifier'); }
   let method = 'manual';
+  // Contabo's proforma PDFs can consist almost entirely of vector outlines.
+  // pdfText supplies OCR when the text layer is sparse. Require the issuer,
+  // proforma number, issue date and gross total together before using this layout.
+  const contaboNumber = /Proforma\s*[-–]?\s*Rechnung\s*:?\s*([A-Z0-9]{8,40})\b/i.exec(text);
+  const contaboDate = /\bDatum\s*:\s*(\d{1,2}\.\d{1,2}\.\d{4})\b/i.exec(text);
+  const contaboGross = /Gesamt\s*brutto\s*:?\s*(\d{1,7}(?:[.,]\d{2}))\s*(?:€|EUR)/i.exec(text);
+  if (/\bContabo\s*GmbH\b/i.test(text) && contaboNumber && contaboDate && contaboGross) {
+    const date = calendar(contaboDate[1]);
+    const amount = money(contaboGross[1].replace(',', '.'));
+    if (date && amount) {
+      method = 'deterministic-contabo';
+      Object.assign(fields, { counterparty: 'Contabo', amount, currency: 'EUR', transactionDate: date, invoiceNumber: contaboNumber[1] });
+      evidence.push('Contabo issuer, proforma number, issue date and gross EUR total');
+      // Preserve the existing first-labeled-VAT semantics: the customer VAT-ID
+      // precedes Contabo's own USt-IdNr in the footer. This is not a supplier-ID field.
+      if (vat) evidence.push('VAT ID is the first labeled identifier in document order (customer VAT-ID on Contabo)');
+    }
+  }
   const aws = /\b(EUINDE\d+-\d+)\b/.exec(text);
   const total = /TOTAL AMOUNT\s+USD\s+([\d,]+\.\d{2})/.exec(text);
   const awsDate = /VAT Invoice Date:\s*([A-Za-z]+\s+\d{1,2},?\s+\d{4})/.exec(text);
@@ -252,20 +272,73 @@ export async function pdfText(bytes: Buffer): Promise<string> {
   // Keep native ESM import through the CommonJS build.
   const load = new Function('return import("pdfjs-dist/legacy/build/pdf.mjs")') as () => Promise<typeof import('pdfjs-dist')>;
   const pdfjs = await load();
-  const task = pdfjs.getDocument({ data: new Uint8Array(bytes), isEvalSupported: false, useSystemFonts: false, verbosity: 0 });
+  const task = pdfjs.getDocument({ data: new Uint8Array(bytes), isEvalSupported: false, useSystemFonts: false, verbosity: 0,
+    standardFontDataUrl: join(dirname(require.resolve('pdfjs-dist/package.json')), 'standard_fonts') + '/' });
   try {
     const doc = await task.promise;
     if (doc.numPages > 40) throw new Error('pdf-page-limit');
     let text = '';
+    const sparsePages: number[] = [];
     for (let n=1; n<=doc.numPages; n++) {
       const page = await doc.getPage(n);
       const content = await page.getTextContent();
+      let pageText = '';
       for (const item of content.items) {
-        if ('str' in item) text += item.str + (item.hasEOL ? '\n' : ' ');
-        if (text.length > 200000) throw new Error('pdf-text-limit');
+        if ('str' in item) pageText += item.str + (item.hasEOL ? '\n' : ' ');
+        if (text.length + pageText.length > 200000) throw new Error('pdf-text-limit');
       }
-      text += '\n';
+      text += pageText + '\n';
+      if (text.length > 200000) throw new Error('pdf-text-limit');
+      if (pageText.replace(/\s/g, '').length < 100) sparsePages.push(n);
     }
+    // Keep the text layer first: reliable labeled IDs retain their precedence
+    // over OCR (notably the customer VAT-ID on outline-only Contabo invoices).
+    if (sparsePages.length) {
+      const fields = extractInvoiceText(text).fields;
+      if (!fields.amount && !fields.transactionDate && !fields.invoiceNumber) text += await ocrPages(doc, sparsePages);
+    }
+    if (text.length > 200000) throw new Error('pdf-text-limit');
     return text;
   } finally { await task.destroy(); }
+}
+
+async function ocrPages(doc: import('pdfjs-dist').PDFDocumentProxy, pages: number[]): Promise<string> {
+  // Bound memory and latency within the 60-second, 1-GiB Lambda. Never download
+  // executables or language data at runtime, or write into Lambda's read-only tree.
+  if (pages.length > 3) throw new Error('pdf-ocr-page-limit');
+  const { createWorker } = require('tesseract.js') as typeof import('tesseract.js');
+  const { createCanvas } = require('@napi-rs/canvas') as typeof import('@napi-rs/canvas');
+  const langPath = join(dirname(require.resolve('@tesseract.js-data/eng/package.json')), '4.0.0');
+  let worker: import('tesseract.js').Worker | undefined;
+  let expired = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const operation = async () => {
+    // Legacy recognition preserves the tiny decimal comma in Contabo's narrow
+    // outlined font; the LSTM model reads its "70,44" as "7044". Require explicit
+    // decimal punctuation in the layout parser rather than inferring cents.
+    worker = await createWorker('eng', 0, { langPath, cacheMethod: 'none', errorHandler: () => {} });
+    if (expired) { await worker.terminate(); throw new Error('pdf-ocr-timeout'); }
+    await worker.setParameters({ preserve_interword_spaces: '1' });
+    let text = '';
+    for (const n of pages) {
+      const page = await doc.getPage(n);
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.min(4, Math.sqrt(10_000_000 / (base.width * base.height)));
+      const viewport = page.getViewport({ scale });
+      if (!Number.isFinite(viewport.width * viewport.height) || viewport.width > 10000 || viewport.height > 10000)
+        throw new Error('pdf-ocr-dimension-limit');
+      const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+      try {
+        await page.render({ canvas: canvas as unknown as HTMLCanvasElement, viewport }).promise;
+        text += '\n' + (await worker.recognize(canvas.toBuffer('image/png'))).data.text;
+      } finally { canvas.width = 1; canvas.height = 1; page.cleanup(); }
+      if (text.length > 200000) throw new Error('pdf-text-limit');
+    }
+    return text;
+  };
+  try {
+    return await Promise.race([operation(), new Promise<never>((_, reject) => {
+      timer = setTimeout(() => { expired = true; reject(new Error('pdf-ocr-timeout')); }, 35000);
+    })]);
+  } finally { if (timer) clearTimeout(timer); if (worker) await worker.terminate(); }
 }
