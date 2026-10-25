@@ -2,7 +2,7 @@ export interface InvoiceFields {
   transactionDate?: string; paidDate?: string; counterparty?: string; description?: string;
   amount?: string; currency?: string; amountEur?: string; statementRef?: string; comment?: string;
   quantity?: number; subtype?: string; period?: string; category?: string;
-  paymentEvidence?: string; accountContext?: string; invoiceNumber?: string;
+  paymentEvidence?: string; accountContext?: string; invoiceNumber?: string; vatId?: string;
   archiveRequired?: boolean; archiveExceptionReason?: string;
 }
 export interface Destination {
@@ -15,12 +15,12 @@ export interface Invoice {
   extraction: { method: string; evidence: string[]; issues: string[] };
   source: { intakeItemIds: string[]; artifactId: string; checksum: string };
   destinations: { dropbox: Destination; sheets: Destination };
-  audit: Array<{ action: string; actor: string; at: string; revision: number }>;
+  audit: Array<{ action: string; actor: string; at: string; revision: number; oldDocument?: { artifactId: string; checksum: string }; newDocument?: { artifactId: string; checksum: string }; reextracted?: boolean }>;
   createdAt: string; updatedAt: string; confirmedRevision?: number;
   verification?: { revision: number; actor: string; at: string; method: 'operator' };
   publicationBinding?: string; publicationError?: string; leaseOwner?: string; leaseUntil?: number; restoredNeedsReconciliation?: boolean;
 }
-const fields = new Set(['transactionDate','paidDate','counterparty','description','amount','currency','amountEur','statementRef','comment','quantity','subtype','period','category','paymentEvidence','accountContext','invoiceNumber','archiveRequired','archiveExceptionReason']);
+const fields = new Set(['transactionDate','paidDate','counterparty','description','amount','currency','amountEur','statementRef','comment','quantity','subtype','period','category','paymentEvidence','accountContext','invoiceNumber','vatId','archiveRequired','archiveExceptionReason']);
 export function date(value: unknown): boolean {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value;
 }

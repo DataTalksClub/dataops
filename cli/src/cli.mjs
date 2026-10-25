@@ -127,6 +127,7 @@ export const FAMILIES = {
       reject: invoices.reject,
       retry: invoices.retry,
       reextract: invoices.reextract,
+      "replace-document": invoices.replaceDocument,
       process: invoices.processIntake,
     },
   },

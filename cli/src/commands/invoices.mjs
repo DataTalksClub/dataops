@@ -1,7 +1,9 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { apiFor } from "../session.mjs";
 
 const base = "/api/bookkeeping/invoices";
-const fieldNames = ["transactionDate", "paidDate", "counterparty", "description", "amount", "currency", "amountEur", "statementRef", "quantity", "subtype", "period", "category", "paymentEvidence", "accountContext", "invoiceNumber", "archiveRequired", "archiveExceptionReason", "comment"];
+const fieldNames = ["transactionDate", "paidDate", "counterparty", "description", "amount", "currency", "amountEur", "statementRef", "quantity", "subtype", "period", "category", "paymentEvidence", "accountContext", "invoiceNumber", "vatId", "archiveRequired", "archiveExceptionReason", "comment"];
 const client = apiFor;
 
 export const summary = "Bookkeeping invoice drafts: review, verify, publish";
@@ -15,12 +17,15 @@ Usage
     [--payment-evidence NOTE] [--counterparty NAME] [--invoice-number REF]
     [--account-context CONTEXT] [--archive-required true|false] [--verified]
     Other fields: transaction-date, description, amount, currency, statement-ref,
-    quantity, subtype, period, category, comment, archive-exception-reason.
+    quantity, subtype, period, category, comment, vat-id, archive-exception-reason.
   dataops invoices verify <id> --revision N   Verify invoice/payment values and publish automatically
   dataops invoices confirm <id> --revision N  Existing explicit verification action
   dataops invoices reject <id> --revision N [--reason NOTE]
   dataops invoices retry <id> --revision N
   dataops invoices reextract <id> --revision N  Re-run extraction on an untouched draft
+  dataops invoices replace-document <id> --file <pdf> --revision N [--reextract]
+    Replace a pending draft PDF (up to 4 MiB); retain the old document in audit.
+    Fields stay unchanged unless --reextract is supplied (includes VAT-ID).
   dataops invoices process --intake-item-id ID
 
 \`document\` returns a short-lived private PDF URL; treat it as sensitive.
@@ -81,3 +86,22 @@ export const confirm = (args, io) => action("confirm", args, io);
 export const reject = (args, io) => action("reject", args, io);
 export const retry = (args, io) => action("retry", args, io);
 export const reextract = (args, io) => action("reextract", args, io);
+
+export async function replaceDocument(args, io) {
+  const invoiceId = id(args);
+  const reviewedRevision = revision(args);
+  if (typeof args.file !== "string" || !args.file) throw new Error("--file must name a PDF.");
+  if (args.reextract !== undefined && ![true, "true", "false"].includes(args.reextract))
+    throw new Error("--reextract must be true or false.");
+  const bytes = await readFile(args.file);
+  if (bytes.length > 4 * 1024 * 1024) throw new Error("PDF exceeds the 4 MiB upload limit.");
+  if (path.extname(args.file).toLowerCase() !== ".pdf" || bytes.subarray(0, 5).toString() !== "%PDF-")
+    throw new Error("--file must contain a PDF.");
+  return show(await client(args).post(`${base}/${invoiceId}/replace-document`, {
+    revision: reviewedRevision,
+    filename: path.basename(args.file),
+    contentType: "application/pdf",
+    contentBase64: bytes.toString("base64"),
+    reextract: args.reextract === true || args.reextract === "true",
+  }), args, io);
+}

@@ -41,7 +41,7 @@ function intakeHints(item:{title?:string; sourceActor?:{email?:string}}|null|und
 // in place when a duplicate arrives or an operator asks for re-extraction.
 // Operator-corrected or published records are never rewritten by parsing.
 function draftIsUntouched(record:Invoice):boolean {
-  return record.status==='pending' && !record.audit.some(item=>['corrected','re-extracted'].includes(item.action));
+  return record.status==='pending' && !record.audit.some(item=>['corrected','re-extracted','document-replaced'].includes(item.action));
 }
 async function linkedHints(client:DynamoDBDocumentClient,record:Invoice):Promise<InvoiceHints> {
   for(const id of record.source.intakeItemIds) {

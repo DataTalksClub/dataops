@@ -3,6 +3,7 @@ import type { LambdaEvent, LambdaResponse } from '../types';
 import { publicInvoice, validateFields, missingEvidence } from '../invoices/model';
 import { getInvoice, listInvoices, saveInvoice } from '../invoices/store';
 import { confirmInvoice, documentUrl, processInvoiceIntake, publishInvoice, readiness, reextractInvoice, verifyInvoice } from '../invoices/service';
+import { InvoiceDocumentError, replaceInvoiceDocument } from '../invoices/replaceDocument';
 import { recordRequestError } from '../requestErrorLog';
 const json=(statusCode:number,body:unknown):LambdaResponse=>({statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify(body)});
 export async function handleInvoiceRoutes(path:string,method:string,event:LambdaEvent,client:DynamoDBDocumentClient,authorized:boolean):Promise<LambdaResponse> {
@@ -13,7 +14,7 @@ export async function handleInvoiceRoutes(path:string,method:string,event:Lambda
     let body:Record<string,unknown>={};
     if(['POST','PUT'].includes(method)) {try{body=JSON.parse(event.body || '{}');}catch{return json(400,{error:'Invalid JSON'});}if(!body || typeof body!=='object' || Array.isArray(body))return json(400,{error:'Invalid JSON'});}
     if(path==='/api/bookkeeping/invoices/process' && method==='POST') {if(typeof body.intakeItemId!=='string' || body.intakeItemId.length>160)return json(400,{error:'intakeItemId required'});const result=await processInvoiceIntake(client,body.intakeItemId);return json(200,{items:result.items.map(publicInvoice),issues:result.issues});}
-    const match=/^\/api\/bookkeeping\/invoices\/([a-f0-9]{64})(?:\/(confirm|verify|reject|retry|reextract|document))?$/.exec(path);
+    const match=/^\/api\/bookkeeping\/invoices\/([a-f0-9]{64})(?:\/(confirm|verify|reject|retry|reextract|replace-document|document))?$/.exec(path);
     if(!match)return json(404,{error:'Not found'});
     const record=await getInvoice(client,match[1]);if(!record)return json(404,{error:'Not found'});
     if(method==='GET') return match[2]==='document'?json(200,await documentUrl(client,record)):match[2]?json(405,{error:'Method not allowed'}):json(200,publicInvoice(record));
@@ -31,6 +32,7 @@ export async function handleInvoiceRoutes(path:string,method:string,event:Lambda
       const updated=await saveInvoice(client,next,record);
       return json(200,publicInvoice(body.verified===true?await verifyInvoice(client,updated,actor):updated));
     }
+    if(method==='POST' && match[2]==='replace-document') return json(200,publicInvoice(await replaceInvoiceDocument(client,record,body,actor)));
     if(method==='POST' && match[2]==='verify') return json(200,publicInvoice(await verifyInvoice(client,record,actor)));
     if(method==='POST' && match[2]==='confirm') return json(200,publicInvoice(await confirmInvoice(client,record,actor)));
     if(method==='POST' && match[2]==='retry') return json(200,publicInvoice(await publishInvoice(client,record,actor)));
@@ -38,6 +40,7 @@ export async function handleInvoiceRoutes(path:string,method:string,event:Lambda
     if(method==='POST' && match[2]==='reject') {if(record.status==='confirmed')return json(409,{error:'Confirmed invoices cannot be rejected'});const next=structuredClone(record);next.status='rejected';next.audit.push({action:'rejected',actor,at:new Date().toISOString(),revision:next.revision});return json(200,publicInvoice(await saveInvoice(client,next,record)));}
     return json(405,{error:'Method not allowed'});
   } catch(error) {
+    if(error instanceof InvoiceDocumentError) return json(error.statusCode,{error:error.message});
     recordRequestError(error);
     const name=(error as Error).name;const message=(error as Error).message;
     if(['ConditionalCheckFailedException','TransactionCanceledException'].includes(name))return json(409,{error:'Invoice changed or publication already in progress'});
