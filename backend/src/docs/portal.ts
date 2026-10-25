@@ -265,8 +265,6 @@ function isDataPath(path: string): boolean {
     isDocsRoute(path) ||
     path.startsWith('/content/')
     || path.startsWith('/knowledge-files/')
-    || path === '/mcp'
-    || path.startsWith('/mcp/')
   );
 }
 

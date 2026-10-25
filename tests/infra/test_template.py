@@ -17,6 +17,27 @@ SANDBOX_CONSUMER_FUNCTIONS = {
     "BackendFunction",
 }
 
+
+def test_dedicated_mcp_proxies_with_caller_auth_and_has_no_data_role():
+    template = _load_template()
+    function = template["Resources"]["McpFunction"]
+    properties = function["Properties"]
+    assert function["Metadata"]["BuildMethod"] == "makefile"
+    assert properties["CodeUri"] == "../mcp"
+    assert properties["Handler"] == "src/lambda.handler"
+    assert properties["Environment"]["Variables"] == {
+        "DATAOPS_URL": {"GetAtt": "BackendFunctionUrl.FunctionUrl"},
+    }
+    # SAM supplies basic Lambda logging only. API access uses the caller's
+    # bearer token, never a shared database/secret role or stored credential.
+    assert "Role" not in properties
+    assert not properties.get("Policies")
+    assert properties["FunctionUrlConfig"]["AuthType"] == "NONE"
+    logs = template["Resources"]["McpFunctionLogs"]
+    assert logs["DeletionPolicy"] == "Retain"
+    assert logs["UpdateReplacePolicy"] == "Retain"
+    assert "McpUrl" in template["Outputs"]
+
 class _CloudFormationLoader(yaml.SafeLoader):
     pass
 

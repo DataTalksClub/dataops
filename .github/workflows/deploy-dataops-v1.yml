@@ -310,3 +310,19 @@ jobs:
           done
           echo "Backend smoke test failed after retries: root expected 302 got $code; /login expected 302 got $login_code"
           exit 1
+
+      - name: Smoke test dedicated DataOps MCP
+        run: |
+          set -euo pipefail
+          mcp_url="$(aws cloudformation describe-stacks \
+            --stack-name dataops-v1 \
+            --query "Stacks[0].Outputs[?OutputKey=='McpUrl'].OutputValue" \
+            --output text)"
+          mcp_origin="${mcp_url%/mcp}"
+          curl --fail --silent --show-error "$mcp_origin/health" \
+            | jq -e '.status == "ok" and .service == "dataops-mcp"' >/dev/null
+          code="$(curl --silent --show-error -o /dev/null -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' "$mcp_url")"
+          test "$code" = 401
+          echo "DataOps MCP endpoint: $mcp_url"

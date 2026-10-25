@@ -1272,6 +1272,34 @@ Resources:
           AllowOrigins:
             - "*"
 
+  McpFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: ../mcp
+      Handler: src/lambda.handler
+      Timeout: 120
+      MemorySize: 256
+      Environment:
+        Variables:
+          DATAOPS_URL: !GetAtt BackendFunctionUrl.FunctionUrl
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowCredentials: false
+          AllowHeaders: [authorization, content-type, accept, mcp-protocol-version, mcp-session-id]
+          AllowMethods: [GET, POST]
+          AllowOrigins: ["*"]
+
+  McpFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${McpFunction}
+      RetentionInDays: 30
+
   BackendFunctionDailyBackendCron:
     Type: AWS::Events::Rule
     Properties:
@@ -1493,6 +1521,9 @@ Outputs:
   BackendUrl:
     Description: Protected DataOps v1 Lambda Function URL
     Value: !GetAtt BackendFunctionUrl.FunctionUrl
+  McpUrl:
+    Description: Dedicated DataOps MCP endpoint; accepts the caller's DataOps bearer credential
+    Value: !Sub ${McpFunctionUrl.FunctionUrl}mcp
   DataOpsTasksTableName:
     Description: DynamoDB table for task and recurring execution state
     Value: !Ref DataOpsTasksTable

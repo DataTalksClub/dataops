@@ -11,7 +11,6 @@ import { handleSponsorFinanceRoutes } from '../routes/sponsorFinance';
 import { handleTaskRoutes } from '../routes/tasks';
 import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
 import { listUsers } from '../db/users';
-import { handleMcp } from '../mcp';
 
 const PRINCIPAL = { id: 'invoice-reader', scopes: ['invoices:read', 'crm:read', 'crm:write'], expiresAt: null };
 const response = (statusCode: number, body: unknown): LambdaResponse => ({
@@ -90,17 +89,6 @@ export async function handleInvoiceReader(
   const method = (event.httpMethod || 'GET').toUpperCase();
 
   if (method === 'GET' && cleanPath === '/api/me') return response(200, { service: PRINCIPAL });
-
-  // Authenticate the MCP envelope with the same service credential. Each
-  // tool call re-enters this gate, retaining the exact API route restrictions
-  // below; a service never becomes an interactive user through MCP.
-  if (cleanPath === '/mcp') {
-    return handleMcp(
-      event, client,
-      async (subEvent) => await handleInvoiceReader(subEvent, client) ?? response(401, { error: 'Unauthorized' }),
-      { serviceAuthenticated: true },
-    );
-  }
 
   const isInvoiceAllowed = cleanPath === '/api/bookkeeping/invoices' || cleanPath === '/api/bookkeeping/invoices/readiness'
     || /^\/api\/bookkeeping\/invoices\/[a-f0-9]{64}(?:\/document)?$/.test(cleanPath);
