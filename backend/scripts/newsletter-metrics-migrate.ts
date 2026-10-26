@@ -64,7 +64,7 @@ async function listOpenTasks(origin: string, token: string) {
     for (let page = 0; page < 50; page++) {
       const query = new URLSearchParams({ status, limit: '100', ...(cursor ? { cursor } : {}) });
       const pageData = await apiFetch(origin, token, `/api/tasks?${query.toString()}`);
-      const items = Array.isArray(pageData.items) ? pageData.items : [];
+      const items = Array.isArray((pageData as any).tasks) ? (pageData as any).tasks : [];
       tasks.push(...items);
       cursor = pageData.nextCursor || undefined;
       if (!cursor) break;
@@ -148,4 +148,13 @@ export async function main(argv = process.argv.slice(2)) {
     await writeFile(outJsonPath, JSON.stringify({ mode, renamedIssues, skippedIssues, renamedTasks, skippedTasks, details }, null, 2), 'utf8');
   }
   return { renamedIssues, skippedIssues, renamedTasks, skippedTasks, details };
+}
+
+const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
+const selfPath = new URL(import.meta.url).pathname;
+if (entryPath && entryPath === selfPath) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
 }
