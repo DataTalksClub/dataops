@@ -25,8 +25,9 @@ import {
   listCalendarHolds,
   putCalendarHold,
 } from '../db/calendarHolds';
-import { getCard, getCardConsistent, updateCardAdditive } from '../db/cards';
+import { getCard, getCardConsistent } from '../db/cards';
 import { getCalendarOverlaySettings } from '../db/calendar';
+import { syncCardInvite } from '../calendar/cardInvite';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
   statusCode,
@@ -62,7 +63,7 @@ export function setCalendarHoldGoogleDepsForTests(deps: HoldGoogleDeps): void {
  * connectionId from DataOps calendar settings (Orin-picked). Explicit
  * googleDeps.connectionId (tests) wins over settings.
  */
-async function depsFor(body: any, client: DynamoDBDocumentClient): Promise<HoldGoogleDeps> {
+export async function calendarInviteDeps(body: any, client: DynamoDBDocumentClient): Promise<HoldGoogleDeps> {
   const calendars = (() => {
     try {
       return parseHoldCalendars(body?.googleCalendars);
@@ -97,6 +98,12 @@ const googlePayload = (hold: { id: string }, summary: string, startIso: string, 
 async function createRoute(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const body = parse(event);
   if (!body || typeof body !== 'object' || Array.isArray(body)) return json(400, { error: 'Request body is required' });
+  if (typeof body.cardId === 'string') {
+    const card = await getCardConsistent(client, body.cardId);
+    if (card?.eventTime || card?.calendarInvites?.length) {
+      return json(409, { error: 'This Card already owns an invitation. Change its time with dataops cards time.' });
+    }
+  }
   let hold;
   try {
     hold = buildHold(
@@ -121,7 +128,7 @@ async function createRoute(event: LambdaEvent, client: DynamoDBDocumentClient): 
   }
   const sync = await createHoldGoogleEvents(
     googlePayload(hold, proposalTitle(hold.title), hold.startIso, hold.endIso),
-    await depsFor(body, client),
+    await calendarInviteDeps(body, client),
   );
   const stored = {
     ...hold,
@@ -183,7 +190,7 @@ async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocu
     return json(409, { error: String(e?.message || 'Cannot confirm hold'), code: e?.code || 'hold_state' });
   }
   const confirmed = confirmedTitle(existing.title);
-  const deps = await depsFor({}, client);
+  const deps = await calendarInviteDeps({}, client);
   if (existing.cardId && !next.documentUrl) {
     const card = await getCard(client, existing.cardId);
     // Explicit guest document links only; never internal research or run sheets.
@@ -199,10 +206,17 @@ async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocu
   // when mirrors exist, otherwise CREATE. Either way the mirror becomes the
   // guest invite immediately: confirmed title, Zoom location + description,
   // required attendees (never Meet, never deny-listed), window start −5 min.
+  const card = existing.cardId ? await getCardConsistent(client, existing.cardId) : null;
   const invite = confirmedHoldInvite(next);
-  const sync = Object.keys(existing.googleEventIds || {}).length
-    ? await updateHoldGoogleEvents(existing.googleEventIds, invite, deps)
-    : await createHoldGoogleEvents(invite, deps);
+  const sync = card
+    ? (await syncCardInvite(client, card, {
+        startIso: next.startIso, endIso: next.endIso, timeZone: next.timeZone, durationMinutes: next.durationMinutes,
+      }, [existing.guestRef!.trim().toLowerCase()], deps, actor(event), {
+        eventKey: existing.id, eventIds: existing.googleEventIds || {}, title: next.title, documentUrl: next.documentUrl,
+      })).sync
+    : Object.keys(existing.googleEventIds || {}).length
+      ? await updateHoldGoogleEvents(existing.googleEventIds, invite, deps)
+      : await createHoldGoogleEvents(invite, deps);
   const stored = {
     ...next,
     googleTitle: confirmed,
@@ -211,29 +225,6 @@ async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocu
       : { googleEventIds: sync.eventIds, googleSync: { state: 'deferred' as const, reason: sync.reason } }),
   };
   await putCalendarHold(client, stored);
-  // The confirmed mirror IS the guest invite: link every synced calendar
-  // copy to the Card so the invite Task's done-gate sees it. Best-effort
-  // after the hold is stored — a link write must never fail the confirmation
-  // itself. Re-confirming the same hold upserts nothing new.
-  if (stored.cardId && sync.state === 'synced' && Object.keys(stored.googleEventIds || {}).length > 0) {
-    try {
-      const card = await getCardConsistent(client, stored.cardId);
-      if (card) {
-        const linkedAt = new Date().toISOString();
-        await updateCardAdditive(client, card, (current) => {
-          const invites = [...(current.calendarInvites || [])];
-          for (const [calendar, eventId] of Object.entries(stored.googleEventIds)) {
-            if (!invites.some((entry) => entry.eventId === eventId && entry.calendar === calendar)) {
-              invites.push({ eventId, calendar, createdAt: linkedAt, createdBy: actor(event) });
-            }
-          }
-          return { calendarInvites: invites };
-        });
-      }
-    } catch (error) {
-      console.error(`Calendar hold ${stored.id}: failed to link invite to card ${stored.cardId}`, error);
-    }
-  }
   return json(200, { hold: stored });
 }
 
@@ -256,7 +247,7 @@ async function releaseRoute(
   } catch (e: any) {
     return json(409, { error: String(e?.message || 'Cannot release hold'), code: e?.code || 'hold_state' });
   }
-  const sync = await deleteHoldGoogleEvents(existing.googleEventIds, await depsFor(body, client));
+  const sync = await deleteHoldGoogleEvents(existing.googleEventIds, await calendarInviteDeps(body, client));
   const stored = {
     ...next,
     ...(sync.state === 'synced'
@@ -270,7 +261,7 @@ async function releaseRoute(
 async function expireRoute(client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const { expired, followUps } = await expireCalendarHolds(client);
   for (const hold of expired) {
-    await deleteHoldGoogleEvents(hold.googleEventIds, await depsFor({}, client));
+    await deleteHoldGoogleEvents(hold.googleEventIds, await calendarInviteDeps({}, client));
   }
   return json(200, {
     expired,

@@ -343,12 +343,9 @@ export interface CardLink {
 }
 
 /**
- * One Google Calendar invite linked to a Card. Invites are usually created
- * by hand on any connected calendar (organizer grace@ or
- * alexey.s.grigoriev@gmail.com) and then linked with
- * `dataops cards invite add`; the confirm-hold flow links its own invite
- * automatically. A Card holds at most one entry per (calendar, event id);
- * re-linking the same event updates it (e.g. label 'original' → 'resent').
+ * One Google Calendar invite linked to a Card. DataOps creates and moves
+ * invites when the Card event time changes. Hand linking is reserved for
+ * adopting legacy events. Entries are unique per (calendar, event id).
  */
 export interface CardCalendarInvite {
   eventId: string;
@@ -388,6 +385,19 @@ export interface Card {
   cardLinks?: CardLink[];
   /** Google Calendar invites linked to this Card (see CardCalendarInvite). */
   calendarInvites?: CardCalendarInvite[];
+  /** Guest email addresses used for this Card's calendar invitation. */
+  guestEmails?: string[];
+  eventTime?: {
+    startIso: string;
+    endIso: string;
+    timeZone: string;
+    durationMinutes: number;
+    eventKey: string;
+    googleEventIds: Record<string, string>;
+    sync: 'syncing' | 'synced' | 'deferred';
+    syncStartedAt: string;
+    reason?: string;
+  };
   tags?: string[];
   /**
    * Administrative owner of the Card. Optional: existing and system-created

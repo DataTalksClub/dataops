@@ -83,7 +83,7 @@ export function confirmedHoldInvite(
   attendees: string[];
   startIso: string;
   endIso: string;
-  timeZone: typeof HOLD_TIME_ZONE;
+  timeZone: string;
 } {
   return {
     eventKey: hold.id,
@@ -118,7 +118,7 @@ export interface CalendarHold {
   durationMinutes: number;
   startIso: string;
   endIso: string;
-  timeZone: typeof HOLD_TIME_ZONE;
+  timeZone: string;
   status: CalendarHoldStatus;
   googleTitle: string;
   googleEventIds: Record<string, string>;

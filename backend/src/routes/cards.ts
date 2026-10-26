@@ -1,3 +1,6 @@
+import { cardEventInterval } from '../calendar/cardEventTime';
+import { cardGuests, parseCardGuests, syncCardInvite } from '../calendar/cardInvite';
+import { calendarInviteDeps } from './calendarHolds';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
   CardNotFoundError,
@@ -339,6 +342,9 @@ async function handleCardRoutes(
     if (parkMatch) {
       return await handleParkResume(method, parkMatch[1], parkMatch[2] as 'park' | 'resume', rawBody, client, event);
     }
+
+    const timeMatch = suffix.match(/^\/([^/]+)\/time\/?$/);
+    if (timeMatch) return await handleCardTime(method, timeMatch[1], rawBody, client, event);
 
     // Route: /api/cards/:id/calendar-invites
     const invitesMatch = suffix.match(/^\/([^/]+)\/calendar-invites\/?$/);
@@ -874,3 +880,28 @@ async function handleCardCalendarInvites(
 }
 
 export { handleCardRoutes };
+
+async function handleCardTime(method: string, id: string, rawBody: string | null, client: DynamoDBDocumentClient, event: LambdaEvent): Promise<LambdaResponse> {
+  if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+  const resolved = await resolveInteractiveActor(client, event, 'work-write');
+  if (!resolved.ok) return resolved.response;
+  const card = await getCardConsistent(client, id);
+  if (!card) return json(404, { error: 'Card not found' });
+  if (!mayAdministerCard(resolved.actor, card)) return workAdminForbidden('Administering this Card requires its owner or an admin');
+  let interval;
+  let guests;
+  try {
+    const body = JSON.parse(rawBody || '{}');
+    interval = cardEventInterval(body.at, body.duration ?? card.eventTime?.durationMinutes ?? 60, body.tz ?? card.eventTime?.timeZone ?? 'Europe/Berlin');
+    guests = body.guestEmails !== undefined ? parseCardGuests(body.guestEmails) : await cardGuests(client, card);
+  } catch (error) {
+    return json(400, { error: error instanceof Error ? error.message : 'Invalid event time' });
+  }
+  try {
+    const result = await syncCardInvite(client, card, interval, guests, await calendarInviteDeps({}, client), resolved.actor.id);
+    return json(result.sync.state === 'synced' ? 200 : 502, result);
+  } catch (error) {
+    if (error instanceof CardVersionConflictError || (error as { statusCode?: number }).statusCode === 409) return json(409, { error: 'Card invitation changed or is syncing; reload and retry' });
+    throw error;
+  }
+}
