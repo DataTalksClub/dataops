@@ -590,6 +590,7 @@ export function createOperationsModel({
     const proof = taskProofState(task);
     if (!proof.ok) {
       const first = proof.missing[0] || "proof";
+      if (first === "calendar invite") return "Link calendar invite";
       if (first === "required file" || first.endsWith("(file)")) return "Attach file";
       if (first === "approved artifact") return "Approve an attached artifact";
       if (first === "external status" || first.endsWith("(external status)")) return `Set ${first}`;

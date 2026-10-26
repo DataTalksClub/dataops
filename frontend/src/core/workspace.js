@@ -10,6 +10,7 @@ export {
   cardLinkUrlForTask,
   describeMissingProof,
   hasApprovedArtifactEvidence,
+  hasLinkedCalendarInvite,
   hasTaskFileEvidence,
   isOptionalWorkTask,
   proofRequirementLabel,
@@ -18,6 +19,7 @@ export {
   taskOptionality,
   taskProofState,
   taskRequiresApprovedArtifact,
+  taskRequiresCalendarInvite,
 } from "./task-proof.js";
 
 export const WORKSPACE_PATH_BY_VIEW = Object.freeze({
@@ -510,8 +512,11 @@ export function deriveScopedWorkState(snapshot, options = {}) {
     return Math.max(visibleTasks.length, Number(value) - excluded);
   };
   const allKnownVisible = selectedOwnerId ? scope(allTasks) : allTasks;
+  // Invite-gated Tasks resolve against their Card: without it an invite that
+  // is already linked would still read as missing proof.
+  const cardsById = work.cardsById instanceof Map ? work.cardsById : new Map();
   const missingProofVisible = allKnownVisible.filter(
-    (task) => isOpenWorkTask(task) && !taskProofState(task).ok,
+    (task) => isOpenWorkTask(task) && !taskProofState(task, task?.cardId ? cardsById.get(String(task.cardId)) || null : null).ok,
   );
 
   return {

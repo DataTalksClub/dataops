@@ -8,8 +8,10 @@ import { blockedReason, blockingPrerequisites, prerequisiteStatusLabel } from ".
 import {
   cardLinkUrlForTask,
   describeMissingProof,
+  hasLinkedCalendarInvite,
   taskOptionality,
   taskProofState,
+  taskRequiresCalendarInvite,
 } from "../../core/task-proof.js";
 
 function proofNeeds(task) {
@@ -68,21 +70,23 @@ export function renderTaskCompletion(context) {
     const proof = taskProofState(draft, parentCard);
     const missingLink = task.requiredLinkName && !cardLinkUrlForTask(parentCard, task);
     const missingFile = task.requiresFile && !evidence.hasFiles();
+    const missingInvite = taskRequiresCalendarInvite(task) && !hasLinkedCalendarInvite(parentCard);
     const missingArtifact =
       taskRequiresApprovedArtifact(task) &&
       !hasApprovedArtifactEvidence(task, evidence.artifacts());
     const missingProof = proof.missing.filter(
-      (entry) => entry !== task.requiredLinkName && entry !== "required file" && entry !== "approved artifact",
+      (entry) => entry !== task.requiredLinkName && entry !== "required file" && entry !== "approved artifact" && entry !== "calendar invite",
     );
     const blockedBy = blockedReason(task, siblingTasks);
     return {
       missingLink,
       missingFile,
+      missingInvite,
       missingArtifact,
       missingProof,
       blockedBy,
       canComplete:
-        !blockedBy && !missingLink && !missingFile && !missingArtifact && missingProof.length === 0,
+        !blockedBy && !missingLink && !missingFile && !missingInvite && !missingArtifact && missingProof.length === 0,
     };
   };
 
@@ -170,10 +174,21 @@ export function renderTaskCompletion(context) {
   // A blocked task's Mark done is not the next action, so it is not primary.
   if (blockingPrerequisites(task, siblingTasks).length === 0) complete.classList.add("is-primary");
 
+  // Name the invite requirement where the operator acts on it: the invite
+  // lives on the Card (linked by hand or by confirm-hold), not on this Task.
+  if (taskRequiresCalendarInvite(task) && !hasLinkedCalendarInvite(parentCard)) {
+    const hint = document.createElement("p");
+    hint.className = "task-proof-hint";
+    hint.textContent =
+      `Link the Google Calendar invite to the card first: dataops cards invite add ${parentCard?.id || "<card-id>"} --event-id <event-id> --calendar <calendar>`;
+    stateSection.append(hint);
+  }
+
   const syncCompletion = () => {
     const {
       missingLink,
       missingFile,
+      missingInvite,
       missingArtifact,
       missingProof,
       blockedBy,
@@ -188,6 +203,7 @@ export function renderTaskCompletion(context) {
     if (blockedBy) reasons.push(blockedBy);
     if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
     if (missingFile) reasons.push("Upload required file");
+    if (missingInvite) reasons.push("Link a calendar invite to the card");
     if (missingArtifact) reasons.push("Approve an attached artifact");
     for (const entry of missingProof) reasons.push(describeMissingProof(entry));
     complete.title = reasons.join("; ");

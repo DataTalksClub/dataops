@@ -50,6 +50,7 @@ export function proofRequirementLabel(task) {
 
 export function describeMissingProof(entry) {
   const text = String(entry || "");
+  if (text === "calendar invite") return "Link a calendar invite to the card";
   if (text === "required file" || text.endsWith("(file)")) return "Upload required file";
   if (text === "approved artifact") return "Approve an attached artifact";
   if (text === "external status" || text.endsWith("(external status)")) return `Set external status: ${text}`;
@@ -82,6 +83,7 @@ export function taskProofState(task, card = null) {
   const missing = [];
   if (task?.requiredLinkName && !cardLinkUrlForTask(card, task)) missing.push(task.requiredLinkName);
   if (task?.requiresFile && !hasTaskFileEvidence(task)) missing.push("required file");
+  if (taskRequiresCalendarInvite(task) && !hasLinkedCalendarInvite(card)) missing.push("calendar invite");
   if (taskRequiresApprovedArtifact(task) && !hasApprovedArtifactEvidence(task, [])) missing.push("approved artifact");
   const proof = task?.proofRequirement;
   if (proof && typeof proof === "object" && proof.required !== false) {
@@ -105,6 +107,25 @@ export function taskProofState(task, card = null) {
     return { ok: true, label: "Proof ready", missing: [] };
   }
   return { ok: true, label: "No proof required", missing: [] };
+}
+
+// The guest-invite Task in the webinar and podcast templates. It implies
+// the calendar-invite requirement for Cards created before their Template
+// declared it explicitly — the same fallback the server enforces.
+export const CALENDAR_INVITE_TASK_REF = "create-calendar-invite";
+
+export function taskRequiresCalendarInvite(task) {
+  if (!task || typeof task !== "object") return false;
+  if (task.requiresCalendarInvite === true) return true;
+  const validation = task.validation;
+  if (validation && typeof validation === "object" && !Array.isArray(validation)) {
+    if (validation.requiresCalendarInvite === true) return true;
+  }
+  return task.templateTaskRef === CALENDAR_INVITE_TASK_REF;
+}
+
+export function hasLinkedCalendarInvite(card) {
+  return Array.isArray(card?.calendarInvites) && card.calendarInvites.length > 0;
 }
 
 // Required-vs-optional in the Template's words, for the rows and dialogs

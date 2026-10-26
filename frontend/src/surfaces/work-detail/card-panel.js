@@ -1,7 +1,7 @@
 import { documentHref, opensInNewTab } from "../../core/links.js";
 import { afterText, blockedReason, blockingPrerequisites, prerequisiteStatusLabel } from "../../core/task-dependencies.js";
 import { taskTitleParts } from "../../core/task-display.js";
-import { cardLinkUrlForTask, describeMissingProof, isCanonicalWorkTask, taskProofState } from "../../core/workspace.js";
+import { cardLinkUrlForTask, describeMissingProof, hasLinkedCalendarInvite, isCanonicalWorkTask, taskProofState, taskRequiresCalendarInvite } from "../../core/workspace.js";
 import { appendChecklistOptionality } from "./task-completion.js";
 import { createCardActions } from "./card-actions.js";
 import { renderCardTemplateUpdate } from "./card-template-review.js";
@@ -17,6 +17,7 @@ import {
   renderCardSponsorDocsSection,
   renderCardTemplateLink,
 } from "./card-summary.js";
+import { renderCardInvitesSection } from "./card-invites.js";
 import { renderWebinarMaterialsAction } from "./webinar-materials.js";
 import { renderLinkRow, renderLinkList } from "./link-rows.js";
 
@@ -402,9 +403,8 @@ export function createCardPanel(context) {
     });
     if (templateUpdate) main.append(templateUpdate);
 
-    if (Array.isArray(card.cardLinks) && card.cardLinks.length > 0) {
-      main.append(renderCardLinksSection(card));
-    }
+    if (Array.isArray(card.cardLinks) && card.cardLinks.length > 0) main.append(renderCardLinksSection(card));
+    if (Array.isArray(card.calendarInvites) && card.calendarInvites.length > 0) main.append(renderCardInvitesSection(card));
 
     {
       const artifactsSection = document.createElement("div");
@@ -662,6 +662,7 @@ export function createCardPanel(context) {
     const missingLink = !isDone && Boolean(task.requiredLinkName) && !resolvedTaskLink;
     const missingFile =
       !isDone && task.requiresFile && !hasTaskFileEvidence(task);
+    const missingInvite = !isDone && taskRequiresCalendarInvite(task) && !hasLinkedCalendarInvite(activeCard);
     const missingArtifact =
       !isDone &&
       taskRequiresApprovedArtifact(task) &&
@@ -671,7 +672,7 @@ export function createCardPanel(context) {
     // here is never a dead click that fails server-side.
     const missingProof = !isDone
       ? taskProofState(task, activeCard).missing.filter(
-        (entry) => entry !== task.requiredLinkName && entry !== "required file" && entry !== "approved artifact",
+        (entry) => entry !== task.requiredLinkName && entry !== "required file" && entry !== "approved artifact" && entry !== "calendar invite",
       )
       : [];
 
@@ -689,6 +690,7 @@ export function createCardPanel(context) {
       !isWaiting &&
       !isBlocked &&
       missingLink &&
+      !missingInvite &&
       !missingFile &&
       !missingArtifact &&
       missingProof.length === 0;
@@ -717,12 +719,12 @@ export function createCardPanel(context) {
       checkbox.disabled =
         mutationBusy ||
         isWaiting || Boolean(blockedBy) ||
-        missingLink || missingFile || missingArtifact || missingProof.length > 0;
+        missingLink || missingFile || missingInvite || missingArtifact || missingProof.length > 0;
       if (checkbox.disabled && !isDone) {
         const reasons = [];
         if (blockedBy) reasons.push(blockedBy);
         if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
-        if (missingFile) reasons.push("Upload required file");
+        if (missingFile) reasons.push("Upload required file"); if (missingInvite) reasons.push("Link a calendar invite to the card");
         if (missingArtifact) reasons.push("Approve an attached artifact");
         for (const entry of missingProof) reasons.push(describeMissingProof(entry));
         if (isWaiting) reasons.push("Waiting task");
@@ -865,14 +867,14 @@ export function createCardPanel(context) {
         });
         body.append(trigger);
       }
-    } else if (!isDone && !isBlocked && !isWaiting && (missingFile || missingArtifact || missingProof.length > 0)) {
+    } else if (!isDone && !isBlocked && !isWaiting && (missingFile || missingInvite || missingArtifact || missingProof.length > 0)) {
       const flags = document.createElement("div");
       flags.className = "card-checklist-flags";
       const missing = [];
       if (missingLink && task.requiredLinkName !== "Completion proof") {
         missing.push(`Needs ${task.requiredLinkName}`);
       }
-      if (missingFile) missing.push("Needs file");
+      if (missingFile) missing.push("Needs file"); if (missingInvite) missing.push("Needs calendar invite");
       if (missingArtifact) missing.push("Needs artifact");
       for (const entry of missingProof) {
         if (entry === "external status" || entry.endsWith("(external status)")) missing.push("Needs external status");

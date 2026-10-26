@@ -613,7 +613,7 @@ export function createTaskQueue(context) {
   // Whether the checkbox does anything. Proof-blocked and waiting tasks keep
   // a disabled box that names its reasons — the same gate the card checklist
   // and the task panel enforce — so ticking it is never a dead click.
-  function queueToggleBlockers(task) {
+  function queueToggleBlockers(task, card = null) {
     const reasons = [];
     if (task.status === "waiting") {
       reasons.push(
@@ -621,7 +621,7 @@ export function createTaskQueue(context) {
       );
       return reasons;
     }
-    const proof = taskProofState(task);
+    const proof = taskProofState(task, card);
     if (proof.ok) return reasons;
     for (const missing of proof.missing) reasons.push(describeMissingProof(missing));
     return reasons;
@@ -636,7 +636,7 @@ export function createTaskQueue(context) {
     return "later";
   }
 
-  function renderQueueToggle(task) {
+  function renderQueueToggle(task, card = null) {
     const label = document.createElement("label");
     label.className = "ops-queue-check";
     const input = document.createElement("input");
@@ -646,7 +646,7 @@ export function createTaskQueue(context) {
     const completed = completedThisSession.has(task.id);
     input.checked = completed;
     if (completed) input.setAttribute("aria-label", `Reopen ${cleanTaskTitle(task)}`);
-    const blockers = completed ? [] : queueToggleBlockers(task);
+    const blockers = completed ? [] : queueToggleBlockers(task, card);
     if (blockers.length > 0) {
       input.disabled = true;
       // The tooltip lives on the label: the visible box is its child, and a
@@ -861,7 +861,7 @@ export function createTaskQueue(context) {
       }
     });
 
-    const toggle = renderQueueToggle(task);
+    const toggle = renderQueueToggle(task, origin.card || null);
 
     const open = document.createElement("button");
     open.type = "button";
