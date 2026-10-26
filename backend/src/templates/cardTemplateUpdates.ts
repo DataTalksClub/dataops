@@ -40,6 +40,7 @@ const TASK_FIELDS = [
   'validation',
   'requiredLinkName',
   'requiresFile',
+  'requiresCalendarInvite',
   'proofRequirement',
   'tags',
   'sourceDocIds',

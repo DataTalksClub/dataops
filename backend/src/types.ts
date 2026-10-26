@@ -286,6 +286,8 @@ export interface Task {
   materials?: TaskMaterial[];
   requiredLinkName?: string;
   requiresFile?: boolean;
+  /** When true, the Task cannot be marked done until its Card links at least one calendar invite. */
+  requiresCalendarInvite?: boolean;
   assigneeId?: string;
   createdBy?: string;
   tags?: string[];
@@ -340,6 +342,23 @@ export interface CardLink {
   url: string;
 }
 
+/**
+ * One Google Calendar invite linked to a Card. Invites are usually created
+ * by hand on any connected calendar (organizer grace@ or
+ * alexey.s.grigoriev@gmail.com) and then linked with
+ * `dataops cards invite add`; the confirm-hold flow links its own invite
+ * automatically. A Card holds at most one entry per (calendar, event id);
+ * re-linking the same event updates it (e.g. label 'original' → 'resent').
+ */
+export interface CardCalendarInvite {
+  eventId: string;
+  calendar: string;
+  url?: string;
+  label?: string;
+  createdAt?: string;
+  createdBy?: string;
+}
+
 export interface Card {
   id: string;
   /** Monotonic optimistic-concurrency token. */
@@ -367,6 +386,8 @@ export interface Card {
   issueNumber?: string;
   references?: CardLink[];
   cardLinks?: CardLink[];
+  /** Google Calendar invites linked to this Card (see CardCalendarInvite). */
+  calendarInvites?: CardCalendarInvite[];
   tags?: string[];
   /**
    * Administrative owner of the Card. Optional: existing and system-created
@@ -457,6 +478,13 @@ export interface TaskDefinition {
   validation?: string | Record<string, unknown>;
   requiredLinkName?: string;
   requiresFile?: boolean;
+  /**
+   * When true, the Task cannot be marked done until its Card links at least
+   * one calendar invite. Webinar/podcast invite Tasks carry this; the
+   * `create-calendar-invite` template ref implies it for Cards created
+   * before their Template declared it.
+   */
+  requiresCalendarInvite?: boolean;
   proofRequirement?: ProofRequirement;
   /** Checklist tag split out of the description (e.g. "Podcast page"). */
   tags?: string[];
@@ -505,6 +533,13 @@ export interface TemplateTaskDefinitionSnapshot {
   validation?: string | Record<string, unknown>;
   requiredLinkName?: string;
   requiresFile?: boolean;
+  /**
+   * When true, the Task cannot be marked done until its Card links at least
+   * one calendar invite. Webinar/podcast invite Tasks carry this; the
+   * `create-calendar-invite` template ref implies it for Cards created
+   * before their Template declared it.
+   */
+  requiresCalendarInvite?: boolean;
   proofRequirement?: ProofRequirement;
   tags?: string[];
   sourceDocIds?: string[];

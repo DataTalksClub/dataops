@@ -61,6 +61,7 @@ const TASK_FIELDS = [
   ['validation', 'validation'],
   ['requiredLinkName', 'required_link'],
   ['requiresFile', 'requires_file'],
+  ['requiresCalendarInvite', 'requires_calendar_invite'],
   ['optionalGroup', 'optional_group'],
   ['proofRequirement', 'proof'],
   ['tags', 'tags'],

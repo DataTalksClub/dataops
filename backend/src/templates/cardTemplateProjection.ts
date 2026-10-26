@@ -132,6 +132,7 @@ export function templateTaskDefinitionSnapshot(
     validation: definition.validation ? copy(definition.validation) : undefined,
     requiredLinkName: definition.requiredLinkName,
     requiresFile: definition.requiresFile,
+    requiresCalendarInvite: definition.requiresCalendarInvite,
     proofRequirement: definition.proofRequirement ? copy(definition.proofRequirement) : undefined,
     tags: combinedTags.length ? combinedTags : undefined,
     sourceDocIds: template.sourceDocIds?.length ? copy(template.sourceDocIds) : undefined,
