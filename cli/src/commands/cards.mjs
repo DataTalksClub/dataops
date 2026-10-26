@@ -19,6 +19,8 @@ Usage
       [--optional-groups a,b] [--stage S] [--description D] [--owner ID] [--tags a,b]
   dataops cards update <card-id> [--title T] [--description D] [--date D] [--owner ID|none]
       [--tags a,b]
+  dataops cards time <card-id> --at "YYYY-MM-DD HH:MM" [--duration 60] [--tz Europe/Berlin]
+      [--guests EMAIL,EMAIL] [--json]            Create or move the Card guest invite
   dataops cards stage <card-id> <preparation|announced|after-event>
   dataops cards link <card-id> <link-name> <url>  Fill a Card link (e.g. a template's required link)
   dataops cards invite add <card-id> --event-id ID --calendar CAL [--url URL] [--label L]
@@ -102,6 +104,10 @@ export async function show(args, io) {
     ["status", card.status],
     ["stage", card.stage],
     ["date", card.anchorDate],
+    ["event time", card.eventTime?.startIso],
+    ["event end", card.eventTime?.endIso],
+    ["time zone", card.eventTime?.timeZone],
+    ["guests", card.guestEmails],
     ["owner", card.owner?.name],
     ["template", card.templateId],
     ["options", card.selectedOptionalGroups],
@@ -307,7 +313,24 @@ export async function invite(args, io) {
   throw new UsageError(`Unknown invite action: ${action}. ${usage}`);
 }
 
+export async function time(args, io) {
+  const id = positional(args, 0);
+  if (!id) throw new UsageError('A Card id is required');
+  const at = required(args, 'at', 'at');
+  const body = { at };
+  if (args.duration !== undefined) body.duration = integer(args.duration, 'duration');
+  if (args.tz !== undefined) body.tz = optionalString(args, 'tz');
+  if (args.guests !== undefined) body.guestEmails = csv(args.guests);
+  const result = await apiFor(args).post(`/api/cards/${enc(id)}/time`, body);
+  if (!args.json) {
+    io.print(`Event: ${result.card.eventTime.startIso} .. ${result.card.eventTime.endIso} (${result.card.eventTime.timeZone})`);
+    for (const invite of result.card.calendarInvites || []) io.print(`invite: ${invite.eventId} ${invite.url || ''}`);
+  }
+  return result;
+}
+
 export const commands = {
+  time,
   list,
   show,
   create,
