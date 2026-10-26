@@ -1426,7 +1426,7 @@ describe("Planning surface production behavior", () => {
       status: "sent",
       version: 2,
       stats: {
-        deliveries: 99714,
+        sent: 99714,
         opens: 34886,
         openRate: 34.99,
         clicks: 831,
@@ -1477,7 +1477,7 @@ describe("Planning surface production behavior", () => {
     });
     await harness.surface.renderNewsletterSurface();
     const html = dom.slots.innerHTML;
-    assert.match(html, /<strong>Mailchimp:<\/strong> 99,714 deliveries · 34,886 opens \(34\.99%\) · 831 clicks \(651 unique, 2\.38% CTR\)/);
+    assert.match(html, /<strong>Mailchimp:<\/strong> 99,714 sent · 34,886 opens \(34\.99%\) · 831 clicks \(651 unique, 2\.38% CTR\)/);
     assert.match(html, /<strong>Primary \(VectorAI DB\) stats:<\/strong> Newsletter 831 clicks \(651 unique, 2\.38% CTR\) · <a href="https:\/\/www\.linkedin\.com\/feed\/update\/urn:li:activity:7446932215609192448\/"[^>]*>LinkedIn<\/a>: 8,080 views \/ 109 clicks \(1\.35% CTR\) · <a href="https:\/\/x\.com\/DataTalksClub\/status\/2041170969592254836"[^>]*>X<\/a>: 2,916 views \/ 0 clicks \(0% CTR\)/);
     assert.match(html, /<strong>Secondary \(Astronomer\) stats:<\/strong> Newsletter 273 clicks \(185 unique, 0\.78% CTR\) · LinkedIn: 2,639 views \/ 49 clicks \(1\.86% CTR\)/);
 
@@ -1486,7 +1486,7 @@ describe("Planning surface production behavior", () => {
         closest: (selector) => (selector === "[data-edit]" ? { dataset: { edit: "issue-stats" } } : null),
       },
     });
-    assert.equal(dom.form.elements.statsDeliveries.value, 99714);
+    assert.equal(dom.form.elements.statsSent.value, 99714);
     assert.equal(dom.form.elements.primaryLinkedinImpressions.value, 8080);
     assert.equal(dom.form.elements.secondaryClicks.value, 273);
 
@@ -1495,7 +1495,7 @@ describe("Planning surface production behavior", () => {
     await dom.surface.querySelector("[data-save]").onclick({ preventDefault() {} });
     assert.equal(savedBody.slots.primary.stats.xClicks, 11);
     assert.equal(savedBody.slots.primary.stats.xCtr, 0.38);
-    assert.equal(savedBody.stats.deliveries, 99714);
+    assert.equal(savedBody.stats.sent, 99714);
   });
 });
 

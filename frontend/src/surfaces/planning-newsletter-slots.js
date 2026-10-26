@@ -59,7 +59,7 @@ const fmtNum = (value) => new Intl.NumberFormat("en-US").format(value);
 function formatIssueMailchimpLine(stats, escapeHtml) {
   if (!stats || typeof stats !== "object") return "";
   const parts = [];
-  if (stats.deliveries !== undefined) parts.push(`${escapeHtml(fmtNum(stats.deliveries))} deliveries`);
+  if (stats.sent !== undefined) parts.push(`${escapeHtml(fmtNum(stats.sent))} sent`);
   if (stats.opens !== undefined) {
     const rate = stats.openRate !== undefined ? ` (${escapeHtml(String(stats.openRate))}%)` : "";
     parts.push(`${escapeHtml(fmtNum(stats.opens))} opens${rate}`);
@@ -84,23 +84,25 @@ function formatSlotChannelStats(slot, positionLabel, escapeHtml) {
     if (stats.clickRate !== undefined) details.push(`${escapeHtml(String(stats.clickRate))}% CTR`);
     parts.push(`Newsletter ${escapeHtml(fmtNum(stats.clicks))} clicks${details.length ? ` (${details.join(", ")})` : ""}`);
   }
-  if (stats.linkedinImpressions !== undefined || stats.linkedinClicks !== undefined || stats.linkedinPostUrl) {
+  if (stats.linkedinImpressions !== undefined || stats.linkedinClicks !== undefined || stats.linkedinReactions !== undefined || stats.linkedinPostUrl) {
     const label = stats.linkedinPostUrl
       ? `<a href="${escapeHtml(stats.linkedinPostUrl)}" target="_blank" rel="noreferrer">LinkedIn</a>`
       : "LinkedIn";
     const metrics = [];
     if (stats.linkedinImpressions !== undefined) metrics.push(`${escapeHtml(fmtNum(stats.linkedinImpressions))} views`);
     if (stats.linkedinClicks !== undefined) metrics.push(`${escapeHtml(fmtNum(stats.linkedinClicks))} clicks`);
+    if (stats.linkedinReactions !== undefined) metrics.push(`${escapeHtml(fmtNum(stats.linkedinReactions))} reactions`);
     const ctr = stats.linkedinCtr !== undefined ? ` (${escapeHtml(String(stats.linkedinCtr))}% CTR)` : "";
     parts.push(`${label}${metrics.length ? `: ${metrics.join(" / ")}${ctr}` : ""}`);
   }
-  if (stats.xImpressions !== undefined || stats.xClicks !== undefined || stats.xPostUrl) {
+  if (stats.xImpressions !== undefined || stats.xClicks !== undefined || stats.xReactions !== undefined || stats.xPostUrl) {
     const label = stats.xPostUrl
       ? `<a href="${escapeHtml(stats.xPostUrl)}" target="_blank" rel="noreferrer">X</a>`
       : "X";
     const metrics = [];
     if (stats.xImpressions !== undefined) metrics.push(`${escapeHtml(fmtNum(stats.xImpressions))} views`);
     if (stats.xClicks !== undefined) metrics.push(`${escapeHtml(fmtNum(stats.xClicks))} clicks`);
+    if (stats.xReactions !== undefined) metrics.push(`${escapeHtml(fmtNum(stats.xReactions))} reactions`);
     const ctr = stats.xCtr !== undefined ? ` (${escapeHtml(String(stats.xCtr))}% CTR)` : "";
     parts.push(`${label}${metrics.length ? `: ${metrics.join(" / ")}${ctr}` : ""}`);
   }
@@ -293,17 +295,19 @@ export function issueSlotFieldsetsMarkup() {
                   <label>Click rate (%) <input name="${position}ClickRate" type="number" min="0" max="100" step="0.01"></label>
                   <label>LinkedIn views <input name="${position}LinkedinImpressions" type="number" min="0"></label>
                   <label>LinkedIn clicks <input name="${position}LinkedinClicks" type="number" min="0"></label>
+                  <label>LinkedIn reactions <input name="${position}LinkedinReactions" type="number" min="0"></label>
                   <label>LinkedIn CTR (%) <input name="${position}LinkedinCtr" type="number" min="0" max="100" step="0.01"></label>
                   <label>LinkedIn post URL <input name="${position}LinkedinPostUrl" type="url"></label>
                   <label>X views <input name="${position}XImpressions" type="number" min="0"></label>
                   <label>X clicks <input name="${position}XClicks" type="number" min="0"></label>
+                  <label>X reactions <input name="${position}XReactions" type="number" min="0"></label>
                   <label>X CTR (%) <input name="${position}XCtr" type="number" min="0" max="100" step="0.01"></label>
                   <label>X post URL <input name="${position}XPostUrl" type="url"></label>
                 </fieldset>`).join("");
   return `${slotFieldsets}
                 <fieldset class="planner-field-wide newsletter-slot-fields" data-issue-stats-fields>
-                  <legend>Mailchimp issue stats</legend>
-                  <label>Deliveries <input name="statsDeliveries" type="number" min="0"></label>
+                  <legend>Mailchimp issue metrics</legend>
+                  <label>Sent <input name="statsSent" type="number" min="0"></label>
                   <label>Opens (views) <input name="statsOpens" type="number" min="0"></label>
                   <label>Open rate (%) <input name="statsOpenRate" type="number" min="0" max="100" step="0.01"></label>
                   <label>Clicks <input name="statsClicks" type="number" min="0"></label>
@@ -314,15 +318,15 @@ export function issueSlotFieldsetsMarkup() {
 
 export const SLOT_FORM_FIELD = new RegExp(
   "^(?:(?:primary|secondary)(?:DocumentUrl|Clicks|UniqueClicks|ClickRate|"
-  + "LinkedinImpressions|LinkedinClicks|LinkedinCtr|LinkedinPostUrl|"
-  + "XImpressions|XClicks|XCtr|XPostUrl)|"
-  + "stats(?:Deliveries|Opens|OpenRate|Clicks|UniqueClicks|ClickRate))$",
+  + "LinkedinImpressions|LinkedinClicks|LinkedinReactions|LinkedinCtr|LinkedinPostUrl|"
+  + "XImpressions|XClicks|XReactions|XCtr|XPostUrl)|"
+  + "stats(?:Sent|Opens|OpenRate|Clicks|UniqueClicks|ClickRate))$",
 );
 
-const SLOT_INT_FIELDS = ["Clicks", "UniqueClicks", "LinkedinImpressions", "LinkedinClicks", "XImpressions", "XClicks"];
+const SLOT_INT_FIELDS = ["Clicks", "UniqueClicks", "LinkedinImpressions", "LinkedinClicks", "LinkedinReactions", "XImpressions", "XClicks", "XReactions"];
 const SLOT_RATE_FIELDS = ["ClickRate", "LinkedinCtr", "XCtr"];
 const SLOT_URL_FIELDS = ["LinkedinPostUrl", "XPostUrl"];
-const ISSUE_INT_FIELDS = ["Deliveries", "Opens", "Clicks", "UniqueClicks"];
+const ISSUE_INT_FIELDS = ["Sent", "Opens", "Clicks", "UniqueClicks"];
 const ISSUE_RATE_FIELDS = ["OpenRate", "ClickRate"];
 
 const lowerFirst = (name) => name[0].toLowerCase() + name.slice(1);
