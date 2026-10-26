@@ -109,6 +109,43 @@ export const HOLD_ORGANIZER = 'orin@datatalks.club';
 const GOOGLE = 'https://www.googleapis.com/calendar/v3';
 const eventsUrl = (calendar: string) => `${GOOGLE}/calendars/${encodeURIComponent(calendar)}/events`;
 
+/** Bounds for Google error text surfaced in googleSync.reason (secret-free: body only, never headers/tokens). */
+export const GOOGLE_ERROR_MESSAGE_LIMIT = 200;
+const GOOGLE_ERROR_BODY_LIMIT = 4096;
+
+/**
+ * Summarize a Google Calendar error response for googleSync.reason: HTTP
+ * status plus the JSON error body's `error.message` / `errors[].reason`,
+ * bounded in length. Only the response body is read — no request headers,
+ * tokens, or payloads are ever included.
+ */
+export function googleErrorDetail(status: number, bodyText: string): string {
+  let message = '';
+  let reason = '';
+  try {
+    const parsed = JSON.parse(bodyText) as { error?: { message?: unknown; errors?: unknown } };
+    const err = parsed?.error;
+    if (typeof err?.message === 'string') message = err.message.trim();
+    const errors = Array.isArray(err?.errors) ? (err.errors as Array<{ reason?: unknown; message?: unknown }>) : [];
+    const first = errors.find((e) => typeof e?.reason === 'string' || typeof e?.message === 'string');
+    if (typeof first?.reason === 'string') reason = first.reason.trim();
+    if (!message && typeof first?.message === 'string') message = first.message.trim();
+  } catch {
+    // Non-JSON body: status only.
+  }
+  const prefix = `Google Calendar returned HTTP ${status}`;
+  const detail = [message, reason].filter(Boolean).join(' — ').slice(0, GOOGLE_ERROR_MESSAGE_LIMIT);
+  return detail ? `${prefix}: ${detail}` : prefix;
+}
+
+async function readBodyText(response: Response, limit: number): Promise<string> {
+  try {
+    return (await response.text()).slice(0, limit);
+  } catch {
+    return '';
+  }
+}
+
 function eventBody(event: HoldGoogleEvent) {
   return {
     summary: event.summary,
@@ -135,8 +172,13 @@ async function syncEvents(
     const response = await googleFetch(deps, url, {
       method, headers, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(15000),
     });
-    if (!response.ok) throw new Error(`Google Calendar returned HTTP ${response.status}`);
-    return response.json();
+    const text = await readBodyText(response, GOOGLE_ERROR_BODY_LIMIT);
+    if (!response.ok) throw new Error(googleErrorDetail(response.status, text));
+    try {
+      return text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error('Google Calendar returned an unreadable response; retry the hold after checking the Orin connection.');
+    }
   }
   try {
     // Fail before writing anything with a token for the wrong Google identity.
@@ -235,7 +277,7 @@ export async function deleteHoldGoogleEvents(
         `${eventsUrl(calendar)}/${encodeURIComponent(id)}${calendar === HOLD_ORGANIZER ? '?sendUpdates=all' : ''}`,
         { method: 'DELETE', headers: { Authorization: `Bearer ${resolved.token}` }, signal: AbortSignal.timeout(15000) });
       if (!res.ok && res.status !== 404 && res.status !== 410) {
-        return { state: 'deferred', reason: `Google Calendar returned HTTP ${res.status}`, eventIds };
+        return { state: 'deferred', reason: googleErrorDetail(res.status, await readBodyText(res, GOOGLE_ERROR_BODY_LIMIT)), eventIds };
       }
     }
     return { state: 'synced', eventIds };
@@ -259,7 +301,7 @@ export async function moveLinkedGoogleInvite(
   const headers = { Authorization: `Bearer ${resolved.token}`, 'Content-Type': 'application/json' };
   try {
     const response = await googleFetch(deps, url, { headers, signal: AbortSignal.timeout(15000) });
-    if (!response.ok) return deferred(`Google Calendar returned HTTP ${response.status}`);
+    if (!response.ok) return deferred(googleErrorDetail(response.status, await readBodyText(response, GOOGLE_ERROR_BODY_LIMIT)));
     const current = await response.json() as { id?: string; status?: string };
     if (current.id !== id || current.status === 'cancelled') return deferred('The adopted calendar invitation is missing or cancelled.');
     const patched = await googleFetch(deps, `${url}?sendUpdates=all`, {
@@ -267,7 +309,7 @@ export async function moveLinkedGoogleInvite(
       body: JSON.stringify({ start: { dateTime: event.startIso, timeZone: event.timeZone }, end: { dateTime: event.endIso, timeZone: event.timeZone } }),
       signal: AbortSignal.timeout(15000),
     });
-    if (!patched.ok) return deferred(`Google Calendar returned HTTP ${patched.status}`);
+    if (!patched.ok) return deferred(googleErrorDetail(patched.status, await readBodyText(patched, GOOGLE_ERROR_BODY_LIMIT)));
     return { state: 'synced', eventIds };
   } catch {
     return deferred('Google Calendar move could not complete; retry the same Card time command.');
