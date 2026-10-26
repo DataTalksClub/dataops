@@ -36,16 +36,18 @@ Usage
       Mark the deal "wait, revisit later": open Tasks go waiting until DATE (a waiting
       Task is created when the deal has none), then the fresh state is printed.
   dataops crm company show <id>
-  dataops crm company create [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'      Through the canonical organization record
-  dataops crm company update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'  Must include the current version
+  dataops crm company create [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] [--follow-up-at DATE] [--follow-up-status open|done] [--follow-up-note TEXT] --data '{...}'      Through the canonical organization record
+  dataops crm company update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] [--follow-up-at DATE] [--follow-up-status open|done] [--follow-up-note TEXT] --data '{...}'  Must include the current version
   dataops crm company dnc <id> [--unset] [--note TEXT]
+  dataops crm company followup <id> --on YYYY-MM-DD|+7d [--status open|done] [--note TEXT] [--clear]
   dataops crm company archive <id>
   dataops crm company unarchive <id>
   dataops crm company delete <id> --yes [--expected-version N]  Permanently delete (admin only)
   dataops crm person show <id>
-  dataops crm person create [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'      Through the canonical contact record
-  dataops crm person update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'  Must include the current version
+  dataops crm person create [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] [--follow-up-at DATE] [--follow-up-status open|done] [--follow-up-note TEXT] --data '{...}'      Through the canonical contact record
+  dataops crm person update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] [--follow-up-at DATE] [--follow-up-status open|done] [--follow-up-note TEXT] --data '{...}'  Must include the current version
   dataops crm person dnc <id> [--unset] [--note TEXT]
+  dataops crm person followup <id> --on YYYY-MM-DD|+7d [--status open|done] [--note TEXT] [--clear]
   dataops crm person archive <id>
   dataops crm person unarchive <id>
   dataops crm person delete <id> --yes [--expected-version N]   Permanently delete (admin only)
@@ -172,6 +174,15 @@ export async function companyShow(args, io) {
   return result;
 }
 
+function followUpFlags(args, payload) {
+  const followUpAt = args.followUpAt ?? args.follow_up_at;
+  if (followUpAt !== undefined) payload.follow_up_at = followUpAt;
+  const followUpStatus = args.followUpStatus ?? args.follow_up_status;
+  if (followUpStatus !== undefined) payload.follow_up_status = followUpStatus;
+  const followUpNote = args.followUpNote ?? args.follow_up_note;
+  if (followUpNote !== undefined) payload.follow_up_note = followUpNote;
+}
+
 export async function companyCreate(args, io) {
   const payload = { ...(args.data !== undefined ? jsonData(args) : {}) };
   if (args.tags !== undefined) {
@@ -181,8 +192,9 @@ export async function companyCreate(args, io) {
   if (firstContactAt !== undefined) payload.first_contact_at = firstContactAt;
   const lastContactAt = args.lastContactAt ?? args.last_contact_at;
   if (lastContactAt !== undefined) payload.last_contact_at = lastContactAt;
+  followUpFlags(args, payload);
   if (Object.keys(payload).length === 0) {
-    throw new UsageError("Pass --data '{...}' or flags like --tags, --first-contact-at, --last-contact-at.");
+    throw new UsageError("Pass --data '{...}' or flags like --tags, --first-contact-at, --last-contact-at, --follow-up-at.");
   }
   const result = await apiFor(args).post("/api/sponsor-crm/organizations", payload);
   if (!args.json) io.print(`Created company ${result?.id || ""}.`.replace(" .", "."));
@@ -190,7 +202,7 @@ export async function companyCreate(args, io) {
 }
 
 export async function companyUpdate(args, io) {
-  const id = positional(args, 0, "dataops crm company update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'");
+  const id = positional(args, 0, "dataops crm company update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] [--follow-up-at DATE] --data '{...}'");
   const payload = { ...(args.data !== undefined ? jsonData(args) : {}) };
   if (args.tags !== undefined) {
     payload.tags = typeof args.tags === "string" ? args.tags.split(",").map((t) => t.trim()).filter(Boolean) : args.tags;
@@ -199,8 +211,9 @@ export async function companyUpdate(args, io) {
   if (firstContactAt !== undefined) payload.first_contact_at = firstContactAt;
   const lastContactAt = args.lastContactAt ?? args.last_contact_at;
   if (lastContactAt !== undefined) payload.last_contact_at = lastContactAt;
+  followUpFlags(args, payload);
   if (Object.keys(payload).length === 0) {
-    throw new UsageError("Pass --data '{...}' or flags like --tags, --first-contact-at, --last-contact-at.");
+    throw new UsageError("Pass --data '{...}' or flags like --tags, --first-contact-at, --last-contact-at, --follow-up-at.");
   }
   const result = await apiFor(args).put(`/api/sponsor-crm/organizations/${enc(id)}`, payload);
   if (!args.json) io.print(`Updated company ${id}.`);
@@ -253,8 +266,9 @@ export async function personCreate(args, io) {
   if (firstContactAt !== undefined) payload.first_contact_at = firstContactAt;
   const lastContactAt = args.lastContactAt ?? args.last_contact_at;
   if (lastContactAt !== undefined) payload.last_contact_at = lastContactAt;
+  followUpFlags(args, payload);
   if (Object.keys(payload).length === 0) {
-    throw new UsageError("Pass --data '{...}' or flags like --tags, --first-contact-at, --last-contact-at.");
+    throw new UsageError("Pass --data '{...}' or flags like --tags, --first-contact-at, --last-contact-at, --follow-up-at.");
   }
   const result = await apiFor(args).post("/api/sponsor-crm/contacts", payload);
   if (!args.json) io.print(`Created person ${result?.id || ""}.`.replace(" .", "."));
@@ -262,7 +276,7 @@ export async function personCreate(args, io) {
 }
 
 export async function personUpdate(args, io) {
-  const id = positional(args, 0, "dataops crm person update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] --data '{...}'");
+  const id = positional(args, 0, "dataops crm person update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] [--follow-up-at DATE] --data '{...}'");
   const payload = { ...(args.data !== undefined ? jsonData(args) : {}) };
   if (args.tags !== undefined) {
     payload.tags = typeof args.tags === "string" ? args.tags.split(",").map((t) => t.trim()).filter(Boolean) : args.tags;
@@ -271,8 +285,9 @@ export async function personUpdate(args, io) {
   if (firstContactAt !== undefined) payload.first_contact_at = firstContactAt;
   const lastContactAt = args.lastContactAt ?? args.last_contact_at;
   if (lastContactAt !== undefined) payload.last_contact_at = lastContactAt;
+  followUpFlags(args, payload);
   if (Object.keys(payload).length === 0) {
-    throw new UsageError("Pass --data '{...}' or flags like --tags, --first-contact-at, --last-contact-at.");
+    throw new UsageError("Pass --data '{...}' or flags like --tags, --first-contact-at, --last-contact-at, --follow-up-at.");
   }
   const result = await apiFor(args).put(`/api/sponsor-crm/contacts/${enc(id)}`, payload);
   if (!args.json) io.print(`Updated person ${id}.`);
@@ -584,6 +599,7 @@ export async function followups(args, io) {
   if (args.overdue) query.overdue = "true";
   const result = await api.get("/api/sponsor-crm/followups", { query });
   const items = Array.isArray(result?.items) ? result.items : [];
+  const records = Array.isArray(result?.records) ? result.records : [];
   if (args.json) return result;
   table(
     io,
@@ -598,7 +614,51 @@ export async function followups(args, io) {
     ],
     "No follow-up tasks found.",
   );
+  table(
+    io,
+    records,
+    [
+      ["KIND", (item) => item.kind || ""],
+      ["DUE", (item) => item.follow_up_at || ""],
+      ["STATUS", (item) => item.follow_up_status || ""],
+      ["NAME", (item) => item.organizationName && item.kind === "person" ? `${item.name} (${item.organizationName})` : item.name || ""],
+      ["NOTE", (item) => item.follow_up_note || ""],
+    ],
+    "No direct contact/company follow-ups.",
+  );
   return result;
+}
+
+async function recordFollowup(args, io, plural) {
+  const id = idOf(args, 0);
+  const api = apiFor(args);
+  if (args.clear) {
+    const result = await api.post(`/api/sponsor-crm/${plural}/${enc(id)}/followup`, { clear: true });
+    if (args.json) return result;
+    io.print(`Cleared the direct follow-up on ${id}.`);
+    return result;
+  }
+  const on = isoDate(args.on ?? args.followUpAt ?? args.follow_up_at, "on");
+  if (!on) throw new UsageError("Pass --on YYYY-MM-DD (or a relative date like +7d).");
+  const status = optionalString(args, "status");
+  if (status !== undefined && !["open", "done"].includes(status)) throw new UsageError("--status must be open or done.");
+  const note = optionalString(args, "note");
+  const result = await api.post(`/api/sponsor-crm/${plural}/${enc(id)}/followup`, {
+    follow_up_at: on,
+    ...(status ? { follow_up_status: status } : {}),
+    ...(note ? { follow_up_note: note } : {}),
+  });
+  if (args.json) return result;
+  io.print(`Follow-up on ${id}: ${on}${status ? ` (${status})` : ""}.${note ? ` Note: "${note}"` : ""}`);
+  return result;
+}
+
+export async function companyFollowup(args, io) {
+  return recordFollowup(args, io, "organizations");
+}
+
+export async function personFollowup(args, io) {
+  return recordFollowup(args, io, "contacts");
 }
 
 export async function companyDnc(args, io) {
@@ -642,15 +702,17 @@ export const commands = {
     {
       show: companyShow, create: companyCreate, update: companyUpdate, archive: companyArchive, unarchive: companyUnarchive, delete: companyDelete,
       dnc: companyDnc, "set-dnc": companyDnc, "unset-dnc": (a, o) => companyDnc({ ...a, unset: true }, o),
+      followup: companyFollowup,
     },
-    "dataops crm company <show|create|update|archive|unarchive|delete|dnc> [...]"),
+    "dataops crm company <show|create|update|archive|unarchive|delete|dnc|followup> [...]"),
   people: (args, io) => dispatch(args, io, { list: peopleList }, "dataops crm people list [...]"),
   person: (args, io) => dispatch(args, io,
     {
       show: personShow, create: personCreate, update: personUpdate, archive: personArchive, unarchive: personUnarchive, delete: personDelete,
       dnc: personDnc, "set-dnc": personDnc, "unset-dnc": (a, o) => personDnc({ ...a, unset: true }, o),
+      followup: personFollowup,
     },
-    "dataops crm person <show|create|update|archive|unarchive|delete|dnc> [...]"),
+    "dataops crm person <show|create|update|archive|unarchive|delete|dnc|followup> [...]"),
   deals: (args, io) => dispatch(args, io, { list: dealsList }, "dataops crm deals list [...]"),
   deal: (args, io) => dispatch(args, io,
     { show: dealShow, create: dealCreate, update: dealUpdate, archive: dealArchive, unarchive: dealUnarchive },

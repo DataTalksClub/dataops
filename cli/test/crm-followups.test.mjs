@@ -138,4 +138,64 @@ describe("CLI crm followups and dnc", () => {
     assert.equal(peopleQuery.dnc, "false");
     assert.equal(peopleQuery.noDeal, "true");
   });
+
+  test("dataops crm followups lists direct contact/company follow-ups", async () => {
+    fakePortal({
+      "GET /api/sponsor-crm/followups": () => ({
+        status: 200,
+        body: {
+          items: [],
+          records: [
+            { kind: "company", id: "org-9", name: "Acme Corp", follow_up_at: "2026-10-20", follow_up_status: "open", follow_up_note: "revisit", isDue: true, isOverdue: true },
+            { kind: "person", id: "p-9", name: "Jane", organizationId: "org-9", organizationName: "Acme Corp", follow_up_at: "2026-11-01", follow_up_status: "open", isDue: false, isOverdue: false },
+          ],
+          total: 2,
+        },
+      }),
+    });
+    const io = captureIo();
+    assert.equal(await run(["crm", "followups"], io), 0);
+    assert.ok(io.text().includes("Acme Corp"));
+    assert.ok(io.text().includes("2026-10-20"));
+    assert.ok(io.text().includes("Jane (Acme Corp)"));
+  });
+
+  test("dataops crm company followup sets, and clears, the direct follow-up", async () => {
+    let requestBody;
+    fakePortal({
+      "POST /api/sponsor-crm/organizations/org-123/followup": ({ body }) => {
+        requestBody = body;
+        return { status: 200, body: { id: "org-123", ...body } };
+      },
+    });
+    const io = captureIo();
+    assert.equal(await run(["crm", "company", "followup", "org-123", "--on", "2026-11-05", "--status", "open", "--note", "revisit"], io), 0);
+    assert.deepEqual(requestBody, { follow_up_at: "2026-11-05", follow_up_status: "open", follow_up_note: "revisit" });
+    assert.ok(io.text().includes("2026-11-05"));
+
+    assert.equal(await run(["crm", "company", "followup", "org-123", "--clear"], io), 0);
+    assert.deepEqual(requestBody, { clear: true });
+
+    assert.notEqual(await run(["crm", "company", "followup", "org-123"], io), 0);
+  });
+
+  test("dataops crm person followup rejects an unknown status", async () => {
+    fakePortal({});
+    const io = captureIo();
+    assert.notEqual(await run(["crm", "person", "followup", "p-456", "--on", "2026-11-05", "--status", "someday"], io), 0);
+  });
+
+  test("company update passes follow-up flags through to the API", async () => {
+    let requestBody;
+    fakePortal({
+      "PUT /api/sponsor-crm/organizations/org-123": ({ body }) => {
+        requestBody = body;
+        return { status: 200, body: { id: "org-123" } };
+      },
+    });
+    const io = captureIo();
+    assert.equal(await run(["crm", "company", "update", "org-123", "--follow-up-at", "2026-11-05", "--follow-up-status", "open"], io), 0);
+    assert.equal(requestBody.follow_up_at, "2026-11-05");
+    assert.equal(requestBody.follow_up_status, "open");
+  });
 });
