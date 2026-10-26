@@ -56,7 +56,7 @@ Tasks (15):
   - instructions: https://docs.google.com/document/d/1pHfmmVGnNKGM4i0um3M5yqpgZJlb6sgHGl0eZ1abW-A/edit
 - Schedule Sponsorship content on Twitter
   - instructions: https://docs.google.com/document/d/18Pm55ewbv1FoO4Cz_Dx-vWICPa0QhgrXiEsvZX7b6DQ/edit
-- Add newsletter performance on the spreadsheet [milestone: +7d]
+- Add newsletter performance metrics in DataOps [milestone: +7d]
   - instructions: https://docs.google.com/document/d/1A4bsGDNh4MP8WPsrTAo2hVJvlfQNKth9O0q55Xnf0oI/edit
 - Send the performance of the newsletter to the sponsor [milestone: +7d]
   - instructions: https://docs.google.com/document/d/1oXpq9SlHHcSe5JjDrScPT2yVb4n980uTJX_-F6NNqkU/edit

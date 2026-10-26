@@ -63,6 +63,7 @@ describe("newsletter issues", () => {
         sponsorTask("invoice", "primary-slot"),
         sponsorTask("sponsor-document", "secondary-slot"),
         sponsorTask("invoice", "secondary-slot"),
+        { refId: "add-newsletter-performance", description: "Add newsletter performance metrics in DataOps", offsetDays: 7 },
       ],
     });
     await createTemplate(client, {
@@ -108,7 +109,7 @@ describe("newsletter issues", () => {
     assert.equal(card.sponsor, "Sponsor A");
     assert.deepEqual(card.selectedOptionalGroups, ["primary-slot"]);
     assert.deepEqual(await tasksOf(card.id), [
-      "invoice:todo", "schedule:todo", "sponsor-document:todo", "write-issue:todo",
+      "add-newsletter-performance:todo", "invoice:todo", "schedule:todo", "sponsor-document:todo", "write-issue:todo",
     ]);
     const again = await invoke("POST", "/api/newsletter-issues", weekly({ sourceKey: "issue-340" }));
     assert.equal(again.statusCode, 200, again.body);
@@ -195,7 +196,7 @@ describe("newsletter issues", () => {
   it("starts a Card with only the booked slots' Tasks", async () => {
     const open = await createWithCard(weekly({ publicationDate: "2027-05-10", issueNumber: 351, slots: { primary: {}, secondary: {} } }));
     assert.deepEqual((await getCard(client, open.cardId))!.selectedOptionalGroups, []);
-    assert.deepEqual(await tasksOf(open.cardId), ["schedule:todo", "write-issue:todo"]);
+    assert.deepEqual(await tasksOf(open.cardId), ["add-newsletter-performance:todo", "schedule:todo", "write-issue:todo"]);
   });
 
   it("books, changes and releases a slot through the sponsor's deal", async () => {
@@ -428,10 +429,12 @@ describe("newsletter issues", () => {
             clickRate: 2.38,
             linkedinImpressions: 8080,
             linkedinClicks: 109,
+            linkedinReactions: 42,
             linkedinCtr: 1.35,
             linkedinPostUrl: "https://www.linkedin.com/feed/update/urn:li:activity:7446932215609192448/",
             xImpressions: 2916,
             xClicks: 0,
+            xReactions: 3,
             xCtr: 0,
             xPostUrl: "https://x.com/DataTalksClub/status/2041170969592254836",
           },
@@ -454,7 +457,7 @@ describe("newsletter issues", () => {
         },
       },
       stats: {
-        deliveries: 99714,
+        sent: 99714,
         opens: 34886,
         clicks: 831,
         uniqueClicks: 651,
@@ -462,12 +465,14 @@ describe("newsletter issues", () => {
         clickRate: 2.38,
       },
     }));
-    assert.equal(issue.stats.deliveries, 99714);
+    assert.equal(issue.stats.sent, 99714);
     assert.equal(issue.stats.opens, 34886);
     assert.equal(issue.stats.openRate, 34.99);
     assert.ok(issue.stats.recordedAt, "recordedAt is stamped automatically");
     assert.equal(issue.slots.primary.stats.clicks, 831);
     assert.equal(issue.slots.primary.stats.linkedinImpressions, 8080);
+    assert.equal(issue.slots.primary.stats.linkedinReactions, 42);
+    assert.equal(issue.slots.primary.stats.xReactions, 3);
     assert.ok(issue.slots.primary.stats.recordedAt);
     assert.equal(issue.slots.secondary.stats.clicks, 273);
     assert.equal(issue.slots.secondary.stats.xClicks, 7);
@@ -497,7 +502,7 @@ describe("newsletter issues", () => {
     );
     assert.equal(secondaryReport.report.sponsor, "Astronomer");
     assert.equal(secondaryReport.report.slot, "secondary");
-    assert.equal(secondaryReport.report.newsletter.deliveries, 99714);
+    assert.equal(secondaryReport.report.newsletter.sent, 99714);
     assert.equal(secondaryReport.report.newsletter.views, 34886);
     assert.equal(secondaryReport.report.newsletter.clicks, 273);
     assert.match(secondaryReport.report.message, /- 34,886 views \/ 273 clicks in the newsletter/);
@@ -522,6 +527,8 @@ describe("newsletter issues", () => {
     );
     assert.match(primaryReport.report.message, /- 2,916 views in Twitter\n/);
     assert.doesNotMatch(primaryReport.report.message, /2,916 views \/ 0 clicks/);
+    assert.equal(primaryReport.report.linkedin.reactions, 42);
+    assert.equal(primaryReport.report.x.reactions, 3);
 
     // Sponsor-wide report aggregates placements for the requested sponsor
     const sponsorReport = data(
@@ -533,12 +540,14 @@ describe("newsletter issues", () => {
 
     // Validation errors on malformed stats
     const badCases: [Record<string, unknown>, RegExp][] = [
-      [{ stats: { deliveries: -1 } }, /Invalid stats deliveries/],
+      [{ stats: { sent: -1 } }, /Invalid stats sent/],
       [{ stats: { openRate: 120 } }, /Invalid stats openRate/],
       [{ stats: { bogus: 1 } }, /Unknown stats field: bogus/],
+      [{ stats: { deliveries: 1 } }, /Unknown stats field: deliveries/],
       [{ slots: { primary: { sponsor: "VectorAI DB", stats: { clicks: -5 } } } }, /Invalid primary slot stats clicks/],
       [{ slots: { primary: { sponsor: "VectorAI DB", stats: { clickRate: 200 } } } }, /Invalid primary slot stats clickRate/],
       [{ slots: { primary: { sponsor: "VectorAI DB", stats: { linkedinPostUrl: "http://linkedin.com/x" } } } }, /Invalid primary slot stats linkedinPostUrl/],
+      [{ slots: { primary: { sponsor: "VectorAI DB", stats: { linkedinReactions: -1 } } } }, /Invalid primary slot stats linkedinReactions/],
       [{ slots: { primary: { sponsor: "VectorAI DB", stats: { unknownMetric: 1 } } } }, /Unknown primary slot stats field: unknownMetric/],
     ];
     for (const [patch, pattern] of badCases) {
@@ -554,6 +563,37 @@ describe("newsletter issues", () => {
     });
     assert.equal(cleared.statusCode, 200, cleared.body);
     assert.equal(data(cleared).stats, undefined);
+  });
+
+  it("auto-closes the metrics task when the issue metrics become complete", async () => {
+    const created = await createWithCard(weekly({
+      sourceKey: "issue-metrics-autoclose",
+      publicationDate: "2027-11-02",
+      issueNumber: 390,
+      slots: { primary: { sponsor: "Sponsor A" }, secondary: {} },
+    }));
+    const metricsOf = async () =>
+      (await listTasksByCard(client, created.cardId)).find((task) => task.templateTaskRef === "add-newsletter-performance")!;
+    assert.equal((await metricsOf()).status, "todo");
+
+    // Opens alone are not complete: the task stays open.
+    let issue = data(await invoke("PUT", `/api/newsletter-issues/${created.id}`, {
+      version: created.version,
+      stats: { opens: 34886, openRate: 34.99 },
+    }));
+    assert.equal(issue.metricsTask, "open");
+    assert.equal((await metricsOf()).status, "todo");
+
+    // Sent counts plus the booked slot's link clicks complete the metrics.
+    issue = data(await invoke("PUT", `/api/newsletter-issues/${created.id}`, {
+      version: issue.version,
+      stats: { sent: 99714, opens: 34886, openRate: 34.99 },
+      slots: { primary: { sponsor: "Sponsor A", stats: { clicks: 831, uniqueClicks: 651 } } },
+    }));
+    assert.equal(issue.metricsTask, "closed");
+    const closed = await metricsOf();
+    assert.equal(closed.status, "done");
+    assert.match(closed.externalStatus || "", /99714 sent, 34886 opens/);
   });
 
   it("requires an authenticated writer", async () => {
