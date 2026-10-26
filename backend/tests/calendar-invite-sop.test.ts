@@ -50,13 +50,17 @@ describe('calendar invite SOP contract', () => {
     const proposals = [...google.events.values()].flatMap((store) => [...store.values()]);
     assert.equal(proposals.length, 3, 'organizer source plus two target blocks');
     assert.equal(new Set(proposals.map((e) => e.iCalUID)).size, 1);
-    for (const event of proposals) {
-      assert.equal(event.summary, hold.googleTitle);
-      assert.equal(event.description, '');
-      assert.equal(event.organizer.email, HOLD_ORGANIZER);
-      assert.deepEqual(event.attendees, []);
-      assert.ok(!JSON.stringify(event).includes(hold.id));
-      assert.ok(!('conferenceData' in event));
+    for (const [calendar, store] of google.events) {
+      for (const event of store.values()) {
+        assert.equal(event.summary, hold.googleTitle);
+        assert.equal(event.description, '');
+        assert.equal(event.organizer.email, HOLD_ORGANIZER);
+        // Copies keep their own target calendar as the sole attendee (the
+        // import constraint); the organizer proposal stays attendee-free.
+        assert.deepEqual(event.attendees, calendar === HOLD_ORGANIZER ? [] : [{ email: calendar }]);
+        assert.ok(!JSON.stringify(event).includes(hold.id));
+        assert.ok(!('conferenceData' in event));
+      }
     }
     const confirmed = await invoke('POST', `/api/calendar-holds/${hold.id}/confirm`);
     assert.equal(confirmed.status, 200);

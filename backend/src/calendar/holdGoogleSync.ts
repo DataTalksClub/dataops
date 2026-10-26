@@ -208,8 +208,19 @@ async function syncEvents(
         // Google documents importing matching UIDs on organizer and attendee
         // calendars to show copies regardless of invitation auto-add settings.
         // Imports send no email. Only the organizer PATCH below sends the invite.
+        // Google only accepts an import when the calendar owner is the
+        // organizer or an attendee: the Orin organizer owns none of the copy
+        // calendars, so each copy imports its own target calendar as the sole
+        // attendee (the copy PATCH below strips attendees and stays silent).
+        // The organizer import stays attendee-free: the organizer PATCH below
+        // is the single guest invitation (sendUpdates=all), and a retry after
+        // a lost invite response must find a silent organizer block to PATCH.
+        const isCopy = calendar !== HOLD_ORGANIZER;
         current = await request(`${eventsUrl(calendar)}/import`, 'POST', {
-          ...body, attendees: [], iCalUID: uid, organizer: { email: HOLD_ORGANIZER },
+          ...body,
+          attendees: isCopy ? [{ email: calendar }] : [],
+          iCalUID: uid,
+          organizer: { email: HOLD_ORGANIZER },
         });
       }
       if (!current.id || current.organizer?.email?.toLowerCase() !== HOLD_ORGANIZER || current.iCalUID !== uid) {
@@ -274,7 +285,7 @@ export async function deleteHoldGoogleEvents(
     for (const [calendar, id] of Object.entries(eventIds).sort(([a], [b]) =>
       Number(a === HOLD_ORGANIZER) - Number(b === HOLD_ORGANIZER))) {
       const res = await googleFetch(deps,
-        `${eventsUrl(calendar)}/${encodeURIComponent(id)}${calendar === HOLD_ORGANIZER ? '?sendUpdates=all' : ''}`,
+        `${eventsUrl(calendar)}/${encodeURIComponent(id)}${calendar === HOLD_ORGANIZER ? '?sendUpdates=all' : '?sendUpdates=none'}`,
         { method: 'DELETE', headers: { Authorization: `Bearer ${resolved.token}` }, signal: AbortSignal.timeout(15000) });
       if (!res.ok && res.status !== 404 && res.status !== 410) {
         return { state: 'deferred', reason: googleErrorDetail(res.status, await readBodyText(res, GOOGLE_ERROR_BODY_LIMIT)), eventIds };

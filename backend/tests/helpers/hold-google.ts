@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { DEFAULT_HOLD_GOOGLE_CALENDARS } from '../../src/calendar/dapierBroker';
 import { HOLD_ORGANIZER } from '../../src/calendar/holdGoogleSync';
 
 export function holdGoogleProvider() {
@@ -24,7 +25,19 @@ export function holdGoogleProvider() {
     if (method === 'GET') return Response.json(store.get(id!) || {}, { status: store.has(id!) ? 200 : 404 });
     if (method === 'POST' && id === 'import') {
       assert.equal(body.organizer.email, HOLD_ORGANIZER);
-      assert.deepEqual(body.attendees, [], 'imports never invite guests');
+      if (calendar === HOLD_ORGANIZER) {
+        // The organizer invite carries real guests only (the required
+        // attendees ride along, including Orin's personal Gmail as a guest).
+        // The DTC copy calendar is never invited from the organizer event;
+        // copies are imported, never emailed.
+        const dtc = DEFAULT_HOLD_GOOGLE_CALENDARS.find((id) => id.includes('group.calendar.google.com'));
+        assert.ok(!(body.attendees || []).some((a: any) => a.email === dtc), 'organizer invite must not invite the DTC copy calendar');
+      } else {
+        // Google only imports onto a calendar whose owner is the organizer or
+        // an attendee: each copy imports its own target calendar as the sole
+        // attendee. Imports send no email; the copy PATCH strips attendees.
+        assert.deepEqual(body.attendees, [{ email: calendar }]);
+      }
       const event = { ...body, id: `event-${++sequence}` };
       store.set(event.id, event);
       return Response.json(event);
