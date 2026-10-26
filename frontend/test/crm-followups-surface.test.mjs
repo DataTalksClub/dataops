@@ -7,6 +7,7 @@ import { DIRECTORY_FILTER_KEYS, validateDirectoryState } from "../src/surfaces/f
 import { validateViewFilters } from "../src/surfaces/finance/sponsor-saved-views.js";
 import { personHeaderMarkup } from "../src/surfaces/finance/sponsor-person-detail.js";
 import { recordHeaderMarkup } from "../src/surfaces/finance/sponsor-record-markup.js";
+import { followupsTablesMarkup } from "../src/surfaces/finance/sponsor-followups.js";
 
 describe("CRM follow-ups and DNC frontend surface components", () => {
   it("registers followups tab in sponsor routes and navigation", () => {
@@ -82,5 +83,50 @@ describe("CRM follow-ups and DNC frontend surface components", () => {
     const normalHtml = recordHeaderMarkup(normalCompany, { canEdit: true }, { escapeHtml: (s) => s });
     assert.ok(!normalHtml.includes("data-status=\"dnc\""));
     assert.ok(normalHtml.includes("Mark Do-Not-Contact"));
+  });
+
+  it("headers render a follow-up badge when a direct follow-up is set", () => {
+    const personHtml = personHeaderMarkup(
+      { id: "p1", name: "Jane", follow_up_at: "2026-11-05", follow_up_status: "open" },
+      { canEdit: false },
+      { escapeHtml: (s) => s },
+    );
+    assert.ok(personHtml.includes("Follow-up 2026-11-05"));
+
+    const companyHtml = recordHeaderMarkup(
+      { id: "c1", displayName: "Acme", follow_up_at: "2026-11-06", follow_up_status: "done" },
+      { canEdit: false },
+      { escapeHtml: (s) => s },
+    );
+    assert.ok(companyHtml.includes("Follow-up 2026-11-06 (done)"));
+
+    const plainHtml = recordHeaderMarkup({ id: "c2", displayName: "Plain" }, {}, { escapeHtml: (s) => s });
+    assert.ok(!plainHtml.includes("data-status=\"followup\""));
+  });
+
+  it("follow-ups markup renders direct records and tasks in separate tables", () => {
+    const html = followupsTablesMarkup({
+      items: [{
+        task: { id: "task-1", date: "2026-10-22", status: "todo", description: "Check deck" },
+        subjectType: "sponsor-company",
+        subjectId: "org-1",
+        subjectName: "Acme Corp",
+        isDue: true,
+        isOverdue: false,
+      }],
+      records: [{
+        kind: "company", id: "org-9", name: "Beta Ltd",
+        follow_up_at: "2026-10-20", follow_up_status: "open", follow_up_note: "revisit",
+        isDue: true, isOverdue: true,
+      }],
+    }, { escapeHtml: (s) => s });
+    assert.ok(html.includes("Contact and company follow-ups"));
+    assert.ok(html.includes("Beta Ltd"));
+    assert.ok(html.includes("revisit"));
+    assert.ok(html.includes("Follow-up tasks"));
+    assert.ok(html.includes("Check deck"));
+
+    const empty = followupsTablesMarkup({ items: [], records: [] }, { escapeHtml: (s) => s });
+    assert.ok(empty.includes("No open follow-ups."));
   });
 });
