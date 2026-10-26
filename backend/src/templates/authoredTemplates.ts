@@ -7,6 +7,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import yaml from 'js-yaml';
 
 import { KnowledgeStore, knowledgeStoreConfigFromEnv } from '../docs/knowledgeStore';
+import { expandTemplateIncludes, parseBlockFiles, type AuthoredBlockFile } from './blocks';
 import { invalidateTemplateTypeMap } from '../cards/createCard';
 import {
   createTemplateWithGuard,
@@ -94,9 +95,17 @@ function authoredTypeFromPath(path: string): string {
  * Parse a complete authored-template file set without leaking template bodies
  * into failures. Detailed schema diagnostics belong to the private repository's
  * validation workflow; deployment errors identify only the safe source path.
+ *
+ * Blocks listed in `workflow-templates/blocks/*.yaml` expand before
+ * validation: includes splice block tasks into the task list, so the expanded
+ * tasks are what validation and the lossless mapping check see.
  */
-export function parseAuthoredTemplateFiles(files: AuthoredTemplateFile[]): AuthoredTemplateDefinition[] {
+export function parseAuthoredTemplateFiles(
+  files: AuthoredTemplateFile[],
+  blockFiles: AuthoredBlockFile[] = [],
+): AuthoredTemplateDefinition[] {
   if (files.length === 0) throw new Error('No authored workflow template files found');
+  const blocks = parseBlockFiles(blockFiles);
 
   const definitions: AuthoredTemplateDefinition[] = [];
   const seenTypes = new Set<string>();
@@ -109,10 +118,18 @@ export function parseAuthoredTemplateFiles(files: AuthoredTemplateFile[]): Autho
       throw new Error(`${file.path}: invalid authored workflow template YAML`);
     }
     if (!isDict(document)) throw new Error(`${file.path}: authored workflow template must be an object`);
+    let expanded: Dict;
+    try {
+      expanded = expandTemplateIncludes(document, file.path, blocks);
+    } catch (error) {
+      if (error instanceof Error) throw error;
+      throw new Error(`${file.path}: invalid authored workflow template structure`);
+    }
+    document = expanded;
 
     let issues: ReturnType<typeof validateAuthoredTemplate>;
     try {
-      issues = validateAuthoredTemplate(document);
+      issues = validateAuthoredTemplate(expanded);
     } catch {
       throw new Error(`${file.path}: invalid authored workflow template structure`);
     }
@@ -120,7 +137,7 @@ export function parseAuthoredTemplateFiles(files: AuthoredTemplateFile[]): Autho
       throw new Error(`${file.path}: authored workflow template validation failed (${issues.length} issues)`);
     }
 
-    const type = String(document.type);
+    const type = String(expanded.type);
     if (authoredTypeFromPath(file.path) !== type) {
       throw new Error(`${file.path}: filename must match the authored template type`);
     }
@@ -129,17 +146,17 @@ export function parseAuthoredTemplateFiles(files: AuthoredTemplateFile[]): Autho
 
     let runtime: Dict;
     try {
-      runtime = templateFromYaml(document);
+      runtime = templateFromYaml(expanded);
     } catch {
       throw new Error(`${file.path}: invalid authored workflow template structure`);
     }
-    if (!isDeepStrictEqual(templateToYaml(runtime), document)) {
+    if (!isDeepStrictEqual(templateToYaml(runtime), expanded)) {
       throw new Error(`${file.path}: authored workflow template mapping is not lossless`);
     }
     definitions.push({
       ...runtime,
       type,
-      name: String(document.name),
+      name: String(expanded.name),
       sourcePath: file.path,
       sourceRevision: file.revision,
     } as AuthoredTemplateDefinition);
@@ -165,7 +182,20 @@ export function loadAuthoredTemplatesFromDirectory(root: string): AuthoredTempla
         content,
       };
     });
-  return parseAuthoredTemplateFiles(files);
+  const blocksDirectory = join(directory, 'blocks');
+  const blockFiles: AuthoredBlockFile[] = existsSync(blocksDirectory)
+    ? readdirSync(blocksDirectory, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /\.ya?ml$/i.test(entry.name))
+      .map((entry) => {
+        const content = readFileSync(join(blocksDirectory, entry.name), 'utf8');
+        return {
+          path: `workflow-templates/blocks/${entry.name}`,
+          revision: localRevision(content),
+          content,
+        };
+      })
+    : [];
+  return parseAuthoredTemplateFiles(files, blockFiles);
 }
 
 /** Locate a local private-repository checkout without adding a public fallback. */
@@ -197,12 +227,20 @@ export async function loadAuthoredTemplatesFromKnowledge(
   const entries = Object.values(tree)
     .filter((entry) => entry.type === 'blob' && /^workflow-templates\/[^/]+\.ya?ml$/i.test(entry.path))
     .sort((left, right) => left.path.localeCompare(right.path));
+  const blockEntries = Object.values(tree)
+    .filter((entry) => entry.type === 'blob' && /^workflow-templates\/blocks\/[^/]+\.ya?ml$/i.test(entry.path))
+    .sort((left, right) => left.path.localeCompare(right.path));
   const files = await Promise.all(entries.map(async (entry) => ({
     path: entry.path,
     revision: entry.sha,
     content: (await store.blobBytes(entry.sha)).toString('utf8'),
   })));
-  return parseAuthoredTemplateFiles(files);
+  const blockFiles: AuthoredBlockFile[] = await Promise.all(blockEntries.map(async (entry) => ({
+    path: entry.path,
+    revision: entry.sha,
+    content: (await store.blobBytes(entry.sha)).toString('utf8'),
+  })));
+  return parseAuthoredTemplateFiles(files, blockFiles);
 }
 
 function runtimeTypes(templates: Template[]): Map<string, Template[]> {
