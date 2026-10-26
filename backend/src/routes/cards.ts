@@ -8,6 +8,7 @@ import {
   parkCard,
   resumeCard,
   updateCard,
+  updateCardAdditive,
   listCardsPage,
 } from '../db/cards';
 import {
@@ -50,7 +51,7 @@ import {
   buildCardTemplateUpdatePlan,
   CardTemplateUpdateInvalidStateError,
 } from '../templates/cardTemplateUpdates';
-import type { Card, LambdaEvent, LambdaResponse, Task } from '../types';
+import type { Card, CardCalendarInvite, LambdaEvent, LambdaResponse, Task } from '../types';
 import { recordRequestError } from '../requestErrorLog';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -337,6 +338,12 @@ async function handleCardRoutes(
     const parkMatch = suffix.match(/^\/([^/]+)\/(park|resume)\/?$/);
     if (parkMatch) {
       return await handleParkResume(method, parkMatch[1], parkMatch[2] as 'park' | 'resume', rawBody, client, event);
+    }
+
+    // Route: /api/cards/:id/calendar-invites
+    const invitesMatch = suffix.match(/^\/([^/]+)\/calendar-invites\/?$/);
+    if (invitesMatch) {
+      return handleCardCalendarInvites(method, invitesMatch[1], rawBody, client, event);
     }
 
     // Route: /api/cards/:id
@@ -765,6 +772,105 @@ async function handleCardTasks(
     owner: projected.owner,
     taskAssignees: projected.taskAssignees,
   });
+}
+
+type CalendarInviteInputError = { error: string };
+
+function validateCalendarInviteBody(body: Record<string, unknown>): { invite: { eventId: string; calendar: string; url?: string; label?: string } } | CalendarInviteInputError {
+  const eventId = typeof body.eventId === 'string' ? body.eventId.trim() : '';
+  if (!eventId) return { error: 'eventId is required' };
+  if (eventId.length > 200) return { error: 'eventId must be 200 characters or fewer' };
+  const calendar = typeof body.calendar === 'string' ? body.calendar.trim() : '';
+  if (!calendar) return { error: 'calendar is required' };
+  if (calendar.length > 200) return { error: 'calendar must be 200 characters or fewer' };
+  let url: string | undefined;
+  if (body.url !== undefined && body.url !== null && String(body.url).trim() !== '') {
+    const raw = String(body.url).trim();
+    let parsed: URL;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      return { error: 'url must be a valid URL' };
+    }
+    if (parsed.protocol !== 'https:') return { error: 'url must be an HTTPS URL' };
+    if (raw.length > 2000) return { error: 'url must be 2000 characters or fewer' };
+    url = parsed.href;
+  }
+  let label: string | undefined;
+  if (body.label !== undefined && body.label !== null && String(body.label).trim() !== '') {
+    label = String(body.label).trim();
+    if (label.length > 60) return { error: 'label must be 60 characters or fewer' };
+  }
+  return { invite: { eventId, calendar, ...(url ? { url } : {}), ...(label ? { label } : {}) } };
+}
+
+/**
+ * Handle /api/cards/:id/calendar-invites: list and link Google Calendar
+ * invites. Linking is idempotent per (calendar, event id): re-linking the
+ * same event updates its url/label instead of duplicating it.
+ */
+async function handleCardCalendarInvites(
+  method: string,
+  id: string,
+  rawBody: string | null,
+  client: DynamoDBDocumentClient,
+  event: LambdaEvent,
+): Promise<LambdaResponse> {
+  if (method === 'GET') {
+    const readActor = await resolveInteractiveActor(client, event, 'work-read');
+    if (!readActor.ok) return readActor.response;
+    const card = await getCard(client, id);
+    if (!card) return json(404, { error: 'Card not found' });
+    return json(200, { invites: card.calendarInvites || [] });
+  }
+
+  if (method === 'POST') {
+    const writeActor = await resolveInteractiveActor(client, event, 'work-write');
+    if (!writeActor.ok) return writeActor.response;
+    const actor = writeActor.actor;
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(rawBody || '');
+    } catch {
+      return json(400, { error: 'Invalid JSON' });
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return json(400, { error: 'Request body must be an object' });
+    }
+    const parsed = validateCalendarInviteBody(body);
+    if ('error' in parsed) return json(400, { error: parsed.error });
+    const existing = await getCardConsistent(client, id);
+    if (!existing) return json(404, { error: 'Card not found' });
+    if (!mayAdministerCard(actor, existing)) {
+      return workAdminForbidden('Administering this Card requires its owner or an admin');
+    }
+    const now = new Date().toISOString();
+    const card = await updateCardAdditive(client, existing, (current) => {
+      const invites: CardCalendarInvite[] = [...(current.calendarInvites || [])];
+      const index = invites.findIndex(
+        (entry) => entry.eventId === parsed.invite.eventId && entry.calendar === parsed.invite.calendar,
+      );
+      if (index >= 0) {
+        invites[index] = {
+          ...invites[index],
+          ...(parsed.invite.url !== undefined ? { url: parsed.invite.url } : {}),
+          ...(parsed.invite.label !== undefined ? { label: parsed.invite.label } : {}),
+        };
+      } else {
+        invites.push({
+          ...parsed.invite,
+          createdAt: now,
+          ...(actor.id ? { createdBy: actor.id } : {}),
+        });
+      }
+      return { calendarInvites: invites };
+    });
+    const templateIdByType = await getTemplateIdByType(client);
+    const projected = await projectCard(new TeamDirectory(client), card, undefined, templateIdByType);
+    return json(201, { card: projected, invites: card.calendarInvites || [] });
+  }
+
+  return json(405, { error: 'Method not allowed' });
 }
 
 export { handleCardRoutes };

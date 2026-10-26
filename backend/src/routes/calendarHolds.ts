@@ -25,7 +25,7 @@ import {
   listCalendarHolds,
   putCalendarHold,
 } from '../db/calendarHolds';
-import { getCard } from '../db/cards';
+import { getCard, getCardConsistent, updateCardAdditive } from '../db/cards';
 import { getCalendarOverlaySettings } from '../db/calendar';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
@@ -211,6 +211,29 @@ async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocu
       : { googleEventIds: sync.eventIds, googleSync: { state: 'deferred' as const, reason: sync.reason } }),
   };
   await putCalendarHold(client, stored);
+  // The confirmed mirror IS the guest invite: link every synced calendar
+  // copy to the Card so the invite Task's done-gate sees it. Best-effort
+  // after the hold is stored — a link write must never fail the confirmation
+  // itself. Re-confirming the same hold upserts nothing new.
+  if (stored.cardId && sync.state === 'synced' && Object.keys(stored.googleEventIds || {}).length > 0) {
+    try {
+      const card = await getCardConsistent(client, stored.cardId);
+      if (card) {
+        const linkedAt = new Date().toISOString();
+        await updateCardAdditive(client, card, (current) => {
+          const invites = [...(current.calendarInvites || [])];
+          for (const [calendar, eventId] of Object.entries(stored.googleEventIds)) {
+            if (!invites.some((entry) => entry.eventId === eventId && entry.calendar === calendar)) {
+              invites.push({ eventId, calendar, createdAt: linkedAt, createdBy: actor(event) });
+            }
+          }
+          return { calendarInvites: invites };
+        });
+      }
+    } catch (error) {
+      console.error(`Calendar hold ${stored.id}: failed to link invite to card ${stored.cardId}`, error);
+    }
+  }
   return json(200, { hold: stored });
 }
 
