@@ -64,6 +64,9 @@ describe("newsletter issues", () => {
         sponsorTask("sponsor-document", "secondary-slot"),
         sponsorTask("invoice", "secondary-slot"),
         { refId: "add-newsletter-performance", description: "Add newsletter performance metrics in DataOps", offsetDays: 7 },
+        { refId: "collect-mailchimp-stats", description: "Collect newsletter stats from Mailchimp", offsetDays: 7 },
+        { refId: "collect-x-stats", description: "Collect stats from X post", offsetDays: 7 },
+        { refId: "collect-linkedin-stats", description: "Collect stats from LinkedIn post", offsetDays: 7 },
       ],
     });
     await createTemplate(client, {
@@ -109,7 +112,8 @@ describe("newsletter issues", () => {
     assert.equal(card.sponsor, "Sponsor A");
     assert.deepEqual(card.selectedOptionalGroups, ["primary-slot"]);
     assert.deepEqual(await tasksOf(card.id), [
-      "add-newsletter-performance:todo", "invoice:todo", "schedule:todo", "sponsor-document:todo", "write-issue:todo",
+      "add-newsletter-performance:todo", "collect-linkedin-stats:todo", "collect-mailchimp-stats:todo",
+      "collect-x-stats:todo", "invoice:todo", "schedule:todo", "sponsor-document:todo", "write-issue:todo",
     ]);
     const again = await invoke("POST", "/api/newsletter-issues", weekly({ sourceKey: "issue-340" }));
     assert.equal(again.statusCode, 200, again.body);
@@ -196,7 +200,7 @@ describe("newsletter issues", () => {
   it("starts a Card with only the booked slots' Tasks", async () => {
     const open = await createWithCard(weekly({ publicationDate: "2027-05-10", issueNumber: 351, slots: { primary: {}, secondary: {} } }));
     assert.deepEqual((await getCard(client, open.cardId))!.selectedOptionalGroups, []);
-    assert.deepEqual(await tasksOf(open.cardId), ["add-newsletter-performance:todo", "schedule:todo", "write-issue:todo"]);
+    assert.deepEqual(await tasksOf(open.cardId), ["add-newsletter-performance:todo", "collect-linkedin-stats:todo", "collect-mailchimp-stats:todo", "collect-x-stats:todo", "schedule:todo", "write-issue:todo"]);
   });
 
   it("books, changes and releases a slot through the sponsor's deal", async () => {
@@ -565,35 +569,52 @@ describe("newsletter issues", () => {
     assert.equal(data(cleared).stats, undefined);
   });
 
-  it("auto-closes the metrics task when the issue metrics become complete", async () => {
+  it("auto-closes the metrics tasks when the issue metrics become complete", async () => {
     const created = await createWithCard(weekly({
       sourceKey: "issue-metrics-autoclose",
       publicationDate: "2027-11-02",
       issueNumber: 390,
       slots: { primary: { sponsor: "Sponsor A" }, secondary: {} },
     }));
-    const metricsOf = async () =>
-      (await listTasksByCard(client, created.cardId)).find((task) => task.templateTaskRef === "add-newsletter-performance")!;
-    assert.equal((await metricsOf()).status, "todo");
+    const tasksByRef = async () => Object.fromEntries(
+      (await listTasksByCard(client, created.cardId)).map((task) => [task.templateTaskRef, task]),
+    );
+    assert.equal((await tasksByRef())["collect-mailchimp-stats"].status, "todo");
 
-    // Opens alone are not complete: the task stays open.
+    // Opens close the Mailchimp collect task; the social and legacy tasks stay open.
     let issue = data(await invoke("PUT", `/api/newsletter-issues/${created.id}`, {
       version: created.version,
       stats: { opens: 34886, openRate: 34.99 },
     }));
-    assert.equal(issue.metricsTask, "open");
-    assert.equal((await metricsOf()).status, "todo");
+    assert.equal(issue.metricsTask, "closed");
+    let tasks = await tasksByRef();
+    assert.equal(tasks["collect-mailchimp-stats"].status, "done");
+    assert.match(tasks["collect-mailchimp-stats"].externalStatus || "", /34886 opens/);
+    assert.equal(tasks["collect-x-stats"].status, "todo");
+    assert.equal(tasks["collect-linkedin-stats"].status, "todo");
+    assert.equal(tasks["add-newsletter-performance"].status, "todo");
 
-    // Sent counts plus the booked slot's link clicks complete the metrics.
+    // The X post's impressions close the X collect task.
+    issue = data(await invoke("PUT", `/api/newsletter-issues/${created.id}`, {
+      version: issue.version,
+      slots: { primary: { sponsor: "Sponsor A", stats: { xImpressions: 2916 } } },
+    }));
+    tasks = await tasksByRef();
+    assert.equal(tasks["collect-x-stats"].status, "done");
+    assert.match(tasks["collect-x-stats"].externalStatus || "", /2916 impressions/);
+    assert.equal(tasks["collect-linkedin-stats"].status, "todo");
+
+    // Sent counts plus the booked slot's link clicks complete the legacy task.
     issue = data(await invoke("PUT", `/api/newsletter-issues/${created.id}`, {
       version: issue.version,
       stats: { sent: 99714, opens: 34886, openRate: 34.99 },
-      slots: { primary: { sponsor: "Sponsor A", stats: { clicks: 831, uniqueClicks: 651 } } },
+      slots: { primary: { sponsor: "Sponsor A", stats: { clicks: 831, uniqueClicks: 651, xImpressions: 2916, linkedinImpressions: 8080 } } },
     }));
     assert.equal(issue.metricsTask, "closed");
-    const closed = await metricsOf();
-    assert.equal(closed.status, "done");
-    assert.match(closed.externalStatus || "", /99714 sent, 34886 opens/);
+    tasks = await tasksByRef();
+    assert.equal(tasks["add-newsletter-performance"].status, "done");
+    assert.match(tasks["add-newsletter-performance"].externalStatus || "", /99714 sent, 34886 opens/);
+    assert.equal(tasks["collect-linkedin-stats"].status, "done");
   });
 
   it("requires an authenticated writer", async () => {

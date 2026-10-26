@@ -592,8 +592,13 @@ async function withDueCard(client: DynamoDBDocumentClient, actor: VerifiedActor,
   }
 }
 
-/** Ref of the Template Task that records newsletter performance in DataOps. */
+/** Ref of the retired Template Task that recorded newsletter performance in DataOps. */
 const METRICS_TASK_REF = 'add-newsletter-performance';
+
+/** Refs of the Template Tasks that collect newsletter performance in DataOps. */
+const COLLECT_MAILCHIMP_REF = 'collect-mailchimp-stats';
+const COLLECT_X_REF = 'collect-x-stats';
+const COLLECT_LINKEDIN_REF = 'collect-linkedin-stats';
 
 /** Metrics are complete when the send has counts and every booked slot has link clicks. */
 function newsletterMetricsComplete(issue: NewsletterIssue): boolean {
@@ -606,9 +611,45 @@ function newsletterMetricsComplete(issue: NewsletterIssue): boolean {
   });
 }
 
+/** The primary slot's stats, where the sponsored social posts live. */
+const primaryStats = (issue: NewsletterIssue) => issue.slots.primary?.stats;
+
 /**
- * Close the issue Card's open metrics task once the issue's metrics are
- * complete. The recorded stats are the proof: the task's external-status
+ * Whether the DataOps metrics for one collect task are present: Mailchimp
+ * opens, the X post's impressions, or the LinkedIn post's impressions.
+ */
+function collectMetricsPresent(ref: string, issue: NewsletterIssue): boolean {
+  if (ref === COLLECT_MAILCHIMP_REF) return issue.stats?.opens != null;
+  if (ref === COLLECT_X_REF) return primaryStats(issue)?.xImpressions != null;
+  if (ref === COLLECT_LINKEDIN_REF) return primaryStats(issue)?.linkedinImpressions != null;
+  if (ref === METRICS_TASK_REF) return newsletterMetricsComplete(issue);
+  return false;
+}
+
+/** The external-status proof recorded when a collect task auto-closes. */
+function collectSummary(ref: string, issue: NewsletterIssue): string {
+  const stats = issue.stats;
+  const slot = primaryStats(issue);
+  if (ref === COLLECT_X_REF) {
+    return `X stats recorded in DataOps: ${slot?.xImpressions} impressions`
+      + `${slot?.xReactions != null ? `, ${slot.xReactions} reactions` : ''}`;
+  }
+  if (ref === COLLECT_LINKEDIN_REF) {
+    return `LinkedIn stats recorded in DataOps: ${slot?.linkedinImpressions} impressions`
+      + `${slot?.linkedinReactions != null ? `, ${slot.linkedinReactions} reactions` : ''}`;
+  }
+  if (ref === COLLECT_MAILCHIMP_REF) {
+    return `Mailchimp stats recorded in DataOps: ${stats?.opens} opens`
+      + `${stats?.openRate != null ? ` (${stats.openRate}% open rate)` : ''}`
+      + `${slot?.clicks != null ? `, ${slot.clicks} link clicks${slot.uniqueClicks != null ? ` (${slot.uniqueClicks} unique)` : ''}` : ''}`;
+  }
+  return `Metrics recorded in DataOps: ${stats?.sent} sent, ${stats?.opens} opens`
+    + ` (${stats?.openRate ?? '?'}% open rate) on ${issue.publicationDate}`;
+}
+
+/**
+ * Close the issue Card's open metrics tasks whose DataOps metrics are now
+ * present. The recorded stats are the proof: each task's external-status
  * proof is set to the recorded summary. Never fails the issue write.
  */
 async function maybeCloseMetricsTask(
@@ -620,14 +661,19 @@ async function maybeCloseMetricsTask(
   try {
     const tasks = await listTasksByCardConsistent(client, next.cardId);
     const open = tasks.filter(
-      (task) => task.templateTaskRef === METRICS_TASK_REF && (task.status === 'todo' || task.status === 'waiting'),
+      (task) => (
+        task.templateTaskRef === METRICS_TASK_REF
+        || task.templateTaskRef === COLLECT_MAILCHIMP_REF
+        || task.templateTaskRef === COLLECT_X_REF
+        || task.templateTaskRef === COLLECT_LINKEDIN_REF
+      ) && (task.status === 'todo' || task.status === 'waiting'),
     );
     if (!open.length) return 'none';
-    if (!newsletterMetricsComplete(next)) return 'open';
     const now = new Date().toISOString();
-    const summary = `Metrics recorded in DataOps: ${next.stats?.sent} sent, ${next.stats?.opens} opens`
-      + ` (${next.stats?.openRate ?? '?'}% open rate) on ${next.publicationDate}`;
+    let closed = 0;
     for (const task of open) {
+      const ref = String(task.templateTaskRef);
+      if (!collectMetricsPresent(ref, next)) continue;
       await updateTask(client, task.id, {
         expectedVersion: task.version,
         currentTask: task,
@@ -635,13 +681,14 @@ async function maybeCloseMetricsTask(
         triggerKind: 'newsletter-metrics',
         patch: {
           status: 'done',
-          externalStatus: summary,
+          externalStatus: collectSummary(ref, next),
           completedBy: actorId,
           completedAt: now,
         },
       });
+      closed += 1;
     }
-    return 'closed';
+    return closed > 0 ? 'closed' : 'open';
   } catch (failure) {
     console.error('Newsletter metrics auto-close failed:', failure);
     return 'open';
