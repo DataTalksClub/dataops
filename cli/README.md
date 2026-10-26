@@ -195,6 +195,11 @@ Agent and invoice-reader service credentials are separate:
 `dataops login --service-token-stdin --url URL` configures the service identity
 holding `invoices:read`, `crm:read`, and `crm:write` scopes, enabling automated
 invoice ingestion, CRM operations, and task management on remote runners.
+Agent hosts (for example the Hetzner runner) use this login: with the CRM
+scopes the same credential reads and writes CRM directories, records, DNC
+flags, and direct follow-ups (`dataops crm followups`,
+`dataops crm company followup <id> --on +7d`). Without the CRM scopes the
+portal answers `403` on every `/api/sponsor-crm/*` route.
 
 ## Tests
 

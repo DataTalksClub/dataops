@@ -91,6 +91,20 @@ root workspace install:
 | `npm run restore:drill -- --archive <file-or-s3-uri> --archive-checksum sha256:<hex>` | Verify and extract an archive, validate it, dry-run import it, and write restore evidence |
 | `npm run clean` | Remove `dist/` directory |
 
+### CRM follow-ups
+
+Contacts and companies carry a direct follow-up (`follow_up_at` YYYY-MM-DD,
+`follow_up_status` `open`|`done`, `follow_up_note` up to 2000 chars) so a
+follow-up list lives in the CRM without a deal. Set it through
+`POST /api/sponsor-crm/organizations/:id/followup` (or `/contacts/:id/followup`),
+through record create/update, or with
+`dataops crm company followup <id> --on YYYY-MM-DD` (same for `person`).
+`GET /api/sponsor-crm/followups` returns open follow-up tasks (`items`) plus
+open direct follow-ups (`records`); both honor `?due` / `?overdue` and exclude
+do-not-contact. `npx tsx scripts/crm-followup-migrate.ts --dry-run` previews
+moving open tasks tagged `crm-followup` into the direct fields; `--apply`
+writes them idempotently (marker-skipped on rerun).
+
 ## Testing
 
 ### Unit tests
