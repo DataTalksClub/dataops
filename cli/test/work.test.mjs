@@ -3,6 +3,7 @@ import { afterEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { captureIo, fakePortal, isolateConfig } from "./helpers.mjs";
+import { deleteProfile, saveProfile } from "../src/config.mjs";
 
 isolateConfig();
 delete process.env.DATAOPS_CAPABILITIES;
@@ -526,6 +527,62 @@ describe("newsletter", () => {
       version: 4,
     });
     assert.equal(await run(["newsletter", "update", "i-3"], captureIo()), 2);
+  });
+
+  test("update --public-url uses the same stored login as whoami (no Not signed in)", async () => {
+    // Orin's case: a file login, no DATAOPS_TOKEN. The issue's public URL must
+    // not hijack the portal lookup the way the old content --url flag did.
+    delete process.env.DATAOPS_TOKEN;
+    saveProfile("https://portal.test", { token: "dops_file", kind: "user", label: "orin@test" });
+    try {
+      const current = {
+        id: "i-3", version: 4, label: "Weekly #306", status: "planned", slots: {}, links: [],
+      };
+      const calls = fakePortal({
+        "GET /api/me": { user: { name: "Orin", email: "orin@test" } },
+        "GET /api/newsletter-issues/i-3": current,
+        "PUT /api/newsletter-issues/i-3": ({ body }) => ({ ...current, ...body, version: 5 }),
+      });
+      assert.equal(await run(["whoami"], captureIo()), 0);
+      const io = captureIo();
+      assert.equal(
+        await run(["newsletter", "update", "i-3", "--status", "sent", "--public-url", "https://public.example.com/nl-306"], io),
+        0,
+      );
+      assert.equal(calls.at(-1).body.status, "sent");
+      assert.equal(calls.at(-1).body.publicUrl, "https://public.example.com/nl-306");
+      for (const call of calls) assert.equal(call.headers.Authorization, "Bearer dops_file");
+      assert.match(FAMILIES.newsletter.help, /--public-url URL/);
+    } finally {
+      deleteProfile("https://portal.test");
+    }
+  });
+
+  test("create --public-url sends the public URL and --url stays the portal selector", async () => {
+    let calls = fakePortal({
+      "POST /api/newsletter-issues": ({ body }) => ({ status: 201, body: { id: "i-9", label: "Weekly #309", ...body } }),
+    });
+    assert.equal(
+      await run(["newsletter", "create", "--date", "2026-11-09", "--public-url", "https://public.example.com/nl-9"], captureIo()),
+      0,
+    );
+    assert.equal(calls.at(-1).body.publicUrl, "https://public.example.com/nl-9");
+    for (const call of calls) assert.equal(call.headers.Authorization, "Bearer dops_test");
+    // --url means the portal, exactly as for whoami; it no longer sets the issue's public URL.
+    const current = {
+      id: "i-3", version: 4, label: "Weekly #306", status: "planned", slots: {}, links: [],
+    };
+    calls = fakePortal({
+      "GET /api/newsletter-issues/i-3": current,
+      "PUT /api/newsletter-issues/i-3": ({ body }) => ({ ...current, ...body, version: 5 }),
+    });
+    assert.equal(
+      await run(["newsletter", "update", "i-3", "--status", "sent", "--url", "https://other.test"], captureIo()),
+      0,
+    );
+    assert.equal(calls.at(-1).body.status, "sent");
+    assert.equal(calls.at(-1).body.publicUrl, undefined);
+    for (const call of calls) assert.equal(call.headers.Authorization, "Bearer dops_test");
   });
 
   test("list --card is the reverse lookup; there is no card linking command", async () => {

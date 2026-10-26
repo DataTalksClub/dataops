@@ -32,10 +32,10 @@ Usage
   dataops newsletter list --card <card-id>     The issue a Card belongs to
   dataops newsletter show <issue-id>
   dataops newsletter create --date YYYY-MM-DD [--kind weekly|standalone] [--number N]
-      [--time HH:MM] [--status S] [--note N] [--url URL]
+      [--time HH:MM] [--status S] [--note N] [--public-url URL]
                                   weekly by default, slots open, status planned
   dataops newsletter update <issue-id> [--date D] [--number N] [--time HH:MM] [--status S]
-      [--primary-doc URL|none] [--secondary-doc URL|none] [--note N] [--url URL]
+      [--primary-doc URL|none] [--secondary-doc URL|none] [--note N] [--public-url URL]
       [--link "NAME=URL"|"NAME=none" ...] [--confirm]
   dataops newsletter create-card <issue-id>    Create the issue's Card now
   dataops newsletter remove-card <issue-id> [--dry-run] [--confirm]
@@ -186,7 +186,7 @@ function issueFields(args) {
   const body = {};
   const date = isoDate(optionalString(args, "date"), "date");
   if (date) body.publicationDate = date;
-  for (const [flag, key] of [["time", "publicationTime"], ["status", "status"], ["note", "planningNote"], ["url", "publicUrl"]]) {
+  for (const [flag, key] of [["time", "publicationTime"], ["status", "status"], ["note", "planningNote"], ["publicUrl", "publicUrl"]]) {
     const value = optionalString(args, flag);
     if (value !== undefined) body[key] = value;
   }
