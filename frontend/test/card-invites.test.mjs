@@ -59,6 +59,7 @@ test("event time editor shows local time and sends arbitrary time, duration, zon
   assert.equal(inputs[0].value, "2026-11-09T14:30");
   inputs[0].value = "2026-11-09T16:47";
   inputs[2].value = "90";
+  inputs[3].value = "guest@example.test, ";
   await form.dispatch("submit");
   assert.deepEqual(calls, [{ url: "/api/cards/card-1/time", body: { at: "2026-11-09 16:47", duration: 90, tz: "Europe/Berlin", guestEmails: ["guest@example.test"] } }]);
   assert.equal(reloaded, true);

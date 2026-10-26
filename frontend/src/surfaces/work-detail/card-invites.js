@@ -100,7 +100,7 @@ export function renderCardEventTime({ request, workApiUrl, reload }, card) {
       await request(workApiUrl(`/api/cards/${encodeURIComponent(card.id)}/time`), {
         method: "POST",
         body: JSON.stringify({ at: at.value.replace("T", " "), duration: Number(duration.value), tz: tz.value,
-          ...(guests.value.trim() ? { guestEmails: guests.value.split(",").map(value => value.trim()) } : {}),
+          ...(guests.value.trim() ? { guestEmails: guests.value.split(",").map(value => value.trim()).filter(Boolean) } : {}),
         }),
       });
       await reload();
