@@ -125,6 +125,10 @@ dataops tasks done <task-id> --file ./evidence.pdf     # uploads to the Task fir
 
 If the server answers "required card link ... is not filled", fill it on the Card:
 `dataops cards link <card-id> "<link name>" <url>`, then run `done` again.
+If the server answers "no calendar invite is linked", link the Google invite first:
+`dataops cards invite add <card-id> --event-id <event-id> --calendar <calendar> [--url <htmlLink>] [--label original|resent]`
+(`--url` here is the invite link; point at another portal with DATAOPS_URL).
+Then run `done` again. `dataops cards invite list <card-id>` shows linked invites.
 A waiting Task is closed through the follow-up resolve action automatically.
 
 Blocked on someone else? Record it instead of leaving the Task open silently:

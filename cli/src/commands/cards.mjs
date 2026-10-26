@@ -21,6 +21,9 @@ Usage
       [--tags a,b]
   dataops cards stage <card-id> <preparation|announced|after-event>
   dataops cards link <card-id> <link-name> <url>  Fill a Card link (e.g. a template's required link)
+  dataops cards invite add <card-id> --event-id ID --calendar CAL [--url URL] [--label L]
+                                                Link a Google Calendar invite to the Card
+  dataops cards invite list <card-id>           List the Card's linked calendar invites
   dataops cards sponsor-doc <card-id> [--template T] [--slot primary|secondary] [--sponsor NAME]
                                                 Create a portal sponsor doc and link it on the Card
   dataops cards park <card-id> | resume <card-id>
@@ -109,6 +112,9 @@ export async function show(args, io) {
   ]);
   for (const link of card.cardLinks || []) {
     io.print(`link: ${link.name || link.label} = ${link.url || "(not filled)"}`);
+  }
+  for (const invite of card.calendarInvites || []) {
+    io.print(`invite: ${invite.eventId} on ${invite.calendar}${invite.label ? ` [${invite.label}]` : ""}${invite.url ? ` ${invite.url}` : ""}`);
   }
   for (const doc of card.sponsorDocs || []) {
     const edited = doc.lastEditedAt ? `, last edited ${doc.lastEditedAt} by ${doc.lastEditedBy || "staff"}` : "";
@@ -257,6 +263,50 @@ export async function templateUpdate(args, io) {
   return result;
 }
 
+export async function invite(args, io) {
+  const usage = "dataops cards invite add <card-id> --event-id ID --calendar CAL [--url URL] [--label L]\n"
+    + "  dataops cards invite list <card-id>";
+  const action = positional(args, 0, usage);
+  if (action === "add") {
+    const id = positional(args, 1, usage);
+    // NOTE: --url here is the invite's htmlLink, not the global portal
+    // override (point at another portal with DATAOPS_URL for this subcommand).
+    const api = apiFor({ ...args, url: undefined });
+    const body = {
+      eventId: required(args, "eventId", "event-id"),
+      calendar: required(args, "calendar", "calendar"),
+    };
+    const url = optionalString(args, "url");
+    if (url !== undefined) body.url = url;
+    const label = optionalString(args, "label");
+    if (label !== undefined) body.label = label;
+    const result = await api.post(`/api/cards/${enc(id)}/calendar-invites`, body);
+    if (args.json) return result;
+    io.print(`Linked invite ${body.eventId} on ${body.calendar} to Card ${id}.`);
+    return result;
+  }
+  if (action === "list") {
+    const id = positional(args, 1, usage);
+    const api = apiFor(args);
+    const result = await api.get(`/api/cards/${enc(id)}/calendar-invites`);
+    const invites = Array.isArray(result?.invites) ? result.invites : [];
+    if (args.json) return { invites };
+    table(
+      io,
+      invites,
+      [
+        ["EVENT ID", (invite) => invite.eventId],
+        ["CALENDAR", (invite) => invite.calendar],
+        ["URL", (invite) => invite.url || ""],
+        ["LABEL", (invite) => invite.label || ""],
+      ],
+      "No calendar invites linked.",
+    );
+    return { invites };
+  }
+  throw new UsageError(`Unknown invite action: ${action}. ${usage}`);
+}
+
 export const commands = {
   list,
   show,
@@ -264,6 +314,7 @@ export const commands = {
   update,
   stage,
   link,
+  invite,
   "sponsor-doc": createSponsorDoc,
   park,
   resume,
