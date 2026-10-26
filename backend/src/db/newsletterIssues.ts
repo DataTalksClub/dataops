@@ -22,7 +22,7 @@ export type NewsletterIssueKind = 'weekly' | 'standalone';
 export type NewsletterSlotPosition = 'primary' | 'secondary';
 
 export interface NewsletterIssueStats {
-  deliveries?: number;
+  sent?: number;
   opens?: number;
   clicks?: number;
   uniqueClicks?: number;
@@ -37,10 +37,12 @@ export interface NewsletterSlotStats {
   clickRate?: number;
   linkedinImpressions?: number;
   linkedinClicks?: number;
+  linkedinReactions?: number;
   linkedinCtr?: number;
   linkedinPostUrl?: string;
   xImpressions?: number;
   xClicks?: number;
+  xReactions?: number;
   xCtr?: number;
   xPostUrl?: string;
   recordedAt: string;

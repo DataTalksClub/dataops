@@ -17,7 +17,7 @@ export interface SponsorStatsReport {
   organizationId?: string;
   recordedAt: string | null;
   newsletter: {
-    deliveries?: number;
+    sent?: number;
     views?: number;
     clicks?: number;
     uniqueClicks?: number;
@@ -27,12 +27,14 @@ export interface SponsorStatsReport {
   linkedin: {
     views?: number;
     clicks?: number;
+    reactions?: number;
     ctr?: number;
     postUrl?: string;
   };
   x: {
     views?: number;
     clicks?: number;
+    reactions?: number;
     ctr?: number;
     postUrl?: string;
   };
@@ -92,7 +94,7 @@ export function buildSponsorStatsReport(
   const issueStats = issue.stats;
   const slotStats = slot.stats;
   const newsletter = {
-    ...(issueStats?.deliveries !== undefined ? { deliveries: issueStats.deliveries } : {}),
+    ...(issueStats?.sent !== undefined ? { sent: issueStats.sent } : {}),
     ...(issueStats?.opens !== undefined ? { views: issueStats.opens } : {}),
     ...((slotStats?.clicks ?? issueStats?.clicks) !== undefined
       ? { clicks: slotStats?.clicks ?? issueStats?.clicks }
@@ -108,12 +110,14 @@ export function buildSponsorStatsReport(
   const linkedin = {
     ...(slotStats?.linkedinImpressions !== undefined ? { views: slotStats.linkedinImpressions } : {}),
     ...(slotStats?.linkedinClicks !== undefined ? { clicks: slotStats.linkedinClicks } : {}),
+    ...(slotStats?.linkedinReactions !== undefined ? { reactions: slotStats.linkedinReactions } : {}),
     ...(slotStats?.linkedinCtr !== undefined ? { ctr: slotStats.linkedinCtr } : {}),
     ...(slotStats?.linkedinPostUrl ? { postUrl: slotStats.linkedinPostUrl } : {}),
   };
   const x = {
     ...(slotStats?.xImpressions !== undefined ? { views: slotStats.xImpressions } : {}),
     ...(slotStats?.xClicks !== undefined ? { clicks: slotStats.xClicks } : {}),
+    ...(slotStats?.xReactions !== undefined ? { reactions: slotStats.xReactions } : {}),
     ...(slotStats?.xCtr !== undefined ? { ctr: slotStats.xCtr } : {}),
     ...(slotStats?.xPostUrl ? { postUrl: slotStats.xPostUrl } : {}),
   };

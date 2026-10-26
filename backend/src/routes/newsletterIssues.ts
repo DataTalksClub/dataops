@@ -39,7 +39,7 @@ import {
   type NewsletterSlotStats,
 } from '../db/newsletterIssues';
 import { getCard, getCardConsistent } from '../db/cards';
-import { listTasksByCardConsistent } from '../db/tasks';
+import { listTasksByCardConsistent, updateTask } from '../db/tasks';
 import {
   CardDeletionBlockedError,
   CardDeletionConflictError,
@@ -104,7 +104,7 @@ const UPDATABLE_FIELDS = [
 const CREATE_FIELDS = new Set<string>([...UPDATABLE_FIELDS, 'kind', 'sourceType', 'sourceKey']);
 const CONFIRMATIONS = ['confirmCardDeletion', 'confirmSlotRemoval'];
 const SLOT_FIELDS = new Set(['sponsor', 'organizationId', 'bookedByUserId', 'sheetId', 'documentUrl', 'stats']);
-const ISSUE_STATS_COUNTS = new Set(['deliveries', 'opens', 'clicks', 'uniqueClicks']);
+const ISSUE_STATS_COUNTS = new Set(['sent', 'opens', 'clicks', 'uniqueClicks']);
 const ISSUE_STATS_RATES = new Set(['openRate', 'clickRate']);
 const ISSUE_STATS_FIELDS = new Set([...ISSUE_STATS_COUNTS, ...ISSUE_STATS_RATES, 'recordedAt']);
 const SLOT_STATS_COUNTS = new Set([
@@ -112,8 +112,10 @@ const SLOT_STATS_COUNTS = new Set([
   'uniqueClicks',
   'linkedinImpressions',
   'linkedinClicks',
+  'linkedinReactions',
   'xImpressions',
   'xClicks',
+  'xReactions',
 ]);
 const SLOT_STATS_RATES = new Set(['clickRate', 'linkedinCtr', 'xCtr']);
 const SLOT_STATS_URLS = new Set(['linkedinPostUrl', 'xPostUrl']);
@@ -590,6 +592,62 @@ async function withDueCard(client: DynamoDBDocumentClient, actor: VerifiedActor,
   }
 }
 
+/** Ref of the Template Task that records newsletter performance in DataOps. */
+const METRICS_TASK_REF = 'add-newsletter-performance';
+
+/** Metrics are complete when the send has counts and every booked slot has link clicks. */
+function newsletterMetricsComplete(issue: NewsletterIssue): boolean {
+  if (issue.stats?.sent == null || issue.stats?.opens == null) return false;
+  const positions = SLOT_POSITIONS[issue.kind] as readonly NewsletterSlotPosition[];
+  return positions.every((position) => {
+    const slot = issue.slots[position];
+    if (!slot?.sponsor) return true;
+    return slot.stats?.clicks != null;
+  });
+}
+
+/**
+ * Close the issue Card's open metrics task once the issue's metrics are
+ * complete. The recorded stats are the proof: the task's external-status
+ * proof is set to the recorded summary. Never fails the issue write.
+ */
+async function maybeCloseMetricsTask(
+  client: DynamoDBDocumentClient,
+  next: NewsletterIssue,
+  actorId: string,
+): Promise<'closed' | 'open' | 'none'> {
+  if (!next.cardId) return 'none';
+  try {
+    const tasks = await listTasksByCardConsistent(client, next.cardId);
+    const open = tasks.filter(
+      (task) => task.templateTaskRef === METRICS_TASK_REF && (task.status === 'todo' || task.status === 'waiting'),
+    );
+    if (!open.length) return 'none';
+    if (!newsletterMetricsComplete(next)) return 'open';
+    const now = new Date().toISOString();
+    const summary = `Metrics recorded in DataOps: ${next.stats?.sent} sent, ${next.stats?.opens} opens`
+      + ` (${next.stats?.openRate ?? '?'}% open rate) on ${next.publicationDate}`;
+    for (const task of open) {
+      await updateTask(client, task.id, {
+        expectedVersion: task.version,
+        currentTask: task,
+        actorId,
+        triggerKind: 'newsletter-metrics',
+        patch: {
+          status: 'done',
+          externalStatus: summary,
+          completedBy: actorId,
+          completedAt: now,
+        },
+      });
+    }
+    return 'closed';
+  } catch (failure) {
+    console.error('Newsletter metrics auto-close failed:', failure);
+    return 'open';
+  }
+}
+
 async function updateRoute(id: string, body: Body, event: LambdaEvent, client: DynamoDBDocumentClient) {
   const existing = await getNewsletterIssue(client, id);
   if (!existing) return json(404, { error: 'Not found' });
@@ -649,6 +707,7 @@ async function updateRoute(id: string, body: Body, event: LambdaEvent, client: D
     return json(409, { error: 'Conflicting update' });
   }
   let cardSync = 'unchanged';
+  let metricsTask = 'none';
   try {
     const slotTasks = await syncIssueSlotTasks(client, existing, next, actor.id || 'system');
     await pushIssueToCard(client, next);
@@ -657,11 +716,12 @@ async function updateRoute(id: string, body: Body, event: LambdaEvent, client: D
       await moveIssueDeliverables(client, next, actor.id || 'system');
     }
     cardSync = slotTasks === 'synced' ? 'synced' : 'pushed';
+    metricsTask = await maybeCloseMetricsTask(client, next, actor.id || 'system');
   } catch (failure) {
     console.error('Newsletter issue card sync failed:', failure);
     cardSync = 'failed';
   }
-  return json(200, await issueView(client, await withDueCard(client, actor, next), { cardSync }));
+  return json(200, await issueView(client, await withDueCard(client, actor, next), { cardSync, metricsTask }));
 }
 
 async function deleteRoute(id: string, body: Body, event: LambdaEvent, client: DynamoDBDocumentClient) {
