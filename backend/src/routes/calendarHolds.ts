@@ -25,9 +25,9 @@ import {
   listCalendarHolds,
   putCalendarHold,
 } from '../db/calendarHolds';
-import { getCard, getCardConsistent } from '../db/cards';
+import { CardVersionConflictError, getCardConsistent } from '../db/cards';
 import { getCalendarOverlaySettings } from '../db/calendar';
-import { syncCardInvite } from '../calendar/cardInvite';
+import { CardInviteConflictError, CardInviteInputError, syncCardInvite } from '../calendar/cardInvite';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
   statusCode,
@@ -191,16 +191,6 @@ async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocu
   }
   const confirmed = confirmedTitle(existing.title);
   const deps = await calendarInviteDeps({}, client);
-  if (existing.cardId && !next.documentUrl) {
-    const card = await getCard(client, existing.cardId);
-    // Explicit guest document links only; never internal research or run sheets.
-    const document = card?.cardLinks?.find((link) => /^(Podcast document|Outline document|Episode brief)$/i.test(link.name))
-      || card?.cardLinks?.find((link) => /^Guest materials$/i.test(link.name));
-    if (document) {
-      try { next = { ...next, documentUrl: parseHoldDocumentUrl(document.url) }; }
-      catch { return json(422, { error: 'The Card guest document must be an HTTPS URL.' }); }
-    }
-  }
   // Propose may have deferred while the broker credential was unavailable,
   // leaving googleEventIds empty. Confirm must still mirror Google: PATCH
   // when mirrors exist, otherwise CREATE. Either way the mirror becomes the
@@ -208,17 +198,26 @@ async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocu
   // required attendees (never Meet, never deny-listed), window start −5 min.
   const card = existing.cardId ? await getCardConsistent(client, existing.cardId) : null;
   const invite = confirmedHoldInvite(next);
-  const sync = card
-    ? (await syncCardInvite(client, card, {
+  if (card) {
+    try {
+      const result = await syncCardInvite(client, card, {
         startIso: next.startIso, endIso: next.endIso, timeZone: next.timeZone, durationMinutes: next.durationMinutes,
-      }, [existing.guestRef!.trim().toLowerCase()], deps, actor(event), {
-        eventKey: existing.id, eventIds: existing.googleEventIds || {}, title: next.title, documentUrl: next.documentUrl,
-      })).sync
-    : Object.keys(existing.googleEventIds || {}).length
-      ? await updateHoldGoogleEvents(existing.googleEventIds, invite, deps)
-      : await createHoldGoogleEvents(invite, deps);
+      }, [existing.guestRef!.trim().toLowerCase()], deps, actor(event), { ...existing, documentUrl: next.documentUrl });
+      return json(200, { hold: result.hold });
+    } catch (error) {
+      if (error instanceof CardVersionConflictError || error instanceof CardInviteConflictError) {
+        return json(409, { error: error.message, code: 'card_invite_conflict' });
+      }
+      if (error instanceof CardInviteInputError) return json(422, { error: error.message });
+      throw error;
+    }
+  }
+  const sync = Object.keys(existing.googleEventIds || {}).length
+    ? await updateHoldGoogleEvents(existing.googleEventIds, invite, deps)
+    : await createHoldGoogleEvents(invite, deps);
   const stored = {
     ...next,
+    version: existing.version + 1,
     googleTitle: confirmed,
     ...(sync.state === 'synced'
       ? { googleEventIds: sync.eventIds, googleSync: { state: 'synced' as const } }

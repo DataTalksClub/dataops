@@ -5,8 +5,19 @@ import { listTasksByCardConsistent, updateTask } from '../db/tasks';
 import { scanCrmPrefix } from '../db/sponsorCrm';
 import { getCalendarHold, listCalendarHolds, putCalendarHold } from '../db/calendarHolds';
 import { taskRequiresCalendarInvite, makeTaskHistoryEvent } from '../routes/taskValidation';
-import { confirmedHoldInvite, holdGuestAttendees, HOLD_ATTENDEE_DENY_LIST } from './holds';
+import { confirmedHoldInvite, confirmedTitle, holdGuestAttendees, parseHoldDocumentUrl, HOLD_ATTENDEE_DENY_LIST, type CalendarHold } from './holds';
 import { createHoldGoogleEvents, moveLinkedGoogleInvite, updateHoldGoogleEvents, type HoldGoogleDeps } from './holdGoogleSync';
+
+export class CardInviteConflictError extends Error {}
+export class CardInviteInputError extends Error {}
+
+export function cardGuestDocument(card: Card): string | undefined {
+  const links = (card.cardLinks || []).filter(link => Boolean(link.url?.trim()));
+  const document = links.find(link => /^(Podcast document|Outline document|Episode brief)$/i.test(link.name))
+    || links.find(link => /^Guest materials$/i.test(link.name));
+  try { return parseHoldDocumentUrl(document?.url); }
+  catch { throw new CardInviteInputError('The Card guest document must be an HTTPS URL.'); }
+}
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export function parseCardGuests(raw: unknown): string[] {
@@ -59,28 +70,35 @@ export async function syncCardInvite(
   client: DynamoDBDocumentClient, card: Card,
   interval: { startIso: string; endIso: string; timeZone: string; durationMinutes: number },
   guests: string[], deps: HoldGoogleDeps, actorId: string,
-  source?: { eventKey: string; eventIds: Record<string, string>; title?: string; documentUrl?: string },
+  source?: CalendarHold,
 ) {
   if (card.eventTime?.sync === 'syncing' && Date.now() - Date.parse(card.eventTime.syncStartedAt) < 180000) {
-    throw Object.assign(new Error('This Card invitation is syncing; retry shortly'), { statusCode: 409 });
+    throw new CardInviteConflictError('This Card invitation is syncing; retry shortly');
   }
-  let linkedHold = card.eventTime?.eventKey.startsWith('hold_')
-    ? await getCalendarHold(client, card.eventTime.eventKey) : null;
-  if (!card.eventTime && !source) {
+  if (source && card.eventTime && source.id !== card.eventTime.eventKey) {
+    throw new CardInviteConflictError('This Card already owns a different invitation; change its time on the Card.');
+  }
+  if (source && !card.eventTime && card.calendarInvites?.some(invite => source.googleEventIds[invite.calendar] !== invite.eventId)) {
+    throw new CardInviteConflictError('This Card already links a different invitation.');
+  }
+  let linkedHold = source || (card.eventTime?.eventKey.startsWith('hold_')
+    ? await getCalendarHold(client, card.eventTime.eventKey) : null);
+  if (!card.eventTime && !linkedHold) {
     const active = (await listCalendarHolds(client)).filter(hold => hold.cardId === card.id && ['tentative', 'confirmed'].includes(hold.status));
-    if (active.length > 1) throw Object.assign(new Error('Multiple calendar holds are linked to this Card; reconcile them before setting time'), { statusCode: 409 });
+    if (active.length > 1) throw new CardInviteConflictError('Multiple calendar holds are linked to this Card; reconcile them before setting time');
     linkedHold = active[0] || null;
-    if (linkedHold) source = { eventKey: linkedHold.id, eventIds: linkedHold.googleEventIds, title: linkedHold.title, documentUrl: linkedHold.documentUrl };
   }
-  const eventKey = card.eventTime?.eventKey || source?.eventKey || (card.calendarInvites?.length ? `legacy:${card.id}` : `card:${card.id}`);
-  const eventIds = card.eventTime?.googleEventIds || source?.eventIds ||
+  const eventKey = card.eventTime?.eventKey || linkedHold?.id || (card.calendarInvites?.length ? `legacy:${card.id}` : `card:${card.id}`);
+  const eventIds = card.eventTime?.googleEventIds || linkedHold?.googleEventIds ||
     Object.fromEntries((card.calendarInvites || []).map(invite => [invite.calendar, invite.eventId]));
   const pending: NonNullable<Card['eventTime']> = {
     ...interval, eventKey, googleEventIds: eventIds, sync: 'syncing', syncStartedAt: new Date().toISOString(),
   };
-  const document = card.cardLinks?.find(link => /^(Podcast document|Outline document|Episode brief|Guest materials)$/i.test(link.name));
+  let documentUrl: string | undefined;
+  try { documentUrl = parseHoldDocumentUrl(linkedHold?.documentUrl) || cardGuestDocument(card); }
+  catch { throw new CardInviteInputError('The guest document must be an HTTPS URL.'); }
   const invite = {
-    ...confirmedHoldInvite({ id: eventKey, title: source?.title || linkedHold?.title || card.title || 'DataTalks.Club event', ...interval, ...((source?.documentUrl || linkedHold?.documentUrl || document?.url) ? { documentUrl: source?.documentUrl || linkedHold?.documentUrl || document?.url } : {}) }),
+    ...confirmedHoldInvite({ id: eventKey, title: linkedHold?.title || card.title || 'DataTalks.Club event', ...interval, documentUrl }),
     timeZone: interval.timeZone,
     attendees: [...new Set(guests.flatMap(guest => holdGuestAttendees(guest)))],
   };
@@ -104,14 +122,17 @@ export async function syncCardInvite(
       eventTime: { ...pending, googleEventIds: sync.eventIds, sync: sync.state, ...(sync.state === 'deferred' ? { reason: sync.reason } : {}) },
     };
   });
+  let storedHold: CalendarHold | undefined;
   if (linkedHold) {
-    await putCalendarHold(client, {
+    storedHold = {
       ...linkedHold, ...interval, date: new Intl.DateTimeFormat('en-CA', { timeZone: interval.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(interval.startIso)),
+      googleTitle: confirmedTitle(linkedHold.title), guestRef: guests[0], ...(documentUrl ? { documentUrl } : {}),
       status: 'confirmed', confirmedAt: linkedHold.confirmedAt || new Date().toISOString(),
       googleEventIds: sync.eventIds, googleSync: { state: sync.state, ...(sync.state === 'deferred' ? { reason: sync.reason } : {}) },
       updatedAt: new Date().toISOString(), version: linkedHold.version + 1,
-    });
+    };
+    await putCalendarHold(client, storedHold);
   }
   if (sync.state === 'synced') await closeCardInviteTasks(client, updated, actorId);
-  return { card: (await getCardConsistent(client, updated.id))!, sync };
+  return { card: (await getCardConsistent(client, updated.id))!, sync, ...(storedHold ? { hold: storedHold } : {}) };
 }

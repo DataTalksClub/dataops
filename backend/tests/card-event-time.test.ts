@@ -31,6 +31,7 @@ import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTemplate } from '../src/db/templates';
+import { getCardConsistent, updateCard } from '../src/db/cards';
 import { setCalendarHoldGoogleDepsForTests } from '../src/routes/calendarHolds';
 import { holdGoogleProvider } from './helpers/hold-google';
 import { HOLD_ORGANIZER } from '../src/calendar/holdGoogleSync';
@@ -110,7 +111,10 @@ describe('Card-owned invitation lifecycle', () => {
     assert.equal(moved.data.card.eventTime.googleEventIds[HOLD_ORGANIZER], proposed.data.hold.googleEventIds[HOLD_ORGANIZER]);
     assert.equal(provider.events.get(HOLD_ORGANIZER)!.size, 1);
     const holds = await invoke('GET', '/api/calendar-holds');
-    assert.equal(holds.data.holds.find((h: any) => h.id === proposed.data.hold.id).status, 'confirmed');
+    const storedHold = holds.data.holds.find((h: any) => h.id === proposed.data.hold.id);
+    assert.equal(storedHold.status, 'confirmed');
+    assert.equal(storedHold.googleTitle, 'Test webinar');
+    assert.equal(storedHold.guestRef, 'guest@example.test');
   });
   test('concurrent Card time requests reserve one writer; missing guests fails before Google', async () => {
     const provider = google();
@@ -148,6 +152,77 @@ describe('Card-owned invitation lifecycle', () => {
     assert.ok(patches.every(call => call.url.endsWith('/events/legacy-event?sendUpdates=all')));
     assert.ok(patches.every(call => Object.keys(call.body).sort().join(',') === 'end,start'));
     assert.equal(patches[1].body.start.dateTime, '2026-11-10T13:32:00.000Z');
+  });
+  test('confirm rejects a second hold without moving the first invitation or orphaning proposals', async () => {
+    const provider = google();
+    const c = await card('webinar-two-holds');
+    const proposal = async (date: string) => invoke('POST', '/api/calendar-holds', { date, title: 'Test hold', topic: 'Test', cardId: c.id, guestRef: 'guest@example.test' });
+    const first = (await proposal('2026-11-09')).data.hold;
+    const second = (await proposal('2026-11-10')).data.hold;
+    assert.equal((await invoke('POST', `/api/calendar-holds/${first.id}/confirm`, {})).code, 200);
+    const before = provider.calls.length;
+    const rejected = await invoke('POST', `/api/calendar-holds/${second.id}/confirm`, {});
+    assert.equal(rejected.code, 409, rejected.raw);
+    assert.equal(provider.calls.length, before, 'conflict must precede all Google operations');
+    const stored = (await invoke('GET', `/api/calendar-holds/${second.id}`)).data.hold;
+    assert.equal(stored.status, 'tentative');
+    assert.deepEqual(stored.googleEventIds, second.googleEventIds);
+    const event = provider.events.get(HOLD_ORGANIZER)!.get(first.googleEventIds[HOLD_ORGANIZER]);
+    assert.equal(event.start.dateTime, '2026-11-09T15:55:00.000Z');
+  });
+  test('deferred confirmation retry writes one monotonic hold version and reports in-flight conflicts as 409', async () => {
+    const provider = google();
+    const c = await card('podcast-deferred-confirm');
+    const proposed = (await invoke('POST', '/api/calendar-holds', { date: '2026-11-09', title: 'Test hold', topic: 'Test', cardId: c.id, guestRef: 'guest@example.test' })).data.hold;
+    provider.state.loseInviteResponse = true;
+    const first = await invoke('POST', `/api/calendar-holds/${proposed.id}/confirm`, {});
+    assert.equal(first.code, 200, first.raw);
+    assert.equal(first.data.hold.googleSync.state, 'deferred');
+    assert.equal(first.data.hold.version, proposed.version + 1);
+    const existing = (await getCardConsistent(db, c.id))!;
+    const locked = await updateCard(db, c.id, { expectedVersion: existing.version, patch: { eventTime: { ...existing.eventTime!, sync: 'syncing', syncStartedAt: new Date().toISOString() } } });
+    assert.equal((await invoke('POST', `/api/calendar-holds/${proposed.id}/confirm`, {})).code, 409);
+    await updateCard(db, c.id, { expectedVersion: locked.version, patch: { eventTime: { ...locked.eventTime!, sync: 'deferred' } } });
+    const retry = await invoke('POST', `/api/calendar-holds/${proposed.id}/confirm`, {});
+    assert.equal(retry.code, 200, retry.raw);
+    assert.equal(retry.data.hold.version, first.data.hold.version + 1);
+    assert.equal(retry.data.hold.googleSync.state, 'synced');
+    assert.equal((await invoke('GET', `/api/calendar-holds/${proposed.id}`)).data.hold.version, retry.data.hold.version);
+    assert.equal(provider.events.get(HOLD_ORGANIZER)!.size, 1);
+  });
+  test('populated fallback guest document is sent; invalid document fails before reservation or Google', async () => {
+    const provider = google();
+    const c = await card('webinar-guest-document');
+    await updateCard(db, c.id, { expectedVersion: c.version, patch: { cardLinks: [
+      { name: 'Podcast document', url: '' }, { name: 'Guest materials', url: 'https://example.test/guest' },
+    ] } });
+    const sent = await invoke('POST', `/api/cards/${c.id}/time`, { at: '2026-11-09 14:30', guestEmails: ['guest@example.test'] });
+    assert.equal(sent.code, 200, sent.raw);
+    const event = provider.events.get(HOLD_ORGANIZER)!.get(sent.data.card.eventTime.googleEventIds[HOLD_ORGANIZER]);
+    assert.match(event.description, /https:\/\/example.test\/guest/);
+    const bad = await card('webinar-invalid-document');
+    await updateCard(db, bad.id, { expectedVersion: bad.version, patch: { cardLinks: [{ name: 'Guest materials', url: 'http://example.test/guest' }] } });
+    const before = provider.calls.length;
+    const rejected = await invoke('POST', `/api/cards/${bad.id}/time`, { at: '2026-11-09 14:30', guestEmails: ['guest@example.test'] });
+    assert.equal(rejected.code, 422, rejected.raw);
+    assert.match(rejected.data.error, /HTTPS/);
+    assert.equal(provider.calls.length, before);
+    assert.equal((await getCardConsistent(db, bad.id))!.eventTime, undefined);
+  });
+  test('legacy adoption cannot replace a deferred managed attempt or cause a duplicate on retry', async () => {
+    const provider = google();
+    provider.state.account = 'wrong@example.test';
+    const c = await card('webinar-adoption-conflict');
+    const first = await invoke('POST', `/api/cards/${c.id}/time`, { at: '2026-11-09 14:30', guestEmails: ['guest@example.test'] });
+    assert.equal(first.code, 502, first.raw);
+    assert.deepEqual(first.data.card.eventTime.googleEventIds, {});
+    assert.ok(first.data.error, 'deferred reason reaches CLI and UI clients');
+    const adopted = await invoke('POST', `/api/cards/${c.id}/calendar-invites`, { eventId: 'another-event', calendar: 'legacy@example.test' });
+    assert.equal(adopted.code, 409, adopted.raw);
+    provider.state.account = HOLD_ORGANIZER;
+    const retried = await invoke('POST', `/api/cards/${c.id}/time`, { at: '2026-11-09 14:30' });
+    assert.equal(retried.code, 200, retried.raw);
+    assert.equal(provider.events.get(HOLD_ORGANIZER)!.size, 1);
   });
   test('retry after uncertain Google response recovers same event and closes task', async () => {
     const provider = google();

@@ -1,5 +1,5 @@
 import { cardEventInterval } from '../calendar/cardEventTime';
-import { cardGuests, closeCardInviteTasks, parseCardGuests, syncCardInvite } from '../calendar/cardInvite';
+import { CardInviteConflictError, CardInviteInputError, cardGuests, closeCardInviteTasks, parseCardGuests, syncCardInvite } from '../calendar/cardInvite';
 import { calendarInviteDeps } from './calendarHolds';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
@@ -349,7 +349,7 @@ async function handleCardRoutes(
     // Route: /api/cards/:id/calendar-invites
     const invitesMatch = suffix.match(/^\/([^/]+)\/calendar-invites\/?$/);
     if (invitesMatch) {
-      return handleCardCalendarInvites(method, invitesMatch[1], rawBody, client, event);
+      return await handleCardCalendarInvites(method, invitesMatch[1], rawBody, client, event);
     }
 
     // Route: /api/cards/:id
@@ -366,6 +366,7 @@ async function handleCardRoutes(
       body: JSON.stringify({ error: 'Not found' }),
     };
   } catch (err: unknown) {
+    if (err instanceof CardInviteConflictError) return json(409, { error: err.message, code: 'card_invite_conflict' });
     if (err instanceof CardNotFoundError) {
       return json(404, { error: 'Card not found', code: 'card_not_found' });
     }
@@ -852,6 +853,9 @@ async function handleCardCalendarInvites(
     }
     const now = new Date().toISOString();
     const card = await updateCardAdditive(client, existing, (current) => {
+      if (current.eventTime && current.eventTime.googleEventIds[parsed.invite.calendar] !== parsed.invite.eventId) {
+        throw new CardInviteConflictError('This Card already owns an invitation attempt. Retry cards time to recover it before adopting another event.');
+      }
       const invites: CardCalendarInvite[] = [...(current.calendarInvites || [])];
       const index = invites.findIndex(
         (entry) => entry.eventId === parsed.invite.eventId && entry.calendar === parsed.invite.calendar,
@@ -873,7 +877,7 @@ async function handleCardCalendarInvites(
     });
     await closeCardInviteTasks(client, card, actor.id);
     const templateIdByType = await getTemplateIdByType(client);
-    const projected = await projectCard(new TeamDirectory(client), card, undefined, templateIdByType);
+    const projected = await projectCard(new TeamDirectory(client), (await getCardConsistent(client, id))!, undefined, templateIdByType);
     return json(201, { card: projected, invites: card.calendarInvites || [] });
   }
 
@@ -900,9 +904,11 @@ async function handleCardTime(method: string, id: string, rawBody: string | null
   }
   try {
     const result = await syncCardInvite(client, card, interval, guests, await calendarInviteDeps({}, client), resolved.actor.id);
-    return json(result.sync.state === 'synced' ? 200 : 502, result);
+    const projected = await projectCard(new TeamDirectory(client), result.card, undefined, await getTemplateIdByType(client));
+    return json(result.sync.state === 'synced' ? 200 : 502, { ...result, card: projected, ...(result.sync.state === 'deferred' ? { error: result.sync.reason } : {}) });
   } catch (error) {
-    if (error instanceof CardVersionConflictError || (error as { statusCode?: number }).statusCode === 409) return json(409, { error: 'Card invitation changed or is syncing; reload and retry' });
+    if (error instanceof CardVersionConflictError || error instanceof CardInviteConflictError) return json(409, { error: 'Card invitation changed or is syncing; reload and retry' });
+    if (error instanceof CardInviteInputError) return json(422, { error: error.message });
     throw error;
   }
 }
