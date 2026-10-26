@@ -44,6 +44,7 @@ export const ALLOWED_UPDATE_FIELDS = [
   'materials',
   'requiredLinkName',
   'requiresFile',
+  'requiresCalendarInvite',
   'assigneeId',
   'tags',
   'templateId',
@@ -385,7 +386,7 @@ function hasScopedSkipClosure(validation: unknown): boolean {
   return Boolean(config.suppresses && typeof config.suppresses === 'object' && !Array.isArray(config.suppresses));
 }
 
-export function skipClosureSuppresses(taskData: Record<string, unknown>, gate: 'cardLink' | 'requiredLink' | 'file' | 'proof', name?: string): boolean {
+export function skipClosureSuppresses(taskData: Record<string, unknown>, gate: 'cardLink' | 'requiredLink' | 'file' | 'proof' | 'calendarInvite', name?: string): boolean {
   const status = allowedSkipClosureStatus(taskData);
   if (!status) return false;
   if (!hasScopedSkipClosure(taskData.validation)) return true;
@@ -399,6 +400,7 @@ export function skipClosureSuppresses(taskData: Record<string, unknown>, gate: '
   }
   if (gate === 'requiredLink') return scope.requiredLink === true;
   if (gate === 'file') return scope.file === true;
+  if (gate === 'calendarInvite') return scope.calendarInvite === true;
   if (gate === 'proof') return scope.proof === true;
   return false;
 }
@@ -507,6 +509,43 @@ export async function validateRequiredCardLinks(
   return null;
 }
 
+/**
+ * Template ref for the guest-invite Task in the webinar and podcast
+ * templates. It implies the calendar-invite requirement for Cards created
+ * before their Template declared `requires_calendar_invite` explicitly.
+ */
+export const CALENDAR_INVITE_TASK_REF = 'create-calendar-invite';
+
+export function taskRequiresCalendarInvite(taskData: Record<string, unknown>): boolean {
+  if (taskData.requiresCalendarInvite === true) return true;
+  const validation = taskData.validation;
+  if (
+    validation && typeof validation === 'object' && !Array.isArray(validation)
+    && (validation as Record<string, unknown>).requiresCalendarInvite === true
+  ) return true;
+  return taskData.templateTaskRef === CALENDAR_INVITE_TASK_REF;
+}
+
+export function calendarInviteDoneError(taskData: Record<string, unknown>): string {
+  const cardId = isNonEmptyString(taskData.cardId) ? String(taskData.cardId).trim() : '<card-id>';
+  return `Cannot mark task as done: no calendar invite is linked to this card. Link one with: dataops cards invite add ${cardId} --event-id <event-id> --calendar <calendar>`;
+}
+
+export async function validateCalendarInviteRequirement(
+  client: DynamoDBDocumentClient,
+  taskData: Record<string, unknown>,
+): Promise<string | null> {
+  if (!taskRequiresCalendarInvite(taskData)) return null;
+  if (skipClosureSuppresses(taskData, 'calendarInvite')) return null;
+  const cardId = isNonEmptyString(taskData.cardId) ? String(taskData.cardId).trim() : null;
+  if (!cardId) {
+    return `Cannot mark task as done: no calendar invite is linked to this card. Link one with: dataops cards invite add <card-id> --event-id <event-id> --calendar <calendar>`;
+  }
+  const card = await getCard(client, cardId);
+  if (Array.isArray(card?.calendarInvites) && card.calendarInvites.length > 0) return null;
+  return calendarInviteDoneError(taskData);
+}
+
 export async function validateDoneProof(
   client: DynamoDBDocumentClient,
   id: string,
@@ -559,6 +598,8 @@ export async function validateDoneProofOnCreate(client: DynamoDBDocumentClient, 
   if (taskData.requiresFile === true && !skipClosureSuppresses(taskData, 'file')) {
     return 'Cannot mark task as done: required file has not been uploaded';
   }
+  const calendarInviteError = await validateCalendarInviteRequirement(client, taskData);
+  if (calendarInviteError) return calendarInviteError;
 
   if (skipClosureSuppresses(taskData, 'proof')) return null;
 

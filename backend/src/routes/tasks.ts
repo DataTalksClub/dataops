@@ -63,6 +63,7 @@ import {
   trimmedString,
   validateActionChannel,
   validateActionNote,
+  validateCalendarInviteRequirement,
   validateDateOrTimestampValue,
   validateDoneProof,
   validateDoneProofOnCreate,
@@ -284,6 +285,7 @@ export async function handleTaskRoutes(
     if (body.materials !== undefined) taskData.materials = body.materials;
     if (body.requiredLinkName !== undefined) taskData.requiredLinkName = body.requiredLinkName;
     if (body.requiresFile !== undefined) taskData.requiresFile = body.requiresFile;
+    if (body.requiresCalendarInvite !== undefined) taskData.requiresCalendarInvite = body.requiresCalendarInvite;
     if (body.assigneeId !== undefined) taskData.assigneeId = body.assigneeId;
     if (body.tags !== undefined) taskData.tags = body.tags;
     if (body.templateId !== undefined) taskData.templateId = body.templateId;
@@ -1003,6 +1005,9 @@ export async function handleTaskRoutes(
         }
       }
 
+      const calendarInviteError = await validateCalendarInviteRequirement(client, taskData);
+      if (calendarInviteError) return jsonResponse(400, { error: calendarInviteError });
+
       const cardLinkError = await validateRequiredCardLinks(client, taskData);
       if (cardLinkError) return jsonResponse(400, { error: cardLinkError });
 
@@ -1248,6 +1253,13 @@ export async function handleTaskRoutes(
         if (files.length === 0) {
           return jsonResponse(400, { error: 'Cannot mark task as done: required file has not been uploaded' });
         }
+      }
+
+      const calendarInviteError = existing.status === 'done'
+        ? null
+        : await validateCalendarInviteRequirement(client, taskData);
+      if (calendarInviteError) {
+        return jsonResponse(400, { error: calendarInviteError });
       }
 
       const cardLinkError = await validateRequiredCardLinks(client, taskData);
