@@ -6,7 +6,7 @@ import { scanCrmPrefix } from '../db/sponsorCrm';
 import { getCalendarHold, listCalendarHolds, putCalendarHold } from '../db/calendarHolds';
 import { taskRequiresCalendarInvite, makeTaskHistoryEvent } from '../routes/taskValidation';
 import { confirmedHoldInvite, holdGuestAttendees, HOLD_ATTENDEE_DENY_LIST } from './holds';
-import { createHoldGoogleEvents, updateHoldGoogleEvents, type HoldGoogleDeps } from './holdGoogleSync';
+import { createHoldGoogleEvents, moveLinkedGoogleInvite, updateHoldGoogleEvents, type HoldGoogleDeps } from './holdGoogleSync';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export function parseCardGuests(raw: unknown): string[] {
@@ -72,7 +72,7 @@ export async function syncCardInvite(
     linkedHold = active[0] || null;
     if (linkedHold) source = { eventKey: linkedHold.id, eventIds: linkedHold.googleEventIds, title: linkedHold.title, documentUrl: linkedHold.documentUrl };
   }
-  const eventKey = card.eventTime?.eventKey || source?.eventKey || `card:${card.id}`;
+  const eventKey = card.eventTime?.eventKey || source?.eventKey || (card.calendarInvites?.length ? `legacy:${card.id}` : `card:${card.id}`);
   const eventIds = card.eventTime?.googleEventIds || source?.eventIds ||
     Object.fromEntries((card.calendarInvites || []).map(invite => [invite.calendar, invite.eventId]));
   const pending: NonNullable<Card['eventTime']> = {
@@ -85,9 +85,11 @@ export async function syncCardInvite(
     attendees: [...new Set(guests.flatMap(guest => holdGuestAttendees(guest)))],
   };
   const reserved = await updateCard(client, card.id, { expectedVersion: card.version, patch: { eventTime: pending, guestEmails: guests } });
-  const sync = Object.keys(eventIds).length
-    ? await updateHoldGoogleEvents(eventIds, invite, deps)
-    : await createHoldGoogleEvents(invite, deps);
+  const sync = eventKey.startsWith('legacy:')
+    ? await moveLinkedGoogleInvite(eventIds, invite, deps)
+    : Object.keys(eventIds).length
+      ? await updateHoldGoogleEvents(eventIds, invite, deps)
+      : await createHoldGoogleEvents(invite, deps);
   const updated = await updateCardAdditive(client, reserved, current => {
     const invites = [...(current.calendarInvites || [])];
     if (sync.state === 'synced') {

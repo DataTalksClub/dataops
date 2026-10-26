@@ -129,6 +129,8 @@ export function mapCard(item: Record<string, unknown>): JsonRecord {
     references: jsonArray(item.references),
     card_links: jsonArray(item.cardLinks),
     calendar_invites: jsonArray(item.calendarInvites),
+    guest_emails: stringArray(item.guestEmails),
+    event_time: optionalJsonStringOrObject(item.eventTime),
     tags: stringArray(item.tags),
     artifact_refs: jsonArray(item.artifactRefs),
     intake_refs: jsonArray(item.intakeRefs),
