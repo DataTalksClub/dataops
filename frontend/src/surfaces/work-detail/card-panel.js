@@ -17,7 +17,7 @@ import {
   renderCardSponsorDocsSection,
   renderCardTemplateLink,
 } from "./card-summary.js";
-import { renderCardInvitesSection } from "./card-invites.js";
+import { renderCardEventTime, renderCardInvitesSection } from "./card-invites.js";
 import { renderWebinarMaterialsAction } from "./webinar-materials.js";
 import { renderLinkRow, renderLinkList } from "./link-rows.js";
 
@@ -404,6 +404,9 @@ export function createCardPanel(context) {
     if (templateUpdate) main.append(templateUpdate);
 
     if (Array.isArray(card.cardLinks) && card.cardLinks.length > 0) main.append(renderCardLinksSection(card));
+    if (card.eventTime || card.calendarInvites?.length || tasks.some(taskRequiresCalendarInvite)) {
+      main.append(renderCardEventTime({ request, workApiUrl, reload: reloadCardIntent }, card));
+    }
     if (Array.isArray(card.calendarInvites) && card.calendarInvites.length > 0) main.append(renderCardInvitesSection(card));
 
     {

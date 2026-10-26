@@ -52,3 +52,65 @@ export function renderCardInvitesSection(card) {
   section.append(list);
   return section;
 }
+
+export function renderCardEventTime({ request, workApiUrl, reload }, card) {
+  const section = document.createElement("form");
+  section.className = "workflow-detail-section";
+  const heading = document.createElement("h3");
+  heading.textContent = "Event time";
+  section.append(heading);
+  const input = (labelText, type, value) => {
+    const label = document.createElement("label");
+    label.textContent = labelText;
+    const field = document.createElement("input");
+    field.type = type;
+    field.value = value;
+    field.required = true;
+    label.append(field);
+    section.append(label);
+    return field;
+  };
+  const zone = card.eventTime?.timeZone || "Europe/Berlin";
+  let local = "";
+  if (card.eventTime?.startIso) {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+      timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).formatToParts(new Date(card.eventTime.startIso)).map(p => [p.type, p.value]));
+    local = `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+  }
+  const at = input("Date and time", "datetime-local", local);
+  const tz = input("Time zone", "text", zone);
+  const duration = input("Duration (minutes)", "number", String(card.eventTime?.durationMinutes || 60));
+  duration.min = "1";
+  duration.max = "1440";
+  const guests = input("Guest emails (comma separated)", "text", (card.guestEmails || []).join(", "));
+  guests.required = false;
+  const note = document.createElement("p");
+  note.textContent = "The invite starts 5 minutes early and ends with the event. Saving sends updates to guests.";
+  const feedback = document.createElement("p");
+  feedback.setAttribute("role", "status");
+  feedback.textContent = card.eventTime?.reason || "";
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.className = "dk-button dk-button--secondary dk-button--sm";
+  save.textContent = "Save time and send invite";
+  section.append(note, save, feedback);
+  section.addEventListener("submit", async event => {
+    event.preventDefault();
+    save.disabled = true;
+    feedback.textContent = "Saving event and sending invite…";
+    try {
+      await request(workApiUrl(`/api/cards/${encodeURIComponent(card.id)}/time`), {
+        method: "POST",
+        body: JSON.stringify({ at: at.value.replace("T", " "), duration: Number(duration.value), tz: tz.value,
+          ...(guests.value.trim() ? { guestEmails: guests.value.split(",").map(value => value.trim()) } : {}),
+        }),
+      });
+      await reload();
+    } catch (error) {
+      feedback.textContent = error.message || "Could not send the invitation. Retry to recover the same event.";
+      save.disabled = false;
+    }
+  });
+  return section;
+}
