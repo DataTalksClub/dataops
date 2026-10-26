@@ -146,7 +146,7 @@ describe("newsletter sheet", () => {
     const { issues: sheet } = sheetIssues(statsRows, today);
     assert.equal(sheet.length, 1);
     assert.deepEqual(sheet[0].stats, {
-      deliveries: 99714,
+      sent: 99714,
       opens: 34886,
       clicks: 831,
       uniqueClicks: 651,

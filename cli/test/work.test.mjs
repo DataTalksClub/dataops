@@ -877,7 +877,7 @@ describe("newsletter cards", () => {
   });
 });
 
-describe("newsletter stats and sponsor report", () => {
+describe("newsletter metrics and sponsor report", () => {
   const issue = {
     id: "i-297",
     version: 4,
@@ -891,7 +891,7 @@ describe("newsletter stats and sponsor report", () => {
     },
   };
 
-  test("stats sets and shows issue Mailchimp metrics and per-slot social metrics, and report formats sponsor results", async () => {
+  test("metrics sets and shows issue Mailchimp metrics and per-slot social metrics, and report formats sponsor results", async () => {
     const calls = fakePortal({
       "GET /api/newsletter-issues/i-297": issue,
       "PUT /api/newsletter-issues/i-297": ({ body }) => ({
@@ -938,10 +938,10 @@ describe("newsletter stats and sponsor report", () => {
       await run(
         [
           "newsletter",
-          "stats",
+          "metrics",
           "i-297",
           "primary",
-          "--deliveries",
+          "--sent",
           "99,714",
           "--opens",
           "34,886",
@@ -969,7 +969,7 @@ describe("newsletter stats and sponsor report", () => {
     assert.deepEqual(calls.at(-1).body, {
       version: 4,
       stats: {
-        deliveries: 99714,
+        sent: 99714,
         opens: 34886,
         openRate: 34.99,
         clicks: 831,
@@ -995,7 +995,7 @@ describe("newsletter stats and sponsor report", () => {
         },
       },
     });
-    assert.match(setPrimary.text(), /Updated stats on Weekly #297/);
+    assert.match(setPrimary.text(), /Updated metrics on Weekly #297/);
 
     const reportOut = captureIo();
     assert.equal(await run(["newsletter", "report", "i-297", "primary", "--contact", "Alex"], reportOut), 0);

@@ -63,14 +63,15 @@ Usage
   dataops newsletter markdown show <issue-id> [issue|sources|brief]
   dataops newsletter markdown preview <issue-id>
   dataops newsletter markdown rotate-code <issue-id>
-  dataops newsletter stats <issue-id> [primary|secondary]
-      [--deliveries N] [--opens N] [--clicks N] [--unique-clicks N]
+  dataops newsletter metrics <issue-id> [primary|secondary]
+      [--sent N] [--opens N] [--clicks N] [--unique-clicks N]
       [--open-rate PCT] [--click-rate PCT]
-      [--linkedin-impressions N] [--linkedin-clicks N] [--linkedin-ctr PCT] [--linkedin-post URL|none]
-      [--x-impressions N] [--x-clicks N] [--x-ctr PCT] [--x-post URL|none]
+      [--linkedin-impressions N] [--linkedin-clicks N] [--linkedin-reactions N] [--linkedin-ctr PCT] [--linkedin-post URL|none]
+      [--x-impressions N] [--x-clicks N] [--x-reactions N] [--x-ctr PCT] [--x-post URL|none]
       [--clear]
-                                  Show or set Mailchimp issue stats and per-slot
-                                  (primary / secondary) link + LinkedIn + X stats
+                                  Show or set Mailchimp issue metrics and per-slot
+                                  (primary / secondary) link + LinkedIn + X metrics.
+                                  With no metric flags it shows the current values.
   dataops newsletter report <issue-id> [primary|secondary] [--contact NAME]
   dataops newsletter report --sponsor <name> [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--contact NAME]
                                   Sponsor performance report (template.newsletter.newsletter-performance)
@@ -101,7 +102,7 @@ the issue's current version.
 Examples
   dataops newsletter list --from 2026-11-01 --to 2026-11-30 --booked false
   dataops newsletter doc create <issue-id|card-id> --slot primary --email
-  dataops newsletter stats <issue-id> primary --deliveries 99714 --opens 34886 --clicks 831 --unique-clicks 651
+  dataops newsletter metrics <issue-id> primary --sent 99714 --opens 34886 --clicks 831 --unique-clicks 651
   dataops newsletter report <issue-id> primary --contact "Alex"
 `;
 
@@ -111,7 +112,7 @@ const fmtNum = (n) => new Intl.NumberFormat("en-US").format(n);
 function formatIssueStatsLine(stats) {
   if (!stats) return "";
   const parts = [];
-  if (stats.deliveries !== undefined) parts.push(`${fmtNum(stats.deliveries)} deliveries`);
+  if (stats.sent !== undefined) parts.push(`${fmtNum(stats.sent)} sent`);
   if (stats.opens !== undefined) {
     parts.push(`${fmtNum(stats.opens)} opens${stats.openRate !== undefined ? ` (${stats.openRate}%)` : ""}`);
   }
@@ -132,18 +133,20 @@ function formatSlotStatsLine(stats) {
     const detail = [uniq, rate].filter(Boolean).join(", ");
     parts.push(`newsletter ${fmtNum(stats.clicks)} clicks${detail ? ` (${detail})` : ""}`);
   }
-  if (stats.linkedinImpressions !== undefined || stats.linkedinClicks !== undefined || stats.linkedinPostUrl) {
+  if (stats.linkedinImpressions !== undefined || stats.linkedinClicks !== undefined || stats.linkedinReactions !== undefined || stats.linkedinPostUrl) {
     const li = [];
     if (stats.linkedinImpressions !== undefined) li.push(`${fmtNum(stats.linkedinImpressions)} imp`);
     if (stats.linkedinClicks !== undefined) li.push(`${fmtNum(stats.linkedinClicks)} clicks`);
+    if (stats.linkedinReactions !== undefined) li.push(`${fmtNum(stats.linkedinReactions)} reactions`);
     if (stats.linkedinCtr !== undefined) li.push(`${stats.linkedinCtr}% CTR`);
     if (stats.linkedinPostUrl) li.push(stats.linkedinPostUrl);
     parts.push(`LinkedIn ${li.join(" / ")}`);
   }
-  if (stats.xImpressions !== undefined || stats.xClicks !== undefined || stats.xPostUrl) {
+  if (stats.xImpressions !== undefined || stats.xClicks !== undefined || stats.xReactions !== undefined || stats.xPostUrl) {
     const x = [];
     if (stats.xImpressions !== undefined) x.push(`${fmtNum(stats.xImpressions)} imp`);
     if (stats.xClicks !== undefined) x.push(`${fmtNum(stats.xClicks)} clicks`);
+    if (stats.xReactions !== undefined) x.push(`${fmtNum(stats.xReactions)} reactions`);
     if (stats.xCtr !== undefined) x.push(`${stats.xCtr}% CTR`);
     if (stats.xPostUrl) x.push(stats.xPostUrl);
     parts.push(`X ${x.join(" / ")}`);
@@ -238,10 +241,10 @@ export async function show(args, io) {
   if (args.json) return issue;
   fields(io, Object.entries(issue).filter(([, value]) => typeof value !== "object" || value === null));
   io.print(`slots: ${slotText(issue)}`);
-  if (issue.stats) io.print(`stats: ${formatIssueStatsLine(issue.stats)}`);
+  if (issue.stats) io.print(`metrics: ${formatIssueStatsLine(issue.stats)}`);
   for (const position of POSITIONS) {
     const slotStats = issue.slots?.[position]?.stats;
-    if (slotStats) io.print(`${position} stats: ${formatSlotStatsLine(slotStats)}`);
+    if (slotStats) io.print(`${position} metrics: ${formatSlotStatsLine(slotStats)}`);
   }
   if (issue.card) io.print(`card: ${issue.card.id} ${issue.card.title} (${issue.card.openTaskCount}/${issue.card.taskCount} open)`);
   else if (issue.cardDueDate) io.print(`card: none yet; the daily run creates it on ${issue.cardDueDate}`);
@@ -356,8 +359,8 @@ function applySlotStatFlags(currentSlotStats, spec, issueOpens) {
   return next;
 }
 
-export async function stats(args, io) {
-  const usage = "dataops newsletter stats <issue-id> [primary|secondary] [--deliveries N] [--opens N] [--clicks N] ...";
+export async function metrics(args, io) {
+  const usage = "dataops newsletter metrics <issue-id> [primary|secondary] [--sent N] [--opens N] [--clicks N] ...";
   const id = positional(args, 0, usage);
   const posArg = args._[1] !== undefined ? String(args._[1]) : optionalString(args, "slot");
   if (posArg !== undefined && !POSITIONS.includes(posArg)) {
@@ -369,7 +372,7 @@ export async function stats(args, io) {
     throw new UsageError("A stand-alone issue has no secondary slot.");
   }
 
-  const deliveries = nonNegativeIntArg(args, ["deliveries"], "deliveries");
+  const sent = nonNegativeIntArg(args, ["sent"], "sent");
   const opens = nonNegativeIntArg(args, ["opens", "views"], "opens");
   const openRate = rateArg(args, ["openRate"], "open-rate");
   const directClicks = nonNegativeIntArg(args, ["clicks"], "clicks");
@@ -377,18 +380,20 @@ export async function stats(args, io) {
   const directClickRate = rateArg(args, ["clickRate", "ctr"], "click-rate");
   const directLiImp = nonNegativeIntArg(args, ["linkedinImpressions"], "linkedin-impressions");
   const directLiClicks = nonNegativeIntArg(args, ["linkedinClicks"], "linkedin-clicks");
+  const directLiReactions = nonNegativeIntArg(args, ["linkedinReactions"], "linkedin-reactions");
   const directLiCtr = rateArg(args, ["linkedinCtr"], "linkedin-ctr");
   const directLiPost = urlArg(args, ["linkedinPost", "linkedinUrl"]);
   const directXImp = nonNegativeIntArg(args, ["xImpressions", "twitterImpressions"], "x-impressions");
   const directXClicks = nonNegativeIntArg(args, ["xClicks", "twitterClicks"], "x-clicks");
+  const directXReactions = nonNegativeIntArg(args, ["xReactions", "twitterReactions"], "x-reactions");
   const directXCtr = rateArg(args, ["xCtr", "twitterCtr"], "x-ctr");
   const directXPost = urlArg(args, ["xPost", "xUrl", "twitterPost", "twitterUrl"]);
 
   const perSlotSpecs = {};
   for (const position of POSITIONS) {
     const isTarget = (posArg || "primary") === position;
-    const hasSocialDirect = directLiImp !== undefined || directLiClicks !== undefined || directLiCtr !== undefined || directLiPost !== undefined
-      || directXImp !== undefined || directXClicks !== undefined || directXCtr !== undefined || directXPost !== undefined;
+    const hasSocialDirect = directLiImp !== undefined || directLiClicks !== undefined || directLiReactions !== undefined || directLiCtr !== undefined || directLiPost !== undefined
+      || directXImp !== undefined || directXClicks !== undefined || directXReactions !== undefined || directXCtr !== undefined || directXPost !== undefined;
     const useDirectSlot = posArg === position || (!posArg && position === "primary" && (hasSocialDirect || directClicks !== undefined || directUniqueClicks !== undefined || directClickRate !== undefined));
     perSlotSpecs[position] = {
       opensChanged: opens !== undefined,
@@ -398,9 +403,11 @@ export async function stats(args, io) {
         clickRate: rateArg(args, [`${position}ClickRate`, `${position}Ctr`], `${position}-click-rate`) ?? (useDirectSlot ? directClickRate : undefined),
         linkedinImpressions: nonNegativeIntArg(args, [`${position}LinkedinImpressions`], `${position}-linkedin-impressions`) ?? (isTarget ? directLiImp : undefined),
         linkedinClicks: nonNegativeIntArg(args, [`${position}LinkedinClicks`], `${position}-linkedin-clicks`) ?? (isTarget ? directLiClicks : undefined),
+        linkedinReactions: nonNegativeIntArg(args, [`${position}LinkedinReactions`], `${position}-linkedin-reactions`) ?? (isTarget ? directLiReactions : undefined),
         linkedinCtr: rateArg(args, [`${position}LinkedinCtr`], `${position}-linkedin-ctr`) ?? (isTarget ? directLiCtr : undefined),
         xImpressions: nonNegativeIntArg(args, [`${position}XImpressions`, `${position}TwitterImpressions`], `${position}-x-impressions`) ?? (isTarget ? directXImp : undefined),
         xClicks: nonNegativeIntArg(args, [`${position}XClicks`, `${position}TwitterClicks`], `${position}-x-clicks`) ?? (isTarget ? directXClicks : undefined),
+        xReactions: nonNegativeIntArg(args, [`${position}XReactions`, `${position}TwitterReactions`], `${position}-x-reactions`) ?? (isTarget ? directXReactions : undefined),
         xCtr: rateArg(args, [`${position}XCtr`, `${position}TwitterCtr`], `${position}-x-ctr`) ?? (isTarget ? directXCtr : undefined),
       },
       urls: {
@@ -438,15 +445,15 @@ export async function stats(args, io) {
     const issueUniqueClicks = posArg !== "secondary" ? directUniqueClicks : undefined;
     const issueClickRate = posArg !== "secondary" ? directClickRate : undefined;
     if (
-      deliveries !== undefined || opens !== undefined || openRate !== undefined
+      sent !== undefined || opens !== undefined || openRate !== undefined
       || issueClicks !== undefined || issueUniqueClicks !== undefined || issueClickRate !== undefined
     ) {
       const nextIssueStats = { ...(current.stats || {}) };
-      if (deliveries !== undefined) nextIssueStats.deliveries = deliveries;
+      if (sent !== undefined) nextIssueStats.sent = sent;
       if (opens !== undefined) nextIssueStats.opens = opens;
       if (openRate !== undefined) nextIssueStats.openRate = openRate;
-      else if (deliveries !== undefined || opens !== undefined) {
-        const derivedOpenRate = deriveRate(nextIssueStats.opens, nextIssueStats.deliveries);
+      else if (sent !== undefined || opens !== undefined) {
+        const derivedOpenRate = deriveRate(nextIssueStats.opens, nextIssueStats.sent);
         if (derivedOpenRate !== undefined) nextIssueStats.openRate = derivedOpenRate;
       }
       if (issueClicks !== undefined) nextIssueStats.clicks = issueClicks;
@@ -480,7 +487,7 @@ export async function stats(args, io) {
       };
     }
     io.print(`${current.label} (${current.publicationDate})`);
-    io.print(`issue stats: ${formatIssueStatsLine(current.stats) || "none recorded"}`);
+    io.print(`issue metrics: ${formatIssueStatsLine(current.stats) || "none recorded"}`);
     for (const position of POSITIONS) {
       if (posArg && posArg !== position) continue;
       const slot = current.slots?.[position];
@@ -492,8 +499,8 @@ export async function stats(args, io) {
 
   const updated = await api.put(`/api/newsletter-issues/${enc(id)}`, { ...body, version: current.version });
   if (args.json) return updated;
-  io.print(`Updated stats on ${updated.label} (${updated.publicationDate}).`);
-  if (updated.stats) io.print(`issue stats: ${formatIssueStatsLine(updated.stats)}`);
+  io.print(`Updated metrics on ${updated.label} (${updated.publicationDate}).`);
+  if (updated.stats) io.print(`issue metrics: ${formatIssueStatsLine(updated.stats)}`);
   for (const position of POSITIONS) {
     const slot = updated.slots?.[position];
     if (slot?.stats) io.print(`${position} (${slot.sponsor || "open"}): ${formatSlotStatsLine(slot.stats)}`);
@@ -924,7 +931,7 @@ export const commands = {
   update,
   doc,
   markdown,
-  stats,
+  metrics,
   report,
   delete: remove,
   sponsors,

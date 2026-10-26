@@ -89,7 +89,7 @@ function compactObject(record) {
 }
 
 function extractPlacementStats(values, links, issueOpens) {
-  const deliveries = sheetCount(values["newsletter deliveries"]);
+  const sent = sheetCount(values["newsletter deliveries"]);
   const opens = sheetCount(values["newsletter views opens"]);
   const effectiveOpens = opens ?? issueOpens;
   const clicks = sheetCount(values.clicks);
@@ -104,7 +104,7 @@ function extractPlacementStats(values, links, issueOpens) {
   const xCtr = sheetRate(values["twitter ctr"], xClicks, xImpressions);
   const xPostUrl = httpsLink(links["twitter post"], values["twitter post"]);
   return {
-    deliveries,
+    sent,
     opens,
     rawCtr: values.ctr,
     slotStats: compactObject({
@@ -202,18 +202,18 @@ export function sheetIssues(rows, today) {
       if (!primary) continue;
     }
     const validSecondary = secondary && primary?.date === secondary.date ? secondary : undefined;
-    const issueDeliveries = sheetCount(primary?.values?.["newsletter deliveries"]) ?? sheetCount(validSecondary?.values?.["newsletter deliveries"]);
+    const issueSent = sheetCount(primary?.values?.["newsletter deliveries"]) ?? sheetCount(validSecondary?.values?.["newsletter deliveries"]);
     const issueOpens = sheetCount(primary?.values?.["newsletter views opens"]) ?? sheetCount(validSecondary?.values?.["newsletter views opens"]);
     const primaryExtracted = primary ? extractPlacementStats(primary.values, primary.links, issueOpens) : null;
     const secondaryExtracted = validSecondary ? extractPlacementStats(validSecondary.values, validSecondary.links, issueOpens) : null;
     const issueClicks = primaryExtracted?.slotStats?.clicks ?? secondaryExtracted?.slotStats?.clicks;
     const issueUniqueClicks = primaryExtracted?.slotStats?.uniqueClicks ?? secondaryExtracted?.slotStats?.uniqueClicks;
     const issueStats = head.type === "vacation" ? undefined : compactObject({
-      deliveries: issueDeliveries,
+      sent: issueSent,
       opens: issueOpens,
       clicks: issueClicks,
       uniqueClicks: issueUniqueClicks,
-      openRate: sheetRate("", issueOpens, issueDeliveries),
+      openRate: sheetRate("", issueOpens, issueSent),
       clickRate: sheetRate(primaryExtracted?.rawCtr || secondaryExtracted?.rawCtr || "", issueClicks, issueOpens),
     });
     const slot = (placement, extracted) => {
