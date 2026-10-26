@@ -222,7 +222,7 @@ test("wired panel pager, retry and task buttons behave", async () => {
   await wired.refresh();
   assert.match(list.innerHTML, /Record updated/);
   assert.match(related.innerHTML, /data-open-task="t1"/);
-  assert.match(pager.innerHTML, /Show more \(1 remaining\)/);
+  assert.match(pager.innerHTML, /Show more/);
   const more = new FakeNode("button");
   more.setClosest("[data-activity-more]", more);
   await pager.dispatch("click", { targetPatch: {}, closestPatch: { "[data-activity-more]": more } });

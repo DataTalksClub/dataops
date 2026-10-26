@@ -320,7 +320,7 @@ export function wireActivityPanel(root, loader, context = {}) {
         pager.innerHTML = html`<button type="button" data-activity-more disabled>Loading more…</button>`;
       } else {
         pager.innerHTML = loader.state.nextCursor && loader.state.status === "ready"
-          ? html`<button type="button" data-activity-more>Show more (${loader.state.total - loader.state.items.length} remaining)</button>`
+          ? html`<button type="button" data-activity-more>Show more</button>`
           : "";
       }
     }

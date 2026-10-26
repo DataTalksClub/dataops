@@ -1,18 +1,13 @@
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getCrmRecord, listCrmRecords } from '../db/sponsorCrm';
 import { listTasksByStatus } from '../db/tasks';
 import type { Task } from '../types';
 import { berlinToday } from './berlin';
 import { pipelineTaskDate, pipelineTaskDeferred } from '../sponsorCrm/pipeline';
 import { realDate } from '../sponsorCrm/model';
-import { cursorBinding, decodeCursor, encodeCursor, pageLimit } from './cursor';
-import { queryTargetNotes } from './notes';
-import {
-  queryHistoryEvents,
-  queryTargetMessages,
-  workspaceErrorOf,
-  type MessageQueryTarget,
-} from './reads';
+import { cursorBinding, pageLimit } from './cursor';
+import { TABLE_SPONSOR_CRM } from '../db/tableNames';
+import { workspaceErrorOf } from './reads';
 
 export const ACTIVITY_TARGETS = ['organization', 'contact', 'deal'] as const;
 export type ActivityTarget = (typeof ACTIVITY_TARGETS)[number];
@@ -112,12 +107,23 @@ export async function readActivity(
   const wanted = new Set(types);
   const limit = pageLimit(query.limit);
   if ('error' in limit) return { status: 400, body: { error: limit.error } };
+  const fetchLimit = limit.limit + 1;
   const binding = cursorBinding(['activity', target, id, [...wanted].sort()]);
-  let offset = 0;
+  // Resume each source after its consumed storage key, including at 1 MB.
+  let positions: Record<string, string | null> = {};
+  let seen = 0;
   if (query.cursor !== undefined) {
-    const cursor = decodeCursor(binding, query.cursor);
-    if ('error' in cursor) return { status: 400, body: { error: cursor.error } };
-    offset = cursor.offset;
+    try {
+      if (query.cursor.length > 64_000) throw new Error();
+      const parsed = JSON.parse(Buffer.from(query.cursor, 'base64url').toString('utf8'));
+      if (parsed.h !== binding || !Number.isSafeInteger(parsed.seen) || parsed.seen < 0 ||
+        !parsed.positions || typeof parsed.positions !== 'object' || Array.isArray(parsed.positions) ||
+        Object.values(parsed.positions).some((key) => key !== null && typeof key !== 'string')) throw new Error();
+      positions = parsed.positions;
+      seen = parsed.seen;
+    } catch {
+      return { status: 400, body: { error: 'Invalid cursor or cursor does not match these filters' } };
+    }
   }
 
   const items: TimelineItem[] = [];
@@ -125,17 +131,38 @@ export async function readActivity(
   const queries: Array<{ kind: string; scanned: number; matched: number }> = [];
   const historyReads: Array<{ booking: string; itemsRead: number }> = [];
   const relatedWork: RelatedWork[] = [];
-  let anySourceHasMore = false;
-  const fetchLimit = offset + limit.limit + 1;
+  const streams: Array<{ pk: string; rows: Record<string, unknown>[]; more: boolean }> = [];
+  const itemKeys = new Map<TimelineItem, { pk: string; sk: string }>();
+  const nextPositions: Record<string, string | null> = {};
+  async function readSource(pk: string) {
+    if (positions[pk] === null) {
+      streams.push({ pk, rows: [], more: false });
+      return [];
+    }
+    const result = await client.send(new QueryCommand({
+      TableName: TABLE_SPONSOR_CRM,
+      KeyConditionExpression: 'PK = :pk',
+      ExpressionAttributeValues: { ':pk': pk },
+      ScanIndexForward: false,
+      Limit: fetchLimit,
+      ...(positions[pk] ? { ExclusiveStartKey: { PK: pk, SK: positions[pk] } } : {}),
+    }));
+    const rows = result.Items || [];
+    streams.push({ pk, rows, more: !!result.LastEvaluatedKey });
+    return rows;
+  }
+  function addItem(item: TimelineItem, row: Record<string, unknown>) {
+    items.push(item);
+    itemKeys.set(item, { pk: String(row.PK), sk: String(row.SK) });
+  }
 
   try {
     if (wanted.has('note')) {
-      const { items: notes, scanned, matched, hasMore } = await queryTargetNotes(client, target, id, fetchLimit);
-      if (hasMore) anySourceHasMore = true;
-      queries.push({ kind: 'note', scanned, matched });
+      const notes = await readSource(`NOTE#${target}:${id}`);
+      queries.push({ kind: 'note', scanned: notes.length, matched: notes.length });
       for (const note of notes) {
         const body = String(note.body || '');
-        items.push({
+        addItem({
           ts: String(note.createdAt || ''),
           source: 'note',
           id: String(note.id),
@@ -143,30 +170,20 @@ export async function readActivity(
           text: snippet(body),
           ...(body.length > 280 ? { detail: { body } } : {}),
           provenance: { targetType: target, targetId: id },
-        });
+        }, note);
         sources.note += 1;
       }
     }
 
     if (wanted.has('touch') || wanted.has('mail')) {
-      const scanTarget: MessageQueryTarget =
-        target === 'contact'
-          ? {
-            targetType: 'contact',
-            targetId: id,
-            organizationId: String(record.organizationId || ''),
-            emails: Array.isArray(record.emails) ? record.emails.map((address) => String(address).toLowerCase()) : [],
-          }
-          : { targetType: target, targetId: id };
-      const { items: messages, scanned, matched, hasMore } = await queryTargetMessages(client, scanTarget, 'messages', fetchLimit);
-      if (hasMore) anySourceHasMore = true;
-      queries.push({ kind: 'message', scanned, matched });
+      const messages = await readSource(`MESSAGE_TARGET#${target}:${id}`);
+      queries.push({ kind: 'message', scanned: messages.length, matched: messages.length });
       for (const message of messages) {
         const isTouch = message.sourceType === 'touch';
         if (isTouch && !wanted.has('touch')) continue;
         if (!isTouch && !wanted.has('mail')) continue;
         const text = String(message.snippet || '');
-        items.push({
+        addItem({
           ts: String(message.sentAt || ''),
           source: isTouch ? 'touch' : 'mail',
           id: String(message.id),
@@ -181,19 +198,18 @@ export async function readActivity(
             messageId: message.id,
             link: 'direct',
           },
-        });
+        }, message);
         sources[isTouch ? 'touch' : 'mail'] += 1;
       }
     }
 
     if (wanted.has('history')) {
       const booking = target === 'deal' ? id : `${target}:${id}`;
-      const { items: events, itemsRead, hasMore } = await queryHistoryEvents(client, booking, 'history', fetchLimit);
-      if (hasMore) anySourceHasMore = true;
-      historyReads.push({ booking, itemsRead });
+      const events = await readSource(`HISTORY#${booking}`);
+      historyReads.push({ booking, itemsRead: events.length });
       for (const event of events) {
         if (DEDUPED_HISTORY_ACTIONS.has(String(event.action || ''))) continue;
-        items.push({
+        addItem({
           ts: String(event.createdAt || ''),
           source: 'history',
           id: String(event.id),
@@ -206,7 +222,7 @@ export async function readActivity(
             ...(event.oldStatus !== undefined ? { oldStatus: event.oldStatus } : {}),
             ...(event.newStatus !== undefined ? { newStatus: event.newStatus } : {}),
           },
-        });
+        }, event);
         sources.history += 1;
       }
     }
@@ -214,12 +230,11 @@ export async function readActivity(
     if (wanted.has('deal-history') && target === 'organization') {
       const deals = (await listCrmRecords(client, 'deal')).filter((deal) => String(deal.organizationId) === id);
       for (const deal of deals) {
-        const { items: events, itemsRead, hasMore } = await queryHistoryEvents(client, deal.id, 'deal history', fetchLimit);
-        if (hasMore) anySourceHasMore = true;
-        historyReads.push({ booking: deal.id, itemsRead });
+        const events = await readSource(`HISTORY#${deal.id}`);
+        historyReads.push({ booking: deal.id, itemsRead: events.length });
         for (const event of events) {
           if (event.oldStatus === undefined && event.newStatus === undefined) continue;
-          items.push({
+          addItem({
             ts: String(event.createdAt || ''),
             source: 'deal-history',
             id: String(event.id),
@@ -232,7 +247,7 @@ export async function readActivity(
               ...(event.oldStatus !== undefined ? { oldStatus: event.oldStatus } : {}),
               ...(event.newStatus !== undefined ? { newStatus: event.newStatus } : {}),
             },
-          });
+          }, event);
           sources['deal-history'] += 1;
         }
       }
@@ -296,10 +311,32 @@ export async function readActivity(
     throw workspaceErrorOf(error, 'activity');
   }
 
-  items.sort((a, b) => b.ts.localeCompare(a.ts) || a.source.localeCompare(b.source) || a.id.localeCompare(b.id));
-  const pagedItems = items.slice(offset, offset + limit.limit);
-  const hasMore = items.length > offset + limit.limit || anySourceHasMore;
-  const total = hasMore ? Math.max(items.length, offset + limit.limit + 1) : items.length;
+  // Merge heads, consuming a prefix of each source even for tied timestamps.
+  const compare = (a: TimelineItem, b: TimelineItem) =>
+    b.ts.localeCompare(a.ts) || a.source.localeCompare(b.source) || b.id.localeCompare(a.id);
+  const queues = streams.map((stream) => ({
+    ...stream,
+    pending: items.filter((item) => itemKeys.get(item)!.pk === stream.pk),
+  }));
+  const pagedItems: TimelineItem[] = [];
+  while (pagedItems.length < limit.limit) {
+    const available = queues.filter((queue) => queue.pending.length);
+    if (!available.length) break;
+    available.sort((a, b) => compare(a.pending[0], b.pending[0]));
+    pagedItems.push(available[0].pending.shift()!);
+  }
+  for (const queue of queues) {
+    // Advance filtered rows too, but never pass an unreturned event.
+    const firstPending = queue.pending[0];
+    const stop = firstPending
+      ? queue.rows.findIndex((row) => row.SK === itemKeys.get(firstPending)!.sk)
+      : queue.rows.length;
+    nextPositions[queue.pk] = !firstPending && !queue.more ? null
+      : stop > 0 ? String(queue.rows[stop - 1].SK) : positions[queue.pk] ?? '';
+  }
+  const hasMore = Object.values(nextPositions).some((key) => key !== null);
+  const total = seen + pagedItems.length + (hasMore ? 1 : 0);
+
   return {
     status: 200,
     body: {
@@ -307,7 +344,7 @@ export async function readActivity(
       targetId: id,
       items: pagedItems,
       total,
-      nextCursor: hasMore ? encodeCursor(binding, offset + limit.limit) : null,
+      nextCursor: hasMore ? Buffer.from(JSON.stringify({ h: binding, positions: nextPositions, seen: seen + pagedItems.length })).toString('base64url') : null,
       sources,
       relatedWork,
       tasksScope: 'open',

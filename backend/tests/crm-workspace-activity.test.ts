@@ -3,6 +3,9 @@ import { setDefaultAssignee } from '../src/db/workspaceSettings';
 import { before, after, describe, it } from 'node:test';
 import assert from 'node:assert';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { BatchWriteCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
+import { readActivity } from '../src/crmWorkspace/activity';
 import { handler } from '../src/handler';
 import { appendBookingHistory } from '../src/db/sponsorCrm';
 import { queryTargetMessages } from '../src/crmWorkspace/reads';
@@ -208,6 +211,97 @@ describe('crm workspace activity', () => {
     const page2 = data(await invoke('GET', `/api/sponsor-crm/activity/organization/${org.id}?types=mail&limit=5&cursor=${encodeURIComponent(body.nextCursor)}`));
     assert.equal(page2.items.length, 5);
     assert.notEqual(page2.items[0].id, body.items[0].id);
+  });
+
+  it('traverses sources above the old item/byte bounds and DynamoDB page boundary for every target', async () => {
+    const { org, contact, deal } = await seed(String(seedCount++));
+    const count = 1005;
+    for (const [target, id] of [['organization', org.id], ['contact', contact.id], ['deal', deal.id]] as const) {
+      const pk = `MESSAGE_TARGET#${target}:${id}`;
+      for (let start = 0; start < count; start += 25) {
+        const requests = Array.from({ length: Math.min(25, count - start) }, (_, offset) => {
+          const index = start + offset;
+          const sentAt = new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString();
+          return { PutRequest: { Item: {
+            PK: pk, SK: `${sentAt}#large-${index}`, id: `large-${index}`,
+            sentAt, snippet: 'x'.repeat(12_000), sourceType: 'mail',
+          } } };
+        });
+        const result = await client.send(new BatchWriteCommand({ RequestItems: { [TABLE_SPONSOR_CRM]: requests } }));
+        assert.deepEqual(result.UnprocessedItems || {}, {});
+      }
+      const calls: any[] = [];
+      const observed = { send: async (command: any) => {
+        if (command instanceof QueryCommand && command.input.ExpressionAttributeValues?.[':pk'] === pk) {
+          calls.push(command.input);
+        }
+        return client.send(command);
+      } } as unknown as DynamoDBDocumentClient;
+      const ids = new Set<string>();
+      let cursor: string | undefined;
+      let pages = 0;
+      do {
+        const response = await readActivity(observed, target, id, { types: 'mail', limit: '100', cursor });
+        assert.equal(response.status, 200);
+        const body = response.body as any;
+        assert.ok(body.items.length <= 100);
+        for (const item of body.items) {
+          assert.ok(!ids.has(item.id), `duplicate ${item.id}`);
+          ids.add(item.id);
+        }
+        cursor = body.nextCursor || undefined;
+        assert.ok(++pages < 40, 'pagination must advance to the end');
+      } while (cursor);
+      assert.equal(ids.size, count + (target === 'organization' ? 2 : target === 'contact' ? 1 : 0));
+      assert.ok(pages > 10, '1 MB boundary must produce short storage pages');
+      assert.ok(calls.every((call) => call.Limit === 101), 'read cost must not grow with cursor depth');
+      assert.ok(calls.slice(1).every((call) => call.ExclusiveStartKey?.PK === pk));
+    }
+  });
+
+  it('merges all sources without losing events on one-item pages', async () => {
+    const { org, contact, deal } = await seed(String(seedCount++));
+    for (const [target, id] of [['organization', org.id], ['contact', contact.id], ['deal', deal.id]]) {
+      const path = `/api/sponsor-crm/activity/${target}/${id}`;
+      const expected = data(await invoke('GET', `${path}?limit=100`)).items.map((item: any) => `${item.source}:${item.id}`);
+      const actual: string[] = [];
+      let cursor: string | undefined;
+      do {
+        const response = await invoke('GET', `${path}?limit=1${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+        assert.equal(response.statusCode, 200);
+        const body = data(response);
+        actual.push(...body.items.map((item: any) => `${item.source}:${item.id}`));
+        cursor = body.nextCursor || undefined;
+        assert.ok(actual.length <= expected.length);
+      } while (cursor);
+      assert.deepEqual(actual, expected);
+    }
+  });
+
+  it('advances over pages containing only excluded message types', async () => {
+    const { contact } = await seed(String(seedCount++));
+    const pk = `MESSAGE_TARGET#contact:${contact.id}`;
+    for (let index = 0; index < 8; index++) {
+      const sentAt = `2027-01-0${index + 1}`;
+      await client.send(new BatchWriteCommand({ RequestItems: { [TABLE_SPONSOR_CRM]: [
+        { PutRequest: { Item: { PK: pk, SK: `${sentAt}#filtered-${index}`, id: `filtered-${index}`, sentAt, sourceType: 'touch' } } },
+      ] } }));
+    }
+    let cursor: string | undefined;
+    const ids = new Set<string>();
+    let emptyPages = 0;
+    for (let page = 0; page < 10; page++) {
+      const response = await readActivity(client, 'contact', contact.id, { types: 'mail', limit: '2', cursor });
+      assert.equal(response.status, 200);
+      const body = response.body as any;
+      if (!body.items.length) emptyPages++;
+      for (const item of body.items) ids.add(item.id);
+      cursor = body.nextCursor || undefined;
+      if (!cursor) break;
+    }
+    assert.ok(emptyPages > 0);
+    assert.equal(cursor, undefined);
+    assert.equal(ids.size, 1);
   });
 
   it('orders related work by eligibility, never manufacturing urgency', async () => {
