@@ -1,7 +1,4 @@
-// Linked Google Calendar invites on a Card: event id + calendar/organizer,
-// the htmlLink when known, and the operator label (`original`, `resent`).
-// Read-only here — invites are linked with
-// `dataops cards invite add <card> --event-id … --calendar …`.
+// Card calendar invitations created from event time; hand linking adopts legacy events.
 export function renderCardInvitesSection(card) {
   const section = document.createElement("div");
   section.className =

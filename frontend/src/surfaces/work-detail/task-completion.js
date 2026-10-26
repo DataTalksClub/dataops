@@ -175,12 +175,12 @@ export function renderTaskCompletion(context) {
   if (blockingPrerequisites(task, siblingTasks).length === 0) complete.classList.add("is-primary");
 
   // Name the invite requirement where the operator acts on it: the invite
-  // lives on the Card (linked by hand or by confirm-hold), not on this Task.
+  // lives on the Card (created from its event time or by confirm-hold), not on this Task.
   if (taskRequiresCalendarInvite(task) && !hasLinkedCalendarInvite(parentCard)) {
     const hint = document.createElement("p");
     hint.className = "task-proof-hint";
     hint.textContent =
-      `Link the Google Calendar invite to the card first: dataops cards invite add ${parentCard?.id || "<card-id>"} --event-id <event-id> --calendar <calendar>`;
+      `Set the Card event time first: dataops cards time ${parentCard?.id || "<card-id>"} --at "YYYY-MM-DD HH:MM"`;
     stateSection.append(hint);
   }
 
@@ -203,7 +203,7 @@ export function renderTaskCompletion(context) {
     if (blockedBy) reasons.push(blockedBy);
     if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
     if (missingFile) reasons.push("Upload required file");
-    if (missingInvite) reasons.push("Link a calendar invite to the card");
+    if (missingInvite) reasons.push("Set the event time on the card");
     if (missingArtifact) reasons.push("Approve an attached artifact");
     for (const entry of missingProof) reasons.push(describeMissingProof(entry));
     complete.title = reasons.join("; ");

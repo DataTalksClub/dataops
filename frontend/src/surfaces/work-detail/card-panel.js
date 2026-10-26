@@ -727,7 +727,7 @@ export function createCardPanel(context) {
         const reasons = [];
         if (blockedBy) reasons.push(blockedBy);
         if (missingLink) reasons.push(`Fill in ${task.requiredLinkName}`);
-        if (missingFile) reasons.push("Upload required file"); if (missingInvite) reasons.push("Link a calendar invite to the card");
+        if (missingFile) reasons.push("Upload required file"); if (missingInvite) reasons.push("Set the event time on the card");
         if (missingArtifact) reasons.push("Approve an attached artifact");
         for (const entry of missingProof) reasons.push(describeMissingProof(entry));
         if (isWaiting) reasons.push("Waiting task");

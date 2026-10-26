@@ -50,7 +50,7 @@ export function proofRequirementLabel(task) {
 
 export function describeMissingProof(entry) {
   const text = String(entry || "");
-  if (text === "calendar invite") return "Link a calendar invite to the card";
+  if (text === "calendar invite") return "Set the event time on the card";
   if (text === "required file" || text.endsWith("(file)")) return "Upload required file";
   if (text === "approved artifact") return "Approve an attached artifact";
   if (text === "external status" || text.endsWith("(external status)")) return `Set external status: ${text}`;

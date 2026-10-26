@@ -160,7 +160,7 @@ describe('Card calendar invites (link-by-hand + invite-task done-gate + confirm-
       const done = await invoke('PUT', `/api/tasks/${inviteTask.id}`, { expectedVersion: inviteTask.version, status: 'done' });
       assert.strictEqual(done.statusCode, 400, done.body);
       assert.match(parse(done).error, /no calendar invite is linked/);
-      assert.match(parse(done).error, new RegExp(`dataops cards invite add ${card.id}`));
+      assert.match(parse(done).error, new RegExp(`dataops cards time ${card.id}`));
     });
 
     it('refuses create-as-done without a linked invite', async () => {
@@ -177,14 +177,15 @@ describe('Card calendar invites (link-by-hand + invite-task done-gate + confirm-
       assert.match(parse(created).error, /no calendar invite is linked/);
     });
 
-    it('lets done through once an invite is linked', async () => {
+    it('automatically closes the invite Task when a legacy invite is adopted', async () => {
       const { inviteTask, card } = await createWebinarStyleCard('Linked card');
       const add = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, {
         eventId: 'evt9', calendar: 'alexey@datatalks.club',
       });
       assert.strictEqual(add.statusCode, 201, add.body);
-      const done = await invoke('PUT', `/api/tasks/${inviteTask.id}`, { expectedVersion: inviteTask.version, status: 'done' });
+      const done = await invoke('GET', `/api/tasks/${inviteTask.id}`);
       assert.strictEqual(done.statusCode, 200, done.body);
+      assert.strictEqual(parse(done).status, 'done');
     });
 
     it('honours an explicit requiresCalendarInvite flag on any task', async () => {

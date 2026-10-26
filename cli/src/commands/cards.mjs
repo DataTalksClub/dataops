@@ -24,7 +24,7 @@ Usage
   dataops cards stage <card-id> <preparation|announced|after-event>
   dataops cards link <card-id> <link-name> <url>  Fill a Card link (e.g. a template's required link)
   dataops cards invite add <card-id> --event-id ID --calendar CAL [--url URL] [--label L]
-                                                Link a Google Calendar invite to the Card
+                                                Adopt a legacy Google Calendar invite
   dataops cards invite list <card-id>           List the Card's linked calendar invites
   dataops cards sponsor-doc <card-id> [--template T] [--slot primary|secondary] [--sponsor NAME]
                                                 Create a portal sponsor doc and link it on the Card

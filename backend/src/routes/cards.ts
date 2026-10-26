@@ -1,5 +1,5 @@
 import { cardEventInterval } from '../calendar/cardEventTime';
-import { cardGuests, parseCardGuests, syncCardInvite } from '../calendar/cardInvite';
+import { cardGuests, closeCardInviteTasks, parseCardGuests, syncCardInvite } from '../calendar/cardInvite';
 import { calendarInviteDeps } from './calendarHolds';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
@@ -871,6 +871,7 @@ async function handleCardCalendarInvites(
       }
       return { calendarInvites: invites };
     });
+    await closeCardInviteTasks(client, card, actor.id);
     const templateIdByType = await getTemplateIdByType(client);
     const projected = await projectCard(new TeamDirectory(client), card, undefined, templateIdByType);
     return json(201, { card: projected, invites: card.calendarInvites || [] });

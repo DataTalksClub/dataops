@@ -528,7 +528,7 @@ export function taskRequiresCalendarInvite(taskData: Record<string, unknown>): b
 
 export function calendarInviteDoneError(taskData: Record<string, unknown>): string {
   const cardId = isNonEmptyString(taskData.cardId) ? String(taskData.cardId).trim() : '<card-id>';
-  return `Cannot mark task as done: no calendar invite is linked to this card. Link one with: dataops cards invite add ${cardId} --event-id <event-id> --calendar <calendar>`;
+  return `Cannot mark task as done: no calendar invite is linked to this card. Set the event time with: dataops cards time ${cardId} --at "YYYY-MM-DD HH:MM"`;
 }
 
 export async function validateCalendarInviteRequirement(
@@ -539,7 +539,7 @@ export async function validateCalendarInviteRequirement(
   if (skipClosureSuppresses(taskData, 'calendarInvite')) return null;
   const cardId = isNonEmptyString(taskData.cardId) ? String(taskData.cardId).trim() : null;
   if (!cardId) {
-    return `Cannot mark task as done: no calendar invite is linked to this card. Link one with: dataops cards invite add <card-id> --event-id <event-id> --calendar <calendar>`;
+    return `Cannot mark task as done: no calendar invite is linked to this card. Set the event time with: dataops cards time <card-id> --at "YYYY-MM-DD HH:MM"`;
   }
   const card = await getCard(client, cardId);
   if (Array.isArray(card?.calendarInvites) && card.calendarInvites.length > 0) return null;
