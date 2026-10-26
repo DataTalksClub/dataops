@@ -194,6 +194,9 @@ export type CompanyItem = {
   lastOutboundAt?: string;
   first_contact_at?: string;
   last_contact_at?: string;
+  follow_up_at?: string;
+  follow_up_status?: string;
+  follow_up_note?: string;
   openDealCount: number;
   doNotContact?: boolean;
   version: number;
@@ -218,6 +221,9 @@ export type PersonItem = {
   lastContactedAt?: string;
   first_contact_at?: string;
   last_contact_at?: string;
+  follow_up_at?: string;
+  follow_up_status?: string;
+  follow_up_note?: string;
   doNotContact?: boolean;
   lastSender?: 'us' | 'them';
   lastMessageState?: string;
@@ -269,6 +275,9 @@ function companyRow(org: CrmRecord, ctx: CompanyContext): CompanyItem {
     ...(typeof org.lastOutboundAt === 'string' ? { lastOutboundAt: org.lastOutboundAt } : {}),
     ...(typeof org.first_contact_at === 'string' ? { first_contact_at: org.first_contact_at } : {}),
     ...(typeof org.last_contact_at === 'string' ? { last_contact_at: org.last_contact_at } : {}),
+    ...(typeof org.follow_up_at === 'string' ? { follow_up_at: org.follow_up_at } : {}),
+    ...(typeof org.follow_up_status === 'string' ? { follow_up_status: org.follow_up_status } : {}),
+    ...(typeof org.follow_up_note === 'string' && org.follow_up_note ? { follow_up_note: org.follow_up_note } : {}),
     openDealCount: orgDeals.filter((deal) => deal.status === 'open' && !deal.archivedAt).length,
     version: org.version,
     updatedAt: String(org.updatedAt),
@@ -392,6 +401,9 @@ export type CompanySummary = {
   lastOutboundAt?: string;
   first_contact_at?: string;
   last_contact_at?: string;
+  follow_up_at?: string;
+  follow_up_status?: string;
+  follow_up_note?: string;
   version: number;
   updatedAt: string;
   notes?: string;
@@ -415,6 +427,9 @@ export async function getCompanySummary(
     ...(typeof org.lastOutboundAt === 'string' ? { lastOutboundAt: org.lastOutboundAt } : {}),
     ...(typeof org.first_contact_at === 'string' ? { first_contact_at: org.first_contact_at } : {}),
     ...(typeof org.last_contact_at === 'string' ? { last_contact_at: org.last_contact_at } : {}),
+    ...(typeof org.follow_up_at === 'string' ? { follow_up_at: org.follow_up_at } : {}),
+    ...(typeof org.follow_up_status === 'string' ? { follow_up_status: org.follow_up_status } : {}),
+    ...(typeof org.follow_up_note === 'string' && org.follow_up_note ? { follow_up_note: org.follow_up_note } : {}),
     version: org.version,
     updatedAt: String(org.updatedAt),
     ...(typeof org.notes === 'string' && org.notes ? { notes: org.notes } : {}),
@@ -511,6 +526,9 @@ export async function listPeople(
       ...(typeof contact.lastContactedAt === 'string' ? { lastContactedAt: contact.lastContactedAt } : {}),
       ...(typeof contact.first_contact_at === 'string' ? { first_contact_at: contact.first_contact_at } : {}),
       ...(typeof contact.last_contact_at === 'string' ? { last_contact_at: contact.last_contact_at } : {}),
+      ...(typeof contact.follow_up_at === 'string' ? { follow_up_at: contact.follow_up_at } : {}),
+      ...(typeof contact.follow_up_status === 'string' ? { follow_up_status: contact.follow_up_status } : {}),
+      ...(typeof contact.follow_up_note === 'string' && contact.follow_up_note ? { follow_up_note: contact.follow_up_note } : {}),
       ...(typeof contact.doNotContact === 'boolean' ? { doNotContact: contact.doNotContact } : {}),
       ...(lastSender ? { lastSender, lastMessageState: lastSender } : {}),
       active: activeOf(contact),

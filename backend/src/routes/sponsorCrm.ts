@@ -94,6 +94,21 @@ function validateTags(tags: unknown): string | null {
   return null;
 }
 
+export const FOLLOW_UP_STATUSES = ['open', 'done'] as const;
+
+function validateFollowUp(body: Record<string, unknown>): string | null {
+  if (body.follow_up_at !== undefined && body.follow_up_at !== null && body.follow_up_at !== '') {
+    if (typeof body.follow_up_at !== 'string' || !realDate(body.follow_up_at)) return 'Invalid follow_up_at: YYYY-MM-DD';
+  }
+  if (body.follow_up_status !== undefined && body.follow_up_status !== null && body.follow_up_status !== '') {
+    if (!(FOLLOW_UP_STATUSES as readonly string[]).includes(String(body.follow_up_status))) return 'Invalid follow_up_status: open or done';
+  }
+  if (body.follow_up_note !== undefined && body.follow_up_note !== null && (typeof body.follow_up_note !== 'string' || body.follow_up_note.length > 2000)) {
+    return 'Invalid follow_up_note';
+  }
+  return null;
+}
+
 function validateOrganization(body: Record<string, unknown>, partial = false) {
   if ((!partial && !text(body.displayName, 200)) || (body.displayName !== undefined && !text(body.displayName, 200))) return 'Invalid organization fields';
   if (body.notes !== undefined && typeof body.notes !== 'string') return 'Invalid organization fields';
@@ -113,6 +128,8 @@ function validateOrganization(body: Record<string, unknown>, partial = false) {
     const error = validateTags(body.tags);
     if (error) return error;
   }
+  const followUpError = validateFollowUp(body);
+  if (followUpError) return followUpError;
   return '';
 }
 
@@ -137,6 +154,8 @@ function validateContact(body: Record<string, unknown>, partial = false) {
     const error = validateTags(body.tags);
     if (error) return error;
   }
+  const followUpError = validateFollowUp(body);
+  if (followUpError) return followUpError;
   return '';
 }
 
@@ -444,7 +463,67 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
         String(a.task.date || '').localeCompare(String(b.task.date || '')) ||
         a.task.id.localeCompare(b.task.id),
     );
-    return json(200, { items, total: items.length });
+
+    const records: Array<{
+      kind: 'company' | 'person';
+      id: string;
+      name: string;
+      organizationId?: string;
+      organizationName?: string;
+      follow_up_at: string;
+      follow_up_status: string;
+      follow_up_note?: string;
+      isDue: boolean;
+      isOverdue: boolean;
+    }> = [];
+    const [allOrgs, allContacts] = await Promise.all([
+      listCrmRecords(client, 'organization'),
+      listCrmRecords(client, 'contact'),
+    ]);
+    const orgById = new Map(allOrgs.map((org) => [org.id, org]));
+    const pushRecord = (
+      kind: 'company' | 'person',
+      record: any,
+      name: string,
+      orgId?: string,
+      orgName?: string,
+    ) => {
+      if (!record || record.archivedAt) return;
+      const at = typeof record.follow_up_at === 'string' ? record.follow_up_at : '';
+      if (!at) return;
+      const status = typeof record.follow_up_status === 'string' ? record.follow_up_status : 'open';
+      if (status === 'done') return;
+      if (overdueOnly && !(at < today)) return;
+      if (dueOnly && !(at <= today)) return;
+      if (isRecordDnc(record)) return;
+      records.push({
+        kind,
+        id: record.id,
+        name,
+        ...(orgId ? { organizationId: orgId, ...(orgName ? { organizationName: orgName } : {}) } : {}),
+        follow_up_at: at,
+        follow_up_status: status,
+        ...(typeof record.follow_up_note === 'string' && record.follow_up_note ? { follow_up_note: record.follow_up_note } : {}),
+        isDue: at <= today,
+        isOverdue: at < today,
+      });
+    };
+    for (const org of allOrgs) {
+      pushRecord('company', org, String(org.displayName || org.name || org.id));
+    }
+    for (const contact of allContacts) {
+      const org = contact.organizationId ? orgById.get(String(contact.organizationId)) : undefined;
+      if (org && isRecordDnc(org)) continue;
+      pushRecord(
+        'person',
+        contact,
+        String(contact.name || contact.id),
+        contact.organizationId ? String(contact.organizationId) : undefined,
+        org ? String(org.displayName || org.name || org.id) : undefined,
+      );
+    }
+    records.sort((a, b) => a.follow_up_at.localeCompare(b.follow_up_at) || a.id.localeCompare(b.id));
+    return json(200, { items, records, total: items.length + records.length });
   }
 
   if (path === '/api/sponsor-crm/imports' && method === 'POST') {
@@ -629,6 +708,34 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     if (typeof body?.note === 'string' && body.note.trim()) {
       await createNote(client, user, kind, id, { body: body.note.trim() });
     }
+    return json(200, updated);
+  }
+
+  const followupMatch = path.match(/^\/api\/sponsor-crm\/(organizations|contacts)\/([^/]+)\/followup$/);
+  if (followupMatch) {
+    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+    const plural = followupMatch[1], id = followupMatch[2];
+    const kind = plural === 'contacts' ? 'contact' : 'organization';
+    if (!ID.test(id)) return json(400, { error: 'Invalid ID' });
+    const existing = await getCrmRecord(client, kind, id);
+    if (!existing) return json(404, { error: 'Not found' });
+    if (body?.clear) {
+      const cleared = kind === 'organization'
+        ? await updateOrganizationAtomic(client, existing, { follow_up_at: null, follow_up_status: null, follow_up_note: null }, user)
+        : await updateContactAtomic(client, existing, { follow_up_at: null, follow_up_status: null, follow_up_note: null }, user);
+      return json(200, cleared);
+    }
+    const updates: Record<string, unknown> = {};
+    if (body?.follow_up_at !== undefined) updates.follow_up_at = body.follow_up_at;
+    if (body?.follow_up_status !== undefined) updates.follow_up_status = body.follow_up_status;
+    else if (body?.follow_up_at) updates.follow_up_status = existing.follow_up_status || 'open';
+    if (body?.follow_up_note !== undefined) updates.follow_up_note = body.follow_up_note;
+    if (!Object.keys(updates).length) return json(400, { error: 'Pass follow_up_at, follow_up_status, follow_up_note or clear' });
+    const error = kind === 'organization' ? validateOrganization(updates, true) : validateContact(updates, true);
+    if (error) return json(400, { error });
+    const updated = kind === 'organization'
+      ? await updateOrganizationAtomic(client, existing, updates, user)
+      : await updateContactAtomic(client, existing, updates, user);
     return json(200, updated);
   }
 
