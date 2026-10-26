@@ -172,10 +172,13 @@ async function syncEvents(
     const response = await googleFetch(deps, url, {
       method, headers, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(15000),
     });
-    const text = await readBodyText(response, GOOGLE_ERROR_BODY_LIMIT);
-    if (!response.ok) throw new Error(googleErrorDetail(response.status, text));
+    if (!response.ok) {
+      // Bounded body only on errors; success bodies are parsed whole so a
+      // large recovery listing is never truncated mid-JSON.
+      throw new Error(googleErrorDetail(response.status, await readBodyText(response, GOOGLE_ERROR_BODY_LIMIT)));
+    }
     try {
-      return text ? JSON.parse(text) : {};
+      return await response.json();
     } catch {
       throw new Error('Google Calendar returned an unreadable response; retry the hold after checking the Orin connection.');
     }
@@ -211,10 +214,14 @@ async function syncEvents(
         // Google only accepts an import when the calendar owner is the
         // organizer or an attendee: the Orin organizer owns none of the copy
         // calendars, so each copy imports its own target calendar as the sole
-        // attendee (the copy PATCH below strips attendees and stays silent).
-        // The organizer import stays attendee-free: the organizer PATCH below
-        // is the single guest invitation (sendUpdates=all), and a retry after
-        // a lost invite response must find a silent organizer block to PATCH.
+        // attendee (imports send no email). The copy PATCH below omits
+        // attendees, so no real guests are ever added or emailed — each copy
+        // simply retains its own calendar as attendee. Note the personal copy
+        // address doubles as a required guest on the organizer invite
+        // (HOLD_REQUIRED_ATTENDEES); that overlap is intentional, not a copy
+        // leak. The organizer import stays attendee-free: the organizer PATCH
+        // below is the single guest invitation (sendUpdates=all), and a retry
+        // after a lost invite response must find a silent organizer block.
         const isCopy = calendar !== HOLD_ORGANIZER;
         current = await request(`${eventsUrl(calendar)}/import`, 'POST', {
           ...body,

@@ -44,6 +44,11 @@ describe('google error reasons (no bare HTTP status)', () => {
     assert.equal(googleErrorDetail(503, '{}'), 'Google Calendar returned HTTP 503');
     assert.equal(googleErrorDetail(500, 'not json'), 'Google Calendar returned HTTP 500');
     assert.equal(googleErrorDetail(500, ''), 'Google Calendar returned HTTP 500');
+    // errors[].message is used when the top-level message is missing.
+    assert.equal(
+      googleErrorDetail(400, JSON.stringify({ error: { errors: [{ reason: 'notFound', message: 'Event gone' }] } })),
+      'Google Calendar returned HTTP 400: Event gone — notFound',
+    );
     const long = googleErrorDetail(400, JSON.stringify({ error: { message: 'x'.repeat(5000), errors: [] } }));
     assert.ok(long.length <= `Google Calendar returned HTTP 400: `.length + GOOGLE_ERROR_MESSAGE_LIMIT);
     // Non-string fields never leak into the reason.

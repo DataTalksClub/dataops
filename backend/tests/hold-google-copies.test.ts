@@ -82,6 +82,13 @@ describe('hold google copies: importable payloads, silent copies', () => {
       assert.ok(organizerPatch);
       assert.equal(organizerPatch.url.searchParams.get('sendUpdates'), 'all');
       assert.deepEqual(organizerPatch.body.attendees, [{ email: 'guest@example.com' }]);
+      // Copies retain their own calendar as attendee after the silent PATCH
+      // (PATCH omits the key, so the import-written value survives).
+      for (const copy of DEFAULT_HOLD_GOOGLE_CALENDARS) {
+        const stored = [...google.events.get(copy)!.values()];
+        assert.equal(stored.length, 1);
+        assert.deepEqual(stored[0].attendees, [{ email: copy }]);
+      }
     }
   });
 
