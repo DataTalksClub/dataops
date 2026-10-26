@@ -57,6 +57,9 @@ export function personHeaderMarkup(person, options = {}, context = {}) {
     : person?.organizationId
       ? "Company unavailable"
       : "No company link";
+  const followupLabel = person?.follow_up_at
+    ? `Follow-up ${person.follow_up_at}${person?.follow_up_status === "done" ? " (done)" : ""}`
+    : "";
   return html`<header class="dk-split__head">
     <button type="button" class="dk-split__back" data-person-back>${escape(returnLabel)}</button>
     <div class="booking-detail-title">
@@ -66,7 +69,7 @@ export function personHeaderMarkup(person, options = {}, context = {}) {
         ${person?.primary ? html`<span class="status-label" data-status="primary">Primary</span>` : ""}
         ${person?.active === false ? html`<span class="status-label" data-status="archived">Archived</span>` : ""}
         ${isDnc ? html`<span class="status-label" data-status="dnc">Do Not Contact</span>` : ""}
-        ${person?.follow_up_at ? html`<span class="status-label" data-status="followup">Follow-up ${escape(person.follow_up_at)}${person?.follow_up_status === "done" ? " (done)" : ""}</span>` : ""}
+        ${followupLabel ? html`<span class="status-label" data-status="followup">${escape(followupLabel)}</span>` : ""}
       </p>
       <p class="crm-record-sub">
         ${companyLink}

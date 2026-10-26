@@ -28,8 +28,11 @@ describe('crm direct follow-ups on contacts and companies', () => {
 
   it('stores follow-up date and status directly on a company via create and update', async () => {
     const created = data(await invoke('POST', '/api/sponsor-crm/organizations', {
-      displayName: 'Direct Followup Co', sourceKey: 'direct-followup-co',
-      follow_up_at: '2026-11-05', follow_up_status: 'open', follow_up_note: 'revisit after launch',
+      displayName: 'Direct Followup Co',
+      sourceKey: 'direct-followup-co',
+      follow_up_at: '2026-11-05',
+      follow_up_status: 'open',
+      follow_up_note: 'revisit after launch',
     }));
     assert.equal(created.follow_up_at, '2026-11-05');
     assert.equal(created.follow_up_status, 'open');

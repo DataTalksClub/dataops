@@ -110,6 +110,9 @@ export function recordHeaderMarkup(company, options = {}, context = {}) {
     || (company != null && Object.prototype.hasOwnProperty.call(company, "primaryPerson"));
   const archived = Boolean(company?.archivedAt) || company?.active === false;
   const isDnc = Boolean(company?.doNotContact || (Array.isArray(company?.tags) && company.tags.includes("do-not-contact")));
+  const followupLabel = company?.follow_up_at
+    ? `Follow-up ${company.follow_up_at}${company?.follow_up_status === "done" ? " (done)" : ""}`
+    : "";
   return html`<header class="dk-split__head">
     <button type="button" class="dk-split__back" data-record-back>${escape(returnLabel)}</button>
     <div class="booking-detail-title">
@@ -119,7 +122,7 @@ export function recordHeaderMarkup(company, options = {}, context = {}) {
         ${company?.relationship ? html`<span class="status-label" data-status="${escape(company.relationship)}">${escape(humanize(company.relationship, context))}</span>` : ""}
         ${archived ? html`<span class="status-label" data-status="archived">Archived</span>` : ""}
         ${isDnc ? html`<span class="status-label" data-status="dnc">Do Not Contact</span>` : ""}
-        ${company?.follow_up_at ? html`<span class="status-label" data-status="followup">Follow-up ${escape(company.follow_up_at)}${company?.follow_up_status === "done" ? " (done)" : ""}</span>` : ""}
+        ${followupLabel ? html`<span class="status-label" data-status="followup">${escape(followupLabel)}</span>` : ""}
         ${selectedDeal ? html`<span class="status-label" data-status="${escape(selectedDeal.status)}">${escape(humanize(selectedDeal.status, context))}</span>` : ""}
       </p>
       <p class="crm-record-sub">
