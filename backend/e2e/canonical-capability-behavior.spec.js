@@ -966,7 +966,7 @@ test.describe('canonical frontend capability behavior', () => {
     await page.keyboard.press('Escape');
     await expect(page.locator('.newsletter-surface dialog')).toBeHidden();
     const editableSlot = page.locator('[data-slots] article', { hasText: sponsor });
-    await editableSlot.getByRole('button', { name: 'Stand-alone newsletter', exact: true }).click();
+    await editableSlot.getByRole('button', { name: 'Edit', exact: true }).click();
     const serverSlot = await json(await context.request.get(`/api/newsletter-issues/${slot.id}`));
     const concurrentSlot = await context.request.put(`/api/newsletter-issues/${slot.id}`, { data: {
       version: serverSlot.version, slots: { primary: { sponsor: `Server sponsor ${id}` } },

@@ -1068,20 +1068,29 @@ a.calendar-day-timeline-title:hover {
   display: flex;
   min-width: 0;
   overflow: visible;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: baseline;
   gap: 8px;
+}
+.newsletter-slot-row .newsletter-issue-edit {
+  flex: none;
+  font-size: 0.8em;
+  opacity: 0.75;
 }
 /* The button, not the heading, clips the long name, so the heading does not
    clip the button's touch area. */
-.newsletter-issue-edit {
+.newsletter-issue-edit,
+.newsletter-issue-link {
   position: relative;
 }
 @media (max-width: 820px), (pointer: coarse) {
-  #main-content .newsletter-slot-row .newsletter-slot-title button.newsletter-issue-edit {
+  #main-content .newsletter-slot-row .newsletter-slot-title button.newsletter-issue-edit,
+  #main-content .newsletter-slot-row .newsletter-slot-title a.newsletter-issue-link {
     min-width: 0;
     min-height: 0;
   }
-  .newsletter-issue-edit::before {
+  .newsletter-issue-edit::before,
+  .newsletter-issue-link::before {
     position: absolute;
     inset: -12px 0;
     content: "";

@@ -203,7 +203,7 @@ for (const viewport of VIEWPORTS) {
   }
 }
 
-test('newsletter at 375x667: issue cards fit the compaction budget and the issue name opens its details', async ({ page }) => {
+test('newsletter at 375x667: issue cards fit the compaction budget and the issue name opens its issue page', async ({ page }) => {
   test.setTimeout(60_000);
   const viewport = VIEWPORTS[0];
   const route = ROUTES.find((candidate) => candidate.path === '/newsletter');
@@ -233,8 +233,10 @@ test('newsletter at 375x667: issue cards fit the compaction budget and the issue
   }
 
   const firstCard = page.locator('.newsletter-slot-row').first();
-  // The row carries no Compose button and no More menu; its name edits it.
+  // The row carries no Compose button and no More menu; its name links to the
+  // issue page and a small Edit control opens the edit dialog.
   await expect(firstCard.getByRole('button', { name: /Compose|More actions/ })).toHaveCount(0);
+  await expect(firstCard.locator('a.newsletter-issue-link')).toHaveAttribute('href', /^\/newsletter\/.+/);
   await firstCard.locator('button[data-edit]').click();
   await expect(page.locator('.newsletter-surface dialog')).toBeVisible();
   await page.keyboard.press('Escape');
