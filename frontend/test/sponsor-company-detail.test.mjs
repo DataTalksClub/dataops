@@ -109,6 +109,49 @@ test("migration archives and restores through the record header", async () => {
   assert.equal(put.body.archivedAt, null);
 });
 
+test("deals tab deletes a deal after confirmation and shows the guard error", async () => {
+  const deal = { id: "d1", organizationId: "c1", status: "open", productKind: "one-off", version: 7 };
+  let refuse = true;
+  const { surface, calls, changed, detail } = migrationHarness({
+    organization,
+    routes: {
+      "GET /directory/companies/c1": organization,
+      "GET /activity/organization/c1?limit=3": preview,
+      "GET /deals?organizationId=c1&limit=50": { items: [deal], nextCursor: null },
+      "DELETE /deals/d1?hard=true&expectedVersion=7": () => {
+        if (refuse) throw Object.assign(new Error("Deal has a deliverable (x1); hard delete is refused"), { status: 409 });
+        return { id: "d1", deleted: true };
+      },
+    },
+  });
+  await detail.reopenCompanyDetail(organization, { id: "d1" });
+  const wired = surface.querySelector("[data-crm-detail]").querySelector("[data-crm-record]");
+  const rendered = surface.querySelector("[data-crm-record]");
+  const dialog = new FakeNode("dialog");
+  const error = dialog.setQuery("[data-delete-deal-error]", new FakeNode("p"));
+  dialog.setQuery("[data-delete-deal-description]", new FakeNode("p"));
+  let shown = 0, closed = 0;
+  dialog.showModal = () => { shown += 1; };
+  dialog.close = () => { closed += 1; };
+  rendered.setQuery("[data-delete-deal-dialog]", dialog);
+  assert.match(rendered.innerHTML, /data-delete-deal-dialog/);
+  const tab = new FakeNode("button");
+  tab.dataset.recordTab = "deals";
+  await wired.dispatch("click", { closestPatch: { "[data-record-tab]": tab } });
+  const button = new FakeNode("button");
+  button.dataset.deleteDeal = "d1";
+  await wired.dispatch("click", { closestPatch: { "[data-delete-deal]": button } });
+  assert.equal(shown, 1, "delete opens the confirm dialog");
+  assert.equal(calls.some(({ method }) => method === "DELETE"), false, "nothing is deleted before confirming");
+  await wired.dispatch("click", { closestPatch: { "[data-delete-deal-confirm]": new FakeNode("button") } });
+  assert.match(error.textContent, /deliverable/, "the guard error shows in the dialog");
+  assert.equal(closed, 0, "the dialog stays open on a refusal");
+  refuse = false;
+  await wired.dispatch("click", { closestPatch: { "[data-delete-deal-confirm]": new FakeNode("button") } });
+  assert.equal(closed, 1);
+  assert.deepEqual(changed.map((item) => item.id), ["c1"]);
+});
+
 test("migration projects the B archive read-only without send hooks", async () => {
   const communications = {
     items: [

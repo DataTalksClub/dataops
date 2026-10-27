@@ -142,6 +142,23 @@ export function recordHeaderMarkup(company, options = {}, context = {}) {
   </header>`;
 }
 
+/** Confirm dialog for permanently deleting a deal; the guard error shows in the alert. */
+export function deleteDealDialogMarkup() {
+  return html`<dialog class="surface-dialog" data-delete-deal-dialog>
+    <form method="dialog">
+      <header>
+        <h3>Delete deal</h3>
+        <p data-delete-deal-description></p>
+      </header>
+      <p role="alert" data-delete-deal-error></p>
+      <footer>
+        <button type="button" class="primary-button" data-delete-deal-confirm>Delete deal</button>
+        <button type="button" data-delete-deal-cancel>Cancel</button>
+      </footer>
+    </form>
+  </dialog>`;
+}
+
 export function recordTabsMarkup(active, context = {}) {
   const escape = esc(context);
   return html`<div class="dk-tabs" role="tablist" aria-label="Company record sections" data-record-tabs>
@@ -287,6 +304,7 @@ export function peopleListMarkup({ items, total, canEdit }, context = {}) {
 export function dealsListMarkup({ deals, selectedDealId, canAdd = false }, context = {}) {
   const escape = esc(context);
   const canEditDeal = typeof context?.onEditDeal === "function";
+  const canDeleteDeal = typeof context?.onDeleteDeal === "function";
   if (!deals?.length) {
     return emptyMarkup("No deals", "Add a deal for this company.", context)
       + (canAdd ? html`<button type="button" data-add-deal>Add deal</button>` : "");
@@ -308,6 +326,7 @@ export function dealsListMarkup({ deals, selectedDealId, canAdd = false }, conte
           <div class="row-actions">
             <button type="button" data-select-deal="${escape(deal.id)}"${current ? " disabled" : ""}>${current ? "Selected" : "Select deal"}</button>
             ${canEditDeal ? html`<button type="button" data-edit-deal="${escape(deal.id)}">Edit deal</button>` : ""}
+            ${canDeleteDeal ? html`<button type="button" data-delete-deal="${escape(deal.id)}">Delete deal</button>` : ""}
           </div>
         </article></li>`;
       })

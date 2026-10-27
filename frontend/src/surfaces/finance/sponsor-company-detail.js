@@ -78,6 +78,9 @@ export function createSponsorCompanyDetail({
     // Edit uses E's existing deal dialog via openDeal with the actual loaded
     // deal (object + optimistic version); error/conflict surfacing and the
     // post-save refresh stay in E's dialog wiring.
+    // The record shows the guard error (409: booked slot, deliverable,
+    // finance) in its confirm dialog when this rejects.
+    onDeleteDeal,
     onEditDeal: onEditDeal || ((deal) => openDeal(deal)),
     onAddDeal: onAddDeal || ((organizationId) => openDeal({ organizationId, status: "open" })),
     onEditCompany,
@@ -126,6 +129,12 @@ export function createSponsorCompanyDetail({
     const updated = await api(`/organizations/${encodeURIComponent(company.id)}`, { method: "DELETE" });
     if (typeof onRecordChanged === "function") await onRecordChanged(updated);
     await reopenCompanyDetail({ id: company.id }, record.getSelectedDealId());
+  }
+
+  async function onDeleteDeal(deal) {
+    await api(`/deals/${encodeURIComponent(deal.id)}?hard=true&expectedVersion=${encodeURIComponent(deal.version)}`, { method: "DELETE" });
+    if (typeof onRecordChanged === "function") await onRecordChanged({ id: deal.organizationId });
+    await reopenCompanyDetail({ id: deal.organizationId });
   }
 
   async function onRestoreCompany() {

@@ -13,6 +13,7 @@ import {
   loadingMarkup,
   overviewMarkup,
   peopleListMarkup,
+  deleteDealDialogMarkup,
   recordHeaderMarkup,
   recordTabsMarkup,
 } from "./sponsor-record-markup.js";
@@ -247,7 +248,8 @@ export function createSponsorRecord(context) {
       ${RECORD_TABS.map(
         ([id]) => html`<section role="tabpanel" id="record-panel-${id}" aria-labelledby="record-tab-${id}"
           data-record-panel="${id}"${id === "overview" ? "" : " hidden"}></section>`,
-      ).join("")}`;
+      ).join("")}
+      ${context.onDeleteDeal ? deleteDealDialogMarkup() : ""}`;
     host.querySelector("[data-record-title]")?.focus?.();
     await loadOverview(mine);
     return record;
@@ -669,6 +671,36 @@ export function createSponsorRecord(context) {
       const pick = event.target.closest("[data-select-deal]");
       if (pick) {
         selectDeal(pick.dataset.selectDeal);
+        return;
+      }
+      const deleteDeal = event.target.closest("[data-delete-deal]");
+      if (deleteDeal && typeof context.onDeleteDeal === "function") {
+        const deal = (record?.deals || []).find((item) => item.id === deleteDeal.dataset.deleteDeal);
+        const dialog = root()?.querySelector("[data-delete-deal-dialog]");
+        if (!deal || !dialog) return;
+        dialog.dataset.dealId = deal.id;
+        dialog.querySelector("[data-delete-deal-description]").textContent =
+          "Permanently delete this deal with its history, notes and Tasks? This cannot be undone.";
+        dialog.querySelector("[data-delete-deal-error]").textContent = "";
+        dialog.showModal();
+        return;
+      }
+      const cancelDelete = event.target.closest("[data-delete-deal-cancel]");
+      if (cancelDelete) {
+        root()?.querySelector("[data-delete-deal-dialog]")?.close();
+        return;
+      }
+      const confirmDelete = event.target.closest("[data-delete-deal-confirm]");
+      if (confirmDelete && typeof context.onDeleteDeal === "function") {
+        const dialog = root()?.querySelector("[data-delete-deal-dialog]");
+        const deal = (record?.deals || []).find((item) => item.id === dialog?.dataset.dealId);
+        if (!deal) return;
+        try {
+          await context.onDeleteDeal(deal);
+          dialog.close();
+        } catch (error) {
+          dialog.querySelector("[data-delete-deal-error]").textContent = error?.message || "Could not delete the deal";
+        }
         return;
       }
       const editDeal = event.target.closest("[data-edit-deal]");
