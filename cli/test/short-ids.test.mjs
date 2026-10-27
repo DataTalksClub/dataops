@@ -51,13 +51,15 @@ describe("CLI show commands accept unique id prefixes", () => {
     assert.match(io.errors.join("\n"), /No Task matches short id prefix/);
   });
 
-  test("tasks show rejects prefixes shorter than 8 characters", async () => {
-    const calls = fakePortal({});
+  test("tasks show passes refs shorter than 8 characters through to the API", async () => {
+    const calls = fakePortal({
+      "GET /api/tasks/abc": () => ({ status: 200, body: { id: "abc", description: "Short id", status: "todo" } }),
+    });
     const io = captureIo();
-    const code = await run(["tasks", "show", "abc"], io);
-    assert.notEqual(code, 0);
-    assert.match(io.errors.join("\n"), /too short/);
-    assert.equal(calls.length, 0);
+    const code = await run(["tasks", "show", "abc", "--json"], io);
+    assert.equal(code, 0, io.errors.join(" | "));
+    assert.equal(io.json().id, "abc");
+    assert.equal(calls.length, 1);
   });
 
   test("tasks show passes a full id through without listing", async () => {

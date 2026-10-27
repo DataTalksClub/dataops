@@ -2,8 +2,9 @@ import { UsageError } from "./errors.mjs";
 
 /**
  * Show commands accept a unique id prefix (8 or more characters) in place of a
- * full id. Shorter refs are rejected, full ids pass through untouched, and an
- * ambiguous prefix is an error naming the matches.
+ * full id. Anything else (full ids, arbitrary task-id slugs, shorter refs)
+ * passes through to the API untouched, and an ambiguous prefix is an error
+ * naming the matches.
  */
 
 const MIN_PREFIX = 8;
@@ -29,12 +30,7 @@ async function collectAll(listPage) {
  * `{ items, nextCursor }`; `label` names the kind in errors.
  */
 export async function resolveId(api, { label, id, listPage }) {
-  if (!isShortPrefix(id)) {
-    if (id.length < MIN_PREFIX) {
-      throw new UsageError(`"${id}" is too short: a ${label} id or its unique prefix (8+ characters) is required.`);
-    }
-    return id;
-  }
+  if (!isShortPrefix(id)) return id;
   const matches = (await collectAll(listPage))
     .map((item) => String(item.id))
     .filter((full) => full.startsWith(id));
