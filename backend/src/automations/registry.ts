@@ -159,6 +159,17 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
     settings: [],
   },
   {
+    id: 'dynamo-pitr-check',
+    name: 'DynamoDB PITR guard',
+    description: 'Verifies point-in-time recovery is on for every DataOps table and pages dev@dtcdev.click when it is not.',
+    runsIn: 'Backend Lambda',
+    system: true,
+    infraSchedule: 'BackendFunctionDailyDynamoPitrCheck',
+    schedule: { kind: 'cron', expression: 'cron(0 7 * * ? *)' },
+    runSource: 'recorded',
+    settings: [],
+  },
+  {
     id: 'knowledge-backup',
     name: 'Knowledge backup',
     description: 'Copies every published knowledge file version to the knowledge backup bucket.',

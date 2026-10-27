@@ -5,6 +5,7 @@ import { runCron } from './cron/runner';
 import { recordAutomationRun } from './automations/runs';
 import { writePortableExportArchive } from './export/archive';
 import { backupConfigFromEnv, writeRawDynamoBackup } from './export/dynamoBackup';
+import { checkDynamoPitrStatus } from './export/dynamoPitrCheck';
 import { sanitizeJsonResponse } from './responsePrivacy';
 import type { CronRunnerResult } from './cron/runner';
 import type { LambdaEvent, LambdaResponse } from './types';
@@ -342,6 +343,22 @@ async function handleInvocation(
               { items: stats.items, bytes: stats.bytes },
             ]),
           ),
+        }),
+      };
+    }
+    if (detail?.dataopsAction === 'dynamo-pitr-check') {
+      const result = await recordedRun('dynamo-pitr-check', () => checkDynamoPitrStatus(client!),
+        (check) => (check.disabledTables.length === 0
+          ? `PITR on for ${check.tableCount - check.unknownTables.length}/${check.tableCount} tables`
+          : `PITR disabled: ${check.disabledTables.join(', ')}`));
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          generated_at: result.generatedAt,
+          table_count: result.tableCount,
+          disabled_tables: result.disabledTables,
+          unknown_tables: result.unknownTables,
         }),
       };
     }

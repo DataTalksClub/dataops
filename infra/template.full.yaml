@@ -78,6 +78,11 @@ Parameters:
     Type: Number
     Default: 90
     MinValue: 30
+  DynamoPitrAlertEmail:
+    Type: String
+    Default: dev@dtcdev.click
+    AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+    Description: Mailbox paged when the daily PITR guard finds DynamoDB point-in-time recovery disabled.
   InvoicePublicationConfig:
     Type: String
     Default: ""
@@ -187,6 +192,19 @@ Resources:
     Properties:
       TopicName: !Sub ${AWS::StackName}-conversational-rollout-alarms
       KmsMasterKeyId: alias/aws/sns
+
+  DynamoPitrAlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${AWS::StackName}-dynamo-pitr-alarms
+      KmsMasterKeyId: alias/aws/sns
+
+  DynamoPitrAlarmSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref DynamoPitrAlarmTopic
+      Protocol: email
+      Endpoint: !Ref DynamoPitrAlertEmail
 
   ConversationalBackendLogGroup:
     Type: AWS::Logs::LogGroup
@@ -1138,6 +1156,37 @@ Resources:
         - Statement:
             Effect: Allow
             Action:
+              - dynamodb:DescribeContinuousBackups
+            Resource:
+              - !GetAtt DataOpsTasksTable.Arn
+              - !GetAtt DataOpsCardsTable.Arn
+              - !GetAtt DataOpsTemplatesTable.Arn
+              - !GetAtt DataOpsUsersTable.Arn
+              - !GetAtt DataOpsFilesTable.Arn
+              - !GetAtt DataOpsArtifactsTable.Arn
+              - !GetAtt DataOpsAuditEventsTable.Arn
+              - !GetAtt DataOpsSecretsTable.Arn
+              - !GetAtt DataOpsIntakeTable.Arn
+              - !GetAtt DataOpsNotificationsTable.Arn
+              - !GetAtt DataOpsSessionsTable.Arn
+              - !GetAtt DataOpsBookkeepingTable.Arn
+              - !GetAtt DataOpsSponsorCrmTable.Arn
+              - !GetAtt DataOpsNewsletterSlotsTable.Arn
+              - !GetAtt DataOpsCalendarTable.Arn
+              - !GetAtt DataOpsPodcastEpisodesTable.Arn
+              - !GetAtt DataOpsPeopleTable.Arn
+              - !GetAtt DataOpsBooksTable.Arn
+        - Statement:
+            Effect: Allow
+            Action:
+              - cloudwatch:PutMetricData
+            Resource: "*"
+            Condition:
+              StringEquals:
+                cloudwatch:namespace: DataOps/DynamoBackup
+        - Statement:
+            Effect: Allow
+            Action:
               - dynamodb:TransactGetItems
             Resource:
               - !GetAtt DataOpsBookkeepingTable.Arn
@@ -1376,6 +1425,25 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt BackendFunctionDailyDynamoBackup.Arn
 
+  BackendFunctionDailyDynamoPitrCheck:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Verify every DataOps DynamoDB table still has point-in-time recovery on, once per day.
+      ScheduleExpression: cron(0 7 * * ? *)
+      State: ENABLED
+      Targets:
+        - Arn: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${BackendTargetFunctionName}
+          Id: BackendFunctionDailyDynamoPitrCheckLambdaTarget
+          Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"dynamo-pitr-check"}}'
+
+  BackendFunctionDailyDynamoPitrCheckPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BackendTargetFunctionName
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt BackendFunctionDailyDynamoPitrCheck.Arn
+
   KnowledgeWorkerFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -1526,9 +1594,26 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
 
+  DynamoPitrDisabledAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-dynamo-pitr-disabled
+      Namespace: DataOps/DynamoBackup
+      MetricName: PitrDisabledTables
+      Statistic: Maximum
+      Period: 86400
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref DynamoPitrAlarmTopic]
+
 Outputs:
   ConversationalRolloutAlarmTopicArn:
     Value: !Ref ConversationalRolloutAlarmTopic
+  DynamoPitrAlarmTopicArn:
+    Value: !Ref DynamoPitrAlarmTopic
   SponsorCommunicationPrivateArchiveBucketName:
     Value: !Ref SponsorCommunicationPrivateArchiveBucket
   DataOpsBookkeepingTableName:
