@@ -7,12 +7,11 @@ import { DATAOPS_TABLES, TABLE_SESSIONS } from '../db/tableNames';
 /**
  * Daily PITR guard: describe continuous backups for every application table
  * and publish the count of tables without point-in-time recovery to
- * CloudWatch (`DataOps/DynamoBackup` / `PitrDisabledTables`). The
- * `DynamoPitrDisabledAlarm` in infra/template.full.yaml pages through the
- * existing shared `ConversationalRolloutAlarmTopic` (the same channel as
- * every other DataOps alarm, so the guard needs no new SNS topic or IAM
- * permissions) when the count reaches 1 (or when the check stops
- * reporting at all).
+ * CloudWatch (`DataOps/DynamoBackup` / `PitrDisabledTables`) for dashboards.
+ * Paging goes through the portal's own notifications instead of a CloudWatch
+ * alarm (the deploy role cannot create alarms or SNS topics): the scheduled
+ * handler raises one undismissed `automation-failure` notification per active
+ * problem and auto-dismisses it once the guard is green again.
  *
  * The sessions table is a deliberate exception: it holds TTL-expired
  * ephemeral login state, not durable execution state (enforced by
@@ -109,7 +108,7 @@ async function checkDynamoPitrStatus(
   const unknownTables = tables.filter((t) => t.pitrEnabled === null).map((t) => t.table);
 
   // Never assert "all healthy" when nothing could be verified: with no
-  // datapoint the alarm's TreatMissingData=breaching pages instead.
+  // datapoint dashboards stay empty and the handler pages instead.
   // Local runs (DYNAMODB_ENDPOINT set by test/script tooling) also skip the
   // publish so unit tests never touch real CloudWatch.
   if (unknownTables.length < tables.length && !process.env.DYNAMODB_ENDPOINT) {

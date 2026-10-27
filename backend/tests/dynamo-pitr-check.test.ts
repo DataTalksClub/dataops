@@ -6,6 +6,8 @@ import { DescribeContinuousBackupsCommand } from '@aws-sdk/client-dynamodb';
 import { checkDynamoPitrStatus } from '../src/export/dynamoPitrCheck';
 import { DATAOPS_TABLES, TABLE_SESSIONS } from '../src/db/tableNames';
 import { handler } from '../src/handler';
+import { getClient } from '../src/db/client';
+import { listUndismissedNotifications } from '../src/db/notifications';
 import { stopLocal } from '../scripts/local-dynamodb';
 import { useTestDatabase } from './helpers/db';
 
@@ -146,6 +148,23 @@ describe('DynamoDB PITR guard', () => {
       assert.strictEqual(body.table_count, DATAOPS_TABLES.length);
       assert.deepStrictEqual(body.disabled_tables, []);
       assert.strictEqual(body.unknown_tables.length, DATAOPS_TABLES.length);
+    });
+
+    it('raises one undismissed notification when nothing could be verified, without duplicating it', async () => {
+      const event = {
+        source: 'aws.events',
+        'detail-type': 'Scheduled Event',
+        detail: { dataopsAction: 'dynamo-pitr-check' },
+      };
+      await handler(event);
+      await handler(event);
+
+      const guardNotes = (await listUndismissedNotifications(await getClient())).filter(
+        (notification) => notification.type === 'automation-failure'
+          && notification.metadata?.guard === 'dynamo-pitr-check',
+      );
+      assert.strictEqual(guardNotes.length, 1);
+      assert.match(guardNotes[0].message, /unknown/);
     });
   });
 });

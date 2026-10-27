@@ -6,6 +6,8 @@ import { recordAutomationRun } from './automations/runs';
 import { writePortableExportArchive } from './export/archive';
 import { backupConfigFromEnv, writeRawDynamoBackup } from './export/dynamoBackup';
 import { checkDynamoPitrStatus } from './export/dynamoPitrCheck';
+import type { PitrCheckResult } from './export/dynamoPitrCheck';
+import { createNotification, dismissNotification, listUndismissedNotifications } from './db/notifications';
 import { sanitizeJsonResponse } from './responsePrivacy';
 import type { CronRunnerResult } from './cron/runner';
 import type { LambdaEvent, LambdaResponse } from './types';
@@ -60,6 +62,39 @@ async function recordedRun<T>(automationId: string, job: () => Promise<T>, summa
     await recordAutomationRun(client!, automationId, { ok: false, summary: `Failed: ${(error as Error)?.message || 'unknown error'}` });
     throw error;
   }
+}
+
+/**
+ * Page the PITR guard through the portal's own notifications instead of a
+ * CloudWatch alarm: the deploy role cannot create alarms or SNS topics, so
+ * infra-level paging is unavailable to this stack. One undismissed
+ * notification per active problem; auto-dismissed once the guard is green
+ * again. A fully-unreadable check pages too, mirroring the old alarm's
+ * treat-missing-data-as-breaching behavior.
+ */
+async function reconcilePitrGuardNotification(db: DynamoDBDocumentClient, result: PitrCheckResult): Promise<void> {
+  const breaching = result.disabledTables.length > 0 || result.unknownTables.length === result.tableCount;
+  const existing = (await listUndismissedNotifications(db)).filter(
+    (notification) => notification.type === 'automation-failure'
+      && notification.metadata?.guard === 'dynamo-pitr-check',
+  );
+  if (!breaching) {
+    for (const notification of existing) await dismissNotification(db, notification.id);
+    return;
+  }
+  if (existing.length > 0) return;
+  const message = result.disabledTables.length > 0
+    ? `DynamoDB PITR disabled on: ${result.disabledTables.join(', ')}`
+    : `DynamoDB PITR status unknown for all ${result.tableCount} tables`;
+  await createNotification(db, {
+    type: 'automation-failure',
+    message,
+    metadata: {
+      guard: 'dynamo-pitr-check',
+      disabledTables: result.disabledTables,
+      unknownTables: result.unknownTables,
+    },
+  });
 }
 
 /**
@@ -356,6 +391,7 @@ async function handleInvocation(
               + (check.unknownTables.length > 0 ? `, ${check.unknownTables.length} unknown` : '')
             : `PITR disabled: ${check.disabledTables.join(', ')}`
               + (check.unknownTables.length > 0 ? ` (${check.unknownTables.length} unknown)` : '')));
+      await reconcilePitrGuardNotification(client!, result);
       return {
         statusCode: 200,
         headers: { 'Content-Type': 'application/json' },

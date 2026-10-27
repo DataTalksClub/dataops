@@ -1574,21 +1574,6 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
 
-  DynamoPitrDisabledAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub ${AWS::StackName}-dynamo-pitr-disabled
-      Namespace: DataOps/DynamoBackup
-      MetricName: PitrDisabledTables
-      Statistic: Maximum
-      Period: 86400
-      EvaluationPeriods: 1
-      DatapointsToAlarm: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: breaching
-      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
-
 Outputs:
   ConversationalRolloutAlarmTopicArn:
     Value: !Ref ConversationalRolloutAlarmTopic
