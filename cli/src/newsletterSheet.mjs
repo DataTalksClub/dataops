@@ -1,18 +1,23 @@
-// Read the schedule sheet's Newsletter tab and plan how DataOps newsletter
-// issues catch up with it. The sheet keeps one row per sponsor placement: a
-// Primary Slot and an optional Secondary Slot per weekly issue, a Stand-Alone
-// Newsletter row per stand-alone send, and a Vacation row for a cancelled
-// week. Every row has a stable ID (`NL-306`, `NL-306-secondary`,
-// `NL-<date>-standalone`, `NL-<date>-vacation`); `NL-306` and
-// `NL-306-secondary` are one issue.
+// Read the retired schedule sheet's Newsletter tab from a CSV export and plan
+// how DataOps newsletter issues catch up with it. The export keeps one row per
+// sponsor placement: a Primary Slot and an optional Secondary Slot per weekly
+// issue, a Stand-Alone Newsletter row per stand-alone send, and a Vacation row
+// for a cancelled week. Every row has a stable ID (`NL-306`,
+// `NL-306-secondary`, `NL-<date>-standalone`, `NL-<date>-vacation`); `NL-306`
+// and `NL-306-secondary` are one issue. The tab's banner row sits above the
+// header row, so the header is found by looking for the ID and Promo Type
+// columns.
 //
-// Past issues follow the sheet. An issue still to come is planned in DataOps
-// (slots are booked there), so the sync only fills what it lacks and reports
-// where it differs. A sponsor is linked to its company in the Sponsors tab
-// only when exactly one company has the same name; otherwise the sheet's name
-// stays plain text. The sync never creates deals or Cards and never deletes.
+// Past issues follow the export's date, number, document links, and stats.
+// Sponsor names and company links already in DataOps are never overwritten or
+// cleared: the sync fills only what is missing and reports every difference.
+// A sponsor is linked to its company only when exactly one company has the
+// same name; an ambiguous name (NVIDIA/Nvidia) keeps the issue's existing
+// link and is reported. The sync never creates deals or Cards and never
+// deletes.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { UsageError } from "./errors.mjs";
 import { parseCsv } from "./bookkeepingSheet.mjs";
 
 export const SOURCE_TYPE = "schedule-sheet";
@@ -125,10 +130,19 @@ function extractPlacementStats(values, links, issueOpens) {
 
 /**
  * Sheet rows as `{ row, values, links }` keyed by header: `values` are the
- * displayed texts, `links` the cells' hyperlinks.
+ * displayed texts, `links` the cells' hyperlinks. The tab has a banner row
+ * above the header, so the header is the first of the leading rows that names
+ * the ID and Promo Type columns.
  */
 function keyedRows(grid) {
-  const [header = [], ...rows] = grid;
+  const headerAt = grid.slice(0, 5).findIndex((cells) => {
+    const names = cells.map((cell) => squash(cell.value));
+    return names.includes("id") && names.includes("promo type");
+  });
+  if (headerAt < 0) {
+    throw new UsageError("No header row in the first 5 rows: a Newsletter export must name the ID and Promo Type columns.");
+  }
+  const [header = [], ...rows] = grid.slice(headerAt);
   const names = header.map((cell) => squash(cell.value));
   return rows.map((cells, index) => {
     const values = {};
@@ -138,21 +152,8 @@ function keyedRows(grid) {
       values[name] = String(cells[column]?.value ?? "").trim();
       links[name] = cells[column]?.link || "";
     });
-    return { row: index + 2, values, links };
+    return { row: headerAt + index + 2, values, links };
   });
-}
-
-/** The Newsletter tab through the Sheets API, hidden rows included, with each cell's link. */
-export async function fetchNewsletterTab(spreadsheetId, accessToken, fetchImpl = fetch) {
-  const range = encodeURIComponent("'Newsletter'");
-  const fields = encodeURIComponent("sheets.data.rowData.values(formattedValue,hyperlink)");
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?ranges=${range}&fields=${fields}`;
-  const response = await fetchImpl(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!response.ok) throw new Error(`Google Sheets answered HTTP ${response.status}; check the sheet id and the token's account.`);
-  const body = await response.json();
-  const rowData = body.sheets?.[0]?.data?.[0]?.rowData || [];
-  if (!rowData.length) throw new Error("The spreadsheet has no Newsletter tab, or it is empty.");
-  return keyedRows(rowData.map((row) => (row.values || []).map((cell) => ({ value: cell.formattedValue ?? "", link: cell.hyperlink || "" }))));
 }
 
 /** A CSV export of the Newsletter tab (links only where the cell shows the URL). */
@@ -175,14 +176,14 @@ export function sheetIssues(rows, today) {
     if (!date) { skipped.push({ row, reason: `no date (${id})` }); continue; }
     if (!type) { skipped.push({ row, reason: `unknown promo type (${id})` }); continue; }
     seen.add(id);
-    const sponsor = values.sponsor.slice(0, 200);
-    const number = /^NL-(\d+)(?:-secondary)?$/i.exec(id)?.[1] || /weekly-(\d+)\b/.exec(`${links.url} ${values.url}`)?.[1];
+    const sponsor = String(values.sponsor ?? "").slice(0, 200);
+    const number = /^NL-(\d+)(?:-secondary)?$/i.exec(id)?.[1] || /weekly-(\d+)\b/.exec(`${links.url || ""} ${values.url || ""}`)?.[1];
     placements.push({
       row, id, date, type,
       issueNumber: number ? Number(number) : undefined,
       sponsor: /^n\/?a$|^-$/i.test(sponsor) ? "" : sponsor,
       documentUrl: httpsLink(links.doc, values.doc),
-      note: values.note.slice(0, 1000),
+      note: String(values.note ?? "").slice(0, 1000),
       values,
       links,
     });
@@ -247,21 +248,17 @@ export function sheetIssues(rows, today) {
   return { issues, skipped };
 }
 
-/** The one live company named exactly `name`, ignoring case and punctuation. */
-function companyMatcher(organizations) {
+/** The live companies named `name`, ignoring case and punctuation. */
+function companiesNamed(organizations) {
   const byName = new Map();
   for (const org of organizations) {
     if (org.archivedAt) continue;
     const key = squash(org.displayName);
     if (key) byName.set(key, [...(byName.get(key) || []), org.id]);
   }
-  return (name) => {
-    const ids = byName.get(squash(name)) || [];
-    return ids.length === 1 ? ids[0] : null;
-  };
+  return (name) => byName.get(squash(name)) || [];
 }
 
-const SLOT_FIELDS = ["sponsor", "sheetId", "documentUrl", "organizationId"];
 const same = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 
 /**
@@ -288,11 +285,14 @@ function mergeStats(haveStats, wantStats, prefix, differences) {
 
 /**
  * What to write: issues the sheet has and DataOps lacks, and changes to
- * matched issues. A past issue takes the sheet's date, number, sponsors and
- * links; one still to come only gets what it lacks.
+ * matched issues. A past issue takes the sheet's date, number, document
+ * links, and stats; one still to come only gets what it lacks. Sponsor names
+ * and company links already in DataOps are never overwritten or cleared: the
+ * plan fills what is missing and reports every difference. An ambiguous
+ * company name keeps the slot's existing link and is reported.
  */
 export function planNewsletterSync(sheet, issues, organizations, today) {
-  const companyOf = companyMatcher(organizations);
+  const companiesOf = companiesNamed(organizations);
   const bySourceKey = new Map(issues.filter((issue) => issue.sourceKey).map((issue) => [issue.sourceKey, issue]));
   const byDate = new Map();
   for (const issue of issues) {
@@ -301,21 +301,30 @@ export function planNewsletterSync(sheet, issues, organizations, today) {
     byDate.set(key, [...(byDate.get(key) || []), issue]);
   }
   const plan = { creates: [], updates: [], conflicts: [], unchanged: 0, linked: 0, statsUpdated: 0 };
+  const ambiguity = (position, sponsor, ids, kept) =>
+    `${position} sponsor "${sponsor}" matches ${ids.length} companies (${ids.join(", ")})${kept ? "; keeping the existing company link" : "; no company link"}`;
+  const ambiguousBySlotId = new Map();
   for (const wanted of sheet) {
     for (const slot of Object.values(wanted.slots)) {
-      const organizationId = slot.sponsor ? companyOf(slot.sponsor) : null;
-      if (organizationId) {
-        slot.organizationId = organizationId;
+      if (!slot.sponsor) continue;
+      const ids = companiesOf(slot.sponsor);
+      if (ids.length === 1) {
+        slot.organizationId = ids[0];
         plan.linked += 1;
+      } else if (ids.length > 1) {
+        ambiguousBySlotId.set(slot.sheetId, ids);
       }
     }
     const candidates = byDate.get(`${wanted.publicationDate}|${wanted.kind}`) || [];
     const existing = bySourceKey.get(wanted.sourceKey) || (candidates.length === 1 ? candidates[0] : null);
     const { sheetId, ...body } = wanted;
     if (!existing) {
+      const ambiguous = Object.entries(body.slots || {})
+        .filter(([, slot]) => ambiguousBySlotId.has(slot.sheetId))
+        .map(([position, slot]) => ambiguity(position, slot.sponsor, ambiguousBySlotId.get(slot.sheetId), false));
       const hasStats = Boolean(body.stats || Object.values(body.slots || {}).some((slot) => slot?.stats));
       if (hasStats) plan.statsUpdated += 1;
-      plan.creates.push({ sheetId, body: { ...body, sourceType: SOURCE_TYPE } });
+      plan.creates.push({ sheetId, ...(ambiguous.length ? { ambiguous } : {}), body: { ...body, sourceType: SOURCE_TYPE } });
       continue;
     }
     const past = existing.publicationDate < today && wanted.publicationDate < today;
@@ -339,13 +348,30 @@ export function planNewsletterSync(sheet, issues, organizations, today) {
       const have = existing.slots?.[position] || {};
       const want = wanted.slots[position];
       const next = { ...have };
-      for (const field of SLOT_FIELDS) {
+      for (const field of ["sheetId", "documentUrl"]) {
         if (want[field] === undefined) continue;
         if (past || have[field] === undefined) next[field] = want[field];
-        else if (have[field] !== want[field] && field === "sponsor") differences.push(`${position} sponsor "${have.sponsor}" vs sheet "${want.sponsor}"`);
       }
-      // A past slot names the sheet's sponsor; its company link follows the name.
-      if (past && want.sponsor !== undefined && !want.organizationId) delete next.organizationId;
+      // DataOps wins for sponsor names and company links: fill what is
+      // missing, report the rest, never overwrite or clear.
+      if (want.sponsor !== undefined) {
+        if (have.sponsor === undefined) next.sponsor = want.sponsor;
+        else if (squash(have.sponsor) !== squash(want.sponsor)) {
+          differences.push(`${position} sponsor "${have.sponsor}" vs sheet "${want.sponsor}"`);
+        }
+      }
+      const ambiguousIds = ambiguousBySlotId.get(want.sheetId);
+      if (ambiguousIds) {
+        differences.push(ambiguity(position, want.sponsor, ambiguousIds, Boolean(have.organizationId)));
+      } else if (want.organizationId !== undefined) {
+        if (have.organizationId === undefined) {
+          // The sheet's link belongs to the sheet's name; apply it only when
+          // that name is the one the slot keeps.
+          if (have.sponsor === undefined || squash(have.sponsor) === squash(want.sponsor)) next.organizationId = want.organizationId;
+        } else if (have.organizationId !== want.organizationId) {
+          differences.push(`${position} company link ${have.organizationId} vs sheet ${want.organizationId}`);
+        }
+      }
       if (want.stats) {
         const mergedSlotStats = mergeStats(have.stats, want.stats, `${position} stats`, differences);
         if (mergedSlotStats.changed) {

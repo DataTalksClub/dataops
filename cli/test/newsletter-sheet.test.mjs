@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, test } from "node:test";
 
-import { issueSourceKey, planNewsletterSync, sheetCount, sheetIssueDate, sheetIssues, sheetRate } from "../src/newsletterSheet.mjs";
+import { issueSourceKey, planNewsletterSync, readNewsletterCsv, sheetCount, sheetIssueDate, sheetIssues, sheetRate } from "../src/newsletterSheet.mjs";
 
 // Synthetic rows shaped like the schedule sheet's Newsletter tab.
 const row = (n, values, links = {}) => ({
@@ -45,7 +48,7 @@ describe("newsletter sheet", () => {
     assert.deepEqual(skipped.map((item) => item.row), [7, 8]);
   });
 
-  test("creates what is missing, follows the sheet for past issues, and only fills upcoming ones", () => {
+  test("creates what is missing, protects DataOps names and links on past issues, and only fills upcoming ones", () => {
     const { issues: sheet } = sheetIssues(rows, today);
     const organizations = [
       { id: "org-alpha", displayName: "Synthetic Alpha" },
@@ -66,14 +69,22 @@ describe("newsletter sheet", () => {
       issueNumber: 61,
       status: "sent",
       slots: {
-        // Exactly one company named Synthetic Alpha: linked. Two named Synthetic Beta: plain text.
-        primary: { sponsor: "Synthetic Alpha", sheetId: "NL-61", organizationId: "org-alpha" },
-        secondary: { sponsor: "Synthetic Beta", sheetId: "NL-61-secondary", documentUrl: "https://docs.example.com/beta" },
+        // DataOps' name is kept and the sheet's company link is not applied
+        // over a different name. The empty secondary fills from the sheet;
+        // two companies named Synthetic Beta mean no link.
+        primary: { sponsor: "Old name", sheetId: "NL-61" },
+        secondary: { sheetId: "NL-61-secondary", sponsor: "Synthetic Beta", documentUrl: "https://docs.example.com/beta" },
       },
     });
     const upcoming = plan.updates.find((item) => item.id === "i-310");
     assert.deepEqual(upcoming.changes, { issueNumber: 310, slots: { primary: { sponsor: "Booked in DataOps", organizationId: "org-x", sheetId: "NL-310" } } });
-    assert.deepEqual(plan.conflicts.map((item) => item.differences), [['primary sponsor "Booked in DataOps" vs sheet "Synthetic Future"']]);
+    assert.deepEqual(plan.conflicts.map((item) => item.differences), [
+      [
+        'primary sponsor "Old name" vs sheet "Synthetic Alpha"',
+        'secondary sponsor "Synthetic Beta" matches 2 companies (org-beta-1, org-beta-2); no company link',
+      ],
+      ['primary sponsor "Booked in DataOps" vs sheet "Synthetic Future"'],
+    ]);
 
     // Applied, a second run has nothing to write.
     const applied = existing.map((issue) => {
@@ -83,6 +94,95 @@ describe("newsletter sheet", () => {
     for (const item of plan.creates) applied.push({ id: item.sheetId, label: item.sheetId, version: 1, ...item.body });
     const again = planNewsletterSync(sheetIssues(rows, today).issues, applied, organizations, today);
     assert.deepEqual([again.creates.length, again.updates.length], [0, 0]);
+  });
+
+  test("an ambiguous company keeps the issue's existing link and is reported (NVIDIA/Nvidia)", () => {
+    const nvidiaRows = [
+      row(2, { date: "14 Sep 26", sponsor: "Nvidia", "promo type": "Primary Slot", id: "NL-300" }),
+    ];
+    const { issues: sheet } = sheetIssues(nvidiaRows, today);
+    const organizations = [
+      { id: "org-nvidia", displayName: "NVIDIA" },
+      { id: "org-nvidia-2", displayName: "Nvidia" },
+    ];
+    const existing = [{
+      id: "i-300", label: "Weekly #300", version: 3, kind: "weekly", issueNumber: 300, publicationDate: "2026-09-14", status: "sent",
+      sourceKey: issueSourceKey("NL-300"),
+      slots: { primary: { sheetId: "NL-300", sponsor: "NVIDIA", organizationId: "org-nvidia" }, secondary: {} },
+    }];
+    const plan = planNewsletterSync(sheet, existing, organizations, today);
+    assert.deepEqual(plan.creates, []);
+    // The link survives: nothing is written over it.
+    assert.deepEqual(plan.updates, []);
+    assert.deepEqual(plan.conflicts.map((item) => item.differences), [[
+      'primary sponsor "Nvidia" matches 2 companies (org-nvidia, org-nvidia-2); keeping the existing company link',
+    ]]);
+  });
+
+  test("a company link in DataOps is never overwritten by the sheet's own match", () => {
+    const svelteRows = [
+      row(2, { date: "14 Sep 26", sponsor: "Svelte", "promo type": "Primary Slot", id: "NL-300" }),
+    ];
+    const { issues: sheet } = sheetIssues(svelteRows, today);
+    const organizations = [{ id: "org-svelte", displayName: "Svelte" }];
+    const existing = [{
+      id: "i-300", label: "Weekly #300", version: 3, kind: "weekly", issueNumber: 300, publicationDate: "2026-09-14", status: "sent",
+      sourceKey: issueSourceKey("NL-300"),
+      slots: { primary: { sheetId: "NL-300", sponsor: "NVIDIA", organizationId: "org-nvidia" }, secondary: {} },
+    }];
+    const plan = planNewsletterSync(sheet, existing, organizations, today);
+    assert.deepEqual(plan.updates, []);
+    assert.deepEqual(plan.conflicts.flatMap((item) => item.differences), [
+      'primary sponsor "NVIDIA" vs sheet "Svelte"',
+      "primary company link org-nvidia vs sheet org-svelte",
+    ]);
+  });
+
+  test("sync never overwrites a past issue's corrected sponsor name and company link", () => {
+    const correctedRows = [
+      row(2, { date: "1 Jun 26", sponsor: "Nvidia", "promo type": "Primary Slot", id: "NL-288", doc: "Doc 288" }, { doc: "https://docs.example.com/288" }),
+    ];
+    const { issues: sheet } = sheetIssues(correctedRows, today);
+    const organizations = [
+      { id: "org-nvidia", displayName: "NVIDIA" },
+      { id: "org-nvidia-2", displayName: "Nvidia" },
+    ];
+    const existing = [{
+      id: "i-288", label: "Weekly #288", version: 7, kind: "weekly", issueNumber: 288,
+      publicationDate: "2026-06-01", status: "sent",
+      sourceKey: issueSourceKey("NL-288"),
+      slots: { primary: { sheetId: "NL-288", sponsor: "NVIDIA Corporation", organizationId: "org-nvidia" }, secondary: {} },
+    }];
+    const plan = planNewsletterSync(sheet, existing, organizations, today);
+    // The corrected name and link stay; the document link still follows the sheet.
+    assert.deepEqual(plan.updates.map((item) => item.changes), [{
+      slots: { primary: { sheetId: "NL-288", sponsor: "NVIDIA Corporation", organizationId: "org-nvidia", documentUrl: "https://docs.example.com/288" } },
+    }]);
+    assert.deepEqual(plan.conflicts.flatMap((item) => item.differences), [
+      'primary sponsor "NVIDIA Corporation" vs sheet "Nvidia"',
+      'primary sponsor "Nvidia" matches 2 companies (org-nvidia, org-nvidia-2); keeping the existing company link',
+    ]);
+  });
+
+  test("finds the header row below the tab's banner row in a CSV export", () => {
+    const file = path.join(mkdtempSync(path.join(tmpdir(), "newsletter-csv-")), "newsletter.csv");
+    writeFileSync(file, [
+      "DataTalks.Club newsletter schedule (banner row above the header)",
+      "Date,Sponsor,Promo Type,URL,Doc,Note,ID",
+      "14 Feb 22,Synthetic Alpha,Primary Slot,https://mailchi.mp/example/weekly-61,,week 61,NL-61",
+      "14 Feb 22,Synthetic Beta,Secondary Slot,,,doc in the Sponsors tab,NL-61-secondary",
+    ].join("\n"));
+    const { issues, skipped } = sheetIssues(readNewsletterCsv(file), today);
+    assert.deepEqual(issues.map((issue) => issue.sheetId), ["NL-61"]);
+    assert.equal(issues[0].slots.primary.sponsor, "Synthetic Alpha");
+    assert.equal(issues[0].slots.secondary.sponsor, "Synthetic Beta");
+    assert.deepEqual(skipped, []);
+  });
+
+  test("refuses a Newsletter export that has no header row", () => {
+    const file = path.join(mkdtempSync(path.join(tmpdir(), "newsletter-csv-")), "no-header.csv");
+    writeFileSync(file, "some text\nsome more text\n");
+    assert.throws(() => readNewsletterCsv(file), /No header row/);
   });
 
   test("parses historical Mailchimp, LinkedIn, and X stats and merges without overwriting existing metrics", () => {
