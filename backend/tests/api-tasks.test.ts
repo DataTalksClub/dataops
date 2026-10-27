@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import { GetCommand, TransactWriteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
+import { TABLE_CARDS, TABLE_TASKS } from '../src/db/tableNames';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables, deleteTables } from '../scripts/local-dynamodb';
 import { createTemplate } from '../src/db/templates';
@@ -213,8 +214,8 @@ describe('API — CRUD for tasks', () => {
             throw Object.assign(new Error('Card raced'), { name: 'TransactionCanceledException' });
           }
           if (!(command instanceof GetCommand)) throw new Error('Unexpected command');
-          if (command.input.TableName === 'Tasks') return {};
-          if (command.input.TableName === 'Projects') {
+          if (command.input.TableName === TABLE_TASKS) return {};
+          if (command.input.TableName === TABLE_CARDS) {
             cardReads += 1;
             return { Item: { PK: 'CARD#create-conflict-card', SK: 'CARD#create-conflict-card', ...(cardReads === 1 ? initialCard : currentCard) } };
           }

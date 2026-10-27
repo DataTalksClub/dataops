@@ -105,21 +105,22 @@ Environment variables:
 - `DATAOPS_SESSIONS_TABLE`
 - `DATAOPS_AUDIT_EVENTS_TABLE`
 
-Local defaults may map to the existing prototype names:
+With neither explicit names nor `DATAOPS_TABLE_PREFIX` set, names default to
+the live `dataops-v1-` tables:
 
-- `Tasks`
-- `Projects`
-- `Templates`
-- `Users`
-- `Files`
-- `Artifacts`
-- `AuditEvents`
-- `Notifications`
-- `Sessions`
+- `dataops-v1-tasks`
+- `dataops-v1-cards`
+- `dataops-v1-templates`
+- `dataops-v1-users`
+- `dataops-v1-files`
+- `dataops-v1-artifacts`
+- `dataops-v1-audit-events`
+- `dataops-v1-notifications`
+- `dataops-v1-sessions`
 
 Current implementation reads these environment variables in `backend/` and
-keeps the local names above. The Lambda handler never creates tables. Local
-developers run `npm --prefix backend run setup:local`, while tests explicitly
+defaults to the `dataops-v1-` names above. The Lambda handler never creates
+tables. Local developers run `npm --prefix backend run setup:local`, while tests explicitly
 start an in-memory database fixture.
 
 The deployed SAM template declares stack-owned DynamoDB tables with names such

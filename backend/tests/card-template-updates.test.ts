@@ -4,6 +4,13 @@ import { GetCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 
 import type { Card, Task, Template } from '../src/types';
 import {
+  TABLE_AUDIT_EVENTS,
+  TABLE_CARDS,
+  TABLE_TASKS,
+  TABLE_TEMPLATES,
+  TABLE_USERS,
+} from '../src/db/tableNames';
+import {
   templateCardDefinitionSnapshot,
   templateTaskDefinitionSnapshot,
 } from '../src/templates/cardTemplateProjection';
@@ -117,7 +124,7 @@ describe('Card Template update planning', () => {
         if (command instanceof GetCommand) return {};
         if (command instanceof TransactWriteCommand) {
           for (const item of command.input.TransactItems || []) {
-            if (item.Put?.TableName === 'Tasks') writes.push(item.Put.Item as unknown as Task);
+            if (item.Put?.TableName === TABLE_TASKS) writes.push(item.Put.Item as unknown as Task);
           }
           return {};
         }
@@ -392,10 +399,10 @@ describe('Card Template update planning', () => {
         if (!(command instanceof GetCommand)) throw new Error('Unexpected write');
         const table = command.input.TableName;
         const key = command.input.Key as Record<string, unknown>;
-        if (table === 'AuditEvents') return {};
-        if (table === 'Projects') return { Item: { ...card, ...key } };
-        if (table === 'Templates') return { Item: { ...target, ...key } };
-        if (table === 'Tasks') {
+        if (table === TABLE_AUDIT_EVENTS) return {};
+        if (table === TABLE_CARDS) return { Item: { ...card, ...key } };
+        if (table === TABLE_TEMPLATES) return { Item: { ...target, ...key } };
+        if (table === TABLE_TASKS) {
           const task = tasks.find(({ id }) => `TASK#${id}` === key.PK)!;
           const { version: _version, ...versionless } = task;
           return { Item: { ...versionless, ...key } };
@@ -488,12 +495,12 @@ describe('Card Template update planning', () => {
     assert.equal(commands.length, 3);
     assert.ok(commands[0] instanceof GetCommand);
     assert.ok(commands[1] instanceof GetCommand);
-    assert.equal((commands[1] as GetCommand).input.TableName, 'Users');
+    assert.equal((commands[1] as GetCommand).input.TableName, TABLE_USERS);
     assert.ok(commands[2] instanceof TransactWriteCommand);
     const items = (commands[2] as TransactWriteCommand).input.TransactItems || [];
-    assert.ok(items.some((item) => item.ConditionCheck?.TableName === 'Templates'));
-    assert.ok(items.some((item) => item.Put?.TableName === 'Projects'));
-    assert.ok(items.some((item) => item.Put?.TableName === 'Tasks'));
-    assert.ok(items.some((item) => item.Put?.TableName === 'AuditEvents'));
+    assert.ok(items.some((item) => item.ConditionCheck?.TableName === TABLE_TEMPLATES));
+    assert.ok(items.some((item) => item.Put?.TableName === TABLE_CARDS));
+    assert.ok(items.some((item) => item.Put?.TableName === TABLE_TASKS));
+    assert.ok(items.some((item) => item.Put?.TableName === TABLE_AUDIT_EVENTS));
   });
 });

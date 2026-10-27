@@ -10,7 +10,7 @@ import {
   UpdateCommand,
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
-import { createTables, TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_USERS } from '../scripts/local-dynamodb';
+import { createTables, TABLE_BOOKKEEPING, TABLE_NOTIFICATIONS, TABLE_SPONSOR_CRM, TABLE_USERS } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
 import {
   classifyFinance,
@@ -370,7 +370,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     assert.ok(first.created >= 1);
     assert.equal(second.created, 0);
     const notifications = (await client.send(new ScanCommand({
-      TableName: process.env.DATAOPS_NOTIFICATIONS_TABLE || 'Notifications',
+      TableName: TABLE_NOTIFICATIONS,
     }))).Items || [];
     const financeAlerts = notifications.filter((item) => item.type === 'sponsor-finance');
     assert.ok(financeAlerts.length >= 1);
@@ -431,13 +431,13 @@ describe('sponsor finance production DynamoDB transactions', () => {
     assert.equal(concurrentInitial.reduce((sum, result) => sum + result.created, 0), 1);
     assert.ok(sponsorScanPages > concurrentInitial.length);
     const findAlerts = async () => ((await client.send(new ScanCommand({
-      TableName: process.env.DATAOPS_NOTIFICATIONS_TABLE || 'Notifications',
+      TableName: TABLE_NOTIFICATIONS,
     }))).Items || []).filter((item) =>
       item.type === 'sponsor-finance' && item.metadata?.financeDealId === alertBooking);
     let alerts = await findAlerts();
     assert.equal(alerts.length, 1);
     await client.send(new UpdateCommand({
-      TableName: process.env.DATAOPS_NOTIFICATIONS_TABLE || 'Notifications',
+      TableName: TABLE_NOTIFICATIONS,
       Key: { PK: alerts[0].PK, SK: alerts[0].SK },
       UpdateExpression: 'SET dismissed = :true',
       ExpressionAttributeValues: { ':true': true },
@@ -470,7 +470,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     await put(client, TABLE_SPONSOR_CRM, { ...key('DEAL', seeded.dealId), id: seeded.dealId,
       version: 1, active: false, status: 'lost', archivedAt: '2099-01-01', organizationId: 'organization-inactive-invoice-alert' });
     await evaluateSponsorFinanceAlerts(client, '2100-01-01');
-    const ownAlerts = async () => ((await client.send(new ScanCommand({ TableName: process.env.DATAOPS_NOTIFICATIONS_TABLE || 'Notifications' }))).Items || [])
+    const ownAlerts = async () => ((await client.send(new ScanCommand({ TableName: TABLE_NOTIFICATIONS }))).Items || [])
       .filter((item) => item.metadata?.financeDealId === seeded.dealId);
     assert.ok((await ownAlerts()).some((item) => !item.dismissed && !item.resolvedAt));
     assert.ok((await financeLedger(client, '2100-01-01')).rows.some((row) => row.dealId === seeded.dealId));

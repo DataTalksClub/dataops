@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { GetCommand, TransactWriteCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient, disableLocalTransactionEmulation } from '../src/db/client';
+import { TABLE_TASKS } from '../src/db/tableNames';
 import { getTask, listTasksByCard, listTasksByCardConsistent, updateTask } from '../src/db/tasks';
 import { createCardFromTemplate, createTemplate, getTemplate, instantiateTemplate, updateTemplate } from '../src/db/templates';
 import { createCard, getCardConsistent } from '../src/db/cards';
@@ -218,7 +219,7 @@ describe('Card Template sync of dependencies', () => {
         if (command instanceof GetCommand) return {};
         if (command instanceof TransactWriteCommand) {
           for (const item of command.input.TransactItems || []) {
-            if (item.Put?.TableName === 'Tasks') writes.push(item.Put.Item as unknown as Task);
+            if (item.Put?.TableName === TABLE_TASKS) writes.push(item.Put.Item as unknown as Task);
           }
           return {};
         }

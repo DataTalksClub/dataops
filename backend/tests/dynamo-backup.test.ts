@@ -10,7 +10,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal, createTables } from '../scripts/local-dynamodb';
-import { DATAOPS_TABLES, TABLE_SESSIONS, TABLE_USERS } from '../src/db/tableNames';
+import { DATAOPS_TABLES, TABLE_SESSIONS, TABLE_TASKS, TABLE_USERS } from '../src/db/tableNames';
 import { createTask } from '../src/db/tasks';
 import { handleCronRoutes } from '../src/routes/cron';
 import { SCHEMA_VERSION, writeRawDynamoBackup } from '../src/export/dynamoBackup';
@@ -149,7 +149,7 @@ describe('raw DynamoDB dump', { concurrency: 1 }, () => {
       ),
     );
     assert.strictEqual(manifest.tables[TABLE_SESSIONS].error, 'sessions scan denied');
-    assert.ok(manifest.tables.Tasks.items >= 1);
+    assert.ok(manifest.tables[TABLE_TASKS].items >= 1);
   });
 
   it('serves POST /api/cron/dynamo-backup', async () => {

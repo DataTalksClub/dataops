@@ -26,6 +26,9 @@ function runSetupProbe(env: Record<string, string>): Record<string, unknown> {
         newsletterSlots: mod.TABLE_NEWSLETTER_SLOTS,
         calendar: mod.TABLE_CALENDAR,
         podcastEpisodes: mod.TABLE_PODCAST_EPISODES,
+        secrets: mod.TABLE_SECRETS,
+        people: mod.TABLE_PEOPLE,
+        books: mod.TABLE_BOOKS,
       }));
     });
   `;
@@ -45,19 +48,27 @@ function runSetupProbe(env: Record<string, string>): Record<string, unknown> {
 }
 
 describe('DynamoDB table setup environment', () => {
-  it('uses local prototype table names by default', () => {
+  it('defaults to the live dataops-v1 tables with no environment set', () => {
     const setup = runSetupProbe({});
 
-    assert.strictEqual(setup.tasks, 'Tasks');
-    assert.strictEqual(setup.cards, 'Projects');
-    assert.strictEqual(setup.templates, 'Templates');
-    assert.strictEqual(setup.users, 'Users');
-    assert.strictEqual(setup.files, 'Files');
-    assert.strictEqual(setup.artifacts, 'Artifacts');
-    assert.strictEqual(setup.auditEvents, 'AuditEvents');
-    assert.strictEqual(setup.intake, 'IntakeItems');
-    assert.strictEqual(setup.notifications, 'Notifications');
-    assert.strictEqual(setup.sessions, 'Sessions');
+    assert.strictEqual(setup.tasks, 'dataops-v1-tasks');
+    assert.strictEqual(setup.cards, 'dataops-v1-cards');
+    assert.strictEqual(setup.templates, 'dataops-v1-templates');
+    assert.strictEqual(setup.users, 'dataops-v1-users');
+    assert.strictEqual(setup.files, 'dataops-v1-files');
+    assert.strictEqual(setup.artifacts, 'dataops-v1-artifacts');
+    assert.strictEqual(setup.auditEvents, 'dataops-v1-audit-events');
+    assert.strictEqual(setup.intake, 'dataops-v1-intake');
+    assert.strictEqual(setup.notifications, 'dataops-v1-notifications');
+    assert.strictEqual(setup.sessions, 'dataops-v1-sessions');
+    assert.strictEqual(setup.bookkeeping, 'dataops-v1-bookkeeping');
+    assert.strictEqual(setup.sponsorCrm, 'dataops-v1-sponsor-crm');
+    assert.strictEqual(setup.newsletterSlots, 'dataops-v1-newsletter-slots');
+    assert.strictEqual(setup.calendar, 'dataops-v1-calendar');
+    assert.strictEqual(setup.podcastEpisodes, 'dataops-v1-podcast-episodes');
+    assert.strictEqual(setup.secrets, 'dataops-v1-secrets');
+    assert.strictEqual(setup.people, 'dataops-v1-people');
+    assert.strictEqual(setup.books, 'dataops-v1-books');
   });
 
   it('uses production table names from DATAOPS environment variables', () => {
@@ -86,24 +97,37 @@ describe('DynamoDB table setup environment', () => {
     assert.strictEqual(setup.sessions, 'prod-sessions');
   });
 
-  it('derives production table names from the CloudFormation stack name', () => {
-    const setup = runSetupProbe({ DATAOPS_TABLE_PREFIX: 'dataops-v1' });
+  it('uses the configured prefix instead of the default', () => {
+    const setup = runSetupProbe({ DATAOPS_TABLE_PREFIX: 'custom-env' });
 
-    assert.strictEqual(setup.tasks, 'dataops-v1-tasks');
-    assert.strictEqual(setup.cards, 'dataops-v1-cards');
-    assert.strictEqual(setup.templates, 'dataops-v1-templates');
-    assert.strictEqual(setup.users, 'dataops-v1-users');
-    assert.strictEqual(setup.files, 'dataops-v1-files');
-    assert.strictEqual(setup.artifacts, 'dataops-v1-artifacts');
-    assert.strictEqual(setup.auditEvents, 'dataops-v1-audit-events');
-    assert.strictEqual(setup.intake, 'dataops-v1-intake');
-    assert.strictEqual(setup.notifications, 'dataops-v1-notifications');
-    assert.strictEqual(setup.sessions, 'dataops-v1-sessions');
-    assert.strictEqual(setup.bookkeeping, 'dataops-v1-bookkeeping');
-    assert.strictEqual(setup.sponsorCrm, 'dataops-v1-sponsor-crm');
-    assert.strictEqual(setup.newsletterSlots, 'dataops-v1-newsletter-slots');
-    assert.strictEqual(setup.calendar, 'dataops-v1-calendar');
-    assert.strictEqual(setup.podcastEpisodes, 'dataops-v1-podcast-episodes');
+    assert.strictEqual(setup.tasks, 'custom-env-tasks');
+    assert.strictEqual(setup.cards, 'custom-env-cards');
+    assert.strictEqual(setup.templates, 'custom-env-templates');
+    assert.strictEqual(setup.users, 'custom-env-users');
+    assert.strictEqual(setup.files, 'custom-env-files');
+    assert.strictEqual(setup.artifacts, 'custom-env-artifacts');
+    assert.strictEqual(setup.auditEvents, 'custom-env-audit-events');
+    assert.strictEqual(setup.intake, 'custom-env-intake');
+    assert.strictEqual(setup.notifications, 'custom-env-notifications');
+    assert.strictEqual(setup.sessions, 'custom-env-sessions');
+    assert.strictEqual(setup.bookkeeping, 'custom-env-bookkeeping');
+    assert.strictEqual(setup.sponsorCrm, 'custom-env-sponsor-crm');
+    assert.strictEqual(setup.newsletterSlots, 'custom-env-newsletter-slots');
+    assert.strictEqual(setup.calendar, 'custom-env-calendar');
+    assert.strictEqual(setup.podcastEpisodes, 'custom-env-podcast-episodes');
+    assert.strictEqual(setup.secrets, 'custom-env-secrets');
+    assert.strictEqual(setup.people, 'custom-env-people');
+    assert.strictEqual(setup.books, 'custom-env-books');
+  });
+
+  it('prefers the explicit table name over the shared prefix', () => {
+    const setup = runSetupProbe({
+      DATAOPS_TABLE_PREFIX: 'other-env',
+      DATAOPS_TASKS_TABLE: 'explicit-tasks',
+    });
+
+    assert.strictEqual(setup.tasks, 'explicit-tasks');
+    assert.strictEqual(setup.cards, 'other-env-cards');
   });
 
   it('has no way for the application to create its own tables', async () => {

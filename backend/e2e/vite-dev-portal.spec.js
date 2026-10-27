@@ -330,7 +330,7 @@ function representativeClient(port) {
 
 async function createRepresentativeTaskTable(client) {
   await client.send(new CreateTableCommand({
-    TableName: 'Tasks',
+    TableName: 'dataops-v1-tasks',
     KeySchema: [
       { AttributeName: 'PK', KeyType: 'HASH' },
       { AttributeName: 'SK', KeyType: 'RANGE' },
@@ -533,7 +533,7 @@ test('representative mode mutates and restores only an isolated loopback Dynalit
   const taskId = 'synthetic-representative-task';
   await createRepresentativeTaskTable(client);
   await client.send(new PutCommand({
-    TableName: 'Tasks',
+    TableName: 'dataops-v1-tasks',
     Item: {
       PK: `TASK#${taskId}`,
       SK: `TASK#${taskId}`,
@@ -599,7 +599,7 @@ test('representative mode mutates and restores only an isolated loopback Dynalit
     expect(afterReload.status).toBe(200);
     expect(afterReload.body.description).toBe(changedDescription);
     const localRecord = await client.send(new GetCommand({
-      TableName: 'Tasks',
+      TableName: 'dataops-v1-tasks',
       Key: { PK: `TASK#${taskId}`, SK: `TASK#${taskId}` },
     }));
     expect(localRecord.Item.description).toBe(changedDescription);
@@ -611,7 +611,7 @@ test('representative mode mutates and restores only an isolated loopback Dynalit
     });
     expect(restored.status).toBe(200);
     const restoredLocalRecord = await client.send(new GetCommand({
-      TableName: 'Tasks',
+      TableName: 'dataops-v1-tasks',
       Key: { PK: `TASK#${taskId}`, SK: `TASK#${taskId}` },
     }));
     expect(restoredLocalRecord.Item.description).toBe(originalDescription);
@@ -634,7 +634,7 @@ test('representative mode acts as the configured operator without the test auth 
   const taskId = 'synthetic-operator-task';
   await createRepresentativeTaskTable(client);
   await client.send(new CreateTableCommand({
-    TableName: 'Users',
+    TableName: 'dataops-v1-users',
     KeySchema: [
       { AttributeName: 'PK', KeyType: 'HASH' },
       { AttributeName: 'SK', KeyType: 'RANGE' },
@@ -646,7 +646,7 @@ test('representative mode acts as the configured operator without the test auth 
     BillingMode: 'PAY_PER_REQUEST',
   }));
   await client.send(new PutCommand({
-    TableName: 'Users',
+    TableName: 'dataops-v1-users',
     Item: {
       PK: `USER#${actorId}`,
       SK: `USER#${actorId}`,
@@ -658,7 +658,7 @@ test('representative mode acts as the configured operator without the test auth 
     },
   }));
   await client.send(new PutCommand({
-    TableName: 'Tasks',
+    TableName: 'dataops-v1-tasks',
     Item: {
       PK: `TASK#${taskId}`,
       SK: `TASK#${taskId}`,
