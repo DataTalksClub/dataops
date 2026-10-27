@@ -203,6 +203,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-calendar
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification: { SSEEnabled: true }
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
       AttributeDefinitions:
@@ -218,6 +219,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-newsletter-slots
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification: { SSEEnabled: true }
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
       AttributeDefinitions:
@@ -241,6 +243,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-podcast-episodes
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification: { SSEEnabled: true }
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
       AttributeDefinitions:
@@ -268,6 +271,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-people
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification: { SSEEnabled: true }
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
       AttributeDefinitions:
@@ -287,6 +291,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-books
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification: { SSEEnabled: true }
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
       AttributeDefinitions:
@@ -306,6 +311,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-sponsor-crm
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification: { SSEEnabled: true }
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
       TimeToLiveSpecification:
@@ -347,6 +353,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-bookkeeping
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification: { SSEEnabled: true }
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
       AttributeDefinitions:
@@ -491,6 +498,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-tasks
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
@@ -551,6 +559,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-cards
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
@@ -580,6 +589,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-templates
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
@@ -609,6 +619,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-users
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
@@ -638,6 +649,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-files
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
@@ -678,6 +690,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-artifacts
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
@@ -707,6 +720,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-audit-events
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
@@ -739,6 +753,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-intake
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
@@ -831,6 +846,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-notifications
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
@@ -860,6 +876,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-secrets
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
@@ -903,6 +920,7 @@ Resources:
     Properties:
       TableName: !Sub ${AWS::StackName}-sessions
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
