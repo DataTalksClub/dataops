@@ -32,6 +32,9 @@ Usage
       a deal only exists once a sale closes.
   dataops sponsors update <kind> <id> --data '{...}'
   dataops sponsors update leads <id> --data '{"status":"ignored","version":N}' [--reason TEXT]
+  dataops sponsors delete deals <id> --yes [--expected-version N]
+      Permanently delete a deal and its history, notes and Tasks (admin only). Refused with exit 5 when it
+      has a booked newsletter slot, a deliverable or finance (invoice, payment, settlement); exit 4 = not found.
   dataops sponsors messages <organization-id>          Communications with an organization
   dataops sponsors history <deal-id>                   A deal's change history
   dataops sponsors cold [--days N] [--remind]          Orgs/contacts with no contact for N days (defaults per relationship stage)
@@ -196,6 +199,20 @@ export async function update(args, io) {
   }
   const result = await apiFor(args)[verb](`/api/sponsor-crm/${kind}/${enc(id)}`, data);
   if (!args.json) io.print(`Updated ${kind.replace(/s$/, "")} ${id}.`);
+  return result;
+}
+
+export async function remove(args, io) {
+  const kind = kindOf(args);
+  if (kind !== "deals") throw new UsageError("Permanent deletion is supported for deals only: dataops sponsors delete deals <id> --yes [--expected-version N]");
+  const id = positional(args, 1, "dataops sponsors delete deals <id> --yes [--expected-version N]");
+  if (args.yes !== true) throw new UsageError("Permanent deletion requires --yes. Read the deal before deleting it.");
+  const expectedVersion = integer(optionalString(args, "expectedVersion"), "expected-version");
+  if (expectedVersion !== undefined && !Number.isSafeInteger(expectedVersion)) throw new UsageError("expected-version must be a safe positive integer.");
+  const result = await apiFor(args).delete(`/api/sponsor-crm/deals/${enc(id)}`, undefined, {
+    query: { hard: "true", expectedVersion },
+  });
+  if (!args.json) io.print(`Deleted deal ${id}.`);
   return result;
 }
 
@@ -623,4 +640,4 @@ export async function recordThankYou(args, io) {
   return result;
 }
 
-export const commands = { pipeline, contact, list, show, create, update, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification, "record-thank-you": recordThankYou };
+export const commands = { pipeline, contact, list, show, create, update, delete: remove, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification, "record-thank-you": recordThankYou };
