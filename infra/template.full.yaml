@@ -163,8 +163,8 @@ Conditions:
   HasSponsorTemplateSecret: !Not [!Equals [!Ref SponsorCommunicationTemplateSecretArn, ""]]
   HasSponsorHmacSecret: !Not [!Equals [!Ref SponsorCommunicationHmacSecretArn, ""]]
   HasSponsorCommunicationSecrets: !Or
-    - !Condition HasSponsorTemplateSecret
-    - !Condition HasSponsorHmacSecret
+    - !Not [!Equals [!Ref SponsorCommunicationTemplateSecretArn, ""]]
+    - !Not [!Equals [!Ref SponsorCommunicationHmacSecretArn, ""]]
 Globals:
   Function:
     Runtime: nodejs24.x
