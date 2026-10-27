@@ -78,11 +78,6 @@ Parameters:
     Type: Number
     Default: 90
     MinValue: 30
-  InvoicePublicationConfig:
-    Type: String
-    Default: ""
-    NoEcho: true
-    Description: Optional base64-encoded private JSON broker and invoice destination configuration
   InvoiceReaderTokenSha256:
     Type: String
     Default: ""
@@ -157,7 +152,6 @@ Rules:
               - !Not [!Equals [!Ref SponsorCommunicationHmacSecretArn, ""]]
         AssertDescription: Sponsor sending requires separate pre-created template and HMAC secret ARNs
 Conditions:
-  HasInvoicePublicationConfig: !Not [!Equals [!Ref InvoicePublicationConfig, ""]]
   HasEmailDocumentExternalSource: !Not [!Equals [!Ref EmailDocumentExternalSourceBucketName, ""]]
   HasEmailDocumentExternalSourceKms: !Not [!Equals [!Ref EmailDocumentExternalSourceKmsKeyArn, ""]]
   HasSponsorTemplateSecret: !Not [!Equals [!Ref SponsorCommunicationTemplateSecretArn, ""]]
@@ -188,15 +182,6 @@ Resources:
             Resource:
               - !If [HasSponsorTemplateSecret, !Ref SponsorCommunicationTemplateSecretArn, !Ref AWS::NoValue]
               - !If [HasSponsorHmacSecret, !Ref SponsorCommunicationHmacSecretArn, !Ref AWS::NoValue]
-  InvoicePublicationSecret:
-    Type: AWS::SecretsManager::Secret
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Condition: HasInvoicePublicationConfig
-    Properties:
-      Name: !Sub ${AWS::StackName}/invoice-publication
-      Description: Scoped broker credential and private invoice destinations
-      SecretString: !Ref InvoicePublicationConfig
   ConversationalRolloutAlarmTopic:
     Type: AWS::SNS::Topic
     Properties:
