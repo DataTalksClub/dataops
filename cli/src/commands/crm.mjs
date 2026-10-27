@@ -2,6 +2,7 @@ import { UsageError } from "../errors.mjs";
 import { enc, integer, isoDate, optionalString, positional, table, jsonData } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { runLookup, runSetWait } from "../crmLookup.mjs";
+import { resolveCompanyId, resolveDealId, resolvePersonId } from "../shortIds.mjs";
 
 export const summary = "CRM workspace: company/people directories, activity, notes, touches, saved views";
 
@@ -35,7 +36,7 @@ Usage
   dataops crm lookup --email ADDRESS --set-wait --until YYYY-MM-DD --reason TEXT [--deal-id ID]
       Mark the deal "wait, revisit later": open Tasks go waiting until DATE (a waiting
       Task is created when the deal has none), then the fresh state is printed.
-  dataops crm company show <id>
+  dataops crm company show <id>                A unique 8+ character id prefix works
   dataops crm company create [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] [--follow-up-at DATE] [--follow-up-status open|done] [--follow-up-note TEXT] --data '{...}'      Through the canonical organization record
   dataops crm company update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] [--follow-up-at DATE] [--follow-up-status open|done] [--follow-up-note TEXT] --data '{...}'  Must include the current version
   dataops crm company dnc <id> [--unset] [--note TEXT]
@@ -43,7 +44,7 @@ Usage
   dataops crm company archive <id>
   dataops crm company unarchive <id>
   dataops crm company delete <id> --yes [--expected-version N]  Permanently delete (admin only)
-  dataops crm person show <id>
+  dataops crm person show <id>                A unique 8+ character id prefix works
   dataops crm person create [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] [--follow-up-at DATE] [--follow-up-status open|done] [--follow-up-note TEXT] --data '{...}'      Through the canonical contact record
   dataops crm person update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] [--follow-up-at DATE] [--follow-up-status open|done] [--follow-up-note TEXT] --data '{...}'  Must include the current version
   dataops crm person dnc <id> [--unset] [--note TEXT]
@@ -51,7 +52,7 @@ Usage
   dataops crm person archive <id>
   dataops crm person unarchive <id>
   dataops crm person delete <id> --yes [--expected-version N]   Permanently delete (admin only)
-  dataops crm deal show <id>
+  dataops crm deal show <id>                A unique 8+ character id prefix works
   dataops crm deal create --data '{...}'        Through the canonical deal record
   dataops crm deal update <id> --data '{...}'    Must include the current version
   dataops crm deal archive <id>
@@ -168,8 +169,9 @@ export async function companiesList(args, io) {
 }
 
 export async function companyShow(args, io) {
-  const id = positional(args, 0, "dataops crm company show <id>");
-  const result = await apiFor(args).get(`/api/sponsor-crm/directory/companies/${enc(id)}`);
+  const api = apiFor(args);
+  const id = await resolveCompanyId(api, positional(args, 0, "dataops crm company show <id>"));
+  const result = await api.get(`/api/sponsor-crm/directory/companies/${enc(id)}`);
   if (!args.json) io.print(JSON.stringify(result, null, 2));
   return result;
 }
@@ -251,8 +253,9 @@ export async function peopleList(args, io) {
 }
 
 export async function personShow(args, io) {
-  const id = positional(args, 0, "dataops crm person show <id>");
-  const result = await apiFor(args).get(`/api/sponsor-crm/contacts/${enc(id)}`);
+  const api = apiFor(args);
+  const id = await resolvePersonId(api, positional(args, 0, "dataops crm person show <id>"));
+  const result = await api.get(`/api/sponsor-crm/contacts/${enc(id)}`);
   if (!args.json) io.print(JSON.stringify(result, null, 2));
   return result;
 }
@@ -324,8 +327,9 @@ export const companyDelete = (args, io) => deleteDirectoryRecord(args, io, 'comp
 export const personDelete = (args, io) => deleteDirectoryRecord(args, io, 'person', 'contacts');
 
 export async function dealShow(args, io) {
-  const id = positional(args, 0, "dataops crm deal show <id>");
-  const result = await apiFor(args).get(`/api/sponsor-crm/deals/${enc(id)}`);
+  const api = apiFor(args);
+  const id = await resolveDealId(api, positional(args, 0, "dataops crm deal show <id>"));
+  const result = await api.get(`/api/sponsor-crm/deals/${enc(id)}`);
   if (!args.json) io.print(JSON.stringify(result, null, 2));
   return result;
 }

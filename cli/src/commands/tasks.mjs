@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { UsageError } from "../errors.mjs";
 import { enc, fields, integer, isoDate, isValidTimezone, list as csv, optionalString, positional, required, resolveDateTime, table } from "../format.mjs";
 import { apiFor, today } from "../session.mjs";
+import { resolveTaskId } from "../shortIds.mjs";
 import { hasTaskFollowUp, isTaskActionable, isTaskSnoozed, taskAttentionDate } from "../../../frontend/src/core/task-attention.js";
 
 export const summary = "List, inspect, create, complete, skip, and follow up Tasks";
@@ -14,7 +15,7 @@ export const help = `dataops tasks - Tasks are the checklist items inside Cards
 Usage
   dataops tasks list [view] [filters] [--batches]
   dataops tasks batches [view] [filters]
-  dataops tasks show <task-id>
+  dataops tasks show <task-id>               A unique 8+ character id prefix works
   dataops tasks create --description D [--date YYYY-MM-DD] [--card ID] [--assignee ID|me]
       [--subject-type sponsor-deal|sponsor-company|sponsor-person|tuition-agreement --subject-id ID]
       [--comment C] [--link URL] [--tags a,b] [--required-link-name NAME] [--instruction-doc DOC-ID]
@@ -547,8 +548,9 @@ function prerequisiteLines(task) {
 }
 
 export async function show(args, io) {
-  const id = positional(args, 0, "dataops tasks show <task-id>");
-  const task = await getTask(apiFor(args), id);
+  const api = apiFor(args);
+  const id = await resolveTaskId(api, positional(args, 0, "dataops tasks show <task-id>"));
+  const task = await getTask(api, id);
   if (args.json) return task;
   fields(io, [
     ["id", task.id],
