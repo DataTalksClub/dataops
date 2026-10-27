@@ -504,3 +504,63 @@ describe('Card Template update planning', () => {
     assert.ok(items.some((item) => item.Put?.TableName === TABLE_AUDIT_EVENTS));
   });
 });
+
+describe('manual task adoption', () => {
+  for (const status of ['todo', 'waiting'] as const) {
+    it(`adopts one ${status} manual match without losing operator fields, then is a no-op`, async () => {
+      const source = template(1);
+      const target = template(2);
+      target.taskDefinitions!.push({ refId: 'collect-x-stats', description: 'Collect stats from X post', offsetDays: 7, assigneeId: 'template-assignee' });
+      const card = cardFrom(source);
+      const manual: Task = {
+        id: 'manual-stats', version: 1, status, source: 'manual', cardId: card.id,
+        ...(status === 'waiting' ? { templateId: source.id } : {}),
+        description: '  collect STATS from X post  ', date: '2026-04-22',
+        comment: 'Keep this', notesLog: [{ id: 'note', text: 'Earlier note', createdAt: CREATED }],
+        assigneeId: 'operator-assignee', link: 'https://example.invalid/proof',
+        taskHistory: [{ id: 'history', taskId: 'manual-stats', action: 'noted', note: 'Existing history', createdAt: CREATED }],
+        createdAt: CREATED, updatedAt: CREATED,
+      };
+      const tasks = [...tasksFrom(source), manual];
+      const plan = buildCardTemplateUpdatePlan(card, tasks, target);
+      assert.equal(plan.taskUpdates.find(({ taskRef }) => taskRef === 'collect-x-stats')?.action, 'adopt');
+      const commands: unknown[] = [];
+      const fake = { send: async (command: unknown) => { commands.push(command); return {}; } } as any;
+      disableLocalTransactionEmulation();
+      const result = await applyCardTemplateUpdate(fake, card, tasks, target, plan.preview.previewToken, 'operator');
+      const adopted = result.tasks.filter(({ description }) => description.trim().toLowerCase() === 'collect stats from x post');
+      assert.equal(adopted.length, 1);
+      const { templateId, templateTaskRef, templateVersion, templateSourceRevision, templateDefinitionSnapshot, version, updatedAt, ...preserved } = adopted[0];
+      const { version: oldVersion, updatedAt: oldUpdated, templateId: oldTemplate, ...original } = manual;
+      assert.deepEqual(preserved, original);
+      assert.equal(templateId, target.id);
+      assert.equal(templateTaskRef, 'collect-x-stats');
+      assert.equal(templateVersion, target.version);
+      assert.equal(templateDefinitionSnapshot?.description, 'Collect stats from X post');
+      const next = buildCardTemplateUpdatePlan(result.card, result.tasks, target);
+      assert.equal(next.preview.state, 'current');
+      const retry = await applyCardTemplateUpdate(fake, result.card, result.tasks, target, next.preview.previewToken, 'operator');
+      assert.equal(retry.applied, false);
+      assert.equal(commands.filter((command) => command instanceof TransactWriteCommand).length, 1);
+      const retriedOriginal = { send: async () => ({ Item: result.auditEvent }) } as any;
+      assert.equal((await applyCardTemplateUpdate(retriedOriginal, result.card, result.tasks, target, plan.preview.previewToken, 'operator')).idempotent, true);
+    });
+  }
+  for (const status of ['done', 'skipped', 'ambiguous'] as const) {
+    it(`surfaces a ${status} manual match as a conflict and refuses any writes`, async () => {
+      const source = template(1);
+      const target = template(2);
+      target.taskDefinitions!.push({ refId: 'collect-x-stats', description: 'Collect stats from X post', offsetDays: 7 });
+      const card = cardFrom(source);
+      const manual = { ...tasksFrom(source)[0], id: 'manual', description: 'Collect stats from X post', status: status === 'ambiguous' ? 'todo' : status } as Task;
+      delete manual.templateId;
+      delete manual.templateTaskRef;
+      const tasks = [...tasksFrom(source), manual, ...(status === 'ambiguous' ? [{ ...manual, id: 'second-manual' }] : [])];
+      const plan = buildCardTemplateUpdatePlan(card, tasks, target);
+      assert.equal(plan.preview.taskChanges.find(({ taskRef }) => taskRef === 'collect-x-stats')?.action, 'conflict');
+      const fake = { send: async (command: unknown) => { assert.ok(command instanceof GetCommand); return {}; } } as any;
+      await assert.rejects(() => applyCardTemplateUpdate(fake, card, tasks, target, plan.preview.previewToken, 'operator'), CardTemplateUpdateConflictError);
+      assert.equal(manual.status, status === 'ambiguous' ? 'todo' : status);
+    });
+  }
+});

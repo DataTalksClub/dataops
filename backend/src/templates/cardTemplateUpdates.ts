@@ -52,6 +52,8 @@ const DEPENDENCY_FIELD = 'dependsOnRefs';
 export type CardTemplateUpdateState = 'current' | 'update-available';
 export type TemplateTaskUpdateAction =
   | 'add'
+  | 'adopt'
+  | 'conflict'
   | 'update'
   | 'restore'
   | 'skip-removed'
@@ -71,6 +73,7 @@ export interface TemplateTaskUpdatePreview {
   taskRef: string;
   currentLabel?: string;
   targetLabel?: string;
+  reason?: string;
   changes: TemplateFieldChange[];
   operatorOverrideFields: string[];
 }
@@ -316,6 +319,11 @@ export function buildCardTemplateUpdatePlan(
     targetCardSnapshot as unknown as Dict,
   );
 
+  const descriptionCounts = new Map<string, number>();
+  definitions.forEach((definition, order) => {
+    const label = templateTaskDefinitionSnapshot(template, definition, order, card.anchorDate!).description.trim().toLowerCase();
+    descriptionCounts.set(label, (descriptionCounts.get(label) || 0) + 1);
+  });
   const accountedRefs = new Set(card.templateDefinitionSnapshot.taskRefs);
   for (const [order, definition] of definitions.entries()) {
     const ref = definition.refId;
@@ -327,6 +335,22 @@ export function buildCardTemplateUpdatePlan(
     // definition new to this Card adds a Task.
     if (!current && accountedRefs.has(ref)) continue;
     if (!current) {
+      const matches = tasks.filter((task) => !(task.templateId && task.templateTaskRef)
+        && task.description.trim().toLowerCase() === target.description.trim().toLowerCase());
+      if (matches.length > 0) {
+        const match = matches[0];
+        const safe = matches.length === 1 && (match.status === 'todo' || match.status === 'waiting')
+          && descriptionCounts.get(target.description.trim().toLowerCase()) === 1;
+        const action = safe ? 'adopt' : 'conflict';
+        taskUpdates.push({ action, taskRef: ref, before: match, target, changedFields: [] });
+        taskChanges.push({
+          action, taskId: match.id, taskRef: ref,
+          currentLabel: match.description, targetLabel: target.description,
+          ...(safe ? {} : { reason: 'Matching manual work is resolved or ambiguous; resolve it before applying' }),
+          changes: [], operatorOverrideFields: [],
+        });
+        continue;
+      }
       taskUpdates.push({ action: 'add', taskRef: ref, before: null, target, changedFields: [...TASK_FIELDS] });
       taskChanges.push({
         action: 'add',
@@ -445,6 +469,7 @@ function assertAcyclicAfterUpdate(tasks: Task[], updates: PlannedTaskUpdate[]): 
   const idByRef = new Map<string, string>();
   for (const task of tasks) if (task.templateTaskRef) idByRef.set(task.templateTaskRef, task.id);
   for (const update of updates) {
+    if (update.action === 'adopt') idByRef.set(update.taskRef, update.before!.id);
     if (update.action === 'add') idByRef.set(update.taskRef, `added:${update.taskRef}`);
   }
   const edges = new Map<string, string[]>(tasks.map((task) => [task.id, task.dependsOn || []]));

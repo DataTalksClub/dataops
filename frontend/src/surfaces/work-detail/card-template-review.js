@@ -4,6 +4,8 @@ function templateUpdateSummary(preview) {
   const counts = preview?.counts || {};
   const parts = [
     [counts.added, "added"],
+    [(preview.taskChanges || []).filter(({ action }) => action === "adopt").length, "adopted"],
+    [(preview.taskChanges || []).filter(({ action }) => action === "conflict").length, "conflicts"],
     [counts.updated, "updated"],
     [counts.skipped, "skipped"],
     [counts.retainedCompleted, "completed retained"],
@@ -15,6 +17,8 @@ function templateUpdateSummary(preview) {
 
 function taskUpdateLabel(change) {
   const label = change.targetLabel || change.currentLabel || change.taskRef;
+  if (change.action === "adopt") return `Adopt manual task: ${label} (${change.taskId})`;
+  if (change.action === "conflict") return `Conflict: ${label} — ${change.reason}`;
   if (change.action === "add") return `Add ${label}`;
   if (change.action === "restore") return `Restore task: ${label}`;
   if (change.action === "skip-removed") return `Skip removed task: ${label}`;
@@ -176,7 +180,7 @@ export function renderCardTemplateUpdate(card, data, context) {
   apply.type = "button";
   apply.className = "primary-button";
   apply.textContent = detail.activeCardTemplateBusy ? "Applying…" : "Apply reviewed update";
-  apply.disabled = detail.activeCardTemplateBusy ||
+  apply.disabled = (preview.taskChanges || []).some(({ action }) => action === "conflict") || detail.activeCardTemplateBusy ||
     detail.activeCardMutationBusy || detail.activeTaskMutationBusy;
   apply.addEventListener("click", () => applyCardTemplateUpdate(card.id, preview.previewToken, preview.targetOptionalGroups));
   const cancel = document.createElement("button");

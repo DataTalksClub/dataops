@@ -68,8 +68,8 @@ export interface AppliedCardTemplateUpdate {
 }
 
 export class CardTemplateUpdateConflictError extends Error {
-  constructor() {
-    super('Card, Task, or Template changed after preview');
+  constructor(message = 'Card, Task, or Template changed after preview') {
+    super(message);
     this.name = 'CardTemplateUpdateConflictError';
   }
 }
@@ -262,6 +262,10 @@ function appliedExistingTask(
         },
       ];
     }
+    if (update.action === 'adopt') {
+      next.templateId = template.id;
+      next.templateTaskRef = update.taskRef;
+    }
     delete next.templateRetiredAt;
     delete next.templateRetiredReason;
     next.templateVersion = template.version;
@@ -452,6 +456,9 @@ export async function applyCardTemplateUpdate(
       idempotent: true,
     };
   }
+  if (plan.taskUpdates.some(({ action }) => action === 'conflict')) {
+    throw new CardTemplateUpdateConflictError('Matching manual work is resolved or ambiguous; resolve the preview conflicts before applying');
+  }
   if (plan.preview.previewToken !== previewToken) throw new CardTemplateUpdateConflictError();
   if (plan.preview.state === 'current') {
     return { preview: plan.preview, card, tasks, auditEvent: null, applied: false, idempotent: true };
@@ -481,6 +488,7 @@ export async function applyCardTemplateUpdate(
   const idsByRef = new Map<string, string>();
   for (const task of tasks) if (task.templateTaskRef && task.templateId === template.id) idsByRef.set(task.templateTaskRef, task.id);
   for (const update of plan.taskUpdates) {
+    if (update.action === 'adopt') idsByRef.set(update.taskRef, update.before!.id);
     if (update.action === 'add') idsByRef.set(update.taskRef, deterministicTaskId(card.id, template.id, update.taskRef));
   }
   const replacements = new Map<string, Task>();
