@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'crypto';
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { readRuntimeSecret } from '../secrets/reader';
 import { DynamoDBDocumentClient, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
 import { createCrmRecord, deterministicCrmId, getCrmRecord, listCrmRecords, updateCrmRecord, type CrmRecord } from '../db/sponsorCrm';
@@ -23,7 +23,7 @@ const LEAD_STATUSES = new Set(['new', 'triaged', 'converted', 'ignored']);
 const LEAD_SOURCES = new Set(['newsletter', 'social', 'influencer', 'paid']);
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
-let secretsClient: SecretsManagerClient | null = null;
+let readSecret = readRuntimeSecret;
 let cachedCredential: { value: string; id: string; expiresAt: number } | null = null;
 
 interface Credential { value: string; id: string }
@@ -85,9 +85,7 @@ async function loadCredential(force = false): Promise<Credential | null> {
   if (!force && cachedCredential && cachedCredential.expiresAt > Date.now()) return cachedCredential;
   const name = process.env.EMAIL_DOCUMENT_INTAKE_SECRET_NAME;
   if (!name) return null;
-  secretsClient ||= new SecretsManagerClient({});
-  const value = await secretsClient.send(new GetSecretValueCommand({ SecretId: name }));
-  const raw = value.SecretString || (value.SecretBinary ? Buffer.from(value.SecretBinary).toString('utf8') : '');
+  const raw = await readSecret(name);
   if (!raw) return null;
   const parsed = parseCredential(raw);
   cachedCredential = { ...parsed, expiresAt: Date.now() + SECRET_CACHE_MS };
@@ -354,11 +352,11 @@ export async function storeLead(client: DynamoDBDocumentClient, value: LeadValue
 
 export function resetSponsorLeadIntakeStateForTests(): void {
   cachedCredential = null;
-  secretsClient = null;
+  readSecret = readRuntimeSecret;
 }
 
-export function setSponsorLeadIntakeClientsForTests(clients: { secrets?: SecretsManagerClient }): void {
-  if (clients.secrets) secretsClient = clients.secrets;
+export function setSponsorLeadIntakeClientsForTests(clients: { readSecret?: typeof readRuntimeSecret }): void {
+  if (clients.readSecret) readSecret = clients.readSecret;
 }
 
 export async function handleSponsorLeadIntake(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {

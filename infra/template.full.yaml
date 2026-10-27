@@ -89,10 +89,6 @@ Parameters:
     NoEcho: true
     AllowedPattern: "^([a-f0-9]{64})?$"
     Description: SHA256 digest of the deployment-managed read-only invoice service credential; empty disables access
-  EmailDocumentIntakeSecretArn:
-    Type: String
-    Description: ARN of the pre-created email document intake secret
-    AllowedPattern: "^arn:[a-z0-9-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+$"
   EmailDocumentSourcePrefix:
     Type: String
     Default: transfer/
@@ -1199,7 +1195,6 @@ Resources:
             Action:
               - secretsmanager:GetSecretValue
             Resource:
-              - !Ref EmailDocumentIntakeSecretArn
               - !If [HasInvoicePublicationConfig, !Ref InvoicePublicationSecret, !Ref AWS::NoValue]
               - !If
                 - HasSponsorTemplateSecret
@@ -1292,7 +1287,7 @@ Resources:
           INVOICE_READER_TOKEN_SHA256: !Ref InvoiceReaderTokenSha256
           KNOWLEDGE_PUBLISHER_REPOSITORY: !Sub ${GitHubOwner}/${GitHubRepo}
           KNOWLEDGE_PUBLISHER_BRANCH: !Ref GitHubBranch
-          EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Ref EmailDocumentIntakeSecretArn
+          EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Sub ${AWS::StackName}.email-document-intake
           EMAIL_DOCUMENTS_BUCKET: !Ref EmailDocumentsBucket
           EMAIL_DOCUMENTS_KMS_KEY: !Ref EmailDocumentsKey
           EMAIL_DOCUMENT_SOURCE_PREFIX: !Ref EmailDocumentSourcePrefix
@@ -1644,4 +1639,4 @@ Outputs:
     Value: !Ref WorkEnginePortalSecret
   EmailDocumentIntakeSecretName:
     Description: Rotatable machine credential for versioned email document intake
-    Value: !Ref EmailDocumentIntakeSecretArn
+    Value: !Sub ${AWS::StackName}.email-document-intake

@@ -1,7 +1,6 @@
 import { after, before, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert';
 import { CopyObjectCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
@@ -304,11 +303,11 @@ describe('POST /api/v1/intake/email-documents', () => {
 
   it('refreshes a rotated secret on mismatch and throttles by non-secret credential id', async () => {
     delete process.env.EMAIL_DOCUMENT_INTAKE_SECRET;
-    process.env.EMAIL_DOCUMENT_INTAKE_SECRET_NAME = 'configured-secret-arn';
+    process.env.EMAIL_DOCUMENT_INTAKE_SECRET_NAME = 'dataops-v1.email-document-intake';
     let active = JSON.stringify({ id: 'sender-a', credential: 'old-secret-value' });
-    const fakeSecrets = { send: async () => ({ SecretString: active }) } as unknown as SecretsManagerClient;
+    const fakeReader = async () => active;
     resetEmailDocumentIntakeStateForTests();
-    setEmailDocumentIntakeClientsForTests({ secrets: fakeSecrets, s3: s3 as unknown as S3Client });
+    setEmailDocumentIntakeClientsForTests({ readSecret: fakeReader, s3: s3 as unknown as S3Client });
     const old = request('rotation-old-109', [], 'todo'); old.headers['x-dataops-intake-secret'] = 'old-secret-value';
     assert.strictEqual((await handler(old, {})).statusCode, 202);
     active = JSON.stringify({ id: 'sender-a', credential: 'new-secret-value' });
@@ -320,7 +319,7 @@ describe('POST /api/v1/intake/email-documents', () => {
     process.env.EMAIL_DOCUMENT_RATE_LIMIT = '1';
     active = JSON.stringify({ id: 'sender-rate-sequential', credential: 'new-secret-value' });
     resetEmailDocumentIntakeStateForTests();
-    setEmailDocumentIntakeClientsForTests({ secrets: fakeSecrets });
+    setEmailDocumentIntakeClientsForTests({ readSecret: fakeReader });
     const one = request('rate-one-109', [], 'todo'); one.headers['x-dataops-intake-secret'] = 'new-secret-value';
     const two = request('rate-two-109', [], 'todo'); two.headers['x-dataops-intake-secret'] = 'new-secret-value';
     assert.strictEqual((await handler(one, {})).statusCode, 202);

@@ -2,6 +2,18 @@ import { DynamoDBClient, GetItemCommand } from '@aws-sdk/client-dynamodb';
 import { DecryptCommand, KMSClient } from '@aws-sdk/client-kms';
 import { decodeFields } from './cipher';
 
+/** Read an imported SecretString verbatim using this Lambda's workload identity. */
+export async function readRuntimeSecret(name: string): Promise<string> {
+  const read = createSecretReader({
+    tableName: process.env.DATAOPS_SECRETS_TABLE || '',
+    keyId: process.env.DATAOPS_SECRETS_KMS_KEY || '',
+    region: process.env.AWS_REGION || '',
+  });
+  const fields = await read(name);
+  if (typeof fields.value !== 'string' || !fields.value) throw new Error(`Secret '${name}' has no value`);
+  return fields.value;
+}
+
 /** IAM is the machine identity: GetItem on the table plus context-scoped Decrypt. */
 export function createSecretReader(options: {
   tableName: string;

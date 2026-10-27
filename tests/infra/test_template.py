@@ -474,27 +474,22 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     backend_dump = _resource_block(template, "BackendFunctionDailyDynamoBackup")
     assert '"dataopsAction":"dynamo-backup"' in backend_dump
     assert "WORK_ENGINE_PORTAL_SECRET_NAME: !Sub ${AWS::StackName}.work-engine.portal-secret" in backend
-    assert "EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Ref EmailDocumentIntakeSecretArn" in backend
-    assert "!Ref EmailDocumentIntakeSecretArn" in backend
+    assert "EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Sub ${AWS::StackName}.email-document-intake" in backend
+    assert "!Ref EmailDocumentIntakeSecretArn" not in backend
     # No cross-function invocation — the old two-Lambda proxy is gone.
     assert "lambda:InvokeFunction" not in backend
 
 
-def test_email_document_intake_uses_a_precreated_rotatable_secret():
+def test_email_document_intake_reads_team_store_without_sm_permissions():
     template = TEMPLATE.read_text(encoding="utf-8")
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
     backend = _resource_block(template, "BackendFunction")
-    assert "EmailDocumentIntakeSecretArn:" in template
-    assert "ARN of the pre-created email document intake secret" in template
-    assert "EmailDocumentIntakeSecretName:" in template
-    assert "EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Ref EmailDocumentIntakeSecretArn" in backend
+    assert "EmailDocumentIntakeSecretArn" not in template
+    assert "EMAIL_DOCUMENT_INTAKE_SECRET_ARN" not in workflow
+    assert "EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Sub ${AWS::StackName}.email-document-intake" in backend
     assert "EMAIL_DOCUMENT_RATE_LIMIT: !Ref EmailDocumentRateLimit" in backend
-    assert "EMAIL_DOCUMENT_INTAKE_SECRET_ARN: ${{ secrets.EMAIL_DOCUMENT_INTAKE_SECRET_ARN }}" in workflow
-    assert "ParameterKey=EmailDocumentIntakeSecretArn,ParameterValue=$EMAIL_DOCUMENT_INTAKE_SECRET_ARN" in workflow
-    assert 'if [ -z "$EMAIL_DOCUMENT_INTAKE_SECRET_ARN" ]' in workflow
-    intake_secret_parameter = template.split("  EmailDocumentIntakeSecretArn:", 1)[1].split("\n  EmailDocumentSourcePrefix:", 1)[0]
-    assert "Default:" not in intake_secret_parameter
-    assert "Default: arn:" not in template
+    assert "DATAOPS_SECRETS_TABLE: !Ref DataOpsSecretsTable" in backend
+    assert "DATAOPS_SECRETS_KMS_KEY: !Ref SecretsStoreKey" in backend
 
 
 def test_backend_reads_only_the_exact_calendar_broker_secret():

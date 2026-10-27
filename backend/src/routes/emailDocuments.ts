@@ -4,7 +4,7 @@ import { getInvoice } from '../invoices/store';
 import type { Invoice } from '../invoices/model';
 import { createHash, timingSafeEqual } from 'crypto';
 import { CopyObjectCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { readRuntimeSecret } from '../secrets/reader';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 
 import { createArtifactIfAbsent, deleteArtifact, getArtifact, updateArtifact } from '../db/artifacts';
@@ -23,7 +23,7 @@ const DOCUMENT_FIELDS = new Set(['kind', 'storageUri', 'filename', 'contentType'
 const SENSITIVE_KEY = /^(secret|token|password|credential|authorization|signed[_-]?url|base64|body|data|bytes|fileContent|attachmentContent|rawEmail)$/i;
 const SIGNED_URL = /(x-amz-signature|x-amz-credential|x-amz-security-token|[?&](token|signature|sig)=)/i;
 
-let secretsClient: SecretsManagerClient | null = null;
+let readSecret = readRuntimeSecret;
 let s3Client: S3Client | null = null;
 let cachedCredential: { value: string; id: string; expiresAt: number } | null = null;
 
@@ -80,9 +80,7 @@ async function loadCredential(force = false): Promise<Credential | null> {
   if (!force && cachedCredential && cachedCredential.expiresAt > Date.now()) return cachedCredential;
   const name = process.env.EMAIL_DOCUMENT_INTAKE_SECRET_NAME;
   if (!name) return null;
-  secretsClient ||= new SecretsManagerClient({});
-  const value = await secretsClient.send(new GetSecretValueCommand({ SecretId: name }));
-  const raw = value.SecretString || (value.SecretBinary ? Buffer.from(value.SecretBinary).toString('utf8') : '');
+  const raw = await readSecret(name);
   if (!raw) return null;
   const parsed = parseCredential(raw);
   cachedCredential = { ...parsed, expiresAt: Date.now() + SECRET_CACHE_MS };
@@ -309,12 +307,12 @@ function audit(outcome: string, credential: Credential | null, correlation: stri
 
 export function resetEmailDocumentIntakeStateForTests(): void {
   cachedCredential = null;
-  secretsClient = null;
+  readSecret = readRuntimeSecret;
   s3Client = null;
 }
 
-export function setEmailDocumentIntakeClientsForTests(clients: { secrets?: SecretsManagerClient; s3?: S3Client }): void {
-  if (clients.secrets) secretsClient = clients.secrets;
+export function setEmailDocumentIntakeClientsForTests(clients: { readSecret?: typeof readRuntimeSecret; s3?: S3Client }): void {
+  if (clients.readSecret) readSecret = clients.readSecret;
   if (clients.s3) s3Client = clients.s3;
 }
 
