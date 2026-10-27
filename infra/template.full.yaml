@@ -1199,7 +1199,6 @@ Resources:
             Action:
               - secretsmanager:GetSecretValue
             Resource:
-              - !Ref WorkEnginePortalSecret
               - !Ref EmailDocumentIntakeSecretArn
               - !If [HasInvoicePublicationConfig, !Ref InvoicePublicationSecret, !Ref AWS::NoValue]
               - !If
@@ -1288,7 +1287,7 @@ Resources:
           AUTH_SESSION_LIFETIME_SECONDS: !Ref AuthSessionLifetimeSeconds
           DATAOPS_DOCS_DOMAIN: "1"
           WORK_ENGINE_AUTH_MODE: portal
-          WORK_ENGINE_PORTAL_SECRET_NAME: !Sub ${AWS::StackName}/work-engine/portal-secret
+          WORK_ENGINE_PORTAL_SECRET_NAME: !Sub ${AWS::StackName}.work-engine.portal-secret
           INVOICE_PUBLICATION_SECRET_NAME: !If [HasInvoicePublicationConfig, !Ref InvoicePublicationSecret, ""]
           INVOICE_READER_TOKEN_SHA256: !Ref InvoiceReaderTokenSha256
           KNOWLEDGE_PUBLISHER_REPOSITORY: !Sub ${GitHubOwner}/${GitHubRepo}

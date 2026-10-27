@@ -1,9 +1,7 @@
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
-
-let secretsClient: SecretsManagerClient | null = null;
+import { createSecretReader } from './secrets/reader';
 
 /**
- * Read the deployed portal secret on each Secrets Manager-backed use so key
+ * Read the deployed portal secret on each team-store use so key
  * rotation invalidates derived cursor material without a warm-process restart.
  * Static environment injection remains preferred where deployment provides it.
  */
@@ -17,9 +15,12 @@ export async function portalRuntimeSecret(): Promise<string> {
     return '';
   }
 
-  secretsClient ||= new SecretsManagerClient({});
-  const result = await secretsClient.send(new GetSecretValueCommand({ SecretId: secretName }));
-  const secret = result.SecretString
-    || (result.SecretBinary ? Buffer.from(result.SecretBinary).toString('utf-8') : '');
-  return secret;
+  const read = createSecretReader({
+    tableName: process.env.DATAOPS_SECRETS_TABLE || '',
+    keyId: process.env.DATAOPS_SECRETS_KMS_KEY || '',
+    region: process.env.AWS_REGION || '',
+  });
+  const fields = await read(secretName);
+  if (typeof fields.value !== 'string' || !fields.value) throw new Error('Portal runtime secret is empty');
+  return fields.value;
 }

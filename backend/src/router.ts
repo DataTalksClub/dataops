@@ -1,6 +1,6 @@
 import { handleTuitionRoutes } from './routes/tuition';
 import { timingSafeEqual } from 'crypto';
-import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import { portalRuntimeSecret } from './runtimeSecret';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { handleCardRoutes } from './routes/cards';
@@ -59,7 +59,6 @@ import { recordRequestError } from './requestErrorLog';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 let cachedPortalSecret: string | null | undefined;
-let secretsClient: SecretsManagerClient | null = null;
 
 // Routes that do NOT require authentication
 const AUTH_EXEMPT_PATHS = new Set([
@@ -105,9 +104,7 @@ async function portalSecret(): Promise<string> {
     return '';
   }
 
-  secretsClient ||= new SecretsManagerClient({});
-  const result = await secretsClient.send(new GetSecretValueCommand({ SecretId: secretName }));
-  const secret = result.SecretString || (result.SecretBinary ? Buffer.from(result.SecretBinary).toString('utf-8') : '');
+  const secret = await portalRuntimeSecret();
   cachedPortalSecret = secret || null;
   return secret;
 }
