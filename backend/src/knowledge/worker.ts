@@ -5,7 +5,6 @@ import {mkdtemp,open,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {CopyObjectCommand,HeadObjectCommand,PutObjectCommand} from '@aws-sdk/client-s3';
-import {GetSecretValueCommand,SecretsManagerClient} from '@aws-sdk/client-secrets-manager';
 import {KnowledgeStore,bounded,checksum,isManagedKnowledgePath,type Publication} from '../docs/knowledgeStore';
 import {writeEmbeddedMetric} from '../embeddedMetrics';
 import {withKnowledgeJobLease} from './lease';
@@ -95,7 +94,10 @@ export class KnowledgeJobs {
       if(this.primaryRemaining<=0)throw new Error('Mirror deferred: primary quota exhausted');
       this.primaryRemaining--;
     }
-    if(!this.token) {const secret=await new SecretsManagerClient({}).send(new GetSecretValueCommand({SecretId:process.env.GITHUB_TOKEN_SECRET_NAME}));this.token=secret.SecretString;}
+    if(!this.token) {
+      const {readRuntimeSecret}=await import('../secrets/reader');
+      this.token=await readRuntimeSecret(process.env.GITHUB_TOKEN_SECRET_NAME||'');
+    }
     const token=this.token;if(!token) throw new Error('Mirror credential missing');
     const response=await this.fetchImpl(`https://api.github.com/repos/${process.env.GITHUB_OWNER||'DataTalksClub'}/${process.env.GITHUB_REPO||'dataops-knowledge'}${path}`,{method,signal:AbortSignal.timeout(60_000),headers:{authorization:`Bearer ${token}`,accept:'application/vnd.github+json','content-type':'application/json','x-github-api-version':'2022-11-28'},body:body?JSON.stringify(body):undefined});
     const remaining=response.headers.get('x-ratelimit-remaining');

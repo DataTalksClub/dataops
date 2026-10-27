@@ -6,9 +6,35 @@ import {existsSync} from 'node:fs';
 import {KnowledgeJobs} from '../src/knowledge/worker';
 import {KNOWLEDGE_LEASE_MS,withKnowledgeJobLease} from '../src/knowledge/lease';
 import {syntheticKnowledge} from './helpers/knowledge';
+import {DynamoDBClient} from '@aws-sdk/client-dynamodb';
+import {KMSClient} from '@aws-sdk/client-kms';
+
+it('loads the mirror token through the context-bound reader and caches it per job',async t=>{
+  const env={...process.env};t.after(()=>{process.env=env;});
+  Object.assign(process.env,{DATAOPS_SECRETS_TABLE:'fixture-secrets',DATAOPS_SECRETS_KMS_KEY:'fixture-key',AWS_REGION:'eu-west-1',GITHUB_TOKEN_SECRET_NAME:'dataops-v1.knowledge.github-token'});
+  let reads=0;
+  t.mock.method(DynamoDBClient.prototype,'send',async(command:any)=>{
+    reads++;assert.equal(command.input.Key.SK.S,'SECRET#dataops-v1.knowledge.github-token');
+    return {Item:{data:{S:Buffer.from('ciphertext').toString('base64')}}};
+  });
+  t.mock.method(KMSClient.prototype,'send',async(command:any)=>{
+    assert.deepEqual(command.input.EncryptionContext,{secret:'dataops-v1.knowledge.github-token'});
+    return {Plaintext:Buffer.from(JSON.stringify({value:'fixture-mirror-token'}))};
+  });
+  const fetcher=(async(_url:any,options:any)=>{
+    assert.equal(options.headers.authorization,'Bearer fixture-mirror-token');
+    return new Response('{}',{status:200});
+  }) as typeof fetch;
+  const jobs=new KnowledgeJobs(syntheticKnowledge({}).store,'fixture-backups',fetcher);
+  await jobs.github('GET','/git/ref/heads/main');
+  await jobs.github('GET','/git/ref/heads/main');
+  assert.equal(reads,1);
+});
 
 it('streams a large historical repository within a 256 MiB RSS bound',async()=>{
-  const {stdout}=await promisify(execFile)(process.execPath,['--max-old-space-size=96','--import','tsx',require.resolve('./helpers/knowledge-backup-memory.ts')],{timeout:120_000});
+  // Linux carries the parent's peak RSS across exec. Fork Node from a small
+  // shell so the oracle measures this workload, not the test runner's imports.
+  const {stdout}=await promisify(execFile)('/bin/sh',['-c','"$@"; result=$?; exit "$result"','knowledge-memory',process.execPath,'--max-old-space-size=96','--import','tsx',require.resolve('./helpers/knowledge-backup-memory.ts')],{timeout:120_000});
   const measured=JSON.parse(stdout.trim());
   assert.ok(measured.uploaded>256*1024*1024);assert.ok(measured.maxRssBytes<256*1024*1024);
   console.log(`Backup memory regression: ${JSON.stringify(measured)}`);

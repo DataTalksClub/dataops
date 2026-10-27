@@ -22,9 +22,9 @@ Parameters:
     Default: main
   GitHubTokenSecretName:
     Type: String
-    Default: dataops-v1/knowledge/github-token
+    Default: dataops-v1.knowledge.github-token
     Description: >-
-      Secrets Manager token used exclusively by the daily knowledge mirror worker.
+      Team store token used exclusively by the daily knowledge mirror worker.
   AuthBaseUrl:
     Type: String
     Default: https://auth.dtcdev.click
@@ -1437,6 +1437,8 @@ Resources:
           GITHUB_REPO: !Ref GitHubRepo
           GITHUB_BRANCH: !Ref GitHubBranch
           GITHUB_TOKEN_SECRET_NAME: !Ref GitHubTokenSecretName
+          DATAOPS_SECRETS_TABLE: !Ref DataOpsSecretsTable
+          DATAOPS_SECRETS_KMS_KEY: !Ref SecretsStoreKey
       Policies:
         - Statement:
             Effect: Allow
@@ -1460,8 +1462,15 @@ Resources:
             Resource: !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}/jobs/*
         - Statement:
             Effect: Allow
-            Action: secretsmanager:GetSecretValue
-            Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GitHubTokenSecretName}-*
+            Action: dynamodb:GetItem
+            Resource: !GetAtt DataOpsSecretsTable.Arn
+        - Statement:
+            Effect: Allow
+            Action: kms:Decrypt
+            Resource: !GetAtt SecretsStoreKey.Arn
+            Condition:
+              StringEquals:
+                kms:EncryptionContext:secret: !Ref GitHubTokenSecretName
       Events:
         DailyKnowledgeBackup:
           Type: Schedule
