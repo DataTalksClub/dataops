@@ -162,7 +162,7 @@ export function classifyThread(
 ): {candidate?: ClassifiedCandidate; exclusion?: string} {
   const first = [...messages].sort((a, b) => Number(a.internalDate || 0) - Number(b.internalDate || 0))[0];
   if (!first) return {exclusion: "no_sponsorship_ask"};
-  const {name, email: rawEmail} = parseEmail(first.from);
+  const {email: rawEmail} = parseEmail(first.from);
   const email = normalizeEmail(rawEmail);
   const domain = email.split("@")[1] || "";
   if (!domain || ownEmails.some(e => normalizeEmail(e) === email)
@@ -208,7 +208,7 @@ export function classifyThread(
   const askType = guest ? "podcast_guest_pitch" : newsletter ? "newsletter_slot"
     : workshop ? "sponsored_workshop_webinar" : commercial ? "paid_placement" : "share_promote";
   return {candidate: {
-    threadId, name: cleanPersonName(name, email), email,
+    threadId, name: extractPersonName(messages, email, domain), email,
     domain: GENERIC_DOMAINS.has(domain) ? null : domain,
     askType, subject: first.subject || "",
     date: first.internalDate ? new Date(Number(first.internalDate)).toISOString().slice(0, 10) : "",
@@ -267,6 +267,114 @@ export function parseEmail(from?: string): { name: string; email: string } {
   let email = (match[2] || match[1] || "").trim().toLowerCase();
   if (email.includes("<")) email = email.replace(/.*<([^>]+)>.*/, "$1");
   return { name, email };
+}
+
+const GENERIC_PERSON_NAMES = new Set([
+  "twitter", "facebook", "linkedin", "instagram", "youtube", "whatsapp",
+  "telegram", "tiktok", "pinterest", "reddit", "snapchat",
+  "info", "team", "hello", "contact", "support", "sales", "marketing",
+  "admin", "office", "noreply", "subscribe", "newsletter",
+]);
+
+const ORG_NAME_WORDS = new Set([
+  "institute", "university", "college", "school", "academy", "agency",
+  "media", "studio", "group", "solutions", "technologies", "consulting",
+  "ventures", "labs", "llc", "gmbh", "inc", "ltd",
+]);
+
+const SIGN_OFF_CLOSER = /^(?:best|kind\s+(?:regards|wishes)|warm(?:est)?\s+(?:regards|wishes)|thanks|thank\s+you|regards|cheers|sincerely|warmly)[,!.]*/i;
+const NAME_TOKEN = /[A-Z][\p{L}'’-]+/gu;
+const SENTENCE_STARTERS = new Set([
+  "this", "that", "these", "those", "we", "our", "us", "i", "it", "its",
+  "please", "kindly", "look", "looking", "hope", "let", "lets", "my", "me",
+  "if", "in", "on", "to", "for", "with", "and", "the", "as", "at", "by",
+  "feel", "happy", "excited", "reach", "reaching", "email", "call",
+]);
+
+function normalizedKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+/** Display-name junk: platform or role words, the sender's own company name,
+ * or an organization word ("Saras AI Institute") — none identify a person. */
+export function isJunkPersonName(name: string, company = ""): boolean {
+  const key = normalizedKey(name);
+  if (!key) return true;
+  if (GENERIC_PERSON_NAMES.has(key)) return true;
+  if (company && key === normalizedKey(company)) return true;
+  const words = name.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  return words.some((word) => ORG_NAME_WORDS.has(word));
+}
+
+function trimCompanyTokens(tokens: string[], company: string): string[] {
+  const copy = [...tokens];
+  while (copy.length) {
+    const key = normalizedKey(copy[copy.length - 1]);
+    if ((company && key === normalizedKey(company)) || ORG_NAME_WORDS.has(key)) copy.pop();
+    else break;
+  }
+  return copy;
+}
+
+function capitalizedRun(text: string, company: string): string[] {
+  const run: string[] = [];
+  for (const token of text.match(NAME_TOKEN) || []) {
+    const key = normalizedKey(token);
+    if (SENTENCE_STARTERS.has(key)) break;
+    if ((company && key === normalizedKey(company)) || ORG_NAME_WORDS.has(key)) break;
+    run.push(token);
+  }
+  return trimCompanyTokens(run, company);
+}
+
+/** The sender's real name from the authored sign-off ("Best, Xan EezyCollab"):
+ * capitalized tokens right after the closing word, or a following line that is
+ * nothing but a name. Company and organization tokens never join the name. */
+export function signOffPersonName(text: string, company = ""): string | undefined {
+  const lines = text
+    .replace(/<(?:script|style)\b[^>]*>[\s\S]*?<\/(?:script|style)>/gi, " ")
+    .replace(/<br\s*\/?[^>]*>|<\/(?:p|div)>/gi, "\n")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[>\s]+/, "").trim())
+    .filter(Boolean);
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(SIGN_OFF_CLOSER);
+    if (!match) continue;
+    const sameLine = capitalizedRun(lines[i].slice(match[0].length), company);
+    if (sameLine.length) return sameLine.join(" ");
+    for (const next of lines.slice(i + 1, i + 4)) {
+      const tokens = trimCompanyTokens(next.match(NAME_TOKEN) || [], company);
+      if (!tokens.length) continue;
+      const bare = normalizedKey(next);
+      if (bare === normalizedKey(tokens.join(""))) return tokens.join(" ");
+      break;
+    }
+  }
+  return undefined;
+}
+
+/** A person's name must identify the person: prefer a display name from the
+ * thread that is not junk, then the sign-off, then the email local part. */
+export function extractPersonName(messages: RawMailMessage[], senderEmail: string, domain: string): string {
+  const company = GENERIC_DOMAINS.has(domain) ? "" : deriveCompanyName(domain);
+  const displayNames: Array<{ name: string; at: number }> = [];
+  messages.forEach((msg, index) => {
+    const parsed = parseEmail(msg.from);
+    if (normalizeEmail(parsed.email) !== normalizeEmail(senderEmail)) return;
+    const name = (parsed.name || "").trim().replace(/^["']|["']$/g, "");
+    if (name && !name.includes("@") && name.length <= 200) displayNames.push({ name, at: index });
+  });
+  const personLike = displayNames.filter((entry) => !isJunkPersonName(entry.name, company));
+  if (personLike.length) {
+    personLike.sort((a, b) => (b.name.trim().split(/\s+/).length - a.name.trim().split(/\s+/).length) || (a.at - b.at));
+    return personLike[0].name;
+  }
+  const initiating = [...messages].sort((a, b) => Number(a.internalDate || 0) - Number(b.internalDate || 0))[0];
+  const signOff = initiating ? signOffPersonName(initiating.body || initiating.snippet || "", company) : undefined;
+  if (signOff) return signOff;
+  return cleanPersonName("", senderEmail);
 }
 
 function cleanPersonName(name: string, email: string): string {

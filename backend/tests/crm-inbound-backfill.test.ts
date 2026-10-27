@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { classifyThread, dedupePeople, main, normalizeEmail, resolveCandidateOrgId, type RawMailMessage } from '../scripts/crm-inbound-backfill';
+import { classifyThread, dedupePeople, extractPersonName, isJunkPersonName, main, normalizeEmail, resolveCandidateOrgId, signOffPersonName, type RawMailMessage } from '../scripts/crm-inbound-backfill';
 
 function message(overrides: Partial<RawMailMessage> = {}): RawMailMessage {
   return { id: 'm1', from: 'Pat Example <pat@vendor.example>', internalDate: '1000',
@@ -112,6 +112,36 @@ test('dry-run matches name/domain and suppresses needs-review records without wr
     if (originalToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = originalToken;
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('person names come from the real sender, not org or display-name junk', () => {
+  // The Saras case: the ask arrived under the org display name; the same
+  // sender's later messages carry the real person name.
+  const saras = classifyThread('t-saras', [
+    message({ id: 's1', from: 'Saras AI Institute <puranjay.s@sarasai.org>' }),
+    message({ id: 's2', from: 'Puranjay Sharma <puranjay.s@sarasai.org>', internalDate: '2000' }),
+  ]);
+  assert.equal(saras.candidate?.name, 'Puranjay Sharma');
+  // Org-worded and platform display names are junk on their own.
+  assert.equal(isJunkPersonName('Saras AI Institute', 'Sarasai'), true);
+  assert.equal(isJunkPersonName('Twitter'), true);
+  assert.equal(isJunkPersonName('Eezycollab', 'Eezycollab'), true);
+  assert.equal(isJunkPersonName('Allie Beazell', 'Fabi.ai'), false);
+});
+
+test('a bare role sender takes its name from the authored sign-off', () => {
+  // The EezyCollab case: the sender address has no display name anywhere in
+  // the thread; the name only exists in the message sign-off.
+  const xan = classifyThread('t-xan', [
+    message({ from: 'twitter@eezycollab.com',
+      body: 'We would like to sponsor your newsletter. Could you share your rates?\r\n\r\nBest,\r\n\r\nXan\r\nEezyCollab\r\n\r\nThis is an official collaboration inquiry from EezyCollab on behalf of our client.' }),
+  ]);
+  assert.equal(xan.candidate?.name, 'Xan');
+  assert.equal(signOffPersonName('details!\r\n\r\nBest,\r\n\r\nXan\r\nEezyCollab\r\n\r\nThis is an official collaboration inquiry.', 'Eezycollab'), 'Xan');
+  assert.equal(signOffPersonName('Best regards, Puranjay Sharma\nSaras AI Institute', 'Sarasai'), 'Puranjay Sharma');
+  assert.equal(signOffPersonName('Thanks, I would love to hear from you', ''), undefined);
+  // No display name and no sign-off falls back to the email local part.
+  assert.equal(extractPersonName([message({ from: 'puranjay.s@sarasai.org' })], 'puranjay.s@sarasai.org', 'sarasai.org'), 'Puranjay S');
 });
 
 test('links sender with personal email to known org via thread colleague', () => {
