@@ -39,6 +39,15 @@ describe('one canonical frontend', () => {
     }
   });
 
+  it('serves the app shell for a newsletter issue deep link, including 64-hex ids', () => {
+    const shell = serveCanonicalFrontend({ httpMethod: 'GET', path: '/' });
+    for (const id of ['22510fb31805d6bab4a5adedcc3a9b5f78b446c9667c2f1fdf24dc01029f9683', 'not-an-issue']) {
+      const response = serveCanonicalFrontend({ httpMethod: 'GET', path: `/newsletter/${id}` });
+      assert.strictEqual(response?.statusCode, 200);
+      assert.strictEqual(response?.body, shell?.body);
+    }
+  });
+
   it('rejects the retired namespace, traversal, and undeclared static assets', async () => {
     for (const requestPath of [
       '/public/app.js',

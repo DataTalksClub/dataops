@@ -258,6 +258,8 @@ function createNewsletterDom() {
   const status = surface.setQuery('[role="status"]', new TestElement("p"));
   const alerts = surface.setQuery("[data-alerts]", new TestElement("div"));
   const slots = surface.setQuery("[data-slots]", new TestElement("div"));
+  const issueBody = surface.setQuery("[data-issue-body]", new TestElement("div"));
+  const issueTitle = surface.setQuery("#newsletter-issue-title", new TestElement("h1"));
   const dialog = surface.setQuery("dialog", new TestElement("dialog"));
   const form = dialog.setQuery("form", new TestElement("form"));
   form.setQuery('[role="alert"]', new TestElement("p"));
@@ -278,6 +280,8 @@ function createNewsletterDom() {
     alerts,
     dialog,
     form,
+    issueBody,
+    issueTitle,
     slots,
     status,
     surface,
@@ -291,6 +295,7 @@ function createPlanningHarness({
   calendar,
   newsletter,
   request,
+  route = null,
   today = "2026-08-13",
 } = {}) {
   const documentList = new TestElement("main");
@@ -311,6 +316,7 @@ function createPlanningHarness({
   const surface = createPlanningSurface({
     documentList,
     escapeHtml,
+    getActiveWorkspaceRoute: () => route,
     request: async (url, options = {}) => {
       const entry = { options, url: String(url) };
       requests.push(entry);
@@ -1113,7 +1119,10 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.alerts.innerHTML, /A slot needs a sponsor soon/);
     assert.match(dom.alerts.innerHTML, /Weekly #43 — 28 Aug/);
     const html = dom.slots.innerHTML;
-    assert.match(html, /title="Edit issue details"><span>Weekly #42<\/span><\/button><\/h4>/);
+    assert.match(
+      html,
+      /<h4><a class="newsletter-issue-link" href="\/newsletter\/issue-1"\s*title="Open issue page"><span>Weekly #42<\/span><\/a>\s*<button type="button" class="newsletter-issue-edit" data-edit="issue-1"\s*title="Edit issue details">Edit<\/button><\/h4>/,
+    );
     // Every row's date column: the date, then kind and distance from today.
     assert.equal(html.match(/class="newsletter-relative-badge"/g).length, 3);
     for (const [kind, distance] of [["Weekly", "in 8d"], ["Weekly", "in 2w"], ["Stand-alone", "in 13d"]]) {
@@ -1146,6 +1155,137 @@ describe("Planning surface production behavior", () => {
     assert.match(harness.requests[0].url, /\/api\/newsletter-issues\?/);
     assert.equal(range.get("from"), "2026-08-13");
     assert.equal(range.get("to"), null, "Upcoming runs from today with no end");
+  });
+
+  test("links every planner row to the issue's own page, past and upcoming", async () => {
+    const dom = createNewsletterDom();
+    const upcoming = weeklyIssue({ id: "issue-up", label: "Weekly #42", publicationDate: "2026-08-21", status: "planned" });
+    const past = weeklyIssue({ id: "issue-past", label: "Weekly #40", publicationDate: "2026-08-01", status: "sent" });
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      request: async (url) => (new URL(String(url)).searchParams.get("to")
+        ? { alerts: [], items: [past] }
+        : { alerts: [], items: [upcoming] }),
+    });
+    await harness.surface.renderNewsletterSurface();
+    assert.match(dom.slots.innerHTML, /class="newsletter-issue-link" href="\/newsletter\/issue-up"\s*title="Open issue page"/);
+
+    dom.viewPast.onclick();
+    await nextTicks();
+    assert.match(dom.slots.innerHTML, /class="newsletter-issue-link" href="\/newsletter\/issue-past"\s*title="Open issue page"/);
+  });
+
+  test("the issue page shows one issue's details with company, doc, stats, and card links", async () => {
+    const dom = createNewsletterDom();
+    const issue = {
+      id: "22510fb3-4c75",
+      kind: "weekly",
+      label: "Weekly #42",
+      issueNumber: 42,
+      publicationDate: "2026-08-21",
+      publicationTime: "14:00",
+      status: "sent",
+      publicUrl: "https://example.invalid/campaign/42",
+      links: [{ name: "Planning doc", url: "https://docs.example.invalid/nl-42" }],
+      slots: {
+        primary: {
+          sponsor: "Primary Sponsor",
+          organizationId: "org-1",
+          documentUrl: "https://docs.example.invalid/placement",
+        },
+        secondary: { sponsor: "Plain Sponsor" },
+      },
+      stats: { sent: 1000, opens: 500, openRate: 50 },
+      card: { id: "card-1", title: "21 Aug · #42", stage: "done", status: "archived", anchorDate: "2026-08-21", taskCount: 6, openTaskCount: 0 },
+    };
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      route: { params: new URLSearchParams({ issueId: "22510fb3-4c75" }) },
+      request: async (url) => {
+        assert.match(String(url), /\/api\/newsletter-issues\/22510fb3-4c75$/);
+        return issue;
+      },
+    });
+    await harness.surface.renderNewsletterSurface();
+    assert.deepEqual(harness.routeTitles, ["Newsletter"]);
+    assert.equal(dom.issueTitle.textContent, "Weekly #42");
+    assert.equal(dom.status.textContent, "");
+    const html = dom.issueBody.innerHTML;
+    assert.match(html, /data-issue-details/);
+    assert.match(
+      dom.surface.innerHTML,
+      /class="newsletter-issue-toolbar" aria-label="Newsletter"><a href="\/newsletter">All issues<\/a><\/nav>/,
+      "the page links back to the planner",
+    );
+    assert.match(html, /<time datetime="2026-08-21">Friday, 21 Aug 2026<\/time>/);
+    assert.match(html, /Time: 14:00 Europe\/Berlin/);
+    assert.match(html, /data-issue-number><strong class="dk-mono">#42<\/strong><\/dd>/);
+    assert.match(html, /href="\/sponsors\/companies\/org-1">Primary Sponsor<\/a>/);
+    assert.match(html, /<strong>Primary:<\/strong> <a href="\/sponsors\/companies\/org-1">Primary Sponsor<\/a> <a class="newsletter-issue-doc" href="https:\/\/docs.example.invalid\/placement" target="_blank" rel="noreferrer">document<\/a>/);
+    assert.match(html, /<strong>Secondary:<\/strong> Plain Sponsor<\/li>/, "a sponsor without a company stays plain text");
+    assert.match(html, /data-issue-campaign-link href="https:\/\/example.invalid\/campaign\/42"[^>]*>Open campaign<\/a>/);
+    assert.match(html, /data-issue-doc-links><div class="newsletter-issue-docs"><a class="newsletter-issue-doc" data-issue-campaign-link /);
+    assert.match(html, /rel="noreferrer">Planning doc<\/a>/);
+    assert.match(html, /data-issue-stats><div class="newsletter-stats-line" data-issue-mailchimp-stats><strong>Mailchimp:<\/strong> 1,000 sent · 500 opens \(50%\)<\/div>/);
+    assert.match(html, /data-issue-card-link href="\/cards\?cardId=card-1"/);
+    assert.match(html, /Done ·\s*<span class="dk-mono">0\/6<\/span> open/);
+    assert.match(html, /data-issue-preview-link href="\/newsletter-issues\/22510fb3-4c75\/preview">Open Markdown &amp; HTML preview<\/a>/);
+  });
+
+  test("the issue page shows honest empty states without stats, docs, number, or card", async () => {
+    const dom = createNewsletterDom();
+    const issue = {
+      id: "issue-solo",
+      kind: "standalone",
+      label: "Stand-alone newsletter",
+      publicationDate: "2026-08-26",
+      status: "planned",
+      slots: { primary: {} },
+    };
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      route: { params: new URLSearchParams({ issueId: "issue-solo" }) },
+      request: async () => issue,
+    });
+    await harness.surface.renderNewsletterSurface();
+    const html = dom.issueBody.innerHTML;
+    assert.match(html, /data-issue-stats-empty>No performance stats recorded\.<\/p>/);
+    assert.doesNotMatch(html, /data-issue-number|data-issue-doc-links|data-issue-stats>/);
+    assert.match(html, /<strong>Sponsor:<\/strong> open<\/li>/);
+    assert.match(html, /data-no-card>No card yet<\/span>/);
+    assert.doesNotMatch(html, /data-issue-card-link/);
+  });
+
+  test("an unknown issue id shows a friendly not-found state with a way back", async () => {
+    const dom = createNewsletterDom();
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      route: { params: new URLSearchParams({ issueId: "not-an-issue" }) },
+      request: async () => {
+        throw Object.assign(new Error("Not found"), { status: 404 });
+      },
+    });
+    await harness.surface.renderNewsletterSurface();
+    const html = dom.issueBody.innerHTML;
+    assert.match(html, /data-issue-notfound>\s*<strong>Newsletter issue not found<\/strong>/);
+    assert.match(html, /href="\/newsletter"/);
+    assert.doesNotMatch(html, /data-issue-details|"error"/, "no raw error reaches the page");
+  });
+
+  test("a failed issue load says so and links back instead of showing raw JSON", async () => {
+    const dom = createNewsletterDom();
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      route: { params: new URLSearchParams({ issueId: "issue-x" }) },
+      request: async () => {
+        throw new Error("Storage unavailable");
+      },
+    });
+    await harness.surface.renderNewsletterSurface();
+    const html = dom.issueBody.innerHTML;
+    assert.match(html, /<strong>Newsletter issue unavailable<\/strong>/);
+    assert.match(html, /Storage unavailable/);
+    assert.match(html, /href="\/newsletter"/);
   });
 
   test("removes a slot's sponsor from the row after confirming, and again when done tasks would stay", async () => {
@@ -1397,7 +1537,7 @@ describe("Planning surface production behavior", () => {
     });
     await harness.surface.renderNewsletterSurface();
     assert.doesNotMatch(dom.slots.innerHTML, /data-compose|Compose|data-preview|data-schedule|newsletter-overflow|More actions/);
-    assert.match(dom.slots.innerHTML, /<h4><button type="button" class="newsletter-issue-edit" data-edit="issue-edit"/);
+    assert.match(dom.slots.innerHTML, /<button type="button" class="newsletter-issue-edit" data-edit="issue-edit"\s+title="Edit issue details">Edit<\/button>/);
 
     dom.slots.onclick({
       target: {

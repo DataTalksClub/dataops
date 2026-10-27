@@ -4,7 +4,16 @@ import {
   setupNewsletterDialog,
 } from "./planning-newsletter-dialog.js";
 import { renderPageHeaderMarkup } from "./operations-overview.js";
-import { attachSlotControls, cardDueLabel, issueSlotsMarkup, issueStatsSummaryMarkup } from "./planning-newsletter-slots.js";
+import { createNewsletterIssuePage } from "./planning-newsletter-issue.js";
+import {
+  attachSlotControls,
+  cardDueLabel,
+  issueSlotsMarkup,
+  issueStatsSummaryMarkup,
+  plannerLabel,
+  plannerStatusClass,
+  stageLabel,
+} from "./planning-newsletter-slots.js";
 import { sponsorRecordPath } from "../core/sponsor-routes.js";
 
 export function createNewsletterPlanner(context) {
@@ -17,20 +26,7 @@ export function createNewsletterPlanner(context) {
     viewportWidth,
     workApiUrl,
   } = context;
-
-  function plannerLabel(value) {
-    if (value === "review") return "In Review";
-    const label = String(value || "").replaceAll("-", " ");
-    return label ? label[0].toUpperCase() + label.slice(1) : "";
-  }
-
-  function plannerStatusClass(value) {
-    if (["sent", "published", "confirmed"].includes(value)) return "is-success";
-    if (["cancelled"].includes(value)) return "is-danger";
-    if (["drafting", "scheduled", "announced"].includes(value)) return "is-info";
-    if (["review", "tentative"].includes(value)) return "is-warning";
-    return "";
-  }
+  const { renderNewsletterIssuePage } = createNewsletterIssuePage(context);
 
   function formatShortPlanningDate(iso) {
     const parsed = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
@@ -85,16 +81,6 @@ export function createNewsletterPlanner(context) {
     }[reasonCode] || "Check the publication date and slots.";
   }
 
-
-  function stageLabel(stage) {
-    return {
-      preparation: "Preparation",
-      announced: "Announced",
-      "after-event": "After event",
-      done: "Done",
-    }[stage] || plannerLabel(stage);
-  }
-
   /**
    * The issue's Card as a chip in the actions row: stage and open/total
    * Tasks, and a warning when the Card's date drifted from the issue's (the
@@ -138,6 +124,8 @@ export function createNewsletterPlanner(context) {
   }
 
   async function renderNewsletterSurface() {
+    // /newsletter/<issueId> shows one issue's details; /newsletter the planner.
+    if (await renderNewsletterIssuePage()) return;
     documentList.replaceChildren();
     const newsletterStatuses = [
       "planned",
@@ -230,6 +218,7 @@ export function createNewsletterPlanner(context) {
         ? `<small class="newsletter-slot-note">${escapeHtml(item.planningNote)}</small>`
         : "";
       const issueId = escapeHtml(item.id);
+      const issueHref = `/newsletter/${encodeURIComponent(item.id)}`;
       const hasMarkdown = Boolean(
         item.markdown && (item.markdown.issue || item.markdown.sources || item.markdown.brief),
       );
@@ -255,8 +244,10 @@ export function createNewsletterPlanner(context) {
           </div>
           <div class="newsletter-slot-main">
             <div class="newsletter-slot-title">
-              <h4><button type="button" class="newsletter-issue-edit" data-edit="${issueId}"
-                title="Edit issue details"><span>${escapeHtml(item.label)}</span></button></h4>
+              <h4><a class="newsletter-issue-link" href="${issueHref}"
+                title="Open issue page"><span>${escapeHtml(item.label)}</span></a>
+                <button type="button" class="newsletter-issue-edit" data-edit="${issueId}"
+                  title="Edit issue details">Edit</button></h4>
               <span class="planner-status ${plannerStatusClass(item.status)}">
                 ${escapeHtml(plannerLabel(item.status))}
               </span>
@@ -287,7 +278,8 @@ export function createNewsletterPlanner(context) {
           </div>
           <div class="newsletter-slot-main">
             <div class="newsletter-slot-title">
-              <h4>${escapeHtml(item.label)}</h4>
+              <h4><a class="newsletter-issue-link" href="/newsletter/${encodeURIComponent(item.id)}"
+                title="Open issue page"><span>${escapeHtml(item.label)}</span></a></h4>
               ${item.status === "sent" ? "" : `<span class="planner-status ${plannerStatusClass(item.status)}">${escapeHtml(plannerLabel(item.status))}</span>`}
             </div>
             ${sponsors}

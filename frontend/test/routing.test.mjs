@@ -68,6 +68,7 @@ describe("canonical workspace routing", () => {
       "/sponsors/leads/:leadId",
       "/sponsors/newsletters/:newsletterId",
       "/newsletter",
+      "/newsletter/:issueId",
       "/calendar",
       "/podcast",
       "/podcast/schedule",
@@ -116,6 +117,28 @@ describe("canonical workspace routing", () => {
     for (const url of ["/sponsors/queue", "/sponsors/finance", "/sponsors/deals", "/sponsors/companies/a/b"]) {
       assert.deepEqual(parseWorkspaceLocation(url, browserLocation(url)), { invalid: true, reason: "unknown path" }, url);
     }
+  });
+
+  test("addresses each newsletter issue at /newsletter/<issueId> on the newsletter view", () => {
+    const url = `/newsletter/${encodeURIComponent("22510fb3-4c75")}`;
+    const route = parseWorkspaceLocation(url, browserLocation(url));
+    assert.equal(route.invalid, undefined, url);
+    assert.equal(route.view, "newsletter", url);
+    assert.equal(route.params.get("issueId"), "22510fb3-4c75", url);
+    assert.equal(route.canonicalUrl, url, url);
+    assert.equal(route.normalized, false, url);
+    assert.equal(workspaceRouteFor(url).canonicalUrl, url, url);
+    // The bare planner path stays canonical for the view.
+    assert.equal(WORKSPACE_PATH_BY_VIEW.newsletter, "/newsletter");
+    const bare = parseWorkspaceLocation("/newsletter/", browserLocation("/newsletter/"));
+    assert.equal(bare.canonicalUrl, "/newsletter");
+    assert.equal(bare.params.get("issueId"), null);
+    assert.equal(bare.normalized, true);
+    // Two segments never name an issue.
+    assert.deepEqual(
+      parseWorkspaceLocation("/newsletter/a/b", browserLocation("/newsletter/a/b")),
+      { invalid: true, reason: "unknown path" },
+    );
   });
 
   test("serializes only supported parameters in stable canonical order", () => {

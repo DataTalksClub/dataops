@@ -17,6 +17,29 @@ export const SLOT_NAMES = { primary: "Primary", secondary: "Secondary" };
 export const slotName = (issue, position) => (issue?.kind === "standalone" ? "Sponsor" : SLOT_NAMES[position]);
 const slotsLocked = (issue) => ["sent", "cancelled"].includes(issue?.status);
 
+export function stageLabel(stage) {
+  return {
+    preparation: "Preparation",
+    announced: "Announced",
+    "after-event": "After event",
+    done: "Done",
+  }[stage] || plannerLabel(stage);
+}
+
+export function plannerLabel(value) {
+  if (value === "review") return "In Review";
+  const label = String(value || "").replaceAll("-", " ");
+  return label ? label[0].toUpperCase() + label.slice(1) : "";
+}
+
+export function plannerStatusClass(value) {
+  if (["sent", "published", "confirmed"].includes(value)) return "is-success";
+  if (["cancelled"].includes(value)) return "is-danger";
+  if (["drafting", "scheduled", "announced"].includes(value)) return "is-info";
+  if (["review", "tentative"].includes(value)) return "is-warning";
+  return "";
+}
+
 /** One control per slot: a booking button, or the sponsor with change and remove. */
 export function issueSlotsMarkup(item, escapeHtml) {
   const positions = SLOT_POSITIONS[item.kind] || [];

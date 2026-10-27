@@ -1041,8 +1041,10 @@ a.calendar-day-timeline-title:hover {
 .newsletter-slot-fields[hidden] { display: none; }
 .newsletter-surface .planner-form-grid [hidden] { display: none; }
 
-/* The issue name opens its details: a text button, not a chrome button. */
-.newsletter-issue-edit {
+/* The issue name opens its issue page (link) or its edit dialog (button):
+   both text-level controls, not chrome buttons. */
+.newsletter-issue-edit,
+.newsletter-issue-link {
   display: flex;
   max-width: 100%;
   border: 0;
@@ -1053,7 +1055,8 @@ a.calendar-day-timeline-title:hover {
   text-align: left;
   cursor: pointer;
 }
-.newsletter-issue-edit > span {
+.newsletter-issue-edit > span,
+.newsletter-issue-link > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1062,11 +1065,14 @@ a.calendar-day-timeline-title:hover {
 /* The button, not the heading, clips the long name, so the heading does not
    clip the button's touch area. */
 .newsletter-slot-row .newsletter-slot-title h4:not([class*="dk-"]) {
+  display: flex;
   min-width: 0;
   overflow: visible;
+  flex-wrap: wrap;
+  gap: 8px;
 }
-/* On touch layouts the name keeps a 44px hit area without growing the row:
-   the box stays one text line and a pseudo-element carries the hit area. */
+/* The button, not the heading, clips the long name, so the heading does not
+   clip the button's touch area. */
 .newsletter-issue-edit {
   position: relative;
 }
@@ -1081,10 +1087,63 @@ a.calendar-day-timeline-title:hover {
     content: "";
   }
 }
-.newsletter-issue-edit:hover {
+.newsletter-issue-edit:hover,
+.newsletter-issue-link:hover {
   color: var(--dk-primary);
   text-decoration: underline;
 }
+
+/* The per-issue page: one issue's facts under the planner header. */
+.newsletter-issue-page .newsletter-issue-details {
+  max-width: 720px;
+}
+.newsletter-issue-page .newsletter-issue-details .newsletter-slot-title {
+  margin: var(--dk-space-2) 0 var(--dk-space-3);
+}
+.newsletter-issue-facts {
+  display: grid;
+  margin: 0;
+  gap: var(--dk-space-3);
+}
+.newsletter-issue-facts > div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: var(--dk-space-3);
+  align-items: baseline;
+}
+.newsletter-issue-facts dt {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  font-weight: 600;
+}
+.newsletter-issue-facts dd {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  margin: 0;
+  gap: var(--dk-space-2);
+  align-items: baseline;
+}
+.newsletter-issue-sponsors {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  gap: var(--dk-space-2) var(--dk-space-4);
+  list-style: none;
+}
+.newsletter-issue-docs,
+.newsletter-issue-docs .newsletter-issue-doc {
+  display: inline-flex;
+}
+.newsletter-issue-actions {
+  display: flex;
+  margin-top: var(--dk-space-4);
+}
+.newsletter-issue-toolbar {
+  margin-bottom: var(--dk-space-2);
+}
+
 .newsletter-campaign-field {
   display: flex;
   flex-wrap: wrap;

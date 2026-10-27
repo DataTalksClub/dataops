@@ -220,6 +220,7 @@ const { renderCalendarSurface, renderNewsletterSurface } =
   createPlanningSurface({
     documentList,
     escapeHtml,
+    getActiveWorkspaceRoute,
     navigateCanonicalWorkspace,
     request,
     setRouteTitle,
