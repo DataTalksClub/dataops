@@ -173,6 +173,8 @@ Globals:
 Resources:
   InvoicePublicationSecret:
     Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Condition: HasInvoicePublicationConfig
     Properties:
       Name: !Sub ${AWS::StackName}/invoice-publication
@@ -1195,7 +1197,6 @@ Resources:
             Action:
               - secretsmanager:GetSecretValue
             Resource:
-              - !If [HasInvoicePublicationConfig, !Ref InvoicePublicationSecret, !Ref AWS::NoValue]
               - !If
                 - HasSponsorTemplateSecret
                 - !Ref SponsorCommunicationTemplateSecretArn
@@ -1276,7 +1277,7 @@ Resources:
           DATAOPS_DOCS_DOMAIN: "1"
           WORK_ENGINE_AUTH_MODE: portal
           WORK_ENGINE_PORTAL_SECRET_NAME: !Sub ${AWS::StackName}.work-engine.portal-secret
-          INVOICE_PUBLICATION_SECRET_NAME: !If [HasInvoicePublicationConfig, !Ref InvoicePublicationSecret, ""]
+          INVOICE_PUBLICATION_SECRET_NAME: !Sub ${AWS::StackName}.invoice-publication
           INVOICE_READER_TOKEN_SHA256: !Ref InvoiceReaderTokenSha256
           KNOWLEDGE_PUBLISHER_REPOSITORY: !Sub ${GitHubOwner}/${GitHubRepo}
           KNOWLEDGE_PUBLISHER_BRANCH: !Ref GitHubBranch

@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { readRuntimeSecret } from '../secrets/reader';
 import type { Invoice, InvoiceFields } from './model';
 export interface PublicationConfig {
   brokerUrl: string; brokerCredential: string; agent: string;
@@ -17,14 +17,14 @@ export interface Providers {
   writeDropbox(path:string,bytes:Buffer): Promise<void>;
   dropboxPath(invoice:Invoice): string;
 }
-let secretClient = new SecretsManagerClient({});
+let readSecret = readRuntimeSecret;
 let fetcher: typeof fetch = fetch;
-export function setInvoiceProviderClientsForTests(value: {secrets?: SecretsManagerClient; fetch?:typeof fetch}) { if(value.secrets) secretClient=value.secrets; fetcher=value.fetch || fetch; }
+export function setInvoiceProviderClientsForTests(value: {readSecret?:typeof readRuntimeSecret; fetch?:typeof fetch}) { readSecret=value.readSecret || readRuntimeSecret; fetcher=value.fetch || fetch; }
 export async function publicationConfig(): Promise<PublicationConfig | null> {
   const inline = process.env.NODE_ENV === 'test' ? process.env.INVOICE_PUBLICATION_CONFIG : undefined;
   const name = process.env.INVOICE_PUBLICATION_SECRET_NAME;
   if (!inline && !name) return null;
-  const raw = inline || (await secretClient.send(new GetSecretValueCommand({SecretId:name}))).SecretString;
+  const raw = inline || await readSecret(name!);
   if (!raw) throw new Error('publication-config-unavailable');
   const config = JSON.parse(raw.trim().startsWith('{') ? raw : Buffer.from(raw,'base64').toString('utf8')) as PublicationConfig;
   for (const key of ['brokerUrl','brokerCredential','agent','googleConnection','googleAccountId','dropboxConnection','dropboxAccountId','spreadsheetId','sheetTab','dropboxRoot','monthFolderPrefix'] as const)
