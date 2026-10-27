@@ -473,7 +473,7 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert '"dataopsAction":"export"' in backend_export
     backend_dump = _resource_block(template, "BackendFunctionDailyDynamoBackup")
     assert '"dataopsAction":"dynamo-backup"' in backend_dump
-    assert "WORK_ENGINE_PORTAL_SECRET_NAME: !Sub ${AWS::StackName}/work-engine/portal-secret" in backend
+    assert "WORK_ENGINE_PORTAL_SECRET_NAME: !Sub ${AWS::StackName}.work-engine.portal-secret" in backend
     assert "EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Ref EmailDocumentIntakeSecretArn" in backend
     assert "!Ref EmailDocumentIntakeSecretArn" in backend
     # No cross-function invocation — the old two-Lambda proxy is gone.
