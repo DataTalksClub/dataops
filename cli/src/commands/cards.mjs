@@ -30,6 +30,8 @@ Usage
                                                 Create a portal sponsor doc and link it on the Card
   dataops cards park <card-id> | resume <card-id>
   dataops cards delete <card-id> --yes          Delete the Card and all its Tasks (admin)
+  dataops cards dedupe-tasks --card ID|--all [--dry-run] [--apply]
+                                                Skip manual duplicates; preview by default
   dataops cards template-update <card-id> [--optional-groups a,b|none] [--apply]
                                                 Review Template and Card option changes
 
@@ -330,6 +332,7 @@ export async function time(args, io) {
 }
 
 export const commands = {
+  "dedupe-tasks": dedupeTasks,
   time,
   list,
   show,
@@ -344,3 +347,70 @@ export const commands = {
   delete: remove,
   "template-update": templateUpdate,
 };
+
+/** Archive duplicate manual work through the ordinary versioned skip action. */
+export async function dedupeTasks(args, io) {
+  if (Boolean(args.card) === Boolean(args.all)) throw new UsageError('Choose --card ID or --all.');
+  if (args.apply && args.dryRun) throw new UsageError('Choose --dry-run or --apply.');
+  const api = apiFor(args);
+  const cards = [];
+  if (args.card) {
+    cards.push((await api.get(`/api/cards/${enc(args.card)}`)).card);
+  } else {
+    let cursor;
+    do {
+      const page = await api.get('/api/cards', { query: { cursor, limit: 100 } });
+      cards.push(...itemsOf(page));
+      cursor = page?.cards?.nextCursor;
+    } while (cursor);
+  }
+  const pairs = [];
+  const normalize = (task) => String(task.description || '').trim().toLowerCase();
+  const open = (task) => task.status === 'todo' || task.status === 'waiting';
+  for (const card of cards) {
+    const tasks = [];
+    let cursor;
+    do {
+      const page = await api.get('/api/tasks', { query: { cardId: card.id, cursor, limit: 100 } });
+      tasks.push(...(page.tasks || []));
+      cursor = page.nextCursor;
+    } while (cursor);
+    for (const extra of tasks.filter((task) => open(task) && !(task.templateId && task.templateTaskRef))) {
+      const matches = tasks.filter((task) => open(task) && task.templateId && task.templateTaskRef
+        && normalize(task) === normalize(extra));
+      // Multiple template owners need an operator decision.
+      if (matches.length !== 1) continue;
+      const pair = { cardId: card.id, keepId: matches[0].id, extraId: extra.id };
+      pairs.push(pair);
+      if (args.apply) {
+        // Re-read the keeper for each pair: several manual copies can share it.
+        let keep = await api.get(`/api/tasks/${enc(pair.keepId)}`);
+        if (!open(keep) || normalize(keep) !== normalize(extra) || !keep.templateId || !keep.templateTaskRef) {
+          throw new UsageError(`Task ${pair.keepId} changed; run the preview again.`);
+        }
+        const marker = `Duplicate task ${extra.id}`;
+        const copied = [
+          ...(extra.notesLog || []).map((note) => `${note.createdAt || ''} ${note.authorId || ''}: ${note.text}`),
+          extra.comment,
+          extra.link ? `Link: ${extra.link}` : undefined,
+        ].filter(Boolean);
+        const body = { expectedVersion: keep.version };
+        // A marker makes retrying a partially applied pair safe.
+        if (copied.length && !(keep.notesLog || []).some((note) => note.text.startsWith(`${marker}\n`))) {
+          body.comment = `${marker}\n${[...new Set(copied)].join('\n')}`;
+        }
+        if (extra.link && !keep.link) body.link = extra.link;
+        if (Object.keys(body).length > 1) keep = await api.put(`/api/tasks/${enc(keep.id)}`, body);
+        await api.post(`/api/tasks/${enc(extra.id)}/actions/skip`, {
+          expectedVersion: extra.version, reason: `duplicate of ${keep.id}`,
+        });
+      }
+    }
+  }
+  const result = { dryRun: !args.apply, cardsScanned: cards.length, pairs };
+  if (!args.json) {
+    table(io, pairs, [['CARD', (p) => p.cardId], ['KEEP', (p) => p.keepId], ['EXTRA', (p) => p.extraId]], 'No duplicate open Tasks.');
+    io.print(`${args.apply ? 'Skipped' : 'Dry-run:'} ${pairs.length} duplicate pairs across ${cards.length} Cards.`);
+  }
+  return result;
+}
