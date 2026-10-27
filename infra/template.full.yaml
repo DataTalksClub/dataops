@@ -941,8 +941,6 @@ Resources:
       DeletionProtectionEnabled: true
       SSESpecification:
         SSEEnabled: true
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
       TimeToLiveSpecification:
         AttributeName: ttl
         Enabled: true

@@ -351,7 +351,8 @@ async function handleInvocation(
         (check) => (check.unknownTables.length === check.tableCount
           ? `PITR status unknown for all ${check.tableCount} tables`
           : check.disabledTables.length === 0
-            ? `PITR on for ${check.tableCount - check.unknownTables.length}/${check.tableCount} tables`
+            ? `PITR on for ${check.tableCount - check.unknownTables.length - check.expectedDisabledTables.length}/${check.tableCount} tables`
+              + (check.expectedDisabledTables.length > 0 ? ` (${check.expectedDisabledTables.length} expected-disabled: sessions)` : '')
               + (check.unknownTables.length > 0 ? `, ${check.unknownTables.length} unknown` : '')
             : `PITR disabled: ${check.disabledTables.join(', ')}`
               + (check.unknownTables.length > 0 ? ` (${check.unknownTables.length} unknown)` : '')));
@@ -362,6 +363,7 @@ async function handleInvocation(
           generated_at: result.generatedAt,
           table_count: result.tableCount,
           disabled_tables: result.disabledTables,
+          expected_disabled_tables: result.expectedDisabledTables,
           unknown_tables: result.unknownTables,
           tables: Object.fromEntries(
             result.tables.map((status) => [

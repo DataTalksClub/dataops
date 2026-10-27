@@ -2,7 +2,7 @@ import { DescribeContinuousBackupsCommand } from '@aws-sdk/client-dynamodb';
 import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwatch';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { DATAOPS_TABLES } from '../db/tableNames';
+import { DATAOPS_TABLES, TABLE_SESSIONS } from '../db/tableNames';
 
 /**
  * Daily PITR guard: describe continuous backups for every application table
@@ -12,12 +12,18 @@ import { DATAOPS_TABLES } from '../db/tableNames';
  * dev@dtcdev.click when the count reaches 1 (or when the check stops
  * reporting at all).
  *
+ * The sessions table is a deliberate exception: it holds TTL-expired
+ * ephemeral login state, not durable execution state (enforced by
+ * tests/infra/test_template.py), so PITR stays off there by design and it
+ * does not count toward the alarm.
+ *
  * A single unreadable table never fails the check: it is reported as
  * unknown and the remaining tables are still evaluated.
  */
 
 const METRIC_NAMESPACE = 'DataOps/DynamoBackup';
 const METRIC_NAME = 'PitrDisabledTables';
+const EXPECTED_PITR_DISABLED = new Set([TABLE_SESSIONS]);
 
 interface PitrTableStatus {
   table: string;
@@ -31,6 +37,7 @@ interface PitrCheckResult {
   generatedAt: string;
   tableCount: number;
   disabledTables: string[];
+  expectedDisabledTables: string[];
   unknownTables: string[];
   tables: PitrTableStatus[];
 }
@@ -91,7 +98,12 @@ async function checkDynamoPitrStatus(
     }
   }
 
-  const disabledTables = tables.filter((t) => t.pitrEnabled === false).map((t) => t.table);
+  const disabledTables = tables
+    .filter((t) => t.pitrEnabled === false && !EXPECTED_PITR_DISABLED.has(t.table))
+    .map((t) => t.table);
+  const expectedDisabledTables = tables
+    .filter((t) => t.pitrEnabled === false && EXPECTED_PITR_DISABLED.has(t.table))
+    .map((t) => t.table);
   const unknownTables = tables.filter((t) => t.pitrEnabled === null).map((t) => t.table);
 
   // Never assert "all healthy" when nothing could be verified: with no
@@ -124,6 +136,7 @@ async function checkDynamoPitrStatus(
     generatedAt,
     tableCount: tables.length,
     disabledTables,
+    expectedDisabledTables,
     unknownTables,
     tables,
   };

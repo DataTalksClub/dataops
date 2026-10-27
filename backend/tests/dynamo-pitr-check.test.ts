@@ -4,7 +4,7 @@ import { PutMetricDataCommand } from '@aws-sdk/client-cloudwatch';
 import { DescribeContinuousBackupsCommand } from '@aws-sdk/client-dynamodb';
 
 import { checkDynamoPitrStatus } from '../src/export/dynamoPitrCheck';
-import { DATAOPS_TABLES } from '../src/db/tableNames';
+import { DATAOPS_TABLES, TABLE_SESSIONS } from '../src/db/tableNames';
 import { handler } from '../src/handler';
 import { stopLocal } from '../scripts/local-dynamodb';
 import { useTestDatabase } from './helpers/db';
@@ -67,6 +67,22 @@ describe('DynamoDB PITR guard', () => {
     assert.deepStrictEqual(result.unknownTables, []);
     const input = (sent[0] as unknown as { input: { MetricData: { Value: number }[] } }).input;
     assert.strictEqual(input.MetricData[0].Value, 2);
+  });
+
+  it('treats the sessions table as expected-disabled and publishes zero', async () => {
+    const sent: unknown[] = [];
+    const cloudWatch = { send: async (command: unknown) => { sent.push(command); return {}; } };
+
+    const result = await checkDynamoPitrStatus(
+      fakeDocClient({ [TABLE_SESSIONS]: 'DISABLED' }),
+      { cloudWatch: cloudWatch as never },
+    );
+
+    assert.deepStrictEqual(result.disabledTables, []);
+    assert.deepStrictEqual(result.expectedDisabledTables, [TABLE_SESSIONS]);
+    assert.deepStrictEqual(result.unknownTables, []);
+    const input = (sent[0] as unknown as { input: { MetricData: { Value: number }[] } }).input;
+    assert.strictEqual(input.MetricData[0].Value, 0);
   });
 
   it('treats unreadable tables as unknown without failing the check', async () => {
