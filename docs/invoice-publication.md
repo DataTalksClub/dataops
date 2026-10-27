@@ -4,7 +4,7 @@ Invoice email transport and OAuth ownership stay in Dapier. DataOps verifies and
 
 Supported AWS and Stripe invoice/receipt layouts use bounded PDF.js text extraction. Unknown, scanned or ambiguous layouts remain editable manual drafts. Source integrity failures block staging or both publications. A receipt's displayed EUR tax conversion does not establish the bank payment amount. Review requires invoice/account identity, actual payment date, actual EUR amount and an explicit payment evidence note. Publication runs automatically after an authenticated operator verifies every required field of the current revision. Extraction confidence alone never verifies actual bank payment values; incomplete or uncertain drafts stay in review. Rejected or unconfirmed drafts cannot publish or enter the confirmed ledger.
 
-Configure publication through the standard app CI/CD path. Set repository Actions secret `INVOICE_PUBLICATION_CONFIG` to private JSON containing these keys:
+The invoice provider reads private JSON configuration from the DataOps team secrets store. Its configuration schema contains these keys:
 
 ```json
 {
@@ -22,7 +22,7 @@ Configure publication through the standard app CI/CD path. Set repository Action
 }
 ```
 
-The deploy workflow base64-encodes and masks the parameter to preserve JSON commas through SAM CLI parsing. `InvoicePublicationConfig` is a `NoEcho` parameter; the optional declared `InvoicePublicationSecret` stores that value, and `INVOICE_PUBLICATION_SECRET_NAME` identifies it to the runtime. The runtime decodes the secret, requests bounded short-lived provider tokens from `/api/agent/token`, verifies the configured account IDs and scopes, and keeps refresh tokens in Dapier. No local AWS credentials or runtime infrastructure creation is needed. An empty Actions secret disables publication; ingestion/manual review remain available. Private credentials, account IDs and destinations belong only in the managed configuration, never in docs or issue comments.
+`INVOICE_PUBLICATION_SECRET_NAME` identifies the team-store record. The reader decrypts its `value` field with the record name as the KMS encryption context. The runtime parses the JSON, requests bounded short-lived provider tokens from `/api/agent/token`, verifies account IDs and scopes, and keeps provider refresh tokens in Dapier. Configuration values are managed separately from the application deployment; private credentials and destinations do not belong in source control.
 
 Provision a dedicated Dapier agent-bound machine token and only `use` grants for the configured Google and Dropbox connections via their supported Console/CLI/API. Required scopes are `https://www.googleapis.com/auth/spreadsheets`, `files.content.write`, `files.content.read`, and `files.metadata.read`. Existing consent with those scopes needs no renewal. Verify `dataops invoices readiness` under an authenticated DataOps account; broker authentication cannot substitute for DataOps operator authorization. Readiness verifies scoped account tokens, the actual tab headers and configured archive folder without returning secrets.
 
