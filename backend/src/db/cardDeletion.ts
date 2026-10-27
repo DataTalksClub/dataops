@@ -483,6 +483,7 @@ export {
   CardDeletionTooLargeError,
   cardBlockingReferences,
   deleteCardCascade,
+  emulateTransaction,
   listCardArtifacts,
 };
 export type {

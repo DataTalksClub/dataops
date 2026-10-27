@@ -24,6 +24,7 @@ import {
   updateOrganizationAtomic,
   type CrmRecord,
 } from '../db/sponsorCrm';
+import { hardDeleteDeal } from '../db/dealDeletion';
 import { listOpenDealTasks } from '../db/taskSubjects';
 import { listTasksByStatus } from '../db/tasks';
 import { getWorkspaceSettings, resolveDefaultAssigneeId } from '../db/workspaceSettings';
@@ -880,8 +881,8 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
 
   if (method === 'DELETE' && id && kind !== 'deliverable') {
     if (event.queryStringParameters?.hard !== undefined) {
-      if (event.queryStringParameters.hard !== 'true' || (kind !== 'organization' && kind !== 'contact')) {
-        return json(400, { error: 'hard=true is supported only for organizations and contacts' });
+      if (event.queryStringParameters.hard !== 'true' || (kind !== 'organization' && kind !== 'contact' && kind !== 'deal')) {
+        return json(400, { error: 'hard=true is supported only for organizations, contacts and deals' });
       }
       const auth = await resolveInteractiveActor(client, event, 'work-write');
       if (!auth.ok) return auth.response;
@@ -892,7 +893,7 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
         return json(400, { error: 'expectedVersion must be a positive integer' });
       }
       try {
-        return json(200, await hardDeleteCrmRecord(client, kind, id, expectedVersion));
+        return json(200, kind === 'deal' ? await hardDeleteDeal(client, id, expectedVersion) : await hardDeleteCrmRecord(client, kind, id, expectedVersion));
       } catch (error) {
         const status = (error as { statusCode?: number }).statusCode;
         if (status) return json(status, { error: (error as Error).message });

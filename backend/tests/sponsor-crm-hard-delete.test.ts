@@ -132,7 +132,7 @@ describe('CRM hard delete', () => {
     assert.equal((await remove('organizations', company.id, '&expectedVersion=2')).statusCode, 409);
     assert.equal((await remove('organizations', company.id, '&expectedVersion=0')).statusCode, 400);
     assert.equal((await invoke('DELETE', `/api/sponsor-crm/organizations/${company.id}?hard=false`)).statusCode, 400);
-    assert.equal((await invoke('DELETE', '/api/sponsor-crm/deals/missing?hard=true')).statusCode, 400);
+    assert.equal((await invoke('DELETE', '/api/sponsor-crm/deals/missing?hard=false')).statusCode, 400);
     assert.equal((await invoke('DELETE', `/api/sponsor-crm/organizations/${company.id}`)).statusCode, 200);
     assert.ok(data(await invoke('GET', `/api/sponsor-crm/organizations/${company.id}`)).archivedAt);
     assert.equal((await remove('organizations', company.id, '&expectedVersion=2')).statusCode, 200);
