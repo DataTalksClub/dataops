@@ -30,6 +30,20 @@ describe("CLI show commands accept unique id prefixes", () => {
     assert.ok(calls.some((c) => c.route === `/api/tasks/${FULL}`));
   });
 
+  test("tasks show scans every task status while resolving", async () => {
+    const calls = fakePortal({
+      "GET /api/tasks": (call) => call.query.status === "done"
+        ? { status: 200, body: { tasks: [{ id: FULL }], nextCursor: null } }
+        : { status: 200, body: { tasks: [], nextCursor: null } },
+      [`GET /api/tasks/${FULL}`]: () => ({ status: 200, body: { id: FULL, description: "Real task", status: "done" } }),
+    });
+    const io = captureIo();
+    const code = await run(["tasks", "show", PREFIX, "--json"], io);
+    assert.equal(code, 0, io.errors.join(" | "));
+    assert.equal(io.json().id, FULL);
+    assert.ok(calls.filter((c) => c.route === "/api/tasks").every((c) => c.query.status));
+  });
+
   test("tasks show rejects an ambiguous prefix naming the matches", async () => {
     fakePortal({
       "GET /api/tasks": () => ({ status: 200, body: { tasks: [{ id: FULL }, { id: SIBLING }], nextCursor: null } }),
@@ -84,7 +98,7 @@ describe("CLI show commands accept unique id prefixes", () => {
     const code = await run(["tasks", "show", PREFIX, "--json"], io);
     assert.equal(code, 0, io.errors.join(" | "));
     assert.equal(io.json().id, FULL);
-    const listCalls = calls.filter((c) => c.route === "/api/tasks");
+    const listCalls = calls.filter((c) => c.route === "/api/tasks" && c.query.status === "todo");
     assert.deepEqual(listCalls.map((c) => c.query.cursor), [undefined, "page-2"]);
   });
 

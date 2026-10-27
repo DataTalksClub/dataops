@@ -26,36 +26,48 @@ async function collectAll(listPage) {
 }
 
 /**
- * Resolve `id` for one entity kind. `listPage` fetches one page as
- * `{ items, nextCursor }`; `label` names the kind in errors.
+ * Resolve `id` for one entity kind. `listAll` returns every id-bearing record
+ * of the kind; `label` names the kind in errors.
  */
-export async function resolveId(api, { label, id, listPage }) {
+export async function resolveId(api, { label, id, listAll }) {
   if (!isShortPrefix(id)) return id;
-  const matches = (await collectAll(listPage))
-    .map((item) => String(item.id))
-    .filter((full) => full.startsWith(id));
-  if (matches.length === 1) return matches[0];
-  if (matches.length === 0) {
+  const matches = new Set();
+  for (const full of (await listAll()).map((item) => String(item.id))) {
+    if (full.startsWith(id)) matches.add(full);
+    if (matches.size > 1) break;
+  }
+  if (matches.size === 1) return [...matches][0];
+  if (matches.size === 0) {
     throw new UsageError(`No ${label} matches short id prefix "${id}".`);
   }
-  const shown = matches.slice(0, 5).join(", ");
-  const more = matches.length > 5 ? ` +${matches.length - 5} more` : "";
-  throw new UsageError(`Ambiguous short id prefix "${id}": ${matches.length} ${label} matches (${shown}${more}).`);
+  const found = [...matches];
+  const shown = found.slice(0, 5).join(", ");
+  const more = found.length > 5 ? ` +${found.length - 5} more` : "";
+  throw new UsageError(`Ambiguous short id prefix "${id}": ${found.length} ${label} matches (${shown}${more}).`);
 }
 
-function paged(route) {
-  return (api, query) => api.get(route, { query }).then((page) => ({
+function pagedAll(api, route) {
+  return () => collectAll((query) => api.get(route, { query }).then((page) => ({
     items: Array.isArray(page?.items) ? page.items : [],
     nextCursor: page?.nextCursor,
-  }));
+  })));
 }
 
-const listTasks = (api, query) => api.get("/api/tasks", { query }).then((page) => ({
-  items: Array.isArray(page) ? page : Array.isArray(page?.tasks) ? page.tasks : [],
-  nextCursor: page?.nextCursor,
-}));
+// The tasks endpoint requires a primary filter, so every status is scanned.
+const TASK_STATUSES = ["todo", "waiting", "done", "skipped"];
 
-export const resolveTaskId = (api, id) => resolveId(api, { label: "Task", id, listPage: (q) => listTasks(api, q) });
-export const resolveCompanyId = (api, id) => resolveId(api, { label: "company", id, listPage: (q) => paged("/api/sponsor-crm/directory/companies")(api, q) });
-export const resolvePersonId = (api, id) => resolveId(api, { label: "person", id, listPage: (q) => paged("/api/sponsor-crm/directory/people")(api, q) });
-export const resolveDealId = (api, id) => resolveId(api, { label: "deal", id, listPage: (q) => paged("/api/sponsor-crm/deals")(api, q) });
+async function listAllTasks(api) {
+  const items = [];
+  for (const status of TASK_STATUSES) {
+    items.push(...(await collectAll((query) => api.get("/api/tasks", { query: { ...query, status } }).then((page) => ({
+      items: Array.isArray(page) ? page : Array.isArray(page?.tasks) ? page.tasks : [],
+      nextCursor: page?.nextCursor,
+    })))));
+  }
+  return items;
+}
+
+export const resolveTaskId = (api, id) => resolveId(api, { label: "Task", id, listAll: () => listAllTasks(api) });
+export const resolveCompanyId = (api, id) => resolveId(api, { label: "company", id, listAll: pagedAll(api, "/api/sponsor-crm/directory/companies") });
+export const resolvePersonId = (api, id) => resolveId(api, { label: "person", id, listAll: pagedAll(api, "/api/sponsor-crm/directory/people") });
+export const resolveDealId = (api, id) => resolveId(api, { label: "deal", id, listAll: pagedAll(api, "/api/sponsor-crm/deals") });
