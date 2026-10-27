@@ -348,9 +348,13 @@ async function handleInvocation(
     }
     if (detail?.dataopsAction === 'dynamo-pitr-check') {
       const result = await recordedRun('dynamo-pitr-check', () => checkDynamoPitrStatus(client!),
-        (check) => (check.disabledTables.length === 0
-          ? `PITR on for ${check.tableCount - check.unknownTables.length}/${check.tableCount} tables`
-          : `PITR disabled: ${check.disabledTables.join(', ')}`));
+        (check) => (check.unknownTables.length === check.tableCount
+          ? `PITR status unknown for all ${check.tableCount} tables`
+          : check.disabledTables.length === 0
+            ? `PITR on for ${check.tableCount - check.unknownTables.length}/${check.tableCount} tables`
+              + (check.unknownTables.length > 0 ? `, ${check.unknownTables.length} unknown` : '')
+            : `PITR disabled: ${check.disabledTables.join(', ')}`
+              + (check.unknownTables.length > 0 ? ` (${check.unknownTables.length} unknown)` : '')));
       return {
         statusCode: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -359,6 +363,17 @@ async function handleInvocation(
           table_count: result.tableCount,
           disabled_tables: result.disabledTables,
           unknown_tables: result.unknownTables,
+          tables: Object.fromEntries(
+            result.tables.map((status) => [
+              status.table,
+              {
+                pitr: status.pitrEnabled,
+                ...(status.earliestRestorable ? { earliest_restorable: status.earliestRestorable } : {}),
+                ...(status.latestRestorable ? { latest_restorable: status.latestRestorable } : {}),
+                ...(status.error ? { error: status.error } : {}),
+              },
+            ]),
+          ),
         }),
       };
     }

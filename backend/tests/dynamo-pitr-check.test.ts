@@ -13,7 +13,11 @@ function pitrResponse(status: string) {
   return {
     ContinuousBackupsDescription: {
       ContinuousBackupsStatus: 'ENABLED',
-      PointInTimeRecoveryDescription: { PointInTimeRecoveryStatus: status },
+      PointInTimeRecoveryDescription: {
+        PointInTimeRecoveryStatus: status,
+        EarliestRestorableDateTime: new Date('2025-10-26T07:00:00.000Z'),
+        LatestRestorableDateTime: new Date('2025-10-27T07:00:00.000Z'),
+      },
     },
   };
 }
@@ -39,6 +43,8 @@ describe('DynamoDB PITR guard', () => {
     assert.strictEqual(result.tableCount, DATAOPS_TABLES.length);
     assert.deepStrictEqual(result.disabledTables, []);
     assert.deepStrictEqual(result.unknownTables, []);
+    assert.strictEqual(result.tables[0].earliestRestorable, '2025-10-26T07:00:00.000Z');
+    assert.strictEqual(result.tables[0].latestRestorable, '2025-10-27T07:00:00.000Z');
     assert.strictEqual(sent.length, 1);
     assert.ok(sent[0] instanceof PutMetricDataCommand);
     const input = (sent[0] as unknown as { input: { Namespace: string; MetricData: { MetricName: string; Value: number }[] } }).input;
@@ -65,14 +71,30 @@ describe('DynamoDB PITR guard', () => {
 
   it('treats unreadable tables as unknown without failing the check', async () => {
     const [first] = DATAOPS_TABLES;
+    const sent: unknown[] = [];
+    const cloudWatch = { send: async (command: unknown) => { sent.push(command); return {}; } };
     const result = await checkDynamoPitrStatus(
       fakeDocClient({}, [first]),
-      { cloudWatch: { send: async () => ({}) } as never },
+      { cloudWatch: cloudWatch as never },
     );
 
     assert.deepStrictEqual(result.disabledTables, []);
     assert.deepStrictEqual(result.unknownTables, [first]);
     assert.match(result.tables.find((t) => t.table === first)?.error || '', /boom/);
+    assert.strictEqual(sent.length, 1);
+  });
+
+  it('skips the metric publish when no table could be verified', async () => {
+    const sent: unknown[] = [];
+    const cloudWatch = { send: async (command: unknown) => { sent.push(command); return {}; } };
+    const result = await checkDynamoPitrStatus(
+      fakeDocClient({}, [...DATAOPS_TABLES]),
+      { cloudWatch: cloudWatch as never },
+    );
+
+    assert.strictEqual(result.unknownTables.length, DATAOPS_TABLES.length);
+    assert.deepStrictEqual(result.disabledTables, []);
+    assert.strictEqual(sent.length, 0);
   });
 
   it('still returns a result when metric publishing fails', async () => {
@@ -83,12 +105,15 @@ describe('DynamoDB PITR guard', () => {
   });
 
   describe('scheduled handler', () => {
+    const previousEnv = process.env.DATAOPS_ENV;
     before(async () => {
       await useTestDatabase();
       process.env.DATAOPS_ENV = 'test';
     });
 
     after(async () => {
+      if (previousEnv === undefined) delete process.env.DATAOPS_ENV;
+      else process.env.DATAOPS_ENV = previousEnv;
       await stopLocal();
     });
 
