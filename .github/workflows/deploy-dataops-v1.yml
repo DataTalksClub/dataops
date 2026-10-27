@@ -237,6 +237,15 @@ jobs:
               "ParameterKey=SponsorCommunicationHmacSecretArn,ParameterValue=$SPONSOR_COMMUNICATION_HMAC_SECRET_ARN" \
 
       - name: Project authored workflow templates
+        timeout-minutes: 10
+        env:
+          # The backend shares its concurrency cap with live requests and jobs.
+          # Standard retries back off on Invoke throttling (TooManyRequestsException),
+          # including a temporary reserved-concurrency pause during maintenance.
+          # Bound attempts; FunctionError and the projection contract below still fail.
+          # https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-retries.html
+          AWS_RETRY_MODE: standard
+          AWS_MAX_ATTEMPTS: '20'
         run: |
           set -euo pipefail
           backend_function="$(aws cloudformation describe-stack-resource \
