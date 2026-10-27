@@ -47,11 +47,9 @@ describe('Card calendar invites (link-by-hand + invite-task done-gate + confirm-
     await saveCalendarOverlaySettings(client, { connectionId: 'google-calendar' }, 'test-operator');
     // Keep unit tests offline: the broker secret is unreadable unless a test injects a credential.
     setDapierBrokerClientsForTests({
-      secrets: {
-        send: async () => {
-          throw Object.assign(new Error('no aws in unit test'), { name: 'CredentialsProviderError' });
-        },
-      } as any,
+      readSecret: async () => {
+        throw Object.assign(new Error('no aws in unit test'), { name: 'CredentialsProviderError' });
+      },
     });
   });
 

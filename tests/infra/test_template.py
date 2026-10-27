@@ -492,20 +492,11 @@ def test_email_document_intake_reads_team_store_without_sm_permissions():
     assert "DATAOPS_SECRETS_KMS_KEY: !Ref SecretsStoreKey" in backend
 
 
-def test_backend_reads_only_the_exact_calendar_broker_secret():
-    backend = _load_template()["Resources"]["BackendFunction"]["Properties"]["Policies"]
-    grants = [
-        statement["Statement"]
-        for statement in backend
-        if isinstance(statement, dict)
-        and isinstance(statement.get("Statement"), dict)
-        and "personal-scheduler" in str(statement["Statement"].get("Resource"))
-    ]
-    assert grants == [{
-        "Effect": "Allow",
-        "Action": "secretsmanager:GetSecretValue",
-        "Resource": {"Sub": "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:personal-scheduler/dapier-api-token-??????"},
-    }]
+def test_backend_does_not_read_calendar_broker_from_secrets_manager():
+    backend = _resource_block(TEMPLATE.read_text(encoding="utf-8"), "BackendFunction")
+    assert "personal-scheduler/dapier-api-token" not in backend
+    assert "DATAOPS_SECRETS_TABLE: !Ref DataOpsSecretsTable" in backend
+    assert "DATAOPS_SECRETS_KMS_KEY: !Ref SecretsStoreKey" in backend
 
 
 def test_email_document_storage_is_private_retained_and_prefix_scoped():

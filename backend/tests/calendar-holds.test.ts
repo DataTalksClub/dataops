@@ -46,14 +46,12 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     client = await getClient(port);
     await createTables(client);
     await saveCalendarOverlaySettings(client, { connectionId: "google-calendar" }, "test-operator");
-    // Holds resolve the Dapier machine token via Secrets Manager (no Coolify env).
+    // Holds resolve the Dapier machine token via the team store (no Coolify env).
     // Keep unit tests offline: pretend the secret is unreadable unless a test injects a credential.
     setDapierBrokerClientsForTests({
-      secrets: {
-        send: async () => {
-          throw Object.assign(new Error('no aws in unit test'), { name: 'CredentialsProviderError' });
-        },
-      } as any,
+      readSecret: async () => {
+        throw Object.assign(new Error('no aws in unit test'), { name: 'CredentialsProviderError' });
+      },
     });
   });
   after(stopLocal);

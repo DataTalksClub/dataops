@@ -22,9 +22,9 @@ const input = {
   date: '2026-11-03', window: 'midday', title: 'Guest at DataTalks.Club Podcast',
   topic: 'Topic', guestRef: 'guest@example.com', documentUrl: 'https://example.com/podcast',
 };
-const offline = () => setDapierBrokerClientsForTests({ secrets: { send: async () => {
+const offline = () => setDapierBrokerClientsForTests({ readSecret: async () => {
   throw Object.assign(new Error('offline'), { name: 'CredentialsProviderError' });
-} } as any });
+} });
 
 describe('calendar invite SOP contract', () => {
   let client: DynamoDBDocumentClient;
@@ -123,15 +123,15 @@ describe('calendar invite SOP contract', () => {
     assert.equal(Date.parse(organizer.end.dateTime) - Date.parse(organizer.start.dateTime), 95 * 60000);
   });
 
-  it('uses Secrets Manager and the stored connection when propose was deferred', async () => {
+  it('uses the team store and the stored connection when propose was deferred', async () => {
     const { hold } = await invoke('POST', '/api/calendar-holds', input);
     assert.equal(hold.googleSync.state, 'deferred');
     const google = holdGoogleProvider();
     let reads = 0;
-    setDapierBrokerClientsForTests({ secrets: { send: async (command: any) => {
-      assert.equal(command.input.SecretId, 'personal-scheduler/dapier-api-token');
-      reads++; return { SecretString: JSON.stringify({ api_token: 'test-machine' }) };
-    } } as any });
+    setDapierBrokerClientsForTests({ readSecret: async (name: string) => {
+      assert.equal(name, 'personal-scheduler.dapier-api-token');
+      reads++; return JSON.stringify({ api_token: 'test-machine' });
+    } });
     setCalendarHoldGoogleDepsForTests({ fetchImpl: google.fetchImpl });
     const result = await invoke('POST', `/api/calendar-holds/${hold.id}/confirm`);
     assert.equal(result.hold.googleSync.state, 'synced');

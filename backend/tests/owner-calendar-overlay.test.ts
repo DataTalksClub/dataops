@@ -401,11 +401,9 @@ describe('owner calendar overlay and filtering', () => {
   describe('ownerCalendarOverlay provider', () => {
     it('returns empty list gracefully if no token or credentials are available', async () => {
       setOwnerCalendarProviderClientsForTests({
-        secrets: {
-          send: async () => {
-            throw new Error('Secret not found');
-          },
-        } as any,
+        readSecret: async () => {
+          throw new Error('Secret not found');
+        },
       });
 
       const provider = selectedOwnerCalendarOverlay({ today: TODAY, brokerCredential: '' });
@@ -417,16 +415,14 @@ describe('owner calendar overlay and filtering', () => {
 
     it('names a missing secret permission as the reason the layer is not connected', async () => {
       setOwnerCalendarProviderClientsForTests({
-        secrets: {
-          send: async () => {
-            throw Object.assign(new Error('denied'), { name: 'AccessDeniedException' });
-          },
-        } as any,
+        readSecret: async () => {
+          throw Object.assign(new Error('denied'), { name: 'AccessDeniedException' });
+        },
       });
       const { connection } = await selectedOwnerCalendarOverlay({ today: TODAY, settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS }).project('2026-10-01', '2026-10-31');
       assert.deepEqual(connection, {
         state: 'not-configured',
-        reason: 'This environment is not allowed to read the calendar broker secret personal-scheduler/dapier-api-token.',
+        reason: 'This environment is not allowed to read the calendar broker secret personal-scheduler.dapier-api-token.',
       });
     });
 

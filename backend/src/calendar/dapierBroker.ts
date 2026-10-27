@@ -8,16 +8,16 @@
  *   Planning → calendar settings (or `dataops calendar settings --connection <id>`).
  *   Propose / podcast invite mint Google tokens for that stored connectionId.
  *
- *   Platform (once): Lambda uses machine agent `personal-scheduler` via AWS SM
- *   `personal-scheduler/dapier-api-token` to call Dapier `/api/agent/token`.
+ *   Platform (once): Lambda uses machine agent `personal-scheduler` via the team store
+ *   `personal-scheduler.dapier-api-token` to call Dapier `/api/agent/token`.
  *   Google OAuth grants live in Dapier — never Coolify/DataOps env tokens, and
- *   Orin does not stuff `dap_…` into SM as a day-to-day step.
+ *   Orin does not stuff `dap_…` into the team store as a day-to-day step.
  */
-import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { readRuntimeSecret } from '../secrets/reader';
 
 export const DAPIER_BASE_URL = 'https://dapier.dtcdev.click';
 export const DAPIER_AGENT = 'personal-scheduler';
-export const DAPIER_SECRET_NAME = 'personal-scheduler/dapier-api-token';
+export const DAPIER_SECRET_NAME = 'personal-scheduler.dapier-api-token';
 
 /**
  * SOP `sop.events.calendar.creating-tentative-event-on-google-calendar`:
@@ -33,8 +33,8 @@ export const DEFAULT_HOLD_GOOGLE_CALENDARS = [
 /** Orin day-to-day path when Google sync cannot mint a token. */
 export const CREDENTIAL_OPERATOR_HINT =
   `In DataOps Planning → calendar settings (or \`dataops calendar settings\`), pick a suitable Dapier google-calendar connection — propose/invite uses it automatically. ` +
-  `No Coolify env tokens and no day-to-day SM dap_ stuffing. ` +
-  `If the connection is already selected and sync still defers: the selected connection needs a Dapier \`use\` grant for agent "${DAPIER_AGENT}" (platform keeps the machine token in SM "${DAPIER_SECRET_NAME}" once). Google refresh tokens stay in Dapier.`;
+  `No Coolify env tokens and no day-to-day credential setup. ` +
+  `If the connection is already selected and sync still defers: the selected connection needs a Dapier \`use\` grant for agent "${DAPIER_AGENT}" (platform keeps the machine token in the team store "${DAPIER_SECRET_NAME}" once). Google refresh tokens stay in Dapier.`;
 
 /** When the operator has not selected a connection. */
 export const CONNECTION_OPERATOR_HINT =
@@ -53,22 +53,22 @@ export function dapierTokenProblem(status: number, connectionId: string, agent =
   return `The calendar broker refused the token request (HTTP ${status}).`;
 }
 
-let secretClient = new SecretsManagerClient({});
+let readSecret = readRuntimeSecret;
 
-export function setDapierBrokerClientsForTests(value: { secrets?: SecretsManagerClient }): void {
-  if (value.secrets) secretClient = value.secrets;
+export function setDapierBrokerClientsForTests(value: { readSecret: typeof readRuntimeSecret }): void {
+  readSecret = value.readSecret;
 }
 
 async function readSecretCredential(): Promise<DapierCredential> {
   try {
-    const res = await secretClient.send(new GetSecretValueCommand({ SecretId: DAPIER_SECRET_NAME }));
-    if (res.SecretString) {
+    const raw = await readSecret(DAPIER_SECRET_NAME);
+    if (raw) {
       try {
-        const parsed = JSON.parse(res.SecretString);
-        const token = parsed.api_token || parsed.token || res.SecretString;
+        const parsed = JSON.parse(raw);
+        const token = parsed.api_token || parsed.token || raw;
         if (typeof token === 'string' && token.trim()) return { credential: token.trim() };
       } catch {
-        if (res.SecretString.trim()) return { credential: res.SecretString.trim() };
+        if (raw.trim()) return { credential: raw.trim() };
       }
       return { problem: `The calendar broker secret ${DAPIER_SECRET_NAME} is empty.` };
     }
@@ -97,8 +97,8 @@ async function readSecretCredential(): Promise<DapierCredential> {
  * Resolve the Dapier machine token used to mint short-lived Google Calendar
  * access tokens via POST /api/agent/token.
  *
- * Non-empty `explicit` wins (tests). Empty string falls through to Secrets
- * Manager so overlays that pass brokerCredential:'' still exercise SM.
+ * Non-empty `explicit` wins (tests). Empty string reads the team
+ * store so overlays that pass brokerCredential:'' still exercise the store.
  */
 export async function readDapierCredential(explicit?: string): Promise<DapierCredential> {
   const trimmed = explicit === undefined || explicit === null ? '' : String(explicit).trim();

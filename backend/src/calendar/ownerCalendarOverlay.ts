@@ -345,10 +345,10 @@ function adjustAllDayEndDate(start: string, end?: string): string {
 let fetcher: typeof fetch = fetch;
 
 export function setOwnerCalendarProviderClientsForTests(value: {
-  secrets?: Parameters<typeof setDapierBrokerClientsForTests>[0]['secrets'];
+  readSecret?: Parameters<typeof setDapierBrokerClientsForTests>[0]['readSecret'];
   fetch?: typeof fetch;
 }) {
-  if (value.secrets) setDapierBrokerClientsForTests({ secrets: value.secrets });
+  if (value.readSecret) setDapierBrokerClientsForTests({ readSecret: value.readSecret });
   fetcher = value.fetch || fetch;
 }
 

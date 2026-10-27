@@ -1204,13 +1204,6 @@ Resources:
                 - HasSponsorHmacSecret
                 - !Ref SponsorCommunicationHmacSecretArn
                 - !Ref AWS::NoValue
-        # Alexey's calendar overlay reads the personal-scheduler Dapier token.
-        # The secret lives outside this stack and uses the AWS-managed
-        # aws/secretsmanager key, so no kms:Decrypt grant is needed.
-        - Statement:
-            Effect: Allow
-            Action: secretsmanager:GetSecretValue
-            Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:personal-scheduler/dapier-api-token-??????
         - Statement:
             Effect: Allow
             Action:
