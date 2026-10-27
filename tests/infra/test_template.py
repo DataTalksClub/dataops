@@ -465,7 +465,14 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "dynamodb:DescribeTable" not in backend
     assert "${DataOpsTasksTable.Arn}/index/*" in backend
     assert "${DataOpsFilesTable.Arn}/index/*" in backend
-    assert "secretsmanager:GetSecretValue" in backend
+    assert "secretsmanager:GetSecretValue" not in backend
+    sponsor_policy = _resource_block(template, "SponsorCommunicationSecretsPolicy")
+    assert "Condition: HasSponsorCommunicationSecrets" in sponsor_policy
+    assert "Roles: [!Ref BackendFunctionRole]" in sponsor_policy
+    assert "secretsmanager:GetSecretValue" in sponsor_policy
+    assert "!If [HasSponsorTemplateSecret," in sponsor_policy
+    assert "!If [HasSponsorHmacSecret," in sponsor_policy
+    assert "HasSponsorCommunicationSecrets: !Or" in template
     assert "s3:PutObject" in backend
     assert "${DataOpsExportArchiveBucket.Arn}/${ExportArchivePrefix}/*" in backend
     assert "${DataOpsExportArchiveBucket.Arn}/${DynamoBackupPrefix}/*" in backend

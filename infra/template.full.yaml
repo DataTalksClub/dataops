@@ -162,6 +162,9 @@ Conditions:
   HasEmailDocumentExternalSourceKms: !Not [!Equals [!Ref EmailDocumentExternalSourceKmsKeyArn, ""]]
   HasSponsorTemplateSecret: !Not [!Equals [!Ref SponsorCommunicationTemplateSecretArn, ""]]
   HasSponsorHmacSecret: !Not [!Equals [!Ref SponsorCommunicationHmacSecretArn, ""]]
+  HasSponsorCommunicationSecrets: !Or
+    - !Condition HasSponsorTemplateSecret
+    - !Condition HasSponsorHmacSecret
 Globals:
   Function:
     Runtime: nodejs24.x
@@ -171,6 +174,20 @@ Globals:
       - x86_64
 
 Resources:
+  SponsorCommunicationSecretsPolicy:
+    Type: AWS::IAM::Policy
+    Condition: HasSponsorCommunicationSecrets
+    Properties:
+      PolicyName: sponsor-communication-secrets
+      Roles: [!Ref BackendFunctionRole]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: [secretsmanager:GetSecretValue]
+            Resource:
+              - !If [HasSponsorTemplateSecret, !Ref SponsorCommunicationTemplateSecretArn, !Ref AWS::NoValue]
+              - !If [HasSponsorHmacSecret, !Ref SponsorCommunicationHmacSecretArn, !Ref AWS::NoValue]
   InvoicePublicationSecret:
     Type: AWS::SecretsManager::Secret
     DeletionPolicy: Retain
@@ -1192,19 +1209,6 @@ Resources:
             Resource:
               - !GetAtt DataOpsCalendarTable.Arn
               - !GetAtt DataOpsUsersTable.Arn
-        - Statement:
-            Effect: Allow
-            Action:
-              - secretsmanager:GetSecretValue
-            Resource:
-              - !If
-                - HasSponsorTemplateSecret
-                - !Ref SponsorCommunicationTemplateSecretArn
-                - !Ref AWS::NoValue
-              - !If
-                - HasSponsorHmacSecret
-                - !Ref SponsorCommunicationHmacSecretArn
-                - !Ref AWS::NoValue
         - Statement:
             Effect: Allow
             Action:
