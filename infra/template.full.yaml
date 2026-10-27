@@ -78,11 +78,6 @@ Parameters:
     Type: Number
     Default: 90
     MinValue: 30
-  DynamoPitrAlertEmail:
-    Type: String
-    Default: dev@dtcdev.click
-    AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
-    Description: Mailbox paged when the daily PITR guard finds DynamoDB point-in-time recovery disabled.
   InvoicePublicationConfig:
     Type: String
     Default: ""
@@ -192,19 +187,6 @@ Resources:
     Properties:
       TopicName: !Sub ${AWS::StackName}-conversational-rollout-alarms
       KmsMasterKeyId: alias/aws/sns
-
-  DynamoPitrAlarmTopic:
-    Type: AWS::SNS::Topic
-    Properties:
-      TopicName: !Sub ${AWS::StackName}-dynamo-pitr-alarms
-      KmsMasterKeyId: alias/aws/sns
-
-  DynamoPitrAlarmSubscription:
-    Type: AWS::SNS::Subscription
-    Properties:
-      TopicArn: !Ref DynamoPitrAlarmTopic
-      Protocol: email
-      Endpoint: !Ref DynamoPitrAlertEmail
 
   ConversationalBackendLogGroup:
     Type: AWS::Logs::LogGroup
@@ -1605,13 +1587,11 @@ Resources:
       Threshold: 1
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: breaching
-      AlarmActions: [!Ref DynamoPitrAlarmTopic]
+      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
 
 Outputs:
   ConversationalRolloutAlarmTopicArn:
     Value: !Ref ConversationalRolloutAlarmTopic
-  DynamoPitrAlarmTopicArn:
-    Value: !Ref DynamoPitrAlarmTopic
   SponsorCommunicationPrivateArchiveBucketName:
     Value: !Ref SponsorCommunicationPrivateArchiveBucket
   DataOpsBookkeepingTableName:

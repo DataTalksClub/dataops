@@ -8,8 +8,10 @@ import { DATAOPS_TABLES, TABLE_SESSIONS } from '../db/tableNames';
  * Daily PITR guard: describe continuous backups for every application table
  * and publish the count of tables without point-in-time recovery to
  * CloudWatch (`DataOps/DynamoBackup` / `PitrDisabledTables`). The
- * `DynamoPitrDisabledAlarm` in infra/template.full.yaml pages
- * dev@dtcdev.click when the count reaches 1 (or when the check stops
+ * `DynamoPitrDisabledAlarm` in infra/template.full.yaml pages through the
+ * existing shared `ConversationalRolloutAlarmTopic` (the same channel as
+ * every other DataOps alarm, so the guard needs no new SNS topic or IAM
+ * permissions) when the count reaches 1 (or when the check stops
  * reporting at all).
  *
  * The sessions table is a deliberate exception: it holds TTL-expired
