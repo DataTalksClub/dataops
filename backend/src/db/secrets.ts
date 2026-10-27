@@ -70,7 +70,7 @@ export async function putSecret(
   }));
   const createdAt = (existing.Item?.createdAt as string) || now;
   const createdBy = (existing.Item?.createdBy as string) || input.actorId;
-  const data = await cipher.encrypt(encodeFields(input.fields));
+  const data = await cipher.encrypt(input.name, encodeFields(input.fields));
   const meta: SecretMeta = {
     name: input.name,
     fields: Object.keys(input.fields).sort(),
@@ -99,7 +99,7 @@ export async function getSecret(
     Key: secretKey(name),
   }));
   if (!result.Item) return null;
-  const fields = decodeFields(await cipher.decrypt(result.Item.data as string));
+  const fields = decodeFields(await cipher.decrypt(name, result.Item.data as string));
   await recordSecretAccess(client, { action: 'read', actorId, secretName: name });
   return { ...toMeta(result.Item), fields };
 }

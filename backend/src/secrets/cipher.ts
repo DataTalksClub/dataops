@@ -23,8 +23,8 @@ import {
 export const MAX_PAYLOAD_BYTES = 4096;
 
 export interface SecretCipher {
-  encrypt(plaintext: string): Promise<string>;
-  decrypt(ciphertext: string): Promise<string>;
+  encrypt(name: string, plaintext: string): Promise<string>;
+  decrypt(name: string, ciphertext: string): Promise<string>;
 }
 
 const DEV_KEY_BYTES = 32;
@@ -37,17 +37,20 @@ class KmsCipher implements SecretCipher {
     this.client = new KMSClient({});
   }
 
-  async encrypt(plaintext: string): Promise<string> {
+  async encrypt(name: string, plaintext: string): Promise<string> {
     const result = await this.client.send(new EncryptCommand({
       KeyId: this.keyId,
       Plaintext: Buffer.from(plaintext, 'utf8'),
+      EncryptionContext: { secret: name },
     }));
     return Buffer.from(result.CiphertextBlob as Uint8Array).toString('base64');
   }
 
-  async decrypt(ciphertext: string): Promise<string> {
+  async decrypt(name: string, ciphertext: string): Promise<string> {
     const result = await this.client.send(new DecryptCommand({
       CiphertextBlob: Buffer.from(ciphertext, 'base64'),
+      KeyId: this.keyId,
+      EncryptionContext: { secret: name },
     }));
     return Buffer.from(result.Plaintext as Uint8Array).toString('utf8');
   }
@@ -57,20 +60,22 @@ class KmsCipher implements SecretCipher {
 class AesGcmCipher implements SecretCipher {
   constructor(private readonly key: Buffer) {}
 
-  async encrypt(plaintext: string): Promise<string> {
+  async encrypt(name: string, plaintext: string): Promise<string> {
     const iv = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', this.key, iv);
+    cipher.setAAD(Buffer.from(name, 'utf8'));
     const data = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
     return Buffer.concat([iv, cipher.getAuthTag(), data]).toString('base64');
   }
 
-  async decrypt(ciphertext: string): Promise<string> {
+  async decrypt(name: string, ciphertext: string): Promise<string> {
     const blob = Buffer.from(ciphertext, 'base64');
     const iv = blob.subarray(0, 12);
     const tag = blob.subarray(12, 28);
     const data = blob.subarray(28);
     const decipher = createDecipheriv('aes-256-gcm', this.key, iv);
     decipher.setAuthTag(tag);
+    decipher.setAAD(Buffer.from(name, 'utf8'));
     return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
   }
 }
@@ -109,6 +114,9 @@ export function decodeFields(plaintext: string): Record<string, string> {
   const parsed = JSON.parse(plaintext);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('Secret payload is not an object');
+  }
+  if (Object.values(parsed).some(value => typeof value !== 'string')) {
+    throw new Error('Secret payload fields must be strings');
   }
   return parsed;
 }
