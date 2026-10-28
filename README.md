@@ -29,8 +29,8 @@ their outputs as artifacts.
 - `docs/` — DataOps merge plan, development process, and planning notes.
 - `frontend/` — static vanilla-JS app and its Dockerfile.
 - `infra/` — SAM/CloudFormation templates, OIDC deploy roles, runtime secrets.
-- `tools/content_tools/` — pure-Python content validation CLIs (docs link
-  validation, knowledge-repo validation, process-quality reports).
+- `tools/content_tools/` — pure-Python content parsing helpers (document
+  registry and SOP frontmatter) used by the planning-docs validator.
 - `scripts/` — repo tooling (planning-docs validator).
 
 ## Architecture
@@ -237,4 +237,5 @@ etc.) — invisible on GitHub but machine-readable. See
 [`docs/sop-format-design.md`](docs/sop-format-design.md) for the design log.
 
 The Node CLI (`backend/scripts/sop.ts`) provides `parse` and `lint` subcommands;
-the content-validation Python tools live in `tools/content_tools/`.
+the Python parsing helpers used by the planning-docs validator live in
+`tools/content_tools/`.
