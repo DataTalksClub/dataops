@@ -93,9 +93,7 @@ export const FAMILIES = {
     commands: {
       list: calendar.list,
       day: calendar.day,
-      schedule: calendar.day,
       slots: calendar.slots,
-      overlays: calendar.slots,
       propose: calendar.propose,
       "confirm-hold": calendar.confirmHold,
       "release-hold": calendar.releaseHold,
