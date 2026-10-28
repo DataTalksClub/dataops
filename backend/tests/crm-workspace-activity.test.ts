@@ -184,10 +184,10 @@ describe('crm workspace activity', () => {
 
   it('queries messages via keyed target query and paginates without whole-table scans', async () => {
     const { org } = await seed(String(seedCount++));
-    const full = await queryTargetMessages(client, { targetType: 'organization', targetId: org.id }, 'messages');
+    const full = await queryTargetMessages(client, { targetType: 'organization', targetId: org.id });
     assert.ok(full.matched >= 1);
     assert.equal(full.scanned, full.matched);
-    const paged = await queryTargetMessages(client, { targetType: 'organization', targetId: org.id }, 'messages', 1);
+    const paged = await queryTargetMessages(client, { targetType: 'organization', targetId: org.id }, 1);
     assert.equal(paged.items.length, 1);
     assert.ok(paged.hasMore);
   });

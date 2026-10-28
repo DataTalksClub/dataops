@@ -584,7 +584,7 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     const organization = await getCrmRecord(client, 'organization', orgMessages[1]);
     if (!organization) return json(404, { error: 'Not found' });
     const query = (event.queryStringParameters || {}).q?.toLowerCase() || '';
-    const { items: orgMsgItems } = await queryTargetMessages(client, { targetType: 'organization', targetId: organization.id }, 'messages');
+    const { items: orgMsgItems } = await queryTargetMessages(client, { targetType: 'organization', targetId: organization.id });
     let items = orgMsgItems;
     if (query) items = items.filter((item) => String(item.snippet || '').toLowerCase().includes(query) || String(item.threadId || '').toLowerCase().includes(query));
     items.sort((a, b) => String(b.sentAt || '').localeCompare(String(a.sentAt || '')));
