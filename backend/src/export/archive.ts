@@ -549,7 +549,7 @@ async function writeRestoreEvidence(options: RestoreEvidenceOptions): Promise<Re
     archive_key: archiveKeyFromUri(options.archiveUri),
     expected_archive_checksum: options.expectedArchiveChecksum,
     calculated_archive_checksum: calculatedArchiveChecksum,
-    app_git_sha: options.appGitSha || process.env.GITHUB_SHA || process.env.APP_GIT_SHA || 'unknown',
+    app_git_sha: options.appGitSha || process.env.GITHUB_SHA || 'unknown',
     export_generated_at: manifest.generated_at,
     manifest_checksum_summary: manifest.checksums,
     validation,

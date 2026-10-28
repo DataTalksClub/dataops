@@ -290,7 +290,7 @@ async function writePortableExport(
     source_environment: options.sourceEnvironment || process.env.DATAOPS_ENV || process.env.NODE_ENV || 'unknown',
     source_stack: options.sourceStack || process.env.AWS_STACK_NAME || 'unknown',
     source_region: options.sourceRegion || process.env.AWS_REGION || 'unknown',
-    app_git_sha: options.appGitSha || process.env.GITHUB_SHA || process.env.APP_GIT_SHA || 'unknown',
+    app_git_sha: options.appGitSha || process.env.GITHUB_SHA || 'unknown',
     export_format_version: EXPORT_FORMAT_VERSION,
     entity_files: entityFiles,
     entity_counts: entityCounts,
