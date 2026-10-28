@@ -112,13 +112,15 @@ describe('sponsor lead intake and review', () => {
 
   it('treats exact replays as duplicates and keeps one record per sponsor identity', async () => {
     const event = intakeRequest('newsletter-202', [sponsor({ name: '  Acme Gadgets ' }), sponsor({ name: 'ACME GADGETS', url: 'https://acme.example.test/widgets/' })]);
-    // The two descriptors normalize to the same identity, so the batch is rejected.
-    assert.strictEqual((await handler(event, {})).statusCode, 400);
+    // Raw duplicate descriptors are cleansed within the intake, first wins.
+    const batch = await handler(event, {});
+    assert.strictEqual(batch.statusCode, 201);
+    assert.strictEqual(JSON.parse(batch.body).leads.length, 1);
 
-    const single = intakeRequest('newsletter-202', [sponsor()]);
+    const single = intakeRequest('newsletter-202-single', [sponsor()]);
     const first = await handler(single, {});
     assert.strictEqual(first.statusCode, 201);
-    const replay = await handler(intakeRequest('newsletter-202', [sponsor({ url: 'https://acme.example.test/widgets/' })]), {});
+    const replay = await handler(intakeRequest('newsletter-202-single', [sponsor({ url: 'https://acme.example.test/widgets/' })]), {});
     assert.strictEqual(replay.statusCode, 200);
     assert.strictEqual(JSON.parse(replay.body).status, 'duplicate');
     assert.strictEqual(JSON.parse(replay.body).leads[0].id, JSON.parse(first.body).leads[0].id);
@@ -169,7 +171,7 @@ describe('sponsor lead intake and review', () => {
     assert.strictEqual((await handler(intakeRequest('newsletter-404', [sponsor({ name: 'Fresh Vendor' })]), {})).statusCode, 201);
     // Same normalized identity with different substantive content conflicts;
     // the genuinely new sponsor in the same batch is still stored.
-    const poisoned = intakeRequest('newsletter-404', [sponsor({ name: 'Fresh Vendor', blurb: 'Changed blurb for the same sponsor.' }), sponsor({ name: 'Brand New Vendor' })]);
+    const poisoned = intakeRequest('newsletter-404', [sponsor({ name: 'Fresh Vendor', blurb: 'Changed blurb for the same sponsor.' }), sponsor({ name: 'Brand New Vendor', url: 'https://brand-new.example.test' })]);
     const partial = await handler(poisoned, {});
     assert.strictEqual(partial.statusCode, 207);
     assert.strictEqual(JSON.parse(partial.body).status, 'partial-failure');
@@ -214,19 +216,94 @@ describe('sponsor lead intake and review', () => {
     unknownTop.body = unknownTop.body.replace('"sponsors":[', '"rawEmail":"private","sponsors":[');
     assert.strictEqual((await handler(unknownTop, {})).statusCode, 400);
     assert.strictEqual((await handler(intakeRequest('not-array-601', 'none' as unknown as unknown[]), {})).statusCode, 400);
-    assert.strictEqual((await handler(intakeRequest('too-many-601', Array.from({ length: 21 }, (_, index) => sponsor({ name: `Vendor ${index}` }))), {})).statusCode, 400);
+    assert.strictEqual((await handler(intakeRequest('too-many-601', Array.from({ length: 21 }, (_, index) => sponsor({ name: `Vendor ${index}`, url: `https://vendor-${index}.example.test` }))), {})).statusCode, 400);
     assert.strictEqual((await handler(intakeRequest('unknown-sponsor-601', [{ ...sponsor(), extra: true }]), {})).statusCode, 400);
-    assert.strictEqual((await handler(intakeRequest('http-url-601', [sponsor({ url: 'http://unsafe.example.test' })]), {})).statusCode, 400);
-    assert.strictEqual((await handler(intakeRequest('cred-url-601', [sponsor({ url: 'https://user:pass@acme.example.test/' })]), {})).statusCode, 400);
     assert.strictEqual((await handler(intakeRequest('bad-time-601', [sponsor()], { ...newsletter(), receivedAt: '2026-02-30T00:00:00Z' }), {})).statusCode, 400);
     assert.strictEqual((await handler(intakeRequest('future-601', [sponsor()], { ...newsletter(), receivedAt: '2099-01-01T00:00:00Z' }), {})).statusCode, 400);
-    assert.strictEqual((await handler(intakeRequest('missing-name-601', [sponsor({ name: '   ' })]), {})).statusCode, 400);
 
     const oversized = intakeRequest('oversized-601', [sponsor({ blurb: 'x'.repeat(70 * 1024) })]);
     assert.strictEqual((await handler(oversized, {})).statusCode, 413);
 
     const afterCount = await count();
     assert.strictEqual(afterCount, initial + 1);
+  });
+
+  it('cleans raw extraction and replays the former forwarder result without changes', async () => {
+    const raw = [
+      { name: '  Acme   Cloud ', url: 'HTTPS://ACME.example.test:443/widgets/#slot', blurb: ' first\n placement ', context: ' mid-roll ' },
+      { name: 'Another reading', url: 'https://acme.example.test/widgets/', blurb: 'ignored duplicate' },
+      { name: 'Micro', url: 'https://micro.example.test/category/service/blurb/context' },
+      { name: 'Union', url: 'https://union.example.test/tbd-placeholder-removed' },
+      { name: 'Plain', url: 'http://plain.example.test' },
+      { name: 'Credentials', url: 'https://user:pass@evil.example.test' },
+      { name: 'Junk', url: 'not a URL' },
+      { name: 'Section', url: 'https://section.example.test/category/launch/' },
+      { name: ' Name   only ' }, { name: 'name only', url: '' },
+      { name: '  ' }, 'junk', null,
+    ];
+    const expected = [
+      { name: 'Acme Cloud', url: 'https://acme.example.test/widgets', blurb: 'first placement', context: 'mid-roll' },
+      { name: 'Micro' }, { name: 'Union' }, { name: 'Plain' }, { name: 'Credentials' }, { name: 'Junk' },
+      { name: 'Section', url: 'https://section.example.test/category/launch' }, { name: 'Name only' },
+    ];
+    const first = await handler(intakeRequest('raw-extraction-cleansing', raw, newsletter({ name: '  Raw   Weekly ' })), {});
+    assert.strictEqual(first.statusCode, 201);
+    const leads = JSON.parse(first.body).leads;
+    assert.strictEqual(leads.length, expected.length);
+    for (const [index, lead] of leads.entries()) {
+      const stored = await getCrmRecord(await getClient(), 'lead', lead.id);
+      const expectedSponsor = expected[index] as Record<string, string>;
+      const actual = stored?.sponsor as Record<string, string>;
+      for (const field of ['name', 'url', 'blurb', 'context']) assert.strictEqual(actual[field], expectedSponsor[field] || '');
+      assert.strictEqual(stored?.newsletter.name, 'Raw Weekly');
+    }
+    const replay = await handler(intakeRequest('raw-extraction-cleansing', expected, newsletter({ name: 'Raw Weekly' })), {});
+    assert.strictEqual(replay.statusCode, 200);
+    assert.deepStrictEqual(JSON.parse(replay.body).leads.map((lead: { id: string }) => lead.id), leads.map((lead: { id: string }) => lead.id));
+    assert.ok(JSON.parse(replay.body).leads.every((lead: { outcome: string }) => lead.outcome === 'duplicate'));
+  });
+
+  it('applies the former newsletter metadata fallbacks after cleansing', async () => {
+    for (const [suffix, raw, cleaned] of [
+      ['empty', { name: ' ', subject: ' \n ', sender: ' ' }, { name: 'Inbound email', subject: 'Inbound email', sender: 'unknown@example.com' }],
+      ['subject', { name: ' ', subject: ' Real   issue ', sender: 'news@example.test' }, { name: 'Real issue', subject: 'Real issue', sender: 'news@example.test' }],
+    ] as const) {
+      const first = await handler(intakeRequest(`raw-metadata-${suffix}`, [], newsletter(raw)), {});
+      assert.strictEqual(first.statusCode, 201);
+      const replay = await handler(intakeRequest(`raw-metadata-${suffix}`, [], newsletter(cleaned)), {});
+      assert.strictEqual(replay.statusCode, 200);
+      assert.strictEqual(JSON.parse(replay.body).issue.id, JSON.parse(first.body).issue.id);
+    }
+  });
+
+  it('retains historical source identities for root queries and non-https scheme spellings', async () => {
+    const cleaned = [{ name: 'Query', url: 'https://query.example.test?code=abc' }, { name: 'Scheme' }];
+    const first = await handler(intakeRequest('raw-edge-identities', cleaned), {});
+    assert.strictEqual(first.statusCode, 201);
+    const raw = [{ name: 'Query', url: 'https://QUERY.example.test?Code=ABC' }, { name: 'Scheme', url: 'https:scheme.example.test' }];
+    const replay = await handler(intakeRequest('raw-edge-identities', raw), {});
+    assert.strictEqual(replay.statusCode, 200);
+    assert.deepStrictEqual(JSON.parse(replay.body).leads.map((lead: { id: string }) => lead.id), JSON.parse(first.body).leads.map((lead: { id: string }) => lead.id));
+  });
+
+  it('reports original request indices after filtering and deduplication for successes and conflicts', async () => {
+    const first = await handler(intakeRequest('raw-indices', [{ name: ' ' }, sponsor(), sponsor(), { name: 'New', url: 'https://new.example.test' }]), {});
+    assert.strictEqual(first.statusCode, 201);
+    assert.deepStrictEqual(JSON.parse(first.body).leads.map((lead: { index: number }) => lead.index), [1, 3]);
+    const replay = await handler(intakeRequest('raw-indices', [null, sponsor({ blurb: 'changed' }), sponsor(), { name: 'Fresh', url: 'https://fresh.example.test' }]), {});
+    assert.strictEqual(replay.statusCode, 207);
+    assert.deepStrictEqual(JSON.parse(replay.body).failures, [{ index: 1, code: 'idempotency-conflict' }]);
+    assert.strictEqual(JSON.parse(replay.body).leads[0].index, 3);
+  });
+
+  it('applies the twenty-sponsor limit after cleansing and records empty issues', async () => {
+    const repeated = Array.from({ length: 25 }, () => sponsor());
+    const deduped = await handler(intakeRequest('raw-over-twenty-duplicates', repeated), {});
+    assert.strictEqual(deduped.statusCode, 201);
+    assert.strictEqual(JSON.parse(deduped.body).leads.length, 1);
+    const empty = await handler(intakeRequest('raw-empty-issue', [{ name: ' ' }, null]), {});
+    assert.strictEqual(empty.statusCode, 201);
+    assert.deepStrictEqual(JSON.parse(empty.body).leads, []);
   });
 
   it('refuses reserved test domains on a deployed portal so probes cannot write fictional leads', async () => {

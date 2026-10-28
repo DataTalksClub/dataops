@@ -16,6 +16,20 @@ separate task product.
 - **Frontend**: SPA with vanilla JavaScript for local/module workflows
 - **Deployment**: single Lambda served from one Function URL
 
+## Sponsor lead intake ownership
+
+`POST /api/v1/intake/leads` receives the raw sponsor extraction array.
+DataOps owns whitespace normalization, text limits, URL normalization,
+hallucinated URL removal and first-wins deduplication by URL (or normalized
+name when no URL remains). Nameless entries are dropped. The twenty-sponsor
+limit applies after cleanup; an empty result still records the issue.
+Response lead/failure indices reference the original request array.
+
+Extraction clients only wrap and forward their output. Deploy this receiver
+before removing client-side cleansing. Cleanup preserves the former source
+identity form so historical raw output and previously cleaned payloads replay
+to the same records; content changes still produce idempotency conflicts.
+
 ## Local Development
 
 ### Prerequisites

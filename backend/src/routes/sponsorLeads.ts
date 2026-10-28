@@ -183,14 +183,64 @@ function validatedUrl(value: unknown, field: string): string {
   return result;
 }
 
+// DataOps owns cleansing of raw extraction output before domain validation.
+function cleanLeadText(value: unknown, field: string, max: number): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value !== 'string') throw new Error(`${field} must be a string`);
+  return value.replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function cleanLeadUrl(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const raw = value.trim();
+  if (!/^https:\/\//i.test(raw) || /\s/.test(raw) || raw.split('/')[2].includes('@')) return '';
+  // Preserve the extraction identity form formerly applied by Dapier so
+  // replaying historical raw output cannot create a second lead identity.
+  const parts = raw.replace(/^https:\/\//i, '').split('/');
+  const host = parts.shift()!.toLowerCase().replace(/:443$/, '');
+  const rest = parts.join('/').split('#')[0].replace(/\/+$/, '');
+  const segments = rest.split('/').filter(Boolean);
+  const schemaWords = new Set(['category', 'blurb', 'context']);
+  if (segments.filter((segment) => schemaWords.has(segment.toLowerCase())).length >= 2
+      || segments.some((segment) => /tbd|placeholder/i.test(segment))) return '';
+  return `https://${host}${rest ? `/${rest}` : ''}`;
+}
+
+function cleanIntakeSponsors(value: unknown): { sponsors: LeadSponsor[]; sourceIndices: number[] } {
+  if (!Array.isArray(value)) throw new Error('sponsors must be an array');
+  const sponsors: LeadSponsor[] = [];
+  const sourceIndices: number[] = [];
+  const seen = new Set<string>();
+  for (const [index, item] of value.entries()) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const raw = item as Record<string, unknown>;
+    onlyFields(raw, SPONSOR_FIELDS, 'sponsor');
+    const name = cleanLeadText(raw.name, 'sponsor.name', 200);
+    if (!name) continue;
+    const url = cleanLeadUrl(raw.url);
+    const key = url || `name:${normalizeLeadName(name)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    sourceIndices.push(index);
+    sponsors.push({
+      name, url,
+      category: cleanLeadText(raw.category, 'sponsor.category', 40),
+      blurb: cleanLeadText(raw.blurb, 'sponsor.blurb', 2000),
+      context: cleanLeadText(raw.context, 'sponsor.context', 2000),
+    });
+  }
+  return { sponsors: parseSponsors(sponsors), sourceIndices };
+}
+
 function parseNewsletter(value: unknown): LeadNewsletter {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('newsletter must be an object');
   const newsletter = value as Record<string, unknown>;
   onlyFields(newsletter, NEWSLETTER_FIELDS, 'newsletter');
+  const subject = cleanLeadText(newsletter.subject, 'newsletter.subject', 500) || 'Inbound email';
   return {
-    name: text(newsletter.name, 'newsletter.name', 200),
-    sender: text(newsletter.sender, 'newsletter.sender', 320),
-    subject: text(newsletter.subject, 'newsletter.subject', 500),
+    name: text(cleanLeadText(newsletter.name, 'newsletter.name', 200) || subject.slice(0, 200), 'newsletter.name', 200),
+    sender: text(cleanLeadText(newsletter.sender, 'newsletter.sender', 320) || 'unknown@example.com', 'newsletter.sender', 320),
+    subject: text(subject, 'newsletter.subject', 500),
     receivedAt: utcTimestamp(newsletter.receivedAt, 'newsletter.receivedAt'),
   };
 }
@@ -395,11 +445,12 @@ export async function handleSponsorLeadIntake(event: LambdaEvent, client: Dynamo
   let messageId: string;
   let newsletter: LeadNewsletter;
   let sponsors: LeadSponsor[];
+  let sourceIndices: number[];
   try {
     if (body.version !== CONTRACT_VERSION) throw new Error(`version must be ${CONTRACT_VERSION}`);
     messageId = text(body.messageId, 'messageId', 500);
     newsletter = parseNewsletter(body.newsletter);
-    sponsors = parseSponsors(body.sponsors);
+    ({ sponsors, sourceIndices } = cleanIntakeSponsors(body.sponsors));
   } catch (error) {
     return safeError(400, 'validation-error', 'invalid-request', error instanceof Error ? error.message : 'Invalid request');
   }
@@ -417,7 +468,8 @@ export async function handleSponsorLeadIntake(event: LambdaEvent, client: Dynamo
   let issue: { id: string; outcome: string };
   try {
     issue = await recordInboxIssue(client, messageId, newsletter);
-    for (const [index, sponsor] of sponsors.entries()) {
+    for (const [position, sponsor] of sponsors.entries()) {
+      const index = sourceIndices[position];
       try {
         const stored = await storeLead(client, leadValue(messageId, newsletter, sponsor, 'leads-intake'));
         leads.push({ index, id: stored.id, outcome: stored.outcome });
