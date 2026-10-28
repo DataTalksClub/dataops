@@ -101,9 +101,7 @@ through record create/update, or with
 `dataops crm company followup <id> --on YYYY-MM-DD` (same for `person`).
 `GET /api/sponsor-crm/followups` returns open follow-up tasks (`items`) plus
 open direct follow-ups (`records`); both honor `?due` / `?overdue` and exclude
-do-not-contact. `npx tsx scripts/crm-followup-migrate.ts --dry-run` previews
-moving open tasks tagged `crm-followup` into the direct fields; `--apply`
-writes them idempotently (marker-skipped on rerun).
+do-not-contact.
 
 ## Testing
 
