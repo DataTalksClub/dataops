@@ -14,15 +14,15 @@
  * `/docs/process-quality`.
  */
 
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, posix, sep } from 'node:path';
+import { readFileSync, statSync } from 'node:fs';
+import { posix, sep } from 'node:path';
 
 import { ParseError, parseFrontmatter, splitFrontmatter } from './sop';
 import type { Frontmatter } from './sop';
+import { collectMarkdown, generatedId, inferDocType, inferDomain } from './search/extract';
 
 const DOCUMENT_ID_RE = /^[a-z0-9][a-z0-9._-]*$/;
 const WIKI_REF_RE = /^\[\[([^\]|]+)(?:\|[^\]]+)?\]\]$/;
-const ID_STRIP_DIRS = new Set(['sops', 'templates', 'reference', 'playbooks', 'code-views']);
 
 export const VALID_DOC_TYPES = new Set([
   'sop',
@@ -125,15 +125,6 @@ export function registryToDict(registry: DocumentRegistry): { documents: Documen
 // ── Build ─────────────────────────────────────────────────────────────────────
 
 /** Recursively collect `*.md` files under `dir`, sorted (posix order). */
-function collectMarkdown(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...collectMarkdown(full));
-    else if (entry.isFile() && entry.name.endsWith('.md')) out.push(full);
-  }
-  return out;
-}
 
 /**
  * Build the registry for a content root. `contentRoot` is an absolute path; repo
@@ -401,15 +392,6 @@ function recordFromMetadata(
   };
 }
 
-// Canonical implementation lives in ./search/extract (re-used here internally).
-// Not exported to avoid an ambiguous duplicate in the docs barrel (index.ts).
-function generatedId(repoPath: string, docType: string): string {
-  const path = removeSuffix(removePrefix(repoPath, 'content/'), '.md');
-  const parts = path.split('/').filter((part) => !ID_STRIP_DIRS.has(part));
-  const slug = parts.join('.');
-  return `${docType}.${slug}`.replace(/_/g, '-');
-}
-
 function addUnique(
   index: Map<string, DocumentRecord>,
   key: string,
@@ -508,32 +490,10 @@ function firstHeading(body: string): string {
   return '';
 }
 
-function inferDomain(path: string): string {
-  const parts = path.split('/');
-  if (parts.length >= 2 && parts[0] === 'content') return parts[1];
-  return 'unknown';
-}
-
-function inferDocType(path: string): string {
-  const parts = new Set(path.split('/'));
-  if (parts.has('sops')) return 'sop';
-  if (parts.has('code-views')) return 'code-view';
-  if (parts.has('templates')) return 'template';
-  if (parts.has('reference')) return 'reference';
-  if (parts.has('playbooks')) return 'playbook';
-  if (parts.has('prompts')) return 'prompt';
-  if (parts.has('archive')) return 'archive';
-  return 'doc';
-}
-
 // ── Small string utilities (Python str method parity) ─────────────────────────
 
 function removePrefix(value: string, prefix: string): string {
   return value.startsWith(prefix) ? value.slice(prefix.length) : value;
-}
-
-function removeSuffix(value: string, suffix: string): string {
-  return value.endsWith(suffix) ? value.slice(0, -suffix.length) : value;
 }
 
 function titleCase(text: string): string {

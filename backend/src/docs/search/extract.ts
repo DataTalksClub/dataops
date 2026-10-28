@@ -184,8 +184,8 @@ function scalarOr(value: unknown): string {
   return String(value);
 }
 
-/** Recursively collect `*.md` files under `dir`, sorted (posix order). */
-function collectMarkdown(dir: string): string[] {
+/** Recursively collect `*.md` files under `dir` (unsorted; callers sort). */
+export function collectMarkdown(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
