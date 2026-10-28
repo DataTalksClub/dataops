@@ -25,6 +25,7 @@ import { TeamDirectory } from '../identity/directory';
 import { sponsorDocPortalBaseUrl } from '../routes/sponsorDocs';
 import type { Card, LambdaEvent, LambdaResponse } from '../types';
 import { issueLabel, SLOT_POSITIONS } from './issueCard';
+import { headerValue } from '../httpHeaders';
 
 export const NEWSLETTER_MARKDOWN_KINDS: readonly NewsletterMarkdownKind[] = ['issue', 'sources', 'brief'];
 export const NEWSLETTER_MARKDOWN_LINK_NAME = 'Newsletter Markdown';
@@ -42,12 +43,6 @@ function json(statusCode: number, body: unknown, extraHeaders?: Record<string, s
     headers: extraHeaders ? { ...JSON_HEADERS, ...extraHeaders } : JSON_HEADERS,
     body: JSON.stringify(body),
   };
-}
-
-function headerValue(headers: Record<string, string> | null | undefined, name: string): string {
-  if (!headers) return '';
-  const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
-  return match ? String(match[1]) : '';
 }
 
 function requestIp(event: LambdaEvent): string {

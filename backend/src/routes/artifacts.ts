@@ -11,6 +11,7 @@ import { getTask, updateTaskAdditive, TaskVersionConflictError } from '../db/tas
 import { isLocalFilesystemStorageAllowed } from '../storage';
 import type { ArtifactRecord, ArtifactRef, LambdaEvent, LambdaResponse } from '../types';
 import { recordRequestError } from '../requestErrorLog';
+import { headerValue } from '../httpHeaders';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 const ARTIFACT_TYPES = new Set(['podcast-doc', 'transcript', 'recording', 'report', 'invoice', 'event-page', 'assistant-output', 'external-link', 'other']);
@@ -45,12 +46,6 @@ function parseBody(event: LambdaEvent): Record<string, unknown> | null {
   } catch {
     return null;
   }
-}
-
-function headerValue(headers: Record<string, string> | null | undefined, name: string): string {
-  if (!headers) return '';
-  const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
-  return match ? String(match[1]) : '';
 }
 
 function isNonEmptyString(value: unknown): value is string {

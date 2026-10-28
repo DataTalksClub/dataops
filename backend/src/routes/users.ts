@@ -10,6 +10,7 @@ import {
 } from '../db/userLifecycle';
 import type { LambdaEvent, LambdaResponse, UserRole } from '../types';
 import { recordRequestError } from '../requestErrorLog';
+import { headerValue } from '../httpHeaders';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 const VALID_ROLES = new Set<UserRole>(['admin', 'operator']);
@@ -71,12 +72,6 @@ function parseBody(rawBody: string | null): Record<string, unknown> | null {
   } catch {
     return null;
   }
-}
-
-function headerValue(headers: Record<string, string> | null | undefined, name: string): string {
-  if (!headers) return '';
-  const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
-  return match ? String(match[1]) : '';
 }
 
 function isNonEmptyString(value: unknown): value is string {
