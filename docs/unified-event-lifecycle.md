@@ -159,6 +159,35 @@ check and cannot confirm the new date.
 
 ## Migration and delivery slices
 
+### Live linked documents (AC9)
+
+Card documents store their Card relationship and authored content, never an
+independent event date or lifecycle-derived title. Guest materials, briefs,
+run sheets and other linked document views resolve a shared event projection
+at read/render time: Card title, authoritative local datetime/time zone and
+state. Display proposed as tentative, approved as confirmed and released as
+released. Do not filter released authorities away and accidentally render the
+previous confirmed date. A Card with no scheduled time displays unscheduled;
+it must not fall back to a stale document field.
+
+All document read surfaces (editable view, public guest view, generated title,
+Markdown/HTML render and any export) use the same resolver. Exports are snapshots
+and must identify their render time; live views resolve on every request and
+invalidate any cached rendering by event version. No transition sends document
+update commands or copies a new event date into document content. Arbitrary
+externally hosted static documents cannot derive live data by themselves: their
+event metadata must be a live DataOps link/view, rather than copied date text.
+
+Migration inventories every Card-linked document type and removes persisted
+date/title metadata that duplicates event authority. Replace date placeholders
+with derived fields in rendering templates and reject future writes to those
+fields. Preserve authored prose and unrelated dates. Report ambiguous free-text
+dates for explicit reconciliation, never perform a broad text/date replacement.
+Verify the cited stale guest-materials example against its current linked
+authority without modifying protected holds. Test reschedule, approve and release
+against every linked document view, including an already opened guest page
+refreshed after the transition; dev E2E proves no document write occurred.
+
 1. Review this design with a different model and resolve findings before code.
 2. Add schema/policy validation and the shared transition service with concurrency,
    retry and projection tests; then wire API and CLI.
