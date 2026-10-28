@@ -174,13 +174,6 @@ export function createDocumentRenderer(context, services) {
     }
   }
 
-  function exitRenderedMode() {
-    editorView.dataset.mode = "raw";
-    viewToggleButton.hidden = true;
-    renderedView.replaceChildren();
-    resizeDocumentTitle();
-  }
-
   function updateViewToggleAvailability() {
     // The toggle switches between the normal document view and the Gist-style
     // code view. It appears when the open doc IS a code view or has one linked

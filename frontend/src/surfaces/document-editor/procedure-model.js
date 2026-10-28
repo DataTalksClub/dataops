@@ -387,10 +387,6 @@ export function todosOf(model) {
   return model.items.filter((item) => item.kind === "todo");
 }
 
-export function isGrouped(model) {
-  return groupsOf(model).length > 0;
-}
-
 /** Steps in document order. */
 export function stepsOf(model) {
   const steps = [];
@@ -727,8 +723,4 @@ export function convertItem(model, item, kind) {
   where.list.splice(where.index, 1, replacement);
   renumber(model);
   return replacement;
-}
-
-export function deleteGroup(model, group) {
-  return removeItem(model, group);
 }

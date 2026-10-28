@@ -88,7 +88,3 @@ export function browserRequirementParts(value) {
   }
   return { label: "Browser need not classified", short: "", icon: "", classified: false };
 }
-
-export function taskBrowserRequirement(task) {
-  return browserRequirementParts(task?.browserRequirement);
-}

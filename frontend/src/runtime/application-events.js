@@ -22,16 +22,6 @@ export function bindApplicationEvents(context) {
     searchInput,
   } = dom;
 
-  const isTyping = () => {
-    const active = documentRef.activeElement;
-    return Boolean(
-      active &&
-        (active.tagName === "INPUT" ||
-          active.tagName === "TEXTAREA" ||
-          active.isContentEditable),
-    );
-  };
-
   documentRef.addEventListener("dk:shortcuts", () => {
     helpModal.hidden = false;
     helpClose.focus();

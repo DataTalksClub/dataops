@@ -351,48 +351,6 @@ export function createOperationsOverview(context) {
     return node;
   }
 
-  async function refreshOperationsRecurringSnapshot(options = {}) {
-    const snapshot = emptyOperationsRecurringSnapshot();
-    try {
-      const payload = await request(workApiUrl("/api/recurring"));
-      snapshot.loaded = true;
-      snapshot.recurringConfigs = recurringConfigsFromPayload(payload);
-    } catch (err) {
-      snapshot.errors = [err?.message || "Recurring API request failed"];
-    }
-    operationsRecurringSnapshot =
-      normalizeOperationsRecurringSnapshot(snapshot);
-    if (options.rerender && isOperationsWorkspaceVisible()) refreshDocuments();
-  }
-
-  function isOperationsWorkspaceVisible() {
-    return (
-      body.dataset.view === "library" &&
-      !knowledgeState.selectedFolder &&
-      !searchInput.value.trim()
-    );
-  }
-
-  function workApiUrl(path, params = {}) {
-    const url = apiUrl(path);
-    for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined && value !== null && value !== "")
-        url.searchParams.set(key, String(value));
-    }
-    return url;
-  }
-
-  function allWorkTasks(work = operationsWorkSnapshot) {
-    return dedupeWorkTasks([
-      ...tasksFromWorkPayload(work.todayTasks || []),
-      ...tasksFromWorkPayload(work.overdueTasks || []),
-      ...tasksFromWorkPayload(work.waitingTasks || []),
-      ...Object.values(work.cardTasks || {}).flatMap((tasks) =>
-        tasksFromWorkPayload(tasks),
-      ),
-    ]);
-  }
-
   // ---------- Quick create: ad-hoc task and workflow ----------
 
   function renderOperationsRuntimeState(runtime) {
