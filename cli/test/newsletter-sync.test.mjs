@@ -42,14 +42,12 @@ const syncRoutes = {
 };
 
 describe("newsletter sync", () => {
-  test("--sheet is retired with a usage error and sends nothing", async () => {
+  test("requires a CSV path with a usage error and sends nothing", async () => {
     const io = captureIo();
     const calls = fakePortal({});
-    const exit = await run(["newsletter", "sync", "--sheet", "sheet-id", "--json"], io);
+    const exit = await run(["newsletter", "sync", "--json"], io);
     assert.equal(exit, EXIT.usage);
-    const message = io.errors.join("\n");
-    assert.match(message, /--sheet is retired/);
-    assert.match(message, /DataOps is the source of truth/);
+    assert.match(io.errors.join("\n"), /Pass a CSV export of the Newsletter tab/);
     assert.equal(calls.length, 0);
   });
 

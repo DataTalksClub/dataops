@@ -89,10 +89,6 @@ Usage
                                   that name; an ambiguous name (e.g. NVIDIA/Nvidia) keeps
                                   the issue's existing company link and is reported. Never
                                   deletes, never creates deals. Dry run unless --apply.
-                                  --sheet is retired: the schedule sheet is no longer
-                                  maintained and DataOps is the source of truth for
-                                  newsletter issues, so --sheet fails with a usage error
-                                  (the old sheet-reading code stays in git history).
                                   A plain CSV export cannot carry cell hyperlinks: a cell
                                   that displays text over a link (e.g. a Doc link) imports
                                   as empty, so link columns must show the full https://
@@ -659,12 +655,7 @@ async function allPages(api, route) {
 }
 
 export async function sync(args, io) {
-  if (args.sheet !== undefined) {
-    throw new UsageError(
-      "newsletter sync --sheet is retired: the schedule sheet is no longer maintained and DataOps is the source of truth for newsletter issues. Export the Newsletter tab to a CSV (link columns showing the full https:// URLs) and run `dataops newsletter sync <newsletter.csv>`.",
-    );
-  }
-  if (!args._[0]) throw new UsageError("Pass a CSV export of the Newsletter tab (--sheet is retired; DataOps is the source of truth).");
+  if (!args._[0]) throw new UsageError("Pass a CSV export of the Newsletter tab: `dataops newsletter sync <newsletter.csv>`.");
   const rows = readNewsletterCsv(args._[0]);
   const api = apiFor(args);
   const today = new Date().toISOString().slice(0, 10);
