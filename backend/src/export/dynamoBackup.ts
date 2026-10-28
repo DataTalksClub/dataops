@@ -7,6 +7,7 @@ import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { ScanCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { DATAOPS_TABLES } from '../db/tableNames';
+import { sanitizePathSegment } from './archive';
 
 /**
  * Raw DynamoDB dump: scan every application table into gzip NDJSON plus a
@@ -48,13 +49,6 @@ interface DynamoBackupResult {
   manifest: DynamoBackupManifest;
   manifestKey: string;
   manifestUri: string;
-}
-
-function sanitizePathSegment(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9_.-]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'unknown';
 }
 
 function jsonReplacer(_key: string, value: unknown): unknown {

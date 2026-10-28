@@ -128,7 +128,7 @@ function sha256Base64(content: Buffer): string {
   return crypto.createHash('sha256').update(content).digest('base64');
 }
 
-function sanitizePathSegment(value: string): string {
+export function sanitizePathSegment(value: string): string {
   return value
     .toLowerCase()
     .replace(/[^a-z0-9_.-]+/g, '-')
