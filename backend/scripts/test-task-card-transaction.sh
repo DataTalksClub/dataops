@@ -14,6 +14,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 container_id="$(docker run --detach --rm \
+  --cpus=1 \
   --publish 127.0.0.1::8000 \
   --name "$container_name" \
   amazon/dynamodb-local:latest \
@@ -44,12 +45,24 @@ DYNAMODB_ENDPOINT="$endpoint" \
 DATAOPS_TASKS_TABLE=Issue183TaskCardTransactionTasks \
 DATAOPS_CARDS_TABLE=Issue183TaskCardTransactionCards \
 DATAOPS_AUDIT_EVENTS_TABLE=Issue183TaskCardTransactionAuditEvents \
+DATAOPS_CALENDAR_TABLE=EventLifecycleTransactionCalendar \
 AWS_ACCESS_KEY_ID=local \
 AWS_SECRET_ACCESS_KEY=local \
 AWS_REGION=us-east-1 \
 NODE_ENV=production \
 node --import tsx --test --test-concurrency=1 --test-force-exit tests/task-card-transaction.ddb.ts tests/task-dependency-transaction.ddb.ts tests/card-deletion-transaction.ddb.ts
 test_status=$?
+if [ "$test_status" -eq 0 ]; then
+  DYNAMODB_ENDPOINT="$endpoint" \
+  DATAOPS_CARDS_TABLE=EventLifecycleTransactionCards \
+  DATAOPS_CALENDAR_TABLE=EventLifecycleTransactionCalendar \
+  AWS_ACCESS_KEY_ID=local \
+  AWS_SECRET_ACCESS_KEY=local \
+  AWS_REGION=us-east-1 \
+  NODE_ENV=production \
+  node --import tsx --test --test-concurrency=1 --test-force-exit tests/event-store.ddb.ts
+  test_status=$?
+fi
 set -e
 
 if [ "$test_status" -ne 0 ]; then

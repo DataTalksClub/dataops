@@ -1,3 +1,4 @@
+import { fitsEventBytes } from './size';
 /** Declarative event behavior, resolved from a Card's reviewed Template snapshot. */
 export const EVENT_TRANSITIONS = ['propose', 'approve', 'reschedule', 'release'] as const;
 export type EventTransition = typeof EVENT_TRANSITIONS[number];
@@ -27,6 +28,7 @@ const dict = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof 
 /** Strict and shared by authored YAML, API edits, and runtime resolution. No type defaults. */
 export function eventPolicyIssues(raw: unknown): string[] {
   const issues: string[] = [];
+  if (!fitsEventBytes(raw, 64 * 1024)) issues.push('eventPolicy exceeds the 64 KiB UTF-8 byte budget');
   const fail = (path: string, message: string) => issues.push(`eventPolicy.${path} ${message}`);
   function object(value: unknown, path: string, keys: string[]): Record<string, unknown> {
     if (!dict(value)) { fail(path, 'must be an object'); return {}; }

@@ -45,3 +45,19 @@ test('strict policy rejects misspellings and invalid cross-field configuration a
   }
   for (const input of [null, [], false, 'policy']) assert.throws(() => parseEventPolicy(input));
 });
+
+
+test('aggregate policy limits count UTF-8 bytes across transitions and email templates', () => {
+  const p = policy();
+  for (const transition of ['propose', 'approve', 'reschedule', 'release'] as const) {
+    p.notifications[transition].emails = Array.from({ length: 10 }, () => ({ to: 'guests' as const, subject: 'Synthetic', body: 'x'.repeat(10000) }));
+  }
+  assert.throws(() => parseEventPolicy(p), /byte budget/);
+  const multibyte = policy();
+  multibyte.description = '日'.repeat(10000);
+  multibyte.inviteText = '日'.repeat(10000);
+  multibyte.notifications.approve.emails = [{ to: 'guests', subject: 'Subject', body: '日'.repeat(2000) }];
+  assert.throws(() => parseEventPolicy(multibyte), /byte budget/);
+  multibyte.notifications.approve.emails = [];
+  assert.deepEqual(parseEventPolicy(multibyte), multibyte);
+});

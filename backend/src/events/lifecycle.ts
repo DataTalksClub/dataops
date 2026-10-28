@@ -1,3 +1,4 @@
+import { requireEventBytes } from './size';
 import { createHash } from 'node:crypto';
 import { cardEventInterval } from '../calendar/cardEventTime';
 import { EVENT_TRANSITIONS, parseEventPolicy, renderEventText, type EventPolicy, type EventRenderValues, type EventTransition } from './policy';
@@ -17,6 +18,7 @@ export interface EventOperation {
   fingerprint: string;
   transition: EventTransition;
   state: 'pending' | 'complete' | 'outcome-unknown';
+  result?: { googleEventIds: Record<string, string> };
   /** Fully resolved desired payload: a retry must never reread mutable Card values. */
   desired: {
     summary: string;
@@ -175,6 +177,10 @@ export function planEventTransition(id: string, cardId: string, current: EventRe
       })),
     },
   });
+  requireEventBytes(next.operations.at(-1)!.desired, 128 * 1024, 'Rendered event payload');
+  for (const email of next.operations.at(-1)!.desired.emails) {
+    if (/[\r\n]/.test(email.subject)) throw new Error('Rendered event email subject must be a single line');
+  }
   next.history.push({
     transition, generation: next.generation, operationKey: command.operationKey, at: command.now, actor: command.actor,
     ...(command.approval ? { note: 'approved via calendar accept', attendeeEmail: command.approval.attendeeEmail.toLowerCase() } : {}),

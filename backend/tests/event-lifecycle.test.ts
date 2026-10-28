@@ -120,3 +120,14 @@ test('all-guest Calendar approval requires the entire eligible guest set', () =>
   approval.acceptedEmails.push('two@example.invalid');
   assert.equal(planEventTransition('hold', 'card', current, command('approve', 1, { approval })).status, 'approved');
 });
+
+
+test('rendered expansion and dynamic email headers are validated before persistence', () => {
+  const p = proposal();
+  p.title = '日'.repeat(9000);
+  p.policy.description = '{title}'.repeat(5);
+  assert.throws(() => planEventTransition('hold', 'card', null, command('propose', 0, { date: '2030-12-03', time: '12:30', proposal: p })), /byte budget/);
+  p.title = 'Topic\nInjected header'; p.policy.description = '{topic}';
+  const event = complete(planEventTransition('hold', 'card', null, command('propose', 0, { date: '2030-12-03', time: '12:30', proposal: p })));
+  assert.throws(() => planEventTransition('hold', 'card', event, command('approve', 1)), /single line/);
+});
