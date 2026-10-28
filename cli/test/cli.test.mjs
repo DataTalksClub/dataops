@@ -597,7 +597,7 @@ describe("command dispatch", () => {
 });
 
 describe("newsletter doc and podcast doc commands", () => {
-  test("creates a sponsor doc via newsletter doc and podcast doc, supports show/export/delete, and keeps sponsor-docs as a deprecated alias", async () => {
+  test("creates a sponsor doc via newsletter doc and podcast doc, supports show/export/delete", async () => {
     saveProfile("https://ops.dtcdev.click", { token: "dops_abc", tokenId: "id-1" });
     const sent = [];
     const fetch = fakeFetch({
@@ -782,13 +782,6 @@ describe("newsletter doc and podcast doc commands", () => {
     );
     assert.deepEqual(sent[5], { deleted: "doc-123" });
     assert.match(ioDelete.text(), /Deleted sponsor doc doc-123/);
-
-    const ioDeprecated = captureIo();
-    assert.equal(
-      await run(["sponsor-docs", "show", "doc-123", "--url", "https://ops.dtcdev.click"], ioDeprecated),
-      0,
-    );
-    assert.match(ioDeprecated.text(), /Deprecated: 'dataops sponsor-docs' is deprecated; use 'dataops newsletter doc show'/);
 
     globalThis.fetch = globalFetch;
   });

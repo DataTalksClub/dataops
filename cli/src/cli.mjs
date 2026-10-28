@@ -152,14 +152,6 @@ export const FAMILIES = {
   },
 };
 
-const DEPRECATED_FAMILIES = {
-  "sponsor-docs": {
-    summary: sponsorDocs.summary,
-    help: sponsorDocs.help,
-    commands: sponsorDocs.commands,
-  },
-};
-
 export function usage() {
   const lines = [
     "dataops - command line client for the DataOps portal (the same API as the web app)",
@@ -251,12 +243,12 @@ export async function run(argv, io = console) {
     return EXIT.ok;
   }
   if (commandName === "help") {
-    const family = FAMILIES[rest[0]] || DEPRECATED_FAMILIES[rest[0]];
+    const family = FAMILIES[rest[0]];
     print(family ? family.help : usage());
     return EXIT.ok;
   }
 
-  const family = FAMILIES[commandName] || DEPRECATED_FAMILIES[commandName];
+  const family = FAMILIES[commandName];
   if (!family) {
     io.error(`Unknown command: ${commandName}. Run \`dataops --help\`.`);
     return EXIT.usage;
@@ -275,16 +267,6 @@ export async function run(argv, io = console) {
     if (!handler) {
       io.error(`Unknown subcommand: ${commandName} ${subcommandName}. One of: ${Object.keys(family.commands).join(", ")}.`);
       return EXIT.usage;
-    }
-    if (commandName === "sponsor-docs") {
-      const parsedSub = parseArgs(subRest);
-      const isPodcast = parsedSub.template === "podcast";
-      const newCmd = isPodcast
-        ? `dataops podcast doc ${subcommandName}`
-        : `dataops newsletter doc ${subcommandName}`;
-      const notice = `Deprecated: 'dataops sponsor-docs' is deprecated; use '${newCmd}' (or 'dataops podcast doc ${subcommandName}').`;
-      if (wantsJson) io.error(notice);
-      else print(notice);
     }
   }
 

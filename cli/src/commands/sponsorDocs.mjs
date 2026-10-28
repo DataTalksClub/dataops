@@ -3,8 +3,6 @@ import { enc, fields, isoDate, optionalString, positional, table } from "../form
 import { apiFor } from "../session.mjs";
 import { rewriteVerificationUri } from "./auth.mjs";
 
-export const summary = "Deprecated alias for `dataops newsletter doc` and `dataops podcast doc`";
-
 export const TEMPLATES = [
   "newsletter-main",
   "newsletter-secondary",
@@ -84,19 +82,6 @@ Required to submit: talkTitle, outline (3–4 newline-separated bullets), bio.
 Optional: summary, linkedinUrl, githubUrl, websiteUrl.
 Create links the form to the webinar card. Copy the share link or invitation
 with email; these commands do not send messages.
-`;
-
-export const help = `Deprecated: \`dataops sponsor-docs\` has moved under the domain commands:
-
-  dataops newsletter doc create <issue-id|card-id> [--slot primary|secondary] [--standalone] [--email]
-  dataops newsletter doc show <doc-id>
-  dataops newsletter doc export <doc-id>
-  dataops newsletter doc delete <doc-id> --yes
-
-  dataops podcast doc create <card-id> [--sponsor NAME] [--date YYYY-MM-DD] [--email]
-  dataops podcast doc show <doc-id>
-  dataops podcast doc export <doc-id>
-  dataops podcast doc delete <doc-id> --yes
 `;
 
 export function extractDocId(raw) {
