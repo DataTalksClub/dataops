@@ -11,7 +11,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_CARDS, TABLE_TASKS, TABLE_TEMPLATES } from './tableNames';
 import { buildCard, cardKey, getCard } from './cards';
 import { usesLocalTransactionEmulation } from './client';
-import type { PlannedWrite } from './plannedWrite';
+import { compact, type PlannedWrite } from './plannedWrite';
 import { createTask, listTasksByCard } from './tasks';
 import type { Card, Template, Task } from '../types';
 import { resolveTemplateConditionalValidation } from '../cards/conditionalRequired';
@@ -95,18 +95,6 @@ function templateKey(id: string) {
 
 function taskKey(id: string) {
   return { PK: `TASK#${id}`, SK: `TASK#${id}` };
-}
-
-function compact(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(compact);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .filter(([, field]) => field !== undefined)
-        .map(([key, field]) => [key, compact(field)]),
-    );
-  }
-  return value;
 }
 
 let templateCreationTail: Promise<void> = Promise.resolve();

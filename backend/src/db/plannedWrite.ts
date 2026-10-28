@@ -20,6 +20,19 @@ export interface PlannedWrite {
   after: (current: Dict) => Dict | null;
 }
 
+/** Recursively drop `undefined` fields so a row can be written as a DynamoDB item. */
+export function compact(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(compact);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Dict)
+        .filter(([, field]) => field !== undefined)
+        .map(([key, field]) => [key, compact(field)]),
+    );
+  }
+  return value;
+}
+
 /** Put a row that must not exist yet. */
 export function putNew(tableName: string, key: Dict, row: Dict): PlannedWrite {
   const item = { ...key, ...row };

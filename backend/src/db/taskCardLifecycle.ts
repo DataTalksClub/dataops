@@ -18,6 +18,7 @@ import {
 } from './cards';
 import { TABLE_AUDIT_EVENTS, TABLE_CARDS, TABLE_TASKS } from './tableNames';
 import type { TaskDependencyPlan, TaskGuard } from './taskDependencies';
+import { compact } from './plannedWrite';
 
 type Dict = Record<string, unknown>;
 type TransactionItems = NonNullable<ConstructorParameters<typeof TransactWriteCommand>[0]['TransactItems']>;
@@ -134,18 +135,6 @@ function taskKey(id: string) {
 
 function auditKey(id: string) {
   return { PK: `AUDIT_EVENT#${id}`, SK: `AUDIT_EVENT#${id}` };
-}
-
-function compact(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(compact);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Dict)
-        .filter(([, field]) => field !== undefined)
-        .map(([key, field]) => [key, compact(field)]),
-    );
-  }
-  return value;
 }
 
 function taskCardId(task: Task | undefined): string | null {

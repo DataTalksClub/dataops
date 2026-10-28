@@ -24,6 +24,7 @@ import {
 } from './taskCardLifecycle';
 import { resolveDependencyIds, templateTaskProjection } from '../templates/cardTemplateProjection';
 import { loadAssignmentPolicy, type AssignmentPolicy } from './workspaceSettings';
+import { compact } from './plannedWrite';
 
 import {
   buildCardTemplateUpdatePlan,
@@ -72,18 +73,6 @@ export class CardTemplateUpdateConflictError extends Error {
     super(message);
     this.name = 'CardTemplateUpdateConflictError';
   }
-}
-
-function compact(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(compact);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Dict)
-        .filter(([, field]) => field !== undefined)
-        .map(([key, field]) => [key, compact(field)]),
-    );
-  }
-  return value;
 }
 
 function auditId(cardId: string, previewToken: string): string {
