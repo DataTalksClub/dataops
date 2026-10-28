@@ -387,5 +387,3 @@ export async function anchorPayloadRetention(
     ExpressionAttributeValues: { ':anchor': anchor, ':ttl': payloadDeleteAt(anchor) },
   }));
 }
-
-export const sponsorItemKey = itemKey;
