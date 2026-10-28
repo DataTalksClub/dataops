@@ -53,6 +53,7 @@ export function templateCardDefinitionSnapshot(
     cardLinkDefinitions: copy(template.cardLinkDefinitions || []),
     taskRefs: [...new Set(taskRefs)].sort(),
     episodeStages: episodeStageRefs(template),
+    eventPolicy: template.eventPolicy === undefined ? undefined : copy(template.eventPolicy),
   });
 }
 

@@ -1,3 +1,4 @@
+import { eventPolicyIssues } from '../events/policy';
 /**
  * Git-authored workflow templates.
  *
@@ -37,6 +38,7 @@ const TEMPLATE_FIELDS = [
   ['nextReviewAt', 'next_review_at'],
   ['icon', 'icon'],
   ['cardTitle', 'card_title'],
+  ['eventPolicy', 'event_policy'],
   ['tags', 'tags'],
   ['sourceDocIds', 'source_document_ids'],
 ] as const;
@@ -231,6 +233,10 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
   if (!doc.name) fail('name is required');
   if (doc.icon !== undefined && !isTemplateIcon(doc.icon)) {
     fail(`icon must be one of: ${TEMPLATE_ICONS.join(', ')}`);
+  }
+
+  if (doc.event_policy !== undefined) {
+    for (const issue of eventPolicyIssues(doc.event_policy)) fail(issue);
   }
 
   if (doc.card_title !== undefined) {

@@ -1,3 +1,4 @@
+import type { EventPolicy } from './events/policy';
 import type { EpisodeStage, EpisodeStageRefs } from './podcast/cardStatus';
 
 // --- Task ---
@@ -505,6 +506,7 @@ export interface TaskDefinition {
 
 /** Definition-owned Card defaults captured when a Template is applied. */
 export interface TemplateCardDefinitionSnapshot {
+  eventPolicy?: EventPolicy;
   tags: string[];
   sourceDocIds: string[];
   references: Reference[];
@@ -556,6 +558,7 @@ export interface TemplateTaskDefinitionSnapshot {
 }
 
 export interface Template {
+  eventPolicy?: EventPolicy;
   id: string;
   /** Authored identity and schema revision, separate from runtime id/version. */
   authoredId?: string;

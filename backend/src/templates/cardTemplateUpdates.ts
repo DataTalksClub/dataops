@@ -21,6 +21,7 @@ const CARD_FIELDS = [
   'sourceDocIds',
   'references',
   'cardLinkDefinitions',
+  'eventPolicy',
 ] as const;
 
 const TASK_FIELDS = [
@@ -159,6 +160,7 @@ function taskVersion(task: Task): number {
 }
 
 function cardDefinitionValue(card: Card, field: typeof CARD_FIELDS[number]): unknown {
+  if (field === 'eventPolicy') return card.templateDefinitionSnapshot.eventPolicy;
   if (field === 'cardLinkDefinitions') {
     return (card.cardLinks || []).map(({ name }) => ({ name }));
   }
