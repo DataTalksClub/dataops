@@ -2,6 +2,7 @@ import { UsageError } from "../errors.mjs";
 import { enc, fields, isoDate, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { rewriteVerificationUri } from "./auth.mjs";
+import { exportDocument } from "./documents-transfer.mjs";
 
 export const TEMPLATES = [
   "newsletter-main",
@@ -198,6 +199,8 @@ export async function create(args, io) {
   const targetId = positional({ _: positionals }, 0, createUsage);
   const api = apiFor(args);
   const body = { cardId: targetId };
+  const from = optionalString(args, "from");
+  if (from !== undefined) body.from = extractDocId(from);
 
   const template = optionalString(args, "template");
   const slot = optionalString(args, "slot");
@@ -214,7 +217,7 @@ export async function create(args, io) {
     if (template !== undefined && !PODCAST_TEMPLATES.includes(template)) {
       throw new UsageError(`--template must be one of: ${PODCAST_TEMPLATES.join(", ")}.`);
     }
-    body.template = template || "podcast";
+    if (template !== undefined || !from) body.template = template || "podcast";
   } else {
     if (slot !== undefined) {
       if (!["primary", "secondary", "main", "standalone"].includes(slot)) {
@@ -413,6 +416,9 @@ export async function reopen(args, io) {
 export async function exportMarkdown(args, io) {
   const prefix = commandPrefix(args);
   const id = extractDocId(positional(args, 0, `${prefix} export <doc-id>`));
+  if (args.format !== undefined || args.output !== undefined) {
+    return exportDocument(args, io, `/api/sponsor-docs/${enc(id)}/export`, id);
+  }
   const api = apiFor(args);
   const result = await api.get(`/api/sponsor-docs/${enc(id)}/export`);
   if (args.json) return result;

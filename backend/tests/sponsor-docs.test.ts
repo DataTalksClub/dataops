@@ -577,4 +577,79 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     }
   });
 
+  it('copies every template to a new draft and exports real DOCX and Markdown', async () => {
+    const sourceCard = await createCard(client, { ...templateLink(), title: '[Podcast] Source' });
+    const targetCard = await createCard(client, { ...templateLink(), title: '[Podcast] Target' });
+    for (const card of [sourceCard, targetCard]) {
+      await createPodcastEpisode(client, { title: 'Confirmed', guests: [], status: 'booked', recordingDate: '2026-12-01', cardId: card.id });
+    }
+    const templates = JSON.parse((await staffReq('GET', '/api/sponsor-docs/templates')).body).templates;
+    for (const template of templates) {
+      const fields = [...(template.fields || []), ...(template.sections || []).flatMap((section: { fields?: { key: string }[] }) => section.fields || [])];
+      const field = fields.find((value: { type?: string }) => !['url', 'radio', 'select'].includes(value.type || '')) || fields[0];
+      const original = await staffReq('POST', '/api/sponsor-docs', { cardId: sourceCard.id, template: template.key, title: `Copy ${template.key}`, content: { [field.key]: 'Authored text' } });
+      assert.equal(original.statusCode, 201, original.body);
+      const source = JSON.parse(original.body).doc;
+      const copied = await staffReq('POST', '/api/sponsor-docs', { cardId: targetCard.id, from: source.id });
+      assert.equal(copied.statusCode, 201, copied.body);
+      const copy = JSON.parse(copied.body).doc;
+      assert.notEqual(copy.id, source.id);
+      assert.notEqual(copy.accessCode, source.accessCode);
+      assert.equal(copy.cardId, targetCard.id);
+      assert.equal(copy.template, template.key);
+      assert.deepEqual(copy.content, source.content);
+      assert.equal(copy.status, 'draft');
+      assert.equal(copy.version, 1);
+      assert.equal(copy.submittedAt, null);
+      const markdown = await staffReq('GET', `/api/sponsor-docs/${copy.id}/export`, undefined, { format: 'md' });
+      assert.equal(markdown.statusCode, 200);
+      assert.ok(markdown.body.includes(copy.title));
+      const docx = await staffReq('GET', `/api/sponsor-docs/${copy.id}/export`, undefined, { format: 'docx' });
+      assert.equal(docx.statusCode, 200);
+      assert.equal(docx.isBase64Encoded, true);
+      assert.equal(Buffer.from(docx.body, 'base64').subarray(0, 2).toString(), 'PK');
+      assert.match(docx.headers?.['Content-Type'] || '', /wordprocessingml/);
+    }
+    const missing = await staffReq('POST', '/api/sponsor-docs', { cardId: targetCard.id, from: 'missing-doc' });
+    assert.equal(missing.statusCode, 404);
+    const badFormat = await staffReq('GET', `/api/sponsor-docs/${JSON.parse((await staffReq('GET', '/api/sponsor-docs', undefined, { cardId: targetCard.id })).body).docs[0].id}/export`, undefined, { format: 'pdf' });
+    assert.equal(badFormat.statusCode, 400);
+  });
+
+  it('keeps workshop internal content out of external DOCX exports and denies copying anonymously', async () => {
+    const card = await createCard(client, { ...templateLink(), title: '[Workshop] Export test' });
+    const response = await staffReq('POST', '/api/sponsor-docs', { cardId: card.id, content: { prepNotes: 'PRIVATE-PREP', partnerQuestions: 'PRIVATE-QUESTIONS', talkTitle: 'Public title' } });
+    const doc = JSON.parse(response.body).doc;
+    const { fromBuffer } = await import('yauzl');
+    const exported = await anonReq('GET', `/api/sponsor-docs/${doc.id}/export`, { codeHeader: doc.accessCode, query: { format: 'docx' } });
+    assert.equal(exported.statusCode, 200, exported.body);
+    const text = await new Promise<string>((resolve, reject) => fromBuffer(Buffer.from(exported.body, 'base64'), { lazyEntries: true }, (error, zip) => {
+      if (error || !zip) return reject(error);
+      zip.on('error', reject);
+      zip.on('entry', entry => {
+        if (entry.fileName !== 'word/document.xml') return zip.readEntry();
+        zip.openReadStream(entry, (streamError, stream) => {
+          if (streamError || !stream) return reject(streamError);
+          const chunks: Buffer[] = [];
+          stream.on('data', chunk => chunks.push(chunk));
+          stream.on('error', reject);
+          stream.on('end', () => { zip.close(); resolve(Buffer.concat(chunks).toString('utf8')); });
+        });
+      });
+      zip.readEntry();
+    }));
+    assert.ok(text.includes('Public title'));
+    assert.ok(!text.includes('PRIVATE-PREP'));
+    assert.ok(!text.includes('PRIVATE-QUESTIONS'));
+    const skipAuth = process.env.SKIP_AUTH;
+    try {
+      process.env.SKIP_AUTH = 'false';
+      const denied = await anonReq('POST', '/api/sponsor-docs', { codeHeader: doc.accessCode, body: { cardId: card.id, from: doc.id } });
+      assert.ok([401, 403].includes(denied.statusCode), denied.body);
+    } finally {
+      if (skipAuth === undefined) delete process.env.SKIP_AUTH;
+      else process.env.SKIP_AUTH = skipAuth;
+    }
+  });
+
 });

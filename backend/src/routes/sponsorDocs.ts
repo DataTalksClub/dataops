@@ -4,6 +4,7 @@ import { browserAuthOrigin } from '../auth/browserAuth';
 import { normalizeCardLinks } from '../artifactLinks';
 import { cardTemplateType, hydrateStructuredCardFields } from '../cards/cardTitleStructure';
 import { getTemplateIdByType } from '../cards/createCard';
+import { DOCX_CONTENT_TYPE, markdownToDocx } from '../docs/docxExport';
 import { getCardConsistent, updateCard } from '../db/cards';
 import {
   getNewsletterIssue,
@@ -432,6 +433,25 @@ export async function handleSponsorDocRoutes(
         const body = parseBody(event.body);
         if (!body) return json(400, { error: 'Invalid JSON body' });
 
+        // Copy authored content only. createSponsorDoc supplies a new identity,
+        // access code, draft status, author, timestamps and version.
+        if (body.from !== undefined) {
+          if (typeof body.from !== 'string' || !body.from.trim()) {
+            return json(400, { error: 'from must be a document ID', code: 'invalid_source' });
+          }
+          const source = await getSponsorDocWithAuthMaterial(client, body.from.trim());
+          if (!source) return json(404, { error: 'Source document not found', code: 'sponsor_doc_not_found' });
+          if (body.template !== undefined && body.template !== source.doc.template) {
+            return json(400, { error: 'A copy must use the source document template', code: 'template_mismatch' });
+          }
+          body.template = source.doc.template;
+          if (body.title === undefined) body.title = source.doc.title;
+          body.content = {
+            ...source.doc.content,
+            ...(body.content && typeof body.content === 'object' && !Array.isArray(body.content) ? body.content : {}),
+          };
+        }
+
         const rawTargetId = typeof body.cardId === 'string' && body.cardId.trim()
           ? body.cardId.trim()
           : typeof body.issueId === 'string' && body.issueId.trim()
@@ -670,7 +690,24 @@ export async function handleSponsorDocRoutes(
 
       const markdown = renderSponsorDocMarkdownExport(doc);
       const format = (event.queryStringParameters?.format || 'json').toLowerCase();
-      if (format === 'markdown' || format === 'md' || format === 'text') {
+      if (format === 'docx') {
+        const bytes = await markdownToDocx(markdown);
+        return {
+          statusCode: 200,
+          headers: {
+            'Content-Type': DOCX_CONTENT_TYPE,
+            'Content-Disposition': `attachment; filename="${doc.id}.docx"`,
+            'Cache-Control': 'no-store',
+            'Referrer-Policy': 'no-referrer',
+          },
+          body: bytes.toString('base64'),
+          isBase64Encoded: true,
+        };
+      }
+      if (!['json', 'markdown', 'md', 'text', 'txt'].includes(format)) {
+        return json(400, { error: 'format must be md, docx, txt, or json', code: 'invalid_format' });
+      }
+      if (format === 'markdown' || format === 'md' || format === 'text' || format === 'txt') {
         return {
           statusCode: 200,
           headers: {
