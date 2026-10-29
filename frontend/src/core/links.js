@@ -6,6 +6,7 @@
 const MARKDOWN_ESCAPE = /\\([\\`*_{}[\]()#+\-.!~|])/g;
 
 const SERVICES = [
+  { id: "workshopdoc", name: "Workshop materials", icon: "doc", group: "documents", test: (_h, p) => p.startsWith("/workshop-docs/") },
   { id: "webinardoc", name: "Speaker materials", icon: "doc", group: "documents", test: (_h, p) => p.startsWith("/webinar-docs/") },
   {
     id: "sponsordoc",

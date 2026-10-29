@@ -41,6 +41,8 @@ import {
   isSponsorDocTemplateKey,
   renderSponsorDocMarkdownExport,
   renderSponsorEmailDraft,
+  speakerContentView,
+  speakerTemplateView,
   type SponsorDocTemplateKey,
 } from '../sponsorDocs/templates';
 import { listNextRecordingSlots } from '../podcast/resolveRecordingSlot';
@@ -86,6 +88,7 @@ function requestIp(event: LambdaEvent): string {
 /** Canonical public materials page for each event or sponsorship template. */
 export function sponsorDocPathForTemplate(template: string | null | undefined): string {
   if (template === 'webinar') return '/webinar-docs';
+  if (template === 'workshop') return '/workshop-docs';
   return template === 'podcast' ? '/podcast-docs' : '/sponsor-docs';
 }
 
@@ -127,7 +130,7 @@ export function isAnonymousSponsorDocRequest(method: string, path: string): bool
  */
 export function isAnonymousSponsorDocAsset(method: string, path: string): boolean {
   if (method.toUpperCase() !== 'GET') return false;
-  if (/^\/(sponsor-docs|podcast-docs|guest-docs|webinar-docs)\/[^/]+\/?$/.test(path)) return true;
+  if (/^\/(sponsor-docs|podcast-docs|guest-docs|webinar-docs|workshop-docs)\/[^/]+\/?$/.test(path)) return true;
   return (
     path === '/src/sponsor-doc-page.js'
     || path === '/src/surfaces/operations/sponsor-docs.js'
@@ -165,7 +168,8 @@ async function inferTemplateForCard(
   const cType = cardTemplateType(card, templateIdByType);
   const combinedText = `${card.title || ''} ${(card.tags || []).join(' ')} ${card.description || ''}`.toLowerCase();
 
-  if (cType === 'webinar' || cType === 'podcast') return cType;
+  if (cType === 'webinar' || cType === 'workshop' || cType === 'podcast') return cType;
+  if (/\bworkshop\b/.test(combinedText)) return 'workshop';
   if (/\bwebinar\b/.test(combinedText)) return 'webinar';
 
   if (/\bpodcast\b/.test(combinedText)) {
@@ -192,6 +196,30 @@ async function inferTemplateForCard(
     return 'newsletter-secondary';
   }
   return 'newsletter-main';
+}
+
+/** After a type switch, point the owning Card's document link at the new page and label. */
+async function relinkCardToDoc(
+  client: DynamoDBDocumentClient,
+  event: LambdaEvent,
+  before: SponsorDoc,
+  after: SponsorDoc,
+): Promise<void> {
+  const card = await getCardConsistent(client, after.cardId);
+  if (!card || !Array.isArray(card.cardLinks)) return;
+  const oldSuffix = `${sponsorDocPathForTemplate(before.template)}/${encodeURIComponent(before.id)}`;
+  const newUrl = `${sponsorDocPortalBaseUrl(event)}${sponsorDocPathForTemplate(after.template)}/${encodeURIComponent(after.id)}`;
+  let changed = false;
+  const nextLinks = card.cardLinks.map((item) => {
+    if (!String(item.url || '').endsWith(oldSuffix)) return item;
+    changed = true;
+    return { ...item, name: after.linkType, url: newUrl };
+  });
+  if (!changed) return;
+  await updateCard(client, card.id, {
+    expectedVersion: card.version,
+    patch: { cardLinks: normalizeCardLinks(nextLinks) as Card['cardLinks'] },
+  });
 }
 
 async function buildDocResponsePayload(
@@ -248,12 +276,13 @@ async function buildDocResponsePayload(
     };
   }
 
+  const speakerDoc = { ...doc, content: speakerContentView(doc.template, doc.content) };
   return {
-    ...doc,
+    ...speakerDoc,
     viewerRole: 'sponsor' as const,
-    templateDefinition,
+    templateDefinition: speakerTemplateView(templateDefinition),
     docUrl,
-    markdownExport,
+    markdownExport: renderSponsorDocMarkdownExport(speakerDoc),
   };
 }
 
@@ -518,7 +547,7 @@ export async function handleSponsorDocRoutes(
             || hydratedCard?.sponsor
             || existingIssue?.slots?.primary?.sponsor
             || null;
-        } else if (template === 'webinar') {
+        } else if (template === 'webinar' || template === 'workshop') {
           sponsorName = hydratedCard?.people?.[0] || null;
         } else if (template === 'podcast' || template.startsWith('podcast-')) {
           sponsorName = hydratedCard?.sponsor
@@ -636,7 +665,7 @@ export async function handleSponsorDocRoutes(
           extractProvidedAccessCode(event),
         );
         if (!verified.ok) return verified.response;
-        doc = verified.doc;
+        doc = { ...verified.doc, content: speakerContentView(verified.doc.template, verified.doc.content) };
       }
 
       const markdown = renderSponsorDocMarkdownExport(doc);
@@ -735,11 +764,15 @@ export async function handleSponsorDocRoutes(
 
         const access = await resolveStaffOrSponsorAccess(client, event, 'work-write', body);
         if (access.isStaff) {
+          if (body.template !== undefined && !isSponsorDocTemplateKey(body.template)) {
+            return json(400, { error: 'Unknown template', code: 'invalid_template' });
+          }
           const loaded = await getSponsorDocWithAuthMaterial(client, docId);
           if (!loaded) {
             return json(404, { error: 'Document not found', code: 'sponsor_doc_not_found' });
           }
           const updated = await updateSponsorDoc(client, docId, {
+            template: body.template as SponsorDocTemplateKey | undefined,
             title: typeof body.title === 'string' ? body.title : undefined,
             sponsorName: body.sponsorName !== undefined ? (body.sponsorName as string | null) : undefined,
             publicationDate: body.publicationDate !== undefined ? (body.publicationDate as string | null) : undefined,
@@ -749,6 +782,9 @@ export async function handleSponsorDocRoutes(
             actorUserId: access.staffActorId || null,
             actorName: access.staffActorName || 'DataOps Staff',
           });
+          if (updated && updated.template !== loaded.doc.template) {
+            await relinkCardToDoc(client, event, loaded.doc, updated);
+          }
           const accessCode = decryptSponsorDocAccessCode(docId, loaded.accessCodeCiphertext);
           return json(200, {
             doc: await buildDocResponsePayload(updated!, event, client, {
@@ -793,6 +829,7 @@ export async function handleSponsorDocRoutes(
             if (
               url.endsWith(`/sponsor-docs/${encodedId}`)
               || url.endsWith(`/webinar-docs/${encodedId}`)
+              || url.endsWith(`/workshop-docs/${encodedId}`)
               || url.endsWith(`/podcast-docs/${encodedId}`)
               || url.endsWith(`/guest-docs/${encodedId}`)
             ) {

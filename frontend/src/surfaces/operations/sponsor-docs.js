@@ -46,10 +46,10 @@ function safePreviewHref(rawUrl) {
   return /^https?:\/\//i.test(trimmed) ? trimmed : "#";
 }
 
-export const SPONSOR_DOC_PATH_PREFIXES = ["/webinar-docs", "/podcast-docs", "/guest-docs", "/sponsor-docs"];
+export const SPONSOR_DOC_PATH_PREFIXES = ["/webinar-docs", "/workshop-docs", "/podcast-docs", "/guest-docs", "/sponsor-docs"];
 
 function extractDocId(pathname) {
-  const match = /^\/(sponsor-docs|podcast-docs|guest-docs|webinar-docs)\/([^/?#]+)/.exec(String(pathname || ""));
+  const match = /^\/(sponsor-docs|podcast-docs|guest-docs|webinar-docs|workshop-docs)\/([^/?#]+)/.exec(String(pathname || ""));
   if (!match) return { id: "", prefix: "/sponsor-docs" };
   return { id: decodeURIComponent(match[2]), prefix: `/${match[1]}` };
 }
@@ -60,8 +60,11 @@ function isPodcastGuestDoc(doc) {
     || String(doc?.templateDefinition?.key || "") === "podcast";
 }
 
+/** Webinar and workshop forms are filled by the speaker. */
+const isSpeakerDoc = (doc) => doc?.template === "webinar" || doc?.template === "workshop";
+
 function guestRoleLabel(doc) {
-  if (doc?.template === "webinar") return "speaker";
+  if (isSpeakerDoc(doc)) return "speaker";
   return isPodcastGuestDoc(doc) ? "guest" : "sponsor";
 }
 
@@ -148,7 +151,7 @@ export function createSponsorDocPage({
       if (doc.viewerRole === "staff") {
         identity.append(el("span", "", "DataOps Staff · Full access"));
       } else {
-        identity.append(el("span", "", `${doc.template === "webinar" ? "Speaker" : isPodcastGuestDoc(doc) ? "Guest" : "Sponsor"} access · Code verified`));
+        identity.append(el("span", "", `${isSpeakerDoc(doc) ? "Speaker" : isPodcastGuestDoc(doc) ? "Guest" : "Sponsor"} access · Code verified`));
         const lockBtn = el("button", "dk-button dk-button--secondary dk-button--sm", "Lock");
         lockBtn.type = "button";
         lockBtn.dataset.sponsorAction = "lock";
@@ -293,7 +296,9 @@ export function createSponsorDocPage({
   function renderEditor() {
     const tDef = doc.templateDefinition || { label: doc.template, fields: [], guidelines: [] };
     const isSubmitted = doc.status === "submitted";
-    const formTitle = doc.title || (doc.template === "webinar" ? "Speaker Materials" : isPodcastGuestDoc(doc) ? "Guest Materials" : "Sponsorship Document");
+    const formTitle = doc.title || (doc.template === "workshop" ? "Workshop Materials"
+      : doc.template === "webinar" ? "Speaker Materials"
+        : isPodcastGuestDoc(doc) ? "Guest Materials" : "Sponsorship Document");
     try {
       documentRef.title = `${formTitle} · DataTalks.Club`;
     } catch {
@@ -314,7 +319,7 @@ export function createSponsorDocPage({
     const metaRow = el("div", "sponsor-doc-meta");
     metaRow.append(el("span", "dk-badge", tDef.label || doc.template));
     if (doc.publicationDate) metaRow.append(el("span", "", `Publication date: ${doc.publicationDate}`));
-    if (doc.sponsorName) metaRow.append(el("span", "", `${doc.template === "webinar" ? "Speaker" : isPodcastGuestDoc(doc) ? "Guest" : "Sponsor"}: ${doc.sponsorName}`));
+    if (doc.sponsorName) metaRow.append(el("span", "", `${isSpeakerDoc(doc) ? "Speaker" : isPodcastGuestDoc(doc) ? "Guest" : "Sponsor"}: ${doc.sponsorName}`));
     const editedSpan = el("span", "", formatEditorLabel(doc));
     editedSpan.dataset.sponsorDocLastEdited = "";
     metaRow.append(editedSpan);
@@ -327,7 +332,7 @@ export function createSponsorDocPage({
       const topRow = el("div", "sponsor-doc-staff-bar__row");
       const shareInfo = el("div", "");
       shareInfo.append(
-        el("strong", "", doc.template === "webinar" ? "Shareable speaker link (includes access code): " : "Shareable sponsor link (includes access code): "),
+        el("strong", "", isSpeakerDoc(doc) ? "Shareable speaker link (includes access code): " : "Shareable sponsor link (includes access code): "),
         el("code", "dk-mono", doc.shareUrl || doc.docUrl || ""),
       );
       topRow.append(shareInfo);
@@ -337,16 +342,16 @@ export function createSponsorDocPage({
       if (doc.shareUrl) {
         btnRow.append(
           actionBtn(smBtn, "Copy share link", "copy-share-url", () =>
-            copyText(doc.shareUrl, doc.template === "webinar" ? "Copied shareable speaker link with access code." : "Copied shareable sponsor link with access code."),
+            copyText(doc.shareUrl, isSpeakerDoc(doc) ? "Copied shareable speaker link with access code." : "Copied shareable sponsor link with access code."),
           ),
         );
       }
       if (doc.emailDraft?.body) {
         btnRow.append(
-          actionBtn(smBtn, doc.template === "webinar" ? "Copy invitation email" : "Copy sponsor email", "copy-email", () =>
+          actionBtn(smBtn, isSpeakerDoc(doc) ? "Copy invitation email" : "Copy sponsor email", "copy-email", () =>
             copyText(
               `Subject: ${doc.emailDraft.subject}\n\n${doc.emailDraft.body}`,
-              doc.template === "webinar" ? "Copied invitation email draft." : "Copied ready-to-send sponsor email draft.",
+              isSpeakerDoc(doc) ? "Copied invitation email draft." : "Copied ready-to-send sponsor email draft.",
             ),
           ),
         );

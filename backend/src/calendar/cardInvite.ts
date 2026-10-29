@@ -13,7 +13,7 @@ export class CardInviteConflictError extends Error {}
 export class CardInviteInputError extends Error {}
 
 /** A portal-hosted guest document page (what `sponsorDocPathForTemplate` links). */
-const DATAOPS_GUEST_DOC = /^https:\/\/[^/]+\/(webinar-docs|podcast-docs|guest-docs)\/[^/?#]+\/?$/;
+const DATAOPS_GUEST_DOC = /^https:\/\/[^/]+\/(webinar-docs|workshop-docs|podcast-docs|guest-docs)\/[^/?#]+\/?$/;
 
 /** The Card's own DataOps guest document wins over any named external link. */
 export function cardGuestDocument(card: Card): string | undefined {

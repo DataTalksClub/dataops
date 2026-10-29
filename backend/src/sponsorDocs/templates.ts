@@ -5,6 +5,7 @@ export type SponsorDocTemplateKey =
   | 'newsletter-secondary'
   | 'newsletter-standalone'
   | 'webinar'
+  | 'workshop'
   | 'podcast'
   | 'podcast-guest-research'
   | 'podcast-run-sheet'
@@ -40,6 +41,8 @@ export interface SponsorDocSectionDefinition {
   description?: string;
   /** Rendered as a collapsed <details> (open when it already has content). */
   collapsible?: boolean;
+  /** Staff-only: never shown to, exported for, or writable by the speaker. */
+  internal?: boolean;
   fields: SponsorDocFieldDefinition[];
 }
 
@@ -59,6 +62,7 @@ export const SPONSOR_DOC_TEMPLATE_KEYS: readonly SponsorDocTemplateKey[] = [
   'newsletter-secondary',
   'newsletter-standalone',
   'webinar',
+  'workshop',
   'podcast',
   'podcast-guest-research',
   'podcast-run-sheet',
@@ -455,6 +459,64 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
           { key: 'twitterUrl', label: 'X (Twitter)', type: 'text', format: 'url', placeholder: 'https://x.com/...' },
           { key: 'githubUrl', label: 'GitHub', type: 'text', format: 'url', placeholder: 'https://github.com/...' },
           { key: 'websiteUrl', label: 'Website', type: 'text', format: 'url', placeholder: 'https://...' },
+        ],
+      },
+    ],
+  },
+
+  workshop: {
+    key: 'workshop',
+    label: 'Workshop — Speaker Materials',
+    shortLabel: 'Workshop',
+    defaultLinkType: 'Workshop document',
+    intro: 'Share your workshop materials so we can prepare the event page. Workshop title, description, 3–6 outline bullets, and speaker bio are required to submit. Everything else is optional. You can save a draft and return using the same link.',
+    sections: [
+      {
+        id: 'workshop',
+        title: '1) Your Workshop',
+        fields: [
+          { key: 'talkTitle', label: 'Workshop title', type: 'text', required: true, placeholder: 'Title for the event page' },
+          { key: 'summary', label: 'Subtitle (optional)', type: 'textarea', rows: 2, placeholder: 'One line under the title' },
+          { key: 'dateTime', label: 'Date and time', type: 'text', placeholder: 'e.g. 2026-11-12, 17:00 CET', helpText: 'Pre-filled by the DataTalks.Club team; tell us in the notes below if it does not work.' },
+          { key: 'description', label: 'Description', type: 'textarea', rows: 5, required: true, placeholder: 'What the workshop is about and who it is for' },
+          { key: 'outline', label: 'Outline (3–6 bullets)', type: 'bullets', required: true, minItems: 3, maxItems: 6, placeholder: 'Step or topic' },
+          { key: 'prerequisites', label: 'Prerequisites (optional)', type: 'textarea', rows: 3, placeholder: 'Skills, accounts, or software attendees should prepare' },
+          { key: 'takeaway', label: 'What attendees take away (optional)', type: 'textarea', rows: 3, placeholder: 'What attendees will have built or learned by the end' },
+        ],
+      },
+      {
+        id: 'speaker',
+        title: '2) About You',
+        fields: [
+          { key: 'bio', label: 'Speaker bio', type: 'textarea', rows: 4, required: true, placeholder: 'How should we introduce you on the event page?' },
+        ],
+      },
+      {
+        id: 'links',
+        title: '3) Links (optional)',
+        description: 'Public profile links to include on the event page. Use a full link beginning with https:// or http://.',
+        fields: [
+          { key: 'linkedinUrl', label: 'LinkedIn', type: 'text', format: 'url', placeholder: 'https://www.linkedin.com/in/...' },
+          { key: 'twitterUrl', label: 'X (Twitter)', type: 'text', format: 'url', placeholder: 'https://x.com/...' },
+          { key: 'githubUrl', label: 'GitHub', type: 'text', format: 'url', placeholder: 'https://github.com/...' },
+          { key: 'websiteUrl', label: 'Website', type: 'text', format: 'url', placeholder: 'https://...' },
+        ],
+      },
+      {
+        id: 'notes',
+        title: '4) Notes for the DataTalks.Club Team (optional)',
+        fields: [
+          { key: 'sponsorNotes', label: 'Notes or questions', type: 'textarea', rows: 3, placeholder: 'Anything we should know' },
+        ],
+      },
+      {
+        id: 'internal',
+        title: '5) Internal — DataTalks.Club team only',
+        description: 'Not visible to the speaker.',
+        internal: true,
+        fields: [
+          { key: 'prepNotes', label: 'Prep notes', type: 'textarea', rows: 4, placeholder: 'Rehearsal, setup, materials, run of show' },
+          { key: 'partnerQuestions', label: 'Questions for the partner', type: 'textarea', rows: 4, placeholder: 'Open questions to settle with the partner' },
         ],
       },
     ],
@@ -1021,10 +1083,12 @@ export function sanitizeTemplateContent(
   key: SponsorDocTemplateKey,
   raw: Record<string, unknown>,
   existing?: Record<string, string>,
+  options: { includeInternal?: boolean } = {},
 ): Record<string, string> {
   const def = SPONSOR_DOC_TEMPLATES[key];
   const next: Record<string, string> = { ...(existing || defaultContentForTemplate(key)) };
   for (const section of def.sections) {
+    if (section.internal && options.includeInternal === false) continue;
     for (const field of section.fields) {
       if (Object.hasOwn(raw, field.key)) {
         const val = raw[field.key];
@@ -1034,6 +1098,18 @@ export function sanitizeTemplateContent(
     }
   }
   return next;
+}
+
+/** The template and content a speaker sees: internal sections removed. */
+export function speakerTemplateView(def: SponsorDocTemplateDefinition): SponsorDocTemplateDefinition {
+  return { ...def, sections: def.sections.filter((section) => !section.internal) };
+}
+
+export function speakerContentView(key: SponsorDocTemplateKey, content: Record<string, string>): Record<string, string> {
+  const internalKeys = new Set(SPONSOR_DOC_TEMPLATES[key].sections
+    .filter((section) => section.internal)
+    .flatMap((section) => section.fields.map((field) => field.key)));
+  return Object.fromEntries(Object.entries(content || {}).filter(([k]) => !internalKeys.has(k)));
 }
 
 export class SponsorDocValidationError extends Error {
@@ -1103,10 +1179,10 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
     `# ${doc.title}`,
     '',
     `- **Template**: ${SPONSOR_DOC_TEMPLATES[doc.template].label}`,
-    ...(doc.sponsorName ? [`- **${doc.template === 'webinar' ? 'Speaker' : doc.template === 'podcast' ? 'Guest' : 'Sponsor'}**: ${doc.sponsorName}`] : []),
+    ...(doc.sponsorName ? [`- **${doc.template === 'webinar' || doc.template === 'workshop' ? 'Speaker' : doc.template === 'podcast' ? 'Guest' : 'Sponsor'}**: ${doc.sponsorName}`] : []),
     ...(doc.publicationDate ? [`- **Publication Date**: ${doc.publicationDate}`] : []),
     `- **Status**: ${doc.status === 'submitted' ? 'Submitted / Ready' : 'Draft'}`,
-    `- **Last Edited**: ${doc.lastEditedAt} (${doc.template === 'webinar' && doc.lastEditedBy === 'sponsor' ? 'speaker' : doc.lastEditedBy})`,
+    `- **Last Edited**: ${doc.lastEditedAt} (${(doc.template === 'webinar' || doc.template === 'workshop') && doc.lastEditedBy === 'sponsor' ? 'speaker' : doc.lastEditedBy})`,
     '',
     '---',
     '',
@@ -1214,6 +1290,28 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       `- GitHub: ${valOrPlaceholder(c.githubUrl)}`,
       `- Website: ${valOrPlaceholder(c.websiteUrl)}`,
     );
+  } else if (doc.template === 'workshop') {
+    lines.push(
+      '## Workshop title', '', valOrPlaceholder(c.talkTitle), '',
+      '## Subtitle', '', valOrPlaceholder(c.summary), '',
+      '## Date and time', '', valOrPlaceholder(c.dateTime), '',
+      '## Description', '', valOrPlaceholder(c.description), '',
+      '## Outline', '', valOrPlaceholder(c.outline), '',
+      '## Prerequisites', '', valOrPlaceholder(c.prerequisites), '',
+      '## What attendees take away', '', valOrPlaceholder(c.takeaway), '',
+      '## Speaker bio', '', valOrPlaceholder(c.bio), '',
+      '## Links for the event page', '',
+      `- LinkedIn: ${valOrPlaceholder(c.linkedinUrl)}`,
+      `- X (Twitter): ${valOrPlaceholder(c.twitterUrl)}`,
+      `- GitHub: ${valOrPlaceholder(c.githubUrl)}`,
+      `- Website: ${valOrPlaceholder(c.websiteUrl)}`,
+    );
+    if (Object.hasOwn(c, 'prepNotes') || Object.hasOwn(c, 'partnerQuestions')) {
+      lines.push(
+        '', '## Internal — prep notes', '', valOrPlaceholder(c.prepNotes), '',
+        '## Internal — questions for the partner', '', valOrPlaceholder(c.partnerQuestions),
+      );
+    }
   } else if (doc.template === 'podcast') {
     lines.push(
       '## 1) Recording Slot',
@@ -1341,7 +1439,8 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
   }
 
   if (c.sponsorNotes?.trim()) {
-    const notesHeading = doc.template === 'podcast' ? '## Notes from the Guest' : '## Notes from Sponsor';
+    const notesHeading = doc.template === 'podcast' ? '## Notes from the Guest'
+      : doc.template === 'workshop' ? '## Notes from the Speaker' : '## Notes from Sponsor';
     lines.push(
       '',
       '---',
@@ -1388,6 +1487,20 @@ export function renderSponsorEmailDraft(options: {
         `(Access code if prompted: ${options.accessCode})`, '',
         'Add your talk title, 3–4 outline bullets, and speaker bio. A subtitle or short summary and profile links are optional.',
         'You can save a draft and return using the same link. When ready, mark it as Submitted / Ready so we can prepare the event description.', '',
+        'Thank you!',
+      ].join('\n'),
+    };
+  }
+  if (options.template === 'workshop') {
+    return {
+      subject: 'Your DataTalks.Club workshop materials',
+      body: [
+        'Hi,', '',
+        'Please share the materials for your DataTalks.Club workshop using this form:', '',
+        options.shareUrl,
+        `(Access code if prompted: ${options.accessCode})`, '',
+        'Add the workshop title, description, 3–6 outline bullets, and your bio. Subtitle, prerequisites, takeaways, and profile links are optional.',
+        'You can save a draft and return using the same link. When ready, mark it as Submitted / Ready so we can prepare the event page.', '',
         'Thank you!',
       ].join('\n'),
     };

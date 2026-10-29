@@ -84,6 +84,7 @@ export const FAMILIES = {
   newsletter: { group: "Planning", summary: newsletter.summary, help: newsletter.help, commands: newsletter.commands },
   podcast: { group: "Planning", summary: podcast.summary, help: podcast.help, commands: podcast.commands },
   webinar: { group: "Planning", summary: "Webinar speaker materials", help: sponsorDocs.webinarDocHelp, commands: { doc: sponsorDocs.domainDocCommand("webinar") } },
+  workshop: { group: "Planning", summary: "Workshop document", help: sponsorDocs.workshopDocHelp, commands: { doc: sponsorDocs.domainDocCommand("workshop") } },
   speakers: { group: "Planning", summary: speakers.summary, help: speakers.help, commands: speakers.commands },
   books: { group: "Planning", summary: books.summary, help: books.help, commands: books.commands },
   calendar: {
@@ -276,6 +277,10 @@ export async function run(argv, io = console) {
     }
     if (commandName === "webinar" && rest[0] === "doc") {
       print(sponsorDocs.webinarDocHelp);
+      return EXIT.ok;
+    }
+    if (commandName === "workshop" && rest[0] === "doc") {
+      print(sponsorDocs.workshopDocHelp);
       return EXIT.ok;
     }
     if (commandName === "podcast" && rest[0] === "doc") {

@@ -147,6 +147,17 @@ export function renderCardNewsletterIssue(
   return section;
 }
 
+// Public page and fallback name for each event or sponsorship document type.
+const DOC_KINDS = {
+  workshop: { path: "workshop-docs", label: "Workshop materials" },
+  webinar: { path: "webinar-docs", label: "Speaker materials" },
+  podcast: { path: "podcast-docs", label: "Guest materials" },
+};
+
+function docKind(doc) {
+  return DOC_KINDS[String(doc.template || "")] || { path: "sponsor-docs", label: "Sponsor document" };
+}
+
 export function renderCardSponsorDocsSection(card) {
   const docs = Array.isArray(card?.sponsorDocs) ? card.sponsorDocs : [];
   if (!docs.length) return null;
@@ -157,7 +168,9 @@ export function renderCardSponsorDocsSection(card) {
   const allGuestMaterials = docs.every((doc) => String(doc.template || "") === "podcast");
   const heading = document.createElement("div");
   heading.className = "task-history-label";
-  if (docs.every((doc) => doc.template === "webinar")) {
+  if (docs.every((doc) => doc.template === "workshop")) {
+    heading.textContent = "Workshop materials";
+  } else if (docs.every((doc) => doc.template === "webinar")) {
     heading.textContent = "Speaker materials";
   } else if (allGuestMaterials) {
     heading.textContent = "Guest materials";
@@ -172,14 +185,13 @@ export function renderCardSponsorDocsSection(card) {
     const item = document.createElement("div");
     item.className = "task-history-event card-sponsor-doc-row";
     item.dataset.sponsorDocId = doc.id;
-    const isGuestMaterials = String(doc.template || "") === "podcast";
 
     const topRow = document.createElement("div");
     topRow.className = "card-newsletter-slot__row";
 
     const openLink = document.createElement("a");
-    openLink.href = `/${doc.template === "webinar" ? "webinar-docs" : isGuestMaterials ? "podcast-docs" : "sponsor-docs"}/${encodeURIComponent(doc.id)}`;
-    openLink.textContent = doc.title || doc.sponsorName || (doc.template === "webinar" ? "Speaker materials" : isGuestMaterials ? "Guest materials" : "Sponsor document");
+    openLink.href = `/${docKind(doc).path}/${encodeURIComponent(doc.id)}`;
+    openLink.textContent = doc.title || doc.sponsorName || docKind(doc).label;
     opensInNewTab(openLink);
 
     const statusBadge = document.createElement("span");
@@ -437,7 +449,7 @@ export function createCardSummary(context) {
     const isSubmitted = sdoc.status === "submitted";
     chip.className = `workflow-card-flag is-${isSubmitted ? "success" : "info"}`;
     chip.dataset.cardSponsorDocStatus = sdoc.status;
-    const kindLabel = sdoc.template === "webinar" ? "Speaker materials" : String(sdoc.template || "") === "podcast" ? "Guest materials" : "Sponsor doc";
+    const kindLabel = DOC_KINDS[String(sdoc.template || "")]?.label || "Sponsor doc";
     chip.textContent = isSubmitted ? `${kindLabel}: Submitted / Ready` : `${kindLabel}: Draft`;
     flagRow.append(chip);
   }

@@ -147,7 +147,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     const { templates } = JSON.parse(templatesRes.body);
     assert.deepStrictEqual(
       templates.map((t: { key: string }) => t.key),
-      ['newsletter-main', 'newsletter-secondary', 'newsletter-standalone', 'webinar', 'podcast', 'podcast-guest-research', 'podcast-run-sheet', 'podcast-episode-brief'],
+      ['newsletter-main', 'newsletter-secondary', 'newsletter-standalone', 'webinar', 'workshop', 'podcast', 'podcast-guest-research', 'podcast-run-sheet', 'podcast-episode-brief'],
     );
   });
 
@@ -521,6 +521,49 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.equal(deleted.statusCode, 200, deleted.body);
     const reloaded = await staffReq('GET', `/api/cards/${card.id}`);
     assert.ok(!JSON.parse(reloaded.body).card.cardLinks.some((link: { url: string }) => link.url === doc.docUrl));
+  });
+
+  it('keeps the workshop internal section away from the speaker', async () => {
+    const card = await createCard(client, { ...templateLink(), title: '[Workshop] Synthetic build', people: ['Test Speaker'] });
+    const created = await staffReq('POST', '/api/sponsor-docs', { cardId: card.id });
+    assert.equal(created.statusCode, 201, created.body);
+    const { doc, card: linkedCard } = JSON.parse(created.body);
+    assert.equal(doc.template, 'workshop');
+    assert.ok(doc.docUrl.includes('/workshop-docs/'));
+    assert.ok(linkedCard.cardLinks.some((link: { name: string; url: string }) => link.name === 'Workshop document' && link.url === doc.docUrl));
+    assert.equal((await anonReq('GET', `/workshop-docs/${doc.id}`)).statusCode, 200);
+    const staffSave = await staffReq('PUT', `/api/sponsor-docs/${doc.id}`, { content: { prepNotes: 'Rehearse Tuesday', partnerQuestions: 'Credits budget?' } });
+    assert.equal(staffSave.statusCode, 200, staffSave.body);
+    const save = (body: unknown) => anonReq('PUT', `/api/sponsor-docs/${doc.id}`, { codeHeader: doc.accessCode, body });
+    const speaker = JSON.parse((await save({ content: { talkTitle: 'Build it', prepNotes: 'overwritten' } })).body).doc;
+    assert.equal(speaker.content.prepNotes, undefined);
+    assert.ok(!speaker.templateDefinition.sections.some((section: { internal?: boolean }) => section.internal));
+    assert.doesNotMatch(speaker.markdownExport, /Rehearse|Credits|Internal/);
+    const speakerExport = await anonReq('GET', `/api/sponsor-docs/${doc.id}/export`, { codeHeader: doc.accessCode });
+    assert.doesNotMatch(speakerExport.body, /Rehearse|Credits/);
+    const stored = await getSponsorDoc(client, doc.id);
+    assert.equal(stored?.content.prepNotes, 'Rehearse Tuesday');
+    assert.equal(stored?.content.talkTitle, 'Build it');
+    const staffExport = await staffReq('GET', `/api/sponsor-docs/${doc.id}/export`);
+    assert.ok(staffExport.body.includes('Rehearse Tuesday'));
+  });
+
+  it('switches a webinar form to the workshop type, keeping content and relinking the card', async () => {
+    const card = await createCard(client, { ...templateLink(), title: '[Webinar] Synthetic switch', people: ['Test Speaker'] });
+    const { doc } = JSON.parse((await staffReq('POST', '/api/sponsor-docs', { cardId: card.id })).body);
+    await staffReq('PUT', `/api/sponsor-docs/${doc.id}`, { content: { talkTitle: 'Kept', bio: 'Bio. https://x.test/me' } });
+    const switched = await staffReq('PUT', `/api/sponsor-docs/${doc.id}`, { template: 'workshop', content: { bio: 'Bio.', twitterUrl: 'https://x.test/me' } });
+    assert.equal(switched.statusCode, 200, switched.body);
+    const next = JSON.parse(switched.body).doc;
+    assert.equal(next.template, 'workshop');
+    assert.equal(next.linkType, 'Workshop document');
+    assert.deepEqual([next.content.talkTitle, next.content.bio, next.content.twitterUrl], ['Kept', 'Bio.', 'https://x.test/me']);
+    const reloaded = JSON.parse((await staffReq('GET', `/api/cards/${card.id}`)).body).card;
+    assert.ok(reloaded.cardLinks.some((link: { name: string; url: string }) => link.name === 'Workshop document' && link.url === next.docUrl));
+    assert.ok(!reloaded.cardLinks.some((link: { url: string }) => link.url.includes('/webinar-docs/')));
+    const lossy = await staffReq('PUT', `/api/sponsor-docs/${doc.id}`, { template: 'podcast' });
+    assert.equal(lossy.statusCode, 422, lossy.body);
+    assert.equal((await getSponsorDoc(client, doc.id))?.template, 'workshop');
   });
 
   it('uses the card kind when its description mentions another event format', async () => {

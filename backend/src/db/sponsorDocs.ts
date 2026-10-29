@@ -17,6 +17,7 @@ import {
 import { TABLE_ARTIFACTS, TABLE_SESSIONS } from './tableNames';
 import {
   defaultContentForTemplate,
+  SponsorDocValidationError,
   getSponsorDocTemplate,
   sanitizeTemplateContent,
   validateSubmittedContent,
@@ -281,6 +282,8 @@ export interface UpdateSponsorDocInput {
   sponsorName?: string | null;
   publicationDate?: string | null;
   content?: Record<string, unknown>;
+  /** Staff only: switch the document type, carrying over shared fields. */
+  template?: SponsorDocTemplateKey;
   status?: SponsorDocStatus;
   actorKind: SponsorDocActorKind;
   actorUserId?: string | null;
@@ -308,14 +311,33 @@ export async function updateSponsorDoc(
     submittedBy = null;
   }
 
-  const nextContent = input.content
-    ? sanitizeTemplateContent(doc.template, input.content, doc.content)
-    : doc.content;
+  const nextTemplate = input.actorKind === 'staff' && input.template ? input.template : doc.template;
+  let nextContent: Record<string, string>;
+  if (nextTemplate !== doc.template) {
+    const carried: Record<string, unknown> = { ...doc.content, ...(input.content || {}) };
+    nextContent = sanitizeTemplateContent(nextTemplate, carried, defaultContentForTemplate(nextTemplate));
+    const dropped = Object.entries(carried)
+      .filter(([key, value]) => !Object.hasOwn(nextContent, key) && String(value ?? '').trim());
+    if (dropped.length) {
+      throw new SponsorDocValidationError(Object.fromEntries(dropped.map(([key]) => [
+        key, `${key} has no place in the ${getSponsorDocTemplate(nextTemplate).shortLabel} form; clear it before switching.`,
+      ])));
+    }
+  } else {
+    nextContent = input.content
+      ? sanitizeTemplateContent(doc.template, input.content, doc.content, { includeInternal: input.actorKind === 'staff' })
+      : doc.content;
+  }
 
-  if (nextStatus === 'submitted') validateSubmittedContent(doc.template, nextContent);
+  if (nextStatus === 'submitted') validateSubmittedContent(nextTemplate, nextContent);
+  const linkType = nextTemplate !== doc.template && doc.linkType === getSponsorDocTemplate(doc.template).defaultLinkType
+    ? getSponsorDocTemplate(nextTemplate).defaultLinkType
+    : doc.linkType;
 
   const updated: SponsorDoc = {
     ...doc,
+    template: nextTemplate,
+    linkType,
     title: input.title !== undefined && input.title.trim() ? input.title.trim() : doc.title,
     sponsorName: input.sponsorName !== undefined ? (input.sponsorName?.trim() || null) : doc.sponsorName,
     publicationDate: input.publicationDate !== undefined ? (input.publicationDate?.trim() || null) : doc.publicationDate,
