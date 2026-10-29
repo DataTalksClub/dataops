@@ -241,3 +241,14 @@ function kebab(name) {
 export function enc(value) {
   return encodeURIComponent(value);
 }
+
+/** A linked Card as one line: title, status and stage. */
+export function linkedCardLabel(linked) {
+  if (!linked) return "";
+  return `${linked.title} [${linked.status}${linked.status === "active" ? `, ${linked.stage}` : ""}]`;
+}
+
+/** A portal path as an absolute URL on the portal the CLI talks to. */
+export function portalUrl(api, path) {
+  return api.base ? new URL(path, `${api.base}/`).href : path;
+}

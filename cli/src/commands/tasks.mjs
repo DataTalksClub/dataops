@@ -3,7 +3,7 @@ import { basename } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { UsageError } from "../errors.mjs";
-import { enc, fields, integer, isoDate, isValidTimezone, list as csv, optionalString, positional, required, resolveDateTime, table } from "../format.mjs";
+import { enc, fields, integer, isoDate, isValidTimezone, linkedCardLabel, list as csv, optionalString, portalUrl, positional, required, resolveDateTime, table } from "../format.mjs";
 import { apiFor, today } from "../session.mjs";
 import { resolveTaskId } from "../shortIds.mjs";
 import { hasTaskFollowUp, isTaskActionable, isTaskSnoozed, taskAttentionDate } from "../../../frontend/src/core/task-attention.js";
@@ -41,6 +41,8 @@ Usage
   dataops tasks handover <task-id> --to <agent>        Hand one Task over (admin)
   dataops tasks handover --from <agent> --to <agent>   Hand every open Task over (admin)
   dataops tasks assign <task-id> <user-id|me>
+  dataops tasks link-card <task-id> <card-id>          Link the Card that carries this Task out
+  dataops tasks link-card <task-id> --unlink           Clear the link
   dataops tasks delete <task-id>                                (admin)
 
 List views (default: --queue)
@@ -579,6 +581,7 @@ export async function show(args, io) {
     ["instructions", task.instructionsUrl],
     ["materials", task.materials?.length ? task.materials.map((m) => (m.label ? `${m.label} ${m.url}` : m.url)).join(", ") : ""],
     ["tags", task.tags],
+    ["linked card", task.linkedCard ? `${linkedCardLabel(task.linkedCard)} ${portalUrl(api, task.linkedCard.url)}` : ""],
     ["template", task.templateId],
     ["version", task.version],
   ]);
@@ -932,6 +935,25 @@ export async function handover(args, io) {
   return result;
 }
 
+/** Link a Task to the Card that carries it out (a course's Workshop 2 Task to that workshop's Card), or clear it. */
+export async function linkCard(args, io) {
+  const usage = "dataops tasks link-card <task-id> <card-id> | dataops tasks link-card <task-id> --unlink";
+  const id = positional(args, 0, usage);
+  const cardId = args._[1] === undefined ? undefined : String(args._[1]);
+  if (Boolean(args.unlink) === (cardId !== undefined)) throw new UsageError(usage);
+  const api = apiFor(args);
+  const taskId = await resolveTaskId(api, id);
+  const { expectedVersion } = await currentVersion(api, taskId, args);
+  const task = await api.post(`/api/tasks/${enc(taskId)}/actions/link-card`, {
+    cardId: cardId ?? null, expectedVersion,
+  });
+  if (args.json) return task;
+  io.print(task.linkedCard
+    ? `Linked ${task.description} -> ${linkedCardLabel(task.linkedCard)} ${portalUrl(api, task.linkedCard.url)}`
+    : `Unlinked ${task.description}.`);
+  return task;
+}
+
 export async function remove(args, io) {
   const id = positional(args, 0, "dataops tasks delete <task-id>");
   const api = apiFor(args);
@@ -961,5 +983,6 @@ export const commands = {
   unskip,
   assign,
   handover,
+  "link-card": linkCard,
   delete: remove,
 };

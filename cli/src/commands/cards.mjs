@@ -1,5 +1,5 @@
 import { UsageError } from "../errors.mjs";
-import { enc, fields, integer, isoDate, list as csv, optionalString, positional, required, table } from "../format.mjs";
+import { enc, fields, integer, isoDate, linkedCardLabel, list as csv, optionalString, portalUrl, positional, required, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { create as createSponsorDoc } from "./sponsorDocs.mjs";
 import { findTemplate } from "./templates.mjs";
@@ -16,9 +16,11 @@ Usage
                                                 Default: active and parked; --all adds archived
   dataops cards show <card-id>                  The Card, its links, and its Tasks
   dataops cards create --date YYYY-MM-DD --template ID|TYPE|NAME [--title T]
-      [--optional-groups a,b] [--stage S] [--description D] [--owner ID] [--tags a,b]
+      [--optional-groups a,b] [--count FIELD=N,...] [--stage S] [--description D] [--owner ID] [--tags a,b]
   dataops cards update <card-id> [--title T] [--description D] [--date D] [--owner ID|none]
       [--tags a,b]
+  dataops cards update <card-id> --count FIELD=N[,FIELD=N] [--apply]
+                                                Change a count (e.g. workshops=3); preview by default
   dataops cards time <card-id> --at "YYYY-MM-DD HH:MM" [--duration 60] [--tz Europe/Berlin]
       [--guests EMAIL,EMAIL] [--json]            Create or move the Card guest invite
   dataops cards stage <card-id> <preparation|announced|after-event>
@@ -32,7 +34,7 @@ Usage
   dataops cards delete <card-id> --yes          Delete the Card and all its Tasks (admin)
   dataops cards dedupe-tasks --card ID|--all [--dry-run] [--apply]
                                                 Skip manual duplicates; preview by default
-  dataops cards template-update <card-id> [--optional-groups a,b|none] [--apply]
+  dataops cards template-update <card-id> [--optional-groups a,b|none] [--count FIELD=N] [--apply]
                                                 Review Template and Card option changes
 
 --date is the Card's anchor date: Template Tasks are scheduled relative to it.
@@ -42,6 +44,14 @@ Writes read the Card's current version first (or pass --expected-version N).
 Optional groups default off. Existing Cards need an explicit option decision;
 --optional-groups sponsored activates sponsor work; none disables all optional work.
 Template updates may also include newer definition changes; review before --apply.
+
+Counts
+A Template can declare count fields (e.g. workshops, "Number of workshops") and
+repeat Tasks once per unit: Workshop 1..N. Set them with create --count; change
+them with update --count. Raising adds the missing numbered Tasks; lowering
+removes the extra ones that are not done and link no Card. Done or linked extras
+stay. The preview lists every add and removal; nothing changes without --apply.
+Link a repeated Task to its own Card with \`dataops tasks link-card <task> <card>\`.
 Disabled open tasks are skipped with history; completed and operator-skipped tasks stay resolved.
 
 Examples
@@ -113,6 +123,8 @@ export async function show(args, io) {
     ["owner", card.owner?.name],
     ["template", card.templateId],
     ["options", card.selectedOptionalGroups],
+    ["counts", card.counts && Object.keys(card.counts).length
+      ? Object.entries(card.counts).map(([field, count]) => `${field}=${count}`).join(", ") : undefined],
     ["description", card.description],
     ["tags", card.tags],
     ["source docs", card.sourceDocIds],
@@ -123,6 +135,12 @@ export async function show(args, io) {
   }
   for (const invite of card.calendarInvites || []) {
     io.print(`invite: ${invite.eventId} on ${invite.calendar}${invite.label ? ` [${invite.label}]` : ""}${invite.url ? ` ${invite.url}` : ""}`);
+  }
+  for (const ref of card.linkedFrom || []) {
+    io.print(`linked from: ${ref.cardTitle} - ${ref.taskDescription} [${ref.taskStatus}] ${portalUrl(api, ref.url)}`);
+  }
+  for (const task of result.tasks) {
+    if (task.linkedCard) io.print(`task link: ${task.description} -> ${linkedCardLabel(task.linkedCard)} ${portalUrl(api, task.linkedCard.url)}`);
   }
   for (const doc of card.sponsorDocs || []) {
     const edited = doc.lastEditedAt ? `, last edited ${doc.lastEditedAt} by ${doc.lastEditedBy || "staff"}` : "";
@@ -137,6 +155,7 @@ export async function show(args, io) {
       ["STATUS", (task) => task.status],
       ["DUE", (task) => task.date],
       ["DESCRIPTION", (task) => task.description],
+      ["LINKED CARD", (task) => linkedCardLabel(task.linkedCard)],
     ],
     "No Tasks.",
   );
@@ -153,6 +172,7 @@ export async function create(args, io) {
   // Every Card is instantiated from a Template.
   body.templateId = (await findTemplate(api, required(args, "template", "template"))).id;
   if (args.optionalGroups !== undefined) body.optionalGroups = csv(args.optionalGroups);
+  if (args.count !== undefined) body.counts = parseCounts(args.count);
   const stage = optionalString(args, "stage");
   if (stage !== undefined) body.stage = stage;
   const description = optionalString(args, "description");
@@ -178,8 +198,25 @@ async function write(args, io, id, change, verb) {
   return result;
 }
 
+/** `workshops=3,speakers=2` as `{ workshops: 3, speakers: 2 }`. */
+export function parseCounts(value) {
+  const counts = {};
+  for (const entry of csv(value)) {
+    const match = /^([a-z0-9][a-z0-9-]*)=(\d+)$/.exec(entry);
+    if (!match) throw new UsageError(`--count takes FIELD=N pairs, e.g. --count workshops=3 (got "${entry}").`);
+    counts[match[1]] = Number(match[2]);
+  }
+  if (!Object.keys(counts).length) throw new UsageError("--count needs at least one FIELD=N pair.");
+  return counts;
+}
+
 export async function update(args, io) {
   const id = positional(args, 0, "dataops cards update <card-id> [--title T] ...");
+  if (args.count !== undefined) {
+    const other = ["title", "description", "date", "owner", "tags"].find((flag) => args[flag] !== undefined);
+    if (other) throw new UsageError(`--count is a reviewed change of its own; run --${other} separately.`);
+    return templateUpdate(args, io);
+  }
   const body = {};
   for (const [flag, key] of [["title", "title"], ["description", "description"]]) {
     const value = optionalString(args, flag);
@@ -255,20 +292,49 @@ export async function templateUpdate(args, io) {
   const api = apiFor(args);
   const optionalGroups = args.optionalGroups === undefined ? undefined
     : args.optionalGroups === "none" ? [] : csv(args.optionalGroups);
-  const { preview } = optionalGroups === undefined
+  const counts = args.count === undefined ? undefined : parseCounts(args.count);
+  const target = {
+    ...(optionalGroups === undefined ? {} : { optionalGroups }),
+    ...(counts === undefined ? {} : { counts }),
+  };
+  const { preview } = Object.keys(target).length === 0
     ? await api.get(`/api/cards/${enc(id)}/template-update`)
-    : await api.post(`/api/cards/${enc(id)}/template-update`, { previewOnly: true, optionalGroups });
+    : await api.post(`/api/cards/${enc(id)}/template-update`, { previewOnly: true, ...target });
   if (!args.apply) {
     if (args.json) return { preview };
-    io.print(JSON.stringify(preview, null, 2));
+    if (counts) printCountPreview(io, preview);
+    else io.print(JSON.stringify(preview, null, 2));
     io.print("");
-    io.print(`Apply with: dataops cards template-update ${id}${optionalGroups === undefined ? "" : ` --optional-groups ${optionalGroups.join(",") || "none"}`} --apply`);
+    const flags = [
+      optionalGroups === undefined ? "" : ` --optional-groups ${optionalGroups.join(",") || "none"}`,
+      counts === undefined ? "" : ` --count ${Object.entries(counts).map(([field, n]) => `${field}=${n}`).join(",")}`,
+    ].join("");
+    io.print(`Apply with: dataops cards ${counts ? "update" : "template-update"} ${id}${flags} --apply`);
     return { preview };
   }
-  const result = await api.post(`/api/cards/${enc(id)}/template-update`, { previewToken: preview.previewToken, ...(optionalGroups === undefined ? {} : { optionalGroups }) });
+  const result = await api.post(`/api/cards/${enc(id)}/template-update`, { previewToken: preview.previewToken, ...target });
   if (args.json) return result;
-  io.print(`Applied the Template update to ${id}.`);
+  const removed = preview.counts?.removed || 0;
+  const added = preview.counts?.added || 0;
+  io.print(counts
+    ? `Applied to ${id}: ${added} Task(s) added, ${removed} removed.`
+    : `Applied the Template update to ${id}.`);
   return result;
+}
+
+/** A count change preview as the operator reads it: what is added, removed and kept. */
+function printCountPreview(io, preview) {
+  const labels = new Map((preview.countFields || []).map((field) => [field.id, field.label]));
+  for (const [field, target] of Object.entries(preview.targetCounts || {})) {
+    const current = preview.currentCounts?.[field];
+    io.print(`${labels.get(field) || field}: ${current} -> ${target}`);
+  }
+  const of = (action) => (preview.taskChanges || []).filter((change) => change.action === action);
+  for (const change of of("add")) io.print(`  add     ${change.targetLabel}`);
+  for (const change of of("remove")) io.print(`  remove  ${change.currentLabel} (${change.taskId})`);
+  const other = (preview.taskChanges || []).filter((change) => !["add", "remove"].includes(change.action));
+  if (other.length) io.print(`  ${other.length} other Template change(s) apply too; see --json.`);
+  if (!of("add").length && !of("remove").length) io.print("  No Tasks are added or removed.");
 }
 
 export async function invite(args, io) {
