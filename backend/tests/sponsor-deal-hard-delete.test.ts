@@ -54,7 +54,8 @@ describe('CRM deal hard delete', () => {
     assert.ok(beforeCrm.some(row => row.PK === `NOTE#deal:${target.id}`));
     assert.ok(beforeCrm.some(row => row.PK === `MESSAGE_TARGET#deal:${target.id}`));
 
-    const result = await remove(target.id, `&expectedVersion=${target.version}`);
+    const currentTarget = data(await invoke('GET', `/api/sponsor-crm/deals/${target.id}`));
+    const result = await remove(target.id, `&expectedVersion=${currentTarget.version}`);
     assert.equal(result.statusCode, 200, result.body);
     assert.equal(data(result).deleted, true);
     assert.equal((await invoke('GET', `/api/sponsor-crm/deals/${target.id}`)).statusCode, 404);

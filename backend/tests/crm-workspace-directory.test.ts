@@ -366,8 +366,10 @@ describe('crm workspace directory', () => {
     assert.equal(updatedContact.last_contact_at, '2026-10-10T16:00:00Z');
     assert.equal(updatedContact.first_contact_at, '2026-02-01T08:00:00Z');
 
+    // Creating a linked contact also changes the organization's version.
+    const currentOrg = data(await invoke('GET', `/api/sponsor-crm/organizations/${org.id}`));
     const updatedOrg = data(await invoke('PUT', `/api/sponsor-crm/organizations/${org.id}`, {
-      version: org.version,
+      version: currentOrg.version,
       last_contact_at: '2026-10-10T18:00:00Z',
     }));
     assert.equal(updatedOrg.last_contact_at, '2026-10-10T18:00:00Z');

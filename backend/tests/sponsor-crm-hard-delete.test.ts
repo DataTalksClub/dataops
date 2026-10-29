@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
-import { PutCommand, ScanCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand, ScanCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
@@ -164,6 +164,7 @@ describe('CRM hard delete', () => {
   it('checks later scan pages before allowing deletion', async () => {
     const commands: any[] = [];
     const fake = { send: async (cmd: any) => {
+      if (cmd instanceof GetCommand) return { Item: { PK: 'ORGANIZATION#o', SK: 'ORGANIZATION#o', id: 'o', version: 1 } };
       commands.push(cmd);
       assert.ok(cmd instanceof ScanCommand, 'a guard failure must not write');
       return cmd.input.ExclusiveStartKey
@@ -180,6 +181,7 @@ describe('CRM hard delete', () => {
   it('refuses oversized history atomically and protects history notes', async () => {
     for (const notes of [false, true]) {
       const fake = { send: async (cmd: any) => {
+        if (cmd instanceof GetCommand) return { Item: { PK: 'ORGANIZATION#o', SK: 'ORGANIZATION#o', id: 'o', version: 1 } };
         assert.ok(cmd instanceof ScanCommand, 'a guard failure must not write');
         return { Items: [
           { PK: 'ORGANIZATION#o', SK: 'ORGANIZATION#o', id: 'o', version: 1 },
@@ -197,6 +199,7 @@ describe('CRM hard delete', () => {
     const previous = process.env.NODE_ENV; const commands: any[] = [];
     const fake = { send: async (cmd: any) => {
       commands.push(cmd);
+      if (cmd instanceof GetCommand) return { Item: { PK: 'ORGANIZATION#o', SK: 'ORGANIZATION#o', id: 'o', version: 7 } };
       if (cmd instanceof ScanCommand) return { Items: [
         { PK: 'ORGANIZATION#o', SK: 'ORGANIZATION#o', id: 'o', version: 7 },
         { PK: 'HISTORY#organization:o', SK: 'created', action: 'created' },
@@ -208,9 +211,10 @@ describe('CRM hard delete', () => {
     try {
       await hardDeleteCrmRecord(fake, 'organization', 'o');
       assert.equal(commands[0].input.ConsistentRead, true);
-      assert.equal(commands[1].constructor.name, 'TransactWriteCommand');
-      assert.equal(commands[1].input.TransactItems.length, 3);
-      assert.equal(commands[1].input.TransactItems[0].Delete.ExpressionAttributeValues[':version'], 7);
+      assert.equal(commands[1].input.ConsistentRead, true);
+      assert.equal(commands[2].constructor.name, 'TransactWriteCommand');
+      assert.equal(commands[2].input.TransactItems.length, 3);
+      assert.equal(commands[2].input.TransactItems[0].Delete.ExpressionAttributeValues[':version'], 7);
     } finally { process.env.NODE_ENV = previous; }
   });
 });

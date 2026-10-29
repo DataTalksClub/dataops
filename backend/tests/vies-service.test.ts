@@ -6,7 +6,7 @@ import { lookupVies } from '../src/vies/client';
 import { EU_MEMBER_STATES, isEuMemberState, normalizeVatId, splitVatId, viesMemberState } from '../src/vies/format';
 import { checkVatId, evaluateDealVat, evaluateOrganization, preflightOrganizations, refreshPreflight, vatRequired } from '../src/vies/service';
 import { getViesCheck, listViesChecks } from '../src/vies/store';
-import { createCrmRecord, listCrmRecords, updateCrmRecord } from '../src/db/sponsorCrm';
+import { createCrmRecord, getCrmRecord, listCrmRecords, updateCrmRecord } from '../src/db/sponsorCrm';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 describe('VAT ID format', () => {
@@ -159,7 +159,7 @@ describe('VAT validation service', () => {
     const before = await evaluateDealVat(client, deal.id, { lookup });
     assert.equal(before?.blocking, undefined);
     assert.equal(calls, 0, 'an unchanged VAT ID stays cached');
-    await updateCrmRecord(client, 'organization', organization, { vatId: 'NL999999999B99' });
+    await updateCrmRecord(client, 'organization', (await getCrmRecord(client, 'organization', organization.id))!, { vatId: 'NL999999999B99' });
     const after = await evaluateDealVat(client, deal.id, { lookup });
     assert.equal(calls, 1, 'a changed VAT ID triggers a fresh VIES check');
     assert.equal(after?.vatId, 'NL999999999B99');

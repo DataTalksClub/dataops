@@ -262,7 +262,9 @@ export async function touchTarget(
       sentAt: stamp,
       channel: input.channel,
     });
-    return { organization: nextOrg, contact: nextContact, messageId: message.id };
+    // Filing the message changes the referenced records' versions in the same
+    // transaction as the activity/index rows. Return those committed versions.
+    return { organization: (await getCrmRecord(client, 'organization', nextOrg.id))!, contact: (await getCrmRecord(client, 'contact', nextContact.id))!, messageId: message.id };
   }
   const organization = await getCrmRecord(client, 'organization', target.targetId);
   if (!organization || organization.archivedAt) throw Object.assign(new Error('Organization not found'), { statusCode: 404 });
@@ -275,7 +277,7 @@ export async function touchTarget(
     sentAt: stamp,
     channel: input.channel,
   });
-  return { organization: nextOrg, messageId: message.id };
+  return { organization: (await getCrmRecord(client, 'organization', nextOrg.id))!, messageId: message.id };
 }
 
 async function fileTouchMessage(

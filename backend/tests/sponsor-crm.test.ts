@@ -284,7 +284,8 @@ describe('sponsor CRM', () => {
     const contact = data(await invoke('POST', '/api/sponsor-crm/contacts', { organizationId: first.id, name: 'Owned Contact', emails: ['owned@example.invalid'], sourceKey: 'owned-contact' }));
     const deal = data(await invoke('POST', '/api/sponsor-crm/deals', { organizationId: first.id, primaryContactId: contact.id, status: 'open', sourceKey: 'owned-deal' }));
     assert.equal((await invoke('PUT', `/api/sponsor-crm/deals/${deal.id}`, { version: deal.version, organizationId: second.id })).statusCode, 422);
-    assert.equal((await invoke('PUT', `/api/sponsor-crm/contacts/${contact.id}`, { version: contact.version, organizationId: 'missing' })).statusCode, 422);
+    const currentContact = data(await invoke('GET', `/api/sponsor-crm/contacts/${contact.id}`));
+    assert.equal((await invoke('PUT', `/api/sponsor-crm/contacts/${contact.id}`, { version: currentContact.version, organizationId: 'missing' })).statusCode, 422);
     for (const query of [{ cursor: '-1' }, { cursor: 'nope' }, { limit: '101' }, { status: 'bogus' }, { from: '2026-02-30' }, { from: '2026-09-01', to: '2026-08-01' }]) {
       const response = await handler({ httpMethod: 'GET', path: '/api/sponsor-crm/deals', headers: {}, queryStringParameters: query, body: null }, {});
       assert.equal(response.statusCode, 400, JSON.stringify(query));

@@ -1,8 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'crypto';
-import { DeleteCommand, GetCommand, PutCommand, ScanCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
+import { DeleteCommand, GetCommand, PutCommand, ScanCommand, TransactWriteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_SPONSOR_CRM } from './tableNames';
+import { usesLocalTransactionEmulation } from './client';
 import {
   collectBoundedPages,
   type StoragePaginationLimits,
@@ -30,19 +31,58 @@ export const deterministicCrmId = (kind: string, sourceKey: string) => createHas
 const stored = (kind: string, record: Record<string, unknown>) => ({ PK: key(kind, String(record.id)), SK: key(kind, String(record.id)), ...compact(record) });
 const historyPut = (bookingId: string, event: Record<string, unknown>) => { const createdAt=new Date().toISOString(),id=`${createdAt}#${randomUUID()}`;return { Put:{TableName:TABLE_SPONSOR_CRM,Item:compact({PK:key('history',bookingId),SK:id,...event,id,bookingId,createdAt}),ConditionExpression:'attribute_not_exists(PK) AND attribute_not_exists(SK)'} }; };
 async function transact(client:DynamoDBDocumentClient,items:any[]){
-  if(process.env.NODE_ENV!=='test') return client.send(new TransactWriteCommand({TransactItems:items,ClientRequestToken:randomUUID()}));
+  if(process.env.NODE_ENV!=='test'||!usesLocalTransactionEmulation()) return client.send(new TransactWriteCommand({TransactItems:items,ClientRequestToken:randomUUID()}));
   // Dynalite used by this repository lacks TransactWriteItems. Production always
   // uses the command above; tests preserve conditional-write semantics locally.
   const before=[] as Array<{key:any;item?:Record<string,unknown>}>;
-  for(const operation of items){const input=operation.Put||operation.Delete,keyValue=input.Key||{PK:input.Item.PK,SK:input.Item.SK};before.push({key:keyValue,item:(await client.send(new GetCommand({TableName:TABLE_SPONSOR_CRM,Key:keyValue}))).Item as Record<string,unknown>|undefined});}
+  for(const operation of items){const input=operation.Put||operation.Delete||operation.Update,keyValue=input.Key||{PK:input.Item.PK,SK:input.Item.SK};before.push({key:keyValue,item:(await client.send(new GetCommand({TableName:TABLE_SPONSOR_CRM,Key:keyValue}))).Item as Record<string,unknown>|undefined});}
   let applied=0;
-  try{for(const item of items){if(item.Put)await client.send(new PutCommand(item.Put));else if(item.Delete)await client.send(new DeleteCommand(item.Delete));applied++;if(Number(process.env.SPONSOR_CRM_TEST_FAIL_AFTER||0)===applied)throw new Error('Injected sponsor CRM transaction failure');}}
+  try{for(const item of items){if(item.Put)await client.send(new PutCommand(item.Put));else if(item.Delete)await client.send(new DeleteCommand(item.Delete));else if(item.Update)await client.send(new UpdateCommand(item.Update));applied++;if(Number(process.env.SPONSOR_CRM_TEST_FAIL_AFTER||0)===applied)throw new Error('Injected sponsor CRM transaction failure');}}
   catch(error){for(const snapshot of before.slice(0,applied).reverse()){if(snapshot.item)await client.send(new PutCommand({TableName:TABLE_SPONSOR_CRM,Item:snapshot.item}));else await client.send(new DeleteCommand({TableName:TABLE_SPONSOR_CRM,Key:snapshot.key}));}throw error;}
+}
+
+type CrmDependency = { kind: string; id: string };
+function dependencies(kind: string, value: Record<string, unknown>): CrmDependency[] {
+  const refs: CrmDependency[] = [];
+  if (['contact', 'deal', 'deliverable', 'message'].includes(kind) && value.organizationId) {
+    refs.push({ kind: 'organization', id: String(value.organizationId) });
+  }
+  if (['deal', 'deliverable', 'message'].includes(kind)) {
+    for (const id of [value.primaryContactId, value.contactId, ...(Array.isArray(value.contactIds) ? value.contactIds : [])]) {
+      if (id) refs.push({ kind: 'contact', id: String(id) });
+    }
+  }
+  return refs;
+}
+function addedDependencies(kind: string, before: Record<string, unknown>, after: Record<string, unknown>) {
+  const previous = new Set(dependencies(kind, before).map(ref => key(ref.kind, ref.id)));
+  return dependencies(kind, after).filter(ref => !previous.has(key(ref.kind, ref.id)));
+}
+
+/** A dependency and its parent's version change commit together. Deletion
+ * captures that version before its guard scan, so either the dependency wins
+ * and invalidates deletion, or deletion wins and this existence check fails. */
+export async function transactCrmDependencies(client: DynamoDBDocumentClient, items: any[], refs: CrmDependency[]) {
+  const unique = new Map(refs.map(ref => [key(ref.kind, ref.id), ref]));
+  const bumps = [...unique.keys()].map(pk => ({ Update: {
+    TableName: TABLE_SPONSOR_CRM, Key: { PK: pk, SK: pk },
+    UpdateExpression: 'ADD #version :one', ConditionExpression: 'attribute_exists(PK)',
+    ExpressionAttributeNames: { '#version': 'version' }, ExpressionAttributeValues: { ':one': 1 },
+  } }));
+  if (items.length + bumps.length > 100) throw Object.assign(new Error('Too many CRM dependencies for one transaction'), { statusCode: 409 });
+  try {
+    return await transact(client, [...items, ...bumps]);
+  } catch (error) {
+    if (['ConditionalCheckFailedException', 'TransactionCanceledException'].includes((error as Error).name)) {
+      Object.assign(error as Error, { statusCode: 409 });
+    }
+    throw error;
+  }
 }
 
 export async function getCrmRecord(client: DynamoDBDocumentClient, kind: string, id: string) {
   const k = key(kind, id);
-  return clean((await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: k, SK: k } }))).Item as Record<string, unknown>);
+  return clean((await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: k, SK: k }, ConsistentRead: true }))).Item as Record<string, unknown>);
 }
 
 // Every list read of this table is a full Scan (the key is KIND#id, so a kind
@@ -110,7 +150,7 @@ export async function listCrmRecords(
     a.id.localeCompare(b.id));
 }
 
-export async function indexMessageTargets(client: DynamoDBDocumentClient, message: Record<string, unknown>) {
+function messageTargetWrites(message: Record<string, unknown>) {
   const messageId = String(message.id);
   const sentAt = String(message.sentAt || message.createdAt || new Date().toISOString());
   const sk = `${sentAt}#${messageId}`;
@@ -126,7 +166,7 @@ export async function indexMessageTargets(client: DynamoDBDocumentClient, messag
     targets.push({ type: 'deal', id: String(message.dealId) });
   }
 
-  for (const target of targets) {
+  return targets.map(target => {
     const targetItem = compact({
       PK: `MESSAGE_TARGET#${target.type}:${target.id}`,
       SK: sk,
@@ -152,8 +192,8 @@ export async function indexMessageTargets(client: DynamoDBDocumentClient, messag
       updatedAt: message.updatedAt,
       version: message.version,
     });
-    await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: targetItem }));
-  }
+    return { Put: { TableName: TABLE_SPONSOR_CRM, Item: targetItem } };
+  });
 }
 
 export async function createCrmRecord(client: DynamoDBDocumentClient, kind: string, value: Record<string, unknown>) {
@@ -162,25 +202,25 @@ export async function createCrmRecord(client: DynamoDBDocumentClient, kind: stri
   const now = new Date().toISOString();
   const item = compact({ PK: key(kind, id), SK: key(kind, id), ...value, id, version: 1, createdAt: now, updatedAt: now });
   try {
-    await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: item, ConditionExpression: 'attribute_not_exists(PK)' }));
-    if (kind === 'message') {
-      await indexMessageTargets(client, item);
-    }
+    await transactCrmDependencies(client, [
+      { Put: { TableName: TABLE_SPONSOR_CRM, Item: item, ConditionExpression: 'attribute_not_exists(PK)' } },
+      ...(kind === 'message' ? messageTargetWrites(item) : []),
+    ], dependencies(kind, item));
     return { item: clean(item)!, duplicate: false };
   } catch (error) {
-    if ((error as Error).name !== 'ConditionalCheckFailedException' || !sourceKey) throw error;
+    if (!['ConditionalCheckFailedException', 'TransactionCanceledException'].includes((error as Error).name) || !sourceKey) throw error;
     const existing = await getCrmRecord(client, kind, id);
-    if (!existing || !sameStored(existing, value)) throw replayConflict();
-    if (kind === 'message') {
-      await indexMessageTargets(client, existing);
-    }
+    if (!existing) throw error;
+    if (!sameStored(existing, value)) throw replayConflict();
+    // Message and target indexes were committed together; replay must never
+    // recreate an index for a target that has since been hard-deleted.
     return { item: existing!, duplicate: true };
   }
 }
 
 export async function updateCrmRecord(client: DynamoDBDocumentClient, kind: string, existing: CrmRecord, value: Record<string, unknown>): Promise<CrmRecord> {
   const now = new Date().toISOString(), next = compact({ ...existing, ...value, id: existing.id, createdAt: existing.createdAt, updatedAt: now, version: existing.version + 1 }) as CrmRecord;
-  await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { PK: key(kind, existing.id), SK: key(kind, existing.id), ...next }, ConditionExpression: '#version = :version', ExpressionAttributeNames: { '#version': 'version' }, ExpressionAttributeValues: { ':version': existing.version } }));
+  await transactCrmDependencies(client, [{ Put: { TableName: TABLE_SPONSOR_CRM, Item: stored(kind, next), ConditionExpression: '#version = :version', ExpressionAttributeNames: { '#version': 'version' }, ExpressionAttributeValues: { ':version': existing.version } } }], addedDependencies(kind, existing, next));
   return next;
 }
 
@@ -193,18 +233,18 @@ export async function hardDeleteCrmRecord(
   id: string,
   expectedVersion?: number,
 ) {
+  const pk = key(kind, id);
+  const existing = (await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: pk, SK: pk }, ConsistentRead: true }))).Item;
+  if (!existing) throw Object.assign(new Error('Not found'), { statusCode: 404 });
+  if (expectedVersion !== undefined && expectedVersion !== existing.version) {
+    throw deleteConflict('Record was changed; reload and retry');
+  }
   // Include archived rows: archiving never removes a relationship. Fully
   // paginate consistent reads and fail closed if a storage bound is exceeded.
   const rows = await scanCrmTable(client, [
     'ORGANIZATION#', 'CONTACT#', 'DEAL#', 'DELIVERABLE#',
     'HISTORY#', 'NOTE#', 'MESSAGE#', 'MESSAGE_TARGET#', 'DOMAIN#', 'PRIMARY#',
   ]);
-  const pk = key(kind, id);
-  const existing = rows.find(row => row.PK === pk && row.SK === pk);
-  if (!existing) throw Object.assign(new Error('Not found'), { statusCode: 404 });
-  if (expectedVersion !== undefined && expectedVersion !== existing.version) {
-    throw deleteConflict('Record was changed; reload and retry');
-  }
   const isKind = (row: Record<string, unknown>, prefix: string) => String(row.PK).startsWith(`${prefix}#`);
   if (kind === 'organization') {
     if (rows.some(row => isKind(row, 'DEAL') && row.organizationId === id)) {
@@ -280,7 +320,7 @@ export async function updateOrganizationAtomic(client:DynamoDBDocumentClient,exi
 export async function createDealAtomic(client:DynamoDBDocumentClient,value:Record<string,unknown>,actorId:string){
   const {historyNote,...recordValue}=value,sourceKey=typeof recordValue.sourceKey==='string'?recordValue.sourceKey:'',id=sourceKey?deterministicCrmId('deal',sourceKey):randomUUID(),now=new Date().toISOString();
   const item={...recordValue,id,version:1,createdAt:now,updatedAt:now,active:recordValue.active!==false} as CrmRecord;
-  try{await transact(client,[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('deal',item),ConditionExpression:'attribute_not_exists(PK)'}},historyPut(id,{actorId,oldStatus:null,newStatus:item.status,note:typeof historyNote==='string'?historyNote.slice(0,500):'Deal created'})]);return{item,duplicate:false};}
+  try{await transactCrmDependencies(client,[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('deal',item),ConditionExpression:'attribute_not_exists(PK)'}},historyPut(id,{actorId,oldStatus:null,newStatus:item.status,note:typeof historyNote==='string'?historyNote.slice(0,500):'Deal created'})], dependencies('deal', item));return{item,duplicate:false};}
   catch(error){if(sourceKey){const existing=await getCrmRecord(client,'deal',id);if(existing){if(sameStored(existing,recordValue))return{item:existing,duplicate:true};throw replayConflict();}}throw error;}
 }
 
@@ -291,7 +331,7 @@ export async function updateDealAtomic(client:DynamoDBDocumentClient,existing:Cr
   if(next.status!==existing.status)items.push(historyPut(existing.id,{actorId,oldStatus:existing.status,newStatus:next.status,note:typeof historyNote==='string'?String(historyNote).slice(0,500):undefined}));
   else if(next.archivedAt&&!existing.archivedAt)items.push(historyPut(existing.id,{actorId,entityKind:'deal',entityId:existing.id,action:'archived'}));
   else if(!next.archivedAt&&existing.archivedAt)items.push(historyPut(existing.id,{actorId,entityKind:'deal',entityId:existing.id,action:'unarchived'}));
-  await transact(client,items);return next;
+  await transactCrmDependencies(client,items,addedDependencies('deal', existing, next));return next;
 }
 
 export async function createDeliverableAtomic(client:DynamoDBDocumentClient,value:Record<string,unknown>,actorId:string){
@@ -299,7 +339,7 @@ export async function createDeliverableAtomic(client:DynamoDBDocumentClient,valu
   const item={...value,id,version:1,createdAt:now,updatedAt:now,active:value.active!==false} as CrmRecord;
   const items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('deliverable',item),ConditionExpression:'attribute_not_exists(PK)'}},historyPut(`deliverable:${id}`,{actorId,entityKind:'deliverable',entityId:id,action:'created'})];
   if(item.scheduleEntryId)items.push({Put:{TableName:TABLE_SPONSOR_CRM,Item:{PK:key('schedule',String(item.scheduleEntryId)),SK:key('schedule',String(item.scheduleEntryId)),deliverableId:id},ConditionExpression:'attribute_not_exists(PK)'}});
-  try{await transact(client,items);return{item,duplicate:false};}catch(error){if(sourceKey){const existing=await getCrmRecord(client,'deliverable',id);if(existing){if(sameStored(existing,value))return{item:existing,duplicate:true};throw replayConflict();}}throw error;}
+  try{await transactCrmDependencies(client,items,dependencies('deliverable', item));return{item,duplicate:false};}catch(error){if(sourceKey){const existing=await getCrmRecord(client,'deliverable',id);if(existing){if(sameStored(existing,value))return{item:existing,duplicate:true};throw replayConflict();}}throw error;}
 }
 
 export async function updateDeliverableAtomic(client:DynamoDBDocumentClient,existing:CrmRecord,value:Record<string,unknown>,actorId:string){
@@ -309,7 +349,7 @@ export async function updateDeliverableAtomic(client:DynamoDBDocumentClient,exis
   const items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('deliverable',next),ConditionExpression:'#version = :version',ExpressionAttributeNames:{'#version':'version'},ExpressionAttributeValues:{':version':existing.version}}},historyPut(`deliverable:${existing.id}`,{actorId,entityKind:'deliverable',entityId:existing.id,action:'updated'})];
   if(target&&target!==previous)items.push({Put:{TableName:TABLE_SPONSOR_CRM,Item:{PK:key('schedule',target),SK:key('schedule',target),deliverableId:existing.id},ConditionExpression:'attribute_not_exists(PK)'}});
   if(previous&&previous!==target)items.push({Delete:{TableName:TABLE_SPONSOR_CRM,Key:{PK:key('schedule',previous),SK:key('schedule',previous)},ConditionExpression:'deliverableId = :deliverableId',ExpressionAttributeValues:{':deliverableId':existing.id}}});
-  await transact(client,items);return next;
+  await transactCrmDependencies(client,items,addedDependencies('deliverable', existing, next));return next;
 }
 
 export async function createContactAtomic(client:DynamoDBDocumentClient,value:Record<string,unknown>,actorId:string){
@@ -317,7 +357,7 @@ export async function createContactAtomic(client:DynamoDBDocumentClient,value:Re
   const items:any[]=[];
   if(value.primary)items.push({Put:{TableName:TABLE_SPONSOR_CRM,Item:{PK:key('primary',String(value.organizationId)),SK:key('primary',String(value.organizationId)),contactId:id},ConditionExpression:'attribute_not_exists(PK)'}});
   items.push({Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('contact',item),ConditionExpression:'attribute_not_exists(PK)'}},historyPut(`contact:${id}`,{actorId,entityKind:'contact',entityId:id,action:'created'}));
-  try{await transact(client,items);return{item,duplicate:false};}catch(error){if(sourceKey){const existing=await getCrmRecord(client,'contact',id);if(existing){if(sameStored(existing,value))return{item:existing,duplicate:true};throw replayConflict();}}throw error;}
+  try{await transactCrmDependencies(client,items,dependencies('contact', item));return{item,duplicate:false};}catch(error){if(sourceKey){const existing=await getCrmRecord(client,'contact',id);if(existing){if(sameStored(existing,value))return{item:existing,duplicate:true};throw replayConflict();}}throw error;}
 }
 
 export async function updateContactAtomic(client:DynamoDBDocumentClient,existing:CrmRecord,value:Record<string,unknown>,actorId:string,action='updated'){
@@ -326,12 +366,13 @@ export async function updateContactAtomic(client:DynamoDBDocumentClient,existing
   const items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('contact',next),ConditionExpression:'#version=:version',ExpressionAttributeNames:{'#version':'version'},ExpressionAttributeValues:{':version':existing.version}}},historyPut(`contact:${existing.id}`,{actorId,entityKind:'contact',entityId:existing.id,action})];
   if(newPrimary&&(!oldPrimary||oldOrg!==newOrg))items.push({Put:{TableName:TABLE_SPONSOR_CRM,Item:{PK:key('primary',newOrg),SK:key('primary',newOrg),contactId:existing.id},ConditionExpression:'attribute_not_exists(PK)'}});
   if(oldPrimary&&(!newPrimary||oldOrg!==newOrg))items.push({Delete:{TableName:TABLE_SPONSOR_CRM,Key:{PK:key('primary',oldOrg),SK:key('primary',oldOrg)},ConditionExpression:'contactId=:contactId',ExpressionAttributeValues:{':contactId':existing.id}}});
-  await transact(client,items);return next;
+  await transactCrmDependencies(client,items,addedDependencies('contact', existing, next));return next;
 }
 
 export async function appendBookingHistory(client: DynamoDBDocumentClient, bookingId: string, event: Record<string, unknown>) {
   const id = `${new Date().toISOString()}#${randomUUID()}`;
-  await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { PK: key('history', bookingId), SK: id, ...event, id, bookingId, createdAt: new Date().toISOString() }, ConditionExpression: 'attribute_not_exists(PK) AND attribute_not_exists(SK)' }));
+  const match = /^(organization|contact):(.+)$/.exec(bookingId);
+  await transactCrmDependencies(client, [{ Put: { TableName: TABLE_SPONSOR_CRM, Item: { PK: key('history', bookingId), SK: id, ...event, id, bookingId, createdAt: new Date().toISOString() }, ConditionExpression: 'attribute_not_exists(PK) AND attribute_not_exists(SK)' } }], match ? [{ kind: match[1], id: match[2] }] : []);
 }
 export const appendCrmAudit = (client: DynamoDBDocumentClient, kind: string, id: string, actorId: string, action: string) => appendBookingHistory(client, `${kind}:${id}`, { actorId, entityKind: kind, entityId: id, action });
 export async function listBookingHistory(client: DynamoDBDocumentClient, bookingId: string) {

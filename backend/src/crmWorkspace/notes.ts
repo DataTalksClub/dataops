@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { DeleteCommand, PutCommand, QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { deterministicCrmId, getCrmRecord } from '../db/sponsorCrm';
+import { deterministicCrmId, getCrmRecord, transactCrmDependencies } from '../db/sponsorCrm';
 import { TABLE_SPONSOR_CRM } from '../db/tableNames';
 import { collectBoundedPages } from '../db/boundedPagination';
 import { cursorBinding, decodeCursor, encodeCursor, pageLimit } from './cursor';
@@ -89,16 +89,14 @@ export async function createNote(
     version: 1,
   };
   try {
-    await client.send(
-      new PutCommand({
-        TableName: TABLE_SPONSOR_CRM,
-        Item: item,
-        ConditionExpression: 'attribute_not_exists(PK) AND attribute_not_exists(SK)',
-      }),
-    );
+    await transactCrmDependencies(client, [{ Put: {
+      TableName: TABLE_SPONSOR_CRM,
+      Item: item,
+      ConditionExpression: 'attribute_not_exists(PK) AND attribute_not_exists(SK)',
+    } }], [{ kind: target, id }]);
     return { status: 201, body: publicNote(item) };
   } catch (error) {
-    if ((error as Error).name !== 'ConditionalCheckFailedException' || !sourceKey) throw error;
+    if (!['ConditionalCheckFailedException', 'TransactionCanceledException'].includes((error as Error).name) || !sourceKey) throw error;
     // Strongly consistent replay read: the failed conditional proves the key
     // exists; a lagging replica must not turn an identical retry into a 409.
     const existing = await client.send(
