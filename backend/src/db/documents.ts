@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { collectBoundedPages } from './boundedPagination';
 import { TABLE_ARTIFACTS } from './tableNames';
 
 export const DOCUMENT_KINDS = ['transcript', 'timecodes', 'summary', 'note'] as const;
@@ -30,17 +31,15 @@ export async function createDocument(client: DynamoDBDocumentClient, data: Pick<
   return doc;
 }
 export async function listDocuments(client: DynamoDBDocumentClient, taskId: string): Promise<DocumentRecord[]> {
-  const docs: DocumentRecord[] = [];
-  let cursor: Record<string, unknown> | undefined;
-  do {
-    const result = await client.send(new ScanCommand({
-      TableName: TABLE_ARTIFACTS, ExclusiveStartKey: cursor,
+  const rows = await collectBoundedPages<Record<string, unknown>>({
+    loadPage: async (ExclusiveStartKey, abortSignal) => client.send(new ScanCommand({
+      TableName: TABLE_ARTIFACTS, ExclusiveStartKey, ConsistentRead: true,
       FilterExpression: 'begins_with(PK, :prefix) AND taskId = :task',
       ExpressionAttributeValues: { ':prefix': 'DOCUMENT#', ':task': taskId },
-    }));
-    docs.push(...(result.Items || []).map(clean));
-    cursor = result.LastEvaluatedKey;
-  } while (cursor);
+    }), { abortSignal }),
+    limits: { maxPages: 1000, maxItems: 1000, maxBytes: 8 * 1024 * 1024, deadlineMs: 10000 },
+  });
+  const docs = rows.map(clean);
   return docs.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 }
 export async function updateDocument(client: DynamoDBDocumentClient, id: string, updates: Pick<DocumentRecord, 'title' | 'content'>, version: number): Promise<DocumentRecord | null> {

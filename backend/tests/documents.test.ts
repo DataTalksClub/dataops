@@ -9,7 +9,7 @@ import { createDocument, updateDocument, DocumentVersionConflict, listDocuments 
 
 describe('Task document workspace', () => {
   let client: DynamoDBDocumentClient;
-  before(async () => { client = await getClient(await startLocal()); await createTables(client); await client.send(new PutCommand({ TableName: TABLE_TASKS, Item: { PK: 'TASK#doc-task', SK: 'TASK#doc-task', id: 'doc-task', version: 1, taskHistory: [] } })); });
+  before(async () => { process.env.SKIP_AUTH = 'true'; client = await getClient(await startLocal()); await createTables(client); await client.send(new PutCommand({ TableName: TABLE_TASKS, Item: { PK: 'TASK#doc-task', SK: 'TASK#doc-task', id: 'doc-task', version: 1, taskHistory: [] } })); });
   after(async () => { await stopLocal(); });
   async function request(method: string, path: string, body?: unknown, queryStringParameters?: Record<string, string>) {
     const res = await handleDocumentRoutes({ httpMethod: method, path, body: body === undefined ? undefined : JSON.stringify(body), queryStringParameters }, client);

@@ -1,5 +1,6 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createDocument, DOCUMENT_KINDS, DocumentRecord, DocumentVersionConflict, getDocument, listDocuments, updateDocument } from '../db/documents';
+import { resolveInteractiveActor } from '../identity/actor';
 import { getTask } from '../db/tasks';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
@@ -14,6 +15,8 @@ export async function handleDocumentRoutes(event: LambdaEvent, client: DynamoDBD
   const match = /^\/api\/documents(?:\/([^/]+))?\/?$/.exec(path);
   if (!match) return null;
   const method = event.httpMethod || 'GET';
+  const actor = await resolveInteractiveActor(client, event, method === 'GET' ? 'work-read' : 'work-write');
+  if (!actor.ok) return actor.response;
   const id = match[1];
   if (method === 'GET') {
     if (id) {
