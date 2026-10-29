@@ -7,6 +7,7 @@ import type {
 } from '../types';
 import type { AssignmentPolicy } from '../db/workspaceSettings';
 import type { EpisodeStageRefs } from '../podcast/cardStatus';
+import { cardCountValues, expandTaskDefinitions } from './repeatedTasks';
 
 type Dict = Record<string, unknown>;
 
@@ -26,11 +27,21 @@ export function dateFromTemplateOffset(anchorDate: string, offsetDays: number): 
   return anchor.toISOString().split('T')[0];
 }
 
-/** The Template's task definitions a Card with these optional groups holds. */
-export function selectedTaskDefinitions(template: Template, selectedGroups?: readonly string[]): TaskDefinition[] {
+/**
+ * The task definitions a Card with these optional groups and counts holds:
+ * the selected definitions with repeated ones expanded into numbered
+ * instances (`templates/repeatedTasks.ts`), each carrying its `order`.
+ */
+export function selectedTaskDefinitions(
+  template: Template,
+  selectedGroups?: readonly string[],
+  counts: Record<string, number> = cardCountValues(template),
+  retained?: ReadonlyMap<string, ReadonlySet<number>>,
+): TaskDefinition[] {
   const selected = new Set(selectedGroups || []);
-  return (template.taskDefinitions || [])
+  const definitions = (template.taskDefinitions || [])
     .filter((definition) => !definition.optionalGroup || selected.has(definition.optionalGroup));
+  return expandTaskDefinitions(definitions, counts, retained);
 }
 
 /** The Template's episode stage Tasks by stage, or undefined when it marks none. */
@@ -65,7 +76,8 @@ export function templateCardDefinitionSnapshot(
 export function templateLinkage(
   template: Template,
   selectedGroups: readonly string[] = [],
-  taskRefs: readonly string[] = selectedTaskDefinitions(template, selectedGroups).map(({ refId }) => refId),
+  counts: Record<string, number> = cardCountValues(template),
+  taskRefs: readonly string[] = selectedTaskDefinitions(template, selectedGroups, counts).map(({ refId }) => refId),
 ): Dict {
   return withoutUndefined({
     templateId: template.id,
@@ -73,6 +85,7 @@ export function templateLinkage(
     templateSourceRevision: template.sourceRevision,
     templateDefinitionSnapshot: templateCardDefinitionSnapshot(template, taskRefs),
     selectedOptionalGroups: [...new Set(selectedGroups)],
+    counts: Object.keys(counts).length > 0 ? { ...counts } : undefined,
   });
 }
 
@@ -103,6 +116,7 @@ export function templateTaskDefinitionSnapshot(
     throw new Error(`Template Task ${definition.refId} has invalid stageOnComplete`);
   }
   const offsetDays = definition.offsetDays || 0;
+  const taskOrder = definition.order ?? order;
   // Trello-imported definitions bake the checklist name into the description
   // as "[Checklist] Task". Split it off so instantiated Tasks store the tag
   // in `tags` and keep a clean description.
@@ -119,7 +133,7 @@ export function templateTaskDefinitionSnapshot(
     description: cleanDescription,
     date: dateFromTemplateOffset(anchorDate, offsetDays),
     templateOffsetDays: offsetDays,
-    templateTaskOrder: order,
+    templateTaskOrder: taskOrder,
     isMilestone: definition.isMilestone,
     stageOnComplete: definition.stageOnComplete,
     assigneeId: definition.assigneeId,

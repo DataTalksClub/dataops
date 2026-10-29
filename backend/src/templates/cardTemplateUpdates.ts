@@ -5,14 +5,22 @@ import type {
   Card,
   CardLink,
   Task,
+  TaskDefinition,
   Template,
   TemplateCardDefinitionSnapshot,
   TemplateTaskDefinitionSnapshot,
 } from '../types';
 import {
+  selectedTaskDefinitions,
   templateCardDefinitionSnapshot,
   templateTaskDefinitionSnapshot,
 } from './cardTemplateProjection';
+import {
+  cardCountValues,
+  countValuesError,
+  parseRepeatInstanceRef,
+  retainedRepeatIndexes,
+} from './repeatedTasks';
 
 type Dict = Record<string, unknown>;
 
@@ -58,6 +66,7 @@ export type TemplateTaskUpdateAction =
   | 'update'
   | 'restore'
   | 'skip-removed'
+  | 'remove'
   | 'retain-completed'
   | 'refresh-provenance';
 
@@ -92,6 +101,10 @@ export interface CardTemplateUpdatePreview {
   availableOptionalGroups: string[];
   selectedOptionalGroups: string[];
   targetOptionalGroups: string[];
+  /** Count field values before and after; `remove` Tasks are repeated instances beyond a lowered count. */
+  countFields: Array<{ id: string; label: string; min: number; max: number }>;
+  currentCounts: Record<string, number>;
+  targetCounts: Record<string, number>;
   cardChanges: TemplateFieldChange[];
   taskChanges: TemplateTaskUpdatePreview[];
   counts: {
@@ -99,6 +112,7 @@ export interface CardTemplateUpdatePreview {
     added: number;
     updated: number;
     skipped: number;
+    removed: number;
     retainedCompleted: number;
     reordered: number;
     operatorOverrides: number;
@@ -116,6 +130,8 @@ export interface PlannedTaskUpdate {
 export interface CardTemplateUpdatePlan {
   preview: CardTemplateUpdatePreview;
   targetCardSnapshot: TemplateCardDefinitionSnapshot;
+  /** The concrete (expanded) definitions the Card holds after the update, by ref. */
+  targetDefinitions: Map<string, TaskDefinition>;
   taskUpdates: PlannedTaskUpdate[];
 }
 
@@ -220,10 +236,17 @@ function templateTasksForCard(tasks: Task[], templateId: string): Task[] {
   ));
 }
 
-function tokenFor(card: Card, tasks: Task[], template: Template, selectedGroups: string[]): string {
+function tokenFor(
+  card: Card,
+  tasks: Task[],
+  template: Template,
+  selectedGroups: string[],
+  counts: Record<string, number>,
+): string {
   return digest({
     card: { id: card.id, version: card.version },
     selectedGroups,
+    ...(Object.keys(counts).length > 0 ? { counts } : {}),
     template: {
       id: template.id,
       version: template.version,
@@ -246,6 +269,7 @@ export function buildCardTemplateUpdatePlan(
   tasks: Task[],
   template: Template,
   requestedGroups?: unknown,
+  requestedCounts?: unknown,
 ): CardTemplateUpdatePlan {
   if (!card.templateId || card.templateId !== template.id) {
     throw new CardTemplateUpdateInvalidStateError('Card does not use this Template');
@@ -272,6 +296,16 @@ export function buildCardTemplateUpdatePlan(
     }
   }
   const selectionChanged = !isDeepStrictEqual(currentGroups, selected);
+  if (requestedCounts !== undefined) {
+    const error = countValuesError(template, requestedCounts);
+    if (error) throw new CardTemplateUpdateInvalidStateError(error);
+  }
+  const currentCounts = cardCountValues(template, card.counts);
+  const targetCounts = cardCountValues(template, {
+    ...currentCounts,
+    ...(requestedCounts as Record<string, number> | undefined),
+  });
+  const countsChanged = !isDeepStrictEqual(card.counts || {}, targetCounts);
   const relevantTasks = templateTasksForCard(tasks, template.id);
   if (
     !card.templateDefinitionSnapshot
@@ -308,10 +342,11 @@ export function buildCardTemplateUpdatePlan(
   const refByTaskId = new Map(tasks.map((task) => [task.id, task.templateTaskRef]));
 
   // A Card created without an optional group never receives that group's
-  // tasks from later Template versions either.
-  const definitions = (template.taskDefinitions || []).filter((definition) => (
-    !definition.optionalGroup || selected.includes(definition.optionalGroup)
-  ));
+  // tasks from later Template versions either. Repeated definitions expand
+  // to the target counts; an instance beyond a lowered count stays while any
+  // of its group's Tasks is done or links a Card.
+  const retained = retainedRepeatIndexes(template.taskDefinitions || [], targetCounts, relevantTasks);
+  const definitions = selectedTaskDefinitions(template, selected, targetCounts, retained);
   const targetCardSnapshot = templateCardDefinitionSnapshot(template, definitions.map(({ refId }) => refId));
   const sourceCardSnapshot = card.templateDefinitionSnapshot || null;
   const cardChanges = fieldChanges(
@@ -327,6 +362,8 @@ export function buildCardTemplateUpdatePlan(
     descriptionCounts.set(label, (descriptionCounts.get(label) || 0) + 1);
   });
   const accountedRefs = new Set(card.templateDefinitionSnapshot.taskRefs);
+  const repeatedRefs = new Set((template.taskDefinitions || [])
+    .filter(({ repeat }) => repeat).map(({ refId }) => refId));
   for (const [order, definition] of definitions.entries()) {
     const ref = definition.refId;
     targetRefs.add(ref);
@@ -406,10 +443,15 @@ export function buildCardTemplateUpdatePlan(
   for (const current of relevantTasks) {
     const ref = current.templateTaskRef as string;
     if (targetRefs.has(ref) || alreadyRetainedForCurrentTemplate(card, template, current)) continue;
-    // A resolved Task keeps its resolution; an open one is skipped.
-    const action: TemplateTaskUpdateAction = current.status === 'done' || current.status === 'skipped'
-      ? 'retain-completed'
-      : 'skip-removed';
+    // A repeated instance beyond a lowered count that nothing retained (it is
+    // not done and links no Card) is removed. Otherwise a resolved Task keeps
+    // its resolution and an open one is skipped.
+    const instance = parseRepeatInstanceRef(ref);
+    const action: TemplateTaskUpdateAction = instance && repeatedRefs.has(instance.refId)
+      ? 'remove'
+      : current.status === 'done' || current.status === 'skipped'
+        ? 'retain-completed'
+        : 'skip-removed';
     taskUpdates.push({ action, taskRef: ref, before: current, target: null, changedFields: [] });
     taskChanges.push({
       action,
@@ -422,10 +464,11 @@ export function buildCardTemplateUpdatePlan(
   }
 
   assertAcyclicAfterUpdate(tasks, taskUpdates);
+  assertNoDependentsOfRemoved(tasks, taskUpdates);
 
   const templateBehind = card.templateVersion !== template.version
     || (card.templateSourceRevision || null) !== (template.sourceRevision || null);
-  const hasEffectiveChanges = selectionChanged || cardChanges.length > 0 || taskUpdates.length > 0;
+  const hasEffectiveChanges = selectionChanged || countsChanged || cardChanges.length > 0 || taskUpdates.length > 0;
   const state: CardTemplateUpdateState = templateBehind || hasEffectiveChanges
       ? 'update-available'
       : 'current';
@@ -442,10 +485,13 @@ export function buildCardTemplateUpdatePlan(
       targetTemplateVersion: template.version,
       sourceRevision: card.templateSourceRevision || null,
       targetRevision: template.sourceRevision || null,
-      previewToken: tokenFor(card, tasks, template, selected),
+      previewToken: tokenFor(card, tasks, template, selected, targetCounts),
       availableOptionalGroups: availableGroups,
       selectedOptionalGroups: currentGroups,
       targetOptionalGroups: selected,
+      countFields: (template.countFields || []).map(({ id, label, min, max }) => ({ id, label, min, max })),
+      currentCounts,
+      targetCounts,
       cardChanges,
       taskChanges,
       counts: {
@@ -453,14 +499,29 @@ export function buildCardTemplateUpdatePlan(
         added: taskChanges.filter(({ action }) => action === 'add').length,
         updated: taskChanges.filter(({ action }) => action === 'update' || action === 'restore').length,
         skipped: taskChanges.filter(({ action }) => action === 'skip-removed').length,
+        removed: taskChanges.filter(({ action }) => action === 'remove').length,
         retainedCompleted: taskChanges.filter(({ action }) => action === 'retain-completed').length,
         reordered: taskChanges.filter(({ changes }) => changes.some(({ field }) => field === 'templateTaskOrder')).length,
         operatorOverrides,
       },
     },
     targetCardSnapshot,
+    targetDefinitions: new Map(definitions.map((definition) => [definition.refId, definition])),
     taskUpdates,
   };
+}
+
+/** A Task the update removes must not be a prerequisite of a Task that stays. */
+function assertNoDependentsOfRemoved(tasks: Task[], updates: PlannedTaskUpdate[]): void {
+  const removed = new Set(updates.filter(({ action }) => action === 'remove').map(({ before }) => before!.id));
+  if (removed.size === 0) return;
+  const dependent = tasks.find((task) => !removed.has(task.id)
+    && (task.dependsOn || []).some((id) => removed.has(id)));
+  if (dependent) {
+    throw new CardTemplateUpdateInvalidStateError(
+      `Task "${dependent.description}" depends on a Task the lower count would remove; remove that dependency first`,
+    );
+  }
 }
 
 /**

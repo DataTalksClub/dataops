@@ -227,6 +227,7 @@ describe('API — reviewed Card Template updates', () => {
       added: 1,
       updated: 1,
       skipped: 1,
+      removed: 0,
       retainedCompleted: 1,
       reordered: 2,
       operatorOverrides: 1,

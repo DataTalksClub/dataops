@@ -67,6 +67,7 @@ const AUTHORITATIVE_FIELDS = [
   'sourceDocIds',
   'references',
   'cardLinkDefinitions',
+  'countFields',
   'triggerType',
   'triggerSchedule',
   'triggerLeadDays',

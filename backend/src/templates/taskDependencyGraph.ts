@@ -6,7 +6,7 @@ import type { TaskDefinition } from '../types';
  * definitions.
  */
 
-type DependencyDefinition = Pick<TaskDefinition, 'refId' | 'dependsOn' | 'optionalGroup'>;
+type DependencyDefinition = Pick<TaskDefinition, 'refId' | 'dependsOn' | 'optionalGroup' | 'repeat'>;
 
 /** Describe every way a set of definitions breaks the dependency rules. */
 export function templateDependencyIssues(definitions: readonly DependencyDefinition[]): string[] {
@@ -36,6 +36,14 @@ export function templateDependencyIssues(definitions: readonly DependencyDefinit
         issues.push(
           `task '${definition.refId}' depends on '${ref}' from optional group '${target.optionalGroup}'; `
           + 'a task may only depend on ungrouped tasks or tasks in its own group',
+        );
+      }
+      // Instance n of a repeated Task depends on instance n of its repeated
+      // prerequisite; any other Task has no single instance to wait for.
+      if (target.repeat && target.repeat.countField !== definition.repeat?.countField) {
+        issues.push(
+          `task '${definition.refId}' depends on repeated task '${ref}'; `
+          + `only a task repeated by '${target.repeat.countField}' may depend on it`,
         );
       }
     }

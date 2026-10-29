@@ -22,6 +22,7 @@ import { requiresError } from '../resources/vocabulary';
 import { browserRequirementError } from '../browserRequirement';
 import { isTemplateIcon, TEMPLATE_ICONS } from './templateIcons';
 import { templateDependencyIssues } from './taskDependencyGraph';
+import { MAX_COUNT } from './repeatedTasks';
 
 const TEMPLATE_FIELDS = [
   ['authoredId', 'id'],
@@ -84,6 +85,10 @@ const CLOSURE_FIELDS = [
   ['followUpAfterDays', 'follow_up_after_days'], ['recipientRole', 'recipient_role'],
 ] as const;
 
+const COUNT_FIELD_FIELDS = [
+  ['id', 'id'], ['label', 'label'], ['default', 'default'], ['min', 'min'], ['max', 'max'],
+] as const;
+
 const EXTERNAL_SOURCE_FIELDS = [
   ['id', 'id'], ['location', 'location'], ['kind', 'kind'], ['status', 'status'], ['note', 'note'],
 ] as const;
@@ -120,6 +125,9 @@ export function templateToYaml(template: Dict): Dict {
   const cardLinks = template.cardLinkDefinitions as Dict[] | undefined;
   if (cardLinks !== undefined) doc.card_links = cardLinks.map((link) => ({ name: link.name }));
 
+  const countFields = template.countFields as Dict[] | undefined;
+  if (countFields !== undefined) doc.count_fields = countFields.map((field) => mapFields(field, COUNT_FIELD_FIELDS, true));
+
   const phases = template.phases as Dict[] | undefined;
   if (phases !== undefined) doc.phases = phases.map((phase) => mapFields(phase, PHASE_FIELDS, true));
   const externalSources = template.externalSourceDocuments as Dict[] | undefined;
@@ -131,6 +139,8 @@ export function templateToYaml(template: Dict): Dict {
     const out: Dict = { id: task.refId, name: task.description };
     out.schedule = { offset_days: task.offsetDays };
     for (const [runtime, authored] of TASK_FIELDS) assign(out, authored, task[runtime]);
+    if (task.repeat !== undefined) out.repeat = { count_field: (task.repeat as Dict).countField };
+    if (task.linkCard !== undefined) out.link_card = { template_type: (task.linkCard as Dict).templateType };
     if (task.closure !== undefined) out.closure = mapFields(task.closure as Dict, CLOSURE_FIELDS, true);
     return out;
   });
@@ -163,6 +173,9 @@ export function templateFromYaml(doc: Dict): Dict {
   if (doc.card_links !== undefined) {
     template.cardLinkDefinitions = (doc.card_links as Dict[]).map((link) => ({ name: link.name }));
   }
+  if (doc.count_fields !== undefined) {
+    template.countFields = (doc.count_fields as Dict[]).map((field) => mapFields(field, COUNT_FIELD_FIELDS, false));
+  }
 
   template.taskDefinitions = ((doc.tasks as Dict[] | undefined) || []).map((task) => {
     const schedule = (task.schedule as Dict | undefined) || {};
@@ -172,6 +185,8 @@ export function templateFromYaml(doc: Dict): Dict {
       offsetDays: schedule.offset_days,
     };
     for (const [runtime, authored] of TASK_FIELDS) assign(out, runtime, task[authored]);
+    if (task.repeat !== undefined) out.repeat = { countField: (task.repeat as Dict | null)?.count_field };
+    if (task.link_card !== undefined) out.linkCard = { templateType: (task.link_card as Dict | null)?.template_type };
     if (task.closure !== undefined) out.closure = mapFields(task.closure as Dict, CLOSURE_FIELDS, false);
     return out;
   });
@@ -254,6 +269,29 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
     stringLists(phase, ['entry_criteria', 'exit_criteria', 'allowed_next_phase_ids']);
   }
   const linkNames = new Set(((doc.card_links as Dict[] | undefined) || []).map((link) => String(link.name)));
+  const countFieldIds = new Set<string>();
+  if (doc.count_fields !== undefined) {
+    if (!Array.isArray(doc.count_fields)) fail('count_fields must be a list');
+    else for (const field of doc.count_fields as unknown[]) {
+      if (!field || typeof field !== 'object' || Array.isArray(field)) {
+        fail('count field must be an object');
+        continue;
+      }
+      const entry = field as Dict;
+      const id = typeof entry.id === 'string' ? entry.id : '';
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) fail('count field id must be a slug');
+      else if (countFieldIds.has(id)) fail(`duplicate count field '${id}'`);
+      countFieldIds.add(id);
+      if (typeof entry.label !== 'string' || !entry.label.trim()) fail(`count field '${id}' needs a label`);
+      const [min, max, initial] = [entry.min, entry.max, entry.default];
+      if (![min, max, initial].every(Number.isInteger)) {
+        fail(`count field '${id}' min, max and default must be integers`);
+      } else if (!(0 <= (min as number) && (min as number) <= (initial as number)
+        && (initial as number) <= (max as number) && (max as number) <= MAX_COUNT)) {
+        fail(`count field '${id}' needs 0 <= min <= default <= max <= ${MAX_COUNT}`);
+      }
+    }
+  }
   const seen = new Set<string>();
   const episodeStageTasks = new Map<string, string>();
   const createsEpisodes = recordTemplateTypes('podcast-episode').includes(type);
@@ -277,6 +315,7 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
     const id = String(task.id || '');
     if (!id) { fail('a task is missing an id'); continue; }
     if (seen.has(id)) fail(`duplicate task id '${id}'`);
+    if (id.includes('#')) fail(`task id '${id}' must not contain '#' (it numbers repeated tasks)`);
     seen.add(id);
     if (typeof task.optional_group === 'string' && !/^[a-z0-9][a-z0-9-]*$/.test(task.optional_group)) {
       fail(`task '${id}' optional_group must be a slug`);
@@ -285,6 +324,21 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
     if (task.requires !== undefined) {
       const error = requiresError(task.requires);
       if (error) fail(`task '${id}' ${error}`);
+    }
+
+    if (task.repeat !== undefined) {
+      const repeat = task.repeat as Dict | null;
+      const field = repeat && typeof repeat === 'object' ? repeat.count_field : undefined;
+      if (typeof field !== 'string') fail(`task '${id}' repeat needs a count_field`);
+      else if (!countFieldIds.has(field)) fail(`task '${id}' repeats by unknown count field '${field}'`);
+    }
+
+    if (task.link_card !== undefined) {
+      const linkCard = task.link_card as Dict | null;
+      const type = linkCard && typeof linkCard === 'object' ? linkCard.template_type : undefined;
+      if (typeof type !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(type)) {
+        fail(`task '${id}' link_card needs a template_type slug`);
+      }
     }
 
     if (task.browser_requirement !== undefined) {
@@ -340,6 +394,9 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
       refId: String(task.id || ''),
       dependsOn: task.depends_on as string[] | undefined,
       optionalGroup: typeof task.optional_group === 'string' ? task.optional_group : undefined,
+      repeat: task.repeat && typeof (task.repeat as Dict).count_field === 'string'
+        ? { countField: (task.repeat as Dict).count_field as string }
+        : undefined,
     })))) fail(message);
   }
 

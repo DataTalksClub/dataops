@@ -80,6 +80,8 @@ interface CardBlockingReferences {
   files: string[];
   sponsorDeliverables: string[];
   newsletterIssues: string[];
+  /** Tasks on other Cards that link this Card (`Task.linkedCardId`). */
+  linkingTasks: string[];
 }
 
 /** The owning record's write that rides in the Card deletion transaction. */
@@ -92,7 +94,9 @@ class CardDeletionBlockedError extends Error {
   constructor(readonly cardId: string, readonly references: CardBlockingReferences) {
     super(references.newsletterIssues.length
       ? 'Card belongs to a newsletter issue; delete or cancel the issue instead'
-      : 'Card is still referenced by files or sponsor deliverables; unlink them first');
+      : references.linkingTasks.length
+        ? 'Card is linked by a Task on another Card; unlink it there first'
+        : 'Card is still referenced by files or sponsor deliverables; unlink them first');
     this.name = 'CardDeletionBlockedError';
   }
 }
@@ -191,15 +195,19 @@ async function cardBlockingReferences(
   const taskIds = new Set(tasks.map(({ id }) => id));
   const pointsHere = (row: Dict) => row.cardId === card.id
     || (typeof row.taskId === 'string' && taskIds.has(row.taskId));
-  const [files, sponsorCrm, issues] = await Promise.all([
+  const [files, sponsorCrm, issues, allTasks] = await Promise.all([
     scanAll(client, TABLE_FILES, 'FILE#'),
     scanAll(client, TABLE_SPONSOR_CRM, 'DELIVERABLE#'),
     listNewsletterIssuesByCardId(client, card.id),
+    scanAll(client, TABLE_TASKS, 'TASK#'),
   ]);
   return {
     files: files.filter(pointsHere).map((row) => String(row.id)),
     sponsorDeliverables: sponsorCrm.filter((row) => row.cardId === card.id).map((row) => String(row.id)),
     newsletterIssues: issues.map((issue) => issue.id).filter((id) => id !== owner?.newsletterIssueId),
+    linkingTasks: allTasks
+      .filter((row) => row.linkedCardId === card.id && !taskIds.has(String(row.id)))
+      .map((row) => String(row.id)),
   };
 }
 

@@ -40,6 +40,7 @@ export const DEFINITION_FIELDS = [
   'sourceDocIds',
   'references',
   'cardLinkDefinitions',
+  'countFields',
   'triggerType',
   'triggerSchedule',
   'triggerLeadDays',
@@ -150,6 +151,9 @@ export function validateEffectiveDefinition(definition: Dict): string[] {
         ? (task.dependsOn as unknown[]).filter((ref): ref is string => typeof ref === 'string')
         : undefined,
       optionalGroup: typeof task.optionalGroup === 'string' ? task.optionalGroup : undefined,
+      repeat: task.repeat && typeof (task.repeat as Dict).countField === 'string'
+        ? { countField: (task.repeat as Dict).countField as string }
+        : undefined,
     })))) {
       if (!issues.includes(message)) issues.push(message);
     }

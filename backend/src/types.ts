@@ -310,6 +310,8 @@ export interface Task {
   sourceDocIds?: string[];
   stageOnComplete?: string;
   recurringConfigId?: string;
+  /** Another Card this Task is carried out by (a course's "Workshop 2" Task links that workshop's Card). */
+  linkedCardId?: string;
   artifactRefs?: ArtifactRef[];
   intakeRefs?: IntakeRef[];
   auditEventRefs?: AuditEventRef[];
@@ -374,6 +376,13 @@ export interface Card {
   sourceDocIds?: string[];
   /** Optional task groups selected when the Card was created from its Template. */
   selectedOptionalGroups: string[];
+  /** Values of the Template's count fields (`countFields`): how many times each repeated Task exists. */
+  counts?: Record<string, number>;
+  /**
+   * Tasks on other Cards that link this Card (`Task.linkedCardId`). Written
+   * with the link; a reader confirms each entry against its Task.
+   */
+  linkedFrom?: TaskCardBackReference[];
   /** People named by the Card: speakers and guests on event Cards. */
   people?: string[];
   /** Main sponsor of a newsletter Card. */
@@ -438,6 +447,34 @@ export interface CardLinkDefinition {
   name: string;
 }
 
+/** A Task on another Card that links this Card. */
+export interface TaskCardBackReference {
+  taskId: string;
+  cardId: string;
+}
+
+/**
+ * A number entered on the Card (e.g. "Number of workshops") that decides how
+ * many times the Template's repeated Tasks (`TaskDefinition.repeat`) exist.
+ */
+export interface CountField {
+  id: string;
+  label: string;
+  default: number;
+  min: number;
+  max: number;
+}
+
+/** Repeat a Task once per unit of a count field, numbered 1..N. */
+export interface TaskRepeat {
+  countField: string;
+}
+
+/** The kind of Card a Task may link (`Task.linkedCardId`). */
+export interface TaskLinkCard {
+  templateType: string;
+}
+
 export interface ExternalSourceDocument {
   id: string;
   location: string;
@@ -465,6 +502,19 @@ export interface TaskDefinition {
    * tasks always instantiate.
    */
   optionalGroup?: string;
+  /**
+   * Repeat this Task per unit of a count field. Consecutive definitions with
+   * the same count field form one group repeated together; `{n}` in the
+   * description is the instance number (appended when absent).
+   */
+  repeat?: TaskRepeat;
+  /** The kind of Card a Task from this definition links. */
+  linkCard?: TaskLinkCard;
+  /**
+   * Runtime only, set by `expandTaskDefinitions`: the Task's place in the
+   * Card's checklist. Absent on authored definitions.
+   */
+  order?: number;
   taskKind?: 'procedure' | 'communication' | 'milestone' | 'milestone-plus-publication'
     | 'handoff' | 'waiting-input' | 'validation' | 'approval-gate' | 'checklist' | 'dynamic-slot';
   ownerRole?: string;
@@ -585,6 +635,8 @@ export interface Template {
   sourceDocIds?: string[];
   references?: Reference[];
   cardLinkDefinitions?: CardLinkDefinition[];
+  /** Numbers entered on the Card that drive repeated Tasks. */
+  countFields?: CountField[];
   triggerType?: string;
   triggerSchedule?: string;
   triggerLeadDays?: number;

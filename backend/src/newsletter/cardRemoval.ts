@@ -75,6 +75,7 @@ export async function planIssueCardRemoval(
   if (blocking.files.length) keep.push(plural(blocking.files.length, 'uploaded file'));
   if (blocking.sponsorDeliverables.length) keep.push(plural(blocking.sponsorDeliverables.length, 'sponsor deliverable') + ' pointing at the Card');
   if (blocking.newsletterIssues.length) keep.push('another newsletter issue pointing at the Card');
+  if (blocking.linkingTasks.length) keep.push(plural(blocking.linkingTasks.length, 'Task') + ' on another Card linking it');
 
   const moves: CardMove[] = [];
   const slots = structuredClone(issue.slots);

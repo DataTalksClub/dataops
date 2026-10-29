@@ -14,6 +14,7 @@ import {
   updateCardAdditive,
   listCardsPage,
 } from '../db/cards';
+import { attachLinkedCards, cardBackReferences } from '../cards/taskCardLinkView';
 import {
   CardDeletionBlockedError,
   CardDeletionConflictError,
@@ -163,7 +164,15 @@ async function handleSingleTemplateUpdate(
       return json(400, { error: 'previewOnly must be a boolean' });
     }
     if (body.previewOnly === true) {
-      return json(200, { preview: buildCardTemplateUpdatePlan(loaded.card, loaded.tasks, loaded.template, body.optionalGroups).preview });
+      try {
+        return json(200, {
+          preview: buildCardTemplateUpdatePlan(
+            loaded.card, loaded.tasks, loaded.template, body.optionalGroups, body.counts,
+          ).preview,
+        });
+      } catch (error) {
+        return updateError(error);
+      }
     }
     const previewToken = typeof body.previewToken === 'string' ? body.previewToken : '';
     if (!/^[a-f0-9]{64}$/.test(previewToken)) {
@@ -179,6 +188,7 @@ async function handleSingleTemplateUpdate(
       previewToken,
       actorId,
       body.optionalGroups,
+      body.counts,
     );
     return json(200, result);
   } catch (error) {
@@ -564,7 +574,9 @@ async function handleSingle(
     // not grant direct Card administration.
     const templateIdByType = await getTemplateIdByType(client);
     const tasks = await listTasksByCard(client, card.id);
-    return json(200, { card: await projectCard(new TeamDirectory(client), card, tasks, templateIdByType) });
+    const projected = await projectCard(new TeamDirectory(client), card, tasks, templateIdByType);
+    const linkedFrom = await cardBackReferences(client, card);
+    return json(200, { card: { ...projected, linkedFrom } });
   }
 
   if (method === 'PUT') {
@@ -600,6 +612,7 @@ async function handleSingle(
     const systemOwnedFields = [
       'status', 'taskCount', 'openTaskCount', 'completedAt', 'completedBy',
       'activeStageBeforeCompletion', 'auditEventRefs', 'selectedOptionalGroups',
+      'counts', 'linkedFrom',
     ];
     const suppliedSystemField = systemOwnedFields.find((field) => Object.hasOwn(body, field));
     if (suppliedSystemField) {
@@ -775,7 +788,7 @@ async function handleCardTasks(
   await directory.loadAll();
   const projected = await projectCard(directory, card, tasks);
   return json(200, {
-    tasks: await projectTasks(directory, await attachPrerequisites(client, tasks)),
+    tasks: await projectTasks(directory, await attachLinkedCards(client, await attachPrerequisites(client, tasks))),
     owner: projected.owner,
     taskAssignees: projected.taskAssignees,
   });

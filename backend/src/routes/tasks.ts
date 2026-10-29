@@ -35,6 +35,9 @@ import {
 import { getCard } from '../db/cards';
 import { listFilesByTask } from '../db/files';
 import { getTemplate } from '../db/templates';
+import { liveBackReferences, setTaskLinkedCard, TaskCardLinkConflictError } from '../db/taskCardLinks';
+import { parseRepeatInstanceRef } from '../templates/repeatedTasks';
+import { attachLinkedCards } from '../cards/taskCardLinkView';
 import { matchesRequiresFilter, parseResourceList } from '../resources/vocabulary';
 import type { RequiresFilter } from '../resources/vocabulary';
 import { matchesBrowserRequirementFilter, parseBrowserRequirementFilter } from '../browserRequirement';
@@ -207,7 +210,9 @@ function parseBody(event: LambdaEvent): Record<string, unknown> | null {
 }
 /** Project a Task with its resolved prerequisites and blocked state. */
 async function projectWithPrerequisites(client: DynamoDBDocumentClient, task: Task) {
-  const [withPrerequisites] = await attachSubjects(client, await attachPrerequisites(client, [task]));
+  const [withPrerequisites] = await attachLinkedCards(
+    client, await attachSubjects(client, await attachPrerequisites(client, [task])),
+  );
   return projectTask(new TeamDirectory(client), withPrerequisites);
 }
 
@@ -583,7 +588,9 @@ export async function handleTaskRoutes(
         ? (pageSlice as typeof withPrereqs)
         : await attachPrerequisites(client, pageSlice);
 
-      const projected = await projectTasks(directory, await attachSubjects(client, pageWithPrereqs));
+      const projected = await projectTasks(
+        directory, await attachLinkedCards(client, await attachSubjects(client, pageWithPrereqs)),
+      );
 
       // Frozen Template definitions and heavy audit collections are detail-only
       // provenance. Repeating them on every row in list responses can exceed Lambda's
@@ -739,6 +746,58 @@ export async function handleTaskRoutes(
         triggerKind: 'task-unskipped',
       });
       return jsonResponse(200, await projectWithPrerequisites(client, updated));
+    }
+
+    // Linking the Card that carries a Task out is context, not a lifecycle
+    // change, so it is allowed from any status.
+    if (taskAction.action === 'link-card') {
+      if (!Object.hasOwn(body, 'cardId') || (body.cardId !== null && !isNonEmptyString(body.cardId))) {
+        return jsonResponse(400, { error: 'cardId must be a Card id, or null to unlink' });
+      }
+      const targetCardId = body.cardId === null ? null : (body.cardId as string).trim();
+      if (!existing.cardId) {
+        return jsonResponse(400, { error: 'Only a Task on a Card can link another Card', code: 'task-without-card' });
+      }
+      if ((existing.linkedCardId || null) === targetCardId) {
+        return jsonResponse(200, await projectWithPrerequisites(client, existing));
+      }
+      if (targetCardId) {
+        if (targetCardId === existing.cardId) {
+          return jsonResponse(400, { error: 'A Task cannot link its own Card', code: 'link-own-card' });
+        }
+        const target = await getCard(client, targetCardId);
+        if (!target) return jsonResponse(404, { error: 'Linked Card not found', code: 'card_not_found' });
+        const sourceTemplate = existing.templateId ? await getTemplate(client, existing.templateId) : null;
+        const ref = parseRepeatInstanceRef(existing.templateTaskRef)?.refId ?? existing.templateTaskRef;
+        const wanted = sourceTemplate?.taskDefinitions?.find(({ refId }) => refId === ref)?.linkCard?.templateType;
+        if (wanted) {
+          const targetType = (await getTemplate(client, target.templateId))?.type;
+          if (targetType !== wanted) {
+            return jsonResponse(422, {
+              error: `This Task links a ${wanted} Card; ${target.title || target.id} is a ${targetType || 'different'} Card`,
+              code: 'linked-card-type',
+            });
+          }
+        }
+        const holders = (await liveBackReferences(client, target.id, target.linkedFrom))
+          .filter(({ taskId }) => taskId !== existing.id);
+        if (holders.length > 0) {
+          return jsonResponse(409, {
+            error: `Card is already linked by Task "${holders[0].task.description}"; unlink it there first`,
+            code: 'card-already-linked',
+            taskId: holders[0].taskId,
+          });
+        }
+      }
+      try {
+        const updated = await setTaskLinkedCard(client, existing, targetCardId);
+        return jsonResponse(200, await projectWithPrerequisites(client, updated));
+      } catch (error) {
+        if (error instanceof TaskCardLinkConflictError) {
+          return jsonResponse(409, { error: error.message, code: 'task-card-link-conflict' });
+        }
+        throw error;
+      }
     }
 
     // Notes append from any status, including skipped and done: context is

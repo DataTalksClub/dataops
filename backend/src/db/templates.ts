@@ -15,7 +15,8 @@ import { compact, type PlannedWrite } from './plannedWrite';
 import { createTask, listTasksByCard } from './tasks';
 import type { Card, Template, Task } from '../types';
 import { resolveTemplateConditionalValidation } from '../cards/conditionalRequired';
-import { templateLinkage, templateTaskProjection } from '../templates/cardTemplateProjection';
+import { selectedTaskDefinitions, templateLinkage, templateTaskProjection } from '../templates/cardTemplateProjection';
+import { cardCountValues } from '../templates/repeatedTasks';
 import { prerequisitesFirst, templateDependencyIssues } from '../templates/taskDependencyGraph';
 import { DEFINITION_FIELDS, TemplateDefinitionInvalidError, validateEffectiveDefinition } from '../templates/templateEdits';
 import { loadAssignmentPolicy } from './workspaceSettings';
@@ -823,19 +824,6 @@ async function listTemplates(client: DynamoDBDocumentClient): Promise<Template[]
 }
 
 /**
- * Keep only the task definitions a Card wants: ungrouped tasks always
- * instantiate, while grouped tasks need their group in the selection.
- */
-function selectTaskDefinitions(
-  definitions: Template['taskDefinitions'],
-  selectedGroups?: string[],
-): NonNullable<Template['taskDefinitions']> {
-  const all = definitions || [];
-  const selected = new Set(selectedGroups || []);
-  return all.filter((definition) => !definition.optionalGroup || selected.has(definition.optionalGroup));
-}
-
-/**
  * Task ids for a Card's definitions, known before any Task is written so a
  * dependent can name its prerequisites' ids. Invalid dependencies stop the
  * Card here instead of producing Tasks that could never complete.
@@ -868,12 +856,9 @@ async function instantiateTemplate(
   }
   const template = await resolveTemplateConditionalValidation(client, stored, anchorDate);
 
-  let groups = selectedGroups;
-  if (groups === undefined) {
-    const card = await getCard(client, cardId);
-    groups = card?.selectedOptionalGroups;
-  }
-  const taskDefinitions = selectTaskDefinitions(template.taskDefinitions, groups);
+  const card = await getCard(client, cardId);
+  const groups = selectedGroups ?? card?.selectedOptionalGroups;
+  const taskDefinitions = selectedTaskDefinitions(template, groups, cardCountValues(template, card?.counts));
   const existingTasks = await listTasksByCard(client, cardId);
   const existingRefs = new Set(
     existingTasks
@@ -895,7 +880,7 @@ async function instantiateTemplate(
       continue;
     }
 
-    const order = taskDefinitions.indexOf(def);
+    const order = def.order ?? taskDefinitions.indexOf(def);
     const taskData = {
       id: idsByRef.get(def.refId),
       ...templateTaskProjection(template, def, order, anchorDate, cardId, assignment, idsByRef),
@@ -923,10 +908,12 @@ async function createCardFromTemplate(
   anchorDate: string,
   selectedGroups?: string[],
   companions: (card: Card) => PlannedWrite[] = () => [],
+  counts?: Record<string, number>,
 ): Promise<{ card: Card; tasks: Task[] }> {
   const resolved = await resolveTemplateConditionalValidation(client, template, anchorDate);
-  const definitions = selectTaskDefinitions(resolved.taskDefinitions, selectedGroups);
-  Object.assign(cardData, templateLinkage(resolved, selectedGroups || []));
+  const cardCounts = cardCountValues(resolved, counts);
+  const definitions = selectedTaskDefinitions(resolved, selectedGroups, cardCounts);
+  Object.assign(cardData, templateLinkage(resolved, selectedGroups || [], cardCounts));
   const card = buildCard(cardData, {
     taskCount: definitions.length,
     openTaskCount: definitions.length,
@@ -934,13 +921,13 @@ async function createCardFromTemplate(
   const now = card.createdAt;
   const assignment = await loadAssignmentPolicy(client, definitions.map(({ assigneeId }) => assigneeId));
   const idsByRef = taskIdsByRef(definitions, () => crypto.randomUUID());
-  const tasks = definitions.map((definition, order) => compact({
+  const tasks = definitions.map((definition) => compact({
     id: idsByRef.get(definition.refId),
     version: 1,
     taskHistory: [],
     createdAt: now,
     updatedAt: now,
-    ...templateTaskProjection(resolved, definition, order, anchorDate, card.id, assignment, idsByRef),
+    ...templateTaskProjection(resolved, definition, definition.order!, anchorDate, card.id, assignment, idsByRef),
   }) as Task);
 
   const companionWrites = companions(card);

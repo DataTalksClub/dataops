@@ -18,6 +18,7 @@ import {
 import { parseCardTitle } from './cardTitleStructure';
 import { cardFieldTitleValues, renderCardTitle } from './cardTitlePattern';
 import { templateCardProjection } from '../templates/cardTemplateProjection';
+import { countValuesError } from '../templates/repeatedTasks';
 import { workAdminForbidden, type VerifiedActor } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
 import type { PlannedWrite } from '../db/plannedWrite';
@@ -175,6 +176,7 @@ export async function createCardFromInput(
   const systemOwnedFields = [
     'version', 'expectedVersion', 'status', 'taskCount', 'openTaskCount',
     'completedAt', 'completedBy', 'activeStageBeforeCompletion', 'auditEventRefs', 'selectedOptionalGroups',
+    'linkedFrom',
   ];
   const suppliedSystemField = systemOwnedFields.find((field) => Object.hasOwn(body, field));
   if (suppliedSystemField) {
@@ -306,6 +308,10 @@ export async function createCardFromInput(
     }
     selectedGroups = [...(body.optionalGroups as string[])];
   }
+  if (body.counts !== undefined) {
+    const countsError = countValuesError(template, body.counts);
+    if (countsError) return fail(400, { error: countsError, code: 'invalid-counts' });
+  }
   try {
     const { card, tasks } = await createCardFromTemplate(
       client,
@@ -314,6 +320,7 @@ export async function createCardFromInput(
       body.anchorDate as string,
       selectedGroups,
       options.companions,
+      body.counts as Record<string, number> | undefined,
     );
     return { ok: true, card, tasks, template };
   } catch (error) {

@@ -55,6 +55,8 @@ export interface CardTemplateUpdateAuditEvent {
   previewCounts: CardTemplateUpdatePreview['counts'];
   selectedOptionalGroups: string[];
   targetOptionalGroups: string[];
+  currentCounts: Record<string, number>;
+  targetCounts: Record<string, number>;
   result: 'applied';
   createdAt: string;
 }
@@ -166,6 +168,8 @@ function appliedCard(
     plan.targetCardSnapshot,
   );
   next.selectedOptionalGroups = [...plan.preview.targetOptionalGroups];
+  if (Object.keys(plan.preview.targetCounts).length > 0) next.counts = { ...plan.preview.targetCounts };
+  else delete next.counts;
   next.templateVersion = template.version;
   next.templateSourceRevision = template.sourceRevision;
   next.templateDefinitionSnapshot = structuredClone(plan.targetCardSnapshot);
@@ -269,14 +273,14 @@ function appliedExistingTask(
 
 function addedTask(
   update: PlannedTaskUpdate,
+  plan: CardTemplateUpdatePlan,
   template: Template,
   card: Card,
   now: string,
   assignment: AssignmentPolicy,
   idsByRef: ReadonlyMap<string, string>,
 ): Task {
-  const definitions = template.taskDefinitions || [];
-  const definition = definitions.find(({ refId }) => refId === update.taskRef);
+  const definition = plan.targetDefinitions.get(update.taskRef);
   const order = update.target?.templateTaskOrder;
   if (!definition || order === undefined || order < 0 || !card.anchorDate) {
     throw new CardTemplateUpdateConflictError();
@@ -304,10 +308,10 @@ function taskPut(task: Task, expectedVersion?: number) {
   };
 }
 
-function resultTasks(tasks: Task[], replacements: Map<string, Task>): Task[] {
+function resultTasks(tasks: Task[], replacements: Map<string, Task>, removed: ReadonlySet<string> = new Set()): Task[] {
   const existingIds = new Set(tasks.map(({ id }) => id));
   return [
-    ...tasks.map((task) => replacements.get(task.id) || task),
+    ...tasks.filter((task) => !removed.has(task.id)).map((task) => replacements.get(task.id) || task),
     ...[...replacements.values()].filter((task) => !existingIds.has(task.id)),
   ];
 }
@@ -317,24 +321,29 @@ function taskVersion(task: Task): number {
 }
 
 /** Tasks outside the rewrite that take part in a dependency edge after it. */
-function unrewrittenGraphTasks(tasks: Task[], replacements: Map<string, Task>): Task[] {
-  const after = resultTasks(tasks, replacements);
+function unrewrittenGraphTasks(tasks: Task[], replacements: Map<string, Task>, removed: ReadonlySet<string>): Task[] {
+  const after = resultTasks(tasks, replacements, removed);
   const inGraph = new Set<string>();
   for (const task of after) {
     if (!task.dependsOn?.length) continue;
     inGraph.add(task.id);
     for (const id of task.dependsOn) inGraph.add(id);
   }
-  return tasks.filter((task) => inGraph.has(task.id) && !replacements.has(task.id));
+  return tasks.filter((task) => inGraph.has(task.id) && !replacements.has(task.id) && !removed.has(task.id));
 }
 
 function replacementAggregateDelta(
   tasks: Task[],
   replacements: Map<string, Task>,
+  removed: ReadonlySet<string>,
 ): { taskCount: number; openTaskCount: number } {
   const existing = new Map(tasks.map((task) => [task.id, task]));
   let taskCount = 0;
   let openTaskCount = 0;
+  for (const taskId of removed) {
+    taskCount -= 1;
+    if (isOpenStatus(existing.get(taskId)!.status)) openTaskCount -= 1;
+  }
   for (const [taskId, after] of replacements) {
     const before = existing.get(taskId);
     if (!before) {
@@ -366,6 +375,11 @@ async function testTransaction(
       key = itemKey(entry.Put.Item as Dict);
       condition = entry.Put.ConditionExpression || '';
       expected = entry.Put.ExpressionAttributeValues?.[':expectedVersion'];
+    } else if (entry.Delete) {
+      tableName = entry.Delete.TableName!;
+      key = entry.Delete.Key as Dict;
+      condition = entry.Delete.ConditionExpression || '';
+      expected = entry.Delete.ExpressionAttributeValues?.[':expectedVersion'];
     } else if (entry.ConditionCheck) {
       tableName = entry.ConditionCheck.TableName!;
       key = entry.ConditionCheck.Key as Dict;
@@ -385,14 +399,19 @@ async function testTransaction(
         throw new CardTemplateUpdateConflictError();
       }
     }
-    if (entry.Put) snapshots.push({ tableName, key, item: current || null });
+    if (entry.Put || entry.Delete) snapshots.push({ tableName, key, item: current || null });
   }
 
   let applied = 0;
   try {
     for (const entry of transaction) {
-      if (!entry.Put) continue;
-      await client.send(new PutCommand({ TableName: entry.Put.TableName, Item: entry.Put.Item as Dict }));
+      if (entry.Delete) {
+        await client.send(new DeleteCommand({ TableName: entry.Delete.TableName, Key: entry.Delete.Key as Dict }));
+      } else if (entry.Put) {
+        await client.send(new PutCommand({ TableName: entry.Put.TableName, Item: entry.Put.Item as Dict }));
+      } else {
+        continue;
+      }
       applied += 1;
       if (Number(process.env.CARD_TEMPLATE_UPDATE_TEST_FAIL_AFTER || 0) === applied) {
         throw new Error('Injected Card Template update transaction failure');
@@ -426,6 +445,7 @@ export async function applyCardTemplateUpdate(
   previewToken: string,
   actorId: string,
   requestedGroups?: unknown,
+  requestedCounts?: unknown,
 ): Promise<AppliedCardTemplateUpdate> {
   // Conditional requiredness (`validation.requiredWhen`) resolves against the
   // Card's anchor date before the plan is built, so the preview an operator
@@ -434,7 +454,7 @@ export async function applyCardTemplateUpdate(
     template = await resolveTemplateConditionalValidation(client, template, card.anchorDate);
   }
   const priorAudit = await existingAudit(client, card.id, previewToken);
-  const plan = buildCardTemplateUpdatePlan(card, tasks, template, requestedGroups);
+  const plan = buildCardTemplateUpdatePlan(card, tasks, template, requestedGroups, requestedCounts);
   if (priorAudit) {
     return {
       preview: plan.preview,
@@ -469,6 +489,8 @@ export async function applyCardTemplateUpdate(
     previewCounts: structuredClone(plan.preview.counts),
     selectedOptionalGroups: [...plan.preview.selectedOptionalGroups],
     targetOptionalGroups: [...plan.preview.targetOptionalGroups],
+    currentCounts: { ...plan.preview.currentCounts },
+    targetCounts: { ...plan.preview.targetCounts },
     result: 'applied',
     createdAt: now,
   };
@@ -481,12 +503,14 @@ export async function applyCardTemplateUpdate(
     if (update.action === 'add') idsByRef.set(update.taskRef, deterministicTaskId(card.id, template.id, update.taskRef));
   }
   const replacements = new Map<string, Task>();
+  const removed = new Set(plan.taskUpdates.filter(({ action }) => action === 'remove').map(({ before }) => before!.id));
   const assignment = plan.taskUpdates.some(({ action }) => action === 'add')
     ? await loadAssignmentPolicy(client, (template.taskDefinitions || []).map(({ assigneeId }) => assigneeId))
     : null;
   for (const update of plan.taskUpdates) {
+    if (update.action === 'remove') continue;
     if (update.action === 'add') {
-      const task = addedTask(update, template, card, now, assignment!, idsByRef);
+      const task = addedTask(update, plan, template, card, now, assignment!, idsByRef);
       replacements.set(task.id, task);
       continue;
     }
@@ -496,7 +520,7 @@ export async function applyCardTemplateUpdate(
 
   let nextCard = appliedCard(card, template, plan, auditEvent, now);
   let lifecycleAudit: CardLifecycleAuditEvent | null = null;
-  const delta = replacementAggregateDelta(tasks, replacements);
+  const delta = replacementAggregateDelta(tasks, replacements, removed);
   if (delta.taskCount !== 0 || delta.openTaskCount !== 0) {
     const firstTaskId = replacements.keys().next().value as string | undefined;
     const lifecycle = applyCardAggregateDelta(
@@ -530,6 +554,16 @@ export async function applyCardTemplateUpdate(
     },
   ];
   for (const update of plan.taskUpdates) {
+    if (update.action === 'remove') {
+      transaction.push({
+        Delete: {
+          TableName: TABLE_TASKS,
+          Key: { PK: `TASK#${update.before!.id}`, SK: `TASK#${update.before!.id}` },
+          ...taskVersionCondition(update.before!.version),
+        },
+      });
+      continue;
+    }
     const taskId = update.action === 'add'
       ? deterministicTaskId(card.id, template.id, update.taskRef)
       : update.before!.id;
@@ -541,7 +575,7 @@ export async function applyCardTemplateUpdate(
   // The Card version guards every graph-affecting write; the version of each
   // Task on an edge that this update does not rewrite is checked as well, so
   // the whole affected graph is conditioned, not only the rewritten Tasks.
-  for (const task of unrewrittenGraphTasks(tasks, replacements)) {
+  for (const task of unrewrittenGraphTasks(tasks, replacements, removed)) {
     transaction.push({
       ConditionCheck: {
         TableName: TABLE_TASKS,
@@ -595,7 +629,7 @@ export async function applyCardTemplateUpdate(
   return {
     preview: plan.preview,
     card: nextCard,
-    tasks: resultTasks(tasks, replacements),
+    tasks: resultTasks(tasks, replacements, removed),
     auditEvent,
     applied: true,
     idempotent: false,
