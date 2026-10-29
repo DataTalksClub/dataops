@@ -1,3 +1,4 @@
+import * as cardDocuments from './commands/cardDocuments.mjs';
 import * as documents from './commands/documents.mjs';
 import * as tuition from "./commands/tuition.mjs";
 import { readFileSync } from "node:fs";
@@ -60,6 +61,7 @@ Agents use the same device login, labelled per host: dataops login --label "<age
  * with `run` takes no subcommand. Order here is the order in `--help`.
  */
 export const FAMILIES = {
+  "card-doc": { group: "Work", summary: cardDocuments.summary, help: cardDocuments.help, commands: cardDocuments.commands },
   doc: { group: "Work", summary: documents.summary, help: documents.help, commands: documents.commands },
   tasks: { group: "Work", summary: tasks.summary, help: tasks.help, commands: tasks.commands },
   cards: { group: "Work", summary: cards.summary, help: cards.help, commands: cards.commands },

@@ -1,3 +1,4 @@
+import { renderCardDocuments } from './card-documents.js';
 import { documentHref, opensInNewTab } from "../../core/links.js";
 import { afterText, blockedReason, blockingPrerequisites, prerequisiteStatusLabel } from "../../core/task-dependencies.js";
 import { taskTitleParts } from "../../core/task-display.js";
@@ -387,6 +388,7 @@ export function createCardPanel(context) {
       ),
     );
     main.append(meta);
+    main.append(renderCardDocuments({ card, request, workApiUrl }));
     main.append(renderCardNewsletterIssue({ request, workApiUrl, reload: reloadCardIntent }, card));
     const materialsAction = renderWebinarMaterialsAction({ request, workApiUrl, reload: reloadCardIntent }, card, state.workSnapshot.templates);
     if (materialsAction) main.append(materialsAction);

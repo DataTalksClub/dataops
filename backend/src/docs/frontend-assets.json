@@ -200,6 +200,7 @@
     "src/surfaces/work-detail/artifact-rows.js",
     "src/surfaces/work-detail/card-actions.js",
     "src/surfaces/work-detail/card-display.js",
+    "src/surfaces/work-detail/card-documents.js",
     "src/surfaces/work-detail/card-invites.js",
     "src/surfaces/work-detail/card-panel.js",
     "src/surfaces/work-detail/card-summary.js",
