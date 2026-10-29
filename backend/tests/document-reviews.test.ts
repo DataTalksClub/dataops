@@ -59,3 +59,25 @@ test('Unicode thread growth fails before DynamoDB item size limit', async () => 
   await assert.rejects(changeDocumentThread(client, 'unicode-doc', thread.id, staff, { version: 1, body: '界'.repeat(2000) }), /Thread is full/);
   assert.equal((await listDocumentThreads(client, 'unicode-doc'))[0].version, 1);
 });
+test('router validates reviewer bearer independently from staff sessions', async () => {
+  const { client } = await useTestDatabase();
+  const { createDocument } = await import('../src/db/documents');
+  const document = await createDocument(client, { taskId: 'router-task', title: 'Router doc', content: 'Review body', kind: 'note' });
+  const { token } = await createDocumentReviewer(client, document.id, 'Router reviewer');
+  const oldSkip = process.env.SKIP_AUTH;
+  const oldLocal = process.env.IS_LOCAL;
+  process.env.SKIP_AUTH = 'false'; process.env.IS_LOCAL = 'true';
+  try {
+    const { handler } = await import('../src/handler');
+    const call = (suffix: string, method = 'GET', reviewToken = token, body?: unknown) => handler({ httpMethod: method, path: `/api/documents/${document.id}${suffix}`, headers: { 'x-document-review-token': reviewToken, 'x-user-id': 'forged-staff' }, body: body === undefined ? null : JSON.stringify(body) }, {});
+    assert.equal((await call('/review')).statusCode, 200);
+    assert.equal((await call('/review', 'GET', 'bad')).statusCode, 401);
+    assert.equal((await call('')).statusCode, 401);
+    assert.equal((await call('', 'PUT', token, { title: 'Overwrite', content: 'No', version: 1 })).statusCode, 401);
+    assert.equal((await call('/reviewers', 'POST', token, { name: 'No' })).statusCode, 401);
+    assert.equal((await call('/comments', 'POST', token, { body: 'Router comment' })).statusCode, 201);
+  } finally {
+    if (oldSkip === undefined) delete process.env.SKIP_AUTH; else process.env.SKIP_AUTH = oldSkip;
+    if (oldLocal === undefined) delete process.env.IS_LOCAL; else process.env.IS_LOCAL = oldLocal;
+  }
+});
