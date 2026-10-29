@@ -67,6 +67,9 @@ export function createClient({ url, token, fetchImpl = fetch }) {
       }
       // A missing seam is a 404 with no JSON error body; a real 404 from the
       // API still carries one, so only the former falls through to /api.
+      if (response.ok && options.responseType === "bytes") {
+        return Buffer.from(await response.arrayBuffer());
+      }
       const text = await response.text();
       let parsed = null;
       try {
