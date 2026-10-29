@@ -24,3 +24,10 @@ test('document copy requires target task and lets server clone original text', a
   assert.deepEqual(calls[0].body, { taskId: 'target', from: 'source' });
   await assert.rejects(() => docs.create({ task: 'target', title: 'T', kind: 'note', file: '/unused', content: 'both' }, io), /--file or --content/);
 });
+
+test('document delete sends version in query rather than body', async () => {
+  const calls = fakePortal({ 'DELETE /api/documents/doc': { deleted: true } });
+  await docs.remove({ _: ['doc'], version: '2', json: true }, io);
+  assert.equal(calls[0].query.version, '2');
+  assert.equal(calls[0].body, undefined);
+});

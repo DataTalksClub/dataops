@@ -55,7 +55,7 @@ export async function remove(args, io) {
   const id = positional(args, 0, 'dataops doc delete <id> --version N');
   const version = Number(required(args, 'version', 'version'));
   if (!Number.isSafeInteger(version) || version < 1) throw new UsageError('--version must be a positive integer.');
-  const result = await apiFor(args).delete(`/api/documents/${enc(id)}`, { query: { version } });
+  const result = await apiFor(args).delete(`/api/documents/${enc(id)}`, undefined, { query: { version } });
   if (!args.json) io.print('Document deleted; guest review links are no longer usable.');
   return result;
 }
