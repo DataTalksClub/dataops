@@ -275,7 +275,7 @@ export function createSponsorCrmSurface(context) {
           .join("")}`;
       if (selectedId) form.elements.primaryContactId.value = selectedId;
     }
-    const { loadFollowups } = createFollowupsController({ surface, api, escapeHtml });
+    const { loadFollowups } = createFollowupsController({ surface, api });
 
     // E directory pages factory is constructed after the record modules
     // below: it receives them directly instead of lazy closures.

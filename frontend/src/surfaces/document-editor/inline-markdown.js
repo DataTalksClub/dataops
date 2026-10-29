@@ -7,6 +7,8 @@
 // element remembers the markers it came from, so reading the DOM back gives
 // the original markdown byte for byte until the user changes it.
 
+import { escapeHtml } from "../../core/html.js";
+
 /** Lines that make a block more than inline text (lists, headings, …). */
 const BLOCK_SYNTAX = /^\s*(?:[-*+]\s|\d+[.)]\s|#{1,6}\s|>|```|~~~|\||<!--|<\/?[a-z][^>]*>\s*$)/i;
 
@@ -141,14 +143,6 @@ export function tokensToMarkdown(tokens) {
     if (token.type === "link") return `[${tokensToMarkdown(token.children)}](${token.href})`;
     return `${token.marker}${tokensToMarkdown(token.children)}${token.marker}`;
   }).join("");
-}
-
-export function escapeHtml(text) {
-  return String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 function safeHref(href) {

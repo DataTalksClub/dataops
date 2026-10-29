@@ -9,6 +9,7 @@
     "src/core/collection-loader.js",
     "src/core/dates.js",
     "src/core/hovercard.js",
+    "src/core/html.js",
     "src/core/icons.js",
     "src/core/identity.js",
     "src/core/links.js",

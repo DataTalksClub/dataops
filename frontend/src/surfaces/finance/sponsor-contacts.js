@@ -1,19 +1,12 @@
 /** Contact editing never sends or queues a message. */
 
+import { escapeHtml } from "../../core/html.js";
+
 function normalizeEmails(value) {
   return String(value || "")
     .split(/[,\n]/)
     .map((part) => part.trim())
     .filter(Boolean);
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 /**

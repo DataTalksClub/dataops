@@ -6,7 +6,7 @@ export function sponsorOwnerOptions(teamMembers, selectedId, escapeHtml) {
     members.push({ id: selectedId, name: "Unavailable assignee", active: false });
   }
   return html`<option value="">Select an assignee</option>${members.map((member) => {
-    const id = escapeHtml(member.id).replaceAll('"', "&quot;");
+    const id = escapeHtml(member.id);
     const selected = member.id === selectedId ? " selected" : "";
     const disabled = member.active ? "" : " disabled";
     return html`<option value="${id}"${selected}${disabled}>${escapeHtml(member.name)}</option>`;

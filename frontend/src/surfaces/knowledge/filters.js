@@ -1,3 +1,5 @@
+import { escapeHtml } from "../../core/html.js";
+
 export function createKnowledgeFilters(context, services) {
   const {
     domainFilter,
@@ -149,10 +151,6 @@ export function createKnowledgeFilters(context, services) {
   }
 
   function setHighlightedText(el, text, query) {
-    const safe = String(text)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
     if (!query) {
       el.textContent = text;
       return;
@@ -162,8 +160,12 @@ export function createKnowledgeFilters(context, services) {
       el.textContent = text;
       return;
     }
+    // Match the raw text, then escape each piece: odd pieces are the matches.
     const re = new RegExp(`(${tokens.join("|")})`, "gi");
-    el.innerHTML = safe.replace(re, "<mark>$1</mark>");
+    el.innerHTML = String(text)
+      .split(re)
+      .map((part, index) => (index % 2 ? `<mark>${escapeHtml(part)}</mark>` : escapeHtml(part)))
+      .join("");
   }
 
   return {

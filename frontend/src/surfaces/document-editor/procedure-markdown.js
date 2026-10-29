@@ -100,16 +100,8 @@ export function createProcedureMarkdown(context, services) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
-  function escapeHtmlAttr(s) {
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/"/g, "&quot;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-  }
-
   return {
-    commitProcedure, escapeHtmlAttr, escapeRegex, focusProcedureItem, patchSectionInMarkdown,
+    commitProcedure, escapeRegex, focusProcedureItem, patchSectionInMarkdown,
     readProcedureModel, restoreProcedure, snapshotProcedure,
   };
 }

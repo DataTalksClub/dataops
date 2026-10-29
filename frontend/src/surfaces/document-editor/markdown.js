@@ -1,9 +1,10 @@
-export function createEditorMarkdown(context, services) {
+import { escapeHtml, unescapeHtml } from "../../core/html.js";
+
+export function createEditorMarkdown(context) {
   const {
-    documentState, escapeHtml, openDocument, resolveDocReference,
+    documentState, openDocument, resolveDocReference,
     resolveMarkdownDocLink, visibleDocUrl,
   } = context;
-  const { escapeHtmlAttr } = services;
 
   function resolveImageSrc(src) {
     if (!src) return "";
@@ -79,10 +80,7 @@ export function createEditorMarkdown(context, services) {
 
   function markdownToHtml(md) {
     if (!md) return "";
-    const escaped = md
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+    const escaped = escapeHtml(md);
     const lines = escaped.split("\n");
     const out = [];
     let i = 0;
@@ -186,35 +184,39 @@ export function createEditorMarkdown(context, services) {
     return trimmed.split("|").map((c) => c.trim());
   }
 
+  function docLinkMarkup(doc, labelHtml) {
+    const path = escapeHtml(doc.path);
+    return `<a href="${escapeHtml(visibleDocUrl(doc.path))}" data-doc-path="${path}" title="${path}">${labelHtml}</a>`;
+  }
+
+  // `text` is already escaped HTML: link targets are unescaped before they
+  // are resolved, and every value is escaped exactly once on the way out.
   function inlineMd(text) {
     let s = text;
     // Internal wiki links: [[doc-id]] or [[doc-id|Custom label]].
     s = s.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, rawRef, rawLabel) => {
-      const ref = String(rawRef || "").trim();
+      const ref = unescapeHtml(rawRef).trim();
       const doc = resolveDocReference(ref);
       if (!doc) {
-        const label = rawLabel || ref;
-        return `<span class="broken-doc-link" title="Missing doc: ${escapeHtmlAttr(ref)}">${escapeHtml(label)}</span>`;
+        return `<span class="broken-doc-link" title="Missing doc: ${escapeHtml(ref)}">${rawLabel || escapeHtml(ref)}</span>`;
       }
-      const label = rawLabel || doc.title || ref;
-      return `<a href="${visibleDocUrl(doc.path)}" data-doc-path="${escapeHtmlAttr(doc.path)}" title="${escapeHtmlAttr(doc.path)}">${escapeHtml(label)}</a>`;
+      return docLinkMarkup(doc, rawLabel || escapeHtml(doc.title || ref));
     });
     // Inline image
     s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) => {
-      const resolved = resolveImageSrc(src);
-      return `<img src="${resolved}" alt="${alt}" loading="lazy">`;
+      const resolved = resolveImageSrc(unescapeHtml(src));
+      return `<img src="${escapeHtml(resolved)}" alt="${alt}" loading="lazy">`;
     });
     // Link
-    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => {
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, rawHref) => {
+      const href = unescapeHtml(rawHref);
       const doc = resolveMarkdownDocLink(href);
-      if (doc) {
-        return `<a href="${visibleDocUrl(doc.path)}" data-doc-path="${escapeHtmlAttr(doc.path)}" title="${escapeHtmlAttr(doc.path)}">${escapeHtml(label)}</a>`;
-      }
+      if (doc) return docLinkMarkup(doc, label);
       const safe = resolveLocalAssetHref(href) || "#";
       const target = /^(https?:|mailto:)/i.test(href)
         ? ' target="_blank" rel="noopener"'
         : "";
-      return `<a href="${escapeHtmlAttr(safe)}"${target}>${label}</a>`;
+      return `<a href="${escapeHtml(safe)}"${target}>${label}</a>`;
     });
     // Bold then italic
     s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
@@ -227,10 +229,7 @@ export function createEditorMarkdown(context, services) {
   // Display HTML for an inline construct kept verbatim in an editable block
   // (a wiki link, an image, an escape): the same rendering the reader uses.
   function renderInlineAtom(raw) {
-    const escaped = String(raw || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+    const escaped = escapeHtml(raw);
     if (/^\\./.test(raw)) return escaped.slice(1);
     return inlineMd(escaped);
   }

@@ -1,3 +1,4 @@
+import { escapeHtml } from "../core/html.js";
 import { SELF_LOADING_VIEWS } from "../shell/startup-orchestration.js";
 
 export function createSurfaceBridge() {
@@ -331,13 +332,6 @@ export function createSurfaceComposition(context) {
       clearTimeoutImpl(timeout);
       timeout = setTimeoutImpl(() => callback(...args), delay);
     };
-  }
-
-  function escapeHtml(value) {
-    return String(value)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
   }
 
   return {

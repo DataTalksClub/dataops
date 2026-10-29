@@ -1,7 +1,7 @@
+import { escapeHtml } from "../../core/html.js";
 import { renderIcon } from "../../core/icons.js";
 import { opensInNewTab } from "../../core/links.js";
 import { taskTitleParts } from "../../core/task-display.js";
-import { escapeHtml } from "../document-editor/inline-markdown.js";
 import { attachSlotControls, issueSlotsMarkup, issueStatsSummaryMarkup } from "../planning-newsletter-slots.js";
 
 // The compact summary head of the Card detail modal: stage control, date and

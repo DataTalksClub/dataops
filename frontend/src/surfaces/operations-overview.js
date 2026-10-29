@@ -1,3 +1,4 @@
+import { escapeHtml as escape } from "../core/html.js";
 import { docsAvailabilityView } from "../core/operations-model.js";
 
 export function createPageHeader({
@@ -32,9 +33,6 @@ export function createPageHeader({
 export function renderPageHeaderMarkup({
   title, subtitle = "", actionsHtml = "", className = "", titleId = "",
 }) {
-  const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[character]);
   const classes = `dk-page-header${className ? ` ${className}` : ""}`;
   const id = titleId ? ` id="${escape(titleId)}"` : "";
   const description = subtitle ? `<p class="dk-page-header__subtitle">${escape(subtitle)}</p>` : "";

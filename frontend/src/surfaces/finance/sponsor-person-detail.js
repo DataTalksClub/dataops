@@ -1,3 +1,4 @@
+import { escapeHtml as escape } from "../../core/html.js";
 import { html } from "./shared.js";
 import {
   activityPanelMarkup,
@@ -38,12 +39,7 @@ export const PERSON_TABS = Object.freeze([
   ["activity", "Activity"],
 ]);
 
-function esc(context) {
-  return typeof context?.escapeHtml === "function" ? context.escapeHtml : String;
-}
-
 export function personHeaderMarkup(person, options = {}, context = {}) {
-  const escape = esc(context);
   const { companyName = null, returnLabel = "Back", canEdit = false } = options;
   const isDnc = Boolean(person?.doNotContact || (Array.isArray(person?.tags) && person.tags.includes("do-not-contact")));
   // The company link is a real canonical anchor so modified clicks and
@@ -87,7 +83,6 @@ export function personHeaderMarkup(person, options = {}, context = {}) {
 }
 
 export function personChannelsMarkup(person, context = {}) {
-  const escape = esc(context);
   const emails = Array.isArray(person?.emails) ? person.emails.filter(Boolean) : [];
   const rows = [
     ...emails.map((email) => ({ label: "Email", value: email, href: `mailto:${email}` })),
@@ -108,7 +103,6 @@ export function personChannelsMarkup(person, context = {}) {
 }
 
 export function personTabsMarkup(active, context = {}) {
-  const escape = esc(context);
   return html`<div class="dk-tabs" role="tablist" aria-label="Person record sections" data-person-tabs>
     ${PERSON_TABS.map(
       ([id, label]) => html`<button type="button" class="dk-tab" role="tab" id="person-tab-${id}"
@@ -119,7 +113,6 @@ export function personTabsMarkup(active, context = {}) {
 }
 
 export function personOverviewMarkup(person, context = {}) {
-  const escape = esc(context);
   return html`<div class="crm-record-overview">
     <section aria-label="Contact channels"><h3>Channels</h3>${personChannelsMarkup(person, context)}</section>
     ${person?.notes

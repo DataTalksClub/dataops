@@ -49,9 +49,7 @@ try {
     text.value = markdown;
     const editorView = document.createElement("div");
     editorView.dataset.mode = "rendered";
-    const markdownServices = createEditorMarkdown({ documentState: state, resolveMarkdownDocLink: () => null }, {
-      escapeHtmlAttr: value => String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;"),
-    });
+    const markdownServices = createEditorMarkdown({ documentState: state, resolveMarkdownDocLink: () => null });
     const surface = createTemplateViewSurface();
     window.renderTemplateFixture = (source) => surface.renderTemplateView(document.querySelector("#viewer"), source, markdownServices);
     window.renderTemplateFixture(markdown);

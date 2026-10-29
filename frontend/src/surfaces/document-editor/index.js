@@ -30,7 +30,6 @@ export function createDocumentEditor(context) {
     createSubpage: invoke("createSubpage"),
     draftKey: invoke("draftKey"),
     emptyNote: invoke("emptyNote"),
-    escapeHtmlAttr: invoke("escapeHtmlAttr"),
     escapeRegex: invoke("escapeRegex"),
     fileToBase64: invoke("fileToBase64"),
     listDraftPaths: invoke("listDraftPaths"),
@@ -75,7 +74,7 @@ export function createDocumentEditor(context) {
   Object.assign(api, createEditorReviewMedia(editorContext, services, editorState));
   Object.assign(api, createStructuredEditor(editorContext, services, editorState));
   Object.assign(api, createProcedureMarkdown(editorContext, services, editorState));
-  Object.assign(api, createEditorMarkdown(editorContext, services));
+  Object.assign(api, createEditorMarkdown(editorContext));
 
   return {
     canLeaveDocumentEditor: api.canLeaveDocumentEditor,

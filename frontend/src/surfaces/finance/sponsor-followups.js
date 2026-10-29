@@ -1,7 +1,7 @@
+import { escapeHtml as escape } from "../../core/html.js";
 import { html } from "./shared.js";
 
-export function followupsTablesMarkup({ items = [], records = [] } = {}, context = {}) {
-  const escape = typeof context.escapeHtml === "function" ? context.escapeHtml : (s) => s;
+export function followupsTablesMarkup({ items = [], records = [] } = {}) {
   const taskRows = items.map((item) => {
     const task = item.task;
     const subjectHref = item.subjectType === "sponsor-company"
@@ -76,7 +76,7 @@ export function followupsTablesMarkup({ items = [], records = [] } = {}, context
     </table>` : ""}`;
 }
 
-export function createFollowupsController({ surface, api, escapeHtml }) {
+export function createFollowupsController({ surface, api }) {
   async function loadFollowups(filter = "all") {
     const container = surface.querySelector("[data-crm-followups-content]");
     if (!container) return;
@@ -88,9 +88,9 @@ export function createFollowupsController({ surface, api, escapeHtml }) {
       const res = await api(`/followups?${query.toString()}`);
       const items = Array.isArray(res?.items) ? res.items : [];
       const records = Array.isArray(res?.records) ? res.records : [];
-      container.innerHTML = followupsTablesMarkup({ items, records }, { escapeHtml });
+      container.innerHTML = followupsTablesMarkup({ items, records });
     } catch (err) {
-      container.innerHTML = `<p class="crm-error">Failed to load follow-ups: ${escapeHtml(err.message)}</p>`;
+      container.innerHTML = `<p class="crm-error">Failed to load follow-ups: ${escape(err.message)}</p>`;
     }
   }
 

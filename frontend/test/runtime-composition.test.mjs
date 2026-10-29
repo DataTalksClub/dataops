@@ -399,8 +399,17 @@ describe("runtime surface composition", () => {
     );
     assert.equal(
       harness.composition.escapeHtml('<Task owner="Alexey">'),
-      "&lt;Task owner=\"Alexey\"&gt;",
+      "&lt;Task owner=&quot;Alexey&quot;&gt;",
     );
+  });
+
+  test("escapes quotes so a value cannot break out of an attribute", () => {
+    const harness = createSurfaceHarness();
+    const { escapeHtml } = harness.composition;
+    const id = 'x" autofocus onfocus="alert(1)';
+    const markup = `<option value="${escapeHtml(id)}">`;
+    assert.equal(markup, '<option value="x&quot; autofocus onfocus=&quot;alert(1)">');
+    assert.equal(`<a title='${escapeHtml("it's")}'>`, "<a title='it&#39;s'>");
   });
 
   test("debounces callbacks by replacing the prior timer", () => {

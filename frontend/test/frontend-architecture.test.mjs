@@ -35,6 +35,16 @@ describe("frontend architecture contract", () => {
     assert.deepEqual(oversized, [], "frontend modules may not exceed 1,000 lines");
   });
 
+  test("escapes HTML only through core/html.js", () => {
+    // Entity literals mark a hand-rolled escaper; the one escaper lives in core.
+    const entity = /["'`]&(?:amp|lt|gt|quot|#0*39);["'`]/;
+    const local = frontendJavaScriptFiles()
+      .filter((file) => file !== "src/core/html.js")
+      .filter((file) => entity.test(read(`frontend/${file}`)));
+
+    assert.deepEqual(local, [], "use escapeHtml from src/core/html.js");
+  });
+
   test("keeps production source readable", () => {
     const longLines = [];
     for (const file of frontendJavaScriptFiles()) {

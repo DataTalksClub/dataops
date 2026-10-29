@@ -1,3 +1,4 @@
+import { escapeHtml as escape } from "../../core/html.js";
 import { html } from "./shared.js";
 import {
   activityItemMarkup,
@@ -13,22 +14,16 @@ export const RECORD_TABS = Object.freeze([
   ["finance", "Finance"],
 ]);
 
-function esc(context) {
-  return typeof context?.escapeHtml === "function" ? context.escapeHtml : String;
-}
-
 function humanize(value, context) {
   if (typeof context?.humanizeOptionLabel === "function") return context.humanizeOptionLabel(value);
   return String(value ?? "").replaceAll("-", " ").replaceAll("_", " ");
 }
 
 export function loadingMarkup(label, context = {}) {
-  const escape = esc(context);
   return html`<div class="honest-state"><strong>${escape(label)}…</strong></div>`;
 }
 
 export function errorMarkup(message, context = {}) {
-  const escape = esc(context);
   return html`<div class="honest-state">
     <strong>Unavailable</strong>
     <p>${escape(message || "Could not load this section.")}</p>
@@ -37,7 +32,6 @@ export function errorMarkup(message, context = {}) {
 }
 
 export function emptyMarkup(title, hint, context = {}) {
-  const escape = esc(context);
   return html`<div class="honest-state">
     <strong>${escape(title)}</strong>
     ${hint ? html`<p>${escape(hint)}</p>` : ""}
@@ -45,7 +39,6 @@ export function emptyMarkup(title, hint, context = {}) {
 }
 
 export function archiveDisclosureMarkup(archive, context = {}) {
-  const escape = esc(context);
   const loaded = archive?.items?.length || 0;
   // No fake totals: show the server total only when provided, otherwise the
   // honestly loaded count.
@@ -103,7 +96,6 @@ export function archiveDisclosureMarkup(archive, context = {}) {
 }
 
 export function recordHeaderMarkup(company, options = {}, context = {}) {
-  const escape = esc(context);
   const { selectedDeal = null, returnLabel = "Back", canArchive = false, canEdit = false } = options;
   const primary = company?.primaryPerson;
   const showPrimary = primary !== undefined
@@ -160,7 +152,6 @@ export function deleteDealDialogMarkup() {
 }
 
 export function recordTabsMarkup(active, context = {}) {
-  const escape = esc(context);
   return html`<div class="dk-tabs" role="tablist" aria-label="Company record sections" data-record-tabs>
     ${RECORD_TABS.map(
       ([id, label]) => html`<button type="button" class="dk-tab" role="tab" id="record-tab-${id}"
@@ -181,7 +172,6 @@ export function recordShellMarkup(company, options = {}, context = {}) {
 }
 
 export function nextTaskMarkup(nextTask, emptyMessage, context = {}) {
-  const escape = esc(context);
   if (typeof emptyMessage !== "string") {
     emptyMessage = "No open task. Nothing is due for this company.";
   }
@@ -218,7 +208,6 @@ export function nextTaskMarkup(nextTask, emptyMessage, context = {}) {
 }
 
 export function overviewMarkup({ company, primaryPerson, nextTask, recent, relatedWork = [], activityError = "" }, context = {}) {
-  const escape = esc(context);
   // An absent primaryPerson (cheap D summary) renders a View People action,
   // never a no-contact claim.
   const person = primaryPerson !== undefined ? primaryPerson : company?.primaryPerson;
@@ -267,7 +256,6 @@ export function overviewMarkup({ company, primaryPerson, nextTask, recent, relat
 }
 
 export function peopleListMarkup({ items, total, canEdit }, context = {}) {
-  const escape = esc(context);
   if (!items?.length) {
     return emptyMarkup("No people yet", "Add the first person for this company.", context)
       + (canEdit ? html`<button type="button" data-add-person>Add person</button>` : "");
@@ -302,7 +290,6 @@ export function peopleListMarkup({ items, total, canEdit }, context = {}) {
 }
 
 export function dealsListMarkup({ deals, selectedDealId, canAdd = false }, context = {}) {
-  const escape = esc(context);
   const canEditDeal = typeof context?.onEditDeal === "function";
   const canDeleteDeal = typeof context?.onDeleteDeal === "function";
   if (!deals?.length) {

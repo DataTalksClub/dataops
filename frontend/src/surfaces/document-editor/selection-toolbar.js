@@ -3,6 +3,7 @@
 // the same from the keyboard. Formatting changes the DOM; the block reads it
 // back as markdown (see inline-markdown.js).
 
+import { escapeHtml } from "../../core/html.js";
 import { promptInline } from "./inline-prompt.js";
 
 const BUTTONS = [
@@ -86,7 +87,7 @@ export function applyFormat(editable, kind) {
       }
       if (saved.collapsed) {
         doc.execCommand("insertHTML", false,
-          `<a href="${url.replace(/"/g, "&quot;")}" data-href="${url.replace(/"/g, "&quot;")}">${url.replace(/</g, "&lt;")}</a>`);
+          `<a href="${escapeHtml(url)}" data-href="${escapeHtml(url)}">${escapeHtml(url)}</a>`);
         return;
       }
       doc.execCommand("createLink", false, url);

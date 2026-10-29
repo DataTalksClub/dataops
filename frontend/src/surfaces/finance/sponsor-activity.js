@@ -1,3 +1,4 @@
+import { escapeHtml as escape } from "../../core/html.js";
 import { html } from "./shared.js";
 
 /**
@@ -80,8 +81,7 @@ export function provenanceLabel(item) {
 }
 
 export function activityItemMarkup(item, context = {}) {
-  const { escapeHtml, humanizeOptionLabel } = context;
-  const escape = typeof escapeHtml === "function" ? escapeHtml : String;
+  const { humanizeOptionLabel } = context;
   const type = ACTIVITY_TYPES.includes(item?.source) ? item.source : "history";
   const label = ACTIVITY_TYPE_LABELS[type] || humanize(type, humanizeOptionLabel);
   const provenance = provenanceLabel(item);
@@ -105,8 +105,6 @@ export function activityItemMarkup(item, context = {}) {
 }
 
 export function activityListMarkup(items, context = {}) {
-  const { escapeHtml } = context;
-  const escape = typeof escapeHtml === "function" ? escapeHtml : String;
   if (!items?.length) {
     return html`<div class="honest-state">
       <strong>No activity yet</strong>
@@ -116,9 +114,7 @@ export function activityListMarkup(items, context = {}) {
   return html`<ul class="crm-activity-list">${items.map((item) => activityItemMarkup(item, context)).join("")}</ul>`;
 }
 
-export function relatedWorkMarkup(items, context = {}) {
-  const { escapeHtml } = context;
-  const escape = typeof escapeHtml === "function" ? escapeHtml : String;
+export function relatedWorkMarkup(items) {
   if (!items?.length) return "";
   return html`<section aria-label="Related open work">
     <h4>Related open work</h4>
@@ -288,7 +284,7 @@ function defaultKey() {
  * and related-work task buttons. All callbacks optional except rendering.
  */
 export function wireActivityPanel(root, loader, context = {}) {
-  const { escapeHtml, humanizeOptionLabel, safe, openTaskPanel, generateKey } = context;
+  const { humanizeOptionLabel, safe, openTaskPanel, generateKey } = context;
   const fail = typeof safe === "function" ? safe : async (action) => action();
   const list = root.querySelector("[data-activity-list]");
   const pager = root.querySelector("[data-activity-pager]");
@@ -306,14 +302,14 @@ export function wireActivityPanel(root, loader, context = {}) {
     } else if (state.status === "error") {
       list.innerHTML = html`<div class="honest-state">
         <strong>Activity unavailable</strong>
-        <p>${(typeof escapeHtml === "function" ? escapeHtml : String)(state.error)}</p>
+        <p>${escape(state.error)}</p>
         <button type="button" data-activity-retry>Retry</button>
       </div>`;
     } else {
-      list.innerHTML = activityListMarkup(state.items, { escapeHtml, humanizeOptionLabel });
+      list.innerHTML = activityListMarkup(state.items, { humanizeOptionLabel });
     }
     if (related) {
-      related.innerHTML = relatedWorkMarkup(state.relatedWork, { escapeHtml });
+      related.innerHTML = relatedWorkMarkup(state.relatedWork);
     }
     if (pager) {
       if (loader.state.status === "loading-more") {
