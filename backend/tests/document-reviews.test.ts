@@ -51,3 +51,11 @@ test('review API allows document read/comments but never reviewer management; de
   assert.equal(isAnonymousDocumentReviewRequest('PUT', '/api/documents/api-doc'), false);
   assert.equal(isAnonymousDocumentReviewRequest('POST', '/api/documents/api-doc/reviewers'), false);
 });
+test('Unicode thread growth fails before DynamoDB item size limit', async () => {
+  const { client } = await useTestDatabase();
+  const thread = await createDocumentThread(client, 'unicode-doc', staff, 'Start');
+  thread.posts = Array.from({ length: 60 }, (_, n) => ({ id: String(n), author: staff, body: '界'.repeat(1600), createdAt: 'today' }));
+  await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { PK: 'DOCUMENT_REVIEW#unicode-doc', SK: `THREAD#${thread.id}`, ...thread } }));
+  await assert.rejects(changeDocumentThread(client, 'unicode-doc', thread.id, staff, { version: 1, body: '界'.repeat(2000) }), /Thread is full/);
+  assert.equal((await listDocumentThreads(client, 'unicode-doc'))[0].version, 1);
+});

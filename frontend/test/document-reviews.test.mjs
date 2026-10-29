@@ -1,0 +1,31 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { FakeDocument } from "./support/fake-dom.mjs";
+import { createDocumentReviewPanel } from "../src/surfaces/document-reviews.js";
+const tick = () => new Promise(resolve => setImmediate(resolve));
+test("reviewer panel renders untrusted text and sends versioned replies with scoped token", async () => {
+  const calls = [];
+  const doc = new FakeDocument();
+  const thread = { id: "thread", version: 2, resolved: false, quote: "<img src=x>", posts: [{ author: { name: "Guest" }, body: "<script>bad()</script>", createdAt: "today" }] };
+  const root = createDocumentReviewPanel({ documentRef: doc, documentId: "doc", reviewToken: "secret", staff: false, request: async (path, options) => { calls.push({path, options}); return { threads: [thread] }; } });
+  await tick();
+  assert.equal(root.querySelectorAll("script").length, 0);
+  assert.equal(root.querySelector("blockquote").textContent, "<img src=x>");
+  assert.equal(root.querySelector('[aria-label="Reviewer name"]'), null);
+  const reply = root.querySelector("article form");
+  reply.querySelector("textarea").value = "Checked";
+  await reply.dispatch("submit");
+  await tick();
+  const sent = calls.find(call => call.path.endsWith("/reply"));
+  assert.equal(sent.options.headers["x-document-review-token"], "secret");
+  assert.deepEqual(JSON.parse(sent.options.body), { body: "Checked", version: 2 });
+});
+test("failed submit preserves draft and displays the server error", async () => {
+  const doc = new FakeDocument();
+  const root = createDocumentReviewPanel({ documentRef: doc, documentId: "doc", staff: false, request: async (_path, options) => { if (options.method === "POST") throw new Error("Review link revoked"); return { threads: [] }; } });
+  await tick();
+  const form = root.querySelector("form"); const input = form.querySelector("textarea"); input.value = "Draft";
+  await form.dispatch("submit"); await tick();
+  assert.equal(input.value, "Draft");
+  assert.equal(root.querySelector('[role="status"]').textContent, "Review link revoked");
+});

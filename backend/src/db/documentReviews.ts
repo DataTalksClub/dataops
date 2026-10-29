@@ -55,7 +55,8 @@ export async function verifyDocumentReviewer(client: DynamoDBDocumentClient, doc
   const { Item } = await client.send(new GetCommand({ TableName: TABLE_ARTIFACTS,
     Key: { PK: partition(documentId), SK: `REVIEWER#${token.split('.')[0]}` }, ConsistentRead: true }));
   if (!Item || typeof Item.tokenHash !== 'string' || Item.tokenHash.length !== 64) return null;
-  if (!timingSafeEqual(hash(token), Buffer.from(Item.tokenHash, 'hex')) || Date.parse(Item.expiresAt) <= Date.now()) return null;
+  const expires = Date.parse(Item.expiresAt);
+  if (!timingSafeEqual(hash(token), Buffer.from(Item.tokenHash, 'hex')) || !Number.isFinite(expires) || expires <= Date.now()) return null;
   return { id: Item.id, name: Item.name, kind: 'reviewer' };
 }
 export const listDocumentThreads = (client: DynamoDBDocumentClient, id: string) => list<ReviewThread>(client, id, 'THREAD#');
@@ -83,6 +84,7 @@ export async function changeDocumentThread(client: DynamoDBDocumentClient, docum
   } else throw new DocumentReviewError('Reply body or resolved status is required');
   thread.updatedAt = new Date().toISOString();
   thread.version += 1;
+  if (Buffer.byteLength(JSON.stringify(thread), 'utf8') > 300000) throw new DocumentReviewError('Thread is full; start a new thread');
   try {
     await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { ...Key, ...thread }, ConditionExpression: '#version = :version', ExpressionAttributeNames: { '#version': 'version' }, ExpressionAttributeValues: { ':version': change.version } }));
   } catch (error) {

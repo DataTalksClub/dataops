@@ -22,6 +22,7 @@ import { userDisplayNames } from '../identity/directory';
 import { authErrorPage, browserAuthConfigured, signInRefusal, browserUser, handleCallback, logout, startLogin, unauthenticatedApi } from '../auth/browserAuth';
 import { RUNTIME_ROOT } from '../runtimePaths';
 import type { LambdaEvent, LambdaResponse } from '../types';
+import { isAnonymousDocumentReviewAsset, isAnonymousDocumentReviewRequest } from '../documents/reviews';
 import { isAnonymousDeviceRequest } from '../routes/cliAuth';
 import { isAnonymousSponsorDocAsset, isAnonymousSponsorDocRequest } from '../routes/sponsorDocs';
 import {
@@ -164,6 +165,7 @@ function serveIndex(entry = 'index.html'): LambdaResponse {
 function serveFrontend(event: LambdaEvent, method: string, path: string): LambdaResponse | null {
   if (method !== 'GET') return null;
 
+  if (/^\/document-review\/[^/]+\/?$/.test(path)) return serveIndex('src/document-review.html');
   if (path === '/device' || path === '/device/sessions') return serveIndex('src/device.html');
   if (/^\/(sponsor-docs|podcast-docs|guest-docs|webinar-docs|workshop-docs)\/[^/]+\/?$/.test(path)) return serveIndex('src/sponsor-doc.html');
   if (/^\/newsletter-issues\/[^/]+\/preview\/?$/.test(path)) return serveIndex('src/newsletter-preview.html');
@@ -317,11 +319,11 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
       const returnTo = code ? `/device?code=${encodeURIComponent(code)}` : '/device';
       return { response: redirectToLogin(returnTo), authorized: false };
     }
-    if (isAnonymousSponsorDocAsset(method, path) || isAnonymousNewsletterPreviewAsset(method, path)) {
+    if (isAnonymousDocumentReviewAsset(method, path) || isAnonymousSponsorDocAsset(method, path) || isAnonymousNewsletterPreviewAsset(method, path)) {
       const fe = serveFrontend(event, method, path);
       if (fe) return { response: fe, authorized: false };
     }
-    if (isAnonymousSponsorDocRequest(method, path) || isAnonymousNewsletterPreviewRequest(method, path)) {
+    if (isAnonymousDocumentReviewRequest(method, path) || isAnonymousSponsorDocRequest(method, path) || isAnonymousNewsletterPreviewRequest(method, path)) {
       return { authorized: false };
     }
     // Existing non-browser bearer clients continue through the router's own

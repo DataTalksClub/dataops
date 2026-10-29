@@ -53,6 +53,9 @@ import { handleInvoiceReader } from './auth/invoiceReader';
 import { handleKnowledgePublisher } from './auth/knowledgePublisher';
 import { handleCliAuthRoutes, isAnonymousDeviceRequest } from './routes/cliAuth';
 import { handleSponsorDocRoutes, isAnonymousSponsorDocRequest } from './routes/sponsorDocs';
+import { getDocument } from './db/documents';
+import { handleDocumentRoutes } from './routes/documents';
+import { handleDocumentReviewRoutes, isAnonymousDocumentReviewRequest } from './documents/reviews';
 import { isAnonymousNewsletterPreviewRequest } from './newsletter/markdownPreview';
 import type { LambdaEvent, LambdaResponse } from './types';
 import { recordRequestError } from './requestErrorLog';
@@ -67,6 +70,7 @@ const AUTH_EXEMPT_PATHS = new Set([
 ]);
 
 function isAuthExempt(method: string, path: string): boolean {
+  if (isAnonymousDocumentReviewRequest(method, path)) return true;
   if (isAnonymousDeviceRequest(method, path)) return true;
   if (isAnonymousSponsorDocRequest(method, path)) return true;
   if (isAnonymousNewsletterPreviewRequest(method, path)) return true;
@@ -364,6 +368,13 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     if (reqPath.startsWith('/api/files')) {
       const result = await handleFileRoutes(event);
       if (result) return result;
+    }
+
+    if (reqPath.startsWith('/api/documents')) {
+      const review = await handleDocumentReviewRoutes(event, client, id => getDocument(client, id));
+      if (review) return review;
+      const document = await handleDocumentRoutes(event, client);
+      if (document) return document;
     }
 
     // ── Sponsor content document routes ────────────────────────────
