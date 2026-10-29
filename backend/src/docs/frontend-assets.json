@@ -206,6 +206,7 @@
     "src/surfaces/work-detail/task-browser.js",
     "src/surfaces/work-detail/task-completion.js",
     "src/surfaces/work-detail/task-evidence.js",
+    "src/surfaces/work-detail/task-linked-card.js",
     "src/surfaces/work-detail/task-overview.js",
     "src/surfaces/work-detail/task-panel.js",
     "src/surfaces/work-detail/task-prerequisites.js",
