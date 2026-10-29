@@ -203,16 +203,17 @@ async function inferTemplateForCard(
 async function relinkCardToDoc(
   client: DynamoDBDocumentClient,
   event: LambdaEvent,
-  before: SponsorDoc,
   after: SponsorDoc,
 ): Promise<void> {
   const card = await getCardConsistent(client, after.cardId);
   if (!card || !Array.isArray(card.cardLinks)) return;
-  const oldSuffix = `${sponsorDocPathForTemplate(before.template)}/${encodeURIComponent(before.id)}`;
+  const docSuffixes = ['/sponsor-docs', '/podcast-docs', '/webinar-docs', '/workshop-docs']
+    .map((prefix) => `${prefix}/${encodeURIComponent(after.id)}`);
   const newUrl = `${sponsorDocPortalBaseUrl(event)}${sponsorDocPathForTemplate(after.template)}/${encodeURIComponent(after.id)}`;
   let changed = false;
   const nextLinks = card.cardLinks.map((item) => {
-    if (!String(item.url || '').endsWith(oldSuffix)) return item;
+    if (!docSuffixes.some((suffix) => String(item.url || '').endsWith(suffix))) return item;
+    if (item.name === after.linkType && item.url === newUrl) return item;
     changed = true;
     return { ...item, name: after.linkType, url: newUrl };
   });
@@ -819,8 +820,10 @@ export async function handleSponsorDocRoutes(
             actorUserId: access.staffActorId || null,
             actorName: access.staffActorName || 'DataOps Staff',
           });
-          if (updated && updated.template !== loaded.doc.template) {
-            await relinkCardToDoc(client, event, loaded.doc, updated);
+          // Repeat explicit type-switch requests also repair a link left behind
+          // if the previous request saved the doc but failed its Card update.
+          if (updated && body.template !== undefined) {
+            await relinkCardToDoc(client, event, updated);
           }
           const accessCode = decryptSponsorDocAccessCode(docId, loaded.accessCodeCiphertext);
           return json(200, {

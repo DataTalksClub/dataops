@@ -8,7 +8,7 @@ import { createCard } from '../src/db/cards';
 import { createPodcastEpisode } from '../src/db/podcastEpisodes';
 import { createUser } from '../src/db/users';
 import { createSession } from '../src/db/sessions';
-import { getSponsorDoc } from '../src/db/sponsorDocs';
+import { getSponsorDoc, updateSponsorDoc } from '../src/db/sponsorDocs';
 import { templateLink } from './helpers/cardTemplate';
 
 describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
@@ -564,6 +564,19 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     const lossy = await staffReq('PUT', `/api/sponsor-docs/${doc.id}`, { template: 'podcast' });
     assert.equal(lossy.statusCode, 422, lossy.body);
     assert.equal((await getSponsorDoc(client, doc.id))?.template, 'workshop');
+  });
+
+  it('repairs a stale Card link when retrying an already persisted type switch', async () => {
+    const card = await createCard(client, { ...templateLink(), title: '[Webinar] Retry switch' });
+    const { doc } = JSON.parse((await staffReq('POST', '/api/sponsor-docs', { cardId: card.id })).body);
+    // Reproduce interruption between the document save and the Card relink.
+    await updateSponsorDoc(client, doc.id, { template: 'workshop', actorKind: 'staff' });
+    const response = await staffReq('PUT', `/api/sponsor-docs/${doc.id}`, { template: 'workshop' });
+    assert.equal(response.statusCode, 200, response.body);
+    const next = JSON.parse(response.body).doc;
+    const reloaded = JSON.parse((await staffReq('GET', `/api/cards/${card.id}`)).body).card;
+    assert.ok(reloaded.cardLinks.some((link: { name: string; url: string }) => link.name === 'Workshop document' && link.url === next.docUrl));
+    assert.ok(!reloaded.cardLinks.some((link: { url: string }) => link.url.includes('/webinar-docs/')));
   });
 
   it('uses the card kind when its description mentions another event format', async () => {
