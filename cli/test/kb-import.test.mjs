@@ -18,8 +18,8 @@ test("literal export retains mentions, angle brackets, CRLF normalization and em
   const bytes = Buffer.from("\uFEFF<@NAME> & <TITLE>\r\n```\r\nhello 😊");
   const content = importGoogleDoc({ ...options, bytes });
   assert.ok(content.includes("````text\n<@NAME> & <TITLE>\n```\nhello 😊\n````"));
-  assert.ok(content.includes(`source_sha256: ${createHash("sha256").update(bytes).digest("hex")}`));
-  assert.ok(content.includes('source_url: "https://docs.google.com/document/d/source-id/edit"'));
+  assert.ok(content.includes(`export SHA256 ${createHash("sha256").update(bytes).digest("hex")}`));
+  assert.ok(content.includes('source: "Google Docs https://docs.google.com/document/d/source-id/edit;'));
   assert.ok(content.includes('id: "template.article"'));
 });
 

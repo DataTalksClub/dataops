@@ -34,5 +34,6 @@ export function importGoogleDoc({ source, id, title, type = "reference", format 
       return `| \`${token}\` | Replace with the ${label}. | Your ${label} |`;
     }).join("\n")}\n`;
   }
-  return `---\nid: ${JSON.stringify(id)}\ntitle: ${JSON.stringify(title.trim())}\ndoc_type: ${type}\nsource_google_doc_id: ${JSON.stringify(match[1])}\nsource_url: ${JSON.stringify(`https://docs.google.com/document/d/${match[1]}/edit`)}\nsource_sha256: ${createHash("sha256").update(bytes).digest("hex")}\n---\n\n# ${title.trim()}\n\n${content}${content.endsWith("\n") ? "" : "\n"}`;
+  const provenance = `Google Docs https://docs.google.com/document/d/${match[1]}/edit; export SHA256 ${createHash("sha256").update(bytes).digest("hex")}`;
+  return `---\nid: ${JSON.stringify(id)}\ntitle: ${JSON.stringify(title.trim())}\ndoc_type: ${type}\nsource: ${JSON.stringify(provenance)}\n---\n\n# ${title.trim()}\n\n${content}${content.endsWith("\n") ? "" : "\n"}`;
 }
