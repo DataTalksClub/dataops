@@ -54,6 +54,7 @@ import { handleKnowledgePublisher } from './auth/knowledgePublisher';
 import { handleCliAuthRoutes, isAnonymousDeviceRequest } from './routes/cliAuth';
 import { handleSponsorDocRoutes, isAnonymousSponsorDocRequest } from './routes/sponsorDocs';
 import { getDocument } from './db/documents';
+import { handleCardDocumentRoutes } from './routes/cardDocuments';
 import { handleDocumentRoutes } from './routes/documents';
 import { handleDocumentReviewRoutes, isAnonymousDocumentReviewRequest } from './documents/reviews';
 import { isAnonymousNewsletterPreviewRequest } from './newsletter/markdownPreview';
@@ -367,6 +368,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath.startsWith('/api/files')) {
       const result = await handleFileRoutes(event);
+      if (result) return result;
+    }
+
+    if (reqPath.startsWith('/api/card-documents')) {
+      const result = await handleCardDocumentRoutes(event, client);
       if (result) return result;
     }
 
