@@ -60,11 +60,27 @@ export function holdGuestAttendees(guestRef?: string): string[] {
   return [...new Set(emails)].filter((email) => !deny.includes(email));
 }
 
+const DOCUMENT_LABELS: Record<string, string> = {
+  podcast: 'Podcast document',
+  webinar: 'Webinar document',
+  workshop: 'Workshop document',
+};
+
+/**
+ * The guest document label follows the event type: the Card's Template
+ * type when the invite belongs to a Card, else the type named in a Card-less
+ * hold title. Anything else reads as a neutral "Event document".
+ */
+export function holdDocumentLabel(eventType?: string, title = ''): string {
+  const type = eventType || /\b(podcast|webinar|workshop)\b/i.exec(title)?.[1].toLowerCase();
+  return DOCUMENT_LABELS[type || ''] || 'Event document';
+}
+
 /** Only guest-facing meeting information belongs in Google descriptions. */
-export function confirmedHoldDescription(documentUrl?: string, title = ''): string {
+export function confirmedHoldDescription(documentUrl?: string, title = '', eventType?: string): string {
   documentUrl = parseHoldDocumentUrl(documentUrl);
   return `Zoom link: ${HOLD_ZOOM_LOCATION}` + (documentUrl
-    ? `\n\n${/workshop/i.test(title) ? 'Outline document' : 'Podcast document'}: ${documentUrl}` : '');
+    ? `\n\n${holdDocumentLabel(eventType, title)}: ${documentUrl}` : '');
 }
 
 /** Slot start − HOLD_INVITE_LEAD_MINUTES: recording 12:30 → invite 12:25. */
@@ -75,6 +91,7 @@ export function inviteStartIso(slotStartIso: string): string {
 /** The confirmed mirror IS the guest invite: Zoom + attendees, start −5 min. */
 export function confirmedHoldInvite(
   hold: Pick<CalendarHold, 'id' | 'title' | 'guestRef' | 'startIso' | 'endIso' | 'documentUrl'>,
+  eventType?: string,
 ): {
   summary: string;
   eventKey: string;
@@ -88,7 +105,7 @@ export function confirmedHoldInvite(
   return {
     eventKey: hold.id,
     summary: confirmedTitle(hold.title),
-    description: confirmedHoldDescription(hold.documentUrl, hold.title),
+    description: confirmedHoldDescription(hold.documentUrl, hold.title, eventType),
     location: HOLD_ZOOM_LOCATION,
     attendees: holdGuestAttendees(hold.guestRef),
     startIso: inviteStartIso(hold.startIso),

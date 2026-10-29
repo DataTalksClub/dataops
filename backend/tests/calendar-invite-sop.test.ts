@@ -1,7 +1,7 @@
 import { after, before, afterEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { TABLE_CARDS } from '../src/db/tableNames';
+import { TABLE_CARDS, TABLE_TEMPLATES } from '../src/db/tableNames';
 import { handler } from '../src/handler';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
@@ -10,8 +10,9 @@ import { saveCalendarOverlaySettings } from '../src/db/calendar';
 import { setCalendarHoldGoogleDepsForTests } from '../src/routes/calendarHolds';
 import { setDapierBrokerClientsForTests, DEFAULT_HOLD_GOOGLE_CALENDARS } from '../src/calendar/dapierBroker';
 import { HOLD_ORGANIZER } from '../src/calendar/holdGoogleSync';
-import { HOLD_REQUIRED_ATTENDEES, HOLD_ZOOM_LOCATION, confirmedTitle } from '../src/calendar/holds';
-import { templateLink } from './helpers/cardTemplate';
+import { HOLD_REQUIRED_ATTENDEES, HOLD_ZOOM_LOCATION, confirmedTitle, holdDocumentLabel } from '../src/calendar/holds';
+import type { Template } from '../src/types';
+import { EMPTY_TEMPLATE, templateLink } from './helpers/cardTemplate';
 import { holdGoogleProvider } from './helpers/hold-google';
 
 async function invoke(method: string, path: string, body?: unknown) {
@@ -119,7 +120,7 @@ describe('calendar invite SOP contract', () => {
     assert.equal(google.calls.filter((c) => c.method === 'POST' && c.url.pathname.endsWith('/import')).length, 3);
     assert.equal(google.calls.filter((c) => c.method === 'PATCH' && c.url.searchParams.get('sendUpdates') === 'all').length, 1);
     const organizer = [...google.events.get(HOLD_ORGANIZER)!.values()][0];
-    assert.match(organizer.description, /Outline document:/);
+    assert.match(organizer.description, /Workshop document:/);
     assert.equal(Date.parse(organizer.end.dateTime) - Date.parse(organizer.start.dateTime), 95 * 60000);
   });
 
@@ -174,6 +175,35 @@ describe('calendar invite SOP contract', () => {
     assert.match(organizer.description, /Podcast document: https:\/\/example.com\/guest-document/);
     assert.doesNotMatch(organizer.description, /research/);
     assert.equal(result.hold.guestRef, input.guestRef);
+  });
+
+  it('labels a Card invite by its Template type and links the Card DataOps doc over a supplied Google Doc', async () => {
+    const workshop = { ...EMPTY_TEMPLATE, id: 'synthetic-workshop-template', type: 'workshop', name: 'Workshop' } as Template;
+    await client.send(new PutCommand({ TableName: TABLE_TEMPLATES, Item: { PK: `TEMPLATE#${workshop.id}`, SK: `TEMPLATE#${workshop.id}`, ...workshop } }));
+    const dataopsDoc = 'https://ops.dtcdev.click/webinar-docs/sdoc-synthetic';
+    await client.send(new PutCommand({ TableName: TABLE_CARDS, Item: {
+      PK: 'CARD#workshop-invite', SK: 'CARD#workshop-invite', id: 'workshop-invite', title: 'Build a Media Agent',
+      ...templateLink(workshop), version: 1, status: 'active', stage: 'preparation', taskCount: 0, openTaskCount: 0,
+      cardLinks: [{ name: 'Speaker materials', url: dataopsDoc }],
+    } }));
+    const { hold } = await invoke('POST', '/api/calendar-holds', {
+      ...input, title: 'Build a Media Agent', duration: 90, cardId: 'workshop-invite',
+      documentUrl: 'https://docs.google.com/document/d/old-doc/edit',
+    });
+    const google = holdGoogleProvider();
+    setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
+    const result = await invoke('POST', `/api/calendar-holds/${hold.id}/confirm`);
+    assert.equal(result.status, 200, JSON.stringify(result));
+    for (const store of google.events.values()) for (const event of store.values()) {
+      assert.equal(event.description, `Zoom link: ${HOLD_ZOOM_LOCATION}\n\nWorkshop document: ${dataopsDoc}`);
+    }
+  });
+
+  it('falls back to a neutral label for untyped events', () => {
+    assert.equal(holdDocumentLabel(undefined, 'Office hours'), 'Event document');
+    assert.equal(holdDocumentLabel('webinar', 'Guest at DataTalks.Club Podcast'), 'Webinar document');
+    assert.equal(holdDocumentLabel(undefined, 'DataTalks.Club Webinar'), 'Webinar document');
+    assert.equal(holdDocumentLabel('course'), 'Event document');
   });
 
   it('normalizes both SOP proposal spellings and validates document links', async () => {

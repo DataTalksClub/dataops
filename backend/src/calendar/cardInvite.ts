@@ -3,6 +3,7 @@ import type { Card } from '../types';
 import { getCardConsistent, updateCard, updateCardAdditive } from '../db/cards';
 import { listTasksByCardConsistent, updateTask } from '../db/tasks';
 import { scanCrmPrefix } from '../db/sponsorCrm';
+import { getTemplate } from '../db/templates';
 import { getCalendarHold, listCalendarHolds, putCalendarHold } from '../db/calendarHolds';
 import { taskRequiresCalendarInvite, makeTaskHistoryEvent } from '../routes/taskValidation';
 import { confirmedHoldInvite, confirmedTitle, holdGuestAttendees, parseHoldDocumentUrl, HOLD_ATTENDEE_DENY_LIST, type CalendarHold } from './holds';
@@ -11,9 +12,14 @@ import { createHoldGoogleEvents, moveLinkedGoogleInvite, updateHoldGoogleEvents,
 export class CardInviteConflictError extends Error {}
 export class CardInviteInputError extends Error {}
 
+/** A portal-hosted guest document page (what `sponsorDocPathForTemplate` links). */
+const DATAOPS_GUEST_DOC = /^https:\/\/[^/]+\/(webinar-docs|podcast-docs|guest-docs)\/[^/?#]+\/?$/;
+
+/** The Card's own DataOps guest document wins over any named external link. */
 export function cardGuestDocument(card: Card): string | undefined {
   const links = (card.cardLinks || []).filter(link => Boolean(link.url?.trim()));
-  const document = links.find(link => /^(Podcast document|Outline document|Episode brief)$/i.test(link.name))
+  const document = links.find(link => DATAOPS_GUEST_DOC.test(link.url.trim()))
+    || links.find(link => /^(Podcast document|Workshop document|Webinar document|Event document|Episode brief)$/i.test(link.name))
     || links.find(link => /^Guest materials$/i.test(link.name));
   try { return parseHoldDocumentUrl(document?.url); }
   catch { throw new CardInviteInputError('The Card guest document must be an HTTPS URL.'); }
@@ -95,10 +101,14 @@ export async function syncCardInvite(
     ...interval, eventKey, googleEventIds: eventIds, sync: 'syncing', syncStartedAt: new Date().toISOString(),
   };
   let documentUrl: string | undefined;
-  try { documentUrl = parseHoldDocumentUrl(linkedHold?.documentUrl) || cardGuestDocument(card); }
-  catch { throw new CardInviteInputError('The guest document must be an HTTPS URL.'); }
+  try {
+    const cardDocument = cardGuestDocument(card);
+    documentUrl = (cardDocument && DATAOPS_GUEST_DOC.test(cardDocument) ? cardDocument : undefined)
+      || parseHoldDocumentUrl(linkedHold?.documentUrl) || cardDocument;
+  } catch { throw new CardInviteInputError('The guest document must be an HTTPS URL.'); }
+  const template = await getTemplate(client, card.templateId);
   const invite = {
-    ...confirmedHoldInvite({ id: eventKey, title: linkedHold?.title || card.title || 'DataTalks.Club event', ...interval, documentUrl }),
+    ...confirmedHoldInvite({ id: eventKey, title: linkedHold?.title || card.title || 'DataTalks.Club event', ...interval, documentUrl }, template?.type),
     timeZone: interval.timeZone,
     attendees: [...new Set(guests.flatMap(guest => holdGuestAttendees(guest)))],
   };

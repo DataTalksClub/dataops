@@ -49,8 +49,8 @@ Holds
   required on every new hold (guests are invited to a specific theme).
   --title is plain: <NAME> at DataTalks.Club Podcast (or Webinar / Workshop).
   Google adds (Proposal) until confirmation. --guest-ref supplies the guest
-  email required to confirm; --document-url links the guest podcast/outline
-  document. Invites are sent by the system through Orin's Calendar identity.
+  email required to confirm; --document-url links the guest
+  event document. Invites are sent by the system through Orin's Calendar identity.
   Evening podcast/webinar holds start 17:00 (60 min); workshops pass
   --duration 90 explicitly and start 16:30.
 `; 
