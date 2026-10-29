@@ -1,3 +1,4 @@
+import { renderTaskDocuments } from './task-documents.js';
 import { documentHref, opensInNewTab } from "../../core/links.js";
 import { cardLinkUrlForTask, isCanonicalWorkTask, isTaskOverdue } from "../../core/workspace.js";
 import { skipClosureStatuses } from "../../core/task-proof.js";
@@ -658,6 +659,7 @@ export function createTaskPanel(context) {
     setup.setAttribute("aria-label", "Task setup");
     setup.append(renderTaskRequires(task, panelMutationBusy), renderTaskBrowser(task, panelMutationBusy));
     taskPanelBody.append(setup);
+    taskPanelBody.append(renderTaskDocuments({ task, request, workApiUrl }));
     const instructions = renderTaskInstructions(task, view, overviewDeps);
     if (instructions) taskPanelBody.append(instructions);
 
