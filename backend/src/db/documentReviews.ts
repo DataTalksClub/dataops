@@ -93,3 +93,18 @@ export async function changeDocumentThread(client: DynamoDBDocumentClient, docum
   }
   return thread;
 }
+
+/** Staff cleanup uses a version condition so a new reply cannot be silently removed. */
+export async function deleteDocumentThread(client: DynamoDBDocumentClient, documentId: string, threadId: string, version: unknown): Promise<void> {
+  if (!Number.isSafeInteger(version) || Number(version) < 1) throw new DocumentReviewError('Thread version is required');
+  try {
+    await client.send(new DeleteCommand({ TableName: TABLE_ARTIFACTS,
+      Key: { PK: partition(documentId), SK: `THREAD#${threadId}` },
+      ConditionExpression: '#version = :version', ExpressionAttributeNames: { '#version': 'version' },
+      ExpressionAttributeValues: { ':version': version },
+    }));
+  } catch (error) {
+    if ((error as Error).name === 'ConditionalCheckFailedException') throw new DocumentReviewError('Thread changed or is missing; refresh and retry', 409);
+    throw error;
+  }
+}

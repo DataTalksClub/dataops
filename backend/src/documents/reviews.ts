@@ -2,7 +2,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { resolveInteractiveActor } from '../identity/actor';
 import { recordRequestError } from '../requestErrorLog';
-import { changeDocumentThread, createDocumentReviewer, createDocumentThread, DocumentReviewError, listDocumentReviewers, listDocumentThreads, revokeDocumentReviewer, verifyDocumentReviewer, type ReviewAuthor } from '../db/documentReviews';
+import { deleteDocumentThread, changeDocumentThread, createDocumentReviewer, createDocumentThread, DocumentReviewError, listDocumentReviewers, listDocumentThreads, revokeDocumentReviewer, verifyDocumentReviewer, type ReviewAuthor } from '../db/documentReviews';
 
 const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
 const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers, body: JSON.stringify(body) });
@@ -63,6 +63,11 @@ export async function handleDocumentReviewRoutes(event: LambdaEvent, client: Dyn
       }
     }
     if (resource === 'comments') {
+      if (itemId && !action && method === 'DELETE') {
+        if (!staff) return json(403, { error: 'Only staff can delete threads' });
+        await deleteDocumentThread(client, documentId, itemId, Number(event.queryStringParameters?.version));
+        return json(200, { deleted: true });
+      }
       if (!itemId && method === 'GET') return json(200, { threads: await listDocumentThreads(client, documentId) });
       if (!itemId && method === 'POST') return json(201, { thread: await createDocumentThread(client, documentId, author, body.body, body.quote) });
       if (itemId && method === 'POST' && (action === 'reply' || action === 'resolve')) {

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { PutCommand } from '@aws-sdk/lib-dynamodb';
 import { useTestDatabase } from './helpers/db';
 import { TABLE_TASKS, TABLE_ARTIFACTS } from '../src/db/tableNames';
-import { createDocumentReviewer, verifyDocumentReviewer, revokeDocumentReviewer, listDocumentReviewers, createDocumentThread, changeDocumentThread, listDocumentThreads } from '../src/db/documentReviews';
+import { deleteDocumentThread, createDocumentReviewer, verifyDocumentReviewer, revokeDocumentReviewer, listDocumentReviewers, createDocumentThread, changeDocumentThread, listDocumentThreads } from '../src/db/documentReviews';
 import { handleDocumentReviewRoutes, isAnonymousDocumentReviewRequest } from '../src/documents/reviews';
 const staff = { id: 'staff', name: 'Staff', kind: 'staff' as const };
 test('review tokens are scoped, hashed, expiring and revocable; listings never expose secrets', async () => {
@@ -95,4 +95,15 @@ test('simultaneous replies accept one version and retain the winning post', asyn
   const saved = (await listDocumentThreads(client, 'race-doc'))[0];
   assert.equal(saved.posts.length, 2);
   assert.equal(saved.version, 2);
+});
+
+test('staff thread deletion refuses stale versions and reviewer deletion', async () => {
+  const { client } = await useTestDatabase();
+  const thread = await createDocumentThread(client, 'delete-doc', staff, 'Temporary review');
+  await assert.rejects(deleteDocumentThread(client, 'delete-doc', thread.id, 2), /refresh/);
+  const { token } = await createDocumentReviewer(client, 'delete-doc', 'Guest');
+  const response = await handleDocumentReviewRoutes({ path: `/api/documents/delete-doc/comments/${thread.id}`, httpMethod: 'DELETE', headers: { 'x-document-review-token': token }, queryStringParameters: { version: '1' } }, client, async () => ({}));
+  assert.equal(response?.statusCode, 403);
+  await deleteDocumentThread(client, 'delete-doc', thread.id, 1);
+  assert.deepEqual(await listDocumentThreads(client, 'delete-doc'), []);
 });
