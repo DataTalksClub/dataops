@@ -53,6 +53,27 @@ describe('S3 authenticated knowledge content routes',()=>{
   configureDocsRuntime(fixture.store);revision=fixture.publication.revision;
  });
  afterEach(()=>{resetDocsRuntime();rmSync(dir,{recursive:true,force:true});});
+ it('copies knowledge by document ID without reusing identity and exports Markdown or Word',async()=>{
+  const created=await call(ev('POST','/docs',{body:{path:'content/newsletter/copied-reference.md',from:'ref.newsletter',absent:true,expectedRevision:revision}}));
+  assert.equal(created.status,201,JSON.stringify(created.body));
+  assert.ok(created.body.content.includes('Newsletter reference'));
+  assert.ok(!created.body.content.includes('id: ref.newsletter'));
+  assert.ok(created.body.content.includes('doc_type: reference'));
+  const registry=await call(ev('GET','/docs/registry'));
+  const copies=registry.body.documents.filter((doc:{path:string})=>doc.path.includes('copied-reference'));
+  assert.equal(copies.length,1);
+  assert.notEqual(copies[0].id,'ref.newsletter');
+  for(const format of ['md','txt','docx']) {
+   const result=await handleDocsRoutes(ev('GET','/docs/export',{query:{ref:copies[0].id,format}}),'authenticated-test-user');
+   assert.equal(result?.statusCode,200);
+   if(format==='docx') {assert.equal(result?.isBase64Encoded,true);assert.equal(Buffer.from(result!.body,'base64').subarray(0,2).toString(),'PK');}
+   else assert.equal(result?.body,created.body.content);
+  }
+  assert.equal((await call(ev('GET','/docs/export',{query:{ref:'missing',format:'md'}}))).status,404);
+  assert.equal((await call(ev('GET','/docs/export',{query:{ref:'ref.newsletter',format:'pdf'}}))).status,400);
+  const missing=await call(ev('POST','/docs',{body:{path:'content/new.md',from:'missing',absent:true,expectedRevision:created.body.revision}}));
+  assert.equal(missing.status,404);
+ });
  it('loads docs, registry, parsed content, search, quality and health without GitHub',async()=>{
   for(const route of ['/docs','/docs/registry','/docs/process-quality','/health','/lint']) assert.equal((await call(ev('GET',route))).status,200);
   const doc=await call(ev('GET','/docs',{query:{path:'content/accounts/sops/reset-password.md'}}));assert.equal(doc.body.revision,revision);assert.equal(doc.body.content,SOP);

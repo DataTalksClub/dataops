@@ -1,4 +1,6 @@
 import { templateParser } from './templatePlaceholders';
+import { dump as dumpYaml } from 'js-yaml';
+import { DOCX_CONTENT_TYPE, markdownToDocx } from './docxExport';
 /**
  * Docs content API.
  *
@@ -52,7 +54,7 @@ import {
 import { createSearchIndex, type SearchIndex } from './searchIndex';
 import { iterContentDocs } from './search/extract';
 import { docsStructuredText } from './search/sopExtract';
-import { parse, ParseError, splitFrontmatter, lintDocument, parseCodeView, CodeViewParseError } from './sop';
+import { parse, ParseError, splitFrontmatter, parseFrontmatter, lintDocument, parseCodeView, CodeViewParseError } from './sop';
 import { newDocContent } from './docScaffolds';
 import { DEFAULT_HEADERS, jsonResponse, method, queryParam } from './http';
 import { search } from './contentSearch';
@@ -377,6 +379,28 @@ async function dispatch(event: LambdaEvent, path: string, actor: string, publish
   if (path === '/docs/process-quality' && m === 'GET') return processQuality(rt);
   if (path === '/docs/registry' && m === 'GET') return getDocRegistry(rt);
   if (path === '/docs/resolve' && m === 'GET') return resolveDoc(rt, queryParam(event, 'ref'));
+  if (path === '/docs/export' && m === 'GET') {
+    const ref = queryParam(event, 'ref');
+    if (!ref) throw new BadRequest('ref is required');
+    const format = queryParam(event, 'format') || 'md';
+    if (!['md', 'docx', 'txt'].includes(format)) throw new BadRequest('format must be md, docx, or txt');
+    await rt.ensureSynced();
+    let record: DocumentRecord;
+    try { record = resolveReference(buildRegistry(rt.contentRoot), ref); }
+    catch (error) { if (error instanceof LookupError) throw new NotFound(error.message); throw error; }
+    const content = await rt.store.readFile(record.path);
+    const body = format === 'docx' ? (await markdownToDocx(splitFrontmatter(content)[1])).toString('base64') : content;
+    return {
+      statusCode: 200,
+      headers: {
+        'Content-Type': format === 'docx' ? DOCX_CONTENT_TYPE : format === 'txt' ? 'text/plain; charset=utf-8' : 'text/markdown; charset=utf-8',
+        'Content-Disposition': `attachment; filename="document.${format}"`,
+        'Cache-Control': 'no-store',
+      },
+      body,
+      ...(format === 'docx' ? { isBase64Encoded: true } : {}),
+    };
+  }
   if (path === '/docs/backlinks' && m === 'GET') return listBacklinks(rt, queryParam(event, 'path'));
   if (path === '/docs/rename' && m === 'POST') return renameDoc(rt, jsonBody(event), actor);
   if (path === '/docs/move' && m === 'POST') return moveDoc(rt, jsonBody(event), actor);
@@ -568,6 +592,34 @@ async function createDoc(rt: DocsRuntime, body: Record<string, unknown>, actor:s
 
   const filePath = localPath(rt, repoPath);
   if (existsSync(filePath)) throw new BadRequest('Document already exists');
+
+  if (body.from !== undefined) {
+    if (typeof body.from !== 'string' || !body.from.trim()) throw new BadRequest('from must be a document ID');
+    if (body.content !== undefined) throw new BadRequest('from and content cannot be combined');
+    let source: DocumentRecord;
+    try { source = resolveReference(buildRegistry(rt.contentRoot), body.from); }
+    catch (error) { if (error instanceof LookupError) throw new NotFound(error.message); throw error; }
+    const sourceContent = await rt.store.readFile(source.path);
+    const [raw, text] = splitFrontmatter(sourceContent);
+    const metadata = raw ? { ...parseFrontmatter(raw) } : {};
+    // A copy has its own identity. Never steal aliases, hierarchy, or reviews
+    // from the source document. Preserve the authored document and its type.
+    for (const key of ['id', 'aliases', 'parent', 'last_reviewed_at', 'next_review_at', 'updated_at']) delete metadata[key];
+    if (source.doc_type === 'code-view') {
+      if (typeof body.sop !== 'string' || !body.sop.trim()) throw new BadRequest('Copying a code view requires sop: the target SOP ID');
+      const registry = buildRegistry(rt.contentRoot);
+      let target: DocumentRecord;
+      try { target = resolveReference(registry, body.sop); }
+      catch (error) { if (error instanceof LookupError) throw new NotFound(error.message); throw error; }
+      if (target.doc_type !== 'sop' || registry.codeViewBySop.has(target.id)) throw new BadRequest('Target must be a SOP without a code view');
+      metadata.sop = target.id;
+    }
+    metadata.title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : source.title;
+    metadata.doc_type = source.doc_type;
+    if (body.doc_type !== undefined && body.doc_type !== source.doc_type) throw new BadRequest('A copy must use the source document type');
+    body.content = `---\n${dumpYaml(metadata, { lineWidth: -1 })}---\n${text}`;
+    body.doc_type = source.doc_type;
+  }
 
   const stem = baseStem(repoPath);
   const title =
