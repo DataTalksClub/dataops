@@ -601,7 +601,7 @@ async function createDoc(rt: DocsRuntime, body: Record<string, unknown>, actor:s
     catch (error) { if (error instanceof LookupError) throw new NotFound(error.message); throw error; }
     const sourceContent = await rt.store.readFile(source.path);
     const [raw, text] = splitFrontmatter(sourceContent);
-    const metadata = raw ? { ...parseFrontmatter(raw) } : {};
+    const metadata: Record<string, unknown> = raw ? { ...parseFrontmatter(raw) } : {};
     // A copy has its own identity. Never steal aliases, hierarchy, or reviews
     // from the source document. Preserve the authored document and its type.
     for (const key of ['id', 'aliases', 'parent', 'last_reviewed_at', 'next_review_at', 'updated_at']) delete metadata[key];
