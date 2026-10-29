@@ -10,7 +10,6 @@
  * looks the Tasks up itself.
  */
 import {
-  BatchGetCommand,
   GetCommand,
   PutCommand,
   TransactWriteCommand,
@@ -22,6 +21,7 @@ import { usesLocalTransactionEmulation } from './client';
 import { cardKey, getCardConsistent } from './cards';
 import { compact } from './plannedWrite';
 import { TABLE_CARDS, TABLE_TASKS } from './tableNames';
+import { getTask } from './tasks';
 
 type Dict = Record<string, unknown>;
 type TransactionItems = NonNullable<ConstructorParameters<typeof TransactWriteCommand>[0]['TransactItems']>;
@@ -58,15 +58,13 @@ export async function liveBackReferences(
   cardId: string,
   references: readonly TaskCardBackReference[] | undefined,
 ): Promise<Array<TaskCardBackReference & { task: Task }>> {
-  if (!references?.length) return [];
-  const result = await client.send(new BatchGetCommand({
-    RequestItems: { [TABLE_TASKS]: { Keys: references.map(({ taskId }) => taskKey(taskId)) } },
-  }));
-  const tasks = new Map(((result.Responses?.[TABLE_TASKS] || []) as Task[]).map((task) => [task.id, task]));
-  return references.flatMap((reference) => {
-    const task = tasks.get(reference.taskId);
-    return task && task.linkedCardId === cardId ? [{ ...reference, task }] : [];
-  });
+  // A Card is linked by one Task, rarely a few: plain reads, no batch grant.
+  const live: Array<TaskCardBackReference & { task: Task }> = [];
+  for (const reference of references || []) {
+    const task = await getTask(client, reference.taskId);
+    if (task && task.linkedCardId === cardId) live.push({ ...reference, task });
+  }
+  return live;
 }
 
 /**
