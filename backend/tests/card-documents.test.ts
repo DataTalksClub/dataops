@@ -30,7 +30,9 @@ describe('Staff-only card documents', () => {
       assert.equal((await request('PUT', `/${doc.id}`, { title: doc.title, content: 'Edited privately', version: 1 })).statusCode, 200);
       assert.equal((await request('PUT', `/${doc.id}`, { title: doc.title, content: 'Stale', version: 1 })).statusCode, 409);
       const listed = JSON.parse((await request('GET', '', undefined, { cardId })).body).documents;
-      assert.equal(listed.length, 1); assert.equal(listed[0].content, 'Edited privately');
+      assert.equal(listed.length, 1); assert.equal(listed[0].id, doc.id);
+      assert.equal('content' in listed[0], false);
+      assert.equal(JSON.parse((await request('GET', `/${doc.id}`)).body).document.content, 'Edited privately');
       assert.equal(await getDocument(client, doc.id), null, 'guest-review document loader cannot see card docs');
       const { token } = await createDocumentReviewer(client, doc.id, 'Unrelated guest');
       const review = await handleDocumentReviewRoutes({ httpMethod: 'GET', path: `/api/documents/${doc.id}/review`, headers: { 'x-document-review-token': token } }, client, id => getDocument(client, id));
@@ -75,6 +77,20 @@ describe('Staff-only card documents', () => {
     assert.equal((await request('DELETE', `/${doc.id}`, undefined, { version: '2' })).statusCode, 409);
     assert.equal((await request('DELETE', `/${doc.id}`, undefined, { version: '1' })).statusCode, 200);
     assert.equal((await request('GET', `/${doc.id}`)).statusCode, 404);
+  });
+  it('lists a collection of maximum-size documents without exceeding Lambda response limits', async () => {
+    const content = 'x'.repeat(250000);
+    for (let index = 0; index < 26; index++) {
+      assert.equal((await request('POST', '', { cardId: 'workshop', kind: 'note', title: `Large note ${index}`, content })).statusCode, 201);
+    }
+    const result = await request('GET', '', undefined, { cardId: 'workshop' });
+    assert.equal(result.statusCode, 200);
+    const documents = JSON.parse(result.body).documents;
+    assert.ok(documents.length >= 26);
+    assert.ok(documents.every((doc: Record<string, unknown>) => !('content' in doc)));
+    assert.ok(Buffer.byteLength(JSON.stringify(result), 'utf8') < 6 * 1024 * 1024);
+    const full = JSON.parse((await request('GET', `/${documents.find((doc: { title: string }) => doc.title === 'Large note 0').id}`)).body).document;
+    assert.equal(full.content, content);
   });
   it('does not lose concurrent edits and hides documents whose owning card was removed', async () => {
     const doc = await createCardDocument(client, { cardId: 'q-and-a', kind: 'note', title: 'Host', content: '' });

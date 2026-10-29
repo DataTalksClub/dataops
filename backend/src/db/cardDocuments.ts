@@ -15,6 +15,7 @@ export interface CardDocumentRecord {
   createdAt: string;
   updatedAt: string;
 }
+export type CardDocumentSummary = Omit<CardDocumentRecord, 'content'>;
 export class CardDocumentVersionConflict extends Error {}
 const key = (id: string) => ({ PK: `CARD_DOCUMENT#${id}`, SK: `CARD_DOCUMENT#${id}` });
 function clean(item: Record<string, unknown>): CardDocumentRecord {
@@ -33,16 +34,20 @@ export async function createCardDocument(client: DynamoDBDocumentClient, data: P
   await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { ...key(doc.id), ...doc }, ConditionExpression: 'attribute_not_exists(PK)' }));
   return doc;
 }
-export async function listCardDocuments(client: DynamoDBDocumentClient, cardId: string): Promise<CardDocumentRecord[]> {
+export async function listCardDocuments(client: DynamoDBDocumentClient, cardId: string): Promise<CardDocumentSummary[]> {
   const rows = await collectBoundedPages<Record<string, unknown>>({
     loadPage: async (ExclusiveStartKey, abortSignal) => client.send(new ScanCommand({
       TableName: TABLE_ARTIFACTS, ExclusiveStartKey, ConsistentRead: true,
+      // Lists contain metadata only; retrieve text through GET /:id. This keeps
+      // valid collections below Lambda's synchronous response size limit.
+      ProjectionExpression: 'id, cardId, kind, title, #version, createdAt, updatedAt',
+      ExpressionAttributeNames: { '#version': 'version' },
       FilterExpression: 'begins_with(PK, :prefix) AND cardId = :task',
       ExpressionAttributeValues: { ':prefix': 'CARD_DOCUMENT#', ':task': cardId },
     }), { abortSignal }),
     limits: { maxPages: 1000, maxItems: 1000, maxBytes: 8 * 1024 * 1024, deadlineMs: 10000 },
   });
-  const docs = rows.map(clean);
+  const docs = rows as unknown as CardDocumentSummary[];
   return docs.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 }
 export async function updateCardDocument(client: DynamoDBDocumentClient, id: string, updates: Pick<CardDocumentRecord, 'title' | 'content'>, version: number): Promise<CardDocumentRecord | null> {
