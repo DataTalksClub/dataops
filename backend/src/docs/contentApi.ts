@@ -52,7 +52,7 @@ import {
   type DocumentRecord,
 } from './docRegistry';
 import { createSearchIndex, type SearchIndex } from './searchIndex';
-import { iterContentDocs } from './search/extract';
+import { generatedId, iterContentDocs } from './search/extract';
 import { docsStructuredText } from './search/sopExtract';
 import { parse, ParseError, splitFrontmatter, parseFrontmatter, lintDocument, parseCodeView, CodeViewParseError } from './sop';
 import { newDocContent } from './docScaffolds';
@@ -616,11 +616,36 @@ async function createDoc(rt: DocsRuntime, body: Record<string, unknown>, actor:s
     }
     metadata.title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : source.title;
     metadata.doc_type = source.doc_type;
+    metadata.id = generatedId(repoPath, source.doc_type);
+    metadata.aliases = [];
     metadata.status = 'proposed';
+    metadata.last_reviewed_at = null;
+    metadata.next_review_at = null;
     if (body.doc_type !== undefined && body.doc_type !== source.doc_type) throw new BadRequest('A copy must use the source document type');
-    const copiedText = typeof body.title === 'string' && body.title.trim()
+    let copiedText = typeof body.title === 'string' && body.title.trim()
       ? text.replace(/^# [^\r\n]+/m, () => `# ${body.title!.toString().trim()}`)
       : text;
+    if (posix.dirname(source.path) !== posix.dirname(repoPath)) {
+      const relocate = (destination: string): string => {
+        if (/^(?:[a-z][a-z0-9+.-]*:|\/|#|content\/)/i.test(destination)) return destination;
+        const split = destination.search(/[?#]/);
+        const file = split < 0 ? destination : destination.slice(0, split);
+        const suffix = split < 0 ? '' : destination.slice(split);
+        return posix.relative(posix.dirname(repoPath), posix.normalize(posix.join(posix.dirname(source.path), file))) + suffix;
+      };
+      let fence: string | null = null;
+      copiedText = copiedText.split('\n').map(line => {
+        const marker = /^\s*(`{3,}|~{3,})/.exec(line);
+        if (marker && (!fence || marker[1][0] === fence[0] && marker[1].length >= fence.length)) {
+          fence = fence ? null : marker[1];
+          return line;
+        }
+        if (fence) return line;
+        return line.replace(/(\]\()(<[^>]+>|[^\s)]+)/g, (_match, prefix: string, destination: string) =>
+          prefix + (destination.startsWith('<') ? `<${relocate(destination.slice(1, -1))}>` : relocate(destination)))
+          .replace(/^(\s*\[[^\]]+\]:\s*)(\S+)/, (_match, prefix: string, destination: string) => prefix + relocate(destination));
+      }).join('\n');
+    }
     body.content = `---\n${dumpYaml(metadata, { lineWidth: -1 })}---\n${copiedText}`;
     body.doc_type = source.doc_type;
   }

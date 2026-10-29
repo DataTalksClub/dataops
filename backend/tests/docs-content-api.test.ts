@@ -100,6 +100,18 @@ describe('S3 authenticated knowledge content routes',()=>{
    }
   }
  });
+ it('keeps relative document and image links pointing to their original targets when copied to another folder',async()=>{
+  const content=REF+'\n[Password reset](../accounts/sops/reset-password.md#procedure)\n![Diagram](assets/image.png)\n[Local section](#summary)\n[External](https://example.test/)\n\n```md\n[Example](relative.md)\n```\n';
+  const save=await call(ev('PUT','/docs',{query:{path:'content/newsletter/reference.md'},body:{content,expectedRevision:revision}}));
+  assert.equal(save.status,200);
+  const copied=await call(ev('POST','/docs',{body:{path:'content/other/deep/copied.md',from:'ref.newsletter',absent:true,expectedRevision:save.body.revision}}));
+  assert.equal(copied.status,201);
+  assert.ok(copied.body.content.includes('](../../accounts/sops/reset-password.md#procedure)'));
+  assert.ok(copied.body.content.includes('](../../newsletter/assets/image.png)'));
+  assert.ok(copied.body.content.includes('](#summary)'));
+  assert.ok(copied.body.content.includes('](https://example.test/)'));
+  assert.ok(copied.body.content.includes('[Example](relative.md)'));
+ });
  it('loads docs, registry, parsed content, search, quality and health without GitHub',async()=>{
   for(const route of ['/docs','/docs/registry','/docs/process-quality','/health','/lint']) assert.equal((await call(ev('GET',route))).status,200);
   const doc=await call(ev('GET','/docs',{query:{path:'content/accounts/sops/reset-password.md'}}));assert.equal(doc.body.revision,revision);assert.equal(doc.body.content,SOP);
