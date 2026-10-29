@@ -54,9 +54,10 @@ describe('S3 authenticated knowledge content routes',()=>{
  });
  afterEach(()=>{resetDocsRuntime();rmSync(dir,{recursive:true,force:true});});
  it('copies knowledge by document ID without reusing identity and exports Markdown or Word',async()=>{
-  const created=await call(ev('POST','/docs',{body:{path:'content/newsletter/copied-reference.md',from:'ref.newsletter',absent:true,expectedRevision:revision}}));
+  const created=await call(ev('POST','/docs',{body:{path:'content/newsletter/copied-reference.md',from:'ref.newsletter',title:'Copied newsletter reference',absent:true,expectedRevision:revision}}));
   assert.equal(created.status,201,JSON.stringify(created.body));
-  assert.ok(created.body.content.includes('Newsletter reference'));
+  assert.ok(created.body.content.includes('# Copied newsletter reference'));
+  assert.ok(created.body.content.includes('status: proposed'));
   assert.ok(!created.body.content.includes('id: ref.newsletter'));
   assert.ok(created.body.content.includes('doc_type: reference'));
   const registry=await call(ev('GET','/docs/registry'));

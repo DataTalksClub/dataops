@@ -616,8 +616,12 @@ async function createDoc(rt: DocsRuntime, body: Record<string, unknown>, actor:s
     }
     metadata.title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : source.title;
     metadata.doc_type = source.doc_type;
+    metadata.status = 'proposed';
     if (body.doc_type !== undefined && body.doc_type !== source.doc_type) throw new BadRequest('A copy must use the source document type');
-    body.content = `---\n${dumpYaml(metadata, { lineWidth: -1 })}---\n${text}`;
+    const copiedText = typeof body.title === 'string' && body.title.trim()
+      ? text.replace(/^# [^\r\n]+/m, () => `# ${body.title!.toString().trim()}`)
+      : text;
+    body.content = `---\n${dumpYaml(metadata, { lineWidth: -1 })}---\n${copiedText}`;
     body.doc_type = source.doc_type;
   }
 
