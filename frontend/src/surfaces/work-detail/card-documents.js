@@ -1,3 +1,5 @@
+import { renderCardSponsorDocsSection } from './card-summary.js';
+
 const drafts = new Map();
 const workspaces = new WeakMap();
 /** Private Card workspace. Text APIs keep document content inert. */
@@ -30,7 +32,10 @@ export function renderCardDocuments({ card, request, workApiUrl }) {
   form.addEventListener('submit', async event => {
     event.preventDefault(); create.disabled = true;
     try {
-      const result = await request(workApiUrl('/api/card-documents'), { method: 'POST', body: JSON.stringify({ cardId: card.id, kind: kind.value, title: title.value, content: '' }) });
+      const result = await request(workApiUrl('/api/card-documents'), {
+        method: 'POST',
+        body: JSON.stringify({ cardId: card.id, kind: kind.value, title: title.value, content: '' }),
+      });
       title.value = ''; await load(result.document.id); status.textContent = 'Document created.';
     } catch (error) { status.textContent = error.message || 'Could not create document.'; }
     finally { create.disabled = false; }
@@ -126,4 +131,10 @@ export function renderCardDocuments({ card, request, workApiUrl }) {
   section.append(heading, privacy, form, refresh, status, list);
   void load();
   return section;
+}
+
+/** Keep the Card panel's document composition in one section owner. */
+export function renderCardDocumentSections(context) {
+  const shared = renderCardSponsorDocsSection(context.card);
+  return [shared, renderCardDocuments(context)].filter(Boolean);
 }
