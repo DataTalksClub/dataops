@@ -113,7 +113,7 @@ export function createCardActions(context) {
     return refreshed;
   }
 
-  async function reloadCardTemplateUpdate(cardId, optionalGroups) {
+  async function reloadCardTemplateUpdate(cardId, optionalGroups, counts) {
     const routeToken = getActiveWorkspaceRouteToken();
     if (!cardIsCurrent(cardId, routeToken)) return;
     const drafts = captureCardPanelDrafts();
@@ -123,8 +123,8 @@ export function createCardActions(context) {
     try {
       const response = await request(
         workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
-        optionalGroups === undefined ? undefined : {
-          method: "POST", body: JSON.stringify({ previewOnly: true, optionalGroups }),
+        optionalGroups === undefined && counts === undefined ? undefined : {
+          method: "POST", body: JSON.stringify({ previewOnly: true, optionalGroups, counts }),
         },
       );
       if (!cardIsCurrent(cardId, routeToken)) return;
@@ -147,7 +147,7 @@ export function createCardActions(context) {
     }
   }
 
-  async function applyCardTemplateUpdate(cardId, previewToken, optionalGroups) {
+  async function applyCardTemplateUpdate(cardId, previewToken, optionalGroups, counts) {
     const routeToken = getActiveWorkspaceRouteToken();
     if (!cardIsCurrent(cardId, routeToken)) return;
     const drafts = captureCardPanelDrafts();
@@ -157,7 +157,7 @@ export function createCardActions(context) {
     try {
       const response = await request(
         workApiUrl(`/api/cards/${encodeURIComponent(cardId)}/template-update`),
-        { method: "POST", body: JSON.stringify({ previewToken, optionalGroups }) },
+        { method: "POST", body: JSON.stringify({ previewToken, optionalGroups, counts }) },
       );
       if (!cardIsCurrent(cardId, routeToken)) return;
       detail.activeCardPanelData = {

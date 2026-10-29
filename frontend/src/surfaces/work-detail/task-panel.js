@@ -9,6 +9,7 @@ import { blockingPrerequisites } from "../../core/task-dependencies.js";
 import { renderAddPrerequisite, renderTaskDependencies } from "./task-prerequisites.js";
 import { createTaskRequires } from "./task-requires.js";
 import { createTaskBrowser } from "./task-browser.js";
+import { renderTaskLinkedCard } from "./task-linked-card.js";
 
 export function createTaskPanel(context) {
   const {
@@ -43,6 +44,7 @@ export function createTaskPanel(context) {
     saveTaskRequires,
     saveTaskBrowser,
     saveTaskDependencies,
+    saveTaskLinkedCard,
     state,
     taskPanelBody,
     taskPanelTitle,
@@ -462,6 +464,18 @@ export function createTaskPanel(context) {
     if (task.cardId || task.dependsOn?.length) {
       taskPanelBody.append(renderTaskDependencies(task, dependencyOptions).element);
     }
+    // A linked Card, or a numbered repeated Task (Workshop 2) whose Card is
+    // still to be linked, shows in the open; any other Task offers the link
+    // under the disclosure below.
+    const linkedCard = task.cardId
+      ? renderTaskLinkedCard(task, {
+          busy: panelMutationBusy,
+          createTaskActionButton,
+          onSave: (cardId) => saveTaskLinkedCard(task.id, cardId, task.version),
+        })
+      : null;
+    const linkedCardInOpen = Boolean(task.linkedCardId || /#\d+$/.test(task.templateTaskRef || ""));
+    if (linkedCard && linkedCardInOpen) taskPanelBody.append(linkedCard);
     const parentCard = task.cardId ? resolveCard(task.cardId) : null;
     const proofSlot = document.createElement("div");
     proofSlot.className = "task-proof";
@@ -663,6 +677,7 @@ export function createTaskPanel(context) {
     more.append(moreSummary);
     const addPrerequisite = renderAddPrerequisite(task, dependencyOptions);
     if (addPrerequisite) more.append(addPrerequisite);
+    if (linkedCard && !linkedCardInOpen) more.append(linkedCard);
     renderTaskFileSection(task, {
       onFilesSettled: syncCompletionForFiles,
       container: task.requiresFile ? proofSlot : more,

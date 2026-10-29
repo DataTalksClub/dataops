@@ -5,11 +5,8 @@ import { cardLinkUrlForTask, describeMissingProof, hasLinkedCalendarInvite, isCa
 import { appendChecklistOptionality } from "./task-completion.js";
 import { createCardActions } from "./card-actions.js";
 import { renderCardTemplateUpdate } from "./card-template-review.js";
-import {
-  humanLinkName,
-  ownerAvatar,
-  resolveChecklistOwner,
-} from "./card-display.js";
+import { humanLinkName, ownerAvatar, resolveChecklistOwner } from "./card-display.js";
+import { renderCardLinkedFrom, renderChecklistLinkedCard } from "./task-linked-card.js";
 import {
   appendBreakableText,
   createCardSummary,
@@ -403,6 +400,7 @@ export function createCardPanel(context) {
     });
     if (templateUpdate) main.append(templateUpdate);
 
+    main.append(...renderCardLinkedFrom(card));
     if (Array.isArray(card.cardLinks) && card.cardLinks.length > 0) main.append(renderCardLinksSection(card));
     if (card.eventTime || card.calendarInvites?.length || tasks.some(taskRequiresCalendarInvite)) {
       main.append(renderCardEventTime({ request, workApiUrl, reload: reloadCardIntent }, card));
@@ -765,6 +763,8 @@ export function createCardPanel(context) {
       note.title = `${kind.textContent}${noteText ? `: ${noteText}` : ""}`;
       body.append(note);
     }
+
+    body.append(...renderChecklistLinkedCard(task));
 
     // Unlock condition: name the blocking steps and how to free this checkbox.
     // "after A" alone was opaque when the top step looked done but dependents stayed grey.

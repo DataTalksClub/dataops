@@ -169,6 +169,8 @@ export function createTaskActions(context) {
                   status: "waiting",
                   followUpAt: intent.payload.nextFollowUpAt,
                 }
+              : intent.kind === "linked-card"
+                ? { linkedCardId: intent.payload.cardId ?? undefined }
               : intent.kind === "skip"
                 ? { status: "skipped", skipReason: intent.payload.reason }
                 : intent.kind === "unskip"
@@ -644,6 +646,28 @@ export function createTaskActions(context) {
 
   // Skip resolves the Task as not applicable with a reason; the dialog that
   // collects the reason owns the error display, so a failure rejects.
+  async function saveTaskLinkedCard(taskId, cardId, explicitVersion) {
+    const intent = {
+      taskId,
+      kind: "linked-card",
+      label: cardId ? "Link a Card" : "Unlink the Card",
+      method: "POST",
+      path: `/api/tasks/${encodeURIComponent(taskId)}/actions/link-card`,
+      payload: { cardId },
+      pendingMessage: cardId ? "Linking the Card…" : "Unlinking the Card…",
+      successMessage: cardId ? "The Card is linked." : "The Card is unlinked.",
+      errorPrefix: cardId ? "Could not link the Card" : "Could not unlink the Card",
+    };
+    let expectedVersion;
+    try {
+      expectedVersion = displayedVersion(taskId, explicitVersion);
+    } catch (err) {
+      showIntentFailure(taskIntentOwner(intent), intent, err, expectedVersion);
+      return null;
+    }
+    return submitTaskIntent(intent, expectedVersion);
+  }
+
   async function skipTask(taskId, reason, explicitVersion) {
     const intent = {
       taskId,
@@ -834,6 +858,7 @@ export function createTaskActions(context) {
     saveTaskRequires,
     saveTaskBrowser,
     saveTaskDependencies,
+    saveTaskLinkedCard,
     setCardPanelFeedback,
     setTaskPanelFeedback,
     skipTask,

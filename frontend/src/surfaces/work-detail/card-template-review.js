@@ -8,6 +8,7 @@ function templateUpdateSummary(preview) {
     [(preview.taskChanges || []).filter(({ action }) => action === "conflict").length, "conflicts"],
     [counts.updated, "updated"],
     [counts.skipped, "skipped"],
+    [counts.removed, "removed"],
     [counts.retainedCompleted, "completed retained"],
     [counts.cardFields, "Card fields"],
   ].filter(([count]) => Number(count) > 0)
@@ -22,6 +23,7 @@ function taskUpdateLabel(change) {
   if (change.action === "add") return `Add ${label}`;
   if (change.action === "restore") return `Restore task: ${label}`;
   if (change.action === "skip-removed") return `Skip removed task: ${label}`;
+  if (change.action === "remove") return `Remove ${label} (not done, no linked Card)`;
   if (change.action === "retain-completed") return `Retain completed task: ${label}`;
   if (change.action === "refresh-provenance") return `Refresh provenance: ${label}`;
   const fields = (change.changes || []).map(({ field }) => field).join(", ");
@@ -36,7 +38,7 @@ export function renderCardTemplateUpdate(card, data, context) {
     renderCardPanel,
   } = context;
   const preview = data.templateUpdate;
-  if (preview?.state === "current" && !preview.availableOptionalGroups?.length) return null;
+  if (preview?.state === "current" && !preview.availableOptionalGroups?.length && !preview.countFields?.length) return null;
   const section = document.createElement("section");
   section.className = "card-template-update workflow-detail-section";
   const heading = document.createElement("div");
@@ -54,13 +56,22 @@ export function renderCardTemplateUpdate(card, data, context) {
     return section;
   }
 
-  if (preview.availableOptionalGroups?.length) {
+  const groups = preview.availableOptionalGroups || [];
+  const countFields = preview.countFields || [];
+  // Counts decide how many repeated Tasks exist (Workshop 1..N). A changed
+  // count is reviewed like an option change: the review lists every Task it
+  // adds or removes before anything is applied.
+  const countsOf = (fieldset) => countFields.length
+    ? Object.fromEntries([...fieldset.querySelectorAll("input[data-count-field]")]
+      .map((input) => [input.dataset.countField, Number(input.value)]))
+    : undefined;
+  if (groups.length || countFields.length) {
     const options = document.createElement("fieldset");
     options.className = "card-options";
     const legend = document.createElement("legend");
     legend.textContent = "Card options";
     options.append(legend);
-    for (const group of preview.availableOptionalGroups) {
+    for (const group of groups) {
       const label = document.createElement("label");
       label.className = "quick-form-label quick-form-checkbox";
       const box = document.createElement("input");
@@ -79,13 +90,29 @@ export function renderCardTemplateUpdate(card, data, context) {
       label.append(box, document.createTextNode(group === "sponsored" ? "Sponsored" : humanLinkName(group)));
       options.append(label);
     }
+    for (const field of countFields) {
+      const label = document.createElement("label");
+      label.className = "quick-form-label card-count-field";
+      const input = document.createElement("input");
+      input.type = "number";
+      input.min = String(field.min);
+      input.max = String(field.max);
+      input.step = "1";
+      input.inputMode = "numeric";
+      input.dataset.countField = field.id;
+      input.value = String(preview.targetCounts?.[field.id] ?? preview.currentCounts?.[field.id] ?? field.min);
+      input.disabled = detail.activeCardTemplateBusy;
+      label.append(document.createTextNode(field.label), input);
+      options.append(label);
+    }
     const reviewOptions = document.createElement("button");
     reviewOptions.type = "button";
     reviewOptions.className = "task-action-btn";
-    reviewOptions.textContent = "Review option changes";
+    reviewOptions.textContent = groups.length ? "Review option changes" : "Review count change";
     reviewOptions.disabled = detail.activeCardTemplateBusy;
     reviewOptions.addEventListener("click", () => reloadCardTemplateUpdate(card.id,
-      [...options.querySelectorAll('input[type="checkbox"]')].filter((box) => box.checked).map((box) => box.value)));
+      [...options.querySelectorAll('input[type="checkbox"]')].filter((box) => box.checked).map((box) => box.value),
+      countsOf(options)));
     options.append(reviewOptions);
     section.append(options);
   }
@@ -129,6 +156,9 @@ export function renderCardTemplateUpdate(card, data, context) {
     "Applying this reviewed definition keeps task IDs, live status, notes,",
     "waiting state, links, files, artifacts, and history.",
     "Removed incomplete tasks are skipped; completed tasks are retained.",
+    ...(countFields.length
+      ? ["Lowering a count removes only the extra repeated tasks that are not done and link no Card."]
+      : []),
   ].join(" ");
   review.append(guidance);
   if (Number(preview.counts?.operatorOverrides) > 0) {
@@ -146,6 +176,14 @@ export function renderCardTemplateUpdate(card, data, context) {
   if (JSON.stringify(preview.selectedOptionalGroups) !== JSON.stringify(preview.targetOptionalGroups)) {
     const item = document.createElement("li");
     item.textContent = `Card options: ${(preview.selectedOptionalGroups || []).join(", ") || "none"} → ${(preview.targetOptionalGroups || []).join(", ") || "none"}.`;
+    list.append(item);
+  }
+  for (const field of countFields) {
+    const from = preview.currentCounts?.[field.id];
+    const to = preview.targetCounts?.[field.id];
+    if (from === to) continue;
+    const item = document.createElement("li");
+    item.textContent = `${field.label}: ${from} → ${to}.`;
     list.append(item);
   }
   for (const change of preview.cardChanges || []) {
@@ -182,7 +220,8 @@ export function renderCardTemplateUpdate(card, data, context) {
   apply.textContent = detail.activeCardTemplateBusy ? "Applying…" : "Apply reviewed update";
   apply.disabled = (preview.taskChanges || []).some(({ action }) => action === "conflict") || detail.activeCardTemplateBusy ||
     detail.activeCardMutationBusy || detail.activeTaskMutationBusy;
-  apply.addEventListener("click", () => applyCardTemplateUpdate(card.id, preview.previewToken, preview.targetOptionalGroups));
+  apply.addEventListener("click", () => applyCardTemplateUpdate(card.id, preview.previewToken, preview.targetOptionalGroups,
+    countFields.length ? preview.targetCounts : undefined));
   const cancel = document.createElement("button");
   cancel.type = "button";
   cancel.className = "task-action-btn";
@@ -200,7 +239,8 @@ export function renderCardTemplateUpdate(card, data, context) {
     reload.type = "button";
     reload.className = "task-action-btn";
     reload.textContent = "Reload latest preview";
-    reload.addEventListener("click", () => reloadCardTemplateUpdate(card.id, preview.targetOptionalGroups));
+    reload.addEventListener("click", () => reloadCardTemplateUpdate(card.id, preview.targetOptionalGroups,
+      countFields.length ? preview.targetCounts : undefined));
     actions.append(reload);
   }
   review.append(actions);
