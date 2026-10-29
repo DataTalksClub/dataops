@@ -30,9 +30,9 @@ export const newsletterDocHelp = `dataops newsletter doc - portal-hosted newslet
 
 Usage
   dataops newsletter doc create <issue-id|card-id> [--slot primary|secondary] [--standalone]
-      [--title T] [--sponsor NAME] [--date YYYY-MM-DD] [--link-type NAME] [--email]
+      [--from DOC-ID] [--title T] [--sponsor NAME] [--date YYYY-MM-DD] [--link-type NAME] [--email]
   dataops newsletter doc show <doc-id>
-  dataops newsletter doc export <doc-id>
+  dataops newsletter doc export <doc-id> [--format md|docx|txt] [--output PATH]
   dataops newsletter doc delete <doc-id> --yes
   dataops newsletter doc list [--card <card-id>]
   dataops newsletter doc update <doc-id> [--status draft|submitted] [--field KEY=VALUE ...]
@@ -46,9 +46,9 @@ export const podcastDocHelp = `dataops podcast doc - portal-hosted podcast docum
 
 Usage
   dataops podcast doc create <card-id> [--template podcast|podcast-guest-research|podcast-run-sheet|podcast-episode-brief]
-      [--title T] [--sponsor NAME] [--date YYYY-MM-DD] [--link-type NAME] [--email]
+      [--from DOC-ID] [--title T] [--sponsor NAME] [--date YYYY-MM-DD] [--link-type NAME] [--email]
   dataops podcast doc show <doc-id>
-  dataops podcast doc export <doc-id>
+  dataops podcast doc export <doc-id> [--format md|docx|txt] [--output PATH]
   dataops podcast doc delete <doc-id> --yes
   dataops podcast doc list [--card <card-id>]
   dataops podcast doc update <doc-id> [--status draft|submitted] [--field KEY=VALUE ...]
@@ -71,13 +71,13 @@ Research and run sheets start only after the recording date is confirmed
 export const webinarDocHelp = `dataops webinar doc - webinar speaker materials
 
 Usage
-  dataops webinar doc create <card-id> [--speaker NAME] [--date YYYY-MM-DD] [--email]
+  dataops webinar doc create <card-id> [--from DOC-ID] [--speaker NAME] [--date YYYY-MM-DD] [--email]
   dataops webinar doc show <doc-id>
   dataops webinar doc list [--card <card-id>]
   dataops webinar doc update <doc-id> [--field KEY=VALUE ...]
   dataops webinar doc submit <doc-id>
   dataops webinar doc reopen <doc-id>
-  dataops webinar doc export <doc-id>
+  dataops webinar doc export <doc-id> [--format md|docx|txt] [--output PATH]
   dataops webinar doc email <doc-id>
   dataops webinar doc rotate-code <doc-id>
   dataops webinar doc delete <doc-id> --yes
@@ -92,13 +92,13 @@ with email; these commands do not send messages.
 export const workshopDocHelp = `dataops workshop doc - workshop document (speaker materials + internal prep)
 
 Usage
-  dataops workshop doc create <card-id> [--speaker NAME] [--date YYYY-MM-DD] [--email]
+  dataops workshop doc create <card-id> [--from DOC-ID] [--speaker NAME] [--date YYYY-MM-DD] [--email]
   dataops workshop doc show <doc-id>
   dataops workshop doc list [--card <card-id>]
   dataops workshop doc update <doc-id> [--field KEY=VALUE ...] [--template workshop]
   dataops workshop doc submit <doc-id>
   dataops workshop doc reopen <doc-id>
-  dataops workshop doc export <doc-id>
+  dataops workshop doc export <doc-id> [--format md|docx|txt] [--output PATH]
   dataops workshop doc email <doc-id>
   dataops workshop doc rotate-code <doc-id>
   dataops workshop doc delete <doc-id> --yes

@@ -6,6 +6,7 @@ import { ConflictError, UsageError } from "../errors.mjs";
 import { apiMutation, batches, commitFiles, planReconcile, prodLineage, recordedStates, repositoryName, resolveCommit } from "../knowledgePublish.mjs";
 import { enc, fields, integer, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
+import { copyKnowledgeDocument, exportKnowledgeDocument } from "./kb-transfer.mjs";
 
 export const summary = "Explore, read, and search the knowledge base (SOPs, references, templates)";
 
@@ -28,6 +29,8 @@ Usage
   dataops kb recent [--limit N]                Recently changed docs, newest first: one row
                                                per doc with who changed it and how often
   dataops kb write <path> --file F [--create] [--title T] [--type T]
+  dataops kb create <path> --from <doc-id> [--title T] [--sop TARGET-SOP-ID]
+  dataops kb export <doc-id> [--format md|docx|txt] [--output PATH]
                                                Publish new content (as the web editor does)
   dataops kb import <path> --file F --source GOOGLE_DOC_URL --id ID --title T
       [--type template|reference] [--format text|markdown] [--output F]
@@ -569,4 +572,4 @@ export async function importDoc(args, io) {
   return { ...result, id: args.id };
 }
 
-export const commands = { search, related, show, code, tree, ls, resolve, backlinks, history, recent, write, publish, import: importDoc };
+export const commands = { search, related, show, code, tree, ls, resolve, backlinks, history, recent, write, publish, import: importDoc, create: copyKnowledgeDocument, export: exportKnowledgeDocument };
