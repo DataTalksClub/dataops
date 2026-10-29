@@ -50,11 +50,14 @@ test('webinar workflow creates a form; speaker saves, validates and submits link
   await expect(page.locator('[data-sponsor-feedback]')).toContainText('non-empty bullets');
   await bullets.nth(2).fill('Monitor');
   await page.locator('#sponsor-field-linkedinUrl').fill('https://example.test/linkedin');
+  await expect(page.locator('label[for="sponsor-field-twitterUrl"]')).toContainText('X (Twitter)');
+  await page.locator('#sponsor-field-twitterUrl').fill('https://example.test/x');
   await page.locator('#sponsor-field-githubUrl').fill('https://example.test/github');
   await page.locator('#sponsor-field-websiteUrl').fill('https://example.test/speaker');
   await page.locator('[data-sponsor-action="submit-ready"]').click();
   await expect(page.locator('[data-sponsor-feedback]')).toContainText('Submitted and marked ready');
   await page.reload();
+  await expect(page.locator('#sponsor-field-twitterUrl')).toHaveValue('https://example.test/x');
   await expect(page.locator('[data-sponsor-doc-status]')).toHaveText('Submitted / Ready');
   await expect(page.locator('[data-sponsor-export]')).toContainText('Lessons from building pipelines');
   await expect(page.locator('[data-sponsor-export]')).toContainText('A data engineer.');
@@ -63,6 +66,7 @@ test('webinar workflow creates a form; speaker saves, validates and submits link
   expect(saved.doc.cardId).toBe(card.id);
   expect(saved.doc.status).toBe('submitted');
   expect(saved.doc.content.outline).toContain('Monitor');
+  expect(saved.doc.content.twitterUrl).toBe('https://example.test/x');
 
   await page.setExtraHTTPHeaders({});
   await page.goto(`${server.baseURL}/cards?cardId=${card.id}`);
@@ -73,7 +77,7 @@ test('webinar workflow creates a form; speaker saves, validates and submits link
   const exported = await request.get(`${server.baseURL}${exportPath}`);
   expect(exported.status()).toBe(200);
   const markdown = await exported.text();
-  for (const value of ['Practical pipelines', 'Lessons from building pipelines', 'Design', 'Build', 'Monitor', 'A data engineer.', '/linkedin', '/github', '/speaker']) {
+  for (const value of ['Practical pipelines', 'Lessons from building pipelines', 'Design', 'Build', 'Monitor', 'A data engineer.', '/linkedin', 'X (Twitter): https://example.test/x', '/github', '/speaker']) {
     expect(markdown).toContain(value);
   }
 });
