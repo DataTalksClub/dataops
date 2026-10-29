@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PutCommand } from '@aws-sdk/lib-dynamodb';
@@ -15,7 +16,9 @@ test('review tokens are scoped, hashed, expiring and revocable; listings never e
   assert.deepEqual(await listDocumentReviewers(client, 'doc-a'), [reviewer]);
   await revokeDocumentReviewer(client, 'doc-a', reviewer.id);
   assert.equal(await verifyDocumentReviewer(client, 'doc-a', token), null);
-  await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { PK: 'DOCUMENT_REVIEW#doc-a', SK: `REVIEWER#${reviewer.id}`, ...reviewer, expiresAt: '2000-01-01', tokenHash: '0'.repeat(64) } }));
+  await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { PK: 'DOCUMENT_REVIEW#doc-a', SK: `REVIEWER#${reviewer.id}`, ...reviewer, expiresAt: '2000-01-01', tokenHash: createHash('sha256').update(token).digest('hex') } }));
+  assert.equal(await verifyDocumentReviewer(client, 'doc-a', token), null);
+  await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { PK: 'DOCUMENT_REVIEW#doc-a', SK: `REVIEWER#${reviewer.id}`, ...reviewer, expiresAt: 'invalid', tokenHash: createHash('sha256').update(token).digest('hex') } }));
   assert.equal(await verifyDocumentReviewer(client, 'doc-a', token), null);
 });
 test('threads preserve attribution, replies and resolution; stale writes cannot lose replies', async () => {
@@ -80,4 +83,15 @@ test('router validates reviewer bearer independently from staff sessions', async
     if (oldSkip === undefined) delete process.env.SKIP_AUTH; else process.env.SKIP_AUTH = oldSkip;
     if (oldLocal === undefined) delete process.env.IS_LOCAL; else process.env.IS_LOCAL = oldLocal;
   }
+});
+
+test('simultaneous replies accept one version and retain the winning post', async () => {
+  const { client } = await useTestDatabase();
+  const thread = await createDocumentThread(client, 'race-doc', staff, 'Start');
+  const results = await Promise.allSettled(['First', 'Second'].map(body => changeDocumentThread(client, 'race-doc', thread.id, staff, { body, version: 1 })));
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(results.filter(result => result.status === 'rejected').length, 1);
+  const saved = (await listDocumentThreads(client, 'race-doc'))[0];
+  assert.equal(saved.posts.length, 2);
+  assert.equal(saved.version, 2);
 });
