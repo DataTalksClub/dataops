@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import { collectBoundedPages } from './boundedPagination';
+import { getTask } from './tasks';
 import { TABLE_ARTIFACTS } from './tableNames';
 
 export const DOCUMENT_KINDS = ['transcript', 'timecodes', 'summary', 'note'] as const;
@@ -22,7 +23,9 @@ function clean(item: Record<string, unknown>): DocumentRecord {
 }
 export async function getDocument(client: DynamoDBDocumentClient, id: string): Promise<DocumentRecord | null> {
   const result = await client.send(new GetCommand({ TableName: TABLE_ARTIFACTS, Key: key(id), ConsistentRead: true }));
-  return result.Item ? clean(result.Item) : null;
+  if (!result.Item) return null;
+  const document = clean(result.Item);
+  return await getTask(client, document.taskId) ? document : null;
 }
 export async function createDocument(client: DynamoDBDocumentClient, data: Pick<DocumentRecord, 'taskId' | 'kind' | 'title' | 'content'>): Promise<DocumentRecord> {
   const now = new Date().toISOString();
@@ -57,4 +60,19 @@ export async function updateDocument(client: DynamoDBDocumentClient, id: string,
     throw error;
   }
   return doc;
+}
+
+/** Deletion invalidates every review link because review reads require this row. */
+export async function deleteDocument(client: DynamoDBDocumentClient, id: string, version: number): Promise<boolean> {
+  try {
+    await client.send(new DeleteCommand({ TableName: TABLE_ARTIFACTS, Key: key(id),
+      ConditionExpression: '#version = :version', ExpressionAttributeNames: { '#version': 'version' },
+      ExpressionAttributeValues: { ':version': version },
+    }));
+    return true;
+  } catch (error) {
+    if ((error as Error).name !== 'ConditionalCheckFailedException') throw error;
+    if (!await getDocument(client, id)) return false;
+    throw new DocumentVersionConflict('Document changed; reload before deleting');
+  }
 }

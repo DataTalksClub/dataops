@@ -1,10 +1,11 @@
+import { handleDocumentExportRoutes } from './documentExports';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { createDocument, DOCUMENT_KINDS, DocumentRecord, DocumentVersionConflict, getDocument, listDocuments, updateDocument } from '../db/documents';
+import { createDocument, deleteDocument, DOCUMENT_KINDS, DocumentRecord, DocumentVersionConflict, getDocument, listDocuments, updateDocument } from '../db/documents';
 import { resolveInteractiveActor } from '../identity/actor';
 import { getTask } from '../db/tasks';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
-const json = (statusCode: number, data: unknown): LambdaResponse => ({ statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+const json = (statusCode: number, data: unknown): LambdaResponse => ({ statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify(data) });
 export function validateDocumentText(body: Record<string, unknown>): string | null {
   if (typeof body.title !== 'string' || !body.title.trim() || body.title.length > 200) return 'title must contain 1–200 characters';
   if (typeof body.content !== 'string' || Buffer.byteLength(body.content, 'utf8') > 250000) return 'content must be text of at most 250000 UTF-8 bytes';
@@ -13,11 +14,13 @@ export function validateDocumentText(body: Record<string, unknown>): string | nu
 export async function handleDocumentRoutes(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse | null> {
   const path = event.path || '';
   const match = /^\/api\/documents(?:\/([^/]+))?\/?$/.exec(path);
-  if (!match) return null;
+  if (!match && !/^\/api\/documents\/[^/]+\/export\/?$/.test(path)) return null;
   const method = event.httpMethod || 'GET';
   const actor = await resolveInteractiveActor(client, event, method === 'GET' ? 'work-read' : 'work-write');
   if (!actor.ok) return actor.response;
-  const id = match[1];
+  const exported = await handleDocumentExportRoutes(event, client);
+  if (exported) return exported;
+  const id = match![1];
   if (method === 'GET') {
     if (id) {
       const document = await getDocument(client, id);
@@ -27,6 +30,16 @@ export async function handleDocumentRoutes(event: LambdaEvent, client: DynamoDBD
     if (!taskId) return json(400, { error: 'taskId is required' });
     if (!await getTask(client, taskId)) return json(404, { error: 'Task not found' });
     return json(200, { documents: await listDocuments(client, taskId) });
+  }
+  if (method === 'DELETE' && id) {
+    const version = Number(event.queryStringParameters?.version);
+    if (!Number.isSafeInteger(version) || version < 1) return json(400, { error: 'version is required' });
+    try {
+      return await deleteDocument(client, id, version) ? json(200, { deleted: true }) : json(404, { error: 'Document not found' });
+    } catch (error) {
+      if (error instanceof DocumentVersionConflict) return json(409, { error: error.message });
+      throw error;
+    }
   }
   if ((method === 'POST' && !id) || (method === 'PUT' && id)) {
     let body: Record<string, unknown>;

@@ -1,8 +1,8 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
-import { TABLE_TASKS, TABLE_ARTIFACTS } from '../src/db/tableNames';
+import { TABLE_TASKS, TABLE_ARTIFACTS, TABLE_USERS } from '../src/db/tableNames';
 import { startLocal, stopLocal, createTables } from '../scripts/local-dynamodb';
 import { handleDocumentRoutes } from '../src/routes/documents';
 import { createDocument, updateDocument, DocumentVersionConflict, listDocuments } from '../src/db/documents';
@@ -51,6 +51,40 @@ describe('Task document workspace', () => {
     const results = await Promise.allSettled(['A', 'B'].map(content => updateDocument(client, doc.id, { title: doc.title, content }, 1)));
     assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
     assert.ok(results.some(r => r.status === 'rejected' && r.reason instanceof DocumentVersionConflict));
+  });
+  it('exports saved Unicode content and blocks unsupported formats', async () => {
+    const doc = await createDocument(client, { taskId: 'doc-task', kind: 'transcript', title: 'Export', content: '00:00 café — こんにちは' });
+    for (const format of ['txt', 'md', 'docx']) {
+      const result = await handleDocumentRoutes({ httpMethod: 'GET', path: `/api/documents/${doc.id}/export`, queryStringParameters: { format } }, client);
+      assert.equal(result?.statusCode, 200);
+      if (format === 'docx') { assert.equal(result.isBase64Encoded, true); assert.equal(Buffer.from(result.body, 'base64').subarray(0, 2).toString(), 'PK'); }
+      else assert.equal(result.body, doc.content);
+    }
+    assert.equal((await request('GET', `/api/documents/${doc.id}/export`, undefined, { format: 'pdf' })).status, 400);
+  });
+  it('denies anonymous, disabled and unsupported actors including token-only guests', async () => {
+    delete process.env.SKIP_AUTH;
+    try {
+      assert.equal((await request('GET', '/api/documents', undefined, { taskId: 'doc-task' })).status, 401);
+      for (const [id, role, disabled, status] of [['disabled', 'admin', true, 401], ['unsupported', 'viewer', false, 403]] as const) {
+        await client.send(new PutCommand({ TableName: TABLE_USERS, Item: { PK: `USER#${id}`, SK: `USER#${id}`, id, role, disabled } }));
+        const result = await handleDocumentRoutes({ httpMethod: 'GET', path: '/api/documents', headers: { 'x-user-id': id }, queryStringParameters: { taskId: 'doc-task' } }, client);
+        assert.equal(result?.statusCode, status);
+      }
+      const result = await handleDocumentRoutes({ httpMethod: 'PUT', path: '/api/documents/guest', headers: { 'x-document-review-token': 'guest-token' }, body: JSON.stringify({ title: 'Unauthorized', content: '', version: 1 }) }, client);
+      assert.equal(result?.statusCode, 401);
+    } finally { process.env.SKIP_AUTH = 'true'; }
+  });
+  it('deletes only the requested version and invalidates guest document access', async () => {
+    const doc = await createDocument(client, { taskId: 'doc-task', kind: 'note', title: 'Delete', content: '' });
+    assert.equal((await request('DELETE', `/api/documents/${doc.id}`, undefined, { version: '2' })).status, 409);
+    assert.equal((await request('DELETE', `/api/documents/${doc.id}`, undefined, { version: '1' })).status, 200);
+    assert.equal((await request('GET', `/api/documents/${doc.id}`)).status, 404);
+    assert.equal((await request('DELETE', `/api/documents/${doc.id}`, undefined, { version: '1' })).status, 404);
+    await client.send(new PutCommand({ TableName: TABLE_TASKS, Item: { PK: 'TASK#removed-task', SK: 'TASK#removed-task', id: 'removed-task', version: 1, taskHistory: [] } }));
+    const orphan = await createDocument(client, { taskId: 'removed-task', kind: 'note', title: 'Task removed', content: 'Private' });
+    await client.send(new DeleteCommand({ TableName: TABLE_TASKS, Key: { PK: 'TASK#removed-task', SK: 'TASK#removed-task' } }));
+    assert.equal((await request('GET', `/api/documents/${orphan.id}`)).status, 404);
   });
   it('does not include artifact records in document listings', async () => {
     await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { PK: 'ARTIFACT#fake', SK: 'ARTIFACT#fake', taskId: 'doc-task' } }));

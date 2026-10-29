@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PutCommand } from '@aws-sdk/lib-dynamodb';
 import { useTestDatabase } from './helpers/db';
-import { TABLE_ARTIFACTS } from '../src/db/tableNames';
+import { TABLE_TASKS, TABLE_ARTIFACTS } from '../src/db/tableNames';
 import { createDocumentReviewer, verifyDocumentReviewer, revokeDocumentReviewer, listDocumentReviewers, createDocumentThread, changeDocumentThread, listDocumentThreads } from '../src/db/documentReviews';
 import { handleDocumentReviewRoutes, isAnonymousDocumentReviewRequest } from '../src/documents/reviews';
 const staff = { id: 'staff', name: 'Staff', kind: 'staff' as const };
@@ -65,6 +65,7 @@ test('Unicode thread growth fails before DynamoDB item size limit', async () => 
 test('router validates reviewer bearer independently from staff sessions', async () => {
   const { client } = await useTestDatabase();
   const { createDocument } = await import('../src/db/documents');
+  await client.send(new PutCommand({ TableName: TABLE_TASKS, Item: { PK: 'TASK#router-task', SK: 'TASK#router-task', id: 'router-task', version: 1, taskHistory: [] } }));
   const document = await createDocument(client, { taskId: 'router-task', title: 'Router doc', content: 'Review body', kind: 'note' });
   const { token } = await createDocumentReviewer(client, document.id, 'Router reviewer');
   const oldSkip = process.env.SKIP_AUTH;
