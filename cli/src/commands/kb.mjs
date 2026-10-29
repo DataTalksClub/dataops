@@ -1,5 +1,5 @@
 const templateParser = () => import("../../../frontend/src/template-placeholders.js");
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 import { ApiError } from "../api.mjs";
 import { ConflictError, UsageError } from "../errors.mjs";
@@ -29,6 +29,10 @@ Usage
                                                per doc with who changed it and how often
   dataops kb write <path> --file F [--create] [--title T] [--type T]
                                                Publish new content (as the web editor does)
+  dataops kb import <path> --file F --source GOOGLE_DOC_URL --id ID --title T
+      [--type template|reference] [--format text|markdown] [--output F]
+                                               Import an authenticated Google Docs export;
+                                               --output prepares a local file without publishing
   dataops kb publish [--head REV] [--repo DIR] [--dry-run]
                                                Make prod match a knowledge-repo commit; files
                                                edited in prod that Git has not seen are left
@@ -538,4 +542,31 @@ export async function related(args, io) {
   return result;
 }
 
-export const commands = { search, related, show, code, tree, ls, resolve, backlinks, history, recent, write, publish };
+export async function importDoc(args, io) {
+  const { importGoogleDoc } = await import("../kbImport.mjs");
+  const raw = positional(args, 0, "dataops kb import <path> --file F --source URL --id ID --title T");
+  const file = optionalString(args, "file");
+  if (!file) throw new UsageError("--file must name an authenticated Google Docs UTF-8 export");
+  const content = importGoogleDoc({
+    source: optionalString(args, "source"), id: optionalString(args, "id"),
+    title: optionalString(args, "title"), type: optionalString(args, "type"),
+    format: optionalString(args, "format"), bytes: readFileSync(file === "-" ? 0 : file),
+  });
+  const path = raw.startsWith(CONTENT) ? raw : `${CONTENT}${raw.replace(/^\/+/, "")}`;
+  if (!path.endsWith(".md") || path.split("/").some((part) => !part || part === "." || part === "..")) throw new UsageError("Import path must be a content Markdown path");
+  await validateTemplate(content, { path });
+  const output = optionalString(args, "output");
+  if (output) {
+    writeFileSync(output, content, { flag: "wx", mode: 0o600 });
+    const result = { path, id: args.id, output };
+    if (!args.json) io.print(`Prepared ${output} (${args.id}).`);
+    return result;
+  }
+  const api = apiFor(args);
+  const { revision } = await api.get("/knowledge/publication");
+  const result = await api.post("/docs", { path, content, doc_type: args.type || "reference", absent: true, expectedRevision: revision });
+  if (!args.json) io.print(`Imported ${path} (${args.id}, revision ${result.revision}).`);
+  return { ...result, id: args.id };
+}
+
+export const commands = { search, related, show, code, tree, ls, resolve, backlinks, history, recent, write, publish, import: importDoc };
