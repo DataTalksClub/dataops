@@ -5,6 +5,7 @@ import {dirname,join,resolve} from 'node:path';
 import {KnowledgeStore} from '../src/docs/knowledgeStore';
 import {handleDocsRoutes,configureDocsRuntime,resetDocsRuntime} from '../src/docs/contentApi';
 import {syntheticKnowledge} from './helpers/knowledge';
+import {VALID_DOC_TYPES} from '../src/docs/docRegistry';
 import type {LambdaEvent} from '../src/types';
 const SOP = [
   '---',
@@ -74,6 +75,30 @@ describe('S3 authenticated knowledge content routes',()=>{
   assert.equal((await call(ev('GET','/docs/export',{query:{ref:'ref.newsletter',format:'pdf'}}))).status,400);
   const missing=await call(ev('POST','/docs',{body:{path:'content/new.md',from:'missing',absent:true,expectedRevision:created.body.revision}}));
   assert.equal(missing.status,404);
+ });
+ it('copies and exports every knowledge document type, with a distinct SOP for a copied code view',async()=>{
+  const registry=await call(ev('GET','/docs/registry'));
+  const sop=registry.body.documents.find((doc:{doc_type:string})=>doc.doc_type==='sop');
+  let head=revision;
+  const target=await call(ev('POST','/docs',{body:{path:'content/target-sop.md',from:sop.id,absent:true,expectedRevision:head}}));
+  assert.equal(target.status,201);head=target.body.revision;
+  const targetRegistry=await call(ev('GET','/docs/registry'));
+  const targetSop=targetRegistry.body.documents.find((doc:{path:string})=>doc.path==='content/target-sop.md');
+  for(const type of VALID_DOC_TYPES) {
+   const id=`synthetic.${type}`;
+   const content=`---\nid: ${id}\naliases: [alias.${type}]\ntitle: Source ${type}\ndoc_type: ${type}\n${type==='code-view'?`sop: ${sop.id}\n`:''}---\n# Source ${type}\n\nAuthored ${type} body.\n${type==='template'?'\n## Template\n\n```text\nReusable authored content.\n```\n':''}`;
+   const source=await call(ev('POST','/docs',{body:{path:`content/source-${type}.md`,content,absent:true,expectedRevision:head}}));
+   assert.equal(source.status,201,JSON.stringify(source.body));head=source.body.revision;
+   const copied=await call(ev('POST','/docs',{body:{path:`content/copy-${type}.md`,from:id,absent:true,expectedRevision:head,...(type==='code-view'?{sop:targetSop.id}:{})}}));
+   assert.equal(copied.status,201,`${type}: ${JSON.stringify(copied.body)}`);head=copied.body.revision;
+   assert.ok(!copied.body.content.includes(`id: ${id}\n`));
+   assert.ok(!copied.body.content.includes(`alias.${type}`));
+   if(type==='code-view') assert.ok(copied.body.content.includes(`sop: ${targetSop.id}`));
+   for(const format of ['md','docx']) {
+    const result=await handleDocsRoutes(ev('GET','/docs/export',{query:{ref:`content/copy-${type}.md`,format}}),'authenticated-test-user');
+    assert.equal(result?.statusCode,200,`${type}/${format}`);
+   }
+  }
  });
  it('loads docs, registry, parsed content, search, quality and health without GitHub',async()=>{
   for(const route of ['/docs','/docs/registry','/docs/process-quality','/health','/lint']) assert.equal((await call(ev('GET',route))).status,200);
