@@ -112,6 +112,7 @@
     "src/surfaces/finance/bookkeeping-views.js",
     "src/surfaces/finance/bookkeeping.js",
     "src/surfaces/finance/index.js",
+    "src/surfaces/finance/invoice-generator.js",
     "src/surfaces/finance/invoices.js",
     "src/surfaces/finance/shared.js",
     "src/surfaces/finance/sponsor-activity.js",

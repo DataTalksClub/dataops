@@ -1,4 +1,5 @@
 import { financeSectionHead } from "./shared.js";
+import { mountInvoiceGenerator } from './invoice-generator.js';
 
 const fields = [
   ["transactionDate", "Date sent", "date"],
@@ -240,7 +241,7 @@ export async function mountInvoiceReview(host, context) {
       headers: { "content-type": "application/json" },
     });
   const json = (method, body) => ({ method, body: JSON.stringify(body) });
-  host.innerHTML = `${financeSectionHead({
+  host.innerHTML = `<section data-invoice-generator></section>${financeSectionHead({
     id: "invoice-review-heading",
     title: "Forwarded invoices",
     hint: "Verified rows publish automatically.",
@@ -256,6 +257,7 @@ export async function mountInvoiceReview(host, context) {
     <article data-invoice-detail hidden>
     </article>`;
   const status = host.querySelector("[data-invoice-status]");
+  void mountInvoiceGenerator(host.querySelector('[data-invoice-generator]'), context);
   const list = host.querySelector("[data-invoice-list]");
   const detail = host.querySelector("[data-invoice-detail]");
   let selected;

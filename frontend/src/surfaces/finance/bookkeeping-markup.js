@@ -60,7 +60,7 @@ export function bookkeepingSurfaceMarkup() {
             <button type="button" class="dk-menu__item" role="menuitem" data-view-link="files">Files &amp; statements <span class="bk-more__meta" data-files-meta></span></button>
             <button type="button" class="dk-menu__item" role="menuitem" data-view-link="package">Accountant package &amp; VAT</button>
             <button type="button" class="dk-menu__item" role="menuitem" data-view-link="tuition">Tuition agreements &amp; installments</button>
-            <button type="button" class="dk-menu__item" role="menuitem" data-view-link="invoices">Forwarded invoices <span class="bk-more__meta" data-invoices-meta></span></button>
+            <button type="button" class="dk-menu__item" role="menuitem" data-view-link="invoices">Invoices and PDFs <span class="bk-more__meta" data-invoices-meta></span></button>
           </div>
         </details>
       </div>
