@@ -79,7 +79,7 @@ Usage
   dataops webinar doc templates
 
 Required to submit: talkTitle, outline (3–4 newline-separated bullets), bio.
-Optional: summary, linkedinUrl, githubUrl, websiteUrl.
+Optional: summary, linkedinUrl, twitterUrl, githubUrl, websiteUrl.
 Create links the form to the webinar card. Copy the share link or invitation
 with email; these commands do not send messages.
 `;

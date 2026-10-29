@@ -452,6 +452,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         description: 'Public profile links to include in the event description. Use a full link beginning with https:// or http://.',
         fields: [
           { key: 'linkedinUrl', label: 'LinkedIn', type: 'text', format: 'url', placeholder: 'https://www.linkedin.com/in/...' },
+          { key: 'twitterUrl', label: 'X (Twitter)', type: 'text', format: 'url', placeholder: 'https://x.com/...' },
           { key: 'githubUrl', label: 'GitHub', type: 'text', format: 'url', placeholder: 'https://github.com/...' },
           { key: 'websiteUrl', label: 'Website', type: 'text', format: 'url', placeholder: 'https://...' },
         ],
@@ -1209,6 +1210,7 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '## Speaker bio', '', valOrPlaceholder(c.bio), '',
       '## Links for the event description', '',
       `- LinkedIn: ${valOrPlaceholder(c.linkedinUrl)}`,
+      `- X (Twitter): ${valOrPlaceholder(c.twitterUrl)}`,
       `- GitHub: ${valOrPlaceholder(c.githubUrl)}`,
       `- Website: ${valOrPlaceholder(c.websiteUrl)}`,
     );
