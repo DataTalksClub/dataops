@@ -14,7 +14,7 @@ Usage
   dataops templates show <id|id-prefix|type|name>
   dataops templates create --file <definition.yaml|json> [--dry-run]
   dataops templates update <id|id-prefix|type|name> (--from-file <definition.yaml|json> | --file <definition.yaml|json>
-      | --task <taskRef> --offset-days <int> [--task-name <text>] [--name <text>])
+      | --task <taskRef> --offset-days <int> [--anchor start|end] [--task-name <text>] [--name <text>])
       [--expected-version N] [--revision R] [--dry-run]
   dataops templates reset <id|id-prefix|type|name> [--expected-version N] [--revision R] [--dry-run]
   dataops templates delete <id|id-prefix|type|name> --yes [--expected-version N] [--revision R]
@@ -229,7 +229,7 @@ export async function show(args, io) {
     io,
     template.taskDefinitions || [],
     [
-      ["OFFSET", (task) => `${task.offsetDays >= 0 ? "+" : ""}${task.offsetDays ?? 0}d`],
+      ["OFFSET", (task) => `${task.anchor === "end" ? "END" : ""}${task.offsetDays >= 0 ? "+" : ""}${task.offsetDays ?? 0}d`],
       ["REF", (task) => task.refId || ""],
       ["GROUP", (task) => task.optionalGroup || task.group || ""],
       ["AFTER", (task) => (task.dependsOn || []).join(",")],
@@ -266,7 +266,7 @@ function patchedTaskDefinitions(template, args) {
   if (taskRef === undefined) {
     if (name === undefined) {
       throw new UsageError(
-        "dataops templates update <ref> (--file <definition.yaml|json> | --task <taskRef> --offset-days <int> [--task-name <text>] [--name <text>])",
+        "dataops templates update <ref> (--file <definition.yaml|json> | --task <taskRef> --offset-days <int> [--anchor start|end] [--task-name <text>] [--name <text>])",
       );
     }
     return { name: template.name, taskDefinitions: definitions };
@@ -275,13 +275,21 @@ function patchedTaskDefinitions(template, args) {
   if (!task) throw new UsageError(`No Task definition with ref "${taskRef}" on Template "${template.type || template.id}".`);
   const offsetDays = args.offsetDays === undefined ? undefined : Number(args.offsetDays);
   const taskName = optionalString(args, "taskName");
+  const anchor = optionalString(args, "anchor");
   if (offsetDays !== undefined && (!Number.isInteger(offsetDays))) {
     throw new UsageError("--offset-days must be an integer number of days.");
   }
-  if (offsetDays === undefined && taskName === undefined) {
-    throw new UsageError("dataops templates update <ref> --task <taskRef> --offset-days <int> [--task-name <text>]");
+  if (anchor !== undefined && anchor !== "start" && anchor !== "end") {
+    throw new UsageError("--anchor must be start or end.");
+  }
+  if (offsetDays === undefined && taskName === undefined && anchor === undefined) {
+    throw new UsageError("dataops templates update <ref> --task <taskRef> --offset-days <int> [--anchor start|end] [--task-name <text>]");
   }
   if (offsetDays !== undefined) task.offsetDays = offsetDays;
+  if (anchor !== undefined) {
+    if (anchor === "start") delete task.anchor;
+    else task.anchor = anchor;
+  }
   if (taskName !== undefined) task.description = taskName;
   return { name: template.name, taskDefinitions: definitions };
 }

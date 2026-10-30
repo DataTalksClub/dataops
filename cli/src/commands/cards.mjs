@@ -16,8 +16,8 @@ Usage
                                                 Default: active and parked; --all adds archived
   dataops cards show <card-id>                  The Card, its links, and its Tasks
   dataops cards create --date YYYY-MM-DD --template ID|TYPE|NAME [--title T]
-      [--optional-groups a,b] [--count FIELD=N,...] [--stage S] [--description D] [--owner ID] [--tags a,b]
-  dataops cards update <card-id> [--title T] [--description D] [--date D] [--owner ID|none]
+      [--end-date YYYY-MM-DD] [--optional-groups a,b] [--count FIELD=N,...] [--stage S] [--description D] [--owner ID] [--tags a,b]
+  dataops cards update <card-id> [--title T] [--description D] [--date D] [--end-date D] [--owner ID|none]
       [--tags a,b]
   dataops cards update <card-id> --count FIELD=N[,FIELD=N] [--apply]
                                                 Change a count (e.g. workshops=3); preview by default
@@ -38,6 +38,8 @@ Usage
                                                 Review Template and Card option changes
 
 --date is the Card's anchor date: Template Tasks are scheduled relative to it.
+A Template with Tasks anchored to END also needs --end-date (the cohort END
+date); Tasks anchored to END count their offset from it.
 --title is required unless the Template has a card_title pattern, which
 names the Card when the title is left out.
 Writes read the Card's current version first (or pass --expected-version N).
@@ -116,6 +118,7 @@ export async function show(args, io) {
     ["status", card.status],
     ["stage", card.stage],
     ["date", card.anchorDate],
+    ["end date", card.endDate],
     ["event time", card.eventTime?.startIso],
     ["event end", card.eventTime?.endIso],
     ["time zone", card.eventTime?.timeZone],
@@ -167,6 +170,8 @@ export async function show(args, io) {
 export async function create(args, io) {
   const api = apiFor(args);
   const body = { anchorDate: isoDate(required(args, "date", "date"), "date") };
+  const endDate = optionalString(args, "endDate");
+  if (endDate !== undefined) body.endDate = isoDate(endDate, "end-date");
   const title = optionalString(args, "title");
   if (title !== undefined) body.title = title;
   // Every Card is instantiated from a Template.
@@ -213,7 +218,7 @@ export function parseCounts(value) {
 export async function update(args, io) {
   const id = positional(args, 0, "dataops cards update <card-id> [--title T] ...");
   if (args.count !== undefined) {
-    const other = ["title", "description", "date", "owner", "tags"].find((flag) => args[flag] !== undefined);
+    const other = ["title", "description", "date", "endDate", "owner", "tags"].find((flag) => args[flag] !== undefined);
     if (other) throw new UsageError(`--count is a reviewed change of its own; run --${other} separately.`);
     return templateUpdate(args, io);
   }
@@ -224,6 +229,8 @@ export async function update(args, io) {
   }
   const date = isoDate(args.date, "date");
   if (date) body.anchorDate = date;
+  const endDate = optionalString(args, "endDate");
+  if (endDate !== undefined) body.endDate = isoDate(endDate, "end-date");
   const owner = optionalString(args, "owner");
   if (owner !== undefined) body.ownerId = owner === "none" ? null : owner;
   if (args.tags !== undefined) body.tags = csv(args.tags);

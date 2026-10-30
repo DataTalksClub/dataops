@@ -165,6 +165,43 @@ describe("templates write commands", () => {
     assert.deepEqual([patched.offsetDays, patched.description], [3, "Renamed B"]);
   });
 
+  test("update --anchor end pins the END anchor and --anchor start clears it", async () => {
+    const calls = fakePortal({
+      ...findRoutes,
+      "PUT /api/templates/tpl-1": { template: { ...template, version: 4 } },
+    });
+    assert.equal(await run(["templates", "update", "tpl-1", "--task", "a", "--anchor", "end"], captureIo()), 0);
+    const pinned = calls.at(-1).body.definition.taskDefinitions.find((task) => task.refId === "a");
+    assert.equal(pinned.anchor, "end");
+    assert.equal(await run(["templates", "update", "tpl-1", "--task", "a", "--anchor", "start"], captureIo()), 0);
+    assert.ok(!Object.hasOwn(calls.at(-1).body.definition.taskDefinitions.find((task) => task.refId === "a"), "anchor"));
+  });
+
+  test("update rejects an anchor outside start and end", async () => {
+    fakePortal(findRoutes);
+    assert.equal(await run(["templates", "update", "tpl-1", "--task", "a", "--anchor", "middle"], captureIo()), 2);
+  });
+
+  test("show renders the END anchor on the offset", async () => {
+    fakePortal({
+      "GET /api/templates/end-anchored": { status: 404, body: { error: "Template not found" } },
+      "GET /api/templates": {
+        templates: [{
+          ...template,
+          type: "end-anchored",
+          taskDefinitions: [
+            { refId: "a", description: "Task A", offsetDays: -42 },
+            { refId: "b", description: "Task B", offsetDays: 7, anchor: "end" },
+          ],
+        }],
+      },
+    });
+    const io = captureIo();
+    assert.equal(await run(["templates", "show", "end-anchored"], io), 0);
+    assert.match(io.text(), /-42d/);
+    assert.match(io.text(), /END\+7d/);
+  });
+
   test("update without any usable revision fails before sending", async () => {
     const calls = fakePortal({
       "GET /api/templates/norev-type": { status: 404, body: { error: "Template not found" } },
