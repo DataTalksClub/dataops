@@ -184,8 +184,9 @@ describe('authored YAML template mapping', () => {
     );
     assert.match(
       messages({ ...authored, type: 'webinar' }),
-      /task 'synthetic-stream' episode_stage is only supported on templates that create podcast episodes \(podcast\)/,
+      /task 'synthetic-stream' episode_stage is only supported on templates that create podcast episodes \(podcast, lightning-lesson-podcast\)/,
     );
+    assert.deepStrictEqual(validateAuthoredTemplate({ ...authored, type: 'lightning-lesson-podcast' }), []);
   });
 
   it('round-trips optional task groups and rejects malformed group slugs', () => {
