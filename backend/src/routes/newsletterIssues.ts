@@ -28,6 +28,7 @@ import {
   nextNewsletterIssue,
   putNewsletterAlertRecord,
   replaceIssueWrite,
+  resolveNewsletterIssue,
   updateNewsletterAlertRecord,
   updateNewsletterIssue,
   type NewsletterIssue,
@@ -77,6 +78,10 @@ import {
   handleNewsletterMarkdownRoutes,
   publicNewsletterIssueFields,
 } from '../newsletter/markdownPreview';
+import {
+  MailchimpMetricsError,
+  pullIssueMailchimpMetrics,
+} from '../newsletter/mailchimpMetrics';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
   statusCode,
@@ -696,7 +701,7 @@ async function maybeCloseMetricsTask(
 }
 
 async function updateRoute(id: string, body: Body, event: LambdaEvent, client: DynamoDBDocumentClient) {
-  const existing = await getNewsletterIssue(client, id);
+  const existing = await resolveNewsletterIssue(client, id);
   if (!existing) return json(404, { error: 'Not found' });
   if (body.version !== existing.version) return json(409, { error: 'Issue changed; reload and retry' });
   const allowed = new Set<string>([...UPDATABLE_FIELDS, 'version', ...CONFIRMATIONS]);
@@ -772,7 +777,7 @@ async function updateRoute(id: string, body: Body, event: LambdaEvent, client: D
 }
 
 async function deleteRoute(id: string, body: Body, event: LambdaEvent, client: DynamoDBDocumentClient) {
-  const existing = await getNewsletterIssue(client, id);
+  const existing = await resolveNewsletterIssue(client, id);
   if (!existing) return json(404, { error: 'Not found' });
   if (body.version !== existing.version) return json(409, { error: 'Issue changed; reload and retry' });
   const resolved = await resolveInteractiveActor(client, event, 'work-write');
@@ -814,7 +819,7 @@ async function issueView(client: DynamoDBDocumentClient, issue: NewsletterIssue,
  * the issue (`dryRun` shows what would move and what keeps it).
  */
 async function cardRoute(id: string, method: string, body: Body, event: LambdaEvent, client: DynamoDBDocumentClient) {
-  const existing = await getNewsletterIssue(client, id);
+  const existing = await resolveNewsletterIssue(client, id);
   if (!existing) return json(404, { error: 'Not found' });
   if (method === 'POST' && existing.cardId) return json(200, await issueView(client, existing, {}, event));
   if (body.version !== existing.version) return json(409, { error: 'Issue changed; reload and retry' });
@@ -907,7 +912,7 @@ async function slotRoute(
   event: LambdaEvent,
   client: DynamoDBDocumentClient,
 ) {
-  const existing = await getNewsletterIssue(client, id);
+  const existing = await resolveNewsletterIssue(client, id);
   if (!existing) return json(404, { error: 'Not found' });
   if (!(SLOT_POSITIONS[existing.kind] as readonly string[]).includes(position)) {
     return json(400, { error: `A ${existing.kind} issue has no ${position} slot` });
@@ -985,7 +990,7 @@ async function sponsorReportRoute(event: LambdaEvent, client: DynamoDBDocumentCl
 }
 
 async function issueReportRoute(id: string, event: LambdaEvent, client: DynamoDBDocumentClient) {
-  const item = await getNewsletterIssue(client, id);
+  const item = await resolveNewsletterIssue(client, id);
   if (!item) return json(404, { error: 'Not found' });
   const query = event.queryStringParameters || {};
   const validPositions = SLOT_POSITIONS[item.kind] as readonly NewsletterSlotPosition[];
@@ -1003,6 +1008,97 @@ async function issueReportRoute(id: string, event: LambdaEvent, client: DynamoDB
     report: reports[0] || null,
     reports,
   });
+}
+
+async function mailchimpMetricsRoute(id: string, body: Body, event: LambdaEvent, client: DynamoDBDocumentClient) {
+  const existing = await resolveNewsletterIssue(client, id);
+  if (!existing) return json(404, { error: 'Not found' });
+  const dryRun = body.dryRun === true;
+  const resolved = await resolveInteractiveActor(client, event, dryRun ? 'work-read' : 'work-write');
+  if (!resolved.ok) return resolved.response;
+
+  const campaignId = typeof body.campaignId === 'string' && body.campaignId.trim()
+    ? body.campaignId.trim()
+    : undefined;
+  const slotUrls: Partial<Record<NewsletterSlotPosition, string>> = {};
+  if (body.slotUrls && typeof body.slotUrls === 'object' && !Array.isArray(body.slotUrls)) {
+    for (const position of ['primary', 'secondary'] as const) {
+      const raw = (body.slotUrls as Record<string, unknown>)[position];
+      if (typeof raw === 'string' && raw.trim()) slotUrls[position] = raw.trim();
+    }
+  }
+
+  let pulled: Awaited<ReturnType<typeof pullIssueMailchimpMetrics>>;
+  try {
+    pulled = await pullIssueMailchimpMetrics(client, existing, { campaignId, slotUrls });
+  } catch (err) {
+    if (err instanceof MailchimpMetricsError) {
+      return json(err.statusCode, { error: err.message, code: err.code });
+    }
+    throw err;
+  }
+
+  if (dryRun) {
+    const previewIssue: NewsletterIssue = {
+      ...existing,
+      stats: pulled.stats,
+      slots: pulled.slots,
+    };
+    return json(
+      200,
+      await issueView(
+        client,
+        previewIssue,
+        {
+          mailchimp: {
+            campaign: pulled.campaign,
+            matchedSlotUrls: pulled.matchedSlotUrls,
+            dryRun: true,
+          },
+        },
+        event,
+      ),
+    );
+  }
+
+  let next: NewsletterIssue;
+  try {
+    next = await updateNewsletterIssue(client, existing, {
+      stats: pulled.stats,
+      slots: pulled.slots,
+    });
+  } catch {
+    return json(409, { error: 'Conflicting update' });
+  }
+
+  let cardSync = 'unchanged';
+  let metricsTask = 'none';
+  try {
+    await pushIssueToCard(client, next);
+    cardSync = next.cardId ? 'pushed' : 'unchanged';
+    metricsTask = await maybeCloseMetricsTask(client, next, resolved.actor.id || 'system');
+  } catch (failure) {
+    console.error('Newsletter issue card sync failed:', failure);
+    cardSync = 'failed';
+  }
+
+  return json(
+    200,
+    await issueView(
+      client,
+      next,
+      {
+        cardSync,
+        metricsTask,
+        mailchimp: {
+          campaign: pulled.campaign,
+          matchedSlotUrls: pulled.matchedSlotUrls,
+          dryRun: false,
+        },
+      },
+      event,
+    ),
+  );
 }
 
 export async function handleNewsletterIssueRoutes(
@@ -1035,7 +1131,13 @@ export async function handleNewsletterIssueRoutes(
   const issueReport = path.match(/^\/api\/newsletter-issues\/([^/]+)\/report$/);
   if (issueReport) {
     if (method !== 'GET') return json(405, { error: 'Method not allowed' });
-    return issueReportRoute(issueReport[1], event, client);
+    return issueReportRoute(decodeURIComponent(issueReport[1]), event, client);
+  }
+  const mailchimpMetrics = path.match(/^\/api\/newsletter-issues\/([^/]+)\/mailchimp-metrics$/);
+  if (mailchimpMetrics) {
+    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+    const body = parse(event) || {};
+    return mailchimpMetricsRoute(decodeURIComponent(mailchimpMetrics[1]), body, event, client);
   }
   const rotateMdCode = path.match(/^\/api\/newsletter-issues\/([^/]+)\/markdown\/rotate-code\/?$/);
   if (rotateMdCode) {
@@ -1057,7 +1159,7 @@ export async function handleNewsletterIssueRoutes(
     if (method !== 'POST' && method !== 'DELETE') return json(405, { error: 'Method not allowed' });
     const body = parse(event);
     if (!body) return json(400, { error: 'Invalid JSON' });
-    return cardRoute(card[1], method, body, event, client);
+    return cardRoute(decodeURIComponent(card[1]), method, body, event, client);
   }
   if (path === '/api/newsletter-issues/sponsor-options') {
     if (method !== 'GET') return json(405, { error: 'Method not allowed' });
@@ -1068,14 +1170,14 @@ export async function handleNewsletterIssueRoutes(
     if (method !== 'PUT' && method !== 'DELETE') return json(405, { error: 'Method not allowed' });
     const body = parse(event);
     if (!body) return json(400, { error: 'Invalid JSON' });
-    return slotRoute(slot[1], slot[2], method, body, event, client);
+    return slotRoute(decodeURIComponent(slot[1]), slot[2], method, body, event, client);
   }
   const match = path.match(/^\/api\/newsletter-issues(?:\/([^/]+))?$/);
   if (!match) return json(404, { error: 'Not found' });
-  const id = match[1];
+  const id = match[1] ? decodeURIComponent(match[1]) : undefined;
   if (method === 'GET' && !id) return listRoute(event, client);
-  if (method === 'GET') {
-    const item = await getNewsletterIssue(client, id);
+  if (method === 'GET' && id) {
+    const item = await resolveNewsletterIssue(client, id);
     if (!item) return json(404, { error: 'Not found' });
     return json(200, await issueView(client, item, {}, event));
   }

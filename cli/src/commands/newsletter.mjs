@@ -68,9 +68,10 @@ Usage
       [--open-rate PCT] [--click-rate PCT]
       [--linkedin-impressions N] [--linkedin-clicks N] [--linkedin-reactions N] [--linkedin-ctr PCT] [--linkedin-post URL|none]
       [--x-impressions N] [--x-clicks N] [--x-reactions N] [--x-ctr PCT] [--x-post URL|none]
+      [--pull-mailchimp [--campaign ID] [--primary-url URL] [--secondary-url URL] [--dry-run]]
       [--clear]
-                                  Show or set Mailchimp issue metrics and per-slot
-                                  (primary / secondary) link + LinkedIn + X metrics.
+                                  Show, set, or pull from Mailchimp the issue metrics and
+                                  per-slot (primary / secondary) link + LinkedIn + X metrics.
                                   With no metric flags it shows the current values.
   dataops newsletter report <issue-id> [primary|secondary] [--contact NAME]
   dataops newsletter report --sponsor <name> [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--contact NAME]
@@ -364,7 +365,39 @@ function applySlotStatFlags(currentSlotStats, spec, issueOpens) {
   return next;
 }
 
+export async function pullMailchimp(args, io) {
+  const usage = "dataops newsletter metrics <issue-id> --pull-mailchimp [--campaign <id>] [--primary-url <url>] [--secondary-url <url>] [--dry-run]";
+  const id = positional(args, 0, usage);
+  const api = apiFor(args);
+  const campaignId = optionalString(args, "campaign") ?? optionalString(args, "campaignId");
+  const primaryUrl = optionalString(args, "primaryUrl") ?? optionalString(args, "sponsorUrl");
+  const secondaryUrl = optionalString(args, "secondaryUrl");
+  const slotUrls = {
+    ...(primaryUrl ? { primary: primaryUrl } : {}),
+    ...(secondaryUrl ? { secondary: secondaryUrl } : {}),
+  };
+  const payload = {
+    ...(campaignId ? { campaignId } : {}),
+    ...(Object.keys(slotUrls).length ? { slotUrls } : {}),
+    ...(args.dryRun ? { dryRun: true } : {}),
+  };
+  const updated = await api.post(`/api/newsletter-issues/${enc(id)}/mailchimp-metrics`, payload);
+  if (args.json) return updated;
+  const mc = updated.mailchimp?.campaign;
+  const prefix = updated.mailchimp?.dryRun ? "Would pull Mailchimp metrics for" : "Pulled Mailchimp metrics for";
+  io.print(`${prefix} ${updated.label} (${updated.publicationDate})${mc?.id ? ` from campaign ${mc.id}${mc.title ? ` "${mc.title}"` : ""}` : ""}.`);
+  if (updated.stats) io.print(`issue metrics: ${formatIssueStatsLine(updated.stats)}`);
+  for (const position of POSITIONS) {
+    const slot = updated.slots?.[position];
+    if (slot?.stats) io.print(`${position} (${slot.sponsor || "open"}): ${formatSlotStatsLine(slot.stats)}`);
+  }
+  return updated;
+}
+
 export async function metrics(args, io) {
+  if (args.pullMailchimp || args.mailchimp || args.fromMailchimp) {
+    return pullMailchimp(args, io);
+  }
   const usage = "dataops newsletter metrics <issue-id> [primary|secondary] [--sent N] [--opens N] [--clicks N] ...";
   const id = positional(args, 0, usage);
   const posArg = args._[1] !== undefined ? String(args._[1]) : optionalString(args, "slot");
@@ -938,6 +971,7 @@ export const commands = {
   doc,
   markdown,
   metrics,
+  "pull-mailchimp": pullMailchimp,
   report,
   delete: remove,
   sponsors,

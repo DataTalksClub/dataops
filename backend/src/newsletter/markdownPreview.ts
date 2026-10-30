@@ -3,8 +3,8 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { normalizeCardLinks } from '../artifactLinks';
 import { getCardConsistent, updateCard } from '../db/cards';
 import {
-  getNewsletterIssue,
   listNewsletterIssuesByCardId,
+  resolveNewsletterIssue,
   updateNewsletterIssue,
   type NewsletterIssue,
   type NewsletterIssueLink,
@@ -356,7 +356,7 @@ async function resolveIssueByIdOrCardId(
   client: DynamoDBDocumentClient,
   idOrCardId: string,
 ): Promise<NewsletterIssue | null> {
-  const direct = await getNewsletterIssue(client, idOrCardId);
+  const direct = await resolveNewsletterIssue(client, idOrCardId);
   if (direct) return direct;
   const byCard = await listNewsletterIssuesByCardId(client, idOrCardId);
   return byCard[0] || null;

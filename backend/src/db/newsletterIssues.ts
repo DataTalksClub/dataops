@@ -134,6 +134,35 @@ export async function getNewsletterIssue(client: DynamoDBDocumentClient, id: str
   );
 }
 
+/**
+ * Resolve an issue by exact id, weekly issue number (`299` or `#299`), or
+ * unique hex id prefix (4+ characters).
+ */
+export async function resolveNewsletterIssue(
+  client: DynamoDBDocumentClient,
+  idOrRef: string,
+): Promise<NewsletterIssue | null> {
+  const trimmed = String(idOrRef || '').trim();
+  if (!trimmed) return null;
+  const direct = await getNewsletterIssue(client, trimmed);
+  if (direct) return direct;
+  const numberMatch = /^#?(\d{1,6})$/.exec(trimmed);
+  const isHexPrefix = /^[0-9a-f]{4,63}$/i.test(trimmed);
+  if (!numberMatch && !isHexPrefix) return null;
+  const all = await listNewsletterIssues(client, '0000-01-01', '9999-12-31');
+  if (numberMatch) {
+    const issueNumber = Number(numberMatch[1]);
+    const matches = all.filter((item) => item.kind === 'weekly' && item.issueNumber === issueNumber);
+    if (matches.length === 1) return matches[0];
+  }
+  if (isHexPrefix) {
+    const lower = trimmed.toLowerCase();
+    const matches = all.filter((item) => item.id.toLowerCase().startsWith(lower));
+    if (matches.length === 1) return matches[0];
+  }
+  return null;
+}
+
 export async function listNewsletterIssues(
   client: DynamoDBDocumentClient,
   from: string,

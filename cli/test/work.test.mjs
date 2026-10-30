@@ -1018,4 +1018,76 @@ describe("newsletter metrics and sponsor report", () => {
     assert.deepEqual(calls.at(-1).query, { sponsor: "VectorAI DB" });
     assert.match(bySponsor.text(), /Weekly #297 · 2026-04-06 · primary \(VectorAI DB\)/);
   });
+
+  test("metrics --pull-mailchimp pulls campaign and per-slot link metrics from Mailchimp", async () => {
+    const calls = fakePortal({
+      "POST /api/newsletter-issues/300/mailchimp-metrics": ({ body }) => ({
+        status: 200,
+        body: {
+          id: "i-300",
+          version: 6,
+          kind: "weekly",
+          label: "Weekly #300",
+          publicationDate: "2026-10-26",
+          status: "sent",
+          stats: {
+            sent: 131228,
+            opens: 40440,
+            openRate: 30.82,
+            clicks: 620,
+            uniqueClicks: 475,
+            clickRate: 1.53,
+          },
+          slots: {
+            primary: {
+              sponsor: "Astronomer",
+              stats: {
+                clicks: 620,
+                uniqueClicks: 475,
+                clickRate: 1.53,
+              },
+            },
+            secondary: {},
+          },
+          mailchimp: {
+            campaign: {
+              id: "1f4942be2a",
+              webId: 15816519,
+              title: "Weekly email #300 (Oct 26, 2026) - sponsored",
+            },
+            matchedSlotUrls: {
+              primary: ["https://astronomer.io/events/webinars/build-event-driven-workflows-with-apache-airflow-video"],
+            },
+            dryRun: Boolean(body.dryRun),
+          },
+        },
+      }),
+    });
+
+    const pullOut = captureIo();
+    assert.equal(
+      await run(
+        [
+          "newsletter",
+          "metrics",
+          "300",
+          "--pull-mailchimp",
+          "--campaign",
+          "1f4942be2a",
+          "--primary-url",
+          "https://www.astronomer.io/events/webinars/build-event-driven-workflows-with-apache-airflow-video/",
+        ],
+        pullOut,
+      ),
+      0,
+    );
+    assert.deepEqual(calls.at(-1).body, {
+      campaignId: "1f4942be2a",
+      slotUrls: {
+        primary: "https://www.astronomer.io/events/webinars/build-event-driven-workflows-with-apache-airflow-video/",
+      },
+    });
+    assert.match(pullOut.text(), /Pulled Mailchimp metrics for Weekly #300 \(2026-10-26\) from campaign 1f4942be2a/);
+    assert.match(pullOut.text(), /131,228 sent · 40,440 opens \(30\.82%\) · 620 clicks \(475 unique, 1\.53% CTR\)/);
+  });
 });

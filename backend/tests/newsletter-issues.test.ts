@@ -13,6 +13,7 @@ import { TABLE_CARDS, TABLE_NEWSLETTER_SLOTS, TABLE_TASKS } from "../src/db/tabl
 import { createCrmRecord, getCrmRecord } from "../src/db/sponsorCrm";
 import { newsletterOverlayItem } from "../src/calendar/newsletterOverlay";
 import { handleNewsletterIssueRoutes } from "../src/routes/newsletterIssues";
+import { setMailchimpMetricsDepsForTests } from "../src/newsletter/mailchimpMetrics";
 
 const invoke = (
   method: string,
@@ -615,6 +616,212 @@ describe("newsletter issues", () => {
     assert.equal(tasks["add-newsletter-performance"].status, "done");
     assert.match(tasks["add-newsletter-performance"].externalStatus || "", /99714 sent, 34886 opens/);
     assert.equal(tasks["collect-linkedin-stats"].status, "done");
+  });
+
+  it("resolves issues by weekly issue number (#299 or 299) and unique hex id prefix", async () => {
+    const created = data(
+      await invoke("POST", "/api/newsletter-issues", weekly({
+        sourceKey: "issue-number-lookup-391",
+        publicationDate: "2027-11-09",
+        issueNumber: 391,
+        slots: { primary: { sponsor: "Snowplow" }, secondary: {} },
+      })),
+    );
+    const prefix = created.id.slice(0, 12);
+
+    const byNum = await invoke("GET", "/api/newsletter-issues/391");
+    assert.equal(byNum.statusCode, 200, byNum.body);
+    assert.equal(data(byNum).id, created.id);
+
+    const byHashNum = await invoke("GET", "/api/newsletter-issues/%23391");
+    assert.equal(byHashNum.statusCode, 200, byHashNum.body);
+    assert.equal(data(byHashNum).id, created.id);
+
+    const byPrefix = await invoke("GET", `/api/newsletter-issues/${prefix}`);
+    assert.equal(byPrefix.statusCode, 200, byPrefix.body);
+    assert.equal(data(byPrefix).id, created.id);
+
+    const updated = await invoke("PUT", "/api/newsletter-issues/391", {
+      version: created.version,
+      stats: { sent: 131429, opens: 42575, openRate: 32.39 },
+    });
+    assert.equal(updated.statusCode, 200, updated.body);
+    assert.equal(data(updated).stats.sent, 131429);
+
+    const report = await invoke("GET", "/api/newsletter-issues/391/report");
+    assert.equal(report.statusCode, 200, report.body);
+    assert.equal(data(report).issueId, created.id);
+  });
+
+  it("pulls newsletter metrics and per-slot link clicks from Mailchimp and auto-closes collect tasks", async () => {
+    const created = await createWithCard(weekly({
+      sourceKey: "issue-mailchimp-autopull-392",
+      publicationDate: "2027-11-16",
+      issueNumber: 392,
+      slots: {
+        primary: {
+          sponsor: "VectorAI DB",
+          stats: {
+            linkedinImpressions: 687,
+            linkedinClicks: 14,
+            linkedinCtr: 2.04,
+            linkedinPostUrl: "https://www.linkedin.com/feed/update/urn:li:activity:7513493582025220096",
+          },
+        },
+        secondary: {
+          sponsor: "Astronomer",
+        },
+      },
+    }));
+
+    // Store issue.md with primary and secondary sponsor sections
+    const mdPut = await invoke("PUT", `/api/newsletter-issues/${created.id}/markdown`, {
+      issue: [
+        "---",
+        "issue: 392",
+        "send_date: 2027-11-16",
+        "archive_url: https://mailchi.mp/datatalks.club/weekly-392",
+        "---",
+        "",
+        "Masthead line: #392 · November 16, 2027",
+        "",
+        "## Build Persistent Memory into AI Agents",
+        "",
+        "Actian's free resource hub for agent memory.",
+        "",
+        "[Browse the resource hub](https://bki.sh/UElnLM7)",
+        "",
+        "https://github.com/DataTalksClub/ai-dev-tools-zoomcamp",
+        "",
+        "## Project 1",
+        "",
+        "[Submit your project](https://courses.datatalks.club/ai-dev-tools-2026/project/project1)",
+        "",
+        "[SPONSORED](https://datatalks.club/blog/sponsor-datatalks-club.html)",
+        "",
+        "## A Data Engineer's Guide to AI Orchestration with Airflow",
+        "",
+        "[Download now](https://www.astronomer.io/ebooks/ai-orchestration-with-apache-airflow/?utm_campaign=2026q3-ebook&utm_source=data-talks-club)",
+        "",
+        "NEWS",
+        "",
+        "## Upcoming Events",
+      ].join("\n"),
+    });
+    assert.equal(mdPut.statusCode, 200, mdPut.body);
+
+    setMailchimpMetricsDepsForTests({
+      apiKey: "fakekey123-us19",
+      fetchImpl: (async (url: string) => {
+        if (url.includes("/3.0/campaigns?")) {
+          return new Response(
+            JSON.stringify({
+              campaigns: [
+                {
+                  id: "mc392",
+                  web_id: 15819999,
+                  send_time: "2027-11-16T08:00:00+00:00",
+                  long_archive_url: "https://mailchi.mp/datatalks.club/weekly-392",
+                  emails_sent: 131269,
+                  settings: {
+                    title: "Weekly email #392 (Nov 16, 2027) - sponsored",
+                    subject_line: "Free resource hub for agent memory | DataTalks.Club Weekly",
+                  },
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (url.endsWith("/3.0/reports/mc392")) {
+          return new Response(
+            JSON.stringify({
+              id: "mc392",
+              campaign_title: "Weekly email #392 (Nov 16, 2027) - sponsored",
+              emails_sent: 131269,
+              opens: {
+                opens_total: 62652,
+                unique_opens: 41982,
+                open_rate: 0.3198,
+              },
+              clicks: {
+                clicks_total: 3384,
+                unique_clicks: 2513,
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (url.includes("/3.0/reports/mc392/click-details")) {
+          return new Response(
+            JSON.stringify({
+              urls_clicked: [
+                {
+                  url: "https://bki.sh/UElnLM7?utm_source=DataTalks&utm_campaign=mc392&utm_medium=email",
+                  total_clicks: 637,
+                  unique_clicks: 506,
+                },
+                {
+                  url: "https://bki.sh/UElnLM7?utm_source=DataTalks&utm_campaign=mc392&utm_medium=email",
+                  total_clicks: 224,
+                  unique_clicks: 149,
+                },
+                {
+                  url: "https://www.astronomer.io/ebooks/ai-orchestration-with-apache-airflow/?utm_campaign=2026q3-ebook&utm_source=data-talks-club&utm_medium=email",
+                  total_clicks: 285,
+                  unique_clicks: 226,
+                },
+                {
+                  url: "https://github.com/DataTalksClub/ai-dev-tools-zoomcamp?utm_source=DataTalks",
+                  total_clicks: 252,
+                  unique_clicks: 197,
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({ detail: "Not found" }), { status: 404 });
+      }) as typeof fetch,
+    });
+
+    try {
+      // Dry-run previews without saving or closing tasks
+      const dryRes = await invoke("POST", "/api/newsletter-issues/392/mailchimp-metrics", { dryRun: true });
+      assert.equal(dryRes.statusCode, 200, dryRes.body);
+      const dryData = data(dryRes);
+      assert.equal(dryData.mailchimp.dryRun, true);
+      assert.equal(dryData.mailchimp.campaign.id, "mc392");
+      assert.equal(dryData.stats.sent, 131269);
+      assert.equal(dryData.stats.opens, 41982);
+      assert.equal(dryData.stats.openRate, 31.98);
+      assert.equal(dryData.stats.clicks, 861);
+      assert.equal(dryData.stats.uniqueClicks, 655);
+      assert.equal(dryData.slots.primary.stats.clicks, 861);
+      assert.equal(dryData.slots.primary.stats.uniqueClicks, 655);
+      assert.equal(dryData.slots.primary.stats.linkedinImpressions, 687);
+      assert.equal(dryData.slots.secondary.stats.clicks, 285);
+      assert.equal(dryData.slots.secondary.stats.uniqueClicks, 226);
+
+      // Live pull saves and auto-closes collect-mailchimp-stats and add-newsletter-performance
+      const pullRes = await invoke("POST", "/api/newsletter-issues/392/mailchimp-metrics", {});
+      assert.equal(pullRes.statusCode, 200, pullRes.body);
+      const pulled = data(pullRes);
+      assert.equal(pulled.mailchimp.dryRun, false);
+      assert.equal(pulled.metricsTask, "closed");
+      assert.equal(pulled.stats.sent, 131269);
+      assert.equal(pulled.stats.opens, 41982);
+      assert.equal(pulled.slots.primary.stats.clicks, 861);
+      assert.equal(pulled.slots.secondary.stats.clicks, 285);
+
+      const tasksByRef = Object.fromEntries(
+        (await listTasksByCard(client, created.cardId)).map((task) => [task.templateTaskRef, task]),
+      );
+      assert.equal(tasksByRef["collect-mailchimp-stats"].status, "done");
+      assert.equal(tasksByRef["add-newsletter-performance"].status, "done");
+    } finally {
+      setMailchimpMetricsDepsForTests({});
+    }
   });
 
   it("requires an authenticated writer", async () => {
