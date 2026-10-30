@@ -171,7 +171,7 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
   {
     id: 'dynamo-pitr-check',
     name: 'DynamoDB PITR guard',
-    description: 'Verifies point-in-time recovery is on for every DataOps table and raises an automation-failure notification when it is not.',
+    description: 'Verifies point-in-time recovery is on for every DataOps and Dapier table, raises an automation-failure notification, and emails dev@dtcdev.click via the shared operator alarm topic when it is not.',
     runsIn: 'Backend Lambda',
     system: true,
     infraSchedule: 'BackendFunctionDailyDynamoPitrCheck',

@@ -78,6 +78,15 @@ Parameters:
     Type: Number
     Default: 90
     MinValue: 30
+  DynamoPitrAlertTopicArn:
+    Type: String
+    Default: arn:aws:sns:eu-west-1:817685572750:dapier-AlarmTopic-6LjEWSJwA6Ya
+    Description: Shared operator alarm SNS topic paged when the daily PITR guard finds DynamoDB point-in-time recovery disabled (delivers via AlarmNotifyFunction to dev@dtcdev.click).
+  DynamoPitrAlertEmail:
+    Type: String
+    Default: dev@dtcdev.click
+    AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+    Description: Operator mailbox paged when the daily PITR guard finds DynamoDB point-in-time recovery disabled.
   InvoiceReaderTokenSha256:
     Type: String
     Default: ""
@@ -1156,6 +1165,19 @@ Resources:
               - !GetAtt DataOpsPodcastEpisodesTable.Arn
               - !GetAtt DataOpsPeopleTable.Arn
               - !GetAtt DataOpsBooksTable.Arn
+              - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/dapier-*
+        - Statement:
+            Effect: Allow
+            Action:
+              - dynamodb:ListTables
+            Resource: "*"
+        - Statement:
+            Effect: Allow
+            Action:
+              - sns:Publish
+            Resource:
+              - !Ref ConversationalRolloutAlarmTopic
+              - !Ref DynamoPitrAlertTopicArn
         - Statement:
             Effect: Allow
             Action:
@@ -1255,6 +1277,9 @@ Resources:
           DATAOPS_EXPORT_ARCHIVE_BUCKET: !Ref DataOpsExportArchiveBucket
           DATAOPS_EXPORT_ARCHIVE_PREFIX: !Ref ExportArchivePrefix
           DATAOPS_DYNAMO_BACKUP_PREFIX: !Ref DynamoBackupPrefix
+          DYNAMO_PITR_ALERT_TOPIC_ARN: !Ref DynamoPitrAlertTopicArn
+          DYNAMO_PITR_ALERT_EMAIL: !Ref DynamoPitrAlertEmail
+          DYNAMO_PITR_EXTRA_TABLE_PREFIXES: dapier-
           KNOWLEDGE_BUCKET: !Ref KnowledgeBucketName
           AUTH_BASE_URL: !Ref AuthBaseUrl
           AUTH_ISSUER: !Ref AuthIssuer
@@ -1385,7 +1410,7 @@ Resources:
   BackendFunctionDailyDynamoPitrCheck:
     Type: AWS::Events::Rule
     Properties:
-      Description: Verify every DataOps DynamoDB table still has point-in-time recovery on, once per day.
+      Description: Verify every DataOps and Dapier DynamoDB table still has point-in-time recovery on once per day, and page dev@dtcdev.click when disabled.
       ScheduleExpression: cron(0 7 * * ? *)
       State: ENABLED
       Targets:

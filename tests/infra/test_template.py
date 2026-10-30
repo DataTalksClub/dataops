@@ -926,3 +926,20 @@ def test_dataops_kms_keys_keep_stable_logical_ids_and_retain():
         # Defined once, referenced at least once: an unreferenced key is a
         # rename/orphan waiting to happen.
         assert raw.count(logical_id) >= 2, logical_id
+
+
+def test_dynamo_pitr_guard_checks_dataops_and_dapier_tables_and_pages_dev_mailbox():
+    raw = TEMPLATE.read_text(encoding="utf-8")
+    backend = _resource_block(raw, "BackendFunction")
+    rule = _resource_block(raw, "BackendFunctionDailyDynamoPitrCheck")
+    assert "DYNAMO_PITR_ALERT_TOPIC_ARN: !Ref DynamoPitrAlertTopicArn" in backend
+    assert "DYNAMO_PITR_ALERT_EMAIL: !Ref DynamoPitrAlertEmail" in backend
+    assert "DYNAMO_PITR_EXTRA_TABLE_PREFIXES: dapier-" in backend
+    assert "Default: arn:aws:sns:eu-west-1:817685572750:dapier-AlarmTopic-6LjEWSJwA6Ya" in raw
+    assert "Default: dev@dtcdev.click" in raw
+    assert "- sns:Publish" in backend
+    assert "- !Ref DynamoPitrAlertTopicArn" in backend
+    assert "- dynamodb:ListTables" in backend
+    assert "table/dapier-*" in backend
+    assert "dataopsAction\":\"dynamo-pitr-check\"" in rule
+

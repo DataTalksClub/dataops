@@ -6,7 +6,7 @@ import { recordAutomationRun } from './automations/runs';
 import { expireCalendarHolds } from './db/calendarHolds';
 import { writePortableExportArchive } from './export/archive';
 import { backupConfigFromEnv, writeRawDynamoBackup } from './export/dynamoBackup';
-import { checkDynamoPitrStatus } from './export/dynamoPitrCheck';
+import { checkDynamoPitrStatus, DEFAULT_ALERT_EMAIL, publishPitrGuardAlert } from './export/dynamoPitrCheck';
 import type { PitrCheckResult } from './export/dynamoPitrCheck';
 import { createNotification, dismissNotification, listUndismissedNotifications } from './db/notifications';
 import { sanitizeJsonResponse } from './responsePrivacy';
@@ -66,11 +66,11 @@ async function recordedRun<T>(automationId: string, job: () => Promise<T>, summa
 }
 
 /**
- * Page the PITR guard through the portal's own notifications instead of a
- * CloudWatch alarm: the deploy role cannot create alarms or SNS topics, so
- * infra-level paging is unavailable to this stack. One undismissed
- * notification per active problem; auto-dismissed once the guard is green
- * again. A fully-unreadable check pages too, mirroring the old alarm's
+ * Page the PITR guard through the portal's own notifications and the shared
+ * operator SNS alarm topic (`DYNAMO_PITR_ALERT_TOPIC_ARN`, which delivers to
+ * `dev@dtcdev.click` via `AlarmNotifyFunction`). One undismissed notification
+ * and one email alert per active problem; auto-dismissed once the guard is
+ * green again. A fully-unreadable check pages too, mirroring
  * treat-missing-data-as-breaching behavior.
  */
 async function reconcilePitrGuardNotification(db: DynamoDBDocumentClient, result: PitrCheckResult): Promise<void> {
@@ -84,6 +84,8 @@ async function reconcilePitrGuardNotification(db: DynamoDBDocumentClient, result
     return;
   }
   if (existing.length > 0) return;
+  const alertEmail = (process.env.DYNAMO_PITR_ALERT_EMAIL || DEFAULT_ALERT_EMAIL).trim() || DEFAULT_ALERT_EMAIL;
+  const alertTopicArn = (process.env.DYNAMO_PITR_ALERT_TOPIC_ARN || '').trim();
   const message = result.disabledTables.length > 0
     ? `DynamoDB PITR disabled on: ${result.disabledTables.join(', ')}`
     : `DynamoDB PITR status unknown for all ${result.tableCount} tables`;
@@ -92,10 +94,19 @@ async function reconcilePitrGuardNotification(db: DynamoDBDocumentClient, result
     message,
     metadata: {
       guard: 'dynamo-pitr-check',
+      alertRecipient: alertEmail,
+      ...(alertTopicArn ? { alertTopicArn } : {}),
       disabledTables: result.disabledTables,
       unknownTables: result.unknownTables,
     },
   });
+  if (alertTopicArn && !process.env.DYNAMODB_ENDPOINT) {
+    try {
+      await publishPitrGuardAlert(result, { topicArn: alertTopicArn, alertEmail });
+    } catch (error) {
+      console.error(`Could not publish PITR guard alert to ${alertTopicArn}: ${(error as Error)?.message || 'unknown error'}`);
+    }
+  }
 }
 
 /**

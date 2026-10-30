@@ -1,9 +1,9 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import { PutMetricDataCommand } from '@aws-sdk/client-cloudwatch';
-import { DescribeContinuousBackupsCommand } from '@aws-sdk/client-dynamodb';
+import { DescribeContinuousBackupsCommand, ListTablesCommand } from '@aws-sdk/client-dynamodb';
 
-import { checkDynamoPitrStatus } from '../src/export/dynamoPitrCheck';
+import { checkDynamoPitrStatus, publishPitrGuardAlert } from '../src/export/dynamoPitrCheck';
 import { DATAOPS_TABLES, TABLE_SESSIONS } from '../src/db/tableNames';
 import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
@@ -24,9 +24,16 @@ function pitrResponse(status: string) {
   };
 }
 
-function fakeDocClient(statusByTable: Record<string, string>, failing: string[] = []) {
+function fakeDocClient(
+  statusByTable: Record<string, string>,
+  failing: string[] = [],
+  listedTables: string[] = [],
+) {
   return {
     send: async (command: unknown) => {
+      if (command instanceof ListTablesCommand) {
+        return { TableNames: listedTables };
+      }
       assert.ok(command instanceof DescribeContinuousBackupsCommand);
       const table = (command as unknown as { input: { TableName: string } }).input.TableName;
       if (failing.includes(table)) throw new Error(`boom on ${table}`);
@@ -120,6 +127,71 @@ describe('DynamoDB PITR guard', () => {
     const result = await checkDynamoPitrStatus(fakeDocClient({}), { cloudWatch: cloudWatch as never });
     assert.strictEqual(result.tableCount, DATAOPS_TABLES.length);
     assert.deepStrictEqual(result.disabledTables, []);
+  });
+
+  it('discovers extra prefix tables (dapier-*) and skips restore-drill tables', async () => {
+    const sent: unknown[] = [];
+    const cloudWatch = { send: async (command: unknown) => { sent.push(command); return {}; } };
+    const result = await checkDynamoPitrStatus(
+      fakeDocClient(
+        { 'dapier-ExecutionsTable-1979GG3M1G3ON': 'DISABLED' },
+        [],
+        [
+          'dapier-ExecutionsTable-1979GG3M1G3ON',
+          'dapier-ExecutionsTable-1979GG3M1G3ON-restore-drill-20261027',
+          'unrelated-table',
+        ],
+      ),
+      { cloudWatch: cloudWatch as never, extraTablePrefixes: ['dapier-'] },
+    );
+
+    assert.strictEqual(result.tableCount, DATAOPS_TABLES.length + 1);
+    assert.deepStrictEqual(result.disabledTables, ['dapier-ExecutionsTable-1979GG3M1G3ON']);
+  });
+
+  it('publishes a signed SNS alarm notification targeting dev@dtcdev.click when PITR is disabled', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const outcome = await publishPitrGuardAlert(
+      {
+        generatedAt: '2026-10-30T07:00:00.000Z',
+        tableCount: 18,
+        disabledTables: ['dataops-v1-tasks'],
+        expectedDisabledTables: [TABLE_SESSIONS],
+        unknownTables: [],
+        tables: [],
+      },
+      {
+        topicArn: 'arn:aws:sns:eu-west-1:817685572750:dapier-AlarmTopic-6LjEWSJwA6Ya',
+        alertEmail: 'dev@dtcdev.click',
+        credentials: {
+          accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
+          secretAccessKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+          sessionToken: 'AQoDYXdzEJr1',
+        },
+        now: new Date('2026-10-30T07:00:05.000Z'),
+        fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
+          calls.push({ url: String(url), init: init || {} });
+          return new Response('<PublishResponse/>', { status: 200 });
+        }) as typeof fetch,
+      },
+    );
+
+    assert.strictEqual(outcome.published, true);
+    assert.strictEqual(outcome.alertEmail, 'dev@dtcdev.click');
+    assert.strictEqual(calls.length, 1);
+    assert.strictEqual(calls[0].url, 'https://sns.eu-west-1.amazonaws.com/');
+    const headers = calls[0].init.headers as Record<string, string>;
+    assert.match(headers.authorization, /^AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE\/20261030\/eu-west-1\/sns\/aws4_request/);
+    assert.strictEqual(headers['x-amz-security-token'], 'AQoDYXdzEJr1');
+    const params = new URLSearchParams(String(calls[0].init.body));
+    assert.strictEqual(params.get('Action'), 'Publish');
+    assert.strictEqual(params.get('TopicArn'), 'arn:aws:sns:eu-west-1:817685572750:dapier-AlarmTopic-6LjEWSJwA6Ya');
+    const payload = JSON.parse(params.get('Message') || '{}');
+    assert.strictEqual(payload.AlarmName, 'dataops-v1-dynamo-pitr-disabled');
+    assert.strictEqual(payload.AlertRecipient, 'dev@dtcdev.click');
+    assert.deepStrictEqual(payload.DisabledTables, ['dataops-v1-tasks']);
+    assert.match(payload.NewStateReason, /dataops-v1-tasks/);
+    assert.match(payload.NewStateReason, /dev@dtcdev\.click/);
   });
 
   describe('scheduled handler', () => {
