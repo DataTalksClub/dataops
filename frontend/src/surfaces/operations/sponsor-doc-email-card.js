@@ -68,11 +68,14 @@ export function validateSponsorDocDraft(tDef, draftContent) {
   for (const field of allFields) {
     const raw = String(draftContent?.[field.key] ?? "").trim();
     if (field.type === "bullets" || field.key === "bullets") {
-      if (field.required) {
+      if (field.required && !raw) {
+        errors[field.key] = `${field.label} is required.`;
+      } else if (field.required) {
         const min = field.minItems || 1;
+        const max = field.maxItems || Infinity;
         const filled = parseSponsorBulletItems(raw, 0).filter((item) => item.trim().length > 0);
-        if (filled.length < min) {
-          errors[field.key] = `${field.label} requires at least ${min} bullet points.`;
+        if (filled.length < min || filled.length > max) {
+          errors[field.key] = `${field.label} must contain ${min}–${max} non-empty bullets.`;
         }
       }
       continue;
@@ -81,8 +84,13 @@ export function validateSponsorDocDraft(tDef, draftContent) {
       errors[field.key] = `${field.label} is required.`;
       continue;
     }
-    if (raw && field.format === "url" && !/^https?:\/\/\S+$/i.test(raw)) {
-      errors[field.key] = `${field.label} must be an http(s) URL.`;
+    if (raw && field.format === "url") {
+      try {
+        const url = new URL(raw);
+        if (!["http:", "https:"].includes(url.protocol) || !url.hostname) throw new Error();
+      } catch {
+        errors[field.key] = `${field.label} must be a full http:// or https:// link.`;
+      }
     }
   }
   return errors;
