@@ -18,6 +18,7 @@ Usage
   dataops calendar slots [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--all] [--duration MINUTES] [--window evening|midday|any]
   dataops calendar propose --date D --window evening|midday --duration N --title T --topic TOPIC [--guest-ref EMAIL] [--document-url URL] [--card ID] [--expires-days 7]
   dataops calendar confirm-hold <id> [--guest-ref EMAIL] [--document-url URL]
+  dataops calendar move-hold <id> --date D [--window evening|midday] [--time HH:MM] [--duration N] [--title T] [--topic TOPIC] [--guest-ref EMAIL] [--document-url URL]
   dataops calendar release-hold <id> [--reason manual]
   dataops calendar expire-holds [--dry-run] [--now ISO]
   dataops calendar holds [--status tentative|confirmed|released|expired] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
@@ -672,6 +673,38 @@ export async function confirmHold(args, io) {
   io.print(`Confirmed hold ${id}: ${(result.hold || {}).title || ""}`);
   if (result.hold?.googleSync?.state === "deferred") {
     io.print(`Google sync deferred: ${result.hold.googleSync.reason || "broker unavailable"}`);
+  }
+  return result;
+}
+
+/**
+ * Move/reschedule an existing hold in place without release+re-propose.
+ */
+export async function moveHold(args, io) {
+  const id = holdId(args);
+  if (!args.date) {
+    throw new UsageError(
+      "Usage: dataops calendar move-hold <id> --date YYYY-MM-DD [--window evening|midday] [--time HH:MM] [--duration N] [--title T] [--topic TOPIC].",
+    );
+  }
+  const payload = {
+    date: args.date,
+    ...(args.window !== undefined ? { window: String(args.window).trim().toLowerCase() } : {}),
+    ...(args.time !== undefined ? { time: String(args.time).trim() } : {}),
+    ...(args.duration !== undefined || args.durationMinutes !== undefined
+      ? { durationMinutes: parseDurationMinutes(args.duration ?? args.durationMinutes) }
+      : {}),
+    ...(args.title !== undefined ? { title: String(args.title) } : {}),
+    ...(args.topic !== undefined ? { topic: String(args.topic) } : {}),
+    ...(args.guestRef !== undefined ? { guestRef: String(args.guestRef) } : {}),
+    ...(args.documentUrl !== undefined ? { documentUrl: String(args.documentUrl) } : {}),
+  };
+  const result = await client(args).post(`/api/calendar-holds/${encodeURIComponent(id)}/move`, payload);
+  if (args.json) return result;
+  const hold = result.hold || result;
+  io.print(`Moved hold ${hold.id}: ${formatHold(hold)}`);
+  if (hold.googleSync?.state === "deferred") {
+    io.print(`Google sync deferred: ${hold.googleSync.reason || "broker unavailable"}`);
   }
   return result;
 }

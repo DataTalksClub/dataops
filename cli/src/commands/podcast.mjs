@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { enc, fields, integer, isoDate, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { domainDocCommand } from "./sponsorDocs.mjs";
+import * as eventCommands from "./event.mjs";
 
 export const summary = "Plan podcast episodes and create their Cards";
 
@@ -53,6 +54,10 @@ Usage
                                    Create the episode Card from the podcast Template and link it.
                                    If the episode has no recording date, auto-picks the next free
                                    recording slot (same preference as create) then creates the Card
+  dataops podcast reschedule <episode-id|card-id> --date YYYY-MM-DD [--time HH:MM | --window midday|evening]
+                                   Reschedule an episode's recording slot via the unified event
+                                   lifecycle (returns an approved event to proposed and updates
+                                   the hold, Card, Episode, Google calendars, and linked docs)
   dataops podcast doc create <card-id> [--sponsor NAME] [--date YYYY-MM-DD] [--email]
                                    Create the portal sponsor content document for the
                                    podcast Card (or episode), link it on the Card's
@@ -290,6 +295,9 @@ export async function show(args, io) {
     ["guests", (episode.guests || []).map((guest) => (guest.slug ? `${guest.name} (${guest.slug})` : guest.name))],
     ["status", episode.status],
     ["recordingDate", episode.recordingDate],
+    ...(episode.recordingTime ? [["recordingTime", `${episode.recordingTime}${episode.recordingTimeZone ? ` ${episode.recordingTimeZone}` : ""}`]] : []),
+    ...(episode.recordingEventStatus ? [["recordingEventStatus", episode.recordingEventStatus]] : []),
+    ...(episode.recordingHoldId ? [["recordingHoldId", episode.recordingHoldId]] : []),
     ["releaseDate", episode.releaseDate],
     ...Object.entries(episode.links || {}),
     ["websiteSlug", episode.websiteSlug],
@@ -586,6 +594,10 @@ export async function invite(args, io) {
   return { hold, task, email: rendered };
 }
 
+export async function reschedule(args, io) {
+  return eventCommands.reschedule(args, io);
+}
+
 export const commands = {
   list,
   show,
@@ -593,6 +605,7 @@ export const commands = {
   schedule,
   create,
   update,
+  reschedule,
   "create-card": createCard,
   doc,
   "next-slot": nextSlot,

@@ -9,6 +9,7 @@ import * as automations from "./commands/automations.mjs";
 import * as bookkeeping from "./commands/bookkeeping.mjs";
 import * as calendar from "./commands/calendar.mjs";
 import * as cards from "./commands/cards.mjs";
+import * as event from "./commands/event.mjs";
 import * as files from "./commands/files.mjs";
 import * as invoices from "./commands/invoices.mjs";
 import * as invoicePdfs from './invoicePdfs.mjs';
@@ -86,6 +87,7 @@ export const FAMILIES = {
   files: { group: "Work", summary: files.filesSummary, help: files.filesHelp, commands: files.filesCommands },
   artifacts: { group: "Work", summary: files.artifactsSummary, help: files.artifactsHelp, commands: files.artifactsCommands },
   kb: { group: "Knowledge", summary: kb.summary, help: kb.help, commands: kb.commands },
+  event: { group: "Planning", summary: event.summary, help: event.help, commands: event.commands },
   newsletter: { group: "Planning", summary: newsletter.summary, help: newsletter.help, commands: newsletter.commands },
   podcast: { group: "Planning", summary: podcast.summary, help: podcast.help, commands: podcast.commands },
   webinar: { group: "Planning", summary: "Webinar speaker materials", help: sponsorDocs.webinarDocHelp, commands: { doc: sponsorDocs.domainDocCommand("webinar") } },
@@ -102,6 +104,7 @@ export const FAMILIES = {
       slots: calendar.slots,
       propose: calendar.propose,
       "confirm-hold": calendar.confirmHold,
+      "move-hold": calendar.moveHold,
       "release-hold": calendar.releaseHold,
       "expire-holds": calendar.expireHolds,
       holds: calendar.holds,

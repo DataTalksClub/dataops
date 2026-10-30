@@ -401,7 +401,7 @@ export function createCardPanel(context) {
 
     main.append(...renderCardLinkedFrom(card));
     if (Array.isArray(card.cardLinks) && card.cardLinks.length > 0) main.append(renderCardLinksSection(card));
-    if (card.eventTime || card.calendarInvites?.length || tasks.some(taskRequiresCalendarInvite)) {
+    if (card.templateDefinitionSnapshot?.eventPolicy || card.eventTime || card.calendarInvites?.length || tasks.some(taskRequiresCalendarInvite)) {
       main.append(renderCardEventTime({ request, workApiUrl, reload: reloadCardIntent }, card));
     }
     if (Array.isArray(card.calendarInvites) && card.calendarInvites.length > 0) main.append(renderCardInvitesSection(card));
