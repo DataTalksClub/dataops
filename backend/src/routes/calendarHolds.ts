@@ -7,7 +7,6 @@ import {
   confirmedTitle,
   holdGuestAttendees,
   parseHoldDocumentUrl,
-  parseHoldCalendars,
   proposalTitle,
   releaseHoldRecord,
   type CalendarHoldReleaseReason,
@@ -17,17 +16,20 @@ import {
   createHoldGoogleEvents,
   deleteHoldGoogleEvents,
   updateHoldGoogleEvents,
-  type HoldGoogleDeps,
 } from '../calendar/holdGoogleSync';
 import {
+  calendarInviteDeps,
   expireCalendarHolds,
   getCalendarHold,
   listCalendarHolds,
   putCalendarHold,
+  setCalendarHoldGoogleDepsForTests,
 } from '../db/calendarHolds';
 import { CardVersionConflictError, getCardConsistent } from '../db/cards';
-import { getCalendarOverlaySettings } from '../db/calendar';
 import { CardInviteConflictError, CardInviteInputError, syncCardInvite } from '../calendar/cardInvite';
+import { recordAutomationRun } from '../automations/runs';
+
+export { calendarInviteDeps, setCalendarHoldGoogleDepsForTests };
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
   statusCode,
@@ -52,39 +54,6 @@ const actor = (event: LambdaEvent): string =>
   'authenticated-operator';
 
 const STATUSES: CalendarHoldStatus[] = ['tentative', 'confirmed', 'released', 'expired'];
-
-let googleDeps: HoldGoogleDeps = {};
-export function setCalendarHoldGoogleDepsForTests(deps: HoldGoogleDeps): void {
-  googleDeps = deps;
-}
-
-/**
- * Resolve hold Google deps: calendars from the request (optional), Dapier
- * connectionId from DataOps calendar settings (Orin-picked). Explicit
- * googleDeps.connectionId (tests) wins over settings.
- */
-export async function calendarInviteDeps(body: any, client: DynamoDBDocumentClient): Promise<HoldGoogleDeps> {
-  const calendars = (() => {
-    try {
-      return parseHoldCalendars(body?.googleCalendars);
-    } catch {
-      return undefined;
-    }
-  })();
-  let connectionId = googleDeps.connectionId;
-  if (!connectionId) {
-    const settings = await getCalendarOverlaySettings(client);
-    const picked = (settings.connectionId || '').trim();
-    connectionId = picked;
-  }
-  // Machine credential resolution lives in holdGoogleSync via dapierBroker
-  // (SM personal-scheduler/dapier-api-token). Tests inject googleDeps.credential.
-  return {
-    ...googleDeps,
-    connectionId,
-    ...(calendars ? { calendarIds: calendars } : {}),
-  };
-}
 
 const googlePayload = (hold: { id: string }, summary: string, startIso: string, endIso: string) => ({
   eventKey: hold.id,
@@ -257,12 +226,20 @@ async function releaseRoute(
   return json(200, { hold: stored });
 }
 
-async function expireRoute(client: DynamoDBDocumentClient): Promise<LambdaResponse> {
-  const { expired, followUps } = await expireCalendarHolds(client);
-  for (const hold of expired) {
-    await deleteHoldGoogleEvents(hold.googleEventIds, await calendarInviteDeps({}, client));
+async function expireRoute(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+  const body = parse(event) || {};
+  const q = event.queryStringParameters || {};
+  const dryRun = body.dryRun === true || q.dryRun === 'true';
+  const { expired, followUps, activeCount } = await expireCalendarHolds(client, undefined, { dryRun });
+  if (!dryRun) {
+    await recordAutomationRun(client, 'calendar-hold-expiry', {
+      ok: true,
+      summary: `${expired.length} hold${expired.length === 1 ? '' : 's'} expired`,
+    });
   }
   return json(200, {
+    dryRun,
+    activeCount,
     expired,
     followUps,
     note: 'Expired holds are released in DataOps and Google. Follow-ups are for Orin — no guest email was sent.',
@@ -277,7 +254,7 @@ export async function handleCalendarHoldRoutes(
 ): Promise<LambdaResponse | null> {
   if (path === '/api/calendar-holds/expire') {
     if (method !== 'POST') return json(405, { error: 'Method not allowed' });
-    return expireRoute(client);
+    return expireRoute(event, client);
   }
   if (path === '/api/calendar-holds') {
     if (method === 'POST') return createRoute(event, client);

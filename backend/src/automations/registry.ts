@@ -137,6 +137,16 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
     settings: SPONSOR_REMINDER_SETTINGS,
   },
   {
+    id: 'calendar-hold-expiry',
+    name: 'Calendar hold expiry',
+    description: 'Releases tentative calendar holds whose 7-day TTL has passed, deletes their Google (Proposal) blocks, and surfaces a follow-up task and notification for Orin without emailing the guest.',
+    runsIn: DAILY_JOB,
+    infraSchedule: 'BackendFunctionDailyBackendCron',
+    schedule: DAILY_JOB_SCHEDULE,
+    runSource: 'recorded',
+    settings: [],
+  },
+  {
     id: 'execution-export',
     name: 'Execution data export',
     description: 'Exports Cards, Tasks, Templates and the rest of the execution data as a portable archive to the retained archive bucket.',

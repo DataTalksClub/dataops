@@ -3,6 +3,7 @@ import { route } from './router';
 import { getClient } from './db/client';
 import { runCron } from './cron/runner';
 import { recordAutomationRun } from './automations/runs';
+import { expireCalendarHolds } from './db/calendarHolds';
 import { writePortableExportArchive } from './export/archive';
 import { backupConfigFromEnv, writeRawDynamoBackup } from './export/dynamoBackup';
 import { checkDynamoPitrStatus } from './export/dynamoPitrCheck';
@@ -412,6 +413,28 @@ async function handleInvocation(
               },
             ]),
           ),
+        }),
+      };
+    }
+    if (detail?.dataopsAction === 'calendar-holds-expire') {
+      const dryRun = detail.dryRun === true;
+      const nowIso = typeof detail.now === 'string' && detail.now.trim() ? detail.now.trim() : undefined;
+      const result = dryRun
+        ? await expireCalendarHolds(client!, nowIso, { dryRun: true })
+        : await recordedRun(
+            'calendar-hold-expiry',
+            () => expireCalendarHolds(client!, nowIso),
+            (run) => `${run.expired.length} hold${run.expired.length === 1 ? '' : 's'} expired`,
+          );
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dryRun,
+          activeCount: result.activeCount,
+          expired: result.expired,
+          followUps: result.followUps,
+          note: 'Expired holds are released in DataOps and Google. Follow-ups are for Orin — no guest email was sent.',
         }),
       };
     }

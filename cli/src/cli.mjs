@@ -103,6 +103,7 @@ export const FAMILIES = {
       propose: calendar.propose,
       "confirm-hold": calendar.confirmHold,
       "release-hold": calendar.releaseHold,
+      "expire-holds": calendar.expireHolds,
       holds: calendar.holds,
       settings: calendar.settings,
       "dismiss-alert": calendar.dismissAlert,

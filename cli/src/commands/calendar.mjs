@@ -19,6 +19,7 @@ Usage
   dataops calendar propose --date D --window evening|midday --duration N --title T --topic TOPIC [--guest-ref EMAIL] [--document-url URL] [--card ID] [--expires-days 7]
   dataops calendar confirm-hold <id> [--guest-ref EMAIL] [--document-url URL]
   dataops calendar release-hold <id> [--reason manual]
+  dataops calendar expire-holds [--dry-run] [--now ISO]
   dataops calendar holds [--status tentative|confirmed|released|expired] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
   dataops calendar settings [--connection ID] [--filter-busy true|false] ...
   dataops calendar dismiss-alert <fingerprint>
@@ -714,6 +715,31 @@ export async function holds(args, io) {
   } else {
     io.print(`Calendar holds (${list.length}):`);
     for (const hold of list) io.print(`  ${formatHold(hold)}`);
+  }
+  return result;
+}
+
+/**
+ * Expire tentative holds past TTL (or preview via --dry-run).
+ */
+export async function expireHolds(args, io) {
+  const dryRun = Boolean(args.dryRun || args.dry_run);
+  const payload = {
+    ...(dryRun ? { dryRun: true } : {}),
+    ...(args.now ? { now: String(args.now) } : {}),
+  };
+  const result = await client(args).post("/api/calendar-holds/expire", payload);
+  if (args.json) return result;
+  const expired = result.expired || [];
+  const followUps = result.followUps || [];
+  const label = result.dryRun ? "Dry-run expired tentative holds" : "Expired tentative holds";
+  io.print(`${label}: ${expired.length} (active holds checked: ${result.activeCount ?? 0})`);
+  for (const hold of expired) io.print(`  ${formatHold(hold)}`);
+  if (followUps.length > 0) {
+    io.print(`Orin follow-ups (${followUps.length}):`);
+    for (const f of followUps) {
+      io.print(`  ${f.holdId} (${f.date}) ${f.title}${f.taskId ? ` -> task ${f.taskId}` : ""}`);
+    }
   }
   return result;
 }

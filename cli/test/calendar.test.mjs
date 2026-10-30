@@ -581,4 +581,33 @@ describe("Calendar hold CLI commands", () => {
     globalThis.fetch = async () => { throw new Error("no request expected"); };
     assert.notEqual(await run(["calendar", "holds", "--status", "bogus"], bad), 0);
   });
+
+  test("calendar expire-holds supports --dry-run and live expiry", async () => {
+    const requests = [];
+    globalThis.fetch = async (url, options = {}) => {
+      const body = options.body ? JSON.parse(options.body) : {};
+      requests.push({ url: String(url), body });
+      return new Response(
+        JSON.stringify({
+          dryRun: Boolean(body.dryRun),
+          activeCount: 3,
+          expired: [{ id: "hold_exp1", date: "2026-10-27", window: "evening", durationMinutes: 60, title: "Expired proposal", status: "expired" }],
+          followUps: [{ holdId: "hold_exp1", date: "2026-10-27", title: "Expired proposal", taskId: body.dryRun ? undefined : "calendar-hold-expired-hold_exp1" }],
+        }),
+        { status: 200 },
+      );
+    };
+
+    const dryIo = captureIo();
+    assert.equal(await run(["calendar", "expire-holds", "--dry-run"], dryIo), 0);
+    assert.match(requests[0].url, /\/api\/calendar-holds\/expire$/);
+    assert.deepEqual(requests[0].body, { dryRun: true });
+    assert.match(dryIo.text(), /Dry-run expired tentative holds: 1/);
+
+    const liveIo = captureIo();
+    assert.equal(await run(["calendar", "expire-holds"], liveIo), 0);
+    assert.deepEqual(requests[1].body, {});
+    assert.match(liveIo.text(), /Expired tentative holds: 1/);
+    assert.match(liveIo.text(), /task calendar-hold-expired-hold_exp1/);
+  });
 });

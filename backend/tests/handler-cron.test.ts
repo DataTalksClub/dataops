@@ -10,6 +10,8 @@ import { extractExportArchive } from '../src/export/archive';
 import { SCHEMA_VERSION as DYNAMO_BACKUP_SCHEMA } from '../src/export/dynamoBackup';
 import { DATAOPS_TABLES } from '../src/db/tableNames';
 import { validatePortableExport } from '../src/export/portableValidate';
+import { buildHold } from '../src/calendar/holds';
+import { putCalendarHold } from '../src/db/calendarHolds';
 
 describe('handler - EventBridge scheduled events', () => {
   before(async () => {
@@ -146,6 +148,68 @@ describe('handler - EventBridge scheduled events', () => {
       delete process.env.DATAOPS_DYNAMO_BACKUP_PREFIX;
       delete process.env.DATAOPS_ENV;
       await fs.rm(backupDir, { recursive: true, force: true });
+    }
+  });
+
+  it('routes scheduled calendar-holds-expire events (dryRun and live) and passes portable export validation', async () => {
+    const { client } = await useTestDatabase();
+    const expiredHold = buildHold(
+      { date: '2026-06-05', title: 'Scheduled Handler Expiry Hold', topic: 'Scheduled Handler Guest' },
+      'test@datatalks.club',
+      '2020-01-01T00:00:00.000Z',
+    );
+    await putCalendarHold(client, expiredHold);
+
+    const dryRes = await handler({
+      source: 'aws.events',
+      'detail-type': 'Scheduled Event',
+      detail: { dataopsAction: 'calendar-holds-expire', dryRun: true },
+    });
+    assert.ok('statusCode' in dryRes);
+    assert.strictEqual((dryRes as Record<string, unknown>).statusCode, 200);
+    const dryBody = JSON.parse((dryRes as { body: string }).body);
+    assert.strictEqual(dryBody.dryRun, true);
+    assert.ok(dryBody.expired.some((h: { id: string }) => h.id === expiredHold.id));
+    assert.ok(dryBody.followUps.some((f: { holdId: string }) => f.holdId === expiredHold.id));
+
+    const liveRes = await handler({
+      source: 'aws.events',
+      'detail-type': 'Scheduled Event',
+      detail: { dataopsAction: 'calendar-holds-expire' },
+    });
+    assert.ok('statusCode' in liveRes);
+    assert.strictEqual((liveRes as Record<string, unknown>).statusCode, 200);
+    const liveBody = JSON.parse((liveRes as { body: string }).body);
+    assert.strictEqual(liveBody.dryRun, false);
+    assert.ok(liveBody.expired.some((h: { id: string }) => h.id === expiredHold.id));
+    assert.ok(liveBody.followUps.some((f: { holdId: string; taskId: string; notificationId: string }) =>
+      f.holdId === expiredHold.id
+      && f.taskId === `calendar-hold-expired-${expiredHold.id}`
+      && Boolean(f.notificationId)));
+    assert.match(liveBody.note, /no guest email/i);
+
+    const archiveDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dataops-handler-hold-export-'));
+    process.env.DATAOPS_EXPORT_ARCHIVE_LOCAL_DIR = archiveDir;
+    process.env.DATAOPS_EXPORT_ARCHIVE_PREFIX = 'execution-exports';
+    process.env.DATAOPS_ENV = 'test';
+    try {
+      const exportRes = await handler({
+        source: 'aws.events',
+        'detail-type': 'Scheduled Event',
+        detail: { dataopsAction: 'export' },
+      });
+      assert.strictEqual((exportRes as Record<string, unknown>).statusCode, 200);
+      const exportBody = JSON.parse((exportRes as { body: string }).body);
+      const archivePath = exportBody.archive_uri.replace('file://', '');
+      const extractedDir = path.join(archiveDir, 'extracted');
+      await extractExportArchive(await fs.readFile(archivePath), extractedDir);
+      const validation = await validatePortableExport(extractedDir);
+      assert.strictEqual(validation.valid, true, JSON.stringify(validation.errors));
+    } finally {
+      delete process.env.DATAOPS_EXPORT_ARCHIVE_LOCAL_DIR;
+      delete process.env.DATAOPS_EXPORT_ARCHIVE_PREFIX;
+      delete process.env.DATAOPS_ENV;
+      await fs.rm(archiveDir, { recursive: true, force: true });
     }
   });
 

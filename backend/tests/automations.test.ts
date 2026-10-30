@@ -155,6 +155,7 @@ describe('GET /api/automations', () => {
       { ok: true, summary: '0 tasks created' },
     );
     assert.strictEqual(byId.get('automatic-template-cards')!.lastRun?.summary, '0 cards created');
+    assert.strictEqual(byId.get('calendar-hold-expiry')!.lastRun?.summary, '0 holds expired');
     assert.strictEqual(byId.get('sponsor-booking-alerts')!.lastRun?.summary, 'created 0, resolved 0');
     assert.deepStrictEqual(
       { ok: byId.get('sponsor-finance-alerts')!.lastRun?.ok, summary: byId.get('sponsor-finance-alerts')!.lastRun?.summary },

@@ -282,6 +282,81 @@ jobs:
           jq -c '(.body | fromjson) | {templates: {created: .templates.created, total: .templates.total, unchanged: .templates.unchanged, updated: .templates.updated}}' "$seed_response"
           echo "Authored workflow templates projected."
 
+      - name: Verify scheduled calendar hold expiry
+        timeout-minutes: 5
+        env:
+          AWS_RETRY_MODE: standard
+          AWS_MAX_ATTEMPTS: '20'
+        run: |
+          set -euo pipefail
+          backend_function="$(aws cloudformation describe-stack-resource \
+            --stack-name dataops-v1 \
+            --logical-resource-id BackendFunction \
+            --query "StackResourceDetail.PhysicalResourceId" \
+            --output text)"
+          dry_response="$RUNNER_TEMP/dataops-calendar-holds-expire-dry.json"
+          dry_error="$(aws lambda invoke \
+            --function-name "$backend_function" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"calendar-holds-expire","dryRun":true}}' \
+            --query FunctionError \
+            --output text \
+            "$dry_response")"
+          if [ "$dry_error" != "None" ]; then
+            echo "Scheduled calendar-holds-expire dryRun failed inside the deployed Lambda" >&2
+            exit 1
+          fi
+          jq -e '
+            .statusCode == 200
+            and ((.body | fromjson) as $body
+              | $body.dryRun == true
+              and ($body.activeCount | type == "number" and . >= 0)
+              and ($body.expired | type == "array")
+              and ($body.followUps | type == "array")
+              and ($body.note | type == "string")
+            )
+          ' "$dry_response" >/dev/null
+          jq -c '(.body | fromjson) | {
+            dryRun: .dryRun,
+            activeCount: .activeCount,
+            expiredCount: (.expired | length),
+            expiredHoldIds: [.expired[].id],
+            followUps: [.followUps[] | {holdId: .holdId, expiredAt: .expiredAt}],
+            note: .note
+          }' "$dry_response"
+
+          live_response="$RUNNER_TEMP/dataops-calendar-holds-expire-live.json"
+          live_error="$(aws lambda invoke \
+            --function-name "$backend_function" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"calendar-holds-expire"}}' \
+            --query FunctionError \
+            --output text \
+            "$live_response")"
+          if [ "$live_error" != "None" ]; then
+            echo "Scheduled calendar-holds-expire live run failed inside the deployed Lambda" >&2
+            exit 1
+          fi
+          jq -e '
+            .statusCode == 200
+            and ((.body | fromjson) as $body
+              | $body.dryRun == false
+              and ($body.activeCount | type == "number" and . >= 0)
+              and ($body.expired | type == "array")
+              and ($body.followUps | type == "array")
+              and ($body.note | type == "string")
+            )
+          ' "$live_response" >/dev/null
+          jq -c '(.body | fromjson) | {
+            dryRun: .dryRun,
+            activeCount: .activeCount,
+            expiredCount: (.expired | length),
+            expiredHoldIds: [.expired[].id],
+            followUps: [.followUps[] | {holdId: .holdId, taskId: .taskId, notificationId: .notificationId, expiredAt: .expiredAt}],
+            note: .note
+          }' "$live_response"
+          echo "Scheduled calendar hold expiry verified."
+
       - name: Smoke test deployed single-origin backend
         run: |
           backend_url="$(aws cloudformation describe-stacks \

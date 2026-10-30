@@ -15,6 +15,7 @@ import { reconcileAbandonedSponsorPayloads } from '../sponsorCommunications/repo
 import { templateCardProjection } from '../templates/cardTemplateProjection';
 import { recordAutomationRun } from '../automations/runs';
 import { createDueIssueCards, type DueCardRun } from '../newsletter/cardSchedule';
+import { expireCalendarHolds, type ExpireCalendarHoldFollowUp } from '../db/calendarHolds';
 
 export interface CronRunnerResult {
   created: string[];
@@ -31,6 +32,11 @@ export interface CronRunnerResult {
   };
   /** Newsletter issue Cards that came due today. */
   newsletterCards: Pick<DueCardRun, 'created' | 'failures'>;
+  /** Tentative calendar holds whose TTL passed and were auto-released. */
+  calendarHolds: {
+    expired: string[];
+    followUps: ExpireCalendarHoldFollowUp[];
+  };
   failures: number;
 }
 
@@ -308,12 +314,39 @@ async function runCron(
     });
   }
 
+  // Release tentative calendar holds whose TTL (default 7 days) has passed,
+  // delete their Google (Proposal) blocks, and surface Orin follow-ups without
+  // sending guest email.
+  const calendarHolds: CronRunnerResult['calendarHolds'] = { expired: [], followUps: [] };
+  let calendarHoldFailures = 0;
+  try {
+    const expiredRun = await expireCalendarHolds(client, today.toISOString());
+    calendarHolds.expired = expiredRun.expired.map((hold) => hold.id);
+    calendarHolds.followUps = expiredRun.followUps;
+  } catch (err: unknown) {
+    failures++;
+    calendarHoldFailures++;
+    await createNotification(client, {
+      type: 'automation-failure',
+      message: `Calendar hold expiry failed for ${todayDate}: ${(err as Error).message}`,
+      dueAt: todayDate,
+    });
+  }
+  await recordAutomationRun(client, 'calendar-hold-expiry', {
+    ok: calendarHoldFailures === 0,
+    summary: [
+      `${plural(calendarHolds.expired.length, 'hold')} expired`,
+      ...(calendarHoldFailures ? [plural(calendarHoldFailures, 'failure')] : []),
+    ].join(', '),
+  }, today);
+
   return {
     created,
     skipped: skipped + recurringSkipped,
     templates: { created, skipped, recovered },
     recurring: { generated: recurringGenerated, skipped: recurringSkipped, failures: recurringFailures },
     newsletterCards,
+    calendarHolds,
     failures,
   };
 }

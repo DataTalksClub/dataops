@@ -664,8 +664,9 @@ def test_deploy_workflow_projects_private_templates_through_the_deployed_lambda(
 
     seed = "Project authored workflow templates"
     assert seed in workflow
+    seed_step = deploy.split(seed, 1)[1].split("- name:", 1)[0]
     assert "--logical-resource-id BackendFunction" in workflow
-    assert deploy.count("aws lambda invoke") == 1
+    assert seed_step.count("aws lambda invoke") == 1
     assert '"source":"dataops.deploy","detail-type":"Runtime Seed"' in deploy
     assert '"dataopsAction":"sync-runtime-seeds"' in deploy
     assert '"dataopsAction":"sync-templates"' not in deploy

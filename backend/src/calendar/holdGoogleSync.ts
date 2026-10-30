@@ -45,6 +45,8 @@ export interface HoldGoogleDeps {
   agent?: string;
   connectionId?: string;
   calendarIds?: string[];
+  /** Override Google sendUpdates on organizer cancellation (e.g. 'none' on tentative TTL expiry so no guest email is ever sent). */
+  sendUpdates?: 'all' | 'none';
 }
 
 export type HoldGoogleResult =
@@ -289,10 +291,11 @@ export async function deleteHoldGoogleEvents(
   const resolved = await accessToken(deps);
   if ('problem' in resolved) return { state: 'deferred', reason: resolved.problem, eventIds };
   try {
+    const organizerUpdates = deps.sendUpdates ?? 'all';
     for (const [calendar, id] of Object.entries(eventIds).sort(([a], [b]) =>
       Number(a === HOLD_ORGANIZER) - Number(b === HOLD_ORGANIZER))) {
       const res = await googleFetch(deps,
-        `${eventsUrl(calendar)}/${encodeURIComponent(id)}${calendar === HOLD_ORGANIZER ? '?sendUpdates=all' : '?sendUpdates=none'}`,
+        `${eventsUrl(calendar)}/${encodeURIComponent(id)}${calendar === HOLD_ORGANIZER ? `?sendUpdates=${organizerUpdates}` : '?sendUpdates=none'}`,
         { method: 'DELETE', headers: { Authorization: `Bearer ${resolved.token}` }, signal: AbortSignal.timeout(15000) });
       if (!res.ok && res.status !== 404 && res.status !== 410) {
         return { state: 'deferred', reason: googleErrorDetail(res.status, await readBodyText(res, GOOGLE_ERROR_BODY_LIMIT)), eventIds };

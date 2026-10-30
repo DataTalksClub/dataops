@@ -7,6 +7,8 @@ import { getClient } from "../src/db/client";
 import { setCalendarHoldGoogleDepsForTests } from "../src/routes/calendarHolds";
 import { setDapierBrokerClientsForTests, DEFAULT_HOLD_GOOGLE_CALENDARS, resolveHoldGoogleCalendars } from "../src/calendar/dapierBroker";
 import { getCalendarHold, putCalendarHold } from "../src/db/calendarHolds";
+import { getTask } from "../src/db/tasks";
+import { getNotification } from "../src/db/notifications";
 import { saveCalendarOverlaySettings } from "../src/db/calendar";
 import {
   berlinOffsetSuffix,
@@ -192,6 +194,137 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
     assert.equal(followUps.length, 1);
     assert.match(followUps[0].note, /Orin follow-up/i);
     assert.match(note + followUps[0].note, /no guest email/i);
+    assert.ok(followUps[0].taskId, "follow-up Task id recorded");
+    assert.ok(followUps[0].notificationId, "follow-up Notification id recorded");
+    const followUpTask = await getTask(client, followUps[0].taskId);
+    assert.ok(followUpTask, "follow-up Task persisted in DynamoDB");
+    assert.equal(followUpTask!.source, "calendar-hold-expiry");
+    assert.equal(followUpTask!.status, "todo");
+    assert.match(followUpTask!.description, /Stale proposal/);
+    const followUpNotification = await getNotification(client, followUps[0].notificationId);
+    assert.ok(followUpNotification, "follow-up Notification persisted in DynamoDB");
+    assert.equal(followUpNotification!.type, "follow-up-due");
+    assert.equal(followUpNotification!.taskId, followUpTask!.id);
+  });
+
+  it("scheduled expiry releases expired tentative hold + Google Proposal events, leaves unexpired and confirmed untouched, and is idempotent on re-run", async () => {
+    const deleteCalls: string[] = [];
+    const fetchImpl = (async (input: any, init: any = {}) => {
+      const url = new URL(String(input));
+      const method = init.method || "GET";
+      if (url.pathname === "/api/agent/token") return Response.json({ access_token: "test-google" });
+      if (url.pathname.endsWith("/calendars/primary")) return Response.json({ id: "orin@datatalks.club" });
+      if (method === "DELETE") {
+        deleteCalls.push(`${url.pathname}?${url.searchParams.toString()}`);
+        return new Response(null, { status: 204 });
+      }
+      return Response.json({});
+    }) as typeof fetch;
+
+    setCalendarHoldGoogleDepsForTests({
+      credential: "test-machine",
+      connectionId: "orin-selected",
+      fetchImpl,
+    });
+    try {
+      const expiredHold = parse(
+        await invoke("POST", "/api/calendar-holds", { date: "2026-11-10", title: "Expired proposal", topic: "Expired topic" }),
+      ).hold;
+      const unexpiredHold = parse(
+        await invoke("POST", "/api/calendar-holds", { date: "2026-11-11", title: "Fresh proposal", topic: "Fresh topic" }),
+      ).hold;
+      const confirmedHold = parse(
+        await invoke("POST", "/api/calendar-holds", {
+          date: "2026-11-12",
+          guestRef: "speaker@example.com",
+          title: "Confirmed talk",
+          topic: "Confirmed topic",
+        }),
+      ).hold;
+
+      await putCalendarHold(client, {
+        ...(await getCalendarHold(client, expiredHold.id))!,
+        expiresAt: "2026-10-01T00:00:00.000Z",
+        googleEventIds: {
+          "orin@datatalks.club": "evt-org-expired",
+          "alexey.s.grigoriev@gmail.com": "evt-copy-expired",
+        },
+        googleSync: { state: "synced" },
+      });
+      await putCalendarHold(client, {
+        ...(await getCalendarHold(client, unexpiredHold.id))!,
+        expiresAt: "2099-10-01T00:00:00.000Z",
+        googleEventIds: { "orin@datatalks.club": "evt-org-fresh" },
+        googleSync: { state: "synced" },
+      });
+      await putCalendarHold(client, {
+        ...(await getCalendarHold(client, confirmedHold.id))!,
+        status: "confirmed",
+        confirmedAt: "2026-10-02T00:00:00.000Z",
+        expiresAt: "2026-10-01T00:00:00.000Z",
+        googleEventIds: { "orin@datatalks.club": "evt-org-confirmed" },
+        googleSync: { state: "synced" },
+      });
+
+      // Dry-run scheduled event lists the expired tentative candidate without mutating state.
+      const dryRunRes: any = await handler({
+        source: "aws.events",
+        "detail-type": "Scheduled Event",
+        detail: { dataopsAction: "calendar-holds-expire", dryRun: true },
+      });
+      assert.equal(dryRunRes.statusCode, 200);
+      const dryBody = JSON.parse(dryRunRes.body);
+      assert.equal(dryBody.dryRun, true);
+      assert.ok(dryBody.expired.some((h: any) => h.id === expiredHold.id));
+      assert.ok(!dryBody.expired.some((h: any) => h.id === unexpiredHold.id));
+      assert.ok(!dryBody.expired.some((h: any) => h.id === confirmedHold.id));
+      assert.equal((await getCalendarHold(client, expiredHold.id))?.status, "tentative", "dry-run leaves hold tentative");
+      assert.equal(deleteCalls.length, 0, "dry-run makes no Google DELETE calls");
+
+      // Scheduled EventBridge daily cron pass expires the tentative hold past TTL.
+      const cronResult: any = await handler({
+        source: "aws.events",
+        "detail-type": "Scheduled Event",
+        detail: {},
+      });
+      assert.ok(cronResult.calendarHolds.expired.includes(expiredHold.id));
+      assert.ok(!cronResult.calendarHolds.expired.includes(unexpiredHold.id));
+      assert.ok(!cronResult.calendarHolds.expired.includes(confirmedHold.id));
+      assert.equal(cronResult.calendarHolds.followUps.length, 1);
+
+      const followUp = cronResult.calendarHolds.followUps[0];
+      assert.equal(followUp.holdId, expiredHold.id);
+      assert.match(followUp.note, /do not auto-email the guest/i);
+      assert.ok(followUp.taskId);
+      assert.ok(followUp.notificationId);
+
+      // Expired tentative is released in DataOps and Google (with sendUpdates=none on all calendars).
+      const afterExpired = await getCalendarHold(client, expiredHold.id);
+      assert.equal(afterExpired?.status, "expired");
+      assert.equal(afterExpired?.releaseReason, "expired");
+      assert.equal(afterExpired?.googleSync.state, "synced");
+      assert.equal(deleteCalls.length, 2);
+      for (const call of deleteCalls) {
+        assert.match(call, /sendUpdates=none/, `expiry DELETE must never send guest updates: ${call}`);
+        assert.ok(!call.includes("evt-org-fresh") && !call.includes("evt-org-confirmed"));
+      }
+
+      // Unexpired tentative and confirmed holds are untouched.
+      assert.equal((await getCalendarHold(client, unexpiredHold.id))?.status, "tentative");
+      assert.equal((await getCalendarHold(client, confirmedHold.id))?.status, "confirmed");
+
+      // Idempotent re-run: running the scheduled pass again expires nothing and creates no duplicate tasks/deletes.
+      const secondRun: any = await handler({
+        source: "aws.events",
+        "detail-type": "Scheduled Event",
+        detail: {},
+      });
+      assert.deepEqual(secondRun.calendarHolds.expired, []);
+      assert.deepEqual(secondRun.calendarHolds.followUps, []);
+      assert.equal(deleteCalls.length, 2, "no extra Google DELETE calls on idempotent re-run");
+    } finally {
+      setCalendarHoldGoogleDepsForTests({});
+    }
   });
 
 
