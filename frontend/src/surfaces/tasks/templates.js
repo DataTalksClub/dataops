@@ -112,12 +112,13 @@ export function createTemplatesSurface(context) {
       .replace(/^./, (character) => character.toUpperCase());
   }
 
-  function dayOffsetLabel(offsetDays) {
+  function dayOffsetLabel(offsetDays, anchor) {
     const days = Number(offsetDays || 0);
-    if (days === 0) return "Day 0";
-    if (days > 0) return `+${days} ${days === 1 ? "day" : "days"}`;
+    const prefix = anchor === "end" ? "END " : "";
+    if (days === 0) return `${prefix}Day 0`;
+    if (days > 0) return `${prefix}+${days} ${days === 1 ? "day" : "days"}`;
     const magnitude = Math.abs(days);
-    return `${magnitude} ${magnitude === 1 ? "day" : "days"} before`;
+    return `${prefix}${magnitude} ${magnitude === 1 ? "day" : "days"} before`;
   }
 
   async function refreshRuntimeTemplates(options = {}) {
@@ -357,8 +358,8 @@ export function createTemplatesSurface(context) {
       // starting a card knows which steps need a browser before they exist.
       const browser = browserRequirementParts(task.browserRequirement);
       meta.textContent = browser.classified
-        ? `${dayOffsetLabel(task.offsetDays)} · ${browser.label}`
-        : dayOffsetLabel(task.offsetDays);
+        ? `${dayOffsetLabel(task.offsetDays, task.anchor)} · ${browser.label}`
+        : dayOffsetLabel(task.offsetDays, task.anchor);
       item.append(name, meta);
       tasks.append(item);
     }
