@@ -64,7 +64,6 @@ describe("newsletter issues", () => {
         sponsorTask("invoice", "primary-slot"),
         sponsorTask("sponsor-document", "secondary-slot"),
         sponsorTask("invoice", "secondary-slot"),
-        { refId: "add-newsletter-performance", description: "Add newsletter performance metrics in DataOps", offsetDays: 7 },
         { refId: "collect-mailchimp-stats", description: "Collect newsletter stats from Mailchimp", offsetDays: 7 },
         { refId: "collect-x-stats", description: "Collect stats from X post", offsetDays: 7 },
         { refId: "collect-linkedin-stats", description: "Collect stats from LinkedIn post", offsetDays: 7 },
@@ -113,7 +112,7 @@ describe("newsletter issues", () => {
     assert.equal(card.sponsor, "Sponsor A");
     assert.deepEqual(card.selectedOptionalGroups, ["primary-slot"]);
     assert.deepEqual(await tasksOf(card.id), [
-      "add-newsletter-performance:todo", "collect-linkedin-stats:todo", "collect-mailchimp-stats:todo",
+      "collect-linkedin-stats:todo", "collect-mailchimp-stats:todo",
       "collect-x-stats:todo", "invoice:todo", "schedule:todo", "sponsor-document:todo", "write-issue:todo",
     ]);
     const again = await invoke("POST", "/api/newsletter-issues", weekly({ sourceKey: "issue-340" }));
@@ -201,7 +200,7 @@ describe("newsletter issues", () => {
   it("starts a Card with only the booked slots' Tasks", async () => {
     const open = await createWithCard(weekly({ publicationDate: "2027-05-10", issueNumber: 351, slots: { primary: {}, secondary: {} } }));
     assert.deepEqual((await getCard(client, open.cardId))!.selectedOptionalGroups, []);
-    assert.deepEqual(await tasksOf(open.cardId), ["add-newsletter-performance:todo", "collect-linkedin-stats:todo", "collect-mailchimp-stats:todo", "collect-x-stats:todo", "schedule:todo", "write-issue:todo"]);
+    assert.deepEqual(await tasksOf(open.cardId), ["collect-linkedin-stats:todo", "collect-mailchimp-stats:todo", "collect-x-stats:todo", "schedule:todo", "write-issue:todo"]);
   });
 
   it("books, changes and releases a slot through the sponsor's deal", async () => {
@@ -582,7 +581,7 @@ describe("newsletter issues", () => {
     );
     assert.equal((await tasksByRef())["collect-mailchimp-stats"].status, "todo");
 
-    // Opens close the Mailchimp collect task; the social and legacy tasks stay open.
+    // Opens close the Mailchimp collect task; the social tasks stay open.
     let issue = data(await invoke("PUT", `/api/newsletter-issues/${created.id}`, {
       version: created.version,
       stats: { opens: 34886, openRate: 34.99 },
@@ -593,7 +592,6 @@ describe("newsletter issues", () => {
     assert.match(tasks["collect-mailchimp-stats"].externalStatus || "", /34886 opens/);
     assert.equal(tasks["collect-x-stats"].status, "todo");
     assert.equal(tasks["collect-linkedin-stats"].status, "todo");
-    assert.equal(tasks["add-newsletter-performance"].status, "todo");
 
     // The X post's impressions close the X collect task.
     issue = data(await invoke("PUT", `/api/newsletter-issues/${created.id}`, {
@@ -605,7 +603,7 @@ describe("newsletter issues", () => {
     assert.match(tasks["collect-x-stats"].externalStatus || "", /2916 impressions/);
     assert.equal(tasks["collect-linkedin-stats"].status, "todo");
 
-    // Sent counts plus the booked slot's link clicks complete the legacy task.
+    // LinkedIn impressions close the LinkedIn collect task.
     issue = data(await invoke("PUT", `/api/newsletter-issues/${created.id}`, {
       version: issue.version,
       stats: { sent: 99714, opens: 34886, openRate: 34.99 },
@@ -613,9 +611,8 @@ describe("newsletter issues", () => {
     }));
     assert.equal(issue.metricsTask, "closed");
     tasks = await tasksByRef();
-    assert.equal(tasks["add-newsletter-performance"].status, "done");
-    assert.match(tasks["add-newsletter-performance"].externalStatus || "", /99714 sent, 34886 opens/);
     assert.equal(tasks["collect-linkedin-stats"].status, "done");
+    assert.match(tasks["collect-linkedin-stats"].externalStatus || "", /8080 impressions/);
   });
 
   it("resolves issues by weekly issue number (#299 or 299) and unique hex id prefix", async () => {
@@ -803,7 +800,7 @@ describe("newsletter issues", () => {
       assert.equal(dryData.slots.secondary.stats.clicks, 285);
       assert.equal(dryData.slots.secondary.stats.uniqueClicks, 226);
 
-      // Live pull saves and auto-closes collect-mailchimp-stats and add-newsletter-performance
+      // Live pull saves and auto-closes collect-mailchimp-stats
       const pullRes = await invoke("POST", "/api/newsletter-issues/392/mailchimp-metrics", {});
       assert.equal(pullRes.statusCode, 200, pullRes.body);
       const pulled = data(pullRes);
@@ -818,7 +815,6 @@ describe("newsletter issues", () => {
         (await listTasksByCard(client, created.cardId)).map((task) => [task.templateTaskRef, task]),
       );
       assert.equal(tasksByRef["collect-mailchimp-stats"].status, "done");
-      assert.equal(tasksByRef["add-newsletter-performance"].status, "done");
     } finally {
       setMailchimpMetricsDepsForTests({});
     }

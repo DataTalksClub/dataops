@@ -597,24 +597,10 @@ async function withDueCard(client: DynamoDBDocumentClient, actor: VerifiedActor,
   }
 }
 
-/** Ref of the retired Template Task that recorded newsletter performance in DataOps. */
-const METRICS_TASK_REF = 'add-newsletter-performance';
-
 /** Refs of the Template Tasks that collect newsletter performance in DataOps. */
 const COLLECT_MAILCHIMP_REF = 'collect-mailchimp-stats';
 const COLLECT_X_REF = 'collect-x-stats';
 const COLLECT_LINKEDIN_REF = 'collect-linkedin-stats';
-
-/** Metrics are complete when the send has counts and every booked slot has link clicks. */
-function newsletterMetricsComplete(issue: NewsletterIssue): boolean {
-  if (issue.stats?.sent == null || issue.stats?.opens == null) return false;
-  const positions = SLOT_POSITIONS[issue.kind] as readonly NewsletterSlotPosition[];
-  return positions.every((position) => {
-    const slot = issue.slots[position];
-    if (!slot?.sponsor) return true;
-    return slot.stats?.clicks != null;
-  });
-}
 
 /** The primary slot's stats, where the sponsored social posts live. */
 const primaryStats = (issue: NewsletterIssue) => issue.slots.primary?.stats;
@@ -627,7 +613,6 @@ function collectMetricsPresent(ref: string, issue: NewsletterIssue): boolean {
   if (ref === COLLECT_MAILCHIMP_REF) return issue.stats?.opens != null;
   if (ref === COLLECT_X_REF) return primaryStats(issue)?.xImpressions != null;
   if (ref === COLLECT_LINKEDIN_REF) return primaryStats(issue)?.linkedinImpressions != null;
-  if (ref === METRICS_TASK_REF) return newsletterMetricsComplete(issue);
   return false;
 }
 
@@ -643,13 +628,9 @@ function collectSummary(ref: string, issue: NewsletterIssue): string {
     return `LinkedIn stats recorded in DataOps: ${slot?.linkedinImpressions} impressions`
       + `${slot?.linkedinReactions != null ? `, ${slot.linkedinReactions} reactions` : ''}`;
   }
-  if (ref === COLLECT_MAILCHIMP_REF) {
-    return `Mailchimp stats recorded in DataOps: ${stats?.opens} opens`
-      + `${stats?.openRate != null ? ` (${stats.openRate}% open rate)` : ''}`
-      + `${slot?.clicks != null ? `, ${slot.clicks} link clicks${slot.uniqueClicks != null ? ` (${slot.uniqueClicks} unique)` : ''}` : ''}`;
-  }
-  return `Metrics recorded in DataOps: ${stats?.sent} sent, ${stats?.opens} opens`
-    + ` (${stats?.openRate ?? '?'}% open rate) on ${issue.publicationDate}`;
+  return `Mailchimp stats recorded in DataOps: ${stats?.opens} opens`
+    + `${stats?.openRate != null ? ` (${stats.openRate}% open rate)` : ''}`
+    + `${slot?.clicks != null ? `, ${slot.clicks} link clicks${slot.uniqueClicks != null ? ` (${slot.uniqueClicks} unique)` : ''}` : ''}`;
 }
 
 /**
@@ -667,8 +648,7 @@ async function maybeCloseMetricsTask(
     const tasks = await listTasksByCardConsistent(client, next.cardId);
     const open = tasks.filter(
       (task) => (
-        task.templateTaskRef === METRICS_TASK_REF
-        || task.templateTaskRef === COLLECT_MAILCHIMP_REF
+        task.templateTaskRef === COLLECT_MAILCHIMP_REF
         || task.templateTaskRef === COLLECT_X_REF
         || task.templateTaskRef === COLLECT_LINKEDIN_REF
       ) && (task.status === 'todo' || task.status === 'waiting'),
