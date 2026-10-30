@@ -8,6 +8,9 @@ import { configureDocsRuntime, handleDocsRoutes, resetDocsRuntime } from '../src
 import { resetKnowledgePublisherCaches } from '../src/auth/knowledgePublisher';
 import { syntheticKnowledge } from './helpers/knowledge';
 import { useTestDatabase } from './helpers/db';
+import { setDeploymentTemplateLoaderForTest } from '../src/deploymentSeeds';
+import { loadAuthoredTemplatesFromKnowledge } from '../src/templates/authoredTemplates';
+import { syntheticAuthoredFiles, syntheticKnowledgeStore } from './helpers/authoredTemplates';
 
 const REPO = 'ExampleOrg/knowledge';
 const SHA = 'a'.repeat(40);
@@ -93,6 +96,27 @@ describe('GitHub Actions OIDC knowledge publisher', () => {
       expectedRevision: revision, mutations: [{ path: 'content/a.md', content: 'stale' }],
     });
     assert.equal(stale.statusCode, 409);
+  });
+
+  it('syncs authored templates on request and reports failures', async () => {
+    const { store } = syntheticKnowledgeStore(syntheticAuthoredFiles(3));
+    setDeploymentTemplateLoaderForTest(() => loadAuthoredTemplatesFromKnowledge(store));
+    try {
+      const first = await request('POST', '/api/templates/sync', token());
+      assert.equal(first.statusCode, 200);
+      assert.deepEqual(JSON.parse(first.body), {
+        templates: { total: 3, created: 3, updated: 0, unchanged: 0 }, pinnedTypes: [], triggeredBy: SHA,
+      });
+      const again = JSON.parse((await request('POST', '/api/templates/sync', token())).body);
+      assert.deepEqual(again.templates, { total: 3, created: 0, updated: 0, unchanged: 3 });
+      setDeploymentTemplateLoaderForTest(async () => { throw new Error('invalid template: broken.yaml'); });
+      const failed = await request('POST', '/api/templates/sync', token());
+      assert.equal(failed.statusCode, 409);
+      assert.match(JSON.parse(failed.body).error, /broken\.yaml/);
+      assert.equal((await request('GET', '/api/templates/sync', token())).statusCode, 403);
+    } finally {
+      setDeploymentTemplateLoaderForTest(null);
+    }
   });
 
   it('may not reach any other route', async () => {

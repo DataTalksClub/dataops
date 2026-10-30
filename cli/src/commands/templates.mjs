@@ -18,6 +18,12 @@ Usage
       [--expected-version N] [--revision R] [--dry-run]
   dataops templates reset <id|type|name> [--expected-version N] [--revision R] [--dry-run]
   dataops templates delete <id|type|name> --yes [--expected-version N] [--revision R]
+  dataops templates sync
+
+sync projects dataops-knowledge main (workflow-templates/) into the live
+Templates; it needs the knowledge repository's CI identity and runs in its
+publish workflow, so a push to main refreshes them without a deploy. Pinned
+(edited) Templates keep their pin and are reported.
 
 Create a Card from one with: dataops cards create --title T --date D --template <id|type|name>
 
@@ -334,4 +340,15 @@ export async function remove(args, io) {
   return result;
 }
 
-export const commands = { list, show, create, update, reset, delete: remove };
+export async function sync(args, io) {
+  const result = await apiFor(args).post("/api/templates/sync", {});
+  if (args.json) return result;
+  const { total, created, updated, unchanged } = result.templates;
+  io.print(`Synced ${total} Templates from Git: ${created} created, ${updated} updated, ${unchanged} unchanged.`);
+  if (result.pinnedTypes?.length) {
+    io.print(`Pinned (live definition differs from Git, base follows Git): ${result.pinnedTypes.join(", ")}`);
+  }
+  return result;
+}
+
+export const commands = { list, show, create, update, reset, delete: remove, sync };

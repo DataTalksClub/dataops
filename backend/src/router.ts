@@ -166,7 +166,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // The knowledge repository's publish workflow presents its own GitHub
     // OIDC token; it is a scoped service principal, never a portal session.
     if (isDocsDomainEnabled()) {
-      const publisherResponse = await handleKnowledgePublisher(event);
+      const publisherResponse = await handleKnowledgePublisher(event, client);
       if (publisherResponse) return publisherResponse;
     }
 

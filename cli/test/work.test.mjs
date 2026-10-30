@@ -386,6 +386,17 @@ describe("cards and templates", () => {
     assert.deepEqual(calls.at(-1).body, { previewToken: "a".repeat(64), optionalGroups: [] });
   });
 
+  test("templates sync posts to the sync route and reports pinned types", async () => {
+    const calls = fakePortal({
+      "POST /api/templates/sync": { templates: { total: 3, created: 0, updated: 1, unchanged: 2 }, pinnedTypes: ["newsletter-issue"] },
+    });
+    const io = captureIo();
+    assert.equal(await run(["templates", "sync"], io), 0);
+    assert.equal(calls.at(-1).method, "POST");
+    assert.match(io.text(), /Synced 3 Templates from Git: 0 created, 1 updated, 2 unchanged/);
+    assert.match(io.text(), /Pinned.*newsletter-issue/);
+  });
+
   const template = { id: "tpl-1", type: "newsletter-issue", name: "Newsletter issue", taskDefinitions: [{ description: "Draft", offsetDays: -3 }] };
 
   test("create resolves a template by type and anchors the card on --date", async () => {

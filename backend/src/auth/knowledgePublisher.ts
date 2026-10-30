@@ -5,13 +5,18 @@
  * keys and the configured repository, branch and workflow file.
  *
  * The principal is not an interactive user. It may read the knowledge
- * manifest and file history and publish knowledge files, nothing else, and its publication
+ * manifest and file history, publish knowledge files and project the
+ * Git-authored workflow templates into the live runtime, nothing else, and its publication
  * actor and message name the verified commit rather than anything the
  * request body claims.
  */
 import { createPublicKey, verify as verifySignature, type JsonWebKey } from 'node:crypto';
 
+import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+
+import { seedDeploymentRuntime } from '../deploymentSeeds';
 import { handleDocsRoutes } from '../docs/contentApi';
+import { listTemplates } from '../db/templates';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 export const GITHUB_OIDC_ISSUER = 'https://token.actions.githubusercontent.com';
@@ -104,7 +109,10 @@ export async function verifyPublisherToken(token: string, now = Date.now()): Pro
  * Handle a request carrying a GitHub Actions OIDC bearer token, or return
  * null so every other credential continues through the normal middleware.
  */
-export async function handleKnowledgePublisher(event: LambdaEvent): Promise<LambdaResponse | null> {
+export async function handleKnowledgePublisher(
+  event: LambdaEvent,
+  client: DynamoDBDocumentClient,
+): Promise<LambdaResponse | null> {
   const token = bearer(event);
   if (!token || !isGitHubOidcToken(token)) return null;
   let claims: GitHubOidcClaims;
@@ -116,12 +124,33 @@ export async function handleKnowledgePublisher(event: LambdaEvent): Promise<Lamb
   }
   const method = (event.httpMethod || 'GET').toUpperCase();
   const path = event.path || '/';
+  if (method === 'POST' && path === '/api/templates/sync') return syncTemplates(client, claims);
   const allowed = (method === 'GET' && (path === '/knowledge/manifest' || path === '/knowledge/history'))
     || (method === 'POST' && path === '/knowledge/publish');
-  if (!allowed) return response(403, { error: 'Knowledge publisher may only read the manifest and file history, and publish knowledge files' });
+  if (!allowed) return response(403, { error: 'Knowledge publisher may only read the manifest and file history, publish knowledge files and sync workflow templates' });
   const repo = claims.repository.split('/')[1];
   const result = await handleDocsRoutes(event, `git:${repo}@${claims.sha.slice(0, 12)}`, `Publish ${repo} ${claims.sha}`);
   return result || response(404, { error: 'Not found' });
+}
+
+/**
+ * Project the knowledge repository's main branch into the live templates, the
+ * same reconciliation a deploy runs. Pinned (manually edited) templates keep
+ * their pin but follow the new Git base; they are listed so the caller can see
+ * which live definitions deliberately differ from Git.
+ */
+async function syncTemplates(client: DynamoDBDocumentClient, claims: GitHubOidcClaims): Promise<LambdaResponse> {
+  try {
+    const templates = await seedDeploymentRuntime(client).then((report) => report.templates);
+    const pinnedTypes = (await listTemplates(client))
+      .filter((template) => template.pinned === true)
+      .map((template) => String(template.type))
+      .sort();
+    return response(200, { templates, pinnedTypes, triggeredBy: claims.sha });
+  } catch (error) {
+    console.warn('Template sync failed:', (error as Error).message);
+    return response(409, { error: `Template sync failed: ${(error as Error).message}`, code: 'template-sync-failed' });
+  }
 }
 
 /** Test-only reset for deterministic JWKS refresh assertions. */
