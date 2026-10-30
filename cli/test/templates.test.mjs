@@ -47,6 +47,36 @@ describe("templates read commands", () => {
     assert.match(io.text(), /rev-1/);
   });
 
+  test("show resolves a unique id prefix (AC7)", async () => {
+    const full = {
+      ...template,
+      id: "f25c4abf-1234-5678-9abc-def012345678",
+      type: "prefixed-type",
+      name: "Prefixed",
+      sourceRevision: "dad2d88302bc0b4ab0cada1e3dcf622ababd1c00a10580401e4eb5f9b3ecf1b2",
+      sourceBlobSha: "ad64be810dbff91a733474d5dfbbc48202901a9f",
+    };
+    fakePortal({
+      "GET /api/templates/f25c4abf": { status: 404, body: { error: "Template not found" } },
+      "GET /api/templates": { templates: [full] },
+    });
+    const io = captureIo();
+    assert.equal(await run(["templates", "show", "f25c4abf"], io), 0);
+    assert.match(io.text(), /f25c4abf-1234/);
+  });
+
+  test("an ambiguous id prefix is a usage error", async () => {
+    const first = { ...template, id: "f25c4abf-1111-1111-1111-111111111111", type: "alpha" };
+    const second = { ...template, id: "f25c4abf-2222-2222-2222-222222222222", type: "beta" };
+    fakePortal({
+      "GET /api/templates/f25c4abf": { status: 404, body: { error: "Template not found" } },
+      "GET /api/templates": { templates: [first, second] },
+    });
+    const io = captureIo();
+    assert.equal(await run(["templates", "show", "f25c4abf"], io), 2);
+    assert.match(io.errors.join("\n"), /More than one Template id starts with/);
+  });
+
   test("an ambiguous type match is a usage error before any write", async () => {
     fakePortal({
       "GET /api/templates/dup": { status: 404, body: { error: "Template not found" } },

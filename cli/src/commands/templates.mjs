@@ -11,13 +11,13 @@ export const help = `dataops templates - reusable Card definitions; edits pin a 
 
 Usage
   dataops templates list
-  dataops templates show <id|type|name>
+  dataops templates show <id|id-prefix|type|name>
   dataops templates create --file <definition.yaml|json> [--dry-run]
-  dataops templates update <id|type|name> (--from-file <definition.yaml|json> | --file <definition.yaml|json>
+  dataops templates update <id|id-prefix|type|name> (--from-file <definition.yaml|json> | --file <definition.yaml|json>
       | --task <taskRef> --offset-days <int> [--task-name <text>] [--name <text>])
       [--expected-version N] [--revision R] [--dry-run]
-  dataops templates reset <id|type|name> [--expected-version N] [--revision R] [--dry-run]
-  dataops templates delete <id|type|name> --yes [--expected-version N] [--revision R]
+  dataops templates reset <id|id-prefix|type|name> [--expected-version N] [--revision R] [--dry-run]
+  dataops templates delete <id|id-prefix|type|name> --yes [--expected-version N] [--revision R]
   dataops templates sync
 
 sync projects dataops-knowledge main (workflow-templates/) into the live
@@ -51,7 +51,7 @@ function templatesOf(payload) {
   return Array.isArray(payload?.templates) ? payload.templates : Array.isArray(payload) ? payload : [];
 }
 
-/** A Template by id, then exact type, then exact (case-insensitive) name. */
+/** A Template by id, unique id prefix, then exact type, then exact (case-insensitive) name. */
 export async function findTemplate(api, ref) {
   try {
     const { template } = await api.get(`/api/templates/${enc(ref)}`);
@@ -60,6 +60,25 @@ export async function findTemplate(api, ref) {
     if (!(error instanceof ApiError) || error.status !== 404) throw error;
   }
   const templates = templatesOf(await api.get("/api/templates"));
+  // Unique id prefix (Orin request AC7): `f25c4abf` resolves when it matches
+  // exactly one template id, ignoring dashes and case. An ambiguous prefix
+  // fails closed so the caller picks the full id.
+  if (typeof ref === "string" && ref.length > 0) {
+    const strippedRef = ref.replace(/-/g, "").toLowerCase();
+    if (/^[0-9a-f-]+$/i.test(ref) && strippedRef.length >= 4) {
+      const prefixMatches = templates.filter(
+        (template) =>
+          typeof template.id === "string" &&
+          template.id.replace(/-/g, "").toLowerCase().startsWith(strippedRef),
+      );
+      if (prefixMatches.length > 1) {
+        throw new UsageError(
+          `More than one Template id starts with "${ref}". Re-run with its full id.`,
+        );
+      }
+      if (prefixMatches.length === 1) return prefixMatches[0];
+    }
+  }
   const lower = ref.toLowerCase();
   const matches = templates.filter(
     (template) => template.type === ref || String(template.name || "").toLowerCase() === lower,
@@ -76,8 +95,8 @@ export async function findTemplate(api, ref) {
 
 /** Server-owned fields never travel inside a definition; the CAS pair rides alongside it. */
 const SERVER_OWNED_FIELDS = new Set([
-  "id", "version", "revision", "origin", "pinned", "base", "baseSourceRevision",
-  "sourcePath", "sourceRevision", "createdAt", "updatedAt", "PK", "SK",
+  "id", "version", "revision", "origin", "pinned", "base", "baseSourceRevision", "baseSourceBlobSha",
+  "sourcePath", "sourceRevision", "sourceBlobSha", "createdAt", "updatedAt", "PK", "SK",
 ]);
 
 function stripServerOwned(definition) {
@@ -195,7 +214,10 @@ export async function show(args, io) {
     ["pinned", template.pinned ? "yes" : "no"],
     ["revision", template.revision],
     ["version", template.version],
+    ["content sha256", template.sourceRevision],
+    ["git blob", template.sourceBlobSha],
     ["base source", template.baseSourceRevision || template.sourceRevision],
+    ["base git blob", template.baseSourceBlobSha || template.sourceBlobSha],
     ["trigger", template.triggerType],
     ["source", template.sourcePath],
     ["source docs", template.sourceDocIds],
