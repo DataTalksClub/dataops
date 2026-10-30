@@ -8,19 +8,16 @@ backend, one deployable runtime, and a clear language boundary only where a
 worker genuinely needs it. It is the reference for the backend-consolidation
 issue.
 
-> Search libraries — two distinct Python libraries, both maintained by Alexey:
-> - **`minsearch`** — TF-IDF + cosine similarity via scikit-learn; pulls in
->   `numpy`/`scipy`/`pandas`; pickled index. This is what the docs backend uses
->   **today**.
+> Search engine:
 > - **`zerosearch`** — a tiny, **zero-dependency** BM25-lite index (pure stdlib,
->   portable `save`/`load`). This is the **target** search engine.
+>   portable `save`/`load`).
+> - **`zerosearch-node`** — the Node port of `zerosearch`, whose index is
+>   compatible with Python `zerosearch`.
 >
-> Consolidation migrates docs search from `minsearch` → **`zerosearch-node`**
-> (the Node port of `zerosearch`), whose index is compatible with Python
-> `zerosearch`. This both removes the heavy scientific-Python stack and gives an
-> easy port (BM25-lite is small and dependency-free). Note: rankings shift from
-> TF-IDF to BM25-lite; per the `zerosearch` README, recall is on par with
-> `minsearch`, ordering differs — an acceptable, deliberate change.
+> Consolidation replaced the legacy Python TF-IDF (`scikit-learn`/`numpy`/`scipy`/`pandas`,
+> pickled index) search stack with **`zerosearch-node`**. This removes the heavy
+> scientific-Python stack and uses a small, dependency-free BM25-lite ranking
+> engine with a portable index format.
 
 ## Decision
 
@@ -37,11 +34,11 @@ The earlier plan targeted Python. The dependency analysis reversed it:
 - The work engine — the larger (~11.7k src + ~15k tests + Playwright e2e),
   stateful, actively-developed core — is already TypeScript. Porting it to
   Python is the bigger, riskier rewrite.
-- The Python backend's only **runtime** third-party deps are `minsearch` and
+- The Python backend's only **runtime** third-party deps were TF-IDF search and
   `python-frontmatter`. The TypeScript port splits the frontmatter delimiters
   locally and parses YAML with the backend's existing `js-yaml` dependency;
   `sop_parse`/`sop_lint` are pure stdlib logic.
-- `minsearch` is the heaviest dependency in the whole system — it pulls in
+- The legacy Python TF-IDF search was the heaviest dependency in the whole system — it pulled in
   `scikit-learn` + `numpy` + `scipy` + `pandas`. Replacing it with
   `zerosearch-node` (zero-dependency BM25-lite) **removes** the single largest
   contributor to Lambda package size, cold-start latency, and baseline memory.
@@ -121,7 +118,7 @@ server).
 | `lambda-functions/src/.../{api_handler,github_store,docs_index,local_server}.py` | `backend/src/docs/*` (TS) |
 | `lambda-functions/.../{sop_parse,sop_lint}.py` + `scripts/sop_*.py` | `backend/src/docs/sop/*` + `backend/scripts` CLI (TS) |
 | `python-frontmatter` | local delimiter splitting + `js-yaml` (npm) |
-| `minsearch` (Python, scikit-learn, pickle) | `zerosearch-node` (BM25-lite, portable index) |
+| Python TF-IDF search (`scikit-learn`, pickle) | `zerosearch-node` (BM25-lite, portable index) |
 | `lambda-functions/template.*.yaml` | `infra/` |
 | Python migration tooling (`Pillow`, `openpyxl`, `slugify`, `httpx`) | not ported (one-time); replace only if still needed (`sharp`, `exceljs`, `slugify`, `fetch`) |
 
@@ -132,7 +129,7 @@ server).
 `client-secrets-manager`) + `zerosearch-node` + `js-yaml`. Everything else
 the docs backend used is Node stdlib (`crypto`, `zlib`, `path`, `url`, etc.).
 
-**Lambda resource impact:** replacing `minsearch` with `zerosearch-node` drops
+**Lambda resource impact:** replacing the Python TF-IDF search stack with `zerosearch-node` drops
 `scikit-learn`/`numpy`/`scipy`/`pandas` — ~100–250 MB of dependencies and the
 multi-second cold start caused by importing them. `zerosearch-node` is
 dependency-free, so the backend's search runtime stays at AWS SDK + `js-yaml`
@@ -178,7 +175,7 @@ the reverse. That parity suite is the definition of done.
 
 ### DataOps adoption
 
-Within DataOps, the docs domain swaps `minsearch` for `zerosearch-node`. Field
+Within DataOps, the docs domain uses `zerosearch-node`. Field
 config carries over from today's `docs_index.py`:
 
 - text fields & boosts: title(4), summary(3), description(3), purpose(3),

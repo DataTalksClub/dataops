@@ -2,14 +2,14 @@
 
 ## `zerosearch-node`
 
-`zerosearch-node` (the BM25-lite search engine that replaces Python `minsearch`
-for docs search, issue #85) is **not published to npm**. It lives in a separate
-local project at `~/git/zerosearch-node`.
+`zerosearch-node` (the BM25-lite search engine used for docs search, issue #85)
+is **not published to npm**. It lives in a separate local project at
+`~/git/zerosearch-node`.
 
 It is consumed here by **vendoring a CommonJS build of its source** (plus
 `package.json`, `README.md`, `FORMAT.md`) into
-`work-engine/vendor/zerosearch-node/` and referencing it from
-`work-engine/package.json` as a relative `file:` dependency:
+`backend/vendor/zerosearch-node/` and referencing it from
+`backend/package.json` as a relative `file:` dependency:
 
 ```json
 "zerosearch-node": "file:vendor/zerosearch-node"
@@ -17,7 +17,7 @@ It is consumed here by **vendoring a CommonJS build of its source** (plus
 
 ### Why a CommonJS build (not the upstream ESM `dist/`)
 
-The work-engine compiles to CommonJS (`tsconfig.json` `module: commonjs`) and
+The backend compiles to CommonJS (`tsconfig.json` `module: commonjs`) and
 deploys as a CommonJS Lambda. Upstream `zerosearch-node` publishes an
 **ESM-only** `dist/` (`"type": "module"`, `exports.import` only), which a
 CommonJS `require()` cannot load (`ERR_PACKAGE_PATH_NOT_EXPORTED`). To keep the
@@ -37,16 +37,13 @@ format is identical regardless of JS module format.
   deterministic and network-free. `zerosearch-node` has **zero runtime
   dependencies**, so nothing transitive is pulled in.
 
-### Follow-up (deploy)
+### Refreshing the vendored build
 
-Proper publishing of `zerosearch-node` to npm (or a private registry) and
-switching this `file:` dep to a versioned semver range is a **deploy follow-up**
-tracked with the #88 packaging cutover. Until then, refresh the vendored copy
-with:
+Refresh the vendored copy with:
 
 ```bash
 # Recompile the upstream source to CommonJS (module: commonjs) and replace dist/.
 # e.g. tsc with --module commonjs over ~/git/zerosearch-node/src/{index,marshal}.ts
-rm -rf work-engine/vendor/zerosearch-node/dist
-# ...emit CJS index.js/marshal.js (+ .d.ts) into work-engine/vendor/zerosearch-node/dist
+rm -rf backend/vendor/zerosearch-node/dist
+# ...emit CJS index.js/marshal.js (+ .d.ts) into backend/vendor/zerosearch-node/dist
 ```

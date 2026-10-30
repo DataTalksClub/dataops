@@ -72,9 +72,9 @@ Original direction (historical context):
 Why this was reversed:
 
 - The work engine (the larger, stateful, actively-developed core) is TypeScript.
-- The Python backend's only runtime third-party deps were `minsearch` and
+- The Python backend's only runtime third-party deps were TF-IDF docs search and
   `python-frontmatter`, both with drop-in Node equivalents.
-- `minsearch` pulled in `scikit-learn` + `numpy` + `scipy` + `pandas` -- the
+- The Python TF-IDF search pulled in `scikit-learn` + `numpy` + `scipy` + `pandas` -- the
   single largest contributor to Lambda package size and cold-start latency.
 - Replacing it with `zerosearch-node` (zero-dependency BM25-lite) both removes
   the heavy scientific-Python stack and gives the lighter Lambda.
@@ -108,7 +108,7 @@ Use separate stores for separate truth:
 ### Search
 
 **Superseded** -- search now uses `zerosearch-node` (zero-dependency
-BM25-lite). The original `minsearch` (TF-IDF via scikit-learn) has been
+BM25-lite). The earlier Python TF-IDF search (`scikit-learn`) has been
 retired; see `docs/TARGET_ARCHITECTURE.md`.
 
 Original direction (historical context):

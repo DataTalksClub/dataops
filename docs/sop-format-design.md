@@ -118,15 +118,17 @@ Key properties:
 
 ## The tooling
 
-Three stdlib-only Python scripts under `scripts/`. Each one does one
-thing and is callable from the shell or imported as a library.
+The TypeScript SOP engine lives in `backend/src/docs/sop/` with a Node CLI at
+`backend/scripts/sop.ts`. A stdlib-only Python parser mirror at
+`tools/content_tools/content_tools/sop_parse.py` supports the planning-docs
+validator.
 
-### `scripts/sop_parse.py`
+### `backend/scripts/sop.ts parse`
 
 Reads a marked-up SOP and emits the parsed tree as JSON.
 
 ```bash
-python3 scripts/sop_parse.py path/to/sop.md --pretty
+npx --prefix backend tsx backend/scripts/sop.ts parse path/to/sop.md --pretty
 ```
 
 Returns a dict with `frontmatter`, `schema_version`, and `sections`. The
@@ -138,12 +140,12 @@ exposes its `id`, `attrs` (systems, action, tool), `body_md`, and
 This is the entry point for any agent or tool that wants structured SOP
 data.
 
-### `scripts/sop_lint.py`
+### `backend/scripts/sop.ts lint`
 
-Validates a file against the spec. Used in CI gating once we wire it up.
+Validates a file against the spec (exposed as `make sop-lint FILES="path/to/sop.md"`).
 
 ```bash
-python3 scripts/sop_lint.py path/to/sop.md
+npx --prefix backend tsx backend/scripts/sop.ts lint path/to/sop.md
 ```
 
 Checks:
@@ -161,16 +163,10 @@ Checks:
 Files without `schema_version: 1` are skipped — migration is
 incremental.
 
-### `scripts/sop_normalize.py`
+### Legacy normalization (retired)
 
-Converts a legacy SOP into the marked-up form. This is what we used to
-migrate all 240 files in one pass.
-
-```bash
-python3 scripts/sop_normalize.py path/to/sop.md -o path/to/sop.md
-```
-
-Heuristics:
+During the initial corpus migration, a one-time normalizer converted all 240
+legacy SOPs into the marked-up form in one pass using these heuristics:
 
 - Detects the six standard section headings and wraps each in section
   markers.

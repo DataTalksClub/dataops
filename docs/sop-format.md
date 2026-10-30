@@ -25,9 +25,9 @@ them from the rendered output; our parser treats them as load-bearing.
 
 This document defines the format. The implementation lives in:
 
-- `scripts/sop_parse.py` — read a marked-up file → JSON
-- `scripts/sop_lint.py` — validate a file against this spec
-- `scripts/sop_normalize.py` — convert a legacy SOP into marked-up form
+- `backend/src/docs/sop/` — TypeScript parser and linter (`parse.ts`, `lint.ts`)
+- `backend/scripts/sop.ts` — Node CLI (`parse` and `lint` subcommands)
+- `tools/content_tools/content_tools/sop_parse.py` — stdlib-only Python parser helper used by `scripts/validate_planning_docs.py`
 
 ## Content
 
@@ -294,7 +294,7 @@ section. Lint skips structural checks inside raw sections.
 
 ### Parsed shape
 
-`sop_parse.py <file>` produces:
+`npx --prefix backend tsx backend/scripts/sop.ts parse <file>` produces:
 
 ```json
 {
@@ -336,22 +336,15 @@ section. Lint skips structural checks inside raw sections.
 If the procedure has no `<!-- group -->` blocks, `groups` is `[]` and steps
 go in `flat_steps`.
 
-### Migration
+### Validation
 
-Files migrate one at a time:
-
-1. Run `scripts/sop_normalize.py <file>` — auto-injects markers from the
-   legacy structure (numbered list + `Image note:` heuristics).
+1. Author the SOP with the six required section markers and `schema_version: 1` in frontmatter.
 2. Open the diff; eyeball edge cases (multi-image steps, free prose).
-3. Add `schema_version: 1` to the frontmatter.
-4. Run `scripts/sop_lint.py <file>` — must pass before commit.
-5. CI runs lint on every file with `schema_version: 1` and fails the PR
-   on any violation.
+3. Run `make sop-lint FILES="<file>"` (or `npx --prefix backend tsx backend/scripts/sop.ts lint <file>`) — must pass before commit.
 
-Files without `schema_version` are ignored by lint. The conversion is not
-all-or-nothing.
+Files without `schema_version` are ignored by lint.
 
 ## References
 
 - `docs/STRUCTURE.md` — overall doc taxonomy and required frontmatter.
-- `scripts/sop_parse.py`, `scripts/sop_lint.py`, `scripts/sop_normalize.py`.
+- `backend/scripts/sop.ts`, `backend/src/docs/sop/`.

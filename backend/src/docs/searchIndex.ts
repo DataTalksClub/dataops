@@ -5,11 +5,10 @@
  * docs field configuration ported as data from
  * `lambda-functions/src/lambda_functions/docs_index.py`.
  *
- * Implemented (issue #85) on top of `zerosearch-node` (BM25-lite, portable
- * `json-1` index format compatible with the Python `zerosearch`). Per
- * `docs/TARGET_ARCHITECTURE.md` the field config below carries over unchanged
- * from `minsearch`; ranking shifts from TF-IDF (minsearch) to BM25-lite, with
- * recall on par and ordering allowed to differ.
+ * Implemented on top of `zerosearch-node` (BM25-lite, portable `json-1` index
+ * format compatible with the Python `zerosearch`). Per
+ * `docs/TARGET_ARCHITECTURE.md` the field config below uses BM25-lite ranking
+ * over the configured text and keyword fields.
  */
 
 import { readFile, writeFile } from 'node:fs/promises';

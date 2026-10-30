@@ -1,11 +1,8 @@
 /**
  * Docs search field extraction.
  *
- * Ports the document-field derivation from
- * `lambda-functions/src/lambda_functions/docs_index.py` (`iter_docs`) and the
- * id/domain/doc_type inference from `doc_registry.py`. Each `content/` markdown
- * file becomes a flat {@link SearchDocument} whose fields line up exactly with
- * the `minsearch` text/keyword fields:
+ * Derives a flat {@link SearchDocument} from each `content/` markdown file with
+ * the `zerosearch-node` text/keyword fields:
  *
  *   text:    title, summary, description, purpose, headings, body, tags, systems
  *   keyword: path, id, domain, doc_type

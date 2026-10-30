@@ -30,7 +30,7 @@ Primary inputs:
 
 - `.goal-v1.md` for V1 workflow framing.
 - `frontend/DESIGN.md` for the Notion-like, one-page-at-a-time workspace model.
-- `docs/local-development.md` for the current portal/work-engine runtime split.
+- `docs/local-development.md` for local development and verification commands.
 - `frontend/` for the current DataOps docs portal, Operations Home, task and
   card panels, notifications, document editing, create flow, and dark mode.
 - `work-engine/src/pages/index.html` and `work-engine/src/public/app.js` for

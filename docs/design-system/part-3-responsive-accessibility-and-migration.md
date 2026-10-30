@@ -108,7 +108,7 @@
 
 - The current plain HTML/CSS/JavaScript stack.
 - Runtime behavior not required for token or component normalization.
-- The portal/work-engine Lambda split described in `docs/local-development.md`.
+- The backend runtime architecture described in `docs/local-development.md`.
 - Source repos outside `dataops`.
 - Public DataTalksClub brand or marketing guidelines.
 

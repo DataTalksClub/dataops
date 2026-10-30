@@ -17,8 +17,8 @@ import { extractDoc } from '../src/docs/search/extract';
 
 const paths = (results: SearchResult[]): string[] => results.map((r) => String(r.path));
 
-describe('docs search - field config (parity with docs_index.py)', () => {
-  it('carries the minsearch text fields, keyword fields, and boosts verbatim', () => {
+describe('docs search - field config', () => {
+  it('exposes the zerosearch-node text fields, keyword fields, and boosts', () => {
     assert.deepStrictEqual(
       [...DOCS_TEXT_FIELDS],
       ['title', 'summary', 'description', 'purpose', 'headings', 'body', 'tags', 'systems'],
