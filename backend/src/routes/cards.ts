@@ -677,10 +677,14 @@ async function handleSingle(
 
     // Only allow updating known fields
     const allowedFields = [
-      'title', 'description', 'anchorDate', 'references', 'cardLinks', 'tags', 'stage',
+      'title', 'description', 'anchorDate', 'endDate', 'references', 'cardLinks', 'tags', 'stage',
       'sourceDocIds', 'artifactRefs', 'intakeRefs',
       'people', 'sponsor', 'secondarySponsors', 'issueNumber',
     ];
+    if (body.endDate !== undefined && body.endDate !== null
+      && !/^\d{4}-\d{2}-\d{2}$/.test(body.endDate as string)) {
+      return json(400, { error: 'Invalid endDate format, expected YYYY-MM-DD' });
+    }
     const updates: Record<string, unknown> = {};
     for (const field of allowedFields) {
       if (body[field] !== undefined) {

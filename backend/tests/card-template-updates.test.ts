@@ -564,4 +564,26 @@ describe('manual task adoption', () => {
       assert.equal(manual.status, status === 'ambiguous' ? 'todo' : status);
     });
   }
+
+  it('dates END-anchored definitions from the card end date and flags the anchor', () => {
+    const source = template(1);
+    const target = template(2);
+    target.taskDefinitions!.push({ refId: 'closeout', description: 'Close out', offsetDays: 7, anchor: 'end' });
+    const card = { ...cardFrom(source), endDate: '2026-05-20' };
+    const plan = buildCardTemplateUpdatePlan(card, tasksFrom(source), target);
+    const added = plan.preview.taskChanges.find(({ taskRef }) => taskRef === 'closeout');
+    assert.equal(added?.action, 'add');
+    const update = plan.taskUpdates.find((entry) => entry.taskRef === 'closeout');
+    assert.equal(update?.target?.date, '2026-05-27');
+    assert.equal(update?.target?.templateAnchor, 'end');
+    assert.equal(update?.target?.templateOffsetDays, 7);
+  });
+
+  it('refuses to plan an END-anchored definition on a card without an end date', () => {
+    const source = template(1);
+    const target = template(2);
+    target.taskDefinitions!.push({ refId: 'closeout', description: 'Close out', offsetDays: 7, anchor: 'end' });
+    const card = cardFrom(source);
+    assert.throws(() => buildCardTemplateUpdatePlan(card, tasksFrom(source), target), /no endDate/);
+  });
 });

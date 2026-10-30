@@ -117,6 +117,7 @@ export function mapCard(item: Record<string, unknown>): JsonRecord {
     title: optionalString(item.title),
     description: optionalString(item.description),
     anchor_date: optionalString(item.anchorDate),
+    end_date: optionalString(item.endDate),
     template_id: optionalString(item.templateId),
     source_doc_ids: stringArray(item.sourceDocIds),
     status: optionalString(item.status),

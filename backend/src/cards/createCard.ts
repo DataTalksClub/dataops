@@ -172,6 +172,9 @@ export async function createCardFromInput(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(body.anchorDate as string)) {
     return fail(400, { error: 'Invalid anchorDate format, expected YYYY-MM-DD' });
   }
+  if (body.endDate !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(body.endDate as string)) {
+    return fail(400, { error: 'Invalid endDate format, expected YYYY-MM-DD' });
+  }
 
   const systemOwnedFields = [
     'version', 'expectedVersion', 'status', 'taskCount', 'openTaskCount',
@@ -232,6 +235,7 @@ export async function createCardFromInput(
     anchorDate: body.anchorDate,
     stage: body.stage || 'preparation',
   };
+  if (body.endDate !== undefined) cardData.endDate = body.endDate;
   if (ownerId) cardData.ownerId = ownerId;
   if (body.description !== undefined) {
     cardData.description = body.description;
@@ -311,6 +315,13 @@ export async function createCardFromInput(
   if (body.counts !== undefined) {
     const countsError = countValuesError(template, body.counts);
     if (countsError) return fail(400, { error: countsError, code: 'invalid-counts' });
+  }
+  const needsEndDate = (template.taskDefinitions || []).some((definition) => definition.anchor === 'end');
+  if (needsEndDate && cardData.endDate === undefined) {
+    return fail(400, {
+      error: 'Template anchors Tasks to the cohort END date: endDate is required',
+      code: 'missing-end-date',
+    });
   }
   try {
     const { card, tasks } = await createCardFromTemplate(

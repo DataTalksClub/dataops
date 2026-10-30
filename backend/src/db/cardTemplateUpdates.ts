@@ -292,7 +292,7 @@ function addedTask(
     taskHistory: [],
     createdAt: now,
     updatedAt: now,
-    ...templateTaskProjection(template, definition, order, card.anchorDate, card.id, assignment, idsByRef),
+    ...templateTaskProjection(template, definition, order, card.anchorDate, card.id, assignment, idsByRef, card.endDate),
   }) as Task;
 }
 

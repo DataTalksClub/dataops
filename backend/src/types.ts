@@ -366,6 +366,12 @@ export interface Card {
   title?: string;
   description?: string | null;
   anchorDate?: string;
+  /**
+   * Cohort END date (date-only, Europe/Berlin semantics like `anchorDate`).
+   * Required on Cards whose Template anchors any Task to END; START-anchored
+   * Cards leave it absent.
+   */
+  endDate?: string;
   /** Every Card is instantiated from a Template; these fields record it. */
   templateId: string;
   /** Template projection used for the last reviewed application to this Card. */
@@ -497,6 +503,13 @@ export interface TaskDefinition {
   description: string;
   offsetDays: number;
   /**
+   * Which Card date `offsetDays` counts from: the cohort START (`anchorDate`,
+   * the default) or the cohort END (`endDate`). Closeout work (certificates,
+   * testimonials, payout, retrospective) anchors to END so it stays after
+   * delivery no matter how long the cohort runs.
+   */
+  anchor?: 'start' | 'end';
+  /**
    * Optional checklist group (e.g. "secondary"): tasks in a group are only
    * instantiated when the group is selected at Card creation. Ungrouped
    * tasks always instantiate.
@@ -579,6 +592,13 @@ export interface TemplateTaskDefinitionSnapshot {
   description: string;
   date: string;
   templateOffsetDays: number;
+  /**
+   * Canonical schedule anchor captured when a Template is applied. Only END
+   * is stored: an absent anchor and an explicit START anchor both mean the
+   * cohort START date, so START-anchored Tasks keep the snapshot shape they
+   * have always had.
+   */
+  templateAnchor?: 'end';
   templateTaskOrder: number;
   isMilestone?: boolean;
   stageOnComplete?: string;

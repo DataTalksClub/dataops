@@ -229,4 +229,30 @@ describe('authored YAML template mapping', () => {
     assert.match(messages, /card link/);
     assert.match(messages, /Google Docs link without an internal process document/);
   });
+
+  it('round-trips the END schedule anchor and defaults an absent anchor to START', () => {
+    const authored = templateToYaml({
+      ...RUNTIME_TEMPLATE,
+      taskDefinitions: [
+        { ...RUNTIME_TEMPLATE.taskDefinitions[0] },
+        { refId: 'closeout', description: 'Close out after END', offsetDays: 7, anchor: 'end' },
+      ],
+    });
+    assert.deepStrictEqual(validateAuthoredTemplate(authored), []);
+    const restored = templateFromYaml(authored);
+    const restoredTasks = restored.taskDefinitions as Record<string, unknown>[];
+    assert.strictEqual(restoredTasks[0].anchor, undefined);
+    assert.strictEqual(restoredTasks[1].anchor, 'end');
+    assert.deepStrictEqual(templateToYaml(restored), authored);
+  });
+
+  it('rejects schedule anchors outside start and end', () => {
+    const authored = templateToYaml(RUNTIME_TEMPLATE);
+    const tasks = authored.tasks as Record<string, unknown>[];
+    const messages = validateAuthoredTemplate({
+      ...authored,
+      tasks: [{ ...tasks[0], schedule: { offset_days: 7, anchor: 'middle' } }],
+    }).map((issue) => issue.message).join('\n');
+    assert.match(messages, /schedule\.anchor must be start or end/);
+  });
 });

@@ -36,6 +36,7 @@ const TASK_FIELDS = [
   'description',
   'date',
   'templateOffsetDays',
+  'templateAnchor',
   'templateTaskOrder',
   'isMilestone',
   'stageOnComplete',
@@ -358,7 +359,7 @@ export function buildCardTemplateUpdatePlan(
 
   const descriptionCounts = new Map<string, number>();
   definitions.forEach((definition, order) => {
-    const label = templateTaskDefinitionSnapshot(template, definition, order, card.anchorDate!).description.trim().toLowerCase();
+    const label = templateTaskDefinitionSnapshot(template, definition, order, card.anchorDate!, card.endDate).description.trim().toLowerCase();
     descriptionCounts.set(label, (descriptionCounts.get(label) || 0) + 1);
   });
   const accountedRefs = new Set(card.templateDefinitionSnapshot.taskRefs);
@@ -368,7 +369,7 @@ export function buildCardTemplateUpdatePlan(
     const ref = definition.refId;
     targetRefs.add(ref);
     const current = byRef.get(ref) || null;
-    const target = templateTaskDefinitionSnapshot(template, definition, order, card.anchorDate);
+    const target = templateTaskDefinitionSnapshot(template, definition, order, card.anchorDate, card.endDate);
     // A definition the Card already accounts for but holds no Task for was
     // left out on purpose (or its work predates the Template); only a
     // definition new to this Card adds a Task.

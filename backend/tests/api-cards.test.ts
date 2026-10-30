@@ -63,6 +63,84 @@ describe('API — Cards', () => {
 
   // ---- POST /api/cards ----
 
+  // ---- Cohort END-date anchor ----
+
+  describe('POST /api/cards with END-anchored template tasks', () => {
+    it('dates END-anchored tasks from endDate and persists it on the card', async () => {
+      const template = await createTemplate(client, {
+        name: 'Cohort API template',
+        taskDefinitions: [
+          { refId: 'kickoff', description: 'Kick off', offsetDays: 0 },
+          { refId: 'certificates', description: 'Issue certificates', offsetDays: 7, anchor: 'end' },
+        ],
+      });
+      const res = await invoke('POST', '/api/cards', {
+        title: 'Cohort',
+        anchorDate: '2026-09-01',
+        endDate: '2026-10-13',
+        templateId: template.id,
+      });
+
+      assert.strictEqual(res.statusCode, 201);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.card.endDate, '2026-10-13');
+      const byRef = new Map(body.tasks.map((task: { templateTaskRef: string }) => [task.templateTaskRef, task]) as Map<string, { date: string }>);
+      assert.strictEqual(byRef.get('kickoff')!.date, '2026-09-01');
+      assert.strictEqual(byRef.get('certificates')!.date, '2026-10-20');
+    });
+
+    it('rejects a missing endDate when the template anchors tasks to END', async () => {
+      const template = await createTemplate(client, {
+        name: 'Cohort API template without end',
+        taskDefinitions: [
+          { refId: 'certificates', description: 'Issue certificates', offsetDays: 7, anchor: 'end' },
+        ],
+      });
+      const res = await invoke('POST', '/api/cards', {
+        title: 'Cohort',
+        anchorDate: '2026-09-01',
+        templateId: template.id,
+      });
+
+      assert.strictEqual(res.statusCode, 400);
+      assert.match(JSON.parse(res.body).error, /endDate is required/);
+    });
+
+    it('rejects a malformed endDate', async () => {
+      const res = await invoke('POST', '/api/cards', {
+        title: 'Cohort',
+        anchorDate: '2026-09-01',
+        endDate: '13-10-2026',
+        templateId: EMPTY_TEMPLATE_ID,
+      });
+
+      assert.strictEqual(res.statusCode, 400);
+      assert.match(JSON.parse(res.body).error, /endDate/);
+    });
+
+    it('updates the card end date', async () => {
+      const created = await invoke('POST', '/api/cards', {
+        title: 'Cohort to reschedule',
+        anchorDate: '2026-09-01',
+        templateId: EMPTY_TEMPLATE_ID,
+      });
+      const card = JSON.parse(created.body).card;
+      const res = await invoke('PUT', `/api/cards/${card.id}`, {
+        expectedVersion: card.version,
+        endDate: '2026-10-20',
+      });
+
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(JSON.parse(res.body).card.endDate, '2026-10-20');
+
+      const bad = await invoke('PUT', `/api/cards/${card.id}`, {
+        expectedVersion: card.version + 1,
+        endDate: 'tomorrow',
+      });
+      assert.strictEqual(bad.statusCode, 400);
+    });
+  });
+
   describe('POST /api/cards', () => {
     it('creates a card with valid title and anchorDate', async () => {
       const res = await invoke('POST', '/api/cards', {

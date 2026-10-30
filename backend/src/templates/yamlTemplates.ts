@@ -137,7 +137,10 @@ export function templateToYaml(template: Dict): Dict {
 
   doc.tasks = ((template.taskDefinitions as Dict[] | undefined) || []).map((task) => {
     const out: Dict = { id: task.refId, name: task.description };
-    out.schedule = { offset_days: task.offsetDays };
+    const schedule: Dict = { offset_days: task.offsetDays };
+    if (task.anchor === 'end') schedule.anchor = 'end';
+    else if (task.anchor === 'start') schedule.anchor = 'start';
+    out.schedule = schedule;
     for (const [runtime, authored] of TASK_FIELDS) assign(out, authored, task[runtime]);
     if (task.repeat !== undefined) out.repeat = { count_field: (task.repeat as Dict).countField };
     if (task.linkCard !== undefined) out.link_card = { template_type: (task.linkCard as Dict).templateType };
@@ -184,6 +187,8 @@ export function templateFromYaml(doc: Dict): Dict {
       description: task.name,
       offsetDays: schedule.offset_days,
     };
+    if (schedule.anchor === 'end') out.anchor = 'end';
+    else if (schedule.anchor === 'start') out.anchor = 'start';
     for (const [runtime, authored] of TASK_FIELDS) assign(out, runtime, task[authored]);
     if (task.repeat !== undefined) out.repeat = { countField: (task.repeat as Dict | null)?.count_field };
     if (task.link_card !== undefined) out.linkCard = { templateType: (task.link_card as Dict | null)?.template_type };
@@ -348,6 +353,9 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
 
     const schedule = (task.schedule as Dict | undefined) || {};
     if (typeof schedule.offset_days !== 'number') fail(`task '${id}' needs schedule.offset_days`);
+    if (schedule.anchor !== undefined && schedule.anchor !== 'start' && schedule.anchor !== 'end') {
+      fail(`task '${id}' schedule.anchor must be start or end`);
+    }
 
     const docId = task.instruction_doc_id;
     if (typeof docId === 'string' && knownDocIds && !knownDocIds.has(docId)) {

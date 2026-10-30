@@ -261,6 +261,7 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
       errors.push(`${context} field open_task_count must not exceed task_count`);
     }
     validateDateField(card, 'anchor_date', errors, context);
+    validateDateField(card, 'end_date', errors, context);
     validateDateOrTimestampField(card, 'completed_at', errors, context);
     validateDateOrTimestampField(card, 'created_at', errors, context);
     validateDateOrTimestampField(card, 'updated_at', errors, context);

@@ -188,6 +188,49 @@ describe('Templates data layer', () => {
     );
   });
 
+  it('instantiateTemplate dates END-anchored tasks from the card end date', async () => {
+    const template = await createTemplate(client, {
+      name: 'Cohort template',
+      taskDefinitions: [
+        { refId: 'kickoff', description: 'Kick off', offsetDays: 0 },
+        { refId: 'certificates', description: 'Issue certificates', offsetDays: 7, anchor: 'end' },
+        { refId: 'retro', description: 'Retrospective', offsetDays: 28, anchor: 'end' },
+      ],
+    });
+
+    const cardId = 'cohort-card-1';
+    await createCard(client, {
+      ...templateLink(), id: cardId, title: 'Cohort',
+      anchorDate: '2026-09-01', endDate: '2026-10-13',
+    });
+
+    const tasks = await instantiateTemplate(client, template.id, cardId, '2026-09-01');
+    assert.strictEqual(tasks.length, 3);
+    const byRef = new Map(tasks.map((task) => [task.templateTaskRef, task]));
+    assert.strictEqual(byRef.get('kickoff')!.date, '2026-09-01');
+    assert.strictEqual(byRef.get('certificates')!.date, '2026-10-20');
+    assert.strictEqual(byRef.get('retro')!.date, '2026-11-10');
+    assert.strictEqual(byRef.get('certificates')!.templateDefinitionSnapshot.templateAnchor, 'end');
+    assert.strictEqual(byRef.get('kickoff')!.templateDefinitionSnapshot.templateAnchor, undefined);
+  });
+
+  it('instantiateTemplate fails loudly when an END-anchored task meets a card without an end date', async () => {
+    const template = await createTemplate(client, {
+      name: 'Cohort template without end',
+      taskDefinitions: [
+        { refId: 'certificates', description: 'Issue certificates', offsetDays: 7, anchor: 'end' },
+      ],
+    });
+
+    const cardId = 'cohort-card-2';
+    await createCard(client, { ...templateLink(), id: cardId, title: 'Cohort', anchorDate: '2026-09-01' });
+
+    await assert.rejects(
+      () => instantiateTemplate(client, template.id, cardId, '2026-09-01'),
+      /anchored to the cohort END date but the Card has no endDate/,
+    );
+  });
+
   // --- New fields tests (issue #17) ---
 
   it('createTemplate persists all new template-level fields', async () => {

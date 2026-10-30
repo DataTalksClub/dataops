@@ -28,6 +28,27 @@ export function dateFromTemplateOffset(anchorDate: string, offsetDays: number): 
 }
 
 /**
+ * The Card date a Task definition counts its offset from: the cohort START
+ * (`anchorDate`) by default, or the cohort END (`endDate`) when the
+ * definition anchors to END. Fails loudly when an END-anchored definition
+ * meets a Card without an END date instead of silently dating closeout work
+ * from START.
+ */
+export function templateAnchorDate(
+  definition: Pick<TaskDefinition, 'refId' | 'anchor'>,
+  anchorDate: string,
+  endDate?: string,
+): string {
+  if (definition.anchor !== 'end') return anchorDate;
+  if (!endDate) {
+    throw new Error(
+      `Template Task ${definition.refId} is anchored to the cohort END date but the Card has no endDate`,
+    );
+  }
+  return endDate;
+}
+
+/**
  * The task definitions a Card with these optional groups and counts holds:
  * the selected definitions with repeated ones expanded into numbered
  * instances (`templates/repeatedTasks.ts`), each carrying its `order`.
@@ -108,6 +129,7 @@ export function templateTaskDefinitionSnapshot(
   definition: TaskDefinition,
   order: number,
   anchorDate: string,
+  endDate?: string,
 ): TemplateTaskDefinitionSnapshot {
   if (
     definition.stageOnComplete !== undefined
@@ -117,6 +139,7 @@ export function templateTaskDefinitionSnapshot(
   }
   const offsetDays = definition.offsetDays || 0;
   const taskOrder = definition.order ?? order;
+  const resolvedAnchorDate = templateAnchorDate(definition, anchorDate, endDate);
   // Trello-imported definitions bake the checklist name into the description
   // as "[Checklist] Task". Split it off so instantiated Tasks store the tag
   // in `tags` and keep a clean description.
@@ -131,8 +154,9 @@ export function templateTaskDefinitionSnapshot(
   ];
   return withoutUndefined({
     description: cleanDescription,
-    date: dateFromTemplateOffset(anchorDate, offsetDays),
+    date: dateFromTemplateOffset(resolvedAnchorDate, offsetDays),
     templateOffsetDays: offsetDays,
+    templateAnchor: (definition.anchor === 'end' ? 'end' : undefined) as 'end' | undefined,
     templateTaskOrder: taskOrder,
     isMilestone: definition.isMilestone,
     stageOnComplete: definition.stageOnComplete,
@@ -179,8 +203,9 @@ export function templateTaskProjection(
   cardId: string,
   assignment: AssignmentPolicy,
   taskIdsByRef: ReadonlyMap<string, string>,
+  endDate?: string,
 ): Dict {
-  const snapshot = templateTaskDefinitionSnapshot(template, definition, order, anchorDate);
+  const snapshot = templateTaskDefinitionSnapshot(template, definition, order, anchorDate, endDate);
   const { dependsOnRefs, ...definitionFields } = snapshot;
   const dependsOn = resolveDependencyIds(definition.refId, dependsOnRefs, taskIdsByRef);
   // The snapshot keeps only a person the Template itself names for this Task;

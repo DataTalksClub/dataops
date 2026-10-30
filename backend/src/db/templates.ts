@@ -857,6 +857,7 @@ async function instantiateTemplate(
   cardId: string,
   anchorDate: string,
   selectedGroups?: string[],
+  endDate?: string,
 ): Promise<Task[]> {
   const stored = await getTemplate(client, templateId);
   if (!stored) {
@@ -866,6 +867,7 @@ async function instantiateTemplate(
 
   const card = await getCard(client, cardId);
   const groups = selectedGroups ?? card?.selectedOptionalGroups;
+  const resolvedEndDate = endDate ?? card?.endDate;
   const taskDefinitions = selectedTaskDefinitions(template, groups, cardCountValues(template, card?.counts));
   const existingTasks = await listTasksByCard(client, cardId);
   const existingRefs = new Set(
@@ -891,7 +893,7 @@ async function instantiateTemplate(
     const order = def.order ?? taskDefinitions.indexOf(def);
     const taskData = {
       id: idsByRef.get(def.refId),
-      ...templateTaskProjection(template, def, order, anchorDate, cardId, assignment, idsByRef),
+      ...templateTaskProjection(template, def, order, anchorDate, cardId, assignment, idsByRef, resolvedEndDate),
     };
 
     const task = await createTask(client, taskData);
@@ -922,6 +924,9 @@ async function createCardFromTemplate(
   const cardCounts = cardCountValues(resolved, counts);
   const definitions = selectedTaskDefinitions(resolved, selectedGroups, cardCounts);
   Object.assign(cardData, templateLinkage(resolved, selectedGroups || [], cardCounts));
+  const endDate = typeof cardData.endDate === 'string' && cardData.endDate.length > 0
+    ? (cardData.endDate as string)
+    : undefined;
   const card = buildCard(cardData, {
     taskCount: definitions.length,
     openTaskCount: definitions.length,
@@ -935,7 +940,7 @@ async function createCardFromTemplate(
     taskHistory: [],
     createdAt: now,
     updatedAt: now,
-    ...templateTaskProjection(resolved, definition, definition.order!, anchorDate, card.id, assignment, idsByRef),
+    ...templateTaskProjection(resolved, definition, definition.order!, anchorDate, card.id, assignment, idsByRef, endDate),
   }) as Task);
 
   const companionWrites = companions(card);
