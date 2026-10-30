@@ -42,18 +42,7 @@ jobs:
       - name: Knowledge backup stale alarm state
         run: |
           aws cloudwatch describe-alarms --alarm-names dataops-v1-knowledge-backup-stale \
-            --query 'MetricAlarms[0].{
-              AlarmName: AlarmName,
-              StateValue: StateValue,
-              StateUpdatedTime: StateUpdatedTime,
-              StateReason: StateReason,
-              MetricName: MetricName,
-              Threshold: Threshold,
-              Period: Period,
-              EvaluationPeriods: EvaluationPeriods,
-              DatapointsToAlarm: DatapointsToAlarm,
-              TreatMissingData: TreatMissingData
-            }' \
+            --query 'MetricAlarms[0]' \
             --output json --region "$AWS_REGION"
 
       - name: Knowledge worker function configuration
