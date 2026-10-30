@@ -140,7 +140,7 @@ describe('template blocks', () => {
     assert.strictEqual((send.schedule as Record<string, unknown>).offset_days, 7);
   });
 
-  it('rewrites the anchor and offset for every emitted task', () => {
+  it('rewrites the anchor and adds the include offset to each task offset', () => {
     const doc = templateWithTasks([
       { include: 'blocks/sponsor-performance.yaml', anchor: 'custom-anchor', offset_days: 9 },
     ]);
@@ -148,7 +148,7 @@ describe('template blocks', () => {
     const tasks = expanded.tasks as Array<Record<string, unknown>>;
     assert.deepStrictEqual(tasks[0].depends_on, ['custom-anchor']);
     for (const task of tasks) {
-      assert.strictEqual((task.schedule as Record<string, unknown>).offset_days, 9);
+      assert.strictEqual((task.schedule as Record<string, unknown>).offset_days, 16);
     }
   });
 

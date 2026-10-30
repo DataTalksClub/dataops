@@ -18,7 +18,8 @@
     {
       "id": "podcast-episode",
       "templateTypes": [
-        "podcast"
+        "podcast",
+        "lightning-lesson-podcast"
       ],
       "tokens": {
         "date": "Recording date, e.g. 19 Oct",
