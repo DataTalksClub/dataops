@@ -89,6 +89,31 @@ import {
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 const SUBJECT_WITH_CARD_ERROR = 'A Task belongs to a Card or has a subject, not both';
+
+/**
+ * Hard byte budget for one serialized tasks-list page. Lambda rejects
+ * responses above 6,291,556 bytes with HTTP 413, so a page is shrunk to the
+ * largest row prefix that fits well below that ceiling; the cursor continues
+ * after the last emitted row, so pagination still returns every item.
+ */
+export const MAX_TASKS_LIST_BYTES = 4 * 1024 * 1024;
+/** Headroom in the budget for the response envelope: cursor token and owner reference. */
+const RESPONSE_ENVELOPE_RESERVE_BYTES = 16 * 1024;
+/**
+ * List rows are summaries: append-only transition history stays complete
+ * behind GET /api/tasks/:id, and a list row keeps only its most recent
+ * events so one aged Task cannot bloat a whole page.
+ */
+export const LIST_ROW_HISTORY_CAP = 100;
+
+/** Project a Task to its list-row summary: detail-only fields dropped, history capped. */
+function taskListRow(task: Record<string, unknown>): Record<string, unknown> {
+  const { templateDefinitionSnapshot: _snapshot, historyActors: _actors, ...row } = task;
+  if (Array.isArray(row.taskHistory) && row.taskHistory.length > LIST_ROW_HISTORY_CAP) {
+    row.taskHistory = row.taskHistory.slice(-LIST_ROW_HISTORY_CAP);
+  }
+  return row;
+}
 const RELATIVE_DATE_ERROR =
   'must be a date like 2026-01-31, +7d, tomorrow, or a weekday like mon (Europe/Berlin)';
 
@@ -592,19 +617,29 @@ export async function handleTaskRoutes(
         directory, await attachLinkedCards(client, await attachSubjects(client, pageWithPrereqs)),
       );
 
-      // Frozen Template definitions and heavy audit collections are detail-only
-      // provenance. Repeating them on every row in list responses can exceed Lambda's
-      // 6 MB response limit. GET /api/tasks/:id returns the complete stored snapshot.
-      const listTasks = projected.map(({
-        templateDefinitionSnapshot: _snapshot,
-        historyActors: _ha,
-        ...task
-      }) => task);
+      // Frozen Template definitions, heavy audit collections, and full history
+      // are detail-only provenance. Repeating them on every row in list
+      // responses is what pushed pages past Lambda's 6 MB response limit.
+      // GET /api/tasks/:id returns the complete stored snapshot.
+      const listTasks = projected.map((task) => taskListRow(task as unknown as Record<string, unknown>));
 
-      const responseBody: Record<string, unknown> = { tasks: listTasks };
+      // Emit the largest prefix of the page whose serialized rows fit the
+      // byte budget; anything left continues on the next page through the
+      // cursor, so no item is ever dropped. The first row always ships: a
+      // page that cannot fit even one row would silently hide work forever.
+      let take = 0;
+      let rowsBytes = RESPONSE_ENVELOPE_RESERVE_BYTES;
+      while (take < listTasks.length) {
+        const rowBytes = Buffer.byteLength(JSON.stringify(listTasks[take])) + 1;
+        if (take > 0 && rowsBytes + rowBytes > MAX_TASKS_LIST_BYTES) break;
+        rowsBytes += rowBytes;
+        take += 1;
+      }
 
-      if (offset + limit < totalMatching) {
-        responseBody.nextCursor = await encodeCollectionCursor(binding, { offset: offset + limit });
+      const responseBody: Record<string, unknown> = { tasks: listTasks.slice(0, take) };
+      const nextOffset = offset + take;
+      if (nextOffset < totalMatching) {
+        responseBody.nextCursor = await encodeCollectionCursor(binding, { offset: nextOffset });
       }
 
       const ownerReference = ownerFilterUserId(ownerFilter);
@@ -612,7 +647,7 @@ export async function handleTaskRoutes(
       // including for a disabled or missing teammate, so a deep link never
       // degrades into a different scope.
       if (ownerReference) responseBody.owner = await directory.project(ownerReference);
-      return jsonResponse(200, responseBody);
+      return { statusCode: 200, headers: JSON_HEADERS, body: JSON.stringify(responseBody) };
     }
 
     // Pick a query source, then intersect every supplied filter above.

@@ -649,10 +649,14 @@ describe("Tasks surface boundary", () => {
     assert.equal(retained.querySelector("input").checked, true);
     assert.equal(retained.querySelector("input").getAttribute("aria-label"), "Reopen First");
 
-    // A new page instance starts without in-memory completion rows.
+    // A new page instance starts without in-memory completion rows and follows
+    // nextCursor across pages when loading persisted completed history.
+    const savedOlder = { ...canonicalTask({ id: "retain-older", description: "Older", date: "2026-08-10" }), status: "done", version: 1 };
     const reloaded = createHarness({
       workSnapshot: { todayTasks: [second] },
-      request: async () => ({ tasks: [saved] }),
+      request: async (url) => url.includes("cursor=page-2")
+        ? { tasks: [savedOlder] }
+        : { tasks: [saved], nextCursor: "page-2" },
     });
     reloaded.api.renderTasksSurface([], "queue");
     assert.deepEqual(queueRowTitles(reloaded.documentList), ["Second"]);
@@ -660,10 +664,15 @@ describe("Tasks surface boundary", () => {
     history.open = true;
     await history.dispatch("toggle");
     await nextTicks();
-    assert.equal(reloaded.requests[0].url, "/api/tasks?status=done");
-    const historyRow = reloaded.documentList.querySelector(".ops-queue-history-row");
-    assert.match(historyRow.textContent, /First/);
-    await historyRow.dispatch("click");
+    assert.deepEqual(
+      reloaded.requests.map((entry) => entry.url),
+      ["/api/tasks?status=done", "/api/tasks?status=done&cursor=page-2"],
+    );
+    const historyRows = findAllByClass(reloaded.documentList, "ops-queue-history-row");
+    assert.equal(historyRows.length, 2);
+    assert.match(historyRows[0].textContent, /First/);
+    assert.match(historyRows[1].textContent, /Older/);
+    await historyRows[0].dispatch("click");
     assert.deepEqual(reloaded.openedTasks, ["retain-first"]);
   });
 

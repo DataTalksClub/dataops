@@ -1,4 +1,4 @@
-import { tasksFromWorkPayload } from "../../core/workspace.js";
+import { fetchAllWorkPages, tasksFromWorkPayload } from "../../core/workspace.js";
 
 const HISTORY_VISIBLE_LIMIT = 12;
 
@@ -31,7 +31,8 @@ export function createQueueHistory({ request, workApiUrl, openTaskPanel, cleanTa
       historyError = "";
       rerender();
       try {
-        historyTasks = tasksFromWorkPayload(await request(workApiUrl("/api/tasks?status=done")));
+        const rawTasks = await fetchAllWorkPages({ request, workApiUrl, path: "/api/tasks?status=done" });
+        historyTasks = tasksFromWorkPayload({ tasks: rawTasks });
         historyLoaded = true;
       } catch (err) {
         historyError = err?.message || "Request failed";

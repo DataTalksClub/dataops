@@ -10,6 +10,7 @@ import { createTemplate } from '../src/db/templates';
 import { createCard, getCard } from '../src/db/cards';
 import { EMPTY_TEMPLATE_ID, putEmptyTemplate, templateLink } from './helpers/cardTemplate';
 import { createTask, getTask } from '../src/db/tasks';
+import { LIST_ROW_HISTORY_CAP, MAX_TASKS_LIST_BYTES } from '../src/routes/tasks';
 import type { LambdaResponse } from '../src/types';
 
 describe('API — CRUD for tasks', () => {
@@ -437,6 +438,83 @@ describe('API — CRUD for tasks', () => {
         queryStringParameters: { date, cursor: 'not-valid' },
       }, {});
       assert.strictEqual(invalidCursorRes.statusCode, 400);
+    });
+
+    it('keeps every page under a hard byte budget for a large task set and returns all items across pages', async () => {
+      const client = await getClient(port);
+      const date = '2099-12-01';
+      // ~48 KB of stored text per Task: 100 Tasks hold ~5 MB, which would
+      // breach Lambda's 6 MB response limit in a single unpaginated response.
+      const fatComment = 'x'.repeat(48 * 1024);
+      const createdIds: string[] = [];
+      for (let index = 0; index < 100; index++) {
+        const task = await createTask(client, {
+          description: `Byte budget task ${index}`,
+          date,
+          comment: `${fatComment} #${index}`,
+        });
+        createdIds.push(task.id);
+      }
+
+      let cursor: string | undefined;
+      const seenIds: string[] = [];
+      let pages = 0;
+      do {
+        const pageRes = await handler({
+          httpMethod: 'GET',
+          path: '/api/tasks',
+          queryStringParameters: { date, ...(cursor ? { cursor } : {}) },
+        }, {});
+        assert.strictEqual(pageRes.statusCode, 200);
+        assert.ok(
+          Buffer.byteLength(pageRes.body) <= MAX_TASKS_LIST_BYTES,
+          `Page ${pages + 1} must stay within the hard byte budget`,
+        );
+        const page = JSON.parse(pageRes.body);
+        assert.ok(page.tasks.length >= 1, 'a page must always make progress');
+        assert.ok(page.tasks.length < 100, 'a ~5 MB set must shrink below the page limit');
+        seenIds.push(...page.tasks.map((task: { id: string }) => task.id));
+        cursor = page.nextCursor;
+        pages += 1;
+      } while (cursor);
+
+      assert.ok(pages > 1, 'the budget must split the large set across multiple pages');
+      assert.strictEqual(seenIds.length, createdIds.length, 'no duplicates across pages');
+      assert.deepStrictEqual(new Set(seenIds), new Set(createdIds), 'all items returned across pages');
+    });
+
+    it('caps list-row history to recent events while detail keeps the full history', async () => {
+      const client = await getClient(port);
+      const date = '2099-12-02';
+      const created = await createTask(client, { description: 'History cap task', date });
+
+      const extraNotes = 30;
+      let version = created.version;
+      for (let index = 0; index < LIST_ROW_HISTORY_CAP + extraNotes; index++) {
+        const res = await handler({
+          httpMethod: 'POST',
+          path: `/api/tasks/${created.id}/actions/add-note`,
+          body: JSON.stringify({ note: `Note ${index}`, expectedVersion: version }),
+        }, {});
+        assert.strictEqual(res.statusCode, 200);
+        version = JSON.parse(res.body).version;
+      }
+
+      const listRes = await handler({
+        httpMethod: 'GET',
+        path: '/api/tasks',
+        queryStringParameters: { date },
+      }, {});
+      assert.strictEqual(listRes.statusCode, 200);
+      const row = JSON.parse(listRes.body).tasks.find((task: { id: string }) => task.id === created.id);
+      assert.ok(row, 'task must appear in the list page');
+      assert.strictEqual(row.taskHistory.length, LIST_ROW_HISTORY_CAP);
+      assert.strictEqual(row.taskHistory[row.taskHistory.length - 1].action, 'noted', 'kept events are the most recent');
+
+      const detailRes = await handler({ httpMethod: 'GET', path: `/api/tasks/${created.id}` }, {});
+      assert.strictEqual(detailRes.statusCode, 200);
+      const detail = JSON.parse(detailRes.body);
+      assert.strictEqual(detail.taskHistory.length, LIST_ROW_HISTORY_CAP + extraNotes, 'detail keeps every event');
     });
 
     it('intersects date, range, card and status filters', async () => {

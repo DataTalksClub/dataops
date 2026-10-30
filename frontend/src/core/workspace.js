@@ -521,6 +521,26 @@ export function tasksFromWorkPayload(payload) {
   return [];
 }
 
+/**
+ * Work collections answer paginated: every page is byte-bounded, so a client
+ * that wants the whole collection follows `nextCursor` instead of expecting
+ * one unbounded response. Pages are fetched one after another; `maxPages`
+ * keeps a runaway server from hanging the caller forever.
+ */
+export async function fetchAllWorkPages({ request, workApiUrl = (url) => url, path, maxPages = 20 }) {
+  const items = [];
+  let cursor;
+  const separator = path.includes("?") ? "&" : "?";
+  for (let page = 0; page < maxPages; page += 1) {
+    const url = cursor ? `${path}${separator}cursor=${encodeURIComponent(cursor)}` : path;
+    const payload = await request(workApiUrl(url));
+    items.push(...(Array.isArray(payload?.tasks) ? payload.tasks : []));
+    cursor = payload?.nextCursor;
+    if (!cursor) break;
+  }
+  return items;
+}
+
 const CANONICAL_TASK_STATUSES = new Set(["todo", "waiting", "done", "skipped"]);
 
 export function isCanonicalWorkTask(task) {
