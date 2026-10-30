@@ -29,7 +29,7 @@ export const EPISODE_LINK_KINDS = [
   "website",
 ] as const;
 
-export type PodcastGuest = { name: string; slug?: string };
+export type PodcastGuest = { name: string; slug?: string; email?: string };
 /**
  * One page-content transcript row, mirroring the website `_podcast/*.md`
  * front matter: either a `{ header }` section marker or a spoken `{ line }`
@@ -63,6 +63,12 @@ export type PodcastEpisode = {
   title?: string | null;
   guests: PodcastGuest[];
   recordingDate?: string | null;
+  recordingTime?: string | null;
+  recordingTimeZone?: string | null;
+  recordingStartIso?: string | null;
+  recordingEndIso?: string | null;
+  recordingEventStatus?: "proposed" | "approved" | "released" | "tentative" | "confirmed" | "expired" | null;
+  recordingHoldId?: string | null;
   releaseDate?: string | null;
   status: (typeof EPISODE_STATUSES)[number];
   links?: Partial<Record<(typeof EPISODE_LINK_KINDS)[number], string>>;

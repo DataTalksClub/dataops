@@ -33,6 +33,7 @@ import { handlePeopleRoutes } from './routes/people';
 import { handleBookRoutes } from './routes/books';
 import { handleCalendarRoutes } from './routes/calendar';
 import { handleCalendarHoldRoutes } from './routes/calendarHolds';
+import { handleEventRoutes } from './routes/events';
 import { handleOperatingModelRoutes } from './routes/operatingModel';
 import { handleAuthRoutes, extractToken } from './routes/auth';
 import { handleTeamMemberRoutes } from './routes/teamMembers';
@@ -337,6 +338,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     if (reqPath.startsWith('/api/podcast-first-contact')) return await handlePodcastFirstContactRoutes(reqPath, method, event, client);
     if (reqPath === '/api/people' || reqPath.startsWith('/api/people/')) return await handlePeopleRoutes(reqPath, method, event, client);
     if (reqPath === '/api/books' || reqPath.startsWith('/api/books/')) return await handleBookRoutes(reqPath, method, event, client);
+    if (reqPath.startsWith('/api/events')) {
+      const events = await handleEventRoutes(reqPath, method, event, client);
+      if (events) return events;
+    }
     if (reqPath.startsWith('/api/calendar-holds')) {
       const holds = await handleCalendarHoldRoutes(reqPath, method, event, client);
       if (holds) return holds;

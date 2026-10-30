@@ -28,6 +28,13 @@ import {
 import { CardVersionConflictError, getCardConsistent } from '../db/cards';
 import { CardInviteConflictError, CardInviteInputError, syncCardInvite } from '../calendar/cardInvite';
 import { recordAutomationRun } from '../automations/runs';
+import {
+  EventConflictError,
+  EventInputError,
+  EventNotFoundError,
+  rescheduleEvent,
+  toCalendarHoldView,
+} from '../events/service';
 
 export { calendarInviteDeps, setCalendarHoldGoogleDepsForTests };
 
@@ -226,6 +233,99 @@ async function releaseRoute(
   return json(200, { hold: stored });
 }
 
+async function moveRoute(
+  id: string,
+  event: LambdaEvent,
+  client: DynamoDBDocumentClient,
+): Promise<LambdaResponse> {
+  const body = parse(event);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return json(400, { error: 'Request body is required' });
+  }
+  const existing = await getCalendarHold(client, id);
+  if (!existing) return json(404, { error: 'Hold not found' });
+
+  // Delegate to unified event lifecycle service if the hold is backed by a Card with an eventPolicy
+  if (existing.cardId) {
+    try {
+      const result = await rescheduleEvent(client, id, {
+        ...(typeof body.date === 'string' ? { date: body.date } : {}),
+        ...(typeof body.time === 'string' ? { time: body.time } : {}),
+        ...(typeof body.window === 'string' ? { window: body.window } : {}),
+        ...(typeof body.title === 'string' ? { title: body.title } : {}),
+        ...(typeof body.topic === 'string' ? { topic: body.topic } : {}),
+        ...(typeof body.documentUrl === 'string' ? { documentUrl: body.documentUrl } : {}),
+        ...(typeof body.guestRef === 'string' && body.guestRef.includes('@')
+          ? { guestEmails: [body.guestRef.trim()] }
+          : {}),
+        actor: actor(event),
+      });
+      return json(200, {
+        hold: toCalendarHoldView(result),
+        event: result.event,
+        card: result.card,
+        episode: result.episode,
+      });
+    } catch (err) {
+      if (err instanceof EventConflictError) return json(409, { error: err.message, code: 'event_conflict' });
+      if (err instanceof EventNotFoundError) return json(404, { error: err.message, code: 'event_not_found' });
+      if (!(err instanceof EventInputError && err.message.includes('does not declare an eventPolicy'))) {
+        if (err instanceof EventInputError) return json(422, { error: err.message, code: 'event_input_error' });
+        throw err;
+      }
+      // Fallback below when a standalone/legacy Card has no eventPolicy
+    }
+  }
+
+  if (existing.status === 'released' || existing.status === 'expired') {
+    return json(409, { error: `Cannot move a ${existing.status} hold; propose a new hold instead.`, code: 'hold_state' });
+  }
+
+  let rebuilt;
+  try {
+    rebuilt = buildHold(
+      {
+        date: body.date ?? existing.date,
+        window: body.window ?? existing.window,
+        duration: body.duration ?? body.durationMinutes ?? existing.durationMinutes,
+        durationMinutes: body.durationMinutes ?? existing.durationMinutes,
+        title: body.title ?? existing.title,
+        topic: body.topic ?? existing.topic,
+        cardId: existing.cardId,
+        guestRef: body.guestRef ?? existing.guestRef,
+        documentUrl: body.documentUrl ?? existing.documentUrl,
+        organizationId: existing.organizationId,
+        expiresDays: body.expiresDays ?? existing.expiresDays,
+        googleCalendars: body.googleCalendars,
+      },
+      actor(event),
+    );
+  } catch (e: any) {
+    return json(400, { error: String(e?.message || 'Invalid hold move') });
+  }
+
+  const deps = await calendarInviteDeps(body, client);
+  const payload = googlePayload(existing, proposalTitle(rebuilt.title), rebuilt.startIso, rebuilt.endIso);
+  const sync = Object.keys(existing.googleEventIds || {}).length
+    ? await updateHoldGoogleEvents(existing.googleEventIds, payload, deps)
+    : await createHoldGoogleEvents(payload, deps);
+
+  const stored = {
+    ...rebuilt,
+    id: existing.id,
+    proposedAt: existing.proposedAt,
+    proposedBy: existing.proposedBy,
+    status: 'tentative' as const,
+    googleTitle: proposalTitle(rebuilt.title),
+    version: existing.version + 1,
+    ...(sync.state === 'synced'
+      ? { googleEventIds: sync.eventIds, googleSync: { state: 'synced' as const } }
+      : { googleEventIds: sync.eventIds, googleSync: { state: 'deferred' as const, reason: sync.reason } }),
+  };
+  await putCalendarHold(client, stored);
+  return json(200, { hold: stored });
+}
+
 async function expireRoute(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const body = parse(event) || {};
   const q = event.queryStringParameters || {};
@@ -270,6 +370,11 @@ export async function handleCalendarHoldRoutes(
   if (release) {
     if (method !== 'POST') return json(405, { error: 'Method not allowed' });
     return releaseRoute(decodeURIComponent(release[1]), event, client);
+  }
+  const move = path.match(/^\/api\/calendar-holds\/([^/]+)\/move$/);
+  if (move) {
+    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+    return moveRoute(decodeURIComponent(move[1]), event, client);
   }
   const detail = path.match(/^\/api\/calendar-holds\/([^/]+)$/);
   if (detail) {

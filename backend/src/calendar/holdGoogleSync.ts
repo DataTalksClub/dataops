@@ -35,6 +35,10 @@ export interface HoldGoogleEvent {
   location?: string;
   /** Emails invited when the hold confirms; proposals stay attendee-free. */
   attendees?: string[];
+  /** Private organizer metadata binding calendar-accept polling to hold + generation. */
+  extendedProperties?: { private?: Record<string, string> };
+  /** Reset attendee responseStatus to needsAction on reschedule so prior accepts cannot carry over. */
+  resetAttendeeResponses?: boolean;
 }
 
 export interface HoldGoogleDeps {
@@ -154,9 +158,12 @@ function eventBody(event: HoldGoogleEvent) {
     description: event.description,
     location: event.location || '',
     guestsCanModify: true,
-    attendees: (event.attendees || []).map((email) => ({ email })),
+    attendees: (event.attendees || []).map((email) =>
+      event.resetAttendeeResponses ? { email, responseStatus: 'needsAction' } : { email },
+    ),
     start: { dateTime: event.startIso, timeZone: event.timeZone },
     end: { dateTime: event.endIso, timeZone: event.timeZone },
+    ...(event.extendedProperties ? { extendedProperties: event.extendedProperties } : {}),
   };
 }
 
@@ -245,6 +252,9 @@ async function syncEvents(
       const url = `${eventsUrl(calendar)}/${encodeURIComponent(eventIds[calendar])}`;
       const sameInvite = isOrganizer && Object.entries(body).every(([key, value]) => {
         if (key === 'attendees') {
+          if (event.resetAttendeeResponses && (organizer.attendees || []).some((a: any) => a.responseStatus && a.responseStatus !== 'needsAction')) {
+            return false;
+          }
           return JSON.stringify((organizer.attendees || []).map((a: any) => a.email.toLowerCase()).sort()) ===
             JSON.stringify((event.attendees || []).map((email) => email.toLowerCase()).sort());
         }
@@ -253,11 +263,15 @@ async function syncEvents(
             organizer[key]?.timeZone === event.timeZone;
         }
         if (key === 'location' || key === 'description') return (organizer[key] || '') === value;
+        if (key === 'extendedProperties') {
+          return JSON.stringify(organizer.extendedProperties?.private || {}) === JSON.stringify(event.extendedProperties?.private || {});
+        }
         return JSON.stringify(organizer[key]) === JSON.stringify(value);
       });
       if (sameInvite) continue;
       const { attendees, guestsCanModify, ...copyBody } = body;
-      await request(`${url}${isOrganizer && event.attendees?.length ? '?sendUpdates=all' : '?sendUpdates=none'}`,
+      const organizerUpdates = deps.sendUpdates ?? (event.attendees?.length ? 'all' : 'none');
+      await request(`${url}${isOrganizer ? `?sendUpdates=${organizerUpdates}` : '?sendUpdates=none'}`,
         'PATCH', isOrganizer ? body : copyBody);
     }
     return { state: 'synced', eventIds };
@@ -334,5 +348,38 @@ export async function moveLinkedGoogleInvite(
     return { state: 'synced', eventIds };
   } catch {
     return deferred('Google Calendar move could not complete; retry the same Card time command.');
+  }
+}
+
+export interface LiveGoogleOrganizerEvent {
+  id: string;
+  status?: string;
+  iCalUID?: string;
+  summary?: string;
+  organizer?: { email?: string };
+  start?: { dateTime?: string; timeZone?: string };
+  end?: { dateTime?: string; timeZone?: string };
+  extendedProperties?: { private?: Record<string, string> };
+  attendees?: Array<{ email?: string; responseStatus?: string }>;
+}
+
+/** Read the live organizer event on Orin's calendar to detect guest responseStatus changes. */
+export async function fetchOrganizerGoogleEvent(
+  eventId: string,
+  deps: HoldGoogleDeps,
+): Promise<{ state: 'ok'; event: LiveGoogleOrganizerEvent } | { state: 'deferred'; reason: string }> {
+  const resolved = await accessToken(deps);
+  if ('problem' in resolved) return { state: 'deferred', reason: resolved.problem };
+  const headers = { Authorization: `Bearer ${resolved.token}`, 'Content-Type': 'application/json' };
+  try {
+    const url = `${eventsUrl(HOLD_ORGANIZER)}/${encodeURIComponent(eventId)}`;
+    const response = await googleFetch(deps, url, { headers, signal: AbortSignal.timeout(15000) });
+    if (!response.ok) {
+      return { state: 'deferred', reason: googleErrorDetail(response.status, await readBodyText(response, GOOGLE_ERROR_BODY_LIMIT)) };
+    }
+    const event = (await response.json()) as LiveGoogleOrganizerEvent;
+    return { state: 'ok', event };
+  } catch {
+    return { state: 'deferred', reason: 'Google Calendar organizer event could not be read.' };
   }
 }

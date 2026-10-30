@@ -20,6 +20,8 @@ import {
   type PodcastEpisode,
 } from "../db/podcastEpisodes";
 import { getCard } from "../db/cards";
+import { listCalendarHolds } from "../db/calendarHolds";
+import { getEventRecord } from "../events/store";
 import { listTasksByCard } from "../db/tasks";
 import { cardCanAdvance, statusFromCard } from "../podcast/cardStatus";
 import {
@@ -62,6 +64,7 @@ const WRITABLE = new Set([
   "title",
   "guests",
   "recordingDate",
+  "recordingTime",
   "releaseDate",
   "status",
   "links",
@@ -126,11 +129,12 @@ function validate(body: Record<string, any>): string {
         guest &&
         typeof guest === "object" &&
         !Array.isArray(guest) &&
-        Object.keys(guest).every((name) => ["name", "slug"].includes(name)) &&
+        Object.keys(guest).every((name) => ["name", "slug", "email"].includes(name)) &&
         typeof guest.name === "string" &&
         guest.name.trim().length > 0 &&
         guest.name.length <= 200 &&
-        (guest.slug === undefined || (typeof guest.slug === "string" && SLUG.test(guest.slug))),
+        (guest.slug === undefined || (typeof guest.slug === "string" && SLUG.test(guest.slug))) &&
+        (guest.email === undefined || (typeof guest.email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guest.email))),
     )
   )
     return "Invalid guests";
@@ -138,6 +142,8 @@ function validate(body: Record<string, any>): string {
     return "An episode needs a title or at least one guest";
   for (const name of ["recordingDate", "releaseDate"])
     if (body[name] != null && !realDate(body[name])) return `Invalid ${name}`;
+  if (body.recordingTime != null && (typeof body.recordingTime !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.recordingTime)))
+    return "Invalid recordingTime";
   if (!EPISODE_STATUSES.includes(body.status)) return "Invalid status";
   if (body.links != null) {
     if (typeof body.links !== "object" || Array.isArray(body.links)) return "Invalid links";
@@ -309,12 +315,70 @@ const summarizeEpisode = (episode: PodcastEpisode): PodcastEpisode => {
   return copy;
 };
 
-/** The episode as every response shows it: status and readiness derived, never stored. */
-const presented = async (client: DynamoDBDocumentClient, episode: PodcastEpisode) => ({
-  ...episode,
-  status: await derivedStatus(client, episode),
-  readiness: derivePublicationReadiness(episode.publication),
-});
+/** Resolve active event hold authority for an episode's linked Card. */
+async function resolveEpisodeEventAuthority(client: DynamoDBDocumentClient, episode: PodcastEpisode) {
+  if (!episode.cardId) return null;
+  const holdId = episode.recordingHoldId || `hold_${episode.cardId}`;
+  try {
+    const record = await getEventRecord(client, holdId);
+    if (record) {
+      return {
+        holdId: record.id,
+        date: record.date,
+        time: record.time,
+        timeZone: record.timeZone,
+        startIso: record.startIso,
+        endIso: record.endIso,
+        status: record.status,
+      };
+    }
+  } catch {
+    // Legacy hold row in TABLE_CALENDAR falls back to listCalendarHolds below.
+  }
+  const holds = (await listCalendarHolds(client)).filter((h) => h.cardId === episode.cardId);
+  const active = holds.find((h) => h.status === "tentative" || h.status === "confirmed") || holds[0];
+  if (active) {
+    const time = new Intl.DateTimeFormat("en-GB", {
+      timeZone: active.timeZone || "Europe/Berlin",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(active.startIso));
+    return {
+      holdId: active.id,
+      date: active.date,
+      time,
+      timeZone: active.timeZone || "Europe/Berlin",
+      startIso: active.startIso,
+      endIso: active.endIso,
+      status: active.status,
+    };
+  }
+  return null;
+}
+
+/** The episode as every response shows it: status, readiness, and hold-owned recording datetime derived on read. */
+const presented = async (client: DynamoDBDocumentClient, episode: PodcastEpisode) => {
+  const authority = await resolveEpisodeEventAuthority(client, episode);
+  return {
+    ...episode,
+    ...(authority
+      ? {
+          recordingDate: authority.date,
+          recordingTime: authority.time,
+          recordingTimeZone: authority.timeZone,
+          recordingStartIso: authority.startIso,
+          recordingEndIso: authority.endIso,
+          recordingEventStatus: authority.status,
+          recordingHoldId: authority.holdId,
+        }
+      : episode.recordingDate && !episode.recordingTimeZone
+        ? { recordingTimeZone: "Europe/Berlin" }
+        : {}),
+    status: await derivedStatus(client, episode),
+    readiness: derivePublicationReadiness(episode.publication),
+  };
+};
 
 async function withCard(client: DynamoDBDocumentClient, episode: PodcastEpisode) {
   const card = episode.cardId ? await getCard(client, episode.cardId) : null;
@@ -469,6 +533,20 @@ export async function handlePodcastEpisodeRoutes(
       validate(merged) || applyPublication(merged, Object.hasOwn(changes, "publication"));
     if (error) return json(400, { error });
     if (Object.hasOwn(changes, "publication")) changes.publication = merged.publication;
+    const recordingChanged =
+      (Object.hasOwn(changes, "recordingDate") && changes.recordingDate !== existing.recordingDate) ||
+      (Object.hasOwn(changes, "recordingTime") && changes.recordingTime !== existing.recordingTime);
+    if (recordingChanged) {
+      const authority = await resolveEpisodeEventAuthority(client, existing);
+      if (authority && authority.status !== "released" && authority.status !== "expired") {
+        return json(409, {
+          error: `Recording date is owned by event hold ${authority.holdId}. Use 'dataops event reschedule ${existing.cardId} --date ${changes.recordingDate || authority.date}' or 'dataops podcast reschedule ${existing.id} --date ${changes.recordingDate || authority.date}' so the calendar hold, Card, and episode move together.`,
+          code: "event_hold_owns_date",
+          holdId: authority.holdId,
+          cardId: existing.cardId,
+        });
+      }
+    }
     const episodes = await listPodcastEpisodes(client);
     const duplicate = duplicateOf(merged, episodes, id);
     if (duplicate) return json(409, { error: duplicate });

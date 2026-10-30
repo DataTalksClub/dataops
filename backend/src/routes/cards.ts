@@ -685,6 +685,18 @@ async function handleSingle(
       && !/^\d{4}-\d{2}-\d{2}$/.test(body.endDate as string)) {
       return json(400, { error: 'Invalid endDate format, expected YYYY-MM-DD' });
     }
+    if (
+      body.anchorDate !== undefined &&
+      body.anchorDate !== existing.anchorDate &&
+      existing.eventTime?.eventKey &&
+      existing.eventTime.status !== 'released'
+    ) {
+      return json(409, {
+        error: `Card date is owned by event hold ${existing.eventTime.eventKey}. Use 'dataops event reschedule ${existing.id} --date ${body.anchorDate}' so the calendar hold and Card move together.`,
+        code: 'event_hold_owns_date',
+        holdId: existing.eventTime.eventKey,
+      });
+    }
     const updates: Record<string, unknown> = {};
     for (const field of allowedFields) {
       if (body[field] !== undefined) {

@@ -59,6 +59,41 @@ function clean(item: Record<string, unknown> | undefined): CalendarHold | null {
   if (!item) return null;
   const { PK, SK, ...data } = item;
   if (typeof data.id !== 'string') return null;
+  if (Number.isInteger(data.generation) && data.renderValues && data.policy) {
+    const rv = data.renderValues as Record<string, string>;
+    const policy = data.policy as {
+      windows?: Record<string, string>;
+      expiresDays?: number;
+      titles?: { proposed?: string; approved?: string };
+    };
+    const rawStatus = String(data.status || 'proposed');
+    const mappedStatus: CalendarHoldStatus =
+      rawStatus === 'approved' ? 'confirmed' : rawStatus === 'proposed' ? 'tentative' : 'released';
+    const win =
+      Object.entries(policy.windows || {}).find(([, t]) => t === data.time)?.[0] || 'midday';
+    const title = rv.title || String(data.title || 'Event');
+    const googleTitle =
+      rawStatus === 'approved'
+        ? (policy.titles?.approved || '{title}').replace(/\{title\}/g, title)
+        : (policy.titles?.proposed || '(Proposal) {title}').replace(/\{title\}/g, title);
+    const guestEmails = Array.isArray(data.guestEmails) ? (data.guestEmails as string[]) : [];
+    return {
+      ...data,
+      status: mappedStatus,
+      lifecycleStatus: rawStatus,
+      title,
+      topic: rv.topic || title,
+      googleTitle: String(data.googleTitle || googleTitle),
+      window: (win === 'evening' ? 'evening' : 'midday') as CalendarHold['window'],
+      expiresDays: Number(policy.expiresDays || 7),
+      proposedAt: String(data.proposedAt || data.startIso || new Date().toISOString()),
+      updatedAt: String(data.updatedAt || data.startIso || new Date().toISOString()),
+      proposedBy: String(data.proposedBy || 'operator'),
+      guestRef: guestEmails[0] || (typeof data.guestRef === 'string' ? data.guestRef : undefined),
+      documentUrl: rv.documentUrl || undefined,
+      googleSync: (data.googleSync as CalendarHold['googleSync']) || { state: 'synced' },
+    } as unknown as CalendarHold;
+  }
   return data as unknown as CalendarHold;
 }
 
