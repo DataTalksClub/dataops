@@ -670,3 +670,26 @@ test("webinar speaker form preserves its invite path, required labels and speake
   assert.equal(linkService("https://example.test/webinar-docs/doc-abc").id, "webinardoc");
   h.controller.destroy();
 });
+
+
+test("event fields render read-only and are excluded from document saves", async () => {
+  const h = harness({ docOverrides: {
+    template: "podcast-episode-brief",
+    title: "Synthetic · 3 Dec 2030 12:30 Europe/Berlin (tentative)",
+    publicationDate: null,
+    eventMetadata: { label: "3 Dec 2030 12:30 Europe/Berlin (tentative)", state: "tentative" },
+    content: { recordingDate: "3 Dec 2030 12:30 Europe/Berlin (tentative)", goal: "Authored goal" },
+    templateDefinition: { label: "Episode brief", sections: [{ id: "overview", fields: [
+      { key: "recordingDate", label: "Recording Date", type: "text", derived: "event-datetime" },
+      { key: "goal", label: "Goal", type: "text" },
+    ] }] },
+  } });
+  await h.controller.start();
+  assert.ok(h.root.querySelector('[data-sponsor-derived-field="recordingDate"]'));
+  assert.equal(h.root.querySelector('#sponsor-field-recordingDate'), null);
+  assert.ok(h.root.querySelector('[data-sponsor-doc-event]'));
+  await h.root.querySelector('[data-sponsor-action="save-draft"]').click();
+  await nextTicks();
+  const put = h.calls.find(([, opts]) => opts.method === "PUT");
+  assert.deepEqual(JSON.parse(put[1].body).content, { goal: "Authored goal" });
+});

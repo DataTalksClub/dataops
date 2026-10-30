@@ -22,6 +22,7 @@ export interface SponsorDocFieldDefinition {
   type: 'text' | 'textarea' | 'bullets' | 'select' | 'radio';
   placeholder: string;
   required?: boolean;
+  derived?: 'event-title' | 'event-datetime';
   format?: 'url';
   helpText?: string;
   maxCharsHint?: number;
@@ -49,6 +50,7 @@ export interface SponsorDocSectionDefinition {
 
 export interface SponsorDocTemplateDefinition {
   key: SponsorDocTemplateKey;
+  metadataSource?: 'card-event';
   label: string;
   shortLabel: string;
   defaultLinkType: string;
@@ -444,6 +446,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
 
   webinar: {
     key: 'webinar',
+    metadataSource: 'card-event',
     label: 'Webinar — Speaker Materials',
     shortLabel: 'Webinar',
     defaultLinkType: 'Speaker materials',
@@ -539,6 +542,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
 
   podcast: {
     key: 'podcast',
+    metadataSource: 'card-event',
     label: 'Podcast — Materials from the Guest',
     shortLabel: 'Podcast',
     defaultLinkType: 'Guest materials',
@@ -551,6 +555,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         fields: [
           {
             key: 'proposedSlotLabel',
+            derived: 'event-datetime',
             label: 'Proposed time from the invite',
             type: 'text',
             placeholder: 'Pre-filled by Orin (Europe/Berlin)',
@@ -696,6 +701,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
 
   'podcast-guest-research': {
     key: 'podcast-guest-research',
+    metadataSource: 'card-event',
     label: 'Podcast — Guest Research (internal)',
     shortLabel: 'Guest Research',
     defaultLinkType: 'Guest research',
@@ -812,6 +818,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
 
   'podcast-run-sheet': {
     key: 'podcast-run-sheet',
+    metadataSource: 'card-event',
     label: 'Podcast — Host Run Sheet (internal)',
     shortLabel: 'Host Run Sheet',
     defaultLinkType: 'Host run sheet',
@@ -823,6 +830,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         fields: [
           {
             key: 'episodeTitle',
+            derived: 'event-title',
             label: 'Episode Title (working)',
             type: 'text',
             placeholder: 'e.g. Shipping ML features without the platform team',
@@ -835,6 +843,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
           },
           {
             key: 'recordingDate',
+            derived: 'event-datetime',
             label: 'Recording Date',
             type: 'text',
             placeholder: 'YYYY-MM-DD HH:MM (Europe/Berlin)',
@@ -900,6 +909,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
 
   'podcast-episode-brief': {
     key: 'podcast-episode-brief',
+    metadataSource: 'card-event',
     label: 'Podcast — Episode Planning Brief',
     shortLabel: 'Episode Brief',
     defaultLinkType: 'Episode brief',
@@ -911,6 +921,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         fields: [
           {
             key: 'episodeTitle',
+            derived: 'event-title',
             label: 'Episode Title (working)',
             type: 'text',
             placeholder: 'e.g. Shipping ML features without the platform team',
@@ -923,6 +934,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
           },
           {
             key: 'recordingDate',
+            derived: 'event-datetime',
             label: 'Recording Date',
             type: 'text',
             placeholder: 'YYYY-MM-DD HH:MM (Europe/Berlin)',
@@ -1088,7 +1100,7 @@ export function defaultContentForTemplate(key: SponsorDocTemplateKey): Record<st
   const content: Record<string, string> = {};
   for (const section of def.sections) {
     for (const field of section.fields) {
-      content[field.key] = '';
+      if (!field.derived) content[field.key] = '';
     }
   }
   return content;
@@ -1105,6 +1117,11 @@ export function sanitizeTemplateContent(
   for (const section of def.sections) {
     if (section.internal && options.includeInternal === false) continue;
     for (const field of section.fields) {
+      if (field.derived) {
+        delete next[field.key];
+        if (Object.hasOwn(raw, field.key)) throw new SponsorDocValidationError({ [field.key]: `${field.label} is derived from the Card event and cannot be edited.` });
+        continue;
+      }
       if (Object.hasOwn(raw, field.key)) {
         const val = raw[field.key];
         const maxLen = field.key === 'graphicsUrl' || field.allowVisualUpload ? 300000 : 20000;
@@ -1138,6 +1155,7 @@ export function validateSubmittedContent(key: SponsorDocTemplateKey, content: Re
   const errors: Record<string, string> = {};
   for (const field of getSponsorDocTemplate(key).sections.flatMap((section) => section.fields)) {
     const value = (content[field.key] || '').trim();
+    if (field.derived) continue;
     if (field.required && !value) {
       errors[field.key] = `${field.label} is required.`;
     } else if (field.required && field.type === 'bullets') {
@@ -1164,6 +1182,7 @@ export interface SponsorDocExportInput {
   template: SponsorDocTemplateKey;
   sponsorName?: string | null;
   publicationDate?: string | null;
+  eventMetadata?: { label: string };
   status: 'draft' | 'submitted';
   lastEditedAt: string;
   lastEditedBy: 'sponsor' | 'staff';
@@ -1195,7 +1214,7 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
     '',
     `- **Template**: ${SPONSOR_DOC_TEMPLATES[doc.template].label}`,
     ...(doc.sponsorName ? [`- **${doc.template === 'webinar' || doc.template === 'workshop' ? 'Speaker' : doc.template === 'podcast' ? 'Guest' : 'Sponsor'}**: ${doc.sponsorName}`] : []),
-    ...(doc.publicationDate ? [`- **Publication Date**: ${doc.publicationDate}`] : []),
+    ...(doc.eventMetadata ? [`- **Event**: ${doc.eventMetadata.label}`] : doc.publicationDate ? [`- **Publication Date**: ${doc.publicationDate}`] : []),
     `- **Status**: ${doc.status === 'submitted' ? 'Submitted / Ready' : 'Draft'}`,
     `- **Last Edited**: ${doc.lastEditedAt} (${(doc.template === 'webinar' || doc.template === 'workshop') && doc.lastEditedBy === 'sponsor' ? 'speaker' : doc.lastEditedBy})`,
     '',

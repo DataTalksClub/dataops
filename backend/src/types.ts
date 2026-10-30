@@ -413,6 +413,8 @@ export interface Card {
     sync: 'syncing' | 'synced' | 'deferred';
     syncStartedAt: string;
     reason?: string;
+    generation?: number;
+    status?: 'proposed' | 'approved' | 'released';
   };
   tags?: string[];
   /**

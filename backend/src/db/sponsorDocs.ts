@@ -1,3 +1,4 @@
+import { projectDocumentEvent, stripDerivedDocumentFields, type DocumentEventMetadata } from '../sponsorDocs/eventMetadata';
 import {
   createCipheriv,
   createDecipheriv,
@@ -17,10 +18,10 @@ import {
 import { TABLE_ARTIFACTS, TABLE_SESSIONS } from './tableNames';
 import {
   defaultContentForTemplate,
-  SponsorDocValidationError,
   getSponsorDocTemplate,
   sanitizeTemplateContent,
   validateSubmittedContent,
+  SponsorDocValidationError,
   type SponsorDocTemplateKey,
 } from '../sponsorDocs/templates';
 import type { SponsorDocEmailDelivery } from '../sponsorDocs/emailDelivery';
@@ -34,6 +35,7 @@ export type SponsorDocActorKind = 'sponsor' | 'staff';
 export type SponsorDocStatus = 'draft' | 'submitted';
 
 export interface SponsorDocSummary {
+  eventMetadata?: DocumentEventMetadata;
   id: string;
   cardId: string;
   template: SponsorDocTemplateKey;
@@ -155,6 +157,7 @@ function toSummary(doc: SponsorDoc): SponsorDocSummary {
     cardId: doc.cardId,
     template: doc.template,
     title: doc.title,
+    ...(doc.eventMetadata ? { eventMetadata: doc.eventMetadata } : {}),
     sponsorName: doc.sponsorName,
     publicationDate: doc.publicationDate,
     linkType: doc.linkType,
@@ -215,7 +218,7 @@ export async function createSponsorDoc(
     : defaultContentForTemplate(input.template);
   const defaultLinkType = getSponsorDocTemplate(input.template).defaultLinkType;
 
-  const doc: SponsorDoc = {
+  const doc: SponsorDoc = await projectDocumentEvent(client, {
     id,
     cardId: input.cardId,
     template: input.template,
@@ -235,17 +238,17 @@ export async function createSponsorDoc(
     createdAt: now,
     updatedAt: now,
     version: 1,
-  };
+  } satisfies SponsorDoc);
 
-  const primaryItem: StoredSponsorDoc = {
+  const primaryItem = {
     ...sponsorDocKey(id),
-    ...doc,
+    ...stripDerivedDocumentFields(doc),
     accessCodeHash: generated.hashHex,
     accessCodeCiphertext: ciphertext,
   };
   const indexItem = {
     ...cardSponsorDocIndexKey(doc.cardId, id),
-    ...toSummary(doc),
+    ...stripDerivedDocumentFields(toSummary(doc)),
   };
 
   await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: primaryItem }));
@@ -277,7 +280,7 @@ export async function getSponsorDoc(
   id: string,
 ): Promise<SponsorDoc | null> {
   const loaded = await getSponsorDocWithAuthMaterial(client, id);
-  return loaded ? loaded.doc : null;
+  return loaded ? projectDocumentEvent(client, loaded.doc) : null;
 }
 
 export interface UpdateSponsorDocInput {
@@ -300,7 +303,11 @@ export async function updateSponsorDoc(
 ): Promise<SponsorDoc | null> {
   const loaded = await getSponsorDocWithAuthMaterial(client, id);
   if (!loaded) return null;
-  const { doc, accessCodeHash, accessCodeCiphertext } = loaded;
+  const { accessCodeHash, accessCodeCiphertext } = loaded;
+  const doc = await projectDocumentEvent(client, loaded.doc);
+  if (doc.eventMetadata && (input.title !== undefined || input.publicationDate !== undefined)) {
+    throw new SponsorDocValidationError({ eventMetadata: 'Event document title and date are derived from the Card and cannot be edited.' });
+  }
   const now = new Date().toISOString();
 
   const nextStatus: SponsorDocStatus = input.status !== undefined ? input.status : doc.status;
@@ -337,7 +344,7 @@ export async function updateSponsorDoc(
     ? getSponsorDocTemplate(nextTemplate).defaultLinkType
     : doc.linkType;
 
-  const updated: SponsorDoc = {
+  const updated: SponsorDoc = await projectDocumentEvent(client, {
     ...doc,
     template: nextTemplate,
     linkType,
@@ -354,17 +361,17 @@ export async function updateSponsorDoc(
     lastEditedByName: input.actorKind === 'staff' ? (input.actorName || null) : 'Sponsor',
     updatedAt: now,
     version: (doc.version || 1) + 1,
-  };
+  });
 
-  const primaryItem: StoredSponsorDoc = {
+  const primaryItem = {
     ...sponsorDocKey(id),
-    ...updated,
+    ...stripDerivedDocumentFields(updated),
     accessCodeHash,
     accessCodeCiphertext,
   };
   const indexItem = {
     ...cardSponsorDocIndexKey(updated.cardId, id),
-    ...toSummary(updated),
+    ...stripDerivedDocumentFields(toSummary(updated)),
   };
 
   await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: primaryItem }));
@@ -406,7 +413,7 @@ export async function rotateSponsorDocAccessCode(
 ): Promise<{ doc: SponsorDoc; accessCode: string } | null> {
   const loaded = await getSponsorDocWithAuthMaterial(client, id);
   if (!loaded) return null;
-  const { doc } = loaded;
+  const doc = await projectDocumentEvent(client, loaded.doc);
   const generated = generateSponsorDocAccessCode();
   const ciphertext = encryptAccessCode(id, generated.code);
   const now = new Date().toISOString();
@@ -416,15 +423,15 @@ export async function rotateSponsorDocAccessCode(
     version: (doc.version || 1) + 1,
   };
 
-  const primaryItem: StoredSponsorDoc = {
+  const primaryItem = {
     ...sponsorDocKey(id),
-    ...updated,
+    ...stripDerivedDocumentFields(updated),
     accessCodeHash: generated.hashHex,
     accessCodeCiphertext: ciphertext,
   };
   const indexItem = {
     ...cardSponsorDocIndexKey(updated.cardId, id),
-    ...toSummary(updated),
+    ...stripDerivedDocumentFields(toSummary(updated)),
   };
 
   await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: primaryItem }));
@@ -439,7 +446,7 @@ export async function deleteSponsorDoc(
 ): Promise<SponsorDoc | null> {
   const loaded = await getSponsorDocWithAuthMaterial(client, id);
   if (!loaded) return null;
-  const { doc } = loaded;
+  const doc = await projectDocumentEvent(client, loaded.doc);
   await client.send(new DeleteCommand({ TableName: TABLE_ARTIFACTS, Key: sponsorDocKey(id) }));
   await client.send(
     new DeleteCommand({ TableName: TABLE_ARTIFACTS, Key: cardSponsorDocIndexKey(doc.cardId, id) }),
@@ -462,12 +469,15 @@ export async function listSponsorDocSummariesByCardId(
     }),
   );
   const items = (res.Items || []) as Array<Record<string, unknown>>;
-  return items
+  const summaries = items
     .map((item) => {
       const { PK, SK, ...summary } = item;
       return summary as unknown as SponsorDocSummary;
     })
     .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  const result: SponsorDocSummary[] = [];
+  for (const doc of summaries) result.push(await projectDocumentEvent(client, doc));
+  return result;
 }
 
 export async function listAllSponsorDocSummaries(
@@ -490,7 +500,9 @@ export async function listAllSponsorDocSummaries(
     }
     exclusiveStartKey = page.LastEvaluatedKey as Record<string, unknown> | undefined;
   } while (exclusiveStartKey);
-  return summaries.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  const result: SponsorDocSummary[] = [];
+  for (const doc of summaries) result.push(await projectDocumentEvent(client, doc));
+  return result.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
 }
 
 // ── Access Code Rate Limiting (stored in TABLE_SESSIONS with TTL) ─────────────

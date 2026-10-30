@@ -265,7 +265,9 @@ export function createSponsorDocPage({
     render();
     try {
       const headers = accessCode ? { "x-sponsor-doc-code": accessCode } : {};
-      const body = { content: { ...draftContent } };
+      const derivedKeys = new Set((doc.templateDefinition?.sections || []).flatMap(section =>
+        (section.fields || []).filter(field => field.derived).map(field => field.key)));
+      const body = { content: Object.fromEntries(Object.entries(draftContent).filter(([key]) => !derivedKeys.has(key))) };
       if (nextStatus) body.status = nextStatus;
       const payload = await request(`/api/sponsor-docs/${encodeURIComponent(docId)}`, {
         method: "PUT",
@@ -389,6 +391,11 @@ export function createSponsorDocPage({
 
     const metaRow = el("div", "sponsor-doc-meta");
     metaRow.append(el("span", "dk-badge", tDef.label || doc.template));
+    if (doc.eventMetadata) {
+      const eventLabel = el("span", "", doc.eventMetadata.label);
+      eventLabel.dataset.sponsorDocEvent = "";
+      metaRow.append(eventLabel);
+    }
     if (doc.publicationDate) metaRow.append(el("span", "", `Publication date: ${doc.publicationDate}`));
     if (doc.sponsorName) metaRow.append(el("span", "", `${isSpeakerDoc(doc) ? "Speaker" : isPodcastGuestDoc(doc) ? "Guest" : "Sponsor"}: ${doc.sponsorName}`));
     const editedSpan = el("span", "", formatEditorLabel(doc));
@@ -565,6 +572,15 @@ export function createSponsorDocPage({
           fieldWrap.append(errEl);
           return errEl;
         };
+
+        if (fieldDef.derived) {
+          top.append(label);
+          const value = el("p", "dk-hint", currentVal || "Unscheduled");
+          value.dataset.sponsorDerivedField = fieldDef.key;
+          fieldWrap.append(top, value);
+          sectionWrap.append(fieldWrap);
+          continue;
+        }
 
         if (fieldDef.type === "bullets" || fieldDef.key === "bullets") {
           appendSponsorDocBulletsField({

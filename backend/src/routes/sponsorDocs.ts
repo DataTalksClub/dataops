@@ -1,3 +1,4 @@
+import { projectDocumentEvent, readDocumentEventMetadata } from '../sponsorDocs/eventMetadata';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { browserAuthOrigin } from '../auth/browserAuth';
@@ -240,6 +241,7 @@ async function buildDocResponsePayload(
     accessCode?: string | null;
   },
 ) {
+  doc = await projectDocumentEvent(client, doc);
   const base = sponsorDocPortalBaseUrl(event);
   const docPath = sponsorDocPathForTemplate(doc.template);
   const docUrl = `${base}${docPath}/${encodeURIComponent(doc.id)}`;
@@ -269,7 +271,7 @@ async function buildDocResponsePayload(
         template: doc.template,
         sponsorName: doc.sponsorName,
         recipientName: doc.emailDelivery?.recipientName || null,
-        publicationDate: doc.publicationDate,
+        publicationDate: doc.eventMetadata?.label || doc.publicationDate,
         shareUrl,
         accessCode,
       })
@@ -560,6 +562,11 @@ export async function handleSponsorDocRoutes(
           }
         }
 
+        const eventDocumentTemplate = getSponsorDocTemplate(template).metadataSource === 'card-event';
+        if (eventDocumentTemplate && !existingCard && !existingEpisode) {
+          return json(422, { error: 'Link this event document to a Card first.', code: 'event_card_required' });
+        }
+
         const publicationDate = typeof body.publicationDate === 'string' && body.publicationDate.trim()
           ? body.publicationDate.trim()
           : existingIssue?.publicationDate
@@ -724,6 +731,7 @@ export async function handleSponsorDocRoutes(
         doc = { ...verified.doc, content: speakerContentView(verified.doc.template, verified.doc.content) };
       }
 
+      doc = await projectDocumentEvent(client, doc);
       const markdown = renderSponsorDocMarkdownExport(doc);
       const format = (event.queryStringParameters?.format || 'json').toLowerCase();
       if (format === 'docx') {

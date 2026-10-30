@@ -1,6 +1,10 @@
+import { buildHold } from '../src/calendar/holds';
+import { putCalendarHold } from '../src/db/calendarHolds';
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { TABLE_ARTIFACTS } from '../src/db/tableNames';
+import { sponsorDocKey } from '../src/db/sponsorDocs';
 
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
@@ -812,8 +816,8 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     }
     const templates = JSON.parse((await staffReq('GET', '/api/sponsor-docs/templates')).body).templates;
     for (const template of templates) {
-      const fields = [...(template.fields || []), ...(template.sections || []).flatMap((section: { fields?: { key: string }[] }) => section.fields || [])];
-      const field = fields.find((value: { type?: string }) => !['url', 'radio', 'select'].includes(value.type || '')) || fields[0];
+      const fields = [...(template.fields || []), ...(template.sections || []).flatMap((section: { fields?: { key: string; type?: string; derived?: boolean }[] }) => section.fields || [])];
+      const field = fields.find((value: { type?: string; derived?: boolean }) => !value.derived && !['url', 'radio', 'select'].includes(value.type || '')) || fields[0];
       const original = await staffReq('POST', '/api/sponsor-docs', { cardId: sourceCard.id, template: template.key, title: `Copy ${template.key}`, content: { [field.key]: 'Authored text' } });
       assert.equal(original.statusCode, 201, original.body);
       const source = JSON.parse(original.body).doc;
@@ -824,7 +828,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       assert.notEqual(copy.accessCode, source.accessCode);
       assert.equal(copy.cardId, targetCard.id);
       assert.equal(copy.template, template.key);
-      assert.deepEqual(copy.content, source.content);
+      assert.equal(copy.content[field.key], 'Authored text');
       assert.equal(copy.status, 'draft');
       assert.equal(copy.version, 1);
       assert.equal(copy.submittedAt, null);
@@ -877,6 +881,46 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       if (skipAuth === undefined) delete process.env.SKIP_AUTH;
       else process.env.SKIP_AUTH = skipAuth;
     }
+  });
+
+  it('checks guest codes and rate limits before resolving a broken event relationship', async () => {
+    const card = await createCard(client, { ...templateLink(), title: 'Synthetic event' });
+    const created = await staffReq('POST', '/api/sponsor-docs', { cardId: card.id, template: 'podcast' });
+    assert.strictEqual(created.statusCode, 201);
+    const { doc } = JSON.parse(created.body);
+    const stored = (await client.send(new GetCommand({ TableName: TABLE_ARTIFACTS, Key: sponsorDocKey(doc.id) }))).Item!;
+    await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { ...stored, cardId: 'missing-synthetic-card' } }));
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const denied = await anonReq('GET', `/api/sponsor-docs/${doc.id}`, { codeHeader: 'WRONG-TEST-CODE', ip: '203.0.113.55' });
+      assert.strictEqual(denied.statusCode, 403, 'bad event links must not bypass authentication');
+    }
+    const limited = await anonReq('GET', `/api/sponsor-docs/${doc.id}`, { codeHeader: 'WRONG-TEST-CODE', ip: '203.0.113.55' });
+    assert.strictEqual(limited.statusCode, 429);
+  });
+
+  it('staff, guest, list and export views resolve the current event without document updates', async () => {
+    const card = await createCard(client, { ...templateLink(), title: 'Synthetic event', anchorDate: '2030-01-01' });
+    let hold = buildHold({ title: 'Synthetic event', topic: 'Synthetic topic', date: '2030-01-01', cardId: card.id, window: 'midday' }, 'test');
+    await putCalendarHold(client, hold);
+    const created = await staffReq('POST', '/api/sponsor-docs', { cardId: card.id, template: 'podcast' });
+    assert.strictEqual(created.statusCode, 201);
+    const original = JSON.parse(created.body).doc;
+    const moved = buildHold({ title: hold.title, topic: hold.topic, date: '2030-12-03', cardId: card.id, window: 'midday' }, 'test');
+    hold = { ...moved, id: hold.id, version: hold.version + 1 }; await putCalendarHold(client, hold);
+    const staff = JSON.parse((await staffReq('GET', `/api/sponsor-docs/${original.id}`)).body).doc;
+    const guest = JSON.parse((await anonReq('GET', `/api/sponsor-docs/${original.id}`, { codeHeader: original.accessCode })).body).doc;
+    const listing = JSON.parse((await staffReq('GET', '/api/sponsor-docs', undefined, { cardId: card.id })).body).docs;
+    const exported = await anonReq('GET', `/api/sponsor-docs/${original.id}/export`, { codeHeader: original.accessCode, query: { format: 'markdown' } });
+    for (const live of [staff, guest, listing[0]]) {
+      assert.strictEqual(live.eventMetadata.date, '2030-12-03');
+      assert.strictEqual(live.eventMetadata.state, 'tentative');
+      assert.strictEqual(live.version, original.version);
+      assert.strictEqual(live.updatedAt, original.updatedAt);
+    }
+    assert.ok(guest.content.proposedSlotLabel.includes('3 Dec 2030 12:30'));
+    assert.strictEqual(exported.statusCode, 200);
+    assert.ok(exported.body.includes('3 Dec 2030 12:30'));
+    assert.ok(!Object.hasOwn(guest, 'accessCode'));
   });
 
 });

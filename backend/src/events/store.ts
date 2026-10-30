@@ -1,6 +1,7 @@
 import { requireEventBytes } from './size';
 import { createHash, randomUUID } from 'node:crypto';
-import { GetCommand, QueryCommand, TransactWriteCommand, UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DeleteCommand, GetCommand, PutCommand, QueryCommand, TransactWriteCommand, UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { usesLocalTransactionEmulation } from '../db/client';
 import { TABLE_CALENDAR, TABLE_CARDS } from '../db/tableNames';
 import type { Card } from '../types';
 import { EventConflictError, type EventRecord, type EventOperation, type EventHistoryEntry } from './lifecycle';
@@ -9,6 +10,41 @@ const eventKey = (id: string) => ({ PK: `CALHOLD#${id}`, SK: `CALHOLD#${id}` });
 const logKey = (id: string, key: string) => ({ PK: `CALEVENTLOG#${id}`, SK: `OP#${key}` });
 const cardKey = (id: string) => ({ PK: `CARD#${id}`, SK: `CARD#${id}` });
 type TransactionItems = NonNullable<ConstructorParameters<typeof TransactWriteCommand>[0]['TransactItems']>;
+
+async function sendTransaction(client: DynamoDBDocumentClient, items: TransactionItems, token?: string): Promise<void> {
+  if (!usesLocalTransactionEmulation()) {
+    await client.send(new TransactWriteCommand({
+      ...(token ? { ClientRequestToken: token } : {}),
+      TransactItems: items,
+    }));
+    return;
+  }
+  const snapshots: Array<{ tableName: string; key: Record<string, unknown>; item?: Record<string, unknown> }> = [];
+  for (const entry of items) {
+    const tableName = entry.Put?.TableName || entry.Update?.TableName || entry.Delete?.TableName;
+    const key = entry.Put
+      ? { PK: (entry.Put.Item as Record<string, unknown>).PK, SK: (entry.Put.Item as Record<string, unknown>).SK }
+      : (entry.Update?.Key || entry.Delete?.Key) as Record<string, unknown> | undefined;
+    if (!tableName || !key) continue;
+    const current = await client.send(new GetCommand({ TableName: tableName, Key: key, ConsistentRead: true }));
+    snapshots.push({ tableName, key, item: current.Item as Record<string, unknown> | undefined });
+  }
+  let applied = 0;
+  try {
+    for (const entry of items) {
+      if (entry.Put) await client.send(new PutCommand(entry.Put));
+      else if (entry.Update) await client.send(new UpdateCommand(entry.Update));
+      else if (entry.Delete) await client.send(new DeleteCommand(entry.Delete));
+      applied += 1;
+    }
+  } catch (error) {
+    for (const snap of snapshots.slice(0, applied).reverse()) {
+      if (snap.item) await client.send(new PutCommand({ TableName: snap.tableName, Item: snap.item }));
+      else await client.send(new DeleteCommand({ TableName: snap.tableName, Key: snap.key }));
+    }
+    throw error;
+  }
+}
 
 /** Journals have separate rows: repeated rescheduling cannot fill the authority's 400KB item. */
 export async function getEventRecord(client: DynamoDBDocumentClient, id: string, retryKey?: string): Promise<EventRecord | null> {
@@ -81,10 +117,11 @@ export async function commitEventTransition(
   }
   requireEventBytes(transaction, 1024 * 1024, 'Event transaction');
   try {
-    await client.send(new TransactWriteCommand({
-      ClientRequestToken: createHash('sha256').update(JSON.stringify(transaction)).digest('hex').slice(0, 36),
-      TransactItems: transaction,
-    }));
+    await sendTransaction(
+      client,
+      transaction,
+      createHash('sha256').update(JSON.stringify(transaction)).digest('hex').slice(0, 36),
+    );
   } catch (error) {
     if (isConditionalConflict(error)) throw new EventConflictError('Card, event or operation changed; reload before retrying');
     throw error;
@@ -128,7 +165,7 @@ export async function completeEventOperation(
   requireEventBytes(googleEventIds, 16 * 1024, 'Google event identities');
   const next = { ...current, googleEventIds };
   try {
-    await client.send(new TransactWriteCommand({ TransactItems: [
+    await sendTransaction(client, [
       { Update: {
         TableName: TABLE_CALENDAR, Key: eventKey(current.id),
         UpdateExpression: 'SET googleEventIds = :ids ADD #version :one',
@@ -150,7 +187,7 @@ export async function completeEventOperation(
         ExpressionAttributeNames: { '#version': 'version' },
         ExpressionAttributeValues: { ':time': projectedTime(next, 'synced', now), ':now': now, ':one': 1, ':event': current.id, ':generation': current.generation },
       } },
-    ] }));
+    ]);
   } catch (error) {
     if (isConditionalConflict(error)) {
       if (await alreadyComplete()) return;
