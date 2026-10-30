@@ -107,7 +107,7 @@ describe('GitHub Actions OIDC knowledge publisher', () => {
       assert.deepEqual(JSON.parse(first.body), {
         templates: { total: 3, created: 3, updated: 0, unchanged: 0 }, pinnedTypes: [], triggeredBy: SHA,
       });
-      const again = JSON.parse((await request('POST', '/api/templates/sync', token())).body);
+      const again = JSON.parse((await request('POST', '/work/api/templates/sync', token())).body);
       assert.deepEqual(again.templates, { total: 3, created: 0, updated: 0, unchanged: 3 });
       setDeploymentTemplateLoaderForTest(async () => { throw new Error('invalid template: broken.yaml'); });
       const failed = await request('POST', '/api/templates/sync', token());

@@ -124,7 +124,8 @@ export async function handleKnowledgePublisher(
   }
   const method = (event.httpMethod || 'GET').toUpperCase();
   const path = event.path || '/';
-  if (method === 'POST' && path === '/api/templates/sync') return syncTemplates(client, claims);
+  // The portal serves the work API under /work/api; the CLI tries that prefix first.
+  if (method === 'POST' && (path === '/api/templates/sync' || path === '/work/api/templates/sync')) return syncTemplates(client, claims);
   const allowed = (method === 'GET' && (path === '/knowledge/manifest' || path === '/knowledge/history'))
     || (method === 'POST' && path === '/knowledge/publish');
   if (!allowed) return response(403, { error: 'Knowledge publisher may only read the manifest and file history, publish knowledge files and sync workflow templates' });
