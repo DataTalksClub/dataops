@@ -87,3 +87,37 @@ jobs:
             --prefix snapshots/ \
             --query 'sort_by(Contents, &LastModified)[-3:].{Key: Key, Size: Size, LastModified: LastModified}' \
             --output json --region "$AWS_REGION" || echo "snapshot listing not permitted for this role"
+
+      - name: Backend function configuration and recurring cron alarm (best effort)
+        continue-on-error: true
+        run: |
+          backend_fn="$(aws cloudformation describe-stack-resource \
+            --stack-name dataops-v1 \
+            --logical-resource-id BackendFunction \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text --region "$AWS_REGION")"
+          echo "BackendFunction: $backend_fn"
+          aws lambda get-function-configuration --function-name "$backend_fn" \
+            --query '{
+              FunctionName: FunctionName,
+              MemorySize: MemorySize,
+              LastModified: LastModified,
+              LastUpdateStatus: LastUpdateStatus,
+              Version: Version,
+              CodeSha256: CodeSha256,
+              Runtime: Runtime
+            }' \
+            --output json --region "$AWS_REGION"
+          aws cloudwatch describe-alarms --alarm-names dataops-v1-recurring-cron-errors \
+            --query 'MetricAlarms[0]' \
+            --output json --region "$AWS_REGION" || echo "recurring-cron-errors alarm read not permitted for this role"
+          start="$(date -u -d '2 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+          aws cloudwatch get-metric-statistics \
+            --namespace AWS/Lambda \
+            --metric-name Errors \
+            --dimensions "Name=FunctionName,Value=$backend_fn" \
+            --start-time "$start" \
+            --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --period 86400 \
+            --statistics Sum \
+            --output json --region "$AWS_REGION" || echo "BackendFunction Errors metric read not permitted for this role"
