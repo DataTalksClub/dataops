@@ -53,7 +53,6 @@ List views (default: --queue)
   --batches    Group Tasks due on the same day for the same Card/subject into one sitting
                (also \`dataops tasks batches [view] [filters]\`)
   --owner me|team|unassigned|<member>, or --mine for --owner me
-  --assignee <member>   Same filter as --owner (use one of them)
   --as-of YYYY-MM-DD   Treat this date as today (default: Europe/Berlin date)
 
 <member> is a user id, an email, or a name: --owner orin shows Orin's work.
@@ -131,12 +130,7 @@ function tasksOf(payload) {
 
 function ownerOf(args) {
   if (args.mine) return "me";
-  const owner = optionalString(args, "owner");
-  const assignee = optionalString(args, "assignee");
-  if (owner !== undefined && assignee !== undefined) {
-    throw new UsageError("Use --owner or --assignee, not both: they filter the same work.");
-  }
-  return owner ?? assignee;
+  return optionalString(args, "owner");
 }
 
 /**

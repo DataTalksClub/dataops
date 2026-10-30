@@ -25,18 +25,4 @@ describe("tasks owner by name", () => {
     assert.deepEqual(calls.map((call) => call.query), [{ owner: "orin", status: "todo" }]);
     assert.deepEqual(io.json().tasks.map((item) => item.id), ["o-1"]);
   });
-
-  test("--assignee is the same filter as --owner", async () => {
-    const calls = fakePortal({ "GET /api/tasks": { tasks: [] } });
-    assert.equal(await run(["tasks", "list", "--assignee", "orin@datatalks.club", "--status", "todo"], captureIo()), 0);
-    assert.deepEqual(calls.map((call) => call.query), [{ owner: "orin@datatalks.club", status: "todo" }]);
-  });
-
-  test("--owner and --assignee together are a usage error before anything is sent", async () => {
-    const calls = fakePortal({});
-    const io = captureIo();
-    assert.equal(await run(["tasks", "list", "--owner", "orin", "--assignee", "orin", "--status", "todo"], io), 2);
-    assert.match(io.errors.join("\n"), /Use --owner or --assignee, not both/);
-    assert.equal(calls.length, 0);
-  });
 });

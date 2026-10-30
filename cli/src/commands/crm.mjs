@@ -723,7 +723,6 @@ export const commands = {
     "dataops crm deal <show|create|update|archive|unarchive> [...]"),
   pipeline: (args, io) => dispatch(args, io, { list: pipelineList }, "dataops crm pipeline list [...]"),
   followups,
-  "follow-ups": followups,
   archive,
   lookup,
   activity,
