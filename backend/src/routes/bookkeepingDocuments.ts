@@ -275,7 +275,7 @@ export async function handleBookkeepingDocumentRoutes(
     const doc = await getBookkeepingItem(client, "document", complete[1]);
     if (!doc)
       return json(404, { error: "Pending document not found" });
-    if (doc.status === "active" && doc.declaredSha256) {
+    if (doc.status === "active") {
       const body = parse(event.body || null);
       if (
         !body ||
@@ -286,136 +286,133 @@ export async function handleBookkeepingDocumentRoutes(
     }
     if (doc.status !== "pending")
       return json(404, { error: "Pending document not found" });
-    if (doc.declaredSha256) {
-      const body = parse(event.body || null);
-      if (
-        !body ||
-        !OPAQUE.test(String(body.idempotencyKey || "")) ||
-          doc.creatorIdempotencyKey !== body.idempotencyKey
-      )
-        return json(409, { error: "Completion refused" });
-      const bucket = process.env.BOOKKEEPING_DOCUMENTS_BUCKET || "";
-      let verified: Awaited<ReturnType<typeof verifyDocumentObject>>;
+    const body = parse(event.body || null);
+    if (
+      !body ||
+      !OPAQUE.test(String(body.idempotencyKey || "")) ||
+      doc.creatorIdempotencyKey !== body.idempotencyKey
+    )
+      return json(409, { error: "Completion refused" });
+    const bucket = process.env.BOOKKEEPING_DOCUMENTS_BUCKET || "";
+    let verified: Awaited<ReturnType<typeof verifyDocumentObject>>;
+    try {
+      verified = await verifyDocumentObject(bucket, await getRawDocument(client, complete[1]) || doc);
+    } catch (error) {
+      if ((error as Error).message === "upload-missing")
+        return json(409, { error: "Upload unavailable" });
       try {
-        verified = await verifyDocumentObject(bucket, await getRawDocument(client, complete[1]) || doc);
-      } catch (error) {
-        if ((error as Error).message === "upload-missing")
-          return json(409, { error: "Upload unavailable" });
-        try {
-          const rawDocument = (await getRawDocument(client, complete[1]))!;
-          await markDocumentCleanupRequired(
-            client,
-            complete[1],
-            String(body.idempotencyKey),
-          );
-          if (
-            Date.parse(String(rawDocument.uploadAuthorizationExpiresAt || "")) >=
-            Date.now()
-          )
-            return json(409, { error: "Cleanup deferred" });
-          const head = await s3.send(
-            new HeadObjectCommand({ Bucket: bucket, Key: String(rawDocument.s3Key) }),
-          );
-          await deleteExactDocumentObject(bucket, rawDocument, head.VersionId);
-          await removePendingDocumentClaim(
-            client,
-            complete[1],
-            String(doc.declaredSha256),
-            String(body.idempotencyKey),
-          );
-          return json(400, { error: "Uploaded object verification failed" });
-        } catch {
-          await markDocumentCleanupRequired(
-            client,
-            complete[1],
-            String(body.idempotencyKey),
-          ).catch(() => undefined);
-          return json(503, { error: "Cleanup required" });
-        }
-      }
-      if (
-        verified.size !== Number(doc.declaredByteSize) ||
-        verified.sha256 !== doc.declaredSha256 ||
-        !verified.contentOk ||
-        !verified.versionId
-      ) {
-        try {
-          const rawDocument = (await getRawDocument(client, complete[1]))!;
-          await markDocumentCleanupRequired(
-            client,
-            complete[1],
-            String(body.idempotencyKey),
-          );
-          if (
-            Date.parse(String(rawDocument.uploadAuthorizationExpiresAt || "")) >=
-            Date.now()
-          )
-            return json(409, { error: "Cleanup deferred" });
-          await deleteExactDocumentObject(bucket, rawDocument, verified.versionId);
-          await removePendingDocumentClaim(
-            client,
-            complete[1],
-            String(doc.declaredSha256),
-            String(body.idempotencyKey),
-          );
-        } catch {
-          await markDocumentCleanupRequired(
-            client,
-            complete[1],
-            String(body.idempotencyKey),
-          ).catch(() => undefined);
-          return json(503, { error: "Cleanup required" });
-        }
+        const rawDocument = (await getRawDocument(client, complete[1]))!;
+        await markDocumentCleanupRequired(
+          client,
+          complete[1],
+          String(body.idempotencyKey),
+        );
+        if (
+          Date.parse(String(rawDocument.uploadAuthorizationExpiresAt || "")) >=
+          Date.now()
+        )
+          return json(409, { error: "Cleanup deferred" });
+        const head = await s3.send(
+          new HeadObjectCommand({ Bucket: bucket, Key: String(rawDocument.s3Key) }),
+        );
+        await deleteExactDocumentObject(bucket, rawDocument, head.VersionId);
+        await removePendingDocumentClaim(
+          client,
+          complete[1],
+          String(doc.declaredSha256),
+          String(body.idempotencyKey),
+        );
         return json(400, { error: "Uploaded object verification failed" });
+      } catch {
+        await markDocumentCleanupRequired(
+          client,
+          complete[1],
+          String(body.idempotencyKey),
+        ).catch(() => undefined);
+        return json(503, { error: "Cleanup required" });
       }
+    }
+    if (
+      verified.size !== Number(doc.declaredByteSize) ||
+      verified.sha256 !== doc.declaredSha256 ||
+      !verified.contentOk ||
+      !verified.versionId
+    ) {
       try {
-        await activateDocument(
+        const rawDocument = (await getRawDocument(client, complete[1]))!;
+        await markDocumentCleanupRequired(
+          client,
+          complete[1],
+          String(body.idempotencyKey),
+        );
+        if (
+          Date.parse(String(rawDocument.uploadAuthorizationExpiresAt || "")) >=
+          Date.now()
+        )
+          return json(409, { error: "Cleanup deferred" });
+        await deleteExactDocumentObject(bucket, rawDocument, verified.versionId);
+        await removePendingDocumentClaim(
+          client,
+          complete[1],
+          String(doc.declaredSha256),
+          String(body.idempotencyKey),
+        );
+      } catch {
+        await markDocumentCleanupRequired(
+          client,
+          complete[1],
+          String(body.idempotencyKey),
+        ).catch(() => undefined);
+        return json(503, { error: "Cleanup required" });
+      }
+      return json(400, { error: "Uploaded object verification failed" });
+    }
+    try {
+      await activateDocument(
+        client,
+        complete[1],
+        verified.sha256,
+        String(body.idempotencyKey),
+        verified.versionId,
+        verified.size,
+      );
+    } catch (error) {
+      const current = await getBookkeepingItem(client, "document", complete[1]);
+      if (current?.status === "active")
+        return json(200, {
+          outcome: "existing",
+          document: publicDocument(current),
+        });
+      try {
+        const rawDocument = (await getRawDocument(client, complete[1]))!;
+        await markDocumentCleanupRequired(
+          client,
+          complete[1],
+          String(body.idempotencyKey),
+        );
+        if (
+          Date.parse(String(rawDocument.uploadAuthorizationExpiresAt || "")) >=
+          Date.now()
+        )
+          return json(503, { error: "Document activation failed" });
+        await deleteExactDocumentObject(bucket, rawDocument, verified.versionId);
+        await removePendingDocumentClaim(
           client,
           complete[1],
           verified.sha256,
           String(body.idempotencyKey),
-          verified.versionId,
-          verified.size,
         );
-      } catch (error) {
-        const current = await getBookkeepingItem(client, "document", complete[1]);
-        if (current?.status === "active")
-          return json(200, {
-            outcome: "existing",
-            document: publicDocument(current),
-          });
-        try {
-          const rawDocument = (await getRawDocument(client, complete[1]))!;
-          await markDocumentCleanupRequired(
-            client,
-            complete[1],
-            String(body.idempotencyKey),
-          );
-          if (
-            Date.parse(String(rawDocument.uploadAuthorizationExpiresAt || "")) >=
-            Date.now()
-          )
-            return json(503, { error: "Document activation failed" });
-          await deleteExactDocumentObject(bucket, rawDocument, verified.versionId);
-          await removePendingDocumentClaim(
-            client,
-            complete[1],
-            verified.sha256,
-            String(body.idempotencyKey),
-          );
-        } catch {
-          await markDocumentCleanupRequired(
-            client,
-            complete[1],
-            String(body.idempotencyKey),
-          ).catch(() => undefined);
-        }
-        return json(503, { error: "Document activation failed" });
+      } catch {
+        await markDocumentCleanupRequired(
+          client,
+          complete[1],
+          String(body.idempotencyKey),
+        ).catch(() => undefined);
       }
-      const active = await getBookkeepingItem(client, "document", complete[1]);
-      return json(200, { outcome: "created", document: publicDocument(active!) });
+      return json(503, { error: "Document activation failed" });
     }
-    return json(409, { error: "Legacy pending upload requires operator cleanup" });
+    const active = await getBookkeepingItem(client, "document", complete[1]);
+    return json(200, { outcome: "created", document: publicDocument(active!) });
   }
   const download = path.match(
     /^\/api\/bookkeeping\/documents\/([^/]+)\/download$/,
