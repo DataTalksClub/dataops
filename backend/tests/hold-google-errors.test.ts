@@ -7,7 +7,6 @@ import {
   createHoldGoogleEvents,
   deleteHoldGoogleEvents,
   googleErrorDetail,
-  moveLinkedGoogleInvite,
   updateHoldGoogleEvents,
 } from '../src/calendar/holdGoogleSync';
 
@@ -94,19 +93,6 @@ describe('google error reasons (no bare HTTP status)', () => {
   it('delete surfaces the Google DELETE error text in the deferred reason', async () => {
     const sync = await deleteHoldGoogleEvents(
       { [HOLD_ORGANIZER]: 'event-1' }, deps(googleFailure(400, GOOGLE_ERROR_JSON)));
-    assert.equal(sync.state, 'deferred');
-    assert.match(sync.reason, /HTTP 400/);
-    assert.match(sync.reason, /must either be the organizer or an attendee/);
-  });
-
-  it('move surfaces the Google error text in the deferred reason', async () => {
-    const fetchImpl = (async (input: any, init: any = {}) => {
-      const url = new URL(String(input));
-      if (url.pathname === '/api/agent/token') return Response.json({ access_token: 'test-google' });
-      if ((init.method || 'GET') === 'GET') return Response.json({ id: 'legacy-1', status: 'confirmed' });
-      return new Response(GOOGLE_ERROR_JSON, { status: 400, headers: { 'Content-Type': 'application/json' } });
-    }) as typeof fetch;
-    const sync = await moveLinkedGoogleInvite({ 'orin@datatalks.club': 'legacy-1' }, proposal, deps(fetchImpl));
     assert.equal(sync.state, 'deferred');
     assert.match(sync.reason, /HTTP 400/);
     assert.match(sync.reason, /must either be the organizer or an attendee/);

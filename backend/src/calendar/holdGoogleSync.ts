@@ -321,36 +321,6 @@ export async function deleteHoldGoogleEvents(
   }
 }
 
-/** Adopted legacy invitations keep their organizer and identity. A time change
- * PATCHes that exact event; it must never import a new Orin replacement. */
-export async function moveLinkedGoogleInvite(
-  eventIds: Record<string, string>, event: HoldGoogleEvent, deps: HoldGoogleDeps,
-): Promise<HoldGoogleResult> {
-  const entries = Object.entries(eventIds);
-  const deferred = (reason: string): HoldGoogleResult => ({ state: 'deferred', eventIds, reason });
-  if (entries.length !== 1) return deferred('Select one legacy invitation before changing its time.');
-  const resolved = await accessToken(deps);
-  if ('problem' in resolved) return deferred(resolved.problem);
-  const [calendar, id] = entries[0];
-  const url = `${eventsUrl(calendar)}/${encodeURIComponent(id)}`;
-  const headers = { Authorization: `Bearer ${resolved.token}`, 'Content-Type': 'application/json' };
-  try {
-    const response = await googleFetch(deps, url, { headers, signal: AbortSignal.timeout(15000) });
-    if (!response.ok) return deferred(googleErrorDetail(response.status, await readBodyText(response, GOOGLE_ERROR_BODY_LIMIT)));
-    const current = await response.json() as { id?: string; status?: string };
-    if (current.id !== id || current.status === 'cancelled') return deferred('The adopted calendar invitation is missing or cancelled.');
-    const patched = await googleFetch(deps, `${url}?sendUpdates=all`, {
-      method: 'PATCH', headers,
-      body: JSON.stringify({ start: { dateTime: event.startIso, timeZone: event.timeZone }, end: { dateTime: event.endIso, timeZone: event.timeZone } }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!patched.ok) return deferred(googleErrorDetail(patched.status, await readBodyText(patched, GOOGLE_ERROR_BODY_LIMIT)));
-    return { state: 'synced', eventIds };
-  } catch {
-    return deferred('Google Calendar move could not complete; retry the same Card time command.');
-  }
-}
-
 export interface LiveGoogleOrganizerEvent {
   id: string;
   status?: string;

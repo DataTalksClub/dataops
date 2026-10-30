@@ -7,7 +7,7 @@ import { getTemplate } from '../db/templates';
 import { getCalendarHold, listCalendarHolds, putCalendarHold } from '../db/calendarHolds';
 import { taskRequiresCalendarInvite, makeTaskHistoryEvent } from '../routes/taskValidation';
 import { confirmedHoldInvite, confirmedTitle, holdGuestAttendees, parseHoldDocumentUrl, HOLD_ATTENDEE_DENY_LIST, type CalendarHold } from './holds';
-import { createHoldGoogleEvents, moveLinkedGoogleInvite, updateHoldGoogleEvents, type HoldGoogleDeps } from './holdGoogleSync';
+import { createHoldGoogleEvents, updateHoldGoogleEvents, type HoldGoogleDeps } from './holdGoogleSync';
 
 export class CardInviteConflictError extends Error {}
 export class CardInviteInputError extends Error {}
@@ -94,9 +94,8 @@ export async function syncCardInvite(
     if (active.length > 1) throw new CardInviteConflictError('Multiple calendar holds are linked to this Card; reconcile them before setting time');
     linkedHold = active[0] || null;
   }
-  const eventKey = card.eventTime?.eventKey || linkedHold?.id || (card.calendarInvites?.length ? `legacy:${card.id}` : `card:${card.id}`);
-  const eventIds = card.eventTime?.googleEventIds || linkedHold?.googleEventIds ||
-    Object.fromEntries((card.calendarInvites || []).map(invite => [invite.calendar, invite.eventId]));
+  const eventKey = card.eventTime?.eventKey || linkedHold?.id || `card:${card.id}`;
+  const eventIds = card.eventTime?.googleEventIds || linkedHold?.googleEventIds || {};
   const pending: NonNullable<Card['eventTime']> = {
     ...interval, eventKey, googleEventIds: eventIds, sync: 'syncing', syncStartedAt: new Date().toISOString(),
   };
@@ -113,11 +112,9 @@ export async function syncCardInvite(
     attendees: [...new Set(guests.flatMap(guest => holdGuestAttendees(guest)))],
   };
   const reserved = await updateCard(client, card.id, { expectedVersion: card.version, patch: { eventTime: pending, guestEmails: guests } });
-  const sync = eventKey.startsWith('legacy:')
-    ? await moveLinkedGoogleInvite(eventIds, invite, deps)
-    : Object.keys(eventIds).length
-      ? await updateHoldGoogleEvents(eventIds, invite, deps)
-      : await createHoldGoogleEvents(invite, deps);
+  const sync = Object.keys(eventIds).length
+    ? await updateHoldGoogleEvents(eventIds, invite, deps)
+    : await createHoldGoogleEvents(invite, deps);
   const updated = await updateCardAdditive(client, reserved, current => {
     const invites = [...(current.calendarInvites || [])];
     if (sync.state === 'synced') {

@@ -128,31 +128,6 @@ describe('Card-owned invitation lifecycle', () => {
     assert.deepEqual(results.map(r => r.code).sort(), [200, 409]);
     assert.equal(provider.events.get(HOLD_ORGANIZER)!.size, 1);
   });
-  test('an adopted legacy event moves by PATCH without replacing its organizer or creating a new event', async () => {
-    const c = await card('webinar-legacy');
-    const calls: Array<{ method: string; url: string; body: any }> = [];
-    const fetchImpl = (async (input: any, init: any = {}) => {
-      const url = String(input), method = init.method || 'GET';
-      const body = init.body ? JSON.parse(init.body) : undefined;
-      calls.push({ method, url, body });
-      if (url.endsWith('/api/agent/token')) return Response.json({ access_token: 'test-google' });
-      if (method === 'GET') return Response.json({ id: 'legacy-event', organizer: { email: 'legacy@example.test' } });
-      if (method === 'PATCH') return Response.json({ id: 'legacy-event' });
-      throw new Error('Unexpected create');
-    }) as typeof fetch;
-    setCalendarHoldGoogleDepsForTests({ fetchImpl, credential: 'test', connectionId: 'orin' });
-    assert.equal((await invoke('POST', `/api/cards/${c.id}/calendar-invites`, { eventId: 'legacy-event', calendar: 'legacy@example.test' })).code, 201);
-    for (const at of ['2026-11-09 14:30', '2026-11-10 14:37']) {
-      const moved = await invoke('POST', `/api/cards/${c.id}/time`, { at, guestEmails: ['guest@example.test'] });
-      assert.equal(moved.code, 200, moved.raw);
-      assert.equal(moved.data.card.eventTime.googleEventIds['legacy@example.test'], 'legacy-event');
-    }
-    const patches = calls.filter(call => call.method === 'PATCH');
-    assert.equal(patches.length, 2);
-    assert.ok(patches.every(call => call.url.endsWith('/events/legacy-event?sendUpdates=all')));
-    assert.ok(patches.every(call => Object.keys(call.body).sort().join(',') === 'end,start'));
-    assert.equal(patches[1].body.start.dateTime, '2026-11-10T13:32:00.000Z');
-  });
   test('confirm rejects a second hold without moving the first invitation or orphaning proposals', async () => {
     const provider = google();
     const c = await card('webinar-two-holds');
