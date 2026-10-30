@@ -2,8 +2,33 @@ import { formatUserCode } from "../../dakit/device-code.js";
 import { renderSponsorDocGate } from "./sponsor-doc-gate.js";
 import { appendSponsorDocRadioField } from "./sponsor-doc-radio.js";
 import { appendSponsorDocSelectField } from "./sponsor-doc-select.js";
-import { parseSponsorBulletItems, serializeSponsorBulletItems } from "./sponsor-doc-bullets.js";
-export { parseSponsorBulletItems, serializeSponsorBulletItems };
+import {
+  appendSponsorDocBulletsField,
+  parseSponsorBulletItems,
+  serializeSponsorBulletItems,
+} from "./sponsor-doc-bullets.js";
+import {
+  DEFAULT_NEWSLETTER_UTM_MEDIUM,
+  DEFAULT_NEWSLETTER_UTM_SOURCE,
+  attachSoftUtmSuggestion,
+  buildSuggestedUtmUrl,
+  hasUtmParams,
+  isEmailPieceSection,
+  mountNewsletterEmailPieceSection,
+  needsNewsletterUtmSuggestion,
+  renderNewsletterLivePreview,
+  validateSponsorDocDraft,
+} from "./sponsor-doc-email-card.js";
+
+export {
+  DEFAULT_NEWSLETTER_UTM_MEDIUM,
+  DEFAULT_NEWSLETTER_UTM_SOURCE,
+  buildSuggestedUtmUrl,
+  hasUtmParams,
+  needsNewsletterUtmSuggestion,
+  parseSponsorBulletItems,
+  serializeSponsorBulletItems,
+};
 
 export const SPONSOR_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ23456789";
 export const SPONSOR_CODE_LENGTH = 16;
@@ -97,6 +122,7 @@ export function createSponsorDocPage({
   let accessCode = "";
   let doc = null;
   let draftContent = {};
+  let fieldErrors = {};
   let uploadedVisualName = "";
   let phase = "loading";
   let gateError = "";
@@ -193,6 +219,7 @@ export function createSponsorDocPage({
       const payload = await request(`/api/sponsor-docs/${encodeURIComponent(docId)}`, { method: "GET", headers });
       doc = payload.doc;
       draftContent = { ...(doc.content || {}) };
+      fieldErrors = {};
       uploadedVisualName = "";
       if (accessCode) saveStoredCode(docId, accessCode);
       gateError = "";
@@ -221,6 +248,18 @@ export function createSponsorDocPage({
 
   async function saveChanges(nextStatus) {
     if (busy || !doc) return;
+    if (nextStatus === "submitted") {
+      const validationErrors = validateSponsorDocDraft(doc.templateDefinition, draftContent);
+      if (Object.keys(validationErrors).length > 0) {
+        fieldErrors = validationErrors;
+        feedbackMsg = Object.values(validationErrors).join(" ");
+        feedbackTone = "danger";
+        announce(feedbackMsg);
+        render();
+        return;
+      }
+    }
+    fieldErrors = {};
     busy = true;
     feedbackMsg = "";
     render();
@@ -250,6 +289,9 @@ export function createSponsorDocPage({
       render();
     } catch (err) {
       busy = false;
+      if (err.fields && typeof err.fields === "object") {
+        fieldErrors = { ...err.fields };
+      }
       feedbackMsg = err.message || "Failed to save changes.";
       feedbackTone = "danger";
       announce(feedbackMsg);
@@ -275,6 +317,35 @@ export function createSponsorDocPage({
     } catch (err) {
       busy = false;
       feedbackMsg = err.message || "Could not rotate access code.";
+      feedbackTone = "danger";
+      render();
+    }
+  }
+
+  async function sendSponsorEmailFromOrin() {
+    if (busy || !doc) return;
+    busy = true;
+    render();
+    try {
+      const payload = await request(`/api/sponsor-docs/${encodeURIComponent(docId)}/send-email`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      if (payload?.doc) doc = payload.doc;
+      const delivery = payload?.emailDelivery || doc?.emailDelivery;
+      busy = false;
+      if (delivery?.state === "sent") {
+        feedbackMsg = `Sent sponsor form email from ${delivery.from} to ${delivery.to}.`;
+        feedbackTone = "success";
+      } else {
+        feedbackMsg = delivery?.message || "Sponsor email could not be sent automatically yet.";
+        feedbackTone = "warning";
+      }
+      announce(feedbackMsg);
+      render();
+    } catch (err) {
+      busy = false;
+      feedbackMsg = err.message || "Could not send sponsor email.";
       feedbackTone = "danger";
       render();
     }
@@ -337,6 +408,17 @@ export function createSponsorDocPage({
       );
       topRow.append(shareInfo);
 
+      if (doc.emailDelivery) {
+        const delivery = doc.emailDelivery;
+        const delivRow = el("div", "sponsor-doc-staff-bar__delivery");
+        delivRow.dataset.sponsorEmailDelivery = delivery.state || "unknown";
+        const statusText = delivery.state === "sent"
+          ? `Auto-sent from ${delivery.from} to ${delivery.to}${delivery.sentAt ? ` at ${formatEditedTimestamp(delivery.sentAt)}` : ""}`
+          : `Auto-send (${delivery.from || "orin@datatalks.club"}): ${delivery.state}${delivery.reason ? ` (${delivery.reason})` : ""}`;
+        delivRow.append(el("span", "dk-hint", statusText));
+        topRow.append(delivRow);
+      }
+
       const smBtn = "dk-button dk-button--secondary dk-button--sm";
       const btnRow = el("div", "sponsor-doc-actions__buttons");
       if (doc.shareUrl) {
@@ -354,6 +436,11 @@ export function createSponsorDocPage({
               isSpeakerDoc(doc) ? "Copied invitation email draft." : "Copied ready-to-send sponsor email draft.",
             ),
           ),
+        );
+      }
+      if (!isSpeakerDoc(doc) && !isPodcastGuestDoc(doc)) {
+        btnRow.append(
+          actionBtn(smBtn, "Send from orin@datatalks.club", "send-sponsor-email", () => sendSponsorEmailFromOrin(), busy),
         );
       }
       btnRow.append(actionBtn(smBtn, "Rotate code", "rotate-code", () => rotateStaffCode(), busy));
@@ -406,174 +493,19 @@ export function createSponsorDocPage({
       previewCard.setAttribute("aria-label", "Live newsletter preview");
     }
 
+    const previewSyncListeners = [];
     const updateLivePreview = () => {
-      if (!previewCard) return;
-      previewCard.replaceChildren();
-
-      const head = el("div", "sponsor-doc-preview__head");
-      const headRow = el("div", "sponsor-doc-title-row");
-      headRow.append(el("h2", "sponsor-doc-section__title", "Live Preview"));
-      const slotLabel = doc.template === "newsletter-standalone"
-        ? "Stand-Alone Blast"
-        : doc.template === "newsletter-secondary" ? "Secondary Slot" : "Main Sponsor Block";
-      const slotBadge = el("span", "dk-badge", slotLabel);
-      slotBadge.dataset.sponsorPreviewSlot = doc.template || "newsletter-main";
-      headRow.append(slotBadge);
-      const hintText =
-        "Updates live as you type and upload your visual so the final email block look is clear before submitting.";
-      head.append(headRow, el("p", "dk-hint", hintText));
-      previewCard.append(head);
-
-      const val = (key) => String(draftContent[key] || "").trim();
-      const previewEl = (tag, baseClass, text, placeholder, dataAttr) => {
-        const node = el(tag, text ? baseClass : `${baseClass} is-placeholder`, text || placeholder);
-        node.dataset[dataAttr] = "";
-        return node;
-      };
-      const appendCtaPreview = (parent, textVal, urlVal, fallbackLabel, wrapAttr, linkAttr, urlAttr) => {
-        const wrap = el("div", "sponsor-preview-canvas__cta");
-        wrap.dataset[wrapAttr] = "";
-        const btn = previewEl("a", "sponsor-preview-canvas__cta-btn", textVal, fallbackLabel, linkAttr);
-        btn.href = safePreviewHref(urlVal);
-        btn.target = "_blank";
-        btn.rel = "noopener noreferrer";
-        const urlSpan = el("span", "sponsor-preview-canvas__cta-url", urlVal || "https://...");
-        if (urlAttr) urlSpan.dataset[urlAttr] = "";
-        wrap.append(btn, urlSpan);
-        parent.append(wrap);
-      };
-
-      const showEnvelope =
-        doc.template === "newsletter-main"
-        || doc.template === "newsletter-standalone"
-        || hasField("subjectLine")
-        || hasField("previewText");
-      if (showEnvelope) {
-        const env = el("div", "sponsor-preview-envelope");
-        env.dataset.sponsorPreviewEnvelope = "";
-        const rawSubj = val("subjectLine");
-        const subjDisplay = doc.template === "newsletter-main"
-          ? `${rawSubj || "[Your subject line]"} | DataTalks.Club Weekly`
-          : (rawSubj || "[Email subject line]");
-        const subjRow = el("div", "sponsor-preview-envelope__row");
-        const envValClass = "sponsor-preview-envelope__value";
-        const subjValEl = previewEl("span", envValClass, rawSubj ? subjDisplay : "", subjDisplay, "sponsorPreviewSubject");
-        subjRow.append(el("span", "sponsor-preview-envelope__label", "Subject"), subjValEl);
-        const preRow = el("div", "sponsor-preview-envelope__row");
-        const preValEl = previewEl("span", envValClass, val("previewText"), "[Inbox preview text]", "sponsorPreviewPreheader");
-        preRow.append(el("span", "sponsor-preview-envelope__label", "Preview"), preValEl);
-        env.append(subjRow, preRow);
-        previewCard.append(env);
-      }
-
-      const canvas = el("article", "sponsor-preview-canvas");
-      canvas.dataset.sponsorPreviewCanvas = "";
-      const kickerDate = doc.publicationDate ? ` · ${doc.publicationDate}` : "";
-      canvas.append(
-        el("div", "sponsor-preview-canvas__kicker", `Sponsored · ${doc.sponsorName || "Your Company"}${kickerDate}`),
-      );
-
-      const titleVal = val("title") || val("headline");
-      canvas.append(
-        previewEl("h3", "sponsor-preview-canvas__title", titleVal, "Headline for your sponsored section", "sponsorPreviewTitle"),
-      );
-
-      const visualWrap = el("div", "sponsor-preview-canvas__visual");
-      visualWrap.dataset.sponsorPreviewVisual = "";
-      const visualVal = val("graphicsUrl") || val("imageUrl");
-      if (/^(?:data:image\/|https?:\/\/|\/|blob:)/i.test(visualVal)) {
-        const figure = el("figure", "sponsor-preview-figure");
-        const img = el("img", "sponsor-preview-figure__img");
-        img.dataset.sponsorPreviewImage = "";
-        img.src = visualVal;
-        img.alt = titleVal || doc.sponsorName || "Sponsor visual";
-        figure.append(img);
-        if (uploadedVisualName || /^data:image\//i.test(visualVal)) {
-          const capText = uploadedVisualName ? `Uploaded visual: ${uploadedVisualName}` : "Uploaded visual";
-          const caption = el("figcaption", "sponsor-preview-figure__caption", capText);
-          caption.dataset.sponsorPreviewVisualCaption = "";
-          figure.append(caption);
-        }
-        visualWrap.append(figure);
-      } else if (visualVal) {
-        const noteBox = el("div", "sponsor-preview-visual-placeholder", `Visual note: ${visualVal}`);
-        noteBox.dataset.sponsorPreviewVisualNote = "";
-        visualWrap.append(noteBox);
-      } else {
-        const phText = "Visual placement — upload an image or paste an image URL to preview it here.";
-        const ph = el("div", "sponsor-preview-visual-placeholder is-placeholder", phText);
-        ph.dataset.sponsorPreviewVisualPlaceholder = "";
-        visualWrap.append(ph);
-      }
-      canvas.append(visualWrap);
-
-      const pClass = "sponsor-preview-canvas__paragraph";
-      const introFallback = "1–2 sentences introducing the problem, product, or resource.";
-      canvas.append(previewEl("p", pClass, val("intro") || val("body"), introFallback, "sponsorPreviewIntro"));
-
-      if (doc.template === "newsletter-standalone" || hasField("earlyCtaText") || hasField("earlyCtaUrl")) {
-        appendCtaPreview(
-          canvas, val("earlyCtaText"), val("earlyCtaUrl"), "Early CTA Button",
-          "sponsorPreviewEarlyCta", "sponsorPreviewEarlyCtaLink", "",
-        );
-      }
-      if (doc.template === "newsletter-standalone" || hasField("mainBodyOpening")) {
-        const openingFallback = "1–2 sentences introducing the session, product, or key story before the bullet list.";
-        canvas.append(previewEl("p", pClass, val("mainBodyOpening"), openingFallback, "sponsorPreviewOpening"));
-      }
-      if (hasField("bullets") || Boolean(draftContent.bullets) || isNewsletterTemplate(doc.template, tDef)) {
-        const ul = el("ul", "sponsor-preview-canvas__bullets");
-        ul.dataset.sponsorPreviewBullets = "";
-        const parsedBullets = parseSponsorBulletItems(draftContent.bullets, 0).filter((item) => item.trim().length > 0);
-        if (parsedBullets.length > 0) {
-          for (const bulletText of parsedBullets) {
-            const li = el("li", "", bulletText);
-            li.dataset.sponsorPreviewBullet = "";
-            ul.append(li);
-          }
-        } else {
-          for (let i = 1; i <= 3; i += 1) {
-            const li = el("li", "is-placeholder", `Bullet point ${i}`);
-            li.dataset.sponsorPreviewBulletPlaceholder = String(i);
-            ul.append(li);
-          }
-        }
-        canvas.append(ul);
-      }
-      if (hasField("closing") || Boolean(draftContent.closing) || isNewsletterTemplate(doc.template, tDef)) {
-        const closingFallback = "Closing sentence leading into the call-to-action.";
-        canvas.append(previewEl("p", pClass, val("closing"), closingFallback, "sponsorPreviewClosing"));
-      }
-
-      const isStandalone = doc.template === "newsletter-standalone" || hasField("closingCtaText");
-      appendCtaPreview(
-        canvas,
-        isStandalone ? val("closingCtaText") : val("ctaText"),
-        isStandalone ? val("closingCtaUrl") : val("ctaUrl"),
-        isStandalone ? "Closing CTA Button" : "Call to Action",
-        "sponsorPreviewCta", "sponsorPreviewCtaLink", "sponsorPreviewCtaUrl",
-      );
-      previewCard.append(canvas);
-
-      const linkedinVal = val("linkedinPost");
-      const twitterVal = val("twitterPost");
-      if (linkedinVal || twitterVal) {
-        const socialWrap = el("div", "sponsor-preview-social");
-        socialWrap.dataset.sponsorPreviewSocial = "";
-        socialWrap.append(el("h3", "sponsor-doc-field__label", "Social Media Preview"));
-        const socialEntries = [
-          [linkedinVal, "LinkedIn", "sponsorPreviewLinkedin"],
-          [twitterVal, "X (Twitter)", "sponsorPreviewTwitter"],
-        ];
-        for (const [postVal, labelText, attr] of socialEntries) {
-          if (!postVal) continue;
-          const card = el("div", "sponsor-preview-social__card");
-          card.dataset[attr] = "";
-          card.append(el("span", "sponsor-preview-envelope__label", labelText), el("p", "sponsor-preview-social__text", postVal));
-          socialWrap.append(card);
-        }
-        previewCard.append(socialWrap);
-      }
+      for (const fn of previewSyncListeners) fn();
+      renderNewsletterLivePreview({
+        el,
+        previewCard,
+        doc,
+        tDef,
+        draftContent,
+        hasField,
+        uploadedVisualName,
+        safePreviewHref,
+      });
     };
 
     const formCard = el("div", "sponsor-doc-card sponsor-doc-form-card");
@@ -604,9 +536,17 @@ export function createSponsorDocPage({
       }
       if (sectionDef.description) sectionWrap.append(el("p", "dk-hint", sectionDef.description));
 
+      const useEmailCard = isEmailPieceSection(doc, tDef, sectionDef);
+      const fieldNodesByKey = new Map();
+      const appendFieldNode = (key, node) => {
+        if (useEmailCard) fieldNodesByKey.set(key, node);
+        else sectionWrap.append(node);
+      };
+
       for (const fieldDef of sectionDef.fields || []) {
         const fieldWrap = el("div", "sponsor-doc-field");
         fieldWrap.dataset.sponsorFieldGroup = fieldDef.key;
+        if (fieldDef.required) fieldWrap.dataset.sponsorFieldRequired = "true";
         const top = el("div", "sponsor-doc-field__top");
         const label = el("label", "sponsor-doc-field__label", `${fieldDef.label}${fieldDef.required ? " *" : ""}`);
         const inputId = `sponsor-field-${fieldDef.key}`;
@@ -617,116 +557,32 @@ export function createSponsorDocPage({
         const countEl = el("span", "sponsor-doc-field__count");
         const currentVal = String(draftContent[fieldDef.key] ?? "");
 
+        const appendErrorIfAny = () => {
+          const errText = fieldErrors[fieldDef.key];
+          if (!errText) return null;
+          const errEl = el("p", "sponsor-doc-field__error", errText);
+          errEl.dataset.sponsorFieldError = fieldDef.key;
+          fieldWrap.append(errEl);
+          return errEl;
+        };
+
         if (fieldDef.type === "bullets" || fieldDef.key === "bullets") {
-          const minItems = fieldDef.minItems || 3;
-          const maxItems = fieldDef.maxItems || 6;
-          const marker = fieldDef.bulletMarker || "•";
-          const basePlaceholder = (fieldDef.placeholder || "Bullet point")
-            .split("\n")[0]
-            .replace(/^(?:[-*•→🔸▪▸]|\d+[.)])\s*/, "")
-            .replace(/\s+\d+$/, "")
-            .trim() || "Bullet point";
-
-          const bulletItems = parseSponsorBulletItems(currentVal, minItems);
-          const updateBulletsCount = () => {
-            const filled = bulletItems.filter((item) => item.trim().length > 0).length;
-            countEl.textContent = `${filled} / ${minItems} bullets`;
-            countEl.classList.toggle("is-over", filled > maxItems);
-          };
-
-          label.setAttribute("for", `${inputId}-0`);
-          updateBulletsCount();
-          top.append(label, countEl);
-
-          const bulletsContainer = el("div", "sponsor-doc-bullets");
-          bulletsContainer.id = inputId;
-          bulletsContainer.dataset.sponsorField = fieldDef.key;
-          bulletsContainer.dataset.sponsorBullets = fieldDef.key;
-
-          const bulletList = el("div", "sponsor-doc-bullets__list");
-          bulletList.dataset.sponsorBulletList = "";
-          const actionsRow = el("div", "sponsor-doc-bullets__actions");
-          const addBulletBtn = actionBtn("dk-button dk-button--secondary dk-button--sm", "+ Add bullet", "add-bullet", () => {
-            if (bulletItems.length >= maxItems) return;
-            bulletItems.push("");
-            renderBulletRows(bulletItems.length - 1);
-            syncBulletsState();
+          appendSponsorDocBulletsField({
+            el,
+            actionBtn,
+            fieldWrap,
+            fieldDef,
+            inputId,
+            currentVal,
+            busy,
+            draftContent,
+            updateLivePreview,
+            top,
+            label,
+            countEl,
           });
-          addBulletBtn.id = "add-sponsor-bullet";
-
-          function syncBulletsState() {
-            draftContent[fieldDef.key] = serializeSponsorBulletItems(bulletItems);
-            updateBulletsCount();
-            addBulletBtn.disabled = busy || bulletItems.length >= maxItems;
-            updateLivePreview();
-          }
-
-          function renderBulletRows(focusIndex = null) {
-            bulletList.replaceChildren();
-            bulletItems.forEach((itemVal, idx) => {
-              const row = el("div", "sponsor-doc-bullets__row");
-              row.dataset.sponsorBulletRow = String(idx);
-              const markerSpan = el("span", "sponsor-doc-bullets__marker", marker);
-              markerSpan.setAttribute("aria-hidden", "true");
-
-              const bulletInput = el("input", "dk-input sponsor-doc-bullets__input");
-              bulletInput.type = "text";
-              bulletInput.id = `${inputId}-${idx}`;
-              bulletInput.name = `${fieldDef.key}[]`;
-              bulletInput.dataset.sponsorBulletInput = String(idx);
-              bulletInput.placeholder = `${basePlaceholder} ${idx + 1}`;
-              bulletInput.value = itemVal;
-              bulletInput.disabled = busy;
-              if (fieldDef.required && idx < minItems) bulletInput.setAttribute("aria-required", "true");
-              bulletInput.addEventListener("input", () => {
-                const rawInput = String(bulletInput.value || "");
-                if (rawInput.includes("\n")) {
-                  const splitLines = rawInput.replace(/\r\n/g, "\n").split("\n").map((l) => stripBulletPrefix(l)).filter(Boolean);
-                  if (splitLines.length > 0) {
-                    bulletItems[idx] = splitLines[0];
-                    for (let s = 1; s < splitLines.length; s += 1) {
-                      const targetIdx = idx + s;
-                      if (targetIdx < bulletItems.length && !bulletItems[targetIdx]) bulletItems[targetIdx] = splitLines[s];
-                      else if (bulletItems.length < maxItems) bulletItems.splice(Math.min(targetIdx, bulletItems.length), 0, splitLines[s]);
-                    }
-                    renderBulletRows(Math.min(idx + splitLines.length - 1, bulletItems.length - 1));
-                    syncBulletsState();
-                    return;
-                  }
-                }
-                bulletItems[idx] = rawInput;
-                syncBulletsState();
-              });
-
-              const removeClass = "dk-button dk-button--secondary dk-button--sm sponsor-doc-bullets__remove";
-              const removeBtn = actionBtn(
-                removeClass,
-                "Remove",
-                "remove-bullet",
-                () => {
-                  if (bulletItems.length > 1) bulletItems.splice(idx, 1);
-                  else bulletItems[0] = "";
-                  renderBulletRows(Math.max(0, Math.min(idx, bulletItems.length - 1)));
-                  syncBulletsState();
-                },
-                busy || (bulletItems.length <= 1 && !bulletItems[0]),
-              );
-              removeBtn.dataset.sponsorBulletRemove = String(idx);
-              removeBtn.setAttribute("aria-label", `Remove bullet ${idx + 1}`);
-
-              row.append(markerSpan, bulletInput, removeBtn);
-              bulletList.append(row);
-              if (focusIndex === idx) bulletInput.focus?.();
-            });
-            addBulletBtn.disabled = busy || bulletItems.length >= maxItems;
-          }
-
-          renderBulletRows();
-          actionsRow.append(addBulletBtn);
-          bulletsContainer.append(bulletList, actionsRow);
-          fieldWrap.append(top, bulletsContainer);
-          if (fieldDef.helpText) fieldWrap.append(el("p", "dk-hint", fieldDef.helpText));
-          sectionWrap.append(fieldWrap);
+          appendErrorIfAny();
+          appendFieldNode(fieldDef.key, fieldWrap);
           continue;
         }
 
@@ -766,7 +622,8 @@ export function createSponsorDocPage({
             updateLivePreview,
             top,
           });
-          sectionWrap.append(fieldWrap);
+          appendErrorIfAny();
+          appendFieldNode(fieldDef.key, fieldWrap);
           continue;
         }
 
@@ -783,7 +640,8 @@ export function createSponsorDocPage({
             updateLivePreview,
             top,
           });
-          sectionWrap.append(fieldWrap);
+          appendErrorIfAny();
+          appendFieldNode(fieldDef.key, fieldWrap);
           continue;
         }
 
@@ -798,15 +656,41 @@ export function createSponsorDocPage({
         control.placeholder = isDataVisual ? attachedPh : (fieldDef.placeholder || "");
         control.value = isDataVisual ? "" : currentVal;
         control.disabled = busy;
-        if (fieldDef.required) control.setAttribute("aria-required", "true");
+        if (fieldDef.required) {
+          control.required = true;
+          control.setAttribute("aria-required", "true");
+        }
+        if (fieldErrors[fieldDef.key]) {
+          control.setAttribute("aria-invalid", "true");
+        }
         if (fieldDef.format === "url") control.type = "url";
+        fieldWrap.append(top, control);
+
+        const syncUtmSuggestion = attachSoftUtmSuggestion({
+          el,
+          actionBtn,
+          fieldWrap,
+          fieldDef,
+          control,
+          draftContent,
+          publicationDate: doc.publicationDate,
+          updateCount,
+          updateLivePreview,
+          announce,
+        });
+
         control.addEventListener("input", () => {
           uploadedVisualName = "";
           draftContent[fieldDef.key] = control.value;
+          if (fieldErrors[fieldDef.key]) {
+            delete fieldErrors[fieldDef.key];
+            control.removeAttribute("aria-invalid");
+            fieldWrap.querySelector(`[data-sponsor-field-error="${fieldDef.key}"]`)?.remove?.();
+          }
           updateCount(control.value);
+          syncUtmSuggestion();
           updateLivePreview();
         });
-        fieldWrap.append(top, control);
 
         if (isVisualField) {
           const visualControls = el("div", "sponsor-doc-visual-upload");
@@ -870,8 +754,22 @@ export function createSponsorDocPage({
           fieldWrap.append(visualControls);
         }
 
+        appendErrorIfAny();
         if (fieldDef.helpText) fieldWrap.append(el("p", "dk-hint", fieldDef.helpText));
-        sectionWrap.append(fieldWrap);
+        appendFieldNode(fieldDef.key, fieldWrap);
+      }
+
+      if (useEmailCard) {
+        const syncEditorCta = mountNewsletterEmailPieceSection({
+          el,
+          doc,
+          sectionWrap,
+          sectionDef,
+          fieldNodesByKey,
+          draftContent,
+          safePreviewHref,
+        });
+        previewSyncListeners.push(syncEditorCta);
       }
       form.append(sectionWrap);
     }

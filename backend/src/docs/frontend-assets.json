@@ -158,6 +158,7 @@
     "src/surfaces/operations/index.js",
     "src/surfaces/operations/newsletter-preview.js",
     "src/surfaces/operations/sponsor-doc-bullets.js",
+    "src/surfaces/operations/sponsor-doc-email-card.js",
     "src/surfaces/operations/sponsor-doc-gate.js",
     "src/surfaces/operations/sponsor-doc-radio.js",
     "src/surfaces/operations/sponsor-doc-select.js",

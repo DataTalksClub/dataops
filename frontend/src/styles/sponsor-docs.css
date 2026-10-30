@@ -110,6 +110,104 @@
   font-weight: var(--dk-weight-semibold);
 }
 
+.sponsor-doc-field__error {
+  margin: 0;
+  color: var(--dk-danger-text);
+  font-size: var(--dk-text-xs);
+  font-weight: var(--dk-weight-semibold);
+}
+
+.sponsor-email-piece-envelope {
+  background-color: var(--dk-bg-muted);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  padding: var(--dk-space-4);
+  display: grid;
+  gap: var(--dk-space-3);
+}
+
+.sponsor-email-piece-card {
+  background-color: var(--dk-bg-surface);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-lg);
+  padding: var(--dk-space-5);
+  display: grid;
+  gap: var(--dk-space-4);
+}
+
+.sponsor-email-piece-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dk-space-2);
+  padding-bottom: var(--dk-space-3);
+  border-bottom: 1px solid var(--dk-border-default);
+}
+
+.sponsor-email-piece-card__kicker {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-xs);
+  font-weight: var(--dk-weight-semibold);
+  text-transform: uppercase;
+}
+
+.sponsor-email-piece-card__flow-label {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-xs);
+}
+
+.sponsor-email-piece-card__flow {
+  display: grid;
+  gap: var(--dk-space-4);
+}
+
+.sponsor-email-piece-card__step {
+  padding-top: var(--dk-space-3);
+  border-top: 1px solid var(--dk-border-default);
+}
+
+.sponsor-email-piece-card__cta {
+  display: grid;
+  gap: var(--dk-space-3);
+}
+
+.sponsor-email-piece-card__cta-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-space-2);
+  padding: var(--dk-space-3);
+  background-color: var(--dk-bg-muted);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+}
+
+.sponsor-email-piece-card__cta-fields {
+  display: grid;
+  gap: var(--dk-space-3);
+}
+
+.sponsor-doc-utm-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dk-space-2);
+  padding: var(--dk-space-2) var(--dk-space-3);
+  background-color: var(--dk-bg-muted);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+}
+
+.sponsor-doc-utm-suggestion__text {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-xs);
+  flex: 1;
+  min-width: 12rem;
+  overflow-wrap: anywhere;
+}
+
 .sponsor-doc-form-card,
 .sponsor-doc-card {
   min-width: 0;

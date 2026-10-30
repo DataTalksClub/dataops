@@ -202,7 +202,7 @@ test.describe("sponsor newsletter catalog", () => {
     await expect(page.locator(".entity-route-not-found:visible")).toContainText("missing-newsletter");
   });
 
-  test("sponsor newsletter content form keeps structured Opening / Bullets / Closing fields and updates live preview on typing and visual upload", async ({
+  test("sponsor newsletter content form renders card-as-email layout, keeps structured Opening / Bullets / Closing fields, requires CTA, softly suggests UTM, and updates live preview on typing and visual upload", async ({
     page,
   }) => {
     test.setTimeout(60_000);
@@ -240,7 +240,20 @@ test.describe("sponsor newsletter catalog", () => {
     await expect(preview).toContainText("Live Preview");
     await expect(preview).toContainText("Stand-Alone Blast");
 
-    // Structured fields remain distinct (Opening, Bulleted List, Closing)
+    // 1. White email-piece card in editor with ordered flow: opening -> bullets -> closing -> cta
+    const emailCard = page.locator("[data-sponsor-email-card]");
+    await expect(emailCard).toBeVisible();
+    const editorSteps = await emailCard
+      .locator("[data-sponsor-email-step]")
+      .evaluateAll((nodes) => nodes.map((n) => n.dataset.sponsorEmailStep));
+    expect(editorSteps).toEqual(["opening", "bullets", "closing", "cta"]);
+
+    const previewSteps = await preview
+      .locator("[data-sponsor-preview-step]")
+      .evaluateAll((nodes) => nodes.map((n) => n.dataset.sponsorPreviewStep));
+    expect(previewSteps).toEqual(["opening", "bullets", "closing", "cta"]);
+
+    // 2. Structured fields remain distinct (Opening, Bulleted List, Closing)
     const openingField = page.locator("#sponsor-field-mainBodyOpening");
     const bulletsField = page.locator('[data-sponsor-bullets="bullets"]');
     const closingField = page.locator("#sponsor-field-closing");
@@ -248,7 +261,7 @@ test.describe("sponsor newsletter catalog", () => {
     await expect(bulletsField).toBeVisible();
     await expect(closingField).toBeVisible();
 
-    // Bullets field renders 3 structured list inputs + "+ Add bullet" button
+    // 3. Bullets field renders 3 structured list inputs + "+ Add bullet" button
     await expect(bulletsField.locator("[data-sponsor-bullet-input]")).toHaveCount(3);
     await page.locator("#sponsor-field-title").fill("Real-Time CDC Pipelines Without Ops Overhead");
     await expect(preview.locator("[data-sponsor-preview-title]")).toHaveText(
@@ -277,7 +290,7 @@ test.describe("sponsor newsletter catalog", () => {
       "Join our live engineering workshop this Thursday.",
     );
 
-    // Upload a 1x1 PNG visual and verify live preview renders the uploaded image immediately
+    // 4. Upload a 1x1 PNG visual and verify live preview renders the uploaded image immediately
     const onePixelPng = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
       "base64",
@@ -293,6 +306,29 @@ test.describe("sponsor newsletter catalog", () => {
     await expect(previewImg).toHaveAttribute("src", /^data:image\/png;base64,/);
     await expect(preview.locator("[data-sponsor-preview-visual-caption]")).toContainText("estuary-banner.png");
 
+    // 5. Required CTA button label & URL validation blocks submission while empty
+    await page.locator('[data-sponsor-action="submit-ready"]').click();
+    await expect(page.locator('[data-sponsor-field-error="closingCtaText"]')).toBeVisible();
+    await expect(page.locator('[data-sponsor-field-error="closingCtaUrl"]')).toBeVisible();
+    await expect(page.locator('[data-sponsor-doc-status="draft"]')).toBeVisible();
+
+    // 6. Filling CTA label and non-UTM URL updates editor CTA pill & preview, and softly suggests UTM without silent rewrite
+    await page.locator("#sponsor-field-closingCtaText").fill("Register for Workshop");
+    await page.locator("#sponsor-field-closingCtaUrl").fill("https://estuary.dev/workshop");
+    await expect(page.locator("[data-sponsor-editor-cta-pill]")).toHaveText("Register for Workshop");
+    await expect(preview.locator("[data-sponsor-preview-cta-link]")).toHaveText("Register for Workshop");
+
+    const utmSuggestion = page.locator('[data-sponsor-utm-suggestion="closingCtaUrl"]');
+    await expect(utmSuggestion).toBeVisible();
+    await expect(utmSuggestion).toContainText("datatalksclub-newsletter");
+    await expect(page.locator("#sponsor-field-closingCtaUrl")).toHaveValue("https://estuary.dev/workshop");
+
+    // Clicking the soft UTM suggestion button appends datatalksclub-newsletter UTM
+    await utmSuggestion.locator('[data-sponsor-action="apply-utm-suggestion"]').click();
+    await expect(page.locator("#sponsor-field-closingCtaUrl")).toHaveValue(/utm_source=datatalksclub-newsletter/);
+    await expect(utmSuggestion).toBeHidden();
+
+    // 7. Submit succeeds once required CTA fields are valid
     await page.locator('[data-sponsor-action="submit-ready"]').click();
     await expect(page.locator('[data-sponsor-doc-status="submitted"]')).toHaveText("Submitted / Ready");
   });
