@@ -229,9 +229,12 @@ jobs:
       - name: Project authored workflow templates
         timeout-minutes: 10
         env:
-          # The backend shares its concurrency cap with live requests and jobs.
-          # Standard retries back off on Invoke throttling (TooManyRequestsException),
-          # including a temporary reserved-concurrency pause during maintenance.
+          # BackendFunction has no ReservedConcurrentExecutions in template.full.yaml
+          # (unreserved steady-state concurrency, shared by BackendFunctionUrl HTTP/MCP
+          # traffic, the four daily EventBridge cron rules, and post-deploy invokes).
+          # Standard retries back off on Invoke throttling (TooManyRequestsException /
+          # ReservedFunctionConcurrentInvocationLimitExceeded), including a temporary
+          # ReservedConcurrentExecutions=0 writer-drain pause during maintenance.
           # Bound attempts; FunctionError and the projection contract below still fail.
           # https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-retries.html
           AWS_RETRY_MODE: standard

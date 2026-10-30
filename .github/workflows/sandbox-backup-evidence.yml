@@ -108,6 +108,8 @@ jobs:
               Runtime: Runtime
             }' \
             --output json --region "$AWS_REGION"
+          aws lambda get-function-concurrency --function-name "$backend_fn" \
+            --output json --region "$AWS_REGION"
           aws cloudwatch describe-alarms --alarm-names dataops-v1-recurring-cron-errors \
             --query 'MetricAlarms[0]' \
             --output json --region "$AWS_REGION" || echo "recurring-cron-errors alarm read not permitted for this role"

@@ -659,12 +659,18 @@ def test_sandbox_environment_contract_rejects_escape_hatches():
 
 
 def test_deploy_workflow_projects_private_templates_through_the_deployed_lambda():
+    template = _load_template()
     workflow = DEPLOY_WORKFLOW.read_text(encoding="utf-8")
     deploy = workflow.split("\n  deploy:\n", 1)[1]
+
+    assert "ReservedConcurrentExecutions" not in template["Resources"]["BackendFunction"]["Properties"]
 
     seed = "Project authored workflow templates"
     assert seed in workflow
     seed_step = deploy.split(seed, 1)[1].split("- name:", 1)[0]
+    assert "timeout-minutes: 10" in seed_step
+    assert "AWS_RETRY_MODE: standard" in seed_step
+    assert "AWS_MAX_ATTEMPTS: '20'" in seed_step
     assert "--logical-resource-id BackendFunction" in workflow
     assert seed_step.count("aws lambda invoke") == 1
     assert '"source":"dataops.deploy","detail-type":"Runtime Seed"' in deploy

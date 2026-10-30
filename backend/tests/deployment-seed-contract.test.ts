@@ -41,6 +41,16 @@ test('deploy seed gate rejects malformed counts and incomplete reconciliation', 
   assert.equal(accepted({ statusCode: 200, body: 'not JSON' }), false);
 });
 
+test('deploy seed step configures bounded standard throttling retries while failing on FunctionError', () => {
+  const seedStep = workflow.split('- name: Project authored workflow templates')[1]?.split('\n      - name:')[0];
+  assert.ok(seedStep, 'deployment workflow must define Project authored workflow templates step');
+  assert.match(seedStep, /timeout-minutes:\s*10/);
+  assert.match(seedStep, /AWS_RETRY_MODE:\s*standard/);
+  assert.match(seedStep, /AWS_MAX_ATTEMPTS:\s*'20'/);
+  assert.match(seedStep, /set -euo pipefail/);
+  assert.match(seedStep, /if \[ "\$seed_error" != "None" \]; then\s+echo "Runtime seed failed inside the deployed Lambda" >&2\s+exit 1\s+fi/);
+});
+
 test('deploy seed step logs only template created, total, unchanged, and updated counts after validation', () => {
   const summaryFilter = workflow.match(/fi\s+jq -c '([^']+)' "\$seed_response"\s+echo "Authored workflow templates projected\."/)?.[1];
   assert.ok(summaryFilter, 'deployment must log a compact counts-only summary after validation');
