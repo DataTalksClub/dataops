@@ -23,6 +23,7 @@ import {
   validateSubmittedContent,
   type SponsorDocTemplateKey,
 } from '../sponsorDocs/templates';
+import type { SponsorDocEmailDelivery } from '../sponsorDocs/emailDelivery';
 
 const CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 const CODE_CHAR_COUNT = 16; // 16 * 5 bits = 80 bits of entropy
@@ -48,6 +49,7 @@ export interface SponsorDocSummary {
   createdAt: string;
   updatedAt: string;
   version: number;
+  emailDelivery?: SponsorDocEmailDelivery | null;
 }
 
 export interface SponsorDoc extends SponsorDocSummary {
@@ -164,6 +166,7 @@ function toSummary(doc: SponsorDoc): SponsorDocSummary {
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
     version: doc.version,
+    ...(doc.emailDelivery ? { emailDelivery: doc.emailDelivery } : {}),
   };
 }
 
@@ -367,6 +370,33 @@ export async function updateSponsorDoc(
   await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: primaryItem }));
   await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: indexItem }));
 
+  return updated;
+}
+
+export async function setSponsorDocEmailDelivery(
+  client: DynamoDBDocumentClient,
+  id: string,
+  emailDelivery: SponsorDocEmailDelivery,
+): Promise<SponsorDoc | null> {
+  const loaded = await getSponsorDocWithAuthMaterial(client, id);
+  if (!loaded) return null;
+  const { doc, accessCodeHash, accessCodeCiphertext } = loaded;
+  const updated: SponsorDoc = {
+    ...doc,
+    emailDelivery,
+  };
+  const primaryItem: StoredSponsorDoc = {
+    ...sponsorDocKey(id),
+    ...updated,
+    accessCodeHash,
+    accessCodeCiphertext,
+  };
+  const indexItem = {
+    ...cardSponsorDocIndexKey(updated.cardId, id),
+    ...toSummary(updated),
+  };
+  await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: primaryItem }));
+  await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: indexItem }));
   return updated;
 }
 

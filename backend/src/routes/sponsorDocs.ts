@@ -25,11 +25,17 @@ import {
   listSponsorDocSummariesByCardId,
   recordSponsorDocFailedAttempt,
   rotateSponsorDocAccessCode,
+  setSponsorDocEmailDelivery,
   updateSponsorDoc,
   verifySponsorDocCodeConstantTime,
   type SponsorDoc,
   type SponsorDocStatus,
 } from '../db/sponsorDocs';
+import {
+  deliverSponsorDocEmail,
+  isAutoSendEligibleTemplate,
+  type SponsorDocEmailDelivery,
+} from '../sponsorDocs/emailDelivery';
 import { resolveInteractiveActor } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
 import { projectCard } from '../identity/projections';
@@ -139,6 +145,7 @@ export function isAnonymousSponsorDocAsset(method: string, path: string): boolea
     || path === '/src/surfaces/operations/sponsor-doc-select.js'
     || path === '/src/surfaces/operations/sponsor-doc-radio.js'
     || path === '/src/surfaces/operations/sponsor-doc-bullets.js'
+    || path === '/src/surfaces/operations/sponsor-doc-email-card.js'
     || path === '/src/styles/sponsor-docs.css'
     || path.startsWith('/src/dakit/')
   );
@@ -261,6 +268,7 @@ async function buildDocResponsePayload(
       ? renderSponsorEmailDraft({
         template: doc.template,
         sponsorName: doc.sponsorName,
+        recipientName: doc.emailDelivery?.recipientName || null,
         publicationDate: doc.publicationDate,
         shareUrl,
         accessCode,
@@ -657,9 +665,36 @@ export async function handleSponsorDocRoutes(
           updatedIssue = await updateNewsletterIssue(client, existingIssue, { slots: nextSlots }).catch(() => existingIssue);
         }
 
+        let finalDoc = doc;
+        let emailDelivery: SponsorDocEmailDelivery | null = null;
+        const explicitRecipient = typeof body.recipientEmail === 'string' && body.recipientEmail.trim()
+          ? body.recipientEmail.trim()
+          : typeof body.to === 'string' && body.to.trim()
+            ? body.to.trim()
+            : null;
+        const shouldAutoSend = body.autoSendEmail !== false
+          && (isAutoSendEligibleTemplate(template) || Boolean(explicitRecipient));
+        if (shouldAutoSend) {
+          const shareUrl = `${docUrl}?code=${encodeURIComponent(accessCode)}`;
+          emailDelivery = await deliverSponsorDocEmail(client, {
+            template,
+            sponsorName,
+            publicationDate,
+            shareUrl,
+            accessCode,
+            recipientEmail: explicitRecipient,
+            recipientName: typeof body.recipientName === 'string' ? body.recipientName : null,
+            cc: body.cc as string[] | string | null | undefined,
+            connectionId: typeof body.connectionId === 'string' ? body.connectionId : undefined,
+          });
+          const withDelivery = await setSponsorDocEmailDelivery(client, doc.id, emailDelivery);
+          if (withDelivery) finalDoc = withDelivery;
+        }
+
         return json(201, {
-          doc: await buildDocResponsePayload(doc, event, client, { viewerRole: 'staff', accessCode }),
+          doc: await buildDocResponsePayload(finalDoc, event, client, { viewerRole: 'staff', accessCode }),
           card: projectedCard,
+          ...(emailDelivery ? { emailDelivery } : {}),
           ...(updatedIssue ? { issue: updatedIssue } : {}),
         });
       }
@@ -728,6 +763,52 @@ export async function handleSponsorDocRoutes(
         lastEditedAt: doc.lastEditedAt,
         lastEditedBy: doc.lastEditedBy,
         markdown,
+      });
+    }
+
+    // POST /api/sponsor-docs/:id/send-email
+    const sendEmailMatch = suffix.match(/^\/([^/]+)\/send-email\/?$/);
+    if (sendEmailMatch) {
+      if (m !== 'POST') return json(405, { error: 'Method not allowed' });
+      const actor = await resolveInteractiveActor(client, event, 'work-write');
+      if (!actor.ok) return actor.response;
+      const body = parseBody(event.body);
+      if (!body) return json(400, { error: 'Invalid JSON body' });
+      const docId = decodeURIComponent(sendEmailMatch[1]);
+      const loaded = await getSponsorDocWithAuthMaterial(client, docId);
+      if (!loaded) {
+        return json(404, { error: 'Document not found', code: 'sponsor_doc_not_found' });
+      }
+      const accessCode = decryptSponsorDocAccessCode(docId, loaded.accessCodeCiphertext);
+      if (!accessCode) {
+        return json(422, { error: 'Access code is unavailable; rotate the code first.', code: 'missing_access_code' });
+      }
+      const base = sponsorDocPortalBaseUrl(event);
+      const docUrl = `${base}${sponsorDocPathForTemplate(loaded.doc.template)}/${encodeURIComponent(loaded.doc.id)}`;
+      const shareUrl = `${docUrl}?code=${encodeURIComponent(accessCode)}`;
+      const explicitRecipient = typeof body.recipientEmail === 'string' && body.recipientEmail.trim()
+        ? body.recipientEmail.trim()
+        : typeof body.to === 'string' && body.to.trim()
+          ? body.to.trim()
+          : null;
+      const emailDelivery = await deliverSponsorDocEmail(client, {
+        template: loaded.doc.template,
+        sponsorName: loaded.doc.sponsorName,
+        publicationDate: loaded.doc.publicationDate,
+        shareUrl,
+        accessCode,
+        recipientEmail: explicitRecipient,
+        recipientName: typeof body.recipientName === 'string' ? body.recipientName : null,
+        cc: body.cc as string[] | string | null | undefined,
+        connectionId: typeof body.connectionId === 'string' ? body.connectionId : undefined,
+      });
+      const updatedDoc = (await setSponsorDocEmailDelivery(client, docId, emailDelivery)) || loaded.doc;
+      return json(200, {
+        doc: await buildDocResponsePayload(updatedDoc, event, client, {
+          viewerRole: 'staff',
+          accessCode,
+        }),
+        emailDelivery,
       });
     }
 

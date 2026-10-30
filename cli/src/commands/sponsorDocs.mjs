@@ -30,7 +30,8 @@ export const newsletterDocHelp = `dataops newsletter doc - portal-hosted newslet
 
 Usage
   dataops newsletter doc create <issue-id|card-id> [--slot primary|secondary] [--standalone]
-      [--from DOC-ID] [--title T] [--sponsor NAME] [--date YYYY-MM-DD] [--link-type NAME] [--email]
+      [--from DOC-ID] [--title T] [--sponsor NAME] [--date YYYY-MM-DD] [--link-type NAME]
+      [--recipient EMAIL] [--recipient-name NAME] [--email]
   dataops newsletter doc show <doc-id>
   dataops newsletter doc export <doc-id> [--format md|docx|txt] [--output PATH]
   dataops newsletter doc delete <doc-id> --yes
@@ -39,6 +40,7 @@ Usage
   dataops newsletter doc submit <doc-id>
   dataops newsletter doc reopen <doc-id>
   dataops newsletter doc email <doc-id>
+  dataops newsletter doc send-email <doc-id> [--recipient EMAIL] [--recipient-name NAME]
   dataops newsletter doc rotate-code <doc-id>
 `;
 
@@ -255,6 +257,16 @@ export async function create(args, io) {
   const linkType = optionalString(args, "linkType");
   if (linkType !== undefined) body.linkType = linkType;
 
+  const recipientEmail = optionalString(args, "recipient") ?? optionalString(args, "recipientEmail");
+  if (recipientEmail !== undefined) body.recipientEmail = recipientEmail;
+
+  const recipientName = optionalString(args, "recipientName");
+  if (recipientName !== undefined) body.recipientName = recipientName;
+
+  if (args.autoSendEmail === false || args.autoSendEmail === "false" || args.noAutoSend === true) {
+    body.autoSendEmail = false;
+  }
+
   const content = parseFieldFlags(args.field);
   if (content !== undefined) body.content = content;
 
@@ -275,6 +287,14 @@ export async function create(args, io) {
   io.print(`Card link (${doc.linkType}): ${doc.docUrl}`);
   io.print(`Shareable link (with code): ${doc.shareUrl}`);
   io.print(`Access code: ${doc.accessCode}`);
+  const delivery = result.emailDelivery || doc.emailDelivery;
+  if (delivery) {
+    if (delivery.state === "sent") {
+      io.print(`Email delivery: sent from ${delivery.from} to ${delivery.to} (Gmail message ${delivery.messageId || "ok"}).`);
+    } else if (delivery.state === "deferred") {
+      io.print(`Email delivery (${delivery.from}): deferred (${delivery.reason || "deferred"}) — ${delivery.message || ""}`);
+    }
+  }
   if (wantsEmail && doc.emailDraft) {
     io.print("");
     io.print(`Subject: ${doc.emailDraft.subject}`);
@@ -443,6 +463,29 @@ export async function email(args, io) {
   return { id: doc.id, shareUrl: doc.shareUrl, accessCode: doc.accessCode, emailDraft: doc.emailDraft };
 }
 
+export async function sendEmail(args, io) {
+  const prefix = commandPrefix(args);
+  const id = extractDocId(positional(args, 0, `${prefix} send-email <doc-id> [--recipient EMAIL] [--recipient-name NAME]`));
+  const api = apiFor(args);
+  const body = {};
+  const recipientEmail = optionalString(args, "recipient") ?? optionalString(args, "recipientEmail");
+  if (recipientEmail !== undefined) body.recipientEmail = recipientEmail;
+  const recipientName = optionalString(args, "recipientName");
+  if (recipientName !== undefined) body.recipientName = recipientName;
+  const result = await api.post(`/api/sponsor-docs/${enc(id)}/send-email`, body);
+  if (result?.doc) {
+    result.doc = normalizeDocUrls(result.doc, api.base);
+  }
+  if (args.json) return result;
+  const delivery = result.emailDelivery || result.doc?.emailDelivery;
+  if (delivery?.state === "sent") {
+    io.print(`Sent sponsor form email from ${delivery.from} to ${delivery.to} (Gmail message ${delivery.messageId || "ok"}).`);
+  } else {
+    io.print(`Email delivery (${delivery?.from || "orin@datatalks.club"}): ${delivery?.state || "unknown"} (${delivery?.reason || "unknown"}) — ${delivery?.message || ""}`);
+  }
+  return result;
+}
+
 export async function rotateCode(args, io) {
   const prefix = commandPrefix(args);
   const id = extractDocId(positional(args, 0, `${prefix} rotate-code <doc-id>`));
@@ -505,6 +548,7 @@ export const commands = {
   reopen,
   export: exportMarkdown,
   email,
+  "send-email": sendEmail,
   "rotate-code": rotateCode,
   templates,
   delete: remove,

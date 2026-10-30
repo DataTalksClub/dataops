@@ -31,6 +31,7 @@ export interface SponsorDocFieldDefinition {
   maxItems?: number;
   bulletMarker?: string;
   allowVisualUpload?: boolean;
+  suggestNewsletterUtm?: boolean;
   /** For type=select/radio: static choices. Podcast guest forms also get free-slot options hydrated at read time. */
   options?: SponsorDocFieldOption[];
 }
@@ -141,13 +142,17 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             key: 'ctaText',
             label: 'CTA Button Text',
             type: 'text',
+            required: true,
             placeholder: 'e.g. Start Building For Free / Download the Guide',
           },
           {
             key: 'ctaUrl',
             label: 'CTA Button Link',
             type: 'text',
-            placeholder: 'https://... (include UTM parameters if needed)',
+            required: true,
+            format: 'url',
+            suggestNewsletterUtm: true,
+            placeholder: 'https://... (e.g. https://example.com?utm_source=datatalksclub-newsletter)',
           },
         ],
       },
@@ -244,13 +249,17 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             key: 'ctaText',
             label: 'CTA Button / Link Text',
             type: 'text',
+            required: true,
             placeholder: 'e.g. Download now',
           },
           {
             key: 'ctaUrl',
             label: 'CTA Button Link',
             type: 'text',
-            placeholder: 'https://... (include UTM parameters if needed)',
+            required: true,
+            format: 'url',
+            suggestNewsletterUtm: true,
+            placeholder: 'https://... (e.g. https://example.com?utm_source=datatalksclub-newsletter)',
           },
         ],
       },
@@ -350,6 +359,8 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             key: 'earlyCtaUrl',
             label: 'CTA Button — Early Placement (Link)',
             type: 'text',
+            format: 'url',
+            suggestNewsletterUtm: true,
             placeholder: 'https://...',
           },
           {
@@ -379,13 +390,17 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             key: 'closingCtaText',
             label: 'CTA Button — Closing Placement (Text)',
             type: 'text',
+            required: true,
             placeholder: 'e.g. SIGN ME UP',
           },
           {
             key: 'closingCtaUrl',
             label: 'CTA Button — Closing Placement (Link)',
             type: 'text',
-            placeholder: 'https://...',
+            required: true,
+            format: 'url',
+            suggestNewsletterUtm: true,
+            placeholder: 'https://... (e.g. https://example.com?utm_source=datatalksclub-newsletter)',
           },
         ],
       },
@@ -1476,12 +1491,19 @@ export function renderSponsorEmailDraft(options: {
   publicationDate?: string | null;
   shareUrl: string;
   accessCode: string;
+  recipientName?: string | null;
 }): SponsorEmailDraft {
+  const recipientGreeting = options.recipientName?.trim()
+    ? `Hi ${options.recipientName.trim()},`
+    : 'Hi,';
+  const namedGreeting = options.recipientName?.trim()
+    ? `Hi ${options.recipientName.trim()},`
+    : 'Hi <NAME>,';
   if (options.template === 'webinar') {
     return {
       subject: 'Your DataTalks.Club webinar speaker materials',
       body: [
-        'Hi,', '',
+        recipientGreeting, '',
         'Please share your talk materials for your DataTalks.Club webinar using this form:', '',
         options.shareUrl,
         `(Access code if prompted: ${options.accessCode})`, '',
@@ -1495,7 +1517,7 @@ export function renderSponsorEmailDraft(options: {
     return {
       subject: 'Your DataTalks.Club workshop materials',
       body: [
-        'Hi,', '',
+        recipientGreeting, '',
         'Please share the materials for your DataTalks.Club workshop using this form:', '',
         options.shareUrl,
         `(Access code if prompted: ${options.accessCode})`, '',
@@ -1528,7 +1550,7 @@ export function renderSponsorEmailDraft(options: {
 
   if (options.template === 'podcast') {
     const body = [
-      'Hi <NAME>,',
+      namedGreeting,
       '',
       `Confirming your DataTalks.Club podcast episode scheduled for ${pubDate}.`,
       '',
@@ -1567,7 +1589,7 @@ export function renderSponsorEmailDraft(options: {
   }
 
   const body = [
-    'Hi <NAME>,',
+    namedGreeting,
     '',
     `Confirming ${company}'s sponsored slot in the DataTalks.Club newsletter scheduled for ${pubDate}.`,
     '',

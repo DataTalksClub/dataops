@@ -9,6 +9,7 @@ import { createPodcastEpisode } from '../src/db/podcastEpisodes';
 import { createUser } from '../src/db/users';
 import { createSession } from '../src/db/sessions';
 import { getSponsorDoc, updateSponsorDoc } from '../src/db/sponsorDocs';
+import { setSponsorDocEmailDepsForTests } from '../src/sponsorDocs/emailDelivery';
 import { templateLink } from './helpers/cardTemplate';
 
 describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
@@ -479,6 +480,219 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.ok(fieldKeys.includes('closing'));
     const bulletsDef = placementFields.find((f: { key: string }) => f.key === 'bullets');
     assert.strictEqual(bulletsDef.type, 'bullets');
+    const closingCtaTextDef = placementFields.find((f: { key: string }) => f.key === 'closingCtaText');
+    const closingCtaUrlDef = placementFields.find((f: { key: string }) => f.key === 'closingCtaUrl');
+    assert.strictEqual(closingCtaTextDef.required, true);
+    assert.strictEqual(closingCtaUrlDef.required, true);
+    assert.strictEqual(closingCtaUrlDef.format, 'url');
+    assert.strictEqual(closingCtaUrlDef.suggestNewsletterUtm, true);
+  });
+
+  it('requires CTA button label and URL on newsletter templates when submitting and never rewrites non-UTM URLs silently', async () => {
+    const card = await createCard(client, {
+      ...templateLink(),
+      title: '[Newsletter] (09 NOV 2026) #311 - Modal',
+      anchorDate: '2026-11-09',
+      sponsor: 'Modal',
+    });
+
+    const createRes = await staffReq('POST', '/api/sponsor-docs', {
+      cardId: card.id,
+      template: 'newsletter-main',
+    });
+    assert.strictEqual(createRes.statusCode, 201, createRes.body);
+    const { doc } = JSON.parse(createRes.body);
+    const placementFields = doc.templateDefinition.sections[0].fields;
+    const ctaTextDef = placementFields.find((f: { key: string }) => f.key === 'ctaText');
+    const ctaUrlDef = placementFields.find((f: { key: string }) => f.key === 'ctaUrl');
+    assert.strictEqual(ctaTextDef.required, true);
+    assert.strictEqual(ctaUrlDef.required, true);
+    assert.strictEqual(ctaUrlDef.format, 'url');
+    assert.strictEqual(ctaUrlDef.suggestNewsletterUtm, true);
+
+    // Anonymous asset route serves sponsor-doc-email-card.js
+    const assetRes = await anonReq('GET', '/src/surfaces/operations/sponsor-doc-email-card.js');
+    assert.strictEqual(assetRes.statusCode, 200);
+
+    // Saving draft without CTA fields succeeds
+    const draftRes = await anonReq('PUT', `/api/sponsor-docs/${doc.id}`, {
+      codeHeader: doc.accessCode,
+      body: {
+        content: {
+          title: 'Serverless GPU inference',
+          intro: 'Run AI workloads in seconds.',
+          bullets: '- Fast cold starts\n- Per-second billing\n- Python SDK',
+          closing: 'Start building today.',
+          ctaText: '',
+          ctaUrl: '',
+        },
+      },
+    });
+    assert.strictEqual(draftRes.statusCode, 200, draftRes.body);
+
+    // Submitting without CTA label and URL fails with 422
+    const missingCtaSubmit = await anonReq('PUT', `/api/sponsor-docs/${doc.id}`, {
+      codeHeader: doc.accessCode,
+      body: { status: 'submitted' },
+    });
+    assert.strictEqual(missingCtaSubmit.statusCode, 422, missingCtaSubmit.body);
+    const missingFields = JSON.parse(missingCtaSubmit.body).fields;
+    assert.ok(missingFields.ctaText);
+    assert.ok(missingFields.ctaUrl);
+
+    // Submitting with non-http(s) CTA URL fails with 422
+    const invalidUrlSubmit = await anonReq('PUT', `/api/sponsor-docs/${doc.id}`, {
+      codeHeader: doc.accessCode,
+      body: {
+        content: {
+          ctaText: 'Try Modal Free',
+          ctaUrl: 'modal.com/signup',
+        },
+        status: 'submitted',
+      },
+    });
+    assert.strictEqual(invalidUrlSubmit.statusCode, 422, invalidUrlSubmit.body);
+    assert.ok(JSON.parse(invalidUrlSubmit.body).fields.ctaUrl);
+
+    // Submitting with valid CTA label and URL (without UTM) succeeds and preserves exact URL
+    const validSubmit = await anonReq('PUT', `/api/sponsor-docs/${doc.id}`, {
+      codeHeader: doc.accessCode,
+      body: {
+        content: {
+          ctaText: 'Try Modal Free',
+          ctaUrl: 'https://modal.com/signup',
+        },
+        status: 'submitted',
+      },
+    });
+    assert.strictEqual(validSubmit.statusCode, 200, validSubmit.body);
+    const submittedDoc = JSON.parse(validSubmit.body).doc;
+    assert.strictEqual(submittedDoc.status, 'submitted');
+    assert.strictEqual(submittedDoc.content.ctaText, 'Try Modal Free');
+    assert.strictEqual(
+      submittedDoc.content.ctaUrl,
+      'https://modal.com/signup',
+      'never rewrites CTA URL silently when UTM is omitted',
+    );
+  });
+
+  it('automatically sends the sponsor form email from orin@datatalks.club via Dapier on create and send-email', async () => {
+    const card = await createCard(client, {
+      ...templateLink(),
+      title: '[Newsletter] (16 NOV 2026) #312 - ClickHouse',
+      anchorDate: '2026-11-16',
+      sponsor: 'ClickHouse',
+    });
+
+    const sentMessages: Array<{ url: string; rawDecoded: string; auth: string }> = [];
+
+    try {
+      setSponsorDocEmailDepsForTests({
+        brokerUrl: 'https://dapier.example.test',
+        credential: 'dp_test_orin_token',
+        fetchImpl: (async (input: string | URL | Request, init?: RequestInit) => {
+          const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+          if (url === 'https://dapier.example.test/api/agent/token') {
+            return new Response(
+              JSON.stringify({
+                access_token: 'ya29.orin-gmail-access-token',
+                expires_in: 3600,
+                token_type: 'Bearer',
+                connection_id: 'google-calendar-orin',
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          if (url.includes('/gmail/v1/users/me/profile') || url.includes('/oauth2/v')) {
+            return new Response(
+              JSON.stringify({ emailAddress: 'orin@datatalks.club', email: 'orin@datatalks.club', verified_email: true }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          if (url === 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send') {
+            const parsedBody = JSON.parse(String(init?.body || '{}'));
+            const rawDecoded = Buffer.from(String(parsedBody.raw || ''), 'base64url').toString('utf8');
+            const headers = (init?.headers || {}) as Record<string, string>;
+            sentMessages.push({
+              url,
+              rawDecoded,
+              auth: headers.Authorization || headers.authorization || '',
+            });
+            return new Response(
+              JSON.stringify({ id: 'gmail-msg-orin-1', threadId: 'gmail-thread-orin-1' }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          throw new Error(`Unexpected fetch URL in test: ${url}`);
+        }) as typeof globalThis.fetch,
+      });
+
+      const createRes = await staffReq('POST', '/api/sponsor-docs', {
+        cardId: card.id,
+        template: 'newsletter-main',
+        recipientEmail: 'sponsors@clickhouse.example.com',
+        recipientName: 'Alex',
+      });
+      assert.strictEqual(createRes.statusCode, 201, createRes.body);
+      const created = JSON.parse(createRes.body);
+      assert.strictEqual(created.emailDelivery?.state, 'sent', JSON.stringify(created.emailDelivery));
+      assert.strictEqual(created.emailDelivery?.from, 'orin@datatalks.club');
+      assert.strictEqual(created.emailDelivery?.to, 'sponsors@clickhouse.example.com');
+      assert.strictEqual(created.emailDelivery?.messageId, 'gmail-msg-orin-1');
+      assert.strictEqual(created.doc.emailDelivery?.state, 'sent');
+
+      assert.strictEqual(sentMessages.length, 1);
+      assert.strictEqual(sentMessages[0].auth, 'Bearer ya29.orin-gmail-access-token');
+      assert.match(sentMessages[0].rawDecoded, /From: Orin <orin@datatalks\.club>/);
+      assert.match(sentMessages[0].rawDecoded, /To: sponsors@clickhouse\.example\.com/);
+      assert.ok(sentMessages[0].rawDecoded.includes(created.doc.shareUrl));
+      assert.ok(sentMessages[0].rawDecoded.includes(created.doc.accessCode));
+
+      // Also verify POST /api/sponsor-docs/:id/send-email when gmail.send scope is missing (403)
+      setSponsorDocEmailDepsForTests({
+        brokerUrl: 'https://dapier.example.test',
+        credential: 'dp_test_orin_token',
+        fetchImpl: (async (input: string | URL | Request) => {
+          const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+          if (url === 'https://dapier.example.test/api/agent/token') {
+            return new Response(
+              JSON.stringify({ access_token: 'ya29.orin-no-gmail-scope', expires_in: 3600 }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          if (url.includes('/gmail/v1/users/me/profile') || url.includes('/oauth2/v')) {
+            return new Response(
+              JSON.stringify({ emailAddress: 'orin@datatalks.club', email: 'orin@datatalks.club' }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          if (url === 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send') {
+            return new Response(
+              JSON.stringify({
+                error: {
+                  code: 403,
+                  message: 'Request had insufficient authentication scopes.',
+                  status: 'PERMISSION_DENIED',
+                },
+              }),
+              { status: 403, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          throw new Error(`Unexpected fetch URL: ${url}`);
+        }) as typeof globalThis.fetch,
+      });
+
+      const retryRes = await staffReq('POST', `/api/sponsor-docs/${created.doc.id}/send-email`, {
+        recipientEmail: 'sponsors@clickhouse.example.com',
+      });
+      assert.strictEqual(retryRes.statusCode, 200, retryRes.body);
+      const retried = JSON.parse(retryRes.body);
+      assert.strictEqual(retried.emailDelivery?.state, 'deferred');
+      assert.strictEqual(retried.emailDelivery?.reason, 'insufficient_gmail_scope');
+      assert.match(retried.emailDelivery?.message || '', /gmail\.send/);
+    } finally {
+      setSponsorDocEmailDepsForTests({});
+    }
   });
   it('links webinar materials, saves speaker drafts, validates submission and exposes the saved export on the card', async () => {
     const card = await createCard(client, { ...templateLink(), title: '[Webinar] Synthetic talk', people: ['Test Speaker'] });
