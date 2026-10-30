@@ -1,0 +1,97 @@
+name: Sandbox Backup Evidence (read-only)
+
+# Dispatch-only job that records independent, read-only live evidence for the
+# knowledge-backup stale alarm and the deployed knowledge worker: alarm state
+# (whose StateReason names the recent Success datapoints), the deployed
+# function configuration, and best-effort metric/snapshot reads. It runs no
+# writes: every command is a describe/get/list, and the two reads the deploy
+# role is not scoped for are allowed to fail without failing the job.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sandbox-backup-evidence
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-west-1
+  AWS_DEFAULT_REGION: eu-west-1
+  AWS_ROLE_ARN: arn:aws:iam::817685572750:role/dataops-github-actions-deploy
+
+jobs:
+  evidence:
+    name: Read alarm state and worker config
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.0
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-session-name: sandbox-backup-evidence
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Knowledge backup stale alarm state
+        run: |
+          aws cloudwatch describe-alarms --alarm-names dataops-v1-knowledge-backup-stale \
+            --query 'MetricAlarms[0].{
+              AlarmName: AlarmName,
+              StateValue: StateValue,
+              StateUpdatedTime: StateUpdatedTime,
+              StateReason: StateReason,
+              MetricName: MetricName,
+              Threshold: Threshold,
+              Period: Period,
+              EvaluationPeriods: EvaluationPeriods,
+              DatapointsToAlarm: DatapointsToAlarm,
+              TreatMissingData: TreatMissingData
+            }' \
+            --output json --region "$AWS_REGION"
+
+      - name: Knowledge worker function configuration
+        run: |
+          function_name="$(aws cloudformation describe-stack-resource \
+            --stack-name dataops-v1 \
+            --logical-resource-id KnowledgeWorkerFunction \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text --region "$AWS_REGION")"
+          echo "Function: $function_name"
+          aws lambda get-function-configuration --function-name "$function_name" \
+            --query '{
+              FunctionName: FunctionName,
+              MemorySize: MemorySize,
+              LastModified: LastModified,
+              LastUpdateStatus: LastUpdateStatus,
+              Version: Version,
+              CodeSha256: CodeSha256,
+              Runtime: Runtime
+            }' \
+            --output json --region "$AWS_REGION"
+
+      - name: Success metric datapoints (best effort)
+        continue-on-error: true
+        run: |
+          start="$(date -u -d '8 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+          aws cloudwatch get-metric-statistics \
+            --namespace DataOps/Knowledge \
+            --metric-name Success \
+            --dimensions Name=Job,Value=knowledge-backup \
+            --start-time "$start" \
+            --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --period 86400 \
+            --statistics Sum \
+            --output json --region "$AWS_REGION" || echo "metric read not permitted for this role"
+
+      - name: Latest snapshot objects (best effort)
+        continue-on-error: true
+        run: |
+          aws s3api list-objects-v2 \
+            --bucket dataops-knowledge-protected-817685572750-eu-west-1 \
+            --prefix snapshots/ \
+            --query 'sort_by(Contents, &LastModified)[-3:].{Key: Key, Size: Size, LastModified: LastModified}' \
+            --output json --region "$AWS_REGION" || echo "snapshot listing not permitted for this role"
