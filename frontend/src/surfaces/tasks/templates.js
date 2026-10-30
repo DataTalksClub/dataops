@@ -404,6 +404,12 @@ export function createTemplatesSurface(context) {
       selected.sourceRevision ? String(selected.sourceRevision).slice(0, 12) : "Unavailable",
       selected.sourceRevision ? "runtime-template-mono" : "",
     );
+    appendDefinition(
+      definition,
+      "Git blob",
+      selected.sourceBlobSha ? String(selected.sourceBlobSha).slice(0, 12) : "Unavailable",
+      selected.sourceBlobSha ? "runtime-template-mono" : "",
+    );
     definitionSection.append(definitionSummary, definition, provenanceNote);
 
     const editorSection = renderTemplateEditor(selected);
@@ -414,8 +420,8 @@ export function createTemplatesSurface(context) {
   }
 
   const TEMPLATE_EDITOR_SERVER_FIELDS = new Set([
-    "id", "version", "revision", "origin", "pinned", "base", "baseSourceRevision",
-    "sourcePath", "sourceRevision", "createdAt", "updatedAt", "PK", "SK",
+    "id", "version", "revision", "origin", "pinned", "base", "baseSourceRevision", "baseSourceBlobSha",
+    "sourcePath", "sourceRevision", "sourceBlobSha", "createdAt", "updatedAt", "PK", "SK",
   ]);
 
   function definitionPayloadFromTemplate(template) {

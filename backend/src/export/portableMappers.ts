@@ -158,6 +158,8 @@ export function mapTemplate(item: Record<string, unknown>): JsonRecord {
     trigger_enabled: optionalBoolean(item.triggerEnabled),
     source_path: optionalString(item.sourcePath),
     source_revision: optionalString(item.sourceRevision),
+    source_blob_sha: optionalString(item.sourceBlobSha),
+    base_source_blob_sha: optionalString(item.baseSourceBlobSha),
     version: optionalNumber(item.version),
     created_at: optionalString(item.createdAt),
     updated_at: optionalString(item.updatedAt),

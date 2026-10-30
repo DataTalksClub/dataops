@@ -2322,7 +2322,7 @@ describe("Tasks surface boundary", () => {
     assert.equal(writes.length, 1);
     assert.equal(writes[0].expectedVersion, 2);
     assert.equal(writes[0].revision, "rev-2");
-    for (const owned of ["id", "version", "revision", "origin", "pinned", "base", "sourcePath", "sourceRevision"]) {
+    for (const owned of ["id", "version", "revision", "origin", "pinned", "base", "sourcePath", "sourceRevision", "sourceBlobSha", "baseSourceRevision", "baseSourceBlobSha"]) {
       assert.equal(writes[0].definition[owned], undefined, `${owned} is server-owned`);
     }
     // The save confirms in place: still the template detail, showing the pin.

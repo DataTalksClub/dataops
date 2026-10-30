@@ -642,9 +642,16 @@ export interface Template {
   triggerLeadDays?: number;
   triggerEnabled?: boolean;
   taskDefinitions?: TaskDefinition[];
-  /** Private-repository path and Git blob SHA for this runtime projection. */
+  /**
+   * Private-repository path, SHA256 content hash, and Git blob SHA1 for this
+   * runtime projection. `sourceRevision` is the content hash the knowledge
+   * store records (`sha256sum <file>`); it is never the Git blob. `sourceBlobSha`
+   * is the Git blob (`git hash-object <file>`, `git rev-parse HEAD:<path>`) so
+   * Orin can verify sync against Git without a Developer.
+   */
   sourcePath?: string;
   sourceRevision?: string;
+  sourceBlobSha?: string;
   /**
    * How the effective definition arrived: Git-seeded (`git`) or created
    * through the Templates API (`custom`). Pre-feature rows lack it until
@@ -664,6 +671,8 @@ export interface Template {
   base?: Record<string, unknown>;
   /** `base.sourceRevision` convenience for pin-drift comparison. */
   baseSourceRevision?: string | null;
+  /** `base.sourceBlobSha` convenience for pin-drift comparison. */
+  baseSourceBlobSha?: string | null;
   /** Required monotonic optimistic-concurrency token. */
   version: number;
   createdAt: string;

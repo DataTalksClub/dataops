@@ -362,11 +362,10 @@ async function rawTemplate(client: DynamoDBDocumentClient, id: string): Promise<
 
 /**
  * Create a new template. Generates a UUID, sets createdAt/updatedAt.
- *
  * Test and local-dev fixtures are always written in canonical shape, so
  * production routes (which require `revision` + `expectedVersion`) work on
  * them exactly as on seeded rows: `origin` defaults from Git provenance,
- * `pinned` defaults to false, and Git rows carry `base`/`baseSourceRevision`.
+ * `pinned` defaults to false, and Git rows carry `base`/`baseSourceRevision`/`baseSourceBlobSha`.
  */
 async function createTemplate(client: DynamoDBDocumentClient, data: Record<string, unknown>): Promise<Template> {
   const id = crypto.randomUUID();
@@ -390,6 +389,8 @@ async function createTemplate(client: DynamoDBDocumentClient, data: Record<strin
         base: { ...definitionFieldsOf(data) },
         baseSourceRevision: (data.baseSourceRevision as string | undefined)
           ?? (data.sourceRevision as string | undefined) ?? null,
+        baseSourceBlobSha: (data.baseSourceBlobSha as string | undefined)
+          ?? (data.sourceBlobSha as string | undefined) ?? null,
       }
       : {}),
     version: 1,
@@ -509,11 +510,17 @@ function effectiveItemFromDefinition(
   if (item.sourceRevision === undefined && current.sourceRevision !== undefined) {
     item.sourceRevision = current.sourceRevision;
   }
+  if (item.sourceBlobSha === undefined && current.sourceBlobSha !== undefined) {
+    item.sourceBlobSha = current.sourceBlobSha;
+  }
   // An operator pin never discards the Git base it shadows; the seed sets
   // both fields explicitly when they change.
   if (item.base === undefined && current.base !== undefined) item.base = current.base;
   if (item.baseSourceRevision === undefined && current.baseSourceRevision !== undefined) {
     item.baseSourceRevision = current.baseSourceRevision;
+  }
+  if (item.baseSourceBlobSha === undefined && current.baseSourceBlobSha !== undefined) {
+    item.baseSourceBlobSha = current.baseSourceBlobSha;
   }
   if (current.cardCreateSeq !== undefined) item.cardCreateSeq = current.cardCreateSeq;
   return item;
@@ -636,7 +643,7 @@ async function createCustomTemplate(
 /**
  * Pin a whole validated effective definition over a template. Identity
  * (`id`, `type`), seed authority (`origin`, `base`, `sourcePath`,
- * `sourceRevision`) and history survive; everything else is the operator's
+ * `sourceRevision`, `sourceBlobSha`) and history survive; everything else is the operator's
  * definition. Single conditional write: concurrent seeds or editors lose
  * with a 409, never interleave.
  */
@@ -693,6 +700,7 @@ async function replaceSeedTemplate(
     pinned: false,
     base: { ...definitionFieldsOf(fields) },
     baseSourceRevision: (fields.sourceRevision as string | undefined) ?? null,
+    baseSourceBlobSha: (fields.sourceBlobSha as string | undefined) ?? null,
   });
   await conditionalPutTemplate(client, item, expectedVersion);
   return cleanItem(item) as Template;

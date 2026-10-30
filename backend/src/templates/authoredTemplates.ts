@@ -34,6 +34,7 @@ export interface AuthoredTemplateDefinition extends Dict {
   name: string;
   sourcePath: string;
   sourceRevision: string;
+  sourceBlobSha: string;
 }
 
 export interface TemplateReconciliationResult {
@@ -75,6 +76,7 @@ const AUTHORITATIVE_FIELDS = [
   'taskDefinitions',
   'sourcePath',
   'sourceRevision',
+  'sourceBlobSha',
 ] as const;
 
 function isDict(value: unknown): value is Dict {
@@ -161,6 +163,7 @@ export function parseAuthoredTemplateFiles(
       name: String(expanded.name),
       sourcePath: file.path,
       sourceRevision: file.revision,
+      sourceBlobSha: gitBlobSha(file.content),
     } as AuthoredTemplateDefinition);
   }
   return definitions.sort((left, right) => left.type.localeCompare(right.type));
@@ -168,6 +171,18 @@ export function parseAuthoredTemplateFiles(
 
 function localRevision(content: string): string {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
+}
+
+/**
+ * Git blob SHA1 for a file's bytes, so `templates show` exposes the same
+ * identifier `git rev-parse HEAD:<path>` and `git hash-object <path>` report.
+ * The content hash (`sourceRevision`) is SHA256 and never equals the blob;
+ * the blob exists so Orin can verify sync against Git without a Developer.
+ */
+export function gitBlobSha(content: string | Buffer): string {
+  const bytes = typeof content === 'string' ? Buffer.from(content, 'utf8') : content;
+  const header = Buffer.from(`blob ${bytes.length}\0`, 'utf8');
+  return createHash('sha1').update(Buffer.concat([header, bytes])).digest('hex');
 }
 
 /** Load authored templates from a private-repository checkout. */
@@ -339,6 +354,7 @@ export async function reconcileAuthoredTemplates(
           pinned: false,
           base,
           baseSourceRevision: (fields.sourceRevision as string | undefined) ?? null,
+          baseSourceBlobSha: (fields.sourceBlobSha as string | undefined) ?? null,
         }, definition.type);
       } catch (error) {
         if (error instanceof TemplateDuplicateTypeError || error instanceof TemplateVersionConflictError) {
@@ -376,6 +392,7 @@ export async function reconcileAuthoredTemplates(
       pinned: true,
       base,
       baseSourceRevision: (fields.sourceRevision as string | undefined) ?? null,
+      baseSourceBlobSha: (fields.sourceBlobSha as string | undefined) ?? null,
     }, current.version);
     result.updated += 1;
   }

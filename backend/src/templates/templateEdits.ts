@@ -50,6 +50,7 @@ export const DEFINITION_FIELDS = [
   // rejected before normalization; the seed restores them on every write.
   'sourcePath',
   'sourceRevision',
+  'sourceBlobSha',
 ] as const;
 
 /** Server-owned fields a client definition must never carry. */
@@ -61,8 +62,10 @@ export const SERVER_OWNED_TEMPLATE_FIELDS = [
   'pinned',
   'base',
   'baseSourceRevision',
+  'baseSourceBlobSha',
   'sourcePath',
   'sourceRevision',
+  'sourceBlobSha',
   'createdAt',
   'updatedAt',
   'PK',

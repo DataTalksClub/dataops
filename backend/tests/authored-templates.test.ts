@@ -18,6 +18,7 @@ import {
   loadAuthoredTemplatesFromKnowledge,
   parseAuthoredTemplateFiles,
   reconcileAuthoredTemplates,
+  gitBlobSha,
 } from '../src/templates/authoredTemplates';
 import { templateToYaml } from '../src/templates/yamlTemplates';
 import { syntheticAuthoredTemplate, syntheticAuthoredFiles, syntheticKnowledgeStore } from './helpers/authoredTemplates';
@@ -61,7 +62,24 @@ describe('Git-authored template projection', () => {
     assert.strictEqual(templates.length, 1);
     assert.strictEqual(templates[0].sourcePath, 'workflow-templates/synthetic.yaml');
     assert.match(templates[0].sourceRevision, /^sha256:[a-f0-9]{64}$/);
+    assert.match(templates[0].sourceBlobSha, /^[a-f0-9]{40}$/);
+    assert.strictEqual(templates[0].sourceBlobSha, gitBlobSha(authored('synthetic')));
     assert.strictEqual((templates[0].taskDefinitions as any[])[0].refId, 'first');
+  });
+
+  it('exposes the Git blob SHA1 alongside the SHA256 content hash (AC6)', () => {
+    // Probe from intake 52291ad1: live tax-report sourceRevision dad2... is the
+    // sha256 of knowledge main 33776d9, blob ad64be8... is `git hash-object`.
+    const probeContent = 'type: tax-report\nname: Tax report\ntrigger:\n  mode: manual\ntasks:\n  - id: first\n    name: First\n    schedule:\n      offset_days: 0\n';
+    const definitions = parseAuthoredTemplateFiles([{
+      path: 'workflow-templates/tax-report.yaml',
+      revision: 'dad2d88302bc0b4ab0cada1e3dcf622ababd1c00a10580401e4eb5f9b3ecf1b2',
+      content: probeContent,
+    }]);
+    assert.strictEqual(definitions.length, 1);
+    assert.strictEqual(definitions[0].sourceRevision, 'dad2d88302bc0b4ab0cada1e3dcf622ababd1c00a10580401e4eb5f9b3ecf1b2');
+    assert.match(definitions[0].sourceBlobSha, /^[a-f0-9]{40}$/);
+    assert.strictEqual(definitions[0].sourceBlobSha, gitBlobSha(probeContent));
   });
 
   it('rejects malformed, mismatched, duplicate, and lossy authored files safely', () => {
@@ -158,6 +176,8 @@ describe('Git-authored template projection', () => {
     assert.strictEqual(original.origin, 'git');
     assert.strictEqual(original.pinned, false);
     assert.ok(typeof original.revision === 'string');
+    assert.match(original.sourceBlobSha as string, /^[a-f0-9]{40}$/);
+    assert.strictEqual(original.baseSourceBlobSha, original.sourceBlobSha);
 
     const changedDocument = {
       ...document, name: 'Alpha changed in Git', owner_role: 'synthetic-new-owner',
