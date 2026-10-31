@@ -1,0 +1,30 @@
+{
+  "id": "credit-note-refund-adjusted-total",
+  "source": {
+    "artifact": "email-document-03206ba6ba41e61140dfbbe274d7668f",
+    "invoiceDraft": "1c7b85ad",
+    "intake": "bccc0df8",
+    "note": "Synthetic twin of a vendor refund (Stripe-hosted credit note) forwarded with the email subject 'refund'. Real values are in the private gold set."
+  },
+  "emailSubject": "refund",
+  "text": "Page 1 of 1 \nRefund \nInvoice number   A1B2C3D4 \u0000 0059 \nReceipt number   3082 \u0000 9498\nDate issued   October 30, 2026 \nExample Assist, LLC \nExample Assist, LLC \nUnited States \n  1 555 \u0000 010 \u0000 0000\nbilling@example.com \nBill to \nExample Customer\ncustomer@example.com \n$646.63 refunded on October 30, 2026 \nDescription   Qty   Unit price   Amount \nExample Assist Part-Time Virtual Assistant - 20 Hours a\nWeek\nOct 22 \u0000 Nov 22, 2026\n1   $858.00   $858.00 \nSubtotal   $858.00\nTotal   $858.00 \nAmount paid   $858.00 \n \u0000 A1B2C3D4 \u0000 0059 \u0000 CN \u0000 01 \u0000 Unused time on Example Assist Part-Time Virtual Assistant after 30 Oct 2026 \n  1   $646.63     $646.63 \nCredited subtotal     $646.63\nCredited total     $646.63\nAdjusted invoice total   $211.37 \nPayment history \nPayment method   Date   Amount paid   Receipt number \nVisa - 0000   October 22, 2026   $858.00   2022 \u0000 8164 \nRefund instructions\nYour refund has been issued by Example Assist, LLC. It may take about 5 to 10 days to appear on your statement.\n",
+  "expected": {
+    "docType": "credit_note",
+    "direction": "income",
+    "amount": "646.63",
+    "currency": "USD",
+    "invoiceNumber": "A1B2C3D4-0059-CN-01",
+    "counterparty": "Example Assist, LLC",
+    "date": "2026-10-30",
+    "descriptionFrom": "document",
+    "paymentChannel": "card",
+    "ledgerSourceKey": "credit-note:A1B2C3D4-0059-CN-01"
+  },
+  "traps": [
+    { "field": "amount", "value": "211.37", "why": "'Adjusted invoice total' is what remains of the original invoice, not the refund" },
+    { "field": "amount", "value": "858.00", "why": "the original invoice total and amount paid" },
+    { "field": "invoiceNumber", "value": "A1B2C3D4", "why": "hyphens arrive as U+0000; the number must be kept in full" },
+    { "field": "description", "value": "refund", "why": "the email subject is not a description" },
+    { "field": "paymentChannel", "value": "paypal", "why": "paid and refunded by card, not PayPal" }
+  ]
+}
