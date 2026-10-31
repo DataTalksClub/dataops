@@ -19,6 +19,7 @@ import { handleEmailDocumentIntake } from './routes/emailDocuments';
 import { handleNotificationRoutes } from './routes/notifications';
 import { handleCronRoutes } from './routes/cron';
 import { handleBookkeepingRoutes } from './routes/bookkeeping';
+import { handleFinanceRoutes } from './routes/finance';
 import { handleReconcileRoutes } from './routes/reconcile';
 import { handleViesRoutes } from './routes/vies';
 import { handleSponsorCrmRoutes } from './routes/sponsorCrm';
@@ -321,6 +322,12 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // ── Task routes ────────────────────────────────────────────────
     if (reqPath.startsWith('/api/bookkeeping')) {
       return await handleBookkeepingRoutes(reqPath, method, event, client, skipAuth || !!portalUserId || portalAuthorized || !!headerValue(event.headers, 'x-user-id'));
+    }
+
+    if (reqPath.startsWith('/api/finance/')) {
+      if (!(skipAuth || portalUserId || portalAuthorized || headerValue(event.headers, 'x-user-id'))) return jsonResponse(401, { error: 'Unauthorized' });
+      const finance = await handleFinanceRoutes(reqPath, method, event, client);
+      if (finance) return finance;
     }
 
     if (reqPath === '/api/vies/check' || reqPath === '/api/vies/preflight') {

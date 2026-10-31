@@ -45,6 +45,13 @@ describe('deployment-managed invoice reader through the configured portal', () =
       assert.equal(crmCompanies.statusCode, 200);
       const tasksList = await request('GET', `${prefix}/api/tasks?status=todo`);
       assert.equal(tasksList.statusCode, 200);
+
+      // Finance aggregates are readable; the period is validated.
+      const finance = await request('GET', `${prefix}/api/finance/summary?month=2026-10`);
+      assert.equal(finance.statusCode, 200);
+      assert.equal(JSON.parse(finance.body).totals.net, 0);
+      assert.equal((await request('GET', `${prefix}/api/finance/summary?month=2026-13`)).statusCode, 400);
+      for (const method of ['POST', 'PUT', 'DELETE']) assert.equal((await request(method, `${prefix}/api/finance/summary`)).statusCode, 403);
     }
   });
   it('refuses every mutation, unrelated API and path lookalike', async () => {

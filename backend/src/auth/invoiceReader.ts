@@ -10,6 +10,7 @@ import { handleSponsorCommunicationRoutes } from '../routes/sponsorCommunication
 import { handleSponsorFinanceRoutes } from '../routes/sponsorFinance';
 import { handleTaskRoutes } from '../routes/tasks';
 import { handleOffersRoutes } from '../routes/offers';
+import { handleFinanceRoutes } from '../routes/finance';
 import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
 import { listUsers } from '../db/users';
 
@@ -96,6 +97,12 @@ export async function handleInvoiceReader(
   if (isInvoiceAllowed) {
     if (method !== 'GET') return response(403, { error: 'Service credential permits invoice reads only' });
     return handleInvoiceRoutes(cleanPath, 'GET', event, client, true);
+  }
+
+  // Finance aggregates are reads over the same books the invoice scope covers.
+  if (cleanPath.startsWith('/api/finance/')) {
+    if (method !== 'GET') return response(403, { error: 'Service credential permits finance reads only' });
+    return (await handleFinanceRoutes(cleanPath, 'GET', event, client)) || response(404, { error: 'Not found' });
   }
 
   const isCrmAllowed = cleanPath.startsWith('/api/sponsor-crm/');
