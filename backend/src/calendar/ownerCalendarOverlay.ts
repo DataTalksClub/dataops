@@ -62,7 +62,7 @@ export const WORKSHOP_DURATION_MINUTES = 90;
  * separate from the event windows above: Lunch and Busy blocks only mark time
  * for event slots, so they (like every other non-free event) block calls.
  */
-export const CALL_WINDOW = { start: '11:00', end: '16:00' } as const;
+export const CALL_WINDOW = { start: '11:00', end: '16:30' } as const;
 export const CALL_GRID_MINUTES = 30;
 export const DEFAULT_CALL_DURATION_MINUTES = 30;
 

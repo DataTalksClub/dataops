@@ -37,7 +37,7 @@ Slot options
 Operational windows (Europe/Berlin)
   evening 16:30–18:30 band. Podcast/recording (and 60-min webinar) preferred
           start 17:00; 16:30 is workshop-only (90 min, needs 16:30–18:00 free).
-  call    11:00–16:00 weekdays, 30-minute grid (matches the public 30-minute
+  call    11:00–16:30 weekdays, 30-minute grid (matches the public 30-minute
           Calendly event; --window call defaults --duration to 30). Lunch and
           Busy blocks are for event slots only and block calls.
   midday  11:30–14:00; podcast/webinar start 12:30 (60), workshop start 12:00 (90).

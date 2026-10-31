@@ -886,7 +886,7 @@ describe('owner calendar overlay and filtering', () => {
       setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
       const out: any = await selectedOwnerCalendarOverlay({ today: TODAY, now: new Date('2026-10-01T00:00:00Z'), brokerCredential: 't', window: 'call' }).project('2026-10-10', '2026-10-14');
       const byDay = (d: string) => out.items.filter((i: any) => i.startDate === d).map((i: any) => i.id.split(':call:')[1]);
-      assert.deepEqual(byDay('2026-10-12'), ['11:30', '13:00', '13:30', '15:00', '15:30']);
+      assert.deepEqual(byDay('2026-10-12'), ['11:30', '13:00', '13:30', '15:00', '15:30', '16:00']);
       assert.deepEqual(byDay('2026-10-13'), [], 'all-day blocker closes the day');
       assert.deepEqual(byDay('2026-10-10'), [], 'weekend');
       assert.ok(out.items.every((i: any) => i.slot === 'call' && i.isAvailableSlot));
