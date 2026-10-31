@@ -114,8 +114,8 @@ describe('month reconciliation', () => {
       [
         bank('b-fee', { counterparty: 'Finom account fee', amount: '-15.00' }),
         bank('b-tax', { counterparty: 'Finanzamt Example', amount: '-3296.00' }),
-        bank('b-out', { accountId: 'finom', counterparty: 'Own Revolut account', amount: '-1000.00', date: '2026-10-10' }),
-        bank('b-in', { accountId: 'revolut', wallet: 'EUR', counterparty: 'Own Finom account', amount: '1000.00', date: '2026-10-11' }),
+        bank('b-out', { accountId: 'finom', counterparty: 'Synthetic Holder', reference: 'account transfer', amount: '-1000.00', date: '2026-10-10' }),
+        bank('b-in', { accountId: 'revolut', wallet: 'EUR', counterparty: 'SYNTHETIC HOLDER', amount: '1000.00', date: '2026-10-11' }),
         bank('b-payout', { counterparty: 'PayPal Europe', amount: '48.32' }),
       ],
       [ledger('l-payout', { counterparty: 'PayPal Europe', amount: '48.32', documents: [] })],
@@ -168,5 +168,30 @@ describe('month reconciliation', () => {
     const november = buildMonthTable({ period: '2026-11', bank: bankRows, ledger: ledgerRows, decisions: none(), rules: [], pairing });
     assert.equal(october.rows.length, 0);
     assert.equal(november.rows[0].status, 'matched');
+  });
+
+  it('does not take a sponsor payment and a salary of the same amount for an internal transfer (backtest 2025-03)', () => {
+    const result = table(
+      [
+        bank('b-sponsor', { accountId: 'revolut', wallet: 'EUR', counterparty: 'EDTECH EXAMPLE B.V.', reference: '202503/5', amount: '2000.00', date: '2025-03-21' }),
+        bank('b-salary', { accountId: 'finom', counterparty: 'Owner Person', reference: 'salary', amount: '-2000.00', date: '2025-03-24' }),
+      ],
+      [ledger('l-sponsor', { counterparty: 'Edtech Example B.V.', amount: '2000.00', date: '2025-03-17' })],
+    );
+    const october = buildMonthTable({ period: '2025-03', bank: [
+      bank('b-sponsor', { accountId: 'revolut', wallet: 'EUR', counterparty: 'EDTECH EXAMPLE B.V.', reference: '202503/5', amount: '2000.00', date: '2025-03-21' }),
+      bank('b-salary', { accountId: 'finom', counterparty: 'Owner Person', reference: 'salary', amount: '-2000.00', date: '2025-03-24' }),
+    ], ledger: [ledger('l-sponsor', { counterparty: 'Edtech Example B.V.', amount: '2000.00', date: '2025-03-17' })], decisions: none(), rules: RULES });
+    assert.equal(result.rows.length, 0);
+    assert.equal(october.rows.find((row) => row.id === 'b-sponsor')?.ledger?.id, 'l-sponsor');
+    assert.equal(october.rows.find((row) => row.id === 'b-salary')?.exception, undefined);
+  });
+
+  it('rejects an EUR-only fit when the bank\'s original amount contradicts the ledger (backtest 2025-07)', () => {
+    const tolerances = DEFAULT_TOLERANCES;
+    const aws = bank('b-aws', { counterparty: 'Aws Emea', amount: '-208.33', origAmount: '-245.95', origCurrency: 'USD', date: '2025-07-02' });
+    assert.equal(amountFit(aws, ledger('l-podcast', { counterparty: 'Podcast Example', amount: '-249.00', currency: 'USD', amountEur: '-211.40' }), tolerances), null);
+    // Identical EUR amounts still pair, as a mismatch pointing at the ledger's foreign-amount typo.
+    assert.equal(amountFit(bank('b', { amount: '-20.28', origAmount: '-23.80', origCurrency: 'USD' }), ledger('l', { amount: '-23.28', currency: 'USD', amountEur: '-20.28' }), tolerances)?.basis, 'fee');
   });
 });

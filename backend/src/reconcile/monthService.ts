@@ -179,7 +179,7 @@ export function validateConfig(input: unknown): string[] {
   }
   if (value.tolerances !== undefined) {
     const tolerances = value.tolerances as Record<string, unknown>;
-    for (const [field, max] of [["dateLagDays", 31], ["fxSpreadPct", 0.2], ["feeTolerance", 100]] as const) {
+    for (const [field, max] of [["dateLagDays", 31], ["fxSpreadPct", 0.2], ["feeTolerance", 100], ["namedFxSpreadPct", 0.3], ["namedMismatchPct", 0.5]] as const) {
       if (tolerances[field] !== undefined && !(typeof tolerances[field] === "number" && (tolerances[field] as number) >= 0 && (tolerances[field] as number) <= max)) problems.push(`tolerances.${field} must be a number 0..${max}`);
     }
   }

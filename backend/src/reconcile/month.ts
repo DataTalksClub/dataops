@@ -62,9 +62,19 @@ export type ReconcileTolerances = {
   fxSpreadPct: number;
   /** Absolute gap (same currency) that still pairs, flagged as an amount mismatch. */
   feeTolerance: number;
+  /** With the counterparty named on both sides: a wider FX gap, proposed for review. */
+  namedFxSpreadPct: number;
+  /** With the counterparty named on both sides and the dates close: a relative same-currency gap, flagged as an amount mismatch. */
+  namedMismatchPct: number;
 };
 
-export const DEFAULT_TOLERANCES: ReconcileTolerances = { dateLagDays: 7, fxSpreadPct: 0.03, feeTolerance: 2 };
+/**
+ * Calibrated on the 2025-01..2026-09 backtest (359 true pairs): 99% of
+ * bank bookings land within ±7 days of the ledger date and none beyond ±9;
+ * the bank-vs-ledger EUR gap of foreign-currency rows never exceeded 2.5%,
+ * one incoming USD payment converted by the sender at 4.05%.
+ */
+export const DEFAULT_TOLERANCES: ReconcileTolerances = { dateLagDays: 10, fxSpreadPct: 0.03, feeTolerance: 2, namedFxSpreadPct: 0.05, namedMismatchPct: 0.2 };
 
 export type BankTx = {
   key: string;
@@ -185,24 +195,33 @@ export function bankKeyFor(accountId: string, rowKey: string): string {
 type AmountFit = { basis: Exclude<PairBasis, "manual" | "proposed"> | "unknown"; score: number; difference?: number };
 
 /** How well a ledger amount explains a bank amount; null when it cannot be the same payment. */
-export function amountFit(bank: BankTx, ledger: LedgerRow, tolerances: ReconcileTolerances): AmountFit | null {
+export function amountFit(bank: BankTx, ledger: LedgerRow, tolerances: ReconcileTolerances, named = false): AmountFit | null {
   const bankAmount = amountNumber(bank.amount), ledgerAmount = amountNumber(ledger.amount);
   if (Math.sign(bankAmount) !== Math.sign(ledgerAmount)) return null;
   if (bank.currency === ledger.currency) {
     const difference = cents(Math.abs(bankAmount) - Math.abs(ledgerAmount));
     if (Math.abs(difference) < 0.005) return { basis: "exact", score: 6 };
     const fee = Math.abs(amountNumber(bank.fee));
+    if (fee && Math.abs(cents(Math.abs(bankAmount) - fee - Math.abs(ledgerAmount))) < 0.005) return { basis: "exact", score: 5 };
     if (fee && Math.abs(cents(Math.abs(bankAmount) + fee - Math.abs(ledgerAmount))) < 0.005) return { basis: "exact", score: 5 };
     if (Math.abs(difference) <= tolerances.feeTolerance) return { basis: "fee", score: 2, difference };
+    if (named && Math.abs(difference) / Math.abs(ledgerAmount) <= tolerances.namedMismatchPct) return { basis: "fee", score: 1, difference };
     return null;
   }
   if (bank.origCurrency === ledger.currency && bank.origAmount !== undefined) {
+    // The bank says what was charged in the ledger's currency: it agrees, or the pair is out unless
+    // the EUR amounts are identical (then the ledger's foreign amount is the typo, shown as a mismatch).
     if (Math.abs(Math.abs(amountNumber(bank.origAmount)) - Math.abs(ledgerAmount)) < 0.005) return { basis: "fx", score: 5 };
+    if (bank.currency === "EUR" && ledger.amountEur && Math.abs(Math.abs(bankAmount) - Math.abs(amountNumber(ledger.amountEur))) < 0.005) {
+      return { basis: "fee", score: 3, difference: cents(Math.abs(amountNumber(bank.origAmount)) - Math.abs(ledgerAmount)) };
+    }
+    return null;
   }
   if (bank.currency === "EUR" && ledger.amountEur) {
     const eur = Math.abs(amountNumber(ledger.amountEur));
     const gap = Math.abs(Math.abs(bankAmount) - eur);
     if (eur && gap / eur <= tolerances.fxSpreadPct) return { basis: "fx", score: gap < 0.005 ? 5 : 4, difference: cents(Math.abs(bankAmount) - eur) };
+    if (named && eur && gap / eur <= tolerances.namedFxSpreadPct) return { basis: "unknown", score: 1, difference: cents(Math.abs(bankAmount) - eur) };
     return null;
   }
   // Foreign currency with nothing to convert by: only text and date can tell.
@@ -214,14 +233,14 @@ type Edge = { bank: BankTx; ledger: LedgerRow; score: number; fit: AmountFit; te
 function scoreEdge(bank: BankTx, ledger: LedgerRow, tolerances: ReconcileTolerances): Edge | null {
   const lag = daysApart(bank.date, ledger.date);
   if (lag > tolerances.dateLagDays) return null;
-  const fit = amountFit(bank, ledger, tolerances);
-  if (!fit) return null;
   const bankText = textTokens(bank.counterparty, bank.reference);
   const ledgerText = textTokens(ledger.counterparty, ledger.description);
   const shared = [...bankText].some((token) => ledgerText.has(token));
   const invoice = digitsOnly(ledger.invoiceNumber);
   const invoiceHit = invoice.length >= 4 && digitsOnly(`${bank.reference} ${bank.counterparty}`).includes(invoice);
   const textHit = shared || invoiceHit;
+  const fit = amountFit(bank, ledger, tolerances, textHit && lag <= 3);
+  if (!fit) return null;
   if (fit.basis === "unknown" && !textHit) return null;
   const dateScore = lag <= 1 ? 2 : lag <= 3 ? 1 : 0;
   return { bank, ledger, fit, textHit, score: fit.score + dateScore + (invoiceHit ? 3 : shared ? 2 : 0) };
@@ -246,6 +265,8 @@ export type PairingResult = {
  * not paired automatically.
  */
 export function pairAll(bank: BankTx[], ledger: LedgerRow[], decisions: ManualDecisions, tolerances: ReconcileTolerances): PairingResult {
+  // Both legs of a move between own accounts have no ledger row; pairing them would steal one.
+  const legs = internalTransferLegs(bank, tolerances);
   const pairs: PairingResult["pairs"] = new Map();
   const ambiguous: PairingResult["ambiguous"] = new Map();
   const ambiguousLedger: PairingResult["ambiguousLedger"] = new Map();
@@ -269,7 +290,7 @@ export function pairAll(bank: BankTx[], ledger: LedgerRow[], decisions: ManualDe
     byDay.set(day, [...(byDay.get(day) || []), row]);
   }
   for (const bankRow of bank) {
-    if (pairs.has(bankRow.key) || !Number.isFinite(dayOf(bankRow.date))) continue;
+    if (pairs.has(bankRow.key) || legs.has(bankRow.key) || !Number.isFinite(dayOf(bankRow.date))) continue;
     const day = dayOf(bankRow.date) / DAY;
     for (let offset = -tolerances.dateLagDays; offset <= tolerances.dateLagDays; offset++) {
       for (const row of byDay.get(day + offset) || []) {
@@ -290,7 +311,7 @@ export function pairAll(bank: BankTx[], ledger: LedgerRow[], decisions: ManualDe
   // Two candidates that are the same payment twice (same amount, date, text) are interchangeable, not ambiguous.
   const twins = (left: Edge, right: Edge, side: "bank" | "ledger") => side === "bank"
     ? left.ledger.amount === right.ledger.amount && left.ledger.date === right.ledger.date && left.ledger.counterparty === right.ledger.counterparty
-    : left.bank.amount === right.bank.amount && left.bank.date === right.bank.date && left.bank.counterparty === right.bank.counterparty;
+    : left.bank.amount === right.bank.amount && left.bank.date === right.bank.date && left.bank.accountId === right.bank.accountId && left.bank.currency === right.bank.currency;
   for (const edge of edges) {
     if (!open(edge) || ambiguous.has(edge.bank.key) || ambiguousLedger.has(edge.ledger.id)) continue;
     const bankRivals = sortEdges((byBank.get(edge.bank.key) || []).filter(open));
@@ -341,12 +362,15 @@ export function internalTransferLegs(bank: BankTx[], tolerances: ReconcileTolera
   const sorted = [...bank].sort((left, right) => left.date.localeCompare(right.date) || left.key.localeCompare(right.key));
   for (const row of sorted) {
     if (legs.has(row.key) || amountNumber(row.amount) >= 0) continue;
+    // Amount and date alone also fit a sponsor payment next to a salary; both legs must name the same holder.
+    const names = textTokens(row.counterparty, row.reference);
     const match = sorted.find((other) => !legs.has(other.key) && other.key !== row.key
       && amountNumber(other.amount) > 0
       && other.currency === row.currency
       && Math.abs(amountNumber(other.amount) + amountNumber(row.amount)) < 0.005
       && (other.accountId !== row.accountId || (other.wallet || "") !== (row.wallet || ""))
-      && daysApart(other.date, row.date) <= Math.min(tolerances.dateLagDays, 3));
+      && daysApart(other.date, row.date) <= Math.min(tolerances.dateLagDays, 3)
+      && [...textTokens(other.counterparty, other.reference)].some((token) => names.has(token)));
     if (match) { legs.set(row.key, match.key); legs.set(match.key, row.key); }
   }
   return legs;
@@ -381,8 +405,8 @@ export function buildMonthTable(input: MonthInput): MonthTable {
     if (!inPeriod(bankRow.date)) continue;
     const pair = pairing.pairs.get(bankRow.key);
     const documents = pair?.ledger.documents || [];
-    let classification = classify(bankRow, input.rules);
-    if (!classification && legs.has(bankRow.key)) classification = { kind: "internal_transfer" };
+    // A found counter-leg is the strongest evidence: it wins over name rules (a transfer to the owner's other account is no withdrawal).
+    let classification = legs.has(bankRow.key) && !pair ? { kind: "internal_transfer" as const } : classify(bankRow, input.rules);
     const recorded = input.decisions.exceptions[`bank:${bankRow.key}`] || (pair ? input.decisions.exceptions[`ledger:${pair.ledger.id}`] : undefined);
     const kind = recorded?.kind || (classification && classification.kind !== "known_vendor" ? classification.kind : undefined);
     const row: MonthRow = {
