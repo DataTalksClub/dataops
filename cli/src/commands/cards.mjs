@@ -30,8 +30,9 @@ Usage
   dataops cards stage <card-id> <preparation|announced|after-event>
   dataops cards link <card-id> <link-name> <url>  Fill a Card link (e.g. a template's required link)
   dataops cards invite list <card-id> [--json]  The Card's invites, checked in Google (gone = stale)
-  dataops cards invite remove <card-id> <event-id> [--calendar CAL] [--json]
-                                                Unlink an invite from the Card; never deletes the Google event
+  dataops cards invite remove <card-id> <event-id> [--calendar CAL] [--delete-event] [--json]
+                                                Unlink an invite from the Card; with --delete-event also
+                                                deletes the Google event (no guest notification)
   dataops cards sponsor-doc <card-id> [--template T] [--slot primary|secondary] [--sponsor NAME]
                                                 Create a portal sponsor doc and link it on the Card
   dataops cards park <card-id> | resume <card-id>
@@ -371,7 +372,7 @@ function printCountPreview(io, preview) {
 
 export async function invite(args, io) {
   const usage = "dataops cards invite list <card-id>\n"
-    + "  dataops cards invite remove <card-id> <event-id> [--calendar CAL]";
+    + "  dataops cards invite remove <card-id> <event-id> [--calendar CAL] [--delete-event]";
   const action = positional(args, 0, usage);
   if (action === "add") {
     throw new UsageError("Invites are created only by setting the event time: dataops cards time <card-id> --at \"YYYY-MM-DD HH:MM\"");
@@ -380,10 +381,11 @@ export async function invite(args, io) {
     const id = positional(args, 1, usage);
     const eventId = positional(args, 2, usage);
     const calendar = optionalString(args, "calendar");
-    const result = await apiFor(args).delete(`/api/cards/${enc(id)}/calendar-invites`, { eventId, ...(calendar ? { calendar } : {}) });
+    const deleteEvent = args.deleteEvent === true;
+    const result = await apiFor(args).delete(`/api/cards/${enc(id)}/calendar-invites`, { eventId, ...(calendar ? { calendar } : {}), ...(deleteEvent ? { deleteEvent } : {}) });
     if (args.json) return result;
     for (const removed of result.removed || []) {
-      io.print(`Unlinked invite ${removed.eventId} on ${calendarLabel(removed.calendar)} from Card ${id} (the Google event is untouched).`);
+      io.print(`Unlinked invite ${removed.eventId} on ${calendarLabel(removed.calendar)} from Card ${id} (${deleteEvent ? "the Google event was deleted without notifying guests" : "the Google event is untouched"}).`);
     }
     return result;
   }

@@ -14,7 +14,11 @@ import { getCalendarHold, listCalendarHolds, putCalendarHold } from '../db/calen
 import { calendarsMissingInvite, taskRequiresCalendarInvite, makeTaskHistoryEvent } from '../routes/taskValidation';
 import { dateFromTemplateOffset } from '../templates/cardTemplateProjection';
 import { confirmedHoldInvite, confirmedTitle, holdGuestAttendees, parseHoldDocumentUrl, HOLD_ATTENDEE_DENY_LIST, type CalendarHold } from './holds';
-import { createHoldGoogleEvents, findGoneGoogleEvents, updateHoldGoogleEvents, type HoldGoogleDeps } from './holdGoogleSync';
+import { createHoldGoogleEvents, deleteHoldGoogleEvents, findGoneGoogleEvents, updateHoldGoogleEvents, type HoldGoogleDeps, type HoldGoogleResult } from './holdGoogleSync';
+
+/** AISHL workshops are scheduled by the AISHL site event, which sends its own invite and Zoom. */
+export const AISHL_TEMPLATE_ID = 'aishl-workshop';
+export const isSiteScheduledCard = (card: Card) => card.templateId === AISHL_TEMPLATE_ID;
 
 export class CardInviteConflictError extends Error {}
 export class CardInviteInputError extends Error {}
@@ -197,6 +201,7 @@ export async function syncCardInvite(
   guests: string[], deps: HoldGoogleDeps, actorId: string,
   source?: CalendarHold,
 ) {
+  if (isSiteScheduledCard(card)) return setSiteScheduledTime(client, card, interval, guests);
   if (card.eventTime?.sync === 'syncing' && Date.now() - Date.parse(card.eventTime.syncStartedAt) < 180000) {
     throw new CardInviteConflictError('This Card invitation is syncing; retry shortly');
   }
@@ -284,6 +289,25 @@ export async function syncCardInvite(
   };
 }
 
+/** Date-only `cards time` for site-scheduled cards: no Google event, no Zoom, no guest email. */
+async function setSiteScheduledTime(
+  client: DynamoDBDocumentClient, card: Card,
+  interval: { startIso: string; endIso: string; timeZone: string; durationMinutes: number }, guests: string[],
+): Promise<{ card: Card; sync: HoldGoogleResult; invite: CardInviteSyncResult; taskClosure: InviteTaskClosureOutcome; hold?: CalendarHold }> {
+  const eventKey = card.eventTime?.eventKey || `card:${card.id}`;
+  const updated = await updateCard(client, card.id, {
+    expectedVersion: card.version,
+    patch: { eventTime: { ...interval, eventKey, googleEventIds: {}, sync: 'synced', syncStartedAt: new Date().toISOString() }, guestEmails: guests },
+  });
+  const reason = 'AISHL cards are scheduled by the AISHL site event; no calendar invite or Zoom was created.';
+  const sync: HoldGoogleResult = { state: 'synced', eventIds: {} };
+  return {
+    card: updated, sync,
+    invite: { outcome: 'sent', state: 'synced', eventKey, googleEventIds: {}, calendarInvites: updated.calendarInvites || [], reason } as CardInviteSyncResult,
+    taskClosure: { outcome: 'not_attempted', message: reason, tasks: [] } as InviteTaskClosureOutcome,
+  };
+}
+
 export interface CardInviteCheck {
   state: 'verified' | 'deferred';
   /** Linked invites Google no longer has (marked `staleAt`). */
@@ -315,22 +339,42 @@ export async function verifyCardInvites(
 
 /**
  * Unlink an invite reference (every calendar copy of `eventId`, or only the
- * one on `calendar`) from the Card. The Google event itself is never touched.
- * The invitation `cards time` owns is moved with `cards time`, not unlinked.
+ * one on `calendar`) from the Card. Without `deleteEvent` the Google event is
+ * never touched. With it, the event is deleted first (organizer copy with
+ * sendUpdates=none, so nobody is notified; the invite uses the shared fixed
+ * Zoom room, so no meeting exists to clean up) and the reference is dropped
+ * only once Google confirms. The invitation `cards time` owns can be removed
+ * only when it is stale (gone in Google) or being deleted; a live one is moved
+ * with `cards time`. Removing an owned invite also clears it from `eventTime`.
  */
 export async function unlinkCardInvite(
   client: DynamoDBDocumentClient, card: Card, eventId: string, calendar?: string,
+  options: { deleteEvent?: boolean; deps?: HoldGoogleDeps } = {},
 ): Promise<{ card: Card; removed: CardCalendarInvite[] }> {
   const matches = (invite: CardCalendarInvite) => invite.eventId === eventId && (!calendar || invite.calendar === calendar);
   const removed = (card.calendarInvites || []).filter(matches);
   if (!removed.length) throw new CardInviteInputError(`Card ${card.id} links no invite ${eventId}${calendar ? ` on ${calendar}` : ''}`);
-  const owned = removed.filter(invite => card.eventTime?.googleEventIds[invite.calendar] === invite.eventId);
-  if (owned.length) {
-    throw new CardInviteConflictError(`Invite ${eventId} is this Card's own invitation from cards time; move it with: dataops cards time ${card.id} --at "YYYY-MM-DD HH:MM"`);
+  const owned = (invite: CardCalendarInvite) => card.eventTime?.googleEventIds?.[invite.calendar] === invite.eventId;
+  if (!options.deleteEvent && removed.some(invite => owned(invite) && !invite.staleAt)) {
+    throw new CardInviteConflictError(`Invite ${eventId} is this Card's own invitation from cards time; move it with: dataops cards time ${card.id} --at "YYYY-MM-DD HH:MM" (or delete it with: dataops cards invite remove ${card.id} ${eventId} --delete-event)`);
   }
-  const updated = await updateCardAdditive(client, card, current => ({
-    calendarInvites: (current.calendarInvites || []).filter(invite => !matches(invite)),
-  }));
+  if (options.deleteEvent) {
+    if (!options.deps) throw new Error('deleteEvent needs calendar dependencies');
+    const result = await deleteHoldGoogleEvents(
+      Object.fromEntries(removed.map(invite => [invite.calendar, invite.eventId])),
+      { ...options.deps, sendUpdates: 'none' },
+    );
+    if (result.state === 'deferred') throw new CardInviteConflictError(`Google event not deleted, invite kept: ${result.reason}`);
+  }
+  const updated = await updateCardAdditive(client, card, current => {
+    const ownedCalendars = removed.filter(owned).map(invite => invite.calendar);
+    const eventIds = { ...(current.eventTime?.googleEventIds || {}) };
+    for (const cal of ownedCalendars) delete eventIds[cal];
+    return {
+      calendarInvites: (current.calendarInvites || []).filter(invite => !matches(invite)),
+      ...(current.eventTime && ownedCalendars.length ? { eventTime: { ...current.eventTime, googleEventIds: eventIds } } : {}),
+    };
+  });
   return { card: updated, removed };
 }
 

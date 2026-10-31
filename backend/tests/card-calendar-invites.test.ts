@@ -117,6 +117,77 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
       assert.match(parse(refused).error, /dataops cards time/);
     });
 
+    const ownedTime = (cardId: string, ids: Record<string, string>) => ({
+      startIso: '2026-11-09T16:00:00.000Z', endIso: '2026-11-09T17:00:00.000Z', timeZone: 'Europe/Berlin', durationMinutes: 60,
+      eventKey: `card:${cardId}`, googleEventIds: ids, sync: 'synced', syncStartedAt: '2026-10-31T00:00:00.000Z',
+    });
+
+    it('unlinks a stale cards-time invite and clears it from the event time', async () => {
+      const card = await createCard('Stale owned card');
+      await linkInvites(card.id, [{ eventId: 'owned-gone', calendar: DTC, staleAt: '2026-10-31T00:00:00.000Z' }], ownedTime(card.id, { [DTC]: 'owned-gone' }));
+      const removed = await invoke('DELETE', `/api/cards/${card.id}/calendar-invites`, { eventId: 'owned-gone' });
+      assert.strictEqual(removed.statusCode, 200, removed.body);
+      const after = (await getCardConsistent(client, card.id))!;
+      assert.deepStrictEqual(after.calendarInvites, []);
+      assert.deepStrictEqual(after.eventTime?.googleEventIds, {});
+    });
+
+    it('--delete-event deletes the Google event silently, then unlinks it', async () => {
+      const card = await createCard('Delete event card');
+      const google = holdGoogleProvider();
+      google.events.set(DTC, new Map([['live-dtc', { id: 'live-dtc' }]]));
+      google.events.set('orin@datatalks.club', new Map([['live-org', { id: 'live-org' }]]));
+      await linkInvites(card.id, [{ eventId: 'live-org', calendar: 'orin@datatalks.club' }], ownedTime(card.id, { 'orin@datatalks.club': 'live-org' }));
+      setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
+      try {
+        const refused = await invoke('DELETE', `/api/cards/${card.id}/calendar-invites`, { eventId: 'live-org' });
+        assert.strictEqual(refused.statusCode, 409, refused.body);
+        const removed = await invoke('DELETE', `/api/cards/${card.id}/calendar-invites`, { eventId: 'live-org', deleteEvent: true });
+        assert.strictEqual(removed.statusCode, 200, removed.body);
+        const deletes = google.calls.filter(call => call.method === 'DELETE');
+        assert.strictEqual(deletes.length, 1);
+        assert.strictEqual(deletes[0].url.searchParams.get('sendUpdates'), 'none');
+        assert.ok(!google.events.get('orin@datatalks.club')!.has('live-org'));
+        assert.deepStrictEqual((await getCardConsistent(client, card.id))!.calendarInvites, []);
+      } finally {
+        setCalendarHoldGoogleDepsForTests({});
+      }
+    });
+
+    it('keeps the invite when Google refuses the deletion', async () => {
+      const card = await createCard('Delete fails card');
+      const google = holdGoogleProvider();
+      google.state.failCalendar = DTC;
+      await linkInvites(card.id, [{ eventId: 'x', calendar: DTC }]);
+      setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
+      try {
+        const res = await invoke('DELETE', `/api/cards/${card.id}/calendar-invites`, { eventId: 'x', deleteEvent: true });
+        assert.strictEqual(res.statusCode, 409, res.body);
+        assert.strictEqual((await getCardConsistent(client, card.id))!.calendarInvites?.length, 1);
+      } finally {
+        setCalendarHoldGoogleDepsForTests({});
+      }
+    });
+
+    it('cards time on an AISHL card sets the time but never calls Google', async () => {
+      const card = await createCard('AISHL workshop');
+      const current = (await getCardConsistent(client, card.id))!;
+      await updateCard(client, card.id, { expectedVersion: current.version, patch: { templateId: 'aishl-workshop' } });
+      const google = holdGoogleProvider();
+      setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
+      try {
+        const res = await invoke('POST', `/api/cards/${card.id}/time`, { at: '2026-11-09 14:30', guestEmails: ['guest@example.test'] });
+        assert.strictEqual(res.statusCode, 200, res.body);
+        assert.strictEqual(google.calls.length, 0, 'no Google or Zoom call for AISHL cards');
+        const after = (await getCardConsistent(client, card.id))!;
+        assert.strictEqual(after.anchorDate, '2026-11-09');
+        assert.deepStrictEqual(after.calendarInvites || [], []);
+        assert.strictEqual(after.eventTime?.startIso, '2026-11-09T13:30:00.000Z');
+      } finally {
+        setCalendarHoldGoogleDepsForTests({});
+      }
+    });
+
     it('verify marks invites Google no longer has as stale and deletes nothing', async () => {
       const card = await createCard('Stale card');
       const google = holdGoogleProvider();

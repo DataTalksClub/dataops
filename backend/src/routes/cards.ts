@@ -879,6 +879,7 @@ async function handleCardCalendarInvites(
     }
     const eventId = typeof body?.eventId === 'string' ? body.eventId.trim() : '';
     const calendar = typeof body?.calendar === 'string' ? body.calendar.trim() : '';
+    const deleteEvent = body?.deleteEvent === true;
     if (!eventId) return json(400, { error: 'eventId is required' });
     const existing = await getCardConsistent(client, id);
     if (!existing) return json(404, { error: 'Card not found' });
@@ -886,11 +887,12 @@ async function handleCardCalendarInvites(
       return workAdminForbidden('Administering this Card requires its owner or an admin');
     }
     try {
-      const { card, removed } = await unlinkCardInvite(client, existing, eventId, calendar || undefined);
+      const { card, removed } = await unlinkCardInvite(client, existing, eventId, calendar || undefined,
+        deleteEvent ? { deleteEvent, deps: await calendarInviteDeps({}, client) } : {});
       return json(200, { removed, invites: card.calendarInvites || [] });
     } catch (error) {
       if (error instanceof CardInviteInputError) return json(404, { error: error.message, code: 'invite_not_linked' });
-      if (error instanceof CardInviteConflictError) return json(409, { error: error.message, code: 'invite_owned_by_card_time' });
+      if (error instanceof CardInviteConflictError) return json(409, { error: error.message, code: 'invite_conflict' });
       throw error;
     }
   }
