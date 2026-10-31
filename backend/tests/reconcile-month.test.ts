@@ -194,4 +194,35 @@ describe('month reconciliation', () => {
     // Identical EUR amounts still pair, as a mismatch pointing at the ledger's foreign-amount typo.
     assert.equal(amountFit(bank('b', { amount: '-20.28', origAmount: '-23.80', origCurrency: 'USD' }), ledger('l', { amount: '-23.28', currency: 'USD', amountEur: '-20.28' }), tolerances)?.basis, 'fee');
   });
+
+  // Separate-proof scenarios found in 2024-26 bookkeeping (anonymized): each replays
+  // row -> payment proof missing -> proof attached -> matched -> nothing blocks close.
+  for (const scenario of [
+    { name: 'N26 personal card, printed transaction page', rows: [ledger('l-n26', { counterparty: 'Example Taxi', amount: '-11.23', date: '2026-05-04' })] },
+    { name: 'PayPal transaction details page', rows: [ledger('l-paypal', { counterparty: 'Example Podcast Editing', amount: '-249.00', currency: 'USD', date: '2025-07-04' })] },
+    { name: 'Wise transfer confirmation covering two ledger rows', rows: [ledger('l-wise-1', { counterparty: 'Contractor Example', amount: '-1000.00', date: '2025-05-06' }), ledger('l-wise-2', { counterparty: 'Contractor Example', amount: '-1000.00', date: '2025-05-06' })] },
+    { name: 'personal Revolut one-transaction statement', rows: [ledger('l-retail', { counterparty: 'Example Store', amount: '-35.00', date: '2026-02-10' })] },
+    { name: 'Google Play receipt paid by personal card', rows: [ledger('l-play', { counterparty: 'Google Play', amount: '-1.99', date: '2024-08-14' })] },
+    { name: 'credit note with no bank row yet', rows: [ledger('l-credit', { counterparty: 'Example Vendor', amount: '646.63', currency: 'USD', date: '2026-10-30' })] },
+  ]) {
+    it(`separate proof: ${scenario.name}`, () => {
+      const period = scenario.rows[0].date.slice(0, 7);
+      const run = (decisions: ManualDecisions) => buildMonthTable({ period, bank: [], ledger: scenario.rows, decisions, rules: RULES });
+      const before = run(none());
+      assert.ok(before.rows.every((row) => row.status === 'payment-proof-missing'));
+      assert.equal(closeBlockers(before).length, scenario.rows.length);
+      // One proof document may cover several rows (one transfer paying two invoices).
+      const proofs = Object.fromEntries(scenario.rows.map((row) => [row.id, { documentId: 'proof-1', by: 'operator', at: '2026-11-01T00:00:00Z' }]));
+      const after = run({ ...none(), proofs });
+      assert.ok(after.rows.every((row) => row.status === 'matched'), JSON.stringify(after.rows));
+      assert.equal(closeBlockers(after).length, 0);
+    });
+  }
+
+  it('separate proof: income known only from a notification or chat stays blocked until a proof is attached', () => {
+    const rows = [ledger('l-notified', { counterparty: 'Sponsor Example', amount: '3000.00', date: '2026-10-31' })];
+    const result = buildMonthTable({ period: '2026-10', bank: [], ledger: rows, decisions: { ...none(), exceptions: { 'ledger:l-notified': { kind: 'platform_payout', by: 'operator', at: '2026-11-01T00:00:00Z' } } }, rules: RULES });
+    // A no-invoice kind waives the document, never the payment.
+    assert.equal(result.rows[0].status, 'payment-proof-missing');
+  });
 });
