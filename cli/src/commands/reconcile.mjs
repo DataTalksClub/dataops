@@ -10,7 +10,7 @@ export const summary = "Month-end reconciliation: bank statements, matching, pay
 export const help = `dataops reconcile - month-end reconciliation (the Finance views' command line)
 
 Usage
-  dataops reconcile upload --file statement.(csv|pdf|xlsx) --account revolut|finom|mercury|merchant --period YYYY-MM [--currency EUR] [--json]
+  dataops reconcile upload --file statement.(csv|pdf|xlsx) --account revolut|finom|mercury|merchant --period YYYY-MM [--currency EUR] [--by-month] [--json]
       Stores the raw statement as a verified private bank-statement document,
       parses its rows server-side and saves them for matching. Re-uploading the
       same file for the same account and period replaces the stored rows;
@@ -19,6 +19,9 @@ Usage
       --currency sets the currency of a file without a currency column
       (Finom exports default to EUR). The closing balance of each wallet is
       stored with its as-of date.
+      --by-month stores a statement spanning several months (a year export)
+      as one statement per calendar month; --period then only labels the
+      stored document.
   dataops reconcile balances [--account ACCOUNT] [--json]
       Latest known balance per account wallet, from uploaded statements.
   dataops reconcile statements [--period YYYY-MM] [--json]
@@ -58,7 +61,7 @@ function contentTypeFor(file) {
 }
 
 export async function upload(args, io) {
-  const usage = "dataops reconcile upload --file statement.(csv|pdf|xlsx) --account revolut|finom|mercury|merchant --period YYYY-MM [--currency EUR] [--json]";
+  const usage = "dataops reconcile upload --file statement.(csv|pdf|xlsx) --account revolut|finom|mercury|merchant --period YYYY-MM [--currency EUR] [--by-month] [--json]";
   if (!args.file) throw new UsageError(usage);
   const account = String(args.account || "");
   if (!ACCOUNTS.includes(account)) throw new UsageError(`--account must be one of ${ACCOUNTS.join(", ")}`);
@@ -86,24 +89,37 @@ export async function upload(args, io) {
   }
   const documentId = prepared.document.id;
   const parsed = await api.post("/api/reconcile/statements/parse", { account, documentId, ...(currency ? { currency: currency.toUpperCase() } : {}) });
-  const saved = await api.post("/api/reconcile/statements", {
-    account, period, documentId,
-    ...(parsed.filename ? { filename: parsed.filename } : {}),
-    contentType: parsed.contentType,
-    rows: parsed.rows,
-    ...(parsed.balances?.length ? { balances: parsed.balances } : {}),
-    ...(parsed.warnings?.length ? { warnings: parsed.warnings } : {}),
-  });
-  const statement = saved.statement;
+  const months = args.byMonth
+    ? [...new Set(parsed.rows.map((row) => row.date.slice(0, 7)))].sort()
+    : [period];
+  const statements = [];
+  for (const month of months) {
+    const rows = args.byMonth ? parsed.rows.filter((row) => row.date.startsWith(month)) : parsed.rows;
+    // Each month keeps the balances as of its own last day; the latest month carries the closing ones.
+    const balances = (parsed.balances || []).filter((balance) => !args.byMonth || balance.asOf.startsWith(month));
+    const saved = await api.post("/api/reconcile/statements", {
+      account, period: month, documentId,
+      ...(parsed.filename ? { filename: parsed.filename } : {}),
+      contentType: parsed.contentType,
+      rows,
+      ...(balances.length ? { balances } : {}),
+      ...(parsed.warnings?.length && month === months.at(-1) ? { warnings: parsed.warnings } : {}),
+    });
+    statements.push(saved.statement);
+  }
+  const statement = statements.at(-1);
   if (!args.json) {
     io.print(`${prepared.outcome === "existing" ? "Reused" : "Stored"} document ${documentId} (sha256 ${sha256.slice(0, 12)}…).`);
-    io.print(`Statement ${statement.id}: ${statement.rows.length} rows, ${parsed.incomingCount} incoming, incoming total ${parsed.incomingTotal} across ${account}.`);
+    if (args.byMonth) {
+      for (const item of statements) io.print(`Statement ${item.id}: ${item.period}, ${item.rows.length} rows.`);
+    }
+    io.print(`${args.byMonth ? `${statements.length} statements` : `Statement ${statement.id}`}: ${parsed.rows.length} rows, ${parsed.incomingCount} incoming, incoming total ${parsed.incomingTotal} across ${account}.`);
     for (const balance of parsed.balances || []) io.print(`balance ${balance.wallet ? `${balance.wallet} ` : ""}${balance.amount} ${balance.currency} as of ${balance.asOf}`);
     for (const warning of (parsed.warnings || []).slice(0, 5)) io.print(`warning: ${warning}`);
     if ((parsed.warnings || []).length > 5) io.print(`… and ${parsed.warnings.length - 5} more warnings (dataops reconcile statement ${statement.id} --json)`);
-    io.print(`Next: dataops reconcile report --period ${period}`);
+    io.print(`Next: dataops reconcile report --period ${months.at(-1)}`);
   }
-  return { documentId, statement, parsed };
+  return { documentId, statement, ...(args.byMonth ? { statements } : {}), parsed };
 }
 
 export async function balances(args, io) {

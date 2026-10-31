@@ -201,3 +201,33 @@ test("upload accepts a Finom statement, forwards --currency and stores the closi
   await assert.rejects(upload({ ...args, file: path, account: "finom", period: "2026-10", currency: "euro" }, {}), /--currency/);
   await rm(directory, { recursive: true, force: true });
 });
+
+test("upload --by-month stores a year export as one statement per month", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-test-"));
+  const path = join(directory, "year.csv");
+  await writeFile(path, "synthetic\n");
+  const rows = [
+    { date: "2026-09-30", amount: "-5.00", currency: "EUR", counterparty: "A" },
+    { date: "2026-10-01", amount: "10.00", currency: "EUR", counterparty: "B" },
+    { date: "2026-10-02", amount: "-1.00", currency: "EUR", counterparty: "C" },
+  ];
+  const saves = [];
+  await withFakePortal([
+    ["/documents/prepare", { outcome: "existing", document: { id: "year-doc" } }],
+    ["/reconcile/statements/parse", { contentType: "text/csv", rowCount: 3, incomingCount: 1, incomingTotal: "10.00", rows, balances: [{ currency: "EUR", amount: "4.00", asOf: "2026-10-02" }], warnings: ["skipped a pending row dated 2026-10-03"] }],
+    ["/reconcile/statements", (request) => {
+      const body = JSON.parse(request.options.body);
+      saves.push(body);
+      return { statement: { id: `stmt-${body.period}`, period: body.period, rows: body.rows } };
+    }],
+  ], async () => {
+    const result = await upload({ ...args, file: path, account: "revolut", period: "2026-10", byMonth: true }, {});
+    assert.deepEqual(saves.map((save) => [save.period, save.rows.length, save.balances?.length ?? 0, save.warnings?.length ?? 0]), [
+      ["2026-09", 1, 0, 0],
+      ["2026-10", 2, 1, 1],
+    ]);
+    assert.equal(saves[0].documentId, "year-doc");
+    assert.equal(result.statements.length, 2);
+  });
+  await rm(directory, { recursive: true, force: true });
+});
