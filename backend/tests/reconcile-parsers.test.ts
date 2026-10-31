@@ -136,7 +136,9 @@ describe('statement parsers', () => {
       '+2200.00 EUR',
       'Balance: 12000.00 EUR',
     ].join('\n'));
-    const parsed = await parseStatement('application/pdf', bytes, 'revolut');
+    const parsed = await parseStatement('application/pdf', bytes, 'merchant');
+    // Revolut and Finom PDFs only go through their fixed layouts.
+    await assert.rejects(parseStatement('application/pdf', bytes, 'revolut'), /unrecognized revolut PDF statement layout/);
     assert.deepEqual(parsed.rows, [
       { date: '2026-02-02', amount: '2200.00', currency: 'EUR', counterparty: 'Sponsor Five', reference: '202602/9' },
     ]);

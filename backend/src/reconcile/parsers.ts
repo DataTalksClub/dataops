@@ -566,7 +566,13 @@ export function csvHeaders(text: string): string[] {
 export async function parseStatement(contentType: string, bytes: Buffer, account: StatementAccount, options: ParseOptions = {}): Promise<ParsedStatement> {
   const type = contentType.split(";")[0].trim().toLowerCase();
   if (type === "application/pdf" || bytes.subarray(0, 5).toString("ascii") === "%PDF-") {
-    return parseStatementPdfText(await pdfText(bytes), options.currency || DEFAULT_CURRENCY[account]);
+    const text = await pdfText(bytes);
+    // Finom and Revolut PDFs have fixed layouts too; other banks keep the block heuristic.
+    if (account === "finom" || account === "revolut") {
+      const layouts = await import("./pdfLayouts");
+      return account === "finom" ? layouts.parseFinomPdfText(text) : layouts.parseRevolutPdfText(text);
+    }
+    return parseStatementPdfText(text, options.currency || DEFAULT_CURRENCY[account]);
   }
   if (type.includes("spreadsheetml") || type === "application/vnd.ms-excel") {
     return parseStatementXlsx(bytes, account, options);
