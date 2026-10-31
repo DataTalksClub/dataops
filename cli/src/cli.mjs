@@ -20,6 +20,7 @@ import * as notifications from "./commands/notifications.mjs";
 import * as people from "./commands/people.mjs";
 import * as books from "./commands/books.mjs";
 import * as company from "./commands/company.mjs";
+import * as offers from "./commands/offers.mjs";
 import * as speakers from "./commands/speakers.mjs";
 import * as podcast from "./commands/podcast.mjs";
 import * as raw from "./commands/raw.mjs";
@@ -117,6 +118,7 @@ export const FAMILIES = {
   },
   bookkeeping: { group: "Finance", summary: bookkeeping.summary, help: bookkeeping.help, commands: bookkeeping.commands },
   company: { group: "Finance", summary: company.summary, help: company.help, commands: company.commands },
+  offers: { group: "Finance", summary: offers.summary, help: offers.help, commands: offers.commands },
   reconcile: { group: "Finance", summary: reconcile.summary, help: reconcile.help, commands: reconcile.commands },
   tuition: { group: "Finance", summary: tuition.summary, help: tuition.help, commands: tuition.commands },
   sponsors: { group: "Finance", summary: sponsors.summary, help: sponsors.help, commands: sponsors.commands },

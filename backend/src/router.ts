@@ -9,6 +9,7 @@ import { handleRecurringRoutes } from './routes/recurring';
 import { handleAutomationRoutes } from './routes/automations';
 import { handleUserRoutes } from './routes/users';
 import { handleCompanyRoutes } from './routes/company';
+import { handleOffersRoutes } from './routes/offers';
 import { handleSecretRoutes } from './routes/secrets';
 import { handleFileRoutes } from './routes/files';
 import { handleArtifactRoutes } from './routes/artifacts';
@@ -445,6 +446,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath === '/api/company' || reqPath.startsWith('/api/company/')) {
       const result = await handleCompanyRoutes(reqPath, method, event, client);
+      if (result) return result;
+    }
+
+    if (reqPath === '/api/offers' || reqPath.startsWith('/api/offers/')) {
+      const result = await handleOffersRoutes(reqPath, method, event, client);
       if (result) return result;
     }
 

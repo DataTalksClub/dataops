@@ -370,8 +370,9 @@ The API is `DELETE /api/sponsor-crm/organizations/<id>?hard=true` or
 `DELETE /api/sponsor-crm/contacts/<id>?hard=true`, optionally with
 `&expectedVersion=N`. Without `hard=true`, DELETE still archives.
 
-Sponsors (`dataops sponsors`), reconciliation (`dataops reconcile`), calendar, recurring schedules, automations
+Sponsors (`dataops sponsors`), commercial offers and rate card (`dataops offers`), reconciliation (`dataops reconcile`), calendar, recurring schedules, automations
 (`dataops automations`), invoices, files and artifacts have their own families.
+For commercial offers and the sponsor rate card (packages, EUR/USD prices, channels, validity dates, deliverables, pitch snippets, non-offers, and inbound routing), read via `dataops offers list --json` (optional `--channel <ch>` or `--tag <tag>`) or `dataops offers show <slug> --json`. Admins update a package or rate card via `dataops offers update <slug> --price <amount> [--channels ...] [--valid-from YYYY-MM-DD] [--valid-until YYYY-MM-DD] [--notes "..."]` or bulk-import via `dataops offers import --from-file offers.json`.
 Whenever a sponsor payment is resolved or marked paid (`sponsors receive-payment`, `sponsors link-payment`, `sponsors approve-settlement`, `sponsors correct-payment`, or `reconcile confirm`), the CLI and `--json` response surface `thankYou` (and `nextStep` when `thankYou.status === "required"`), referencing `template.finance.bookkeeping.email-to-sponsor-when-payment-has-been-received` (SOP step 9). Always prepare the thank-you reply as a **draft only** (never send email — Alexey reviews and sends it himself) using the `<NAME>`, `<WHAT_WAS_PAID>`, and `<SENDER_NAME>` placeholders, then record the message reference with `dataops sponsors record-thank-you <deal-id> --ref THREAD_REF --apply`.
 For a web view without a command, call its
 route directly: `dataops api GET /api/<route>` (see `dataops api --help`).

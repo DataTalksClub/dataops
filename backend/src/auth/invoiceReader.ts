@@ -9,6 +9,7 @@ import { handleSponsorNewsletterRoutes } from '../routes/sponsorNewsletters';
 import { handleSponsorCommunicationRoutes } from '../routes/sponsorCommunications';
 import { handleSponsorFinanceRoutes } from '../routes/sponsorFinance';
 import { handleTaskRoutes } from '../routes/tasks';
+import { handleOffersRoutes } from '../routes/offers';
 import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
 import { listUsers } from '../db/users';
 
@@ -99,13 +100,18 @@ export async function handleInvoiceReader(
 
   const isCrmAllowed = cleanPath.startsWith('/api/sponsor-crm/');
   const isTaskAllowed = cleanPath === '/api/tasks' || cleanPath.startsWith('/api/tasks/');
+  const isOffersReadAllowed = method === 'GET' && (cleanPath === '/api/offers' || cleanPath.startsWith('/api/offers/'));
 
-  if (isCrmAllowed || isTaskAllowed) {
+  if (isCrmAllowed || isTaskAllowed || isOffersReadAllowed) {
     const actorId = await resolveServiceActorId(client);
     if (!event.headers) event.headers = {};
     event.headers['x-user-id'] = actorId;
     if (isCrmAllowed) {
       return await handleSponsorRoute(cleanPath, method, event, client);
+    }
+    if (isOffersReadAllowed) {
+      const offersRes = await handleOffersRoutes(cleanPath, method, event, client);
+      if (offersRes) return offersRes;
     }
     return await handleTaskRoutes(cleanPath, method, event, client);
   }
