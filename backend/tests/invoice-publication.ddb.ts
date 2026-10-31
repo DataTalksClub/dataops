@@ -96,6 +96,13 @@ test('a credit note books once as income keyed credit-note:<number>, linking an 
   const linked=await confirmInvoice(client,await asCreditNote('cn-manual','A1B2C3D4-0059-CN-01'),'operator');
   assert.equal(linked.ledgerTransactionId,'manual-cn');
   assert.equal((await client.send(new GetCommand({TableName:TABLE_BOOKKEEPING,Key:{PK:`BOOKKEEPING#${linked.id}`,SK:`BOOKKEEPING#${linked.id}`}}))).Item,undefined);
+  // A hand-corrected draft without the Refund subtype links the same way.
+  await client.send(new PutCommand({TableName:TABLE_BOOKKEEPING,Item:{PK:'BOOKKEEPING#manual-cn-2',SK:'BOOKKEEPING#manual-cn-2',id:'manual-cn-2',transactionDate:'2026-10-30',entryType:'income',amount:'20.00',currency:'USD',sourceType:'manual',sourceKey:'credit-note:A1B2C3D4-0060-CN-01',counterparty:'Example Assist, LLC',createdAt:'2026-10-31T00:00:00.000Z',updatedAt:'2026-10-31T00:00:00.000Z'}}));
+  const {record:plain}=await stage('cn-plain');const corrected=structuredClone(plain);
+  Object.assign(corrected.fields,{invoiceNumber:'A1B2C3D4-0060-CN-01',amount:'20.00',currency:'USD',amountEur:'18.10'});
+  const plainLinked=await confirmInvoice(client,await saveInvoice(client,corrected,plain),'operator');
+  assert.equal(plainLinked.ledgerTransactionId,'manual-cn-2');
+  assert.equal((await client.send(new GetCommand({TableName:TABLE_BOOKKEEPING,Key:{PK:`BOOKKEEPING#${plainLinked.id}`,SK:`BOOKKEEPING#${plainLinked.id}`}}))).Item,undefined);
   // Publishing again (retry or backfill) still adds nothing.
   const again=await publishInvoice(client,(await getInvoice(client,linked.id))!,'operator');
   assert.equal(again.ledgerTransactionId,'manual-cn');

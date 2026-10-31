@@ -203,9 +203,12 @@ export async function publishInvoice(client:DynamoDBDocumentClient,record:Invoic
   // A credit note is income keyed credit-note:<full number>. When that key
   // is already in the ledger (recorded by hand or by an earlier draft), the
   // draft links to that row instead of adding a second one.
+  // The lookup runs for every numbered draft: a hand-corrected draft may
+  // lack the Refund subtype while its credit note is already booked.
   const refund=record.fields.subtype==='Refund'&&!!record.fields.invoiceNumber;
   const sourceKey=refund?`credit-note:${record.fields.invoiceNumber}`:record.id;
-  const booked=refund?(await listTransactions(client)).find(t=>t.sourceKey===sourceKey&&t.id!==record.id):undefined;
+  const creditKey=`credit-note:${record.fields.invoiceNumber}`;
+  const booked=record.fields.invoiceNumber?(await listTransactions(client)).find(t=>t.sourceKey===creditKey&&t.id!==record.id):undefined;
   if(booked){const next=structuredClone(record);next.ledgerTransactionId=booked.id;next.audit.push({action:'publication-attempt',actor,at:new Date().toISOString(),revision:record.revision});delete next.leaseOwner;delete next.leaseUntil;delete next.restoredNeedsReconciliation;await checkpoint(next);return record;}
   const ledger=await putBookkeepingItem(client,'bookkeeping',{...record.fields,id:record.id,entryType:refund||record.fields.subtype==='Refund'?'income':'expense',sourceType:'invoice',sourceKey,invoiceId:record.id,documentArtifactId:record.source.artifactId,externalReferences:record.destinations},`invoice#${record.id}`);
   if(ledger.duplicate) await updateBookkeepingTransaction(client,record.id,ledger.item.updatedAt,{externalReferences:record.destinations});
