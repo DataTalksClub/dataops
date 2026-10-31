@@ -12,6 +12,7 @@ import * as campaigns from "./commands/campaigns.mjs";
 import * as cards from "./commands/cards.mjs";
 import * as event from "./commands/event.mjs";
 import * as events from "./commands/events.mjs";
+import * as finance from "./commands/finance.mjs";
 import * as files from "./commands/files.mjs";
 import * as invoices from "./commands/invoices.mjs";
 import * as invoicePdfs from './invoicePdfs.mjs';
@@ -118,6 +119,7 @@ export const FAMILIES = {
       "sync-holidays": calendar.syncHolidays,
     },
   },
+  finance: { group: "Finance", summary: finance.summary, help: finance.help, commands: finance.commands },
   bookkeeping: { group: "Finance", summary: bookkeeping.summary, help: bookkeeping.help, commands: bookkeeping.commands },
   company: { group: "Finance", summary: company.summary, help: company.help, commands: company.commands },
   offers: { group: "Finance", summary: offers.summary, help: offers.help, commands: offers.commands },
