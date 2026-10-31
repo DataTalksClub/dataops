@@ -60,6 +60,7 @@ subcommands, flags, and examples.
 | `podcast` | episodes: `list`, `show`, `create`, `update`, `create-card` |
 | `speakers` | website speaker/author profiles: `list`, `show`, `create`, `update` |
 | `books` | Book of the Week entries: `list`, `show`, `create`, `update` |
+| `events` | past events archive (Luma descriptions, speakers, recordings): `list` (`--course`, `--date`), `show`, `create`, `update`, `delete`, `import` |
 | `calendar` | read-only events (Cards, podcast episodes, newsletter issues) and open slots |
 | `recurring` | schedules that generate Tasks |
 | `automations` | `list` every scheduled or triggered job with its last and next run; `set` the settings they read (admin) |

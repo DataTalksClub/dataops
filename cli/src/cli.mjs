@@ -11,6 +11,7 @@ import * as calendar from "./commands/calendar.mjs";
 import * as campaigns from "./commands/campaigns.mjs";
 import * as cards from "./commands/cards.mjs";
 import * as event from "./commands/event.mjs";
+import * as events from "./commands/events.mjs";
 import * as files from "./commands/files.mjs";
 import * as invoices from "./commands/invoices.mjs";
 import * as invoicePdfs from './invoicePdfs.mjs';
@@ -91,6 +92,7 @@ export const FAMILIES = {
   kb: { group: "Knowledge", summary: kb.summary, help: kb.help, commands: kb.commands },
   campaigns: { group: "Planning", summary: campaigns.summary, help: campaigns.help, commands: campaigns.commands },
   event: { group: "Planning", summary: event.summary, help: event.help, commands: event.commands },
+  events: { group: "Planning", summary: events.summary, help: events.help, commands: events.commands },
   newsletter: { group: "Planning", summary: newsletter.summary, help: newsletter.help, commands: newsletter.commands },
   podcast: { group: "Planning", summary: podcast.summary, help: podcast.help, commands: podcast.commands },
   webinar: { group: "Planning", summary: "Webinar speaker materials", help: sponsorDocs.webinarDocHelp, commands: { doc: sponsorDocs.domainDocCommand("webinar") } },

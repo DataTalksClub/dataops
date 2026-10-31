@@ -233,9 +233,13 @@ alternate-slot picker. Send the printed email from Orin's mailbox; DataOps
 never mails the guest automatically.
 
 For website content: `dataops speakers list` (speaker/author profiles for
-`_people` pages; `--name/--slug/--bio/--photo-url/--github/--twitter/--linkedin/--website`)
-and `dataops books list` (Book of the Week entries for `_books` pages;
-`--title/--authors/--description/--start-date/--end-date/--cover-url/--link "Text=URL"`).
+`_people` pages; `--name/--slug/--bio/--photo-url/--github/--twitter/--linkedin/--website`),
+`dataops books list` (Book of the Week entries for `_books` pages;
+`--title/--authors/--description/--start-date/--end-date/--cover-url/--link "Text=URL"`),
+and `dataops events list [--course COURSE] [--date YYYY-MM-DD|YYYY-MM|YYYY]`
+(the past events archive with Luma copy, speakers, and recording URLs:
+`dataops events show <id-or-slug>`, `dataops events create --title ... --date YYYY-MM-DD --course ... --luma-url ... --speakers "..." --recording-url ... --description "..."`,
+and `dataops events import <folder>`).
 The website script generates the pages from these registers plus the episode register.
 
 For cohort campaign calendars and social post rows per cohort Card:
