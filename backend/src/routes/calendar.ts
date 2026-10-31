@@ -7,7 +7,7 @@ import { builtInHolidayGeneration,holidayMetadata,holidaySnapshot } from '../cal
 import { persistHolidayGeneration,readHolidayGeneration } from '../db/calendarHolidays';
 import { projectCalendarOverlays } from '../calendar/overlays';
 import { newsletterCalendarOverlay } from '../calendar/newsletterOverlay';
-import { berlinToday, ownerCalendarOverlay, ownerCalendarRange, fetchDapierConnections, parseDurationMinutes, parseSlotWindow } from '../calendar/ownerCalendarOverlay';
+import { berlinToday, ownerCalendarOverlay, ownerCalendarRange, fetchDapierConnections, parseDurationMinutes, parseSlotWindow, DEFAULT_CALL_DURATION_MINUTES, type SlotWindow } from '../calendar/ownerCalendarOverlay';
 import { calendarHoldOverlay, suppressHeldSlots } from '../calendar/holdOverlay';
 import { listCalendarHolds } from '../db/calendarHolds';
 const json=(statusCode:number,body:unknown):LambdaResponse=>({statusCode,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -29,7 +29,7 @@ export async function handleCalendarRoutes(path:string,method:string,event:Lambd
  }
  const r=range(event);
  if(path==='/api/calendar-items/overlays'){if(method!=='GET')return json(405,{error:'Method not allowed'});if(!r)return json(400,{error:'Invalid or unbounded range'});const q=event.queryStringParameters||{},includeAll=q.all==='true'||q.includeAll==='true'||r.from===r.to;
- let durationMinutes: number; let slotWindow: 'midday'|'evening'|'any'; try{durationMinutes=parseDurationMinutes((q as any).duration);slotWindow=parseSlotWindow((q as any).window);}catch(e:any){return json(400,{error:String(e?.message||'Invalid duration or window')});}
+ let durationMinutes: number; let slotWindow: SlotWindow; try{slotWindow=parseSlotWindow((q as any).window);durationMinutes=parseDurationMinutes((q as any).duration,slotWindow==='call'?DEFAULT_CALL_DURATION_MINUTES:undefined);}catch(e:any){return json(400,{error:String(e?.message||'Invalid duration or window')});}
  // Past days get no open slots, so the owner's calendar is read only for a range that reaches today.
  const providers=[newsletterCalendarOverlay(client)];if(ownerCalendarRange(r.from,r.to))providers.push(ownerCalendarOverlay({ client, includeAll, durationMinutes, window: slotWindow }));const holds=await listCalendarHolds(client,{from:r.from,to:r.to,activeOnly:true});providers.push(calendarHoldOverlay(holds));const projected=await projectCalendarOverlays(r.from,r.to,providers);const items=suppressHeldSlots(projected.items,holds);return json(200,{...projected,items,durationMinutes,window:slotWindow});}
  if(path!=='/api/calendar-items')return json(404,{error:'Not found'});

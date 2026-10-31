@@ -15,7 +15,7 @@ an overlay. Change an event on its Card or episode (dataops cards update
 Usage
   dataops calendar list [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--type KIND]
   dataops calendar day <date> [--duration MINUTES] [--window evening|midday|any]
-  dataops calendar slots [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--all] [--duration MINUTES] [--window evening|midday|any]
+  dataops calendar slots [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--all] [--duration MINUTES] [--window evening|midday|any|call]
   dataops calendar propose --date D --window evening|midday --duration N --title T --topic TOPIC [--guest-ref EMAIL] [--document-url URL] [--card ID] [--expires-days 7]
   dataops calendar confirm-hold <id> [--guest-ref EMAIL] [--document-url URL]
   dataops calendar move-hold <id> --date D [--window evening|midday] [--time HH:MM] [--duration N] [--title T] [--topic TOPIC] [--guest-ref EMAIL] [--document-url URL]
@@ -37,6 +37,9 @@ Slot options
 Operational windows (Europe/Berlin)
   evening 16:30–18:30 band. Podcast/recording (and 60-min webinar) preferred
           start 17:00; 16:30 is workshop-only (90 min, needs 16:30–18:00 free).
+  call    11:00–16:00 weekdays, 30-minute grid (matches the public 30-minute
+          Calendly event; --window call defaults --duration to 30). Lunch and
+          Busy blocks are for event slots only and block calls.
   midday  11:30–14:00; podcast/webinar start 12:30 (60), workshop start 12:00 (90).
   Availability = a contiguous free block of at least --duration inside the
   chosen window(s). Single-day range implies --all (full event listing).
@@ -71,8 +74,8 @@ export function parseDurationMinutes(raw) {
 export function parseSlotWindow(raw) {
   if (raw === undefined || raw === null || raw === "") return DEFAULT_SLOT_WINDOW;
   const v = String(raw).trim().toLowerCase();
-  if (v === "midday" || v === "evening" || v === "any") return v;
-  throw new Error("Invalid --window: must be one of 'evening', 'midday', 'any'.");
+  if (v === "midday" || v === "evening" || v === "any" || v === "call") return v;
+  throw new Error("Invalid --window: must be one of 'evening', 'midday', 'any', 'call'.");
 }
 
 const MIDDAY_WINDOW = { start: "11:30", end: "14:00", preferStart: "12:30" };
@@ -355,6 +358,17 @@ export async function day(args, io) {
     io.print(`\n  ⚠ ALL-DAY BLOCKER: ${blockers.map((b) => b.label).join(" · ")}`);
   }
 
+  if (window === "call") {
+    const byDate = {};
+    for (const item of items) {
+      if (item.provider === "owner-calendar" && item.isAvailableSlot && item.slot === "call") {
+        (byDate[item.startDate] ||= []).push(item.label.split(" ")[0]);
+      }
+    }
+    io.print(`\nCall availability (${durationMinutes} min, Europe/Berlin):`);
+    for (const date of Object.keys(byDate).sort()) io.print(`  ${date}: ${byDate[date].join(", ")}`);
+    return { ...result, durationMinutes, window };
+  }
   const showMidday = window === "any" || window === "midday";
   const showEvening = window === "any" || window === "evening";
   io.print(`\nOperational Slot Availability (${durationMinutes} min):`);
@@ -413,8 +427,8 @@ export async function slots(args, io) {
   } else if (!from) {
     from = to;
   }
-  const durationMinutes = parseDurationMinutes(args.duration);
   const window = parseSlotWindow(args.window);
+  const durationMinutes = window === "call" && !args.duration ? 30 : parseDurationMinutes(args.duration);
 
   const query = new URLSearchParams({ from, to, duration: String(durationMinutes), window });
   if (args.all || args.includeAll) query.set("includeAll", "true");

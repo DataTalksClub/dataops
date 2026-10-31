@@ -27,11 +27,13 @@ export interface OwnerCalendarConfig {
   today?: string;
   /** Free contiguous block length in minutes. Default 60; workshops use 90. */
   durationMinutes?: number;
+  /** Clock for call slots (tests); defaults to the current time. */
+  now?: Date;
   /** Which operational window(s) to project. Default 'any'. */
   window?: SlotWindow;
 }
 
-export type SlotWindow = 'midday' | 'evening' | 'any';
+export type SlotWindow = 'midday' | 'evening' | 'any' | 'call';
 
 export const DEFAULT_SLOT_DURATION_MINUTES = 60;
 export const DEFAULT_SLOT_WINDOW: SlotWindow = 'any';
@@ -54,6 +56,16 @@ export const WORKSHOP_WINDOW = { start: '16:30', end: '18:30', preferStart: '16:
 /** Workshop duration (minutes). 90 = workshop only; 60 = webinar AND podcast. */
 export const WORKSHOP_DURATION_MINUTES = 90;
 
+/**
+ * Call hours (Europe/Berlin): the window Alexey's public Calendly 30-minute
+ * event offers, weekdays only. Call slots sit on a 30-minute grid and are
+ * separate from the event windows above: Lunch and Busy blocks only mark time
+ * for event slots, so they (like every other non-free event) block calls.
+ */
+export const CALL_WINDOW = { start: '11:00', end: '16:00' } as const;
+export const CALL_GRID_MINUTES = 30;
+export const DEFAULT_CALL_DURATION_MINUTES = 30;
+
 export function parseDurationMinutes(raw: unknown, def = DEFAULT_SLOT_DURATION_MINUTES): number {
   if (raw === undefined || raw === null || raw === '') return def;
   const n = typeof raw === 'number' ? raw : Number(String(raw).trim());
@@ -66,8 +78,8 @@ export function parseDurationMinutes(raw: unknown, def = DEFAULT_SLOT_DURATION_M
 export function parseSlotWindow(raw: unknown, def: SlotWindow = DEFAULT_SLOT_WINDOW): SlotWindow {
   if (raw === undefined || raw === null || raw === '') return def;
   const v = String(raw).trim().toLowerCase();
-  if (v === 'midday' || v === 'evening' || v === 'any') return v;
-  throw new Error("Invalid window: must be one of 'evening', 'midday', 'any'.");
+  if (v === 'midday' || v === 'evening' || v === 'any' || v === 'call') return v;
+  throw new Error("Invalid window: must be one of 'evening', 'midday', 'any', 'call'.");
 }
 
 function timeToMinutes(t: string): number {
@@ -126,6 +138,25 @@ export function isWindowFreeForDuration(
     if (b.start < blockEnd && b.end > blockStart) return false;
   }
   return true;
+}
+
+/**
+ * Open call start times (Berlin HH:MM) for one day: every grid start in the
+ * call hours whose `durationMinutes` block overlaps no busy interval.
+ */
+export function openCallStarts(
+  busy: Array<{ start: string; end: string }>,
+  durationMinutes: number = DEFAULT_CALL_DURATION_MINUTES,
+): string[] {
+  const out: string[] = [];
+  const first = timeToMinutes(CALL_WINDOW.start);
+  const last = timeToMinutes(CALL_WINDOW.end);
+  for (let m = first; m + durationMinutes <= last; m += CALL_GRID_MINUTES) {
+    const start = minutesToTime(m);
+    const end = minutesToTime(m + durationMinutes);
+    if (!busy.some((b) => b.start < end && b.end > start)) out.push(start);
+  }
+  return out;
 }
 
 /** Busy Berlin HH:MM intervals clipped to a window, for duration checks. */
@@ -471,6 +502,53 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
         : activeSettings;
 
       const result: CalendarOverlayItem[] = [];
+
+      if (config?.window === 'call') {
+        const callDuration = config.durationMinutes ?? DEFAULT_CALL_DURATION_MINUTES;
+        const nowIso = (config.now ?? new Date()).toISOString();
+        const nowDate = formatBerlinDate(nowIso);
+        const nowTime = formatBerlinTime(nowIso);
+        for (const curDate of eachDayOfInterval(from, to)) {
+          const dow = new Date(`${curDate}T12:00:00Z`).getUTCDay();
+          if (dow === 0 || dow === 6) continue;
+          // Calls ignore the Lunch/Busy/routine filters: every event that is
+          // not marked free (transparent) and not cancelled blocks the call.
+          const busy: Array<{ start: string; end: string }> = [];
+          let dayBlocked = false;
+          for (const e of events) {
+            if (e.status === 'cancelled' || e.transparency === 'transparent') continue;
+            if (e.start?.date) {
+              const endDate = adjustAllDayEndDate(e.start.date, e.end?.date);
+              if (e.start.date <= curDate && curDate <= endDate) dayBlocked = true;
+              continue;
+            }
+            if (!e.start?.dateTime) continue;
+            const sDate = formatBerlinDate(e.start.dateTime);
+            const eDate = formatBerlinDate(e.end?.dateTime || e.start.dateTime);
+            if (curDate < sDate || curDate > eDate) continue;
+            busy.push({
+              start: sDate < curDate ? '00:00' : formatBerlinTime(e.start.dateTime),
+              end: eDate > curDate || !e.end?.dateTime ? '24:00' : formatBerlinTime(e.end.dateTime),
+            });
+          }
+          if (dayBlocked) continue;
+          for (const start of openCallStarts(busy, callDuration)) {
+            if (curDate < nowDate || (curDate === nowDate && start <= nowTime)) continue;
+            result.push({
+              provider: 'owner-calendar',
+              id: `owner-slot:${curDate}:call:${start}`,
+              startDate: curDate,
+              endDate: curDate,
+              label: `${start} Available`,
+              category: 'Available slot',
+              slot: 'call',
+              isSlotEvent: true,
+              isAvailableSlot: true,
+            });
+          }
+        }
+        return connected(result);
+      }
 
       interface ProcessedEvent {
         event: any;

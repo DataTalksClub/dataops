@@ -9,7 +9,7 @@ export type CalendarOverlayItem = {
   category?: string;
   startsAt?: string;
   endsAt?: string;
-  slot?: 'midday' | 'evening' | 'all-day' | 'outside';
+  slot?: 'midday' | 'evening' | 'call' | 'all-day' | 'outside';
   isSlotEvent?: boolean;
   isAvailableSlot?: boolean;
   /** A newsletter issue's kind, number and slot state (newsletter overlay only). */

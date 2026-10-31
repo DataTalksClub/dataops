@@ -6,6 +6,7 @@ import {
   setOwnerCalendarProviderClientsForTests,
   shouldFilterOwnerCalendarEvent,
   ownerCalendarRange,
+  parseSlotWindow,
 } from '../src/calendar/ownerCalendarOverlay';
 import { DEFAULT_CALENDAR_OVERLAY_SETTINGS as UNSELECTED_CALENDAR_SETTINGS } from '../src/db/calendar';
 
@@ -859,6 +860,37 @@ describe('owner calendar overlay and filtering', () => {
       const mondayMid: any = await selectedOwnerCalendarOverlay({ today: TODAY, brokerCredential: 't', durationMinutes: 60, window: 'midday' }).project('2026-10-12', '2026-10-12');
       assert.ok(mondayMid.items.some((i: any) => i.id === 'owner-slot:2026-10-12:midday'), 'midday still projected');
       assert.equal(mondayMid.items.some((i: any) => i.slot === 'evening'), false, 'window=midday projects no evening slots');
+    });
+
+    it('projects 30-minute call slots on a grid where Lunch and Busy blocks block calls', async () => {
+      const ev = (id: string, summary: string, s: string, e: string, extra: object = {}) => ({ id, summary, status: 'confirmed', start: { dateTime: s }, end: { dateTime: e }, ...extra });
+      const mockFetch: typeof fetch = async (input) => {
+        const url = String(input);
+        if (url.endsWith('/api/agent/token')) return new Response(JSON.stringify({ access_token: 'g' }), { status: 200 });
+        if (url.includes('googleapis.com')) {
+          return new Response(JSON.stringify({
+            items: [
+              // Monday 2026-10-12: Lunch + Busy would be ignored for event slots but block calls
+              ev('lunch', 'Lunch', '2026-10-12T12:00:00+02:00', '2026-10-12T13:00:00+02:00'),
+              ev('busy', 'Busy', '2026-10-12T14:00:00+02:00', '2026-10-12T15:00:00+02:00'),
+              ev('mtg', 'Meeting', '2026-10-12T11:00:00+02:00', '2026-10-12T11:15:00+02:00'),
+              // Transparent (free) events do not block
+              ev('free', 'Reminder', '2026-10-12T15:00:00+02:00', '2026-10-12T16:00:00+02:00', { transparency: 'transparent' }),
+              // Tuesday: all-day vacation closes the day
+              { id: 'vac', summary: 'Vacation', status: 'confirmed', start: { date: '2026-10-13' }, end: { date: '2026-10-14' } },
+            ],
+          }), { status: 200 });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+      setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
+      const out: any = await selectedOwnerCalendarOverlay({ today: TODAY, now: new Date('2026-10-01T00:00:00Z'), brokerCredential: 't', window: 'call' }).project('2026-10-10', '2026-10-14');
+      const byDay = (d: string) => out.items.filter((i: any) => i.startDate === d).map((i: any) => i.id.split(':call:')[1]);
+      assert.deepEqual(byDay('2026-10-12'), ['11:30', '13:00', '13:30', '15:00', '15:30']);
+      assert.deepEqual(byDay('2026-10-13'), [], 'all-day blocker closes the day');
+      assert.deepEqual(byDay('2026-10-10'), [], 'weekend');
+      assert.ok(out.items.every((i: any) => i.slot === 'call' && i.isAvailableSlot));
+      assert.equal(parseSlotWindow('call'), 'call');
     });
   });
 });
