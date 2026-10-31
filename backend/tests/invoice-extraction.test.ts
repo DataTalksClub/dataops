@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { extractInvoiceText, normalizeSubject, pdfText } from '../src/invoices/extract';
+import { extractInvoiceText, normalizePdfText, normalizeSubject, pdfText } from '../src/invoices/extract';
 import { missingEvidence, validateFields } from '../src/invoices/model';
 import { sheetValues, validateHeaders } from '../src/invoices/providers';
 import { restoredRecord } from '../src/export/portableValidate';
@@ -123,4 +123,44 @@ test('EUR invoice and actual payment retain independent values with equivalent d
   assert.deepEqual(missingEvidence({...fields,amount:'1000000000.01',amountEur:'1000000000.01'}),[]);
   assert.deepEqual(missingEvidence({...fields,amountEur:'11',paymentEvidence:'Operator actual bank value includes separately reviewed fee'}),[]);
   assert.ok(missingEvidence({...fields,amountEur:'11',paymentEvidence:''}).includes('paymentEvidence'));
+});
+
+// Gold cases: synthetic twins of real documents (tests/fixtures/extraction-gold).
+const gold=(id:string)=>JSON.parse(readFileSync(new URL(`./fixtures/extraction-gold/${id}.json`,import.meta.url),'utf8'));
+test('credit note: refunded amount (not the adjusted total), full number, document description, income, card',async()=>{
+  const g=gold('credit-note-refund-adjusted-total');
+  const check=(parsed:ReturnType<typeof extractInvoiceText>)=>{
+    assert.equal(parsed.extraction.documentType,g.expected.docType);
+    assert.equal(parsed.extraction.direction,g.expected.direction);
+    assert.equal(parsed.extraction.paymentChannel,g.expected.paymentChannel);
+    assert.equal(parsed.extraction.needsReview,undefined);
+    assert.equal(parsed.fields.subtype,'Refund');
+    assert.equal(parsed.fields.amount,g.expected.amount);
+    assert.equal(parsed.fields.currency,g.expected.currency);
+    assert.equal(parsed.fields.invoiceNumber,g.expected.invoiceNumber);
+    assert.equal(parsed.fields.counterparty,g.expected.counterparty);
+    assert.equal(parsed.fields.transactionDate,g.expected.date);
+    assert.match(parsed.fields.description||'',/^Credit note: Unused time/);
+    for(const trap of g.traps) assert.notEqual((parsed.fields as Record<string,unknown>)[trap.field] ?? (parsed.extraction as Record<string,unknown>)[trap.field],trap.value,trap.why);
+  };
+  // The text layer as pdfjs returns it, hyphens as U+0000.
+  check(extractInvoiceText(g.text,{subject:g.emailSubject}));
+  // A real PDF of the same layout through pdfText.
+  check(extractInvoiceText(await pdfText(pdf(normalizePdfText(g.text))),{subject:g.emailSubject}));
+});
+test('credit note with conflicting refunded amounts leaves the amount empty and asks for review',()=>{
+  const parsed=extractInvoiceText('Credit note\nCredit note number EX-0001-CN-01\nDate issued October 30, 2026\nExample Supplier GmbH\n$120.00 refunded on October 30, 2026\nCredited total $100.00\nAdjusted invoice total $20.00\n',{subject:'refund'});
+  assert.equal(parsed.extraction.documentType,'credit_note');
+  assert.equal(parsed.fields.amount,undefined);
+  assert.equal(parsed.extraction.needsReview,true);
+  assert.deepEqual(parsed.extraction.candidates?.sort(),['100.00','120.00']);
+  assert.match(parsed.extraction.issues.join(' '),/conflicting refunded amounts \(120\.00, 100\.00\)/);
+  assert.notEqual(parsed.fields.description,'refund');
+});
+test('prose about a credit note on a replacement invoice is not a credit note; hyphenated numbers stay whole',()=>{
+  const parsed=extractInvoiceText('Invoice\nInvoice number 202605/31\nDate 01.06.2026\nThis invoice replaces invoice 202604/24, which was cancelled by the corresponding credit note.\nTotal 1,550.00 EUR\n');
+  assert.equal(parsed.extraction.documentType,'invoice');
+  assert.equal(parsed.fields.subtype,undefined);
+  assert.equal(extractInvoiceText('Receipt\nReceipt number ABCD \u0000 1234 \u0000 0001\nTotal $5.00').fields.invoiceNumber,'ABCD-1234-0001');
+  assert.equal(extractInvoiceText('Invoice\nInvoice number F-0003-2026\nTotal 10.00 EUR').fields.invoiceNumber,'F-0003-2026');
 });

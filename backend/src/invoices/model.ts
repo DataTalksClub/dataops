@@ -12,7 +12,13 @@ export interface Destination {
 export interface Invoice {
   id: string; revision: number; status: 'pending' | 'confirmed' | 'rejected';
   fields: InvoiceFields;
-  extraction: { method: string; evidence: string[]; issues: string[] };
+  // A credit note is published as income (subtype Refund) keyed
+  // credit-note:<number>. needsReview with candidates: the amount was
+  // ambiguous and left empty.
+  extraction: { method: string; evidence: string[]; issues: string[]; documentType?: 'invoice' | 'credit_note'; direction?: 'income' | 'expense'; paymentChannel?: string; needsReview?: boolean; candidates?: string[] };
+  // The ledger row this record is booked as when it is not its own row
+  // (a credit note already recorded under the same credit-note:<number>).
+  ledgerTransactionId?: string;
   source: { intakeItemIds: string[]; artifactId: string; checksum: string };
   destinations: { dropbox: Destination; sheets: Destination };
   audit: Array<{ action: string; actor: string; at: string; revision: number; oldDocument?: { artifactId: string; checksum: string }; newDocument?: { artifactId: string; checksum: string }; reextracted?: boolean }>;

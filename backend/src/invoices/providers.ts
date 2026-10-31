@@ -40,7 +40,9 @@ export const marker = (invoice:Invoice) => `[dataops:${invoice.id}]`;
 export function sheetValues(invoice:Invoice,headers:string[]): string[] {
   validateHeaders(headers);
   const f:InvoiceFields = invoice.fields;
-  const cells:Record<string,string> = {'Date sent':f.transactionDate!, 'Date paid':f.paidDate!, Provider:f.counterparty!, What:f.description!, 'Price, $': f.currency==='USD' ? `-${f.amount}`:'', 'Price, EUR':`-${f.amountEur}`, Statement:`${f.statementRef || ''} ${marker(invoice)} document:${invoice.source.artifactId}`.trim(), Count:String(f.quantity || 1), Comment:[f.comment,f.paymentEvidence].filter(Boolean).join('; '), 'Entry Type':'expense', Type:f.subtype || '', Period:f.period || '', Category:f.category || ''};
+  // A credit note is money coming back: a positive income row.
+  const refund = f.subtype === 'Refund';
+  const cells:Record<string,string> = {'Date sent':f.transactionDate!, 'Date paid':f.paidDate!, Provider:f.counterparty!, What:f.description!, 'Price, $': f.currency==='USD' ? `${refund?'':'-'}${f.amount}`:'', 'Price, EUR':`${refund?'':'-'}${f.amountEur}`, Statement:`${f.statementRef || ''} ${marker(invoice)} document:${invoice.source.artifactId}`.trim(), Count:String(f.quantity || 1), Comment:[f.comment,f.paymentEvidence].filter(Boolean).join('; '), 'Entry Type':refund?'income':'expense', Type:f.subtype || '', Period:f.period || '', Category:f.category || ''};
   return headers.map(h=>cells[h] || '');
 }
 function column(index:number) { let result=''; for(let n=index;n>0;n=Math.floor((n-1)/26)) result=String.fromCharCode(65+(n-1)%26)+result; return result; }

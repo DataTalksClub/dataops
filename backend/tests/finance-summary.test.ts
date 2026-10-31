@@ -108,10 +108,12 @@ describe('finance summary', () => {
     const t = summarize({ today: '2026-10-31', query: { month: '2026-10' }, rates: usdAt(1.12, '2026-10-03'), rows }).totals;
     assert.equal(t.operatingIncome, 2190);
     assert.equal(t.outputVat, 190);
-    assert.equal(t.operatingExpenses, 217.1);
+    assert.equal(t.operatingExpenses, 229);
+    assert.equal(t.refunds, 11.9);
+    assert.equal(t.refundsNetOfVat, 10);
     assert.equal(t.inputVat, 27.1);
     assert.equal(t.incomeNetOfVat, 2000);
-    assert.equal(t.expensesNetOfVat, 100 + 90 - 10 + 10);
+    assert.equal(t.expensesNetOfVat, 200);
     assert.equal(t.netProfitExVat, 1810);
     assert.equal(t.projectedVat, 162.9);
     assert.equal(t.vatPaid, 150);
@@ -121,6 +123,17 @@ describe('finance summary', () => {
     assert.equal(t.vatUnknownCount, 1);
     assert.equal(t.moneyOut, 4854.36);
     assert.equal(t.moneyIn, 2201.9);
+  });
+
+  it('flags a credit-note row as a refund: money in, not revenue', () => {
+    const t = summarize({ today: '2026-10-31', query: { month: '2026-10' }, rates: usdAt(1.1, '2026-10-30'), rows: [
+      row('cn', { entryType: 'income', amount: '646.63', currency: 'USD', paidDate: '2026-10-30', sourceType: 'manual', sourceKey: 'credit-note:A1B2C3D4-0059-CN-01' }),
+      row('sale', { entryType: 'income', amount: '1000', paidDate: '2026-10-02', vatAmount: '0' }),
+    ] }).totals;
+    assert.equal(t.moneyIn, 1587.85);
+    assert.equal(t.refunds, 587.85);
+    assert.equal(t.operatingIncome, 1000);
+    assert.equal(t.netProfitExVat, 1587.85);
   });
 
   it('splits a year into twelve months, marks future ones, and ytd stops at the current month', () => {

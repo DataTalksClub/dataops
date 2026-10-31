@@ -64,11 +64,16 @@ Rates are quoted as units of the currency per 1 EUR, the ECB convention.
 | `Health Insurance` | TK |
 | anything else | Operating income or expense |
 
-A `Refund` subtype income row reduces operating expenses rather than adding to
-income.
+**Refunds.** A supplier refund or credit note is recorded as **income** with
+subtype `Refund` and source key `credit-note:<full document number>` (the
+invoice intake does this automatically and dedupes on the key, so a credit note
+recorded by hand is linked, never booked twice). Refunds count as money in and
+toward net profit, but are their own `refunds` line, not revenue; their VAT
+reduces input VAT. A row with a `credit-note:` key is a refund even without the
+subtype.
 
-- **Net profit excluding VAT** = (operating income − output VAT) − (operating
-  expenses − input VAT). Taxes and TK are shown as their own lines and in *net
+- **Net profit excluding VAT** = (operating income − output VAT) + (refunds −
+  their VAT) − (operating expenses − input VAT). Taxes and TK are shown as their own lines and in *net
   after taxes and TK*. VAT payments and refunds are neither profit nor loss.
 - **Projected VAT position** = output VAT − input VAT. Positive is owed to the
   Finanzamt, negative is a refund. It is shown next to what was actually paid

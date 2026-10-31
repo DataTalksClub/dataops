@@ -41,7 +41,8 @@ export function headlineMarkup(summary, e) {
       <section class="fin-tile fin-tile--hero" aria-labelledby="fin-profit-label">
         <h2 id="fin-profit-label" class="fin-tile__label">Net profit excluding VAT</h2>
         <p class="fin-tile__value" data-fin-profit>${formatEur(t.netProfitExVat)} <span class="fin-tile__unit">EUR</span></p>
-        <p class="fin-tile__sub">Income net of VAT ${formatEur(t.incomeNetOfVat)} − expenses net of VAT ${formatEur(t.expensesNetOfVat)}</p>
+        <p class="fin-tile__sub">Income net of VAT ${formatEur(t.incomeNetOfVat)}${t.refunds ? ` + refunds ${formatEur(t.refundsNetOfVat)}` : ""}
+          − expenses net of VAT ${formatEur(t.expensesNetOfVat)}</p>
         <p class="fin-tile__sub">After taxes ${formatEur(t.otherTaxes)} and TK ${formatEur(t.healthInsurance)}: <strong>${formatEur(t.netAfterTaxes)}</strong></p>
       </section>
       <section class="fin-tile fin-tile--hero" aria-labelledby="fin-vat-label">

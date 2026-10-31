@@ -46,6 +46,8 @@ export type Totals = {
   net: number;
   operatingIncome: number;
   operatingExpenses: number;
+  refunds: number;
+  refundsNetOfVat: number;
   outputVat: number;
   inputVat: number;
   incomeNetOfVat: number;
@@ -86,8 +88,9 @@ export const SOURCE_RULES = [
   'Bank and PayPal statement lines are never counted. They are evidence: a statement line with no ledger row is listed as a gap, so the payment, the invoice it settles and the bank line are counted once.',
   'A bookkeeping-sheet row that repeats an invoice, sponsor-payment or payout row (same direction, currency and amount, paid within 3 days, same payer or payee) is dropped and listed under duplicates; the non-sheet row is kept.',
   'EUR conversion: a EUR row is taken as is. A non-EUR row uses its booked EUR amount (amountEur, what the bank actually credited or debited), with the implied rate shown. Without one, the ECB reference rate for the paid date (or the last ECB business day before it) is used. A row that cannot be converted is excluded from the totals and listed as a gap.',
-  'Lines: category VAT is a payment to (expense) or refund from (income) the Finanzamt for VAT; category Taxes is every other tax (Gewerbesteuer, income or corporate tax prepayments); category Health Insurance is TK. Everything else is operating income or expense. A Refund subtype income row reduces operating expenses instead of adding to income.',
-  'Net profit excluding VAT = (operating income - output VAT) - (operating expenses - input VAT). Taxes and TK are shown as their own lines and in net after taxes; VAT payments and refunds are not profit or loss.',
+  'Lines: category VAT is a payment to (expense) or refund from (income) the Finanzamt for VAT; category Taxes is every other tax (Gewerbesteuer, income or corporate tax prepayments); category Health Insurance is TK. Everything else is operating income or expense.',
+  'Refunds from suppliers (credit notes: income rows with subtype Refund or a credit-note:<number> source key) are money in and count toward net profit, but are their own line, not revenue. Their VAT reduces input VAT.',
+  'Net profit excluding VAT = (operating income - output VAT) + (refunds - their VAT) - (operating expenses - input VAT). Taxes and TK are shown as their own lines and in net after taxes; VAT payments and refunds are not profit or loss.',
   'Projected VAT position = output VAT - input VAT: positive is owed to the Finanzamt, negative is a refund. A row without a VAT amount counts as zero VAT and is listed as a gap, so the projection is only as complete as the VAT data.',
 ];
 
@@ -190,19 +193,20 @@ export function dedupe(rows: LedgerRow[]): { kept: LedgerRow[]; duplicates: Dupl
 
 function emptyTotals(): Totals {
   return {
-    moneyIn: 0, moneyOut: 0, net: 0, operatingIncome: 0, operatingExpenses: 0, outputVat: 0, inputVat: 0,
+    moneyIn: 0, moneyOut: 0, net: 0, operatingIncome: 0, operatingExpenses: 0, refunds: 0, refundsNetOfVat: 0, outputVat: 0, inputVat: 0,
     incomeNetOfVat: 0, expensesNetOfVat: 0, netProfitExVat: 0, projectedVat: 0, vatPaid: 0, vatRefunded: 0,
     otherTaxes: 0, healthInsurance: 0, netAfterTaxes: 0, entryCount: 0, vatUnknownCount: 0, unconvertedCount: 0,
   };
 }
 
-const SUMMED: Array<keyof Totals> = ['moneyIn', 'moneyOut', 'operatingIncome', 'operatingExpenses', 'outputVat', 'inputVat', 'vatPaid', 'vatRefunded', 'otherTaxes', 'healthInsurance'];
+const SUMMED: Array<keyof Totals> = ['moneyIn', 'moneyOut', 'operatingIncome', 'operatingExpenses', 'refunds', 'outputVat', 'inputVat', 'vatPaid', 'vatRefunded', 'otherTaxes', 'healthInsurance'];
 
 /** Totals in integer cents, then derived figures, then back to EUR. */
 function total(entries: Entry[]): Totals {
   const c = Object.fromEntries(SUMMED.map((key) => [key, 0])) as Record<string, number>;
   let vatUnknownCount = 0;
   let unconvertedCount = 0;
+  let refundVat = 0;
   for (const entry of entries) {
     if (entry.eur === null) { unconvertedCount += 1; continue; }
     const value = cents(entry.eur);
@@ -211,15 +215,16 @@ function total(entries: Entry[]): Totals {
     if (entry.line === 'operating') {
       if (entry.vatEur === null) vatUnknownCount += 1;
       if (entry.direction === 'out') { c.operatingExpenses += value; c.inputVat += vat; }
-      else if (entry.refund) { c.operatingExpenses -= value; c.inputVat -= vat; }
+      else if (entry.refund) { c.refunds += value; c.inputVat -= vat; refundVat += vat; }
       else { c.operatingIncome += value; c.outputVat += vat; }
     } else if (entry.line === 'vat') c[entry.direction === 'out' ? 'vatPaid' : 'vatRefunded'] += value;
     else if (entry.line === 'taxes') c.otherTaxes += entry.direction === 'out' ? value : -value;
     else c.healthInsurance += entry.direction === 'out' ? value : -value;
   }
   const incomeNetOfVat = c.operatingIncome - c.outputVat;
-  const expensesNetOfVat = c.operatingExpenses - c.inputVat;
-  const netProfitExVat = incomeNetOfVat - expensesNetOfVat;
+  const expensesNetOfVat = c.operatingExpenses - (c.inputVat + refundVat);
+  const refundsNetOfVat = c.refunds - refundVat;
+  const netProfitExVat = incomeNetOfVat + refundsNetOfVat - expensesNetOfVat;
   const out = emptyTotals();
   for (const key of SUMMED) (out[key] as number) = fromCents(c[key]);
   return {
@@ -227,6 +232,7 @@ function total(entries: Entry[]): Totals {
     net: fromCents(c.moneyIn - c.moneyOut),
     incomeNetOfVat: fromCents(incomeNetOfVat),
     expensesNetOfVat: fromCents(expensesNetOfVat),
+    refundsNetOfVat: fromCents(refundsNetOfVat),
     netProfitExVat: fromCents(netProfitExVat),
     projectedVat: fromCents(c.outputVat - c.inputVat),
     netAfterTaxes: fromCents(netProfitExVat - c.otherTaxes - c.healthInsurance),
@@ -247,7 +253,7 @@ export function toEntry(row: LedgerRow, rates: RateLookup): Entry | null {
     month: date.slice(0, 7),
     direction: entryType === 'income' ? 'in' : 'out',
     line: lineOf(row),
-    refund: entryType === 'income' && str(row.subtype) === 'Refund',
+    refund: entryType === 'income' && (str(row.subtype) === 'Refund' || str(row.sourceKey).startsWith('credit-note:')),
     counterparty: str(row.counterparty),
     description: str(row.description),
     category: str(row.category),

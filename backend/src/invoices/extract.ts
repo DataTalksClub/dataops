@@ -96,7 +96,7 @@ function issuerCandidates(text: string): string[] {
   if (first) candidates.push(first[1]);
   const above = /([^\n]{1,120})\n(?:Receipt|Invoice)\s*(?:\n|$)/.exec(text);
   if (above) candidates.push(above[1]);
-  const afterDate = /(?:Date (?:of issue|paid|due)|Invoice date|Billing date|Due date)[^\n]*\n/.exec(text);
+  const afterDate = /(?:Date (?:of issue|issued|paid|due)|Invoice date|Billing date|Due date)[^\n]*\n/.exec(text);
   if (afterDate) {
     for (const line of text.slice(afterDate.index+afterDate[0].length).split('\n').slice(0,8)) {
       if (/^\s*(?:bill\s+to|sold\s+to|customer|client)\b/i.test(line)) break;
@@ -165,7 +165,53 @@ function invoiceNumber(text: string): string | undefined {
   const bare = /(?:^|\n)\s*(?:invoice|receipt)\s+((?=[A-Za-z0-9-]*\d)[A-Za-z0-9][A-Za-z0-9\/_.-]{2,40})\s*(?:\n|$)/i.exec(text);
   return bare ? bare[1] : undefined;
 }
-export function extractInvoiceText(text: string, hints: InvoiceHints = {}): { fields: InvoiceFields; extraction: { method: string; evidence: string[]; issues: string[] } } {
+// Some PDF fonts map the hyphen glyph to U+0000, so "D9D54E5A-0059-CN-01"
+// arrives as "D9D54E5A \0 0059 \0 CN \0 01". Rejoin such tokens; drop any
+// other NUL.
+export function normalizePdfText(text: string): string {
+  return text
+    .replace(/([A-Za-z0-9])[ \t]*\u0000[ \t]*(?=[A-Z0-9]{1,12}(?:[ \t\u0000\n]|$))/g, '$1-')
+    .replace(/\u0000/g, ' ');
+}
+// A credit note or refund document: the amount is what was credited or
+// refunded, never the adjusted, remaining or balance figure.
+// Titles and labels only: prose such as "cancelled by the corresponding
+// credit note" on a replacement invoice is not a credit note.
+const CREDIT_NOTE = /^\s*(?:credit\s*note|gutschrift|stornorechnung|refund)\b(?:\s*(?:no\.?|number|nr\.?|date|datum)\b|\s*$)|\bcredited\s+(?:sub)?total\b|\brefunded\s+on\b/im;
+const CREDIT_NUMBER = /\b([A-Z0-9]+(?:[-/][A-Z0-9]+)*-CN(?:-\d+)?)(?![A-Za-z0-9-])/;
+// "-1.550,00 €" or "-$12.50" on a total line of a credit note.
+const NEGATIVE_TOTAL = /total[^\n\d-]{0,30}-\s?(\$|€|USD\s?|EUR\s?)?([\d][\d.,]*)\s?(\$|€|USD|EUR)?/gi;
+function signedMoney(value: string): string | undefined {
+  const european = /^\d{1,3}(?:\.\d{3})*,\d{2}$/.test(value);
+  return money(european ? value.replace(/\./g, '').replace(',', '.') : value);
+}
+const REFUNDED = /(\$|€|USD\s?|EUR\s?)([\d,]+\.\d{2})\s*(?:USD|EUR)?\s*(?:refunded|credited)\b/gi;
+const CREDITED_TOTAL = /(?:credited\s+total|credit\s+(?:note\s+)?total|total\s+(?:credited|refunded)|gutschriftsbetrag|refund\s+amount)[^\n\d$€]{0,20}(\$|€|USD\s?|EUR\s?)?\s*-?\s*([\d,]+\.\d{2})\s*(\$|€|USD|EUR)?/gi;
+function creditNote(text: string): { amount?: string; currency?: 'USD' | 'EUR'; number?: string; candidates: string[]; line?: string } | undefined {
+  const number = CREDIT_NUMBER.exec(text)?.[1];
+  if (!CREDIT_NOTE.test(text) && !number) return undefined;
+  const found = new Map<string, 'USD' | 'EUR'>();
+  const currencyOf = (symbol = '') => (/€|EUR/i.test(symbol) ? 'EUR' : /\$|USD/i.test(symbol) ? 'USD' : documentCurrency(text) || 'USD');
+  for (const m of text.matchAll(REFUNDED)) { const amount = money(m[2]); if (amount) found.set(amount, currencyOf(m[1])); }
+  for (const m of text.matchAll(CREDITED_TOTAL)) { const amount = money(m[2]); if (amount) found.set(amount, currencyOf(m[1] || m[3])); }
+  if (!found.size) for (const m of text.matchAll(NEGATIVE_TOTAL)) { const amount = signedMoney(m[2]); if (amount) found.set(amount, currencyOf(m[1] || m[3])); }
+  const candidates = [...found.keys()];
+  const line = number ? new RegExp(`${number.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+([^\\n$€]{3,140})`).exec(text)?.[1]?.trim() : undefined;
+  if (candidates.length !== 1) return { number, candidates, line };
+  return { amount: candidates[0], currency: found.get(candidates[0]), number, candidates, line };
+}
+// How the document says it was paid (or refunded): card, PayPal, debit, transfer.
+export function paymentChannel(text: string): 'card' | 'paypal' | 'direct-debit' | 'bank-transfer' | undefined {
+  if (/\b(?:visa|mastercard|master\s?card|amex|american\s+express|maestro)\b[^\n]{0,12}\d{4}\b|\bcard\s+ending\b/i.test(text)) return 'card';
+  if (/\bpaypal\b/i.test(text)) return 'paypal';
+  if (/\b(?:sepa[\s-]+(?:direct\s+debit|lastschrift)|lastschrift|direct\s+debit)\b/i.test(text)) return 'direct-debit';
+  if (/\b(?:bank\s+transfer|wire\s+transfer|überweisung)\b/i.test(text)) return 'bank-transfer';
+  return undefined;
+}
+// Words that say what kind of mail it is, not what was bought.
+const GENERIC_SUBJECT = /^(?:refund|invoice|receipt|payment|credit\s*note|your\s+(?:invoice|receipt|refund)|fwd?|statement|document)s?$/i;
+export function extractInvoiceText(rawText: string, hints: InvoiceHints = {}): { fields: InvoiceFields; extraction: { method: string; evidence: string[]; issues: string[]; documentType?: 'invoice' | 'credit_note'; direction?: 'income' | 'expense'; paymentChannel?: string; needsReview?: boolean; candidates?: string[] } } {
+  const text = normalizePdfText(rawText);
   const fields: InvoiceFields = { archiveRequired: true, quantity: 1 };
   const evidence: string[] = [];
   const issues: string[] = [];
@@ -221,12 +267,35 @@ export function extractInvoiceText(text: string, hints: InvoiceHints = {}): { fi
     if (paid) fields.paidDate = calendar(paid[1]);
     evidence.push('Stripe-layout invoice/receipt number, date and total anchors');
   }
+  const credit = creditNote(text);
+  let needsReview = false;
+  let candidates: string[] | undefined;
+  if (credit) {
+    fields.subtype = 'Refund';
+    if (credit.number) { fields.invoiceNumber = credit.number; evidence.push('full credit-note number'); }
+    if (credit.amount) {
+      fields.amount = credit.amount;
+      fields.currency = credit.currency;
+      evidence.push('refunded/credited amount of a credit note');
+    } else {
+      delete fields.amount;
+      needsReview = true;
+      candidates = credit.candidates;
+      issues.push(credit.candidates.length
+        ? `Credit note with conflicting refunded amounts (${credit.candidates.join(', ')}): confirm the refunded amount`
+        : 'Credit note without a refunded or credited amount: enter it during review');
+      const currency = documentCurrency(text);
+      if (currency) fields.currency = currency;
+    }
+    if (credit.line && !/^(?:credit\s*note|gutschrift|date|datum|invoice|rechnung)\b/i.test(credit.line)) fields.description = `Credit note: ${credit.line}`.slice(0, 200);
+    if (method === 'manual' || method === 'deterministic-stripe') method = 'deterministic-credit-note';
+  }
   // Generic anchors cover layouts outside the two named families and fill
   // anything the named-family pass missed.
   if (!fields.invoiceNumber) { const found = invoiceNumber(text); if (found) { fields.invoiceNumber = found; evidence.push('labeled invoice/receipt number'); } }
   if (!fields.transactionDate) { const found = labeledDate(text, ISSUED_LABELS); if (found) { fields.transactionDate = found; evidence.push('labeled issue date'); } }
   if (!fields.paidDate) { const found = labeledDate(text, PAID_LABELS); if (found) fields.paidDate = found; }
-  if (!fields.amount) {
+  if (!fields.amount && !credit) {
     const found = totalAmount(text);
     if (found) { fields.amount = found.amount; fields.currency = found.currency; evidence.push(`labeled total with ${found.currency} currency`); }
     else { const currency = documentCurrency(text); if (currency) fields.currency = currency; }
@@ -255,17 +324,19 @@ export function extractInvoiceText(text: string, hints: InvoiceHints = {}): { fi
     }
     if (!fields.description) {
       const derived = subjectDescription(subject, fields.counterparty || rule?.name);
-      if (derived) { fields.description = derived; if (method === 'manual') method = 'email-hints'; evidence.push('description from the email subject'); }
+      if (derived && !GENERIC_SUBJECT.test(derived)) { fields.description = derived; if (method === 'manual') method = 'email-hints'; evidence.push('description from the email subject'); }
     }
     if (rule && fields.counterparty === rule.name && !evidence.includes('provider from the forwarded email subject/sender')) evidence.push('provider confirmed against the email subject/sender');
   }
   if (!fields.counterparty) issues.push('Provider not identified: complete it during review');
   else if (method === 'email-hints') issues.push('Provider identified from the email, not the document: confirm it against the PDF');
-  if (!fields.amount || !fields.currency) issues.push('Total not identified: enter the invoice amount during review');
+  if (!credit && (!fields.amount || !fields.currency)) issues.push('Total not identified: enter the invoice amount during review');
   if (!fields.transactionDate) issues.push('Invoice date not identified: enter it during review');
   if (method === 'manual') issues.push('Unsupported or ambiguous layout: complete the draft manually');
   else issues.push('Confirm payment evidence and actual EUR bank amount');
-  return { fields, extraction: { method, evidence, issues } };
+  const channel = paymentChannel(text);
+  return { fields, extraction: { method, evidence, issues, documentType: credit ? 'credit_note' : 'invoice', direction: credit ? 'income' : 'expense',
+    ...(channel ? { paymentChannel: channel } : {}), ...(needsReview ? { needsReview, candidates } : {}) } };
 }
 export async function pdfText(bytes: Buffer): Promise<string> {
   if (bytes.length > 25*1024*1024 || bytes.subarray(0,5).toString() !== '%PDF-') throw new Error('invalid-pdf');

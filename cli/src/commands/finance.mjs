@@ -73,6 +73,7 @@ export function printSummary(io, s) {
   io.print("");
   grid(io, [
     ["Income net of VAT", t.incomeNetOfVat],
+    ["Refunds from suppliers, net of VAT", t.refundsNetOfVat],
     ["Expenses net of VAT", -t.expensesNetOfVat],
     ["Net profit excluding VAT", t.netProfitExVat],
     ["Other taxes (Gewerbesteuer, prepayments)", -t.otherTaxes],
