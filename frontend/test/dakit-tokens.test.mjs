@@ -80,6 +80,7 @@ describe("dakit adoption contract", () => {
         "/src/styles/period-nav.css",
         "/src/styles/podcast.css",
         "/src/styles/bookkeeping.css",
+        "/src/styles/reconcile.css",
       ],
       "index.html must load the dakit tokens, then the dakit bundle, then the app stylesheets in slice order",
     );

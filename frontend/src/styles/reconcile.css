@@ -1,0 +1,345 @@
+/* Month-end bank reconciliation (surfaces/reconcile). Kit tokens only. The
+   table is wide by nature, so it scrolls inside its own container and the
+   page itself never scrolls sideways. */
+body[data-workspace-view="reconcile"] .document-list {
+  width: 100%;
+  min-width: 0;
+  max-width: 1440px;
+}
+
+.reconcile-surface {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--dk-space-4);
+  min-width: 0;
+}
+
+.reconcile-surface p {
+  margin: 0;
+}
+
+.recon-header {
+  flex-wrap: wrap;
+  gap: var(--dk-space-3);
+}
+
+.recon-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--dk-space-3);
+  min-width: 0;
+}
+
+.recon-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dk-space-2);
+  min-width: 0;
+}
+
+.recon-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--dk-space-4);
+  min-width: 0;
+}
+
+.recon-body[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+.recon-stats {
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+}
+
+.recon-stat {
+  border: 0;
+  background: var(--dk-bg-surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recon-stat:hover {
+  background: var(--dk-bg-hover);
+}
+
+.recon-stat[aria-pressed="true"] {
+  background: var(--dk-accent-soft);
+}
+
+.recon-stat--attention .dk-stat__value {
+  color: var(--dk-danger-text);
+}
+
+.recon-stat:focus-visible {
+  outline: 2px solid var(--dk-focus-ring);
+  outline-offset: -2px;
+}
+
+.recon-muted,
+.recon-sub {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}
+
+.recon-sub {
+  display: block;
+}
+
+.recon-filters {
+  max-width: 100%;
+}
+
+.recon-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-surface);
+}
+
+.recon-table-wrap:focus-visible {
+  outline: 2px solid var(--dk-focus-ring);
+}
+
+.recon-table {
+  min-width: 1180px;
+  font-size: var(--dk-text-sm);
+}
+
+.recon-table th {
+  white-space: nowrap;
+  background: var(--dk-bg-muted);
+}
+
+.recon-table td {
+  min-width: 0;
+}
+
+.recon-row--matched td {
+  color: var(--dk-text-muted);
+}
+
+.recon-status {
+  min-width: 152px;
+  max-width: 220px;
+}
+
+.recon-missing-text {
+  margin-top: var(--dk-space-1);
+  color: var(--dk-danger-text);
+  font-size: var(--dk-text-xs);
+}
+
+.recon-row--amount-mismatch .recon-missing-text,
+.recon-row--needs-review .recon-missing-text {
+  color: var(--dk-warning-text);
+}
+
+.recon-party {
+  min-width: 160px;
+  max-width: 240px;
+  overflow-wrap: anywhere;
+}
+
+.recon-side {
+  min-width: 152px;
+}
+
+.recon-side > span {
+  display: block;
+}
+
+.recon-side--missing {
+  background: var(--dk-danger-bg);
+  color: var(--dk-danger-text);
+  font-weight: var(--dk-weight-medium);
+}
+
+.recon-account {
+  font-weight: var(--dk-weight-medium);
+}
+
+.recon-reference {
+  max-width: 220px;
+  overflow-wrap: anywhere;
+}
+
+.recon-num,
+.recon-money {
+  font-family: var(--dk-font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.recon-num {
+  text-align: right;
+}
+
+.recon-currency {
+  color: var(--dk-text-muted);
+}
+
+.recon-nowrap {
+  white-space: nowrap;
+}
+
+.recon-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dk-text-link);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.recon-link:hover {
+  color: var(--dk-text-link-hover);
+}
+
+.recon-docs {
+  display: grid;
+  gap: var(--dk-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recon-actions {
+  display: grid;
+  justify-items: stretch;
+  gap: var(--dk-space-1);
+  min-width: 136px;
+}
+
+/* Actions stay in view while the wide table scrolls sideways. */
+.recon-table .recon-actions-cell {
+  position: sticky;
+  right: 0;
+  background: var(--dk-bg-surface);
+  box-shadow: -1px 0 0 var(--dk-border-default);
+}
+
+.recon-table th.recon-actions-cell {
+  background: var(--dk-bg-muted);
+}
+
+.recon-table tbody tr:hover .recon-actions-cell {
+  background: var(--dk-bg-hover);
+}
+
+.recon-blockers {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.recon-blocker-list {
+  display: grid;
+  gap: var(--dk-space-1);
+  margin: var(--dk-space-2) 0 0;
+  padding-left: var(--dk-space-5);
+}
+
+.recon-blocker-list .recon-sub {
+  display: inline;
+  color: inherit;
+}
+
+.recon-log summary {
+  cursor: pointer;
+  font-weight: var(--dk-weight-semibold);
+}
+
+.recon-log__list {
+  display: grid;
+  gap: var(--dk-space-2);
+  margin: var(--dk-space-3) 0 0;
+  padding-left: var(--dk-space-5);
+  font-size: var(--dk-text-sm);
+  overflow-wrap: anywhere;
+}
+
+.recon-log__list .recon-sub {
+  display: inline;
+}
+
+.recon-dialog {
+  --dk-dialog-width: 600px;
+}
+
+.recon-dialog-row {
+  overflow-wrap: anywhere;
+}
+
+.recon-field {
+  display: grid;
+  gap: var(--dk-space-1);
+}
+
+.recon-drop {
+  display: grid;
+  justify-items: center;
+  gap: var(--dk-space-1);
+  padding: var(--dk-space-6) var(--dk-space-4);
+  border: 1px dashed var(--dk-border-strong);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-muted);
+  text-align: center;
+  cursor: pointer;
+}
+
+.recon-drop.is-over,
+.recon-drop:hover {
+  background: var(--dk-accent-soft);
+}
+
+.recon-drop:has(input:focus-visible) {
+  outline: 2px solid var(--dk-focus-ring);
+}
+
+.recon-drop__title {
+  font-weight: var(--dk-weight-semibold);
+}
+
+.recon-options {
+  display: grid;
+  gap: var(--dk-space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.recon-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--dk-space-2);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 820px) {
+  body[data-workspace-view="reconcile"] .document-list {
+    max-width: none;
+  }
+
+  body[data-workspace-view="reconcile"] .library-view {
+    padding: var(--dk-space-4);
+  }
+
+  .recon-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* On a phone a pinned column would hide the row it acts on. */
+  .recon-table .recon-actions-cell {
+    position: static;
+    box-shadow: none;
+  }
+}

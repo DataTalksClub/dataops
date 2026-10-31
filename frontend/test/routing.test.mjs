@@ -54,6 +54,8 @@ describe("canonical workspace routing", () => {
       "/templates",
       "/recurring",
       "/finance",
+      "/finance/reconcile",
+      "/finance/reconcile/:period",
       "/bookkeeping",
       "/sponsors",
       "/sponsors/pipeline",

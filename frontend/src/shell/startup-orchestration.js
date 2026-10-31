@@ -19,7 +19,7 @@
 // deferred at bootstrap and shielded from snapshot repaints together, so the
 // two can never drift apart.
 export const SELF_LOADING_VIEWS = Object.freeze(
-  new Set(["bookkeeping", "calendar", "finance", "newsletter", "podcast", "sponsors", "users"]),
+  new Set(["bookkeeping", "calendar", "finance", "newsletter", "podcast", "reconcile", "sponsors", "users"]),
 );
 
 // Whether committing this route needs none of the shared snapshots yet. An

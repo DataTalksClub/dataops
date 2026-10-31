@@ -28,6 +28,7 @@ import {
 } from "../core/operations-model.js";
 import { createWorkModel } from "../core/work-model.js";
 import { createFinanceSurface } from "../surfaces/finance/index.js";
+import { createReconcileSurface } from "../surfaces/reconcile/index.js";
 import { createAdminSurface } from "../surfaces/operations/index.js";
 import { createPlanningSurface } from "../surfaces/planning.js";
 import { createTasksSurface } from "../surfaces/tasks/index.js";
@@ -160,6 +161,7 @@ const {
   getRenderAdminSurfaceView: () => renderAdminSurfaceView,
   getRenderBookkeepingSurface: () => renderBookkeepingSurface,
   getRenderFinanceOverviewSurface: () => renderFinanceOverviewSurface,
+  getRenderReconcileSurface: () => renderReconcileSurface,
   getRenderCalendarSurface: () => renderCalendarSurface,
   getRenderDocsSurface: () => renderDocsSurface,
   getRenderNewsletterSurface: () => renderNewsletterSurface,
@@ -217,6 +219,9 @@ const {
   setRouteTitle, todayIsoDate,
   viewportWidth: () => window.innerWidth,
   workApiUrl,
+});
+const { renderReconcileSurface } = createReconcileSurface({
+  documentList, escapeHtml, request, setRouteTitle, todayIsoDate, workApiUrl,
 });
 const { renderCalendarSurface, renderNewsletterSurface } =
   createPlanningSurface({
