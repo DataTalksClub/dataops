@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
 import { UsageError } from "../errors.mjs";
 import { enc, optionalString, positional } from "../format.mjs";
 import { apiFor } from "../session.mjs";
@@ -70,6 +72,15 @@ Usage
       Refused, with the blocking rows listed, while any row lacks its
       invoice or its bank side. A closed month is locked.
   dataops reconcile reopen YYYY-MM --reason TEXT
+  dataops reconcile package YYYY-MM [--out DIR] [--draft] [--json]
+      Build the accountant's month package locally (nothing is sent):
+        YYYY-MM/YYYY-MM_reconciliation_datatalksclub.csv
+        YYYY-MM/statements/YYYY-MM_<bank>-<account>.<ext>
+        YYYY-MM/income|expenses/YYYY-MM-DD_<counterparty>_<doc-number>_<amount><CUR>.pdf
+        YYYY-MM/proofs/YYYY-MM-DD_<counterparty>_<ledger-row>.pdf
+      plus datatalksclub-YYYY-MM.zip when zip is installed. Names are
+      lowercase-hyphen slugs (max 40), collisions get -2, -3; originals keep
+      their names in DataOps. Refused for an open month unless --draft.
   dataops reconcile config [--set rules.json] [--json]
   dataops reconcile aliases [--json]
   dataops reconcile alias add <alias> --sponsor SPONSOR [--json]
@@ -556,6 +567,40 @@ export async function reopen(args, io) {
   return result;
 }
 
+async function downloadBytes(api, entry) {
+  const route = entry.documentId ? `/api/bookkeeping/documents/${enc(entry.documentId)}/download` : `/api/artifacts/${enc(entry.artifactId)}/download`;
+  const signed = await api.get(route);
+  const response = await fetch(signed.downloadUrl);
+  if (!response.ok) throw new Error(`Download failed for ${entry.path} (${response.status})`);
+  return Buffer.from(await response.arrayBuffer());
+}
+
+export async function packageMonth(args, io) {
+  const usage = "dataops reconcile package YYYY-MM [--out DIR] [--draft] [--json]";
+  const period = periodArg(args, usage);
+  const api = apiFor(args);
+  const manifest = await api.get(`/api/reconcile/months/${period}/package`, { query: args.draft ? { draft: "true" } : {} });
+  const out = optionalString(args, "out") || ".";
+  const written = [];
+  for (const entry of manifest.entries) {
+    const target = join(out, entry.path);
+    await mkdir(dirname(target), { recursive: true });
+    if (entry.kind === "report") await writeFile(target, manifest.csv);
+    else if (entry.documentId || entry.artifactId) await writeFile(target, await downloadBytes(api, entry));
+    else continue;
+    written.push(entry.path);
+  }
+  let zip;
+  const zipName = `datatalksclub-${period}${manifest.draft ? "-draft" : ""}.zip`;
+  const zipped = spawnSync("zip", ["-qr", zipName, period], { cwd: out });
+  if (zipped.status === 0) zip = join(out, zipName);
+  if (!args.json) {
+    io.print(`${manifest.draft ? "DRAFT package (month still open)" : "Package"} ${period}: ${written.length} files in ${join(out, period)}${zip ? `, ${zip}` : " (zip not installed; folder only)"}. Nothing was sent.`);
+    for (const path of written) io.print(`  ${path}`);
+  }
+  return { ...manifest, written, ...(zip ? { zip } : {}) };
+}
+
 export async function config(args, io) {
   const api = apiFor(args);
   const file = optionalString(args, "set");
@@ -598,5 +643,5 @@ export async function alias(args, io) {
 export const commands = {
   upload, "import-document": importDocument, balances, statements, statement, report, confirm, aliases, alias,
   month, months, match, unmatch, "attach-proof": attachProof, "attach-doc": attachDoc, "create-ledger": createLedger,
-  except, "clear-except": clearExcept, "confirm-exceptions": confirmExceptions, close, reopen, config,
+  except, "clear-except": clearExcept, "confirm-exceptions": confirmExceptions, close, reopen, package: packageMonth, config,
 };

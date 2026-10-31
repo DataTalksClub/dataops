@@ -283,3 +283,30 @@ test("close shows the blocking rows when the portal refuses", async () => {
     assert.ok(printed.some((line) => /payment-proof-missing -1.99 EUR Google — upload a payment proof/.test(line)), printed.join("\n"));
   });
 });
+
+test("package writes the month folder layout from the manifest and never sends anything", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-test-"));
+  await withFakePortal([
+    ["/reconcile/months/2026-10/package", { period: "2026-10", state: "closed", draft: false, csv: "date,status\n", entries: [
+      { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
+      { path: "2026-10/statements/2026-10_finom-main.csv", kind: "statement", documentId: "doc-stmt" },
+      { path: "2026-10/expenses/2026-10-14_google_1.99EUR.pdf", kind: "invoice", documentId: "doc-google" },
+      { path: "2026-10/proofs/2026-10-14_google_a1c9d26b5312.pdf", kind: "proof", documentId: "doc-proof" },
+    ] }],
+    ["/documents/doc-stmt/download", { downloadUrl: "https://private.example.test/stmt" }],
+    ["/documents/doc-google/download", { downloadUrl: "https://private.example.test/google" }],
+    ["/documents/doc-proof/download", { downloadUrl: "https://private.example.test/proof" }],
+    ["https://private.example.test/", "synthetic-bytes"],
+  ], async (calls) => {
+    const result = await commands.package({ ...args, _: ["2026-10"], out: directory }, {});
+    assert.deepEqual(result.written, [
+      "2026-10/2026-10_reconciliation_datatalksclub.csv",
+      "2026-10/statements/2026-10_finom-main.csv",
+      "2026-10/expenses/2026-10-14_google_1.99EUR.pdf",
+      "2026-10/proofs/2026-10-14_google_a1c9d26b5312.pdf",
+    ]);
+    assert.equal(await (await import("node:fs/promises")).readFile(join(directory, "2026-10/proofs/2026-10-14_google_a1c9d26b5312.pdf"), "utf8"), "synthetic-bytes");
+    assert.ok(!calls.some((call) => call.method === "POST"), "building a package never writes");
+  });
+  await rm(directory, { recursive: true, force: true });
+});

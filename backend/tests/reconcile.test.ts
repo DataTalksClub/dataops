@@ -333,6 +333,16 @@ describe('reconcile API', () => {
     const closed = await operator('POST', '/api/reconcile/months/2026-12/close', {});
     assert.equal(closed.statusCode, 200, closed.body);
 
+    const pack = JSON.parse((await invoke('GET', '/api/reconcile/months/2026-12/package', undefined, AUTH)).body);
+    assert.equal(pack.draft, false);
+    const paths = pack.entries.map((entry: { path: string }) => entry.path);
+    assert.ok(paths.includes('2026-12/2026-12_reconciliation_datatalksclub.csv'), paths.join('\n'));
+    assert.ok(paths.some((path: string) => /^2026-12\/statements\/2026-12_finom-main\./.test(path)), paths.join('\n'));
+    assert.ok(paths.includes('2026-12/expenses/2026-12-14_google_1.99EUR.pdf'), paths.join('\n'));
+    assert.ok(paths.some((path: string) => path.startsWith('2026-12/proofs/2026-12-14_google_')), paths.join('\n'));
+    // Taxes stay out of the accountant's package, as in every report sent so far.
+    assert.ok(!paths.some((path: string) => /finanzamt/.test(path)));
+
     // Closed means locked.
     assert.equal((await operator('POST', '/api/reconcile/months/2026-12/exception', { row: tax.id, kind: 'bank_fee' })).statusCode, 409);
     assert.equal((await operator('POST', '/api/reconcile/statements', { account: 'finom', period: '2026-12', documentId: 'late', rows: [row({ date: '2026-12-30' })] })).statusCode, 409);

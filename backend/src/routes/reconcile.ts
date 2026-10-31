@@ -35,6 +35,7 @@ import {
   confirmExceptions,
   createLedgerFromBank,
   getConfig,
+  monthPackage,
   MonthGateError,
   pairRows,
   periodsBetween,
@@ -248,6 +249,7 @@ async function handleMonthRoutes(
       })),
     });
   }
+  if (action === "package" && method === "GET") return json(200, await monthPackage(client, period, { draft: query.draft === "true" }));
   if (!action && method === "GET") {
     const view = await buildMonth(client, period);
     if (query.format === "csv") return { statusCode: 200, headers: { "Content-Type": "text/csv; charset=utf-8" }, body: tableCsv(view) };

@@ -509,3 +509,67 @@ export function monthSummary(view: MonthView): string {
 }
 
 export const digestOf = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 16);
+
+export type PackageEntry = {
+  path: string;
+  kind: "report" | "statement" | "invoice" | "proof";
+  /** Bookkeeping document to download into this path (none for the generated report). */
+  documentId?: string;
+  /** Email attachment a statement came from, when it arrived by email. */
+  artifactId?: string;
+  originalFilename?: string;
+  rowId?: string;
+};
+
+/**
+ * The month package for the accountant as a manifest: deterministic
+ * package paths (see naming.ts) for the report, every statement, each
+ * row's invoice/receipt and payment proof. Taxes and health insurance stay
+ * out, as in every report sent so far. Building it never sends anything.
+ */
+export async function monthPackage(client: DynamoDBDocumentClient, period: string, options: { draft?: boolean } = {}): Promise<{ period: string; state: MonthRecord["state"]; draft: boolean; entries: PackageEntry[]; csv: string }> {
+  const view = await buildMonth(client, period);
+  if (view.state !== "closed" && !options.draft) throw new MonthGateError(`Month ${period} is open; close it first (or build a draft package)`, []);
+  const { REPORT_EXEMPT_CATEGORIES } = await import("../db/bookkeeping");
+  const naming = await import("./naming");
+  const entries: PackageEntry[] = [{ path: naming.packagePath(period, null, naming.reportName(period, "csv")), kind: "report" }];
+  const statements = (await listStatements(client)).filter((record) => record.period === period);
+  for (const record of statements) {
+    const wallets = [...new Set(record.rows.map((row) => row.wallet || "main"))];
+    entries.push({
+      path: naming.packagePath(period, "statements", naming.statementName(period, record.accountId, wallets.length === 1 ? wallets[0] : "all", record.filename)),
+      kind: "statement",
+      ...(record.documentId ? { documentId: record.documentId } : {}),
+      ...(record.artifactId ? { artifactId: record.artifactId } : {}),
+      ...(record.filename ? { originalFilename: record.filename } : {}),
+    });
+  }
+  const seenDocuments = new Set<string>();
+  for (const row of view.rows) {
+    if (!row.ledger || REPORT_EXEMPT_CATEGORIES.has(row.ledger.category || "")) continue;
+    const folder = Number(row.ledger.amount) > 0 ? "income" : "expenses";
+    for (const document of row.documents) {
+      if (seenDocuments.has(document.id)) continue;
+      seenDocuments.add(document.id);
+      const raw = await getRawDocument(client, document.id);
+      if (!raw) continue;
+      entries.push({
+        path: naming.packagePath(period, folder, naming.documentName({ date: row.ledger.date, counterparty: row.ledger.counterparty, documentNumber: row.ledger.invoiceNumber, amount: row.ledger.amount, currency: row.ledger.currency, filename: String(raw.originalFilename || "x.pdf") })),
+        kind: "invoice", documentId: document.id, rowId: row.id,
+        ...(raw.originalFilename ? { originalFilename: String(raw.originalFilename) } : {}),
+      });
+    }
+    if (row.paymentProof && !seenDocuments.has(row.paymentProof.documentId)) {
+      seenDocuments.add(row.paymentProof.documentId);
+      entries.push({
+        path: naming.packagePath(period, "proofs", naming.proofName({ date: row.ledger.date, counterparty: row.ledger.counterparty, ledgerId: row.ledger.id, filename: row.paymentProof.filename })),
+        kind: "proof", documentId: row.paymentProof.documentId, rowId: row.id,
+        ...(row.paymentProof.filename ? { originalFilename: row.paymentProof.filename } : {}),
+      });
+    }
+  }
+  const unique = naming.uniquePaths(entries.map((entry) => entry.path));
+  entries.forEach((entry, index) => { entry.path = unique[index]; });
+  const { tableCsv } = await import("./month");
+  return { period, state: view.state, draft: view.state !== "closed", entries, csv: tableCsv(view) };
+}
