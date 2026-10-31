@@ -61,6 +61,8 @@ Usage
       Required: receivedOn, amount, currency, counterparty, reference (bank/account + unique transaction ID).
       Creates and links bookkeeping atomically. Optional: amountEur, category, replacesPaymentId.
       Link an existing ledger row instead of recreating it. Use --idempotency-key KEY for safe retries.
+      On success prints the thank-you next step: send it from orin@ as a reply in the invoice
+      thread using the template (no draft; template exists, so no Alexey approval needed).
   dataops sponsors correct-payment <deal-id> <transaction-id> --data @receipt.json [--apply]
       Correct actual amount/date, optional amountEur/category; retain the original bank transaction reference.
       The nominal invoice stays unchanged. Missing replacement FX value is cleared when foreign cash changes.
@@ -69,8 +71,9 @@ Usage
       recorded before the row existed (same amount, within 14 days) is replaced by
       the link. Prints what it would do unless --apply is given.
   dataops sponsors record-thank-you <deal-id> --ref THREAD_REF [--label TEXT] [--date YYYY-MM-DD] [--apply]
-      Idempotently record the drafted/sent payment-received thank-you email reference
-      on the deal's Finance evidence (draft-only policy: Alexey reviews and sends).
+      Idempotently record the sent payment-received thank-you email reference
+      on the deal's Finance evidence (sent from orin@ as a reply in the invoice thread, no draft;
+      template exists, so no Alexey approval needed).
 
 Invoice drafts: use dataops invoices. To find invoice evidence for a sponsor deal,
 use dataops sponsors finance <deal-id> candidates/invoices.

@@ -193,7 +193,7 @@ test.describe('Sponsors Money', () => {
       await expect(panel).not.toContainText('Reported, unverified');
       await expect(panel.locator('header h3').first()).toHaveText('Paid');
       await expect(panel.locator('[data-finance-thank-you="required"]')).toBeVisible();
-      await expect(panel.locator('[data-finance-thank-you="required"]')).toContainText('Draft only — Alexey reviews and sends');
+      await expect(panel.locator('[data-finance-thank-you="required"]')).toContainText('Send from orin@ — template exists, no Alexey approval');
       await expect(panel.locator('[data-finance-thank-you="required"] .template-placeholder-chip').filter({ hasText: '<WHAT_WAS_PAID>' })).toBeVisible();
       await panel.locator('[data-finance-thank-you="required"] .template-placeholder-chip').filter({ hasText: '<WHAT_WAS_PAID>' }).click();
       await expect(panel.locator('[data-finance-thank-you="required"] .template-placeholder-panel')).toContainText('<WHAT_WAS_PAID>');

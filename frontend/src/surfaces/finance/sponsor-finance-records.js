@@ -103,19 +103,19 @@ export function resolveThankYou(projection) {
   const status = recordedEvidence ? "recorded" : "required";
   return {
     status,
-    sendPolicy: "draft-only",
+    sendPolicy: "send-with-template",
     templateId: THANK_YOU_TEMPLATE_ID,
     templatePath: THANK_YOU_TEMPLATE_PATH,
     sopId: THANK_YOU_SOP_ID,
     sopStep: THANK_YOU_SOP_STEP,
     summary: status === "recorded"
       ? "Sponsor thank-you email recorded"
-      : "Draft thank-you email to sponsor (draft only — Alexey reviews and sends)",
+      : "Send thank-you email to sponsor from orin@ (template exists — no Alexey approval)",
     instruction:
-      `Prepare a draft reply in the sponsor's existing invoice or payment email thread using ${THANK_YOU_TEMPLATE_ID} `
+      `Send a reply from orin@ directly in the sponsor's existing invoice or payment email thread using ${THANK_YOU_TEMPLATE_ID} `
       + `(SOP ${THANK_YOU_SOP_ID} step ${THANK_YOU_SOP_STEP}). Address the main contact, keep the thread's CC list, `
-      + `and name ${whatWasPaid}. Draft only — do NOT send the email; Alexey reviews and sends it himself. `
-      + "Record the drafted/sent message reference in Finance evidence and on the owning Task.",
+      + `and name ${whatWasPaid}. Send it directly — no draft step: the template exists, so no Alexey approval is needed. `
+      + "Record the sent message reference in Finance evidence and on the owning Task.",
     templateBody: THANK_YOU_TEMPLATE_BODY,
     templateMarkdown: THANK_YOU_TEMPLATE_MARKDOWN,
     placeholders: [

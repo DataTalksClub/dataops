@@ -280,7 +280,7 @@ describe('sponsor finance contracts', () => {
     assert.throws(() => validateEvidence(Array.from({ length: 21 }, () => ({ kind: 'note', ref: 'x' }))));
   });
 
-  it('derives the draft-only payment thank-you contract when payment resolves and marks it recorded idempotently', async () => {
+  it('derives the send-with-template payment thank-you contract when payment resolves and marks it recorded idempotently', async () => {
     const parser = await templateParser();
     const parsed = parser.parseTemplatePlaceholders(THANK_YOU_TEMPLATE_MARKDOWN);
     assert.deepEqual(parsed.issues, []);
@@ -318,7 +318,7 @@ describe('sponsor finance contracts', () => {
     });
     assert.ok(required);
     assert.equal(required.status, 'required');
-    assert.equal(required.sendPolicy, 'draft-only');
+    assert.equal(required.sendPolicy, 'send-with-template');
     assert.equal(required.templateId, THANK_YOU_TEMPLATE_ID);
     assert.equal(required.sopId, THANK_YOU_SOP_ID);
     assert.equal(required.sopStep, 9);

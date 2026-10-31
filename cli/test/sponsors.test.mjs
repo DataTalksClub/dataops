@@ -233,8 +233,8 @@ test("sponsors link-payment links a transaction and replaces the payment recorde
     const post = calls.find((call) => call.method === "POST");
     assert.deepEqual(post.body, { dealVersion: 2, expectedVersion: 4, sourceId: "tx-demo", identityToken: "token-demo", replacesPaymentId: "a".repeat(32) });
     assert.match(post.headers["Idempotency-Key"], /^[A-Za-z0-9_-]{16,128}$/);
-    assert.match(out.join("\n"), /next-step: draft thank-you email using template\.finance\.bookkeeping\.email-to-sponsor-when-payment-has-been-received/);
-    assert.match(out.join("\n"), /draft-only — Alexey reviews and sends/);
+    assert.match(out.join("\n"), /next-step: send thank-you email from orin@ using template\.finance\.bookkeeping\.email-to-sponsor-when-payment-has-been-received/);
+    assert.match(out.join("\n"), /no draft; template exists — no Alexey approval/);
   } finally {
     globalThis.fetch = originalFetch;
     if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
@@ -379,7 +379,7 @@ for (const view of ['early', 'overdue', 'reply']) {
   });
 }
 
-test("receive-payment and record-thank-you surface the draft-only thank-you contract and record evidence idempotently", async () => {
+test("receive-payment and record-thank-you surface the send-with-template thank-you contract and record evidence idempotently", async () => {
   const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
   process.env.DATAOPS_TOKEN = "sanitized-test-token";
   const calls = [];
@@ -432,7 +432,7 @@ test("receive-payment and record-thank-you surface the draft-only thank-you cont
       json: true,
     }, {});
     assert.equal(receipt.thankYou?.status, "required");
-    assert.equal(receipt.thankYou?.sendPolicy, "draft-only");
+    assert.equal(receipt.thankYou?.sendPolicy, "send-with-template");
     assert.equal(receipt.thankYou?.templateId, "template.finance.bookkeeping.email-to-sponsor-when-payment-has-been-received");
     assert.equal(receipt.thankYou?.context?.whatWasPaid, "invoice 202610/37");
     assert.equal(receipt.nextStep?.code, "thank-sponsor");

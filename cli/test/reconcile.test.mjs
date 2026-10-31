@@ -96,7 +96,7 @@ test("confirm links an unclaimed ledger row the way sponsors link-payment does, 
     assert.equal(applied.mode, "apply");
     assert.equal(applied.paymentState, "paid");
     assert.equal(applied.thankYou?.status, "required");
-    assert.equal(applied.thankYou?.sendPolicy, "draft-only");
+    assert.equal(applied.thankYou?.sendPolicy, "send-with-template");
     assert.equal(applied.thankYou?.templateId, "template.finance.bookkeeping.email-to-sponsor-when-payment-has-been-received");
     assert.equal(applied.thankYou?.context?.whatWasPaid, "invoice 202610/12");
     assert.equal(applied.nextStep?.code, "thank-sponsor");

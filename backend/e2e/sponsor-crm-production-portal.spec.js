@@ -849,7 +849,7 @@ test.describe("production sponsor CRM portal", () => {
       page.locator('[data-finance-thank-you="required"]'),
     ).toBeVisible();
     await expect(page.locator("[data-finance-panel]")).toContainText(
-      "Draft only",
+      "template exists, no Alexey approval",
     );
     await expect(statusMessage).not.toContainText(
       /Could not|Synthetic route missing/,

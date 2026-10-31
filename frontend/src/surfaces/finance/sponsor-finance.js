@@ -273,7 +273,7 @@ export function createSponsorFinance(context) {
     const thankYou = resolveThankYou(projection);
     const nextDetail = next.detail
       || (thankYou?.status === "required"
-        ? "Payment received — draft the thank-you email to the sponsor (draft only; Alexey reviews and sends)."
+        ? "Payment received — send the thank-you email to the sponsor from orin@ as a reply in the invoice thread (template exists — no Alexey approval)."
         : "");
     const nextStep = html`<div
       class="dk-callout dk-callout--${thankYou?.status === "required" && (projection.followUp?.code || "none") === "none" ? "info" : next.tone} finance-next-step"
@@ -519,7 +519,7 @@ export function createSponsorFinance(context) {
       ? html`<div class="finance-thank-you" data-finance-thank-you="${escapeHtml(thankYou.status)}">
           <header class="crm-company-section-header">
             <h4>Thank the sponsor</h4>
-            <span class="dk-muted" data-finance-thank-you-policy="draft-only">Draft only — Alexey reviews and sends</span>
+            <span class="dk-muted" data-finance-thank-you-policy="send-with-template">Send from orin@ — template exists, no Alexey approval</span>
             ${live && thankYou.status === "required"
               ? html`<button type="button" data-finance-thank-you-record>Record thank-you email</button>`
               : ""}

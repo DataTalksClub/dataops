@@ -2858,7 +2858,7 @@ describe("CRM directory controllers", () => {
   });
 });
 
-test("resolved sponsor payment renders the draft-only thank-you template with interactive placeholder chips and idempotent evidence recording", async () => {
+test("resolved sponsor payment renders the send-with-template thank-you template with interactive placeholder chips and idempotent evidence recording", async () => {
   createHarness();
   const surface = new FakeElement("section");
   const panel = surface.querySelector('[data-booking-panel="finance"]');
@@ -2922,7 +2922,7 @@ test("resolved sponsor payment renders the draft-only thank-you template with in
   };
   await sponsorFinance.loadFinance({ id: "deal-paid-1", version: 3 });
   assert.match(panel.innerHTML, /data-finance-thank-you="required"/);
-  assert.match(panel.innerHTML, /Draft only — Alexey reviews and sends/);
+  assert.match(panel.innerHTML, /Send from orin@ — template exists, no Alexey approval/);
   assert.match(panel.innerHTML, /template\.finance\.bookkeeping\.email-to-sponsor-when-payment-has-been-received/);
   assert.match(panel.innerHTML, /invoice 202610\/37/);
   assert.equal(templateContainer.classList.contains("template-view"), true);
