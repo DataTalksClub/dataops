@@ -159,6 +159,7 @@ const {
     normalizeOperationsRecurringSnapshot,
   getRenderAdminSurfaceView: () => renderAdminSurfaceView,
   getRenderBookkeepingSurface: () => renderBookkeepingSurface,
+  getRenderFinanceOverviewSurface: () => renderFinanceOverviewSurface,
   getRenderCalendarSurface: () => renderCalendarSurface,
   getRenderDocsSurface: () => renderDocsSurface,
   getRenderNewsletterSurface: () => renderNewsletterSurface,
@@ -200,6 +201,7 @@ const {
 const {
   canLeaveFinanceSurface,
   renderBookkeepingSurface,
+  renderFinanceOverviewSurface,
   renderSponsorCrmSurface,
 } = createFinanceSurface({
   documentList,

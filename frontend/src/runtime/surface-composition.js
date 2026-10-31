@@ -121,6 +121,7 @@ export function createSurfaceComposition(context) {
     getKnowledgeSelectedFolder,
     getRenderAdminSurfaceView,
     getRenderBookkeepingSurface,
+    getRenderFinanceOverviewSurface,
     getRenderCalendarSurface,
     getRenderDocsSurface,
     getRenderNewsletterSurface,
@@ -162,6 +163,7 @@ export function createSurfaceComposition(context) {
     if (view === "users") return context.getRenderUsersSurfaceView()();
     if (view === "device") return window.location.assign("/device");
     if (view === "bookkeeping") return getRenderBookkeepingSurface()();
+    if (view === "finance") return getRenderFinanceOverviewSurface()();
     if (view === "sponsors") return getRenderSponsorCrmSurface()();
     if (view === "newsletter") return getRenderNewsletterSurface()();
     if (view === "calendar") return getRenderCalendarSurface()();

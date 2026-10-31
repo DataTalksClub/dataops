@@ -276,6 +276,7 @@ export function createOperationsOverview(context) {
     if (view === "admin") return "Admin";
     if (view === "users") return "Users";
     if (view === "bookkeeping") return "Bookkeeping";
+    if (view === "finance") return "Finance overview";
     if (view === "sponsors") return "CRM";
     if (view === "newsletter") return "Newsletter";
     if (view === "calendar") return "Calendar";

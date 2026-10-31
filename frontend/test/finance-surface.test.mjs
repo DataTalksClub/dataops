@@ -408,6 +408,7 @@ describe("Finance surface boundary", () => {
     assert.deepEqual(Object.keys(finance).sort(), [
       "canLeaveFinanceSurface",
       "renderBookkeepingSurface",
+      "renderFinanceOverviewSurface",
       "renderSponsorCrmSurface",
     ]);
   });

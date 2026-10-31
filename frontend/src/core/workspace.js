@@ -28,6 +28,7 @@ export const WORKSPACE_PATH_BY_VIEW = Object.freeze({
   admin: "/admin",
   users: "/users",
   device: "/device",
+  finance: "/finance",
   bookkeeping: "/bookkeeping",
   sponsors: "/sponsors/pipeline",
   newsletter: "/newsletter",
@@ -55,6 +56,9 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
     params: ["templateId"],
   },
   "/recurring": { view: "tasks", tasksSection: "recurring", params: [] },
+  // Money in/out, net profit excluding VAT and the VAT position for one
+  // month, a year or the year to date (exactly one of the three params).
+  "/finance": { view: "finance", tasksSection: "queue", params: ["month", "year", "ytd"] },
   "/bookkeeping": {
     view: "bookkeeping",
     tasksSection: "queue",

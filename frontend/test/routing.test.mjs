@@ -53,6 +53,7 @@ describe("canonical workspace routing", () => {
       "/cards/archive",
       "/templates",
       "/recurring",
+      "/finance",
       "/bookkeeping",
       "/sponsors",
       "/sponsors/pipeline",
