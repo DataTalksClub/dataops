@@ -43,6 +43,8 @@ export type StatementRecord = {
   accountId: StatementAccount;
   period: string;
   documentId?: string;
+  /** The emailed attachment a statement came from, when it arrived by email. */
+  artifactId?: string;
   filename?: string;
   contentType?: string;
   rows: StatementRow[];
@@ -58,6 +60,7 @@ export type StatementInput = {
   accountId: StatementAccount;
   period: string;
   documentId?: string;
+  artifactId?: string;
   filename?: string;
   contentType?: string;
   rows: StatementRow[];
@@ -130,7 +133,7 @@ export async function saveStatement(client: DynamoDBDocumentClient, input: State
   const balanceProblems = validateBalances(input.balances);
   if (balanceProblems.length) throw new Error(`invalid statement balances: ${balanceProblems.join(", ")}`);
   const sorted = [...input.rows].map((row) => ({ ...row })).sort((left, right) => left.date.localeCompare(right.date));
-  const id = statementIdFor(input.documentId || "adhoc", input.accountId, input.period);
+  const id = statementIdFor(input.documentId || (input.artifactId ? `artifact:${input.artifactId}` : "adhoc"), input.accountId, input.period);
   const now = new Date().toISOString();
   const record: StatementRecord = {
     id,
@@ -138,6 +141,7 @@ export async function saveStatement(client: DynamoDBDocumentClient, input: State
     accountId: input.accountId,
     period: input.period,
     ...(input.documentId ? { documentId: input.documentId } : {}),
+    ...(input.artifactId ? { artifactId: input.artifactId } : {}),
     ...(input.filename ? { filename: input.filename } : {}),
     ...(input.contentType ? { contentType: input.contentType } : {}),
     rows: input.rows,

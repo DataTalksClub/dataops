@@ -5,6 +5,7 @@ import { financeActor } from "../sponsorFinance/repository";
 import { getRawDocument } from "../db/bookkeeping";
 import { json, MONTH, parse, s3 } from "./bookkeepingShared";
 import {
+  ParseError,
   parseStatement,
   statementTotal,
   STATEMENT_ACCOUNTS,
@@ -43,6 +44,7 @@ import {
   unpairRows,
 } from "../reconcile/monthService";
 import { tableCsv } from "../reconcile/month";
+import { importStatement, UnrecognizedStatementError } from "../reconcile/statementIntake";
 
 const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const CURRENCY = /^[A-Z]{3}$/;
@@ -127,6 +129,27 @@ export async function handleReconcileRoutes(
         ...(Array.isArray(body.warnings) ? { warnings: body.warnings.filter((warning: unknown) => typeof warning === "string") as string[] } : {}),
       });
       return json(201, { statement });
+    }
+
+    if (action === "/statements/import" && method === "POST") {
+      // No account or period: the bank comes from the file, the months from its rows.
+      const body = parse(event.body || null);
+      if (!body) return json(400, { error: "Invalid JSON" });
+      const documentId = String(body.documentId || "");
+      if (!OPAQUE_ID.test(documentId)) return json(400, { error: "documentId is required" });
+      const currency = body.currency === undefined ? undefined : String(body.currency).toUpperCase();
+      if (currency !== undefined && !CURRENCY.test(currency)) return json(400, { error: "currency must be a 3-letter ISO code" });
+      const source = await documentBytes(client, documentId);
+      try {
+        const result = await importStatement(client, source.bytes, { documentId, contentType: source.contentType, ...(source.filename ? { filename: source.filename } : {}) }, { ...(currency ? { currency } : {}), notify: true });
+        return json(201, {
+          account: result.account, layout: result.layout, statements: result.statements, skippedClosedMonths: result.skippedClosedMonths,
+          rowCount: result.parsed.rows.length, balances: result.parsed.balances, warnings: result.parsed.warnings, summaries: result.summaries,
+        });
+      } catch (error) {
+        if (error instanceof UnrecognizedStatementError || error instanceof ParseError) return json(422, { error: `Statement not recognized: ${(error as Error).message}` });
+        throw error;
+      }
     }
 
     if (action === "/statements/parse" && method === "POST") {

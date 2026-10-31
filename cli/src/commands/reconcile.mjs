@@ -10,6 +10,10 @@ export const summary = "Month-end reconciliation: bank statements, matching, pay
 export const help = `dataops reconcile - month-end reconciliation (the Finance views' command line)
 
 Usage
+  dataops reconcile upload --file statement.(csv|pdf|xlsx) [--json]
+      Finom and Revolut statements need no flags: the bank comes from the
+      file, and its rows are stored as one statement per month, then each
+      month is reconciled. A file that is no known statement is refused.
   dataops reconcile upload --file statement.(csv|pdf|xlsx) --account revolut|finom|mercury|merchant --period YYYY-MM [--currency EUR] [--by-month] [--json]
       Stores the raw statement as a verified private bank-statement document,
       parses its rows server-side and saves them for matching. Re-uploading the
@@ -108,9 +112,30 @@ async function storeDocument(api, file, { documentType, accountId, statementMont
   return { documentId: prepared.document.id, sha256, reused: prepared.outcome === "existing" };
 }
 
+async function autoImport(args, io) {
+  const api = apiFor(args);
+  const currency = optionalString(args, "currency");
+  if (currency !== undefined && !CURRENCY.test(currency)) throw new UsageError("--currency must be a 3-letter ISO code");
+  // The stored document is labelled with the upload month; the statements carry their own months.
+  const stored = await storeDocument(api, args.file, {
+    documentType: "bank-statement", accountId: "auto", statementMonth: new Date().toISOString().slice(0, 7), sourceRef: "reconcile:auto",
+  });
+  const result = await api.post("/api/reconcile/statements/import", { documentId: stored.documentId, ...(currency ? { currency: currency.toUpperCase() } : {}) });
+  if (!args.json) {
+    io.print(`${stored.reused ? "Reused" : "Stored"} document ${stored.documentId}: ${result.layout}, ${result.rowCount} rows.`);
+    for (const statement of result.statements) io.print(`  ${statement.period}: ${statement.rowCount} rows (statement ${statement.id})`);
+    for (const period of result.skippedClosedMonths || []) io.print(`  ${period}: month is closed, rows not imported (reopen it first)`);
+    for (const balance of result.balances || []) io.print(`balance ${balance.wallet ? `${balance.wallet} ` : ""}${balance.amount} ${balance.currency} as of ${balance.asOf}`);
+    for (const warning of (result.warnings || []).slice(0, 5)) io.print(`warning: ${warning}`);
+    for (const summary of result.summaries || []) io.print(summary);
+  }
+  return { documentId: stored.documentId, ...result };
+}
+
 export async function upload(args, io) {
   const usage = "dataops reconcile upload --file statement.(csv|pdf|xlsx) --account revolut|finom|mercury|merchant --period YYYY-MM [--currency EUR] [--by-month] [--json]";
   if (!args.file) throw new UsageError(usage);
+  if (args.account === undefined && args.period === undefined) return autoImport(args, io);
   const account = String(args.account || "");
   if (!ACCOUNTS.includes(account)) throw new UsageError(`--account must be one of ${ACCOUNTS.join(", ")}`);
   const period = periodOr(args);

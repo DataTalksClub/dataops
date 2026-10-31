@@ -1,5 +1,6 @@
 import { isInvoiceIntakeRoute } from '../invoices/intakeRoute';
 import { processInvoiceIntake, resolveInvoiceIntakeAfterImport } from '../invoices/service';
+import { processStatementIntake } from '../reconcile/statementIntake';
 import { getInvoice } from '../invoices/store';
 import type { Invoice } from '../invoices/model';
 import { createHash, timingSafeEqual } from 'crypto';
@@ -492,7 +493,15 @@ export async function handleEmailDocumentIntake(event: LambdaEvent, client: Dyna
     return response(207, { status: 'partial-failure', intakeItemId: item.id, artifacts: publicArtifacts(refs), invoices: [], failures });
   }
   let invoices: InvoicePreview[] = [];
+  let statements: Array<{ account: string; months: string[]; rows: number }> = [];
+  let statementIssues: string[] = [];
   if (isInvoiceIntakeRoute(recipientRoute) && !failures.length) {
+    // Bank statements sent to the invoice address are imported first and tagged, so invoice processing skips them.
+    try {
+      const result = await processStatementIntake(client, item.id);
+      statements = result.imported.map((entry) => ({ account: entry.account, months: entry.statements.map((statement) => statement.period), rows: entry.parsed.rows.length }));
+      statementIssues = result.issues;
+    } catch { statementIssues = ['Statement import failed: retry from Finance (dataops reconcile import)']; }
     try {
       const processed = await processInvoiceIntake(client, item.id);
       invoices = (processed.items || []).map(previewOf);
@@ -504,7 +513,7 @@ export async function handleEmailDocumentIntake(event: LambdaEvent, client: Dyna
     }
   }
   audit(reservation.created ? 'accepted' : 'resumed', credential, correlation, documents.length);
-  return response(reservation.created ? 202 : 200, { status: reservation.created ? 'accepted' : 'duplicate', intakeItemId: item.id, artifacts: publicArtifacts(refs), invoices });
+  return response(reservation.created ? 202 : 200, { status: reservation.created ? 'accepted' : 'duplicate', intakeItemId: item.id, artifacts: publicArtifacts(refs), invoices, ...(statements.length || statementIssues.length ? { statements, statementIssues } : {}) });
 }
 
 function emailDocumentsAlreadyImported(item: IntakeItem | null, documents: EmailDocument[]): boolean {

@@ -11,6 +11,8 @@ import { createDocumentLink, putBookkeepingItem } from '../src/db/bookkeeping';
 import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { setBookkeepingStorageForTests } from '../src/routes/bookkeepingShared';
 import { handleReconcileRoutes } from '../src/routes/reconcile';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const invoke = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}, query?: Record<string, string>) =>
   handler({ httpMethod: method, path, headers, body: body === undefined ? null : JSON.stringify(body), queryStringParameters: query || null }, {});
@@ -344,5 +346,33 @@ describe('reconcile API', () => {
     assert.match(csv.body.split('\n')[0], /^date,status,counterparty/);
     const summary = JSON.parse((await invoke('GET', '/api/reconcile/months', undefined, AUTH, { from: '2026-11', to: '2026-12' })).body);
     assert.deepEqual(summary.items.map((item: { period: string }) => item.period), ['2026-11', '2026-12']);
+  });
+
+  it('imports a Revolut or Finom export with no flags: bank from the headers, one statement per month, summary notification', async () => {
+    process.env.BOOKKEEPING_DOCUMENTS_BUCKET = 'synthetic-private-bucket';
+    let objectBytes = readFileSync(join(__dirname, 'fixtures', 'reconcile', 'finom-main.csv'));
+    setBookkeepingStorageForTests({ send: async (command: { constructor: { name: string } }) => command.constructor.name === 'GetObjectCommand' ? { Body: Readable.from(objectBytes) } : {} } as never);
+    const document = (await putBookkeepingItem(client, 'document', {
+      documentType: 'bank-statement', status: 'active', contentType: 'text/csv', accountId: 'auto', statementMonth: '2026-10',
+      originalFilename: 'finom_2026-10_main.csv', byteSize: objectBytes.length, sha256: 'f'.repeat(64), s3Key: 'documents/finom-auto',
+    })).item;
+    const imported = await call('POST', '/api/reconcile/statements/import', { documentId: document.id });
+    assert.equal(imported.statusCode, 201, imported.body);
+    const result = JSON.parse(imported.body);
+    assert.equal(result.account, 'finom');
+    assert.equal(result.rowCount, 7);
+    assert.deepEqual(result.statements.map((statement: { period: string; rowCount: number }) => [statement.period, statement.rowCount]), [['2026-10', 7]]);
+    assert.match(result.summaries[0], /^Reconciliation 2026-10/);
+    const again = JSON.parse((await call('POST', '/api/reconcile/statements/import', { documentId: document.id })).body);
+    assert.equal(again.statements[0].id, result.statements[0].id, 'the same file imports to the same statement');
+
+    objectBytes = Buffer.from('Date,Description,Amount\n2026-10-01,Something,1.00\n');
+    const unknown = (await putBookkeepingItem(client, 'document', {
+      documentType: 'bank-statement', status: 'active', contentType: 'text/csv', accountId: 'auto', statementMonth: '2026-10',
+      originalFilename: 'mystery.csv', byteSize: objectBytes.length, sha256: '9'.repeat(64), s3Key: 'documents/mystery',
+    })).item;
+    const refused = await call('POST', '/api/reconcile/statements/import', { documentId: unknown.id });
+    assert.equal(refused.statusCode, 422);
+    assert.match(JSON.parse(refused.body).error, /not a recognized Finom or Revolut statement export \(headers: Date, Description, Amount\)/);
   });
 });
