@@ -10,10 +10,12 @@ export const summary = "Month-end reconciliation: bank statements, matching, pay
 export const help = `dataops reconcile - month-end reconciliation (the Finance views' command line)
 
 Usage
-  dataops reconcile upload --file statement.(csv|pdf|xlsx) [--json]
+  dataops reconcile upload --file statement.(csv|pdf|xlsx) [--quiet] [--json]
       Finom and Revolut statements need no flags: the bank comes from the
       file, and its rows are stored as one statement per month, then each
-      month is reconciled. A file that is no known statement is refused.
+      month is reconciled and summarised in a finance notification
+      (--quiet skips it, e.g. for history). A file that is no known
+      statement is refused.
   dataops reconcile upload --file statement.(csv|pdf|xlsx) --account revolut|finom|mercury|merchant --period YYYY-MM [--currency EUR] [--by-month] [--json]
       Stores the raw statement as a verified private bank-statement document,
       parses its rows server-side and saves them for matching. Re-uploading the
@@ -26,6 +28,9 @@ Usage
       --by-month stores a statement spanning several months (a year export)
       as one statement per calendar month; --period then only labels the
       stored document.
+  dataops reconcile import-document <document-id> [--quiet] [--json]
+      Parse a bank-statement document DataOps already stores (bank detected
+      from its content) into per-month statements.
   dataops reconcile balances [--account ACCOUNT] [--json]
       Latest known balance per account wallet, from uploaded statements.
   dataops reconcile statements [--period YYYY-MM] [--json]
@@ -120,7 +125,7 @@ async function autoImport(args, io) {
   const stored = await storeDocument(api, args.file, {
     documentType: "bank-statement", accountId: "auto", statementMonth: new Date().toISOString().slice(0, 7), sourceRef: "reconcile:auto",
   });
-  const result = await api.post("/api/reconcile/statements/import", { documentId: stored.documentId, ...(currency ? { currency: currency.toUpperCase() } : {}) });
+  const result = await api.post("/api/reconcile/statements/import", { documentId: stored.documentId, ...(currency ? { currency: currency.toUpperCase() } : {}), ...(args.quiet ? { notify: false } : {}) });
   if (!args.json) {
     io.print(`${stored.reused ? "Reused" : "Stored"} document ${stored.documentId}: ${result.layout}, ${result.rowCount} rows.`);
     for (const statement of result.statements) io.print(`  ${statement.period}: ${statement.rowCount} rows (statement ${statement.id})`);
@@ -193,6 +198,16 @@ export async function upload(args, io) {
     io.print(`Next: dataops reconcile report --period ${months.at(-1)}`);
   }
   return { documentId, statement, ...(args.byMonth ? { statements } : {}), parsed };
+}
+
+export async function importDocument(args, io) {
+  const usage = "dataops reconcile import-document <document-id> [--quiet] [--json]";
+  const documentId = positional(args, 0, usage);
+  const result = await apiFor(args).post("/api/reconcile/statements/import", { documentId, ...(args.quiet ? { notify: false } : {}) });
+  if (!args.json) {
+    io.print(`${documentId}: ${result.layout}, ${result.rowCount} rows; ${result.statements.map((statement) => `${statement.period} ${statement.rowCount}`).join(", ")}${result.skippedClosedMonths?.length ? `; closed, skipped: ${result.skippedClosedMonths.join(", ")}` : ""}`);
+  }
+  return result;
 }
 
 export async function balances(args, io) {
@@ -581,7 +596,7 @@ export async function alias(args, io) {
 }
 
 export const commands = {
-  upload, balances, statements, statement, report, confirm, aliases, alias,
+  upload, "import-document": importDocument, balances, statements, statement, report, confirm, aliases, alias,
   month, months, match, unmatch, "attach-proof": attachProof, "attach-doc": attachDoc, "create-ledger": createLedger,
   except, "clear-except": clearExcept, "confirm-exceptions": confirmExceptions, close, reopen, config,
 };

@@ -141,7 +141,7 @@ export async function handleReconcileRoutes(
       if (currency !== undefined && !CURRENCY.test(currency)) return json(400, { error: "currency must be a 3-letter ISO code" });
       const source = await documentBytes(client, documentId);
       try {
-        const result = await importStatement(client, source.bytes, { documentId, contentType: source.contentType, ...(source.filename ? { filename: source.filename } : {}) }, { ...(currency ? { currency } : {}), notify: true });
+        const result = await importStatement(client, source.bytes, { documentId, contentType: source.contentType, ...(source.filename ? { filename: source.filename } : {}) }, { ...(currency ? { currency } : {}), notify: body.notify !== false });
         return json(201, {
           account: result.account, layout: result.layout, statements: result.statements, skippedClosedMonths: result.skippedClosedMonths,
           rowCount: result.parsed.rows.length, balances: result.parsed.balances, warnings: result.parsed.warnings, summaries: result.summaries,
