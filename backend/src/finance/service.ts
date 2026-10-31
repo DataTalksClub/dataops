@@ -1,7 +1,7 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { listBookkeepingItems, listTransactions } from '../db/bookkeeping';
 import { listInvoices } from '../invoices/store';
-import { listStatements } from '../reconcile/service';
+import { latestBalances, listStatements } from '../reconcile/service';
 import { loadEcbRates } from './rates';
 import { bookingDate, summarize, type FinanceSummary, type LedgerRow, type PeriodQuery } from './summary';
 import { listTaxSchedule } from './taxSchedule';
@@ -59,7 +59,13 @@ const TAX_LINES = new Set(['VAT', 'Taxes', 'Health Insurance']);
  * Scheduled tax and TK debits around today, marked paid where a ledger row
  * or a statement line shows the debit, with the business balance check.
  */
-export async function financeUpcoming(client: DynamoDBDocumentClient, days: number, today = berlinToday(), loadBalance: () => Promise<Balance | null> = async () => null) {
+/** Taxes are debited from Finom: its latest EUR balance from a stored statement. */
+export async function finomBalance(client: DynamoDBDocumentClient): Promise<Balance | null> {
+  const balance = (await latestBalances(client, 'finom')).find((b) => b.currency === 'EUR');
+  return balance ? { accountId: 'finom', amount: Number(balance.amount), currency: 'EUR', asOf: balance.asOf, source: `statement ${balance.statementId}` } : null;
+}
+
+export async function financeUpcoming(client: DynamoDBDocumentClient, days: number, today = berlinToday(), loadBalance: () => Promise<Balance | null> = () => finomBalance(client)) {
   const [schedule, rows, statements, balance] = await Promise.all([
     listTaxSchedule(client), listTransactions(client), listStatements(client), loadBalance(),
   ]);

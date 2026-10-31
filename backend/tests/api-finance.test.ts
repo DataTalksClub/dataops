@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { handler } from '../src/handler';
 import { useTestDatabase } from './helpers/db';
 import { berlinToday } from '../src/finance/service';
+import { saveStatement } from '../src/reconcile/service';
+import { getClient } from '../src/db/client';
 
 const invoke = (method: string, path: string, body?: unknown, query?: Record<string, string>) =>
   handler({ httpMethod: method, path, headers: {}, body: body === undefined ? null : JSON.stringify(body), queryStringParameters: query || null }, {});
@@ -40,5 +42,23 @@ describe('finance tax schedule and upcoming debits API', () => {
     assert.equal(body.balance, null);
     assert.equal((await invoke('GET', '/api/finance/upcoming', undefined, { days: '0' })).statusCode, 400);
     assert.equal((await invoke('POST', '/api/finance/upcoming')).statusCode, 405);
+  });
+
+  it('checks cover against the latest Finom EUR balance and marks a debit the statement shows as paid', async () => {
+    const today = berlinToday();
+    const client = await getClient();
+    assert.equal((await invoke('PUT', '/api/finance/tax-schedule/vat-once', { label: 'VAT one-off', taxType: 'vat', amount: '777.77', currency: 'EUR', rule: { kind: 'once', date: today }, source: 'USt-VA' })).statusCode, 200);
+    await saveStatement(client, {
+      accountId: 'finom', period: today.slice(0, 7), filename: 'synthetic-finom.csv',
+      rows: [{ date: today, amount: '-777.77', currency: 'EUR', counterparty: 'Finanzamt' }],
+      balances: [{ currency: 'EUR', amount: '100.00', asOf: today }],
+    });
+    const body = JSON.parse((await invoke('GET', '/api/finance/upcoming', undefined, { days: '60' })).body);
+    assert.deepEqual({ ...body.balance, source: undefined }, { accountId: 'finom', amount: 100, currency: 'EUR', asOf: today, source: undefined, stale: false, ageDays: 0 });
+    const vat = body.debits.find((d: { scheduleId: string }) => d.scheduleId === 'vat-once');
+    assert.equal(vat.status, 'paid');
+    assert.equal(vat.matched.kind, 'statement');
+    assert.ok(body.dueNext30 >= 1200, 'the monthly 1,200 entry falls within 30 days');
+    assert.equal(body.shortfall, true);
   });
 });
