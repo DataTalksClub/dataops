@@ -10,6 +10,8 @@ import {
   parseStatementPdfText,
   parseStatementXlsx,
   statementTotal,
+  csvHeaders,
+  detectStatementAccount,
 } from '../src/reconcile/parsers';
 
 const fixture = (name: string) => readFileSync(join(__dirname, 'fixtures', 'reconcile', name), 'utf8');
@@ -180,7 +182,7 @@ describe('statement parsers', () => {
     ].join('\n');
     const parsed = parseStatementCsv(csv, 'revolut');
     assert.deepEqual(parsed.rows, [
-      { date: '2026-10-03', amount: '700.00', currency: 'EUR', counterparty: 'Payment from Sponsor Seven', reference: '202610/7', bankId: 'b1' },
+      { date: '2026-10-03', amount: '700.00', currency: 'EUR', counterparty: 'Payment from Sponsor Seven', reference: '202610/7', bankId: 'b1', bankType: 'TRANSFER', wallet: 'EUR' },
     ]);
     assert.deepEqual(parsed.balances, [{ currency: 'EUR', amount: '1700.00', asOf: '2026-10-03', wallet: 'EUR' }]);
   });
@@ -213,5 +215,19 @@ describe('statement parsers', () => {
     assert.throws(() => parseStatementCsv(renamed, 'finom'), /unrecognized finom export.*Finom statement \(missing Counterparty name\)/);
     // A generic bank layout is not silently accepted as Revolut.
     assert.throws(() => parseStatementCsv('Date,Description,Amount,Currency\n2026-10-01,X,1.00,EUR\n', 'revolut'), /unrecognized revolut export/);
+  });
+
+  it('keeps the Revolut fields the matcher needs: type, original amount, fee, exchange leg', () => {
+    const rows = parseStatementCsv(fixture('revolut-business-all-accounts.csv'), 'revolut').rows;
+    const hosting = rows.find((row) => row.counterparty === 'Example Hosting')!;
+    assert.deepEqual([hosting.bankType, hosting.origAmount, hosting.origCurrency, hosting.fee], ['CARD_PAYMENT', '-8.50', 'GBP', '0.20']);
+    const exchange = rows.find((row) => row.counterparty === 'Exchanged to USD')!;
+    assert.equal(exchange.relatedBankId, 'a0000000-0000-4000-8000-000000000003');
+  });
+
+  it('detects the bank from the header row alone', () => {
+    assert.deepEqual(detectStatementAccount(csvHeaders(fixture('revolut-business-all-accounts.csv'))), { account: 'revolut', layout: 'Revolut Business account statement (local time)' });
+    assert.deepEqual(detectStatementAccount(csvHeaders(`\uFEFF${fixture('finom-main.csv')}`)), { account: 'finom', layout: 'Finom statement' });
+    assert.equal(detectStatementAccount(['Date', 'Description', 'Amount']), null);
   });
 });

@@ -7,7 +7,7 @@ import { handler } from '../src/handler';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
 import { createUserWithId } from '../src/db/users';
-import { putBookkeepingItem } from '../src/db/bookkeeping';
+import { createDocumentLink, putBookkeepingItem } from '../src/db/bookkeeping';
 import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { setBookkeepingStorageForTests } from '../src/routes/bookkeepingShared';
 import { handleReconcileRoutes } from '../src/routes/reconcile';
@@ -19,6 +19,8 @@ let client: DynamoDBDocumentClient;
 const call = (method: string, path: string, body?: unknown) => handleReconcileRoutes(path, method, { httpMethod: method, path, headers: { 'x-user-id': OPERATOR }, body: body === undefined ? null : JSON.stringify(body), queryStringParameters: null }, client);
 
 const OPERATOR = 'reconcile-operator';
+const APPROVER = 'reconcile-approver';
+const as = (user: string) => (method: string, path: string, body?: unknown) => handleReconcileRoutes(path, method, { httpMethod: method, path, headers: { 'x-user-id': user }, body: body === undefined ? null : JSON.stringify(body), queryStringParameters: null }, client);
 const AUTH = { 'x-user-id': OPERATOR };
 const row = (overrides: Record<string, unknown> = {}) => ({
   date: '2026-10-05', amount: '10.00', currency: 'EUR', counterparty: 'Synthetic counterparty', ...overrides,
@@ -45,6 +47,7 @@ describe('reconcile API', () => {
     client = await getClient(port);
     await createTables(client);
     await createUserWithId(client, OPERATOR, { name: 'Reconcile operator', email: 'reconcile@datatalks.club', role: 'operator' });
+    await createUserWithId(client, APPROVER, { name: 'Reconcile approver', email: 'approver@datatalks.club', role: 'admin' });
   });
   after(stopLocal);
 
@@ -257,5 +260,89 @@ describe('reconcile API', () => {
     });
     assert.equal(badBalance.statusCode, 400);
     assert.match(JSON.parse(badBalance.body).error, /balance 0 amount/);
+  });
+
+  it('runs a month end to end: missing sides block close, a per-row proof fixes the Google receipt, exceptions need the approver', async () => {
+    const operator = as(OPERATOR), approver = as(APPROVER);
+    const proofDoc = (await putBookkeepingItem(client, 'document', {
+      documentType: 'receipt', status: 'active', contentType: 'application/pdf', originalFilename: 'google-payment.pdf', byteSize: 10, sha256: 'c'.repeat(64), s3Key: 'documents/google-proof',
+    })).item;
+    const invoiceDoc = (await putBookkeepingItem(client, 'document', {
+      documentType: 'receipt', status: 'active', contentType: 'application/pdf', originalFilename: 'cloud-invoice.pdf', byteSize: 10, sha256: 'd'.repeat(64), s3Key: 'documents/cloud-invoice',
+    })).item;
+    const google = (await putBookkeepingItem(client, 'bookkeeping', {
+      transactionDate: '2026-12-14', paidDate: '2026-12-14', counterparty: 'Google', description: 'Google One', amount: '1.99', currency: 'EUR', entryType: 'expense', sourceType: 'manual',
+    })).item;
+    const googleReceipt = (await putBookkeepingItem(client, 'document', {
+      documentType: 'receipt', status: 'active', contentType: 'application/pdf', originalFilename: 'google-receipt.pdf', byteSize: 10, sha256: 'e'.repeat(64), s3Key: 'documents/google-receipt',
+    })).item;
+    await createDocumentLink(client, { documentId: googleReceipt.id, transactionId: google.id, coverageType: 'evidence' });
+    const cloud = (await putBookkeepingItem(client, 'bookkeeping', {
+      transactionDate: '2026-12-03', paidDate: '2026-12-03', counterparty: 'Example Cloud', description: 'Hosting', amount: '48.60', currency: 'EUR', entryType: 'expense', sourceType: 'spreadsheet',
+    })).item;
+    const saved = await operator('POST', '/api/reconcile/statements', {
+      account: 'finom', period: '2026-12', documentId: 'finom-december',
+      rows: [
+        row({ date: '2026-12-04', amount: '-48.60', counterparty: 'Example Cloud' }),
+        row({ date: '2026-12-10', amount: '-15.00', counterparty: 'Finom account fee' }),
+        row({ date: '2026-12-15', amount: '-3296.00', counterparty: 'Finanzamt Example' }),
+        row({ date: '2026-12-20', amount: '-12.00', counterparty: 'Unbooked Shop' }),
+      ],
+    });
+    assert.equal(saved.statusCode, 201, saved.body);
+
+    const month = async () => JSON.parse((await operator('GET', '/api/reconcile/months/2026-12')).body);
+    let view = await month();
+    const status = (match: (row: Record<string, any>) => boolean) => view.rows.find(match)?.status;
+    assert.equal(status((item) => item.ledger?.id === google.id), 'payment-proof-missing');
+    assert.equal(status((item) => item.ledger?.id === cloud.id), 'no-invoice');
+    assert.equal(status((item) => item.counterparty === 'Finom account fee'), 'matched');
+    assert.equal(status((item) => item.counterparty === 'Finanzamt Example'), 'needs-review');
+    assert.equal(status((item) => item.counterparty === 'Unbooked Shop'), 'no-invoice');
+
+    const blocked = await operator('POST', '/api/reconcile/months/2026-12/close', {});
+    assert.equal(blocked.statusCode, 409);
+    assert.equal(JSON.parse(blocked.body).blockers.length, 4);
+
+    // The Google receipt: a separate payment proof for that one row.
+    assert.equal((await operator('POST', '/api/reconcile/months/2026-12/proof', { transactionId: google.id, documentId: proofDoc.id })).statusCode, 200);
+    // The cloud invoice gets its document; the unbooked shop gets a ledger row from the bank row.
+    assert.equal((await operator('POST', '/api/reconcile/months/2026-12/document', { transactionId: cloud.id, documentId: invoiceDoc.id })).statusCode, 200);
+    view = await month();
+    const shop = view.rows.find((item: Record<string, any>) => item.counterparty === 'Unbooked Shop');
+    const created = await operator('POST', '/api/reconcile/months/2026-12/ledger', { bankKey: shop.id, category: 'Office', documentId: invoiceDoc.id });
+    assert.equal(created.statusCode, 201, created.body);
+    const again = await operator('POST', '/api/reconcile/months/2026-12/ledger', { bankKey: shop.id });
+    assert.equal(JSON.parse(again.body).duplicate, true);
+    const tax = view.rows.find((item: Record<string, any>) => item.counterparty === 'Finanzamt Example');
+    assert.equal((await operator('POST', '/api/reconcile/months/2026-12/exception', { row: tax.id, kind: 'tax_debit', proof: 'GewSt Q4 schedule entry' })).statusCode, 200);
+    assert.equal((await operator('POST', '/api/reconcile/months/2026-12/exception', { row: tax.id, kind: 'refund' })).statusCode, 400);
+
+    view = await month();
+    assert.equal(status((item) => item.ledger?.id === google.id), 'matched');
+    assert.equal(view.rows.find((item: Record<string, any>) => item.ledger?.id === google.id).paymentProof.documentId, proofDoc.id);
+    assert.equal(view.blockers, 0, JSON.stringify(view.rows.filter((item: Record<string, any>) => item.status !== 'matched')));
+
+    const unconfirmed = await operator('POST', '/api/reconcile/months/2026-12/close', {});
+    assert.equal(unconfirmed.statusCode, 409);
+    assert.match(JSON.parse(unconfirmed.body).error, /approver/);
+    assert.equal((await operator('POST', '/api/reconcile/months/2026-12/confirm-exceptions', {})).statusCode, 403);
+    assert.equal((await approver('POST', '/api/reconcile/months/2026-12/confirm-exceptions', {})).statusCode, 200);
+    const closed = await operator('POST', '/api/reconcile/months/2026-12/close', {});
+    assert.equal(closed.statusCode, 200, closed.body);
+
+    // Closed means locked.
+    assert.equal((await operator('POST', '/api/reconcile/months/2026-12/exception', { row: tax.id, kind: 'bank_fee' })).statusCode, 409);
+    assert.equal((await operator('POST', '/api/reconcile/statements', { account: 'finom', period: '2026-12', documentId: 'late', rows: [row({ date: '2026-12-30' })] })).statusCode, 409);
+    assert.equal((await operator('POST', '/api/reconcile/months/2026-12/reopen', {})).statusCode, 400);
+    const reopened = JSON.parse((await operator('POST', '/api/reconcile/months/2026-12/reopen', { reason: 'late bank fee found' })).body).month;
+    assert.equal(reopened.state, 'open');
+    assert.equal(reopened.exceptionConfirmation, undefined);
+    assert.deepEqual(reopened.log.map((entry: { action: string }) => entry.action), ['attach-proof', 'attach-document', 'create-ledger', 'create-ledger', 'exception', 'confirm-exceptions', 'close', 'reopen']);
+
+    const csv = await invoke('GET', '/api/reconcile/months/2026-12', undefined, AUTH, { format: 'csv' });
+    assert.match(csv.body.split('\n')[0], /^date,status,counterparty/);
+    const summary = JSON.parse((await invoke('GET', '/api/reconcile/months', undefined, AUTH, { from: '2026-11', to: '2026-12' })).body);
+    assert.deepEqual(summary.items.map((item: { period: string }) => item.period), ['2026-11', '2026-12']);
   });
 });

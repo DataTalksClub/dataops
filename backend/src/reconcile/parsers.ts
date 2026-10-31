@@ -20,6 +20,14 @@ export type StatementRow = {
   reference?: string;
   /** The bank's own transaction id, when the export carries one; used to drop rows seen in an overlapping statement. */
   bankId?: string;
+  /** Revolut extras the matcher uses: transaction type, the card's original amount/currency, the fee, the paired exchange leg. */
+  bankType?: string;
+  origAmount?: string;
+  origCurrency?: string;
+  fee?: string;
+  relatedBankId?: string;
+  /** Sub-account of a multi-account export (Revolut "Account" column). */
+  wallet?: string;
 };
 
 /** Closing balance of one wallet: the running balance printed on its latest row. */
@@ -174,6 +182,11 @@ type ColumnPlan = {
   balance: number;
   wallet: number;
   bankId: number;
+  bankType?: number;
+  origAmount?: number;
+  origCurrency?: number;
+  fee?: number;
+  relatedBankId?: number;
   order: "dmy" | "auto";
   currencyDefault?: string;
 };
@@ -228,14 +241,30 @@ function rowFromCells(cells: string[], plan: ColumnPlan, warnings: string[]): St
   const counterparty = (plan.description >= 0 ? cells[plan.description] : "") || (plan.reference >= 0 ? cells[plan.reference] : "") || "";
   if (!counterparty) warnings.push(`row dated ${dateCell} has no counterparty text`);
   const bankId = plan.bankId >= 0 ? (cells[plan.bankId] || "").trim() : "";
-  return {
+  const cell = (index: number | undefined) => (index !== undefined && index >= 0 ? (cells[index] || "").trim() : "");
+  const extras: Partial<StatementRow> = {};
+  if (cell(plan.bankType)) extras.bankType = cell(plan.bankType).slice(0, 40);
+  const origCurrency = cell(plan.origCurrency).toUpperCase();
+  if (cell(plan.origAmount) && CURRENCY.test(origCurrency)) {
+    try { extras.origAmount = parseAmount(cell(plan.origAmount)); extras.origCurrency = origCurrency; } catch (error) { if (!(error instanceof ParseError)) throw error; }
+  }
+  if (cell(plan.fee)) {
+    try { const fee = parseAmount(cell(plan.fee)); if (fee !== "0.00" && fee !== "-0.00") extras.fee = fee.replace("-", ""); } catch (error) { if (!(error instanceof ParseError)) throw error; }
+  }
+  if (cell(plan.relatedBankId)) extras.relatedBankId = cell(plan.relatedBankId).slice(0, 120);
+  if (cell(plan.wallet)) extras.wallet = cell(plan.wallet).slice(0, 120);
+  const row: StatementRow = {
     date: parseStatementDate(dateCell, plan.order),
     amount,
     currency: ((plan.currency >= 0 ? cells[plan.currency] : "") || "").toUpperCase() || plan.currencyDefault || "—",
     counterparty: counterparty.replace(/\s+/g, " ").trim(),
     ...(plan.reference >= 0 && cells[plan.reference] ? { reference: cells[plan.reference].trim() } : {}),
     ...(bankId ? { bankId: bankId.slice(0, 120) } : {}),
+    ...extras,
   };
+  // An original amount in the account's own currency says nothing new.
+  if (row.origCurrency === row.currency) { delete row.origAmount; delete row.origCurrency; }
+  return row;
 }
 
 /** Sortable "HH:MM:SS" from a date cell; rows without a time sort as midnight. */
@@ -292,6 +321,11 @@ type FixedLayout = {
     balance?: string;
     wallet?: string;
     bankId?: string;
+    bankType?: string;
+    origAmount?: string;
+    origCurrency?: string;
+    fee?: string;
+    relatedBankId?: string;
   };
   /** Columns the layout reads when present but does not require. */
   optional?: Array<keyof FixedLayout["columns"]>;
@@ -307,7 +341,9 @@ export const FIXED_LAYOUTS: Partial<Record<StatementAccount, FixedLayout[]>> = {
         date: "Date completed (Europe/Berlin)", fallbackDate: "Date started (Europe/Berlin)",
         description: "Description", reference: "Reference", amount: "Amount", currency: "Payment currency",
         state: "State", balance: "Balance", wallet: "Account", bankId: "ID",
+        bankType: "Type", origAmount: "Orig amount", origCurrency: "Orig currency", fee: "Fee", relatedBankId: "Related transaction id",
       },
+      optional: ["relatedBankId"],
     },
     {
       name: "Revolut Business account statement (UTC)",
@@ -315,7 +351,9 @@ export const FIXED_LAYOUTS: Partial<Record<StatementAccount, FixedLayout[]>> = {
         date: "Date completed (UTC)", fallbackDate: "Date started (UTC)",
         description: "Description", reference: "Reference", amount: "Amount", currency: "Payment currency",
         state: "State", balance: "Balance", wallet: "Account", bankId: "ID",
+        bankType: "Type", origAmount: "Orig amount", origCurrency: "Orig currency", fee: "Fee", relatedBankId: "Related transaction id",
       },
+      optional: ["relatedBankId"],
     },
     {
       name: "Revolut account statement (Type/Product layout)",
@@ -358,7 +396,9 @@ function fixedPlan(headers: string[], account: StatementAccount, layouts: FixedL
     return {
       date: at("date"), fallbackDate: at("fallbackDate"), description: at("description"), reference: at("reference"),
       amount: at("amount"), currency: at("currency"), paidIn: -1, paidOut: -1, type: -1, state: at("state"),
-      balance: at("balance"), wallet: at("wallet"), bankId: at("bankId"), order: "dmy",
+      balance: at("balance"), wallet: at("wallet"), bankId: at("bankId"),
+      bankType: at("bankType"), origAmount: at("origAmount"), origCurrency: at("origCurrency"), fee: at("fee"), relatedBankId: at("relatedBankId"),
+      order: "dmy",
     };
   }
   throw new ParseError(`unrecognized ${account} export; the bank may have changed its columns. Headers: ${headers.join(", ")}. Expected one of: ${misses.join("; ")}`);
@@ -497,6 +537,29 @@ export function parseStatementPdfText(text: string, defaultCurrency?: string): P
   flush();
   if (!rows.length) throw new ParseError("no statement rows parsed from PDF text");
   return { rows, warnings, balances: [] };
+}
+
+/**
+ * Which bank exported a CSV/XLSX statement, from its header row alone:
+ * the account whose fixed layout the headers satisfy. Null when none does.
+ */
+export function detectStatementAccount(headers: string[]): { account: StatementAccount; layout: string } | null {
+  for (const [account, layouts] of Object.entries(FIXED_LAYOUTS) as Array<[StatementAccount, FixedLayout[]]>) {
+    try {
+      fixedPlan(headers, account, layouts);
+      const keys = new Set(headers.map(headerKey));
+      const layout = layouts.find((candidate) => Object.entries(candidate.columns).every(([field, header]) => keys.has(headerKey(header)) || candidate.optional?.includes(field as keyof FixedLayout["columns"])))!;
+      return { account, layout: layout.name };
+    } catch (error) {
+      if (!(error instanceof ParseError)) throw error;
+    }
+  }
+  return null;
+}
+
+export function csvHeaders(text: string): string[] {
+  const first = text.replace(/^\uFEFF/, "").split(/\r?\n/).find((line) => line.trim()) || "";
+  return splitDelimited(first, detectDelimiter(first));
 }
 
 /** Parse a statement by content type. PDF bytes go through pdfText first. */

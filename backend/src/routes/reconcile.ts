@@ -23,6 +23,26 @@ import {
   saveStatement,
 } from "../reconcile/service";
 import { recordRequestError } from "../requestErrorLog";
+import {
+  assertMonthOpen,
+  attachDocument,
+  attachProof,
+  buildMonth,
+  buildMonths,
+  clearException,
+  closeMonth,
+  confirmExceptions,
+  createLedgerFromBank,
+  getConfig,
+  MonthGateError,
+  pairRows,
+  periodsBetween,
+  reopenMonth,
+  saveConfig,
+  setException,
+  unpairRows,
+} from "../reconcile/monthService";
+import { tableCsv } from "../reconcile/month";
 
 const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const CURRENCY = /^[A-Z]{3}$/;
@@ -35,6 +55,7 @@ function fail(error: unknown): LambdaResponse {
   const statusCode = Number((error as { statusCode?: number }).statusCode || 0);
   if (statusCode === 401 || statusCode === 403) return json(statusCode, { error: statusCode === 401 ? "Unauthorized" : "Forbidden" });
   const message = (error as Error).message || "Reconcile request failed";
+  if (error instanceof MonthGateError) return json(409, { error: message, blockers: error.blockers });
   if (statusCode) return json(statusCode, { error: message });
   return json(400, { error: message });
 }
@@ -60,7 +81,16 @@ export async function handleReconcileRoutes(
   client: DynamoDBDocumentClient,
 ): Promise<LambdaResponse> {
   try {
-    await financeActor(client, header(event, "x-user-id"));
+    const actor = await financeActor(client, header(event, "x-user-id"));
+    const monthRoute = path.match(/^\/api\/reconcile\/months(?:\/(\d{4}-\d{2})(?:\/([a-z-]+))?)?$/);
+    if (monthRoute) return await handleMonthRoutes(monthRoute[1], monthRoute[2], method, event, client, actor);
+    if (path === "/api/reconcile/config" && method === "GET") return json(200, { config: await getConfig(client) });
+    if (path === "/api/reconcile/config" && method === "PUT") {
+      await financeActor(client, actor.id, true);
+      const body = parse(event.body || null);
+      if (!body) return json(400, { error: "Invalid JSON" });
+      return json(200, { config: await saveConfig(client, body as never, actor.id) });
+    }
     const route = path.match(/^\/api\/reconcile(\/[^/]+(?:\/[^/]+)?)?$/);
     const action = route?.[1] || "";
     const query = event.queryStringParameters || {};
@@ -85,6 +115,7 @@ export async function handleReconcileRoutes(
       const period = String(body.period || "");
       if (!MONTH.test(period)) return json(400, { error: "period must be YYYY-MM" });
       if (body.documentId !== undefined && !OPAQUE_ID.test(String(body.documentId))) return json(400, { error: "Invalid documentId" });
+      await assertMonthOpen(client, period);
       const statement = await saveStatement(client, {
         accountId: account as StatementAccount,
         period,
@@ -167,5 +198,69 @@ export async function handleReconcileRoutes(
     return json(404, { error: "Not found" });
   } catch (error) {
     return fail(error);
+  }
+}
+
+const text = (value: unknown, max = 500) => (typeof value === "string" && value.trim() ? value.trim().slice(0, max) : undefined);
+
+async function handleMonthRoutes(
+  period: string | undefined,
+  action: string | undefined,
+  method: string,
+  event: LambdaEvent,
+  client: DynamoDBDocumentClient,
+  actor: { id: string; role: string },
+): Promise<LambdaResponse> {
+  const query = event.queryStringParameters || {};
+  if (!period) {
+    if (method !== "GET") return json(404, { error: "Not found" });
+    const periods = periodsBetween(String(query.from || ""), String(query.to || ""));
+    const views = await buildMonths(client, periods);
+    return json(200, {
+      items: views.map((view) => ({
+        period: view.period, state: view.state, counters: view.counters, blockers: view.blockers,
+        statements: view.statements.length,
+        ...(view.closed ? { closed: view.closed } : {}),
+        ...(view.exceptionConfirmation ? { exceptionConfirmation: view.exceptionConfirmation } : {}),
+      })),
+    });
+  }
+  if (!action && method === "GET") {
+    const view = await buildMonth(client, period);
+    if (query.format === "csv") return { statusCode: 200, headers: { "Content-Type": "text/csv; charset=utf-8" }, body: tableCsv(view) };
+    return json(200, view);
+  }
+  if (method !== "POST") return json(404, { error: "Not found" });
+  const body = parse(event.body || null);
+  if (!body) return json(400, { error: "Invalid JSON" });
+  const id = (field: string) => {
+    const value = String(body[field] || "");
+    if (!OPAQUE_ID.test(value)) throw Object.assign(new Error(`${field} is required`), { statusCode: 400 });
+    return value;
+  };
+  const rowId = () => {
+    const value = String(body.row || "");
+    if (!/^(ledger:)?[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value)) throw Object.assign(new Error("row is required"), { statusCode: 400 });
+    return value;
+  };
+  switch (action) {
+    case "pair": return json(200, { month: await pairRows(client, period, actor.id, id("bankKey"), id("transactionId"), text(body.note)) });
+    case "unpair": return json(200, { month: await unpairRows(client, period, actor.id, id("bankKey"), id("transactionId"), text(body.note)) });
+    case "exception": return json(200, { month: await setException(client, period, actor.id, rowId(), String(body.kind || ""), text(body.proof), text(body.note)) });
+    case "clear-exception": return json(200, { month: await clearException(client, period, actor.id, rowId()) });
+    case "proof": return json(200, { month: await attachProof(client, period, actor.id, id("transactionId"), id("documentId")) });
+    case "document": return json(200, { link: await attachDocument(client, period, actor.id, id("transactionId"), id("documentId")) });
+    case "ledger": return json(201, await createLedgerFromBank(client, period, actor.id, id("bankKey"), {
+      ...(text(body.category, 120) ? { category: text(body.category, 120) } : {}),
+      ...(text(body.description) ? { description: text(body.description) } : {}),
+      ...(body.documentId ? { documentId: id("documentId") } : {}),
+    }));
+    case "confirm-exceptions": {
+      if (actor.role !== "admin") return json(403, { error: "Only an admin confirms a month's exception list" });
+      return json(200, { month: await confirmExceptions(client, period, actor.id) });
+    }
+    case "close": return json(200, { month: await closeMonth(client, period, actor.id) });
+    case "reopen": return json(200, { month: await reopenMonth(client, period, actor.id, String(body.reason || "")) });
+    default: return json(404, { error: "Not found" });
   }
 }

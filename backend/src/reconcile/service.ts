@@ -94,7 +94,13 @@ export function validateRows(rows: unknown): string[] {
     if (typeof candidate.currency !== "string" || !CURRENCY.test(candidate.currency)) problems.push(`${label} currency`);
     if (typeof candidate.counterparty !== "string" || !candidate.counterparty.trim() || candidate.counterparty.length > 300) problems.push(`${label} counterparty`);
     if (candidate.reference !== undefined && (typeof candidate.reference !== "string" || candidate.reference.length > 300)) problems.push(`${label} reference`);
-    if (candidate.bankId !== undefined && (typeof candidate.bankId !== "string" || !candidate.bankId || candidate.bankId.length > 120)) problems.push(`${label} bankId`);
+    for (const field of ["bankId", "bankType", "relatedBankId", "wallet"]) {
+      if (candidate[field] !== undefined && (typeof candidate[field] !== "string" || !candidate[field] || (candidate[field] as string).length > 120)) problems.push(`${label} ${field}`);
+    }
+    for (const field of ["origAmount", "fee"]) {
+      if (candidate[field] !== undefined && (typeof candidate[field] !== "string" || !AMOUNT.test(candidate[field] as string))) problems.push(`${label} ${field}`);
+    }
+    if (candidate.origCurrency !== undefined && (typeof candidate.origCurrency !== "string" || !CURRENCY.test(candidate.origCurrency))) problems.push(`${label} origCurrency`);
   });
   return problems;
 }
