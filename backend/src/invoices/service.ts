@@ -94,6 +94,8 @@ export async function processInvoiceIntake(client:DynamoDBDocumentClient,intakeI
   const items:Invoice[]=[];const issues:string[]=[];
   for(const ref of intake.artifactRefs || []) {
     const artifact=await getArtifact(client,ref.artifactId);
+    // Bank statements sent with the invoices were already imported for reconciliation.
+    if(artifact?.metadata?.reconcileStatement) continue;
     if(!artifact || artifact.metadata?.importState!=='complete') {issues.push('Document import incomplete: retry intake import');continue;}
     if(artifact.contentType!=='application/pdf') {issues.push('Unsupported attachment: supply an original PDF');continue;}
     const checksum=String(artifact.checksum);const id=sha(`invoice-document\n${checksum}`);
