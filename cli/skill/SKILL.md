@@ -238,6 +238,18 @@ and `dataops books list` (Book of the Week entries for `_books` pages;
 `--title/--authors/--description/--start-date/--end-date/--cover-url/--link "Text=URL"`).
 The website script generates the pages from these registers plus the episode register.
 
+For cohort campaign calendars and social post rows per cohort Card:
+`dataops campaigns list --card <card-id> [--channel CH] [--status ST] [--phase PH] [--owner OWN] [--format FMT] [--json]`
+(or `--template` for the reusable process-template rows). Import a campaign calendar CSV
+(such as `02-campaign-calendar.csv` or `telegram-announcement-calendar.csv`) with
+`dataops campaigns import --card <card-id> --file <path.csv> [--replace] [--channel CH] [--owner OWN] [--json]`
+(or `dataops campaigns import --template --file <path.csv> --replace --json`, then seed a cohort Card with
+`dataops campaigns import --card <card-id> --from-template [--owner OWN] [--json]`).
+Inspect or update individual rows with `dataops campaigns show <row-id> --json`,
+`dataops campaigns create --card <card-id> (--date YYYY-MM-DD|TBD | --offset T-N) --channel CH --format FMT [--owner OWN] [--status ST] [--title T] --json`,
+`dataops campaigns update <row-id> [--status Published|Drafted|Ready|Planned|Skipped] [--owner OWN] [--date YYYY-MM-DD] [--channel CH] [--format FMT] [--version N] --json`,
+and `dataops campaigns delete <row-id> [--version N] --json`.
+
 ## What is on my plate
 
 ```bash
