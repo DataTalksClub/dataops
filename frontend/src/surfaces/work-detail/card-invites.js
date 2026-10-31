@@ -189,13 +189,16 @@ export function renderCardEventTime({ request, workApiUrl, reload }, card) {
     save.disabled = true;
     feedback.textContent = "Saving event and sending invite…";
     try {
-      await request(workApiUrl(`/api/cards/${encodeURIComponent(card.id)}/time`), {
+      const response = await request(workApiUrl(`/api/cards/${encodeURIComponent(card.id)}/time`), {
         method: "POST",
         body: JSON.stringify({ at: at.value.replace("T", " "), duration: Number(duration.value), tz: tz.value,
           ...(guests.value.trim() ? { guestEmails: guests.value.split(",").map(value => value.trim()).filter(Boolean) } : {}),
         }),
       });
       await reload();
+      if (response?.taskClosure?.outcome === "blocked" && response.taskClosure.message) {
+        feedback.textContent = `Invite sent. ${response.taskClosure.message}`;
+      }
     } catch (error) {
       feedback.textContent = error.message || "Could not send the invitation. Retry to recover the same event.";
       save.disabled = false;

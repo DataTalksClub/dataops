@@ -400,6 +400,7 @@ export async function time(args, io) {
   if (!args.json) {
     io.print(`Event: ${result.card.eventTime.startIso} .. ${result.card.eventTime.endIso} (${result.card.eventTime.timeZone})`);
     for (const invite of result.card.calendarInvites || []) io.print(`invite: ${invite.eventId} ${invite.url || ''}`);
+    if (result.taskClosure?.message) io.print(`taskClosure (${result.taskClosure.outcome}): ${result.taskClosure.message}`);
   }
   return result;
 }

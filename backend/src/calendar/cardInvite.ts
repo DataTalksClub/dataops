@@ -1,7 +1,13 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import type { Card } from '../types';
+import type { Card, CardCalendarInvite, TaskStatus } from '../types';
 import { getCardConsistent, updateCard, updateCardAdditive } from '../db/cards';
-import { listTasksByCardConsistent, updateTask } from '../db/tasks';
+import {
+  CardLifecycleConflictError,
+  listTasksByCardConsistent,
+  TaskVersionConflictError,
+  updateTask,
+} from '../db/tasks';
+import { TaskDependencyError, type TaskReference } from '../db/taskDependencies';
 import { scanCrmPrefix } from '../db/sponsorCrm';
 import { getTemplate } from '../db/templates';
 import { getCalendarHold, listCalendarHolds, putCalendarHold } from '../db/calendarHolds';
@@ -11,6 +17,31 @@ import { createHoldGoogleEvents, updateHoldGoogleEvents, type HoldGoogleDeps } f
 
 export class CardInviteConflictError extends Error {}
 export class CardInviteInputError extends Error {}
+
+export interface InviteTaskClosureItem {
+  taskId: string;
+  description: string;
+  outcome: 'closed' | 'already_closed' | 'blocked';
+  status: TaskStatus;
+  reason?: string;
+  code?: string;
+  unmetPrerequisites?: TaskReference[];
+}
+
+export interface InviteTaskClosureOutcome {
+  outcome: 'closed' | 'already_closed' | 'blocked' | 'no_invite_tasks' | 'not_attempted';
+  message: string;
+  tasks: InviteTaskClosureItem[];
+}
+
+export interface CardInviteSyncResult {
+  outcome: 'sent' | 'deferred';
+  state: 'synced' | 'deferred';
+  eventKey: string;
+  googleEventIds: Record<string, string>;
+  calendarInvites: CardCalendarInvite[];
+  reason?: string;
+}
 
 /** A portal-hosted guest document page (what `sponsorDocPathForTemplate` links). */
 const DATAOPS_GUEST_DOC = /^https:\/\/[^/]+\/(webinar-docs|workshop-docs|podcast-docs|guest-docs)\/[^/?#]+\/?$/;
@@ -56,18 +87,104 @@ export async function cardGuests(client: DynamoDBDocumentClient, card: Card): Pr
 export const calendarInviteUrl = (calendar: string, id: string) =>
   `https://calendar.google.com/calendar/event?eid=${Buffer.from(`${id} ${calendar}`).toString('base64url')}`;
 
-export async function closeCardInviteTasks(client: DynamoDBDocumentClient, card: Card, actorId: string) {
-  if (!card.calendarInvites?.length) return;
-  for (const task of await listTasksByCardConsistent(client, card.id)) {
-    if (!['todo', 'waiting'].includes(task.status) || !taskRequiresCalendarInvite(task as unknown as Record<string, unknown>)) continue;
-    const now = new Date().toISOString();
-    await updateTask(client, task.id, {
-      expectedVersion: task.version, currentTask: task,
-      patch: { status: 'done', completedAt: now, completedBy: actorId },
-      historyEvents: [makeTaskHistoryEvent('completed', task, { actorId, createdAt: now, note: 'Calendar invitation created by DataOps.' })],
-      actorId, triggerKind: 'calendar-invite-created',
-    });
+export async function closeCardInviteTasks(
+  client: DynamoDBDocumentClient,
+  card: Card,
+  actorId: string,
+): Promise<InviteTaskClosureOutcome> {
+  if (!card.calendarInvites?.length) {
+    return {
+      outcome: 'not_attempted',
+      message: 'Calendar invite is not linked yet; invite task closure was not attempted.',
+      tasks: [],
+    };
   }
+  const allTasks = await listTasksByCardConsistent(client, card.id);
+  const inviteTasks = allTasks.filter(task => taskRequiresCalendarInvite(task as unknown as Record<string, unknown>));
+  if (inviteTasks.length === 0) {
+    return {
+      outcome: 'no_invite_tasks',
+      message: 'No calendar invite tasks on this card.',
+      tasks: [],
+    };
+  }
+  const items: InviteTaskClosureItem[] = [];
+  for (const task of inviteTasks) {
+    if (!['todo', 'waiting'].includes(task.status)) {
+      items.push({
+        taskId: task.id,
+        description: task.description,
+        outcome: 'already_closed',
+        status: task.status,
+      });
+      continue;
+    }
+    const now = new Date().toISOString();
+    try {
+      await updateTask(client, task.id, {
+        expectedVersion: task.version, currentTask: task,
+        patch: { status: 'done', completedAt: now, completedBy: actorId },
+        historyEvents: [makeTaskHistoryEvent('completed', task, { actorId, createdAt: now, note: 'Calendar invitation created by DataOps.' })],
+        actorId, triggerKind: 'calendar-invite-created',
+      });
+      items.push({
+        taskId: task.id,
+        description: task.description,
+        outcome: 'closed',
+        status: 'done',
+      });
+    } catch (error) {
+      if (error instanceof TaskDependencyError) {
+        items.push({
+          taskId: task.id,
+          description: task.description,
+          outcome: 'blocked',
+          status: task.status,
+          reason: error.message,
+          code: error.code,
+          ...(error.tasks.length > 0 ? { unmetPrerequisites: error.tasks } : {}),
+        });
+        continue;
+      }
+      if (error instanceof TaskVersionConflictError || error instanceof CardLifecycleConflictError) {
+        items.push({
+          taskId: task.id,
+          description: task.description,
+          outcome: 'blocked',
+          status: task.status,
+          reason: error.message,
+          code: 'task-conflict',
+        });
+        continue;
+      }
+      throw error;
+    }
+  }
+  const blocked = items.filter(item => item.outcome === 'blocked');
+  if (blocked.length > 0) {
+    return {
+      outcome: 'blocked',
+      message: blocked
+        .map(item => `Invite task "${item.description}" (${item.taskId}) remains ${item.status}: ${item.reason}`)
+        .join('; '),
+      tasks: items,
+    };
+  }
+  const closed = items.filter(item => item.outcome === 'closed');
+  if (closed.length > 0) {
+    return {
+      outcome: 'closed',
+      message: closed.map(item => `Closed invite task "${item.description}" (${item.taskId}).`).join(' '),
+      tasks: items,
+    };
+  }
+  return {
+    outcome: 'already_closed',
+    message: items
+      .map(item => `Invite task "${item.description}" (${item.taskId}) was already ${item.status}.`)
+      .join(' '),
+    tasks: items,
+  };
 }
 
 /** Both Card time and confirm-hold use this path. Reserve the Card before
@@ -140,6 +257,27 @@ export async function syncCardInvite(
     };
     await putCalendarHold(client, storedHold);
   }
-  if (sync.state === 'synced') await closeCardInviteTasks(client, updated, actorId);
-  return { card: (await getCardConsistent(client, updated.id))!, sync, ...(storedHold ? { hold: storedHold } : {}) };
+  const taskClosure: InviteTaskClosureOutcome = sync.state === 'synced'
+    ? await closeCardInviteTasks(client, updated, actorId)
+    : {
+        outcome: 'not_attempted',
+        message: 'Calendar invite sync was deferred; invite task closure was not attempted.',
+        tasks: [],
+      };
+  const finalCard = (await getCardConsistent(client, updated.id))!;
+  const inviteResult: CardInviteSyncResult = {
+    outcome: sync.state === 'synced' ? 'sent' : 'deferred',
+    state: sync.state,
+    eventKey,
+    googleEventIds: sync.eventIds,
+    calendarInvites: finalCard.calendarInvites || [],
+    ...(sync.state === 'deferred' ? { reason: sync.reason } : {}),
+  };
+  return {
+    card: finalCard,
+    sync,
+    invite: inviteResult,
+    taskClosure,
+    ...(storedHold ? { hold: storedHold } : {}),
+  };
 }

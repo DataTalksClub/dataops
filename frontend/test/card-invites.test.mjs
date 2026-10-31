@@ -51,7 +51,13 @@ test("event time editor shows local time and sends arbitrary time, duration, zon
   const calls = [];
   let reloaded = false;
   const form = renderCardEventTime({
-    request: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); },
+    request: async (url, options) => {
+      calls.push({ url, body: JSON.parse(options.body) });
+      return {
+        invite: { outcome: "sent", state: "synced" },
+        taskClosure: { outcome: "blocked", message: 'Invite task "Create a calendar invite" remains todo: complete prerequisites first' },
+      };
+    },
     workApiUrl: value => value,
     reload: async () => { reloaded = true; },
   }, { id: "card-1", guestEmails: ["guest@example.test"], eventTime: { startIso: "2026-11-09T13:30:00.000Z", timeZone: "Europe/Berlin", durationMinutes: 60 } });
@@ -63,6 +69,8 @@ test("event time editor shows local time and sends arbitrary time, duration, zon
   await form.dispatch("submit");
   assert.deepEqual(calls, [{ url: "/api/cards/card-1/time", body: { at: "2026-11-09 16:47", duration: 90, tz: "Europe/Berlin", guestEmails: ["guest@example.test"] } }]);
   assert.equal(reloaded, true);
+  const statusEl = doc.created.find(el => el.attributes?.get("role") === "status");
+  assert.match(statusEl.textContent, /Invite sent\..*remains todo/);
 });
 
 test("AC6: event card renders lifecycle status and Propose / Approve / Reschedule / Release buttons", async () => {

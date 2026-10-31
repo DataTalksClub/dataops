@@ -904,10 +904,10 @@ async function handleCardCalendarInvites(
       }
       return { calendarInvites: invites };
     });
-    await closeCardInviteTasks(client, card, actor.id);
+    const taskClosure = await closeCardInviteTasks(client, card, actor.id);
     const templateIdByType = await getTemplateIdByType(client);
     const projected = await projectCard(new TeamDirectory(client), (await getCardConsistent(client, id))!, undefined, templateIdByType);
-    return json(201, { card: projected, invites: card.calendarInvites || [] });
+    return json(201, { card: projected, invites: card.calendarInvites || [], taskClosure });
   }
 
   return json(405, { error: 'Method not allowed' });

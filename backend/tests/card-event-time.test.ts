@@ -206,10 +206,96 @@ describe('Card-owned invitation lifecycle', () => {
     const first = await invoke('POST', `/api/cards/${c.id}/time`, { at: '2026-11-09 14:30', guestEmails: ['guest@example.test'] });
     assert.equal(first.code, 502, first.raw);
     assert.equal(first.data.card.calendarInvites.length, 0);
+    assert.equal(first.data.invite.outcome, 'deferred');
+    assert.equal(first.data.taskClosure.outcome, 'not_attempted');
     const retry = await invoke('POST', `/api/cards/${c.id}/time`, { at: '2026-11-09 14:30' });
     assert.equal(retry.code, 200, retry.raw);
     assert.equal(provider.events.get(HOLD_ORGANIZER)!.size, 1);
+    assert.equal(retry.data.invite.outcome, 'sent');
+    assert.equal(retry.data.taskClosure.outcome, 'closed');
     assert.equal((await invoke('GET', '/api/tasks', undefined, { cardId: c.id })).data.tasks[0].status, 'done');
+  });
+  test('cards time returns 200 with invite result and blocked taskClosure when invite Task prerequisites are open, then closes after prerequisites complete', async () => {
+    const provider = google();
+    const template = await createTemplate(db, {
+      name: 'podcast-prereqs',
+      type: 'podcast-prereqs',
+      triggerType: 'manual',
+      taskDefinitions: [
+        { refId: 'obtain-email', description: "Obtain speaker's email", offsetDays: -30 },
+        { refId: 'propose-invite', description: 'Create a proposed calendar invite', offsetDays: -28, dependsOn: ['obtain-email'] },
+        { refId: 'agree-date', description: 'Agree on a date', offsetDays: -27, dependsOn: ['propose-invite'] },
+        {
+          refId: 'create-calendar-invite',
+          description: 'Create a calendar invite for guest speaker',
+          offsetDays: -26,
+          dependsOn: ['obtain-email', 'propose-invite', 'agree-date'],
+        },
+      ],
+    });
+    const created = await invoke('POST', '/api/cards', {
+      templateId: template.id,
+      title: 'Ian Vanagas podcast',
+      anchorDate: '2026-12-01',
+    });
+    assert.equal(created.code, 201, created.raw);
+    const c = created.data.card;
+
+    const first = await invoke('POST', `/api/cards/${c.id}/time`, {
+      at: '2026-12-01 12:30',
+      duration: 60,
+      tz: 'Europe/Berlin',
+      guestEmails: ['ian@posthog.com'],
+    });
+    assert.equal(first.code, 200, first.raw);
+    assert.equal(first.data.invite.outcome, 'sent');
+    assert.equal(first.data.invite.state, 'synced');
+    assert.ok(first.data.card.calendarInvites.length > 0);
+    assert.equal(first.data.taskClosure.outcome, 'blocked');
+    assert.match(first.data.taskClosure.message, /Create a calendar invite for guest speaker/);
+    assert.match(first.data.taskClosure.message, /Obtain speaker's email/);
+    assert.equal(first.data.taskClosure.tasks.length, 1);
+    assert.equal(first.data.taskClosure.tasks[0].outcome, 'blocked');
+    assert.equal(first.data.taskClosure.tasks[0].status, 'todo');
+    assert.equal(first.data.taskClosure.tasks[0].code, 'prerequisites-incomplete');
+    assert.equal(first.data.taskClosure.tasks[0].unmetPrerequisites.length, 3);
+
+    const tasks = (await invoke('GET', '/api/tasks', undefined, { cardId: c.id })).data.tasks;
+    const byRef = new Map<string, any>(tasks.map((t: any) => [t.templateTaskRef, t]));
+    assert.equal(byRef.get('create-calendar-invite').status, 'todo');
+
+    for (const ref of ['obtain-email', 'propose-invite', 'agree-date']) {
+      const prereq = (await invoke('GET', `/api/tasks/${byRef.get(ref).id}`)).data;
+      const done = await invoke('PUT', `/api/tasks/${prereq.id}`, {
+        expectedVersion: prereq.version,
+        status: 'done',
+      });
+      assert.equal(done.code, 200, done.raw);
+    }
+
+    const second = await invoke('POST', `/api/cards/${c.id}/time`, {
+      at: '2026-12-01 12:30',
+      duration: 60,
+      tz: 'Europe/Berlin',
+      guestEmails: ['ian@posthog.com'],
+    });
+    assert.equal(second.code, 200, second.raw);
+    assert.equal(second.data.invite.outcome, 'sent');
+    assert.equal(second.data.taskClosure.outcome, 'closed');
+    assert.equal(second.data.taskClosure.tasks[0].outcome, 'closed');
+    assert.equal(second.data.taskClosure.tasks[0].status, 'done');
+    assert.equal(provider.events.get(HOLD_ORGANIZER)!.size, 1);
+    assert.equal((await invoke('GET', `/api/tasks/${byRef.get('create-calendar-invite').id}`)).data.status, 'done');
+
+    const third = await invoke('POST', `/api/cards/${c.id}/time`, {
+      at: '2026-12-01 12:30',
+      duration: 60,
+      tz: 'Europe/Berlin',
+      guestEmails: ['ian@posthog.com'],
+    });
+    assert.equal(third.code, 200, third.raw);
+    assert.equal(third.data.taskClosure.outcome, 'already_closed');
+    assert.equal(third.data.taskClosure.tasks[0].outcome, 'already_closed');
   });
 });
 
