@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { upload, confirm, report, alias, aliases, balances } from "../src/commands/reconcile.mjs";
+import { upload, confirm, report, alias, aliases, balances, commands } from "../src/commands/reconcile.mjs";
 
 const withFakePortal = async (routes, run) => {
   const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
@@ -230,4 +230,56 @@ test("upload --by-month stores a year export as one statement per month", async 
     assert.equal(result.statements.length, 2);
   });
   await rm(directory, { recursive: true, force: true });
+});
+
+const monthPayload = {
+  period: "2026-10", state: "open", blockers: 1, statements: [{ id: "s1", accountId: "finom", from: "2026-10-01", to: "2026-10-31" }],
+  counters: { rows: 2, matched: 1, bankWithoutInvoice: 0, ledgerWithoutBank: 1, amountMismatch: 0, needsReview: 0, exceptions: 0 },
+  rows: [
+    { id: "bank-1", date: "2026-10-02", status: "matched", counterparty: "Example Cloud", amount: "-48.60", currency: "EUR", bank: { accountId: "finom", date: "2026-10-02", amount: "-48.60", currency: "EUR" }, ledger: { id: "ledger-cloud", date: "2026-10-01", amount: "-48.60", currency: "EUR" }, documents: [{ id: "doc-cloud" }], pairBasis: "exact", confidence: "exact" },
+    { id: "ledger:ledger-google", date: "2026-10-14", status: "payment-proof-missing", counterparty: "Google", amount: "-1.99", currency: "EUR", ledger: { id: "ledger-google", date: "2026-10-14", amount: "-1.99", currency: "EUR" }, documents: [{ id: "doc-google" }], missing: "no bank transaction in the uploaded statements; upload a payment proof for this row" },
+  ],
+};
+
+test("month prints missing sides first and the per-row proof attaches to that ledger row", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-test-"));
+  const path = join(directory, "google-payment.pdf");
+  await writeFile(path, "%PDF-1.4 synthetic proof");
+  await withFakePortal([
+    ["/reconcile/months/2026-10/proof", (request) => {
+      assert.deepEqual(JSON.parse(request.options.body), { transactionId: "ledger-google", documentId: "proof-doc" });
+      return { month: { period: "2026-10" } };
+    }],
+    ["/reconcile/months/2026-10", monthPayload],
+    ["/documents/prepare", (request) => {
+      const body = JSON.parse(request.options.body);
+      assert.equal(body.documentType, "other-evidence");
+      assert.equal(body.accountId, undefined);
+      return { outcome: "existing", document: { id: "proof-doc" } };
+    }],
+  ], async () => {
+    const printed = [];
+    await commands.month({ url: args.url, _: ["2026-10"] }, { print: (line) => printed.push(line) });
+    assert.match(printed[1], /1 without payment proof/);
+    const firstRow = printed.findIndex((line) => /^2026-10-/.test(line));
+    assert.match(printed[firstRow], /payment-proof-missing/);
+    assert.ok(printed.some((line) => /missing: no bank transaction/.test(line)));
+    const result = await commands["attach-proof"]({ ...args, _: ["ledger-google", path], period: "2026-10" }, {});
+    assert.equal(result.documentId, "proof-doc");
+  });
+  await rm(directory, { recursive: true, force: true });
+});
+
+test("close shows the blocking rows when the portal refuses", async () => {
+  await withFakePortal([], async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({ error: "Month 2026-10 cannot close: 1 rows lack a side", blockers: [{ id: "ledger:ledger-google", date: "2026-10-14", status: "payment-proof-missing", amount: "-1.99", currency: "EUR", counterparty: "Google", missing: "upload a payment proof" }] }), { status: 409 });
+    const printed = [];
+    try {
+      await assert.rejects(commands.close({ url: args.url, _: ["2026-10"] }, { print: (line) => printed.push(line) }), /cannot close/);
+    } finally {
+      globalThis.fetch = original;
+    }
+    assert.ok(printed.some((line) => /payment-proof-missing -1.99 EUR Google — upload a payment proof/.test(line)), printed.join("\n"));
+  });
 });

@@ -33,6 +33,35 @@ Usage
       Dry-run by default. --apply records the payment the way
       sponsors link-payment (existing ledger row) or receive-payment (no ledger
       row yet) do. The same match id always replays to the same write.
+  dataops reconcile month YYYY-MM [--status STATUS] [--json|--csv]
+      The month table: every bank transaction and ledger row with its other
+      side, invoice/receipt documents, payment proof and status (matched,
+      no-invoice, payment-proof-missing, amount-mismatch, needs-review).
+  dataops reconcile months --from YYYY-MM --to YYYY-MM [--json]
+      Counters and open/closed state per month.
+  dataops reconcile match <bank-key> <ledger-id> --period YYYY-MM [--note TEXT]
+  dataops reconcile unmatch <bank-key> <ledger-id> --period YYYY-MM [--note TEXT]
+      Pair or unpair by hand; logged on the month. Unmatching an automatic
+      pair keeps it from coming back.
+  dataops reconcile attach-proof <ledger-id> <file> --period YYYY-MM [--account paypal]
+      A separate payment proof for one ledger row the bank statements do not
+      show (personal card, PayPal, other bank): PDF receipt/screenshot, or a
+      statement CSV (--account names its source).
+  dataops reconcile attach-doc <row> <file.pdf> --period YYYY-MM [--category C]
+      The invoice/receipt for one row. A bank row without a ledger row gets a
+      ledger row created from it, with the document attached.
+  dataops reconcile create-ledger <bank-key> --period YYYY-MM [--category C] [--description D]
+  dataops reconcile except <row> --kind KIND --period YYYY-MM [--proof TEXT] [--note TEXT]
+      Mark a no-invoice row: tax_debit, tk_debit, platform_payout,
+      internal_transfer, bank_fee, owner_withdrawal (each still needs its proof).
+  dataops reconcile clear-except <row> --period YYYY-MM
+  dataops reconcile confirm-exceptions YYYY-MM
+      Admin sign-off of the month's exception list (required before close).
+  dataops reconcile close YYYY-MM
+      Refused, with the blocking rows listed, while any row lacks its
+      invoice or its bank side. A closed month is locked.
+  dataops reconcile reopen YYYY-MM --reason TEXT
+  dataops reconcile config [--set rules.json] [--json]
   dataops reconcile aliases [--json]
   dataops reconcile alias add <alias> --sponsor SPONSOR [--json]
   dataops reconcile alias remove <id> [--json]
@@ -58,6 +87,25 @@ function contentTypeFor(file) {
   const contentType = CONTENT_TYPES[suffix];
   if (!contentType) throw new UsageError("--file must be .csv, .pdf or .xlsx");
   return contentType;
+}
+
+async function storeDocument(api, file, { documentType, accountId, statementMonth, sourceRef }) {
+  const contentType = contentTypeFor(file);
+  const statement = ["bank-statement", "private-account-statement"].includes(documentType);
+  if (!statement && contentType !== "application/pdf") throw new UsageError("invoices, receipts and proof screenshots must be PDF files");
+  const bytes = await readFile(String(file));
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const idempotencyKey = `${documentType}-${sha256}`.slice(0, 120);
+  let prepared = await api.post("/api/bookkeeping/documents/prepare", {
+    sha256, byteSize: bytes.length, documentType, idempotencyKey, sourceRef,
+    ...(statement ? { accountId, statementMonth, contentType } : {}),
+  });
+  if (prepared.uploadUrl) {
+    const uploaded = await fetch(prepared.uploadUrl, { method: "PUT", body: bytes, headers: prepared.uploadHeaders });
+    if (!uploaded.ok) throw new Error(`Document upload failed (${uploaded.status}); retry the same file`);
+    prepared = await api.post(`/api/bookkeeping/documents/${enc(prepared.document.id)}/complete`, { idempotencyKey });
+  }
+  return { documentId: prepared.document.id, sha256, reused: prepared.outcome === "existing" };
 }
 
 export async function upload(args, io) {
@@ -285,6 +333,199 @@ export async function confirm(args, io) {
   return result;
 }
 
+const STATUSES = ["matched", "no-invoice", "payment-proof-missing", "amount-mismatch", "needs-review"];
+
+function periodArg(args, usage) {
+  const period = args._?.[0] && MONTH.test(args._[0]) ? args._[0] : optionalString(args, "period");
+  if (!MONTH.test(period || "")) throw new UsageError(usage);
+  return period;
+}
+
+function rowLine(row) {
+  const bank = row.bank ? `bank ${row.bank.accountId}${row.bank.wallet ? `/${row.bank.wallet}` : ""} ${row.bank.date} ${row.bank.amount} ${row.bank.currency}${row.bank.reference ? ` ref ${row.bank.reference}` : ""}` : "no bank row";
+  const ledger = row.ledger ? `ledger ${row.ledger.id.slice(0, 12)} ${row.ledger.date} ${row.ledger.amount} ${row.ledger.currency}${row.ledger.category ? ` [${row.ledger.category}]` : ""}` : "no ledger row";
+  const docs = row.documents.length ? `docs ${row.documents.map((doc) => doc.id.slice(0, 12)).join(",")}` : "no invoice";
+  const proof = row.paymentProof ? ` proof ${row.paymentProof.documentId.slice(0, 12)}` : "";
+  const exception = row.exception ? ` exception ${row.exception.kind}${row.exception.satisfied ? "" : " (proof missing)"}` : "";
+  return [
+    `${row.date}  ${row.status.padEnd(21)} ${row.amount} ${row.currency}  ${row.counterparty}${row.description && row.description !== row.counterparty ? ` — ${row.description}` : ""}`,
+    `    row ${row.id}  ${bank} | ${ledger} | ${docs}${proof}${exception}${row.pairBasis ? ` | ${row.pairBasis}/${row.confidence}` : ""}`,
+    ...(row.missing ? [`    missing: ${row.missing}`] : []),
+    ...(row.candidates?.length ? [`    candidates: ${row.candidates.map((candidate) => candidate.transactionId || candidate.bankKey).join(", ")}`] : []),
+  ];
+}
+
+export async function month(args, io) {
+  const usage = "dataops reconcile month YYYY-MM [--status STATUS] [--json|--csv]";
+  const period = periodArg(args, usage);
+  const api = apiFor(args);
+  const status = optionalString(args, "status");
+  if (status !== undefined && !STATUSES.includes(status)) throw new UsageError(`--status must be one of ${STATUSES.join(", ")}`);
+  if (args.csv) {
+    const csv = await api.get(`/api/reconcile/months/${period}`, { query: { format: "csv" } });
+    io.print(typeof csv === "string" ? csv.trimEnd() : String(csv));
+    return { period, csv };
+  }
+  const result = await api.get(`/api/reconcile/months/${period}`);
+  if (!args.json) {
+    const c = result.counters;
+    io.print(`Reconciliation ${period} — ${result.state}${result.closed ? ` (closed by ${result.closed.by} ${result.closed.at})` : ""}`);
+    io.print(`${c.rows} rows: ${c.matched} matched, ${c.bankWithoutInvoice} without invoice, ${c.ledgerWithoutBank} without payment proof, ${c.amountMismatch} amount mismatch, ${c.needsReview} need review, ${c.exceptions} exceptions${c.exceptions ? (result.exceptionConfirmation?.current ? " (confirmed)" : " (not confirmed)") : ""}.`);
+    io.print(result.blockers ? `${result.blockers} rows block closing.` : "Nothing blocks closing.");
+    io.print(`Statements: ${result.statements.map((statement) => `${statement.accountId} ${statement.from}…${statement.to}`).join("; ") || "none"}`);
+    const rows = result.rows.filter((row) => !status || row.status === status)
+      .sort((left, right) => Number(left.status === "matched") - Number(right.status === "matched") || left.date.localeCompare(right.date));
+    for (const row of rows) for (const line of rowLine(row)) io.print(line);
+  }
+  return result;
+}
+
+export async function months(args, io) {
+  const usage = "dataops reconcile months --from YYYY-MM --to YYYY-MM [--json]";
+  const from = optionalString(args, "from"), to = optionalString(args, "to");
+  if (!MONTH.test(from || "") || !MONTH.test(to || "")) throw new UsageError(usage);
+  const result = await apiFor(args).get("/api/reconcile/months", { query: { from, to } });
+  if (!args.json) {
+    io.print("month    state   rows matched no-inv no-proof mismatch review except blockers statements");
+    for (const item of result.items) {
+      const c = item.counters;
+      io.print(`${item.period}  ${item.state.padEnd(6)} ${String(c.rows).padStart(4)} ${String(c.matched).padStart(7)} ${String(c.bankWithoutInvoice).padStart(6)} ${String(c.ledgerWithoutBank).padStart(8)} ${String(c.amountMismatch).padStart(8)} ${String(c.needsReview).padStart(6)} ${String(c.exceptions).padStart(6)} ${String(item.blockers).padStart(8)} ${String(item.statements).padStart(10)}`);
+    }
+  }
+  return result;
+}
+
+const monthPost = async (args, period, action, body) => apiFor(args).post(`/api/reconcile/months/${period}/${action}`, body);
+
+export async function match(args, io) {
+  const usage = "dataops reconcile match <bank-key> <ledger-id> --period YYYY-MM [--note TEXT]";
+  const bankKey = positional(args, 0, usage), transactionId = positional(args, 1, usage);
+  const period = periodOr(args);
+  const note = optionalString(args, "note");
+  const result = await monthPost(args, period, "pair", { bankKey, transactionId, ...(note ? { note } : {}) });
+  if (!args.json) io.print(`Paired bank row ${bankKey} with ledger row ${transactionId} in ${period}.`);
+  return result;
+}
+
+export async function unmatch(args, io) {
+  const usage = "dataops reconcile unmatch <bank-key> <ledger-id> --period YYYY-MM [--note TEXT]";
+  const bankKey = positional(args, 0, usage), transactionId = positional(args, 1, usage);
+  const period = periodOr(args);
+  const note = optionalString(args, "note");
+  const result = await monthPost(args, period, "unpair", { bankKey, transactionId, ...(note ? { note } : {}) });
+  if (!args.json) io.print(`Unpaired bank row ${bankKey} from ledger row ${transactionId} in ${period}.`);
+  return result;
+}
+
+export async function attachProof(args, io) {
+  const usage = "dataops reconcile attach-proof <ledger-id> <file> --period YYYY-MM [--account paypal]";
+  const transactionId = positional(args, 0, usage), file = positional(args, 1, usage);
+  const period = periodOr(args);
+  const api = apiFor(args);
+  const isPdf = contentTypeFor(file) === "application/pdf";
+  const account = optionalString(args, "account") || "other";
+  const stored = await storeDocument(api, file, isPdf
+    ? { documentType: "other-evidence", sourceRef: `reconcile-proof:${period}` }
+    : { documentType: "private-account-statement", accountId: account, statementMonth: period, sourceRef: `reconcile-proof:${account}:${period}` });
+  const result = await api.post(`/api/reconcile/months/${period}/proof`, { transactionId, documentId: stored.documentId });
+  if (!args.json) io.print(`${stored.reused ? "Reused" : "Stored"} proof ${stored.documentId}; ledger row ${transactionId} now has its payment proof.`);
+  return { ...result, documentId: stored.documentId };
+}
+
+export async function attachDoc(args, io) {
+  const usage = "dataops reconcile attach-doc <row> <file.pdf> --period YYYY-MM [--category C]";
+  const row = positional(args, 0, usage), file = positional(args, 1, usage);
+  const period = periodOr(args);
+  const api = apiFor(args);
+  const stored = await storeDocument(api, file, { documentType: "receipt", sourceRef: `reconcile-doc:${period}` });
+  let result;
+  if (row.startsWith("ledger:")) {
+    result = await api.post(`/api/reconcile/months/${period}/document`, { transactionId: row.slice(7), documentId: stored.documentId });
+  } else {
+    const category = optionalString(args, "category");
+    result = await api.post(`/api/reconcile/months/${period}/ledger`, { bankKey: row, documentId: stored.documentId, ...(category ? { category } : {}) });
+  }
+  if (!args.json) io.print(`${stored.reused ? "Reused" : "Stored"} document ${stored.documentId} and attached it to ${row}${result.transaction ? ` (ledger row ${result.transaction.id} created from the bank row)` : ""}.`);
+  return { ...result, documentId: stored.documentId };
+}
+
+export async function createLedger(args, io) {
+  const usage = "dataops reconcile create-ledger <bank-key> --period YYYY-MM [--category C] [--description D]";
+  const bankKey = positional(args, 0, usage);
+  const period = periodOr(args);
+  const category = optionalString(args, "category"), description = optionalString(args, "description");
+  const result = await monthPost(args, period, "ledger", { bankKey, ...(category ? { category } : {}), ...(description ? { description } : {}) });
+  if (!args.json) io.print(`${result.duplicate ? "Ledger row already existed" : "Created ledger row"} ${result.transaction.id} for bank row ${bankKey}.`);
+  return result;
+}
+
+export async function except(args, io) {
+  const usage = "dataops reconcile except <row> --kind KIND --period YYYY-MM [--proof TEXT] [--note TEXT]";
+  const row = positional(args, 0, usage);
+  const period = periodOr(args);
+  const kind = optionalString(args, "kind");
+  if (!kind) throw new UsageError(usage);
+  const proof = optionalString(args, "proof"), note = optionalString(args, "note");
+  const result = await monthPost(args, period, "exception", { row, kind, ...(proof ? { proof } : {}), ...(note ? { note } : {}) });
+  if (!args.json) io.print(`Marked ${row} as ${kind}${proof ? ` (proof: ${proof})` : ""}.`);
+  return result;
+}
+
+export async function clearExcept(args, io) {
+  const usage = "dataops reconcile clear-except <row> --period YYYY-MM";
+  const row = positional(args, 0, usage);
+  const result = await monthPost(args, periodOr(args), "clear-exception", { row });
+  if (!args.json) io.print(`Cleared the exception on ${row}.`);
+  return result;
+}
+
+function printBlockers(io, error) {
+  const blockers = error?.body?.blockers || error?.details?.blockers || [];
+  for (const blocker of blockers.slice(0, 50)) io.print(`  ${blocker.date || ""} ${blocker.status || blocker.kind || ""} ${blocker.amount || ""} ${blocker.currency || ""} ${blocker.counterparty || blocker.id}${blocker.missing ? ` — ${blocker.missing}` : ""}`);
+  if (blockers.length > 50) io.print(`  … and ${blockers.length - 50} more (dataops reconcile month <period> --status …)`);
+}
+
+async function gate(args, io, action, usage, body = {}) {
+  const period = periodArg(args, usage);
+  try {
+    const result = await monthPost(args, period, action, body);
+    return { period, result };
+  } catch (error) {
+    if (!args.json) { io.print(String(error.message || error)); printBlockers(io, error); }
+    throw error;
+  }
+}
+
+export async function confirmExceptions(args, io) {
+  const { period, result } = await gate(args, io, "confirm-exceptions", "dataops reconcile confirm-exceptions YYYY-MM");
+  if (!args.json) io.print(`Confirmed ${result.month.exceptionConfirmation.count} exception rows for ${period}.`);
+  return result;
+}
+
+export async function close(args, io) {
+  const { period, result } = await gate(args, io, "close", "dataops reconcile close YYYY-MM");
+  if (!args.json) io.print(`Closed ${period}. The month is locked; dataops reconcile reopen ${period} --reason … to change it.`);
+  return result;
+}
+
+export async function reopen(args, io) {
+  const reason = optionalString(args, "reason");
+  if (!reason) throw new UsageError("dataops reconcile reopen YYYY-MM --reason TEXT");
+  const { period, result } = await gate(args, io, "reopen", "dataops reconcile reopen YYYY-MM --reason TEXT", { reason });
+  if (!args.json) io.print(`Reopened ${period}. The exception list needs confirming again before it closes.`);
+  return result;
+}
+
+export async function config(args, io) {
+  const api = apiFor(args);
+  const file = optionalString(args, "set");
+  const result = file
+    ? await api.put("/api/reconcile/config", JSON.parse(await readFile(file, "utf8")))
+    : await api.get("/api/reconcile/config");
+  if (!args.json) io.print(JSON.stringify(result.config, null, 2));
+  return result;
+}
+
 export async function aliases(args, io) {
   const result = await apiFor(args).get("/api/reconcile/aliases");
   if (!args.json) {
@@ -314,4 +555,8 @@ export async function alias(args, io) {
   throw new UsageError("dataops reconcile alias add <alias> --sponsor SPONSOR | alias remove <id>");
 }
 
-export const commands = { upload, balances, statements, statement, report, confirm, aliases, alias };
+export const commands = {
+  upload, balances, statements, statement, report, confirm, aliases, alias,
+  month, months, match, unmatch, "attach-proof": attachProof, "attach-doc": attachDoc, "create-ledger": createLedger,
+  except, "clear-except": clearExcept, "confirm-exceptions": confirmExceptions, close, reopen, config,
+};
