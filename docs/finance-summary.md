@@ -93,3 +93,31 @@ business account with no bank statement for a month that has started).
 
 Signed-in portal users, API tokens, and the read-only `invoice-reader` service
 credential (GET only).
+
+## Upcoming tax debits
+
+The Finanzamt and TK collect every tax and the health insurance by direct
+debit from the business account, VAT included. `dataops finance upcoming
+[--days 60] [--json]` and the *Upcoming tax debits* section of `/finance` list
+what will be debited, so the account holds enough money beforehand.
+
+- **Schedule as data.** Each prepayment or assessment is a `TAX_SCHEDULE#`
+  entry: label, tax type (`income-tax`, `trade-tax`, `vat`,
+  `health-insurance`, `other`), amount, rule (`monthly` on a day, `quarterly`
+  on a day of given months, or `once` on a date), source (`Bescheid`,
+  `USt-VA`, `recurring`) and an optional validity window. When a new Bescheid
+  or USt-VA arrives, replace the entry: `dataops finance schedule set <id>
+  --file entry.json --expected-version N` (the version you read with
+  `dataops finance schedule`). Close an old entry with `validUntil` and add the
+  new one with `validFrom` rather than editing history.
+- **Dates.** A due date on a weekend or Berlin public holiday moves to the next
+  business day (§108 AO); the row says why. TK collects *around* its day and
+  is marked approximate.
+- **Paid.** A debit counts as paid when a ledger row (category VAT, Taxes or
+  Health Insurance, or payee Finanzamt/Krankenkasse) or a EUR statement line
+  shows the same amount within 5 days (7 for approximate ones). A past debit
+  with neither is listed as *not seen*.
+- **Cover.** The total of unpaid debits in the next 30 days is compared with
+  the latest known business account balance and its as-of date; a balance
+  below it is a shortfall, and a balance older than 7 days is flagged stale.
+  With no balance on record the check says so instead of guessing.

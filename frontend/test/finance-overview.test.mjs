@@ -77,3 +77,28 @@ describe("finance overview", () => {
     assert.match(svg, /class="fin-chart__month is-future"/);
   });
 });
+
+describe("upcoming tax debits section", () => {
+  const U = {
+    today: "2026-10-31", days: 60, dueNext30: 5134.64, dueInWindow: 17356, shortfall: true,
+    balance: { accountId: "finom", amount: 5000, currency: "EUR", asOf: "2026-10-30", stale: false },
+    debits: [
+      { label: "Trade tax prepayment", taxType: "trade-tax", date: "2026-11-16", shifted: "due 2026-11-15 falls on Sunday", amount: 3296, source: "Bescheid", sourceRef: null, approximate: false, status: "scheduled", matched: null },
+      { label: "TK <health>", taxType: "health-insurance", date: "2026-11-16", shifted: null, amount: 1179.36, source: "recurring", sourceRef: null, approximate: true, status: "paid", matched: { kind: "statement", date: "2026-11-17" } },
+    ],
+    warnings: ["Balance 5000.00 EUR is below the 5134.64 EUR due in the next 30 days"],
+  };
+  test("shows the 30-day total, balance with as-of date, shortfall, shift reasons and paid status", async () => {
+    const { upcomingMarkup } = await import("../src/surfaces/finance/overview.js");
+    const markup = upcomingMarkup(U, e);
+    assert.match(markup, /data-fin-due30>5,134\.64</);
+    assert.match(markup, /5,000\.00 EUR\s+<span class="fin-muted">\(finom, as of 2026-10-30\)/);
+    assert.match(markup, /role="alert">Shortfall/);
+    assert.match(markup, /due 2026-11-15 falls on Sunday/);
+    assert.match(markup, /Paid \(statement 2026-11-17\)/);
+    assert.match(markup, /TK &lt;health&gt;/);
+    const unknown = upcomingMarkup({ ...U, balance: null, shortfall: null }, e);
+    assert.match(unknown, /<span class="fin-muted">unknown<\/span>/);
+    assert.doesNotMatch(unknown, /Shortfall/);
+  });
+});

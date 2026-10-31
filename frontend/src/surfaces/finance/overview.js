@@ -224,6 +224,34 @@ function periodControlsMarkup(period, today, e) {
     </div>`;
 }
 
+const TAX_TYPE = { "income-tax": "Income tax + Soli", "trade-tax": "Trade tax", vat: "VAT", "health-insurance": "Health insurance (TK)", other: "Other" };
+
+/** Scheduled tax and TK auto-debits, the 30-day total and the balance check. */
+export function upcomingMarkup(u, e) {
+  const balance = u.balance
+    ? html`${formatEur(u.balance.amount)} ${e(u.balance.currency)}
+        <span class="fin-muted">(${e(u.balance.accountId)}, as of ${e(u.balance.asOf)}${u.balance.stale ? ", stale" : ""})</span>`
+    : html`<span class="fin-muted">unknown</span>`;
+  const status = (d) => (d.status === "paid" ? `Paid (${d.matched.kind} ${d.matched.date})` : d.status === "not-seen" ? "Not seen yet" : "Scheduled");
+  return html`<section class="fin-block" aria-labelledby="fin-upcoming-heading">
+      <h2 id="fin-upcoming-heading" class="fin-block__title">Upcoming tax debits <span class="fin-muted">next ${e(String(u.days))} days, auto-debited</span></h2>
+      <dl class="fin-stats">
+        <div><dt>Due in the next 30 days</dt><dd data-fin-due30>${formatEur(u.dueNext30)}</dd></div>
+        <div><dt>Due in the next ${e(String(u.days))} days</dt><dd>${formatEur(u.dueInWindow)}</dd></div>
+        <div><dt>Account balance</dt><dd>${balance}</dd></div>
+      </dl>
+      ${u.shortfall ? html`<p class="fin-error" role="alert">Shortfall: the balance does not cover the ${formatEur(u.dueNext30)} EUR due in the next 30 days.</p>` : ""}
+      ${u.debits.length ? html`<div class="fin-table-wrap"><table class="fin-table">
+        ${headRow(["Date", "Amount", "Tax type", "What", "Source", "Status"])}
+        <tbody>${u.debits.map((d) => html`<tr class="${d.status === "paid" ? "is-future" : ""}">
+          <td>${e(d.date)}${d.approximate ? " ~" : ""}${d.shifted ? html`<br><small class="fin-muted">${e(d.shifted)}</small>` : ""}</td>
+          <td class="fin-num">${formatEur(d.amount)}</td><td>${e(TAX_TYPE[d.taxType] || d.taxType)}</td><td>${e(d.label)}</td>
+          <td>${e(d.sourceRef ? `${d.source} ${d.sourceRef}` : d.source)}</td><td>${e(status(d))}</td></tr>`).join("")}</tbody>
+      </table></div>` : html`<p class="fin-muted">No scheduled debits in this window.</p>`}
+      ${u.warnings.length ? html`<ul class="fin-gaps">${u.warnings.map((w) => html`<li>${e(w)}</li>`).join("")}</ul>` : ""}
+    </section>`;
+}
+
 const cliFlag = (period) =>
   period.kind === "month" ? `--month ${period.label}` : period.kind === "year" ? `--year ${period.label}` : "--ytd";
 
@@ -260,10 +288,19 @@ export function createFinanceOverviewSurface(context) {
       </header>
       <p class="fin-period-label" data-fin-label></p>
       <div class="fin-body" data-fin-body aria-live="polite"><p class="fin-muted">Loading…</p></div>
+      <div class="fin-body" data-fin-upcoming></div>
       <div class="fin-tooltip" data-fin-tooltip role="status" hidden></div>`;
 
     const body = surface.querySelector("[data-fin-body]");
     const tooltip = surface.querySelector("[data-fin-tooltip]");
+
+    // The debit schedule does not depend on the period, so it loads once.
+    request(workApiUrl("/api/finance/upcoming?days=60"))
+      .then((u) => { surface.querySelector("[data-fin-upcoming]").innerHTML = upcomingMarkup(u, escapeHtml); })
+      .catch((error) => {
+        const message = escapeHtml(error?.message || "request failed");
+        surface.querySelector("[data-fin-upcoming]").innerHTML = html`<p class="fin-error" role="alert">Could not load upcoming tax debits: ${message}</p>`;
+      });
 
     async function load() {
       const mine = ++generation;

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { UsageError } from "../errors.mjs";
 import { apiFor } from "../session.mjs";
 
@@ -14,7 +16,17 @@ Usage
       original currency, the rate, its date and its source (booked by the bank,
       or the ECB reference rate). Data gaps are listed under the table.
 
-Exactly one of --month, --year or --ytd. --json prints the same numbers the
+  dataops finance upcoming [--days 60] [--json]
+      Tax and TK auto-debits due in the next N days (default 60): date (moved past
+      weekends and Berlin holidays), amount, tax type and source (Bescheid, USt-VA,
+      recurring), paid once the ledger or a statement shows it. Totals the next 30
+      days against the latest business account balance and flags a shortfall.
+  dataops finance schedule [--json]
+  dataops finance schedule set <id> --file entry.json [--expected-version N]
+      The schedule the debits come from. Replace an entry when a new Bescheid or
+      USt-VA arrives; --expected-version is the version you read (omit to create).
+
+For summary: exactly one of --month, --year or --ytd. --json prints the same numbers the
 portal shows, as returned by GET /api/finance/summary. How rows are chosen,
 deduplicated and converted: docs/finance-summary.md.
 `;
@@ -125,4 +137,71 @@ export async function summaryCommand(args, io) {
   printSummary(io, result);
 }
 
-export const commands = { summary: summaryCommand };
+const TAX_TYPE = { "income-tax": "Income tax + Soli", "trade-tax": "Trade tax", vat: "VAT", "health-insurance": "Health insurance", other: "Other" };
+
+export function printUpcoming(io, u) {
+  io.print(`Upcoming tax debits ${u.today} to ${u.to} (EUR)`);
+  io.print("");
+  grid(io, u.debits, [
+    ["Date", (d) => `${d.date}${d.approximate ? " ~" : ""}`],
+    ["Amount", (d) => money(d.amount), "right"],
+    ["Tax type", (d) => TAX_TYPE[d.taxType] || d.taxType],
+    ["What", (d) => d.label],
+    ["Source", (d) => (d.sourceRef ? `${d.source} ${d.sourceRef}` : d.source)],
+    ["Status", (d) => (d.status === "paid" ? `paid (${d.matched.kind} ${d.matched.date})` : d.status)],
+  ]);
+  if (!u.debits.length) io.print("No scheduled debits in this window.");
+  const shifted = u.debits.filter((d) => d.shifted);
+  if (shifted.length || u.debits.some((d) => d.approximate)) io.print("");
+  for (const d of shifted) io.print(`  ${d.date}: ${d.label} moved, ${d.shifted}`);
+  if (u.debits.some((d) => d.approximate)) io.print("  ~ collected around this day, not on a fixed date");
+  io.print("");
+  io.print(`Due in the next 30 days:  ${money(u.dueNext30)}`);
+  io.print(`Due in the next ${u.days} days:  ${money(u.dueInWindow)}`);
+  io.print(u.balance
+    ? `Balance (${u.balance.accountId}, as of ${u.balance.asOf}):  ${money(u.balance.amount)} ${u.balance.currency}${u.shortfall ? "  ! SHORTFALL" : "  covers the next 30 days"}${u.balance.stale ? "  (stale)" : ""}`
+    : "Balance: unknown");
+  if (u.warnings.length) {
+    io.print("");
+    io.print("Warnings");
+    for (const w of u.warnings) io.print(`  - ${w}`);
+  }
+}
+
+export async function upcomingCommand(args, io) {
+  const days = args.days === undefined ? 60 : Number(args.days);
+  if (!Number.isInteger(days) || days < 1 || days > 366) throw new UsageError("--days takes a whole number from 1 to 366.");
+  const result = await apiFor(args).get("/api/finance/upcoming", { query: { days: String(days) } });
+  if (args.json) return result;
+  printUpcoming(io, result);
+}
+
+export async function scheduleCommand(args, io) {
+  const api = apiFor(args);
+  if (args._[0] === "set") {
+    const id = args._[1];
+    if (!id || typeof args.file !== "string") throw new UsageError("dataops finance schedule set <id> --file entry.json [--expected-version N]");
+    let entry;
+    try { entry = JSON.parse(readFileSync(args.file, "utf8")); } catch (error) { throw new UsageError(`Cannot read ${args.file}: ${error.message}`); }
+    if (args.expectedVersion !== undefined) entry.expectedVersion = Number(args.expectedVersion);
+    const saved = await api.put(`/api/finance/tax-schedule/${encodeURIComponent(id)}`, entry);
+    if (args.json) return saved;
+    io.print(`Saved ${saved.id} version ${saved.version}: ${saved.label}, ${money(saved.amount)} EUR`);
+    return;
+  }
+  if (args._.length) throw new UsageError(`Unknown schedule action ${args._[0]}. Use: dataops finance schedule [set <id> --file entry.json]`);
+  const { items } = await api.get("/api/finance/tax-schedule");
+  if (args.json) return { items };
+  const when = (r) => (r.kind === "once" ? r.date : r.kind === "monthly" ? `monthly on the ${r.day}th` : `day ${r.day} of months ${r.months.join("/")}`);
+  grid(io, items, [
+    ["Id", (e) => e.id],
+    ["What", (e) => e.label],
+    ["Amount", (e) => money(e.amount), "right"],
+    ["When", (e) => when(e.rule)],
+    ["Source", (e) => e.source],
+    ["Valid", (e) => `${e.validFrom || "…"} to ${e.validUntil || "…"}`],
+    ["Version", (e) => String(e.version)],
+  ]);
+}
+
+export const commands = { summary: summaryCommand, upcoming: upcomingCommand, schedule: scheduleCommand };

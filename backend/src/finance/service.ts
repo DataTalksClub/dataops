@@ -4,6 +4,8 @@ import { listInvoices } from '../invoices/store';
 import { listStatements } from '../reconcile/service';
 import { loadEcbRates } from './rates';
 import { bookingDate, summarize, type FinanceSummary, type LedgerRow, type PeriodQuery } from './summary';
+import { listTaxSchedule } from './taxSchedule';
+import { upcomingDebits, type Balance, type PaidEvidence } from './upcoming';
 
 /** Today in Berlin, where the books are kept. */
 export function berlinToday(now = new Date()) {
@@ -49,4 +51,26 @@ export function parsePeriodQuery(params: Record<string, string | undefined> | nu
   if (month) return /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? { month } : 'month must be YYYY-MM';
   if (year) return /^\d{4}$/.test(year) ? { year } : 'year must be YYYY';
   return { ytd: true };
+}
+
+const TAX_LINES = new Set(['VAT', 'Taxes', 'Health Insurance']);
+
+/**
+ * Scheduled tax and TK debits around today, marked paid where a ledger row
+ * or a statement line shows the debit, with the business balance check.
+ */
+export async function financeUpcoming(client: DynamoDBDocumentClient, days: number, today = berlinToday(), loadBalance: () => Promise<Balance | null> = async () => null) {
+  const [schedule, rows, statements, balance] = await Promise.all([
+    listTaxSchedule(client), listTransactions(client), listStatements(client), loadBalance(),
+  ]);
+  const paid: PaidEvidence[] = [
+    ...(rows as LedgerRow[])
+      .filter((row) => row.entryType === 'expense' && (TAX_LINES.has(String(row.category || '')) || /finanzamt|krankenkasse/i.test(String(row.counterparty || ''))))
+      .map((row) => ({ id: row.id, date: bookingDate(row), amount: Number(row.amountEur || row.amount), kind: 'ledger' as const })),
+    ...statements.flatMap((statement) => statement.rows
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => line.currency === 'EUR' && Number(line.amount) < 0)
+      .map(({ line, index }) => ({ id: `${statement.id}:${index}`, date: line.date, amount: Math.abs(Number(line.amount)), kind: 'statement' as const }))),
+  ];
+  return upcomingDebits({ schedule, today, days, paid, balance });
 }

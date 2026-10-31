@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, test } from "node:test";
 
 import { captureIo, fakePortal, isolateConfig } from "./helpers.mjs";
@@ -69,5 +72,55 @@ describe("dataops finance summary", () => {
       const io = captureIo();
       assert.equal(await run(["finance", "summary", ...argv], io), 2, argv.join(" "));
     }
+  });
+});
+
+const UPCOMING = {
+  today: "2026-10-31", from: "2026-10-24", to: "2026-12-30", days: 60,
+  debits: [
+    { scheduleId: "vat-2026-q3", label: "VAT Q3/2026", taxType: "vat", dueDate: "2026-11-10", date: "2026-11-10", shifted: null, amount: 659.28, currency: "EUR", source: "USt-VA", sourceRef: "Q3/2026", approximate: false, status: "scheduled", matched: null },
+    { scheduleId: "gewst", label: "Trade tax prepayment", taxType: "trade-tax", dueDate: "2026-11-15", date: "2026-11-16", shifted: "due 2026-11-15 falls on Sunday", amount: 3296, currency: "EUR", source: "Bescheid", sourceRef: null, approximate: false, status: "scheduled", matched: null },
+    { scheduleId: "tk", label: "TK health insurance", taxType: "health-insurance", dueDate: "2026-11-16", date: "2026-11-16", shifted: null, amount: 1179.36, currency: "EUR", source: "recurring", sourceRef: null, approximate: true, status: "scheduled", matched: null },
+  ],
+  dueNext30: 5134.64, dueInWindow: 5134.64,
+  balance: { accountId: "finom", amount: 5000, currency: "EUR", asOf: "2026-10-30", source: "statement", stale: false, ageDays: 1 },
+  shortfall: true,
+  warnings: ["Balance 5000.00 EUR is below the 5134.64 EUR due in the next 30 days"],
+};
+
+describe("dataops finance upcoming and schedule", () => {
+  test("upcoming prints dates, amounts, tax types, sources, the 30-day total and the shortfall", async () => {
+    const calls = fakePortal({ "GET /api/finance/upcoming": UPCOMING });
+    const io = captureIo();
+    assert.equal(await run(["finance", "upcoming"], io), 0);
+    assert.deepEqual(calls[0].query, { days: "60" });
+    const text = io.text();
+    assert.match(text, /2026-11-10\s+659\.28\s+VAT\s+VAT Q3\/2026\s+USt-VA Q3\/2026\s+scheduled/);
+    assert.match(text, /2026-11-16 ~\s+1,179\.36\s+Health insurance/);
+    assert.match(text, /2026-11-16: Trade tax prepayment moved, due 2026-11-15 falls on Sunday/);
+    assert.match(text, /Due in the next 30 days:\s+5,134\.64/);
+    assert.match(text, /Balance \(finom, as of 2026-10-30\):\s+5,000\.00 EUR\s+! SHORTFALL/);
+  });
+
+  test("upcoming --days and --json pass through; bad days are refused", async () => {
+    const calls = fakePortal({ "GET /api/finance/upcoming": UPCOMING });
+    const io = captureIo();
+    assert.equal(await run(["finance", "upcoming", "--days", "30", "--json"], io), 0);
+    assert.deepEqual(calls[0].query, { days: "30" });
+    assert.deepEqual(io.json(), UPCOMING);
+    assert.equal(await run(["finance", "upcoming", "--days", "0"], captureIo()), 2);
+  });
+
+  test("schedule set sends the entry with the version that was read", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "fin-"));
+    const file = path.join(dir, "gewst.json");
+    writeFileSync(file, JSON.stringify({ label: "Trade tax prepayment", taxType: "trade-tax", amount: "3500.00", currency: "EUR", rule: { kind: "quarterly", months: [2, 5, 8, 11], day: 15 }, source: "Bescheid" }));
+    const calls = fakePortal({ "PUT /api/finance/tax-schedule/gewst": (call) => ({ ...call.body, id: "gewst", version: 3 }) });
+    const io = captureIo();
+    assert.equal(await run(["finance", "schedule", "set", "gewst", "--file", file, "--expected-version", "2"], io), 0);
+    assert.equal(calls[0].body.expectedVersion, 2);
+    assert.equal(calls[0].body.amount, "3500.00");
+    assert.match(io.text(), /Saved gewst version 3: Trade tax prepayment, 3,500\.00 EUR/);
+    rmSync(dir, { recursive: true, force: true });
   });
 });
