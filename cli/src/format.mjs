@@ -245,7 +245,16 @@ export function enc(value) {
 /** A linked Card as one line: title, status and stage. */
 export function linkedCardLabel(linked) {
   if (!linked) return "";
-  return `${linked.title} [${linked.status}${linked.status === "active" ? `, ${linked.stage}` : ""}]`;
+  const when = linked.eventStartIso || (linked.dateTbd ? "date TBD" : linked.anchorDate);
+  const invites = (linked.invites || []).map((invite) => `${calendarLabel(invite.calendar)} ${invite.state}`).join(", ");
+  return `${linked.title} [${linked.status}${linked.status === "active" ? `, ${linked.stage}` : ""}]${when ? ` ${when}` : ""}${invites ? ` (invites: ${invites})` : ""}`;
+}
+
+/** A short name for the calendars event invites go to. */
+export function calendarLabel(calendar) {
+  if (String(calendar).endsWith("@group.calendar.google.com")) return "DTC events";
+  if (calendar === "alexey.s.grigoriev@gmail.com") return "Alexey personal";
+  return calendar;
 }
 
 /** A portal path as an absolute URL on the portal the CLI talks to. */

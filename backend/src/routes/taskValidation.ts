@@ -2,6 +2,10 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getArtifact, listArtifacts } from '../db/artifacts';
 import { getCard } from '../db/cards';
+import { listTasksByCard } from '../db/tasks';
+import { getTemplate } from '../db/templates';
+import { resolveHoldGoogleCalendars } from '../calendar/dapierBroker';
+import { slotName, taskLinkCardDefinition } from '../cards/taskLinkCard';
 import { listFilesByTask } from '../db/files';
 import { requiresError } from '../resources/vocabulary';
 import { browserRequirementError } from '../browserRequirement';
@@ -526,9 +530,15 @@ export function taskRequiresCalendarInvite(taskData: Record<string, unknown>): b
   return taskData.templateTaskRef === CALENDAR_INVITE_TASK_REF;
 }
 
-export function calendarInviteDoneError(taskData: Record<string, unknown>): string {
+export function calendarInviteDoneError(taskData: Record<string, unknown>, missing: string[] = resolveHoldGoogleCalendars()): string {
   const cardId = isNonEmptyString(taskData.cardId) ? String(taskData.cardId).trim() : '<card-id>';
-  return `Cannot mark task as done: no calendar invite is linked to this card. Set the event time with: dataops cards time ${cardId} --at "YYYY-MM-DD HH:MM"`;
+  return `Cannot mark task as done: the card has no live calendar invite on ${missing.join(' and ')}. Set the event time with: dataops cards time ${cardId} --at "YYYY-MM-DD HH:MM"`;
+}
+
+/** Calendars (DTC events, Alexey personal) the Card has no live invite on. */
+export function calendarsMissingInvite(card: { calendarInvites?: Array<{ calendar: string; staleAt?: string }> } | null): string[] {
+  const live = new Set((card?.calendarInvites || []).filter((invite) => !invite.staleAt).map((invite) => invite.calendar));
+  return resolveHoldGoogleCalendars().filter((calendar) => !live.has(calendar));
 }
 
 export async function validateCalendarInviteRequirement(
@@ -538,12 +548,52 @@ export async function validateCalendarInviteRequirement(
   if (!taskRequiresCalendarInvite(taskData)) return null;
   if (skipClosureSuppresses(taskData, 'calendarInvite')) return null;
   const cardId = isNonEmptyString(taskData.cardId) ? String(taskData.cardId).trim() : null;
-  if (!cardId) {
-    return `Cannot mark task as done: no calendar invite is linked to this card. Set the event time with: dataops cards time <card-id> --at "YYYY-MM-DD HH:MM"`;
+  if (!cardId) return calendarInviteDoneError(taskData);
+  const missing = calendarsMissingInvite(await getCard(client, cardId));
+  return missing.length ? calendarInviteDoneError(taskData, missing) : null;
+}
+
+function requiresLinkedEventCards(validation: unknown): boolean {
+  return Boolean(validation && typeof validation === 'object' && !Array.isArray(validation)
+    && (validation as Record<string, unknown>).requiresLinkedEventCards === true);
+}
+
+function linkCardDoneError(taskData: Record<string, unknown>, templateType: string, slot: string | null): string {
+  const cardId = isNonEmptyString(taskData.cardId) ? String(taskData.cardId).trim() : '<card-id>';
+  const taskId = isNonEmptyString(taskData.id) ? String(taskData.id).trim() : '<task-id>';
+  return slot
+    ? `Cannot mark task as done: the ${slot} is done through its own ${templateType} Card, not a comment or URL. Create and link it with: dataops cards event-slots ${cardId} --apply, then set its time with: dataops cards time <event-card-id> --at "YYYY-MM-DD HH:MM"`
+    : `Cannot mark task as done: link its ${templateType} Card first (a comment or URL is not enough): dataops tasks link-card ${taskId} <card-id>`;
+}
+
+/**
+ * A Task whose Template definition links a Card (`link_card`) is carried out
+ * by that Card: it completes only once the Card is linked. A Task with
+ * `validation.requiresLinkedEventCards` completes only when every open or
+ * done event-slot Task on its Card links its event Card.
+ */
+export async function validateLinkedCardRequirement(
+  client: DynamoDBDocumentClient,
+  taskData: Record<string, unknown>,
+): Promise<string | null> {
+  const templateId = isNonEmptyString(taskData.templateId) ? String(taskData.templateId) : null;
+  if (!templateId) return null;
+  const linkCardDefinition = isNonEmptyString(taskData.templateTaskRef);
+  const needsAll = requiresLinkedEventCards(taskData.validation);
+  if (!linkCardDefinition && !needsAll) return null;
+  const template = await getTemplate(client, templateId);
+  const own = taskLinkCardDefinition(template, { templateTaskRef: taskData.templateTaskRef as string | undefined });
+  if (own && !isNonEmptyString(taskData.linkedCardId)) {
+    return linkCardDoneError(taskData, own.templateType, slotName(own, { templateTaskRef: taskData.templateTaskRef as string }));
   }
-  const card = await getCard(client, cardId);
-  if (Array.isArray(card?.calendarInvites) && card.calendarInvites.length > 0) return null;
-  return calendarInviteDoneError(taskData);
+  if (!needsAll || !isNonEmptyString(taskData.cardId)) return null;
+  const unlinked = (await listTasksByCard(client, String(taskData.cardId)))
+    .filter((task) => task.id !== taskData.id && task.status !== 'skipped' && !task.linkedCardId)
+    .map((task) => ({ task, linkCard: taskLinkCardDefinition(template, task) }))
+    .filter(({ linkCard }) => linkCard?.slot);
+  if (unlinked.length === 0) return null;
+  const names = unlinked.map(({ task, linkCard }) => slotName(linkCard!, task)).join(', ');
+  return `Cannot mark task as done: event slots without a linked event Card: ${names}. Create and link them with: dataops cards event-slots ${taskData.cardId} --apply`;
 }
 
 export async function validateDoneProof(
@@ -600,6 +650,8 @@ export async function validateDoneProofOnCreate(client: DynamoDBDocumentClient, 
   }
   const calendarInviteError = await validateCalendarInviteRequirement(client, taskData);
   if (calendarInviteError) return calendarInviteError;
+  const linkedCardError = await validateLinkedCardRequirement(client, taskData);
+  if (linkedCardError) return linkedCardError;
 
   if (skipClosureSuppresses(taskData, 'proof')) return null;
 

@@ -67,6 +67,7 @@ import {
   validateActionChannel,
   validateActionNote,
   validateCalendarInviteRequirement,
+  validateLinkedCardRequirement,
   validateDateOrTimestampValue,
   validateDoneProof,
   validateDoneProofOnCreate,
@@ -1102,6 +1103,9 @@ export async function handleTaskRoutes(
       const calendarInviteError = await validateCalendarInviteRequirement(client, taskData);
       if (calendarInviteError) return jsonResponse(400, { error: calendarInviteError });
 
+      const linkedCardError = await validateLinkedCardRequirement(client, taskData);
+      if (linkedCardError) return jsonResponse(400, { error: linkedCardError, code: 'linked-card-required' });
+
       const cardLinkError = await validateRequiredCardLinks(client, taskData);
       if (cardLinkError) return jsonResponse(400, { error: cardLinkError });
 
@@ -1354,6 +1358,13 @@ export async function handleTaskRoutes(
         : await validateCalendarInviteRequirement(client, taskData);
       if (calendarInviteError) {
         return jsonResponse(400, { error: calendarInviteError });
+      }
+
+      const linkedCardError = existing.status === 'done'
+        ? null
+        : await validateLinkedCardRequirement(client, taskData);
+      if (linkedCardError) {
+        return jsonResponse(400, { error: linkedCardError, code: 'linked-card-required' });
       }
 
       const cardLinkError = await validateRequiredCardLinks(client, taskData);

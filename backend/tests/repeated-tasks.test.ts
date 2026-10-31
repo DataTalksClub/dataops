@@ -193,8 +193,19 @@ describe('API — count-driven repeated tasks and task card links', () => {
       expectedVersion: byRef.get('workshop#3')!.version, cardId: workshopCard.id,
     });
     assert.equal(linked.statusCode, 200, linked.body);
-    const done = await invoke('PUT', `/api/tasks/${byRef.get('workshop#4')!.id}`, {
+    // A Task that links a Card completes only through that Card.
+    const unlinkedDone = await invoke('PUT', `/api/tasks/${byRef.get('workshop#4')!.id}`, {
       expectedVersion: byRef.get('workshop#4')!.version, status: 'done',
+    });
+    assert.equal(unlinkedDone.statusCode, 400, unlinkedDone.body);
+    assert.equal(parsed(unlinkedDone).code, 'linked-card-required');
+    assert.match(parsed(unlinkedDone).error, /dataops tasks link-card/);
+    const fourthLinked = await invoke('POST', `/api/tasks/${byRef.get('workshop#4')!.id}/actions/link-card`, {
+      expectedVersion: byRef.get('workshop#4')!.version, cardId: (await createWorkshop('Workshop four card')).id,
+    });
+    assert.equal(fourthLinked.statusCode, 200, fourthLinked.body);
+    const done = await invoke('PUT', `/api/tasks/${byRef.get('workshop#4')!.id}`, {
+      expectedVersion: parsed(fourthLinked).version, status: 'done',
     });
     assert.equal(done.statusCode, 200, done.body);
 

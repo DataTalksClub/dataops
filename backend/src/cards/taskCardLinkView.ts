@@ -4,14 +4,37 @@
  */
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { resolveHoldGoogleCalendars } from '../calendar/dapierBroker';
 import { getCard } from '../db/cards';
 import { liveBackReferences } from '../db/taskCardLinks';
 import type { Card, Task } from '../types';
 import { summarizeCard, type CardSummary } from './recordCardLink';
 
+export interface LinkedCardInviteStatus {
+  calendar: string;
+  /** `live`: a linked invite Google still has; `stale`: Google reported it gone; `missing`: none linked. */
+  state: 'live' | 'stale' | 'missing';
+  eventId?: string;
+}
+
 export type LinkedCardSummary = Pick<CardSummary, 'id' | 'title' | 'stage' | 'status' | 'anchorDate'> & {
   url: string;
+  /** No date set yet: the event Card is "date TBD" until `cards time`. */
+  dateTbd: boolean;
+  eventStartIso?: string;
+  /** One row per required calendar (DTC events, Alexey personal). */
+  invites: LinkedCardInviteStatus[];
 };
+
+/** Invite status of a Card on each calendar its invite tasks require. */
+export function cardInviteStatus(card: Pick<Card, 'calendarInvites'>): LinkedCardInviteStatus[] {
+  return resolveHoldGoogleCalendars().map((calendar) => {
+    const linked = (card.calendarInvites || []).filter((invite) => invite.calendar === calendar);
+    const live = linked.find((invite) => !invite.staleAt);
+    if (live) return { calendar, state: 'live', eventId: live.eventId };
+    return linked.length ? { calendar, state: 'stale', eventId: linked[0].eventId } : { calendar, state: 'missing' };
+  });
+}
 
 export interface CardBackReferenceView {
   taskId: string;
@@ -31,7 +54,12 @@ async function linkedCardSummary(client: DynamoDBDocumentClient, cardId: string)
   const card = await getCard(client, cardId);
   if (!card) return null;
   const { id, title, stage, status, anchorDate } = await summarizeCard(client, card);
-  return { id, title, stage, status, anchorDate, url: cardPath(id) };
+  return {
+    id, title, stage, status, anchorDate, url: cardPath(id),
+    dateTbd: !card.anchorDate,
+    ...(card.eventTime?.sync === 'synced' ? { eventStartIso: card.eventTime.startIso } : {}),
+    invites: cardInviteStatus(card),
+  };
 }
 
 /** Each Task with the summary of the Card it links (`linkedCard`), when it links one that exists. */

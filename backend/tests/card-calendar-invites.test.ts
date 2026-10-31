@@ -9,7 +9,8 @@ import { createTask } from '../src/db/tasks';
 import { createTemplate } from '../src/db/templates';
 import { EMPTY_TEMPLATE_ID, putEmptyTemplate } from './helpers/cardTemplate';
 import { setCalendarHoldGoogleDepsForTests } from '../src/routes/calendarHolds';
-import { setDapierBrokerClientsForTests } from '../src/calendar/dapierBroker';
+import { DEFAULT_HOLD_GOOGLE_CALENDARS, setDapierBrokerClientsForTests } from '../src/calendar/dapierBroker';
+import { getCardConsistent, updateCard } from '../src/db/cards';
 import { saveCalendarOverlaySettings } from '../src/db/calendar';
 import { holdGoogleProvider } from './helpers/hold-google';
 import type { LambdaResponse } from '../src/types';
@@ -38,7 +39,7 @@ async function createCard(title = 'Webinar card'): Promise<any> {
 
 let client: DynamoDBDocumentClient;
 
-describe('Card calendar invites (link-by-hand + invite-task done-gate + confirm-hold auto-link)', () => {
+describe('Card calendar invites (unlink + stale check + invite-task done-gate + confirm-hold auto-link)', () => {
   before(async () => {
     const port = await startLocal();
     client = await getClient(port);
@@ -58,74 +59,86 @@ describe('Card calendar invites (link-by-hand + invite-task done-gate + confirm-
     await stopLocal();
   });
 
-  describe('link and list', () => {
-    it('links an invite created outside DataOps and lists it', async () => {
-      const card = await createCard();
-      const add = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, {
-        eventId: '71m4nplkn0s9g7pg800r1t009p',
-        calendar: 'alexey@datatalks.club',
-        url: 'https://www.google.com/calendar/event?eid=abc123',
-        label: 'original',
-      });
-      assert.strictEqual(add.statusCode, 201, add.body);
-      assert.strictEqual(parse(add).invites.length, 1);
+  /** Invites as `cards time` leaves them on a Card (written straight to the store). */
+  async function linkInvites(cardId: string, invites: Array<Record<string, unknown>>, eventTime?: Record<string, unknown>) {
+    const current = (await getCardConsistent(client, cardId))!;
+    return updateCard(client, cardId, {
+      expectedVersion: current.version,
+      patch: { calendarInvites: invites as any, ...(eventTime ? { eventTime: eventTime as any } : {}) },
+    });
+  }
+  const [PERSONAL, DTC] = DEFAULT_HOLD_GOOGLE_CALENDARS;
 
+  describe('list, unlink and stale check', () => {
+    it('lists the linked invites and refuses hand-linking a new one', async () => {
+      const card = await createCard();
+      await linkInvites(card.id, [{ eventId: 'evt-a', calendar: DTC }]);
       const list = await invoke('GET', `/api/cards/${card.id}/calendar-invites`);
       assert.strictEqual(list.statusCode, 200, list.body);
-      const invites = parse(list).invites;
-      assert.strictEqual(invites.length, 1);
-      assert.strictEqual(invites[0].eventId, '71m4nplkn0s9g7pg800r1t009p');
-      assert.strictEqual(invites[0].calendar, 'alexey@datatalks.club');
-      assert.strictEqual(invites[0].url, 'https://www.google.com/calendar/event?eid=abc123');
-      assert.strictEqual(invites[0].label, 'original');
-      assert.ok(invites[0].createdAt);
+      assert.deepStrictEqual(parse(list).invites.map((i: any) => i.eventId), ['evt-a']);
+      const add = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, { eventId: 'evt-b', calendar: DTC });
+      assert.strictEqual(add.statusCode, 405, add.body);
+      assert.strictEqual((await invoke('GET', '/api/cards/nope/calendar-invites')).statusCode, 404);
     });
 
-    it('supports several invites per card on any calendar, without a url', async () => {
-      const card = await createCard('Multi-invite card');
-      for (const invite of [
-        { eventId: 'aaa', calendar: 'alexey@datatalks.club', label: 'original' },
-        { eventId: 'bbb', calendar: 'alexey.s.grigoriev@gmail.com' },
-      ]) {
-        const add = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, invite);
-        assert.strictEqual(add.statusCode, 201, add.body);
+    it('unlinks an invite reference without calling Google', async () => {
+      const card = await createCard('Unlink card');
+      await linkInvites(card.id, [
+        { eventId: 'gone-dtc', calendar: DTC },
+        { eventId: 'gone-personal', calendar: PERSONAL },
+        { eventId: 'kept', calendar: DTC },
+      ]);
+      const google = holdGoogleProvider();
+      setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
+      try {
+        const removed = await invoke('DELETE', `/api/cards/${card.id}/calendar-invites`, { eventId: 'gone-dtc' });
+        assert.strictEqual(removed.statusCode, 200, removed.body);
+        assert.deepStrictEqual(parse(removed).removed.map((i: any) => i.eventId), ['gone-dtc']);
+        assert.deepStrictEqual(parse(removed).invites.map((i: any) => i.eventId), ['gone-personal', 'kept']);
+        assert.strictEqual(google.calls.length, 0, 'unlinking never touches Google');
+        const again = await invoke('DELETE', `/api/cards/${card.id}/calendar-invites`, { eventId: 'gone-dtc' });
+        assert.strictEqual(again.statusCode, 404, again.body);
+        const wrongCalendar = await invoke('DELETE', `/api/cards/${card.id}/calendar-invites`, { eventId: 'kept', calendar: PERSONAL });
+        assert.strictEqual(wrongCalendar.statusCode, 404, wrongCalendar.body);
+        assert.strictEqual((await invoke('DELETE', `/api/cards/${card.id}/calendar-invites`, {})).statusCode, 400);
+      } finally {
+        setCalendarHoldGoogleDepsForTests({});
       }
-      const list = await invoke('GET', `/api/cards/${card.id}/calendar-invites`);
-      assert.strictEqual(parse(list).invites.length, 2);
-      assert.ok(parse(list).invites.some((i: any) => i.calendar === 'alexey.s.grigoriev@gmail.com' && i.url === undefined));
     });
 
-    it('re-linking the same event updates it instead of duplicating', async () => {
-      const card = await createCard('Resent card');
-      assert.strictEqual((await invoke('POST', `/api/cards/${card.id}/calendar-invites`, {
-        eventId: 'evt1', calendar: 'alexey@datatalks.club', label: 'original',
-      })).statusCode, 201);
-      const resent = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, {
-        eventId: 'evt1', calendar: 'alexey@datatalks.club', label: 'resent',
-        url: 'https://www.google.com/calendar/event?eid=evt1',
+    it('refuses to unlink the invitation cards time owns', async () => {
+      const card = await createCard('Owned card');
+      await linkInvites(card.id, [{ eventId: 'owned', calendar: DTC }], {
+        startIso: '2026-11-09T16:00:00.000Z', endIso: '2026-11-09T17:00:00.000Z', timeZone: 'Europe/Berlin', durationMinutes: 60,
+        eventKey: `card:${card.id}`, googleEventIds: { [DTC]: 'owned' }, sync: 'synced', syncStartedAt: '2026-10-31T00:00:00.000Z',
       });
-      assert.strictEqual(resent.statusCode, 201, resent.body);
-      const invites = parse(resent).invites;
-      assert.strictEqual(invites.length, 1);
-      assert.strictEqual(invites[0].label, 'resent');
-      assert.strictEqual(invites[0].url, 'https://www.google.com/calendar/event?eid=evt1');
+      const refused = await invoke('DELETE', `/api/cards/${card.id}/calendar-invites`, { eventId: 'owned' });
+      assert.strictEqual(refused.statusCode, 409, refused.body);
+      assert.match(parse(refused).error, /dataops cards time/);
     });
 
-    it('validates invite input', async () => {
-      const card = await createCard('Validation card');
-      const missingEvent = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, { calendar: 'c' });
-      assert.strictEqual(missingEvent.statusCode, 400);
-      assert.match(parse(missingEvent).error, /eventId/);
-      const missingCalendar = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, { eventId: 'e' });
-      assert.strictEqual(missingCalendar.statusCode, 400);
-      assert.match(parse(missingCalendar).error, /calendar/);
-      const badUrl = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, {
-        eventId: 'e', calendar: 'c', url: 'http://insecure.example/x',
-      });
-      assert.strictEqual(badUrl.statusCode, 400);
-      assert.match(parse(badUrl).error, /HTTPS/);
-      const missing = await invoke('GET', '/api/cards/nope/calendar-invites');
-      assert.strictEqual(missing.statusCode, 404);
+    it('verify marks invites Google no longer has as stale and deletes nothing', async () => {
+      const card = await createCard('Stale card');
+      const google = holdGoogleProvider();
+      google.events.set(DTC, new Map([['alive', { id: 'alive', status: 'confirmed' }], ['cancelled', { id: 'cancelled', status: 'cancelled' }]]));
+      await linkInvites(card.id, [
+        { eventId: 'alive', calendar: DTC },
+        { eventId: 'cancelled', calendar: DTC },
+        { eventId: 'deleted', calendar: PERSONAL },
+      ]);
+      setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
+      try {
+        const verified = await invoke('GET', `/api/cards/${card.id}/calendar-invites`, undefined, { verify: '1' });
+        assert.strictEqual(verified.statusCode, 200, verified.body);
+        const byId = Object.fromEntries(parse(verified).invites.map((i: any) => [i.eventId, i]));
+        assert.strictEqual(byId.alive.staleAt, undefined);
+        assert.ok(byId.cancelled.staleAt);
+        assert.ok(byId.deleted.staleAt);
+        assert.strictEqual(parse(verified).check.state, 'verified');
+        assert.ok(google.calls.every((call) => call.method === 'GET' || call.url.pathname === '/api/agent/token'));
+      } finally {
+        setCalendarHoldGoogleDepsForTests({});
+      }
     });
   });
 
@@ -157,8 +170,19 @@ describe('Card calendar invites (link-by-hand + invite-task done-gate + confirm-
       const { inviteTask, card } = await createWebinarStyleCard('Gated card');
       const done = await invoke('PUT', `/api/tasks/${inviteTask.id}`, { expectedVersion: inviteTask.version, status: 'done' });
       assert.strictEqual(done.statusCode, 400, done.body);
-      assert.match(parse(done).error, /no calendar invite is linked/);
+      assert.match(parse(done).error, /no live calendar invite/);
       assert.match(parse(done).error, new RegExp(`dataops cards time ${card.id}`));
+    });
+
+    it('needs live invites on both the DTC events and the personal calendar', async () => {
+      const { inviteTask, card } = await createWebinarStyleCard('Both-calendars card');
+      await linkInvites(card.id, [{ eventId: 'only-dtc', calendar: DTC }, { eventId: 'gone', calendar: PERSONAL, staleAt: '2026-10-31T00:00:00.000Z' }]);
+      const oneCalendar = await invoke('PUT', `/api/tasks/${inviteTask.id}`, { expectedVersion: inviteTask.version, status: 'done' });
+      assert.strictEqual(oneCalendar.statusCode, 400, oneCalendar.body);
+      assert.match(parse(oneCalendar).error, new RegExp(`no live calendar invite on ${PERSONAL.replace(/[.]/g, '\\.')}`));
+      await linkInvites(card.id, [{ eventId: 'only-dtc', calendar: DTC }, { eventId: 'live', calendar: PERSONAL }]);
+      const both = await invoke('PUT', `/api/tasks/${inviteTask.id}`, { expectedVersion: inviteTask.version, status: 'done' });
+      assert.strictEqual(both.statusCode, 200, both.body);
     });
 
     it('refuses create-as-done without a linked invite', async () => {
@@ -172,18 +196,7 @@ describe('Card calendar invites (link-by-hand + invite-task done-gate + confirm-
         status: 'done',
       });
       assert.strictEqual(created.statusCode, 400, created.body);
-      assert.match(parse(created).error, /no calendar invite is linked/);
-    });
-
-    it('automatically closes the invite Task when a legacy invite is adopted', async () => {
-      const { inviteTask, card } = await createWebinarStyleCard('Linked card');
-      const add = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, {
-        eventId: 'evt9', calendar: 'alexey@datatalks.club',
-      });
-      assert.strictEqual(add.statusCode, 201, add.body);
-      const done = await invoke('GET', `/api/tasks/${inviteTask.id}`);
-      assert.strictEqual(done.statusCode, 200, done.body);
-      assert.strictEqual(parse(done).status, 'done');
+      assert.match(parse(created).error, /no live calendar invite/);
     });
 
     it('honours an explicit requiresCalendarInvite flag on any task', async () => {
@@ -197,7 +210,7 @@ describe('Card calendar invites (link-by-hand + invite-task done-gate + confirm-
       } as any);
       const done = await invoke('PUT', `/api/tasks/${task.id}`, { expectedVersion: task.version, status: 'done' });
       assert.strictEqual(done.statusCode, 400, done.body);
-      assert.match(parse(done).error, /no calendar invite is linked/);
+      assert.match(parse(done).error, /no live calendar invite/);
     });
 
     it('does not break already-done invite tasks', async () => {
@@ -230,7 +243,7 @@ describe('Card calendar invites (link-by-hand + invite-task done-gate + confirm-
         expectedVersion: parse(reopened).version, status: 'done',
       });
       assert.strictEqual(closed.statusCode, 400, closed.body);
-      assert.match(parse(closed).error, /no calendar invite is linked/);
+      assert.match(parse(closed).error, /no live calendar invite/);
     });
   });
 

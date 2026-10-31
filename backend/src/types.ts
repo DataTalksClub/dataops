@@ -357,6 +357,8 @@ export interface CardCalendarInvite {
   label?: string;
   createdAt?: string;
   createdBy?: string;
+  /** When Google reported the event gone (404/410 or cancelled); a stale invite proves nothing. */
+  staleAt?: string;
 }
 
 export interface Card {
@@ -481,6 +483,12 @@ export interface TaskRepeat {
 /** The kind of Card a Task may link (`Task.linkedCardId`). */
 export interface TaskLinkCard {
   templateType: string;
+  /**
+   * Event slot name (e.g. "Pre-Course Live Q&A", "Workshop {n}"). A slot Task
+   * gets its own undated Card of `templateType`, created and linked with the
+   * Card that owns the Task; `{n}` is the repeat instance number.
+   */
+  slot?: string;
 }
 
 export interface ExternalSourceDocument {

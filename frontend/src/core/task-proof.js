@@ -125,7 +125,7 @@ export function taskRequiresCalendarInvite(task) {
 }
 
 export function hasLinkedCalendarInvite(card) {
-  return Array.isArray(card?.calendarInvites) && card.calendarInvites.length > 0;
+  return Array.isArray(card?.calendarInvites) && card.calendarInvites.some((invite) => !invite.staleAt);
 }
 
 // Required-vs-optional in the Template's words, for the rows and dialogs

@@ -414,6 +414,14 @@ export function createCardSummary(context) {
     anchor.setAttribute("aria-label", `Card date ${card.anchorDate}`);
     anchor.textContent = formatCardAnchorLabel(card.anchorDate, today);
     summaryTop.append(anchor);
+  } else {
+    // An event Card created as a course slot has no date until `cards time` sets it.
+    const anchor = document.createElement("span");
+    anchor.className = "workflow-card-anchor is-upcoming";
+    anchor.dataset.anchorDate = "";
+    anchor.setAttribute("aria-label", "Card date to be decided");
+    anchor.textContent = "Date TBD";
+    summaryTop.append(anchor);
   }
   const issueNumber = typeof workCardIssueNumber === "function"
     ? workCardIssueNumber(card)

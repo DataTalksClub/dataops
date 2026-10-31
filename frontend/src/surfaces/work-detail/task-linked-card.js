@@ -15,8 +15,32 @@ export function linkedCardIdFrom(value) {
   }
 }
 
+function calendarName(calendar) {
+  if (calendar.endsWith("@group.calendar.google.com")) return "DTC events";
+  if (calendar === "alexey.s.grigoriev@gmail.com") return "Alexey personal";
+  return calendar;
+}
+
+/** When the linked event happens: its invitation time, its date, or "date TBD". */
+function whenText(linked) {
+  if (linked.eventStartIso) {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/Berlin", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+    }).format(new Date(linked.eventStartIso));
+  }
+  return linked.dateTbd ? "date TBD" : linked.anchorDate || "";
+}
+
+/** Invite state per required calendar, e.g. "DTC events: live, Alexey personal: missing". */
+function invitesText(linked) {
+  if (!Array.isArray(linked.invites) || linked.invites.length === 0) return "";
+  return linked.invites.map((invite) => `${calendarName(invite.calendar)}: ${invite.state}`).join(", ");
+}
+
 function statusText(linked) {
-  return linked.status === "active" ? `${linked.status}, ${linked.stage}` : linked.status;
+  const status = linked.status === "active" ? `${linked.status}, ${linked.stage}` : linked.status;
+  const invites = invitesText(linked);
+  return [status, whenText(linked), invites && `invites ${invites}`].filter(Boolean).join(" · ");
 }
 
 export function renderTaskLinkedCard(task, { busy, onSave, createTaskActionButton }) {

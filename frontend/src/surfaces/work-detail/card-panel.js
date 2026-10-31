@@ -404,7 +404,7 @@ export function createCardPanel(context) {
     if (card.templateDefinitionSnapshot?.eventPolicy || card.eventTime || card.calendarInvites?.length || tasks.some(taskRequiresCalendarInvite)) {
       main.append(renderCardEventTime({ request, workApiUrl, reload: reloadCardIntent }, card));
     }
-    if (Array.isArray(card.calendarInvites) && card.calendarInvites.length > 0) main.append(renderCardInvitesSection(card));
+    if (Array.isArray(card.calendarInvites) && card.calendarInvites.length > 0) main.append(renderCardInvitesSection(card, { request, workApiUrl, reload: reloadCardIntent }));
 
     {
       const artifactsSection = document.createElement("div");

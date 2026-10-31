@@ -1,5 +1,6 @@
-// Card calendar invitations created from event time; hand linking adopts legacy events.
-export function renderCardInvitesSection(card) {
+// Card calendar invitations, created only from the Card's event time. An invite
+// Google reports gone is marked stale and proves nothing until it is unlinked.
+export function renderCardInvitesSection(card, { request, workApiUrl, reload } = {}) {
   const section = document.createElement("div");
   section.className =
     "task-history workflow-detail-section workflow-links-section";
@@ -9,6 +10,26 @@ export function renderCardInvitesSection(card) {
   heading.className = "task-history-label";
   heading.textContent = "Calendar invites";
   header.append(heading);
+  if (request && workApiUrl) {
+    // Ask Google which linked events still exist; gone ones are marked stale.
+    const check = document.createElement("button");
+    check.type = "button";
+    check.className = "dk-button dk-button--secondary dk-button--sm";
+    check.dataset.inviteAction = "verify";
+    check.textContent = "Check in Google";
+    check.addEventListener("click", async () => {
+      check.disabled = true;
+      check.textContent = "Checking…";
+      try {
+        await request(workApiUrl(`/api/cards/${encodeURIComponent(card.id)}/calendar-invites?verify=1`));
+        if (reload) await reload();
+      } finally {
+        check.disabled = false;
+        check.textContent = "Check in Google";
+      }
+    });
+    header.append(check);
+  }
   section.append(header);
   const list = document.createElement("ul");
   list.className = "link-rows";
@@ -18,7 +39,8 @@ export function renderCardInvitesSection(card) {
     row.className = "link-row";
     const name = document.createElement("span");
     name.className = "link-row__label";
-    const labelText = [invite.calendar, invite.label].filter(Boolean).join(" · ") || "Invite";
+    const labelText = [invite.calendar, invite.label, invite.staleAt ? "stale: gone in Google" : ""].filter(Boolean).join(" · ") || "Invite";
+    if (invite.staleAt) row.dataset.inviteState = "stale";
     name.textContent = labelText;
     name.title = labelText;
     const valueCell = document.createElement("div");

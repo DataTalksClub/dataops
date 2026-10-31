@@ -143,7 +143,10 @@ export function templateToYaml(template: Dict): Dict {
     out.schedule = schedule;
     for (const [runtime, authored] of TASK_FIELDS) assign(out, authored, task[runtime]);
     if (task.repeat !== undefined) out.repeat = { count_field: (task.repeat as Dict).countField };
-    if (task.linkCard !== undefined) out.link_card = { template_type: (task.linkCard as Dict).templateType };
+    if (task.linkCard !== undefined) {
+      const linkCard = task.linkCard as Dict;
+      out.link_card = { template_type: linkCard.templateType, ...(linkCard.slot !== undefined ? { slot: linkCard.slot } : {}) };
+    }
     if (task.closure !== undefined) out.closure = mapFields(task.closure as Dict, CLOSURE_FIELDS, true);
     return out;
   });
@@ -191,7 +194,10 @@ export function templateFromYaml(doc: Dict): Dict {
     else if (schedule.anchor === 'start') out.anchor = 'start';
     for (const [runtime, authored] of TASK_FIELDS) assign(out, runtime, task[authored]);
     if (task.repeat !== undefined) out.repeat = { countField: (task.repeat as Dict | null)?.count_field };
-    if (task.link_card !== undefined) out.linkCard = { templateType: (task.link_card as Dict | null)?.template_type };
+    if (task.link_card !== undefined) {
+      const linkCard = task.link_card as Dict | null;
+      out.linkCard = { templateType: linkCard?.template_type, ...(linkCard?.slot !== undefined ? { slot: linkCard.slot } : {}) };
+    }
     if (task.closure !== undefined) out.closure = mapFields(task.closure as Dict, CLOSURE_FIELDS, false);
     return out;
   });
@@ -343,6 +349,9 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
       const type = linkCard && typeof linkCard === 'object' ? linkCard.template_type : undefined;
       if (typeof type !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(type)) {
         fail(`task '${id}' link_card needs a template_type slug`);
+      }
+      if (linkCard?.slot !== undefined && (typeof linkCard.slot !== 'string' || !linkCard.slot.trim() || linkCard.slot.length > 80)) {
+        fail(`task '${id}' link_card slot must be a name of 1 to 80 characters`);
       }
     }
 

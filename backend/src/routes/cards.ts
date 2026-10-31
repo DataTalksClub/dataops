@@ -1,5 +1,5 @@
 import { cardEventInterval } from '../calendar/cardEventTime';
-import { CardInviteConflictError, CardInviteInputError, cardGuests, closeCardInviteTasks, parseCardGuests, syncCardInvite } from '../calendar/cardInvite';
+import { adoptEventDate, CardInviteConflictError, CardInviteInputError, cardGuests, parseCardGuests, syncCardInvite, unlinkCardInvite, verifyCardInvites } from '../calendar/cardInvite';
 import { calendarInviteDeps } from './calendarHolds';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
@@ -15,6 +15,7 @@ import {
   listCardsPage,
 } from '../db/cards';
 import { attachLinkedCards, cardBackReferences } from '../cards/taskCardLinkView';
+import { ensureEventSlotCards } from '../cards/eventSlots';
 import {
   CardDeletionBlockedError,
   CardDeletionConflictError,
@@ -190,10 +191,37 @@ async function handleSingleTemplateUpdate(
       body.optionalGroups,
       body.counts,
     );
-    return json(200, result);
+    return json(200, { ...result, ...await eventSlotsAfterWrite(client, actor, loaded.card) });
   } catch (error) {
     return updateError(error);
   }
+}
+
+/**
+ * Event Cards for the Card's open slot Tasks, created after the Card or its
+ * Tasks were written. A failure leaves the Card in place and names the
+ * command that finishes the job.
+ */
+async function eventSlotsAfterWrite(client: DynamoDBDocumentClient, actor: VerifiedActor, card: Card) {
+  try {
+    return { eventSlots: await ensureEventSlotCards(client, actor, card, { apply: true }) };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : 'event Card creation failed';
+    return { eventSlots: [], eventSlotsError: `${reason}. Finish with: dataops cards event-slots ${card.id} --apply` };
+  }
+}
+
+/** /api/cards/:id/event-slots: GET previews, POST creates the missing event Cards. */
+async function handleCardEventSlots(method: string, id: string, client: DynamoDBDocumentClient, event: LambdaEvent): Promise<LambdaResponse> {
+  if (method !== 'GET' && method !== 'POST') return json(405, { error: 'Method not allowed' });
+  const resolved = await resolveInteractiveActor(client, event, method === 'GET' ? 'work-read' : 'work-write');
+  if (!resolved.ok) return resolved.response;
+  const card = await getCardConsistent(client, id);
+  if (!card) return json(404, { error: 'Card not found' });
+  if (method === 'POST' && !mayAdministerCard(resolved.actor, card)) {
+    return workAdminForbidden('Creating event Cards requires the Card owner or an admin');
+  }
+  return json(200, { eventSlots: await ensureEventSlotCards(client, resolved.actor, card, { apply: method === 'POST' }) });
 }
 
 function selectedCardIds(body: Record<string, unknown>): string[] {
@@ -356,6 +384,9 @@ async function handleCardRoutes(
     const timeMatch = suffix.match(/^\/([^/]+)\/time\/?$/);
     if (timeMatch) return await handleCardTime(method, timeMatch[1], rawBody, client, event);
 
+    const eventSlotsMatch = suffix.match(/^\/([^/]+)\/event-slots\/?$/);
+    if (eventSlotsMatch) return await handleCardEventSlots(method, eventSlotsMatch[1], client, event);
+
     // Route: /api/cards/:id/calendar-invites
     const invitesMatch = suffix.match(/^\/([^/]+)\/calendar-invites\/?$/);
     if (invitesMatch) {
@@ -496,9 +527,11 @@ async function handleCollection(
     }
     const created = await createCardFromInput(client, createActor.actor, body);
     if (!created.ok) return created.response;
+    const slots = await eventSlotsAfterWrite(client, createActor.actor, created.card);
     const templateIdByType = await getTemplateIdByType(client);
-    const card = await projectCard(new TeamDirectory(client), created.card, created.tasks, templateIdByType);
-    return json(201, { card, tasks: created.tasks });
+    const tasks = slots.eventSlots.length ? await listTasksByCardConsistent(client, created.card.id) : created.tasks;
+    const card = await projectCard(new TeamDirectory(client), created.card, tasks, templateIdByType);
+    return json(201, { card, tasks, ...slots });
   }
 
   // Method not allowed
@@ -810,40 +843,11 @@ async function handleCardTasks(
   });
 }
 
-type CalendarInviteInputError = { error: string };
-
-function validateCalendarInviteBody(body: Record<string, unknown>): { invite: { eventId: string; calendar: string; url?: string; label?: string } } | CalendarInviteInputError {
-  const eventId = typeof body.eventId === 'string' ? body.eventId.trim() : '';
-  if (!eventId) return { error: 'eventId is required' };
-  if (eventId.length > 200) return { error: 'eventId must be 200 characters or fewer' };
-  const calendar = typeof body.calendar === 'string' ? body.calendar.trim() : '';
-  if (!calendar) return { error: 'calendar is required' };
-  if (calendar.length > 200) return { error: 'calendar must be 200 characters or fewer' };
-  let url: string | undefined;
-  if (body.url !== undefined && body.url !== null && String(body.url).trim() !== '') {
-    const raw = String(body.url).trim();
-    let parsed: URL;
-    try {
-      parsed = new URL(raw);
-    } catch {
-      return { error: 'url must be a valid URL' };
-    }
-    if (parsed.protocol !== 'https:') return { error: 'url must be an HTTPS URL' };
-    if (raw.length > 2000) return { error: 'url must be 2000 characters or fewer' };
-    url = parsed.href;
-  }
-  let label: string | undefined;
-  if (body.label !== undefined && body.label !== null && String(body.label).trim() !== '') {
-    label = String(body.label).trim();
-    if (label.length > 60) return { error: 'label must be 60 characters or fewer' };
-  }
-  return { invite: { eventId, calendar, ...(url ? { url } : {}), ...(label ? { label } : {}) } };
-}
-
 /**
- * Handle /api/cards/:id/calendar-invites: list and link Google Calendar
- * invites. Linking is idempotent per (calendar, event id): re-linking the
- * same event updates its url/label instead of duplicating it.
+ * Handle /api/cards/:id/calendar-invites. A Card's invitations come only
+ * from `cards time`; this route lists them (`?verify=1` asks Google which are
+ * gone and marks those stale) and unlinks one (DELETE). Unlinking removes the
+ * reference on the Card and never deletes the Google event.
  */
 async function handleCardCalendarInvites(
   method: string,
@@ -855,59 +859,40 @@ async function handleCardCalendarInvites(
   if (method === 'GET') {
     const readActor = await resolveInteractiveActor(client, event, 'work-read');
     if (!readActor.ok) return readActor.response;
-    const card = await getCard(client, id);
+    const card = await getCardConsistent(client, id);
     if (!card) return json(404, { error: 'Card not found' });
-    return json(200, { invites: card.calendarInvites || [] });
+    if (!['1', 'true'].includes(String(event.queryStringParameters?.verify || ''))) {
+      return json(200, { invites: card.calendarInvites || [] });
+    }
+    const verified = await verifyCardInvites(client, card, await calendarInviteDeps({}, client));
+    return json(200, { invites: verified.card.calendarInvites || [], check: verified.check });
   }
 
-  if (method === 'POST') {
+  if (method === 'DELETE') {
     const writeActor = await resolveInteractiveActor(client, event, 'work-write');
     if (!writeActor.ok) return writeActor.response;
-    const actor = writeActor.actor;
     let body: Record<string, unknown>;
     try {
-      body = JSON.parse(rawBody || '');
+      body = JSON.parse(rawBody || '{}');
     } catch {
       return json(400, { error: 'Invalid JSON' });
     }
-    if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      return json(400, { error: 'Request body must be an object' });
-    }
-    const parsed = validateCalendarInviteBody(body);
-    if ('error' in parsed) return json(400, { error: parsed.error });
+    const eventId = typeof body?.eventId === 'string' ? body.eventId.trim() : '';
+    const calendar = typeof body?.calendar === 'string' ? body.calendar.trim() : '';
+    if (!eventId) return json(400, { error: 'eventId is required' });
     const existing = await getCardConsistent(client, id);
     if (!existing) return json(404, { error: 'Card not found' });
-    if (!mayAdministerCard(actor, existing)) {
+    if (!mayAdministerCard(writeActor.actor, existing)) {
       return workAdminForbidden('Administering this Card requires its owner or an admin');
     }
-    const now = new Date().toISOString();
-    const card = await updateCardAdditive(client, existing, (current) => {
-      if (current.eventTime && current.eventTime.googleEventIds[parsed.invite.calendar] !== parsed.invite.eventId) {
-        throw new CardInviteConflictError('This Card already owns an invitation attempt. Retry cards time to recover it before adopting another event.');
-      }
-      const invites: CardCalendarInvite[] = [...(current.calendarInvites || [])];
-      const index = invites.findIndex(
-        (entry) => entry.eventId === parsed.invite.eventId && entry.calendar === parsed.invite.calendar,
-      );
-      if (index >= 0) {
-        invites[index] = {
-          ...invites[index],
-          ...(parsed.invite.url !== undefined ? { url: parsed.invite.url } : {}),
-          ...(parsed.invite.label !== undefined ? { label: parsed.invite.label } : {}),
-        };
-      } else {
-        invites.push({
-          ...parsed.invite,
-          createdAt: now,
-          ...(actor.id ? { createdBy: actor.id } : {}),
-        });
-      }
-      return { calendarInvites: invites };
-    });
-    const taskClosure = await closeCardInviteTasks(client, card, actor.id);
-    const templateIdByType = await getTemplateIdByType(client);
-    const projected = await projectCard(new TeamDirectory(client), (await getCardConsistent(client, id))!, undefined, templateIdByType);
-    return json(201, { card: projected, invites: card.calendarInvites || [], taskClosure });
+    try {
+      const { card, removed } = await unlinkCardInvite(client, existing, eventId, calendar || undefined);
+      return json(200, { removed, invites: card.calendarInvites || [] });
+    } catch (error) {
+      if (error instanceof CardInviteInputError) return json(404, { error: error.message, code: 'invite_not_linked' });
+      if (error instanceof CardInviteConflictError) return json(409, { error: error.message, code: 'invite_owned_by_card_time' });
+      throw error;
+    }
   }
 
   return json(405, { error: 'Method not allowed' });
@@ -932,9 +917,15 @@ async function handleCardTime(method: string, id: string, rawBody: string | null
     return json(400, { error: error instanceof Error ? error.message : 'Invalid event time' });
   }
   try {
-    const result = await syncCardInvite(client, card, interval, guests, await calendarInviteDeps({}, client), resolved.actor.id);
-    const projected = await projectCard(new TeamDirectory(client), result.card, undefined, await getTemplateIdByType(client));
-    return json(result.sync.state === 'synced' ? 200 : 502, { ...result, card: projected, ...(result.sync.state === 'deferred' ? { error: result.sync.reason } : {}) });
+    const deps = await calendarInviteDeps({}, client);
+    const verified = await verifyCardInvites(client, card, deps);
+    const result = await syncCardInvite(client, verified.card, interval, guests, deps, resolved.actor.id);
+    const dated = await adoptEventDate(client, result.card, card.eventTime);
+    const projected = await projectCard(new TeamDirectory(client), dated.card, undefined, await getTemplateIdByType(client));
+    return json(result.sync.state === 'synced' ? 200 : 502, {
+      ...result, card: projected, inviteCheck: verified.check, movedTasks: dated.movedTasks,
+      ...(result.sync.state === 'deferred' ? { error: result.sync.reason } : {}),
+    });
   } catch (error) {
     if (error instanceof CardVersionConflictError || error instanceof CardInviteConflictError) return json(409, { error: 'Card invitation changed or is syncing; reload and retry' });
     if (error instanceof CardInviteInputError) return json(422, { error: error.message });

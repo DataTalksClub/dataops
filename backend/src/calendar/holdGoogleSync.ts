@@ -353,3 +353,33 @@ export async function fetchOrganizerGoogleEvent(
     return { state: 'deferred', reason: 'Google Calendar organizer event could not be read.' };
   }
 }
+
+/**
+ * Which of these calendar events Google no longer has: 404/410, or an event
+ * whose status is `cancelled`. Read-only; nothing is ever deleted here.
+ */
+export async function findGoneGoogleEvents(
+  events: Array<{ calendar: string; eventId: string }>,
+  deps: HoldGoogleDeps,
+): Promise<{ state: 'ok'; gone: Array<{ calendar: string; eventId: string }> } | { state: 'deferred'; reason: string }> {
+  if (!events.length) return { state: 'ok', gone: [] };
+  const resolved = await accessToken(deps);
+  if ('problem' in resolved) return { state: 'deferred', reason: resolved.problem };
+  const headers = { Authorization: `Bearer ${resolved.token}` };
+  const gone: Array<{ calendar: string; eventId: string }> = [];
+  try {
+    for (const event of events) {
+      const response = await googleFetch(deps, `${eventsUrl(event.calendar)}/${encodeURIComponent(event.eventId)}`,
+        { headers, signal: AbortSignal.timeout(15000) });
+      if (response.status === 404 || response.status === 410) { gone.push(event); continue; }
+      if (!response.ok) {
+        return { state: 'deferred', reason: googleErrorDetail(response.status, await readBodyText(response, GOOGLE_ERROR_BODY_LIMIT)) };
+      }
+      const body = await response.json() as { status?: string };
+      if (body.status === 'cancelled') gone.push(event);
+    }
+  } catch {
+    return { state: 'deferred', reason: 'Google Calendar events could not be read.' };
+  }
+  return { state: 'ok', gone };
+}

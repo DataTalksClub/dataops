@@ -1,5 +1,5 @@
 import { UsageError } from "../errors.mjs";
-import { enc, fields, integer, isoDate, linkedCardLabel, list as csv, optionalString, portalUrl, positional, required, table } from "../format.mjs";
+import { calendarLabel, enc, fields, integer, isoDate, linkedCardLabel, list as csv, optionalString, portalUrl, positional, required, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { create as createSponsorDoc } from "./sponsorDocs.mjs";
 import { findTemplate } from "./templates.mjs";
@@ -22,12 +22,16 @@ Usage
   dataops cards update <card-id> --count FIELD=N[,FIELD=N] [--apply]
                                                 Change a count (e.g. workshops=3); preview by default
   dataops cards time <card-id> --at "YYYY-MM-DD HH:MM" [--duration 60] [--tz Europe/Berlin]
-      [--guests EMAIL,EMAIL] [--json]            Create or move the Card guest invite
+      [--guests EMAIL,EMAIL] [--json]            Set the event time: creates or moves its invites on
+                                                DTC events, Alexey personal and orin@ (the only way)
+  dataops cards event-slots <card-id> [--apply] [--json]
+                                                A course's event Cards (Q&A, launch, workshops);
+                                                --apply creates and links the missing ones, undated
   dataops cards stage <card-id> <preparation|announced|after-event>
   dataops cards link <card-id> <link-name> <url>  Fill a Card link (e.g. a template's required link)
-  dataops cards invite add <card-id> --event-id ID --calendar CAL [--url URL] [--label L]
-                                                Adopt a legacy Google Calendar invite
-  dataops cards invite list <card-id>           List the Card's linked calendar invites
+  dataops cards invite list <card-id> [--json]  The Card's invites, checked in Google (gone = stale)
+  dataops cards invite remove <card-id> <event-id> [--calendar CAL] [--json]
+                                                Unlink an invite from the Card; never deletes the Google event
   dataops cards sponsor-doc <card-id> [--template T] [--slot primary|secondary] [--sponsor NAME]
                                                 Create a portal sponsor doc and link it on the Card
   dataops cards park <card-id> | resume <card-id>
@@ -54,6 +58,14 @@ them with update --count. Raising adds the missing numbered Tasks; lowering
 removes the extra ones that are not done and link no Card. Done or linked extras
 stay. The preview lists every add and removal; nothing changes without --apply.
 Link a repeated Task to its own Card with \`dataops tasks link-card <task> <card>\`.
+
+Event Cards
+A Template Task with a link_card slot (a course's Pre-Course Live Q&A, launch
+stream, Workshop N) is done through its own event Card, never a comment or URL.
+Creating the course Card creates those event Cards undated ("date TBD") and
+links them; \`cards event-slots <card> --apply\` adds any that are missing.
+\`cards time <event-card>\` is the one way to date an event: it sets the Card
+date, re-dates its open Tasks and sends the calendar invites.
 Disabled open tasks are skipped with history; completed and operator-skipped tasks stay resolved.
 
 Examples
@@ -117,7 +129,7 @@ export async function show(args, io) {
     ["title", card.title],
     ["status", card.status],
     ["stage", card.stage],
-    ["date", card.anchorDate],
+    ["date", card.anchorDate || "TBD (set with: dataops cards time)"],
     ["end date", card.endDate],
     ["event time", card.eventTime?.startIso],
     ["event end", card.eventTime?.endIso],
@@ -137,7 +149,7 @@ export async function show(args, io) {
     io.print(`link: ${link.name || link.label} = ${link.url || "(not filled)"}`);
   }
   for (const invite of card.calendarInvites || []) {
-    io.print(`invite: ${invite.eventId} on ${invite.calendar}${invite.label ? ` [${invite.label}]` : ""}${invite.url ? ` ${invite.url}` : ""}`);
+    io.print(`invite: ${invite.eventId} on ${calendarLabel(invite.calendar)}${invite.label ? ` [${invite.label}]` : ""}${invite.staleAt ? " STALE (gone in Google; unlink with: dataops cards invite remove " + card.id + " " + invite.eventId + ")" : ""}${invite.url ? ` ${invite.url}` : ""}`);
   }
   for (const ref of card.linkedFrom || []) {
     io.print(`linked from: ${ref.cardTitle} - ${ref.taskDescription} [${ref.taskStatus}] ${portalUrl(api, ref.url)}`);
@@ -189,6 +201,10 @@ export async function create(args, io) {
   if (args.json) return result;
   io.print(`Created Card ${result.card.id} - ${result.card.title} (${result.tasks?.length ?? 0} Tasks).`);
   for (const task of result.tasks || []) io.print(`  ${task.id}  ${task.date}  ${task.description}`);
+  for (const slot of result.eventSlots || []) {
+    if (slot.outcome === "created") io.print(`Event Card ${slot.cardId} - ${slot.cardTitle} (date TBD; set it with: dataops cards time ${slot.cardId} --at "YYYY-MM-DD HH:MM")`);
+  }
+  if (result.eventSlotsError) io.print(`Event Cards incomplete: ${result.eventSlotsError}`);
   return result;
 }
 
@@ -250,14 +266,23 @@ export async function link(args, io) {
   const id = positional(args, 0, usage);
   const name = positional(args, 1, usage);
   const url = positional(args, 2, usage);
-  return write(args, io, id, (card) => {
-    const links = Array.isArray(card.cardLinks) ? card.cardLinks : [];
-    if (!links.some((item) => (item.name || item.label) === name)) {
-      const known = links.map((item) => item.name || item.label).join(", ") || "none";
-      throw new UsageError(`Card has no link named "${name}". Known links: ${known}.`);
-    }
-    return { cardLinks: links.map((item) => ((item.name || item.label) === name ? { ...item, url } : item)) };
-  }, `Saved "${name}" on`);
+  const api = apiFor(args);
+  const { card } = await api.get(`/api/cards/${enc(id)}`);
+  const links = Array.isArray(card.cardLinks) ? card.cardLinks : [];
+  if (links.some((item) => (item.name || item.label) === name)) {
+    return write(args, io, id, {
+      cardLinks: links.map((item) => ((item.name || item.label) === name ? { ...item, url } : item)),
+    }, `Saved "${name}" on`);
+  }
+  // A link the Card's Template defines today (e.g. "Meetup Global") but the
+  // Card predates is added to the Card.
+  const template = card.templateId ? await api.get(`/api/templates/${enc(card.templateId)}`).catch(() => null) : null;
+  const defined = (template?.template || template)?.cardLinkDefinitions || [];
+  if (!defined.some((definition) => definition.name === name)) {
+    const known = [...new Set([...links.map((item) => item.name || item.label), ...defined.map((definition) => definition.name)])].join(", ") || "none";
+    throw new UsageError(`Card has no link named "${name}". Known links: ${known}.`);
+  }
+  return write(args, io, id, { cardLinks: [...links, { name, url }] }, `Saved "${name}" on`);
 }
 
 async function parkResume(args, io, verb) {
@@ -345,47 +370,70 @@ function printCountPreview(io, preview) {
 }
 
 export async function invite(args, io) {
-  const usage = "dataops cards invite add <card-id> --event-id ID --calendar CAL [--url URL] [--label L]\n"
-    + "  dataops cards invite list <card-id>";
+  const usage = "dataops cards invite list <card-id>\n"
+    + "  dataops cards invite remove <card-id> <event-id> [--calendar CAL]";
   const action = positional(args, 0, usage);
   if (action === "add") {
+    throw new UsageError("Invites are created only by setting the event time: dataops cards time <card-id> --at \"YYYY-MM-DD HH:MM\"");
+  }
+  if (action === "remove") {
     const id = positional(args, 1, usage);
-    // NOTE: --url here is the invite's htmlLink, not the global portal
-    // override (point at another portal with DATAOPS_URL for this subcommand).
-    const api = apiFor({ ...args, url: undefined });
-    const body = {
-      eventId: required(args, "eventId", "event-id"),
-      calendar: required(args, "calendar", "calendar"),
-    };
-    const url = optionalString(args, "url");
-    if (url !== undefined) body.url = url;
-    const label = optionalString(args, "label");
-    if (label !== undefined) body.label = label;
-    const result = await api.post(`/api/cards/${enc(id)}/calendar-invites`, body);
+    const eventId = positional(args, 2, usage);
+    const calendar = optionalString(args, "calendar");
+    const result = await apiFor(args).delete(`/api/cards/${enc(id)}/calendar-invites`, { eventId, ...(calendar ? { calendar } : {}) });
     if (args.json) return result;
-    io.print(`Linked invite ${body.eventId} on ${body.calendar} to Card ${id}.`);
+    for (const removed of result.removed || []) {
+      io.print(`Unlinked invite ${removed.eventId} on ${calendarLabel(removed.calendar)} from Card ${id} (the Google event is untouched).`);
+    }
     return result;
   }
   if (action === "list") {
     const id = positional(args, 1, usage);
     const api = apiFor(args);
-    const result = await api.get(`/api/cards/${enc(id)}/calendar-invites`);
+    const result = await api.get(`/api/cards/${enc(id)}/calendar-invites`, { query: { verify: "1" } });
     const invites = Array.isArray(result?.invites) ? result.invites : [];
-    if (args.json) return { invites };
+    if (args.json) return { invites, ...(result?.check ? { check: result.check } : {}) };
     table(
       io,
       invites,
       [
         ["EVENT ID", (invite) => invite.eventId],
-        ["CALENDAR", (invite) => invite.calendar],
-        ["URL", (invite) => invite.url || ""],
+        ["CALENDAR", (invite) => calendarLabel(invite.calendar)],
+        ["STATE", (invite) => (invite.staleAt ? `stale (gone in Google ${invite.staleAt.slice(0, 10)})` : "live")],
         ["LABEL", (invite) => invite.label || ""],
       ],
       "No calendar invites linked.",
     );
+    if (result?.check?.state === "deferred") io.print(`Not checked in Google: ${result.check.reason}`);
     return { invites };
   }
   throw new UsageError(`Unknown invite action: ${action}. ${usage}`);
+}
+
+export async function eventSlots(args, io) {
+  const id = positional(args, 0, "dataops cards event-slots <card-id> [--apply]");
+  const api = apiFor(args);
+  const route = `/api/cards/${enc(id)}/event-slots`;
+  const result = args.apply ? await api.post(route, {}) : await api.get(route);
+  if (args.json) return result;
+  const slots = result.eventSlots || [];
+  table(
+    io,
+    slots,
+    [
+      ["SLOT", (slot) => slot.slot],
+      ["TASK", (slot) => slot.taskId],
+      ["STATUS", (slot) => slot.taskStatus],
+      ["OUTCOME", (slot) => slot.outcome],
+      ["EVENT CARD", (slot) => [slot.cardId, slot.cardTitle].filter(Boolean).join(" ")],
+    ],
+    "This Card has no event slots.",
+  );
+  if (!args.apply && slots.some((slot) => slot.outcome === "planned")) io.print("Preview only: --apply creates and links the planned event Cards.");
+  if (slots.some((slot) => slot.outcome === "closed-without-card")) {
+    io.print("closed-without-card: the Task was closed before event Cards existed; reopen it to give the event its Card.");
+  }
+  return result;
 }
 
 export async function time(args, io) {
@@ -399,7 +447,10 @@ export async function time(args, io) {
   const result = await apiFor(args).post(`/api/cards/${enc(id)}/time`, body);
   if (!args.json) {
     io.print(`Event: ${result.card.eventTime.startIso} .. ${result.card.eventTime.endIso} (${result.card.eventTime.timeZone})`);
-    for (const invite of result.card.calendarInvites || []) io.print(`invite: ${invite.eventId} ${invite.url || ''}`);
+    if (result.card.anchorDate) io.print(`Card date: ${result.card.anchorDate}${result.movedTasks ? ` (${result.movedTasks} open Tasks re-dated)` : ''}`);
+    for (const invite of result.card.calendarInvites || []) {
+      io.print(`invite: ${invite.eventId} on ${calendarLabel(invite.calendar)}${invite.staleAt ? ' STALE (gone in Google)' : ''} ${invite.url || ''}`);
+    }
     if (result.taskClosure?.message) io.print(`taskClosure (${result.taskClosure.outcome}): ${result.taskClosure.message}`);
   }
   return result;
@@ -407,6 +458,7 @@ export async function time(args, io) {
 
 export const commands = {
   "dedupe-tasks": dedupeTasks,
+  "event-slots": eventSlots,
   time,
   list,
   show,

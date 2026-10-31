@@ -11,9 +11,10 @@ import { TaskDependencyError, type TaskReference } from '../db/taskDependencies'
 import { scanCrmPrefix } from '../db/sponsorCrm';
 import { getTemplate } from '../db/templates';
 import { getCalendarHold, listCalendarHolds, putCalendarHold } from '../db/calendarHolds';
-import { taskRequiresCalendarInvite, makeTaskHistoryEvent } from '../routes/taskValidation';
+import { calendarsMissingInvite, taskRequiresCalendarInvite, makeTaskHistoryEvent } from '../routes/taskValidation';
+import { dateFromTemplateOffset } from '../templates/cardTemplateProjection';
 import { confirmedHoldInvite, confirmedTitle, holdGuestAttendees, parseHoldDocumentUrl, HOLD_ATTENDEE_DENY_LIST, type CalendarHold } from './holds';
-import { createHoldGoogleEvents, updateHoldGoogleEvents, type HoldGoogleDeps } from './holdGoogleSync';
+import { createHoldGoogleEvents, findGoneGoogleEvents, updateHoldGoogleEvents, type HoldGoogleDeps } from './holdGoogleSync';
 
 export class CardInviteConflictError extends Error {}
 export class CardInviteInputError extends Error {}
@@ -92,10 +93,11 @@ export async function closeCardInviteTasks(
   card: Card,
   actorId: string,
 ): Promise<InviteTaskClosureOutcome> {
-  if (!card.calendarInvites?.length) {
+  const missing = calendarsMissingInvite(card);
+  if (missing.length) {
     return {
       outcome: 'not_attempted',
-      message: 'Calendar invite is not linked yet; invite task closure was not attempted.',
+      message: `No live calendar invite on ${missing.join(' and ')} yet; invite task closure was not attempted.`,
       tasks: [],
     };
   }
@@ -280,4 +282,91 @@ export async function syncCardInvite(
     taskClosure,
     ...(storedHold ? { hold: storedHold } : {}),
   };
+}
+
+export interface CardInviteCheck {
+  state: 'verified' | 'deferred';
+  /** Linked invites Google no longer has (marked `staleAt`). */
+  stale: CardCalendarInvite[];
+  reason?: string;
+}
+
+/**
+ * Ask Google whether each linked invite still exists and mark the ones it
+ * reports gone as stale. A stale invite stays listed until it is unlinked;
+ * no Google event is ever deleted.
+ */
+export async function verifyCardInvites(
+  client: DynamoDBDocumentClient, card: Card, deps: HoldGoogleDeps,
+): Promise<{ card: Card; check: CardInviteCheck }> {
+  const live = (card.calendarInvites || []).filter(invite => !invite.staleAt);
+  const result = await findGoneGoogleEvents(live.map(({ calendar, eventId }) => ({ calendar, eventId })), deps);
+  const staleOf = (current: Card) => (current.calendarInvites || []).filter(invite => invite.staleAt);
+  if (result.state === 'deferred') return { card, check: { state: 'deferred', stale: staleOf(card), reason: result.reason } };
+  if (!result.gone.length) return { card, check: { state: 'verified', stale: staleOf(card) } };
+  const gone = new Set(result.gone.map(({ calendar, eventId }) => `${calendar} ${eventId}`));
+  const staleAt = new Date().toISOString();
+  const updated = await updateCardAdditive(client, card, current => ({
+    calendarInvites: (current.calendarInvites || []).map(invite =>
+      !invite.staleAt && gone.has(`${invite.calendar} ${invite.eventId}`) ? { ...invite, staleAt } : invite),
+  }));
+  return { card: updated, check: { state: 'verified', stale: staleOf(updated) } };
+}
+
+/**
+ * Unlink an invite reference (every calendar copy of `eventId`, or only the
+ * one on `calendar`) from the Card. The Google event itself is never touched.
+ * The invitation `cards time` owns is moved with `cards time`, not unlinked.
+ */
+export async function unlinkCardInvite(
+  client: DynamoDBDocumentClient, card: Card, eventId: string, calendar?: string,
+): Promise<{ card: Card; removed: CardCalendarInvite[] }> {
+  const matches = (invite: CardCalendarInvite) => invite.eventId === eventId && (!calendar || invite.calendar === calendar);
+  const removed = (card.calendarInvites || []).filter(matches);
+  if (!removed.length) throw new CardInviteInputError(`Card ${card.id} links no invite ${eventId}${calendar ? ` on ${calendar}` : ''}`);
+  const owned = removed.filter(invite => card.eventTime?.googleEventIds[invite.calendar] === invite.eventId);
+  if (owned.length) {
+    throw new CardInviteConflictError(`Invite ${eventId} is this Card's own invitation from cards time; move it with: dataops cards time ${card.id} --at "YYYY-MM-DD HH:MM"`);
+  }
+  const updated = await updateCardAdditive(client, card, current => ({
+    calendarInvites: (current.calendarInvites || []).filter(invite => !matches(invite)),
+  }));
+  return { card: updated, removed };
+}
+
+/** The event's local calendar date in its own time zone. */
+function localDate(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+}
+
+/**
+ * `cards time` dates an undated ("date TBD") event Card, and keeps a Card
+ * whose date followed its invitation on the invitation's day: the Card date
+ * becomes the event day and its open Template Tasks are re-dated from their
+ * offsets. A Card dated independently of its invitation keeps its date.
+ */
+export async function adoptEventDate(
+  client: DynamoDBDocumentClient, card: Card, previous: Card['eventTime'],
+): Promise<{ card: Card; movedTasks: number }> {
+  if (!card.eventTime || card.eventTime.sync !== 'synced') return { card, movedTasks: 0 };
+  const date = localDate(card.eventTime.startIso, card.eventTime.timeZone);
+  const followed = !card.anchorDate || (previous && card.anchorDate === localDate(previous.startIso, previous.timeZone));
+  if (!followed || card.anchorDate === date) return { card, movedTasks: 0 };
+  const updated = await updateCardAdditive(client, card, () => ({ anchorDate: date }));
+  let movedTasks = 0;
+  for (const task of await listTasksByCardConsistent(client, card.id)) {
+    if (!['todo', 'waiting'].includes(task.status) || typeof task.templateOffsetDays !== 'number') continue;
+    if ((task as { templateAnchor?: string }).templateAnchor === 'end') continue;
+    const taskDate = dateFromTemplateOffset(date, task.templateOffsetDays);
+    if (task.date === taskDate) continue;
+    await updateTask(client, task.id, {
+      expectedVersion: task.version, currentTask: task,
+      patch: {
+        date: taskDate,
+        ...(task.templateDefinitionSnapshot ? { templateDefinitionSnapshot: { ...task.templateDefinitionSnapshot, date: taskDate } } : {}),
+      },
+    });
+    movedTasks += 1;
+  }
+  return { card: (await getCardConsistent(client, updated.id))!, movedTasks };
 }

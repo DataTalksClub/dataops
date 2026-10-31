@@ -159,17 +159,29 @@ export async function createCardFromInput(
   client: DynamoDBDocumentClient,
   actor: VerifiedActor,
   body: Record<string, unknown>,
-  options: { companions?: (card: Card) => PlannedWrite[] } = {},
+  options: {
+    companions?: (card: Card) => PlannedWrite[];
+    /**
+     * Create the Card undated ("date TBD"): it stores no `anchorDate`, and
+     * its Tasks are dated from this date until the Card's date is set.
+     */
+    provisionalAnchorDate?: string;
+  } = {},
 ): Promise<CardCreation> {
   const fail = (statusCode: number, payload: unknown): CardCreation => ({ ok: false, response: json(statusCode, payload) });
 
   if (body.title !== undefined && typeof body.title !== 'string') {
     return fail(400, { error: 'title must be a string' });
   }
-  if (!body.anchorDate) {
+  const undated = options.provisionalAnchorDate !== undefined;
+  if (undated && body.anchorDate !== undefined) {
+    return fail(400, { error: 'An undated Card takes no anchorDate' });
+  }
+  const anchorDate = undated ? options.provisionalAnchorDate : body.anchorDate;
+  if (!anchorDate) {
     return fail(400, { error: 'Missing required field: anchorDate' });
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(body.anchorDate as string)) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(anchorDate as string)) {
     return fail(400, { error: 'Invalid anchorDate format, expected YYYY-MM-DD' });
   }
   if (body.endDate !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(body.endDate as string)) {
@@ -232,7 +244,7 @@ export async function createCardFromInput(
 
   const cardData: Record<string, unknown> = {
     title,
-    anchorDate: body.anchorDate,
+    ...(undated ? {} : { anchorDate }),
     stage: body.stage || 'preparation',
   };
   if (body.endDate !== undefined) cardData.endDate = body.endDate;
@@ -328,7 +340,7 @@ export async function createCardFromInput(
       client,
       cardData,
       template,
-      body.anchorDate as string,
+      anchorDate as string,
       selectedGroups,
       options.companions,
       body.counts as Record<string, number> | undefined,
