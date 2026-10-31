@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { upload, confirm, report, alias, aliases } from "../src/commands/reconcile.mjs";
+import { upload, confirm, report, alias, aliases, balances } from "../src/commands/reconcile.mjs";
 
 const withFakePortal = async (routes, run) => {
   const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
@@ -165,4 +165,39 @@ test("the month-end report round-trips and alias registry commands hit the recon
     const post = calls.find((call) => call.method === "POST");
     assert.deepEqual(JSON.parse(post.body), { alias: "OMANE", sponsor: "Organization Two" });
   });
+});
+
+test("upload accepts a Finom statement, forwards --currency and stores the closing balance", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-test-"));
+  const path = join(directory, "finom.csv");
+  await writeFile(path, "Completed date,Counterparty name,Reference,Amount,Balance\n05.10.2026 08:00:00,Sponsor Three Ltd,202610/03,1 000.00,3 000.00\n");
+  const rows = [{ date: "2026-10-05", amount: "1000.00", currency: "USD", counterparty: "Sponsor Three Ltd", reference: "202610/03" }];
+  const parsedBalances = [{ currency: "USD", amount: "3000.00", asOf: "2026-10-05" }];
+  await withFakePortal([
+    ["/documents/prepare", { outcome: "existing", document: { id: "finom-doc" } }],
+    ["/reconcile/statements/parse", (request) => {
+      const body = JSON.parse(request.options.body);
+      assert.equal(body.account, "finom");
+      assert.equal(body.currency, "USD");
+      return { contentType: "text/csv", rowCount: 1, incomingCount: 1, incomingTotal: "1000.00", rows, balances: parsedBalances, warnings: [] };
+    }],
+    ["/reconcile/statements", (request) => {
+      const body = JSON.parse(request.options.body);
+      assert.deepEqual(body.balances, parsedBalances);
+      return { statement: { id: "stmt-finom", accountId: "finom", period: "2026-10", rows, balances: parsedBalances } };
+    }],
+    ["/reconcile/balances", (request) => {
+      assert.match(request.url, /account=finom/);
+      return { items: [{ accountId: "finom", statementId: "stmt-finom", ...parsedBalances[0] }] };
+    }],
+  ], async () => {
+    const printed = [];
+    const result = await upload({ url: args.url, file: path, account: "finom", period: "2026-10", currency: "usd" }, { print: (line) => printed.push(line) });
+    assert.equal(result.statement.id, "stmt-finom");
+    assert.ok(printed.some((line) => line === "balance 3000.00 USD as of 2026-10-05"), printed.join("\n"));
+    const listed = await balances({ ...args, account: "finom" }, {});
+    assert.equal(listed.items[0].amount, "3000.00");
+  });
+  await assert.rejects(upload({ ...args, file: path, account: "finom", period: "2026-10", currency: "euro" }, {}), /--currency/);
+  await rm(directory, { recursive: true, force: true });
 });

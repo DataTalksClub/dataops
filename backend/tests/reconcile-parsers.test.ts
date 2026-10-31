@@ -1,5 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   parseAmount,
   parseStatement,
@@ -9,6 +11,8 @@ import {
   parseStatementXlsx,
   statementTotal,
 } from '../src/reconcile/parsers';
+
+const fixture = (name: string) => readFileSync(join(__dirname, 'fixtures', 'reconcile', name), 'utf8');
 
 /** Minimal single-page PDF with one Helvetica text line per input line. */
 function pdf(text: string): Buffer {
@@ -95,7 +99,7 @@ describe('statement parsers', () => {
   });
 
   it('rejects files without a usable header row', () => {
-    assert.throws(() => parseStatementCsv('nothing,to,see\n1,2,3\n', 'revolut'), /no (date|amount) column/);
+    assert.throws(() => parseStatementCsv('nothing,to,see\n1,2,3\n', 'merchant'), /no (date|amount) column/);
   });
 
   it('parses a revolut-style PDF statement block layout', () => {
@@ -150,5 +154,64 @@ describe('statement parsers', () => {
       { date: '2026-03-01', amount: '750.00', currency: 'EUR', counterparty: 'Sponsor Six', reference: '202603/21' },
       { date: '2026-03-02', amount: '-64.50', currency: 'EUR', counterparty: 'Catering' },
     ]);
+  });
+
+  it('parses the current Revolut Business all-accounts export', () => {
+    const parsed = parseStatementCsv(fixture('revolut-business-all-accounts.csv'), 'revolut');
+    assert.deepEqual(parsed.rows.map((row) => [row.date, row.amount, row.currency, row.counterparty, row.reference, row.bankId?.slice(-2)]), [
+      ['2026-10-20', '-20.00', 'USD', 'Example Cloud', undefined, '05'],
+      ['2026-10-15', '-460.00', 'EUR', 'Exchanged to USD', undefined, '04'],
+      ['2026-10-15', '500.00', 'USD', 'Exchanged from EUR', undefined, '03'],
+      ['2026-10-05', '-9.80', 'EUR', 'Example Hosting', undefined, '02'],
+      // Booked just after midnight Berlin time: the local completed date wins over UTC.
+      ['2026-10-01', '2500.00', 'EUR', 'Payment from Sponsor One BV', '202610/12', '01'],
+    ]);
+    assert.equal(parsed.warnings.filter((warning) => /skipped a (pending|reverted) row/.test(warning)).length, 2);
+    assert.deepEqual(parsed.balances, [
+      { currency: 'EUR', amount: '4130.00', asOf: '2026-10-15', wallet: 'Main EUR' },
+      { currency: 'USD', amount: '1480.00', asOf: '2026-10-20', wallet: 'Main USD' },
+    ]);
+  });
+
+  it('reads Revolut Business exports with UTC columns only', () => {
+    const csv = [
+      'Date started (UTC),Date completed (UTC),ID,Type,State,Description,Reference,Payer,Card number,Orig currency,Orig amount,Payment currency,Amount,Fee,Balance,Account',
+      '2026-10-02,2026-10-03,b1,TRANSFER,COMPLETED,Payment from Sponsor Seven,202610/7,Sponsor Seven,,EUR,700.00,EUR,700.00,0.00,1700.00,EUR',
+    ].join('\n');
+    const parsed = parseStatementCsv(csv, 'revolut');
+    assert.deepEqual(parsed.rows, [
+      { date: '2026-10-03', amount: '700.00', currency: 'EUR', counterparty: 'Payment from Sponsor Seven', reference: '202610/7', bankId: 'b1' },
+    ]);
+    assert.deepEqual(parsed.balances, [{ currency: 'EUR', amount: '1700.00', asOf: '2026-10-03', wallet: 'EUR' }]);
+  });
+
+  it('parses the Finom statement export, defaulting to EUR, and keeps its closing balance', () => {
+    const parsed = parseStatementCsv(`\uFEFF${fixture('finom-main.csv')}`, 'finom');
+    assert.equal(parsed.rows.length, 7);
+    assert.deepEqual(parsed.warnings, []);
+    assert.deepEqual(parsed.rows[0], { date: '2026-10-31', amount: '-1250.00', currency: 'EUR', counterparty: 'Example Payroll Service', reference: 'October salaries' });
+    assert.deepEqual(parsed.rows[1], { date: '2026-10-28', amount: '2000.00', currency: 'EUR', counterparty: 'Sponsor Two GmbH', reference: 'Invoice 202610/15' });
+    assert.deepEqual(parsed.rows[3], { date: '2026-10-12', amount: '-50.00', currency: 'EUR', counterparty: 'Example Software Inc' });
+    assert.deepEqual(parsed.balances, [{ currency: 'EUR', amount: '3210.55', asOf: '2026-10-31' }]);
+    assert.equal(statementTotal(parsed.rows), '1210.55');
+
+    const usd = parseStatementCsv(fixture('finom-main.csv'), 'finom', { currency: 'USD' });
+    assert.ok(usd.rows.every((row) => row.currency === 'USD'));
+    assert.equal(usd.balances[0].currency, 'USD');
+  });
+
+  it('orders same-day balances by the file direction', () => {
+    const header = 'Completed date,Counterparty name,Reference,Amount,Balance';
+    const oldestFirst = [header, '01.10.2026,A,,10.00,110.00', '01.10.2026,B,,5.00,115.00'].join('\n');
+    const newestFirst = [header, '02.10.2026,C,,1.00,116.00', '01.10.2026,B,,5.00,115.00', '01.10.2026,A,,10.00,110.00'].join('\n');
+    assert.equal(parseStatementCsv(oldestFirst, 'finom').balances[0].amount, '115.00');
+    assert.equal(parseStatementCsv(newestFirst, 'finom').balances[0].amount, '116.00');
+  });
+
+  it('refuses Revolut and Finom files whose columns changed instead of guessing', () => {
+    const renamed = fixture('finom-main.csv').replace('Counterparty name', 'Counterparty');
+    assert.throws(() => parseStatementCsv(renamed, 'finom'), /unrecognized finom export.*Finom statement \(missing Counterparty name\)/);
+    // A generic bank layout is not silently accepted as Revolut.
+    assert.throws(() => parseStatementCsv('Date,Description,Amount,Currency\n2026-10-01,X,1.00,EUR\n', 'revolut'), /unrecognized revolut export/);
   });
 });

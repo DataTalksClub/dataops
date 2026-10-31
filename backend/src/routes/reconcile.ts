@@ -16,6 +16,7 @@ import {
   deleteAlias,
   deleteStatement,
   getStatement,
+  latestBalances,
   listAliases,
   listStatements,
   saveAlias,
@@ -24,6 +25,7 @@ import {
 import { recordRequestError } from "../requestErrorLog";
 
 const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const CURRENCY = /^[A-Z]{3}$/;
 
 const header = (event: LambdaEvent, name: string) =>
   Object.entries(event.headers || {}).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1] || "";
@@ -90,6 +92,7 @@ export async function handleReconcileRoutes(
         ...(body.filename ? { filename: String(body.filename).slice(0, 300) } : {}),
         ...(body.contentType ? { contentType: String(body.contentType).slice(0, 120) } : {}),
         rows: body.rows as never,
+        ...(body.balances !== undefined ? { balances: body.balances as never } : {}),
         ...(Array.isArray(body.warnings) ? { warnings: body.warnings.filter((warning: unknown) => typeof warning === "string") as string[] } : {}),
       });
       return json(201, { statement });
@@ -102,10 +105,12 @@ export async function handleReconcileRoutes(
       if (!STATEMENT_ACCOUNTS.includes(account as StatementAccount)) return json(400, { error: `account must be one of ${STATEMENT_ACCOUNTS.join(", ")}` });
       const documentId = String(body.documentId || "");
       if (!OPAQUE_ID.test(documentId)) return json(400, { error: "documentId is required" });
+      const currency = body.currency === undefined ? undefined : String(body.currency).toUpperCase();
+      if (currency !== undefined && !CURRENCY.test(currency)) return json(400, { error: "currency must be a 3-letter ISO code" });
       const source = await documentBytes(client, documentId);
       let parsed: ParsedStatement;
       try {
-        parsed = await parseStatement(source.contentType, source.bytes, account as StatementAccount);
+        parsed = await parseStatement(source.contentType, source.bytes, account as StatementAccount, currency ? { currency } : {});
       } catch (error) {
         return json(422, { error: `Statement parsing failed: ${(error as Error).message}` });
       }
@@ -118,8 +123,15 @@ export async function handleReconcileRoutes(
         incomingCount: parsed.rows.filter((row) => Number(row.amount) > 0).length,
         incomingTotal: statementTotal(parsed.rows.filter((row) => Number(row.amount) > 0)),
         rows: parsed.rows,
+        balances: parsed.balances,
         warnings: parsed.warnings,
       });
+    }
+
+    if (action === "/balances" && method === "GET") {
+      const account = query.account ? String(query.account) : undefined;
+      if (account !== undefined && !STATEMENT_ACCOUNTS.includes(account as StatementAccount)) return json(400, { error: `account must be one of ${STATEMENT_ACCOUNTS.join(", ")}` });
+      return json(200, { items: await latestBalances(client, account as StatementAccount | undefined) });
     }
 
     const statementId = action.match(/^\/statements\/([^/]+)$/);

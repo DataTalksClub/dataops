@@ -6,8 +6,11 @@
  */
 import { pdfText } from "../invoices/extract";
 
-export const STATEMENT_ACCOUNTS = ["revolut", "mercury", "merchant"] as const;
+export const STATEMENT_ACCOUNTS = ["revolut", "finom", "mercury", "merchant"] as const;
 export type StatementAccount = (typeof STATEMENT_ACCOUNTS)[number];
+
+/** Currency assumed when a statement has no currency column (Finom exports one wallet per file). */
+export const DEFAULT_CURRENCY: Partial<Record<StatementAccount, string>> = { finom: "EUR" };
 
 export type StatementRow = {
   date: string;
@@ -15,9 +18,21 @@ export type StatementRow = {
   currency: string;
   counterparty: string;
   reference?: string;
+  /** The bank's own transaction id, when the export carries one; used to drop rows seen in an overlapping statement. */
+  bankId?: string;
 };
 
-export type ParsedStatement = { rows: StatementRow[]; warnings: string[] };
+/** Closing balance of one wallet: the running balance printed on its latest row. */
+export type StatementBalance = {
+  currency: string;
+  amount: string;
+  asOf: string;
+  /** Sub-account label from multi-account exports (Revolut "Account" column). */
+  wallet?: string;
+};
+
+export type ParsedStatement = { rows: StatementRow[]; warnings: string[]; balances: StatementBalance[] };
+export type ParseOptions = { currency?: string };
 
 const CURRENCY = /^[A-Z]{3}$/;
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -132,10 +147,13 @@ function detectDelimiter(headerLine: string): string {
 const slug = (header: string) => header.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 const DATE_HEADERS = new Set(["starteddate", "completeddate", "date", "transactiondate", "valuedate", "postingdate", "posteddate", "bookingdate"]);
-const DESCRIPTION_HEADERS = new Set(["description", "counterparty", "merchant", "merchantname", "name", "payee", "details", "narrative", "transactiondescription"]);
+const DESCRIPTION_HEADERS = new Set(["description", "counterparty", "counterpartyname", "merchant", "merchantname", "name", "payee", "details", "narrative", "transactiondescription"]);
 const REFERENCE_HEADERS = new Set(["reference", "ref", "paymentreference", "referencenumber", "memo", "transactionreference", "transactionid"]);
 const AMOUNT_HEADERS = new Set(["amount", "transactionamount", "amountvalue", "operationamount"]);
-const CURRENCY_HEADERS = new Set(["currency", "amountcurrency", "transactioncurrency", "currencycode"]);
+const CURRENCY_HEADERS = new Set(["currency", "amountcurrency", "transactioncurrency", "currencycode", "paymentcurrency"]);
+const BALANCE_HEADERS = new Set(["balance", "runningbalance", "balanceafter", "accountbalance"]);
+const WALLET_HEADERS = new Set(["account", "accountname", "wallet"]);
+const BANK_ID_HEADERS = new Set(["id", "transactionid"]);
 const PAID_IN_HEADERS = new Set(["paidin", "moneyin", "credit", "creditamount", "incoming", "inflow", "deposits"]);
 const PAID_OUT_HEADERS = new Set(["paidout", "moneyout", "debit", "debitamount", "outgoing", "outflow", "withdrawals"]);
 const TYPE_HEADERS = new Set(["type", "transactiontype", "direction", "creditdebit"]);
@@ -143,6 +161,8 @@ const STATE_HEADERS = new Set(["state", "status"]);
 
 type ColumnPlan = {
   date: number;
+  /** Used when the preferred date cell is empty (a Revolut row that never completed). */
+  fallbackDate: number;
   description: number;
   reference: number;
   amount: number;
@@ -151,7 +171,11 @@ type ColumnPlan = {
   paidOut: number;
   type: number;
   state: number;
+  balance: number;
+  wallet: number;
+  bankId: number;
   order: "dmy" | "auto";
+  currencyDefault?: string;
 };
 
 function planColumns(headers: string[]): ColumnPlan {
@@ -159,6 +183,7 @@ function planColumns(headers: string[]): ColumnPlan {
     headers.findIndex((header) => header && candidates.has(slug(header)));
   const plan: ColumnPlan = {
     date: find(DATE_HEADERS),
+    fallbackDate: -1,
     description: find(DESCRIPTION_HEADERS),
     reference: find(REFERENCE_HEADERS),
     amount: find(AMOUNT_HEADERS),
@@ -167,6 +192,9 @@ function planColumns(headers: string[]): ColumnPlan {
     paidOut: find(PAID_OUT_HEADERS),
     type: find(TYPE_HEADERS),
     state: find(STATE_HEADERS),
+    balance: find(BALANCE_HEADERS),
+    wallet: find(WALLET_HEADERS),
+    bankId: find(BANK_ID_HEADERS),
     order: "dmy",
   };
   if (plan.date < 0) throw new ParseError(`no date column in headers: ${headers.join(", ")}`);
@@ -176,9 +204,10 @@ function planColumns(headers: string[]): ColumnPlan {
 }
 
 function rowFromCells(cells: string[], plan: ColumnPlan, warnings: string[]): StatementRow | null {
+  const dateCell = cells[plan.date] || (plan.fallbackDate >= 0 ? cells[plan.fallbackDate] || "" : "");
   const state = plan.state >= 0 ? (cells[plan.state] || "").toLowerCase() : "";
   if (state && !["completed", "success", "succeeded", "posted", "done", "paid", ""].includes(state)) {
-    warnings.push(`skipped a ${state} row dated ${cells[plan.date]}`);
+    warnings.push(`skipped a ${state} row dated ${dateCell}`);
     return null;
   }
   let amount = "0.00";
@@ -197,46 +226,188 @@ function rowFromCells(cells: string[], plan: ColumnPlan, warnings: string[]): St
   }
   if (amount === "0.00") return null;
   const counterparty = (plan.description >= 0 ? cells[plan.description] : "") || (plan.reference >= 0 ? cells[plan.reference] : "") || "";
-  if (!counterparty) warnings.push(`row dated ${cells[plan.date]} has no counterparty text`);
+  if (!counterparty) warnings.push(`row dated ${dateCell} has no counterparty text`);
+  const bankId = plan.bankId >= 0 ? (cells[plan.bankId] || "").trim() : "";
   return {
-    date: parseStatementDate(cells[plan.date], plan.order),
+    date: parseStatementDate(dateCell, plan.order),
     amount,
-    currency: ((plan.currency >= 0 ? cells[plan.currency] : "") || "").toUpperCase() || "—",
+    currency: ((plan.currency >= 0 ? cells[plan.currency] : "") || "").toUpperCase() || plan.currencyDefault || "—",
     counterparty: counterparty.replace(/\s+/g, " ").trim(),
     ...(plan.reference >= 0 && cells[plan.reference] ? { reference: cells[plan.reference].trim() } : {}),
+    ...(bankId ? { bankId: bankId.slice(0, 120) } : {}),
   };
 }
 
-function parseTable(headers: string[], dataRows: string[][], account: string): ParsedStatement {
-  const plan = planColumns(headers);
+/** Sortable "HH:MM:SS" from a date cell; rows without a time sort as midnight. */
+function timeOf(value: string): string {
+  const time = value.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  return time ? `${pad(Number(time[1]))}:${time[2]}:${time[3] || "00"}` : "00:00:00";
+}
+
+/**
+ * The closing balance of each wallet is the running balance on its latest
+ * row. Rows that share a timestamp are ordered as the file lists them, read
+ * in the file's own direction (exports come newest-first or oldest-first).
+ */
+function closingBalances(entries: Array<{ row: StatementRow; when: string; balance: string; wallet: string }>): StatementBalance[] {
+  if (!entries.length) return [];
+  const newestFirst = entries[0].when > entries[entries.length - 1].when;
+  const ordered = newestFirst ? [...entries].reverse() : entries;
+  const latest = new Map<string, { when: string; balance: StatementBalance }>();
+  for (const entry of ordered) {
+    const key = `${entry.wallet}|${entry.row.currency}`;
+    const current = latest.get(key);
+    if (current && current.when > entry.when) continue;
+    latest.set(key, {
+      when: entry.when,
+      balance: {
+        currency: entry.row.currency,
+        amount: entry.balance,
+        asOf: entry.row.date,
+        ...(entry.wallet ? { wallet: entry.wallet } : {}),
+      },
+    });
+  }
+  return [...latest.values()].map((item) => item.balance)
+    .sort((left, right) => (left.wallet || "").localeCompare(right.wallet || "") || left.currency.localeCompare(right.currency));
+}
+
+/**
+ * Revolut and Finom always export the same columns, so their statements are
+ * read through a fixed layout: every named column must be present by its
+ * exact header, and a file that matches no layout is refused with the
+ * difference spelled out rather than guessed at.
+ */
+type FixedLayout = {
+  name: string;
+  columns: {
+    date: string;
+    /** Used when the date cell is empty (a row that never completed). */
+    fallbackDate?: string;
+    description: string;
+    reference: string;
+    amount: string;
+    currency?: string;
+    state?: string;
+    balance?: string;
+    wallet?: string;
+    bankId?: string;
+  };
+  /** Columns the layout reads when present but does not require. */
+  optional?: Array<keyof FixedLayout["columns"]>;
+};
+
+export const FIXED_LAYOUTS: Partial<Record<StatementAccount, FixedLayout[]>> = {
+  revolut: [
+    {
+      // Revolut Business "Account statement" CSV, one or all accounts. Booking
+      // dates use the local (Europe/Berlin) completed date when exported.
+      name: "Revolut Business account statement (local time)",
+      columns: {
+        date: "Date completed (Europe/Berlin)", fallbackDate: "Date started (Europe/Berlin)",
+        description: "Description", reference: "Reference", amount: "Amount", currency: "Payment currency",
+        state: "State", balance: "Balance", wallet: "Account", bankId: "ID",
+      },
+    },
+    {
+      name: "Revolut Business account statement (UTC)",
+      columns: {
+        date: "Date completed (UTC)", fallbackDate: "Date started (UTC)",
+        description: "Description", reference: "Reference", amount: "Amount", currency: "Payment currency",
+        state: "State", balance: "Balance", wallet: "Account", bankId: "ID",
+      },
+    },
+    {
+      name: "Revolut account statement (Type/Product layout)",
+      columns: {
+        date: "Completed Date", fallbackDate: "Started Date",
+        description: "Description", reference: "Reference", amount: "Amount", currency: "Currency",
+        state: "State", balance: "Balance",
+      },
+      optional: ["reference"],
+    },
+  ],
+  finom: [
+    {
+      // Finom "Get statement" CSV: one wallet per file, no currency column.
+      name: "Finom statement",
+      columns: { date: "Completed date", description: "Counterparty name", reference: "Reference", amount: "Amount", balance: "Balance" },
+      optional: ["balance"],
+    },
+  ],
+};
+
+const headerKey = (header: string) => header.trim().toLowerCase();
+
+function fixedPlan(headers: string[], account: StatementAccount, layouts: FixedLayout[]): ColumnPlan {
+  const index = new Map(headers.map((header, position) => [headerKey(header), position] as const).reverse());
+  const misses: string[] = [];
+  for (const layout of layouts) {
+    const entries = Object.entries(layout.columns) as Array<[keyof FixedLayout["columns"], string]>;
+    const missing = entries
+      .filter(([field, header]) => !index.has(headerKey(header)) && !layout.optional?.includes(field))
+      .map(([, header]) => header);
+    if (missing.length) {
+      misses.push(`${layout.name} (missing ${missing.join(", ")})`);
+      continue;
+    }
+    const at = (field: keyof FixedLayout["columns"]) => {
+      const header = layout.columns[field];
+      return header === undefined ? -1 : index.get(headerKey(header)) ?? -1;
+    };
+    return {
+      date: at("date"), fallbackDate: at("fallbackDate"), description: at("description"), reference: at("reference"),
+      amount: at("amount"), currency: at("currency"), paidIn: -1, paidOut: -1, type: -1, state: at("state"),
+      balance: at("balance"), wallet: at("wallet"), bankId: at("bankId"), order: "dmy",
+    };
+  }
+  throw new ParseError(`unrecognized ${account} export; the bank may have changed its columns. Headers: ${headers.join(", ")}. Expected one of: ${misses.join("; ")}`);
+}
+
+function parseTable(headers: string[], dataRows: string[][], account: StatementAccount, options: ParseOptions = {}): ParsedStatement {
+  const layouts = FIXED_LAYOUTS[account];
+  const plan = layouts ? fixedPlan(headers, account, layouts) : planColumns(headers);
   if (account === "merchant") plan.order = "auto";
+  if (plan.currency < 0) plan.currencyDefault = options.currency || DEFAULT_CURRENCY[account];
   const warnings: string[] = [];
   const rows: StatementRow[] = [];
+  const balanceEntries: Array<{ row: StatementRow; when: string; balance: string; wallet: string }> = [];
   for (const cells of dataRows) {
     if (!cells.some((cell) => cell)) continue;
     try {
       const row = rowFromCells(cells, plan, warnings);
-      if (row) rows.push(row);
+      if (!row) continue;
+      rows.push(row);
+      const balanceCell = plan.balance >= 0 ? cells[plan.balance] : "";
+      if (balanceCell) {
+        const dateCell = cells[plan.date] || (plan.fallbackDate >= 0 ? cells[plan.fallbackDate] || "" : "");
+        balanceEntries.push({
+          row,
+          when: `${row.date}T${timeOf(dateCell)}`,
+          balance: parseAmount(balanceCell),
+          wallet: plan.wallet >= 0 ? (cells[plan.wallet] || "").trim().slice(0, 120) : "",
+        });
+      }
     } catch (error) {
       if (!(error instanceof ParseError)) throw error;
       warnings.push(error.message);
     }
   }
   if (!rows.length) throw new ParseError("no statement rows parsed");
-  return { rows, warnings };
+  return { rows, warnings, balances: closingBalances(balanceEntries) };
 }
 
-export function parseStatementCsv(text: string, account: StatementAccount): ParsedStatement {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim());
+export function parseStatementCsv(text: string, account: StatementAccount, options: ParseOptions = {}): ParsedStatement {
+  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim());
   if (!lines.length) throw new ParseError("statement file is empty");
   const delimiter = detectDelimiter(lines[0]);
   const headers = splitDelimited(lines[0], delimiter);
   const dataRows = lines.slice(1).map((line) => splitDelimited(line, delimiter));
-  return parseTable(headers, dataRows, account);
+  return parseTable(headers, dataRows, account, options);
 }
 
 /** XLSX: exceljs is loaded lazily so CSV and test paths never pay for it. */
-export async function parseStatementXlsx(bytes: Buffer, account: StatementAccount): Promise<ParsedStatement> {
+export async function parseStatementXlsx(bytes: Buffer, account: StatementAccount, options: ParseOptions = {}): Promise<ParsedStatement> {
   // exceljs ships CommonJS; its ESM namespace wraps the module under default.
   const load = new Function("return import('exceljs')") as () => Promise<{ default?: typeof import("exceljs"); Workbook?: unknown }>;
   const imported = await load();
@@ -259,7 +430,7 @@ export async function parseStatementXlsx(bytes: Buffer, account: StatementAccoun
   });
   while (grid.length && !grid[0].some((cell) => cell)) grid.shift();
   if (!grid.length) throw new ParseError("sheet is empty");
-  return parseTable(grid[0], grid.slice(1), account);
+  return parseTable(grid[0], grid.slice(1), account, options);
 }
 
 const moneyPattern = "\\(?\\+?-?[0-9][0-9.,\\s]*[0-9](?:[.,]\\d{2})?-?\\)?";
@@ -269,9 +440,9 @@ const moneyPattern = "\\(?\\+?-?[0-9][0-9.,\\s]*[0-9](?:[.,]\\d{2})?-?\\)?";
  * a line that opens with a date; the block's last signed amount wins, a
  * "Reference:"-style line inside the block becomes the reference.
  */
-export function parseStatementPdfText(text: string): ParsedStatement {
+export function parseStatementPdfText(text: string, defaultCurrency?: string): ParsedStatement {
   const warnings: string[] = [];
-  const currencyHint = text.match(/(?:account currency|currency)[:\s]+([A-Z]{3})/i)?.[1]?.toUpperCase();
+  const currencyHint = text.match(/(?:account currency|currency)[:\s]+([A-Z]{3})/i)?.[1]?.toUpperCase() || defaultCurrency;
   const dateStart = new RegExp("^(?:\\d{4}-\\d{2}-\\d{2}|\\d{1,2}[ .-](?:\\d{1,2}|[A-Za-z]{3,})[ .-]\\d{2,4})(?=$|[\\s,])");
   const referenceLine = /^(?:payment )?reference(?: \/ description)?[:\s]+(.+)$/i;
   const counterpartyStrip = /^(?:transfer from|received (?:from|payment from)|payment from|incoming transfer from|from|sent to|transfer to|payment to|to|top-?up|card payment to|faster payment (?:from|to)|sepa (?:credit )?(?:from|to))\s+/i;
@@ -325,19 +496,19 @@ export function parseStatementPdfText(text: string): ParsedStatement {
   }
   flush();
   if (!rows.length) throw new ParseError("no statement rows parsed from PDF text");
-  return { rows, warnings };
+  return { rows, warnings, balances: [] };
 }
 
 /** Parse a statement by content type. PDF bytes go through pdfText first. */
-export async function parseStatement(contentType: string, bytes: Buffer, account: StatementAccount): Promise<ParsedStatement> {
+export async function parseStatement(contentType: string, bytes: Buffer, account: StatementAccount, options: ParseOptions = {}): Promise<ParsedStatement> {
   const type = contentType.split(";")[0].trim().toLowerCase();
   if (type === "application/pdf" || bytes.subarray(0, 5).toString("ascii") === "%PDF-") {
-    return parseStatementPdfText(await pdfText(bytes));
+    return parseStatementPdfText(await pdfText(bytes), options.currency || DEFAULT_CURRENCY[account]);
   }
   if (type.includes("spreadsheetml") || type === "application/vnd.ms-excel") {
-    return parseStatementXlsx(bytes, account);
+    return parseStatementXlsx(bytes, account, options);
   }
-  return parseStatementCsv(bytes.toString("utf8"), account);
+  return parseStatementCsv(bytes.toString("utf8"), account, options);
 }
 
 /** Loose identity used to pair a statement row with a ledger transaction. */

@@ -10,10 +10,17 @@ export const summary = "Month-end reconciliation: bank statements, matching, pay
 export const help = `dataops reconcile - month-end reconciliation (the Finance views' command line)
 
 Usage
-  dataops reconcile upload --file statement.(csv|pdf|xlsx) --account revolut|mercury|merchant --period YYYY-MM [--json]
+  dataops reconcile upload --file statement.(csv|pdf|xlsx) --account revolut|finom|mercury|merchant --period YYYY-MM [--currency EUR] [--json]
       Stores the raw statement as a verified private bank-statement document,
       parses its rows server-side and saves them for matching. Re-uploading the
-      same file for the same account and period replaces the stored rows.
+      same file for the same account and period replaces the stored rows;
+      rows that overlap another statement of the same account (a year export
+      next to a month export) are counted once in the report.
+      --currency sets the currency of a file without a currency column
+      (Finom exports default to EUR). The closing balance of each wallet is
+      stored with its as-of date.
+  dataops reconcile balances [--account ACCOUNT] [--json]
+      Latest known balance per account wallet, from uploaded statements.
   dataops reconcile statements [--period YYYY-MM] [--json]
   dataops reconcile statement <id> [--json]
   dataops reconcile report --period YYYY-MM [--json]
@@ -34,7 +41,8 @@ const CONTENT_TYPES = {
   ".csv": "text/csv",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
-const ACCOUNTS = ["revolut", "mercury", "merchant"];
+const ACCOUNTS = ["revolut", "finom", "mercury", "merchant"];
+const CURRENCY = /^[A-Za-z]{3}$/;
 
 function periodOr(args) {
   const period = optionalString(args, "period");
@@ -50,11 +58,13 @@ function contentTypeFor(file) {
 }
 
 export async function upload(args, io) {
-  const usage = "dataops reconcile upload --file statement.(csv|pdf|xlsx) --account revolut|mercury|merchant --period YYYY-MM [--json]";
+  const usage = "dataops reconcile upload --file statement.(csv|pdf|xlsx) --account revolut|finom|mercury|merchant --period YYYY-MM [--currency EUR] [--json]";
   if (!args.file) throw new UsageError(usage);
   const account = String(args.account || "");
   if (!ACCOUNTS.includes(account)) throw new UsageError(`--account must be one of ${ACCOUNTS.join(", ")}`);
   const period = periodOr(args);
+  const currency = optionalString(args, "currency");
+  if (currency !== undefined && !CURRENCY.test(currency)) throw new UsageError("--currency must be a 3-letter ISO code");
   const contentType = contentTypeFor(args.file);
   const bytes = await readFile(String(args.file));
   const sha256 = createHash("sha256").update(bytes).digest("hex");
@@ -75,23 +85,36 @@ export async function upload(args, io) {
     prepared = await api.post(`/api/bookkeeping/documents/${enc(prepared.document.id)}/complete`, { idempotencyKey });
   }
   const documentId = prepared.document.id;
-  const parsed = await api.post("/api/reconcile/statements/parse", { account, documentId });
+  const parsed = await api.post("/api/reconcile/statements/parse", { account, documentId, ...(currency ? { currency: currency.toUpperCase() } : {}) });
   const saved = await api.post("/api/reconcile/statements", {
     account, period, documentId,
     ...(parsed.filename ? { filename: parsed.filename } : {}),
     contentType: parsed.contentType,
     rows: parsed.rows,
+    ...(parsed.balances?.length ? { balances: parsed.balances } : {}),
     ...(parsed.warnings?.length ? { warnings: parsed.warnings } : {}),
   });
   const statement = saved.statement;
   if (!args.json) {
     io.print(`${prepared.outcome === "existing" ? "Reused" : "Stored"} document ${documentId} (sha256 ${sha256.slice(0, 12)}…).`);
     io.print(`Statement ${statement.id}: ${statement.rows.length} rows, ${parsed.incomingCount} incoming, incoming total ${parsed.incomingTotal} across ${account}.`);
+    for (const balance of parsed.balances || []) io.print(`balance ${balance.wallet ? `${balance.wallet} ` : ""}${balance.amount} ${balance.currency} as of ${balance.asOf}`);
     for (const warning of (parsed.warnings || []).slice(0, 5)) io.print(`warning: ${warning}`);
     if ((parsed.warnings || []).length > 5) io.print(`… and ${parsed.warnings.length - 5} more warnings (dataops reconcile statement ${statement.id} --json)`);
     io.print(`Next: dataops reconcile report --period ${period}`);
   }
   return { documentId, statement, parsed };
+}
+
+export async function balances(args, io) {
+  const account = optionalString(args, "account");
+  if (account !== undefined && !ACCOUNTS.includes(account)) throw new UsageError(`--account must be one of ${ACCOUNTS.join(", ")}`);
+  const result = await apiFor(args).get("/api/reconcile/balances", { query: account ? { account } : {} });
+  if (!args.json) {
+    for (const item of result.items) io.print(`${item.accountId}${item.wallet ? ` ${item.wallet}` : ""}  ${item.amount} ${item.currency}  as of ${item.asOf}`);
+    if (!result.items.length) io.print("No balances stored; upload a statement with a balance column.");
+  }
+  return result;
 }
 
 export async function statements(args, io) {
@@ -120,7 +143,7 @@ export async function report(args, io) {
   if (!args.json) {
     io.print(`Reconciliation ${period}`);
     for (const statement of result.statements) {
-      io.print(`statement ${statement.accountId}: ${statement.rowCount} rows (${statement.incomingCount} incoming)${statement.filename ? ` ${statement.filename}` : ""}`);
+      io.print(`statement ${statement.accountId}: ${statement.rowCount} rows (${statement.incomingCount} incoming)${statement.duplicateCount ? `, ${statement.duplicateCount} already in an earlier statement` : ""}${statement.filename ? ` ${statement.filename}` : ""}`);
     }
     if (!result.statements.length) io.print("no statements uploaded for this period");
     io.print("");
@@ -275,4 +298,4 @@ export async function alias(args, io) {
   throw new UsageError("dataops reconcile alias add <alias> --sponsor SPONSOR | alias remove <id>");
 }
 
-export const commands = { upload, statements, statement, report, confirm, aliases, alias };
+export const commands = { upload, balances, statements, statement, report, confirm, aliases, alias };

@@ -203,4 +203,59 @@ describe('reconcile API', () => {
     ]);
     assert.equal(revolut.coveredDays, 5);
   });
+
+  it('counts rows of overlapping statements once and keeps the latest wallet balance', async () => {
+    const year = await call('POST', '/api/reconcile/statements', {
+      account: 'finom', period: '2026-11', documentId: 'finom-year',
+      rows: [
+        row({ date: '2026-11-02', amount: '-40.00', counterparty: 'Example Bank' }),
+        row({ date: '2026-11-03', amount: '900.00', counterparty: 'Sponsor Nine', bankId: 'tx-9' }),
+        row({ date: '2026-11-03', amount: '-5.00', counterparty: 'Coffee' }),
+        row({ date: '2026-11-03', amount: '-5.00', counterparty: 'Coffee' }),
+      ],
+      balances: [{ currency: 'EUR', amount: '2000.00', asOf: '2026-11-03' }],
+    });
+    assert.equal(year.statusCode, 201, year.body);
+    const month = await call('POST', '/api/reconcile/statements', {
+      account: 'finom', period: '2026-11', documentId: 'finom-month',
+      rows: [
+        row({ date: '2026-11-02', amount: '-40.00', counterparty: 'EXAMPLE BANK' }),
+        row({ date: '2026-11-03', amount: '900.00', counterparty: 'Sponsor Nine (renamed)', bankId: 'tx-9' }),
+        row({ date: '2026-11-03', amount: '-5.00', counterparty: 'Coffee' }),
+        row({ date: '2026-11-03', amount: '-5.00', counterparty: 'Coffee' }),
+        row({ date: '2026-11-03', amount: '-5.00', counterparty: 'Coffee' }),
+        row({ date: '2026-11-04', amount: '300.00', counterparty: 'Sponsor Ten' }),
+      ],
+      balances: [{ currency: 'EUR', amount: '2295.00', asOf: '2026-11-04' }],
+    });
+    assert.equal(month.statusCode, 201, month.body);
+    // Re-uploading the same document rewrites its statement instead of adding one.
+    const again = await call('POST', '/api/reconcile/statements', {
+      account: 'finom', period: '2026-11', documentId: 'finom-month', rows: JSON.parse(month.body).statement.rows,
+      balances: [{ currency: 'EUR', amount: '2295.00', asOf: '2026-11-04' }],
+    });
+    assert.equal(JSON.parse(again.body).statement.id, JSON.parse(month.body).statement.id);
+
+    const report = JSON.parse((await invoke('GET', '/api/reconcile/report', undefined, AUTH, { period: '2026-11' })).body);
+    const finom = report.statements.filter((statement: { accountId: string }) => statement.accountId === 'finom');
+    assert.equal(finom.length, 2);
+    const yearSummary = finom.find((statement: { documentId: string }) => statement.documentId === 'finom-year');
+    const monthSummary = finom.find((statement: { documentId: string }) => statement.documentId === 'finom-month');
+    assert.equal(yearSummary.rowCount, 4);
+    assert.equal(yearSummary.duplicateCount, undefined);
+    assert.equal(monthSummary.rowCount, 2, 'the third coffee and Sponsor Ten are new');
+    assert.equal(monthSummary.duplicateCount, 4);
+    assert.equal(report.totals.incomingCount, 2, JSON.stringify(report.totals));
+
+    const balances = JSON.parse((await invoke('GET', '/api/reconcile/balances', undefined, AUTH, { account: 'finom' })).body);
+    assert.deepEqual(balances.items.map((item: Record<string, string>) => [item.accountId, item.currency, item.amount, item.asOf]), [
+      ['finom', 'EUR', '2295.00', '2026-11-04'],
+    ]);
+    const badBalance = await call('POST', '/api/reconcile/statements', {
+      account: 'finom', period: '2026-11', documentId: 'finom-bad', rows: [row()],
+      balances: [{ currency: 'EUR', amount: 'lots', asOf: '2026-11-04' }],
+    });
+    assert.equal(badBalance.statusCode, 400);
+    assert.match(JSON.parse(badBalance.body).error, /balance 0 amount/);
+  });
 });

@@ -3,7 +3,9 @@
  * counterparty aliases live in the bookkeeping table as new item kinds; the
  * raw statement file itself stays a bookkeeping document (private storage),
  * referenced by id. Re-uploading the same file/account/period rewrites the
- * statement record, so uploads are idempotent.
+ * statement record, so uploads are idempotent. Statements of one account
+ * that overlap (a year export next to a month export) are deduplicated row by
+ * row when the report is built.
  */
 import { createHash } from "crypto";
 import { PutCommand } from "@aws-sdk/lib-dynamodb";
@@ -17,7 +19,7 @@ import {
   putBookkeepingItem,
 } from "../db/bookkeeping";
 import { listCrmRecords, scanCrmPrefix } from "../db/sponsorCrm";
-import type { StatementAccount, StatementRow } from "./parsers";
+import type { StatementAccount, StatementBalance, StatementRow } from "./parsers";
 import {
   coverageGaps,
   matchStatements,
@@ -44,6 +46,7 @@ export type StatementRecord = {
   filename?: string;
   contentType?: string;
   rows: StatementRow[];
+  balances?: StatementBalance[];
   from?: string;
   to?: string;
   warnings?: string[];
@@ -58,8 +61,11 @@ export type StatementInput = {
   filename?: string;
   contentType?: string;
   rows: StatementRow[];
+  balances?: StatementBalance[];
   warnings?: string[];
 };
+
+export type AccountBalance = StatementBalance & { accountId: StatementAccount; statementId: string };
 
 export function statementIdFor(documentId: string, accountId: string, period: string): string {
   return createHash("sha256").update(`${documentId}|${accountId}|${period}`).digest("hex").slice(0, 32);
@@ -88,6 +94,25 @@ export function validateRows(rows: unknown): string[] {
     if (typeof candidate.currency !== "string" || !CURRENCY.test(candidate.currency)) problems.push(`${label} currency`);
     if (typeof candidate.counterparty !== "string" || !candidate.counterparty.trim() || candidate.counterparty.length > 300) problems.push(`${label} counterparty`);
     if (candidate.reference !== undefined && (typeof candidate.reference !== "string" || candidate.reference.length > 300)) problems.push(`${label} reference`);
+    if (candidate.bankId !== undefined && (typeof candidate.bankId !== "string" || !candidate.bankId || candidate.bankId.length > 120)) problems.push(`${label} bankId`);
+  });
+  return problems;
+}
+
+const BALANCE_AMOUNT = /^-?(0|[1-9]\d{0,11})(\.\d{1,2})$/;
+
+export function validateBalances(balances: unknown): string[] {
+  if (balances === undefined) return [];
+  if (!Array.isArray(balances) || balances.length > 50) return ["balances must be an array of at most 50 items"];
+  const problems: string[] = [];
+  balances.forEach((balance, index) => {
+    const label = `balance ${index}`;
+    if (!balance || typeof balance !== "object" || Array.isArray(balance)) { problems.push(`${label} must be an object`); return; }
+    const candidate = balance as Record<string, unknown>;
+    if (typeof candidate.currency !== "string" || !CURRENCY.test(candidate.currency)) problems.push(`${label} currency`);
+    if (typeof candidate.amount !== "string" || !BALANCE_AMOUNT.test(candidate.amount)) problems.push(`${label} amount`);
+    if (typeof candidate.asOf !== "string" || !realDate(candidate.asOf)) problems.push(`${label} asOf`);
+    if (candidate.wallet !== undefined && (typeof candidate.wallet !== "string" || !candidate.wallet || candidate.wallet.length > 120)) problems.push(`${label} wallet`);
   });
   return problems;
 }
@@ -96,6 +121,8 @@ export async function saveStatement(client: DynamoDBDocumentClient, input: State
   if (!MONTH.test(input.period)) throw new Error("period must be YYYY-MM");
   const problems = validateRows(input.rows);
   if (problems.length) throw new Error(`invalid statement rows: ${problems.join(", ")}`);
+  const balanceProblems = validateBalances(input.balances);
+  if (balanceProblems.length) throw new Error(`invalid statement balances: ${balanceProblems.join(", ")}`);
   const sorted = [...input.rows].map((row) => ({ ...row })).sort((left, right) => left.date.localeCompare(right.date));
   const id = statementIdFor(input.documentId || "adhoc", input.accountId, input.period);
   const now = new Date().toISOString();
@@ -108,6 +135,7 @@ export async function saveStatement(client: DynamoDBDocumentClient, input: State
     ...(input.filename ? { filename: input.filename } : {}),
     ...(input.contentType ? { contentType: input.contentType } : {}),
     rows: input.rows,
+    ...(input.balances?.length ? { balances: input.balances } : {}),
     from: sorted[0].date,
     to: sorted[sorted.length - 1].date,
     ...(input.warnings?.length ? { warnings: input.warnings.slice(0, 100) } : {}),
@@ -128,6 +156,60 @@ export async function getStatement(client: DynamoDBDocumentClient, id: string): 
 
 export async function listStatements(client: DynamoDBDocumentClient): Promise<StatementRecord[]> {
   return (await listBookkeepingItems(client, "statement")) as unknown as StatementRecord[];
+}
+
+/**
+ * The latest known balance per account wallet and currency, across every
+ * stored statement: the one with the latest as-of date wins, a later upload
+ * breaks ties.
+ */
+export async function latestBalances(client: DynamoDBDocumentClient, accountId?: StatementAccount): Promise<AccountBalance[]> {
+  const latest = new Map<string, { balance: AccountBalance; updatedAt: string }>();
+  for (const record of await listStatements(client)) {
+    if (accountId && record.accountId !== accountId) continue;
+    for (const balance of record.balances || []) {
+      const key = `${record.accountId}|${balance.wallet || ""}|${balance.currency}`;
+      const current = latest.get(key);
+      if (current && (current.balance.asOf > balance.asOf || (current.balance.asOf === balance.asOf && current.updatedAt > record.updatedAt))) continue;
+      latest.set(key, { balance: { accountId: record.accountId, statementId: record.id, ...balance }, updatedAt: record.updatedAt });
+    }
+  }
+  return [...latest.values()].map((item) => item.balance)
+    .sort((left, right) => left.accountId.localeCompare(right.accountId) || (left.wallet || "").localeCompare(right.wallet || "") || left.currency.localeCompare(right.currency));
+}
+
+/**
+ * Identity of a statement row across overlapping statements of one account:
+ * the bank's transaction id when the export has one, otherwise the row's
+ * content plus its occurrence number (two identical card payments on one day
+ * stay two rows).
+ */
+export function rowKeys(rows: StatementRow[]): string[] {
+  const seen = new Map<string, number>();
+  return rows.map((row) => {
+    if (row.bankId) return `id|${row.bankId}|${row.currency}|${row.amount}`;
+    const content = `row|${row.date}|${row.amount}|${row.currency}|${row.counterparty.toLowerCase()}|${row.reference || ""}`;
+    const occurrence = (seen.get(content) || 0) + 1;
+    seen.set(content, occurrence);
+    return `${content}|${occurrence}`;
+  });
+}
+
+/** Per statement, its in-period rows minus those an earlier-uploaded statement of the same account already holds. */
+function dedupedPeriodRows(statements: StatementRecord[], bounds: { start: number; end: number }): Map<string, { rows: StatementRow[]; duplicates: number }> {
+  const result = new Map<string, { rows: StatementRow[]; duplicates: number }>();
+  const seenByAccount = new Map<string, Set<string>>();
+  const byUpload = [...statements].sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
+  for (const record of byUpload) {
+    const seen = seenByAccount.get(record.accountId) || new Set<string>();
+    seenByAccount.set(record.accountId, seen);
+    const rows = rowsInPeriod(record, bounds);
+    const keys = rowKeys(rows);
+    const kept = rows.filter((_, index) => !seen.has(keys[index]));
+    keys.forEach((key) => seen.add(key));
+    result.set(record.id, { rows: kept, duplicates: rows.length - kept.length });
+  }
+  return result;
 }
 
 export async function deleteStatement(client: DynamoDBDocumentClient, id: string): Promise<void> {
@@ -225,9 +307,10 @@ export async function buildReport(client: DynamoDBDocumentClient, period: string
     ...(item.sponsorDealId ? { sponsorDealId: String(item.sponsorDealId) } : {}),
   }));
 
+  const periodRows = dedupedPeriodRows(statements, bounds);
   const matched = matchStatements({
     statements: statements.map((record) => {
-      const rows = rowsInPeriod(record, bounds);
+      const { rows } = periodRows.get(record.id)!;
       return {
         id: record.id,
         accountId: record.accountId,
@@ -243,7 +326,7 @@ export async function buildReport(client: DynamoDBDocumentClient, period: string
   });
 
   const summaries: StatementSummary[] = statements.map((record) => {
-    const rows = rowsInPeriod(record, bounds);
+    const { rows, duplicates } = periodRows.get(record.id)!;
     return {
       id: record.id,
       accountId: record.accountId,
@@ -252,6 +335,7 @@ export async function buildReport(client: DynamoDBDocumentClient, period: string
       period: record.period,
       rowCount: rows.length,
       incomingCount: rows.filter((row) => Number(row.amount) > 0).length,
+      ...(duplicates ? { duplicateCount: duplicates } : {}),
       ...(record.from ? { from: record.from } : {}),
       ...(record.to ? { to: record.to } : {}),
     };

@@ -94,6 +94,8 @@ export type StatementSummary = {
   period: string;
   rowCount: number;
   incomingCount: number;
+  /** In-period rows dropped because an earlier-uploaded statement of the same account already holds them. */
+  duplicateCount?: number;
   from?: string;
   to?: string;
 };
