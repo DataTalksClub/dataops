@@ -88,32 +88,36 @@ test("summary clearly marks a missing invoice and presents conversion metadata",
 });
 
 test("matched statement summary is read-only and exposes the exact bank line and source row", () => {
-  const markup = bookkeepingTransactionSummaryMarkup({
-    transaction: {
-      entryType: "expense",
-      counterparty: "Go Daddy",
-      amount: "178.49",
+  const transaction = {
+    entryType: "expense",
+    counterparty: "Go Daddy",
+    amount: "178.49",
+    currency: "EUR",
+  };
+  const statementLine = {
+    accountLabel: "Revolut Business EUR",
+    statementPeriod: "2026-09",
+    statementRowIndex: 11,
+    line: {
+      date: "2026-09-12",
+      amount: "-178.49",
       currency: "EUR",
+      counterparty: "Go Daddy",
+      reference: ".COM Domain Registration",
     },
+  };
+  const markup = bookkeepingTransactionSummaryMarkup({
+    transaction,
     statementLink: {
-      accountLabel: "Revolut Business EUR",
-      statementPeriod: "2026-09",
-      statementDocumentId: "statement-document",
-      statementRowIndex: 11,
-      line: {
-        date: "2026-09-12",
-        amount: "-178.49",
-        currency: "EUR",
-        counterparty: "Go Daddy",
-        reference: ".COM Domain Registration",
-      },
+      ...statementLine,
+      statementArtifactId: "statement-artifact",
     },
     escape: escapeHtml,
     formatAmount: amount,
   });
 
   assert.match(markup, /Matched statement line/);
-  assert.match(markup, /data-view-document="statement-document"/);
+  assert.match(markup, /data-view-artifact="statement-artifact"/);
   assert.match(markup, /Open statement/);
   assert.match(markup, /Revolut Business EUR/);
   assert.match(markup, /2026-09/);
@@ -122,6 +126,13 @@ test("matched statement summary is read-only and exposes the exact bank line and
   assert.match(markup, /\.COM Domain Registration/);
   assert.match(markup, /Source parsed line<\/dt><dd>12<\/dd>/);
   assert.doesNotMatch(markup, /<input|<textarea|contenteditable/);
+  const documentMarkup = bookkeepingTransactionSummaryMarkup({
+    transaction,
+    statementLink: { ...statementLine, statementDocumentId: "statement-document" },
+    escape: escapeHtml,
+    formatAmount: amount,
+  });
+  assert.match(documentMarkup, /data-view-document="statement-document"/);
 });
 
 test("unmatched transaction offers candidate statement rows and a link action", () => {

@@ -71,9 +71,12 @@ function statementLineMarkup(statementLink, { e, amount }) {
     ? `<dt>Source parsed line</dt><dd>${e(rowIndex + 1)}</dd>`
     : "";
   const documentId = text(statementLink.statementDocumentId || statementLink.documentId);
+  const artifactId = text(statementLink.statementArtifactId || statementLink.artifactId);
   const openStatement = documentId
     ? `<button type="button" class="dk-button dk-button--secondary" data-view-document="${e(documentId)}">Open statement</button>`
-    : `<button type="button" class="dk-button dk-button--secondary" disabled>Open statement</button>`;
+    : artifactId
+      ? `<button type="button" class="dk-button dk-button--secondary" data-view-artifact="${e(artifactId)}">Open statement</button>`
+      : `<button type="button" class="dk-button dk-button--secondary" disabled>Open statement</button>`;
   const details = [
     ["Account", statementLink.accountLabel],
     ["Statement period", statementLink.statementPeriod],
@@ -84,7 +87,7 @@ function statementLineMarkup(statementLink, { e, amount }) {
   ].filter(([, value]) => filled(value));
   return `<section class="bk-transaction-statement" aria-labelledby="bk-transaction-statement-heading">
     <h3 id="bk-transaction-statement-heading">Matched statement line</h3>
-    <button type="button" class="bk-transaction-statement__record" data-view-document="${e(documentId)}"${documentId ? "" : " disabled"}>
+    <button type="button" class="bk-transaction-statement__record"${documentId ? ` data-view-document="${e(documentId)}"` : artifactId ? ` data-view-artifact="${e(artifactId)}"` : " disabled"}>
       <span class="bk-transaction-statement__account">${e(statementLink.accountLabel || "Bank account")}</span>
       <span class="bk-transaction-statement__period">${e(statementLink.statementPeriod || "Statement period unavailable")}</span>
       <span class="bk-transaction-statement__line">${e(line.date || "Date unavailable")} · ${e(lineAmount)}</span>

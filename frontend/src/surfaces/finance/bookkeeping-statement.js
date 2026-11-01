@@ -111,6 +111,7 @@ export function statementLinkForTransaction(transaction, monthViews, statementRe
     statementId: String(statement.id),
     statementPeriod: String(statement.period || ""),
     statementDocumentId: statement.documentId ? String(statement.documentId) : "",
+    statementArtifactId: statement.artifactId ? String(statement.artifactId) : "",
     statementFilename: statement.filename ? String(statement.filename) : "",
     statementContentType: statement.contentType ? String(statement.contentType) : "",
     bankKey: String(bank.key || ""),

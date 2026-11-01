@@ -37,6 +37,7 @@ test("a matched ledger row resolves its real statement and exact source line", (
       accountId: "revolut",
       period: "2026-09",
       documentId: "document-1",
+      artifactId: "artifact-1",
       filename: "revolut-september.csv",
       contentType: "text/csv",
       rows: [
@@ -63,6 +64,7 @@ test("a matched ledger row resolves its real statement and exact source line", (
     statementId: "statement-1",
     statementPeriod: "2026-09",
     statementDocumentId: "document-1",
+    statementArtifactId: "artifact-1",
     statementFilename: "revolut-september.csv",
     statementContentType: "text/csv",
     bankKey: "revolut|row-1",
