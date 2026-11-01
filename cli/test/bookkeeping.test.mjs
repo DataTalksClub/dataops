@@ -407,3 +407,53 @@ test("facts reads only unattached invoices and receipts that were not read yet",
   assert.equal(await run(["bookkeeping", "facts", "--apply"], io), 0);
   assert.match(io.text(), /applied: read 1 \(deterministic-stripe 1\), failed 0/);
 });
+
+test("bookkeeping show preserves stored fields and filters evidence links with GET only", async () => {
+  const transaction = {
+    id: "tx-one", transactionDate: "2026-10-15", amount: "59.99", currency: "EUR",
+    entryType: "income", sourceType: "platform-payout", category: "Refund",
+    counterparty: "Example Vendor", statementRef: "Example Bank", bankTransactionId: "bank-one",
+    voidedAt: "2026-10-16T12:00:00Z", createdAt: "2026-10-15T12:00:00Z",
+    updatedAt: "2026-10-16T12:00:00Z", updatedBy: "example-actor",
+  };
+  const link = { id: "link-one", transactionId: transaction.id, documentId: "doc-one", coverageType: "evidence" };
+  const calls = fakePortal({
+    "GET /api/bookkeeping/transactions/tx-one": transaction,
+    "GET /api/bookkeeping/links": { items: [link, { transactionId: "other", documentId: "other-doc" }] },
+  });
+  for (const flags of [["--json"], []]) {
+    const io = captureIo();
+    assert.equal(await run(["bookkeeping", "show", "tx-one", ...flags], io), 0);
+    assert.deepEqual(io.json(), { ...transaction, links: [link] });
+  }
+  assert.deepEqual(calls.map(({ method, route }) => [method, route]), [
+    ["GET", "/api/bookkeeping/transactions/tx-one"], ["GET", "/api/bookkeeping/links"],
+    ["GET", "/api/bookkeeping/transactions/tx-one"], ["GET", "/api/bookkeeping/links"],
+  ]);
+  assert.ok(calls.every(({ headers }) => headers.Authorization === "Bearer dops_test"));
+});
+
+test("bookkeeping show reports not found and unauthorized without further requests", async () => {
+  for (const [status, error, exit] of [[404, "Not found", 4], [401, "Unauthorized", 3], [403, "Forbidden", 3]]) {
+    const calls = fakePortal({ "GET /api/bookkeeping/transactions/missing": { status, body: { error } } });
+    const io = captureIo();
+    assert.equal(await run(["bookkeeping", "show", "missing", "--json"], io), exit);
+    assert.equal(JSON.parse(io.errors[0]).error.status, status);
+    assert.match(io.errors[0], new RegExp(error));
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "GET");
+  }
+});
+
+test("bookkeeping show requires exactly one id and encodes the path segment", async () => {
+  const calls = fakePortal({
+    "GET /api/bookkeeping/transactions/a%2Fb": { id: "a/b" },
+    "GET /api/bookkeeping/links": { items: [] },
+  });
+  for (const ids of [[], ["one", "two"]])
+    assert.equal(await run(["bookkeeping", "show", ...ids], captureIo()), 2);
+  assert.equal(calls.length, 0);
+  const io = captureIo();
+  assert.equal(await run(["bookkeeping", "show", "a/b", "--json"], io), 0);
+  assert.deepEqual(io.json(), { id: "a/b", links: [] });
+});

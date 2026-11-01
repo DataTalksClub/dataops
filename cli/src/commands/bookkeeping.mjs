@@ -8,6 +8,10 @@ export const summary = "Bookkeeping: sync from the spreadsheet, fill classificat
 export const help = `dataops bookkeeping - keep DataOps transactions in step with the bookkeeping sheet
 
 Usage
+  dataops bookkeeping show <transaction-id> [--json]
+      Read all stored transaction fields and document/evidence links. No writes.
+      Absent bank, void or audit fields remain absent.
+
   dataops bookkeeping sync --sheet <spreadsheet-id> [--apply]
   dataops bookkeeping sync <csv-dir> [--apply]
       Compare the bookkeeping sheet with DataOps transactions. Adds rows DataOps
@@ -340,4 +344,15 @@ export async function addIncome(args, io) {
   return result;
 }
 
-export const commands = { sync, classify, facts, "add-income": addIncome };
+export async function show(args, io) {
+  if (args._.length !== 1 || !String(args._[0]).trim())
+    throw new UsageError("Usage: dataops bookkeeping show <transaction-id> [--json]");
+  const api = apiFor(args);
+  const transaction = await api.get(`/api/bookkeeping/transactions/${encodeURIComponent(args._[0])}`);
+  const linked = await api.get("/api/bookkeeping/links");
+  const result = { ...transaction, links: linked.items.filter((link) => link.transactionId === transaction.id) };
+  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  return result;
+}
+
+export const commands = { show, sync, classify, facts, "add-income": addIncome };
