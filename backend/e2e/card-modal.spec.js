@@ -144,10 +144,13 @@ test.describe('card dialog over the current page', () => {
   test('Calendar: an event Card opens over the calendar and Escape returns to it', async ({ page, request }) => {
     const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const calendarWorkday = (isoDate) => {
-      const d = new Date(`${isoDate}T00:00:00Z`);
+      // Keep the synthetic event in the month the calendar opens. Moving
+      // Sunday back to Friday can put it in the previous month when today is
+      // the first, where the calendar correctly will not show the event.
+      const d = new Date(`${isoDate.slice(0, 7)}-15T00:00:00Z`);
       const day = d.getUTCDay();
-      if (day === 0) d.setUTCDate(d.getUTCDate() - 2);
-      else if (day === 6) d.setUTCDate(d.getUTCDate() - 1);
+      if (day === 0) d.setUTCDate(d.getUTCDate() + 1);
+      else if (day === 6) d.setUTCDate(d.getUTCDate() + 2);
       return d.toISOString().slice(0, 10);
     };
     const { template } = await json(await request.post(at('/__e2e__/template-fixtures'), {
