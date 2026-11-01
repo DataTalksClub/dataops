@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { invoiceDetailMarkup, invoiceLedgerMarkup } from "../src/surfaces/finance/invoices.js";
-const escape = value => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
+import { escapeHtml as escape } from "../src/core/html.js";
 const draft = { id: "demo", revision: 3, status: "pending", fields: { counterparty: "Example <Vendor>", amount: "12.00", currency: "USD", archiveRequired: true }, extraction: { method: "bounded-pdf-text", evidence: ["Invoice total label"], issues: ["Payment requires bank evidence"] }, source: { intakeItemIds: ["intake-demo"], artifactId: "artifact-demo", checksum: "sanitized-checksum" }, destinations: { dropbox: { state: "pending", operationId: "archive-demo" }, sheets: { state: "pending", operationId: "sheet-demo" } }, missingEvidence: ["amountEur", "paidDate"], publicationStatus: "not-confirmed", audit: [] };
 
 test("pending invoice presents source evidence, actual payment correction and current verification", () => {
   const markup = invoiceDetailMarkup(draft, escape);
-  assert.ok(markup.includes("Example &lt;Vendor>"));
+  assert.ok(markup.includes("Example &lt;Vendor&gt;"));
   for (const value of ["Revision 3", "bounded-pdf-text", "intake-demo", "artifact-demo", "Missing evidence: amountEur", "Actual EUR paid", "Payment evidence / operator attestation", "Invoice tax conversion is not bank payment evidence", "data-invoice-document", 'data-invoice-action="verify"', 'data-invoice-action="reject"']) assert.ok(markup.includes(value), value);
 });
 

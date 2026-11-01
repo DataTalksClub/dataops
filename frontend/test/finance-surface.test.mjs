@@ -4,6 +4,7 @@ import { afterEach, describe, test } from "node:test";
 import { formatAmount } from "../src/surfaces/finance/bookkeeping-format.js";
 
 import { createFinanceSurface } from "../src/surfaces/finance/index.js";
+import { escapeHtml } from "../src/core/html.js";
 import { createSponsorFinance } from "../src/surfaces/finance/sponsor-finance.js";
 import { createFinanceRecordForms, followUpSummary, replaceablePayment } from "../src/surfaces/finance/sponsor-finance-records.js";
 import {
@@ -294,15 +295,6 @@ class FakeFormData {
   get(name) {
     return this.entries.find(([key]) => key === name)?.[1] ?? null;
   }
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 function humanizeOptionLabel(value) {

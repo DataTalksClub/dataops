@@ -141,7 +141,7 @@ const mountScript = async () => {
     documentList: document.querySelector("#document-list"),
     request,
     workApiUrl: (url) => url,
-    escapeHtml: (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;"),
+    escapeHtml: (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;"),
     humanizeOptionLabel: (value) => String(value || "").replaceAll("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()),
     setRouteTitle: () => {},
     todayIsoDate: () => "2026-10-15",

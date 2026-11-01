@@ -17,8 +17,7 @@ import {
   vocabulary,
 } from "../src/surfaces/finance/bookkeeping-ledger.js";
 
-const escapeHtml = (value) =>
-  String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
+import { escapeHtml } from "../src/core/html.js";
 
 // Synthetic rows shaped like the imported sheet.
 const rows = Object.freeze([
@@ -121,7 +120,7 @@ test("suggested matches offer attaching a file or opening the sponsor deal", () 
   });
   assert.match(markup, /data-attach-suggestion="doc-9"/);
   assert.match(markup, /data-view-document="doc-9"/);
-  assert.match(markup, /Cloudbase &lt;Inc>/);
+  assert.match(markup, /Cloudbase &lt;Inc&gt;/);
   assert.match(markup, /Same amount, 1 day apart/);
   assert.match(markup, /href="\/sponsors\/deals\/deal%201"/);
   assert.match(markup, /€2,000\.00 outstanding/);

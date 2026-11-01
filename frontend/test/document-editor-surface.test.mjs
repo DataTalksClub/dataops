@@ -16,6 +16,7 @@ import {
   PROCEDURE_BLOCKS,
 } from "../src/surfaces/document-editor/slash-menu.js";
 import { emitProcedure, parseProcedure, stepsOf } from "../src/surfaces/document-editor/procedure-model.js";
+import { escapeHtml } from "../src/core/html.js";
 import {
   FakeDocument,
   FakeElement,
@@ -272,11 +273,7 @@ function createEditorHarness(options = {}) {
       return options.confirm !== false;
     },
     emptyNote: undefined,
-    escapeHtml: (value) =>
-      String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;"),
+    escapeHtml,
     fetchBacklinksForCurrentDoc() {},
     getActiveWorkspaceRouteToken: () => routeToken,
     documentState,

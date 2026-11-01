@@ -1,4 +1,5 @@
 import "../../dakit/collection.js";
+import { escapeHtml as coreEscapeHtml } from "../../core/html.js";
 import { html } from "./shared.js";
 import { leadsSectionMarkup } from "./sponsor-leads.js";
 import { renderPageHeaderMarkup } from "../operations-overview.js";
@@ -21,7 +22,7 @@ function options(values, humanize) {
     .join("");
 }
 
-export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = (value) => String(value ?? ""), initialTab = "pipeline" } = {}) {
+export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = coreEscapeHtml, initialTab = "pipeline" } = {}) {
   const dealStatusOptions = options(DEAL_STATUSES, humanizeOptionLabel);
   const productOptions = options(PRODUCT_KINDS, (kind) => ({ "one-off": "One-off", package: "Package", course: "Course" })[kind]);
   const channelOptions = options(CHANNELS, humanizeOptionLabel);

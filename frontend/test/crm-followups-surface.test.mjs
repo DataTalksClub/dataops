@@ -61,26 +61,26 @@ describe("CRM follow-ups and DNC frontend surface components", () => {
 
   it("person header renders DNC badge and toggle button when person is marked DNC", () => {
     const dncPerson = { id: "p1", name: "Allie Beazell", doNotContact: true };
-    const html = personHeaderMarkup(dncPerson, { canEdit: true }, { escapeHtml: (s) => s });
+    const html = personHeaderMarkup(dncPerson, { canEdit: true }, {});
     assert.ok(html.includes("Do Not Contact"));
     assert.ok(html.includes("data-toggle-person-dnc"));
     assert.ok(html.includes("Remove DNC"));
 
     const normalPerson = { id: "p2", name: "Normal Person", doNotContact: false };
-    const normalHtml = personHeaderMarkup(normalPerson, { canEdit: true }, { escapeHtml: (s) => s });
+    const normalHtml = personHeaderMarkup(normalPerson, { canEdit: true }, {});
     assert.ok(!normalHtml.includes("data-status=\"dnc\""));
     assert.ok(normalHtml.includes("Mark Do-Not-Contact"));
   });
 
   it("company header renders DNC badge and toggle button when company is marked DNC", () => {
     const dncCompany = { id: "c1", displayName: "Fabi.ai", doNotContact: true };
-    const html = recordHeaderMarkup(dncCompany, { canEdit: true }, { escapeHtml: (s) => s });
+    const html = recordHeaderMarkup(dncCompany, { canEdit: true }, {});
     assert.ok(html.includes("Do Not Contact"));
     assert.ok(html.includes("data-toggle-company-dnc"));
     assert.ok(html.includes("Remove DNC"));
 
     const normalCompany = { id: "c2", displayName: "Normal Corp", doNotContact: false };
-    const normalHtml = recordHeaderMarkup(normalCompany, { canEdit: true }, { escapeHtml: (s) => s });
+    const normalHtml = recordHeaderMarkup(normalCompany, { canEdit: true }, {});
     assert.ok(!normalHtml.includes("data-status=\"dnc\""));
     assert.ok(normalHtml.includes("Mark Do-Not-Contact"));
   });
@@ -89,18 +89,18 @@ describe("CRM follow-ups and DNC frontend surface components", () => {
     const personHtml = personHeaderMarkup(
       { id: "p1", name: "Jane", follow_up_at: "2026-11-05", follow_up_status: "open" },
       { canEdit: false },
-      { escapeHtml: (s) => s },
+      {},
     );
     assert.ok(personHtml.includes("Follow-up 2026-11-05"));
 
     const companyHtml = recordHeaderMarkup(
       { id: "c1", displayName: "Acme", follow_up_at: "2026-11-06", follow_up_status: "done" },
       { canEdit: false },
-      { escapeHtml: (s) => s },
+      {},
     );
     assert.ok(companyHtml.includes("Follow-up 2026-11-06 (done)"));
 
-    const plainHtml = recordHeaderMarkup({ id: "c2", displayName: "Plain" }, {}, { escapeHtml: (s) => s });
+    const plainHtml = recordHeaderMarkup({ id: "c2", displayName: "Plain" }, {}, {});
     assert.ok(!plainHtml.includes("data-status=\"followup\""));
   });
 
@@ -119,14 +119,14 @@ describe("CRM follow-ups and DNC frontend surface components", () => {
         follow_up_at: "2026-10-20", follow_up_status: "open", follow_up_note: "revisit",
         isDue: true, isOverdue: true,
       }],
-    }, { escapeHtml: (s) => s });
+    }, {});
     assert.ok(html.includes("Contact and company follow-ups"));
     assert.ok(html.includes("Beta Ltd"));
     assert.ok(html.includes("revisit"));
     assert.ok(html.includes("Follow-up tasks"));
     assert.ok(html.includes("Check deck"));
 
-    const empty = followupsTablesMarkup({ items: [], records: [] }, { escapeHtml: (s) => s });
+    const empty = followupsTablesMarkup({ items: [], records: [] }, {});
     assert.ok(empty.includes("No open follow-ups."));
   });
 });

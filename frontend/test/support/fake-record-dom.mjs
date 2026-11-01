@@ -195,14 +195,7 @@ export class FakeNode {
   }
 }
 
-export function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+export { escapeHtml } from "../../src/core/html.js";
 
 /** api stub: route `${METHOD} ${path}` (or path prefix) to handlers. */
 export function createApiStub(routes = {}, calls = []) {

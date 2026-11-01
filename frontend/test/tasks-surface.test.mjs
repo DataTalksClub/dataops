@@ -27,6 +27,7 @@ import {
   workTaskTitle,
 } from "../src/core/workspace.js";
 import { createOperationsModel } from "../src/core/operations-model.js";
+import { escapeHtml } from "../src/core/html.js";
 import { createTasksSurface } from "../src/surfaces/tasks/index.js";
 import {
   FakeDocument,
@@ -49,14 +50,6 @@ afterEach(() => {
   if (originalDocument === undefined) delete globalThis.document;
   else globalThis.document = originalDocument;
 });
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
 
 function countLabel(count, singular, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;

@@ -44,7 +44,7 @@ try {
       if (url.endsWith("/retry")) record = { ...record, publicationStatus: "complete", destinations: { ...record.destinations, sheets: { state: "verified", operationId: "sheet-demo", reference: "synthetic-row" } } };
       return url.endsWith("/invoices") ? { items: [record] } : record;
     };
-    await createFinanceSurface({ documentList: document.querySelector("#finance"), request, workApiUrl: url => url, escapeHtml: value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;"), humanizeOptionLabel: value => value, setRouteTitle: () => {} }).renderBookkeepingSurface();
+    await createFinanceSurface({ documentList: document.querySelector("#finance"), request, workApiUrl: url => url, escapeHtml: value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;"), humanizeOptionLabel: value => value, setRouteTitle: () => {} }).renderBookkeepingSurface();
   });
   assert.match(await page.locator("[data-invoice-list]").innerText(), /1 invoice · 1 pending review/);
   const detail = page.locator("[data-invoice-detail]");

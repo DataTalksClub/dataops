@@ -40,11 +40,7 @@ import {
   validateViewSort,
 } from "../src/surfaces/finance/sponsor-saved-views.js";
 
-const escapeHtml = (value) => String(value ?? "")
-  .replaceAll("&", "&amp;")
-  .replaceAll("<", "&lt;")
-  .replaceAll(">", "&gt;")
-  .replaceAll('"', "&quot;");
+import { escapeHtml } from "../src/core/html.js";
 const rows = { escapeHtml, humanDate: (value) => String(value).slice(0, 10) };
 
 // --- Navigation: Pipeline · Companies · People primary, More secondary ---

@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { pipelineControlsFromFilters, renderSponsorPipelineList, renderSponsorPipelineFilters } from "../src/surfaces/finance/sponsor-pipeline.js";
-
-const escapeHtml = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
+import { escapeHtml } from "../src/core/html.js";
 
 test("funnel renders compact rows grouped by commitments and opportunities, with escaped primary people and actions", () => {
   const items = [
@@ -13,7 +12,7 @@ test("funnel renders compact rows grouped by commitments and opportunities, with
   const markup = renderSponsorPipelineList({ items, escapeHtml, humanSponsorDate: (value) => value, ownerName: () => "Synthetic owner" });
   assert.match(markup, /Active commitments/);
   assert.match(markup, /Opportunities & history/);
-  assert.match(markup, /Synthetic &lt;Sponsor>/);
+  assert.match(markup, /Synthetic &lt;Sponsor&gt;/);
   assert.match(markup, /Test Person · test@example.test/);
   assert.match(markup, /Confirm the date/);
   assert.match(markup, /Review newer inbound/);
@@ -44,17 +43,16 @@ test("Sponsors creates ride on their collections, never the page header", async 
 
 test("sponsor owner options use the directory, preserve selected owners and escape labels", async () => {
   const { sponsorOwnerOptions } = await import("../src/surfaces/finance/sponsor-deal-form.js");
-  const escapeOwner = (value) => escapeHtml(value).replaceAll(">", "&gt;");
   const members = [
     { id: "synthetic-operator", name: "New <Operator>", active: true },
     { id: "inactive", name: "Former Operator", active: false },
   ];
-  const options = sponsorOwnerOptions(members, "synthetic-operator", escapeOwner);
+  const options = sponsorOwnerOptions(members, "synthetic-operator", escapeHtml);
   assert.match(options, /value="synthetic-operator" selected/);
   assert.match(options, /New &lt;Operator&gt;/);
   assert.doesNotMatch(options, /Former Operator|Grace/);
-  assert.match(sponsorOwnerOptions(members, "inactive", escapeOwner), /value="inactive" selected disabled/);
-  assert.match(sponsorOwnerOptions(members, "deleted", escapeOwner), /value="deleted" selected disabled>Unavailable assignee/);
+  assert.match(sponsorOwnerOptions(members, "inactive", escapeHtml), /value="inactive" selected disabled/);
+  assert.match(sponsorOwnerOptions(members, "deleted", escapeHtml), /value="deleted" selected disabled>Unavailable assignee/);
   assert.equal(members.length, 2, "rendering leaves the directory unchanged");
 });
 

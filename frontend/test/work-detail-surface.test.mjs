@@ -20,6 +20,7 @@ import {
   workTaskTitle,
 } from "../src/core/workspace.js";
 import { createWorkDetailSurface } from "../src/surfaces/work-detail/index.js";
+import { escapeHtml } from "../src/core/html.js";
 import {
   FakeDocument,
   FakeElement,
@@ -34,14 +35,6 @@ afterEach(() => {
   if (originalDocument === undefined) delete globalThis.document;
   else globalThis.document = originalDocument;
 });
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
 
 function apiUrl(path, params = {}) {
   const query = new URLSearchParams();

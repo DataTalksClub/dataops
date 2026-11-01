@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
 import { createPlanningSurface } from "../src/surfaces/planning.js";
+import { escapeHtml } from "../src/core/html.js";
 import { setupCalendarSettingsDialog, setupDayScheduleDialog } from "../src/surfaces/planning-calendar-dialogs.js";
 
 const originalDocument = globalThis.document;
@@ -157,15 +158,6 @@ class TestFormData {
   [Symbol.iterator]() {
     return this.entries[Symbol.iterator]();
   }
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 function nextTicks(count = 3) {
@@ -342,7 +334,7 @@ describe("Planning surface production behavior", () => {
   test("day schedule exposes a deferred Google sync reason on its saved hold", async () => {
     const dom = createCalendarDom();
     const dialog = setupDayScheduleDialog({
-      surface: dom.surface, api: async () => ({ items: [] }), escapeHtml: (s) => s,
+      surface: dom.surface, api: async () => ({ items: [] }), escapeHtml,
       todayIsoDate: () => '2026-08-13', getCalendarState: () => ({ items: [] }),
       holdsApi: async () => ({ holds: [{ id: 'proof', title: 'Test', status: 'tentative', window: 'evening', durationMinutes: 60, googleSync: { state: 'deferred', reason: 'No Dapier calendar connection selected' } }] }),
     });
@@ -357,7 +349,7 @@ describe("Planning surface production behavior", () => {
     const picker = dom.settingsDialog.querySelector("#dapier-calendar-connections");
     let selected = "";
     let saved;
-    setupCalendarSettingsDialog({ surface: dom.surface, escapeHtml: (s) => s, api: async (_path, options) => {
+    setupCalendarSettingsDialog({ surface: dom.surface, escapeHtml, api: async (_path, options) => {
       if (options?.method === "PUT") { saved = JSON.parse(options.body); return {}; }
       return { settings: { connectionId: selected }, connections: [], connectionProblem: "Calendar connection needs a Dapier use grant" };
     } });

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
 import { createAdminSurface } from "../src/surfaces/operations/index.js";
+import { escapeHtml } from "../src/core/html.js";
 import {
   FakeDocument,
   FakeElement,
@@ -16,14 +17,6 @@ afterEach(() => {
   if (originalDocument === undefined) delete globalThis.document;
   else globalThis.document = originalDocument;
 });
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
 
 function apiUrl(path, params = {}) {
   const query = new URLSearchParams();

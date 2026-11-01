@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import { cashChartMarkup, formatEur, overviewMarkup, periodFromParams } from "../src/surfaces/finance/overview.js";
-
-const e = (value) => String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+import { escapeHtml as e } from "../src/core/html.js";
 const totals = (fields) => ({
   moneyIn: 0, moneyOut: 0, net: 0, operatingIncome: 0, operatingExpenses: 0, outputVat: 0, inputVat: 0,
   incomeNetOfVat: 0, expensesNetOfVat: 0, netProfitExVat: 0, projectedVat: 0, vatPaid: 0, vatRefunded: 0,

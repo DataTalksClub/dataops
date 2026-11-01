@@ -45,6 +45,37 @@ describe("frontend architecture contract", () => {
     assert.deepEqual(local, [], "use escapeHtml from src/core/html.js");
   });
 
+  test("never falls back to String or identity for escapeHtml", () => {
+    // A String or identity fallback silently disables escaping: a value with
+    // a quote breaks out of the double-quoted attributes the markup fills.
+    // Every surface receives the core escaper through context or imports it.
+    const fallbackPatterns = [
+      [/(?:const|let|var)\s+escapeHtml\s*=/, "local escapeHtml binding"],
+      [/function\s+escapeHtml\s*\(/, "local escapeHtml function"],
+      [/function\s+esc\s*\(/, "local esc() helper"],
+      [/\bescapeHtmlAttr\b/, "escapeHtmlAttr copy"],
+      [/\bescapeHtml\s*=\s*String\b/, "escapeHtml = String"],
+      [/\bescapeHtml\s*=\s*\(.*?\)\s*=>\s*String\(/, "escapeHtml default to String()"],
+      [/\bescapeHtml\s*:\s*String\b/, "escapeHtml: String"],
+      [/typeof\s+escapeHtml/, "typeof escapeHtml fallback check"],
+      [/\?\s*escapeHtml\s*:\s*String/, "? escapeHtml : String"],
+      [/\|\|\s*String\b.*escapeHtml|escapeHtml.*\|\|\s*String/, "escapeHtml || String"],
+      [/\bescapeHtml\s*\|\|/, "escapeHtml || fallback"],
+      [/\bescapeHtml\s*\?\?/, "escapeHtml ?? fallback"],
+      [/escapeHtml:\s*\(s\)\s*=>\s*s/, "escapeHtml: (s) => s"],
+      [/escapeHtml\s*=\s*\(s\)\s*=>\s*s/, "escapeHtml = (s) => s"],
+    ];
+    const offenders = [];
+    for (const file of frontendJavaScriptFiles()) {
+      if (file === "src/core/html.js") continue;
+      const source = read(`frontend/${file}`);
+      for (const [pattern, label] of fallbackPatterns) {
+        if (pattern.test(source)) offenders.push(`${file}: ${label}`);
+      }
+    }
+    assert.deepEqual(offenders, [], "pass the core escapeHtml through context or import it");
+  });
+
   test("keeps production source readable", () => {
     const longLines = [];
     for (const file of frontendJavaScriptFiles()) {
