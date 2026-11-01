@@ -59,6 +59,51 @@ describe('month reconciliation', () => {
     assert.equal(closeBlockers(result).length, 3);
   });
 
+  it('surfaces an accepted pending email invoice as needs-review without treating it as a ledger match', () => {
+    const result = buildMonthTable({
+      period: '2026-10',
+      bank: [bank('b-mailchimp', { date: '2026-10-22', counterparty: 'Intuit Ireland Software L', amount: '-726.59' })],
+      ledger: [],
+      pendingEmailInvoices: [{
+        id: 'draft-mailchimp', artifactId: 'email-document-mailchimp', receivedAt: '2026-10-22T06:00:00Z',
+        fields: { transactionDate: '2026-10-21', counterparty: 'Intuit Mailchimp' }, direction: 'expense',
+      }],
+      decisions: none(), rules: [],
+    });
+    const row = result.rows[0];
+    assert.equal(row.status, 'needs-review');
+    assert.match(row.missing!, /pending email invoice draft needs review/);
+    assert.deepEqual(row.emailInvoiceCandidates, [{
+      invoiceId: 'draft-mailchimp', artifactId: 'email-document-mailchimp', counterparty: 'Intuit Mailchimp',
+    }]);
+    assert.equal(row.ledger, undefined, 'a draft is not published into the bookkeeping ledger');
+    assert.deepEqual(row.documents, [], 'the draft document is not presented as an attached ledger document');
+    assert.equal(result.counters.bankWithoutInvoice, 0);
+    assert.equal(result.counters.needsReview, 1);
+  });
+
+  it('surfaces a possible refund direction conflict without associating an unrelated draft', () => {
+    const result = buildMonthTable({
+      period: '2026-10',
+      bank: [
+        bank('b-refund', { date: '2026-10-22', counterparty: 'X Corp. Paid Features', amount: '7.64' }),
+        bank('b-other', { date: '2026-10-22', counterparty: 'Unrelated Vendor', amount: '-5.00' }),
+      ],
+      ledger: [],
+      pendingEmailInvoices: [
+        { id: 'wrong-direction', artifactId: 'invoice-a', receivedAt: '2026-10-22T00:00:00Z', fields: { counterparty: 'X Internet Unlimited Company' }, direction: 'expense' },
+        { id: 'wrong-date', artifactId: 'invoice-b', receivedAt: '2026-09-01T00:00:00Z', fields: { counterparty: 'Another Vendor' }, direction: 'income' },
+      ],
+      decisions: none(), rules: [],
+    });
+    const rows = Object.fromEntries(result.rows.map((row) => [row.id, row]));
+    assert.equal(rows['b-refund'].status, 'needs-review');
+    assert.deepEqual(rows['b-refund'].emailInvoiceCandidates, [{
+      invoiceId: 'wrong-direction', artifactId: 'invoice-a', counterparty: 'X Internet Unlimited Company', directionConflict: true,
+    }]);
+    assert.equal(rows['b-other'].status, 'no-invoice');
+  });
+
   it('matches foreign-currency rows through the original amount or the EUR amount, and flags fee gaps', () => {
     const tolerances = DEFAULT_TOLERANCES;
     assert.equal(amountFit(bank('b', { amount: '-9.80', origAmount: '-8.50', origCurrency: 'GBP' }), ledger('l', { amount: '-8.50', currency: 'GBP' }), tolerances)?.basis, 'fx');

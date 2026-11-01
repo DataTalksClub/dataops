@@ -114,6 +114,22 @@ export type LedgerRow = {
   documents: LedgerDocument[];
 };
 
+/** An imported email invoice that still needs a person to verify its fields. */
+export type PendingEmailInvoice = {
+  id: string;
+  artifactId: string;
+  receivedAt?: string;
+  fields: {
+    transactionDate?: string;
+    paidDate?: string;
+    amount?: string;
+    currency?: string;
+    counterparty?: string;
+    invoiceNumber?: string;
+  };
+  direction?: "income" | "expense";
+};
+
 /** `auto` marks a pair the matcher found and persisted after an upload; a person can unmatch it like any other. */
 export type ManualPair = { bankKey: string; transactionId: string; by: string; at: string; note?: string; auto?: { basis: Exclude<PairBasis, "manual" | "fee" | "proposed">; confidence: "exact" | "strong" } };
 export type RowException = { kind: ExceptionKind; proof?: string; note?: string; by: string; at: string };
@@ -149,6 +165,14 @@ export type MonthRow = {
   bank?: BankTx;
   ledger?: Omit<LedgerRow, "documents">;
   documents: LedgerDocument[];
+  /** Pending email invoice drafts that plausibly belong to this bank row. */
+  emailInvoiceCandidates?: Array<{
+    invoiceId: string;
+    artifactId: string;
+    counterparty?: string;
+    invoiceNumber?: string;
+    directionConflict?: boolean;
+  }>;
   paymentProof?: PaymentProof;
   pairBasis?: PairBasis;
   /** The pair was made by the matcher after an upload, not by a person. */
@@ -405,6 +429,7 @@ export type MonthInput = {
   period: string;
   bank: BankTx[];
   ledger: LedgerRow[];
+  pendingEmailInvoices?: PendingEmailInvoice[];
   decisions: ManualDecisions;
   rules: ClassificationRule[];
   tolerances?: ReconcileTolerances;
@@ -471,8 +496,25 @@ export function buildMonthTable(input: MonthInput): MonthTable {
     } else if (row.exception) {
       if (!row.exception.satisfied) { row.status = "needs-review"; row.missing = `${row.exception.kind} needs proof: ${row.exception.proof}`; }
     } else if (!pair) {
-      row.status = "no-invoice";
-      row.missing = "no ledger row or invoice for this bank transaction";
+      const emailInvoiceCandidates = (input.pendingEmailInvoices || [])
+        .filter((invoice) => matchesPendingEmailInvoice(bankRow, invoice, tolerances.dateLagDays))
+        .map((invoice) => ({
+          invoiceId: invoice.id,
+          artifactId: invoice.artifactId,
+          ...(invoice.fields.counterparty ? { counterparty: invoice.fields.counterparty } : {}),
+          ...(invoice.fields.invoiceNumber ? { invoiceNumber: invoice.fields.invoiceNumber } : {}),
+          ...(invoice.direction && invoice.direction !== (Number(bankRow.amount) > 0 ? "income" : "expense")
+            ? { directionConflict: true } : {}),
+        }));
+      if (emailInvoiceCandidates.length) {
+        row.status = "needs-review";
+        row.emailInvoiceCandidates = emailInvoiceCandidates;
+        const ids = emailInvoiceCandidates.map((candidate) => candidate.invoiceId).join(", ");
+        row.missing = `pending email invoice ${emailInvoiceCandidates.length === 1 ? "draft needs" : "drafts need"} review (${ids})`;
+      } else {
+        row.status = "no-invoice";
+        row.missing = "no ledger row or invoice for this bank transaction";
+      }
     } else if (pair.basis === "fee") {
       row.status = "amount-mismatch";
       row.missing = `bank and ledger differ by ${pair.difference?.toFixed(2)} ${bankRow.currency}; confirm the pair or fix the ledger amount`;
@@ -537,6 +579,36 @@ export function buildMonthTable(input: MonthInput): MonthTable {
       exceptions: rows.filter((row) => row.exception).length,
     },
   };
+}
+
+function matchesPendingEmailInvoice(bank: BankTx, invoice: PendingEmailInvoice, dateLagDays: number): boolean {
+  const invoiceDate = invoice.fields.transactionDate || invoice.fields.paidDate || invoice.receivedAt || "";
+  const bankDay = dayOf(bank.date);
+  const invoiceDay = invoiceDate ? dayOf(invoiceDate) : Number.NaN;
+  if (!Number.isFinite(bankDay) || !Number.isFinite(invoiceDay) || Math.abs(bankDay - invoiceDay) / DAY > dateLagDays) return false;
+
+  const amount = Number(invoice.fields.amount);
+  const invoiceCurrency = String(invoice.fields.currency || "").trim().toUpperCase();
+  const amountKnown = Number.isFinite(amount) && amount > 0 && Boolean(invoiceCurrency);
+  const sameCurrencyAmount = amountKnown && invoiceCurrency === bank.currency.toUpperCase()
+    && Math.round(amount * 100) === Math.round(Math.abs(Number(bank.amount)) * 100);
+  const originalAmount = amountKnown && invoiceCurrency === String(bank.origCurrency || "").toUpperCase()
+    && bank.origAmount !== undefined
+    && Math.round(amount * 100) === Math.round(Math.abs(Number(bank.origAmount)) * 100);
+
+  const normalizedDraftVendor = normalizedAutoMatchVendor(invoice.fields.counterparty);
+  const normalizedBankVendor = normalizedAutoMatchVendor(bank.counterparty);
+  const meaningfulTokens = (value: string) => new Set(value.toLowerCase().split(/[^a-z0-9]+/).filter((token) =>
+    (token.length >= 5 || token === "xai") && !["google", "amazon", "company"].includes(token)));
+  const draftTokens = meaningfulTokens(String(invoice.fields.counterparty || ""));
+  const bankTokens = meaningfulTokens(bank.counterparty);
+  const sharedVendorToken = [...draftTokens].some((token) => bankTokens.has(token));
+  const vendorMatch = Boolean(normalizedDraftVendor && normalizedBankVendor
+    && (normalizedDraftVendor === normalizedBankVendor || sharedVendorToken));
+  // Exact amounts may identify bank abbreviations (for example, GOOGLE*G1AI).
+  // Otherwise require a normalized vendor or a distinctive shared vendor token;
+  // mismatches remain visible for human review instead of attaching the draft.
+  return sameCurrencyAmount || originalAmount || vendorMatch;
 }
 
 /** Rows that keep a month from closing, and the exception rows the approver confirms. */

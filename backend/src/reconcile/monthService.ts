@@ -37,6 +37,10 @@ import {
   type ReconcileTolerances,
 } from "./month";
 import { listStatements, rowKeys, type StatementRecord } from "./service";
+import { getIntakeItem } from "../db/intake";
+import { listInvoices } from "../invoices/store";
+import { isInvoiceIntakeRoute } from "../invoices/intakeRoute";
+import type { PendingEmailInvoice } from "./month";
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const LOG_LIMIT = 2000;
@@ -271,11 +275,28 @@ export type MonthView = MonthTable & {
   log: MonthLogEntry[];
 };
 
-export type Snapshot = { bank: BankTx[]; ledger: LedgerRow[]; statements: StatementRecord[]; months: Map<string, MonthRecord>; config: ReconcileConfig };
+export type Snapshot = { bank: BankTx[]; ledger: LedgerRow[]; statements: StatementRecord[]; months: Map<string, MonthRecord>; config: ReconcileConfig; pendingEmailInvoices: PendingEmailInvoice[] };
+
+async function listPendingEmailInvoices(client: DynamoDBDocumentClient): Promise<PendingEmailInvoice[]> {
+  const pending = (await listInvoices(client)).filter((invoice) => invoice.status === "pending"
+    && Array.isArray(invoice.source?.intakeItemIds) && invoice.source.intakeItemIds.length > 0);
+  const candidates = await Promise.all(pending.map(async (invoice) => {
+    const intake = await getIntakeItem(client, invoice.source.intakeItemIds[0]);
+    if (!intake || !isInvoiceIntakeRoute(intake.metadata?.recipientRoute)) return null;
+    return {
+      id: invoice.id,
+      artifactId: invoice.source.artifactId,
+      ...(intake.sourceReceivedAt ? { receivedAt: intake.sourceReceivedAt } : {}),
+      fields: invoice.fields,
+      ...(invoice.extraction?.direction ? { direction: invoice.extraction.direction } : {}),
+    } satisfies PendingEmailInvoice;
+  }));
+  return candidates.filter((candidate): candidate is PendingEmailInvoice => candidate !== null);
+}
 
 export async function snapshot(client: DynamoDBDocumentClient): Promise<Snapshot> {
-  const [statements, transactions, links, months, config] = await Promise.all([
-    listStatements(client), listTransactions(client), listBookkeepingItems(client, "link"), listMonths(client), getConfig(client),
+  const [statements, transactions, links, months, config, pendingEmailInvoices] = await Promise.all([
+    listStatements(client), listTransactions(client), listBookkeepingItems(client, "link"), listMonths(client), getConfig(client), listPendingEmailInvoices(client),
   ]);
   return {
     bank: bankRowsFrom(statements),
@@ -283,6 +304,7 @@ export async function snapshot(client: DynamoDBDocumentClient): Promise<Snapshot
     statements,
     months: new Map(months.map((month) => [month.period, { ...month, decisions: withDefaults(month.decisions) }])),
     config,
+    pendingEmailInvoices,
   };
 }
 
@@ -300,7 +322,7 @@ export function mergedDecisions(months: Map<string, MonthRecord>): ManualDecisio
 
 function viewFor(period: string, data: Snapshot, pairing: ReturnType<typeof pairAll>, decisions: ManualDecisions): MonthView {
   const record = data.months.get(period) || emptyMonth(period);
-  const table = buildMonthTable({ period, bank: data.bank, ledger: data.ledger, decisions, rules: data.config.rules, tolerances: data.config.tolerances, pairing });
+  const table = buildMonthTable({ period, bank: data.bank, ledger: data.ledger, pendingEmailInvoices: data.pendingEmailInvoices, decisions, rules: data.config.rules, tolerances: data.config.tolerances, pairing });
   const digest = exceptionDigest(table);
   return {
     ...table,
