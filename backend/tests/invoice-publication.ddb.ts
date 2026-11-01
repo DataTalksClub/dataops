@@ -54,10 +54,10 @@ test('EUR equivalent decimal formats and evidenced distinct actual bank payment 
 });
 test('complete but unverified drafts stay pending, explicit verification automatically publishes current revision',async()=>{
   const {record,intakeId}=await stage('auto-verified');const count=writes;
-  const importedAgain=await processInvoiceIntake(client,intakeId);assert.equal(importedAgain.items[0].status,'pending');assert.equal(writes,count);assert.equal((await getIntakeItem(client,intakeId))?.status,'archived');
-  const response=await handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}/verify`,'POST',{headers:{'x-user-id':'verified-operator'},body:JSON.stringify({revision:record.revision})},client,true);
-  assert.equal(response.statusCode,200);const result=JSON.parse(response.body);assert.equal(result.publicationPolicy,'automatic-when-verified');assert.equal(result.publicationStatus,'complete');assert.equal(result.verifiedRevision,record.revision);assert.equal(result.verification.actor,'verified-operator');assert.ok(result.audit.some((event:{action:string})=>event.action==='automatically-confirmed'));
-  const repeated=await handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}/verify`,'POST',{headers:{'x-user-id':'verified-operator'},body:JSON.stringify({revision:record.revision})},client,true);assert.equal(repeated.statusCode,200);assert.equal(writes,count+2);
+  const importedAgain=await processInvoiceIntake(client,intakeId);const current=importedAgain.items[0];assert.equal(current.status,'pending');assert.equal(writes,count);assert.equal((await getIntakeItem(client,intakeId))?.status,'archived');
+  const response=await handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}/verify`,'POST',{headers:{'x-user-id':'verified-operator'},body:JSON.stringify({revision:current.revision})},client,true);
+  assert.equal(response.statusCode,200,response.body);const result=JSON.parse(response.body);assert.equal(result.publicationPolicy,'automatic-when-verified');assert.equal(result.publicationStatus,'complete');assert.equal(result.verifiedRevision,current.revision);assert.equal(result.verification.actor,'verified-operator');assert.ok(result.audit.some((event:{action:string})=>event.action==='automatically-confirmed'));
+  const repeated=await handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}/verify`,'POST',{headers:{'x-user-id':'verified-operator'},body:JSON.stringify({revision:current.revision})},client,true);assert.equal(repeated.statusCode,200);assert.equal(writes,count+2);
 });
 test('verified edit publishes the resulting revision; ordinary corrections never attest verification',async()=>{
   const {record}=await stage('auto-edit');const count=writes;

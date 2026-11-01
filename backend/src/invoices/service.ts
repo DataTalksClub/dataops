@@ -8,7 +8,7 @@ import { listTransactions, putBookkeepingItem, updateBookkeepingTransaction } fr
 import { BlankConversionError, pdfText, type InvoiceHints } from './extract';
 import { extractFinancePdf } from './financeExtraction';
 import { isInvoiceIntakeRoute } from './intakeRoute';
-import { BLANK_CONVERSION_ISSUE, invoiceDuplicateKey, missingEvidence, type Invoice, type InvoiceFields } from './model';
+import { BLANK_CONVERSION_ISSUE, missingEvidence, type Invoice, type InvoiceFields } from './model';
 import { createInvoice, getInvoice, listInvoices, saveInvoice, claimInvoice, reserveSheetRow, approveInvoice } from './store';
 import { officialProviders, publicationConfig, marker, sheetValues, type Providers } from './providers';
 import type { IntakeHistoryEvent, IntakeItem } from '../types';
@@ -163,9 +163,9 @@ export async function confirmInvoice(client:DynamoDBDocumentClient,record:Invoic
   if(record.status==='rejected') throw new Error('rejected-invoice');
   if(record.status==='pending') {
     if(missingEvidence(record.fields).length) throw new Error('payment-or-invoice-evidence-required');
-    const duplicateKey=invoiceDuplicateKey(record);
-    const duplicates=duplicateKey?(await listInvoices(client)).filter(x=>x.id!==record.id && x.status!=='rejected' && invoiceDuplicateKey(x)===duplicateKey):[];
-    if(duplicates.length) throw new Error('duplicate-invoice-identity-detected-review-both-drafts');
+    const duplicateIdentity=identity(record);
+    const duplicates=(await listInvoices(client)).filter(x=>x.id!==record.id && x.status!=='rejected' && identity(x)===duplicateIdentity);
+    if(duplicates.length) throw new Error('duplicate-invoice-identity-review-both-drafts');
     const next=structuredClone(record);const at=new Date().toISOString();next.status='confirmed';next.confirmedRevision=record.revision;next.verification={revision:record.revision,actor,at,method:'operator'};next.audit.push({action:'fields-verified',actor,at,revision:record.revision},{action:automatically?'automatically-confirmed':'confirmed',actor,at,revision:record.revision});
     record=await approveInvoice(client,next,record,identity(record));
   }
