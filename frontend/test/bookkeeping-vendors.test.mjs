@@ -11,7 +11,10 @@ test("canonical vendor aliases preserve the bank name separately", () => {
   const examples = [
     ["Aws", "Amazon Web Services"],
     ["Aws Emea", "Amazon Web Services"],
+    ["AWS EMEA SARL", "Amazon Web Services"],
+    ["Amazon Web Services EMEA SARL", "Amazon Web Services"],
     ["Google Cloud", "Google"],
+    ["Google Cloud EMEA Limited", "Google"],
     ["Google Workspace", "Google"],
     ["Google One", "Google"],
     ["X Corp", "X"],

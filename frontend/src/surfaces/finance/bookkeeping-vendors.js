@@ -5,7 +5,14 @@
 export const VENDOR_ALIASES = [
   {
     canonical: "Amazon Web Services",
-    aliases: ["aws", "aws emea", "amazon web services"],
+    aliases: [
+      "aws",
+      "aws emea",
+      "aws emea sarl",
+      "amazon web services",
+      "amazon web services emea",
+      "amazon web services emea sarl",
+    ],
   },
   {
     canonical: "Google",
@@ -13,7 +20,9 @@ export const VENDOR_ALIASES = [
       "google",
       "google cloud",
       "google cloud platform",
+      "google cloud emea limited",
       "google workspace",
+      "google workspace emea limited",
       "google one",
     ],
   },
@@ -30,11 +39,11 @@ export const VENDOR_ALIASES = [
   },
   {
     canonical: "GoDaddy",
-    aliases: ["go daddy", "godaddy", "godaddy.com"],
+    aliases: ["go daddy", "go daddy.com", "godaddy", "godaddy.com"],
   },
   {
     canonical: "OpenAI",
-    aliases: ["openai", "openai inc", "openai llc", "chatgpt"],
+    aliases: ["openai", "openai inc", "openai llc", "openai opco llc", "chatgpt"],
   },
 ];
 
