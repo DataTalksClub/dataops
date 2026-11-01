@@ -130,7 +130,7 @@ test('blank conversion is stored and returned as a visible review flag', async (
 });
 
 test('vendor and invoice number duplicate flags are read-only and ignore checksum/account context', async () => {
-  const first = pendingInvoice(createHash('sha256').update(randomUUID()).digest('hex'), 'Contabo', '300639000P261021', 'sha256:first-copy', 'merchant-account-a');
+  const first = pendingInvoice(createHash('sha256').update(randomUUID()).digest('hex'), 'Contabo GmbH', '300639000P261021', 'sha256:first-copy', 'merchant-account-a');
   const second = pendingInvoice(createHash('sha256').update(randomUUID()).digest('hex'), ' contabo ', '300639000P261021', 'sha256:second-copy', 'merchant-account-b');
   await createInvoice(client, first);
   await createInvoice(client, second);

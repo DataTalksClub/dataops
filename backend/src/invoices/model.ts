@@ -65,7 +65,7 @@ export function missingEvidence(f: InvoiceFields): string[] {
   return missing;
 }
 export function invoiceDuplicateKey(record: Pick<Invoice, 'fields'>): string | undefined {
-  const vendor = record.fields.counterparty?.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
+  const vendor = record.fields.counterparty?.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase().replace(/\s+gmbh\.?$/, '').trim();
   const number = record.fields.invoiceNumber?.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
   return vendor && number ? `${vendor}\n${number}` : undefined;
 }
