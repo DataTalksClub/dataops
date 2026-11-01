@@ -87,9 +87,9 @@ function statementLineMarkup(statementLink, { e, amount }) {
   ].filter(([, value]) => filled(value));
   const bankKey = text(statementLink.bankKey);
   const lineDate = text(line.date);
-  const period = /^\d{4}-\d{2}$/.test(text(statementLink.statementPeriod))
-    ? text(statementLink.statementPeriod)
-    : lineDate.slice(0, 7);
+  const period = /^\d{4}-\d{2}-\d{2}$/.test(lineDate)
+    ? lineDate.slice(0, 7)
+    : text(statementLink.statementPeriod);
   const reconcileHref = bankKey && /^\d{4}-\d{2}$/.test(period)
     ? `/finance/reconcile/${period}?bankKey=${encodeURIComponent(bankKey)}`
     : "";
