@@ -5,6 +5,7 @@ import { getCard } from '../db/cards';
 import { listTasksByCard } from '../db/tasks';
 import { getTemplate } from '../db/templates';
 import { resolveHoldGoogleCalendars } from '../calendar/dapierBroker';
+import { isLumaEventLink, lumaUrlForCard } from '../calendar/lumaEvents';
 import { slotName, taskLinkCardDefinition } from '../cards/taskLinkCard';
 import { listFilesByTask } from '../db/files';
 import { requiresError } from '../resources/vocabulary';
@@ -532,7 +533,7 @@ export function taskRequiresCalendarInvite(taskData: Record<string, unknown>): b
 
 export function calendarInviteDoneError(taskData: Record<string, unknown>, missing: string[] = resolveHoldGoogleCalendars()): string {
   const cardId = isNonEmptyString(taskData.cardId) ? String(taskData.cardId).trim() : '<card-id>';
-  return `Cannot mark task as done: the card has no live calendar invite on ${missing.join(' and ')}. Set the event time with: dataops cards time ${cardId} --at "YYYY-MM-DD HH:MM"`;
+  return `Cannot mark task as done: the card has no live calendar invite on ${missing.join(' and ')}. Set the event time with: dataops cards time ${cardId} --at "YYYY-MM-DD HH:MM" (or adopt an existing event with: dataops cards invite add ${cardId} <event-id> --calendar <calendar>)`;
 }
 
 /** Calendars (DTC events, Alexey personal) the Card has no live invite on. */
@@ -587,13 +588,34 @@ export async function validateLinkedCardRequirement(
     return linkCardDoneError(taskData, own.templateType, slotName(own, { templateTaskRef: taskData.templateTaskRef as string }));
   }
   if (!needsAll || !isNonEmptyString(taskData.cardId)) return null;
-  const unlinked = (await listTasksByCard(client, String(taskData.cardId)))
-    .filter((task) => task.id !== taskData.id && task.status !== 'skipped' && !task.linkedCardId)
+  const eventTasks = (await listTasksByCard(client, String(taskData.cardId)))
+    .filter((task) => task.id !== taskData.id && task.status !== 'skipped')
     .map((task) => ({ task, linkCard: taskLinkCardDefinition(template, task) }))
     .filter(({ linkCard }) => linkCard?.slot);
-  if (unlinked.length === 0) return null;
-  const names = unlinked.map(({ task, linkCard }) => slotName(linkCard!, task)).join(', ');
-  return `Cannot mark task as done: event slots without a linked event Card: ${names}. Create and link them with: dataops cards event-slots ${taskData.cardId} --apply`;
+  const unlinked = eventTasks.filter(({ task }) => !task.linkedCardId);
+  if (unlinked.length > 0) {
+    const names = unlinked.map(({ task, linkCard }) => slotName(linkCard!, task)).join(', ');
+    return `Cannot mark task as done: event slots without a linked event Card: ${names}. Create and link them with: dataops cards event-slots ${taskData.cardId} --apply`;
+  }
+
+  for (const { task, linkCard } of eventTasks) {
+    if (!task.linkedCardId) continue;
+    const eventCard = await getCard(client, task.linkedCardId);
+    if (!eventCard) {
+      if (isLumaEventLink(task.link)) {
+        const slot = slotName(linkCard!, task) || task.description;
+        return `Cannot mark task as done: ${slot} links to a missing event Card. Recreate and link it with: dataops cards event-slots ${taskData.cardId} --apply`;
+      }
+      continue;
+    }
+    if (!isLumaEventLink(task.link) && !lumaUrlForCard(eventCard)) continue;
+    const missing = calendarsMissingInvite(eventCard);
+    if (missing.length) {
+      const slot = slotName(linkCard!, task) || task.description;
+      return `Cannot mark task as done: ${slot} is missing live calendar entries on ${missing.join(' and ')}. Create them with: dataops cards time ${eventCard.id} --at "YYYY-MM-DD HH:MM" (or adopt existing events with: dataops cards invite add ${eventCard.id} <event-id> --calendar <calendar> --label "${slot}")`;
+    }
+  }
+  return null;
 }
 
 export async function validateDoneProof(

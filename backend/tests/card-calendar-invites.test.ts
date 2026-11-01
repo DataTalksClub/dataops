@@ -70,14 +70,42 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
   const [PERSONAL, DTC] = DEFAULT_HOLD_GOOGLE_CALENDARS;
 
   describe('list, unlink and stale check', () => {
-    it('lists the linked invites and refuses hand-linking a new one', async () => {
+    it('lists existing invites and adopts a live Google event idempotently', async () => {
       const card = await createCard();
       await linkInvites(card.id, [{ eventId: 'evt-a', calendar: DTC }]);
       const list = await invoke('GET', `/api/cards/${card.id}/calendar-invites`);
       assert.strictEqual(list.statusCode, 200, list.body);
       assert.deepStrictEqual(parse(list).invites.map((i: any) => i.eventId), ['evt-a']);
-      const add = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, { eventId: 'evt-b', calendar: DTC });
-      assert.strictEqual(add.statusCode, 405, add.body);
+      const google = holdGoogleProvider();
+      google.events.set(DTC, new Map([['manual-event', { id: 'manual-event', status: 'confirmed' }]]));
+      setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
+      try {
+        const add = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, {
+          eventId: 'manual-event', calendar: DTC, label: 'Pre-Course Q&A',
+        });
+        assert.strictEqual(add.statusCode, 200, add.body);
+        assert.equal(parse(add).invite.eventId, 'manual-event');
+        assert.equal(parse(add).invite.label, 'Pre-Course Q&A');
+        assert.equal(parse(add).invite.url, `https://calendar.google.com/calendar/event?eid=${Buffer.from(`manual-event ${DTC}`).toString('base64url')}`);
+        const again = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, {
+          eventId: 'manual-event', calendar: DTC, label: 'Pre-Course Q&A',
+        });
+        assert.strictEqual(again.statusCode, 200, again.body);
+        assert.equal(parse(again).invites.filter((invite: any) => invite.eventId === 'manual-event').length, 1);
+        assert.equal(google.calls.filter(call => call.method === 'GET' && call.url.pathname.includes('/manual-event')).length, 1,
+          'repeat adoption returns the linked event without another Google read');
+        const missing = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, { eventId: 'missing-event', calendar: DTC });
+        assert.strictEqual(missing.statusCode, 400, missing.body);
+        assert.match(parse(missing).error, /does not exist/);
+        const wrongCalendar = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, {
+          eventId: 'manual-event', calendar: 'other-calendar@example.test',
+        });
+        assert.strictEqual(wrongCalendar.statusCode, 400, wrongCalendar.body);
+        assert.ok(google.calls.every(call => call.method === 'GET' || call.url.pathname === '/api/agent/token'),
+          'adoption only verifies the existing Google event; it never writes or sends updates');
+      } finally {
+        setCalendarHoldGoogleDepsForTests({});
+      }
       assert.strictEqual((await invoke('GET', '/api/cards/nope/calendar-invites')).statusCode, 404);
     });
 

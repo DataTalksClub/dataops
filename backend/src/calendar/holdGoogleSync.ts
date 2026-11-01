@@ -297,6 +297,35 @@ export async function updateHoldGoogleEvents(
   return syncEvents(event, deps, eventIds);
 }
 
+export interface LumaCalendarEvent {
+  eventKey: string;
+  summary: string;
+  startIso: string;
+  endIso: string;
+  timeZone: string;
+  lumaUrl: string;
+}
+
+/** Create silent DTC and personal copies using the same iCalendar identity as hold sync. */
+export async function syncLumaCalendarEvents(
+  event: LumaCalendarEvent,
+  deps: HoldGoogleDeps,
+  existing: Record<string, string> = {},
+): Promise<HoldGoogleResult> {
+  const dataopsEventKey = createHash('sha256').update(event.eventKey).digest('hex');
+  return syncEvents({
+    eventKey: event.eventKey,
+    summary: event.summary,
+    description: `Luma event: ${event.lumaUrl}`,
+    location: event.lumaUrl,
+    attendees: [],
+    startIso: event.startIso,
+    endIso: event.endIso,
+    timeZone: event.timeZone,
+    extendedProperties: { private: { dataopsEventKey } },
+  }, deps, existing);
+}
+
 /** Cancel each copy; only the organizer sends cancellation notifications. */
 export async function deleteHoldGoogleEvents(
   eventIds: Record<string, string>, deps: HoldGoogleDeps,

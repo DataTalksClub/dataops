@@ -7,13 +7,15 @@ isolateConfig();
 const { run } = await import("../src/cli.mjs");
 
 describe("cards invite commands", () => {
-  test("invite add is refused: invites come only from cards time", async () => {
-    const calls = fakePortal({});
+  test("invite add adopts an existing event without modifying Google", async () => {
+    const calls = fakePortal({
+      "POST /api/cards/card-1/calendar-invites": (call) => ({ invite: call.body, invites: [call.body] }),
+    });
     const io = captureIo();
-    const code = await run(["cards", "invite", "add", "card-1", "--event-id", "evt1", "--calendar", "c"], io);
-    assert.equal(code, 2);
-    assert.equal(calls.length, 0);
-    assert.match(io.errors.join("\n"), /dataops cards time <card-id>/);
+    const code = await run(["cards", "invite", "add", "card-1", "evt_123", "--calendar", "c", "--label", "Pre-Course Q&A"], io);
+    assert.equal(code, 0);
+    assert.deepEqual(calls[0].body, { eventId: "evt_123", calendar: "c", label: "Pre-Course Q&A" });
+    assert.match(io.text(), /Linked existing invite evt_123 .*Google event was untouched/);
   });
 
   test("invite remove unlinks the reference and says the Google event is untouched", async () => {

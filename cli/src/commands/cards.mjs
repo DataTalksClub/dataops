@@ -22,13 +22,15 @@ Usage
   dataops cards update <card-id> --count FIELD=N[,FIELD=N] [--apply]
                                                 Change a count (e.g. workshops=3); preview by default
   dataops cards time <card-id> --at "YYYY-MM-DD HH:MM" [--duration 60] [--tz Europe/Berlin]
-      [--guests EMAIL,EMAIL] [--json]            Set the event time: creates or moves its invites on
-                                                DTC events, Alexey personal and orin@ (the only way)
+      [--guests EMAIL,EMAIL] [--json]            Set the event time; Luma events sync silently to DTC
+                                                events and Alexey personal, other events invite guests
   dataops cards event-slots <card-id> [--apply] [--json]
                                                 A course's event Cards (Q&A, launch, workshops);
                                                 --apply creates and links the missing ones, undated
   dataops cards stage <card-id> <preparation|announced|after-event>
   dataops cards link <card-id> <link-name> <url>  Fill a Card link (e.g. a template's required link)
+  dataops cards invite add <card-id> <event-id> --calendar CAL [--label LABEL] [--json]
+                                                Adopt an existing Google event without editing it
   dataops cards invite list <card-id> [--json]  The Card's invites, checked in Google (gone = stale)
   dataops cards invite remove <card-id> <event-id> [--calendar CAL] [--delete-event] [--json]
                                                 Unlink an invite from the Card; with --delete-event also
@@ -371,11 +373,23 @@ function printCountPreview(io, preview) {
 }
 
 export async function invite(args, io) {
-  const usage = "dataops cards invite list <card-id>\n"
+  const usage = "dataops cards invite add <card-id> <event-id> --calendar CAL [--label LABEL]\n"
+    + "  dataops cards invite list <card-id>\n"
     + "  dataops cards invite remove <card-id> <event-id> [--calendar CAL] [--delete-event]";
   const action = positional(args, 0, usage);
   if (action === "add") {
-    throw new UsageError("Invites are created only by setting the event time: dataops cards time <card-id> --at \"YYYY-MM-DD HH:MM\"");
+    const id = positional(args, 1, usage);
+    const eventId = positional(args, 2, usage);
+    const calendar = required(args, "calendar", "calendar");
+    const label = optionalString(args, "label");
+    const result = await apiFor(args).post(`/api/cards/${enc(id)}/calendar-invites`, {
+      eventId, calendar, ...(label ? { label } : {}),
+    });
+    if (!args.json) {
+      io.print(`Linked existing invite ${eventId} on ${calendarLabel(calendar)} to Card ${id} (the Google event was untouched).`);
+      if (result.taskClosure?.message) io.print(`taskClosure (${result.taskClosure.outcome}): ${result.taskClosure.message}`);
+    }
+    return result;
   }
   if (action === "remove") {
     const id = positional(args, 1, usage);

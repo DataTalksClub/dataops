@@ -346,9 +346,9 @@ export interface CardLink {
 }
 
 /**
- * One Google Calendar invite linked to a Card. DataOps creates and moves
- * invites when the Card event time changes. Hand linking is reserved for
- * adopting legacy events. Entries are unique per (calendar, event id).
+ * One Google Calendar event linked to a Card. DataOps creates and moves
+ * entries when a Card event time changes. Hand linking is reserved for
+ * adopting existing events. Entries are unique per (calendar, event id).
  */
 export interface CardCalendarInvite {
   eventId: string;

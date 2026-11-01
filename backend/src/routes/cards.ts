@@ -1,5 +1,6 @@
 import { cardEventInterval } from '../calendar/cardEventTime';
-import { adoptEventDate, CardInviteConflictError, CardInviteInputError, cardGuests, parseCardGuests, syncCardInvite, unlinkCardInvite, verifyCardInvites } from '../calendar/cardInvite';
+import { adoptCardInvite, adoptEventDate, CardInviteConflictError, CardInviteGoogleError, CardInviteInputError, cardGuests, parseCardGuests, syncCardInvite, unlinkCardInvite, verifyCardInvites } from '../calendar/cardInvite';
+import { lumaUrlForEventCard } from '../calendar/lumaEvents';
 import { calendarInviteDeps } from './calendarHolds';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
@@ -844,9 +845,9 @@ async function handleCardTasks(
 }
 
 /**
- * Handle /api/cards/:id/calendar-invites. A Card's invitations come only
- * from `cards time`; this route lists them (`?verify=1` asks Google which are
- * gone and marks those stale) and unlinks one (DELETE). Unlinking removes the
+ * Handle /api/cards/:id/calendar-invites. This route lists invitations
+ * (`?verify=1` asks Google which are gone and marks those stale), adopts an
+ * existing event (POST), or unlinks one (DELETE). Unlinking removes the
  * reference on the Card and never deletes the Google event.
  */
 async function handleCardCalendarInvites(
@@ -866,6 +867,44 @@ async function handleCardCalendarInvites(
     }
     const verified = await verifyCardInvites(client, card, await calendarInviteDeps({}, client));
     return json(200, { invites: verified.card.calendarInvites || [], check: verified.check });
+  }
+
+  if (method === 'POST') {
+    const writeActor = await resolveInteractiveActor(client, event, 'work-write');
+    if (!writeActor.ok) return writeActor.response;
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(rawBody || '{}');
+    } catch {
+      return json(400, { error: 'Invalid JSON' });
+    }
+    const eventId = typeof body?.eventId === 'string' ? body.eventId.trim() : '';
+    const calendar = typeof body?.calendar === 'string' ? body.calendar.trim() : '';
+    const label = typeof body?.label === 'string' ? body.label.trim() : '';
+    if (!/^[A-Za-z0-9_-]{5,1024}$/.test(eventId)) return json(400, { error: 'eventId must be a Google Calendar event id' });
+    if (!calendar) return json(400, { error: 'calendar is required' });
+    if (body?.label !== undefined && typeof body.label !== 'string') return json(400, { error: 'label must be a string' });
+    if (label.length > 200) return json(400, { error: 'label must be 200 characters or fewer' });
+    const existing = await getCardConsistent(client, id);
+    if (!existing) return json(404, { error: 'Card not found' });
+    if (!mayAdministerCard(writeActor.actor, existing)) {
+      return workAdminForbidden('Administering this Card requires its owner or an admin');
+    }
+    try {
+      const adopted = await adoptCardInvite(client, existing, {
+        eventId, calendar, ...(label ? { label } : {}),
+      }, await calendarInviteDeps({}, client), writeActor.actor.id);
+      return json(200, {
+        invite: adopted.invite,
+        invites: adopted.card.calendarInvites || [],
+        taskClosure: adopted.taskClosure,
+      });
+    } catch (error) {
+      if (error instanceof CardInviteInputError) return json(400, { error: error.message, code: 'invalid_invite' });
+      if (error instanceof CardInviteConflictError) return json(409, { error: error.message, code: 'invite_conflict' });
+      if (error instanceof CardInviteGoogleError) return json(502, { error: error.message, code: 'invite_verification_failed' });
+      throw error;
+    }
   }
 
   if (method === 'DELETE') {
@@ -910,11 +949,20 @@ async function handleCardTime(method: string, id: string, rawBody: string | null
   if (!card) return json(404, { error: 'Card not found' });
   if (!mayAdministerCard(resolved.actor, card)) return workAdminForbidden('Administering this Card requires its owner or an admin');
   let interval;
-  let guests;
+  let guests: string[];
   try {
     const body = JSON.parse(rawBody || '{}');
     interval = cardEventInterval(body.at, body.duration ?? card.eventTime?.durationMinutes ?? 60, body.tz ?? card.eventTime?.timeZone ?? 'Europe/Berlin');
-    guests = body.guestEmails !== undefined ? parseCardGuests(body.guestEmails) : await cardGuests(client, card);
+    const lumaUrl = await lumaUrlForEventCard(client, card);
+    if (lumaUrl) {
+      if (body.guestEmails !== undefined && body.guestEmails !== null
+        && (!Array.isArray(body.guestEmails) || body.guestEmails.length > 0)) {
+        throw new Error('Luma event Cards create silent calendar entries and do not send guest invitations');
+      }
+      guests = [];
+    } else {
+      guests = body.guestEmails !== undefined ? parseCardGuests(body.guestEmails) : await cardGuests(client, card);
+    }
   } catch (error) {
     return json(400, { error: error instanceof Error ? error.message : 'Invalid event time' });
   }
@@ -929,7 +977,8 @@ async function handleCardTime(method: string, id: string, rawBody: string | null
       ...(result.sync.state === 'deferred' ? { error: result.sync.reason } : {}),
     });
   } catch (error) {
-    if (error instanceof CardVersionConflictError || error instanceof CardInviteConflictError) return json(409, { error: 'Card invitation changed or is syncing; reload and retry' });
+    if (error instanceof CardVersionConflictError) return json(409, { error: 'Card invitation changed or is syncing; reload and retry' });
+    if (error instanceof CardInviteConflictError) return json(409, { error: error.message });
     if (error instanceof CardInviteInputError) return json(422, { error: error.message });
     throw error;
   }

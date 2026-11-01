@@ -14,7 +14,9 @@ import { getCalendarHold, listCalendarHolds, putCalendarHold } from '../db/calen
 import { calendarsMissingInvite, taskRequiresCalendarInvite, makeTaskHistoryEvent } from '../routes/taskValidation';
 import { dateFromTemplateOffset } from '../templates/cardTemplateProjection';
 import { confirmedHoldInvite, confirmedTitle, holdGuestAttendees, parseHoldDocumentUrl, HOLD_ATTENDEE_DENY_LIST, type CalendarHold } from './holds';
-import { createHoldGoogleEvents, deleteHoldGoogleEvents, findGoneGoogleEvents, updateHoldGoogleEvents, type HoldGoogleDeps, type HoldGoogleResult } from './holdGoogleSync';
+import { createHoldGoogleEvents, deleteHoldGoogleEvents, findGoneGoogleEvents, syncLumaCalendarEvents, updateHoldGoogleEvents, type HoldGoogleDeps, type HoldGoogleResult } from './holdGoogleSync';
+import { lumaUrlForEventCard } from './lumaEvents';
+import { resolveHoldGoogleCalendars } from './dapierBroker';
 
 /** AISHL workshops are scheduled by the AISHL site event, which sends its own invite and Zoom. */
 export const AISHL_TEMPLATE_ID = 'aishl-workshop';
@@ -22,6 +24,7 @@ export const isSiteScheduledCard = (card: Card) => card.templateId === AISHL_TEM
 
 export class CardInviteConflictError extends Error {}
 export class CardInviteInputError extends Error {}
+export class CardInviteGoogleError extends Error {}
 
 export interface InviteTaskClosureItem {
   taskId: string;
@@ -40,7 +43,7 @@ export interface InviteTaskClosureOutcome {
 }
 
 export interface CardInviteSyncResult {
-  outcome: 'sent' | 'deferred';
+  outcome: 'sent' | 'synced' | 'deferred';
   state: 'synced' | 'deferred';
   eventKey: string;
   googleEventIds: Record<string, string>;
@@ -130,7 +133,7 @@ export async function closeCardInviteTasks(
       await updateTask(client, task.id, {
         expectedVersion: task.version, currentTask: task,
         patch: { status: 'done', completedAt: now, completedBy: actorId },
-        historyEvents: [makeTaskHistoryEvent('completed', task, { actorId, createdAt: now, note: 'Calendar invitation created by DataOps.' })],
+        historyEvents: [makeTaskHistoryEvent('completed', task, { actorId, createdAt: now, note: 'Live Google Calendar entries are linked to this Card.' })],
         actorId, triggerKind: 'calendar-invite-created',
       });
       items.push({
@@ -220,32 +223,66 @@ export async function syncCardInvite(
   }
   const eventKey = card.eventTime?.eventKey || linkedHold?.id || `card:${card.id}`;
   const eventIds = card.eventTime?.googleEventIds || linkedHold?.googleEventIds || {};
+  const lumaUrl = await lumaUrlForEventCard(client, card);
+  const silentLumaEvent = Boolean(lumaUrl && !linkedHold);
+  if (silentLumaEvent && guests.length > 0) {
+    throw new CardInviteInputError('Luma event Cards create silent calendar entries and do not send guest invitations.');
+  }
+  if (silentLumaEvent && !card.eventTime && (card.calendarInvites || []).some(invite =>
+    !invite.staleAt && resolveHoldGoogleCalendars(deps.calendarIds).includes(invite.calendar))) {
+    throw new CardInviteConflictError('This Card has adopted manual Google events. Keep those entries linked with cards invite add instead of creating a second event.');
+  }
   const pending: NonNullable<Card['eventTime']> = {
     ...interval, eventKey, googleEventIds: eventIds, sync: 'syncing', syncStartedAt: new Date().toISOString(),
   };
   let documentUrl: string | undefined;
-  try {
-    const cardDocument = cardGuestDocument(card);
-    documentUrl = (cardDocument && DATAOPS_GUEST_DOC.test(cardDocument) ? cardDocument : undefined)
-      || parseHoldDocumentUrl(linkedHold?.documentUrl) || cardDocument;
-  } catch { throw new CardInviteInputError('The guest document must be an HTTPS URL.'); }
-  const template = await getTemplate(client, card.templateId);
-  const invite = {
-    ...confirmedHoldInvite({ id: eventKey, title: linkedHold?.title || card.title || 'DataTalks.Club event', ...interval, documentUrl }, template?.type),
-    timeZone: interval.timeZone,
-    attendees: [...new Set(guests.flatMap(guest => holdGuestAttendees(guest)))],
-  };
-  const reserved = await updateCard(client, card.id, { expectedVersion: card.version, patch: { eventTime: pending, guestEmails: guests } });
-  const sync = Object.keys(eventIds).length
-    ? await updateHoldGoogleEvents(eventIds, invite, deps)
-    : await createHoldGoogleEvents(invite, deps);
+  let invite: ReturnType<typeof confirmedHoldInvite> | undefined;
+  if (!silentLumaEvent) {
+    try {
+      const cardDocument = cardGuestDocument(card);
+      documentUrl = (cardDocument && DATAOPS_GUEST_DOC.test(cardDocument) ? cardDocument : undefined)
+        || parseHoldDocumentUrl(linkedHold?.documentUrl) || cardDocument;
+    } catch { throw new CardInviteInputError('The guest document must be an HTTPS URL.'); }
+    const template = await getTemplate(client, card.templateId);
+    invite = {
+      ...confirmedHoldInvite({ id: eventKey, title: linkedHold?.title || card.title || 'DataTalks.Club event', ...interval, documentUrl }, template?.type),
+      timeZone: interval.timeZone,
+      attendees: [...new Set(guests.flatMap(guest => holdGuestAttendees(guest)))],
+    };
+  }
+  const reserved = await updateCard(client, card.id, {
+    expectedVersion: card.version,
+    patch: { eventTime: pending, ...(silentLumaEvent ? {} : { guestEmails: guests }) },
+  });
+  const sync = silentLumaEvent
+    ? await syncLumaCalendarEvents({
+      eventKey,
+      summary: card.title || 'DataTalks.Club event',
+      startIso: interval.startIso,
+      endIso: interval.endIso,
+      timeZone: interval.timeZone,
+      lumaUrl: lumaUrl!,
+    }, deps, eventIds)
+    : Object.keys(eventIds).length
+      ? await updateHoldGoogleEvents(eventIds, invite!, deps)
+      : await createHoldGoogleEvents(invite!, deps);
   const updated = await updateCardAdditive(client, reserved, current => {
     const invites = [...(current.calendarInvites || [])];
     if (sync.state === 'synced') {
-      for (const [calendar, eventId] of Object.entries(sync.eventIds)) {
+      const linkedEventIds = Object.entries(sync.eventIds).filter(([calendar]) =>
+        !silentLumaEvent || resolveHoldGoogleCalendars(deps.calendarIds).includes(calendar));
+      for (const [calendar, eventId] of linkedEventIds) {
         const index = invites.findIndex(entry => entry.calendar === calendar && entry.eventId === eventId);
-        const entry = { calendar, eventId, url: calendarInviteUrl(calendar, eventId), createdAt: new Date().toISOString(), createdBy: actorId };
-        if (index < 0) invites.push(entry); else invites[index] = { ...invites[index], url: entry.url };
+        const entry = {
+          calendar, eventId, url: calendarInviteUrl(calendar, eventId), createdAt: new Date().toISOString(), createdBy: actorId,
+          ...(silentLumaEvent ? { label: card.title || 'Luma event' } : {}),
+        };
+        if (index < 0) invites.push(entry);
+        else {
+          const refreshed = { ...invites[index] };
+          delete refreshed.staleAt;
+          invites[index] = { ...refreshed, ...entry };
+        }
       }
     }
     return {
@@ -268,12 +305,12 @@ export async function syncCardInvite(
     ? await closeCardInviteTasks(client, updated, actorId)
     : {
         outcome: 'not_attempted',
-        message: 'Calendar invite sync was deferred; invite task closure was not attempted.',
+        message: 'Calendar event sync was deferred; invite task closure was not attempted.',
         tasks: [],
       };
   const finalCard = (await getCardConsistent(client, updated.id))!;
   const inviteResult: CardInviteSyncResult = {
-    outcome: sync.state === 'synced' ? 'sent' : 'deferred',
+    outcome: sync.state === 'deferred' ? 'deferred' : silentLumaEvent ? 'synced' : 'sent',
     state: sync.state,
     eventKey,
     googleEventIds: sync.eventIds,
@@ -335,6 +372,77 @@ export async function verifyCardInvites(
       !invite.staleAt && gone.has(`${invite.calendar} ${invite.eventId}`) ? { ...invite, staleAt } : invite),
   }));
   return { card: updated, check: { state: 'verified', stale: staleOf(updated) } };
+}
+
+/** Adopt one already-existing Google event without editing or notifying anyone. */
+export async function adoptCardInvite(
+  client: DynamoDBDocumentClient,
+  card: Card,
+  input: { eventId: string; calendar: string; label?: string },
+  deps: HoldGoogleDeps,
+  actorId: string,
+): Promise<{ card: Card; invite: CardCalendarInvite; taskClosure: InviteTaskClosureOutcome }> {
+  if (!resolveHoldGoogleCalendars(deps.calendarIds).includes(input.calendar)) {
+    throw new CardInviteInputError(`Calendar ${input.calendar} is not one of the configured DataOps calendars.`);
+  }
+  const existing = (card.calendarInvites || []).find(invite =>
+    invite.eventId === input.eventId && invite.calendar === input.calendar && !invite.staleAt);
+  if (existing) return finishAdoptedInvite(client, card, existing, actorId);
+
+  const verified = await findGoneGoogleEvents([{ eventId: input.eventId, calendar: input.calendar }], deps);
+  if (verified.state === 'deferred') throw new CardInviteGoogleError(verified.reason);
+  if (verified.gone.length) {
+    throw new CardInviteInputError(`Google event ${input.eventId} does not exist on ${input.calendar}.`);
+  }
+
+  const now = new Date().toISOString();
+  let adopted: CardCalendarInvite = {
+    eventId: input.eventId,
+    calendar: input.calendar,
+    url: calendarInviteUrl(input.calendar, input.eventId),
+    ...(input.label ? { label: input.label } : {}),
+    createdAt: now,
+    createdBy: actorId,
+  };
+  const updated = await updateCardAdditive(client, card, current => {
+    const invites = [...(current.calendarInvites || [])];
+    const index = invites.findIndex(invite => invite.eventId === input.eventId && invite.calendar === input.calendar);
+    if (index < 0) invites.push(adopted);
+    else {
+      const currentInvite = invites[index];
+      const refreshed = { ...currentInvite };
+      delete refreshed.staleAt;
+      adopted = {
+        ...refreshed,
+        url: currentInvite.url || adopted.url,
+        ...(currentInvite.label || !input.label ? {} : { label: input.label }),
+        ...(currentInvite.createdAt ? {} : { createdAt: now }),
+        ...(currentInvite.createdBy ? {} : { createdBy: actorId }),
+      };
+      invites[index] = adopted;
+    }
+    return { calendarInvites: invites };
+  });
+  return finishAdoptedInvite(client, updated, adopted, actorId);
+}
+
+async function finishAdoptedInvite(
+  client: DynamoDBDocumentClient,
+  card: Card,
+  invite: CardCalendarInvite,
+  actorId: string,
+): Promise<{ card: Card; invite: CardCalendarInvite; taskClosure: InviteTaskClosureOutcome }> {
+  const taskClosure = calendarsMissingInvite(card).length === 0
+    ? await closeCardInviteTasks(client, card, actorId)
+    : {
+      outcome: 'not_attempted' as const,
+      message: 'A live invite is still needed on another required calendar; invite task closure was not attempted.',
+      tasks: [],
+    };
+  const finalCard = (await getCardConsistent(client, card.id))!;
+  const finalInvite = (finalCard.calendarInvites || []).find(entry =>
+    entry.eventId === invite.eventId && entry.calendar === invite.calendar) || invite;
+  return { card: finalCard, invite: finalInvite, taskClosure };
 }
 
 /**
