@@ -87,6 +87,17 @@ test("summary clearly marks a missing invoice and presents conversion metadata",
   assert.match(markup, /1 EUR = 1\.0834 USD · 2026-09-20 · ecb/);
 });
 
+test("statement loading is distinct from an unmatched statement", () => {
+  const markup = bookkeepingTransactionSummaryMarkup({
+    transaction: { counterparty: "Vendor", amount: "10", currency: "EUR" },
+    statementPending: true,
+    escape: escapeHtml,
+    formatAmount: amount,
+  });
+  assert.match(markup, /Checking the linked statement line/);
+  assert.doesNotMatch(markup, /Not matched to a statement/);
+});
+
 test("matched statement summary is read-only and exposes the exact bank line and source row", () => {
   const transaction = {
     entryType: "expense",

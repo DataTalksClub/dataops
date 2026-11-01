@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   loadTransactionStatementContext,
+  pairTransactionWithStatementRow,
   statementLinkForTransaction,
   statementPeriodsForTransaction,
   unmatchedStatementCandidates,
@@ -204,4 +205,28 @@ test("statement context only loads months within the candidate date window", () 
     "2026-01",
   ]);
   assert.deepEqual(statementPeriodsForTransaction({ transactionDate: "invalid" }), []);
+});
+
+test("manual statement linking posts the selected bank key to its month pair endpoint", async () => {
+  const calls = [];
+  await pairTransactionWithStatementRow("tx-1", {
+    bankKey: "revolut|row/1",
+    period: "2026-09",
+  }, {
+    workApiUrl: (path) => `https://portal.test${path}`,
+    request: async (url, options) => calls.push({ url, options }),
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://portal.test/api/reconcile/months/2026-09/pair");
+  assert.equal(calls[0].options.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    bankKey: "revolut|row/1",
+    transactionId: "tx-1",
+  });
+  await assert.rejects(
+    () => pairTransactionWithStatementRow("tx-1", { bankKey: "missing", period: "nope" }, {
+      request: async () => {}, workApiUrl: (path) => path,
+    }),
+    /valid statement candidate/,
+  );
 });

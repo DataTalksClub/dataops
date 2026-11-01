@@ -244,3 +244,23 @@ export async function loadTransactionStatementContext(
     statementCandidates: unmatchedStatementCandidates(transaction, monthViews, { maxDays }),
   };
 }
+
+/** Manually pair a transaction with a bank line selected from the statement picker. */
+export async function pairTransactionWithStatementRow(
+  transactionId,
+  candidate,
+  { request, workApiUrl } = {},
+) {
+  const id = String(transactionId || "");
+  const period = String(candidate?.period || "");
+  const bankKey = String(candidate?.bankKey || "");
+  if (!id || !bankKey || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period))
+    throw new TypeError("A transaction and valid statement candidate are required");
+  if (typeof request !== "function" || typeof workApiUrl !== "function")
+    throw new TypeError("request and workApiUrl are required");
+  return request(workApiUrl(`/api/reconcile/months/${encodeURIComponent(period)}/pair`), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ bankKey, transactionId: id }),
+  });
+}

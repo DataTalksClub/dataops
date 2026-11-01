@@ -141,6 +141,17 @@ function unmatchedStatementMarkup(candidates, renderers) {
   </section>`;
 }
 
+function pendingStatementMarkup({ e }, error = "") {
+  const message = error
+    ? `Could not load statement details: ${error}`
+    : "Checking the linked statement line…";
+  return `<section class="bk-transaction-statement" aria-labelledby="bk-transaction-statement-heading">
+    <h3 id="bk-transaction-statement-heading">Statement</h3>
+    <p class="bk-transaction-statement__none" role="status">${e(message)}</p>
+    ${error ? `<button type="button" class="dk-button dk-button--secondary" data-retry-statement-link>Retry</button>` : ""}
+  </section>`;
+}
+
 function fieldMarkup(label, value, e) {
   return `<div class="bk-transaction-field"><dt>${e(label)}</dt><dd>${value}</dd></div>`;
 }
@@ -158,6 +169,8 @@ export function bookkeepingTransactionSummaryMarkup({
   documents,
   statementLink = null,
   statementCandidates = [],
+  statementPending = false,
+  statementError = "",
   escape,
   formatAmount,
 } = {}) {
@@ -190,7 +203,9 @@ export function bookkeepingTransactionSummaryMarkup({
   ].filter(Boolean).join(" · ");
   const statementMarkup = statementLink
     ? statementLineMarkup(statementLink, renderers)
-    : unmatchedStatementMarkup(Array.isArray(statementCandidates) ? statementCandidates : [], renderers);
+    : statementPending || statementError
+      ? pendingStatementMarkup(renderers, statementError)
+      : unmatchedStatementMarkup(Array.isArray(statementCandidates) ? statementCandidates : [], renderers);
 
   return `${invoiceSectionMarkup(invoiceList, e)}
     <section class="bk-transaction-summary" aria-labelledby="bk-transaction-summary-heading">
