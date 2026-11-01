@@ -90,6 +90,7 @@ describe('reconcile API', () => {
 
     const listed = JSON.parse((await call('GET', '/api/reconcile/statements')).body);
     assert.equal(listed.items.length, 1);
+    assert.equal(listed.items[0].incomingTotal, '100.00');
     const removed = await call('DELETE', `/api/reconcile/statements/${statement.id}`);
     assert.equal(removed.statusCode, 200);
     assert.equal(JSON.parse((await call('GET', '/api/reconcile/statements')).body).items.length, 0);

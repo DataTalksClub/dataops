@@ -31,6 +31,19 @@ const withFakePortal = async (routes, run) => {
 
 const args = { url: "https://portal.example.test", json: true };
 
+test("statement list displays the incoming amount", async () => {
+  await withFakePortal([
+    ["/reconcile/statements", (request) => {
+      assert.equal(new URL(request.url).searchParams.get("period"), "2026-10");
+      return { items: [{ id: "stmt-finom", accountId: "finom", period: "2026-10", rowCount: 7, incomingCount: 1, incomingTotal: "43633.73" }] };
+    }],
+  ], async () => {
+    const io = { lines: [], print(line) { this.lines.push(String(line)); } };
+    await commands.statements({ ...args, json: false, period: "2026-10" }, io);
+    assert.match(io.lines[0], /7 rows \(43633\.73 incoming\)/);
+  });
+});
+
 test("PDF upload stores the raw statement, parses it and saves rows for matching", async () => {
   const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-test-"));
   const path = join(directory, "statement.pdf");

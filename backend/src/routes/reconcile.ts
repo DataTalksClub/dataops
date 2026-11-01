@@ -109,7 +109,10 @@ export async function handleReconcileRoutes(
     }
 
     if (action === "/statements" && method === "GET") {
-      const items = await listStatements(client);
+      const items = (await listStatements(client)).map((statement) => ({
+        ...statement,
+        incomingTotal: statementTotal(statement.rows.filter((row) => Number(row.amount) > 0)),
+      }));
       const period = query.period;
       const selected = period ? items.filter((item) => item.period === period) : items;
       return json(200, { items: selected.map((item) => ({

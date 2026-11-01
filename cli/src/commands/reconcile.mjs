@@ -253,7 +253,7 @@ export async function statements(args, io) {
   const result = await api.get("/api/reconcile/statements", { query: period ? { period } : {} });
   if (!args.json) {
     for (const statement of result.items) {
-      io.print(`${statement.id}  ${statement.accountId}  ${statement.period}  ${statement.rowCount} rows (${statement.incomingCount} incoming)${statement.filename ? `  ${statement.filename}` : ""}`);
+      io.print(`${statement.id}  ${statement.accountId}  ${statement.period}  ${statement.rowCount} rows (${statement.incomingTotal} incoming)${statement.filename ? `  ${statement.filename}` : ""}`);
     }
     if (!result.items.length) io.print("No statements stored.");
   }
