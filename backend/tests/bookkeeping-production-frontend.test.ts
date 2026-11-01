@@ -86,4 +86,20 @@ describe('production portal bookkeeping frontend', () => {
       );
     }
   });
+
+  it('serves every new bookkeeping presentation module from the production asset manifest', async () => {
+    for (const relativePath of [
+      'src/surfaces/finance/bookkeeping-statement.js',
+      'src/surfaces/finance/bookkeeping-transaction-dialog.js',
+      'src/surfaces/finance/bookkeeping-vendors.js',
+    ]) {
+      assert.ok(DEPLOYED_FRONTEND_FILE_LIST.includes(relativePath), `${relativePath} must be deployable`);
+      const response = await invoke(`/${relativePath}`);
+      assert.equal(response.statusCode, 200, `${relativePath} should be served`);
+      assert.equal(
+        response.body,
+        readFileSync(path.join(frontendRoot, ...relativePath.split('/')), 'utf8'),
+      );
+    }
+  });
 });
