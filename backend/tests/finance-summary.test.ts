@@ -105,7 +105,8 @@ describe('finance summary', () => {
       row('tk', { entryType: 'expense', category: 'Health Insurance', amount: '1179.36', paidDate: '2026-10-16' }),
       row('no-vat', { entryType: 'expense', amount: '10', paidDate: '2026-10-17' }),
     ];
-    const t = summarize({ today: '2026-10-31', query: { month: '2026-10' }, rates: usdAt(1.12, '2026-10-03'), rows }).totals;
+    const summary = summarize({ today: '2026-10-31', query: { month: '2026-10' }, rates: usdAt(1.12, '2026-10-03'), rows });
+    const t = summary.totals;
     assert.equal(t.operatingIncome, 2190);
     assert.equal(t.outputVat, 190);
     assert.equal(t.operatingExpenses, 229);
@@ -120,7 +121,8 @@ describe('finance summary', () => {
     assert.equal(t.otherTaxes, 3296);
     assert.equal(t.healthInsurance, 1179.36);
     assert.equal(t.netAfterTaxes, -2665.36);
-    assert.equal(t.vatUnknownCount, 1);
+    assert.equal('vatUnknownCount' in t, false);
+    assert.equal(summary.gaps.some((gap) => gap.kind === 'vat-unknown'), false);
     assert.equal(t.moneyOut, 4854.36);
     assert.equal(t.moneyIn, 2201.9);
   });

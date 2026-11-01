@@ -79,15 +79,14 @@ subtype.
   Finanzamt, negative is a refund. It is shown next to what was actually paid
   or refunded (category `VAT`) in the same period.
 
-A row without a VAT amount counts as zero VAT and is listed as `vat-unknown`,
-so the projection is only as complete as the VAT data.
+A row without a VAT amount contributes zero VAT.
 
 ## Gaps
 
 Each response lists what it could not count or had to assume:
-`unconverted`, `no-direction`, `no-booked-eur`, `vat-unknown`,
-`pending-invoices`, `bank-line-without-ledger-row` and `missing-statement` (a
-business account with no bank statement for a month that has started).
+`unconverted`, `no-direction`, `no-booked-eur`, `pending-invoices`,
+`bank-line-without-ledger-row` and `missing-statement` (a business account with
+no bank statement for a month that has started).
 
 ## Access
 

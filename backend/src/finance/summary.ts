@@ -60,7 +60,6 @@ export type Totals = {
   healthInsurance: number;
   netAfterTaxes: number;
   entryCount: number;
-  vatUnknownCount: number;
   unconvertedCount: number;
 };
 
@@ -91,7 +90,7 @@ export const SOURCE_RULES = [
   'Lines: category VAT is a payment to (expense) or refund from (income) the Finanzamt for VAT; category Taxes is every other tax (Gewerbesteuer, income or corporate tax prepayments); category Health Insurance is TK. Everything else is operating income or expense.',
   'Refunds from suppliers (credit notes: income rows with subtype Refund or a credit-note:<number> source key) are money in and count toward net profit, but are their own line, not revenue. Their VAT reduces input VAT.',
   'Net profit excluding VAT = (operating income - output VAT) + (refunds - their VAT) - (operating expenses - input VAT). Taxes and TK are shown as their own lines and in net after taxes; VAT payments and refunds are not profit or loss.',
-  'Projected VAT position = output VAT - input VAT: positive is owed to the Finanzamt, negative is a refund. A row without a VAT amount counts as zero VAT and is listed as a gap, so the projection is only as complete as the VAT data.',
+  'Projected VAT position = output VAT - input VAT: positive is owed to the Finanzamt, negative is a refund. A row without a VAT amount contributes zero VAT.',
 ];
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -195,7 +194,7 @@ function emptyTotals(): Totals {
   return {
     moneyIn: 0, moneyOut: 0, net: 0, operatingIncome: 0, operatingExpenses: 0, refunds: 0, refundsNetOfVat: 0, outputVat: 0, inputVat: 0,
     incomeNetOfVat: 0, expensesNetOfVat: 0, netProfitExVat: 0, projectedVat: 0, vatPaid: 0, vatRefunded: 0,
-    otherTaxes: 0, healthInsurance: 0, netAfterTaxes: 0, entryCount: 0, vatUnknownCount: 0, unconvertedCount: 0,
+    otherTaxes: 0, healthInsurance: 0, netAfterTaxes: 0, entryCount: 0, unconvertedCount: 0,
   };
 }
 
@@ -204,7 +203,6 @@ const SUMMED: Array<keyof Totals> = ['moneyIn', 'moneyOut', 'operatingIncome', '
 /** Totals in integer cents, then derived figures, then back to EUR. */
 function total(entries: Entry[]): Totals {
   const c = Object.fromEntries(SUMMED.map((key) => [key, 0])) as Record<string, number>;
-  let vatUnknownCount = 0;
   let unconvertedCount = 0;
   let refundVat = 0;
   for (const entry of entries) {
@@ -213,7 +211,6 @@ function total(entries: Entry[]): Totals {
     const vat = entry.vatEur === null ? 0 : cents(entry.vatEur);
     c[entry.direction === 'in' ? 'moneyIn' : 'moneyOut'] += value;
     if (entry.line === 'operating') {
-      if (entry.vatEur === null) vatUnknownCount += 1;
       if (entry.direction === 'out') { c.operatingExpenses += value; c.inputVat += vat; }
       else if (entry.refund) { c.refunds += value; c.inputVat -= vat; refundVat += vat; }
       else { c.operatingIncome += value; c.outputVat += vat; }
@@ -237,7 +234,6 @@ function total(entries: Entry[]): Totals {
     projectedVat: fromCents(c.outputVat - c.inputVat),
     netAfterTaxes: fromCents(netProfitExVat - c.otherTaxes - c.healthInsurance),
     entryCount: entries.length,
-    vatUnknownCount,
     unconvertedCount,
   };
 }
@@ -316,9 +312,6 @@ export function summarize(input: SummaryInput): FinanceSummary {
   if (noDirection.length) gaps.push({ kind: 'no-direction', message: 'Rows whose entryType is neither income nor expense; left out of the totals', count: noDirection.length, ids: noDirection });
   const ecbConverted = entries.filter((entry) => entry.rateSource === 'ecb');
   if (ecbConverted.length) gaps.push({ kind: 'no-booked-eur', message: 'Non-EUR rows without the EUR amount the bank booked; converted at the ECB reference rate', count: ecbConverted.length, ids: ecbConverted.map((e) => e.id) });
-  const vatUnknown = entries.filter((entry) => entry.line === 'operating' && entry.vatEur === null);
-  if (vatUnknown.length) gaps.push({ kind: 'vat-unknown', message: 'Operating rows with no VAT amount; counted as zero VAT', count: vatUnknown.length, ids: vatUnknown.map((e) => e.id) });
-
   const pending = (input.pendingInvoices || []).filter((invoice) => inPeriod(invoice.date));
   if (pending.length) gaps.push({ kind: 'pending-invoices', message: 'Incoming invoice drafts not yet verified; not counted until confirmed and published', count: pending.length, ids: pending.map((p) => p.id) });
 

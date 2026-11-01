@@ -67,7 +67,7 @@ export function printSummary(io, s) {
   io.print(`Finance summary ${s.period.label} (EUR)`);
   io.print("");
   io.print(`Net profit excluding VAT:  ${money(t.netProfitExVat)}`);
-  io.print(`Projected VAT position:    ${money(t.projectedVat)} (${vatWord(t.projectedVat)})${t.vatUnknownCount ? `  ! ${t.vatUnknownCount} rows have no VAT amount` : ""}`);
+  io.print(`Projected VAT position:    ${money(t.projectedVat)} (${vatWord(t.projectedVat)})`);
   io.print("");
   const rows = s.months.length > 1 ? [...s.months, { month: "Total", ...t }] : s.months;
   grid(io, rows, [

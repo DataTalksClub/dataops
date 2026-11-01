@@ -33,10 +33,6 @@ const vatWord = (value) => (value > 0 ? "owed to the Finanzamt" : value < 0 ? "r
 export function headlineMarkup(summary, e) {
   const t = summary.totals;
   const settled = t.vatPaid - t.vatRefunded;
-  const vatNote = t.vatUnknownCount
-    ? html`<p class="fin-tile__warn" role="note"><span aria-hidden="true">!</span>
-        ${e(String(t.vatUnknownCount))} operating ${t.vatUnknownCount === 1 ? "row has" : "rows have"} no VAT amount; counted as zero</p>`
-    : "";
   return html`<div class="fin-hero">
       <section class="fin-tile fin-tile--hero" aria-labelledby="fin-profit-label">
         <h2 id="fin-profit-label" class="fin-tile__label">Net profit excluding VAT</h2>
@@ -50,7 +46,6 @@ export function headlineMarkup(summary, e) {
         <p class="fin-tile__value" data-fin-vat>${formatEur(t.projectedVat)} <span class="fin-tile__unit">EUR</span></p>
         <p class="fin-tile__sub">${vatWord(t.projectedVat)} · output VAT ${formatEur(t.outputVat)} − input VAT ${formatEur(t.inputVat)}</p>
         <p class="fin-tile__sub">Actually ${settled < 0 ? "refunded" : "paid"} in this period: <strong>${formatEur(Math.abs(settled))}</strong></p>
-        ${vatNote}
       </section>
     </div>
     <dl class="fin-stats">
