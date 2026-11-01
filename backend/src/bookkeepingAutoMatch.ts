@@ -228,7 +228,10 @@ export function planEvidenceAutoMatches(
   );
 
   const eligibleTransactions = transactions.filter(
-    (transaction) => transaction.id && !linkedTransactions.has(transaction.id),
+    (transaction) =>
+      transaction.id &&
+      !linkedTransactions.has(transaction.id) &&
+      !transaction.sponsorDealId,
   );
   const eligibleDocuments = documents.filter(
     (document) =>

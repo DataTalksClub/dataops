@@ -5,13 +5,16 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import type { LambdaEvent, LambdaResponse } from "../types";
 import {
+  createDocumentLink,
   getBookkeepingItem,
   getRawDocument,
   listBookkeepingItems,
+  listTransactions,
   setDocumentFacts,
   updateBookkeepingTransaction,
   transactionSponsorDeal,
 } from "../db/bookkeeping";
+import { planEvidenceAutoMatches, type AutoMatchDocument, type AutoMatchEvidenceLink, type AutoMatchTransaction } from "../bookkeepingAutoMatch";
 import { pdfText } from "../invoices/extract";
 import { extractFinancePdf } from "../invoices/financeExtraction";
 import type { InvoiceFields, Invoice } from "../invoices/model";
@@ -170,7 +173,36 @@ export async function extractDocumentFacts(client: DynamoDBDocumentClient, id: s
   for (const link of await listBookkeepingItems(client, "link")) {
     if (link.documentId === id && link.coverageType === "evidence") await applyDocumentFinance(client, facts, String(link.transactionId));
   }
+  await autoAttachConfidentEvidence(client);
   return { ...publicDocument(document), facts };
+}
+
+/** Attach only mutual, unique, exact matches after either side arrives. */
+export async function autoAttachConfidentEvidence(client: DynamoDBDocumentClient) {
+  const [transactions, documents, links] = await Promise.all([
+    listTransactions(client),
+    listBookkeepingItems(client, "document"),
+    listBookkeepingItems(client, "link"),
+  ]);
+  const planned = planEvidenceAutoMatches(
+    transactions as unknown as AutoMatchTransaction[],
+    documents as unknown as AutoMatchDocument[],
+    links as unknown as AutoMatchEvidenceLink[],
+  );
+  const documentsById = new Map(documents.map((document) => [document.id, document]));
+  const attached: Array<{ transactionId: string; documentId: string }> = [];
+  for (const pair of planned) {
+    const result = await createDocumentLink(client, {
+      documentId: pair.documentId,
+      transactionId: pair.transactionId,
+      coverageType: "evidence",
+    });
+    if (result.outcome !== "created") continue;
+    attached.push({ transactionId: pair.transactionId, documentId: pair.documentId });
+    const facts = documentsById.get(pair.documentId)?.facts;
+    if (facts) await applyDocumentFinance(client, facts as DocumentFacts, pair.transactionId);
+  }
+  return attached;
 }
 
 export async function transactionSuggestions(client: DynamoDBDocumentClient, transaction: Record_) {

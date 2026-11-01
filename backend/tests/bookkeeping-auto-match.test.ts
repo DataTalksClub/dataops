@@ -138,6 +138,17 @@ describe("strict bookkeeping evidence auto-matching", () => {
     );
   });
 
+  it("leaves sponsor-finance-claimed transactions unchanged", () => {
+    assert.deepEqual(
+      planEvidenceAutoMatches(
+        [transaction("tx-claimed", { sponsorDealId: "deal-1" })],
+        [document("doc-1")],
+        [],
+      ),
+      [],
+    );
+  });
+
   it("leaves tied candidates unmatched and only accepts mutual closest pairs", () => {
     const tied = planEvidenceAutoMatches(
       [transaction("tx-1")],

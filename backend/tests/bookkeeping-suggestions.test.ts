@@ -6,7 +6,7 @@ import { PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { handler } from '../src/handler';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
-import { putBookkeepingItem } from '../src/db/bookkeeping';
+import { getBookkeepingItem, listBookkeepingItems, putBookkeepingItem } from '../src/db/bookkeeping';
 import { TABLE_BOOKKEEPING } from '../src/db/tableNames';
 import { setBookkeepingStorageForTests } from '../src/routes/bookkeepingShared';
 import { scoreDocument, scoreSponsorDeal } from '../src/routes/bookkeepingSuggestions';
@@ -104,6 +104,71 @@ describe('bookkeeping matching suggestions', () => {
       const listed = JSON.parse((await invoke('GET', '/api/bookkeeping/documents')).body).items;
       assert.equal(listed.find((item: any) => item.id === target.id).facts.method, 'unreadable');
       assert.equal((await invoke('POST', '/api/bookkeeping/documents/missing/facts')).statusCode, 404);
+    });
+
+    it('auto-attaches a confident invoice when extraction finishes', async () => {
+      const { PDFDocument, StandardFonts } = await import('pdf-lib');
+      const pdf = await PDFDocument.create();
+      const page = pdf.addPage();
+      const font = await pdf.embedFont(StandardFonts.Helvetica);
+      [
+        'Hetzner Online GmbH',
+        'Invoice no.: 123456789',
+        'Invoice date: 01/10/2026',
+        'Tax code Tax rate',
+        'A1 19 %',
+        'Total € 100.00 € 19.00 € 119.00',
+      ].forEach((line, index) => page.drawText(line, { x: 40, y: 750 - index * 22, size: 12, font }));
+      const bytes = Buffer.from(await pdf.save());
+      const oldBucket = process.env.BOOKKEEPING_DOCUMENTS_BUCKET;
+      process.env.BOOKKEEPING_DOCUMENTS_BUCKET = 'synthetic-private-bucket';
+      setBookkeepingStorageForTests({
+        send: async (command: any) => command.constructor.name === 'GetObjectCommand'
+          ? { Body: Readable.from([bytes]) }
+          : {},
+      } as any);
+
+      try {
+        const transaction = (await putBookkeepingItem(client, 'bookkeeping', {
+          transactionDate: '2026-10-01', paidDate: '2026-10-01', counterparty: 'Hetzner Online GmbH',
+          description: 'Hosting', amount: '119.00', amountEur: '119.00', currency: 'EUR', entryType: 'expense',
+        })).item;
+        const target = await document('arrival-match', {});
+        const response = await invoke('POST', `/api/bookkeeping/documents/${target.id}/facts`);
+        assert.equal(response.statusCode, 200);
+        const extracted = JSON.parse(response.body);
+        assert.equal(extracted.facts.extraction.needsReview, false);
+        const links = await listBookkeepingItems(client, 'link');
+        assert.equal(links.some((link) => link.transactionId === transaction.id && link.documentId === target.id && link.coverageType === 'evidence'), true);
+        const updated = await getBookkeepingItem(client, 'bookkeeping', transaction.id);
+        assert.equal(updated?.vatAmount, '19.00');
+        assert.equal(updated?.netAmount, '100.00');
+      } finally {
+        if (oldBucket === undefined) delete process.env.BOOKKEEPING_DOCUMENTS_BUCKET;
+        else process.env.BOOKKEEPING_DOCUMENTS_BUCKET = oldBucket;
+      }
+    });
+
+    it('auto-attaches when a transaction arrives after invoice facts exist', async () => {
+      const target = await document('transaction-arrival', {
+        facts: {
+          counterparty: 'Special Cloud Partner Ltd', amount: '765.43', currency: 'EUR',
+          transactionDate: '2026-11-19', method: 'deterministic-text', extractedAt: '2026-11-19T00:00:00Z',
+        },
+      });
+      const response = await invoke('POST', '/api/bookkeeping/transactions', {
+        ...transaction,
+        transactionDate: '2026-11-19',
+        counterparty: 'Special Cloud Partner GmbH',
+        description: 'Unique invoice match',
+        amount: '765.43',
+        amountEur: '765.43',
+        currency: 'EUR',
+      });
+      assert.equal(response.statusCode, 201);
+      const created = JSON.parse(response.body);
+      const links = await listBookkeepingItems(client, 'link');
+      assert.equal(links.some((link) => link.transactionId === created.id && link.documentId === target.id && link.coverageType === 'evidence'), true);
     });
   });
 });

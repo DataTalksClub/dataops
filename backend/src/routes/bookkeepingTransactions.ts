@@ -9,6 +9,7 @@ import {
   updateBookkeepingTransaction,
 } from "../db/bookkeeping";
 import { json, MONEY, MONTH, parse } from "./bookkeepingShared";
+import { autoAttachConfidentEvidence } from "./bookkeepingSuggestions";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const CURRENCY = /^[A-Z]{3}$/;
@@ -173,6 +174,9 @@ export async function handleBookkeepingTransactionRoutes(
       if (match[1]) {
         try {
           const updated = await updateBookkeepingTransaction(client, match[1], String(previous!.updatedAt), value);
+          if (["transactionDate", "paidDate", "counterparty", "amount", "amountEur", "currency"].some((field) => body[field] !== undefined)) {
+            await autoAttachConfidentEvidence(client);
+          }
           return json(200, updated);
         } catch (error) {
           if (error instanceof BookkeepingItemLockedError)
@@ -187,6 +191,7 @@ export async function handleBookkeepingTransactionRoutes(
         client, "bookkeeping", value,
         typeof value.sourceKey === "string" ? `source#${value.sourceKey}` : undefined,
       );
+      await autoAttachConfidentEvidence(client);
       return json(result.duplicate ? 200 : 201, result.item);
     }
   }
