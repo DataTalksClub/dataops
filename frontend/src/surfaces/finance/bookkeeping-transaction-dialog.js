@@ -41,8 +41,13 @@ function invoiceMarkup(document, index, e) {
   const id = text(document?.id || document?.documentId);
   const filename = text(document?.filename || document?.originalFilename || document?.fileName || document?.name);
   const label = filename ? `Open invoice · ${filename}` : "Open invoice";
+  const buttonParts = [
+    '<button type="button" class="dk-button dk-button--primary dk-button--lg bk-transaction-invoice__open"',
+    `data-view-document="${e(id)}"`,
+    `aria-label="${e(label)}">${e(label)}</button>`,
+  ];
   const control = id
-    ? `<button type="button" class="dk-button dk-button--primary dk-button--lg bk-transaction-invoice__open" data-view-document="${e(id)}" aria-label="${e(label)}">${e(label)}</button>`
+    ? buttonParts.join(" ")
     : `<span class="bk-transaction-invoice__name">${e(filename || `Attached invoice ${index + 1}`)}</span>`;
   return `<li class="bk-transaction-invoice">${control}</li>`;
 }
@@ -93,9 +98,14 @@ function statementLineMarkup(statementLink, { e, amount }) {
   const reconcileHref = bankKey && /^\d{4}-\d{2}$/.test(period)
     ? `/finance/reconcile/${period}?bankKey=${encodeURIComponent(bankKey)}`
     : "";
+  const recordTarget = documentId
+    ? ` data-view-document="${e(documentId)}"`
+    : artifactId
+      ? ` data-view-artifact="${e(artifactId)}"`
+      : " disabled";
   return `<section class="bk-transaction-statement" aria-labelledby="bk-transaction-statement-heading">
     <h3 id="bk-transaction-statement-heading">Matched statement line</h3>
-    <button type="button" class="bk-transaction-statement__record"${documentId ? ` data-view-document="${e(documentId)}"` : artifactId ? ` data-view-artifact="${e(artifactId)}"` : " disabled"}>
+    <button type="button" class="bk-transaction-statement__record"${recordTarget}>
       <span class="bk-transaction-statement__account">${e(statementLink.accountLabel || "Bank account")}</span>
       <span class="bk-transaction-statement__period">${e(statementLink.statementPeriod || "Statement period unavailable")}</span>
       <span class="bk-transaction-statement__line">${e(line.date || "Date unavailable")} · ${e(lineAmount)}</span>
@@ -192,8 +202,17 @@ export function bookkeepingTransactionSummaryMarkup({
   const paidDate = filled(transaction.paidDate) && text(transaction.paidDate) !== transactionDate
     ? fieldMarkup("Paid date", e(transaction.paidDate), e)
     : "";
+  const exchangeRateDate = filled(transaction.exchangeRateDate)
+    ? ` · ${e(transaction.exchangeRateDate)}`
+    : "";
+  const exchangeRateSource = filled(transaction.exchangeRateSource)
+    ? ` · ${e(transaction.exchangeRateSource)}`
+    : "";
   const exchangeRateMarkup = exchangeRate
-    ? `<div class="bk-transaction-field"><dt>Exchange rate</dt><dd>1 EUR = ${e(exchangeRate)} ${e(currency)}${filled(transaction.exchangeRateDate) ? ` · ${e(transaction.exchangeRateDate)}` : ""}${filled(transaction.exchangeRateSource) ? ` · ${e(transaction.exchangeRateSource)}` : ""}</dd></div>`
+    ? `<div class="bk-transaction-field">
+      <dt>Exchange rate</dt>
+      <dd>1 EUR = ${e(exchangeRate)} ${e(currency)}${exchangeRateDate}${exchangeRateSource}</dd>
+    </div>`
     : "";
   const vatExtra = [
     filled(transaction.vatRate)

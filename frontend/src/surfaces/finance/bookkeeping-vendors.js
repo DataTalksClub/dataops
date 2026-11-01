@@ -57,7 +57,10 @@ const PRODUCT_PURPOSES = [
   { pattern: /\bchatgpt\s*plus\b/i, description: "ChatGPT Plus" },
   { pattern: /\bllm\s+zoomcamp\b/i, description: "LLM Zoomcamp workshop" },
   { pattern: /\bnewsletter\s+sponsorship\b/i, description: "Newsletter sponsorship" },
-  { pattern: /\b(?:social\s+media|email\s+newsletter)\s+management\b|\bsocial\s+media\s+management\s+and\s+email\s+newsletter\s+creation\b/i, description: "Social media and newsletter management" },
+  {
+    pattern: /\b(?:social\s+media|email\s+newsletter)\s+management\b|\bsocial\s+media\s+management\s+and\s+email\s+newsletter\s+creation\b/i,
+    description: "Social media and newsletter management",
+  },
   { pattern: /\bcloud\s+(?:hosting|services?)\b|\baws\b/i, description: "Cloud hosting" },
 ];
 

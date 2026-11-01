@@ -125,9 +125,9 @@ body[data-workspace-view="reconcile"] .document-list {
   color: var(--dk-text-muted);
 }
 
-.recon-row[data-statement-target="true"] {
-  outline: 2px solid var(--dk-focus-ring);
-  outline-offset: -2px;
+.recon-row[data-statement-target="true"] td {
+  border-block: 1px solid var(--dk-border-default);
+  background: var(--dk-accent-soft);
 }
 
 .recon-status {
