@@ -870,15 +870,11 @@ export function nextDueOpenTask(tasks, today) {
   return openTasks[0] || null;
 }
 
-export function sortCardChecklistTasks(tasks, today) {
-  const sorted = tasksFromWorkPayload(tasks);
-  sorted.sort((left, right) => {
-    const leftDone = isResolvedWorkTask(left);
-    const rightDone = isResolvedWorkTask(right);
-    if (leftDone !== rightDone) return leftDone ? 1 : -1;
-    return compareIsoDate(taskDate(left) || today, taskDate(right) || today);
-  });
-  return orderAfterPrerequisites(sorted); // dates alone could list a step above its prerequisite
+export function sortCardChecklistTasks(tasks, _today) {
+  // Template order is the reading order: open and completed rows stay where
+  // the Template put them instead of sinking to the end. Only prerequisites
+  // may move a row, and only below its own prerequisite.
+  return orderAfterPrerequisites(tasksFromWorkPayload(tasks)); // dates alone could list a step above its prerequisite
 }
 
 export function workflowTaskGroups(tasks, today) {

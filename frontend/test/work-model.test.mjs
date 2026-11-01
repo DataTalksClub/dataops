@@ -275,8 +275,8 @@ describe("frontend work model", () => {
     ];
     const groups = workflowTaskGroups(tasks, TODAY);
     assert.deepEqual(groups.map((group) => group.title), ["Active", "Waiting / follow-up", "Done / history"]);
-    assert.deepEqual(groups.map((group) => group.tasks.map((task) => task.id)), [["active"], ["waiting"], ["retired", "done"]]);
-    assert.deepEqual(groups[2].tasks[0].artifactRefs, [{ artifactId: "retained-evidence" }]);
+    assert.deepEqual(groups.map((group) => group.tasks.map((task) => task.id)), [["active"], ["waiting"], ["done", "retired"]]);
+    assert.deepEqual(groups[2].tasks.find((task) => task.id === "retired").artifactRefs, [{ artifactId: "retained-evidence" }]);
   });
 
   test("reports missing link, file, and approved-artifact proof", () => {
