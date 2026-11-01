@@ -104,6 +104,31 @@ describe('month reconciliation', () => {
     assert.equal(rows['b-other'].status, 'no-invoice');
   });
 
+  it('surfaces pending email documents for paired rows with no invoice and for Google Play review', () => {
+    const result = buildMonthTable({
+      period: '2026-10',
+      bank: [
+        bank('b-refund', { date: '2026-10-31', counterparty: 'Pro Sulum Llc', amount: '646.63', currency: 'USD' }),
+        bank('b-google-play', { date: '2026-10-17', counterparty: 'Google*google Play App', amount: '877.39' }),
+      ],
+      ledger: [ledger('l-refund', { date: '2026-10-30', counterparty: 'Pro Sulum, LLC', amount: '646.63', currency: 'USD', documents: [] })],
+      pendingEmailInvoices: [
+        { id: 'refund-draft', artifactId: 'email-document-refund', receivedAt: '2026-10-31T00:00:00Z', fields: { transactionDate: '2026-10-30', amount: '646.63', currency: 'USD', counterparty: 'Pro Sulum, LLC' }, direction: 'income' },
+        { id: 'google-play-draft', artifactId: 'email-document-google-play', receivedAt: '2026-10-04T00:00:00Z', fields: { transactionDate: '2026-10-02', amount: '219.99', currency: 'EUR', counterparty: 'Google Commerce Limited' }, direction: 'expense' },
+      ],
+      decisions: none(), rules: [],
+    });
+    const rows = Object.fromEntries(result.rows.map((row) => [row.id, row]));
+    assert.equal(rows['b-refund'].status, 'needs-review');
+    assert.equal(rows['b-refund'].ledger?.id, 'l-refund');
+    assert.equal(rows['b-refund'].emailInvoiceCandidates?.[0].invoiceId, 'refund-draft');
+    assert.equal(rows['b-google-play'].status, 'needs-review');
+    assert.deepEqual(rows['b-google-play'].emailInvoiceCandidates, [{
+      invoiceId: 'google-play-draft', artifactId: 'email-document-google-play',
+      counterparty: 'Google Commerce Limited', directionConflict: true,
+    }]);
+  });
+
   it('matches foreign-currency rows through the original amount or the EUR amount, and flags fee gaps', () => {
     const tolerances = DEFAULT_TOLERANCES;
     assert.equal(amountFit(bank('b', { amount: '-9.80', origAmount: '-8.50', origCurrency: 'GBP' }), ledger('l', { amount: '-8.50', currency: 'GBP' }), tolerances)?.basis, 'fx');

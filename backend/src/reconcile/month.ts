@@ -495,7 +495,7 @@ export function buildMonthTable(input: MonthInput): MonthTable {
       row.missing = `${ambiguous.length} ledger rows fit equally; pick one`;
     } else if (row.exception) {
       if (!row.exception.satisfied) { row.status = "needs-review"; row.missing = `${row.exception.kind} needs proof: ${row.exception.proof}`; }
-    } else if (!pair) {
+    } else if (!pair || !documents.length) {
       const emailInvoiceCandidates = (input.pendingEmailInvoices || [])
         .filter((invoice) => matchesPendingEmailInvoice(bankRow, invoice, tolerances.dateLagDays))
         .map((invoice) => ({
@@ -511,9 +511,12 @@ export function buildMonthTable(input: MonthInput): MonthTable {
         row.emailInvoiceCandidates = emailInvoiceCandidates;
         const ids = emailInvoiceCandidates.map((candidate) => candidate.invoiceId).join(", ");
         row.missing = `pending email invoice ${emailInvoiceCandidates.length === 1 ? "draft needs" : "drafts need"} review (${ids})`;
-      } else {
+      } else if (!pair) {
         row.status = "no-invoice";
         row.missing = "no ledger row or invoice for this bank transaction";
+      } else {
+        row.status = "no-invoice";
+        row.missing = "ledger row has no invoice/receipt document";
       }
     } else if (pair.basis === "fee") {
       row.status = "amount-mismatch";
@@ -585,7 +588,8 @@ function matchesPendingEmailInvoice(bank: BankTx, invoice: PendingEmailInvoice, 
   const invoiceDate = invoice.fields.transactionDate || invoice.fields.paidDate || invoice.receivedAt || "";
   const bankDay = dayOf(bank.date);
   const invoiceDay = invoiceDate ? dayOf(invoiceDate) : Number.NaN;
-  if (!Number.isFinite(bankDay) || !Number.isFinite(invoiceDay) || Math.abs(bankDay - invoiceDay) / DAY > dateLagDays) return false;
+  const dayGap = Math.abs(bankDay - invoiceDay) / DAY;
+  if (!Number.isFinite(bankDay) || !Number.isFinite(invoiceDay)) return false;
 
   const amount = Number(invoice.fields.amount);
   const invoiceCurrency = String(invoice.fields.currency || "").trim().toUpperCase();
@@ -598,13 +602,16 @@ function matchesPendingEmailInvoice(bank: BankTx, invoice: PendingEmailInvoice, 
 
   const normalizedDraftVendor = normalizedAutoMatchVendor(invoice.fields.counterparty);
   const normalizedBankVendor = normalizedAutoMatchVendor(bank.counterparty);
+  const googlePlayCrossVendor = /google commerce/.test(normalizedDraftVendor || "")
+    && /google play/.test(normalizedBankVendor || "");
+  if (dayGap > dateLagDays && !(googlePlayCrossVendor && dayGap <= 31)) return false;
   const meaningfulTokens = (value: string) => new Set(value.toLowerCase().split(/[^a-z0-9]+/).filter((token) =>
     (token.length >= 5 || token === "xai") && !["google", "amazon", "company"].includes(token)));
   const draftTokens = meaningfulTokens(String(invoice.fields.counterparty || ""));
   const bankTokens = meaningfulTokens(bank.counterparty);
   const sharedVendorToken = [...draftTokens].some((token) => bankTokens.has(token));
   const vendorMatch = Boolean(normalizedDraftVendor && normalizedBankVendor
-    && (normalizedDraftVendor === normalizedBankVendor || sharedVendorToken));
+    && (normalizedDraftVendor === normalizedBankVendor || sharedVendorToken || googlePlayCrossVendor));
   // Exact amounts may identify bank abbreviations (for example, GOOGLE*G1AI).
   // Otherwise require a normalized vendor or a distinctive shared vendor token;
   // mismatches remain visible for human review instead of attaching the draft.
