@@ -514,8 +514,12 @@ export function createCardPanel(context) {
         ? "Hide completed"
         : `Show ${doneMain.length} completed`;
       toggle.addEventListener("click", () => {
+        const restoreFocus = toggle === document.activeElement;
         completedVisibility.set(card.id, !completedOpen);
         renderCardPanel({ preserveDrafts: true });
+        if (restoreFocus) {
+          cardPanelBody.querySelector(".card-checklist-completed-toggle")?.focus();
+        }
       });
       // One pass in template order: open rows paint in place, completed rows
       // paint only while the toggle is open, the toggle itself sitting where

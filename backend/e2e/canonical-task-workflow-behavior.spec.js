@@ -614,6 +614,10 @@ test.describe('canonical Tasks and Workflows browser behavior', () => {
     await expect(workflowCard).toContainText('2/3 tasks');
     await workflowCard.click();
     await expect(page.locator('#card-panel-title')).toHaveText(cardTitle);
+    const completedToggle = page.locator('#card-panel .card-checklist-completed-toggle');
+    await expect(completedToggle).toHaveAccessibleName('Show 2 completed tasks');
+    await completedToggle.click();
+    await expect(completedToggle).toHaveAttribute('aria-expanded', 'true');
     for (const taskTitle of [missingArtifactTitle, proofTitle, completedTitle]) {
       await expect(page.locator('#card-panel .card-checklist-label', { hasText: taskTitle })).toBeVisible();
     }

@@ -35,6 +35,10 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 1440, height: 900
     await page.goto(`/cards?cardId=${card.id}`);
     const panel = page.locator('#card-panel');
     const rows = panel.locator('.card-checklist-item');
+    const completedToggle = panel.locator('.card-checklist-completed-toggle');
+    await expect(completedToggle).toHaveAccessibleName('Show 2 completed tasks');
+    await completedToggle.click();
+    await expect(completedToggle).toHaveAttribute('aria-expanded', 'true');
     await expect(rows).toHaveCount(3);
 
     const skipped = rows.filter({ has: page.locator(`[data-task-id="${tasks[2].id}"]`) });

@@ -131,8 +131,12 @@ test.describe('a finished Task returns to where it was opened', () => {
     await expect(page.locator('#task-panel')).toBeHidden();
     await expect(cardDialog).toBeVisible();
     await expect(page).toHaveURL(at(`/tasks?assignee=all&card=${card.id}`));
+    const completedToggle = cardDialog.locator('.card-checklist-completed-toggle');
+    await expect(completedToggle).toHaveAccessibleName('Show 1 completed tasks');
+    await completedToggle.click();
+    await expect(completedToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(completedToggle).toBeFocused();
     await expect(cardDialog.locator('.card-checklist-label.is-skipped', { hasText: first.description })).toBeVisible();
-    await expect(cardDialog.locator('.card-checklist-label', { hasText: first.description })).toBeFocused();
 
     await cardDialog.locator('.card-checklist-label', { hasText: dependent.description }).click();
     await page.locator('#task-panel').getByRole('button', { name: 'Mark done' }).click();
