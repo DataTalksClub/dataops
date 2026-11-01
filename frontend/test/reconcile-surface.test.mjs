@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import { escapeHtml as e } from "../src/core/html.js";
-import { createReconcileClient, gateErrorOf } from "../src/surfaces/reconcile/index.js";
+import { createReconcileClient, focusStatementRow, gateErrorOf } from "../src/surfaces/reconcile/index.js";
 import {
   blockersMarkup,
   confirmationMarkup,
@@ -81,6 +81,28 @@ describe("reconciliation periods", () => {
     assert.equal(periodFromPath("/finance/reconcile"), null);
     assert.equal(periodFromPath("/finance/reconcile/2026-13"), null);
     assert.equal(reconcilePath("2026-09"), "/finance/reconcile/2026-09");
+  });
+});
+
+describe("bookkeeping statement links", () => {
+  test("focuses and scrolls to the reconciliation row selected by bank key", () => {
+    const calls = [];
+    const target = {
+      dataset: { reconRowId: "revolut:m1" },
+      scrollIntoView: (options) => calls.push(["scroll", options]),
+      focus: (options) => calls.push(["focus", options]),
+    };
+    const body = {
+      querySelectorAll: (selector) => selector === "[data-recon-row-id]" ? [target] : [],
+    };
+    assert.equal(focusStatementRow(body, MONTH, "revolut:m1"), true);
+    assert.equal(target.tabIndex, -1);
+    assert.equal(target.dataset.statementTarget, "true");
+    assert.deepEqual(calls, [
+      ["scroll", { block: "center" }],
+      ["focus", { preventScroll: true }],
+    ]);
+    assert.equal(focusStatementRow(body, MONTH, "missing-key"), false);
   });
 });
 

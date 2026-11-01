@@ -79,6 +79,23 @@ export function gateErrorOf(error) {
   return { error: error?.message || "Request failed", blockers: [] };
 }
 
+/** Focus the bank-side row selected by a bookkeeping statement-line link. */
+export function focusStatementRow(body, month, bankKey) {
+  const key = String(bankKey || "");
+  if (!key || !body?.querySelectorAll) return false;
+  const row = (Array.isArray(month?.rows) ? month.rows : [])
+    .find((item) => String(item?.bank?.key || "") === key);
+  if (!row) return false;
+  const target = [...body.querySelectorAll("[data-recon-row-id]")]
+    .find((element) => element.dataset?.reconRowId === String(row.id));
+  if (!target) return false;
+  target.tabIndex = -1;
+  target.dataset.statementTarget = "true";
+  target.scrollIntoView?.({ block: "center" });
+  target.focus?.({ preventScroll: true });
+  return true;
+}
+
 export function createReconcileSurface(context) {
   const { documentList, escapeHtml: e, request, setRouteTitle, todayIsoDate, workApiUrl } = context;
   const locationRef = context.locationRef || globalThis.location;
@@ -90,7 +107,9 @@ export function createReconcileSurface(context) {
     const today = typeof todayIsoDate === "function" ? todayIsoDate() : new Date().toISOString().slice(0, 10);
     const params = new URLSearchParams(locationRef?.search || "");
     let period = periodFromPath(locationRef?.pathname) || previousMonth(today);
-    let filter = FILTER_IDS.includes(params.get("status")) ? params.get("status") : "all";
+    let focusBankKey = params.get("bankKey") || "";
+    let focusPending = Boolean(focusBankKey);
+    let filter = focusBankKey ? "all" : FILTER_IDS.includes(params.get("status")) ? params.get("status") : "all";
     let month = null;
     if (!periodFromPath(locationRef?.pathname)) historyRef?.replaceState?.({}, "", urlFor());
 
@@ -128,7 +147,11 @@ export function createReconcileSurface(context) {
     });
 
     function urlFor() {
-      return `${reconcilePath(period)}${filter === "all" ? "" : `?status=${filter}`}`;
+      const query = new URLSearchParams();
+      if (filter !== "all") query.set("status", filter);
+      if (focusBankKey) query.set("bankKey", focusBankKey);
+      const suffix = query.toString();
+      return `${reconcilePath(period)}${suffix ? `?${suffix}` : ""}`;
     }
 
     function say(markup) {
@@ -144,6 +167,11 @@ export function createReconcileSurface(context) {
       surface.querySelector("[data-recon-actions]").innerHTML = headerActionsMarkup(month);
       surface.querySelector("[data-recon-badges]").innerHTML = `${stateBadgeMarkup(month, e)} ${confirmationMarkup(month, e)}`;
       body.innerHTML = monthBodyMarkup(month, filter, e);
+      if (focusPending) {
+        focusPending = false;
+        if (!focusStatementRow(body, month, focusBankKey))
+          notice(`No reconciliation row found for statement line ${focusBankKey} in ${period}.`, "warning");
+      }
     }
 
     async function load() {
@@ -171,6 +199,8 @@ export function createReconcileSurface(context) {
     function choose(next) {
       if (next === period) return;
       period = next;
+      focusBankKey = "";
+      focusPending = false;
       month = null;
       say("");
       historyRef?.pushState?.({}, "", urlFor());

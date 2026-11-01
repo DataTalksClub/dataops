@@ -125,6 +125,11 @@ body[data-workspace-view="reconcile"] .document-list {
   color: var(--dk-text-muted);
 }
 
+.recon-row[data-statement-target="true"] {
+  outline: 2px solid var(--dk-focus-ring);
+  outline-offset: -2px;
+}
+
 .recon-status {
   min-width: 152px;
   max-width: 220px;

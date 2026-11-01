@@ -97,6 +97,7 @@ test("matched statement summary is read-only and exposes the exact bank line and
   const statementLine = {
     accountLabel: "Revolut Business EUR",
     statementPeriod: "2026-09",
+    bankKey: "revolut|row-1",
     statementRowIndex: 11,
     line: {
       date: "2026-09-12",
@@ -119,6 +120,8 @@ test("matched statement summary is read-only and exposes the exact bank line and
   assert.match(markup, /Matched statement line/);
   assert.match(markup, /data-view-artifact="statement-artifact"/);
   assert.match(markup, /Open statement/);
+  assert.match(markup, /href="\/finance\/reconcile\/2026-09\?bankKey=revolut%7Crow-1"/);
+  assert.match(markup, /View matching line in reconciliation/);
   assert.match(markup, /Revolut Business EUR/);
   assert.match(markup, /2026-09/);
   assert.match(markup, /-178\.49 EUR/);
