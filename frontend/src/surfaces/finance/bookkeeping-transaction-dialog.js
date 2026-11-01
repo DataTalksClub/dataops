@@ -163,6 +163,10 @@ export function bookkeepingTransactionSummaryMarkup({
     ? amount(transaction.vatAmount, vatCurrency)
     : "No VAT recorded";
   const exchangeRate = text(transaction.exchangeRate);
+  const transactionDate = text(transaction.transactionDate || transaction.paidDate || "Not recorded");
+  const paidDate = filled(transaction.paidDate) && text(transaction.paidDate) !== transactionDate
+    ? fieldMarkup("Paid date", e(transaction.paidDate), e)
+    : "";
   const exchangeRateMarkup = exchangeRate
     ? `<div class="bk-transaction-field"><dt>Exchange rate</dt><dd>1 EUR = ${e(exchangeRate)} ${e(currency)}${filled(transaction.exchangeRateDate) ? ` · ${e(transaction.exchangeRateDate)}` : ""}${filled(transaction.exchangeRateSource) ? ` · ${e(transaction.exchangeRateSource)}` : ""}</dd></div>`
     : "";
@@ -183,7 +187,8 @@ export function bookkeepingTransactionSummaryMarkup({
       <p class="bk-transaction-summary__what"><span>What for</span> ${e(presentation.description)}</p>
       <dl class="bk-transaction-summary__facts">
         ${fieldMarkup("Raw bank name", e(presentation.rawCounterparty || "Unknown"), e)}
-        ${fieldMarkup("Date", e(transaction.paidDate || transaction.transactionDate || "Not recorded"), e)}
+        ${fieldMarkup("Date", e(transactionDate), e)}
+        ${paidDate}
         ${fieldMarkup("Original amount", e(signedAmountMarkup(originalValue, currency, amount)), e)}
         ${fieldMarkup("EUR amount", e(signedAmountMarkup(eurValue, "EUR", amount)), e)}
         ${exchangeRateMarkup}

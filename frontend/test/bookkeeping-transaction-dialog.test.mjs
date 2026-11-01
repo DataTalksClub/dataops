@@ -35,6 +35,7 @@ test("transaction summary shows invoice, canonical and raw vendor, signed values
     transaction: {
       id: "transaction-1",
       transactionDate: "2026-09-12",
+      paidDate: "2026-09-13",
       entryType: "expense",
       counterparty: "Go Daddy",
       description: ".COM Domain Registration",
@@ -56,6 +57,7 @@ test("transaction summary shows invoice, canonical and raw vendor, signed values
   assert.match(markup, /Raw bank name<\/dt><dd>Go Daddy<\/dd>/);
   assert.match(markup, /What for<\/span> Domain renewal/);
   assert.match(markup, /Date<\/dt><dd>2026-09-12<\/dd>/);
+  assert.match(markup, /Paid date<\/dt><dd>2026-09-13<\/dd>/);
   assert.match(markup, /Original amount<\/dt><dd>-178\.49 EUR<\/dd>/);
   assert.match(markup, /EUR amount<\/dt><dd>-178\.49 EUR<\/dd>/);
   assert.match(markup, /Category<\/dt><dd>Software and web services<\/dd>/);
