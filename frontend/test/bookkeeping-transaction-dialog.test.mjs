@@ -45,7 +45,7 @@ test("transaction summary shows invoice, canonical and raw vendor, signed values
       vatCurrency: "EUR",
       vatRate: "20",
     },
-    invoice: { id: "invoice-1", filename: "domain-renewal.pdf" },
+    invoice: { id: "invoice-1", originalFilename: "domain-renewal.pdf" },
     escape: escapeHtml,
     formatAmount: amount,
   });

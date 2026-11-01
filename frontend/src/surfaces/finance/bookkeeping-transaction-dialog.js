@@ -39,7 +39,7 @@ function invoiceDocuments({ invoice, invoices, documents }) {
 
 function invoiceMarkup(document, index, e) {
   const id = text(document?.id || document?.documentId);
-  const filename = text(document?.filename || document?.fileName || document?.name);
+  const filename = text(document?.filename || document?.originalFilename || document?.fileName || document?.name);
   const label = filename ? `Open invoice · ${filename}` : "Open invoice";
   const control = id
     ? `<button type="button" class="dk-button dk-button--primary dk-button--lg bk-transaction-invoice__open" data-view-document="${e(id)}" aria-label="${e(label)}">${e(label)}</button>`
