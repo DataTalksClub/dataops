@@ -159,6 +159,7 @@ export function unmatchedStatementCandidates(transaction, monthViews, { maxDays 
       if (!current || gapDays < current.gapDays) {
         candidates.set(key, {
           bankKey: key,
+          period: String(view.period || ""),
           statementId: String(bank.statementId),
           accountId: String(bank.accountId || ""),
           accountLabel: accountLabel(bank.accountId, bank.currency, bank.wallet),

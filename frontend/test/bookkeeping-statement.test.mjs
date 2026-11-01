@@ -129,6 +129,7 @@ test("manual statement picker shows only nearby exact amount and direction candi
   assert.equal(candidates.length, 1);
   assert.deepEqual(candidates[0], {
     bankKey: "near",
+    period: "2026-09",
     statementId: "statement-1",
     accountId: "revolut",
     accountLabel: "Revolut Business EUR",
