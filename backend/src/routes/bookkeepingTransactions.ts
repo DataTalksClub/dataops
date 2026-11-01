@@ -8,7 +8,7 @@ import {
   putBookkeepingItem,
   updateBookkeepingTransaction,
 } from "../db/bookkeeping";
-import { json, MONEY, parse } from "./bookkeepingShared";
+import { json, MONEY, MONTH, parse } from "./bookkeepingShared";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const CURRENCY = /^[A-Z]{3}$/;
@@ -28,6 +28,7 @@ const allowed = [
   "entryType",
   "subtype",
   "period",
+  "incomePeriod",
   "category",
   "sourceType",
   "sourceKey",
@@ -53,6 +54,7 @@ function validateTransaction(input: Record<string, unknown>, partial = false) {
     "entryType",
     "subtype",
     "period",
+    "incomePeriod",
     "category",
     "sourceType",
     "sourceKey",
@@ -93,6 +95,16 @@ function validateTransaction(input: Record<string, unknown>, partial = false) {
     (!Number.isSafeInteger(input.quantity) || Number(input.quantity) < 0)
   )
     errors.push("quantity");
+  if (input.incomePeriod != null && (typeof input.incomePeriod !== "string" || !MONTH.test(input.incomePeriod)))
+    errors.push("incomePeriod");
+  if (input.sourceType === "platform-payout") {
+    if (input.entryType !== "income") errors.push("entryType");
+    if (typeof input.sourceKey !== "string" || !input.sourceKey.startsWith("platform-payout:") || input.sourceKey.length > 300)
+      errors.push("sourceKey");
+    if (typeof input.statementRef !== "string" || !input.statementRef.trim()) errors.push("statementRef");
+    if (typeof input.incomePeriod !== "string" || !MONTH.test(input.incomePeriod)) errors.push("incomePeriod");
+    if (typeof input.amount !== "string" || Number(input.amount) <= 0) errors.push("amount");
+  }
   return [...new Set(errors)];
 }
 function realDate(value: unknown) {
@@ -153,6 +165,8 @@ export async function handleBookkeepingTransactionRoutes(
         ...safeData(body),
         ...(match[1] ? { id: match[1] } : {}),
       };
+      if (!match[1] && value.sourceType === "platform-payout")
+        value.addedAt = new Date().toISOString().slice(0, 10);
       const errors = validateTransaction(value);
       if (errors.length)
         return json(400, { error: "Validation failed", fields: errors });

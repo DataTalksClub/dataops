@@ -39,7 +39,9 @@ Usage
   dataops reconcile statement <id> [--json]
   dataops reconcile report --period YYYY-MM [--json]
       Matched payment candidates, ambiguous matches, incoming money without an
-      invoice, issued invoices without a payment, and statement coverage gaps.
+      invoice, issued invoices without a payment, platform payouts, and statement
+      coverage gaps. A platform payout appears in its income month and the month
+      it was added, so late entries surface in the next monthly report.
   dataops reconcile confirm <match-id> [--period YYYY-MM] [--apply] [--json]
       Dry-run by default. --apply records the payment the way
       sponsors link-payment (existing ledger row) or receive-payment (no ledger
@@ -261,6 +263,13 @@ export async function report(args, io) {
       io.print(`statement ${statement.accountId}: ${statement.rowCount} rows (${statement.incomingCount} incoming)${statement.duplicateCount ? `, ${statement.duplicateCount} already in an earlier statement` : ""}${statement.filename ? ` ${statement.filename}` : ""}`);
     }
     if (!result.statements.length) io.print("no statements uploaded for this period");
+    io.print("");
+    const platformPayouts = result.platformPayouts || [];
+    io.print(`Platform payouts (${platformPayouts.length})`);
+    for (const payout of platformPayouts) {
+      io.print(`  ${payout.transactionDate}  ${payout.amount} ${payout.currency}  ${payout.counterparty}${payout.category ? `  ${payout.category}` : ""}${payout.reference ? `  reference ${payout.reference}` : ""}  (income ${payout.incomePeriod}; added ${payout.addedAt})`);
+      if (payout.comment) io.print(`    ${payout.comment}`);
+    }
     io.print("");
     io.print(`Matched (${result.matched.length})`);
     for (const match of result.matched) {

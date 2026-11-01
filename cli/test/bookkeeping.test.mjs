@@ -195,6 +195,74 @@ test("classify --apply writes only the filled fields", async () => {
   assert.match(io.text(), /applied: updated 1, failed 0/);
 });
 
+const platformIncomeArgs = [
+  "bookkeeping", "add-income",
+  "--date", "2026-10-01",
+  "--amount", "17.25",
+  "--currency", "USD",
+  "--counterparty", "Synthetic Learning Platform",
+  "--reference", "synthetic-ref-2026-10-01",
+  "--period", "2026-10",
+  "--category", "Affiliate income",
+  "--comment", "Synthetic affiliate payout; test statement SYN-1; received via test wallet.",
+];
+
+test("add-income is a dry run by default and records an idempotent platform payout on apply", async () => {
+  const calls = fakePortal({
+    "GET /api/bookkeeping/transactions": { items: [] },
+    "POST /api/bookkeeping/transactions": ({ body }) => ({ status: 201, body: { id: "income-1", addedAt: "2026-11-01", ...body } }),
+  });
+  const dryIo = captureIo();
+  assert.equal(await run([...platformIncomeArgs, "--json"], dryIo), 0);
+  const dry = dryIo.json();
+  assert.equal(dry.mode, "dry-run");
+  assert.equal(dry.outcome, "would-create");
+  assert.equal(dry.transaction.incomePeriod, "2026-10");
+  assert.equal(dry.transaction.sourceKey, "platform-payout:synthetic-ref-2026-10-01");
+  assert.equal(calls.filter((call) => call.method === "POST").length, 0);
+
+  const applyIo = captureIo();
+  assert.equal(await run([...platformIncomeArgs, "--apply", "--json"], applyIo), 0);
+  const applied = applyIo.json();
+  assert.equal(applied.mode, "apply");
+  assert.equal(applied.outcome, "created");
+  assert.equal(applied.transaction.addedAt, "2026-11-01");
+  assert.equal(applied.transaction.entryType, "income");
+  assert.equal(applied.transaction.amount, "17.25");
+  const post = calls.find((call) => call.method === "POST");
+  assert.equal(post.body.sourceType, "platform-payout");
+  assert.equal(post.body.statementRef, "synthetic-ref-2026-10-01");
+});
+
+test("add-income replays an existing reference without writing and rejects conflicting details", async () => {
+  const existing = {
+    id: "income-1",
+    transactionDate: "2026-10-01",
+    amount: "17.25",
+    currency: "USD",
+    counterparty: "Synthetic Learning Platform",
+    description: "Synthetic affiliate payout; test statement SYN-1; received via test wallet.",
+    entryType: "income",
+    statementRef: "synthetic-ref-2026-10-01",
+    incomePeriod: "2026-10",
+    category: "Affiliate income",
+    comment: "Synthetic affiliate payout; test statement SYN-1; received via test wallet.",
+    sourceType: "platform-payout",
+    sourceKey: "platform-payout:synthetic-ref-2026-10-01",
+    addedAt: "2026-11-01",
+  };
+  const calls = fakePortal({ "GET /api/bookkeeping/transactions": { items: [existing] } });
+  const replayIo = captureIo();
+  assert.equal(await run([...platformIncomeArgs, "--apply", "--json"], replayIo), 0);
+  assert.equal(replayIo.json().outcome, "existing");
+  assert.equal(calls.filter((call) => call.method === "POST").length, 0);
+
+  const conflictIo = captureIo();
+  assert.notEqual(await run([...platformIncomeArgs, "--amount", "19.00", "--apply"], conflictIo), 0);
+  assert.match(conflictIo.errors.join("\n"), /reference.*different details/i);
+  assert.equal(calls.filter((call) => call.method === "POST").length, 0);
+});
+
 test("facts reads only unattached invoices and receipts that were not read yet", async () => {
   const calls = fakePortal({
     "GET /api/bookkeeping/documents": {

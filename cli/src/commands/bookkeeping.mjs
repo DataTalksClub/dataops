@@ -18,12 +18,18 @@ Usage
       Fill a missing Type, Category or Period from the provider's other transactions
       when they all agree. Default --since 2025-01-01 (older tabs have no classification).
 
+  dataops bookkeeping add-income --date YYYY-MM-DD --amount AMOUNT --currency CUR
+      --counterparty NAME --reference REF --period YYYY-MM --category CATEGORY
+      --comment TEXT [--apply]
+      Add a non-sponsor income transaction such as an affiliate or platform payout.
+      The reference is the idempotency key. Dry-run by default; --apply writes it.
+
   dataops bookkeeping facts [--retry] [--apply]
       Read each unattached invoice or receipt PDF that has not been read yet and keep
       its date, amount and provider, so the row details can suggest a match.
       --retry also re-reads documents an earlier run could not read.
 
-All three print a dry run unless --apply is given. Run the dry run first and read it.
+Commands with writes print a dry run unless --apply is given. Run it first and read it.
 
 Dapier hands the Google token to the command (run from the dapier checkout):
   uv run dapier token exec drive <account> --agent admin-os -- \\
@@ -165,4 +171,92 @@ export async function facts(args, io) {
   return result;
 }
 
-export const commands = { sync, classify, facts };
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+const AMOUNT = /^(0|[1-9]\d{0,11})(?:\.(\d{1,2}))?$/;
+const CURRENCY = /^[A-Za-z]{3}$/;
+
+function incomeText(args, name, max = 300) {
+  const value = args[name];
+  if (typeof value !== "string" || !value.trim()) throw new UsageError(`--${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} is required.`);
+  const trimmed = value.trim();
+  if (trimmed.length > max) throw new UsageError(`--${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} must be at most ${max} characters.`);
+  return trimmed;
+}
+
+function validDate(value) {
+  if (!DATE.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+function platformIncomeRecord(args) {
+  const date = incomeText(args, "date", 10);
+  if (!validDate(date)) throw new UsageError("--date must be a real date in YYYY-MM-DD format.");
+  const rawAmount = incomeText(args, "amount", 20);
+  const amountParts = rawAmount.match(AMOUNT);
+  if (!amountParts || (amountParts[1] === "0" && !Number(amountParts[2] || 0)))
+    throw new UsageError("--amount must be a positive amount with up to two decimal places.");
+  const amount = `${amountParts[1]}.${(amountParts[2] || "").padEnd(2, "0")}`;
+  const currency = incomeText(args, "currency", 3).toUpperCase();
+  if (!CURRENCY.test(currency)) throw new UsageError("--currency must be a 3-letter ISO code.");
+  const counterparty = incomeText(args, "counterparty");
+  const reference = incomeText(args, "reference", 280);
+  const incomePeriod = incomeText(args, "period", 7);
+  if (!MONTH.test(incomePeriod)) throw new UsageError("--period must be YYYY-MM.");
+  const category = incomeText(args, "category");
+  const comment = incomeText(args, "comment", 2000);
+  return {
+    transactionDate: date,
+    counterparty,
+    description: comment.slice(0, 300),
+    amount,
+    currency,
+    entryType: "income",
+    statementRef: reference,
+    comment,
+    incomePeriod,
+    category,
+    sourceType: "platform-payout",
+    sourceKey: `platform-payout:${reference}`,
+  };
+}
+
+const INCOME_IDENTITY_FIELDS = [
+  "transactionDate", "counterparty", "description", "amount", "currency", "entryType",
+  "statementRef", "comment", "incomePeriod", "category", "sourceType", "sourceKey",
+];
+
+function checkIncomeIdentity(existing, expected, reference) {
+  const differences = INCOME_IDENTITY_FIELDS.filter((field) => existing[field] !== expected[field]);
+  if (differences.length) {
+    throw new UsageError(`Reference ${reference} already belongs to a platform payout with different details (${differences.join(", ")}); existing row ${existing.id} was left unchanged.`);
+  }
+}
+
+export async function addIncome(args, io) {
+  const transaction = platformIncomeRecord(args);
+  const reference = transaction.statementRef;
+  const api = apiFor(args);
+  const rows = await transactions(api);
+  const existing = rows.find((item) => item.sourceKey === transaction.sourceKey);
+  let result;
+  if (existing) {
+    checkIncomeIdentity(existing, transaction, reference);
+    result = { mode: args.apply ? "apply" : "dry-run", outcome: "existing", transaction: existing };
+  } else if (args.apply) {
+    const saved = await api.post("/api/bookkeeping/transactions", transaction);
+    checkIncomeIdentity(saved, transaction, reference);
+    result = { mode: "apply", outcome: "created", transaction: saved };
+  } else {
+    result = { mode: "dry-run", outcome: "would-create", transaction };
+  }
+  if (!args.json) {
+    const item = result.transaction;
+    io.print(`${result.mode}: ${result.outcome} platform payout ${item.transactionDate}  ${item.amount} ${item.currency}  ${item.counterparty}  reference ${reference}${item.addedAt ? `  added ${item.addedAt}` : ""}`);
+  }
+  return result;
+}
+
+export const commands = { sync, classify, facts, "add-income": addIncome };

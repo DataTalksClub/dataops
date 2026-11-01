@@ -102,9 +102,24 @@ export type StatementSummary = {
 
 export type CoverageGap = { from: string; to: string };
 
+export type PlatformPayout = {
+  id: string;
+  transactionDate: string;
+  incomePeriod: string;
+  addedAt: string;
+  counterparty: string;
+  amount: string;
+  currency: string;
+  reference?: string;
+  category?: string;
+  comment?: string;
+};
+
 export type ReconcileReport = {
   period: string;
   statements: StatementSummary[];
+  /** Non-sponsor platform income assigned to this month or entered during it. */
+  platformPayouts: PlatformPayout[];
   matched: MatchItem[];
   ambiguous: AmbiguousMatch[];
   unmatchedIncoming: UnmatchedIncoming[];
@@ -175,7 +190,7 @@ export type MatchInput = {
   ledger: LedgerTransaction[];
 };
 
-export function matchStatements(input: MatchInput): Omit<ReconcileReport, "period" | "coverage" | "statements"> {
+export function matchStatements(input: MatchInput): Omit<ReconcileReport, "period" | "coverage" | "statements" | "platformPayouts"> {
   const matched: MatchItem[] = [];
   const ambiguous: AmbiguousMatch[] = [];
   const unmatchedIncoming: UnmatchedIncoming[] = [];

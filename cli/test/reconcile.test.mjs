@@ -167,6 +167,41 @@ test("the month-end report round-trips and alias registry commands hit the recon
   });
 });
 
+test("the text reconcile report includes non-sponsor platform payouts", async () => {
+  const payout = {
+    id: "income-1",
+    transactionDate: "2026-10-01",
+    incomePeriod: "2026-10",
+    addedAt: "2026-11-01",
+    counterparty: "Synthetic Learning Platform",
+    amount: "17.25",
+    currency: "USD",
+    reference: "synthetic-ref-2026-10-01",
+    category: "Affiliate income",
+    comment: "Synthetic affiliate payout; test statement SYN-1.",
+  };
+  await withFakePortal([
+    ["/reconcile/report", {
+      period: "2026-10",
+      statements: [],
+      platformPayouts: [payout],
+      matched: [],
+      ambiguous: [],
+      unmatchedIncoming: [],
+      missingPayments: [],
+      coverage: { daysInPeriod: 31, accounts: [], accountsWithoutStatement: [] },
+      totals: { incomingCount: 0, matchedCount: 0, unmatchedCount: 0, ambiguousCount: 0 },
+    }],
+  ], async () => {
+    const io = { lines: [], print(line) { this.lines.push(String(line)); } };
+    const result = await report({ ...args, json: false, period: "2026-10" }, io);
+    assert.equal(result.platformPayouts[0].reference, "synthetic-ref-2026-10-01");
+    assert.match(io.lines.join("\n"), /Platform payouts \(1\)/);
+    assert.match(io.lines.join("\n"), /2026-10-01  17\.25 USD  Synthetic Learning Platform.*reference synthetic-ref-2026-10-01/);
+    assert.match(io.lines.join("\n"), /added 2026-11-01/);
+  });
+});
+
 test("upload accepts a Finom statement, forwards --currency and stores the closing balance", async () => {
   const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-test-"));
   const path = join(directory, "finom.csv");

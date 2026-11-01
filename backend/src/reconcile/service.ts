@@ -27,6 +27,7 @@ import {
   type CoverageGap,
   type DealFinanceFacts,
   type LedgerTransaction,
+  type PlatformPayout,
   type ReconcileReport,
   type StatementSummary,
 } from "./match";
@@ -317,6 +318,23 @@ export async function buildReport(client: DynamoDBDocumentClient, period: string
     ...(item.sponsorDealId ? { sponsorDealId: String(item.sponsorDealId) } : {}),
   }));
 
+  const platformPayouts: PlatformPayout[] = ledgerRaw
+    .filter((item) => item.sourceType === "platform-payout" && item.entryType === "income")
+    .filter((item) => item.incomePeriod === period || String(item.addedAt || "").slice(0, 7) === period)
+    .map((item) => ({
+      id: item.id,
+      transactionDate: String(item.transactionDate || ""),
+      incomePeriod: String(item.incomePeriod || ""),
+      addedAt: String(item.addedAt || ""),
+      counterparty: String(item.counterparty || ""),
+      amount: String(item.amount || ""),
+      currency: String(item.currency || ""),
+      ...(item.statementRef ? { reference: String(item.statementRef) } : {}),
+      ...(item.category ? { category: String(item.category) } : {}),
+      ...(item.comment ? { comment: String(item.comment) } : {}),
+    }))
+    .sort((left, right) => left.transactionDate.localeCompare(right.transactionDate) || left.id.localeCompare(right.id));
+
   const periodRows = dedupedPeriodRows(statements, bounds);
   const matched = matchStatements({
     statements: statements.map((record) => {
@@ -370,6 +388,7 @@ export async function buildReport(client: DynamoDBDocumentClient, period: string
   return {
     period,
     statements: summaries,
+    platformPayouts,
     matched: matched.matched,
     ambiguous: matched.ambiguous,
     unmatchedIncoming: matched.unmatchedIncoming,
