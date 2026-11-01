@@ -1328,9 +1328,10 @@ test.describe('canonical frontend capability behavior', () => {
     } });
     expect(referenceEdit.status()).toBe(200);
     await page.reload();
-    await expect(page.locator('#backlinks-host')).toContainText('Referenced by (1)');
-    await expect(page.locator('.block-backlinks-row')).toHaveText(referenceTitle);
-    await page.locator('.block-backlinks-row').click();
+    const referenceBacklink = page.locator('.block-backlinks-row', { hasText: referenceTitle });
+    await expect(referenceBacklink).toHaveCount(1);
+    await expect(referenceBacklink).toHaveText(referenceTitle);
+    await referenceBacklink.click();
     await expect(page.locator('#document-title')).toHaveValue(referenceTitle);
 
     const quality = await context.request.get('/docs/process-quality');
