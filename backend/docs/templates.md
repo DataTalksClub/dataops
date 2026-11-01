@@ -15,7 +15,7 @@ Workflow task names are Card titles and must be no more than 80 Unicode characte
 
 Offsets are integer day counts from the task's anchor (`start` by default, or `end`). For dependencies on the same anchor, a task cannot be scheduled earlier than any prerequisite. A later, nonzero day than the latest same-anchor prerequisite is treated as an extra delay and needs a documented reason in nonempty `validation.operatorAction` or `instruction_doc_id`. Offset `0` is the Card anchor itself, and a task without same-anchor dependencies is scheduled directly relative to its anchor, so neither needs a separate reason. START and END offsets are not compared because their calendar order depends on each Card's duration.
 
-The shared validator runs for authored templates in CI and on API saves. The `dataops templates update` CLI uses that same API validation and reports its lint issues.
+The API applies this lint on Template creation and whole-definition updates. The `dataops templates update` CLI uses the same API validation and reports its lint issues, and backend tests cover the lint rules. Deploy reconciliation still parses existing Git bases, but applies workflow lint before it creates or replaces an unpinned runtime Template. Reset also validates a pinned Template's base before restoring it, so an invalid base cannot become the effective definition.
 
 ## Document Parts
 

@@ -20,7 +20,7 @@ import {
   reconcileAuthoredTemplates,
   gitBlobSha,
 } from '../src/templates/authoredTemplates';
-import { templateToYaml } from '../src/templates/yamlTemplates';
+import { templateToYaml, validateAuthoredTemplate } from '../src/templates/yamlTemplates';
 import { syntheticAuthoredTemplate, syntheticAuthoredFiles, syntheticKnowledgeStore } from './helpers/authoredTemplates';
 
 function authored(type: string, name = `Synthetic ${type}`): string {
@@ -65,6 +65,47 @@ describe('Git-authored template projection', () => {
     assert.match(templates[0].sourceBlobSha, /^[a-f0-9]{40}$/);
     assert.strictEqual(templates[0].sourceBlobSha, gitBlobSha(authored('synthetic')));
     assert.strictEqual((templates[0].taskDefinitions as any[])[0].refId, 'first');
+  });
+
+  it('parses existing source bases while deferring the new workflow lint to seed preflight', () => {
+    const legacySource = {
+      type: 'synthetic',
+      name: 'Synthetic workflow',
+      trigger: { mode: 'manual' },
+      tasks: [
+        { id: 'first', name: 'First', schedule: { offset_days: -2 } },
+        { id: 'later', name: 'Later', schedule: { offset_days: -1 }, depends_on: ['first'] },
+      ],
+    };
+    const content = yaml.dump(legacySource);
+    const parsed = parseAuthoredTemplateFiles([{
+      path: 'workflow-templates/synthetic.yaml', revision: 'source-a', content,
+    }]);
+    assert.strictEqual(parsed.length, 1);
+    assert.match(
+      validateAuthoredTemplate(legacySource).map(({ message }) => message).join('\n'),
+      /useless schedule offset/,
+    );
+  });
+
+  it('rejects a lint-invalid source before creating an unpinned runtime Template', async () => {
+    const content = yaml.dump({
+      type: 'unlinted-source',
+      name: 'Synthetic unlinted source',
+      trigger: { mode: 'manual' },
+      tasks: [
+        { id: 'first', name: 'First', schedule: { offset_days: -2 } },
+        { id: 'later', name: 'Later', schedule: { offset_days: -1 }, depends_on: ['first'] },
+      ],
+    });
+    const [definition] = parseAuthoredTemplateFiles([{
+      path: 'workflow-templates/unlinted-source.yaml', revision: 'source-b', content,
+    }]);
+    await assert.rejects(
+      reconcileAuthoredTemplates(client, [definition]),
+      /unlinted-source\.yaml: authored workflow template validation failed \(1 issues\)/,
+    );
+    assert.deepStrictEqual(await listTemplates(client), []);
   });
 
   it('exposes the Git blob SHA1 alongside the SHA256 content hash (AC6)', () => {

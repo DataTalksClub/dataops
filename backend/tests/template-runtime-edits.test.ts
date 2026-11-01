@@ -647,6 +647,48 @@ describe('Templates runtime editing', () => {
     assert.equal(bodyOf(again).applied, false);
   });
 
+  it('refuses a reset whose Git base fails the authored workflow lint', async () => {
+    const seeded = await seedGit('reset-invalid-base', TWO_TASKS, 'rev-git-1');
+    const key = { PK: `TEMPLATE#${seeded.id}`, SK: `TEMPLATE#${seeded.id}` };
+    const raw = (await client.send(new GetCommand({ TableName: TABLE_TEMPLATES, Key: key }))).Item!;
+    const base = raw.base as Record<string, unknown>;
+    await client.send(new PutCommand({
+      TableName: TABLE_TEMPLATES,
+      Item: {
+        ...raw,
+        base: {
+          ...base,
+          taskDefinitions: [
+            { refId: 'first', description: 'First', offsetDays: -2 },
+            { refId: 'later', description: 'Later', offsetDays: -1, dependsOn: ['first'] },
+          ],
+        },
+      },
+    }));
+    const update = await call('PUT', `/api/templates/${seeded.id}`, {
+      expectedVersion: seeded.version,
+      revision: seeded.revision,
+      definition: {
+        ...validCustomDefinition('reset-invalid-base'),
+        taskDefinitions: [{ refId: 'current', description: 'Current', offsetDays: 0 }],
+      },
+    });
+    assert.equal(update.statusCode, 200, update.body);
+    const pinned = bodyOf(update).template;
+    for (const query of [{ dryRun: 'true' }, undefined]) {
+      const reset = await call('POST', `/api/templates/${seeded.id}/reset`, {
+        expectedVersion: pinned.version,
+        revision: pinned.revision,
+      }, undefined, query);
+      assert.equal(reset.statusCode, 422, reset.body);
+      assert.equal(bodyOf(reset).code, 'invalid-template');
+      assert.match(JSON.stringify(bodyOf(reset).issues), /useless schedule offset/);
+      const unchanged = bodyOf(await get(`/api/templates/${seeded.id}`)).template;
+      assert.equal(unchanged.version, pinned.version);
+      assert.equal(unchanged.pinned, true);
+    }
+  });
+
   it('reset dry runs validate the pair and Git origin without writing', async () => {
     const seeded = await seedGit('reset-dry', TWO_TASKS, 'rev-git-1');
     await call('PUT', `/api/templates/${seeded.id}`, {

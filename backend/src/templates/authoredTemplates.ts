@@ -133,7 +133,10 @@ export function parseAuthoredTemplateFiles(
 
     let issues: ReturnType<typeof validateAuthoredTemplate>;
     try {
-      issues = validateAuthoredTemplate(expanded);
+      // A pinned row keeps its last known Git base while an operator owns the
+      // effective definition. Keep parsing that base for reconciliation;
+      // new or unpinned definitions are linted below before any seed write.
+      issues = validateAuthoredTemplate(expanded, null, { workflowLint: false });
     } catch {
       throw new Error(`${file.path}: invalid authored workflow template structure`);
     }
@@ -328,6 +331,21 @@ export async function reconcileAuthoredTemplates(
       continue;
     }
     throw new Error(`Unclassified runtime workflow template ${template.id}: missing or invalid canonical origin`);
+  }
+
+  // A pinned row keeps its last known Git base while an operator owns the
+  // effective definition. Do not make a deployment fail on an old base that
+  // will not be written; every new or unpinned source definition must satisfy
+  // the same lint as an API save before the seed begins any writes.
+  for (const definition of authored) {
+    const current = byType.get(definition.type)?.[0];
+    if (current?.pinned === true && isDict(current.base)) continue;
+    const issues = validateAuthoredTemplate(templateToYaml(definition));
+    if (issues.length > 0) {
+      throw new Error(
+        `${definition.sourcePath}: authored workflow template validation failed (${issues.length} issues)`,
+      );
+    }
   }
 
   // Claim or verify TEMPLATE_TYPE# guards before any create.

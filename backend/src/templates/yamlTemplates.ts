@@ -212,13 +212,22 @@ export interface TemplateValidationIssue {
   message: string;
 }
 
+export interface AuthoredTemplateValidationOptions {
+  workflowLint?: boolean;
+}
+
 /**
  * Validates an authored template. Instruction documents are checked against the
  * document registry so a template can never point at a process document that
  * does not exist; that is the failure the Google Doc migration was about.
  */
-export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | null = null): TemplateValidationIssue[] {
+export function validateAuthoredTemplate(
+  doc: Dict,
+  knownDocIds: Set<string> | null = null,
+  options: AuthoredTemplateValidationOptions = {},
+): TemplateValidationIssue[] {
   const issues: TemplateValidationIssue[] = [];
+  const checkWorkflowLint = options.workflowLint !== false;
   const type = String(doc.type || '(untyped)');
   const fail = (message: string) => issues.push({ template: type, message });
   const strings = (value: Dict, fields: string[]) => {
@@ -330,7 +339,7 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
     if (seen.has(id)) fail(`duplicate task id '${id}'`);
     if (id.includes('#')) fail(`task id '${id}' must not contain '#' (it numbers repeated tasks)`);
     seen.add(id);
-    if (typeof task.name === 'string') {
+    if (checkWorkflowLint && typeof task.name === 'string') {
       const titleLength = Array.from(task.name).length;
       if (titleLength > MAX_TASK_TITLE_LENGTH) {
         fail(`task '${id}' title must be at most ${MAX_TASK_TITLE_LENGTH} characters (got ${titleLength})`);
@@ -425,51 +434,53 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
         : undefined,
     })))) fail(message);
 
-    for (const task of tasks) {
-      const id = String(task.id || '');
-      const schedule = (task.schedule as Dict | undefined) || {};
-      const offset = schedule.offset_days;
-      if (!Number.isInteger(offset)) continue;
-      const anchor = schedule.anchor === 'end' ? 'end' : 'start';
-      const sameAnchorDependencyOffsets: number[] = [];
+    if (checkWorkflowLint) {
+      for (const task of tasks) {
+        const id = String(task.id || '');
+        const schedule = (task.schedule as Dict | undefined) || {};
+        const offset = schedule.offset_days;
+        if (!Number.isInteger(offset)) continue;
+        const anchor = schedule.anchor === 'end' ? 'end' : 'start';
+        const sameAnchorDependencyOffsets: number[] = [];
 
-      for (const dependencyRef of (task.depends_on as string[] | undefined) || []) {
-        const dependency = tasksById.get(dependencyRef);
-        if (!dependency) continue;
-        const dependencySchedule = (dependency.schedule as Dict | undefined) || {};
-        const dependencyOffset = dependencySchedule.offset_days;
-        if (!Number.isInteger(dependencyOffset)) continue;
-        const dependencyAnchor = dependencySchedule.anchor === 'end' ? 'end' : 'start';
-        if (anchor !== dependencyAnchor) continue;
+        for (const dependencyRef of (task.depends_on as string[] | undefined) || []) {
+          const dependency = tasksById.get(dependencyRef);
+          if (!dependency) continue;
+          const dependencySchedule = (dependency.schedule as Dict | undefined) || {};
+          const dependencyOffset = dependencySchedule.offset_days;
+          if (!Number.isInteger(dependencyOffset)) continue;
+          const dependencyAnchor = dependencySchedule.anchor === 'end' ? 'end' : 'start';
+          if (anchor !== dependencyAnchor) continue;
 
-        if ((offset as number) < (dependencyOffset as number)) {
-          fail(
-            `task '${id}' schedule offset ${offset} is earlier than dependency '${dependencyRef}' `
-            + `offset ${dependencyOffset} on the same ${anchor} anchor`,
-          );
+          if ((offset as number) < (dependencyOffset as number)) {
+            fail(
+              `task '${id}' schedule offset ${offset} is earlier than dependency '${dependencyRef}' `
+              + `offset ${dependencyOffset} on the same ${anchor} anchor`,
+            );
+          }
+          sameAnchorDependencyOffsets.push(dependencyOffset as number);
         }
-        sameAnchorDependencyOffsets.push(dependencyOffset as number);
-      }
 
-      if (sameAnchorDependencyOffsets.length > 0) {
-        const latestDependencyOffset = Math.max(...sameAnchorDependencyOffsets);
-        const validation = task.validation;
-        const operatorAction = validation && typeof validation === 'object' && !Array.isArray(validation)
-          ? (validation as Dict).operatorAction
-          : undefined;
-        const hasOperatorAction = typeof operatorAction === 'string' && operatorAction.trim().length > 0;
-        const instructionDocId = task.instruction_doc_id;
-        const hasInstructionDoc = typeof instructionDocId === 'string' && instructionDocId.trim().length > 0;
-        if (
-          (offset as number) > latestDependencyOffset
-          && offset !== 0
-          && !hasOperatorAction
-          && !hasInstructionDoc
-        ) {
-          fail(
-            `task '${id}' has a useless schedule offset ${offset}: it is later than the latest `
-            + 'same-anchor dependency without a documented reason (add validation.operatorAction or instruction_doc_id)',
-          );
+        if (sameAnchorDependencyOffsets.length > 0) {
+          const latestDependencyOffset = Math.max(...sameAnchorDependencyOffsets);
+          const validation = task.validation;
+          const operatorAction = validation && typeof validation === 'object' && !Array.isArray(validation)
+            ? (validation as Dict).operatorAction
+            : undefined;
+          const hasOperatorAction = typeof operatorAction === 'string' && operatorAction.trim().length > 0;
+          const instructionDocId = task.instruction_doc_id;
+          const hasInstructionDoc = typeof instructionDocId === 'string' && instructionDocId.trim().length > 0;
+          if (
+            (offset as number) > latestDependencyOffset
+            && offset !== 0
+            && !hasOperatorAction
+            && !hasInstructionDoc
+          ) {
+            fail(
+              `task '${id}' has a useless schedule offset ${offset}: it is later than the latest `
+              + 'same-anchor dependency without a documented reason (add validation.operatorAction or instruction_doc_id)',
+            );
+          }
         }
       }
     }

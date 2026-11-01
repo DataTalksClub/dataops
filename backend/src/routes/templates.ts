@@ -19,6 +19,7 @@ import {
   normalizeTemplateDefinition,
   SERVER_OWNED_TEMPLATE_FIELDS,
   TemplateDefinitionInvalidError,
+  validateEffectiveDefinition,
 } from '../templates/templateEdits';
 import type { LambdaEvent, LambdaResponse, Template } from '../types';
 import { recordRequestError } from '../requestErrorLog';
@@ -82,6 +83,18 @@ function rejectServerOwned(definition: Record<string, unknown>): void {
 function isDryRun(event: LambdaEvent): boolean {
   const query = event.queryStringParameters || {};
   return query.dryRun === 'true' || query['dry-run'] === 'true';
+}
+
+function resetLintResponse(template: Template): LambdaResponse | null {
+  if (template.origin !== 'git' || template.pinned !== true || !template.base) return null;
+  const issues = validateEffectiveDefinition(template.base as Record<string, unknown>);
+  return issues.length > 0
+    ? json(422, {
+      error: `Template definition is invalid: ${issues.join('; ')}`,
+      code: 'invalid-template',
+      issues,
+    })
+    : null;
 }
 
 async function conflictResponse(client: DynamoDBDocumentClient, id: string, expectedVersion: number): Promise<LambdaResponse> {
@@ -169,8 +182,17 @@ async function handleTemplateRoutes(
             code: 'cannot-reset-custom-template',
           });
         }
+        const lintError = resetLintResponse(template);
+        if (lintError) return lintError;
         return json(200, { dryRun: true, template });
       }
+      const current: Template | null = await getTemplate(client, resetMatch[1]);
+      if (!current) return json(404, { error: 'Template not found' });
+      if (current.version !== expectedVersion || current.revision !== revision) {
+        return conflictResponse(client, resetMatch[1], expectedVersion);
+      }
+      const lintError = resetLintResponse(current);
+      if (lintError) return lintError;
       const result = await resetTemplateOverride(client, resetMatch[1], expectedVersion, revision);
       if (!result) return json(404, { error: 'Template not found' });
       if (isDocsDomainEnabled()) {
