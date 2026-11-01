@@ -19,8 +19,7 @@ import { lumaUrlForEventCard } from './lumaEvents';
 import { resolveHoldGoogleCalendars } from './dapierBroker';
 
 /** AISHL workshops are scheduled by the AISHL site event, which sends its own invite and Zoom. */
-export const AISHL_TEMPLATE_ID = 'aishl-workshop';
-export const isSiteScheduledCard = (card: Card) => card.templateId === AISHL_TEMPLATE_ID;
+const AISHL_TEMPLATE_TYPE = 'aishl-workshop';
 
 export class CardInviteConflictError extends Error {}
 export class CardInviteInputError extends Error {}
@@ -204,7 +203,8 @@ export async function syncCardInvite(
   guests: string[], deps: HoldGoogleDeps, actorId: string,
   source?: CalendarHold,
 ) {
-  if (isSiteScheduledCard(card)) return setSiteScheduledTime(client, card, interval, guests);
+  const template = await getTemplate(client, card.templateId);
+  if (template?.type === AISHL_TEMPLATE_TYPE) return setSiteScheduledTime(client, card, interval, guests);
   if (card.eventTime?.sync === 'syncing' && Date.now() - Date.parse(card.eventTime.syncStartedAt) < 180000) {
     throw new CardInviteConflictError('This Card invitation is syncing; retry shortly');
   }
@@ -243,7 +243,6 @@ export async function syncCardInvite(
       documentUrl = (cardDocument && DATAOPS_GUEST_DOC.test(cardDocument) ? cardDocument : undefined)
         || parseHoldDocumentUrl(linkedHold?.documentUrl) || cardDocument;
     } catch { throw new CardInviteInputError('The guest document must be an HTTPS URL.'); }
-    const template = await getTemplate(client, card.templateId);
     invite = {
       ...confirmedHoldInvite({ id: eventKey, title: linkedHold?.title || card.title || 'DataTalks.Club event', ...interval, documentUrl }, template?.type),
       timeZone: interval.timeZone,
