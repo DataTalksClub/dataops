@@ -182,6 +182,31 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
       }
     });
 
+    it('deletes only the selected shared-calendar copy when event IDs match', async () => {
+      const card = await createCard('Selected calendar copy');
+      const google = holdGoogleProvider();
+      for (const calendar of [DTC, PERSONAL]) google.events.set(calendar, new Map([['same-id', { id: 'same-id' }]]));
+      await linkInvites(card.id, [DTC, PERSONAL].map(calendar => ({ calendar, eventId: 'same-id' })),
+        ownedTime(card.id, { [DTC]: 'same-id', [PERSONAL]: 'same-id' }));
+      setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
+      try {
+        const res = await invoke('DELETE', `/api/cards/${card.id}/calendar-invites`, {
+          eventId: 'same-id', calendar: DTC, deleteEvent: true,
+        });
+        assert.strictEqual(res.statusCode, 200, res.body);
+        assert.ok(!google.events.get(DTC)!.has('same-id'));
+        assert.ok(google.events.get(PERSONAL)!.has('same-id'));
+        const deletes = google.calls.filter(call => call.method === 'DELETE');
+        assert.strictEqual(deletes.length, 1);
+        assert.strictEqual(deletes[0].url.searchParams.get('sendUpdates'), 'none');
+        const stored = (await getCardConsistent(client, card.id))!;
+        assert.deepStrictEqual(stored.eventTime?.googleEventIds, { [PERSONAL]: 'same-id' });
+        assert.deepStrictEqual(stored.calendarInvites?.map(invite => invite.calendar), [PERSONAL]);
+      } finally {
+        setCalendarHoldGoogleDepsForTests({});
+      }
+    });
+
     it('keeps the invite when Google refuses the deletion', async () => {
       const card = await createCard('Delete fails card');
       const google = holdGoogleProvider();
@@ -198,9 +223,13 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
     });
 
     it('cards time on an AISHL card sets the time but never calls Google', async () => {
+      const template = await createTemplate(client, {
+        name: 'AISHL workshop', type: 'aishl-workshop', triggerType: 'manual', taskDefinitions: [],
+      });
+      assert.notStrictEqual(template.id, template.type, 'stored template IDs are UUIDs, not types');
       const card = await createCard('AISHL workshop');
       const current = (await getCardConsistent(client, card.id))!;
-      await updateCard(client, card.id, { expectedVersion: current.version, patch: { templateId: 'aishl-workshop' } });
+      await updateCard(client, card.id, { expectedVersion: current.version, patch: { templateId: template.id } });
       const google = holdGoogleProvider();
       setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
       try {

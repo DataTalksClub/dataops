@@ -7,6 +7,17 @@ isolateConfig();
 const { run } = await import("../src/cli.mjs");
 
 describe("cards invite commands", () => {
+  test("invite remove --delete-event explicitly deletes only the selected calendar copy", async () => {
+    const calls = fakePortal({
+      "DELETE /api/cards/card-1/calendar-invites": (call) => ({ removed: [{ eventId: call.body.eventId, calendar: call.body.calendar }], invites: [] }),
+    });
+    const io = captureIo();
+    const code = await run(["cards", "invite", "remove", "card-1", "evt", "--calendar", "shared", "--delete-event"], io);
+    assert.equal(code, 0);
+    assert.deepEqual(calls[0].body, { eventId: "evt", calendar: "shared", deleteEvent: true });
+    assert.match(io.text(), /[Dd]eleted/);
+  });
+
   test("invite add adopts an existing event without modifying Google", async () => {
     const calls = fakePortal({
       "POST /api/cards/card-1/calendar-invites": (call) => ({ invite: call.body, invites: [call.body] }),
