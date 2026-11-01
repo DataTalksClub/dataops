@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  loadTransactionStatementContext,
   statementLinkForTransaction,
+  statementPeriodsForTransaction,
   unmatchedStatementCandidates,
 } from "../src/surfaces/finance/bookkeeping-statement.js";
 
@@ -152,4 +154,54 @@ test("manual statement picker can match exact EUR conversion for a foreign trans
     rows: [{ id: bank.key, bank }],
   });
   assert.equal(candidates.length, 1);
+});
+
+test("statement context reads the matched month and corresponding stored statement", async () => {
+  const month = {
+    period: "2026-09",
+    rows: [{ id: bank.key, ledger: { id: transaction.id }, bank }],
+  };
+  const statement = {
+    statement: {
+      id: "statement-1",
+      accountId: "revolut",
+      period: "2026-09",
+      rows: [{
+        date: bank.date,
+        amount: bank.amount,
+        currency: bank.currency,
+        counterparty: bank.counterparty,
+        reference: bank.reference,
+      }],
+    },
+  };
+  const calls = [];
+  const result = await loadTransactionStatementContext(transaction, {
+    workApiUrl: (path) => `https://portal.test${path}`,
+    request: async (url) => {
+      calls.push(url);
+      if (url.endsWith("/api/reconcile/months/2026-09")) return month;
+      if (url.endsWith("/api/reconcile/statements/statement-1")) return statement;
+      throw new Error(`Unexpected URL ${url}`);
+    },
+  });
+  assert.deepEqual(calls, [
+    "https://portal.test/api/reconcile/months/2026-09",
+    "https://portal.test/api/reconcile/statements/statement-1",
+  ]);
+  assert.equal(result.statementLink?.bankKey, bank.key);
+  assert.equal(result.statementLink?.statementRowIndex, 0);
+  assert.deepEqual(result.statementCandidates, []);
+});
+
+test("statement context only loads months within the candidate date window", () => {
+  assert.deepEqual(statementPeriodsForTransaction({ transactionDate: "2026-09-30" }), [
+    "2026-09",
+    "2026-10",
+  ]);
+  assert.deepEqual(statementPeriodsForTransaction({ transactionDate: "2026-01-01" }, 10), [
+    "2025-12",
+    "2026-01",
+  ]);
+  assert.deepEqual(statementPeriodsForTransaction({ transactionDate: "invalid" }), []);
 });

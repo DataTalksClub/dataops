@@ -130,6 +130,27 @@ function transactionDate(transaction) {
   return transaction?.paidDate || transaction?.transactionDate || "";
 }
 
+function periodAt(timestamp) {
+  return new Date(timestamp).toISOString().slice(0, 7);
+}
+
+function shiftPeriod(period, delta) {
+  const [year, month] = period.split("-").map(Number);
+  const index = year * 12 + month - 1 + delta;
+  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
+}
+
+/** Months that can contain a bank line within `maxDays` of the transaction. */
+export function statementPeriodsForTransaction(transaction, maxDays = MATCH_WINDOW_DAYS) {
+  const timestamp = validDate(transactionDate(transaction));
+  if (timestamp === null || !Number.isSafeInteger(maxDays) || maxDays < 0) return [];
+  const first = periodAt(timestamp - maxDays * DAY_MS);
+  const last = periodAt(timestamp + maxDays * DAY_MS);
+  const periods = [];
+  for (let period = first; period <= last; period = shiftPeriod(period, 1)) periods.push(period);
+  return periods;
+}
+
 function exactStatementAmount(transaction, bank) {
   const bankAmount = cents(bank.amount);
   if (bankAmount === null) return false;
@@ -181,4 +202,45 @@ export function unmatchedStatementCandidates(transaction, monthViews, { maxDays 
     left.line.date.localeCompare(right.line.date) ||
     left.bankKey.localeCompare(right.bankKey),
   );
+}
+
+/**
+ * Load real reconciliation views and, when paired, the stored statement record
+ * for one transaction. The caller owns caching and display; this function only
+ * reads the reconciliation API.
+ */
+export async function loadTransactionStatementContext(
+  transaction,
+  { request, workApiUrl, maxDays = MATCH_WINDOW_DAYS } = {},
+) {
+  if (typeof request !== "function" || typeof workApiUrl !== "function")
+    throw new TypeError("request and workApiUrl are required");
+  const periods = statementPeriodsForTransaction(transaction, maxDays);
+  if (!periods.length) return { monthViews: [], statementLink: null, statementCandidates: [] };
+
+  const monthViews = await Promise.all(periods.map(async (period) => {
+    const value = await request(workApiUrl(`/api/reconcile/months/${encodeURIComponent(period)}`));
+    return value?.month || value;
+  }));
+  const matchedBanks = new Map();
+  for (const view of monthViews) {
+    for (const row of Array.isArray(view?.rows) ? view.rows : []) {
+      if (String(row?.ledger?.id || "") !== String(transaction?.id || "") || !row?.bank?.statementId) continue;
+      const key = String(row.bank.key || row.id || "");
+      if (key) matchedBanks.set(key, String(row.bank.statementId));
+    }
+  }
+  if (matchedBanks.size === 1) {
+    const [statementId] = matchedBanks.values();
+    const statement = await request(
+      workApiUrl(`/api/reconcile/statements/${encodeURIComponent(statementId)}`),
+    );
+    const statementLink = statementLinkForTransaction(transaction, monthViews, statement);
+    if (statementLink) return { monthViews, statementLink, statementCandidates: [] };
+  }
+  return {
+    monthViews,
+    statementLink: null,
+    statementCandidates: unmatchedStatementCandidates(transaction, monthViews, { maxDays }),
+  };
 }
