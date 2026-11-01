@@ -26,6 +26,8 @@ import {
   verifyDocumentObject,
 } from "./bookkeepingShared";
 
+import { extractDocumentFacts } from "./bookkeepingSuggestions";
+
 const SHA256 = /^[a-f0-9]{64}$/;
 const OPAQUE = /^[a-zA-Z0-9._:-]{1,160}$/;
 const STATEMENT_CONTENT_TYPES = new Set([
@@ -282,6 +284,10 @@ export async function handleBookkeepingDocumentRoutes(
         doc.creatorIdempotencyKey !== body.idempotencyKey
       )
         return json(409, { error: "Completion refused" });
+      if (["invoice", "receipt"].includes(String(doc.documentType)) && !doc.facts) {
+        try { return json(200,{outcome:"existing",document:await extractDocumentFacts(client,complete[1])}); }
+        catch { return json(503,{error:"Document stored; extraction must be retried"}); }
+      }
       return json(200, { outcome: "existing", document: publicDocument(doc) });
     }
     if (doc.status !== "pending")
@@ -411,7 +417,11 @@ export async function handleBookkeepingDocumentRoutes(
       }
       return json(503, { error: "Document activation failed" });
     }
-    const active = await getBookkeepingItem(client, "document", complete[1]);
+    let active = await getBookkeepingItem(client, "document", complete[1]);
+    if (["invoice", "receipt"].includes(String(active?.documentType))) {
+      try { const extracted=await extractDocumentFacts(client,complete[1]); if(extracted) active={...active!,facts:extracted.facts}; }
+      catch { return json(503, {error:"Document stored; extraction must be retried",document:publicDocument(active!)}); }
+    }
     return json(200, { outcome: "created", document: publicDocument(active!) });
   }
   const download = path.match(

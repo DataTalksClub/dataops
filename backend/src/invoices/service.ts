@@ -6,6 +6,7 @@ import { getIntakeItem, updateIntakeItem } from '../db/intake';
 import { getArtifact } from '../db/artifacts';
 import { listTransactions, putBookkeepingItem, updateBookkeepingTransaction } from '../db/bookkeeping';
 import { extractInvoiceText, pdfText, type InvoiceHints } from './extract';
+import { extractFinancePdf } from './financeExtraction';
 import { isInvoiceIntakeRoute } from './intakeRoute';
 import { missingEvidence, type Invoice, type InvoiceFields } from './model';
 import { createInvoice, getInvoice, listInvoices, saveInvoice, claimInvoice, reserveSheetRow, approveInvoice } from './store';
@@ -52,8 +53,8 @@ async function linkedHints(client:DynamoDBDocumentClient,record:Invoice):Promise
 }
 async function upgradeDraft(client:DynamoDBDocumentClient,record:Invoice,hints:InvoiceHints,actor:string):Promise<Invoice> {
   if(!draftIsUntouched(record)) return record;
-  let parsed:ReturnType<typeof extractInvoiceText>;
-  try { parsed=extractInvoiceText(await textExtractor(await artifactBytes(record.source.artifactId,client)),hints); }
+  let parsed:Pick<Invoice,'fields'|'extraction'>;
+  try { const bytes=await artifactBytes(record.source.artifactId,client); parsed=await extractFinancePdf(bytes,{textReader:textExtractor,hints}); }
   catch { return record; }
   if(parsed.extraction.method==='manual') return record;
   const found=Object.entries(parsed.fields).filter(([,value])=>value!==undefined) as Array<[keyof InvoiceFields, unknown]>;
@@ -109,8 +110,8 @@ export async function processInvoiceIntake(client:DynamoDBDocumentClient,intakeI
     }
     let bytes:Buffer;
     try { bytes=await artifactBytes(artifact.id,client); } catch { issues.push('Source integrity verification failed: reimport the original document'); continue; }
-    let parsed:ReturnType<typeof extractInvoiceText>;
-    try {parsed=extractInvoiceText(await textExtractor(bytes),intakeHints(intake));}
+    let parsed:Pick<Invoice,'fields'|'extraction'>;
+    try {parsed=await extractFinancePdf(bytes,{textReader:textExtractor,hints:intakeHints(intake)});}
     catch {parsed={fields:{archiveRequired:true,quantity:1},extraction:{method:'manual',evidence:[],issues:['PDF extraction unavailable: inspect original and complete manually']}};}
     const now=new Date().toISOString();
     const record:Invoice={id,revision:1,status:'pending',...parsed,source:{intakeItemIds:[intake.id],artifactId:artifact.id,checksum},destinations:{dropbox:{state:'pending',operationId:`dropbox-${id}`},sheets:{state:'pending',operationId:`sheets-${id}`}},audit:[{action:'staged',actor:'email-intake',at:now,revision:1}],createdAt:now,updatedAt:now};
@@ -212,7 +213,7 @@ export async function publishInvoice(client:DynamoDBDocumentClient,record:Invoic
   const creditKey=`credit-note:${record.fields.invoiceNumber}`;
   const booked=record.fields.invoiceNumber?(await listTransactions(client)).find(t=>t.sourceKey===creditKey&&t.id!==record.id):undefined;
   if(booked){const next=structuredClone(record);next.ledgerTransactionId=booked.id;next.audit.push({action:'publication-attempt',actor,at:new Date().toISOString(),revision:record.revision});delete next.leaseOwner;delete next.leaseUntil;delete next.restoredNeedsReconciliation;await checkpoint(next);return record;}
-  const ledger=await putBookkeepingItem(client,'bookkeeping',{...record.fields,id:record.id,entryType:refund||record.fields.subtype==='Refund'?'income':'expense',sourceType:'invoice',sourceKey,invoiceId:record.id,documentArtifactId:record.source.artifactId,externalReferences:record.destinations},`invoice#${record.id}`);
+  const ledger=await putBookkeepingItem(client,'bookkeeping',{...record.fields,id:record.id,entryType:record.extraction.direction==='income'||refund||record.fields.subtype==='Refund'?'income':'expense',sourceType:'invoice',sourceKey,invoiceId:record.id,documentArtifactId:record.source.artifactId,externalReferences:record.destinations},`invoice#${record.id}`);
   if(ledger.duplicate) await updateBookkeepingTransaction(client,record.id,ledger.item.updatedAt,{externalReferences:record.destinations});
   const next=structuredClone(record);next.audit.push({action:'publication-attempt',actor,at:new Date().toISOString(),revision:record.revision});delete next.leaseOwner;delete next.leaseUntil;delete next.restoredNeedsReconciliation;await checkpoint(next);
   return record;

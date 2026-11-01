@@ -11,6 +11,7 @@ import {
   putBookkeepingItem,
   removeDocumentReportReference,
 } from "../db/bookkeeping";
+import { applyDocumentFinance, type DocumentFacts } from "./bookkeepingSuggestions";
 import { json, MONTH, parse, publicDocument, publicLink } from "./bookkeepingShared";
 
 export async function handleBookkeepingResourceRoutes(
@@ -90,6 +91,7 @@ export async function handleBookkeepingResourceRoutes(
           transactionId: String(body.transactionId),
           coverageType: String(body.coverageType),
         });
+        if(body.coverageType === "evidence" && targetDocument.facts) await applyDocumentFinance(client, targetDocument.facts as DocumentFacts, String(body.transactionId));
         const safeLink = publicLink(result.item);
         return json(result.outcome === "created" ? 201 : 200, {
           ...safeLink,

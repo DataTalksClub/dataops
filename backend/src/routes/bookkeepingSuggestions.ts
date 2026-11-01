@@ -9,16 +9,20 @@ import {
   getRawDocument,
   listBookkeepingItems,
   setDocumentFacts,
+  updateBookkeepingTransaction,
   transactionSponsorDeal,
 } from "../db/bookkeeping";
-import { extractInvoiceText, pdfText } from "../invoices/extract";
+import { pdfText } from "../invoices/extract";
+import { extractFinancePdf } from "../invoices/financeExtraction";
+import type { InvoiceFields, Invoice } from "../invoices/model";
 import { financeLedger, type LedgerRow } from "../sponsorFinance/ledger";
 import { financeEnabled } from "../sponsorFinance/repository";
 import { json, publicDocument, s3 } from "./bookkeepingShared";
 import { recordRequestError } from '../requestErrorLog';
 
 type Record_ = Record<string, unknown>;
-export type DocumentFacts = {
+export type DocumentFacts = InvoiceFields & {
+  extraction?: Invoice["extraction"];
   transactionDate?: string;
   paidDate?: string;
   amount?: string;
@@ -155,15 +159,17 @@ export async function extractDocumentFacts(client: DynamoDBDocumentClient, id: s
   // A storage failure is retried by the caller; only the PDF itself can be unreadable.
   const bytes = await readPdf(document);
   try {
-    const { fields, extraction } = extractInvoiceText(await pdfText(bytes));
-    facts.method = extraction.method;
-    for (const field of ["transactionDate", "paidDate", "amount", "currency", "counterparty", "invoiceNumber"] as const)
-      if (fields[field]) facts[field] = String(fields[field]);
+    const { fields, extraction } = await extractFinancePdf(bytes);
+    Object.assign(facts, fields, { method:extraction.method, extraction });
   } catch (error) {
-    facts.reason = `${(error as Error).name}: ${String((error as Error).message).slice(0, 120)}`;
+    facts.reason = "ExtractionError: document-extraction-unavailable";
+    facts.extraction = {method:"unreadable",evidence:[],issues:["Document could not be read; retry extraction"],needsReview:true};
     console.error(JSON.stringify({ message: "bookkeeping document unreadable", documentId: id, reason: facts.reason }));
   }
-  await setDocumentFacts(client, id, facts);
+  await setDocumentFacts(client, id, {...facts});
+  for (const link of await listBookkeepingItems(client, "link")) {
+    if (link.documentId === id && link.coverageType === "evidence") await applyDocumentFinance(client, facts, String(link.transactionId));
+  }
   return { ...publicDocument(document), facts };
 }
 
@@ -237,4 +243,18 @@ export async function handleBookkeepingSuggestionRoutes(
     }
   }
   return null;
+}
+
+/** Copy extraction evidence to a linked row without replacing bank amounts. */
+export async function applyDocumentFinance(client:DynamoDBDocumentClient, facts:DocumentFacts, transactionId:string) {
+  if(!facts.extraction) return;
+  const row=await getBookkeepingItem(client,"bookkeeping",transactionId);
+  if(!row || JSON.stringify(row.documentExtraction)===JSON.stringify(facts)) return;
+  const patch:Record<string,unknown>={documentExtraction:facts};
+  if(!facts.extraction?.needsReview && facts.currency===row.currency) {
+    for(const field of ['netAmount','vatAmount','vatCurrency','vatRate','reverseCharge','grossAmountEur','netAmountEur','vatAmountEur','exchangeRate','exchangeRateDate','exchangeRateSource'] as const) {
+      if(facts[field]!==undefined && row[field]===undefined) patch[field]=facts[field];
+    }
+  }
+  await updateBookkeepingTransaction(client,transactionId,String(row.updatedAt),patch);
 }

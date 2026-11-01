@@ -3,6 +3,7 @@ import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createArtifactIfAbsent } from '../db/artifacts';
 import { extractInvoiceText, pdfText } from './extract';
+import { extractFinanceText, convertExtractedFinance } from './financeExtraction';
 import type { Invoice, InvoiceFields } from './model';
 import { saveInvoice } from './store';
 
@@ -78,8 +79,9 @@ export async function replaceInvoiceDocument(
     // New document evidence replaces old document evidence. Actual bank EUR
     // amounts, payment evidence and other operator ledger fields stay owned
     // by the operator. Old email hints must not identify the replacement.
-    const parsed = extractInvoiceText(text);
+    const parsed = await convertExtractedFinance(await extractFinanceText(text,{pdf:bytes}));
     const documentFields: Array<keyof InvoiceFields> = [
+      'netAmount','vatAmount','vatCurrency','vatRate','reverseCharge','grossAmountEur','netAmountEur','vatAmountEur','exchangeRate','exchangeRateDate','exchangeRateSource',
       'counterparty', 'description', 'amount', 'currency', 'transactionDate', 'paidDate', 'invoiceNumber', 'vatId',
     ];
     for (const name of documentFields) {

@@ -8,6 +8,12 @@ const fields = [
   ["description", "What"],
   ["amount", "Invoice amount (positive)", "number"],
   ["currency", "Invoice currency"],
+  ["netAmount", "Net amount", "number"],
+  ["vatAmount", "VAT amount", "number"],
+  ["vatRate", "VAT rate (%)", "number"],
+  ["grossAmountEur", "Gross in EUR (estimate)", "number"],
+  ["netAmountEur", "Net in EUR (estimate)", "number"],
+  ["vatAmountEur", "VAT in EUR (estimate)", "number"],
   ["amountEur", "Actual EUR paid (positive)", "number"],
   ["paymentEvidence", "Payment evidence / operator attestation"],
   ["statementRef", "Statement reference"],
@@ -139,7 +145,8 @@ export function invoiceDetailMarkup(record, escapeHtml) {
     <p>${e(record.status)} · Revision ${e(record.revision)} · Publication ${e(record.publicationStatus)}</p>
     </header>
     ${record.verification ? `<p>Fields verified by ${e(record.verification.actor)} · Revision ${e(record.verification.revision)} · ${e(record.verification.at)}</p>` : ""}
-    <p>Extraction: ${e(record.extraction?.method || "Manual completion required")}</p>
+    <p>Extraction: ${e(record.extraction?.method || "Manual completion required")}${record.extraction?.needsReview ? " · Review required" : ""}</p>
+    ${record.fields?.exchangeRate ? `<p>EUR estimate: ${e(record.fields.exchangeRate)} ${e(record.fields.currency)} per EUR · ${e(record.fields.exchangeRateSource)} · ${e(record.fields.exchangeRateDate)}</p>` : ""}
     <ul>${[
       ...(record.extraction?.issues || []),
       ...(record.missingEvidence || []).map((field) => `Missing evidence: ${field}`),
@@ -153,7 +160,7 @@ export function invoiceDetailMarkup(record, escapeHtml) {
     <button type="button" data-invoice-document>Open original private PDF</button>
     <form data-invoice-fields>
     <fieldset ${pending ? "" : "disabled"}>
-    <legend>Reviewed expense fields</legend>
+    <legend>Reviewed invoice fields</legend>
     <div class="invoice-fields">${fields
       .map(
         ([
@@ -164,6 +171,10 @@ export function invoiceDetailMarkup(record, escapeHtml) {
     </label>`,
       )
       .join("")}
+    <label>Reverse charge<select name="reverseCharge">
+    <option value="false" ${record.fields?.reverseCharge !== true ? "selected" : ""}>No</option>
+    <option value="true" ${record.fields?.reverseCharge === true ? "selected" : ""}>Yes</option>
+    </select></label>
     <label>Archive original PDF<select name="archiveRequired">
     <option value="true" ${record.fields?.archiveRequired !== false ? "selected" : ""}>Required</option>
     <option value="false" ${record.fields?.archiveRequired === false ? "selected" : ""}>Reviewed exception</option>
@@ -316,6 +327,7 @@ export async function mountInvoiceReview(host, context) {
         values.quantity =
           values.quantity === "" ? null : Number(values.quantity);
         values.archiveRequired = values.archiveRequired === "true";
+        values.reverseCharge = values.reverseCharge === "true";
         const result = await api(
           `/${encodeURIComponent(selected.id)}`,
           json("PUT", { revision: selected.revision, fields: values, ...(verified ? { verified: true } : {}) }),

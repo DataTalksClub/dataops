@@ -1,4 +1,6 @@
 export interface InvoiceFields {
+  netAmount?: string; vatAmount?: string; vatCurrency?: string; vatRate?: string; reverseCharge?: boolean;
+  grossAmountEur?: string; netAmountEur?: string; vatAmountEur?: string; exchangeRate?: string; exchangeRateDate?: string; exchangeRateSource?: string;
   transactionDate?: string; paidDate?: string; counterparty?: string; description?: string;
   amount?: string; currency?: string; amountEur?: string; statementRef?: string; comment?: string;
   quantity?: number; subtype?: string; period?: string; category?: string;
@@ -15,7 +17,7 @@ export interface Invoice {
   // A credit note is published as income (subtype Refund) keyed
   // credit-note:<number>. needsReview with candidates: the amount was
   // ambiguous and left empty.
-  extraction: { method: string; evidence: string[]; issues: string[]; documentType?: 'invoice' | 'credit_note'; direction?: 'income' | 'expense'; paymentChannel?: string; needsReview?: boolean; candidates?: string[] };
+  extraction: { method: string; evidence: string[]; issues: string[]; documentType?: 'invoice' | 'receipt' | 'credit_note' | 'other'; direction?: 'income' | 'expense'; paymentChannel?: string; needsReview?: boolean; candidates?: string[] };
   // The ledger row this record is booked as when it is not its own row
   // (a credit note already recorded under the same credit-note:<number>).
   ledgerTransactionId?: string;
@@ -26,7 +28,9 @@ export interface Invoice {
   verification?: { revision: number; actor: string; at: string; method: 'operator' };
   publicationBinding?: string; publicationError?: string; leaseOwner?: string; leaseUntil?: number; restoredNeedsReconciliation?: boolean;
 }
-const fields = new Set(['transactionDate','paidDate','counterparty','description','amount','currency','amountEur','statementRef','comment','quantity','subtype','period','category','paymentEvidence','accountContext','invoiceNumber','vatId','archiveRequired','archiveExceptionReason']);
+const fields = new Set(['netAmount','vatAmount','vatCurrency','vatRate','reverseCharge','grossAmountEur','netAmountEur','vatAmountEur','exchangeRate','exchangeRateDate','exchangeRateSource','transactionDate','paidDate','counterparty','description','amount','currency','amountEur','statementRef','comment','quantity','subtype','period','category','paymentEvidence','accountContext','invoiceNumber','vatId','archiveRequired','archiveExceptionReason']);
+const currencies = new Set(Intl.supportedValuesOf('currency'));
+export function validCurrency(value: string): boolean { return currencies.has(value); }
 export function date(value: unknown): boolean {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value;
 }
@@ -37,12 +41,15 @@ export function validateFields(value: unknown): string[] {
   for (const [name, child] of Object.entries(value)) {
     if (!fields.has(name)) { errors.push(name); continue; }
     if (child === null && ['amount','amountEur','quantity'].includes(name)) continue;
-    if (name === 'archiveRequired') { if (typeof child !== 'boolean') errors.push(name); }
+    if (['archiveRequired','reverseCharge'].includes(name)) { if (typeof child !== 'boolean') errors.push(name); }
     else if (name === 'quantity') { if (!Number.isSafeInteger(child) || Number(child) < 1) errors.push(name); }
     else if (typeof child !== 'string' || child.length > 500 || /[\x00-\x1f]/.test(child)) errors.push(name);
-    else if (child && ['transactionDate','paidDate'].includes(name) && !date(child)) errors.push(name);
+    else if (child && ['transactionDate','paidDate','exchangeRateDate'].includes(name) && !date(child)) errors.push(name);
     else if (child && ['amount','amountEur'].includes(name) && !money(child)) errors.push(name);
-    else if (child && name === 'currency' && !['USD','EUR'].includes(child)) errors.push(name);
+    else if (child && ['currency','vatCurrency'].includes(name) && !validCurrency(child)) errors.push(name);
+    else if (child && ['netAmount','vatAmount','grossAmountEur','netAmountEur','vatAmountEur'].includes(name) && !/^(0|[1-9]\d{0,9})(\.\d{1,2})?$/.test(child)) errors.push(name);
+    else if (child && name === 'vatRate' && (!/^\d{1,2}(\.\d{1,2})?$/.test(child) || Number(child)>50)) errors.push(name);
+    else if (child && name === 'exchangeRate' && (!/^\d+(\.\d+)?$/.test(child) || Number(child)<=0)) errors.push(name);
   }
   return errors;
 }
@@ -52,7 +59,7 @@ export function missingEvidence(f: InvoiceFields): string[] {
   if (!date(f.paidDate)) missing.push('paidDate');
   if (!money(f.amount)) missing.push('amount');
   if (!money(f.amountEur)) missing.push('amountEur');
-  if (!['USD','EUR'].includes(f.currency || '')) missing.push('currency');
+  if (!validCurrency(f.currency || '')) missing.push('currency');
   if (f.archiveRequired === false && !f.archiveExceptionReason?.trim()) missing.push('archiveExceptionReason');
   return missing;
 }
