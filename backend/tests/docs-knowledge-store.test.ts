@@ -2,7 +2,7 @@ import {describe,it} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {KnowledgeStore,RevisionConflict,normalizeRepoPath,bounded} from '../src/docs/knowledgeStore';
+import {KnowledgeStore,RevisionConflict,KnowledgeError,normalizeRepoPath,bounded} from '../src/docs/knowledgeStore';
 import {KnowledgeJobs,GitHubMirrorError} from '../src/knowledge/worker';
 import {syntheticKnowledge} from './helpers/knowledge';
 
@@ -43,6 +43,35 @@ describe('immutable S3 knowledge publications',()=>{
   assert.equal(snapshot.publications[0].actor,'actor');
  });
  it('rejects unsafe paths',()=>{for(const path of ['/absolute','../escape','a//b','.git/config','a\\b']) assert.throws(()=>normalizeRepoPath(path));});
+});
+
+describe('knowledge history pagination',()=>{
+ it('paginates a deep chain without re-walking it from the head on every page',async()=>{
+  const {store,s3,publication}=syntheticKnowledge({'content/quiet.md':'quiet','content/other.md':'v0'});
+  let revision=publication.revision;
+  for(let i=1;i<=250;i++) revision=(await store.publish([{path:'content/other.md',bytes:`v${i}`}],revision,'actor',`change ${i}`)).revision;
+  const pages:{versions:Record<string,unknown>[];cursor:string|null}[]=[];
+  let cursor:string|undefined;
+  while(true) {
+   const page=await store.history('content/quiet.md',cursor);
+   pages.push(page);
+   if(!page.cursor) break;
+   cursor=page.cursor;
+  }
+  const ops=pages.flatMap(page=>page.versions.map(v=>v.operation));
+  assert.deepEqual(ops,['import']);
+  const getPubs=()=>s3.calls.filter(c=>c.name==='GetObjectCommand'&&String(c.input.Key).includes('/publications/')).length;
+  const before=getPubs();
+  const continued=await store.history('content/quiet.md',pages[0].cursor!);
+  const reads=getPubs()-before;
+  assert.ok(continued.versions.length===0&&continued.cursor, 'the second page continues the chain');
+  assert.ok(reads<=110,`a cursor page must cost O(page), not O(depth): ${reads} publication reads`);
+ });
+ it('rejects cursors that name no publication',async()=>{
+  const {store}=syntheticKnowledge({'content/a.md':'a'});
+  await assert.rejects(()=>store.history('content/a.md','00000000-0000-4000-8000-000000000000'),KnowledgeError);
+  await assert.rejects(()=>store.history('content/a.md','not-a-cursor'),/Invalid history cursor/);
+ });
 });
 
 describe('daily Git mirror publication',()=>{

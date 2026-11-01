@@ -282,14 +282,15 @@ export class KnowledgeStore {
   }
   async history(path:string,cursor?:string,limit=20):Promise<{versions:Record<string,unknown>[];cursor:string|null}> {
     normalizeRepoPath(path);
-    let publication=await this.pin();
     const seen=new Set<string>();
+    let publication=await this.pin();
     if(cursor) {
       if(!/^[a-f0-9-]{36}$/.test(cursor)) throw new KnowledgeError('Invalid history cursor');
-      // Cursors must be ancestors of the published head, never failed unpublished manifests.
-      while(publication.revision!==cursor && publication.parent) {
-        seen.add(publication.revision);publication=(await this.json<Publication>(`publications/${publication.parent}.json`)).value;
-      }
+      // Publications are immutable, so the page starts at the cursor revision
+      // itself; re-walking the chain from the head made every page O(depth)
+      // and pagination quadratic on long histories.
+      try {publication=(await this.json<Publication>(`publications/${cursor}.json`)).value;}
+      catch(err) {if(['NoSuchKey','NotFound'].includes((err as {name?:string}).name||'')) throw new KnowledgeError('History cursor is not published');throw err;}
       if(publication.revision!==cursor) throw new KnowledgeError('History cursor is not published');
     }
     const versions:Record<string,unknown>[]=[];
