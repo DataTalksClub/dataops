@@ -270,7 +270,8 @@ const INCOME_IDENTITY_FIELDS = [
 ];
 
 function checkIncomeIdentity(existing, expected, reference, kind) {
-  const differences = INCOME_IDENTITY_FIELDS.filter((field) => existing[field] !== expected[field]);
+  const fields = expected.sourceType === "credit-note" ? [...INCOME_IDENTITY_FIELDS, "subtype"] : INCOME_IDENTITY_FIELDS;
+  const differences = fields.filter((field) => existing[field] !== expected[field]);
   if (differences.length) {
     throw new UsageError(`Reference ${reference} already belongs to a ${kind} with different details (${differences.join(", ")}); existing row ${existing.id} was left unchanged.`);
   }

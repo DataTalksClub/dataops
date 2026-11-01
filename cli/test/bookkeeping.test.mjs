@@ -331,6 +331,18 @@ test("add-income --type refund applies with evidence links and replays without w
   assert.match(conflictIo.errors.join("\n"), /credit note with different details/i);
 });
 
+test("refund replay rejects a row whose refund classification changed before linking evidence", async () => {
+  const dryIo = captureIo();
+  fakePortal({ "GET /api/bookkeeping/transactions": { items: [] } });
+  assert.equal(await run([...refundArgs, "--json"], dryIo), 0);
+  const existing = { ...dryIo.json().transaction, id: "changed-refund", subtype: "Payout" };
+  const calls = fakePortal({ "GET /api/bookkeeping/transactions": { items: [existing] } });
+  const io = captureIo();
+  assert.notEqual(await run([...refundArgs, "--document", "proof", "--apply"], io), 0);
+  assert.match(io.errors.join("\n"), /different details \(subtype\)/);
+  assert.equal(calls.filter((call) => call.method !== "GET").length, 0);
+});
+
 test("add-income --type refund uploads --evidence PDFs and links them to the row", async () => {
   const file = path.join(mkdtempSync(path.join(tmpdir(), "credit-note-")), "SYN-CN-0002.pdf");
   writeFileSync(file, "%PDF-synthetic credit note");
