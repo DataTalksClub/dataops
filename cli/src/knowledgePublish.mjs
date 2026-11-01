@@ -53,26 +53,63 @@ export function classify(states, known, headSha) {
   return (states[index] === ORIGIN ? null : states[index]) === headSha ? "ahead" : "conflict";
 }
 
+/** Run `fn` over `items` with at most `limit` calls in flight; rejects with the first error. */
+export async function bounded(items, fn, limit) {
+  let next = 0;
+  let failed = false;
+  let firstError;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (next < items.length && !failed) {
+      try {
+        await fn(items[next++]);
+      } catch (error) {
+        if (!failed) firstError = error;
+        failed = true;
+        throw error;
+      }
+    }
+  });
+  await Promise.allSettled(workers);
+  if (failed) throw firstError;
+}
+
 /**
  * Plan a reconcile. `files` maps every managed path in the commit to
  * `{ bytes, sha }`; `prod` is the manifest's entries; `known(path)` returns
- * the Git-recorded states of a path; `lineage(path)` resolves prod's states
- * (current first) for a path whose current state Git does not know.
+ * the Git-recorded states of a path; `page(path, cursor)` fetches one
+ * /knowledge/history page `{ versions, cursor }` for a path whose current
+ * state Git does not know. Pages are walked only until the verdict is
+ * decided, and unrelated paths walk concurrently (`concurrency` at a time).
  */
-export async function planReconcile({ files, prod, known, lineage }) {
+export async function planReconcile({ files, prod, known, page, concurrency = 12 }) {
   const paths = [...new Set([...files.keys(), ...Object.keys(prod)])].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  const plan = { mutations: [], ahead: [], conflicts: [], unchanged: 0 };
+  const verdicts = new Map();
+  const lineagePending = [];
   for (const file of paths) {
     const head = files.get(file) || null;
     const headSha = head ? head.sha : null;
     const prodSha = prod[file]?.sha256 ?? null;
     if (prodSha === headSha) {
-      plan.unchanged += 1;
+      verdicts.set(file, { verdict: "unchanged" });
       continue;
     }
     const recorded = known(file);
-    const verdict = recorded.has(prodSha) ? "publish" : classify(await lineage(file), recorded, headSha);
-    if (verdict === "publish") {
+    if (recorded.has(prodSha)) verdicts.set(file, { verdict: "publish" });
+    else lineagePending.push(file);
+  }
+  await bounded(lineagePending, async (file) => {
+    const recorded = known(file);
+    const headSha = files.get(file)?.sha ?? null;
+    verdicts.set(file, { verdict: await classifyByHistory(page, file, recorded, headSha) });
+  }, concurrency);
+  const plan = { mutations: [], ahead: [], conflicts: [], unchanged: 0 };
+  for (const file of paths) {
+    const head = files.get(file) || null;
+    const prodSha = prod[file]?.sha256 ?? null;
+    const { verdict } = verdicts.get(file);
+    if (verdict === "unchanged") {
+      plan.unchanged += 1;
+    } else if (verdict === "publish") {
       if (!head) plan.mutations.push({ path: file, operation: "delete" });
       else plan.mutations.push({ path: file, operation: prodSha ? "edit" : "create", base64: head.bytes.toString("base64") });
     } else if (verdict === "ahead") {
@@ -85,20 +122,25 @@ export async function planReconcile({ files, prod, known, lineage }) {
 }
 
 /**
- * Prod's states for a path, newest first, from /knowledge/history pages:
- * each version's sha256 (null once deleted), the first being the current
- * state, then ORIGIN when the history is exhausted.
+ * Classify one path from its /knowledge/history pages, newest first. Each
+ * page is fetched only while the verdict is still undecided: classification
+ * reads the states up to the first one Git recorded (or the chain's origin),
+ * so a decision rarely needs the whole lineage.
  */
-export async function prodLineage(api, file, maxPages = MAX_HISTORY_PAGES) {
+async function classifyByHistory(page, file, recorded, headSha, maxPages = MAX_HISTORY_PAGES) {
   const states = [];
   let cursor;
-  for (let page = 0; page < maxPages; page++) {
-    const result = await api.get("/knowledge/history", { query: { path: file, cursor } });
+  for (let pages = 0; pages < maxPages; pages++) {
+    if (states.some((state) => state === ORIGIN || recorded.has(state))) break;
+    const result = await page(file, cursor);
     for (const version of result.versions || []) states.push(version.deleted ? null : version.sha256);
+    if (!result.cursor) {
+      states.push(ORIGIN);
+      break;
+    }
     cursor = result.cursor;
-    if (!cursor) return [...states, ORIGIN];
   }
-  return states;
+  return classify(states, recorded, headSha);
 }
 
 /** The API body form of a planned mutation. */

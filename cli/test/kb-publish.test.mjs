@@ -67,17 +67,22 @@ describe("three-way classification", () => {
       "content/web-created.md": states(),
       "content/web-deleted.md": states("git copy"),
     };
-    const lineages = {
-      "content/new-in-git.md": [ORIGIN],
-      "content/web-ahead.md": [h("web edit"), h("git base"), ORIGIN],
-      "content/both.md": [h("web edit"), h("git v1"), ORIGIN],
-      "content/web-created.md": [h("web only"), ORIGIN],
-      "content/web-deleted.md": [null, h("git copy"), ORIGIN],
+    const version = (body) => ({ sha256: body === null ? null : h(body), deleted: body === null });
+    const pagesOf = {
+      "content/new-in-git.md": [{ versions: [], cursor: null }],
+      "content/web-ahead.md": [{ versions: [version("web edit")], cursor: "c1" }, { versions: [version("git base")], cursor: null }],
+      "content/both.md": [{ versions: [version("web edit")], cursor: "c1" }, { versions: [version("git v1")], cursor: null }],
+      "content/web-created.md": [{ versions: [version("web only")], cursor: null }],
+      "content/web-deleted.md": [{ versions: [version(null)], cursor: "c1" }, { versions: [version("git copy")], cursor: null }],
     };
     const asked = [];
     const plan = await planReconcile({
       files, prod, known: (file) => recorded[file],
-      lineage: async (file) => { asked.push(file); return lineages[file]; },
+      page: async (file, cursor) => {
+        asked.push(file);
+        const pages = pagesOf[file];
+        return pages[cursor ? 1 : 0];
+      },
     });
     assert.deepEqual(plan.mutations.map(({ path: file, operation }) => [file, operation]), [
       ["content/deleted-in-git.md", "delete"],
@@ -89,6 +94,68 @@ describe("three-way classification", () => {
     assert.deepEqual(plan.conflicts, [{ path: "content/both.md", prod: "differs" }]);
     assert.equal(plan.unchanged, 1);
     assert.ok(!asked.includes("content/restored.md"));
+  });
+
+  test("stops paging once a Git-recorded state decides the verdict", async () => {
+    const files = new Map([["content/long.md", { bytes: Buffer.from("git v2"), sha: h("git v2") }]]);
+    const prod = { "content/long.md": { sha256: h("web edit"), size: 8 } };
+    const pages = [
+      { versions: [{ sha256: h("web edit"), deleted: false }], cursor: "c1" },
+      { versions: [{ sha256: h("git v2"), deleted: false }], cursor: "c2" },
+      { versions: [{ sha256: h("older"), deleted: false }], cursor: null },
+    ];
+    const fetched = [];
+    const plan = await planReconcile({
+      files, prod, known: () => states("git v2"),
+      page: async (file, cursor) => {
+        fetched.push(cursor ?? "first");
+        return pages[fetched.length - 1];
+      },
+    });
+    assert.deepEqual(plan.ahead, ["content/long.md"]);
+    assert.deepEqual(fetched, ["first", "c1"], "the third page must never be fetched");
+  });
+
+  test("walks undecided paths with the requested concurrency", async () => {
+    const paths = Array.from({ length: 6 }, (_, index) => `content/diverged-${index}.md`);
+    const files = new Map(paths.map((file) => [file, { bytes: Buffer.from(file), sha: h(file) }]));
+    const prod = Object.fromEntries(paths.map((file) => [file, { sha256: h(`web ${file}`), size: 8 }]));
+    const makePage = () => {
+      let inFlight = 0;
+      let peak = 0;
+      return {
+        page: async () => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          inFlight -= 1;
+          return { versions: [], cursor: null };
+        },
+        peak: () => peak,
+      };
+    };
+    const single = makePage();
+    await planReconcile({ files, prod, known: () => states(), page: single.page, concurrency: 1 });
+    assert.equal(single.peak(), 1, "concurrency 1 must never overlap walks");
+    const pooled = makePage();
+    await planReconcile({ files, prod, known: () => states(), page: pooled.page, concurrency: 4 });
+    assert.equal(pooled.peak(), 4, "four lineage walks must overlap at once");
+  });
+
+  test("rejects the plan when one lineage walk fails", async () => {
+    const paths = ["content/a.md", "content/b.md"];
+    const files = new Map(paths.map((file) => [file, { bytes: Buffer.from(file), sha: h(file) }]));
+    const prod = Object.fromEntries(paths.map((file) => [file, { sha256: h(`web ${file}`), size: 8 }]));
+    await assert.rejects(
+      () => planReconcile({
+        files, prod, known: () => states(),
+        page: async (file) => {
+          if (file === "content/a.md") throw new Error("history exploded");
+          return { versions: [], cursor: null };
+        },
+      }),
+      /history exploded/,
+    );
   });
 
   test("splits large publications into request-sized batches and refuses an oversized file", () => {

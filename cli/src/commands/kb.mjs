@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 import { ApiError } from "../api.mjs";
 import { ConflictError, UsageError } from "../errors.mjs";
-import { apiMutation, batches, commitFiles, planReconcile, prodLineage, recordedStates, repositoryName, resolveCommit } from "../knowledgePublish.mjs";
+import { apiMutation, batches, commitFiles, planReconcile, recordedStates, repositoryName, resolveCommit } from "../knowledgePublish.mjs";
 import { enc, fields, integer, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { copyKnowledgeDocument, exportKnowledgeDocument } from "./kb-transfer.mjs";
@@ -429,7 +429,8 @@ export async function publish(args, io) {
     .filter((file) => (manifest.entries[file]?.sha256 ?? null) !== (files.get(file)?.sha ?? null));
   const recorded = recordedStates(repo, head, manifest.roots, diverged);
   const plan = await planReconcile({
-    files, prod: manifest.entries, known: (file) => recorded.get(file), lineage: (file) => prodLineage(api, file),
+    files, prod: manifest.entries, known: (file) => recorded.get(file),
+    page: (file, cursor) => api.get("/knowledge/history", { query: { path: file, cursor } }),
   });
   let revision = manifest.revision;
   if (!args.dryRun && plan.mutations.length) {
