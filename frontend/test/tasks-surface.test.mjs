@@ -2365,6 +2365,12 @@ describe("Tasks surface boundary", () => {
       loading.querySelector(".dk-split__list").textContent,
       /Loading templates/,
     );
+    // The search row is part of the shell: it renders before the fetch
+    // answers so the operator can type while templates load.
+    assert.ok(
+      loading.querySelector(".runtime-template-search-input"),
+      "the search input exists while loading",
+    );
 
     await harness.api.refreshRuntimeTemplates();
     harness.api.renderTasksSurface([], "templates");
@@ -2375,9 +2381,11 @@ describe("Tasks surface boundary", () => {
       1,
       "the list fills in; the shell does not swap",
     );
+    // The search row is the one deliberate control in the simplified
+    // surface (added for "hard to find cards" feedback); the older
+    // toolbar/sort/facts experiments stay out.
     for (const removed of [
       ".runtime-template-toolbar",
-      ".runtime-template-search",
       ".runtime-template-sort",
       ".runtime-template-result-count",
       ".runtime-template-facts",
@@ -2442,6 +2450,197 @@ describe("Tasks surface boundary", () => {
     assert.equal(
       harness.documentList.querySelector(".dk-split__scroll").scrollTop,
       142,
+    );
+  });
+
+  function templateFixture(overrides = {}) {
+    return {
+      version: 2,
+      triggerType: "manual",
+      taskDefinitions: [],
+      ...overrides,
+    };
+  }
+
+  test("template search filters rows, counts N of M, and clears", async () => {
+    const templates = [
+      templateFixture({ id: "tpl-news", name: "Newsletter", type: "newsletter", tags: ["comms"] }),
+      templateFixture({ id: "tpl-web", name: "Webinar", type: "webinar", triggerType: "automatic", tags: ["events"] }),
+      templateFixture({ id: "tpl-pod", name: "Podcast episode", type: "podcast" }),
+    ];
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/templates") return { templates };
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    await harness.api.refreshRuntimeTemplates();
+    harness.api.renderTasksSurface([], "templates");
+
+    const input = harness.documentList.querySelector(".runtime-template-search-input");
+    assert.ok(input, "the list pane has a search input");
+    assert.equal(input.getAttribute("aria-label"), "Search templates");
+    assert.equal(input.placeholder, "Search templates…");
+    const count = () => harness.documentList.querySelector(".dk-split__count").textContent;
+    const rowNames = () => harness.documentList.querySelectorAll(".runtime-template-row")
+      .map((row) => row.querySelector(".dk-split__name").textContent);
+    assert.deepEqual(rowNames(), ["Newsletter", "Podcast episode", "Webinar"]);
+    assert.equal(count(), "3");
+
+    // Backend-only trigger modes keep their own group instead of merging.
+    const groupNames = () => harness.documentList.querySelectorAll(".runtime-template-group-header")
+      .map((header) => header.querySelector(".runtime-template-group-name").textContent);
+    assert.deepEqual(groupNames(), ["Manual", "Automatic"]);
+
+    input.value = "webin";
+    await input.dispatch("input");
+    assert.deepEqual(rowNames(), ["Webinar"]);
+    assert.equal(count(), "1 of 3");
+    // Typing only refreshes the scroll region: the input element survives.
+    assert.equal(harness.documentList.querySelector(".runtime-template-search-input"), input);
+
+    input.value = "comms";
+    await input.dispatch("input");
+    assert.deepEqual(rowNames(), ["Newsletter"], "tags are searchable");
+
+    input.value = "automatic";
+    await input.dispatch("input");
+    assert.deepEqual(rowNames(), ["Webinar"], "trigger labels are searchable");
+
+    input.value = "podcast manual";
+    await input.dispatch("input");
+    assert.deepEqual(rowNames(), ["Podcast episode"], "every term must match somewhere");
+
+    input.value = "zzz-no-match";
+    await input.dispatch("input");
+    assert.equal(harness.documentList.querySelectorAll(".runtime-template-row").length, 0);
+    assert.equal(count(), "0 of 3");
+    assert.match(harness.documentList.textContent, /No templates match/);
+    const clearEmpty = findByText(harness.documentList, "Clear search", "button");
+    assert.ok(clearEmpty, "the empty state offers a clear action");
+    await clearEmpty.dispatch("click");
+    assert.equal(input.value, "");
+    assert.deepEqual(rowNames(), ["Newsletter", "Podcast episode", "Webinar"]);
+    assert.equal(count(), "3");
+
+    input.value = "webin";
+    await input.dispatch("input");
+    const clear = harness.documentList.querySelector(".runtime-template-search-clear");
+    assert.equal(clear.hidden, false);
+    await clear.dispatch("click");
+    assert.equal(input.value, "");
+    assert.equal(count(), "3");
+    assert.equal(input.focused, true, "clearing returns focus to the search input");
+
+    input.value = "webin";
+    await input.dispatch("input");
+    await input.dispatch("keydown", { key: "Escape" });
+    assert.equal(input.value, "");
+    assert.equal(count(), "3");
+  });
+
+  test("template groups collapse persistently and open while searching", async () => {
+    const templates = [
+      templateFixture({ id: "tpl-news", name: "Newsletter", type: "newsletter" }),
+      templateFixture({ id: "tpl-web", name: "Webinar", type: "webinar", triggerType: "scheduled" }),
+    ];
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/templates") return { templates };
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    await harness.api.refreshRuntimeTemplates();
+    harness.api.renderTasksSurface([], "templates");
+
+    const headers = () => harness.documentList.querySelectorAll(".runtime-template-group-header");
+    assert.equal(headers().length, 2);
+    assert.equal(headers()[0].getAttribute("aria-expanded"), "true");
+    await headers()[0].dispatch("click");
+    assert.equal(headers()[0].getAttribute("aria-expanded"), "false");
+    assert.equal(
+      harness.documentList.querySelectorAll(".runtime-template-group-rows")[0].hidden,
+      true,
+    );
+
+    // Collapsing survives a full surface rerender (e.g. after selection).
+    harness.api.renderTasksSurface([], "templates");
+    assert.equal(headers()[0].getAttribute("aria-expanded"), "false");
+
+    // A search opens collapsed groups so matches stay visible; clearing the
+    // query restores the persisted collapsed set.
+    const input = harness.documentList.querySelector(".runtime-template-search-input");
+    input.value = "news";
+    await input.dispatch("input");
+    assert.equal(headers().length, 1);
+    assert.equal(headers()[0].getAttribute("aria-expanded"), "true");
+    assert.equal(harness.documentList.querySelectorAll(".runtime-template-row").length, 1);
+    input.value = "";
+    await input.dispatch("input");
+    assert.equal(headers()[0].getAttribute("aria-expanded"), "false");
+  });
+
+  test("template rows show tag pills and honest trigger labels", async () => {
+    const templates = [
+      templateFixture({ id: "tpl-news", name: "Newsletter", type: "newsletter", tags: ["comms", "weekly"] }),
+      templateFixture({ id: "tpl-web", name: "Webinar", type: "webinar", triggerType: "automatic" }),
+    ];
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/templates") return { templates };
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    await harness.api.refreshRuntimeTemplates();
+    harness.api.renderTasksSurface([], "templates");
+
+    const rows = harness.documentList.querySelectorAll(".runtime-template-row");
+    assert.deepEqual(
+      rows[0].querySelectorAll(".runtime-template-tag").map((pill) => pill.textContent),
+      ["comms", "weekly"],
+    );
+    assert.equal(rows[1].querySelectorAll(".runtime-template-tag").length, 0);
+    assert.match(rows[1].textContent, /Automatic/);
+    assert.doesNotMatch(rows[1].textContent, /Manual/);
+  });
+
+  test("template search text survives selection rerenders", async () => {
+    const templates = [
+      templateFixture({ id: "tpl-news", name: "Newsletter", type: "newsletter" }),
+      templateFixture({ id: "tpl-web", name: "Webinar", type: "webinar" }),
+    ];
+    const harness = createHarness({
+      request: async (url) => {
+        if (url === "/api/templates") return { templates };
+        throw new Error(`Unexpected request ${url}`);
+      },
+    });
+    await harness.api.refreshRuntimeTemplates();
+    harness.api.renderTasksSurface([], "templates");
+
+    const input = harness.documentList.querySelector(".runtime-template-search-input");
+    input.value = "news";
+    await input.dispatch("input");
+    assert.equal(harness.documentList.querySelectorAll(".runtime-template-row").length, 1);
+
+    await harness.documentList.querySelector(".runtime-template-row").dispatch("click");
+    harness.api.setRuntimeTemplateRoute(
+      {
+        tasksSection: "templates",
+        params: new URLSearchParams({ templateId: "tpl-news" }),
+      },
+      { templateId: "tpl-news" },
+    );
+    harness.api.renderTasksSurface([], "templates");
+    assert.equal(
+      harness.documentList.querySelector(".runtime-template-search-input").value,
+      "news",
+      "the filter persists across selection rerenders",
+    );
+    assert.equal(harness.documentList.querySelectorAll(".runtime-template-row").length, 1);
+    assert.equal(
+      harness.documentList.querySelector(".runtime-template-row").getAttribute("aria-current"),
+      "true",
     );
   });
 

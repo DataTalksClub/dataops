@@ -1,4 +1,5 @@
 import { SPLIT_BACK_ICON } from "../split-back-icon.js";
+import { createTemplateListController } from "./template-list.js";
 import { browserRequirementParts } from "../../core/task-display.js";
 
 export function createTemplatesSurface(context) {
@@ -34,10 +35,13 @@ export function createTemplatesSurface(context) {
   };
 
   // Selecting a Template re-renders the whole surface (route change plus a
-  // fresh fetch), which recreates the list element and resets its scroll to
-  // the top. Track the scroll offset so a Template at the bottom of a long
-  // list stays where the operator left it.
-  let listScrollTop = 0;
+  // fresh fetch), which recreates the list element. The list controller owns
+  // the scroll offset, filter text, and collapsed groups across rerenders.
+  const templateList = createTemplateListController({
+    renderHonestState,
+    renderRow: (template) => renderTemplateRow(template),
+    triggerLabel,
+  });
 
   // The Templates page has two jobs, in this order: start a Card from a
   // Template, and reconcile live Cards when the definition changed upstream.
@@ -99,7 +103,9 @@ export function createTemplatesSurface(context) {
   }
 
   function triggerLabel(triggerType) {
-    return TRIGGER_LABELS[triggerType] || TRIGGER_LABELS.manual;
+    // Backend modes outside the original four (notably "automatic") keep
+    // their own label instead of misfiling as Manual.
+    return TRIGGER_LABELS[triggerType] || humanize(triggerType) || TRIGGER_LABELS.manual;
   }
 
   // Slugs are maintainer vocabulary. Rows and headings say what an operator
@@ -175,60 +181,20 @@ export function createTemplatesSurface(context) {
     }
 
     // The route decides which pane a phone shows (dakit list–detail split).
+    // The list pane (search, groups, rows) renders through the list
+    // controller, which persists the filter, groups, and scroll across
+    // rerenders.
     const layout = document.createElement("div");
     layout.className = "dk-split";
     layout.dataset.view = runtimeState.selectedId ? "detail" : "list";
-    const pane = document.createElement("section");
-    pane.className = "dk-split__list";
-    pane.setAttribute("aria-labelledby", "runtime-templates-title");
-    const head = document.createElement("header");
-    head.className = "dk-split__head";
-    const title = document.createElement("h2");
-    title.className = "dk-split__title";
-    title.id = "runtime-templates-title";
-    title.textContent = "Authored templates";
-    head.append(title);
-    if (runtimeState.loaded && !runtimeState.error) {
-      const count = document.createElement("span");
-      count.className = "dk-split__count";
-      count.textContent = String(orderedTemplates().length);
-      head.append(count);
-    }
-    const list = document.createElement("div");
-    list.className = "dk-split__scroll";
-    list.addEventListener("scroll", () => {
-      listScrollTop = list.scrollTop || 0;
-    }, { passive: true });
-    if (runtimeState.error) {
-      list.append(renderHonestState("Runtime templates unavailable", runtimeState.error));
-    } else if (!runtimeState.loaded) {
-      const loading = document.createElement("p");
-      loading.className = "runtime-template-loading";
-      loading.setAttribute("role", "status");
-      loading.textContent = "Loading templates…";
-      list.append(loading);
-    } else {
-      renderTemplateRows(list);
-    }
-    pane.append(head, list);
+    const pane = templateList.renderListPane({
+      ordered: orderedTemplates(),
+      loaded: runtimeState.loaded,
+      error: runtimeState.error,
+    });
     layout.append(pane, renderTemplateDetail());
     section.append(layout);
     return section;
-  }
-
-  function renderTemplateRows(list) {
-    const templates = orderedTemplates();
-    list.replaceChildren();
-    if (!templates.length) {
-      list.append(renderHonestState(
-        "No Authored templates",
-        "The deployment has not published any Templates yet.",
-      ));
-    }
-    for (const template of templates) list.append(renderTemplateRow(template));
-    // The list element is recreated on every surface render; without this a
-    // selection made at the bottom jumps the scroll back to the top.
-    list.scrollTop = listScrollTop;
   }
 
   // Row anatomy follows the work queue, which is the app's strongest list:
@@ -271,6 +237,22 @@ export function createTemplatesSurface(context) {
       } else chip.textContent = value;
       meta.append(chip);
     }
+    // Tags are sparse (often absent), so they render as quiet pills after the
+    // fact chips rather than as a filter facet of their own.
+    const rowTags = (Array.isArray(template.tags) ? template.tags : []).map(String).filter(Boolean);
+    const shownTags = rowTags.slice(0, 5);
+    for (const tag of shownTags) {
+      const pill = document.createElement("span");
+      pill.className = "runtime-template-tag";
+      pill.textContent = tag;
+      meta.append(pill);
+    }
+    if (rowTags.length > shownTags.length) {
+      const rest = document.createElement("span");
+      rest.className = "runtime-template-tag";
+      rest.textContent = `+${rowTags.length - shownTags.length} more`;
+      meta.append(rest);
+    }
 
     const summary = document.createElement("small");
     summary.textContent = templateRowSummary(facts);
@@ -278,7 +260,7 @@ export function createTemplatesSurface(context) {
     button.append(name, meta, summary);
     button.addEventListener("click", () => {
       if (template.id === runtimeState.selectedId) return;
-      listScrollTop = button.closest(".dk-split__scroll")?.scrollTop || 0;
+      templateList.saveScroll();
       navigateCanonicalWorkspace("/templates", { templateId: template.id });
     });
     return button;

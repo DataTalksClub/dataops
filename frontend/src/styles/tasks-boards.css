@@ -1443,3 +1443,83 @@ body[data-workspace-view="tasks"] .ops-queue-blocked-reason {
   white-space: nowrap;
 }
 
+
+/* Templates search + trigger groups -----------------------------------------
+   The search row sits between the list head and the scroll region (both kit
+   frames), so per-keystroke filtering never rebuilds the input. Group headers
+   stick to the top of the scroller while their rows scroll under them. */
+body[data-workspace-view="tasks"] .runtime-template-search {
+  display: flex;
+  align-items: center;
+  gap: var(--dk-space-2);
+  padding: var(--dk-space-2) var(--dk-space-3);
+  border-bottom: 1px solid var(--dk-border-default);
+}
+body[data-workspace-view="tasks"] .runtime-template-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .runtime-template-search-clear {
+  flex: none;
+}
+body[data-workspace-view="tasks"] .runtime-template-group {
+  display: block;
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .runtime-template-group-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--dk-space-2);
+  width: 100%;
+  padding: var(--dk-space-1) var(--dk-space-3);
+  border: 0;
+  border-bottom: 1px solid var(--dk-border-default);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
+  cursor: pointer;
+  font-size: var(--dk-text-xs);
+  font-weight: var(--dk-weight-medium);
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+}
+body[data-workspace-view="tasks"] .runtime-template-group-header:hover {
+  color: var(--dk-text-default);
+}
+body[data-workspace-view="tasks"] .runtime-template-group-header:focus-visible {
+  outline: 3px solid var(--dk-focus-ring);
+  outline-offset: -3px;
+}
+body[data-workspace-view="tasks"] .runtime-template-group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body[data-workspace-view="tasks"] .runtime-template-group-count {
+  flex: none;
+  font-size: var(--dk-text-xs);
+}
+body[data-workspace-view="tasks"] .runtime-template-group-rows {
+  display: block;
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .runtime-template-tag {
+  margin-left: var(--dk-space-1);
+  padding: 0 var(--dk-space-2);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-full);
+  color: var(--dk-text-faint);
+  font-size: var(--dk-text-xs);
+  line-height: 1.6;
+  white-space: nowrap;
+}
+body[data-workspace-view="tasks"] .runtime-template-chip + .runtime-template-tag {
+  margin-left: var(--dk-space-2);
+}
+body[data-workspace-view="tasks"] .runtime-template-empty-clear {
+  margin-top: var(--dk-space-2);
+}
