@@ -263,6 +263,118 @@ test("add-income replays an existing reference without writing and rejects confl
   assert.equal(calls.filter((call) => call.method === "POST").length, 0);
 });
 
+const refundArgs = [
+  "bookkeeping", "add-income", "--type", "refund",
+  "--date", "2026-10-15",
+  "--amount", "59.99",
+  "--currency", "EUR",
+  "--counterparty", "Synthetic Marketplace",
+  "--reference", "SYN-CN-0001",
+  "--comment", "Synthetic credit note for a returned ticket; credited to the vendor balance.",
+];
+
+test("add-income --type refund is a dry run by default and classifies a credit note, not a payout", async () => {
+  const calls = fakePortal({ "GET /api/bookkeeping/transactions": { items: [] } });
+  const io = captureIo();
+  assert.equal(await run([...refundArgs, "--json"], io), 0);
+  const dry = io.json();
+  assert.equal(dry.mode, "dry-run");
+  assert.equal(dry.outcome, "would-create");
+  assert.equal(dry.transaction.sourceType, "credit-note");
+  assert.equal(dry.transaction.sourceKey, "credit-note:SYN-CN-0001");
+  assert.equal(dry.transaction.entryType, "income");
+  assert.equal(dry.transaction.subtype, "Refund");
+  assert.equal(dry.transaction.category, "Refund", "the category defaults to Refund");
+  assert.equal(dry.transaction.incomePeriod, undefined, "a credit note has no payout period");
+  assert.equal(dry.transaction.statementRef, "SYN-CN-0001");
+  assert.equal(calls.filter((call) => call.method === "POST").length, 0);
+
+  const textIo = captureIo();
+  assert.equal(await run(refundArgs, textIo), 0);
+  assert.match(textIo.text(), /dry-run: would-create credit note 2026-10-15  59\.99 EUR  Synthetic Marketplace  number SYN-CN-0001/);
+});
+
+test("add-income --type refund applies with evidence links and replays without writing", async () => {
+  const calls = fakePortal({
+    "GET /api/bookkeeping/transactions": { items: [] },
+    "POST /api/bookkeeping/transactions": ({ body }) => ({ status: 201, body: { id: "cn-1", addedAt: "2026-11-01", ...body } }),
+    "POST /api/bookkeeping/links": ({ body }) => ({ status: 201, body: { id: `link-${body.documentId}`, outcome: "created", ...body } }),
+  });
+  const io = captureIo();
+  assert.equal(await run([...refundArgs, "--document", "doc-proof-1", "--apply", "--json"], io), 0);
+  const applied = io.json();
+  assert.equal(applied.outcome, "created");
+  assert.equal(applied.transaction.addedAt, "2026-11-01");
+  const post = calls.find((call) => call.method === "POST" && call.route === "/api/bookkeeping/transactions");
+  assert.equal(post.body.sourceType, "credit-note");
+  assert.equal(post.body.sourceKey, "credit-note:SYN-CN-0001");
+  assert.equal(post.body.subtype, "Refund");
+  assert.equal(post.body.entryType, "income");
+  const link = calls.find((call) => call.method === "POST" && call.route === "/api/bookkeeping/links");
+  assert.deepEqual(link.body, { documentId: "doc-proof-1", transactionId: "cn-1", coverageType: "evidence" });
+  assert.deepEqual(applied.documents, [{ documentId: "doc-proof-1", linked: true }]);
+
+  const existing = { id: "cn-1", addedAt: "2026-11-01", ...post.body };
+  const replayCalls = fakePortal({
+    "GET /api/bookkeeping/transactions": { items: [existing] },
+    "POST /api/bookkeeping/links": ({ body }) => ({ status: 200, body: { id: `link-${body.documentId}`, outcome: "existing", ...body } }),
+  });
+  const replayIo = captureIo();
+  assert.equal(await run([...refundArgs, "--document", "doc-proof-1", "--apply", "--json"], replayIo), 0);
+  assert.equal(replayIo.json().outcome, "existing");
+  assert.equal(replayCalls.filter((call) => call.route === "/api/bookkeeping/transactions" && call.method === "POST").length, 0);
+  assert.equal(replayCalls.filter((call) => call.route === "/api/bookkeeping/links").length, 1, "relinking stays idempotent at the API");
+
+  fakePortal({ "GET /api/bookkeeping/transactions": { items: [existing] } });
+  const conflictIo = captureIo();
+  assert.notEqual(await run([...refundArgs, "--amount", "49.99", "--apply"], conflictIo), 0);
+  assert.match(conflictIo.errors.join("\n"), /credit note with different details/i);
+});
+
+test("add-income --type refund uploads --evidence PDFs and links them to the row", async () => {
+  const file = path.join(mkdtempSync(path.join(tmpdir(), "credit-note-")), "SYN-CN-0002.pdf");
+  writeFileSync(file, "%PDF-synthetic credit note");
+  const calls = fakePortal({
+    "GET /api/bookkeeping/transactions": { items: [] },
+    "POST /api/bookkeeping/transactions": ({ body }) => ({ status: 201, body: { id: "cn-2", addedAt: "2026-11-01", ...body } }),
+    "POST /api/bookkeeping/documents/prepare": ({ body }) => ({
+      status: 201,
+      body: { document: { id: `doc-${body.documentType}`, sha256: body.sha256 }, uploadUrl: "https://portal.test/upload?doc=1", uploadHeaders: {} },
+    }),
+    "PUT /upload": () => ({ status: 200, body: "" }),
+    "POST /api/bookkeeping/documents/doc-other-evidence/complete": () => ({ status: 200, body: { document: { id: "doc-other-evidence" }, outcome: "created" } }),
+    "POST /api/bookkeeping/links": ({ body }) => ({ status: 201, body: { id: `link-${body.documentId}`, outcome: "created", ...body } }),
+  });
+  const io = captureIo();
+  assert.equal(await run([...refundArgs, "--reference", "SYN-CN-0002", "--evidence", file, "--apply", "--json"], io), 0);
+  const prepared = calls.find((call) => call.method === "POST" && call.route === "/api/bookkeeping/documents/prepare");
+  assert.equal(prepared.body.documentType, "other-evidence");
+  assert.equal(prepared.body.sourceRef, "credit-note:SYN-CN-0002");
+  assert.equal(prepared.body.originalFilename, "SYN-CN-0002.pdf");
+  const upload = calls.find((call) => call.method === "PUT");
+  assert.ok(upload, "the PDF bytes are uploaded once");
+  const link = calls.find((call) => call.method === "POST" && call.route === "/api/bookkeeping/links");
+  assert.equal(link.body.documentId, "doc-other-evidence");
+  assert.equal(link.body.transactionId, "cn-2");
+  assert.deepEqual(io.json().documents, [{ documentId: "doc-other-evidence", linked: true, uploaded: true }]);
+});
+
+test("add-income --type refund validates type and period and dry-runs evidence without writing", async () => {
+  const calls = fakePortal({ "GET /api/bookkeeping/transactions": { items: [] } });
+  const badType = captureIo();
+  assert.notEqual(await run(["bookkeeping", "add-income", "--type", "payout", "--date", "2026-10-15"], badType), 0);
+  assert.match(badType.errors.join("\n"), /--type must be platform-payout or refund/);
+
+  const withPeriod = captureIo();
+  assert.notEqual(await run([...refundArgs, "--period", "2026-10"], withPeriod), 0);
+  assert.match(withPeriod.errors.join("\n"), /--period only applies to platform payouts/);
+
+  const io = captureIo();
+  assert.equal(await run([...refundArgs, "--document", "doc-proof-9"], io), 0);
+  assert.match(io.text(), /would link document doc-proof-9/);
+  assert.equal(calls.filter((call) => call.method === "POST").length, 0, "a dry run neither uploads nor links");
+});
+
 test("facts reads only unattached invoices and receipts that were not read yet", async () => {
   const calls = fakePortal({
     "GET /api/bookkeeping/documents": {

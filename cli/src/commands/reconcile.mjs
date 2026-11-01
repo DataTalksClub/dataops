@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { UsageError } from "../errors.mjs";
 import { enc, optionalString, positional } from "../format.mjs";
 import { apiFor } from "../session.mjs";
+import { contentTypeFor, originalFilename, requirePdfBytes, storeDocument } from "../documentUpload.mjs";
 import { attachThankYouResult, printThankYouHint } from "../thank-you.mjs";
 
 export const summary = "Month-end reconciliation: bank statements, matching, payment confirm";
@@ -95,53 +96,12 @@ Usage
 `;
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
-const CONTENT_TYPES = {
-  ".pdf": "application/pdf",
-};
 const ACCOUNTS = ["revolut", "finom", "mercury", "merchant"];
 
 function periodOr(args) {
   const period = optionalString(args, "period");
   if (!MONTH.test(period || "")) throw new UsageError("--period must be YYYY-MM");
   return period;
-}
-
-function contentTypeFor(file) {
-  const suffix = String(file).toLowerCase().match(/\.[a-z0-9]+$/)?.[0] || "";
-  const contentType = CONTENT_TYPES[suffix];
-  if (!contentType) throw new UsageError("Reconcile statement uploads accept PDF files only (.pdf)");
-  return contentType;
-}
-
-function requirePdfBytes(file, bytes) {
-  if (bytes.subarray(0, 5).toString("ascii") !== "%PDF-") {
-    throw new UsageError(`${file}: reconcile statement uploads accept PDF files only`);
-  }
-}
-
-function originalFilename(file) {
-  return String(file).split(/[\\/]/).at(-1) || "statement.pdf";
-}
-
-async function storeDocument(api, file, { documentType, accountId, statementMonth, sourceRef }) {
-  const contentType = contentTypeFor(file);
-  const statement = ["bank-statement", "private-account-statement"].includes(documentType);
-  if (!statement && contentType !== "application/pdf") throw new UsageError("invoices, receipts and proof screenshots must be PDF files");
-  const bytes = await readFile(String(file));
-  requirePdfBytes(file, bytes);
-  const sha256 = createHash("sha256").update(bytes).digest("hex");
-  const idempotencyKey = `${documentType}-${sha256}`.slice(0, 120);
-  let prepared = await api.post("/api/bookkeeping/documents/prepare", {
-    sha256, byteSize: bytes.length, documentType, idempotencyKey, sourceRef,
-    originalFilename: originalFilename(file),
-    ...(statement ? { accountId, statementMonth, contentType } : {}),
-  });
-  if (prepared.uploadUrl) {
-    const uploaded = await fetch(prepared.uploadUrl, { method: "PUT", body: bytes, headers: prepared.uploadHeaders });
-    if (!uploaded.ok) throw new Error(`Document upload failed (${uploaded.status}); retry the same file`);
-    prepared = await api.post(`/api/bookkeeping/documents/${enc(prepared.document.id)}/complete`, { idempotencyKey });
-  }
-  return { documentId: prepared.document.id, sha256, reused: prepared.outcome === "existing" };
 }
 
 async function autoImport(args, io) {

@@ -208,7 +208,7 @@ export function usage() {
 }
 
 // Flags that may repeat; every other flag keeps its last value.
-const REPEATABLE = new Set(["link", "query", "field"]);
+const REPEATABLE = new Set(["link", "query", "field", "document", "evidence"]);
 
 /**
  * Minimal flag parser: `--flag value`, `--flag=value`, and `--boolean`.

@@ -71,8 +71,10 @@ Rates are quoted as units of the currency per 1 EUR, the ECB convention.
 
 **Refunds.** A supplier refund or credit note is recorded as **income** with
 subtype `Refund` and source key `credit-note:<full document number>` (the
-invoice intake does this automatically and dedupes on the key, so a credit note
-recorded by hand is linked, never booked twice). Refunds count as money in and
+invoice intake does this automatically, and
+`dataops bookkeeping add-income --type refund` records one by hand; both dedupe
+on the key, so a credit note recorded by hand is linked, never booked twice).
+Refunds count as money in and
 toward net profit, but are their own `refunds` line, not revenue; their VAT
 reduces input VAT. A row with a `credit-note:` key is a refund even without the
 subtype.

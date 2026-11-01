@@ -106,6 +106,14 @@ function validateTransaction(input: Record<string, unknown>, partial = false) {
     if (typeof input.incomePeriod !== "string" || !MONTH.test(input.incomePeriod)) errors.push("incomePeriod");
     if (typeof input.amount !== "string" || Number(input.amount) <= 0) errors.push("amount");
   }
+  if (input.sourceType === "credit-note") {
+    if (input.entryType !== "income") errors.push("entryType");
+    if (typeof input.sourceKey !== "string" || !/^credit-note:.+/.test(input.sourceKey) || input.sourceKey.length > 300)
+      errors.push("sourceKey");
+    if (typeof input.statementRef !== "string" || !input.statementRef.trim()) errors.push("statementRef");
+    if (input.subtype !== "Refund") errors.push("subtype");
+    if (typeof input.amount !== "string" || Number(input.amount) <= 0) errors.push("amount");
+  }
   return [...new Set(errors)];
 }
 function realDate(value: unknown) {
@@ -166,7 +174,7 @@ export async function handleBookkeepingTransactionRoutes(
         ...safeData(body),
         ...(match[1] ? { id: match[1] } : {}),
       };
-      if (!match[1] && value.sourceType === "platform-payout")
+      if (!match[1] && (value.sourceType === "platform-payout" || value.sourceType === "credit-note"))
         value.addedAt = new Date().toISOString().slice(0, 10);
       const errors = validateTransaction(value);
       if (errors.length)

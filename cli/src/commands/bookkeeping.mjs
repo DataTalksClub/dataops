@@ -1,5 +1,6 @@
 import { UsageError } from "../errors.mjs";
 import { fetchSheet, readSheetDir, planClassification, planSync } from "../bookkeepingSheet.mjs";
+import { linkEvidence, storeDocument } from "../documentUpload.mjs";
 import { apiFor } from "../session.mjs";
 
 export const summary = "Bookkeeping: sync from the spreadsheet, fill classification, read invoices";
@@ -23,6 +24,16 @@ Usage
       --comment TEXT [--apply]
       Add a non-sponsor income transaction such as an affiliate or platform payout.
       The reference is the idempotency key. Dry-run by default; --apply writes it.
+  dataops bookkeeping add-income --type refund --date YYYY-MM-DD --amount AMOUNT
+      --currency CUR --counterparty VENDOR --reference CREDIT-NOTE-NUMBER
+      --comment TEXT [--category CATEGORY] [--document ID]... [--evidence FILE.pdf]...
+      [--apply]
+      Record a vendor refund or credit note credited to the vendor's balance without
+      a bank transaction: an income row with subtype Refund and the key
+      credit-note:<number>, the same classification the invoice intake uses, never a
+      platform payout. --category defaults to Refund. --document links an already
+      stored document as the row's evidence; --evidence uploads a PDF first. Both
+      flags repeat, and relinking an already linked document does nothing.
 
   dataops bookkeeping facts [--retry] [--apply]
       Read each unattached invoice or receipt PDF that has not been read yet and keep
@@ -191,14 +202,18 @@ function validDate(value) {
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
-function platformIncomeRecord(args) {
-  const date = incomeText(args, "date", 10);
-  if (!validDate(date)) throw new UsageError("--date must be a real date in YYYY-MM-DD format.");
+function incomeAmount(args) {
   const rawAmount = incomeText(args, "amount", 20);
   const amountParts = rawAmount.match(AMOUNT);
   if (!amountParts || (amountParts[1] === "0" && !Number(amountParts[2] || 0)))
     throw new UsageError("--amount must be a positive amount with up to two decimal places.");
-  const amount = `${amountParts[1]}.${(amountParts[2] || "").padEnd(2, "0")}`;
+  return `${amountParts[1]}.${(amountParts[2] || "").padEnd(2, "0")}`;
+}
+
+function platformIncomeRecord(args) {
+  const date = incomeText(args, "date", 10);
+  if (!validDate(date)) throw new UsageError("--date must be a real date in YYYY-MM-DD format.");
+  const amount = incomeAmount(args);
   const currency = incomeText(args, "currency", 3).toUpperCase();
   if (!CURRENCY.test(currency)) throw new UsageError("--currency must be a 3-letter ISO code.");
   const counterparty = incomeText(args, "counterparty");
@@ -223,38 +238,103 @@ function platformIncomeRecord(args) {
   };
 }
 
+function creditNoteRecord(args) {
+  const date = incomeText(args, "date", 10);
+  if (!validDate(date)) throw new UsageError("--date must be a real date in YYYY-MM-DD format.");
+  const amount = incomeAmount(args);
+  const currency = incomeText(args, "currency", 3).toUpperCase();
+  if (!CURRENCY.test(currency)) throw new UsageError("--currency must be a 3-letter ISO code.");
+  const counterparty = incomeText(args, "counterparty");
+  const number = incomeText(args, "reference", 280);
+  const category = args.category === undefined ? "Refund" : incomeText(args, "category");
+  const comment = incomeText(args, "comment", 2000);
+  return {
+    transactionDate: date,
+    counterparty,
+    description: comment.slice(0, 300),
+    amount,
+    currency,
+    entryType: "income",
+    subtype: "Refund",
+    statementRef: number,
+    comment,
+    category,
+    sourceType: "credit-note",
+    sourceKey: `credit-note:${number}`,
+  };
+}
+
 const INCOME_IDENTITY_FIELDS = [
   "transactionDate", "counterparty", "description", "amount", "currency", "entryType",
   "statementRef", "comment", "incomePeriod", "category", "sourceType", "sourceKey",
 ];
 
-function checkIncomeIdentity(existing, expected, reference) {
+function checkIncomeIdentity(existing, expected, reference, kind) {
   const differences = INCOME_IDENTITY_FIELDS.filter((field) => existing[field] !== expected[field]);
   if (differences.length) {
-    throw new UsageError(`Reference ${reference} already belongs to a platform payout with different details (${differences.join(", ")}); existing row ${existing.id} was left unchanged.`);
+    throw new UsageError(`Reference ${reference} already belongs to a ${kind} with different details (${differences.join(", ")}); existing row ${existing.id} was left unchanged.`);
   }
 }
 
+function repeatable(args, name) {
+  const value = args[name];
+  if (value === undefined) return [];
+  const listed = Array.isArray(value) ? value : [value];
+  const cleaned = listed.map((item) => String(item).trim()).filter(Boolean);
+  if (cleaned.length !== listed.length) throw new UsageError(`--${name} takes a non-empty value.`);
+  return cleaned;
+}
+
 export async function addIncome(args, io) {
-  const transaction = platformIncomeRecord(args);
+  const type = args.type === undefined ? "platform-payout" : String(args.type);
+  if (!["platform-payout", "refund"].includes(type))
+    throw new UsageError("--type must be platform-payout or refund.");
+  if (type === "refund" && args.period !== undefined)
+    throw new UsageError("--period only applies to platform payouts; a credit note is booked on its date.");
+  const kind = type === "refund" ? "credit note" : "platform payout";
+  const transaction = type === "refund" ? creditNoteRecord(args) : platformIncomeRecord(args);
   const reference = transaction.statementRef;
+  const documents = repeatable(args, "document");
+  const evidenceFiles = repeatable(args, "evidence");
   const api = apiFor(args);
   const rows = await transactions(api);
   const existing = rows.find((item) => item.sourceKey === transaction.sourceKey);
+  if (existing) checkIncomeIdentity(existing, transaction, reference, kind);
   let result;
   if (existing) {
-    checkIncomeIdentity(existing, transaction, reference);
     result = { mode: args.apply ? "apply" : "dry-run", outcome: "existing", transaction: existing };
   } else if (args.apply) {
     const saved = await api.post("/api/bookkeeping/transactions", transaction);
-    checkIncomeIdentity(saved, transaction, reference);
+    checkIncomeIdentity(saved, transaction, reference, kind);
     result = { mode: "apply", outcome: "created", transaction: saved };
   } else {
     result = { mode: "dry-run", outcome: "would-create", transaction };
   }
+  if (args.apply) {
+    const uploaded = [];
+    for (const file of evidenceFiles)
+      uploaded.push(await storeDocument(api, file, { documentType: "other-evidence", sourceRef: transaction.sourceKey.slice(0, 160) }));
+    const documentIds = [...documents, ...uploaded.map((store) => store.documentId)];
+    if (documentIds.length) {
+      const linked = await linkEvidence(api, result.transaction.id, documentIds);
+      result.documents = [
+        ...uploaded.map(({ documentId, reused }) => ({ documentId, linked: true, uploaded: !reused })),
+        ...linked.filter(({ documentId }) => !uploaded.some((store) => store.documentId === documentId)).map(({ documentId, outcome }) => ({ documentId, linked: outcome !== "existing" })),
+      ];
+    }
+  } else if (documents.length || evidenceFiles.length) {
+    result.documents = [
+      ...documents.map((documentId) => ({ documentId })),
+      ...evidenceFiles.map((file) => ({ file })),
+    ];
+  }
   if (!args.json) {
     const item = result.transaction;
-    io.print(`${result.mode}: ${result.outcome} platform payout ${item.transactionDate}  ${item.amount} ${item.currency}  ${item.counterparty}  reference ${reference}${item.addedAt ? `  added ${item.addedAt}` : ""}`);
+    io.print(`${result.mode}: ${result.outcome} ${kind} ${item.transactionDate}  ${item.amount} ${item.currency}  ${item.counterparty}  ${type === "refund" ? "number" : "reference"} ${reference}${item.addedAt ? `  added ${item.addedAt}` : ""}`);
+    for (const document of result.documents || []) {
+      const state = args.apply ? (document.linked ? "linked" : "already linked") : "would link";
+      io.print(`  ${state} ${document.file ? `${document.file} as ` : ""}document ${document.documentId || "(dry run: upload first)"}`);
+    }
   }
   return result;
 }
