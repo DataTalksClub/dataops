@@ -43,7 +43,7 @@ const LOG_LIMIT = 2000;
 
 export type MonthAction =
   | "pair" | "unpair" | "exception" | "clear-exception" | "attach-proof" | "attach-document"
-  | "create-ledger" | "confirm-exceptions" | "close" | "reopen" | "summary";
+  | "auto-match" | "create-ledger" | "confirm-exceptions" | "close" | "reopen" | "summary";
 
 export type MonthLogEntry = { at: string; by: string; action: MonthAction; detail: Record<string, unknown> };
 
@@ -137,7 +137,7 @@ async function writeMonth(client: DynamoDBDocumentClient, record: MonthRecord, e
 }
 
 /** Apply one logged change to an open month. */
-async function mutateMonth(
+export async function mutateMonth(
   client: DynamoDBDocumentClient,
   period: string,
   by: string,
@@ -271,9 +271,9 @@ export type MonthView = MonthTable & {
   log: MonthLogEntry[];
 };
 
-type Snapshot = { bank: BankTx[]; ledger: LedgerRow[]; statements: StatementRecord[]; months: Map<string, MonthRecord>; config: ReconcileConfig };
+export type Snapshot = { bank: BankTx[]; ledger: LedgerRow[]; statements: StatementRecord[]; months: Map<string, MonthRecord>; config: ReconcileConfig };
 
-async function snapshot(client: DynamoDBDocumentClient): Promise<Snapshot> {
+export async function snapshot(client: DynamoDBDocumentClient): Promise<Snapshot> {
   const [statements, transactions, links, months, config] = await Promise.all([
     listStatements(client), listTransactions(client), listBookkeepingItems(client, "link"), listMonths(client), getConfig(client),
   ]);
@@ -287,7 +287,7 @@ async function snapshot(client: DynamoDBDocumentClient): Promise<Snapshot> {
 }
 
 /** All months' decisions merged: pairs are global, so every month's manual pairs and unmatches apply everywhere. */
-function mergedDecisions(months: Map<string, MonthRecord>): ManualDecisions {
+export function mergedDecisions(months: Map<string, MonthRecord>): ManualDecisions {
   const merged: ManualDecisions = { pairs: [], rejected: [], exceptions: {}, proofs: {} };
   for (const month of [...months.values()].sort((left, right) => left.period.localeCompare(right.period))) {
     merged.pairs.push(...month.decisions.pairs);

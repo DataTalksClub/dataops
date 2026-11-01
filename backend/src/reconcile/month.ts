@@ -15,6 +15,7 @@
  * withdrawal) need that kind's proof instead of a document.
  */
 import { createHash } from "crypto";
+import { normalizedAutoMatchVendor } from "../bookkeepingAutoMatch";
 
 const DAY = 86_400_000;
 
@@ -113,7 +114,8 @@ export type LedgerRow = {
   documents: LedgerDocument[];
 };
 
-export type ManualPair = { bankKey: string; transactionId: string; by: string; at: string; note?: string };
+/** `auto` marks a pair the matcher found and persisted after an upload; a person can unmatch it like any other. */
+export type ManualPair = { bankKey: string; transactionId: string; by: string; at: string; note?: string; auto?: { basis: Exclude<PairBasis, "manual" | "fee" | "proposed">; confidence: "exact" | "strong" } };
 export type RowException = { kind: ExceptionKind; proof?: string; note?: string; by: string; at: string };
 
 /**
@@ -149,6 +151,8 @@ export type MonthRow = {
   documents: LedgerDocument[];
   paymentProof?: PaymentProof;
   pairBasis?: PairBasis;
+  /** The pair was made by the matcher after an upload, not by a person. */
+  autoMatched?: boolean;
   confidence?: "exact" | "strong" | "proposed";
   amountDifference?: string;
   classification?: { kind: ExceptionPolicy["kind"] | "known_vendor"; ruleId?: string; vendor?: string; category?: string };
@@ -192,10 +196,19 @@ export function bankKeyFor(accountId: string, rowKey: string): string {
   return createHash("sha256").update(`${accountId}|${rowKey}`).digest("hex").slice(0, 20);
 }
 
+/** Units of a currency per 1 EUR on a date (dated reference rate), or null when none is known. */
+export type FxLookup = (currency: string, date: string) => number | null;
+
 type AmountFit = { basis: Exclude<PairBasis, "manual" | "proposed"> | "unknown"; score: number; difference?: number };
 
+function eurByRate(amount: number, currency: string, date: string, fx?: FxLookup): number | null {
+  if (currency === "EUR") return amount;
+  const rate = fx?.(currency, date.slice(0, 10));
+  return rate ? amount / rate : null;
+}
+
 /** How well a ledger amount explains a bank amount; null when it cannot be the same payment. */
-export function amountFit(bank: BankTx, ledger: LedgerRow, tolerances: ReconcileTolerances, named = false): AmountFit | null {
+export function amountFit(bank: BankTx, ledger: LedgerRow, tolerances: ReconcileTolerances, named = false, fx?: FxLookup): AmountFit | null {
   const bankAmount = amountNumber(bank.amount), ledgerAmount = amountNumber(ledger.amount);
   if (Math.sign(bankAmount) !== Math.sign(ledgerAmount)) return null;
   if (bank.currency === ledger.currency) {
@@ -224,22 +237,32 @@ export function amountFit(bank: BankTx, ledger: LedgerRow, tolerances: Reconcile
     if (named && eur && gap / eur <= tolerances.namedFxSpreadPct) return { basis: "unknown", score: 1, difference: cents(Math.abs(bankAmount) - eur) };
     return null;
   }
+  // Neither side states the other's currency: convert both to EUR by the dated reference rate.
+  const bankEur = eurByRate(Math.abs(bankAmount), bank.currency, bank.date, fx);
+  const ledgerEur = ledger.currency === "EUR" ? Math.abs(ledgerAmount) : ledger.amountEur ? Math.abs(amountNumber(ledger.amountEur)) : eurByRate(Math.abs(ledgerAmount), ledger.currency, ledger.date, fx);
+  if (bankEur !== null && ledgerEur) {
+    const gap = Math.abs(bankEur - ledgerEur) / ledgerEur;
+    if (gap <= tolerances.fxSpreadPct / 2) return { basis: "fx", score: 4 };
+    if (gap <= tolerances.fxSpreadPct) return { basis: "fx", score: 3 };
+    return null;
+  }
   // Foreign currency with nothing to convert by: only text and date can tell.
   return { basis: "unknown", score: 0 };
 }
 
 type Edge = { bank: BankTx; ledger: LedgerRow; score: number; fit: AmountFit; textHit: boolean };
 
-function scoreEdge(bank: BankTx, ledger: LedgerRow, tolerances: ReconcileTolerances): Edge | null {
+function scoreEdge(bank: BankTx, ledger: LedgerRow, tolerances: ReconcileTolerances, fx?: FxLookup): Edge | null {
   const lag = daysApart(bank.date, ledger.date);
   if (lag > tolerances.dateLagDays) return null;
   const bankText = textTokens(bank.counterparty, bank.reference);
   const ledgerText = textTokens(ledger.counterparty, ledger.description);
-  const shared = [...bankText].some((token) => ledgerText.has(token));
+  const bankVendor = normalizedAutoMatchVendor(bank.counterparty);
+  const shared = [...bankText].some((token) => ledgerText.has(token)) || (bankVendor !== "" && bankVendor === normalizedAutoMatchVendor(ledger.counterparty));
   const invoice = digitsOnly(ledger.invoiceNumber);
   const invoiceHit = invoice.length >= 4 && digitsOnly(`${bank.reference} ${bank.counterparty}`).includes(invoice);
   const textHit = shared || invoiceHit;
-  const fit = amountFit(bank, ledger, tolerances, textHit && lag <= 3);
+  const fit = amountFit(bank, ledger, tolerances, textHit && lag <= 3, fx);
   if (!fit) return null;
   if (fit.basis === "unknown" && !textHit) return null;
   const dateScore = lag <= 1 ? 2 : lag <= 3 ? 1 : 0;
@@ -254,7 +277,7 @@ function confidenceOf(edge: Edge): "exact" | "strong" | "proposed" {
 }
 
 export type PairingResult = {
-  pairs: Map<string, { ledger: LedgerRow; basis: PairBasis; confidence: "exact" | "strong" | "proposed"; difference?: number }>;
+  pairs: Map<string, { ledger: LedgerRow; basis: PairBasis; confidence: "exact" | "strong" | "proposed"; difference?: number; auto?: boolean }>;
   ambiguous: Map<string, Array<{ transactionId: string; score: number }>>;
   ambiguousLedger: Map<string, Array<{ bankKey: string; score: number }>>;
 };
@@ -264,7 +287,7 @@ export type PairingResult = {
  * first. A bank row (or ledger row) whose two best open candidates tie is
  * not paired automatically.
  */
-export function pairAll(bank: BankTx[], ledger: LedgerRow[], decisions: ManualDecisions, tolerances: ReconcileTolerances): PairingResult {
+export function pairAll(bank: BankTx[], ledger: LedgerRow[], decisions: ManualDecisions, tolerances: ReconcileTolerances, fx?: FxLookup): PairingResult {
   // Both legs of a move between own accounts have no ledger row; pairing them would steal one.
   const legs = internalTransferLegs(bank, tolerances);
   const pairs: PairingResult["pairs"] = new Map();
@@ -277,7 +300,7 @@ export function pairAll(bank: BankTx[], ledger: LedgerRow[], decisions: ManualDe
     if (!row || pairs.has(pair.bankKey) || usedLedger.has(row.id)) continue;
     const bankRow = bank.find((item) => item.key === pair.bankKey);
     const difference = bankRow && bankRow.currency === row.currency ? cents(Math.abs(amountNumber(bankRow.amount)) - Math.abs(amountNumber(row.amount))) : undefined;
-    pairs.set(pair.bankKey, { ledger: row, basis: "manual", confidence: "exact", ...(difference ? { difference } : {}) });
+    pairs.set(pair.bankKey, { ledger: row, basis: pair.auto?.basis ?? "manual", confidence: pair.auto?.confidence ?? "exact", ...(pair.auto ? { auto: true } : {}), ...(difference ? { difference } : {}) });
     usedLedger.add(row.id);
   }
   const rejected = new Set(decisions.rejected);
@@ -295,7 +318,7 @@ export function pairAll(bank: BankTx[], ledger: LedgerRow[], decisions: ManualDe
     for (let offset = -tolerances.dateLagDays; offset <= tolerances.dateLagDays; offset++) {
       for (const row of byDay.get(day + offset) || []) {
         if (rejected.has(`${bankRow.key}|${row.id}`)) continue;
-        const edge = scoreEdge(bankRow, row, tolerances);
+        const edge = scoreEdge(bankRow, row, tolerances, fx);
         if (edge) edges.push(edge);
       }
     }
@@ -417,7 +440,7 @@ export function buildMonthTable(input: MonthInput): MonthTable {
       amount: bankRow.amount,
       currency: bankRow.currency,
       bank: bankRow,
-      ...(pair ? { ledger: stripDocs(pair.ledger), pairBasis: pair.basis, confidence: pair.confidence } : {}),
+      ...(pair ? { ledger: stripDocs(pair.ledger), pairBasis: pair.basis, confidence: pair.confidence, ...(pair.auto ? { autoMatched: true } : {}) } : {}),
       ...(pair?.difference ? { amountDifference: pair.difference.toFixed(2) } : {}),
       documents,
       ...(classification ? { classification } : {}),

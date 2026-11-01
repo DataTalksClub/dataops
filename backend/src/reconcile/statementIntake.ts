@@ -24,6 +24,7 @@ import {
 import { detectPdfStatementAccount, parseFinomPdfText, parseRevolutPdfText } from "./pdfLayouts";
 import { saveStatement, type StatementRecord } from "./service";
 import { buildMonths, getMonth, monthSummary } from "./monthService";
+import { autoMatchMonths, matchCountsText, matchesOf, type AutoMatchResult, type MatchesView } from "./autoMatch";
 
 export type StatementSource = { documentId?: string; artifactId?: string; filename?: string; contentType: string };
 
@@ -34,6 +35,8 @@ export type ImportedStatement = {
   skippedClosedMonths: string[];
   parsed: ParsedStatement;
   summaries: string[];
+  autoMatch: AutoMatchResult;
+  matches: Array<MatchesView["counts"] & { period: string }>;
 };
 
 export class UnrecognizedStatementError extends Error {
@@ -101,17 +104,20 @@ export async function importStatement(
     statements.push({ id: record.id, period, from: record.from, to: record.to, rowCount: rows.length });
   }
   const touched = statements.map((statement) => statement.period);
+  // The matcher runs on every upload: confident pairs are persisted before the months are summarised.
+  const autoMatch = await autoMatchMonths(client, touched);
   const views = touched.length ? await buildMonths(client, touched) : [];
+  const matches = views.map((view) => ({ period: view.period, ...matchesOf(view).counts }));
   const summaries = views.map(monthSummary);
   if (options.notify && views.length) {
     const latest = views[views.length - 1];
     await createNotification(client, {
       type: "reconcile-month",
-      message: `${account} statement imported (${parsed.rows.length} rows, ${touched.join(", ")}). ${summaries.at(-1)}`,
-      metadata: { period: latest.period, account, statements: statements.map((statement) => statement.id), counters: latest.counters, blockers: latest.blockers, audience: "finance-operator" },
+      message: `${account} statement imported (${parsed.rows.length} rows, ${touched.join(", ")}). ${summaries.at(-1)} ${matchCountsText(matches[matches.length - 1])}`,
+      metadata: { period: latest.period, account, statements: statements.map((statement) => statement.id), counters: latest.counters, matches: matches[matches.length - 1], autoMatched: autoMatch.attached, blockers: latest.blockers, audience: "finance-operator" },
     });
   }
-  return { account, layout, statements, skippedClosedMonths, parsed, summaries };
+  return { account, layout, statements, skippedClosedMonths, parsed, summaries, autoMatch, matches };
 }
 
 let s3 = new S3Client({});

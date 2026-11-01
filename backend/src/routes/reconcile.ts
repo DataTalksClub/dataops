@@ -46,6 +46,7 @@ import {
 } from "../reconcile/monthService";
 import { tableCsv } from "../reconcile/month";
 import { importStatement, UnrecognizedStatementError } from "../reconcile/statementIntake";
+import { autoMatchMonths, matchesOf } from "../reconcile/autoMatch";
 
 const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const CURRENCY = /^[A-Z]{3}$/;
@@ -146,6 +147,7 @@ export async function handleReconcileRoutes(
         return json(201, {
           account: result.account, layout: result.layout, statements: result.statements, skippedClosedMonths: result.skippedClosedMonths,
           rowCount: result.parsed.rows.length, balances: result.parsed.balances, warnings: result.parsed.warnings, summaries: result.summaries,
+          autoMatch: result.autoMatch, matches: result.matches,
         });
       } catch (error) {
         if (error instanceof UnrecognizedStatementError || error instanceof ParseError) return json(422, { error: `Statement not recognized: ${(error as Error).message}` });
@@ -250,6 +252,11 @@ async function handleMonthRoutes(
     });
   }
   if (action === "package" && method === "GET") return json(200, await monthPackage(client, period, { draft: query.draft === "true" }));
+  if (action === "matches" && method === "GET") return json(200, matchesOf(await buildMonth(client, period)));
+  if (action === "auto-match" && method === "POST") {
+    const attached = await autoMatchMonths(client, [period]);
+    return json(200, { autoMatch: attached, ...matchesOf(await buildMonth(client, period)) });
+  }
   if (!action && method === "GET") {
     const view = await buildMonth(client, period);
     if (query.format === "csv") return { statusCode: 200, headers: { "Content-Type": "text/csv; charset=utf-8" }, body: tableCsv(view) };
