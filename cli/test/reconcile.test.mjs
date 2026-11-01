@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { upload, confirm, report, alias, aliases, balances, commands } from "../src/commands/reconcile.mjs";
+import { upload, confirm, report, alias, aliases, balances, matches, commands } from "../src/commands/reconcile.mjs";
 
 const withFakePortal = async (routes, run) => {
   const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
@@ -344,4 +344,27 @@ test("package writes the month folder layout from the manifest and never sends a
     assert.ok(!calls.some((call) => call.method === "POST"), "building a package never writes");
   });
   await rm(directory, { recursive: true, force: true });
+});
+
+test("reconcile matches prints matched, unmatched bank and invoices without a bank row", async () => {
+  const payload = {
+    period: "2026-10",
+    counts: { matched: 1, autoMatched: 1, needsReview: 0, unmatchedBank: 1, invoicesWithoutBank: 1 },
+    matched: [{ bankKey: "bk1", date: "2026-10-02", amount: "-48.60", currency: "EUR", counterparty: "Example Cloud", invoice: { transactionId: "t1", date: "2026-09-30", counterparty: "Example Cloud", amount: "-48.60", currency: "EUR", documents: 1 }, basis: "exact", confidence: "exact", auto: true, status: "matched" }],
+    unmatchedBank: [{ bankKey: "bk2", date: "2026-10-09", amount: "-15.00", currency: "EUR", counterparty: "Unknown Shop", status: "no-invoice" }],
+    invoicesWithoutBank: [{ transactionId: "t2", date: "2026-10-12", amount: "-20.00", currency: "EUR", counterparty: "Example Hosting", documents: 1, status: "payment-proof-missing" }],
+  };
+  await withFakePortal([["/reconcile/months/2026-10/matches", payload]], async (calls) => {
+    const lines = [];
+    const result = await matches({ ...args, json: false, period: "2026-10" }, { print: (line) => lines.push(line) });
+    assert.equal(result.counts.matched, 1);
+    const text = lines.join("\n");
+    assert.match(text, /1 matched \(1 automatically, 0 to review\), 1 bank rows unmatched, 1 invoices without a bank row/);
+    assert.match(text, /\[exact\/exact, auto\]/);
+    assert.match(text, /Unknown Shop/);
+    assert.match(text, /Example Hosting/);
+    assert.match(calls[0].url, /\/api\/reconcile\/months\/2026-10\/matches$/);
+  });
+  await assert.rejects(() => matches({ ...args }, {}), /matches --period YYYY-MM/);
+  assert.equal(typeof commands.matches, "function");
 });

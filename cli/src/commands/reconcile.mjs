@@ -52,6 +52,13 @@ Usage
       no-invoice, payment-proof-missing, amount-mismatch, needs-review).
   dataops reconcile months --from YYYY-MM --to YYYY-MM [--json]
       Counters and open/closed state per month.
+  dataops reconcile matches --period YYYY-MM [--json]
+      The result of the automatic matching: matched bank rows with their
+      invoice, basis, confidence and difference; bank rows without an invoice;
+      invoices without a bank row. Matching runs by itself after every
+      statement upload; confident pairs are persisted, weak ones wait for review.
+  dataops reconcile auto-match --period YYYY-MM [--json]
+      Run the matcher on a month again (after new invoices arrive) and show the result.
   dataops reconcile match <bank-key> <ledger-id> --period YYYY-MM [--note TEXT]
   dataops reconcile unmatch <bank-key> <ledger-id> --period YYYY-MM [--note TEXT]
       Pair or unpair by hand; logged on the month. Unmatching an automatic
@@ -146,6 +153,7 @@ async function autoImport(args, io) {
     for (const balance of result.balances || []) io.print(`balance ${balance.wallet ? `${balance.wallet} ` : ""}${balance.amount} ${balance.currency} as of ${balance.asOf}`);
     for (const warning of (result.warnings || []).slice(0, 5)) io.print(`warning: ${warning}`);
     for (const summary of result.summaries || []) io.print(summary);
+    for (const item of result.matches || []) io.print(matchLine(item.period, item));
   }
   return { documentId: stored.documentId, ...result };
 }
@@ -440,6 +448,43 @@ export async function month(args, io) {
   return result;
 }
 
+const matchLine = (period, counts) =>
+  `Matches ${period}: ${counts.matched} matched (${counts.autoMatched} automatically, ${counts.needsReview} to review), ${counts.unmatchedBank} bank rows unmatched, ${counts.invoicesWithoutBank} invoices without a bank row.`;
+
+const money = (amount, currency) => `${amount} ${currency}`;
+
+function printMatches(io, result) {
+  io.print(matchLine(result.period, result.counts));
+  io.print(`\nMatched (${result.matched.length})`);
+  for (const row of result.matched) {
+    io.print(`  ${row.date}  ${money(row.amount, row.currency)}  ${row.counterparty}`);
+    io.print(`    ↔ ${row.invoice.counterparty}${row.invoice.invoiceNumber ? ` #${row.invoice.invoiceNumber}` : ""} ${row.invoice.date} ${money(row.invoice.amount, row.invoice.currency)}  [${row.basis}/${row.confidence}${row.auto ? ", auto" : ""}]${row.difference ? ` diff ${row.difference}` : ""}${row.documents === 0 || row.invoice.documents === 0 ? " (no document)" : ""}  bank ${row.bankKey} ledger ${row.invoice.transactionId}`);
+  }
+  io.print(`\nBank rows without an invoice (${result.unmatchedBank.length})`);
+  for (const row of result.unmatchedBank) io.print(`  ${row.date}  ${money(row.amount, row.currency)}  ${row.counterparty}${row.classification ? ` [${row.classification}]` : ""}  ${row.status}  bank ${row.bankKey}`);
+  io.print(`\nInvoices without a bank row (${result.invoicesWithoutBank.length})`);
+  for (const row of result.invoicesWithoutBank) io.print(`  ${row.date}  ${money(row.amount, row.currency)}  ${row.counterparty}${row.invoiceNumber ? ` #${row.invoiceNumber}` : ""}  ledger ${row.transactionId}`);
+}
+
+export async function matches(args, io) {
+  const usage = "dataops reconcile matches --period YYYY-MM [--json]";
+  if (!MONTH.test(optionalString(args, "period") || "")) throw new UsageError(usage);
+  const result = await apiFor(args).get(`/api/reconcile/months/${periodOr(args)}/matches`);
+  if (!args.json) printMatches(io, result);
+  return result;
+}
+
+export async function autoMatch(args, io) {
+  const usage = "dataops reconcile auto-match --period YYYY-MM [--json]";
+  if (!MONTH.test(optionalString(args, "period") || "")) throw new UsageError(usage);
+  const result = await monthPost(args, periodOr(args), "auto-match", {});
+  if (!args.json) {
+    io.print(`Auto-matched ${result.autoMatch.attached} new pairs${result.autoMatch.skippedClosedMonths.length ? ` (closed, skipped: ${result.autoMatch.skippedClosedMonths.join(", ")})` : ""}.`);
+    printMatches(io, result);
+  }
+  return result;
+}
+
 export async function months(args, io) {
   const usage = "dataops reconcile months --from YYYY-MM --to YYYY-MM [--json]";
   const from = optionalString(args, "from"), to = optionalString(args, "to");
@@ -651,6 +696,6 @@ export async function alias(args, io) {
 
 export const commands = {
   upload, "import-document": importDocument, balances, statements, statement, report, confirm, aliases, alias,
-  month, months, match, unmatch, "attach-proof": attachProof, "attach-doc": attachDoc, "create-ledger": createLedger,
+  month, months, matches, "auto-match": autoMatch, match, unmatch, "attach-proof": attachProof, "attach-doc": attachDoc, "create-ledger": createLedger,
   except, "clear-except": clearExcept, "confirm-exceptions": confirmExceptions, close, reopen, package: packageMonth, config,
 };
