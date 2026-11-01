@@ -167,25 +167,26 @@ export function monthTableMarkup(summary, e) {
 export function currencyMarkup(summary, e) {
   if (!summary.byCurrency.length) return "";
   const source = { booked: "Booked by the bank", ecb: "ECB reference rate", eur: "EUR" };
-  const conversions = summary.conversions.length
-    ? html`<table class="fin-table">
-        <caption class="fin-table__caption">Conversions to EUR</caption>
-        ${headRow(["Paid", "Counterparty", "Original", "EUR", "Rate (per EUR)", "Rate date", "Source"])}
-        <tbody>${summary.conversions.map((c) => {
-          const entry = summary.entries.find((x) => x.id === c.id) || {};
-          return html`<tr><td>${e(c.date)}</td><td>${e(entry.counterparty || "")}</td><td class="fin-num">${e(formatEur(c.amount))} ${e(c.currency)}</td>
-            <td class="fin-num">${c.eur === null ? "<em>not converted</em>" : formatEur(c.eur)}</td><td class="fin-num">${e(c.rate ? String(c.rate) : "–")}</td>
-            <td>${e(c.rateDate || "–")}</td><td>${e(source[c.rateSource] || "No rate")}</td></tr>`;
-        }).join("")}</tbody></table>`
-    : "";
+  const entriesById = new Map(summary.entries.map((entry) => [entry.id, entry]));
+  const conversionsByCurrency = new Map();
+  for (const conversion of summary.conversions) {
+    const conversions = conversionsByCurrency.get(conversion.currency) || [];
+    conversions.push(conversion);
+    conversionsByCurrency.set(conversion.currency, conversions);
+  }
   return html`<section class="fin-block" aria-labelledby="fin-currency-heading">
       <h2 id="fin-currency-heading" class="fin-block__title">Currencies</h2>
       <table class="fin-table">
         ${headRow(["Currency", "In (original)", "In (EUR)", "Out (original)", "Out (EUR)"])}
-        <tbody>${summary.byCurrency.map((c) => html`<tr><th scope="row">${e(c.currency)}</th>
+        <tbody>${summary.byCurrency.map((c) => html`<tr><th scope="row">${e(c.currency)}${(conversionsByCurrency.get(c.currency) || []).map((conversion) => {
+          const entry = entriesById.get(conversion.id) || {};
+          const eur = conversion.eur === null ? "not converted" : `${formatEur(conversion.eur)} EUR`;
+          const rate = conversion.rate ? ` · ${String(conversion.rate)} per EUR` : "";
+          const rateInfo = [source[conversion.rateSource], conversion.rateDate].filter(Boolean).join(" ");
+          return html`<small class="fin-currency__conversion">${e(conversion.date)}: ${entry.counterparty ? `${e(entry.counterparty)}: ` : ""}${e(formatEur(conversion.amount))} ${e(conversion.currency)} → ${e(eur)}${rate}${rateInfo ? ` (${e(rateInfo)})` : ""}</small>`;
+        }).join("")}</th>
           ${[c.moneyIn, c.moneyInEur, c.moneyOut, c.moneyOutEur].map((v) => html`<td class="fin-num">${formatEur(v)}</td>`).join("")}</tr>`).join("")}</tbody>
       </table>
-      ${conversions}
     </section>`;
 }
 

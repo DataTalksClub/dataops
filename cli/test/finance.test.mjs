@@ -22,9 +22,13 @@ const OCTOBER = {
   byCurrency: [
     { currency: "EUR", moneyIn: "21100.00", moneyOut: "1000.00", moneyInEur: 21100, moneyOutEur: 1000 },
     { currency: "USD", moneyIn: "6000.00", moneyOut: "0.00", moneyInEur: 5360.49, moneyOutEur: 0 },
+    { currency: "GBP", moneyIn: "25.00", moneyOut: "0.00", moneyInEur: 33.10, moneyOutEur: 0 },
   ],
-  conversions: [{ id: "r1", date: "2026-10-23", amount: "6000", currency: "USD", eur: 5360.49, rate: 1.1193, rateDate: "2026-10-23", rateSource: "ecb" }],
-  entries: [],
+  conversions: [
+    { id: "r1", date: "2026-10-23", amount: "6000", currency: "USD", eur: 5360.49, rate: 1.1193, rateDate: "2026-10-23", rateSource: "ecb" },
+    { id: "r2", date: "2026-10-24", amount: "25", currency: "GBP", eur: 33.1, rate: null, rateDate: null, rateSource: null },
+  ],
+  entries: [{ id: "r1", counterparty: "Payer & Co" }, { id: "r2", counterparty: "No-rate Ltd" }],
   duplicates: [],
   gaps: [],
   rules: ["Ledger rows are the only thing counted."],
@@ -32,7 +36,7 @@ const OCTOBER = {
 };
 
 describe("dataops finance summary", () => {
-  test("--month prints the headline numbers, a table, conversions and gaps", async () => {
+  test("--month prints the headline numbers, inline row conversions and gaps", async () => {
     const calls = fakePortal({ "GET /api/finance/summary": OCTOBER });
     const io = captureIo();
     assert.equal(await run(["finance", "summary", "--month", "2026-10"], io), 0);
@@ -43,8 +47,11 @@ describe("dataops finance summary", () => {
     assert.match(text, /Projected VAT position:\s+0\.00 \(nothing owed\)/);
     assert.doesNotMatch(text, /no VAT amount|vat-unknown/i);
     assert.match(text, /2026-10\s+26,460\.49\s+1,000\.00\s+25,460\.49/);
-    assert.match(text, /USD\s+6,000\.00\s+5,360\.49/);
-    assert.match(text, /2026-10-23\s+6,000\.00 USD\s+5,360\.49\s+1\.1193\s+2026-10-23\s+ECB reference/);
+    assert.match(text, /USD — .*6,000\.00\s+5,360\.49/);
+    assert.match(text, /USD — 2026-10-23: Payer & Co: 6,000\.00 USD → 5,360\.49 EUR @ 1\.1193 per EUR \(ECB reference 2026-10-23\)/);
+    assert.match(text, /GBP — 2026-10-24: No-rate Ltd: 25\.00 GBP → 33\.10 EUR/);
+    assert.doesNotMatch(text.match(/GBP —[^\n]*/)?.[0] || "", /@/);
+    assert.doesNotMatch(text, /(?:^|\n)Conversions(?: to EUR)?(?:\n|$)/);
   });
 
   test("--json returns the portal's payload unchanged", async () => {

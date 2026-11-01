@@ -1665,6 +1665,14 @@ closes on every tab switch (see setView), so it never covers list content. */
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+.fin-currency__conversion {
+  display: block;
+  margin-top: var(--dk-space-1);
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-xs);
+  font-weight: 400;
+  white-space: normal;
+}
 .fin-table__total th,
 .fin-table__total td {
   font-weight: 650;

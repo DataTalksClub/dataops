@@ -14,9 +14,15 @@ const YEAR = {
   period: { kind: "year", label: "2026", from: "2026-01-01", to: "2026-12-31", months: ["2026-09", "2026-10", "2026-11"] },
   totals: totals({ moneyIn: 3000, moneyOut: 1300, net: 1700, netProfitExVat: 2100, incomeNetOfVat: 2500, expensesNetOfVat: 400, projectedVat: 410.5, outputVat: 500, inputVat: 89.5, vatPaid: 300, otherTaxes: 400, healthInsurance: 0, netAfterTaxes: 1700, entryCount: 4 }),
   months: [month("2026-09", { moneyIn: 1000, moneyOut: 1300, net: -300, netProfitExVat: -100, outputVat: 50, inputVat: 15, vatPaid: 45, vatRefunded: 5, projectedVat: 35 }), month("2026-10", { moneyIn: 2000, net: 2000, netProfitExVat: 2200 }), month("2026-11", {}, true)],
-  byCurrency: [{ currency: "USD", moneyIn: "6000.00", moneyOut: "0.00", moneyInEur: 5360.49, moneyOutEur: 0 }],
-  conversions: [{ id: "r1", date: "2026-10-23", amount: "6000", currency: "USD", eur: 5360.49, rate: 1.1193, rateDate: "2026-10-23", rateSource: "ecb" }],
-  entries: [{ id: "r1", counterparty: "<Payer & Co>" }],
+  byCurrency: [
+    { currency: "USD", moneyIn: "6000.00", moneyOut: "0.00", moneyInEur: 5360.49, moneyOutEur: 0 },
+    { currency: "GBP", moneyIn: "25.00", moneyOut: "0.00", moneyInEur: 33.1, moneyOutEur: 0 },
+  ],
+  conversions: [
+    { id: "r1", date: "2026-10-23", amount: "6000", currency: "USD", eur: 5360.49, rate: 1.1193, rateDate: "2026-10-23", rateSource: "ecb" },
+    { id: "r2", date: "2026-10-24", amount: "25", currency: "GBP", eur: 33.1, rate: null, rateDate: null, rateSource: null },
+  ],
+  entries: [{ id: "r1", counterparty: "<Payer & Co>" }, { id: "r2", counterparty: "No-rate & Co" }],
   duplicates: [{ keptId: "a", droppedId: "b", reason: "sheet row repeats sponsor-receipt row" }],
   gaps: [],
   rules: ["Ledger rows are the only thing counted."],
@@ -65,10 +71,12 @@ describe("finance overview", () => {
     assert.match(markup, /--month 2026-10/);
   });
 
-  test("shows original amounts, rate, rate date and source, escaping counterparties", () => {
+  test("shows conversions inline in currency rows and includes rates when available", () => {
     const markup = overviewMarkup(YEAR, e);
-    assert.match(markup, /<td>2026-10-23<\/td><td>&lt;Payer &amp; Co&gt;<\/td><td class="fin-num">6,000\.00 USD<\/td>/);
-    assert.match(markup, /1\.1193<\/td>\s*<td>2026-10-23<\/td><td>ECB reference rate<\/td>/);
+    assert.match(markup, /<th scope="row">USD<small class="fin-currency__conversion">2026-10-23: &lt;Payer &amp; Co&gt;: 6,000\.00 USD → 5,360\.49 EUR · 1\.1193 per EUR \(ECB reference rate 2026-10-23\)<\/small><\/th>/);
+    assert.match(markup, /<th scope="row">GBP<small class="fin-currency__conversion">2026-10-24: No-rate &amp; Co: 25\.00 GBP → 33\.10 EUR<\/small><\/th>/);
+    assert.doesNotMatch(markup.match(/<th scope="row">GBP[\s\S]*?<\/th>/)?.[0] || "", /per EUR/);
+    assert.doesNotMatch(markup, /class="fin-table__caption"/);
     assert.match(markup, /dropped as duplicates of invoice or receipt rows \(1\)/);
   });
 

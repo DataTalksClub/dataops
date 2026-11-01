@@ -12,9 +12,10 @@ Usage
   dataops finance summary --year 2026 [--json]
   dataops finance summary --ytd [--json]
       Money in, money out and net in EUR, net profit excluding VAT, the projected
-      VAT position, and taxes and TK on their own lines. Non-EUR amounts show the
-      original currency, the rate, its date and its source (booked by the bank,
-      or the ECB reference rate). Data gaps are listed under the table.
+      VAT position, and taxes and TK on their own lines. Non-EUR currency rows
+      show each original amount and its EUR value inline, plus the rate, date and
+      source when available (booked by the bank or the ECB reference rate).
+      Data gaps are listed under the table.
 
   dataops finance upcoming [--days 60] [--json]
       Tax and TK auto-debits due in the next N days (default 60): date (moved past
@@ -61,6 +62,20 @@ function periodArgs(args) {
 }
 
 const vatWord = (value) => (value > 0 ? "owed to the Finanzamt" : value < 0 ? "refund from the Finanzamt" : "nothing owed");
+const rateSource = (source) => ({ booked: "booked by bank", ecb: "ECB reference" })[source] || "";
+
+function currencyRowLabel(currency, conversions, entriesById) {
+  const details = conversions
+    .filter((conversion) => conversion.currency === currency)
+    .map((conversion) => {
+      const counterparty = entriesById.get(conversion.id)?.counterparty;
+      const eur = conversion.eur === null ? "not converted" : `${money(conversion.eur)} EUR`;
+      const rate = conversion.rate ? ` @ ${conversion.rate} per EUR` : "";
+      const sourceDate = [rateSource(conversion.rateSource), conversion.rateDate].filter(Boolean).join(" ");
+      return `${conversion.date}: ${counterparty ? `${counterparty}: ` : ""}${money(conversion.amount)} ${conversion.currency} → ${eur}${rate}${sourceDate ? ` (${sourceDate})` : ""}`;
+    });
+  return details.length ? `${currency} — ${details.join("; ")}` : currency;
+}
 
 export function printSummary(io, s) {
   const t = s.totals;
@@ -96,25 +111,14 @@ export function printSummary(io, s) {
     ["VAT paid to / refunded by the Finanzamt", -(t.vatPaid - t.vatRefunded)],
   ], [["Line", (r) => r[0]], ["EUR", (r) => money(r[1]), "right"]]);
   if (s.byCurrency.length) {
+    const entriesById = new Map(s.entries.map((entry) => [entry.id, entry]));
     io.print("");
     grid(io, s.byCurrency, [
-      ["Currency", (r) => r.currency],
+      ["Currency", (r) => currencyRowLabel(r.currency, s.conversions, entriesById)],
       ["In (original)", (r) => money(r.moneyIn), "right"],
       ["In (EUR)", (r) => money(r.moneyInEur), "right"],
       ["Out (original)", (r) => money(r.moneyOut), "right"],
       ["Out (EUR)", (r) => money(r.moneyOutEur), "right"],
-    ]);
-  }
-  if (s.conversions.length) {
-    io.print("");
-    io.print("Conversions");
-    grid(io, s.conversions, [
-      ["Date", (r) => r.date],
-      ["Amount", (r) => `${money(r.amount)} ${r.currency}`, "right"],
-      ["EUR", (r) => money(r.eur), "right"],
-      ["Rate (per EUR)", (r) => (r.rate ? String(r.rate) : "-"), "right"],
-      ["Rate date", (r) => r.rateDate || "-"],
-      ["Source", (r) => ({ booked: "booked by bank", ecb: "ECB reference" })[r.rateSource] || "none"],
     ]);
   }
   const notes = [
