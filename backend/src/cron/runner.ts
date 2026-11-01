@@ -75,18 +75,27 @@ function formatAnchorDate(dateStr: string): string {
 }
 
 /**
- * The one Card a Template has for an anchor date: created when missing, and
- * when it already exists any missing Template Tasks are recovered instead of
- * duplicating the Card, however many passes reach the same anchor.
+ * The one Card a Template has for a schedule occurrence: created when missing,
+ * and when it already exists any missing Template Tasks are recovered instead
+ * of duplicating the Card, however many passes reach the same occurrence.
  */
 async function ensureAutomaticCard(
   client: DynamoDBDocumentClient,
   template: Template,
   anchorDate: string,
+  scheduleDates: string[],
   allCards: Card[],
 ): Promise<{ created: Card | null; recovered: number }> {
+  // Manual Cards may keep an original weekend cron date while generated
+  // Cards use its weekday anchor. Weekend dates cannot be generated anchors,
+  // so this identifies the same occurrence without confusing lead-day Cards
+  // from adjacent periods.
+  const unshiftedWeekendDates = new Set(
+    scheduleDates.filter((scheduleDate) => moveWeekendToMonday(scheduleDate) !== scheduleDate),
+  );
   const duplicate = allCards.find(
-    (b: Card) => b.templateId === template.id && b.anchorDate === anchorDate
+    (card: Card) => card.templateId === template.id
+      && (card.anchorDate === anchorDate || unshiftedWeekendDates.has(card.anchorDate || '')),
   );
 
   if (duplicate) {
@@ -262,11 +271,16 @@ async function runCron(
       const cron = parseCronExpression(template.triggerSchedule!);
       if (!cron) continue;
       const leadDays = template.triggerLeadDays || 0;
-      const anchorDates = [...new Set(scheduleDatesOccurringOn(cron, todayDate)
-        .map((scheduleDate) => moveWeekendToMonday(addCivilDays(scheduleDate, leadDays))))];
+      const scheduleDatesByAnchor = new Map<string, string[]>();
+      for (const scheduleDate of scheduleDatesOccurringOn(cron, todayDate)) {
+        const anchorDate = moveWeekendToMonday(addCivilDays(scheduleDate, leadDays));
+        const dates = scheduleDatesByAnchor.get(anchorDate) || [];
+        dates.push(scheduleDate);
+        scheduleDatesByAnchor.set(anchorDate, dates);
+      }
 
-      for (const anchorDate of anchorDates) {
-        const outcome = await ensureAutomaticCard(client, template, anchorDate, allCards);
+      for (const [anchorDate, scheduleDates] of scheduleDatesByAnchor) {
+        const outcome = await ensureAutomaticCard(client, template, anchorDate, scheduleDates, allCards);
         if (outcome.created) {
           allCards.push(outcome.created);
           created.push(outcome.created.id);

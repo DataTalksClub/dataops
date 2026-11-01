@@ -5,7 +5,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
-import { createTemplate, listTemplates, updateTemplate } from '../src/db/templates';
+import { createCardFromTemplate, createTemplate, listTemplates, updateTemplate } from '../src/db/templates';
 import { listCards } from '../src/db/cards';
 import { listUndismissedNotifications } from '../src/db/notifications';
 import { createRecurringConfig, updateRecurringConfig } from '../src/db/recurring';
@@ -352,6 +352,86 @@ describe('Cron runner', () => {
       await runCron(client, at('2033-01-10'));
       const cards = await cardsOf(template.id);
       assert.deepStrictEqual(cards.map((card) => [card.anchorDate, card.title]), [['2033-01-10', 'Monthly report on a Sunday - Jan 10']]);
+      await updateTemplate(client, template.id, { triggerEnabled: false });
+    });
+
+    it('dedupes a weekend occurrence against its unshifted manual Card date', async () => {
+      const makeTemplate = (name: string, type: string) => createTemplate(client, {
+        name,
+        type,
+        triggerType: 'automatic',
+        triggerSchedule: '0 9 1 * *',
+        triggerLeadDays: 0,
+        taskDefinitions: [{ refId: 'report', description: 'Prepare monthly report', offsetDays: 0 }],
+      });
+      const makeManualCard = (template: Awaited<ReturnType<typeof makeTemplate>>, anchorDate: string) =>
+        createCardFromTemplate(client, {
+          title: `${template.name} - ${formatAnchorDate(anchorDate)}`,
+          type: template.type,
+          anchorDate,
+        }, template, anchorDate);
+
+      const taxReport = await makeTemplate('Tax report manual occurrence', 'tax-report-manual-occurrence');
+      const noCard = await makeTemplate('Tax report empty occurrence', 'tax-report-empty-occurrence');
+      const priorPeriod = await makeTemplate('Tax report prior period', 'tax-report-prior-period');
+      await makeManualCard(taxReport, '2026-11-01');
+      await makeManualCard(priorPeriod, '2026-10-01');
+
+      const monday = at('2026-11-02');
+      await runCron(client, monday);
+
+      const firstPass = await listCards(client);
+      const cardsOf = (templateId: string) => firstPass
+        .filter((card) => card.templateId === templateId)
+        .map((card) => card.anchorDate)
+        .sort();
+      assert.deepStrictEqual(cardsOf(taxReport.id), ['2026-11-01']);
+      assert.deepStrictEqual(cardsOf(noCard.id), ['2026-11-02']);
+      assert.deepStrictEqual(cardsOf(priorPeriod.id), ['2026-10-01', '2026-11-02']);
+
+      await runCron(client, monday);
+      const secondPass = await listCards(client);
+      for (const template of [taxReport, noCard, priorPeriod]) {
+        assert.deepStrictEqual(
+          secondPass
+            .filter((card) => card.templateId === template.id)
+            .map((card) => card.anchorDate)
+            .sort(),
+          cardsOf(template.id),
+          `rerunning must not duplicate ${template.name}`,
+        );
+      }
+
+      for (const template of [taxReport, noCard, priorPeriod]) {
+        await updateTemplate(client, template.id, { triggerEnabled: false });
+      }
+    });
+
+    it('keeps adjacent lead-day occurrences separate when weekend anchors collapse', async () => {
+      const template = await createTemplate(client, {
+        name: 'Daily lead-day periods',
+        type: 'daily-lead-day-periods',
+        triggerType: 'automatic',
+        triggerSchedule: '0 9 * * *',
+        triggerLeadDays: 1,
+        taskDefinitions: [{ refId: 'report', description: 'Prepare report', offsetDays: 0 }],
+      });
+
+      await runCron(client, at('2033-01-10'));
+      const anchors = (await listCards(client))
+        .filter((card) => card.templateId === template.id)
+        .map((card) => card.anchorDate)
+        .sort();
+      assert.deepStrictEqual(anchors, ['2033-01-10', '2033-01-11']);
+
+      await runCron(client, at('2033-01-10'));
+      assert.deepStrictEqual(
+        (await listCards(client))
+          .filter((card) => card.templateId === template.id)
+          .map((card) => card.anchorDate)
+          .sort(),
+        anchors,
+      );
       await updateTemplate(client, template.id, { triggerEnabled: false });
     });
 
