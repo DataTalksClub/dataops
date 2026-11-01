@@ -36,11 +36,13 @@ describe('bookkeeping API',()=>{
     await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-06',description:'VAT expense',entryType:'expense',vatAmount:'7.00',vatCurrency:'EUR'});
     await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-07',description:'Income tax payment',category:'Taxes',entryType:'expense',amount:'100.00'});
     await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-08',description:'Health insurance premium',category:'Health Insurance',entryType:'expense'});
+    await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-09',counterparty:'Finanzamt',description:'UMS.ST 2026',entryType:'expense',amount:'500.00'});
+    await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-10',counterparty:'Techniker Krankenkasse',description:'Monthly contribution',entryType:'expense',amount:'200.00'});
     const setup=await invoke('POST','/api/bookkeeping/accounts/setup');
     for(const account of JSON.parse(setup.body).accounts) await putBookkeepingItem(client,'document',{documentType:'bank-statement',status:'active',accountId:account.id,statementMonth:'2026-09',originalFilename:'synthetic.pdf',contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update(`synthetic-vat-${account.id}`).digest('hex'),s3Key:`documents/${account.id}`});
     const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-09'});assert.equal(snapshot.statusCode,201);
     const report=JSON.parse(snapshot.body).report;
-    assert.equal(report.reconciliation.excludedTransactionCount,2);
+    assert.equal(report.reconciliation.excludedTransactionCount,4);
     assert.deepEqual(report.transactionIds.length,2);
     const vat=await invoke('GET','/api/bookkeeping/reports/vat',undefined,undefined,{year:'2026'});assert.equal(vat.statusCode,200);
     assert.deepEqual(JSON.parse(vat.body).months,[{month:'2026-09',currency:'EUR',outputVat:19,inputVat:7,net:12,transactionCount:2}]);

@@ -17,6 +17,7 @@ import {
   vatPresentation,
   vocabulary,
 } from "../src/surfaces/finance/bookkeeping-ledger.js";
+import { createBookkeepingFinance, mandatoryPaymentsMarkup } from "../src/surfaces/finance/bookkeeping-vat.js";
 
 import { escapeHtml } from "../src/core/html.js";
 
@@ -107,6 +108,49 @@ test("the VAT column shows document VAT, a zero rate, and reverse charge distinc
   assert.match(markup, />0%<\/td>/);
   assert.match(markup, /Reverse charge · 19%/);
   assert.equal(vatPresentation({ vatAmount: "500.00", vatCurrency: "USD", vatRate: "0.19" }), "$500.00 (19%)");
+});
+
+test("the month bottom section lists classified mandatory payments once with a subtotal", () => {
+  const markup = mandatoryPaymentsMarkup([
+    { id: "vat-april", month: "2026-04", date: "2026-04-14", direction: "out", line: "vat", mandatoryKind: "tax_debit", counterparty: "Finanzamt", description: "UMS.ST 2025", amount: "4581.14", currency: "EUR", eur: 4581.14 },
+    { id: "tk-april", month: "2026-04", date: "2026-04-16", direction: "out", line: "health-insurance", mandatoryKind: "tk_debit", counterparty: "Techniker Krankenkasse", description: "Beiträge", amount: "1179.36", currency: "EUR", eur: 1179.36 },
+    { id: "refund-april", month: "2026-04", date: "2026-04-20", direction: "in", line: "vat", mandatoryKind: "tax_debit", counterparty: "Finanzamt", description: "VAT refund", amount: "100", currency: "EUR", eur: 100 },
+    { id: "tax-may", month: "2026-05", date: "2026-05-14", direction: "out", line: "taxes", mandatoryKind: "tax_debit", counterparty: "Finanzamt", description: "EINK.ST", amount: "200", currency: "EUR", eur: 200 },
+  ], "2026-04", escapeHtml);
+
+  assert.match(markup, /Mandatory payments · April 2026/);
+  assert.match(markup, /Finanzamt/);
+  assert.match(markup, /VAT \/ USt/);
+  assert.match(markup, /Techniker Krankenkasse/);
+  assert.match(markup, /Health insurance \/ TK/);
+  assert.match(markup, /€5,760\.50/);
+  assert.doesNotMatch(markup, /VAT refund|EINK\.ST/);
+  assert.equal((markup.match(/<tr>/g) || []).length, 3, "two payments plus the table header");
+  assert.equal(mandatoryPaymentsMarkup([], "2026", escapeHtml), "", "the section is specific to a selected month");
+});
+
+test("finance summary ensure shares and awaits an in-flight year load", async () => {
+  let resolveLoad;
+  let loadCount = 0;
+  const refreshes = [];
+  const finance = createBookkeepingFinance({
+    loadYear: () => {
+      loadCount += 1;
+      return new Promise((resolve) => { resolveLoad = resolve; });
+    },
+    getLens: () => "2026-04",
+    getEntries: () => [],
+    getTodayIsoDate: () => "2026-11-01",
+    refresh: () => refreshes.push(true),
+  });
+  const first = finance.ensure();
+  const second = finance.ensure();
+  assert.strictEqual(first, second);
+  assert.equal(loadCount, 1);
+  resolveLoad({ entries: [{ id: "vat-april", month: "2026-04", mandatoryKind: "tax_debit" }], months: [], totals: {} });
+  await Promise.all([first, second]);
+  assert.equal(finance.entries().length, 1);
+  assert.equal(refreshes.length, 2, "one refresh starts the load and one publishes its result");
 });
 
 test("details show every field, attached files one click away, and an attach action", () => {

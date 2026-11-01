@@ -169,6 +169,20 @@
 .bk-period-vat__loading,
 .bk-period-vat__error { margin: 0; padding: var(--dk-space-3); color: var(--dk-text-muted); font-size: var(--dk-text-sm); }
 
+.bk-mandatory-payments { padding: var(--dk-space-4) var(--dk-space-3); border-top: 1px solid var(--dk-border-default); }
+.bk-mandatory-payments h2 { margin: 0 0 var(--dk-space-1); color: var(--dk-text-heading); font-size: var(--dk-text-sm); font-weight: var(--dk-weight-semibold); }
+.bk-mandatory-payments__hint,
+.bk-mandatory-payments__state { margin: 0 0 var(--dk-space-3); color: var(--dk-text-muted); font-size: var(--dk-text-xs); }
+.bk-mandatory-payments__table-wrap { overflow-x: auto; }
+.bk-mandatory-payments table { width: 100%; min-width: 440px; border-collapse: collapse; font-size: var(--dk-text-sm); }
+.bk-mandatory-payments th { padding: var(--dk-space-2); border-bottom: 1px solid var(--dk-border-strong); color: var(--dk-text-muted); font-size: var(--dk-text-xs); font-weight: var(--dk-weight-semibold); text-align: left; text-transform: uppercase; }
+.bk-mandatory-payments td { padding: var(--dk-space-2); border-bottom: 1px solid var(--dk-border-default); color: var(--dk-text-body); }
+.bk-mandatory-payments__amount { font-family: var(--dk-font-mono); text-align: right; white-space: nowrap; }
+.bk-mandatory-payments th:last-child { text-align: right; }
+.bk-mandatory-payments__subtotal { display: flex; align-items: baseline; justify-content: flex-end; gap: var(--dk-space-3); margin: var(--dk-space-3) 0 0; color: var(--dk-text-muted); font-size: var(--dk-text-sm); }
+.bk-mandatory-payments__subtotal strong { color: var(--dk-text-heading); font-family: var(--dk-font-mono); font-weight: var(--dk-weight-semibold); }
+.bk-mandatory-payments__unconverted { color: var(--dk-warning-text); font-size: var(--dk-text-xs); }
+
 
 /* Classification cells read as plain text until hovered or focused. */
 .bookkeeping-surface .bk-inline-select {

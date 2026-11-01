@@ -8,7 +8,7 @@ import {
 import { mountPeriodNav } from "../period-nav.js";
 
 export function mountBookkeepingNavigation({
-  surface, status, setLens, lensEntries, todayIsoDate,
+  surface, status, setLens, lensEntries, todayIsoDate, isExempt = isReportExempt, prepareExemptions = async () => {},
   getEntries, getLens,
 }) {
   let lens = getLens();
@@ -45,13 +45,14 @@ export function mountBookkeepingNavigation({
       disabled: lens === "all",
     });
   }
-  const exportReport = () => {
+  const exportReport = async () => {
+    await prepareExemptions();
     const period = lens === "all" ? "all-records" : lens;
     const filename = `datatalksclub-${period}.csv`;
     const shown = lensEntries();
-    const csv = formatReportCsv(shown, { excludeExempt: true });
+    const csv = formatReportCsv(shown, { excludeExempt: true, isExempt });
     downloadCsv(csv, filename);
-    const count = shown.filter((e) => !isReportExempt(e)).length;
+    const count = shown.filter((e) => !isExempt(e)).length;
     status.textContent = `Exported report CSV (${filename}) with ${count} transactions.`;
   };
   const exportFull = () => {
@@ -63,10 +64,11 @@ export function mountBookkeepingNavigation({
     status.textContent = `Exported full CSV (${filename}) with ${shown.length} transactions.`;
   };
   const copyReport = async () => {
+    await prepareExemptions();
     const period = monthLabel(lens);
     const shown = lensEntries();
-    const tsv = formatReportTsv(shown, { excludeExempt: true });
-    const count = shown.filter((e) => !isReportExempt(e)).length;
+    const tsv = formatReportTsv(shown, { excludeExempt: true, isExempt });
+    const count = shown.filter((e) => !isExempt(e)).length;
     const ok = await copyToClipboard(tsv);
     if (ok) {
       status.textContent = `✓ Copied report table for ${period} (${count} transactions) to clipboard. Paste directly into email or spreadsheet.`;

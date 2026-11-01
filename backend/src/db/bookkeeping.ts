@@ -9,6 +9,7 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { TABLE_BOOKKEEPING } from "./tableNames";
+import { classifyMandatoryPayment } from "../finance/mandatoryPayments";
 
 export type BookkeepingItem = Record<string, unknown> & {
   id: string;
@@ -20,7 +21,8 @@ export type BookkeepingItem = Record<string, unknown> & {
 // monthly package: they are settled from private money and reported separately.
 export const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance"]);
 export function isReportExemptTransaction(item: Readonly<Record<string, unknown>>) {
-  return REPORT_EXEMPT_CATEGORIES.has(String(item.category || ""));
+  return REPORT_EXEMPT_CATEGORIES.has(String(item.category || ""))
+    || classifyMandatoryPayment(item) !== null;
 }
 
 // Raised when a conditional mutation loses its optimistic-concurrency race or

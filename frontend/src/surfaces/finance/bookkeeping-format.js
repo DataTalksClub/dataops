@@ -145,17 +145,19 @@ function spreadsheetText(value) {
 
 // Payment categories tracked in the ledger but kept out of accountant's
 // monthly package and taxable report.
-export const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance"]);
+export const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance", "VAT"]);
 export function isReportExempt(entry) {
-  return REPORT_EXEMPT_CATEGORIES.has(String(entry?.category || ""));
+  return REPORT_EXEMPT_CATEGORIES.has(String(entry?.category || ""))
+    || ["tax_debit", "tk_debit"].includes(String(entry?.mandatoryKind || ""));
 }
 
 // Format ledger entries into the standard accountant tax report CSV.
 // Follows the DTC bookkeeping sheet specification (signed EUR prices, USD original prices).
 export function formatReportCsv(entries, options = {}) {
   const excludeExempt = options.excludeExempt ?? true;
+  const isExempt = options.isExempt || isReportExempt;
   const rows = excludeExempt
-    ? (entries || []).filter((e) => !isReportExempt(e))
+    ? (entries || []).filter((e) => !isExempt(e))
     : (entries || []);
   const headers = [
     "Date",

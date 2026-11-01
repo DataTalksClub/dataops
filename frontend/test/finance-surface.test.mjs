@@ -58,6 +58,16 @@ test("noncash settlement requires explicit approval fields and evidence and neve
   assert.deepEqual(calls[0][3], { expectedVersion: 4, amount: "5", currency: "EUR", reason: "Conversion fee accepted", approvedBy: "Owner", approvedOn: "2026-10-02", evidence: [{ kind: "document", ref: "owner-approval" }], replacesPaymentId: "reviewed-report" });
 });
 
+test("accountant CSV excludes mandatory payments classified by the finance summary", () => {
+  const csv = formatReportCsv([
+    { transactionDate: "2026-09-04", paidDate: "2026-09-04", counterparty: "Synthetic ScaleVector", description: "Workshop", amount: "5950.00", currency: "EUR", entryType: "income", category: "Sponsorship", vatAmount: "950.00", vatCurrency: "EUR" },
+    { transactionDate: "2026-09-16", counterparty: "Finanzamt", description: "UMS.ST", amount: "4581.14", currency: "EUR", entryType: "expense", category: "", mandatoryKind: "tax_debit" },
+    { transactionDate: "2026-09-20", counterparty: "Techniker Krankenkasse", description: "Monthly contribution", amount: "1179.36", currency: "EUR", entryType: "expense", category: "", mandatoryKind: "tk_debit" },
+  ]);
+  assert.match(csv, /Synthetic ScaleVector/);
+  assert.doesNotMatch(csv, /Finanzamt|Techniker Krankenkasse/);
+});
+
 afterEach(() => {
   for (const [name, value] of Object.entries(originalGlobals)) {
     if (value === undefined) delete globalThis[name];

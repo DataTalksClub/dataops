@@ -77,8 +77,7 @@ export function createBookkeepingSurface(context) {
     let filters = filtersFromParams(initial);
     let selectedId = initial.get("tx") || "";
     let view = SECONDARY_VIEWS.includes(initial.get("view")) ? initial.get("view") : "";
-    let defaultLens = "";
-    let invoicesMounted = false;
+    let defaultLens = "", invoicesMounted = false;
     const loadTuition = createTuitionLoader(surface.querySelector("[data-tuition]"), context, initial.get("agreement"));
     let vocab = {};
     const suggestions = suggestionLoader({ load: (id) => api(`/transactions/${encodeURIComponent(id)}/suggestions`),
@@ -109,6 +108,7 @@ export function createBookkeepingSurface(context) {
         if (view === "package") renderPackageReview();
       },
     });
+    const isReportExemptEntry = (entry) => REPORT_EXEMPT_CATEGORIES.has(String(entry.category || "")) || financeSummary.hasMandatoryEntry(entry.id);
     let setupAccountsReady = false;
     // Clear transient confirmations after six seconds.
     let statusTimer = null;
@@ -232,7 +232,7 @@ export function createBookkeepingSurface(context) {
         hasEvidence,
         vocab,
         selectedId,
-        financeEntriesById: new Map(financeSummary.entries().map((entry) => [entry.id, entry])),
+        financeEntriesById: financeSummary.entryMap(),
         e: escapeHtml,
       }) + financeSummary.markup(escapeHtml);
     }
@@ -447,8 +447,8 @@ export function createBookkeepingSurface(context) {
       const businessAccounts = accounts.filter(
         (a) => a.kind === "business" && a.active !== false,
       );
-      const monthEntries = lensEntries().filter((e) => !REPORT_EXEMPT_CATEGORIES.has(String(e.category || "")));
-      const excludedCount = lensEntries().filter((e) => REPORT_EXEMPT_CATEGORIES.has(String(e.category || ""))).length;
+      const monthEntries = lensEntries().filter((entry) => !isReportExemptEntry(entry));
+      const excludedCount = lensEntries().filter(isReportExemptEntry).length;
       const linkedDocIds = new Set(
         links
           .filter((l) => monthEntries.some((e) => e.id === l.transactionId))
@@ -489,7 +489,7 @@ export function createBookkeepingSurface(context) {
       const report = monthReport();
       const preview = html`<span class="dk-mono">${monthEntries.length}</span>&nbsp;transaction${monthEntries.length === 1 ? "" : "s"} ·
         <span class="dk-mono">${evidenceDocs.length}</span>&nbsp;linked document${evidenceDocs.length === 1 ? "" : "s"}
-        · <span class="dk-mono">${excludedCount}</span>&nbsp;tax/health-insurance ${excludedCount === 1 ? "entry" : "entries"} kept out`;
+        · <span class="dk-mono">${excludedCount}</span>&nbsp;mandatory-payment ${excludedCount === 1 ? "entry" : "entries"} kept out`;
       review.innerHTML = packageReviewMarkup({
         title: monthLabel(lens),
         preflightRows,
@@ -598,6 +598,7 @@ export function createBookkeepingSurface(context) {
 
     const navigation = mountBookkeepingNavigation({
       surface, status, setLens, lensEntries, todayIsoDate,
+      isExempt: isReportExemptEntry, prepareExemptions: () => financeSummary.ensure(),
       getEntries: () => entries, getLens: () => lens,
     });
 
