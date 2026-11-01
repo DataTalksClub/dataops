@@ -60,7 +60,7 @@ test.describe("production portal bookkeeping", () => {
     await expect(detail.locator("[name=counterparty]")).toHaveValue("Synthetic Portal Vendor");
     await detail.locator("[name=category]").fill("synthetic-testing");
     await detail.locator("[name=category]").press("Tab");
-    await expect(page.getByRole("status")).toContainText("Saved Category");
+    await expect(page.locator("[data-bookkeeping-status]")).toContainText("Saved Category");
     await page.reload();
     await expect(createdRow).toContainText("Synthetic browser evidence");
     await expect(createdRow.locator('[data-inline-field="category"]')).toHaveValue("synthetic-testing");
@@ -74,7 +74,7 @@ test.describe("production portal bookkeeping", () => {
       mimeType: "application/pdf",
       buffer: Buffer.from("%PDF-1.4\nsynthetic real evidence\n%%EOF"),
     });
-    await expect(page.getByRole("status")).toContainText("PDF attached.");
+    await expect(page.locator("[data-bookkeeping-status]")).toContainText("PDF attached.");
     await expect(detail.locator(".bk-receipts")).toContainText("Receipt PDF");
     const transactionId = await createdRow.getAttribute("data-tx");
     const linksResponse = await context.request.get(
@@ -90,12 +90,15 @@ test.describe("production portal bookkeeping", () => {
     await page.locator(".bk-more > summary").click();
     await page.getByRole("menuitem", { name: /Files & statements/ }).click();
     await expect(page).toHaveURL(/view=files/);
-    await expect(page.locator(".bookkeeping-documents")).toContainText("Private PDF");
+    const documents = page.locator(".bookkeeping-documents");
+    await expect(documents).toContainText("Downloads are private and expire after five minutes.");
+    await expect(documents).toContainText("synthetic-upload.pdf");
+    await expect(documents).toContainText("Receipt · matched to 1 entry");
     await page.getByRole("button", { name: "Set up business accounts" }).click();
-    await expect(page.getByRole("status")).toContainText("2 business accounts ready");
+    await expect(page.locator("[data-bookkeeping-status]")).toContainText("2 business accounts ready");
     await page.locator(".bookkeeping-upload-panel > summary").click();
     await page.getByRole("button", { name: "Upload PDF" }).click();
-    await expect(page.getByRole("status")).toContainText("Choose a PDF first");
+    await expect(page.locator("[data-bookkeeping-status]")).toContainText("Choose a PDF first");
     await page.locator("#bookkeeping-evidence").getByRole("button", { name: "← Transactions" }).click();
     await expect(createdRow).toBeVisible();
 
@@ -119,7 +122,7 @@ test.describe("production portal bookkeeping", () => {
     await expect(page.locator(".bookkeeping-ledger")).toContainText(
       "Could not load bookkeeping: Synthetic route failure (503)",
     );
-    await expect(page.getByRole("status")).toContainText(
+    await expect(page.locator("[data-bookkeeping-status]")).toContainText(
       "Retry by reopening Bookkeeping",
     );
     const clearFaults = await context.request.delete(
@@ -229,7 +232,7 @@ test.describe("production portal bookkeeping", () => {
     await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text) => { window.__copiedReport = text; } } }));
     await more.click();
     await page.getByRole("menuitem", { name: "Copy accountant table", exact: true }).click();
-    await expect(page.getByRole("status")).toContainText("Copied report table for 2024 (2 transactions)");
+    await expect(page.locator("[data-bookkeeping-status]")).toContainText("Copied report table for 2024 (2 transactions)");
     const copied = await page.evaluate(() => window.__copiedReport);
     expect(copied).toContain("VAT\tVAT Currency");
     expect(copied).toContain("January Export Vendor");
