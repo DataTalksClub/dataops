@@ -4,7 +4,7 @@ import { resolve, dirname, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { extractWithLlm, needsPdfInput, extractionModel, EXTRACTION_PROMPT, EXTRACTION_SCHEMA, type LlmExtraction } from '../src/invoices/llm';
-import { extractFinanceText, regexFinanceFacts } from '../src/invoices/financeExtraction';
+import { extractFinanceText, regexFinanceFacts, validateFinanceFacts } from '../src/invoices/financeExtraction';
 
 async function main() {
 const args = process.argv.slice(2);
@@ -47,7 +47,7 @@ async function worker() {
         return result;
       };
       if (mode === 'regex') {fields=regexFinanceFacts(text);route='regex';latencyMs=performance.now()-started;}
-      else if (mode === 'openai') fields = (await read()).fields;
+      else if (mode === 'openai') {fields = (await read()).fields; issues=validateFinanceFacts(fields!);}
       else {
         const result = await extractFinanceText(text, { llm: read });
         fields = result.facts; issues = result.extraction.issues; route = result.extraction.method;
