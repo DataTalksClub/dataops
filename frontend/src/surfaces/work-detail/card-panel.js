@@ -1,12 +1,21 @@
 import { renderCardDocumentSections } from './card-documents.js';
-import { documentHref, opensInNewTab } from "../../core/links.js";
 import { afterText, blockedReason, blockingPrerequisites, prerequisiteStatusLabel } from "../../core/task-dependencies.js";
 import { taskTitleParts } from "../../core/task-display.js";
-import { cardLinkUrlForTask, describeMissingProof, hasLinkedCalendarInvite, isCanonicalWorkTask, taskProofState, taskRequiresCalendarInvite } from "../../core/workspace.js";
+import {
+  cardLinkUrlForTask,
+  describeMissingProof,
+  hasLinkedCalendarInvite,
+  isCanonicalWorkTask,
+  isResolvedWorkTask,
+  isWaitingOrFollowUpTask,
+  sortCardChecklistTasks,
+  taskProofState,
+  taskRequiresCalendarInvite,
+} from "../../core/workspace.js";
 import { appendChecklistOptionality } from "./task-completion.js";
 import { createCardActions } from "./card-actions.js";
 import { renderCardTemplateUpdate } from "./card-template-review.js";
-import { humanLinkName, ownerAvatar, resolveChecklistOwner } from "./card-display.js";
+import { ownerAvatar, resolveChecklistOwner } from "./card-display.js";
 import { renderCardLinkedFrom, renderChecklistLinkedCard } from "./task-linked-card.js";
 import {
   appendBreakableText,
@@ -16,7 +25,8 @@ import {
 } from "./card-summary.js";
 import { renderCardEventTime, renderCardInvitesSection } from "./card-invites.js";
 import { renderWebinarMaterialsAction } from "./webinar-materials.js";
-import { renderLinkRow, renderLinkList } from "./link-rows.js";
+import { renderCardReferencesSection } from "./card-references.js";
+import { renderCardLinksSection } from "./link-rows.js";
 
 export function createCardPanel(context) {
   const {
@@ -60,13 +70,17 @@ export function createCardPanel(context) {
     workCardSubtitle,
     workCardTitle,
     workTaskTitle,
-    workflowTaskGroups,
     cardPanelBody,
     cardPanelTitle,
   } = context;
   // Link rows whose editor is open, so an unsaved edit survives a rerender.
   const openLinkEditors = new Set();
   const openTaskLinkPrompts = new Set();
+  // Per-Card expander choices, so a collapsed section stays collapsed (and
+  // an expanded one stays open) across rerenders.
+  const linksMissingVisibility = new Map();
+  const completedVisibility = new Map();
+  const referencesVisibility = new Map();
 
   // A Card opens as a dialog over the page showing (`?card=`), which stays
   // as it was underneath. On the Cards pages, and outside any workspace page,
@@ -400,7 +414,7 @@ export function createCardPanel(context) {
     if (templateUpdate) main.append(templateUpdate);
 
     main.append(...renderCardLinkedFrom(card));
-    if (Array.isArray(card.cardLinks) && card.cardLinks.length > 0) main.append(renderCardLinksSection(card));
+    if (Array.isArray(card.cardLinks) && card.cardLinks.length > 0) main.append(renderCardLinks(card));
     if (card.templateDefinitionSnapshot?.eventPolicy || card.eventTime || card.calendarInvites?.length || tasks.some(taskRequiresCalendarInvite)) {
       main.append(renderCardEventTime({ request, workApiUrl, reload: reloadCardIntent }, card));
     }
@@ -472,90 +486,84 @@ export function createCardPanel(context) {
 
       const list = document.createElement("div");
       list.className = "task-history-list";
-      // Completed Tasks stay in place, struck through, instead of jumping to
-      // a Done section: sortCardChecklistTasks already orders done last, so
-      // the open and done groups concatenate back into stable global order.
-      // Only Waiting keeps its own titled group.
-      const allGroups = workflowTaskGroups(tasks, today);
-      const waitingGroup = allGroups.find(
-        (group) => group.title === "Waiting / follow-up",
+      // Template order is the reading order: open and completed rows stay
+      // where the Template put them, and the completed ones fold behind an
+      // expander instead of sinking to the end. Only Waiting keeps its own
+      // titled group, at the bottom.
+      const ordered = sortCardChecklistTasks(tasks, today);
+      const mainTasks = ordered.filter((task) => !isWaitingOrFollowUpTask(task));
+      const waitingTasks = ordered.filter((task) => isWaitingOrFollowUpTask(task));
+      const doneMain = mainTasks.filter((task) => isResolvedWorkTask(task));
+      // Completed shows when there is nothing open to do; otherwise it hides
+      // behind the toggle until the operator asks for it. Reopening a Task
+      // from the open section repaints the list, so the counts stay honest.
+      const completedOpen = completedVisibility.has(card.id)
+        ? completedVisibility.get(card.id)
+        : doneMain.length === mainTasks.length;
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "quiet-button card-checklist-completed-toggle";
+      toggle.setAttribute("aria-expanded", String(completedOpen));
+      toggle.setAttribute(
+        "aria-label",
+        completedOpen
+          ? `Hide ${doneMain.length} completed tasks`
+          : `Show ${doneMain.length} completed tasks`,
       );
-      const mainTasks = allGroups
-        .filter((group) => group !== waitingGroup)
-        .flatMap((group) => group.tasks);
-      const displayGroups = [
-        { title: "", tasks: mainTasks },
-        ...(waitingGroup && waitingGroup.tasks.length > 0 ? [waitingGroup] : []),
-      ].filter((group) => group.tasks.length > 0);
-      for (const group of displayGroups) {
-        if (displayGroups.length > 1 && group.title) {
-          const groupTitle = document.createElement("div");
-          groupTitle.className = "card-task-group-title";
-          groupTitle.textContent = `${group.title} (${group.tasks.length})`;
-          list.append(groupTitle);
+      toggle.textContent = completedOpen
+        ? "Hide completed"
+        : `Show ${doneMain.length} completed`;
+      toggle.addEventListener("click", () => {
+        completedVisibility.set(card.id, !completedOpen);
+        renderCardPanel({ preserveDrafts: true });
+      });
+      // One pass in template order: open rows paint in place, completed rows
+      // paint only while the toggle is open, the toggle itself sitting where
+      // the first completed row would be.
+      let completedTogglePlaced = false;
+      for (const task of mainTasks) {
+        if (!isResolvedWorkTask(task)) {
+          list.append(renderCardChecklistItem(task, card.id, today));
+          continue;
         }
-        for (const task of group.tasks)
+        if (!completedTogglePlaced) {
+          list.append(toggle);
+          completedTogglePlaced = true;
+        }
+        if (completedOpen)
+          list.append(renderCardChecklistItem(task, card.id, today));
+      }
+      if (waitingTasks.length > 0) {
+        const groupTitle = document.createElement("div");
+        groupTitle.className = "card-task-group-title";
+        groupTitle.textContent = `Waiting / follow-up (${waitingTasks.length})`;
+        list.append(groupTitle);
+        for (const task of waitingTasks)
           list.append(renderCardChecklistItem(task, card.id, today));
       }
       checklistSection.append(list);
       main.append(checklistSection);
     }
 
-    const refsList = document.createElement("div");
-    refsList.className = "task-history-list";
-    const seenRefs = new Set();
-    const appendReferenceItem = (refName, refUrl, isProcessDoc = false) => {
-      if (!refUrl && !refName) return;
-      const docPath = refUrl ? localDocPathFromHref(refUrl) : "";
-      const href = docPath ? documentHref(docPath) : refUrl ? String(refUrl) : "";
-      const dedupeKey = href || `label:${refName}`;
-      if (seenRefs.has(dedupeKey)) return;
-      seenRefs.add(dedupeKey);
-      const item = document.createElement("div");
-      item.className = "task-history-event";
-      if (href) {
-        const link = document.createElement("a");
-        link.href = href;
-        if (docPath || isProcessDoc) link.className = "task-instruction-doc-link";
-        appendBreakableText(link, refName || refUrl);
-        opensInNewTab(link);
-        item.append(link);
-      } else {
-        appendBreakableText(item, refName);
-      }
-      refsList.append(item);
-    };
-    const sourceDocIds = Array.isArray(card.sourceDocIds) ? card.sourceDocIds : [];
-    for (const docId of sourceDocIds) {
-      if (!docId) continue;
-      const doc = resolveDocReference(docId);
-      const docUrl = doc?.path || (localDocPathFromHref(docId) ? docId : "");
-      const docLabel =
-        doc?.title ||
-        String(docId).split(".").pop()?.replace(/[-_]+/g, " ") ||
-        String(docId);
-      appendReferenceItem(docLabel, docUrl, true);
-    }
-    const existingRefs = Array.isArray(card.references)
-      ? card.references
-      : [];
-    for (const ref of existingRefs) {
-      const refUrl = typeof ref === "string" ? ref : ref.url || ref.link || "";
-      const refName =
-        typeof ref === "string" ? ref : ref.name || ref.title || refUrl;
-      if (!refUrl) continue;
-      appendReferenceItem(refName, refUrl, false);
-    }
-    if (refsList.children.length > 0) {
-      const refsSection = document.createElement("div");
-      refsSection.className =
-        "task-history workflow-detail-section workflow-references-section";
-      const refsLabel = document.createElement("div");
-      refsLabel.className = "task-history-label";
-      refsLabel.textContent = "Process references";
-      refsSection.append(refsLabel, refsList);
-      main.append(refsSection);
-    }
+    // Process references: the card-wide union from the template, folded
+    // behind an expander when long (card-references.js). Each task already
+    // carries its own subset behind "How to do it" in the task dialog.
+    const refsSection = renderCardReferencesSection(
+      {
+        resolveDocReference,
+        localDocPathFromHref,
+        expanded: referencesVisibility.has(card.id)
+          ? referencesVisibility.get(card.id)
+          : null,
+        onToggle: (next) => {
+          referencesVisibility.set(card.id, next);
+          renderCardPanel({ preserveDrafts: true });
+        },
+      },
+      card,
+      tasks,
+    );
+    if (refsSection) main.append(refsSection);
     if (preserveDrafts) restoreCardPanelDrafts(capturedDrafts);
     if (feedbackClaimedFocus && detail.activeCardPanelFeedback?.focusSelector) {
       const focusTarget = main.querySelector(
@@ -568,21 +576,10 @@ export function createCardPanel(context) {
     }
   }
 
-  // Card links as a dense list: the filled links first (they are what an
-  // operator opens), then the missing ones, each one "Add" away. Missing links
-  // stay visible rather than folded away: they are the gaps the Card's
-  // "missing proof" count is about.
-  function renderCardLinksSection(card) {
-    const section = document.createElement("div");
-    section.className =
-      "task-history workflow-detail-section workflow-links-section";
-    const header = document.createElement("div");
-    header.className = "workflow-links-header";
-    const heading = document.createElement("div");
-    heading.className = "task-history-label";
-    heading.textContent = "Links";
-    header.append(heading);
-    section.append(header);
+  // Card links render through link-rows.js: filled links stay visible in
+  // template order, missing ones fold behind an expander. The wrapper only
+  // binds the panel's editor set, draft, and busy flags.
+  function renderCardLinks(card) {
     const busy =
       detail.activeCardMutationBusy ||
       detail.activeTaskMutationBusy ||
@@ -590,54 +587,23 @@ export function createCardPanel(context) {
     const draftLinks = detail.activeCardPanelDraft?.kind === "card-link"
       ? detail.activeCardPanelDraft.payload.cardLinks
       : null;
-    const filled = [];
-    const missing = [];
-    const seenUrls = new Set();
-    for (const link of card.cardLinks) {
-      const linkName = link.name || link.label || "Link";
-      const rawUrl = link.url || "";
-      const linkUrl = String(rawUrl)
-        .replace(/[\s"'\u200c\u200b]+$/, "")
-        .replace(/^["']/, "")
-        .trim();
-      // If a named link already displayed this exact URL, skip the duplicate raw-url item
-      if (
-        linkUrl &&
-        seenUrls.has(linkUrl) &&
-        (linkName === rawUrl || linkName === linkUrl || /^https?:\/\//i.test(linkName))
-      ) {
-        continue;
-      }
-      if (linkUrl) seenUrls.add(linkUrl);
-      const editorKey = `${card.id}\u0000${linkName}`;
-      const draftValue = draftLinks?.find(
-        (value) => (value.name || value.label) === linkName,
-      )?.url;
-      const hasDraft = draftValue !== undefined && draftValue !== linkUrl;
-      const row = renderLinkRow({
-        label: humanLinkName(linkName),
-        value: linkUrl,
-        disabled: busy,
-        editing: openLinkEditors.has(editorKey) || hasDraft,
-        draftKey: `template-link:${linkName}`,
-        draftValue: hasDraft ? draftValue : undefined,
-        onEditingChange: (open) => {
-          if (open) openLinkEditors.add(editorKey);
-          else openLinkEditors.delete(editorKey);
-        },
-        onSave: (value) =>
-          saveCardLink(card.id, card.cardLinks, linkName, value),
-      });
-      (linkUrl ? filled : missing).push(row);
-    }
-    if (missing.length) {
-      const count = document.createElement("span");
-      count.className = "workflow-links-missing";
-      count.textContent = `${missing.length} missing`;
-      header.append(count);
-    }
-    section.append(renderLinkList([...filled, ...missing], "Card links"));
-    return section;
+    return renderCardLinksSection({
+      card,
+      busy,
+      draftLinks,
+      isEditorOpen: (key) => openLinkEditors.has(key),
+      onEditingChange: (key, open) => {
+        if (open) openLinkEditors.add(key);
+        else openLinkEditors.delete(key);
+      },
+      onSaveLink: (linkName, value) =>
+        saveCardLink(card.id, card.cardLinks, linkName, value),
+      missingExpanded: linksMissingVisibility.get(card.id),
+      onToggleMissing: (next) => {
+        linksMissingVisibility.set(card.id, next);
+        renderCardPanel({ preserveDrafts: true });
+      },
+    });
   }
 
   function renderCardChecklistItem(task, cardId, today) {

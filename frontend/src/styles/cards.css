@@ -1364,3 +1364,51 @@
 .card-invite-feedback {
   margin: 0;
 }
+
+/* Card links + completed-tasks expanders: quiet controls that fold the
+   missing links / finished rows away without hiding their counts. Status
+   pills are fill-only (tinted background plus text, never a colored border).
+   Spacing and type sit on the dakit scale. */
+.workflow-links-toggle,
+.card-checklist-completed-toggle {
+  align-self: flex-start;
+  border: 0;
+  border-radius: var(--dk-radius-sm);
+  background: transparent;
+  color: var(--dk-text-muted);
+  padding: var(--dk-space-1) var(--dk-space-2);
+  font-size: var(--dk-text-sm);
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.workflow-links-toggle:hover,
+.card-checklist-completed-toggle:hover {
+  background: var(--dk-bg-hover);
+  color: var(--dk-text-heading);
+}
+
+/* Process references expander: a long template reference list paints its
+   first rows inline and folds the rest behind a quiet "Show all N (M done)"
+   toggle, mirroring the completed-tasks expander. Done rows mute because
+   their task is resolved; the title text itself is never rewritten. Spacing
+   and type sit on the dakit scale. */
+.workflow-references-toggle {
+  align-self: flex-start;
+  border: 0;
+  border-radius: var(--dk-radius-sm);
+  background: transparent;
+  color: var(--dk-text-muted);
+  padding: var(--dk-space-1) var(--dk-space-2);
+  font-size: var(--dk-text-sm);
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.workflow-references-toggle:hover {
+  background: var(--dk-bg-hover);
+  color: var(--dk-text-heading);
+}
+.workflow-references-section .task-history-event.is-done a {
+  color: var(--dk-text-muted);
+}

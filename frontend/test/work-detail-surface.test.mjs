@@ -1487,7 +1487,7 @@ describe("Work Detail surface boundary", () => {
     assert.deepEqual(harness.errors, []);
   });
 
-  test("keeps a completed Task in the list, struck through, instead of moving it away", async () => {
+  test("keeps a completed Task in template order behind the completed expander", async () => {
     const card = {
       id: "card-complete-stays",
       version: 1,
@@ -1524,7 +1524,8 @@ describe("Work Detail surface boundary", () => {
         if (url === `/api/artifacts?cardId=${card.id}`)
           return { artifacts: [] };
         if (url === `/api/tasks/${first.id}` && requestOptions.method === "PUT") {
-          return { ...first, status: "done", version: 2, cardId: card.id };
+          const body = JSON.parse(requestOptions.body);
+          return { ...first, status: body.status || "done", version: 2, cardId: card.id };
         }
         return {};
       },
@@ -1536,23 +1537,44 @@ describe("Work Detail surface boundary", () => {
       harness.cardPanelBody.querySelectorAll(".card-checklist-item");
     assert.equal(rows().length, 2);
     await rows()[0].querySelector('input[type="checkbox"]').dispatch("change");
-    const doneRow = await waitFor(() => {
-      const items = rows();
-      if (items.length !== 2) return null;
-      const last = items[items.length - 1];
-      const box = last.querySelector('input[type="checkbox"]');
-      return box.checked && last.querySelector(".card-checklist-label.is-done")
-        ? last
-        : null;
-    }, "completed Task sinking struck through to the end of the list");
-    assert.match(doneRow.textContent, /First checklist item/);
+    // The completed Task stays where the Template put it, folded behind the
+    // completed expander instead of sinking to the end of the list.
+    const toggle = await waitFor(
+      () => harness.cardPanelBody.querySelector(".card-checklist-completed-toggle"),
+      "completed expander appearing after completing a Task",
+    );
+    assert.equal(toggle.textContent, "Show 1 completed");
+    assert.equal(toggle.getAttribute("aria-expanded"), "false");
+    assert.equal(toggle.getAttribute("aria-label"), "Show 1 completed tasks");
+    assert.equal(rows().length, 1);
+    // Expanding reveals template order, the finished row struck through.
+    // The click repaints the panel, so the toggle is re-queried after it.
+    await toggle.click();
+    const openToggle = harness.cardPanelBody.querySelector(".card-checklist-completed-toggle");
+    assert.equal(openToggle.getAttribute("aria-expanded"), "true");
+    assert.equal(openToggle.textContent, "Hide completed");
+    assert.deepEqual(
+      [...rows()].map((row) => row.querySelector(".card-checklist-label").textContent),
+      ["First checklist item", "Second checklist item"],
+    );
+    const doneRow = rows()[0];
+    assert.equal(doneRow.querySelector('input[type="checkbox"]').checked, true);
+    assert.ok(doneRow.querySelector(".card-checklist-label.is-done"));
     assert.equal(
-      rows()[0].querySelector('input[type="checkbox"]').checked,
+      rows()[1].querySelector('input[type="checkbox"]').checked,
       false,
     );
     assert.equal(
-      rows()[0].querySelector(".card-checklist-label.is-done"),
+      rows()[1].querySelector(".card-checklist-label.is-done"),
       null,
+    );
+    // Reopening from the open section restores both rows and drops the toggle.
+    await doneRow.querySelector('input[type="checkbox"]').dispatch("change");
+    await waitFor(
+      () =>
+        rows().length === 2 &&
+        !harness.cardPanelBody.querySelector(".card-checklist-completed-toggle"),
+      "completed expander closing after reopening the Task",
     );
     assert.deepEqual(harness.errors, []);
   });
@@ -1649,12 +1671,20 @@ describe("Work Detail surface boundary", () => {
     harness.api.prepareCardPanel(card.id);
     await harness.api.hydrateCardPanel(card.id, 1);
 
-    const rows = [...harness.cardPanelBody.querySelectorAll(".card-checklist-item")];
+    // The open Task shows on its own; done and skipped fold behind the
+    // completed expander instead of sinking below it in the list.
+    const rows = () => [...harness.cardPanelBody.querySelectorAll(".card-checklist-item")];
+    assert.equal(rows().length, 1);
+    const toggle = harness.cardPanelBody.querySelector(".card-checklist-completed-toggle");
+    assert.equal(toggle.textContent, "Show 2 completed");
+    assert.equal(toggle.getAttribute("aria-expanded"), "false");
+    await toggle.click();
+    // Template order is preserved: open, done, skipped — nothing sinks.
     assert.deepEqual(
-      rows.map((row) => row.querySelector(".card-checklist-label").textContent),
+      rows().map((row) => row.querySelector(".card-checklist-label").textContent),
       ["Publish the episode", "Prepare the doc", "Create a calendar invite"],
     );
-    const skipped = rows[2];
+    const skipped = rows()[2];
     assert.equal(skipped.querySelector('input[type="checkbox"]'), null);
     assert.equal(skipped.querySelector(".card-checklist-skip").getAttribute("aria-label"), "Skipped");
     const label = skipped.querySelector(".card-checklist-label");
@@ -1665,8 +1695,8 @@ describe("Work Detail surface boundary", () => {
     assert.equal(note.title, `Skipped: ${reason}`);
     assert.ok(skipped.querySelector(".card-checklist-owner"));
     // Done stays a checked, struck-through checkbox row.
-    assert.equal(rows[1].querySelector('input[type="checkbox"]').checked, true);
-    assert.equal(rows[1].querySelector(".card-checklist-label").classList.contains("is-done"), true);
+    assert.equal(rows()[1].querySelector('input[type="checkbox"]').checked, true);
+    assert.equal(rows()[1].querySelector(".card-checklist-label").classList.contains("is-done"), true);
     // Skipped counts as resolved in the progress, as Card completion does.
     assert.equal(harness.cardPanelBody.querySelector(".card-checklist-percent").textContent, "67%");
   });
@@ -2000,6 +2030,81 @@ describe("Work Detail surface boundary", () => {
       ],
     );
     assert.equal(harness.cardPanelBody.querySelector(".card-ref-name"), null);
+    assert.deepEqual(harness.errors, []);
+  });
+
+  test("folds a long process reference list behind an expander", async () => {
+    const card = {
+      id: "card-refs-long",
+      version: 1,
+      title: "Social content",
+      sourceDocIds: ["process.social.patterns", "process.social.courses"],
+      references: [
+        { name: "Newsletter posts", url: "https://example.test/newsletter" },
+        { name: "Podcast posts", url: "https://example.test/podcast" },
+        { name: "Sponsored posts", url: "https://example.test/sponsored" },
+        { name: "Workshop posts", url: "https://example.test/workshop" },
+        { name: "Event templates", url: "https://example.test/templates" },
+      ],
+    };
+    const doneTask = {
+      id: "task-refs-done",
+      version: 1,
+      cardId: card.id,
+      description: "Study the patterns",
+      taskHistory: [],
+      instructionDocId: "process.social.patterns",
+      status: "done",
+    };
+    const openTask = {
+      id: "task-refs-open",
+      version: 1,
+      cardId: card.id,
+      description: "Draft the courses",
+      taskHistory: [],
+      instructionDocId: "process.social.courses",
+      status: "todo",
+    };
+    const harness = createHarness({
+      cards: [card],
+      resolveDocReference: (id) => {
+        if (id === "process.social.patterns") {
+          return { id, title: "Social post patterns", path: "content/process/social/patterns.md" };
+        }
+        if (id === "process.social.courses") {
+          return { id, title: "Course posts", path: "content/process/social/courses.md" };
+        }
+        return null;
+      },
+      request: async (url) => {
+        if (url === `/api/cards/${card.id}`) return card;
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [doneTask, openTask] };
+        if (url.startsWith("/api/files")) return { files: { items: [] } };
+        if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+        return {};
+      },
+    });
+
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    const section = () => harness.cardPanelBody.querySelector(".workflow-references-section");
+    assert.equal(section().querySelectorAll("a").length, 5);
+    const toggle = section().querySelector(".workflow-references-toggle");
+    assert.equal(toggle.textContent, "Show all 7 references (1 done)");
+    assert.equal(toggle.getAttribute("aria-expanded"), "false");
+    // The done reference keeps its title and link, muted behind is-done.
+    const doneRow = section().querySelector(".task-history-event.is-done");
+    assert.ok(doneRow);
+    assert.match(doneRow.textContent, /Social post patterns/);
+    const doneLink = doneRow.querySelector("a");
+    assert.equal(doneLink.href, "/process/social/patterns.md");
+    assert.equal(doneLink.target, "_blank");
+
+    await toggle.click();
+    assert.equal(section().querySelector(".workflow-references-toggle").getAttribute("aria-expanded"), "true");
+    assert.equal(section().querySelector(".workflow-references-toggle").textContent, "Show fewer");
+    assert.equal(section().querySelectorAll("a").length, 7);
+    assert.equal(section().querySelectorAll("a").at(-1).href, "https://example.test/templates");
     assert.deepEqual(harness.errors, []);
   });
 

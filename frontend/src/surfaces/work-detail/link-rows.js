@@ -7,6 +7,7 @@ import {
   mailAddress,
   opensInNewTab,
 } from "../../core/links.js";
+import { humanLinkName } from "./card-display.js";
 
 // Named links as a dense list: one row per link with its label, the value as
 // a readable link (host and a shortened path, the full address in the title),
@@ -180,4 +181,110 @@ export function renderLinkList(rows, label = "Links") {
   list.setAttribute("aria-label", label);
   list.append(...rows);
   return list;
+}
+
+// Card links as a dense list: the filled links always visible in template
+// order, the missing ones folded behind an expander. The missing rows are
+// the gaps the Card's "missing proof" count is about, but a dozen "+ Add"
+// rows push the Tasks off screen, so they collapse (beyond a handful they
+// start collapsed; a missing row with its editor open forces them open so
+// an unsaved edit survives a rerender).
+//
+// - `card`: the Card payload (`cardLinks`, `id`).
+// - `busy`: a mutation is in flight; nothing can be edited.
+// - `draftLinks`: unsaved card-link draft values, if any.
+// - `isEditorOpen(key)` / `onEditingChange(key, open)`: which link rows
+//   keep their editor open across rerenders.
+// - `onSaveLink(linkName, value)`: commit an edited link.
+// - `missingExpanded`: explicit expander choice, or undefined for the
+//   default (open when at most a handful are missing).
+// - `onToggleMissing(next)`: the operator flipped the expander.
+export function renderCardLinksSection(options) {
+  const {
+    card,
+    busy = false,
+    draftLinks = null,
+    isEditorOpen = () => false,
+    onEditingChange = () => {},
+    onSaveLink,
+    missingExpanded,
+    onToggleMissing = () => {},
+  } = options;
+  const section = document.createElement("div");
+  section.className =
+    "task-history workflow-detail-section workflow-links-section";
+  const header = document.createElement("div");
+  header.className = "workflow-links-header";
+  const heading = document.createElement("div");
+  heading.className = "task-history-label";
+  heading.textContent = "Links";
+  header.append(heading);
+  section.append(header);
+  const filled = [];
+  const missing = [];
+  let missingEditorOpen = false;
+  const seenUrls = new Set();
+  for (const link of card.cardLinks) {
+    const linkName = link.name || link.label || "Link";
+    const rawUrl = link.url || "";
+    const linkUrl = String(rawUrl)
+      .replace(/[\s"'\u200c\u200b]+$/, "")
+      .replace(/^["']/, "")
+      .trim();
+    // If a named link already displayed this exact URL, skip the duplicate raw-url item
+    if (
+      linkUrl &&
+      seenUrls.has(linkUrl) &&
+      (linkName === rawUrl || linkName === linkUrl || /^https?:\/\//i.test(linkName))
+    ) {
+      continue;
+    }
+    if (linkUrl) seenUrls.add(linkUrl);
+    const editorKey = `${card.id}\u0000${linkName}`;
+    const draftValue = draftLinks?.find(
+      (value) => (value.name || value.label) === linkName,
+    )?.url;
+    const hasDraft = draftValue !== undefined && draftValue !== linkUrl;
+    const editing = isEditorOpen(editorKey) || hasDraft;
+    if (!linkUrl && editing) missingEditorOpen = true;
+    const row = renderLinkRow({
+      label: humanLinkName(linkName),
+      value: linkUrl,
+      disabled: busy,
+      editing,
+      draftKey: `template-link:${linkName}`,
+      draftValue: hasDraft ? draftValue : undefined,
+      onEditingChange: (open) => onEditingChange(editorKey, open),
+      onSave: (value) => onSaveLink(linkName, value),
+    });
+    (linkUrl ? filled : missing).push(row);
+  }
+  if (missing.length) {
+    const count = document.createElement("span");
+    count.className = "workflow-links-missing";
+    count.textContent = `${missing.length} missing`;
+    header.append(count);
+  }
+  section.append(renderLinkList(filled, "Card links"));
+  if (missing.length > 0) {
+    const expanded = missingEditorOpen ||
+      (missingExpanded === undefined ? missing.length <= 5 : missingExpanded);
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "quiet-button workflow-links-toggle";
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.setAttribute(
+      "aria-label",
+      expanded
+        ? `Hide ${missing.length} missing links`
+        : `Show ${missing.length} missing links`,
+    );
+    toggle.textContent = expanded
+      ? "Hide missing"
+      : `Show ${missing.length} missing`;
+    toggle.addEventListener("click", () => onToggleMissing(!expanded));
+    section.append(toggle);
+    if (expanded) section.append(renderLinkList(missing, "Missing card links"));
+  }
+  return section;
 }

@@ -214,6 +214,7 @@
     "src/surfaces/work-detail/card-documents.js",
     "src/surfaces/work-detail/card-invites.js",
     "src/surfaces/work-detail/card-panel.js",
+    "src/surfaces/work-detail/card-references.js",
     "src/surfaces/work-detail/card-summary.js",
     "src/surfaces/work-detail/card-template-review.js",
     "src/surfaces/work-detail/index.js",
