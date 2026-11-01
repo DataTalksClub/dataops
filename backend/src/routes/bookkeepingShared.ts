@@ -62,11 +62,7 @@ export function publicLink(link: Record<string, unknown>) {
   return safe;
 }
 
-/**
- * Verify an uploaded document object: exact size and digest always; PDF
- * documents additionally must carry the %PDF- prefix. CSV and XLSX bank
- * statements pass on size and digest alone.
- */
+/** Verify an uploaded evidence or bank-statement object: exact size, digest and PDF signature. */
 export async function verifyDocumentObject(bucket: string, document: Record<string, unknown>) {
   const object = await s3.send(
     new GetObjectCommand({ Bucket: bucket, Key: String(document.s3Key) }),
@@ -87,13 +83,11 @@ export async function verifyDocumentObject(bucket: string, document: Record<stri
       prefix = Buffer.concat([prefix, bytes.subarray(0, 5 - prefix.length)]);
     digest.update(bytes);
   }
-  const contentType = String(document.contentType || "application/pdf");
+  const contentType = String(document.contentType || "application/pdf").split(";")[0].trim().toLowerCase();
   return {
     size,
     sha256: digest.digest("hex"),
-    contentOk: contentType === "application/pdf"
-      ? prefix.toString("ascii") === "%PDF-"
-      : true,
+    contentOk: contentType === "application/pdf" && prefix.toString("ascii") === "%PDF-",
     versionId: object.VersionId || "",
   };
 }

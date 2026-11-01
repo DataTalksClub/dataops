@@ -11,6 +11,7 @@ import { createDocumentLink, putBookkeepingItem } from '../src/db/bookkeeping';
 import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { setBookkeepingStorageForTests } from '../src/routes/bookkeepingShared';
 import { handleReconcileRoutes } from '../src/routes/reconcile';
+import { setStatementPdfTextForTests } from '../src/reconcile/statementIntake';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -108,13 +109,9 @@ describe('reconcile API', () => {
     assert.equal(JSON.parse((await call('GET', '/api/reconcile/aliases')).body).items.length, 0);
   });
 
-  it('parses an uploaded statement document on demand', async () => {
+  it('rejects CSV and XLSX parse uploads while keeping CSV-backed stored rows readable', async () => {
     process.env.BOOKKEEPING_DOCUMENTS_BUCKET = 'synthetic-private-bucket';
-    const csv = [
-      'Type;Product;Started Date;Completed Date;Description;Amount;Fee;Currency;State;Balance',
-      'TRANSFER;Current;02 Oct 2026;02 Oct 2026;Transfer from Sponsor One;1000.00;0.00;EUR;Completed;5000.00',
-    ].join('\n');
-    let objectBytes = Buffer.from(csv);
+    let objectBytes = Buffer.from('');
     const fake = {
       send: async (command: { constructor: { name: string } }) => {
         if (command.constructor.name === 'GetObjectCommand') return { Body: Readable.from(objectBytes), VersionId: 'synthetic' };
@@ -122,13 +119,35 @@ describe('reconcile API', () => {
       },
     };
     setBookkeepingStorageForTests(fake as never);
-    const document = (await putBookkeepingItem(client, 'document', {
-      documentType: 'bank-statement', status: 'active', contentType: 'text/csv',
-      originalFilename: 'statement.csv', byteSize: objectBytes.length, sha256: 'a'.repeat(64), s3Key: 'documents/parse-test',
-    })).item;
-    const parsed = JSON.parse((await call('POST', '/api/reconcile/statements/parse', { account: 'revolut', documentId: document.id })).body);
-    assert.equal(parsed.rowCount, 1);
-    assert.deepEqual(parsed.rows[0], { date: '2026-10-02', amount: '1000.00', currency: 'EUR', counterparty: 'Transfer from Sponsor One' });
+    const inputs = [
+      { filename: 'statement.csv', contentType: 'text/csv', bytes: Buffer.from('Date,Description,Amount\n2026-10-02,Transfer,1000.00\n') },
+      { filename: 'statement.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', bytes: Buffer.from('PK\u0003\u0004synthetic workbook') },
+    ];
+    for (const [index, input] of inputs.entries()) {
+      objectBytes = input.bytes;
+      const document = (await putBookkeepingItem(client, 'document', {
+        documentType: 'bank-statement', status: 'active', contentType: input.contentType,
+        originalFilename: input.filename, byteSize: objectBytes.length, sha256: `${String(index + 1).repeat(64)}`, s3Key: `documents/parse-test-${index}`,
+      })).item;
+      const parsed = await call('POST', '/api/reconcile/statements/parse', { account: 'revolut', documentId: document.id });
+      assert.equal(parsed.statusCode, 422, parsed.body);
+      assert.match(JSON.parse(parsed.body).error, /statement\.csv|statement\.xlsx/);
+      assert.match(JSON.parse(parsed.body).error, /PDF files only/);
+      const imported = await call('POST', '/api/reconcile/statements/import', { documentId: document.id });
+      assert.equal(imported.statusCode, 422, imported.body);
+      assert.match(JSON.parse(imported.body).error, /PDF files only/);
+      const statements = JSON.parse((await call('GET', '/api/reconcile/statements')).body).items;
+      assert.ok(!statements.some((statement: Record<string, unknown>) => statement.documentId === document.id));
+    }
+
+    const legacy = await call('POST', '/api/reconcile/statements', {
+      account: 'revolut', period: '2030-01', documentId: 'legacy-csv-statement', filename: 'older-export.csv', contentType: 'text/csv', rows: [row({ date: '2030-01-02', amount: '20.00' })],
+    });
+    assert.equal(legacy.statusCode, 201, legacy.body);
+    const listed = JSON.parse((await call('GET', '/api/reconcile/statements')).body).items;
+    const retained = listed.find((statement: Record<string, unknown>) => statement.documentId === 'legacy-csv-statement');
+    assert.equal(retained.rowCount, 1);
+    assert.equal(retained.incomingCount, 1);
 
     const notStatement = (await putBookkeepingItem(client, 'document', {
       documentType: 'receipt', status: 'active', contentType: 'application/pdf', originalFilename: 'receipt.pdf', byteSize: 9, sha256: 'b'.repeat(64), s3Key: 'documents/receipt',
@@ -136,6 +155,96 @@ describe('reconcile API', () => {
     const rejected = await call('POST', '/api/reconcile/statements/parse', { account: 'revolut', documentId: notStatement.id });
     assert.equal(rejected.statusCode, 400);
     objectBytes = Buffer.alloc(0);
+  });
+
+  it('rejects malformed Finom/Revolut rows, invalid dates, zero-row PDFs and balance mismatches atomically', async () => {
+    process.env.BOOKKEEPING_DOCUMENTS_BUCKET = 'synthetic-private-bucket';
+    const objectBytes = Buffer.from('%PDF-1.4 synthetic statement');
+    setBookkeepingStorageForTests({
+      send: async (command: { constructor: { name: string } }) => command.constructor.name === 'GetObjectCommand'
+        ? { Body: Readable.from(objectBytes), VersionId: 'synthetic' }
+        : {},
+    } as never);
+    const base = [
+      'FINOM PAYMENTS B.V.',
+      'Finom   STATEMENT',
+      'From: 01.10.2026',
+      'To: 31.10.2026',
+      'Opening balance: 0,00 €',
+      'Closing balance: 0,00 €',
+      'Completed   Description   Pay in/out',
+    ];
+    const documents = [
+      {
+        filename: 'finom-bad-row.pdf',
+        text: [...base, '02.10.2026   Unfinished transfer'].join('\n'),
+        line: /line 8/,
+        source: /Unfinished transfer/,
+      },
+      {
+        filename: 'finom-empty.pdf',
+        text: base.join('\n'),
+        line: /line 7/,
+        source: /Completed\s+Description\s+Pay in\/out/,
+      },
+      {
+        filename: 'finom-balance-mismatch.pdf',
+        text: [...base.slice(0, 5), 'Closing balance: 0,00 €', base[6], '02.10.2026   Customer', '1,00 €'].join('\n'),
+        line: /line 6/,
+        source: /Closing balance: 0,00 €/,
+        failure: /does not reconcile/,
+      },
+      {
+        filename: 'finom-invalid-date.pdf',
+        text: [...base.slice(0, 5), 'Closing balance: 2,00 €', base[6], '02.10.2026   First customer', '1,00 €', '99.10.2026   Bad date customer', '1,00 €'].join('\n'),
+        line: /line 10/,
+        source: /99\.10\.2026\s+Bad date customer/,
+        failure: /date out of range/i,
+      },
+      {
+        filename: 'revolut-unparsed-row.pdf',
+        text: [
+          '© 2026 Revolut Bank UAB 1/1',
+          'Account name   Euro',
+          'Currency   EUR',
+          'Type   Local',
+          'Balance summary',
+          'Opening balance   €0.00',
+          'Money in   €0.00',
+          'Money out   - €0.00',
+          'Closing balance   €0.00',
+          'Transactions from 1 October 2026 to 31 October 2026',
+          'Date (UTC)   Description   Money out   Money in   Balance',
+          '2 Oct 2026   XYZ   Unknown transaction   €1.00   €0.00',
+          'Transaction types',
+          '© 2026 Revolut Bank UAB 1/1',
+        ].join('\n'),
+        line: /line 12/,
+        source: /2 Oct 2026\s+XYZ/,
+        failure: /unknown transaction type "XYZ"/,
+      },
+    ];
+    try {
+      for (const [index, fixture] of documents.entries()) {
+        setStatementPdfTextForTests(async () => fixture.text);
+        const document = (await putBookkeepingItem(client, 'document', {
+          documentType: 'bank-statement', status: 'active', contentType: 'application/pdf',
+          originalFilename: fixture.filename, byteSize: objectBytes.length, sha256: `${String(index + 3).repeat(64)}`, s3Key: `documents/${fixture.filename}`,
+        })).item;
+        const response = await call('POST', '/api/reconcile/statements/import', { documentId: document.id });
+        assert.equal(response.statusCode, 422, response.body);
+        const message = JSON.parse(response.body).error;
+        assert.match(message, new RegExp(fixture.filename.replaceAll('.', '\\.')));
+        assert.match(message, fixture.line);
+        assert.match(message, fixture.source);
+        if (fixture.failure) assert.match(message, fixture.failure);
+        if (fixture.filename === 'finom-empty.pdf') assert.match(message, /zero transaction rows/i);
+        const statements = JSON.parse((await call('GET', '/api/reconcile/statements')).body).items;
+        assert.ok(!statements.some((statement: Record<string, unknown>) => statement.documentId === document.id));
+      }
+    } finally {
+      setStatementPdfTextForTests();
+    }
   });
 
   it('matches invoice references, aliases and amounts into one month-end report', async () => {
@@ -358,7 +467,7 @@ describe('reconcile API', () => {
     assert.deepEqual(summary.items.map((item: { period: string }) => item.period), ['2026-11', '2026-12']);
   });
 
-  it('imports a Revolut or Finom export with no flags: bank from the headers, one statement per month, summary notification', async () => {
+  it('rejects a CSV from the statement import route before writing rows', async () => {
     process.env.BOOKKEEPING_DOCUMENTS_BUCKET = 'synthetic-private-bucket';
     let objectBytes = readFileSync(join(__dirname, 'fixtures', 'reconcile', 'finom-main.csv'));
     setBookkeepingStorageForTests({ send: async (command: { constructor: { name: string } }) => command.constructor.name === 'GetObjectCommand' ? { Body: Readable.from(objectBytes) } : {} } as never);
@@ -367,22 +476,10 @@ describe('reconcile API', () => {
       originalFilename: 'finom_2026-10_main.csv', byteSize: objectBytes.length, sha256: 'f'.repeat(64), s3Key: 'documents/finom-auto',
     })).item;
     const imported = await call('POST', '/api/reconcile/statements/import', { documentId: document.id });
-    assert.equal(imported.statusCode, 201, imported.body);
-    const result = JSON.parse(imported.body);
-    assert.equal(result.account, 'finom');
-    assert.equal(result.rowCount, 7);
-    assert.deepEqual(result.statements.map((statement: { period: string; rowCount: number }) => [statement.period, statement.rowCount]), [['2026-10', 7]]);
-    assert.match(result.summaries[0], /^Reconciliation 2026-10/);
-    const again = JSON.parse((await call('POST', '/api/reconcile/statements/import', { documentId: document.id })).body);
-    assert.equal(again.statements[0].id, result.statements[0].id, 'the same file imports to the same statement');
-
-    objectBytes = Buffer.from('Date,Description,Amount\n2026-10-01,Something,1.00\n');
-    const unknown = (await putBookkeepingItem(client, 'document', {
-      documentType: 'bank-statement', status: 'active', contentType: 'text/csv', accountId: 'auto', statementMonth: '2026-10',
-      originalFilename: 'mystery.csv', byteSize: objectBytes.length, sha256: '9'.repeat(64), s3Key: 'documents/mystery',
-    })).item;
-    const refused = await call('POST', '/api/reconcile/statements/import', { documentId: unknown.id });
-    assert.equal(refused.statusCode, 422);
-    assert.match(JSON.parse(refused.body).error, /not a recognized Finom or Revolut statement export \(headers: Date, Description, Amount\)/);
+    assert.equal(imported.statusCode, 422, imported.body);
+    assert.match(JSON.parse(imported.body).error, /finom_2026-10_main\.csv/);
+    assert.match(JSON.parse(imported.body).error, /PDF files only/);
+    const statements = JSON.parse((await call('GET', '/api/reconcile/statements')).body).items;
+    assert.ok(!statements.some((statement: Record<string, unknown>) => statement.documentId === document.id));
   });
 });

@@ -12,21 +12,20 @@ export const summary = "Month-end reconciliation: bank statements, matching, pay
 export const help = `dataops reconcile - month-end reconciliation (the Finance views' command line)
 
 Usage
-  dataops reconcile upload --file statement.(csv|pdf|xlsx) [--quiet] [--json]
+  dataops reconcile upload --file statement.pdf [--quiet] [--json]
       Finom and Revolut statements need no flags: the bank comes from the
       file, and its rows are stored as one statement per month, then each
       month is reconciled and summarised in a finance notification
       (--quiet skips it, e.g. for history). A file that is no known
       statement is refused.
-  dataops reconcile upload --file statement.(csv|pdf|xlsx) --account revolut|finom|mercury|merchant --period YYYY-MM [--currency EUR] [--by-month] [--json]
+  dataops reconcile upload --file statement.pdf --account revolut|finom|mercury|merchant --period YYYY-MM [--by-month] [--json]
       Stores the raw statement as a verified private bank-statement document,
       parses its rows server-side and saves them for matching. Re-uploading the
       same file for the same account and period replaces the stored rows;
       rows that overlap another statement of the same account (a year export
       next to a month export) are counted once in the report.
-      --currency sets the currency of a file without a currency column
-      (Finom exports default to EUR). The closing balance of each wallet is
-      stored with its as-of date.
+      Dedicated Finom and Revolut PDF layouts are parsed; every Revolut
+      currency wallet and its closing balance are retained.
       --by-month stores a statement spanning several months (a year export)
       as one statement per calendar month; --period then only labels the
       stored document.
@@ -64,9 +63,8 @@ Usage
       Pair or unpair by hand; logged on the month. Unmatching an automatic
       pair keeps it from coming back.
   dataops reconcile attach-proof <ledger-id> <file> --period YYYY-MM [--account paypal]
-      A separate payment proof for one ledger row the bank statements do not
-      show (personal card, PayPal, other bank): PDF receipt/screenshot, or a
-      statement CSV (--account names its source).
+      A separate PDF payment proof for one ledger row the bank statements do
+      not show (personal card, PayPal, other bank).
   dataops reconcile attach-doc <row> <file.pdf> --period YYYY-MM [--category C]
       The invoice/receipt for one row. A bank row without a ledger row gets a
       ledger row created from it, with the document attached.
@@ -99,11 +97,8 @@ Usage
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const CONTENT_TYPES = {
   ".pdf": "application/pdf",
-  ".csv": "text/csv",
-  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 const ACCOUNTS = ["revolut", "finom", "mercury", "merchant"];
-const CURRENCY = /^[A-Za-z]{3}$/;
 
 function periodOr(args) {
   const period = optionalString(args, "period");
@@ -114,8 +109,18 @@ function periodOr(args) {
 function contentTypeFor(file) {
   const suffix = String(file).toLowerCase().match(/\.[a-z0-9]+$/)?.[0] || "";
   const contentType = CONTENT_TYPES[suffix];
-  if (!contentType) throw new UsageError("--file must be .csv, .pdf or .xlsx");
+  if (!contentType) throw new UsageError("Reconcile statement uploads accept PDF files only (.pdf)");
   return contentType;
+}
+
+function requirePdfBytes(file, bytes) {
+  if (bytes.subarray(0, 5).toString("ascii") !== "%PDF-") {
+    throw new UsageError(`${file}: reconcile statement uploads accept PDF files only`);
+  }
+}
+
+function originalFilename(file) {
+  return String(file).split(/[\\/]/).at(-1) || "statement.pdf";
 }
 
 async function storeDocument(api, file, { documentType, accountId, statementMonth, sourceRef }) {
@@ -123,10 +128,12 @@ async function storeDocument(api, file, { documentType, accountId, statementMont
   const statement = ["bank-statement", "private-account-statement"].includes(documentType);
   if (!statement && contentType !== "application/pdf") throw new UsageError("invoices, receipts and proof screenshots must be PDF files");
   const bytes = await readFile(String(file));
+  requirePdfBytes(file, bytes);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   const idempotencyKey = `${documentType}-${sha256}`.slice(0, 120);
   let prepared = await api.post("/api/bookkeeping/documents/prepare", {
     sha256, byteSize: bytes.length, documentType, idempotencyKey, sourceRef,
+    originalFilename: originalFilename(file),
     ...(statement ? { accountId, statementMonth, contentType } : {}),
   });
   if (prepared.uploadUrl) {
@@ -139,13 +146,11 @@ async function storeDocument(api, file, { documentType, accountId, statementMont
 
 async function autoImport(args, io) {
   const api = apiFor(args);
-  const currency = optionalString(args, "currency");
-  if (currency !== undefined && !CURRENCY.test(currency)) throw new UsageError("--currency must be a 3-letter ISO code");
   // The stored document is labelled with the upload month; the statements carry their own months.
   const stored = await storeDocument(api, args.file, {
     documentType: "bank-statement", accountId: "auto", statementMonth: new Date().toISOString().slice(0, 7), sourceRef: "reconcile:auto",
   });
-  const result = await api.post("/api/reconcile/statements/import", { documentId: stored.documentId, ...(currency ? { currency: currency.toUpperCase() } : {}), ...(args.quiet ? { notify: false } : {}) });
+  const result = await api.post("/api/reconcile/statements/import", { documentId: stored.documentId, ...(args.quiet ? { notify: false } : {}) });
   if (!args.json) {
     io.print(`${stored.reused ? "Reused" : "Stored"} document ${stored.documentId}: ${result.layout}, ${result.rowCount} rows.`);
     for (const statement of result.statements) io.print(`  ${statement.period}: ${statement.rowCount} rows (statement ${statement.id})`);
@@ -159,22 +164,22 @@ async function autoImport(args, io) {
 }
 
 export async function upload(args, io) {
-  const usage = "dataops reconcile upload --file statement.(csv|pdf|xlsx) --account revolut|finom|mercury|merchant --period YYYY-MM [--currency EUR] [--by-month] [--json]";
+  const usage = "dataops reconcile upload --file statement.pdf --account revolut|finom|mercury|merchant --period YYYY-MM [--by-month] [--json]";
   if (!args.file) throw new UsageError(usage);
   if (args.account === undefined && args.period === undefined) return autoImport(args, io);
   const account = String(args.account || "");
   if (!ACCOUNTS.includes(account)) throw new UsageError(`--account must be one of ${ACCOUNTS.join(", ")}`);
   const period = periodOr(args);
-  const currency = optionalString(args, "currency");
-  if (currency !== undefined && !CURRENCY.test(currency)) throw new UsageError("--currency must be a 3-letter ISO code");
   const contentType = contentTypeFor(args.file);
   const bytes = await readFile(String(args.file));
+  requirePdfBytes(args.file, bytes);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   const idempotencyKey = `statement-${sha256}`;
   const api = apiFor(args);
   let prepared = await api.post("/api/bookkeeping/documents/prepare", {
     sha256, byteSize: bytes.length, documentType: "bank-statement",
     accountId: account, statementMonth: period, contentType, idempotencyKey,
+    originalFilename: originalFilename(args.file),
     sourceRef: `reconcile:${account}:${period}`,
   });
   if (prepared.uploadUrl) {
@@ -187,7 +192,7 @@ export async function upload(args, io) {
     prepared = await api.post(`/api/bookkeeping/documents/${enc(prepared.document.id)}/complete`, { idempotencyKey });
   }
   const documentId = prepared.document.id;
-  const parsed = await api.post("/api/reconcile/statements/parse", { account, documentId, ...(currency ? { currency: currency.toUpperCase() } : {}) });
+  const parsed = await api.post("/api/reconcile/statements/parse", { account, documentId });
   const months = args.byMonth
     ? [...new Set(parsed.rows.map((row) => row.date.slice(0, 7)))].sort()
     : [period];

@@ -343,6 +343,7 @@ export function createBookkeepingSurface(context) {
           sha256,
           byteSize: file.size,
           documentType,
+          originalFilename: file.name,
           ...ownership,
           sourceRef: `portal-${sha256.slice(0, 24)}`,
           accountId,

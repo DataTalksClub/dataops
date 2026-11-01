@@ -30,11 +30,11 @@ import { extractDocumentFacts } from "./bookkeepingSuggestions";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const OPAQUE = /^[a-zA-Z0-9._:-]{1,160}$/;
-const STATEMENT_CONTENT_TYPES = new Set([
-  "application/pdf",
-  "text/csv",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-]);
+function safeUploadFilename(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.replace(/\\/g, "/").split("/").at(-1)!
+    .replace(/[\u0000-\u001f\u007f"]/g, "_").trim().slice(0, 300);
+}
 const DOCUMENT_TYPES = new Set([
   "invoice",
   "receipt",
@@ -54,6 +54,11 @@ export async function handleBookkeepingDocumentRoutes(
     const byteSize = Number(body?.byteSize);
     const documentType = String(body?.documentType || "");
     const statement = ["bank-statement", "private-account-statement"].includes(documentType);
+    const filenameProvided = body?.originalFilename !== undefined;
+    const originalFilename = filenameProvided ? safeUploadFilename(body?.originalFilename) : "";
+    const requestedContentType = String(body?.contentType || "application/pdf").split(";")[0].trim().toLowerCase();
+    if (statement && requestedContentType !== "application/pdf")
+      return json(400, { error: "Bank statement uploads accept PDF files only" });
     const limit = Number(process.env.BOOKKEEPING_PDF_MAX_BYTES || 20 * 1024 * 1024);
     if (
       !body ||
@@ -64,11 +69,12 @@ export async function handleBookkeepingDocumentRoutes(
       !DOCUMENT_TYPES.has(documentType) ||
       !OPAQUE.test(String(body.idempotencyKey || "")) ||
       !OPAQUE.test(String(body.sourceRef || "")) ||
+      (filenameProvided && !originalFilename) ||
       (statement &&
         (!OPAQUE.test(String(body.accountId || "")) ||
           !MONTH.test(String(body.statementMonth || "")) ||
           (body.contentType !== undefined &&
-            !STATEMENT_CONTENT_TYPES.has(String(body.contentType))))) ||
+            requestedContentType !== "application/pdf"))) ||
       (!statement &&
         ((body.accountId !== undefined || body.statementMonth !== undefined) ||
           (body.contentType !== undefined && String(body.contentType) !== "application/pdf")))
@@ -92,6 +98,7 @@ export async function handleBookkeepingDocumentRoutes(
       documentType,
       contentType: statement && body.contentType ? String(body.contentType) : "application/pdf",
       ...(statement ? { accountId: String(body.accountId), statementMonth: String(body.statementMonth) } : {}),
+      ...(originalFilename ? { originalFilename } : {}),
       idempotencyKey: String(body.idempotencyKey),
       sourceRef: String(body.sourceRef),
       s3Key: "documents/{id}",
@@ -118,6 +125,7 @@ export async function handleBookkeepingDocumentRoutes(
           documentType,
           contentType: statement && body.contentType ? String(body.contentType) : "application/pdf",
           ...(statement ? { accountId: String(body.accountId), statementMonth: String(body.statementMonth) } : {}),
+          ...(originalFilename ? { originalFilename } : {}),
           idempotencyKey: String(body.idempotencyKey),
               sourceRef: String(body.sourceRef),
           s3Key: "documents/{id}",
@@ -161,6 +169,7 @@ export async function handleBookkeepingDocumentRoutes(
                 statementMonth: String(body.statementMonth),
               }
             : {}),
+          ...(originalFilename ? { originalFilename } : {}),
           idempotencyKey: String(body.idempotencyKey),
               sourceRef: String(body.sourceRef),
           s3Key: "documents/{id}",
@@ -354,8 +363,14 @@ export async function handleBookkeepingDocumentRoutes(
         if (
           Date.parse(String(rawDocument.uploadAuthorizationExpiresAt || "")) >=
           Date.now()
-        )
-          return json(409, { error: "Cleanup deferred" });
+        ) {
+          const message = !verified.contentOk
+            ? ["bank-statement", "private-account-statement"].includes(String(doc.documentType))
+              ? "Bank statement uploads accept PDF files only"
+              : "Evidence uploads accept PDF files only"
+            : "Cleanup deferred";
+          return json(message === "Cleanup deferred" ? 409 : 400, { error: message });
+        }
         await deleteExactDocumentObject(bucket, rawDocument, verified.versionId);
         await removePendingDocumentClaim(
           client,
@@ -371,7 +386,12 @@ export async function handleBookkeepingDocumentRoutes(
         ).catch(() => undefined);
         return json(503, { error: "Cleanup required" });
       }
-      return json(400, { error: "Uploaded object verification failed" });
+      const message = !verified.contentOk
+        ? ["bank-statement", "private-account-statement"].includes(String(doc.documentType))
+          ? "Bank statement uploads accept PDF files only"
+          : "Evidence uploads accept PDF files only"
+        : "Uploaded object verification failed";
+      return json(400, { error: message });
     }
     try {
       await activateDocument(

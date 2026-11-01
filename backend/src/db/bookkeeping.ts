@@ -356,6 +356,7 @@ export type PrepareDocumentInput = {
   contentType?: string;
   accountId?: string;
   statementMonth?: string;
+  originalFilename?: string;
   idempotencyKey: string;
   sourceRef: string;
   s3Key: string;
@@ -419,6 +420,7 @@ export async function prepareDocument(
     documentType: input.documentType,
     ...(input.accountId ? { accountId: input.accountId } : {}),
     ...(input.statementMonth ? { statementMonth: input.statementMonth } : {}),
+    ...(input.originalFilename ? { originalFilename: input.originalFilename } : {}),
     s3Key: input.s3Key.replace("{id}", id),
     prepareExpiresAt: input.expiresAt,
     uploadAuthorizationExpiresAt: input.uploadAuthorizationExpiresAt,

@@ -6,7 +6,6 @@ import { getRawDocument } from "../db/bookkeeping";
 import { json, MONTH, parse, s3 } from "./bookkeepingShared";
 import {
   ParseError,
-  parseStatement,
   statementTotal,
   STATEMENT_ACCOUNTS,
   type ParsedStatement,
@@ -45,7 +44,7 @@ import {
   unpairRows,
 } from "../reconcile/monthService";
 import { tableCsv } from "../reconcile/month";
-import { importStatement, UnrecognizedStatementError } from "../reconcile/statementIntake";
+import { importStatement, recognizeStatement, UnrecognizedStatementError } from "../reconcile/statementIntake";
 import { autoMatchMonths, matchesOf } from "../reconcile/autoMatch";
 
 const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -75,7 +74,11 @@ async function documentBytes(client: DynamoDBDocumentClient, documentId: string)
   if (!object.Body) throw new Error("Statement object is empty");
   const chunks: Buffer[] = [];
   for await (const part of object.Body as unknown as AsyncIterable<Uint8Array>) chunks.push(Buffer.from(part));
-  return { bytes: Buffer.concat(chunks), contentType: String(document.contentType || "text/csv"), ...(document.originalFilename ? { filename: String(document.originalFilename) } : {}) };
+  return {
+    bytes: Buffer.concat(chunks),
+    contentType: String(document.contentType || "application/octet-stream"),
+    filename: String(document.originalFilename || `document-${documentId}.pdf`),
+  };
 }
 
 export async function handleReconcileRoutes(
@@ -108,7 +111,12 @@ export async function handleReconcileRoutes(
     if (action === "/statements" && method === "GET") {
       const items = await listStatements(client);
       const period = query.period;
-      return json(200, { items: period ? items.filter((item) => item.period === period) : items });
+      const selected = period ? items.filter((item) => item.period === period) : items;
+      return json(200, { items: selected.map((item) => ({
+        ...item,
+        rowCount: item.rows.length,
+        incomingCount: item.rows.filter((row) => Number(row.amount) > 0).length,
+      })) });
     }
 
     if (action === "/statements" && method === "POST") {
@@ -167,7 +175,12 @@ export async function handleReconcileRoutes(
       const source = await documentBytes(client, documentId);
       let parsed: ParsedStatement;
       try {
-        parsed = await parseStatement(source.contentType, source.bytes, account as StatementAccount, currency ? { currency } : {});
+        const recognized = await recognizeStatement(source.bytes, source.contentType, {
+          expectedAccount: account as StatementAccount,
+          ...(currency ? { currency } : {}),
+          ...(source.filename ? { filename: source.filename } : {}),
+        });
+        parsed = recognized.parsed;
       } catch (error) {
         return json(422, { error: `Statement parsing failed: ${(error as Error).message}` });
       }

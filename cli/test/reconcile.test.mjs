@@ -4,16 +4,18 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { upload, confirm, report, alias, aliases, balances, matches, commands } from "../src/commands/reconcile.mjs";
+import { exitCodeFor, EXIT } from "../src/errors.mjs";
 
 const withFakePortal = async (routes, run) => {
   const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
   process.env.DATAOPS_TOKEN = "sanitized-test-token";
-  const calls = [];
+  let calls = [];
   globalThis.fetch = async (url, options = {}) => {
     calls.push({ url: String(url), method: options.method || "GET", body: options.body, headers: options.headers || {} });
     for (const [match, respond] of [...routes].sort((left, right) => String(right[0]).length - String(left[0]).length)) {
       if (typeof match === "string" ? url.includes(match) : match(url)) {
         const body = typeof respond === "function" ? respond({ url: String(url), options }) : respond;
+        if (body instanceof Response) return body;
         return new Response(typeof body === "string" ? body : JSON.stringify(body ?? {}));
       }
     }
@@ -29,10 +31,10 @@ const withFakePortal = async (routes, run) => {
 
 const args = { url: "https://portal.example.test", json: true };
 
-test("upload stores the raw statement, parses it and saves rows for matching", async () => {
+test("PDF upload stores the raw statement, parses it and saves rows for matching", async () => {
   const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-test-"));
-  const path = join(directory, "statement.csv");
-  await writeFile(path, "Date,Description,Amount,Currency,Reference\n2026-10-05,Transfer from Sponsor One,1000.00,EUR,20261012\n");
+  const path = join(directory, "statement.pdf");
+  await writeFile(path, "%PDF-1.4 synthetic statement bytes");
   const parsedRows = [{ date: "2026-10-05", amount: "1000.00", currency: "EUR", counterparty: "Transfer from Sponsor One", reference: "20261012" }];
   await withFakePortal([
     ["https://private.example.test/object", ""],
@@ -41,16 +43,17 @@ test("upload stores the raw statement, parses it and saves rows for matching", a
       assert.equal(body.documentType, "bank-statement");
       assert.equal(body.accountId, "revolut");
       assert.equal(body.statementMonth, "2026-10");
-      assert.equal(body.contentType, "text/csv");
+      assert.equal(body.originalFilename, "statement.pdf");
+      assert.equal(body.contentType, "application/pdf");
       assert.match(body.idempotencyKey, /^statement-[0-9a-f]{64}$/);
-      return { document: { id: "stmt-doc" }, uploadUrl: "https://private.example.test/object", uploadHeaders: { "content-type": "text/csv" } };
+      return { document: { id: "stmt-doc" }, uploadUrl: "https://private.example.test/object", uploadHeaders: { "content-type": "application/pdf" } };
     }],
     ["/documents/stmt-doc/complete", { document: { id: "stmt-doc" } }],
     ["/reconcile/statements/parse", (request) => {
       const body = JSON.parse(request.options.body);
       assert.equal(body.documentId, "stmt-doc");
       assert.equal(body.account, "revolut");
-      return { account: "revolut", documentId: "stmt-doc", contentType: "text/csv", rowCount: 1, incomingCount: 1, incomingTotal: "1000.00", rows: parsedRows, warnings: [] };
+      return { account: "revolut", documentId: "stmt-doc", contentType: "application/pdf", rowCount: 1, incomingCount: 1, incomingTotal: "1000.00", rows: parsedRows, warnings: [] };
     }],
     ["/reconcile/statements", (request) => {
       const body = JSON.parse(request.options.body);
@@ -67,6 +70,64 @@ test("upload stores the raw statement, parses it and saves rows for matching", a
     assert.equal(put.headers.Authorization, undefined);
   });
   await rm(directory, { recursive: true, force: true });
+});
+
+test("upload rejects CSV and XLSX locally with a non-zero usage exit code", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-pdf-only-"));
+  try {
+    for (const extension of ["csv", "xlsx"]) {
+      const path = join(directory, `statement.${extension}`);
+      await writeFile(path, "synthetic bank export");
+      await assert.rejects(
+        upload({ ...args, file: path, account: "revolut", period: "2026-10" }, {}),
+        (error) => {
+          assert.match(error.message, /PDF files only/);
+          assert.equal(exitCodeFor(error), EXIT.usage);
+          return true;
+        },
+      );
+    }
+    const invalidPdf = join(directory, "not-a-pdf.pdf");
+    await writeFile(invalidPdf, "Date,Amount\n2026-10-01,1.00\n");
+    await assert.rejects(
+      upload({ ...args, file: invalidPdf, account: "revolut", period: "2026-10" }, {}),
+      (error) => {
+        assert.match(error.message, /PDF files only/);
+        assert.equal(exitCodeFor(error), EXIT.usage);
+        return true;
+      },
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("server PDF parser errors stop CLI upload before statement rows are saved", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-parse-failure-"));
+  const path = join(directory, "statement.pdf");
+  await writeFile(path, "%PDF-1.4 synthetic statement bytes");
+  let calls = [];
+  try {
+    await assert.rejects(
+      withFakePortal([
+        ["https://private.example.test/object", ""],
+        ["/documents/prepare", { document: { id: "bad-statement" }, uploadUrl: "https://private.example.test/object", uploadHeaders: { "content-type": "application/pdf" } }],
+        ["/documents/bad-statement/complete", { document: { id: "bad-statement" } }],
+        ["/reconcile/statements/parse", new Response(JSON.stringify({ error: "statement.pdf: line 12, source text \\\"broken row\\\": amount unreadable" }), { status: 422 })],
+      ], async (recorded) => {
+        calls = recorded;
+        await upload({ ...args, file: path, account: "revolut", period: "2026-10" }, {});
+      }),
+      (error) => {
+        assert.match(error.message, /line 12/);
+        assert.equal(exitCodeFor(error), EXIT.invalid);
+        return true;
+      },
+    );
+    assert.ok(!calls.some((call) => call.url.includes("/api/reconcile/statements") && call.method === "POST" && !call.url.includes("/parse")));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("confirm links an unclaimed ledger row the way sponsors link-payment does, dry-run by default", async () => {
@@ -202,19 +263,19 @@ test("the text reconcile report includes non-sponsor platform payouts", async ()
   });
 });
 
-test("upload accepts a Finom statement, forwards --currency and stores the closing balance", async () => {
+test("upload accepts a Finom PDF and stores its closing balance", async () => {
   const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-test-"));
-  const path = join(directory, "finom.csv");
-  await writeFile(path, "Completed date,Counterparty name,Reference,Amount,Balance\n05.10.2026 08:00:00,Sponsor Three Ltd,202610/03,1 000.00,3 000.00\n");
-  const rows = [{ date: "2026-10-05", amount: "1000.00", currency: "USD", counterparty: "Sponsor Three Ltd", reference: "202610/03" }];
-  const parsedBalances = [{ currency: "USD", amount: "3000.00", asOf: "2026-10-05" }];
+  const path = join(directory, "finom.pdf");
+  await writeFile(path, "%PDF-1.4 synthetic Finom statement");
+  const rows = [{ date: "2026-10-05", amount: "1000.00", currency: "EUR", counterparty: "Sponsor Three Ltd", reference: "202610/03" }];
+  const parsedBalances = [{ currency: "EUR", amount: "3000.00", asOf: "2026-10-05" }];
   await withFakePortal([
     ["/documents/prepare", { outcome: "existing", document: { id: "finom-doc" } }],
     ["/reconcile/statements/parse", (request) => {
       const body = JSON.parse(request.options.body);
       assert.equal(body.account, "finom");
-      assert.equal(body.currency, "USD");
-      return { contentType: "text/csv", rowCount: 1, incomingCount: 1, incomingTotal: "1000.00", rows, balances: parsedBalances, warnings: [] };
+      assert.equal(body.currency, undefined);
+      return { contentType: "application/pdf", rowCount: 1, incomingCount: 1, incomingTotal: "1000.00", rows, balances: parsedBalances, warnings: [] };
     }],
     ["/reconcile/statements", (request) => {
       const body = JSON.parse(request.options.body);
@@ -227,29 +288,32 @@ test("upload accepts a Finom statement, forwards --currency and stores the closi
     }],
   ], async () => {
     const printed = [];
-    const result = await upload({ url: args.url, file: path, account: "finom", period: "2026-10", currency: "usd" }, { print: (line) => printed.push(line) });
+    const result = await upload({ url: args.url, file: path, account: "finom", period: "2026-10" }, { print: (line) => printed.push(line) });
     assert.equal(result.statement.id, "stmt-finom");
-    assert.ok(printed.some((line) => line === "balance 3000.00 USD as of 2026-10-05"), printed.join("\n"));
+    assert.ok(printed.some((line) => line === "balance 3000.00 EUR as of 2026-10-05"), printed.join("\n"));
     const listed = await balances({ ...args, account: "finom" }, {});
     assert.equal(listed.items[0].amount, "3000.00");
   });
-  await assert.rejects(upload({ ...args, file: path, account: "finom", period: "2026-10", currency: "euro" }, {}), /--currency/);
   await rm(directory, { recursive: true, force: true });
 });
 
-test("upload --by-month stores a year export as one statement per month", async () => {
+test("upload --by-month stores all Revolut currency wallets as one statement per month", async () => {
   const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-test-"));
-  const path = join(directory, "year.csv");
-  await writeFile(path, "synthetic\n");
+  const path = join(directory, "year.pdf");
+  await writeFile(path, "%PDF-1.4 synthetic Revolut year statement");
   const rows = [
-    { date: "2026-09-30", amount: "-5.00", currency: "EUR", counterparty: "A" },
+    { date: "2026-09-30", amount: "-5.00", currency: "USD", counterparty: "A", wallet: "USD" },
     { date: "2026-10-01", amount: "10.00", currency: "EUR", counterparty: "B" },
     { date: "2026-10-02", amount: "-1.00", currency: "EUR", counterparty: "C" },
+    { date: "2026-10-02", amount: "2.00", currency: "USD", counterparty: "D", wallet: "USD" },
   ];
   const saves = [];
   await withFakePortal([
     ["/documents/prepare", { outcome: "existing", document: { id: "year-doc" } }],
-    ["/reconcile/statements/parse", { contentType: "text/csv", rowCount: 3, incomingCount: 1, incomingTotal: "10.00", rows, balances: [{ currency: "EUR", amount: "4.00", asOf: "2026-10-02" }], warnings: ["skipped a pending row dated 2026-10-03"] }],
+    ["/reconcile/statements/parse", { contentType: "application/pdf", rowCount: 4, incomingCount: 2, incomingTotal: "12.00", rows, balances: [
+      { currency: "EUR", amount: "4.00", asOf: "2026-10-02", wallet: "EUR" },
+      { currency: "USD", amount: "12.00", asOf: "2026-10-02", wallet: "USD" },
+    ], warnings: [] }],
     ["/reconcile/statements", (request) => {
       const body = JSON.parse(request.options.body);
       saves.push(body);
@@ -259,8 +323,9 @@ test("upload --by-month stores a year export as one statement per month", async 
     const result = await upload({ ...args, file: path, account: "revolut", period: "2026-10", byMonth: true }, {});
     assert.deepEqual(saves.map((save) => [save.period, save.rows.length, save.balances?.length ?? 0, save.warnings?.length ?? 0]), [
       ["2026-09", 1, 0, 0],
-      ["2026-10", 2, 1, 1],
+      ["2026-10", 3, 2, 0],
     ]);
+    assert.deepEqual(new Set(saves[1].rows.map((row) => row.currency)), new Set(["EUR", "USD"]));
     assert.equal(saves[0].documentId, "year-doc");
     assert.equal(result.statements.length, 2);
   });

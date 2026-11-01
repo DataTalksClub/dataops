@@ -1,6 +1,6 @@
 /**
  * Statement import without flags: the bank is recognised from the file
- * itself (CSV/XLSX header row, or PDF layout markers), the rows are parsed
+ * itself (PDF layout markers), the rows are parsed
  * through that bank's fixed layout, stored as one statement per calendar
  * month, and every touched month is re-reconciled and summarised. Used by
  * the email intake (a statement sent to the invoice address), the
@@ -13,11 +13,8 @@ import { getIntakeItem } from "../db/intake";
 import { createNotification } from "../db/notifications";
 import { pdfText } from "../invoices/extract";
 import {
-  csvHeaders,
-  detectStatementAccount,
-  parseStatementCsv,
-  parseStatementXlsx,
   ParseError,
+  parseStatementDate,
   type ParsedStatement,
   type StatementAccount,
 } from "./parsers";
@@ -43,36 +40,85 @@ export class UnrecognizedStatementError extends Error {
   statusCode = 422;
 }
 
-const XLSX = /spreadsheetml|ms-excel/;
 const isPdf = (contentType: string, bytes: Buffer) => contentType === "application/pdf" || bytes.subarray(0, 5).toString("ascii") === "%PDF-";
+let statementPdfText = pdfText;
+export function setStatementPdfTextForTests(extractor?: typeof pdfText) {
+  statementPdfText = extractor ?? pdfText;
+}
 
-/** Which bank, which layout, and the parsed rows; throws UnrecognizedStatementError when the file is no known statement. */
-export async function recognizeStatement(bytes: Buffer, contentType: string, options: { currency?: string } = {}): Promise<{ account: StatementAccount; layout: string; parsed: ParsedStatement }> {
-  const type = contentType.split(";")[0].trim().toLowerCase();
-  if (isPdf(type, bytes)) {
-    const text = await pdfText(bytes);
-    const account = detectPdfStatementAccount(text);
-    if (!account) throw new UnrecognizedStatementError("PDF is not a recognized Finom or Revolut statement");
-    const parsed = account === "finom" ? parseFinomPdfText(text) : parseRevolutPdfText(text);
-    return { account, layout: `${account} PDF statement`, parsed };
-  }
-  if (XLSX.test(type)) {
-    for (const account of ["revolut", "finom"] as StatementAccount[]) {
-      try {
-        return { account, layout: `${account} workbook`, parsed: await parseStatementXlsx(bytes, account, options) };
-      } catch (error) {
-        if (!(error instanceof ParseError) || !/unrecognized/.test(error.message)) throw error;
-      }
+function safeFilename(filename?: string): string {
+  return String(filename || "uploaded statement.pdf").replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 200);
+}
+
+function pdfErrorLine(text: string, message: string): { number: number; text: string } {
+  const source = text.split(/\r?\n/).map((line, index) => ({ number: index + 1, text: line.trim() })).filter((line) => line.text);
+  const date = message.match(/\b(\d{4}-\d{2}-\d{2}|\d{1,2}\.\d{1,2}\.\d{4}|\d{1,2} [A-Z][a-z]{2} \d{4})\b/)?.[1];
+  for (const line of source) {
+    const printed = line.text.match(/^(\d{1,2}\.\d{1,2}\.\d{4}|\d{1,2} [A-Z][a-z]{2} \d{4})\b/)?.[1];
+    if (!printed) continue;
+    if (!date && /(?:unreadable date|date out of range)/i.test(message)) {
+      try { parseStatementDate(printed); } catch { return line; }
     }
-    throw new UnrecognizedStatementError("workbook is not a recognized Finom or Revolut statement export");
+    if (!date) continue;
+    if (printed === date) return line;
+    try { if (parseStatementDate(printed) === parseStatementDate(date)) return line; }
+    catch { if (/(?:unreadable date|date out of range)/i.test(message)) return line; }
   }
-  const text = bytes.toString("utf8");
-  const headers = csvHeaders(text);
-  const detected = detectStatementAccount(headers);
-  if (!detected) {
-    throw new UnrecognizedStatementError(`CSV is not a recognized Finom or Revolut statement export (headers: ${headers.slice(0, 12).join(", ")}${headers.length > 12 ? ", …" : ""})`);
+  const summary = message.match(/Money in|Money out|Opening balance|Closing balance/i)?.[0];
+  if (summary) {
+    const line = source.find((candidate) => candidate.text.startsWith(summary));
+    if (line) return line;
   }
-  return { account: detected.account, layout: detected.layout, parsed: parseStatementCsv(text, detected.account, options) };
+  if (/balance|reconcil/i.test(message)) {
+    const line = source.find((candidate) => /^Closing balance\s*:/.test(candidate.text));
+    if (line) return line;
+  }
+  if (/zero transaction rows|no transactions/i.test(message)) {
+    const line = source.find((candidate) => /^(Completed|Date \(UTC\))/i.test(candidate.text));
+    if (line) return line;
+  }
+  if (/header|layout|column/i.test(message)) {
+    const line = source.find((candidate) => /^(Completed|Date \(UTC\))/i.test(candidate.text));
+    if (line) return line;
+  }
+  return source.find((candidate) => /^\d{2}\.\d{2}\.\d{4}|^\d{1,2} [A-Z][a-z]{2} \d{4}/.test(candidate.text))
+    || source[0]
+    || { number: 1, text: "(no extractable statement text)" };
+}
+
+function pdfFailure(error: unknown, text: string, filename?: string): ParseError {
+  const message = error instanceof Error ? error.message : String(error);
+  const source = pdfErrorLine(text, message);
+  const excerpt = source.text.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 240);
+  return new ParseError(`${safeFilename(filename)}: line ${source.number}, source text "${excerpt}": ${message}`);
+}
+
+/** Recognize and completely parse a supported bank PDF before any statement rows are stored. */
+export async function recognizeStatement(bytes: Buffer, contentType: string, options: { currency?: string; expectedAccount?: StatementAccount; filename?: string } = {}): Promise<{ account: StatementAccount; layout: string; parsed: ParsedStatement }> {
+  const type = contentType.split(";")[0].trim().toLowerCase();
+  if (!isPdf(type, bytes)) {
+    throw new UnrecognizedStatementError(`${safeFilename(options.filename)}: bank statement uploads accept PDF files only`);
+  }
+
+  let text: string;
+  try { text = await statementPdfText(bytes); }
+  catch (error) { throw pdfFailure(error, "", options.filename); }
+  const account = detectPdfStatementAccount(text);
+  if (!account) {
+    const message = "PDF is not a recognized Finom or Revolut statement";
+    throw new UnrecognizedStatementError(pdfFailure(message, text, options.filename).message);
+  }
+  if (options.expectedAccount && account !== options.expectedAccount) {
+    throw pdfFailure(`PDF contains a ${account} statement, not the selected ${options.expectedAccount} account`, text, options.filename);
+  }
+
+  try {
+    const parsed = account === "finom" ? parseFinomPdfText(text) : parseRevolutPdfText(text);
+    if (!parsed.rows.length) throw new ParseError("PDF statement parsed zero transaction rows");
+    return { account, layout: `${account} PDF statement`, parsed };
+  } catch (error) {
+    throw pdfFailure(error, text, options.filename);
+  }
 }
 
 /** Store parsed rows as one statement per month; a closed month is left untouched and reported. */
@@ -82,7 +128,7 @@ export async function importStatement(
   source: StatementSource,
   options: { currency?: string; notify?: boolean } = {},
 ): Promise<ImportedStatement> {
-  const { account, layout, parsed } = await recognizeStatement(bytes, source.contentType, options);
+  const { account, layout, parsed } = await recognizeStatement(bytes, source.contentType, { ...options, filename: source.filename });
   const months = [...new Set(parsed.rows.map((row) => row.date.slice(0, 7)))].sort();
   const statements: ImportedStatement["statements"] = [];
   const skippedClosedMonths: string[] = [];
@@ -144,9 +190,9 @@ async function artifactContent(client: DynamoDBDocumentClient, artifactId: strin
 const STATEMENT_ATTACHMENT = /\.(csv|xlsx|pdf)$/i;
 
 /**
- * Email intake: every attachment that is a Finom or Revolut statement is
- * imported and tagged so invoice processing skips it. Non-PDF attachments
- * that are no known statement are reported back instead of dropped.
+ * Email intake imports PDF Finom or Revolut statements and tags them so
+ * invoice processing skips them. CSV/XLSX exports are reported as rejected
+ * PDF-only statement inputs and are never imported.
  */
 export async function processStatementIntake(client: DynamoDBDocumentClient, intakeItemId: string): Promise<{ imported: ImportedStatement[]; issues: string[] }> {
   const intake = await getIntakeItem(client, intakeItemId);

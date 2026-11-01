@@ -105,6 +105,64 @@ describe("atomic bookkeeping document API", () => {
     assert.match(String(signedInputs.at(-1)?.Key), /^documents\//);
   });
 
+  it("rejects CSV/XLSX bank statement uploads with a PDF-only error at prepare and completion", async () => {
+    const ownership = { idempotencyKey: "statement-pdf-only-owner" };
+    for (const contentType of [
+      "text/csv",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ]) {
+      const response = await invoke("POST", "/api/bookkeeping/documents/prepare", {
+        sha256,
+        byteSize: pdf.length,
+        documentType: "bank-statement",
+        accountId: "revolut",
+        statementMonth: "2026-10",
+        ...ownership,
+        sourceRef: `pdf-only-${contentType}`,
+        contentType,
+      });
+      assert.equal(response.statusCode, 400);
+      assert.match(JSON.parse(response.body).error, /bank statement uploads accept PDF files only/i);
+    }
+
+    const csv = Buffer.from("Date,Description,Amount\n2026-10-01,Transfer,1.00\n");
+    objectBytes = csv;
+    const uploaded = await invoke("POST", "/api/bookkeeping/documents/prepare", {
+      sha256: createHash("sha256").update(csv).digest("hex"),
+      byteSize: csv.length,
+      documentType: "bank-statement",
+      accountId: "revolut",
+      statementMonth: "2026-10",
+      idempotencyKey: "statement-pdf-only-body-owner",
+      sourceRef: "statement-pdf-only-body-source",
+    });
+    const document = JSON.parse(uploaded.body).document;
+    const completed = await invoke("POST", `/api/bookkeeping/documents/${document.id}/complete`, {
+      idempotencyKey: "statement-pdf-only-body-owner",
+    });
+    assert.equal(completed.statusCode, 400);
+    assert.match(JSON.parse(completed.body).error, /bank statement uploads accept PDF files only/i);
+    assert.equal(deletedVersions.at(-1), "version-1");
+    objectBytes = pdf;
+  });
+
+  it("stores a path-free original filename for upload diagnostics", async () => {
+    const bytes = Buffer.from("%PDF-filename-diagnostic");
+    const prepared = await invoke("POST", "/api/bookkeeping/documents/prepare", {
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      byteSize: bytes.length,
+      documentType: "bank-statement",
+      accountId: "finom",
+      statementMonth: "2026-10",
+      originalFilename: "C:\\bookkeeping\\finom-main.pdf",
+      idempotencyKey: "finom-filename-diagnostic",
+      sourceRef: "finom-filename-diagnostic",
+      contentType: "application/pdf",
+    });
+    assert.equal(prepared.statusCode, 201);
+    assert.equal(JSON.parse(prepared.body).document.originalFilename, "finom-main.pdf");
+  });
+
   it("creates exactly one link under concurrent tuple requests", async () => {
     const documentId = verifiedDocumentId;
     const transaction = JSON.parse((await invoke("POST", "/api/bookkeeping/transactions", {
