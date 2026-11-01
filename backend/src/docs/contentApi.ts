@@ -1,6 +1,7 @@
 import { templateParser } from './templatePlaceholders';
 import { dump as dumpYaml } from 'js-yaml';
 import { DOCX_CONTENT_TYPE, markdownToDocx } from './docxExport';
+import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 /**
  * Docs content API.
  *
@@ -41,8 +42,15 @@ import {
   MANAGED_KNOWLEDGE_ROOTS,
   RevisionConflict,
   KnowledgeVersionNotFound,
+  type Mutation,
   type RecentDocChanges,
 } from './knowledgeStore';
+import { listTemplates } from '../db/templates';
+import type { Template } from '../types';
+import {
+  DerivedDocumentNotFound,
+  regenerateDerivedDocuments,
+} from './derivedDocuments';
 import {
   buildRegistry,
   recordToDict,
@@ -229,6 +237,136 @@ export function resetDocsRuntime(): void {
   sharedRecent = null;
 }
 
+interface KnowledgePlan {
+  mutations: Mutation[];
+  regenerated: string[];
+}
+
+function readMarkdownCorpus(rt: DocsRuntime): Map<string, string> {
+  const files = new Map<string, string>();
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const file = join(directory, entry.name);
+      if (entry.isDirectory()) visit(file);
+      else if (entry.isFile() && entry.name.endsWith('.md')) {
+        const repoPath = relative(rt.repoRoot, file).split(sep).join('/');
+        files.set(repoPath, readFileSync(file, 'utf8'));
+      }
+    }
+  };
+  if (existsSync(rt.contentRoot)) visit(rt.contentRoot);
+  return files;
+}
+
+async function templatesFor(client?: DynamoDBDocumentClient): Promise<Template[]> {
+  return client ? listTemplates(client) : [];
+}
+
+async function applyMutationsToCorpus(rt: DocsRuntime, files: Map<string, string>, mutations: Mutation[]): Promise<Map<string, string>> {
+  const candidate = new Map(files);
+  for (const mutation of mutations) {
+    const path = normalizeRepoPath(mutation.path);
+    if (!path.startsWith(CONTENT_PREFIX) || !path.endsWith('.md')) continue;
+    if (mutation.sourcePath) {
+      const source = normalizeRepoPath(mutation.sourcePath);
+      const content = candidate.get(source);
+      if (content !== undefined) {
+        candidate.set(path, content);
+        candidate.delete(source);
+      }
+    } else if (mutation.restoreRevision) {
+      candidate.set(path, (await rt.store.versionBytes(path, mutation.restoreRevision)).toString('utf8'));
+    } else if (mutation.bytes !== undefined) {
+      candidate.set(path, typeof mutation.bytes === 'string' ? mutation.bytes : Buffer.from(mutation.bytes).toString('utf8'));
+    } else {
+      candidate.delete(path);
+    }
+  }
+  return candidate;
+}
+
+async function prepareKnowledgePlan(
+  rt: DocsRuntime,
+  sourceMutations: Mutation[],
+  templates: Template[],
+  selection: { all?: boolean; id?: string } = { all: true },
+): Promise<KnowledgePlan> {
+  await rt.ensureSynced();
+  const current = readMarkdownCorpus(rt);
+  const candidate = await applyMutationsToCorpus(rt, current, sourceMutations);
+  const generated = regenerateDerivedDocuments(candidate, templates, selection);
+  const mutations = sourceMutations.map((mutation) => ({ ...mutation }));
+  const regenerated: string[] = [];
+
+  for (const [path, content] of generated) {
+    if (candidate.get(path) === content) continue;
+    regenerated.push(path);
+    let existingMutation = -1;
+    for (let index = mutations.length - 1; index >= 0; index--) {
+      if (mutations[index].path === path) {
+        existingMutation = index;
+        break;
+      }
+    }
+    if (existingMutation >= 0) {
+      const mutation = { ...mutations[existingMutation], bytes: content };
+      delete mutation.restoreRevision;
+      mutations[existingMutation] = mutation;
+      continue;
+    }
+    const createdBefore = mutations.some((mutation) => mutation.path === path
+      && (mutation.sourcePath !== undefined || mutation.bytes !== undefined || mutation.restoreRevision !== undefined));
+    mutations.push({ path, bytes: content, ...(!current.has(path) && !createdBefore ? { absent: true } : {}) });
+  }
+  return { mutations, regenerated };
+}
+
+async function publishKnowledgeWithDerivedDocuments(
+  rt: DocsRuntime,
+  sourceMutations: Mutation[],
+  expectedRevision: string,
+  actor: string,
+  message: string,
+  templates: Template[],
+): Promise<{ revision: string; regenerated: string[] }> {
+  const plan = await prepareKnowledgePlan(rt, sourceMutations, templates);
+  if (!plan.mutations.length) return { revision: rt.store.revision, regenerated: plan.regenerated };
+  const publication = await rt.store.publish(plan.mutations, expectedRevision, actor, message);
+  return { revision: publication.revision, regenerated: plan.regenerated };
+}
+
+async function publishRegeneratedKnowledge(
+  rt: DocsRuntime,
+  templates: Template[],
+  actor: string,
+  selection: { all?: boolean; id?: string } = { all: true },
+  retries = 0,
+): Promise<{ revision: string; regenerated: string[] }> {
+  for (let attempt = 0; ; attempt++) {
+    if (attempt > 0) await rt.store.refreshTree();
+    await rt.ensureSynced();
+    const plan = await prepareKnowledgePlan(rt, [], templates, selection);
+    if (!plan.mutations.length) return { revision: rt.store.revision, regenerated: [] };
+    try {
+      const publication = await rt.store.publish(plan.mutations, rt.store.revision, actor, 'Regenerate derived knowledge documents');
+      await rt.ensureSynced();
+      rt.rebuildSearch();
+      return { revision: publication.revision, regenerated: plan.regenerated };
+    } catch (error) {
+      if (!(error instanceof RevisionConflict) || attempt >= retries) throw error;
+    }
+  }
+}
+
+/** Regenerate generated KB pages after a runtime Template changes or syncs from Git. */
+export async function regenerateKnowledgeForTemplates(
+  templates: Template[],
+  actor = 'template-update',
+): Promise<{ revision: string; regenerated: string[] }> {
+  const rt = runtime || new DocsRuntime(createKnowledgeStore(knowledgeStoreConfigFromEnv()));
+  return publishRegeneratedKnowledge(rt, templates, actor, { all: true }, 2);
+}
+
 // ── Response helpers ──────────────────────────────────────────────────────────
 
 function editableKnowledgePath(path:string):string {
@@ -265,7 +403,13 @@ function jsonBody(event: LambdaEvent): Record<string, unknown> {
  * `publishMessage` is set only for a service principal whose publication
  * message is derived from verified credential claims rather than the body.
  */
-export async function handleDocsRoutes(event: LambdaEvent, actor = process.env.DTC_OFFLINE === '1' ? 'local-operator' : '', publishMessage?: string, actorNames?: ActorNameResolver): Promise<LambdaResponse | null> {
+export async function handleDocsRoutes(
+  event: LambdaEvent,
+  actor = process.env.DTC_OFFLINE === '1' ? 'local-operator' : '',
+  publishMessage?: string,
+  actorNames?: ActorNameResolver,
+  client?: DynamoDBDocumentClient,
+): Promise<LambdaResponse | null> {
   const path = event.path || '/';
   if (!isDocsRoute(path)) return null;
 
@@ -274,9 +418,10 @@ export async function handleDocsRoutes(event: LambdaEvent, actor = process.env.D
   }
 
   try {
-    return await dispatch(event, path, actor, publishMessage, actorNames);
+    return await dispatch(event, path, actor, publishMessage, actorNames, client);
   } catch (err) {
     if (err instanceof HttpError) return jsonResponse(err.status, { error: err.message });
+    if (err instanceof DerivedDocumentNotFound) return jsonResponse(404, { error: err.message });
     if (err instanceof ContentRootUnavailableError) {
       return jsonResponse(503, { error: contentRootUnavailableMessage(err.contentRoot) });
     }
@@ -327,7 +472,14 @@ function publicationMessage(raw: unknown): string {
   return raw.trim();
 }
 
-async function dispatch(event: LambdaEvent, path: string, actor: string, publishMessage?: string, actorNames?: ActorNameResolver): Promise<LambdaResponse> {
+async function dispatch(
+  event: LambdaEvent,
+  path: string,
+  actor: string,
+  publishMessage?: string,
+  actorNames?: ActorNameResolver,
+  client?: DynamoDBDocumentClient,
+): Promise<LambdaResponse> {
   const m = method(event);
   const rt = runtime || new DocsRuntime(createKnowledgeStore(knowledgeStoreConfigFromEnv()));
 
@@ -343,8 +495,13 @@ async function dispatch(event: LambdaEvent, path: string, actor: string, publish
       if(typeof item.path!=='string') throw new BadRequest('Mutation path is required');
       return {path:editableKnowledgePath(item.path),...(typeof item.content==='string'?{bytes:item.content}:{}),...(typeof item.base64==='string'?{bytes:Buffer.from(item.base64,'base64')}:{}),...(typeof item.sourcePath==='string'?{sourcePath:editableKnowledgePath(item.sourcePath)}:{}),absent:item.absent===true};
     });
-    const publication=await rt.store.publish(mutations,String(body.expectedRevision||''),actor,publishMessage ?? publicationMessage(body.message));
-    return jsonResponse(200,{revision:publication.revision});
+    const publication=await publishKnowledgeWithDerivedDocuments(
+      rt, mutations, String(body.expectedRevision||''), actor,
+      publishMessage ?? publicationMessage(body.message), await templatesFor(client),
+    );
+    await rt.ensureSynced();
+    rt.rebuildSearch();
+    return jsonResponse(200,{revision:publication.revision,regenerated:publication.regenerated});
   }
   if (path === '/knowledge/manifest' && m === 'GET') {
     const publication=await rt.store.pin();
@@ -366,8 +523,13 @@ async function dispatch(event: LambdaEvent, path: string, actor: string, publish
   }
   if (path === '/knowledge/restore' && m === 'POST') {
     const body=jsonBody(event);
-    const publication=await rt.store.publish([{path:editableKnowledgePath(requiredPath(event)), restoreRevision:String(body.version || '')}], String(body.expectedRevision || ''), actor, 'Restore file');
-    return jsonResponse(200,{revision:publication.revision});
+    const publication=await publishKnowledgeWithDerivedDocuments(
+      rt, [{path:editableKnowledgePath(requiredPath(event)), restoreRevision:String(body.version || '')}],
+      String(body.expectedRevision || ''), actor, 'Restore file', await templatesFor(client),
+    );
+    await rt.ensureSynced();
+    rt.rebuildSearch();
+    return jsonResponse(200,{revision:publication.revision,regenerated:publication.regenerated});
   }
   if (path === '/knowledge/status' && m === 'GET') {
     await rt.store.pin();
@@ -376,6 +538,17 @@ async function dispatch(event: LambdaEvent, path: string, actor: string, publish
     return jsonResponse(200,{revision:rt.store.revision,exported,backup,exportLag:exported?.revision!==rt.store.revision});
   }
   if (path === '/knowledge/publication' && m === 'GET') {await rt.store.pin();return jsonResponse(200,{revision:rt.store.revision});}
+  if (path === '/docs/regenerate' && m === 'POST') {
+    const body = jsonBody(event);
+    if (body.all !== true && (typeof body.id !== 'string' || !body.id.trim())) {
+      throw new BadRequest('Choose all: true or a generated document id');
+    }
+    const selection = body.all === true ? { all: true } : { id: String(body.id).trim() };
+    const result = await publishRegeneratedKnowledge(rt, await templatesFor(client), actor, selection, 2);
+    return jsonResponse(200, { revision: result.revision, regenerated: result.regenerated });
+  }
+  if (path === '/docs/preview-write' && m === 'POST') return previewWrite(rt, jsonBody(event), await templatesFor(client));
+  if (path === '/docs/status' && m === 'POST') return updateDocStatus(rt, jsonBody(event), actor, await templatesFor(client));
   if (path === '/docs/process-quality' && m === 'GET') return processQuality(rt);
   if (path === '/docs/registry' && m === 'GET') return getDocRegistry(rt);
   if (path === '/docs/resolve' && m === 'GET') return resolveDoc(rt, queryParam(event, 'ref'));
@@ -402,19 +575,19 @@ async function dispatch(event: LambdaEvent, path: string, actor: string, publish
     };
   }
   if (path === '/docs/backlinks' && m === 'GET') return listBacklinks(rt, queryParam(event, 'path'));
-  if (path === '/docs/rename' && m === 'POST') return renameDoc(rt, jsonBody(event), actor);
-  if (path === '/docs/move' && m === 'POST') return moveDoc(rt, jsonBody(event), actor);
+  if (path === '/docs/rename' && m === 'POST') return renameDoc(rt, jsonBody(event), actor, await templatesFor(client));
+  if (path === '/docs/move' && m === 'POST') return moveDoc(rt, jsonBody(event), actor, await templatesFor(client));
 
   if (path === '/docs' && m === 'GET') {
     const docPath = queryParam(event, 'path');
     return docPath ? getDoc(rt, docPath) : listDocs(rt);
   }
-  if (path === '/docs' && m === 'PUT') return saveDoc(rt, queryParam(event, 'path'), jsonBody(event), actor);
-  if (path === '/docs' && m === 'POST') return createDoc(rt, jsonBody(event), actor);
-  if (path === '/docs' && m === 'DELETE') return deleteDoc(rt, queryParam(event, 'path'), jsonBody(event), actor);
+  if (path === '/docs' && m === 'PUT') return saveDoc(rt, queryParam(event, 'path'), jsonBody(event), actor, await templatesFor(client));
+  if (path === '/docs' && m === 'POST') return createDoc(rt, jsonBody(event), actor, await templatesFor(client));
+  if (path === '/docs' && m === 'DELETE') return deleteDoc(rt, queryParam(event, 'path'), jsonBody(event), actor, await templatesFor(client));
 
-  if (path === '/folders' && m === 'DELETE') return deleteFolder(rt, queryParam(event, 'path'), jsonBody(event), actor);
-  if (path === '/folders/rename' && m === 'POST') return renameFolder(rt, jsonBody(event), actor);
+  if (path === '/folders' && m === 'DELETE') return deleteFolder(rt, queryParam(event, 'path'), jsonBody(event), actor, await templatesFor(client));
+  if (path === '/folders/rename' && m === 'POST') return renameFolder(rt, jsonBody(event), actor, await templatesFor(client));
 
   if (path === '/lint' && m === 'GET') return runCorpusLint(rt);
   if (path === '/parse' && m === 'POST') return parseContent(jsonBody(event));
@@ -552,11 +725,68 @@ async function applyDocTypeAndCodeView(
 
 // ── Docs mutation endpoints (commit-on-save + search refresh) ─────────────────
 
+async function previewWrite(rt: DocsRuntime, body: Record<string, unknown>, templates: Template[]): Promise<LambdaResponse> {
+  if (typeof body.path !== 'string' || !body.path.trim()) throw new BadRequest('Request body must include string field: path');
+  if (typeof body.content !== 'string') throw new BadRequest('Request body must include string field: content');
+  const path = normalizeDocPath(body.path);
+  validateDocPath(path);
+  await rt.ensureSynced();
+  const current = readMarkdownCorpus(rt);
+  const exists = current.has(path);
+  if (body.create === true && exists) throw new BadRequest('Document already exists');
+  if (body.create !== true && !exists) throw new NotFound('Document not found. Pass --create to add it.');
+
+  const { isTemplateDocument, parseTemplatePlaceholders, documentType } = await templateParser();
+  const oldContent = current.get(path) || '';
+  const doc = { path, doc_type: typeof body.doc_type === 'string' ? body.doc_type : undefined };
+  const isTemplate = isTemplateDocument(body.content, doc)
+    || (!documentType(body.content) && isTemplateDocument(oldContent, { path }));
+  if (isTemplate) {
+    const { issues } = parseTemplatePlaceholders(body.content);
+    if (issues.length) throw new BadRequest(`${path}: ${issues.map((issue) => issue.message).join(' ')}`);
+  }
+
+  const source: Mutation = { path, bytes: body.content, ...(body.create === true ? { absent: true } : {}) };
+  const plan = await prepareKnowledgePlan(rt, [source], templates);
+  return jsonResponse(200, {
+    dryRun: true,
+    revision: rt.store.revision,
+    changes: [...new Set(plan.mutations.map((mutation) => mutation.path))].sort(),
+    regenerated: plan.regenerated,
+  });
+}
+
+async function updateDocStatus(rt: DocsRuntime, body: Record<string, unknown>, actor: string, templates: Template[]): Promise<LambdaResponse> {
+  const ref = typeof body.ref === 'string' ? body.ref.trim() : '';
+  const status = typeof body.status === 'string' ? body.status.trim() : '';
+  if (!ref) throw new BadRequest('ref is required');
+  if (status !== 'deprecated' && status !== 'archived') throw new BadRequest('status must be deprecated or archived');
+  if (body.replaced_by !== undefined && typeof body.replaced_by !== 'string') throw new BadRequest('replaced_by must be a document ID');
+  await rt.ensureSynced();
+  const registry = buildRegistry(rt.contentRoot);
+  let document: DocumentRecord;
+  try { document = resolveReference(registry, ref); }
+  catch (error) { if (error instanceof LookupError) throw new NotFound(error.message); throw error; }
+  const content = await rt.store.readFile(document.path);
+  const [raw, markdown] = splitFrontmatter(content);
+  const metadata: Record<string, unknown> = raw ? { ...parseFrontmatter(raw) } : {};
+  metadata.status = status;
+  if (typeof body.replaced_by === 'string' && body.replaced_by.trim()) metadata.replaced_by = body.replaced_by.trim();
+  const updated = `---\n${dumpYaml(metadata, { lineWidth: -1 })}---\n${markdown}`;
+  const publication = await publishKnowledgeWithDerivedDocuments(
+    rt, [{ path: document.path, bytes: updated }], rt.store.revision, actor, `Set ${document.path} status to ${status}`, templates,
+  );
+  await rt.ensureSynced();
+  rt.rebuildSearch();
+  return jsonResponse(200, { id: document.id, path: document.path, status, revision: publication.revision, regenerated: publication.regenerated });
+}
+
 async function saveDoc(
   rt: DocsRuntime,
   rawPath: string | null,
   body: Record<string, unknown>,
   actor: string,
+  templates: Template[],
 ): Promise<LambdaResponse> {
   if (!rawPath) throw new BadRequest('Missing required query parameter: path');
   const content = body.content;
@@ -568,7 +798,9 @@ async function saveDoc(
 
   const filePath = localPath(rt, repoPath);
   mkdirSync(dirname(filePath), { recursive: true });
-  await rt.store.publish([{path:repoPath, bytes:content}], String(body.expectedRevision || ''), actor, `Update ${repoPath}`);
+  const publication = await publishKnowledgeWithDerivedDocuments(
+    rt, [{path:repoPath, bytes:content}], String(body.expectedRevision || ''), actor, `Update ${repoPath}`, templates,
+  );
   await rt.ensureSynced();
 
   let warnings: string[] = [];
@@ -578,10 +810,10 @@ async function saveDoc(
     warnings = [];
   }
   rt.rebuildSearch();
-  return jsonResponse(200, { path: repoPath, updated: rt.store.updatedAt(repoPath), warnings, revision:rt.store.revision });
+  return jsonResponse(200, { path: repoPath, updated: rt.store.updatedAt(repoPath), warnings, revision:publication.revision, regenerated:publication.regenerated });
 }
 
-async function createDoc(rt: DocsRuntime, body: Record<string, unknown>, actor:string): Promise<LambdaResponse> {
+async function createDoc(rt: DocsRuntime, body: Record<string, unknown>, actor:string, templates: Template[]): Promise<LambdaResponse> {
   const rawPath = body.path;
   if (typeof rawPath !== 'string' || !rawPath.trim()) {
     throw new BadRequest('Request body must include string field: path');
@@ -666,14 +898,16 @@ async function createDoc(rt: DocsRuntime, body: Record<string, unknown>, actor:s
   }
   mkdirSync(dirname(filePath), { recursive: true });
   if(body.absent !== true) throw new BadRequest('Creation requires absent: true');
-  await rt.store.publish([{path:repoPath,bytes:content,absent:true}],String(body.expectedRevision || ''),actor,`Create ${repoPath}`);
+  const publication = await publishKnowledgeWithDerivedDocuments(
+    rt, [{path:repoPath,bytes:content,absent:true}], String(body.expectedRevision || ''), actor, `Create ${repoPath}`, templates,
+  );
   await rt.ensureSynced();
   rt.rebuildSearch();
 
-  return jsonResponse(201, { path: repoPath, content, updated: rt.store.updatedAt(repoPath), revision:rt.store.revision });
+  return jsonResponse(201, { path: repoPath, content, updated: rt.store.updatedAt(repoPath), revision:publication.revision, regenerated:publication.regenerated });
 }
 
-async function deleteDoc(rt: DocsRuntime, rawPath: string | null, body:Record<string,unknown>, actor:string): Promise<LambdaResponse> {
+async function deleteDoc(rt: DocsRuntime, rawPath: string | null, body:Record<string,unknown>, actor:string, templates: Template[]): Promise<LambdaResponse> {
   if (!rawPath) throw new BadRequest('Missing required query parameter: path');
   const repoPath = normalizeDocPath(rawPath);
   validateDocPath(repoPath);
@@ -681,13 +915,13 @@ async function deleteDoc(rt: DocsRuntime, rawPath: string | null, body:Record<st
 
   const filePath = localPath(rt, repoPath);
   if (!existsSync(filePath)) throw new NotFound('Document not found');
-  await rt.store.publish([{path:repoPath}],String(body.expectedRevision || ''),actor,`Delete ${repoPath}`);
+  const publication = await publishKnowledgeWithDerivedDocuments(rt, [{path:repoPath}], String(body.expectedRevision || ''), actor, `Delete ${repoPath}`, templates);
   await rt.ensureSynced();
   rt.rebuildSearch();
-  return jsonResponse(200, { deleted: repoPath, revision:rt.store.revision });
+  return jsonResponse(200, { deleted: repoPath, revision:publication.revision, regenerated:publication.regenerated });
 }
 
-async function renameDoc(rt: DocsRuntime, body: Record<string, unknown>, actor:string): Promise<LambdaResponse> {
+async function renameDoc(rt: DocsRuntime, body: Record<string, unknown>, actor:string, templates: Template[]): Promise<LambdaResponse> {
   const oldRaw = body.old_path;
   const newRaw = body.new_path;
   if (typeof oldRaw !== 'string' || !oldRaw.trim()) throw new BadRequest('Request body must include string field: old_path');
@@ -702,13 +936,13 @@ async function renameDoc(rt: DocsRuntime, body: Record<string, unknown>, actor:s
   const newFile = localPath(rt, newPath);
   if (!existsSync(oldFile)) throw new NotFound('Document not found');
   if (existsSync(newFile)) throw new BadRequest('Target path already exists');
-  await rt.store.publish([{path:newPath,sourcePath:oldPath,absent:true}],String(body.expectedRevision || ''),actor,`Rename ${oldPath} to ${newPath}`);
+  const publication = await publishKnowledgeWithDerivedDocuments(rt, [{path:newPath,sourcePath:oldPath,absent:true}], String(body.expectedRevision || ''), actor, `Rename ${oldPath} to ${newPath}`, templates);
   await rt.ensureSynced();
   rt.rebuildSearch();
-  return jsonResponse(200, { old_path: oldPath, new_path: newPath, revision:rt.store.revision });
+  return jsonResponse(200, { old_path: oldPath, new_path: newPath, revision:publication.revision, regenerated:publication.regenerated });
 }
 
-async function moveDoc(rt: DocsRuntime, body: Record<string, unknown>, actor: string): Promise<LambdaResponse> {
+async function moveDoc(rt: DocsRuntime, body: Record<string, unknown>, actor: string, templates: Template[]): Promise<LambdaResponse> {
   const rawPath = body.path;
   if (typeof rawPath !== 'string' || !rawPath.trim()) {
     throw new BadRequest('Request body must include string field: path');
@@ -755,11 +989,8 @@ async function moveDoc(rt: DocsRuntime, body: Record<string, unknown>, actor: st
   const updatedContent = updateFrontmatterParent(content, targetParent ? targetParent.id : null);
 
   const actionMsg = targetParent ? `Move ${repoPath} under ${targetParent.id}` : `Move ${repoPath} to root`;
-  await rt.store.publish(
-    [{ path: repoPath, bytes: updatedContent }],
-    String(body.expectedRevision || ''),
-    actor,
-    actionMsg,
+  const publication = await publishKnowledgeWithDerivedDocuments(
+    rt, [{ path: repoPath, bytes: updatedContent }], String(body.expectedRevision || ''), actor, actionMsg, templates,
   );
   await rt.ensureSynced();
   rt.rebuildSearch();
@@ -767,7 +998,8 @@ async function moveDoc(rt: DocsRuntime, body: Record<string, unknown>, actor: st
   return jsonResponse(200, {
     path: repoPath,
     parent: targetParent ? targetParent.id : null,
-    revision: rt.store.revision,
+    revision: publication.revision,
+    regenerated: publication.regenerated,
   });
 }
 
@@ -991,19 +1223,19 @@ async function uploadImage(rt: DocsRuntime, body: Record<string, unknown>, actor
 
 // ── Folders ───────────────────────────────────────────────────────────────────
 
-async function deleteFolder(rt: DocsRuntime, rawPath: string | null, body:Record<string,unknown>, actor:string): Promise<LambdaResponse> {
+async function deleteFolder(rt: DocsRuntime, rawPath: string | null, body:Record<string,unknown>, actor:string, templates: Template[]): Promise<LambdaResponse> {
   await rt.ensureSynced();
   const folder = resolveFolderPath(rt, rawPath, false);
   const prefix=repoRelative(rt.repoRoot,folder)+'/';
   const repoPaths=Object.keys(await rt.store.tree()).filter(path=>path.startsWith(prefix));
   if(!repoPaths.length)throw new NotFound('Folder not found');
-  await rt.store.publish(repoPaths.map(path=>({path})),String(body.expectedRevision || ''),actor,'Delete folder');
+  const publication = await publishKnowledgeWithDerivedDocuments(rt, repoPaths.map(path=>({path})), String(body.expectedRevision || ''), actor, 'Delete folder', templates);
   await rt.ensureSynced();
   rt.rebuildSearch();
-  return jsonResponse(200, { deleted: repoRelative(rt.repoRoot, folder), files: repoPaths.length });
+  return jsonResponse(200, { deleted: repoRelative(rt.repoRoot, folder), files: repoPaths.length, revision: publication.revision, regenerated: publication.regenerated });
 }
 
-async function renameFolder(rt: DocsRuntime, body: Record<string, unknown>, actor:string): Promise<LambdaResponse> {
+async function renameFolder(rt: DocsRuntime, body: Record<string, unknown>, actor:string, templates: Template[]): Promise<LambdaResponse> {
   const oldRaw = body.old_path;
   const newRaw = body.new_path;
   if (typeof oldRaw !== 'string' || !oldRaw.trim()) throw new BadRequest('Request body must include string field: old_path');
@@ -1021,10 +1253,13 @@ async function renameFolder(rt: DocsRuntime, body: Record<string, unknown>, acto
 
   const srcRepo=repoRelative(rt.repoRoot,src);
   const dstRepo=repoRelative(rt.repoRoot,dst);
-  await rt.store.publish(oldRepoPaths.map(path=>({path:dstRepo+path.slice(srcRepo.length),sourcePath:path,absent:true})),String(body.expectedRevision || ''),actor,'Rename folder');
+  const publication = await publishKnowledgeWithDerivedDocuments(
+    rt, oldRepoPaths.map(path=>({path:dstRepo+path.slice(srcRepo.length),sourcePath:path,absent:true})),
+    String(body.expectedRevision || ''), actor, 'Rename folder', templates,
+  );
   await rt.ensureSynced();
   rt.rebuildSearch();
-  return jsonResponse(200, { old_path: srcRepo, new_path: dstRepo });
+  return jsonResponse(200, { old_path: srcRepo, new_path: dstRepo, revision: publication.revision, regenerated: publication.regenerated });
 }
 
 // ── Path / filesystem helpers (ported from api_handler.py) ────────────────────

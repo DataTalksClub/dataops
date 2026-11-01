@@ -22,6 +22,7 @@ import {
 } from '../templates/templateEdits';
 import type { LambdaEvent, LambdaResponse, Template } from '../types';
 import { recordRequestError } from '../requestErrorLog';
+import { isDocsDomainEnabled, regenerateKnowledgeForTemplates } from '../docs/contentApi';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
@@ -172,6 +173,9 @@ async function handleTemplateRoutes(
       }
       const result = await resetTemplateOverride(client, resetMatch[1], expectedVersion, revision);
       if (!result) return json(404, { error: 'Template not found' });
+      if (isDocsDomainEnabled()) {
+        await regenerateKnowledgeForTemplates([result.template], reset.actor.id || 'template-reset');
+      }
       return json(200, { template: result.template, applied: result.applied });
     }
 
@@ -228,6 +232,9 @@ async function handleTemplateUpdate(
     client, id, definition as Record<string, unknown>, expectedVersion, revision,
   );
   if (!template) return json(404, { error: 'Template not found' });
+  if (isDocsDomainEnabled()) {
+    await regenerateKnowledgeForTemplates([template], update.actor.id || 'template-update');
+  }
   return json(200, { template });
 }
 

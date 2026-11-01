@@ -6,6 +6,7 @@ import {KnowledgeStore} from '../src/docs/knowledgeStore';
 import {handleDocsRoutes,configureDocsRuntime,resetDocsRuntime} from '../src/docs/contentApi';
 import {syntheticKnowledge} from './helpers/knowledge';
 import {VALID_DOC_TYPES} from '../src/docs/docRegistry';
+import {DOCUMENT_INDEX_PATH} from '../src/docs/derivedDocuments';
 import type {LambdaEvent} from '../src/types';
 const SOP = [
   '---',
@@ -183,6 +184,75 @@ describe('S3 authenticated knowledge content routes',()=>{
    const rejected=await call(ev('POST','/knowledge/publish',{body:{expectedRevision:JSON.parse(forced!.body).revision,message,mutations:[{path:'content/a.md',content:'delta'}]}}));
    assert.equal(rejected.status,400);
   }
+ });
+ it('regenerates the document index in the same publication for direct writes and Git publication', async () => {
+  const index = [
+   '---',
+   'id: reference.indexes.document-index',
+   'title: Document index',
+   'doc_type: reference',
+   'status: active',
+   '---',
+   '',
+   '# Old index',
+  ].join('\n');
+  const first = [
+   '---',
+   'id: sop.events.calendar.old',
+   'title: Old calendar title',
+   'doc_type: sop',
+   'department: 03-programs-and-community',
+   'business_system: manage-event-calendar',
+   'owner_role: event-operations-owner',
+   'status: proposed',
+   '---',
+   '',
+   '# Old calendar title',
+  ].join('\n');
+  const fixture = syntheticKnowledge({ [DOCUMENT_INDEX_PATH]: index, 'content/calendar/old.md': first }, dir);
+  configureDocsRuntime(fixture.store);
+  revision = fixture.publication.revision;
+
+  const updated = first.replace('Old calendar title', 'Retired calendar title').replace('status: proposed', 'status: deprecated');
+  const written = await call(ev('PUT', '/docs', { query: { path: 'content/calendar/old.md' }, body: { content: updated, expectedRevision: revision } }));
+  assert.equal(written.status, 200, JSON.stringify(written.body));
+  const indexDoc = await call(ev('GET', '/docs', { query: { path: DOCUMENT_INDEX_PATH } }));
+  assert.match(indexDoc.body.content, /Retired calendar title/);
+  assert.match(indexDoc.body.content, /sop\.events\.calendar\.old/);
+  assert.match(indexDoc.body.content, /`deprecated`/);
+  const sourceHistory = await call(ev('GET', '/knowledge/history', { query: { path: 'content/calendar/old.md' } }));
+  const indexHistory = await call(ev('GET', '/knowledge/history', { query: { path: DOCUMENT_INDEX_PATH } }));
+  assert.equal(sourceHistory.body.versions[0].revision, indexHistory.body.versions[0].revision);
+
+  const published = await call(ev('POST', '/knowledge/publish', {
+   body: {
+    expectedRevision: written.body.revision,
+    mutations: [{ path: 'content/calendar/old.md', content: updated.replace('Retired calendar title', 'Git calendar title') }],
+   },
+  }));
+  assert.equal(published.status, 200, JSON.stringify(published.body));
+  const afterGit = await call(ev('GET', '/docs', { query: { path: DOCUMENT_INDEX_PATH } }));
+  assert.match(afterGit.body.content, /Git calendar title/);
+  assert.doesNotMatch(afterGit.body.content.split('## Archived and deprecated documents')[0], /sop\.events\.calendar\.old/);
+ });
+ it('backfills generated pages and changes lifecycle status through the shared publication path', async () => {
+  const regenerated = await call(ev('POST', '/docs/regenerate', { body: { all: true } }));
+  assert.equal(regenerated.status, 200, JSON.stringify(regenerated.body));
+  assert.ok(regenerated.body.regenerated.includes(DOCUMENT_INDEX_PATH));
+
+  const deprecated = await call(ev('POST', '/docs/status', {
+   body: { ref: 'ref.newsletter', status: 'deprecated', replaced_by: 'sop.accounts.password-reset' },
+  }));
+  assert.equal(deprecated.status, 200, JSON.stringify(deprecated.body));
+  const source = await call(ev('GET', '/docs', { query: { path: 'content/newsletter/reference.md' } }));
+  assert.match(source.body.content, /status: deprecated/);
+  assert.match(source.body.content, /replaced_by: sop\.accounts\.password-reset/);
+  const index = await call(ev('GET', '/docs', { query: { path: DOCUMENT_INDEX_PATH } }));
+  assert.match(index.body.content, /ref\.newsletter/);
+  assert.match(index.body.content, /`deprecated`/);
+  const sourceHistory = await call(ev('GET', '/knowledge/history', { query: { path: 'content/newsletter/reference.md' } }));
+  const indexHistory = await call(ev('GET', '/knowledge/history', { query: { path: DOCUMENT_INDEX_PATH } }));
+  assert.equal(sourceHistory.body.versions[0].revision, indexHistory.body.versions[0].revision);
  });
  it('renames atomically and rejects unsafe paths/stateless invalid parse',async()=>{
   const rename=await call(ev('POST','/docs/rename',{body:{old_path:'content/newsletter/reference.md',new_path:'content/newsletter/renamed.md',expectedRevision:revision}}));assert.equal(rename.status,200);

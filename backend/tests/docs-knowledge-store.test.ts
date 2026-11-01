@@ -22,6 +22,8 @@ describe('immutable S3 knowledge publications',()=>{
    const history=await store.history('content/b.md');assert.deepEqual(history.versions.map(v=>v.operation),['delete','rename']);
    const restored=await store.publish([{path:'content/b.md',restoreRevision:renamed.revision}],deleted.revision,'actor','Restore');
    assert.equal(await store.readFile('content/b.md'),'new');assert.equal(restored.actor,'actor');
+   const regenerated=await store.publish([{path:'content/derived.md',sourcePath:'content/b.md',bytes:'generated view',absent:true}],restored.revision,'actor','Rename and regenerate');
+   assert.equal(regenerated.entries['content/b.md'],undefined);assert.equal(await store.readFile('content/derived.md'),'generated view');
   } finally{rmSync(dir,{recursive:true,force:true});}
  });
  it('failed pointer publication exposes no partial multi-file write and rejects unpublished restore',async()=>{

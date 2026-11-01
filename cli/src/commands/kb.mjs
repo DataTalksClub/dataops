@@ -28,7 +28,10 @@ Usage
   dataops kb history <doc-id|path>             Published versions of it
   dataops kb recent [--limit N]                Recently changed docs, newest first: one row
                                                per doc with who changed it and how often
-  dataops kb write <path> --file F [--create] [--title T] [--type T]
+  dataops kb write <path> --file F [--create] [--title T] [--type T] [--dry-run]
+  dataops kb regenerate --all|<id>           Regenerate task views, indexes, and system pages
+  dataops kb deprecate <doc-id> [--replaced-by ID]
+  dataops kb archive <doc-id>                Mark a document archived
   dataops kb create <path> --from <doc-id> [--title T] [--sop TARGET-SOP-ID]
   dataops kb export <doc-id> [--format md|docx|txt] [--output PATH]
                                                Publish new content (as the web editor does)
@@ -323,13 +326,26 @@ async function validateTemplate(content, document) {
 }
 
 export async function write(args, io) {
-  const usage = "dataops kb write <path> --file F [--create] [--title T] [--type T]";
+  const usage = "dataops kb write <path> --file F [--create] [--title T] [--type T] [--dry-run]";
   const raw = positional(args, 0, usage);
   if (args.file === undefined || args.file === true) throw new UsageError(`--file is required. ${usage}`);
   const path = raw.startsWith(CONTENT) ? raw : `${CONTENT}${raw.replace(/^\/+/, "")}`;
   const content = String(args.file) === "-" ? readFileSync(0, "utf8") : readFileSync(String(args.file), "utf8");
   await validateTemplate(content, { path, doc_type: optionalString(args, "type") });
   const api = apiFor(args);
+  if (args.dryRun) {
+    const result = await api.post("/docs/preview-write", {
+      path,
+      content,
+      create: Boolean(args.create),
+      title: optionalString(args, "title"),
+      doc_type: optionalString(args, "type"),
+    });
+    if (args.json) return result;
+    io.print(`Dry run: ${result.changes?.length || 0} file(s) would be published at revision ${result.revision}.`);
+    for (const changed of result.changes || []) io.print(`would update ${changed}`);
+    return result;
+  }
   let revision;
   try {
     const existing = await api.get("/docs", { query: { path } });
@@ -355,6 +371,42 @@ export async function write(args, io) {
   io.print(`Published ${result.path} (revision ${result.revision}).`);
   for (const warning of result.warnings || []) io.print(`warning: ${warning}`);
   return result;
+}
+
+export async function regenerate(args, io) {
+  const id = args._[0] === undefined ? "" : String(args._[0]).trim();
+  if (args.all && id) throw new UsageError("Use either --all or one generated document ID.");
+  if (!args.all && !id) throw new UsageError("Usage: dataops kb regenerate --all|<id>");
+  const result = await apiFor(args).post("/docs/regenerate", args.all ? { all: true } : { id });
+  if (args.json) return result;
+  if (result.regenerated?.length) {
+    for (const path of result.regenerated) io.print(`regenerated ${path}`);
+  }
+  io.print(result.regenerated?.length
+    ? `Regenerated ${result.regenerated.length} generated document(s) at revision ${result.revision}.`
+    : `Generated documents are current at revision ${result.revision}.`);
+  return result;
+}
+
+async function setStatus(args, io, status) {
+  const ref = positional(args, 0, `dataops kb ${status === "deprecated" ? "deprecate" : "archive"} <doc-id>`);
+  const replacedBy = optionalString(args, "replacedBy");
+  const result = await apiFor(args).post("/docs/status", {
+    ref,
+    status,
+    ...(replacedBy ? { replaced_by: replacedBy } : {}),
+  });
+  if (args.json) return result;
+  io.print(`Marked ${result.id} ${status} (revision ${result.revision}).`);
+  return result;
+}
+
+export async function deprecate(args, io) {
+  return setStatus(args, io, "deprecated");
+}
+
+export async function archive(args, io) {
+  return setStatus(args, io, "archived");
 }
 
 export async function publish(args, io) {
@@ -572,4 +624,4 @@ export async function importDoc(args, io) {
   return { ...result, id: args.id };
 }
 
-export const commands = { search, related, show, code, tree, ls, resolve, backlinks, history, recent, write, publish, import: importDoc, create: copyKnowledgeDocument, export: exportKnowledgeDocument };
+export const commands = { search, related, show, code, tree, ls, resolve, backlinks, history, recent, write, regenerate, deprecate, archive, publish, import: importDoc, create: copyKnowledgeDocument, export: exportKnowledgeDocument };

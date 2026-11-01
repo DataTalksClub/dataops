@@ -352,7 +352,7 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
   }
   // Docs content API.
   if (isDocsRoute(path)) {
-    const result = await handleDocsRoutes(event, knowledgeActor, undefined, (ids) => userDisplayNames(client, ids));
+    const result = await handleDocsRoutes(event, knowledgeActor, undefined, (ids) => userDisplayNames(client, ids), client);
     if (result) return { response: result, authorized: true, userId: user?.id };
   }
 

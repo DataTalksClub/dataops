@@ -304,6 +304,46 @@ describe("kb write", () => {
     assert.deepEqual(post.body, { path: "content/new/doc.md", absent: true, expectedRevision: "rev-head", title: "New", content: readFileSync(file, "utf8") });
     assert.equal(calls.at(-1).body.expectedRevision, "rev-new");
   });
+
+  test("dry run previews a write and publishes nothing", async () => {
+    const calls = fakePortal({
+      "POST /docs/preview-write": ({ body }) => ({
+        dryRun: true,
+        revision: "rev-1",
+        changes: [body.path, "content/indexes/document-index.md"],
+        regenerated: ["content/indexes/document-index.md"],
+      }),
+    });
+    const file = fileURLToPath(new URL("../package.json", import.meta.url));
+    const io = captureIo();
+    assert.equal(await run(["kb", "write", "newsletter/reference.md", "--file", file, "--dry-run", "--json"], io), 0);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].rawPath, "/docs/preview-write");
+    assert.equal(calls[0].body.path, "content/newsletter/reference.md");
+    assert.equal(calls[0].body.create, false);
+    assert.deepEqual(io.json().regenerated, ["content/indexes/document-index.md"]);
+  });
+
+  test("regenerate accepts --all or one generated ID", async () => {
+    const calls = fakePortal({
+      "POST /docs/regenerate": ({ body }) => ({ revision: "rev-2", regenerated: body.all ? ["content/index.md"] : [body.id] }),
+    });
+    assert.equal(await run(["kb", "regenerate", "--all", "--json"], captureIo()), 0);
+    assert.deepEqual(calls[0].body, { all: true });
+    assert.equal(await run(["kb", "regenerate", "reference.indexes.document-index", "--json"], captureIo()), 0);
+    assert.deepEqual(calls[1].body, { id: "reference.indexes.document-index" });
+    assert.equal(await run(["kb", "regenerate"], captureIo()), 2);
+  });
+
+  test("deprecate and archive change document lifecycle through the shared write route", async () => {
+    const calls = fakePortal({
+      "POST /docs/status": ({ body }) => ({ id: body.ref, status: body.status, revision: "rev-3", path: "content/legacy.md" }),
+    });
+    assert.equal(await run(["kb", "deprecate", "sop.old", "--replaced-by", "sop.new"], captureIo()), 0);
+    assert.deepEqual(calls[0].body, { ref: "sop.old", status: "deprecated", replaced_by: "sop.new" });
+    assert.equal(await run(["kb", "archive", "sop.old"], captureIo()), 0);
+    assert.deepEqual(calls[1].body, { ref: "sop.old", status: "archived" });
+  });
 });
 
 describe('kb template validation before mutation', () => {

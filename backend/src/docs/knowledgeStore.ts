@@ -247,7 +247,16 @@ export class KnowledgeStore {
       if(mutation.sourcePath) {
         const source=normalizeRepoPath(mutation.sourcePath);
         if(entries[path] || !entries[source]) throw new RevisionConflict();
-        entry={...entries[source],path};delete entries[source];operation='rename';
+        if(mutation.bytes!==undefined) {
+          const bytes=typeof mutation.bytes==='string'?Buffer.from(mutation.bytes):mutation.bytes;
+          const sha=checksum(bytes);
+          try {await this.client.send(new PutObjectCommand({Bucket:this.bucket,Key:`objects/${sha}`,Body:bytes,IfNoneMatch:'*'}));}
+          catch(err) {if((err as {name?:string}).name!=='PreconditionFailed') throw err;}
+          entry={path,sha,size:bytes.length,type:'blob'};
+        } else {
+          entry={...entries[source],path};
+        }
+        delete entries[source];operation='rename';
       } else if(mutation.restoreRevision) {
         if(!/^[a-f0-9-]{36}$/.test(mutation.restoreRevision)) throw new KnowledgeError('Invalid revision');
         await this.versionBytes(path,mutation.restoreRevision);

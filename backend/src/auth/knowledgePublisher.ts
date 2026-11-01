@@ -15,7 +15,7 @@ import { createPublicKey, verify as verifySignature, type JsonWebKey } from 'nod
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { seedDeploymentRuntime } from '../deploymentSeeds';
-import { handleDocsRoutes } from '../docs/contentApi';
+import { handleDocsRoutes, isDocsDomainEnabled, regenerateKnowledgeForTemplates } from '../docs/contentApi';
 import { listTemplates } from '../db/templates';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
@@ -130,7 +130,7 @@ export async function handleKnowledgePublisher(
     || (method === 'POST' && path === '/knowledge/publish');
   if (!allowed) return response(403, { error: 'Knowledge publisher may only read the manifest and file history, publish knowledge files and sync workflow templates' });
   const repo = claims.repository.split('/')[1];
-  const result = await handleDocsRoutes(event, `git:${repo}@${claims.sha.slice(0, 12)}`, `Publish ${repo} ${claims.sha}`);
+  const result = await handleDocsRoutes(event, `git:${repo}@${claims.sha.slice(0, 12)}`, `Publish ${repo} ${claims.sha}`, undefined, client);
   return result || response(404, { error: 'Not found' });
 }
 
@@ -143,7 +143,12 @@ export async function handleKnowledgePublisher(
 async function syncTemplates(client: DynamoDBDocumentClient, claims: GitHubOidcClaims): Promise<LambdaResponse> {
   try {
     const templates = await seedDeploymentRuntime(client).then((report) => report.templates);
-    const pinnedTypes = (await listTemplates(client))
+    const runtimeTemplates = await listTemplates(client);
+    if (isDocsDomainEnabled()) {
+      const repo = claims.repository.split('/')[1];
+      await regenerateKnowledgeForTemplates(runtimeTemplates, `git:${repo}@${claims.sha.slice(0, 12)}`);
+    }
+    const pinnedTypes = runtimeTemplates
       .filter((template) => template.pinned === true)
       .map((template) => String(template.type))
       .sort();

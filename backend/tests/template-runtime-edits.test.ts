@@ -1,6 +1,8 @@
 import { describe, it, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 
 import { handler } from '../src/handler';
@@ -18,6 +20,9 @@ import { createUserWithId } from '../src/db/users';
 import { TABLE_TEMPLATES } from '../src/db/tableNames';
 import { reconcileAuthoredTemplates } from '../src/templates/authoredTemplates';
 import { templateFromYaml } from '../src/templates/yamlTemplates';
+import { configureDocsRuntime, resetDocsRuntime } from '../src/docs/contentApi';
+import { DOCUMENT_INDEX_PATH } from '../src/docs/derivedDocuments';
+import { syntheticKnowledge } from './helpers/knowledge';
 import type { LambdaResponse } from '../src/types';
 
 const OPERATOR_ID = 'template-op';
@@ -186,6 +191,64 @@ describe('Templates runtime editing', () => {
     assert.equal(bodyOf(renamed).code, 'immutable-template-type');
 
     assert.equal((await call('PUT', '/api/templates/missing', update)).statusCode, 404);
+  });
+
+  it('regenerates the workflow view from the newly pinned Template before returning success', async () => {
+    const previousDocsDomain = process.env.DATAOPS_DOCS_DOMAIN;
+    const docsDir = mkdtempSync(resolve('../.tmp/template-derived-'));
+    const viewPath = 'content/00-start-here/workflow-catalog/reference/maven-lightning-lesson-workflow.md';
+    const frontmatter = [
+      '---',
+      'id: task-template.tasks.maven-ll',
+      'title: Maven Lightning Lesson Workflow View',
+      'doc_type: task-template',
+      'status: active',
+      'tags: [task-template, maven-ll]',
+      '---',
+      '',
+      '# Stale workflow view',
+    ].join('\n');
+    const doc = (id: string, title: string) => [
+      '---', `id: ${id}`, `title: ${title}`, 'doc_type: sop', 'department: 03-programs-and-community',
+      'business_system: manage-event-calendar', 'status: active', '---', '', `# ${title}`,
+    ].join('\n');
+    const fixture = syntheticKnowledge({
+      [DOCUMENT_INDEX_PATH]: [
+        '---', 'id: reference.indexes.document-index', 'title: Document index', 'doc_type: reference', 'status: active', '---', '', '# Old index',
+      ].join('\n'),
+      [viewPath]: frontmatter,
+      'content/sops/old.md': doc('sop.events.calendar.old', 'Old event process'),
+      'content/sops/new.md': doc('sop.events.calendar.new', 'New event process'),
+    }, docsDir);
+    configureDocsRuntime(fixture.store);
+    process.env.DATAOPS_DOCS_DOMAIN = 'true';
+    try {
+      const template = await createTemplate(client, authored('maven-ll', [
+        { id: 'publish-lesson', name: 'Publish lesson', schedule: { offset_days: 0 }, instruction_doc_id: 'sop.events.calendar.old' },
+      ]));
+      const response = await call('PUT', `/api/templates/${template.id}`, {
+        expectedVersion: template.version,
+        revision: template.revision,
+        definition: {
+          ...validCustomDefinition('maven-ll'),
+          sourceDocIds: ['sop.events.calendar.new'],
+          taskDefinitions: [{
+            refId: 'publish-lesson', description: 'Publish lesson', offsetDays: 0,
+            instructionDocId: 'sop.events.calendar.new',
+          }],
+        },
+      }, OPERATOR_ID);
+      assert.equal(response.statusCode, 200, response.body);
+      const generated = await fixture.store.readFile(viewPath);
+      assert.match(generated, /Template version: `2`/);
+      assert.match(generated, /sop\.events\.calendar\.new/);
+      assert.doesNotMatch(generated, /sop\.events\.calendar\.old/);
+    } finally {
+      resetDocsRuntime();
+      if (previousDocsDomain === undefined) delete process.env.DATAOPS_DOCS_DOMAIN;
+      else process.env.DATAOPS_DOCS_DOMAIN = previousDocsDomain;
+      rmSync(docsDir, { recursive: true, force: true });
+    }
   });
 
   it('instantiates from the pinned effective definition and freezes existing snapshots', async () => {

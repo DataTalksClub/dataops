@@ -492,7 +492,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (isDocsRoute(reqPath)) {
         const resolved=await resolveInteractiveActor(client,event,method==='GET'?'work-read':'work-write');
         if(!resolved.ok)return resolved.response;
-        const result=await handleDocsRoutes(event,resolved.actor.id || (resolved.actor.testBypass?'local-test-operator':''),undefined,(ids)=>userDisplayNames(client,ids));
+        const result=await handleDocsRoutes(event,resolved.actor.id || (resolved.actor.testBypass?'local-test-operator':''),undefined,(ids)=>userDisplayNames(client,ids),client);
         if(result)return result;
       }
     }
