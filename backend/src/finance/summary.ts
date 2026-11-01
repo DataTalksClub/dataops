@@ -97,7 +97,7 @@ export const SOURCE_RULES = [
   'Bank statement lines matching a ledger row are counted once through that row. Unmatched TK and Finanzamt debit lines are counted directly; other unmatched statement lines are listed as gaps.',
   'A bookkeeping-sheet row that repeats an invoice, sponsor-payment or payout row (same direction, currency and amount, paid within 3 days, same payer or payee) is dropped and listed under duplicates; the non-sheet row is kept.',
   'EUR conversion: a EUR row is taken as is. A non-EUR row uses its booked EUR amount (amountEur, what the bank actually credited or debited), with the implied rate shown. Without one, the ECB reference rate for the paid date (or the last ECB business day before it) is used. A row that cannot be converted is excluded from the totals and listed as a gap.',
-  'Lines: category VAT or a Finanzamt USt/UMS.ST purpose is VAT paid/refunded; other Finanzamt tax purposes are other taxes; TK/Health Insurance is health insurance. These mandatory payments do not affect operating profit.',
+  'Lines: category VAT or a Finanzamt USt/UMS.ST purpose in the ledger row or its matched statement reference is VAT paid/refunded; other Finanzamt tax purposes are other taxes; TK/Health Insurance is health insurance. These mandatory payments do not affect operating profit.',
   'VAT uses the reviewed ledger vatAmount first, then linked stored document VAT facts. If VAT amount is absent, an explicit VAT rate and net amount or the document gross-minus-net amount determine it; explicit 0% remains zero. Reverse-charge VAT is derived only from an explicit rate and net amount and is counted as both output and input VAT. No rate or source VAT fields means zero VAT.',
   'Refunds from suppliers (credit notes: income rows with subtype Refund or a credit-note:<number> source key) are money in and count toward net profit, but are their own line, not revenue. Their VAT reduces input VAT.',
   'Net profit excluding VAT = (operating income - output VAT) + (refunds - their VAT) - (operating expenses - input VAT). Taxes and TK are shown as their own lines and in net after taxes; VAT payments and refunds are not profit or loss.',
@@ -413,7 +413,14 @@ export function summarize(input: SummaryInput): FinanceSummary {
   const period = resolvePeriod(input.query, input.today);
   const inPeriod = (date: string) => date >= period.from && date <= period.to;
   const { kept, duplicates } = dedupe(input.rows);
-  const periodRows = kept.filter((row) => inPeriod(bookingDate(row)));
+  const statementMatches = matchStatementLines(input.statementLines || [], kept);
+  const periodRows = kept
+    .map((row) => {
+      const reference = statementMatches.byLedgerId.get(row.id)?.reference;
+      if (!reference) return row;
+      return { ...row, reference: [str(row.reference), reference].filter(Boolean).join(' ') };
+    })
+    .filter((row) => inPeriod(bookingDate(row)));
   const gaps: Gap[] = [];
   const entries: Entry[] = [];
   const noDirection: string[] = [];
@@ -422,7 +429,7 @@ export function summarize(input: SummaryInput): FinanceSummary {
     if (entry) entries.push(entry);
     else noDirection.push(row.id);
   }
-  const unmatched = unmatchedStatementLines(input.statementLines || [], kept).filter((line) => inPeriod(line.date));
+  const unmatched = statementMatches.unmatched.filter((line) => inPeriod(line.date));
   for (const [index, line] of unmatched.entries()) {
     const entry = toMandatoryStatementEntry(line, index, input.rates);
     if (entry) entries.push(entry);
@@ -490,9 +497,11 @@ export function summarize(input: SummaryInput): FinanceSummary {
  * (or the row's booked EUR amount against a EUR line), within the reconciliation
  * date-lag tolerance. Each ledger row explains at most one line.
  */
-export function unmatchedStatementLines(lines: StatementLine[], rows: LedgerRow[]): StatementLine[] {
+function matchStatementLines(lines: StatementLine[], rows: LedgerRow[]) {
   const used = new Set<string>();
-  return lines.filter((line) => {
+  const unmatched: StatementLine[] = [];
+  const byLedgerId = new Map<string, StatementLine>();
+  for (const line of lines) {
     const amount = positive(line.amount);
     const match = rows.find((row) => {
       if (used.has(row.id)) return false;
@@ -502,7 +511,14 @@ export function unmatchedStatementLines(lines: StatementLine[], rows: LedgerRow[
       const bookedEur = line.currency === 'EUR' && positive(row.amountEur) === amount;
       return sameCurrency || bookedEur;
     });
-    if (match) used.add(match.id);
-    return !match;
-  });
+    if (match) {
+      used.add(match.id);
+      byLedgerId.set(match.id, line);
+    } else unmatched.push(line);
+  }
+  return { byLedgerId, unmatched };
+}
+
+export function unmatchedStatementLines(lines: StatementLine[], rows: LedgerRow[]): StatementLine[] {
+  return matchStatementLines(lines, rows).unmatched;
 }

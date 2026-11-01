@@ -107,6 +107,25 @@ describe('finance summary', () => {
     assert.equal(aug.totals.otherTaxes, 3296);
   });
 
+  it('uses the matched statement purpose to classify a generic Taxes ledger row as VAT paid', () => {
+    const s = summarize({
+      today: '2026-08-31', query: { month: '2026-08' }, rates: noRates,
+      rows: [row('ust-ledger', {
+        entryType: 'expense', amount: '4196.60', paidDate: '2026-08-15', category: 'Taxes',
+        counterparty: 'Finanzamt Charlottenburg', description: 'Finanzamt Charlottenburg',
+      })],
+      statementLines: [{
+        id: 'finom:ust-august', accountId: 'finom', date: '2026-08-15', amount: '-4196.60',
+        currency: 'EUR', counterparty: 'Finanzamt Charlottenburg', reference: 'UMS.ST 2VJ.26 4.196,60EUR',
+      }],
+    });
+    assert.equal(s.totals.vatPaid, 4196.6);
+    assert.equal(s.totals.otherTaxes, 0);
+    assert.equal(s.totals.moneyOut, 4196.6);
+    assert.equal(s.entries.length, 1);
+    assert.deepEqual([s.entries[0].id, s.entries[0].line, s.entries[0].mandatoryKind], ['ust-ledger', 'vat', 'tax_debit']);
+  });
+
   it('derives VAT only from stored document fields and handles zero-rate and reverse-charge documents', () => {
     const s = summarize({ today: '2026-10-31', query: { month: '2026-10' }, rates: noRates, rows: [
       row('scalevector', { entryType: 'income', amount: '5950.00', paidDate: '2026-10-04', documentExtraction: { netAmount: '5000.00', vatAmount: '950.00', vatCurrency: 'EUR', vatRate: '19', amount: '5950.00', currency: 'EUR', reverseCharge: false } }),

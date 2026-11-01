@@ -36,7 +36,9 @@ A row is booked in the month it was **paid** (`paidDate`, else
    by a ledger row with the same direction, currency and amount (or the row's
    booked EUR amount against a EUR line), within the reconciliation date-lag
    tolerance (10 days by default); each row explains at most one line. Explained
-   lines count through the ledger row only. Unmatched TK and Finanzamt debit
+   lines count through the ledger row only, with the matched statement reference
+   supplying its purpose when the ledger row has only a generic tax label. This
+   keeps a matched `UMS.ST` debit in VAT paid instead of other taxes. Unmatched TK and Finanzamt debit
    lines count directly; other unmatched lines are listed as
    `bank-line-without-ledger-row`.
 2. **Sheet row vs a system row for the same payment.** A `spreadsheet` row that
@@ -62,7 +64,7 @@ Rates are quoted as units of the currency per 1 EUR, the ECB convention.
 
 | Category | Line |
 |---|---|
-| `VAT`, or Finanzamt purpose `USt` / `UMS.ST` | VAT paid or refunded |
+| `VAT`, or Finanzamt purpose `USt` / `UMS.ST` in the row or its matched statement reference | VAT paid or refunded |
 | `Taxes`, except an USt / `UMS.ST` purpose | Other taxes: Gewerbesteuer, income/corporate tax prepayments |
 | `Health Insurance`, or TK statement debit | Health insurance |
 | anything else | Operating income or expense |
