@@ -184,7 +184,7 @@ describe('Card-owned invitation lifecycle', () => {
     assert.equal(provider.calls.length, before);
     assert.equal((await getCardConsistent(db, bad.id))!.eventTime, undefined);
   });
-  test('a deferred attempt is retried with cards time without a duplicate; invites are never hand-linked', async () => {
+  test('a deferred attempt is retried with cards time; invite adoption is restricted to configured calendars', async () => {
     const provider = google();
     provider.state.account = 'wrong@example.test';
     const c = await card('webinar-adoption-conflict');
@@ -193,7 +193,8 @@ describe('Card-owned invitation lifecycle', () => {
     assert.deepEqual(first.data.card.eventTime.googleEventIds, {});
     assert.ok(first.data.error, 'deferred reason reaches CLI and UI clients');
     const adopted = await invoke('POST', `/api/cards/${c.id}/calendar-invites`, { eventId: 'another-event', calendar: 'legacy@example.test' });
-    assert.equal(adopted.code, 405, adopted.raw);
+    assert.equal(adopted.code, 400, adopted.raw);
+    assert.match(adopted.data.error, /not one of the configured DataOps calendars/);
     provider.state.account = HOLD_ORGANIZER;
     const retried = await invoke('POST', `/api/cards/${c.id}/time`, { at: '2026-11-09 14:30' });
     assert.equal(retried.code, 200, retried.raw);
