@@ -16,6 +16,7 @@ import {
   PROCEDURE_BLOCKS,
 } from "../src/surfaces/document-editor/slash-menu.js";
 import { emitProcedure, parseProcedure, stepsOf } from "../src/surfaces/document-editor/procedure-model.js";
+import { readFrontmatterScalar } from "../src/surfaces/document-editor/frontmatter.js";
 import { escapeHtml } from "../src/core/html.js";
 import {
   FakeDocument,
@@ -989,6 +990,77 @@ describe("Document Editor surface boundary", () => {
     const stepBody = findAllByClass(view, "block-step-body")[0];
     assert.equal(stepBody.dataset.editable, "rich");
     assert.equal(stepBody.innerHTML, "Send the newsletter.");
+  });
+
+  test("keeps a custom frontmatter doc_type inert in the type selector", async () => {
+    const payloads = [
+      ['run"><img src=x onerror=alert(1)>', 'Run"><Img Src=X Onerror=Alert(1)>'],
+      ["<script>alert(1)</script>", "<Script>Alert(1)</Script>"],
+      ['guide" onmouseover="alert(1)', 'Guide" Onmouseover="Alert(1)'],
+    ];
+    const standardTypes = [
+      "sop", "checklist", "template", "reference", "playbook", "prompt",
+    ];
+    for (const [docType, humanized] of payloads) {
+      const content = [
+        "---",
+        'title: "Custom type doc"',
+        `doc_type: ${docType}`,
+        "---",
+        "# Custom type doc",
+        "",
+        "Body",
+      ].join("\n");
+      const harness = createEditorHarness({ content, editorValue: content });
+
+      await harness.api.enterRenderedMode();
+      const select = harness.elements.renderedView.querySelector(
+        ".doc-property-select",
+      );
+      assert.ok(select);
+
+      // The frontmatter value is data: options are the only descendants and
+      // no event-handler attribute is ever created from it.
+      const nodes = select.querySelectorAll("*");
+      assert.ok(nodes.every((node) => node.tagName === "OPTION"));
+      assert.ok(
+        nodes.every((node) =>
+          [...node.attributes.keys()].every((name) => !/^on/i.test(name)),
+        ),
+      );
+
+      // The custom type stays first, verbatim, selected and humanized as text.
+      const options = select.querySelectorAll("option");
+      assert.deepEqual(
+        options.map((option) => option.value),
+        [docType, ...standardTypes],
+      );
+      assert.equal(options[0].textContent, humanized);
+      assert.equal(options[1].textContent, "SOP");
+      assert.deepEqual(
+        options.map((option) => option.selected),
+        [true, ...standardTypes.map(() => false)],
+      );
+
+      // Selection and edits keep working in both directions.
+      select.value = "checklist";
+      await select.dispatch("change");
+      const edited = harness.elements.editor.value;
+      assert.equal(readFrontmatterScalar(edited, "doc_type"), "checklist");
+      assert.equal(
+        harness.storageValues.get(
+          "dtc-doc-draft:content/processes/existing.md",
+        ),
+        edited,
+      );
+
+      select.value = docType;
+      await select.dispatch("change");
+      assert.equal(
+        readFrontmatterScalar(harness.elements.editor.value, "doc_type"),
+        docType,
+      );
+    }
   });
 
   test("renders safe internal Markdown navigation and resolves relative media", async () => {

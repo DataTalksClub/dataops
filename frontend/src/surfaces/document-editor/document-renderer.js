@@ -615,9 +615,15 @@ export function createDocumentRenderer(context, services) {
     const types = DOC_TYPES.includes(fm.doc_type) || !fm.doc_type
       ? DOC_TYPES
       : [fm.doc_type, ...DOC_TYPES];
-    type.innerHTML = types.map(
-      (t) => `<option value="${t}"${t === fm.doc_type ? " selected" : ""}>${humanizeDocType(t)}</option>`,
-    ).join("");
+    // A custom doc_type comes from document frontmatter, so it is data, not
+    // markup: option nodes keep its value and label inert but verbatim.
+    for (const docType of types) {
+      const option = document.createElement("option");
+      option.value = docType;
+      option.textContent = humanizeDocType(docType);
+      option.selected = docType === fm.doc_type;
+      type.append(option);
+    }
     type.addEventListener("change", () => applyFrontmatterEdit(fm, { doc_type: type.value }));
     row("Type", type);
 
