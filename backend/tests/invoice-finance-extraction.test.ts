@@ -113,3 +113,9 @@ test('the eval CLI checks recorded synthetic documents offline in both modes and
   assert.equal(regression.status,1);assert.match(regression.stderr,/Accuracy check failed/);
  } finally {await rm(dir,{recursive:true,force:true});}
 });
+
+test('a partial refund uses credited subtotal rather than the original invoice subtotal',async()=>{
+ const text='Example Tools GmbH\nRefund\nInvoice number: EXAMPLE-123-CN-01\nDate issued: October 1, 2026\nOriginal subtotal $100.00\nSubtotal $100.00\nTotal $100.00\n$25.00 refunded on October 1, 2026\nCredited subtotal - $25.00\nCredited total - $25.00\nAdjusted invoice total $75.00';
+ const r=await extractFinanceText(text,{llm:llm({...facts,docType:'credit_note',direction:'income',invoiceNumber:'EXAMPLE-123-CN-01',currency:'USD',gross:'25.00',net:null,vat:null,vatRate:null})});
+ assert.equal(r.fields.amount,'25.00');assert.equal(r.fields.netAmount,'25.00');assert.equal(r.fields.vatAmount,'0.00');assert.equal(r.fields.subtype,'Refund');
+});

@@ -27,7 +27,12 @@ export function regexFinanceFacts(raw: string): Facts {
   const taxAtRate = new RegExp(`(?:VAT|Tax|Umsatzsteuer)\\s*\\(?\\d{1,2}(?:[.,]\\d{1,2})?\\s*%\\)?\\s*(?:USD|EUR|€|\\$)?\\s*${decimal}`, 'i').exec(text);
   if (taxAtRate) f.vat = amount(taxAtRate[1]);
   if (f.reverseCharge && f.net && f.gross === f.net) { f.vat = '0.00'; f.vatRate = '0'; }
-  if (/(?:^|\n)\s*(?:credit note|refund|Gutschrift|Stornorechnung)\b/i.test(text)) {f.docType='credit_note'; f.direction='income';}
+  if (/(?:^|\n)\s*(?:credit note|refund|Gutschrift|Stornorechnung)\b/i.test(text)) {
+    f.docType='credit_note'; f.direction='income';
+    // Original invoice totals are not the tax base of a partial refund.
+    f.net=pick(text,`(?:Credited subtotal|Refunded net|Net credit)\\s*[:]?\\s*[-−]?\\s*(?:USD|EUR|€|\\$)?\\s*${decimal}`);
+    f.vat=pick(text,`(?:Credited tax|Refunded VAT|VAT credit)\\s*[:]?\\s*[-−]?\\s*(?:USD|EUR|€|\\$)?\\s*${decimal}`);
+  }
   else if (/\bReceipt\b/.test(text)) f.docType='receipt';
   return f;
 }
