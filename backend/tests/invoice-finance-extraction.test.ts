@@ -84,3 +84,32 @@ test('an unlabeled rate remains unknown when explicit subtotal and total establi
  const r=await extractFinanceText(t,{llm:llm({...facts,net:null,vat:null,gross:'100.00',vatRate:null})});
  assert.equal(r.fields.netAmount,'100.00');assert.equal(r.fields.vatAmount,'0.00');assert.equal(r.fields.vatRate,undefined);assert.ok(r.extraction.issues.includes('missing:vatRate'));
 });
+
+test('the eval CLI checks recorded synthetic documents offline in both modes and fails an amount regression',async()=>{
+ const {mkdtemp,writeFile,readFile,mkdir,rm}=await import('node:fs/promises');
+ const {tmpdir}=await import('node:os');const {join,resolve}=await import('node:path');
+ const {createHash}=await import('node:crypto');const {spawnSync}=await import('node:child_process');
+ const {EXTRACTION_PROMPT,EXTRACTION_SCHEMA}=await import('../src/invoices/llm');
+ const dir=await mkdtemp(join(tmpdir(),'invoice-eval-'));const model='gpt-6-luna';
+ try {
+  await mkdir(join(dir,'text'));await mkdir(join(dir,'eval-cache'));
+  await writeFile(join(dir,'index.json'),JSON.stringify([{id:'synthetic',file:join(dir,'synthetic.pdf'),kind:'synthetic'}]));
+  await writeFile(join(dir,'text','synthetic.txt'),unknown);
+  await writeFile(join(dir,'gold.json'),JSON.stringify({synthetic:facts}));
+  const fingerprint=createHash('sha256').update(EXTRACTION_PROMPT+unknown+model).update('').update(JSON.stringify(EXTRACTION_SCHEMA)).digest('hex');
+  const recording=join(dir,'eval-cache',`${fingerprint}.json`);
+  const record=(fields:LlmExtraction)=>JSON.stringify({fields,model,latencyMs:12,usage:{inputTokens:100,outputTokens:100}});
+  await writeFile(recording,record(facts));
+  // Tests run both from repo root and via npm --prefix backend test.
+  const script=resolve(__dirname,'../scripts/extract-eval.ts');
+  for(const mode of ['full','openai']) {
+   const run=spawnSync(process.execPath,['--import','tsx',script,'--corpus',dir,'--gold',join(dir,'gold.json'),'--mode',mode,'--model',model,'--offline','--check'],{encoding:'utf8'});
+   assert.equal(run.status,0,run.stderr);
+   const report=JSON.parse(await readFile(join(dir,`${mode}-${model}.json`),'utf8'));
+   assert.equal(report.documents,1);assert.equal(report.failures,0);assert.equal(report.accuracy.gross.accuracy,1);assert.equal(report.costPerDocumentUsd,0.00006);
+  }
+  await writeFile(recording,record({...facts,gross:'120.00'}));
+  const regression=spawnSync(process.execPath,['--import','tsx',script,'--corpus',dir,'--gold',join(dir,'gold.json'),'--mode','openai','--model',model,'--offline','--check'],{encoding:'utf8'});
+  assert.equal(regression.status,1);assert.match(regression.stderr,/Accuracy check failed/);
+ } finally {await rm(dir,{recursive:true,force:true});}
+});
