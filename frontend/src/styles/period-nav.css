@@ -249,17 +249,22 @@
     background: transparent;
     padding: 0;
   }
-  .period-nav,
-  .period-nav__picker { gap: var(--dk-space-1); }
-  .period-nav__today { padding-inline: var(--dk-space-3); }
+  .period-nav { gap: var(--dk-space-1); flex-wrap: nowrap; }
+  .period-nav__picker { gap: var(--dk-space-1); flex-wrap: nowrap; }
+  .period-nav__today { padding-inline: var(--dk-space-2); }
   .period-nav__badge { display: none; }
   .period-nav__today,
   .period-nav__arrow { min-height: var(--dk-size-touch); }
-  .period-nav__title-btn { min-height: var(--dk-size-touch); }
+  .period-nav__title-btn { min-height: var(--dk-size-touch); padding-inline: var(--dk-space-1); }
+  .period-nav__title { font-size: var(--dk-text-lg); }
   /* The title sits at the row's end on a phone; open the picker leftwards. */
   .period-nav__popover { right: 0; left: auto; }
   .period-nav__year-btn,
   .period-nav__month,
   .period-nav__shortcut { min-height: var(--dk-size-touch); }
   .period-nav__year-btn { width: var(--dk-size-touch); height: var(--dk-size-touch); }
+}
+
+@media (max-width: 359px) {
+  .period-nav { flex-wrap: wrap; }
 }
