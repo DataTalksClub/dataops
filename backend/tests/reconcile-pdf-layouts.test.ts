@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { ParseError } from '../src/reconcile/parsers';
 import { detectPdfStatementAccount, parseFinomPdfText, parseRevolutPdfText } from '../src/reconcile/pdfLayouts';
 
@@ -166,6 +167,8 @@ $0.00
 Monthly statement
 Generated on the 17 February 2025`;
 
+const REVOLUT_OCT_2026_REDACTED = readFileSync(new URL('./fixtures/reconcile/revolut-2026-10-redacted.txt', import.meta.url), 'utf8');
+
 describe('detectPdfStatementAccount', () => {
   it('tells Finom and Revolut statements apart by their issuer markers', () => {
     assert.equal(detectPdfStatementAccount(FINOM_SOLARIS), 'finom');
@@ -250,6 +253,38 @@ describe('parseRevolutPdfText', () => {
     assert.deepEqual(parsed.rows, []);
     assert.deepEqual(parsed.period, { from: '2025-01-01', to: '2025-01-31' });
     assert.deepEqual(parsed.balances, [{ currency: 'USD', amount: '50.00', asOf: '2025-01-31', wallet: 'USD' }]);
+  });
+
+  it('reads the October 2026 wallet titles and accepts its empty GBP section', () => {
+    const parsed = parseRevolutPdfText(REVOLUT_OCT_2026_REDACTED);
+    assert.deepEqual(parsed.period, { from: '2026-10-01', to: '2026-10-31' });
+    assert.deepEqual(
+      ['EUR', 'GBP', 'USD'].map((currency) => parsed.rows.filter((row) => row.currency === currency).length),
+      [28, 0, 3],
+    );
+    assert.deepEqual(parsed.openingBalances.map(({ currency, amount }) => [currency, amount]), [
+      ['EUR', '18654.92'],
+      ['GBP', '0.00'],
+      ['USD', '5.89'],
+    ]);
+    assert.deepEqual(parsed.balances.map(({ currency, amount }) => [currency, amount]), [
+      ['EUR', '51588.97'],
+      ['GBP', '0.00'],
+      ['USD', '6647.52'],
+    ]);
+
+    const eurRows = parsed.rows.filter((row) => row.currency === 'EUR');
+    const sumAbsolute = (rows: typeof eurRows) => (rows.reduce((sum, row) => sum + Math.abs(Math.round(Number(row.amount) * 100)), 0) / 100).toFixed(2);
+    assert.equal(sumAbsolute(eurRows.filter((row) => Number(row.amount) > 0)), '41985.03');
+    assert.equal(sumAbsolute(eurRows.filter((row) => Number(row.amount) < 0)), '9050.98');
+  });
+
+  it('rejects a dated row after an empty-wallet notice', () => {
+    const broken = REVOLUT_EMPTY_USD.replace(
+      'There were no transactions during this period',
+      'There were no transactions during this period\n1 Jan 2025   CAR   Redacted transaction   $1.00   $51.00',
+    );
+    assert.throws(() => parseRevolutPdfText(broken), /says it has no transactions but lists some/);
   });
 
   it('throws when the column header changed', () => {

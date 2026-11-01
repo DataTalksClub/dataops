@@ -1,0 +1,71 @@
+© 2026 Revolut Bank UAB
+Account name   Euro
+Currency   EUR
+Account statement
+Generated on the October 31, 2026
+Balance summary
+Opening balance   €18 654.92
+Money in   €41 985.03
+Money out   - €9 050.98
+Closing balance   €51 588.97
+Transactions from 1 October 2026 to 31 October 2026
+Date (UTC)   Description   Money out   Money in   Balance
+30 Oct 2026   MOA   Redacted transaction   €3 000.00   €51 588.97
+29 Oct 2026   MOA   Redacted transaction   €3 700.00   €48 588.97
+28 Oct 2026   FEE   Redacted transaction   €10.00   €44 888.97
+27 Oct 2026   MOS   Redacted transaction   €3 500.00   €44 898.97
+23 Oct 2026   CAR   Redacted transaction   €769.08   €48 398.97
+22 Oct 2026   CAR   Redacted transaction   €8.90   €49 168.05
+22 Oct 2026   CAR   Redacted transaction   €726.59   €49 176.95
+22 Oct 2026   CAR   Redacted transaction   €70.44   €49 903.54
+20 Oct 2026   MOA   Redacted transaction   €9 000.00   €49 973.98
+17 Oct 2026   MOR   Redacted transaction   €7.64   €40 973.98
+17 Oct 2026   CAR   Redacted transaction   €2 100.00   €40 966.34
+17 Oct 2026   MOR   Redacted transaction   €877.39   €43 066.34
+16 Oct 2026   MOR   Redacted transaction   €20 000.00   €42 188.95
+16 Oct 2026   CAR   Redacted transaction   €8.00   €22 188.95
+14 Oct 2026   CAR   Redacted transaction   €25.19   €22 196.95
+13 Oct 2026   CAR   Redacted transaction   €89.44   €22 222.14
+13 Oct 2026   CAR   Redacted transaction   €180.00   €22 311.58
+13 Oct 2026   CAR   Redacted transaction   €9.99   €22 491.58
+13 Oct 2026   CAR   Redacted transaction   €131.99   €22 501.57
+7 Oct 2026   CAR   Redacted transaction   €59.99   €22 633.56
+7 Oct 2026   CAR   Redacted transaction   €7.90   €22 693.55
+6 Oct 2026   MOA   Redacted transaction   €2 700.00   €22 701.45
+5 Oct 2026   CAR   Redacted transaction   €420.84   €20 001.45
+3 Oct 2026   CAR   Redacted transaction   €45.70   €20 422.29
+2 Oct 2026   CAR   Redacted transaction   €62.76   €20 467.99
+2 Oct 2026   CAR   Redacted transaction   €614.63   €20 530.75
+1 Oct 2026   CAR   Redacted transaction   €209.54   €21 145.38
+1 Oct 2026   MOA   Redacted transaction   €2 700.00   €21 354.92
+Transaction types
+Account name   British Pound
+Currency   GBP
+Account statement
+Generated on the October 31, 2026
+Balance summary
+Opening balance   £0.00
+Money in   £0.00
+Money out   £0.00
+Closing balance   £0.00
+Transactions from 1 October 2026 to 31 October 2026
+Date (UTC)   Description   Money out   Money in   Balance
+There were no transactions during this period
+No transaction details are present for this wallet.
+Transaction types
+Account name   United States Dollar
+Currency   USD
+Account statement
+Generated on the October 31, 2026
+Balance summary
+Opening balance   $5.89
+Money in   $6 646.63
+Money out   - $5.00
+Closing balance   $6 647.52
+Transactions from 1 October 2026 to 31 October 2026
+Date (UTC)   Description   Money out   Money in   Balance
+31 Oct 2026   MOR   Redacted transaction   $646.63   $6 647.52
+23 Oct 2026   MOA   Redacted transaction   $6 000.00   $6 000.89
+4 Oct 2026   CAR   Redacted transaction   $5.00   $0.89
+Transaction types
+© 2026 Revolut Bank UAB

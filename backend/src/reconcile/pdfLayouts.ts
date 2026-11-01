@@ -200,7 +200,8 @@ const REVOLUT_DATE_LINE = /^(\d{1,2} [A-Z][a-z]{2} \d{4})\s{3,}([A-Z]{3})(?:\s{3
 const REVOLUT_MONEY = /^([-+]\s?)?([€$£]|[A-Z]{3} ?)(\d{1,3}(?:[ ,]\d{3})*\.\d{2})$/;
 const REVOLUT_FX = /^FX rate [A-Z]{3} [\d.]+ = [A-Z]{3} [\d.]+(?:,\s*Fee:\s*(.+))?$/;
 const REVOLUT_NO_ROWS = /^There were no transactions during this period$/;
-const REVOLUT_CHROME_START = /^(?:Report lost or stolen card|(?:Account|Monthly) statement(?:\s+Generated on the .*)?)$/;
+const REVOLUT_CHROME_START = /^Report lost or stolen card$/;
+const REVOLUT_DOCUMENT_TITLE = /^(?:Account|Monthly) statement(?:\s+Generated on the .*)?$/;
 const REVOLUT_CHROME_END = /^© \d{4} Revolut Bank UAB\b/;
 const REVOLUT_PAGE = /^\d+\/\d+$/;
 /** Revolut's statement type codes, in the vocabulary of its CSV "Type" column. */
@@ -258,6 +259,10 @@ export function parseRevolutPdfText(text: string): PdfParsedStatement {
       afterChrome = false;
       if (REVOLUT_PAGE.test(trimmed)) continue;
     }
+    // Newer statements repeat this title inside each wallet section. It is a
+    // single decorative line, not the start of page chrome: the wallet summary
+    // and transaction table follow it before the page footer.
+    if (REVOLUT_DOCUMENT_TITLE.test(trimmed)) continue;
     if (REVOLUT_CHROME_START.test(trimmed)) { chrome = true; continue; }
     if (/^Generated on the /.test(trimmed)) continue;
     const parts = cells(trimmed);
@@ -273,6 +278,12 @@ export function parseRevolutPdfText(text: string): PdfParsedStatement {
       if (trimmed === "Transaction types") { inTable = false; continue; }
       if (REVOLUT_NO_ROWS.test(trimmed)) { section.empty = true; continue; }
       if (headerKey(trimmed) === REVOLUT_HEADER) continue;
+      if (section.empty) {
+        if (REVOLUT_DATE_LINE.test(trimmed)) {
+          throw new ParseError(`revolut PDF statement: the ${section.wallet} section says it has no transactions but lists some`);
+        }
+        continue;
+      }
       const dated = trimmed.match(REVOLUT_DATE_LINE);
       if (dated) {
         section.blocks.push({ date: parseStatementDate(dated[1]), code: dated[2], pieces: dated[3] ? cells(dated[3]) : [] });
