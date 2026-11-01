@@ -1,8 +1,8 @@
 import { UsageError } from "./errors.mjs";
 
 /**
- * Show commands accept a unique id prefix (8 or more characters) in place of a
- * full id. Anything else (full ids, arbitrary task-id slugs, shorter refs)
+ * Task commands accept a unique id prefix (8 or more characters) in place of
+ * a full id. Anything else (full ids, arbitrary task-id slugs, shorter refs)
  * passes through to the API untouched, and an ambiguous prefix is an error
  * naming the matches.
  */

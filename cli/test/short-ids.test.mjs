@@ -147,3 +147,122 @@ describe("CLI show commands accept unique id prefixes", () => {
     assert.match(io.errors.join("\n"), /Ambiguous short id prefix/);
   });
 });
+
+describe("CLI mutating tasks subcommands accept unique id prefixes", () => {
+  beforeEach(() => {
+    isolateConfig();
+    delete globalThis.fetch;
+  });
+
+  const listRoutes = () => ({
+    "GET /api/tasks": () => ({ status: 200, body: { tasks: [{ id: FULL }], nextCursor: null } }),
+    [`GET /api/tasks/${FULL}`]: () => ({
+      status: 200,
+      body: { id: FULL, description: "Real task", status: "todo", version: 3 },
+    }),
+  });
+
+  test("tasks update resolves a unique 8-character prefix (AC1)", async () => {
+    const calls = fakePortal({
+      ...listRoutes(),
+      [`PUT /api/tasks/${FULL}`]: ({ body }) => ({
+        status: 200,
+        body: { id: FULL, description: "Real task", status: "todo", version: 4, date: body.date },
+      }),
+    });
+    const io = captureIo();
+    const code = await run(["tasks", "update", PREFIX, "--date", "2026-11-05", "--json"], io);
+    assert.equal(code, 0, io.errors.join(" | "));
+    assert.equal(io.json().id, FULL);
+    assert.equal(io.json().date, "2026-11-05");
+    assert.ok(calls.some((c) => c.method === "PUT" && c.route === `/api/tasks/${FULL}`));
+    assert.ok(!calls.some((c) => c.route === `/api/tasks/${PREFIX}`));
+  });
+
+  test("tasks done resolves a unique prefix", async () => {
+    const calls = fakePortal({
+      ...listRoutes(),
+      [`PUT /api/tasks/${FULL}`]: ({ body }) => ({
+        status: 200,
+        body: { id: FULL, description: "Real task", status: "done", version: 4 },
+      }),
+    });
+    const io = captureIo();
+    const code = await run(["tasks", "done", PREFIX, "--comment", "Shipped", "--json"], io);
+    assert.equal(code, 0, io.errors.join(" | "));
+    assert.equal(io.json().id, FULL);
+    assert.ok(calls.some((c) => c.method === "PUT" && c.route === `/api/tasks/${FULL}`));
+  });
+
+  test("tasks reopen resolves a unique prefix", async () => {
+    const calls = fakePortal({
+      ...listRoutes(),
+      [`PUT /api/tasks/${FULL}`]: () => ({
+        status: 200,
+        body: { id: FULL, description: "Real task", status: "todo", version: 4 },
+      }),
+    });
+    const io = captureIo();
+    const code = await run(["tasks", "reopen", PREFIX, "--json"], io);
+    assert.equal(code, 0, io.errors.join(" | "));
+    assert.equal(io.json().id, FULL);
+    assert.ok(calls.some((c) => c.method === "PUT" && c.route === `/api/tasks/${FULL}`));
+  });
+
+  test("tasks snooze resolves a unique prefix (covers the shared action helper)", async () => {
+    const calls = fakePortal({
+      ...listRoutes(),
+      [`POST /api/tasks/${FULL}/actions/snooze`]: () => ({
+        status: 200,
+        body: { id: FULL, description: "Real task", status: "todo", version: 4 },
+      }),
+    });
+    const io = captureIo();
+    const code = await run(["tasks", "snooze", PREFIX, "--until", "+7d", "--reason", "Waiting", "--json"], io);
+    assert.equal(code, 0, io.errors.join(" | "));
+    assert.equal(io.json().id, FULL);
+    assert.ok(calls.some((c) => c.method === "POST" && c.route === `/api/tasks/${FULL}/actions/snooze`));
+  });
+
+  test("tasks note resolves a unique prefix", async () => {
+    const calls = fakePortal({
+      ...listRoutes(),
+      [`POST /api/tasks/${FULL}/actions/add-note`]: () => ({
+        status: 200,
+        body: { id: FULL, description: "Real task", status: "todo", version: 4 },
+      }),
+    });
+    const io = captureIo();
+    const code = await run(["tasks", "note", PREFIX, "hello", "--json"], io);
+    assert.equal(code, 0, io.errors.join(" | "));
+    assert.equal(io.json().id, FULL);
+    assert.ok(calls.some((c) => c.method === "POST" && c.route === `/api/tasks/${FULL}/actions/add-note`));
+  });
+
+  test("tasks assign resolves a unique prefix", async () => {
+    const calls = fakePortal({
+      ...listRoutes(),
+      [`PUT /api/tasks/${FULL}`]: ({ body }) => ({
+        status: 200,
+        body: { id: FULL, description: "Real task", status: "todo", version: 4, assigneeId: body.assigneeId },
+      }),
+    });
+    const io = captureIo();
+    const code = await run(["tasks", "assign", PREFIX, "user-1", "--json"], io);
+    assert.equal(code, 0, io.errors.join(" | "));
+    assert.equal(io.json().id, FULL);
+    assert.ok(calls.some((c) => c.method === "PUT" && c.route === `/api/tasks/${FULL}`));
+  });
+
+  test("tasks delete resolves a unique prefix", async () => {
+    const calls = fakePortal({
+      ...listRoutes(),
+      [`DELETE /api/tasks/${FULL}`]: () => ({ status: 200, body: { status: "deleted" } }),
+    });
+    const io = captureIo();
+    const code = await run(["tasks", "delete", PREFIX, "--json"], io);
+    assert.equal(code, 0, io.errors.join(" | "));
+    assert.equal(io.json().id, FULL);
+    assert.ok(calls.some((c) => c.method === "DELETE" && c.route === `/api/tasks/${FULL}`));
+  });
+});

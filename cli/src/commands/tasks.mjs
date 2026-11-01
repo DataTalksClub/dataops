@@ -45,6 +45,8 @@ Usage
   dataops tasks link-card <task-id> --unlink           Clear the link
   dataops tasks delete <task-id>                                (admin)
 
+Every <task-id> above accepts a unique 8+ character id prefix.
+
 List views (default: --queue)
   --queue      Overdue work, follow-ups due today or earlier, and today todos
   --today      Due today          --overdue    Open and past due     --waiting   All waiting, including future follow-ups
@@ -692,10 +694,11 @@ function report(io, args, task, verb) {
 }
 
 export async function update(args, io) {
-  const id = positional(args, 0, "dataops tasks update <task-id> [--description D] ...");
+  const raw = positional(args, 0, "dataops tasks update <task-id> [--description D] ...");
   const body = writableFields(args);
   if (!Object.keys(body).length) throw new UsageError("Nothing to change. See `dataops tasks --help`.");
   const api = apiFor(args);
+  const id = await resolveTaskId(api, raw);
   const { expectedVersion } = await currentVersion(api, id, args);
   return report(io, args, await api.put(`/api/tasks/${enc(id)}`, { ...body, expectedVersion }), "Updated");
 }
@@ -723,8 +726,9 @@ export async function uploadFile(api, taskId, path, category) {
 }
 
 export async function done(args, io) {
-  const id = positional(args, 0, "dataops tasks done <task-id> [--link URL] [--comment C] [--file PATH]");
+  const raw = positional(args, 0, "dataops tasks done <task-id> [--link URL] [--comment C] [--file PATH]");
   const api = apiFor(args);
+  const id = await resolveTaskId(api, raw);
   if (args.file !== undefined) {
     if (args.file === true) throw new UsageError("--file needs a path.");
     await uploadFile(api, id, String(args.file), optionalString(args, "category"));
@@ -751,15 +755,16 @@ export async function done(args, io) {
 }
 
 export async function reopen(args, io) {
-  const id = positional(args, 0, "dataops tasks reopen <task-id>");
+  const raw = positional(args, 0, "dataops tasks reopen <task-id>");
   const api = apiFor(args);
+  const id = await resolveTaskId(api, raw);
   const { expectedVersion } = await currentVersion(api, id, args);
   return report(io, args, await api.put(`/api/tasks/${enc(id)}`, { status: "todo", expectedVersion }), "Reopened");
 }
 
 async function action(args, io, name, body, verb) {
-  const id = args._[0];
   const api = apiFor(args);
+  const id = await resolveTaskId(api, String(args._[0]));
   const { expectedVersion } = await currentVersion(api, id, args);
   const task = await api.post(`/api/tasks/${enc(id)}/actions/${name}`, { ...body, expectedVersion });
   return report(io, args, task, verb);
@@ -851,10 +856,11 @@ export async function unsnooze(args, io) {
 }
 
 export async function note(args, io) {
-  const id = positional(args, 0, `dataops tasks note <task-id> "text"`);
+  const raw = positional(args, 0, `dataops tasks note <task-id> "text"`);
   const text = positional(args, 1, `dataops tasks note <task-id> "text"`);
   if (!text.trim()) throw new UsageError(`Usage: dataops tasks note <task-id> "text"`);
   const api = apiFor(args);
+  const id = await resolveTaskId(api, raw);
   const { expectedVersion } = await currentVersion(api, id, args);
   return report(io, args, await api.post(`/api/tasks/${enc(id)}/actions/add-note`, { note: text, expectedVersion }), "Noted");
 }
@@ -878,9 +884,10 @@ export async function unskip(args, io) {
 }
 
 export async function assign(args, io) {
-  const id = positional(args, 0, "dataops tasks assign <task-id> <user-id|me>");
+  const raw = positional(args, 0, "dataops tasks assign <task-id> <user-id|me>");
   const who = positional(args, 1, "dataops tasks assign <task-id> <user-id|me>");
   const api = apiFor(args);
+  const id = await resolveTaskId(api, raw);
   const assigneeId = await resolveAssignee(api, who);
   const { expectedVersion } = await currentVersion(api, id, args);
   return report(io, args, await api.put(`/api/tasks/${enc(id)}`, { assigneeId, expectedVersion }), "Assigned");
@@ -898,8 +905,9 @@ export async function handover(args, io) {
   if (!to) throw new UsageError("--to is required: the agent who takes over.");
   const api = apiFor(args);
   const toId = await resolveAssignee(api, to);
-  const id = args._[0] === undefined ? undefined : String(args._[0]);
-  if (id !== undefined) {
+  const raw = args._[0] === undefined ? undefined : String(args._[0]);
+  if (raw !== undefined) {
+    const id = await resolveTaskId(api, raw);
     const { expectedVersion } = await currentVersion(api, id, args);
     return report(io, args, await api.put(`/api/tasks/${enc(id)}`, { assigneeId: toId, expectedVersion }), "Handed over");
   }
@@ -949,8 +957,9 @@ export async function linkCard(args, io) {
 }
 
 export async function remove(args, io) {
-  const id = positional(args, 0, "dataops tasks delete <task-id>");
+  const raw = positional(args, 0, "dataops tasks delete <task-id>");
   const api = apiFor(args);
+  const id = await resolveTaskId(api, raw);
   const { expectedVersion } = await currentVersion(api, id, args);
   await api.delete(`/api/tasks/${enc(id)}`, { expectedVersion });
   const result = { status: "deleted", id };
