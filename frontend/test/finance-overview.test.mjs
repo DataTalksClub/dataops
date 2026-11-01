@@ -13,7 +13,7 @@ const month = (m, fields, future = false) => ({ month: m, future, ...totals(fiel
 const YEAR = {
   period: { kind: "year", label: "2026", from: "2026-01-01", to: "2026-12-31", months: ["2026-09", "2026-10", "2026-11"] },
   totals: totals({ moneyIn: 3000, moneyOut: 1300, net: 1700, netProfitExVat: 2100, incomeNetOfVat: 2500, expensesNetOfVat: 400, projectedVat: 410.5, outputVat: 500, inputVat: 89.5, vatPaid: 300, otherTaxes: 400, healthInsurance: 0, netAfterTaxes: 1700, entryCount: 4 }),
-  months: [month("2026-09", { moneyIn: 1000, moneyOut: 1300, net: -300, netProfitExVat: -100 }), month("2026-10", { moneyIn: 2000, net: 2000, netProfitExVat: 2200 }), month("2026-11", {}, true)],
+  months: [month("2026-09", { moneyIn: 1000, moneyOut: 1300, net: -300, netProfitExVat: -100, outputVat: 50, inputVat: 15, vatPaid: 45, vatRefunded: 5, projectedVat: 35 }), month("2026-10", { moneyIn: 2000, net: 2000, netProfitExVat: 2200 }), month("2026-11", {}, true)],
   byCurrency: [{ currency: "USD", moneyIn: "6000.00", moneyOut: "0.00", moneyInEur: 5360.49, moneyOutEur: 0 }],
   conversions: [{ id: "r1", date: "2026-10-23", amount: "6000", currency: "USD", eur: 5360.49, rate: 1.1193, rateDate: "2026-10-23", rateSource: "ecb" }],
   entries: [{ id: "r1", counterparty: "<Payer & Co>" }],
@@ -52,6 +52,9 @@ describe("finance overview", () => {
     assert.match(markup, /<th scope="row">Total<\/th>/);
     assert.match(markup, /2026-11 <small>\(not over\)<\/small>/);
     assert.match(markup, /dataops finance summary --year 2026/);
+    for (const header of ["Output VAT", "Input VAT", "VAT paid", "VAT refunded", "VAT position"])
+      assert.match(markup, new RegExp(`<th scope="col">${header}</th>`));
+    assert.match(markup, /<th scope="row">2026-09<\/th>[\s\S]*?<td class="fin-num">50\.00<\/td>\s*<td class="fin-num">15\.00<\/td>\s*<td class="fin-num">45\.00<\/td>\s*<td class="fin-num">5\.00<\/td>\s*<td class="fin-num">35\.00<\/td>/);
   });
 
   test("a single month has no chart, only its table", () => {

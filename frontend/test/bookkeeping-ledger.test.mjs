@@ -14,6 +14,7 @@ import {
   needsCategory,
   originalValue,
   suggestionsMarkup,
+  vatPresentation,
   vocabulary,
 } from "../src/surfaces/finance/bookkeeping-ledger.js";
 
@@ -90,6 +91,22 @@ test("the table renders one compact row per transaction without changing stored 
   assert.match(markup, /aria-label="No receipt"/);
   assert.match(markup, /out <span class="dk-mono">−€86\.00/);
   assert.equal(JSON.stringify(rows), before);
+});
+
+test("the VAT column shows document VAT, a zero rate, and reverse charge distinctly", () => {
+  const markup = ledgerTableMarkup({
+    groups: groupByMonth(rows), hasEvidence: () => false, vocab: {}, selectedId: "",
+    financeEntriesById: new Map([
+      ["a", { vatAmount: "19.00", vatCurrency: "EUR", vatRate: "19", reverseCharge: false, zeroRated: false }],
+      ["b", { vatAmount: "0.00", vatCurrency: "EUR", vatRate: "0", reverseCharge: false, zeroRated: true }],
+      ["d", { vatAmount: "0.00", vatCurrency: "EUR", vatRate: "19", reverseCharge: true, zeroRated: false }],
+    ]),
+    e: escapeHtml,
+  });
+  assert.match(markup, /€19\.00 \(19%\)/);
+  assert.match(markup, />0%<\/td>/);
+  assert.match(markup, /Reverse charge · 19%/);
+  assert.equal(vatPresentation({ vatAmount: "500.00", vatCurrency: "USD", vatRate: "0.19" }), "$500.00 (19%)");
 });
 
 test("details show every field, attached files one click away, and an attach action", () => {

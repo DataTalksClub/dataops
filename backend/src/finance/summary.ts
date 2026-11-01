@@ -1,13 +1,16 @@
+import { DEFAULT_TOLERANCES } from '../reconcile/month';
+import { classifyMandatoryPayment, type MandatoryPaymentKind } from './mandatoryPayments';
+
 /**
  * Finance summary: money in, money out and net per month, year and
- * year-to-date, in EUR, from the bookkeeping ledger. Pure: callers load the
- * rows and supply exchange rates, so the portal, the CLI and the tests all run
- * the same arithmetic. The rules are written out in SOURCE_RULES and in
- * docs/finance-summary.md; change both together.
+ * year-to-date, in EUR. Pure: callers load the rows and supply exchange rates,
+ * so the portal, the CLI and the tests all run the same arithmetic. The rules
+ * are written out in SOURCE_RULES and in docs/finance-summary.md; change both
+ * together.
  */
 
 export type LedgerRow = Record<string, unknown> & { id: string };
-export type StatementLine = { accountId: string; date: string; amount: string; currency: string; counterparty?: string };
+export type StatementLine = { id?: string; accountId: string; date: string; amount: string; currency: string; counterparty?: string; reference?: string };
 export type PendingInvoice = { id: string; date: string; amount?: string; currency?: string; counterparty?: string };
 export type StatementCoverage = { accountId: string; month: string };
 
@@ -31,6 +34,7 @@ export type Entry = {
   description: string;
   category: string;
   sourceType: string;
+  mandatoryKind: MandatoryPaymentKind | null;
   amount: string;
   currency: string;
   eur: number | null;
@@ -38,6 +42,12 @@ export type Entry = {
   rateDate: string | null;
   rateSource: 'eur' | 'booked' | 'ecb' | null;
   vatEur: number | null;
+  reverseChargeVatEur: number | null;
+  vatAmount: string | null;
+  vatCurrency: string | null;
+  vatRate: string | null;
+  reverseCharge: boolean;
+  zeroRated: boolean;
 };
 
 export type Totals = {
@@ -81,16 +91,17 @@ export type FinanceSummary = {
 };
 
 export const SOURCE_RULES = [
-  'Ledger rows are the only thing counted. A row is there because a person or a verified flow put it there: a confirmed and published incoming invoice, a recorded sponsor payment, a platform payout, or a bookkeeping-sheet row. Pending and rejected invoice drafts never count; they are listed as gaps.',
+  'Confirmed ledger rows count, along with unmatched bank statement rows classified as TK or Finanzamt mandatory debits. Pending and rejected invoice drafts never count; they are listed as gaps.',
   'A row is booked in the month it was paid (paidDate), or its transactionDate when it has no paid date. entryType income is money in, expense is money out.',
   'Issued outgoing invoices count only once paid, through the payment row. An unpaid invoice is not income.',
-  'Bank and PayPal statement lines are never counted. They are evidence: a statement line with no ledger row is listed as a gap, so the payment, the invoice it settles and the bank line are counted once.',
+  'Bank statement lines matching a ledger row are counted once through that row. Unmatched TK and Finanzamt debit lines are counted directly; other unmatched statement lines are listed as gaps.',
   'A bookkeeping-sheet row that repeats an invoice, sponsor-payment or payout row (same direction, currency and amount, paid within 3 days, same payer or payee) is dropped and listed under duplicates; the non-sheet row is kept.',
   'EUR conversion: a EUR row is taken as is. A non-EUR row uses its booked EUR amount (amountEur, what the bank actually credited or debited), with the implied rate shown. Without one, the ECB reference rate for the paid date (or the last ECB business day before it) is used. A row that cannot be converted is excluded from the totals and listed as a gap.',
-  'Lines: category VAT is a payment to (expense) or refund from (income) the Finanzamt for VAT; category Taxes is every other tax (Gewerbesteuer, income or corporate tax prepayments); category Health Insurance is TK. Everything else is operating income or expense.',
+  'Lines: category VAT or a Finanzamt USt/UMS.ST purpose is VAT paid/refunded; other Finanzamt tax purposes are other taxes; TK/Health Insurance is health insurance. These mandatory payments do not affect operating profit.',
+  'VAT uses the reviewed ledger vatAmount first, then linked stored document VAT facts. If VAT amount is absent, an explicit VAT rate and net amount or the document gross-minus-net amount determine it; explicit 0% remains zero. Reverse-charge VAT is derived only from an explicit rate and net amount and is counted as both output and input VAT. No rate or source VAT fields means zero VAT.',
   'Refunds from suppliers (credit notes: income rows with subtype Refund or a credit-note:<number> source key) are money in and count toward net profit, but are their own line, not revenue. Their VAT reduces input VAT.',
   'Net profit excluding VAT = (operating income - output VAT) + (refunds - their VAT) - (operating expenses - input VAT). Taxes and TK are shown as their own lines and in net after taxes; VAT payments and refunds are not profit or loss.',
-  'Projected VAT position = output VAT - input VAT: positive is owed to the Finanzamt, negative is a refund. A row without a VAT amount contributes zero VAT.',
+  'Projected VAT position = output VAT - input VAT: positive is owed to the Finanzamt, negative is a refund. Missing VAT fields contribute zero and do not create a warning.',
 ];
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -130,6 +141,8 @@ export function bookingDate(row: LedgerRow) {
 }
 
 export function lineOf(row: LedgerRow): Line {
+  const mandatory = classifyMandatoryPayment(row);
+  if (mandatory) return mandatory.line;
   const category = str(row.category);
   if (category === 'VAT') return 'vat';
   if (category === 'Taxes') return 'taxes';
@@ -153,13 +166,89 @@ export function convert(row: LedgerRow, rates: RateLookup) {
 
 const round6 = (value: number) => Math.round(value * 1e6) / 1e6;
 
-function vatEur(row: LedgerRow, conversion: ReturnType<typeof convert>) {
-  const vat = positive(row.vatAmount);
-  if (vat === null) return null;
-  const currency = str(row.vatCurrency) || str(row.currency) || 'EUR';
-  if (currency === 'EUR') return fromCents(cents(vat));
-  if (currency === str(row.currency) && conversion.rate) return fromCents(cents(vat / conversion.rate));
-  return null;
+function documentVatFacts(row: LedgerRow): Record<string, unknown> | null {
+  const value = row.documentExtraction;
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function vatAmounts(row: LedgerRow, conversion: ReturnType<typeof convert>, rates: RateLookup) {
+  const facts = documentVatFacts(row);
+  const reverseCharge = row.reverseCharge === true || facts?.reverseCharge === true;
+  const directVat = row.vatAmount !== undefined && row.vatAmount !== null;
+  const extractedVat = !directVat && facts?.vatAmount !== undefined && facts?.vatAmount !== null;
+  const sourceVat = directVat ? row.vatAmount : extractedVat ? facts?.vatAmount : null;
+  const explicitVat = positive(sourceVat);
+  let vat = explicitVat;
+  let reverseChargeVat: number | null = null;
+  let derivedFromRate = false;
+  const net = positive(facts?.netAmount ?? row.netAmount);
+  const rate = positive(facts?.vatRate ?? row.vatRate);
+  const gross = positive(facts?.amount ?? facts?.grossAmount);
+
+  if (reverseCharge && rate !== null && net !== null) {
+    reverseChargeVat = fromCents(cents(net * rate / 100));
+    if (vat === null) vat = reverseChargeVat;
+    derivedFromRate = true;
+  } else if (reverseCharge && explicitVat !== null && explicitVat > 0) {
+    reverseChargeVat = explicitVat;
+  } else if (!reverseCharge && vat === null && rate !== null && net !== null) {
+    vat = fromCents(cents(net * rate / 100));
+    derivedFromRate = true;
+  } else if (!reverseCharge && vat === null && gross !== null && net !== null) {
+    vat = fromCents(cents(Math.max(0, gross - net)));
+  }
+  if (vat === null && reverseCharge) vat = 0;
+  const vatRate = facts?.vatRate ?? row.vatRate;
+  const rateText = vatRate === undefined || vatRate === null || String(vatRate).trim() === '' ? null : String(vatRate);
+  if (vat === null) return {
+    vatEur: null,
+    reverseChargeVatEur: null,
+    vatAmount: null,
+    vatCurrency: null,
+    vatRate: rateText,
+    reverseCharge,
+    zeroRated: rate === 0,
+  };
+
+  const currency = directVat
+    ? str(row.vatCurrency) || str(row.currency) || 'EUR'
+    : str(facts?.vatCurrency) || str(facts?.currency) || str(row.vatCurrency) || str(row.currency) || 'EUR';
+  const storedVatEur = directVat ? positive(row.vatAmountEur) : extractedVat ? positive(facts?.vatAmountEur) : null;
+  const netEur = derivedFromRate ? positive(facts?.netAmountEur) : null;
+  let eur: number | null = storedVatEur === null ? null : fromCents(cents(storedVatEur));
+  if (eur === null && netEur !== null && rate !== null) eur = fromCents(cents(netEur * rate / 100));
+  if (eur === null) {
+    if (currency === 'EUR') eur = fromCents(cents(vat));
+    else if (currency === str(row.currency) && conversion.rate) eur = fromCents(cents(vat / conversion.rate));
+    else {
+      const ecb = rates(currency, bookingDate(row));
+      if (ecb) eur = fromCents(cents(vat / ecb.rate));
+    }
+  }
+  let reverseChargeEur: number | null = null;
+  if (reverseChargeVat !== null) {
+    const storedReverseChargeEur = derivedFromRate
+      ? rate !== null && netEur !== null ? fromCents(cents(netEur * rate / 100)) : null
+      : storedVatEur === null ? null : fromCents(cents(storedVatEur));
+    reverseChargeEur = storedReverseChargeEur;
+    if (reverseChargeEur === null) {
+      if (currency === 'EUR') reverseChargeEur = fromCents(cents(reverseChargeVat));
+      else if (currency === str(row.currency) && conversion.rate) reverseChargeEur = fromCents(cents(reverseChargeVat / conversion.rate));
+      else {
+        const ecb = rates(currency, bookingDate(row));
+        if (ecb) reverseChargeEur = fromCents(cents(reverseChargeVat / ecb.rate));
+      }
+    }
+  }
+  return {
+    vatEur: reverseCharge && explicitVat === null ? 0 : eur,
+    reverseChargeVatEur: reverseChargeEur,
+    vatAmount: vat.toFixed(2),
+    vatCurrency: currency,
+    vatRate: rateText,
+    reverseCharge,
+    zeroRated: rate === 0,
+  };
 }
 
 const SYSTEM_SOURCES = new Set(['invoice', 'sponsor-receipt', 'payout']);
@@ -205,21 +294,37 @@ function total(entries: Entry[]): Totals {
   const c = Object.fromEntries(SUMMED.map((key) => [key, 0])) as Record<string, number>;
   let unconvertedCount = 0;
   let refundVat = 0;
+  let reverseChargeInputVat = 0;
+  let reverseChargeOutputVat = 0;
   for (const entry of entries) {
     if (entry.eur === null) { unconvertedCount += 1; continue; }
     const value = cents(entry.eur);
     const vat = entry.vatEur === null ? 0 : cents(entry.vatEur);
+    const reverseChargeVat = entry.reverseChargeVatEur === null ? 0 : cents(entry.reverseChargeVatEur);
     c[entry.direction === 'in' ? 'moneyIn' : 'moneyOut'] += value;
     if (entry.line === 'operating') {
-      if (entry.direction === 'out') { c.operatingExpenses += value; c.inputVat += vat; }
-      else if (entry.refund) { c.refunds += value; c.inputVat -= vat; refundVat += vat; }
+      if (entry.direction === 'out') {
+        c.operatingExpenses += value;
+        c.inputVat += vat + reverseChargeVat;
+        c.outputVat += reverseChargeVat;
+        reverseChargeInputVat += reverseChargeVat;
+        reverseChargeOutputVat += reverseChargeVat;
+      }
+      else if (entry.refund) {
+        c.refunds += value;
+        c.inputVat -= vat + reverseChargeVat;
+        c.outputVat -= reverseChargeVat;
+        refundVat += vat;
+        reverseChargeInputVat -= reverseChargeVat;
+        reverseChargeOutputVat -= reverseChargeVat;
+      }
       else { c.operatingIncome += value; c.outputVat += vat; }
     } else if (entry.line === 'vat') c[entry.direction === 'out' ? 'vatPaid' : 'vatRefunded'] += value;
     else if (entry.line === 'taxes') c.otherTaxes += entry.direction === 'out' ? value : -value;
     else c.healthInsurance += entry.direction === 'out' ? value : -value;
   }
-  const incomeNetOfVat = c.operatingIncome - c.outputVat;
-  const expensesNetOfVat = c.operatingExpenses - (c.inputVat + refundVat);
+  const incomeNetOfVat = c.operatingIncome - (c.outputVat - reverseChargeOutputVat);
+  const expensesNetOfVat = c.operatingExpenses - (c.inputVat - reverseChargeInputVat + refundVat);
   const refundsNetOfVat = c.refunds - refundVat;
   const netProfitExVat = incomeNetOfVat + refundsNetOfVat - expensesNetOfVat;
   const out = emptyTotals();
@@ -243,25 +348,53 @@ export function toEntry(row: LedgerRow, rates: RateLookup): Entry | null {
   if (entryType !== 'income' && entryType !== 'expense') return null;
   const date = bookingDate(row);
   const conversion = convert(row, rates);
+  const mandatory = classifyMandatoryPayment(row);
+  const vat = vatAmounts(row, conversion, rates);
   return {
     id: row.id,
     date,
     month: date.slice(0, 7),
     direction: entryType === 'income' ? 'in' : 'out',
-    line: lineOf(row),
+    line: mandatory?.line || lineOf(row),
     refund: entryType === 'income' && (str(row.subtype) === 'Refund' || str(row.sourceKey).startsWith('credit-note:')),
     counterparty: str(row.counterparty),
     description: str(row.description),
     category: str(row.category),
     sourceType: str(row.sourceType),
+    mandatoryKind: mandatory?.kind || null,
     amount: str(row.amount),
     currency: str(row.currency) || 'EUR',
     eur: conversion.eur,
     rate: conversion.rate,
     rateDate: conversion.rateDate,
     rateSource: conversion.rateSource,
-    vatEur: vatEur(row, conversion),
+    vatEur: vat.vatEur,
+    reverseChargeVatEur: vat.reverseChargeVatEur,
+    vatAmount: vat.vatAmount,
+    vatCurrency: vat.vatCurrency,
+    vatRate: vat.vatRate,
+    reverseCharge: vat.reverseCharge,
+    zeroRated: vat.zeroRated,
   };
+}
+
+function toMandatoryStatementEntry(line: StatementLine, index: number, rates: RateLookup): Entry | null {
+  const mandatory = classifyMandatoryPayment(line);
+  const amount = positive(line.amount);
+  if (!mandatory || amount === null || amount === 0) return null;
+  const row: LedgerRow = {
+    id: line.id || `statement:${line.accountId}:${line.date}:${index}`,
+    transactionDate: line.date,
+    paidDate: line.date,
+    entryType: Number(line.amount) < 0 ? 'expense' : 'income',
+    amount: String(amount),
+    currency: line.currency || 'EUR',
+    counterparty: line.counterparty || '',
+    description: line.reference || '',
+    category: mandatory.line === 'vat' ? 'VAT' : mandatory.line === 'taxes' ? 'Taxes' : 'Health Insurance',
+    sourceType: 'statement',
+  };
+  return toEntry(row, rates);
 }
 
 export type SummaryInput = {
@@ -289,6 +422,11 @@ export function summarize(input: SummaryInput): FinanceSummary {
     if (entry) entries.push(entry);
     else noDirection.push(row.id);
   }
+  const unmatched = unmatchedStatementLines(input.statementLines || [], kept).filter((line) => inPeriod(line.date));
+  for (const [index, line] of unmatched.entries()) {
+    const entry = toMandatoryStatementEntry(line, index, input.rates);
+    if (entry) entries.push(entry);
+  }
   entries.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const periodDuplicates = duplicates.filter((d) => periodRows.some((row) => row.id === d.keptId));
 
@@ -315,8 +453,8 @@ export function summarize(input: SummaryInput): FinanceSummary {
   const pending = (input.pendingInvoices || []).filter((invoice) => inPeriod(invoice.date));
   if (pending.length) gaps.push({ kind: 'pending-invoices', message: 'Incoming invoice drafts not yet verified; not counted until confirmed and published', count: pending.length, ids: pending.map((p) => p.id) });
 
-  const unmatched = unmatchedStatementLines(input.statementLines || [], kept).filter((line) => inPeriod(line.date));
-  if (unmatched.length) gaps.push({ kind: 'bank-line-without-ledger-row', message: 'Statement lines with no ledger row; not counted until a row is recorded', count: unmatched.length });
+  const unclassified = unmatched.filter((line) => !classifyMandatoryPayment(line));
+  if (unclassified.length) gaps.push({ kind: 'bank-line-without-ledger-row', message: 'Unclassified statement lines with no ledger row; not counted until a row is recorded', count: unclassified.length });
 
   const today = input.today.slice(0, 7);
   for (const month of period.months.filter((m) => m <= today)) {
@@ -349,8 +487,8 @@ export function summarize(input: SummaryInput): FinanceSummary {
 
 /**
  * Statement lines no ledger row explains: same currency and absolute amount
- * (or the row's booked EUR amount against a EUR line), within 5 days. Each
- * ledger row explains at most one line.
+ * (or the row's booked EUR amount against a EUR line), within the reconciliation
+ * date-lag tolerance. Each ledger row explains at most one line.
  */
 export function unmatchedStatementLines(lines: StatementLine[], rows: LedgerRow[]): StatementLine[] {
   const used = new Set<string>();
@@ -359,7 +497,7 @@ export function unmatchedStatementLines(lines: StatementLine[], rows: LedgerRow[
     const match = rows.find((row) => {
       if (used.has(row.id)) return false;
       if ((Number(line.amount) < 0) !== (str(row.entryType) === 'expense')) return false;
-      if (dayDistance(bookingDate(row), line.date) > 5) return false;
+      if (dayDistance(bookingDate(row), line.date) > DEFAULT_TOLERANCES.dateLagDays) return false;
       const sameCurrency = (str(row.currency) || 'EUR') === line.currency && positive(row.amount) === amount;
       const bookedEur = line.currency === 'EUR' && positive(row.amountEur) === amount;
       return sameCurrency || bookedEur;

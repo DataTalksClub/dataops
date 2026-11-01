@@ -3,7 +3,8 @@ import { listBookkeepingItems, listTransactions } from '../db/bookkeeping';
 import { listInvoices } from '../invoices/store';
 import { latestBalances, listStatements } from '../reconcile/service';
 import { loadEcbRates } from './rates';
-import { bookingDate, summarize, type FinanceSummary, type LedgerRow, type PeriodQuery } from './summary';
+import { bookingDate, summarize, unmatchedStatementLines, type FinanceSummary, type LedgerRow, type PeriodQuery, type StatementLine } from './summary';
+import { classifyMandatoryPayment } from './mandatoryPayments';
 import { listTaxSchedule } from './taxSchedule';
 import { upcomingDebits, type Balance, type PaidEvidence } from './upcoming';
 
@@ -12,15 +13,61 @@ export function berlinToday(now = new Date()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
 }
 
+function documentVatFacts(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const facts = value as Record<string, unknown>;
+  return facts.vatAmount != null || facts.vatRate != null || facts.reverseCharge === true
+    || (facts.netAmount != null && (facts.amount != null || facts.grossAmount != null));
+}
+
+function sameMoney(a: unknown, b: unknown) {
+  const left = Number(a);
+  const right = Number(b);
+  return String(a ?? '').trim() !== '' && String(b ?? '').trim() !== ''
+    && Number.isFinite(left) && Number.isFinite(right)
+    && Math.round(left * 100) === Math.round(right * 100);
+}
+
+function linkedVatFacts(row: LedgerRow, documents: Array<Record<string, unknown>>, links: Array<Record<string, unknown>>) {
+  if (documentVatFacts(row.documentExtraction)) return row.documentExtraction;
+  const candidates = links
+    .filter((link) => link.transactionId === row.id && link.coverageType === 'evidence')
+    .map((link) => documents.find((document) => document.id === link.documentId))
+    .filter((document): document is Record<string, unknown> => !!document
+      && document.status === 'active'
+      && ['invoice', 'receipt'].includes(String(document.documentType))
+      && documentVatFacts(document.facts))
+    .map((document) => document.facts as Record<string, unknown>);
+  if (candidates.length === 1) return candidates[0];
+  const exact = candidates.filter((facts) =>
+    String(facts.currency || '') === String(row.currency || '')
+    && sameMoney(facts.amount ?? facts.grossAmount, row.amount));
+  if (exact.length === 1) return exact[0];
+  const vatFacts = (facts: Record<string, unknown>) => JSON.stringify({
+    amount: facts.amount ?? facts.grossAmount,
+    currency: facts.currency,
+    netAmount: facts.netAmount,
+    vatAmount: facts.vatAmount,
+    vatCurrency: facts.vatCurrency,
+    vatRate: facts.vatRate,
+    reverseCharge: facts.reverseCharge,
+  });
+  return exact.length > 1 && new Set(exact.map(vatFacts)).size === 1 ? exact[0] : undefined;
+}
+
 export async function financeSummary(client: DynamoDBDocumentClient, query: PeriodQuery, today = berlinToday()): Promise<FinanceSummary & { rateErrors: string[] }> {
-  const [rows, invoices, statements, accounts, documents] = await Promise.all([
+  const [rows, invoices, statements, accounts, documents, links] = await Promise.all([
     listTransactions(client),
     listInvoices(client),
     listStatements(client),
     listBookkeepingItems(client, 'account'),
     listBookkeepingItems(client, 'document'),
+    listBookkeepingItems(client, 'link'),
   ]);
-  const ledger = rows as LedgerRow[];
+  const ledger = (rows as LedgerRow[]).map((row) => {
+    const facts = linkedVatFacts(row, documents, links);
+    return facts ? { ...row, documentExtraction: facts } : row;
+  });
   const needs = ledger
     .filter((row) => row.currency && row.currency !== 'EUR' && !row.amountEur)
     .map((row) => ({ currency: String(row.currency), date: bookingDate(row) }));
@@ -33,7 +80,11 @@ export async function financeSummary(client: DynamoDBDocumentClient, query: Peri
     pendingInvoices: invoices
       .filter((invoice) => invoice.status === 'pending')
       .map((invoice) => ({ id: invoice.id, date: invoice.fields.paidDate || invoice.fields.transactionDate || invoice.createdAt.slice(0, 10), amount: invoice.fields.amount, currency: invoice.fields.currency, counterparty: invoice.fields.counterparty })),
-    statementLines: statements.flatMap((statement) => statement.rows.map((line) => ({ ...line, accountId: statement.accountId }))),
+    statementLines: statements.flatMap((statement) => statement.rows.map((line, index) => ({
+      ...line,
+      id: `${statement.id}:${index}`,
+      accountId: statement.accountId,
+    }))),
     businessAccounts: accounts.filter((account) => account.kind === 'business' && account.active !== false).map((account) => String(account.id)),
     statementCoverage: documents
       .filter((document) => document.documentType === 'bank-statement' && document.status === 'active')
@@ -53,8 +104,6 @@ export function parsePeriodQuery(params: Record<string, string | undefined> | nu
   return { ytd: true };
 }
 
-const TAX_LINES = new Set(['VAT', 'Taxes', 'Health Insurance']);
-
 /**
  * Scheduled tax and TK debits around today, marked paid where a ledger row
  * or a statement line shows the debit, with the business balance check.
@@ -69,14 +118,19 @@ export async function financeUpcoming(client: DynamoDBDocumentClient, days: numb
   const [schedule, rows, statements, balance] = await Promise.all([
     listTaxSchedule(client), listTransactions(client), listStatements(client), loadBalance(),
   ]);
+  const ledger = rows as LedgerRow[];
+  const statementLines = statements.flatMap((statement) => statement.rows.map((line, index) => ({
+    ...line,
+    id: `${statement.id}:${index}`,
+    accountId: statement.accountId,
+  }))) as StatementLine[];
   const paid: PaidEvidence[] = [
-    ...(rows as LedgerRow[])
-      .filter((row) => row.entryType === 'expense' && (TAX_LINES.has(String(row.category || '')) || /finanzamt|krankenkasse/i.test(String(row.counterparty || ''))))
+    ...ledger
+      .filter((row) => row.entryType === 'expense' && classifyMandatoryPayment(row))
       .map((row) => ({ id: row.id, date: bookingDate(row), amount: Number(row.amountEur || row.amount), kind: 'ledger' as const })),
-    ...statements.flatMap((statement) => statement.rows
-      .map((line, index) => ({ line, index }))
-      .filter(({ line }) => line.currency === 'EUR' && Number(line.amount) < 0)
-      .map(({ line, index }) => ({ id: `${statement.id}:${index}`, date: line.date, amount: Math.abs(Number(line.amount)), kind: 'statement' as const }))),
+    ...unmatchedStatementLines(statementLines, ledger)
+      .filter((line) => line.currency === 'EUR' && Number(line.amount) < 0 && classifyMandatoryPayment(line))
+      .map((line) => ({ id: line.id || '', date: line.date, amount: Math.abs(Number(line.amount)), kind: 'statement' as const })),
   ];
   return upcomingDebits({ schedule, today, days, paid, balance });
 }

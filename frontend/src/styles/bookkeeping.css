@@ -147,6 +147,7 @@
 .bk-who__what { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--dk-text-muted); text-overflow: ellipsis; }
 .bk-col-money { width: 7.5em; overflow: hidden; font-family: var(--dk-font-mono); text-align: right; }
 .bk-table th.bk-col-money { text-align: right; }
+.bk-col-vat { min-width: 8em; color: var(--dk-text-muted); font-size: var(--dk-text-xs); }
 .bk-col-original { color: var(--dk-text-muted); }
 .bk-col-eur { color: var(--dk-text-heading); }
 .is-income .bk-col-eur { color: var(--dk-success-text); }
@@ -159,6 +160,15 @@
 .bk-col-flag { width: 32px; padding-right: var(--dk-space-3); text-align: center; }
 .bk-flag { display: inline-flex; color: var(--dk-text-faint); }
 .bk-flag svg { width: 14px; height: 14px; }
+
+.bk-period-vat { padding: var(--dk-space-4) var(--dk-space-3); border-top: 1px solid var(--dk-border-default); }
+.bk-period-vat h2 { margin: 0 0 var(--dk-space-2); color: var(--dk-text-heading); font-size: var(--dk-text-sm); font-weight: var(--dk-weight-semibold); }
+.bk-period-vat dl { display: flex; flex-wrap: wrap; gap: var(--dk-space-2) var(--dk-space-5); margin: 0; }
+.bk-period-vat dl div { display: flex; gap: var(--dk-space-2); color: var(--dk-text-muted); font-size: var(--dk-text-sm); }
+.bk-period-vat dd { margin: 0; color: var(--dk-text-heading); font-family: var(--dk-font-mono); }
+.bk-period-vat__loading,
+.bk-period-vat__error { margin: 0; padding: var(--dk-space-3); color: var(--dk-text-muted); font-size: var(--dk-text-sm); }
+
 
 /* Classification cells read as plain text until hovered or focused. */
 .bookkeeping-surface .bk-inline-select {

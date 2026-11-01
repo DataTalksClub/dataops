@@ -5,6 +5,7 @@ import { useTestDatabase } from './helpers/db';
 import { berlinToday } from '../src/finance/service';
 import { saveStatement } from '../src/reconcile/service';
 import { getClient } from '../src/db/client';
+import { createDocumentLink, putBookkeepingItem } from '../src/db/bookkeeping';
 
 const invoke = (method: string, path: string, body?: unknown, query?: Record<string, string>) =>
   handler({ httpMethod: method, path, headers: {}, body: body === undefined ? null : JSON.stringify(body), queryStringParameters: query || null }, {});
@@ -60,5 +61,29 @@ describe('finance tax schedule and upcoming debits API', () => {
     assert.equal(vat.matched.kind, 'statement');
     assert.ok(body.dueNext30 >= 1200, 'the monthly 1,200 entry falls within 30 days');
     assert.equal(body.shortfall, true);
+  });
+
+  it('derives row VAT from the linked stored invoice facts', async () => {
+    const client = await getClient();
+    const transaction = (await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-scalevector-vat-row', transactionDate: '2026-09-04', paidDate: '2026-09-04',
+      entryType: 'income', amount: '5950.00', currency: 'EUR', sourceType: 'spreadsheet',
+      counterparty: 'Synthetic ScaleVector GmbH', description: 'Synthetic workshop', category: 'Sponsorship',
+    })).item;
+    const document = (await putBookkeepingItem(client, 'document', {
+      id: 'synthetic-scalevector-invoice', documentType: 'invoice', status: 'active',
+      facts: { netAmount: '5000.00', vatAmount: '950.00', vatCurrency: 'EUR', vatRate: '19', amount: '5950.00', currency: 'EUR', reverseCharge: false },
+    })).item;
+    await createDocumentLink(client, { documentId: document.id, transactionId: transaction.id, coverageType: 'evidence' });
+
+    const response = await invoke('GET', '/api/finance/summary', undefined, { month: '2026-09' });
+    assert.equal(response.statusCode, 200);
+    const body = JSON.parse(response.body);
+    const row = body.entries.find((entry: { id: string }) => entry.id === transaction.id);
+    assert.equal(row.vatAmount, '950.00');
+    assert.equal(row.vatCurrency, 'EUR');
+    assert.equal(row.vatRate, '19');
+    assert.equal(body.totals.outputVat, 950);
+    assert.equal(body.totals.projectedVat, 950);
   });
 });

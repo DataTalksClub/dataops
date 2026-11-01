@@ -70,6 +70,65 @@ describe('finance summary', () => {
     assert.equal(s.gaps.find((g) => g.kind === 'bank-line-without-ledger-row')?.count, 2);
   });
 
+  it('counts bank-only TK and Finanzamt debits while deduping a matching ledger tax row', () => {
+    const s = summarize({
+      today: '2026-04-30', query: { month: '2026-04' }, rates: noRates,
+      rows: [row('eink', { entryType: 'expense', amount: '1000.00', paidDate: '2026-04-08', category: 'Taxes', counterparty: 'Finanzamt', description: 'EINK.ST / SOLI' })],
+      statementLines: [
+        { id: 'finom:tk', accountId: 'finom', date: '2026-04-16', amount: '-1179.36', currency: 'EUR', counterparty: 'Techniker Krankenkasse', reference: 'TK-BuchNr 06408502800 Monat 03/26' },
+        { id: 'finom:vat', accountId: 'finom', date: '2026-04-14', amount: '-4581.14', currency: 'EUR', counterparty: 'Finanzamt', reference: 'UMS.ST 2025' },
+        { id: 'finom:eink', accountId: 'finom', date: '2026-04-14', amount: '-1000.00', currency: 'EUR', counterparty: 'Finanzamt', reference: 'EINK.ST / SOLI' },
+        { id: 'finom:unrelated', accountId: 'finom', date: '2026-04-20', amount: '-20.00', currency: 'EUR', counterparty: 'Synthetic Vendor', reference: 'Unrelated purchase' },
+      ],
+    });
+    assert.equal(s.totals.healthInsurance, 1179.36);
+    assert.equal(s.totals.vatPaid, 4581.14);
+    assert.equal(s.totals.otherTaxes, 1000);
+    assert.equal(s.totals.moneyOut, 6760.5);
+    assert.equal(s.totals.entryCount, 3);
+    assert.equal(s.gaps.find((gap) => gap.kind === 'bank-line-without-ledger-row')?.count, 1);
+    assert.deepEqual(s.entries.filter((entry) => entry.sourceType === 'statement').map((entry) => [entry.id, entry.mandatoryKind, entry.line]), [
+      ['finom:vat', 'tax_debit', 'vat'],
+      ['finom:tk', 'tk_debit', 'health-insurance'],
+    ]);
+  });
+
+  it('classifies USt in Taxes as VAT while ESt and GewSt remain other taxes', () => {
+    const rows = [
+      row('vat-2025', { entryType: 'expense', amount: '1029.96', paidDate: '2025-02-14', category: 'Taxes', counterparty: 'Finanzamt', description: 'UMS.ST 1VJ.25' }),
+      row('vat-2026', { entryType: 'expense', amount: '4196.60', paidDate: '2026-08-15', category: 'Taxes', counterparty: 'Finanzamt', description: 'UMS.ST 2VJ.26' }),
+      row('eink', { entryType: 'expense', amount: '11042.00', paidDate: '2026-06-10', category: 'Taxes', counterparty: 'Finanzamt', description: 'EINK.ST / SOLI' }),
+      row('gewst', { entryType: 'expense', amount: '3296.00', paidDate: '2026-08-15', category: 'Taxes', counterparty: 'Finanzamt', description: 'GEW.ST 2026' }),
+    ];
+    const feb = summarize({ today: '2026-10-31', query: { month: '2025-02' }, rates: noRates, rows });
+    const aug = summarize({ today: '2026-10-31', query: { month: '2026-08' }, rates: noRates, rows });
+    assert.equal(feb.totals.vatPaid, 1029.96);
+    assert.equal(aug.totals.vatPaid, 4196.6);
+    assert.equal(aug.totals.otherTaxes, 3296);
+  });
+
+  it('derives VAT only from stored document fields and handles zero-rate and reverse-charge documents', () => {
+    const s = summarize({ today: '2026-10-31', query: { month: '2026-10' }, rates: noRates, rows: [
+      row('scalevector', { entryType: 'income', amount: '5950.00', paidDate: '2026-10-04', documentExtraction: { netAmount: '5000.00', vatAmount: '950.00', vatCurrency: 'EUR', vatRate: '19', amount: '5950.00', currency: 'EUR', reverseCharge: false } }),
+      row('zero-rated', { entryType: 'expense', amount: '100.00', paidDate: '2026-10-05', documentExtraction: { netAmount: '100.00', vatAmount: '0.00', vatCurrency: 'EUR', vatRate: '0', amount: '100.00', currency: 'EUR', reverseCharge: false } }),
+      row('reverse-charge', { entryType: 'expense', amount: '100.00', paidDate: '2026-10-06', documentExtraction: { netAmount: '100.00', netAmountEur: '100.00', vatAmount: '0.00', vatAmountEur: '0.00', vatCurrency: 'EUR', vatRate: '19', amount: '100.00', currency: 'EUR', reverseCharge: true } }),
+      row('unknown-vat', { entryType: 'expense', amount: '50.00', paidDate: '2026-10-07' }),
+    ] });
+    const byId = Object.fromEntries(s.entries.map((entry) => [entry.id, entry]));
+    assert.equal(byId.scalevector.vatEur, 950);
+    assert.equal(byId.scalevector.vatAmount, '950.00');
+    assert.equal(byId.scalevector.vatRate, '19');
+    assert.equal(byId['zero-rated'].zeroRated, true);
+    assert.equal(byId['zero-rated'].vatAmount, '0.00');
+    assert.equal(byId['reverse-charge'].reverseCharge, true);
+    assert.equal(byId['reverse-charge'].reverseChargeVatEur, 19);
+    assert.equal(byId['unknown-vat'].vatEur, null);
+    assert.equal(s.totals.outputVat, 969);
+    assert.equal(s.totals.inputVat, 19);
+    assert.equal(s.totals.projectedVat, 950);
+    assert.equal(s.totals.expensesNetOfVat, 250);
+  });
+
   it('converts with the booked EUR amount first, the ECB rate second, and lists rows it cannot convert', () => {
     const rows = [
       row('booked', { entryType: 'expense', amount: '10.00', currency: 'USD', amountEur: '8.73', paidDate: '2026-10-22' }),

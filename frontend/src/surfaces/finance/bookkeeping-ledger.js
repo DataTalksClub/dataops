@@ -147,6 +147,27 @@ function signedAmount(value, currency) {
   return value < 0 ? `−${text}` : `+${text}`;
 }
 
+function vatRateLabel(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return "";
+  const raw = String(value).trim().replace(/%$/, "");
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric)) return `${raw}%`;
+  const percent = numeric > 0 && numeric <= 1 ? numeric * 100 : numeric;
+  return `${Number.isInteger(percent) ? percent : Number(percent.toFixed(2))}%`;
+}
+
+export function vatPresentation(entry) {
+  if (!entry) return "";
+  const rate = vatRateLabel(entry.vatRate);
+  if (entry.reverseCharge) return `Reverse charge${rate ? ` · ${rate}` : ""}`;
+  if (entry.zeroRated || (rate && Number(rate.slice(0, -1)) === 0)) return "0%";
+  if (entry.vatAmount !== null && entry.vatAmount !== undefined && String(entry.vatAmount).trim() !== "")
+    return `${formatAmount(entry.vatAmount, entry.vatCurrency || entry.currency || "EUR")}${rate ? ` (${rate})` : ""}`;
+  if (entry.vatEur !== null && entry.vatEur !== undefined)
+    return `${formatAmount(entry.vatEur, "EUR")}${rate ? ` (${rate})` : ""}`;
+  return "";
+}
+
 // One date when transaction and paid dates agree; the paid date, muted,
 // only when it differs.
 function dateCell(entry, e) {
@@ -173,7 +194,7 @@ const icon = {
     + '<path d="M6 5.5h4M6 8h4" stroke-linecap="round"/></svg>',
 };
 
-export function ledgerRowMarkup(entry, { hasEvidence, vocab, selectedId, e }) {
+export function ledgerRowMarkup(entry, { hasEvidence, vocab, selectedId, financeEntry, e }) {
   const direction = entryDirection(entry);
   const eur = eurValue(entry);
   const original = originalValue(entry);
@@ -182,6 +203,7 @@ export function ledgerRowMarkup(entry, { hasEvidence, vocab, selectedId, e }) {
   const flagged = needsCategory(entry);
   const description = String(entry.description || "");
   const showDescription = description && description !== entry.counterparty;
+  const vat = vatPresentation(financeEntry);
   return html`<tr class="bk-row${flagged ? " is-uncategorised" : ""}${direction === "income" ? " is-income" : ""}"
       data-tx="${e(entry.id)}"${entry.id === selectedId ? ' aria-selected="true"' : ""}>
       <td class="bk-col-date">${dateCell(entry, e)}</td>
@@ -200,6 +222,7 @@ export function ledgerRowMarkup(entry, { hasEvidence, vocab, selectedId, e }) {
         id: entry.id, field, label: `${label} for ${entry.counterparty || "transaction"}`,
         value: entry[field], options: vocab[field] || [], e,
       })}</td>`).join("")}
+      <td class="bk-col-vat"${vat ? ` title="${e(vat)}"` : ""}>${e(vat || "—")}</td>
       <td class="bk-col-flag">${evidence
         ? ""
         : html`<span class="bk-flag" title="No receipt attached" aria-label="No receipt">${icon.receipt}</span>`}</td>
@@ -215,14 +238,15 @@ export function ledgerHeadMarkup() {
         <th scope="col" class="bk-col-money bk-col-eur">EUR</th>
         <th scope="col" class="bk-col-account">Account</th>
         ${CLASSIFICATION_FIELDS.map(({ field, label }) => html`<th scope="col" class="bk-col-class bk-col-${field}">${label}</th>`).join("")}
+        <th scope="col" class="bk-col-vat">VAT</th>
         <th scope="col" class="bk-col-flag"><span class="dk-visually-hidden">Receipt</span></th>
       </tr>
     </thead>`;
 }
 
-const COLUMN_COUNT = 9;
+const COLUMN_COUNT = 10;
 
-export function ledgerTableMarkup({ groups, hasEvidence, vocab, selectedId, e }) {
+export function ledgerTableMarkup({ groups, hasEvidence, vocab, selectedId, financeEntriesById = new Map(), e }) {
   const body = groups.map((group) => {
     const totals = [
       group.moneyOut ? html`<span class="bk-total">out <span class="dk-mono">${e(signedAmount(group.moneyOut, "EUR"))}</span></span>` : "",
@@ -237,7 +261,7 @@ export function ledgerTableMarkup({ groups, hasEvidence, vocab, selectedId, e })
             <span class="bk-month__totals">${totals}</span>
           </th>
         </tr>
-        ${group.entries.map((entry) => ledgerRowMarkup(entry, { hasEvidence, vocab, selectedId, e })).join("")}
+        ${group.entries.map((entry) => ledgerRowMarkup(entry, { hasEvidence, vocab, selectedId, financeEntry: financeEntriesById.get(entry.id), e })).join("")}
       </tbody>`;
   }).join("");
   return html`<table class="bk-table">${ledgerHeadMarkup()}${body}</table>`;

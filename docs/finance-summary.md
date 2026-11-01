@@ -21,21 +21,24 @@ payload unchanged. YTD runs from 1 January to today (Europe/Berlin).
 
 | Source | Counted? | How |
 |---|---|---|
-| Ledger rows (`BOOKKEEPING#`): sheet import, confirmed incoming invoices, sponsor payments, platform payouts | Yes | The ledger is the only thing summed |
+| Ledger rows (`BOOKKEEPING#`): sheet import, confirmed incoming invoices, sponsor payments, platform payouts | Yes | Counted once in the month paid |
+| Unmatched TK and Finanzamt statement debits | Yes | Classified as health insurance, VAT paid/refunded, or other taxes; a matching ledger row prevents a second count |
 | Incoming invoice drafts (`pending`, `rejected`) | No | Listed as a gap until verified and published |
 | Issued outgoing invoices | Only once paid | Through the payment row; an unpaid invoice is not income |
-| Bank / PayPal statement lines | Never | Evidence only; a line no ledger row explains is a gap |
+| Other bank statement lines | No | Evidence only; a line no ledger row explains remains a gap |
 
 A row is booked in the month it was **paid** (`paidDate`, else
 `transactionDate`). `entryType: income` is money in, `expense` is money out.
 
 ## No double counting
 
-1. **Invoice or payout vs the bank line that pays it.** Statement lines are
-   never summed. A line is "explained" by a ledger row with the same direction,
-   the same currency and amount (or the row's booked EUR amount against a EUR
-   line), paid within 5 days; each row explains at most one line. Unexplained
-   lines are listed as `bank-line-without-ledger-row`.
+1. **Ledger row vs the bank line that pays it.** A statement line is explained
+   by a ledger row with the same direction, currency and amount (or the row's
+   booked EUR amount against a EUR line), within the reconciliation date-lag
+   tolerance (10 days by default); each row explains at most one line. Explained
+   lines count through the ledger row only. Unmatched TK and Finanzamt debit
+   lines count directly; other unmatched lines are listed as
+   `bank-line-without-ledger-row`.
 2. **Sheet row vs a system row for the same payment.** A `spreadsheet` row that
    repeats an `invoice`, `sponsor-receipt` or `payout` row (same direction,
    currency and amount, paid within 3 days, same payer/payee by name) is
@@ -59,9 +62,9 @@ Rates are quoted as units of the currency per 1 EUR, the ECB convention.
 
 | Category | Line |
 |---|---|
-| `VAT` | VAT payment to (expense) or refund from (income) the Finanzamt |
-| `Taxes` | Every other tax: Gewerbesteuer, income/corporate tax prepayments |
-| `Health Insurance` | TK |
+| `VAT`, or Finanzamt purpose `USt` / `UMS.ST` | VAT paid or refunded |
+| `Taxes`, except an USt / `UMS.ST` purpose | Other taxes: Gewerbesteuer, income/corporate tax prepayments |
+| `Health Insurance`, or TK statement debit | Health insurance |
 | anything else | Operating income or expense |
 
 **Refunds.** A supplier refund or credit note is recorded as **income** with
@@ -77,9 +80,16 @@ subtype.
   after taxes and TK*. VAT payments and refunds are neither profit nor loss.
 - **Projected VAT position** = output VAT − input VAT. Positive is owed to the
   Finanzamt, negative is a refund. It is shown next to what was actually paid
-  or refunded (category `VAT`) in the same period.
+  or refunded in the same period.
 
-A row without a VAT amount contributes zero VAT.
+For output and input VAT, a reviewed ledger `vatAmount` takes precedence. If it
+is absent, the summary reads the linked active invoice/receipt document's stored
+VAT facts. It uses an explicit VAT amount, or derives VAT from the document's
+net amount and explicit rate, or from its gross minus net amount. Explicit `0%`
+is zero VAT. For reverse-charge documents, an explicit rate and net amount give
+equal output and input VAT; this cancels in the position and does not change
+profit. Without source VAT facts or a stated rate, VAT is zero. Missing VAT does
+not produce a warning.
 
 ## Gaps
 
@@ -112,10 +122,10 @@ what will be debited, so the account holds enough money beforehand.
 - **Dates.** A due date on a weekend or Berlin public holiday moves to the next
   business day (§108 AO); the row says why. TK collects *around* its day and
   is marked approximate.
-- **Paid.** A debit counts as paid when a ledger row (category VAT, Taxes or
-  Health Insurance, or payee Finanzamt/Krankenkasse) or a EUR statement line
-  shows the same amount within 5 days (7 for approximate ones). A past debit
-  with neither is listed as *not seen*.
+- **Paid.** A debit counts as paid when a mandatory-payment ledger row or an
+  unmatched EUR statement line classified as `tax_debit` or `tk_debit` shows the
+  same amount within 5 days (7 for approximate ones). A statement line matched
+  to a ledger row is used once. A past debit with neither is listed as *not seen*.
 - **Cover.** The total of unpaid debits in the next 30 days is compared with
   the latest known business account balance and its as-of date; a balance
   below it is a shortfall, and a balance older than 7 days is flagged stale.

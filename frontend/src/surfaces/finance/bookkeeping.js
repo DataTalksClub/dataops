@@ -86,6 +86,11 @@ export function createBookkeepingSurface(context) {
       links = [],
       accounts = [],
       reports = [];
+    let financeSummaries = new Map();
+    let financeSummaryKey = "";
+    let financeSummaryPendingKey = "";
+    let financeSummaryGeneration = 0;
+    let financeSummaryError = "";
     const initial = new URLSearchParams(locationRef?.search || "");
     // The lens is a month ("YYYY-MM"), a year, or "all". Without one in the
     // URL it opens on the latest month that has transactions.
@@ -155,6 +160,84 @@ export function createBookkeepingSurface(context) {
     const isExempt = (entry) =>
       REPORT_EXEMPT_CATEGORIES.has(String(entry.category || ""));
     const lensEntries = () => entries.filter((e) => inLens(e, lens));
+    function summaryYears() {
+      if (/^\d{4}-\d{2}$/.test(lens)) return [lens.slice(0, 4)];
+      if (/^\d{4}$/.test(lens)) return [lens];
+      const years = [...new Set(entries.flatMap((entry) => [entry.transactionDate, entry.paidDate]
+        .map((date) => String(date || "").slice(0, 4)).filter((year) => /^\d{4}$/.test(year))))].sort();
+      return years.length ? years : [String(todayIsoDate?.() || new Date().toISOString()).slice(0, 4)];
+    }
+    function financeEntries() {
+      return [...financeSummaries.values()].flatMap((summary) => summary.entries || []);
+    }
+    function invalidateFinanceSummaries() {
+      financeSummaryGeneration += 1;
+      financeSummaryKey = "";
+      financeSummaryPendingKey = "";
+      financeSummaryError = "";
+      financeSummaries = new Map();
+    }
+    async function ensureFinanceSummaries() {
+      const years = summaryYears();
+      const key = years.join(",");
+      if (financeSummaryKey === key && years.every((year) => financeSummaries.has(year))) return;
+      if (financeSummaryPendingKey === key) return;
+      const generation = ++financeSummaryGeneration;
+      financeSummaryPendingKey = key;
+      financeSummaryError = "";
+      if (financeSummaryKey !== key) {
+        financeSummaries = new Map();
+        renderLedger();
+      }
+      try {
+        const values = await Promise.all(years.map(async (year) => {
+          const summary = await request(workApiUrl(`/api/finance/summary?year=${encodeURIComponent(year)}`));
+          return [year, summary];
+        }));
+        if (generation !== financeSummaryGeneration || key !== summaryYears().join(",")) return;
+        financeSummaries = new Map(values);
+        financeSummaryKey = key;
+        financeSummaryPendingKey = "";
+      } catch (error) {
+        if (generation !== financeSummaryGeneration) return;
+        financeSummaryError = error?.message || "request failed";
+        financeSummaryKey = key;
+        financeSummaryPendingKey = "";
+      }
+      renderLedger();
+      if (view === "package") renderPackageReview();
+    }
+    function selectedVatTotals() {
+      if (/^\d{4}-\d{2}$/.test(lens)) {
+        return financeSummaries.get(lens.slice(0, 4))?.months?.find((month) => month.month === lens) || null;
+      }
+      if (/^\d{4}$/.test(lens)) return financeSummaries.get(lens)?.totals || null;
+      const summaries = [...financeSummaries.values()];
+      if (!summaries.length) return null;
+      return summaries.reduce((totals, summary) => {
+        for (const key of ["outputVat", "inputVat", "vatPaid", "vatRefunded", "projectedVat"])
+          totals[key] += Number(summary.totals?.[key] || 0);
+        return totals;
+      }, { outputVat: 0, inputVat: 0, vatPaid: 0, vatRefunded: 0, projectedVat: 0 });
+    }
+    function bookkeepingFinanceMarkup() {
+      const totals = selectedVatTotals();
+      const periodLabel = /^\d{4}-\d{2}$/.test(lens) ? monthLabel(lens) : lens === "all" ? "All records" : lens;
+      const vat = totals
+        ? html`<section class="bk-period-vat" aria-labelledby="bk-period-vat-heading">
+            <h2 id="bk-period-vat-heading">VAT totals · ${escapeHtml(periodLabel)}</h2>
+            <dl><div><dt>Output VAT</dt><dd>${escapeHtml(formatAmount(totals.outputVat, "EUR"))}</dd></div>
+              <div><dt>Input VAT</dt><dd>${escapeHtml(formatAmount(totals.inputVat, "EUR"))}</dd></div>
+              <div><dt>VAT paid</dt><dd>${escapeHtml(formatAmount(totals.vatPaid, "EUR"))}</dd></div>
+              <div><dt>VAT refunded</dt><dd>${escapeHtml(formatAmount(totals.vatRefunded, "EUR"))}</dd></div>
+              <div><dt>VAT position</dt><dd>${escapeHtml(formatAmount(totals.projectedVat, "EUR"))}</dd></div>
+            </dl>
+          </section>`
+        : financeSummaryError
+          ? html`<p class="bk-period-vat__error" role="status">Could not load monthly VAT totals.</p>`
+          : html`<p class="bk-period-vat__loading" role="status">Loading monthly VAT totals…</p>`;
+      return vat;
+    }
     function monthReport() {
       if (!/^\d{4}-\d{2}$/.test(lens)) return null;
       return reports.find(
@@ -171,6 +254,7 @@ export function createBookkeepingSurface(context) {
       renderView();
       renderFilterOptions();
       renderLedger();
+      void ensureFinanceSummaries();
       renderDetail();
       if (view === "package") renderPackageReview();
       syncUrl();
@@ -231,7 +315,7 @@ export function createBookkeepingSurface(context) {
           filtered: filtered && scoped.length > 0,
           latest,
           e: escapeHtml,
-        });
+        }) + bookkeepingFinanceMarkup();
         return;
       }
       ledger.innerHTML = ledgerTableMarkup({
@@ -239,8 +323,9 @@ export function createBookkeepingSurface(context) {
         hasEvidence,
         vocab,
         selectedId,
+        financeEntriesById: new Map(financeEntries().map((entry) => [entry.id, entry])),
         e: escapeHtml,
-      });
+      }) + bookkeepingFinanceMarkup();
     }
     function selectedEntry() {
       return entries.find((entry) => entry.id === selectedId) || null;
@@ -289,6 +374,8 @@ export function createBookkeepingSurface(context) {
       entries = entries.some((e) => e.id === saved.id)
         ? entries.map((e) => (e.id === saved.id ? saved : e))
         : [saved, ...entries];
+      invalidateFinanceSummaries();
+      void ensureFinanceSummaries();
     }
 
     // One field saved on its own; the API merges it into the stored record.
@@ -531,7 +618,9 @@ export function createBookkeepingSurface(context) {
       surface.querySelector("[data-account]").innerHTML =
         accountOptionsMarkup(accounts, escapeHtml);
       renderDocuments();
+      invalidateFinanceSummaries();
       renderLedger();
+      void ensureFinanceSummaries();
       renderDetail();
       if (view === "package") renderPackageReview();
     }
@@ -848,6 +937,7 @@ export function createBookkeepingSurface(context) {
           const dialog = surface.querySelector(".bookkeeping-delete-dialog");
           await api(`/transactions/${dialog.dataset.id}`, { method: "DELETE" });
           entries = entries.filter((e) => e.id !== dialog.dataset.id);
+          invalidateFinanceSummaries();
           if (selectedId === dialog.dataset.id) selectedId = "";
           dialog.close();
           renderAll();

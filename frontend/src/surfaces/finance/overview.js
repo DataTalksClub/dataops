@@ -153,11 +153,13 @@ export function monthTableMarkup(summary, e) {
       <caption class="fin-sr">Per month, EUR</caption>
       <thead><tr><th scope="col">Month</th><th scope="col">Money in</th><th scope="col">Money out</th><th scope="col">Net</th>
         <th scope="col">Income net of VAT</th><th scope="col">Expenses net of VAT</th><th scope="col">Profit ex VAT</th>
-        <th scope="col">Other taxes</th><th scope="col">TK</th><th scope="col">VAT position</th><th scope="col">VAT paid</th><th scope="col">Rows</th></tr></thead>
+        <th scope="col">Other taxes</th><th scope="col">TK</th><th scope="col">Output VAT</th><th scope="col">Input VAT</th>
+        <th scope="col">VAT paid</th><th scope="col">VAT refunded</th><th scope="col">VAT position</th><th scope="col">Rows</th></tr></thead>
       <tbody>${rows.map((r) => html`<tr class="${r.total ? "fin-table__total" : r.future ? "is-future" : ""}">
         <th scope="row">${e(r.month)}${r.future ? " <small>(not over)</small>" : ""}</th>
         ${cell(r.moneyIn)}${cell(r.moneyOut)}${cell(r.net, { sign: true })}${cell(r.incomeNetOfVat)}${cell(r.expensesNetOfVat)}
-        ${cell(r.netProfitExVat, { sign: true })}${cell(r.otherTaxes)}${cell(r.healthInsurance)}${cell(r.projectedVat)}${cell(r.vatPaid - r.vatRefunded)}
+        ${cell(r.netProfitExVat, { sign: true })}${cell(r.otherTaxes)}${cell(r.healthInsurance)}${cell(r.outputVat)}${cell(r.inputVat)}
+        ${cell(r.vatPaid)}${cell(r.vatRefunded)}${cell(r.projectedVat)}
         <td class="fin-num">${e(String(r.entryCount))}</td></tr>`).join("")}</tbody>
     </table></div>`;
 }
