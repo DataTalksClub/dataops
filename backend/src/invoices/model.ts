@@ -7,6 +7,7 @@ export interface InvoiceFields {
   paymentEvidence?: string; accountContext?: string; invoiceNumber?: string; vatId?: string;
   archiveRequired?: boolean; archiveExceptionReason?: string;
 }
+export const BLANK_CONVERSION_ISSUE = 'Blank conversion — original needed';
 export interface Destination {
   state: 'pending' | 'unknown' | 'verified' | 'blocked' | 'skipped';
   operationId: string; error?: string; reference?: string; reservedRow?: number;
@@ -17,7 +18,7 @@ export interface Invoice {
   // A credit note is published as income (subtype Refund) keyed
   // credit-note:<number>. needsReview with candidates: the amount was
   // ambiguous and left empty.
-  extraction: { method: string; evidence: string[]; issues: string[]; documentType?: 'invoice' | 'receipt' | 'credit_note' | 'other'; direction?: 'income' | 'expense'; paymentChannel?: string; needsReview?: boolean; candidates?: string[] };
+  extraction: { method: string; evidence: string[]; issues: string[]; documentType?: 'invoice' | 'receipt' | 'credit_note' | 'other'; direction?: 'income' | 'expense'; paymentChannel?: string; needsReview?: boolean; candidates?: string[]; blankConversion?: boolean };
   // The ledger row this record is booked as when it is not its own row
   // (a credit note already recorded under the same credit-note:<number>).
   ledgerTransactionId?: string;
@@ -63,7 +64,17 @@ export function missingEvidence(f: InvoiceFields): string[] {
   if (f.archiveRequired === false && !f.archiveExceptionReason?.trim()) missing.push('archiveExceptionReason');
   return missing;
 }
-export function publicInvoice(record: Invoice) {
+export function invoiceDuplicateKey(record: Pick<Invoice, 'fields'>): string | undefined {
+  const vendor = record.fields.counterparty?.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
+  const number = record.fields.invoiceNumber?.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
+  return vendor && number ? `${vendor}\n${number}` : undefined;
+}
+export function duplicateInvoiceIds(record: Invoice, records: Invoice[]): string[] {
+  const key = invoiceDuplicateKey(record);
+  if (!key) return [];
+  return records.filter(other => other.id !== record.id && invoiceDuplicateKey(other) === key).map(other => other.id).sort();
+}
+export function publicInvoice(record: Invoice, duplicateIds: string[] = []) {
   const { leaseOwner: _owner, leaseUntil: _until, ...safe } = record;
-  return { ...safe, publicationPolicy: 'automatic-when-verified', verifiedRevision: record.verification?.revision, missingEvidence: missingEvidence(record.fields), publicationStatus: record.status !== 'confirmed' ? 'not-confirmed' : record.publicationError ? 'incomplete' : ['verified','skipped'].includes(record.destinations.dropbox.state) && record.destinations.sheets.state === 'verified' ? 'complete' : 'incomplete' };
+  return { ...safe, duplicateInvoiceIds: duplicateIds, publicationPolicy: 'automatic-when-verified', verifiedRevision: record.verification?.revision, missingEvidence: missingEvidence(record.fields), publicationStatus: record.status !== 'confirmed' ? 'not-confirmed' : record.publicationError ? 'incomplete' : ['verified','skipped'].includes(record.destinations.dropbox.state) && record.destinations.sheets.state === 'verified' ? 'complete' : 'incomplete' };
 }

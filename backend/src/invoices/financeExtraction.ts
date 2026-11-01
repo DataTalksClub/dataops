@@ -1,4 +1,4 @@
-import { extractInvoiceText, normalizePdfText, pdfText, type InvoiceHints } from './extract';
+import { BlankConversionError, extractInvoiceText, normalizePdfText, pdfText, type InvoiceHints } from './extract';
 import { extractWithLlm, needsPdfInput, type LlmExtraction, type LlmResult } from './llm';
 import { date, validCurrency, type Invoice, type InvoiceFields } from './model';
 import { loadEcbRates } from '../finance/rates';
@@ -131,6 +131,14 @@ export async function extractFinanceText(raw:string, options:{pdf?:Buffer; hints
       facts=regex;method='regex-fallback';issues.push('reader-unavailable:retry-extraction');
     }
   }
+  // Keep high-signal values found by the local labeled parser when a reader
+  // omits them. In particular, forwarded PDFs often put a printed total or
+  // paid date behind dot leaders that a remote reader may skip.
+  if(facts.counterparty===null && regex.counterparty!==null) facts.counterparty=regex.counterparty;
+  if(facts.invoiceNumber===null && regex.invoiceNumber!==null) facts.invoiceNumber=regex.invoiceNumber;
+  if(facts.date===null && regex.date!==null) facts.date=regex.date;
+  if(facts.currency===null && regex.currency!==null) facts.currency=regex.currency;
+  if(facts.gross===null && regex.gross!==null) facts.gross=regex.gross;
   if(facts.docType!=='credit_note' && /\b(?:Bill to|Billed to|To)\s*:?\s*DataTalks\.?Club\b/i.test(text) && facts.direction==='income') {
     facts.direction='expense';issues.push('disagreement:direction');
   }
@@ -167,12 +175,19 @@ export async function convertExtractedFinance(result:FinanceExtraction):Promise<
 }
 
 /** OCR failure must still allow the document reader to inspect a scanned PDF. */
-export async function extractFinancePdf(bytes:Buffer,options:{hints?:InvoiceHints;textReader?:typeof pdfText}={}):Promise<FinanceExtraction> {
-  if(bytes.length>25*1024*1024) throw new Error('invalid-pdf');
+export async function extractFinancePdf(bytes:Buffer,options:{hints?:InvoiceHints;textReader?:typeof pdfText;llm?:(input:{text:string;pdf?:Buffer;forcePdf?:boolean;hints?:InvoiceHints})=>Promise<LlmResult>}={}):Promise<FinanceExtraction> {
+  if(bytes.length>25*1024*1024 || !/^%PDF-[12]\.[0-9]/.test(bytes.subarray(0,8).toString())) throw new Error('invalid-pdf');
   let text='';
-  try {text=await (options.textReader||pdfText)(bytes);} catch {
-    if(!/^%PDF-[12]\.[0-9]/.test(bytes.subarray(0,8).toString())) throw new Error('invalid-pdf');
+  let textReaderError: string | undefined;
+  try {text=await (options.textReader||pdfText)(bytes);} catch(error) {
+    if(error instanceof BlankConversionError) throw error;
     // The reader accepts PDF images when OCR is unavailable.
+    textReaderError = error instanceof Error ? error.message : String(error);
   }
-  return convertExtractedFinance(await extractFinanceText(text,{pdf:bytes,hints:options.hints}));
+  const result=await extractFinanceText(text,{pdf:bytes,hints:options.hints,llm:options.llm});
+  if(textReaderError) {
+    result.extraction.issues.push(`PDF text extraction failed: ${textReaderError.slice(0,500)}`);
+    result.extraction.needsReview=true;
+  }
+  return convertExtractedFinance(result);
 }

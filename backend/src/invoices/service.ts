@@ -5,18 +5,24 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getIntakeItem, updateIntakeItem } from '../db/intake';
 import { getArtifact } from '../db/artifacts';
 import { listTransactions, putBookkeepingItem, updateBookkeepingTransaction } from '../db/bookkeeping';
-import { extractInvoiceText, pdfText, type InvoiceHints } from './extract';
+import { BlankConversionError, pdfText, type InvoiceHints } from './extract';
 import { extractFinancePdf } from './financeExtraction';
 import { isInvoiceIntakeRoute } from './intakeRoute';
-import { missingEvidence, type Invoice, type InvoiceFields } from './model';
+import { BLANK_CONVERSION_ISSUE, invoiceDuplicateKey, missingEvidence, type Invoice, type InvoiceFields } from './model';
 import { createInvoice, getInvoice, listInvoices, saveInvoice, claimInvoice, reserveSheetRow, approveInvoice } from './store';
 import { officialProviders, publicationConfig, marker, sheetValues, type Providers } from './providers';
 import type { IntakeHistoryEvent, IntakeItem } from '../types';
 let s3 = new S3Client({});
 let providerFactory: (()=>Promise<Providers>) | undefined;
 let textExtractor = pdfText;
-export function setInvoiceServiceForTests(value:{s3?:S3Client; providers?:()=>Promise<Providers>; extract?:typeof pdfText}) {s3=value.s3 || new S3Client({});providerFactory=value.providers;textExtractor=value.extract || pdfText;}
+let financeExtractor = extractFinancePdf;
+export function setInvoiceServiceForTests(value:{s3?:S3Client; providers?:()=>Promise<Providers>; extract?:typeof pdfText; financeExtract?:typeof extractFinancePdf}) {s3=value.s3 || new S3Client({});providerFactory=value.providers;textExtractor=value.extract || pdfText;financeExtractor=value.financeExtract || extractFinancePdf;}
 const sha = (bytes:Buffer|string) => createHash('sha256').update(bytes).digest('hex');
+function extractionFailure(error:unknown):Invoice['extraction'] {
+  if(error instanceof BlankConversionError) return {method:'manual',evidence:[],issues:[BLANK_CONVERSION_ISSUE],needsReview:true,blankConversion:true};
+  const message=(error instanceof Error?error.message:String(error || 'unknown extraction error')).slice(0,500);
+  return {method:'manual',evidence:[],issues:[`PDF extraction failed: ${message || 'unknown extraction error'}`],needsReview:true};
+}
 async function artifactBytes(artifactId:string,client:DynamoDBDocumentClient):Promise<Buffer> {
   const artifact=await getArtifact(client,artifactId);
   if(!artifact || artifact.metadata?.importState!=='complete' || artifact.contentType!=='application/pdf') throw new Error('source-document-unavailable');
@@ -54,11 +60,16 @@ async function linkedHints(client:DynamoDBDocumentClient,record:Invoice):Promise
 async function upgradeDraft(client:DynamoDBDocumentClient,record:Invoice,hints:InvoiceHints,actor:string):Promise<Invoice> {
   if(!draftIsUntouched(record)) return record;
   let parsed:Pick<Invoice,'fields'|'extraction'>;
-  try { const bytes=await artifactBytes(record.source.artifactId,client); parsed=await extractFinancePdf(bytes,{textReader:textExtractor,hints}); }
-  catch { return record; }
-  if(parsed.extraction.method==='manual') return record;
+  try { const bytes=await artifactBytes(record.source.artifactId,client); parsed=await financeExtractor(bytes,{textReader:textExtractor,hints}); }
+  catch(error) {
+    const next=structuredClone(record);next.extraction=extractionFailure(error);next.revision+=1;
+    next.audit.push({action:'re-extraction-failed',actor,at:new Date().toISOString(),revision:next.revision});
+    try {return await saveInvoice(client,next,record);} catch {return (await getInvoice(client,record.id)) || record;}
+  }
+  const readerFailed=parsed.extraction.issues.some(issue=>issue.startsWith('PDF text extraction failed:'));
+  if(parsed.extraction.method==='manual' && !readerFailed) return record;
   const found=Object.entries(parsed.fields).filter(([,value])=>value!==undefined) as Array<[keyof InvoiceFields, unknown]>;
-  if(!found.some(([key])=>key==='counterparty'||key==='amount')) return record;
+  if(!readerFailed && !found.some(([key])=>key==='counterparty'||key==='amount')) return record;
   const next=structuredClone(record);
   for(const [key,value] of found) (next.fields as Record<string,unknown>)[key]=value;
   next.extraction=parsed.extraction;
@@ -111,8 +122,8 @@ export async function processInvoiceIntake(client:DynamoDBDocumentClient,intakeI
     let bytes:Buffer;
     try { bytes=await artifactBytes(artifact.id,client); } catch { issues.push('Source integrity verification failed: reimport the original document'); continue; }
     let parsed:Pick<Invoice,'fields'|'extraction'>;
-    try {parsed=await extractFinancePdf(bytes,{textReader:textExtractor,hints:intakeHints(intake)});}
-    catch {parsed={fields:{archiveRequired:true,quantity:1},extraction:{method:'manual',evidence:[],issues:['PDF extraction unavailable: inspect original and complete manually']}};}
+    try {parsed=await financeExtractor(bytes,{textReader:textExtractor,hints:intakeHints(intake)});}
+    catch(error) {parsed={fields:{archiveRequired:true,quantity:1},extraction:extractionFailure(error)};}
     const now=new Date().toISOString();
     const record:Invoice={id,revision:1,status:'pending',...parsed,source:{intakeItemIds:[intake.id],artifactId:artifact.id,checksum},destinations:{dropbox:{state:'pending',operationId:`dropbox-${id}`},sheets:{state:'pending',operationId:`sheets-${id}`}},audit:[{action:'staged',actor:'email-intake',at:now,revision:1}],createdAt:now,updatedAt:now};
     items.push(await createInvoice(client,record));
@@ -152,8 +163,9 @@ export async function confirmInvoice(client:DynamoDBDocumentClient,record:Invoic
   if(record.status==='rejected') throw new Error('rejected-invoice');
   if(record.status==='pending') {
     if(missingEvidence(record.fields).length) throw new Error('payment-or-invoice-evidence-required');
-    const duplicates=(await listInvoices(client)).filter(x=>x.id!==record.id && x.status!=='rejected' && identity(x)===identity(record));
-    if(duplicates.length) throw new Error('ambiguous-invoice-identity-review-and-reject-duplicate');
+    const duplicateKey=invoiceDuplicateKey(record);
+    const duplicates=duplicateKey?(await listInvoices(client)).filter(x=>x.id!==record.id && x.status!=='rejected' && invoiceDuplicateKey(x)===duplicateKey):[];
+    if(duplicates.length) throw new Error('duplicate-invoice-identity-detected-review-both-drafts');
     const next=structuredClone(record);const at=new Date().toISOString();next.status='confirmed';next.confirmedRevision=record.revision;next.verification={revision:record.revision,actor,at,method:'operator'};next.audit.push({action:'fields-verified',actor,at,revision:record.revision},{action:automatically?'automatically-confirmed':'confirmed',actor,at,revision:record.revision});
     record=await approveInvoice(client,next,record,identity(record));
   }

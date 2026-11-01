@@ -57,6 +57,25 @@ function ledgerMoney(record) {
 // Status is a fill-only kit badge; a rejected draft stays neutral.
 const INVOICE_STATUS_TONE = { pending: " dk-badge--warning", confirmed: " dk-badge--success" };
 
+function invoiceFlags(record, escapeHtml) {
+  const duplicates = Array.isArray(record.duplicateInvoiceIds)
+    ? record.duplicateInvoiceIds
+    : [];
+  const blank = record.extraction?.blankConversion === true
+    ? '<span class="dk-badge dk-badge--warning invoice-review-flag" role="alert">'
+      + 'Blank conversion — original needed</span>'
+    : "";
+  const duplicate = duplicates.length
+    ? '<span class="dk-badge dk-badge--warning invoice-review-flag" role="status" '
+      + `title="Matching draft IDs: ${duplicates.map((id) => escapeHtml(id)).join(", ")}">`
+      + `Possible duplicate · ${duplicates.length + 1} drafts share this vendor and invoice number</span>`
+    : "";
+  return [
+    blank,
+    duplicate,
+  ].filter(Boolean).join(" ");
+}
+
 function ledgerRow(record, position, escapeHtml) {
   const e = (value) => escapeHtml(String(value ?? ""));
   const money = ledgerMoney(record);
@@ -66,7 +85,7 @@ function ledgerRow(record, position, escapeHtml) {
 <td class="num">${position}</td>
 <td>${e(shortDate(record.fields?.transactionDate))}</td>
 <td>${e(shortDate(record.fields?.paidDate))}</td>
-<td><strong>${e(record.fields?.counterparty || "—")}</strong></td>
+<td><strong>${e(record.fields?.counterparty || "—")}</strong>${invoiceFlags(record, escapeHtml)}</td>
 <td class="invoice-what">${e(description || "—")}</td>
 <td class="num">${e(money.usd)}</td>
 <td class="num">${e(money.eur)}</td>
@@ -146,6 +165,15 @@ export function invoiceDetailMarkup(record, escapeHtml) {
     </header>
     ${record.verification ? `<p>Fields verified by ${e(record.verification.actor)} · Revision ${e(record.verification.revision)} · ${e(record.verification.at)}</p>` : ""}
     <p>Extraction: ${e(record.extraction?.method || "Manual completion required")}${record.extraction?.needsReview ? " · Review required" : ""}</p>
+    ${record.extraction?.blankConversion === true
+      ? '<p class="invoice-review-flag" role="alert">Blank conversion — original needed. '
+        + 'Request the original PDF before completing this draft.</p>'
+      : ""}
+    ${record.duplicateInvoiceIds?.length
+      ? `<p class="invoice-review-flag" role="status">Possible duplicate: draft${record.duplicateInvoiceIds.length === 1 ? "" : "s"} `
+        + `${record.duplicateInvoiceIds.map((id) => e(String(id).slice(0, 8))).join(", ")} `
+        + 'share this vendor and invoice number. Both records remain available for review.</p>'
+      : ""}
     ${record.fields?.exchangeRate ? `<p>EUR estimate: ${e(record.fields.exchangeRate)} ${e(record.fields.currency)} per EUR
       · ${e(record.fields.exchangeRateSource)} · ${e(record.fields.exchangeRateDate)}</p>` : ""}
     <ul>${[

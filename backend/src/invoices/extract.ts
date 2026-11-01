@@ -1,6 +1,11 @@
-import type { InvoiceFields } from './model';
+import { BLANK_CONVERSION_ISSUE, type InvoiceFields } from './model';
 import { dirname, join } from 'node:path';
 export interface InvoiceHints { subject?: string; sender?: string }
+export const MIN_BLANK_PDF_BYTES = 1024;
+export class BlankConversionError extends Error {
+  readonly code = 'blank-conversion';
+  constructor() { super(BLANK_CONVERSION_ISSUE); this.name = 'BlankConversionError'; }
+}
 const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const monthIndex = new Map<string, number>();
 for (const [index, name] of months.entries()) { monthIndex.set(name.toLowerCase(), index); monthIndex.set(name.slice(0,3).toLowerCase(), index); }
@@ -121,24 +126,37 @@ function issuerCandidates(text: string): string[] {
 }
 function money(value: string): string | undefined {
   let normalized = value.replace(/\s/g,'');
-  if (/^\d{1,3},\d{2}$/.test(normalized)) normalized = `${normalized.slice(0,normalized.indexOf(','))}.${normalized.slice(normalized.indexOf(',')+1)}`;
+  const european = /^((?:\d{1,3}(?:\.\d{3})+)|\d{1,4}),(\d{2})$/.exec(normalized);
+  if (european) normalized = `${european[1].replace(/\./g,'')}.${european[2]}`;
   else normalized = normalized.replace(/,/g,'');
   return /^\d{1,10}(\.\d{2})?$/.test(normalized) && Number(normalized) > 0 ? normalized : undefined;
 }
-const TOTAL_LABEL = /(?:grand\s+total|total\s+amount|amount\s+(?:due|charged|paid)|balance\s+due|order\s+total|total\s+due|total)\b[^\n]{0,80}/gi;
+const TOTAL_LABEL = /(?:grand\s+total|total\s+amount|amount\s+(?:due|charged|paid)|balance\s+due|order\s+total|total\s+due|gesamtsumme|rechnungsbetrag|total)\b[^\n]{0,80}/gi;
 function lineMoney(line: string): { amount: string; currency: 'USD' | 'EUR' } | undefined {
-  const match = /(?:(\$|€|\bUSD\b|\bEUR\b)\s?([\d][\d,]*(?:\.\d{2})?)\s?(?:USD|EUR)?)|((?:[\d][\d,]*(?:\.\d{2})?)\s?(\$|€|\bUSD\b|\bEUR\b))/.exec(line);
+  const match = /(?:(\$|€|\bUSD\b|\bEUR\b)\s*([\d][\d.,]*)\s*(?:USD|EUR)?)|([\d][\d.,]*)\s*(\$|€|\bUSD\b|\bEUR\b)/i.exec(line);
   if (!match) return undefined;
   const euro = (symbol: string) => symbol === '€' || /EUR/i.test(symbol);
   if (match[2] !== undefined) {
     const amount = money(match[2]);
     return amount ? { amount, currency: euro(match[1]) ? 'EUR' : 'USD' } : undefined;
   }
-  const amount = money(match[3].replace(/(\$|€|\bUSD\b|\bEUR\b)/i, ''));
+  const amount = money(match[3]);
   return amount ? { amount, currency: euro(match[4]) ? 'EUR' : 'USD' } : undefined;
 }
 // European comma decimals ("45,70 €") only inside an explicit € context.
-const COMMA_EURO = /([\d]{1,4},\d{2})\s?€/;
+const COMMA_EURO = /((?:\d{1,3}(?:\.\d{3})+|\d{1,4}),\d{2})\s*€/;
+const CURRENCY_AMOUNT = /(?:(\$|€|\bUSD\b|\bEUR\b)\s*([\d][\d.,]*)|([\d][\d.,]*)\s*(\$|€|\bUSD\b|\bEUR\b))/gi;
+function soleCurrencyAmount(text: string): { amount: string; currency: 'USD' | 'EUR' } | undefined {
+  const found = new Map<string, { amount: string; currency: 'USD' | 'EUR' }>();
+  for (const match of text.matchAll(CURRENCY_AMOUNT)) {
+    const symbol = match[1] ?? match[4] ?? '';
+    const amount = money(match[2] ?? match[3] ?? '');
+    if (!amount) continue;
+    const currency = symbol === '€' || /EUR/i.test(symbol) ? 'EUR' : 'USD';
+    found.set(`${currency}:${amount}`, { amount, currency });
+  }
+  return found.size === 1 ? [...found.values()][0] : undefined;
+}
 function totalAmount(text: string): { amount: string; currency: 'USD' | 'EUR' } | undefined {
   let found: { amount: string; currency: 'USD' | 'EUR' } | undefined;
   for (const label of text.matchAll(TOTAL_LABEL)) {
@@ -155,9 +173,9 @@ function documentCurrency(text: string): 'USD' | 'EUR' | undefined {
 }
 function labeledDate(text: string, labels: RegExp): string | undefined {
   const match = labels.exec(text);
-  return match?.[1] ? calendar(match[1]) : undefined;
+  return match?.[1] ? calendar(match[1].replace(/^[\s.:·•—–-]+/, '')) : undefined;
 }
-const ISSUED_LABELS = /(?:invoice\s+date|date\s+of\s+issue|issue\s+date|billing\s+date|order\s+date|rechnungsdatum|\bdate\b)[^\n]{0,30}?([^\n]{1,40})/i;
+const ISSUED_LABELS = /(?:invoice\s+date|date\s+of\s+issue|issue\s+date|billing\s+date|order\s+date|rechnungsdatum|\bdate\b(?!\s+paid))[^\n]{0,30}?([^\n]{1,40})/i;
 const PAID_LABELS = /(?:date\s+paid|paid\s+on|payment\s+date)[^\n]{0,30}?([^\n]{1,40})/i;
 function invoiceNumber(text: string): string | undefined {
   const labeled = /(?:invoice|receipt|order)\s+(?:number|no\.?|num\.?|#|id)\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\/_.-]{2,40})/i.exec(text);
@@ -293,12 +311,18 @@ export function extractInvoiceText(rawText: string, hints: InvoiceHints = {}): {
   // Generic anchors cover layouts outside the two named families and fill
   // anything the named-family pass missed.
   if (!fields.invoiceNumber) { const found = invoiceNumber(text); if (found) { fields.invoiceNumber = found; evidence.push('labeled invoice/receipt number'); } }
-  if (!fields.transactionDate) { const found = labeledDate(text, ISSUED_LABELS); if (found) { fields.transactionDate = found; evidence.push('labeled issue date'); } }
   if (!fields.paidDate) { const found = labeledDate(text, PAID_LABELS); if (found) fields.paidDate = found; }
+  if (!fields.transactionDate) { const found = labeledDate(text, ISSUED_LABELS); if (found) { fields.transactionDate = found; evidence.push('labeled issue date'); } }
+  if (!fields.transactionDate && fields.paidDate) { fields.transactionDate = fields.paidDate; evidence.push('date paid used as the invoice date fallback'); }
   if (!fields.amount && !credit) {
     const found = totalAmount(text);
     if (found) { fields.amount = found.amount; fields.currency = found.currency; evidence.push(`labeled total with ${found.currency} currency`); }
-    else { const currency = documentCurrency(text); if (currency) fields.currency = currency; }
+    else {
+      const hasTotalLabel = new RegExp(TOTAL_LABEL.source, 'i').test(text);
+      const single = hasTotalLabel ? undefined : soleCurrencyAmount(text);
+      if (single) { fields.amount = single.amount; fields.currency = single.currency; evidence.push(`single distinct unlabeled ${single.currency} amount`); }
+      else { const currency = documentCurrency(text); if (currency) fields.currency = currency; }
+    }
   }
   if (!fields.counterparty) {
     for (const candidate of issuerCandidates(text)) {
@@ -349,7 +373,12 @@ export async function pdfText(bytes: Buffer): Promise<string> {
     const doc = await task.promise;
     if (doc.numPages > 40) throw new Error('pdf-page-limit');
     let text = '';
+    let hasRenderableContent = false;
     const sparsePages: number[] = [];
+    const visibleOperationNames = new Set(['stroke','closeStroke','fill','eoFill','fillStroke','eoFillStroke','closeFillStroke','closeEOFillStroke','shadingFill','showText','showSpacedText']);
+    const visibleOperations = new Set<unknown>(Object.entries(pdfjs.OPS)
+      .filter(([name]) => visibleOperationNames.has(name) || name.startsWith('paintImage') || name.startsWith('paintInlineImage') || name === 'paintJpegXObject' || name === 'paintSolidColorImageMask')
+      .map(([, operation]) => operation));
     for (let n=1; n<=doc.numPages; n++) {
       const page = await doc.getPage(n);
       const content = await page.getTextContent();
@@ -361,7 +390,10 @@ export async function pdfText(bytes: Buffer): Promise<string> {
       text += pageText + '\n';
       if (text.length > 200000) throw new Error('pdf-text-limit');
       if (pageText.replace(/\s/g, '').length < 100) sparsePages.push(n);
+      const operations = await page.getOperatorList();
+      if (operations.fnArray.some(operation => visibleOperations.has(operation))) hasRenderableContent = true;
     }
+    if (!text.replace(/\s/g, '').length && !hasRenderableContent) throw new BlankConversionError();
     // Keep the text layer first: reliable labeled IDs retain their precedence
     // over OCR (notably the customer VAT-ID on outline-only Contabo invoices).
     if (sparsePages.length) {
@@ -370,6 +402,9 @@ export async function pdfText(bytes: Buffer): Promise<string> {
     }
     if (text.length > 200000) throw new Error('pdf-text-limit');
     return text;
+  } catch(error) {
+    if(bytes.length<MIN_BLANK_PDF_BYTES && !(error instanceof BlankConversionError)) throw new BlankConversionError();
+    throw error;
   } finally { await task.destroy(); }
 }
 

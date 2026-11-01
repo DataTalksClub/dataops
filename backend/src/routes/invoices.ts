@@ -1,23 +1,34 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
-import { publicInvoice, validateFields, missingEvidence } from '../invoices/model';
+import { duplicateInvoiceIds, publicInvoice, validateFields, missingEvidence, type Invoice } from '../invoices/model';
 import { getInvoice, listInvoices, saveInvoice } from '../invoices/store';
 import { confirmInvoice, documentUrl, processInvoiceIntake, publishInvoice, readiness, reextractInvoice, verifyInvoice } from '../invoices/service';
 import { InvoiceDocumentError, replaceInvoiceDocument } from '../invoices/replaceDocument';
 import { recordRequestError } from '../requestErrorLog';
 const json=(statusCode:number,body:unknown):LambdaResponse=>({statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify(body)});
+async function publicInvoiceResponse(client:DynamoDBDocumentClient,record:Invoice) {
+  const records=await listInvoices(client);
+  return publicInvoice(record,duplicateInvoiceIds(record,records));
+}
 export async function handleInvoiceRoutes(path:string,method:string,event:LambdaEvent,client:DynamoDBDocumentClient,authorized:boolean):Promise<LambdaResponse> {
   if(!authorized) return json(401,{error:'Unauthorized'});
   try {
     if(path==='/api/bookkeeping/invoices/readiness' && method==='GET') return json(200,await readiness());
-    if(path==='/api/bookkeeping/invoices' && method==='GET') return json(200,{items:(await listInvoices(client)).map(publicInvoice)});
+    if(path==='/api/bookkeeping/invoices' && method==='GET') {
+      const records=await listInvoices(client);
+      return json(200,{items:records.map(record=>publicInvoice(record,duplicateInvoiceIds(record,records)))});
+    }
     let body:Record<string,unknown>={};
     if(['POST','PUT'].includes(method)) {try{body=JSON.parse(event.body || '{}');}catch{return json(400,{error:'Invalid JSON'});}if(!body || typeof body!=='object' || Array.isArray(body))return json(400,{error:'Invalid JSON'});}
-    if(path==='/api/bookkeeping/invoices/process' && method==='POST') {if(typeof body.intakeItemId!=='string' || body.intakeItemId.length>160)return json(400,{error:'intakeItemId required'});const result=await processInvoiceIntake(client,body.intakeItemId);return json(200,{items:result.items.map(publicInvoice),issues:result.issues});}
+    if(path==='/api/bookkeeping/invoices/process' && method==='POST') {
+      if(typeof body.intakeItemId!=='string' || body.intakeItemId.length>160)return json(400,{error:'intakeItemId required'});
+      const result=await processInvoiceIntake(client,body.intakeItemId);const records=await listInvoices(client);
+      return json(200,{items:result.items.map(record=>publicInvoice(record,duplicateInvoiceIds(record,records))),issues:result.issues});
+    }
     const match=/^\/api\/bookkeeping\/invoices\/([a-f0-9]{64})(?:\/(confirm|verify|reject|retry|reextract|replace-document|document))?$/.exec(path);
     if(!match)return json(404,{error:'Not found'});
     const record=await getInvoice(client,match[1]);if(!record)return json(404,{error:'Not found'});
-    if(method==='GET') return match[2]==='document'?json(200,await documentUrl(client,record)):match[2]?json(405,{error:'Method not allowed'}):json(200,publicInvoice(record));
+    if(method==='GET') return match[2]==='document'?json(200,await documentUrl(client,record)):match[2]?json(405,{error:'Method not allowed'}):json(200,await publicInvoiceResponse(client,record));
     if(body.revision!==record.revision)return json(409,{error:'Review changed: reload the current revision'});
     const actor=event.headers?.['x-user-id'] || 'authenticated-operator';
     if(method==='PUT' && !match[2]) {
@@ -30,20 +41,20 @@ export async function handleInvoiceRoutes(path:string,method:string,event:Lambda
       if(body.verified===true && missingEvidence(next.fields).length)return json(409,{error:'payment-or-invoice-evidence-required',fields:missingEvidence(next.fields)});
       next.audit.push({action:'corrected',actor,at:new Date().toISOString(),revision:next.revision});
       const updated=await saveInvoice(client,next,record);
-      return json(200,publicInvoice(body.verified===true?await verifyInvoice(client,updated,actor):updated));
+      return json(200,await publicInvoiceResponse(client,body.verified===true?await verifyInvoice(client,updated,actor):updated));
     }
-    if(method==='POST' && match[2]==='replace-document') return json(200,publicInvoice(await replaceInvoiceDocument(client,record,body,actor)));
-    if(method==='POST' && match[2]==='verify') return json(200,publicInvoice(await verifyInvoice(client,record,actor)));
-    if(method==='POST' && match[2]==='confirm') return json(200,publicInvoice(await confirmInvoice(client,record,actor)));
-    if(method==='POST' && match[2]==='retry') return json(200,publicInvoice(await publishInvoice(client,record,actor)));
-    if(method==='POST' && match[2]==='reextract') return json(200,publicInvoice(await reextractInvoice(client,record,actor)));
-    if(method==='POST' && match[2]==='reject') {if(record.status==='confirmed')return json(409,{error:'Confirmed invoices cannot be rejected'});const next=structuredClone(record);next.status='rejected';next.audit.push({action:'rejected',actor,at:new Date().toISOString(),revision:next.revision});return json(200,publicInvoice(await saveInvoice(client,next,record)));}
+    if(method==='POST' && match[2]==='replace-document') return json(200,await publicInvoiceResponse(client,await replaceInvoiceDocument(client,record,body,actor)));
+    if(method==='POST' && match[2]==='verify') return json(200,await publicInvoiceResponse(client,await verifyInvoice(client,record,actor)));
+    if(method==='POST' && match[2]==='confirm') return json(200,await publicInvoiceResponse(client,await confirmInvoice(client,record,actor)));
+    if(method==='POST' && match[2]==='retry') return json(200,await publicInvoiceResponse(client,await publishInvoice(client,record,actor)));
+    if(method==='POST' && match[2]==='reextract') return json(200,await publicInvoiceResponse(client,await reextractInvoice(client,record,actor)));
+    if(method==='POST' && match[2]==='reject') {if(record.status==='confirmed')return json(409,{error:'Confirmed invoices cannot be rejected'});const next=structuredClone(record);next.status='rejected';next.audit.push({action:'rejected',actor,at:new Date().toISOString(),revision:next.revision});return json(200,await publicInvoiceResponse(client,await saveInvoice(client,next,record)));}
     return json(405,{error:'Method not allowed'});
   } catch(error) {
     if(error instanceof InvoiceDocumentError) return json(error.statusCode,{error:error.message});
     recordRequestError(error);
     const name=(error as Error).name;const message=(error as Error).message;
     if(['ConditionalCheckFailedException','TransactionCanceledException'].includes(name))return json(409,{error:'Invoice changed or publication already in progress'});
-    return json(/not-found/.test(message)?404:/required|rejected|ambiguous|not-invoice|reextract|only-pending|corrected/.test(message)?409:503,{error:/^[a-z-]+$/.test(message)?message:'Invoice operation unavailable'});
+    return json(/not-found/.test(message)?404:/required|rejected|ambiguous|duplicate|not-invoice|reextract|only-pending|corrected/.test(message)?409:503,{error:/^[a-z-]+$/.test(message)?message:'Invoice operation unavailable'});
   }
 }

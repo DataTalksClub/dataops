@@ -57,3 +57,29 @@ test("empty ledger shows the honest forwarding state", () => {
   assert.ok(markup.includes("No invoice drafts received."));
   assert.ok(!markup.includes("<table"));
 });
+
+test("blank conversions and possible duplicate invoices are flagged in the list and detail", () => {
+  const record = {
+    ...draft,
+    id: "a".repeat(64),
+    extraction: {
+      ...draft.extraction,
+      blankConversion: true,
+      issues: ["Blank conversion — original needed"],
+    },
+    duplicateInvoiceIds: ["b".repeat(64)],
+  };
+  const list = invoiceLedgerMarkup([record], escape);
+  for (const value of [
+    "Blank conversion — original needed",
+    "Possible duplicate · 2 drafts share this vendor and invoice number",
+    'role="alert"',
+    'role="status"',
+  ]) assert.ok(list.includes(value), value);
+  const detail = invoiceDetailMarkup(record, escape);
+  for (const value of [
+    "Blank conversion — original needed. Request the original PDF",
+    "Possible duplicate: draft",
+    "Both records remain available for review.",
+  ]) assert.ok(detail.includes(value), value);
+});

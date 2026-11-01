@@ -1,12 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { extractInvoiceText, normalizePdfText, normalizeSubject, pdfText } from '../src/invoices/extract';
+import { BlankConversionError, extractInvoiceText, MIN_BLANK_PDF_BYTES, normalizePdfText, normalizeSubject, pdfText } from '../src/invoices/extract';
+import { extractFinancePdf, extractFinanceText, regexFinanceFacts } from '../src/invoices/financeExtraction';
+import type { LlmExtraction } from '../src/invoices/llm';
 import { missingEvidence, validateFields } from '../src/invoices/model';
 import { sheetValues, validateHeaders } from '../src/invoices/providers';
 import { restoredRecord } from '../src/export/portableValidate';
 import type { Invoice } from '../src/invoices/model';
 export const headers=['Date sent','Date paid','Provider','What','Price, $','Price, EUR','Statement','Count','Comment','Entry Type','Type','Period','Category'];
+const emptyReaderFacts:LlmExtraction={docType:'invoice',direction:'expense',counterparty:null,invoiceNumber:null,date:null,currency:null,net:null,vat:null,gross:null,vatRate:null,reverseCharge:false,paymentChannel:null,description:null,confidence:'low',uncertainFields:[]};
+const emptyReader=async()=>({fields:{...emptyReaderFacts,uncertainFields:[]},model:'synthetic-reader',latencyMs:1,usage:{inputTokens:0,outputTokens:0}});
 function pdf(text:string) {
   const stream='BT /F1 10 Tf 30 750 Td '+text.split('\n').map((line,i)=>(i?'0 -15 Td ':'')+`(${line.replace(/[()\\]/g,'\\$&')}) Tj`).join('\n')+' ET';
   const objects=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',`<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`];
@@ -163,4 +167,59 @@ test('prose about a credit note on a replacement invoice is not a credit note; h
   assert.equal(parsed.fields.subtype,undefined);
   assert.equal(extractInvoiceText('Receipt\nReceipt number ABCD \u0000 1234 \u0000 0001\nTotal $5.00').fields.invoiceNumber,'ABCD-1234-0001');
   assert.equal(extractInvoiceText('Invoice\nInvoice number F-0003-2026\nTotal 10.00 EUR').fields.invoiceNumber,'F-0003-2026');
+});
+
+test('dot leaders do not hide invoice dates or labeled totals from Finance extraction',async()=>{
+  const text='X Subscription\nInvoice number CF5469A422\nInvoice date ..... Oct 16, 2026\nTotal in EUR ....... € 2100.00';
+  const parsed=extractInvoiceText(text);
+  assert.equal(parsed.fields.amount,'2100.00');assert.equal(parsed.fields.currency,'EUR');assert.equal(parsed.fields.transactionDate,'2026-10-16');
+  const facts=regexFinanceFacts(text);
+  assert.equal(facts.gross,'2100.00');assert.equal(facts.currency,'EUR');assert.equal(facts.date,'2026-10-16');
+  const finance=await extractFinanceText(text,{llm:emptyReader});
+  assert.equal(finance.fields.amount,'2100.00');assert.equal(finance.fields.currency,'EUR');assert.equal(finance.fields.transactionDate,'2026-10-16');
+});
+
+test('PDF text-reader exceptions remain visible in Finance extraction issues',async()=>{
+  const result=await extractFinancePdf(pdf('Synthetic invoice\nInvoice number SYNTHETIC-1'),{
+    textReader:async()=>{throw new Error('synthetic-pdfjs-reader-error');},
+    llm:emptyReader,
+  });
+  assert.ok(result.extraction.issues.includes('PDF text extraction failed: synthetic-pdfjs-reader-error'));
+  assert.equal(result.extraction.needsReview,true);
+});
+
+test('date paid fills the invoice date only when no issue date is present',async()=>{
+  const text='Example Service GmbH\nReceipt number EX-2026-10\nDate paid ..... Oct 16, 2026\nTotal EUR 12.00';
+  const parsed=extractInvoiceText(text);
+  assert.equal(parsed.fields.paidDate,'2026-10-16');assert.equal(parsed.fields.transactionDate,'2026-10-16');
+  assert.ok(parsed.extraction.evidence.includes('date paid used as the invoice date fallback'));
+  assert.equal(extractInvoiceText(text.replace('Date paid ..... Oct 16, 2026','Invoice date: Oct 15, 2026\nDate paid: Oct 16, 2026')).fields.transactionDate,'2026-10-15');
+  assert.equal((await extractFinanceText(text,{llm:emptyReader})).fields.transactionDate,'2026-10-16');
+});
+
+test('German Gesamtsumme and Rechnungsbetrag labels identify the gross total',async()=>{
+  const total=extractInvoiceText('Example Handel GmbH\nRechnungsdatum: 16.10.2026\nGesamtsumme: 70,44 €');
+  assert.equal(total.fields.amount,'70.44');assert.equal(total.fields.currency,'EUR');
+  const invoice=extractInvoiceText('Example Handel GmbH\nRechnungsbetrag EUR 2.100,00');
+  assert.equal(invoice.fields.amount,'2100.00');assert.equal(invoice.fields.currency,'EUR');
+  const finance=await extractFinanceText('Example Handel GmbH\nRechnungsbetrag EUR 2.100,00',{llm:emptyReader});
+  assert.equal(finance.fields.amount,'2100.00');assert.equal(finance.fields.currency,'EUR');
+});
+
+test('one distinct currency amount can be an unlabeled total; Mailchimp receipt keeps its amount and paid date',async()=>{
+  const generic=extractInvoiceText('Example Service GmbH\nSubscription EUR 726.59');
+  assert.equal(generic.fields.amount,'726.59');assert.equal(generic.fields.currency,'EUR');
+  const ambiguous=extractInvoiceText('Example Service GmbH\nSubscription EUR 726.59\nVAT EUR 4.31');
+  assert.equal(ambiguous.fields.amount,undefined);
+  const mailchimp='Mailchimp Receipt\nReceipt MC19758543\nThe Rocket Science Group, LLC\nPremium plan €726.59\nDate Paid: October 16, 2026\nTax was not applied to this purchase. The reverse charge mechanism applies';
+  const parsed=await extractFinanceText(mailchimp,{llm:async()=>{throw new Error('template should skip reader');}});
+  assert.equal(parsed.fields.amount,'726.59');assert.equal(parsed.fields.currency,'EUR');assert.equal(parsed.fields.transactionDate,'2026-10-16');
+});
+
+test('redacted empty-PDF fixture is flagged as a blank conversion, including when padded above 1 KB',async()=>{
+  const blank=readFileSync(new URL('./fixtures/invoices/blank-conversion.pdf',import.meta.url));
+  assert.ok(blank.length<MIN_BLANK_PDF_BYTES);
+  await assert.rejects(extractFinancePdf(blank),BlankConversionError);
+  const padded=Buffer.concat([blank,Buffer.alloc(MIN_BLANK_PDF_BYTES+1-blank.length,32)]);
+  await assert.rejects(pdfText(padded),BlankConversionError);
 });

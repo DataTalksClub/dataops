@@ -8,8 +8,6 @@ import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { TABLE_INTAKE } from '../src/db/tableNames';
-import { ScanCommand } from '@aws-sdk/lib-dynamodb';
-import { TABLE_INTAKE } from '../src/db/tableNames';
 import { getArtifact, listArtifacts } from '../src/db/artifacts';
 import { getIntakeItem } from '../src/db/intake';
 import { setInvoiceServiceForTests } from '../src/invoices/service';
@@ -151,7 +149,12 @@ describe('POST /api/v1/intake/email-documents', () => {
 
   it('returns an invoice filename preview for DataOps-first archiving', async () => {
     const text = 'Acme Ltd\nInvoice\nInvoice number: INV-2026-001\nInvoice date: 2026-09-30\nTotal: 42.00 EUR\n';
-    const pdf = Buffer.from(text, 'utf8');
+    const { PDFDocument, StandardFonts } = await import('pdf-lib');
+    const documentPdf = await PDFDocument.create();
+    const page = documentPdf.addPage();
+    const font = await documentPdf.embedFont(StandardFonts.Helvetica);
+    page.drawText(text, { x: 20, y: 760, size: 8, font });
+    const pdf = Buffer.from(await documentPdf.save());
     const checksum = `sha256:${createHash('sha256').update(pdf).digest('hex')}`;
     s3.sources.set('transfer/invoice-preview.pdf', { size: pdf.length, type: 'application/pdf', checksum });
     setInvoiceServiceForTests({
