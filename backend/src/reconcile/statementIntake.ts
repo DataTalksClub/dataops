@@ -13,6 +13,10 @@ import { getIntakeItem } from "../db/intake";
 import { createNotification } from "../db/notifications";
 import { pdfText } from "../invoices/extract";
 import {
+  csvHeaders,
+  detectStatementAccount,
+  parseStatementCsv,
+  parseStatementXlsx,
   ParseError,
   parseStatementDate,
   type ParsedStatement,
@@ -40,6 +44,7 @@ export class UnrecognizedStatementError extends Error {
   statusCode = 422;
 }
 
+const XLSX = /spreadsheetml|ms-excel/;
 const isPdf = (contentType: string, bytes: Buffer) => contentType === "application/pdf" || bytes.subarray(0, 5).toString("ascii") === "%PDF-";
 let statementPdfText = pdfText;
 export function setStatementPdfTextForTests(extractor?: typeof pdfText) {
@@ -121,14 +126,42 @@ export async function recognizeStatement(bytes: Buffer, contentType: string, opt
   }
 }
 
+/**
+ * Email document intake keeps its existing tabular attachment handling.
+ * The explicit reconcile upload API, CLI and portal use recognizeStatement,
+ * which accepts PDFs only.
+ */
+async function recognizeEmailStatement(bytes: Buffer, contentType: string, options: { currency?: string } = {}): Promise<{ account: StatementAccount; layout: string; parsed: ParsedStatement }> {
+  const type = contentType.split(";")[0].trim().toLowerCase();
+  if (isPdf(type, bytes)) return recognizeStatement(bytes, type, options);
+  if (XLSX.test(type)) {
+    for (const account of ["revolut", "finom"] as StatementAccount[]) {
+      try {
+        return { account, layout: `${account} workbook`, parsed: await parseStatementXlsx(bytes, account, options) };
+      } catch (error) {
+        if (!(error instanceof ParseError) || !/unrecognized/.test(error.message)) throw error;
+      }
+    }
+    throw new UnrecognizedStatementError("workbook is not a recognized Finom or Revolut statement export");
+  }
+  const text = bytes.toString("utf8");
+  const headers = csvHeaders(text);
+  const detected = detectStatementAccount(headers);
+  if (!detected) {
+    throw new UnrecognizedStatementError(`CSV is not a recognized Finom or Revolut statement export (headers: ${headers.slice(0, 12).join(", ")}${headers.length > 12 ? ", …" : ""})`);
+  }
+  return { account: detected.account, layout: detected.layout, parsed: parseStatementCsv(text, detected.account, options) };
+}
+
 /** Store parsed rows as one statement per month; a closed month is left untouched and reported. */
-export async function importStatement(
+async function storeParsedStatement(
   client: DynamoDBDocumentClient,
-  bytes: Buffer,
   source: StatementSource,
+  account: StatementAccount,
+  layout: string,
+  parsed: ParsedStatement,
   options: { currency?: string; notify?: boolean } = {},
 ): Promise<ImportedStatement> {
-  const { account, layout, parsed } = await recognizeStatement(bytes, source.contentType, { ...options, filename: source.filename });
   const months = [...new Set(parsed.rows.map((row) => row.date.slice(0, 7)))].sort();
   const statements: ImportedStatement["statements"] = [];
   const skippedClosedMonths: string[] = [];
@@ -166,6 +199,26 @@ export async function importStatement(
   return { account, layout, statements, skippedClosedMonths, parsed, summaries, autoMatch, matches };
 }
 
+export async function importStatement(
+  client: DynamoDBDocumentClient,
+  bytes: Buffer,
+  source: StatementSource,
+  options: { currency?: string; notify?: boolean } = {},
+): Promise<ImportedStatement> {
+  const recognized = await recognizeStatement(bytes, source.contentType, { ...options, filename: source.filename });
+  return storeParsedStatement(client, source, recognized.account, recognized.layout, recognized.parsed, options);
+}
+
+async function importEmailStatement(
+  client: DynamoDBDocumentClient,
+  bytes: Buffer,
+  source: StatementSource,
+  options: { currency?: string; notify?: boolean } = {},
+): Promise<ImportedStatement> {
+  const recognized = await recognizeEmailStatement(bytes, source.contentType, options);
+  return storeParsedStatement(client, source, recognized.account, recognized.layout, recognized.parsed, options);
+}
+
 let s3 = new S3Client({});
 export function setStatementIntakeStorageForTests(client: S3Client) { s3 = client; }
 
@@ -190,9 +243,9 @@ async function artifactContent(client: DynamoDBDocumentClient, artifactId: strin
 const STATEMENT_ATTACHMENT = /\.(csv|xlsx|pdf)$/i;
 
 /**
- * Email intake imports PDF Finom or Revolut statements and tags them so
- * invoice processing skips them. CSV/XLSX exports are reported as rejected
- * PDF-only statement inputs and are never imported.
+ * Email intake imports Finom or Revolut statements and tags them so invoice
+ * processing skips them. Its existing CSV/XLSX attachment path is separate
+ * from the PDF-only reconcile upload routes.
  */
 export async function processStatementIntake(client: DynamoDBDocumentClient, intakeItemId: string): Promise<{ imported: ImportedStatement[]; issues: string[] }> {
   const intake = await getIntakeItem(client, intakeItemId);
@@ -213,7 +266,7 @@ export async function processStatementIntake(client: DynamoDBDocumentClient, int
       continue;
     }
     try {
-      const result = await importStatement(client, content.bytes, { artifactId: artifact.id, contentType: content.contentType, ...(content.filename ? { filename: content.filename } : {}) }, { notify: true });
+      const result = await importEmailStatement(client, content.bytes, { artifactId: artifact.id, contentType: content.contentType, ...(content.filename ? { filename: content.filename } : {}) }, { notify: true });
       imported.push(result);
       await updateArtifact(client, artifact.id, { metadata: { ...(artifact.metadata || {}), reconcileStatement: { account: result.account, statements: result.statements.map((statement) => statement.id) } } });
       if (result.skippedClosedMonths.length) issues.push(`${label}: months ${result.skippedClosedMonths.join(", ")} are closed; reopen them to import these rows`);
