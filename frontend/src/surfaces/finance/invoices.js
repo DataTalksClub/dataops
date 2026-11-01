@@ -146,7 +146,8 @@ export function invoiceDetailMarkup(record, escapeHtml) {
     </header>
     ${record.verification ? `<p>Fields verified by ${e(record.verification.actor)} · Revision ${e(record.verification.revision)} · ${e(record.verification.at)}</p>` : ""}
     <p>Extraction: ${e(record.extraction?.method || "Manual completion required")}${record.extraction?.needsReview ? " · Review required" : ""}</p>
-    ${record.fields?.exchangeRate ? `<p>EUR estimate: ${e(record.fields.exchangeRate)} ${e(record.fields.currency)} per EUR · ${e(record.fields.exchangeRateSource)} · ${e(record.fields.exchangeRateDate)}</p>` : ""}
+    ${record.fields?.exchangeRate ? `<p>EUR estimate: ${e(record.fields.exchangeRate)} ${e(record.fields.currency)} per EUR
+      · ${e(record.fields.exchangeRateSource)} · ${e(record.fields.exchangeRateDate)}</p>` : ""}
     <ul>${[
       ...(record.extraction?.issues || []),
       ...(record.missingEvidence || []).map((field) => `Missing evidence: ${field}`),
