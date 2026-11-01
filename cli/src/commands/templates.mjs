@@ -172,13 +172,28 @@ function versionPair(args, template, fileDefinition) {
   return { expectedVersion, revision };
 }
 
-function describeConflict(error, ref) {
+function describeTemplateWriteError(error, ref) {
   if (error instanceof ApiError && error.status === 409 && error.body && typeof error.body === "object") {
     const current = error.body.currentTemplate;
     const hint = current
       ? ` Current version is ${current.version} (revision ${current.revision || "unknown"}).`
       : "";
     throw new ConflictError(`${error.message || "Template changed."}${hint} Re-read ${ref} and retry.`, { current });
+  }
+  if (
+    error instanceof ApiError
+    && error.status === 422
+    && error.body
+    && typeof error.body === "object"
+    && Array.isArray(error.body.issues)
+  ) {
+    const issues = error.body.issues.filter((issue) => typeof issue === "string" && issue.trim());
+    if (issues.length > 0) {
+      throw new ApiError(error.status, {
+        ...error.body,
+        error: `${error.message || "Template definition is invalid"}: ${issues.join("; ")}`,
+      }, error.url);
+    }
   }
   throw error;
 }
@@ -316,7 +331,7 @@ export async function update(args, io) {
   try {
     result = await api.put(`/api/templates/${enc(template.id)}`, { expectedVersion, revision, definition }, { query });
   } catch (error) {
-    describeConflict(error, ref);
+    describeTemplateWriteError(error, ref);
   }
   if (args.json) return result;
   if (result.dryRun) {
@@ -337,7 +352,7 @@ export async function reset(args, io) {
   try {
     result = await api.post(`/api/templates/${enc(template.id)}/reset`, { expectedVersion, revision }, { query });
   } catch (error) {
-    describeConflict(error, ref);
+    describeTemplateWriteError(error, ref);
   }
   if (args.json) return result;
   if (result.dryRun) {
@@ -363,7 +378,7 @@ export async function remove(args, io) {
   try {
     result = await api.delete(`/api/templates/${enc(template.id)}`, { expectedVersion, revision });
   } catch (error) {
-    describeConflict(error, ref);
+    describeTemplateWriteError(error, ref);
   }
   if (args.json) return result;
   io.print(`Deleted ${template.id}.`);

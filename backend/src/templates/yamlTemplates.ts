@@ -95,6 +95,8 @@ const EXTERNAL_SOURCE_FIELDS = [
 
 type Dict = Record<string, unknown>;
 
+const MAX_TASK_TITLE_LENGTH = 80;
+
 function assign(target: Dict, key: string, value: unknown): void {
   if (value === undefined) return;
   target[key] = value;
@@ -328,6 +330,12 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
     if (seen.has(id)) fail(`duplicate task id '${id}'`);
     if (id.includes('#')) fail(`task id '${id}' must not contain '#' (it numbers repeated tasks)`);
     seen.add(id);
+    if (typeof task.name === 'string') {
+      const titleLength = Array.from(task.name).length;
+      if (titleLength > MAX_TASK_TITLE_LENGTH) {
+        fail(`task '${id}' title must be at most ${MAX_TASK_TITLE_LENGTH} characters (got ${titleLength})`);
+      }
+    }
     if (typeof task.optional_group === 'string' && !/^[a-z0-9][a-z0-9-]*$/.test(task.optional_group)) {
       fail(`task '${id}' optional_group must be a slug`);
     }
@@ -407,6 +415,7 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
     || (Array.isArray(task.depends_on) && task.depends_on.every((ref) => typeof ref === 'string')))
   ));
   if (dependencyShapeValid) {
+    const tasksById = new Map(tasks.map((task) => [String(task.id || ''), task]));
     for (const message of templateDependencyIssues(tasks.map((task) => ({
       refId: String(task.id || ''),
       dependsOn: task.depends_on as string[] | undefined,
@@ -415,6 +424,55 @@ export function validateAuthoredTemplate(doc: Dict, knownDocIds: Set<string> | n
         ? { countField: (task.repeat as Dict).count_field as string }
         : undefined,
     })))) fail(message);
+
+    for (const task of tasks) {
+      const id = String(task.id || '');
+      const schedule = (task.schedule as Dict | undefined) || {};
+      const offset = schedule.offset_days;
+      if (!Number.isInteger(offset)) continue;
+      const anchor = schedule.anchor === 'end' ? 'end' : 'start';
+      const sameAnchorDependencyOffsets: number[] = [];
+
+      for (const dependencyRef of (task.depends_on as string[] | undefined) || []) {
+        const dependency = tasksById.get(dependencyRef);
+        if (!dependency) continue;
+        const dependencySchedule = (dependency.schedule as Dict | undefined) || {};
+        const dependencyOffset = dependencySchedule.offset_days;
+        if (!Number.isInteger(dependencyOffset)) continue;
+        const dependencyAnchor = dependencySchedule.anchor === 'end' ? 'end' : 'start';
+        if (anchor !== dependencyAnchor) continue;
+
+        if ((offset as number) < (dependencyOffset as number)) {
+          fail(
+            `task '${id}' schedule offset ${offset} is earlier than dependency '${dependencyRef}' `
+            + `offset ${dependencyOffset} on the same ${anchor} anchor`,
+          );
+        }
+        sameAnchorDependencyOffsets.push(dependencyOffset as number);
+      }
+
+      if (sameAnchorDependencyOffsets.length > 0) {
+        const latestDependencyOffset = Math.max(...sameAnchorDependencyOffsets);
+        const validation = task.validation;
+        const operatorAction = validation && typeof validation === 'object' && !Array.isArray(validation)
+          ? (validation as Dict).operatorAction
+          : undefined;
+        const hasOperatorAction = typeof operatorAction === 'string' && operatorAction.trim().length > 0;
+        const instructionDocId = task.instruction_doc_id;
+        const hasInstructionDoc = typeof instructionDocId === 'string' && instructionDocId.trim().length > 0;
+        if (
+          (offset as number) > latestDependencyOffset
+          && offset !== 0
+          && !hasOperatorAction
+          && !hasInstructionDoc
+        ) {
+          fail(
+            `task '${id}' has a useless schedule offset ${offset}: it is later than the latest `
+            + 'same-anchor dependency without a documented reason (add validation.operatorAction or instruction_doc_id)',
+          );
+        }
+      }
+    }
   }
 
   return issues;

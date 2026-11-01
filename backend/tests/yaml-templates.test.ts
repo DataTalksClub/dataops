@@ -78,6 +78,71 @@ describe('authored YAML template mapping', () => {
     assert.ok(!Object.hasOwn(runtime, 'version'));
   });
 
+  it('limits task titles to 80 Unicode characters', () => {
+    const authored = templateToYaml({
+      ...RUNTIME_TEMPLATE,
+      taskDefinitions: [{ refId: 'title', description: '😀'.repeat(80), offsetDays: 0 }],
+    });
+    assert.deepStrictEqual(validateAuthoredTemplate(authored), []);
+
+    const task = (authored.tasks as Record<string, unknown>[])[0];
+    task.name = '😀'.repeat(81);
+    assert.match(
+      validateAuthoredTemplate(authored).map((issue) => issue.message).join('\n'),
+      /title must be at most 80 characters \(got 81\)/,
+    );
+  });
+
+  it('rejects backwards and undocumented dependency offsets while accepting anchor-based dates', () => {
+    const definition = (taskDefinitions: Record<string, unknown>[]) => templateToYaml({
+      ...RUNTIME_TEMPLATE,
+      taskDefinitions,
+    });
+    const messages = (taskDefinitions: Record<string, unknown>[]) => validateAuthoredTemplate(definition(taskDefinitions))
+      .map((issue) => issue.message).join('\n');
+
+    assert.match(messages([
+      { refId: 'first', description: 'First task', offsetDays: -2 },
+      {
+        refId: 'second', description: 'Second task', offsetDays: -3, dependsOn: ['first'],
+        validation: { operatorAction: 'Complete after the first task.' },
+      },
+    ]), /schedule offset -3 is earlier than dependency 'first' offset -2/);
+
+    assert.match(messages([
+      { refId: 'first', description: 'First task', offsetDays: -2 },
+      { refId: 'second', description: 'Second task', offsetDays: -1, dependsOn: ['first'] },
+    ]), /useless schedule offset -1/);
+
+    assert.deepStrictEqual(validateAuthoredTemplate(definition([
+      { refId: 'first', description: 'First task', offsetDays: -2 },
+      { refId: 'same-day', description: 'Same day task', offsetDays: -2, dependsOn: ['first'] },
+      { refId: 'anchor-day', description: 'Anchor task', offsetDays: 0, dependsOn: ['same-day'] },
+      { refId: 'independent', description: 'Independent task', offsetDays: -7 },
+    ])), []);
+
+    assert.deepStrictEqual(validateAuthoredTemplate(definition([
+      { refId: 'first', description: 'First task', offsetDays: -2 },
+      {
+        refId: 'documented', description: 'Documented delay', offsetDays: -1, dependsOn: ['first'],
+        validation: { operatorAction: 'Wait for the approval before proceeding.' },
+      },
+    ])), []);
+
+    assert.deepStrictEqual(validateAuthoredTemplate(definition([
+      { refId: 'first', description: 'First task', offsetDays: -2 },
+      {
+        refId: 'documented-sop', description: 'Documented SOP delay', offsetDays: -1, dependsOn: ['first'],
+        instructionDocId: 'sop.synthetic.schedule-delay',
+      },
+    ])), []);
+
+    assert.deepStrictEqual(validateAuthoredTemplate(definition([
+      { refId: 'end-task', description: 'END task', offsetDays: 2, anchor: 'end' },
+      { refId: 'start-task', description: 'START task', offsetDays: -20, dependsOn: ['end-task'] },
+    ])), [], 'START and END offsets cannot establish order without the Card duration');
+  });
+
   it('distinguishes absent lists from explicitly empty lists at every definition level', () => {
     const authored = syntheticAuthoredTemplate();
     for (const field of ['tools', 'tags', 'source_document_ids', 'external_source_documents', 'references', 'card_links', 'phases']) {

@@ -251,13 +251,22 @@ describe("templates write commands", () => {
     assert.match(io.errors.join("\n"), /Current version is 9 \(revision rev-9\)/);
   });
 
-  test("a 422 reports issues as invalid input", async () => {
+  test("a 422 reports template lint issues as invalid input", async () => {
+    const file = path.join(dir, "invalid-title.json");
+    writeFileSync(file, JSON.stringify({
+      ...template,
+      taskDefinitions: [{ refId: "a", description: "x".repeat(81), offsetDays: 0 }],
+    }));
     fakePortal({
       ...findRoutes,
-      "PUT /api/templates/tpl-1": { status: 422, body: { error: "bad", code: "invalid-template", issues: ["cycle"] } },
+      "PUT /api/templates/tpl-1": {
+        status: 422,
+        body: { error: "Template definition is invalid", code: "invalid-template", issues: ["task 'a' title must be at most 80 characters"] },
+      },
     });
     const io = captureIo();
-    assert.equal(await run(["templates", "update", "tpl-1", "--task", "a", "--offset-days", "1"], io), 6);
+    assert.equal(await run(["templates", "update", "tpl-1", "--from-file", file], io), 6);
+    assert.match(io.errors.join("\n"), /task 'a' title must be at most 80 characters/);
   });
 
   test("reset and delete confirm, version, and refuse Git templates in words", async () => {

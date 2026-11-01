@@ -9,6 +9,14 @@ Notes on mapping to our data model:
 - Some tasks mention specific assignees (e.g., "– Valeriia", "– Alexey") - these map to per-task `assigneeId`.
 - Checklist names become phase groupings - useful for understanding the workflow but flattened in our model.
 
+## Authored workflow template lint
+
+Workflow task names are Card titles and must be no more than 80 Unicode characters. Put longer task detail in `validation.operatorAction`; keep `instruction_doc_id` when a task links to its SOP.
+
+Offsets are integer day counts from the task's anchor (`start` by default, or `end`). For dependencies on the same anchor, a task cannot be scheduled earlier than any prerequisite. A later, nonzero day than the latest same-anchor prerequisite is treated as an extra delay and needs a documented reason in nonempty `validation.operatorAction` or `instruction_doc_id`. Offset `0` is the Card anchor itself, and a task without same-anchor dependencies is scheduled directly relative to its anchor, so neither needs a separate reason. START and END offsets are not compared because their calendar order depends on each Card's duration.
+
+The shared validator runs for authored templates in CI and on API saves. The `dataops templates update` CLI uses that same API validation and reports its lint issues.
+
 ## Document Parts
 
 This document is split into four parts:

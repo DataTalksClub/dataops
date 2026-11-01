@@ -41,7 +41,10 @@ function authored(type: string, tasks: unknown[], rev = 'rev-1', extra: Record<s
 
 const TWO_TASKS = [
   { id: 'a', name: 'Task A', schedule: { offset_days: 0 } },
-  { id: 'b', name: 'Task B', schedule: { offset_days: 7 }, depends_on: ['a'] },
+  {
+    id: 'b', name: 'Task B', schedule: { offset_days: 7 }, depends_on: ['a'],
+    validation: { operatorAction: 'Schedule after Task A is complete.' },
+  },
 ];
 
 function validCustomDefinition(type: string, tasks: unknown[] = TWO_TASKS) {
@@ -107,6 +110,21 @@ describe('Templates runtime editing', () => {
         ],
         /cycle/i,
       ],
+      [[{ id: 'a', name: 'x'.repeat(81), schedule: { offset_days: 0 } }], /at most 80 characters/],
+      [
+        [
+          { id: 'a', name: 'A', schedule: { offset_days: -2 } },
+          { id: 'b', name: 'B', schedule: { offset_days: -3 }, depends_on: ['a'] },
+        ],
+        /earlier than dependency/,
+      ],
+      [
+        [
+          { id: 'a', name: 'A', schedule: { offset_days: -2 } },
+          { id: 'b', name: 'B', schedule: { offset_days: -1 }, depends_on: ['a'] },
+        ],
+        /useless schedule offset/,
+      ],
       [[{ id: 'a', name: 'A' }], /offset_days/i],
     ] as const) {
       const response = await call('POST', '/api/templates', validCustomDefinition('bad-def', tasks as unknown[]));
@@ -119,6 +137,22 @@ describe('Templates runtime editing', () => {
     assert.equal(typeResponse.statusCode, 422);
     const owned = await call('POST', '/api/templates', { ...validCustomDefinition('owned'), id: 'nope' });
     assert.equal(owned.statusCode, 400);
+  });
+
+  it('rejects a lint-invalid pinned update without changing the Template version', async () => {
+    const template = await createCustom('lint-update');
+    const response = await call('PUT', `/api/templates/${template.id}`, {
+      expectedVersion: template.version,
+      revision: template.revision,
+      definition: {
+        ...validCustomDefinition('lint-update'),
+        taskDefinitions: [{ refId: 'long-title', description: 'x'.repeat(81), offsetDays: 0 }],
+      },
+    });
+    assert.equal(response.statusCode, 422, response.body);
+    assert.equal(bodyOf(response).code, 'invalid-template');
+    assert.match(JSON.stringify(bodyOf(response).issues), /at most 80 characters/);
+    assert.equal(bodyOf(await get(`/api/templates/${template.id}`)).template.version, template.version);
   });
 
   it('refuses duplicate types and names the conflict', async () => {
