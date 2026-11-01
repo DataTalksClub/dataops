@@ -18,6 +18,7 @@ export type AutoMatchTransaction = Record<string, unknown> & {
   currency?: string;
   counterparty?: string;
   entryType?: string;
+  sponsorDealId?: string;
 };
 
 export type AutoMatchDocument = Record<string, unknown> & {
@@ -186,6 +187,14 @@ function extractionNeedsReview(facts: Record<string, unknown>): boolean {
   );
 }
 
+function directionMatches(transaction: AutoMatchTransaction, facts: Record<string, unknown>): boolean {
+  const extraction = facts.extraction;
+  if (!extraction || typeof extraction !== "object" || Array.isArray(extraction)) return true;
+  const extractedDirection = String((extraction as Record<string, unknown>).direction || "").toLowerCase();
+  if (!extractedDirection) return true;
+  return extractedDirection === String(transaction.entryType || "").toLowerCase();
+}
+
 type Candidate = AutoMatchPair & { transactionKey: string; documentKey: string };
 
 function uniqueClosestBy<T extends Candidate>(
@@ -249,6 +258,7 @@ export function planEvidenceAutoMatches(
     if (!transactionVendor) continue;
     for (const document of eligibleDocuments) {
       const facts = document.facts!;
+      if (!directionMatches(transaction, facts)) continue;
       if (normalizedAutoMatchVendor(facts.counterparty) !== transactionVendor) continue;
 
       const match = exactAmountMatch(transaction, facts);

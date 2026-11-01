@@ -125,6 +125,22 @@ describe("strict bookkeeping evidence auto-matching", () => {
     assert.deepEqual(planEvidenceAutoMatches([transaction("tx-1")], docs, links), []);
   });
 
+  it("does not attach an invoice to the opposite transaction direction", () => {
+    assert.deepEqual(
+      planEvidenceAutoMatches(
+        [transaction("tx-expense")],
+        [document("credit-note", {
+          facts: {
+            ...document("d").facts,
+            extraction: { documentType: "credit_note", direction: "income", needsReview: false },
+          },
+        })],
+        [],
+      ),
+      [],
+    );
+  });
+
   it("does not reattach rows or documents that already have evidence links", () => {
     const linkedTransaction = [{ transactionId: "tx-1", documentId: "doc-other", coverageType: "evidence" }];
     const linkedDocument = [{ transactionId: "tx-other", documentId: "doc-1", coverageType: "evidence" }];
