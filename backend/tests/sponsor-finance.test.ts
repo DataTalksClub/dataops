@@ -21,6 +21,7 @@ import {
   deriveThankYou,
 } from '../src/sponsorFinance/thankYou';
 import { templateParser } from '../src/docs/templatePlaceholders';
+import { FINOM_PAID_INSTRUCTION_DOC_ID, finomPaidTaskDescription } from '../src/sponsorFinance/finomPaidTask';
 
 describe('sponsor finance contracts', () => {
   it('uses exact four-place scaled integer money arithmetic', () => {
@@ -37,7 +38,7 @@ describe('sponsor finance contracts', () => {
 
   it('keeps the 20-link contract within the current DynamoDB transaction limit', () => {
     assert.equal(PAYMENT_LINK_LIMIT, 20);
-    assert.equal(MAX_PAYMENT_LINK_TRANSACTION_ACTIONS, 50);
+    assert.equal(MAX_PAYMENT_LINK_TRANSACTION_ACTIONS, 51);
     assert.ok(MAX_PAYMENT_LINK_TRANSACTION_ACTIONS <= 100);
   });
 
@@ -280,6 +281,12 @@ describe('sponsor finance contracts', () => {
     assert.throws(() => validateEvidence(Array.from({ length: 21 }, () => ({ kind: 'note', ref: 'x' }))));
   });
 
+  it('names the Finom follow-through Task after the invoice and pins its instruction doc', () => {
+    assert.equal(finomPaidTaskDescription('202610/12'), 'Mark invoice 202610/12 paid in Finom');
+    assert.equal(finomPaidTaskDescription(undefined), 'Mark the invoice paid in Finom');
+    assert.equal(FINOM_PAID_INSTRUCTION_DOC_ID, 'sop.finance.bookkeeping.marking-invoice-as-paid-in-finom');
+  });
+
   it('derives the send-with-template payment thank-you contract when payment resolves and marks it recorded idempotently', async () => {
     const parser = await templateParser();
     const parsed = parser.parseTemplatePlaceholders(THANK_YOU_TEMPLATE_MARKDOWN);
@@ -321,7 +328,7 @@ describe('sponsor finance contracts', () => {
     assert.equal(required.sendPolicy, 'send-with-template');
     assert.equal(required.templateId, THANK_YOU_TEMPLATE_ID);
     assert.equal(required.sopId, THANK_YOU_SOP_ID);
-    assert.equal(required.sopStep, 9);
+    assert.equal(required.sopStep, 10);
     assert.equal(required.context.whatWasPaid, 'invoice 202610/12');
     assert.equal(
       required.placeholders.find((item) => item.name === '<WHAT_WAS_PAID>')?.suggestedValue,

@@ -535,7 +535,7 @@ export function createSponsorFinance(context) {
                 <a href="/?doc=${encodeURIComponent(thankYou.templateId)}" data-finance-thank-you-doc="${escapeHtml(thankYou.templateId)}">
                   <code>${escapeHtml(thankYou.templateId)}</code>
                 </a>
-                (SOP Step ${escapeHtml(thankYou.sopStep || 9)}). Keep the thread's CC list.
+                (SOP Step ${escapeHtml(thankYou.sopStep || 10)}). Keep the thread's CC list.
                 <strong>Do not send the email</strong> — prepare a draft for Alexey to review and send.
                 Suggested <code>&lt;WHAT_WAS_PAID&gt;</code>: <strong>${escapeHtml(thankYou.context?.whatWasPaid || "")}</strong>.
               </p>`}

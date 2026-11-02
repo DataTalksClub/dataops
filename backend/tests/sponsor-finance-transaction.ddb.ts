@@ -1054,6 +1054,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
       'prospective payment source identity',
       'prospective reverse claim uniqueness',
       'prospective sponsor-finance link uniqueness',
+      'open Finom Task pin',
       'finance version and payment-link list',
       'idempotency receipt uniqueness',
       'history event uniqueness',

@@ -1,7 +1,7 @@
 export const THANK_YOU_TEMPLATE_ID = "template.finance.bookkeeping.email-to-sponsor-when-payment-has-been-received";
 export const THANK_YOU_TEMPLATE_PATH = "content/06-finance-and-compliance/create-and-collect-invoices/templates/email-to-sponsor-when-payment-has-been-received.md";
 export const THANK_YOU_SOP_ID = "sop.finance.bookkeeping.adding-paid-invoices-to-the-bookkeeping-spreadsheet-and-adding-it-to-dropbox";
-export const THANK_YOU_SOP_STEP = 9;
+export const THANK_YOU_SOP_STEP = 10;
 export const THANK_YOU_EVIDENCE_LABEL = "Payment received thank-you email";
 
 export const THANK_YOU_TEMPLATE_BODY = [

@@ -395,8 +395,14 @@ describe('sponsor payment follow-ups', () => {
 
     const partial = await bootstrapDeal();
     partial.financeVersion = (await receivePayment(client, { actorId: ADMIN, dealId: partial.dealId, dealVersion: 1, expectedVersion: partial.financeVersion, idempotencyKey: 'partial-receipt-0123456789', receivedOn: day(-1), amount: '400', currency: 'EUR', reference: 'synthetic-account:partial-receipt', counterparty: 'Synthetic Sponsor' })).financeVersion;
+    // The receipt's Finom follow-through Task is open deal work; a separate
+    // follow-up must review it first (what `--review-existing` does).
+    const existing = (await followUpView(partial.dealId))!.existingTasks
+      .map(({ id, version }) => ({ id, version })).sort((a, b) => a.id.localeCompare(b.id));
+    assert.ok(existing.length >= 1, 'the receipt left an open Finom follow-through Task');
     const partialFollowUp = await requestFollowUp(partial.dealId, {
       dealVersion: 1, expectedVersion: partial.financeVersion,
+      ...(existing.length ? { reviewedOpenTasks: existing } : {}),
     }, 'create-partial');
     assert.strictEqual(partialFollowUp.status, 201, JSON.stringify(partialFollowUp.body));
     assert.match(partialFollowUp.body.task.description, /600 EUR outstanding/);

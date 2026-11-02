@@ -10,6 +10,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { settlementBalance, validateSettlementAdjustment } from './settlementAdjustment';
 import { documentLinkItem } from '../db/bookkeeping';
+import { finomPaidTaskActions } from './finomPaidTask';
 import { TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_USERS } from '../db/tableNames';
 import {
   CURRENCY,
@@ -1195,10 +1196,16 @@ export async function linkPayment(
     );
   }
   if (existingTupleChecks.length + 12 > MAX_PAYMENT_LINK_TRANSACTION_ACTIONS) throw safeConflict();
+  // The Finom follow-through rides the payment's transaction: the Task exists
+  // if and only if the payment link commits (or the deal's open one is adopted).
+  const finom = await finomPaidTaskActions(client, {
+    actorId: input.actorId, dealId: input.dealId, sourceId: input.sourceId, invoiceNumber: state.invoiceNumber,
+  });
   return executeMutation(client, {
     actorId: input.actorId, operation: prepared ? 'receive-payment' : 'link-payment', dealId: input.dealId, idempotencyKey: input.idempotencyKey,
     request,
     financeVersion: nextVersion, recordId: id, linkId: id, sourceId: input.sourceId, eventCode: 'payment-linked',
+    details: { finomTaskId: finom.taskId, finomTaskCreated: finom.created },
     transactItems: [
       adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
       ...existingTupleChecks,
@@ -1222,6 +1229,7 @@ export async function linkPayment(
         },
       },
       { Put: { TableName: TABLE_SPONSOR_CRM, Item: { ...singleton(id), ...link }, ConditionExpression: 'attribute_not_exists(PK)' } },
+      ...finom.actions,
       ...(replacedKey ? [{
         Delete: {
           TableName: TABLE_SPONSOR_CRM, Key: singleton(replacedKey),
