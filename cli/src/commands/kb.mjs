@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 import { ApiError } from "../api.mjs";
 import { ConflictError, UsageError } from "../errors.mjs";
-import { apiMutation, batches, commitFiles, planReconcile, recordedStates, repositoryName, resolveCommit } from "../knowledgePublish.mjs";
+import { apiMutation, batches, changedPaths, commitFiles, planReconcile, recordedStates, repositoryName, resolveCommit } from "../knowledgePublish.mjs";
 import { enc, fields, integer, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { copyKnowledgeDocument, exportKnowledgeDocument } from "./kb-transfer.mjs";
@@ -39,10 +39,11 @@ Usage
       [--type template|reference] [--format text|markdown] [--output F]
                                                Import an authenticated Google Docs export;
                                                --output prepares a local file without publishing
-  dataops kb publish [--head REV] [--repo DIR] [--dry-run]
+  dataops kb publish [--head REV] [--repo DIR] [--changed-since REV] [--dry-run]
                                                Make prod match a knowledge-repo commit; files
                                                edited in prod that Git has not seen are left
-                                               alone, and real conflicts exit 5
+                                               alone, and real conflicts exit 5. Limit work to
+                                               paths changed since REV when requested.
 
 Folders and paths may omit the leading "content/". Search runs on the server
 against an index of the current knowledge publication; nothing is downloaded.
@@ -410,8 +411,8 @@ export async function archive(args, io) {
 }
 
 export async function publish(args, io) {
-  const usage = "dataops kb publish [--head REV] [--repo DIR] [--dry-run]";
-  if (args.base !== undefined) throw new UsageError(`--base is gone: publish reconciles prod with the whole commit. ${usage}`);
+  const usage = "dataops kb publish [--head REV] [--repo DIR] [--changed-since REV] [--dry-run]";
+  if (args.base !== undefined) throw new UsageError(`--base was removed; use --changed-since to limit path selection. ${usage}`);
   const repo = optionalString(args, "repo") || ".";
   let head;
   try {
@@ -421,15 +422,28 @@ export async function publish(args, io) {
   }
   const api = apiFor(args);
   const manifest = await api.get("/knowledge/manifest");
-  const files = commitFiles(repo, head, manifest.roots);
+  let files = commitFiles(repo, head, manifest.roots);
+  let prod = manifest.entries;
+  const changedSince = optionalString(args, "changedSince");
+  if (changedSince) {
+    let base;
+    try {
+      base = resolveCommit(repo, changedSince);
+    } catch (error) {
+      throw new UsageError(`Cannot resolve --changed-since commit in ${repo}: ${String(error.stderr || error.message).trim()}`);
+    }
+    const changed = changedPaths(repo, base, head, manifest.roots);
+    files = new Map([...files].filter(([file]) => changed.has(file)));
+    prod = Object.fromEntries(Object.entries(manifest.entries).filter(([file]) => changed.has(file)));
+  }
   for (const [path, file] of files) {
     if (path.endsWith(".md")) await validateTemplate(file.bytes.toString("utf8"), { path });
   }
-  const diverged = [...new Set([...files.keys(), ...Object.keys(manifest.entries)])]
-    .filter((file) => (manifest.entries[file]?.sha256 ?? null) !== (files.get(file)?.sha ?? null));
+  const diverged = [...new Set([...files.keys(), ...Object.keys(prod)])]
+    .filter((file) => (prod[file]?.sha256 ?? null) !== (files.get(file)?.sha ?? null));
   const recorded = recordedStates(repo, head, manifest.roots, diverged);
   const plan = await planReconcile({
-    files, prod: manifest.entries, known: (file) => recorded.get(file),
+    files, prod, known: (file) => recorded.get(file),
     page: (file, cursor) => api.get("/knowledge/history", { query: { path: file, cursor } }),
   });
   let revision = manifest.revision;

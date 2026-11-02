@@ -255,6 +255,12 @@ export function commitFiles(repo, head, roots) {
   }));
 }
 
+/** Managed paths changed between two commits, with renames represented as delete/create. */
+export function changedPaths(repo, base, head, roots) {
+  const output = git(repo, ["diff", "--name-only", "-z", "--no-renames", base, head, "--", ...roots], { encoding: "utf8" });
+  return new Set(output.split("\0").filter((file) => file && isManagedPath(file, roots)));
+}
+
 /**
  * The states Git recorded for each of `paths` in the commit's history: the
  * sha256 of every blob it held, and null where a commit deleted it.

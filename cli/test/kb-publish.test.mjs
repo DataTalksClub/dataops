@@ -304,6 +304,31 @@ describe("kb publish from a Git checkout", () => {
     assert.doesNotMatch(io.errors.join("\n"), /content\/a\.md/);
   });
 
+  test("limits reconciliation to paths changed since the requested base, including Git deletions", async () => {
+    write("content/a.md", "a1");
+    write("content/deleted.md", "old");
+    write("content/unrelated.md", "git v1");
+    commit("initial");
+    write("content/unrelated.md", "git v2");
+    const base = commit("unrelated Git change");
+    write("content/a.md", "a2");
+    unlinkSync(path.join(repo, "content/deleted.md"));
+    const head = commit("target push");
+
+    const calls = portal(
+      { "content/a.md": "a1", "content/deleted.md": "old", "content/unrelated.md": "web edit" },
+      { "content/unrelated.md": ["web edit", "git v1"] },
+    );
+    const io = captureIo();
+    assert.equal(await run(["kb", "publish", "--head", head, "--changed-since", base, "--repo", repo, "--json"], io), 0);
+    const [published] = calls.filter((call) => call.method === "POST");
+    assert.deepEqual(published.body.mutations.map((mutation) => [mutation.path, mutation.base64 && Buffer.from(mutation.base64, "base64").toString(), mutation.absent]), [
+      ["content/a.md", "a2", false],
+      ["content/deleted.md", undefined, undefined],
+    ]);
+    assert.equal(calls.filter((call) => call.route === "/knowledge/history").length, 0);
+  });
+
   test("dry run and an already-matching prod send nothing", async () => {
     write("content/a.md", "a1");
     commit("base");
@@ -339,6 +364,7 @@ describe("kb publish from a Git checkout", () => {
     commit("base");
     portal({});
     assert.equal(await run(["kb", "publish", "--head", "nope", "--repo", repo], captureIo()), 2);
+    assert.equal(await run(["kb", "publish", "--changed-since", "nope", "--repo", repo], captureIo()), 2);
     assert.equal(await run(["kb", "publish", "--base", "HEAD", "--repo", repo], captureIo()), 2);
   });
 });
