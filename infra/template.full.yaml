@@ -16,15 +16,11 @@ Parameters:
     Type: String
     Default: dataops-knowledge
     Description: >-
-      Private daily mirror repository. Application knowledge is authoritative in S3.
+      Private knowledge repository: publish reconciles it with the store and its
+      scheduled workflow carries prod-ahead web edits back into Git.
   GitHubBranch:
     Type: String
     Default: main
-  GitHubTokenSecretName:
-    Type: String
-    Default: dataops-v1.knowledge.github-token
-    Description: >-
-      Team store token used exclusively by the daily knowledge mirror worker.
   AuthBaseUrl:
     Type: String
     Default: https://auth.dtcdev.click
@@ -1440,12 +1436,6 @@ Resources:
         Variables:
           KNOWLEDGE_BUCKET: !Ref KnowledgeBucketName
           KNOWLEDGE_BACKUP_BUCKET: !Ref KnowledgeBackupBucketName
-          GITHUB_OWNER: !Ref GitHubOwner
-          GITHUB_REPO: !Ref GitHubRepo
-          GITHUB_BRANCH: !Ref GitHubBranch
-          GITHUB_TOKEN_SECRET_NAME: !Ref GitHubTokenSecretName
-          DATAOPS_SECRETS_TABLE: !Ref DataOpsSecretsTable
-          DATAOPS_SECRETS_KMS_KEY: !Ref SecretsStoreKey
       Policies:
         - Statement:
             Effect: Allow
@@ -1467,17 +1457,6 @@ Resources:
             Effect: Allow
             Action: [s3:PutObject]
             Resource: !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}/jobs/*
-        - Statement:
-            Effect: Allow
-            Action: dynamodb:GetItem
-            Resource: !GetAtt DataOpsSecretsTable.Arn
-        - Statement:
-            Effect: Allow
-            Action: kms:Decrypt
-            Resource: !GetAtt SecretsStoreKey.Arn
-            Condition:
-              StringEquals:
-                kms:EncryptionContext:secret: !Ref GitHubTokenSecretName
       Events:
         DailyKnowledgeBackup:
           Type: Schedule
@@ -1485,12 +1464,6 @@ Resources:
             Schedule: cron(0 3 * * ? *)
             Enabled: true
             Input: '{"detail":{"dataopsAction":"knowledge-backup"}}'
-        DailyKnowledgeMirror:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 4 * * ? *)
-            Enabled: true
-            Input: '{"detail":{"dataopsAction":"knowledge-mirror"}}'
   KnowledgeWorkerFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -1512,21 +1485,6 @@ Resources:
       Namespace: DataOps/Knowledge
       MetricName: Success
       Dimensions: [{Name: Job, Value: knowledge-backup}]
-      Statistic: Sum
-      Period: 86400
-      EvaluationPeriods: 2
-      DatapointsToAlarm: 2
-      Threshold: 1
-      ComparisonOperator: LessThanThreshold
-      TreatMissingData: breaching
-      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
-  KnowledgeMirrorStaleAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub ${AWS::StackName}-knowledge-mirror-stale
-      Namespace: DataOps/Knowledge
-      MetricName: Success
-      Dimensions: [{Name: Job, Value: knowledge-mirror}]
       Statistic: Sum
       Period: 86400
       EvaluationPeriods: 2

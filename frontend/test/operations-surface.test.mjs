@@ -226,7 +226,7 @@ describe("Operations surface boundary", () => {
     assert.equal(
       diagnostics.querySelector('[data-diagnostic="knowledge-status"] span')
         .textContent,
-      "Daily GitHub export is current.",
+      "Daily knowledge backup is current.",
     );
     assert.equal(
       diagnostics.querySelector('[data-diagnostic="knowledge-publication"] span')

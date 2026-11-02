@@ -895,15 +895,15 @@ describe("Document Editor surface boundary", () => {
     assert.equal(harness.elements.changesStatus.hidden, false);
   });
 
-  test("reports delayed export independently and lists recoverable deleted-file history", async () => {
+  test("reports delayed backup independently and lists recoverable deleted-file history", async () => {
     const harness = createEditorHarness({ request: async (url) => {
       const path = new URL(url).pathname;
-      if (path === "/knowledge/status") return { exported: { at: "2026-10-02T10:00:00Z" }, exportLag: true };
+      if (path === "/knowledge/status") return { backup: { at: "2026-10-02T10:00:00Z" }, backupLag: true };
       if (path === "/knowledge/history") return { versions: [{ revision: "r0", actor: "Grace", time: "2026-10-01T10:00:00Z", operation: "delete", deleted: true }] };
       return {};
     } });
     await harness.api.refreshKnowledgeStatus();
-    assert.match(harness.elements.knowledgeStatusText.textContent, /newer saves await daily export/);
+    assert.match(harness.elements.knowledgeStatusText.textContent, /newer saves await the daily backup/);
     await harness.api.openHistory();
     assert.equal(harness.elements.historyModal.hidden, false);
     assert.match(harness.elements.historyVersions.textContent, /delete · deleted/);
@@ -1142,7 +1142,7 @@ describe("Document Editor surface boundary", () => {
     );
   });
 
-  test("keeps dirty-leave and export status failures recoverable", async () => {
+  test("keeps dirty-leave and backup status failures recoverable", async () => {
     const harness = createEditorHarness({
       confirm: false,
       content: "# Saved\n",
@@ -1162,7 +1162,7 @@ describe("Document Editor surface boundary", () => {
     assert.ok(harness.elements.renderedView.children.length > 0);
 
     await harness.api.refreshKnowledgeStatus();
-    assert.match(harness.elements.knowledgeStatusText.textContent, /File saves and history are independent of GitHub/);
+    assert.match(harness.elements.knowledgeStatusText.textContent, /File saves and history are independent of the backup bucket/);
   });
   test("compares authenticated versions and restores with a revision precondition", async () => {
     const harness = createEditorHarness({ request: async (url, options) => {
