@@ -848,6 +848,44 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     }
   });
 
+  it('never sends sponsor form email to grace@datatalks.club', async () => {
+    const card = await createCard(client, {
+      ...templateLink(),
+      title: '[Newsletter] (16 NOV 2026) #312 - ClickHouse',
+      anchorDate: '2026-11-16',
+      sponsor: 'ClickHouse',
+    });
+    const ownerTask = await createTask(client, {
+      description: 'Email sponsor the sponsorship document',
+      date: '2026-11-02',
+      cardId: card.id,
+    });
+    let fetchCalls = 0;
+    setSponsorDocEmailDepsForTests({
+      brokerUrl: 'https://dapier.example.test',
+      credential: 'dp_test_orin_token',
+      fetchImpl: (async () => {
+        fetchCalls += 1;
+        throw new Error('Email sending must never start for a blocked recipient');
+      }) as typeof globalThis.fetch,
+    });
+    try {
+      const autoSend = await staffReq('POST', '/api/sponsor-docs', {
+        cardId: card.id,
+        template: 'newsletter-main',
+        recipientEmail: 'grace@datatalks.club',
+        taskId: ownerTask.id,
+      });
+      assert.equal(autoSend.statusCode, 201, autoSend.body);
+      const autoSendBody = JSON.parse(autoSend.body);
+      assert.equal(autoSendBody.emailDelivery?.state, 'skipped');
+      assert.equal(autoSendBody.emailDelivery?.reason, 'blocked_recipient');
+      assert.equal(fetchCalls, 0, 'Gmail must not be contacted for a blocked recipient');
+    } finally {
+      setSponsorDocEmailDepsForTests({});
+    }
+  });
+
   it('links webinar materials, saves speaker drafts, validates submission and exposes the saved export on the card', async () => {
     const card = await createCard(client, { ...templateLink(), title: '[Webinar] Synthetic talk', people: ['Test Speaker'] });
     const created = await staffReq('POST', '/api/sponsor-docs', { cardId: card.id });

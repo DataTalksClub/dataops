@@ -263,6 +263,17 @@ export async function deliverSponsorDocEmail(
     ? newsletterSponsorSubject(options.template, options.sponsorName, options.publicationDate)
     : draft.subject;
 
+  if (resolvedRecipient.to?.toLowerCase() === 'grace@datatalks.club') {
+    return {
+      state: 'skipped',
+      from: SPONSOR_DOC_EMAIL_FROM,
+      ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
+      subject,
+      reason: 'blocked_recipient',
+      message: 'Sponsor form emails are never sent to grace@datatalks.club; no email was sent.',
+    };
+  }
+
   if (!resolvedRecipient.to) {
     return {
       state: 'skipped',
