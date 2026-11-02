@@ -112,6 +112,17 @@ export async function resolveCardEventPolicy(
       policy: parseEventPolicy(template.eventPolicy),
     };
   }
+  // A pinned (operator-edited) Git Template keeps its live definition, but its
+  // Git base still follows workflow-templates/. When the live definition never
+  // declared an eventPolicy, use the Git-authored one from the base (eb5012d8).
+  const basePolicy = template?.base?.eventPolicy;
+  if (template && basePolicy) {
+    return {
+      templateId: template.id,
+      templateVersion: template.version || 1,
+      policy: parseEventPolicy(basePolicy),
+    };
+  }
   throw new EventInputError(
     `Card '${card.id}' (template '${card.templateId}') does not declare an eventPolicy in its Template.`,
   );
