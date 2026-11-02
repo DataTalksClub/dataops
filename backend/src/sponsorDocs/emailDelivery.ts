@@ -81,6 +81,27 @@ function isNewsletterSponsorTemplate(template: SponsorDocTemplateKey): boolean {
   );
 }
 
+function newsletterSubjectDate(value: string | null | undefined): string {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[2]}-${match[3]}-${match[1]}` : raw;
+}
+
+export function newsletterSponsorSubject(
+  template: SponsorDocTemplateKey,
+  sponsorName: string | null | undefined,
+  publicationDate: string | null | undefined,
+): string {
+  const company = String(sponsorName || '').trim() || '<COMPANY>';
+  const variant = template === 'newsletter-secondary'
+    ? ' (Secondary Slot)'
+    : template === 'newsletter-standalone'
+      ? ' (Stand-alone)'
+      : '';
+  const date = newsletterSubjectDate(publicationDate) || '<PUBLICATION DATE>';
+  return `${company} + DataTalks.Club Newsletter${variant} - ${date}`;
+}
+
 export function isAutoSendEligibleTemplate(template: SponsorDocTemplateKey): boolean {
   return (
     isNewsletterSponsorTemplate(template)
@@ -213,7 +234,6 @@ export async function deliverSponsorDocEmail(
     recipientEmail?: string | null;
     recipientName?: string | null;
     organizationId?: string | null;
-    cc?: string[] | string | null;
     connectionId?: string | null;
   },
 ): Promise<SponsorDocEmailDelivery> {
@@ -232,13 +252,17 @@ export async function deliverSponsorDocEmail(
     accessCode: options.accessCode,
     recipientName: resolvedRecipient.recipientName,
   });
+  const newsletterEmail = isNewsletterSponsorTemplate(options.template);
+  const subject = newsletterEmail
+    ? newsletterSponsorSubject(options.template, options.sponsorName, options.publicationDate)
+    : draft.subject;
 
   if (!resolvedRecipient.to) {
     return {
       state: 'skipped',
       from: SPONSOR_DOC_EMAIL_FROM,
       ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-      subject: draft.subject,
+      subject,
       reason: 'missing_recipient_email',
       message:
         'No sponsor recipient email on the request or CRM contact. '
@@ -248,13 +272,7 @@ export async function deliverSponsorDocEmail(
   }
 
   const to = resolvedRecipient.to;
-  const cc = Array.isArray(options.cc)
-    ? options.cc.map((item) => String(item || '').trim().toLowerCase()).filter((item) => EMAIL_PATTERN.test(item))
-    : typeof options.cc === 'string' && options.cc.trim()
-      ? options.cc.split(',').map((item) => item.trim().toLowerCase()).filter((item) => EMAIL_PATTERN.test(item))
-      : isNewsletterSponsorTemplate(options.template) && to !== SPONSOR_DOC_EMAIL_CC
-        ? [SPONSOR_DOC_EMAIL_CC]
-        : [];
+  const cc = [SPONSOR_DOC_EMAIL_CC];
 
   const explicitConnectionId = (
     options.connectionId
@@ -302,7 +320,7 @@ export async function deliverSponsorDocEmail(
       to,
       ...(cc.length > 0 ? { cc } : {}),
       ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-      subject: draft.subject,
+      subject,
       connectionId: primaryConnectionId,
       reason: 'missing_dapier_credential',
       message: `${base} (form created; sponsor email auto-send deferred)`,
@@ -313,7 +331,7 @@ export async function deliverSponsorDocEmail(
     from: SPONSOR_DOC_EMAIL_FROM,
     to,
     cc,
-    subject: draft.subject,
+    subject,
     body: draft.body,
   });
 
@@ -501,7 +519,7 @@ export async function deliverSponsorDocEmail(
       to,
       ...(cc.length > 0 ? { cc } : {}),
       ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-      subject: draft.subject,
+      subject,
       connectionId,
       ...(sentPayload.id ? { messageId: sentPayload.id } : {}),
       ...(sentPayload.threadId ? { threadId: sentPayload.threadId } : {}),
@@ -516,7 +534,7 @@ export async function deliverSponsorDocEmail(
       to,
       ...(cc.length > 0 ? { cc } : {}),
       ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-      subject: draft.subject,
+      subject,
       connectionId: primaryConnectionId,
       reason: 'dapier_unreachable',
       message: 'The Dapier token broker could not be reached.',

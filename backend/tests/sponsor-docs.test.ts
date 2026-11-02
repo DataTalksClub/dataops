@@ -13,7 +13,7 @@ import { createPodcastEpisode } from '../src/db/podcastEpisodes';
 import { createUser } from '../src/db/users';
 import { createSession } from '../src/db/sessions';
 import { getSponsorDoc, updateSponsorDoc } from '../src/db/sponsorDocs';
-import { setSponsorDocEmailDepsForTests } from '../src/sponsorDocs/emailDelivery';
+import { newsletterSponsorSubject, setSponsorDocEmailDepsForTests } from '../src/sponsorDocs/emailDelivery';
 import { templateLink } from './helpers/cardTemplate';
 
 describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
@@ -39,6 +39,12 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     staffUserId = user.id;
     const session = await createSession(client, staffUserId);
     staffToken = session.token;
+  });
+
+  it('formats newsletter sponsor subject variants with the requested date shape', () => {
+    assert.equal(newsletterSponsorSubject('newsletter-main', 'Acme', '2026-11-16'), 'Acme + DataTalks.Club Newsletter - 11-16-2026');
+    assert.equal(newsletterSponsorSubject('newsletter-secondary', 'Acme', '2026-11-16'), 'Acme + DataTalks.Club Newsletter (Secondary Slot) - 11-16-2026');
+    assert.equal(newsletterSponsorSubject('newsletter-standalone', 'Acme', '2026-11-16'), 'Acme + DataTalks.Club Newsletter (Stand-alone) - 11-16-2026');
   });
 
   after(async () => {
@@ -588,7 +594,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       sponsor: 'ClickHouse',
     });
 
-    const sentMessages: Array<{ url: string; rawDecoded: string; auth: string }> = [];
+    const sentMessages: Array<{ url: string; rawDecoded: string; auth: string; sendBody: Record<string, unknown> }> = [];
 
     try {
       setSponsorDocEmailDepsForTests({
@@ -621,6 +627,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
               url,
               rawDecoded,
               auth: headers.Authorization || headers.authorization || '',
+              sendBody: parsedBody,
             });
             return new Response(
               JSON.stringify({ id: 'gmail-msg-orin-1', threadId: 'gmail-thread-orin-1' }),
@@ -634,21 +641,27 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       const createRes = await staffReq('POST', '/api/sponsor-docs', {
         cardId: card.id,
         template: 'newsletter-main',
-        recipientEmail: 'sponsors@clickhouse.example.com',
+        recipientEmail: 'alexey.s.grigoriev@gmail.com',
         recipientName: 'Alex',
       });
       assert.strictEqual(createRes.statusCode, 201, createRes.body);
       const created = JSON.parse(createRes.body);
       assert.strictEqual(created.emailDelivery?.state, 'sent', JSON.stringify(created.emailDelivery));
       assert.strictEqual(created.emailDelivery?.from, 'orin@datatalks.club');
-      assert.strictEqual(created.emailDelivery?.to, 'sponsors@clickhouse.example.com');
+      assert.strictEqual(created.emailDelivery?.to, 'alexey.s.grigoriev@gmail.com');
+      assert.deepEqual(created.emailDelivery?.cc, ['valeriia@datatalks.club']);
       assert.strictEqual(created.emailDelivery?.messageId, 'gmail-msg-orin-1');
+      assert.match(created.emailDelivery?.subject || '', /^ClickHouse \+ DataTalks\.Club Newsletter - 11-16-2026$/);
       assert.strictEqual(created.doc.emailDelivery?.state, 'sent');
 
       assert.strictEqual(sentMessages.length, 1);
       assert.strictEqual(sentMessages[0].auth, 'Bearer ya29.orin-gmail-access-token');
       assert.match(sentMessages[0].rawDecoded, /From: Orin <orin@datatalks\.club>/);
-      assert.match(sentMessages[0].rawDecoded, /To: sponsors@clickhouse\.example\.com/);
+      assert.match(sentMessages[0].rawDecoded, /To: alexey\.s\.grigoriev@gmail\.com/);
+      assert.match(sentMessages[0].rawDecoded, /Cc: valeriia@datatalks\.club/);
+      assert.doesNotMatch(sentMessages[0].rawDecoded, /grace@datatalks\.club/i);
+      assert.match(sentMessages[0].rawDecoded, /Subject: ClickHouse \+ DataTalks\.Club Newsletter - 11-16-2026/);
+      assert.deepEqual(Object.keys(sentMessages[0].sendBody), ['raw'], 'a missing threadId makes Gmail create a new thread');
       assert.ok(sentMessages[0].rawDecoded.includes(created.doc.shareUrl));
       assert.ok(sentMessages[0].rawDecoded.includes(created.doc.accessCode));
 
@@ -687,7 +700,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       });
 
       const retryRes = await staffReq('POST', `/api/sponsor-docs/${created.doc.id}/send-email`, {
-        recipientEmail: 'sponsors@clickhouse.example.com',
+        recipientEmail: 'alexey.s.grigoriev@gmail.com',
       });
       assert.strictEqual(retryRes.statusCode, 200, retryRes.body);
       const retried = JSON.parse(retryRes.body);

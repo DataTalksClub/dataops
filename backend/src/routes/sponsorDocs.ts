@@ -686,7 +686,6 @@ export async function handleSponsorDocRoutes(
             accessCode,
             recipientEmail: explicitRecipient,
             recipientName: typeof body.recipientName === 'string' ? body.recipientName : null,
-            cc: body.cc as string[] | string | null | undefined,
             connectionId: typeof body.connectionId === 'string' ? body.connectionId : undefined,
           });
           const withDelivery = await setSponsorDocEmailDelivery(client, doc.id, emailDelivery);
@@ -802,7 +801,6 @@ export async function handleSponsorDocRoutes(
         accessCode,
         recipientEmail: explicitRecipient,
         recipientName: typeof body.recipientName === 'string' ? body.recipientName : null,
-        cc: body.cc as string[] | string | null | undefined,
         connectionId: typeof body.connectionId === 'string' ? body.connectionId : undefined,
       });
       const updatedDoc = (await setSponsorDocEmailDelivery(client, docId, emailDelivery)) || loaded.doc;
