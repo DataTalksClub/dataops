@@ -1,9 +1,10 @@
 const templateParser = () => import("../../../frontend/src/template-placeholders.js");
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
+import { dirname as parentOf, join as pathJoin, resolve as pathResolve } from "node:path";
 
 import { ApiError } from "../api.mjs";
 import { ConflictError, UsageError } from "../errors.mjs";
-import { apiMutation, batches, changedPaths, commitFiles, planReconcile, recordedStates, repositoryName, resolveCommit } from "../knowledgePublish.mjs";
+import { apiMutation, batches, changedPaths, commitFiles, planMirror, planReconcile, recordedVersions, repositoryName, resolveCommit } from "../knowledgePublish.mjs";
 import { enc, fields, integer, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { copyKnowledgeDocument, exportKnowledgeDocument } from "./kb-transfer.mjs";
@@ -42,7 +43,11 @@ Usage
   dataops kb publish [--head REV] [--repo DIR] [--changed-since REV] [--dry-run]
                                                Make prod match a knowledge-repo commit; files
                                                edited in prod that Git has not seen are left
-                                               alone, and real conflicts exit 5. Limit work to
+                                               alone, and real conflicts exit 5
+  dataops kb mirror [--head REV] [--repo DIR] [--dry-run]
+                                               Bring prod's web edits into the Git working tree:
+                                               prod-ahead files byte for byte, files both sides
+                                               changed as a three-way merge; conflicts exit 5. Limit work to
                                                paths changed since REV when requested.
 
 Folders and paths may omit the leading "content/". Search runs on the server
@@ -441,9 +446,9 @@ export async function publish(args, io) {
   }
   const diverged = [...new Set([...files.keys(), ...Object.keys(prod)])]
     .filter((file) => (prod[file]?.sha256 ?? null) !== (files.get(file)?.sha ?? null));
-  const recorded = recordedStates(repo, head, manifest.roots, diverged);
+  const recorded = recordedVersions(repo, head, manifest.roots, diverged);
   const plan = await planReconcile({
-    files, prod, known: (file) => recorded.get(file),
+    files, prod, known: (file) => recorded.get(file)?.states ?? new Set(),
     page: (file, cursor) => api.get("/knowledge/history", { query: { path: file, cursor } }),
   });
   let revision = manifest.revision;
@@ -475,6 +480,82 @@ export async function publish(args, io) {
     );
   }
   return result;
+}
+
+/**
+ * The daily mirror: bring prod's web edits into Git, the reverse of publish.
+ * Prod-ahead edits are written into the working tree byte for byte; files
+ * both sides changed are merged three ways against the newest prod version
+ * Git recorded. Nothing is written to prod, nothing is committed: the caller
+ * reviews, commits and pushes the working tree.
+ */
+export async function mirror(args, io) {
+  const usage = "dataops kb mirror [--head REV] [--repo DIR] [--dry-run]";
+  const repo = optionalString(args, "repo") || ".";
+  let head;
+  try {
+    head = resolveCommit(repo, optionalString(args, "head") || "HEAD");
+  } catch (error) {
+    throw new UsageError(`Cannot resolve the commit in ${repo}: ${String(error.stderr || error.message).trim()}`);
+  }
+  const api = apiFor(args);
+  const manifest = await api.get("/knowledge/manifest");
+  const files = commitFiles(repo, head, manifest.roots);
+  const diverged = [...new Set([...files.keys(), ...Object.keys(manifest.entries)])]
+    .filter((file) => (manifest.entries[file]?.sha256 ?? null) !== (files.get(file)?.sha ?? null));
+  const recorded = recordedVersions(repo, head, manifest.roots, diverged);
+  const plan = await planMirror({
+    files, prod: manifest.entries,
+    known: (file) => recorded.get(file)?.states ?? new Set(),
+    recordedBytes: (file) => recorded.get(file)?.bytes ?? new Map(),
+    page: (file, cursor) => api.get("/knowledge/history", { query: { path: file, cursor } }),
+    version: (file) => manifest.entries[file]
+      ? api.get("/knowledge/version", { query: { path: file, revision: manifest.revision }, responseType: "bytes" })
+      : null,
+  });
+  const result = {
+    head, revision: manifest.revision, dryRun: Boolean(args.dryRun),
+    applied: plan.writes.map(({ path, operation, merged }) => ({ path, operation, merged })),
+    conflicts: plan.conflicts, unchanged: plan.unchanged,
+  };
+  if (!args.dryRun) for (const write of plan.writes) applyMirrorWrite(repo, write);
+  if (!args.json) {
+    const verb = args.dryRun ? "would " : "";
+    for (const item of plan.writes) io.print(`${verb}${item.merged ? "merged" : item.operation} ${item.path}`);
+    for (const item of plan.conflicts) io.print(`conflict (left for a human) ${item.path}: ${item.reason}`);
+    if (args.dryRun) io.print(`Dry run: ${plan.writes.length} file(s) would be mirrored from prod revision ${manifest.revision}; ${plan.unchanged} already match.`);
+    else io.print(`Mirrored ${plan.writes.length} file(s) from prod revision ${manifest.revision} into the working tree; ${plan.unchanged} already matched.`);
+  }
+  if (plan.conflicts.length) {
+    const lines = plan.conflicts.map((item) => `  ${item.path} (${item.reason})`);
+    throw new ConflictError(
+      `${plan.conflicts.length} file(s) need a human merge and were left untouched${args.dryRun ? "" : "; the clean mirror was applied to the working tree"}:\n${lines.join("\n")}\n`
+        + "Resolve them by hand against prod's copy, commit, and push.",
+      result,
+    );
+  }
+  return result;
+}
+
+/** Write one mirrored path into the working tree, pruning dirs prod emptied. */
+function applyMirrorWrite(repo, { path, bytes }) {
+  const target = pathJoin(repo, path);
+  if (bytes === null) {
+    rmSync(target, { force: true });
+    let parent = parentOf(target);
+    const root = pathResolve(repo);
+    while (parent !== root && parent.startsWith(root)) {
+      try {
+        rmdirSync(parent);
+      } catch {
+        break;
+      }
+      parent = parentOf(parent);
+    }
+    return;
+  }
+  mkdirSync(parentOf(target), { recursive: true });
+  writeFileSync(target, bytes);
 }
 
 // ── related: docs for a Task or Card ─────────────────────────────────────────
@@ -639,4 +720,4 @@ export async function importDoc(args, io) {
   return { ...result, id: args.id };
 }
 
-export const commands = { search, related, show, code, tree, ls, resolve, backlinks, history, recent, write, regenerate, deprecate, archive, publish, import: importDoc, create: copyKnowledgeDocument, export: exportKnowledgeDocument };
+export const commands = { search, related, show, code, tree, ls, resolve, backlinks, history, recent, write, regenerate, deprecate, archive, publish, mirror, import: importDoc, create: copyKnowledgeDocument, export: exportKnowledgeDocument };
