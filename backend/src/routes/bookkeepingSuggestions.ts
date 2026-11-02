@@ -258,6 +258,10 @@ export async function handleBookkeepingSuggestionRoutes(
   _event: LambdaEvent,
   client: DynamoDBDocumentClient,
 ): Promise<LambdaResponse | null> {
+  if (path === "/api/bookkeeping/auto-attach" && method === "POST") {
+    const attached = await autoAttachConfidentEvidence(client);
+    return json(200, { attached: attached.length });
+  }
   const suggestions = path.match(/^\/api\/bookkeeping\/transactions\/([^/]+)\/suggestions$/);
   if (suggestions && method === "GET") {
     const transaction = await getBookkeepingItem(client, "bookkeeping", suggestions[1]);

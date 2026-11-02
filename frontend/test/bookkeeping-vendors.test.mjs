@@ -34,7 +34,7 @@ test("canonical vendor aliases preserve the bank name separately", () => {
 });
 
 test("Google and X products have distinct short purposes", () => {
-  assert.equal(bookkeepingPurpose({ counterparty: "Google", description: "Google Cloud" }), "Cloud hosting");
+  assert.equal(bookkeepingPurpose({ counterparty: "Google", description: "Google Cloud" }), "Google Cloud");
   assert.equal(bookkeepingPurpose({ counterparty: "Google Workspace" }), "Google Workspace");
   assert.equal(bookkeepingPurpose({ counterparty: "Google One" }), "Google One storage");
   assert.equal(bookkeepingPurpose({ counterparty: "X Corp", description: "Paid Features" }), "X Premium subscription");

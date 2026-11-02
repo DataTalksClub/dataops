@@ -1,7 +1,7 @@
 import "../../dakit/collection.js";
 // Static shell for the bookkeeping surface. The page is the transaction
 // list: header with the month navigator and actions, one filter row, the
-// table with its detail pane. Files, the accountant package/VAT and
+// table. Transaction details open as a modal. Files, the accountant package/VAT and
 // forwarded invoices are secondary views (?view=…) reached from the ⋯ menu.
 import { financeSectionHead, html } from "./shared.js";
 import { periodNavMarkup } from "../period-nav.js";
@@ -64,19 +64,14 @@ export function bookkeepingSurfaceMarkup() {
           </div>
         </details>
       </div>
-      <div class="dk-split bk-split" data-bk-split data-view="list" data-pane="closed">
-        <div class="dk-split__list bk-split__list">
-          <div class="dk-split__scroll bk-scroll bookkeeping-ledger" aria-live="polite">Loading transactions…</div>
-        </div>
-        <aside class="dk-split__detail bk-detail" data-detail aria-labelledby="bk-detail-title" hidden></aside>
-      </div>
+      <div class="bk-scroll bookkeeping-ledger" aria-live="polite">Loading transactions…</div>
     </div>
     <section id="bookkeeping-evidence" class="bookkeeping-section bookkeeping-evidence bk-secondary" data-secondary="files" aria-labelledby="bookkeeping-evidence-heading" hidden>
       ${backLink}
       ${financeSectionHead({
         id: "bookkeeping-evidence-heading",
         title: "Files & statements",
-        hint: "Private PDFs, grouped by month. Attach a receipt to one transaction from its details.",
+        hint: "Private PDFs, grouped by month. Attach a matching invoice or receipt from a transaction's details.",
         actions: html`<button class="dk-button dk-button--secondary dk-button--sm" type="button" data-setup-accounts disabled>
           Set up business accounts
         </button>`,
@@ -187,8 +182,6 @@ export function bookkeepingSurfaceMarkup() {
           ><label class="bookkeeping-eur-only" hidden
             ><span class="label-text">EUR value</span>
             <input name="amountEur" inputmode="decimal" /></label
-          ><label
-            >Account / statement <input name="statementRef" /></label
           >
           <small class="field-hint span-all">Enter amounts as positive numbers; Direction sets the sign.</small>
           <p class="span-all" role="alert" data-form-error></p>

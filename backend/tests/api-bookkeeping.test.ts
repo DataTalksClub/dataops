@@ -17,6 +17,22 @@ describe('bookkeeping API',()=>{
   let client:DynamoDBDocumentClient;
   before(async()=>{const port=await startLocal();client=await getClient(port);await createTables(client);}); after(stopLocal);
   it('round-trips decimal strings and dates through CRUD',async()=>{let r=await invoke('POST','/api/bookkeeping/transactions',valid);assert.equal(r.statusCode,201);const created=JSON.parse(r.body);assert.equal(created.amount,'10.25');assert.match(created.id,/./);r=await invoke('GET','/api/bookkeeping/transactions');assert.equal(JSON.parse(r.body).items.length,1);r=await invoke('PUT',`/api/bookkeeping/transactions/${created.id}`,{paidDate:'2026-07-02',category:'software'});assert.equal(JSON.parse(r.body).paidDate,'2026-07-02');r=await invoke('DELETE',`/api/bookkeeping/transactions/${created.id}`);assert.equal(r.statusCode,204);});
+  it('persists canonical vendor labels while preserving the raw bank counterparty',async()=>{
+    const created=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,counterparty:'Aws Emea SARL'})).body);
+    assert.equal(created.counterparty,'Aws Emea SARL');assert.equal(created.counterpartyCanonical,'Amazon Web Services');
+    const listed=JSON.parse((await invoke('GET','/api/bookkeeping/transactions')).body).items.find((item:any)=>item.id===created.id);
+    assert.equal(listed.counterparty,'Aws Emea SARL');assert.equal(listed.counterpartyCanonical,'Amazon Web Services');
+    const updated=JSON.parse((await invoke('PUT',`/api/bookkeeping/transactions/${created.id}`,{counterparty:'Google Workspace'})).body);
+    assert.equal(updated.counterparty,'Google Workspace');assert.equal(updated.counterpartyCanonical,'Google');
+  });
+  it('backfills exact confident invoice matches through the protected operation',async()=>{
+    const transaction=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'1980-09-12',counterparty:'Go Daddy',amount:'178.49'})).body);
+    const document=(await putBookkeepingItem(client,'document',{status:'active',documentType:'invoice',originalFilename:'domain-renewal.pdf',facts:{counterparty:'GoDaddy',amount:'178.49',currency:'EUR',transactionDate:'1980-09-10'}})).item;
+    const result=await invoke('POST','/api/bookkeeping/auto-attach',{});
+    assert.equal(result.statusCode,200);assert.equal(JSON.parse(result.body).attached,1);
+    const links=JSON.parse((await invoke('GET','/api/bookkeeping/links')).body).items;
+    assert.ok(links.some((link:any)=>link.transactionId===transaction.id&&link.documentId===document.id&&link.coverageType==='evidence'));
+  });
   it('stores a rate source and an audit entry for existing-row corrections',async()=>{
     const created=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',valid)).body);
     const response=await invoke('PUT',`/api/bookkeeping/transactions/${created.id}`,{category:'Work-related',subtype:'Subscription',amountEur:'9.25',rateSource:'ECB 23 Oct 2026'}, {'x-user-id':'synthetic-operator'});

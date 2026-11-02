@@ -6,6 +6,7 @@
 import { sponsorRecordPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
 import { entryDirection, formatAmount, ledgerDate, monthLabel, monthOf } from "./bookkeeping-format.js";
+import { bookkeepingVendorPresentation } from "./bookkeeping-vendors.js";
 
 // Query parameters the bookkeeping route keeps in the URL.
 export const LEDGER_PARAMS = ["month", "q", "account", "dir", "category", "needs", "tx", "view"];
@@ -105,8 +106,10 @@ export function filterEntries(entries, filters, { hasEvidence = () => true } = {
     if (filters.needs === "category" && !needsCategory(entry)) return false;
     if (filters.needs === "receipt" && hasEvidence(entry.id)) return false;
     if (query) {
+      const presentation = bookkeepingVendorPresentation(entry);
       const haystack = [
-        entry.counterparty, entry.description, entry.statementRef, entry.subtype,
+        entry.counterparty, presentation.canonicalCounterparty, presentation.description,
+        entry.description, entry.statementRef, entry.subtype,
         entry.category, entry.period, entry.comment, entry.amount, entry.amountEur,
       ].join(" ").toLowerCase();
       if (!haystack.includes(query)) return false;
@@ -194,22 +197,22 @@ const icon = {
     + '<path d="M6 5.5h4M6 8h4" stroke-linecap="round"/></svg>',
 };
 
-export function ledgerRowMarkup(entry, { hasEvidence, vocab, selectedId, financeEntry, e }) {
+export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, vocab, selectedId, financeEntry, e }) {
   const direction = entryDirection(entry);
   const eur = eurValue(entry);
   const original = originalValue(entry);
   const missingEur = eur === null;
-  const evidence = hasEvidence(entry.id);
   const flagged = needsCategory(entry);
-  const description = String(entry.description || "");
-  const showDescription = description && description !== entry.counterparty;
+  const presentation = bookkeepingVendorPresentation(entry);
+  const description = presentation.description;
+  const showDescription = Boolean(description);
   const vat = vatPresentation(financeEntry);
   return html`<tr class="bk-row${flagged ? " is-uncategorised" : ""}${direction === "income" ? " is-income" : ""}"
       data-tx="${e(entry.id)}"${entry.id === selectedId ? ' aria-selected="true"' : ""}>
       <td class="bk-col-date">${dateCell(entry, e)}</td>
       <td class="bk-col-who">
         <a class="bk-who" href="?tx=${encodeURIComponent(entry.id)}" data-open-tx="${e(entry.id)}"
-          ><span class="bk-who__name">${e(entry.counterparty || "—")}</span
+          ><span class="bk-who__name">${e(entry.counterpartyCanonical || presentation.canonicalCounterparty)}</span
           >${showDescription ? html`<span class="bk-who__what" title="${e(description)}">${e(description)}</span>` : ""}</a
         >
       </td>
@@ -223,9 +226,9 @@ export function ledgerRowMarkup(entry, { hasEvidence, vocab, selectedId, finance
         value: entry[field], options: vocab[field] || [], e,
       })}</td>`).join("")}
       <td class="bk-col-vat"${vat ? ` title="${e(vat)}"` : ""}>${e(vat || "—")}</td>
-      <td class="bk-col-flag">${evidence
-        ? ""
-        : html`<span class="bk-flag" title="No receipt attached" aria-label="No receipt">${icon.receipt}</span>`}</td>
+      <td class="bk-col-flag">${hasInvoice(entry.id)
+        ? html`<span class="bk-invoice-icon" title="Invoice attached" aria-label="Invoice attached">${icon.receipt}</span>`
+        : html`<span class="bk-no-invoice">No invoice</span>`}</td>
     </tr>`;
 }
 
@@ -239,14 +242,14 @@ export function ledgerHeadMarkup() {
         <th scope="col" class="bk-col-account">Account</th>
         ${CLASSIFICATION_FIELDS.map(({ field, label }) => html`<th scope="col" class="bk-col-class bk-col-${field}">${label}</th>`).join("")}
         <th scope="col" class="bk-col-vat">VAT</th>
-        <th scope="col" class="bk-col-flag"><span class="dk-visually-hidden">Receipt</span></th>
+        <th scope="col" class="bk-col-flag">Invoice</th>
       </tr>
     </thead>`;
 }
 
 const COLUMN_COUNT = 10;
 
-export function ledgerTableMarkup({ groups, hasEvidence, vocab, selectedId, financeEntriesById = new Map(), e }) {
+export function ledgerTableMarkup({ groups, hasEvidence, hasInvoice = () => false, vocab, selectedId, financeEntriesById = new Map(), e }) {
   const body = groups.map((group) => {
     const totals = [
       group.moneyOut ? html`<span class="bk-total">out <span class="dk-mono">${e(signedAmount(group.moneyOut, "EUR"))}</span></span>` : "",
@@ -261,7 +264,7 @@ export function ledgerTableMarkup({ groups, hasEvidence, vocab, selectedId, fina
             <span class="bk-month__totals">${totals}</span>
           </th>
         </tr>
-        ${group.entries.map((entry) => ledgerRowMarkup(entry, { hasEvidence, vocab, selectedId, financeEntry: financeEntriesById.get(entry.id), e })).join("")}
+        ${group.entries.map((entry) => ledgerRowMarkup(entry, { hasEvidence, hasInvoice, vocab, selectedId, financeEntry: financeEntriesById.get(entry.id), e })).join("")}
       </tbody>`;
   }).join("");
   return html`<table class="bk-table">${ledgerHeadMarkup()}${body}</table>`;

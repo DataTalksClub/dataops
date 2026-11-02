@@ -9,7 +9,6 @@ import {
 import {
   accountsOf,
   CLASSIFICATION_FIELDS,
-  detailMarkup,
   emptyLedgerMarkup,
   filterEntries,
   filtersFromParams,
@@ -27,6 +26,7 @@ import { mountInvoiceReview } from "./invoices.js";
 import { openBookkeepingDialog } from "./bookkeeping-dialogs.js";
 import { createBookkeepingFinance } from "./bookkeeping-vat.js";
 import { html } from "./shared.js";
+import { createBookkeepingTransactionModal } from "./bookkeeping-transaction-modal.js";
 import {
   FIELD_LABELS,
   formatAmount,
@@ -63,6 +63,11 @@ export function createBookkeepingSurface(context) {
     surface.className = "bookkeeping-surface dk-fill";
     surface.innerHTML = bookkeepingSurfaceMarkup();
     documentList.append(surface);
+    const transactionDialog = document.createElement("dialog");
+    transactionDialog.className = "surface-dialog bk-transaction-dialog";
+    transactionDialog.id = "bookkeeping-transaction-dialog";
+    transactionDialog.setAttribute("aria-labelledby", "bookkeeping-transaction-dialog-title");
+    surface.append(transactionDialog);
     setRouteTitle("Bookkeeping");
 
     let entries = [],
@@ -81,12 +86,10 @@ export function createBookkeepingSurface(context) {
     const loadTuition = createTuitionLoader(surface.querySelector("[data-tuition]"), context, initial.get("agreement"));
     let vocab = {};
     const suggestions = suggestionLoader({ load: (id) => api(`/transactions/${encodeURIComponent(id)}/suggestions`),
-      holder: (id) => (selectedId === id ? detail.querySelector("[data-suggestions]") : null),
+      holder: (id) => (selectedId === id ? transactionDialog.querySelector("[data-suggestions]") : null),
       render: (result) => suggestionsMarkup({ suggestions: result, humanize: humanizeOptionLabel, e: escapeHtml }) });
 
     const ledger = surface.querySelector(".bookkeeping-ledger"),
-      split = surface.querySelector("[data-bk-split]"),
-      detail = surface.querySelector("[data-detail]"),
       entryDialog = surface.querySelector(".bookkeeping-entry-dialog"),
       form = entryDialog.querySelector("form"),
       status = surface.querySelector("[data-bookkeeping-status]");
@@ -110,6 +113,7 @@ export function createBookkeepingSurface(context) {
     });
     const isReportExemptEntry = (entry) => REPORT_EXEMPT_CATEGORIES.has(String(entry.category || "")) || financeSummary.hasMandatoryEntry(entry.id);
     let setupAccountsReady = false;
+    let transactionDetails;
     // Clear transient confirmations after six seconds.
     let statusTimer = null;
     if (typeof MutationObserver === "function")
@@ -124,6 +128,31 @@ export function createBookkeepingSurface(context) {
         status.textContent = `${fallback}: ${error.message}`;
       }
     }
+    transactionDetails = createBookkeepingTransactionModal({
+      dialog: transactionDialog,
+      request,
+      workApiUrl,
+      api,
+      escapeHtml,
+      formatAmount,
+      suggestions,
+      getSelectedId: () => selectedId,
+      getEntry: (id) => entries.find((entry) => entry.id === id) || null,
+      getAttached: (id) => links
+        .filter((link) => link.transactionId === id && link.coverageType === "evidence")
+        .map((link) => documents.find((document) => document.id === link.documentId))
+        .filter(Boolean),
+      openDocument: viewDocument,
+      refreshEvidence: () => refreshEvidence(),
+      safeAction,
+      setStatus: (message) => { status.textContent = message; },
+      onClose: () => {
+        if (!selectedId) return;
+        selectedId = "";
+        renderLedger();
+        syncUrl();
+      },
+    });
     function openPrivateDownload(url) {
       const link = document.createElement("a");
       link.href = url;
@@ -146,6 +175,10 @@ export function createBookkeepingSurface(context) {
 
     const hasEvidence = (id) =>
       links.some((l) => l.transactionId === id && l.coverageType === "evidence");
+    const hasInvoice = (id) => links.some((link) =>
+      link.transactionId === id && link.coverageType === "evidence" &&
+      documents.some((document) => document.id === link.documentId && document.documentType === "invoice"),
+    );
     const lensEntries = () => entries.filter((e) => inLens(e, lens));
     function monthReport() {
       if (!/^\d{4}-\d{2}$/.test(lens)) return null;
@@ -171,8 +204,6 @@ export function createBookkeepingSurface(context) {
     function renderView() {
       surface.dataset.bkView = view || "transactions";
       surface.querySelector("[data-bk-main]").hidden = Boolean(view);
-      // The split also hides, so the page scrolls normally in a secondary view.
-      split.hidden = Boolean(view);
       surface.classList.toggle("dk-fill", !view);
       surface.querySelectorAll("[data-secondary]").forEach((section) => {
         section.hidden = section.dataset.secondary !== view;
@@ -230,6 +261,7 @@ export function createBookkeepingSurface(context) {
       ledger.innerHTML = ledgerTableMarkup({
         groups: groupByMonth(shown),
         hasEvidence,
+        hasInvoice,
         vocab,
         selectedId,
         financeEntriesById: financeSummary.entryMap(),
@@ -241,25 +273,7 @@ export function createBookkeepingSurface(context) {
     }
     function renderDetail() {
       const entry = selectedEntry();
-      split.dataset.pane = entry ? "open" : "closed";
-      split.dataset.view = entry ? "detail" : "list";
-      detail.hidden = !entry;
-      if (!entry) {
-        detail.innerHTML = "";
-        return;
-      }
-      const attached = links
-        .filter((l) => l.transactionId === entry.id && l.coverageType === "evidence")
-        .map((l) => documents.find((d) => d.id === l.documentId))
-        .filter(Boolean);
-      detail.innerHTML = detailMarkup({
-        entry,
-        documents: attached,
-        vocab,
-        humanize: humanizeOptionLabel,
-        e: escapeHtml,
-      });
-      suggestions.show(entry.id);
+      transactionDetails.render(entry);
     }
     function openTransaction(id) {
       selectedId = id;
@@ -269,15 +283,6 @@ export function createBookkeepingSurface(context) {
         else row.removeAttribute("aria-selected");
       });
       syncUrl();
-      globalThis.dakitSplit?.show?.(split, "detail");
-    }
-    function closeTransaction() {
-      const previous = selectedId;
-      selectedId = "";
-      renderDetail();
-      ledger.querySelector('[aria-selected="true"]')?.removeAttribute("aria-selected");
-      syncUrl();
-      ledger.querySelector(`[data-open-tx="${CSS?.escape ? CSS.escape(previous) : previous}"]`)?.focus?.();
     }
     function replaceEntry(saved) {
       entries = entries.some((e) => e.id === saved.id)
@@ -657,74 +662,6 @@ export function createBookkeepingSurface(context) {
         if (selectedId === id) renderDetail();
       }, "Could not save");
     });
-    detail.addEventListener("click", (event) => {
-      if (event.target.closest("[data-close-detail]")) closeTransaction();
-      const documentId = event.target.closest("[data-view-document]")?.dataset.viewDocument;
-      if (documentId) safeAction(() => viewDocument(documentId), "Could not open the file");
-      const suggested = event.target.closest("[data-attach-suggestion]");
-      if (suggested) {
-        const link = { documentId: suggested.dataset.attachSuggestion, transactionId: selectedId, coverageType: "evidence" };
-        safeAction(async () => {
-          await api("/links", { method: "POST", body: JSON.stringify(link) });
-          await refreshEvidence();
-          status.textContent = "Attached the suggested file.";
-        }, "Could not attach the file");
-      }
-      const del = event.target.closest("[data-delete]")?.dataset.delete;
-      if (del) {
-        const dialog = surface.querySelector(".bookkeeping-delete-dialog"),
-          item = entries.find((e) => e.id === del);
-        dialog.dataset.id = del;
-        dialog.querySelector("[data-delete-entry-name]").textContent =
-          item?.counterparty || "This transaction";
-        openBookkeepingDialog(dialog);
-      }
-    });
-    detail.addEventListener("change", (event) => {
-      const attach = event.target.closest("[data-attach-file]");
-      if (attach) {
-        const file = attach.files?.[0];
-        if (!file) return;
-        const id = selectedId;
-        safeAction(async () => {
-          status.textContent = "Uploading…";
-          const outcome = await uploadPdf({
-            file,
-            documentType: detail.querySelector("[data-attach-type]").value,
-            transactionId: id,
-          });
-          await refreshEvidence();
-          status.textContent = outcome === "existing" ? "That PDF was already on file; attached it." : "PDF attached.";
-        }, "Could not attach the PDF");
-        return;
-      }
-      const field = event.target.closest("[data-detail-form] [name]");
-      if (!field) return;
-      const id = detail.querySelector("[data-detail-form]").dataset.id;
-      const holder = field.closest("[data-field]");
-      const errorNote = holder?.querySelector("[data-field-error]");
-      if (errorNote) errorNote.textContent = "";
-      field.removeAttribute("aria-invalid");
-      safeAction(async () => {
-        const result = await saveField(id, field.name, field.value);
-        if (result.error) {
-          field.setAttribute("aria-invalid", "true");
-          if (errorNote) errorNote.textContent = result.error;
-          return;
-        }
-        if (result.unchanged) return;
-        holder?.classList.add("is-saved");
-        status.textContent = `Saved ${FIELD_LABELS[field.name] || field.name}.`;
-        renderLedger();
-        // Amount, currency and direction change the summary line.
-        if (["amount", "amountEur", "currency", "entryType", "counterparty", "transactionDate"].includes(field.name))
-          renderDetail();
-      }, "Could not save");
-    });
-    detail.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") closeTransaction();
-    });
-
     const more = surface.querySelector("[data-more]");
     more.addEventListener("click", (event) => {
       if (event.target.closest(".dk-menu__item")) more.open = false;

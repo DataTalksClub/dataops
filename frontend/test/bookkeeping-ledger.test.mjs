@@ -89,7 +89,8 @@ test("the table renders one compact row per transaction without changing stored 
   assert.equal((markup.match(/paid /g) || []).length, 1);
   assert.match(markup, /class="bk-row is-uncategorised is-income"\s+data-tx="b" aria-selected="true"/);
   assert.match(markup, /<option value="Infrastructure" selected>/);
-  assert.match(markup, /aria-label="No receipt"/);
+  assert.match(markup, /No invoice/);
+  assert.match(markup, /Invoice<\/th>/);
   assert.match(markup, /out <span class="dk-mono">−€86\.00/);
   assert.equal(JSON.stringify(rows), before);
 });
@@ -108,6 +109,26 @@ test("the VAT column shows document VAT, a zero rate, and reverse charge distinc
   assert.match(markup, />0%<\/td>/);
   assert.match(markup, /Reverse charge · 19%/);
   assert.equal(vatPresentation({ vatAmount: "500.00", vatCurrency: "USD", vatRate: "0.19" }), "$500.00 (19%)");
+});
+
+test("ledger rows show canonical vendor names, concise purposes, and invoice state", () => {
+  const entries = [
+    { id: "aws", transactionDate: "2026-09-01", counterparty: "Aws Emea", description: "long invoice details that should not spill into the table", category: "Software", amount: "10", currency: "EUR", entryType: "expense" },
+    { id: "google", transactionDate: "2026-09-02", counterparty: "Google Cloud", description: "Google Cloud", amount: "20", currency: "EUR", entryType: "expense" },
+  ];
+  const markup = ledgerTableMarkup({
+    groups: groupByMonth(entries), hasEvidence: () => false, hasInvoice: (id) => id === "google",
+    vocab: {}, selectedId: "", e: escapeHtml,
+  });
+  assert.match(markup, /Amazon Web Services/);
+  assert.match(markup, /Cloud hosting/);
+  assert.match(markup, /Invoice attached/);
+  assert.match(markup, /No invoice/);
+  assert.doesNotMatch(markup, /long invoice details/);
+  assert.deepEqual(
+    filterEntries(entries, { q: "Amazon Web Services", account: "", dir: "", category: "", needs: "" }).map((entry) => entry.id),
+    ["aws"],
+  );
 });
 
 test("the month bottom section lists classified mandatory payments once with a subtotal", () => {

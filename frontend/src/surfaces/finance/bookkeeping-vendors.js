@@ -50,7 +50,7 @@ export const VENDOR_ALIASES = [
 const PRODUCT_PURPOSES = [
   { pattern: /\bgoogle\s+one\b/i, description: "Google One storage" },
   { pattern: /\bgoogle\s+workspace\b|\bworkspace\s+subscription\b/i, description: "Google Workspace" },
-  { pattern: /\bgoogle\s+(?:cloud|cloud platform)\b/i, description: "Cloud hosting" },
+  { pattern: /\bgoogle\s+(?:cloud|cloud platform)\b/i, description: "Google Cloud" },
   { pattern: /\b(?:x\s+)?(?:creator\s+)?revenue\s+sharing\b|\brevenue\s+share\b/i, description: "X creator revenue sharing" },
   { pattern: /\b(?:x\s+)?paid\s+features\b|\bx\s+premium\b/i, description: "X Premium subscription" },
   { pattern: /\bgo\s*daddy\b|\b(?:domain|\.com)\s+(?:registration|renewal)\b/i, description: "Domain renewal" },

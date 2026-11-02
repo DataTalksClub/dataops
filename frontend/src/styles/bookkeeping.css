@@ -1,5 +1,5 @@
 /* Bookkeeping: the page is the transaction list. A dense, spreadsheet-like
-   table (one ~36px line per transaction) beside a details pane, using the
+   table (one ~36px line per transaction) with transaction details in a modal, using the
    same dakit roles as the calendar. Loaded after the legacy finance sheets,
    so the few overrides below win on order at equal specificity. */
 
@@ -59,7 +59,7 @@
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-full);
   background: var(--dk-bg-surface);
-  color: var(--dk-text-body);
+  color: var(--dk-text-primary);
   font-size: var(--dk-text-sm);
   font-weight: var(--dk-weight-medium);
 }
@@ -70,15 +70,8 @@
 .bk-toggle .dk-mono:empty { display: none; }
 .bk-filters__count { margin-left: auto; color: var(--dk-text-muted); font-family: var(--dk-font-mono); font-size: var(--dk-text-sm); font-variant-numeric: tabular-nums; }
 
-/* ---- list + details ------------------------------------------------------ */
-.bk-split.dk-split { min-height: 360px; }
-.bk-split[data-pane="closed"] { grid-template-columns: minmax(0, 1fr); }
-.bk-split[data-pane="closed"] > .dk-split__list { border-right: 0; }
-.bk-split[data-pane="open"] { grid-template-columns: minmax(0, 1fr) clamp(320px, 34%, 440px); }
+/* ---- list --------------------------------------------------------------- */
 .bk-scroll { overflow: auto; }
-/* With details open the pane repeats original amount, account and period,
-   so the table drops them and keeps the counterparty readable. */
-.bk-split[data-pane="open"] :is(.bk-col-original, .bk-col-account, .bk-col-period) { display: none; }
 
 /* ---- the table -------------------------------------------------------- */
 .bk-table {
@@ -108,7 +101,7 @@
   height: 36px;
   padding: 0 var(--dk-space-2);
   border-bottom: 1px solid var(--dk-border-default);
-  color: var(--dk-text-body);
+  color: var(--dk-text-primary);
   vertical-align: middle;
   white-space: nowrap;
 }
@@ -192,7 +185,7 @@
   border: 1px solid transparent;
   border-radius: var(--dk-radius-sm);
   background: transparent;
-  color: var(--dk-text-body);
+  color: var(--dk-text-primary);
   font: inherit;
   font-size: var(--dk-text-sm);
   text-overflow: ellipsis;
@@ -204,19 +197,7 @@
 .bookkeeping-surface .bk-inline-select:focus-visible { outline: 2px solid var(--dk-focus-ring); outline-offset: 0; }
 .bookkeeping-surface .bk-inline-select:disabled { opacity: 0.6; }
 
-/* ---- details pane --------------------------------------------------------- */
-.bk-detail__head { gap: var(--dk-space-2); }
-.bk-detail__close { margin-left: auto; }
-.bookkeeping-surface .bk-detail .dk-split__back,
-.bookkeeping-surface .bk-detail .dk-icon-button { min-height: 0; border: 0; background: transparent; padding: 0; }
-.bk-detail__scroll { display: flex; flex-direction: column; gap: var(--dk-space-4); }
-.bk-detail__summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--dk-space-1) var(--dk-space-3); margin: 0; }
-.bk-detail__amount { color: var(--dk-text-heading); font-size: var(--dk-text-lg); font-weight: var(--dk-weight-semibold); }
-.bk-detail__amount.is-income { color: var(--dk-success-text); }
-.bk-detail__original,
-.bk-detail__date { color: var(--dk-text-muted); font-size: var(--dk-text-sm); }
-.bk-detail__subhead { margin: 0 0 var(--dk-space-2); color: var(--dk-text-heading); font-size: var(--dk-text-sm); font-weight: var(--dk-weight-semibold); }
-.bk-detail__hint { margin: 0 0 var(--dk-space-3); color: var(--dk-text-muted); font-size: var(--dk-text-xs); }
+/* ---- supporting transaction controls ------------------------------------- */
 .bk-receipts { display: grid; gap: var(--dk-space-1); margin: 0 0 var(--dk-space-2); padding: 0; list-style: none; }
 .bk-receipt { display: flex; align-items: center; justify-content: space-between; gap: var(--dk-space-2); padding: var(--dk-space-1) var(--dk-space-2); border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-md); }
 .bk-receipt__name { min-width: 0; overflow: hidden; color: var(--dk-text-body); font-size: var(--dk-text-sm); text-overflow: ellipsis; white-space: nowrap; }
@@ -243,7 +224,47 @@
 .bk-field__error { color: var(--dk-danger-text); font-size: var(--dk-text-xs); }
 .bk-field__error:empty { display: none; }
 .bk-field.is-saved .dk-label::after { content: " · saved"; color: var(--dk-success-text); }
-.bk-detail__danger { padding-top: var(--dk-space-3); border-top: 1px solid var(--dk-border-default); }
+
+/* Transaction details open as a focused modal; statement matches remain
+   read-only until the explicit reconciliation picker action is used. */
+.bk-transaction-dialog {
+  width: min(48rem, calc(100vw - 2rem));
+  max-width: none;
+  max-height: min(88vh, 54rem);
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-lg);
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-primary);
+  box-shadow: var(--dk-shadow-overlay);
+}
+.bk-transaction-dialog::backdrop { background: var(--dk-bg-backdrop); }
+.bk-transaction-dialog__header { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: var(--dk-space-3); padding: var(--dk-space-3) var(--dk-space-4); border-bottom: 1px solid var(--dk-border-default); background: var(--dk-bg-surface); }
+.bk-transaction-dialog__header h2 { margin: 0; font-size: var(--dk-text-lg); }
+.bk-transaction-dialog__close { min-height: var(--dk-size-control-sm); padding: 0 var(--dk-space-2); border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-md); background: var(--dk-bg-surface); color: var(--dk-text-primary); cursor: pointer; }
+.bk-transaction-dialog__content { display: grid; gap: var(--dk-space-4); padding: var(--dk-space-4); }
+.bk-transaction-invoices { order: -1; padding: var(--dk-space-3); border: 1px solid var(--dk-border-strong); border-radius: var(--dk-radius-md); background: var(--dk-bg-muted); }
+.bk-transaction-invoices h3 { margin: 0 0 var(--dk-space-2); font-size: var(--dk-text-md); }
+.bk-transaction-invoices__list { display: grid; gap: var(--dk-space-2); margin: 0; padding: 0; list-style: none; }
+.bk-transaction-invoice__open { min-height: var(--dk-size-control-lg); width: 100%; }
+.bk-transaction-invoices__none { margin: 0; color: var(--dk-text-muted); }
+.bk-transaction-summary h3,
+.bk-transaction-suggestions h3,
+.bk-transaction-statement h3 { margin: 0 0 var(--dk-space-2); }
+.bk-transaction-summary__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--dk-space-2) var(--dk-space-4); }
+.bk-transaction-field { min-width: 0; }
+.bk-transaction-field dt { color: var(--dk-text-muted); font-size: var(--dk-text-xs); }
+.bk-transaction-field dd { margin: 0; overflow-wrap: anywhere; }
+.bk-transaction-statement,
+.bk-transaction-suggestions { display: grid; gap: var(--dk-space-2); padding-top: var(--dk-space-3); border-top: 1px solid var(--dk-border-default); }
+.bk-transaction-statement__record { display: grid; gap: var(--dk-space-1); padding: var(--dk-space-2); border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-md); background: var(--dk-bg-muted); color: var(--dk-text-primary); text-align: left; cursor: pointer; }
+.bk-transaction-statement__candidate-label { display: grid; gap: var(--dk-space-1); }
+.bk-transaction-statement__candidate-label select { min-height: var(--dk-size-control-sm); }
+.bk-col-flag { width: 6.5em; text-align: center; }
+.bk-invoice-icon { display: inline-flex; color: var(--dk-accent-default); }
+.bk-invoice-icon svg { width: 1rem; height: 1rem; }
+.bk-no-invoice { color: var(--dk-text-muted); font-size: var(--dk-text-xs); white-space: nowrap; }
 
 /* ---- secondary views (Files, Accountant package, Forwarded invoices) ---- */
 .bk-secondary { display: grid; gap: var(--dk-space-3); }
@@ -272,15 +293,12 @@
   .bk-filters [data-bookkeeping-add] > span:last-child {
     position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
   }
-  .bk-split.dk-split { border-radius: var(--dk-radius-md); }
-  .bk-split[data-pane="open"] { grid-template-columns: minmax(0, 1fr); }
   .bk-table thead { display: none; }
   .bk-month__head th { top: 0; }
   .bk-month__totals { display: none; }
   .bk-col-original,
   .bk-col-account,
-  .bk-col-class,
-  .bk-col-flag { display: none; }
+  .bk-col-class { display: none; }
   .bk-table td { height: 44px; }
   .bk-col-date { width: 4.5em; font-size: var(--dk-text-xs); }
   .bk-date__paid { display: none; }
@@ -289,6 +307,8 @@
   .bk-who__what { font-size: var(--dk-text-xs); }
   .bk-col-money { width: auto; }
   .bk-fields { grid-template-columns: minmax(0, 1fr); }
+  .bk-transaction-dialog { width: calc(100vw - 1rem); max-height: 94vh; }
+  .bk-transaction-summary__facts { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Touch: every control in the page meets the 44px target. */
@@ -300,6 +320,4 @@
   .bookkeeping-surface .bk-field .dk-select { min-height: var(--dk-size-touch); height: var(--dk-size-touch); }
   .bk-who { min-height: var(--dk-size-touch); justify-content: center; }
   .bookkeeping-surface .bk-inline-select { height: var(--dk-size-touch); }
-  .bookkeeping-surface .bk-detail .dk-split__back,
-  .bookkeeping-surface .bk-detail .dk-icon-button { min-height: var(--dk-size-touch); min-width: var(--dk-size-touch); }
 }

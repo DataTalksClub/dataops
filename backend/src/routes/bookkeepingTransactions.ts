@@ -11,6 +11,7 @@ import {
 import { json, MONEY, MONTH, parse } from "./bookkeepingShared";
 import { autoAttachConfidentEvidence } from "./bookkeepingSuggestions";
 import { headerValue } from "../httpHeaders";
+import { canonicalBookkeepingCounterparty, bookkeepingTransactionView } from "../bookkeepingVendors";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const CURRENCY = /^[A-Z]{3}$/;
@@ -149,11 +150,11 @@ export async function handleBookkeepingTransactionRoutes(
   if (match) {
     if (method === "GET" && !match[1])
       return json(200, {
-        items: await listTransactions(client),
+        items: (await listTransactions(client)).map(bookkeepingTransactionView),
       });
     if (method === "GET" && match[1]) {
       const item = await getBookkeepingItem(client, "bookkeeping", match[1]);
-      return item ? json(200, item) : json(404, { error: "Not found" });
+      return item ? json(200, bookkeepingTransactionView(item)) : json(404, { error: "Not found" });
     }
     if (method === "DELETE" && match[1]) {
       try {
@@ -181,6 +182,7 @@ export async function handleBookkeepingTransactionRoutes(
         ...safeData(body),
         ...(match[1] ? { id: match[1] } : {}),
       };
+      value.counterpartyCanonical = canonicalBookkeepingCounterparty(value.counterparty);
       if (!match[1] && (value.sourceType === "platform-payout" || value.sourceType === "credit-note"))
         value.addedAt = new Date().toISOString().slice(0, 10);
       const errors = validateTransaction(value);
