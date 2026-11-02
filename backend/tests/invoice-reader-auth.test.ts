@@ -30,7 +30,7 @@ describe('deployment-managed invoice reader through the configured portal', () =
     if (value === undefined) delete process.env[key]; else process.env[key] = value;
   } });
   it('reads invoices and identifies a service without issuing a user session', async () => {
-    for (const prefix of ['', '/work']) {
+    for (const prefix of ['']) {
       const identity = await request('GET', `${prefix}/api/me`);
       assert.equal(identity.statusCode, 200);
       assert.deepEqual(JSON.parse(identity.body), { service: { id: 'invoice-reader', scopes: ['invoices:read', 'crm:read', 'crm:write'], expiresAt: null } });
@@ -55,7 +55,7 @@ describe('deployment-managed invoice reader through the configured portal', () =
     }
   });
   it('refuses every mutation, unrelated API and path lookalike', async () => {
-    for (const prefix of ['', '/work']) for (const path of ['/api/me', '/api/users', '/api/tokens',
+    for (const prefix of ['']) for (const path of ['/api/me', '/api/users', '/api/tokens',
       '/api/templates',
       '/api/auth/device/approve', '/api/bookkeeping', '/api/bookkeeping/invoices/',
       '/api/bookkeeping/invoices/process', `/api/bookkeeping/invoices/${'b'.repeat(64)}/verify`]) {

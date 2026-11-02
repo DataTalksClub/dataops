@@ -85,32 +85,31 @@ function jsonResponse(statusCode: number, body: unknown): LambdaResponse {
   };
 }
 
-const OPERATIONAL_API_ALIASES: ReadonlyArray<readonly [
-  canonicalPath: string,
-  workAliasPath: string,
+const OPERATIONAL_API_ROUTES: ReadonlyArray<readonly [
+  path: string,
   family: ReturnType<typeof classifyApiRouteFamily>,
 ]> = [
-  ['/api', '/work/api', 'other'],
-  ['/api/artifacts', '/work/api/artifacts', 'artifacts'],
-  ['/api/auth', '/work/api/auth', 'health_auth_team'],
-  ['/api/bookkeeping', '/work/api/bookkeeping', 'bookkeeping'],
-  ['/api/cards', '/work/api/cards', 'cards'],
-  ['/api/cron', '/work/api/cron', 'recurring'],
-  ['/api/files', '/work/api/files', 'files'],
-  ['/api/health', '/work/api/health', 'health_auth_team'],
-  ['/api/me', '/work/api/me', 'health_auth_team'],
-  ['/api/newsletter-issues', '/work/api/newsletter-issues', 'calendar_newsletter'],
-  ['/api/notifications', '/work/api/notifications', 'notifications'],
-  ['/api/recurring', '/work/api/recurring', 'recurring'],
-  ['/api/sponsor-crm', '/work/api/sponsor-crm', 'sponsor_crm'],
-  ['/api/tasks', '/work/api/tasks', 'tasks'],
-  ['/api/team-members', '/work/api/team-members', 'health_auth_team'],
-  ['/api/templates', '/work/api/templates', 'templates'],
-  ['/api/tokens', '/work/api/tokens', 'users_tokens'],
-  ['/api/users', '/work/api/users', 'users_tokens'],
-  ['/api/v1/intake/email-documents', '/work/api/v1/intake/email-documents', 'email_documents'],
-  ['/api/calendar-items', '/work/api/calendar-items', 'calendar_newsletter'],
-  ['/api/podcast-episodes', '/work/api/podcast-episodes', 'calendar_newsletter'],
+  ['/api', 'other'],
+  ['/api/artifacts', 'artifacts'],
+  ['/api/auth', 'health_auth_team'],
+  ['/api/bookkeeping', 'bookkeeping'],
+  ['/api/cards', 'cards'],
+  ['/api/cron', 'recurring'],
+  ['/api/files', 'files'],
+  ['/api/health', 'health_auth_team'],
+  ['/api/me', 'health_auth_team'],
+  ['/api/newsletter-issues', 'calendar_newsletter'],
+  ['/api/notifications', 'notifications'],
+  ['/api/recurring', 'recurring'],
+  ['/api/sponsor-crm', 'sponsor_crm'],
+  ['/api/tasks', 'tasks'],
+  ['/api/team-members', 'health_auth_team'],
+  ['/api/templates', 'templates'],
+  ['/api/tokens', 'users_tokens'],
+  ['/api/users', 'users_tokens'],
+  ['/api/v1/intake/email-documents', 'email_documents'],
+  ['/api/calendar-items', 'calendar_newsletter'],
+  ['/api/podcast-episodes', 'calendar_newsletter'],
 ];
 
 type MetricCollector = ApiRequestMetricInput[] & {
@@ -446,8 +445,7 @@ describe('portal API request telemetry', () => {
       ['/docs/document-name-secret-209.md', 'docs_content_search'],
       ['/search', 'docs_content_search'],
       ['/content/images/image-eighteen.png', 'docs_content_search'],
-      ['/work/api/tasks/task-nineteen', 'tasks'],
-      ['/', 'static_frontend'],
+            ['/', 'static_frontend'],
       ['/work/operator-dashboard', 'static_frontend'],
       ['/favicon.ico', 'static_frontend'],
       ['/browser-deep-link', 'static_frontend'],
@@ -459,17 +457,17 @@ describe('portal API request telemetry', () => {
     }
   });
 
-  it('maps every operational work API alias to its canonical route family', () => {
-    assert.strictEqual(OPERATIONAL_API_ALIASES.length, 21);
-    for (const [canonicalPath, workAliasPath, family] of OPERATIONAL_API_ALIASES) {
-      assert.strictEqual(classifyApiRouteFamily(canonicalPath), family, canonicalPath);
-      assert.strictEqual(classifyApiRouteFamily(workAliasPath), family, workAliasPath);
+  it('maps every operational API route to its route family', () => {
+    assert.strictEqual(OPERATIONAL_API_ROUTES.length, 21);
+    for (const [path, family] of OPERATIONAL_API_ROUTES) {
+      assert.strictEqual(classifyApiRouteFamily(path), family, path);
     }
 
-    assert.strictEqual(classifyApiRouteFamily('/work/health'), 'health_auth_team');
+    assert.strictEqual(classifyApiRouteFamily('/work/api/tasks'), 'other');
+    assert.strictEqual(classifyApiRouteFamily('/work/health'), 'other');
   });
 
-  it('correlates representative work aliases through both HTTP shapes and docs modes', async () => {
+  it('correlates representative API routes through both HTTP shapes and docs modes', async () => {
     const saved: Record<string, string | undefined> = {};
     for (const key of [
       'DATAOPS_DOCS_DOMAIN',
@@ -485,7 +483,7 @@ describe('portal API request telemetry', () => {
       delete process.env[key];
     }
 
-    const invokeWorkAlias = async (
+    const invokeApiRoute = async (
       path: string,
       shape: 'api-gateway' | 'function-url'
     ): Promise<{ response: LambdaResponse; records: Record<string, unknown>[] }> => {
@@ -510,15 +508,15 @@ describe('portal API request telemetry', () => {
 
     try {
       const cases = [
-        { path: '/work/api/health', family: 'health_auth_team', statusCode: 200 },
-        { path: '/work/api/tasks/task-telemetry-missing-209', family: 'tasks', statusCode: 404 },
+        { path: '/api/health', family: 'health_auth_team', statusCode: 200 },
+        { path: '/api/tasks/task-telemetry-missing-209', family: 'tasks', statusCode: 404 },
       ] as const;
 
       for (const docsEnabled of [false, true]) {
         process.env.DATAOPS_DOCS_DOMAIN = docsEnabled ? '1' : '0';
         for (const expected of cases) {
-          const apiGateway = await invokeWorkAlias(expected.path, 'api-gateway');
-          const functionUrl = await invokeWorkAlias(expected.path, 'function-url');
+          const apiGateway = await invokeApiRoute(expected.path, 'api-gateway');
+          const functionUrl = await invokeApiRoute(expected.path, 'function-url');
 
           for (const invocation of [apiGateway, functionUrl]) {
             assert.strictEqual(invocation.response.statusCode, expected.statusCode);

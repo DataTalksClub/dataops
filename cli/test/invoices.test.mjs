@@ -44,7 +44,7 @@ test("invoice CLI follows reviewed revisions and exposes partial and verified de
     assert.equal(await run(["invoices", "verify", "invoice-demo"], io), 1);
     assert.equal(calls.length, before, "unreviewed verification cannot send a request");
     assert.ok(errors[0].includes("current reviewed revision"));
-    assert.ok(calls.every(call => call.url.includes("/work/api/bookkeeping/invoices")));
+    assert.ok(calls.every(call => call.url.includes("/api/bookkeeping/invoices")));
   } finally {
     globalThis.fetch = originalFetch;
     if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
@@ -95,7 +95,7 @@ test("replace-document sends PDF and revision, supports re-extraction, reports c
     };
     assert.equal(await run(["invoices", "replace-document", "test-draft", "--file", file, "--revision", "1", "--json"], io), 0);
     assert.deepEqual(calls[0].body, { revision: 1, filename: "TEST.pdf", contentType: "application/pdf", contentBase64: bytes.toString("base64"), reextract: false });
-    assert.ok(calls[0].url.endsWith("/work/api/bookkeeping/invoices/test-draft/replace-document"));
+    assert.ok(calls[0].url.endsWith("/api/bookkeeping/invoices/test-draft/replace-document"));
     assert.equal(await run(["invoices", "replace-document", "test-draft", "--file", file, "--revision", "1", "--reextract", "--json"], io), 0);
     assert.equal(calls[1].body.reextract, true);
     assert.equal(await run(["invoices", "replace-document", "test-draft", "--file", file, "--revision", "2", "--json"], io), 5);

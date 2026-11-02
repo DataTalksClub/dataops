@@ -177,8 +177,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     // ── Single-origin portal layer (docs domain, flag-gated) ─────
     // When the docs domain is enabled, the portal serves the frontend, the docs
-    // content API, and `/content/*`, enforces the opaque browser session, and
-    // rewrites the old `/work/api/*` proxy path to `/api/*`. A verified portal
+    // content API, and `/content/*`, and enforces the opaque browser session. A verified portal
     // session also authorizes the work `/api/*` routes (portalAuthorized).
     let portalAuthorized = false;
     let browserUserId: string | undefined;
@@ -187,19 +186,6 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (portal.response) return portal.response;
       portalAuthorized = portal.authorized;
       browserUserId = portal.userId;
-      // The portal may rewrite the path (e.g. /work/api/* -> /api/*).
-      reqPath = event.path || '/';
-    }
-
-    // The canonical frontend always uses the single-origin /work API seam.
-    // Full portal mode rewrites it above; API-only/local mode performs the
-    // same in-process mapping without enabling browser-session auth or docs.
-    if (!isDocsDomainEnabled() && reqPath === '/work/health') {
-      event.path = '/api/health';
-      reqPath = event.path;
-    } else if (!isDocsDomainEnabled() && reqPath.startsWith('/work/api/')) {
-      event.path = reqPath.slice('/work'.length);
-      reqPath = event.path;
     }
 
     // ── Auth routes (exempt from middleware) ─────────────────────

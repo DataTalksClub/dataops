@@ -26,13 +26,7 @@ export function withQuery(route, query) {
   return `${route}${route.includes("?") ? "&" : "?"}${text}`;
 }
 
-/**
- * The portal serves the work API under /work/api; a bare backend serves it at
- * /api. Callers name `/api/*` routes the way the frontend does and this
- * resolves the seam, trying the portal path first. Docs routes (`/docs`,
- * `/search`, `/knowledge/*`) live at the same path on both, so they are called
- * directly: under `/work` the portal would answer with the web app instead.
- */
+/** JSON client for the portal; routes are the server paths (`/api/*`, `/docs`, ...). */
 export function createClient({ url, token, fetchImpl = fetch }) {
   const base = String(url || "").replace(/\/+$/, "");
   if (!base) {
@@ -53,38 +47,25 @@ export function createClient({ url, token, fetchImpl = fetch }) {
       headers["Content-Type"] = "application/json";
       payload = JSON.stringify(body);
     }
-    const target = withQuery(route, options.query);
-    const prefixes = target.startsWith("/api/") ? ["/work", ""] : [""];
-
-    let lastError = null;
-    for (const prefix of prefixes) {
-      const address = `${base}${prefix}${target}`;
-      let response;
-      try {
-        response = await fetchImpl(address, { method, headers, body: payload, redirect: "manual" });
-      } catch (error) {
-        throw new NetworkError(address, error);
-      }
-      // A missing seam is a 404 with no JSON error body; a real 404 from the
-      // API still carries one, so only the former falls through to /api.
-      if (response.ok && options.responseType === "bytes") {
-        return Buffer.from(await response.arrayBuffer());
-      }
-      const text = await response.text();
-      let parsed = null;
-      try {
-        parsed = text ? JSON.parse(text) : null;
-      } catch {
-        parsed = text;
-      }
-      if (response.status === 404 && prefix === "/work" && !isApiPayload(parsed)) {
-        lastError = new ApiError(response.status, parsed, address);
-        continue;
-      }
-      if (!response.ok) throw new ApiError(response.status, parsed, address);
-      return parsed;
+    const address = `${base}${withQuery(route, options.query)}`;
+    let response;
+    try {
+      response = await fetchImpl(address, { method, headers, body: payload, redirect: "manual" });
+    } catch (error) {
+      throw new NetworkError(address, error);
     }
-    throw lastError;
+    if (response.ok && options.responseType === "bytes") {
+      return Buffer.from(await response.arrayBuffer());
+    }
+    const text = await response.text();
+    let parsed = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      parsed = text;
+    }
+    if (!response.ok) throw new ApiError(response.status, parsed, address);
+    return parsed;
   }
 
   return {
@@ -103,8 +84,4 @@ export class NetworkError extends Error {
     super(`Could not reach ${url}: ${cause?.cause?.code || cause?.message || cause}`);
     this.name = "NetworkError";
   }
-}
-
-function isApiPayload(value) {
-  return Boolean(value && typeof value === "object");
 }

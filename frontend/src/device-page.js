@@ -3,7 +3,7 @@ import "./dakit/dialogs.js";
 import { createDevicePage } from "./surfaces/operations/device.js";
 
 async function request(path, options = {}) {
-  const response = await fetch(`/work${path}`, {
+  const response = await fetch(path, {
     ...options,
     cache: "no-store",
     headers: { "content-type": "application/json" },

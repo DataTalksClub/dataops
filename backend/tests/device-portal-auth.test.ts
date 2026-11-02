@@ -48,7 +48,7 @@ describe('device authentication through the configured portal and router', () =>
   });
 
   it('passes only device start and poll without establishing an authenticated identity', async () => {
-    for (const prefix of ['', '/work']) {
+    for (const prefix of ['']) {
       for (const suffix of ['', '/token']) {
         const event = { httpMethod: 'POST', path: `${prefix}/api/auth/device${suffix}`, headers: {} };
         assert.deepEqual(await handlePortal(event, client), { authorized: false });
@@ -84,7 +84,7 @@ describe('device authentication through the configured portal and router', () =>
 
   it('does not widen the exception to methods, lookalikes, identity headers or private APIs', async () => {
     const paths = ['/api/auth/device', '/api/auth/device/token'];
-    for (const prefix of ['', '/work']) {
+    for (const prefix of ['']) {
       for (const path of paths) {
         for (const method of ['GET', 'PUT', 'DELETE', 'PATCH', 'HEAD']) {
           assert.equal((await request(method, prefix + path)).statusCode, 401, `${method} ${prefix + path}`);
@@ -116,11 +116,11 @@ describe('device authentication through the configured portal and router', () =>
   it('requires browser approval and preserves single-use exchange, bearer validation and disabled-user denial', async () => {
     const grant = await start();
     assert.equal((await request('POST', '/api/auth/device/approve', { userCode: grant.userCode }, { 'x-user-id': 'device-browser-operator' })).statusCode, 401);
-    const preview = await handler({ httpMethod: 'GET', path: '/work/api/auth/device/pending',
+    const preview = await handler({ httpMethod: 'GET', path: '/api/auth/device/pending',
       queryStringParameters: { userCode: grant.userCode }, headers: { cookie } }, {});
     assert.equal(preview.statusCode, 200);
     assert.equal(json(preview).label, 'Synthetic CLI');
-    assert.equal((await request('POST', '/work/api/auth/device/approve', { userCode: grant.userCode }, { cookie })).statusCode, 200);
+    assert.equal((await request('POST', '/api/auth/device/approve', { userCode: grant.userCode }, { cookie })).statusCode, 200);
     const exchange = await request('POST', '/api/auth/device/token', { deviceCode: grant.deviceCode });
     assert.equal(exchange.statusCode, 200);
     const credential = json(exchange);

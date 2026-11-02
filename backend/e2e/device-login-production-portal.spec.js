@@ -16,7 +16,7 @@ function cli(args, configDir, options = {}) {
   // sending device/bearer secrets to test output.
   const observer = `const original = globalThis.fetch; globalThis.fetch = async (...args) => {
     const response = await original(...args);
-    if (['/api/auth/device/token', '/work/api/auth/device/token'].includes(new URL(String(args[0])).pathname)) {
+    if (new URL(String(args[0])).pathname === '/api/auth/device/token') {
       const error = (await response.clone().json()).error || '';
       process.send?.({ status: response.status, error });
       if (${Boolean(options.expireOnPending)} && error === 'authorization_pending') {

@@ -336,7 +336,7 @@ describe('isolated SAM handler frontend runtime', () => {
         return collectChild(child, phase);
       };
       const manifestAssets = readFrontendAssetManifest().files.map((asset) => `/${asset}`);
-      const positive = await probe(isolated, ['/', '/workspace/deep-link', ...manifestAssets, '/src/../package.json', '/src/missing.js', '/public/app.js', '/public/extensionless', '/unknown.js', '/api/not-a-route', '/work/api'], 'Packaged frontend positive-route probe');
+      const positive = await probe(isolated, ['/', '/workspace/deep-link', ...manifestAssets, '/src/../package.json', '/src/missing.js', '/public/app.js', '/public/extensionless', '/unknown.js', '/api/not-a-route'], 'Packaged frontend positive-route probe');
       assert.equal(positive.status, 0, positive.stderr);
       const result = parseProbeResult(positive.stdout);
       assert.equal(result.outsideModuleResolution, false, JSON.stringify(result.outsideModuleResolutions));
@@ -387,13 +387,6 @@ describe('isolated SAM handler frontend runtime', () => {
       assert.match(api.contentType, /application\/json/, '/api/not-a-route: API error must be JSON');
       assert.equal(api.isBase64Encoded, false, '/api/not-a-route: API error must not be base64 encoded');
       assert.doesNotMatch(api.body, /<html/i, '/api/not-a-route: API error must not fall back to HTML');
-      // Exact /work/api is outside the /work/api/* rewrite and the /api/*
-      // middleware scope, so it still falls through to the route 404.
-      const exactWorkApi = responseFor('/work/api');
-      assert.equal(exactWorkApi.statusCode, 404, '/work/api: exact work API root must return 404');
-      assert.match(exactWorkApi.contentType, /application\/json/, '/work/api: work API error must be JSON');
-      assert.equal(exactWorkApi.isBase64Encoded, false, '/work/api: work API error must not be base64 encoded');
-      assert.doesNotMatch(exactWorkApi.body, /<html/i, '/work/api: work API error must not fall back to HTML');
 
       const missing = mkdtempSync(join(generatedRoot, 'missing-runtime-'));
       cpSync(samArtifact, missing, { recursive: true, dereference: false });

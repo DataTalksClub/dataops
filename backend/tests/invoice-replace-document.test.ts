@@ -157,7 +157,7 @@ test('storage failure leaves original invoice and history unchanged', async () =
 test('operator API token uses the same authenticated route as invoice edit; anonymous and reader are refused', async () => {
   process.env.SKIP_AUTH = 'false'; process.env.WORK_ENGINE_AUTH_MODE = 'standalone';
   const record = await draft();
-  const invoke = (credential?: string) => handler({ httpMethod: 'POST', path: `/work/api/bookkeeping/invoices/${record.id}/replace-document`, headers: credential ? { authorization: `Bearer ${credential}` } : {}, body: JSON.stringify(payload()) }, {});
+  const invoke = (credential?: string) => handler({ httpMethod: 'POST', path: `/api/bookkeeping/invoices/${record.id}/replace-document`, headers: credential ? { authorization: `Bearer ${credential}` } : {}, body: JSON.stringify(payload()) }, {});
   assert.equal((await invoke()).statusCode, 401);
   assert.equal((await invoke(`dops_svc_${'a'.repeat(64)}`)).statusCode, 401);
   const reader = `dops_svc_${'b'.repeat(64)}`;

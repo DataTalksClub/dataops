@@ -513,7 +513,7 @@ test('Vite HMR and real backend proxy preserve one localhost browser origin', as
       try { return listenerPid(ports.backendPort); } catch { return 0; }
     }, { timeout: 30_000 }).not.toBe(backendPidBeforeRestart);
     await expect.poll(async () => {
-      try { return (await fetch(`${stack.origin}/work/health`)).status; } catch { return 0; }
+      try { return (await fetch(`${stack.origin}/api/health`)).status; } catch { return 0; }
     }, { timeout: 30_000 }).toBe(200);
     await expect(page).toHaveURL(canonicalRoute);
   } finally {

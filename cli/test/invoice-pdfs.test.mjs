@@ -34,7 +34,7 @@ test('invoice PDF CLI saves private output without exposing base64 or overwritin
     assert.equal(calls.at(-1).body.templateId, 'selected');
     assert.equal(await run(['invoice-pdfs', 'reissue', '--template-id', 'selected', '--file', correction, '--output', path.join(dir, 'missing-reason.pdf'), '--json'], io), 1);
     assert.ok(!out.join('').includes(bytes.toString('base64')));
-    assert.ok(calls.every(call => call.url.includes('/work/api/bookkeeping/invoice-generation/')));
+    assert.ok(calls.every(call => call.url.includes('/api/bookkeeping/invoice-generation/')));
   } finally {
     globalThis.fetch = oldFetch;
     if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;

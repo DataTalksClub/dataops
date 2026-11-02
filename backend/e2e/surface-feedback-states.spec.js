@@ -226,8 +226,8 @@ test.describe('issue 204 owning-surface feedback', () => {
     await expect(page.locator('.ops-users-table, [data-summary-id="users"][data-summary-state="empty"]').first()).toBeVisible();
     await shot(page, 'users-ready-desktop-1440x900');
 
-    await page.route('**/work/api/me', route => route.fulfill({ json: { user: { email: 'operator@example.test' } } }));
-    await page.route('**/work/api/auth/device/pending?**', route => route.fulfill({ status: 404, json: { error: 'Not found' } }));
+    await page.route('**/api/me', route => route.fulfill({ json: { user: { email: 'operator@example.test' } } }));
+    await page.route('**/api/auth/device/pending?**', route => route.fulfill({ status: 404, json: { error: 'Not found' } }));
     await page.goto(`${baseURL}/device`);
     await expect(page.locator('.dk-auth-page')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Authorize a device', exact: true })).toBeVisible();

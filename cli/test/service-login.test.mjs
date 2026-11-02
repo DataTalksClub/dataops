@@ -48,7 +48,7 @@ test('real CLI configures a verified service profile, identifies it, and removes
     assert.equal((await cli(['logout'], dir)).code, 0);
     assert.equal(calls.length, count);
     assert.equal(JSON.parse(readFileSync(file, 'utf8')).profiles[url], undefined);
-    assert.deepEqual(calls, ['/work/api/me', '/work/api/me']);
+    assert.deepEqual(calls, ['/api/me', '/api/me']);
     const failedDir = path.join(dir, 'failed');
     // The server rejects the unknown credential: exit code 3 (auth).
     assert.equal((await cli(['login', '--service-token-stdin', '--url', url], failedDir, `dops_svc_${'b'.repeat(64)}`)).code, 3);

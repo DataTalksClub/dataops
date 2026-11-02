@@ -201,7 +201,7 @@ export function renderCardSponsorDocsSection(card) {
     statusBadge.textContent = isSubmitted ? "Submitted / Ready" : "Draft";
 
     const exportLink = document.createElement("a");
-    exportLink.href = `/work/api/sponsor-docs/${encodeURIComponent(doc.id)}/export?format=markdown`;
+    exportLink.href = `/api/sponsor-docs/${encodeURIComponent(doc.id)}/export?format=markdown`;
     exportLink.className = "task-instruction-doc-link";
     exportLink.textContent = "Markdown export";
     opensInNewTab(exportLink);

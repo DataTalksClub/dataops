@@ -348,7 +348,7 @@ describe("Calendar CLI commands", () => {
     assert.match(ioAlert.text(), /Dismissed calendar alert alert-fp-123/);
     assert.equal(
       requests[0].url,
-      "https://portal.test/work/api/calendar-items/alerts/alert-fp-123/dismiss",
+      "https://portal.test/api/calendar-items/alerts/alert-fp-123/dismiss",
     );
 
     const ioSync = captureIo();
@@ -357,7 +357,7 @@ describe("Calendar CLI commands", () => {
     assert.match(ioSync.text(), /Synced holidays: 42/);
     assert.equal(
       requests[1].url,
-      "https://portal.test/work/api/calendar-items/holidays/sync",
+      "https://portal.test/api/calendar-items/holidays/sync",
     );
   });
 
@@ -541,8 +541,8 @@ describe("Calendar hold CLI commands", () => {
     };
     assert.equal(await run(["calendar", "confirm-hold", "hold_1"], captureIo()), 0);
     assert.equal(await run(["calendar", "release-hold", "hold_1"], captureIo()), 0);
-    assert.equal(requests[0].url, "https://portal.test/work/api/calendar-holds/hold_1/confirm");
-    assert.equal(requests[1].url, "https://portal.test/work/api/calendar-holds/hold_1/release");
+    assert.equal(requests[0].url, "https://portal.test/api/calendar-holds/hold_1/confirm");
+    assert.equal(requests[1].url, "https://portal.test/api/calendar-holds/hold_1/release");
     assert.deepEqual(requests[1].body, { reason: "manual" });
 
     const io = captureIo();

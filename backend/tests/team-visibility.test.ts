@@ -9,7 +9,7 @@
  * may do, and what a deleted, disabled, or unsupported-role actor may never do.
  *
  * Both API prefixes are covered: the canonical `/api/*` surface and the
- * rewritten `/work/api/*` surface the browser uses.
+ * `/api/*` surface the browser uses.
  *
  * All people here are synthetic (`example.test`); no real person, production
  * id, or operational record appears.
@@ -189,10 +189,8 @@ describe('signed-in identity, teammate projections, and the work authorization b
 
   // ── Identity ───────────────────────────────────────────────────────────────
 
-  it('returns the same signed-in identity from /api/me and /work/api/me for a bearer session', async () => {
+  it('returns the signed-in identity from /api/me for a bearer session', async () => {
     const canonical = body(await invoke({ path: '/api/me', bearer: sessions[AVERY] }));
-    const work = body(await invoke({ path: '/work/api/me', bearer: sessions[AVERY] }));
-    assert.deepStrictEqual(canonical, work);
     assert.strictEqual(canonical.user.id, AVERY);
     assert.strictEqual(canonical.user.name, 'Avery Operator');
     assert.strictEqual(canonical.user.email, 'avery@example.test');
@@ -201,39 +199,31 @@ describe('signed-in identity, teammate projections, and the work authorization b
     assert.strictEqual(canonical.token, undefined);
   });
 
-  it('returns the same signed-in identity from /api/me and /work/api/me for a browser cookie', async () => {
+  it('returns the signed-in identity from /api/me for a browser cookie', async () => {
     usePortalCookieMode();
     const canonical = await invoke({ path: '/api/me', cookie: cookies[MORGAN] });
-    const proxied = await invoke({ path: '/work/api/me', cookie: cookies[MORGAN] });
     assert.strictEqual(canonical.statusCode, 200);
-    assert.deepStrictEqual(body(canonical), body(proxied));
     assert.strictEqual(body(canonical).user.id, MORGAN);
     assert.strictEqual(body(canonical).user.disabled, false);
   });
 
-  it('normalizes /work/api before docs-domain authorization for bearer identity', async () => {
+  it('authorizes bearer identity before docs-domain routing', async () => {
     usePortalCookieMode();
     const requests: Request[] = [
       { path: '/api/me', bearer: sessions[AVERY] },
-      { path: '/work/api/me', bearer: sessions[AVERY] },
       { path: '/api/me', bearer: 'not-a-real-token' },
-      { path: '/work/api/me', bearer: 'not-a-real-token' },
       { path: '/api/me', bearer: sessions[CASEY] },
-      { path: '/work/api/me', bearer: sessions[CASEY] },
     ];
 
     const responses = await Promise.all(requests.map(invoke));
-    assert.deepStrictEqual(responses.map((response) => response.statusCode), [200, 200, 401, 401, 401, 401]);
-    assert.deepStrictEqual(body(responses[0]), body(responses[1]));
+    assert.deepStrictEqual(responses.map((response) => response.statusCode), [200, 401, 401]);
     assert.strictEqual(body(responses[0]).user.id, AVERY);
+    assert.deepStrictEqual(body(responses[1]), { error: 'Unauthorized' });
     assert.deepStrictEqual(body(responses[2]), { error: 'Unauthorized' });
-    assert.deepStrictEqual(body(responses[3]), { error: 'Unauthorized' });
-    assert.deepStrictEqual(body(responses[4]), { error: 'Unauthorized' });
-    assert.deepStrictEqual(body(responses[5]), { error: 'Unauthorized' });
   });
 
-  it('has no password login in either auth mode, at either prefix', async () => {
-    const attempts = async () => Promise.all(['/api/auth/login', '/work/api/auth/login'].map((path) => invoke({
+  it('has no password login in either auth mode', async () => {
+    const attempts = async () => Promise.all(['/api/auth/login'].map((path) => invoke({
       method: 'POST',
       path,
       body: { email: 'morgan@example.test', password: 'anything' },
@@ -252,16 +242,14 @@ describe('signed-in identity, teammate projections, and the work authorization b
     }
   });
 
-  it('answers a missing, unknown, disabled, or deleted identity with JSON 401 at both prefixes', async () => {
+  it('answers a missing, unknown, disabled, or deleted identity with JSON 401', async () => {
     usePortalCookieMode();
     const deletedSession = (await createSession(client, GHOST)).token;
     const cases: Request[] = [
       { path: '/api/me' },
-      { path: '/work/api/me' },
       { path: '/api/me', bearer: 'not-a-real-token' },
       { path: '/api/me', cookie: 'not-a-real-cookie' },
       { path: '/api/me', cookie: cookies[CASEY] },
-      { path: '/work/api/me', cookie: cookies[CASEY] },
       { path: '/api/me', bearer: deletedSession },
     ];
     for (const request of cases) {
@@ -304,13 +292,6 @@ describe('signed-in identity, teammate projections, and the work authorization b
     assert.strictEqual(morgan.disabled, false);
   });
 
-  it('serves the same team projection from the rewritten /work/api prefix', async () => {
-    const canonical = await invoke({ path: '/api/team-members', bearer: sessions[AVERY] });
-    const proxied = await invoke({ path: '/work/api/team-members', bearer: sessions[AVERY] });
-    assert.strictEqual(proxied.statusCode, 200);
-    assert.deepStrictEqual(body(proxied), body(canonical));
-  });
-
   it('refuses team reads for unsupported-role, disabled, and unauthenticated actors', async () => {
     const unsupported = await invoke({ path: '/api/team-members', bearer: sessions[ROWAN] });
     assert.strictEqual(unsupported.statusCode, 403);
@@ -343,8 +324,6 @@ describe('signed-in identity, teammate projections, and the work authorization b
     assert.deepStrictEqual(body(canonical).owner, {
       id: AVERY, name: 'Avery Operator', role: 'operator', active: true, disabled: false, available: true,
     });
-    const proxied = await invoke({ path: '/work/api/tasks', query: { owner: 'me' }, bearer: sessions[AVERY] });
-    assert.deepStrictEqual(body(proxied), body(canonical));
   });
 
   it('resolves owner=me from the server session, not from a spoofed identity header', async () => {
@@ -637,7 +616,7 @@ describe('signed-in identity, teammate projections, and the work authorization b
   it('attributes an atomic waiting action to the verified actor, not to a spoofed header or the assignee', async () => {
     const before = (await getTaskConsistent(client, 'task-morgan'))!;
     const response = await invoke({
-      method: 'POST', path: '/work/api/tasks/task-morgan/actions/mark-waiting',
+      method: 'POST', path: '/api/tasks/task-morgan/actions/mark-waiting',
       bearer: sessions[AVERY],
       headers: { 'x-user-id': RILEY },
       body: {

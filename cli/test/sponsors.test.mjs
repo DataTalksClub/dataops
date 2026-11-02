@@ -344,7 +344,7 @@ test('pipeline CLI requests one bounded page with the same filters as the web', 
     const { pipeline, contact } = await import('../src/commands/sponsors.mjs');
     const result = await pipeline({ json: true, url: 'https://example.test', view: 'active', stage: 'agreed', search: 'Synthetic', company: 'org', limit: '30' }, {});
     assert.equal(urls.length, 1); assert.equal(result.nextCursor, '30');
-    assert.equal(urls[0].pathname, '/work/api/sponsor-crm/pipeline');
+    assert.equal(urls[0].pathname, '/api/sponsor-crm/pipeline');
     assert.equal(urls[0].searchParams.get('organizationId'), 'org');
     assert.equal(urls[0].searchParams.get('view'), 'active');
     assert.equal(urls[0].searchParams.get('search'), 'Synthetic');

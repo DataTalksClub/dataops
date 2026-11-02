@@ -213,5 +213,4 @@ npm run test:e2e --workspace dataops-cli    # the real binary against a local ba
 
 Add a module under `src/commands/` that exports `summary`, `help`, and
 `commands`, and register it in `FAMILIES` in `src/cli.mjs`. `apiFor(args)` in
-`src/session.mjs` returns the signed-in client; it handles auth, errors, and the
-`/work/api` seam.
+`src/session.mjs` returns the signed-in client; it handles auth and errors.

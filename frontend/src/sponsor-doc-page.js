@@ -1,7 +1,7 @@
 import { createSponsorDocPage } from "./surfaces/operations/sponsor-docs.js";
 
 async function request(path, options = {}) {
-  const response = await fetch(`/work${path}`, {
+  const response = await fetch(path, {
     ...options,
     cache: "no-store",
     headers: {

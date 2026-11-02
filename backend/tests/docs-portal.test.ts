@@ -97,7 +97,7 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
   });
 
   it('returns JSON 401 for unauthenticated API/data requests without a Basic challenge', async () => {
-    for (const path of ['/api/tasks', '/work/api/tasks', '/work/api/me', '/work/health', '/content/a/reference/guide.md']) {
+    for (const path of ['/api/tasks', '/api/me', '/content/a/reference/guide.md']) {
       const res = await route(ev('GET', path), client);
       assert.strictEqual(res.statusCode, 401, path);
       assert.deepStrictEqual(JSON.parse(res.body), { error: 'Unauthorized' }, path);
@@ -324,21 +324,6 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
       if (offlineBefore === undefined) delete process.env.DTC_OFFLINE;
       else process.env.DTC_OFFLINE = offlineBefore;
     }
-  });
-
-  it('rewrites the old /work/api proxy path to /api in-process', async () => {
-    // /work/health -> /api/health (work route), authorized via browser session.
-    const res = await route(ev('GET', '/work/health', { headers: { cookie: browserCookie } }), client);
-    assert.strictEqual(res.statusCode, 200);
-    assert.deepStrictEqual(JSON.parse(res.body), { status: 'ok' });
-  });
-
-  it('keeps the exact authenticated /work/api boundary JSON-only', async () => {
-    const res = await route(ev('GET', '/work/api', { headers: { cookie: browserCookie } }), client);
-    assert.strictEqual(res.statusCode, 404);
-    assert.match(res.headers?.['Content-Type'] || res.headers?.['content-type'] || '', /application\/json/);
-    assert.deepStrictEqual(JSON.parse(res.body), { error: 'Not found' });
-    assert.doesNotMatch(res.body, /<html|DataOps Portal/i);
   });
 
   it('serves regular workspace paths directly in portal and local modes', async () => {

@@ -4,8 +4,7 @@
  * Implements shared browser auth, static frontend serving, and
  * `/content/*` serving from `lambda-functions/.../full_app_handler.py` so that
  * one TypeScript origin serves the frontend, the docs content API, and the work
- * APIs together. The cross-service `/work/api` proxy is replaced by an in-process
- * path rewrite (`/work/api/* -> /api/*`).
+ * APIs together.
  *
  * Active only when {@link isDocsDomainEnabled} is true; the work-engine routes
  * and their tests are untouched while the flag is off.
@@ -261,9 +260,6 @@ function isDataPath(path: string): boolean {
   return (
     path.startsWith('/api/') ||
     path === '/api' ||
-    path.startsWith('/work/api/') ||
-    path === '/work/api' ||
-    path === '/work/health' ||
     isDocsRoute(path) ||
     path.startsWith('/content/')
     || path.startsWith('/knowledge-files/')
@@ -277,14 +273,7 @@ function isDataPath(path: string): boolean {
  */
 export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<PortalOutcome> {
   const method = (event.httpMethod || 'GET').toUpperCase();
-  let path = event.path || '/';
-
-  // Normalize the deployed work-engine prefix before authorization so every
-  // credential type reaches the same canonical API middleware and errors.
-  if (path === '/work/api' || path.startsWith('/work/api/')) {
-    event.path = path.slice('/work'.length);
-    path = event.path;
-  }
+  const path = event.path || '/';
 
   // Shared Cognito browser auth. Local development remains open when the
   // non-secret relying-party configuration is intentionally absent.
@@ -293,8 +282,7 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
   if (path === '/auth/error' && method === 'GET') return { response: authErrorPage(signInRefusal(event.queryStringParameters?.reason)), authorized: false };
   if (path === '/logout' && (method === 'GET' || method === 'POST')) return { response: await logout(event, client), authorized: false };
   // Full portal mode replaces password login with OAuth/device flows. Docs-domain
-  // local development keeps the canonical login reachable behind the rewritten
-  // /work/api prefix so the Vite proxy preserves its single-origin journey.
+  // local development keeps the canonical login reachable.
   if (process.env.WORK_ENGINE_AUTH_MODE === 'portal' && path === '/api/auth/login') {
     return {
       response: {
@@ -332,11 +320,6 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
     return { response: isDataPath(path) ? unauthenticatedApi() : redirectToLogin(), authorized: false };
   }
 
-  // Replace the old cross-service /work/api proxy with an in-process rewrite.
-  if (path === '/work/health') {
-    event.path = '/api/health';
-    return { authorized: true, userId: user?.id };
-  }
   if ((path === '/work' || path.startsWith('/work/')) && method === 'GET') {
     return { response: serveIndex(), authorized: true, userId: user?.id };
   }

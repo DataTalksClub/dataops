@@ -31,10 +31,10 @@ async function verifyAuthenticatedRole(baseURL, role) {
   const sessionResponse = await fetch(`${baseURL}/__parity__/session?role=${role}`, { redirect: 'manual' });
   assert(sessionResponse.status === 303, `${role} session returned ${sessionResponse.status}`);
   const cookie = cookiePair(sessionResponse);
-  const me = await jsonOk(`${baseURL}/work/api/me`, { headers: { cookie } });
+  const me = await jsonOk(`${baseURL}/api/me`, { headers: { cookie } });
   assert(me.user?.role === role, `${role} cookie authenticated as ${me.user?.role || 'no role'}`);
 
-  const tasksResponse = await fetch(`${baseURL}/work/api/tasks?date=2026-08-12`, { headers: { cookie } });
+  const tasksResponse = await fetch(`${baseURL}/api/tasks?date=2026-08-12`, { headers: { cookie } });
   assert(tasksResponse.status === 200, `${role} protected work API returned ${tasksResponse.status}`);
   const tasks = await tasksResponse.json();
   assert(Array.isArray(tasks.tasks), `${role} work API did not return a task list`);

@@ -78,7 +78,7 @@ describe("CLI API client", () => {
     await client.get("/api/recurring");
     assert.equal(
       fetchImpl.calls[0].url,
-      "https://portal.test/work/api/recurring",
+      "https://portal.test/api/recurring",
     );
     assert.equal(
       fetchImpl.calls[0].options.headers.Authorization,

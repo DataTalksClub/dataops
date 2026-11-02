@@ -98,11 +98,7 @@ function matchesPrefix(path: string, prefix: string): boolean {
 }
 
 function canonicalClassificationPath(path: unknown): string {
-  const value = typeof path === 'string' && path.length > 0 ? path : '/';
-  if (value === '/work/health') return '/api/health';
-  if (value === '/work/api') return '/api';
-  if (value.startsWith('/work/api/')) return value.slice('/work'.length);
-  return value;
+  return typeof path === 'string' && path.length > 0 ? path : '/';
 }
 
 export function classifyApiRouteFamily(path: unknown): ApiRouteFamily {

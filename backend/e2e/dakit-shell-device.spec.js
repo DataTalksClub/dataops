@@ -101,11 +101,11 @@ for (const theme of ['light', 'dark']) {
 test('standalone device consent requires Continue, preserves overflow input, and gates different-network approval', async ({ browser }) => {
   const { context, page } = await signedIn(browser, { width: 390, height: 844 });
   let lookups = 0, decisions = 0;
-  await page.route('**/work/api/auth/device/pending?**', route => {
+  await page.route('**/api/auth/device/pending?**', route => {
     lookups++;
     return route.fulfill({ json: { label: '<untrusted machine>', requestIp: '203.0.113.7', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 600000).toISOString(), same_network: false } });
   });
-  await page.route('**/work/api/auth/device/approve', route => { decisions++; return route.fulfill({ json: { status: 'approved' } }); });
+  await page.route('**/api/auth/device/approve', route => { decisions++; return route.fulfill({ json: { status: 'approved' } }); });
   await page.goto('/device?code=bcdfghjk');
   await expect(page.locator('.dk-auth-page__bar .dk-brand')).toHaveCSS('text-decoration-line', 'none');
   await expect(page.getByRole('heading', { name: 'Authorize a device', exact: true })).toBeFocused();
@@ -221,10 +221,10 @@ for (const theme of ['light', 'dark']) {
       expect(await touchControls(page, '#main-content')).toBeGreaterThan(open ? 8 : 4);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
-    await page.route('**/work/api/auth/device/pending?**', route => route.fulfill({ json: {
+    await page.route('**/api/auth/device/pending?**', route => route.fulfill({ json: {
       label: 'synthetic-machine', requestIp: '203.0.113.7', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 600000).toISOString(),
     } }));
-    await page.route('**/work/api/auth/device/approve', route => route.fulfill({ json: { status: 'approved' } }));
+    await page.route('**/api/auth/device/approve', route => route.fulfill({ json: { status: 'approved' } }));
     await page.goto('/device?code=bcdfghjk');
     await expect(page.getByLabel('Device code', { exact: true })).toHaveValue('BCDF-GHJK');
     await expect(page).toHaveURL(/\/device$/);
@@ -253,7 +253,7 @@ test('long identity and machine labels wrap on touch without clipping Switch acc
   const { context, page } = await signedIn(browser, { width: 390, height: 844 });
   const email = 'operations.long-address.for-wrapping-checks@engineering.datatalks.club';
   await page.route('**/api/me', route => route.fulfill({ json: { user: { email, name: 'Synthetic Operator', role: 'admin' } } }));
-  await page.route('**/work/api/auth/device/pending?**', route => route.fulfill({ json: {
+  await page.route('**/api/auth/device/pending?**', route => route.fulfill({ json: {
     label: 'build-runner-with-a-very-long-unbroken-hostname-0123456789abcdef.internal', requestIp: '203.0.113.7',
     createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 600000).toISOString(),
   } }));
@@ -308,7 +308,7 @@ for (const theme of ['light', 'dark']) {
       ['Similar name overdue task', otherId, 'todo'],
       ['Blocked overdue task', actorId, 'waiting'],
     ]) {
-      const response = await context.request.post('/work/api/tasks', { data: {
+      const response = await context.request.post('/api/tasks', { data: {
         description, assigneeId, status, date: '2020-01-01',
         ...(status === 'waiting' ? { waitingFor: 'Synthetic reply', followUpAt: '2020-01-01T09:00:00Z', comment: 'Synthetic waiting fixture' } : {}),
       } });
@@ -336,7 +336,7 @@ for (const theme of ['light', 'dark']) {
     expect(fills[0]).toEqual(fills[1]);
     expect(fills[0].opacity).toBe('1');
     for (const task of created) {
-      const removed = await context.request.delete('/work/api/tasks/' + task.id, { data: { expectedVersion: task.version } });
+      const removed = await context.request.delete('/api/tasks/' + task.id, { data: { expectedVersion: task.version } });
       expect(removed.ok(), await removed.text()).toBe(true);
     }
     await context.close();

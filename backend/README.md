@@ -200,7 +200,7 @@ unsupported-role actor is refused before any read or write. Interactive routes
 never fall back to `system`, `portal-admin`, a requested owner, or an assignee.
 
 - `GET /api/me` returns the signed-in identity (`disabled` always explicit, no
-  password or session material). `/work/api/*` is the same surface.
+  password or session material).
 - `GET /api/team-members` is the safe work directory: id, display name,
   supported role, and availability only. `GET /api/users` stays the
   account-management surface for the Admin/Users screen and is not used by

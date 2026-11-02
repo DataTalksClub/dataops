@@ -25,14 +25,13 @@ export function captureIo() {
 /**
  * Install a fake portal on globalThis.fetch. Routes are keyed "METHOD /path"
  * (no query string); a handler gets { query, body, url } and returns
- * { status, body } or a plain body. The portal's /work/api seam is served by
- * the same routes, and every call is recorded.
+ * { status, body } or a plain body. Every call is recorded.
  */
 export function fakePortal(routes) {
   const calls = [];
   globalThis.fetch = async (url, options = {}) => {
     const parsed = new URL(url);
-    const route = parsed.pathname.startsWith("/work/api/") ? parsed.pathname.slice("/work".length) : parsed.pathname;
+    const route = parsed.pathname;
     const method = options.method || "GET";
     let body = options.body;
     if (typeof body === "string") {

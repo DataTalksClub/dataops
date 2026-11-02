@@ -84,9 +84,7 @@ export async function handleInvoiceReader(
     || !timingSafeEqual(createHash('sha256').update(token).digest(), Buffer.from(configured, 'hex'))) {
     return response(401, { error: 'Unauthorized' });
   }
-  let path = event.path || '/';
-  if (path.startsWith('/work/')) path = path.slice(5);
-  if (path === '/work') path = '/';
+  const path = event.path || '/';
   const cleanPath = path.split('?')[0];
   const method = (event.httpMethod || 'GET').toUpperCase();
 
