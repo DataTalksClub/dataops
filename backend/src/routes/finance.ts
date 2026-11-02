@@ -1,6 +1,6 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
-import { financeSummary, financeUpcoming, parsePeriodQuery } from '../finance/service';
+import { financeSummary, financeTaxes, financeUpcoming, parsePeriodQuery } from '../finance/service';
 import { listTaxSchedule, putTaxScheduleEntry, ScheduleVersionConflict } from '../finance/taxSchedule';
 import { validateScheduleEntry, type ScheduleEntry } from '../finance/upcoming';
 import { json, parse } from './bookkeepingShared';
@@ -8,6 +8,7 @@ import { json, parse } from './bookkeepingShared';
 /**
  * Finance views:
  *   GET /api/finance/summary?month=|year=|ytd=1
+ *   GET /api/finance/taxes?month=|year=|ytd=1   VAT expected vs paid, other taxes by type, TK
  *   GET /api/finance/upcoming?days=60          scheduled tax/TK debits + balance check
  *   GET /api/finance/tax-schedule              the schedule those debits come from
  *   PUT /api/finance/tax-schedule/<id>         create/replace one entry (expectedVersion)
@@ -18,6 +19,12 @@ export async function handleFinanceRoutes(path: string, method: string, event: L
     const query = parsePeriodQuery(event.queryStringParameters);
     if (typeof query === 'string') return json(400, { error: query });
     return json(200, await financeSummary(client, query));
+  }
+  if (path === '/api/finance/taxes') {
+    if (method !== 'GET') return json(405, { error: 'Method not allowed' });
+    const query = parsePeriodQuery(event.queryStringParameters);
+    if (typeof query === 'string') return json(400, { error: query });
+    return json(200, await financeTaxes(client, query));
   }
   if (path === '/api/finance/upcoming') {
     if (method !== 'GET') return json(405, { error: 'Method not allowed' });

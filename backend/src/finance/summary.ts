@@ -1,5 +1,6 @@
 import { DEFAULT_TOLERANCES } from '../reconcile/month';
-import { classifyMandatoryPayment, type MandatoryPaymentKind } from './mandatoryPayments';
+import { classifyMandatoryPayment, taxTypeOf, type MandatoryPaymentKind, type TaxType } from './mandatoryPayments';
+import { isOwnerPayRow, ownerPayTypeOf, type OwnerPayType } from './ownerPay';
 
 /**
  * Finance summary: money in, money out and net per month, year and
@@ -21,7 +22,7 @@ export type Period = { kind: 'month' | 'year' | 'ytd'; label: string; from: stri
 export type Rate = { currency: string; rate: number; date: string; source: 'ecb' };
 export type RateLookup = (currency: string, date: string) => Rate | null;
 
-export type Line = 'operating' | 'vat' | 'taxes' | 'health-insurance';
+export type Line = 'operating' | 'vat' | 'taxes' | 'health-insurance' | 'owner-pay';
 
 export type Entry = {
   id: string;
@@ -37,6 +38,10 @@ export type Entry = {
   subtype: string;
   sourceType: string;
   mandatoryKind: MandatoryPaymentKind | null;
+  /** Tax a vat/taxes/health-insurance entry belongs to. */
+  taxType: TaxType | null;
+  /** Set on owner-pay entries. */
+  ownerPayType: OwnerPayType | null;
   amount: string;
   currency: string;
   /** Exact booked EUR amount stored on the ledger row, when present. */
@@ -73,6 +78,9 @@ export type Totals = {
   otherTaxes: number;
   healthInsurance: number;
   netAfterTaxes: number;
+  /** Paid to the owner personally; shown below net profit, not an expense. */
+  ownerPay: number;
+  netAfterOwnerPay: number;
   entryCount: number;
   unconvertedCount: number;
 };
@@ -103,6 +111,8 @@ export const SOURCE_RULES = [
   'Lines: category VAT or a Finanzamt USt/UMS.ST purpose in the ledger row or its matched statement reference is VAT paid/refunded; other Finanzamt tax purposes are other taxes; TK/Health Insurance is health insurance. These mandatory payments do not affect operating profit.',
   'VAT uses the reviewed ledger vatAmount first, then linked stored document VAT facts. If VAT amount is absent, an explicit VAT rate and net amount or the document gross-minus-net amount determine it; explicit 0% remains zero. Reverse-charge VAT is derived only from an explicit rate and net amount and is counted as both output and input VAT. No rate or source VAT fields means zero VAT.',
   'Refunds from suppliers (credit notes: rows with subtype Refund or a credit-note:<number> source key) are contra-expense: they reduce operating expenses, their VAT reduces input VAT, and they are not money in and not revenue.',
+  'Owner pay: ledger rows with category Owner pay (ownerPayType salary, draw, reimbursement or unknown, decided from the booking text and counterparty) are money paid to the owner personally. They are money out, never operating expenses, and appear on their own line below net profit; net after owner pay = net after taxes and TK - owner pay.',
+  'Tax types: a mandatory payment carries a taxType (vat, income-tax, trade-tax, health-insurance, other), the stored row value first, otherwise derived from the booking text (Gewerbesteuer = trade-tax; Einkommensteuer, Körperschaftsteuer, Soli = income-tax). Category VAT without a decisive text stays vat. dataops finance taxes shows them per period.',
   'Net profit excluding VAT = (operating income - output VAT) - (operating expenses - input VAT); supplier refunds reduce the expense side. Taxes and TK are shown as their own lines and in net after taxes; VAT payments and refunds are not profit or loss.',
   'Projected VAT position = output VAT - input VAT: positive is owed to the Finanzamt, negative is a refund. Missing VAT fields contribute zero and do not create a warning.',
 ];
@@ -147,6 +157,7 @@ export function bookingDate(row: LedgerRow) {
 export const isRefundRow = (row: LedgerRow) => str(row.subtype) === 'Refund' || str(row.sourceKey).startsWith('credit-note:');
 
 export function lineOf(row: LedgerRow): Line {
+  if (isOwnerPayRow(row)) return 'owner-pay';
   const mandatory = classifyMandatoryPayment(row);
   if (mandatory) return mandatory.line;
   const category = str(row.category);
@@ -280,11 +291,11 @@ function emptyTotals(): Totals {
   return {
     moneyIn: 0, moneyOut: 0, net: 0, operatingIncome: 0, operatingExpenses: 0, outputVat: 0, inputVat: 0,
     incomeNetOfVat: 0, expensesNetOfVat: 0, netProfitExVat: 0, projectedVat: 0, vatPaid: 0, vatRefunded: 0,
-    otherTaxes: 0, healthInsurance: 0, netAfterTaxes: 0, entryCount: 0, unconvertedCount: 0,
+    otherTaxes: 0, healthInsurance: 0, netAfterTaxes: 0, ownerPay: 0, netAfterOwnerPay: 0, entryCount: 0, unconvertedCount: 0,
   };
 }
 
-const SUMMED: Array<keyof Totals> = ['moneyIn', 'moneyOut', 'operatingIncome', 'operatingExpenses', 'outputVat', 'inputVat', 'vatPaid', 'vatRefunded', 'otherTaxes', 'healthInsurance'];
+const SUMMED: Array<keyof Totals> = ['moneyIn', 'moneyOut', 'operatingIncome', 'operatingExpenses', 'outputVat', 'inputVat', 'vatPaid', 'vatRefunded', 'otherTaxes', 'healthInsurance', 'ownerPay'];
 
 /** Totals in integer cents, then derived figures, then back to EUR. */
 function total(entries: Entry[]): Totals {
@@ -320,6 +331,7 @@ function total(entries: Entry[]): Totals {
       else { c.operatingIncome += value; c.outputVat += vat; }
     } else if (entry.line === 'vat') c[entry.direction === 'out' ? 'vatPaid' : 'vatRefunded'] += value;
     else if (entry.line === 'taxes') c.otherTaxes += entry.direction === 'out' ? value : -value;
+    else if (entry.line === 'owner-pay') c.ownerPay += entry.direction === 'out' ? value : -value;
     else c.healthInsurance += entry.direction === 'out' ? value : -value;
   }
   const incomeNetOfVat = c.operatingIncome - (c.outputVat - reverseChargeOutputVat);
@@ -335,6 +347,7 @@ function total(entries: Entry[]): Totals {
     netProfitExVat: fromCents(netProfitExVat),
     projectedVat: fromCents(c.outputVat - c.inputVat),
     netAfterTaxes: fromCents(netProfitExVat - c.otherTaxes - c.healthInsurance),
+    netAfterOwnerPay: fromCents(netProfitExVat - c.otherTaxes - c.healthInsurance - c.ownerPay),
     entryCount: entries.length,
     unconvertedCount,
   };
@@ -347,19 +360,22 @@ export function toEntry(row: LedgerRow, rates: RateLookup): Entry | null {
   const conversion = convert(row, rates);
   const mandatory = classifyMandatoryPayment(row);
   const vat = vatAmounts(row, conversion, rates);
+  const line = isOwnerPayRow(row) ? 'owner-pay' : mandatory?.line || lineOf(row);
   return {
     id: row.id,
     date,
     month: date.slice(0, 7),
     direction: entryType === 'income' ? 'in' : 'out',
-    line: mandatory?.line || lineOf(row),
+    line,
     refund: isRefundRow(row),
     counterparty: str(row.counterparty),
     description: str(row.description),
     category: str(row.category),
     subtype: str(row.subtype),
     sourceType: str(row.sourceType),
-    mandatoryKind: mandatory?.kind || null,
+    mandatoryKind: line === 'owner-pay' ? null : mandatory?.kind || null,
+    taxType: line === 'vat' || line === 'taxes' || line === 'health-insurance' ? taxTypeOf(row, line) : null,
+    ownerPayType: line === 'owner-pay' ? ownerPayTypeOf(row.ownerPayType) : null,
     amount: str(row.amount),
     currency: str(row.currency) || 'EUR',
     amountEur: str(row.amountEur) || null,

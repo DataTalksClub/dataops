@@ -14,6 +14,11 @@ dataops finance summary --year 2026
 dataops finance summary --ytd
 ```
 
+```
+dataops finance taxes --month 2026-10      # tax ledger: VAT, other taxes by type, TK
+dataops finance taxes --year 2026 --json
+```
+
 Exactly one period flag. The default output is a table; `--json` prints the API
 payload unchanged. YTD runs from 1 January to today (Europe/Berlin).
 
@@ -134,3 +139,37 @@ what will be debited, so the account holds enough money beforehand.
   the latest known business account balance and its as-of date; a balance
   below it is a shortfall, and a balance older than 7 days is flagged stale.
   With no balance on record the check says so instead of guessing.
+
+## Tax ledger (`dataops finance taxes`, GET /api/finance/taxes)
+
+Same entries, dedup and EUR conversion as the summary. Per month and for the
+period it shows:
+
+- **VAT**: projected position (output VAT on income minus input VAT on expenses;
+  positive is owed to the Finanzamt, negative a refund) next to what was actually
+  paid and refunded, and the outstanding difference. A period that has not ended
+  yet (`open: true`) shows a projection; a closed one shows it against the actual
+  payment.
+- **Other taxes by type**: `income-tax` (Einkommensteuer, Körperschaftsteuer,
+  Soli), `trade-tax` (Gewerbesteuer), `other`. The type is the row's stored
+  `taxType` when set, otherwise derived from the booking text. A stored
+  `taxType` also moves a mislabelled row (for example 2024 "VAT Advance payment"
+  rows that are really ESt + Soli) between the VAT and taxes lines.
+- **TK** health insurance, on its own line.
+
+Tax payments are never expenses: they sit below net profit excluding VAT.
+
+## Owner pay
+
+Money paid to the owner personally is a ledger row with category `Owner pay`
+and `ownerPayType` of `salary` (Geschäftsführergehalt), `draw` (Privatentnahme),
+`reimbursement` or `unknown`. It is money out, but not an operating expense; it
+has its own line (`totals.ownerPay`) below net profit and
+`netAfterOwnerPay = netAfterTaxes - ownerPay`. Shown per month, year and YTD in
+the portal and in `dataops finance summary` (table and `--json`).
+
+Classifying existing rows: `backend/scripts/finance-owner-pay-dryrun.ts` scans a
+transactions export for outgoing transfers to the owner since 2024, decides the
+type from the booking text and counterparty, and writes a markdown report. It
+never writes. Apply the classifications only after the report is reviewed
+(add a category and `ownerPayType`; nothing is deleted).

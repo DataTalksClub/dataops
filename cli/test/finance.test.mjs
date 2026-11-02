@@ -130,3 +130,41 @@ describe("dataops finance upcoming and schedule", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 });
+
+describe("dataops finance taxes", () => {
+  const bucket = { "income-tax": 1000, "trade-tax": 3296, other: 0 };
+  const t = { outputVat: 190, inputVat: 19, projectedVat: 171, vatPaid: 100, vatRefunded: 0, vatSettled: 100, vatOutstanding: 71, taxes: bucket, otherTaxes: 4296, healthInsurance: 1179.36, totalTaxesAndTk: 5575.36 };
+  const TAXES = {
+    period: OCTOBER.period, baseCurrency: "EUR", open: false, netProfitExVat: 900, totals: t,
+    months: [{ month: "2026-10", future: false, ...t }], entries: [], gaps: [], rules: ["Taxes come from the same entries."],
+  };
+
+  test("prints VAT projected next to paid, other taxes by type and TK", async () => {
+    const calls = fakePortal({ "GET /api/finance/taxes": TAXES });
+    const io = captureIo();
+    assert.equal(await run(["finance", "taxes", "--month", "2026-10"], io), 0);
+    assert.deepEqual(calls[0].query, { month: "2026-10" });
+    const text = io.text();
+    assert.match(text, /Tax ledger 2026-10 \(EUR\)/);
+    assert.match(text, /Projected VAT position:\s+171\.00 \(owed to the Finanzamt\)/);
+    assert.match(text, /VAT actually paid:\s+100\.00\s+outstanding: 71\.00/);
+    assert.match(text, /3,296\.00/);
+    assert.match(text, /1,179\.36/);
+  });
+
+  test("--json returns the portal payload and a period is required", async () => {
+    fakePortal({ "GET /api/finance/taxes": TAXES });
+    const io = captureIo();
+    assert.equal(await run(["finance", "taxes", "--ytd", "--json"], io), 0);
+    assert.deepEqual(io.json(), TAXES);
+    assert.notEqual(await run(["finance", "taxes"], captureIo()), 0);
+  });
+
+  test("summary shows owner pay on its own line", async () => {
+    fakePortal({ "GET /api/finance/summary": { ...OCTOBER, totals: { ...OCTOBER.totals, ownerPay: 4500, netAfterOwnerPay: 20960.49 } } });
+    const io = captureIo();
+    assert.equal(await run(["finance", "summary", "--month", "2026-10"], io), 0);
+    assert.match(io.text(), /Owner pay \(below net profit\)\s+-4,500\.00/);
+    assert.match(io.text(), /Net after owner pay\s+20,960\.49/);
+  });
+});

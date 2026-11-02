@@ -15,7 +15,14 @@ Usage
       VAT position, and taxes and TK on their own lines. Non-EUR currency rows
       show each original amount and its EUR value inline, plus the rate, date and
       source when available (booked by the bank or the ECB reference rate).
+      Owner pay (salary, draw, reimbursement) has its own line below net profit.
       Data gaps are listed under the table.
+
+  dataops finance taxes --month 2026-10 | --year 2026 | --ytd [--json]
+      The tax ledger: VAT (projected output minus input VAT next to what was
+      actually paid to or refunded by the Finanzamt, and what is outstanding),
+      other taxes by type (income tax + Soli, trade tax, other) and TK health
+      insurance, per month and for the period. Table by default.
 
   dataops finance upcoming [--days 60] [--json]
       Tax and TK auto-debits due in the next N days (default 60): date (moved past
@@ -92,6 +99,7 @@ export function printSummary(io, s) {
     ["Profit ex VAT", (r) => money(r.netProfitExVat), "right"],
     ["Taxes", (r) => money(r.otherTaxes), "right"],
     ["TK", (r) => money(r.healthInsurance), "right"],
+    ["Owner pay", (r) => money(r.ownerPay || 0), "right"],
     ["VAT position", (r) => money(r.projectedVat), "right"],
     ["VAT paid", (r) => money(r.vatPaid - r.vatRefunded), "right"],
   ]);
@@ -104,6 +112,8 @@ export function printSummary(io, s) {
     ["Other taxes (Gewerbesteuer, prepayments)", -t.otherTaxes],
     ["Health insurance (TK)", -t.healthInsurance],
     ["Net after taxes and TK", t.netAfterTaxes],
+    ["Owner pay (below net profit)", -(t.ownerPay || 0)],
+    ["Net after owner pay", t.netAfterOwnerPay ?? t.netAfterTaxes],
     ["Output VAT", t.outputVat],
     ["Input VAT", -t.inputVat],
     ["VAT paid to / refunded by the Finanzamt", -(t.vatPaid - t.vatRefunded)],
@@ -136,6 +146,43 @@ export async function summaryCommand(args, io) {
   const result = await apiFor(args).get("/api/finance/summary", { query: periodArgs(args) });
   if (args.json) return result;
   printSummary(io, result);
+}
+
+export function printTaxes(io, r) {
+  const t = r.totals;
+  io.print(`Tax ledger ${r.period.label} (EUR)${r.open ? " - period still open, VAT is a projection" : ""}`);
+  io.print("");
+  io.print(`Net profit excluding VAT:  ${money(r.netProfitExVat)}`);
+  io.print(`Projected VAT position:    ${money(t.projectedVat)} (${vatWord(t.projectedVat)})`);
+  io.print(`VAT actually ${t.vatSettled < 0 ? "refunded" : "paid"}:      ${money(Math.abs(t.vatSettled))}   outstanding: ${money(t.vatOutstanding)}`);
+  io.print("");
+  const rows = r.months.length > 1 ? [...r.months, { month: "Total", ...t }] : r.months;
+  grid(io, rows, [
+    ["Month", (m) => (m.future ? `${m.month} *` : m.month)],
+    ["Output VAT", (m) => money(m.outputVat), "right"],
+    ["Input VAT", (m) => money(m.inputVat), "right"],
+    ["VAT projected", (m) => money(m.projectedVat), "right"],
+    ["VAT paid", (m) => money(m.vatPaid), "right"],
+    ["VAT refunded", (m) => money(m.vatRefunded), "right"],
+    ["Income tax+Soli", (m) => money(m.taxes["income-tax"]), "right"],
+    ["Trade tax", (m) => money(m.taxes["trade-tax"]), "right"],
+    ["Other tax", (m) => money(m.taxes.other), "right"],
+    ["TK", (m) => money(m.healthInsurance), "right"],
+  ]);
+  if (r.months.some((m) => m.future)) io.print("* not over yet");
+  if (r.gaps.length) {
+    io.print("");
+    io.print("Data gaps");
+    for (const g of r.gaps) io.print(`  - ${g.month ? `${g.month}: ` : ""}${g.message} (${g.count})`);
+  }
+  io.print("");
+  io.print(`${r.entries.length} tax/TK payments. Source rules: dataops finance taxes --json | jq .rules`);
+}
+
+export async function taxesCommand(args, io) {
+  const result = await apiFor(args).get("/api/finance/taxes", { query: periodArgs(args) });
+  if (args.json) return result;
+  printTaxes(io, result);
 }
 
 const TAX_TYPE = { "income-tax": "Income tax + Soli", "trade-tax": "Trade tax", vat: "VAT", "health-insurance": "Health insurance", other: "Other" };
@@ -205,4 +252,4 @@ export async function scheduleCommand(args, io) {
   ]);
 }
 
-export const commands = { summary: summaryCommand, upcoming: upcomingCommand, schedule: scheduleCommand };
+export const commands = { summary: summaryCommand, taxes: taxesCommand, upcoming: upcomingCommand, schedule: scheduleCommand };

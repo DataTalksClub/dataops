@@ -5,6 +5,7 @@ import { latestBalances, listStatements } from '../reconcile/service';
 import { loadEcbRates } from './rates';
 import { bookingDate, summarize, unmatchedStatementLines, type FinanceSummary, type LedgerRow, type PeriodQuery, type StatementLine } from './summary';
 import { classifyMandatoryPayment } from './mandatoryPayments';
+import { taxesReport } from './taxes';
 import { listTaxSchedule } from './taxSchedule';
 import { upcomingDebits, type Balance, type PaidEvidence } from './upcoming';
 
@@ -91,6 +92,10 @@ export async function financeSummary(client: DynamoDBDocumentClient, query: Peri
       .map((document) => ({ accountId: String(document.accountId), month: String(document.statementMonth) })),
   });
   return { ...summary, rateErrors: errors };
+}
+
+export async function financeTaxes(client: DynamoDBDocumentClient, query: PeriodQuery, today = berlinToday()) {
+  return taxesReport(await financeSummary(client, query, today), today);
 }
 
 export function parsePeriodQuery(params: Record<string, string | undefined> | null | undefined): PeriodQuery | string {

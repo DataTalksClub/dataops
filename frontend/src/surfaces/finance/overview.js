@@ -54,6 +54,8 @@ export function headlineMarkup(summary, e) {
       <div><dt>Net (cash)</dt><dd>${formatEur(t.net, { sign: true })}</dd></div>
       <div><dt>Other taxes</dt><dd>${formatEur(t.otherTaxes)}</dd></div>
       <div><dt>Health insurance (TK)</dt><dd>${formatEur(t.healthInsurance)}</dd></div>
+      <div><dt>Owner pay (below net profit)</dt><dd data-fin-owner-pay>${formatEur(t.ownerPay)}</dd></div>
+      <div><dt>Net after owner pay</dt><dd>${formatEur(t.netAfterOwnerPay, { sign: true })}</dd></div>
     </dl>`;
 }
 
@@ -158,7 +160,7 @@ export function monthTableMarkup(summary, e) {
       <tbody>${rows.map((r) => html`<tr class="${r.total ? "fin-table__total" : r.future ? "is-future" : ""}">
         <th scope="row">${e(r.month)}${r.future ? " <small>(not over)</small>" : ""}</th>
         ${cell(r.moneyIn)}${cell(r.moneyOut)}${cell(r.net, { sign: true })}${cell(r.incomeNetOfVat)}${cell(r.expensesNetOfVat)}
-        ${cell(r.netProfitExVat, { sign: true })}${cell(r.otherTaxes)}${cell(r.healthInsurance)}${cell(r.outputVat)}${cell(r.inputVat)}
+        ${cell(r.netProfitExVat, { sign: true })}${cell(r.otherTaxes)}${cell(r.healthInsurance)}${cell(r.ownerPay)}${cell(r.outputVat)}${cell(r.inputVat)}
         ${cell(r.vatPaid)}${cell(r.vatRefunded)}${cell(r.projectedVat)}
         <td class="fin-num">${e(String(r.entryCount))}</td></tr>`).join("")}</tbody>
     </table></div>`;
