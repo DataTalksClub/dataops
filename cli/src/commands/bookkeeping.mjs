@@ -51,9 +51,11 @@ Usage
 
 Commands with writes print a dry run unless --apply is given. Run it first and read it.
 
-Dapier hands the Google token to the command (run from the dapier checkout):
-  uv run dapier token exec drive <account> --agent admin-os -- \\
-    node <dataops>/cli/bin/dataops.mjs bookkeeping sync --sheet <spreadsheet-id>
+Sanctioned sheet pull without a Google token in the environment (run from the
+dapier checkout; the google-data-pull skill exports one <tab>.csv per tab):
+  python3 .agents/skills/google-data-pull/gpull.py --agent admin-os \\
+    --as "drive datatalks" drive sheet <spreadsheet-id> --out-dir <csv-dir>
+  node <dataops>/cli/bin/dataops.mjs bookkeeping sync <csv-dir>
 Keep any CSV export outside this repository: it is private finance data.
 `;
 
@@ -91,7 +93,7 @@ async function eachWithLimit(items, limit, work) {
 async function sheetRows(args) {
   if (typeof args.sheet === "string" && args.sheet) {
     const token = process.env.DAPIER_ACCESS_TOKEN;
-    if (!token) throw new UsageError("--sheet needs a Google access token in DAPIER_ACCESS_TOKEN: run the command under `dapier token exec drive <account>`.");
+    if (!token) throw new UsageError('--sheet needs a Google access token in DAPIER_ACCESS_TOKEN. The sanctioned route with no token in the environment exports the sheet to CSVs with the dapier google-data-pull skill (gpull.py), then runs `bookkeeping sync <csv-dir>`.');
     return fetchSheet(args.sheet, token);
   }
   if (args._[0]) return readSheetDir(args._[0]);
