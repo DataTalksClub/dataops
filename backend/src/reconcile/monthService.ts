@@ -467,9 +467,9 @@ export async function deleteLedgerRow(
     const other = data.ledger.find((candidate) => candidate.id === duplicateOf);
     if (duplicateOf === transactionId) blockers.push("a row cannot be a duplicate of itself");
     else if (!other) blockers.push(`duplicate-of row ${duplicateOf} not found`);
-    else if (other.date !== row.date || other.amount !== row.amount || other.currency !== row.currency
+    else if (Math.abs(Date.parse(`${other.date}T00:00:00Z`) - Date.parse(`${row.date}T00:00:00Z`)) > 3 * 86_400_000 || other.amount !== row.amount || other.currency !== row.currency
       || sameName(other.counterparty) !== sameName(row.counterparty)) {
-      blockers.push(`${duplicateOf} is not an exact duplicate (date, amount, currency and counterparty must all match)`);
+      blockers.push(`${duplicateOf} is not an exact duplicate (amount, currency and counterparty must match, dates within 3 days)`);
     }
   } else if (holds.length) {
     blockers.push(`row holds ${holds.join(", ")}; unlink it first, or pass the ledger row it duplicates`);

@@ -55,6 +55,19 @@ describe("reconcile delete-row", () => {
     assert.equal((await buildReport(client, "2026-10")).platformPayouts.length, 2);
   });
 
+  it("accepts a booking-date difference of up to 3 days for an exact duplicate, not more", async () => {
+    const at = (date: string) => payout(`platform-payout:tol-${date}`, { transactionDate: date, paidDate: date, amount: "77.00", counterparty: date === "2026-10-30" ? "Synthetic Co, LLC" : "Synthetic Co Llc" });
+    const keep = await create(at("2026-10-30"));
+    const near = await create(at("2026-10-31"));
+    const far = await create(at("2026-10-26"));
+    const tooFar = await deleteLedgerRow(client, "2026-10", "tester", far, { reason: "x", duplicateOf: keep, apply: false });
+    assert.match(tooFar.blockers[0], /within 3 days/);
+    const done = await deleteLedgerRow(client, "2026-10", "tester", near, { reason: "same invoice booked a day apart", duplicateOf: keep, apply: true });
+    assert.equal(done.deleted, true);
+    assert.equal(await getBookkeepingItem(client, "bookkeeping", near), null);
+    assert.ok(await getBookkeepingItem(client, "bookkeeping", far));
+  });
+
   it("refuses a row that holds an invoice link unless it is the named exact duplicate", async () => {
     const linked = await create(payout("platform-payout:linked", { transactionDate: "2026-10-05", paidDate: "2026-10-05", amount: "99.00" }));
     const document = (await putBookkeepingItem(client, "document", { status: "active", documentType: "invoice", originalFilename: "synthetic.pdf", facts: {} })).item;

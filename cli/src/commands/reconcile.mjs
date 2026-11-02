@@ -81,9 +81,9 @@ Usage
       Delete one ledger row; dry run unless --apply. Audited on the month's
       history with the row's facts. Refused for a row that holds a bank pairing,
       document, payment proof, exception or invoice/deal link, unless
-      --duplicate-of names another ledger row with the same date, amount,
-      currency and counterparty name, ignoring case and punctuation (the exact
-      duplicate being removed).
+      --duplicate-of names another ledger row with the same amount, currency and
+      counterparty name (ignoring case and punctuation) booked within 3 days
+      of it (the duplicate being removed).
   dataops reconcile note <ledger-id> --note TEXT
       Add or replace the note on an existing ledger row.
   dataops reconcile except <row> --kind KIND --period YYYY-MM [--proof TEXT] [--note TEXT]
