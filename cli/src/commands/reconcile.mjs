@@ -71,9 +71,9 @@ Usage
       A separate PDF payment proof for one ledger row the bank statements do
       not show (personal card, PayPal, other bank).
   dataops reconcile attach-doc <row> <file.pdf> --period YYYY-MM [--category C]
-      The invoice/receipt for one row. Use a bank-row key to create its ledger
-      row, or a ledger ID (64 hex, UUID, receipt-<hex>, optionally prefixed
-      ledger:) to attach directly to an existing row.
+      The invoice/receipt for one row. A bank-row key attaches to its paired
+      ledger row, or creates one if unpaired. A ledger ID (64 hex, UUID,
+      receipt-<hex>, optionally prefixed ledger:) attaches directly.
   dataops reconcile create-ledger <bank-key> --period YYYY-MM [--category C] [--description D]
       Create the missing ledger row and pair it with the bank row. Repeating the
       command for the same bank row reuses that ledger row.
