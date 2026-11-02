@@ -2,6 +2,234 @@ import { parseSponsorBulletItems } from "./sponsor-doc-bullets.js";
 
 export const DEFAULT_NEWSLETTER_UTM_SOURCE = "datatalksclub-newsletter";
 export const DEFAULT_NEWSLETTER_UTM_MEDIUM = "newsletter";
+export const MAX_X_POST_CHARS = 280;
+
+function extractSponsorSocialFields(content = {}, options = {}) {
+  const headline = String(content?.title || content?.headline || "").trim();
+  const intro = String(content?.intro || content?.body || "").trim();
+  const opening = String(content?.mainBodyOpening || "").trim();
+  const bullets = parseSponsorBulletItems(content?.bullets, 0)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const closing = String(content?.closing || "").trim();
+  const ctaText = String(
+    content?.closingCtaText || content?.ctaText || content?.earlyCtaText || "",
+  ).trim();
+  const ctaUrl = String(
+    content?.closingCtaUrl || content?.ctaUrl || content?.earlyCtaUrl || "",
+  ).trim();
+  const sponsorName = String(options?.sponsorName || content?.sponsorName || "").trim();
+  return { headline, intro, opening, bullets, closing, ctaText, ctaUrl, sponsorName };
+}
+
+function formatSponsorCtaLine(ctaText, ctaUrl) {
+  if (ctaText && ctaUrl) return `👉 ${ctaText}: ${ctaUrl}`;
+  if (ctaUrl) return `👉 ${ctaUrl}`;
+  if (ctaText) return `👉 ${ctaText}`;
+  return "";
+}
+
+export function generateSponsorLinkedinPost(content = {}, options = {}) {
+  const {
+    headline,
+    intro,
+    opening,
+    bullets,
+    closing,
+    ctaText,
+    ctaUrl,
+    sponsorName,
+  } = extractSponsorSocialFields(content, options);
+  if (!headline && !intro && !opening && bullets.length === 0 && !closing && !ctaText && !ctaUrl) {
+    return "";
+  }
+  const blocks = [];
+  if (headline) blocks.push(headline);
+  if (intro && intro !== headline) blocks.push(intro);
+  if (opening && opening !== intro && opening !== headline) blocks.push(opening);
+  if (bullets.length > 0) {
+    blocks.push(bullets.map((item) => `🔸 ${item}`).join("\n"));
+  }
+  if (closing) blocks.push(closing);
+  const ctaLine = formatSponsorCtaLine(ctaText, ctaUrl);
+  if (ctaLine) blocks.push(ctaLine);
+  if (sponsorName) {
+    blocks.push(`This post is sponsored by ${sponsorName}. Thank you for supporting our community!`);
+  }
+  return blocks.join("\n\n");
+}
+
+function splitWordsToFit(text, maxLen) {
+  const words = String(text || "").trim().split(/\s+/).filter(Boolean);
+  const chunks = [];
+  let current = "";
+  for (const word of words) {
+    if (word.length > maxLen) {
+      if (current) {
+        chunks.push(current);
+        current = "";
+      }
+      for (let i = 0; i < word.length; i += maxLen) {
+        chunks.push(word.slice(i, i + maxLen));
+      }
+      continue;
+    }
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= maxLen) {
+      current = next;
+    } else {
+      chunks.push(current);
+      current = word;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function splitTextToFit(text, maxLen) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return [];
+  if (trimmed.length <= maxLen) return [trimmed];
+  const sentences = trimmed.split(/(?<=[.!?])\s+/).filter(Boolean);
+  const chunks = [];
+  let current = "";
+  for (const sentence of sentences) {
+    if (sentence.length > maxLen) {
+      if (current) {
+        chunks.push(current);
+        current = "";
+      }
+      chunks.push(...splitWordsToFit(sentence, maxLen));
+      continue;
+    }
+    const next = current ? `${current} ${sentence}` : sentence;
+    if (next.length <= maxLen) {
+      current = next;
+    } else {
+      chunks.push(current);
+      current = sentence;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function packUnitsIntoXThread(units, maxChars = MAX_X_POST_CHARS) {
+  const maxBodyChars = maxChars - 8;
+  const expanded = [];
+  for (const unit of units) {
+    const text = String(unit.text || "").trim();
+    if (!text) continue;
+    const pieces = splitTextToFit(text, maxBodyChars);
+    pieces.forEach((piece, idx) => {
+      expanded.push({
+        text: piece,
+        isBullet: Boolean(unit.isBullet) && idx === 0,
+      });
+    });
+  }
+  if (expanded.length === 0) return [];
+  const chunks = [];
+  let current = "";
+  let lastWasBullet = false;
+  for (const item of expanded) {
+    if (!current) {
+      current = item.text;
+      lastWasBullet = item.isBullet;
+      continue;
+    }
+    const joiner = lastWasBullet && item.isBullet ? "\n" : "\n\n";
+    const candidate = `${current}${joiner}${item.text}`;
+    if (candidate.length <= maxBodyChars) {
+      current = candidate;
+      lastWasBullet = item.isBullet;
+    } else {
+      chunks.push(current);
+      current = item.text;
+      lastWasBullet = item.isBullet;
+    }
+  }
+  if (current) chunks.push(current);
+  if (chunks.length === 1) return chunks;
+  const total = chunks.length;
+  return chunks.map((chunk, idx) => `${idx + 1}/${total}\n\n${chunk}`);
+}
+
+export function generateSponsorXPosts(content = {}, options = {}) {
+  const {
+    headline,
+    intro,
+    opening,
+    bullets,
+    closing,
+    ctaText,
+    ctaUrl,
+  } = extractSponsorSocialFields(content, options);
+  if (!headline && !intro && !opening && bullets.length === 0 && !closing && !ctaText && !ctaUrl) {
+    return [];
+  }
+  const leadBlocks = [];
+  if (headline) leadBlocks.push(headline);
+  if (intro && intro !== headline) leadBlocks.push(intro);
+  if (opening && opening !== intro && opening !== headline) leadBlocks.push(opening);
+
+  const bulletLines = bullets.map((item) => `🔸 ${item}`);
+  const ctaLine = formatSponsorCtaLine(ctaText, ctaUrl);
+
+  const singleBlocks = [...leadBlocks];
+  if (bulletLines.length > 0) singleBlocks.push(bulletLines.join("\n"));
+  if (closing) singleBlocks.push(closing);
+  if (ctaLine) singleBlocks.push(ctaLine);
+
+  const singlePost = singleBlocks.join("\n\n");
+  if (singlePost.length <= MAX_X_POST_CHARS) {
+    return [singlePost];
+  }
+
+  const maxBodyChars = MAX_X_POST_CHARS - 8;
+  const units = [
+    ...leadBlocks.map((text) => ({ text, isBullet: false })),
+    ...bulletLines.map((text) => ({ text, isBullet: true })),
+  ];
+  if (closing) units.push({ text: closing, isBullet: false });
+  if (ctaLine) {
+    if (ctaLine.length <= maxBodyChars || !ctaText || !ctaUrl) {
+      units.push({ text: ctaLine, isBullet: false });
+    } else {
+      units.push({ text: ctaText, isBullet: false });
+      units.push({ text: `👉 ${ctaUrl}`, isBullet: false });
+    }
+  }
+  return packUnitsIntoXThread(units, MAX_X_POST_CHARS);
+}
+
+export function splitSponsorXThread(rawTwitterPost) {
+  const trimmed = String(rawTwitterPost || "").trim();
+  if (!trimmed) return [];
+  if (trimmed.includes("\n\n---\n\n")) {
+    const parts = trimmed.split(/\n\n---\n\n/).map((p) => p.trim()).filter(Boolean);
+    if (parts.every((p) => p.length <= MAX_X_POST_CHARS)) return parts;
+  }
+  if (trimmed.length <= MAX_X_POST_CHARS) return [trimmed];
+  const units = trimmed
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map((text) => ({ text, isBullet: text.startsWith("🔸") }));
+  return packUnitsIntoXThread(units, MAX_X_POST_CHARS);
+}
+
+export function generateSponsorSocialPosts(content = {}, options = {}) {
+  const linkedinPost = generateSponsorLinkedinPost(content, options);
+  const xPosts = generateSponsorXPosts(content, options);
+  const twitterPost = xPosts.join("\n\n---\n\n");
+  return {
+    linkedinPost,
+    twitterPost,
+    xPosts,
+    isThread: xPosts.length > 1,
+  };
+}
 
 export function hasUtmParams(rawUrl) {
   const trimmed = String(rawUrl || "").trim();
@@ -453,23 +681,78 @@ export function renderNewsletterLivePreview({
   );
   previewCard.append(canvas);
 
-  const linkedinVal = val("linkedinPost");
-  const twitterVal = val("twitterPost");
-  if (linkedinVal || twitterVal) {
-    const socialWrap = el("div", "sponsor-preview-social");
-    socialWrap.dataset.sponsorPreviewSocial = "";
-    socialWrap.append(el("h3", "sponsor-doc-field__label", "Social Media Preview"));
-    const socialEntries = [
-      [linkedinVal, "LinkedIn", "sponsorPreviewLinkedin"],
-      [twitterVal, "X (Twitter)", "sponsorPreviewTwitter"],
-    ];
-    for (const [postVal, labelText, attr] of socialEntries) {
-      if (!postVal) continue;
-      const card = el("div", "sponsor-preview-social__card");
-      card.dataset[attr] = "";
-      card.append(el("span", "sponsor-preview-envelope__label", labelText), el("p", "sponsor-preview-social__text", postVal));
-      socialWrap.append(card);
-    }
-    previewCard.append(socialWrap);
+  const generatedSocial = generateSponsorSocialPosts(draftContent, {
+    sponsorName: doc.sponsorName,
+  });
+  const linkedinVal = val("linkedinPost") || generatedSocial.linkedinPost;
+  const rawTwitterVal = val("twitterPost");
+  const xPosts = !rawTwitterVal || rawTwitterVal === generatedSocial.twitterPost
+    ? generatedSocial.xPosts
+    : splitSponsorXThread(rawTwitterVal);
+
+  const socialWrap = el("div", "sponsor-preview-social");
+  socialWrap.dataset.sponsorPreviewSocial = "";
+  socialWrap.append(el("h3", "sponsor-doc-field__label", "Social Media Preview"));
+
+  const linkedinCard = el("div", "sponsor-preview-social__card");
+  linkedinCard.dataset.sponsorPreviewLinkedin = "";
+  const linkedinTop = el("div", "sponsor-doc-field__top");
+  linkedinTop.append(
+    el("span", "sponsor-preview-envelope__label", "LinkedIn"),
+    el("span", "sponsor-doc-field__count", "Auto-generated"),
+  );
+  const linkedinPlaceholder = "Auto-generated LinkedIn post will appear here as you fill in the fields.";
+  const linkedinTextNode = el(
+    "p",
+    linkedinVal ? "sponsor-preview-social__text" : "sponsor-preview-social__text is-placeholder",
+    linkedinVal || linkedinPlaceholder,
+  );
+  linkedinTextNode.dataset.sponsorPreviewLinkedinText = "";
+  linkedinCard.append(linkedinTop, linkedinTextNode);
+  socialWrap.append(linkedinCard);
+
+  const isThread = xPosts.length > 1;
+  const twitterCard = el("div", "sponsor-preview-social__card");
+  twitterCard.dataset.sponsorPreviewTwitter = "";
+  twitterCard.dataset.sponsorPreviewTwitterMode = isThread ? "thread" : "single";
+  const twitterTop = el("div", "sponsor-doc-field__top");
+  const twitterLabelText = isThread ? `X (Twitter) Thread (${xPosts.length} tweets)` : "X (Twitter)";
+  const twitterMetaText = isThread
+    ? `${xPosts.length} tweets · ≤ ${MAX_X_POST_CHARS} chars each`
+    : `${(xPosts[0] || "").length} / ${MAX_X_POST_CHARS} chars`;
+  twitterTop.append(
+    el("span", "sponsor-preview-envelope__label", twitterLabelText),
+    el("span", "sponsor-doc-field__count", twitterMetaText),
+  );
+  twitterCard.append(twitterTop);
+
+  if (xPosts.length === 0) {
+    const xPh = "Auto-generated X post (or thread when > 280 chars) will appear here.";
+    const emptyTweet = el("p", "sponsor-preview-social__text is-placeholder", xPh);
+    twitterCard.append(emptyTweet);
+  } else if (!isThread) {
+    const singleTweet = el("p", "sponsor-preview-social__text", xPosts[0]);
+    singleTweet.dataset.sponsorPreviewTweet = "1";
+    singleTweet.dataset.sponsorPreviewTweetChars = String(xPosts[0].length);
+    twitterCard.append(singleTweet);
+  } else {
+    const threadWrap = el("div", "sponsor-preview-social__thread");
+    threadWrap.dataset.sponsorPreviewThread = "";
+    xPosts.forEach((tweetText, idx) => {
+      const item = el("div", "sponsor-preview-social__thread-item");
+      const itemTop = el("div", "sponsor-doc-field__top");
+      itemTop.append(
+        el("span", "sponsor-preview-envelope__label", `Tweet ${idx + 1} of ${xPosts.length}`),
+        el("span", "sponsor-doc-field__count", `${tweetText.length} / ${MAX_X_POST_CHARS} chars`),
+      );
+      const tweetP = el("p", "sponsor-preview-social__text", tweetText);
+      tweetP.dataset.sponsorPreviewTweet = String(idx + 1);
+      tweetP.dataset.sponsorPreviewTweetChars = String(tweetText.length);
+      item.append(itemTop, tweetP);
+      threadWrap.append(item);
+    });
+    twitterCard.append(threadWrap);
   }
+  socialWrap.append(twitterCard);
+  previewCard.append(socialWrap);
 }

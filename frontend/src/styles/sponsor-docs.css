@@ -661,6 +661,20 @@
   overflow-wrap: anywhere;
 }
 
+.sponsor-preview-social__thread {
+  display: grid;
+  gap: var(--dk-space-2);
+}
+
+.sponsor-preview-social__thread-item {
+  background-color: var(--dk-bg-surface);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  padding: var(--dk-space-3);
+  display: grid;
+  gap: var(--dk-space-1);
+}
+
 /* Phone viewport (~390px): no horizontal scroll, tappable controls,
    readable intro/sections, reachable submit. */
 @media (max-width: 640px) {

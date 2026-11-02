@@ -10,24 +10,34 @@ import {
 import {
   DEFAULT_NEWSLETTER_UTM_MEDIUM,
   DEFAULT_NEWSLETTER_UTM_SOURCE,
+  MAX_X_POST_CHARS,
   attachSoftUtmSuggestion,
   buildSuggestedUtmUrl,
+  generateSponsorLinkedinPost,
+  generateSponsorSocialPosts,
+  generateSponsorXPosts,
   hasUtmParams,
   isEmailPieceSection,
   mountNewsletterEmailPieceSection,
   needsNewsletterUtmSuggestion,
   renderNewsletterLivePreview,
+  splitSponsorXThread,
   validateSponsorDocDraft,
 } from "./sponsor-doc-email-card.js";
 
 export {
   DEFAULT_NEWSLETTER_UTM_MEDIUM,
   DEFAULT_NEWSLETTER_UTM_SOURCE,
+  MAX_X_POST_CHARS,
   buildSuggestedUtmUrl,
+  generateSponsorLinkedinPost,
+  generateSponsorSocialPosts,
+  generateSponsorXPosts,
   hasUtmParams,
   needsNewsletterUtmSuggestion,
   parseSponsorBulletItems,
   serializeSponsorBulletItems,
+  splitSponsorXThread,
 };
 
 export const SPONSOR_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ23456789";
@@ -501,6 +511,32 @@ export function createSponsorDocPage({
     }
 
     const previewSyncListeners = [];
+    const socialFieldControls = new Map();
+    const syncAutoSocialPosts = () => {
+      if (!showLivePreview) return;
+      const social = generateSponsorSocialPosts(draftContent, {
+        sponsorName: doc.sponsorName,
+      });
+      draftContent.linkedinPost = social.linkedinPost;
+      draftContent.twitterPost = social.twitterPost;
+      for (const [key, val] of [
+        ["linkedinPost", social.linkedinPost],
+        ["twitterPost", social.twitterPost],
+      ]) {
+        const binding = socialFieldControls.get(key);
+        if (binding) {
+          binding.control.value = val;
+          binding.updateCount(val);
+        }
+      }
+    };
+    if (
+      showLivePreview
+      && !String(draftContent.linkedinPost || "").trim()
+      && !String(draftContent.twitterPost || "").trim()
+    ) {
+      syncAutoSocialPosts();
+    }
     const updateLivePreview = () => {
       for (const fn of previewSyncListeners) fn();
       renderNewsletterLivePreview({
@@ -513,6 +549,10 @@ export function createSponsorDocPage({
         uploadedVisualName,
         safePreviewHref,
       });
+    };
+    const onSourceFieldEdit = () => {
+      syncAutoSocialPosts();
+      updateLivePreview();
     };
 
     const formCard = el("div", "sponsor-doc-card sponsor-doc-form-card");
@@ -592,7 +632,7 @@ export function createSponsorDocPage({
             currentVal,
             busy,
             draftContent,
-            updateLivePreview,
+            updateLivePreview: onSourceFieldEdit,
             top,
             label,
             countEl,
@@ -609,6 +649,14 @@ export function createSponsorDocPage({
             countEl.textContent = uploadedVisualName ? `Uploaded (${uploadedVisualName})` : "Uploaded image";
             countEl.classList.remove("is-over");
             return;
+          }
+          if (fieldDef.key === "twitterPost") {
+            const tweets = splitSponsorXThread(text);
+            if (tweets.length > 1) {
+              countEl.textContent = `${tweets.length} tweets (≤ ${MAX_X_POST_CHARS} chars each)`;
+              countEl.classList.toggle("is-over", tweets.some((t) => t.length > MAX_X_POST_CHARS));
+              return;
+            }
           }
           const len = text.length;
           if (maxChars > 0) {
@@ -682,6 +730,11 @@ export function createSponsorDocPage({
         if (fieldDef.format === "url") control.type = "url";
         fieldWrap.append(top, control);
 
+        const isSocialField = fieldDef.key === "linkedinPost" || fieldDef.key === "twitterPost";
+        if (isSocialField) {
+          socialFieldControls.set(fieldDef.key, { control, updateCount });
+        }
+
         const syncUtmSuggestion = attachSoftUtmSuggestion({
           el,
           actionBtn,
@@ -691,7 +744,7 @@ export function createSponsorDocPage({
           draftContent,
           publicationDate: doc.publicationDate,
           updateCount,
-          updateLivePreview,
+          updateLivePreview: onSourceFieldEdit,
           announce,
         });
 
@@ -705,7 +758,8 @@ export function createSponsorDocPage({
           }
           updateCount(control.value);
           syncUtmSuggestion();
-          updateLivePreview();
+          if (isSocialField) updateLivePreview();
+          else onSourceFieldEdit();
         });
 
         if (isVisualField) {

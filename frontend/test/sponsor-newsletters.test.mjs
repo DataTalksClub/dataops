@@ -4,8 +4,12 @@ import { afterEach, test } from "node:test";
 import { filterNewsletters } from "../src/surfaces/finance/sponsor-newsletters.js";
 import {
   DEFAULT_NEWSLETTER_UTM_SOURCE,
+  MAX_X_POST_CHARS,
   buildSuggestedUtmUrl,
   createSponsorDocPage,
+  generateSponsorLinkedinPost,
+  generateSponsorSocialPosts,
+  generateSponsorXPosts,
   hasUtmParams,
   needsNewsletterUtmSuggestion,
   parseSponsorBulletItems,
@@ -327,5 +331,140 @@ test("staff view displays Orin auto-send delivery status and can trigger Send fr
   const updatedDeliv = h.root.querySelector("[data-sponsor-email-delivery]");
   assert.equal(updatedDeliv.dataset.sponsorEmailDelivery, "sent");
   assert.match(h.root.textContent, /Sent sponsor form email from orin@datatalks\.club to partner@modal\.example\.com/);
+  h.controller.destroy();
+});
+
+test("auto-generates LinkedIn post and single X post (<= 280 chars) or numbered X thread (> 280 chars) with CTA link and updates on edit", async () => {
+  const templateWithSocial = {
+    ...newsletterMainTemplateDefinition(),
+    sections: [
+      ...newsletterMainTemplateDefinition().sections,
+      {
+        id: "social-media",
+        title: "2) Social Media Posts (Optional)",
+        fields: [
+          { key: "linkedinPost", label: "LinkedIn Post", type: "textarea", rows: 5 },
+          { key: "twitterPost", label: "X (Twitter) Post (≤ 280 characters per tweet)", type: "textarea", rows: 5, maxCharsHint: 280 },
+        ],
+      },
+    ],
+  };
+
+  // Start with concise fields that fit into a single <= 280-char X post
+  const h = setupPageHarness({
+    templateDefinition: templateWithSocial,
+    content: {
+      subjectLine: "Serverless GPUs",
+      previewText: "Run AI workloads fast.",
+      title: "Serverless GPUs for AI teams",
+      graphicsUrl: "",
+      intro: "Deploy models in seconds without managing clusters.",
+      bullets: "- Sub-second cold starts\n- Per-second billing\n- Python SDK",
+      closing: "Try Modal free today.",
+      ctaText: "Start Free",
+      ctaUrl: "https://modal.com/start",
+      linkedinPost: "",
+      twitterPost: "",
+    },
+  });
+  await h.controller.start();
+
+  const getPreview = () => h.root.querySelector("[data-sponsor-live-preview]");
+  const linkedinInput = h.root.querySelector("#sponsor-field-linkedinPost");
+  const twitterInput = h.root.querySelector("#sponsor-field-twitterPost");
+
+  // 1. Initial auto-generated LinkedIn post and single X post (<= 280 chars)
+  assert.ok(linkedinInput.value.includes("Serverless GPUs for AI teams"));
+  assert.ok(linkedinInput.value.includes("🔸 Sub-second cold starts"));
+  assert.ok(linkedinInput.value.includes("👉 Start Free: https://modal.com/start"));
+  assert.ok(linkedinInput.value.includes("This post is sponsored by Modal."));
+
+  let preview = getPreview();
+  const previewLinkedin = preview.querySelector("[data-sponsor-preview-linkedin-text]");
+  assert.equal(previewLinkedin.textContent, linkedinInput.value);
+
+  const previewTwitterCard = preview.querySelector("[data-sponsor-preview-twitter]");
+  assert.equal(previewTwitterCard.dataset.sponsorPreviewTwitterMode, "single");
+  let previewTweets = preview.querySelectorAll("[data-sponsor-preview-tweet]");
+  assert.equal(previewTweets.length, 1);
+  assert.ok(
+    previewTweets[0].textContent.length <= MAX_X_POST_CHARS,
+    `Single tweet length ${previewTweets[0].textContent.length} should be <= 280`,
+  );
+  assert.ok(previewTweets[0].textContent.includes("https://modal.com/start"));
+
+  // 2. Editing fields expands copy beyond 280 chars -> automatically splits X post into numbered thread
+  const titleInput = h.root.querySelector("#sponsor-field-title");
+  titleInput.value = "Run production generative AI and batch GPU workloads without managing Kubernetes infrastructure";
+  await titleInput.dispatch("input");
+
+  const introInput = h.root.querySelector("#sponsor-field-intro");
+  introInput.value =
+    "Engineering teams waste weeks wrestling with GPU quotas, YAML manifests, and slow container image builds instead of shipping models.";
+  await introInput.dispatch("input");
+
+  const bulletInputs = h.root.querySelectorAll("[data-sponsor-bullet-input]");
+  bulletInputs[0].value = "Sub-second container cold starts across H100, A100, and L40S GPUs";
+  await bulletInputs[0].dispatch("input");
+  bulletInputs[1].value = "Autoscale from zero to hundreds of GPUs with per-second billing";
+  await bulletInputs[1].dispatch("input");
+  bulletInputs[2].value = "Define environments and distributed jobs purely in idiomatic Python";
+  await bulletInputs[2].dispatch("input");
+
+  const closingInput = h.root.querySelector("#sponsor-field-closing");
+  closingInput.value = "Explore the architecture guide and claim $30/month in free compute credits with Modal.";
+  await closingInput.dispatch("input");
+
+  const ctaUrlInput = h.root.querySelector("#sponsor-field-ctaUrl");
+  ctaUrlInput.value = "https://modal.com/datatalksclub?utm_source=datatalksclub-newsletter&utm_medium=newsletter";
+  await ctaUrlInput.dispatch("input");
+
+  preview = getPreview();
+  const updatedLinkedinText = preview.querySelector("[data-sponsor-preview-linkedin-text]").textContent;
+  assert.ok(updatedLinkedinText.includes(titleInput.value));
+  assert.ok(updatedLinkedinText.includes(introInput.value));
+  assert.ok(updatedLinkedinText.includes("🔸 Sub-second container cold starts across H100, A100, and L40S GPUs"));
+  assert.ok(updatedLinkedinText.includes(closingInput.value));
+  assert.ok(updatedLinkedinText.includes(ctaUrlInput.value));
+  assert.equal(linkedinInput.value, updatedLinkedinText);
+
+  const updatedTwitterCard = preview.querySelector("[data-sponsor-preview-twitter]");
+  assert.equal(updatedTwitterCard.dataset.sponsorPreviewTwitterMode, "thread");
+  previewTweets = preview.querySelectorAll("[data-sponsor-preview-tweet]");
+  assert.ok(previewTweets.length >= 2, `Expected multi-tweet X thread, got ${previewTweets.length}`);
+
+  previewTweets.forEach((tweetNode, idx) => {
+    const text = tweetNode.textContent;
+    assert.ok(
+      text.length <= MAX_X_POST_CHARS,
+      `Tweet ${idx + 1} length (${text.length}) exceeds ${MAX_X_POST_CHARS} chars: ${text}`,
+    );
+    assert.match(text, new RegExp(`^${idx + 1}/${previewTweets.length}\\b`));
+  });
+
+  const combinedTweets = previewTweets.map((node) => node.textContent).join("\n");
+  assert.ok(combinedTweets.includes(ctaUrlInput.value), "X thread includes CTA link");
+  assert.ok(twitterInput.value.includes(ctaUrlInput.value), "X textarea includes CTA link");
+
+  // 3. Direct helper verification for very long unbroken sentences
+  const directSocial = generateSponsorSocialPosts(
+    {
+      headline: "Deep-dive into modern lakehouse streaming architectures",
+      body: `${"Streaming data pipelines require low-latency ingestion and exactly-once semantics across distributed storage engines. ".repeat(4)}`,
+      bullets: "- Zero-copy table clones\n- Incremental materialized views\n- Automated compaction",
+      closing: "Read the benchmark report.",
+      ctaText: "Read Benchmark",
+      ctaUrl: "https://example.com/benchmark",
+    },
+    { sponsorName: "LakeCorp" },
+  );
+  assert.equal(directSocial.isThread, true);
+  assert.ok(directSocial.xPosts.length >= 3);
+  for (const tweet of directSocial.xPosts) {
+    assert.ok(tweet.length <= MAX_X_POST_CHARS, `Tweet length ${tweet.length} <= 280`);
+  }
+  assert.ok(directSocial.xPosts.at(-1).includes("https://example.com/benchmark"));
+  assert.ok(directSocial.linkedinPost.includes("https://example.com/benchmark"));
+
   h.controller.destroy();
 });
