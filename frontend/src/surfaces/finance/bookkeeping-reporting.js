@@ -34,7 +34,13 @@ export function createBookkeepingReports({
       return;
     }
     const businessAccounts = accounts.filter(
-      (account) => account.kind === "business" && account.active !== false,
+      (account) =>
+        account.kind === "business" &&
+        account.active !== false &&
+        (!account.statementRequiredFromMonth ||
+          lens >= account.statementRequiredFromMonth) &&
+        (!account.statementRequiredThroughMonth ||
+          lens <= account.statementRequiredThroughMonth),
     );
     const monthEntries = lensEntries().filter((entry) => !isReportExemptEntry(entry));
     const excludedCount = lensEntries().filter(isReportExemptEntry).length;

@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import { dedupe, resolvePeriod, summarize, unmatchedStatementLines, type LedgerRow, type RateLookup } from '../src/finance/summary';
 import { clearEcbRateCacheForTests, loadEcbRates, parseEcbCsv } from '../src/finance/rates';
 import { parsePeriodQuery } from '../src/finance/service';
+import { businessAccountStatementRequirement } from '../src/finance/businessAccounts';
 
 // Synthetic fixture books for October 2026, every figure invented.
 const row = (id: string, fields: Record<string, unknown>): LedgerRow => ({ id, currency: 'EUR', counterparty: 'Synthetic Vendor', description: 'synthetic', sourceType: 'spreadsheet', ...fields });
@@ -253,12 +254,30 @@ describe('finance summary', () => {
     const s = summarize({
       today: '2026-10-31', query: { month: '2026-10' }, rates: noRates, rows: [],
       pendingInvoices: [{ id: 'draft', date: '2026-10-12', amount: '180', currency: 'EUR' }],
-      businessAccounts: ['business-1', 'business-2'],
-      statementCoverage: [{ accountId: 'business-1', month: '2026-10' }],
+      businessAccounts: [{ id: 'revolut' }, { id: 'finom' }],
+      statementCoverage: [{ accountId: 'revolut', month: '2026-10' }],
     });
     assert.equal(s.totals.moneyOut, 0);
     assert.deepEqual(s.gaps.map((g) => g.kind), ['pending-invoices', 'missing-statement']);
-    assert.match(s.gaps[1].message, /business-2/);
+    assert.match(s.gaps[1].message, /finom/);
+  });
+
+  it('stops requiring legacy business setup statements after September 2026', () => {
+    const businessAccounts = ['business-1', 'business-2', 'revolut', 'finom'].map(businessAccountStatementRequirement);
+    const october = summarize({
+      today: '2026-10-31', query: { month: '2026-10' }, rates: noRates, rows: [], businessAccounts,
+      statementCoverage: [
+        { accountId: 'revolut', month: '2026-10' },
+        { accountId: 'finom', month: '2026-10' },
+      ],
+    });
+    assert.equal(october.gaps.some((gap) => gap.kind === 'missing-statement'), false);
+
+    const september = summarize({
+      today: '2026-09-30', query: { month: '2026-09' }, rates: noRates, rows: [], businessAccounts,
+      statementCoverage: [{ accountId: 'business-1', month: '2026-09' }],
+    });
+    assert.match(september.gaps.find((gap) => gap.kind === 'missing-statement')?.message || '', /business-2/);
   });
 
   it('validates the period query', () => {

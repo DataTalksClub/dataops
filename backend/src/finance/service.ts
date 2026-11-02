@@ -8,6 +8,7 @@ import { classifyMandatoryPayment } from './mandatoryPayments';
 import { taxesReport } from './taxes';
 import { listTaxSchedule } from './taxSchedule';
 import { upcomingDebits, type Balance, type PaidEvidence } from './upcoming';
+import { businessAccountStatementRequirement } from './businessAccounts';
 
 /** Today in Berlin, where the books are kept. */
 export function berlinToday(now = new Date()) {
@@ -86,7 +87,9 @@ export async function financeSummary(client: DynamoDBDocumentClient, query: Peri
       id: `${statement.id}:${index}`,
       accountId: statement.accountId,
     }))),
-    businessAccounts: accounts.filter((account) => account.kind === 'business' && account.active !== false).map((account) => String(account.id)),
+    businessAccounts: accounts
+      .filter((account) => account.kind === 'business' && account.active !== false)
+      .map((account) => businessAccountStatementRequirement(String(account.id))),
     statementCoverage: documents
       .filter((document) => document.documentType === 'bank-statement' && document.status === 'active')
       .map((document) => ({ accountId: String(document.accountId), month: String(document.statementMonth) })),

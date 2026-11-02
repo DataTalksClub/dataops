@@ -1,6 +1,7 @@
 import { DEFAULT_TOLERANCES } from '../reconcile/month';
 import { classifyMandatoryPayment, taxTypeOf, type MandatoryPaymentKind, type TaxType } from './mandatoryPayments';
 import { isOwnerPayRow, ownerPayTypeOf, type OwnerPayType } from './ownerPay';
+import type { BusinessAccountStatementRequirement } from './businessAccounts';
 
 /**
  * Finance summary: money in, money out and net per month, year and
@@ -420,7 +421,7 @@ export type SummaryInput = {
   rates: RateLookup;
   pendingInvoices?: PendingInvoice[];
   statementLines?: StatementLine[];
-  businessAccounts?: string[];
+  businessAccounts?: BusinessAccountStatementRequirement[];
   statementCoverage?: StatementCoverage[];
   generatedAt?: string;
 };
@@ -482,7 +483,11 @@ export function summarize(input: SummaryInput): FinanceSummary {
 
   const today = input.today.slice(0, 7);
   for (const month of period.months.filter((m) => m <= today)) {
-    const missing = (input.businessAccounts || []).filter((account) => !(input.statementCoverage || []).some((c) => c.accountId === account && c.month === month));
+    const missing = (input.businessAccounts || [])
+      .filter((account) => account.requiredFromMonth === undefined || month >= account.requiredFromMonth)
+      .filter((account) => account.requiredThroughMonth === undefined || month <= account.requiredThroughMonth)
+      .filter((account) => !(input.statementCoverage || []).some((c) => c.accountId === account.id && c.month === month))
+      .map((account) => account.id);
     if (missing.length) gaps.push({ kind: 'missing-statement', month, message: `No bank statement stored for ${missing.join(', ')}`, count: missing.length });
   }
 

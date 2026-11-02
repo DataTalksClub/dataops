@@ -56,6 +56,23 @@ describe('bookkeeping API',()=>{
     const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-08'});assert.equal(snapshot.statusCode,201);const report=JSON.parse(snapshot.body).report;assert.deepEqual(report.transactionIds,[transaction.id]);assert.equal(report.documentIds.length,3);
     const retry=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-08'});assert.equal(retry.statusCode,200);assert.equal(JSON.parse(retry.body).report.id,report.id);
   });
+  it('does not require legacy business setup statements for current monthly snapshots',async()=>{
+    await invoke('POST','/api/bookkeeping/accounts/setup');
+    const currentAccounts=[['revolut','Revolut Business EUR'],['finom','Finom Business']];
+    const statementIds:string[]=[];
+    for(const [id,displayName] of currentAccounts){
+      await putBookkeepingItem(client,'account',{id,displayName,kind:'business',active:true},`business-account#current#${id}`);
+      const statement=(await putBookkeepingItem(client,'document',{documentType:'bank-statement',status:'active',accountId:id,statementMonth:'2026-10',originalFilename:`${id}-october.pdf`,contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update(`statement-${id}-october`).digest('hex'),s3Key:`documents/${id}-october`})).item;
+      statementIds.push(statement.id);
+    }
+    const listed=JSON.parse((await invoke('GET','/api/bookkeeping/accounts')).body).items;
+    assert.deepEqual(listed.filter((account:any)=>String(account.id).startsWith('business-')).map((account:any)=>account.statementRequiredThroughMonth),['2026-09','2026-09']);
+    const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-10'});
+    assert.equal(snapshot.statusCode,201,snapshot.body);
+    const report=JSON.parse(snapshot.body).report;
+    assert.equal(report.reconciliation.businessStatementCount,2);
+    assert.ok(statementIds.every((id)=>report.documentIds.includes(id)));
+  });
   it('records VAT amounts and keeps tax and health-insurance entries out of monthly snapshots',async()=>{
     const bad=await invoke('POST','/api/bookkeeping/transactions',{...valid,description:'bad vat',vatAmount:'-1',vatCurrency:'eur'});assert.equal(bad.statusCode,400);assert.deepEqual(JSON.parse(bad.body).fields.sort(),['vatAmount','vatCurrency']);
     const income=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-05',description:'VAT income',entryType:'income',vatAmount:'19.00',vatCurrency:'EUR'})).body);

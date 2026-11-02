@@ -13,6 +13,7 @@ import {
 } from "../db/bookkeeping";
 import { applyDocumentFinance, type DocumentFacts } from "./bookkeepingSuggestions";
 import { json, MONTH, parse, publicDocument, publicLink } from "./bookkeepingShared";
+import { businessAccountStatementMetadata } from "../finance/businessAccounts";
 
 export async function handleBookkeepingResourceRoutes(
   path: string,
@@ -27,12 +28,13 @@ export async function handleBookkeepingResourceRoutes(
     ];
     const accounts = [];
     for (const [index, displayName] of names.entries()) {
-      accounts.push((await putBookkeepingItem(client, "account", {
+      const account = (await putBookkeepingItem(client, "account", {
         id: `business-${index + 1}`,
         displayName,
         kind: "business",
         active: true,
-      }, `business-account#${index + 1}`)).item);
+      }, `business-account#${index + 1}`)).item;
+      accounts.push({ ...account, ...businessAccountStatementMetadata(String(account.id)) });
     }
     return json(200, { accounts });
   }
@@ -51,7 +53,9 @@ export async function handleBookkeepingResourceRoutes(
             ? publicDocument(item)
             : kind === "link"
               ? publicLink(item)
-              : item,
+              : kind === "account"
+                ? { ...item, ...businessAccountStatementMetadata(String(item.id)) }
+                : item,
         ),
       });
     }

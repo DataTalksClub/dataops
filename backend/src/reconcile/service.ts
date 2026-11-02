@@ -18,6 +18,7 @@ import {
   listTransactions,
   putBookkeepingItem,
 } from "../db/bookkeeping";
+import { businessAccountRequiresStatement } from "../finance/businessAccounts";
 import { listCrmRecords, scanCrmPrefix } from "../db/sponsorCrm";
 import type { StatementAccount, StatementBalance, StatementRow } from "./parsers";
 import {
@@ -371,7 +372,9 @@ export async function buildReport(client: DynamoDBDocumentClient, period: string
 
   const accounts = [...new Set([
     ...statements.map((record) => record.accountId),
-    ...(await listBookkeepingItems(client, "account")).filter((account) => account.active !== false).map((account) => String(account.id)),
+    ...(await listBookkeepingItems(client, "account"))
+      .filter((account) => account.active !== false && businessAccountRequiresStatement(String(account.id), period))
+      .map((account) => String(account.id)),
   ])].sort();
   const coverage = accounts.map((accountId) => {
     const own = statements.filter((record) => record.accountId === accountId);

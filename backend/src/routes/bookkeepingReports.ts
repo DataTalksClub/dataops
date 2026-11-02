@@ -17,6 +17,7 @@ import {
   type BookkeepingItem,
 } from "../db/bookkeeping";
 import { preflightOrganizations } from '../vies/service';
+import { businessAccountRequiresStatement } from "../finance/businessAccounts";
 import {
   headDocumentObject,
   json,
@@ -69,7 +70,7 @@ export async function handleBookkeepingReportRoutes(
     );
     if (existing) return json(200, { report: existing, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
     const accounts = (await listBookkeepingItems(client, "account")).filter(
-      (a) => a.kind === "business" && a.active !== false,
+      (a) => a.kind === "business" && a.active !== false && businessAccountRequiresStatement(String(a.id), month),
     );
     const docs = (await listBookkeepingItems(client, "document")).filter(
       (d) => d.status === "active",

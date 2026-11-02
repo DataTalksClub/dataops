@@ -249,6 +249,8 @@ describe('reconcile API', () => {
   });
 
   it('matches invoice references, aliases and amounts into one month-end report', async () => {
+    await putBookkeepingItem(client, 'account', { id: 'business-1', displayName: 'Primary legacy account', kind: 'business', active: true }, 'report-legacy-business-1');
+    await putBookkeepingItem(client, 'account', { id: 'business-2', displayName: 'Secondary legacy account', kind: 'business', active: true }, 'report-legacy-business-2');
     await putCrm(client, 'organization', { id: 'org-one', name: 'Organization One' });
     await putCrm(client, 'organization', { id: 'org-two', name: 'Organization Two' });
     await putCrm(client, 'deal', { id: 'deal-one', organizationId: 'org-one', name: 'Deal One', status: 'open' });
@@ -283,6 +285,8 @@ describe('reconcile API', () => {
     const report = JSON.parse((await invoke('GET', '/api/reconcile/report', undefined, AUTH, { period: '2026-10' })).body);
     assert.equal(report.period, '2026-10');
     assert.equal(report.totals.incomingCount, 4, JSON.stringify(report));
+    assert.deepEqual(report.coverage.accountsWithoutStatement, []);
+    assert.ok(!report.coverage.accounts.some((account: { accountId: string }) => ['business-1', 'business-2'].includes(account.accountId)));
 
     const exact = report.matched.find((item: { strategy: string }) => item.strategy === 'invoice-number');
     assert.ok(exact, 'reference invoice-number match expected');
