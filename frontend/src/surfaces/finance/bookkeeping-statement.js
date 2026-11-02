@@ -154,7 +154,9 @@ export function statementPeriodsForTransaction(transaction, maxDays = MATCH_WIND
 function exactStatementAmount(transaction, bank) {
   const bankAmount = cents(bank.amount);
   if (bankAmount === null) return false;
-  const expectedSign = String(transaction.entryType || "expense").toLowerCase() === "income" ? 1 : -1;
+  // A refund is the money coming back: its bank line is a credit.
+  const isRefund = String(transaction.subtype || "") === "Refund" || String(transaction.sourceKey || "").startsWith("credit-note:");
+  const expectedSign = isRefund || String(transaction.entryType || "expense").toLowerCase() === "income" ? 1 : -1;
   if (Math.sign(Number(bank.amount)) !== expectedSign) return false;
   const sameCurrency = String(transaction.currency || "EUR").toUpperCase() === String(bank.currency || "").toUpperCase();
   if (sameCurrency && cents(transaction.amount) === bankAmount) return true;

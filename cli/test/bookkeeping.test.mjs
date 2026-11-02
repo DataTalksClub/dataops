@@ -305,7 +305,7 @@ test("add-income --type refund is a dry run by default and classifies a credit n
   assert.equal(dry.outcome, "would-create");
   assert.equal(dry.transaction.sourceType, "credit-note");
   assert.equal(dry.transaction.sourceKey, "credit-note:SYN-CN-0001");
-  assert.equal(dry.transaction.entryType, "income");
+  assert.equal(dry.transaction.entryType, "expense");
   assert.equal(dry.transaction.subtype, "Refund");
   assert.equal(dry.transaction.category, "Refund", "the category defaults to Refund");
   assert.equal(dry.transaction.incomePeriod, undefined, "a credit note has no payout period");
@@ -332,7 +332,7 @@ test("add-income --type refund applies with evidence links and replays without w
   assert.equal(post.body.sourceType, "credit-note");
   assert.equal(post.body.sourceKey, "credit-note:SYN-CN-0001");
   assert.equal(post.body.subtype, "Refund");
-  assert.equal(post.body.entryType, "income");
+  assert.equal(post.body.entryType, "expense");
   const link = calls.find((call) => call.method === "POST" && call.route === "/api/bookkeeping/links");
   assert.deepEqual(link.body, { documentId: "doc-proof-1", transactionId: "cn-1", coverageType: "evidence" });
   assert.deepEqual(applied.documents, [{ documentId: "doc-proof-1", linked: true }]);

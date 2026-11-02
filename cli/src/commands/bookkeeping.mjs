@@ -38,7 +38,7 @@ Usage
       --comment TEXT [--category CATEGORY] [--document ID]... [--evidence FILE.pdf]...
       [--apply]
       Record a vendor refund or credit note credited to the vendor's balance without
-      a bank transaction: an income row with subtype Refund and the key
+      a bank transaction: a contra-expense expense row with subtype Refund and the key
       credit-note:<number>, the same classification the invoice intake uses, never a
       platform payout. --category defaults to Refund. --document links an already
       stored document as the row's evidence; --evidence uploads a PDF first. Both
@@ -263,7 +263,7 @@ function creditNoteRecord(args) {
     description: comment.slice(0, 300),
     amount,
     currency,
-    entryType: "income",
+    entryType: "expense",
     subtype: "Refund",
     statementRef: number,
     comment,

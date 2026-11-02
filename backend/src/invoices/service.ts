@@ -215,7 +215,8 @@ export async function publishInvoice(client:DynamoDBDocumentClient,record:Invoic
     } catch(error) {const next=structuredClone(record);const errorCode=(error as Error).message;next.destinations[kind].error=/^[a-z-]+$/.test(errorCode)?errorCode:'destination-verification-required';if(next.destinations[kind].state!=='unknown')next.destinations[kind].state='blocked';await checkpoint(next);}
   }
   // Only confirmed records enter the existing ledger, including when an external destination needs retry.
-  // A credit note is income keyed credit-note:<full number>. When that key
+  // A supplier credit note books once as a contra-expense (entryType
+  // expense, subtype Refund) keyed credit-note:<full number>. When that key
   // is already in the ledger (recorded by hand or by an earlier draft), the
   // draft links to that row instead of adding a second one.
   // The lookup runs for every numbered draft: a hand-corrected draft may
@@ -225,7 +226,7 @@ export async function publishInvoice(client:DynamoDBDocumentClient,record:Invoic
   const creditKey=`credit-note:${record.fields.invoiceNumber}`;
   const booked=record.fields.invoiceNumber?(await listTransactions(client)).find(t=>t.sourceKey===creditKey&&t.id!==record.id):undefined;
   if(booked){const next=structuredClone(record);next.ledgerTransactionId=booked.id;next.audit.push({action:'publication-attempt',actor,at:new Date().toISOString(),revision:record.revision});delete next.leaseOwner;delete next.leaseUntil;delete next.restoredNeedsReconciliation;await checkpoint(next);return record;}
-  const ledger=await putBookkeepingItem(client,'bookkeeping',{...record.fields,id:record.id,entryType:record.extraction.direction==='income'||refund||record.fields.subtype==='Refund'?'income':'expense',sourceType:'invoice',sourceKey,invoiceId:record.id,documentArtifactId:record.source.artifactId,externalReferences:record.destinations},`invoice#${record.id}`);
+  const ledger=await putBookkeepingItem(client,'bookkeeping',{...record.fields,id:record.id,entryType:record.extraction.direction==='income'?'income':'expense',sourceType:'invoice',sourceKey,invoiceId:record.id,documentArtifactId:record.source.artifactId,externalReferences:record.destinations},`invoice#${record.id}`);
   if(ledger.duplicate) await updateBookkeepingTransaction(client,record.id,ledger.item.updatedAt,{externalReferences:record.destinations});
   const next=structuredClone(record);next.audit.push({action:'publication-attempt',actor,at:new Date().toISOString(),revision:record.revision});delete next.leaseOwner;delete next.leaseUntil;delete next.restoredNeedsReconciliation;await checkpoint(next);
   return record;

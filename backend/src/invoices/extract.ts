@@ -359,7 +359,7 @@ export function extractInvoiceText(rawText: string, hints: InvoiceHints = {}): {
   if (method === 'manual') issues.push('Unsupported or ambiguous layout: complete the draft manually');
   else issues.push('Confirm payment evidence and actual EUR bank amount');
   const channel = paymentChannel(text);
-  return { fields, extraction: { method, evidence, issues, documentType: credit ? 'credit_note' : 'invoice', direction: credit ? 'income' : 'expense',
+  return { fields, extraction: { method, evidence, issues, documentType: credit ? 'credit_note' : 'invoice', direction: 'expense',
     ...(channel ? { paymentChannel: channel } : {}), ...(needsReview ? { needsReview, candidates } : {}) } };
 }
 export async function pdfText(bytes: Buffer): Promise<string> {

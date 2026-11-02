@@ -28,7 +28,7 @@ export function regexFinanceFacts(raw: string): Facts {
   if (taxAtRate) f.vat = amount(taxAtRate[1]);
   if (f.reverseCharge && f.net && f.gross === f.net) { f.vat = '0.00'; f.vatRate = '0'; }
   if (/(?:^|\n)\s*(?:credit note|refund|Gutschrift|Stornorechnung)\b/i.test(text)) {
-    f.docType='credit_note'; f.direction='income';
+    f.docType='credit_note'; f.direction='expense';
     // Original invoice totals are not the tax base of a partial refund.
     f.net=pick(text,`(?:Credited subtotal|Refunded net|Net credit)\\s*[:]?\\s*[-−]?\\s*(?:USD|EUR|€|\\$)?\\s*${decimal}`);
     f.vat=pick(text,`(?:Credited tax|Refunded VAT|VAT credit)\\s*[:]?\\s*[-−]?\\s*(?:USD|EUR|€|\\$)?\\s*${decimal}`);
@@ -148,6 +148,8 @@ export async function extractFinanceText(raw:string, options:{pdf?:Buffer; hints
     if(facts.vat===null && facts.net!==null && facts.gross!==null && Number(facts.gross)>=Number(facts.net)) facts.vat=(Number(facts.gross)-Number(facts.net)).toFixed(2);
     if(facts.net===null && facts.vat!==null && facts.gross!==null && Number(facts.gross)>=Number(facts.vat)) facts.net=(Number(facts.gross)-Number(facts.vat)).toFixed(2);
   }
+  // A supplier credit note is contra-expense; the reader never decides otherwise.
+  if(facts.docType==='credit_note') facts.direction='expense';
   issues.push(...validateFinanceFacts(facts,options.expectedPeriod));
   if(facts.invoiceNumber) facts.invoiceNumber=facts.invoiceNumber.replace(/[\u0000\u2010-\u2014\u2212]/g,'-').replace(/\s*-\s*/g,'-');
   const fields:InvoiceFields={...base.fields};

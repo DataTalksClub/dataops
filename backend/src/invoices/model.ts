@@ -15,8 +15,8 @@ export interface Destination {
 export interface Invoice {
   id: string; revision: number; status: 'pending' | 'confirmed' | 'rejected';
   fields: InvoiceFields;
-  // A credit note is published as income (subtype Refund) keyed
-  // credit-note:<number>. needsReview with candidates: the amount was
+  // A supplier credit note is published as a contra-expense (subtype Refund)
+  // keyed credit-note:<number>. needsReview with candidates: the amount was
   // ambiguous and left empty.
   extraction: { method: string; evidence: string[]; issues: string[]; documentType?: 'invoice' | 'receipt' | 'credit_note' | 'other'; direction?: 'income' | 'expense'; paymentChannel?: string; needsReview?: boolean; candidates?: string[]; blankConversion?: boolean };
   // The ledger row this record is booked as when it is not its own row

@@ -115,7 +115,7 @@ function validateTransaction(input: Record<string, unknown>, partial = false) {
     if (typeof input.amount !== "string" || Number(input.amount) <= 0) errors.push("amount");
   }
   if (input.sourceType === "credit-note") {
-    if (input.entryType !== "income") errors.push("entryType");
+    if (input.entryType !== "expense") errors.push("entryType");
     if (typeof input.sourceKey !== "string" || !/^credit-note:.+/.test(input.sourceKey) || input.sourceKey.length > 300)
       errors.push("sourceKey");
     if (typeof input.statementRef !== "string" || !input.statementRef.trim()) errors.push("statementRef");

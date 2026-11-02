@@ -131,7 +131,7 @@ test('EUR invoice and actual payment retain independent values with equivalent d
 
 // Gold cases: synthetic twins of real documents (tests/fixtures/extraction-gold).
 const gold=(id:string)=>JSON.parse(readFileSync(new URL(`./fixtures/extraction-gold/${id}.json`,import.meta.url),'utf8'));
-test('credit note: refunded amount (not the adjusted total), full number, document description, income, card',async()=>{
+test('credit note: refunded amount (not the adjusted total), full number, document description, contra-expense, card',async()=>{
   const g=gold('credit-note-refund-adjusted-total');
   const check=(parsed:ReturnType<typeof extractInvoiceText>)=>{
     assert.equal(parsed.extraction.documentType,g.expected.docType);

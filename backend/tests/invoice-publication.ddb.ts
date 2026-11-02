@@ -89,15 +89,15 @@ test('a credit note books once as income keyed credit-note:<number>, linking an 
   // No row yet: publication creates the income row under the credit-note key.
   const fresh=await confirmInvoice(client,await asCreditNote('cn-fresh','A1B2C3D4-0001-CN-01'),'operator');
   const created=(await client.send(new GetCommand({TableName:TABLE_BOOKKEEPING,Key:{PK:`BOOKKEEPING#${fresh.id}`,SK:`BOOKKEEPING#${fresh.id}`}}))).Item!;
-  assert.equal(created.entryType,'income');assert.equal(created.subtype,'Refund');assert.equal(created.sourceKey,'credit-note:A1B2C3D4-0001-CN-01');
-  assert.equal(rows.get(Number(fresh.destinations.sheets.reference!.slice(4)))![headers.indexOf('Entry Type')],'income');
+  assert.equal(created.entryType,'expense');assert.equal(created.subtype,'Refund');assert.equal(created.sourceKey,'credit-note:A1B2C3D4-0001-CN-01');
+  assert.equal(rows.get(Number(fresh.destinations.sheets.reference!.slice(4)))![headers.indexOf('Entry Type')],'expense');
   // Recorded by hand first: the draft links to that row and adds none.
-  await client.send(new PutCommand({TableName:TABLE_BOOKKEEPING,Item:{PK:'BOOKKEEPING#manual-cn',SK:'BOOKKEEPING#manual-cn',id:'manual-cn',transactionDate:'2026-10-30',entryType:'income',amount:'646.63',currency:'USD',sourceType:'manual',sourceKey:'credit-note:A1B2C3D4-0059-CN-01',counterparty:'Example Assist, LLC',createdAt:'2026-10-31T00:00:00.000Z',updatedAt:'2026-10-31T00:00:00.000Z'}}));
+  await client.send(new PutCommand({TableName:TABLE_BOOKKEEPING,Item:{PK:'BOOKKEEPING#manual-cn',SK:'BOOKKEEPING#manual-cn',id:'manual-cn',transactionDate:'2026-10-30',entryType:'expense',amount:'646.63',currency:'USD',sourceType:'manual',sourceKey:'credit-note:A1B2C3D4-0059-CN-01',counterparty:'Example Assist, LLC',createdAt:'2026-10-31T00:00:00.000Z',updatedAt:'2026-10-31T00:00:00.000Z'}}));
   const linked=await confirmInvoice(client,await asCreditNote('cn-manual','A1B2C3D4-0059-CN-01'),'operator');
   assert.equal(linked.ledgerTransactionId,'manual-cn');
   assert.equal((await client.send(new GetCommand({TableName:TABLE_BOOKKEEPING,Key:{PK:`BOOKKEEPING#${linked.id}`,SK:`BOOKKEEPING#${linked.id}`}}))).Item,undefined);
   // A hand-corrected draft without the Refund subtype links the same way.
-  await client.send(new PutCommand({TableName:TABLE_BOOKKEEPING,Item:{PK:'BOOKKEEPING#manual-cn-2',SK:'BOOKKEEPING#manual-cn-2',id:'manual-cn-2',transactionDate:'2026-10-30',entryType:'income',amount:'20.00',currency:'USD',sourceType:'manual',sourceKey:'credit-note:A1B2C3D4-0060-CN-01',counterparty:'Example Assist, LLC',createdAt:'2026-10-31T00:00:00.000Z',updatedAt:'2026-10-31T00:00:00.000Z'}}));
+  await client.send(new PutCommand({TableName:TABLE_BOOKKEEPING,Item:{PK:'BOOKKEEPING#manual-cn-2',SK:'BOOKKEEPING#manual-cn-2',id:'manual-cn-2',transactionDate:'2026-10-30',entryType:'expense',amount:'20.00',currency:'USD',sourceType:'manual',sourceKey:'credit-note:A1B2C3D4-0060-CN-01',counterparty:'Example Assist, LLC',createdAt:'2026-10-31T00:00:00.000Z',updatedAt:'2026-10-31T00:00:00.000Z'}}));
   const {record:plain}=await stage('cn-plain');const corrected=structuredClone(plain);
   Object.assign(corrected.fields,{invoiceNumber:'A1B2C3D4-0060-CN-01',amount:'20.00',currency:'USD',amountEur:'18.10'});
   const plainLinked=await confirmInvoice(client,await saveInvoice(client,corrected,plain),'operator');

@@ -32,7 +32,8 @@ test('reader outage keeps the document reviewable and does not invent VAT',async
 test('arithmetic discrepancies and uncertainty flag review; a refund retains its own full number',async()=>{
  const r=await extractFinanceText(unknown,{llm:llm({...facts,net:'90.00',uncertainFields:['net']})});
  assert.ok(r.extraction.issues.includes('inconsistent:net+vat=gross'));assert.ok(r.extraction.issues.includes('disagreement:net'));
- const refund=await extractFinanceText('Credit note\nRefund EUR 119.00\nAdjusted invoice total EUR 20.00',{llm:llm({...facts,docType:'credit_note',direction:'income',invoiceNumber:'EXAMPLE-0001-CN-01'})});
+ const refund=await extractFinanceText('Credit note\nRefund EUR 119.00\nAdjusted invoice total EUR 20.00',{llm:llm({...facts,docType:'credit_note',direction:'expense',invoiceNumber:'EXAMPLE-0001-CN-01'})});
+ assert.equal(refund.extraction.direction,'expense');
  assert.equal(refund.fields.subtype,'Refund');assert.equal(refund.fields.invoiceNumber,'EXAMPLE-0001-CN-01');assert.equal(refund.fields.amount,'119.00');
 });
 

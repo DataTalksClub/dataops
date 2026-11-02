@@ -29,6 +29,7 @@ export type Entry = {
   month: string;
   direction: 'in' | 'out';
   line: Line;
+  /** Supplier credit note (contra-expense): reduces operating expenses. */
   refund: boolean;
   counterparty: string;
   description: string;
@@ -61,8 +62,6 @@ export type Totals = {
   net: number;
   operatingIncome: number;
   operatingExpenses: number;
-  refunds: number;
-  refundsNetOfVat: number;
   outputVat: number;
   inputVat: number;
   incomeNetOfVat: number;
@@ -103,8 +102,8 @@ export const SOURCE_RULES = [
   'EUR conversion: a EUR row is taken as is. A non-EUR row uses its booked EUR amount (amountEur, what the bank actually credited or debited), with the implied rate shown. Without one, the ECB reference rate for the paid date (or the last ECB business day before it) is used. A row that cannot be converted is excluded from the totals and listed as a gap.',
   'Lines: category VAT or a Finanzamt USt/UMS.ST purpose in the ledger row or its matched statement reference is VAT paid/refunded; other Finanzamt tax purposes are other taxes; TK/Health Insurance is health insurance. These mandatory payments do not affect operating profit.',
   'VAT uses the reviewed ledger vatAmount first, then linked stored document VAT facts. If VAT amount is absent, an explicit VAT rate and net amount or the document gross-minus-net amount determine it; explicit 0% remains zero. Reverse-charge VAT is derived only from an explicit rate and net amount and is counted as both output and input VAT. No rate or source VAT fields means zero VAT.',
-  'Refunds from suppliers (credit notes: income rows with subtype Refund or a credit-note:<number> source key) are money in and count toward net profit, but are their own line, not revenue. Their VAT reduces input VAT.',
-  'Net profit excluding VAT = (operating income - output VAT) + (refunds - their VAT) - (operating expenses - input VAT). Taxes and TK are shown as their own lines and in net after taxes; VAT payments and refunds are not profit or loss.',
+  'Refunds from suppliers (credit notes: rows with subtype Refund or a credit-note:<number> source key) are contra-expense: they reduce operating expenses, their VAT reduces input VAT, and they are not money in and not revenue.',
+  'Net profit excluding VAT = (operating income - output VAT) - (operating expenses - input VAT); supplier refunds reduce the expense side. Taxes and TK are shown as their own lines and in net after taxes; VAT payments and refunds are not profit or loss.',
   'Projected VAT position = output VAT - input VAT: positive is owed to the Finanzamt, negative is a refund. Missing VAT fields contribute zero and do not create a warning.',
 ];
 
@@ -143,6 +142,9 @@ const positive = (value: unknown) => {
 export function bookingDate(row: LedgerRow) {
   return str(row.paidDate) || str(row.transactionDate);
 }
+
+/** A supplier credit note however its entryType was recorded. */
+export const isRefundRow = (row: LedgerRow) => str(row.subtype) === 'Refund' || str(row.sourceKey).startsWith('credit-note:');
 
 export function lineOf(row: LedgerRow): Line {
   const mandatory = classifyMandatoryPayment(row);
@@ -276,19 +278,18 @@ export function dedupe(rows: LedgerRow[]): { kept: LedgerRow[]; duplicates: Dupl
 
 function emptyTotals(): Totals {
   return {
-    moneyIn: 0, moneyOut: 0, net: 0, operatingIncome: 0, operatingExpenses: 0, refunds: 0, refundsNetOfVat: 0, outputVat: 0, inputVat: 0,
+    moneyIn: 0, moneyOut: 0, net: 0, operatingIncome: 0, operatingExpenses: 0, outputVat: 0, inputVat: 0,
     incomeNetOfVat: 0, expensesNetOfVat: 0, netProfitExVat: 0, projectedVat: 0, vatPaid: 0, vatRefunded: 0,
     otherTaxes: 0, healthInsurance: 0, netAfterTaxes: 0, entryCount: 0, unconvertedCount: 0,
   };
 }
 
-const SUMMED: Array<keyof Totals> = ['moneyIn', 'moneyOut', 'operatingIncome', 'operatingExpenses', 'refunds', 'outputVat', 'inputVat', 'vatPaid', 'vatRefunded', 'otherTaxes', 'healthInsurance'];
+const SUMMED: Array<keyof Totals> = ['moneyIn', 'moneyOut', 'operatingIncome', 'operatingExpenses', 'outputVat', 'inputVat', 'vatPaid', 'vatRefunded', 'otherTaxes', 'healthInsurance'];
 
 /** Totals in integer cents, then derived figures, then back to EUR. */
 function total(entries: Entry[]): Totals {
   const c = Object.fromEntries(SUMMED.map((key) => [key, 0])) as Record<string, number>;
   let unconvertedCount = 0;
-  let refundVat = 0;
   let reverseChargeInputVat = 0;
   let reverseChargeOutputVat = 0;
   for (const entry of entries) {
@@ -306,10 +307,11 @@ function total(entries: Entry[]): Totals {
         reverseChargeOutputVat += reverseChargeVat;
       }
       else if (entry.refund) {
-        c.refunds += value;
+        // A supplier credit note is contra-expense: it reduces the booked
+        // operating expenses and their input VAT. It is not money in.
+        c.operatingExpenses -= value;
         c.inputVat -= vat + reverseChargeVat;
         c.outputVat -= reverseChargeVat;
-        refundVat += vat;
         reverseChargeInputVat -= reverseChargeVat;
         reverseChargeOutputVat -= reverseChargeVat;
       }
@@ -319,9 +321,8 @@ function total(entries: Entry[]): Totals {
     else c.healthInsurance += entry.direction === 'out' ? value : -value;
   }
   const incomeNetOfVat = c.operatingIncome - (c.outputVat - reverseChargeOutputVat);
-  const expensesNetOfVat = c.operatingExpenses - (c.inputVat - reverseChargeInputVat + refundVat);
-  const refundsNetOfVat = c.refunds - refundVat;
-  const netProfitExVat = incomeNetOfVat + refundsNetOfVat - expensesNetOfVat;
+  const expensesNetOfVat = c.operatingExpenses - (c.inputVat - reverseChargeInputVat);
+  const netProfitExVat = incomeNetOfVat - expensesNetOfVat;
   const out = emptyTotals();
   for (const key of SUMMED) (out[key] as number) = fromCents(c[key]);
   return {
@@ -329,7 +330,6 @@ function total(entries: Entry[]): Totals {
     net: fromCents(c.moneyIn - c.moneyOut),
     incomeNetOfVat: fromCents(incomeNetOfVat),
     expensesNetOfVat: fromCents(expensesNetOfVat),
-    refundsNetOfVat: fromCents(refundsNetOfVat),
     netProfitExVat: fromCents(netProfitExVat),
     projectedVat: fromCents(c.outputVat - c.inputVat),
     netAfterTaxes: fromCents(netProfitExVat - c.otherTaxes - c.healthInsurance),
@@ -351,7 +351,7 @@ export function toEntry(row: LedgerRow, rates: RateLookup): Entry | null {
     month: date.slice(0, 7),
     direction: entryType === 'income' ? 'in' : 'out',
     line: mandatory?.line || lineOf(row),
-    refund: entryType === 'income' && (str(row.subtype) === 'Refund' || str(row.sourceKey).startsWith('credit-note:')),
+    refund: isRefundRow(row),
     counterparty: str(row.counterparty),
     description: str(row.description),
     category: str(row.category),
@@ -443,6 +443,7 @@ export function summarize(input: SummaryInput): FinanceSummary {
 
   const currencies = new Map<string, { in: number; out: number; inEur: number; outEur: number }>();
   for (const entry of entries) {
+    if (entry.refund) continue; // contra-expense: never money in or out
     const bucket = currencies.get(entry.currency) || { in: 0, out: 0, inEur: 0, outEur: 0 };
     const original = cents(positive(entry.amount) || 0);
     const eur = entry.eur === null ? 0 : cents(entry.eur);
@@ -500,7 +501,8 @@ function matchStatementLines(lines: StatementLine[], rows: LedgerRow[]) {
     const amount = positive(line.amount);
     const match = rows.find((row) => {
       if (used.has(row.id)) return false;
-      if ((Number(line.amount) < 0) !== (str(row.entryType) === 'expense')) return false;
+      // A refund row is explained by the money that came back (a credit line).
+      if ((Number(line.amount) < 0) !== (str(row.entryType) === 'expense' && !isRefundRow(row))) return false;
       if (dayDistance(bookingDate(row), line.date) > DEFAULT_TOLERANCES.dateLagDays) return false;
       const sameCurrency = (str(row.currency) || 'EUR') === line.currency && positive(row.amount) === amount;
       const bookedEur = line.currency === 'EUR' && positive(row.amountEur) === amount;

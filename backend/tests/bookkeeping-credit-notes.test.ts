@@ -18,7 +18,7 @@ const creditNote = {
   description: "Synthetic credit note for a returned ticket, credited to the vendor balance.",
   amount: "59.99",
   currency: "EUR",
-  entryType: "income",
+  entryType: "expense",
   subtype: "Refund",
   statementRef: "SYN-CREDIT-NOTE-0001",
   comment: "Synthetic credit note SYN-CREDIT-NOTE-0001, credited to the vendor balance, no bank transaction.",
@@ -64,8 +64,10 @@ describe("vendor credit note bookkeeping", () => {
     });
     const entry = summary.entries.find((item) => item.id === record.id)!;
     assert.equal(entry.refund, true);
-    assert.equal(summary.totals.refunds, 59.99);
+    assert.equal(summary.totals.operatingExpenses, -59.99);
     assert.equal(summary.totals.operatingIncome, 0);
+    assert.equal(summary.totals.moneyIn, 0);
+    assert.equal(summary.totals.netProfitExVat, 59.99);
   });
 
   it("updates a credit note's free fields but rejects re-typing it as an expense", async () => {
@@ -75,7 +77,7 @@ describe("vendor credit note bookkeeping", () => {
 
     const retyped = await handleBookkeepingTransactionRoutes(
       `/api/bookkeeping/transactions/${record.id}`, "PUT",
-      event({ entryType: "expense" }), client,
+      event({ entryType: "income" }), client,
     );
     assert.equal(retyped?.statusCode, 400);
     assert.deepEqual(JSON.parse(retyped!.body).fields, ["entryType"]);
@@ -90,7 +92,7 @@ describe("vendor credit note bookkeeping", () => {
 
   it("rejects a misclassified or incomplete credit note", async () => {
     const cases: Array<[Record<string, unknown>, string[]]> = [
-      [{ ...creditNote, statementRef: "SYN-CREDIT-NOTE-BAD1", sourceKey: "credit-note:SYN-CREDIT-NOTE-BAD1", entryType: "expense" }, ["entryType"]],
+      [{ ...creditNote, statementRef: "SYN-CREDIT-NOTE-BAD1", sourceKey: "credit-note:SYN-CREDIT-NOTE-BAD1", entryType: "income" }, ["entryType"]],
       [{ ...creditNote, statementRef: "SYN-CREDIT-NOTE-BAD2", sourceKey: "platform-payout:SYN-CREDIT-NOTE-BAD2" }, ["sourceKey"]],
       [{ ...creditNote, statementRef: "SYN-CREDIT-NOTE-BAD3", sourceKey: "credit-note:" }, ["sourceKey"]],
       [{ ...creditNote, statementRef: "SYN-CREDIT-NOTE-BAD4", sourceKey: "credit-note:SYN-CREDIT-NOTE-BAD4", subtype: "Payout" }, ["subtype"]],
