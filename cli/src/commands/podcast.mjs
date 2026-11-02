@@ -39,7 +39,8 @@ Usage
                                    omit --recording-date to auto-pick the next free recording
                                    slot (ordinary free: Mon/Tue only; prefer midday ~12:30
                                    Europe/Berlin, else evening ~17:00; not workshop 16:30).
-                                   Occupancy: CalendarHolds + episodes + event Cards.
+                                   Occupancy: owner Google calendar + CalendarHolds
+                                   + episodes + event Cards.
                                    Pass --recording-date to override.
   dataops podcast update <episode-id> [same flags as create]
                                   "none" clears a date, link, slug, card, notes or episode number
@@ -73,8 +74,8 @@ Usage
   dataops podcast next-recording-slot [--count N]
                                    Next free recording windows (prefer midday ~12:30
                                    Europe/Berlin, else evening ~17:00 Mon/Tue; not
-                                   workshop 16:30). Occupancy: CalendarHolds + episodes
-                                   + event Cards
+                                   workshop 16:30). Occupancy: owner Google calendar,
+                                   CalendarHolds, episodes, and event Cards
   dataops podcast cadence [--weekday N] [--time HH:MM] [--timezone TZ]
                           [--episodes-per-season N]
                                    Show the release cadence, or set it (admin)

@@ -174,8 +174,8 @@ describe("Calendar CLI commands", () => {
     // Midday is busy because of "Podcast with Guest"
     assert.match(text, /Midday Event Slot \(11:30–14:00[^)]*\):\s+BUSY/);
     assert.match(text, /Podcast with Guest/);
-    // Evening is available because there are no evening blockers
-    assert.match(text, /Evening Event Slot \(16:30–18:30, start 17:00\):\s+AVAILABLE/);
+    // A public DataOps event occupies the whole day, even when Google is free.
+    assert.match(text, /Evening Event Slot \(16:30–18:30, start 17:00\):\s+BUSY/);
     // Full schedule lists both overlay and activity items
     assert.match(text, /Team sync/);
     assert.match(text, /MLOps live demonstration/);
@@ -252,6 +252,124 @@ describe("Calendar CLI commands", () => {
     assert.equal(code, 0);
     assert.match(io.text(), /12:30–14:00 Available event slot/);
     assert.match(io.text(), /16:30–18:30 Available event slot/);
+  });
+
+  test("calendar day marks every slot busy on a day with a public event", async () => {
+    const io = captureIo();
+
+    globalThis.fetch = async (url) => {
+      if (String(url).includes("/overlays")) {
+        return Response.json({ items: [] });
+      }
+      return Response.json({
+        items: [
+          { id: "podcast-recording:ep-1", date: "2026-11-10", title: "Valeriia podcast recording" },
+          { id: "card:course-1", date: "2026-11-10", title: "Pre-course Q&A" },
+        ],
+        holidays: [],
+      });
+    };
+
+    const code = await run(["calendar", "day", "2026-11-10", "--json"], io);
+    assert.equal(code, 0);
+    const payload = JSON.parse(io.text());
+    assert.equal(payload.slots.midday.available, false);
+    assert.equal(payload.slots.evening.available, false);
+    assert.deepEqual(payload.slots.midday.conflicts, ["Valeriia podcast recording", "Pre-course Q&A"]);
+  });
+
+  test("calendar day includes tentative holds in window occupancy", async () => {
+    const io = captureIo();
+    globalThis.fetch = async (url) => {
+      if (String(url).includes("/overlays")) {
+        return Response.json({ items: [
+          {
+            provider: "calendar-holds",
+            label: "(Proposal) Guest recording · 12:30–13:30",
+            startDate: "2026-11-17",
+            endDate: "2026-11-17",
+            startsAt: "2026-11-17T11:30:00Z",
+            endsAt: "2026-11-17T12:30:00Z",
+            slot: "midday",
+          },
+        ] });
+      }
+      return Response.json({ items: [], holidays: [] });
+    };
+
+    const code = await run(["calendar", "day", "2026-11-17", "--json"], io);
+    assert.equal(code, 0);
+    const payload = JSON.parse(io.text());
+    assert.equal(payload.slots.midday.available, false);
+    assert.equal(payload.slots.evening.available, true);
+    assert.deepEqual(payload.slots.midday.conflicts, ["(Proposal) Guest recording · 12:30–13:30"]);
+  });
+
+  test("calendar slots includes fully busy dates in availability", async () => {
+    const io = captureIo();
+    globalThis.fetch = async () => Response.json({
+      items: [
+        { provider: "owner-calendar", isAvailableSlot: true, slot: "midday", startDate: "2026-11-09", label: "12:30 Available" },
+      ],
+    });
+
+    const code = await run(["calendar", "slots", "--from", "2026-11-16", "--to", "2026-11-24"], io);
+    assert.equal(code, 0);
+    assert.match(io.text(), /2026-11-17: midday busy · evening busy/);
+    assert.match(io.text(), /2026-11-24: midday busy · evening busy/);
+  });
+
+  test("calendar slots --json keeps every requested date in its availability summary", async () => {
+    const io = captureIo();
+    globalThis.fetch = async () => Response.json({ items: [] });
+
+    const code = await run(["calendar", "slots", "--from", "2026-11-17", "--to", "2026-11-18", "--json"], io);
+    assert.equal(code, 0);
+    const payload = JSON.parse(io.text());
+    assert.deepEqual(payload.availability, [
+      { date: "2026-11-17", midday: "BUSY", evening: "BUSY" },
+      { date: "2026-11-18", midday: "BUSY", evening: "BUSY" },
+    ]);
+  });
+
+  test("single-day calendar slots keeps full events and requests the availability projection", async () => {
+    const io = captureIo();
+    const requests = [];
+    globalThis.fetch = async (url) => {
+      const value = String(url);
+      requests.push(value);
+      if (value.includes("includeAll=true")) return Response.json({ items: [{ provider: "owner-calendar", label: "12:30–13:30 Meeting", startDate: "2026-11-17" }] });
+      return Response.json({ items: [{ provider: "owner-calendar", isAvailableSlot: true, slot: "evening", startDate: "2026-11-17" }] });
+    };
+
+    const code = await run(["calendar", "slots", "--from", "2026-11-17", "--to", "2026-11-17", "--json"], io);
+    assert.equal(code, 0);
+    assert.equal(requests.length, 2);
+    assert.match(requests[1], /includeAll=false/);
+    const payload = JSON.parse(io.text());
+    assert.deepEqual(payload.availability, [
+      { date: "2026-11-17", midday: "BUSY", evening: "AVAILABLE" },
+    ]);
+  });
+
+  test("calendar slots call availability reports free start times", async () => {
+    const io = captureIo();
+    globalThis.fetch = async () => Response.json({ items: [
+      {
+        id: "owner-slot:2026-11-17:call:11:30",
+        provider: "owner-calendar",
+        isAvailableSlot: true,
+        slot: "call",
+        startDate: "2026-11-17",
+      },
+    ] });
+
+    const code = await run(["calendar", "slots", "--from", "2026-11-17", "--to", "2026-11-17", "--window", "call", "--json"], io);
+    assert.equal(code, 0);
+    const payload = JSON.parse(io.text());
+    assert.deepEqual(payload.availability, [
+      { date: "2026-11-17", callStarts: ["11:30"] },
+    ]);
   });
 
   test("calendar settings explains missing connection selection and discovery grants", async () => {
@@ -383,7 +501,7 @@ describe("Calendar CLI commands", () => {
       return new Response(
         JSON.stringify({
           items: [
-            { provider: "owner-calendar", category: "Available slot", label: "17:00 Available", startDate: "2026-10-13", slot: "evening", isAvailableSlot: true },
+            { provider: "owner-calendar", category: "Available slot", label: "17:00 Available", startDate: "2026-11-17", slot: "evening", isAvailableSlot: true },
           ],
           sources: {},
         }),
@@ -391,7 +509,7 @@ describe("Calendar CLI commands", () => {
       );
     };
     const code = await run(
-      ["calendar", "slots", "--from", "2026-10-13", "--to", "2026-10-13", "--duration", "90", "--window", "evening"],
+      ["calendar", "slots", "--from", "2026-11-17", "--to", "2026-11-17", "--duration", "90", "--window", "evening"],
       io,
     );
     assert.equal(code, 0);

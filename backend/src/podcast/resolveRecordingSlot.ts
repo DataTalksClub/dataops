@@ -9,8 +9,10 @@ import { listCards } from '../db/cards';
 import { listTemplates } from '../db/templates';
 import { listPodcastEpisodes, type PodcastEpisode } from '../db/podcastEpisodes';
 import { EVENT_CARD_TYPES } from '../calendar/entities';
-import { berlinToday } from '../calendar/ownerCalendarOverlay';
+import { berlinToday, ownerCalendarOverlay } from '../calendar/ownerCalendarOverlay';
 import {
+  addDays,
+  DEFAULT_RECORDING_HORIZON_DAYS,
   nextRecordingSlot,
   nextRecordingSlots,
   type NextRecordingSlotsResult,
@@ -34,20 +36,29 @@ export async function loadRecordingOccupancy(client: DynamoDBDocumentClient): Pr
   holds: Awaited<ReturnType<typeof listCalendarHolds>>;
   eventCardDates: string[];
   fromDate: string;
+  ownerFreeWindows?: string[];
 }> {
-  const [episodes, holds, eventCardDates] = await Promise.all([
+  const fromDate = berlinToday();
+  const toDate = addDays(fromDate, DEFAULT_RECORDING_HORIZON_DAYS - 1);
+  const [episodes, holds, eventCardDates, ownerProjection] = await Promise.all([
     listPodcastEpisodes(client),
     listCalendarHolds(client, { activeOnly: true }),
     eventCardAnchorDates(client),
+    ownerCalendarOverlay({ client, durationMinutes: 60, window: 'any' }).project(fromDate, toDate),
   ]);
-  return { episodes, holds, eventCardDates, fromDate: berlinToday() };
+  const ownerFreeWindows = ownerProjection.connection.state === 'connected'
+    ? ownerProjection.items
+      .filter((item) => item.provider === 'owner-calendar' && item.isAvailableSlot && item.slot)
+      .map((item) => `${item.startDate}#${item.slot}`)
+    : undefined;
+  return { episodes, holds, eventCardDates, fromDate, ownerFreeWindows };
 }
 
 export async function pickNextRecordingSlot(
   client: DynamoDBDocumentClient,
   opts: { excludeEpisodeId?: string | null } = {},
 ): Promise<RecordingSlot | null> {
-  const { episodes, holds, eventCardDates, fromDate } = await loadRecordingOccupancy(client);
+  const { episodes, holds, eventCardDates, fromDate, ownerFreeWindows } = await loadRecordingOccupancy(client);
   const filtered = opts.excludeEpisodeId
     ? episodes.filter((e) => e.id !== opts.excludeEpisodeId)
     : episodes;
@@ -56,6 +67,7 @@ export async function pickNextRecordingSlot(
     episodes: filtered,
     holds,
     eventCardDates,
+    ownerFreeWindows,
   });
 }
 
@@ -63,12 +75,13 @@ export async function listNextRecordingSlots(
   client: DynamoDBDocumentClient,
   count: number,
 ): Promise<NextRecordingSlotsResult> {
-  const { episodes, holds, eventCardDates, fromDate } = await loadRecordingOccupancy(client);
+  const { episodes, holds, eventCardDates, fromDate, ownerFreeWindows } = await loadRecordingOccupancy(client);
   return nextRecordingSlots({
     fromDate,
     episodes,
     holds,
     eventCardDates,
+    ownerFreeWindows,
     count,
   });
 }

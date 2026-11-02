@@ -46,7 +46,8 @@ export interface NextRecordingSlotsInput {
   eventCardDates?: string[];
   /**
    * Optional owner-calendar free windows as `YYYY-MM-DD#midday|evening`.
-   * When provided and non-empty, only those windows are offered.
+   * When provided, only those windows are offered; an empty list means the
+   * connected owner calendar has no free recording windows in range.
    */
   ownerFreeWindows?: Iterable<string>;
   count?: number;
@@ -78,13 +79,14 @@ export function isoWeekday(date: string): number {
 }
 
 export function takenRecordingDates(
-  episodes: Array<{ status?: string | null; recordingDate?: string | null }>,
+  episodes: Array<{ status?: string | null; recordingDate?: string | null; releaseDate?: string | null }>,
   eventCardDates: string[] = [],
 ): Set<string> {
   const taken = new Set<string>();
   for (const episode of episodes) {
     if (episode.status === 'cancelled') continue;
     if (episode.recordingDate && DATE.test(episode.recordingDate)) taken.add(episode.recordingDate);
+    if (episode.releaseDate && DATE.test(episode.releaseDate)) taken.add(episode.releaseDate);
   }
   for (const date of eventCardDates) {
     if (DATE.test(date)) taken.add(date);
@@ -144,8 +146,7 @@ export function nextRecordingSlots(input: NextRecordingSlotsInput): NextRecordin
   }
   const taken = takenRecordingDates(input.episodes, input.eventCardDates || []);
   const held = heldWindows(input.holds);
-  const ownerList = input.ownerFreeWindows ? [...input.ownerFreeWindows] : null;
-  const owner = ownerList && ownerList.length ? new Set(ownerList) : null;
+  const owner = input.ownerFreeWindows === undefined ? null : new Set(input.ownerFreeWindows);
 
   const slots: RecordingSlot[] = [];
   for (let i = 0; i < horizon && slots.length < count; i += 1) {

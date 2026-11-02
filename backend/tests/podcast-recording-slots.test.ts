@@ -44,12 +44,12 @@ describe("podcast recording slots", () => {
   it("skips dates taken by episodes or event Cards", () => {
     const taken = takenRecordingDates(
       [
-        { status: "booked", recordingDate: "2026-10-26" },
+        { status: "booked", recordingDate: "2026-10-26", releaseDate: "2026-10-29" },
         { status: "cancelled", recordingDate: "2026-10-27" },
       ],
       ["2026-10-28"],
     );
-    assert.deepEqual([...taken].sort(), ["2026-10-26", "2026-10-28"]);
+    assert.deepEqual([...taken].sort(), ["2026-10-26", "2026-10-28", "2026-10-29"]);
 
     const slot = nextRecordingSlot({
       fromDate: "2026-10-26",
@@ -129,6 +129,17 @@ describe("podcast recording slots", () => {
     assert.equal(slot?.date, "2026-10-27");
     assert.equal(slot?.window, "evening");
     assert.equal(slot?.localTime, "17:00");
+  });
+
+  it("does not treat a connected owner calendar with no free windows as unconstrained", () => {
+    const result = nextRecordingSlots({
+      fromDate: "2026-10-26",
+      episodes: [],
+      holds: [],
+      ownerFreeWindows: [],
+      count: 2,
+    });
+    assert.deepEqual(result.slots, []);
   });
 
   it("skips weekends", () => {

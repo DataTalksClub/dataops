@@ -43,7 +43,9 @@ Operational windows (Europe/Berlin)
           Busy blocks are for event slots only and block calls.
   midday  11:30–14:00; podcast/webinar start 12:30 (60), workshop start 12:00 (90).
   Availability = a contiguous free block of at least --duration inside the
-  chosen window(s). Single-day range implies --all (full event listing).
+  chosen window(s). A public event reserves both windows for its date. Every
+  requested future weekday is reported, including fully busy days. Single-day
+  range implies --all (full event listing).
 
 Holds
   A hold is a tentative event reservation: DataOps plus a Google
@@ -180,6 +182,26 @@ function currentMonthBounds() {
   return { from: first, to: last };
 }
 
+function eachDate(from, to) {
+  const dates = [];
+  const current = new Date(`${from}T12:00:00Z`);
+  const end = new Date(`${to}T12:00:00Z`);
+  while (current <= end) {
+    dates.push(current.toISOString().slice(0, 10));
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+function futureWeekdays(from, to) {
+  const today = todayBerlin();
+  return eachDate(from, to).filter((date) => {
+    if (date < today) return false;
+    const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
+    return weekday > 0 && weekday < 6;
+  });
+}
+
 function toBoolean(val) {
   if (val === true || val === "true") return true;
   if (val === false || val === "false") return false;
@@ -280,17 +302,23 @@ export async function day(args, io) {
     (h) => h.startDate <= dateIso && h.endDate >= dateIso,
   );
   const ownerCalendarItems = overlayItems.filter((o) => o.provider === "owner-calendar");
+  const calendarHolds = overlayItems.filter((o) => o.provider === "calendar-holds");
 
   const blockers = ownerCalendarItems.filter(
     (e) => e.slot === "all-day" || /vacation|holiday|flight|conference|trip/i.test(e.label),
   );
   const timedOwnerItems = ownerCalendarItems.filter((e) => !blockers.includes(e));
-  const middayBusy = busyIntervalsForDay(timedOwnerItems, "midday");
-  const eveningBusy = busyIntervalsForDay(timedOwnerItems, "evening");
-  const isMiddayAvailable = blockers.length === 0 && isWindowFreeForDuration("midday", middayBusy, durationMinutes);
-  const isEveningAvailable = blockers.length === 0 && isWindowFreeForDuration("evening", eveningBusy, durationMinutes);
+  const occupancyItems = [...timedOwnerItems, ...calendarHolds];
+  const middayBusy = busyIntervalsForDay(occupancyItems, "midday");
+  const eveningBusy = busyIntervalsForDay(occupancyItems, "evening");
+  const publicEventBusy = events.length > 0;
+  const isMiddayAvailable = blockers.length === 0 && !publicEventBusy && isWindowFreeForDuration("midday", middayBusy, durationMinutes);
+  const isEveningAvailable = blockers.length === 0 && !publicEventBusy && isWindowFreeForDuration("evening", eveningBusy, durationMinutes);
   const middayEvents = timedOwnerItems.filter((e) => e.slot === "midday");
   const eveningEvents = timedOwnerItems.filter((e) => e.slot === "evening");
+  const middayHolds = calendarHolds.filter((e) => e.slot === "midday");
+  const eveningHolds = calendarHolds.filter((e) => e.slot === "evening");
+  const publicEventConflicts = events.map((event) => event.title);
 
   // Build unified timeline
   const timeline = [];
@@ -346,12 +374,12 @@ export async function day(args, io) {
       midday: {
         slot: "11:30–14:00",
         available: isMiddayAvailable,
-        conflicts: middayEvents.map((e) => e.label),
+        conflicts: [...middayEvents.map((e) => e.label), ...middayHolds.map((e) => e.label), ...publicEventConflicts],
       },
       evening: {
         slot: "16:30–18:30",
         available: isEveningAvailable,
-        conflicts: eveningEvents.map((e) => e.label),
+        conflicts: [...eveningEvents.map((e) => e.label), ...eveningHolds.map((e) => e.label), ...publicEventConflicts],
       },
       blockers: blockers.map((b) => b.label),
     },
@@ -386,7 +414,7 @@ export async function day(args, io) {
     if (isMiddayAvailable) {
       io.print("    No conflicts. Preferred operational window for podcasts and lunch discussions.");
     } else {
-      io.print(`    Conflicting: ${middayEvents.map((e) => e.label).join(", ") || "Blocked by all-day event"}`);
+      io.print(`    Conflicting: ${[...blockers.map((e) => e.label), ...middayEvents.map((e) => e.label), ...middayHolds.map((e) => e.label), ...publicEventConflicts].join(", ") || "Blocked by all-day event"}`);
     }
   }
 
@@ -398,7 +426,7 @@ export async function day(args, io) {
     if (isEveningAvailable) {
       io.print("    No conflicts. Preferred operational window for workshops, live Q&As and webinars.");
     } else {
-      io.print(`    Conflicting: ${eveningEvents.map((e) => e.label).join(", ") || "Blocked by all-day event"}`);
+      io.print(`    Conflicting: ${[...blockers.map((e) => e.label), ...eveningEvents.map((e) => e.label), ...eveningHolds.map((e) => e.label), ...publicEventConflicts].join(", ") || "Blocked by all-day event"}`);
     }
   }
 
@@ -437,58 +465,86 @@ export async function slots(args, io) {
   const window = parseSlotWindow(args.window);
   const durationMinutes = window === "call" && !args.duration ? 30 : parseDurationMinutes(args.duration);
 
+  const api = client(args);
   const query = new URLSearchParams({ from, to, duration: String(durationMinutes), window });
-  if (args.all || args.includeAll) query.set("includeAll", "true");
+  const includeAll = Boolean(args.all || args.includeAll);
+  if (includeAll) query.set("includeAll", "true");
 
-  const result = await client(args).get(`/api/calendar-items/overlays?${query}`);
-  if (args.json) return { ...result, durationMinutes, window };
+  const result = await api.get(`/api/calendar-items/overlays?${query}`);
+  // includeAll returns the event details instead of free-slot markers. Keep its
+  // listing while querying the normal projection for availability summaries.
+  // Single-day ranges default to includeAll on the API, so explicitly turn it
+  // off for this availability request.
+  const availabilityResult = includeAll || from === to
+    ? await api.get(`/api/calendar-items/overlays?${new URLSearchParams({ from, to, duration: String(durationMinutes), window, includeAll: "false" })}`)
+    : result;
 
   const items = result.items || [];
+  // Free/busy per window for the requested duration. The backend projects
+  // only available slots, so a date/window with no slot is busy. Iterate the
+  // whole requested range so fully busy dates remain visible in this view.
+  const showMidday = window === "any" || window === "midday";
+  const showEvening = window === "any" || window === "evening";
+  const availabilityItems = availabilityResult.items || [];
+  const freeByDate = {};
+  for (const item of availabilityItems) {
+    if (item.provider === "owner-calendar" && item.isAvailableSlot) {
+      const callStart = item.slot === "call"
+        ? item.id?.match(/:call:(\d{2}:\d{2})$/)?.[1] || item.label?.match(/^(\d{2}:\d{2})\b/)?.[1]
+        : null;
+      const slot = callStart || item.slot;
+      if (slot) (freeByDate[item.startDate] ||= new Set()).add(slot);
+    }
+  }
+  const dates = futureWeekdays(from, to);
+  const availability = dates.map((date) => {
+    const free = freeByDate[date] || new Set();
+    if (window === "call") return { date, callStarts: [...free].sort() };
+    return {
+      date,
+      ...(window === "any" || window === "midday" ? { midday: free.has("midday") ? "AVAILABLE" : "BUSY" } : {}),
+      ...(window === "any" || window === "evening" ? { evening: free.has("evening") ? "AVAILABLE" : "BUSY" } : {}),
+    };
+  });
+
+  const payload = { ...result, durationMinutes, window, availability };
+  if (args.json) return payload;
+
   io.print(`Calendar Overlays & Event Slots (${from} to ${to}) [${durationMinutes} min, ${window}]:`);
   if (items.length === 0) {
     io.print("  No overlay items in this range.");
-    return { ...result, durationMinutes, window };
-  }
+  } else {
+    const grouped = {};
+    for (const item of items) {
+      const key = item.startDate || "other";
+      (grouped[key] ||= []).push(item);
+    }
 
-  const grouped = {};
-  for (const item of items) {
-    const key = item.startDate || "other";
-    (grouped[key] ||= []).push(item);
-  }
-
-  for (const [date, dayItems] of Object.entries(grouped)) {
-    io.print(`  ${date}:`);
-    for (const item of dayItems) {
-      const category = `[${item.category || "Overlay"}]`.padEnd(12);
-      const slot = item.slot ? `(${item.slot})`.padEnd(12) : "".padEnd(12);
-      io.print(`    ${category} ${slot} ${item.label}`);
+    for (const [date, dayItems] of Object.entries(grouped)) {
+      io.print(`  ${date}:`);
+      for (const item of dayItems) {
+        const category = `[${item.category || "Overlay"}]`.padEnd(12);
+        const slot = item.slot ? `(${item.slot})`.padEnd(12) : "".padEnd(12);
+        io.print(`    ${category} ${slot} ${item.label}`);
+      }
     }
   }
 
-  // Free/busy per window for the requested duration. The backend already
-  // projects only available slots that fit duration+window, so presence of
-  // an available owner slot means that window is free for that duration.
-  const showMidday = window === "any" || window === "midday";
-  const showEvening = window === "any" || window === "evening";
-  const availableByDate = {};
-  for (const item of items) {
-    if (item.provider === "owner-calendar" && item.isAvailableSlot) {
-      (availableByDate[item.startDate] ||= new Set()).add(item.slot);
-    }
-  }
-  const dates = [...new Set(items.map((i) => i.startDate).filter(Boolean))].sort();
   if (dates.length > 0) {
     io.print(`\nAvailability (${durationMinutes} min${window === "any" ? "" : `, ${window}`}):`);
     for (const date of dates) {
-      const free = availableByDate[date] || new Set();
+      const free = freeByDate[date] || new Set();
       const parts = [];
-      if (showMidday) parts.push(`midday ${free.has("midday") ? "AVAILABLE" : "busy"}`);
-      if (showEvening) parts.push(`evening ${free.has("evening") ? "AVAILABLE" : "busy"}`);
+      if (window === "call") parts.push(`call ${[...free].sort().join(", ") || "busy"}`);
+      else {
+        if (showMidday) parts.push(`midday ${free.has("midday") ? "AVAILABLE" : "busy"}`);
+        if (showEvening) parts.push(`evening ${free.has("evening") ? "AVAILABLE" : "busy"}`);
+      }
       io.print(`  ${date}: ${parts.join(" · ")}`);
     }
   }
 
-  return { ...result, durationMinutes, window };
+  return payload;
 }
 
 /**

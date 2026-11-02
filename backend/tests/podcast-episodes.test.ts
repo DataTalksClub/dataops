@@ -14,6 +14,10 @@ import { buildHold } from "../src/calendar/holds";
 import { getCalendarHold, listCalendarHolds, putCalendarHold } from "../src/db/calendarHolds";
 import { handlePodcastEpisodeRoutes } from "../src/routes/podcastEpisodes";
 import { EPISODE_STAGES, statusFromCard } from "../src/podcast/cardStatus";
+import { addDays, isoWeekday, takenRecordingDates } from "../src/podcast/recordingSlots";
+import { berlinToday, setOwnerCalendarProviderClientsForTests } from "../src/calendar/ownerCalendarOverlay";
+import { saveCalendarOverlaySettings } from "../src/db/calendar";
+import { loadRecordingOccupancy } from "../src/podcast/resolveRecordingSlot";
 
 /** Synthetic stage Task refs; the Template, not the code, says which Task marks which stage. */
 const STAGE_REFS = Object.fromEntries(EPISODE_STAGES.map((stage) => [stage, `synthetic-${stage}-step`])) as Record<(typeof EPISODE_STAGES)[number], string>;
@@ -364,6 +368,84 @@ describe("podcast episodes", () => {
     assert.equal(body.preference.primary, "midday");
     assert.equal(body.preference.eveningLocalTime, "17:00");
     assert.match(body.preference.note, /not workshop/);
+  });
+
+  it("uses Google blockers when listing podcast recording slots", async () => {
+    const monday = addDays(berlinToday(), 7);
+    let targetMonday = monday;
+    while (isoWeekday(targetMonday) !== 1) targetMonday = addDays(targetMonday, 1);
+    const baseline = await loadRecordingOccupancy(client);
+    const existingDates = takenRecordingDates(baseline.episodes, baseline.eventCardDates);
+    for (const hold of baseline.holds) {
+      if (hold.status === "tentative" || hold.status === "confirmed") existingDates.add(hold.date);
+    }
+    while ([targetMonday, addDays(targetMonday, 7), addDays(targetMonday, 8)].some((date) => existingDates.has(date))) {
+      targetMonday = addDays(targetMonday, 7);
+    }
+    const followingMonday = addDays(targetMonday, 7);
+    const followingTuesday = addDays(targetMonday, 8);
+    const berlinOffset = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Europe/Berlin",
+      timeZoneName: "longOffset",
+    }).formatToParts(new Date(`${targetMonday}T12:00:00Z`)).find((part) => part.type === "timeZoneName")!.value.replace("GMT", "");
+
+    await saveCalendarOverlaySettings(client, { connectionId: "synthetic-calendar" }, "calendar-test");
+    const googleCalls: string[] = [];
+    setOwnerCalendarProviderClientsForTests({
+      readSecret: async () => "synthetic-machine-token",
+      fetch: async (input) => {
+        const url = String(input);
+        googleCalls.push(url);
+        if (url.endsWith("/api/agent/token")) return Response.json({ access_token: "synthetic-google-token" });
+        if (url.includes("googleapis.com/calendar/v3/calendars/")) {
+          return Response.json({ items: [
+            {
+              id: "vibekon-block",
+              summary: "VibeKon",
+              status: "confirmed",
+              start: { dateTime: `${targetMonday}T10:00:00${berlinOffset}` },
+              end: { dateTime: `${targetMonday}T16:00:00${berlinOffset}` },
+            },
+            {
+              id: "malta-all-day",
+              summary: "Malta trip",
+              status: "confirmed",
+              start: { date: followingMonday },
+              end: { date: followingTuesday },
+            },
+            {
+              id: "malta-tuesday",
+              summary: "Malta trip",
+              status: "confirmed",
+              start: { dateTime: `${followingTuesday}T09:30:00${berlinOffset}` },
+              end: { dateTime: `${followingTuesday}T18:00:00${berlinOffset}` },
+            },
+          ] });
+        }
+        return new Response("Not found", { status: 404 });
+      },
+    });
+    try {
+      const occupancy = await loadRecordingOccupancy(client);
+      assert.ok(occupancy.ownerFreeWindows, `Google occupancy should be applied: ${JSON.stringify(occupancy)}`);
+      assert.ok(googleCalls.some((url) => url.includes("googleapis.com")), `Google API should be queried: ${googleCalls.join(",")}`);
+      const response = await invoke("GET", "/api/podcast-episodes/next-recording-slot", undefined, { count: "52" });
+      assert.equal(response.statusCode, 200, response.body);
+      const slots = data(response).slots;
+      assert.deepEqual(
+        slots.filter((slot: any) => slot.date === targetMonday).map((slot: any) => slot.window),
+        ["evening"],
+        "the Google 10:00–16:00 VibeKon event blocks 12:30 while leaving 17:00 free",
+      );
+      assert.ok(!slots.some((slot: any) => slot.date === followingMonday), "the Google all-day trip blocks Monday");
+      assert.ok(!slots.some((slot: any) => slot.date === followingTuesday), "the Google 09:30–18:00 trip blocks Tuesday");
+    } finally {
+      try {
+        await saveCalendarOverlaySettings(client, { connectionId: "" }, "calendar-test");
+      } finally {
+        setOwnerCalendarProviderClientsForTests({ readSecret: async () => "", fetch: globalThis.fetch });
+      }
+    }
   });
 
 });

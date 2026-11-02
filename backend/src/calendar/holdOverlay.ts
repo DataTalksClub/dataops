@@ -62,3 +62,21 @@ export function suppressHeldSlots(
       ),
   );
 }
+
+/** Public DataOps events occupy their whole day, even when Google is free. */
+export function suppressPublicEventSlots(
+  items: CalendarOverlayItem[],
+  eventDates: Iterable<string>,
+): CalendarOverlayItem[] {
+  const occupied = new Set(eventDates);
+  if (!occupied.size) return items;
+  return items.filter(
+    (item) =>
+      !(
+        item.provider === 'owner-calendar' &&
+        item.isAvailableSlot &&
+        (item.slot === 'midday' || item.slot === 'evening') &&
+        occupied.has(item.startDate)
+      ),
+  );
+}

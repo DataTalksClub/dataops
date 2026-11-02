@@ -21,8 +21,12 @@ import { buildNewsletterIssue, issueItem, createNewsletterIssue } from "../src/d
 import { TABLE_NEWSLETTER_SLOTS } from "../src/db/tableNames";
 import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import { newsletterOverlayItem } from "../src/calendar/newsletterOverlay";
+import { suppressPublicEventSlots } from "../src/calendar/holdOverlay";
 import { createTemplate } from "../src/db/templates";
 import { createPodcastEpisode } from "../src/db/podcastEpisodes";
+import { deleteCardCascade } from "../src/db/cardDeletion";
+import { saveCalendarOverlaySettings } from "../src/db/calendar";
+import { setOwnerCalendarProviderClientsForTests } from "../src/calendar/ownerCalendarOverlay";
 const invoke = (
   method: string,
   pathName: string,
@@ -51,6 +55,56 @@ describe("operations calendar", () => {
   after(stopLocal);
   afterEach(() => {
     process.env.SKIP_AUTH = "true";
+  });
+  it("does not offer owner slots on dates with public calendar events", () => {
+    const items: any[] = [
+      { provider: "owner-calendar", id: "owner-slot:2030-05-12:midday", startDate: "2030-05-12", slot: "midday", isAvailableSlot: true },
+      { provider: "owner-calendar", id: "owner-slot:2030-05-13:midday", startDate: "2030-05-13", slot: "midday", isAvailableSlot: true },
+      { provider: "owner-calendar", id: "owner-slot:2030-05-12:call:11:00", startDate: "2030-05-12", slot: "call", isAvailableSlot: true },
+      { provider: "calendar-holds", id: "calendar-hold:h1", startDate: "2030-05-12", isAvailableSlot: false },
+    ];
+    const result = suppressPublicEventSlots(items, ["2030-05-12"]);
+    assert.deepEqual(result.map((item) => item.id), [
+      "owner-slot:2030-05-13:midday",
+      "owner-slot:2030-05-12:call:11:00",
+      "calendar-hold:h1",
+    ]);
+  });
+  it("filters public event dates from the live availability projection", async () => {
+    const template = await createTemplate(client, { name: "Synthetic webinar", type: "webinar", taskDefinitions: [] });
+    const created = await invoke("POST", "/api/cards", {
+      templateId: template.id,
+      title: "Synthetic public event",
+      anchorDate: "2030-05-13",
+    });
+    assert.equal(created.statusCode, 201, created.body);
+    const testCard = parse(created).card;
+    await saveCalendarOverlaySettings(client, { connectionId: "synthetic-calendar" }, "calendar-test");
+    setOwnerCalendarProviderClientsForTests({
+      readSecret: async () => "synthetic-machine-token",
+      fetch: async (input) => {
+        const url = String(input);
+        if (url.endsWith("/api/agent/token")) return Response.json({ access_token: "synthetic-google-token" });
+        if (url.includes("googleapis.com/calendar/v3/calendars/")) return Response.json({ items: [] });
+        return new Response("Not found", { status: 404 });
+      },
+    });
+    try {
+      const response = await invoke("GET", "/api/calendar-items/overlays", undefined, {}, {
+        from: "2030-05-13",
+        to: "2030-05-14",
+        includeAll: "false",
+      });
+      assert.equal(response.statusCode, 200, response.body);
+      const body = parse(response);
+      assert.equal(body.sources["owner-calendar"].state, "connected");
+      assert.ok(!body.items.some((item: any) => item.id.startsWith("owner-slot:2030-05-13:")));
+      assert.ok(body.items.some((item: any) => item.id === "owner-slot:2030-05-14:midday"));
+    } finally {
+      await deleteCardCascade(client, testCard.id, testCard.version, "calendar-test");
+      await saveCalendarOverlaySettings(client, { connectionId: "" }, "calendar-test");
+      setOwnerCalendarProviderClientsForTests({ readSecret: async () => "", fetch: globalThis.fetch });
+    }
   });
   it("does not leak before auth and projects event cards and podcast episodes, each linked to its entity", async () => {
     process.env.SKIP_AUTH = "false";
