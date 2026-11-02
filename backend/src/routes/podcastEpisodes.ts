@@ -19,7 +19,8 @@ import {
   updatePodcastEpisode,
   type PodcastEpisode,
 } from "../db/podcastEpisodes";
-import { getCard } from "../db/cards";
+import { getCard, getCardConsistent } from "../db/cards";
+import { adoptRecordingHold, findAdoptableRecordingHold } from "../podcast/adoptRecordingHold";
 import { listCalendarHolds } from "../db/calendarHolds";
 import { getEventRecord } from "../events/store";
 import { listTasksByCard } from "../db/tasks";
@@ -627,6 +628,7 @@ async function createEpisodeCard(
   }
   const guests = working.guests.map((guest) => guest.name);
   let linked: PodcastEpisode | null = null;
+  const adoptable = await findAdoptableRecordingHold(client, working);
   try {
     const created = await createLinkedCard(
       client,
@@ -643,10 +645,18 @@ async function createEpisodeCard(
       },
     );
     if (!created.ok) return created.response;
+    if (adoptable && linked) {
+      const adopted = await adoptRecordingHold(client, created.card, adoptable, actor.id);
+      linked = await updatePodcastEpisode(client, linked, {
+        recordingHoldId: adopted.holdId,
+        recordingTime: adopted.time,
+      });
+    }
+    const card = adoptable ? (await getCardConsistent(client, created.card.id)) ?? created.card : created.card;
     const autoMeta = autoRecordingSlot ? { recordingSlot: autoRecordingSlot, recordingDateAutoSelected: true } : {};
     return json(201, {
       episode: linked && (await presented(client, linked)),
-      card: await summarizeCard(client, created.card),
+      card: await summarizeCard(client, card),
       ...autoMeta,
     });
   } catch (error) {

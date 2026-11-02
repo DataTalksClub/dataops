@@ -10,6 +10,8 @@ import { templateLink } from "./helpers/cardTemplate";
 import { createTemplate, instantiateTemplate } from "../src/db/templates";
 import { listTasksByCard } from "../src/db/tasks";
 import { TABLE_CARDS, TABLE_PODCAST_EPISODES } from "../src/db/tableNames";
+import { buildHold } from "../src/calendar/holds";
+import { getCalendarHold, listCalendarHolds, putCalendarHold } from "../src/db/calendarHolds";
 import { handlePodcastEpisodeRoutes } from "../src/routes/podcastEpisodes";
 import { EPISODE_STAGES, statusFromCard } from "../src/podcast/cardStatus";
 
@@ -244,6 +246,25 @@ describe("podcast episodes", () => {
     const leftovers = await client.send(new ScanCommand({ TableName: TABLE_CARDS, FilterExpression: "title = :title", ExpressionAttributeValues: { ":title": "Synthetic Doomed Episode" } }));
     assert.equal(leftovers.Items?.length, 0);
   });
+  it("create-card adopts the episode's unlinked recording hold so the Card carries its time and no second hold appears", async () => {
+    const hold = buildHold({ date: "2027-07-05", window: "midday", title: "Synthetic Hold Guest", topic: "Synthetic topic" }, "test-operator");
+    await putCalendarHold(client, hold);
+    const episode = data(await invoke("POST", "/api/podcast-episodes", { ...booked, title: "Synthetic Hold Episode", recordingDate: "2027-07-05" }));
+    const created = await invoke("POST", `/api/podcast-episodes/${episode.id}/card`, { version: episode.version });
+    assert.equal(created.statusCode, 201, created.body);
+    const result = data(created);
+    const card = (await getCard(client, result.card.id))!;
+    assert.equal(card.anchorDate, "2027-07-05");
+    assert.equal(card.eventTime?.eventKey, hold.id);
+    assert.equal(card.eventTime?.startIso, hold.startIso);
+    assert.equal(card.eventTime?.status, "proposed");
+    assert.equal(result.episode.recordingHoldId, hold.id);
+    assert.equal(result.episode.recordingTime, "12:30");
+    assert.equal((await getCalendarHold(client, hold.id))!.cardId, card.id);
+    const holds = (await listCalendarHolds(client)).filter((h) => h.date === "2027-07-05");
+    assert.deepEqual(holds.map((h) => h.id), [hold.id]);
+  });
+
   it("moves with its Card: a ticked stage Task advances the status", async () => {
     // Synthetic Template whose Tasks mark the episode stages.
     const template = await createTemplate(client, {
