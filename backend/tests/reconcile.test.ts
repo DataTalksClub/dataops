@@ -374,6 +374,38 @@ describe('reconcile API', () => {
     assert.match(JSON.parse(badBalance.body).error, /balance 0 amount/);
   });
 
+  it('attaches a document to the ledger row already paired with a bank row', async () => {
+    const operator = as(OPERATOR), period = '2027-01';
+    const transaction = (await putBookkeepingItem(client, 'bookkeeping', {
+      transactionDate: `${period}-12`, paidDate: `${period}-12`, counterparty: 'Paired Synthetic Vendor',
+      description: 'Existing paired invoice', amount: '100.00', currency: 'EUR', entryType: 'expense', sourceType: 'manual',
+    })).item;
+    const receipt = (await putBookkeepingItem(client, 'document', {
+      documentType: 'receipt', status: 'active', contentType: 'application/pdf', originalFilename: 'paired-receipt.pdf',
+      byteSize: 10, sha256: 'f'.repeat(64), s3Key: 'documents/paired-receipt',
+    })).item;
+    const saved = await operator('POST', '/api/reconcile/statements', {
+      account: 'revolut', period, documentId: 'paired-statement',
+      rows: [row({ date: `${period}-12`, amount: '-100.00', counterparty: 'Paired Synthetic Vendor', reference: 'Existing paired invoice' })],
+    });
+    assert.equal(saved.statusCode, 201, saved.body);
+    const initial = JSON.parse((await operator('GET', `/api/reconcile/months/${period}`)).body);
+    const paired = initial.rows.find((candidate: Record<string, any>) => candidate.ledger?.id === transaction.id);
+    assert.ok(paired, JSON.stringify(initial.rows));
+
+    const attached = await operator('POST', `/api/reconcile/months/${period}/ledger`, { bankKey: paired.id, documentId: receipt.id });
+    assert.equal(attached.statusCode, 201, attached.body);
+    const result = JSON.parse(attached.body);
+    assert.equal(result.paired, true);
+    assert.equal(result.duplicate, true);
+    assert.equal(result.transaction.id, transaction.id);
+
+    const final = JSON.parse((await operator('GET', `/api/reconcile/months/${period}`)).body);
+    assert.equal(final.rows.length, 1);
+    assert.equal(final.rows[0].ledger.id, transaction.id);
+    assert.ok(final.rows[0].documents.some((document: Record<string, string>) => document.id === receipt.id));
+  });
+
   it('runs a month end to end: missing sides block close, a per-row proof fixes the Google receipt, exceptions need the approver', async () => {
     const operator = as(OPERATOR), approver = as(APPROVER);
     const proofDoc = (await putBookkeepingItem(client, 'document', {
@@ -472,7 +504,7 @@ describe('reconcile API', () => {
     const reopened = JSON.parse((await operator('POST', '/api/reconcile/months/2026-12/reopen', { reason: 'late bank fee found' })).body).month;
     assert.equal(reopened.state, 'open');
     assert.equal(reopened.exceptionConfirmation, undefined);
-    assert.deepEqual(reopened.log.map((entry: { action: string }) => entry.action), ['attach-proof', 'attach-document', 'create-ledger', 'create-ledger', 'exception', 'exception', 'confirm-exceptions', 'close', 'reopen']);
+    assert.deepEqual(reopened.log.map((entry: { action: string }) => entry.action), ['attach-proof', 'attach-document', 'create-ledger', 'exception', 'exception', 'confirm-exceptions', 'close', 'reopen']);
 
     const csv = await invoke('GET', '/api/reconcile/months/2026-12', undefined, AUTH, { format: 'csv' });
     assert.match(csv.body.split('\n')[0], /^date,status,counterparty/);

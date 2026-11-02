@@ -553,7 +553,14 @@ export async function attachDoc(args, io) {
     const category = optionalString(args, "category");
     result = await api.post(`/api/reconcile/months/${period}/ledger`, { bankKey: row, documentId: stored.documentId, ...(category ? { category } : {}) });
   }
-  if (!args.json) io.print(`${stored.reused ? "Reused" : "Stored"} document ${stored.documentId} and attached it to ${row}${result.transaction ? ` (ledger row ${result.transaction.id} created from the bank row)` : ""}.`);
+  if (!args.json) {
+    const document = `${stored.reused ? "Reused" : "Stored"} document ${stored.documentId}`;
+    if (result.paired && result.transaction?.id) {
+      io.print(`${document} and attached it to paired ledger row ${result.transaction.id} for bank row ${row}.`);
+    } else {
+      io.print(`${document} and attached it to ${row}${result.transaction ? ` (ledger row ${result.transaction.id} created from the bank row)` : ""}.`);
+    }
+  }
   return { ...result, documentId: stored.documentId };
 }
 
@@ -592,7 +599,10 @@ export async function createLedger(args, io) {
   const period = periodOr(args);
   const category = optionalString(args, "category"), description = optionalString(args, "description");
   const result = await monthPost(args, period, "ledger", { bankKey, ...(category ? { category } : {}), ...(description ? { description } : {}) });
-  if (!args.json) io.print(`${result.duplicate ? "Ledger row already existed" : "Created ledger row"} ${result.transaction.id} for bank row ${bankKey}.`);
+  if (!args.json) {
+    if (result.paired) io.print(`Bank row ${bankKey} is already paired with ledger row ${result.transaction.id}.`);
+    else io.print(`${result.duplicate ? "Ledger row already existed" : "Created ledger row"} ${result.transaction.id} for bank row ${bankKey}.`);
+  }
   return result;
 }
 

@@ -171,6 +171,34 @@ test("attach-doc accepts a bare ledger ID and links evidence without creating an
   }
 });
 
+test("attach-doc on a paired bank row reports the existing ledger row", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-paired-doc-"));
+  const path = join(directory, "receipt.pdf");
+  const bankKey = "revolut:paired-bank-row";
+  const ledgerId = "f1e8e2d7fefdfa49b5222b60b61d6dcc6b2acdba1078a3058965665effaf6bb7";
+  const io = { lines: [], print(line) { this.lines.push(String(line)); } };
+  await writeFile(path, "%PDF-1.4 synthetic receipt");
+  try {
+    await withFakePortal([
+      ["https://private.example.test/object", ""],
+      ["/documents/prepare", { document: { id: "paired-receipt" }, uploadUrl: "https://private.example.test/object", uploadHeaders: { "content-type": "application/pdf" } }],
+      ["/documents/paired-receipt/complete", { document: { id: "paired-receipt" } }],
+      ["/reconcile/months/2026-10/ledger", (request) => {
+        assert.deepEqual(JSON.parse(request.options.body), { bankKey, documentId: "paired-receipt" });
+        return { transaction: { id: ledgerId }, duplicate: true, paired: true };
+      }],
+    ], async (calls) => {
+      const result = await attachDoc({ ...args, json: false, _: [bankKey, path], period: "2026-10" }, io);
+      assert.equal(result.transaction.id, ledgerId);
+      assert.equal(result.paired, true);
+      assert.ok(calls.some((call) => call.url.endsWith("/ledger") && call.method === "POST"));
+      assert.match(io.lines.at(-1), new RegExp(`paired ledger row ${ledgerId}`));
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 for (const row of ["receipt-7aceb67624c4496bd10f1ffdb70e0f21f9974b2f", "ledger:receipt-7aceb67624c4496bd10f1ffdb70e0f21f9974b2f"]) {
   test(`attach-doc resolves ${row} as an existing ledger row, not a bank key`, async () => {
     const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-receipt-doc-"));

@@ -530,6 +530,14 @@ export async function createLedgerFromBank(
   if (month.state === "closed") throw new MonthClosedError(period);
   const bank = await requireBankRow(client, bankKey);
   if (input.documentId) await requireActiveDocument(client, input.documentId);
+  const pairedLedger = (await buildMonth(client, period)).rows.find((row) => row.id === bankKey)?.ledger;
+  if (pairedLedger) {
+    const transaction = await requireLedger(client, pairedLedger.id);
+    const link = input.documentId
+      ? await attachDocument(client, period, by, pairedLedger.id, input.documentId)
+      : undefined;
+    return { transaction, duplicate: true, paired: true, ...(link ? { link } : {}) };
+  }
   const amount = Number(bank.amount);
   const { item, duplicate } = await putBookkeepingItem(client, "bookkeeping", {
     transactionDate: bank.date,
