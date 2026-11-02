@@ -694,6 +694,51 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       assert.strictEqual(retried.emailDelivery?.state, 'deferred');
       assert.strictEqual(retried.emailDelivery?.reason, 'insufficient_gmail_scope');
       assert.match(retried.emailDelivery?.message || '', /gmail\.send/);
+
+      // Also verify automatic fallback to dedicated gmail-orin connection when google-calendar-orin lacks gmail.send
+      setSponsorDocEmailDepsForTests({
+        brokerUrl: 'https://dapier.example.test',
+        credential: 'dp_test_orin_token',
+        fetchImpl: (async (input: string | URL | Request, init?: RequestInit) => {
+          const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+          if (url === 'https://dapier.example.test/api/agent/token') {
+            const reqBody = JSON.parse(String(init?.body || '{}')) as { connection_id?: string };
+            const connId = reqBody.connection_id || '';
+            return new Response(
+              JSON.stringify({
+                access_token: connId === 'gmail-orin' ? 'ya29.orin-dedicated-gmail' : 'ya29.orin-calendar-only',
+                expires_in: 3600,
+                provider_account_id: 'orin@datatalks.club',
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          if (url === 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send') {
+            const headers = (init?.headers || {}) as Record<string, string>;
+            const auth = headers.Authorization || headers.authorization || '';
+            if (auth === 'Bearer ya29.orin-calendar-only') {
+              return new Response(
+                JSON.stringify({ error: { code: 403, message: 'Request had insufficient authentication scopes.' } }),
+                { status: 403, headers: { 'Content-Type': 'application/json' } },
+              );
+            }
+            return new Response(
+              JSON.stringify({ id: 'gmail-msg-orin-fallback', threadId: 'gmail-thread-orin-fallback' }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } },
+            );
+          }
+          throw new Error(`Unexpected fetch URL: ${url}`);
+        }) as typeof globalThis.fetch,
+      });
+
+      const fallbackRes = await staffReq('POST', `/api/sponsor-docs/${created.doc.id}/send-email`, {
+        recipientEmail: 'sponsors@clickhouse.example.com',
+      });
+      assert.strictEqual(fallbackRes.statusCode, 200, fallbackRes.body);
+      const fallbackBody = JSON.parse(fallbackRes.body);
+      assert.strictEqual(fallbackBody.emailDelivery?.state, 'sent');
+      assert.strictEqual(fallbackBody.emailDelivery?.connectionId, 'gmail-orin');
+      assert.strictEqual(fallbackBody.emailDelivery?.messageId, 'gmail-msg-orin-fallback');
     } finally {
       setSponsorDocEmailDepsForTests({});
     }

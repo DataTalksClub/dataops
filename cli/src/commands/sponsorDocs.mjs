@@ -263,6 +263,9 @@ export async function create(args, io) {
   const recipientName = optionalString(args, "recipientName");
   if (recipientName !== undefined) body.recipientName = recipientName;
 
+  const connectionId = optionalString(args, "connection") ?? optionalString(args, "connectionId");
+  if (connectionId !== undefined) body.connectionId = connectionId;
+
   if (args.autoSendEmail === false || args.autoSendEmail === "false" || args.noAutoSend === true) {
     body.autoSendEmail = false;
   }
@@ -472,6 +475,9 @@ export async function sendEmail(args, io) {
   if (recipientEmail !== undefined) body.recipientEmail = recipientEmail;
   const recipientName = optionalString(args, "recipientName");
   if (recipientName !== undefined) body.recipientName = recipientName;
+
+  const connectionId = optionalString(args, "connection") ?? optionalString(args, "connectionId");
+  if (connectionId !== undefined) body.connectionId = connectionId;
   const result = await api.post(`/api/sponsor-docs/${enc(id)}/send-email`, body);
   if (result?.doc) {
     result.doc = normalizeDocUrls(result.doc, api.base);

@@ -38,6 +38,7 @@ import {
 export const SPONSOR_DOC_EMAIL_FROM = 'orin@datatalks.club';
 export const SPONSOR_DOC_EMAIL_CC = 'valeriia@datatalks.club';
 export const DEFAULT_ORIN_GMAIL_CONNECTION_ID = 'google-calendar-orin';
+export const DEDICATED_ORIN_GMAIL_CONNECTION_ID = 'gmail-orin';
 
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo';
@@ -194,7 +195,8 @@ function summarizeGmailError(status: number, bodyText: string, connectionId: str
     return (
       `Gmail API returned HTTP 403${detail ? ` (${detail})` : ''}. `
       + `Dapier connection "${connectionId}" (${SPONSOR_DOC_EMAIL_FROM}) needs the `
-      + `https://www.googleapis.com/auth/gmail.send scope granted and re-consented in Dapier.`
+      + `https://www.googleapis.com/auth/gmail.send scope granted and re-consented in Dapier `
+      + `(or connect "${DEDICATED_ORIN_GMAIL_CONNECTION_ID}" as ${SPONSOR_DOC_EMAIL_FROM}).`
     );
   }
   return `Gmail API returned HTTP ${status}${detail ? `: ${detail}` : ''}.`;
@@ -254,23 +256,32 @@ export async function deliverSponsorDocEmail(
         ? [SPONSOR_DOC_EMAIL_CC]
         : [];
 
-  let connectionId = (
+  const explicitConnectionId = (
     options.connectionId
     || emailDeps.connectionId
     || process.env.DATAOPS_ORIN_GMAIL_CONNECTION_ID
     || ''
   ).trim();
-  if (!connectionId) {
+  let settingsConnectionId = '';
+  if (!explicitConnectionId) {
     try {
       const settings = await getCalendarOverlaySettings(client);
-      connectionId = (settings.connectionId || '').trim();
+      settingsConnectionId = (settings.connectionId || '').trim();
     } catch {
       // Ignore calendar settings lookup failure and fall back to default Orin connection id.
     }
   }
-  if (!connectionId) {
-    connectionId = DEFAULT_ORIN_GMAIL_CONNECTION_ID;
-  }
+  const candidateConnectionIds = explicitConnectionId
+    ? [explicitConnectionId]
+    : Array.from(
+      new Set(
+        [
+          settingsConnectionId || DEFAULT_ORIN_GMAIL_CONNECTION_ID,
+          DEDICATED_ORIN_GMAIL_CONNECTION_ID,
+        ].filter(Boolean),
+      ),
+    );
+  const primaryConnectionId = candidateConnectionIds[0] || DEFAULT_ORIN_GMAIL_CONNECTION_ID;
 
   const brokerUrl = (emailDeps.brokerUrl || process.env.DAPIER_BASE_URL || DAPIER_BASE_URL).replace(/\/$/, '');
   const agent = emailDeps.agent || DAPIER_AGENT;
@@ -292,127 +303,9 @@ export async function deliverSponsorDocEmail(
       ...(cc.length > 0 ? { cc } : {}),
       ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
       subject: draft.subject,
-      connectionId,
+      connectionId: primaryConnectionId,
       reason: 'missing_dapier_credential',
       message: `${base} (form created; sponsor email auto-send deferred)`,
-    };
-  }
-
-  let tokenRes: Response;
-  try {
-    tokenRes = await runFetch(`${brokerUrl}/api/agent/token`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${credential}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ connection_id: connectionId, agent }),
-      signal: AbortSignal.timeout(10000),
-    });
-  } catch {
-    return {
-      state: 'deferred',
-      from: SPONSOR_DOC_EMAIL_FROM,
-      to,
-      ...(cc.length > 0 ? { cc } : {}),
-      ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-      subject: draft.subject,
-      connectionId,
-      reason: 'dapier_unreachable',
-      message: 'The Dapier token broker could not be reached.',
-    };
-  }
-
-  if (!tokenRes.ok) {
-    const msg = dapierTokenProblem(tokenRes.status, connectionId, agent);
-    return {
-      state: 'deferred',
-      from: SPONSOR_DOC_EMAIL_FROM,
-      to,
-      ...(cc.length > 0 ? { cc } : {}),
-      ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-      subject: draft.subject,
-      connectionId,
-      reason: `dapier_token_http_${tokenRes.status}`,
-      message: msg,
-    };
-  }
-
-  let tokenData: { access_token?: string; provider_account_id?: string; scope?: string };
-  try {
-    tokenData = (await tokenRes.json()) as { access_token?: string; provider_account_id?: string; scope?: string };
-  } catch {
-    return {
-      state: 'deferred',
-      from: SPONSOR_DOC_EMAIL_FROM,
-      to,
-      ...(cc.length > 0 ? { cc } : {}),
-      ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-      subject: draft.subject,
-      connectionId,
-      reason: 'invalid_broker_json',
-      message: 'The Dapier token broker returned an invalid JSON response.',
-    };
-  }
-
-  if (!tokenData.access_token) {
-    return {
-      state: 'deferred',
-      from: SPONSOR_DOC_EMAIL_FROM,
-      to,
-      ...(cc.length > 0 ? { cc } : {}),
-      ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-      subject: draft.subject,
-      connectionId,
-      reason: 'empty_access_token',
-      message: `Dapier connection "${connectionId}" returned no access token.`,
-    };
-  }
-
-  const authHeaders = {
-    Authorization: `Bearer ${tokenData.access_token}`,
-    'Content-Type': 'application/json',
-  };
-
-  // Verify the Dapier connection's authenticated Google mailbox is orin@datatalks.club.
-  let verifiedAccount = String(tokenData.provider_account_id || '').trim().toLowerCase();
-  if (!verifiedAccount) {
-    try {
-      const profileRes = await runFetch(`${GMAIL_API_BASE}/profile`, {
-        method: 'GET',
-        headers: authHeaders,
-        signal: AbortSignal.timeout(10000),
-      }).catch(() => null);
-      if (profileRes && profileRes.ok) {
-        const profile = (await profileRes.json()) as { emailAddress?: string };
-        verifiedAccount = String(profile.emailAddress || '').trim().toLowerCase();
-      } else {
-        const infoRes = await runFetch(GOOGLE_USERINFO_URL, {
-          method: 'GET',
-          headers: authHeaders,
-          signal: AbortSignal.timeout(10000),
-        }).catch(() => null);
-        if (infoRes && infoRes.ok) {
-          const info = (await infoRes.json()) as { email?: string };
-          verifiedAccount = String(info.email || '').trim().toLowerCase();
-        }
-      }
-    } catch {
-      // Proceed to send call which will surface any transport or permission error.
-    }
-  }
-
-  if (verifiedAccount && verifiedAccount !== SPONSOR_DOC_EMAIL_FROM) {
-    return {
-      state: 'deferred',
-      from: SPONSOR_DOC_EMAIL_FROM,
-      to,
-      ...(cc.length > 0 ? { cc } : {}),
-      ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-      subject: draft.subject,
-      connectionId,
-      reason: 'wrong_sender_identity',
-      message: `Sponsor form emails must be sent from ${SPONSOR_DOC_EMAIL_FROM}, but Dapier connection "${connectionId}" is bound to "${verifiedAccount}".`,
     };
   }
 
@@ -424,61 +317,209 @@ export async function deliverSponsorDocEmail(
     body: draft.body,
   });
 
-  let sendRes: Response;
-  try {
-    sendRes = await runFetch(`${GMAIL_API_BASE}/messages/send`, {
-      method: 'POST',
-      headers: authHeaders,
-      body: JSON.stringify({ raw }),
-      signal: AbortSignal.timeout(15000),
-    });
-  } catch {
+  let preferredDeferred: SponsorDocEmailDelivery | null = null;
+
+  for (const connectionId of candidateConnectionIds) {
+    let tokenRes: Response;
+    try {
+      tokenRes = await runFetch(`${brokerUrl}/api/agent/token`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${credential}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ connection_id: connectionId, agent }),
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch {
+      return {
+        state: 'deferred',
+        from: SPONSOR_DOC_EMAIL_FROM,
+        to,
+        ...(cc.length > 0 ? { cc } : {}),
+        ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
+        subject: draft.subject,
+        connectionId,
+        reason: 'dapier_unreachable',
+        message: 'The Dapier token broker could not be reached.',
+      };
+    }
+
+    if (!tokenRes.ok) {
+      const msg = dapierTokenProblem(tokenRes.status, connectionId, agent);
+      const failure: SponsorDocEmailDelivery = {
+        state: 'deferred',
+        from: SPONSOR_DOC_EMAIL_FROM,
+        to,
+        ...(cc.length > 0 ? { cc } : {}),
+        ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
+        subject: draft.subject,
+        connectionId,
+        reason: `dapier_token_http_${tokenRes.status}`,
+        message: msg,
+      };
+      if (!preferredDeferred) preferredDeferred = failure;
+      continue;
+    }
+
+    let tokenData: { access_token?: string; provider_account_id?: string; scope?: string };
+    try {
+      tokenData = (await tokenRes.json()) as { access_token?: string; provider_account_id?: string; scope?: string };
+    } catch {
+      const failure: SponsorDocEmailDelivery = {
+        state: 'deferred',
+        from: SPONSOR_DOC_EMAIL_FROM,
+        to,
+        ...(cc.length > 0 ? { cc } : {}),
+        ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
+        subject: draft.subject,
+        connectionId,
+        reason: 'invalid_broker_json',
+        message: 'The Dapier token broker returned an invalid JSON response.',
+      };
+      if (!preferredDeferred) preferredDeferred = failure;
+      continue;
+    }
+
+    if (!tokenData.access_token) {
+      const failure: SponsorDocEmailDelivery = {
+        state: 'deferred',
+        from: SPONSOR_DOC_EMAIL_FROM,
+        to,
+        ...(cc.length > 0 ? { cc } : {}),
+        ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
+        subject: draft.subject,
+        connectionId,
+        reason: 'empty_access_token',
+        message: `Dapier connection "${connectionId}" returned no access token.`,
+      };
+      if (!preferredDeferred) preferredDeferred = failure;
+      continue;
+    }
+
+    const authHeaders = {
+      Authorization: `Bearer ${tokenData.access_token}`,
+      'Content-Type': 'application/json',
+    };
+
+    // Verify the Dapier connection's authenticated Google mailbox is orin@datatalks.club.
+    let verifiedAccount = String(tokenData.provider_account_id || '').trim().toLowerCase();
+    if (!verifiedAccount) {
+      try {
+        const profileRes = await runFetch(`${GMAIL_API_BASE}/profile`, {
+          method: 'GET',
+          headers: authHeaders,
+          signal: AbortSignal.timeout(10000),
+        }).catch(() => null);
+        if (profileRes && profileRes.ok) {
+          const profile = (await profileRes.json()) as { emailAddress?: string };
+          verifiedAccount = String(profile.emailAddress || '').trim().toLowerCase();
+        } else {
+          const infoRes = await runFetch(GOOGLE_USERINFO_URL, {
+            method: 'GET',
+            headers: authHeaders,
+            signal: AbortSignal.timeout(10000),
+          }).catch(() => null);
+          if (infoRes && infoRes.ok) {
+            const info = (await infoRes.json()) as { email?: string };
+            verifiedAccount = String(info.email || '').trim().toLowerCase();
+          }
+        }
+      } catch {
+        // Proceed to send call which will surface any transport or permission error.
+      }
+    }
+
+    if (verifiedAccount && verifiedAccount !== SPONSOR_DOC_EMAIL_FROM) {
+      const failure: SponsorDocEmailDelivery = {
+        state: 'deferred',
+        from: SPONSOR_DOC_EMAIL_FROM,
+        to,
+        ...(cc.length > 0 ? { cc } : {}),
+        ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
+        subject: draft.subject,
+        connectionId,
+        reason: 'wrong_sender_identity',
+        message: `Sponsor form emails must be sent from ${SPONSOR_DOC_EMAIL_FROM}, but Dapier connection "${connectionId}" is bound to "${verifiedAccount}".`,
+      };
+      if (!preferredDeferred) preferredDeferred = failure;
+      continue;
+    }
+
+    let sendRes: Response;
+    try {
+      sendRes = await runFetch(`${GMAIL_API_BASE}/messages/send`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ raw }),
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch {
+      return {
+        state: 'deferred',
+        from: SPONSOR_DOC_EMAIL_FROM,
+        to,
+        ...(cc.length > 0 ? { cc } : {}),
+        ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
+        subject: draft.subject,
+        connectionId,
+        reason: 'gmail_unreachable',
+        message: 'Gmail API could not be reached to send the sponsor email.',
+      };
+    }
+
+    if (!sendRes.ok) {
+      const errText = await sendRes.text().catch(() => '');
+      const msg = summarizeGmailError(sendRes.status, errText, connectionId);
+      const failure: SponsorDocEmailDelivery = {
+        state: 'deferred',
+        from: SPONSOR_DOC_EMAIL_FROM,
+        to,
+        ...(cc.length > 0 ? { cc } : {}),
+        ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
+        subject: draft.subject,
+        connectionId,
+        reason: sendRes.status === 403 ? 'insufficient_gmail_scope' : `gmail_http_${sendRes.status}`,
+        message: msg,
+      };
+      if (!preferredDeferred || preferredDeferred.reason !== 'insufficient_gmail_scope') {
+        preferredDeferred = failure;
+      }
+      continue;
+    }
+
+    let sentPayload: { id?: string; threadId?: string } = {};
+    try {
+      sentPayload = (await sendRes.json()) as { id?: string; threadId?: string };
+    } catch {
+      // Keep sent state even if response body is minimal.
+    }
+
     return {
-      state: 'deferred',
+      state: 'sent',
       from: SPONSOR_DOC_EMAIL_FROM,
       to,
       ...(cc.length > 0 ? { cc } : {}),
       ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
       subject: draft.subject,
       connectionId,
-      reason: 'gmail_unreachable',
-      message: 'Gmail API could not be reached to send the sponsor email.',
+      ...(sentPayload.id ? { messageId: sentPayload.id } : {}),
+      ...(sentPayload.threadId ? { threadId: sentPayload.threadId } : {}),
+      sentAt: new Date().toISOString(),
     };
   }
 
-  if (!sendRes.ok) {
-    const errText = await sendRes.text().catch(() => '');
-    const msg = summarizeGmailError(sendRes.status, errText, connectionId);
-    return {
+  return (
+    preferredDeferred || {
       state: 'deferred',
       from: SPONSOR_DOC_EMAIL_FROM,
       to,
       ...(cc.length > 0 ? { cc } : {}),
       ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
       subject: draft.subject,
-      connectionId,
-      reason: sendRes.status === 403 ? 'insufficient_gmail_scope' : `gmail_http_${sendRes.status}`,
-      message: msg,
-    };
-  }
-
-  let sentPayload: { id?: string; threadId?: string } = {};
-  try {
-    sentPayload = (await sendRes.json()) as { id?: string; threadId?: string };
-  } catch {
-    // Keep sent state even if response body is minimal.
-  }
-
-  return {
-    state: 'sent',
-    from: SPONSOR_DOC_EMAIL_FROM,
-    to,
-    ...(cc.length > 0 ? { cc } : {}),
-    ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-    subject: draft.subject,
-    connectionId,
-    ...(sentPayload.id ? { messageId: sentPayload.id } : {}),
-    ...(sentPayload.threadId ? { threadId: sentPayload.threadId } : {}),
-    sentAt: new Date().toISOString(),
-  };
+      connectionId: primaryConnectionId,
+      reason: 'dapier_unreachable',
+      message: 'The Dapier token broker could not be reached.',
+    }
+  );
 }
