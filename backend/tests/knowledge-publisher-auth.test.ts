@@ -119,8 +119,25 @@ describe('GitHub Actions OIDC knowledge publisher', () => {
     }
   });
 
+  it('reads a stored file version as base64 bytes for the daily mirror', async () => {
+    const viaPublisher = await handler({
+      httpMethod: 'GET', path: '/knowledge/version',
+      queryStringParameters: { path: 'content/a.md', revision },
+      headers: { Authorization: `Bearer ${token()}` }, body: null,
+    }, {});
+    assert.equal(viaPublisher.statusCode, 200);
+    assert.equal(viaPublisher.isBase64Encoded, true);
+    assert.equal(Buffer.from(viaPublisher.body, 'base64').toString(), 'old');
+    assert.notEqual((await request('GET', '/knowledge/version', token())).statusCode, 403);
+  });
+
+  it('accepts the schedule event the daily mirror runs on', async () => {
+    const manifest = await request('GET', '/knowledge/manifest', token(claims({ event_name: 'schedule' })));
+    assert.equal(manifest.statusCode, 200);
+  });
+
   it('may not reach any other route', async () => {
-    for (const [method, path] of [['GET', '/knowledge/version'], ['GET', '/docs'], ['PUT', '/docs'], ['POST', '/knowledge/restore'],
+    for (const [method, path] of [['GET', '/docs'], ['PUT', '/docs'], ['POST', '/knowledge/restore'],
       ['GET', '/api/me'], ['GET', '/api/tasks'], ['POST', '/api/tasks'], ['GET', '/knowledge/publication'], ['GET', '/content/a.md']]) {
       assert.equal((await request(method, path, token())).statusCode, 403, `${method} ${path}`);
     }
