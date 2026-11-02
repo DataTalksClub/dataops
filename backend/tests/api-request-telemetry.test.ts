@@ -463,8 +463,8 @@ describe('portal API request telemetry', () => {
       assert.strictEqual(classifyApiRouteFamily(path), family, path);
     }
 
-    assert.strictEqual(classifyApiRouteFamily('/work/api/tasks'), 'other');
-    assert.strictEqual(classifyApiRouteFamily('/work/health'), 'other');
+    assert.strictEqual(classifyApiRouteFamily('/work/api/tasks'), 'static_frontend');
+    assert.strictEqual(classifyApiRouteFamily('/work/health'), 'static_frontend');
   });
 
   it('correlates representative API routes through both HTTP shapes and docs modes', async () => {
