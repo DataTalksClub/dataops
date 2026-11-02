@@ -82,7 +82,8 @@ Usage
       history with the row's facts. Refused for a row that holds a bank pairing,
       document, payment proof, exception or invoice/deal link, unless
       --duplicate-of names another ledger row with the same date, amount,
-      currency and counterparty (the exact duplicate being removed).
+      currency and counterparty name, ignoring case and punctuation (the exact
+      duplicate being removed).
   dataops reconcile note <ledger-id> --note TEXT
       Add or replace the note on an existing ledger row.
   dataops reconcile except <row> --kind KIND --period YYYY-MM [--proof TEXT] [--note TEXT]

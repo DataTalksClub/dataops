@@ -414,6 +414,9 @@ export async function clearException(client: DynamoDBDocumentClient, period: str
   return mutateMonth(client, period, by, "clear-exception", { row: key }, (record) => { delete record.decisions.exceptions[key]; });
 }
 
+/** Counterparty spelling differences (case, punctuation, spacing) do not make two rows different. */
+const sameName = (name: string) => name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
 export type DeleteRowResult = {
   mode: "dry-run" | "apply";
   deleted: boolean;
@@ -465,7 +468,7 @@ export async function deleteLedgerRow(
     if (duplicateOf === transactionId) blockers.push("a row cannot be a duplicate of itself");
     else if (!other) blockers.push(`duplicate-of row ${duplicateOf} not found`);
     else if (other.date !== row.date || other.amount !== row.amount || other.currency !== row.currency
-      || other.counterparty.trim().toLowerCase() !== row.counterparty.trim().toLowerCase()) {
+      || sameName(other.counterparty) !== sameName(row.counterparty)) {
       blockers.push(`${duplicateOf} is not an exact duplicate (date, amount, currency and counterparty must all match)`);
     }
   } else if (holds.length) {

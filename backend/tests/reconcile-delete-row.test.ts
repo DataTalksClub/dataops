@@ -27,8 +27,8 @@ describe("reconcile delete-row", () => {
   };
 
   it("dry-runs, refuses a non-duplicate with a hold, deletes an exact duplicate and audits it", async () => {
-    const keep = await create(payout("platform-payout:dup-a"));
-    const dup = await create(payout("platform-payout:dup-b"));
+    const keep = await create(payout("platform-payout:dup-a", { counterparty: "Synthetic Course Platform, Inc." }));
+    const dup = await create(payout("platform-payout:dup-b", { counterparty: "synthetic course platform inc" }));
     const other = await create(payout("platform-payout:other", { amount: "10.00" }));
     assert.equal((await buildMonth(client, "2026-10")).counters.rows, 3);
 
