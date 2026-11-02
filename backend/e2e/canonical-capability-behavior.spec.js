@@ -715,7 +715,7 @@ test.describe('canonical frontend capability behavior', () => {
     await setFaults(context.request, [{ method: 'GET', path: '/api/bookkeeping/transactions', status: 503, remaining: 10 }]);
     await page.goto('/bookkeeping');
     await expect(page.locator('.bookkeeping-ledger')).toContainText('Could not load bookkeeping: Synthetic route failure (503)');
-    await expect(page.getByRole('status')).toContainText('Retry by reopening Bookkeeping');
+    await expect(page.locator('[data-bookkeeping-status]')).toContainText('Retry by reopening Bookkeeping');
     await clearFaults(context.request);
     await page.reload();
     await expect(page.getByText('No transactions recorded for')).toBeVisible();
@@ -741,7 +741,7 @@ test.describe('canonical frontend capability behavior', () => {
     await page.locator('.bk-detail [data-attach-file]').setInputFiles({
       name: 'synthetic-evidence.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\nsynthetic evidence\n%%EOF'),
     });
-    await expect(page.getByRole('status')).toContainText('PDF attached.');
+    await expect(page.locator('[data-bookkeeping-status]')).toContainText('PDF attached.');
     await expect(page.locator('.bk-detail .bk-receipts')).toContainText('Invoice PDF');
     const links = await json(await context.request.get('/api/bookkeeping/links'));
     expect(links.items.some((link) => link.transactionId === transaction.id)).toBe(true);
@@ -751,7 +751,7 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(page.locator('.bookkeeping-documents article')).toHaveCount(1);
     await page.locator('.bookkeeping-upload-panel > summary').click();
     await page.getByRole('button', { name: 'Upload PDF' }).click();
-    await expect(page.getByRole('status')).toContainText('Choose a PDF first');
+    await expect(page.locator('[data-bookkeeping-status]')).toContainText('Choose a PDF first');
     for (const [index] of accounts.entries()) {
       await page.getByLabel('Document type').selectOption('bank-statement');
       const accountSelect = page.locator('[data-account]');
@@ -764,7 +764,7 @@ test.describe('canonical frontend capability behavior', () => {
         buffer: Buffer.from(`%PDF-1.4\nsynthetic statement ${index + 1}\n%%EOF`),
       });
       await page.getByRole('button', { name: 'Upload PDF' }).click();
-      await expect(page.getByRole('status')).toContainText('PDF uploaded and verified');
+      await expect(page.locator('[data-bookkeeping-status]')).toContainText('PDF uploaded and verified');
       await expect(page.locator('.bookkeeping-documents article')).toHaveCount(index + 2);
     }
     const retired = await context.request.post('/api/bookkeeping/documents/upload', { data: {
