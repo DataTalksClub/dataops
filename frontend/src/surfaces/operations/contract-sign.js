@@ -84,7 +84,8 @@ export function createContractSignPage({ documentRef, request, locationRef }) {
       return true;
     } catch (error) {
       setIdentity(error.message || 'This signing link is not valid');
-      root.innerHTML = '<p role="alert">' + escapeHtml(error.message || 'This signing link is invalid or expired') + '</p><p>Ask DataTalks.Club to send a fresh link to your email address.</p>';
+      root.innerHTML = '<p role="alert">' + escapeHtml(error.message || 'This signing link is invalid or expired') + '</p>'
+        + '<p>Ask DataTalks.Club to send a fresh link to your email address.</p>';
       return false;
     }
   };
