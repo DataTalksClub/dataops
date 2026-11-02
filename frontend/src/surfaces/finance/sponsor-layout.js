@@ -403,8 +403,53 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = coreEsc
           <p class="span-all" role="alert"></p>
         </div>
         <footer>
+          <button type="button" data-contract-open>Contract…</button
           <button class="primary-button" data-deal-save>Save deal</button
           ><button value="cancel">Cancel</button>
+        </footer>
+      </form>
+    </dialog>
+    <dialog class="surface-dialog" data-contract-dialog>
+      <form method="dialog">
+        <header>
+          <h3>Sponsor contract</h3>
+          <p data-contract-summary></p>
+        </header>
+        <div class="dialog-fields">
+          <input name="contractId" type="hidden" /><input name="contractVersion" type="hidden" /><label
+            >Company
+            <input name="company" /></label
+          ><label
+            >Legal payer
+            <input name="legalPayer" /></label
+          ><label
+            >Payer country (DE adds VAT)
+            <input name="payerCountry" maxlength="2" /></label
+          ><label class="span-all"
+            >Scope
+            <textarea name="scope" rows="3"></textarea></label
+          ><label
+            >Price EUR
+            <input name="priceEur" inputmode="decimal" /></label
+          ><label
+            >Starts
+            <input name="startDate" type="date" /></label
+          ><label
+            >Ends
+            <input name="endDate" type="date" /></label
+          ><label
+            >Signing order
+            <select name="signingOrder">
+              <option value="sponsor-first">Sponsor signs first, then DataTalks.Club</option>
+              <option value="counter-first">DataTalks.Club signs first, then sponsor</option>
+            </select></label
+          ><p class="span-all muted" data-contract-links hidden></p>
+          <p class="span-all" role="alert"></p>
+        </div>
+        <footer>
+          <button class="primary-button" data-contract-create>Create contract</button
+          ><button type="button" data-contract-send hidden>Send signing links</button
+          ><button value="cancel">Close</button>
         </footer>
       </form>
     </dialog>

@@ -1,6 +1,7 @@
 import { createSponsorContactEditor, createSponsorDialogGuard } from "./sponsor-contacts.js";
 import { createSponsorPersonDetail } from "./sponsor-person-detail.js";
 import { createSponsorOwnerDirectory, populateSponsorDealForm } from "./sponsor-deal-form.js";
+import { wireSponsorContractDialog } from "./sponsor-contract.js";
 import { createSponsorCommunications } from "./sponsor-communications.js";
 import { createSponsorFinance } from "./sponsor-finance.js";
 import { createSponsorLeads } from "./sponsor-leads.js";
@@ -877,6 +878,11 @@ export function createSponsorCrmSurface(context) {
         }
       }, "Could not save deal");
     };
+    wireSponsorContractDialog({
+      surface, api, safe,
+      getDeals: () => deals,
+      setDeals: (items) => { deals = items; },
+    });
     surface.querySelector("[data-save-suppression]").onclick = (event) => {
       event.preventDefault();
       const dialog = surface.querySelector("[data-suppression-dialog]");
