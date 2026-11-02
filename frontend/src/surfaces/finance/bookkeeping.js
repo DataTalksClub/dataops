@@ -4,8 +4,8 @@ import { bookkeepingSurfaceMarkup } from "./bookkeeping-markup.js";
 import {
   accountOptionsMarkup,
   documentGroupsMarkup,
-  packageReviewMarkup,
 } from "./bookkeeping-views.js";
+import { createBookkeepingReports } from "./bookkeeping-reporting.js";
 import {
   accountsOf,
   CLASSIFICATION_FIELDS,
@@ -29,7 +29,6 @@ import { createBookkeepingFinance } from "./bookkeeping-vat.js";
 import { html } from "./shared.js";
 import {
   FIELD_LABELS,
-  formatAmount,
   latestActivityMonth,
   MONEY_PATTERN,
   monthLabel,
@@ -151,13 +150,6 @@ export function createBookkeepingSurface(context) {
       documents.some((document) => document.id === link.documentId && document.documentType === "invoice"),
     );
     const lensEntries = () => entries.filter((e) => inLens(e, lens));
-    function monthReport() {
-      if (!/^\d{4}-\d{2}$/.test(lens)) return null;
-      return reports.find(
-        (r) =>
-          r.month === lens && ["ready", "generated"].includes(String(r.status)),
-      );
-    }
     function setLens(month) {
       lens = month;
       renderAll();
@@ -436,82 +428,19 @@ export function createBookkeepingSurface(context) {
           humanizeOptionLabel,
         });
     }
-    function renderPackageReview() {
-      const review = surface.querySelector("[data-package-review]");
-      const reportInput = surface.querySelector("[data-report-month]");
-      const isMonth = /^\d{4}-\d{2}$/.test(lens);
-      reportInput.value = isMonth ? lens : "";
-      surface.querySelector("[data-report]").disabled = !isMonth;
-      if (!isMonth) {
-        review.innerHTML = html`<div class="dk-empty dk-empty--compact">
-            <p class="dk-empty__title">Choose a month</p>
-            <p class="dk-empty__desc">The package follows the month picked in the navigator above.</p>
-          </div>`;
-        return;
-      }
-      const businessAccounts = accounts.filter(
-        (a) => a.kind === "business" && a.active !== false,
-      );
-      const monthEntries = lensEntries().filter((entry) => !isReportExemptEntry(entry));
-      const excludedCount = lensEntries().filter(isReportExemptEntry).length;
-      const linkedDocIds = new Set(
-        links
-          .filter((l) => monthEntries.some((e) => e.id === l.transactionId))
-          .map((l) => String(l.documentId)),
-      );
-      const evidenceDocs = documents.filter(
-        (d) => d.documentType !== "bank-statement" && linkedDocIds.has(d.id),
-      );
-      const statementStates = businessAccounts.map((a) => ({
-        account: a,
-        hasStatement: documents.some(
-          (d) =>
-            d.documentType === "bank-statement" &&
-            d.accountId === a.id &&
-            d.statementMonth === lens,
-        ),
-      }));
-      const missingStatements = statementStates.filter((s) => !s.hasStatement);
-      const preflightRows = statementStates.map((s) =>
-        html`<p class="preflight-row ${s.hasStatement ? "is-ok" : "is-blocked"}">
-          ${s.hasStatement ? "✓" : "✗"} Bank statement —
-          ${escapeHtml(s.account.displayName)}
-        </p>`,
-      );
-      if (businessAccounts.length < 2)
-        preflightRows.push(
-          html`<p class="dk-callout dk-callout--warning">
-            Set up two business accounts under Files &amp; statements before preparing a monthly package.
-          </p>`,
-        );
-      const preflightNote = missingStatements.length
-        ? html`<p class="preflight-note">
-            The accountant package needs each business account's statement
-            for ${escapeHtml(monthLabel(lens))}. Upload them under Files &amp; statements
-            (document type “Bank statement”).
-          </p>`
-        : "";
-      const report = monthReport();
-      const preview = html`<span class="dk-mono">${monthEntries.length}</span>&nbsp;transaction${monthEntries.length === 1 ? "" : "s"} ·
-        <span class="dk-mono">${evidenceDocs.length}</span>&nbsp;linked document${evidenceDocs.length === 1 ? "" : "s"}
-        · <span class="dk-mono">${excludedCount}</span>&nbsp;mandatory-payment ${excludedCount === 1 ? "entry" : "entries"} kept out`;
-      review.innerHTML = packageReviewMarkup({
-        title: monthLabel(lens),
-        preflightRows,
-        preflightNote,
-        preview,
-        ready: report
-          ? {
-              id: report.id,
-              transactionCount:
-                report.reconciliation?.transactionCount ??
-                monthEntries.length,
-              documentCount: report.reconciliation?.documentCount ?? "—",
-            }
-          : null,
-        e: escapeHtml,
-      });
-    }
+    const { renderPackageReview, renderVat } = createBookkeepingReports({
+      api,
+      escapeHtml,
+      getAccounts: () => accounts,
+      getDocuments: () => documents,
+      getLens: () => lens,
+      getLinks: () => links,
+      getReports: () => reports,
+      isReportExemptEntry,
+      lensEntries,
+      safeAction,
+      surface,
+    });
     async function refreshEvidence() {
       const [docResult, linkResult, accountResult, reportResult] =
         await Promise.all([
@@ -537,59 +466,6 @@ export function createBookkeepingSurface(context) {
       void financeSummary.ensure();
       renderDetail();
       if (view === "package") renderPackageReview();
-    }
-    async function renderVat() {
-      const yearSelect = surface.querySelector("[data-vat-year]");
-      const summary = surface.querySelector("[data-vat-summary]");
-      const year = yearSelect.value;
-      summary.textContent = "Loading VAT summary…";
-      await safeAction(async () => {
-        const vat = await api(
-          `/reports/vat${year ? `?year=${encodeURIComponent(year)}` : ""}`,
-        );
-        const months = vat.months || [];
-        summary.innerHTML = months.length
-          ? html`<div class="bookkeeping-table-wrap">
-              <table class="dk-table">
-                <thead>
-                  <tr>
-                    <th>Month</th>
-                    <th>Currency</th>
-                    <th>Output VAT</th>
-                    <th>Input VAT</th>
-                    <th>Net</th>
-                    <th>Entries</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${months
-                    .map(
-                      (m) =>
-                        html`<tr>
-                          <td data-label="Month">${escapeHtml(m.month)}</td>
-                          <td data-label="Currency">${escapeHtml(m.currency)}</td>
-                          <td data-label="Output VAT" class="ledger-amount">
-                            ${escapeHtml(formatAmount(m.outputVat, m.currency))}
-                          </td>
-                          <td data-label="Input VAT" class="ledger-amount">
-                            ${escapeHtml(formatAmount(m.inputVat, m.currency))}
-                          </td>
-                          <td data-label="Net" class="ledger-amount">
-                            ${escapeHtml(formatAmount(m.net, m.currency))}
-                          </td>
-                          <td data-label="Entries">${m.transactionCount}</td>
-                        </tr>`,
-                    )
-                    .join("")}
-                </tbody>
-              </table>
-            </div>`
-          : html`<div class="dk-empty dk-empty--compact">
-              <p class="dk-empty__title">
-                No VAT recorded${year ? ` in ${escapeHtml(year)}` : ""}
-              </p>
-            </div>`;
-      }, "Could not load VAT summary");
     }
     async function refreshInvoiceCount() {
       try {

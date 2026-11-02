@@ -307,6 +307,7 @@ export function dealsListMarkup({ deals, selectedDealId, canAdd = false }, conte
         return html`<li><article class="crm-card crm-company-deal"${current ? ' aria-current="true"' : ""}>
           <div class="crm-deal-card-header">
             <strong>${escape(({ "one-off": "One-off", package: "Package", course: "Course" }[deal.productKind]) || humanize(deal.productKind || "deal", context))}</strong>
+            <span class="status-label" data-status="${escape(deal.status)}">${escape(humanize(deal.status, context))}</span>
             <span class="status-label" data-status="contract" data-contract-chip>${deal.contract ? escape("contract: " + deal.contract.status) : ""}</span>
           </div>
           <p class="crm-deal-meta">${[next].filter(Boolean).map((value) => escape(value)).join(" · ")}</p>

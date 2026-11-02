@@ -404,7 +404,7 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = coreEsc
         </div>
         <footer>
           <button type="button" data-contract-open>Contract…</button
-          <button class="primary-button" data-deal-save>Save deal</button
+          ><button class="primary-button" data-deal-save>Save deal</button
           ><button value="cancel">Cancel</button>
         </footer>
       </form>
