@@ -1,4 +1,5 @@
 import { projectDocumentEvent, readDocumentEventMetadata } from '../sponsorDocs/eventMetadata';
+import { randomUUID } from 'node:crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { browserAuthOrigin } from '../auth/browserAuth';
@@ -8,6 +9,7 @@ import { cardTemplateType, hydrateStructuredCardFields } from '../cards/cardTitl
 import { getTemplateIdByType } from '../cards/createCard';
 import { DOCX_CONTENT_TYPE, markdownToDocx } from '../docs/docxExport';
 import { getCardConsistent, updateCard } from '../db/cards';
+import { getTaskConsistent, TaskVersionConflictError, updateTask } from '../db/tasks';
 import {
   getNewsletterIssue,
   listNewsletterIssuesByCardId,
@@ -63,12 +65,70 @@ const JSON_HEADERS: Record<string, string> = {
   'Referrer-Policy': 'no-referrer',
 };
 
+class SponsorEmailTaskOwnerError extends Error {
+  constructor(readonly statusCode: 400 | 404, message: string) {
+    super(message);
+  }
+}
+
 function json(statusCode: number, body: unknown, extraHeaders?: Record<string, string>): LambdaResponse {
   return {
     statusCode,
     headers: extraHeaders ? { ...JSON_HEADERS, ...extraHeaders } : JSON_HEADERS,
     body: JSON.stringify(body),
   };
+}
+
+async function recordSponsorEmailOnTask(
+  client: DynamoDBDocumentClient,
+  taskId: string | null,
+  cardId: string,
+  delivery: SponsorDocEmailDelivery,
+): Promise<SponsorDocEmailDelivery> {
+  if (!taskId || delivery.state !== 'sent' || !delivery.messageId) return delivery;
+  const noteText = `Sponsor document email sent (Gmail message ID: ${delivery.messageId})`;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const task = await getTaskConsistent(client, taskId);
+    if (!task) throw new SponsorEmailTaskOwnerError(404, `Task ${taskId} not found`);
+    if (task.cardId !== cardId) throw new SponsorEmailTaskOwnerError(400, `Task ${taskId} is not linked to this sponsor document`);
+    if ((task.notesLog || []).some((note) => note.text === noteText)) return { ...delivery, taskId };
+    const now = new Date().toISOString();
+    try {
+      await updateTask(client, task.id, {
+        currentTask: task,
+        expectedVersion: task.version,
+        patch: {
+          notesLog: [...(task.notesLog || []), { id: randomUUID(), text: noteText, authorId: 'system:sponsor-doc-email', createdAt: now }],
+        },
+        historyEvents: [{
+          id: randomUUID(),
+          taskId: task.id,
+          cardId,
+          action: 'noted',
+          actorId: 'system:sponsor-doc-email',
+          note: noteText,
+          createdAt: now,
+        }],
+        actorId: 'system:sponsor-doc-email',
+        triggerKind: 'sponsor-doc-email-sent',
+      });
+      return { ...delivery, taskId };
+    } catch (error) {
+      if (!(error instanceof TaskVersionConflictError) || attempt === 2) throw error;
+    }
+  }
+  return { ...delivery, taskId };
+}
+
+async function assertSponsorEmailTaskOwner(
+  client: DynamoDBDocumentClient,
+  taskId: string | null,
+  cardId: string,
+): Promise<void> {
+  if (!taskId) return;
+  const task = await getTaskConsistent(client, taskId);
+  if (!task) throw new SponsorEmailTaskOwnerError(404, `Task ${taskId} not found`);
+  if (task.cardId !== cardId) throw new SponsorEmailTaskOwnerError(400, `Task ${taskId} is not linked to this sponsor document`);
 }
 
 function parseBody(rawBody: string | null | undefined): Record<string, unknown> | null {
@@ -612,6 +672,15 @@ export async function handleSponsorDocRoutes(
         const directory = new TeamDirectory(client);
         const staffProj = actor.actor.id ? await directory.project(actor.actor.id) : null;
         const ownerRecordId = existingCard?.id || existingIssue?.id || existingEpisode!.id;
+        const explicitRecipient = typeof body.recipientEmail === 'string' && body.recipientEmail.trim()
+          ? body.recipientEmail.trim()
+          : typeof body.to === 'string' && body.to.trim()
+            ? body.to.trim()
+            : null;
+        const shouldAutoSend = body.autoSendEmail !== false
+          && (isAutoSendEligibleTemplate(template) || Boolean(explicitRecipient));
+        const taskId = typeof body.taskId === 'string' && body.taskId.trim() ? body.taskId.trim() : null;
+        if (shouldAutoSend) await assertSponsorEmailTaskOwner(client, taskId, ownerRecordId);
 
         const { doc, accessCode } = await createSponsorDoc(client, {
           cardId: ownerRecordId,
@@ -669,13 +738,6 @@ export async function handleSponsorDocRoutes(
 
         let finalDoc = doc;
         let emailDelivery: SponsorDocEmailDelivery | null = null;
-        const explicitRecipient = typeof body.recipientEmail === 'string' && body.recipientEmail.trim()
-          ? body.recipientEmail.trim()
-          : typeof body.to === 'string' && body.to.trim()
-            ? body.to.trim()
-            : null;
-        const shouldAutoSend = body.autoSendEmail !== false
-          && (isAutoSendEligibleTemplate(template) || Boolean(explicitRecipient));
         if (shouldAutoSend) {
           const shareUrl = `${docUrl}?code=${encodeURIComponent(accessCode)}`;
           emailDelivery = await deliverSponsorDocEmail(client, {
@@ -686,10 +748,15 @@ export async function handleSponsorDocRoutes(
             accessCode,
             recipientEmail: explicitRecipient,
             recipientName: typeof body.recipientName === 'string' ? body.recipientName : null,
-            connectionId: typeof body.connectionId === 'string' ? body.connectionId : undefined,
           });
+          if (taskId) emailDelivery = { ...emailDelivery, taskId };
           const withDelivery = await setSponsorDocEmailDelivery(client, doc.id, emailDelivery);
           if (withDelivery) finalDoc = withDelivery;
+          emailDelivery = await recordSponsorEmailOnTask(client, taskId, doc.cardId, emailDelivery);
+          if (taskId) {
+            const withTask = await setSponsorDocEmailDelivery(client, doc.id, emailDelivery);
+            if (withTask) finalDoc = withTask;
+          }
         }
 
         return json(201, {
@@ -793,7 +860,11 @@ export async function handleSponsorDocRoutes(
         : typeof body.to === 'string' && body.to.trim()
           ? body.to.trim()
           : null;
-      const emailDelivery = await deliverSponsorDocEmail(client, {
+      const taskId = typeof body.taskId === 'string' && body.taskId.trim()
+        ? body.taskId.trim()
+        : loaded.doc.emailDelivery?.taskId || null;
+      await assertSponsorEmailTaskOwner(client, taskId, loaded.doc.cardId);
+      let emailDelivery = await deliverSponsorDocEmail(client, {
         template: loaded.doc.template,
         sponsorName: loaded.doc.sponsorName,
         publicationDate: loaded.doc.publicationDate,
@@ -801,9 +872,11 @@ export async function handleSponsorDocRoutes(
         accessCode,
         recipientEmail: explicitRecipient,
         recipientName: typeof body.recipientName === 'string' ? body.recipientName : null,
-        connectionId: typeof body.connectionId === 'string' ? body.connectionId : undefined,
       });
-      const updatedDoc = (await setSponsorDocEmailDelivery(client, docId, emailDelivery)) || loaded.doc;
+      if (taskId) emailDelivery = { ...emailDelivery, taskId };
+      let updatedDoc = (await setSponsorDocEmailDelivery(client, docId, emailDelivery)) || loaded.doc;
+      emailDelivery = await recordSponsorEmailOnTask(client, taskId, loaded.doc.cardId, emailDelivery);
+      if (taskId) updatedDoc = (await setSponsorDocEmailDelivery(client, docId, emailDelivery)) || updatedDoc;
       return json(200, {
         doc: await buildDocResponsePayload(updatedDoc, event, client, {
           viewerRole: 'staff',
@@ -977,6 +1050,9 @@ export async function handleSponsorDocRoutes(
   } catch (err: unknown) {
     if (err instanceof SponsorDocValidationError) {
       return json(422, { error: err.message, code: 'invalid_content', fields: err.fields });
+    }
+    if (err instanceof SponsorEmailTaskOwnerError) {
+      return json(err.statusCode, { error: err.message, code: 'invalid_email_task' });
     }
     recordRequestError(err);
     return json(500, { error: 'Internal server error' });

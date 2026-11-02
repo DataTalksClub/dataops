@@ -336,12 +336,13 @@ export function createSponsorDocPage({
 
   async function sendSponsorEmailFromOrin() {
     if (busy || !doc) return;
+    const taskId = String(root?.querySelector?.("[data-sponsor-task-id]")?.value || "").trim();
     busy = true;
     render();
     try {
       const payload = await request(`/api/sponsor-docs/${encodeURIComponent(docId)}/send-email`, {
         method: "POST",
-        body: JSON.stringify({}),
+        body: JSON.stringify(taskId ? { taskId } : {}),
       });
       if (payload?.doc) doc = payload.doc;
       const delivery = payload?.emailDelivery || doc?.emailDelivery;
@@ -438,6 +439,18 @@ export function createSponsorDocPage({
 
       const smBtn = "dk-button dk-button--secondary dk-button--sm";
       const btnRow = el("div", "sponsor-doc-actions__buttons");
+      let taskLabel = null;
+      if (!isSpeakerDoc(doc) && !isPodcastGuestDoc(doc)) {
+        taskLabel = el("label", "sponsor-doc-task-id");
+        taskLabel.append(el("span", "dk-hint", "Owning task ID (for the sent message record)"));
+        const taskInput = el("input", "dk-input");
+        taskInput.type = "text";
+        taskInput.value = doc.emailDelivery?.taskId || "";
+        taskInput.placeholder = "DataOps task ID";
+        taskInput.disabled = busy;
+        taskInput.dataset.sponsorTaskId = "";
+        taskLabel.append(taskInput);
+      }
       if (doc.shareUrl) {
         btnRow.append(
           actionBtn(smBtn, "Copy share link", "copy-share-url", () =>
@@ -466,7 +479,9 @@ export function createSponsorDocPage({
         cardLink.href = `/cards?cardId=${encodeURIComponent(doc.cardId)}`;
         btnRow.append(cardLink);
       }
-      staffBar.append(topRow, btnRow);
+      staffBar.append(topRow);
+      if (taskLabel) staffBar.append(taskLabel);
+      staffBar.append(btnRow);
       headerCard.append(staffBar);
     }
 

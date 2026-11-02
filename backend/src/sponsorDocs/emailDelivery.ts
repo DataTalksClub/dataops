@@ -30,9 +30,12 @@ import {
 } from '../calendar/dapierBroker';
 import { listCrmRecords } from '../db/sponsorCrm';
 import {
+  newsletterSponsorSubject,
   renderSponsorEmailDraft,
   type SponsorDocTemplateKey,
 } from './templates';
+
+export { newsletterSponsorSubject } from './templates';
 
 export const SPONSOR_DOC_EMAIL_FROM = 'orin@datatalks.club';
 export const SPONSOR_DOC_EMAIL_CC = 'valeriia@datatalks.club';
@@ -52,6 +55,7 @@ export interface SponsorDocEmailDelivery {
   subject: string;
   connectionId?: string;
   messageId?: string;
+  taskId?: string;
   threadId?: string;
   sentAt?: string;
   reason?: string;
@@ -80,25 +84,11 @@ function isNewsletterSponsorTemplate(template: SponsorDocTemplateKey): boolean {
   );
 }
 
-function newsletterSubjectDate(value: string | null | undefined): string {
+function isValidIsoDate(value: string | null | undefined): boolean {
   const raw = String(value || '').trim();
-  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return match ? `${match[2]}-${match[3]}-${match[1]}` : raw;
-}
-
-export function newsletterSponsorSubject(
-  template: SponsorDocTemplateKey,
-  sponsorName: string | null | undefined,
-  publicationDate: string | null | undefined,
-): string {
-  const company = String(sponsorName || '').trim() || '<COMPANY>';
-  const variant = template === 'newsletter-secondary'
-    ? ' (Secondary Slot)'
-    : template === 'newsletter-standalone'
-      ? ' (Stand-alone)'
-      : '';
-  const date = newsletterSubjectDate(publicationDate) || '<PUBLICATION DATE>';
-  return `${company} + DataTalks.Club Newsletter${variant} - ${date}`;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  const parsed = new Date(`${raw}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === raw;
 }
 
 export function isAutoSendEligibleTemplate(template: SponsorDocTemplateKey): boolean {
@@ -286,6 +276,19 @@ export async function deliverSponsorDocEmail(
     };
   }
 
+  if (newsletterEmail && (!options.sponsorName?.trim() || !isValidIsoDate(options.publicationDate))) {
+    return {
+      state: 'deferred',
+      from: SPONSOR_DOC_EMAIL_FROM,
+      to: resolvedRecipient.to,
+      cc: [SPONSOR_DOC_EMAIL_CC],
+      ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
+      subject,
+      reason: 'incomplete_newsletter_template_data',
+      message: 'Newsletter sponsor email needs a company name and valid publication date; no email was sent.',
+    };
+  }
+
   const to = resolvedRecipient.to;
   const cc = [SPONSOR_DOC_EMAIL_CC];
 
@@ -355,7 +358,7 @@ export async function deliverSponsorDocEmail(
         to,
         ...(cc.length > 0 ? { cc } : {}),
         ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-        subject: draft.subject,
+        subject,
         connectionId,
         reason: 'dapier_unreachable',
         message: 'The Dapier token broker could not be reached.',
@@ -363,14 +366,14 @@ export async function deliverSponsorDocEmail(
     }
 
     if (!tokenRes.ok) {
-      const msg = dapierTokenProblem(tokenRes.status, connectionId, agent);
+      const msg = summarizeDapierGmailTokenProblem(tokenRes.status, connectionId, agent);
       const failure: SponsorDocEmailDelivery = {
         state: 'deferred',
         from: SPONSOR_DOC_EMAIL_FROM,
         to,
         ...(cc.length > 0 ? { cc } : {}),
         ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-        subject: draft.subject,
+        subject,
         connectionId,
         reason: `dapier_token_http_${tokenRes.status}`,
         message: msg,
@@ -389,7 +392,7 @@ export async function deliverSponsorDocEmail(
         to,
         ...(cc.length > 0 ? { cc } : {}),
         ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-        subject: draft.subject,
+        subject,
         connectionId,
         reason: 'invalid_broker_json',
         message: 'The Dapier token broker returned an invalid JSON response.',
@@ -405,7 +408,7 @@ export async function deliverSponsorDocEmail(
         to,
         ...(cc.length > 0 ? { cc } : {}),
         ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-        subject: draft.subject,
+        subject,
         connectionId,
         reason: 'empty_access_token',
         message: `Dapier connection "${connectionId}" returned no access token.`,
@@ -454,10 +457,26 @@ export async function deliverSponsorDocEmail(
         to,
         ...(cc.length > 0 ? { cc } : {}),
         ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-        subject: draft.subject,
+        subject,
         connectionId,
         reason: 'wrong_sender_identity',
         message: `Sponsor form emails must be sent from ${SPONSOR_DOC_EMAIL_FROM}, but Dapier connection "${connectionId}" is bound to "${verifiedAccount}".`,
+      };
+      if (!preferredDeferred) preferredDeferred = failure;
+      continue;
+    }
+
+    if (!verifiedAccount) {
+      const failure: SponsorDocEmailDelivery = {
+        state: 'deferred',
+        from: SPONSOR_DOC_EMAIL_FROM,
+        to,
+        ...(cc.length > 0 ? { cc } : {}),
+        ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
+        subject,
+        connectionId,
+        reason: 'sender_identity_unverified',
+        message: `DataOps could not verify that Dapier connection "${connectionId}" belongs to ${SPONSOR_DOC_EMAIL_FROM}; no email was sent.`,
       };
       if (!preferredDeferred) preferredDeferred = failure;
       continue;
@@ -478,7 +497,7 @@ export async function deliverSponsorDocEmail(
         to,
         ...(cc.length > 0 ? { cc } : {}),
         ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-        subject: draft.subject,
+        subject,
         connectionId,
         reason: 'gmail_unreachable',
         message: 'Gmail API could not be reached to send the sponsor email.',
@@ -494,7 +513,7 @@ export async function deliverSponsorDocEmail(
         to,
         ...(cc.length > 0 ? { cc } : {}),
         ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-        subject: draft.subject,
+        subject,
         connectionId,
         reason: sendRes.status === 403 ? 'insufficient_gmail_scope' : `gmail_http_${sendRes.status}`,
         message: msg,

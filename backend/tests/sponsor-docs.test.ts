@@ -9,11 +9,13 @@ import { sponsorDocKey } from '../src/db/sponsorDocs';
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createCard } from '../src/db/cards';
+import { createTask, getTask } from '../src/db/tasks';
 import { createPodcastEpisode } from '../src/db/podcastEpisodes';
 import { createUser } from '../src/db/users';
 import { createSession } from '../src/db/sessions';
 import { getSponsorDoc, updateSponsorDoc } from '../src/db/sponsorDocs';
 import { newsletterSponsorSubject, setSponsorDocEmailDepsForTests } from '../src/sponsorDocs/emailDelivery';
+import { renderSponsorEmailDraft } from '../src/sponsorDocs/templates';
 import { templateLink } from './helpers/cardTemplate';
 
 describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
@@ -45,6 +47,11 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.equal(newsletterSponsorSubject('newsletter-main', 'Acme', '2026-11-16'), 'Acme + DataTalks.Club Newsletter - 11-16-2026');
     assert.equal(newsletterSponsorSubject('newsletter-secondary', 'Acme', '2026-11-16'), 'Acme + DataTalks.Club Newsletter (Secondary Slot) - 11-16-2026');
     assert.equal(newsletterSponsorSubject('newsletter-standalone', 'Acme', '2026-11-16'), 'Acme + DataTalks.Club Newsletter (Stand-alone) - 11-16-2026');
+    const draft = renderSponsorEmailDraft({ template: 'newsletter-main', sponsorName: 'Acme', publicationDate: '2026-11-16', shareUrl: 'https://example.test', accessCode: 'code' });
+    assert.equal(draft.subject, 'Acme + DataTalks.Club Newsletter - 11-16-2026');
+    assert.match(draft.body, /Nice to meet you! I'm Orin/);
+    assert.match(draft.body, /Acme's next sponsored slot in our newsletter is scheduled for November 16, 2026/);
+    assert.match(draft.body, /Access code: code/);
   });
 
   after(async () => {
@@ -593,8 +600,14 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       anchorDate: '2026-11-16',
       sponsor: 'ClickHouse',
     });
+    const ownerTask = await createTask(client, {
+      description: 'Email sponsor the sponsorship document',
+      date: '2026-11-02',
+      cardId: card.id,
+    });
 
     const sentMessages: Array<{ url: string; rawDecoded: string; auth: string; sendBody: Record<string, unknown> }> = [];
+    const requestedConnections: string[] = [];
 
     try {
       setSponsorDocEmailDepsForTests({
@@ -603,6 +616,8 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
         fetchImpl: (async (input: string | URL | Request, init?: RequestInit) => {
           const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
           if (url === 'https://dapier.example.test/api/agent/token') {
+            const reqBody = JSON.parse(String(init?.body || '{}')) as { connection_id?: string };
+            requestedConnections.push(reqBody.connection_id || '');
             return new Response(
               JSON.stringify({
                 access_token: 'ya29.orin-gmail-access-token',
@@ -643,6 +658,8 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
         template: 'newsletter-main',
         recipientEmail: 'alexey.s.grigoriev@gmail.com',
         recipientName: 'Alex',
+        connectionId: 'google-calendar-orin',
+        taskId: ownerTask.id,
       });
       assert.strictEqual(createRes.statusCode, 201, createRes.body);
       const created = JSON.parse(createRes.body);
@@ -651,8 +668,36 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       assert.strictEqual(created.emailDelivery?.to, 'alexey.s.grigoriev@gmail.com');
       assert.deepEqual(created.emailDelivery?.cc, ['valeriia@datatalks.club']);
       assert.strictEqual(created.emailDelivery?.messageId, 'gmail-msg-orin-1');
+      assert.strictEqual(created.emailDelivery?.taskId, ownerTask.id);
       assert.match(created.emailDelivery?.subject || '', /^ClickHouse \+ DataTalks\.Club Newsletter - 11-16-2026$/);
       assert.strictEqual(created.doc.emailDelivery?.state, 'sent');
+      assert.deepEqual(requestedConnections, ['gmail-orin'], 'the dedicated send connection cannot be overridden by the API request');
+      const taskAfterCreate = await getTask(client, ownerTask.id);
+      assert.match(taskAfterCreate?.notesLog?.[0]?.text || '', /gmail-msg-orin-1/);
+      assert.equal(taskAfterCreate?.taskHistory.at(-1)?.action, 'noted');
+
+      let unverifiedSendAttempted = false;
+      setSponsorDocEmailDepsForTests({
+        brokerUrl: 'https://dapier.example.test',
+        credential: 'dp_test_orin_token',
+        fetchImpl: (async (input: string | URL | Request, init?: RequestInit) => {
+          const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+          if (url === 'https://dapier.example.test/api/agent/token') {
+            return new Response(JSON.stringify({ access_token: 'ya29.unverified', expires_in: 3600 }), { status: 200 });
+          }
+          if (url.includes('/gmail/v1/users/me/profile') || url.includes('/oauth2/v')) {
+            return new Response(JSON.stringify({ error: 'identity unavailable' }), { status: 403 });
+          }
+          if (url.endsWith('/messages/send')) unverifiedSendAttempted = true;
+          throw new Error(`Unexpected fetch URL: ${url}`);
+        }) as typeof globalThis.fetch,
+      });
+      const unverifiedRes = await staffReq('POST', `/api/sponsor-docs/${created.doc.id}/send-email`, {
+        recipientEmail: 'alexey.s.grigoriev@gmail.com',
+      });
+      const unverified = JSON.parse(unverifiedRes.body);
+      assert.equal(unverified.emailDelivery?.reason, 'sender_identity_unverified');
+      assert.equal(unverifiedSendAttempted, false, 'never send unless Orin identity is positively verified');
 
       assert.strictEqual(sentMessages.length, 1);
       assert.strictEqual(sentMessages[0].auth, 'Bearer ya29.orin-gmail-access-token');
@@ -666,12 +711,15 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       assert.ok(sentMessages[0].rawDecoded.includes(created.doc.accessCode));
 
       // Also verify POST /api/sponsor-docs/:id/send-email when gmail.send scope is missing (403)
+      let retryConnection = '';
       setSponsorDocEmailDepsForTests({
         brokerUrl: 'https://dapier.example.test',
         credential: 'dp_test_orin_token',
-        fetchImpl: (async (input: string | URL | Request) => {
+        fetchImpl: (async (input: string | URL | Request, init?: RequestInit) => {
           const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
           if (url === 'https://dapier.example.test/api/agent/token') {
+            const reqBody = JSON.parse(String(init?.body || '{}')) as { connection_id?: string };
+            retryConnection = reqBody.connection_id || '';
             return new Response(
               JSON.stringify({ access_token: 'ya29.orin-no-gmail-scope', expires_in: 3600 }),
               { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -701,14 +749,16 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
 
       const retryRes = await staffReq('POST', `/api/sponsor-docs/${created.doc.id}/send-email`, {
         recipientEmail: 'alexey.s.grigoriev@gmail.com',
+        connectionId: 'google-calendar-orin',
       });
       assert.strictEqual(retryRes.statusCode, 200, retryRes.body);
       const retried = JSON.parse(retryRes.body);
       assert.strictEqual(retried.emailDelivery?.state, 'deferred');
       assert.strictEqual(retried.emailDelivery?.reason, 'insufficient_gmail_scope');
       assert.match(retried.emailDelivery?.message || '', /gmail\.send/);
+      assert.strictEqual(retryConnection, 'gmail-orin', 'the send-email API also pins the dedicated connection');
 
-      // Also verify automatic fallback to dedicated gmail-orin connection when google-calendar-orin lacks gmail.send
+      // Verify the dedicated gmail-orin connection sends after the prior scope failure.
       setSponsorDocEmailDepsForTests({
         brokerUrl: 'https://dapier.example.test',
         credential: 'dp_test_orin_token',
@@ -745,13 +795,15 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       });
 
       const fallbackRes = await staffReq('POST', `/api/sponsor-docs/${created.doc.id}/send-email`, {
-        recipientEmail: 'sponsors@clickhouse.example.com',
+        recipientEmail: 'alexey.s.grigoriev@gmail.com',
       });
       assert.strictEqual(fallbackRes.statusCode, 200, fallbackRes.body);
       const fallbackBody = JSON.parse(fallbackRes.body);
       assert.strictEqual(fallbackBody.emailDelivery?.state, 'sent');
       assert.strictEqual(fallbackBody.emailDelivery?.connectionId, 'gmail-orin');
       assert.strictEqual(fallbackBody.emailDelivery?.messageId, 'gmail-msg-orin-fallback');
+      const taskAfterRetry = await getTask(client, ownerTask.id);
+      assert.match(taskAfterRetry?.notesLog?.at(-1)?.text || '', /gmail-msg-orin-fallback/);
     } finally {
       setSponsorDocEmailDepsForTests({});
     }
