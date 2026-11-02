@@ -31,6 +31,7 @@ import { getWorkspaceSettings, resolveDefaultAssigneeId } from '../db/workspaceS
 import { importCrmSnapshot } from '../sponsorCrm/importSnapshot';
 import { listColdEntries, remindColdEntries, touchTarget, TOUCH_CHANNELS } from '../sponsorCrm/coldContacts';
 import { dealMoneyFacts } from '../sponsorFinance/ledger';
+import { dealHasSignedContract, listContracts } from '../db/sponsorContracts';
 import {
   CHANNELS,
   NEWSLETTER_CHANNELS,
@@ -169,6 +170,7 @@ function validateDeal(body: Record<string, unknown>, partial = false, existing?:
   if (body.title !== undefined && body.title !== '' && !text(body.title, 200)) return 'Invalid title';
   if (body.lostReason !== undefined && !LOST_REASONS.has(String(body.lostReason))) return 'Invalid lostReason';
   if (body.amountEur !== undefined && (typeof body.amountEur !== 'number' || !Number.isFinite(body.amountEur))) return 'Invalid amountEur';
+  if (body.contractRequired !== undefined && typeof body.contractRequired !== 'boolean') return 'Invalid contractRequired';
   if (body.agreementDate != null && !realDate(body.agreementDate)) return 'Invalid agreementDate';
   if (body.primaryContactId != null && !ID.test(String(body.primaryContactId))) return 'Invalid primaryContactId';
   return '';
@@ -258,10 +260,12 @@ async function decorateDeals(client: DynamoDBDocumentClient, deals: CrmRecord[],
     dealMoneyFacts(client, today, { organizations, deals: allDeals, deliverables }),
     listOpenDealTasks(client),
   ]);
+  const contractsByDeal = new Map((await listContracts(client)).map((contract) => [String(contract.dealId), contract]));
   return deals.map((deal) => {
     const kids = deliverables.filter((item) => item.dealId === deal.id && !item.archivedAt);
     const money = facts.get(deal.id);
     return publicDeal(deal, {
+      contract: contractsByDeal.has(String(deal.id)) ? { id: contractsByDeal.get(String(deal.id))!.id, status: contractsByDeal.get(String(deal.id))!.status } : null,
       money: deriveMoney(money), fulfillment: deriveFulfillment(kids), deliverables: kids,
       openTasks: (tasksByDeal.get(deal.id) || []).map(publicDealTask),
       ...(money ? { finance: publicMoney(money) } : {}),
@@ -819,6 +823,9 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
       if (!contact || contact.organizationId !== body.organizationId) return json(422, { error: 'Invalid primary contact reference' });
     }
     if (kind === 'deal') body.productKind = body.productKind || 'one-off';
+    if (kind === 'deal' && body.status === 'agreed' && body.contractRequired) {
+      return json(422, { error: 'A signed contract is required before this deal can be marked agreed', code: 'signed_contract_required' });
+    }
     if (kind === 'organization' && body.domain) body.domain = registrableDomain(String(body.domain));
     if (Array.isArray(body.tags)) body.tags = body.tags.map((t) => String(t).trim());
     try {
@@ -867,6 +874,9 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
       return json(422, { error: 'Invalid newsletter issue reference' });
     }
     if (kind === 'organization' && body.domain) body.domain = registrableDomain(String(body.domain));
+    if (kind === 'deal' && body.status === 'agreed' && (body.contractRequired !== undefined ? body.contractRequired : existing.contractRequired) && !(await dealHasSignedContract(client, existing.id))) {
+      return json(422, { error: 'A signed contract is required before this deal can be marked agreed', code: 'signed_contract_required' });
+    }
     if (Array.isArray(body.tags)) body.tags = body.tags.map((t) => String(t).trim());
     try {
       if (kind === 'deal') return json(200, publicDeal(await updateDealAtomic(client, existing, body, user)));

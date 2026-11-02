@@ -30,7 +30,7 @@ const replayConflict = () => Object.assign(new Error('Idempotency key already us
 export const deterministicCrmId = (kind: string, sourceKey: string) => createHash('sha256').update(`${kind}:${sourceKey}`).digest('hex');
 const stored = (kind: string, record: Record<string, unknown>) => ({ PK: key(kind, String(record.id)), SK: key(kind, String(record.id)), ...compact(record) });
 const historyPut = (bookingId: string, event: Record<string, unknown>) => { const createdAt=new Date().toISOString(),id=`${createdAt}#${randomUUID()}`;return { Put:{TableName:TABLE_SPONSOR_CRM,Item:compact({PK:key('history',bookingId),SK:id,...event,id,bookingId,createdAt}),ConditionExpression:'attribute_not_exists(PK) AND attribute_not_exists(SK)'} }; };
-async function transact(client:DynamoDBDocumentClient,items:any[]){
+export async function transact(client:DynamoDBDocumentClient,items:any[]){
   if(process.env.NODE_ENV!=='test'||!usesLocalTransactionEmulation()) return client.send(new TransactWriteCommand({TransactItems:items,ClientRequestToken:randomUUID()}));
   // Dynalite used by this repository lacks TransactWriteItems. Production always
   // uses the command above; tests preserve conditional-write semantics locally.

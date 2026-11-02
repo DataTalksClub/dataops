@@ -1,3 +1,4 @@
+
 /**
  * Portal layer for the consolidated single-origin backend.
  *
@@ -25,6 +26,7 @@ import type { LambdaEvent, LambdaResponse } from '../types';
 import { isAnonymousDocumentReviewAsset, isAnonymousDocumentReviewRequest } from '../documents/reviews';
 import { isAnonymousDeviceRequest } from '../routes/cliAuth';
 import { isAnonymousSponsorDocAsset, isAnonymousSponsorDocRequest } from '../routes/sponsorDocs';
+import { isAnonymousSponsorContractAsset } from '../routes/sponsorContracts';
 import {
   isAnonymousNewsletterPreviewAsset,
   isAnonymousNewsletterPreviewRequest,
@@ -159,6 +161,7 @@ function serveFrontend(event: LambdaEvent, method: string, path: string): Lambda
 
   if (/^\/document-review\/[^/]+\/?$/.test(path)) return serveIndex('src/document-review.html');
   if (path === '/device' || path === '/device/sessions') return serveIndex('src/device.html');
+  if (/^\/contracts\/[^/]+\/?$/.test(path)) return serveIndex('src/contract-sign.html');
   if (/^\/(sponsor-docs|podcast-docs|guest-docs|webinar-docs|workshop-docs)\/[^/]+\/?$/.test(path)) return serveIndex('src/sponsor-doc.html');
   if (/^\/newsletter-issues\/[^/]+\/preview\/?$/.test(path)) return serveIndex('src/newsletter-preview.html');
   if (path === '/' || path === '/index.html') return serveIndex();
@@ -300,7 +303,7 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
       const returnTo = code ? `/device?code=${encodeURIComponent(code)}` : '/device';
       return { response: redirectToLogin(returnTo), authorized: false };
     }
-    if (isAnonymousDocumentReviewAsset(method, path) || isAnonymousSponsorDocAsset(method, path) || isAnonymousNewsletterPreviewAsset(method, path)) {
+    if (isAnonymousDocumentReviewAsset(method, path) || isAnonymousSponsorDocAsset(method, path) || isAnonymousNewsletterPreviewAsset(method, path) || isAnonymousSponsorContractAsset(method, path)) {
       const fe = serveFrontend(event, method, path);
       if (fe) return { response: fe, authorized: false };
     }

@@ -58,6 +58,7 @@ import { handleInvoiceReader } from './auth/invoiceReader';
 import { handleKnowledgePublisher } from './auth/knowledgePublisher';
 import { handleCliAuthRoutes, isAnonymousDeviceRequest } from './routes/cliAuth';
 import { handleSponsorDocRoutes, isAnonymousSponsorDocRequest } from './routes/sponsorDocs';
+import { handleSponsorContractRoutes, isAnonymousSponsorContractRequest } from './routes/sponsorContracts';
 import { getDocument } from './db/documents';
 import { handleCardDocumentRoutes } from './routes/cardDocuments';
 import { handleCampaignCalendarRoutes } from './routes/campaignCalendar';
@@ -80,6 +81,7 @@ function isAuthExempt(method: string, path: string): boolean {
   if (isAnonymousDocumentReviewRequest(method, path)) return true;
   if (isAnonymousDeviceRequest(method, path)) return true;
   if (isAnonymousSponsorDocRequest(method, path)) return true;
+  if (isAnonymousSponsorContractRequest(method, path)) return true;
   if (isAnonymousNewsletterPreviewRequest(method, path)) return true;
   if (AUTH_EXEMPT_PATHS.has(path)) return true;
   if (method === 'POST' && path === '/api/v1/intake/email-documents') return true;
@@ -319,6 +321,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       return await handleReconcileRoutes(reqPath, method, event, client);
     }
     if (reqPath === '/api/tuition' || reqPath.startsWith('/api/tuition/')) return await handleTuitionRoutes(reqPath, method, event, client);
+    if (reqPath.startsWith('/api/sponsor-crm/contracts')) {
+      return await handleSponsorContractRoutes(reqPath, method, event, client);
+    }
     if (reqPath.startsWith('/api/sponsor-crm')) {
       const sponsorRoute = () => handleSponsorRoute(reqPath, method, event, client);
       // A read-only request scans the CRM table once, not once per kind.
