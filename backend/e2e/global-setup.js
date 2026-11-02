@@ -464,7 +464,11 @@ async function globalSetup({
     {
       env: buildTestServerEnvironment(undefined, port, ownerToken),
       stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
+      // POSIX: own process group. Windows: detached means DETACHED_PROCESS, so the tsx
+      // child allocates a console that Windows Terminal turns into a visible tab; stay
+      // attached to a hidden console instead.
+      detached: process.platform !== 'win32',
+      windowsHide: true,
     }
   );
 
