@@ -1523,3 +1523,10 @@ body[data-workspace-view="tasks"] .runtime-template-chip + .runtime-template-tag
 body[data-workspace-view="tasks"] .runtime-template-empty-clear {
   margin-top: var(--dk-space-2);
 }
+.ops-queue-checklist-progress {
+  align-self: baseline;
+  color: var(--dk-text-muted, #68717d);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

@@ -11,6 +11,7 @@ import { renderAddPrerequisite, renderTaskDependencies } from "./task-prerequisi
 import { createTaskRequires } from "./task-requires.js";
 import { createTaskBrowser } from "./task-browser.js";
 import { renderTaskLinkedCard } from "./task-linked-card.js";
+import { renderTaskChecklist } from "./task-checklist.js";
 
 export function createTaskPanel(context) {
   const {
@@ -52,6 +53,7 @@ export function createTaskPanel(context) {
     taskRequiresApprovedArtifact,
     todayIsoDate,
     unskipTask,
+    toggleTaskChecklistItem,
     updateTaskStatus,
     retryTaskIntent,
     workApiUrl,
@@ -429,6 +431,12 @@ export function createTaskPanel(context) {
 
     const view = taskDisplayParts(task, overviewDeps);
     taskPanelBody.append(renderTaskContext(task, view, overviewDeps));
+    const checklist = renderTaskChecklist(task, {
+      resolveDocReference,
+      toggleTaskChecklistItem,
+      busy: panelMutationBusy,
+    });
+    if (checklist) taskPanelBody.append(checklist);
 
     const actor = getCurrentOperator();
     const assignee = task.assigneeId
@@ -719,10 +727,18 @@ export function createTaskPanel(context) {
         unskipped: "Task unskipped",
         "template-retired": "Task retired by Template update",
         "template-restored": "Task restored by Template update",
+        "checklist-item-checked": "Checklist item checked",
+        "checklist-item-unchecked": "Checklist item unchecked",
       };
-      const label =
+      const baseLabel =
         labels[event.action] ||
         labelizeWorkValue(event.action || "updated");
+      const checklistItem = event.checklistItemId
+        ? task.checklistItems?.find((item) => item.id === event.checklistItemId)
+        : null;
+      const label = checklistItem
+        ? `${baseLabel}: ${checklistItem.text}`
+        : baseLabel;
       const detail =
         event.note && event.note !== label ? ` — ${event.note}` : "";
       return `[${event.createdAt || task.updatedAt || new Date().toISOString()}] ${label}${detail}`;

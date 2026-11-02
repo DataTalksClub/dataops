@@ -35,6 +35,7 @@ import {
   optionalStringArrayField,
   optionalStringField,
   optionalStringOrObjectField,
+  optionalTaskChecklistItemsField,
   requiredEnum,
   requiredIntegerField,
   requiredTaskHistoryField,
@@ -215,6 +216,8 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
     optionalStringField(task, 'instructions_url', errors, context);
     optionalStringField(task, 'instruction_doc_id', errors, context);
     optionalStringField(task, 'instruction_step_id', errors, context);
+    optionalStringField(task, 'checklist_doc_id', errors, context);
+    optionalTaskChecklistItemsField(task, errors, context);
     optionalStringField(task, 'phase', errors, context);
     optionalStringArrayField(task, 'requires', errors, context);
     optionalEnum(task, 'browser_requirement', VALID_BROWSER_REQUIREMENTS, errors, context);

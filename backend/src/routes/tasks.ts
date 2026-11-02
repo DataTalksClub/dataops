@@ -44,6 +44,12 @@ import { matchesBrowserRequirementFilter, parseBrowserRequirementFilter } from '
 import type { BrowserRequirementFilter } from '../browserRequirement';
 import type { LambdaEvent, LambdaResponse, Task, TaskHistoryEvent } from '../types';
 import { mergeMaterials } from '../taskMaterials';
+import {
+  loadTaskChecklistDefinition,
+  makeInlineChecklistItems,
+  taskChecklistItems,
+  TaskChecklistSourceError,
+} from '../taskChecklist';
 import { resolveTaskDate, resolveTaskDateTime, addDays, isValidTimezone, berlinToday } from '../relativeDates';
 import { defaultPaymentNextFollowUp, isPaymentFollowUpTask, noteWithEvidence, paymentDeferralError, paymentEvidence } from '../paymentTaskGuard';
 import {
@@ -257,6 +263,26 @@ function extractTaskAction(reqPath: string): { taskId: string; action: string } 
   return { taskId: decodeURIComponent(match[1]), action: match[2] };
 }
 
+function checklistCompletionError(
+  task: Pick<Task, 'checklistItems'>,
+  force: boolean,
+  reason: string | undefined,
+): string | null {
+  const items = task.checklistItems || [];
+  const checked = items.filter((item) => item.checked).length;
+  if (force && !reason) return '--force requires a non-empty --reason';
+  if (!force && reason) return '--reason requires --force';
+  if (items.length === 0) return null;
+  if (checked < items.length && !force) {
+    return `Cannot mark Task as done: ${checked}/${items.length} checklist items are complete. Check the remaining items or use --force --reason to override.`;
+  }
+  return null;
+}
+
+function checklistOverrideNote(openCount: number, reason?: string): string | undefined {
+  return openCount > 0 && reason ? `Forced completion with ${openCount} checklist items open: ${reason}` : undefined;
+}
+
 export async function handleTaskRoutes(
   reqPath: string,
   method: string,
@@ -280,6 +306,20 @@ export async function handleTaskRoutes(
     }
 
     const taskData: Record<string, unknown> = {};
+    let checklistDefinition: Awaited<ReturnType<typeof loadTaskChecklistDefinition>> | null = null;
+    let inlineChecklistItems: ReturnType<typeof makeInlineChecklistItems> = [];
+    try {
+      if (body.checklistDocId !== undefined) {
+        if (typeof body.checklistDocId !== 'string' || !body.checklistDocId.trim()) {
+          return jsonResponse(400, { error: 'checklistDocId must be a non-empty KB checklist id' });
+        }
+        checklistDefinition = await loadTaskChecklistDefinition(body.checklistDocId);
+      }
+      inlineChecklistItems = makeInlineChecklistItems(body.inlineChecklistItems);
+    } catch (error) {
+      if (error instanceof TaskChecklistSourceError) return jsonResponse(error.statusCode, { error: error.message });
+      throw error;
+    }
     if (body.description) taskData.description = body.description;
     if (body.date) {
       const resolved = resolveDateInput(body.date, 'date');
@@ -324,6 +364,18 @@ export async function handleTaskRoutes(
     if (body.sourceDocIds !== undefined) taskData.sourceDocIds = body.sourceDocIds;
     if (body.artifactRefs !== undefined) taskData.artifactRefs = body.artifactRefs;
     if (body.auditEventRefs !== undefined) taskData.auditEventRefs = body.auditEventRefs;
+    if (checklistDefinition || inlineChecklistItems.length) {
+      taskData.checklistItems = taskChecklistItems(checklistDefinition, inlineChecklistItems);
+      if (checklistDefinition) taskData.checklistDocId = checklistDefinition.id;
+      const extraSourceIds = [
+        ...(checklistDefinition ? [checklistDefinition.id] : []),
+        ...(checklistDefinition?.items.map((item) => item.instructionDocId).filter(Boolean) || []),
+      ];
+      if (taskData.sourceDocIds !== undefined && !Array.isArray(taskData.sourceDocIds)) {
+        return jsonResponse(400, { error: 'sourceDocIds must be an array of document ids' });
+      }
+      taskData.sourceDocIds = [...new Set([...(taskData.sourceDocIds as string[] || []), ...extraSourceIds])];
+    }
     taskData.source = (body.source as string) || 'manual';
     if (actor.id) taskData.createdBy = actor.id;
 
@@ -403,6 +455,8 @@ export async function handleTaskRoutes(
       }
     }
     if (taskData.status === 'done') {
+      const checklistError = checklistCompletionError(taskData as Pick<Task, 'checklistItems'>, false, undefined);
+      if (checklistError) return jsonResponse(400, { error: checklistError });
       if (
         isNonEmptyString(taskData.requiredLinkName)
         && !isNonEmptyString(taskData.link)
@@ -721,6 +775,80 @@ export async function handleTaskRoutes(
     }
     const actorId = actionActor.actor.id || undefined;
     const now = new Date().toISOString();
+
+    if (taskAction.action === 'checklist-check' || taskAction.action === 'checklist-uncheck') {
+      if (body.force !== undefined || body.reason !== undefined) {
+        return jsonResponse(400, { error: 'force and reason only apply when completing a Task' });
+      }
+      if (existing.status === 'done' || existing.status === 'skipped') {
+        return jsonResponse(400, { error: 'Reopen or unskip the Task before changing its checklist' });
+      }
+      const items = existing.checklistItems || [];
+      if (!items.length) return jsonResponse(400, { error: 'Task has no checklist items' });
+      const itemId = trimmedString(body.itemId);
+      if (!itemId) return jsonResponse(400, { error: 'itemId is required' });
+      const itemIndex = items.findIndex((item) => item.id === itemId);
+      if (itemIndex < 0) return jsonResponse(404, { error: `Checklist item ${itemId} not found` });
+
+      const checking = taskAction.action === 'checklist-check';
+      const item = items[itemIndex];
+      if (item.checked === checking) {
+        return jsonResponse(400, { error: checking ? 'Checklist item is already checked' : 'Checklist item is already unchecked' });
+      }
+      const link = trimmedString(body.link);
+      if (link) {
+        try {
+          const parsed = new URL(link);
+          if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('unsupported protocol');
+        } catch {
+          return jsonResponse(400, { error: 'link must be an HTTP or HTTPS URL' });
+        }
+      }
+      const note = trimmedString(body.note);
+      if (note) {
+        const noteError = validateActionNote(note);
+        if (noteError) return jsonResponse(400, { error: noteError });
+      }
+
+      const nextItem = checking
+        ? {
+          ...item,
+          checked: true,
+          checkedAt: now,
+          ...(actorId ? { checkedBy: actorId } : {}),
+          ...(link ? { link } : {}),
+          ...(note ? { note } : {}),
+        }
+        : (() => {
+          const {
+            checkedAt: _checkedAt,
+            checkedBy: _checkedBy,
+            link: _link,
+            note: _note,
+            ...rest
+          } = item;
+          return { ...rest, checked: false };
+        })();
+      const nextItems = items.map((current, index) => index === itemIndex ? nextItem : current);
+      const action = checking ? 'checklist-item-checked' : 'checklist-item-unchecked';
+      const historyEvent = {
+        ...makeTaskHistoryEvent(action, existing, {
+          actorId,
+          note: note || (checking && link ? link : undefined),
+          createdAt: now,
+        }),
+        checklistItemId: item.id,
+      };
+      const updated = await updateTask(client, existing.id, {
+        currentTask: existing,
+        expectedVersion,
+        patch: { checklistItems: nextItems },
+        historyEvents: [historyEvent],
+        actorId,
+        triggerKind: checking ? 'task-checklist-item-checked' : 'task-checklist-item-unchecked',
+      });
+      return jsonResponse(200, await projectWithPrerequisites(client, updated));
+    }
 
     // Skip resolves an open Task as not applicable. It deliberately bypasses
     // the link, file, and proof gates that completion enforces: the reason is
@@ -1067,6 +1195,17 @@ export async function handleTaskRoutes(
       const note = trimmedString(body.note);
       const noteError = validateActionNote(note);
       if (noteError) return jsonResponse(400, { error: noteError });
+      if (body.force !== undefined && typeof body.force !== 'boolean') {
+        return jsonResponse(400, { error: 'force must be true or false' });
+      }
+      if (body.reason !== undefined && typeof body.reason !== 'string') {
+        return jsonResponse(400, { error: 'reason must be non-empty text' });
+      }
+      const forceChecklist = body.force === true;
+      const forceReason = trimmedString(body.reason);
+      const checklistError = checklistCompletionError(existing, forceChecklist, forceReason);
+      if (checklistError) return jsonResponse(400, { error: checklistError });
+      const openChecklistItems = (existing.checklistItems || []).filter((item) => !item.checked).length;
 
       const updates: TaskPatch & Record<string, unknown> = {
         status: 'done',
@@ -1133,7 +1272,7 @@ export async function handleTaskRoutes(
       });
       const completedEvent = makeTaskHistoryEvent('completed', existing, {
         actorId,
-        note,
+        note: checklistOverrideNote(openChecklistItems, forceReason) || note,
         createdAt: now,
       });
       const updated = await updateTask(client, existing.id, {
@@ -1185,6 +1324,12 @@ export async function handleTaskRoutes(
     const expectedVersion = body.expectedVersion as number;
 
     // Filter to allowed fields only
+    if (body.force !== undefined && typeof body.force !== 'boolean') {
+      return jsonResponse(400, { error: 'force must be true or false' });
+    }
+    if (body.reason !== undefined && typeof body.reason !== 'string') {
+      return jsonResponse(400, { error: 'reason must be non-empty text' });
+    }
     const updates: TaskPatch & Record<string, unknown> = {};
     for (const field of ALLOWED_UPDATE_FIELDS) {
       if (body[field] !== undefined) {
@@ -1314,6 +1459,16 @@ export async function handleTaskRoutes(
     if (existing.status === 'waiting' && updates.status === 'todo') {
       return jsonResponse(400, { error: WAITING_TODO_ERROR });
     }
+    const forceChecklist = body.force === true;
+    const forceReason = trimmedString(body.reason);
+    if ((body.force !== undefined || body.reason !== undefined) && updates.status !== 'done') {
+      return jsonResponse(400, { error: '--force and --reason only apply when marking a Task done' });
+    }
+    if (updates.status === 'done') {
+      const checklistError = checklistCompletionError(existing, forceChecklist, forceReason);
+      if (checklistError) return jsonResponse(400, { error: checklistError });
+    }
+    const openChecklistItems = (existing.checklistItems || []).filter((item) => !item.checked).length;
     if (effectiveStatus === 'waiting') {
       const effectiveWaitingFor = updates.waitingFor !== undefined ? updates.waitingFor : existing.waitingFor;
       const effectiveFollowUpAt = updates.followUpAt !== undefined ? updates.followUpAt : existing.followUpAt;
@@ -1392,7 +1547,8 @@ export async function handleTaskRoutes(
       if (existing.status !== 'done') {
         historyEvents.push(makeTaskHistoryEvent('completed', existing, {
           actorId: actorId || undefined,
-          note: isNonEmptyString(updates.comment) ? String(updates.comment) : undefined,
+          note: checklistOverrideNote(openChecklistItems, forceReason)
+            || (isNonEmptyString(updates.comment) ? String(updates.comment) : undefined),
           createdAt: completedAt,
         }));
       }

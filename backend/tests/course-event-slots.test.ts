@@ -14,6 +14,8 @@ import { HOLD_ORGANIZER } from '../src/calendar/holdGoogleSync';
 import { setCalendarHoldGoogleDepsForTests } from '../src/routes/calendarHolds';
 import { templateFromYaml, templateToYaml, validateAuthoredTemplate } from '../src/templates/yamlTemplates';
 import { holdGoogleProvider } from './helpers/hold-google';
+import { configureTaskChecklistStore } from '../src/taskChecklist';
+import { createTaskChecklistFixture } from './helpers/task-checklist-fixture';
 import type { LambdaResponse } from '../src/types';
 
 function invoke(method: string, path: string, body?: unknown, query: Record<string, string> = {}): Promise<LambdaResponse> {
@@ -23,9 +25,12 @@ const parsed = (response: LambdaResponse): any => JSON.parse(response.body);
 
 let client: DynamoDBDocumentClient;
 let courseTemplateId: string;
+let checklistFixture: ReturnType<typeof createTaskChecklistFixture>;
 
 describe('course event slots: event Cards instead of text', () => {
   before(async () => {
+    checklistFixture = createTaskChecklistFixture();
+    configureTaskChecklistStore(checklistFixture.store);
     client = await getClient(await startLocal());
     await createTables(client);
     await createTemplate(client, {
@@ -67,7 +72,12 @@ describe('course event slots: event Cards instead of text', () => {
       ],
     } as any)).id;
   });
-  after(async () => { setCalendarHoldGoogleDepsForTests({}); await stopLocal(); });
+  after(async () => {
+    setCalendarHoldGoogleDepsForTests({});
+    configureTaskChecklistStore(null);
+    checklistFixture.cleanup();
+    await stopLocal();
+  });
 
   async function createCourse(workshops = 1, optionalGroups: string[] = []) {
     const response = await invoke('POST', '/api/cards', {

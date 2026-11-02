@@ -8,9 +8,9 @@ import { apiFor, today } from "../session.mjs";
 import { resolveTaskId } from "../shortIds.mjs";
 import { hasTaskFollowUp, isTaskActionable, isTaskSnoozed, taskAttentionDate } from "../../../frontend/src/core/task-attention.js";
 
-export const summary = "List, inspect, create, complete, skip, and follow up Tasks";
+export const summary = "List, inspect, and complete Tasks and their checklists";
 
-export const help = `dataops tasks - Tasks are the checklist items inside Cards
+export const help = `dataops tasks - Manage work items, including Tasks inside Cards
 
 Usage
   dataops tasks list [view] [filters] [--batches]
@@ -19,14 +19,16 @@ Usage
   dataops tasks create --description D [--date YYYY-MM-DD] [--card ID] [--assignee ID|me]
       [--subject-type sponsor-deal|sponsor-company|sponsor-person|tuition-agreement --subject-id ID]
       [--comment C] [--link URL] [--tags a,b] [--required-link-name NAME] [--instruction-doc DOC-ID]
-      [--requires youtube,luma] [--browser required|headless] [--depends-on ID,ID]
+      [--checklist KB-CHECKLIST-ID] [--item "text"]... [--requires youtube,luma] [--browser required|headless] [--depends-on ID,ID]
   dataops tasks update <task-id> [--description D] [--date D] [--comment C] [--link URL]
       [--subject-type sponsor-deal|sponsor-company|sponsor-person|tuition-agreement --subject-id ID | --clear-subject]
       [--at "2026-10-23 19:00" --tz Europe/Berlin | --at +7d | --at none]
       [--external-status S] [--tags a,b] [--card ID|none] [--instruction-doc DOC-ID]
       [--requires a,b|none] [--browser required|headless|none] [--depends-on ID,ID|none]
       --comment appends to the notes log (the old comment becomes its first entry)
-  dataops tasks done <task-id> [--link URL] [--comment C] [--external-status S] [--file PATH]
+  dataops tasks check <task-id> <n|item-id> [--link URL] [--note N]
+  dataops tasks uncheck <task-id> <n|item-id>
+  dataops tasks done <task-id> [--link URL] [--comment C] [--external-status S] [--file PATH] [--force --reason R]
   dataops tasks reopen <task-id>
   dataops tasks skip <task-id> --reason R        Resolve as not applicable (no proof needed)
   dataops tasks unskip <task-id>                 Back to todo
@@ -113,6 +115,11 @@ Proof
   Every write reads the Task's current version first (or pass --expected-version N);
   a 409 means someone else changed it: re-read and retry.
 
+Task checklists
+  --checklist copies the ordered items from a KB checklist; repeat --item to add
+  Task-specific rows. Use check/uncheck with a 1-based row number or item id.
+  A Task with unchecked rows cannot be completed unless done uses --force --reason.
+
 Examples
   dataops tasks list --mine
   dataops tasks list --can-do youtube,luma,gmail
@@ -125,6 +132,22 @@ Examples
 `;
 
 const OPEN = new Set(["todo", "waiting"]);
+
+function checklistProgress(task) {
+  const items = Array.isArray(task?.checklistItems) ? task.checklistItems : [];
+  if (!items.length) return "";
+  return `${items.filter((item) => item.checked).length}/${items.length}`;
+}
+
+function repeatedText(args, name) {
+  const value = args[name];
+  if (value === undefined) return [];
+  const values = Array.isArray(value) ? value : [value];
+  if (values.some((item) => typeof item !== "string" || !item.trim())) {
+    throw new UsageError(`--${name} needs non-empty text.`);
+  }
+  return values.map((item) => item.trim());
+}
 
 function tasksOf(payload) {
   if (Array.isArray(payload)) return payload;
@@ -530,6 +553,7 @@ export async function list(args, io) {
       ["ID", (task) => task.id],
       ["STATUS", (task) => task.status],
       ["DUE", (task) => String(task.date || "").slice(0, 10)],
+      ["CHECKLIST", checklistProgress],
       ...(view === "filter" ? [] : [["WHEN", (task) => task.queueSegment]]),
       ["ASSIGNEE", (task) => task.assignee?.name || ""],
       ["REQUIRES", (task) => (task.requires || []).join(",")],
@@ -595,6 +619,18 @@ export async function show(args, io) {
     ["template", task.templateId],
     ["version", task.version],
   ]);
+  const checklist = Array.isArray(task.checklistItems) ? task.checklistItems : [];
+  if (checklist.length) {
+    io.print("");
+    io.print(`checklist (${checklistProgress(task)} complete):`);
+    for (const [index, item] of checklist.entries()) {
+      const marker = item.checked ? "[x]" : "[ ]";
+      const instruction = item.instructionDocId ? ` — SOP ${item.instructionDocId}${item.instructionStepId ? `#${item.instructionStepId}` : ""}` : "";
+      const evidence = item.link ? ` — ${item.link}` : "";
+      io.print(`  ${index + 1}. ${marker} ${item.text} (${item.id})${instruction}${evidence}`);
+      if (item.note) io.print(`     note: ${item.note}`);
+    }
+  }
   const log = Array.isArray(task.notesLog) ? task.notesLog : [];
   if (log.length) {
     const names = new Map((task.historyActors || []).map((actor) => [actor.id, actor.name]));
@@ -686,12 +722,17 @@ export async function create(args, io) {
   const body = writableFields(args);
   body.description = required(args, "description", "description");
   body.date = body.date || today();
+  const checklistDocId = optionalString(args, "checklist");
+  if (checklistDocId !== undefined) body.checklistDocId = checklistDocId;
+  const inlineChecklistItems = repeatedText(args, "item");
+  if (inlineChecklistItems.length) body.inlineChecklistItems = inlineChecklistItems;
   if (body.cardId === null) delete body.cardId;
   if (body.subject === null) throw new UsageError("--clear-subject applies to tasks update only.");
   if (args.assignee !== undefined) body.assigneeId = await resolveAssignee(api, String(args.assignee));
   const task = await api.post("/api/tasks", body);
   if (args.json) return task;
   io.print(`Created Task ${task.id} - ${task.description} (due ${task.date}).`);
+  if (task.checklistItems?.length) io.print(`Checklist: ${checklistProgress(task)} complete.`);
   return task;
 }
 
@@ -741,6 +782,10 @@ export async function uploadFile(api, taskId, path, category) {
 
 export async function done(args, io) {
   const raw = positional(args, 0, "dataops tasks done <task-id> [--link URL] [--comment C] [--file PATH]");
+  const force = args.force === true;
+  const reason = optionalString(args, "reason");
+  if (force && !reason) throw new UsageError("--force needs --reason so the override is recorded.");
+  if (!force && reason !== undefined) throw new UsageError("--reason requires --force.");
   const api = apiFor(args);
   const id = await resolveTaskId(api, raw);
   if (args.file !== undefined) {
@@ -761,11 +806,65 @@ export async function done(args, io) {
       expectedVersion = task.version;
     }
     const note = optionalString(args, "note") || proof.comment || "Completed from the DataOps CLI";
-    task = await api.post(`/api/tasks/${enc(id)}/actions/resolve-done`, { expectedVersion, note });
+    task = await api.post(`/api/tasks/${enc(id)}/actions/resolve-done`, {
+      expectedVersion,
+      note,
+      ...(force ? { force: true, reason } : {}),
+    });
     return report(io, args, task, "Resolved and completed");
   }
-  task = await api.put(`/api/tasks/${enc(id)}`, { ...proof, status: "done", expectedVersion });
+  task = await api.put(`/api/tasks/${enc(id)}`, {
+    ...proof,
+    status: "done",
+    expectedVersion,
+    ...(force ? { force: true, reason } : {}),
+  });
   return report(io, args, task, "Completed");
+}
+
+async function checklistItemAction(command, args, io) {
+  const usage = `dataops tasks ${command} <task-id> <n|item-id>`;
+  const rawTaskId = positional(args, 0, usage);
+  const rawItem = positional(args, 1, usage);
+  const api = apiFor(args);
+  const taskId = await resolveTaskId(api, rawTaskId);
+  const { task, expectedVersion } = await currentVersion(api, taskId, args);
+  const items = Array.isArray(task.checklistItems) ? task.checklistItems : [];
+  if (!items.length) throw new UsageError(`Task ${taskId} has no checklist items.`);
+
+  const numeric = /^\d+$/.test(rawItem) ? Number(rawItem) : null;
+  let item = numeric === null ? null : items[numeric - 1] || null;
+  if (numeric !== null && !item) throw new UsageError(`Checklist row ${rawItem} is outside 1..${items.length}.`);
+  if (numeric === null) {
+    const matches = items.filter((candidate) => candidate.id === rawItem || candidate.id.startsWith(rawItem));
+    if (matches.length !== 1) {
+      throw new UsageError(matches.length ? `Checklist item id ${rawItem} is ambiguous.` : `Checklist item ${rawItem} was not found.`);
+    }
+    [item] = matches;
+  }
+
+  const checking = command === "check";
+  const payload = {
+    expectedVersion,
+    itemId: item.id,
+    ...(checking && optionalString(args, "link") ? { link: optionalString(args, "link") } : {}),
+    ...(checking && optionalString(args, "note") ? { note: optionalString(args, "note") } : {}),
+  };
+  const updated = await api.post(
+    `/api/tasks/${enc(taskId)}/actions/${checking ? "checklist-check" : "checklist-uncheck"}`,
+    payload,
+  );
+  if (args.json) return updated;
+  io.print(`${checking ? "Checked" : "Unchecked"} ${updated.id} item ${item.id} (${checklistProgress(updated)} complete).`);
+  return updated;
+}
+
+export async function check(args, io) {
+  return checklistItemAction("check", args, io);
+}
+
+export async function uncheck(args, io) {
+  return checklistItemAction("uncheck", args, io);
 }
 
 export async function reopen(args, io) {
@@ -998,6 +1097,8 @@ export const commands = {
   show,
   create,
   update,
+  check,
+  uncheck,
   done,
   reopen,
   wait,

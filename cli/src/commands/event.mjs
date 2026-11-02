@@ -101,6 +101,7 @@ function printLifecycleSummary(io, actionLabel, result) {
   if (result.sync?.state === "deferred") {
     io.print(`Google sync deferred: ${result.sync.reason || "retry required"}`);
   }
+  if (result.rescheduleTaskId) io.print(`Reschedule checklist Task: ${result.rescheduleTaskId}`);
 }
 
 export async function propose(args, io) {

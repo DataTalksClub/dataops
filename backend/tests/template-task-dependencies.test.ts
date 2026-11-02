@@ -296,6 +296,46 @@ describe('portable export of dependencies', () => {
     assert.deepEqual(mapped.depends_on, ['t1']);
     assert.equal(mapTask({ id: 't1', version: 1, description: 'P', status: 'todo', taskHistory: [] }).depends_on, undefined);
   });
+
+  it('exports checklist snapshots and validates checklist history', async () => {
+    const [{ mapTask }, { optionalTaskChecklistItemsField, requiredTaskHistoryField }] = await Promise.all([
+      import('../src/export/portableMappers'),
+      import('../src/export/portableChecks'),
+    ]);
+    const mapped = mapTask({
+      id: 't2',
+      version: 2,
+      description: 'Move event',
+      status: 'todo',
+      checklistDocId: 'checklist.events.move',
+      checklistItems: [{
+        id: 'kb-1',
+        text: 'Update the listing',
+        checked: true,
+        instructionDocId: 'sop.events.listing',
+        checkedAt: '2026-11-03T10:00:00.000Z',
+      }],
+      taskHistory: [{
+        id: 'history-1',
+        taskId: 't2',
+        action: 'checklist-item-checked',
+        checklistItemId: 'kb-1',
+        createdAt: '2026-11-03T10:00:00.000Z',
+      }],
+    });
+    assert.equal(mapped.checklist_doc_id, 'checklist.events.move');
+    assert.deepEqual(mapped.checklist_items, [{
+      id: 'kb-1',
+      text: 'Update the listing',
+      checked: true,
+      instructionDocId: 'sop.events.listing',
+      checkedAt: '2026-11-03T10:00:00.000Z',
+    }]);
+    const errors: string[] = [];
+    optionalTaskChecklistItemsField(mapped, errors, 'task');
+    requiredTaskHistoryField(mapped, errors, 'task');
+    assert.deepEqual(errors, []);
+  });
 });
 
 describe('Card Template sync guards the whole affected graph', () => {
