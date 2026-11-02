@@ -103,7 +103,7 @@ describe("tasks", () => {
   test("list without a view loads the three queue lanes for the owner", async () => {
     const calls = fakePortal({
       "GET /api/tasks": ({ query }) => ({
-        tasks: query.date ? [task({ id: "today", date: query.date })] : query.status ? [] : [task({ id: "late", date: "2026-10-01" })],
+        tasks: query.date ? [task({ id: "today", date: query.date })] : query.status === "waiting" ? [] : [task({ id: "late", date: "2026-10-01" })],
       }),
     });
     const io = captureIo();
@@ -114,8 +114,8 @@ describe("tasks", () => {
     assert.deepEqual(
       calls.map((call) => call.query).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
       [
-        { date: "2026-10-14", owner: "me" },
-        { endDate: "2026-10-13", owner: "me", startDate: "1970-01-01" },
+        { date: "2026-10-14", owner: "me", status: "todo" },
+        { endDate: "2026-10-13", owner: "me", startDate: "1970-01-01", status: "todo" },
         { owner: "me", status: "waiting" },
       ],
     );

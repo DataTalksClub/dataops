@@ -44,7 +44,8 @@ import { matchesBrowserRequirementFilter, parseBrowserRequirementFilter } from '
 import type { BrowserRequirementFilter } from '../browserRequirement';
 import type { LambdaEvent, LambdaResponse, Task, TaskHistoryEvent } from '../types';
 import { mergeMaterials } from '../taskMaterials';
-import { resolveTaskDate, resolveTaskDateTime, addDays, isValidTimezone } from '../relativeDates';
+import { resolveTaskDate, resolveTaskDateTime, addDays, isValidTimezone, berlinToday } from '../relativeDates';
+import { defaultPaymentNextFollowUp, isPaymentFollowUpTask, noteWithEvidence, paymentDeferralError, paymentEvidence } from '../paymentTaskGuard';
 import {
   ALLOWED_UPDATE_FIELDS,
   INVALID_STATUS_ERROR,
@@ -881,10 +882,12 @@ export async function handleTaskRoutes(
       }
       const followUpAt = resolvedFollowUpAt && 'date' in resolvedFollowUpAt ? resolvedFollowUpAt.date : rawFollowUpAt;
       const channel = trimmedString(body.channel);
-      const note = trimmedString(body.note);
+      const note = noteWithEvidence(trimmedString(body.note), paymentEvidence(body));
       const noteError = validateActionNote(note);
       const channelError = validateActionChannel(channel);
       const dateError = validateDateOrTimestampValue(followUpAt, 'followUpAt');
+      const deferralError = paymentDeferralError(existing, body, berlinToday());
+      if (deferralError) return jsonResponse(422, { error: deferralError });
       if (!waitingFor) return jsonResponse(400, { error: 'waitingFor is required' });
       if (waitingFor.length > 160) return jsonResponse(400, { error: 'waitingFor must be 160 characters or fewer' });
       if (dateError) return jsonResponse(400, { error: dateError });
@@ -920,13 +923,17 @@ export async function handleTaskRoutes(
         return jsonResponse(400, { error: 'Task must be waiting before recording a follow-up' });
       }
       const channel = trimmedString(body.channel);
-      const note = trimmedString(body.note);
+      const note = noteWithEvidence(trimmedString(body.note), paymentEvidence(body));
       const rawNextFollowUpAt = trimmedString(body.nextFollowUpAt || body.followUpAt);
       const resolvedNext = rawNextFollowUpAt ? resolveDateInput(rawNextFollowUpAt, 'nextFollowUpAt') : null;
       if (resolvedNext && 'error' in resolvedNext) {
         return jsonResponse(400, { error: resolvedNext.error });
       }
-      const nextFollowUpAt = resolvedNext && 'date' in resolvedNext ? resolvedNext.date : rawNextFollowUpAt;
+      const today = berlinToday();
+      const nextFollowUpAt = resolvedNext && 'date' in resolvedNext ? resolvedNext.date
+        : rawNextFollowUpAt || (isPaymentFollowUpTask(existing) ? defaultPaymentNextFollowUp(today) : rawNextFollowUpAt);
+      const deferralError = paymentDeferralError(existing, body, today);
+      if (deferralError) return jsonResponse(422, { error: deferralError });
       const noteError = validateActionNote(note);
       const channelError = validateActionChannel(channel);
       const dateError = validateDateOrTimestampValue(nextFollowUpAt, 'nextFollowUpAt');
@@ -970,9 +977,11 @@ export async function handleTaskRoutes(
       if (!resolvedUntil || 'error' in resolvedUntil) {
         return jsonResponse(400, { error: resolvedUntil && 'error' in resolvedUntil ? resolvedUntil.error : 'snoozedUntil is required' });
       }
-      const reason = trimmedString(body.reason);
+      const reason = noteWithEvidence(trimmedString(body.reason), paymentEvidence(body));
       const reasonError = validateSkipReason(reason);
       if (reasonError) return jsonResponse(400, { error: reasonError });
+      const deferralError = paymentDeferralError(existing, body, berlinToday());
+      if (deferralError) return jsonResponse(422, { error: deferralError });
 
       const historyEvent = makeTaskHistoryEvent('snoozed', existing, {
         actorId,

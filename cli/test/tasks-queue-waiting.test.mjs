@@ -23,7 +23,7 @@ const tasks = [
 
 function portal() {
   return fakePortal({ "GET /api/tasks": ({ query }) => ({ tasks: tasks.filter((t) =>
-    query.status ? t.status === query.status : query.date ? t.date === query.date : t.date < day),
+    (!query.status || t.status === query.status) && (query.date ? t.date === query.date : query.status ? true : t.date < day)),
   }) });
 }
 

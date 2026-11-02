@@ -5,6 +5,7 @@ import { berlinDate, displayMoney, scaledMoney, sourceKey } from './core';
 import { settlementBalance, type SettlementAdjustment } from './settlementAdjustment';
 import { financeEnabled } from './repository';
 import { deliveredOn } from './context';
+import { chaseDates } from './chase';
 import { daysBetween, deriveFollowUp, deriveStates, followUpUrgency } from './followUp';
 import type { FinanceState, FollowUp, InvoiceState, PaymentState, RecordedPayment, TimingState, WaitingOn } from './types';
 
@@ -81,11 +82,12 @@ export async function financeLedger(
   today = berlinDate(),
   preload?: CrmPreload,
 ): Promise<FinanceLedger> {
-  const [organizations, deals, deliverables, financeItems] = await Promise.all([
+  const [organizations, deals, deliverables, financeItems, chased] = await Promise.all([
     preload?.organizations ?? listCrmRecords(client, 'organization'),
     preload?.deals ?? listCrmRecords(client, 'deal'),
     preload?.deliverables ?? listCrmRecords(client, 'deliverable'),
     scanCrmPrefix(client, 'SPONSOR_FINANCE'),
+    chaseDates(client),
   ]);
   const states = new Map<string, FinanceState>();
   const recorded = new Map<string, RecordedPayment>();
@@ -167,7 +169,7 @@ export async function financeLedger(
     const followUp = deriveFollowUp({
       dealStatus: String(deal.status), ...states_, reportedPayments: unconfirmed.length > 0,
       requestBy: state.invoiceRequestedAt ? undefined : state.requestBy,
-      expectedInvoiceBy: state.expectedInvoiceBy, dueOn: state.dueOn, sentOn: state.sentOn, waitingOn: state.waitingOn, deliveredOn: delivered,
+      expectedInvoiceBy: state.expectedInvoiceBy, dueOn: state.dueOn, sentOn: state.sentOn, chasedOn: chased.get(deal.id), waitingOn: state.waitingOn, deliveredOn: delivered,
     }, today);
     const outstanding = due !== undefined && coherent ? settlement.outstanding : undefined;
     const row: LedgerRow = {

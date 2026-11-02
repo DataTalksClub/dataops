@@ -30,11 +30,12 @@ Usage
   dataops tasks reopen <task-id>
   dataops tasks skip <task-id> --reason R        Resolve as not applicable (no proof needed)
   dataops tasks unskip <task-id>                 Back to todo
-  dataops tasks wait <task-id> --for WHO --follow-up YYYY-MM-DD --channel CHANNEL --note NOTE
-  dataops tasks followed-up <task-id> --channel CHANNEL --note NOTE [--next YYYY-MM-DD]
+  dataops tasks wait <task-id> --for WHO --follow-up YYYY-MM-DD --channel CHANNEL --note NOTE [--email-ref REF | --card ID]
+  dataops tasks followed-up <task-id> --channel CHANNEL --note NOTE [--next YYYY-MM-DD] [--email-ref REF | --card ID]
   dataops tasks followup --about <task|card|sponsor-deal|company|person id> --on +7d --description "check X" [--note "context"]
       Linked to its subject, assigned to you, due that day
-  dataops tasks snooze <task-id> --until +7d --reason R   Hide from today/overdue until then
+  dataops tasks snooze <task-id> --until +7d --reason R [--email-ref REF | --card ID]   Hide from today/overdue until then
+  Payment follow-ups: followed-up defaults --next to +7d; waiting/snoozing a due one needs --email-ref or --card
   dataops tasks unsnooze <task-id>                       Back in the queue now
   dataops tasks unblock <task-id> --note NOTE [--unblocked]   (default: response received)
   dataops tasks note <task-id> "text"                 Append to the notes log
@@ -473,13 +474,26 @@ export async function list(args, io) {
     const wanted = ["today", "overdue", "waiting"].filter((name) => args[name]);
     view = !args.queue && wanted.length === 1 ? wanted[0] : "queue";
     const lanes = wanted.length && !args.queue ? wanted : ["today", "overdue", "waiting"];
+    // Every lane asks only for open work and follows nextCursor: an unfiltered
+    // date range returns done Tasks too, and its first page of the oldest
+    // (finished) rows used to hide every overdue todo.
     const queries = {
-      today: { date: day },
-      overdue: { startDate: "1970-01-01", endDate: yesterday(day) },
-      waiting: { status: "waiting" },
+      today: [{ date: day, status: "todo" }],
+      overdue: [{ startDate: "1970-01-01", endDate: yesterday(day), status: "todo" }],
+      waiting: [{ status: "waiting" }],
     };
-    const pages = await Promise.all(lanes.map((lane) => api.get("/api/tasks", { query: { ...queries[lane], owner, ...resources, ...browser } })));
-    tasks = orderQueue(pages.flatMap(tasksOf), day, nowIso, { includeUpcomingWaiting: view === "waiting" });
+    const fetchAll = async (query) => {
+      const rows = [];
+      let next;
+      do {
+        const page = await api.get("/api/tasks", { query: { ...query, owner, ...resources, ...browser, ...(next ? { cursor: next } : {}) } });
+        rows.push(...tasksOf(page));
+        next = page?.nextCursor;
+      } while (next);
+      return rows;
+    };
+    const pages = await Promise.all(lanes.flatMap((lane) => queries[lane]).map(fetchAll));
+    tasks = orderQueue(pages.flat(), day, nowIso, { includeUpcomingWaiting: view === "waiting" });
     if (view === "overdue") tasks = tasks.filter((task) => task.queueSegment === "overdue");
     if (view === "today") tasks = tasks.filter((task) => String(task.date || "").slice(0, 10) === day);
     if (view === "waiting") tasks = tasks.filter(isWaitingOrFollowUp);
@@ -770,6 +784,14 @@ async function action(args, io, name, body, verb) {
   return report(io, args, task, verb);
 }
 
+/** The outgoing email or raised card a due payment follow-up needs before it is deferred again. */
+function paymentEvidence(args) {
+  return {
+    ...(optionalString(args, "emailRef") ? { emailRef: optionalString(args, "emailRef") } : {}),
+    ...(optionalString(args, "card") ? { raisedCardId: optionalString(args, "card") } : {}),
+  };
+}
+
 export async function wait(args, io) {
   positional(args, 0, "dataops tasks wait <task-id> --for WHO --follow-up YYYY-MM-DD --channel C --note N");
   return action(args, io, "mark-waiting", {
@@ -777,6 +799,7 @@ export async function wait(args, io) {
     followUpAt: isoDate(required(args, "followUp", "follow-up"), "follow-up"),
     channel: required(args, "channel", "channel"),
     note: required(args, "note", "note"),
+    ...paymentEvidence(args),
   }, "Waiting on");
 }
 
@@ -786,6 +809,7 @@ export async function followedUp(args, io) {
     channel: required(args, "channel", "channel"),
     note: required(args, "note", "note"),
     nextFollowUpAt: isoDate(args.next, "next"),
+    ...paymentEvidence(args),
   }, "Recorded follow-up on");
 }
 
@@ -847,6 +871,7 @@ export async function snooze(args, io) {
   return action(args, io, "snooze", {
     snoozedUntil: isoDate(required(args, "until", "until"), "until"),
     reason: required(args, "reason", "reason"),
+    ...paymentEvidence(args),
   }, "Snoozed");
 }
 

@@ -9,14 +9,17 @@ import { TABLE_NOTIFICATIONS, TABLE_SPONSOR_CRM } from '../db/tableNames';
 import { berlinDate, digest } from './core';
 import { financeEnabled, getFinanceState, projectFinance } from './repository';
 import { deliveredOn } from './context';
+import { chaseDates } from './chase';
+import { ensurePaymentFollowUpTask, paymentTasksByDeal, type OverdueInvoice } from './overdueTasks';
+import { loadAssignmentPolicy } from '../db/workspaceSettings';
 
 type Condition = { dealId: string; rule: string; basisDate: string; version: number };
 
 export async function evaluateSponsorFinanceAlerts(
   client: DynamoDBDocumentClient,
   today = berlinDate(),
-): Promise<{ created: number; resolved: number }> {
-  if (!financeEnabled()) return { created: 0, resolved: 0 };
+): Promise<{ created: number; resolved: number; paymentTasksCreated: number; paymentTasksReopened: number }> {
+  if (!financeEnabled()) return { created: 0, resolved: 0, paymentTasksCreated: 0, paymentTasksReopened: 0 };
   const deals: Record<string, unknown>[] = [];
   let cursor: Record<string, unknown> | undefined;
   do {
@@ -60,6 +63,8 @@ export async function evaluateSponsorFinanceAlerts(
     deals.map((deal) => [String(deal.id), deal]),
   );
   const conditions: Condition[] = [];
+  const overdueInvoices: OverdueInvoice[] = [];
+  const chased = await chaseDates(client);
   for (const deal of deals) {
     if (deal.archivedAt || deal.active !== true || deal.status === 'lost') {
       const state = await getFinanceState(client, String(deal.id));
@@ -68,6 +73,7 @@ export async function evaluateSponsorFinanceAlerts(
     const delivered = deliveredOn(deliverables.filter((item) => item.dealId === deal.id));
     const projection = await projectFinance(client, String(deal.id), 'operator', {
       today, dealStatus: String(deal.status), ...(delivered ? { deliveredOn: delivered } : {}),
+      ...(chased.has(String(deal.id)) ? { chasedOn: chased.get(String(deal.id)) } : {}),
     });
     const pushCondition = (rule: string, basisDate: string, version: number) => {
       conditions.push({ dealId: String(deal.id), rule, basisDate, version });
@@ -97,6 +103,17 @@ export async function evaluateSponsorFinanceAlerts(
       && ['unpaid', 'partially-paid'].includes(projection.paymentState)
     ) {
       pushCondition('payment-overdue', finance.dueOn, finance.version);
+      overdueInvoices.push({
+        dealId: String(deal.id),
+        organizationName: String(orgNames.get(String(deal.organizationId)) || deal.title || 'Sponsor'),
+        ...(typeof deal.title === 'string' && deal.title ? { dealTitle: deal.title } : {}),
+        ...(finance.invoiceNumber ? { invoiceNumber: finance.invoiceNumber } : {}),
+        ...(finance.amountDue ? { amountDue: finance.amountDue } : {}),
+        ...(finance.currency ? { currency: finance.currency } : {}),
+        dueOn: finance.dueOn,
+        ...(projection.outstanding !== undefined ? { outstanding: projection.outstanding } : {}),
+        ...(projection.daysOverdue !== undefined ? { daysOverdue: projection.daysOverdue } : {}),
+      });
     }
     if (projection.followUp.code === 'reconcile') {
       pushCondition('finance-reconciliation-required', today, finance.version);
@@ -198,5 +215,13 @@ export async function evaluateSponsorFinanceAlerts(
       if ((error as Error).name !== 'ConditionalCheckFailedException') throw error;
     }
   }
-  return { created, resolved };
+  const paymentTasks = overdueInvoices.length ? await paymentTasksByDeal(client) : new Map();
+  const assignee = overdueInvoices.length ? (await loadAssignmentPolicy(client, [])).defaultAssigneeId : null;
+  let paymentTasksCreated = 0, paymentTasksReopened = 0;
+  for (const invoice of overdueInvoices) {
+    const outcome = await ensurePaymentFollowUpTask(client, paymentTasks.get(invoice.dealId) || [], { ...invoice, assigneeId: assignee }, today);
+    if (outcome === 'created') paymentTasksCreated++;
+    if (outcome === 'reopened') paymentTasksReopened++;
+  }
+  return { created, resolved, paymentTasksCreated, paymentTasksReopened };
 }

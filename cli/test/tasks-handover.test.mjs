@@ -21,7 +21,7 @@ describe("tasks handover and queue", () => {
   test("--mine --queue is the queue view over the three lanes", async () => {
     const calls = fakePortal({
       "GET /api/tasks": ({ query }) => ({
-        tasks: query.date ? [task({ id: "today", date: query.date })] : query.status ? [] : [task({ id: "late", date: "2026-10-01" })],
+        tasks: query.date ? [task({ id: "today", date: query.date })] : query.status === "waiting" ? [] : [task({ id: "late", date: "2026-10-01" })],
       }),
     });
     const io = captureIo();

@@ -12,6 +12,8 @@ export type FollowUpInput = {
   expectedInvoiceBy?: string;
   dueOn?: string;
   sentOn?: string;
+  /** First recorded follow-up with the sponsor; proves the invoice reached them. */
+  chasedOn?: string;
   reportedPayments?: boolean;
   waitingOn?: WaitingOn;
   /** Latest delivered (published) deliverable date, if any deliverable is delivered. */
@@ -33,7 +35,7 @@ export function deriveFollowUp(input: FollowUpInput, today: string): FollowUp {
   if (paymentState === 'paid') return { code: 'none', party: 'none' };
   if (waitingOn?.party === 'us') return { code: 'unblock', party: 'us', since: waitingOn.since, reason: waitingOn.reason };
   if (invoiceState === 'issued') {
-    if (!input.sentOn) return { code: 'send-invoice', party: 'us' };
+    if (!input.sentOn && !input.chasedOn) return { code: 'send-invoice', party: 'us' };
     if (input.dueOn && input.dueOn < today) {
       return { code: 'payment-follow-up', party: 'us', since: input.dueOn, daysOverdue: daysBetween(input.dueOn, today) };
     }

@@ -1,5 +1,6 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getCrmRecord, listCrmRecords } from '../db/sponsorCrm';
+import { chaseDates } from './chase';
 import type { ProjectionContext } from './repository';
 
 /** Latest published date across delivered deliverables; the invoice is owed from then on. */
@@ -12,13 +13,15 @@ export function deliveredOn(deliverables: Array<Record<string, unknown>>): strin
 }
 
 export async function dealProjectionContext(client: DynamoDBDocumentClient, dealId: string): Promise<ProjectionContext> {
-  const [deal, deliverables] = await Promise.all([
+  const [deal, deliverables, chased] = await Promise.all([
     getCrmRecord(client, 'deal', dealId),
     listCrmRecords(client, 'deliverable'),
+    chaseDates(client, dealId),
   ]);
   const delivered = deliveredOn(deliverables.filter((item) => item.dealId === dealId));
   return {
     ...(deal ? { dealStatus: String(deal.status) } : {}),
     ...(delivered ? { deliveredOn: delivered } : {}),
+    ...(chased.get(dealId) ? { chasedOn: chased.get(dealId) } : {}),
   };
 }

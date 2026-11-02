@@ -1358,7 +1358,7 @@ export async function voidFinance(
   });
 }
 
-export type ProjectionContext = { today?: string; deliveredOn?: string; dealStatus?: string };
+export type ProjectionContext = { today?: string; deliveredOn?: string; dealStatus?: string; chasedOn?: string };
 
 export async function projectFinance(
   client: DynamoDBDocumentClient,
@@ -1492,7 +1492,7 @@ export async function projectFinance(
       invoiceState, paymentState, reportedPayments: recordedIds.length > 0,
       requestBy: state.invoiceRequestedAt ? undefined : state.requestBy,
       expectedInvoiceBy: state.expectedInvoiceBy,
-      dueOn: state.dueOn, sentOn: state.sentOn, waitingOn: state.waitingOn, deliveredOn: context.deliveredOn,
+      dueOn: state.dueOn, sentOn: state.sentOn, chasedOn: context.chasedOn, waitingOn: state.waitingOn, deliveredOn: context.deliveredOn,
     }, today);
     const vat = await evaluateDealVat(client, dealId, { cachedOnly: true });
     const paidDisplay = state.amountDue && coherent ? displayMoney(total) : undefined;

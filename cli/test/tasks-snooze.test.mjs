@@ -85,7 +85,7 @@ describe("tasks snooze", () => {
       "GET /api/tasks": ({ query }) => ({
         tasks: query.date
           ? [task({ id: "today", date: query.date })]
-          : query.status
+          : query.status === "waiting"
             ? []
             : [task({ id: "late", date: "2026-10-01" }), task({ id: "snoozed", date: "2026-10-01", snoozedUntil: "2026-10-24" })],
       }),
