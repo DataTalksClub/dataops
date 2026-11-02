@@ -67,9 +67,13 @@ Usage
       A separate PDF payment proof for one ledger row the bank statements do
       not show (personal card, PayPal, other bank).
   dataops reconcile attach-doc <row> <file.pdf> --period YYYY-MM [--category C]
-      The invoice/receipt for one row. A bank row without a ledger row gets a
-      ledger row created from it, with the document attached.
+      The invoice/receipt for one row. Use a bank-row key to create its ledger
+      row, or a ledger ID to attach directly to an existing row.
   dataops reconcile create-ledger <bank-key> --period YYYY-MM [--category C] [--description D]
+      Create the missing ledger row and pair it with the bank row. Repeating the
+      command for the same bank row reuses that ledger row.
+  dataops reconcile note <ledger-id> --note TEXT
+      Add or replace the note on an existing ledger row.
   dataops reconcile except <row> --kind KIND --period YYYY-MM [--proof TEXT] [--note TEXT]
       Mark a no-invoice row: tax_debit, tk_debit, platform_payout,
       internal_transfer, bank_fee, owner_withdrawal (each still needs its proof).
@@ -509,14 +513,26 @@ export async function attachDoc(args, io) {
   const api = apiFor(args);
   const stored = await storeDocument(api, file, { documentType: "receipt", sourceRef: `reconcile-doc:${period}` });
   let result;
-  if (row.startsWith("ledger:")) {
-    result = await api.post(`/api/reconcile/months/${period}/document`, { transactionId: row.slice(7), documentId: stored.documentId });
+  const looksLikeLedgerId = /^[a-f\d]{64}$/i.test(row) || /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i.test(row);
+  if (looksLikeLedgerId) {
+    result = await api.post(`/api/reconcile/months/${period}/document`, { transactionId: row, documentId: stored.documentId });
   } else {
     const category = optionalString(args, "category");
     result = await api.post(`/api/reconcile/months/${period}/ledger`, { bankKey: row, documentId: stored.documentId, ...(category ? { category } : {}) });
   }
   if (!args.json) io.print(`${stored.reused ? "Reused" : "Stored"} document ${stored.documentId} and attached it to ${row}${result.transaction ? ` (ledger row ${result.transaction.id} created from the bank row)` : ""}.`);
   return { ...result, documentId: stored.documentId };
+}
+
+export async function note(args, io) {
+  const usage = "dataops reconcile note <ledger-id> --note TEXT";
+  const transactionId = positional(args, 0, usage);
+  const text = optionalString(args, "note");
+  if (text === undefined) throw new UsageError(usage);
+  const api = apiFor(args);
+  const transaction = await api.put(`/api/bookkeeping/transactions/${enc(transactionId)}`, { comment: text });
+  if (!args.json) io.print(`Updated note on ledger row ${transactionId}.`);
+  return transaction;
 }
 
 export async function createLedger(args, io) {
@@ -661,6 +677,6 @@ export async function alias(args, io) {
 
 export const commands = {
   upload, "import-document": importDocument, balances, statements, statement, report, confirm, aliases, alias,
-  month, months, matches, "auto-match": autoMatch, match, unmatch, "attach-proof": attachProof, "attach-doc": attachDoc, "create-ledger": createLedger,
+  month, months, matches, "auto-match": autoMatch, match, unmatch, "attach-proof": attachProof, "attach-doc": attachDoc, "create-ledger": createLedger, note,
   except, "clear-except": clearExcept, "confirm-exceptions": confirmExceptions, close, reopen, package: packageMonth, config,
 };

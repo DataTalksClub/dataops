@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { upload, confirm, report, alias, aliases, balances, matches, commands } from "../src/commands/reconcile.mjs";
+import { upload, confirm, report, alias, aliases, balances, matches, attachDoc, note, commands } from "../src/commands/reconcile.mjs";
 import { exitCodeFor, EXIT } from "../src/errors.mjs";
 
 const withFakePortal = async (routes, run) => {
@@ -113,6 +113,43 @@ test("upload rejects CSV and XLSX locally with a non-zero usage exit code", asyn
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("attach-doc accepts a bare ledger ID and links evidence without creating another ledger row", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-ledger-doc-"));
+  const path = join(directory, "receipt.pdf");
+  await writeFile(path, "%PDF-1.4 synthetic receipt");
+  const ledgerId = "f1e8e2d7fefdfa49b5222b60b61d6dcc6b2acdba1078a3058965665effaf6bb7";
+  try {
+    await withFakePortal([
+      ["https://private.example.test/object", ""],
+      ["/documents/prepare", { document: { id: "receipt-doc" }, uploadUrl: "https://private.example.test/object", uploadHeaders: { "content-type": "application/pdf" } }],
+      ["/documents/receipt-doc/complete", { document: { id: "receipt-doc" } }],
+      ["/reconcile/months/2026-10/document", (request) => {
+        assert.deepEqual(JSON.parse(request.options.body), { transactionId: ledgerId, documentId: "receipt-doc" });
+        return { id: "link-1", outcome: "created" };
+      }],
+    ], async (calls) => {
+      const result = await attachDoc({ ...args, _: [ledgerId, path], period: "2026-10" }, {});
+      assert.equal(result.documentId, "receipt-doc");
+      assert.ok(!calls.some((call) => call.url.endsWith("/ledger") && call.method === "POST"));
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("reconcile note updates the existing ledger comment", async () => {
+  await withFakePortal([
+    ["/api/bookkeeping/transactions/ledger%2Fid", (request) => {
+      assert.equal(request.options.method, "PUT");
+      assert.deepEqual(JSON.parse(request.options.body), { comment: "Refund for duplicate charge" });
+      return { id: "ledger/id", comment: "Refund for duplicate charge" };
+    }],
+  ], async () => {
+    const result = await note({ ...args, _: ["ledger/id"], note: "Refund for duplicate charge" }, {});
+    assert.equal(result.comment, "Refund for duplicate charge");
+  });
 });
 
 test("server PDF parser errors stop CLI upload before statement rows are saved", async () => {
