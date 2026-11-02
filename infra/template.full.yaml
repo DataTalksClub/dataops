@@ -28,6 +28,10 @@ Parameters:
   AuthBaseUrl:
     Type: String
     Default: https://auth.dtcdev.click
+  OauthIssuerUrl:
+    Type: String
+    Default: https://oauth.dtcdev.click
+    Description: Shared DTC OAuth issuer whose RS256 JWTs authenticate API and MCP machine clients
   AuthUserPoolId:
     Type: String
     Default: us-east-1_H7nJu52Bs
@@ -87,12 +91,6 @@ Parameters:
     Default: dev@dtcdev.click
     AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
     Description: Operator mailbox paged when the daily PITR guard finds DynamoDB point-in-time recovery disabled.
-  InvoiceReaderTokenSha256:
-    Type: String
-    Default: ""
-    NoEcho: true
-    AllowedPattern: "^([a-f0-9]{64})?$"
-    Description: SHA256 digest of the deployment-managed read-only invoice service credential; empty disables access
   EmailDocumentSourcePrefix:
     Type: String
     Default: transfer/
@@ -1292,7 +1290,7 @@ Resources:
           WORK_ENGINE_AUTH_MODE: portal
           WORK_ENGINE_PORTAL_SECRET_NAME: !Sub ${AWS::StackName}.work-engine.portal-secret
           INVOICE_PUBLICATION_SECRET_NAME: !Sub ${AWS::StackName}.invoice-publication
-          INVOICE_READER_TOKEN_SHA256: !Ref InvoiceReaderTokenSha256
+          OAUTH_ISSUER_URL: !Ref OauthIssuerUrl
           KNOWLEDGE_PUBLISHER_REPOSITORY: !Sub ${GitHubOwner}/${GitHubRepo}
           KNOWLEDGE_PUBLISHER_BRANCH: !Ref GitHubBranch
           EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Sub ${AWS::StackName}.email-document-intake
@@ -1335,6 +1333,7 @@ Resources:
       Environment:
         Variables:
           DATAOPS_URL: !GetAtt BackendFunctionUrl.FunctionUrl
+          OAUTH_ISSUER_URL: !Ref OauthIssuerUrl
       FunctionUrlConfig:
         AuthType: NONE
         Cors:

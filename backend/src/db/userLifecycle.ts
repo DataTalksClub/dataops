@@ -296,14 +296,7 @@ export async function revokeCredentials(client: DynamoDBDocumentClient, userId: 
     ProjectionExpression: 'PK, SK',
     ExclusiveStartKey: exclusiveStartKey,
   }));
-  const listing = await readAllPages(client, (exclusiveStartKey) => new QueryCommand({
-    TableName: TABLE_SESSIONS,
-    KeyConditionExpression: 'PK = :pk',
-    ExpressionAttributeValues: { ':pk': `USERTOKENS#${userId}` },
-    ProjectionExpression: 'PK, SK',
-    ExclusiveStartKey: exclusiveStartKey,
-  }));
-  for (const item of [...owned, ...listing]) {
+  for (const item of owned) {
     await client.send(new DeleteCommand({ TableName: TABLE_SESSIONS, Key: { PK: item.PK, SK: item.SK } }));
   }
   return owned.length;

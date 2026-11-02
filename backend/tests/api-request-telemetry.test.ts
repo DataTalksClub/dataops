@@ -105,8 +105,7 @@ const OPERATIONAL_API_ROUTES: ReadonlyArray<readonly [
   ['/api/tasks', 'tasks'],
   ['/api/team-members', 'health_auth_team'],
   ['/api/templates', 'templates'],
-  ['/api/tokens', 'users_tokens'],
-  ['/api/users', 'users_tokens'],
+  ['/api/users', 'users'],
   ['/api/v1/intake/email-documents', 'email_documents'],
   ['/api/calendar-items', 'calendar_newsletter'],
   ['/api/podcast-episodes', 'calendar_newsletter'],
@@ -354,7 +353,7 @@ describe('portal API request telemetry', () => {
     assert.strictEqual(metrics[0].errorClass, 'unhandled_exception');
     assert.strictEqual(metrics[0].durationMs, 37.25);
     assert.strictEqual(metrics[0].timestamp, 123456789);
-    assert.strictEqual(metrics[0].routeFamily, 'users_tokens');
+    assert.strictEqual(metrics[0].routeFamily, 'users');
     assert.ok(!JSON.stringify(metrics).includes(longError));
     assert.ok(!JSON.stringify(metrics).includes('private-user-209'));
   });
@@ -422,7 +421,6 @@ describe('portal API request telemetry', () => {
   it('maps parameterized normalized paths to the closed family table', () => {
     const cases: Array<[string, ReturnType<typeof classifyApiRouteFamily>]> = [
       ['/api/health', 'health_auth_team'],
-      ['/api/auth/device/token', 'health_auth_team'],
       ['/api/me', 'health_auth_team'],
       ['/api/team-members/member-one', 'health_auth_team'],
       ['/api/tasks/task-one/actions/complete', 'tasks'],
@@ -434,8 +432,7 @@ describe('portal API request telemetry', () => {
       ['/api/files/file-five', 'files'],
       ['/api/artifacts/artifact-six', 'artifacts'],
       ['/api/v1/intake/email-documents', 'email_documents'],
-      ['/api/users/user-ten', 'users_tokens'],
-      ['/api/tokens/token-eleven', 'users_tokens'],
+      ['/api/users/user-ten', 'users'],
       ['/api/notifications/notification-twelve', 'notifications'],
       ['/api/calendar-items/event-thirteen', 'calendar_newsletter'],
       ['/api/newsletter-issues/issue-fourteen', 'calendar_newsletter'],

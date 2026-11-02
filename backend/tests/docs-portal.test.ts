@@ -37,7 +37,6 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
     feRoot = mkdtempSync(join(tmpdir(), 'portal-fe-'));
     mkdirSync(join(feRoot, 'src'), { recursive: true });
     writeFileSync(join(feRoot, 'index.html'), '<!doctype html><html><body><h1>DataOps Portal</h1><span id="app-version"></span></body></html>');
-    writeFileSync(join(feRoot, 'src', 'device.html'), '<!doctype html><html><body class="dk-auth-page"><h1>Authorize a device</h1></body></html>');
     writeFileSync(join(feRoot, 'src', 'app.js'), 'console.log("portal app");');
 
     for (const k of ['DATAOPS_DOCS_DOMAIN', 'FRONTEND_ROOT', 'AUTH_BASE_URL', 'AUTH_ISSUER', 'AUTH_JWKS_URL', 'AUTH_CLIENT_ID', 'AUTH_CALLBACK_URL', 'AUTH_LOGOUT_URL']) saved[k] = process.env[k];
@@ -337,22 +336,6 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
       }
     }
     process.env.DATAOPS_DOCS_DOMAIN = 'true';
-  });
-
-  it('preserves the device code through browser sign-in without authorizing it', async () => {
-    const res = await route(ev('GET', '/device', { query: { code: 'BCDF-GHJK' } }), client);
-    assert.strictEqual(res.statusCode, 302);
-    const login = new URL(res.headers?.location || '', 'https://ops.example.test');
-    assert.strictEqual(login.pathname, '/login');
-    assert.strictEqual(login.searchParams.get('return_to'), '/device?code=BCDF-GHJK');
-  });
-
-  it('serves device authorization without the SPA shell and disables caching', async () => {
-    const res = await route(ev('GET', '/device', { headers: { cookie: browserCookie } }), client);
-    assert.strictEqual(res.statusCode, 200);
-    assert.match(res.body, /dk-auth-page/);
-    assert.doesNotMatch(res.body, /DataOps Portal/);
-    assert.strictEqual(res.headers?.['Cache-Control'], 'no-store');
   });
 
   it('renders the SPA shell for an extensionless app route', async () => {

@@ -79,7 +79,6 @@ describe("canonical workspace routing", () => {
       "/processes",
       "/admin",
       "/users",
-      "/device",
     ]);
   });
 

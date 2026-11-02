@@ -14,14 +14,20 @@ import { setInvoiceServiceForTests, reextractInvoice } from '../src/invoices/ser
 import { handleInvoiceRoutes } from '../src/routes/invoices';
 import { handler } from '../src/handler';
 import { createUserWithId } from '../src/db/users';
-import { createApiToken } from '../src/db/cliAuth';
+import { resetSharedIssuerCaches } from '../src/auth/sharedIssuer';
+import { startJwksServer, generateSigningKey, mintJwt, humanClaims, serviceClaims } from './helpers/issuer-rig';
 
 let client: DynamoDBDocumentClient;
+const KID = 'replace-test-key';
+const signingKey = generateSigningKey(KID);
+let issuerUrl = '';
+let jwksServer: ReturnType<typeof import('node:http').createServer>;
+const readerCredential = () => mintJwt(serviceClaims(issuerUrl, { aud: 'https://ops.dtcdev.click', client_id: 'dataops-invoice-reader', sub: 'service:dataops-invoice-reader', scope: 'invoice:read' }), { privateKey: signingKey.privateKey, kid: KID });
 const objects = new Map<string, Buffer>();
 const puts: PutObjectCommand[] = [];
 let failUpload = false;
 let token: string;
-const envNames = ['SKIP_AUTH', 'IS_LOCAL', 'WORK_ENGINE_AUTH_MODE', 'INVOICE_READER_TOKEN_SHA256', 'EMAIL_DOCUMENTS_BUCKET', 'EMAIL_DOCUMENTS_KMS_KEY', 'EMAIL_DOCUMENT_DESTINATION_PREFIX'];
+const envNames = ['SKIP_AUTH', 'IS_LOCAL', 'WORK_ENGINE_AUTH_MODE', 'OAUTH_ISSUER_URL', 'OAUTH_JWKS_URL', 'EMAIL_DOCUMENTS_BUCKET', 'EMAIL_DOCUMENTS_KMS_KEY', 'EMAIL_DOCUMENT_DESTINATION_PREFIX'];
 const saved = Object.fromEntries(envNames.map(name => [name, process.env[name]]));
 
 // A real, text-bearing PDF exercises the production parser as well as upload.
@@ -41,7 +47,9 @@ const payload = (revision = 1, extra = {}) => ({ revision, filename: 'TEST-repla
 before(async () => {
   process.env.IS_LOCAL = 'true';
   ({ client } = await useTestDatabase());
-  Object.assign(process.env, { EMAIL_DOCUMENTS_BUCKET: 'synthetic-invoice-documents', EMAIL_DOCUMENTS_KMS_KEY: 'synthetic-kms-key', EMAIL_DOCUMENT_DESTINATION_PREFIX: 'artifacts/' });
+  jwksServer = await startJwksServer([signingKey.jwk]);
+  issuerUrl = `http://127.0.0.1:${jwksServer.address().port}`;
+  Object.assign(process.env, { OAUTH_ISSUER_URL: issuerUrl, OAUTH_JWKS_URL: `${issuerUrl}/.well-known/jwks.json`, EMAIL_DOCUMENTS_BUCKET: 'synthetic-invoice-documents', EMAIL_DOCUMENTS_KMS_KEY: 'synthetic-kms-key', EMAIL_DOCUMENT_DESTINATION_PREFIX: 'artifacts/' });
   const s3 = { send: async (command: PutObjectCommand | GetObjectCommand) => {
     if (command instanceof PutObjectCommand) {
       puts.push(command);
@@ -56,10 +64,12 @@ before(async () => {
   setInvoiceDocumentForTests({ s3 });
   setInvoiceServiceForTests({ s3 });
   await createUserWithId(client, 'test-orin', { name: 'Test Orin', email: 'orin@example.test', role: 'operator' });
-  token = (await createApiToken(client, { userId: 'test-orin', label: 'Invoice replacement test', source: 'manual' })).token;
+  token = mintJwt(humanClaims(issuerUrl, { aud: 'https://ops.dtcdev.click', email: 'orin@example.test' }), { privateKey: signingKey.privateKey, kid: KID });
 });
-after(() => {
+after(async () => {
   setInvoiceDocumentForTests(); setInvoiceServiceForTests({});
+  resetSharedIssuerCaches();
+  if (jwksServer) await new Promise((resolve) => jwksServer.close(resolve));
   for (const [name, value] of Object.entries(saved)) if (value === undefined) delete process.env[name]; else process.env[name] = value;
 });
 async function draft(status: Invoice['status'] = 'pending') {
@@ -154,15 +164,14 @@ test('storage failure leaves original invoice and history unchanged', async () =
   finally { failUpload = false; }
   assert.deepEqual(await getInvoice(client, record.id), record);
 });
-test('operator API token uses the same authenticated route as invoice edit; anonymous and reader are refused', async () => {
+test('operator shared-issuer JWT uses the same authenticated route as invoice edit; anonymous and invoice-reader service credentials are refused', async () => {
   process.env.SKIP_AUTH = 'false'; process.env.WORK_ENGINE_AUTH_MODE = 'standalone';
+  resetSharedIssuerCaches();
   const record = await draft();
   const invoke = (credential?: string) => handler({ httpMethod: 'POST', path: `/api/bookkeeping/invoices/${record.id}/replace-document`, headers: credential ? { authorization: `Bearer ${credential}` } : {}, body: JSON.stringify(payload()) }, {});
   assert.equal((await invoke()).statusCode, 401);
-  assert.equal((await invoke(`dops_svc_${'a'.repeat(64)}`)).statusCode, 401);
-  const reader = `dops_svc_${'b'.repeat(64)}`;
-  process.env.INVOICE_READER_TOKEN_SHA256 = createHash('sha256').update(reader).digest('hex');
-  assert.equal((await invoke(reader)).statusCode, 403);
+  assert.equal((await invoke('garbage')).statusCode, 401);
+  assert.equal((await invoke(readerCredential())).statusCode, 403);
   const response = await invoke(token); assert.equal(response.statusCode, 200, response.body);
   assert.equal(JSON.parse(response.body).audit.at(-1).actor, 'test-orin');
 });

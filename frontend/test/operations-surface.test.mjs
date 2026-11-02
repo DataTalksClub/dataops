@@ -184,12 +184,6 @@ function submitUserForm(root) {
   return form.dispatch("submit");
 }
 
-function submitDeviceForm(root) {
-  const form = findAllByClass(root, "device-form")[0];
-  if (!form) throw new Error("Device form is not rendered");
-  return form.dispatch("submit");
-}
-
 describe("Operations surface boundary", () => {
   test("directly imports production factories and exposes a stable Admin facade", () => {
     assert.deepEqual(Object.keys(createAdminHarness().api).sort(), [

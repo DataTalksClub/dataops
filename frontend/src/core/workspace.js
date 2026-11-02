@@ -27,7 +27,6 @@ export const WORKSPACE_PATH_BY_VIEW = Object.freeze({
   docs: "/processes",
   admin: "/admin",
   users: "/users",
-  device: "/device",
   finance: "/finance",
   reconcile: "/finance/reconcile",
   bookkeeping: "/bookkeeping",
@@ -110,7 +109,6 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   },
   "/admin": { view: "admin", tasksSection: "queue", params: [] },
   "/users": { view: "users", tasksSection: "queue", params: [] },
-  "/device": { view: "device", tasksSection: "queue", params: ["code"] },
 });
 
 export const TASKS_SECTIONS = Object.freeze([

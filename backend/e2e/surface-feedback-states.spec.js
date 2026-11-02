@@ -227,21 +227,6 @@ test.describe('issue 204 owning-surface feedback', () => {
     await shot(page, 'users-ready-desktop-1440x900');
 
     await page.route('**/api/me', route => route.fulfill({ json: { user: { email: 'operator@example.test' } } }));
-    await page.route('**/api/auth/device/pending?**', route => route.fulfill({ status: 404, json: { error: 'Not found' } }));
-    await page.goto(`${baseURL}/device`);
-    await expect(page.locator('.dk-auth-page')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Authorize a device', exact: true })).toBeVisible();
-    await page.getByLabel('Device code', { exact: true }).fill('ZZZZ-9999');
-    await page.getByRole('button', { name: 'Continue', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Code not found' })).toBeVisible();
-    const deviceError = page.getByRole('alert');
-    await expect(deviceError).toContainText('This code is wrong, expired, or already used.');
-    await expect(page.getByRole('button', { name: 'Enter another code' })).toBeEnabled();
-    await shot(page, 'device-unknown-code-desktop-1440x900');
-    await page.setViewportSize(MOBILE);
-    await expect(page.locator('.dk-auth-card')).toBeVisible();
-    await expectNoHorizontalOverflow(page);
-    await shot(page, 'device-mobile-390x844');
     await context.close();
   });
 

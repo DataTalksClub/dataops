@@ -15,7 +15,8 @@ import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createCard, getCard } from '../src/db/cards';
 import { templateLink } from './helpers/cardTemplate';
-import { createApiToken, getApiToken } from '../src/db/cliAuth';
+import { resetSharedIssuerCaches } from '../src/auth/sharedIssuer';
+import { generateSigningKey, mintJwt, humanClaims, startJwksServer } from './helpers/issuer-rig';
 import { createRecurringConfig, generateRecurringTasks, getRecurringConfig } from '../src/db/recurring';
 import { createSession, getSession } from '../src/db/sessions';
 import { createCrmRecord, getCrmRecord } from '../src/db/sponsorCrm';
@@ -25,6 +26,11 @@ import { createUserWithId, getUser, updateUser } from '../src/db/users';
 import { getWorkspaceSettings, setDefaultAssignee } from '../src/db/workspaceSettings';
 import { TeamDirectory } from '../src/identity/directory';
 import type { LambdaResponse } from '../src/types';
+
+const KID = 'lifecycle-test-key';
+const signingKey = generateSigningKey(KID);
+let issuerBase = '';
+let jwksServer: ReturnType<typeof import('node:http').createServer> | null = null;
 
 const ADMIN = 'ada-admin';
 const SECOND_ADMIN = 'sam-admin';
@@ -48,6 +54,11 @@ describe('user lifecycle: handover, disable, delete', () => {
   const ids: Record<string, string> = {};
 
   before(async () => {
+    jwksServer = await startJwksServer([signingKey.jwk]);
+    issuerBase = `http://127.0.0.1:${jwksServer.address().port}`;
+    process.env.OAUTH_ISSUER_URL = issuerBase;
+    process.env.OAUTH_JWKS_URL = `${issuerBase}/.well-known/jwks.json`;
+    resetSharedIssuerCaches();
     client = await getClient(await startLocal());
     await createTables(client);
     await createUserWithId(client, ADMIN, { name: 'Ada Admin', email: 'ada@example.test', role: 'admin' });
@@ -77,6 +88,11 @@ describe('user lifecycle: handover, disable, delete', () => {
   });
 
   after(async () => {
+    resetSharedIssuerCaches();
+    delete process.env.OAUTH_ISSUER_URL;
+    delete process.env.OAUTH_JWKS_URL;
+    if (jwksServer) await new Promise((resolve) => jwksServer.close(resolve));
+
     await stopLocal();
   });
 
@@ -146,7 +162,8 @@ describe('user lifecycle: handover, disable, delete', () => {
 
   it('disables: new default, open work handed over, credentials revoked', async () => {
     const session = await createSession(client, LEAVER);
-    const { token } = await createApiToken(client, { userId: LEAVER, label: 'laptop', source: 'manual' });
+    // The leaver's CLI holds a shared-issuer JWT mapped by verified email.
+    const leaverToken = mintJwt(humanClaims(issuerBase, { email: 'lee@example.test', aud: 'https://ops.dtcdev.click' }), { privateKey: signingKey.privateKey, kid: KID });
 
     const response = await invoke('POST', `/api/users/${LEAVER}/disable`, ADMIN, {
       reassignTo: HEIR,
@@ -156,7 +173,7 @@ describe('user lifecycle: handover, disable, delete', () => {
     const result = parsed(response);
     assert.strictEqual(result.user.disabled, true);
     assert.deepStrictEqual(result.moved, { tasks: 2, cards: 1, schedules: 1, sponsorRecords: 2 });
-    assert.ok(result.revokedCredentials >= 2);
+    assert.ok(result.revokedCredentials >= 1);
 
     assert.strictEqual((await getWorkspaceSettings(client)).defaultAssigneeId, HEIR);
     assert.strictEqual((await getTask(client, ids.todo))?.assigneeId, HEIR);
@@ -169,7 +186,19 @@ describe('user lifecycle: handover, disable, delete', () => {
     assert.strictEqual((await getCrmRecord(client, 'deal', ids.lostDeal))?.owner, LEAVER, 'a lost deal is history');
 
     assert.strictEqual(await getSession(client, session.token), null);
-    assert.strictEqual(await getApiToken(client, token), null);
+    // The issuer JWT still verifies, but the disabled account no longer maps.
+    const savedSkipAuth = process.env.SKIP_AUTH;
+    process.env.SKIP_AUTH = 'false';
+    try {
+      const rejected = await handler({
+        httpMethod: 'GET',
+        path: '/api/me',
+        headers: { authorization: `Bearer ${leaverToken}` },
+      }, {});
+      assert.strictEqual(rejected.statusCode, 401);
+    } finally {
+      if (savedSkipAuth === undefined) delete process.env.SKIP_AUTH; else process.env.SKIP_AUTH = savedSkipAuth;
+    }
     assert.strictEqual(parsed(await invoke('GET', `/api/users/${LEAVER}/handover`, ADMIN)).openTotal, 0);
   });
 

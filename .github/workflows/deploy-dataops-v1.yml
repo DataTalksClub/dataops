@@ -102,7 +102,7 @@ jobs:
       AUTH_LOGOUT_URL: https://ops.dtcdev.click/
       # 30 days in seconds
       AUTH_SESSION_LIFETIME_SECONDS: 2592000
-      INVOICE_READER_TOKEN_SHA256: ${{ secrets.INVOICE_READER_TOKEN_SHA256 }}
+      OAUTH_ISSUER_URL: https://oauth.dtcdev.click
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET }}
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX: ${{ vars.EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX }}
       EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN: ${{ secrets.EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN }}
@@ -215,7 +215,7 @@ jobs:
               "ParameterKey=AuthCallbackUrl,ParameterValue=$AUTH_CALLBACK_URL" \
               "ParameterKey=AuthLogoutUrl,ParameterValue=$AUTH_LOGOUT_URL" \
               "ParameterKey=AuthSessionLifetimeSeconds,ParameterValue=$AUTH_SESSION_LIFETIME_SECONDS" \
-              "ParameterKey=InvoiceReaderTokenSha256,ParameterValue=$INVOICE_READER_TOKEN_SHA256" \
+              "ParameterKey=OauthIssuerUrl,ParameterValue=$OAUTH_ISSUER_URL" \
               "ParameterKey=EmailDocumentExternalSourceBucketName,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_BUCKET" \
               "ParameterKey=EmailDocumentExternalSourcePrefix,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_PREFIX" \
               "ParameterKey=EmailDocumentExternalSourceKmsKeyArn,ParameterValue=$EMAIL_DOCUMENT_EXTERNAL_SOURCE_KMS_KEY_ARN" \

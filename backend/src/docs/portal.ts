@@ -24,7 +24,6 @@ import { authErrorPage, browserAuthConfigured, signInRefusal, browserUser, handl
 import { RUNTIME_ROOT } from '../runtimePaths';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { isAnonymousDocumentReviewAsset, isAnonymousDocumentReviewRequest } from '../documents/reviews';
-import { isAnonymousDeviceRequest } from '../routes/cliAuth';
 import { isAnonymousSponsorDocAsset, isAnonymousSponsorDocRequest } from '../routes/sponsorDocs';
 import { isAnonymousSponsorContractAsset } from '../routes/sponsorContracts';
 import {
@@ -160,7 +159,6 @@ function serveFrontend(event: LambdaEvent, method: string, path: string): Lambda
   if (method !== 'GET') return null;
 
   if (/^\/document-review\/[^/]+\/?$/.test(path)) return serveIndex('src/document-review.html');
-  if (path === '/device' || path === '/device/sessions') return serveIndex('src/device.html');
   if (/^\/contracts\/[^/]+\/?$/.test(path)) return serveIndex('src/contract-sign.html');
   if (/^\/(sponsor-docs|podcast-docs|guest-docs|webinar-docs|workshop-docs)\/[^/]+\/?$/.test(path)) return serveIndex('src/sponsor-doc.html');
   if (/^\/newsletter-issues\/[^/]+\/preview\/?$/.test(path)) return serveIndex('src/newsletter-preview.html');
@@ -288,7 +286,7 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
   if (path === '/auth/callback' && method === 'GET') return { response: await handleCallback(event, client), authorized: false };
   if (path === '/auth/error' && method === 'GET') return { response: authErrorPage(signInRefusal(event.queryStringParameters?.reason)), authorized: false };
   if (path === '/logout' && (method === 'GET' || method === 'POST')) return { response: await logout(event, client), authorized: false };
-  // Full portal mode replaces password login with OAuth/device flows. Docs-domain
+  // Full portal mode replaces password login with the shared browser sign-in. Docs-domain
   // local development keeps the canonical login reachable.
   if (process.env.WORK_ENGINE_AUTH_MODE === 'portal' && path === '/api/auth/login') {
     return {
@@ -301,10 +299,8 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
     };
   }
   if (path === '/api/health') return { authorized: false };
-  // Starting and polling a device grant establish no identity. The router's
-  // existing device handlers validate the request and require browser approval.
-  if (isAnonymousDeviceRequest(method, path)) return { authorized: false };
-
+  // Non-browser API clients authenticate with shared-issuer JWTs through the
+  // router's bearer middleware; the portal itself has no device-grant page.
   const authEnabled = browserAuthConfigured();
   const user = authEnabled ? await browserUser(event, client) : null;
   if (!user && isDataPath(path) && /^Bearer\s+\S+$/i.test(headerValue(event.headers, 'authorization'))) {
@@ -312,11 +308,6 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
   }
   const authorized = !authEnabled || Boolean(user);
   if (!authorized) {
-    if (path === '/device') {
-      const code = event.queryStringParameters?.code || '';
-      const returnTo = code ? `/device?code=${encodeURIComponent(code)}` : '/device';
-      return { response: redirectToLogin(returnTo), authorized: false };
-    }
     if (isAnonymousDocumentReviewAsset(method, path) || isAnonymousSponsorDocAsset(method, path) || isAnonymousNewsletterPreviewAsset(method, path) || isAnonymousSponsorContractAsset(method, path)) {
       const fe = serveFrontend(event, method, path);
       if (fe) return { response: fe, authorized: false };

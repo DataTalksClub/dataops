@@ -13,7 +13,7 @@ export type ApiRouteFamily =
   | 'recurring'
   | 'files'
   | 'artifacts'
-  | 'users_tokens'
+  | 'users'
   | 'notifications'
   | 'calendar_newsletter'
   | 'bookkeeping'
@@ -74,8 +74,7 @@ const ROUTE_FAMILIES: ReadonlyArray<readonly [ApiRouteFamily, string]> = [
   ['recurring', '/api/automations'],
   ['files', '/api/files'],
   ['artifacts', '/api/artifacts'],
-  ['users_tokens', '/api/users'],
-  ['users_tokens', '/api/tokens'],
+  ['users', '/api/users'],
   ['notifications', '/api/notifications'],
   ['calendar_newsletter', '/api/calendar-items'],
   ['calendar_newsletter', '/api/newsletter-issues'],

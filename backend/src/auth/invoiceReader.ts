@@ -1,6 +1,13 @@
-import { createHash, timingSafeEqual } from 'crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
+import { headerValue } from '../httpHeaders';
+import {
+  serviceClientScopes,
+  scopesInclude,
+  servicePrincipalId,
+  verifySharedIssuerJwt,
+  type SharedIssuerClaims,
+} from './sharedIssuer';
 import { handleInvoiceRoutes } from '../routes/invoices';
 import { handleSponsorCrmRoutes } from '../routes/sponsorCrm';
 import { handleCrmWorkspaceRoutes } from '../routes/crmWorkspace';
@@ -14,7 +21,6 @@ import { handleFinanceRoutes } from '../routes/finance';
 import { resolveDefaultAssigneeId } from '../db/workspaceSettings';
 import { listUsers } from '../db/users';
 
-const PRINCIPAL = { id: 'invoice-reader', scopes: ['invoices:read', 'crm:read', 'crm:write'], expiresAt: null };
 const response = (statusCode: number, body: unknown): LambdaResponse => ({
   statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
   body: JSON.stringify(body),
@@ -72,26 +78,33 @@ async function resolveServiceActorId(client: DynamoDBDocumentClient): Promise<st
   return activeUser ? activeUser.id : 'service-agent';
 }
 
-/** A deployment-managed service credential never becomes an interactive user. */
+/**
+ * A deployment-managed service credential never becomes an interactive
+ * user: it is a `client_credentials` JWT from the shared issuer bound to
+ * this API, and it only reaches the route families its issuer-registered
+ * scopes cover. Non-service bearers fall through untouched.
+ */
 export async function handleInvoiceReader(
   event: LambdaEvent, client: DynamoDBDocumentClient,
 ): Promise<LambdaResponse | null> {
   const header = Object.entries(event.headers || {}).find(([key]) => key.toLowerCase() === 'authorization')?.[1] || '';
   const token = /^Bearer\s+(\S+)$/i.exec(header)?.[1] || '';
-  if (!token.startsWith('dops_svc_')) return null;
-  const configured = process.env.INVOICE_READER_TOKEN_SHA256 || '';
-  if (!/^dops_svc_[a-f0-9]{64}$/.test(token) || !/^[a-f0-9]{64}$/.test(configured)
-    || !timingSafeEqual(createHash('sha256').update(token).digest(), Buffer.from(configured, 'hex'))) {
-    return response(401, { error: 'Unauthorized' });
-  }
+  if (!token) return null;
+  const claims = await verifySharedIssuerJwt(token);
+  const scopes = serviceClientScopes(claims);
+  if (!claims || !scopes) return null;
   const path = event.path || '/';
   const cleanPath = path.split('?')[0];
   const method = (event.httpMethod || 'GET').toUpperCase();
+  const principal = servicePrincipalId(claims);
 
-  if (method === 'GET' && cleanPath === '/api/me') return response(200, { service: PRINCIPAL });
+  const canInvoiceRead = scopesInclude(scopes, 'invoice:read') || scopesInclude(scopes, 'dataops:read');
+  const canDataRead = scopesInclude(scopes, 'dataops:read');
+  const canDataWrite = scopesInclude(scopes, 'dataops:write');
+  if (method === 'GET' && cleanPath === '/api/me') return response(200, { service: { id: claims.client_id, scopes: [...scopes] } });
 
-  const isInvoiceAllowed = cleanPath === '/api/bookkeeping/invoices' || cleanPath === '/api/bookkeeping/invoices/readiness'
-    || /^\/api\/bookkeeping\/invoices\/[a-f0-9]{64}(?:\/document)?$/.test(cleanPath);
+  const isInvoiceAllowed = canInvoiceRead && (cleanPath === '/api/bookkeeping/invoices' || cleanPath === '/api/bookkeeping/invoices/readiness'
+    || /^\/api\/bookkeeping\/invoices\/[a-f0-9]{64}(?:\/document)?$/.test(cleanPath));
   if (isInvoiceAllowed) {
     if (method !== 'GET') return response(403, { error: 'Service credential permits invoice reads only' });
     return handleInvoiceRoutes(cleanPath, 'GET', event, client, true);
@@ -99,15 +112,17 @@ export async function handleInvoiceReader(
 
   // Finance aggregates are reads over the same books the invoice scope covers.
   if (cleanPath.startsWith('/api/finance/')) {
+    if (!canInvoiceRead) return response(403, { error: `Service credential ${principal} lacks invoice read scope` });
     if (method !== 'GET') return response(403, { error: 'Service credential permits finance reads only' });
     return (await handleFinanceRoutes(cleanPath, 'GET', event, client)) || response(404, { error: 'Not found' });
   }
 
-  const isCrmAllowed = cleanPath.startsWith('/api/sponsor-crm/');
-  const isTaskAllowed = cleanPath === '/api/tasks' || cleanPath.startsWith('/api/tasks/');
-  const isOffersReadAllowed = method === 'GET' && (cleanPath === '/api/offers' || cleanPath.startsWith('/api/offers/'));
+  const isCrmAllowed = canDataRead && cleanPath.startsWith('/api/sponsor-crm/');
+  const isTaskAllowed = canDataRead && (cleanPath === '/api/tasks' || cleanPath.startsWith('/api/tasks/'));
+  const isOffersReadAllowed = canDataRead && method === 'GET' && (cleanPath === '/api/offers' || cleanPath.startsWith('/api/offers/'));
 
   if (isCrmAllowed || isTaskAllowed || isOffersReadAllowed) {
+    if (method !== 'GET' && !canDataWrite) return response(403, { error: `Service credential ${principal} lacks write scope` });
     const actorId = await resolveServiceActorId(client);
     if (!event.headers) event.headers = {};
     event.headers['x-user-id'] = actorId;
@@ -121,5 +136,5 @@ export async function handleInvoiceReader(
     return await handleTaskRoutes(cleanPath, method, event, client);
   }
 
-  return response(403, { error: 'Service credential permits invoice reads and CRM operations only' });
+  return response(403, { error: `Service credential ${principal} permits invoice and dataops scopes only` });
 }

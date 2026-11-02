@@ -47,17 +47,15 @@ import { resolveInteractiveActor } from './identity/actor';
 import { identityProjection } from './identity/projections';
 import { getSession } from './db/sessions';
 import { headerValue } from './httpHeaders';
-import { getUser } from './db/users';
+import { getUser, getUsersByNormalizedEmail, normalizeEmail } from './db/users';
 import { userDisplayNames } from './identity/directory';
+import { verifySharedIssuerJwt } from './auth/sharedIssuer';
 import { getTaskConsistent, TaskVersionConflictError, CardLifecycleConflictError } from './db/tasks';
 import { TaskDependencyError } from './db/taskDependencies';
 import { CardNotFoundError, getCardConsistent } from './db/cards';
-import { getApiToken, projectApiToken, touchApiToken } from './db/cliAuth';
-import { isScopedTokenRequestAllowed } from './auth/tokenScopes';
 import { withCrmReadSnapshot } from './db/sponsorCrm';
 import { handleInvoiceReader } from './auth/invoiceReader';
 import { handleKnowledgePublisher } from './auth/knowledgePublisher';
-import { handleCliAuthRoutes, isAnonymousDeviceRequest } from './routes/cliAuth';
 import { handleSponsorDocRoutes, isAnonymousSponsorDocRequest } from './routes/sponsorDocs';
 import { handleSponsorContractRoutes, isAnonymousSponsorContractRequest } from './routes/sponsorContracts';
 import { getDocument } from './db/documents';
@@ -80,7 +78,6 @@ const AUTH_EXEMPT_PATHS = new Set([
 
 function isAuthExempt(method: string, path: string): boolean {
   if (isAnonymousDocumentReviewRequest(method, path)) return true;
-  if (isAnonymousDeviceRequest(method, path)) return true;
   if (isAnonymousSponsorDocRequest(method, path)) return true;
   if (isAnonymousSponsorContractRequest(method, path)) return true;
   if (isAnonymousNewsletterPreviewRequest(method, path)) return true;
@@ -122,6 +119,21 @@ function constantTimeEquals(actual: string, expected: string): boolean {
   const actualBuffer = Buffer.from(actual);
   const expectedBuffer = Buffer.from(expected);
   return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+/**
+ * Resolve a shared-issuer human JWT to this workspace's user id by its
+ * verified email. Service tokens (no email) have no generic identity: they
+ * only reach the scoped service families via the service-credential gate.
+ */
+async function sharedIssuerUserId(client: DynamoDBDocumentClient, token: string): Promise<string | null> {
+  const claims = await verifySharedIssuerJwt(token);
+  if (!claims || typeof claims.email !== 'string' || !claims.email) return null;
+  if (claims.email_verified !== true && claims.email_verified !== 'true') return null;
+  const users = await getUsersByNormalizedEmail(client, normalizeEmail(claims.email));
+  if (users.length !== 1) return null;
+  const user = users[0];
+  return user && !user.disabled ? user.id : null;
 }
 
 async function portalTrustedUserId(event: LambdaEvent): Promise<string | null> {
@@ -193,7 +205,6 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // requests must replace it with an identity established below.
     if (!skipAuth) {
       deleteHeader(event.headers, 'x-user-id');
-      deleteHeader(event.headers, 'x-token-scopes');
       deleteHeader(event.headers, 'x-api-token-id');
     }
     const serviceResponse = await handleInvoiceReader(event, client);
@@ -203,14 +214,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (!event.headers) event.headers = {};
       event.headers['x-user-id'] = verifiedInteractiveUserId;
     }
-    // Portal mode serves no /api/auth routes except the device flow, which is how non-browser
-    // clients obtain a credential from that same portal session.
-    if (portalMode && reqPath.startsWith('/api/auth') && !reqPath.startsWith('/api/auth/device')) {
+    // Portal mode serves no /api/auth routes at all: non-browser clients
+    // obtain credentials from the shared issuer, not from this portal.
+    if (portalMode && reqPath.startsWith('/api/auth')) {
       return jsonResponse(404, { error: 'Not found' });
-    }
-    if (reqPath.startsWith('/api/auth/device')) {
-      const result = await handleCliAuthRoutes(reqPath, method, event);
-      if (result) return result;
     }
     const testTemplateActorId = skipAuth ? process.env.E2E_TEMPLATE_ACTOR_ID || '' : '';
     if (skipAuth && !headerValue(event.headers, 'x-user-id') && testTemplateActorId) {
@@ -231,19 +238,12 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           : jsonResponse(401, { error: 'Unauthorized' });
       }
       // Preserve the existing non-browser bearer-session contract, and accept
-      // the API tokens CLI clients hold: `whoami` runs through this route.
+      // shared-issuer JWTs: `whoami` for CLI/MCP clients runs through here.
       const bearer = extractToken(event);
       const session = bearer ? await getSession(client, bearer) : null;
-      const bearerApiToken = bearer && !session ? await getApiToken(client, bearer) : null;
-      const bearerUserId = session?.userId || bearerApiToken?.userId || '';
+      const bearerUserId = session?.userId
+        || (bearer && !session ? await sharedIssuerUserId(client, bearer) : null) || '';
       if (bearerUserId) {
-        if (bearerApiToken) {
-          await touchApiToken(client, bearerApiToken);
-          const user = await getUser(client, bearerUserId);
-          return user && !user.disabled
-            ? jsonResponse(200, { user: identityProjection(user), apiToken: projectApiToken(bearerApiToken) })
-            : jsonResponse(401, { error: 'Unauthorized' });
-        }
         const user = await getUser(client, bearerUserId);
         return user && !user.disabled
           ? jsonResponse(200, { user: identityProjection(user) })
@@ -287,30 +287,18 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         }
       } else {
         const session = await getSession(client, token);
-        // CLI and script clients present an API token instead of a session. It
-        // resolves to the same user, so every downstream role check is unchanged.
-        const apiToken = session ? null : await getApiToken(client, token);
-        if (!session && !apiToken) {
+        // Machine and CLI clients present a shared-issuer JWT instead of a
+        // session; its verified email resolves to the same user, so every
+        // downstream role check is unchanged.
+        const jwtUserId = session ? null : await sharedIssuerUserId(client, token);
+        if (!session && !jwtUserId) {
           if (!exempt) {
             return jsonResponse(401, { error: 'Unauthorized' });
           }
         } else {
-          if (apiToken) await touchApiToken(client, apiToken);
           // Attach userId to event headers for downstream use
           if (!event.headers) event.headers = {};
-          event.headers['x-user-id'] = session ? session.userId : apiToken!.userId;
-          if (apiToken) {
-            event.headers['x-api-token-id'] = apiToken.id;
-            if (apiToken.scopes && apiToken.scopes.length > 0) {
-              event.headers['x-token-scopes'] = apiToken.scopes.join(',');
-              if (!isScopedTokenRequestAllowed(apiToken.scopes, method, reqPath)) {
-                return jsonResponse(403, {
-                  error: 'Token does not have scope for this operation',
-                  code: 'insufficient_scope',
-                });
-              }
-            }
-          }
+          event.headers['x-user-id'] = session ? session.userId : jwtUserId!;
         }
       }
     }
@@ -480,11 +468,6 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
 
     // ── Notification routes ─────────────────────────────────────
-
-    if (reqPath.startsWith('/api/tokens')) {
-      const result = await handleCliAuthRoutes(reqPath, method, event);
-      if (result) return result;
-    }
 
     if (reqPath.startsWith('/api/notifications')) {
       const rawUserId = event.headers?.['x-user-id'] || undefined;
