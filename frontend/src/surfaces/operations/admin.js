@@ -807,14 +807,14 @@ export function createAdminSurface(context) {
     diagnostics.innerHTML = `
       <header>
         <h3>Read-only diagnostics</h3>
-        <span>Diagnostics show saved knowledge and daily export status.</span>
+        <span>Diagnostics show saved knowledge and daily backup status.</span>
       </header>
       <article data-diagnostic="quality">
         <strong>Process quality</strong>
         <span>Loading local validation…</span>
       </article>
       <article data-diagnostic="knowledge-status">
-        <strong>Daily GitHub export</strong>
+        <strong>Daily knowledge backup</strong>
         <span>Loading availability…</span>
       </article>
       <article data-diagnostic="knowledge-publication">
@@ -918,8 +918,8 @@ export function createAdminSurface(context) {
       diagnosticText(
         "knowledge-status",
         knowledgeStatus.status === "fulfilled"
-          ? knowledgeStatus.value.exportLag ? "Newer saves await the daily GitHub export." : "Daily GitHub export is current."
-          : `Export status unavailable: ${knowledgeStatus.reason?.message || "request failed"}. Saved knowledge is independent of GitHub.`,
+          ? knowledgeStatus.value.backupLag ? "Newer saves await the daily knowledge backup." : "Daily knowledge backup is current."
+          : `Backup status unavailable: ${knowledgeStatus.reason?.message || "request failed"}. Saved knowledge is independent of the backup bucket.`,
       );
       diagnosticText(
         "knowledge-publication",

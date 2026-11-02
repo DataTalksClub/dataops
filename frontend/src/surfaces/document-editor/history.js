@@ -29,12 +29,12 @@ export function createEditorHistory(context, services) {
   async function refreshKnowledgeStatus() {
     try {
       const state = await request(apiUrl("/knowledge/status"));
-      const exported = state.exported;
-      knowledgeStatusText.textContent = exported
-        ? `Saved files are available. Last GitHub export: ${new Date(exported.at).toLocaleString()}${state.exportLag ? " · newer saves await daily export" : " · up to date"}.`
-        : "Saved files are available. Daily GitHub export has not completed yet.";
+      const backup = state.backup;
+      knowledgeStatusText.textContent = backup
+        ? `Saved files are available. Last knowledge backup: ${new Date(backup.at).toLocaleString()}${state.backupLag ? " · newer saves await the daily backup" : " · up to date"}.`
+        : "Saved files are available. The daily knowledge backup has not completed yet.";
     } catch {
-      knowledgeStatusText.textContent = "Daily GitHub export status unavailable. File saves and history are independent of GitHub.";
+      knowledgeStatusText.textContent = "Knowledge backup status unavailable. File saves and history are independent of the backup bucket.";
     }
   }
   // `path` names the file to show (Process Docs › Recently changed); a click

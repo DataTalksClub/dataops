@@ -147,7 +147,7 @@ describe('GET /api/automations', () => {
     });
     const overview = await automationsOverview(client, {
       now: new Date('2026-10-16T09:00:00Z'),
-      readCheckpoint: async (job) => (job === 'knowledge-mirror' ? { at: '2026-10-16T04:00:05.000Z' } : null),
+      readCheckpoint: async (job) => (job === 'knowledge-backup' ? { at: '2026-10-16T03:00:05.000Z' } : null),
     });
     const byId = new Map(overview.automations.map((automation) => [automation.id, automation]));
     assert.deepStrictEqual(
@@ -163,8 +163,7 @@ describe('GET /api/automations', () => {
     );
     assert.strictEqual(byId.get('recurring-tasks')!.lastRun?.at, '2026-10-16T08:00:00.000Z');
     assert.strictEqual(byId.get('recurring-tasks')!.nextRunAt, '2026-10-17T06:00:00.000Z');
-    assert.strictEqual(byId.get('knowledge-mirror')!.lastRun?.source, 'knowledge-checkpoint');
-    assert.strictEqual(byId.get('knowledge-backup')!.lastRun, null);
+    assert.strictEqual(byId.get('knowledge-backup')!.lastRun?.source, 'knowledge-checkpoint');
     assert.deepStrictEqual(byId.get('newsletter-cards')!.settings.map(({ key, value }) => ({ key, value })), [{ key: 'newsletterCardLeadDays', value: 21 }]);
     assert.strictEqual(byId.get('knowledge-publish')!.lastRun, null);
     assert.match(byId.get('knowledge-publish')!.link || '', /^https:\/\/github\.com\//);
@@ -244,7 +243,7 @@ describe('GET /api/automations', () => {
     assert.strictEqual(taxCard.templateLink, `/templates?templateId=${tax.id}`);
     const byId = new Map(overview.automations.map((automation) => [automation.id, automation]));
     assert.strictEqual(byId.get('recurring-tasks')!.system, false);
-    for (const id of ['execution-export', 'dynamo-backup', 'knowledge-backup', 'knowledge-mirror', 'knowledge-publish', 'knowledge-repo-backup']) {
+    for (const id of ['execution-export', 'dynamo-backup', 'knowledge-backup', 'knowledge-publish', 'knowledge-repo-backup']) {
       assert.strictEqual(byId.get(id)!.system, true, id);
     }
     assert.ok(!byId.has('sponsor-email-send') && !byId.has('sponsor-send-recovery') && !byId.has('sponsor-email-events'));

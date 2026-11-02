@@ -533,9 +533,10 @@ async function dispatch(
   }
   if (path === '/knowledge/status' && m === 'GET') {
     await rt.store.pin();
-    async function checkpoint(job:string) {try{return (await rt.store.json<Record<string,unknown>>(`jobs/${job}/success.json`)).value;} catch(error){if(['NoSuchKey','NotFound'].includes((error as Error).name)) return null;throw error;}}
-    const exported=await checkpoint('knowledge-mirror');const backup=await checkpoint('knowledge-backup');
-    return jsonResponse(200,{revision:rt.store.revision,exported,backup,exportLag:exported?.revision!==rt.store.revision});
+    let backup:Record<string,unknown>|null;
+    try {backup=(await rt.store.json<Record<string,unknown>>('jobs/knowledge-backup/success.json')).value;}
+    catch(error){if(['NoSuchKey','NotFound'].includes((error as Error).name)) backup=null;else throw error;}
+    return jsonResponse(200,{revision:rt.store.revision,backup,backupLag:backup?.revision!==rt.store.revision});
   }
   if (path === '/knowledge/publication' && m === 'GET') {await rt.store.pin();return jsonResponse(200,{revision:rt.store.revision});}
   if (path === '/docs/regenerate' && m === 'POST') {
