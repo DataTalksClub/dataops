@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { UsageError } from "../errors.mjs";
-import { enc, integer, isoDate, jsonData, optionalString, positional, table } from "../format.mjs";
+import { enc, fields, integer, isoDate, jsonData, optionalString, positional, required, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import {
   THANK_YOU_EVIDENCE_LABEL,
@@ -71,6 +71,19 @@ Usage
       recorded before the row existed (same amount, within 14 days) is replaced by
       the link. Prints what it would do unless --apply is given.
   dataops sponsors record-thank-you <deal-id> --ref THREAD_REF [--label TEXT] [--date YYYY-MM-DD] [--apply]
+  dataops sponsors contract create --deal-id ID --data @terms.json
+      Required terms fields: company, legalPayer, payerCountry (ISO two-letter), scope, priceEur,
+      startDate, endDate. Optional: currency (EUR default), signingOrder (sponsor-first default or
+      counter-first). Validates a minimum one month lead time before startDate.
+  dataops sponsors contract send <contract-id> [--expires-days N]
+      Mints expiring signing links, emails the sponsor signer from orin@datatalks.club and prints
+      both links once (the counter-sign link is handed to DataTalks.Club staff, not emailed).
+      resend mints fresh links for unsigned signers.
+  dataops sponsors contract status <contract-id>
+  dataops sponsors contract audit <contract-id>
+      Per-event signing audit trail: sent, viewed, signed, declined, completed, with IP and agent.
+  dataops sponsors contract verify <contract-id>
+      Recomputes the SHA-256 of the stored signed PDF and compares it with the stored hash.
       Idempotently record the sent payment-received thank-you email reference
       on the deal's Finance evidence (sent from orin@ as a reply in the invoice thread, no draft;
       template exists, so no Alexey approval needed).
@@ -643,4 +656,80 @@ export async function recordThankYou(args, io) {
   return result;
 }
 
-export const commands = { pipeline, contact, list, show, create, update, delete: remove, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification, "record-thank-you": recordThankYou };
+export async function contract(args, io) {
+  const action = positional(args, 0, "dataops sponsors contract <create|send|resend|status|audit|verify> [contract-id]");
+  const api = apiFor(args);
+  if (action === "create") {
+    const dealId = required(args, "dealId", "deal-id");
+    const terms = jsonData(args);
+    const result = await api.post("/api/sponsor-crm/contracts", { dealId, terms });
+    if (!args.json) {
+      io.print("Created contract " + result.id + " for deal " + dealId + " (status " + result.status + ").");
+      fields(io, [[
+        ["id", result.id],
+        ["status", result.status],
+        ["signing order", result.terms?.signingOrder],
+        ["start", result.terms?.startDate],
+        ["fee", result.terms ? result.terms.priceEur + " " + result.terms.currency : undefined],
+        ["signers", (result.signers || []).map((s) => s.role + ":" + s.email).join(", ")],
+      ]]);
+    }
+    return result;
+  }
+  const id = positional(args, 1, "dataops sponsors contract " + action + " <contract-id>");
+  if (action === "send" || action === "resend") {
+    const body = {};
+    const days = optionalString(args, "expiresDays");
+    if (days !== undefined) {
+      body.expiresDays = Number(days);
+      if (!Number.isInteger(body.expiresDays) || body.expiresDays < 1 || body.expiresDays > 60) throw new UsageError("--expires-days must be a whole number from 1 to 60.");
+    }
+    const result = await api.post("/api/sponsor-crm/contracts/" + enc(id) + "/" + action, body);
+    if (!args.json) {
+      const delivery = result.emailDelivery || {};
+      io.print("Contract " + id + ": " + (result.contract?.status || "sent") + ". Email " + (delivery.state || "unknown") + (delivery.reason ? " (" + delivery.reason + ")" : "") + (delivery.to ? " to " + delivery.to : "") + ".");
+      const urls = result.signingUrls || {};
+      if (urls.sponsor) io.print("Sponsor link: " + urls.sponsor);
+      if (urls.counter) io.print("Counter-sign link: " + urls.counter);
+      if (delivery.state && delivery.state !== "sent" && delivery.message) io.print(delivery.message);
+    }
+    return result;
+  }
+  if (action === "status") {
+    const result = await api.get("/api/sponsor-crm/contracts/" + enc(id));
+    if (!args.json) {
+      fields(io, [[
+        ["id", result.id],
+        ["status", result.status],
+        ["deal", result.dealId],
+        ["signing order", result.terms?.signingOrder],
+        ["signed pdf sha256", result.signedPdf?.sha256],
+        ["signers", (result.signers || []).map((s) => s.role + ":" + s.email + (s.signedAt ? " signed " + s.signedAt : s.viewedAt ? " viewed" : "")).join(", ")],
+        ["updated", result.updatedAt],
+      ]]);
+    }
+    return result;
+  }
+  if (action === "audit") {
+    const result = await api.get("/api/sponsor-crm/contracts/" + enc(id) + "/audit");
+    if (!args.json) {
+      table(io, result.items || [], [[
+        ["at", (item) => item.createdAt || ""],
+        ["action", (item) => item.action || ""],
+        ["role", (item) => item.role || ""],
+        ["detail", (item) => item.detail || ""],
+        ["ip", (item) => item.ip || ""],
+      ]], "No audit events yet.");
+    }
+    return result;
+  }
+  if (action === "verify") {
+    const result = await api.post("/api/sponsor-crm/contracts/" + enc(id) + "/verify");
+    if (!args.json) {
+      io.print(result.intact ? "Contract " + id + ": signed PDF intact (sha256 " + result.expected + ")." : "Contract " + id + ": TAMPER DETECTED (stored " + result.expected + ", actual " + result.actual + ").");
+    }
+    return result;
+  }
+  throw new UsageError("Unknown contract action: " + action + ". Use create, send, resend, status, audit or verify.");
+}
+export const commands = { pipeline, contact, list, show, create, update, delete: remove, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification, "record-thank-you": recordThankYou, contract };
