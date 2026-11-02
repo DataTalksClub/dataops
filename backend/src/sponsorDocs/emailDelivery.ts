@@ -238,6 +238,7 @@ export async function deliverSponsorDocEmail(
     accessCode: string;
     recipientEmail?: string | null;
     recipientName?: string | null;
+    taskId?: string | null;
     organizationId?: string | null;
     connectionId?: string | null;
   },
@@ -286,6 +287,19 @@ export async function deliverSponsorDocEmail(
       subject,
       reason: 'incomplete_newsletter_template_data',
       message: 'Newsletter sponsor email needs a company name and valid publication date; no email was sent.',
+    };
+  }
+
+  if (!options.taskId?.trim()) {
+    return {
+      state: 'deferred',
+      from: SPONSOR_DOC_EMAIL_FROM,
+      to: resolvedRecipient.to,
+      cc: [SPONSOR_DOC_EMAIL_CC],
+      ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
+      subject,
+      reason: 'task_required',
+      message: 'A linked owning task is required before sending; the email was not sent.',
     };
   }
 
