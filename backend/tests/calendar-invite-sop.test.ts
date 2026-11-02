@@ -206,6 +206,51 @@ describe('calendar invite SOP contract', () => {
     assert.equal(holdDocumentLabel('course'), 'Event document');
   });
 
+  it("cards time keeps a hold-linked Card's guests even when a Luma link exists", async () => {
+    const workshop = { ...EMPTY_TEMPLATE, id: 'synthetic-luma-workshop-template', type: 'workshop', name: 'Workshop' } as Template;
+    await client.send(new PutCommand({ TableName: TABLE_TEMPLATES, Item: { PK: `TEMPLATE#${workshop.id}`, SK: `TEMPLATE#${workshop.id}`, ...workshop } }));
+    const dataopsDoc = 'https://ops.dtcdev.click/workshop-docs/sdoc-luma-card';
+    await client.send(new PutCommand({ TableName: TABLE_CARDS, Item: {
+      PK: 'CARD#luma-hold-invite', SK: 'CARD#luma-hold-invite', id: 'luma-hold-invite', title: 'Build a Media Agent',
+      ...templateLink(workshop), version: 1, status: 'active', stage: 'preparation', taskCount: 0, openTaskCount: 0,
+      cardLinks: [
+        { name: 'Luma', url: 'https://luma.com/synthetic-clubhouse' },
+        { name: 'Workshop document', url: dataopsDoc },
+      ],
+    } }));
+    const google = holdGoogleProvider();
+    setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
+    const { hold } = await invoke('POST', '/api/calendar-holds', {
+      ...input, title: 'Build a Media Agent', cardId: 'luma-hold-invite',
+    });
+    const confirmed = await invoke('POST', `/api/calendar-holds/${hold.id}/confirm`);
+    assert.equal(confirmed.status, 200, JSON.stringify(confirmed));
+    const organizer = [...google.events.get(HOLD_ORGANIZER)!.values()][0];
+    assert.ok(organizer.attendees.some((a: any) => a.email === input.guestRef), 'the confirmed invite carries the guest');
+
+    // Re-timing without explicit guests must not drop the live invite's
+    // attendees (the Luma promo link must not silence a hold-linked Card).
+    const retimed = await invoke('POST', '/api/cards/luma-hold-invite/time', { at: '2026-11-03 12:45' });
+    assert.equal(retimed.status, 200, JSON.stringify(retimed));
+    const patches = google.calls.filter((c) => c.method === 'PATCH' && c.url.searchParams.get('sendUpdates') === 'all'
+      && decodeURIComponent(c.url.pathname).includes(HOLD_ORGANIZER));
+    assert.ok(patches.length >= 1, 'the moved invitation is patched with updates');
+    const organizerAfter = google.events.get(HOLD_ORGANIZER)!.get(organizer.id)!;
+    assert.deepEqual(organizerAfter.attendees.map((a: any) => a.email).sort(),
+      [input.guestRef, ...HOLD_REQUIRED_ATTENDEES].map((email) => email).sort());
+    assert.match(organizerAfter.description, new RegExp(`Workshop document: ${dataopsDoc.replace(/[/.]/g, '\\$&')}`));
+
+    // A Luma Card without a hold invitation stays silent and refuses guests.
+    await client.send(new PutCommand({ TableName: TABLE_CARDS, Item: {
+      PK: 'CARD#luma-silent', SK: 'CARD#luma-silent', id: 'luma-silent', title: 'Pure Luma event',
+      ...templateLink(workshop), version: 1, status: 'active', stage: 'preparation', taskCount: 0, openTaskCount: 0,
+      cardLinks: [{ name: 'Luma', url: 'https://luma.com/synthetic-pure' }],
+    } }));
+    const refused = await invoke('POST', '/api/cards/luma-silent/time', { at: '2026-11-09 14:30', guestEmails: ['guest@example.test'] });
+    assert.equal(refused.status, 400, JSON.stringify(refused));
+    assert.match(refused.error, /silent calendar entries/);
+  });
+
   it('normalizes both SOP proposal spellings and validates document links', async () => {
     for (const prefix of ['(Proposal) ', 'Proposed - ', 'Proposed ']) assert.equal(confirmedTitle(prefix + input.title), input.title);
     const result = await invoke('POST', '/api/calendar-holds', { ...input, documentUrl: 'javascript:alert(1)' });

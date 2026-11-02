@@ -53,6 +53,17 @@ export interface CardInviteSyncResult {
 /** A portal-hosted guest document page (what `sponsorDocPathForTemplate` links). */
 const DATAOPS_GUEST_DOC = /^https:\/\/[^/]+\/(webinar-docs|workshop-docs|podcast-docs|guest-docs)\/[^/?#]+\/?$/;
 
+/**
+ * True when the Card owns or is linked to a hold invitation, so `cards time`
+ * must keep its guests: only a Luma Card without a hold invitation is silent
+ * (the `silentLumaEvent` rule in syncCardInvite).
+ */
+export async function cardHasHoldInvite(client: DynamoDBDocumentClient, card: Card): Promise<boolean> {
+  if (card.eventTime?.eventKey.startsWith('hold_')) return true;
+  return (await listCalendarHolds(client)).some(hold =>
+    hold.cardId === card.id && ['tentative', 'confirmed'].includes(hold.status));
+}
+
 /** The Card's own DataOps guest document wins over any named external link. */
 export function cardGuestDocument(card: Card): string | undefined {
   const links = (card.cardLinks || []).filter(link => Boolean(link.url?.trim()));

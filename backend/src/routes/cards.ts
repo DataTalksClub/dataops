@@ -1,5 +1,5 @@
 import { cardEventInterval } from '../calendar/cardEventTime';
-import { adoptCardInvite, adoptEventDate, CardInviteConflictError, CardInviteGoogleError, CardInviteInputError, cardGuests, parseCardGuests, syncCardInvite, unlinkCardInvite, verifyCardInvites } from '../calendar/cardInvite';
+import { adoptCardInvite, adoptEventDate, CardInviteConflictError, CardInviteGoogleError, CardInviteInputError, cardGuests, cardHasHoldInvite, parseCardGuests, syncCardInvite, unlinkCardInvite, verifyCardInvites } from '../calendar/cardInvite';
 import { lumaUrlForEventCard } from '../calendar/lumaEvents';
 import { calendarInviteDeps } from './calendarHolds';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -954,14 +954,19 @@ async function handleCardTime(method: string, id: string, rawBody: string | null
     const body = JSON.parse(rawBody || '{}');
     interval = cardEventInterval(body.at, body.duration ?? card.eventTime?.durationMinutes ?? 60, body.tz ?? card.eventTime?.timeZone ?? 'Europe/Berlin');
     const lumaUrl = await lumaUrlForEventCard(client, card);
-    if (lumaUrl) {
-      if (body.guestEmails !== undefined && body.guestEmails !== null
-        && (!Array.isArray(body.guestEmails) || body.guestEmails.length > 0)) {
-        throw new Error('Luma event Cards create silent calendar entries and do not send guest invitations');
-      }
+    const holdLinked = lumaUrl ? await cardHasHoldInvite(client, card) : false;
+    if (lumaUrl && !holdLinked && body.guestEmails !== undefined && body.guestEmails !== null
+      && (!Array.isArray(body.guestEmails) || body.guestEmails.length > 0)) {
+      throw new Error('Luma event Cards create silent calendar entries and do not send guest invitations');
+    }
+    if (body.guestEmails !== undefined && body.guestEmails !== null) {
+      guests = parseCardGuests(body.guestEmails);
+    } else if (lumaUrl && !holdLinked) {
       guests = [];
     } else {
-      guests = body.guestEmails !== undefined ? parseCardGuests(body.guestEmails) : await cardGuests(client, card);
+      // A hold-linked Card keeps its guests even when a Luma promo link
+      // exists, so re-timing never drops a live invite's attendees.
+      guests = await cardGuests(client, card);
     }
   } catch (error) {
     return json(400, { error: error instanceof Error ? error.message : 'Invalid event time' });
