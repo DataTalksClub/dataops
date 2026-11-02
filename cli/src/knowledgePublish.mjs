@@ -23,7 +23,9 @@
  */
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import path from "node:path";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 
 const ZERO = /^0+$/;
 const REGULAR_MODES = new Set(["100644", "100755"]);
@@ -168,6 +170,115 @@ async function classifyByHistory(page, file, recorded, headSha, maxPages = MAX_H
   return classify(states, recorded, headSha);
 }
 
+// ── Mirror ───────────────────────────────────────────────────────────────────
+
+/**
+ * Prod's lineage for one path, newest first, with the publication revision
+ * that carried each state (the version endpoint needs it to serve bytes).
+ * `complete` is true when the walk reached prod's first version; a walk that
+ * stops at MAX_HISTORY_PAGES without reaching it leaves the lineage unknown.
+ */
+export async function walkLineage(page, file, recorded, maxPages = MAX_HISTORY_PAGES) {
+  const states = [];
+  let cursor;
+  for (let pages = 0; pages < maxPages; pages++) {
+    if (states.some((state) => state.sha === null ? recorded.has(null) : recorded.has(state.sha))) break;
+    const result = await page(file, cursor);
+    for (const version of result.versions || []) states.push({ sha: version.deleted ? null : version.sha256, revision: version.revision });
+    if (!result.cursor) return { states, complete: true };
+    cursor = result.cursor;
+  }
+  return { states, complete: false };
+}
+
+/**
+ * Plan the daily mirror: the reverse of a publish. Prod-ahead edits become
+ * working-tree writes verbatim; conflicts are resolved where possible by a
+ * three-way merge against the newest prod version Git recorded (ours = the
+ * commit's copy, base = that version's Git blob, theirs = prod's copy), and
+ * reported for a human where a merge cannot decide. Inputs are planReconcile's
+ * `files`/`prod`/`known`/`page`; `version(path)` returns prod's current bytes
+ * for a path (null when prod deleted it); `recordedBytes(file)` maps a
+ * Git-recorded sha256 of that path to the blob bytes it came from.
+ */
+export async function planMirror({ files, prod, known, page, version, recordedBytes, concurrency = 12 }) {
+  const reconcile = await planReconcile({ files, prod, known, page, concurrency });
+  const writes = [];
+  const conflicts = [];
+  const currentBytes = async (file) => {
+    const bytes = await version(file);
+    const entry = prod[file];
+    if (bytes && entry && sha256(bytes) !== entry.sha256) {
+      throw new Error(`${file}: prod bytes do not match the manifest sha256`);
+    }
+    return bytes ?? null;
+  };
+  // Prod changed, Git did not since the common version: prod's copy is the
+  // merge result, byte for byte.
+  await bounded(reconcile.ahead, async (file) => {
+    const bytes = await currentBytes(file);
+    writes.push({ path: file, bytes, operation: bytes === null ? "delete" : files.has(file) ? "edit" : "create", merged: false });
+  }, concurrency);
+  // Both sides moved: decide the base Git recorded, then merge or report.
+  await bounded(reconcile.conflicts, async (item) => {
+    const file = item.path;
+    const recorded = known(file);
+    const lineage = await walkLineage(page, file, recorded);
+    const theirs = await currentBytes(file);
+    const ours = files.get(file)?.bytes ?? null;
+    const base = lineage.states.find((state) => state.sha === null ? recorded.has(null) : recorded.has(state.sha));
+    if (base && base.sha !== null) {
+      const baseBytes = recordedBytes(file)?.get(base.sha);
+      if (!baseBytes) throw new Error(`${file}: no Git blob carries the base version prod started from (${base.sha})`);
+      if (ours === null) {
+        // Git deleted the path after the base version; prod still has content.
+        writes.push({ path: file, bytes: theirs, operation: "create", merged: false });
+      } else if (theirs === null) {
+        conflicts.push({ path: file, prod: "absent", reason: "prod deleted it after the version Git recorded, and Git edited it too" });
+      } else if (ours.includes(0) || theirs.includes(0)) {
+        conflicts.push({ path: file, prod: "differs", reason: "both sides changed this binary file" });
+      } else {
+        const merged = threeWayMerge({ ours, baseBytes, theirs });
+        if (merged.conflicts) conflicts.push({ path: file, prod: "differs", reason: "both sides changed the same lines; resolve them by hand" });
+        else writes.push({ path: file, bytes: merged.bytes, operation: "edit", merged: true });
+      }
+    } else if (base) {
+      conflicts.push({ path: file, prod: theirs === null ? "absent" : "differs", reason: "the newest version they share is a deletion" });
+    } else if (lineage.complete) {
+      if (ours === null && theirs !== null) writes.push({ path: file, bytes: theirs, operation: "create", merged: false });
+      else conflicts.push({ path: file, prod: theirs === null ? "absent" : "differs", reason: "prod lineage reaches no version Git recorded" });
+    } else {
+      conflicts.push({ path: file, prod: theirs === null ? "absent" : "differs", reason: "prod history is longer than the mirror reads" });
+    }
+  }, concurrency);
+  const order = (items) => items.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return { writes: order(writes), conflicts: order(conflicts), unchanged: reconcile.unchanged };
+}
+
+/**
+ * A `git merge-file` three-way merge of text. Returns the merged bytes and
+ * whether the sides touched the same lines (the caller never writes a merge
+ * with conflicts: conflicted files are reported, never committed).
+ */
+export function threeWayMerge({ ours, baseBytes, theirs }) {
+  const directory = mkdtempSync(join(tmpdir(), "kb-mirror-"));
+  try {
+    const write = (name, bytes) => {
+      const file = join(directory, name);
+      writeFileSync(file, bytes);
+      return file;
+    };
+    const result = spawnSync("git", ["merge-file", "-p",
+      "-L", "Git", "-L", "the version prod started from", "-L", "prod",
+      write("ours", ours), write("base", baseBytes), write("theirs", theirs)],
+      { maxBuffer: 2 ** 31 });
+    if (result.status < 0) throw new Error(`git merge-file failed: ${result.stderr}`);
+    return { bytes: Buffer.from(result.stdout), conflicts: result.status > 0 };
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 /** The API body form of a planned mutation. */
 export function apiMutation(mutation) {
   if (mutation.operation === "delete") return { path: mutation.path };
@@ -262,10 +373,14 @@ export function changedPaths(repo, base, head, roots) {
 }
 
 /**
- * The states Git recorded for each of `paths` in the commit's history: the
- * sha256 of every blob it held, and null where a commit deleted it.
+ * Everything Git recorded for each of `paths` in the commit's history:
+ * `states` is the sha256 of every blob it held plus null where a commit
+ * deleted the path, and `bytes` maps each recorded sha256 to the blob's
+ * contents. Publish classifies against `states`; the mirror merges against
+ * `bytes`, because the newest prod version a path's Git history holds is the
+ * base both sides started from.
  */
-export function recordedStates(repo, head, roots, paths) {
+export function recordedVersions(repo, head, roots, paths) {
   const wanted = new Set(paths);
   const versions = new Map([...wanted].map((file) => [file, { blobs: new Set(), deleted: false }]));
   if (wanted.size) {
@@ -280,9 +395,8 @@ export function recordedStates(repo, head, roots, paths) {
   }
   const blobs = readBlobs(repo, [...versions.values()].flatMap((entry) => [...entry.blobs]));
   return new Map([...versions.entries()].map(([file, entry]) => {
-    const states = new Set([...entry.blobs].map((blob) => sha256(blobs.get(blob))));
-    if (entry.deleted) states.add(null);
-    return [file, states];
+    const bytes = new Map([...entry.blobs].map((blob) => [sha256(blobs.get(blob)), blobs.get(blob)]));
+    return [file, { states: new Set([...bytes.keys(), ...(entry.deleted ? [null] : [])]), bytes }];
   }));
 }
 
@@ -295,5 +409,5 @@ export function repositoryName(repo) {
     origin = "";
   }
   const top = git(repo, ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
-  return path.basename(origin || top).replace(/\.git$/, "");
+  return basename(origin || top).replace(/\.git$/, "");
 }
