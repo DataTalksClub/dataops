@@ -24,11 +24,10 @@ const OCTOBER = {
     { currency: "USD", moneyIn: "6000.00", moneyOut: "0.00", moneyInEur: 5360.49, moneyOutEur: 0 },
     { currency: "GBP", moneyIn: "25.00", moneyOut: "0.00", moneyInEur: 33.10, moneyOutEur: 0 },
   ],
-  conversions: [
-    { id: "r1", date: "2026-10-23", amount: "6000", currency: "USD", eur: 5360.49, rate: 1.1193, rateDate: "2026-10-23", rateSource: "ecb" },
-    { id: "r2", date: "2026-10-24", amount: "25", currency: "GBP", eur: 33.1, rate: null, rateDate: null, rateSource: null },
+  entries: [
+    { id: "r1", date: "2026-10-23", amount: "6000", currency: "USD", eur: 5360.49, rate: 1.1193, rateDate: "2026-10-23", rateSource: "ecb", counterparty: "Payer & Co" },
+    { id: "r2", date: "2026-10-24", amount: "25", currency: "GBP", eur: 33.1, rate: null, rateDate: null, rateSource: null, counterparty: "No-rate Ltd" },
   ],
-  entries: [{ id: "r1", counterparty: "Payer & Co" }, { id: "r2", counterparty: "No-rate Ltd" }],
   duplicates: [],
   gaps: [],
   rules: ["Ledger rows are the only thing counted."],

@@ -18,11 +18,10 @@ const YEAR = {
     { currency: "USD", moneyIn: "6000.00", moneyOut: "0.00", moneyInEur: 5360.49, moneyOutEur: 0 },
     { currency: "GBP", moneyIn: "25.00", moneyOut: "0.00", moneyInEur: 33.1, moneyOutEur: 0 },
   ],
-  conversions: [
-    { id: "r1", date: "2026-10-23", amount: "6000", currency: "USD", amountEur: "5360.49", bookedRateSource: "ECB 23 Oct 2026", eur: 5360.49, rate: 1.1193, rateDate: "2026-10-23", rateSource: "ecb" },
-    { id: "r2", date: "2026-10-24", amount: "25", currency: "GBP", eur: 33.1, rate: null, rateDate: null, rateSource: null },
+  entries: [
+    { id: "r1", date: "2026-10-23", amount: "6000", currency: "USD", amountEur: "5360.49", bookedRateSource: "ECB 23 Oct 2026", eur: 5360.49, rate: 1.1193, rateDate: "2026-10-23", rateSource: "ecb", counterparty: "<Payer & Co>", category: "Sponsorship", subtype: "Invoice" },
+    { id: "r2", date: "2026-10-24", amount: "25", currency: "GBP", amountEur: null, eur: 33.1, rate: null, rateDate: null, rateSource: null, counterparty: "No-rate & Co" },
   ],
-  entries: [{ id: "r1", counterparty: "<Payer & Co>", category: "Sponsorship", subtype: "Invoice" }, { id: "r2", counterparty: "No-rate & Co" }],
   duplicates: [{ keptId: "a", droppedId: "b", reason: "sheet row repeats sponsor-receipt row" }],
   gaps: [],
   rules: ["Ledger rows are the only thing counted."],
@@ -76,6 +75,7 @@ describe("finance overview", () => {
     assert.match(markup, /<th scope="row">USD<small class="fin-currency__conversion">2026-10-23: &lt;Payer &amp; Co&gt;: 6,000\.00 USD → 5,360\.49 EUR · 1\.1193 per EUR \(ECB reference rate 2026-10-23\) · booked 5,360\.49 EUR · ECB 23 Oct 2026 · Sponsorship · Invoice<\/small><\/th>/);
     assert.match(markup, /<th scope="row">GBP<small class="fin-currency__conversion">2026-10-24: No-rate &amp; Co: 25\.00 GBP → 33\.10 EUR<\/small><\/th>/);
     assert.doesNotMatch(markup.match(/<th scope="row">GBP[\s\S]*?<\/th>/)?.[0] || "", /per EUR/);
+    assert.doesNotMatch(markup, /Conversions to EUR/);
     assert.doesNotMatch(markup, /class="fin-table__caption"/);
     assert.match(markup, /dropped as duplicates of invoice or receipt rows \(1\)/);
   });

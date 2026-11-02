@@ -64,15 +64,14 @@ function periodArgs(args) {
 const vatWord = (value) => (value > 0 ? "owed to the Finanzamt" : value < 0 ? "refund from the Finanzamt" : "nothing owed");
 const rateSource = (source) => ({ booked: "booked by bank", ecb: "ECB reference" })[source] || "";
 
-function currencyRowLabel(currency, conversions, entriesById) {
-  const details = conversions
-    .filter((conversion) => conversion.currency === currency)
-    .map((conversion) => {
-      const counterparty = entriesById.get(conversion.id)?.counterparty;
-      const eur = conversion.eur === null ? "not converted" : `${money(conversion.eur)} EUR`;
-      const rate = conversion.rate ? ` @ ${conversion.rate} per EUR` : "";
-      const sourceDate = [rateSource(conversion.rateSource), conversion.rateDate].filter(Boolean).join(" ");
-      return `${conversion.date}: ${counterparty ? `${counterparty}: ` : ""}${money(conversion.amount)} ${conversion.currency} → ${eur}${rate}${sourceDate ? ` (${sourceDate})` : ""}`;
+function currencyRowLabel(currency, entries) {
+  const details = entries
+    .filter((entry) => entry.currency === currency && entry.currency !== "EUR")
+    .map((entry) => {
+      const eur = entry.eur === null ? "not converted" : `${money(entry.eur)} EUR`;
+      const rate = entry.rate ? ` @ ${entry.rate} per EUR` : "";
+      const sourceDate = [rateSource(entry.rateSource), entry.rateDate].filter(Boolean).join(" ");
+      return `${entry.date}: ${entry.counterparty ? `${entry.counterparty}: ` : ""}${money(entry.amount)} ${entry.currency} → ${eur}${rate}${sourceDate ? ` (${sourceDate})` : ""}`;
     });
   return details.length ? `${currency} — ${details.join("; ")}` : currency;
 }
@@ -111,10 +110,9 @@ export function printSummary(io, s) {
     ["VAT paid to / refunded by the Finanzamt", -(t.vatPaid - t.vatRefunded)],
   ], [["Line", (r) => r[0]], ["EUR", (r) => money(r[1]), "right"]]);
   if (s.byCurrency.length) {
-    const entriesById = new Map(s.entries.map((entry) => [entry.id, entry]));
     io.print("");
     grid(io, s.byCurrency, [
-      ["Currency", (r) => currencyRowLabel(r.currency, s.conversions, entriesById)],
+      ["Currency", (r) => currencyRowLabel(r.currency, s.entries)],
       ["In (original)", (r) => money(r.moneyIn), "right"],
       ["In (EUR)", (r) => money(r.moneyInEur), "right"],
       ["Out (original)", (r) => money(r.moneyOut), "right"],

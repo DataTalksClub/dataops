@@ -127,11 +127,11 @@ describe('finance summary', () => {
   });
 
   it('derives VAT only from stored document fields and handles zero-rate and reverse-charge documents', () => {
-    const s = summarize({ today: '2026-10-31', query: { month: '2026-10' }, rates: noRates, rows: [
+    const s = summarize({ today: '2026-10-31', query: { month: '2026-10' }, rates: usdAt(1, '2026-10-07'), rows: [
       row('scalevector', { entryType: 'income', amount: '5950.00', paidDate: '2026-10-04', documentExtraction: { netAmount: '5000.00', vatAmount: '950.00', vatCurrency: 'EUR', vatRate: '19', amount: '5950.00', currency: 'EUR', reverseCharge: false } }),
       row('zero-rated', { entryType: 'expense', amount: '100.00', paidDate: '2026-10-05', documentExtraction: { netAmount: '100.00', vatAmount: '0.00', vatCurrency: 'EUR', vatRate: '0', amount: '100.00', currency: 'EUR', reverseCharge: false } }),
       row('reverse-charge', { entryType: 'expense', amount: '100.00', paidDate: '2026-10-06', documentExtraction: { netAmount: '100.00', netAmountEur: '100.00', vatAmount: '0.00', vatAmountEur: '0.00', vatCurrency: 'EUR', vatRate: '19', amount: '100.00', currency: 'EUR', reverseCharge: true } }),
-      row('unknown-vat', { entryType: 'expense', amount: '50.00', paidDate: '2026-10-07' }),
+      row('unknown-vat', { entryType: 'expense', amount: '50.00', currency: 'USD', paidDate: '2026-10-07' }),
     ] });
     const byId = Object.fromEntries(s.entries.map((entry) => [entry.id, entry]));
     assert.equal(byId.scalevector.vatEur, 950);
@@ -141,7 +141,9 @@ describe('finance summary', () => {
     assert.equal(byId['zero-rated'].vatAmount, '0.00');
     assert.equal(byId['reverse-charge'].reverseCharge, true);
     assert.equal(byId['reverse-charge'].reverseChargeVatEur, 19);
-    assert.equal(byId['unknown-vat'].vatEur, null);
+    assert.equal(byId['unknown-vat'].vatEur, 0);
+    assert.equal(byId['unknown-vat'].vatAmount, '0.00');
+    assert.equal(byId['unknown-vat'].vatCurrency, 'USD');
     assert.equal(s.totals.outputVat, 969);
     assert.equal(s.totals.inputVat, 19);
     assert.equal(s.totals.projectedVat, 950);
@@ -155,8 +157,17 @@ describe('finance summary', () => {
       row('gbp', { entryType: 'expense', amount: '5', currency: 'GBP', paidDate: '2026-10-25' }),
     ];
     const s = summarize({ today: '2026-10-31', query: { month: '2026-10' }, rates: usdAt(1.12, '2026-10-23'), rows });
-    const byId = Object.fromEntries(s.conversions.map((c) => [c.id, c]));
-    assert.deepEqual(byId.booked, { id: 'booked', date: '2026-10-22', amount: '10.00', currency: 'USD', amountEur: '8.73', bookedRateSource: 'ECB 22 Oct 2026', eur: 8.73, rate: 1.145475, rateDate: '2026-10-22', rateSource: 'booked' });
+    const byId = Object.fromEntries(s.entries.filter((entry) => entry.currency !== 'EUR').map((entry) => [entry.id, entry]));
+    assert.equal('conversions' in s, false);
+    assert.equal(byId.booked.date, '2026-10-22');
+    assert.equal(byId.booked.amount, '10.00');
+    assert.equal(byId.booked.currency, 'USD');
+    assert.equal(byId.booked.amountEur, '8.73');
+    assert.equal(byId.booked.bookedRateSource, 'ECB 22 Oct 2026');
+    assert.equal(byId.booked.eur, 8.73);
+    assert.equal(byId.booked.rate, 1.145475);
+    assert.equal(byId.booked.rateDate, '2026-10-22');
+    assert.equal(byId.booked.rateSource, 'booked');
     const bookedEntry = s.entries.find((entry) => entry.id === 'booked');
     assert.equal(bookedEntry?.category, 'Tools');
     assert.equal(bookedEntry?.subtype, 'Subscription');

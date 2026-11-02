@@ -88,7 +88,6 @@ export type FinanceSummary = {
   totals: Totals;
   months: Array<{ month: string; future: boolean } & Totals>;
   byCurrency: Array<{ currency: string; moneyIn: string; moneyOut: string; moneyInEur: number; moneyOutEur: number }>;
-  conversions: Array<{ id: string; date: string; amount: string; currency: string; amountEur: string | null; bookedRateSource: string | null; eur: number | null; rate: number | null; rateDate: string | null; rateSource: string | null }>;
   entries: Entry[];
   duplicates: Duplicate[];
   gaps: Gap[];
@@ -202,32 +201,23 @@ function vatAmounts(row: LedgerRow, conversion: ReturnType<typeof convert>, rate
   } else if (!reverseCharge && vat === null && gross !== null && net !== null) {
     vat = fromCents(cents(Math.max(0, gross - net)));
   }
-  if (vat === null && reverseCharge) vat = 0;
+  const missingVat = vat === null;
+  const vatAmount = vat ?? 0;
   const vatRate = facts?.vatRate ?? row.vatRate;
   const rateText = vatRate === undefined || vatRate === null || String(vatRate).trim() === '' ? null : String(vatRate);
-  if (vat === null) return {
-    vatEur: null,
-    reverseChargeVatEur: null,
-    vatAmount: null,
-    vatCurrency: null,
-    vatRate: rateText,
-    reverseCharge,
-    zeroRated: rate === 0,
-  };
-
   const currency = directVat
     ? str(row.vatCurrency) || str(row.currency) || 'EUR'
     : str(facts?.vatCurrency) || str(facts?.currency) || str(row.vatCurrency) || str(row.currency) || 'EUR';
   const storedVatEur = directVat ? positive(row.vatAmountEur) : extractedVat ? positive(facts?.vatAmountEur) : null;
   const netEur = derivedFromRate ? positive(facts?.netAmountEur) : null;
-  let eur: number | null = storedVatEur === null ? null : fromCents(cents(storedVatEur));
+  let eur: number | null = missingVat ? 0 : storedVatEur === null ? null : fromCents(cents(storedVatEur));
   if (eur === null && netEur !== null && rate !== null) eur = fromCents(cents(netEur * rate / 100));
   if (eur === null) {
-    if (currency === 'EUR') eur = fromCents(cents(vat));
-    else if (currency === str(row.currency) && conversion.rate) eur = fromCents(cents(vat / conversion.rate));
+    if (currency === 'EUR') eur = fromCents(cents(vatAmount));
+    else if (currency === str(row.currency) && conversion.rate) eur = fromCents(cents(vatAmount / conversion.rate));
     else {
       const ecb = rates(currency, bookingDate(row));
-      if (ecb) eur = fromCents(cents(vat / ecb.rate));
+      if (ecb) eur = fromCents(cents(vatAmount / ecb.rate));
     }
   }
   let reverseChargeEur: number | null = null;
@@ -247,8 +237,8 @@ function vatAmounts(row: LedgerRow, conversion: ReturnType<typeof convert>, rate
   }
   return {
     vatEur: reverseCharge && explicitVat === null ? 0 : eur,
-    reverseChargeVatEur: reverseChargeEur,
-    vatAmount: vat.toFixed(2),
+    reverseChargeVatEur: missingVat && reverseCharge ? 0 : reverseChargeEur,
+    vatAmount: vatAmount.toFixed(2),
     vatCurrency: currency,
     vatRate: rateText,
     reverseCharge,
@@ -489,9 +479,6 @@ export function summarize(input: SummaryInput): FinanceSummary {
       moneyOut: (b.out / 100).toFixed(2),
       moneyInEur: fromCents(b.inEur),
       moneyOutEur: fromCents(b.outEur),
-    })),
-    conversions: entries.filter((entry) => entry.currency !== 'EUR').map((entry) => ({
-      id: entry.id, date: entry.date, amount: entry.amount, currency: entry.currency, amountEur: entry.amountEur, bookedRateSource: entry.bookedRateSource, eur: entry.eur, rate: entry.rate, rateDate: entry.rateDate, rateSource: entry.rateSource,
     })),
     entries,
     duplicates: periodDuplicates,
