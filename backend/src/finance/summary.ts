@@ -297,6 +297,17 @@ function total(entries: Entry[]): Totals {
     const value = cents(entry.eur);
     const vat = entry.vatEur === null ? 0 : cents(entry.vatEur);
     const reverseChargeVat = entry.reverseChargeVatEur === null ? 0 : cents(entry.reverseChargeVatEur);
+    if (entry.line === 'operating' && entry.refund) {
+      // A supplier credit note is contra-expense however its entryType was
+      // recorded: it reduces operating expenses and their input VAT, and is
+      // neither money in, money out, nor revenue.
+      c.operatingExpenses -= value;
+      c.inputVat -= vat + reverseChargeVat;
+      c.outputVat -= reverseChargeVat;
+      reverseChargeInputVat -= reverseChargeVat;
+      reverseChargeOutputVat -= reverseChargeVat;
+      continue;
+    }
     c[entry.direction === 'in' ? 'moneyIn' : 'moneyOut'] += value;
     if (entry.line === 'operating') {
       if (entry.direction === 'out') {
@@ -305,15 +316,6 @@ function total(entries: Entry[]): Totals {
         c.outputVat += reverseChargeVat;
         reverseChargeInputVat += reverseChargeVat;
         reverseChargeOutputVat += reverseChargeVat;
-      }
-      else if (entry.refund) {
-        // A supplier credit note is contra-expense: it reduces the booked
-        // operating expenses and their input VAT. It is not money in.
-        c.operatingExpenses -= value;
-        c.inputVat -= vat + reverseChargeVat;
-        c.outputVat -= reverseChargeVat;
-        reverseChargeInputVat -= reverseChargeVat;
-        reverseChargeOutputVat -= reverseChargeVat;
       }
       else { c.operatingIncome += value; c.outputVat += vat; }
     } else if (entry.line === 'vat') c[entry.direction === 'out' ? 'vatPaid' : 'vatRefunded'] += value;
