@@ -75,6 +75,12 @@ Pre-existing failures, unrelated to this intake (verified on a pristine
 (it passes solo and in two-file concurrent runs; its only diff here is the
 retired `/api/tokens` family rows).
 
+Rebase note (2026-11-02): main gained the admin-issued scoped API-token
+feature mid-flight; this branch folded it into the issuer seam —
+`/api/me` and logout verify shared-issuer JWTs, the `tokens` CLI commands
+and per-route `templates:write` scope gates are removed, and issuer scopes
+govern at the credential gate (commits `4f50bb28`..`984cfd2a`).
+
 Deployment note: pushing `main` triggers the normal DataOps CI/CD (Lambda
 deploy with OIDC). The DataOps MCP Function URL is unchanged, so registered
 issuer audiences stay valid; the invoice-reader consumer (dapier) and Hub MCP
