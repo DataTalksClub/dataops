@@ -26,8 +26,12 @@ export function withQuery(route, query) {
   return `${route}${route.includes("?") ? "&" : "?"}${text}`;
 }
 
-/** JSON client for the portal; routes are the server paths (`/api/*`, `/docs`, ...). */
-export function createClient({ url, token, fetchImpl = fetch }) {
+/**
+ * JSON client for the portal; routes are the server paths (`/api/*`, `/docs`, ...).
+ * `credential` optionally supplies the bearer value per call (async), which is
+ * how shared-issuer sessions refresh themselves transparently.
+ */
+export function createClient({ url, token, credential, fetchImpl = fetch }) {
   const base = String(url || "").replace(/\/+$/, "");
   if (!base) {
     throw new Error(
@@ -36,8 +40,9 @@ export function createClient({ url, token, fetchImpl = fetch }) {
   }
 
   async function call(method, route, body, options = {}) {
-    const headers = { Accept: "application/json", ...options.headers };
-    if (token && !options.anonymous) headers.Authorization = `Bearer ${token}`;
+    const headers = { Accept: "application/json" };
+    const value = options.anonymous ? null : await (credential ? credential() : token);
+    if (value) headers.Authorization = `Bearer ${value}`;
     Object.assign(headers, options.headers);
     let payload;
     if (options.rawBody !== undefined) {

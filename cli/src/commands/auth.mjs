@@ -16,6 +16,35 @@ import {
   hostOperatorConfigDir,
 } from "../config.mjs";
 
+export const ISSUER = "https://oauth.dtcdev.click";
+const CLI_CLIENT_ID = "dtc-cli";
+const API_RESOURCE = "https://ops.dtcdev.click";
+
+/** Tests and air-gapped deployments can point the CLI at another issuer. */
+function issuerBase() {
+  return (process.env.DTC_OAUTH_ISSUER || ISSUER).replace(/\/$/, "");
+}
+const GRANT_DEVICE = "urn:ietf:params:oauth:grant-type:device_code";
+
+/**
+ * When the issuer (or a portal Lambda URL) hands back a verification page on
+ * a raw host, keep the human-facing origin of the target portal instead,
+ * preserving path, query and hash.
+ */
+export function rewriteVerificationUri(rawUri, targetBaseUrl) {
+  if (!rawUri || !targetBaseUrl) return rawUri;
+  try {
+    const parsedUri = new URL(rawUri);
+    const targetOrigin = new URL(targetBaseUrl).origin;
+    if (parsedUri.origin !== targetOrigin) {
+      return `${targetOrigin}${parsedUri.pathname}${parsedUri.search}${parsedUri.hash}`;
+    }
+    return rawUri;
+  } catch {
+    return rawUri;
+  }
+}
+
 function defaultLabel() {
   try {
     return `${userInfo().username}@${hostname()}`;
@@ -50,38 +79,32 @@ async function sharedDeviceLogin() {
   return import(pathToFileURL(found).href);
 }
 
-/**
- * When the server returns a verification URI hosted on a raw internal hostname
- * (such as a direct Lambda function URL), rewrite it to the origin of the target
- * portal URL passed by the operator, keeping the path, query, hash and code intact.
- */
-export function rewriteVerificationUri(rawUri, targetBaseUrl) {
-  if (!rawUri || !targetBaseUrl) return rawUri;
+/** Claims of a shared-issuer access token, without verifying the signature. */
+function claimsOf(jwt) {
+  const part = String(jwt || "").split(".")[1];
+  if (!part) return {};
   try {
-    const parsedUri = new URL(rawUri);
-    const targetOrigin = new URL(targetBaseUrl).origin;
-    if (parsedUri.origin !== targetOrigin) {
-      return `${targetOrigin}${parsedUri.pathname}${parsedUri.search}${parsedUri.hash}`;
-    }
-    return rawUri;
+    return JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
   } catch {
-    return rawUri;
+    return {};
   }
 }
 
-/** The portal speaks camelCase. The shared loop speaks the device-grant names. */
-function deviceStartFromPortal(payload) {
-  const expiresIn = Number.isFinite(payload.expiresIn)
-    ? payload.expiresIn
-    : Math.max(0, Math.round((Date.parse(payload.expiresAt) - Date.now()) / 1000));
-  return {
-    device_code: payload.deviceCode,
-    user_code: payload.userCode,
-    verification_uri: payload.verificationUri,
-    verification_uri_complete: payload.verificationUriComplete,
-    expires_in: expiresIn,
-    interval: payload.interval,
-  };
+/** Token endpoint calls speak x-www-form-urlencoded (RFC 6749). */
+async function issuerTokenForm(body) {
+  const response = await fetch(`${issuerBase()}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    body: new URLSearchParams(body).toString(),
+  });
+  const text = await response.text();
+  let parsed = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = null;
+  }
+  return { status: response.status, body: parsed };
 }
 
 function assertHttpsOrLoopback(url) {
@@ -95,73 +118,39 @@ function assertHttpsOrLoopback(url) {
 }
 
 /**
- * Device authorization grant or stdin token configuration. The browser half runs
- * wherever the operator already has a portal session, or an admin issues a
- * scoped API token directly via `dataops tokens create`.
+ * The portal speaks camelCase device-grant JSON; the shared issuer speaks
+ * the RFC names and takes the poll on its form-encoded token endpoint. The
+ * shared loop drives both through this translating `post`.
  */
-export async function login(args, io) {
-  const url = args.url || process.env.DATAOPS_URL || resolveProfile().url;
-  if (args.serviceTokenStdin !== undefined) {
-    if (args.serviceTokenStdin !== true) throw new Error("Pass the service token through stdin, never as an argument.");
-    assertHttpsOrLoopback(url);
-    const token = readFileSync(0, "utf8").trim();
-    if (!/^dops_svc_[a-f0-9]{64}$/.test(token)) throw new Error("Invalid service credential.");
-    const serviceClient = createClient({ url, token });
-    const identity = await serviceClient.get("/api/me");
-    if (identity.service?.id !== "invoice-reader" || !Array.isArray(identity.service.scopes) || !identity.service.scopes.includes("invoices:read")) {
-      throw new Error("The credential is not an invoice reader service credential.");
-    }
-    saveProfile(serviceClient.base, { token, kind: "service", label: identity.service.id, expiresAt: null });
-    io.print(`Service credential configured for ${serviceClient.base} (${identity.service.scopes.join(", ")}).`);
-    return identity;
-  }
-  if (args.tokenStdin !== undefined) {
-    if (args.tokenStdin !== true) throw new Error("Pass the API token through stdin, never as an argument.");
-    assertHttpsOrLoopback(url);
-    const token = readFileSync(0, "utf8").trim();
-    if (!/^dops_[A-Za-z0-9_-]{16,}$/.test(token) || token.startsWith("dops_svc_")) {
-      throw new Error("Invalid API token.");
-    }
-    const tokenClient = createClient({ url, token });
-    const identity = await tokenClient.get("/api/me");
-    const apiToken = identity.apiToken || {};
-    const scopes = Array.isArray(apiToken.scopes) ? apiToken.scopes : null;
-    saveProfile(tokenClient.base, {
-      token,
-      tokenId: apiToken.id || "",
-      expiresAt: apiToken.expiresAt || "",
-      user: identity.user || null,
-      label: apiToken.label || args.label || defaultAgentLabel(),
-      ...(scopes ? { scopes, kind: "agent" } : {}),
-    });
-    const scopeText = scopes && scopes.length > 0 ? ` (${scopes.join(", ")})` : "";
-    io.print(`API token configured for ${tokenClient.base}${scopeText}.`);
-    return identity;
-  }
-  const client = createClient({ url });
-  const label = args.label || defaultLabel();
+async function issuerDeviceLogin({ label, prompt, presentUri }) {
   const { deviceLogin, DeviceLoginError } = await sharedDeviceLogin();
   const post = async (target, body) => {
-    const route = target.startsWith(client.base) ? target.slice(client.base.length) : target;
-    const polling = route === "/api/auth/device/token";
-    const wireBody = polling ? { deviceCode: body.device_code } : body;
-    try {
-      const payload = await client.post(route, wireBody, { anonymous: true });
-      return { status: 200, body: polling ? payload : deviceStartFromPortal(payload) };
-    } catch (error) {
-      if (!(error instanceof ApiError)) throw error;
-      const payload = error.body && typeof error.body === "object" ? error.body : { error: error.message };
-      return { status: error.status, body: payload };
+    if (target.endsWith("/oauth/token")) {
+      return issuerTokenForm(body);
     }
+    const response = await fetch(target, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+    });
+    const text = await response.text();
+    let parsed = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      parsed = null;
+    }
+    return { status: response.status, body: parsed };
   };
-  let result;
   try {
-    result = await deviceLogin({
+    return await deviceLogin({
       post,
-      baseUrl: client.base,
-      startBody: { label },
-      prompt: (text) => io.print(text),
-      presentUri: (uri) => rewriteVerificationUri(uri, client.base),
+      baseUrl: issuerBase(),
+      startPath: "/oauth/device",
+      tokenPath: "/oauth/token",
+      startBody: { client_id: CLI_CLIENT_ID, resource: API_RESOURCE, scope: "openid email profile offline_access mcp admin" },
+      prompt,
+      presentUri,
     });
   } catch (error) {
     if (!(error instanceof DeviceLoginError)) throw error;
@@ -170,212 +159,199 @@ export async function login(args, io) {
     }
     throw new Error(error.message);
   }
+}
 
-  saveProfile(client.base, {
-    token: result.token,
-    tokenId: result.tokenId,
-    expiresAt: result.expiresAt,
-    user: result.user,
+/**
+ * Human login: the shared issuer's device grant. The browser half runs on
+ * oauth.dtcdev.click (Google SSO restricted to verified @datatalks.club
+ * accounts), which is why this still works over SSH with no local browser.
+ */
+export async function login(args, io) {
+  const url = args.url || process.env.DATAOPS_URL || resolveProfile().url;
+  if (args.serviceTokenStdin !== undefined) {
+    if (args.serviceTokenStdin !== true) throw new Error("Pass the service credential through stdin, never as an argument.");
+    return serviceLogin(args, io, url);
+  }
+  const label = args.label || defaultLabel();
+  const payload = await issuerDeviceLogin({
     label,
+    prompt: (text) => io.print(text),
+    presentUri: (uri) => uri,
   });
-  if (args.json) return result;
+  const profile = {
+    accessToken: payload.access_token,
+    refreshToken: payload.refresh_token,
+    expiresAt: new Date(Date.now() + (Number(payload.expires_in) || 3600) * 1000).toISOString(),
+    user: userFromToken(payload.access_token),
+    label,
+  };
+  const client = createClient({ url, token: profile.accessToken });
+  const identity = await client.get("/api/me");
+  if (identity.user) profile.user = identity.user;
+  saveProfile(url, profile);
+  if (args.json) return { ...payload, user: profile.user, url };
   io.print("");
-  io.print(
-    `  Signed in as ${result.user?.name || result.user?.email || "unknown user"}.`,
-  );
-  io.print(
-    `  Token stored in ${credentialsPath()} (expires ${result.expiresAt.slice(0, 10)}).`,
-  );
-  return result;
+  io.print(`  Signed in as ${profile.user?.name || profile.user?.email || "unknown user"}.`);
+  io.print(`  Session stored in ${credentialsPath()} (refreshable until the issuer revokes it).`);
+  return { user: profile.user, url };
+}
+
+function userFromToken(jwt) {
+  const claims = claimsOf(jwt);
+  return claims.email ? { id: claims.sub, email: claims.email, name: claims.email } : null;
+}
+
+/**
+ * Service login: mint once with client_credentials to verify the credential
+ * and learn its scopes; the secret stays local and tokens are minted per run.
+ */
+async function serviceLogin(args, io, url) {
+  const parsedBase = new URL(url);
+  if (parsedBase.protocol !== "https:" && !(parsedBase.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsedBase.hostname))) {
+    throw new Error("Service credentials require HTTPS outside local development.");
+  }
+  let input;
+  try {
+    input = JSON.parse(readFileSync(0, "utf8"));
+  } catch {
+    throw new Error('Pass a JSON document {"clientId","clientSecret"} through stdin.');
+  }
+  const { clientId, clientSecret } = input || {};
+  if (!clientId || !clientSecret) throw new Error('Both "clientId" and "clientSecret" are required.');
+  const minted = await mintServiceToken({ clientId, clientSecret });
+  const client = createClient({ url, token: minted.accessToken });
+  const identity = await client.get("/api/me");
+  if (!identity.service?.id) throw new Error("The credential was not accepted as a service principal.");
+  saveProfile(url, {
+    kind: "service",
+    clientId,
+    clientSecret,
+    user: null,
+    label: identity.service.id,
+    scopes: identity.service.scopes,
+  });
+  io.print(`Service credential configured for ${url} (${(identity.service.scopes || []).join(", ")}).`);
+  return identity;
+}
+
+async function mintServiceToken({ clientId, clientSecret }) {
+  const { status, body } = await issuerTokenForm({
+    grant_type: "client_credentials",
+    client_id: clientId,
+    client_secret: clientSecret,
+    resource: API_RESOURCE,
+  });
+  if (status !== 200 || !body?.access_token) {
+    throw new AuthError(body?.error === "invalid_client"
+      ? "The issuer refused the client id or secret."
+      : `Token mint failed: ${body?.error || `HTTP ${status}`}`);
+  }
+  return {
+    accessToken: body.access_token,
+    expiresAt: Date.now() + (Number(body.expires_in) || 900) * 1000,
+  };
+}
+
+/** Rotate a single-use refresh token for a fresh access token. */
+export async function refreshTokens(profile) {
+  if (!profile.refreshToken) throw new AuthError("No refreshable session. Run `dataops login`.");
+  const { status, body } = await issuerTokenForm({
+    grant_type: "refresh_token",
+    refresh_token: profile.refreshToken,
+    client_id: CLI_CLIENT_ID,
+  });
+  if (status !== 200 || !body?.access_token) {
+    throw new AuthError("Session expired. Run `dataops login` again.");
+  }
+  const updated = {
+    ...profile,
+    accessToken: body.access_token,
+    refreshToken: body.refresh_token || profile.refreshToken,
+    expiresAt: new Date(Date.now() + (Number(body.expires_in) || 3600) * 1000).toISOString(),
+  };
+  saveProfile(profile.url, updated);
+  return updated;
 }
 
 export async function logout(args, io) {
   const profile = resolveProfile(args);
-  if (!profile.token) {
+  if (profile.source === "environment") {
+    throw new Error("DATAOPS_TOKEN is set; unset it to drop the environment credential.");
+  }
+  if (!profile.token && !profile.accessToken && !profile.clientId) {
     io.print("Not signed in.");
     return { status: "signed-out" };
   }
-  if (profile.source === "environment") {
-    throw new Error(
-      "DATAOPS_TOKEN is set; unset it or revoke the token with `dataops tokens revoke`.",
-    );
-  }
-  const client = createClient(profile);
-  if (profile.kind === "service") {
-    deleteProfile(profile.url);
-    io.print("Removed the local service credential. Rotate or disable its deployment digest to revoke server access.");
-    return { status: "signed-out" };
-  }
-  // Revoke server-side first: deleting only the local copy leaves a live
-  // credential behind.
-  try {
-    const listed = await client.get("/api/tokens");
-    const current = (listed.tokens || []).find(
-      (token) => token.id === profile.tokenId,
-    );
-    if (current)
-      await client.delete(`/api/tokens/${encodeURIComponent(current.id)}`);
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 403) {
-      try {
-        await client.delete("/api/tokens/self");
-      } catch (selfError) {
-        if (!(selfError instanceof ApiError) || selfError.status !== 401) throw selfError;
-      }
-    } else if (!(error instanceof ApiError) || error.status !== 401) {
-      throw error;
+  // Revoke at the issuer first: deleting only the local copy leaves a live
+  // refresh family behind. Service credentials carry no refresh token; the
+  // secret itself is the only state, so removing it ends the login.
+  if (profile.refreshToken) {
+    try {
+      await fetch(`${issuerBase()}/oauth/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token: profile.refreshToken, client_id: CLI_CLIENT_ID }).toString(),
+      });
+    } catch {
+      // The issuer may be unreachable; the local removal still happens.
     }
   }
   deleteProfile(profile.url);
-  io.print("Signed out and revoked this machine's token.");
+  io.print(profile.clientId
+    ? "Removed the local service credential. Rotate or disable its issuer client to revoke server access."
+    : "Signed out and revoked this machine's session at the issuer.");
   return { status: "signed-out" };
 }
 
 export async function whoami(args, io) {
   const profile = resolveProfile(args);
-  if (!profile.token) throw new AuthError("Not signed in. Run `dataops login`, or set DATAOPS_TOKEN.");
-  const client = createClient(profile);
+  if (!profile.token && !profile.accessToken && !profile.clientId) {
+    throw new AuthError("Not signed in. Run `dataops login`, or set DATAOPS_TOKEN.");
+  }
+  const client = createClient({ url: profile.url, credential: sessionCredential(profile) });
   const result = await client.get("/api/me");
-  if (args.json) {
-    return {
-      ...result,
-      portal: client.base,
-      credential: profile.source === "environment" ? "DATAOPS_TOKEN" : "file",
+  if (args.json) return { ...result, portal: profile.url, credential: profile.source === "environment" ? "DATAOPS_TOKEN" : credentialsPath() };
+  const user = result.user || {};
+  io.print(result.service ? `${result.service.id} (${(result.service.scopes || []).join(", ")})` : `${user.name || "unknown"} <${user.email || "unknown"}>`);
+  if (user.role) io.print(`role: ${user.role}`);
+  io.print(`portal: ${profile.url}`);
+  io.print(`credential: ${profile.source === "environment" ? "DATAOPS_TOKEN" : credentialsPath()}`);
+  return result;
+}
+
+/**
+ * A credential provider for createClient: expires the stored access token
+ * proactively, rotates the refresh token on 401, and mints fresh service
+ * tokens per exchange. Returns a static token for environment credentials.
+ */
+export function sessionCredential(profile) {
+  if (profile.kind === "service" && profile.clientId) {
+    let minted = null;
+    return async () => {
+      if (!minted || minted.expiresAt <= Date.now() + 30_000) {
+        minted = await mintServiceToken({ clientId: profile.clientId, clientSecret: profile.clientSecret });
+      }
+      return minted.accessToken;
     };
   }
-  const user = result.user || {};
-  io.print(result.service ? `${result.service.id} (${result.service.scopes.join(", ")})` : `${user.name || "unknown"} <${user.email || "unknown"}>`);
-  if (user.role) io.print(`role: ${user.role}`);
-  const apiToken = result.apiToken || null;
-  const tokenLabel = apiToken?.label || profile.label || "";
-  const tokenIdShort = (apiToken?.id || profile.tokenId || "").slice(0, 12);
-  const scopes = apiToken?.scopes || profile.scopes || null;
-  if (tokenLabel || (Array.isArray(scopes) && scopes.length > 0)) {
-    if (tokenLabel) {
-      io.print(`token: ${tokenLabel}${tokenIdShort ? ` (${tokenIdShort})` : ""}`);
-    }
-    if (Array.isArray(scopes) && scopes.length > 0) {
-      io.print(`scopes: ${scopes.join(", ")}`);
-    }
+  if (profile.accessToken) {
+    let current = { token: profile.accessToken, expiresAt: Date.parse(profile.expiresAt || 0) };
+    const credential = async () => {
+      if (current.expiresAt <= Date.now() + 60_000) {
+        const refreshed = await refreshTokens(profile);
+        current = { token: refreshed.accessToken, expiresAt: Date.parse(refreshed.expiresAt) };
+      }
+      return current.token;
+    };
+    credential.refresh = async () => {
+      const refreshed = await refreshTokens(profile);
+      current = { token: refreshed.accessToken, expiresAt: Date.parse(refreshed.expiresAt) };
+      return current.token;
+    };
+    return credential;
   }
-  io.print(`portal: ${client.base}`);
-  io.print(
-    `credential: ${profile.source === "environment" ? "DATAOPS_TOKEN" : credentialsPath()}`,
-  );
-  return result;
+    // Anything else is a static token (environment override or a stored
+  // deployment secret): present it as-is.
+  return async () => profile.token || null;
 }
 
-function resolveAdminIssuerProfile(args) {
-  if (args.adminConfigDir) {
-    return resolveProfileFromDir(args.adminConfigDir, args);
-  }
-  const current = resolveProfile(args);
-  if (current.token && (!Array.isArray(current.scopes) || current.scopes.length === 0)) {
-    return current;
-  }
-  const hostDir = hostOperatorConfigDir();
-  if (hostDir) {
-    const hostProfile = resolveProfileFromDir(hostDir, args);
-    if (hostProfile.token) return hostProfile;
-  }
-  return current;
-}
-
-export async function tokensCreate(args, io) {
-  const rawScope = args.scope || args.scopes || "";
-  if (typeof rawScope !== "string" || !rawScope.trim()) {
-    throw new UsageError(
-      "Usage: dataops tokens create --scope kb:write,templates:write,cards:write,newsletter:write [--label NAME] [--config-dir DIR]",
-    );
-  }
-  const scopes = rawScope
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (scopes.length === 0) {
-    throw new UsageError("Provide at least one token scope with --scope.");
-  }
-  const label = String(args.label || defaultAgentLabel()).trim();
-  const targetDir = args.configDir || hubSharedConfigDir();
-  const issuerProfile = resolveAdminIssuerProfile(args);
-  if (!issuerProfile.token) {
-    throw new AuthError(
-      "Issuing a scoped token requires an admin credential. Sign in as an admin first or pass --admin-config-dir.",
-    );
-  }
-  const client = createClient(issuerProfile);
-  const issued = await client.post("/api/tokens", { label, scopes });
-  const savedPath = saveProfileToDir(targetDir, client.base, {
-    token: issued.token,
-    tokenId: issued.tokenId,
-    expiresAt: issued.expiresAt,
-    user: issued.user,
-    label: issued.label || label,
-    scopes: issued.scopes || scopes,
-    kind: "agent",
-  });
-  // Never print or return the raw token string.
-  const safeResult = {
-    tokenId: issued.tokenId,
-    label: issued.label || label,
-    scopes: issued.scopes || scopes,
-    expiresAt: issued.expiresAt,
-    user: issued.user,
-    credentialsPath: savedPath,
-  };
-  if (args.json) return safeResult;
-  io.print(
-    `Issued scoped API token ${safeResult.label} (${String(safeResult.tokenId || "").slice(0, 12)}).`,
-  );
-  io.print(`scopes: ${(safeResult.scopes || []).join(", ")}`);
-  io.print(
-    `stored: ${savedPath} (expires ${String(safeResult.expiresAt || "").slice(0, 10)})`,
-  );
-  return safeResult;
-}
-
-export async function tokensList(args, io) {
-  const profile = args.adminConfigDir
-    ? resolveProfileFromDir(args.adminConfigDir, args)
-    : resolveProfile(args);
-  const client = createClient(profile);
-  const result = await client.get("/api/tokens");
-  if (args.json) return result;
-  const tokens = result.tokens || [];
-  if (tokens.length === 0) {
-    io.print("No API tokens.");
-    return result;
-  }
-  for (const token of tokens) {
-    const parts = [
-      token.id.slice(0, 12),
-      token.label,
-      ...(Array.isArray(token.scopes) && token.scopes.length > 0
-        ? [`[${token.scopes.join(",")}]`]
-        : []),
-      `expires ${token.expiresAt.slice(0, 10)}`,
-      token.lastUsedAt
-        ? `last used ${token.lastUsedAt.slice(0, 10)}`
-        : "never used",
-    ];
-    io.print(parts.join("  "));
-  }
-  return result;
-}
-
-export async function tokensRevoke(args, io) {
-  const id = args._[0];
-  if (!id) throw new Error("Usage: dataops tokens revoke <id>");
-  const profile = args.adminConfigDir
-    ? resolveProfileFromDir(args.adminConfigDir, args)
-    : resolveProfile(args);
-  const client = createClient(profile);
-  const listed = await client.get("/api/tokens");
-  const match = (listed.tokens || []).find(
-    (token) => token.id === id || token.id.startsWith(id),
-  );
-  if (!match) throw new Error(`No token matching ${id}.`);
-  await client.delete(`/api/tokens/${encodeURIComponent(match.id)}`);
-  io.print(`Revoked ${match.label} (${match.id.slice(0, 12)}).`);
-  return { status: "revoked", id: match.id };
-}

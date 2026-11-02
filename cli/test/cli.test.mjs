@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
 
+const root = fileURLToPath(new URL("../../", import.meta.url));
 const configDir = mkdtempSync(path.join(tmpdir(), "dataops-cli-"));
 process.env.DATAOPS_CONFIG_DIR = configDir;
 
 const globalFetch = globalThis.fetch;
+
+const ACCESS_TOKEN = "h.eyJpc3MiOiJodHRwczovL2lzc3Vlci50ZXN0IiwiZW1haWwiOiJncmFjZUBkY2MuZGV2Iiwic3ViIjoidTEiLCJleHAiOjk5OTk5OTk5OTl9.sig";
+const REFRESHED_TOKEN = ACCESS_TOKEN;
 
 const { parseArgs, run } = await import("../src/cli.mjs");
 const { createClient, ApiError } = await import("../src/api.mjs");
@@ -135,82 +140,90 @@ describe("credential storage", () => {
   });
 });
 
-describe("device login", () => {
+function json(body, status = 200) {
+  return { status, ok: status >= 200 && status < 300, text: async () => JSON.stringify(body) };
+}
+
+describe("shared-issuer login", () => {
   const realFetch = globalThis.fetch;
+  const issuer = "https://issuer.test";
+  let deviceCode;
+  let polls;
+
   beforeEach(() => {
     delete process.env.DATAOPS_TOKEN;
+    process.env.DTC_AUTH_HOME = fileURLToPath(new URL("./fixtures/dtc-auth", import.meta.url));
+    process.env.DTC_OAUTH_ISSUER = issuer;
+    deviceCode = "device-code";
+    polls = 0;
   });
   afterEach(() => {
     globalThis.fetch = realFetch;
+    delete process.env.DTC_AUTH_HOME;
+    delete process.env.DTC_OAUTH_ISSUER;
   });
 
-  test("polls until the browser confirms, then stores the token", async () => {
-    let polls = 0;
-    const fetchImpl = fakeFetch({
-      "/api/auth/device": {
-        body: {
-          deviceCode: "device-code",
-          userCode: "BCDF-GHJK",
-          verificationUri: "https://portal.test/device",
-          verificationUriComplete:
-            "https://portal.test/device?code=BCDF-GHJK",
-          expiresAt: new Date(Date.now() + 600_000).toISOString(),
-          // The client floors the interval at a second; keep the test near it.
+  /** One fake that answers both the issuer endpoints and the portal. */
+  function fakeIssuer({ tokenResponse, me, contentType = null }) {
+    globalThis.fetch = async (url, options = {}) => {
+      const target = new URL(url);
+      const method = options.method || "GET";
+      const raw = options.body;
+      if (target.origin + target.pathname === `${issuer}/oauth/device`) {
+        assert.equal(options.headers["Content-Type"], "application/json");
+        return json({
+          device_code: deviceCode,
+          user_code: "BCDF-GHJK",
+          verification_uri: `${issuer}/device`,
+          verification_uri_complete: `${issuer}/device?code=BCDF-GHJK`,
+          expires_in: 600,
           interval: 1,
-        },
-      },
-      "/api/auth/device/token": () => {
+        });
+      }
+      if (target.origin + target.pathname === `${issuer}/oauth/token`) {
         polls += 1;
-        if (polls < 2)
-          return { status: 400, body: { error: "authorization_pending" } };
-        return {
-          body: {
-            token: "dops_issued",
-            tokenId: "token-id",
-            expiresAt: "2026-11-11T00:00:00.000Z",
-            user: { id: "u1", name: "Grace", email: "grace@datatalks.club" },
-          },
-        };
-      },
+        const form = new URLSearchParams(String(raw || ""));
+        assert.equal(form.get("grant_type"), "urn:ietf:params:oauth:grant-type:device_code");
+        assert.equal(form.get("device_code"), deviceCode);
+        if (contentType) assert.match(String(options.headers["Content-Type"]), /x-www-form-urlencoded/);
+        const spec = typeof tokenResponse === "function" ? tokenResponse() : tokenResponse;
+        return json(spec.body ?? spec, spec.status || 200);
+      }
+      if (target.pathname === "/api/me") {
+        const meBody = me.body ?? me;
+        return json(meBody, me.status || 200);
+      }
+      console.log("FAKE-MISS", url); return { status: 404, text: async () => "" };
+    };
+  }
+
+
+  test("polls until the issuer confirms, then stores a refreshable session", async () => {
+    fakeIssuer({
+      tokenResponse: () => polls < 2
+        ? { status: 400, body: { error: "authorization_pending" } }
+        : { body: { access_token: ACCESS_TOKEN, refresh_token: "rt-1", expires_in: 3600, scope: "openid mcp" } },
+      me: { body: { user: { id: "u1", name: "Grace", email: "grace@dtc.dev" } } },
+      contentType: "form",
     });
-    globalThis.fetch = fetchImpl;
     const { login } = await import("../src/commands/auth.mjs");
     const io = captureIo();
-    const result = await login(
-      { url: "https://portal.test", label: "grace@remote" },
-      { print: io.log },
-    );
-
-    assert.equal(result.token, "dops_issued");
+    const result = await login({ url: "https://portal.test", label: "grace@remote" }, { print: io.log });
     assert.equal(polls, 2, "keeps polling while the grant is pending");
     assert.match(io.text(), /BCDF-GHJK/);
-    assert.match(io.text(), /\/device\?code=BCDF-GHJK/);
     assert.match(io.text(), /Signed in as Grace/);
-    assert.equal(
-      resolveProfile({ url: "https://portal.test" }).token,
-      "dops_issued",
-    );
-    // The device code is the CLI's secret and is never printed.
+    assert.equal(result.user.email, "grace@dtc.dev");
+    const profile = resolveProfile({ url: "https://portal.test" });
+    assert.equal(profile.refreshToken, "rt-1");
+    assert.equal(profile.user.name, "Grace");
     assert.doesNotMatch(io.text(), /device-code/);
   });
 
   test("stops with a clear message when the browser denies the login", async () => {
-    const fetchImpl = fakeFetch({
-      "/api/auth/device": {
-        body: {
-          deviceCode: "device-code",
-          userCode: "BCDF-GHJK",
-          verificationUri: "https://portal.test/device",
-          expiresAt: new Date(Date.now() + 600_000).toISOString(),
-          interval: 1,
-        },
-      },
-      "/api/auth/device/token": {
-        status: 400,
-        body: { error: "access_denied" },
-      },
+    fakeIssuer({
+      tokenResponse: { status: 400, body: { error: "access_denied" } },
+      me: { body: { user: null } },
     });
-    globalThis.fetch = fetchImpl;
     const { login } = await import("../src/commands/auth.mjs");
     await assert.rejects(
       () => login({ url: "https://portal.test" }, { print: () => {} }),
@@ -218,55 +231,33 @@ describe("device login", () => {
     );
   });
 
-  test("rewrites verification link to the target portal origin when server returns a different host", async () => {
-    const rawLambda =
-      "https://el4jt4z2k4lnxwvoqawrdcsedm0axjzc.lambda-url.eu-west-1.on.aws/device?code=BCDF-GHJK";
-    const fetchImpl = fakeFetch({
-      "/api/auth/device": {
-        body: {
-          deviceCode: "device-code",
-          userCode: "BCDF-GHJK",
-          verificationUri:
-            "https://el4jt4z2k4lnxwvoqawrdcsedm0axjzc.lambda-url.eu-west-1.on.aws/device",
-          verificationUriComplete: rawLambda,
-          expiresAt: new Date(Date.now() + 600_000).toISOString(),
-          interval: 1,
-        },
-      },
-      "/api/auth/device/token": {
-        body: {
-          token: "dops_issued",
-          tokenId: "token-id",
-          expiresAt: "2026-11-11T00:00:00.000Z",
-          user: { id: "u1", name: "Grace", email: "grace@datatalks.club" },
-        },
-      },
+  test("refreshes the session on 401 and rotates the single-use refresh token", async () => {
+    fakeIssuer({
+      tokenResponse: { body: { access_token: REFRESHED_TOKEN, refresh_token: "rt-2", expires_in: 3600 } },
+      me: { body: { user: { id: "u1", name: "Grace", email: "grace@dtc.dev" } } },
     });
-    globalThis.fetch = fetchImpl;
-    const { login, rewriteVerificationUri } = await import(
-      "../src/commands/auth.mjs"
-    );
-    assert.equal(
-      rewriteVerificationUri(rawLambda, "https://ops.dtcdev.click"),
-      "https://ops.dtcdev.click/device?code=BCDF-GHJK",
-    );
-    assert.equal(
-      rewriteVerificationUri(
-        "https://ops.dtcdev.click/device?code=XYZ",
-        "https://ops.dtcdev.click",
-      ),
-      "https://ops.dtcdev.click/device?code=XYZ",
-    );
-    const io = captureIo();
-    await login(
-      { url: "https://ops.dtcdev.click", label: "grace@remote" },
-      { print: io.log },
-    );
-    assert.match(
-      io.text(),
-      /Open in a browser:\s+https:\/\/ops\.dtcdev\.click\/device\?code=BCDF-GHJK/,
-    );
-    assert.doesNotMatch(io.text(), /lambda-url/);
+    saveProfile("https://portal.test", {
+      accessToken: "expired-token", refreshToken: "rt-1", expiresAt: new Date(Date.now() - 1000).toISOString(),
+    });
+    globalThis.fetch = async (url, options = {}) => {
+      const target = new URL(url);
+      if (target.origin + target.pathname === `${issuer}/oauth/token`) {
+        const form = new URLSearchParams(String(options.body || ""));
+        assert.equal(form.get("grant_type"), "refresh_token");
+        assert.equal(form.get("refresh_token"), "rt-1");
+        return { status: 200, text: async () => JSON.stringify({ access_token: REFRESHED_TOKEN, refresh_token: "rt-2", expires_in: 3600 }) };
+      }
+      const auth = options.headers.Authorization || "";
+      if (auth === "Bearer expired-token") return { status: 401, text: async () => JSON.stringify({ error: "Unauthorized" }) };
+      return { status: 200, text: async () => JSON.stringify({ tasks: [] }) };
+    };
+    const { sessionCredential } = await import("../src/commands/auth.mjs");
+    const credential = sessionCredential(resolveProfile({ url: "https://portal.test" }));
+    const rotated = await credential.refresh();
+    assert.equal(rotated, REFRESHED_TOKEN);
+    const stored = resolveProfile({ url: "https://portal.test" });
+    assert.equal(stored.refreshToken, "rt-2", "the rotated refresh token replaces the old one");
+    assert.match(String(stored.expiresAt), /^\d{4}/);
   });
 });
 

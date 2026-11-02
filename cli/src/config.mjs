@@ -189,16 +189,12 @@ export function resolveProfile(options = {}) {
   const envToken = process.env.DATAOPS_TOKEN || "";
   if (envToken) return { url, token: envToken, source: "environment" };
   const profile = (store.profiles || {})[url];
-  if (!profile?.token) return { url, token: "", source: "none" };
+  if (!profile || (!profile.token && !profile.accessToken && !profile.clientId)) {
+    return { url, token: "", source: "none" };
+  }
   return {
     url,
-    token: profile.token,
-    tokenId: profile.tokenId || "",
-    label: profile.label || "",
-    scopes: Array.isArray(profile.scopes) ? profile.scopes : null,
-    expiresAt: profile.expiresAt || "",
-    user: profile.user || null,
-    kind: profile.kind || "user",
+    ...profile,
     source: "file",
   };
 }
