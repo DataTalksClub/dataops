@@ -350,11 +350,13 @@ export async function deleteHoldGoogleEvents(
   }
 }
 
-export interface LiveGoogleOrganizerEvent {
+export interface LiveGoogleEvent {
   id: string;
   status?: string;
   iCalUID?: string;
   summary?: string;
+  description?: string;
+  location?: string;
   organizer?: { email?: string };
   start?: { dateTime?: string; timeZone?: string };
   end?: { dateTime?: string; timeZone?: string };
@@ -362,24 +364,32 @@ export interface LiveGoogleOrganizerEvent {
   attendees?: Array<{ email?: string; responseStatus?: string }>;
 }
 
-/** Read the live organizer event on Orin's calendar to detect guest responseStatus changes. */
-export async function fetchOrganizerGoogleEvent(
+export type GoogleEventFetch =
+  | { state: 'ok'; event: LiveGoogleEvent }
+  | { state: 'gone' }
+  | { state: 'deferred'; reason: string };
+
+/** Read one live Google event: `gone` covers 404/410 and `cancelled`. */
+export async function fetchGoogleEvent(
   eventId: string,
+  calendar: string,
   deps: HoldGoogleDeps,
-): Promise<{ state: 'ok'; event: LiveGoogleOrganizerEvent } | { state: 'deferred'; reason: string }> {
+): Promise<GoogleEventFetch> {
   const resolved = await accessToken(deps);
   if ('problem' in resolved) return { state: 'deferred', reason: resolved.problem };
   const headers = { Authorization: `Bearer ${resolved.token}`, 'Content-Type': 'application/json' };
   try {
-    const url = `${eventsUrl(HOLD_ORGANIZER)}/${encodeURIComponent(eventId)}`;
+    const url = `${eventsUrl(calendar)}/${encodeURIComponent(eventId)}`;
     const response = await googleFetch(deps, url, { headers, signal: AbortSignal.timeout(15000) });
+    if (response.status === 404 || response.status === 410) return { state: 'gone' };
     if (!response.ok) {
       return { state: 'deferred', reason: googleErrorDetail(response.status, await readBodyText(response, GOOGLE_ERROR_BODY_LIMIT)) };
     }
-    const event = (await response.json()) as LiveGoogleOrganizerEvent;
+    const event = (await response.json()) as LiveGoogleEvent;
+    if (event.status === 'cancelled') return { state: 'gone' };
     return { state: 'ok', event };
   } catch {
-    return { state: 'deferred', reason: 'Google Calendar organizer event could not be read.' };
+    return { state: 'deferred', reason: `Google Calendar event could not be read from ${calendar}.` };
   }
 }
 

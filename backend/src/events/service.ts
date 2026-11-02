@@ -21,7 +21,7 @@ import {
 import {
   createHoldGoogleEvents,
   deleteHoldGoogleEvents,
-  fetchOrganizerGoogleEvent,
+  fetchGoogleEvent,
   HOLD_ORGANIZER,
   updateHoldGoogleEvents,
   type HoldGoogleDeps,
@@ -1005,7 +1005,7 @@ export async function pollEventCalendarAcceptances(
       continue;
     }
 
-    const fetched = await fetchOrganizerGoogleEvent(organizerEventId, deps);
+    const fetched = await fetchGoogleEvent(organizerEventId, HOLD_ORGANIZER, deps);
     if (fetched.state === 'deferred') {
       outcomes.push({
         holdId: record.id,
@@ -1016,18 +1016,18 @@ export async function pollEventCalendarAcceptances(
       });
       continue;
     }
-
-    const live = fetched.event;
-    if (live.status === 'cancelled') {
+    if (fetched.state === 'gone') {
       outcomes.push({
         holdId: record.id,
         cardId: record.cardId,
         status: record.status,
         action: 'deferred',
-        reason: 'Organizer Google Calendar event is cancelled',
+        reason: 'Organizer Google Calendar event is cancelled or gone',
       });
       continue;
     }
+
+    const live = fetched.event;
 
     const priv = live.extendedProperties?.private;
     if (priv) {

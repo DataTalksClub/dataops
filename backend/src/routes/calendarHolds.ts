@@ -15,8 +15,12 @@ import {
 import {
   createHoldGoogleEvents,
   deleteHoldGoogleEvents,
+  fetchGoogleEvent,
+  HOLD_ORGANIZER,
   updateHoldGoogleEvents,
 } from '../calendar/holdGoogleSync';
+import { resolveHoldGoogleCalendars } from '../calendar/dapierBroker';
+import { resolveInteractiveActor } from '../identity/actor';
 import {
   calendarInviteDeps,
   expireCalendarHolds,
@@ -346,6 +350,55 @@ async function expireRoute(event: LambdaEvent, client: DynamoDBDocumentClient): 
   });
 }
 
+/** Guest-safe view of a live Google event; internal extendedProperties never leave the backend. */
+function googleEventView(event: any) {
+  return {
+    id: event.id,
+    status: event.status,
+    summary: event.summary,
+    description: event.description,
+    location: event.location,
+    start: event.start,
+    end: event.end,
+    attendees: (event.attendees || []).map((attendee: { email?: string; responseStatus?: string }) => ({
+      email: attendee.email,
+      responseStatus: attendee.responseStatus,
+    })),
+  };
+}
+
+/**
+ * Read one Google event as it exists right now — by default on the organizer
+ * calendar plus every configured hold calendar, or on `?calendar=` (one of
+ * those). Read-only verification: invite label/link audits compare this
+ * description against what DataOps last wrote.
+ */
+async function googleEventRoute(eventId: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+  const actor = await resolveInteractiveActor(client, event, 'work-read');
+  if (!actor.ok) return actor.response;
+  const q = event.queryStringParameters || {};
+  const calendar = String(q.calendar || '').trim();
+  const deps = await calendarInviteDeps({}, client);
+  const allowed = [...new Set([HOLD_ORGANIZER, ...resolveHoldGoogleCalendars(deps.calendarIds)])];
+  const targets = calendar ? [calendar] : allowed;
+  const unknown = targets.find((candidate) => !allowed.includes(candidate));
+  if (unknown) {
+    return json(400, { error: `Calendar ${unknown} is not a DataOps hold calendar (${allowed.join(', ')}).` });
+  }
+  const events = [];
+  for (const candidate of targets) {
+    const fetched = await fetchGoogleEvent(eventId, candidate, deps);
+    events.push(
+      fetched.state === 'ok'
+        ? { calendar: candidate, state: 'ok', event: googleEventView(fetched.event) }
+        : fetched.state === 'gone'
+          ? { calendar: candidate, state: 'gone' }
+          : { calendar: candidate, state: 'deferred', reason: fetched.reason },
+    );
+  }
+  return json(200, { eventId, events });
+}
+
 export async function handleCalendarHoldRoutes(
   path: string,
   method: string,
@@ -375,6 +428,11 @@ export async function handleCalendarHoldRoutes(
   if (move) {
     if (method !== 'POST') return json(405, { error: 'Method not allowed' });
     return moveRoute(decodeURIComponent(move[1]), event, client);
+  }
+  const googleEvent = path.match(/^\/api\/calendar-holds\/google-events\/([^/]+)$/);
+  if (googleEvent) {
+    if (method !== 'GET') return json(405, { error: 'Method not allowed' });
+    return googleEventRoute(decodeURIComponent(googleEvent[1]), event, client);
   }
   const detail = path.match(/^\/api\/calendar-holds\/([^/]+)$/);
   if (detail) {
