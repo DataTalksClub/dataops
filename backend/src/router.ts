@@ -46,6 +46,7 @@ import { handleTaskRoutes } from './routes/tasks';
 import { resolveInteractiveActor } from './identity/actor';
 import { identityProjection } from './identity/projections';
 import { getSession } from './db/sessions';
+import { headerValue } from './httpHeaders';
 import { getUser } from './db/users';
 import { userDisplayNames } from './identity/directory';
 import { getTaskConsistent, TaskVersionConflictError, CardLifecycleConflictError } from './db/tasks';
@@ -89,12 +90,6 @@ function isAuthExempt(method: string, path: string): boolean {
   // credential and bearer middleware has nothing to add.
   if (method === 'GET' && /^\/api\/files\/[^/]+\/content$/.test(path)) return true;
   return false;
-}
-
-function headerValue(headers: Record<string, string> | null | undefined, name: string): string {
-  if (!headers) return '';
-  const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
-  return match ? String(match[1]) : '';
 }
 
 function deleteHeader(headers: Record<string, string> | null | undefined, name: string): void {

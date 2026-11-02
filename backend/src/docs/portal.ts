@@ -18,6 +18,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import {resolveInteractiveActor} from '../identity/actor';
 import { userDisplayNames } from '../identity/directory';
+import { headerValue } from '../httpHeaders';
 import { authErrorPage, browserAuthConfigured, signInRefusal, browserUser, handleCallback, logout, startLogin, unauthenticatedApi } from '../auth/browserAuth';
 import { RUNTIME_ROOT } from '../runtimePaths';
 import type { LambdaEvent, LambdaResponse } from '../types';
@@ -87,14 +88,6 @@ export function configurePortalStore(s: KnowledgeStore | null): void {
 }
 
 // ── Headers / auth primitives ─────────────────────────────────────────────────
-
-function headerValue(event: LambdaEvent, name: string): string {
-  const headers = event.headers || {};
-  for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === name.toLowerCase()) return String(value);
-  }
-  return '';
-}
 
 function redirectToLogin(returnTo = ''): LambdaResponse {
   const location = returnTo ? `/login?return_to=${encodeURIComponent(returnTo)}` : '/login';
@@ -316,7 +309,7 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
     }
     // Existing non-browser bearer clients continue through the router's own
     // server-side session validation, but a bearer token never serves a page.
-    if (isDataPath(path) && /^Bearer\s+\S+$/i.test(headerValue(event, 'authorization'))) return { authorized: false };
+    if (isDataPath(path) && /^Bearer\s+\S+$/i.test(headerValue(event.headers, 'authorization'))) return { authorized: false };
     return { response: isDataPath(path) ? unauthenticatedApi() : redirectToLogin(), authorized: false };
   }
 

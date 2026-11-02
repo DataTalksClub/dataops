@@ -1,5 +1,6 @@
 import { getClient } from '../db/client';
 import { getUser } from '../db/users';
+import { headerValue } from '../httpHeaders';
 import { browserAuthOrigin } from '../auth/browserAuth';
 import {
   DEVICE_POLL_INTERVAL_SECONDS,
@@ -27,12 +28,6 @@ export function isAnonymousDeviceRequest(method: string, path: string): boolean 
 
 function json(statusCode: number, body: unknown): LambdaResponse {
   return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) };
-}
-
-function headerValue(headers: Record<string, string> | null | undefined, name: string): string {
-  if (!headers) return '';
-  const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
-  return match ? String(match[1]) : '';
 }
 
 function parseBody(event: LambdaEvent): Record<string, unknown> | null {

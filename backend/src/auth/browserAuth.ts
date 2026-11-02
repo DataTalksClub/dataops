@@ -3,6 +3,7 @@ import { DeleteCommand, PutCommand, type DynamoDBDocumentClient } from '@aws-sdk
 
 import { TABLE_SESSIONS } from '../db/tableNames';
 import { createBrowserSession, deleteSession, getSession } from '../db/sessions';
+import { headerValue } from '../httpHeaders';
 import { getFormerUserByEmail, getUser, getUsersByNormalizedEmail, normalizeEmail, recordSignInPicture } from '../db/users';
 import type { LambdaEvent, LambdaResponse, User } from '../types';
 
@@ -79,12 +80,8 @@ function base64url(input: Buffer): string { return input.toString('base64url'); 
 function sha256(value: string): string { return createHash('sha256').update(value).digest('base64url'); }
 function randomValue(bytes = 32): string { return base64url(randomBytes(bytes)); }
 
-function headerValue(event: LambdaEvent, name: string): string {
-  return Object.entries(event.headers || {}).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1] || '';
-}
-
 function cookieValue(event: LambdaEvent, name: string): string {
-  for (const part of headerValue(event, 'cookie').split(';')) {
+  for (const part of headerValue(event.headers, 'cookie').split(';')) {
     const [key, ...value] = part.trim().split('=');
     if (key === name) return value.join('=');
   }

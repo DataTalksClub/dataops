@@ -2,6 +2,7 @@ import { projectDocumentEvent, readDocumentEventMetadata } from '../sponsorDocs/
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { browserAuthOrigin } from '../auth/browserAuth';
+import { headerValue } from '../httpHeaders';
 import { normalizeCardLinks } from '../artifactLinks';
 import { cardTemplateType, hydrateStructuredCardFields } from '../cards/cardTitleStructure';
 import { getTemplateIdByType } from '../cards/createCard';
@@ -68,12 +69,6 @@ function json(statusCode: number, body: unknown, extraHeaders?: Record<string, s
     headers: extraHeaders ? { ...JSON_HEADERS, ...extraHeaders } : JSON_HEADERS,
     body: JSON.stringify(body),
   };
-}
-
-function headerValue(headers: Record<string, string> | null | undefined, name: string): string {
-  if (!headers) return '';
-  const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
-  return match ? String(match[1]) : '';
 }
 
 function parseBody(rawBody: string | null | undefined): Record<string, unknown> | null {
