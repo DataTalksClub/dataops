@@ -258,7 +258,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     // API-only/local configurations still expose the same canonical frontend;
     // full portal mode serves it earlier after browser authentication.
-    if (!portalMode && method === 'GET' && !/^\/(?:api|work|docs|knowledge|content|auth|login|logout)(?:\/|$)/.test(reqPath)) {
+    if (!portalMode && method === 'GET' && !isDocsRoute(reqPath) && !/^\/(?:api|work|docs|knowledge|content|auth|login|logout)(?:\/|$)/.test(reqPath)) {
       const frontend = serveCanonicalFrontend(event);
       if (frontend) return frontend;
     }

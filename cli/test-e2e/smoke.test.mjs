@@ -193,6 +193,10 @@ describe("dataops CLI against a local backend", () => {
 
     const search = cli("kb", "search", "sponsor invoice", "--json");
     assert.equal(search.code, 0, search.stderr);
+    assert.ok(
+      search.json.results.length > 0,
+      `expected a sponsor invoice search result; received ${JSON.stringify(search.json)}`,
+    );
     assert.equal(search.json.results[0].id, "finance.invoices");
     assert.match(search.json.results[0].snippet, /sponsor invoice/);
     assert.equal(typeof search.json.results[0].score, "number");
