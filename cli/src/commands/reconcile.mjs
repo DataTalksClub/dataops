@@ -75,8 +75,8 @@ Usage
   dataops reconcile note <ledger-id> --note TEXT
       Add or replace the note on an existing ledger row.
   dataops reconcile except <row> --kind KIND --period YYYY-MM [--proof TEXT] [--note TEXT]
-      Mark a no-invoice row: tax_debit, tk_debit, platform_payout,
-      internal_transfer, bank_fee, owner_withdrawal (each still needs its proof).
+      Mark a no-invoice row: tax_debit, tax_refund, tk_debit, platform_payout,
+      internal_transfer, bank_fee, owner_withdrawal. Tax rows are listed separately.
   dataops reconcile clear-except <row> --period YYYY-MM
   dataops reconcile confirm-exceptions YYYY-MM
       Admin sign-off of the month's exception list (required before close).
@@ -410,9 +410,14 @@ export async function month(args, io) {
     io.print(`${c.rows} rows: ${c.matched} matched, ${c.bankWithoutInvoice} without invoice, ${c.ledgerWithoutBank} without payment proof, ${c.amountMismatch} amount mismatch, ${c.needsReview} need review, ${c.exceptions} exceptions${c.exceptions ? (result.exceptionConfirmation?.current ? " (confirmed)" : " (not confirmed)") : ""}.`);
     io.print(result.blockers ? `${result.blockers} rows block closing.` : "Nothing blocks closing.");
     io.print(`Statements: ${result.statements.map((statement) => `${statement.accountId} ${statement.from}…${statement.to}`).join("; ") || "none"}`);
-    const rows = result.rows.filter((row) => !status || row.status === status)
+    const rows = result.rows.filter((row) => !row.tax && (!status || row.status === status))
       .sort((left, right) => Number(left.status === "matched") - Number(right.status === "matched") || left.date.localeCompare(right.date));
     for (const row of rows) for (const line of rowLine(row)) io.print(line);
+    const taxRows = result.rows.filter((row) => row.tax).sort((left, right) => left.date.localeCompare(right.date));
+    if (taxRows.length) {
+      io.print(`\nTaxes and health insurance (${taxRows.length}; excluded from month-close review and accountant package)`);
+      for (const row of taxRows) for (const line of rowLine(row)) io.print(line);
+    }
   }
   return result;
 }

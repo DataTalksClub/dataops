@@ -64,8 +64,9 @@ const MONTH = {
     {
       id: "revolut:tax", date: "2026-09-12", counterparty: "Finanzamt", amount: "-900.00", currency: "EUR",
       bank: bank("revolut:tax", { amount: "-900.00" }), documents: [],
-      exception: { kind: "tax_debit", proof: "tax-schedule", satisfied: false, recorded: { kind: "tax_debit", by: "alexey", at: "2026-10-01T00:00:00Z" } },
-      status: "needs-review", missing: "tax_debit needs proof: tax-schedule",
+      exception: { kind: "tax_debit", proof: "category", satisfied: true, recorded: { kind: "tax_debit", by: "alexey", at: "2026-10-01T00:00:00Z" } },
+      tax: true,
+      status: "matched",
     },
   ],
 };
@@ -119,9 +120,9 @@ describe("reconciliation table", () => {
 
   test("lists rows that are not matched first, the matched row last", () => {
     assert.deepEqual(visibleRows(MONTH.rows, "all").map((row) => row.status),
-      ["no-invoice", "payment-proof-missing", "amount-mismatch", "needs-review", "matched"]);
+      ["no-invoice", "payment-proof-missing", "amount-mismatch", "matched"]);
     assert.deepEqual(visibleRows(MONTH.rows, "open").map((row) => row.id).includes("revolut:m1"), false);
-    assert.deepEqual(visibleRows(MONTH.rows, "exceptions").map((row) => row.id), ["revolut:tax"]);
+    assert.deepEqual(visibleRows(MONTH.rows, "exceptions").map((row) => row.id), []);
   });
 
   test("colours each status and highlights the missing side with the row's missing text", () => {
@@ -153,10 +154,7 @@ describe("reconciliation table", () => {
     assert.match(matched, /data-recon-doc="doc-1">INV-77\.pdf/);
     assert.match(matched, /INV-77<\/span>/);
 
-    const exception = row("revolut:tax");
-    assert.match(exception, /data-recon-exception="tax_debit"/);
-    assert.match(exception, /needs: tax-schedule/);
-    assert.match(exception, /data-recon-action="clear-exception"/);
+    assert.equal(markup.includes('data-recon-row-id="revolut:tax"'), false);
   });
 
   test("offers per-row actions by side, and none once the month is closed", () => {
@@ -186,6 +184,16 @@ describe("reconciliation table", () => {
     assert.match(log, /<strong>alexey<\/strong> pair/);
     assert.match(log, /transactionId: tx-matched/);
     assert.match(monthBodyMarkup(MONTH, "open", e), /role="radio"\s+aria-checked="true" data-recon-filter="open"/);
+  });
+
+  test("keeps tax rows in their own section after the regular month table", () => {
+    const markup = monthBodyMarkup(MONTH, "all", e);
+    assert.match(markup, /data-recon-tax-section/);
+    assert.match(markup, /Taxes and health insurance/);
+    assert.ok(markup.indexOf("data-recon-tax-section") > markup.indexOf("data-recon-row-id=\"revolut:m1\""));
+    assert.match(markup, /data-recon-row-id="revolut:tax"/);
+    assert.match(markup, /data-recon-exception="tax_debit"/);
+    assert.match(markup, /data-recon-action="clear-exception"/);
   });
 
   test("the match picker offers suggested candidates first", () => {

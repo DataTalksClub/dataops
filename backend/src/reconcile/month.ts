@@ -21,6 +21,7 @@ const DAY = 86_400_000;
 
 export type ExceptionKind =
   | "tax_debit"
+  | "tax_refund"
   | "tk_debit"
   | "platform_payout"
   | "internal_transfer"
@@ -33,8 +34,9 @@ export type ExceptionProof = "tax-schedule" | "ledger-row" | "counter-row" | "ba
 export type ExceptionPolicy = { kind: ExceptionKind; proof: ExceptionProof; label: string };
 
 export const EXCEPTION_POLICIES: ExceptionPolicy[] = [
-  { kind: "tax_debit", proof: "tax-schedule", label: "Tax debit (ESt/Soli, GewSt, VAT)" },
-  { kind: "tk_debit", proof: "tax-schedule", label: "TK health insurance debit" },
+  { kind: "tax_debit", proof: "category", label: "Tax debit (ESt/Soli, GewSt, VAT)" },
+  { kind: "tax_refund", proof: "category", label: "Tax refund" },
+  { kind: "tk_debit", proof: "category", label: "TK health insurance debit" },
   { kind: "platform_payout", proof: "ledger-row", label: "Platform payout" },
   { kind: "internal_transfer", proof: "counter-row", label: "Transfer between own accounts" },
   { kind: "bank_fee", proof: "bank-row", label: "Bank fee" },
@@ -183,6 +185,8 @@ export type MonthRow = {
   amountDifference?: string;
   classification?: { kind: ExceptionPolicy["kind"] | "known_vendor"; ruleId?: string; vendor?: string; category?: string };
   exception?: { kind: ExceptionKind; proof: ExceptionProof; satisfied: boolean; evidence?: string; recorded?: RowException };
+  /** Tax and health-insurance rows are shown separately and never block close. */
+  tax?: boolean;
   candidates?: Array<{ transactionId?: string; bankKey?: string; score: number }>;
   status: RowStatus;
   /** What is missing, in words, for a row that is not matched. */
@@ -200,6 +204,10 @@ export type MonthCounters = {
 };
 
 export type MonthTable = { period: string; rows: MonthRow[]; counters: MonthCounters };
+
+const TAX_KINDS = new Set<ExceptionKind>(["tax_debit", "tax_refund", "tk_debit"]);
+const isTaxRow = (row: MonthRow) => TAX_KINDS.has(row.exception?.kind || row.classification?.kind as ExceptionKind)
+  || /\b(?:tax(?:es)?|steuer(?:n)?|vat|health insurance|krankenkasse)\b/i.test(String(row.ledger?.category || row.classification?.category || "").trim());
 
 const amountNumber = (value: string | undefined) => Number(value || 0);
 const cents = (value: number) => Math.round(value * 100) / 100;
@@ -392,6 +400,9 @@ export function classify(bank: BankTx, rules: ClassificationRule[]): MonthRow["c
     if (rule.reference && !new RegExp(rule.reference, "i").test(bank.reference || "")) continue;
     return { kind: rule.kind, ruleId: rule.id, ...(rule.vendor ? { vendor: rule.vendor } : {}), ...(rule.category ? { category: rule.category } : {}) };
   }
+  if (direction === "in" && /finanzamt|bundeskasse|steuerverwaltung/i.test(bank.counterparty)) {
+    return { kind: "tax_refund", ruleId: "tax-refund", category: "Taxes" };
+  }
   return undefined;
 }
 
@@ -530,6 +541,7 @@ export function buildMonthTable(input: MonthInput): MonthTable {
       row.status = "no-invoice";
       row.missing = "ledger row has no invoice/receipt document";
     }
+    row.tax = isTaxRow(row);
     rows.push(row);
   }
 
@@ -557,7 +569,8 @@ export function buildMonthTable(input: MonthInput): MonthTable {
     }
     if (recorded) {
       const policy = policyOf(recorded.kind);
-      row.exception = { kind: recorded.kind, proof: policy.proof, satisfied: Boolean(recorded.proof), recorded };
+      const satisfied = policy.proof === "category" ? Boolean(ledgerRow.category || recorded.proof) : Boolean(recorded.proof);
+      row.exception = { kind: recorded.kind, proof: policy.proof, satisfied, recorded };
       // A no-invoice kind waives the document, never the payment: a proof or bank row is still needed.
       if (proof) { row.status = row.exception.satisfied ? "matched" : "needs-review"; row.missing = row.exception.satisfied ? undefined : `${recorded.kind} needs proof: ${policy.proof}`; if (!row.missing) delete row.missing; }
     }
@@ -566,22 +579,24 @@ export function buildMonthTable(input: MonthInput): MonthTable {
       row.status = "needs-review";
       row.missing = `${ambiguous.length} bank transactions fit equally; pick one`;
     }
+    row.tax = isTaxRow(row);
     rows.push(row);
   }
 
   rows.sort((left, right) => left.date.localeCompare(right.date) || left.id.localeCompare(right.id));
-  const count = (status: RowStatus) => rows.filter((row) => row.status === status).length;
+  const reviewedRows = rows.filter((row) => !row.tax);
+  const count = (status: RowStatus) => reviewedRows.filter((row) => row.status === status).length;
   return {
     period: input.period,
     rows,
     counters: {
-      rows: rows.length,
+      rows: reviewedRows.length,
       matched: count("matched"),
-      bankWithoutInvoice: rows.filter((row) => row.status === "no-invoice").length,
+      bankWithoutInvoice: reviewedRows.filter((row) => row.status === "no-invoice").length,
       ledgerWithoutBank: count("payment-proof-missing"),
       amountMismatch: count("amount-mismatch"),
       needsReview: count("needs-review"),
-      exceptions: rows.filter((row) => row.exception).length,
+      exceptions: reviewedRows.filter((row) => row.exception).length,
     },
   };
 }
@@ -622,13 +637,13 @@ function matchesPendingEmailInvoice(bank: BankTx, invoice: PendingEmailInvoice, 
 
 /** Rows that keep a month from closing, and the exception rows the approver confirms. */
 export function closeBlockers(table: MonthTable): MonthRow[] {
-  return table.rows.filter((row) => row.status !== "matched");
+  return table.rows.filter((row) => !row.tax && row.status !== "matched");
 }
 
 /** Fingerprint of a month's exception list; a confirmation covers exactly this list. */
 export function exceptionDigest(table: MonthTable): string {
   const items = table.rows
-    .filter((row) => row.exception)
+    .filter((row) => !row.tax && row.exception)
     .map((row) => `${row.id}|${row.exception!.kind}|${row.amount}|${row.currency}`)
     .sort();
   return createHash("sha256").update(items.join("\n")).digest("hex").slice(0, 24);
@@ -640,7 +655,7 @@ export function tableCsv(table: MonthTable): string {
     const text = value === undefined || value === null ? "" : String(value);
     return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
-  const lines = table.rows.map((row) => [
+  const lines = table.rows.filter((row) => !row.tax).map((row) => [
     row.date, row.status, row.counterparty, row.description, row.amount, row.currency,
     row.bank ? `${row.bank.accountId}${row.bank.wallet ? ` ${row.bank.wallet}` : ""}` : "", row.bank?.date, row.bank ? `${row.bank.amount} ${row.bank.currency}` : "", row.bank?.reference,
     row.ledger?.id, row.ledger?.date, row.ledger ? `${row.ledger.amount} ${row.ledger.currency}` : "", row.ledger?.category,

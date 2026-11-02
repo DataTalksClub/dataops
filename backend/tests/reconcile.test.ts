@@ -398,6 +398,7 @@ describe('reconcile API', () => {
         row({ date: '2026-12-04', amount: '-48.60', counterparty: 'Example Cloud' }),
         row({ date: '2026-12-10', amount: '-15.00', counterparty: 'Finom account fee' }),
         row({ date: '2026-12-15', amount: '-3296.00', counterparty: 'Finanzamt Example' }),
+        row({ date: '2026-12-16', amount: '43633.73', counterparty: 'Finanzamt refund' }),
         row({ date: '2026-12-20', amount: '-12.00', counterparty: 'Unbooked Shop' }),
       ],
     });
@@ -409,12 +410,19 @@ describe('reconcile API', () => {
     assert.equal(status((item) => item.ledger?.id === google.id), 'payment-proof-missing');
     assert.equal(status((item) => item.ledger?.id === cloud.id), 'no-invoice');
     assert.equal(status((item) => item.counterparty === 'Finom account fee'), 'matched');
-    assert.equal(status((item) => item.counterparty === 'Finanzamt Example'), 'needs-review');
+    assert.equal(status((item) => item.counterparty === 'Finanzamt Example'), 'matched');
+    assert.equal(view.rows.find((item: Record<string, any>) => item.counterparty === 'Finanzamt Example').tax, true);
+    assert.equal(status((item) => item.counterparty === 'Finanzamt refund'), 'matched');
+    assert.equal(view.rows.find((item: Record<string, any>) => item.counterparty === 'Finanzamt refund').exception.kind, 'tax_refund');
+    assert.equal(view.rows.find((item: Record<string, any>) => item.counterparty === 'Finanzamt refund').tax, true);
+    assert.equal(view.counters.rows, 4);
+    assert.equal(view.counters.needsReview, 0);
+    assert.equal(view.counters.bankWithoutInvoice, 2);
     assert.equal(status((item) => item.counterparty === 'Unbooked Shop'), 'no-invoice');
 
     const blocked = await operator('POST', '/api/reconcile/months/2026-12/close', {});
     assert.equal(blocked.statusCode, 409);
-    assert.equal(JSON.parse(blocked.body).blockers.length, 4);
+    assert.equal(JSON.parse(blocked.body).blockers.length, 3);
 
     // The Google receipt: a separate payment proof for that one row.
     assert.equal((await operator('POST', '/api/reconcile/months/2026-12/proof', { transactionId: google.id, documentId: proofDoc.id })).statusCode, 200);
@@ -428,6 +436,8 @@ describe('reconcile API', () => {
     assert.equal(JSON.parse(again.body).duplicate, true);
     const tax = view.rows.find((item: Record<string, any>) => item.counterparty === 'Finanzamt Example');
     assert.equal((await operator('POST', '/api/reconcile/months/2026-12/exception', { row: tax.id, kind: 'tax_debit', proof: 'GewSt Q4 schedule entry' })).statusCode, 200);
+    const refund = view.rows.find((item: Record<string, any>) => item.counterparty === 'Finanzamt refund');
+    assert.equal((await operator('POST', '/api/reconcile/months/2026-12/exception', { row: refund.id, kind: 'tax_refund' })).statusCode, 200);
     assert.equal((await operator('POST', '/api/reconcile/months/2026-12/exception', { row: tax.id, kind: 'refund' })).statusCode, 400);
 
     view = await month();
@@ -446,6 +456,8 @@ describe('reconcile API', () => {
     const pack = JSON.parse((await invoke('GET', '/api/reconcile/months/2026-12/package', undefined, AUTH)).body);
     assert.equal(pack.draft, false);
     const paths = pack.entries.map((entry: { path: string }) => entry.path);
+    assert.doesNotMatch(pack.csv, /Finanzamt/);
+    assert.doesNotMatch(pack.csv, /43633\.73/);
     assert.ok(paths.includes('2026-12/2026-12_reconciliation_datatalksclub.csv'), paths.join('\n'));
     assert.ok(paths.some((path: string) => /^2026-12\/statements\/2026-12_finom-main\./.test(path)), paths.join('\n'));
     assert.ok(paths.includes('2026-12/expenses/2026-12-14_google_1.99EUR.pdf'), paths.join('\n'));
@@ -460,7 +472,7 @@ describe('reconcile API', () => {
     const reopened = JSON.parse((await operator('POST', '/api/reconcile/months/2026-12/reopen', { reason: 'late bank fee found' })).body).month;
     assert.equal(reopened.state, 'open');
     assert.equal(reopened.exceptionConfirmation, undefined);
-    assert.deepEqual(reopened.log.map((entry: { action: string }) => entry.action), ['attach-proof', 'attach-document', 'create-ledger', 'create-ledger', 'exception', 'confirm-exceptions', 'close', 'reopen']);
+    assert.deepEqual(reopened.log.map((entry: { action: string }) => entry.action), ['attach-proof', 'attach-document', 'create-ledger', 'create-ledger', 'exception', 'exception', 'confirm-exceptions', 'close', 'reopen']);
 
     const csv = await invoke('GET', '/api/reconcile/months/2026-12', undefined, AUTH, { format: 'csv' });
     assert.match(csv.body.split('\n')[0], /^date,status,counterparty/);

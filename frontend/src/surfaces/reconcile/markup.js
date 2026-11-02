@@ -197,10 +197,12 @@ export function rowMarkup(row, open, e) {
 }
 
 export function tableMarkup(month, filter, e) {
-  const rows = visibleRows(month.rows, filter);
+  const rows = visibleRows((month.rows || []).filter((row) => !row.tax), filter);
   const open = month.state !== "closed";
   if (!rows.length) {
-    const title = month.rows.length ? "No rows match this filter" : "No bank or ledger rows in this month";
+    const title = (month.rows || []).some((row) => !row.tax)
+      ? "No rows match this filter"
+      : (month.rows || []).some((row) => row.tax) ? "No regular rows in this month" : "No bank or ledger rows in this month";
     return html`<div class="dk-empty dk-empty--compact"><p class="dk-empty__title">${title}</p></div>`;
   }
   return html`<div class="recon-table-wrap" tabindex="0" role="region" aria-label="Reconciliation rows">
@@ -211,6 +213,23 @@ export function tableMarkup(month, filter, e) {
       <tbody>${rows.map((row) => rowMarkup(row, open, e)).join("")}</tbody>
     </table>
   </div>`;
+}
+
+export function taxTableMarkup(month, e) {
+  const rows = (month.rows || []).filter((row) => row.tax);
+  if (!rows.length) return "";
+  const open = month.state !== "closed";
+  return html`<section class="recon-tax-section" aria-labelledby="recon-tax-title" data-recon-tax-section>
+    <h2 id="recon-tax-title">Taxes and health insurance <span class="dk-count">${e(String(rows.length))}</span></h2>
+    <p class="recon-muted">Tax payments, refunds and health-insurance rows are kept separate from the accountant package and month-close review.</p>
+    <div class="recon-table-wrap" tabindex="0" role="region" aria-label="Tax and health-insurance rows">
+      <table class="dk-table recon-table"><caption class="dk-visually-hidden">Tax and health-insurance rows for ${e(month.period)}</caption>
+        <thead><tr>${["Date", "Status", "Counterparty", "Amount", "Bank transaction", "Ledger row", "Invoice / receipt", "Payment proof", "Exception", "Actions"]
+          .map((label) => html`<th scope="col"${label === "Actions" ? ' class="recon-actions-cell"' : ""}>${e(label)}</th>`).join("")}</tr></thead>
+        <tbody>${rows.map((row) => rowMarkup(row, open, e)).join("")}</tbody>
+      </table>
+    </div>
+  </section>`;
 }
 
 /** The 409 from close or confirm-exceptions: its message and every blocking row. */
@@ -247,9 +266,10 @@ export function logMarkup(month, e) {
 export function monthBodyMarkup(month, filter, e) {
   return html`${statsMarkup(month, filter, e)}
     ${statementsMarkup(month, e)}
-    ${filtersMarkup(month.rows, filter, e)}
+    ${filtersMarkup((month.rows || []).filter((row) => !row.tax), filter, e)}
     ${tableMarkup(month, filter, e)}
-    ${logMarkup(month, e)}`;
+    ${logMarkup(month, e)}
+    ${taxTableMarkup(month, e)}`;
 }
 
 // ---- dialogs ---------------------------------------------------------------

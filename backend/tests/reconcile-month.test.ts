@@ -177,9 +177,12 @@ describe('month reconciliation', () => {
     assert.equal(row.amountDifference, '9.00');
   });
 
-  it('classifies no-invoice kinds with rules and checks each kind\'s proof', () => {
+  it('classifies taxes and health insurance separately without blocking month close', () => {
     assert.equal(classify(bank('x', { counterparty: 'Techniker Krankenkasse' }), RULES)?.kind, 'tk_debit');
     assert.equal(classify(bank('x', { counterparty: 'Techniker Krankenkasse', amount: '5.00' }), RULES), undefined);
+    assert.deepEqual(classify(bank('refund', { counterparty: 'Finanzamt refund', amount: '43633.73' }), []), {
+      kind: 'tax_refund', ruleId: 'tax-refund', category: 'Taxes',
+    });
     const result = table(
       [
         bank('b-fee', { counterparty: 'Finom account fee', amount: '-15.00' }),
@@ -193,8 +196,19 @@ describe('month reconciliation', () => {
     );
     const byId = Object.fromEntries(result.rows.map((row) => [row.id, row]));
     assert.deepEqual([byId['b-fee'].exception?.kind, byId['b-fee'].status], ['bank_fee', 'matched']);
-    assert.deepEqual([byId['b-tax'].exception?.kind, byId['b-tax'].status], ['tax_debit', 'needs-review']);
-    assert.match(byId['b-tax'].missing!, /tax-schedule/);
+    assert.deepEqual([byId['b-tax'].exception?.kind, byId['b-tax'].status, byId['b-tax'].tax], ['tax_debit', 'matched', true]);
+    assert.deepEqual([byId['b-tax'].exception?.proof, byId['b-tax'].exception?.satisfied], ['category', true]);
+    const refundAndTk = table([
+      bank('b-refund', { counterparty: 'Finanzamt refund', amount: '43633.73' }),
+      bank('b-tk', { counterparty: 'Techniker Krankenkasse', amount: '-534.20' }),
+    ], []);
+    assert.deepEqual(refundAndTk.rows.map((row) => [row.exception?.kind, row.tax, row.status]), [
+      ['tax_refund', true, 'matched'], ['tk_debit', true, 'matched'],
+    ]);
+    assert.equal(refundAndTk.counters.rows, 0);
+    assert.equal(refundAndTk.counters.needsReview, 0);
+    assert.equal(closeBlockers(refundAndTk).length, 0);
+    assert.equal(tableCsv(refundAndTk).includes('Finanzamt refund'), false);
     assert.deepEqual([byId['b-out'].exception?.kind, byId['b-out'].status], ['internal_transfer', 'matched']);
     assert.match(byId['b-out'].exception!.evidence!, /revolut EUR/);
     assert.equal(byId['b-in'].status, 'matched');

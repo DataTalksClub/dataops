@@ -58,14 +58,14 @@ export function rowMatchesFilter(row, filter) {
 }
 
 export function filterCounts(rows) {
-  return Object.fromEntries(FILTER_IDS.map((id) => [id, rows.filter((row) => rowMatchesFilter(row, id)).length]));
+  return Object.fromEntries(FILTER_IDS.map((id) => [id, rows.filter((row) => !row.tax && rowMatchesFilter(row, id)).length]));
 }
 
 /** Rows for a filter: not-matched first by status, then by date within a status. */
 export function visibleRows(rows, filter) {
   const rank = (row) => STATUS_ORDER.indexOf(row.status);
   return rows
-    .filter((row) => rowMatchesFilter(row, filter))
+    .filter((row) => !row.tax && rowMatchesFilter(row, filter))
     .sort((left, right) => rank(left) - rank(right) || String(left.date).localeCompare(String(right.date)) || left.id.localeCompare(right.id));
 }
 

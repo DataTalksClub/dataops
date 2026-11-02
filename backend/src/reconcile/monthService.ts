@@ -478,7 +478,7 @@ export async function createLedgerFromBank(
 /** The approver signs off the month's exception list exactly as it stands now. */
 export async function confirmExceptions(client: DynamoDBDocumentClient, period: string, by: string) {
   const view = await buildMonth(client, period);
-  const exceptions = view.rows.filter((row) => row.exception);
+  const exceptions = view.rows.filter((row) => !row.tax && row.exception);
   const unproven = exceptions.filter((row) => !row.exception!.satisfied);
   if (unproven.length) throw new MonthGateError(`${unproven.length} exception rows still lack their proof`, unproven.map((row) => ({ id: row.id, kind: row.exception!.kind, proof: row.exception!.proof })));
   return mutateMonth(client, period, by, "confirm-exceptions", { digest: view.exceptionDigest, count: exceptions.length }, (record) => {
@@ -489,7 +489,7 @@ export async function confirmExceptions(client: DynamoDBDocumentClient, period: 
 export async function closeMonth(client: DynamoDBDocumentClient, period: string, by: string) {
   const view = await buildMonth(client, period);
   if (view.state === "closed") throw new MonthClosedError(period);
-  const blockers = view.rows.filter((row) => row.status !== "matched");
+  const blockers = view.rows.filter((row) => !row.tax && row.status !== "matched");
   if (blockers.length) {
     throw new MonthGateError(
       `Month ${period} cannot close: ${blockers.length} rows lack a side`,
@@ -570,6 +570,7 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
   }
   const seenDocuments = new Set<string>();
   for (const row of view.rows) {
+    if (row.tax) continue;
     if (!row.ledger || REPORT_EXEMPT_CATEGORIES.has(row.ledger.category || "")) continue;
     const folder = Number(row.ledger.amount) > 0 ? "income" : "expenses";
     for (const document of row.documents) {
