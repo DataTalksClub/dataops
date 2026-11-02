@@ -5,6 +5,11 @@ SAM_LOCAL_AWS_CREDENTIALS := $(SAM_LOCAL_AWS_DIR)/credentials
 
 .PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-frontend-coverage test-backend test-backend-transactions typecheck-backend build-backend test-backend-e2e test-cli test-cli-e2e sam-local-aws-config sam-validate sam-build test-sam-workspace-isolation verify-sam-frontend verify-sam-runtime-boundary test-sam-frontend-isolation ci clean
 
+# CI only (t2558u): full suites run on GitHub Actions, never on shared hosts.
+define require_ci
+	@if [ "$${CI:-}" != "true" ]; then echo "make $@: refused. CI only (t2558u): run targeted tests locally, e.g. cd backend && NODE_ENV=test FRONTEND_ROOT=../frontend SKIP_AUTH=true node --import tsx --test --test-force-exit tests/<file>.test.ts; then push a branch, open a PR and run gh pr merge --auto --rebase. CI runs the full suite." >&2; exit 2; fi
+endef
+
 help:
 	@printf '%s\n' 'DataOps development targets:'
 	@printf '%s\n' ''
@@ -63,6 +68,7 @@ sop-lint:
 	npx --prefix backend tsx backend/scripts/sop.ts lint $(FILES)
 
 test-backend:
+	$(require_ci)
 	npm --prefix backend test
 
 test-backend-transactions:
@@ -113,6 +119,7 @@ test-sam-frontend-isolation:
 	node --test backend/scripts/frontend-artifact.test.mjs
 
 ci:
+	$(require_ci)
 	$(MAKE) test-frontend-coverage
 	$(MAKE) test-backend
 	$(MAKE) test-backend-transactions
