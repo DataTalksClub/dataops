@@ -5,10 +5,12 @@
  * keys and the configured repository, branch and workflow file.
  *
  * The principal is not an interactive user. It may read the knowledge
- * manifest and file history, publish knowledge files and project the
- * Git-authored workflow templates into the live runtime, nothing else, and its publication
- * actor and message name the verified commit rather than anything the
- * request body claims.
+ * manifest, file history and file versions, publish knowledge files and
+ * project the Git-authored workflow templates into the live runtime, nothing
+ * else, and its publication actor and message name the verified commit rather
+ * than anything the request body claims. Version reads carry the daily mirror:
+ * it copies prod-ahead file bytes into Git, the same files publish may not
+ * overwrite.
  */
 import { createPublicKey, verify as verifySignature, type JsonWebKey } from 'node:crypto';
 
@@ -24,7 +26,7 @@ export const KNOWLEDGE_PUBLISHER_AUDIENCE = 'dataops-knowledge-publish';
 /** The workflow file in the knowledge repository allowed to publish. */
 export const KNOWLEDGE_PUBLISHER_WORKFLOW = '.github/workflows/validate.yml';
 const JWKS_URL = `${GITHUB_OIDC_ISSUER}/.well-known/jwks`;
-const ALLOWED_EVENTS = new Set(['push', 'workflow_dispatch']);
+const ALLOWED_EVENTS = new Set(['push', 'workflow_dispatch', 'schedule']);
 const CLOCK_SKEW_SECONDS = 60;
 
 type Jwk = JsonWebKey & { kid?: string; alg?: string; use?: string };
@@ -125,9 +127,9 @@ export async function handleKnowledgePublisher(
   const method = (event.httpMethod || 'GET').toUpperCase();
   const path = event.path || '/';
   if (method === 'POST' && path === '/api/templates/sync') return syncTemplates(client, claims);
-  const allowed = (method === 'GET' && (path === '/knowledge/manifest' || path === '/knowledge/history'))
+  const allowed = (method === 'GET' && (path === '/knowledge/manifest' || path === '/knowledge/history' || path === '/knowledge/version'))
     || (method === 'POST' && path === '/knowledge/publish');
-  if (!allowed) return response(403, { error: 'Knowledge publisher may only read the manifest and file history, publish knowledge files and sync workflow templates' });
+  if (!allowed) return response(403, { error: 'Knowledge publisher may only read the manifest, file history and file versions, publish knowledge files and sync workflow templates' });
   const repo = claims.repository.split('/')[1];
   const result = await handleDocsRoutes(event, `git:${repo}@${claims.sha.slice(0, 12)}`, `Publish ${repo} ${claims.sha}`, undefined, client);
   return result || response(404, { error: 'Not found' });
