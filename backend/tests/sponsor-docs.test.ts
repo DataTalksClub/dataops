@@ -608,7 +608,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
                 access_token: 'ya29.orin-gmail-access-token',
                 expires_in: 3600,
                 token_type: 'Bearer',
-                connection_id: 'google-calendar-orin',
+                connection_id: 'gmail-orin',
               }),
               { status: 200, headers: { 'Content-Type': 'application/json' } },
             );

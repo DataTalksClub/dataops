@@ -10,7 +10,8 @@
  * 2. DataOps reads the machine credential `personal-scheduler.dapier-api-token`
  *    and exchanges it at `POST https://dapier.dtcdev.click/api/agent/token`
  *    for a short-lived Google access token on Orin's Dapier connection
- *    (`google-calendar-orin` or `DATAOPS_ORIN_GMAIL_CONNECTION_ID`).
+ *    (`gmail-orin` or `DATAOPS_ORIN_GMAIL_CONNECTION_ID`), kept separate from
+ *    the calendar connection so Gmail send scope does not widen calendar grants.
  * 3. DataOps verifies that the Dapier connection is bound to
  *    `orin@datatalks.club` before sending, then posts a raw RFC 2822 MIME
  *    message to `POST https://gmail.googleapis.com/gmail/v1/users/me/messages/send`.
@@ -25,10 +26,8 @@ import {
   CREDENTIAL_OPERATOR_HINT,
   DAPIER_AGENT,
   DAPIER_BASE_URL,
-  dapierTokenProblem,
   readDapierCredential,
 } from '../calendar/dapierBroker';
-import { getCalendarOverlaySettings } from '../db/calendar';
 import { listCrmRecords } from '../db/sponsorCrm';
 import {
   renderSponsorEmailDraft,
@@ -37,7 +36,7 @@ import {
 
 export const SPONSOR_DOC_EMAIL_FROM = 'orin@datatalks.club';
 export const SPONSOR_DOC_EMAIL_CC = 'valeriia@datatalks.club';
-export const DEFAULT_ORIN_GMAIL_CONNECTION_ID = 'google-calendar-orin';
+export const DEFAULT_ORIN_GMAIL_CONNECTION_ID = 'gmail-orin';
 export const DEDICATED_ORIN_GMAIL_CONNECTION_ID = 'gmail-orin';
 
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
@@ -223,6 +222,22 @@ function summarizeGmailError(status: number, bodyText: string, connectionId: str
   return `Gmail API returned HTTP ${status}${detail ? `: ${detail}` : ''}.`;
 }
 
+function summarizeDapierGmailTokenProblem(status: number, connectionId: string, agent: string): string {
+  if (status === 403) {
+    return `Dapier denied access to Gmail connection "${connectionId}". Grant agent "${agent}" use access to this connection.`;
+  }
+  if (status === 401) {
+    return 'Dapier rejected the Gmail machine credential. A platform operator must repair the machine credential; Google refresh tokens stay in Dapier.';
+  }
+  if (status === 404) {
+    return `Dapier Gmail connection "${connectionId}" does not exist. Create or select a dedicated Google Gmail connection.`;
+  }
+  if (status === 409 || status === 502) {
+    return `Dapier cannot obtain a Google token for Gmail connection "${connectionId}". Reconnect it in Dapier and verify the Gmail permissions.`;
+  }
+  return `The Dapier Gmail token broker refused the request (HTTP ${status}).`;
+}
+
 export async function deliverSponsorDocEmail(
   client: DynamoDBDocumentClient,
   options: {
@@ -278,27 +293,11 @@ export async function deliverSponsorDocEmail(
     options.connectionId
     || emailDeps.connectionId
     || process.env.DATAOPS_ORIN_GMAIL_CONNECTION_ID
-    || ''
+    || DEFAULT_ORIN_GMAIL_CONNECTION_ID
   ).trim();
-  let settingsConnectionId = '';
-  if (!explicitConnectionId) {
-    try {
-      const settings = await getCalendarOverlaySettings(client);
-      settingsConnectionId = (settings.connectionId || '').trim();
-    } catch {
-      // Ignore calendar settings lookup failure and fall back to default Orin connection id.
-    }
-  }
   const candidateConnectionIds = explicitConnectionId
     ? [explicitConnectionId]
-    : Array.from(
-      new Set(
-        [
-          settingsConnectionId || DEFAULT_ORIN_GMAIL_CONNECTION_ID,
-          DEDICATED_ORIN_GMAIL_CONNECTION_ID,
-        ].filter(Boolean),
-      ),
-    );
+    : [DEFAULT_ORIN_GMAIL_CONNECTION_ID];
   const primaryConnectionId = candidateConnectionIds[0] || DEFAULT_ORIN_GMAIL_CONNECTION_ID;
 
   const brokerUrl = (emailDeps.brokerUrl || process.env.DAPIER_BASE_URL || DAPIER_BASE_URL).replace(/\/$/, '');
