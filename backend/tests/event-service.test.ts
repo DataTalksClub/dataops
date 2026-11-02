@@ -13,8 +13,10 @@ import { setCalendarHoldGoogleDepsForTests } from '../src/routes/calendarHolds';
 import { DEFAULT_HOLD_GOOGLE_CALENDARS } from '../src/calendar/dapierBroker';
 import { HOLD_ORGANIZER } from '../src/calendar/holdGoogleSync';
 import { setEventEmailSenderForTests, type EventEmailMessage } from '../src/events/service';
+import { configureTaskChecklistStore } from '../src/taskChecklist';
 import type { EventPolicy } from '../src/events/policy';
 import { templateLink } from './helpers/cardTemplate';
+import { createTaskChecklistFixture } from './helpers/task-checklist-fixture';
 
 const invoke = (
   method: string,
@@ -288,8 +290,11 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
   let workshopTemplateId: string;
   let sentEmails: EventEmailMessage[] = [];
   let googleMock = createMockGoogleCalendar();
+  let checklistFixture: ReturnType<typeof createTaskChecklistFixture>;
 
   before(async () => {
+    checklistFixture = createTaskChecklistFixture();
+    configureTaskChecklistStore(checklistFixture.store);
     const port = await startLocal();
     client = await getClient(port);
     await createTables(client);
@@ -328,6 +333,8 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
   after(async () => {
     setEventEmailSenderForTests(null);
     setCalendarHoldGoogleDepsForTests({});
+    configureTaskChecklistStore(null);
+    checklistFixture.cleanup();
     await stopLocal();
   });
 
@@ -491,6 +498,15 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
     assert.equal(rescheduled.event.date, '2026-12-01');
     assert.equal(rescheduled.event.time, '12:30');
     assert.equal(rescheduled.event.generation, 2);
+    assert.ok(rescheduled.rescheduleTaskId);
+    const checklistTask = await getTask(client, rescheduled.rescheduleTaskId);
+    assert.ok(checklistTask);
+    assert.equal(checklistTask?.cardId, undefined);
+    assert.equal(checklistTask?.checklistDocId, 'checklist.events.rescheduling.checklist-document-for-rescheduling-events');
+    assert.deepEqual(checklistTask?.checklistItems?.map((item) => item.instructionDocId), [
+      'sop.test.review-event-details',
+      'sop.test.notify-participants',
+    ]);
     // Same Google event IDs preserved across reschedule
     assert.deepEqual(rescheduled.event.googleEventIds, approved.event.googleEventIds);
 

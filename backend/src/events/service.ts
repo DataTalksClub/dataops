@@ -12,6 +12,11 @@ import { getTemplate } from '../db/templates';
 import { getPodcastEpisode, listPodcastEpisodes, type PodcastEpisode } from '../db/podcastEpisodes';
 import { calendarInviteDeps } from '../db/calendarHolds';
 import {
+  ensureEventRescheduleTask,
+  EVENT_RESCHEDULE_CHECKLIST_ID,
+  loadTaskChecklistDefinition,
+} from '../taskChecklist';
+import {
   calendarInviteUrl,
   cardGuestDocument,
   cardGuests,
@@ -85,6 +90,7 @@ export interface EventLifecycleResult {
   emailReceipts: Record<number, EventEmailReceipt>;
   attendeeResponses?: Record<string, string>;
   declinedBy?: Array<{ email: string; at: string }>;
+  rescheduleTaskId?: string;
 }
 
 const eventKey = (id: string) => ({ PK: `CALHOLD#${id}`, SK: `CALHOLD#${id}` });
@@ -663,9 +669,18 @@ async function runTransition(
 
   if (current) {
     const existingOp = current.operations.find((o) => o.key === operationKey);
-    if (existingOp && existingOp.state !== 'complete') {
+    if (existingOp) {
       const reconciled = await reconcileEventOperation(client, current.id, operationKey, deps, actor);
-      return buildResult(client, current.id, card.id, reconciled.sync, reconciled.emailReceipts);
+      const task = existingOp.transition === 'reschedule'
+        ? await ensureEventRescheduleTask(client, {
+          sourceKey: `${current.id}:${operationKey}`,
+          title: existingOp.desired.summary,
+          date: current.date,
+          actorId: actor,
+        })
+        : null;
+      const result = await buildResult(client, current.id, card.id, reconciled.sync, reconciled.emailReceipts);
+      return task ? { ...result, rescheduleTaskId: task.id } : result;
     }
   }
 
@@ -782,8 +797,21 @@ async function runTransition(
   if (!freshCard) throw new EventNotFoundError(`Card '${card.id}' not found.`);
   const freshEpisode = episode ? await getPodcastEpisode(client, episode.id) : null;
   const relatedWrites = buildEpisodeTransactionWrite(freshEpisode, planned, now);
+  const checklist = transition === 'reschedule'
+    ? await loadTaskChecklistDefinition(EVENT_RESCHEDULE_CHECKLIST_ID)
+    : undefined;
 
   await commitEventTransition(client, freshCard, current?.version ?? 0, planned, relatedWrites);
+
+  const rescheduleTask = transition === 'reschedule'
+    ? await ensureEventRescheduleTask(client, {
+      sourceKey: `${planned.id}:${operationKey}`,
+      title: String(planned.renderValues.title || card.title || 'Event'),
+      date: planned.date,
+      actorId: actor,
+      checklist,
+    })
+    : null;
 
   const reconciled = await reconcileEventOperation(
     client,
@@ -792,7 +820,8 @@ async function runTransition(
     deps,
     actor,
   );
-  return buildResult(client, planned.id, card.id, reconciled.sync, reconciled.emailReceipts);
+  const result = await buildResult(client, planned.id, card.id, reconciled.sync, reconciled.emailReceipts);
+  return rescheduleTask ? { ...result, rescheduleTaskId: rescheduleTask.id } : result;
 }
 
 async function buildResult(
@@ -877,12 +906,23 @@ export async function retryEventOperation(
   if (!event) throw new EventNotFoundError(`No event exists for '${targetId}'.`);
   const opKey = input.operationKey || event.operations.at(-1)?.key;
   if (!opKey) throw new EventInputError(`Event '${event.id}' has no operations to retry.`);
+  const op = event.operations.find((operation) => operation.key === opKey);
+  if (!op) throw new EventInputError(`Operation '${opKey}' does not exist for event '${event.id}'.`);
   const deps = input.deps || (await calendarInviteDeps({}, client));
   const actor = input.actor || 'authenticated-operator';
   const reconciled = await reconcileEventOperation(client, event.id, opKey, deps, actor, {
     forceEmailRetry: input.forceEmailRetry,
   });
-  return buildResult(client, event.id, card.id, reconciled.sync, reconciled.emailReceipts);
+  const task = op.transition === 'reschedule'
+    ? await ensureEventRescheduleTask(client, {
+      sourceKey: `${event.id}:${opKey}`,
+      title: op.desired.summary,
+      date: event.date,
+      actorId: actor,
+    })
+    : null;
+  const result = await buildResult(client, event.id, card.id, reconciled.sync, reconciled.emailReceipts);
+  return task ? { ...result, rescheduleTaskId: task.id } : result;
 }
 
 export async function getEventDetail(

@@ -203,13 +203,16 @@ export type TaskHistoryAction =
   | 'skipped'
   | 'unskipped'
   | 'template-retired'
-  | 'template-restored';
+  | 'template-restored'
+  | 'checklist-item-checked'
+  | 'checklist-item-unchecked';
 
 export interface TaskHistoryEvent {
   id: string;
   taskId: string;
   cardId?: string;
   action: TaskHistoryAction;
+  checklistItemId?: string;
   actorId?: string;
   channel?: string;
   waitingFor?: string;
@@ -223,6 +226,22 @@ export interface TaskHistoryEvent {
 export interface TaskMaterial {
   url: string;
   label?: string;
+}
+
+/** One copied, independently actionable row in an ad-hoc Task checklist. */
+export interface TaskChecklistItem {
+  id: string;
+  text: string;
+  checked: boolean;
+  /** The SOP or other process document specific to this checklist row. */
+  instructionDocId?: string;
+  instructionStepId?: string;
+  /** Step in the checklist source from which this row was copied. */
+  sourceStepId?: string;
+  checkedAt?: string;
+  checkedBy?: string;
+  link?: string;
+  note?: string;
 }
 
 /** One entry of a Task's append-only notes log: who wrote what, when. */
@@ -271,6 +290,9 @@ export interface Task {
   instructionsUrl?: string;
   instructionDocId?: string;
   instructionStepId?: string;
+  /** Checklist source copied into this Task; items remain a snapshot if the KB changes. */
+  checklistDocId?: string;
+  checklistItems?: TaskChecklistItem[];
   phase?: string;
   /** Required resource ids (see resources/vocabulary.ts) needed to do this Task. */
   requires?: string[];
