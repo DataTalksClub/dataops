@@ -226,9 +226,12 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
         value: entry[field], options: vocab[field] || [], e,
       })}</td>`).join("")}
       <td class="bk-col-vat"${vat ? ` title="${e(vat)}"` : ""}>${e(vat || "—")}</td>
-      <td class="bk-col-flag">${hasInvoice(entry.id)
-        ? html`<span class="bk-invoice-icon" title="Invoice attached" aria-label="Invoice attached">${icon.receipt}</span>`
-        : html`<span class="bk-no-invoice">No invoice</span>`}</td>
+      <td class="bk-col-flag">
+        ${hasInvoice(entry.id)
+          ? html`<span class="bk-invoice-icon" title="Invoice attached" aria-label="Invoice attached">${icon.receipt}</span>`
+          : html`<span class="bk-no-invoice">No invoice</span>`}
+        ${hasEvidence(entry.id) ? "" : html`<span class="bk-flag" title="No receipt attached" aria-label="No receipt">${icon.receipt}</span>`}
+      </td>
     </tr>`;
 }
 
