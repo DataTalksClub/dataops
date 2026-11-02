@@ -1,8 +1,8 @@
-import { dump as dumpYaml } from 'js-yaml';
+import { CORE_SCHEMA, dump as dumpYaml, load as loadYaml } from 'js-yaml';
 import { posix } from 'node:path';
 
 import type { Template } from '../types';
-import { parseFrontmatter, splitFrontmatter } from './sop';
+import { splitFrontmatter } from './sop';
 
 export const DOCUMENT_INDEX_ID = 'reference.indexes.document-index';
 export const DOCUMENT_INDEX_PATH = 'content/07-internal-operations/manage-systems-library/reference/document-index.md';
@@ -29,8 +29,33 @@ export interface RegenerationSelection {
 
 export class DerivedDocumentNotFound extends Error {}
 
+const INTEGER_KEYS = ['schema_version', 'review_cycle_days'];
+const NULLABLE_DATE_KEYS = ['last_reviewed_at', 'next_review_at'];
+
+/** Undo earlier stringification ('null', '1', '90') of the keys whose type is fixed by the schema. */
+function repairScalars(metadata: Record<string, unknown>): Record<string, unknown> {
+  const repaired = { ...metadata };
+  for (const key of INTEGER_KEYS) {
+    const value = repaired[key];
+    if (typeof value === 'string' && /^\d+$/.test(value)) repaired[key] = Number(value);
+    else if (value === 'null' || value === '') repaired[key] = null;
+  }
+  for (const key of NULLABLE_DATE_KEYS) {
+    if (repaired[key] === 'null' || repaired[key] === '') repaired[key] = null;
+  }
+  return repaired;
+}
+
 function yamlFrontmatter(metadata: Record<string, unknown>): string {
-  return dumpYaml(metadata, { lineWidth: -1, noRefs: true }).trimEnd();
+  return dumpYaml(repairScalars(metadata), { lineWidth: -1, noRefs: true }).trimEnd();
+}
+
+/** Typed frontmatter read: null, integers and booleans keep their YAML types so a rewrite never stringifies them. */
+function parseTypedFrontmatter(raw: string): Record<string, unknown> {
+  const loaded = loadYaml(raw, { schema: CORE_SCHEMA });
+  if (loaded === null || loaded === undefined) return {};
+  if (typeof loaded !== 'object' || Array.isArray(loaded)) throw new Error('frontmatter must be a YAML mapping');
+  return loaded as Record<string, unknown>;
 }
 
 function list(value: unknown): string[] {
@@ -56,7 +81,7 @@ function readDocument(path: string, content: string): KnowledgeDocument | null {
   if (!raw) return null;
   let metadata: Record<string, unknown>;
   try {
-    metadata = parseFrontmatter(raw) as Record<string, unknown>;
+    metadata = parseTypedFrontmatter(raw);
   } catch {
     return null;
   }

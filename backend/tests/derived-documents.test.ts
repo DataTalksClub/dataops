@@ -136,4 +136,24 @@ describe('derived knowledge documents', () => {
     const output = regenerateDerivedDocuments(files, [template], { id: 'task-template.tasks.maven-ll' });
     assert.deepEqual([...output.keys()], ['content/00-start-here/workflow-catalog/reference/maven-lightning-lesson-workflow.md']);
   });
+
+  it('keeps null and integer frontmatter scalars typed when rewriting generated pages', () => {
+    const typedIndex = INDEX.replace('status: active\n', 'status: active\nschema_version: 1\nreview_cycle_days: 90\nlast_reviewed_at: null\n');
+    const files = new Map([[DOCUMENT_INDEX_PATH, typedIndex]]);
+    const index = regenerateDerivedDocuments(files, [], { all: true }).get(DOCUMENT_INDEX_PATH) || '';
+    assert.match(index, /^schema_version: 1$/m);
+    assert.match(index, /^review_cycle_days: 90$/m);
+    assert.match(index, /^last_reviewed_at: null$/m);
+    assert.doesNotMatch(index, /'null'|'1'|'90'/);
+    const again = regenerateDerivedDocuments(new Map([[DOCUMENT_INDEX_PATH, index]]), [], { all: true }).get(DOCUMENT_INDEX_PATH);
+    assert.equal(again, index);
+  });
+
+  it('repairs stringified scalars already stored in prod', () => {
+    const stringified = INDEX.replace('status: active\n', "status: active\nschema_version: '1'\nreview_cycle_days: '90'\nlast_reviewed_at: 'null'\n");
+    const index = regenerateDerivedDocuments(new Map([[DOCUMENT_INDEX_PATH, stringified]]), [], { all: true }).get(DOCUMENT_INDEX_PATH) || '';
+    assert.match(index, /^schema_version: 1$/m);
+    assert.match(index, /^review_cycle_days: 90$/m);
+    assert.match(index, /^last_reviewed_at: null$/m);
+  });
 });

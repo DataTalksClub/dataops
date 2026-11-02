@@ -13,6 +13,11 @@
  *  - conflict:  prod changed after a Git-recorded version and Git changed
  *               the path too (or prod's lineage reaches no Git version);
  *               it is left alone and reported.
+ * Derived documents (workflow views, generated system overviews, the document
+ * index) are the exception: the server regenerates them from Templates and
+ * frontmatter after every publish, and its output is not byte-identical to
+ * the Git scripts', so a prod copy that differs is never a human edit. Git's
+ * copy always replaces it (`publish`); the server then regenerates it.
  * "Absent" is a Git-recorded state only where Git deleted the path, or before
  * prod's first version of it.
  */
@@ -35,6 +40,25 @@ export function sha256(bytes) {
 export function isManagedPath(file, roots) {
   const slash = file.indexOf("/");
   return slash > 0 && roots.includes(file.slice(0, slash)) && !file.split("/").some((part) => !part || part === "." || part === "..");
+}
+
+const DERIVED_ID = /^id:\s*["']?(task-template\.tasks\.[a-z0-9-]+|reference\.indexes\.document-index)["']?\s*$/m;
+const GENERATED_SYSTEM_MARKER = "<!-- This system page is seeded from the audit register.";
+
+/**
+ * True when a Git copy is a derived document that the server regenerates:
+ * a task-template workflow view, the document index, or a system overview
+ * still carrying the generated-page marker.
+ */
+export function isDerivedDocument(file, bytes) {
+  if (!file.endsWith(".md") || !bytes) return false;
+  const text = bytes.toString("utf8");
+  if (!text.startsWith("---\n")) return false;
+  const end = text.indexOf("\n---", 4);
+  if (end === -1) return false;
+  const frontmatter = text.slice(4, end);
+  if (DERIVED_ID.test(frontmatter)) return true;
+  return /^doc_type:\s*["']?system-overview["']?\s*$/m.test(frontmatter) && text.slice(end).includes(GENERATED_SYSTEM_MARKER);
 }
 
 /** Prod's state before its first version of a path: absent, a state both sides share. */
@@ -94,7 +118,8 @@ export async function planReconcile({ files, prod, known, page, concurrency = 12
       continue;
     }
     const recorded = known(file);
-    if (recorded.has(prodSha)) verdicts.set(file, { verdict: "publish" });
+    if (head && isDerivedDocument(file, head.bytes)) verdicts.set(file, { verdict: "publish" });
+    else if (recorded.has(prodSha)) verdicts.set(file, { verdict: "publish" });
     else lineagePending.push(file);
   }
   await bounded(lineagePending, async (file) => {
