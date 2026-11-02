@@ -38,7 +38,7 @@ it('streams a large historical repository within a 256 MiB RSS bound',async()=>{
   // minimum of three runs; real retention raises every run's peak.
   const measured:{uploaded:number;maxRssBytes:number}[]=[];
   for(let attempt=0;attempt<3;attempt++){
-    const {stdout}=await promisify(execFile)('/bin/sh',['-c','"$@"; result=$?; exit "$result"','knowledge-memory',process.execPath,'--max-old-space-size=96','--import','tsx',require.resolve('./helpers/knowledge-backup-memory.ts')],{timeout:120_000});
+    const {stdout}=await promisify(execFile)('/bin/sh',['-c','"$@"; result=$?; exit "$result"','knowledge-memory',process.execPath,'--max-old-space-size=64','--max-semi-space-size=1','--import','tsx',require.resolve('./helpers/knowledge-backup-memory.ts')],{timeout:120_000});
     measured.push(JSON.parse(stdout.trim()));
   }
   assert.ok(measured.every((m)=>m.uploaded>256*1024*1024));
