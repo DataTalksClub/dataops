@@ -26,14 +26,25 @@ For local development or self-hosting:
 node mcp/src/standalone.mjs --upstream https://ops.dtcdev.click --port 8080
 ```
 
-## Auth (the DataOps auth)
+## Auth (the shared issuer)
 
-Present your DataOps API token as `Authorization: Bearer <token>` — the
-same credential the CLI holds after `dataops login` (device flow, browser
-approval). The proxy validates it against `/api/me` on every MCP request and forwards it
-unchanged. Deployment-managed service credentials retain their existing API
-route restrictions for every tool call. It never mints, stores or logs
-credentials. Auth and token-management routes are not exposed as tools.
+The MCP server is an OAuth 2.0 protected resource (RFC 9728). The only
+accepted credential is an RS256 access token minted by the shared issuer
+`https://oauth.dtcdev.click` and audience-bound to this MCP resource: the
+server verifies the signature against the issuer's JWKS, the issuer,
+validity window and audience locally on every request and forwards the JWT
+to the portal unchanged. Opaque portal tokens are not accepted.
+
+OAuth-aware clients discover the issuer through the challenge: an
+unauthenticated call gets `WWW-Authenticate: Bearer resource_metadata="…/
+.well-known/oauth-protected-resource/mcp"`, and
+`GET /.well-known/oauth-protected-resource` (plus the `/mcp` path form)
+returns the RFC 9728 metadata naming the authorization server. Human
+callers mint tokens through the issuer's authorization-code or device flow
+(`dtc-cli`/`dtc-mcp-public` clients, Google SSO restricted to verified
+@datalks.club accounts); deployment-managed services use their issuer
+service clients. The server never mints, stores or logs credentials, and
+issuer tokens never outlive their one-hour TTL without a refresh.
 
 ## Consumer config
 
@@ -51,9 +62,12 @@ url = "https://<McpUrl-host>/mcp"
 bearer_token_env_var = "DATAOPS_TOKEN"
 ```
 
-Set `DATAOPS_TOKEN` to the credential issued by `dataops login` or a
-deployment-managed service token. `dataops tokens list` shows metadata, not
-the token value. Configure the same Authorization header in Claude Code.
+`DATAOPS_TOKEN` is the shared-issuer access token (`dataops login` mints and
+refreshes it; the same JWT works for the portal API and this MCP resource).
+Clients that speak MCP OAuth can skip the env var entirely: on a 401 they
+follow the `resource_metadata` challenge to the issuer and run the
+authorization-code flow themselves. `dataops whoami` shows the identity a
+token carries; token values are never printed.
 Verify with a read call: `dataops_read` route `/api/tasks?status=todo&limit=1`.
 
 ## Tests

@@ -31,19 +31,15 @@ dataops login --label "<agent>@<host>"   # prints a code; a human approves it in
 dataops whoami                           # confirm identity and role before writing
 ```
 
-- Hub managed sessions on Hetzner read the shared credential from
-  `~/.config/agent-hub/shared/dataops/credentials.json` (`DATAOPS_CONFIG_DIR` or
-  automatic managed-engine fallback). The token is stored outside git repos
-  (mode `0600`) and is never printed to stdout/stderr, even with `--json`.
-- Supported token scopes: `kb:read`, `kb:write`, `templates:read`,
-  `templates:write`, `cards:read`, `cards:write`, `newsletter:read`,
-  `newsletter:write`. Scoped tokens cannot access user management, secrets,
-  finance, or token issuance.
-- Label each token (`<agent>@<host>`) so it is recognisable in
-  `dataops tokens list` and can be revoked alone by an admin with
-  `dataops tokens revoke <id>`.
-- Tokens expire after 90 days; reissue with `dataops tokens create` (or
-  `dataops login`) when one expires (exit code 3).
+- Hub-managed sessions on Hetzner read the shared issuer JWT the same way as
+  people: `dataops login --label "<agent>@<host>"` stores the refreshable
+  session under `DATAOPS_CONFIG_DIR` (mode `0600`, never printed, even with
+  `--json`).
+- Label each host's session (`<agent>@<host>`) and revoke it with
+  `dataops logout` on that host, or revoke the whole refresh family at the
+  issuer.
+- Access tokens last an hour and refresh automatically; only a revoked or
+  deleted issuer family needs `dataops login` again (exit code 3).
 - The portal defaults to `https://ops.dtcdev.click`; set `DATAOPS_URL` (or pass
   `--url`) only for another portal.
 - On standard user machines the token is stored in

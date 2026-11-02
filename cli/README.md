@@ -18,24 +18,29 @@ dataops login                       # the production portal, https://ops.dtcdev.
 dataops login --url http://localhost:3000
 ```
 
-`login` starts an [RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)
-device authorization grant. The CLI prints a short code and a URL; open the URL
-in a browser **on a machine you already trust**, sign in with the portal's
-normal SSO, and confirm the code. The CLI polls until you confirm, then stores a
-token. This works over SSH, where the usual loopback redirect would open a
+`login` starts the shared issuer's RFC 8628 device grant at
+`https://oauth.dtcdev.click`. The CLI prints a short code and a URL; open the
+URL in a browser **on a machine you already trust**, sign in with the workspace
+Google SSO (the issuer only admits verified @datatalks.club accounts), and
+approve the code. The CLI polls until you confirm, then stores the access and
+refresh tokens. This works over SSH, where a loopback redirect would open a
 browser on the wrong machine.
 
-Only confirm a code you started yourself. The approval page shows the machine
-label, the requesting IP, and the time so you can check.
+Only approve a code you started yourself. The issuer's approval page names the
+client, the requested scope, and the session that confirmed it.
 
 ## Credentials
 
-Tokens are stored in `~/.config/dataops/credentials.json`, one entry per portal
-URL. POSIX systems use mode `0600`; Windows access follows filesystem ACLs.
-`DATAOPS_TOKEN` and `DATAOPS_URL` override the stored
-profile. Without `DATAOPS_URL` the CLI talks to `https://ops.dtcdev.click`, which
-is the right default. A token expires after 90 days; `dataops tokens list` shows
-your tokens and `dataops logout` or `dataops tokens revoke <id>` revokes one.
+Credentials are stored in `~/.config/dataops/credentials.json`, one entry per
+portal URL. POSIX systems use mode `0600`; Windows access follows filesystem
+ACLs. `DATAOPS_TOKEN` and `DATAOPS_URL` override the stored profile; without
+`DATAOPS_URL` the CLI talks to `https://ops.dtcdev.click`, the right default.
+
+Access tokens last one hour and the CLI refreshes them automatically with the
+stored single-use refresh token (rotating it on every use). The issuer owns
+issuing and revoking: `dataops logout` revokes the refresh family at the
+issuer and clears the local copy, and the portal's token list pages are gone
+with the API-token store they served.
 
 Tokens act as the user who approved them: every permission check behaves
 exactly as it does in the web UI, and task history records that user's name.
@@ -73,7 +78,7 @@ subcommands, flags, and examples.
 | `team`, `users` | the team directory (ids for `--assignee`/`--owner`) and the workspace default assignee; adding a person: `add-user` (admin; only added people can sign in); a person leaving: `handover`, `reassign`, `disable-user`, `enable-user`, `delete-user` (admin); accounts (admin) |
 | `api` | any other route: `dataops api GET /api/<route>` |
 | `secrets` | team secrets store (admin): `list`, `get` (`--field`, `--out`), `set` (`--field KEY=VALUE`, bare `--field KEY` reads stdin, `--from-file`), `delete`; values encrypted at rest, every access audited |
-| `login`, `logout`, `whoami`, `tokens` | credentials |
+| `login`, `logout`, `whoami` | credentials |
 | `agent-guide` | the workflow guide for agents ([skill/SKILL.md](skill/SKILL.md)) |
 
 ## Template editing
@@ -159,8 +164,9 @@ authenticated by the workflow's GitHub OIDC token.
 
 Agents use the same device flow; there is no separate agent account. On each
 host run `dataops login --label "<agent>@<host>"` and have a person approve the
-code in the browser. The token acts as that person, so label it per host to
-list and revoke it individually with `dataops tokens`.
+code on the issuer's page. The session acts as that person, so label it per
+host; revoke a host with `dataops logout` there, or revoke the whole family
+from the issuer.
 
 Run `dataops agent-guide`, or install [skill/SKILL.md](skill/SKILL.md) as an
 agent skill. It covers setup, the output contract, and the
@@ -193,9 +199,12 @@ payment evidence; it triggers automatic publication only if required evidence
 is complete.
 
 Agent and invoice-reader service credentials are separate:
-`dataops login --service-token-stdin --url URL` configures the service identity
-holding `invoices:read`, `crm:read`, and `crm:write` scopes, enabling automated
-invoice ingestion, CRM operations, and task management on remote runners.
+`dataops login --service-token-stdin --url URL` configures a shared-issuer
+service client (pass `{"clientId","clientSecret"}` on stdin). The issuer
+binds each client to the portal API with fixed scopes — the invoice-reader
+client holds `invoice:read`, the automation client `dataops:read/write` —
+enabling automated invoice ingestion and CRM/task operations on remote
+runners; each mint lasts 15 minutes.
 Agent hosts (for example the Hetzner runner) use this login: with the CRM
 scopes the same credential reads and writes CRM directories, records, DNC
 flags, and direct follow-ups (`dataops crm followups`,
