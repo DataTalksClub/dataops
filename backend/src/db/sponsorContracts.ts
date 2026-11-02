@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'crypto';
 import { GetCommand, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_SESSIONS, TABLE_SPONSOR_CRM } from './tableNames';
-import { transact } from './sponsorCrm';
+import { transact, scanCrmPrefix } from './sponsorCrm';
 
 const key = (kind: string, id: string) => kind.toUpperCase() + '#' + id;
 const compact = (record: Record<string, any>) => Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
@@ -36,8 +36,7 @@ export async function getContract(client: DynamoDBDocumentClient, id: string) {
 }
 
 export async function listContracts(client: DynamoDBDocumentClient, dealId?: string) {
-  const result = await client.send(new ScanCommand({ TableName: TABLE_SPONSOR_CRM, FilterExpression: 'begins_with(PK, :prefix)', ExpressionAttributeValues: { ':prefix': 'CONTRACT#' } }));
-  const items = (result.Items || []).flatMap((item) => { const cleaned = clean(item); return cleaned ? [cleaned] : []; });
+  const items = (await scanCrmPrefix(client, 'CONTRACT#')).map((item) => clean(item)).filter((item): item is Record<string, any> => Boolean(item));
   const filtered = dealId ? items.filter((item) => item.dealId === dealId) : items;
   return filtered.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || a.id.localeCompare(b.id));
 }
@@ -45,7 +44,7 @@ export async function listContracts(client: DynamoDBDocumentClient, dealId?: str
 export async function updateContract(client: DynamoDBDocumentClient, existing: Record<string, any>, changes: Record<string, unknown>, audit?: Record<string, unknown>) {
   const now = new Date().toISOString();
   const next = Object.assign({}, existing, changes, { id: existing.id, createdAt: existing.createdAt, updatedAt: now, version: existing.version + 1 });
-  const items: any[] = [{ Put: { TableName: TABLE_SPONSOR_CRM, Item: contractStored(next), ConditionExpression: 'attribute_not_exists(PK) AND version = :version', ExpressionAttributeValues: { ':version': existing.version } } }];
+  const items: any[] = [{ Put: { TableName: TABLE_SPONSOR_CRM, Item: contractStored(next), ConditionExpression: 'version = :version', ExpressionAttributeValues: { ':version': existing.version } } }];
   if (audit) items.push(contractHistoryPut(existing.id, audit));
   await transact(client, items);
   return next;

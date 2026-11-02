@@ -93,7 +93,7 @@ export async function getCrmRecord(client: DynamoDBDocumentClient, kind: string,
 // table once and serves each kind from that snapshot.
 const SNAPSHOT_PREFIXES = [
   'ORGANIZATION#', 'CONTACT#', 'DEAL#', 'DELIVERABLE#', 'LEAD#', 'NEWSLETTER#',
-  'NEWSLETTER-ISSUE#', 'SPONSOR_FINANCE',
+  'NEWSLETTER-ISSUE#', 'SPONSOR_FINANCE', 'CONTRACT#',
 ] as const;
 
 type CrmReadSnapshot = { items?: Promise<Record<string, unknown>[]> };
