@@ -2,6 +2,7 @@ import { getClient } from '../db/client';
 import { getUser } from '../db/users';
 import { headerValue } from '../httpHeaders';
 import { browserAuthOrigin } from '../auth/browserAuth';
+import { API_TOKEN_SCOPES, parseApiTokenScopes } from '../auth/tokenScopes';
 import {
   DEVICE_POLL_INTERVAL_SECONDS,
   createApiToken,
@@ -10,6 +11,7 @@ import {
   deleteDeviceGrant,
   deviceGrantExhausted,
   countDeviceGrantAttempt,
+  getApiTokenById,
   getDeviceGrantByDeviceCode,
   getDeviceGrantByUserCode,
   listApiTokens,
@@ -181,21 +183,81 @@ async function handleCliAuthRoutes(
       return json(200, { status: approve ? 'approved' : 'denied', label: grant.label });
     }
 
+    // POST /api/tokens — admin issues a scoped API token without a browser.
+    if (method === 'POST' && path === '/api/tokens') {
+      if (!actorId) return json(401, { error: 'Unauthorized' });
+      if (headerValue(event.headers, 'x-token-scopes')) {
+        return json(403, { error: 'Scoped tokens cannot issue API tokens' });
+      }
+      const user = await getUser(client, actorId);
+      if (!user || user.disabled) return json(401, { error: 'Unauthorized' });
+      if (user.role !== 'admin') {
+        return json(403, { error: 'Issuing an API token requires an admin' });
+      }
+      const body = parseBody(event);
+      if (!body) return json(400, { error: 'Invalid JSON body' });
+      const scopes = parseApiTokenScopes(body.scopes ?? body.scope);
+      if (!scopes) {
+        return json(400, {
+          error: `scopes must be a non-empty list of: ${API_TOKEN_SCOPES.join(', ')}`,
+          code: 'invalid_scope',
+        });
+      }
+      const label = sanitizeLabel(body.label || body.name || 'DataOps Agent');
+      const { apiToken, token } = await createApiToken(client, {
+        userId: user.id,
+        label,
+        source: 'manual',
+        scopes,
+        issuedBy: user.id,
+      });
+      return json(201, {
+        token,
+        tokenId: apiToken.id,
+        label: apiToken.label,
+        scopes: apiToken.scopes || scopes,
+        expiresAt: apiToken.expiresAt,
+        user: { id: user.id, name: user.name, email: user.email },
+      });
+    }
+
     // GET /api/tokens — the caller's own credentials.
     if (method === 'GET' && path === '/api/tokens') {
       if (!actorId) return json(401, { error: 'Unauthorized' });
+      if (headerValue(event.headers, 'x-token-scopes')) {
+        return json(403, { error: 'Scoped tokens cannot list API tokens' });
+      }
       return json(200, { tokens: await listApiTokens(client, actorId) });
     }
 
-    // DELETE /api/tokens/:id — revoke. Owners only; ids are token hashes.
+    // DELETE /api/tokens/:id — revoke. Owners or admins; 'self' revokes the caller's bearer token.
     if (method === 'DELETE' && path.startsWith('/api/tokens/')) {
       if (!actorId) return json(401, { error: 'Unauthorized' });
       const id = decodeURIComponent(path.slice('/api/tokens/'.length).replace(/\/$/, ''));
       if (!id) return json(400, { error: 'Token id is required' });
+      if (id === 'self') {
+        const selfTokenId = headerValue(event.headers, 'x-api-token-id');
+        if (!selfTokenId) return json(404, { error: 'Not found' });
+        await deleteApiToken(client, actorId, selfTokenId);
+        return json(204, {});
+      }
+      if (headerValue(event.headers, 'x-token-scopes')) {
+        return json(403, { error: 'Scoped tokens cannot revoke other API tokens' });
+      }
       const owned = await listApiTokens(client, actorId);
-      if (!owned.some((token) => token.id === id)) return json(404, { error: 'Not found' });
-      await deleteApiToken(client, actorId, id);
-      return json(204, {});
+      if (owned.some((token) => token.id === id)) {
+        await deleteApiToken(client, actorId, id);
+        return json(204, {});
+      }
+      const caller = await getUser(client, actorId);
+      if (caller && !caller.disabled && caller.role === 'admin') {
+        const target = await getApiTokenById(client, id);
+        if (target) {
+          await deleteApiToken(client, target.userId, target.id);
+          return json(204, {});
+        }
+      }
+      return json(404, { error: 'Not found' });
     }
 
     return null;

@@ -250,6 +250,17 @@ async function serveKnowledgeDownload(path: string): Promise<LambdaResponse> {
   }
 }
 
+/** Serve `/content/*` and `/knowledge-files/*` for bearer-authenticated callers in router.ts. */
+export async function servePortalContentAsset(method: string, path: string): Promise<LambdaResponse | null> {
+  if (method === 'GET' && path.startsWith('/content/')) {
+    return await serveContent(path);
+  }
+  if (method === 'GET' && path.startsWith('/knowledge-files/')) {
+    return await serveKnowledgeDownload(path);
+  }
+  return null;
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 function isDataPath(path: string): boolean {
@@ -296,6 +307,9 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
 
   const authEnabled = browserAuthConfigured();
   const user = authEnabled ? await browserUser(event, client) : null;
+  if (!user && isDataPath(path) && /^Bearer\s+\S+$/i.test(headerValue(event.headers, 'authorization'))) {
+    return { authorized: false };
+  }
   const authorized = !authEnabled || Boolean(user);
   if (!authorized) {
     if (path === '/device') {

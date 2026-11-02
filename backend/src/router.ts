@@ -14,7 +14,7 @@ import { handleSecretRoutes } from './routes/secrets';
 import { handleFileRoutes } from './routes/files';
 import { handleArtifactRoutes } from './routes/artifacts';
 import { handleDocsRoutes, isDocsDomainEnabled, isDocsRoute } from './docs';
-import { handlePortal, serveCanonicalFrontend } from './docs/portal';
+import { handlePortal, serveCanonicalFrontend, servePortalContentAsset } from './docs/portal';
 import { handleEmailDocumentIntake } from './routes/emailDocuments';
 import { handleNotificationRoutes } from './routes/notifications';
 import { handleCronRoutes } from './routes/cron';
@@ -52,7 +52,8 @@ import { userDisplayNames } from './identity/directory';
 import { getTaskConsistent, TaskVersionConflictError, CardLifecycleConflictError } from './db/tasks';
 import { TaskDependencyError } from './db/taskDependencies';
 import { CardNotFoundError, getCardConsistent } from './db/cards';
-import { getApiToken, touchApiToken } from './db/cliAuth';
+import { getApiToken, projectApiToken, touchApiToken } from './db/cliAuth';
+import { isScopedTokenRequestAllowed } from './auth/tokenScopes';
 import { withCrmReadSnapshot } from './db/sponsorCrm';
 import { handleInvoiceReader } from './auth/invoiceReader';
 import { handleKnowledgePublisher } from './auth/knowledgePublisher';
@@ -190,7 +191,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // x-user-id is an internal identity propagation header, never a client
     // credential. Preserve it only in the explicit test auth bypass; all real
     // requests must replace it with an identity established below.
-    if (!skipAuth) deleteHeader(event.headers, 'x-user-id');
+    if (!skipAuth) {
+      deleteHeader(event.headers, 'x-user-id');
+      deleteHeader(event.headers, 'x-token-scopes');
+      deleteHeader(event.headers, 'x-api-token-id');
+    }
     const serviceResponse = await handleInvoiceReader(event, client);
     if (serviceResponse) return serviceResponse;
     const verifiedInteractiveUserId = browserUserId || portalUserId;
@@ -232,7 +237,13 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       const bearerApiToken = bearer && !session ? await getApiToken(client, bearer) : null;
       const bearerUserId = session?.userId || bearerApiToken?.userId || '';
       if (bearerUserId) {
-        if (bearerApiToken) await touchApiToken(client, bearerApiToken);
+        if (bearerApiToken) {
+          await touchApiToken(client, bearerApiToken);
+          const user = await getUser(client, bearerUserId);
+          return user && !user.disabled
+            ? jsonResponse(200, { user: identityProjection(user), apiToken: projectApiToken(bearerApiToken) })
+            : jsonResponse(401, { error: 'Unauthorized' });
+        }
         const user = await getUser(client, bearerUserId);
         return user && !user.disabled
           ? jsonResponse(200, { user: identityProjection(user) })
@@ -260,7 +271,14 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // A portal pass without an identity (local development with browser auth
     // unconfigured) must not skip bearer validation: without it no x-user-id
     // is ever established and every interactive route fails closed.
-    if (!skipAuth && !verifiedInteractiveUserId && (reqPath.startsWith('/api/') || isDocsRoute(reqPath))) {
+    if (
+      !skipAuth &&
+      !verifiedInteractiveUserId &&
+      (reqPath.startsWith('/api/') ||
+        isDocsRoute(reqPath) ||
+        reqPath.startsWith('/content/') ||
+        reqPath.startsWith('/knowledge-files/'))
+    ) {
       const token = extractToken(event);
       const exempt = isAuthExempt(method, reqPath);
       if (!token) {
@@ -281,6 +299,18 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           // Attach userId to event headers for downstream use
           if (!event.headers) event.headers = {};
           event.headers['x-user-id'] = session ? session.userId : apiToken!.userId;
+          if (apiToken) {
+            event.headers['x-api-token-id'] = apiToken.id;
+            if (apiToken.scopes && apiToken.scopes.length > 0) {
+              event.headers['x-token-scopes'] = apiToken.scopes.join(',');
+              if (!isScopedTokenRequestAllowed(apiToken.scopes, method, reqPath)) {
+                return jsonResponse(403, {
+                  error: 'Token does not have scope for this operation',
+                  code: 'insufficient_scope',
+                });
+              }
+            }
+          }
         }
       }
     }
@@ -472,6 +502,12 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     // ── Docs domain (flag-gated) ─────────────────────────────────
     if (isDocsDomainEnabled()) {
+      if (reqPath.startsWith('/content/') || reqPath.startsWith('/knowledge-files/')) {
+        const resolved = await resolveInteractiveActor(client, event, 'work-read');
+        if (!resolved.ok) return resolved.response;
+        const asset = await servePortalContentAsset(method, reqPath);
+        if (asset) return asset;
+      }
       if (isDocsRoute(reqPath)) {
         const resolved=await resolveInteractiveActor(client,event,method==='GET'?'work-read':'work-write');
         if(!resolved.ok)return resolved.response;

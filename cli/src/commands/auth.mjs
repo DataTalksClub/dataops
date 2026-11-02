@@ -1,16 +1,19 @@
-import { existsSync } from "node:fs";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { hostname, userInfo } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ApiError, createClient } from "../api.mjs";
-import { AuthError } from "../errors.mjs";
+import { AuthError, UsageError } from "../errors.mjs";
 import {
   deleteProfile,
   resolveProfile,
+  resolveProfileFromDir,
   saveProfile,
+  saveProfileToDir,
   credentialsPath,
+  hubSharedConfigDir,
+  hostOperatorConfigDir,
 } from "../config.mjs";
 
 function defaultLabel() {
@@ -19,6 +22,10 @@ function defaultLabel() {
   } catch {
     return hostname();
   }
+}
+
+function defaultAgentLabel() {
+  return `hub-sessions@${hostname()}`;
 }
 
 /** The device-login loop lives in DataTalksClub/auth. Find that checkout. */
@@ -77,19 +84,26 @@ function deviceStartFromPortal(payload) {
   };
 }
 
+function assertHttpsOrLoopback(url) {
+  const parsed = new URL(url);
+  if (
+    parsed.protocol !== "https:" &&
+    !(parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname))
+  ) {
+    throw new Error("Credentials require HTTPS outside local development.");
+  }
+}
+
 /**
- * Device authorization grant. The browser half runs wherever the operator
- * already has a portal session, which is why this works over SSH: nothing
- * here needs a browser on this machine.
+ * Device authorization grant or stdin token configuration. The browser half runs
+ * wherever the operator already has a portal session, or an admin issues a
+ * scoped API token directly via `dataops tokens create`.
  */
 export async function login(args, io) {
   const url = args.url || process.env.DATAOPS_URL || resolveProfile().url;
   if (args.serviceTokenStdin !== undefined) {
     if (args.serviceTokenStdin !== true) throw new Error("Pass the service token through stdin, never as an argument.");
-    const parsed = new URL(url);
-    if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname))) {
-      throw new Error("Service credentials require HTTPS outside local development.");
-    }
+    assertHttpsOrLoopback(url);
     const token = readFileSync(0, "utf8").trim();
     if (!/^dops_svc_[a-f0-9]{64}$/.test(token)) throw new Error("Invalid service credential.");
     const serviceClient = createClient({ url, token });
@@ -99,6 +113,29 @@ export async function login(args, io) {
     }
     saveProfile(serviceClient.base, { token, kind: "service", label: identity.service.id, expiresAt: null });
     io.print(`Service credential configured for ${serviceClient.base} (${identity.service.scopes.join(", ")}).`);
+    return identity;
+  }
+  if (args.tokenStdin !== undefined) {
+    if (args.tokenStdin !== true) throw new Error("Pass the API token through stdin, never as an argument.");
+    assertHttpsOrLoopback(url);
+    const token = readFileSync(0, "utf8").trim();
+    if (!/^dops_[A-Za-z0-9_-]{16,}$/.test(token) || token.startsWith("dops_svc_")) {
+      throw new Error("Invalid API token.");
+    }
+    const tokenClient = createClient({ url, token });
+    const identity = await tokenClient.get("/api/me");
+    const apiToken = identity.apiToken || {};
+    const scopes = Array.isArray(apiToken.scopes) ? apiToken.scopes : null;
+    saveProfile(tokenClient.base, {
+      token,
+      tokenId: apiToken.id || "",
+      expiresAt: apiToken.expiresAt || "",
+      user: identity.user || null,
+      label: apiToken.label || args.label || defaultAgentLabel(),
+      ...(scopes ? { scopes, kind: "agent" } : {}),
+    });
+    const scopeText = scopes && scopes.length > 0 ? ` (${scopes.join(", ")})` : "";
+    io.print(`API token configured for ${tokenClient.base}${scopeText}.`);
     return identity;
   }
   const client = createClient({ url });
@@ -179,7 +216,15 @@ export async function logout(args, io) {
     if (current)
       await client.delete(`/api/tokens/${encodeURIComponent(current.id)}`);
   } catch (error) {
-    if (!(error instanceof ApiError) || error.status !== 401) throw error;
+    if (error instanceof ApiError && error.status === 403) {
+      try {
+        await client.delete("/api/tokens/self");
+      } catch (selfError) {
+        if (!(selfError instanceof ApiError) || selfError.status !== 401) throw selfError;
+      }
+    } else if (!(error instanceof ApiError) || error.status !== 401) {
+      throw error;
+    }
   }
   deleteProfile(profile.url);
   io.print("Signed out and revoked this machine's token.");
@@ -191,10 +236,28 @@ export async function whoami(args, io) {
   if (!profile.token) throw new AuthError("Not signed in. Run `dataops login`, or set DATAOPS_TOKEN.");
   const client = createClient(profile);
   const result = await client.get("/api/me");
-  if (args.json) return { ...result, portal: client.base, credential: profile.source === "environment" ? "DATAOPS_TOKEN" : "file" };
+  if (args.json) {
+    return {
+      ...result,
+      portal: client.base,
+      credential: profile.source === "environment" ? "DATAOPS_TOKEN" : "file",
+    };
+  }
   const user = result.user || {};
   io.print(result.service ? `${result.service.id} (${result.service.scopes.join(", ")})` : `${user.name || "unknown"} <${user.email || "unknown"}>`);
   if (user.role) io.print(`role: ${user.role}`);
+  const apiToken = result.apiToken || null;
+  const tokenLabel = apiToken?.label || profile.label || "";
+  const tokenIdShort = (apiToken?.id || profile.tokenId || "").slice(0, 12);
+  const scopes = apiToken?.scopes || profile.scopes || null;
+  if (tokenLabel || (Array.isArray(scopes) && scopes.length > 0)) {
+    if (tokenLabel) {
+      io.print(`token: ${tokenLabel}${tokenIdShort ? ` (${tokenIdShort})` : ""}`);
+    }
+    if (Array.isArray(scopes) && scopes.length > 0) {
+      io.print(`scopes: ${scopes.join(", ")}`);
+    }
+  }
   io.print(`portal: ${client.base}`);
   io.print(
     `credential: ${profile.source === "environment" ? "DATAOPS_TOKEN" : credentialsPath()}`,
@@ -202,8 +265,79 @@ export async function whoami(args, io) {
   return result;
 }
 
+function resolveAdminIssuerProfile(args) {
+  if (args.adminConfigDir) {
+    return resolveProfileFromDir(args.adminConfigDir, args);
+  }
+  const current = resolveProfile(args);
+  if (current.token && (!Array.isArray(current.scopes) || current.scopes.length === 0)) {
+    return current;
+  }
+  const hostDir = hostOperatorConfigDir();
+  if (hostDir) {
+    const hostProfile = resolveProfileFromDir(hostDir, args);
+    if (hostProfile.token) return hostProfile;
+  }
+  return current;
+}
+
+export async function tokensCreate(args, io) {
+  const rawScope = args.scope || args.scopes || "";
+  if (typeof rawScope !== "string" || !rawScope.trim()) {
+    throw new UsageError(
+      "Usage: dataops tokens create --scope kb:write,templates:write,cards:write,newsletter:write [--label NAME] [--config-dir DIR]",
+    );
+  }
+  const scopes = rawScope
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (scopes.length === 0) {
+    throw new UsageError("Provide at least one token scope with --scope.");
+  }
+  const label = String(args.label || defaultAgentLabel()).trim();
+  const targetDir = args.configDir || hubSharedConfigDir();
+  const issuerProfile = resolveAdminIssuerProfile(args);
+  if (!issuerProfile.token) {
+    throw new AuthError(
+      "Issuing a scoped token requires an admin credential. Sign in as an admin first or pass --admin-config-dir.",
+    );
+  }
+  const client = createClient(issuerProfile);
+  const issued = await client.post("/api/tokens", { label, scopes });
+  const savedPath = saveProfileToDir(targetDir, client.base, {
+    token: issued.token,
+    tokenId: issued.tokenId,
+    expiresAt: issued.expiresAt,
+    user: issued.user,
+    label: issued.label || label,
+    scopes: issued.scopes || scopes,
+    kind: "agent",
+  });
+  // Never print or return the raw token string.
+  const safeResult = {
+    tokenId: issued.tokenId,
+    label: issued.label || label,
+    scopes: issued.scopes || scopes,
+    expiresAt: issued.expiresAt,
+    user: issued.user,
+    credentialsPath: savedPath,
+  };
+  if (args.json) return safeResult;
+  io.print(
+    `Issued scoped API token ${safeResult.label} (${String(safeResult.tokenId || "").slice(0, 12)}).`,
+  );
+  io.print(`scopes: ${(safeResult.scopes || []).join(", ")}`);
+  io.print(
+    `stored: ${savedPath} (expires ${String(safeResult.expiresAt || "").slice(0, 10)})`,
+  );
+  return safeResult;
+}
+
 export async function tokensList(args, io) {
-  const profile = resolveProfile(args);
+  const profile = args.adminConfigDir
+    ? resolveProfileFromDir(args.adminConfigDir, args)
+    : resolveProfile(args);
   const client = createClient(profile);
   const result = await client.get("/api/tokens");
   if (args.json) return result;
@@ -213,16 +347,18 @@ export async function tokensList(args, io) {
     return result;
   }
   for (const token of tokens) {
-    io.print(
-      [
-        token.id.slice(0, 12),
-        token.label,
-        `expires ${token.expiresAt.slice(0, 10)}`,
-        token.lastUsedAt
-          ? `last used ${token.lastUsedAt.slice(0, 10)}`
-          : "never used",
-      ].join("  "),
-    );
+    const parts = [
+      token.id.slice(0, 12),
+      token.label,
+      ...(Array.isArray(token.scopes) && token.scopes.length > 0
+        ? [`[${token.scopes.join(",")}]`]
+        : []),
+      `expires ${token.expiresAt.slice(0, 10)}`,
+      token.lastUsedAt
+        ? `last used ${token.lastUsedAt.slice(0, 10)}`
+        : "never used",
+    ];
+    io.print(parts.join("  "));
   }
   return result;
 }
@@ -230,7 +366,9 @@ export async function tokensList(args, io) {
 export async function tokensRevoke(args, io) {
   const id = args._[0];
   if (!id) throw new Error("Usage: dataops tokens revoke <id>");
-  const profile = resolveProfile(args);
+  const profile = args.adminConfigDir
+    ? resolveProfileFromDir(args.adminConfigDir, args)
+    : resolveProfile(args);
   const client = createClient(profile);
   const listed = await client.get("/api/tokens");
   const match = (listed.tokens || []).find(

@@ -71,3 +71,38 @@ test('a failed credential replacement leaves the original file intact and cleans
     assert.equal(readFileSync(file, 'utf8'), original);
   });
 });
+
+test('managed-engine sessions resolve the shared Hub DataOps credential directory and refuse git worktree paths', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'hub-config-'));
+  try {
+    const sharedDir = path.join(root, 'shared', 'dataops');
+    const engineConfig = path.join(root, 'managed-engines', 'hub-antigravity-1', 'home', '.config');
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import assert from 'node:assert/strict';
+      const { hubSharedConfigDir, saveProfileToDir, resolveProfile, credentialsPath } = await import(${JSON.stringify(configModule)});
+      assert.equal(hubSharedConfigDir(), ${JSON.stringify(sharedDir)});
+      saveProfileToDir(${JSON.stringify(sharedDir)}, 'https://ops.dtcdev.click', {
+        token: 'dops_shared_session_token',
+        tokenId: 'shared-id',
+        label: 'hub-sessions@hetzner',
+        scopes: ['kb:write', 'templates:write', 'cards:write', 'newsletter:write'],
+        kind: 'agent',
+      });
+      assert.equal(credentialsPath(), ${JSON.stringify(path.join(sharedDir, 'credentials.json'))});
+      const profile = resolveProfile({ url: 'https://ops.dtcdev.click' });
+      assert.equal(profile.token, 'dops_shared_session_token');
+      assert.equal(profile.label, 'hub-sessions@hetzner');
+      assert.deepEqual(profile.scopes, ['kb:write', 'templates:write', 'cards:write', 'newsletter:write']);
+      assert.throws(
+        () => saveProfileToDir(process.cwd(), 'https://ops.dtcdev.click', { token: 'dops_x' }),
+        /Refusing to store DataOps credentials inside a git repository/,
+      );
+    `], {
+      env: { ...process.env, DATAOPS_CONFIG_DIR: '', DATAOPS_TOKEN: '', DATAOPS_URL: '', XDG_CONFIG_HOME: engineConfig },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

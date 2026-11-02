@@ -51,14 +51,19 @@ export function guideBody(markdown) {
 const AUTH_HELP = `dataops login | logout | whoami | tokens
 
 Usage
-  dataops login [--url URL] [--label NAME]   Device login: confirm a short code in the browser
+  dataops login [--url URL] [--label NAME]        Device login: confirm a short code in the browser
+  dataops login --token-stdin [--url URL]         Configure an API token from stdin
   dataops login --service-token-stdin --url URL   Configure an invoice reader service credential
-  dataops logout                             Revoke this machine's token and forget it
-  dataops whoami                             Who the credential acts as, and the portal
-  dataops tokens list                        Your API tokens
-  dataops tokens revoke <id>                 Revoke one (a unique prefix is enough)
+  dataops logout                                  Revoke this machine's token and forget it
+  dataops whoami                                  Who the credential acts as, scopes, and the portal
+  dataops tokens create --scope SCOPES [--label NAME] [--config-dir DIR]
+                                                  Admin: issue a scoped token and store it outside repos (never printed)
+  dataops tokens list                             Your API tokens
+  dataops tokens revoke <id>                      Revoke one (a unique prefix is enough)
 
-Agents use the same device login, labelled per host: dataops login --label "<agent>@<host>".
+Hub sessions on Hetzner use a scoped token stored in ~/.config/agent-hub/shared/dataops/credentials.json,
+issued without a browser via:
+  dataops tokens create --label "hub-sessions@hetzner" --scope kb:write,templates:write,cards:write,newsletter:write
 `;
 
 /**
@@ -154,7 +159,12 @@ export const FAMILIES = {
   login: { group: "Account", summary: "Sign in with a device code confirmed in the browser", help: AUTH_HELP, run: auth.login },
   logout: { group: "Account", summary: "Revoke this machine's token", help: AUTH_HELP, run: auth.logout },
   whoami: { group: "Account", summary: "Show who the credential acts as", help: AUTH_HELP, run: auth.whoami },
-  tokens: { group: "Account", summary: "List or revoke your API tokens", help: AUTH_HELP, commands: { list: auth.tokensList, revoke: auth.tokensRevoke } },
+  tokens: {
+    group: "Account",
+    summary: "Issue, list, or revoke API tokens",
+    help: AUTH_HELP,
+    commands: { create: auth.tokensCreate, list: auth.tokensList, revoke: auth.tokensRevoke },
+  },
   secrets: { group: "Account", summary: secrets.summary, help: secrets.help, commands: secrets.commands },
   api: { group: "Other", summary: raw.summary, help: raw.help, run: raw.call },
   "agent-guide": {

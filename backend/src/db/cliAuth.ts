@@ -232,7 +232,14 @@ export async function deleteDeviceGrant(
  */
 export async function createApiToken(
   client: DynamoDBDocumentClient,
-  options: { userId: string; label: string; source: 'device' | 'manual'; now?: Date },
+  options: {
+    userId: string;
+    label: string;
+    source: 'device' | 'manual';
+    scopes?: string[];
+    issuedBy?: string;
+    now?: Date;
+  },
 ): Promise<{ apiToken: ApiToken; token: string }> {
   const now = options.now || new Date();
   const token = generateApiToken();
@@ -244,6 +251,8 @@ export async function createApiToken(
     createdAt: now.toISOString(),
     expiresAt,
     source: options.source,
+    ...(options.scopes && options.scopes.length > 0 ? { scopes: [...options.scopes] } : {}),
+    ...(options.issuedBy ? { issuedBy: options.issuedBy } : {}),
     ttl: epochSeconds(expiresAt),
   };
 
@@ -360,6 +369,53 @@ export async function deleteApiToken(
       Key: { PK: `USERTOKENS#${userId}`, SK: `APITOKEN#${id}` },
     }),
   );
+}
+
+export async function getApiTokenById(
+  client: DynamoDBDocumentClient,
+  id: string,
+  now = new Date(),
+): Promise<ApiToken | null> {
+  if (!id) return null;
+  let result;
+  try {
+    result = await client.send(
+      new GetCommand({
+        TableName: TABLE_SESSIONS,
+        Key: { PK: `APITOKEN#${id}`, SK: `APITOKEN#${id}` },
+      }),
+    );
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && (err as { name?: string }).name === 'ResourceNotFoundException') return null;
+    throw err;
+  }
+  const apiToken = cleanItem<ApiToken>(result.Item as Record<string, unknown> | undefined);
+  if (!apiToken) return null;
+  if (Date.parse(apiToken.expiresAt) <= now.getTime()) {
+    await deleteApiToken(client, apiToken.userId, apiToken.id);
+    return null;
+  }
+  return apiToken;
+}
+
+export function projectApiToken(apiToken: ApiToken): {
+  id: string;
+  label: string;
+  source: 'device' | 'manual';
+  scopes: string[] | null;
+  createdAt: string;
+  expiresAt: string;
+  lastUsedAt: string | null;
+} {
+  return {
+    id: apiToken.id,
+    label: apiToken.label,
+    source: apiToken.source,
+    scopes: apiToken.scopes && apiToken.scopes.length > 0 ? apiToken.scopes : null,
+    createdAt: apiToken.createdAt,
+    expiresAt: apiToken.expiresAt,
+    lastUsedAt: apiToken.lastUsedAt || null,
+  };
 }
 
 export const DEVICE_POLL_INTERVAL_SECONDS = 5;

@@ -15,6 +15,7 @@ import {
   TemplateVersionConflictError,
 } from '../db/templates';
 import { resolveInteractiveActor, workAdminForbidden } from '../identity/actor';
+import { hasTokenScope } from '../auth/tokenScopes';
 import {
   normalizeTemplateDefinition,
   SERVER_OWNED_TEMPLATE_FIELDS,
@@ -134,7 +135,9 @@ async function handleTemplateRoutes(
       if (method === 'POST') {
         const create = await resolveInteractiveActor(client, event, 'work-write');
         if (!create.ok) return create.response;
-        if (!create.actor.isAdmin) return workAdminForbidden('Creating a Template requires an admin');
+        if (!create.actor.isAdmin && !hasTokenScope(event, 'templates:write')) {
+          return workAdminForbidden('Creating a Template requires an admin');
+        }
         const body = parseObject(rawBody);
         rejectServerOwned(body);
         const definition = normalizeTemplateDefinition(body);
@@ -268,7 +271,9 @@ async function handleTemplateDelete(
 ): Promise<LambdaResponse> {
   const remove = await resolveInteractiveActor(client, event, 'work-write');
   if (!remove.ok) return remove.response;
-  if (!remove.actor.isAdmin) return workAdminForbidden('Deleting a Template requires an admin');
+  if (!remove.actor.isAdmin && !hasTokenScope(event, 'templates:write')) {
+    return workAdminForbidden('Deleting a Template requires an admin');
+  }
   const body = parseObject(rawBody);
   const expectedVersion = expectedVersionOf(body);
   const revision = revisionOf(body);

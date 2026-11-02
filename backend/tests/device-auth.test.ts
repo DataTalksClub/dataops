@@ -13,6 +13,12 @@ const PORTAL_HEADERS = {
   'x-user-id': 'device-operator',
 };
 
+const ADMIN_PORTAL_HEADERS = {
+  'x-portal-auth': 'true',
+  'x-portal-secret': 'test-portal-secret',
+  'x-user-id': 'device-admin',
+};
+
 function body(response: { body: string }): Record<string, unknown> {
   return JSON.parse(response.body || '{}');
 }
@@ -69,6 +75,11 @@ describe('CLI device authorization', () => {
       name: 'Device Operator',
       email: 'device-operator@datatalks.club',
       role: 'operator',
+    });
+    await createUserWithId(client, 'device-admin', {
+      name: 'Device Admin',
+      email: 'device-admin@datatalks.club',
+      role: 'admin',
     });
     process.env.SKIP_AUTH = 'false';
     process.env.WORK_ENGINE_AUTH_MODE = 'portal';
@@ -233,5 +244,157 @@ describe('CLI device authorization', () => {
     assert.strictEqual(normalizeUserCode(' bcdfghjk '), 'BCDF-GHJK');
     assert.strictEqual(normalizeUserCode('BCDF GHJK'), 'BCDF-GHJK');
     assert.strictEqual(normalizeUserCode('BCDF-GHJ'), '');
+  });
+
+  it('lets an admin issue and revoke a scoped API token without a browser and enforces its scopes', async () => {
+    // Non-admin cannot issue API tokens.
+    const operatorAttempt = await handler(
+      {
+        httpMethod: 'POST',
+        path: '/api/tokens',
+        body: JSON.stringify({
+          label: 'hub-sessions@hetzner',
+          scopes: ['kb:write', 'templates:write', 'cards:write', 'newsletter:write'],
+        }),
+        headers: PORTAL_HEADERS,
+      },
+      {},
+    );
+    assert.strictEqual(operatorAttempt.statusCode, 403);
+
+    // Invalid scopes are rejected with 400.
+    const badScope = await handler(
+      {
+        httpMethod: 'POST',
+        path: '/api/tokens',
+        body: JSON.stringify({ label: 'hub-sessions@hetzner', scopes: ['secrets:write'] }),
+        headers: ADMIN_PORTAL_HEADERS,
+      },
+      {},
+    );
+    assert.strictEqual(badScope.statusCode, 400);
+
+    // Admin issues a scoped token directly without a browser.
+    const created = await handler(
+      {
+        httpMethod: 'POST',
+        path: '/api/tokens',
+        body: JSON.stringify({
+          label: 'hub-sessions@hetzner',
+          scopes: 'kb:write,templates:write,cards:write,newsletter:write',
+        }),
+        headers: ADMIN_PORTAL_HEADERS,
+      },
+      {},
+    );
+    assert.strictEqual(created.statusCode, 201);
+    const issued = body(created) as {
+      token: string;
+      tokenId: string;
+      label: string;
+      scopes: string[];
+      user: { id: string };
+    };
+    assert.match(issued.token, /^dops_[0-9a-f]{64}$/);
+    assert.strictEqual(issued.label, 'hub-sessions@hetzner');
+    assert.deepStrictEqual(issued.scopes, [
+      'kb:write',
+      'templates:write',
+      'cards:write',
+      'newsletter:write',
+    ]);
+
+    const authHeaders = { authorization: `Bearer ${issued.token}` };
+
+    // GET /api/me shows the identity and token metadata without exposing the raw token string.
+    const me = await handler({ httpMethod: 'GET', path: '/api/me', headers: authHeaders }, {});
+    assert.strictEqual(me.statusCode, 200);
+    const meBody = body(me) as {
+      user: { id: string; email: string };
+      token?: unknown;
+      apiToken: { id: string; label: string; scopes: string[] };
+    };
+    assert.strictEqual(meBody.token, undefined);
+    assert.strictEqual(meBody.user.id, 'device-admin');
+    assert.strictEqual(meBody.apiToken.id, issued.tokenId);
+    assert.strictEqual(meBody.apiToken.label, 'hub-sessions@hetzner');
+    assert.deepStrictEqual(meBody.apiToken.scopes, [
+      'kb:write',
+      'templates:write',
+      'cards:write',
+      'newsletter:write',
+    ]);
+
+    // In-scope routes succeed (cards/tasks, templates, newsletter).
+    const taskCreated = await handler(
+      {
+        httpMethod: 'POST',
+        path: '/api/tasks',
+        body: JSON.stringify({ description: 'Scoped agent task', date: '2028-11-05' }),
+        headers: authHeaders,
+      },
+      {},
+    );
+    assert.strictEqual(taskCreated.statusCode, 201);
+
+    const templatesListed = await handler(
+      { httpMethod: 'GET', path: '/api/templates', headers: authHeaders },
+      {},
+    );
+    assert.strictEqual(templatesListed.statusCode, 200);
+
+    const newsletterListed = await handler(
+      { httpMethod: 'GET', path: '/api/newsletter-issues', headers: authHeaders },
+      {},
+    );
+    assert.strictEqual(newsletterListed.statusCode, 200);
+
+    // Out-of-scope routes are refused with 403 insufficient_scope.
+    for (const forbidden of [
+      { method: 'GET', path: '/api/secrets' },
+      { method: 'GET', path: '/api/users' },
+      { method: 'GET', path: '/api/tokens' },
+      { method: 'POST', path: '/api/tokens' },
+      { method: 'GET', path: '/api/finance/summary' },
+    ]) {
+      const res = await handler(
+        { httpMethod: forbidden.method, path: forbidden.path, headers: authHeaders },
+        {},
+      );
+      assert.strictEqual(res.statusCode, 403, `expected 403 for ${forbidden.method} ${forbidden.path}`);
+      assert.strictEqual(body(res).code, 'insufficient_scope');
+    }
+
+    // Admin can list and revoke the scoped token; once revoked it returns 401.
+    const listed = await handler(
+      { httpMethod: 'GET', path: '/api/tokens', headers: ADMIN_PORTAL_HEADERS },
+      {},
+    );
+    assert.strictEqual(listed.statusCode, 200);
+    const listedTokens = (body(listed) as { tokens: Array<{ id: string; scopes?: string[] }> }).tokens;
+    const found = listedTokens.find((t) => t.id === issued.tokenId);
+    assert.ok(found);
+    assert.deepStrictEqual(found.scopes, [
+      'kb:write',
+      'templates:write',
+      'cards:write',
+      'newsletter:write',
+    ]);
+
+    const revoked = await handler(
+      {
+        httpMethod: 'DELETE',
+        path: `/api/tokens/${issued.tokenId}`,
+        headers: ADMIN_PORTAL_HEADERS,
+      },
+      {},
+    );
+    assert.strictEqual(revoked.statusCode, 204);
+
+    const afterRevoke = await handler(
+      { httpMethod: 'GET', path: '/api/me', headers: authHeaders },
+      {},
+    );
+    assert.strictEqual(afterRevoke.statusCode, 401);
   });
 });

@@ -14,21 +14,41 @@ family, and `dataops <family> --help` for flags and examples.
 
 ## Setup
 
-There is no separate agent account. The CLI signs in with the device flow, and a
-person approves it in the browser; the token then acts as that person.
+Interactive machines sign in with the device flow, and a person approves the code
+in the browser; headless Hub sessions on Hetzner obtain an admin-issued scoped
+API token without a browser.
 
 ```bash
+# Headless Hub sessions on Hetzner (no browser; token is written directly to
+# ~/.config/agent-hub/shared/dataops/credentials.json and never printed):
+dataops tokens create \
+  --label "hub-sessions@hetzner" \
+  --scope kb:write,templates:write,cards:write,newsletter:write
+dataops whoami                           # confirm agent identity, token label, and scopes
+
+# Interactive machines with a browser:
 dataops login --label "<agent>@<host>"   # prints a code; a human approves it in the browser
 dataops whoami                           # confirm identity and role before writing
 ```
 
-- Label each host's token (`<agent>@<host>`) so it is recognisable in
-  `dataops tokens list` and can be revoked alone with `dataops tokens revoke <id>`.
-- Tokens expire after 90 days; run `dataops login` again when one does (exit code 3).
+- Hub managed sessions on Hetzner read the shared credential from
+  `~/.config/agent-hub/shared/dataops/credentials.json` (`DATAOPS_CONFIG_DIR` or
+  automatic managed-engine fallback). The token is stored outside git repos
+  (mode `0600`) and is never printed to stdout/stderr, even with `--json`.
+- Supported token scopes: `kb:read`, `kb:write`, `templates:read`,
+  `templates:write`, `cards:read`, `cards:write`, `newsletter:read`,
+  `newsletter:write`. Scoped tokens cannot access user management, secrets,
+  finance, or token issuance.
+- Label each token (`<agent>@<host>`) so it is recognisable in
+  `dataops tokens list` and can be revoked alone by an admin with
+  `dataops tokens revoke <id>`.
+- Tokens expire after 90 days; reissue with `dataops tokens create` (or
+  `dataops login`) when one expires (exit code 3).
 - The portal defaults to `https://ops.dtcdev.click`; set `DATAOPS_URL` (or pass
   `--url`) only for another portal.
-- The token is stored in `~/.config/dataops/credentials.json` (mode 0600).
-  `DATAOPS_TOKEN` overrides it; never put a token on the command line.
+- On standard user machines the token is stored in
+  `~/.config/dataops/credentials.json` (mode `0600`). `DATAOPS_TOKEN` overrides
+  it; never put a token on the command line or inside a git repository.
 
 ## Contract
 

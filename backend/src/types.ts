@@ -822,6 +822,10 @@ export interface ApiToken {
   lastUsedAt?: string;
   /** Set when the token was minted by a device-code login. */
   source: 'device' | 'manual';
+  /** Optional capability scopes; when set, token is restricted to matching routes. */
+  scopes?: string[];
+  /** User ID of the admin who issued this token, when created via POST /api/tokens. */
+  issuedBy?: string;
   ttl: number;
 }
 

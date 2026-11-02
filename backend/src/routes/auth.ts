@@ -1,6 +1,7 @@
 import { getClient } from '../db/client';
 import { getUser } from '../db/users';
 import { getSession, deleteSession } from '../db/sessions';
+import { deleteApiToken, getApiToken, projectApiToken, touchApiToken } from '../db/cliAuth';
 import { identityProjection } from '../identity/projections';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { recordRequestError } from '../requestErrorLog';
@@ -38,7 +39,12 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
     if (method === 'POST' && path === '/api/auth/logout') {
       const token = extractToken(event);
       if (token) {
-        await deleteSession(client, token);
+        const apiToken = await getApiToken(client, token);
+        if (apiToken) {
+          await deleteApiToken(client, apiToken.userId, apiToken.id);
+        } else {
+          await deleteSession(client, token);
+        }
       }
       return {
         statusCode: 204,
@@ -59,7 +65,9 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
       }
 
       const session = await getSession(client, token);
-      if (!session) {
+      const apiToken = session ? null : await getApiToken(client, token);
+      const userId = session?.userId || apiToken?.userId;
+      if (!userId) {
         return {
           statusCode: 401,
           headers: JSON_HEADERS,
@@ -69,7 +77,7 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
 
       // A deleted or disabled account fails closed here exactly as it does on
       // the portal cookie seam: identity is one decision, not per-transport.
-      const user = await getUser(client, session.userId);
+      const user = await getUser(client, userId);
       if (!user || user.disabled) {
         return {
           statusCode: 401,
@@ -77,11 +85,15 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
           body: JSON.stringify({ error: 'Unauthorized' }),
         };
       }
+      if (apiToken) await touchApiToken(client, apiToken);
 
       return {
         statusCode: 200,
         headers: JSON_HEADERS,
-        body: JSON.stringify({ user: identityProjection(user) }),
+        body: JSON.stringify({
+          user: identityProjection(user),
+          ...(apiToken ? { apiToken: projectApiToken(apiToken) } : {}),
+        }),
       };
     }
 
