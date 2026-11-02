@@ -5,9 +5,7 @@
  * failed attempts. Every shown detail comes from the token-gated
  * GET /api/sponsor-crm/contracts/:id/signing response; nothing is inferred.
  */
-const ESCAPES = { '&': '&amp', '<': '&lt', '>': '&gt', '"': '&quot' };
-ESCAPES[String.fromCharCode(39)] = '&#39';
-const escapeHtml = (value) => String(value === undefined || value === null ? '' : value).replace(/[&<>"']/g, (char) => ESCAPES[char]);
+import { escapeHtml } from "../../core/html.js";
 
 export function createContractSignPage({ documentRef, request, locationRef }) {
   const identity = documentRef.getElementById('contract-sign-identity');
