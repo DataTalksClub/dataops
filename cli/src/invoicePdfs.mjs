@@ -8,13 +8,16 @@ export const help = `dataops invoice-pdfs
   templates
   create-template --file template.json
   render --template-id ID --file invoice.json --output invoice.pdf
+  reissue --template-id ID --file corrected-invoice.json --output reissue.pdf --reason "..."
 
 Template JSON: name, issuer, recipient, paymentDetails, taxNote, currency (EUR/USD/GBP).
 Use multiline strings for names, addresses and tax identifiers. Supply approved tax text.
 Invoice JSON: invoiceNumber, issueDate (YYYY-MM-DD), servicePeriod,
 items: [{description, amount: "100.00"}]. Amounts include the approved tax treatment.
 Templates are private and immutable; create a new named template when details change.
-Rendering downloads a PDF; it does not send it or update the ledger.
+Rendering downloads a PDF; it does not send it or update the ledger. For a correction,
+copy the issued invoice's verified fields into corrected-invoice.json, fix the item line,
+and use reissue to create a separate PDF. The original file is never overwritten.
 `;
 async function input(args) {
   if (typeof args.file !== 'string') throw new Error('--file is required');
@@ -41,6 +44,19 @@ export const commands = {
     await writeFile(args.output, bytes, { mode: 0o600, flag: 'wx' });
     const metadata = { output: args.output, total: result.total, currency: result.currency };
     if (!args.json) io.print(`Saved ${args.output} (${result.total} ${result.currency})`);
+    return metadata;
+  },
+  reissue: async (args, io) => {
+    if (typeof args.templateId !== 'string' || typeof args.output !== 'string') throw new Error('--template-id and --output are required');
+    if (typeof args.reason !== 'string' || !args.reason.trim()) throw new Error('--reason is required');
+    const invoice = await input(args);
+    if (typeof invoice.invoiceNumber !== 'string' || !invoice.invoiceNumber.trim()) throw new Error('Invoice JSON must include invoiceNumber');
+    const result = await apiFor(args).post(`${base}/render`, { ...invoice, templateId: args.templateId });
+    const bytes = Buffer.from(result.contentBase64 || '', 'base64');
+    if (result.contentType !== 'application/pdf' || bytes.subarray(0, 5).toString() !== '%PDF-') throw new Error('Server did not return a PDF');
+    await writeFile(args.output, bytes, { mode: 0o600, flag: 'wx' });
+    const metadata = { output: args.output, invoiceNumber: invoice.invoiceNumber, reason: args.reason.trim(), total: result.total, currency: result.currency };
+    if (!args.json) io.print(`Prepared reissue ${args.output} for invoice ${invoice.invoiceNumber} (${result.total} ${result.currency}); Finom was not changed`);
     return metadata;
   },
 };
