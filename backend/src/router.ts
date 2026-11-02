@@ -322,7 +322,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
     if (reqPath === '/api/tuition' || reqPath.startsWith('/api/tuition/')) return await handleTuitionRoutes(reqPath, method, event, client);
     if (reqPath.startsWith('/api/sponsor-crm/contracts')) {
-      return await handleSponsorContractRoutes(reqPath, method, event, client);
+      return await handleSponsorContractRoutes(reqPath, method, event, client, { skipAuth });
     }
     if (reqPath.startsWith('/api/sponsor-crm')) {
       const sponsorRoute = () => handleSponsorRoute(reqPath, method, event, client);

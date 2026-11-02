@@ -106,7 +106,7 @@ export async function handleSponsorContractRoutes(reqPath: string, method: strin
   const body = parse(event);
   const query = event.queryStringParameters || {};
   const today = typeof query.today === 'string' && /^\x5Cd{4}-\x5Cd{2}-\x5Cd{2}$/.test(query.today) ? query.today : berlinDate();
-  const contractMatch = reqPath.match(/^\x2Fapi\x2Fsponsor-crm\x2Fcontracts\x2F([^\x2F]+)\x2F?\x24/);
+  const contractMatch = reqPath.match(/^\x2Fapi\x2Fsponsor-crm\x2Fcontracts\x2F([^\x2F]+)(\x2F.+)?$/);
   const contractId = contractMatch ? decodeURIComponent(contractMatch[1]) : '';
   // Anonymous token-gated signing endpoints never require a session.
   if (contractId && (reqPath.endsWith('/signing') || reqPath.endsWith('/sign') || reqPath.endsWith('/decline'))) {
