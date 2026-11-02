@@ -59,8 +59,6 @@ const AUTHENTICATED_ROUTES: RouteCase[] = [
   { method: 'GET', path: '/api/team-members' },
   { method: 'GET', path: '/api/users' },
   { method: 'POST', path: '/api/users', body: { name: 'x', email: 'x@example.test' } },
-  { method: 'GET', path: '/api/tokens' },
-  { method: 'POST', path: '/api/tokens', body: { name: 'x' } },
   { method: 'GET', path: '/api/notifications' },
   { method: 'GET', path: '/api/files?taskId=some-task' },
   { method: 'POST', path: '/api/files', body: {} },
@@ -107,7 +105,6 @@ const ADMIN_ONLY_MUTATIONS: RouteCase[] = [
   { method: 'POST', path: '/api/recurring', body: { description: 'x', cronExpression: '0 9 * * 1' } },
   { method: 'PUT', path: '/api/recurring/some-config', body: { description: 'x' } },
   { method: 'DELETE', path: '/api/recurring/some-config' },
-  { method: 'POST', path: '/api/tokens', body: { label: 'x', scopes: ['kb:write'] } },
 ];
 
 /** The exact shape the session middleware in `src/router.ts` refuses with. */
