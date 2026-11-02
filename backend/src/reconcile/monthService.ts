@@ -4,7 +4,7 @@
  * pairs and unmatches, no-invoice exceptions, per-row payment proofs, the
  * approver's confirmation of the exception list, the open/closed state and
  * an append-only log of every action with who and when. Ledger rows, bank
- * rows and documents are never deleted here; a closed month refuses every
+ * rows and documents are never deleted except by the audited delete-row; a closed month refuses every
  * change until it is reopened.
  */
 import { createHash } from "crypto";
@@ -13,6 +13,7 @@ import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { TABLE_BOOKKEEPING } from "../db/tableNames";
 import {
   createDocumentLink,
+  deleteBookkeepingItem,
   getBookkeepingItem,
   getRawDocument,
   listBookkeepingItems,
@@ -46,7 +47,7 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const LOG_LIMIT = 2000;
 
 export type MonthAction =
-  | "pair" | "unpair" | "exception" | "clear-exception" | "attach-proof" | "attach-document"
+  | "pair" | "unpair" | "exception" | "clear-exception" | "delete-row" | "attach-proof" | "attach-document"
   | "auto-match" | "create-ledger" | "confirm-exceptions" | "close" | "reopen" | "summary";
 
 export type MonthLogEntry = { at: string; by: string; action: MonthAction; detail: Record<string, unknown> };
@@ -411,6 +412,80 @@ export async function setException(client: DynamoDBDocumentClient, period: strin
 export async function clearException(client: DynamoDBDocumentClient, period: string, by: string, rowId: string) {
   const key = rowId.startsWith("ledger:") ? rowId : `bank:${rowId}`;
   return mutateMonth(client, period, by, "clear-exception", { row: key }, (record) => { delete record.decisions.exceptions[key]; });
+}
+
+export type DeleteRowResult = {
+  mode: "dry-run" | "apply";
+  deleted: boolean;
+  row: LedgerRow;
+  duplicateOf?: string;
+  /** What the row holds that makes a plain delete unsafe; allowed only for the exact duplicate being removed. */
+  holds: string[];
+  blockers: string[];
+};
+
+/**
+ * Delete one ledger row, audited on the month's history with the row's facts.
+ * A row that holds a bank pairing, document, payment proof, exception or
+ * invoice/deal link is refused unless duplicateOf names another ledger row
+ * with the same date, signed amount, currency and counterparty.
+ */
+export async function deleteLedgerRow(
+  client: DynamoDBDocumentClient,
+  period: string,
+  by: string,
+  transactionId: string,
+  input: { reason: string; duplicateOf?: string; apply: boolean },
+): Promise<DeleteRowResult> {
+  const reason = input.reason.trim();
+  if (!reason) throw badRequest("reason is required");
+  const month = await getMonth(client, period);
+  if (month.state === "closed") throw new MonthClosedError(period);
+  const raw = await requireLedger(client, transactionId);
+  const data = await snapshot(client);
+  const row = data.ledger.find((candidate) => candidate.id === transactionId);
+  if (!row) throw notFound(`Ledger row ${transactionId} not found`);
+  if (!row.date.startsWith(period)) throw badRequest(`Ledger row ${transactionId} is dated ${row.date}, not in ${period}`);
+  const decisions = mergedDecisions(data.months);
+  const holds: string[] = [];
+  const pairing = pairAll(data.bank, data.ledger, decisions, data.config.tolerances);
+  for (const [bankKey, pair] of pairing.pairs) if (pair.ledger.id === transactionId) holds.push(`bank pairing with ${bankKey}`);
+  if (decisions.pairs.some((pair) => pair.transactionId === transactionId)) holds.push("a manual bank pairing");
+  if (row.documents.length) holds.push(`${row.documents.length} linked document(s)`);
+  if (decisions.proofs[transactionId]) holds.push("a payment proof");
+  if (decisions.exceptions[`ledger:${transactionId}`]) holds.push("a recorded exception");
+  if (raw.sponsorDealId) holds.push(`sponsor deal ${raw.sponsorDealId}`);
+  if (row.invoiceNumber) holds.push(`invoice ${row.invoiceNumber}`);
+
+  const blockers: string[] = [];
+  let duplicateOf: string | undefined;
+  if (input.duplicateOf) {
+    duplicateOf = input.duplicateOf.replace(/^ledger:/, "");
+    const other = data.ledger.find((candidate) => candidate.id === duplicateOf);
+    if (duplicateOf === transactionId) blockers.push("a row cannot be a duplicate of itself");
+    else if (!other) blockers.push(`duplicate-of row ${duplicateOf} not found`);
+    else if (other.date !== row.date || other.amount !== row.amount || other.currency !== row.currency
+      || other.counterparty.trim().toLowerCase() !== row.counterparty.trim().toLowerCase()) {
+      blockers.push(`${duplicateOf} is not an exact duplicate (date, amount, currency and counterparty must all match)`);
+    }
+  } else if (holds.length) {
+    blockers.push(`row holds ${holds.join(", ")}; unlink it first, or pass the ledger row it duplicates`);
+  }
+  const result: DeleteRowResult = { mode: input.apply ? "apply" : "dry-run", deleted: false, row, ...(duplicateOf ? { duplicateOf } : {}), holds, blockers };
+  if (blockers.length) {
+    if (input.apply) throw Object.assign(new MonthGateError(`Ledger row ${transactionId} not deleted: ${blockers.join("; ")}`, []), { statusCode: 409 });
+    return result;
+  }
+  if (!input.apply) return result;
+  const removed = await deleteBookkeepingItem(client, "bookkeeping", transactionId);
+  if (!removed) throw notFound(`Ledger row ${transactionId} not found`);
+  const { documents: _documents, ...facts } = row;
+  await mutateMonth(client, period, by, "delete-row", { transactionId, reason: reason.slice(0, 500), ...(duplicateOf ? { duplicateOf } : {}), holds, row: facts }, (record) => {
+    record.decisions.pairs = record.decisions.pairs.filter((pair) => pair.transactionId !== transactionId);
+    delete record.decisions.proofs[transactionId];
+    delete record.decisions.exceptions[`ledger:${transactionId}`];
+  });
+  return { ...result, deleted: true };
 }
 
 /** A separate payment proof for one ledger row: the document stands in for its bank side. */
