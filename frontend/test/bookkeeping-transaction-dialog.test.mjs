@@ -1,18 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { escapeHtml } from "../src/core/html.js";
 import {
   bookkeepingTransactionDialogMarkup,
   bookkeepingTransactionSummaryMarkup,
 } from "../src/surfaces/finance/bookkeeping-transaction-dialog.js";
 
-const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-  "'": "&#39;",
-}[char]));
 const amount = (value, currency) => `${Number(value).toFixed(2)} ${currency}`;
 
 test("transaction dialog shell uses a native, labelled dialog with an explicit close control", () => {

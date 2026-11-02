@@ -23,6 +23,21 @@ function frontendJavaScriptFiles() {
   return manifest.files.filter((file) => file.endsWith(".js") && !file.startsWith("src/dakit/"));
 }
 
+function frontendHarnessFiles() {
+  const collect = (directory) =>
+    readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) return collect(entryPath);
+      return entry.isFile() && /\.(?:mjs|js)$/.test(entry.name)
+        ? [path.relative(repoRoot, entryPath)]
+        : [];
+    });
+
+  return ["test", "e2e"].flatMap((directory) =>
+    collect(path.join(repoRoot, "frontend", directory)),
+  );
+}
+
 describe("frontend architecture contract", () => {
   test("prevents new or growing modules above 1,000 lines", () => {
     const oversized = frontendJavaScriptFiles()
@@ -74,6 +89,15 @@ describe("frontend architecture contract", () => {
       }
     }
     assert.deepEqual(offenders, [], "pass the core escapeHtml through context or import it");
+  });
+
+  test("uses the core HTML escaper in frontend test and e2e harnesses", () => {
+    const localEscaper = /(?:const|let|var)\s+escapeHtml\s*=|function\s+escapeHtml\s*\(|escapeHtml\s*:\s*(?:\([^)]*\)|[\w$]+)\s*=>/;
+    const offenders = frontendHarnessFiles()
+      .filter((file) => file !== "frontend/test/frontend-architecture.test.mjs")
+      .filter((file) => localEscaper.test(read(file)));
+
+    assert.deepEqual(offenders, [], "import escapeHtml from src/core/html.js");
   });
 
   test("keeps production source readable", () => {

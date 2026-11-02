@@ -11,6 +11,7 @@ import { createServer } from "node:http";
 import { copyFile, mkdir, readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { escapeHtml } from "../src/core/html.js";
 const require = createRequire(path.resolve("backend/package.json"));
 const { chromium } = require("playwright");
 const root = path.resolve("frontend");
@@ -141,7 +142,7 @@ const mountScript = async () => {
     documentList: document.querySelector("#document-list"),
     request,
     workApiUrl: (url) => url,
-    escapeHtml: (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;"),
+    escapeHtml,
     humanizeOptionLabel: (value) => String(value || "").replaceAll("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()),
     setRouteTitle: () => {},
     todayIsoDate: () => "2026-10-15",

@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { escapeHtml } from "../src/core/html.js";
 const require = createRequire(path.resolve("backend/package.json"));
 const { chromium } = require("playwright");
 const root = path.resolve("frontend");
@@ -44,7 +45,7 @@ try {
       if (url.endsWith("/retry")) record = { ...record, publicationStatus: "complete", destinations: { ...record.destinations, sheets: { state: "verified", operationId: "sheet-demo", reference: "synthetic-row" } } };
       return url.endsWith("/invoices") ? { items: [record] } : record;
     };
-    await createFinanceSurface({ documentList: document.querySelector("#finance"), request, workApiUrl: url => url, escapeHtml: value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;"), humanizeOptionLabel: value => value, setRouteTitle: () => {} }).renderBookkeepingSurface();
+    await createFinanceSurface({ documentList: document.querySelector("#finance"), request, workApiUrl: url => url, escapeHtml, humanizeOptionLabel: value => value, setRouteTitle: () => {} }).renderBookkeepingSurface();
   });
   assert.match(await page.locator("[data-invoice-list]").innerText(), /1 invoice · 1 pending review/);
   const detail = page.locator("[data-invoice-detail]");
