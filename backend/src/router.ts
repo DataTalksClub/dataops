@@ -465,10 +465,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (result) return result;
     }
 
-    // ── Docs domain (seam — stubs, flag-gated) ──────────────────
-    // TODO(#87/#88): the docs content API is ported into this backend. While the
-    // seam is stub-only it stays behind DATAOPS_DOCS_DOMAIN so existing routes
-    // and tests are unaffected. Handlers currently return 501.
+    // ── Docs domain (flag-gated) ─────────────────────────────────
     if (isDocsDomainEnabled()) {
       if (isDocsRoute(reqPath)) {
         const resolved=await resolveInteractiveActor(client,event,method==='GET'?'work-read':'work-write');

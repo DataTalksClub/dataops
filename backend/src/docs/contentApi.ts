@@ -13,7 +13,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
  * (`./sop`), and search through {@link ZeroSearchIndex} (#85). After a content
  * mutation the in-process search index is refreshed.
  *
- * Registration is opt-in via {@link isDocsDomainEnabled}.
+ * Served only when {@link isDocsDomainEnabled}.
  */
 
 import { Buffer } from 'node:buffer';
@@ -97,9 +97,9 @@ export function isDocsRoute(path: string): boolean {
 }
 
 /**
- * Feature flag: only register/serve docs routes when explicitly enabled. Off by
- * default so existing work-engine behavior is unaffected until the docs domain
- * is turned on (#87/#88).
+ * Feature flag: serve the docs routes and single-origin portal layer only when
+ * explicitly enabled. Infra and compose set it; tests leave it off to exercise
+ * the API-only router.
  */
 export function isDocsDomainEnabled(): boolean {
   const value = process.env.DATAOPS_DOCS_DOMAIN;
