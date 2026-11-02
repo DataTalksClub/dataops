@@ -1504,6 +1504,27 @@ export interface SponsorEmailDraft {
   body: string;
 }
 
+function newsletterSubjectDate(value: string | null | undefined): string {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[2]}-${match[3]}-${match[1]}` : raw;
+}
+
+export function newsletterSponsorSubject(
+  template: SponsorDocTemplateKey,
+  sponsorName: string | null | undefined,
+  publicationDate: string | null | undefined,
+): string {
+  const company = String(sponsorName || '').trim() || '<COMPANY>';
+  const variant = template === 'newsletter-secondary'
+    ? ' (Secondary Slot)'
+    : template === 'newsletter-standalone'
+      ? ' (Stand-alone)'
+      : '';
+  const date = newsletterSubjectDate(publicationDate) || '<PUBLICATION DATE>';
+  return `${company} + DataTalks.Club Newsletter${variant} - ${date}`;
+}
+
 export function renderSponsorEmailDraft(options: {
   template: SponsorDocTemplateKey;
   sponsorName?: string | null;
@@ -1565,7 +1586,9 @@ export function renderSponsorEmailDraft(options: {
     subjectSuffix = 'DataTalks.Club Podcast (Episode Brief)';
   }
 
-  const subject = `${company} + ${subjectSuffix} - ${pubDate}`;
+  const subject = options.template.startsWith('newsletter-')
+    ? newsletterSponsorSubject(options.template, options.sponsorName, options.publicationDate)
+    : `${company} + ${subjectSuffix} - ${pubDate}`;
 
   if (options.template === 'podcast') {
     const body = [
@@ -1603,6 +1626,49 @@ export function renderSponsorEmailDraft(options: {
       'This is a staff-only working document in the DataOps portal. Please keep host-only notes here, not in the guest-shared document.',
       '',
       'Thank you!',
+    ].join('\n');
+    return { subject, body };
+  }
+
+  if (options.template.startsWith('newsletter-')) {
+    // Render the initial-introduction body from dataops-knowledge's
+    // template.newsletter.send-sponsorship-document-2-weeks-before (rev e59732d1).
+    const newsletterDate = (() => {
+      const parsed = new Date(`${pubDate}T00:00:00Z`);
+      return Number.isNaN(parsed.getTime())
+        ? pubDate
+        : new Intl.DateTimeFormat('en-US', {
+          timeZone: 'UTC', month: 'long', day: 'numeric', year: 'numeric',
+        }).format(parsed);
+    })();
+    const body = [
+      recipientGreeting,
+      '',
+      "Nice to meet you! I'm Orin and I'm a community manager at DataTalks.Club.",
+      '',
+      `I wanted to remind you that ${company}'s next sponsored slot in our newsletter is scheduled for ${newsletterDate}, just two weeks from now.`,
+      '',
+      `I've created a DataOps portal document for you to enter your copy: ${options.shareUrl}`,
+      '',
+      `Access code: ${options.accessCode}`,
+      '',
+      "You'll find guidelines at the top of the document. (The legacy visual guide in Drive is optional reference only.)",
+      '',
+      'For inspiration, here are a few examples of past sponsored content from our newsletter:',
+      '',
+      '- "Model Monitoring Industry Certification": https://mailchi.mp/datatalks.club/weekly-108',
+      '- "The Ultimate Guide to Scaling AI: AI at Scale": https://mailchi.mp/datatalks.club/weekly-110',
+      '- "The Robust & Responsible AI Summit 2023": https://mailchi.mp/datatalks.club/weekly-106',
+      '',
+      'You can find more examples here: https://us19.campaign-archive.com/home/?u=0d7822ab98152f5afc118c176&id=97178021aa',
+      '',
+      `To ensure we have enough time for any adjustments, please submit your copy and graphics by ${deadline}.`,
+      '',
+      'I have also added Valeriia who will review the document.',
+      '',
+      'Looking forward to receiving your materials!',
+      '',
+      'Thanks!',
     ].join('\n');
     return { subject, body };
   }

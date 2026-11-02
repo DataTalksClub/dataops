@@ -242,6 +242,13 @@ test("authenticated DataOps staff can view, copy share links, rotate codes, and 
   await findByText(h.root, "Copy sponsor email", "button").click();
   assert.match(h.copied.at(-1), /Subject: Subject line/);
 
+  const taskIdInput = h.root.querySelector("[data-sponsor-task-id]");
+  taskIdInput.value = "task-owner-1";
+  await findByText(h.root, "Send from orin@datatalks.club", "button").click();
+  await nextTicks();
+  const sendCall = h.calls.find(([url]) => url.endsWith("/send-email"));
+  assert.deepEqual(JSON.parse(sendCall[1].body), { taskId: "task-owner-1" });
+
   await findByText(h.root, "Copy Markdown", "button").click();
   assert.match(h.copied.at(-1), /# 2026-11-15 - Acme AI/);
 

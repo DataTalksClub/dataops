@@ -7,7 +7,7 @@ import { isolateConfig, fakePortal } from "./helpers.mjs";
 
 isolateConfig();
 const { exportDocument } = await import("../src/commands/documents-transfer.mjs");
-const { create } = await import("../src/commands/sponsorDocs.mjs");
+const { create, sendEmail } = await import("../src/commands/sponsorDocs.mjs");
 const directory = mkdtempSync(join(tmpdir(), "doc-transfer-"));
 after(() => rmSync(directory, { recursive: true, force: true }));
 const io = { print() {} };
@@ -40,4 +40,24 @@ test("copy CLI sends source ID and leaves podcast template inference to source",
   assert.equal(calls[0].body.from, "source");
   assert.equal(calls[0].body.cardId, "target-card");
   assert.equal(calls[0].body.template, undefined);
+});
+
+test("sponsor doc send-email uses the shared API and reports the Gmail message ID", async () => {
+  const calls = fakePortal({
+    "POST /api/sponsor-docs/doc-1/send-email": {
+      emailDelivery: { state: "sent", from: "orin@datatalks.club", to: "alexey.s.grigoriev@gmail.com", messageId: "gmail-message-1" },
+    },
+  });
+  const lines = [];
+  const result = await sendEmail({
+    _: ["doc-1"],
+    _domain: "newsletter",
+    recipient: "alexey.s.grigoriev@gmail.com",
+    task: "task-1",
+    connection: "google-calendar-orin",
+  }, { print: line => lines.push(line) });
+  assert.equal(calls[0].url, "/api/sponsor-docs/doc-1/send-email");
+  assert.deepEqual(calls[0].body, { recipientEmail: "alexey.s.grigoriev@gmail.com", taskId: "task-1" });
+  assert.match(lines[0], /Gmail message gmail-message-1/);
+  assert.equal(result.emailDelivery.messageId, "gmail-message-1");
 });

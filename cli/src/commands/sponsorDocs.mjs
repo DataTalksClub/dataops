@@ -31,7 +31,7 @@ export const newsletterDocHelp = `dataops newsletter doc - portal-hosted newslet
 Usage
   dataops newsletter doc create <issue-id|card-id> [--slot primary|secondary] [--standalone]
       [--from DOC-ID] [--title T] [--sponsor NAME] [--date YYYY-MM-DD] [--link-type NAME]
-      [--recipient EMAIL] [--recipient-name NAME] [--email]
+      [--recipient EMAIL] [--recipient-name NAME] [--task TASK-ID] [--email]
   dataops newsletter doc show <doc-id>
   dataops newsletter doc export <doc-id> [--format md|docx|txt] [--output PATH]
   dataops newsletter doc delete <doc-id> --yes
@@ -40,7 +40,7 @@ Usage
   dataops newsletter doc submit <doc-id>
   dataops newsletter doc reopen <doc-id>
   dataops newsletter doc email <doc-id>
-  dataops newsletter doc send-email <doc-id> [--recipient EMAIL] [--recipient-name NAME]
+  dataops newsletter doc send-email <doc-id> [--recipient EMAIL] [--recipient-name NAME] [--task TASK-ID]
   dataops newsletter doc rotate-code <doc-id>
 `;
 
@@ -262,9 +262,8 @@ export async function create(args, io) {
 
   const recipientName = optionalString(args, "recipientName");
   if (recipientName !== undefined) body.recipientName = recipientName;
-
-  const connectionId = optionalString(args, "connection") ?? optionalString(args, "connectionId");
-  if (connectionId !== undefined) body.connectionId = connectionId;
+  const taskId = optionalString(args, "task");
+  if (taskId !== undefined) body.taskId = taskId;
 
   if (args.autoSendEmail === false || args.autoSendEmail === "false" || args.noAutoSend === true) {
     body.autoSendEmail = false;
@@ -468,16 +467,16 @@ export async function email(args, io) {
 
 export async function sendEmail(args, io) {
   const prefix = commandPrefix(args);
-  const id = extractDocId(positional(args, 0, `${prefix} send-email <doc-id> [--recipient EMAIL] [--recipient-name NAME]`));
+  const id = extractDocId(positional(args, 0, `${prefix} send-email <doc-id> [--recipient EMAIL] [--recipient-name NAME] [--task TASK-ID]`));
   const api = apiFor(args);
   const body = {};
   const recipientEmail = optionalString(args, "recipient") ?? optionalString(args, "recipientEmail");
   if (recipientEmail !== undefined) body.recipientEmail = recipientEmail;
   const recipientName = optionalString(args, "recipientName");
   if (recipientName !== undefined) body.recipientName = recipientName;
+  const taskId = optionalString(args, "task");
+  if (taskId !== undefined) body.taskId = taskId;
 
-  const connectionId = optionalString(args, "connection") ?? optionalString(args, "connectionId");
-  if (connectionId !== undefined) body.connectionId = connectionId;
   const result = await api.post(`/api/sponsor-docs/${enc(id)}/send-email`, body);
   if (result?.doc) {
     result.doc = normalizeDocUrls(result.doc, api.base);
