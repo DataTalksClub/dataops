@@ -256,6 +256,8 @@ export function ledgerRowsFrom(transactions: Array<Record<string, unknown>>, lin
         counterparty: String(item.counterparty || item.description || ""),
         ...(item.description ? { description: String(item.description) } : {}),
         ...(item.category ? { category: String(item.category) } : {}),
+        ...(item.subtype ? { subtype: String(item.subtype) } : {}),
+        ...(item.rateSource ? { rateSource: String(item.rateSource) } : {}),
         ...(item.statementRef ? { statementRef: String(item.statementRef) } : {}),
         ...(item.invoiceNumber ? { invoiceNumber: String(item.invoiceNumber) } : {}),
         ...(item.sourceType ? { sourceType: String(item.sourceType) } : {}),

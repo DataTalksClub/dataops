@@ -107,6 +107,16 @@ describe("bookkeeping statement links", () => {
 });
 
 describe("reconciliation table", () => {
+  test("shows stored bookkeeping category, subtype, booked EUR amount, and rate source", () => {
+    const month = { ...MONTH, rows: MONTH.rows.map((row) => row.id === "revolut:m1"
+      ? { ...row, ledger: { ...row.ledger, category: "Tools", subtype: "Subscription", amountEur: "9.25", rateSource: "ECB 23 Oct 2026" } }
+      : row) };
+    const markup = tableMarkup(month, "all", e);
+    const matched = markup.slice(markup.indexOf('data-recon-row-id="revolut:m1"')).split("</tr>")[0];
+    assert.match(matched, /Tools · Subscription/);
+    assert.match(matched, /Booked <span class="recon-money">9\.25 <span class="recon-currency">EUR<\/span><\/span> · ECB 23 Oct 2026/);
+  });
+
   test("lists rows that are not matched first, the matched row last", () => {
     assert.deepEqual(visibleRows(MONTH.rows, "all").map((row) => row.status),
       ["no-invoice", "payment-proof-missing", "amount-mismatch", "needs-review", "matched"]);

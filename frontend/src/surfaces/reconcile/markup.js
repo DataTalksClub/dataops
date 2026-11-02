@@ -126,7 +126,11 @@ function ledgerCell(row, e) {
   return html`<td class="recon-side" data-recon-side="ledger">
     <a class="recon-link" href="/bookkeeping?tx=${encodeURIComponent(ledger.id)}" title="${e(ledger.id)}">${e(shortId(ledger.id))}</a>
     <span>${e(ledger.date)}</span><span>${money(ledger.amount, ledger.currency, e)}</span>
-    ${ledger.category ? html`<span class="recon-sub">${e(ledger.category)}</span>` : ""}
+    ${ledger.category || ledger.subtype
+      ? html`<span class="recon-sub">${[ledger.category, ledger.subtype].filter(Boolean).map(e).join(" · ")}</span>` : ""}
+    ${ledger.amountEur
+      ? html`<span class="recon-sub">Booked ${money(ledger.amountEur, "EUR", e)}${ledger.rateSource ? ` · ${e(ledger.rateSource)}` : ""}</span>`
+      : ledger.rateSource ? html`<span class="recon-sub">${e(ledger.rateSource)}</span>` : ""}
   </td>`;
 }
 

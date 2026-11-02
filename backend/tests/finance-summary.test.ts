@@ -150,13 +150,18 @@ describe('finance summary', () => {
 
   it('converts with the booked EUR amount first, the ECB rate second, and lists rows it cannot convert', () => {
     const rows = [
-      row('booked', { entryType: 'expense', amount: '10.00', currency: 'USD', amountEur: '8.73', paidDate: '2026-10-22' }),
+      row('booked', { entryType: 'expense', amount: '10.00', currency: 'USD', amountEur: '8.73', rateSource: 'ECB 22 Oct 2026', category: 'Tools', subtype: 'Subscription', paidDate: '2026-10-22' }),
       row('ecb', { entryType: 'income', amount: '6000', currency: 'USD', paidDate: '2026-10-25' }),
       row('gbp', { entryType: 'expense', amount: '5', currency: 'GBP', paidDate: '2026-10-25' }),
     ];
     const s = summarize({ today: '2026-10-31', query: { month: '2026-10' }, rates: usdAt(1.12, '2026-10-23'), rows });
     const byId = Object.fromEntries(s.conversions.map((c) => [c.id, c]));
-    assert.deepEqual(byId.booked, { id: 'booked', date: '2026-10-22', amount: '10.00', currency: 'USD', eur: 8.73, rate: 1.145475, rateDate: '2026-10-22', rateSource: 'booked' });
+    assert.deepEqual(byId.booked, { id: 'booked', date: '2026-10-22', amount: '10.00', currency: 'USD', amountEur: '8.73', bookedRateSource: 'ECB 22 Oct 2026', eur: 8.73, rate: 1.145475, rateDate: '2026-10-22', rateSource: 'booked' });
+    const bookedEntry = s.entries.find((entry) => entry.id === 'booked');
+    assert.equal(bookedEntry?.category, 'Tools');
+    assert.equal(bookedEntry?.subtype, 'Subscription');
+    assert.equal(bookedEntry?.amountEur, '8.73');
+    assert.equal(bookedEntry?.bookedRateSource, 'ECB 22 Oct 2026');
     assert.equal(byId.ecb.eur, 5357.14);
     assert.equal(byId.ecb.rate, 1.12);
     assert.equal(byId.ecb.rateDate, '2026-10-23');

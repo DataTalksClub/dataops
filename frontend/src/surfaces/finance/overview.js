@@ -185,8 +185,13 @@ export function currencyMarkup(summary, e) {
           const rate = conversion.rate ? ` · ${e(String(conversion.rate))} per EUR` : "";
           const rateInfo = [source[conversion.rateSource], conversion.rateDate].filter(Boolean).join(" ");
           const counterparty = entry.counterparty ? `${e(entry.counterparty)}: ` : "";
+          const category = [entry.category, entry.subtype].filter(Boolean).join(" · ");
+          const classification = category ? ` · ${e(category)}` : "";
+          const booked = conversion.amountEur ? ` · booked ${formatEur(conversion.amountEur)} EUR` : "";
+          const bookedSource = conversion.bookedRateSource ? ` · ${e(conversion.bookedRateSource)}` : "";
           const sourceAndDate = rateInfo ? ` (${e(rateInfo)})` : "";
-          return html`<small class="fin-currency__conversion">${e(conversion.date)}: ${counterparty}${original} → ${e(eur)}${rate}${sourceAndDate}</small>`;
+          return html`<small class="fin-currency__conversion">${e(conversion.date)}: ${counterparty}${original} → ${e(eur)}${rate}${sourceAndDate}`
+            + html`${booked}${bookedSource}${classification}</small>`;
         }).join("")}</th>
           ${[c.moneyIn, c.moneyInEur, c.moneyOut, c.moneyOutEur].map((v) => html`<td class="fin-num">${formatEur(v)}</td>`).join("")}</tr>`).join("")}</tbody>
       </table>

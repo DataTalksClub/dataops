@@ -108,6 +108,8 @@ export type LedgerRow = {
   counterparty: string;
   description?: string;
   category?: string;
+  subtype?: string;
+  rateSource?: string;
   statementRef?: string;
   invoiceNumber?: string;
   sourceType?: string;

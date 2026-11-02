@@ -33,10 +33,15 @@ export type Entry = {
   counterparty: string;
   description: string;
   category: string;
+  subtype: string;
   sourceType: string;
   mandatoryKind: MandatoryPaymentKind | null;
   amount: string;
   currency: string;
+  /** Exact booked EUR amount stored on the ledger row, when present. */
+  amountEur: string | null;
+  /** Exact conversion source text stored on the ledger row, when present. */
+  bookedRateSource: string | null;
   eur: number | null;
   rate: number | null;
   rateDate: string | null;
@@ -83,7 +88,7 @@ export type FinanceSummary = {
   totals: Totals;
   months: Array<{ month: string; future: boolean } & Totals>;
   byCurrency: Array<{ currency: string; moneyIn: string; moneyOut: string; moneyInEur: number; moneyOutEur: number }>;
-  conversions: Array<{ id: string; date: string; amount: string; currency: string; eur: number | null; rate: number | null; rateDate: string | null; rateSource: string | null }>;
+  conversions: Array<{ id: string; date: string; amount: string; currency: string; amountEur: string | null; bookedRateSource: string | null; eur: number | null; rate: number | null; rateDate: string | null; rateSource: string | null }>;
   entries: Entry[];
   duplicates: Duplicate[];
   gaps: Gap[];
@@ -360,10 +365,13 @@ export function toEntry(row: LedgerRow, rates: RateLookup): Entry | null {
     counterparty: str(row.counterparty),
     description: str(row.description),
     category: str(row.category),
+    subtype: str(row.subtype),
     sourceType: str(row.sourceType),
     mandatoryKind: mandatory?.kind || null,
     amount: str(row.amount),
     currency: str(row.currency) || 'EUR',
+    amountEur: str(row.amountEur) || null,
+    bookedRateSource: str(row.rateSource) || null,
     eur: conversion.eur,
     rate: conversion.rate,
     rateDate: conversion.rateDate,
@@ -483,7 +491,7 @@ export function summarize(input: SummaryInput): FinanceSummary {
       moneyOutEur: fromCents(b.outEur),
     })),
     conversions: entries.filter((entry) => entry.currency !== 'EUR').map((entry) => ({
-      id: entry.id, date: entry.date, amount: entry.amount, currency: entry.currency, eur: entry.eur, rate: entry.rate, rateDate: entry.rateDate, rateSource: entry.rateSource,
+      id: entry.id, date: entry.date, amount: entry.amount, currency: entry.currency, amountEur: entry.amountEur, bookedRateSource: entry.bookedRateSource, eur: entry.eur, rate: entry.rate, rateDate: entry.rateDate, rateSource: entry.rateSource,
     })),
     entries,
     duplicates: periodDuplicates,
