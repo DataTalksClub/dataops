@@ -12,6 +12,11 @@ Usage
       Read all stored transaction fields and document/evidence links. No writes.
       Absent bank, void or audit fields remain absent.
 
+  dataops bookkeeping set <transaction-id> [--category CATEGORY] [--subtype SUBTYPE]
+      [--amount-eur AMOUNT --rate-source TEXT] [--apply]
+      Set classification and/or the booked EUR amount on an existing row.
+      Dry-run by default; --apply writes the row and records an audit entry.
+
   dataops bookkeeping sync --sheet <spreadsheet-id> [--apply]
   dataops bookkeeping sync <csv-dir> [--apply]
       Compare the bookkeeping sheet with DataOps transactions. Adds rows DataOps
@@ -355,4 +360,46 @@ export async function show(args, io) {
   return result;
 }
 
-export const commands = { show, sync, classify, facts, "add-income": addIncome };
+export async function set(args, io) {
+  if (args._.length !== 1 || !String(args._[0]).trim())
+    throw new UsageError("Usage: dataops bookkeeping set <transaction-id> [--category CATEGORY] [--subtype SUBTYPE] [--amount-eur AMOUNT --rate-source TEXT] [--apply]");
+  const changes = {};
+  for (const name of ["category", "subtype", "rateSource"]) {
+    if (args[name] !== undefined) {
+      const value = String(args[name]).trim();
+      if (!value || value.length > 300) throw new UsageError(`--${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} needs a non-empty value up to 300 characters.`);
+      changes[name] = value;
+    }
+  }
+  if (args.amountEur !== undefined) {
+    const amount = String(args.amountEur).trim();
+    if (!/^(0|[1-9]\d{0,11})(\.\d{1,4})?$/.test(amount) || Number(amount) <= 0)
+      throw new UsageError("--amount-eur must be a positive decimal amount with up to four decimal places.");
+    const decimalPlaces = amount.split(".")[1]?.length || 0;
+    changes.amountEur = decimalPlaces > 2
+      ? Number(amount).toFixed(4).replace(/0+$/, "").replace(/\.$/, "")
+      : Number(amount).toFixed(2);
+  }
+  if (changes.rateSource && !changes.amountEur)
+    throw new UsageError("--rate-source requires --amount-eur.");
+  if (!Object.keys(changes).length)
+    throw new UsageError("Pass at least one of --category, --subtype or --amount-eur.");
+
+  const api = apiFor(args);
+  const transaction = await api.get(`/api/bookkeeping/transactions/${encodeURIComponent(args._[0])}`);
+  const result = {
+    mode: args.apply ? "apply" : "dry-run",
+    transactionId: transaction.id,
+    changes,
+    previous: Object.fromEntries(Object.keys(changes).map((field) => [field, transaction[field] ?? null])),
+  };
+  if (args.apply) {
+    result.transaction = await api.put(`/api/bookkeeping/transactions/${encodeURIComponent(transaction.id)}`, changes);
+  }
+  if (!args.json) {
+    io.print(`${result.mode}: ${args.apply ? "updated" : "would update"} ${transaction.id}  ${describe(changes)}`);
+  }
+  return result;
+}
+
+export const commands = { show, set, sync, classify, facts, "add-income": addIncome };

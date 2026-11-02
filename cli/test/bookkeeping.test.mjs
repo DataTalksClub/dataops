@@ -179,6 +179,29 @@ test("sync --sheet reads every tab through the Sheets API with the dapier token"
   }
 });
 
+test("set is a dry run by default and applies stored values through audited ledger update", async () => {
+  const existing = { id: "ledger-123", category: null, subtype: null, amountEur: null };
+  let calls = fakePortal({
+    "GET /api/bookkeeping/transactions/ledger-123": existing,
+    "PUT /api/bookkeeping/transactions/ledger-123": ({ body }) => ({ status: 200, body: { ...existing, ...body, audit: [{ action: "updated" }] } }),
+  });
+  let io = captureIo();
+  assert.equal(await run(["bookkeeping", "set", "ledger-123", "--category", "Work-related", "--subtype", "Subscription", "--amount-eur", "578.8", "--rate-source", "ECB 30 Oct 2026"], io), 0);
+  assert.deepEqual(calls.map((call) => call.method), ["GET"], "dry-run does not write");
+  assert.match(io.text(), /dry-run: would update ledger-123/);
+  assert.match(io.text(), /amountEur="578\.80"/);
+
+  calls = fakePortal({
+    "GET /api/bookkeeping/transactions/ledger-123": existing,
+    "PUT /api/bookkeeping/transactions/ledger-123": ({ body }) => ({ status: 200, body: { ...existing, ...body, audit: [{ action: "updated" }] } }),
+  });
+  io = captureIo();
+  assert.equal(await run(["bookkeeping", "set", "ledger-123", "--category", "Refund", "--amount-eur", "578.80", "--rate-source", "ECB 30 Oct 2026", "--apply", "--json"], io), 0);
+  assert.deepEqual(calls.map((call) => call.method), ["GET", "PUT"]);
+  assert.equal(calls[1].body.amountEur, "578.80");
+  assert.equal(io.json().transaction.audit[0].action, "updated");
+});
+
 test("classify --apply writes only the filled fields", async () => {
   const calls = fakePortal({
     "GET /api/bookkeeping/transactions": {

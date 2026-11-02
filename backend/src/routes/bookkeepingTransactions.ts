@@ -10,6 +10,7 @@ import {
 } from "../db/bookkeeping";
 import { json, MONEY, MONTH, parse } from "./bookkeepingShared";
 import { autoAttachConfidentEvidence } from "./bookkeepingSuggestions";
+import { headerValue } from "../httpHeaders";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const CURRENCY = /^[A-Z]{3}$/;
@@ -21,6 +22,7 @@ const allowed = [
   "amount",
   "currency",
   "amountEur",
+  "rateSource",
   "vatAmount",
   "vatCurrency",
   "statementRef",
@@ -76,6 +78,11 @@ function validateTransaction(input: Record<string, unknown>, partial = false) {
     (typeof input.amountEur !== "string" || !MONEY.test(input.amountEur))
   )
     errors.push("amountEur");
+  if (
+    input.rateSource != null &&
+    (typeof input.rateSource !== "string" || !input.rateSource.trim() || input.rateSource.length > 300)
+  )
+    errors.push("rateSource");
   if (
     input.vatAmount != null &&
     (typeof input.vatAmount !== "string" || !MONEY.test(input.vatAmount))
@@ -181,6 +188,16 @@ export async function handleBookkeepingTransactionRoutes(
         return json(400, { error: "Validation failed", fields: errors });
       if (match[1]) {
         try {
+          const changedFields = Object.keys(safeData(body));
+          value.audit = [...(Array.isArray(previous!.audit) ? previous!.audit : []), {
+            action: "updated",
+            actor: headerValue(event.headers, "x-user-id") || "authenticated-operator",
+            at: new Date().toISOString(),
+            changes: Object.fromEntries(changedFields.map((field) => [field, {
+              from: previous![field] ?? null,
+              to: value[field] ?? null,
+            }])),
+          }].slice(-100);
           const updated = await updateBookkeepingTransaction(client, match[1], String(previous!.updatedAt), value);
           if (["transactionDate", "paidDate", "counterparty", "amount", "amountEur", "currency"].some((field) => body[field] !== undefined)) {
             await autoAttachConfidentEvidence(client);
