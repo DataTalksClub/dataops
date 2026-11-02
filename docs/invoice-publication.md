@@ -34,7 +34,7 @@ Review an existing received email with `dataops invoices process --intake-item-i
 
 Financial state uses the existing managed bookkeeping table and its backups. Portable exports include invoice drafts/audit/publication outcomes, identity claims, row cursors and confirmed ledger projections. Restore clears leases and marks drafts for explicit reconciliation while retaining verified external outcomes. Restore does not publish automatically. Keep the identity claims and row cursors with the restored invoice records.
 
-For an issued Finom sponsor invoice that needs a corrected PDF, use `dataops invoice-pdfs reissue --template-id <template-id> --file corrected-invoice.json --output <new-file.pdf> --reason "<correction reason>"`. Copy verified invoice fields into the JSON, change only the intended line, and select the reviewed sponsor template. The command creates a new local PDF with exclusive file creation; it does not overwrite the original, edit or send anything in Finom, assign a new invoice number, or update bookkeeping. Follow the private SOP for checking the correction route in Finom and recording the relationship between the original and corrected documents.
+Invoice PDF templates support local rendering through `dataops invoice-pdfs`. See `dataops invoice-pdfs --help` for the available commands.
 
 Agent verification uses sanitized PDFs, mock provider endpoints and a real DynamoDB Local harness (`npm --prefix backend run test:invoice-publication`). Real end-to-end acceptance additionally needs DataOps operator login and one actual forwarded invoice, correction/verification, verified archived bytes and exactly one correct spreadsheet row. Intake acknowledgement proves document receipt only.
 

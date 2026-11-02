@@ -29,10 +29,17 @@ test('invoice PDF CLI saves private output without exposing base64 or overwritin
     await writeFile(correction, JSON.stringify({ invoiceNumber: '202606/30', issueDate: '2026-06-01', servicePeriod: 'May 2026', items: [{ description: 'Newsletter Sponsorship (25 May 2026)', amount: '1500.00' }] }));
     assert.equal(await run(['invoice-pdfs', 'reissue', '--template-id', 'selected', '--file', correction, '--output', reissue, '--reason', 'Correct newsletter sponsorship date', '--json'], io), 0);
     assert.deepEqual(await readFile(reissue), bytes);
+    const auditFile = `${reissue}.reissue.json`;
+    const audit = JSON.parse(await readFile(auditFile, 'utf8'));
+    assert.equal(audit.reason, 'Correct newsletter sponsorship date');
+    assert.equal(audit.invoiceNumber, '202606/30');
+    assert.equal(audit.templateId, 'selected');
+    assert.equal((await stat(auditFile)).mode & 0o777, 0o600);
     assert.equal(calls.at(-1).body.invoiceNumber, '202606/30');
     assert.equal(calls.at(-1).body.items[0].description, 'Newsletter Sponsorship (25 May 2026)');
     assert.equal(calls.at(-1).body.templateId, 'selected');
     assert.equal(await run(['invoice-pdfs', 'reissue', '--template-id', 'selected', '--file', correction, '--output', path.join(dir, 'missing-reason.pdf'), '--json'], io), 1);
+    assert.equal(await run(['invoice-pdfs', 'reissue', '--template-id', 'selected', '--file', correction, '--output', reissue, '--reason', 'Another reason', '--json'], io), 1);
     assert.ok(!out.join('').includes(bytes.toString('base64')));
     assert.ok(calls.every(call => call.url.includes('/api/bookkeeping/invoice-generation/')));
   } finally {
