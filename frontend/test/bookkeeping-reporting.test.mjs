@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { escapeHtml } from "../src/core/html.js";
 import { createBookkeepingReports } from "../src/surfaces/finance/bookkeeping-reporting.js";
 
 test("current package preflight omits legacy accounts after their statement period", () => {
@@ -11,7 +12,7 @@ test("current package preflight omits legacy accounts after their statement peri
   ]);
   const reports = createBookkeepingReports({
     api: async () => ({ months: [] }),
-    escapeHtml: (value) => String(value ?? ""),
+    escapeHtml,
     getAccounts: () => [
       { id: "business-1", displayName: "Primary legacy account", kind: "business", active: true, statementRequiredThroughMonth: "2026-09" },
       { id: "business-2", displayName: "Secondary legacy account", kind: "business", active: true, statementRequiredThroughMonth: "2026-09" },
