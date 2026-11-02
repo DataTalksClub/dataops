@@ -1,10 +1,18 @@
 import { getClient } from '../db/client';
 import { getUser } from '../db/users';
 import { getSession, deleteSession } from '../db/sessions';
-import { deleteApiToken, getApiToken, projectApiToken, touchApiToken } from '../db/cliAuth';
+import { verifySharedIssuerJwt } from '../auth/sharedIssuer';
 import { identityProjection } from '../identity/projections';
+import { getUsersByNormalizedEmail, normalizeEmail } from '../db/users';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { recordRequestError } from '../requestErrorLog';
+
+/** Shared-issuer JWTs identify humans by verified email, like the browser seam. */
+async function findUserIdByEmail(client: Awaited<ReturnType<typeof getClient>>, email: string): Promise<string | null> {
+  const users = await getUsersByNormalizedEmail(client, normalizeEmail(email));
+  if (users.length !== 1 || users[0].disabled) return null;
+  return users[0].id;
+}
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
@@ -39,12 +47,12 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
     if (method === 'POST' && path === '/api/auth/logout') {
       const token = extractToken(event);
       if (token) {
-        const apiToken = await getApiToken(client, token);
-        if (apiToken) {
-          await deleteApiToken(client, apiToken.userId, apiToken.id);
-        } else {
+        const jwt = await verifySharedIssuerJwt(token);
+        if (!jwt) {
           await deleteSession(client, token);
         }
+        // Issuer sessions are revoked at the issuer (`dataops logout`);
+        // there is no local token store to delete here.
       }
       return {
         statusCode: 204,
@@ -65,8 +73,12 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
       }
 
       const session = await getSession(client, token);
-      const apiToken = session ? null : await getApiToken(client, token);
-      const userId = session?.userId || apiToken?.userId;
+      const claims = session ? null : await verifySharedIssuerJwt(token);
+      const email = claims?.email;
+      const jwtUserId = !session && typeof email === 'string' && email && (claims!.email_verified === true || claims!.email_verified === 'true')
+        ? await findUserIdByEmail(client, email)
+        : null;
+      const userId = session?.userId || jwtUserId;
       if (!userId) {
         return {
           statusCode: 401,
@@ -85,15 +97,11 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
           body: JSON.stringify({ error: 'Unauthorized' }),
         };
       }
-      if (apiToken) await touchApiToken(client, apiToken);
 
       return {
         statusCode: 200,
         headers: JSON_HEADERS,
-        body: JSON.stringify({
-          user: identityProjection(user),
-          ...(apiToken ? { apiToken: projectApiToken(apiToken) } : {}),
-        }),
+        body: JSON.stringify({ user: identityProjection(user) }),
       };
     }
 
