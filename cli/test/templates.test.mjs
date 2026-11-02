@@ -98,7 +98,7 @@ describe("templates write commands", () => {
     writeFileSync(file, "name: Fresh\ntype: fresh-type\ntrigger:\n  mode: manual\ntasks:\n  - id: a\n    name: A\n    schedule:\n      offset_days: 0\n");
     const calls = fakePortal({ "POST /api/templates": { template: { ...template, id: "tpl-9", type: "fresh-type" } } });
     const io = captureIo();
-    assert.equal(await run(["templates", "create", "--file", file], io), 0);
+    assert.equal(await run(["templates", "create", "--from-file", file], io), 0);
     assert.equal(calls.at(-1).method, "POST");
     assert.equal(calls.at(-1).body.type, "fresh-type");
     assert.match(io.text(), /Created tpl-9/);
@@ -109,7 +109,7 @@ describe("templates write commands", () => {
     writeFileSync(file, JSON.stringify({ name: "Dry", type: "dry-type", tasks: [{ id: "a", name: "A", schedule: { offset_days: 0 } }] }));
     const calls = fakePortal({ "POST /api/templates": { dryRun: true, effective: { type: "dry-type" } } });
     const io = captureIo();
-    assert.equal(await run(["templates", "create", "--file", file, "--dry-run"], io), 0);
+    assert.equal(await run(["templates", "create", "--from-file", file, "--dry-run"], io), 0);
     assert.equal(calls.at(-1).query.dryRun, "true");
     assert.match(io.text(), /Dry run/);
   });
@@ -117,7 +117,16 @@ describe("templates write commands", () => {
   test("create rejects an unreadable file before sending", async () => {
     fakePortal({});
     const io = captureIo();
-    assert.equal(await run(["templates", "create", "--file", path.join(dir, "missing.json")], io), 2);
+    assert.equal(await run(["templates", "create", "--from-file", path.join(dir, "missing.json")], io), 2);
+  });
+
+  test("create rejects the removed --file option", async () => {
+    const file = path.join(dir, "def.json");
+    writeFileSync(file, JSON.stringify({ name: "Fresh", type: "fresh-type", tasks: [] }));
+    fakePortal({});
+    const io = captureIo();
+    assert.equal(await run(["templates", "create", "--file", file], io), 2);
+    assert.match(io.errors.join("\n"), /--from-file/);
   });
 
   test("update --task patches the offset client-side and pins with fetched pair", async () => {
@@ -235,10 +244,12 @@ describe("templates write commands", () => {
     assert.deepEqual(put.body.definition.taskDefinitions, [{ refId: "a", description: "Saved A", offsetDays: 4 }]);
   });
 
-  test("update rejects --file together with --from-file", async () => {
-    fakePortal({});
+  test("update rejects the removed --file option", async () => {
+    const calls = fakePortal({ ...findRoutes });
     const io = captureIo();
-    assert.equal(await run(["templates", "update", "tpl-1", "--file", "a.json", "--from-file", "b.json"], io), 2);
+    assert.equal(await run(["templates", "update", "tpl-1", "--file", "a.json"], io), 2);
+    assert.equal(calls.some((call) => call.method === "PUT"), false);
+    assert.match(io.errors.join("\n"), /--from-file/);
   });
 
   test("a 409 surfaces the current pair as a conflict", async () => {

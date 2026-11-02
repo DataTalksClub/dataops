@@ -429,7 +429,7 @@ export function createTemplatesSurface(context) {
       `Edit the JSON definition and Save to pin it in DataOps (durable). `
       + `Git seed path: ${gitPath}. Push that YAML in dataops-knowledge when you want the seed updated; `
       + `pin wins for new cards until you Reset to Git base. Same payload as `
-      + `dataops templates update --file.`;
+      + `dataops templates update --from-file.`;
     section.append(help);
 
     const textarea = document.createElement("textarea");

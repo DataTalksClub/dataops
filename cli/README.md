@@ -84,7 +84,7 @@ base, and a deploy seed advances the base without touching a pin. Cards
 already created keep their stored snapshots until the existing Card
 template-update preview/apply moves them.
 
-- `templates create --file def.yaml` (admin) creates a custom template.
+- `templates create --from-file def.yaml` (admin) creates a custom template.
 - `templates update <id|type> --task <ref> --offset-days <n>`
   (or `--from-file def.yaml`) pins the whole definition; `reset`
   restores the Git base.

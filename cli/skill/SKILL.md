@@ -156,7 +156,7 @@ refreshes the Git base but never overwrites a pin):
 
 ```bash
 dataops templates update <type> --task <ref> --offset-days -3 --task-name "New step name"
-dataops templates update <type> --file edited-definition.json [--dry-run]
+dataops templates update <type> --from-file edited-definition.json [--dry-run]
 dataops templates reset <type>          # restore the Git base
 ```
 

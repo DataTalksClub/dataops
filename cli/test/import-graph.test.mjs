@@ -82,7 +82,7 @@ describe("CLI without installed dependencies", () => {
     const dir = cleanCheckout(t);
     const file = path.join(dir, "def.yaml");
     writeFileSync(file, "name: Fresh\ntype: fresh-type\ntrigger:\n  mode: manual\ntasks:\n  - id: a\n    name: A\n    schedule:\n      offset_days: 0\n");
-    const result = runCli(t, dir, ["templates", "create", "--file", file]);
+    const result = runCli(t, dir, ["templates", "create", "--from-file", file]);
     assert.equal(result.status, 2, result.stderr);
     assert.doesNotMatch(result.stderr, /ERR_MODULE_NOT_FOUND/);
     assert.match(result.stderr, /js-yaml/);
@@ -98,7 +98,7 @@ describe("CLI without installed dependencies", () => {
     }));
     // No portal listens here: the point is reaching the network layer,
     // which proves definition parsing completed without touching js-yaml.
-    const result = runCli(t, dir, ["templates", "create", "--file", file]);
+    const result = runCli(t, dir, ["templates", "create", "--from-file", file]);
     assert.equal(result.status, 7, result.stderr);
     assert.doesNotMatch(result.stderr, /ERR_MODULE_NOT_FOUND/);
     assert.doesNotMatch(result.stderr, /js-yaml/);

@@ -114,7 +114,7 @@ Runtime behavior:
 - Operators edit the effective definition in the DataOps portal
   (Tasks > Templates > Edit definition) or with the CLI
   (`dataops templates update <type> --task <ref> ...`,
-  `--file <definition>`, `dataops templates reset <type>`).
+  `--from-file <definition>`, `dataops templates reset <type>`).
   Both write through the same `PUT /api/templates/:id` compare-and-swap
   API, validated by the same shared validators the knowledge repo's CI
   enforces, so the portal, the CLI, and Git reject the same definitions.

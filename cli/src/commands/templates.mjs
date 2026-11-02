@@ -12,8 +12,8 @@ export const help = `dataops templates - reusable Card definitions; edits pin a 
 Usage
   dataops templates list
   dataops templates show <id|id-prefix|type|name>
-  dataops templates create --file <definition.yaml|json> [--dry-run]
-  dataops templates update <id|id-prefix|type|name> (--from-file <definition.yaml|json> | --file <definition.yaml|json>
+  dataops templates create --from-file <definition.yaml|json> [--dry-run]
+  dataops templates update <id|id-prefix|type|name> (--from-file <definition.yaml|json>
       | --task <taskRef> --offset-days <int> [--anchor start|end] [--task-name <text>] [--name <text>])
       [--expected-version N] [--revision R] [--dry-run]
   dataops templates reset <id|id-prefix|type|name> [--expected-version N] [--revision R] [--dry-run]
@@ -107,24 +107,19 @@ function stripServerOwned(definition) {
 
 /** js-yaml is loaded lazily so the CLI keeps working in checkouts without
  * installed dependencies (e.g. the knowledge publish job) for every command
- * that never parses a YAML file. Only YAML `--file` inputs trigger the load. */
+ * that never parses a YAML file. Only YAML `--from-file` inputs trigger the load. */
 async function loadYaml() {
   try {
     return (await import("js-yaml")).default;
   } catch {
     throw new UsageError(
-      "YAML template files need the js-yaml package: pass a JSON file to --file instead, or run with dependencies installed.",
+      "YAML template files need the js-yaml package: pass a JSON file to --from-file instead, or run with dependencies installed.",
     );
   }
 }
 
 async function definitionFile(args) {
-  const fromFile = optionalString(args, "fromFile");
-  const file = optionalString(args, "file");
-  if (fromFile !== undefined && file !== undefined) {
-    throw new UsageError("Pass --from-file or --file, not both.");
-  }
-  const path = fromFile ?? file;
+  const path = optionalString(args, "fromFile");
   if (path === undefined) return undefined;
   let text;
   try {
@@ -142,12 +137,12 @@ async function definitionFile(args) {
       parsed = JSON.parse(text);
     }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new UsageError(`--file ${path} must hold a template definition object.`);
+      throw new UsageError(`--from-file ${path} must hold a template definition object.`);
     }
     return parsed;
   } catch (error) {
     if (error instanceof UsageError) throw error;
-    throw new UsageError(`--file ${path} is not valid ${isYaml ? "YAML" : "JSON"}: ${error.message}`);
+    throw new UsageError(`--from-file ${path} is not valid ${isYaml ? "YAML" : "JSON"}: ${error.message}`);
   }
 }
 
@@ -258,7 +253,7 @@ export async function show(args, io) {
 export async function create(args, io) {
   const fileDefinition = await definitionFile(args);
   if (fileDefinition === undefined) {
-    throw new UsageError("dataops templates create --file <definition.yaml|json> [--dry-run]");
+    throw new UsageError("dataops templates create --from-file <definition.yaml|json> [--dry-run]");
   }
   const definition = stripServerOwned(fileDefinition);
   const api = apiFor(args);
@@ -281,7 +276,7 @@ function patchedTaskDefinitions(template, args) {
   if (taskRef === undefined) {
     if (name === undefined) {
       throw new UsageError(
-        "dataops templates update <ref> (--file <definition.yaml|json> | --task <taskRef> --offset-days <int> [--anchor start|end] [--task-name <text>] [--name <text>])",
+        "dataops templates update <ref> (--from-file <definition.yaml|json> | --task <taskRef> --offset-days <int> [--anchor start|end] [--task-name <text>] [--name <text>])",
       );
     }
     return { name: template.name, taskDefinitions: definitions };
