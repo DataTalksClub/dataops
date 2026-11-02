@@ -36,6 +36,8 @@ import { setCalendarHoldGoogleDepsForTests } from '../src/routes/calendarHolds';
 import { holdGoogleProvider } from './helpers/hold-google';
 import { HOLD_ORGANIZER } from '../src/calendar/holdGoogleSync';
 import { HOLD_ZOOM_LOCATION } from '../src/calendar/holds';
+import { configureTaskChecklistStore } from '../src/taskChecklist';
+import { createTaskChecklistFixture } from './helpers/task-checklist-fixture';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 async function invoke(method: string, path: string, body?: unknown, queryStringParameters = {}) {
@@ -43,12 +45,20 @@ async function invoke(method: string, path: string, body?: unknown, queryStringP
   return { code: res.statusCode, data: JSON.parse(res.body), raw: res.body };
 }
 let db: DynamoDBDocumentClient;
+let checklistFixture: ReturnType<typeof createTaskChecklistFixture>;
 describe('Card-owned invitation lifecycle', () => {
   before(async () => {
+    checklistFixture = createTaskChecklistFixture();
+    configureTaskChecklistStore(checklistFixture.store);
     db = await getClient(await startLocal());
     await createTables(db);
   });
-  after(async () => { setCalendarHoldGoogleDepsForTests({}); await stopLocal(); });
+  after(async () => {
+    setCalendarHoldGoogleDepsForTests({});
+    configureTaskChecklistStore(null);
+    checklistFixture.cleanup();
+    await stopLocal();
+  });
   async function card(type: string) {
     const template = await createTemplate(db, { name: type, type, triggerType: 'manual', taskDefinitions: [
       { refId: 'create-calendar-invite', description: 'Create a calendar invite for the guests', offsetDays: 0 },
@@ -79,6 +89,10 @@ describe('Card-owned invitation lifecycle', () => {
     assert.equal((await invoke('GET', `/api/tasks/${task.id}`)).data.status, 'done');
     const second = await invoke('POST', `/api/cards/${c.id}/time`, { at: '2026-11-10 16:47', duration: 90 });
     assert.equal(second.code, 200, second.raw);
+    assert.ok(second.data.rescheduleTaskId);
+    const rescheduleTask = (await invoke('GET', `/api/tasks/${second.data.rescheduleTaskId}`)).data;
+    assert.equal(rescheduleTask.cardId, undefined);
+    assert.equal(rescheduleTask.checklistItems.length, 2);
     assert.equal(second.data.card.eventTime.googleEventIds[HOLD_ORGANIZER], id);
     assert.equal(provider.events.get(HOLD_ORGANIZER)!.size, 1);
     assert.equal(provider.events.get(HOLD_ORGANIZER)!.get(id).start.dateTime, '2026-11-10T15:42:00.000Z');

@@ -464,6 +464,7 @@ export async function time(args, io) {
   if (!args.json) {
     io.print(`Event: ${result.card.eventTime.startIso} .. ${result.card.eventTime.endIso} (${result.card.eventTime.timeZone})`);
     if (result.card.anchorDate) io.print(`Card date: ${result.card.anchorDate}${result.movedTasks ? ` (${result.movedTasks} open Tasks re-dated)` : ''}`);
+    if (result.rescheduleTaskId) io.print(`Reschedule checklist Task: ${result.rescheduleTaskId}`);
     for (const invite of result.card.calendarInvites || []) {
       io.print(`invite: ${invite.eventId} on ${calendarLabel(invite.calendar)}${invite.staleAt ? ' STALE (gone in Google)' : ''} ${invite.url || ''}`);
     }

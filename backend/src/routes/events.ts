@@ -51,6 +51,7 @@ async function formatEventResponse(
     emailReceipts: result.emailReceipts,
     ...(result.attendeeResponses ? { attendeeResponses: result.attendeeResponses } : {}),
     ...(result.declinedBy ? { declinedBy: result.declinedBy } : {}),
+    ...(result.rescheduleTaskId ? { rescheduleTaskId: result.rescheduleTaskId } : {}),
   };
 }
 

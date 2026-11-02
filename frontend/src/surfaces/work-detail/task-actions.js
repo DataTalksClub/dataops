@@ -149,6 +149,10 @@ export function createTaskActions(context) {
     if (intent.kind === "dependencies") {
       return JSON.stringify(task.dependsOn || []) === JSON.stringify(intent.payload.dependsOn);
     }
+    if (intent.kind === "checklist-item") {
+      const item = (task.checklistItems || []).find((entry) => entry.id === intent.payload.itemId);
+      return Boolean(item) && item.checked === intent.checklistChecked;
+    }
     if (intent.kind === "requires") {
       return JSON.stringify(task.requires || []) === JSON.stringify(intent.payload.requires);
     }
@@ -454,6 +458,30 @@ export function createTaskActions(context) {
       }
     }
     return updated;
+  }
+
+  async function toggleTaskChecklistItem(taskId, itemId, checked, explicitVersion) {
+    const intent = {
+      taskId,
+      kind: "checklist-item",
+      label: `${checked ? "Check" : "Uncheck"} checklist item`,
+      method: "POST",
+      path: `/api/tasks/${encodeURIComponent(taskId)}/actions/checklist-${checked ? "check" : "uncheck"}`,
+      payload: { itemId },
+      checklistChecked: checked,
+      pendingMessage: `${checked ? "Checking" : "Unchecking"} checklist item…`,
+      successMessage: `Checklist item is ${checked ? "checked" : "unchecked"} in the refreshed Task.`,
+      errorPrefix: "Could not update checklist",
+    };
+    const owner = taskIntentOwner(intent);
+    let expectedVersion;
+    try {
+      expectedVersion = displayedVersion(taskId, explicitVersion);
+    } catch (err) {
+      showIntentFailure(owner, intent, err, expectedVersion);
+      return null;
+    }
+    return submitTaskIntent(intent, expectedVersion);
   }
 
   async function refreshTaskPanel(taskId) {
@@ -863,6 +891,7 @@ export function createTaskActions(context) {
     setTaskPanelFeedback,
     skipTask,
     unskipTask,
+    toggleTaskChecklistItem,
     updateTaskStatus,
   };
 }

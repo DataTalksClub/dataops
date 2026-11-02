@@ -72,6 +72,8 @@ export function mapTask(item: Record<string, unknown>): JsonRecord {
     instructions_url: optionalString(item.instructionsUrl),
     instruction_doc_id: optionalString(item.instructionDocId),
     instruction_step_id: optionalString(item.instructionStepId),
+    checklist_doc_id: optionalString(item.checklistDocId),
+    checklist_items: jsonArray(item.checklistItems),
     phase: optionalString(item.phase),
     requires: stringArray(item.requires),
     browser_requirement: optionalString(item.browserRequirement),

@@ -25,6 +25,8 @@ const VALID_TASK_HISTORY_ACTIONS = new Set([
   'unskipped',
   'template-retired',
   'template-restored',
+  'checklist-item-checked',
+  'checklist-item-unchecked',
 ]);
 export const VALID_NOTIFICATION_TYPES = new Set([
   'task-due',
@@ -293,11 +295,59 @@ export function requiredTaskHistoryField(
     optionalStringField(event, 'actorId', errors, itemContext);
     optionalStringField(event, 'channel', errors, itemContext);
     optionalStringField(event, 'waitingFor', errors, itemContext);
+    optionalStringField(event, 'checklistItemId', errors, itemContext);
     validateDateOrTimestampField(event, 'followUpAt', errors, itemContext);
     validateDateOrTimestampField(event, 'previousFollowUpAt', errors, itemContext);
     optionalStringField(event, 'note', errors, itemContext);
     validateDateOrTimestampField(event, 'createdAt', errors, itemContext, true);
     validateNoSecretPayload(event, errors, itemContext);
+  }
+}
+
+export function optionalTaskChecklistItemsField(
+  task: JsonRecord,
+  errors: string[],
+  context: string,
+): void {
+  const value = task.checklist_items;
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value)) {
+    errors.push(`${context} field checklist_items must be an array when present`);
+    return;
+  }
+  const seenIds = new Set<string>();
+  for (const [index, item] of value.entries()) {
+    const itemContext = `${context}.checklist_items[${index}]`;
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      errors.push(`${itemContext} must be an object`);
+      continue;
+    }
+    const record = item as JsonRecord;
+    const id = requireString(record, 'id', errors, itemContext);
+    if (id) {
+      if (seenIds.has(id)) errors.push(`${itemContext} has duplicate id: ${id}`);
+      seenIds.add(id);
+    }
+    requireString(record, 'text', errors, itemContext);
+    if (typeof record.checked !== 'boolean') {
+      errors.push(`${itemContext} field checked must be a boolean`);
+    }
+    for (const field of [
+      'instructionDocId', 'instructionStepId', 'sourceStepId', 'checkedBy', 'link', 'note',
+    ]) {
+      optionalStringField(record, field, errors, itemContext);
+    }
+    validateDateOrTimestampField(record, 'checkedAt', errors, itemContext);
+    const link = record.link;
+    if (typeof link === 'string') {
+      try {
+        const url = new URL(link);
+        if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported protocol');
+      } catch {
+        errors.push(`${itemContext} field link must be an HTTP or HTTPS URL`);
+      }
+    }
+    validateNoSecretPayload(record, errors, itemContext);
   }
 }
 

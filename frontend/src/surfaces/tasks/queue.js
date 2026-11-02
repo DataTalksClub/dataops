@@ -883,6 +883,15 @@ export function createTaskQueue(context) {
     // Titles truncate to one line; the full name stays one hover away.
     title.title = name;
     titleRow.append(title);
+    const checklistItems = Array.isArray(task.checklistItems) ? task.checklistItems : [];
+    if (checklistItems.length) {
+      const progress = document.createElement("span");
+      progress.className = "ops-queue-checklist-progress";
+      progress.textContent = `${checklistItems.filter((item) => item.checked).length}/${checklistItems.length}`;
+      progress.title = `${checklistItems.filter((item) => item.checked).length} of ${checklistItems.length} checklist items complete`;
+      progress.setAttribute("aria-label", progress.title);
+      titleRow.append(progress);
+    }
     // What the task needs outside DataOps, as glyphs named on hover: an
     // operator or agent without that access can see it is not theirs.
     // The button's name stays the task's name; what it needs and what it

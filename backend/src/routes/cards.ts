@@ -36,6 +36,12 @@ import {
 import { resolveTemplateConditionalValidation } from '../cards/conditionalRequired';
 import { listAllTasks, listTasksByCard, listTasksByCardConsistent } from '../db/tasks';
 import {
+  ensureEventRescheduleTask,
+  EVENT_RESCHEDULE_CHECKLIST_ID,
+  loadTaskChecklistDefinition,
+  TaskChecklistSourceError,
+} from '../taskChecklist';
+import {
   applyCardTemplateUpdate,
   CardTemplateUpdateConflictError,
 } from '../db/cardTemplateUpdates';
@@ -971,14 +977,37 @@ async function handleCardTime(method: string, id: string, rawBody: string | null
   } catch (error) {
     return json(400, { error: error instanceof Error ? error.message : 'Invalid event time' });
   }
+  const rescheduling = Boolean(
+    card.eventTime?.startIso
+    && (card.eventTime.startIso !== interval.startIso || card.eventTime.endIso !== interval.endIso),
+  );
+  let rescheduleChecklist;
+  if (rescheduling) {
+    try {
+      rescheduleChecklist = await loadTaskChecklistDefinition(EVENT_RESCHEDULE_CHECKLIST_ID);
+    } catch (error) {
+      if (error instanceof TaskChecklistSourceError) return json(error.statusCode, { error: error.message });
+      throw error;
+    }
+  }
   try {
     const deps = await calendarInviteDeps({}, client);
     const verified = await verifyCardInvites(client, card, deps);
     const result = await syncCardInvite(client, verified.card, interval, guests, deps, resolved.actor.id);
+    const rescheduleTask = rescheduleChecklist
+      ? await ensureEventRescheduleTask(client, {
+        sourceKey: `card-time:${card.id}:${card.eventTime?.startIso}:${card.eventTime?.endIso}:${interval.startIso}:${interval.endIso}`,
+        title: String(card.title || 'Event'),
+        date: interval.startIso,
+        actorId: resolved.actor.id,
+        checklist: rescheduleChecklist,
+      })
+      : null;
     const dated = await adoptEventDate(client, result.card, card.eventTime);
     const projected = await projectCard(new TeamDirectory(client), dated.card, undefined, await getTemplateIdByType(client));
     return json(result.sync.state === 'synced' ? 200 : 502, {
       ...result, card: projected, inviteCheck: verified.check, movedTasks: dated.movedTasks,
+      ...(rescheduleTask ? { rescheduleTaskId: rescheduleTask.id } : {}),
       ...(result.sync.state === 'deferred' ? { error: result.sync.reason } : {}),
     });
   } catch (error) {
