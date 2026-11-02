@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { upload, confirm, report, alias, aliases, balances, matches, attachDoc, note, commands } from "../src/commands/reconcile.mjs";
+import { upload, confirm, report, alias, aliases, balances, matches, attachDoc, deleteRow, note, commands } from "../src/commands/reconcile.mjs";
 import { exitCodeFor, EXIT } from "../src/errors.mjs";
 
 const withFakePortal = async (routes, run) => {
@@ -169,6 +169,51 @@ test("attach-doc accepts a bare ledger ID and links evidence without creating an
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+for (const row of ["receipt-7aceb67624c4496bd10f1ffdb70e0f21f9974b2f", "ledger:receipt-7aceb67624c4496bd10f1ffdb70e0f21f9974b2f"]) {
+  test(`attach-doc resolves ${row} as an existing ledger row, not a bank key`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-receipt-doc-"));
+    const path = join(directory, "receipt.pdf");
+    await writeFile(path, "%PDF-1.4 synthetic receipt");
+    try {
+      await withFakePortal([
+        ["https://private.example.test/object", ""],
+        ["/documents/prepare", { document: { id: "receipt-doc" }, uploadUrl: "https://private.example.test/object", uploadHeaders: { "content-type": "application/pdf" } }],
+        ["/documents/receipt-doc/complete", { document: { id: "receipt-doc" } }],
+        ["/reconcile/months/2026-10/document", (request) => {
+          assert.deepEqual(JSON.parse(request.options.body), { transactionId: "receipt-7aceb67624c4496bd10f1ffdb70e0f21f9974b2f", documentId: "receipt-doc" });
+          return { id: "link-1", outcome: "created" };
+        }],
+      ], async (calls) => {
+        await attachDoc({ ...args, _: [row, path], period: "2026-10" }, {});
+        assert.ok(!calls.some((call) => call.url.endsWith("/ledger")));
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
+
+test("delete-row sends a dry run by default and applies only with --apply", async () => {
+  const sent = [];
+  await withFakePortal([
+    ["/reconcile/months/2026-10/delete-row", (request) => {
+      sent.push(JSON.parse(request.options.body));
+      return { mode: sent.length === 1 ? "dry-run" : "apply", deleted: sent.length > 1, row: { date: "2026-10-01", amount: "48.32", currency: "USD", counterparty: "Teachable" }, holds: [], blockers: [] };
+    }],
+  ], async () => {
+    const base = { ...args, _: ["ledger:dup-id"], period: "2026-10", reason: "same payout twice", duplicateOf: "keep-id" };
+    const dry = await deleteRow(base, { print() {} });
+    assert.equal(dry.deleted, false);
+    const applied = await deleteRow({ ...base, apply: true }, { print() {} });
+    assert.equal(applied.deleted, true);
+  });
+  assert.deepEqual(sent, [
+    { transactionId: "dup-id", reason: "same payout twice", duplicateOf: "keep-id", apply: false },
+    { transactionId: "dup-id", reason: "same payout twice", duplicateOf: "keep-id", apply: true },
+  ]);
+  assert.ok(commands["delete-row"]);
 });
 
 test("reconcile note updates the existing ledger comment", async () => {

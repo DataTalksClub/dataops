@@ -72,10 +72,17 @@ Usage
       not show (personal card, PayPal, other bank).
   dataops reconcile attach-doc <row> <file.pdf> --period YYYY-MM [--category C]
       The invoice/receipt for one row. Use a bank-row key to create its ledger
-      row, or a ledger ID to attach directly to an existing row.
+      row, or a ledger ID (64 hex, UUID, receipt-<hex>, optionally prefixed
+      ledger:) to attach directly to an existing row.
   dataops reconcile create-ledger <bank-key> --period YYYY-MM [--category C] [--description D]
       Create the missing ledger row and pair it with the bank row. Repeating the
       command for the same bank row reuses that ledger row.
+  dataops reconcile delete-row <ledger-id> --period YYYY-MM --reason TEXT [--duplicate-of <ledger-id>] [--apply]
+      Delete one ledger row; dry run unless --apply. Audited on the month's
+      history with the row's facts. Refused for a row that holds a bank pairing,
+      document, payment proof, exception or invoice/deal link, unless
+      --duplicate-of names another ledger row with the same date, amount,
+      currency and counterparty (the exact duplicate being removed).
   dataops reconcile note <ledger-id> --note TEXT
       Add or replace the note on an existing ledger row.
   dataops reconcile except <row> --kind KIND --period YYYY-MM [--proof TEXT] [--note TEXT]
@@ -529,6 +536,8 @@ export async function attachProof(args, io) {
   return { ...result, documentId: stored.documentId };
 }
 
+const LEDGER_ID = /^(?:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|receipt-[a-f0-9]{20,64})$/i;
+
 export async function attachDoc(args, io) {
   const usage = "dataops reconcile attach-doc <row> <file.pdf> --period YYYY-MM [--category C]";
   const row = positional(args, 0, usage), file = positional(args, 1, usage);
@@ -536,9 +545,9 @@ export async function attachDoc(args, io) {
   const api = apiFor(args);
   const stored = await storeDocument(api, file, { documentType: "receipt", sourceRef: `reconcile-doc:${period}` });
   let result;
-  const looksLikeLedgerId = /^[a-f\d]{64}$/i.test(row) || /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i.test(row);
-  if (looksLikeLedgerId) {
-    result = await api.post(`/api/reconcile/months/${period}/document`, { transactionId: row, documentId: stored.documentId });
+  const ledgerId = row.replace(/^ledger:/, "");
+  if (row.startsWith("ledger:") || LEDGER_ID.test(ledgerId)) {
+    result = await api.post(`/api/reconcile/months/${period}/document`, { transactionId: ledgerId, documentId: stored.documentId });
   } else {
     const category = optionalString(args, "category");
     result = await api.post(`/api/reconcile/months/${period}/ledger`, { bankKey: row, documentId: stored.documentId, ...(category ? { category } : {}) });
@@ -556,6 +565,24 @@ export async function note(args, io) {
   const transaction = await api.put(`/api/bookkeeping/transactions/${enc(transactionId)}`, { comment: text });
   if (!args.json) io.print(`Updated note on ledger row ${transactionId}.`);
   return transaction;
+}
+
+export async function deleteRow(args, io) {
+  const usage = "dataops reconcile delete-row <ledger-id> --period YYYY-MM --reason TEXT [--duplicate-of <ledger-id>] [--apply]";
+  const transactionId = positional(args, 0, usage).replace(/^ledger:/, "");
+  const period = periodOr(args);
+  const reason = optionalString(args, "reason");
+  if (!reason) throw new UsageError(usage);
+  const duplicateOf = optionalString(args, "duplicateOf");
+  const result = await monthPost(args, period, "delete-row", { transactionId, reason, ...(duplicateOf ? { duplicateOf } : {}), apply: Boolean(args.apply) });
+  if (!args.json) {
+    const row = result.row || {};
+    const what = `${row.date || ""} ${row.amount || ""} ${row.currency || ""} ${row.counterparty || ""}`.trim();
+    if (result.deleted) io.print(`Deleted ledger row ${transactionId} (${what}) from ${period}; recorded on the month history.`);
+    else if (result.blockers?.length) io.print(`Would refuse to delete ${transactionId} (${what}): ${result.blockers.join("; ")}.`);
+    else io.print(`Dry run: would delete ledger row ${transactionId} (${what})${result.holds?.length ? `, which holds ${result.holds.join(", ")}` : ""}. Re-run with --apply.`);
+  }
+  return result;
 }
 
 export async function createLedger(args, io) {
@@ -700,6 +727,6 @@ export async function alias(args, io) {
 
 export const commands = {
   upload, "import-document": importDocument, parse, balances, statements, statement, report, confirm, aliases, alias,
-  month, months, matches, "auto-match": autoMatch, match, unmatch, "attach-proof": attachProof, "attach-doc": attachDoc, "create-ledger": createLedger, note,
+  month, months, matches, "auto-match": autoMatch, match, unmatch, "attach-proof": attachProof, "attach-doc": attachDoc, "delete-row": deleteRow, "create-ledger": createLedger, note,
   except, "clear-except": clearExcept, "confirm-exceptions": confirmExceptions, close, reopen, package: packageMonth, config,
 };
