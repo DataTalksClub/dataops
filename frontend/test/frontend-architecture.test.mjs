@@ -29,7 +29,7 @@ function frontendHarnessFiles() {
       const entryPath = path.join(directory, entry.name);
       if (entry.isDirectory()) return collect(entryPath);
       return entry.isFile() && /\.(?:mjs|js)$/.test(entry.name)
-        ? [path.relative(repoRoot, entryPath)]
+        ? [path.relative(repoRoot, entryPath).split(path.sep).join('/')]
         : [];
     });
 
