@@ -808,6 +808,46 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       setSponsorDocEmailDepsForTests({});
     }
   });
+
+  it('keeps taskless drafts but defers email delivery until an owning task is linked', async () => {
+    const card = await createCard(client, {
+      ...templateLink(),
+      title: '[Newsletter] (16 NOV 2026) #312 - ClickHouse',
+      anchorDate: '2026-11-16',
+      sponsor: 'ClickHouse',
+    });
+    let fetchCalls = 0;
+    setSponsorDocEmailDepsForTests({
+      brokerUrl: 'https://dapier.example.test',
+      credential: 'dp_test_orin_token',
+      fetchImpl: (async () => {
+        fetchCalls += 1;
+        throw new Error('Email sending must not start without an owning task');
+      }) as typeof globalThis.fetch,
+    });
+    try {
+      const autoSend = await staffReq('POST', '/api/sponsor-docs', {
+        cardId: card.id,
+        template: 'newsletter-main',
+        recipientEmail: 'alexey.s.grigoriev@gmail.com',
+      });
+      assert.equal(autoSend.statusCode, 201, autoSend.body);
+      const autoSendBody = JSON.parse(autoSend.body);
+      assert.equal(autoSendBody.emailDelivery?.state, 'deferred');
+      assert.equal(autoSendBody.emailDelivery?.reason, 'task_required');
+      assert.match(autoSendBody.emailDelivery?.message || '', /linked owning task is required/i);
+      assert.equal(fetchCalls, 0, 'Gmail must not be contacted without an owning task');
+
+      const docId = autoSendBody.doc.id;
+      const send = await staffReq('POST', `/api/sponsor-docs/${docId}/send-email`, {});
+      assert.equal(send.statusCode, 400, send.body);
+      assert.match(JSON.parse(send.body).error, /linked task is required/i);
+      assert.equal(fetchCalls, 0, 'Gmail must not be contacted before a task is linked');
+    } finally {
+      setSponsorDocEmailDepsForTests({});
+    }
+  });
+
   it('links webinar materials, saves speaker drafts, validates submission and exposes the saved export on the card', async () => {
     const card = await createCard(client, { ...templateLink(), title: '[Webinar] Synthetic talk', people: ['Test Speaker'] });
     const created = await staffReq('POST', '/api/sponsor-docs', { cardId: card.id });

@@ -125,7 +125,7 @@ async function assertSponsorEmailTaskOwner(
   taskId: string | null,
   cardId: string,
 ): Promise<void> {
-  if (!taskId) return;
+  if (!taskId) throw new SponsorEmailTaskOwnerError(400, 'A linked task is required to send a sponsor document email');
   const task = await getTaskConsistent(client, taskId);
   if (!task) throw new SponsorEmailTaskOwnerError(404, `Task ${taskId} not found`);
   if (task.cardId !== cardId) throw new SponsorEmailTaskOwnerError(400, `Task ${taskId} is not linked to this sponsor document`);
@@ -680,8 +680,7 @@ export async function handleSponsorDocRoutes(
         const shouldAutoSend = body.autoSendEmail !== false
           && (isAutoSendEligibleTemplate(template) || Boolean(explicitRecipient));
         const taskId = typeof body.taskId === 'string' && body.taskId.trim() ? body.taskId.trim() : null;
-        if (shouldAutoSend) await assertSponsorEmailTaskOwner(client, taskId, ownerRecordId);
-
+        if (shouldAutoSend && taskId) await assertSponsorEmailTaskOwner(client, taskId, ownerRecordId);
         const { doc, accessCode } = await createSponsorDoc(client, {
           cardId: ownerRecordId,
           template,
@@ -748,6 +747,7 @@ export async function handleSponsorDocRoutes(
             accessCode,
             recipientEmail: explicitRecipient,
             recipientName: typeof body.recipientName === 'string' ? body.recipientName : null,
+            taskId,
           });
           if (taskId) emailDelivery = { ...emailDelivery, taskId };
           const withDelivery = await setSponsorDocEmailDelivery(client, doc.id, emailDelivery);
@@ -872,6 +872,7 @@ export async function handleSponsorDocRoutes(
         accessCode,
         recipientEmail: explicitRecipient,
         recipientName: typeof body.recipientName === 'string' ? body.recipientName : null,
+        taskId,
       });
       if (taskId) emailDelivery = { ...emailDelivery, taskId };
       let updatedDoc = (await setSponsorDocEmailDelivery(client, docId, emailDelivery)) || loaded.doc;
