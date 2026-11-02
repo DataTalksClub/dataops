@@ -346,9 +346,17 @@ describe('sponsor payment follow-ups', () => {
     assert.strictEqual(noProof.status, 400);
     assert.match(noProof.body.error, /comment/);
 
+    // Re-waiting a due payment follow-up without evidence is rejected: no silent re-snooze.
+    const noEvidence = await invoke('POST', `/api/tasks/${taskId}/actions/mark-waiting`, {
+      expectedVersion: 1, waitingFor: 'Sponsor accounts team', followUpAt: day(7), channel: 'email', note: 'Sent the reminder',
+    });
+    assert.strictEqual(noEvidence.status, 422);
+    assert.match(noEvidence.body.error, /emailRef/);
+
     // Waiting on the sponsor carries the next follow-up date into the projection view.
     const waiting = await invoke('POST', `/api/tasks/${taskId}/actions/mark-waiting`, {
       expectedVersion: 1, waitingFor: 'Sponsor accounts team', followUpAt: day(7), channel: 'email', note: 'Sent the reminder',
+      emailRef: 'synthetic-msg-1',
     });
     assert.strictEqual(waiting.status, 200, JSON.stringify(waiting.body));
     assert.strictEqual(waiting.body.status, 'waiting');
@@ -361,6 +369,7 @@ describe('sponsor payment follow-ups', () => {
     // A recorded follow-up moves the next follow-up date.
     const followedUp = await invoke('POST', `/api/tasks/${taskId}/actions/follow-up-sent`, {
       expectedVersion: 2, channel: 'email', note: 'Second reminder', nextFollowUpAt: day(14),
+      emailRef: 'synthetic-msg-2',
     });
     assert.strictEqual(followedUp.status, 200);
     assert.strictEqual(followedUp.body.followUpAt, day(14));

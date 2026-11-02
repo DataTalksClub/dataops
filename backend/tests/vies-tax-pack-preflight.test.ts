@@ -24,6 +24,12 @@ describe('VAT preflight on the monthly tax pack', () => {
     const setup = await invoke('POST', '/api/bookkeeping/accounts/setup');
     assert.equal(setup.statusCode, 200);
     const accounts = JSON.parse(setup.body).accounts as Array<{ id: string }>;
+    // Legacy setup accounts only cover statements through 2026-09; the
+    // current Revolut/Finom accounts are the statement sources for 2026-10.
+    for (const [id, displayName] of [['revolut', 'Revolut Business EUR'], ['finom', 'Finom Business']]) {
+      await putBookkeepingItem(client, 'account', { id, displayName, kind: 'business', active: true }, `business-account#current#${id}`);
+      accounts.push({ id });
+    }
     for (const account of accounts) {
       await putBookkeepingItem(client, 'document', {
         documentType: 'bank-statement', status: 'active', accountId: account.id, statementMonth: '2026-10',

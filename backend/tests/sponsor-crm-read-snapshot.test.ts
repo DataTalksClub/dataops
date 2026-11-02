@@ -30,6 +30,10 @@ function fakeClient() {
     send: async (command: { constructor: { name: string }; input: Record<string, any> }) => {
       const name = command.constructor.name;
       if (name === 'ScanCommand') {
+        // The CRM read snapshot covers the CRM table only; finance enrichment
+        // may also read the Tasks table (recorded sponsor chases), which is
+        // outside this contract and reads as empty here.
+        if (command.input.TableName !== TABLE_SPONSOR_CRM) return { Items: [] };
         assert.equal(command.input.TableName, TABLE_SPONSOR_CRM);
         const prefixes = Object.values(command.input.ExpressionAttributeValues || {}) as string[];
         scans.push(prefixes);
