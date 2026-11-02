@@ -22,19 +22,26 @@ function cleanItem(item: Record<string, unknown> | undefined): Session | null {
   return rest as unknown as Session;
 }
 
+/** Lifetime of a bearer session from `createSession` (local e2e and tests only). */
+const BEARER_SESSION_LIFETIME_SECONDS = 30 * 24 * 3600;
+
 /**
- * Create a new session. Generates a UUID token, sets createdAt.
+ * Create a new bounded bearer session. Generates a UUID token and sets
+ * createdAt and expiresAt.
  */
 async function createSession(client: DynamoDBDocumentClient, userId: string): Promise<Session> {
   const token = crypto.randomUUID();
-  const now = new Date().toISOString();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + BEARER_SESSION_LIFETIME_SECONDS * 1000).toISOString();
 
   const item = {
     PK: `SESSION#${token}`,
     SK: `SESSION#${token}`,
     token,
     userId,
-    createdAt: now,
+    createdAt: now.toISOString(),
+    expiresAt,
+    ttl: Math.floor(Date.parse(expiresAt) / 1000),
   };
 
   await client.send(
@@ -47,7 +54,7 @@ async function createSession(client: DynamoDBDocumentClient, userId: string): Pr
   return cleanItem(item) as Session;
 }
 
-/** Create a bounded opaque browser session without changing legacy bearer sessions. */
+/** Create a bounded opaque browser session. */
 async function createBrowserSession(
   client: DynamoDBDocumentClient,
   userId: string,
@@ -91,8 +98,8 @@ async function getSession(client: DynamoDBDocumentClient, token: string, now = n
 
   const session = result.Item ? cleanItem(result.Item as Record<string, unknown>) : null;
   if (!session) return null;
-  // Existing bearer sessions intentionally have no expiresAt and preserve their contract.
-  if (session.expiresAt && Date.parse(session.expiresAt) <= now.getTime()) {
+  // A session without a parseable expiry is never valid.
+  if (!(Date.parse(session.expiresAt) > now.getTime())) {
     await deleteSession(client, token);
     return null;
   }

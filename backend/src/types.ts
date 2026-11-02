@@ -782,8 +782,7 @@ export interface Session {
   token: string;
   userId: string;
   createdAt: string;
-  /** Present only for bounded browser sessions; legacy bearer sessions remain unbounded. */
-  expiresAt?: string;
+  expiresAt: string;
   /** DynamoDB TTL epoch seconds. */
   ttl?: number;
   sessionType?: 'browser';

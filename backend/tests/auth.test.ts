@@ -1,11 +1,12 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createSession, getSession, deleteSession } from '../src/db/sessions';
+import { TABLE_SESSIONS } from '../src/db/tableNames';
 import { createUserWithId } from '../src/db/users';
 
 describe('Sessions DB layer', () => {
@@ -44,6 +45,15 @@ describe('Sessions DB layer', () => {
   it('getSession returns null for nonexistent token', async () => {
     const result = await getSession(client, 'nonexistent-token-xyz');
     assert.strictEqual(result, null);
+  });
+
+  it('getSession refuses a session stored without expiresAt', async () => {
+    const token = 'unbounded-session-token';
+    await client.send(new PutCommand({
+      TableName: TABLE_SESSIONS,
+      Item: { PK: `SESSION#${token}`, SK: `SESSION#${token}`, token, userId: 'user-000', createdAt: new Date().toISOString() },
+    }));
+    assert.strictEqual(await getSession(client, token), null);
   });
 
   it('deleteSession removes the session', async () => {

@@ -423,11 +423,12 @@ describe('shared Cognito browser authentication', () => {
     assert.strictEqual(page.headers?.location, '/login');
   });
 
-  it('expires and revokes browser sessions while preserving legacy bearer-session expiry semantics', async () => {
+  it('expires and revokes browser and bearer sessions', async () => {
     const expired = await createBrowserSession(client, 'enabled-admin', { now: new Date(Date.now() - 7200_000), lifetimeSeconds: 3600 });
     assert.strictEqual(await getSession(client, expired.token), null);
-    const legacy = await createSession(client, 'enabled-admin');
-    assert.ok(await getSession(client, legacy.token, new Date('2100-01-01')));
+    const bearer = await createSession(client, 'enabled-admin');
+    assert.ok(await getSession(client, bearer.token));
+    assert.strictEqual(await getSession(client, bearer.token, new Date('2100-01-01')), null);
 
     const response = await complete();
     const browserCookie = cookiePair(response, 'dataops_session');
