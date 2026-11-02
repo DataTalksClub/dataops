@@ -56,7 +56,7 @@ test("sponsor doc send-email uses the shared API and reports the Gmail message I
     task: "task-1",
     connection: "google-calendar-orin",
   }, { print: line => lines.push(line) });
-  assert.equal(calls[0].url, "/api/sponsor-docs/doc-1/send-email");
+  assert.equal(calls[0].route, "/api/sponsor-docs/doc-1/send-email");
   assert.deepEqual(calls[0].body, { recipientEmail: "alexey.s.grigoriev@gmail.com", taskId: "task-1" });
   assert.match(lines[0], /Gmail message gmail-message-1/);
   assert.equal(result.emailDelivery.messageId, "gmail-message-1");
