@@ -91,6 +91,7 @@ describe('production portal bookkeeping frontend', () => {
     for (const relativePath of [
       'src/surfaces/finance/bookkeeping-statement.js',
       'src/surfaces/finance/bookkeeping-transaction-dialog.js',
+      'src/surfaces/finance/bookkeeping-transaction-modal.js',
       'src/surfaces/finance/bookkeeping-vendors.js',
     ]) {
       assert.ok(DEPLOYED_FRONTEND_FILE_LIST.includes(relativePath), `${relativePath} must be deployable`);

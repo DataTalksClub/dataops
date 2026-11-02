@@ -113,6 +113,7 @@
     "src/surfaces/finance/bookkeeping-navigation.js",
     "src/surfaces/finance/bookkeeping-statement.js",
     "src/surfaces/finance/bookkeeping-transaction-dialog.js",
+    "src/surfaces/finance/bookkeeping-transaction-modal.js",
     "src/surfaces/finance/bookkeeping-vendors.js",
     "src/surfaces/finance/bookkeeping-views.js",
     "src/surfaces/finance/bookkeeping-vat.js",
