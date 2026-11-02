@@ -1,16 +1,25 @@
-import { describe, it } from 'node:test';
-import assert from 'node:assert';
+import { describe, it, before, beforeEach, after } from 'node:test';
+import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
-import { GUIDE, POCKETSHELL_PARITY, TOOL_DEFINITIONS, validateRoute } from '../src/tools.mjs';
-import { createProxyHandler, validateCaller } from '../src/proxy.mjs';
+import { GUIDE, POCKETSHELL_PARITY, SERVER_INFO, TOOL_DEFINITIONS, validateRoute } from '../src/tools.mjs';
+import { createProxyHandler } from '../src/proxy.mjs';
+import {
+  authenticateRequest,
+  bearerChallengeHeaders,
+  DEFAULT_ISSUER,
+  ISSUER_SCOPES,
+  protectedResourceMetadata,
+  requestUrl,
+  resetJwksCache,
+  resourceForRequest,
+  verifyJwt,
+} from '../src/auth.mjs';
+import { generateSigningKey, humanClaims, mintJwt, startJwksServer } from './helpers/issuer-rig.mjs';
 
 describe('DataOps MCP tools', () => {
   it('exposes exactly read, write and guide', () => {
-    assert.deepStrictEqual(
-      TOOL_DEFINITIONS.map((t) => t.name).sort(),
-      ['dataops_guide', 'dataops_read', 'dataops_write'],
-    );
+    assert.deepStrictEqual(TOOL_DEFINITIONS.map((t) => t.name).sort(), ['dataops_guide', 'dataops_read', 'dataops_write']);
   });
 
   it('marks write as destructive and read/guide as read-only', () => {
@@ -27,122 +36,169 @@ describe('DataOps MCP tools', () => {
   });
 
   it('rejects auth, token, traversal and external routes', () => {
-    for (const route of [
-      '/api/auth/device',
-      '/api/auth/device/token',
-      '/api/tokens',
-      '/api/users/tokens/x',
-      '/api/../secrets',
-      '/api/%2e%2e/tasks',
-      'https://example.com/api/tasks',
-      '/other',
-      '',
-    ]) {
+    for (const route of ['/api/auth/device', '/api/auth/device/token', '/api/tokens', '/api/../secrets', '/api/%2e%2e/tasks', 'https://example.com/api/tasks', '/other', '']) {
       assert.throws(() => validateRoute(route), /Invalid|refused|not tools/, route);
     }
   });
 
-  it('covers every pocketshell-mcp DataOps command family', () => {
-    const commands = Object.keys(POCKETSHELL_PARITY);
-    assert.strictEqual(commands.length, 24);
-    for (const command of commands) {
-      const family = POCKETSHELL_PARITY[command];
-      const probe = family === '/api/team-members' ? '/api/team-members' : `${family}/probe`;
-      assert.doesNotThrow(() => validateRoute(probe), command);
+  it('covers every legacy command family', () => {
+    const names = Object.keys(POCKETSHELL_PARITY);
+    assert.strictEqual(names.length, 24);
+    for (const name of names) {
+      const family = POCKETSHELL_PARITY[name];
+      assert.doesNotThrow(() => validateRoute(family === '/api/team' ? '/api/team' : `${family}/probe`), name);
     }
   });
 
   it('guide names the domain vocabulary', () => {
-    assert.match(GUIDE.portal, /Template.*Card.*Task/s);
+    assert.match(GUIDE.portal, /Template[\s\S]*Card[\s\S]*Task/s);
   });
 });
 
-function startFakeUpstream(handler) {
+// ── Shared-issuer JWT rig ────────────────────────────────────────────────────
+
+const KID = 'test-key-1';
+const pair = generateSigningKey(KID);
+
+let issuerBase = '';
+let goodToken = '';
+let jwksHits = 0;
+let jwksServer;
+
+before(async () => {
+  jwksServer = await startJwksServer([pair.jwk]);
+  issuerBase = `http://127.0.0.1:${jwksServer.address().port}`;
+  goodToken = mintJwt(humanClaims(issuerBase), { privateKey: pair.privateKey, kid: KID });
+});
+
+after(async () => {
+  if (jwksServer) await new Promise((resolve) => jwksServer.close(resolve));
+});
+
+async function fakeUpstream(handler) {
   const server = createServer(handler);
-  return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => resolve(server));
-  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return server;
 }
 
-async function rpc(handler, body, headers = {}) {
+const stopServer = (server) => new Promise((resolve) => server.close(resolve));
+const proxyFor = (upstream) => createProxyHandler({ upstreamBase: `http://127.0.0.1:${upstream.address().port}`, issuer: issuerBase });
+
+/**
+ * Drive a proxy handler with a fake req/res pair mirroring Node http
+ * behaviour that matters here: lowercased response headers and absolute
+ * URL resolution from the Host header. token null omits the header.
+ */
+async function rpc(handler, body, { url = '/mcp', method = 'POST', token = goodToken, host = 'localhost' } = {}) {
+  const chunks = body === undefined ? [] : [Buffer.from(JSON.stringify(body))];
   const req = {
-    url: '/mcp',
-    method: 'POST',
-    headers: { authorization: 'Bearer test-token', ...headers },
-  };
-  let status = 0;
-  let payload = '';
-  const res = {
-    writeHead(code, responseHeaders) {
-      status = code;
-      this.responseHeaders = responseHeaders;
-    },
-    end(data) {
-      payload = data || '';
-      this.finished = true;
-    },
-  };
-  const chunks = [Buffer.from(JSON.stringify(body))];
-  const fakeReq = Object.assign(req, {
+    url,
+    method,
+    headers: { host, ...(token === null ? {} : { authorization: token === '' ? '' : `Bearer ${token}` }) },
     on(event, fn) {
       if (event === 'data') chunks.forEach((c) => fn(c));
       if (event === 'end') queueMicrotask(fn);
       return this;
     },
     destroy() {},
-  });
-  await handler(fakeReq, res);
-  return { status, json: payload ? JSON.parse(payload) : null };
+  };
+  const res = {
+    code: 0,
+    headers: {},
+    payload: '',
+    writeHead(status, heads) {
+      this.code = status;
+      this.headers = Object.fromEntries(Object.entries(heads || {}).map(([k, v]) => [k.toLowerCase(), v]));
+    },
+    end(data) {
+      this.payload = String(data || '');
+    },
+  };
+  await handler(req, res);
+  return { status: res.code, headers: res.headers, payload: res.payload, json: res.payload ? JSON.parse(res.payload) : null };
 }
 
-describe('DataOps MCP proxy protocol', () => {
-  it('authenticates initialize and tools/list with the DataOps credential', async () => {
-    const upstream = await startFakeUpstream((_req, res) => {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ user: { id: 'u1' } }));
-    });
+const INITIALIZE = { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } };
+
+describe('MCP shared-issuer auth', () => {
+  beforeEach(() => {
+    jwksHits = 0;
+    resetJwksCache();
+  });
+
+  it('advertises protected-resource metadata on both well-known paths', async () => {
+    const upstream = await fakeUpstream(() => assert.fail('metadata must not reach upstream'));
     try {
-      const handler = createProxyHandler({ upstreamBase: `http://127.0.0.1:${upstream.address().port}` });
-      const init = await rpc(handler, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
-      assert.strictEqual(init.status, 200);
-      assert.strictEqual(init.json.result.serverInfo.name, 'dataops-mcp');
-      assert.strictEqual(init.json.result.protocolVersion, '2025-06-18');
-      const list = await rpc(handler, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
-      assert.deepStrictEqual(list.json.result.tools.map((t) => t.name).sort(), ['dataops_guide', 'dataops_read', 'dataops_write']);
-      for (const method of ['initialize', 'tools/list']) {
-        const denied = await rpc(handler, { jsonrpc: '2.0', id: 2, method }, { authorization: '' });
-        assert.strictEqual(denied.status, 401);
+      const handler = proxyFor(upstream);
+      for (const path of ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp']) {
+        const out = await rpc(handler, undefined, { url: path, method: 'GET', token: null });
+        assert.strictEqual(out.status, 200, path);
+        assert.strictEqual(out.json.resource, 'http://localhost/mcp', path);
+        assert.deepStrictEqual(out.json.authorization_servers, [issuerBase], path);
+        assert.ok(ISSUER_SCOPES.includes('mcp'));
+        assert.strictEqual(out.headers['access-control-allow-origin'], '*', path);
+      }
+      assert.strictEqual(jwksHits, 0);
+    } finally {
+      await stopServer(upstream);
+    }
+  });
+
+  it('challenges missing and non-JWT credentials without contacting upstream', async () => {
+    const upstream = await fakeUpstream(() => assert.fail('unauthenticated calls must not reach upstream'));
+    try {
+      const handler = proxyFor(upstream);
+      for (const [label, token] of [
+        ['missing header', null],
+        ['empty header', ''],
+        ['opaque token', 'dops_opaque'],
+        ['malformed jwt', 'not.a.jwt'],
+        ['wrong scheme', ''],
+      ]) {
+        const out = await rpc(handler, INITIALIZE, { token: token ?? null });
+        assert.strictEqual(out.status, 401, label);
+        const challenge = String(out.headers['www-authenticate'] || '');
+        assert.match(challenge, /^Bearer /, label);
+        assert.match(challenge, /resource_metadata="http:\/\/localhost\/\.well-known\/oauth-protected-resource\/mcp"/, label);
+        if (token && !token.startsWith('Basic')) assert.match(challenge, /error="invalid_token"/, label);
+      }
+      assert.strictEqual(jwksHits, 0);
+    } finally {
+      await stopServer(upstream);
+    }
+  });
+
+  it('rejects expired, mis-issued, audience-mismatched or wrongly-signed JWTs', async () => {
+    const upstream = await fakeUpstream(() => assert.fail('rejected tokens must not reach upstream'));
+    try {
+      const handler = proxyFor(upstream);
+      const t = Math.floor(Date.now() / 1000);
+      const bad = {
+        expired: mintJwt(humanClaims(issuerBase, { exp: t - 10 }), { privateKey: pair.privateKey, kid: KID }),
+        wrong_iss: mintJwt(humanClaims(issuerBase, { iss: 'https://evil.example' }), { privateKey: pair.privateKey, kid: KID }),
+        wrong_aud: mintJwt(humanClaims(issuerBase, { aud: 'https://ops.dtcdev.click' }), { privateKey: pair.privateKey, kid: KID }),
+        future_nbf: mintJwt(humanClaims(issuerBase, { nbf: t + 3600 }), { privateKey: pair.privateKey, kid: KID }),
+        unsigned: mintJwt(humanClaims(issuerBase), { alg: 'none' }),
+        other_key: mintJwt(humanClaims(issuerBase), { privateKey: generateSigningKey('other').privateKey, kid: KID }),
+      };
+      for (const [label, token] of Object.entries(bad)) {
+        const out = await rpc(handler, INITIALIZE, { token });
+        assert.strictEqual(out.status, 401, label);
+        assert.match(String(out.headers['www-authenticate']), /error="invalid_token"/, label);
       }
     } finally {
-      upstream.close();
+      await stopServer(upstream);
     }
   });
 
-  it('refuses tool calls without a valid upstream session', async () => {
-    const upstream = await startFakeUpstream((_req, res) => {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Unauthorized' }));
-    });
-    try {
-      const handler = createProxyHandler({ upstreamBase: `http://127.0.0.1:${upstream.address().port}` });
-      const out = await rpc(handler, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'dataops_read', arguments: { route: '/api/tasks' } } });
-      assert.strictEqual(out.status, 401);
-    } finally {
-      upstream.close();
-    }
-  });
-
-  it('proxies read and guide calls with the caller token', async () => {
+  it('accepts a valid JWT, never calls /api/me, and forwards the caller token', async () => {
     const seen = [];
-    const upstream = await startFakeUpstream((req, res) => {
-      let body = '';
-      req.on('data', (c) => (body += c));
+    const upstream = await fakeUpstream((req, res) => {
+      let raw = '';
+      req.on('data', (c) => (raw += c));
       req.on('end', () => {
-        seen.push({ url: req.url, method: req.method, auth: req.headers.authorization, body });
-        if (req.url === '/api/me') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ user: { id: 'u1' } }));
-        } else if (req.url === '/api/tasks?owner=me') {
+        seen.push({ url: req.url, method: req.method, auth: req.headers.authorization });
+        if (req.url === '/api/tasks?owner=me') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ tasks: [{ id: 't1' }] }));
         } else {
@@ -152,45 +208,78 @@ describe('DataOps MCP proxy protocol', () => {
       });
     });
     try {
-      const handler = createProxyHandler({ upstreamBase: `http://127.0.0.1:${upstream.address().port}` });
-      const guide = await rpc(handler, { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'dataops_guide', arguments: {} } });
+      const handler = proxyFor(upstream);
+      const init = await rpc(handler, INITIALIZE);
+      assert.strictEqual(init.status, 200);
+      assert.strictEqual(init.json.result.serverInfo.name, SERVER_INFO.name);
+      const list = await rpc(handler, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+      assert.deepStrictEqual(list.json.result.tools.map((t) => t.name).sort(), ['dataops_guide', 'dataops_read', 'dataops_write']);
+      const guide = await rpc(handler, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'dataops_guide', arguments: {} } });
       assert.match(guide.json.result.content[0].text, /Template/);
-      const read = await rpc(handler, {
-        jsonrpc: '2.0',
-        id: 5,
-        method: 'tools/call',
-        params: { name: 'dataops_read', arguments: { route: '/api/tasks?owner=me' } },
-      });
+      const read = await rpc(handler, { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'dataops_read', arguments: { route: '/api/tasks?owner=me' } } });
       assert.match(read.json.result.content[0].text, /t1/);
-      assert.ok(seen.every((s) => s.auth === 'Bearer test-token'), 'caller token forwarded unchanged');
-      const bad = await rpc(handler, {
-        jsonrpc: '2.0',
-        id: 6,
-        method: 'tools/call',
-        params: { name: 'dataops_read', arguments: { route: '/api/auth/device' } },
-      });
-      assert.strictEqual(bad.json.result.isError, true);
+      const refused = await rpc(handler, { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'dataops_read', arguments: { route: '/api/users' } } });
+      assert.strictEqual(refused.status, 200);
+      assert.strictEqual(refused.json.result.isError, true);
+      assert.ok(!refused.json.result.content[0].text.includes(goodToken), 'token never echoed in tool errors');
+      assert.ok(seen.every((s) => s.auth === `Bearer ${goodToken}`), 'caller JWT forwarded unchanged');
+      assert.ok(!seen.some((s) => s.url === '/api/me'), 'tokens verified locally, never via /api/me');
     } finally {
-      upstream.close();
+      await stopServer(upstream);
     }
   });
+});
 
-  it('rejects unknown protocol methods', async () => {
-    const upstream = await startFakeUpstream((_req, res) => {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end('{}');
-    });
-    try {
-      const handler = createProxyHandler({ upstreamBase: `http://127.0.0.1:${upstream.address().port}` });
-      const out = await rpc(handler, { jsonrpc: '2.0', id: 7, method: 'nope', params: {} });
-      assert.strictEqual(out.json.error.code, -32601);
-    } finally {
-      upstream.close();
-    }
+describe('verification contract', () => {
+  beforeEach(() => {
+    resetJwksCache();
   });
 
-  it('validateCaller returns null without a bearer token', async () => {
-    assert.strictEqual(await validateCaller('http://127.0.0.1:1', ''), null);
-    assert.strictEqual(await validateCaller('http://127.0.0.1:1', 'Token x'), null);
+  it('resourceForRequest normalizes path, trailing slashes and queries', () => {
+    const host = 'https://mcp.ops.dtcdev.click';
+    assert.strictEqual(resourceForRequest(`${host}/mcp`), `${host}/mcp`);
+    assert.strictEqual(resourceForRequest(`${host}/mcp/`), `${host}/mcp`);
+    assert.strictEqual(resourceForRequest(`${host}/mcp?x=1`), `${host}/mcp`);
+  });
+
+  it('requestUrl derives the origin from proxy headers', () => {
+    const forwarded = { url: '/mcp', headers: { 'x-forwarded-host': 'mcp.ops.dtcdev.click', 'x-forwarded-proto': 'https' } };
+    assert.strictEqual(requestUrl(forwarded), 'https://mcp.ops.dtcdev.click/mcp');
+    const loopback = { url: '/mcp', headers: { host: 'localhost:8080' } };
+    assert.strictEqual(requestUrl(loopback), 'http://localhost:8080/mcp');
+  });
+
+  it('metadata and challenge shapes follow RFC 9728 and RFC 6750', () => {
+    const host = 'https://mcp.ops.dtcdev.click';
+    const meta = protectedResourceMetadata(`${host}/mcp`, DEFAULT_ISSUER);
+    assert.strictEqual(meta.resource, `${host}/mcp`);
+    assert.deepStrictEqual(meta.authorization_servers, [DEFAULT_ISSUER]);
+    assert.deepStrictEqual(meta.bearer_methods_supported, ['header']);
+    const failed = bearerChallengeHeaders(`${host}/mcp`, { error: 'invalid_token' });
+    assert.strictEqual(
+      failed['WWW-Authenticate'],
+      `Bearer resource_metadata="${host}/.well-known/oauth-protected-resource/mcp", error="invalid_token"`,
+    );
+    const plain = bearerChallengeHeaders(`${host}/mcp`);
+    assert.strictEqual(plain['WWW-Authenticate'], `Bearer resource_metadata="${host}/.well-known/oauth-protected-resource/mcp"`);
+  });
+
+  it('verifies signature, issuer, expiry and audience', async () => {
+    const ok = await verifyJwt(goodToken, { issuer: issuerBase });
+    assert.strictEqual(ok.sub, 'user-1');
+    await assert.rejects(() => verifyJwt(mintJwt(humanClaims(issuerBase), { alg: 'none' }), { issuer: issuerBase }), /invalid_token/);
+    await assert.rejects(() => verifyJwt(mintJwt(humanClaims(issuerBase), { privateKey: pair.privateKey, kid: 'unknown' }), { issuer: issuerBase }), /invalid_token/);
+  });
+
+  it('authenticate returns null without a bearer header and resolves the resource', async () => {
+    assert.strictEqual(await authenticateRequest('', 'http://localhost/mcp', { issuer: issuerBase }), null);
+    assert.strictEqual(await authenticateRequest('Token x', 'http://localhost/mcp', { issuer: issuerBase }), null);
+    const caller = await authenticateRequest(`Bearer ${goodToken}`, 'http://localhost/mcp', { issuer: issuerBase });
+    assert.strictEqual(caller.resource, 'http://localhost/mcp');
+    assert.strictEqual(caller.claims.email, 'agent@datatalks.club');
+    await assert.rejects(
+      () => authenticateRequest(`Bearer ${goodToken}`, 'https://ops.dtcdev.click/api', { issuer: issuerBase }),
+      /invalid_target/,
+    );
   });
 });

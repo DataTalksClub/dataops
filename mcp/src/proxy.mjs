@@ -3,16 +3,26 @@
  *
  * Speaks MCP Streamable HTTP (stateless, JSON responses) on POST /mcp and
  * forwards tool calls to a DataOps portal (`--upstream`, default
- * DATAOPS_URL) using the caller's own `Authorization: Bearer` DataOps
- * credential. The proxy never mints, stores or logs credentials: the token
- * is validated against upstream `/api/me` on every MCP request and then
- * forwarded unchanged.
+ * DATAOPS_URL) using the caller's own `Authorization: Bearer` credential.
+ * The proxy never mints, stores or logs credentials: the credential must be
+ * a shared-issuer JWT audience-bound to this MCP resource, verified locally
+ * against the issuer's JWKS on every request (see auth.mjs) and forwarded
+ * unchanged.
  *
- * Auth is the DataOps auth: run `dataops login` (device flow, browser
- * approval) and present the resulting API token as the Bearer token.
+ * Discovery follows RFC 9728: unauthenticated calls receive a Bearer
+ * challenge pointing at `/.well-known/oauth-protected-resource/mcp`, which
+ * names the shared issuer so MCP clients can run the OAuth flow themselves.
  */
 import { createServer } from 'node:http';
 import { GUIDE, SERVER_INFO, TOOL_DEFINITIONS, validateRoute } from './tools.mjs';
+import {
+  authenticateRequest,
+  bearerChallengeHeaders,
+  issuerUrl,
+  protectedResourceMetadata,
+  requestUrl,
+  resourceForRequest,
+} from './auth.mjs';
 
 const MAX_BODY_BYTES = 256 * 1024;
 const UPSTREAM_TIMEOUT_MS = 50_000;
@@ -78,22 +88,7 @@ function toolResult(id, result) {
   return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }] } };
 }
 
-/** Validate the caller's token against upstream, return the /api/me payload. */
-export async function validateCaller(upstreamBase, authorization) {
-  const token = typeof authorization === 'string' && authorization.startsWith('Bearer ')
-    ? authorization.slice('Bearer '.length).trim()
-    : '';
-  if (!token) return null;
-  try {
-    const me = await upstreamFetch(upstreamBase, '/api/me', { token });
-    if (me.status !== 200 || !me.json) return null;
-    return { token, me: me.json };
-  } catch {
-    return null;
-  }
-}
-
-export function createProxyHandler({ upstreamBase }) {
+export function createProxyHandler({ upstreamBase, issuer = issuerUrl() }) {
   const base = String(upstreamBase || '').replace(/\/$/, '');
   if (!base.startsWith('http://') && !base.startsWith('https://')) throw new Error('Upstream must be an http(s) URL');
 
@@ -171,9 +166,22 @@ export function createProxyHandler({ upstreamBase }) {
   }
 
   return async function requestHandler(req, res) {
-    const url = new URL(req.url || '/', 'http://localhost');
+    const href = requestUrl(req);
+    const url = new URL(href);
+    // The advertised and enforced resource is this origin's MCP endpoint,
+    // whichever well-known path or handler branch resolved it.
+    const resource = `${url.origin}/mcp`;
     if (url.pathname === '/health' && req.method === 'GET') {
       return sendJson(res, 200, { status: 'ok', service: SERVER_INFO.name, upstream: base });
+    }
+    if (
+      req.method === 'GET'
+      && (url.pathname === '/.well-known/oauth-protected-resource'
+        || url.pathname === '/.well-known/oauth-protected-resource/mcp')
+    ) {
+      return sendJson(res, 200, protectedResourceMetadata(resource, issuer), {
+        'Access-Control-Allow-Origin': '*',
+      });
     }
     if (url.pathname !== '/mcp' && url.pathname !== '/mcp/') {
       return sendJson(res, 404, { error: 'not_found' });
@@ -186,9 +194,17 @@ export function createProxyHandler({ upstreamBase }) {
       res.writeHead(405, { Allow: 'POST', 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ error: 'method_not_allowed' }));
     }
-    const caller = await validateCaller(base, req.headers.authorization);
+    // The shared-issuer JWT is the only accepted credential. A missing one
+    // gets the plain RFC 6750 challenge; OAuth-aware MCP clients resolve the
+    // protected-resource metadata and run the authorization-code flow.
+    let caller;
+    try {
+      caller = await authenticateRequest(req.headers.authorization, href, { issuer, resource });
+    } catch {
+      return sendJson(res, 401, { error: 'Unauthorized' }, bearerChallengeHeaders(resource, { error: 'invalid_token' }));
+    }
     if (!caller) {
-      return sendJson(res, 401, { error: 'Unauthorized' }, { 'WWW-Authenticate': 'Bearer realm="DataOps"' });
+      return sendJson(res, 401, { error: 'Unauthorized' }, bearerChallengeHeaders(resource));
     }
     let raw;
     try {

@@ -2,8 +2,8 @@
 import { Readable } from 'node:stream';
 import { createProxyHandler } from './proxy.mjs';
 
-export function createLambdaHandler({ upstreamBase }) {
-  const proxy = createProxyHandler({ upstreamBase });
+export function createLambdaHandler({ upstreamBase, issuer }) {
+  const proxy = createProxyHandler({ upstreamBase, issuer });
   return async (event) => {
     const body = typeof event.body === 'string' ? event.body : '';
     const request = Readable.from([
