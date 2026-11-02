@@ -115,6 +115,38 @@ test("upload rejects CSV and XLSX locally with a non-zero usage exit code", asyn
   }
 });
 
+test("parse previews a stored statement read-only and requires an account", async () => {
+  await withFakePortal([
+    ["/reconcile/statements/parse", (request) => {
+      const body = JSON.parse(request.options.body);
+      assert.equal(body.account, "revolut");
+      assert.equal(body.documentId, "stmt-doc-2025-01");
+      return { accountId: "revolut", documentId: "stmt-doc-2025-01", rowCount: 8, incomingCount: 2, incomingTotal: "3000.00", rows: [], warnings: ["line 42: skipped a summary line"], balances: [
+        { wallet: "EUR", currency: "EUR", amount: "1971.39", asOf: "2025-01-31" },
+        { wallet: "USD", currency: "USD", amount: "23.47", asOf: "2025-01-31" },
+      ] };
+    }],
+  ], async (calls) => {
+    const io = { lines: [], print(line) { this.lines.push(String(line)); } };
+    const result = await commands.parse({ ...args, json: false, account: "revolut", _: ["stmt-doc-2025-01"] }, io);
+    assert.equal(result.rowCount, 8);
+    assert.equal(calls.length, 1);
+    assert.match(io.lines[0], /8 rows, 2 incoming, incoming total 3000\.00 across revolut; nothing stored\./);
+    assert.match(io.lines[1], /balance EUR 1971\.39 EUR as of 2025-01-31/);
+    assert.match(io.lines[2], /balance USD 23\.47 USD as of 2025-01-31/);
+    assert.match(io.lines[3], /warning: line 42/);
+  });
+
+  await assert.rejects(
+    () => commands.parse({ ...args, _: ["stmt-doc-2025-01"] }, {}),
+    (error) => /--account must be one of/.test(error.message) && exitCodeFor(error) === EXIT.usage,
+  );
+  await assert.rejects(
+    () => commands.parse({ ...args, account: "revolut", _: [] }, {}),
+    (error) => /Usage: dataops reconcile parse/.test(error.message) && exitCodeFor(error) === EXIT.usage,
+  );
+});
+
 test("attach-doc accepts a bare ledger ID and links evidence without creating another ledger row", async () => {
   const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-ledger-doc-"));
   const path = join(directory, "receipt.pdf");

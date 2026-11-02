@@ -33,6 +33,10 @@ Usage
   dataops reconcile import-document <document-id> [--quiet] [--json]
       Parse a bank-statement document DataOps already stores (bank detected
       from its content) into per-month statements.
+  dataops reconcile parse <document-id> --account revolut|finom|mercury|merchant [--json]
+      The same parse without storing anything: prints the row count, incoming
+      total, per-wallet closing balances and warnings for a stored
+      bank-statement document.
   dataops reconcile balances [--account ACCOUNT] [--json]
       Latest known balance per account wallet, from uploaded statements.
   dataops reconcile statements [--period YYYY-MM] [--json]
@@ -196,6 +200,20 @@ export async function importDocument(args, io) {
   const result = await apiFor(args).post("/api/reconcile/statements/import", { documentId, ...(args.quiet ? { notify: false } : {}) });
   if (!args.json) {
     io.print(`${documentId}: ${result.layout}, ${result.rowCount} rows; ${result.statements.map((statement) => `${statement.period} ${statement.rowCount}`).join(", ")}${result.skippedClosedMonths?.length ? `; closed, skipped: ${result.skippedClosedMonths.join(", ")}` : ""}`);
+  }
+  return result;
+}
+
+export async function parse(args, io) {
+  const usage = "dataops reconcile parse <document-id> --account revolut|finom|mercury|merchant [--json]";
+  const documentId = positional(args, 0, usage);
+  const account = String(args.account || "");
+  if (!ACCOUNTS.includes(account)) throw new UsageError(`--account must be one of ${ACCOUNTS.join(", ")}`);
+  const result = await apiFor(args).post("/api/reconcile/statements/parse", { account, documentId });
+  if (!args.json) {
+    io.print(`${result.rowCount} rows, ${result.incomingCount} incoming, incoming total ${result.incomingTotal} across ${account}; nothing stored.`);
+    for (const balance of result.balances || []) io.print(`balance ${balance.wallet ? `${balance.wallet} ` : ""}${balance.amount} ${balance.currency} as of ${balance.asOf}`);
+    for (const warning of (result.warnings || []).slice(0, 5)) io.print(`warning: ${warning}`);
   }
   return result;
 }
@@ -681,7 +699,7 @@ export async function alias(args, io) {
 }
 
 export const commands = {
-  upload, "import-document": importDocument, balances, statements, statement, report, confirm, aliases, alias,
+  upload, "import-document": importDocument, parse, balances, statements, statement, report, confirm, aliases, alias,
   month, months, matches, "auto-match": autoMatch, match, unmatch, "attach-proof": attachProof, "attach-doc": attachDoc, "create-ledger": createLedger, note,
   except, "clear-except": clearExcept, "confirm-exceptions": confirmExceptions, close, reopen, package: packageMonth, config,
 };
