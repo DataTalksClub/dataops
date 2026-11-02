@@ -22,6 +22,7 @@ Usage
   dataops calendar release-hold <id> [--reason manual]
   dataops calendar expire-holds [--dry-run] [--now ISO]
   dataops calendar holds [--status tentative|confirmed|released|expired] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+  dataops calendar google-event <eventId> [--calendar ADDRESS]
   dataops calendar settings [--connection ID] [--filter-busy true|false] ...
   dataops calendar dismiss-alert <fingerprint>
   dataops calendar sync-holidays
@@ -58,6 +59,12 @@ Holds
   event document. Invites are sent by the system through Orin's Calendar identity.
   Evening podcast/webinar holds start 17:00 (60 min); workshops pass
   --duration 90 explicitly and start 16:30.
+
+Google event read-back
+  google-event reads one event as Google has it right now (summary,
+  description, location, attendees) on the organizer calendar plus every
+  configured hold calendar, or only --calendar ADDRESS. Use it to verify
+  what an invite actually shows (document label/link, Zoom).
 `; 
 export const DEFAULT_SLOT_DURATION_MINUTES = 60;
 export const DEFAULT_SLOT_WINDOW = "any";
@@ -786,6 +793,43 @@ export async function expireHolds(args, io) {
     io.print(`Orin follow-ups (${followUps.length}):`);
     for (const f of followUps) {
       io.print(`  ${f.holdId} (${f.date}) ${f.title}${f.taskId ? ` -> task ${f.taskId}` : ""}`);
+    }
+  }
+  return result;
+}
+
+/**
+ * Read one Google event back as it exists right now: the organizer calendar
+ * plus every configured hold calendar, or only --calendar. Invite
+ * verification audits this description against what DataOps last wrote.
+ */
+export async function googleEvent(args, io) {
+  const eventId = args._[0];
+  if (!eventId) throw new UsageError("Usage: dataops calendar google-event <eventId> [--calendar ADDRESS].");
+  const query = new URLSearchParams();
+  if (args.calendar) query.set("calendar", args.calendar);
+  const suffix = query.toString() ? `?${query}` : "";
+  const result = await client(args).get(
+    `/api/calendar-holds/google-events/${encodeURIComponent(String(eventId))}${suffix}`,
+  );
+  if (args.json) return result;
+  io.print(`Google event ${result.eventId}:`);
+  for (const entry of result.events || []) {
+    if (entry.state === "ok") {
+      const event = entry.event;
+      io.print(`  ${entry.calendar}: ${event.status || "confirmed"} — ${event.summary || "(no title)"}`);
+      if (event.description) {
+        for (const line of event.description.split("\n")) io.print(`    ${line}`);
+      } else {
+        io.print("    (no description)");
+      }
+      if (event.location) io.print(`    location: ${event.location}`);
+      const guests = (event.attendees || []).map((a) => a.email).filter(Boolean);
+      if (guests.length > 0) io.print(`    attendees: ${guests.join(", ")}`);
+    } else if (entry.state === "gone") {
+      io.print(`  ${entry.calendar}: gone (Google reports the event missing or cancelled)`);
+    } else {
+      io.print(`  ${entry.calendar}: deferred — ${entry.reason || "Google Calendar could not be read"}`);
     }
   }
   return result;

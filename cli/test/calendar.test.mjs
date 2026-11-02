@@ -582,6 +582,45 @@ describe("Calendar hold CLI commands", () => {
     assert.notEqual(await run(["calendar", "holds", "--status", "bogus"], bad), 0);
   });
 
+  test("calendar google-event reads the event back on every hold calendar, or one with --calendar", async () => {
+    const requests = [];
+    globalThis.fetch = async (url) => {
+      const u = String(url);
+      requests.push(u);
+      const payload = u.includes("calendar=")
+        ? { eventId: "evt-1", events: [{ calendar: "f8qidjnq0jhscp8809k1eghs60@group.calendar.google.com", state: "ok", event: {
+            id: "evt-1", status: "confirmed", summary: "Build a Media Agent",
+            description: "Zoom link: https://zoom.us/j/94755324762\n\nWorkshop document: https://ops.dtcdev.click/webinar-docs/sdoc-1",
+            location: "https://zoom.us/j/94755324762", attendees: [{ email: "guest@example.com" }],
+          } }] }
+        : { eventId: "evt-1", events: [
+            { calendar: "orin@datatalks.club", state: "ok", event: { id: "evt-1", summary: "Build a Media Agent", description: "Zoom link: z" } },
+            { calendar: "alexey.s.grigoriev@gmail.com", state: "gone" },
+            { calendar: "f8qidjnq0jhscp8809k1eghs60@group.calendar.google.com", state: "deferred", reason: "Google Calendar returned HTTP 503." },
+          ] };
+      return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+
+    const io = captureIo();
+    assert.equal(await run(["calendar", "google-event", "evt-1"], io), 0);
+    assert.match(requests[0], /\/api\/calendar-holds\/google-events\/evt-1$/);
+    const text = io.text();
+    assert.match(text, /Google event evt-1/);
+    assert.match(text, /orin@datatalks\.club.*Build a Media Agent/);
+    assert.match(text, /alexey\.s\.grigoriev@gmail\.com: gone/);
+    assert.match(text, /deferred — Google Calendar returned HTTP 503\./);
+
+    const one = captureIo();
+    assert.equal(await run(["calendar", "google-event", "evt-1", "--calendar", "f8qidjnq0jhscp8809k1eghs60@group.calendar.google.com"], one), 0);
+    assert.match(requests[1], /google-events\/evt-1\?calendar=f8qidjnq0jhscp8809k1eghs60%40group\.calendar\.google\.com$/);
+    assert.match(one.text(), /Workshop document: https:\/\/ops\.dtcdev\.click\/webinar-docs\/sdoc-1/);
+    assert.match(one.text(), /attendees: guest@example\.com/);
+
+    const noArgs = captureIo();
+    globalThis.fetch = async () => { throw new Error("no request expected"); };
+    assert.notEqual(await run(["calendar", "google-event"], noArgs), 0);
+  });
+
   test("calendar expire-holds supports --dry-run and live expiry", async () => {
     const requests = [];
     globalThis.fetch = async (url, options = {}) => {

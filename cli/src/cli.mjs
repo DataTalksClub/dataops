@@ -114,6 +114,7 @@ export const FAMILIES = {
       "release-hold": calendar.releaseHold,
       "expire-holds": calendar.expireHolds,
       holds: calendar.holds,
+      "google-event": calendar.googleEvent,
       settings: calendar.settings,
       "dismiss-alert": calendar.dismissAlert,
       "sync-holidays": calendar.syncHolidays,
