@@ -166,7 +166,8 @@ export async function financeUpcoming(client: DynamoDBDocumentClient, days: numb
     if (!classification) return null;
     const kind = taxTypeOf(item, classification.line);
     // Generic tax-authority text cannot distinguish an unknown tax from an explicitly recorded other tax.
-    return kind === 'other' && item.taxType !== 'other' ? null : kind;
+    const stored = String(item.taxType ?? '').trim().toLowerCase();
+    return kind === 'other' && stored !== 'other' ? null : kind;
   };
   const paid: PaidEvidence[] = [
     ...kept.flatMap((row) => {

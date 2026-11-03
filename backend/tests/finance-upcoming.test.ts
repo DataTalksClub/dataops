@@ -85,17 +85,20 @@ describe('upcoming tax debits', () => {
       rule: { kind: 'once', date: '2026-11-10' }, source: 'recurring' } as const;
     const schedule: ScheduleEntry[] = [
       { ...base, id: 'income', taxType: 'income-tax' },
+      { ...base, id: 'income-paid', taxType: 'income-tax', rule: { kind: 'once', date: '2026-11-20' } },
       { ...base, id: 'trade', taxType: 'trade-tax' },
       { ...base, id: 'other', taxType: 'other' },
     ];
     const result = upcomingDebits({ schedule, today: '2026-11-10', paid: [
       { id: 'outside-date', date: '2026-11-04', amount: 25, kind: 'ledger', taxType: 'income-tax' },
       { id: 'wrong-amount', date: '2026-11-10', amount: 26, kind: 'ledger', taxType: 'income-tax' },
+      { id: 'income-proof', date: '2026-11-20', amount: 25, kind: 'ledger', taxType: 'income-tax' },
       { id: 'trade-proof', date: '2026-11-10', amount: 25, kind: 'ledger', taxType: 'trade-tax' },
       { id: 'other-proof', date: '2026-11-10', amount: 25, kind: 'ledger', taxType: 'other' },
     ] });
     const byId = Object.fromEntries(result.debits.map((debit) => [debit.scheduleId, debit]));
     assert.equal(byId.income.status, 'scheduled');
+    assert.equal(byId['income-paid'].matched?.id, 'income-proof');
     assert.equal(byId.trade.matched?.id, 'trade-proof');
     assert.equal(byId.other.matched?.id, 'other-proof');
   });
