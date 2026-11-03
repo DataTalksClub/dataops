@@ -1,0 +1,127 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { handleBookkeepingRoutes } from "../src/routes/bookkeeping";
+
+const entries = [
+  {
+    PK: "BOOKKEEPING#synthetic-edited",
+    SK: "BOOKKEEPING#synthetic-edited",
+    id: "synthetic-edited",
+    createdAt: "2026-10-01T00:00:00.000Z",
+    updatedAt: "2026-10-03T00:00:00.000Z",
+    transactionDate: "2026-10-01",
+    counterparty: "Edited Workshop Company",
+    counterpartyCanonical: "Stale Alias",
+    description: "Edited consulting service",
+    amount: "100.00",
+    currency: "EUR",
+    entryType: "expense",
+    category: "Consulting",
+  },
+  {
+    PK: "BOOKKEEPING#synthetic-owner",
+    SK: "BOOKKEEPING#synthetic-owner",
+    id: "synthetic-owner",
+    createdAt: "2026-10-02T00:00:00.000Z",
+    updatedAt: "2026-10-02T00:00:00.000Z",
+    transactionDate: "2026-10-02",
+    counterparty: "Synthetic Owner",
+    description: "Synthetic owner withdrawal",
+    amount: "25.00",
+    currency: "EUR",
+    entryType: "expense",
+    category: "Owner pay",
+    ownerPayType: "draw",
+  },
+  {
+    PK: "BOOKKEEPING#synthetic-tax",
+    SK: "BOOKKEEPING#synthetic-tax",
+    id: "synthetic-tax",
+    createdAt: "2026-10-03T00:00:00.000Z",
+    updatedAt: "2026-10-03T00:00:00.000Z",
+    transactionDate: "2026-10-03",
+    counterparty: "Synthetic Tax Office",
+    description: "Synthetic tax payment",
+    amount: "10.00",
+    currency: "EUR",
+    entryType: "expense",
+    category: "Taxes",
+  },
+  {
+    PK: "BOOKKEEPING#synthetic-out-of-period",
+    SK: "BOOKKEEPING#synthetic-out-of-period",
+    id: "synthetic-out-of-period",
+    createdAt: "2026-09-30T00:00:00.000Z",
+    updatedAt: "2026-09-30T00:00:00.000Z",
+    transactionDate: "2026-09-30",
+    counterparty: "Synthetic Prior Service",
+    description: "Synthetic prior month consulting",
+    amount: "5.00",
+    currency: "EUR",
+    entryType: "expense",
+    category: "Consulting",
+  },
+];
+
+const client = {
+  send: async () => ({ Items: entries }),
+} as unknown as DynamoDBDocumentClient;
+
+describe("native accountant report API", () => {
+  it("serves persisted Company/What through the native CLI path and excludes owner draws and taxes", async () => {
+    const response = await handleBookkeepingRoutes(
+      "/api/bookkeeping/reports/accountant",
+      "GET",
+      {
+        httpMethod: "GET",
+        path: "/api/bookkeeping/reports/accountant",
+        headers: {},
+        queryStringParameters: { period: "2026-10", format: "csv" },
+      },
+      client,
+      true,
+    );
+    assert.equal(response.statusCode, 200);
+    const report = JSON.parse(response.body);
+    assert.equal(report.count, 1);
+    assert.equal(report.excludedCount, 2);
+    assert.equal(report.content,
+      '"Date","Paid Date","Provider","Description","Price EUR","Price USD","Original Currency","VAT Amount","VAT Currency","Category","Type","Statement"\r\n'
+      + '"2026-10-01","","Edited Workshop Company","Edited consulting service","-100.00","","EUR","","","Consulting","Expense",""\r\n');
+    assert.doesNotMatch(report.content, /Stale Alias|Synthetic Owner|Synthetic Tax Office|Synthetic Prior Service/);
+  });
+
+  it("uses the same accountant inclusion rules for copied TSV", async () => {
+    const response = await handleBookkeepingRoutes(
+      "/api/bookkeeping/reports/accountant",
+      "GET",
+      {
+        httpMethod: "GET",
+        path: "/api/bookkeeping/reports/accountant",
+        headers: {},
+        queryStringParameters: { period: "2026-10", format: "tsv" },
+      },
+      client,
+      true,
+    );
+    const report = JSON.parse(response.body);
+    assert.equal(report.count, 1);
+    assert.match(report.content, /Edited Workshop Company\tEdited consulting service/);
+    assert.doesNotMatch(report.content, /Synthetic Owner|Synthetic Tax Office/);
+  });
+
+  it("keeps excluded owner and tax rows in the ordinary transaction list", async () => {
+    const response = await handleBookkeepingRoutes(
+      "/api/bookkeeping/transactions",
+      "GET",
+      { httpMethod: "GET", path: "/api/bookkeeping/transactions", headers: {} },
+      client,
+      true,
+    );
+    const listed = JSON.parse(response.body).items;
+    assert.equal(listed.length, 4);
+    assert.ok(listed.some((entry: Record<string, unknown>) => entry.id === "synthetic-owner"));
+    assert.ok(listed.some((entry: Record<string, unknown>) => entry.id === "synthetic-tax"));
+  });
+});

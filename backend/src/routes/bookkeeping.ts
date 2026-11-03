@@ -8,6 +8,7 @@ import { handleBookkeepingDocumentRoutes } from "./bookkeepingDocuments";
 import { handleBookkeepingReportRoutes } from "./bookkeepingReports";
 import { handleBookkeepingResourceRoutes } from "./bookkeepingResources";
 import { handleBookkeepingSuggestionRoutes } from "./bookkeepingSuggestions";
+import { handleBookkeepingAccountantReportRoutes } from "./bookkeepingAccountantReport";
 
 export async function handleBookkeepingRoutes(
   path: string,
@@ -19,6 +20,7 @@ export async function handleBookkeepingRoutes(
   if (!sessionAuthorized) return json(401, { error: "Unauthorized" });
   if (path.startsWith("/api/bookkeeping/invoices")) return handleInvoiceRoutes(path, method, event, client, sessionAuthorized);
   return (
+    (await handleBookkeepingAccountantReportRoutes(path, method, event, client)) ??
     (await handleInvoiceGenerationRoutes(path, method, event, client)) ??
     (await handleBookkeepingSuggestionRoutes(path, method, event, client)) ??
     (await handleBookkeepingTransactionRoutes(path, method, event, client)) ??

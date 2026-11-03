@@ -155,61 +155,6 @@ export function isReportExempt(entry) {
     || isOwnerWithdrawalReportExempt(entry);
 }
 
-// Format ledger entries into the standard accountant tax report CSV.
-// Follows the DTC bookkeeping sheet specification (signed EUR prices, USD original prices).
-export function formatReportCsv(entries, options = {}) {
-  const excludeExempt = options.excludeExempt ?? true;
-  const isExempt = options.isExempt || isReportExempt;
-  const rows = excludeExempt
-    ? (entries || []).filter((e) => !isExempt(e))
-    : (entries || []);
-  const headers = [
-    "Date",
-    "Paid Date",
-    "Provider",
-    "Description",
-    "Price EUR",
-    "Price USD",
-    "Original Currency",
-    "VAT Amount",
-    "VAT Currency",
-    "Category",
-    "Type",
-    "Statement",
-  ];
-  const lines = [headers.map(csvCell).join(",")];
-  for (const entry of rows) {
-    const dir = entryDirection(entry);
-    const sign = dir === "expense" ? "-" : "";
-    const eurVal =
-      entry.currency === "EUR"
-        ? entry.amount
-        : entry.amountEur ?? "";
-    const priceEur = eurVal !== "" && eurVal != null ? `${sign}${eurVal}` : "";
-    const priceUsd =
-      entry.currency === "USD" ? `${sign}${entry.amount}` : "";
-    lines.push(
-      [
-        entry.transactionDate || "",
-        entry.paidDate || "",
-        entry.counterparty || "",
-        entry.description || "",
-        priceEur,
-        priceUsd,
-        entry.currency || "",
-        entry.vatAmount || "",
-        entry.vatCurrency || "",
-        entry.category || "",
-        dir === "income" ? "Income" : dir === "expense" ? "Expense" : entry.entryType || "",
-        entry.statementRef || "",
-      ]
-        .map((value, index) => csvCell([4, 5, 7].includes(index) ? value : spreadsheetText(value)))
-        .join(","),
-    );
-  }
-  return lines.join("\r\n") + "\r\n";
-}
-
 // Format full raw ledger entries matching the backend snapshot format.
 export function formatFullCsv(entries) {
   const columns = [
@@ -231,63 +176,6 @@ export function formatFullCsv(entries) {
     lines.push(columns.map((c) => csvCell(["amount", "amountEur", "vatAmount"].includes(c) ? entry[c] : spreadsheetText(entry[c]))).join(","));
   }
   return lines.join("\r\n") + "\r\n";
-}
-
-// Format tab-separated values ready for copy-pasting directly into Gmail or Google Sheets.
-export function formatReportTsv(entries, options = {}) {
-  const excludeExempt = options.excludeExempt ?? true;
-  const isExempt = options.isExempt || isReportExempt;
-  const rows = excludeExempt
-    ? (entries || []).filter((e) => !isExempt(e))
-    : (entries || []);
-  const headers = [
-    "Date",
-    "Paid Date",
-    "Provider",
-    "Description",
-    "Price EUR",
-    "Price USD",
-    "Currency",
-    "VAT",
-    "VAT Currency",
-    "Category",
-    "Type",
-    "Statement",
-  ];
-  const lines = [headers.join("\t")];
-  for (const entry of rows) {
-    const dir = entryDirection(entry);
-    const sign = dir === "expense" ? "-" : "";
-    const eurVal =
-      entry.currency === "EUR"
-        ? entry.amount
-        : entry.amountEur ?? "";
-    const priceEur = eurVal !== "" && eurVal != null ? `${sign}${eurVal}` : "";
-    const priceUsd =
-      entry.currency === "USD" ? `${sign}${entry.amount}` : "";
-    lines.push(
-      [
-        entry.transactionDate || "",
-        entry.paidDate || "",
-        entry.counterparty || "",
-        entry.description || "",
-        priceEur,
-        priceUsd,
-        entry.currency || "",
-        entry.vatAmount ?? "",
-        entry.vatCurrency || "",
-        entry.category || "",
-        dir === "income" ? "Income" : dir === "expense" ? "Expense" : entry.entryType || "",
-        entry.statementRef || "",
-      ]
-        .map((v, index) => {
-          const text = String(v ?? "").replace(/[\t\r\n]/g, " ");
-          return [4, 5, 7].includes(index) ? text : spreadsheetText(text);
-        })
-        .join("\t"),
-    );
-  }
-  return lines.join("\n");
 }
 
 // Trigger client-side file download.
