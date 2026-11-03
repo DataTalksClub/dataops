@@ -316,9 +316,11 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
       : html`<span class="bk-no-invoice">No invoice</span>`;
   const account = resolveAccountName(entry, statementLinks);
   const accountDoc = statementLinks instanceof Map ? statementLinks.get(String(entry.id || "")) : null;
+  const accountStatementTitle = accountDoc?.statementPeriod
+    ? `${accountDoc.statementPeriod} statement`
+    : "statement";
   const accountCell = accountDoc?.statementDocumentId
-    ? html`<button type="button" class="bk-account-link" data-view-document="${e(accountDoc.statementDocumentId)}" title="Open ${e(accountDoc.statementPeriod ? `${accountDoc.statementPeriod} statement` : "statement")}">${
-      e(account)}</button>`
+    ? html`<button type="button" class="bk-account-link" data-view-document="${e(accountDoc.statementDocumentId)}" title="Open ${e(accountStatementTitle)}">${e(account)}</button>`
     : e(account || "—");
   return html`<tr class="bk-row${flagged ? " is-uncategorised" : ""}${direction === "income" ? " is-income" : ""}"
       data-tx="${e(entry.id)}"${entry.id === selectedId ? ' aria-selected="true"' : ""}>
@@ -395,8 +397,13 @@ function allocationChildMarkup(entry, allocation, { getAllocationDocument = () =
   const document = getAllocationDocument(entry, allocation);
   const accountName = resolveAccountName(entry, statementLinks);
   const statementLink = statementLinks instanceof Map ? statementLinks.get(String(entry.id || "")) : null;
+  const accountStatementTitle = statementLink?.statementPeriod
+    ? `${statementLink.statementPeriod} statement`
+    : "statement";
   const accountCell = statementLink?.statementDocumentId
-    ? html`<button type="button" class="bk-account-link" data-view-document="${e(statementLink.statementDocumentId)}" title="Open ${e(statementLink.statementPeriod ? `${statementLink.statementPeriod} statement` : "statement")}">${e(accountName)}</button>`
+    ? html`<button type="button" class="bk-account-link" data-view-document="${
+      e(statementLink.statementDocumentId)
+    }" title="Open ${e(accountStatementTitle)}">${e(accountName)}</button>`
     : e(accountName || "—");
   const pdfAction = document
     ? html`<button type="button" class="dk-button dk-button--secondary dk-button--sm bk-evidence-view"
@@ -439,7 +446,17 @@ export function ledgerHeadMarkup() {
 
 const COLUMN_COUNT = 9;
 
-export function ledgerTableMarkup({ groups, hasEvidence, hasInvoice = () => false, getAllocationDocument = () => null, vocab, selectedId, financeEntriesById = new Map(), statementLinks = new Map(), e }) {
+export function ledgerTableMarkup({
+  groups,
+  hasEvidence,
+  hasInvoice = () => false,
+  getAllocationDocument = () => null,
+  vocab,
+  selectedId,
+  financeEntriesById = new Map(),
+  statementLinks = new Map(),
+  e,
+}) {
   const body = groups.map((group) => {
     const visibleRowCount = displayRowCount(group.entries);
     const totals = [
