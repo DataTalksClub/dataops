@@ -56,8 +56,11 @@ import { CardNotFoundError, getCardConsistent } from './db/cards';
 import { withCrmReadSnapshot } from './db/sponsorCrm';
 import { handleInvoiceReader } from './auth/invoiceReader';
 import { handleKnowledgePublisher } from './auth/knowledgePublisher';
+import { isScopedTokenRequestAllowed } from './auth/tokenScopes';
+import { getApiToken, projectApiToken } from './db/apiTokens';
 import { handleSponsorDocRoutes, isAnonymousSponsorDocRequest } from './routes/sponsorDocs';
 import { handleEmailTemplateRoutes } from './routes/emailTemplates';
+import { handleApiTokenRoutes } from './routes/apiTokens';
 import { handleSponsorContractRoutes, isAnonymousSponsorContractRequest } from './routes/sponsorContracts';
 import { getDocument } from './db/documents';
 import { handleCardDocumentRoutes } from './routes/cardDocuments';
@@ -242,12 +245,17 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       // shared-issuer JWTs: `whoami` for CLI/MCP clients runs through here.
       const bearer = extractToken(event);
       const session = bearer ? await getSession(client, bearer) : null;
+      const apiToken = bearer && !session ? await getApiToken(client, bearer) : null;
       const bearerUserId = session?.userId
-        || (bearer && !session ? await sharedIssuerUserId(client, bearer) : null) || '';
+        || apiToken?.userId
+        || (bearer && !session && !apiToken ? await sharedIssuerUserId(client, bearer) : null) || '';
       if (bearerUserId) {
         const user = await getUser(client, bearerUserId);
         return user && !user.disabled
-          ? jsonResponse(200, { user: identityProjection(user) })
+          ? jsonResponse(200, {
+            user: identityProjection(user),
+            ...(apiToken ? { apiToken: projectApiToken(apiToken) } : {}),
+          })
           : jsonResponse(401, { error: 'Unauthorized' });
       }
       return jsonResponse(401, { error: 'Unauthorized' });
@@ -288,14 +296,24 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         }
       } else {
         const session = await getSession(client, token);
+        const apiToken = session ? null : await getApiToken(client, token);
         // Machine and CLI clients present a shared-issuer JWT instead of a
         // session; its verified email resolves to the same user, so every
         // downstream role check is unchanged.
-        const jwtUserId = session ? null : await sharedIssuerUserId(client, token);
-        if (!session && !jwtUserId) {
+        const jwtUserId = session || apiToken ? null : await sharedIssuerUserId(client, token);
+        if (!session && !apiToken && !jwtUserId) {
           if (!exempt) {
             return jsonResponse(401, { error: 'Unauthorized' });
           }
+        } else if (apiToken) {
+          const user = await getUser(client, apiToken.userId);
+          if (!user || user.disabled) return jsonResponse(401, { error: 'Unauthorized' });
+          if (!isScopedTokenRequestAllowed(apiToken.scopes, method, reqPath)) {
+            return jsonResponse(403, { error: 'Token does not have scope for this operation', code: 'insufficient_scope' });
+          }
+          if (!event.headers) event.headers = {};
+          event.headers['x-user-id'] = apiToken.userId;
+          event.headers['x-api-token-id'] = apiToken.id;
         } else {
           // Attach userId to event headers for downstream use
           if (!event.headers) event.headers = {};
@@ -307,6 +325,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // GET /api/health — health check
     if (method === 'GET' && reqPath === '/api/health') {
       return jsonResponse(200, { status: 'ok' });
+    }
+
+    if (reqPath === '/api/tokens' || reqPath.startsWith('/api/tokens/')) {
+      const result = await handleApiTokenRoutes(reqPath, method, event, client);
+      if (result) return result;
     }
 
     // ── Safe team directory ───────────────────────────────────────

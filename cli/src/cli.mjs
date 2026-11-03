@@ -1,5 +1,6 @@
 import * as cardDocuments from './commands/cardDocuments.mjs';
 import * as documents from './commands/documents.mjs';
+import * as tokens from './commands/tokens.mjs';
 import * as email from './commands/email.mjs';
 import * as tuition from "./commands/tuition.mjs";
 import { readFileSync } from "node:fs";
@@ -56,7 +57,7 @@ Usage
   dataops login --service-token-stdin --url URL   Configure a service credential (JSON {"clientId","clientSecret"} on stdin)
   dataops logout                             Revoke this machine's token and forget it
   dataops whoami                             Who the credential acts as, and the portal
-  Token lifecycle lives at the shared issuer: dataops login refreshes, dataops logout revokes.
+  Human login tokens refresh and revoke at the shared issuer. Admin-issued Hub agent tokens are managed with dataops tokens.
 
 Hub sessions on Hetzner use a scoped token stored in ~/.config/agent-hub/shared/dataops/credentials.json,
 issued without a browser via:
@@ -157,6 +158,7 @@ export const FAMILIES = {
   login: { group: "Account", summary: "Sign in with a device code confirmed in the browser", help: AUTH_HELP, run: auth.login },
   logout: { group: "Account", summary: "Revoke this machine's token", help: AUTH_HELP, run: auth.logout },
   whoami: { group: "Account", summary: "Show who the credential acts as", help: AUTH_HELP, run: auth.whoami },
+  tokens: { group: "Account", summary: tokens.summary, help: tokens.help, commands: tokens.commands },
   secrets: { group: "Account", summary: secrets.summary, help: secrets.help, commands: secrets.commands },
   api: { group: "Other", summary: raw.summary, help: raw.help, run: raw.call },
   "agent-guide": {
@@ -211,7 +213,7 @@ export function usage() {
 }
 
 // Flags that may repeat; every other flag keeps its last value.
-const REPEATABLE = new Set(["link", "query", "field", "document", "evidence", "item", "value"]);
+const REPEATABLE = new Set(["link", "query", "field", "document", "evidence", "item", "value", "scope"]);
 
 /**
  * Minimal flag parser: `--flag value`, `--flag=value`, and `--boolean`.

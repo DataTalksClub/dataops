@@ -17,12 +17,14 @@ delete process.env.DATAOPS_TOKEN;
 const { resolveProfile, resolveProfileFromDir, saveProfile } = await import('../src/config.mjs');
 const tokens = await import('../src/commands/tokens.mjs');
 const auth = await import('../src/commands/auth.mjs');
+const { run } = await import('../src/cli.mjs');
 const PORTAL = 'https://portal.test';
 const RAW_TOKEN = 'dops_synthetic_token_value_never_printed';
 
 function ioCapture() {
   const output = [];
-  return { output, print: (line) => output.push(String(line)), text: () => output.join('\n') };
+  const print = (line) => output.push(String(line));
+  return { output, print, log: print, error: print, text: () => output.join('\n') };
 }
 
 function fakeFetch(routes) {
@@ -97,6 +99,32 @@ describe('headless scoped agent tokens', () => {
       assert.equal(statSync(result.credentialsPath).mode & 0o777, 0o600);
     }
     assert.equal(JSON.stringify(readFileSync(result.credentialsPath, 'utf8')).includes(RAW_TOKEN), true);
+  });
+
+  test('exposes token creation through the DataOps CLI and keeps --json output safe', async () => {
+    fakeFetch({
+      'POST /api/tokens': (call) => ({
+        status: 201,
+        body: {
+          token: RAW_TOKEN,
+          apiToken: {
+            id: 'cli-agent-id', userId: 'admin-id', issuedBy: 'admin-id',
+            label: call.body.label, scopes: call.body.scopes,
+            createdAt: '2026-11-03T00:00:00.000Z', expiresAt: '2027-02-01T00:00:00.000Z', lastUsedAt: null,
+          },
+        },
+      }),
+    });
+    const io = ioCapture();
+    const exitCode = await run([
+      'tokens', 'create', '--label', 'hub-sessions@hetzner',
+      '--scope', 'kb:write,templates:write,cards:write,newsletter:write',
+      '--admin-config-dir', configDir, '--config-dir', targetDir, '--url', PORTAL, '--json',
+    ], io);
+    assert.equal(exitCode, 0);
+    assert.equal(io.text().includes(RAW_TOKEN), false);
+    assert.equal(JSON.parse(io.text()).apiToken.id, 'cli-agent-id');
+    assert.equal(resolveProfileFromDir(targetDir, { url: PORTAL }).token, RAW_TOKEN);
   });
 
   test('revokes a newly issued token if safe credential storage is refused', async () => {
