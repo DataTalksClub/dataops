@@ -1467,6 +1467,75 @@ describe('sponsor finance production DynamoDB transactions', () => {
     assert.equal(JSON.parse(repeated!.body).audit.length, updated.audit.length + 1);
   });
 
+  it('updates Company and What on an owned receipt with a claim-safe idempotent CAS', async () => {
+    process.env.SPONSOR_FINANCE_ENABLED = 'true';
+    const seeded = await bootstrapPayable('receipt-metadata-route');
+    const received = await receivePayment(client, { actorId: adminId, dealId: seeded.dealId, dealVersion: 1,
+      expectedVersion: seeded.version, idempotencyKey: idem('metadata-route-receive'), receivedOn: '2026-10-02',
+      amount: '40', currency: 'EUR', reference: 'synthetic-bank:metadata-route', counterparty: 'Synthetic Sponsor' });
+    const sourceId = (await projectFinance(client, seeded.dealId, 'admin')).payments[0].id;
+    const sourceKey = key('BOOKKEEPING', sourceId);
+    const before = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: sourceKey }))).Item!;
+    const claimKeyValue = key('SPONSOR_FINANCE_CLAIM#transaction', sourceId);
+    const claimBefore = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: claimKeyValue }))).Item!;
+    const linkKeyValue = String(claimBefore.linkId);
+    const linkBefore = (await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM,
+      Key: { PK: linkKeyValue, SK: linkKeyValue } }))).Item!;
+    const { handleSponsorFinanceRoutes } = await import('../src/routes/sponsorFinance');
+    const path = `/api/sponsor-crm/finance/receipts/${sourceId}/metadata`;
+    const idempotencyKey = idem('receipt-metadata-update');
+    const body = { expectedUpdatedAt: String(before.updatedAt), counterparty: 'Edited Synthetic Sponsor',
+      description: 'Synthetic consulting service for October', idempotencyKey };
+    const event = { headers: { 'x-user-id': adminId }, body: JSON.stringify(body) };
+
+    const response = await handleSponsorFinanceRoutes(path, 'PUT', event as any, client);
+    assert.equal(response?.statusCode, 200, response?.body);
+    const updated = JSON.parse(response!.body);
+    assert.equal(updated.counterparty, body.counterparty);
+    assert.equal(updated.description, body.description);
+    assert.ok(Date.parse(updated.updatedAt) > Date.parse(String(before.updatedAt)));
+    assert.equal(updated.amount, before.amount);
+    assert.equal(updated.currency, before.currency);
+    assert.equal(updated.statementRef, before.statementRef);
+    assert.equal(updated.audit.at(-1).action, 'receipt-metadata-updated');
+    assert.equal(updated.audit.at(-1).actor, adminId);
+
+    const nextIdentity = paymentIdentity(updated);
+    const claimAfter = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: claimKeyValue }))).Item!;
+    const linkAfter = (await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM,
+      Key: { PK: linkKeyValue, SK: linkKeyValue } }))).Item!;
+    assert.equal(claimAfter.identityToken, nextIdentity);
+    assert.equal(linkAfter.identityToken, nextIdentity);
+    assert.equal(linkAfter.financeVersion, received.financeVersion + 1);
+    assert.equal((await getFinanceState(client, seeded.dealId))?.version, received.financeVersion + 1);
+    assert.equal((await listFinanceHistory(client, seeded.dealId)).filter((item) => item.eventCode === 'receipt-metadata-updated').length, 1);
+
+    const replay = await handleSponsorFinanceRoutes(path, 'PUT', event as any, client);
+    assert.equal(replay?.statusCode, 200, replay?.body);
+    assert.equal(JSON.parse(replay!.body).updatedAt, updated.updatedAt);
+    assert.equal(JSON.parse(replay!.body).audit.length, updated.audit.length);
+    await assert.rejects(() => updateBookkeepingTransaction(client, sourceId, String(updated.updatedAt), { description: 'Generic write is locked' }));
+
+    const stale = await handleSponsorFinanceRoutes(path, 'PUT', { ...event,
+      body: JSON.stringify({ ...body, idempotencyKey: idem('stale-receipt-metadata'),
+        expectedUpdatedAt: String(before.updatedAt), description: 'Stale write' }),
+    } as any, client);
+    assert.equal(stale?.statusCode, 409);
+    const headerOnly = await handleSponsorFinanceRoutes(path, 'PUT', { headers: {
+      'x-user-id': adminId, 'idempotency-key': idem('header-only-receipt-metadata'),
+    }, body: JSON.stringify({ expectedUpdatedAt: String(updated.updatedAt),
+      counterparty: body.counterparty, description: body.description }) } as any, client);
+    assert.equal(headerOnly?.statusCode, 400);
+    const forbidden = await handleSponsorFinanceRoutes(path, 'PUT', { ...event,
+      headers: { 'x-user-id': 'finance-operator-1' },
+      body: JSON.stringify({ ...body, idempotencyKey: idem('non-admin-receipt-metadata') }),
+    } as any, client);
+    assert.equal(forbidden?.statusCode, 403);
+    const finalSource = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: sourceKey }))).Item!;
+    assert.equal(finalSource.counterparty, body.counterparty);
+    assert.equal(finalSource.description, body.description);
+  });
+
   it('CLI recovers lost receipt and correction responses after rereading versions without double booking', async () => {
     const seeded = await bootstrapPayable('cli-receipt-retry', '100');
     const { handleSponsorFinanceRoutes } = await import('../src/routes/sponsorFinance');

@@ -96,6 +96,45 @@ describe('sponsor finance contracts', () => {
     assert.deepEqual(JSON.parse(response!.body), { error: 'Finance follow-through is disabled' });
   });
 
+  it('accepts receipt metadata idempotency from JSON and rejects header-only keys', async () => {
+    const previous = process.env.SPONSOR_FINANCE_ENABLED;
+    process.env.SPONSOR_FINANCE_ENABLED = 'true';
+    try {
+      let reads = 0;
+      const client = {
+        send: async () => {
+          reads++;
+          return { Item: { role: 'admin' } };
+        },
+      };
+      const path = '/api/sponsor-crm/finance/receipts/receipt-unit-test/metadata';
+      const headerOnly = await handleSponsorFinanceRoutes(path, 'PUT', {
+        headers: { 'x-user-id': 'admin-1', 'idempotency-key': 'header-only-key-0123456789' },
+        body: JSON.stringify({ expectedUpdatedAt: '2026-10-01T00:00:00.000Z',
+          counterparty: 'Synthetic Company', description: 'Synthetic service' }),
+      }, client as never);
+      assert.equal(headerOnly?.statusCode, 400);
+      assert.equal(reads, 1);
+
+      reads = 0;
+      const bodyKey = await handleSponsorFinanceRoutes(path, 'PUT', {
+        headers: { 'x-user-id': 'admin-1' },
+        body: JSON.stringify({ expectedUpdatedAt: '2026-10-01T00:00:00.000Z',
+          counterparty: 'Synthetic Company', description: 'Synthetic service',
+          idempotencyKey: 'body-idempotency-key-0123456789' }),
+      }, { send: async () => {
+        reads++;
+        if (reads === 1) return { Item: { role: 'admin' } };
+        return {};
+      } } as never);
+      assert.equal(bodyKey?.statusCode, 404);
+      assert.equal(reads, 2);
+    } finally {
+      if (previous === undefined) delete process.env.SPONSOR_FINANCE_ENABLED;
+      else process.env.SPONSOR_FINANCE_ENABLED = previous;
+    }
+  });
+
   it('explicitly omits every sponsor-finance record family from public restore data', () => {
     for (const name of [
       'sponsor_finance_state',

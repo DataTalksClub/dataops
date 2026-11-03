@@ -154,6 +154,44 @@ export function inLens(entry, lens) {
   return /^\d{4}$/.test(lens) ? month.startsWith(lens) : month === lens;
 }
 
+const BANK_ONLY_EXCEPTION_LABELS = {
+  owner_withdrawal: "Owner withdrawal",
+  bank_fee: "Bank fee",
+  tk_debit: "TK health insurance debit",
+  tax_debit: "Tax debit",
+  tax_refund: "Tax refund",
+};
+
+/** Project classified, unmatched statement lines into the internal ledger view. */
+export function bankOnlyEntryFromMonthRow(row) {
+  const bank = row?.bank;
+  const kind = String(row?.exception?.kind || "");
+  const label = BANK_ONLY_EXCEPTION_LABELS[kind];
+  if (!bank || row.ledger || !label || !bank.key) return null;
+  const date = String(row.date || bank.date || "").slice(0, 10);
+  const amount = Number(bank.amount ?? row.amount);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(amount)) return null;
+  return {
+    id: `bank-only:${bank.key}`,
+    sourceKey: `bank-only:${bank.key}`,
+    transactionDate: date,
+    paidDate: date,
+    amount: String(Math.abs(amount)),
+    currency: String(bank.currency || row.currency || "EUR"),
+    entryType: amount < 0 ? "expense" : "income",
+    counterparty: String(row.counterparty || bank.counterparty || label),
+    description: String(row.description || bank.reference || label),
+    statementRef: String(bank.wallet || bank.accountId || ""),
+    subtype: label,
+    category: label,
+    period: date.slice(0, 7),
+    reconciliationOnly: true,
+    bankKey: String(bank.key || ""),
+    reconciliationLabel: label,
+    reconciliationState: row.exception.satisfied ? "confirmed" : "proof needed",
+  };
+}
+
 export function filterEntries(entries, filters, { hasEvidence = () => true, accountNameOf = resolveAccountName } = {}) {
   const query = filters.q.toLowerCase();
   return entries.filter((entry) => {
@@ -178,6 +216,13 @@ export function filterEntries(entries, filters, { hasEvidence = () => true, acco
 const byDateAsc = (a, b) =>
   cashDate(a).localeCompare(cashDate(b)) ||
   String(a.sourceKey || a.id).localeCompare(String(b.sourceKey || b.id), undefined, { numeric: true });
+
+export function displayRowCount(entries = []) {
+  return entries.reduce((count, entry) => {
+    const allocations = Array.isArray(entry?.allocations) ? entry.allocations.length : 0;
+    return count + Math.max(allocations, 1);
+  }, 0);
+}
 
 // Months newest first; inside a month the sheet's order (oldest first).
 export function groupByMonth(entries) {
@@ -225,15 +270,10 @@ export function vatTitle(entry, text) {
   return text || "";
 }
 
-// One date when transaction and paid dates agree; the paid date, muted,
-// only when it differs.
+// The cash date is primary; the source transaction date remains in the record.
 function dateCell(entry, e) {
-  const sent = String(entry.transactionDate || "");
-  const paid = String(entry.paidDate || "");
-  const paidNote = paid && paid !== sent
-    ? html`<span class="bk-date__paid" title="Paid ${e(ledgerDate(paid))}">paid ${e(ledgerDate(paid))}</span>`
-    : "";
-  return html`<time datetime="${e(sent)}">${e(ledgerDate(sent))}</time>${paidNote}`;
+  const date = cashDate(entry);
+  return html`<time datetime="${e(date)}">${e(ledgerDate(date))}</time>`;
 }
 
 function selectMarkup({ id, field, label, value, options, e }) {
@@ -276,9 +316,11 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
       : html`<span class="bk-no-invoice">No invoice</span>`;
   const account = resolveAccountName(entry, statementLinks);
   const accountDoc = statementLinks instanceof Map ? statementLinks.get(String(entry.id || "")) : null;
+  const accountStatementTitle = accountDoc?.statementPeriod
+    ? `${accountDoc.statementPeriod} statement`
+    : "statement";
   const accountCell = accountDoc?.statementDocumentId
-    ? html`<button type="button" class="bk-account-link" data-view-document="${e(accountDoc.statementDocumentId)}" title="Open ${e(accountDoc.statementPeriod ? `${accountDoc.statementPeriod} statement` : "statement")}">${
-      e(account)}</button>`
+    ? html`<button type="button" class="bk-account-link" data-view-document="${e(accountDoc.statementDocumentId)}" title="Open ${e(accountStatementTitle)}">${e(account)}</button>`
     : e(account || "—");
   return html`<tr class="bk-row${flagged ? " is-uncategorised" : ""}${direction === "income" ? " is-income" : ""}"
       data-tx="${e(entry.id)}"${entry.id === selectedId ? ' aria-selected="true"' : ""}>
@@ -305,6 +347,89 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
     </tr>`;
 }
 
+function bankOnlyRowMarkup(entry, e) {
+  const direction = entryDirection(entry);
+  const eur = eurValue(entry);
+  const original = originalValue(entry);
+  const originalText = original === null ? "" : signedAmount(original, entry.currency);
+  const missingEur = eur === null;
+  const status = `${entry.reconciliationLabel} · ${entry.reconciliationState}`;
+  return html`<tr class="bk-row bk-row--statement-only${direction === "income" ? " is-income" : ""}" data-bank-only="${e(entry.bankKey)}">
+      <td class="bk-col-date">${dateCell(entry, e)}</td>
+      <td class="bk-col-who">
+        <span class="bk-who">
+          <span class="bk-who__name">${e(entry.counterparty)}</span>
+          <span class="bk-who__what" title="${e(entry.description)}">${e(entry.description)}</span>
+          <span class="bk-who__what bk-statement-status">${e(status)}</span>
+        </span>
+      </td>
+      <td class="bk-col-money bk-col-eur${missingEur ? " is-unconverted" : ""}"${!missingEur && originalText ? ` title="Original ${e(originalText)}"` : ""}>${missingEur
+        ? html`<span class="bk-unconverted" title="No EUR value recorded for this statement row">${e(originalText || "EUR?")}</span>`
+        : e(signedAmount(eur, "EUR"))}</td>
+      <td class="bk-col-vat">—</td>
+      ${CLASSIFICATION_FIELDS.map(({ field }) => html`<td class="bk-col-class bk-col-${field}">${e(entry[field] || "")}</td>`).join("")}
+      <td class="bk-col-flag"><span class="bk-statement-source">Bank statement</span></td>
+      <td class="bk-col-account">${e(accountOf(entry))}</td>
+    </tr>`;
+}
+
+function allocationChildMarkup(entry, allocation, { getAllocationDocument = () => null, statementLinks = new Map(), e }) {
+  const vatCurrency = String(allocation.vatCurrency || allocation.currency || entry.currency || "EUR")
+    .trim()
+    .toUpperCase();
+  const vatEur = vatCurrency === "EUR" ? allocation.vatAmount : undefined;
+  const child = {
+    ...entry,
+    ...allocation,
+    vatAmount: allocation.vatAmount,
+    vatCurrency: allocation.vatCurrency,
+    vatEur,
+    reverseCharge: allocation.reverseCharge,
+    transactionDate: entry.transactionDate,
+    paidDate: entry.paidDate,
+    currency: allocation.currency || entry.currency,
+    entryType: entry.entryType,
+  };
+  const net = netValue(child, { vatEur });
+  const original = originalValue(child);
+  const originalText = original === null ? "" : signedAmount(original, child.currency);
+  const vat = vatPresentation(child);
+  const document = getAllocationDocument(entry, allocation);
+  const accountName = resolveAccountName(entry, statementLinks);
+  const statementLink = statementLinks instanceof Map ? statementLinks.get(String(entry.id || "")) : null;
+  const accountStatementTitle = statementLink?.statementPeriod
+    ? `${statementLink.statementPeriod} statement`
+    : "statement";
+  const accountCell = statementLink?.statementDocumentId
+    ? html`<button type="button" class="bk-account-link" data-view-document="${
+      e(statementLink.statementDocumentId)
+    }" title="Open ${e(accountStatementTitle)}">${e(accountName)}</button>`
+    : e(accountName || "—");
+  const pdfAction = document
+    ? html`<button type="button" class="dk-button dk-button--secondary dk-button--sm bk-evidence-view"
+        data-view-document="${e(document.id)}"
+        aria-label="View ${e(document.originalFilename || "invoice or receipt PDF")}"
+        title="${e(document.originalFilename || "Invoice or receipt PDF")}">View PDF</button>`
+    : html`<span class="bk-allocation-no-pdf">No linked PDF</span>`;
+  return html`<tr class="bk-row bk-row--allocation-child" data-allocation-parent="${e(entry.id)}" data-allocation-document="${e(allocation.documentId || "")}">
+      <td class="bk-col-date">${dateCell(child, e)}</td>
+      <td class="bk-col-who">
+        <a class="bk-who" href="?tx=${encodeURIComponent(entry.id)}" data-open-tx="${e(entry.id)}"
+          aria-label="Open original payment for ${e(allocation.counterparty || "invoice")}">
+          <span class="bk-who__name">${e(allocation.counterparty || entry.counterparty || "")}</span>
+          <span class="bk-who__what" title="${e(allocation.description || "")}">${e(allocation.description || "")}</span>
+        </a>
+      </td>
+      <td class="bk-col-money bk-col-eur${net === null ? " is-unconverted" : ""}"${net !== null && originalText ? ` title="Original ${e(originalText)}"` : ""}>${net === null
+        ? html`<span class="bk-unconverted" title="No EUR value recorded for this invoice allocation">${e(originalText || "EUR?")}</span>`
+        : e(signedAmount(net, "EUR"))}</td>
+      <td class="bk-col-vat"${vat ? ` title="${e(vatTitle(child, vat))}"` : ""}>${e(vat || "—")}</td>
+      ${CLASSIFICATION_FIELDS.map(({ field }) => html`<td class="bk-col-class bk-col-${field}">${e(allocation[field] || "")}</td>`).join("")}
+      <td class="bk-col-flag">${pdfAction}</td>
+      <td class="bk-col-account">${accountCell}</td>
+    </tr>`;
+}
+
 export function ledgerHeadMarkup() {
   return html`<thead>
       <tr>
@@ -321,8 +446,19 @@ export function ledgerHeadMarkup() {
 
 const COLUMN_COUNT = 9;
 
-export function ledgerTableMarkup({ groups, hasEvidence, hasInvoice = () => false, vocab, selectedId, financeEntriesById = new Map(), statementLinks = new Map(), e }) {
+export function ledgerTableMarkup({
+  groups,
+  hasEvidence,
+  hasInvoice = () => false,
+  getAllocationDocument = () => null,
+  vocab,
+  selectedId,
+  financeEntriesById = new Map(),
+  statementLinks = new Map(),
+  e,
+}) {
   const body = groups.map((group) => {
+    const visibleRowCount = displayRowCount(group.entries);
     const totals = [
       group.moneyOut ? html`<span class="bk-total">out <span class="dk-mono">${e(signedAmount(group.moneyOut, "EUR"))}</span></span>` : "",
       group.moneyIn ? html`<span class="bk-total">in <span class="dk-mono">${e(signedAmount(group.moneyIn, "EUR"))}</span></span>` : "",
@@ -332,11 +468,20 @@ export function ledgerTableMarkup({ groups, hasEvidence, hasInvoice = () => fals
         <tr class="bk-month__head">
           <th scope="rowgroup" colspan="${COLUMN_COUNT}">
             <span class="bk-month__title">${e(group.month ? monthLabel(group.month) : "No date")}</span>
-            <span class="bk-month__count dk-mono">${group.entries.length}</span>
+            <span class="bk-month__count dk-mono">${visibleRowCount}</span>
             <span class="bk-month__totals">${totals}</span>
           </th>
         </tr>
-        ${group.entries.map((entry) => ledgerRowMarkup(entry, { hasEvidence, hasInvoice, vocab, selectedId, financeEntry: financeEntriesById.get(entry.id), statementLinks, e })).join("")}
+        ${group.entries.map((entry) => {
+          if (entry.reconciliationOnly) return bankOnlyRowMarkup(entry, e);
+          const allocations = Array.isArray(entry.allocations) ? entry.allocations : [];
+          if (allocations.length) {
+            return allocations
+              .map((allocation) => allocationChildMarkup(entry, allocation, { getAllocationDocument, statementLinks, e }))
+              .join("");
+          }
+          return ledgerRowMarkup(entry, { hasEvidence, hasInvoice, vocab, selectedId, financeEntry: financeEntriesById.get(entry.id), statementLinks, e });
+        }).join("")}
       </tbody>`;
   }).join("");
   return html`<table class="bk-table">${ledgerHeadMarkup()}${body}</table>`;

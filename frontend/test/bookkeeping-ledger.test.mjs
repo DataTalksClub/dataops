@@ -5,6 +5,8 @@ import {
   accountOf,
   resolveAccountName,
   accountsOf,
+  bankOnlyEntryFromMonthRow,
+  displayRowCount,
   eurValue,
   filterEntries,
   filtersFromParams,
@@ -139,6 +141,9 @@ test("cash month uses paid date only, falling back to the transaction booking da
   assert.equal(latestActivityMonth([paidInCurrentMonth], "2026-09"), "2026-10");
   assert.equal(inLens(paidInCurrentMonth, "2026-10"), true);
   assert.equal(inLens(paidInCurrentMonth, "2026-09"), false);
+  const paidMarkup = ledgerTableMarkup({ groups: groupByMonth([paidInCurrentMonth]), hasEvidence: () => false,
+    vocab: {}, selectedId: "", e: escapeHtml });
+  assert.match(paidMarkup, /<time datetime="2026-10-02">/, "the table date is the actual cash date");
   assert.equal(cashDate(bookingDateFallback), "2026-10-03");
   assert.deepEqual(groupByMonth([bookingDateFallback, paidInCurrentMonth]).map(({ month, entries }) =>
     [month, entries.map((entry) => entry.id)]), [
@@ -160,14 +165,164 @@ test("the table renders one compact row per transaction without changing stored 
   assert.match(markup, /<span class="bk-unconverted" title="No EUR value recorded yet/);
   assert.match(markup, /bk-col-eur is-unconverted/);
   assert.match(markup, />−\$15\.00<\/span>/, "a row without EUR shows its original value highlighted");
-  assert.match(markup, /paid 7 Sept/, "the paid date shows only when it differs");
-  assert.equal((markup.match(/paid /g) || []).length, 1);
+  assert.match(markup, /<time datetime="2026-09-07">/, "the cash date is primary when transaction and paid dates differ");
+  assert.equal((markup.match(/class="bk-date__paid"/g) || []).length, 0);
   assert.match(markup, /class="bk-row is-uncategorised is-income"\s+data-tx="b" aria-selected="true"/);
   assert.match(markup, /<option value="Infrastructure" selected>/);
   assert.match(markup, /No invoice/);
   assert.match(markup, /Invoice<\/th>/);
   assert.match(markup, /out <span class="dk-mono">−€86\.00/);
   assert.equal(JSON.stringify(rows), before);
+});
+
+test("allocated invoices replace the aggregate row while totals and payment drill-through remain singular", () => {
+  const payment = {
+    id: "synthetic-payment",
+    transactionDate: "2026-09-30",
+    paidDate: "2026-10-05",
+    counterparty: "Synthetic Card Settlement",
+    description: "Combined payment",
+    amount: "123.00",
+    currency: "EUR",
+    entryType: "expense",
+    allocations: [
+      { id: "alloc-100", documentId: "invoice-100", counterparty: "Synthetic Compute GmbH", description: "Dedicated cluster", amount: "100.00", currency: "EUR", category: "Infrastructure" },
+      { id: "alloc-20", documentId: "invoice-20", counterparty: "Synthetic Domain Ltd", description: "Domain renewal", amount: "20.00", currency: "EUR", category: "Domains" },
+      { id: "alloc-3", documentId: "invoice-3", counterparty: "Synthetic Mail BV", description: "Email service", amount: "3.00", currency: "EUR", category: "Services" },
+    ],
+  };
+  const groups = groupByMonth([payment]);
+  const documents = new Map(payment.allocations.map((allocation) => [allocation.documentId, {
+    id: allocation.documentId,
+    status: "active",
+    documentType: "receipt",
+    originalFilename: `${allocation.documentId}.pdf`,
+  }]));
+  const markup = ledgerTableMarkup({
+    groups,
+    hasEvidence: () => true,
+    hasInvoice: () => [],
+    getAllocationDocument: (_entry, allocation) => documents.get(allocation.documentId),
+    statementLinks: new Map([[payment.id, {
+      accountName: "Synthetic Revolut Business EUR",
+      statementPeriod: "2026-10",
+      statementDocumentId: "bank-statement-2026-10",
+    }]]),
+    vocab: {},
+    selectedId: "",
+    e: escapeHtml,
+  });
+
+  assert.equal(groups[0].month, "2026-10", "the child rows follow the payment month");
+  assert.equal(groups[0].entries.length, 1, "one persisted bank payment remains one month entry");
+  assert.equal(displayRowCount(groups[0].entries), 3, "one parent with three allocations is three visible rows");
+  assert.equal(displayRowCount([...groups[0].entries, { id: "bank-only", reconciliationOnly: true }]), 4,
+    "a bank-only row contributes one visible row");
+  assert.equal(groups[0].moneyOut, -123, "the month total counts the parent payment once");
+  assert.equal((markup.match(/class="bk-row/g) || []).length, 3, "the main table shows only the three invoice rows");
+  assert.match(markup, /class="bk-month__count dk-mono">3<\/span>/, "the visible row count follows expanded rows");
+  assert.doesNotMatch(markup, /Synthetic Card Settlement/, "the opaque payment total is not a fourth monetary row");
+  assert.match(markup, /out <span class="dk-mono">−€123\.00/, "the month total still counts the payment once");
+  assert.match(markup, /Synthetic Compute GmbH[\s\S]*Dedicated cluster[\s\S]*−€100\.00/);
+  assert.match(markup, /Synthetic Domain Ltd[\s\S]*Domain renewal[\s\S]*−€20\.00/);
+  assert.match(markup, /Synthetic Mail BV[\s\S]*Email service[\s\S]*−€3\.00/);
+  for (const allocation of payment.allocations) {
+    assert.match(markup, new RegExp(`data-allocation-document="${allocation.documentId}"`));
+    assert.match(markup, new RegExp(`data-view-document="${allocation.documentId}"`));
+  }
+  assert.equal((markup.match(/data-open-tx="synthetic-payment"/g) || []).length, 3,
+    "each invoice row drills through to the one original payment");
+  assert.equal((markup.match(/class="bk-account-link" data-view-document="bank-statement-2026-10"/g) || []).length, 3,
+    "each visible invoice row keeps the parent payment's linked statement account action");
+  assert.equal((markup.match(/Synthetic Revolut Business EUR/g) || []).length, 3,
+    "the account name remains visible on all expanded invoice rows");
+  const header = markup.match(/<thead>([\s\S]*?)<\/thead>/)?.[1] || "";
+  assert.ok(header.indexOf("bk-col-account") > header.indexOf("bk-col-flag"), "Account follows Invoice in the header");
+  const childRows = [...markup.matchAll(/<tr class="bk-row bk-row--allocation-child[^>]*>([\s\S]*?)<\/tr>/g)]
+    .map((match) => match[1]);
+  assert.equal(childRows.length, 3);
+  for (const row of childRows) {
+    assert.equal((row.match(/<td class="bk-col-/g) || []).length, 9);
+    assert.ok(row.indexOf("bk-col-account") > row.indexOf("bk-col-flag"), "Account is the last allocation cell");
+  }
+  assert.match(markup, /aria-label="Open original payment for Synthetic Compute GmbH"/);
+});
+
+test("allocated invoice Net and VAT use each child's VAT rather than the payment VAT", () => {
+  const payment = {
+    id: "synthetic-vat-payment",
+    transactionDate: "2026-09-30",
+    paidDate: "2026-10-05",
+    counterparty: "Synthetic Bundle Settlement",
+    description: "Synthetic payment with invoice VAT",
+    amount: "146.00",
+    currency: "EUR",
+    entryType: "expense",
+    vatAmount: "25.00",
+    vatCurrency: "EUR",
+    allocations: [
+      { id: "alloc-vat-123", documentId: "invoice-vat-123", transactionDate: "2026-09-30", paidDate: "2026-09-30", counterparty: "Synthetic VAT Vendor A", description: "Gross 123 with VAT 23", amount: "123.00", currency: "EUR", vatAmount: "23.00", vatCurrency: "EUR" },
+      { id: "alloc-vat-20", documentId: "invoice-vat-20", transactionDate: "2026-09-30", paidDate: "2026-09-30", counterparty: "Synthetic VAT Vendor B", description: "Gross 20 with VAT 2", amount: "20.00", currency: "EUR", vatAmount: "2.00", vatCurrency: "EUR" },
+      { id: "alloc-vat-3", documentId: "invoice-vat-3", transactionDate: "2026-09-30", paidDate: "2026-09-30", counterparty: "Synthetic VAT Vendor C", description: "Gross 3 with no VAT", amount: "3.00", currency: "EUR" },
+    ],
+  };
+  const markup = ledgerTableMarkup({
+    groups: groupByMonth([payment]),
+    hasEvidence: () => true,
+    hasInvoice: () => [],
+    vocab: {},
+    selectedId: "",
+    financeEntriesById: new Map([[payment.id, { vatEur: 25 }]]),
+    e: escapeHtml,
+  });
+  const rows = [...markup.matchAll(/<tr class="bk-row bk-row--allocation-child[^>]*>([\s\S]*?)<\/tr>/g)]
+    .map((match) => match[1]);
+  assert.equal((markup.match(/<time datetime="2026-10-05">/g) || []).length, 3,
+    "each invoice row shows its payment cash date, not the invoice date");
+  const cells = rows.map((row) => ({
+    net: row.match(/<td class="bk-col-money bk-col-eur[^>]*>([\s\S]*?)<\/td>/)?.[1].replace(/<[^>]*>/g, "").trim(),
+    vat: row.match(/<td class="bk-col-vat[^>]*>([\s\S]*?)<\/td>/)?.[1].replace(/<[^>]*>/g, "").trim(),
+  }));
+  assert.deepEqual(cells, [
+    { net: "−€100.00", vat: "€23.00" },
+    { net: "−€18.00", vat: "€2.00" },
+    { net: "−€3.00", vat: "—" },
+  ]);
+  assert.equal(payment.allocations[0].paidDate, "2026-09-30", "the stored invoice date remains untouched by projection");
+  assert.match(markup, /out <span class="dk-mono">−€146\.00/, "the original payment remains the sole month-total source");
+});
+
+test("classified owner, fee, and TK statement rows stay visible without becoming editable ledger records", () => {
+  const monthRows = [
+    { id: "owner", date: "2026-10-07", counterparty: "Synthetic Owner Transfer", description: "Synthetic private withdrawal",
+      amount: "-44.25", currency: "EUR", bank: { key: "bank-owner", accountId: "synthetic-account", date: "2026-10-07", amount: "-44.25", currency: "EUR", counterparty: "Synthetic Owner Transfer" },
+      exception: { kind: "owner_withdrawal", satisfied: true } },
+    { id: "fee", date: "2026-10-08", counterparty: "Synthetic Bank", description: "Monthly account fee",
+      amount: "-2.00", currency: "EUR", bank: { key: "bank-fee", accountId: "synthetic-account", date: "2026-10-08", amount: "-2.00", currency: "EUR", counterparty: "Synthetic Bank" },
+      exception: { kind: "bank_fee", satisfied: true } },
+    { id: "tk", date: "2026-10-09", counterparty: "Synthetic Health Fund", description: "Synthetic health insurance debit",
+      amount: "-10.00", currency: "EUR", bank: { key: "bank-tk", accountId: "synthetic-account", date: "2026-10-09", amount: "-10.00", currency: "EUR", counterparty: "Synthetic Health Fund" },
+      exception: { kind: "tk_debit", satisfied: true } },
+  ];
+  const projected = monthRows.map(bankOnlyEntryFromMonthRow);
+  assert.deepEqual(projected.map((entry) => entry.category), ["Owner withdrawal", "Bank fee", "TK health insurance debit"]);
+  const groups = groupByMonth(projected);
+  assert.equal(groups[0].month, "2026-10");
+  assert.equal(groups[0].entries.length, 3);
+  assert.equal(groups[0].moneyOut, -56.25);
+  const markup = ledgerTableMarkup({ groups, hasEvidence: () => true, vocab: {}, selectedId: "", e: escapeHtml });
+  assert.equal((markup.match(/data-bank-only=/g) || []).length, 3);
+  const bankRow = markup.match(/<tr class="bk-row bk-row--statement-only[^>]*>([\s\S]*?)<\/tr>/)?.[1] || "";
+  assert.equal((bankRow.match(/<td class="bk-col-/g) || []).length, 9);
+  assert.ok(bankRow.indexOf("bk-col-account") > bankRow.indexOf("bk-col-flag"), "Account is the last bank-only cell");
+  assert.match(markup, /Synthetic Owner Transfer[\s\S]*Owner withdrawal · confirmed/);
+  assert.match(markup, /Monthly account fee[\s\S]*Bank fee · confirmed/);
+  assert.match(markup, /Synthetic health insurance debit[\s\S]*TK health insurance debit · confirmed/);
+  assert.doesNotMatch(markup, /data-tx=|data-open-tx=|data-inline-field=/, "statement projections cannot open or write a nonexistent ledger row");
+  assert.equal(bankOnlyEntryFromMonthRow({ ...monthRows[0], ledger: { id: "already-recorded" } }), null,
+    "matched bank activity is not shown twice");
+  assert.equal(bankOnlyEntryFromMonthRow({ ...monthRows[1], ledger: { id: "recorded-fee" } }), null,
+    "a fee already represented by its canonical ledger row is not projected twice");
 });
 
 test("the VAT column shows document VAT, a zero rate, and reverse charge distinctly", () => {

@@ -8,7 +8,9 @@ import {
 import { createBookkeepingReports } from "./bookkeeping-reporting.js";
 import {
   accountsOf,
+  bankOnlyEntryFromMonthRow,
   CLASSIFICATION_FIELDS,
+  displayRowCount,
   emptyLedgerMarkup,
   filterEntries,
   filtersFromParams,
@@ -69,6 +71,7 @@ export function createBookkeepingSurface(context) {
     setRouteTitle("Bookkeeping");
 
     let entries = [],
+      bankOnlyEntries = [],
       documents = [],
       links = [],
       accounts = [],
@@ -82,6 +85,8 @@ export function createBookkeepingSurface(context) {
     let selectedId = initial.get("tx") || "";
     let view = SECONDARY_VIEWS.includes(initial.get("view")) ? initial.get("view") : "";
     let defaultLens = "", invoicesMounted = false;
+    const reconciliationCache = new Map();
+    let reconciliationGeneration = 0;
     const loadTuition = createTuitionLoader(surface.querySelector("[data-tuition]"), context, initial.get("agreement"));
     let vocab = {};
     const suggestions = suggestionLoader({ load: (id) => api(`/transactions/${encodeURIComponent(id)}/suggestions`),
@@ -148,13 +153,21 @@ export function createBookkeepingSurface(context) {
     }
 
     const hasEvidence = (id) =>
-      links.some((l) => l.transactionId === id && l.coverageType === "evidence");
+      bankOnlyEntries.some((entry) => entry.id === id)
+      || links.some((l) => l.transactionId === id && l.coverageType === "evidence");
     const hasInvoice = (id) => {
       const entry = entries.find((candidate) => candidate.id === id);
       const linked = linkedEvidenceDocuments(entry, links, documents);
       return linked;
     };
+    const allocationDocument = (entry, allocation) =>
+      linkedEvidenceDocuments(entry, links, documents)
+        .find((document) => String(document.id) === String(allocation.documentId)) || null;
     const lensEntries = () => entries.filter((e) => inLens(e, lens));
+    const ledgerEntriesForLens = () => [
+      ...lensEntries(),
+      ...bankOnlyEntries.filter((entry) => inLens(entry, lens)),
+    ];
     let statementLinkLoad = 0;
     function shiftMonth(period, delta) {
       const [year, month] = period.split("-").map(Number);
@@ -179,7 +192,9 @@ export function createBookkeepingSurface(context) {
     }
     function setLens(month) {
       lens = month;
+      bankOnlyEntries = [];
       renderAll();
+      void refreshBankOnlyRows();
       void loadStatementLinks();
     }
     function renderAll() {
@@ -214,15 +229,16 @@ export function createBookkeepingSurface(context) {
       select.value = current || "";
     }
     function renderFilterOptions() {
-      vocab = Object.fromEntries(CLASSIFICATION_FIELDS.map(({ field }) => [field, vocabulary(entries, field)]));
-      optionList(surface.querySelector('[data-filter="account"]'), accountsOf(entries, statementLinks), "All accounts", filters.account);
+      const options = [...entries, ...bankOnlyEntries];
+      vocab = Object.fromEntries(CLASSIFICATION_FIELDS.map(({ field }) => [field, vocabulary(options, field)]));
+      optionList(surface.querySelector('[data-filter="account"]'), accountsOf(options, statementLinks), "All accounts", filters.account);
       optionList(surface.querySelector('[data-filter="category"]'), vocab.category, "All categories", filters.category);
       surface.querySelector('[data-filter="dir"]').value = filters.dir;
       const search = surface.querySelector('[data-filter="q"]');
       if (search.value !== filters.q) search.value = filters.q;
     }
     function renderLedger() {
-      const scoped = lensEntries();
+      const scoped = ledgerEntriesForLens();
       const counts = {
         category: scoped.filter(needsCategory).length,
         receipt: scoped.filter((entry) => !hasEvidence(entry.id)).length,
@@ -234,7 +250,7 @@ export function createBookkeepingSurface(context) {
       });
       const shown = filterEntries(scoped, filters, { hasEvidence, accountNameOf: (entry) => resolveAccountName(entry, statementLinks) });
       surface.querySelector("[data-shown-count]").textContent =
-        `${shown.length} of ${scoped.length}`;
+        `${displayRowCount(shown)} of ${displayRowCount(scoped)}`;
       const active = ["account", "dir", "category", "needs"].filter((name) => filters[name]).length;
       surface.querySelector("[data-active-filters]").textContent = active ? String(active) : "";
       const filtered = Boolean(filters.q || filters.account || filters.dir || filters.category || filters.needs);
@@ -252,12 +268,47 @@ export function createBookkeepingSurface(context) {
         groups: groupByMonth(shown),
         hasEvidence,
         hasInvoice,
+        getAllocationDocument: allocationDocument,
         vocab,
         selectedId,
         financeEntriesById: financeSummary.entryMap(),
         statementLinks,
         e: escapeHtml,
       }) + financeSummary.markup(escapeHtml);
+    }
+    function reconciliationPeriods() {
+      if (/^\d{4}-\d{2}$/.test(lens)) return [lens];
+      if (/^\d{4}$/.test(lens)) return Array.from({ length: 12 }, (_, index) => `${lens}-${String(index + 1).padStart(2, "0")}`);
+      const periods = new Set([
+        ...entries.map((entry) => monthOf(entry)).filter((period) => /^\d{4}-\d{2}$/.test(period)),
+        ...documents.filter((document) => document.documentType === "bank-statement")
+          .map((document) => String(document.statementMonth || "")).filter((period) => /^\d{4}-\d{2}$/.test(period)),
+        String(todayIsoDate?.() || new Date().toISOString()).slice(0, 7),
+      ]);
+      return [...periods].sort();
+    }
+    async function refreshBankOnlyRows() {
+      const requestedLens = lens;
+      const generation = ++reconciliationGeneration;
+      try {
+        const views = await Promise.all(reconciliationPeriods().map(async (period) => {
+          if (reconciliationCache.has(period)) return reconciliationCache.get(period);
+          const view = await request(workApiUrl(`/api/reconcile/months/${encodeURIComponent(period)}`));
+          reconciliationCache.set(period, view);
+          return view;
+        }));
+        if (generation !== reconciliationGeneration || requestedLens !== lens) return;
+        bankOnlyEntries = views.flatMap((view) => Array.isArray(view?.rows) ? view.rows : [])
+          .map(bankOnlyEntryFromMonthRow).filter(Boolean);
+        renderFilterOptions();
+        renderLedger();
+      } catch {
+        if (generation !== reconciliationGeneration || requestedLens !== lens) return;
+        bankOnlyEntries = [];
+        renderFilterOptions();
+        renderLedger();
+        status.textContent = "Bank statement classifications are temporarily unavailable.";
+      }
     }
     function selectedEntry() {
       return entries.find((entry) => entry.id === selectedId) || null;
@@ -448,6 +499,7 @@ export function createBookkeepingSurface(context) {
         ]);
       documents = docResult.items || [];
       links = linkResult.items || [];
+      reconciliationCache.clear();
       suggestions.clear();
       accounts = accountResult.items || [];
       reports = reportResult.items || [];
@@ -466,6 +518,7 @@ export function createBookkeepingSurface(context) {
         if (entry) transactionModal.render(entry);
       }
       if (view === "package") renderPackageReview();
+      void refreshBankOnlyRows();
     }
     async function refreshInvoiceCount() {
       try {
