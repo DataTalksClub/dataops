@@ -37,6 +37,7 @@ describe('reconciliation ledger projection', () => {
     const period = '2026-11';
     const invoiceId = 'c'.repeat(64);
     const artifactId = 'synthetic-invoice-artifact';
+    const originalChecksum = 'e'.repeat(64);
     const oldBucket = process.env.EMAIL_DOCUMENTS_BUCKET;
     const oldPrefix = process.env.EMAIL_DOCUMENT_DESTINATION_PREFIX;
     process.env.EMAIL_DOCUMENTS_BUCKET = 'synthetic-private-documents';
@@ -47,7 +48,7 @@ describe('reconciliation ledger projection', () => {
         Item: {
           PK: `ARTIFACT#${artifactId}`, SK: `ARTIFACT#${artifactId}`, id: artifactId,
           type: 'invoice', title: 'synthetic-source-invoice.pdf', filename: 'synthetic-source-invoice.pdf',
-          contentType: 'application/pdf', dataClass: 'sensitive', status: 'approved',
+          contentType: 'application/pdf', checksum: `sha256:${originalChecksum}`, sizeBytes: 128, dataClass: 'sensitive', status: 'approved',
           storageUri: `s3://synthetic-private-documents/artifacts/${artifactId}.pdf`,
           metadata: { importState: 'complete' },
         },
@@ -55,7 +56,7 @@ describe('reconciliation ledger projection', () => {
       await createInvoice(client, {
         id: invoiceId, revision: 1, status: 'confirmed', fields: { transactionDate: '2026-11-02', paidDate: '2026-11-03', counterparty: 'Synthetic Vendor', amount: '24.00', currency: 'EUR', invoiceNumber: 'SYN-24' },
         extraction: { method: 'synthetic', evidence: [], issues: [], direction: 'expense' },
-        source: { intakeItemIds: ['synthetic-intake'], artifactId, checksum: 'sha256:synthetic' },
+        source: { intakeItemIds: ['synthetic-intake'], artifactId, checksum: originalChecksum },
         destinations: { dropbox: { state: 'verified', operationId: 'dropbox' }, sheets: { state: 'verified', operationId: 'sheets' } },
         audit: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), confirmedRevision: 1,
       });
@@ -64,19 +65,41 @@ describe('reconciliation ledger projection', () => {
         counterparty: 'Synthetic Vendor', amount: '24.00', currency: 'EUR', entryType: 'expense',
         invoiceNumber: 'SYN-24', invoiceId, documentArtifactId: artifactId, sourceType: 'invoice',
       })).item;
+      const attachedCopy = (await putBookkeepingItem(client, 'document', {
+        documentType: 'invoice', status: 'active', contentType: 'application/pdf',
+        originalFilename: 'synthetic-attached-copy.pdf', byteSize: 128, sha256: originalChecksum,
+        s3Key: 'documents/synthetic-attached-copy.pdf',
+      })).item;
+      const distinctEvidence = (await putBookkeepingItem(client, 'document', {
+        documentType: 'other-evidence', status: 'active', contentType: 'application/pdf',
+        originalFilename: 'synthetic-supporting-contract.pdf', byteSize: 256, sha256: 'f'.repeat(64),
+        s3Key: 'documents/synthetic-supporting-contract.pdf',
+      })).item;
+      await createDocumentLink(client, { documentId: attachedCopy.id, transactionId: String(ledger.id), coverageType: 'evidence' });
+      await createDocumentLink(client, { documentId: distinctEvidence.id, transactionId: String(ledger.id), coverageType: 'evidence' });
       assert.deepEqual(ledgerRowsFrom([ledger], [])[0].documents, [{ id: artifactId, invoiceId }]);
       const packageResult = await monthPackage(client, period, { draft: true });
       const entry = packageResult.entries.find((item) => item.invoiceId === invoiceId);
       assert.ok(entry);
       assert.equal(entry.kind, 'invoice');
       assert.equal(entry.originalFilename, 'synthetic-source-invoice.pdf');
+      assert.equal(packageResult.entries.filter((item) => item.rowId === `ledger:${ledger.id}`).length, 2,
+        'same-byte attached copy is deduplicated while distinct linked evidence remains');
+      assert.ok(packageResult.entries.some((item) => item.documentId === distinctEvidence.id));
+      assert.ok(!packageResult.entries.some((item) => item.documentId === attachedCopy.id));
       assert.deepEqual(packageResult.blockers, []);
 
-      await putBookkeepingItem(client, 'bookkeeping', {
+      const missingLedger = (await putBookkeepingItem(client, 'bookkeeping', {
         id: 'synthetic-missing-invoice-ledger', transactionDate: '2026-11-04', paidDate: '2026-11-04',
         counterparty: 'Synthetic Missing Vendor', amount: '10.00', currency: 'EUR', entryType: 'expense',
         invoiceId: 'd'.repeat(64), documentArtifactId: 'synthetic-missing-artifact', sourceType: 'invoice',
-      });
+      })).item;
+      const unrelatedAttachment = (await putBookkeepingItem(client, 'document', {
+        documentType: 'other-evidence', status: 'active', contentType: 'application/pdf',
+        originalFilename: 'synthetic-unrelated-attachment.pdf', byteSize: 64, sha256: 'a'.repeat(64),
+        s3Key: 'documents/synthetic-unrelated-attachment.pdf',
+      })).item;
+      await createDocumentLink(client, { documentId: unrelatedAttachment.id, transactionId: String(missingLedger.id), coverageType: 'evidence' });
       await putBookkeepingItem(client, 'bookkeeping', {
         id: 'synthetic-mismatched-invoice-ledger', transactionDate: '2026-11-05', paidDate: '2026-11-05',
         counterparty: 'Synthetic Mismatch Vendor', amount: '11.00', currency: 'EUR', entryType: 'expense',

@@ -777,6 +777,11 @@ export type PackageEntry = {
 
 export type PackageBlocker = { rowId: string; reference: string; reason: string };
 
+function sourceChecksum(value: unknown): string | undefined {
+  const checksum = String(value || "").replace(/^sha256:/i, "").toLowerCase();
+  return /^[a-f0-9]{64}$/.test(checksum) ? checksum : undefined;
+}
+
 async function confirmedInvoiceSource(client: DynamoDBDocumentClient, row: LedgerRow, document: LedgerRow["documents"][number]) {
   if (!document.invoiceId) return null;
   const invoice = await getInvoice(client, document.invoiceId);
@@ -789,7 +794,7 @@ async function confirmedInvoiceSource(client: DynamoDBDocumentClient, row: Ledge
   const location = /^s3:\/\/([^/]+)\/(.+)$/.exec(artifact?.storageUri || "");
   if (!artifact || artifact.metadata?.importState !== "complete" || artifact.contentType !== "application/pdf"
     || !location || location[1] !== bucket || !location[2].startsWith(`${prefix}/`)) return null;
-  return { invoiceId: invoice.id, artifactId, filename: artifact.filename || artifact.title };
+  return { invoiceId: invoice.id, artifactId, checksum: sourceChecksum(invoice.source.checksum), filename: artifact.filename || artifact.title };
 }
 
 /**
@@ -817,32 +822,50 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
     });
   }
   const seenDocuments = new Set<string>();
+  const seenSourceChecksums = new Set<string>();
   for (const row of view.rows) {
     if (row.tax) continue;
     if (!row.ledger || REPORT_EXEMPT_CATEGORIES.has(row.ledger.category || "")) continue;
     const folder = Number(row.ledger.amount) > 0 ? "income" : "expenses";
+    const invoiceSources = new Map<string, Awaited<ReturnType<typeof confirmedInvoiceSource>>>();
+    for (const document of row.documents) {
+      if (document.invoiceId && !invoiceSources.has(document.invoiceId)) {
+        invoiceSources.set(document.invoiceId, await confirmedInvoiceSource(client, row.ledger, document));
+      }
+    }
     for (const document of row.documents) {
       if (seenDocuments.has(document.id)) continue;
-      seenDocuments.add(document.id);
       const raw = await getRawDocument(client, document.id);
+      const checksum = sourceChecksum(raw?.sha256);
       if (!raw) {
-        const invoice = await confirmedInvoiceSource(client, row.ledger, document);
+        const invoice = document.invoiceId ? invoiceSources.get(document.invoiceId) : null;
         if (!invoice) {
+          seenDocuments.add(document.id);
           blockers.push({ rowId: row.id, reference: document.invoiceId || document.id, reason: "expected invoice document is missing or cannot be safely resolved" });
           continue;
         }
+        seenDocuments.add(document.id);
+        if (invoice.checksum && seenSourceChecksums.has(invoice.checksum)) continue;
         entries.push({
           path: naming.packagePath(period, folder, naming.documentName({ date: row.ledger.date, counterparty: row.ledger.counterparty, documentNumber: row.ledger.invoiceNumber, amount: row.ledger.amount, currency: row.ledger.currency, filename: String(invoice.filename || "invoice.pdf") })),
           kind: "invoice", invoiceId: invoice.invoiceId, rowId: row.id,
           ...(invoice.filename ? { originalFilename: String(invoice.filename) } : {}),
         });
+        if (invoice.checksum) seenSourceChecksums.add(invoice.checksum);
         continue;
       }
+      const matchesInvoiceSource = checksum && [...invoiceSources.values()].some((invoice) => invoice?.checksum === checksum);
+      if (matchesInvoiceSource || (checksum && seenSourceChecksums.has(checksum))) {
+        seenDocuments.add(document.id);
+        continue;
+      }
+      seenDocuments.add(document.id);
       entries.push({
         path: naming.packagePath(period, folder, naming.documentName({ date: row.ledger.date, counterparty: row.ledger.counterparty, documentNumber: row.ledger.invoiceNumber, amount: row.ledger.amount, currency: row.ledger.currency, filename: String(raw.originalFilename || "x.pdf") })),
         kind: "invoice", documentId: document.id, rowId: row.id,
         ...(raw.originalFilename ? { originalFilename: String(raw.originalFilename) } : {}),
       });
+      if (checksum) seenSourceChecksums.add(checksum);
     }
     if (row.paymentProof && !seenDocuments.has(row.paymentProof.documentId)) {
       seenDocuments.add(row.paymentProof.documentId);
