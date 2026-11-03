@@ -6,7 +6,7 @@ import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { setCalendarHoldGoogleDepsForTests } from '../src/routes/calendarHolds';
-import { DEFAULT_HOLD_GOOGLE_CALENDARS, setDapierBrokerClientsForTests } from '../src/calendar/dapierBroker';
+import { DEFAULT_HOLD_GOOGLE_CALENDARS, PUBLIC_DTC_EVENTS_CALENDAR, setDapierBrokerClientsForTests } from '../src/calendar/dapierBroker';
 import { HOLD_ORGANIZER } from '../src/calendar/holdGoogleSync';
 import { HOLD_ZOOM_LOCATION } from '../src/calendar/holds';
 import { saveCalendarOverlaySettings } from '../src/db/calendar';
@@ -21,7 +21,8 @@ function invoke(pathName: string, query: Record<string, string> = {}): Promise<L
 const parse = (r: LambdaResponse): any => JSON.parse(r.body);
 
 let client: DynamoDBDocumentClient;
-const [PERSONAL, DTC] = DEFAULT_HOLD_GOOGLE_CALENDARS;
+const [PERSONAL] = DEFAULT_HOLD_GOOGLE_CALENDARS;
+const DTC = PUBLIC_DTC_EVENTS_CALENDAR;
 
 describe('Google event read-back (invite verification)', () => {
   before(async () => {
@@ -63,7 +64,7 @@ describe('Google event read-back (invite verification)', () => {
     assert.strictEqual(res.statusCode, 200, res.body);
     const body = parse(res);
     assert.strictEqual(body.eventId, 'evt-live');
-    assert.deepStrictEqual(body.events.map((entry: any) => entry.calendar), [HOLD_ORGANIZER, PERSONAL, DTC]);
+    assert.deepStrictEqual(body.events.map((entry: any) => entry.calendar), [HOLD_ORGANIZER, DTC, PERSONAL]);
     for (const entry of body.events) {
       assert.strictEqual(entry.state, 'ok', JSON.stringify(entry));
       assert.strictEqual(entry.event.description, description);
@@ -71,6 +72,9 @@ describe('Google event read-back (invite verification)', () => {
       assert.strictEqual(entry.event.summary, 'Build a Media Agent');
       assert.deepStrictEqual(entry.event.attendees, [{ email: 'guest@example.com', responseStatus: 'accepted' }]);
       assert.ok(!('extendedProperties' in entry.event), 'internal provenance must not leave the backend');
+      if (entry.calendar === DTC) {
+        assert.deepStrictEqual(entry.warnings, ['public_calendar_contains_zoom_link', 'public_calendar_contains_internal_link', 'public_calendar_contains_attendees']);
+      }
     }
   });
 

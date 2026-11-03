@@ -6,10 +6,10 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { getCardConsistent } from '../src/db/cards';
+import { getCardConsistent, updateCard } from '../src/db/cards';
 import { listTasksByCard } from '../src/db/tasks';
 import { createTemplate } from '../src/db/templates';
-import { DEFAULT_HOLD_GOOGLE_CALENDARS } from '../src/calendar/dapierBroker';
+import { DEFAULT_HOLD_GOOGLE_CALENDARS, PUBLIC_DTC_EVENTS_CALENDAR } from '../src/calendar/dapierBroker';
 import { HOLD_ORGANIZER } from '../src/calendar/holdGoogleSync';
 import { setCalendarHoldGoogleDepsForTests } from '../src/routes/calendarHolds';
 import { templateFromYaml, templateToYaml, validateAuthoredTemplate } from '../src/templates/yamlTemplates';
@@ -104,7 +104,7 @@ describe('course event slots: event Cards instead of text', () => {
     const slotTask = tasks.find((task: any) => task.templateTaskRef === 'pre-course-qa');
     assert.equal(slotTask.linkedCardId, qaCard.id);
     assert.equal(slotTask.linkedCard.dateTbd, true);
-    assert.deepEqual(slotTask.linkedCard.invites.map((invite: any) => invite.state), ['missing', 'missing']);
+    assert.deepEqual(slotTask.linkedCard.invites.map((invite: any) => invite.state), ['missing']);
 
     // Rerunning creates nothing new.
     const again = parsed(await invoke('POST', `/api/cards/${created.card.id}/event-slots`, {})).eventSlots;
@@ -174,10 +174,10 @@ describe('course event slots: event Cards instead of text', () => {
     const linked = courseTasks.find((task: any) => task.templateTaskRef === 'pre-course-qa').linkedCard;
     assert.equal(linked.dateTbd, false);
     assert.equal(linked.eventStartIso, '2026-11-12T17:00:00.000Z');
-    assert.deepEqual(linked.invites.map((invite: any) => invite.state), ['live', 'live']);
+    assert.deepEqual(linked.invites.map((invite: any) => invite.state), ['live']);
   });
 
-  it('creates silent Luma calendar entries idempotently and gates cohort preparation on both calendars', async () => {
+  it('creates attendee-free public Luma entries idempotently and keeps guest calendar checks personal-only', async () => {
     const google = holdGoogleProvider();
     setCalendarHoldGoogleDepsForTests({ fetchImpl: google.fetchImpl, credential: 'test', connectionId: 'orin' });
     try {
@@ -185,13 +185,18 @@ describe('course event slots: event Cards instead of text', () => {
       const qaCardId = created.eventSlots.find((slot: any) => slot.slot === 'Pre-Course Live Q&A').cardId;
       const launchCardId = created.eventSlots.find((slot: any) => slot.slot === 'Launch').cardId;
       const officeHoursCardId = created.eventSlots.find((slot: any) => slot.slot === 'Office Hours').cardId;
-      const manualLaunchIds = new Map<string, string>([
-        [DEFAULT_HOLD_GOOGLE_CALENDARS[0], 'manual-launch-personal'],
-        [DEFAULT_HOLD_GOOGLE_CALENDARS[1], 'manual-launch-dtc'],
-      ]);
-      for (const [calendar, eventId] of manualLaunchIds) {
-        google.events.set(calendar, new Map([[eventId, { id: eventId, status: 'confirmed' }]]));
-      }
+      const launchCard = (await getCardConsistent(client, launchCardId))!;
+      google.events.set(PUBLIC_DTC_EVENTS_CALENDAR, new Map([['manual-launch-dtc', {
+        id: 'manual-launch-dtc', status: 'confirmed', summary: launchCard.title,
+        description: 'Subtitle\nStream: https://www.youtube.com/datatalksclub\nLuma: https://luma.com/production-ai-agents-launch',
+        location: 'https://www.youtube.com/datatalksclub',
+        start: { dateTime: '2026-11-16T16:00:00.000Z', timeZone: 'Europe/Berlin' },
+        end: { dateTime: '2026-11-16T17:00:00.000Z', timeZone: 'Europe/Berlin' },
+      }]]));
+      await updateCard(client, launchCardId, {
+        expectedVersion: launchCard.version,
+        patch: { calendarInvites: [{ eventId: 'deleted-old-launch', calendar: PUBLIC_DTC_EVENTS_CALENDAR, staleAt: '2026-11-02T00:00:00.000Z' }] },
+      });
       let courseTasks = await listTasksByCard(client, created.card.id);
       let qaTask = courseTasks.find((task) => task.templateTaskRef === 'pre-course-qa')!;
       const lumaLink = await invoke('PUT', `/api/tasks/${qaTask.id}`, {
@@ -213,61 +218,44 @@ describe('course event slots: event Cards instead of text', () => {
 
       const missing = await invoke('PUT', `/api/tasks/${prepare.id}`, { expectedVersion: prepare.version, status: 'done' });
       assert.equal(missing.statusCode, 400, missing.body);
-      assert.match(parsed(missing).error, /calendar entries.*alexey\.s\.grigoriev@gmail\.com.*group\.calendar\.google\.com/i);
+      assert.match(parsed(missing).error, /calendar entries.*alexey\.s\.grigoriev@gmail\.com/i);
 
       const first = await invoke('POST', `/api/cards/${qaCardId}/time`, { at: '2026-11-10 17:00' });
       assert.equal(first.statusCode, 200, first.body);
       assert.equal(parsed(first).invite.outcome, 'synced');
-      assert.deepEqual(parsed(first).card.calendarInvites.map((invite: any) => invite.calendar).sort(), [...DEFAULT_HOLD_GOOGLE_CALENDARS].sort());
-      assert.deepEqual(Object.keys(parsed(first).card.eventTime.googleEventIds).sort(), [...DEFAULT_HOLD_GOOGLE_CALENDARS, HOLD_ORGANIZER].sort());
-      const organizerEventId = parsed(first).card.eventTime.googleEventIds[HOLD_ORGANIZER];
-      assert.deepEqual(google.events.get(HOLD_ORGANIZER)!.get(organizerEventId)!.attendees, [], 'the organizer copy has no guest invitation');
-      for (const calendar of DEFAULT_HOLD_GOOGLE_CALENDARS) {
+      assert.deepEqual(parsed(first).card.calendarInvites.map((invite: any) => invite.calendar), [PUBLIC_DTC_EVENTS_CALENDAR]);
+      assert.deepEqual(Object.keys(parsed(first).card.eventTime.googleEventIds), [PUBLIC_DTC_EVENTS_CALENDAR]);
+      for (const calendar of [PUBLIC_DTC_EVENTS_CALENDAR]) {
         const event = [...google.events.get(calendar)!.values()].find((item) => item.summary === 'Gen Media 2026: Pre-Course Live Q&A');
         assert.ok(event, `Q&A event exists on ${calendar}`);
         assert.equal(event.summary, 'Gen Media 2026: Pre-Course Live Q&A');
-        assert.equal(event.description, 'Luma event: https://lu.ma/production-ai-agents-qa');
-        assert.equal(event.location, 'https://lu.ma/production-ai-agents-qa');
-        assert.ok((event.attendees || []).every((attendee: any) => attendee.email === calendar),
-          'calendar copies have no external guests');
+        assert.match(event.description, /Luma: https:\/\/lu\.ma\/production-ai-agents-qa/);
+        assert.match(event.description, /Stream: https:\/\/www\.youtube\.com\/datatalksclub/);
+        assert.equal(event.location, 'https://www.youtube.com/datatalksclub');
+        assert.deepEqual(event.attendees || [], [], 'public entries never contain guests');
       }
       const imports = google.calls.filter((call) => call.method === 'POST' && call.url.pathname.endsWith('/events/import'));
-      assert.equal(imports.length, 3, 'organizer, personal and DTC copies share the stable iCalendar identity');
+      assert.equal(imports.length, 0, 'public event uses its standalone insert path');
       assert.ok(imports.every((call) => !call.url.searchParams.has('sendUpdates')), 'Google import never sends invitations');
-      assert.deepEqual(imports.find((call) => call.url.pathname.includes(encodeURIComponent(HOLD_ORGANIZER)))?.body.attendees, []);
-      const patches = google.calls.filter((call) => call.method === 'PATCH');
-      assert.equal(patches.length, 2);
-      assert.ok(patches.every((call) => call.url.searchParams.get('sendUpdates') === 'none'));
-      assert.ok(patches.every((call) => !Object.hasOwn(call.body || {}, 'attendees')));
 
       const retry = await invoke('POST', `/api/cards/${qaCardId}/time`, { at: '2026-11-10 17:00' });
       assert.equal(retry.statusCode, 200, retry.body);
-      assert.equal(google.calls.filter((call) => call.url.pathname.endsWith('/events/import') && call.method === 'POST').length, 3,
-        'retry finds the same event IDs');
-      assert.equal(google.events.get(DEFAULT_HOLD_GOOGLE_CALENDARS[0])!.size, 2);
-      assert.equal(google.events.get(DEFAULT_HOLD_GOOGLE_CALENDARS[1])!.size, 2);
+      assert.equal(google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.size, 2, 'retry does not add a duplicate public event');
 
       const stillMissingLaunch = await invoke('PUT', `/api/tasks/${prepare.id}`, { expectedVersion: prepare.version, status: 'done' });
       assert.equal(stillMissingLaunch.statusCode, 400, stillMissingLaunch.body);
       assert.match(parsed(stillMissingLaunch).error, /Launch is missing live calendar entries/i);
-      let launchAdoption;
-      for (const [calendar, eventId] of manualLaunchIds) {
-        const adopted = await invoke('POST', `/api/cards/${launchCardId}/calendar-invites`, {
-          eventId, calendar, label: 'Launch',
-        });
-        assert.equal(adopted.statusCode, 200, adopted.body);
-        assert.equal(parsed(adopted).invite.label, 'Launch');
-        launchAdoption = parsed(adopted);
-        if (calendar === DEFAULT_HOLD_GOOGLE_CALENDARS[0]) {
-          const stillMissingSecondCalendar = await invoke('PUT', `/api/tasks/${prepare.id}`, { expectedVersion: prepare.version, status: 'done' });
-          assert.equal(stillMissingSecondCalendar.statusCode, 400, stillMissingSecondCalendar.body);
-          assert.match(parsed(stillMissingSecondCalendar).error, new RegExp(`Launch is missing live calendar entries on ${DEFAULT_HOLD_GOOGLE_CALENDARS[1]}`));
-        }
-      }
-      assert.equal(launchAdoption?.taskClosure.outcome, 'closed', 'the paired manual entries close the invite Task');
+      const launchTime = await invoke('POST', `/api/cards/${launchCardId}/time`, { at: '2026-11-16 17:00' });
+      assert.equal(launchTime.statusCode, 200, launchTime.body);
+      assert.deepEqual(parsed(launchTime).card.eventTime.googleEventIds, { [PUBLIC_DTC_EVENTS_CALENDAR]: 'manual-launch-dtc' });
+      assert.deepEqual(parsed(launchTime).card.calendarInvites.map((invite: any) => invite.eventId), ['manual-launch-dtc']);
+      assert.equal(google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.size, 2, 'cards time adopts the existing public entry instead of adding a duplicate');
+      const repeatLaunchTime = await invoke('POST', `/api/cards/${launchCardId}/time`, { at: '2026-11-16 17:00' });
+      assert.equal(repeatLaunchTime.statusCode, 200, repeatLaunchTime.body);
+      assert.equal(google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.size, 2, 'retry keeps the adopted public entry');
       const duplicateLaunch = await invoke('POST', `/api/cards/${launchCardId}/time`, { at: '2026-11-16 17:00' });
-      assert.equal(duplicateLaunch.statusCode, 409, duplicateLaunch.body);
-      assert.match(parsed(duplicateLaunch).error, /adopted manual Google events/i);
+      assert.equal(duplicateLaunch.statusCode, 200, duplicateLaunch.body);
+      assert.equal(google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.size, 2);
 
       courseTasks = await listTasksByCard(client, created.card.id);
       const officeHoursTask = courseTasks.find((task) => task.templateTaskRef === 'office-hours')!;
@@ -280,15 +268,15 @@ describe('course event slots: event Cards instead of text', () => {
       assert.match(parsed(stillMissingOfficeHours).error, /Office Hours is missing live calendar entries/i);
       const officeHoursTime = await invoke('POST', `/api/cards/${officeHoursCardId}/time`, { at: '2026-11-14 17:00' });
       assert.equal(officeHoursTime.statusCode, 200, officeHoursTime.body);
-      assert.deepEqual(parsed(officeHoursTime).card.calendarInvites.map((invite: any) => invite.calendar).sort(), [...DEFAULT_HOLD_GOOGLE_CALENDARS].sort());
-      for (const calendar of DEFAULT_HOLD_GOOGLE_CALENDARS) {
+      assert.deepEqual(parsed(officeHoursTime).card.calendarInvites.map((invite: any) => invite.calendar), [PUBLIC_DTC_EVENTS_CALENDAR]);
+      for (const calendar of [PUBLIC_DTC_EVENTS_CALENDAR]) {
         assert.ok([...google.events.get(calendar)!.values()].some((item) => item.summary === 'Gen Media 2026: Office Hours'),
           `office hours event exists on ${calendar}`);
       }
 
       const eventCard = (await getCardConsistent(client, qaCardId))!;
-      const dtcEventId = eventCard.eventTime!.googleEventIds[DEFAULT_HOLD_GOOGLE_CALENDARS[1]];
-      const dtcEvent = google.events.get(DEFAULT_HOLD_GOOGLE_CALENDARS[1])!.get(dtcEventId)!;
+      const dtcEventId = eventCard.eventTime!.googleEventIds[PUBLIC_DTC_EVENTS_CALENDAR];
+      const dtcEvent = google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.get(dtcEventId)!;
       dtcEvent.status = 'cancelled';
       const verifiedStale = await invoke('GET', `/api/cards/${qaCardId}/calendar-invites`, undefined, { verify: '1' });
       assert.ok(parsed(verifiedStale).invites.find((invite: any) => invite.eventId === dtcEventId).staleAt);
@@ -296,11 +284,10 @@ describe('course event slots: event Cards instead of text', () => {
 
       const moved = await invoke('POST', `/api/cards/${qaCardId}/time`, { at: '2026-11-11 17:00' });
       assert.equal(moved.statusCode, 200, moved.body);
-      assert.deepEqual(Object.keys(parsed(moved).card.eventTime.googleEventIds).sort(), [...DEFAULT_HOLD_GOOGLE_CALENDARS, HOLD_ORGANIZER].sort());
-      assert.ok(!parsed(moved).card.calendarInvites.find((invite: any) => invite.eventId === dtcEventId).staleAt,
-        'a live Luma event clears a stale marker when a sync confirms it');
-      assert.equal(google.events.get(DEFAULT_HOLD_GOOGLE_CALENDARS[0])!.size, 3, 're-timing updates instead of duplicating');
-      assert.equal(google.events.get(DEFAULT_HOLD_GOOGLE_CALENDARS[1])!.size, 3);
+      assert.deepEqual(Object.keys(parsed(moved).card.eventTime.googleEventIds), [PUBLIC_DTC_EVENTS_CALENDAR]);
+      assert.ok(!parsed(moved).card.calendarInvites.find((invite: any) => invite.eventId === dtcEventId),
+        'a cancelled public copy is replaced without retaining a stale duplicate row');
+      assert.equal(google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.size, 4);
       assert.ok(google.calls.filter((call) => call.method === 'PATCH').every((call) => call.url.searchParams.get('sendUpdates') === 'none'));
 
       courseTasks = await listTasksByCard(client, created.card.id);

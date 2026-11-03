@@ -706,7 +706,7 @@ describe("Calendar hold CLI commands", () => {
       const u = String(url);
       requests.push(u);
       const payload = u.includes("calendar=")
-        ? { eventId: "evt-1", events: [{ calendar: "f8qidjnq0jhscp8809k1eghs60@group.calendar.google.com", state: "ok", event: {
+        ? { eventId: "evt-1", events: [{ calendar: "f8qidjnq0jhscp8809k1eghs60@group.calendar.google.com", state: "ok", warnings: ["public_calendar_contains_zoom_link", "public_calendar_contains_internal_link"], event: {
             id: "evt-1", status: "confirmed", summary: "Build a Media Agent",
             description: "Zoom link: https://zoom.us/j/94755324762\n\nWorkshop document: https://ops.dtcdev.click/webinar-docs/sdoc-1",
             location: "https://zoom.us/j/94755324762", attendees: [{ email: "guest@example.com" }],
@@ -733,6 +733,8 @@ describe("Calendar hold CLI commands", () => {
     assert.match(requests[1], /google-events\/evt-1\?calendar=f8qidjnq0jhscp8809k1eghs60%40group\.calendar\.google\.com$/);
     assert.match(one.text(), /Workshop document: https:\/\/ops\.dtcdev\.click\/webinar-docs\/sdoc-1/);
     assert.match(one.text(), /attendees: guest@example\.com/);
+    assert.match(one.text(), /WARNING: the public calendar copy contains a Zoom link/);
+    assert.match(one.text(), /WARNING: the public calendar copy contains an internal link/);
 
     const noArgs = captureIo();
     globalThis.fetch = async () => { throw new Error("no request expected"); };

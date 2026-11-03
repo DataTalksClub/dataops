@@ -4,7 +4,7 @@ import { getArtifact, listArtifacts } from '../db/artifacts';
 import { getCard } from '../db/cards';
 import { listTasksByCard } from '../db/tasks';
 import { getTemplate } from '../db/templates';
-import { resolveHoldGoogleCalendars } from '../calendar/dapierBroker';
+import { PUBLIC_DTC_EVENTS_CALENDAR, resolveHoldGoogleCalendars } from '../calendar/dapierBroker';
 import { isLumaEventLink, lumaUrlForCard } from '../calendar/lumaEvents';
 import { slotName, taskLinkCardDefinition } from '../cards/taskLinkCard';
 import { listFilesByTask } from '../db/files';
@@ -536,8 +536,15 @@ export function calendarInviteDoneError(taskData: Record<string, unknown>, missi
   return `Cannot mark task as done: the card has no live calendar invite on ${missing.join(' and ')}. Set the event time with: dataops cards time ${cardId} --at "YYYY-MM-DD HH:MM" (or adopt an existing event with: dataops cards invite add ${cardId} <event-id> --calendar <calendar>)`;
 }
 
-/** Calendars (DTC events, Alexey personal) the Card has no live invite on. */
-export function calendarsMissingInvite(card: { calendarInvites?: Array<{ calendar: string; staleAt?: string }> } | null): string[] {
+/** Personal calendars the Card has no live guest invite on. */
+export function calendarsMissingInvite(card: {
+  calendarInvites?: Array<{ calendar: string; staleAt?: string }>;
+  guestEmails?: string[];
+  eventTime?: { sync?: string; googleEventIds?: Record<string, string> };
+} | null): string[] {
+  if (card?.eventTime?.sync === 'synced' && card.eventTime.googleEventIds?.[PUBLIC_DTC_EVENTS_CALENDAR] && !card.guestEmails?.length) {
+    return [];
+  }
   const live = new Set((card?.calendarInvites || []).filter((invite) => !invite.staleAt).map((invite) => invite.calendar));
   return resolveHoldGoogleCalendars().filter((calendar) => !live.has(calendar));
 }
