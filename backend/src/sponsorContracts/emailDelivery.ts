@@ -33,7 +33,7 @@ export async function deliverContractEmail(options: { to?: string | null; subjec
   const from = SPONSOR_DOC_EMAIL_FROM;
   const to = String(options.to || '').trim().toLowerCase() || undefined;
   if (!to) {
-    return { state: 'skipped', from, subject: options.subject, reason: 'missing_recipient_email', message: 'No sponsor signer email is known; share the signing link manually.' };
+    return { state: 'skipped', from, subject: options.subject, reason: 'missing_recipient_email', message: 'No signer email is known; the signing link email was skipped.' };
   }
   const brokerUrl = (emailDeps.brokerUrl || process.env.DAPIER_BASE_URL || DAPIER_BASE_URL).replace(/\/$/, '');
   const agent = emailDeps.agent || DAPIER_AGENT;
