@@ -193,11 +193,19 @@ export async function autoAttachConfidentEvidence(client: DynamoDBDocumentClient
   const documentsById = new Map(documents.map((document) => [document.id, document]));
   const attached: Array<{ transactionId: string; documentId: string }> = [];
   for (const pair of planned) {
-    const result = await createDocumentLink(client, {
-      documentId: pair.documentId,
-      transactionId: pair.transactionId,
-      coverageType: "evidence",
-    });
+    let result;
+    try {
+      result = await createDocumentLink(client, {
+        documentId: pair.documentId,
+        transactionId: pair.transactionId,
+        coverageType: "evidence",
+      });
+    } catch (error) {
+      // A concurrent link or an allocation of the same invoice bytes can
+      // invalidate a planned match. Leave it for review and process others.
+      if (error instanceof BookkeepingItemLockedError) continue;
+      throw error;
+    }
     if (result.outcome !== "created") continue;
     attached.push({ transactionId: pair.transactionId, documentId: pair.documentId });
     const facts = documentsById.get(pair.documentId)?.facts;

@@ -6,7 +6,8 @@ import { TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
 import { handleBookkeepingTransactionRoutes } from "../src/routes/bookkeepingTransactions";
 import { createTables } from "../scripts/local-dynamodb";
 import { getClient } from "../src/db/client";
-import { putBookkeepingItem } from "../src/db/bookkeeping";
+import { listBookkeepingItems, listTransactions, putBookkeepingItem } from "../src/db/bookkeeping";
+import { planEvidenceAutoMatches } from "../src/bookkeepingAutoMatch";
 import { handler } from "../src/handler";
 
 let client: Awaited<ReturnType<typeof getClient>>;
@@ -156,4 +157,35 @@ it("rejects an allocation when a duplicate PDF is linked after its validation sc
   }
   const result = await pending;
   assert.equal(result?.statusCode, 409, result?.body);
+});
+
+it("saves a transaction when auto-matching encounters an allocated duplicate PDF", async () => {
+  const { document, first } = await fixture("auto-match-duplicate");
+  const allocated = await allocate(first, document);
+  assert.equal(allocated.statusCode, 200, allocated.body);
+  const duplicate = (await putBookkeepingItem(client, "document", {
+    documentType: "invoice", status: "active", originalFilename: "synthetic-copy.pdf",
+    contentType: "application/pdf", byteSize: 10,
+    sha256: createHash("sha256").update("synthetic-auto-match-duplicate").digest("hex"),
+    s3Key: "documents/synthetic-auto-match-copy",
+    facts: { counterparty: "Unique Synthetic Vendor", amount: "43.21", currency: "EUR",
+      transactionDate: "2025-06-01" },
+  })).item;
+  const created = await invoke("POST", "/api/bookkeeping/transactions", {
+    transactionDate: "2025-06-01", counterparty: "Unique Synthetic Vendor",
+    description: "synthetic duplicate match", amount: "43.21", currency: "EUR",
+    sourceType: "manual", entryType: "expense",
+  });
+  assert.equal(created.statusCode, 201, created.body);
+  const planned = planEvidenceAutoMatches(
+    await listTransactions(client) as any,
+    await listBookkeepingItems(client, "document") as any,
+    await listBookkeepingItems(client, "link") as any,
+  );
+  assert.ok(planned.some((pair) => pair.transactionId === JSON.parse(created.body).id
+    && pair.documentId === duplicate.id), "the duplicate must be a real auto-match candidate");
+  const links = await invoke("GET", `/api/bookkeeping/transactions/${JSON.parse(created.body).id}/allocations`);
+  assert.equal(links.statusCode, 200, links.body);
+  assert.deepEqual(JSON.parse(links.body).links, []);
+  assert.equal((await link(JSON.parse(created.body), duplicate)).statusCode, 409);
 });
