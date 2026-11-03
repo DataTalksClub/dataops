@@ -206,8 +206,9 @@ export type MonthCounters = {
 export type MonthTable = { period: string; rows: MonthRow[]; counters: MonthCounters };
 
 const TAX_KINDS = new Set<ExceptionKind>(["tax_debit", "tax_refund", "tk_debit"]);
+const TAX_CATEGORIES = /^(?:tax(?:es)?|steuer(?:n)?|vat|health\s+insurance|krankenkasse)$/i;
 const isTaxRow = (row: MonthRow) => TAX_KINDS.has(row.exception?.kind || row.classification?.kind as ExceptionKind)
-  || /\b(?:tax(?:es)?|steuer(?:n)?|vat|health insurance|krankenkasse)\b/i.test(String(row.ledger?.category || row.classification?.category || "").trim());
+  || TAX_CATEGORIES.test(String(row.ledger?.category || row.classification?.category || "").trim());
 
 const amountNumber = (value: string | undefined) => Number(value || 0);
 const cents = (value: number) => Math.round(value * 100) / 100;

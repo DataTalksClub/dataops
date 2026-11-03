@@ -222,6 +222,67 @@ describe('month reconciliation', () => {
     assert.notEqual(exceptionDigest(withProof), exceptionDigest(result));
   });
 
+  it('keeps ordinary Compliance & Taxes service invoices in regular rows and CSV while excluding exact tax categories', () => {
+    const result = table(
+      [
+        bank('b-advisory', { counterparty: 'Synthetic Advisory GmbH', amount: '-238.00', date: '2026-10-08' }),
+        bank('b-finanzamt', { counterparty: 'Finanzamt Example', amount: '-1500.00', date: '2026-10-10' }),
+        bank('b-tk', { counterparty: 'Techniker Krankenkasse', amount: '-540.00', date: '2026-10-12' }),
+      ],
+      [
+        ledger('l-advisory', {
+          counterparty: 'Synthetic Advisory GmbH',
+          description: 'Monthly bookkeeping service',
+          amount: '-238.00',
+          date: '2026-10-07',
+          category: 'Compliance & Taxes',
+          subtype: 'Services',
+          invoiceNumber: 'SYN-2026-10',
+        }),
+        ledger('l-exact-tax', {
+          counterparty: 'State Revenue Office',
+          amount: '-400.00',
+          date: '2026-10-15',
+          category: 'Taxes',
+        }),
+        ledger('l-exact-hi', {
+          counterparty: 'Statutory Health Fund',
+          amount: '-300.00',
+          date: '2026-10-16',
+          category: 'Health Insurance',
+        }),
+      ],
+    );
+    const byId = Object.fromEntries(result.rows.map((row) => [row.id, row]));
+    assert.equal(byId['b-advisory'].tax, false);
+    assert.equal(byId['b-advisory'].status, 'matched');
+    assert.equal(byId['b-advisory'].ledger?.category, 'Compliance & Taxes');
+    assert.equal(byId['b-advisory'].ledger?.subtype, 'Services');
+
+    assert.equal(byId['b-finanzamt'].tax, true);
+    assert.equal(byId['b-tk'].tax, true);
+    assert.equal(byId['ledger:l-exact-tax'].tax, true);
+    assert.equal(byId['ledger:l-exact-hi'].tax, true);
+
+    assert.equal(result.counters.rows, 1);
+    assert.equal(result.counters.matched, 1);
+
+    const csv = tableCsv(result);
+    assert.match(csv, /Synthetic Advisory GmbH/);
+    assert.match(csv, /Compliance & Taxes/);
+    assert.doesNotMatch(csv, /Finanzamt Example/);
+    assert.doesNotMatch(csv, /Techniker Krankenkasse/);
+    assert.doesNotMatch(csv, /State Revenue Office/);
+    assert.doesNotMatch(csv, /Statutory Health Fund/);
+
+    const withExplicitTaxException = table(
+      [bank('b-advisory', { counterparty: 'Synthetic Advisory GmbH', amount: '-238.00', date: '2026-10-08' })],
+      [ledger('l-advisory', { counterparty: 'Synthetic Advisory GmbH', amount: '-238.00', date: '2026-10-07', category: 'Compliance & Taxes', subtype: 'Services' })],
+      { ...none(), exceptions: { 'bank:b-advisory': { kind: 'tax_debit', by: 'operator', at: '2026-11-01T00:00:00Z' } } },
+    );
+    assert.equal(withExplicitTaxException.rows[0].tax, true);
+  });
+
   it('links Revolut exchange legs through their related transaction ids', () => {
     const legs = internalTransferLegs([
       bank('eur', { accountId: 'revolut', wallet: 'EUR', amount: '-460.00', bankId: 'tx-4', relatedBankId: 'tx-3' }),
