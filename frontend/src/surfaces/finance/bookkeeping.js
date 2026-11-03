@@ -30,7 +30,11 @@ import { mountInvoiceReview } from "./invoices.js";
 import { createBookkeepingTransactionModal } from "./bookkeeping-transaction-modal.js";
 import { loadStatementLinkIndex } from "./bookkeeping-statement.js";
 import { openBookkeepingDialog } from "./bookkeeping-dialogs.js";
-import { createBookkeepingFinance, monthlyLedgerEntries } from "./bookkeeping-vat.js";
+import {
+  createBookkeepingFinance,
+  monthlyLedgerEntries,
+  ownerWithdrawalsMarkup,
+} from "./bookkeeping-vat.js";
 import { html } from "./shared.js";
 import {
   FIELD_LABELS,
@@ -238,7 +242,20 @@ export function createBookkeepingSurface(context) {
       if (search.value !== filters.q) search.value = filters.q;
     }
     function renderLedger() {
-      const scoped = monthlyLedgerEntries(ledgerEntriesForLens(), lens, financeSummary.entryMap());
+      const sourceRows = ledgerEntriesForLens();
+      const financeEntriesById = financeSummary.entryMap();
+      const scoped = monthlyLedgerEntries(sourceRows, lens, financeEntriesById);
+      const ledgerOptions = {
+        hasEvidence,
+        hasInvoice,
+        getAllocationDocument: allocationDocument,
+        vocab,
+        selectedId,
+        financeEntriesById,
+        statementLinks,
+        e: escapeHtml,
+      };
+      const ownerSection = ownerWithdrawalsMarkup(sourceRows, lens, ledgerOptions);
       const counts = {
         category: scoped.filter(needsCategory).length,
         receipt: scoped.filter((entry) => !hasEvidence(entry.id)).length,
@@ -261,20 +278,13 @@ export function createBookkeepingSurface(context) {
           filtered: filtered && scoped.length > 0,
           latest,
           e: escapeHtml,
-        }) + financeSummary.markup(escapeHtml);
+        }) + financeSummary.markup(escapeHtml) + ownerSection;
         return;
       }
       ledger.innerHTML = ledgerTableMarkup({
         groups: groupByMonth(shown),
-        hasEvidence,
-        hasInvoice,
-        getAllocationDocument: allocationDocument,
-        vocab,
-        selectedId,
-        financeEntriesById: financeSummary.entryMap(),
-        statementLinks,
-        e: escapeHtml,
-      }) + financeSummary.markup(escapeHtml);
+        ...ledgerOptions,
+      }) + financeSummary.markup(escapeHtml) + ownerSection;
     }
     function reconciliationPeriods() {
       if (/^\d{4}-\d{2}$/.test(lens)) return [lens];

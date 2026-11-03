@@ -1,76 +1,121 @@
 import { html } from "./shared.js";
-import { formatAmount, ledgerDate, monthLabel } from "./bookkeeping-format.js";
+import { formatAmount, isOwnerWithdrawalReportExempt, ledgerDate, monthLabel, monthOf } from "./bookkeeping-format.js";
+import { groupByMonth, ledgerTableMarkup } from "./bookkeeping-ledger.js";
 
 const MANDATORY_LABELS = {
   vat: "VAT / USt",
   taxes: "Other taxes",
   "health-insurance": "Health insurance / TK",
 };
+const TAX_HEALTH_KINDS = new Set(["tax_debit", "tk_debit"]);
 
-function mandatoryPaymentAmount(entry) {
+function isTaxHealthEntry(entry) {
+  return TAX_HEALTH_KINDS.has(String(entry?.mandatoryKind || ""));
+}
+
+function isOwnerWithdrawalEntry(entry) {
+  return isOwnerWithdrawalReportExempt(entry)
+    || (entry?.reconciliationOnly === true
+      && entry.category === "Owner withdrawal"
+      && entry.reconciliationLabel === "Owner withdrawal");
+}
+
+function isRefund(entry) {
+  return Boolean(entry?.refund) || entry?.direction === "in";
+}
+
+function mandatoryAmount(entry) {
+  const sign = isRefund(entry) ? 1 : -1;
   const eur = Number(entry.eur);
   if (entry.eur !== null && entry.eur !== undefined && Number.isFinite(eur))
-    return formatAmount(-Math.abs(eur), "EUR");
+    return formatAmount(sign * Math.abs(eur), "EUR");
   const amount = Number(entry.amount);
   return Number.isFinite(amount)
-    ? formatAmount(-Math.abs(amount), entry.currency || "EUR")
+    ? formatAmount(sign * Math.abs(amount), entry.currency || "EUR")
     : "—";
 }
 
-// Exclude only rows actually represented in the selected month's mandatory section.
+function mandatoryLabel(entry) {
+  const label = MANDATORY_LABELS[entry.line] || "Mandatory payment";
+  return isRefund(entry) ? `${label} refund` : label;
+}
+
+// Share the explicit tax/health classification between the monthly list and its separate section.
 export function monthlyLedgerEntries(entries, lens, financeEntriesById) {
   if (!/^\d{4}-\d{2}$/.test(lens)) return entries;
   return entries.filter((entry) => {
     const mandatory = financeEntriesById.get(String(entry.id));
-    return !(mandatory?.month === lens && mandatory.direction === "out" && mandatory.mandatoryKind && !mandatory.refund);
+    const taxHealth = mandatory?.month === lens && isTaxHealthEntry(mandatory);
+    const ownerWithdrawal = monthOf(entry) === lens && isOwnerWithdrawalEntry(entry);
+    return !taxHealth && !ownerWithdrawal;
   });
+}
+
+export function ownerWithdrawalEntries(entries, lens) {
+  if (!/^\d{4}-\d{2}$/.test(lens)) return [];
+  return (entries || []).filter((entry) => monthOf(entry) === lens && isOwnerWithdrawalEntry(entry));
+}
+
+export function ownerWithdrawalsMarkup(entries, lens, ledgerOptions) {
+  if (!/^\d{4}-\d{2}$/.test(lens)) return "";
+  const e = ledgerOptions.e;
+  const withdrawals = ownerWithdrawalEntries(entries, lens);
+  const rows = withdrawals.length
+    ? ledgerTableMarkup({ ...ledgerOptions, groups: groupByMonth(withdrawals) })
+    : html`<p class="bk-mandatory-payments__state">No owner withdrawals recorded for this month.</p>`;
+  return html`<section class="bk-mandatory-payments bk-owner-withdrawals" aria-labelledby="bk-owner-withdrawals-heading" data-owner-withdrawals>
+    <h2 id="bk-owner-withdrawals-heading">Owner withdrawals · ${e(monthLabel(lens))}</h2>
+    <p class="bk-mandatory-payments__hint">Shown separately for internal review; source and reconciliation rows remain visible.</p>
+    ${rows}
+  </section>`;
 }
 
 export function mandatoryPaymentsMarkup(entries, lens, escapeHtml, state = "ready") {
   if (!/^\d{4}-\d{2}$/.test(lens)) return "";
   const periodLabel = monthLabel(lens);
+  const sectionTitle = `Taxes & health insurance · ${periodLabel}`;
   if (state === "loading")
     return html`<section class="bk-mandatory-payments" aria-labelledby="bk-mandatory-payments-heading">
-      <h2 id="bk-mandatory-payments-heading">Mandatory payments · ${escapeHtml(periodLabel)}</h2>
-      <p class="bk-mandatory-payments__state" role="status">Loading mandatory payments…</p>
+      <h2 id="bk-mandatory-payments-heading">${escapeHtml(sectionTitle)}</h2>
+      <p class="bk-mandatory-payments__state" role="status">Loading tax and health-insurance entries…</p>
     </section>`;
   if (state === "error")
     return html`<section class="bk-mandatory-payments" aria-labelledby="bk-mandatory-payments-heading">
-      <h2 id="bk-mandatory-payments-heading">Mandatory payments · ${escapeHtml(periodLabel)}</h2>
-      <p class="bk-mandatory-payments__state" role="status">Could not load mandatory payments.</p>
+      <h2 id="bk-mandatory-payments-heading">${escapeHtml(sectionTitle)}</h2>
+      <p class="bk-mandatory-payments__state" role="status">Could not load tax and health-insurance entries.</p>
     </section>`;
 
-  const payments = (entries || [])
-    .filter((entry) => entry.month === lens && entry.direction === "out" && entry.mandatoryKind && !entry.refund)
+  const exceptions = (entries || [])
+    .filter((entry) => entry.month === lens && isTaxHealthEntry(entry))
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || ""))
       || String(a.id || "").localeCompare(String(b.id || "")));
-  const subtotal = payments.reduce((sum, entry) => {
+  const subtotal = exceptions.reduce((sum, entry) => {
     const value = Number(entry.eur);
     return entry.eur !== null && entry.eur !== undefined && Number.isFinite(value)
-      ? sum + Math.abs(value)
+      ? sum + (isRefund(entry) ? -Math.abs(value) : Math.abs(value))
       : sum;
   }, 0);
-  const unconvertedCount = payments.filter((entry) => entry.eur === null
+  const unconvertedCount = exceptions.filter((entry) => entry.eur === null
     || entry.eur === undefined || !Number.isFinite(Number(entry.eur))).length;
-  const rows = payments.length
-    ? payments.map((entry) => html`<tr>
+  const rows = exceptions.length
+    ? exceptions.map((entry) => html`<tr>
         <td><time datetime="${escapeHtml(entry.date || "")}">${escapeHtml(ledgerDate(entry.date || ""))}</time></td>
         <td>${escapeHtml(entry.counterparty || entry.description || "Unlabelled payment")}</td>
-        <td>${escapeHtml(MANDATORY_LABELS[entry.line] || "Mandatory payment")}</td>
-        <td class="bk-mandatory-payments__amount">${escapeHtml(mandatoryPaymentAmount(entry))}</td>
+        <td>${escapeHtml(mandatoryLabel(entry))}</td>
+        <td class="bk-mandatory-payments__amount">${escapeHtml(mandatoryAmount(entry))}</td>
       </tr>`).join("")
-    : html`<tr><td colspan="4">No mandatory payments recorded for this month.</td></tr>`;
+    : html`<tr><td colspan="4">No tax or health-insurance entries recorded for this month.</td></tr>`;
 
   return html`<section class="bk-mandatory-payments" aria-labelledby="bk-mandatory-payments-heading" data-mandatory-payments>
-    <h2 id="bk-mandatory-payments-heading">Mandatory payments · ${escapeHtml(periodLabel)}</h2>
+    <h2 id="bk-mandatory-payments-heading">${escapeHtml(sectionTitle)}</h2>
     <p class="bk-mandatory-payments__hint">Shown separately for your review and excluded from the accountant report and package.</p>
-    <div class="bk-mandatory-payments__table-wrap" tabindex="0" role="region" aria-label="Scrollable mandatory payments">
-      <table aria-label="Mandatory payments for ${escapeHtml(periodLabel)}">
+    <div class="bk-mandatory-payments__table-wrap" tabindex="0" role="region" aria-label="Scrollable tax and health-insurance entries">
+      <table aria-label="Taxes and health insurance for ${escapeHtml(periodLabel)}">
       <thead><tr><th>Date</th><th>Counterparty</th><th>Kind</th><th>Amount</th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
     <p class="bk-mandatory-payments__subtotal">
-      <span>Month subtotal</span><strong>${escapeHtml(formatAmount(subtotal, "EUR"))}</strong>
+      <span>Net month total</span><strong>${escapeHtml(formatAmount(subtotal, "EUR"))}</strong>
       ${unconvertedCount ? html`<span class="bk-mandatory-payments__unconverted">
         ${unconvertedCount} amount${unconvertedCount === 1 ? "" : "s"} without an EUR conversion
       </span>` : ""}
@@ -189,7 +234,7 @@ export function createBookkeepingFinance({ loadYear, getLens, getEntries, getTod
   }
 
   function hasMandatoryEntry(id) {
-    return Boolean(entryIndex.get(String(id))?.mandatoryKind);
+    return isTaxHealthEntry(entryIndex.get(String(id)));
   }
 
   return { ensure, entries, entryMap: () => entryIndex, hasMandatoryEntry, invalidate, markup };
