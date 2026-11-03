@@ -392,9 +392,13 @@ export function renderCardEventTime({ request, workApiUrl, reload }, card) {
           ...(guests.value.trim() ? { guestEmails: guests.value.split(",").map(value => value.trim()).filter(Boolean) } : {}),
         }),
       });
+      const taskClosureFeedback = response?.taskClosure?.outcome === "blocked" && response.taskClosure.message
+        ? `Invite sent. ${response.taskClosure.message}`
+        : "";
       await reload();
-      if (response?.taskClosure?.outcome === "blocked" && response.taskClosure.message) {
-        feedback.textContent = `Invite sent. ${response.taskClosure.message}`;
+      if (taskClosureFeedback) {
+        const refreshedFeedback = document.querySelector(".card-event-time__feedback");
+        (refreshedFeedback || feedback).textContent = taskClosureFeedback;
       }
     } catch (error) {
       feedback.textContent = error.message || "Could not send the invitation. Retry to recover the same event.";

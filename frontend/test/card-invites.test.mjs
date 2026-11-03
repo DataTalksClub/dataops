@@ -141,7 +141,7 @@ describe("card calendar invites section", () => {
 });
 
 test("event time editor shows local time and sends arbitrary time, duration, zone and guests", async () => {
-  const { doc } = setup();
+  const { doc, root } = setup();
   const calls = [];
   let reloaded = false;
   const form = renderCardEventTime({
@@ -153,7 +153,14 @@ test("event time editor shows local time and sends arbitrary time, duration, zon
       };
     },
     workApiUrl: value => value,
-    reload: async () => { reloaded = true; },
+    reload: async () => {
+      reloaded = true;
+      root.replaceChildren();
+      const refreshedFeedback = doc.createElement("p");
+      refreshedFeedback.className = "dk-hint card-event-time__feedback";
+      refreshedFeedback.setAttribute("role", "status");
+      root.append(refreshedFeedback);
+    },
   }, { id: "card-1", guestEmails: ["guest@example.test"], eventTime: { startIso: "2026-11-09T13:30:00.000Z", timeZone: "Europe/Berlin", durationMinutes: 60 } });
   const inputs = doc.created.filter(element => element.tagName === "INPUT");
   const selects = doc.created.filter(element => element.tagName === "SELECT");
@@ -178,13 +185,14 @@ test("event time editor shows local time and sends arbitrary time, duration, zon
   assert.ok(tzLabel);
   assert.match(tzLabel.textContent, /Time zone/);
   assert.equal(tzSelect.getAttribute("aria-describedby"), `${tzSelect.id}-hint`);
+  root.append(form);
   inputs[0].value = "2026-11-09T16:47";
   durationSelect.value = "90";
   inputs[1].value = "guest@example.test, ";
   await form.dispatch("submit");
   assert.deepEqual(calls, [{ url: "/api/cards/card-1/time", body: { at: "2026-11-09 16:47", duration: 90, tz: "Europe/Berlin", guestEmails: ["guest@example.test"] } }]);
   assert.equal(reloaded, true);
-  const statusEl = doc.created.find(el => el.attributes?.get("role") === "status");
+  const statusEl = root.querySelector(".card-event-time__feedback");
   assert.match(statusEl.textContent, /Invite sent\..*remains todo/);
 });
 
