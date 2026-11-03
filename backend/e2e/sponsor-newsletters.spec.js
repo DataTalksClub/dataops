@@ -312,10 +312,10 @@ test.describe("sponsor newsletter catalog", () => {
     await expect(page.locator('[data-sponsor-field-error="closingCtaUrl"]')).toBeVisible();
     await expect(page.locator('[data-sponsor-doc-status="draft"]')).toBeVisible();
 
-    // 6. Filling CTA label and non-UTM URL updates editor CTA pill & preview, and softly suggests UTM without silent rewrite
+    // 6. Filling CTA label and non-UTM URL updates the main preview; the duplicate editor CTA pill remains removed
     await page.locator("#sponsor-field-closingCtaText").fill("Register for Workshop");
     await page.locator("#sponsor-field-closingCtaUrl").fill("https://estuary.dev/workshop");
-    await expect(page.locator("[data-sponsor-editor-cta-pill]")).toHaveText("Register for Workshop");
+    await expect(page.locator("[data-sponsor-editor-cta-pill]")).toHaveCount(0);
     await expect(preview.locator("[data-sponsor-preview-cta-link]")).toHaveText("Register for Workshop");
 
     const utmSuggestion = page.locator('[data-sponsor-utm-suggestion="closingCtaUrl"]');
