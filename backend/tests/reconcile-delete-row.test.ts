@@ -4,9 +4,9 @@ import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 
 import { getClient } from "../src/db/client";
 import { handleBookkeepingTransactionRoutes } from "../src/routes/bookkeepingTransactions";
-import { createDocumentLink, getBookkeepingItem, putBookkeepingItem } from "../src/db/bookkeeping";
+import { createDocumentLink, deleteBookkeepingItem, deleteDocumentLink, getBookkeepingItem, getRawDocument, listBookkeepingItems, listTransactions, putBookkeepingItem } from "../src/db/bookkeeping";
 import { buildReport } from "../src/reconcile/service";
-import { buildMonth, deleteLedgerRow } from "../src/reconcile/monthService";
+import { attachProof, buildMonth, closeMonth, deleteLedgerRow } from "../src/reconcile/monthService";
 import { createTables, startLocal, stopLocal } from "../scripts/local-dynamodb";
 
 const payout = (sourceKey: string, over: Record<string, unknown> = {}) => ({
@@ -76,5 +76,49 @@ describe("reconcile delete-row", () => {
     assert.match(plain.blockers[0], /1 linked document/);
     await assert.rejects(() => deleteLedgerRow(client, "2026-10", "tester", linked, { reason: "cleanup", apply: true }), /not deleted/);
     assert.ok(await getBookkeepingItem(client, "bookkeeping", linked));
+  });
+
+  it("marks a duplicate 48.32 USD row in 2026-10 so it no longer counts and the month can close", async () => {
+    for (const link of await listBookkeepingItems(client, "link")) await deleteDocumentLink(client, link);
+    for (const item of await listTransactions(client)) await deleteBookkeepingItem(client, "bookkeeping", item.id);
+
+    const keep = await create(payout("platform-payout:202610-54", {
+      counterparty: "Teachable",
+      invoiceNumber: "202610/54",
+      sourceType: "finom-invoice",
+      sourceKey: "finom-invoice:202610/54",
+    }));
+    const dup = await create(payout("platform-payout:429169051Y9487353", {
+      counterparty: "Teachable, Inc.",
+    }));
+    const proofDoc = (await putBookkeepingItem(client, "document", {
+      status: "active",
+      documentType: "other-evidence",
+      originalFilename: "teachable-payout-proof.pdf",
+      facts: {},
+    })).item;
+    await createDocumentLink(client, { documentId: proofDoc.id, transactionId: keep, coverageType: "evidence" });
+    await createDocumentLink(client, { documentId: proofDoc.id, transactionId: dup, coverageType: "evidence" });
+    await attachProof(client, "2026-10", "tester", keep, proofDoc.id);
+
+    const beforeView = await buildMonth(client, "2026-10");
+    assert.equal(beforeView.counters.rows, 2);
+    assert.equal(beforeView.blockers, 1);
+    await assert.rejects(() => closeMonth(client, "2026-10", "tester"), /Month 2026-10 cannot close: 1 rows lack a side/);
+
+    const done = await deleteLedgerRow(client, "2026-10", "tester", dup, { reason: "", duplicateOf: `ledger:${keep}`, apply: true });
+    assert.equal(done.deleted, true);
+    assert.equal(done.duplicateOf, keep);
+    assert.equal((await getRawDocument(client, proofDoc.id))?.linkRefCount, 1);
+
+    const afterView = await buildMonth(client, "2026-10");
+    assert.equal(afterView.counters.rows, 1);
+    assert.equal(afterView.blockers, 0);
+    assert.ok(!afterView.rows.some((row) => row.id === `ledger:${dup}`));
+    assert.equal(afterView.log.at(-1)?.detail.reason, `duplicate of ${keep}`);
+
+    const closed = await closeMonth(client, "2026-10", "tester");
+    assert.equal(closed.state, "closed");
+    assert.equal((await buildMonth(client, "2026-10")).state, "closed");
   });
 });

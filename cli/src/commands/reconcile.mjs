@@ -579,9 +579,9 @@ export async function deleteRow(args, io) {
   const usage = "dataops reconcile delete-row <ledger-id> --period YYYY-MM --reason TEXT [--duplicate-of <ledger-id>] [--apply]";
   const transactionId = positional(args, 0, usage).replace(/^ledger:/, "");
   const period = periodOr(args);
-  const reason = optionalString(args, "reason");
+  const duplicateOf = optionalString(args, "duplicateOf")?.replace(/^ledger:/, "");
+  const reason = optionalString(args, "reason") || (duplicateOf ? `duplicate of ${duplicateOf}` : undefined);
   if (!reason) throw new UsageError(usage);
-  const duplicateOf = optionalString(args, "duplicateOf");
   const result = await monthPost(args, period, "delete-row", { transactionId, reason, ...(duplicateOf ? { duplicateOf } : {}), apply: Boolean(args.apply) });
   if (!args.json) {
     const row = result.row || {};

@@ -236,10 +236,13 @@ test("delete-row sends a dry run by default and applies only with --apply", asyn
     assert.equal(dry.deleted, false);
     const applied = await deleteRow({ ...base, apply: true }, { print() {} });
     assert.equal(applied.deleted, true);
+    const defaultReason = await deleteRow({ ...args, _: ["ledger:dup-id"], period: "2026-10", duplicateOf: "ledger:keep-id", apply: true }, { print() {} });
+    assert.equal(defaultReason.deleted, true);
   });
   assert.deepEqual(sent, [
     { transactionId: "dup-id", reason: "same payout twice", duplicateOf: "keep-id", apply: false },
     { transactionId: "dup-id", reason: "same payout twice", duplicateOf: "keep-id", apply: true },
+    { transactionId: "dup-id", reason: "duplicate of keep-id", duplicateOf: "keep-id", apply: true },
   ]);
   assert.ok(commands["delete-row"]);
 });

@@ -49,6 +49,9 @@ Usage
       its date, amount and provider, so the row details can suggest a match.
       --retry also re-reads documents an earlier run could not read.
 
+  To remove or merge a duplicate ledger row during month reconciliation:
+  dataops reconcile delete-row <ledger-id> --period YYYY-MM --reason TEXT [--duplicate-of <ledger-id>] [--apply]
+
 Commands with writes print a dry run unless --apply is given. Run it first and read it.
 
 Sanctioned sheet pull without a Google token in the environment (run from the

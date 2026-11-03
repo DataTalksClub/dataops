@@ -14,6 +14,7 @@ import { TABLE_BOOKKEEPING } from "../db/tableNames";
 import {
   createDocumentLink,
   deleteBookkeepingItem,
+  deleteDocumentLink,
   getBookkeepingItem,
   getRawDocument,
   listBookkeepingItems,
@@ -41,6 +42,7 @@ import { listStatements, rowKeys, type StatementRecord } from "./service";
 import { getIntakeItem } from "../db/intake";
 import { listInvoices } from "../invoices/store";
 import { isInvoiceIntakeRoute } from "../invoices/intakeRoute";
+import { normalizedAutoMatchVendor } from "../bookkeepingAutoMatch";
 import type { PendingEmailInvoice } from "./month";
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -414,8 +416,9 @@ export async function clearException(client: DynamoDBDocumentClient, period: str
   return mutateMonth(client, period, by, "clear-exception", { row: key }, (record) => { delete record.decisions.exceptions[key]; });
 }
 
-/** Counterparty spelling differences (case, punctuation, spacing) do not make two rows different. */
-const sameName = (name: string) => name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+/** Counterparty spelling differences (case, punctuation, spacing, legal suffixes) do not make two rows different. */
+const sameName = (name: string) =>
+  (normalizedAutoMatchVendor(name) || name.toLowerCase()).replace(/[^\p{L}\p{N}]+/gu, "");
 
 export type DeleteRowResult = {
   mode: "dry-run" | "apply";
@@ -440,7 +443,8 @@ export async function deleteLedgerRow(
   transactionId: string,
   input: { reason: string; duplicateOf?: string; apply: boolean },
 ): Promise<DeleteRowResult> {
-  const reason = input.reason.trim();
+  const duplicateOf = input.duplicateOf ? input.duplicateOf.replace(/^ledger:/, "") : undefined;
+  const reason = (input.reason.trim() || (duplicateOf ? `duplicate of ${duplicateOf}` : "")).trim();
   if (!reason) throw badRequest("reason is required");
   const month = await getMonth(client, period);
   if (month.state === "closed") throw new MonthClosedError(period);
@@ -461,9 +465,7 @@ export async function deleteLedgerRow(
   if (row.invoiceNumber) holds.push(`invoice ${row.invoiceNumber}`);
 
   const blockers: string[] = [];
-  let duplicateOf: string | undefined;
-  if (input.duplicateOf) {
-    duplicateOf = input.duplicateOf.replace(/^ledger:/, "");
+  if (duplicateOf) {
     const other = data.ledger.find((candidate) => candidate.id === duplicateOf);
     if (duplicateOf === transactionId) blockers.push("a row cannot be a duplicate of itself");
     else if (!other) blockers.push(`duplicate-of row ${duplicateOf} not found`);
@@ -480,11 +482,25 @@ export async function deleteLedgerRow(
     return result;
   }
   if (!input.apply) return result;
+  const rowLinks = (await listBookkeepingItems(client, "link")).filter((link) => String(link.transactionId) === transactionId);
+  for (const link of rowLinks) {
+    if (duplicateOf) {
+      await createDocumentLink(client, {
+        documentId: String(link.documentId),
+        transactionId: duplicateOf,
+        coverageType: String(link.coverageType || "evidence"),
+      });
+    }
+    await deleteDocumentLink(client, link);
+  }
   const removed = await deleteBookkeepingItem(client, "bookkeeping", transactionId);
   if (!removed) throw notFound(`Ledger row ${transactionId} not found`);
   const { documents: _documents, ...facts } = row;
   await mutateMonth(client, period, by, "delete-row", { transactionId, reason: reason.slice(0, 500), ...(duplicateOf ? { duplicateOf } : {}), holds, row: facts }, (record) => {
     record.decisions.pairs = record.decisions.pairs.filter((pair) => pair.transactionId !== transactionId);
+    if (duplicateOf && record.decisions.proofs[transactionId] && !record.decisions.proofs[duplicateOf]) {
+      record.decisions.proofs[duplicateOf] = record.decisions.proofs[transactionId];
+    }
     delete record.decisions.proofs[transactionId];
     delete record.decisions.exceptions[`ledger:${transactionId}`];
   });
