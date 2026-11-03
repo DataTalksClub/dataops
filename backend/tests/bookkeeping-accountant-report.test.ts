@@ -141,11 +141,12 @@ describe("native accountant report API", () => {
       category: "Tools",
       statementRef: "Synthetic bank statement",
       allocations: [
-        { id: "alloc-100", documentId: "synthetic-doc-100", transactionDate: "2026-09-30", counterparty: "Synthetic Compute GmbH", description: "Dedicated cluster", amount: "100.00", currency: "EUR", amountEur: "100.00", category: "Infrastructure" },
-        { id: "alloc-20", documentId: "synthetic-doc-20", transactionDate: "2026-09-30", counterparty: "Synthetic Domain Ltd", description: "Domain renewal", amount: "20.00", currency: "EUR", amountEur: "20.00", category: "Domains" },
-        { id: "alloc-3", documentId: "synthetic-doc-3", transactionDate: "2026-09-30", counterparty: "Synthetic Mail BV", description: "Email service", amount: "3.00", currency: "EUR", amountEur: "3.00", category: "Services" },
+        { id: "alloc-100", documentId: "synthetic-doc-100", transactionDate: "2026-09-30", paidDate: "2026-09-30", counterparty: "Synthetic Compute GmbH", description: "Dedicated cluster", amount: "100.00", currency: "EUR", amountEur: "100.00", category: "Infrastructure" },
+        { id: "alloc-20", documentId: "synthetic-doc-20", transactionDate: "2026-09-30", paidDate: "2026-09-30", counterparty: "Synthetic Domain Ltd", description: "Domain renewal", amount: "20.00", currency: "EUR", amountEur: "20.00", category: "Domains" },
+        { id: "alloc-3", documentId: "synthetic-doc-3", transactionDate: "2026-09-30", paidDate: "2026-09-30", counterparty: "Synthetic Mail BV", description: "Email service", amount: "3.00", currency: "EUR", amountEur: "3.00", category: "Services" },
       ],
     };
+    const sourceAllocations = JSON.stringify(allocatedPayment.allocations);
     const allocationClient = {
       send: async () => ({ Items: [...entries, allocatedPayment] }),
     } as unknown as DynamoDBDocumentClient;
@@ -181,6 +182,8 @@ describe("native accountant report API", () => {
       }
       assert.doesNotMatch(report.content, /Synthetic Card Settlement|Combined payment|Synthetic Owner|Synthetic Tax Office/);
     }
+    assert.equal(JSON.stringify(allocatedPayment.allocations), sourceAllocations,
+      "cash-date projection leaves stored invoice dates unchanged");
 
     const septemberResponse = await handleBookkeepingRoutes(
       "/api/bookkeeping/reports/accountant",

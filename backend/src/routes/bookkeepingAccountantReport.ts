@@ -28,8 +28,8 @@ export function accountantReportRows(transactions: ReportEntry[]) {
     if (!allocations.length) return [entry];
     return allocations.map((allocation) => ({
       ...entry,
-      transactionDate: allocation.transactionDate || entry.transactionDate,
-      paidDate: allocation.paidDate || entry.paidDate,
+      transactionDate: entry.transactionDate,
+      paidDate: entry.paidDate,
       counterparty: allocation.counterparty,
       description: allocation.description,
       amount: allocation.amount,

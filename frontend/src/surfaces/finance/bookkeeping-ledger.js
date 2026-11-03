@@ -187,6 +187,13 @@ const byDateAsc = (a, b) =>
   cashDate(a).localeCompare(cashDate(b)) ||
   String(a.sourceKey || a.id).localeCompare(String(b.sourceKey || b.id), undefined, { numeric: true });
 
+export function displayRowCount(entries = []) {
+  return entries.reduce((count, entry) => {
+    const allocations = Array.isArray(entry?.allocations) ? entry.allocations.length : 0;
+    return count + Math.max(allocations, 1);
+  }, 0);
+}
+
 // Months newest first; inside a month the sheet's order (oldest first).
 export function groupByMonth(entries) {
   const groups = new Map();
@@ -340,8 +347,8 @@ function allocationChildMarkup(entry, allocation, { getAllocationDocument = () =
     vatCurrency: allocation.vatCurrency,
     vatEur,
     reverseCharge: allocation.reverseCharge,
-    transactionDate: allocation.transactionDate || entry.transactionDate,
-    paidDate: allocation.paidDate || entry.paidDate,
+    transactionDate: entry.transactionDate,
+    paidDate: entry.paidDate,
     currency: allocation.currency || entry.currency,
     entryType: entry.entryType,
   };
@@ -393,11 +400,7 @@ const COLUMN_COUNT = 9;
 
 export function ledgerTableMarkup({ groups, hasEvidence, hasInvoice = () => false, getAllocationDocument = () => null, vocab, selectedId, financeEntriesById = new Map(), e }) {
   const body = groups.map((group) => {
-    const visibleRowCount = group.entries.reduce((count, entry) => {
-      if (entry.reconciliationOnly) return count + 1;
-      const allocations = Array.isArray(entry.allocations) ? entry.allocations : [];
-      return count + (allocations.length || 1);
-    }, 0);
+    const visibleRowCount = displayRowCount(group.entries);
     const totals = [
       group.moneyOut ? html`<span class="bk-total">out <span class="dk-mono">${e(signedAmount(group.moneyOut, "EUR"))}</span></span>` : "",
       group.moneyIn ? html`<span class="bk-total">in <span class="dk-mono">${e(signedAmount(group.moneyIn, "EUR"))}</span></span>` : "",

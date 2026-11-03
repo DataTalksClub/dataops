@@ -10,6 +10,7 @@ import {
   accountsOf,
   bankOnlyEntryFromMonthRow,
   CLASSIFICATION_FIELDS,
+  displayRowCount,
   emptyLedgerMarkup,
   filterEntries,
   filtersFromParams,
@@ -223,7 +224,7 @@ export function createBookkeepingSurface(context) {
       });
       const shown = filterEntries(scoped, filters, { hasEvidence });
       surface.querySelector("[data-shown-count]").textContent =
-        `${shown.length} of ${scoped.length}`;
+        `${displayRowCount(shown)} of ${displayRowCount(scoped)}`;
       const active = ["account", "dir", "category", "needs"].filter((name) => filters[name]).length;
       surface.querySelector("[data-active-filters]").textContent = active ? String(active) : "";
       const filtered = Boolean(filters.q || filters.account || filters.dir || filters.category || filters.needs);

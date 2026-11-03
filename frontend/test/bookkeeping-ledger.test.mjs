@@ -5,6 +5,7 @@ import {
   accountOf,
   accountsOf,
   bankOnlyEntryFromMonthRow,
+  displayRowCount,
   eurValue,
   filterEntries,
   filtersFromParams,
@@ -183,6 +184,9 @@ test("allocated invoices replace the aggregate row while totals and payment dril
 
   assert.equal(groups[0].month, "2026-10", "the child rows follow the payment month");
   assert.equal(groups[0].entries.length, 1, "one persisted bank payment remains one month entry");
+  assert.equal(displayRowCount(groups[0].entries), 3, "one parent with three allocations is three visible rows");
+  assert.equal(displayRowCount([...groups[0].entries, { id: "bank-only", reconciliationOnly: true }]), 4,
+    "a bank-only row contributes one visible row");
   assert.equal(groups[0].moneyOut, -123, "the month total counts the parent payment once");
   assert.equal((markup.match(/class="bk-row/g) || []).length, 3, "the main table shows only the three invoice rows");
   assert.match(markup, /class="bk-month__count dk-mono">3<\/span>/, "the visible row count follows expanded rows");
@@ -213,9 +217,9 @@ test("allocated invoice Net and VAT use each child's VAT rather than the payment
     vatAmount: "25.00",
     vatCurrency: "EUR",
     allocations: [
-      { id: "alloc-vat-123", documentId: "invoice-vat-123", transactionDate: "2026-09-30", counterparty: "Synthetic VAT Vendor A", description: "Gross 123 with VAT 23", amount: "123.00", currency: "EUR", vatAmount: "23.00", vatCurrency: "EUR" },
-      { id: "alloc-vat-20", documentId: "invoice-vat-20", transactionDate: "2026-09-30", counterparty: "Synthetic VAT Vendor B", description: "Gross 20 with VAT 2", amount: "20.00", currency: "EUR", vatAmount: "2.00", vatCurrency: "EUR" },
-      { id: "alloc-vat-3", documentId: "invoice-vat-3", transactionDate: "2026-09-30", counterparty: "Synthetic VAT Vendor C", description: "Gross 3 with no VAT", amount: "3.00", currency: "EUR" },
+      { id: "alloc-vat-123", documentId: "invoice-vat-123", transactionDate: "2026-09-30", paidDate: "2026-09-30", counterparty: "Synthetic VAT Vendor A", description: "Gross 123 with VAT 23", amount: "123.00", currency: "EUR", vatAmount: "23.00", vatCurrency: "EUR" },
+      { id: "alloc-vat-20", documentId: "invoice-vat-20", transactionDate: "2026-09-30", paidDate: "2026-09-30", counterparty: "Synthetic VAT Vendor B", description: "Gross 20 with VAT 2", amount: "20.00", currency: "EUR", vatAmount: "2.00", vatCurrency: "EUR" },
+      { id: "alloc-vat-3", documentId: "invoice-vat-3", transactionDate: "2026-09-30", paidDate: "2026-09-30", counterparty: "Synthetic VAT Vendor C", description: "Gross 3 with no VAT", amount: "3.00", currency: "EUR" },
     ],
   };
   const markup = ledgerTableMarkup({
@@ -240,6 +244,7 @@ test("allocated invoice Net and VAT use each child's VAT rather than the payment
     { net: "−€18.00", vat: "€2.00" },
     { net: "−€3.00", vat: "—" },
   ]);
+  assert.equal(payment.allocations[0].paidDate, "2026-09-30", "the stored invoice date remains untouched by projection");
   assert.match(markup, /out <span class="dk-mono">−€146\.00/, "the original payment remains the sole month-total source");
 });
 
