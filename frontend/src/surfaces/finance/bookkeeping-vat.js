@@ -123,7 +123,9 @@ export function mandatoryAllocationMarkup(entries, lens, escapeHtml, getAllocati
 
 export function ownerWithdrawalEntries(entries, lens) {
   if (!/^\d{4}-\d{2}$/.test(lens)) return [];
-  return (entries || []).filter((entry) => monthOf(entry) === lens && isOwnerWithdrawalEntry(entry));
+  return (entries || []).filter((entry) => monthOf(entry) === lens
+    && !(Array.isArray(entry.allocations) && entry.allocations.length)
+    && isOwnerWithdrawalEntry(entry));
 }
 
 export function ownerWithdrawalsMarkup(entries, lens, ledgerOptions) {
@@ -300,7 +302,12 @@ export function createBookkeepingFinance({ loadYear, getLens, getEntries, getTod
         ? html`<p class="bk-period-vat__error" role="status">Could not load monthly VAT totals.</p>`
         : html`<p class="bk-period-vat__loading" role="status">Loading monthly VAT totals…</p>`;
     const mandatoryState = summaries.has(lens.slice(0, 4)) ? "ready" : error ? "error" : "loading";
-    return `${vatMarkup}${mandatoryPaymentsMarkup(entries(), lens, escapeHtml, mandatoryState)}`;
+    const allocatedTransactionIds = new Set((getEntries() || [])
+      .filter((entry) => Array.isArray(entry.allocations) && entry.allocations.length)
+      .map((entry) => String(entry.id)));
+    const monthlyMandatoryEntries = entries()
+      .filter((entry) => !allocatedTransactionIds.has(String(entry.id)));
+    return `${vatMarkup}${mandatoryPaymentsMarkup(monthlyMandatoryEntries, lens, escapeHtml, mandatoryState)}`;
   }
 
   function hasMandatoryEntry(id) {

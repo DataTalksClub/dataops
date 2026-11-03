@@ -6,6 +6,7 @@ import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import type { LambdaEvent, LambdaResponse } from "../types";
 import {
   addDocumentReportReference,
+  deactivateBookkeepingArchive,
   deleteBookkeepingItem,
   getBookkeepingItem,
   isReportExemptTransaction,
@@ -14,6 +15,7 @@ import {
   markReportGenerated,
   putBookkeepingItem,
   removeDocumentReportReference,
+  supersedeBookkeepingReport,
   type BookkeepingItem,
 } from "../db/bookkeeping";
 import { preflightOrganizations } from '../vies/service';
@@ -31,19 +33,43 @@ import {
 } from "./bookkeepingShared";
 
 const csvCell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+const SNAPSHOT_ITEM_MAX_BYTES = 350 * 1024;
+const SNAPSHOT_CSV_COLUMNS = [
+  "transactionDate", "paidDate", "counterparty", "description", "amount", "currency",
+  "amountEur", "vatAmount", "vatCurrency", "category", "entryType", "statementRef",
+];
+
+export function accountantSnapshotRows(transactions: Record<string, unknown>[]) {
+  return transactions.map((transaction) => Object.fromEntries(
+    SNAPSHOT_CSV_COLUMNS
+      .filter((column) => transaction[column] !== undefined)
+      .map((column) => [column, transaction[column]]),
+  ));
+}
+
+export function snapshotItemSizeBytes(item: Record<string, unknown>) {
+  return Buffer.byteLength(JSON.stringify(item), "utf8");
+}
 
 export function formatReportSnapshotCsv(transactions: Record<string, unknown>[]) {
-  const columns = [
-    "transactionDate", "paidDate", "counterparty", "description", "amount", "currency",
-    "amountEur", "vatAmount", "vatCurrency", "category", "entryType", "statementRef",
-  ];
-  return columns.join(",") + "\n" + transactions
-    .map((transaction) => columns.map((column) => csvCell(transaction[column])).join(","))
+  return SNAPSHOT_CSV_COLUMNS.join(",") + "\n" + transactions
+    .map((transaction) => SNAPSHOT_CSV_COLUMNS.map((column) => csvCell(transaction[column])).join(","))
     .join("\n") + "\n";
 }
 
 const activeLedgerRows = async (client: DynamoDBDocumentClient) =>
   (await listBookkeepingItems(client, "bookkeeping")).filter((item) => item.voidStatus !== "voided");
+
+async function supersedeLegacyReports(
+  client: DynamoDBDocumentClient,
+  reports: BookkeepingItem[],
+) {
+  for (const report of reports) {
+    const archiveId = String(report.archiveDocumentId || "");
+    if (archiveId) await deactivateBookkeepingArchive(client, archiveId);
+    await supersedeBookkeepingReport(client, String(report.id), String(report.updatedAt));
+  }
+}
 
 /**
  * Customer VAT report for the monthly pack (ZM / Mandantenserver upload):
@@ -78,13 +104,16 @@ export async function handleBookkeepingReportRoutes(
       month = String(body?.month || "");
     if (!MONTH.test(month)) return json(400, { error: "Invalid month" });
     const reports = await listBookkeepingItems(client, "report");
+    const legacyReports = reports.filter((report) => report.month === month
+      && Number(report.snapshotVersion) !== 3
+      && ["ready", "generated"].includes(String(report.status)));
     const existing = reports.find(
       (r) =>
-        r.month === month && ["ready", "generated"].includes(String(r.status)),
+        r.month === month && Number(r.snapshotVersion) === 3
+        && ["ready", "generated"].includes(String(r.status)),
     );
     if (existing) {
-      if (Number(existing.snapshotVersion) !== 3)
-        return json(409, { error: "Existing report predates allocation-safe projection and cannot be reused." });
+      await supersedeLegacyReports(client, legacyReports);
       return json(200, { report: existing, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
     }
     const accounts = (await listBookkeepingItems(client, "account")).filter(
@@ -165,7 +194,25 @@ export async function handleBookkeepingReportRoutes(
         linkedIds.has(d.id) ||
         (selectedPrivate.has(d.id) && !excludedLinkedIds.has(String(d.id))),
     );
-    const reportId = createHash("sha256").update(`report#${month}`).digest("hex");
+    const reportId = createHash("sha256").update(`report#${month}#snapshot-v3`).digest("hex");
+    const snapshot = {
+      id: reportId,
+      month,
+      status: "ready",
+      transactionIds: [...new Set(transactions.map((t) => String(t.sourceTransactionId || t.id)))],
+      transactionRows: accountantSnapshotRows(transactions),
+      documentIds: includedDocs.map((d) => d.id),
+      reconciliation: {
+        transactionCount: transactions.length,
+        excludedTransactionCount: excludedTransactions.length,
+        documentCount: includedDocs.length,
+        businessStatementCount: accounts.length,
+      },
+      snapshotVersion: 3,
+    };
+    const snapshotBytes = snapshotItemSizeBytes(snapshot);
+    if (snapshotBytes > SNAPSHOT_ITEM_MAX_BYTES)
+      return json(413, { error: "Monthly report snapshot exceeds the safe storage limit." });
     const guarded: string[] = [];
     let report: BookkeepingItem;
     try {
@@ -177,21 +224,7 @@ export async function handleBookkeepingReportRoutes(
         await putBookkeepingItem(
           client,
           "report",
-          {
-            id: reportId,
-            month,
-            status: "ready",
-            transactionIds: [...new Set(transactions.map((t) => String(t.sourceTransactionId || t.id)))],
-            transactionRows: transactions,
-            documentIds: includedDocs.map((d) => d.id),
-            reconciliation: {
-              transactionCount: transactions.length,
-              excludedTransactionCount: excludedTransactions.length,
-              documentCount: includedDocs.length,
-              businessStatementCount: accounts.length,
-            },
-            snapshotVersion: 3,
-          },
+          snapshot,
           `report#${month}`,
         )
       ).item;
@@ -205,6 +238,7 @@ export async function handleBookkeepingReportRoutes(
       );
       throw error;
     }
+    await supersedeLegacyReports(client, legacyReports);
     return json(201, {
       report,
       vatPreflight: await vatPreflightSummary(client),

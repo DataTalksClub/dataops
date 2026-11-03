@@ -110,6 +110,15 @@ describe('bookkeeping API',()=>{
   });
   it('snapshots mixed allocations by reportable child amount and selects only child evidence',async()=>{
     const month='2026-11';
+    const legacyArchive=(await putBookkeepingItem(client,'document',{
+      documentType:'monthly-report',status:'active',originalFilename:'synthetic-legacy-report.zip',
+      contentType:'application/zip',byteSize:9,sha256:createHash('sha256').update('synthetic-legacy-report').digest('hex'),
+      s3Key:'documents/synthetic-legacy-report.zip',
+    },`synthetic-legacy-report-archive#${month}`)).item;
+    const legacyReport=(await putBookkeepingItem(client,'report',{
+      month,status:'ready',snapshotVersion:2,transactionIds:['synthetic-legacy-parent'],
+      documentIds:['synthetic-legacy-exempt-document'],archiveDocumentId:legacyArchive.id,
+    },`report#${month}`)).item;
     for(const [id,name] of [['synthetic-mixed-account-a','Synthetic Business Account A'],['synthetic-mixed-account-b','Synthetic Business Account B']])
       await putBookkeepingItem(client,'account',{id,displayName:name,kind:'business',active:true,statementRequiredFromMonth:month},`business-account#${id}`);
     const activeAccounts=JSON.parse((await invoke('GET','/api/bookkeeping/accounts')).body).items
@@ -148,6 +157,13 @@ describe('bookkeeping API',()=>{
     });
     assert.equal(snapshot.statusCode,201,snapshot.body);
     const report=JSON.parse(snapshot.body).report;
+    assert.notEqual(report.id,legacyReport.id,'a v2 report is superseded with a fresh allocation-safe v3 snapshot');
+    assert.equal((await getBookkeepingItem(client,'report',legacyReport.id))?.status,'superseded');
+    assert.equal((await getBookkeepingItem(client,'document',legacyArchive.id))?.status,'inactive');
+    assert.equal((await invoke('GET',`/api/bookkeeping/documents/${legacyArchive.id}/download`)).statusCode,404,
+      'the old package archive cannot be downloaded after the safe replacement exists');
+    assert.equal((await invoke('POST',`/api/bookkeeping/reports/${legacyReport.id}/archive`)).statusCode,404,
+      'a superseded package cannot be regenerated');
     assert.equal(report.reconciliation.transactionCount,2);
     assert.equal(report.reconciliation.excludedTransactionCount,2);
     assert.deepEqual(report.transactionRows.map((row:any)=>[row.counterparty,row.amount,row.category]).sort((a:any[],b:any[])=>String(a[0]).localeCompare(String(b[0]))),[
@@ -156,6 +172,9 @@ describe('bookkeeping API',()=>{
     assert.equal(report.transactionRows.reduce((sum:number,row:any)=>sum+Number(row.amount),0),50);
     assert.ok(report.documentIds.includes(ordinaryA.id)&&report.documentIds.includes(ordinaryB.id));
     assert.ok(![exemptA.id,exemptB.id,parentEvidenceA.id,parentEvidenceB.id].some((id:string)=>report.documentIds.includes(id)));
+    const retry=await invoke('POST','/api/bookkeeping/reports/snapshot',{month});
+    assert.equal(retry.statusCode,200);
+    assert.equal(JSON.parse(retry.body).report.id,report.id);
   });
   it('records VAT amounts and keeps tax and health-insurance entries out of monthly snapshots',async()=>{
     const bad=await invoke('POST','/api/bookkeeping/transactions',{...valid,description:'bad vat',vatAmount:'-1',vatCurrency:'eur'});assert.equal(bad.statusCode,400);assert.deepEqual(JSON.parse(bad.body).fields.sort(),['vatAmount','vatCurrency']);

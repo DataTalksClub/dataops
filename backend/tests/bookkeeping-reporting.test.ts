@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isReportExemptTransaction } from "../src/db/bookkeeping";
 import { accountantReportRows, formatAccountantCsv } from "../src/routes/bookkeepingAccountantReport";
-import { formatReportSnapshotCsv } from "../src/routes/bookkeepingReports";
+import { accountantSnapshotRows, formatReportSnapshotCsv, snapshotItemSizeBytes } from "../src/routes/bookkeepingReports";
 
 test("accountant CSV projects mixed allocations by child category in either parent direction", () => {
   const payments = [
@@ -18,6 +18,7 @@ test("accountant CSV projects mixed allocations by child category in either pare
       entryType: "expense",
       category: "Taxes",
       mandatoryKind: "tax_debit",
+      audit: [{ action: "synthetic-parent-only-audit", payload: "not copied into report items" }],
       allocations: [
         { id: "ordinary-a", documentId: "synthetic-doc-a", counterparty: "Synthetic software", description: "Service A", amount: "10.00", amountEur: "10.00", currency: "EUR", category: "Software" },
         { id: "exempt-a", documentId: "synthetic-doc-exempt-a", counterparty: "Synthetic tax office", description: "Tax A", amount: "20.00", amountEur: "20.00", currency: "EUR", category: "Taxes" },
@@ -42,6 +43,10 @@ test("accountant CSV projects mixed allocations by child category in either pare
     },
   ];
 
+  assert.equal(isReportExemptTransaction(payments[0]), false,
+    "a parent tax marker does not make its ordinary child exempt");
+  assert.equal(isReportExemptTransaction(payments[1]), false,
+    "a parent owner draw marker does not make its ordinary child exempt");
   const projected = accountantReportRows(payments);
   const included = projected.filter((entry) => !isReportExemptTransaction(entry));
   const excluded = projected.filter(isReportExemptTransaction);
@@ -67,4 +72,10 @@ test("accountant CSV projects mixed allocations by child category in either pare
     assert.ok(packageCsv.includes(value), `snapshot CSV includes ${value}`);
   for (const value of ["Synthetic tax office", "Synthetic tax settlement", "Synthetic owner draw", "20.00", "30.00"])
     assert.ok(!packageCsv.includes(value), `snapshot CSV excludes ${value}`);
+  const snapshotRows = accountantSnapshotRows(included);
+  assert.equal(snapshotRows.some((row) => "audit" in row || "allocations" in row), false,
+    "snapshot rows contain accountant fields rather than repeated parent history");
+  assert.ok(snapshotItemSizeBytes({ transactionRows: snapshotRows }) < 350 * 1024);
+  assert.ok(snapshotItemSizeBytes({ transactionRows: [{ description: "x".repeat(351 * 1024) }] }) > 350 * 1024,
+    "the size check stays strictly below DynamoDB's item ceiling");
 });

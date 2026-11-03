@@ -566,6 +566,63 @@ describe("Finance surface boundary", () => {
     assert.ok(requests.some(({ url }) => requestPath(url) === "/api/reconcile/months/2026-08"));
   });
 
+  test("renders mixed allocation children once across ordinary, mandatory, and owner month sections", async () => {
+    const entries = [
+      { id: "synthetic-parent-tax", transactionDate: "2026-08-02", paidDate: "2026-08-03", amount: "30.00", amountEur: "30.00",
+        currency: "EUR", entryType: "expense", category: "Taxes", mandatoryKind: "tax_debit", description: "Synthetic tax settlement",
+        allocations: [
+          { id: "ordinary-a", documentId: "synthetic-doc-a", counterparty: "Synthetic service A", description: "Service A", amount: "10.00", amountEur: "10.00", currency: "EUR", category: "Software" },
+          { id: "exempt-a", documentId: "synthetic-doc-tax-a", counterparty: "Synthetic tax A", description: "Tax A", amount: "20.00", amountEur: "20.00", currency: "EUR", category: "Taxes" },
+        ] },
+      { id: "synthetic-parent-owner", transactionDate: "2026-08-04", paidDate: "2026-08-04", amount: "70.00", amountEur: "70.00",
+        currency: "EUR", entryType: "expense", category: "Owner pay", ownerPayType: "draw", description: "Synthetic owner withdrawal",
+        allocations: [
+          { id: "exempt-b", documentId: "synthetic-doc-tax-b", counterparty: "Synthetic tax B", description: "Tax B", amount: "30.00", amountEur: "30.00", currency: "EUR", category: "Taxes" },
+          { id: "ordinary-b", documentId: "synthetic-doc-b", counterparty: "Synthetic service B", description: "Service B", amount: "40.00", amountEur: "40.00", currency: "EUR", category: "Software" },
+        ] },
+    ];
+    const docs = ["synthetic-doc-a", "synthetic-doc-tax-a", "synthetic-doc-b", "synthetic-doc-tax-b"]
+      .map((id) => ({ id, documentType: "invoice", status: "active", originalFilename: `${id}.pdf` }));
+    const { document, finance } = createHarness({
+      request: async (url) => {
+        const path = requestPath(url);
+        if (path === "/api/bookkeeping/transactions") return { items: entries };
+        if (path === "/api/bookkeeping/documents") return { items: docs };
+        if (path === "/api/bookkeeping/links") return { items: [
+          { transactionId: "synthetic-parent-tax", documentId: "synthetic-doc-a", coverageType: "evidence" },
+          { transactionId: "synthetic-parent-tax", documentId: "synthetic-doc-tax-a", coverageType: "evidence" },
+          { transactionId: "synthetic-parent-owner", documentId: "synthetic-doc-b", coverageType: "evidence" },
+          { transactionId: "synthetic-parent-owner", documentId: "synthetic-doc-tax-b", coverageType: "evidence" },
+        ] };
+        if (["/api/bookkeeping/accounts", "/api/bookkeeping/reports", "/api/bookkeeping/invoices"].includes(path))
+          return { items: [] };
+        if (path.startsWith("/api/finance/summary")) return { entries: [{
+          id: "synthetic-parent-tax", month: "2026-08", date: "2026-08-02", direction: "out", line: "taxes",
+          mandatoryKind: "tax_debit", counterparty: "Synthetic tax settlement", amount: "30.00", currency: "EUR", eur: 30,
+        }], months: [], totals: {} };
+        if (path === "/api/reconcile/months/2026-08") return { rows: [] };
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    });
+    await finance.renderBookkeepingSurface();
+    await settle();
+    const markup = document.surface.querySelector(".bookkeeping-ledger").innerHTML;
+    for (const documentId of ["synthetic-doc-a", "synthetic-doc-b"])
+      assert.equal((markup.match(new RegExp(`data-allocation-document="${documentId}"`, "g")) || []).length, 1,
+        `${documentId} appears in one ordinary allocation row`);
+    for (const documentId of ["synthetic-doc-tax-a", "synthetic-doc-tax-b"])
+      assert.equal((markup.match(new RegExp(`data-view-document="${documentId}"`, "g")) || []).length, 1,
+        `${documentId} appears in one mandatory allocation row`);
+    for (const value of ["Synthetic tax A", "Synthetic tax B"])
+      assert.equal((markup.match(new RegExp(value, "g")) || []).length, 1, `${value} appears once in the mandatory month section`);
+    assert.doesNotMatch(markup, /Synthetic tax settlement|Synthetic owner withdrawal/,
+      "parent classifications and full parent rows do not leak into child sections");
+    assert.match(markup, /out <span class="dk-mono">−€50\.00/);
+    assert.match(markup, /Mandatory invoice allocations/);
+    assert.match(markup, /data-owner-withdrawals/);
+    assert.doesNotMatch(markup, /data-tx="synthetic-parent-owner"|Synthetic owner withdrawal/);
+  });
+
   test("keeps sponsor alert failures truthful and retries pages without duplicates", async () => {
     let notificationRequestCount = 0;
     let continuationOnline = false;

@@ -13,6 +13,7 @@ import { cleanItem } from "./cleanItem";
 import { TABLE_BOOKKEEPING } from "./tableNames";
 import { classifyMandatoryPayment } from "../finance/mandatoryPayments";
 import { isOwnerWithdrawalReportExempt } from "../finance/ownerPay";
+import { projectTransactionAllocations } from "../bookkeepingAllocations";
 
 export type BookkeepingItem = Record<string, unknown> & {
   id: string;
@@ -30,14 +31,10 @@ function isReportExemptClassification(item: Readonly<Record<string, unknown>>) {
 }
 
 export function isReportExemptTransaction(item: Readonly<Record<string, unknown>>) {
-  const allocations = Array.isArray(item.allocations)
-    ? item.allocations.filter((allocation): allocation is Record<string, unknown> =>
-        Boolean(allocation) && typeof allocation === "object" && !Array.isArray(allocation),
-      )
-    : [];
+  const allocations = projectTransactionAllocations(item);
   if (allocations.length) {
     return allocations.every((allocation) =>
-      isReportExemptClassification({ ...item, ...allocation }),
+      isReportExemptClassification(allocation),
     );
   }
   return isReportExemptClassification(item);
@@ -947,6 +944,55 @@ export async function markReportDeleting(
       ExpressionAttributeValues: { ":ready": "ready", ":generated": "generated", ":deleting": "deleting", ":now": new Date().toISOString() },
     }),
   );
+}
+
+export async function supersedeBookkeepingReport(
+  client: DynamoDBDocumentClient,
+  reportId: string,
+  expectedUpdatedAt: string,
+) {
+  const now = new Date().toISOString();
+  try {
+    await client.send(new UpdateCommand({
+      TableName: TABLE_BOOKKEEPING,
+      Key: { PK: key("report", reportId), SK: key("report", reportId) },
+      UpdateExpression: "SET #status = :superseded, updatedAt = :now REMOVE archiveDocumentId",
+      ConditionExpression: "updatedAt = :expected AND (#status = :ready OR #status = :generated)",
+      ExpressionAttributeNames: { "#status": "status" },
+      ExpressionAttributeValues: {
+        ":expected": expectedUpdatedAt,
+        ":superseded": "superseded",
+        ":ready": "ready",
+        ":generated": "generated",
+        ":now": now,
+      },
+    }));
+    return true;
+  } catch (error) {
+    if (isConditionalMutationFailure(error)) return false;
+    throw error;
+  }
+}
+
+export async function deactivateBookkeepingArchive(
+  client: DynamoDBDocumentClient,
+  documentId: string,
+) {
+  const now = new Date().toISOString();
+  try {
+    await client.send(new UpdateCommand({
+      TableName: TABLE_BOOKKEEPING,
+      Key: { PK: documentKey(documentId), SK: documentKey(documentId) },
+      UpdateExpression: "SET #status = :inactive, updatedAt = :now",
+      ConditionExpression: "#status = :active",
+      ExpressionAttributeNames: { "#status": "status" },
+      ExpressionAttributeValues: { ":inactive": "inactive", ":active": "active", ":now": now },
+    }));
+    return true;
+  } catch (error) {
+    if (isConditionalMutationFailure(error)) return false;
+    throw error;
+  }
 }
 
 export async function deleteDeletingReport(
