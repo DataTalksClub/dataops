@@ -266,7 +266,9 @@ export async function handleBookkeepingReportRoutes(
     const report = await getBookkeepingItem(client, "report", archive[1]);
     if (!report || !["ready", "generated"].includes(String(report.status)))
       return json(404, { error: "Ready report not found" });
-    if (Number(report.snapshotVersion) !== 3)
+    if (Number(report.snapshotVersion) !== 3
+      && ((Array.isArray(report.transactionIds) && report.transactionIds.length > 0)
+        || (Array.isArray(report.documentIds) && report.documentIds.length > 0)))
       return json(409, { error: "Report archive is unavailable because the snapshot predates allocation-safe projection." });
     if (report.archiveDocumentId) {
       const doc = await getBookkeepingItem(

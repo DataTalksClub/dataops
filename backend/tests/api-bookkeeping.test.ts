@@ -110,10 +110,16 @@ describe('bookkeeping API',()=>{
   });
   it('snapshots mixed allocations by reportable child amount and selects only child evidence',async()=>{
     const month='2026-11';
-    for(const [id,name] of [['synthetic-mixed-account-a','Synthetic Business Account A'],['synthetic-mixed-account-b','Synthetic Business Account B']]){
+    for(const [id,name] of [['synthetic-mixed-account-a','Synthetic Business Account A'],['synthetic-mixed-account-b','Synthetic Business Account B']])
       await putBookkeepingItem(client,'account',{id,displayName:name,kind:'business',active:true,statementRequiredFromMonth:month},`business-account#${id}`);
-      await putBookkeepingItem(client,'document',{documentType:'bank-statement',status:'active',accountId:id,statementMonth:month,originalFilename:`${id}.pdf`,contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update(id).digest('hex'),s3Key:`documents/${id}`});
-    }
+    const activeAccounts=JSON.parse((await invoke('GET','/api/bookkeeping/accounts')).body).items
+      .filter((account:any)=>account.kind==='business'&&account.active!==false);
+    for(const account of activeAccounts) await putBookkeepingItem(client,'document',{
+      documentType:'bank-statement',status:'active',accountId:account.id,statementMonth:month,
+      originalFilename:`${account.id}-november.pdf`,contentType:'application/pdf',byteSize:9,
+      sha256:createHash('sha256').update(`synthetic-mixed-statement-${account.id}`).digest('hex'),
+      s3Key:`documents/synthetic-mixed-${account.id}`,
+    },`synthetic-mixed-statement#${account.id}`);
     const makeDoc=async(id:string)=> (await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:`${id}.pdf`,contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update(id).digest('hex'),s3Key:`documents/${id}`},`synthetic-mixed-doc#${id}`)).item;
     const [ordinaryA,exemptA,ordinaryB,exemptB,parentEvidenceA,parentEvidenceB]=await Promise.all([
       'ordinary-a','exempt-a','ordinary-b','exempt-b','parent-evidence-a','parent-evidence-b',
