@@ -17,11 +17,30 @@ its audit array grows. Neither the 100-entry window nor the byte guard
 establishes indefinite historical retention.
 
 The portable execution export writes selected bookkeeping records to
-`bookkeeping_records.jsonl`. The archive is private, encrypted, versioned, and
-stored in the retained archive bucket. Export scans are sequential and do not
-provide a transactional snapshot. DynamoDB PITR is configured on the table;
-the documented recovery window is up to 35 days. Production settings and the
-presence of a live archive have not been checked as part of this work.
+`bookkeeping_records.jsonl`. The application template's archive bucket blocks
+public access, uses AES-256 server-side encryption and versioning, and has
+CloudFormation retain policies. The template schedules a portable export daily
+at 08:30 UTC. Archive keys include the export timestamp. Its lifecycle rule
+expires only noncurrent versions after `ExportArchiveRetentionDays` (default
+365 days, minimum 90); that rule does not age out current objects. Export scans
+are sequential and do not provide a transactional snapshot.
+
+The template also schedules a raw DynamoDB dump daily at 09:00 UTC. The backup
+code scans each application table sequentially and writes compressed NDJSON
+objects plus a manifest. A table scan failure makes the run fail after it
+writes the manifest. The bucket lifecycle expires both current and noncurrent
+raw dump versions after `DynamoBackupRetentionDays` (default 90 days, minimum
+30). These are declared schedules and lifecycle settings, not evidence that a
+particular scheduled run succeeded or that an archive object is present.
+
+The bookkeeping table's template enables PITR but does not set a custom
+recovery period. DynamoDB defaults that period to 35 days; a PITR restore
+creates a new table. Live PITR status and production settings were not checked
+as part of this work. Earlier audit entries may be present in a dated export,
+raw dump, or PITR-restored table if captured before they were trimmed, but no
+such artifact was inspected or used to establish recoverability. [DynamoDB
+PITR documentation](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/PointInTimeRecovery_Howitworks.html)
+describes the configurable 1-to-35-day recovery window.
 
 ## Safe storage design
 
@@ -51,6 +70,9 @@ events. The application has no substantiated time-based retention or archival
 policy for older bookkeeping audits. If the product needs history beyond the
 latest 100 events, that requirement and its retention period need an explicit
 decision; this design does not infer one.
+This is the online audit contract. Backup copies have separate recovery
+lifecycles described above; they are not an audit-history interface or a
+product retention policy.
 
 Read legacy rows from their inline array. For migrated rows, read the bounded
 legacy chunks and sequenced event rows, return the same `audit` array shape from
@@ -59,14 +81,15 @@ for clients that need pages. Validate sequence continuity during portable
 export and restore so a sequential scan that observes only one side of an
 atomic parent/event write is rejected rather than archived as complete.
 Include the new `BOOKKEEPING_AUDIT#` prefix in `bookkeeping_records.jsonl`; raw
-table dumps and PITR cover it because it remains in the same table.
+table dumps and PITR can include it because it remains in the same table.
 
 If a new event itself exceeds the safe sidecar item budget, or a write would
 exceed the 100-action DynamoDB transaction limit, reject it before sending the
 transaction with an explicit no-change response. If a portable export fails
 its audit consistency check, rerun it after concurrent writes settle. If
-persisted rows are inconsistent, recovery requires PITR or a verified raw
-table backup. Live PITR status and backup availability were not checked here.
+persisted rows are inconsistent, recovery may require PITR or a verified raw
+table backup, followed by audit-integrity validation. Live PITR status and
+backup availability were not checked here.
 
 ## DynamoDB limits and concurrency
 
