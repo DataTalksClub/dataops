@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -156,6 +156,31 @@ test("sync is a dry run until --apply, then creates and updates through the API"
   assert.equal(calls.filter((call) => call.method === "POST").length, 6);
 });
 
+test("CSV pull dry-run preserves raw amount precision and formatted dates end to end", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "bookkeeping-precision-pull-"));
+  writeFileSync(path.join(dir, "2026.csv"), [
+    'Date sent,Date paid,Provider,What,"Price, EUR",Entry Type',
+    "2 Sep 2026,2 Sep 2026,Example Precision Vendor,Annual license,-15203.78,Expense",
+  ].join("\n"));
+  try {
+    const [row] = sheet.readSheetDir(dir);
+    assert.equal(row.record.transactionDate, "2026-09-02");
+    assert.equal(row.record.paidDate, "2026-09-02");
+    assert.equal(row.record.amount, "15203.78");
+    const existing = { id: "ledger-precision", sourceType: "spreadsheet", sourceKey: row.sourceKey, ...row.record };
+    const calls = fakePortal({ "GET /api/bookkeeping/transactions": { items: [existing] } });
+    const io = captureIo();
+
+    assert.equal(await run(["bookkeeping", "sync", dir, "--json"], io), 0);
+    assert.deepEqual(io.json().counts, {
+      sheetRows: 1, create: 0, update: 0, locked: 0, unchanged: 1, orphans: 0, skipped: 0,
+    });
+    assert.deepEqual(calls.map((call) => call.method), ["GET"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("sync --sheet fails closed without reading a token or making a request", async () => {
   const originalEnv = process.env;
   const originalFetch = globalThis.fetch;
@@ -183,6 +208,8 @@ test("sync --sheet fails closed without reading a token or making a request", as
     assert.match(io.errors.join("\n"), /Direct --sheet mode is disabled/);
     assert.match(io.errors.join("\n"), /google-data-pull/);
     assert.match(io.errors.join("\n"), /bookkeeping sync <csv-dir>/);
+    assert.match(io.errors.join("\n"), /Precision requirement/);
+    assert.match(io.errors.join("\n"), /do not use --apply until the Dapier export meets this requirement/i);
   } finally {
     Object.defineProperty(process, "env", { configurable: true, enumerable: true, writable: true, value: originalEnv });
     globalThis.fetch = originalFetch;

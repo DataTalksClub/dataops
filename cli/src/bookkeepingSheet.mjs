@@ -270,7 +270,13 @@ export function readTab(tab, rows) {
   return out;
 }
 
-/** Every `<tab>.csv` in a directory: an offline export of the same sheet. */
+/**
+ * Every `<tab>.csv` in a directory: an offline export of the same sheet. The
+ * exporter must write raw numeric cells and preserve formatted date strings;
+ * this parser cannot recover precision already rounded into a displayed value.
+ * The filename is the tab identity, so the exporter must also keep sanitized
+ * filenames unique before writing files to this directory.
+ */
 export function readSheetDir(dir) {
   const files = readdirSync(dir).filter((name) => name.toLowerCase().endsWith(".csv")).sort();
   if (!files.length) throw new Error(`No .csv files in ${dir}: export the sheet with one CSV per tab first.`);
