@@ -31,7 +31,9 @@ function invoiceDocuments({ invoice, invoices, documents }) {
   if (invoice) return Array.isArray(invoice) ? invoice : [invoice];
   if (Array.isArray(documents)) {
     return documents.filter((document) =>
-      String(document?.documentType || "").toLowerCase() === "invoice",
+      document?.status === "active" &&
+      ["invoice", "receipt", "credit-note", "credit_note", "other-evidence", "proof"]
+        .includes(String(document?.documentType || "").toLowerCase()),
     );
   }
   return [];
@@ -220,8 +222,8 @@ export function bookkeepingTransactionSummaryMarkup({
   return `${invoiceSectionMarkup(invoiceList, e)}
     <section class="bk-transaction-summary" aria-labelledby="bk-transaction-summary-heading">
       <h3 id="bk-transaction-summary-heading">Transaction</h3>
-      <h4 class="bk-transaction-summary__vendor">${e(presentation.canonicalCounterparty)}</h4>
-      <p class="bk-transaction-summary__what"><span>What for</span> ${e(presentation.description)}</p>
+      <h4 class="bk-transaction-summary__vendor">${e(transaction.counterparty || "Unknown")}</h4>
+      <p class="bk-transaction-summary__what"><span>What for</span> ${e(transaction.description || "Not recorded")}</p>
       <dl class="bk-transaction-summary__facts">
         ${fieldMarkup("Raw bank name", e(presentation.rawCounterparty || "Unknown"), e)}
         ${fieldMarkup("Date", e(transactionDate), e)}
