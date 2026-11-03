@@ -38,12 +38,7 @@ export function displayMoney(value: bigint): string {
   return fraction ? `${whole}.${fraction}` : String(whole);
 }
 
-export function realDate(value: unknown): value is string {
-  if (typeof value !== 'string' || !DATE.test(value)) return false;
-  const [year, month, day] = value.split('-').map(Number);
-  const parsed = new Date(Date.UTC(year, month - 1, day));
-  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
-}
+export { realDate } from '../sponsorCrm/model';
 
 export function berlinDate(value = new Date()): string {
   const parts = new Intl.DateTimeFormat('en', {

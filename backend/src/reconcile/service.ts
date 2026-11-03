@@ -20,6 +20,7 @@ import {
 } from "../db/bookkeeping";
 import { businessAccountRequiresStatement } from "../finance/businessAccounts";
 import { listCrmRecords, scanCrmPrefix } from "../db/sponsorCrm";
+import { realDate } from "../sponsorCrm/model";
 import type { StatementAccount, StatementBalance, StatementRow } from "./parsers";
 import {
   coverageGaps,
@@ -35,7 +36,6 @@ import {
 
 const AMOUNT = /^-?(0|[1-9]\d{0,9})(\.\d{1,2})$/;
 const CURRENCY = /^[A-Z]{3}$/;
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH = /^\d{4}-\d{2}$/;
 export const MAX_ROWS = 2000;
 
@@ -74,11 +74,6 @@ export type AccountBalance = StatementBalance & { accountId: StatementAccount; s
 
 export function statementIdFor(documentId: string, accountId: string, period: string): string {
   return createHash("sha256").update(`${documentId}|${accountId}|${period}`).digest("hex").slice(0, 32);
-}
-
-function realDate(value: string): boolean {
-  if (!DATE.test(value)) return false;
-  return new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 }
 
 /** Field-level problems; empty means the rows can be stored. */

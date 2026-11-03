@@ -15,13 +15,13 @@ import {
   type Book,
 } from "../db/books";
 import { resolveInteractiveActor } from "../identity/actor";
+import { realDate } from "../sponsorCrm/model";
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
   statusCode,
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify(body),
 });
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,199}$/;
 const WRITABLE = new Set([
@@ -36,11 +36,6 @@ const WRITABLE = new Set([
   "version",
 ]);
 
-const realDate = (value: unknown) => {
-  if (typeof value !== "string" || !DATE.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
-};
 const httpsUrl = (value: unknown) => {
   try {
     return typeof value === "string" && new URL(value).protocol === "https:";
