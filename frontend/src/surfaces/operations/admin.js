@@ -785,7 +785,7 @@ export function createAdminSurface(context) {
     const cards = [
       [
         "Diagnostics",
-        "Check process quality, daily export status, and the current knowledge revision.",
+        "Check process quality, daily knowledge backup status, and the current revision.",
         () => section.querySelector(".ops-admin-diagnostics h3")?.focus(),
       ],
     ];

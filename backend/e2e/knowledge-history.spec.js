@@ -58,7 +58,7 @@ async function fixtures(page, conflict = false) {
     const req = route.request(), url = new URL(req.url());
     if (url.pathname === '/knowledge/publication') return route.fulfill({ json: { revision: state.revision } });
     if (url.pathname === '/knowledge/status') return route.fulfill({ json: {
-      revision: state.revision, exported: { revision: 'r0', at: '2026-10-01T12:00:00Z' }, exportLag: true,
+      revision: state.revision, backup: { revision: 'r0', at: '2026-10-01T12:00:00Z' }, backupLag: true,
     } });
     if (url.pathname === '/knowledge/history') {
       const binary = url.searchParams.get('path').endsWith('.png');
