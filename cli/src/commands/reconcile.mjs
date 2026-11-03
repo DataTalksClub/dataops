@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
+import { createWriteStream } from "node:fs";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { pipeline } from "node:stream/promises";
 import { dirname, join } from "node:path";
+import yazl from "yazl";
 import { UsageError } from "../errors.mjs";
 import { enc, optionalString, positional } from "../format.mjs";
 import { apiFor } from "../session.mjs";
@@ -104,7 +106,8 @@ Usage
         YYYY-MM/statements/YYYY-MM_<bank>-<account>.<ext>
         YYYY-MM/income|expenses/YYYY-MM-DD_<counterparty>_<doc-number>_<amount><CUR>.pdf
         YYYY-MM/proofs/YYYY-MM-DD_<counterparty>_<ledger-row>.pdf
-      plus datatalksclub-YYYY-MM.zip when zip is installed. Names are
+      plus datatalksclub-YYYY-MM.zip, created natively without an external zip
+      command. Names are
       lowercase-hyphen slugs (max 40), collisions get -2, -3; originals keep
       their names in DataOps. Refused for an open month unless --draft.
   dataops reconcile config [--set rules.json] [--json]
@@ -685,6 +688,32 @@ async function downloadBytes(api, entry) {
   return Buffer.from(await response.arrayBuffer());
 }
 
+async function packageFiles(directory, root = directory) {
+  const files = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const target = join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...await packageFiles(target, root));
+    else if (entry.isFile()) files.push({ target, archivePath: target.slice(root.length + 1).replaceAll("\\", "/") });
+  }
+  return files;
+}
+
+async function createPackageArchive(out, period, zipPath) {
+  const archive = new yazl.ZipFile();
+  const complete = pipeline(archive.outputStream, createWriteStream(zipPath)).then(() => null, (error) => error);
+  try {
+    for (const file of await packageFiles(join(out, period), out)) archive.addFile(file.target, file.archivePath);
+    archive.end();
+    const error = await complete;
+    if (error) throw error;
+  } catch (error) {
+    archive.outputStream.destroy(error);
+    await complete;
+    await rm(zipPath, { force: true }).catch(() => {});
+    throw new Error(`Could not create package archive ${zipPath}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 export async function packageMonth(args, io) {
   const usage = "dataops reconcile package YYYY-MM [--out DIR] [--draft] [--json]";
   const period = periodArg(args, usage);
@@ -706,10 +735,10 @@ export async function packageMonth(args, io) {
   }
   let zip;
   const zipName = `datatalksclub-${period}${manifest.draft ? "-draft" : ""}.zip`;
-  const zipped = spawnSync("zip", ["-qr", zipName, period], { cwd: out });
-  if (zipped.status === 0) zip = join(out, zipName);
+  zip = join(out, zipName);
+  await createPackageArchive(out, period, zip);
   if (!args.json) {
-    io.print(`${manifest.draft ? "DRAFT package (month still open)" : "Package"} ${period}: ${written.length} files in ${join(out, period)}${zip ? `, ${zip}` : " (zip not installed; folder only)"}. Nothing was sent.`);
+    io.print(`${manifest.draft ? "DRAFT package (month still open)" : "Package"} ${period}: ${written.length} files in ${join(out, period)}, ${zip}. Nothing was sent.`);
     for (const path of written) io.print(`  ${path}`);
   }
   return { ...manifest, written, ...(zip ? { zip } : {}) };

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import yauzl from "yauzl";
 import { upload, confirm, report, alias, aliases, balances, matches, attachDoc, voidLedger, restoreLedger, note, commands } from "../src/commands/reconcile.mjs";
 import { exitCodeFor, EXIT } from "../src/errors.mjs";
 
@@ -28,6 +29,28 @@ const withFakePortal = async (routes, run) => {
     if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
   }
 };
+
+const archiveEntries = (path) => new Promise((resolve, reject) => {
+  yauzl.open(path, { lazyEntries: true }, (error, zip) => {
+    if (error) return reject(error);
+    const entries = [];
+    zip.on("error", reject);
+    zip.on("entry", (entry) => {
+      zip.openReadStream(entry, (streamError, stream) => {
+        if (streamError) return reject(streamError);
+        const chunks = [];
+        stream.on("data", (chunk) => chunks.push(chunk));
+        stream.on("error", reject);
+        stream.on("end", () => {
+          entries.push([entry.fileName, Buffer.concat(chunks)]);
+          zip.readEntry();
+        });
+      });
+    });
+    zip.on("end", () => resolve(entries));
+    zip.readEntry();
+  });
+});
 
 const args = { url: "https://portal.example.test", json: true };
 
@@ -569,7 +592,8 @@ test("package writes the month folder layout from the manifest and never sends a
     ["/api/bookkeeping/invoices/synthetic-invoice/document", { url: "https://private.example.test/invoice" }],
     ["https://private.example.test/", "synthetic-bytes"],
   ], async (calls) => {
-    const result = await commands.package({ ...args, _: ["2026-10"], out: directory }, {});
+    const result = await commands.package({ ...args, _: ["2026-10"], out: directory, json: true }, {});
+    assert.equal(result.zip, join(directory, "datatalksclub-2026-10.zip"));
     assert.deepEqual(result.written, [
       "2026-10/2026-10_reconciliation_datatalksclub.csv",
       "2026-10/statements/2026-10_finom-main.csv",
@@ -579,6 +603,10 @@ test("package writes the month folder layout from the manifest and never sends a
     ]);
     assert.equal(await (await import("node:fs/promises")).readFile(join(directory, "2026-10/proofs/2026-10-14_google_a1c9d26b5312.pdf"), "utf8"), "synthetic-bytes");
     assert.equal(await (await import("node:fs/promises")).readFile(join(directory, "2026-10/expenses/2026-10-15_synthetic-vendor_SYN-1_9.00EUR.pdf"), "utf8"), "synthetic-bytes");
+    const zipped = await archiveEntries(result.zip);
+    assert.deepEqual(zipped.map(([path]) => path).sort(), [...result.written].sort());
+    assert.equal(zipped.find(([path]) => path.endsWith("proofs/2026-10-14_google_a1c9d26b5312.pdf"))?.[1].toString(), "synthetic-bytes");
+    assert.match(zipped.find(([path]) => path.endsWith("reconciliation_datatalksclub.csv"))?.[1].toString() || "", /date,status/);
     assert.ok(!calls.some((call) => call.method === "POST"), "building a package never writes");
   });
   await rm(directory, { recursive: true, force: true });
@@ -591,6 +619,26 @@ test("package refuses to present an incomplete manifest as ready", async () => {
   ]], async () => {
     await assert.rejects(commands.package({ ...args, _: ["2026-10"], draft: true }, {}), /Package is incomplete: 1 expected document/);
   });
+});
+
+test("package reports archive creation failures", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-test-"));
+  await mkdir(join(directory, "datatalksclub-2026-10.zip"));
+  try {
+    await withFakePortal([[
+      "/reconcile/months/2026-10/package",
+      { period: "2026-10", state: "closed", draft: false, csv: "date,status\n", entries: [
+        { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
+      ] },
+    ]], async () => {
+      await assert.rejects(
+        commands.package({ ...args, _: ["2026-10"], out: directory, json: true }, {}),
+        /Could not create package archive/,
+      );
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("reconcile matches prints matched, unmatched bank and invoices without a bank row", async () => {

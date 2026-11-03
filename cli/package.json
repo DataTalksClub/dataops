@@ -8,7 +8,11 @@
     "node": ">=18"
   },
   "dependencies": {
-    "js-yaml": "^4.3.1"
+    "js-yaml": "^4.3.1",
+    "yazl": "^3.3.1"
+  },
+  "devDependencies": {
+    "yauzl": "3.4.0"
   },
   "bin": {
     "dataops": "./bin/dataops.mjs"
