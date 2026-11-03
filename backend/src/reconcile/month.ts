@@ -819,19 +819,19 @@ export function exceptionDigest(table: MonthTable): string {
   return createHash("sha256").update(items.join("\n")).digest("hex").slice(0, 24);
 }
 
-export function isAccountantReportRowExcluded(row: MonthRow, ownerWithdrawalsConfirmed = false) {
+export function isAccountantReportRowExcluded(row: MonthRow) {
   return Boolean(row.tax)
     || Boolean(row.ledger && isOwnerWithdrawalReportExempt(row.ledger))
-    || (ownerWithdrawalsConfirmed && row.exception?.kind === "owner_withdrawal" && row.exception.satisfied);
+    || (row.exception?.kind === "owner_withdrawal" && row.exception.satisfied);
 }
 
-export function tableCsv(table: MonthTable, options: { ownerWithdrawalsConfirmed?: boolean } = {}): string {
+export function tableCsv(table: MonthTable): string {
   const header = ["date", "status", "counterparty", "description", "amount", "currency", "bank_account", "bank_date", "bank_amount", "bank_reference", "ledger_id", "ledger_date", "ledger_amount", "ledger_category", "documents", "pair_basis", "confidence", "exception", "missing"];
   const quote = (value: unknown) => {
     const text = value === undefined || value === null ? "" : String(value);
     return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
-  const lines = table.rows.filter((row) => !isAccountantReportRowExcluded(row, options.ownerWithdrawalsConfirmed)).map((row) => [
+  const lines = table.rows.filter((row) => !isAccountantReportRowExcluded(row)).map((row) => [
     row.date, row.status, row.counterparty, row.description, row.amount, row.currency,
     row.bank ? `${row.bank.accountId}${row.bank.wallet ? ` ${row.bank.wallet}` : ""}` : "", row.bank?.date, row.bank ? `${row.bank.amount} ${row.bank.currency}` : "", row.bank?.reference,
     row.ledger?.id, row.ledger?.date, row.ledger ? `${row.ledger.amount} ${row.ledger.currency}` : "", row.ledger?.category,

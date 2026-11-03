@@ -7,7 +7,7 @@ import { createDocumentLink, getBookkeepingItem, putBookkeepingItem } from '../s
 import { createInvoice } from '../src/invoices/store';
 import { TABLE_ARTIFACTS } from '../src/db/tableNames';
 import { saveStatement } from '../src/reconcile/service';
-import { buildMonth, closeMonth, ledgerRowsFrom, monthPackage } from '../src/reconcile/monthService';
+import { buildMonth, closeMonth, getConfig, ledgerRowsFrom, monthPackage, saveConfig } from '../src/reconcile/monthService';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 
 describe('reconciliation ledger projection', () => {
@@ -241,5 +241,65 @@ describe('reconciliation ledger projection', () => {
     assert.ok(!pack.entries.some((entry) => entry.documentId === ownerTransferDoc.id));
     assert.ok(await getBookkeepingItem(client, 'document', ownerTransferDoc.id), 'owner transfer source document remains stored');
     assert.ok(pack.entries.some((entry) => entry.kind === 'statement' && entry.documentId === 'stmt-doc-2026-10' && entry.originalFilename === 'finom-2026-10.pdf'), 'the original statement reference remains unchanged in the package');
+  });
+
+  it('excludes a satisfied bank-only owner withdrawal from an open-month accountant export while retaining internal rows and source statements', async () => {
+    const period = '2026-12';
+    const previousConfig = await getConfig(client);
+    await saveConfig(client, {
+      ...previousConfig,
+      rules: [...previousConfig.rules, {
+        id: 'synthetic-owner-withdrawal', kind: 'owner_withdrawal', direction: 'out',
+        counterparty: '^Synthetic Owner$', category: 'Owner pay',
+      }],
+    }, 'tester');
+    try {
+      const serviceInvoice = (await putBookkeepingItem(client, 'document', {
+        documentType: 'invoice', status: 'active', contentType: 'application/pdf',
+        originalFilename: 'synthetic-ilz-service-invoice.pdf', byteSize: 128,
+        sha256: 'd'.repeat(64), s3Key: 'documents/synthetic-ilz-service-invoice.pdf',
+      })).item;
+      const serviceTx = (await putBookkeepingItem(client, 'bookkeeping', {
+        id: 'synthetic-ilz-service-ledger', transactionDate: '2026-12-04', paidDate: '2026-12-05',
+        counterparty: 'Synthetic ILZ Services', description: 'Synthetic ordinary service invoice',
+        amount: '35.00', currency: 'EUR', entryType: 'expense', category: 'Compliance & Taxes',
+        subtype: 'Services', invoiceNumber: 'SYN-ILZ-12', sourceType: 'invoice',
+      })).item;
+      await createDocumentLink(client, {
+        documentId: serviceInvoice.id, transactionId: String(serviceTx.id), coverageType: 'evidence',
+      });
+      await saveStatement(client, {
+        accountId: 'finom', period, filename: 'synthetic-original-statement.pdf', documentId: 'synthetic-original-statement',
+        rows: [
+          { date: '2026-12-03', amount: '-42.00', currency: 'EUR', counterparty: 'Synthetic Owner', reference: 'Synthetic private transfer' },
+          { date: '2026-12-05', amount: '-35.00', currency: 'EUR', counterparty: 'Synthetic ILZ Services', reference: 'SYN-ILZ-12' },
+        ],
+      });
+
+      const view = await buildMonth(client, period);
+      assert.equal(view.state, 'open');
+      assert.equal(view.exceptionConfirmation, undefined);
+      const ownerRow = view.rows.find((row) => row.counterparty === 'Synthetic Owner');
+      assert.ok(ownerRow);
+      assert.equal(ownerRow.ledger, undefined);
+      assert.deepEqual([ownerRow.exception?.kind, ownerRow.exception?.satisfied], ['owner_withdrawal', true]);
+      assert.equal(view.counters.rows, 2);
+      assert.equal(view.counters.exceptions, 1);
+
+      const pack = await monthPackage(client, period, { draft: true });
+      assert.equal(pack.state, 'open');
+      assert.equal(pack.draft, true);
+      assert.equal(pack.csv.includes('Synthetic Owner'), false);
+      assert.match(pack.csv, /Synthetic ILZ Services/);
+      assert.match(pack.csv, /Compliance & Taxes/);
+      assert.ok(pack.entries.some((entry) => entry.documentId === serviceInvoice.id));
+      assert.ok(pack.entries.some((entry) => entry.kind === 'statement'
+        && entry.documentId === 'synthetic-original-statement'
+        && entry.originalFilename === 'synthetic-original-statement.pdf'));
+      assert.equal(view.rows.includes(ownerRow), true, 'the internal reconciliation row remains visible');
+      assert.equal(view.counters.rows, 2, 'month counters continue to include the owner transfer');
+    } finally {
+      await saveConfig(client, previousConfig, 'tester');
+    }
   });
 });
