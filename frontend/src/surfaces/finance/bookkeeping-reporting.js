@@ -1,5 +1,6 @@
 // Package and VAT views for the bookkeeping surface.
 import { formatAmount, monthLabel } from "./bookkeeping-format.js";
+import { eurValue } from "./bookkeeping-ledger.js";
 import { packageReviewMarkup } from "./bookkeeping-views.js";
 import { html } from "./shared.js";
 
@@ -25,7 +26,6 @@ export function createBookkeepingReports({
     const reportInput = surface.querySelector("[data-report-month]");
     const isMonth = /^\d{4}-\d{2}$/.test(lens);
     reportInput.value = isMonth ? lens : "";
-    surface.querySelector("[data-report]").disabled = !isMonth;
     if (!isMonth) {
       review.innerHTML = html`<div class="dk-empty dk-empty--compact">
           <p class="dk-empty__title">Choose a month</p>
@@ -43,6 +43,8 @@ export function createBookkeepingReports({
           lens <= account.statementRequiredThroughMonth),
     );
     const monthEntries = lensEntries().filter((entry) => !isReportExemptEntry(entry));
+    const unconverted = monthEntries.filter((entry) => eurValue(entry) === null);
+    surface.querySelector("[data-report]").disabled = !isMonth || unconverted.length > 0;
     const excludedCount = lensEntries().filter(isReportExemptEntry).length;
     const linkedDocIds = new Set(
       links
@@ -72,6 +74,13 @@ export function createBookkeepingReports({
       preflightRows.push(
         html`<p class="dk-callout dk-callout--warning">
           Set up two business accounts under Files &amp; statements before preparing a monthly package.
+        </p>`,
+      );
+    if (unconverted.length)
+      preflightRows.push(
+        html`<p class="preflight-row is-blocked">
+          ✗ ${unconverted.length} transaction${unconverted.length === 1 ? "" : "s"} without a EUR value —
+          convert ${unconverted.length === 1 ? "it" : "them"} before preparing the package.
         </p>`,
       );
     const preflightNote = missingStatements.length

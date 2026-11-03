@@ -164,10 +164,10 @@ export function vatPresentation(entry) {
   const rate = vatRateLabel(entry.vatRate);
   if (entry.reverseCharge) return `Reverse charge${rate ? ` · ${rate}` : ""}`;
   if (entry.zeroRated || (rate && Number(rate.slice(0, -1)) === 0)) return "0%";
+  if (entry.vatEur !== null && entry.vatEur !== undefined && String(entry.vatEur).trim() !== "")
+    return `${formatAmount(entry.vatEur, "EUR")}${rate ? ` (${rate})` : ""}`;
   if (entry.vatAmount !== null && entry.vatAmount !== undefined && String(entry.vatAmount).trim() !== "")
     return `${formatAmount(entry.vatAmount, entry.vatCurrency || entry.currency || "EUR")}${rate ? ` (${rate})` : ""}`;
-  if (entry.vatEur !== null && entry.vatEur !== undefined)
-    return `${formatAmount(entry.vatEur, "EUR")}${rate ? ` (${rate})` : ""}`;
   return "";
 }
 
@@ -207,6 +207,7 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
   const description = presentation.description;
   const showDescription = Boolean(description);
   const vat = vatPresentation(financeEntry);
+  const originalText = original === null ? "" : signedAmount(original, entry.currency);
   return html`<tr class="bk-row${flagged ? " is-uncategorised" : ""}${direction === "income" ? " is-income" : ""}"
       data-tx="${e(entry.id)}"${entry.id === selectedId ? ' aria-selected="true"' : ""}>
       <td class="bk-col-date">${dateCell(entry, e)}</td>
@@ -217,8 +218,8 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
         >
       </td>
       <td class="bk-col-money bk-col-original">${original === null ? "" : e(signedAmount(original, entry.currency))}</td>
-      <td class="bk-col-money bk-col-eur${missingEur ? " is-missing" : ""}">${missingEur
-        ? html`<span class="bk-missing" title="No EUR value recorded yet">EUR?</span>`
+      <td class="bk-col-money bk-col-eur${missingEur ? " is-unconverted" : ""}"${!missingEur && originalText ? ` title="Original ${e(originalText)}"` : ""}>${missingEur
+        ? html`<span class="bk-unconverted" title="No EUR value recorded yet — convert it before the report">${e(originalText || "EUR?")}</span>`
         : e(signedAmount(eur, "EUR"))}</td>
       <td class="bk-col-account">${e(accountOf(entry))}</td>
       ${CLASSIFICATION_FIELDS.map(({ field, label }) => html`<td class="bk-col-class bk-col-${field}">${selectMarkup({

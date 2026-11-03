@@ -147,7 +147,9 @@
 .bk-who__what { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--dk-text-muted); text-overflow: ellipsis; }
 .bk-col-money { width: 7.5em; overflow: hidden; font-family: var(--dk-font-mono); text-align: right; }
 .bk-table th.bk-col-money { text-align: right; }
-.bk-col-vat { min-width: 8em; color: var(--dk-text-muted); font-size: var(--dk-text-xs); }
+.bk-col-vat { min-width: 8em; color: var(--dk-text-muted); }
+.bk-col-eur.is-unconverted { color: var(--dk-warning-text); }
+.bk-unconverted { font-weight: var(--dk-weight-semibold); }
 .bk-col-original { color: var(--dk-text-muted); }
 .bk-col-eur { color: var(--dk-text-heading); }
 .is-income .bk-col-eur { color: var(--dk-success-text); }

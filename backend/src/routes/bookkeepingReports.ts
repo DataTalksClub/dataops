@@ -100,6 +100,16 @@ export async function handleBookkeepingReportRoutes(
     const transactions = monthTransactions.filter(
       (t) => !isReportExemptTransaction(t),
     );
+    const unconverted = transactions.filter(
+      (t) =>
+        String(t.currency || "EUR").toUpperCase() !== "EUR" &&
+        !String(t.amountEur ?? "").trim(),
+    );
+    if (unconverted.length)
+      return json(409, {
+        error: `${unconverted.length} transaction(s) have no EUR value; convert them before preparing the package`,
+        unconvertedTransactionIds: unconverted.map((t) => String(t.id)),
+      });
     const links = await listBookkeepingItems(client, "link");
     const linkedIds = new Set(
       links

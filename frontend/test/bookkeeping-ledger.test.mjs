@@ -84,7 +84,10 @@ test("the table renders one compact row per transaction without changing stored 
   assert.match(markup, /−\$100\.00/);
   assert.match(markup, /−€86\.00/);
   assert.match(markup, /\+€2,000\.00/);
-  assert.match(markup, /EUR\?/);
+  assert.match(markup, /title="Original −\$100\.00"/, "hovering the EUR value reveals the original amount");
+  assert.match(markup, /<span class="bk-unconverted" title="No EUR value recorded yet/);
+  assert.match(markup, /bk-col-eur is-unconverted/);
+  assert.match(markup, />−\$15\.00<\/span>/, "a row without EUR shows its original value highlighted");
   assert.match(markup, /paid 7 Sept/, "the paid date shows only when it differs");
   assert.equal((markup.match(/paid /g) || []).length, 1);
   assert.match(markup, /class="bk-row is-uncategorised is-income"\s+data-tx="b" aria-selected="true"/);
@@ -109,6 +112,7 @@ test("the VAT column shows document VAT, a zero rate, and reverse charge distinc
   assert.match(markup, />0%<\/td>/);
   assert.match(markup, /Reverse charge · 19%/);
   assert.equal(vatPresentation({ vatAmount: "500.00", vatCurrency: "USD", vatRate: "0.19" }), "$500.00 (19%)");
+  assert.equal(vatPresentation({ vatAmount: "110.35", vatCurrency: "USD", vatEur: "98.12", vatRate: "0.19" }), "€98.12 (19%)", "VAT shows in EUR when converted");
 });
 
 test("ledger rows show canonical vendor names, concise purposes, and invoice state", () => {

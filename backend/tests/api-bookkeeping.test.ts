@@ -74,6 +74,18 @@ describe('bookkeeping API',()=>{
     assert.equal(report.reconciliation.businessStatementCount,2);
     assert.ok(statementIds.every((id)=>report.documentIds.includes(id)));
   });
+  it('refuses monthly snapshots while a row has no EUR value',async()=>{
+    await invoke('POST','/api/bookkeeping/accounts/setup');
+    for(const id of ['revolut','finom']) await putBookkeepingItem(client,'document',{documentType:'bank-statement',status:'active',accountId:id,statementMonth:'2026-11',originalFilename:`${id}-november.pdf`,contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update(`statement-${id}-november`).digest('hex'),s3Key:`documents/${id}-november`});
+    const foreign=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-11-04',description:'Unconverted USD row',amount:'100.00',currency:'USD'})).body);
+    const blocked=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-11'});
+    assert.equal(blocked.statusCode,409,blocked.body);
+    assert.deepEqual(JSON.parse(blocked.body).unconvertedTransactionIds,[foreign.id]);
+    const converted=await invoke('PUT',`/api/bookkeeping/transactions/${foreign.id}`,{amountEur:'86.00'});
+    assert.equal(converted.statusCode,200);
+    const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-11'});
+    assert.equal(snapshot.statusCode,201,snapshot.body);
+  });
   it('records VAT amounts and keeps tax and health-insurance entries out of monthly snapshots',async()=>{
     const bad=await invoke('POST','/api/bookkeeping/transactions',{...valid,description:'bad vat',vatAmount:'-1',vatCurrency:'eur'});assert.equal(bad.statusCode,400);assert.deepEqual(JSON.parse(bad.body).fields.sort(),['vatAmount','vatCurrency']);
     const income=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-05',description:'VAT income',entryType:'income',vatAmount:'19.00',vatCurrency:'EUR'})).body);
