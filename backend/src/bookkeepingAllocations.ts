@@ -140,6 +140,7 @@ export interface AllocationDocumentContext {
   sha256?: string;
   originalFilename?: string;
   voidStatus?: string;
+  linkRefCount?: number;
   facts?: Record<string, unknown>;
 }
 

@@ -91,11 +91,18 @@ export async function handleBookkeepingResourceRoutes(
           !(await getBookkeepingItem(client, "bookkeeping", String(body.transactionId)))
         )
           return json(404, { error: "Link target not found" });
-        const result = await createDocumentLink(client, {
-          documentId: String(body.documentId),
-          transactionId: String(body.transactionId),
-          coverageType: String(body.coverageType),
-        });
+        let result;
+        try {
+          result = await createDocumentLink(client, {
+            documentId: String(body.documentId),
+            transactionId: String(body.transactionId),
+            coverageType: String(body.coverageType),
+          });
+        } catch (error) {
+          if (error instanceof BookkeepingItemLockedError)
+            return json(409, { error: "Evidence is allocated or changed; refresh and retry." });
+          throw error;
+        }
         if(body.coverageType === "evidence" && targetDocument.facts) {
           try {
             await applyDocumentFinance(client, targetDocument.facts as DocumentFacts, String(body.transactionId));
@@ -134,7 +141,13 @@ export async function handleBookkeepingResourceRoutes(
       if (kind === "link") {
         const link = await getBookkeepingItem(client, "link", id);
         if (!link) return json(404, { error: "Not found" });
-        await deleteDocumentLink(client, link);
+        try {
+          await deleteDocumentLink(client, link);
+        } catch (error) {
+          if (error instanceof BookkeepingItemLockedError)
+            return json(409, { error: "Evidence is allocated or changed; clear the allocation first." });
+          throw error;
+        }
         return { statusCode: 204, headers: {}, body: "" };
       }
       if (kind === "report") {

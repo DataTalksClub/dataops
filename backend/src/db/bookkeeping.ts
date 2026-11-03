@@ -341,6 +341,7 @@ export async function getRawDocument(client: DynamoDBDocumentClient, id: string)
 export async function listBookkeepingItems(
   client: DynamoDBDocumentClient,
   kind: string,
+  consistentRead = false,
 ): Promise<BookkeepingItem[]> {
   const items: BookkeepingItem[] = [];
   let ExclusiveStartKey: Record<string, unknown> | undefined;
@@ -348,6 +349,7 @@ export async function listBookkeepingItems(
     const result = await client.send(
       new ScanCommand({
         TableName: TABLE_BOOKKEEPING,
+        ...(consistentRead ? { ConsistentRead: true } : {}),
         FilterExpression: "begins_with(PK, :prefix)",
         ExpressionAttributeValues: { ":prefix": `${kind.toUpperCase()}#` },
         ExclusiveStartKey,
@@ -373,6 +375,7 @@ export async function listBookkeepingItems(
  */
 export async function listTransactions(
   client: DynamoDBDocumentClient,
+  consistentRead = false,
 ): Promise<BookkeepingItem[]> {
   const transactions: BookkeepingItem[] = [];
   const claims = new Map<string, string>();
@@ -381,6 +384,7 @@ export async function listTransactions(
     const result = await client.send(
       new ScanCommand({
         TableName: TABLE_BOOKKEEPING,
+        ...(consistentRead ? { ConsistentRead: true } : {}),
         FilterExpression: "begins_with(PK, :transaction) OR begins_with(PK, :claim)",
         ExpressionAttributeValues: {
           ":transaction": "BOOKKEEPING#",
@@ -752,6 +756,47 @@ export function documentLinkItem(
   };
 }
 
+function allocationClaimKey(kind: "document" | "sha256", value: string) {
+  const id = createHash("sha256").update(`${kind}\0${value}`).digest("hex");
+  const pk = `ALLOCATION-SOURCE-CLAIM#${id}`;
+  return { PK: pk, SK: pk };
+}
+
+export function evidenceSourceVersionKey(kind: "document" | "sha256", value: string) {
+  const id = createHash("sha256").update(`${kind}\0${value}`).digest("hex");
+  const pk = `EVIDENCE-SOURCE-VERSION#${id}`;
+  return { id, PK: pk, SK: pk };
+}
+
+function evidenceSourceVersionUpdate(
+  kind: "document" | "sha256", value: string,
+): BookkeepingTransactItem {
+  const source = evidenceSourceVersionKey(kind, value);
+  return { Update: {
+    TableName: TABLE_BOOKKEEPING,
+    Key: { PK: source.PK, SK: source.SK },
+    UpdateExpression: "SET id = :id ADD revision :one",
+    ExpressionAttributeValues: { ":id": source.id, ":one": 1 },
+  } };
+}
+
+function allocationClaimCheck(
+  key: { PK: string; SK: string },
+  transactionId: string,
+  allowOwner: boolean,
+): BookkeepingTransactItem {
+  return {
+    ConditionCheck: {
+      TableName: TABLE_BOOKKEEPING,
+      Key: key,
+      ConditionExpression: allowOwner
+        ? "attribute_not_exists(PK) OR transactionId = :transactionId"
+        : "attribute_not_exists(PK) OR transactionId <> :transactionId",
+      ExpressionAttributeValues: { ":transactionId": transactionId },
+    },
+  };
+}
+
 export async function createDocumentLink(
   client: DynamoDBDocumentClient,
   input: { documentId: string; transactionId: string; coverageType: string },
@@ -759,6 +804,16 @@ export async function createDocumentLink(
   const now = new Date().toISOString();
   const item = documentLinkItem(input, now);
   const id = item.id;
+  const document = await getRawDocument(client, input.documentId);
+  if (!document || document.status !== "active") throw new BookkeepingItemLockedError();
+  const sha256 = typeof document.sha256 === "string" ? document.sha256.trim().toLowerCase() : "";
+  const claims = input.coverageType === "evidence"
+    ? [allocationClaimKey("document", input.documentId),
+       ...(sha256 ? [allocationClaimKey("sha256", sha256)] : [])]
+    : [];
+  const shaCondition = document.sha256 === undefined
+    ? "attribute_not_exists(sha256)"
+    : "sha256 = :sha256";
   try {
     await transact(
       client,
@@ -766,16 +821,25 @@ export async function createDocumentLink(
         TransactItems: [
           { Put: { TableName: TABLE_BOOKKEEPING, Item: item, ConditionExpression: "attribute_not_exists(PK)" } },
           { ConditionCheck: { TableName: TABLE_BOOKKEEPING, Key: { PK: key("bookkeeping", input.transactionId), SK: key("bookkeeping", input.transactionId) }, ConditionExpression: "attribute_exists(PK)" } },
-          { Update: { TableName: TABLE_BOOKKEEPING, Key: { PK: documentKey(input.documentId), SK: documentKey(input.documentId) }, UpdateExpression: "SET updatedAt = :now ADD linkRefCount :one", ConditionExpression: "#status = :active", ExpressionAttributeNames: { "#status": "status" }, ExpressionAttributeValues: { ":one": 1, ":active": "active", ":now": now } } },
+          { Update: { TableName: TABLE_BOOKKEEPING, Key: { PK: documentKey(input.documentId), SK: documentKey(input.documentId) }, UpdateExpression: "SET updatedAt = :now ADD linkRefCount :one", ConditionExpression: `#status = :active AND ${shaCondition}`, ExpressionAttributeNames: { "#status": "status" }, ExpressionAttributeValues: { ":one": 1, ":active": "active", ":now": now, ...(document.sha256 === undefined ? {} : { ":sha256": document.sha256 }) } } },
+          ...claims.map((claim) => allocationClaimCheck(claim, input.transactionId, true)),
+          ...(input.coverageType === "evidence"
+            ? [evidenceSourceVersionUpdate("document", input.documentId),
+               ...(sha256 ? [evidenceSourceVersionUpdate("sha256", sha256)] : [])]
+            : []),
         ],
-      },
+      }, false, true,
     );
     return { outcome: "created", item: clean(item)! };
   } catch (error) {
-    if ((error as Error).name !== "TransactionCanceledException") throw error;
-    const existing = await getBookkeepingItem(client, "link", id);
+    if (!isConditionalMutationFailure(error)) throw error;
+    for (const claim of claims) {
+      const current = await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: claim, ConsistentRead: true }));
+      if (current.Item && current.Item.transactionId !== input.transactionId) throw new BookkeepingItemLockedError();
+    }
+    const existing = await getBookkeepingItem(client, "link", id, true);
     if (existing) return { outcome: "existing", item: existing };
-    throw error;
+    throw new BookkeepingItemLockedError();
   }
 }
 
@@ -783,15 +847,32 @@ export async function deleteDocumentLink(
   client: DynamoDBDocumentClient,
   link: BookkeepingItem,
 ) {
-  await transact(
-    client,
-    {
-      TransactItems: [
-        { Delete: { TableName: TABLE_BOOKKEEPING, Key: { PK: key("link", link.id), SK: key("link", link.id) }, ConditionExpression: "attribute_exists(PK)" } },
-        { Update: { TableName: TABLE_BOOKKEEPING, Key: { PK: documentKey(String(link.documentId)), SK: documentKey(String(link.documentId)) }, UpdateExpression: "SET updatedAt = :now ADD linkRefCount :minus", ConditionExpression: "linkRefCount > :zero", ExpressionAttributeValues: { ":minus": -1, ":zero": 0, ":now": new Date().toISOString() } } },
-      ],
-    },
-  );
+  const document = await getRawDocument(client, String(link.documentId));
+  if (!document) throw new BookkeepingItemLockedError();
+  const sha256 = typeof document.sha256 === "string" ? document.sha256.trim().toLowerCase() : "";
+  const shaCondition = document.sha256 === undefined
+    ? "attribute_not_exists(sha256)"
+    : "sha256 = :sha256";
+  const guard = link.coverageType === "evidence"
+    ? [allocationClaimCheck(allocationClaimKey("document", String(link.documentId)), String(link.transactionId), false),
+       evidenceSourceVersionUpdate("document", String(link.documentId)),
+       ...(sha256 ? [evidenceSourceVersionUpdate("sha256", sha256)] : [])]
+    : [];
+  try {
+    await transact(
+      client,
+      {
+        TransactItems: [
+          { Delete: { TableName: TABLE_BOOKKEEPING, Key: { PK: key("link", link.id), SK: key("link", link.id) }, ConditionExpression: "attribute_exists(PK)" } },
+          { Update: { TableName: TABLE_BOOKKEEPING, Key: { PK: documentKey(String(link.documentId)), SK: documentKey(String(link.documentId)) }, UpdateExpression: "SET updatedAt = :now ADD linkRefCount :minus", ConditionExpression: `linkRefCount > :zero AND ${shaCondition}`, ExpressionAttributeValues: { ":minus": -1, ":zero": 0, ":now": new Date().toISOString(), ...(document.sha256 === undefined ? {} : { ":sha256": document.sha256 }) } } },
+          ...guard,
+        ],
+      }, false, true,
+    );
+  } catch (error) {
+    if (isConditionalMutationFailure(error)) throw new BookkeepingItemLockedError();
+    throw error;
+  }
 }
 
 export async function addDocumentReportReference(

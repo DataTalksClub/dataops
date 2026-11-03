@@ -50,4 +50,4 @@ NODE_ENV=test \
 SKIP_AUTH=true \
 SPONSOR_FINANCE_ENABLED=true \
 node --import tsx --test --test-concurrency=1 --test-force-exit \
-  tests/vies-invoice-gate.ddb.ts tests/sponsor-finance-transaction.ddb.ts tests/sponsor-finance-payment-follow-up.ddb.ts tests/sponsor-finance-finom-task.ddb.ts tests/z-discovery-boundary.ddb.ts
+  tests/bookkeeping-allocation-link-guard.ddb.ts tests/vies-invoice-gate.ddb.ts tests/sponsor-finance-transaction.ddb.ts tests/sponsor-finance-payment-follow-up.ddb.ts tests/sponsor-finance-finom-task.ddb.ts tests/z-discovery-boundary.ddb.ts
