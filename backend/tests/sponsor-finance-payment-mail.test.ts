@@ -145,6 +145,7 @@ describe('ingestion', () => {
     assert.equal(result.candidate?.status, 'already-paid');
     assert.equal(result.candidate?.match?.dealId, 'deal-1');
     assert.ok((result.candidate?.match?.reasons || []).includes('already paid'));
+    assert.equal((result.candidate?.match as { outstanding?: string } | undefined)?.outstanding, undefined);
   });
 });
 
