@@ -13,6 +13,7 @@ export {
   parseFrontmatter,
   splitFrontmatter,
   splitlines,
+  stripBom,
 } from './parse';
 export {
   CodeViewParseError,

@@ -61,12 +61,17 @@ class ParseError(Exception):
 # ---------- frontmatter ----------
 
 def split_frontmatter(text: str) -> tuple[str, str]:
-    if not text.startswith("---\n"):
+    # An optional leading UTF-8 BOM is not content: normalize it before
+    # frontmatter matching so BOM-prefixed writes keep their stable
+    # frontmatter identity instead of deriving a different document ID.
+    # Without frontmatter the input is returned untouched.
+    normalized = text[1:] if text.startswith("\ufeff") else text
+    if not normalized.startswith("---\n"):
         return "", text
-    end = text.find("\n---\n", 4)
+    end = normalized.find("\n---\n", 4)
     if end == -1:
         return "", text
-    return text[4:end], text[end + 5 :]
+    return normalized[4:end], normalized[end + 5 :]
 
 
 def parse_frontmatter(raw: str) -> dict[str, Any]:

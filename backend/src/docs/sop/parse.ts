@@ -98,10 +98,22 @@ function strip(s: string): string {
 
 // ---------- frontmatter ----------
 
+/**
+ * An optional leading UTF-8 BOM (`\uFEFF`, produced when Markdown is saved
+ * as "UTF-8 with BOM") is not content: strip it before frontmatter matching
+ * so a BOM-prefixed write parses the same frontmatter — and keeps the same
+ * stable frontmatter `id` — as the identical bytes without a BOM. Without
+ * frontmatter the input is returned untouched.
+ */
+export function stripBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
 export function splitFrontmatter(text: string): [string, string] {
-  const block = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(text);
+  const normalized = stripBom(text);
+  const block = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(normalized);
   if (!block) return ['', text];
-  return [block[1], text.slice(block[0].length)];
+  return [block[1], normalized.slice(block[0].length)];
 }
 
 /**
