@@ -127,9 +127,9 @@ export async function handleKnowledgePublisher(
   const method = (event.httpMethod || 'GET').toUpperCase();
   const path = event.path || '/';
   if (method === 'POST' && path === '/api/templates/sync') return syncTemplates(client, claims);
-  const allowed = (method === 'GET' && (path === '/knowledge/manifest' || path === '/knowledge/history' || path === '/knowledge/version'))
+  const allowed = (method === 'GET' && (path === '/knowledge/manifest' || path === '/knowledge/history' || path === '/knowledge/version' || path === '/knowledge/download'))
     || (method === 'POST' && path === '/knowledge/publish');
-  if (!allowed) return response(403, { error: 'Knowledge publisher may only read the manifest, file history and file versions, publish knowledge files and sync workflow templates' });
+  if (!allowed) return response(403, { error: 'Knowledge publisher may only read the manifest, file history and versions, publish knowledge files and sync workflow templates' });
   const repo = claims.repository.split('/')[1];
   const result = await handleDocsRoutes(event, `git:${repo}@${claims.sha.slice(0, 12)}`, `Publish ${repo} ${claims.sha}`, undefined, client);
   return result || response(404, { error: 'Not found' });
