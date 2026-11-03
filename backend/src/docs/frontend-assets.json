@@ -224,6 +224,7 @@
     "src/surfaces/work-detail/route-state.js",
     "src/surfaces/work-detail/task-actions.js",
     "src/surfaces/work-detail/task-browser.js",
+    "src/surfaces/work-detail/task-checklist.js",
     "src/surfaces/work-detail/task-completion.js",
     "src/surfaces/work-detail/task-documents.js",
     "src/surfaces/work-detail/task-evidence.js",
