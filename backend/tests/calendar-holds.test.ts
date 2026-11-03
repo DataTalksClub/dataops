@@ -5,7 +5,7 @@ import { handler } from "../src/handler";
 import { createTables, startLocal, stopLocal } from "../scripts/local-dynamodb";
 import { getClient } from "../src/db/client";
 import { setCalendarHoldGoogleDepsForTests } from "../src/routes/calendarHolds";
-import { setDapierBrokerClientsForTests, DEFAULT_HOLD_GOOGLE_CALENDARS, resolveHoldGoogleCalendars } from "../src/calendar/dapierBroker";
+import { setDapierBrokerClientsForTests, DEFAULT_HOLD_GOOGLE_CALENDARS, PUBLIC_DTC_EVENTS_CALENDAR, resolveHoldGoogleCalendars } from "../src/calendar/dapierBroker";
 import { getCalendarHold, putCalendarHold } from "../src/db/calendarHolds";
 import { getTask } from "../src/db/tasks";
 import { getNotification } from "../src/db/notifications";
@@ -361,13 +361,10 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
   });
 
 
-  it("defaults Proposal mirrors to personal + DTC events calendars (SOP)", () => {
+  it("defaults Proposal mirrors to personal calendars only", () => {
     assert.deepEqual(resolveHoldGoogleCalendars(undefined), [...DEFAULT_HOLD_GOOGLE_CALENDARS]);
     assert.ok(DEFAULT_HOLD_GOOGLE_CALENDARS.includes("alexey.s.grigoriev@gmail.com"));
-    assert.ok(
-      DEFAULT_HOLD_GOOGLE_CALENDARS.some((id) => id.includes("group.calendar.google.com")),
-      "DTC events calendar id present",
-    );
+    assert.ok(!DEFAULT_HOLD_GOOGLE_CALENDARS.includes(PUBLIC_DTC_EVENTS_CALENDAR as any));
   });
 
 

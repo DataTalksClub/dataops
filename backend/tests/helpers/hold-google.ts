@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { DEFAULT_HOLD_GOOGLE_CALENDARS } from '../../src/calendar/dapierBroker';
+import { PUBLIC_DTC_EVENTS_CALENDAR } from '../../src/calendar/dapierBroker';
 import { HOLD_ORGANIZER } from '../../src/calendar/holdGoogleSync';
 
 export function holdGoogleProvider() {
@@ -21,7 +21,8 @@ export function holdGoogleProvider() {
     if (calendar === state.failCalendar) return Response.json({}, { status: 503 });
     const store = events.get(calendar) || new Map<string, any>();
     events.set(calendar, store);
-    if (method === 'GET' && !id) return Response.json({ items: [...store.values()].filter((e) => e.iCalUID === url.searchParams.get('iCalUID')) });
+    if (method === 'GET' && !id) return Response.json({ items: [...store.values()].filter((e) =>
+      !url.searchParams.has('iCalUID') || e.iCalUID === url.searchParams.get('iCalUID')) });
     if (method === 'GET') return Response.json(store.get(id!) || {}, { status: store.has(id!) ? 200 : 404 });
     if (method === 'POST' && id === 'import') {
       assert.equal(body.organizer.email, HOLD_ORGANIZER);
@@ -30,8 +31,7 @@ export function holdGoogleProvider() {
         // attendees ride along, including Orin's personal Gmail as a guest).
         // The DTC copy calendar is never invited from the organizer event;
         // copies are imported, never emailed.
-        const dtc = DEFAULT_HOLD_GOOGLE_CALENDARS.find((id) => id.includes('group.calendar.google.com'));
-        assert.ok(!(body.attendees || []).some((a: any) => a.email === dtc), 'organizer invite must not invite the DTC copy calendar');
+        assert.ok(!(body.attendees || []).some((a: any) => a.email === PUBLIC_DTC_EVENTS_CALENDAR), 'organizer invite must not invite the public calendar');
       } else {
         // Google only imports onto a calendar whose owner is the organizer or
         // an attendee: each copy imports its own target calendar as the sole
@@ -42,11 +42,22 @@ export function holdGoogleProvider() {
       store.set(event.id, event);
       return Response.json(event);
     }
+    if (method === 'POST' && !id) {
+      assert.equal(calendar, PUBLIC_DTC_EVENTS_CALENDAR, 'insert is reserved for standalone public events');
+      assert.ok(!('attendees' in body) || body.attendees.length === 0);
+      const event = { ...body, id: `event-${++sequence}` };
+      store.set(event.id, event);
+      return Response.json(event);
+    }
     if (method === 'PATCH') {
       assert.ok(store.has(id!));
       assert.ok(!('conferenceData' in body));
       const event = { ...store.get(id!), ...body };
       store.set(id!, event);
+      if (calendar === PUBLIC_DTC_EVENTS_CALENDAR) {
+        assert.equal(url.searchParams.get('sendUpdates'), 'none');
+        assert.ok(!('attendees' in body));
+      }
       if (calendar !== HOLD_ORGANIZER) {
         assert.equal(url.searchParams.get('sendUpdates'), 'none');
         assert.ok(!('attendees' in body));

@@ -16,9 +16,9 @@ import { dateFromTemplateOffset } from '../templates/cardTemplateProjection';
 import { confirmedHoldInvite, confirmedTitle, holdGuestAttendees, isPodcastInviteTitle, parseHoldDocumentUrl, podcastInviteTitle, HOLD_ATTENDEE_DENY_LIST, type CalendarHold } from './holds';
 import { listPodcastEpisodes, type PodcastEpisode } from '../db/podcastEpisodes';
 import { recordTemplateTypes } from '../cards/cardTitlePattern';
-import { createHoldGoogleEvents, deleteHoldGoogleEvents, findGoneGoogleEvents, syncLumaCalendarEvents, updateHoldGoogleEvents, type HoldGoogleDeps, type HoldGoogleResult } from './holdGoogleSync';
+import { createHoldGoogleEvents, deleteHoldGoogleEvents, fetchGoogleEvent, findGoneGoogleEvents, syncLumaCalendarEvents, updateHoldGoogleEvents, type HoldGoogleDeps, type HoldGoogleResult } from './holdGoogleSync';
 import { lumaUrlForEventCard } from './lumaEvents';
-import { resolveHoldGoogleCalendars } from './dapierBroker';
+import { PUBLIC_DTC_EVENTS_CALENDAR, resolveHoldGoogleCalendars } from './dapierBroker';
 
 /** AISHL workshops are scheduled by the AISHL site event, which sends its own invite and Zoom. */
 const AISHL_TEMPLATE_TYPE = 'aishl-workshop';
@@ -269,13 +269,15 @@ export async function syncCardInvite(
     ...(card.eventTime?.googleEventIds || {}),
     ...(linkedHold?.googleEventIds || {}),
   };
+  // A legacy public-calendar attendee copy is never part of the guest invite.
+  delete eventIds[PUBLIC_DTC_EVENTS_CALENDAR];
   // Podcast SOP: the confirmed invite is named for the guest, not the topic.
   // A hold linked to an episode Card keeps the topic in `topic` but confirms as
   // "<Guest> at DataTalks.Club Podcast", fixed in place (same Google event ids).
   const podcastTitle = await resolvePodcastCardInviteTitle(client, card, template);
   const inviteTitle = podcastTitle || linkedHold?.title || card.title || 'DataTalks.Club event';
   const lumaUrl = await lumaUrlForEventCard(client, card);
-  const silentLumaEvent = Boolean(lumaUrl && !linkedHold);
+  const silentLumaEvent = Boolean(lumaUrl && !linkedHold && template?.type !== 'podcast');
   if (silentLumaEvent && guests.length > 0) {
     throw new CardInviteInputError('Luma event Cards create silent calendar entries and do not send guest invitations.');
   }
@@ -302,17 +304,18 @@ export async function syncCardInvite(
   }
   const reserved = await updateCard(client, card.id, {
     expectedVersion: card.version,
-    patch: { eventTime: pending, ...(silentLumaEvent ? {} : { guestEmails: guests }) },
+    patch: { eventTime: pending, guestEmails: silentLumaEvent ? [] : guests },
   });
   const sync = silentLumaEvent
     ? await syncLumaCalendarEvents({
       eventKey,
       summary: card.title || 'DataTalks.Club event',
+      subtitle: card.description || undefined,
       startIso: interval.startIso,
       endIso: interval.endIso,
       timeZone: interval.timeZone,
       lumaUrl: lumaUrl!,
-    }, deps, eventIds)
+    }, deps, { ...(eventIds[PUBLIC_DTC_EVENTS_CALENDAR] ? { [PUBLIC_DTC_EVENTS_CALENDAR]: eventIds[PUBLIC_DTC_EVENTS_CALENDAR] } : {}) })
     : Object.keys(eventIds).length
       ? await updateHoldGoogleEvents(eventIds, invite!, deps)
       : await createHoldGoogleEvents(invite!, deps);
@@ -320,7 +323,12 @@ export async function syncCardInvite(
     const invites = [...(current.calendarInvites || [])];
     if (sync.state === 'synced') {
       const linkedEventIds = Object.entries(sync.eventIds).filter(([calendar]) =>
-        !silentLumaEvent || resolveHoldGoogleCalendars(deps.calendarIds).includes(calendar));
+        silentLumaEvent ? calendar === PUBLIC_DTC_EVENTS_CALENDAR : calendar !== PUBLIC_DTC_EVENTS_CALENDAR);
+      if (silentLumaEvent && sync.state === 'synced') {
+        for (let index = invites.length - 1; index >= 0; index--) {
+          if (invites[index].calendar === PUBLIC_DTC_EVENTS_CALENDAR) invites.splice(index, 1);
+        }
+      }
       for (const [calendar, eventId] of linkedEventIds) {
         const index = invites.findIndex(entry => entry.calendar === calendar && entry.eventId === eventId);
         const entry = {
@@ -433,7 +441,7 @@ export async function adoptCardInvite(
   deps: HoldGoogleDeps,
   actorId: string,
 ): Promise<{ card: Card; invite: CardCalendarInvite; taskClosure: InviteTaskClosureOutcome }> {
-  if (!resolveHoldGoogleCalendars(deps.calendarIds).includes(input.calendar)) {
+  if (input.calendar !== PUBLIC_DTC_EVENTS_CALENDAR && !resolveHoldGoogleCalendars(deps.calendarIds).includes(input.calendar)) {
     throw new CardInviteInputError(`Calendar ${input.calendar} is not one of the configured DataOps calendars.`);
   }
   const existing = (card.calendarInvites || []).find(invite =>
@@ -444,6 +452,15 @@ export async function adoptCardInvite(
   if (verified.state === 'deferred') throw new CardInviteGoogleError(verified.reason);
   if (verified.gone.length) {
     throw new CardInviteInputError(`Google event ${input.eventId} does not exist on ${input.calendar}.`);
+  }
+  if (input.calendar === PUBLIC_DTC_EVENTS_CALENDAR) {
+    const fetched = await fetchGoogleEvent(input.eventId, input.calendar, deps);
+    if (fetched.state !== 'ok') throw new CardInviteGoogleError(fetched.state === 'deferred' ? fetched.reason : 'The public calendar event is no longer available.');
+    const unsafe = fetched.event as typeof fetched.event & { conferenceData?: unknown };
+    const details = `${unsafe.description || ''}\n${unsafe.location || ''}`;
+    if (unsafe.attendees?.length || unsafe.conferenceData || /zoom\.us|ops\.dtcdev\.click/i.test(details)) {
+      throw new CardInviteInputError('The public DTC events calendar only accepts attendee-free entries without Zoom or internal document links.');
+    }
   }
 
   const now = new Date().toISOString();

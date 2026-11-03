@@ -19,7 +19,7 @@ import {
   HOLD_ORGANIZER,
   updateHoldGoogleEvents,
 } from '../calendar/holdGoogleSync';
-import { resolveHoldGoogleCalendars } from '../calendar/dapierBroker';
+import { PUBLIC_DTC_EVENTS_CALENDAR, resolveHoldGoogleCalendars } from '../calendar/dapierBroker';
 import { resolveInteractiveActor } from '../identity/actor';
 import {
   calendarInviteDeps,
@@ -246,8 +246,10 @@ async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocu
       throw error;
     }
   }
-  const sync = Object.keys(existing.googleEventIds || {}).length
-    ? await updateHoldGoogleEvents(existing.googleEventIds, invite, deps)
+  const inviteEventIds = Object.fromEntries(Object.entries(existing.googleEventIds || {})
+    .filter(([calendar]) => calendar !== PUBLIC_DTC_EVENTS_CALENDAR));
+  const sync = Object.keys(inviteEventIds).length
+    ? await updateHoldGoogleEvents(inviteEventIds, invite, deps)
     : await createHoldGoogleEvents(invite, deps);
   const stored = {
     ...next,
@@ -421,11 +423,20 @@ function googleEventView(event: any) {
   };
 }
 
+function publicCalendarWarnings(event: any): string[] {
+  const details = `${event.description || ''}\n${event.location || ''}`;
+  const warnings = [];
+  if (/zoom\.us|zoom\.com/i.test(details)) warnings.push('public_calendar_contains_zoom_link');
+  if (/ops\.dtcdev\.click/i.test(details)) warnings.push('public_calendar_contains_internal_link');
+  if ((event.attendees || []).length) warnings.push('public_calendar_contains_attendees');
+  return warnings;
+}
+
 /**
  * Read one Google event as it exists right now — by default on the organizer
- * calendar plus every configured hold calendar, or on `?calendar=` (one of
- * those). Read-only verification: invite label/link audits compare this
- * description against what DataOps last wrote.
+ * calendar, every configured personal calendar and the public DTC events
+ * calendar, or on `?calendar=` (one of those). Public entries include safety
+ * warnings when they expose Zoom/internal links or attendees.
  */
 async function googleEventRoute(eventId: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const actor = await resolveInteractiveActor(client, event, 'work-read');
@@ -433,7 +444,7 @@ async function googleEventRoute(eventId: string, event: LambdaEvent, client: Dyn
   const q = event.queryStringParameters || {};
   const calendar = String(q.calendar || '').trim();
   const deps = await calendarInviteDeps({}, client);
-  const allowed = [...new Set([HOLD_ORGANIZER, ...resolveHoldGoogleCalendars(deps.calendarIds)])];
+  const allowed = [...new Set([HOLD_ORGANIZER, PUBLIC_DTC_EVENTS_CALENDAR, ...resolveHoldGoogleCalendars(deps.calendarIds)])];
   const targets = calendar ? [calendar] : allowed;
   const unknown = targets.find((candidate) => !allowed.includes(candidate));
   if (unknown) {
@@ -444,7 +455,8 @@ async function googleEventRoute(eventId: string, event: LambdaEvent, client: Dyn
     const fetched = await fetchGoogleEvent(eventId, candidate, deps);
     events.push(
       fetched.state === 'ok'
-        ? { calendar: candidate, state: 'ok', event: googleEventView(fetched.event) }
+        ? { calendar: candidate, state: 'ok', event: googleEventView(fetched.event),
+            ...(candidate === PUBLIC_DTC_EVENTS_CALENDAR ? { warnings: publicCalendarWarnings(fetched.event) } : {}) }
         : fetched.state === 'gone'
           ? { calendar: candidate, state: 'gone' }
           : { calendar: candidate, state: 'deferred', reason: fetched.reason },

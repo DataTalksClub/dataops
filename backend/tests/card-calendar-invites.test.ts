@@ -10,7 +10,7 @@ import { createTemplate } from '../src/db/templates';
 import { createPodcastEpisode } from '../src/db/podcastEpisodes';
 import { EMPTY_TEMPLATE_ID, putEmptyTemplate } from './helpers/cardTemplate';
 import { setCalendarHoldGoogleDepsForTests } from '../src/routes/calendarHolds';
-import { DEFAULT_HOLD_GOOGLE_CALENDARS, setDapierBrokerClientsForTests } from '../src/calendar/dapierBroker';
+import { DEFAULT_HOLD_GOOGLE_CALENDARS, PUBLIC_DTC_EVENTS_CALENDAR, setDapierBrokerClientsForTests } from '../src/calendar/dapierBroker';
 import { getCardConsistent, updateCard } from '../src/db/cards';
 import { saveCalendarOverlaySettings } from '../src/db/calendar';
 import { holdGoogleProvider } from './helpers/hold-google';
@@ -68,7 +68,8 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
       patch: { calendarInvites: invites as any, ...(eventTime ? { eventTime: eventTime as any } : {}) },
     });
   }
-  const [PERSONAL, DTC] = DEFAULT_HOLD_GOOGLE_CALENDARS;
+  const [PERSONAL] = DEFAULT_HOLD_GOOGLE_CALENDARS;
+  const DTC = PUBLIC_DTC_EVENTS_CALENDAR;
 
   describe('list, unlink and stale check', () => {
     it('lists existing invites and adopts a live Google event idempotently', async () => {
@@ -93,7 +94,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
         });
         assert.strictEqual(again.statusCode, 200, again.body);
         assert.equal(parse(again).invites.filter((invite: any) => invite.eventId === 'manual-event').length, 1);
-        assert.equal(google.calls.filter(call => call.method === 'GET' && call.url.pathname.includes('/manual-event')).length, 1,
+        assert.equal(google.calls.filter(call => call.method === 'GET' && call.url.pathname.includes('/manual-event')).length, 2,
           'repeat adoption returns the linked event without another Google read');
         const missing = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, { eventId: 'missing-event', calendar: DTC });
         assert.strictEqual(missing.statusCode, 400, missing.body);
@@ -183,7 +184,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
       }
     });
 
-    it('deletes only the selected shared-calendar copy when event IDs match', async () => {
+    it('refuses to delete a public standalone event through the guest invite path', async () => {
       const card = await createCard('Selected calendar copy');
       const google = holdGoogleProvider();
       for (const calendar of [DTC, PERSONAL]) google.events.set(calendar, new Map([['same-id', { id: 'same-id' }]]));
@@ -194,21 +195,20 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
         const res = await invoke('DELETE', `/api/cards/${card.id}/calendar-invites`, {
           eventId: 'same-id', calendar: DTC, deleteEvent: true,
         });
-        assert.strictEqual(res.statusCode, 200, res.body);
-        assert.ok(!google.events.get(DTC)!.has('same-id'));
+        assert.strictEqual(res.statusCode, 409, res.body);
+        assert.ok(google.events.get(DTC)!.has('same-id'));
         assert.ok(google.events.get(PERSONAL)!.has('same-id'));
         const deletes = google.calls.filter(call => call.method === 'DELETE');
-        assert.strictEqual(deletes.length, 1);
-        assert.strictEqual(deletes[0].url.searchParams.get('sendUpdates'), 'none');
+        assert.strictEqual(deletes.length, 0);
         const stored = (await getCardConsistent(client, card.id))!;
-        assert.deepStrictEqual(stored.eventTime?.googleEventIds, { [PERSONAL]: 'same-id' });
-        assert.deepStrictEqual(stored.calendarInvites?.map(invite => invite.calendar), [PERSONAL]);
+        assert.deepStrictEqual(stored.eventTime?.googleEventIds, { [DTC]: 'same-id', [PERSONAL]: 'same-id' });
+        assert.deepStrictEqual(stored.calendarInvites?.map(invite => invite.calendar), [DTC, PERSONAL]);
       } finally {
         setCalendarHoldGoogleDepsForTests({});
       }
     });
 
-    it('keeps the invite when Google refuses the deletion', async () => {
+    it('keeps a public invite link when guest invite deletion is refused', async () => {
       const card = await createCard('Delete fails card');
       const google = holdGoogleProvider();
       google.state.failCalendar = DTC;
@@ -303,7 +303,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
       assert.match(parse(done).error, new RegExp(`dataops cards time ${card.id}`));
     });
 
-    it('needs live invites on both the DTC events and the personal calendar', async () => {
+    it('requires a live invite on the personal calendar', async () => {
       const { inviteTask, card } = await createWebinarStyleCard('Both-calendars card');
       await linkInvites(card.id, [{ eventId: 'only-dtc', calendar: DTC }, { eventId: 'gone', calendar: PERSONAL, staleAt: '2026-10-31T00:00:00.000Z' }]);
       const oneCalendar = await invoke('PUT', `/api/tasks/${inviteTask.id}`, { expectedVersion: inviteTask.version, status: 'done' });

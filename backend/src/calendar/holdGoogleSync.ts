@@ -2,9 +2,9 @@
  * Google mirroring for calendar holds, per SOP
  * `sop.events.calendar.creating-tentative-event-on-google-calendar`.
  *
- * A tentative hold creates `(Proposal) {title}` on each configured Google
- * calendar (DTC events + personal Alexey); confirm turns the mirror into the
- * guest invite — Zoom location + description, required attendees, window
+ * A tentative hold creates `(Proposal) {title}` on the organizer and each
+ * configured personal Google calendar; confirm turns the organizer mirror
+ * into the guest invite — Zoom location + description, required attendees, window
  * start −5 min, `sendUpdates=all`; never Google Meet (no conferenceData is
  * ever sent). Release deletes it. DataOps is the source of truth: when the broker
  * credential is unavailable the hold is still created locally and the Google
@@ -21,6 +21,7 @@ import {
   CONNECTION_OPERATOR_HINT,
   dapierTokenProblem,
   readDapierCredential,
+  PUBLIC_DTC_EVENTS_CALENDAR,
   resolveHoldGoogleCalendars,
 } from './dapierBroker';
 
@@ -174,6 +175,10 @@ async function syncEvents(
 ): Promise<HoldGoogleResult> {
   const eventIds = { ...existing };
   const deferred = (reason: string): HoldGoogleResult => ({ state: 'deferred', reason, eventIds });
+  const calendars = resolveHoldGoogleCalendars(deps.calendarIds);
+  if (calendars.includes(PUBLIC_DTC_EVENTS_CALENDAR) || eventIds[PUBLIC_DTC_EVENTS_CALENDAR]) {
+    return deferred('Guest invites and holds cannot be written to the public DTC events calendar.');
+  }
   const resolved = await accessToken(deps);
   if ('problem' in resolved) return deferred(resolved.problem);
   const headers = { Authorization: `Bearer ${resolved.token}`, 'Content-Type': 'application/json' };
@@ -200,7 +205,7 @@ async function syncEvents(
     }
     const calendars = resolveHoldGoogleCalendars(deps.calendarIds);
     if (calendars.includes('primary') || calendars.includes(HOLD_ORGANIZER)) {
-      return deferred('Hold calendars must name the DTC and personal calendars explicitly; primary is the Orin organizer calendar.');
+      return deferred('Hold calendars must name personal calendars explicitly; primary is the Orin organizer calendar.');
     }
     // Stable opaque UID enables recovery after partial writes without leaking the hold id.
     const uid = `${createHash('sha256').update(event.eventKey).digest('hex')}@google.com`;
@@ -300,30 +305,101 @@ export async function updateHoldGoogleEvents(
 export interface LumaCalendarEvent {
   eventKey: string;
   summary: string;
+  subtitle?: string;
   startIso: string;
   endIso: string;
   timeZone: string;
   lumaUrl: string;
 }
 
-/** Create silent DTC and personal copies using the same iCalendar identity as hold sync. */
+/**
+ * Public event copy rules. This path writes one standalone event owned by the
+ * public calendar, without attendees or conference data. Existing manual SOP
+ * entries are adopted by matching title, time and Luma URL before insertion.
+ */
 export async function syncLumaCalendarEvents(
   event: LumaCalendarEvent,
   deps: HoldGoogleDeps,
   existing: Record<string, string> = {},
 ): Promise<HoldGoogleResult> {
+  const eventIds = { ...existing };
+  const deferred = (reason: string): HoldGoogleResult => ({ state: 'deferred', reason, eventIds });
+  let lumaHost = '';
+  try { lumaHost = new URL(event.lumaUrl).hostname.toLowerCase().replace(/^www\./, ''); }
+  catch { /* invalid URL handled below */ }
+  if (!['luma.com', 'lu.ma'].some((domain) => lumaHost === domain || lumaHost.endsWith(`.${domain}`))) {
+    return deferred('Public calendar entries require a Luma event URL.');
+  }
+  const subtitle = event.subtitle?.trim() || '';
+  if (/zoom\.us|ops\.dtcdev\.click|conferenceData|passcode/i.test(subtitle)) {
+    return deferred('Public calendar subtitle contains private meeting or document details.');
+  }
+  const resolved = await accessToken(deps);
+  if ('problem' in resolved) return deferred(resolved.problem);
+  const headers = { Authorization: `Bearer ${resolved.token}`, 'Content-Type': 'application/json' };
+  const url = eventsUrl(PUBLIC_DTC_EVENTS_CALENDAR);
+  async function request(target: string, method = 'GET', body?: unknown): Promise<any> {
+    const response = await googleFetch(deps, target, {
+      method, headers, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) throw new Error(googleErrorDetail(response.status, await readBodyText(response, GOOGLE_ERROR_BODY_LIMIT)));
+    try { return await response.json(); }
+    catch { throw new Error('Google Calendar returned an unreadable response.'); }
+  }
+  try {
+    const account = await request(`${GOOGLE}/calendars/primary`);
+    if (account.id?.toLowerCase() !== HOLD_ORGANIZER) {
+      return deferred('Public event sync requires the Orin Google Calendar connection.');
+    }
+  } catch {
+    return deferred('Google Calendar public event sync could not verify the Orin connection.');
+  }
+  const start = { dateTime: event.startIso, timeZone: event.timeZone };
+  const end = { dateTime: event.endIso, timeZone: event.timeZone };
   const dataopsEventKey = createHash('sha256').update(event.eventKey).digest('hex');
-  return syncEvents({
-    eventKey: event.eventKey,
+  const body = {
     summary: event.summary,
-    description: `Luma event: ${event.lumaUrl}`,
-    location: event.lumaUrl,
-    attendees: [],
-    startIso: event.startIso,
-    endIso: event.endIso,
-    timeZone: event.timeZone,
+    description: [subtitle, `Stream: https://www.youtube.com/datatalksclub`, `Luma: ${event.lumaUrl}`].filter(Boolean).join('\n'),
+    location: 'https://www.youtube.com/datatalksclub',
+    start,
+    end,
     extendedProperties: { private: { dataopsEventKey } },
-  }, deps, existing);
+  };
+  if (/zoom\.us|ops\.dtcdev\.click|conferenceData|passcode/i.test(body.description)) {
+    return deferred('Public calendar entry contains private meeting or document details.');
+  }
+  try {
+    let current: any;
+    if (eventIds[PUBLIC_DTC_EVENTS_CALENDAR]) {
+      try { current = await request(`${url}/${encodeURIComponent(eventIds[PUBLIC_DTC_EVENTS_CALENDAR])}`); }
+      catch (error) {
+        if (!(error instanceof Error) || !/HTTP (404|410)/.test(error.message)) throw error;
+      }
+      if (current?.status === 'cancelled') current = undefined;
+    }
+    if (!current) {
+      const found = await request(`${url}?timeMin=${encodeURIComponent(event.startIso)}&timeMax=${encodeURIComponent(event.endIso)}&singleEvents=true&maxResults=250`);
+      const matches = (found.items || []).filter((item: any) =>
+        item.status !== 'cancelled' && item.summary === event.summary &&
+        Date.parse(item.start?.dateTime || '') === Date.parse(event.startIso) &&
+        Date.parse(item.end?.dateTime || '') === Date.parse(event.endIso) &&
+        item.location === body.location && String(item.description || '').includes(event.lumaUrl),
+      );
+      if (matches.length > 1) return deferred('Multiple matching public Luma entries exist; reconcile them before syncing.');
+      current = matches[0];
+    }
+    if (current?.attendees?.length || current?.conferenceData || /zoom\.us|ops\.dtcdev\.click/i.test(`${current?.description || ''}\n${current?.location || ''}`)) {
+      return deferred('The public calendar event has attendees or private meeting details; it was left untouched.');
+    }
+    const saved = current?.id
+      ? await request(`${url}/${encodeURIComponent(current.id)}?sendUpdates=none`, 'PATCH', body)
+      : await request(`${url}?sendUpdates=none`, 'POST', body);
+    if (!saved.id) return deferred('Google Calendar did not return the public event id.');
+    eventIds[PUBLIC_DTC_EVENTS_CALENDAR] = saved.id;
+    return { state: 'synced', eventIds };
+  } catch {
+    return deferred('Google Calendar public event sync could not complete; retry after checking the Orin connection.');
+  }
 }
 
 /** Cancel each copy; only the organizer sends cancellation notifications. */
@@ -331,6 +407,9 @@ export async function deleteHoldGoogleEvents(
   eventIds: Record<string, string>, deps: HoldGoogleDeps,
 ): Promise<HoldGoogleResult> {
   if (!Object.keys(eventIds).length) return { state: 'synced', eventIds };
+  if (eventIds[PUBLIC_DTC_EVENTS_CALENDAR]) {
+    return { state: 'deferred', reason: 'Public calendar entries are managed separately from holds and guest invites.', eventIds };
+  }
   const resolved = await accessToken(deps);
   if ('problem' in resolved) return { state: 'deferred', reason: resolved.problem, eventIds };
   try {

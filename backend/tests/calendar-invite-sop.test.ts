@@ -47,7 +47,7 @@ describe('calendar invite SOP contract', () => {
     await stopLocal();
   });
 
-  it('propose → confirm → release: Orin organizer, two calendar blocks, one normal invitation', async () => {
+  it('propose → confirm → release: Orin organizer, personal block, one normal invitation', async () => {
     const google = holdGoogleProvider();
     setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
     const created = await invoke('POST', '/api/calendar-holds', { ...input, title: `Proposed - ${input.title}` });
@@ -58,7 +58,7 @@ describe('calendar invite SOP contract', () => {
     assert.equal(hold.googleSync.state, 'synced', hold.googleSync.reason);
     assert.deepEqual(Object.keys(hold.googleEventIds).sort(), [HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS].sort());
     const proposals = [...google.events.values()].flatMap((store) => [...store.values()]);
-    assert.equal(proposals.length, 3, 'organizer source plus two target blocks');
+    assert.equal(proposals.length, 2, 'organizer source plus one personal block');
     assert.equal(new Set(proposals.map((e) => e.iCalUID)).size, 1);
     for (const [calendar, store] of google.events) {
       for (const event of store.values()) {
@@ -113,20 +113,20 @@ describe('calendar invite SOP contract', () => {
 
   it('recovers partial copies and a lost invitation response without duplicates', async () => {
     const google = holdGoogleProvider();
-    google.state.failCalendar = DEFAULT_HOLD_GOOGLE_CALENDARS[1];
+    google.state.failCalendar = DEFAULT_HOLD_GOOGLE_CALENDARS[0];
     setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
     const { hold } = await invoke('POST', '/api/calendar-holds', {
       ...input, title: 'Guest at DataTalks.Club Workshop', duration: 90,
     });
     assert.equal(hold.googleSync.state, 'deferred');
-    assert.equal(Object.keys(hold.googleEventIds).length, 2);
+    assert.equal(Object.keys(hold.googleEventIds).length, 1);
     google.state.failCalendar = '';
     google.state.loseInviteResponse = true;
     const first = await invoke('POST', `/api/calendar-holds/${hold.id}/confirm`);
     assert.equal(first.hold.googleSync.state, 'deferred');
     const retried = await invoke('POST', `/api/calendar-holds/${hold.id}/confirm`);
     assert.equal(retried.hold.googleSync.state, 'synced', retried.hold.googleSync.reason);
-    assert.equal(google.calls.filter((c) => c.method === 'POST' && c.url.pathname.endsWith('/import')).length, 3);
+    assert.equal(google.calls.filter((c) => c.method === 'POST' && c.url.pathname.endsWith('/import')).length, 2);
     assert.equal(google.calls.filter((c) => c.method === 'PATCH' && c.url.searchParams.get('sendUpdates') === 'all').length, 1);
     const organizer = [...google.events.get(HOLD_ORGANIZER)!.values()][0];
     assert.match(organizer.description, /Workshop document:/);

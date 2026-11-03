@@ -20,14 +20,14 @@ export const DAPIER_AGENT = 'personal-scheduler';
 export const DAPIER_SECRET_NAME = 'personal-scheduler.dapier-api-token';
 
 /**
- * SOP `sop.events.calendar.creating-tentative-event-on-google-calendar`:
- * every propose writes Proposal blocks on Alexey's personal calendar AND the
- * DataTalks.Club events calendar. Override with DATAOPS_HOLD_GOOGLE_CALENDARS
- * (comma-separated calendar ids) only when the defaults are wrong.
+ * Holds and guest invites are mirrored only to personal calendars. The public
+ * DTC events calendar contains standalone, attendee-free event listings.
+ * Override with DATAOPS_HOLD_GOOGLE_CALENDARS (comma-separated calendar ids)
+ * only when the personal calendar defaults are wrong.
  */
+export const PUBLIC_DTC_EVENTS_CALENDAR = 'f8qidjnq0jhscp8809k1eghs60@group.calendar.google.com';
 export const DEFAULT_HOLD_GOOGLE_CALENDARS = [
   'alexey.s.grigoriev@gmail.com',
-  'f8qidjnq0jhscp8809k1eghs60@group.calendar.google.com',
 ] as const;
 
 /** Orin day-to-day path when Google sync cannot mint a token. */
@@ -112,7 +112,7 @@ export async function readDapierCredential(explicit?: string): Promise<DapierCre
   };
 }
 
-/** Calendar ids for hold Proposal mirrors (SOP: personal + DTC events). */
+/** Calendar ids for hold Proposal mirrors (personal calendars only). */
 export function resolveHoldGoogleCalendars(explicit?: string[]): string[] {
   if (explicit && explicit.length) return explicit;
   const env = (process.env.DATAOPS_HOLD_GOOGLE_CALENDARS || '')

@@ -1,11 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { DEFAULT_HOLD_GOOGLE_CALENDARS } from '../src/calendar/dapierBroker';
+import { DEFAULT_HOLD_GOOGLE_CALENDARS, PUBLIC_DTC_EVENTS_CALENDAR } from '../src/calendar/dapierBroker';
 import {
   HOLD_ORGANIZER,
   createHoldGoogleEvents,
   deleteHoldGoogleEvents,
+  syncLumaCalendarEvents,
 } from '../src/calendar/holdGoogleSync';
 
 function captureGoogle() {
@@ -24,9 +25,17 @@ function captureGoogle() {
     const id = match![2] && decodeURIComponent(match![2]);
     const store = events.get(calendar) || new Map<string, any>();
     events.set(calendar, store);
-    if (method === 'GET' && !id) return Response.json({ items: [...store.values()].filter((e) => e.iCalUID === url.searchParams.get('iCalUID')) });
+    if (method === 'GET' && !id) return Response.json({ items: [...store.values()].filter((e) =>
+      !url.searchParams.has('iCalUID') || e.iCalUID === url.searchParams.get('iCalUID')) });
     if (method === 'GET') return Response.json(store.get(id!) || {}, { status: store.has(id!) ? 200 : 404 });
     if (method === 'POST' && id === 'import') {
+      const event = { ...body, id: `event-${++sequence}` };
+      store.set(event.id, event);
+      return Response.json(event);
+    }
+    if (method === 'POST' && !id) {
+      assert.equal(calendar, PUBLIC_DTC_EVENTS_CALENDAR);
+      assert.ok(!('attendees' in body));
       const event = { ...body, id: `event-${++sequence}` };
       store.set(event.id, event);
       return Response.json(event);
@@ -58,7 +67,7 @@ describe('hold google copies: importable payloads, silent copies', () => {
     assert.equal(sync.state, 'synced', JSON.stringify(sync));
     assert.deepEqual(Object.keys(sync.eventIds).sort(), [HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS].sort());
     const made = imports(google.calls);
-    assert.equal(made.length, 3);
+    assert.equal(made.length, 2);
     for (const call of made) {
       const calendar = decodeURIComponent(call.url.pathname.split('/')[4]);
       assert.equal(call.body.iCalUID, uid, 'copies share the organizer iCalUID');
@@ -99,7 +108,7 @@ describe('hold google copies: importable payloads, silent copies', () => {
     const patches = google.calls.filter((c) => c.method === 'PATCH');
     // A guestless proposal PATCHes only the copies (the organizer block
     // already matches, so the silent organizer PATCH is skipped).
-    assert.equal(patches.length, 2);
+    assert.equal(patches.length, 1);
     for (const patch of patches) {
       const calendar = decodeURIComponent(patch.url.pathname.split('/')[4]);
       if (calendar === HOLD_ORGANIZER) continue; // proposal PATCH not asserted here
@@ -111,7 +120,7 @@ describe('hold google copies: importable payloads, silent copies', () => {
     const released = await deleteHoldGoogleEvents(created.eventIds, deps(google.fetchImpl));
     assert.equal(released.state, 'synced');
     const deletes = google.calls.filter((c) => c.method === 'DELETE');
-    assert.equal(deletes.length, 3);
+    assert.equal(deletes.length, 2);
     for (const del of deletes) {
       const calendar = decodeURIComponent(del.url.pathname.split('/')[4]);
       assert.equal(del.url.searchParams.get('sendUpdates'), calendar === HOLD_ORGANIZER ? 'all' : 'none');
@@ -119,5 +128,68 @@ describe('hold google copies: importable payloads, silent copies', () => {
     // Organizer copy is cancelled last so guests see one cancellation.
     assert.ok(decodeURIComponent(deletes[deletes.length - 1].url.pathname).includes(HOLD_ORGANIZER));
     assert.ok([...google.events.values()].every((store) => store.size === 0), 'release deletes all copies');
+  });
+
+  it('refuses a public calendar in the guest invite target set', async () => {
+    const google = captureGoogle();
+    const result = await createHoldGoogleEvents(proposal(['guest@example.com']), {
+      ...deps(google.fetchImpl), calendarIds: [PUBLIC_DTC_EVENTS_CALENDAR],
+    });
+    assert.equal(result.state, 'deferred');
+    assert.match(result.reason, /cannot be written to the public DTC events calendar/i);
+    assert.equal(google.calls.length, 0);
+  });
+
+  it('writes and adopts only attendee-free YouTube/Luma public entries', async () => {
+    const google = captureGoogle();
+    const event = {
+      eventKey: 'card:public-event', summary: 'Public event', subtitle: 'A public subtitle',
+      startIso: '2026-11-12T16:00:00.000Z', endIso: '2026-11-12T17:00:00.000Z',
+      timeZone: 'Europe/Berlin', lumaUrl: 'https://luma.com/public-event',
+    };
+    const created = await syncLumaCalendarEvents(event, deps(google.fetchImpl));
+    assert.equal(created.state, 'synced');
+    const eventId = created.eventIds[PUBLIC_DTC_EVENTS_CALENDAR];
+    const saved = google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.get(eventId)!;
+    assert.equal(saved.location, 'https://www.youtube.com/datatalksclub');
+    assert.match(saved.description, /A public subtitle/);
+    assert.match(saved.description, /Stream: https:\/\/www\.youtube\.com\/datatalksclub/);
+    assert.match(saved.description, /Luma: https:\/\/luma\.com\/public-event/);
+    assert.ok(!saved.attendees);
+    assert.equal(google.events.get(HOLD_ORGANIZER)?.size || 0, 0);
+    assert.equal(google.events.get(DEFAULT_HOLD_GOOGLE_CALENDARS[0])?.size || 0, 0);
+    assert.equal(google.calls.filter((call) => call.method === 'POST' && call.url.pathname.endsWith('/events')).length, 1);
+
+    google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.delete(eventId);
+    google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.set('manual-sop-copy', {
+      id: 'manual-sop-copy', status: 'confirmed', summary: event.summary,
+      description: `Subtitle\nStream: https://www.youtube.com/datatalksclub\nLuma: ${event.lumaUrl}`,
+      location: 'https://www.youtube.com/datatalksclub',
+      start: { dateTime: event.startIso, timeZone: event.timeZone }, end: { dateTime: event.endIso, timeZone: event.timeZone },
+    });
+    const adopted = await syncLumaCalendarEvents(event, deps(google.fetchImpl));
+    assert.equal(adopted.eventIds[PUBLIC_DTC_EVENTS_CALENDAR], 'manual-sop-copy');
+    assert.equal(google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.size, 1, 'manual SOP entry is updated, not duplicated');
+  });
+
+  it('leaves a public event with guests or Zoom details untouched', async () => {
+    const google = captureGoogle();
+    const event = {
+      eventKey: 'card:unsafe-public-event', summary: 'Unsafe event',
+      startIso: '2026-11-12T16:00:00.000Z', endIso: '2026-11-12T17:00:00.000Z',
+      timeZone: 'Europe/Berlin', lumaUrl: 'https://luma.com/unsafe-event',
+    };
+    google.events.set(PUBLIC_DTC_EVENTS_CALENDAR, new Map([['unsafe-live-copy', {
+      id: 'unsafe-live-copy', summary: event.summary,
+      description: `Zoom link: https://zoom.us/j/123\nLuma: ${event.lumaUrl}`,
+      location: 'https://www.youtube.com/datatalksclub',
+      start: { dateTime: event.startIso }, end: { dateTime: event.endIso },
+      attendees: [{ email: 'guest@example.com' }],
+    }]]));
+    const result = await syncLumaCalendarEvents(event, deps(google.fetchImpl));
+    assert.equal(result.state, 'deferred');
+    assert.match(result.reason, /attendees or private meeting details/i);
+    assert.equal(google.calls.some((call) => call.url.pathname.includes('/events') && (call.method === 'PATCH' || call.method === 'POST')), false);
+    assert.match(google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.get('unsafe-live-copy')!.description, /zoom\.us/);
   });
 });

@@ -856,8 +856,8 @@ export async function expireHolds(args, io) {
 
 /**
  * Read one Google event back as it exists right now: the organizer calendar
- * plus every configured hold calendar, or only --calendar. Invite
- * verification audits this description against what DataOps last wrote.
+ * plus every configured hold calendar and the public DTC events calendar, or
+ * only --calendar. Public-copy safety warnings are shown alongside the event.
  */
 export async function googleEvent(args, io) {
   const eventId = args._[0];
@@ -882,6 +882,14 @@ export async function googleEvent(args, io) {
       if (event.location) io.print(`    location: ${event.location}`);
       const guests = (event.attendees || []).map((a) => a.email).filter(Boolean);
       if (guests.length > 0) io.print(`    attendees: ${guests.join(", ")}`);
+      for (const warning of entry.warnings || []) {
+        const message = {
+          public_calendar_contains_zoom_link: "the public calendar copy contains a Zoom link",
+          public_calendar_contains_internal_link: "the public calendar copy contains an internal link",
+          public_calendar_contains_attendees: "the public calendar copy contains attendees",
+        }[warning] || warning;
+        io.print(`    WARNING: ${message}`);
+      }
     } else if (entry.state === "gone") {
       io.print(`  ${entry.calendar}: gone (Google reports the event missing or cancelled)`);
     } else {
