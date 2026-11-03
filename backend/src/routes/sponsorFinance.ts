@@ -19,6 +19,7 @@ import {
   receivePayment,
   correctReceipt,
   updateReceiptConversion,
+  updateReceiptMetadata,
   attachPaymentEvidence,
   recordSettlementAdjustment,
   removeSettlementAdjustment,
@@ -131,6 +132,32 @@ export async function handleSponsorFinanceRoutes(
       const statusCode = Number((error as { statusCode?: number }).statusCode || 503);
       if (statusCode >= 500) recordRequestError(error);
       return json(statusCode, { error: statusCode >= 500 ? 'Receipt conversion update failed; retry' : (error as Error).message });
+    }
+  }
+  const metadata = path.match(/^\/api\/sponsor-crm\/finance\/receipts\/([^/]+)\/metadata$/);
+  if (metadata) {
+    if (method !== 'PUT') return json(405, { error: 'Method not allowed' });
+    const body = parse(event);
+    if (!body) return json(400, { error: 'Invalid request' });
+    try {
+      const actor = await financeActor(client, header(event, 'x-user-id'), true);
+      const idempotencyKey = header(event, 'idempotency-key');
+      if (typeof body.expectedUpdatedAt !== 'string' || typeof body.counterparty !== 'string'
+        || typeof body.description !== 'string' || !idempotencyKey) {
+        return json(400, { error: 'expectedUpdatedAt, counterparty, description and Idempotency-Key are required' });
+      }
+      return json(200, await updateReceiptMetadata(client, {
+        actorId: actor.id,
+        sourceId: metadata[1],
+        expectedUpdatedAt: body.expectedUpdatedAt,
+        idempotencyKey,
+        counterparty: body.counterparty,
+        description: body.description,
+      }));
+    } catch (error) {
+      const statusCode = Number((error as { statusCode?: number }).statusCode || 503);
+      if (statusCode >= 500) recordRequestError(error);
+      return json(statusCode, { error: statusCode >= 500 ? 'Receipt metadata update failed; retry' : (error as Error).message });
     }
   }
   const match = path.match(/^\/api\/sponsor-crm\/deals\/([^/]+)\/finance(?:\/(.*))?$/);

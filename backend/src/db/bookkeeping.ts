@@ -48,10 +48,81 @@ const clean = cleanItem<BookkeepingItem>;
 const raw = (item?: Record<string, unknown>) => item || null;
 let testTransactionLock = Promise.resolve();
 
+export type BookkeepingTransactItem = NonNullable<
+  ConstructorParameters<typeof TransactWriteCommand>[0]["TransactItems"]
+>[number];
+
+export function bookkeepingItemId(unique?: string) {
+  return unique ? createHash("sha256").update(unique).digest("hex") : randomUUID();
+}
+
+function testConditionMatches(
+  expression: string | undefined,
+  item: Record<string, unknown> | undefined,
+  names: Record<string, string> = {},
+  values: Record<string, unknown> = {},
+) {
+  if (!expression) return true;
+  const tokens = expression.match(/attribute_not_exists|attribute_exists|AND\b|OR\b|<>|<=|>=|=|<|>|\(|\)|[^\s()]+/gi) || [];
+  let cursor = 0;
+  const attribute = (token: string) => names[token] || token;
+  const value = (token: string) => token.startsWith(":") ? values[token] : item?.[attribute(token)];
+  const parseOr = (): boolean => {
+    let result = parseAnd();
+    while (tokens[cursor]?.toUpperCase() === "OR") {
+      cursor += 1;
+      const right = parseAnd();
+      result = result || right;
+    }
+    return result;
+  };
+  const parseAnd = (): boolean => {
+    let result = parsePrimary();
+    while (tokens[cursor]?.toUpperCase() === "AND") {
+      cursor += 1;
+      const right = parsePrimary();
+      result = result && right;
+    }
+    return result;
+  };
+  const parsePrimary = (): boolean => {
+    const token = tokens[cursor++];
+    if (token === "(") {
+      const result = parseOr();
+      if (tokens[cursor++] !== ")") throw new Error(`Unsupported test condition: ${expression}`);
+      return result;
+    }
+    if (token === "attribute_exists" || token === "attribute_not_exists") {
+      if (tokens[cursor++] !== "(") throw new Error(`Unsupported test condition: ${expression}`);
+      const path = attribute(tokens[cursor++]);
+      if (tokens[cursor++] !== ")") throw new Error(`Unsupported test condition: ${expression}`);
+      const exists = item?.[path] !== undefined;
+      return token === "attribute_exists" ? exists : !exists;
+    }
+    const operator = tokens[cursor++];
+    const rightToken = tokens[cursor++];
+    if (!["=", "<>", "<", ">", "<=", ">="].includes(operator || "") || !rightToken)
+      throw new Error(`Unsupported test condition: ${expression}`);
+    const leftValue = item?.[attribute(token)];
+    const rightValue = value(rightToken);
+    if (operator === "=") return leftValue !== undefined && leftValue === rightValue;
+    if (operator === "<>") return leftValue !== undefined && leftValue !== rightValue;
+    if (leftValue === undefined || rightValue === undefined) return false;
+    if (operator === "<") return Number(leftValue) < Number(rightValue);
+    if (operator === ">") return Number(leftValue) > Number(rightValue);
+    if (operator === "<=") return Number(leftValue) <= Number(rightValue);
+    return Number(leftValue) >= Number(rightValue);
+  };
+  const matched = parseOr();
+  if (cursor !== tokens.length) throw new Error(`Unsupported test condition: ${expression}`);
+  return matched;
+}
+
 async function transact(
   client: DynamoDBDocumentClient,
   input: ConstructorParameters<typeof TransactWriteCommand>[0],
   reportCounterOnly = false,
+  preflightAtomicTestFallback = false,
 ) {
   const guarded = [...(input.TransactItems || [])];
   const protectedSources = new Set<string>();
@@ -89,33 +160,55 @@ async function transact(
     testTransactionLock = new Promise<void>((resolve) => (release = resolve));
     await previous;
     try {
-      for (const action of input.TransactItems || []) {
-        if (action.Put?.ConditionExpression?.includes("attribute_not_exists")) {
-          const existing = await client.send(
-            new GetCommand({ TableName: action.Put.TableName, Key: { PK: action.Put.Item!.PK, SK: action.Put.Item!.SK }, ConsistentRead: true }),
-          );
-          if (existing.Item) throw new Error("Conditional check failed");
+      const actions = input.TransactItems || [];
+      if (preflightAtomicTestFallback) {
+        for (const action of actions) {
+          const write = action.Put || action.Update || action.Delete || action.ConditionCheck;
+          if (!write) continue;
+          const itemKey = action.Put
+            ? { PK: action.Put.Item!.PK, SK: action.Put.Item!.SK }
+            : "Key" in write ? write.Key : undefined;
+          if (!itemKey) continue;
+          const result = await client.send(new GetCommand({ TableName: write.TableName, Key: itemKey, ConsistentRead: true }));
+          const condition = write.ConditionExpression;
+          if (!testConditionMatches(condition, result.Item as Record<string, unknown> | undefined,
+            write.ExpressionAttributeNames as Record<string, string> | undefined,
+            write.ExpressionAttributeValues as Record<string, unknown> | undefined)) {
+            throw new Error("Conditional check failed");
+          }
+        }
+      } else {
+        for (const action of actions) {
+          if (action.Put?.ConditionExpression?.includes("attribute_not_exists")) {
+            const existing = await client.send(
+              new GetCommand({ TableName: action.Put.TableName, Key: { PK: action.Put.Item!.PK, SK: action.Put.Item!.SK }, ConsistentRead: true }),
+            );
+            if (existing.Item) throw new Error("Conditional check failed");
+          }
+        }
+        for (const action of actions) {
+          if (action.ConditionCheck) {
+            const result = await client.send(
+              new GetCommand({
+                TableName: action.ConditionCheck.TableName,
+                Key: action.ConditionCheck.Key,
+                ConsistentRead: true,
+              }),
+            );
+            const expression = action.ConditionCheck.ConditionExpression || "";
+            const values = action.ConditionCheck.ExpressionAttributeValues || {};
+            const valid = expression === "attribute_not_exists(PK)"
+              ? !result.Item
+              : expression.includes("updatedAt = :expected")
+                ? result.Item?.updatedAt === values[":expected"]
+                  && (result.Item?.voidStatus === undefined || result.Item?.voidStatus !== values[":voided"])
+                : !!result.Item;
+            if (!valid) throw new Error("Conditional check failed");
+          }
         }
       }
-      for (const action of input.TransactItems || []) {
-        if (action.ConditionCheck) {
-          const result = await client.send(
-            new GetCommand({
-              TableName: action.ConditionCheck.TableName,
-              Key: action.ConditionCheck.Key,
-              ConsistentRead: true,
-            }),
-          );
-          const expression = action.ConditionCheck.ConditionExpression || "";
-          const values = action.ConditionCheck.ExpressionAttributeValues || {};
-          const valid = expression === "attribute_not_exists(PK)"
-            ? !result.Item
-            : expression.includes("updatedAt = :expected")
-              ? result.Item?.updatedAt === values[":expected"]
-                && (result.Item?.voidStatus === undefined || result.Item?.voidStatus !== values[":voided"])
-              : !!result.Item;
-          if (!valid) throw new Error("Conditional check failed");
-        } else if (action.Put) await client.send(new PutCommand(action.Put));
+      for (const action of actions) {
+        if (action.Put) await client.send(new PutCommand(action.Put));
         else if (action.Update) await client.send(new UpdateCommand(action.Update));
         else if (action.Delete) await client.send(new DeleteCommand(action.Delete));
       }
@@ -141,10 +234,7 @@ export async function putBookkeepingItem(
   value: Record<string, unknown>,
   unique?: string,
 ): Promise<{ item: BookkeepingItem; duplicate: boolean }> {
-  const id = String(
-    value.id ||
-      (unique ? createHash("sha256").update(unique).digest("hex") : randomUUID()),
-  );
+  const id = String(value.id || bookkeepingItemId(unique));
   const now = new Date().toISOString();
   const item = {
     PK: key(kind, id),
@@ -174,6 +264,37 @@ export async function putBookkeepingItem(
     );
     return { item: clean(existing.Item as Record<string, unknown>)!, duplicate: true };
   }
+}
+
+/** Create a ledger row and its allocation evidence/claims in one write. */
+export async function putBookkeepingTransactionWithItems(
+  client: DynamoDBDocumentClient,
+  value: Record<string, unknown>,
+  relatedItems: BookkeepingTransactItem[],
+  unique?: string,
+) {
+  const id = String(value.id || bookkeepingItemId(unique));
+  const now = new Date().toISOString();
+  const item = {
+    PK: key("bookkeeping", id),
+    SK: key("bookkeeping", id),
+    ...value,
+    id,
+    createdAt: value.createdAt || now,
+    updatedAt: now,
+  };
+  try {
+    await transact(client, {
+      TransactItems: [
+        { Put: { TableName: TABLE_BOOKKEEPING, Item: item, ConditionExpression: "attribute_not_exists(PK)" } },
+        ...relatedItems,
+      ],
+    }, false, true);
+  } catch (error) {
+    if (isConditionalMutationFailure(error)) throw new BookkeepingItemLockedError();
+    throw error;
+  }
+  return clean(item)!;
 }
 
 export async function getBookkeepingItem(
@@ -328,6 +449,7 @@ export async function updateBookkeepingTransaction(
   value: Record<string, unknown>,
   expectedVoidStatus: "active" | "voided" = "active",
   expectedRelatedTransaction?: { id: string; updatedAt: string },
+  additionalTransactItems: BookkeepingTransactItem[] = [],
 ) {
   const now = new Date().toISOString();
   const names: Record<string, string> = {};
@@ -336,12 +458,21 @@ export async function updateBookkeepingTransaction(
     ":now": now,
     ":voided": "voided",
   };
-  const sets = Object.entries(value)
-    .filter(([name]) => !["id", "createdAt", "updatedAt", "PK", "SK"].includes(name))
+  const writableFields = Object.entries(value)
+    .filter(([name]) => !["id", "createdAt", "updatedAt", "PK", "SK"].includes(name));
+  const sets = writableFields
+    .filter(([, child]) => child !== undefined)
     .map(([name, child], index) => {
       names[`#field${index}`] = name;
       values[`:value${index}`] = child;
       return `#field${index} = :value${index}`;
+    });
+  const removes = writableFields
+    .filter(([, child]) => child === undefined)
+    .map(([name], index) => {
+      const alias = `#remove${index}`;
+      names[alias] = name;
+      return alias;
     });
   try {
     await transact(client, {
@@ -349,7 +480,7 @@ export async function updateBookkeepingTransaction(
         Update: {
           TableName: TABLE_BOOKKEEPING,
           Key: { PK: key("bookkeeping", id), SK: key("bookkeeping", id) },
-          UpdateExpression: `SET ${sets.join(", ")}, updatedAt = :now`,
+          UpdateExpression: `SET ${[...sets, "updatedAt = :now"].join(", ")}${removes.length ? ` REMOVE ${removes.join(", ")}` : ""}`,
           ConditionExpression: expectedVoidStatus === "voided"
             ? "updatedAt = :expected AND voidStatus = :voided"
             : "updatedAt = :expected AND (attribute_not_exists(voidStatus) OR voidStatus <> :voided)",
@@ -363,8 +494,8 @@ export async function updateBookkeepingTransaction(
           ConditionExpression: "updatedAt = :expected AND (attribute_not_exists(voidStatus) OR voidStatus <> :voided)",
           ExpressionAttributeValues: { ":expected": expectedRelatedTransaction.updatedAt, ":voided": "voided" },
         },
-      }] : [])],
-    });
+      }] : []), ...additionalTransactItems],
+    }, false, additionalTransactItems.length > 0);
   } catch (error) {
     if (isConditionalMutationFailure(error))
       throw new BookkeepingItemLockedError();
@@ -586,7 +717,7 @@ export async function removePendingDocumentClaim(
 }
 
 export function documentLinkItem(
-  input: { documentId: string; transactionId: string; coverageType: string },
+  input: { documentId: string; transactionId: string; coverageType: string; allocationManaged?: boolean },
   now = new Date().toISOString(),
 ) {
   const id = createHash("sha256")
@@ -599,6 +730,7 @@ export function documentLinkItem(
     documentId: input.documentId,
     transactionId: input.transactionId,
     coverageType: input.coverageType,
+    ...(input.allocationManaged ? { allocationManaged: true } : {}),
     createdAt: now,
     updatedAt: now,
   };

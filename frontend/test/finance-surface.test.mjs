@@ -534,6 +534,38 @@ describe("Finance surface boundary", () => {
     assert.equal(sponsorControl.focused, true);
   });
 
+  test("loads classified bank-only owner rows into the internal bookkeeping table", async () => {
+    const { document, finance, requests } = createHarness({
+      request: async (url) => {
+        const path = requestPath(url);
+        if (["/api/bookkeeping/transactions", "/api/bookkeeping/documents", "/api/bookkeeping/links",
+          "/api/bookkeeping/accounts", "/api/bookkeeping/reports", "/api/bookkeeping/invoices"].includes(path))
+          return { items: [] };
+        if (path === "/api/reconcile/months/2026-08") return { rows: [{
+          id: "synthetic-owner-row",
+          date: "2026-08-12",
+          counterparty: "Synthetic Owner Transfer",
+          description: "Synthetic private withdrawal",
+          amount: "-44.25",
+          currency: "EUR",
+          bank: { key: "synthetic-bank-owner-row", accountId: "synthetic-account", date: "2026-08-12",
+            amount: "-44.25", currency: "EUR", counterparty: "Synthetic Owner Transfer" },
+          exception: { kind: "owner_withdrawal", satisfied: true },
+        }] };
+        if (path === "/api/finance/summary") return { entries: [], months: [], totals: {} };
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    });
+
+    await finance.renderBookkeepingSurface();
+    await settle();
+    const ledger = document.surface.querySelector(".bookkeeping-ledger");
+    assert.match(ledger.innerHTML, /data-bank-only="synthetic-bank-owner-row"/);
+    assert.match(ledger.innerHTML, /Synthetic Owner Transfer[\s\S]*Owner withdrawal · confirmed/);
+    assert.doesNotMatch(ledger.innerHTML, /data-tx="synthetic-owner-row"|data-inline-field=/);
+    assert.ok(requests.some(({ url }) => requestPath(url) === "/api/reconcile/months/2026-08"));
+  });
+
   test("keeps sponsor alert failures truthful and retries pages without duplicates", async () => {
     let notificationRequestCount = 0;
     let continuationOnline = false;

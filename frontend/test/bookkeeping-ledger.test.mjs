@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   accountOf,
   accountsOf,
+  bankOnlyEntryFromMonthRow,
   eurValue,
   filterEntries,
   filtersFromParams,
@@ -142,6 +143,82 @@ test("the table renders one compact row per transaction without changing stored 
   assert.match(markup, /Invoice<\/th>/);
   assert.match(markup, /out <span class="dk-mono">−€86\.00/);
   assert.equal(JSON.stringify(rows), before);
+});
+
+test("allocated invoices render as visible child rows while month totals count the bank payment once", () => {
+  const payment = {
+    id: "synthetic-payment",
+    transactionDate: "2026-09-30",
+    paidDate: "2026-10-05",
+    counterparty: "Synthetic Card Settlement",
+    description: "Combined payment",
+    amount: "123.00",
+    currency: "EUR",
+    entryType: "expense",
+    allocations: [
+      { id: "alloc-100", documentId: "invoice-100", counterparty: "Synthetic Compute GmbH", description: "Dedicated cluster", amount: "100.00", currency: "EUR", category: "Infrastructure" },
+      { id: "alloc-20", documentId: "invoice-20", counterparty: "Synthetic Domain Ltd", description: "Domain renewal", amount: "20.00", currency: "EUR", category: "Domains" },
+      { id: "alloc-3", documentId: "invoice-3", counterparty: "Synthetic Mail BV", description: "Email service", amount: "3.00", currency: "EUR", category: "Services" },
+    ],
+  };
+  const groups = groupByMonth([payment]);
+  const documents = new Map(payment.allocations.map((allocation) => [allocation.documentId, {
+    id: allocation.documentId,
+    status: "active",
+    documentType: "receipt",
+    originalFilename: `${allocation.documentId}.pdf`,
+  }]));
+  const markup = ledgerTableMarkup({
+    groups,
+    hasEvidence: () => true,
+    hasInvoice: () => [],
+    getAllocationDocument: (_entry, allocation) => documents.get(allocation.documentId),
+    vocab: {},
+    selectedId: "",
+    e: escapeHtml,
+  });
+
+  assert.equal(groups[0].month, "2026-10", "the child rows follow the payment month");
+  assert.equal(groups[0].entries.length, 1, "one persisted bank payment remains one month entry");
+  assert.equal(groups[0].moneyOut, -123, "the month total counts the parent payment once");
+  assert.equal((markup.match(/class="bk-row/g) || []).length, 4, "one parent and three visible invoice rows");
+  assert.match(markup, /Synthetic Card Settlement/);
+  assert.match(markup, /Synthetic Compute GmbH[\s\S]*Dedicated cluster[\s\S]*−€100\.00/);
+  assert.match(markup, /Synthetic Domain Ltd[\s\S]*Domain renewal[\s\S]*−€20\.00/);
+  assert.match(markup, /Synthetic Mail BV[\s\S]*Email service[\s\S]*−€3\.00/);
+  for (const allocation of payment.allocations) {
+    assert.match(markup, new RegExp(`data-allocation-document="${allocation.documentId}"`));
+    assert.match(markup, new RegExp(`data-view-document="${allocation.documentId}"`));
+  }
+  assert.match(markup, /data-tx="synthetic-payment"/, "the original payment still opens in the detail panel");
+});
+
+test("classified owner, fee, and TK statement rows stay visible without becoming editable ledger records", () => {
+  const monthRows = [
+    { id: "owner", date: "2026-10-07", counterparty: "Synthetic Owner Transfer", description: "Synthetic private withdrawal",
+      amount: "-44.25", currency: "EUR", bank: { key: "bank-owner", accountId: "synthetic-account", date: "2026-10-07", amount: "-44.25", currency: "EUR", counterparty: "Synthetic Owner Transfer" },
+      exception: { kind: "owner_withdrawal", satisfied: true } },
+    { id: "fee", date: "2026-10-08", counterparty: "Synthetic Bank", description: "Monthly account fee",
+      amount: "-2.00", currency: "EUR", bank: { key: "bank-fee", accountId: "synthetic-account", date: "2026-10-08", amount: "-2.00", currency: "EUR", counterparty: "Synthetic Bank" },
+      exception: { kind: "bank_fee", satisfied: true } },
+    { id: "tk", date: "2026-10-09", counterparty: "Synthetic Health Fund", description: "Synthetic health insurance debit",
+      amount: "-10.00", currency: "EUR", bank: { key: "bank-tk", accountId: "synthetic-account", date: "2026-10-09", amount: "-10.00", currency: "EUR", counterparty: "Synthetic Health Fund" },
+      exception: { kind: "tk_debit", satisfied: true } },
+  ];
+  const projected = monthRows.map(bankOnlyEntryFromMonthRow);
+  assert.deepEqual(projected.map((entry) => entry.category), ["Owner withdrawal", "Bank fee", "TK health insurance debit"]);
+  const groups = groupByMonth(projected);
+  assert.equal(groups[0].month, "2026-10");
+  assert.equal(groups[0].entries.length, 3);
+  assert.equal(groups[0].moneyOut, -56.25);
+  const markup = ledgerTableMarkup({ groups, hasEvidence: () => true, vocab: {}, selectedId: "", e: escapeHtml });
+  assert.equal((markup.match(/data-bank-only=/g) || []).length, 3);
+  assert.match(markup, /Synthetic Owner Transfer[\s\S]*Owner withdrawal · confirmed/);
+  assert.match(markup, /Monthly account fee[\s\S]*Bank fee · confirmed/);
+  assert.match(markup, /Synthetic health insurance debit[\s\S]*TK health insurance debit · confirmed/);
+  assert.doesNotMatch(markup, /data-tx=|data-open-tx=|data-inline-field=/, "statement projections cannot open or write a nonexistent ledger row");
+  assert.equal(bankOnlyEntryFromMonthRow({ ...monthRows[0], ledger: { id: "already-recorded" } }), null,
+    "matched bank activity is not shown twice");
 });
 
 test("the VAT column shows document VAT, a zero rate, and reverse charge distinctly", () => {

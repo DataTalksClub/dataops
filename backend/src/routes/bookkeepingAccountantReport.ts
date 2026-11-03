@@ -1,5 +1,6 @@
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { isReportExemptTransaction, listTransactions } from "../db/bookkeeping";
+import { readTransactionAllocations } from "../bookkeepingAllocations";
 import type { LambdaEvent, LambdaResponse } from "../types";
 import { json } from "./bookkeepingShared";
 
@@ -19,6 +20,29 @@ function cashDate(entry: ReportEntry) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(paidDate)) return paidDate;
   const transactionDate = String(entry.transactionDate || "").slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(transactionDate) ? transactionDate : "";
+}
+
+export function accountantReportRows(transactions: ReportEntry[]) {
+  return transactions.flatMap((entry) => {
+    const allocations = readTransactionAllocations(entry);
+    if (!allocations.length) return [entry];
+    return allocations.map((allocation) => ({
+      ...entry,
+      transactionDate: allocation.transactionDate || entry.transactionDate,
+      paidDate: allocation.paidDate || entry.paidDate,
+      counterparty: allocation.counterparty,
+      description: allocation.description,
+      amount: allocation.amount,
+      currency: allocation.currency,
+      ...(allocation.amountEur !== undefined ? { amountEur: allocation.amountEur } : { amountEur: undefined }),
+      ...(allocation.vatAmount !== undefined ? { vatAmount: allocation.vatAmount } : { vatAmount: undefined }),
+      ...(allocation.vatCurrency !== undefined ? { vatCurrency: allocation.vatCurrency } : { vatCurrency: undefined }),
+      category: allocation.category || entry.category,
+      subtype: allocation.subtype || entry.subtype,
+      invoiceNumber: allocation.invoiceNumber,
+      allocations: undefined,
+    }));
+  });
 }
 
 function direction(entry: ReportEntry) {
@@ -99,15 +123,15 @@ export async function handleBookkeepingAccountantReportRoutes(
   if (format !== "csv" && format !== "tsv")
     return json(400, { error: "Invalid format" });
 
-  const periodEntries = (await listTransactions(client)).filter((entry) =>
+  const reportRows = accountantReportRows(await listTransactions(client)).filter((entry) =>
     period === "all" || cashDate(entry).startsWith(period),
   );
-  const included = periodEntries.filter((entry) => !isReportExemptTransaction(entry));
+  const included = reportRows.filter((entry) => !isReportExemptTransaction(entry));
   return json(200, {
     period,
     format,
     count: included.length,
-    excludedCount: periodEntries.length - included.length,
+    excludedCount: reportRows.length - included.length,
     content: format === "csv" ? formatAccountantCsv(included) : formatAccountantTsv(included),
   });
 }

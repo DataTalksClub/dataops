@@ -1085,6 +1085,143 @@ export async function updateReceiptConversion(
   return { ...canonicalSource, amountEur: input.amountEur, rateSource: input.rateSource, audit };
 }
 
+/** Update Company/What on an owned sponsor receipt while keeping its claim coherent. */
+export async function updateReceiptMetadata(
+  client: DynamoDBDocumentClient,
+  input: {
+    actorId: string;
+    sourceId: string;
+    expectedUpdatedAt: string;
+    idempotencyKey: string;
+    counterparty: string;
+    description: string;
+  },
+) {
+  if (!OPAQUE.test(input.sourceId) || !boundedText(input.expectedUpdatedAt, 80)
+    || !boundedText(input.counterparty, 300) || !boundedText(input.description, 300)) {
+    throw Object.assign(new Error('Receipt, current version, Company and What are required'), { statusCode: 400 });
+  }
+  if (!IDEMPOTENCY.test(input.idempotencyKey))
+    throw Object.assign(new Error('Invalid Idempotency-Key'), { statusCode: 400 });
+
+  const source = clean<Record<string, unknown>>((await client.send(new GetCommand({
+    TableName: TABLE_BOOKKEEPING,
+    Key: singleton(sourceKey('transaction', input.sourceId)),
+    ConsistentRead: true,
+  }))).Item as Record<string, unknown>);
+  if (!source || source.id !== input.sourceId || source.sourceType !== 'sponsor-receipt' || source.entryType !== 'income') {
+    throw Object.assign(new Error('Canonical sponsor receipt not found'), { statusCode: 404 });
+  }
+  const claim = clean<Record<string, unknown>>((await client.send(new GetCommand({
+    TableName: TABLE_BOOKKEEPING,
+    Key: singleton(claimKey('transaction', input.sourceId)),
+    ConsistentRead: true,
+  }))).Item as Record<string, unknown>);
+  const dealId = String(claim?.dealId || ''), linkId = String(claim?.linkId || '');
+  if (!dealId || !linkId) throw safeConflict();
+
+  const request = {
+    sourceId: input.sourceId,
+    expectedUpdatedAt: input.expectedUpdatedAt,
+    counterparty: input.counterparty.trim(),
+    description: input.description.trim(),
+  };
+  const replay = await replayMutation(client, {
+    actorId: input.actorId,
+    operation: 'update-receipt-metadata',
+    dealId,
+    idempotencyKey: input.idempotencyKey,
+    request,
+  });
+  if (replay) return sourceItem(client, 'transaction', input.sourceId);
+
+  const state = await getFinanceState(client, dealId);
+  const link = clean<Record<string, unknown>>((await client.send(new GetCommand({
+    TableName: TABLE_SPONSOR_CRM,
+    Key: singleton(linkId),
+    ConsistentRead: true,
+  }))).Item as Record<string, unknown>);
+  const priorIdentity = paymentIdentity(source);
+  if (!claim || claim.recordType !== 'sponsor-finance-claim' || claim.kind !== 'transaction'
+    || !state || state.voidedAt || !state.paymentLinkIds.includes(linkId)
+    || link?.recordType !== 'sponsor-finance-link' || link.kind !== 'transaction'
+    || link.dealId !== dealId || link.id !== linkId || link.sourceId !== input.sourceId
+    || claim.sourceId !== input.sourceId || claim.identityToken !== priorIdentity
+    || link.identityToken !== priorIdentity) {
+    throw safeConflict();
+  }
+  if (source.updatedAt !== input.expectedUpdatedAt) throw safeConflict();
+  if (source.counterparty === request.counterparty && source.description === request.description) return source;
+
+  const previousTimestamp = Date.parse(String(source.updatedAt));
+  const now = new Date(Math.max(Date.now(), previousTimestamp + 1)).toISOString();
+  const updated = { ...source, counterparty: request.counterparty, description: request.description, updatedAt: now };
+  const nextIdentity = paymentIdentity(updated);
+  const audit = [
+    ...(Array.isArray(source.audit) ? source.audit : []),
+    { action: 'receipt-metadata-updated', actor: input.actorId, at: now, changes: {
+      counterparty: { from: source.counterparty ?? null, to: request.counterparty },
+      description: { from: source.description ?? null, to: request.description },
+    } },
+  ].slice(-100);
+  const nextVersion = state.version + 1;
+  await executeMutation(client, {
+    actorId: input.actorId,
+    operation: 'update-receipt-metadata',
+    dealId,
+    idempotencyKey: input.idempotencyKey,
+    request,
+    financeVersion: nextVersion,
+    recordId: input.sourceId,
+    sourceId: input.sourceId,
+    linkId,
+    eventCode: 'receipt-metadata-updated',
+    details: {
+      before: { counterparty: source.counterparty ?? null, description: source.description ?? null },
+      after: { counterparty: request.counterparty, description: request.description },
+    },
+    transactItems: [
+      adminCheck(input.actorId),
+      { Update: {
+        TableName: TABLE_BOOKKEEPING,
+        Key: singleton(sourceKey('transaction', input.sourceId)),
+        UpdateExpression: 'SET counterparty = :counterparty, description = :description, updatedAt = :now, audit = :audit',
+        ConditionExpression: 'id = :id AND updatedAt = :expectedUpdatedAt AND sourceType = :sourceType AND entryType = :entryType AND amount = :amount AND currency = :currency AND statementRef = :reference',
+        ExpressionAttributeValues: { ':counterparty': request.counterparty, ':description': request.description, ':now': now,
+          ':audit': audit, ':id': input.sourceId, ':expectedUpdatedAt': input.expectedUpdatedAt,
+          ':sourceType': 'sponsor-receipt', ':entryType': 'income', ':amount': source.amount,
+          ':currency': source.currency, ':reference': source.statementRef },
+      } },
+      { Update: {
+        TableName: TABLE_BOOKKEEPING,
+        Key: singleton(claimKey('transaction', input.sourceId)),
+        UpdateExpression: 'SET identityToken = :next',
+        ConditionExpression: 'recordType = :type AND kind = :kind AND dealId = :deal AND linkId = :link AND sourceId = :source AND identityToken = :prior',
+        ExpressionAttributeValues: { ':next': nextIdentity, ':type': 'sponsor-finance-claim', ':kind': 'transaction',
+          ':deal': dealId, ':link': linkId, ':source': input.sourceId, ':prior': priorIdentity },
+      } },
+      { Update: {
+        TableName: TABLE_SPONSOR_CRM,
+        Key: singleton(linkId),
+        UpdateExpression: 'SET identityToken = :next, financeVersion = :version',
+        ConditionExpression: 'recordType = :type AND kind = :kind AND dealId = :deal AND id = :link AND sourceId = :source AND identityToken = :prior',
+        ExpressionAttributeValues: { ':next': nextIdentity, ':version': nextVersion, ':type': 'sponsor-finance-link',
+          ':kind': 'transaction', ':deal': dealId, ':link': linkId, ':prior': priorIdentity, ':source': input.sourceId },
+      } },
+      { Update: {
+        TableName: TABLE_SPONSOR_CRM,
+        Key: singleton(financeKey(dealId)),
+        UpdateExpression: 'SET #version = :next, updatedAt = :now, actorId = :actor',
+        ConditionExpression: 'dealId = :deal AND recordType = :type AND #version = :prior AND attribute_not_exists(voidedAt)',
+        ExpressionAttributeNames: { '#version': 'version' },
+        ExpressionAttributeValues: { ':next': nextVersion, ':prior': state.version, ':now': now, ':actor': input.actorId,
+          ':deal': dealId, ':type': 'sponsor-finance' },
+      } },
+    ],
+  });
+  return sourceItem(client, 'transaction', input.sourceId);
+}
+
 /** Standard bookkeeping evidence, committed by the same trusted finance mutation.
  * Generic document-link writes remain locked for claimed invoices. This path
  * pins the existing finance claim, original bytes and finance link together.
