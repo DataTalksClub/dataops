@@ -30,6 +30,7 @@ import {
   mapUser,
 } from './portableMappers';
 import type { JsonRecord } from './portableMappers';
+import { bookkeepingAuditSnapshotErrors } from './bookkeepingAuditConsistency';
 
 /**
  * Portable export: the entity specs and the writer that scans DynamoDB into
@@ -104,12 +105,20 @@ const REDACTIONS = [
   'signed_urls',
 ];
 const ENTITY_SPECS: EntitySpec[] = [
-  ...(['invoice_records','invoice_claims','invoice_cursors','bookkeeping_records'] as const).map((name, index) => ({
+  ...(['invoice_records','invoice_claims','invoice_cursors'] as const).map((name, index) => ({
     name, filename: `${name}.jsonl`, tableName: TABLE_BOOKKEEPING,
-    prefix: ['INVOICE#','INVOICE_IDENTITY#','INVOICE_CURSOR#','BOOKKEEPING#'][index],
+    prefix: ['INVOICE#','INVOICE_IDENTITY#','INVOICE_CURSOR#'][index],
     map: (item: Record<string, unknown>) => JSON.parse(JSON.stringify(item)) as JsonRecord,
     sortKey: (record: JsonRecord) => String(record.PK),
   })),
+  {
+    name: 'bookkeeping_records',
+    filename: 'bookkeeping_records.jsonl',
+    tableName: TABLE_BOOKKEEPING,
+    prefixes: ['BOOKKEEPING#', 'BOOKKEEPING_AUDIT#'],
+    map: (item: Record<string, unknown>) => JSON.parse(JSON.stringify(item)) as JsonRecord,
+    sortKey: (record: JsonRecord) => `${String(record.PK)}#${String(record.SK)}`,
+  },
   {
     name: 'users',
     filename: 'users.jsonl',
@@ -263,6 +272,10 @@ async function writePortableExport(
 
   for (const spec of ENTITY_SPECS) {
     const rawItems = await scanByPrefix(client, spec.tableName, spec.prefix, spec.recordType, spec.prefixes);
+    if (spec.name === 'bookkeeping_records') {
+      const errors = bookkeepingAuditSnapshotErrors(rawItems);
+      if (errors.length) throw new Error(`Portable export rejected: ${errors.join('; ')}`);
+    }
     const records = rawItems
       .filter((item) => (
         (!spec.filter || spec.filter(item))

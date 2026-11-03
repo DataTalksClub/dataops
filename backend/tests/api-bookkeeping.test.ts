@@ -46,37 +46,38 @@ describe('bookkeeping API',()=>{
     assert.deepEqual(updated.audit.at(-1),{action:'updated',actor:'synthetic-operator',at:updated.audit.at(-1).at,changes:{category:{from:null,to:'Work-related'},subtype:{from:null,to:'Subscription'},amountEur:{from:null,to:'9.25'},rateSource:{from:null,to:'ECB 23 Oct 2026'}}});
     assert.ok(Number.isFinite(Date.parse(updated.audit.at(-1).at)));
   });
-  it('rejects corrections over the audit byte budget without trimming retained history',async()=>{
+  it('keeps 100 correction events when their combined UTF-8 payload exceeds the former byte budget',async()=>{
     const created=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',valid)).body);
-    let updated:any,lastComment:string|undefined,rejected=false;
+    let updated:any,lastComment:string|undefined;
     for(let index=0;index<100;index++){
       const comment=`${index}: ${'x'.repeat(1950)}`;
       const response=await invoke('PUT',`/api/bookkeeping/transactions/${created.id}`,{comment});
-      if(response.statusCode===413){rejected=true;break;}
       assert.equal(response.statusCode,200);
       updated=JSON.parse(response.body);
       lastComment=comment;
     }
-    assert.equal(rejected,true);
-    assert.ok(Buffer.byteLength(JSON.stringify(updated.audit),'utf8')<=128*1024);
-    assert.ok(updated.audit.length<100);
+    assert.equal(updated.audit.length,100);
+    assert.ok(Buffer.byteLength(JSON.stringify(updated.audit),'utf8')>128*1024);
     assert.equal(updated.comment,lastComment);
     const after=await getBookkeepingItem(client,'bookkeeping',created.id);
     assert.deepEqual(after?.audit,updated.audit);
     assert.equal(after?.comment,lastComment);
   });
-  it('rejects an audit append over the byte budget without changing the transaction',async()=>{
+  it('accepts a correction when the existing audit payload exceeds the former byte budget',async()=>{
     const created=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',valid)).body);
     const audit=[{action:'historic',payload:'x'.repeat(128*1024-100)}];
     assert.ok(Buffer.byteLength(JSON.stringify(audit),'utf8')<=128*1024);
     const seeded=await updateBookkeepingTransaction(client,created.id,String(created.updatedAt),{...created,audit});
     const response=await invoke('PUT',`/api/bookkeeping/transactions/${created.id}`,{description:'Must not be stored'});
-    assert.equal(response.statusCode,413);
-    assert.match(JSON.parse(response.body).error,/no changes were saved/i);
+    assert.equal(response.statusCode,200,response.body);
+    const updated=JSON.parse(response.body);
+    assert.equal(updated.audit.length,2);
+    assert.deepEqual(updated.audit[0],audit[0]);
+    assert.equal(updated.description,'Must not be stored');
     const after=await getBookkeepingItem(client,'bookkeeping',created.id);
-    assert.deepEqual(after?.audit,seeded.audit);
-    assert.equal(after?.description,seeded.description);
-    assert.equal(after?.updatedAt,seeded.updatedAt);
+    assert.deepEqual(after?.audit,updated.audit);
+    assert.equal(after?.description,'Must not be stored');
+    assert.notEqual(after?.updatedAt,seeded?.updatedAt);
   });
   it('rejects invalid data without echoing values',async()=>{const r=await invoke('POST','/api/bookkeeping/transactions',{...valid,amount:'NaN',currency:'EURO'});assert.equal(r.statusCode,400);assert.deepEqual(JSON.parse(r.body).fields.sort(),['amount','currency']);assert.ok(!r.body.includes('NaN'));});
   it('requires a real session for route-level CRUD without leaking records',async()=>{process.env.SKIP_AUTH='false';const unauthorized=await invoke('GET','/api/bookkeeping/transactions');assert.equal(unauthorized.statusCode,401);assert.equal(unauthorized.body.includes('Synthetic Vendor'),false);const session=await createSession(client,'synthetic-operator');const auth={Authorization:`Bearer ${session.token}`};const created=await invoke('POST','/api/bookkeeping/transactions',{...valid,description:'Session-authenticated synthetic'},auth);assert.equal(created.statusCode,201);const listed=await invoke('GET','/api/bookkeeping/transactions',undefined,auth);assert.equal(listed.statusCode,200);assert.ok(JSON.parse(listed.body).items.some((i:any)=>i.description==='Session-authenticated synthetic'));process.env.SKIP_AUTH='true';});
@@ -293,33 +294,31 @@ describe('bookkeeping API',()=>{
       assert.equal((await getBookkeepingItem(client,'document',document.id))?.linkRefCount,0);
   });
 
-  it('rejects allocation PUT and DELETE over the audit byte budget without changing links, claims, or refcounts',async()=>{
+  it('keeps allocation PUT and DELETE atomic when audit history exceeds the former byte budget',async()=>{
     const document=(await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:'synthetic-budget-invoice.pdf',contentType:'application/pdf',byteSize:100,sha256:createHash('sha256').update('synthetic-budget-invoice').digest('hex'),s3Key:'documents/synthetic-budget-invoice.pdf'})).item;
     const payment=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2025-05-01',paidDate:'2025-05-01',counterparty:'Synthetic Budget Vendor',description:'Synthetic audit-budget payment',amount:'10.00',currency:'EUR',entryType:'expense'})).body);
     const allocations=[{documentId:document.id,counterparty:'Synthetic Budget Vendor',description:'Synthetic invoice',amount:'10.00'}];
-    const allocatedResponse=await invoke('PUT',`/api/bookkeeping/transactions/${payment.id}/allocations`,{expectedUpdatedAt:payment.updatedAt,allocations});
-    assert.equal(allocatedResponse.statusCode,200,allocatedResponse.body);
-    const allocated=JSON.parse(allocatedResponse.body);
     const audit=[{action:'historic',payload:'x'.repeat(128*1024-100)}];
     assert.ok(Buffer.byteLength(JSON.stringify(audit),'utf8')<=128*1024);
-    const seeded=await updateBookkeepingTransaction(client,payment.id,String(allocated.updatedAt),{...allocated,audit});
-    const linksBefore=(await listBookkeepingItems(client,'link',true)).filter((link:any)=>String(link.transactionId)===payment.id);
-    const claimsBefore=(await listBookkeepingItems(client,'allocation-source-claim',true)).filter((claim:any)=>String(claim.transactionId)===payment.id);
-    const refCountBefore=(await getBookkeepingItem(client,'document',document.id))?.linkRefCount;
-    assert.equal(refCountBefore,1);
+    const seeded=await updateBookkeepingTransaction(client,payment.id,String(payment.updatedAt),{...payment,audit});
+    const allocatedResponse=await invoke('PUT',`/api/bookkeeping/transactions/${payment.id}/allocations`,{expectedUpdatedAt:seeded!.updatedAt,allocations});
+    assert.equal(allocatedResponse.statusCode,200,allocatedResponse.body);
+    const allocated=JSON.parse(allocatedResponse.body);
+    assert.equal(allocated.audit.at(-1).action,'allocations-updated');
+    assert.ok(Buffer.byteLength(JSON.stringify(allocated.audit),'utf8')>128*1024);
+    assert.equal((await listBookkeepingItems(client,'allocation-source-claim')).filter((claim:any)=>String(claim.transactionId)===payment.id).length,2);
+    assert.equal((await listBookkeepingItems(client,'link')).filter((link:any)=>String(link.transactionId)===payment.id).length,1);
+    assert.equal((await getBookkeepingItem(client,'document',document.id))?.linkRefCount,1);
 
-    const rejectedPut=await invoke('PUT',`/api/bookkeeping/transactions/${payment.id}/allocations`,{expectedUpdatedAt:seeded!.updatedAt,allocations});
-    assert.equal(rejectedPut.statusCode,413);
-    const rejectedDelete=await invoke('DELETE',`/api/bookkeeping/transactions/${payment.id}/allocations`,{expectedUpdatedAt:seeded!.updatedAt,reason:'synthetic clear over audit budget'});
-    assert.equal(rejectedDelete.statusCode,413);
-
-    const after=await getBookkeepingItem(client,'bookkeeping',payment.id);
-    assert.deepEqual(after?.audit,seeded?.audit);
-    assert.deepEqual(after?.allocations,seeded?.allocations);
-    assert.equal(after?.updatedAt,seeded?.updatedAt);
-    assert.deepEqual((await listBookkeepingItems(client,'link',true)).filter((link:any)=>String(link.transactionId)===payment.id),linksBefore);
-    assert.deepEqual((await listBookkeepingItems(client,'allocation-source-claim',true)).filter((claim:any)=>String(claim.transactionId)===payment.id),claimsBefore);
-    assert.equal((await getBookkeepingItem(client,'document',document.id))?.linkRefCount,refCountBefore);
+    const clearedResponse=await invoke('DELETE',`/api/bookkeeping/transactions/${payment.id}/allocations`,{expectedUpdatedAt:allocated.updatedAt,reason:'synthetic clear over audit budget'});
+    assert.equal(clearedResponse.statusCode,200,clearedResponse.body);
+    const cleared=JSON.parse(clearedResponse.body);
+    assert.equal(cleared.audit.length,3);
+    assert.equal(cleared.audit.at(-1).action,'allocations-cleared');
+    assert.equal(cleared.allocations,undefined);
+    assert.equal((await listBookkeepingItems(client,'allocation-source-claim')).filter((claim:any)=>String(claim.transactionId)===payment.id).length,0);
+    assert.equal((await listBookkeepingItems(client,'link')).filter((link:any)=>String(link.transactionId)===payment.id).length,0);
+    assert.equal((await getBookkeepingItem(client,'document',document.id))?.linkRefCount,0);
   });
 
   it('replays atomic allocation transaction creates only for an identical source payload',async()=>{
