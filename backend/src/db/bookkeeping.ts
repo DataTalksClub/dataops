@@ -23,10 +23,24 @@ export type BookkeepingItem = Record<string, unknown> & {
 // Payment categories tracked in the ledger but kept out of the accountant's
 // monthly package: they are settled from private money and reported separately.
 export const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance"]);
-export function isReportExemptTransaction(item: Readonly<Record<string, unknown>>) {
+function isReportExemptClassification(item: Readonly<Record<string, unknown>>) {
   return REPORT_EXEMPT_CATEGORIES.has(String(item.category || ""))
     || classifyMandatoryPayment(item) !== null
     || isOwnerWithdrawalReportExempt(item);
+}
+
+export function isReportExemptTransaction(item: Readonly<Record<string, unknown>>) {
+  const allocations = Array.isArray(item.allocations)
+    ? item.allocations.filter((allocation): allocation is Record<string, unknown> =>
+        Boolean(allocation) && typeof allocation === "object" && !Array.isArray(allocation),
+      )
+    : [];
+  if (allocations.length) {
+    return allocations.every((allocation) =>
+      isReportExemptClassification({ ...item, ...allocation }),
+    );
+  }
+  return isReportExemptClassification(item);
 }
 
 // Raised when a conditional mutation loses its optimistic-concurrency race or

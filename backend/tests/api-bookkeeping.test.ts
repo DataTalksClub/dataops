@@ -117,6 +117,10 @@ describe('bookkeeping API',()=>{
     await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-09',counterparty:'Finanzamt',description:'UMS.ST 2026',entryType:'expense',amount:'500.00'});
     await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-10',counterparty:'Techniker Krankenkasse',description:'Monthly contribution',entryType:'expense',amount:'200.00'});
     const ownerDraw=(await putBookkeepingItem(client,'bookkeeping',{transactionDate:'2026-09-11',paidDate:'2026-09-11',counterparty:'Synthetic Owner',description:'Synthetic private withdrawal',amount:'42.00',currency:'EUR',entryType:'expense',category:'Owner pay',ownerPayType:'draw'})).item;
+    const mixedAllocationPayment=(await putBookkeepingItem(client,'bookkeeping',{transactionDate:'2026-09-12',paidDate:'2026-09-12',counterparty:'Synthetic Combined Vendor',description:'Synthetic mixed allocation payment',amount:'30.00',currency:'EUR',entryType:'expense',category:'Taxes',allocations:[
+      {id:'synthetic-tax-allocation',documentId:'synthetic-tax-invoice',counterparty:'Synthetic Tax Vendor',description:'Synthetic tax charge',amount:'10.00',currency:'EUR',category:'Taxes'},
+      {id:'synthetic-service-allocation',documentId:'synthetic-service-invoice',counterparty:'Synthetic Service Vendor',description:'Synthetic service charge',amount:'20.00',currency:'EUR',category:'Services'},
+    ]})).item;
     const ownerEvidence=(await putBookkeepingItem(client,'document',{documentType:'receipt',status:'active',originalFilename:'synthetic-owner-transfer.pdf',contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update('synthetic-owner-transfer').digest('hex'),s3Key:'documents/synthetic-owner-transfer'})).item;
     const ownerLink=await invoke('POST','/api/bookkeeping/links',{documentId:ownerEvidence.id,transactionId:ownerDraw.id,coverageType:'evidence'});assert.equal(ownerLink.statusCode,201);
     await invoke('POST','/api/bookkeeping/accounts/setup');
@@ -127,7 +131,8 @@ describe('bookkeeping API',()=>{
     const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-09',privateDocumentIds:[ownerEvidence.id]});assert.equal(snapshot.statusCode,201,snapshot.body);
     const report=JSON.parse(snapshot.body).report;
     assert.equal(report.reconciliation.excludedTransactionCount,5);
-    assert.deepEqual(report.transactionIds.length,2);
+    assert.deepEqual(report.transactionIds.length,3);
+    assert.ok(report.transactionIds.includes(mixedAllocationPayment.id), 'a mixed payment remains in the accountant package for its non-exempt allocation');
     assert.ok(!report.transactionIds.includes(ownerDraw.id));
     assert.ok(!report.documentIds.includes(ownerEvidence.id));
     assert.ok(JSON.parse((await invoke('GET','/api/bookkeeping/transactions')).body).items.some((item:any)=>item.id===ownerDraw.id),'the owner draw remains in the internal ledger');
