@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   accountOf,
+  resolveAccountName,
   accountsOf,
   bankOnlyEntryFromMonthRow,
   displayRowCount,
@@ -70,6 +71,31 @@ test("filters come from the URL and compose", () => {
   assert.equal(inLens(rows[2], "2026"), true);
   assert.equal(inLens(rows[2], "2026-09"), false);
   assert.equal(inLens(rows[2], "all"), true);
+});
+
+test("account names resolve from the linked statement or a short label", () => {
+  const links = new Map([
+    ["a", { accountName: "Revolut Business", statementDocumentId: "doc-1", statementPeriod: "2026-09" }],
+  ]);
+  assert.equal(resolveAccountName({ id: "a", statementRef: "revolut EUR" }, links), "Revolut Business");
+  assert.equal(resolveAccountName({ id: "zzz", statementRef: "revolut EUR" }, links), "Revolut");
+  assert.equal(resolveAccountName({ id: "zzz", statementRef: "N96 - statement.pdf" }, links), "N26-personal");
+  assert.equal(resolveAccountName({ id: "zzz", statementRef: "finom" }, links), "Finom");
+  assert.equal(resolveAccountName({ id: "zzz", statementRef: "Paypal - x.pdf" }, links), "PayPal");
+  assert.equal(resolveAccountName({ id: "zzz", statementRef: "" }, links), "");
+  assert.equal(resolveAccountName({ id: "zzz", statementRef: "revolut:dtc:USD:stmt-abc:row-def" }, links), "");
+  assert.deepEqual(accountsOf(rows, links), ["Card", "Ledgerly", "Northbank", "Revolut Business"], "linked names win over refs");
+});
+
+test("the account column sits last and links to the uploaded statement", () => {
+  const links = new Map([
+    ["a", { accountName: "Revolut Business", statementDocumentId: "doc-1", statementPeriod: "2026-09" }],
+  ]);
+  const markup = ledgerTableMarkup({
+    groups: groupByMonth(rows), hasEvidence: () => false, vocab: {}, selectedId: "", statementLinks: links, e: escapeHtml,
+  });
+  assert.match(markup, /<th scope="col" class="bk-col-flag">Invoice<\/th>\s*<th scope="col" class="bk-col-account">Account<\/th>/);
+  assert.match(markup, /<button[^>]*data-view-document="doc-1"[^>]*>Revolut Business<\/button>/);
 });
 
 test("the net column subtracts VAT from the gross EUR value", () => {
@@ -177,6 +203,11 @@ test("allocated invoices replace the aggregate row while totals and payment dril
     hasEvidence: () => true,
     hasInvoice: () => [],
     getAllocationDocument: (_entry, allocation) => documents.get(allocation.documentId),
+    statementLinks: new Map([[payment.id, {
+      accountName: "Synthetic Revolut Business EUR",
+      statementPeriod: "2026-10",
+      statementDocumentId: "bank-statement-2026-10",
+    }]]),
     vocab: {},
     selectedId: "",
     e: escapeHtml,
@@ -201,6 +232,19 @@ test("allocated invoices replace the aggregate row while totals and payment dril
   }
   assert.equal((markup.match(/data-open-tx="synthetic-payment"/g) || []).length, 3,
     "each invoice row drills through to the one original payment");
+  assert.equal((markup.match(/class="bk-account-link" data-view-document="bank-statement-2026-10"/g) || []).length, 3,
+    "each visible invoice row keeps the parent payment's linked statement account action");
+  assert.equal((markup.match(/Synthetic Revolut Business EUR/g) || []).length, 3,
+    "the account name remains visible on all expanded invoice rows");
+  const header = markup.match(/<thead>([\s\S]*?)<\/thead>/)?.[1] || "";
+  assert.ok(header.indexOf("bk-col-account") > header.indexOf("bk-col-flag"), "Account follows Invoice in the header");
+  const childRows = [...markup.matchAll(/<tr class="bk-row bk-row--allocation-child[^>]*>([\s\S]*?)<\/tr>/g)]
+    .map((match) => match[1]);
+  assert.equal(childRows.length, 3);
+  for (const row of childRows) {
+    assert.equal((row.match(/<td class="bk-col-/g) || []).length, 9);
+    assert.ok(row.indexOf("bk-col-account") > row.indexOf("bk-col-flag"), "Account is the last allocation cell");
+  }
   assert.match(markup, /aria-label="Open original payment for Synthetic Compute GmbH"/);
 });
 
@@ -268,6 +312,9 @@ test("classified owner, fee, and TK statement rows stay visible without becoming
   assert.equal(groups[0].moneyOut, -56.25);
   const markup = ledgerTableMarkup({ groups, hasEvidence: () => true, vocab: {}, selectedId: "", e: escapeHtml });
   assert.equal((markup.match(/data-bank-only=/g) || []).length, 3);
+  const bankRow = markup.match(/<tr class="bk-row bk-row--statement-only[^>]*>([\s\S]*?)<\/tr>/)?.[1] || "";
+  assert.equal((bankRow.match(/<td class="bk-col-/g) || []).length, 9);
+  assert.ok(bankRow.indexOf("bk-col-account") > bankRow.indexOf("bk-col-flag"), "Account is the last bank-only cell");
   assert.match(markup, /Synthetic Owner Transfer[\s\S]*Owner withdrawal · confirmed/);
   assert.match(markup, /Monthly account fee[\s\S]*Bank fee · confirmed/);
   assert.match(markup, /Synthetic health insurance debit[\s\S]*TK health insurance debit · confirmed/);

@@ -42,7 +42,7 @@ function normalizedText(value) {
     .replace(/\s+/g, " ");
 }
 
-function accountLabel(accountId, currency, wallet) {
+export function accountLabel(accountId, currency, wallet) {
   const account = String(accountId || "").toLowerCase();
   const code = String(currency || "").toUpperCase();
   const walletName = String(wallet || "").trim();
@@ -265,4 +265,62 @@ export async function pairTransactionWithStatementRow(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ bankKey, transactionId: id }),
   });
+}
+
+/**
+ * Bulk version of the statement-link lookup for a whole table. Loads the
+ * reconciliation month views for the given periods once, then maps every
+ * paired transaction id to its account name (from the uploaded statement)
+ * and the statement document/artifact that opens it.
+ *
+ * Returns a Map keyed by transaction id. Months that fail to load are
+ * skipped; statements that fail to load keep the account name but no link.
+ */
+export async function loadStatementLinkIndex(periods, { request, workApiUrl } = {}) {
+  if (typeof request !== "function" || typeof workApiUrl !== "function")
+    throw new TypeError("request and workApiUrl are required");
+  const unique = [...new Set((Array.isArray(periods) ? periods : []).map(String).filter(Boolean))];
+  const monthViews = new Map();
+  await Promise.all(unique.map(async (period) => {
+    try {
+      const value = await request(workApiUrl(`/api/reconcile/months/${encodeURIComponent(period)}`));
+      const view = value?.month || value;
+      if (view && Array.isArray(view.rows)) monthViews.set(period, view);
+    } catch {
+      // A month with no reconciliation data contributes no links.
+    }
+  }));
+  const banks = new Map();
+  for (const view of monthViews.values()) {
+    for (const row of view.rows) {
+      const transactionId = String(row?.ledger?.id || "");
+      const bank = row?.bank;
+      if (!transactionId || !bank?.statementId || banks.has(transactionId)) continue;
+      banks.set(transactionId, bank);
+    }
+  }
+  const statements = new Map();
+  await Promise.all([...new Set([...banks.values()].map((bank) => String(bank.statementId)))].map(async (statementId) => {
+    try {
+      const value = await request(workApiUrl(`/api/reconcile/statements/${encodeURIComponent(statementId)}`));
+      const statement = asStatement(value);
+      if (statement && String(statement.id || "") === statementId) statements.set(statementId, statement);
+    } catch {
+      // The account name below still resolves; only the link is missing.
+    }
+  }));
+  const index = new Map();
+  for (const [transactionId, bank] of banks) {
+    const statement = statements.get(String(bank.statementId)) || null;
+    index.set(transactionId, {
+      transactionId,
+      accountId: String(bank.accountId || statement?.accountId || ""),
+      accountName: accountLabel(bank.accountId || statement?.accountId, bank.currency, bank.wallet),
+      statementPeriod: String(statement?.period || ""),
+      statementDocumentId: statement?.documentId ? String(statement.documentId) : "",
+      statementArtifactId: statement && !statement.documentId && statement.artifactId ? String(statement.artifactId) : "",
+      bankKey: String(bank.key || ""),
+    });
+  }
+  return index;
 }
