@@ -1,6 +1,7 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { berlinDate } from '../sponsorFinance/core';
+import { realDate } from '../sponsorCrm/model';
 import { getCrmRecord } from '../db/sponsorCrm';
 import {
   appendContractAudit,
@@ -20,6 +21,7 @@ import {
 import {
   DEFAULT_TOKEN_TTL_DAYS,
   publicContract,
+  validateContractSigningLeadTime,
   validateContractTerms,
   type ContractRecord,
   type ContractSigner,
@@ -106,12 +108,15 @@ export async function handleSponsorContractRoutes(reqPath: string, method: strin
   const m = method.toUpperCase();
   const body = parse(event);
   const query = event.queryStringParameters || {};
-  const today = typeof query.today === 'string' && /^\x5Cd{4}-\x5Cd{2}-\x5Cd{2}$/.test(query.today) ? query.today : berlinDate();
+  const nowDate = new Date(Date.now());
+  const rawToday = typeof query.today === 'string' && query.today ? query.today : (body && typeof body.today === 'string' ? body.today : undefined);
+  const explicitToday = realDate(rawToday);
+  const today = explicitToday ? String(rawToday) : berlinDate(nowDate);
   const contractMatch = reqPath.match(/^\x2Fapi\x2Fsponsor-crm\x2Fcontracts\x2F([^\x2F]+)(\x2F.+)?$/);
   const contractId = contractMatch ? decodeURIComponent(contractMatch[1]) : '';
   // Anonymous token-gated signing endpoints never require a session.
   if (contractId && (reqPath.endsWith('/signing') || reqPath.endsWith('/sign') || reqPath.endsWith('/decline'))) {
-    return await handleSigningRequest(reqPath, m, event, client, contractId, body);
+    return await handleSigningRequest(reqPath, m, event, client, contractId, body, today, nowDate, explicitToday);
   }
   if (!actor(event) && !opts.skipAuth) return json(401, { error: 'Unauthorized' });
 
@@ -266,27 +271,38 @@ function counterSignerFromBody(body: Record<string, unknown>): ContractSigner | 
   return { role: 'counter', name, email, order: 1 };
 }
 
-async function handleSigningRequest(reqPath: string, m: string, event: LambdaEvent, client: DynamoDBDocumentClient, contractId: string, body: Record<string, unknown> | null): Promise<LambdaResponse> {
+async function handleSigningRequest(
+  reqPath: string,
+  m: string,
+  event: LambdaEvent,
+  client: DynamoDBDocumentClient,
+  contractId: string,
+  body: Record<string, unknown> | null,
+  today = berlinDate(),
+  nowDate = new Date(Date.now()),
+  explicitToday = false,
+): Promise<LambdaResponse> {
   const ip = requestIp(event);
   const hashedIp = ipHash(ip);
-  const limited = await checkContractRateLimit(client, contractId, hashedIp);
+  const limited = await checkContractRateLimit(client, contractId, hashedIp, nowDate);
   if (!limited.allowed) return json(429, { error: 'Too many attempts; try again later', code: 'rate_limited' }, { 'Retry-After': String(limited.retryAfterSeconds) });
   const contract = await getContract(client, contractId);
   if (!contract) return json(404, { error: 'Contract not found', code: 'contract_not_found' });
   const token = providedToken(event, body);
-  const signer = findSignerByToken(contract, token);
+  const signer = findSignerByToken(contract, token, nowDate);
   if (!signer) {
-    await recordContractFailedAttempt(client, contractId, hashedIp);
+    await recordContractFailedAttempt(client, contractId, hashedIp, nowDate);
     return json(403, { error: 'This signing link is invalid or expired', code: 'invalid_signing_token' });
   }
   const userAgent = headerValue(event.headers, 'user-agent').slice(0, 300);
+  const now = nowDate.toISOString();
   const isView = reqPath.endsWith('/signing');
   if (isView) {
     if (m !== 'GET') return json(405, { error: 'Method not allowed' });
     let current: Record<string, any> = contract;
     if (contract.status === 'sent' && !signer.viewedAt) {
-      const signers = (contract.signers || []).map((item: any) => item.role === signer.role && !item.viewedAt ? Object.assign({}, item, { viewedAt: new Date().toISOString() }) : item);
-      current = await updateContract(client, contract, { status: 'viewed', viewedAt: new Date().toISOString(), signers }, { actorId: 'signer:' + signer.role, action: 'viewed', role: signer.role, ip, userAgent });
+      const signers = (contract.signers || []).map((item: any) => item.role === signer.role && !item.viewedAt ? Object.assign({}, item, { viewedAt: now }) : item);
+      current = await updateContract(client, contract, { status: 'viewed', viewedAt: now, signers }, { actorId: 'signer:' + signer.role, action: 'viewed', role: signer.role, ip, userAgent });
     }
     const pending = pendingSigner(current);
     return json(200, { contract: publicContract(current), viewer: { role: signer.role, name: signer.name }, pendingRole: pending ? pending.role : null });
@@ -298,7 +314,6 @@ async function handleSigningRequest(reqPath: string, m: string, event: LambdaEve
   if (!pending || pending.role !== signer.role) {
     return json(409, { error: 'Signing order: it is not this signer\x27s turn (next: ' + (pending ? pending.role : 'none') + ')', code: 'signer_out_of_order' });
   }
-  const now = new Date().toISOString();
   const withStamp = (item: ContractSigner) => item.role === signer.role
     ? Object.assign({}, item, reqPath.endsWith('/decline') ? { declinedAt: now, ip, userAgent } : { signedAt: now, ip, userAgent })
     : item;
@@ -306,6 +321,22 @@ async function handleSigningRequest(reqPath: string, m: string, event: LambdaEve
   if (reqPath.endsWith('/decline')) {
     const updated = await updateContract(client, contract, { status: 'declined', declinedAt: now, signers: nextSigners }, { actorId: 'signer:' + signer.role, action: 'declined', role: signer.role, ip, userAgent });
     return json(200, { contract: publicContract(updated) });
+  }
+  const createdDay = contract.createdAt && !Number.isNaN(Date.parse(String(contract.createdAt)))
+    ? berlinDate(new Date(String(contract.createdAt)))
+    : '';
+  const enforceWallClockSigners = !explicitToday || !createdDay || String(contract.terms?.startDate || '') >= createdDay;
+  const leadTimeError = validateContractSigningLeadTime(
+    contract.terms,
+    today,
+    enforceWallClockSigners ? nextSigners : [],
+    (iso) => {
+      const ms = Date.parse(iso);
+      return Number.isNaN(ms) ? '' : berlinDate(new Date(ms));
+    },
+  );
+  if (leadTimeError) {
+    return json(409, { error: leadTimeError, code: 'contract_lead_time_expired' });
   }
   const allSigned = nextSigners.every((item: any) => item.signedAt);
   if (!allSigned) {
@@ -332,6 +363,6 @@ async function handleSigningRequest(reqPath: string, m: string, event: LambdaEve
  * /contracts/:id signing page for an external signer without a session. */
 export function isAnonymousSponsorContractAsset(method: string, path: string): boolean {
   if (method.toUpperCase() !== 'GET') return false;
-  if (/^\x2Fcontracts\x2F[^\x2F]+\x2F?\x24/.test(path)) return true;
+  if (/^\x2Fcontracts\x2F[^\x2F]+\x2F?$/.test(path)) return true;
   return path === '/src/contract-sign-page.js' || path === '/src/surfaces/operations/contract-sign.js';
 }

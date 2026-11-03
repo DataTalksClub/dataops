@@ -76,6 +76,15 @@ export function vatRuleFor(payerCountry: string): VatRule {
 }
 
 export interface ValidatedTerms { error?: string; terms?: ContractTerms }
+export const LEAD_TIME_ERROR = 'Contracts need at least ' + MIN_LEAD_TIME_DAYS + ' days lead time before the start date';
+
+/** Checks that the contract start date is at least MIN_LEAD_TIME_DAYS after the given YYYY-MM-DD date. */
+export function hasContractLeadTime(startDate: unknown, onDate: unknown): boolean {
+  if (!realDate(startDate) || !realDate(onDate)) return false;
+  const leadMs = Date.parse(startDate + 'T00:00:00Z') - Date.parse(onDate + 'T00:00:00Z');
+  return Number.isFinite(leadMs) && leadMs >= MIN_LEAD_TIME_DAYS * 86400000;
+}
+
 /** Validates contract terms from untrusted input. The today argument anchors
  * the minimum lead time between signing and the first deliverable date. */
 export function validateContractTerms(input: unknown, today: string): ValidatedTerms {
@@ -103,10 +112,29 @@ export function validateContractTerms(input: unknown, today: string): ValidatedT
   if (!realDate(startDate)) return { error: 'startDate must be a YYYY-MM-DD date' };
   if (!realDate(endDate)) return { error: 'endDate must be a YYYY-MM-DD date' };
   if (String(startDate) >= String(endDate)) return { error: 'startDate must be before endDate' };
-  const leadMs = Date.parse(startDate + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z');
-  if (!Number.isFinite(leadMs) || leadMs < MIN_LEAD_TIME_DAYS * 86400000) return { error: 'Contracts need at least ' + MIN_LEAD_TIME_DAYS + ' days lead time before the start date' };
+  if (!hasContractLeadTime(startDate, today)) return { error: LEAD_TIME_ERROR };
   const terms: ContractTerms = { company, legalPayer, payerCountry, scope, priceEur, currency, startDate: String(startDate), endDate: String(endDate), signingOrder };
   return { terms };
+}
+
+/** Validates that contract terms and recorded signer timestamps still satisfy
+ * the minimum 30-day lead time before startDate when signing completes. */
+export function validateContractSigningLeadTime(
+  terms: unknown,
+  signingDate: string,
+  signers: ReadonlyArray<{ signedAt?: string }> = [],
+  toCalendarDate: (isoTimestamp: string) => string = (iso) => iso.slice(0, 10),
+): string | null {
+  const validated = validateContractTerms(terms, signingDate);
+  if (validated.error || !validated.terms) return validated.error || 'Invalid contract terms';
+  for (const signer of signers) {
+    if (!signer?.signedAt) continue;
+    const signedDay = toCalendarDate(String(signer.signedAt));
+    if (!hasContractLeadTime(validated.terms.startDate, signedDay)) {
+      return LEAD_TIME_ERROR;
+    }
+  }
+  return null;
 }
 
 export function publicContract(contract: Record<string, any>) {
