@@ -10,6 +10,7 @@ const targetDir = path.join(tempRoot, 'hub-shared', 'dataops');
 const previousConfigDir = process.env.DATAOPS_CONFIG_DIR;
 const previousUrl = process.env.DATAOPS_URL;
 const previousToken = process.env.DATAOPS_TOKEN;
+const previousIssuer = process.env.DTC_OAUTH_ISSUER;
 process.env.DATAOPS_CONFIG_DIR = configDir;
 process.env.DATAOPS_URL = '';
 delete process.env.DATAOPS_TOKEN;
@@ -59,6 +60,8 @@ describe('headless scoped agent tokens', () => {
     else process.env.DATAOPS_URL = previousUrl;
     if (previousToken === undefined) delete process.env.DATAOPS_TOKEN;
     else process.env.DATAOPS_TOKEN = previousToken;
+    if (previousIssuer === undefined) delete process.env.DTC_OAUTH_ISSUER;
+    else process.env.DTC_OAUTH_ISSUER = previousIssuer;
     rmSync(tempRoot, { recursive: true, force: true });
   });
 
@@ -125,6 +128,41 @@ describe('headless scoped agent tokens', () => {
     assert.equal(io.text().includes(RAW_TOKEN), false);
     assert.equal(JSON.parse(io.text()).apiToken.id, 'cli-agent-id');
     assert.equal(resolveProfileFromDir(targetDir, { url: PORTAL }).token, RAW_TOKEN);
+  });
+
+  test('refreshes the host admin issuer profile in place when creating a token', async () => {
+    process.env.DTC_OAUTH_ISSUER = 'https://issuer.test';
+    saveProfile(PORTAL, {
+      accessToken: 'expired-admin-access-token',
+      refreshToken: 'synthetic-admin-refresh-token',
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
+      label: 'admin@host',
+    });
+    const calls = fakeFetch({
+      'POST /oauth/token': (call) => {
+        assert.match(String(call.body), /grant_type=refresh_token/);
+        assert.match(String(call.body), /refresh_token=synthetic-admin-refresh-token/);
+        return { body: { access_token: 'fresh-admin-access-token', refresh_token: 'synthetic-admin-refresh-token-2', expires_in: 3600 } };
+      },
+      'POST /api/tokens': (call) => {
+        assert.equal(call.headers.Authorization, 'Bearer fresh-admin-access-token');
+        return { status: 201, body: {
+          token: RAW_TOKEN,
+          apiToken: { id: 'refreshed-admin-token', userId: 'admin-id', issuedBy: 'admin-id', label: call.body.label, scopes: call.body.scopes, createdAt: new Date().toISOString(), expiresAt: '2027-02-01T00:00:00.000Z', lastUsedAt: null },
+        } };
+      },
+    });
+    const io = ioCapture();
+    await tokens.commands.create({ label: 'hub-sessions@hetzner', adminConfigDir: configDir, configDir: targetDir, url: PORTAL }, io);
+    const refreshedAdmin = resolveProfileFromDir(configDir, { url: PORTAL });
+    assert.equal(refreshedAdmin.refreshToken, 'synthetic-admin-refresh-token-2');
+    assert.equal(refreshedAdmin.accessToken, 'fresh-admin-access-token');
+    const persisted = JSON.parse(readFileSync(path.join(configDir, 'credentials.json'), 'utf8'));
+    assert.equal(Object.hasOwn(persisted.profiles[PORTAL], 'configDir'), false);
+    assert.deepEqual(calls.map(({ method, path: route }) => `${method} ${route}`), [
+      'POST /oauth/token', 'POST /api/tokens',
+    ]);
+    assert.equal(io.text().includes(RAW_TOKEN), false);
   });
 
   test('revokes a newly issued token if safe credential storage is refused', async () => {
