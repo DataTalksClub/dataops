@@ -173,6 +173,32 @@ describe('finance tax schedule and upcoming debits API', () => {
     assert.equal(health.matched.taxType, 'health-insurance');
   });
 
+  it('requires a booked EUR amount before using a foreign-currency row as payment', async () => {
+    const today = berlinToday();
+    const client = await getClient();
+    for (const [id, amount] of [['synthetic-fx-missing', '432.10'], ['synthetic-fx-booked', '543.21']]) {
+      assert.equal((await invoke('PUT', `/api/finance/tax-schedule/${id}`, {
+        label: id, taxType: 'vat', amount, currency: 'EUR',
+        rule: { kind: 'once', date: today }, source: 'recurring',
+      })).statusCode, 200);
+    }
+    await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-usd-unbooked', transactionDate: today, paidDate: today,
+      entryType: 'expense', amount: '432.10', currency: 'USD', category: 'VAT',
+      counterparty: 'Synthetic vendor', sourceType: 'manual',
+    });
+    await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-usd-booked', transactionDate: today, paidDate: today,
+      entryType: 'expense', amount: '600.00', amountEur: '543.21', currency: 'USD', category: 'VAT',
+      counterparty: 'Synthetic vendor', sourceType: 'manual',
+    });
+    const response = await invoke('GET', '/api/finance/upcoming', undefined, { days: '10' });
+    assert.equal(response.statusCode, 200, response.body);
+    const debits = JSON.parse(response.body).debits;
+    assert.equal(debits.find((debit: { scheduleId: string }) => debit.scheduleId === 'synthetic-fx-missing').status, 'scheduled');
+    assert.equal(debits.find((debit: { scheduleId: string }) => debit.scheduleId === 'synthetic-fx-booked').status, 'paid');
+  });
+
   it('derives row VAT from the linked stored invoice facts', async () => {
     const client = await getClient();
     const transaction = (await putBookkeepingItem(client, 'bookkeeping', {
