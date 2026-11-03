@@ -4,6 +4,7 @@ import { dedupe, resolvePeriod, summarize, unmatchedStatementLines, type LedgerR
 import { clearEcbRateCacheForTests, loadEcbRates, parseEcbCsv } from '../src/finance/rates';
 import { financeStatementLines, parsePeriodQuery } from '../src/finance/service';
 import { bankRowsFrom } from '../src/reconcile/monthService';
+import { pairAll, DEFAULT_TOLERANCES } from '../src/reconcile/month';
 import { businessAccountStatementRequirement } from '../src/finance/businessAccounts';
 
 // Synthetic fixture books for October 2026, every figure invented.
@@ -61,12 +62,12 @@ describe('finance summary', () => {
   it('does not count a bank line that a ledger row already explains, and lists one that none does', () => {
     const rows = [row('inv', { entryType: 'expense', amount: '858', currency: 'USD', amountEur: '753.10', paidDate: '2026-10-22', sourceType: 'invoice' })];
     const lines = [
-      { accountId: 'business-1', date: '2026-10-23', amount: '-753.10', currency: 'EUR' },
+      { bankKey: 'bank-inv', accountId: 'business-1', date: '2026-10-23', amount: '-753.10', currency: 'EUR' },
       { accountId: 'business-1', date: '2026-10-24', amount: '-20.00', currency: 'EUR' },
       { accountId: 'business-1', date: '2026-10-23', amount: '753.10', currency: 'EUR' },
     ];
-    assert.deepEqual(unmatchedStatementLines(lines, rows).map((l) => l.amount), ['-20.00', '753.10']);
-    const s = summarize({ today: '2026-10-31', query: { month: '2026-10' }, rates: noRates, rows, statementLines: lines });
+    assert.deepEqual(unmatchedStatementLines(lines, rows, new Map([['bank-inv', 'inv']])).map((l) => l.amount), ['-20.00', '753.10']);
+    const s = summarize({ today: '2026-10-31', query: { month: '2026-10' }, rates: noRates, rows, statementLines: lines, statementPairs: new Map([['bank-inv', 'inv']]) });
     assert.equal(s.totals.moneyOut, 753.1);
     assert.equal(s.totals.moneyIn, 0);
     assert.equal(s.gaps.find((g) => g.kind === 'bank-line-without-ledger-row')?.count, 2);
@@ -79,9 +80,10 @@ describe('finance summary', () => {
       statementLines: [
         { id: 'finom:tk', accountId: 'finom', date: '2026-04-16', amount: '-1179.36', currency: 'EUR', counterparty: 'Techniker Krankenkasse', reference: 'TK-BuchNr 06408502800 Monat 03/26' },
         { id: 'finom:vat', accountId: 'finom', date: '2026-04-14', amount: '-4581.14', currency: 'EUR', counterparty: 'Finanzamt', reference: 'UMS.ST 2025' },
-        { id: 'finom:eink', accountId: 'finom', date: '2026-04-14', amount: '-1000.00', currency: 'EUR', counterparty: 'Finanzamt', reference: 'EINK.ST / SOLI' },
+        { id: 'finom:eink', bankKey: 'bank-eink', accountId: 'finom', date: '2026-04-14', amount: '-1000.00', currency: 'EUR', counterparty: 'Finanzamt', reference: 'EINK.ST / SOLI' },
         { id: 'finom:unrelated', accountId: 'finom', date: '2026-04-20', amount: '-20.00', currency: 'EUR', counterparty: 'Synthetic Vendor', reference: 'Unrelated purchase' },
       ],
+      statementPairs: new Map([['bank-eink', 'eink']]),
     });
     assert.equal(s.totals.healthInsurance, 1179.36);
     assert.equal(s.totals.vatPaid, 4581.14);
@@ -117,9 +119,10 @@ describe('finance summary', () => {
         counterparty: 'Finanzamt Charlottenburg', description: 'Finanzamt Charlottenburg',
       })],
       statementLines: [{
-        id: 'finom:ust-august', accountId: 'finom', date: '2026-08-15', amount: '-4196.60',
+        id: 'finom:ust-august', bankKey: 'bank-ust', accountId: 'finom', date: '2026-08-15', amount: '-4196.60',
         currency: 'EUR', counterparty: 'Finanzamt Charlottenburg', reference: 'UMS.ST 2VJ.26 4.196,60EUR',
       }],
+      statementPairs: new Map([['bank-ust', 'ust-ledger']]),
     });
     assert.equal(s.totals.vatPaid, 4196.6);
     assert.equal(s.totals.otherTaxes, 0);
@@ -328,7 +331,7 @@ it('uses the reconciliation bank identity for mandatory statement entries', () =
   const bank = bankRowsFrom([statement]);
   const lines = financeStatementLines([statement]);
   const summary = summarize({ today: '2026-05-01', query: { month: '2026-04' },
-    rates: noRates, rows: [], statementLines: lines });
+    rates: noRates, rows: [], statementLines: lines, statementPairs: new Map() });
   assert.strictEqual(summary.entries.length, 1);
   assert.strictEqual(summary.entries[0].bankKey, bank[0].key);
   assert.notStrictEqual(summary.entries[0].id, bank[0].key);
@@ -350,14 +353,85 @@ it('deduplicates overlapping statements without merging genuine repeated payment
   assert.deepStrictEqual(lines.map((line) => line.bankKey), bank.map((row) => row.key));
   assert.deepStrictEqual(lines.map((line) => line.id), ['synthetic-original:0', 'synthetic-original:1']);
   const unmatched = summarize({ today: '2026-05-03', query: { month: '2026-04' },
-    rates: noRates, rows: [], statementLines: lines });
+    rates: noRates, rows: [], statementLines: lines, statementPairs: new Map() });
   assert.strictEqual(unmatched.entries.length, 2);
   assert.strictEqual(unmatched.entries.reduce((sum, entry) => sum + (entry.eur || 0), 0), 246.90);
   const onePayment = financeStatementLines([{ ...original, rows: [payment] }, { ...overlap, rows: [payment] }]);
   const matched = summarize({ today: '2026-05-03', query: { month: '2026-04' }, rates: noRates,
     rows: [row('synthetic-ledger', { transactionDate: '2026-04-16', paidDate: '2026-04-16',
       entryType: 'expense', amount: '123.45', counterparty: 'Techniker Krankenkasse',
-      category: 'Health Insurance', description: 'synthetic contribution' })], statementLines: onePayment });
+      category: 'Health Insurance', description: 'synthetic contribution' })], statementLines: onePayment,
+    statementPairs: new Map([[onePayment[0].bankKey!, 'synthetic-ledger']]) });
   assert.strictEqual(matched.entries.length, 1);
   assert.strictEqual(matched.entries[0].eur, 123.45);
+});
+
+it('does not hide a mandatory bank row when equal ledger candidates are ambiguous', () => {
+  const statement = { id: 'synthetic-statement', recordType: 'reconcile-statement',
+    accountId: 'synthetic-account', period: '2026-04',
+    createdAt: '2026-05-01T00:00:00Z', updatedAt: '2026-05-01T00:00:00Z',
+    rows: [{ date: '2026-04-16', amount: '-123.45', currency: 'EUR',
+      counterparty: 'Techniker Krankenkasse', reference: 'synthetic contribution' }] } as any;
+  const bank = bankRowsFrom([statement]);
+  const candidates = ['Vendor Alpha', 'Vendor Beta'].map((counterparty, i) => ({
+    id: `candidate-${i}`, date: '2026-04-16', amount: '-123.45', currency: 'EUR',
+    counterparty, documents: [],
+  }));
+  const pairing = pairAll(bank, candidates, { pairs: [], rejected: [], exceptions: {}, proofs: {} }, DEFAULT_TOLERANCES);
+  assert.strictEqual(pairing.pairs.size, 0);
+  const ledger = candidates.map((candidate) => row(candidate.id, {
+    transactionDate: candidate.date, paidDate: candidate.date, entryType: 'expense',
+    amount: '123.45', counterparty: candidate.counterparty, description: '',
+  }));
+  const summary = summarize({ today: '2026-05-03', query: { month: '2026-04' },
+    rates: noRates, rows: ledger, statementLines: financeStatementLines([statement]),
+    statementPairs: new Map([...pairing.pairs].map(([key, pair]) => [key, pair.ledger.id])) });
+  assert.ok(summary.entries.some((entry) => entry.bankKey === bank[0].key),
+    'ambiguous payment must remain in mandatory section');
+});
+
+it('does not suppress bank evidence paired to an invoice-only candidate', () => {
+  const line = { id: 'synthetic-statement:0', bankKey: 'bank-candidate', accountId: 'finom',
+    date: '2026-04-16', amount: '-123.45', currency: 'EUR',
+    counterparty: 'Techniker Krankenkasse', reference: 'synthetic' };
+  const result = summarize({ today: '2026-05-03', query: { month: '2026-04' },
+    rates: noRates, rows: [], statementLines: [line],
+    statementPairs: new Map([['bank-candidate', 'invoice-candidate-only']]) });
+  assert.strictEqual(result.entries.length, 1);
+  assert.strictEqual(result.entries[0].bankKey, 'bank-candidate');
+});
+
+it('maps pairs to retained ledger rows after sheet/system deduplication', () => {
+  const ledger = [
+    row('system', { entryType: 'expense', amount: '123.45', paidDate: '2026-04-16',
+      counterparty: 'Synthetic vendor', sourceType: 'invoice' }),
+    row('sheet', { entryType: 'expense', amount: '123.45', paidDate: '2026-04-16',
+      counterparty: 'Synthetic vendor', sourceType: 'spreadsheet' }),
+  ];
+  const line = { id: 'statement:0', bankKey: 'bank-dedup', accountId: 'finom',
+    date: '2026-04-16', amount: '-123.45', currency: 'EUR',
+    counterparty: 'Techniker Krankenkasse', reference: 'synthetic' };
+  const result = summarize({ today: '2026-05-03', query: { month: '2026-04' },
+    rates: noRates, rows: ledger, statementLines: [line],
+    statementPairs: new Map([['bank-dedup', 'sheet']]) });
+  assert.strictEqual(result.entries.length, 1);
+  assert.strictEqual(result.entries[0].id, 'system');
+});
+
+it('preserves extra bank evidence when two pairs collapse to one deduplicated ledger row', () => {
+  const ledger = [
+    row('system', { entryType: 'expense', amount: '123.45', paidDate: '2026-04-16',
+      counterparty: 'Synthetic vendor', sourceType: 'invoice' }),
+    row('sheet', { entryType: 'expense', amount: '123.45', paidDate: '2026-04-16',
+      counterparty: 'Synthetic vendor', sourceType: 'spreadsheet' }),
+  ];
+  const line = { accountId: 'finom', date: '2026-04-16', amount: '-123.45',
+    currency: 'EUR', counterparty: 'Techniker Krankenkasse', reference: 'synthetic' };
+  const result = summarize({ today: '2026-05-03', query: { month: '2026-04' }, rates: noRates,
+    rows: ledger, statementLines: [
+      { ...line, id: 'statement:0', bankKey: 'bank-one' },
+      { ...line, id: 'statement:1', bankKey: 'bank-two' },
+    ], statementPairs: new Map([['bank-one', 'system'], ['bank-two', 'sheet']]) });
+  assert.strictEqual(result.entries.length, 2);
+  assert.ok(result.entries.some((entry) => entry.bankKey === 'bank-two'));
 });

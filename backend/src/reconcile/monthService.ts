@@ -502,20 +502,32 @@ async function listPendingEmailInvoices(client: DynamoDBDocumentClient, allInvoi
   return candidates.filter((candidate): candidate is PendingEmailInvoice => candidate !== null);
 }
 
-export async function snapshot(client: DynamoDBDocumentClient): Promise<Snapshot> {
+export type SnapshotPreload = {
+  statements?: Awaited<ReturnType<typeof listStatements>>;
+  transactions?: Awaited<ReturnType<typeof listTransactions>>;
+  links?: Awaited<ReturnType<typeof listBookkeepingItems>>;
+  documents?: Awaited<ReturnType<typeof listBookkeepingItems>>;
+  invoices?: Awaited<ReturnType<typeof listInvoices>>;
+};
+
+export async function snapshot(
+  client: DynamoDBDocumentClient,
+  options: { preloaded?: SnapshotPreload; includePendingEmailInvoices?: boolean } = {},
+): Promise<Snapshot> {
+  const preloaded = options.preloaded || {};
   const [statements, transactions, links, documents, invoices, deals, organizations, financeRaw, months, config] = await Promise.all([
-    listStatements(client),
-    listTransactions(client),
-    listBookkeepingItems(client, "link"),
-    listBookkeepingItems(client, "document"),
-    listInvoices(client),
+    preloaded.statements ?? listStatements(client),
+    preloaded.transactions ?? listTransactions(client),
+    preloaded.links ?? listBookkeepingItems(client, "link"),
+    preloaded.documents ?? listBookkeepingItems(client, "document"),
+    preloaded.invoices ?? listInvoices(client),
     listCrmRecords(client, "deal"),
     listCrmRecords(client, "organization"),
     scanCrmPrefix(client, "SPONSOR_FINANCE#"),
     listMonths(client),
     getConfig(client),
   ]);
-  const pendingEmailInvoices = await listPendingEmailInvoices(client, invoices);
+  const pendingEmailInvoices = options.includePendingEmailInvoices === false ? [] : await listPendingEmailInvoices(client, invoices);
   const baseLedger = ledgerRowsFrom(transactions, links);
   const issuedInvoices = issuedInvoicesFrom(financeRaw, deals, organizations, transactions);
   const receivedInvoiceDocuments = receivedInvoiceDocumentsFrom(documents, invoices, transactions, links);

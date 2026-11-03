@@ -37,11 +37,11 @@ A row is booked in the month it was **paid** (`paidDate`, else
 
 ## No double counting
 
-1. **Ledger row vs the bank line that pays it.** A statement line is explained
-   by a ledger row with the same direction, currency and amount (or the row's
-   booked EUR amount against a EUR line), within the reconciliation date-lag
-   tolerance (10 days by default); each row explains at most one line. Explained
-   lines count through the ledger row only, with the matched statement reference
+1. **Ledger row vs the bank line that pays it.** Reconciliation determines
+   the pairing, including manual pairs, rejections and ambiguous candidates.
+   A line counts through a paired retained ledger row only once. Overlapping
+   statement copies use the same bank-row identity and count once; separate
+   repeated payments remain separate. The matched statement reference
    supplying its purpose when the ledger row has only a generic tax label. This
    keeps a matched `UMS.ST` debit in VAT paid instead of other taxes. Unmatched TK and Finanzamt debit
    lines count directly; other unmatched lines are listed as
