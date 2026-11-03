@@ -51,6 +51,8 @@ import {
   type VerifiedActor,
 } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
+import { listNewsletterIssuesByCardId } from '../db/newsletterIssues';
+import { isSponsorWrittenCard, syncStandaloneMarkdownTask } from '../newsletter/markdownTask';
 import { projectCard, projectCards, projectTasks } from '../identity/projections';
 import { attachPrerequisites } from '../db/taskDependencies';
 import { normalizeCardLinks } from '../artifactLinks';
@@ -761,6 +763,18 @@ async function handleSingle(
       expectedVersion: body.expectedVersion as number,
       patch: updates,
     });
+    // A `sponsor-written` Card tag means the sponsor supplied the text, so a
+    // linked stand-alone issue's Markdown step has nothing to do: skip it so
+    // it leaves the today/overdue queue. Never fails the Card write.
+    if (isSponsorWrittenCard(card)) {
+      try {
+        for (const linked of await listNewsletterIssuesByCardId(client, card.id)) {
+          await syncStandaloneMarkdownTask(client, linked, actor.id || 'system');
+        }
+      } catch (failure) {
+        console.error('Standalone Markdown step sync after Card tagging failed:', failure);
+      }
+    }
     const templateIdByType = await getTemplateIdByType(client);
     return json(200, { card: await projectCard(new TeamDirectory(client), card, undefined, templateIdByType) });
   }
