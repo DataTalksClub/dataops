@@ -135,6 +135,66 @@ describe("native accountant report API", () => {
     assert.doesNotMatch(report.content, /Stale Alias|Synthetic Owner|Synthetic Tax Office|Synthetic Prior Service/);
   });
 
+  it("uses normalized EUR currency for validation and the native accountant amount", async () => {
+    const normalizedEuroRows = [
+      {
+        PK: "BOOKKEEPING#synthetic-missing-currency-eur",
+        SK: "BOOKKEEPING#synthetic-missing-currency-eur",
+        id: "synthetic-missing-currency-eur",
+        transactionDate: "2026-10-08",
+        counterparty: "Synthetic Missing Currency Vendor",
+        description: "Missing currency service",
+        amount: "10.00",
+        entryType: "expense",
+      },
+      {
+        PK: "BOOKKEEPING#synthetic-lowercase-currency-eur",
+        SK: "BOOKKEEPING#synthetic-lowercase-currency-eur",
+        id: "synthetic-lowercase-currency-eur",
+        transactionDate: "2026-10-09",
+        counterparty: "Synthetic Lowercase Currency Vendor",
+        description: "Lowercase currency service",
+        amount: "20.00",
+        amountEur: "19.00",
+        currency: "eur",
+        entryType: "expense",
+      },
+      {
+        PK: "BOOKKEEPING#synthetic-padded-currency-eur",
+        SK: "BOOKKEEPING#synthetic-padded-currency-eur",
+        id: "synthetic-padded-currency-eur",
+        transactionDate: "2026-10-10",
+        counterparty: "Synthetic Padded Currency Vendor",
+        description: "Padded currency service",
+        amount: "30.00",
+        amountEur: "29.00",
+        currency: " EUR ",
+        entryType: "expense",
+      },
+    ];
+    const response = await handleBookkeepingRoutes(
+      "/api/bookkeeping/reports/accountant",
+      "GET",
+      {
+        httpMethod: "GET",
+        path: "/api/bookkeeping/reports/accountant",
+        headers: {},
+        queryStringParameters: { period: "2026-10", format: "csv" },
+      },
+      { send: async () => ({ Items: normalizedEuroRows }) } as unknown as DynamoDBDocumentClient,
+      true,
+    );
+
+    assert.equal(response.statusCode, 200);
+    const report = JSON.parse(response.body);
+    assert.equal(report.count, 3);
+    assert.equal(report.content,
+      '"Date","Company","What","Amount, EUR"\r\n'
+      + '"2026-10-10","Synthetic Padded Currency Vendor","Padded currency service","-30.00"\r\n'
+      + '"2026-10-09","Synthetic Lowercase Currency Vendor","Lowercase currency service","-20.00"\r\n'
+      + '"2026-10-08","Synthetic Missing Currency Vendor","Missing currency service","-10.00"\r\n');
+  });
+
   it("uses the same accountant inclusion rules for copied TSV", async () => {
     const response = await handleBookkeepingRoutes(
       "/api/bookkeeping/reports/accountant",

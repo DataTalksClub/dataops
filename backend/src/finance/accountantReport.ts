@@ -50,10 +50,14 @@ export function selectAccountantReportRows(transactions: AccountantReportEntry[]
   return accountantReportRowsForPeriod(transactions, period).filter(isAccountantReportRowIncluded);
 }
 
+function accountantCurrency(entry: AccountantReportEntry) {
+  return String(entry.currency || "EUR").trim().toUpperCase();
+}
+
 /** Rows that cannot be represented in the EUR-only accountant report. */
 export function unconvertedAccountantReportRows(entries: AccountantReportEntry[]) {
   return entries.filter((entry) =>
-    String(entry.currency || "EUR").toUpperCase() !== "EUR" &&
+    accountantCurrency(entry) !== "EUR" &&
     !String(entry.amountEur ?? "").trim(),
   );
 }
@@ -78,7 +82,7 @@ function csvCell(value: unknown) {
 function values(entry: AccountantReportEntry) {
   const dir = direction(entry);
   const sign = dir === "expense" ? "-" : "";
-  const eurValue = entry.currency === "EUR" ? entry.amount : entry.amountEur ?? "";
+  const eurValue = accountantCurrency(entry) === "EUR" ? entry.amount : entry.amountEur ?? "";
   const priceEur = eurValue !== "" && eurValue != null ? `${sign}${eurValue}` : "";
   return [
     accountantCashDate(entry),

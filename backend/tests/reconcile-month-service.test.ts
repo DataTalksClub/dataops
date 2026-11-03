@@ -50,6 +50,59 @@ describe('reconciliation ledger projection', () => {
     });
   });
 
+  it('keeps accountant API and package CSV aligned for normalized EUR and blocks unconverted foreign currency', async () => {
+    const period = '2027-02';
+    const normalizedEuroRows = [
+      {
+        id: 'synthetic-package-missing-currency-eur', transactionDate: `${period}-08`, paidDate: `${period}-08`,
+        counterparty: 'Synthetic Missing Currency Vendor', description: 'Missing currency service', amount: '10.00',
+        entryType: 'expense',
+      },
+      {
+        id: 'synthetic-package-lowercase-currency-eur', transactionDate: `${period}-09`, paidDate: `${period}-09`,
+        counterparty: 'Synthetic Lowercase Currency Vendor', description: 'Lowercase currency service', amount: '20.00',
+        amountEur: '19.00', currency: 'eur', entryType: 'expense',
+      },
+      {
+        id: 'synthetic-package-padded-currency-eur', transactionDate: `${period}-10`, paidDate: `${period}-10`,
+        counterparty: 'Synthetic Padded Currency Vendor', description: 'Padded currency service', amount: '30.00',
+        amountEur: '29.00', currency: ' EUR ', entryType: 'expense',
+      },
+    ];
+    for (const row of normalizedEuroRows) await putBookkeepingItem(client, 'bookkeeping', row);
+
+    const packageResult = await monthPackage(client, period, { draft: true });
+    const accountant = await handleBookkeepingAccountantReportRoutes(
+      '/api/bookkeeping/reports/accountant', 'GET',
+      { httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period, format: 'csv' } } as any,
+      client,
+    );
+    assert.equal(accountant?.statusCode, 200);
+    const report = JSON.parse(accountant!.body);
+    assert.equal(report.count, 3);
+    assert.deepEqual(packageResult.blockers, []);
+    assert.equal(packageResult.csv, report.content);
+    assert.match(packageResult.csv, /Synthetic Missing Currency Vendor","Missing currency service","-10\.00/);
+    assert.match(packageResult.csv, /Synthetic Lowercase Currency Vendor","Lowercase currency service","-20\.00/);
+    assert.match(packageResult.csv, /Synthetic Padded Currency Vendor","Padded currency service","-30\.00/);
+    assert.doesNotMatch(packageResult.csv, /-19\.00|-29\.00/);
+
+    const unconverted = await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-package-unconverted-usd', transactionDate: `${period}-11`, paidDate: `${period}-11`,
+      counterparty: 'Synthetic Unconverted USD Vendor', description: 'Unconverted foreign service', amount: '12.00',
+      currency: 'USD', entryType: 'expense',
+    });
+    const blockedPackage = await monthPackage(client, period, { draft: true });
+    const blockedAccountant = await handleBookkeepingAccountantReportRoutes(
+      '/api/bookkeeping/reports/accountant', 'GET',
+      { httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period, format: 'csv' } } as any,
+      client,
+    );
+    assert.equal(blockedAccountant?.statusCode, 409);
+    assert.deepEqual(JSON.parse(blockedAccountant!.body).unconvertedTransactionIds, [unconverted.item.id]);
+    assert.deepEqual(blockedPackage.blockers.map((blocker) => blocker.rowId), [unconverted.item.id]);
+  });
+
   it('projects a confirmed invoice intake artifact and blocks unresolved expected files in the package', async () => {
     const period = '2026-11';
     const invoiceId = 'c'.repeat(64);
