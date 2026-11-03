@@ -1,4 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import {
+  closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync,
+  readFileSync, readSync, unlinkSync, writeFileSync,
+} from "node:fs";
 import { hostname, userInfo } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -255,25 +258,117 @@ async function mintServiceToken({ clientId, clientSecret }) {
 /** Rotate a single-use refresh token for a fresh access token. */
 export async function refreshTokens(profile) {
   if (!profile.refreshToken) throw new AuthError("No refreshable session. Run `dataops login`.");
-  const { status, body } = await issuerTokenForm({
-    grant_type: "refresh_token",
-    refresh_token: profile.refreshToken,
-    client_id: CLI_CLIENT_ID,
+  const filePath = profile.configDir
+    ? path.join(path.resolve(profile.configDir), "credentials.json")
+    : credentialsPath();
+  return withCredentialsLock(filePath, async () => {
+    const current = resolveProfileFromDir(path.dirname(filePath), { url: profile.url });
+    if (hasNewerSession(current, profile)) return current;
+
+    const { status, body } = await issuerTokenForm({
+      grant_type: "refresh_token",
+      refresh_token: profile.refreshToken,
+      client_id: CLI_CLIENT_ID,
+    });
+    if (status !== 200 || !body?.access_token) {
+      const reason = body?.error_description || body?.error || `HTTP ${status}`;
+      throw new AuthError(`Token refresh failed: ${reason}`);
+    }
+    const updated = {
+      ...profile,
+      accessToken: body.access_token,
+      refreshToken: body.refresh_token || profile.refreshToken,
+      expiresAt: new Date(Date.now() + (Number(body.expires_in) || 3600) * 1000).toISOString(),
+    };
+    if (profile.configDir) {
+      const { configDir, ...stored } = updated;
+      saveProfileToDir(profile.configDir, profile.url, stored);
+    } else saveProfile(profile.url, updated);
+    return updated;
   });
-  if (status !== 200 || !body?.access_token) {
-    throw new AuthError("Session expired. Run `dataops login` again.");
+}
+
+function hasNewerSession(current, requested) {
+  if (!current.refreshToken || !current.accessToken) return false;
+  if (current.refreshToken !== requested.refreshToken) return true;
+  return current.accessToken !== requested.accessToken &&
+    Date.parse(current.expiresAt || "") > Date.parse(requested.expiresAt || "");
+}
+
+/** Serialize refresh-token rotation across processes sharing one credential file. */
+async function withCredentialsLock(credentialsFile, action) {
+  const lockPath = `${credentialsFile}.lock`;
+  mkdirSync(path.dirname(credentialsFile), { recursive: true, mode: 0o700 });
+  const deadline = Date.now() + 30_000;
+  let lockFd;
+  while (lockFd === undefined) {
+    try {
+      lockFd = openSync(lockPath, "wx", 0o600);
+      writeFileSync(lockFd, JSON.stringify({ pid: process.pid, createdAt: Date.now() }));
+    } catch (error) {
+      if (lockFd !== undefined) {
+        closeSync(lockFd);
+        lockFd = undefined;
+        try { unlinkSync(lockPath); } catch {}
+      }
+      if (error.code !== "EEXIST") throw error;
+      removeDeadRefreshLock(lockPath);
+      if (Date.now() >= deadline) throw new AuthError("Timed out waiting for another DataOps session refresh.");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
   }
-  const updated = {
-    ...profile,
-    accessToken: body.access_token,
-    refreshToken: body.refresh_token || profile.refreshToken,
-    expiresAt: new Date(Date.now() + (Number(body.expires_in) || 3600) * 1000).toISOString(),
-  };
-  if (profile.configDir) {
-    const { configDir, ...stored } = updated;
-    saveProfileToDir(configDir, profile.url, stored);
-  } else saveProfile(profile.url, updated);
-  return updated;
+
+  const lockStat = fstatSync(lockFd);
+  try {
+    return await action();
+  } finally {
+    closeSync(lockFd);
+    try {
+      const currentStat = lstatSync(lockPath);
+      if (currentStat.dev === lockStat.dev && currentStat.ino === lockStat.ino) unlinkSync(lockPath);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
+}
+
+function removeDeadRefreshLock(lockPath) {
+  let stat;
+  try { stat = lstatSync(lockPath); } catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+  let lock;
+  try {
+    const fd = openSync(lockPath, "r");
+    try {
+      const buffer = Buffer.alloc(256);
+      const size = readSync(fd, buffer, 0, buffer.length, 0);
+      lock = JSON.parse(buffer.toString("utf8", 0, size));
+    } finally { closeSync(fd); }
+  } catch {
+    if (Date.now() - stat.mtimeMs > 30_000) unlinkIfSameFile(lockPath, stat);
+    return;
+  }
+  if (!Number.isInteger(lock.pid) || !processIsAlive(lock.pid)) unlinkIfSameFile(lockPath, stat);
+}
+
+function processIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
+
+function unlinkIfSameFile(filePath, expectedStat) {
+  try {
+    const currentStat = lstatSync(filePath);
+    if (currentStat.dev === expectedStat.dev && currentStat.ino === expectedStat.ino) unlinkSync(filePath);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
 }
 
 export async function logout(args, io) {
