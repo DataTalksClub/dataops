@@ -5,10 +5,14 @@ import { apiFor } from "../session.mjs";
 
 export const summary = "Bookkeeping: sync from the spreadsheet, fill classification, read invoices";
 
-const CSV_PULL_GUIDANCE = `From the dapier checkout, export one CSV per tab with the sanctioned google-data-pull skill:
+const CSV_PULL_GUIDANCE = `Safe operator path: pending verification in Dapier intake 1d9cf506.
+Before any pull or sync, from the Dapier checkout selected for export, verify that it contains exporter fix 2239cb08:
+  git merge-base --is-ancestor 2239cb08 HEAD
+This version check is necessary but not sufficient. Do not export or sync until intake 1d9cf506 confirms the operator path is verified.
+When verified, export one CSV per tab from that Dapier checkout with the sanctioned google-data-pull skill:
   python3 .agents/skills/google-data-pull/gpull.py --agent admin-os --as "drive datatalks" drive sheet <spreadsheet-id> --out-dir <csv-dir>
 Then, from the DataOps checkout, run node <dataops>/cli/bin/dataops.mjs bookkeeping sync <csv-dir> (dry run by default). Keep the CSV export outside this repository.
-Precision limitation: DataOps cannot tell from a CSV whether displayed amounts have been rounded, and it still accepts --apply for CSV directories. Do not apply this export until the Dapier pull is verified to write original numeric values, preserve formatted date strings, and avoid filename collisions.`;
+Precision limitation: DataOps cannot tell from a CSV whether displayed amounts have been rounded, and it still accepts --apply for CSV directories. After the operator path is verified, do not apply unless the exporter is confirmed to write original numeric values, preserve formatted date strings, and avoid filename collisions.`;
 
 export const help = `dataops bookkeeping - keep DataOps transactions in step with the bookkeeping sheet
 

@@ -206,6 +206,9 @@ test("sync --sheet fails closed without reading a token or making a request", as
     assert.equal(tokenReads, 0);
     assert.deepEqual(requests, []);
     assert.match(io.errors.join("\n"), /Direct --sheet mode is disabled/);
+    assert.match(io.errors.join("\n"), /Before any pull or sync/);
+    assert.match(io.errors.join("\n"), /git merge-base --is-ancestor 2239cb08 HEAD/);
+    assert.match(io.errors.join("\n"), /Do not export or sync until intake 1d9cf506 confirms the operator path is verified/);
     assert.match(io.errors.join("\n"), /google-data-pull/);
     assert.match(io.errors.join("\n"), /bookkeeping sync <csv-dir>/);
     assert.match(io.errors.join("\n"), /DataOps cannot tell from a CSV whether displayed amounts have been rounded/);
