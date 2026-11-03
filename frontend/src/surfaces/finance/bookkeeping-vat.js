@@ -7,9 +7,13 @@ const MANDATORY_LABELS = {
   taxes: "Other taxes",
   "health-insurance": "Health insurance / TK",
 };
+const TAX_HEALTH_LINES = new Set(["vat", "taxes", "health-insurance"]);
 const TAX_HEALTH_KINDS = new Set(["tax_debit", "tk_debit"]);
 
 function isTaxHealthEntry(entry) {
+  const line = String(entry?.line || "");
+  if (TAX_HEALTH_LINES.has(line)) return true;
+  if (line) return false;
   return TAX_HEALTH_KINDS.has(String(entry?.mandatoryKind || ""));
 }
 
@@ -40,7 +44,7 @@ function mandatoryLabel(entry) {
   return isRefund(entry) ? `${label} refund` : label;
 }
 
-// Share the explicit tax/health classification between the monthly list and its separate section.
+// Share exact tax/health line classification and the guarded kind fallback between both views.
 export function monthlyLedgerEntries(entries, lens, financeEntriesById) {
   if (!/^\d{4}-\d{2}$/.test(lens)) return entries;
   return entries.filter((entry) => {
@@ -92,7 +96,7 @@ export function mandatoryPaymentsMarkup(entries, lens, escapeHtml, state = "read
   const subtotal = exceptions.reduce((sum, entry) => {
     const value = Number(entry.eur);
     return entry.eur !== null && entry.eur !== undefined && Number.isFinite(value)
-      ? sum + (isRefund(entry) ? -Math.abs(value) : Math.abs(value))
+      ? sum + (isRefund(entry) ? Math.abs(value) : -Math.abs(value))
       : sum;
   }, 0);
   const unconvertedCount = exceptions.filter((entry) => entry.eur === null

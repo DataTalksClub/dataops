@@ -403,7 +403,7 @@ test("the month tax section lists debits, refunds, and health insurance with sig
   const markup = mandatoryPaymentsMarkup([
     { id: "synthetic-vat-april", month: "2026-04", date: "2026-04-14", direction: "out", line: "vat", mandatoryKind: "tax_debit", counterparty: "Synthetic Tax Office", description: "Synthetic VAT debit", amount: "120.00", currency: "EUR", eur: 120 },
     { id: "synthetic-tk-april", month: "2026-04", date: "2026-04-16", direction: "out", line: "health-insurance", mandatoryKind: "tk_debit", counterparty: "Synthetic Health Fund", description: "Synthetic health-insurance debit", amount: "40.00", currency: "EUR", eur: 40 },
-    { id: "synthetic-refund-april", month: "2026-04", date: "2026-04-20", direction: "in", line: "vat", mandatoryKind: "tax_debit", counterparty: "Synthetic Refund Office", description: "Synthetic VAT credit", amount: "15.00", currency: "EUR", eur: 15 },
+    { id: "synthetic-refund-april", month: "2026-04", date: "2026-04-20", direction: "in", line: "taxes", mandatoryKind: null, counterparty: "Synthetic Refund Office", description: "Synthetic tax credit", amount: "15.00", currency: "EUR", eur: 15 },
     { id: "synthetic-tax-may", month: "2026-05", date: "2026-05-14", direction: "out", line: "taxes", mandatoryKind: "tax_debit", counterparty: "Synthetic Tax Office", description: "Synthetic other-tax debit", amount: "20.00", currency: "EUR", eur: 20 },
   ], "2026-04", escapeHtml);
 
@@ -412,9 +412,9 @@ test("the month tax section lists debits, refunds, and health insurance with sig
   assert.match(markup, /VAT \/ USt/);
   assert.match(markup, /Synthetic Health Fund/);
   assert.match(markup, /Health insurance \/ TK/);
-  assert.match(markup, /VAT \/ USt refund/);
+  assert.match(markup, /Other taxes refund/);
   assert.match(markup, /€15\.00/);
-  assert.match(markup, /€145\.00/);
+  assert.match(markup, /-€145\.00/);
   assert.doesNotMatch(markup, /Synthetic other-tax debit/);
   assert.equal((markup.match(/<tr>/g) || []).length, 4, "three current-month rows plus the table header");
   assert.equal(mandatoryPaymentsMarkup([], "2026", escapeHtml), "", "the section is specific to a selected month");
@@ -477,7 +477,7 @@ test("monthly tax partition keeps consulting fees and allocation totals in the o
       currency: "EUR", entryType: "expense", category: "Taxes", statementRef: "Synthetic statement A" },
     { id: "synthetic-tax-refund", transactionDate: "2026-04-20", paidDate: "2026-04-20",
       counterparty: "Synthetic Refund Office", description: "Synthetic tax credit", amount: "25.00", amountEur: "25.00",
-      currency: "EUR", entryType: "expense", category: "Taxes", statementRef: "Synthetic statement B" },
+      currency: "EUR", entryType: "income", category: "Taxes", statementRef: "Synthetic statement B" },
     { id: "synthetic-health-debit", transactionDate: "2026-04-16", paidDate: "2026-04-16",
       counterparty: "Synthetic Health Fund", description: "Synthetic health-insurance debit", amount: "10.00", amountEur: "10.00",
       currency: "EUR", entryType: "expense", category: "Health Insurance", statementRef: "Synthetic statement C" },
@@ -505,8 +505,8 @@ test("monthly tax partition keeps consulting fees and allocation totals in the o
   const financeEntries = [
     { id: "synthetic-tax-debit", month, date: "2026-04-14", direction: "out", line: "vat",
       mandatoryKind: "tax_debit", refund: false, counterparty: "Synthetic Tax Office", amount: "120.00", currency: "EUR", eur: 120 },
-    { id: "synthetic-tax-refund", month, date: "2026-04-20", direction: "out", line: "vat",
-      mandatoryKind: "tax_debit", refund: true, counterparty: "Synthetic Refund Office", amount: "25.00", currency: "EUR", eur: 25 },
+    { id: "synthetic-tax-refund", month, date: "2026-04-20", direction: "in", line: "taxes",
+      mandatoryKind: null, counterparty: "Synthetic Refund Office", amount: "25.00", currency: "EUR", eur: 25 },
     { id: "synthetic-health-debit", month, date: "2026-04-16", direction: "out", line: "health-insurance",
       mandatoryKind: "tk_debit", refund: false, counterparty: "Synthetic Health Fund", amount: "10.00", currency: "EUR", eur: 10 },
   ];
@@ -532,11 +532,11 @@ test("monthly tax partition keeps consulting fees and allocation totals in the o
   assert.equal((taxMarkup.match(/<tr>/g) || []).length, 4, "one row per classified exception plus the table header");
   for (const counterparty of ["Synthetic Tax Office", "Synthetic Refund Office", "Synthetic Health Fund"])
     assert.equal((taxMarkup.match(new RegExp(counterparty, "g")) || []).length, 1, `${counterparty} appears once`);
-  assert.match(taxMarkup, /VAT \/ USt refund/);
+  assert.match(taxMarkup, /Other taxes refund/);
   assert.match(taxMarkup, /-€120\.00/);
   assert.match(taxMarkup, /€25\.00/);
   assert.match(taxMarkup, /-€10\.00/);
-  assert.match(taxMarkup, /€105\.00/);
+  assert.match(taxMarkup, /-€105\.00/);
   assert.doesNotMatch(taxMarkup, /Synthetic Compliance Advisor|Synthetic Combined Settlement/);
 
   const withdrawals = ownerWithdrawalEntries(rows, month);
@@ -608,5 +608,24 @@ test("an expense-encoded tax refund moves to the separate section and reduces it
   assert.match(markup, /VAT \/ USt refund/);
   const subtotal = markup.match(/bk-mandatory-payments__subtotal[\s\S]*?<strong>(.*?)<\/strong>/)?.[1];
   assert.ok(subtotal);
-  assert.match(subtotal, /€80\.00/);
+  assert.match(subtotal, /-€80\.00/);
+});
+
+test("tax lines are exact and explicit-kind fallback applies only when line is absent", () => {
+  const entries = [
+    { id: "synthetic-line-tax", month: "2026-04", direction: "in", line: "taxes", mandatoryKind: null,
+      counterparty: "Synthetic tax refund", amount: "12.00", currency: "EUR", eur: 12 },
+    { id: "synthetic-kind-only", month: "2026-04", direction: "out", mandatoryKind: "tax_debit",
+      counterparty: "Synthetic classified debit", amount: "20.00", currency: "EUR", eur: 20 },
+    { id: "synthetic-unrelated-line", month: "2026-04", direction: "out", line: "operating", mandatoryKind: "tax_debit",
+      counterparty: "Synthetic operating payment", amount: "30.00", currency: "EUR", eur: 30 },
+  ];
+  const rows = entries.map(({ id }) => ({ id }));
+  const index = new Map(entries.map((entry) => [entry.id, entry]));
+  assert.deepEqual(monthlyLedgerEntries(rows, "2026-04", index), [rows[2]]);
+  const markup = mandatoryPaymentsMarkup(entries, "2026-04", escapeHtml);
+  assert.match(markup, /Synthetic tax refund/);
+  assert.match(markup, /Synthetic classified debit/);
+  assert.doesNotMatch(markup, /Synthetic operating payment/);
+  assert.match(markup, /-€8\.00/);
 });
