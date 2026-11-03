@@ -118,6 +118,33 @@ describe('finance tax schedule and upcoming debits API', () => {
     assert.equal(upcoming.debits.find((item) => item.scheduleId === 'synthetic-refund-test')?.status, 'scheduled');
   });
 
+  it('uses paired EUR bank evidence and never treats unconverted foreign amounts as EUR', async () => {
+    const client = await getClient();
+    for (const [id, amount] of [['synthetic-fx-paired', '150.00'], ['synthetic-fx-unpaired', '200.00']]) {
+      assert.equal((await invoke('PUT', `/api/finance/tax-schedule/${id}`, {
+        label: id, taxType: 'vat', amount, currency: 'EUR',
+        rule: { kind: 'once', date: '2023-04-17' }, source: 'USt-VA',
+      })).statusCode, 200);
+    }
+    await saveStatement(client, {
+      accountId: 'finom', period: '2023-04', filename: 'synthetic-fx-statement.csv',
+      rows: [{ date: '2023-04-17', amount: '-150.00', currency: 'EUR',
+        counterparty: 'Finanzamt', reference: 'synthetic VAT' }],
+    });
+    for (const [id, amount] of [['synthetic-fx-ledger-paired', '170.00'], ['synthetic-fx-ledger-unpaired', '200.00']]) {
+      await putBookkeepingItem(client, 'bookkeeping', {
+        id, transactionDate: '2023-04-17', paidDate: '2023-04-17',
+        entryType: 'expense', amount, currency: 'USD', sourceType: 'manual',
+        counterparty: 'Synthetic authority', category: 'VAT',
+      });
+    }
+    const bank = bankRowsFrom(await listStatements(client)).find((item) => item.date === '2023-04-17')!;
+    await pairRows(client, '2023-04', 'synthetic-operator', bank.key, 'synthetic-fx-ledger-paired');
+    const result = await financeUpcoming(client, 14, '2023-04-17', async () => null);
+    assert.equal(result.debits.find((item) => item.scheduleId === 'synthetic-fx-paired')?.status, 'paid');
+    assert.equal(result.debits.find((item) => item.scheduleId === 'synthetic-fx-unpaired')?.status, 'scheduled');
+  });
+
   it('derives row VAT from the linked stored invoice facts', async () => {
     const client = await getClient();
     const transaction = (await putBookkeepingItem(client, 'bookkeeping', {
