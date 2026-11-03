@@ -382,8 +382,20 @@ function buildAllocationTransactItems(
       && link.coverageType === "evidence",
     );
     if (existingEvidenceLink) {
-      // Existing operator-created evidence is reused. Pin its source status and
-      // sponsor ownership for the same atomic parent-CAS operation.
+      // Existing operator-created evidence is reused. Pin the exact link,
+      // source status, and sponsor ownership for the same atomic parent-CAS
+      // operation so a concurrent unlink cannot leave an unlinked allocation.
+      const existingLinkPk = `LINK#${String(existingEvidenceLink.id)}`;
+      items.push({ ConditionCheck: {
+        TableName: TABLE_BOOKKEEPING,
+        Key: { PK: existingLinkPk, SK: existingLinkPk },
+        ConditionExpression: "documentId = :documentId AND transactionId = :transactionId AND coverageType = :coverage",
+        ExpressionAttributeValues: {
+          ":documentId": documentId,
+          ":transactionId": transactionId,
+          ":coverage": "evidence",
+        },
+      } });
       items.push({ ConditionCheck: {
         TableName: TABLE_BOOKKEEPING,
         Key: { PK: `DOCUMENT#${documentId}`, SK: `DOCUMENT#${documentId}` },

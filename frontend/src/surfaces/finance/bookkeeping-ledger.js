@@ -334,17 +334,26 @@ function bankOnlyRowMarkup(entry, e) {
 }
 
 function allocationChildMarkup(entry, allocation, { getAllocationDocument = () => null, e }) {
+  const vatCurrency = String(allocation.vatCurrency || allocation.currency || entry.currency || "EUR")
+    .trim()
+    .toUpperCase();
+  const vatEur = vatCurrency === "EUR" ? allocation.vatAmount : undefined;
   const child = {
     ...entry,
     ...allocation,
+    vatAmount: allocation.vatAmount,
+    vatCurrency: allocation.vatCurrency,
+    vatEur,
+    reverseCharge: allocation.reverseCharge,
     transactionDate: allocation.transactionDate || entry.transactionDate,
     paidDate: allocation.paidDate || entry.paidDate,
     currency: allocation.currency || entry.currency,
     entryType: entry.entryType,
   };
-  const eur = eurValue(child);
+  const net = netValue(child, { vatEur });
   const original = originalValue(child);
   const originalText = original === null ? "" : signedAmount(original, child.currency);
+  const vat = vatPresentation(child);
   const document = getAllocationDocument(entry, allocation);
   const pdfAction = document
     ? html`<button type="button" class="dk-button dk-button--secondary dk-button--sm bk-evidence-view"
@@ -359,10 +368,10 @@ function allocationChildMarkup(entry, allocation, { getAllocationDocument = () =
           <span class="bk-who__what" title="${e(allocation.description || "")}">${e(allocation.description || "")}</span>
         </a>
       </td>
-      <td class="bk-col-money bk-col-eur${eur === null ? " is-unconverted" : ""}"${eur !== null && originalText ? ` title="Original ${e(originalText)}"` : ""}>${eur === null
+      <td class="bk-col-money bk-col-eur${net === null ? " is-unconverted" : ""}"${net !== null && originalText ? ` title="Original ${e(originalText)}"` : ""}>${net === null
         ? html`<span class="bk-unconverted" title="No EUR value recorded for this invoice allocation">${e(originalText || "EUR?")}</span>`
-        : e(signedAmount(eur, "EUR"))}</td>
-      <td class="bk-col-vat">${e(vatPresentation(child) || "—")}</td>
+        : e(signedAmount(net, "EUR"))}</td>
+      <td class="bk-col-vat"${vat ? ` title="${e(vatTitle(child, vat))}"` : ""}>${e(vat || "—")}</td>
       <td class="bk-col-account">${e(accountOf(entry))}</td>
       ${CLASSIFICATION_FIELDS.map(({ field }) => html`<td class="bk-col-class bk-col-${field}">${e(allocation[field] || "")}</td>`).join("")}
       <td class="bk-col-flag">${pdfAction}</td>
@@ -387,6 +396,11 @@ const COLUMN_COUNT = 9;
 
 export function ledgerTableMarkup({ groups, hasEvidence, hasInvoice = () => false, getAllocationDocument = () => null, vocab, selectedId, financeEntriesById = new Map(), e }) {
   const body = groups.map((group) => {
+    const visibleRowCount = group.entries.reduce((count, entry) => {
+      if (entry.reconciliationOnly) return count + 1;
+      const allocations = Array.isArray(entry.allocations) ? entry.allocations : [];
+      return count + (allocations.length || 1);
+    }, 0);
     const totals = [
       group.moneyOut ? html`<span class="bk-total">out <span class="dk-mono">${e(signedAmount(group.moneyOut, "EUR"))}</span></span>` : "",
       group.moneyIn ? html`<span class="bk-total">in <span class="dk-mono">${e(signedAmount(group.moneyIn, "EUR"))}</span></span>` : "",
@@ -396,16 +410,19 @@ export function ledgerTableMarkup({ groups, hasEvidence, hasInvoice = () => fals
         <tr class="bk-month__head">
           <th scope="rowgroup" colspan="${COLUMN_COUNT}">
             <span class="bk-month__title">${e(group.month ? monthLabel(group.month) : "No date")}</span>
-            <span class="bk-month__count dk-mono">${group.entries.length}</span>
+            <span class="bk-month__count dk-mono">${visibleRowCount}</span>
             <span class="bk-month__totals">${totals}</span>
           </th>
         </tr>
         ${group.entries.map((entry) => {
           if (entry.reconciliationOnly) return bankOnlyRowMarkup(entry, e);
-          const children = (Array.isArray(entry.allocations) ? entry.allocations : [])
-            .map((allocation) => allocationChildMarkup(entry, allocation, { getAllocationDocument, e }))
-            .join("");
-          return `${ledgerRowMarkup(entry, { hasEvidence, hasInvoice, vocab, selectedId, financeEntry: financeEntriesById.get(entry.id), e })}${children}`;
+          const allocations = Array.isArray(entry.allocations) ? entry.allocations : [];
+          if (allocations.length) {
+            return allocations
+              .map((allocation) => allocationChildMarkup(entry, allocation, { getAllocationDocument, e }))
+              .join("");
+          }
+          return ledgerRowMarkup(entry, { hasEvidence, hasInvoice, vocab, selectedId, financeEntry: financeEntriesById.get(entry.id), e });
         }).join("")}
       </tbody>`;
   }).join("");

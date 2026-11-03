@@ -261,6 +261,36 @@ describe('bookkeeping API',()=>{
     assert.equal((await listBookkeepingItems(client,'allocation-source-claim')).some((claim:any)=>claim.transactionId===payment.id),false);
   });
 
+  it('atomically rejects an existing evidence link removed after allocation validation',async()=>{
+    const document=(await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:'existing-link-race.pdf',contentType:'application/pdf',byteSize:100,sha256:createHash('sha256').update('existing-link-race-pdf').digest('hex'),s3Key:'documents/existing-link-race.pdf'})).item;
+    const payment=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-28',amount:'10.00'})).body);
+    const linkResponse=await invoke('POST','/api/bookkeeping/links',{documentId:document.id,transactionId:payment.id,coverageType:'evidence'});
+    assert.equal(linkResponse.statusCode,201);
+    const link=JSON.parse(linkResponse.body);
+    let raced=false;
+    let transactionItems:any[]=[];
+    const racyClient={send:async(command:any)=>{
+      if(!raced&&command instanceof TransactWriteCommand&&command.input.TransactItems?.some((item:any)=>item.Update?.Key?.PK===`BOOKKEEPING#${payment.id}`)){
+        raced=true;
+        transactionItems=command.input.TransactItems;
+        const unlink=await invoke('DELETE',`/api/bookkeeping/links/${link.id}`);
+        assert.equal(unlink.statusCode,204,unlink.body);
+      }
+      return client.send(command);
+    }} as unknown as DynamoDBDocumentClient;
+    const response=await handleBookkeepingTransactionRoutes(`/api/bookkeeping/transactions/${payment.id}/allocations`,'PUT',{headers:{},body:JSON.stringify({expectedUpdatedAt:payment.updatedAt,allocations:[{documentId:document.id,counterparty:'Synthetic Vendor',description:'Synthetic invoice',amount:'10.00'}]})} as any,racyClient);
+    assert.ok(response);
+    assert.equal(response.statusCode,409);
+    assert.equal(raced,true);
+    const linkGuard=transactionItems.find((item:any)=>item.ConditionCheck?.Key?.PK===`LINK#${link.id}`)?.ConditionCheck;
+    assert.ok(linkGuard,'the reused evidence link is conditionally checked in the parent allocation transaction');
+    assert.equal(linkGuard.ConditionExpression,'documentId = :documentId AND transactionId = :transactionId AND coverageType = :coverage');
+    assert.equal((await getBookkeepingItem(client,'bookkeeping',payment.id))?.allocations,undefined);
+    assert.equal((await getBookkeepingItem(client,'document',document.id))?.linkRefCount,0);
+    assert.equal((await getBookkeepingItem(client,'link',link.id)),undefined);
+    assert.equal((await listBookkeepingItems(client,'allocation-source-claim')).some((claim:any)=>claim.transactionId===payment.id),false);
+  });
+
   it('keeps the parent, document links, refcounts, and claims untouched when the atomic write fails',async()=>{
     const document=(await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:'atomic-failure.pdf',contentType:'application/pdf',byteSize:100,sha256:createHash('sha256').update('atomic-failure-pdf').digest('hex'),s3Key:'documents/atomic-failure.pdf'})).item;
     const payment=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-23',amount:'10.00'})).body);

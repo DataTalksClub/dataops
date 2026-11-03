@@ -145,7 +145,7 @@ test("the table renders one compact row per transaction without changing stored 
   assert.equal(JSON.stringify(rows), before);
 });
 
-test("allocated invoices render as visible child rows while month totals count the bank payment once", () => {
+test("allocated invoices replace the aggregate row while totals and payment drill-through remain singular", () => {
   const payment = {
     id: "synthetic-payment",
     transactionDate: "2026-09-30",
@@ -181,8 +181,10 @@ test("allocated invoices render as visible child rows while month totals count t
   assert.equal(groups[0].month, "2026-10", "the child rows follow the payment month");
   assert.equal(groups[0].entries.length, 1, "one persisted bank payment remains one month entry");
   assert.equal(groups[0].moneyOut, -123, "the month total counts the parent payment once");
-  assert.equal((markup.match(/class="bk-row/g) || []).length, 4, "one parent and three visible invoice rows");
-  assert.match(markup, /Synthetic Card Settlement/);
+  assert.equal((markup.match(/class="bk-row/g) || []).length, 3, "the main table shows only the three invoice rows");
+  assert.match(markup, /class="bk-month__count dk-mono">3<\/span>/, "the visible row count follows expanded rows");
+  assert.doesNotMatch(markup, /Synthetic Card Settlement/, "the opaque payment total is not a fourth monetary row");
+  assert.match(markup, /out <span class="dk-mono">−€123\.00/, "the month total still counts the payment once");
   assert.match(markup, /Synthetic Compute GmbH[\s\S]*Dedicated cluster[\s\S]*−€100\.00/);
   assert.match(markup, /Synthetic Domain Ltd[\s\S]*Domain renewal[\s\S]*−€20\.00/);
   assert.match(markup, /Synthetic Mail BV[\s\S]*Email service[\s\S]*−€3\.00/);
@@ -190,7 +192,50 @@ test("allocated invoices render as visible child rows while month totals count t
     assert.match(markup, new RegExp(`data-allocation-document="${allocation.documentId}"`));
     assert.match(markup, new RegExp(`data-view-document="${allocation.documentId}"`));
   }
-  assert.match(markup, /data-tx="synthetic-payment"/, "the original payment still opens in the detail panel");
+  assert.equal((markup.match(/data-open-tx="synthetic-payment"/g) || []).length, 3,
+    "each invoice row drills through to the one original payment");
+  assert.match(markup, /aria-label="Open original payment for Synthetic Compute GmbH"/);
+});
+
+test("allocated invoice Net and VAT use each child's VAT rather than the payment VAT", () => {
+  const payment = {
+    id: "synthetic-vat-payment",
+    transactionDate: "2026-09-30",
+    paidDate: "2026-10-05",
+    counterparty: "Synthetic Bundle Settlement",
+    description: "Synthetic payment with invoice VAT",
+    amount: "146.00",
+    currency: "EUR",
+    entryType: "expense",
+    vatAmount: "25.00",
+    vatCurrency: "EUR",
+    allocations: [
+      { id: "alloc-vat-123", documentId: "invoice-vat-123", counterparty: "Synthetic VAT Vendor A", description: "Gross 123 with VAT 23", amount: "123.00", currency: "EUR", vatAmount: "23.00", vatCurrency: "EUR" },
+      { id: "alloc-vat-20", documentId: "invoice-vat-20", counterparty: "Synthetic VAT Vendor B", description: "Gross 20 with VAT 2", amount: "20.00", currency: "EUR", vatAmount: "2.00", vatCurrency: "EUR" },
+      { id: "alloc-vat-3", documentId: "invoice-vat-3", counterparty: "Synthetic VAT Vendor C", description: "Gross 3 with no VAT", amount: "3.00", currency: "EUR" },
+    ],
+  };
+  const markup = ledgerTableMarkup({
+    groups: groupByMonth([payment]),
+    hasEvidence: () => true,
+    hasInvoice: () => [],
+    vocab: {},
+    selectedId: "",
+    financeEntriesById: new Map([[payment.id, { vatEur: 25 }]]),
+    e: escapeHtml,
+  });
+  const rows = [...markup.matchAll(/<tr class="bk-row bk-row--allocation-child[^>]*>([\s\S]*?)<\/tr>/g)]
+    .map((match) => match[1]);
+  const cells = rows.map((row) => ({
+    net: row.match(/<td class="bk-col-money bk-col-eur[^>]*>([\s\S]*?)<\/td>/)?.[1].replace(/<[^>]*>/g, "").trim(),
+    vat: row.match(/<td class="bk-col-vat[^>]*>([\s\S]*?)<\/td>/)?.[1].replace(/<[^>]*>/g, "").trim(),
+  }));
+  assert.deepEqual(cells, [
+    { net: "−€100.00", vat: "€23.00" },
+    { net: "−€18.00", vat: "€2.00" },
+    { net: "−€3.00", vat: "—" },
+  ]);
+  assert.match(markup, /out <span class="dk-mono">−€146\.00/, "the original payment remains the sole month-total source");
 });
 
 test("classified owner, fee, and TK statement rows stay visible without becoming editable ledger records", () => {
