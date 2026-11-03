@@ -283,6 +283,48 @@ describe('month reconciliation', () => {
     assert.equal(withExplicitTaxException.rows[0].tax, true);
   });
 
+  it('omits satisfied owner withdrawals from accountant CSV while preserving reconciliation rows and counters', () => {
+    const ownerWithdrawalRule: ClassificationRule = {
+      id: 'owner-withdrawal', kind: 'owner_withdrawal', direction: 'out',
+      counterparty: 'synthetic owner', category: 'Owner pay',
+    };
+    const result = table(
+      [
+        bank('b-owner', { counterparty: 'Synthetic Owner', amount: '-42.00' }),
+        bank('b-ilz', { counterparty: 'Synthetic ILZ Services', amount: '-238.00', date: '2026-10-08' }),
+      ],
+      [
+        ledger('l-owner', { counterparty: 'Synthetic Owner', amount: '-42.00', category: 'Owner pay' }),
+        ledger('l-ilz', { counterparty: 'Synthetic ILZ Services', amount: '-238.00', date: '2026-10-08', category: 'Compliance & Taxes', subtype: 'Services' }),
+      ],
+      none(),
+      [...RULES, ownerWithdrawalRule],
+    );
+    const ownerRow = result.rows.find((row) => row.id === 'b-owner')!;
+    assert.deepEqual([ownerRow.exception?.kind, ownerRow.exception?.satisfied, ownerRow.status], ['owner_withdrawal', true, 'matched']);
+    assert.equal(result.counters.rows, 2);
+    assert.equal(result.counters.matched, 2);
+    assert.equal(result.counters.exceptions, 1);
+
+    const csv = tableCsv(result);
+    assert.doesNotMatch(csv, /Synthetic Owner|Owner pay/);
+    assert.match(csv, /Synthetic ILZ Services/);
+    assert.match(csv, /Compliance & Taxes/);
+    assert.equal(result.rows.includes(ownerRow), true);
+    assert.equal(result.counters.rows, 2);
+    assert.equal(result.counters.matched, 2);
+    assert.equal(result.counters.exceptions, 1);
+
+    const unresolved = table(
+      [bank('b-owner-unresolved', { counterparty: 'Synthetic Owner', amount: '-42.00' })],
+      [],
+      { ...none(), exceptions: { 'bank:b-owner-unresolved': { kind: 'owner_withdrawal', by: 'operator', at: '2026-11-01T00:00:00Z' } } },
+      [],
+    );
+    assert.equal(unresolved.rows[0].exception?.satisfied, false);
+    assert.match(tableCsv(unresolved), /Synthetic Owner/);
+  });
+
   it('links Revolut exchange legs through their related transaction ids', () => {
     const legs = internalTransferLegs([
       bank('eur', { accountId: 'revolut', wallet: 'EUR', amount: '-460.00', bankId: 'tx-4', relatedBankId: 'tx-3' }),

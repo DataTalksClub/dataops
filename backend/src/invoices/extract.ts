@@ -175,13 +175,22 @@ function labeledDate(text: string, labels: RegExp): string | undefined {
   const match = labels.exec(text);
   return match?.[1] ? calendar(match[1].replace(/^[\s.:·•—–-]+/, '')) : undefined;
 }
-const ISSUED_LABELS = /(?:invoice\s+date|date\s+of\s+issue|issue\s+date|billing\s+date|order\s+date|rechnungsdatum|\bdate\b(?!\s+paid))[^\n]{0,30}?([^\n]{1,40})/i;
+const ISSUED_LABELS = /(?:invoice\s+date|credit\s*note\s+date|date\s+of\s+issue|issue\s+date|billing\s+date|order\s+date|rechnungsdatum|\bdate\b(?!\s+paid))[^\n]{0,30}?([^\n]{1,40})/i;
 const PAID_LABELS = /(?:date\s+paid|paid\s+on|payment\s+date)[^\n]{0,30}?([^\n]{1,40})/i;
 function invoiceNumber(text: string): string | undefined {
-  const labeled = /(?:invoice|receipt|order)\s+(?:number|no\.?|num\.?|#|id)\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\/_.-]{2,40})/i.exec(text);
+  const labeled = /(?:invoice|receipt|order|credit\s*note)\s+(?:number|no\.?|num\.?|#|id)\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9\/_.-]{2,40})/i.exec(text);
   if (labeled && /\d/.test(labeled[1])) return labeled[1];
-  const bare = /(?:^|\n)\s*(?:invoice|receipt)\s+((?=[A-Za-z0-9-]*\d)[A-Za-z0-9][A-Za-z0-9\/_.-]{2,40})\s*(?:\n|$)/i.exec(text);
+  const bare = /(?:^|\n)\s*(?:invoice|receipt|credit\s*note)\s+((?=[A-Za-z0-9-]*\d)[A-Za-z0-9][A-Za-z0-9\/_.-]{2,40})\s*(?:\n|$)/i.exec(text);
   return bare ? bare[1] : undefined;
+}
+export function finomCustomer(text: string): string | null {
+  if (!/Created with\s+Finom\.co/.test(text) || !/Total taxable/.test(text)) return null;
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const headerEnd = lines.findIndex(l => /^(?:Invoice|Credit note)\s+(?:No\.|number|#)/i.test(l));
+  if (headerEnd < 0) return null;
+  const first = lines.slice(0, headerEnd).map((l, i) => /^DataTalks\.?Club\b/i.test(l) ? i : -1).filter(i => i >= 0).pop() ?? -1;
+  const addressEnd = first < 0 ? -1 : lines.findIndex((l, i) => i >= first && i <= first + 3 && /\b\d{5}\s+Berlin\b/i.test(l));
+  return addressEnd >= 0 && addressEnd + 1 < headerEnd ? lines[addressEnd + 1] : null;
 }
 // Some PDF fonts map the hyphen glyph to U+0000, so "D9D54E5A-0059-CN-01"
 // arrives as "D9D54E5A \0 0059 \0 CN \0 01". Rejoin such tokens; drop any
@@ -286,10 +295,11 @@ export function extractInvoiceText(rawText: string, hints: InvoiceHints = {}): {
     evidence.push('Stripe-layout invoice/receipt number, date and total anchors');
   }
   const credit = creditNote(text);
+  const customer = finomCustomer(text);
   let needsReview = false;
   let candidates: string[] | undefined;
   if (credit) {
-    fields.subtype = 'Refund';
+    if (!customer) fields.subtype = 'Refund';
     if (credit.number) { fields.invoiceNumber = credit.number; evidence.push('full credit-note number'); }
     if (credit.amount) {
       fields.amount = credit.amount;
@@ -323,6 +333,10 @@ export function extractInvoiceText(rawText: string, hints: InvoiceHints = {}): {
       if (single) { fields.amount = single.amount; fields.currency = single.currency; evidence.push(`single distinct unlabeled ${single.currency} amount`); }
       else { const currency = documentCurrency(text); if (currency) fields.currency = currency; }
     }
+  }
+  if (!fields.counterparty && customer) {
+    fields.counterparty = customer;
+    evidence.push('Finom customer header');
   }
   if (!fields.counterparty) {
     for (const candidate of issuerCandidates(text)) {
@@ -359,7 +373,7 @@ export function extractInvoiceText(rawText: string, hints: InvoiceHints = {}): {
   if (method === 'manual') issues.push('Unsupported or ambiguous layout: complete the draft manually');
   else issues.push('Confirm payment evidence and actual EUR bank amount');
   const channel = paymentChannel(text);
-  return { fields, extraction: { method, evidence, issues, documentType: credit ? 'credit_note' : 'invoice', direction: 'expense',
+  return { fields, extraction: { method, evidence, issues, documentType: credit ? 'credit_note' : 'invoice', direction: customer ? 'income' : 'expense',
     ...(channel ? { paymentChannel: channel } : {}), ...(needsReview ? { needsReview, candidates } : {}) } };
 }
 export async function pdfText(bytes: Buffer): Promise<string> {

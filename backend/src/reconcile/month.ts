@@ -16,6 +16,7 @@
  */
 import { createHash } from "crypto";
 import { normalizedAutoMatchVendor } from "../bookkeepingAutoMatch";
+import { isOwnerWithdrawalReportExempt } from "../finance/ownerPay";
 
 const DAY = 86_400_000;
 
@@ -98,7 +99,7 @@ export type BankTx = {
   relatedBankId?: string;
 };
 
-export type LedgerDocument = { id: string; label?: string };
+export type LedgerDocument = { id: string; label?: string; invoiceId?: string };
 
 export type LedgerRow = {
   id: string;
@@ -110,6 +111,7 @@ export type LedgerRow = {
   counterparty: string;
   description?: string;
   category?: string;
+  ownerPayType?: string;
   subtype?: string;
   rateSource?: string;
   statementRef?: string;
@@ -132,6 +134,47 @@ export type PendingEmailInvoice = {
     invoiceNumber?: string;
   };
   direction?: "income" | "expense";
+};
+
+/** An issued invoice (e.g. sponsor deal invoice) that may not have a bookkeeping ledger row yet. */
+export type IssuedInvoiceCandidate = {
+  id: string;
+  date: string;
+  amount: string;
+  currency: string;
+  amountEur?: string;
+  counterparty: string;
+  description?: string;
+  invoiceNumber?: string;
+  ledgerTransactionId?: string;
+  paid?: boolean;
+  voided?: boolean;
+  documents?: LedgerDocument[];
+};
+
+/** A received invoice or receipt document that may not have a bookkeeping ledger row yet. */
+export type ReceivedInvoiceDocumentCandidate = {
+  id: string;
+  documentId?: string;
+  invoiceId?: string;
+  date: string;
+  amount: string;
+  currency: string;
+  amountEur?: string;
+  counterparty: string;
+  description?: string;
+  invoiceNumber?: string;
+  direction?: "income" | "expense";
+  ledgerTransactionId?: string;
+  sha256?: string;
+  needsReview?: boolean;
+  documents?: LedgerDocument[];
+};
+
+export type InvoiceCandidateSet = {
+  issuedInvoices?: IssuedInvoiceCandidate[];
+  receivedInvoiceDocuments?: ReceivedInvoiceDocumentCandidate[];
+  tolerances?: ReconcileTolerances;
 };
 
 /** `auto` marks a pair the matcher found and persisted after an upload; a person can unmatch it like any other. */
@@ -317,12 +360,130 @@ export type PairingResult = {
   ambiguousLedger: Map<string, Array<{ bankKey: string; score: number }>>;
 };
 
+const BOGUS_COUNTERPARTY = /\bpage \d+ of \d+\b|\b(?:paid|due) (?:on )?[a-z]+ \d{1,2}, \d{4}\b/i;
+
+/**
+ * Append issued invoices and received invoice documents that have no
+ * bookkeeping ledger row yet so they participate in bank pairing and in the
+ * 'invoices without a bank row' list without duplicating existing ledger rows.
+ */
+export function withInvoiceCandidates(ledger: LedgerRow[], candidates: InvoiceCandidateSet = {}): LedgerRow[] {
+  const issuedInvoices = candidates.issuedInvoices || [];
+  const receivedInvoiceDocuments = candidates.receivedInvoiceDocuments || [];
+  if (!issuedInvoices.length && !receivedInvoiceDocuments.length) return ledger;
+  const tolerances = candidates.tolerances || DEFAULT_TOLERANCES;
+  const out = [...ledger];
+  const existingIds = new Set(out.map((row) => row.id));
+  const existingDocIds = new Set(out.flatMap((row) => row.documents.flatMap((doc) => [doc.id, ...(doc.invoiceId ? [doc.invoiceId] : [])])));
+  const existingInvoiceNumbers = new Set(out.map((row) => String(row.invoiceNumber || "").trim()).filter(Boolean));
+
+  const matchesExistingLedger = (date: string, signedAmount: string, currency: string, counterparty: string, invoiceNumber?: string, amountEur?: string) => {
+    const cleanInvoice = String(invoiceNumber || "").trim();
+    if (cleanInvoice && existingInvoiceNumbers.has(cleanInvoice)) return true;
+    const targetAmount = amountNumber(signedAmount);
+    const targetEur = amountEur !== undefined ? amountNumber(amountEur) : undefined;
+    const vendor = normalizedAutoMatchVendor(counterparty);
+    const tokens = textTokens(counterparty);
+    return out.some((row) => {
+      if (!Number.isFinite(dayOf(row.date)) || daysApart(row.date, date) > tolerances.dateLagDays) return false;
+      const rowAmount = amountNumber(row.amount);
+      if (Math.sign(rowAmount) !== Math.sign(targetAmount)) return false;
+      const rowVendor = normalizedAutoMatchVendor(row.counterparty);
+      const sameVendor = (vendor !== "" && vendor === rowVendor)
+        || [...textTokens(row.counterparty, row.description)].some((token) => tokens.has(token));
+      if (!sameVendor) return false;
+      if (row.currency === currency && Math.abs(rowAmount - targetAmount) < 0.005) return true;
+      if (targetEur !== undefined && row.currency === "EUR" && Math.abs(rowAmount - targetEur) < 0.005) return true;
+      if (row.amountEur !== undefined && currency === "EUR" && Math.abs(amountNumber(row.amountEur) - targetAmount) < 0.005) return true;
+      return false;
+    });
+  };
+
+  for (const item of issuedInvoices) {
+    if (item.voided || item.paid) continue;
+    if (!item.id || existingIds.has(item.id) || (item.ledgerTransactionId && existingIds.has(item.ledgerTransactionId))) continue;
+    const date = String(item.date || "").slice(0, 10);
+    const rawAmount = Math.abs(amountNumber(item.amount));
+    const currency = String(item.currency || "EUR").trim().toUpperCase();
+    const counterparty = String(item.counterparty || "").trim();
+    if (!Number.isFinite(dayOf(date)) || !(rawAmount > 0) || !currency || !counterparty) continue;
+    const signedAmount = rawAmount.toFixed(2);
+    const rawEur = item.amountEur !== undefined ? Math.abs(amountNumber(item.amountEur)) : 0;
+    const signedAmountEur = rawEur > 0 ? rawEur.toFixed(2) : undefined;
+    if (matchesExistingLedger(date, signedAmount, currency, counterparty, item.invoiceNumber, signedAmountEur)) continue;
+    const documents = item.documents?.length ? item.documents : [{ id: item.id }];
+    out.push({
+      id: item.id,
+      date,
+      amount: signedAmount,
+      currency,
+      ...(signedAmountEur ? { amountEur: signedAmountEur } : {}),
+      counterparty,
+      ...(item.description ? { description: item.description } : {}),
+      ...(item.invoiceNumber ? { invoiceNumber: item.invoiceNumber.trim() } : {}),
+      sourceType: "issued-invoice",
+      documents,
+    });
+    existingIds.add(item.id);
+    if (item.invoiceNumber?.trim()) existingInvoiceNumbers.add(item.invoiceNumber.trim());
+  }
+
+  for (const item of receivedInvoiceDocuments) {
+    if (item.needsReview) continue;
+    if (!item.id || existingIds.has(item.id) || existingDocIds.has(item.id)) continue;
+    if (item.documentId && (existingIds.has(item.documentId) || existingDocIds.has(item.documentId))) continue;
+    if (item.invoiceId && (existingIds.has(item.invoiceId) || existingDocIds.has(item.invoiceId))) continue;
+    if (item.ledgerTransactionId && existingIds.has(item.ledgerTransactionId)) continue;
+    const date = String(item.date || "").slice(0, 10);
+    const rawAmount = Math.abs(amountNumber(item.amount));
+    const currency = String(item.currency || "").trim().toUpperCase();
+    const counterparty = String(item.counterparty || "").trim();
+    if (!Number.isFinite(dayOf(date)) || !(rawAmount > 0) || !currency || !counterparty || BOGUS_COUNTERPARTY.test(counterparty)) continue;
+    const sign = Number(item.amount) < 0 ? -1 : item.direction === "income" ? 1 : -1;
+    const signedAmount = (sign * rawAmount).toFixed(2);
+    const rawEur = item.amountEur !== undefined ? Math.abs(amountNumber(item.amountEur)) : 0;
+    const signedAmountEur = rawEur > 0 ? (sign * rawEur).toFixed(2) : undefined;
+    if (matchesExistingLedger(date, signedAmount, currency, counterparty, item.invoiceNumber, signedAmountEur)) continue;
+    const documents = item.documents?.length
+      ? item.documents
+      : [{ id: item.documentId || item.id, ...(item.invoiceId ? { invoiceId: item.invoiceId } : {}) }];
+    out.push({
+      id: item.id,
+      date,
+      amount: signedAmount,
+      currency,
+      ...(signedAmountEur ? { amountEur: signedAmountEur } : {}),
+      counterparty,
+      ...(item.description ? { description: item.description } : {}),
+      ...(item.invoiceNumber ? { invoiceNumber: item.invoiceNumber.trim() } : {}),
+      sourceType: item.invoiceId ? "invoice-document" : "document",
+      documents,
+    });
+    existingIds.add(item.id);
+    for (const doc of documents) {
+      existingDocIds.add(doc.id);
+      if (doc.invoiceId) existingDocIds.add(doc.invoiceId);
+    }
+    if (item.invoiceNumber?.trim()) existingInvoiceNumbers.add(item.invoiceNumber.trim());
+  }
+
+  return out;
+}
+
 /**
  * Global one-to-one pairing. Manual pairs first; then edges strongest
  * first. A bank row (or ledger row) whose two best open candidates tie is
  * not paired automatically.
  */
-export function pairAll(bank: BankTx[], ledger: LedgerRow[], decisions: ManualDecisions, tolerances: ReconcileTolerances, fx?: FxLookup): PairingResult {
+export function pairAll(
+  bank: BankTx[],
+  ledgerInput: LedgerRow[],
+  decisions: ManualDecisions,
+  tolerances: ReconcileTolerances,
+  fx?: FxLookup,
+  candidates?: InvoiceCandidateSet,
+): PairingResult {
+  const ledger = candidates ? withInvoiceCandidates(ledgerInput, { ...candidates, tolerances }) : ledgerInput;
   // Both legs of a move between own accounts have no ledger row; pairing them would steal one.
   const legs = internalTransferLegs(bank, tolerances);
   const pairs: PairingResult["pairs"] = new Map();
@@ -443,17 +604,25 @@ export type MonthInput = {
   period: string;
   bank: BankTx[];
   ledger: LedgerRow[];
+  issuedInvoices?: IssuedInvoiceCandidate[];
+  receivedInvoiceDocuments?: ReceivedInvoiceDocumentCandidate[];
   pendingEmailInvoices?: PendingEmailInvoice[];
   decisions: ManualDecisions;
   rules: ClassificationRule[];
   tolerances?: ReconcileTolerances;
+  fx?: FxLookup;
   /** Pairing computed once over all months, reused per month. */
   pairing?: PairingResult;
 };
 
 export function buildMonthTable(input: MonthInput): MonthTable {
   const tolerances = input.tolerances || DEFAULT_TOLERANCES;
-  const pairing = input.pairing || pairAll(input.bank, input.ledger, input.decisions, tolerances);
+  const ledger = withInvoiceCandidates(input.ledger, {
+    issuedInvoices: input.issuedInvoices,
+    receivedInvoiceDocuments: input.receivedInvoiceDocuments,
+    tolerances,
+  });
+  const pairing = input.pairing || pairAll(input.bank, ledger, input.decisions, tolerances, input.fx);
   const legs = internalTransferLegs(input.bank, tolerances);
   const inPeriod = (date: string) => date.startsWith(input.period);
   const pairedLedger = new Map<string, string>();
@@ -546,7 +715,7 @@ export function buildMonthTable(input: MonthInput): MonthTable {
     rows.push(row);
   }
 
-  for (const ledgerRow of input.ledger) {
+  for (const ledgerRow of ledger) {
     if (!inPeriod(ledgerRow.date) || pairedLedger.has(ledgerRow.id)) continue;
     const recorded = input.decisions.exceptions[`ledger:${ledgerRow.id}`];
     const ambiguous = pairing.ambiguousLedger.get(ledgerRow.id);
@@ -650,13 +819,19 @@ export function exceptionDigest(table: MonthTable): string {
   return createHash("sha256").update(items.join("\n")).digest("hex").slice(0, 24);
 }
 
+export function isAccountantReportRowExcluded(row: MonthRow) {
+  return Boolean(row.tax)
+    || Boolean(row.ledger && isOwnerWithdrawalReportExempt(row.ledger))
+    || (row.exception?.kind === "owner_withdrawal" && row.exception.satisfied);
+}
+
 export function tableCsv(table: MonthTable): string {
   const header = ["date", "status", "counterparty", "description", "amount", "currency", "bank_account", "bank_date", "bank_amount", "bank_reference", "ledger_id", "ledger_date", "ledger_amount", "ledger_category", "documents", "pair_basis", "confidence", "exception", "missing"];
   const quote = (value: unknown) => {
     const text = value === undefined || value === null ? "" : String(value);
     return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
-  const lines = table.rows.filter((row) => !row.tax).map((row) => [
+  const lines = table.rows.filter((row) => !isAccountantReportRowExcluded(row)).map((row) => [
     row.date, row.status, row.counterparty, row.description, row.amount, row.currency,
     row.bank ? `${row.bank.accountId}${row.bank.wallet ? ` ${row.bank.wallet}` : ""}` : "", row.bank?.date, row.bank ? `${row.bank.amount} ${row.bank.currency}` : "", row.bank?.reference,
     row.ledger?.id, row.ledger?.date, row.ledger ? `${row.ledger.amount} ${row.ledger.currency}` : "", row.ledger?.category,

@@ -1,4 +1,4 @@
-import { BlankConversionError, extractInvoiceText, normalizePdfText, pdfText, type InvoiceHints } from './extract';
+import { BlankConversionError, extractInvoiceText, finomCustomer, normalizePdfText, pdfText, type InvoiceHints } from './extract';
 import { extractWithLlm, needsPdfInput, type LlmExtraction, type LlmResult } from './llm';
 import { date, validCurrency, type Invoice, type InvoiceFields } from './model';
 import { loadEcbRates } from '../finance/rates';
@@ -18,6 +18,7 @@ function blank(): Facts { return { docType:'invoice', direction:'expense', count
 export function regexFinanceFacts(raw: string): Facts {
   const text = normalizePdfText(raw);
   const old = extractInvoiceText(raw).fields;
+  const customer = finomCustomer(text);
   const f = Object.assign(blank(), { counterparty: old.counterparty || null, invoiceNumber:old.invoiceNumber || null, date:old.transactionDate || null, currency:old.currency || null, gross:old.amount || null, description:old.description || null });
   f.reverseCharge = /reverse[ -]charge|§\s*13b|Steuerschuldnerschaft.*Leistungsempfängers/i.test(text);
   f.net = pick(text, `(?:^|\\n)\\s*(?:Net Charges \\(After Credits/Discounts, excl\\. Tax\\)|Gesamt netto|Subtotal(?: \\(excl\\. VAT\\))?|Net(?: amount)?|Total excl\\. VAT)\\s*[:]?\\s*(?:USD|EUR|€|\\$)?\\s*${decimal}`);
@@ -28,12 +29,13 @@ export function regexFinanceFacts(raw: string): Facts {
   if (taxAtRate) f.vat = amount(taxAtRate[1]);
   if (f.reverseCharge && f.net && f.gross === f.net) { f.vat = '0.00'; f.vatRate = '0'; }
   if (/(?:^|\n)\s*(?:credit note|refund|Gutschrift|Stornorechnung)\b/i.test(text)) {
-    f.docType='credit_note'; f.direction='expense';
+    f.docType='credit_note'; f.direction=customer ? 'income' : 'expense';
     // Original invoice totals are not the tax base of a partial refund.
     f.net=pick(text,`(?:Credited subtotal|Refunded net|Net credit)\\s*[:]?\\s*[-−]?\\s*(?:USD|EUR|€|\\$)?\\s*${decimal}`);
     f.vat=pick(text,`(?:Credited tax|Refunded VAT|VAT credit)\\s*[:]?\\s*[-−]?\\s*(?:USD|EUR|€|\\$)?\\s*${decimal}`);
   }
   else if (/\bReceipt\b/.test(text)) f.docType='receipt';
+  else if (customer) f.direction='income';
   return f;
 }
 
@@ -47,15 +49,9 @@ export const FINANCE_TEMPLATES: Template[] = [
     return {...f,counterparty:'Hetzner Online GmbH',currency:'EUR',net:amount(row?.[1]),vat:amount(row?.[2]),gross:amount(row?.[3]),vatRate:/19\s*%/.test(t)?'19':null,date:d?`${d[3]}-${d[2]}-${d[1]}`:null};
   } },
   { name:'finom', match:t=>/Created with\s+Finom\.co/.test(t)&&/Total taxable/.test(t), parse:(t,f)=>{
-    const total = new RegExp(`Total taxable\\s+${decimal}\\s*€\\s+${decimal}\\s*€`).exec(t);
-    const lines=t.split('\n').map(l=>l.trim()).filter(Boolean);
-    const headerEnd=lines.findIndex(l=>/^Invoice No\./.test(l));
-    const first=lines.slice(0,headerEnd).map((l,i)=>/^DataTalks\.?Club\b/i.test(l)?i:-1).filter(i=>i>=0).pop() ?? -1;
-    // Issuer blocks may repeat before the recipient. Use the final issuer
-    // header and the end of its address, never a footer's bank details.
-    const addressEnd=first<0?-1:lines.findIndex((l,i)=>i>=first&&i<=first+3&&/\b\d{5}\s+Berlin\b/i.test(l));
-    const recipient=addressEnd>=0&&addressEnd+1<headerEnd?lines[addressEnd+1]:null;
-    const allZero=/VAT \(%\)/.test(t)&&/\s0\s+[\d.,]+\s*€/.test(t)&&total?.[1]===total?.[2];
+    const total = new RegExp(`Total taxable\\s+[-−]?\\s*${decimal}\\s*€\\s+[-−]?\\s*${decimal}\\s*€`).exec(t);
+    const recipient = finomCustomer(t);
+    const allZero=/VAT \(%\)/.test(t)&&/\s0\s+[-−]?[\d.,]+\s*€/.test(t)&&total?.[1]===total?.[2];
     return {...f,counterparty:recipient,direction:'income',currency:'EUR',net:amount(total?.[1]),gross:amount(total?.[2]),vat:allZero?'0.00':null,vatRate:allZero?'0':null};
   } },
   { name:'google-workspace', match:t=>/Google Cloud EMEA Limited/.test(t)&&/Google Workspace/.test(t)&&/Subtotal in EUR\s+VAT \(0%\)\s+Total in EUR/.test(t), parse:(t,f)=>{
@@ -122,6 +118,10 @@ export async function extractFinanceText(raw:string, options:{pdf?:Buffer; hints
     try {
       result=await (options.llm||((input)=>extractWithLlm(input,{timeoutMs:15_000})))({text:raw,pdf:options.pdf,forcePdf:needsPdfInput(raw),hints:options.hints});
       facts=result.fields;
+      if(facts.invoiceNumber) {
+        facts.invoiceNumber=facts.invoiceNumber.replace(/[\u0000\u2010-\u2014\u2212]/g,'-').replace(/\s*-\s*/g,'-');
+        if(regex.invoiceNumber && facts.invoiceNumber.replace(/\s+/g,'-')===regex.invoiceNumber) facts.invoiceNumber=regex.invoiceNumber;
+      }
       for(const key of ['net','vat','gross','vatRate','currency','date','invoiceNumber'] as const) {
         const left=regex[key],right=facts[key];
         const same=['net','vat','gross','vatRate'].includes(key)?Number(left)===Number(right):left===right;
@@ -131,6 +131,13 @@ export async function extractFinanceText(raw:string, options:{pdf?:Buffer; hints
       facts=regex;method='regex-fallback';issues.push('reader-unavailable:retry-extraction');
     }
   }
+  if(base.extraction.documentType==='credit_note') facts.docType='credit_note';
+  const creditConflict=facts.docType==='credit_note' && regex.gross!==null && facts.gross!==null && Number(regex.gross)!==Number(facts.gross);
+  const creditCandidates=base.extraction.candidates?.length
+    ? base.extraction.candidates
+    : creditConflict
+      ? [...new Set([regex.gross!,facts.gross!])]
+      : base.extraction.candidates;
   // Keep high-signal values found by the local labeled parser when a reader
   // omits them. In particular, forwarded PDFs often put a printed total or
   // paid date behind dot leaders that a remote reader may skip.
@@ -148,8 +155,13 @@ export async function extractFinanceText(raw:string, options:{pdf?:Buffer; hints
     if(facts.vat===null && facts.net!==null && facts.gross!==null && Number(facts.gross)>=Number(facts.net)) facts.vat=(Number(facts.gross)-Number(facts.net)).toFixed(2);
     if(facts.net===null && facts.vat!==null && facts.gross!==null && Number(facts.gross)>=Number(facts.vat)) facts.net=(Number(facts.gross)-Number(facts.vat)).toFixed(2);
   }
-  // A supplier credit note is contra-expense; the reader never decides otherwise.
-  if(facts.docType==='credit_note') facts.direction='expense';
+  if(base.extraction.candidates?.length || creditConflict) {
+    facts.gross=null;facts.net=null;facts.vat=null;
+    issues.push(`Credit note with conflicting refunded amounts (${creditCandidates!.join(', ')}): confirm the refunded amount`);
+  }
+  const customerCreditNote=facts.docType==='credit_note' && Boolean(finomCustomer(text));
+  // A supplier credit note is contra-expense; a DataTalks.Club credit note is customer income.
+  if(facts.docType==='credit_note') facts.direction=customerCreditNote?'income':'expense';
   issues.push(...validateFinanceFacts(facts,options.expectedPeriod));
   if(facts.invoiceNumber) facts.invoiceNumber=facts.invoiceNumber.replace(/[\u0000\u2010-\u2014\u2212]/g,'-').replace(/\s*-\s*/g,'-');
   const fields:InvoiceFields={...base.fields};
@@ -160,8 +172,9 @@ export async function extractFinanceText(raw:string, options:{pdf?:Buffer; hints
   }
   fields.reverseCharge=facts.reverseCharge;
   if(facts.vat!==null && facts.currency) fields.vatCurrency=facts.currency;
-  if(facts.docType==='credit_note') fields.subtype='Refund';
-  return {fields,facts,extraction:{method,evidence:[...base.extraction.evidence,`finance:${method}`],issues:[...new Set(issues)],documentType:facts.docType,direction:facts.direction,needsReview:issues.length>0,...(facts.paymentChannel?{paymentChannel:facts.paymentChannel}:{})},...(result?{usage:result.usage,model:result.model}:{})};
+  if(facts.docType==='credit_note' && !customerCreditNote) fields.subtype='Refund';
+  else if(customerCreditNote) delete fields.subtype;
+  return {fields,facts,extraction:{method,evidence:[...base.extraction.evidence,`finance:${method}`],issues:[...new Set(issues)],documentType:facts.docType,direction:facts.direction,needsReview:issues.length>0,...(facts.paymentChannel?{paymentChannel:facts.paymentChannel}:{}),...(creditCandidates?{candidates:creditCandidates}:{})},...(result?{usage:result.usage,model:result.model}:{})};
 }
 /** Indicative conversion is separate from the actual EUR bank payment. */
 export async function convertExtractedFinance(result:FinanceExtraction):Promise<FinanceExtraction> {

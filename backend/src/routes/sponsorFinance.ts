@@ -18,6 +18,7 @@ import {
   recordPayment,
   receivePayment,
   correctReceipt,
+  updateReceiptConversion,
   attachPaymentEvidence,
   recordSettlementAdjustment,
   removeSettlementAdjustment,
@@ -112,6 +113,24 @@ export async function handleSponsorFinanceRoutes(
       const statusCode = Number((error as { statusCode?: number }).statusCode || 503);
       if (statusCode >= 500) recordRequestError(error);
       return json(statusCode, { error: statusCode >= 500 ? 'Payment mail data is temporarily unavailable; retry' : (error as Error).message });
+    }
+  }
+  const conversion = path.match(/^\/api\/sponsor-crm\/finance\/receipts\/([^/]+)\/conversion$/);
+  if (conversion) {
+    if (method !== 'PUT') return json(405, { error: 'Method not allowed' });
+    const body = parse(event);
+    if (!body) return json(400, { error: 'Invalid request' });
+    try {
+      const actor = await financeActor(client, header(event, 'x-user-id'), true);
+      if (typeof body.amountEur !== 'string' || typeof body.rateSource !== 'string')
+        return json(400, { error: 'amountEur and rateSource are required' });
+      return json(200, await updateReceiptConversion(client, {
+        actorId: actor.id, sourceId: conversion[1], amountEur: body.amountEur, rateSource: body.rateSource,
+      }));
+    } catch (error) {
+      const statusCode = Number((error as { statusCode?: number }).statusCode || 503);
+      if (statusCode >= 500) recordRequestError(error);
+      return json(statusCode, { error: statusCode >= 500 ? 'Receipt conversion update failed; retry' : (error as Error).message });
     }
   }
   const match = path.match(/^\/api\/sponsor-crm\/deals\/([^/]+)\/finance(?:\/(.*))?$/);

@@ -1003,6 +1003,88 @@ export async function correctReceipt(
   });
 }
 
+/** Update conversion metadata on a canonical sponsor receipt without changing
+ * its globally unique finance claim. Generic bookkeeping writes intentionally
+ * reject claimed rows; this path verifies their owner and current finance link.
+ */
+export async function updateReceiptConversion(
+  client: DynamoDBDocumentClient,
+  input: { actorId: string; sourceId: string; amountEur: string; rateSource: string },
+) {
+  try { scaledMoney(input.amountEur); } catch {
+    throw Object.assign(new Error('Invalid EUR conversion amount'), { statusCode: 400 });
+  }
+  if (!OPAQUE.test(input.sourceId) || !boundedText(input.rateSource, 300)) {
+    throw Object.assign(new Error('Receipt and rate source are required'), { statusCode: 400 });
+  }
+  const source = clean<Record<string, unknown>>((await client.send(new GetCommand({
+    TableName: TABLE_BOOKKEEPING, Key: singleton(sourceKey('transaction', input.sourceId)), ConsistentRead: true,
+  }))).Item as Record<string, unknown>);
+  if (!source || source.id !== input.sourceId || source.sourceType !== 'sponsor-receipt' || source.entryType !== 'income') {
+    throw Object.assign(new Error('Canonical sponsor receipt not found'), { statusCode: 404 });
+  }
+  const claim = clean<Record<string, unknown>>((await client.send(new GetCommand({
+    TableName: TABLE_BOOKKEEPING, Key: singleton(claimKey('transaction', input.sourceId)), ConsistentRead: true,
+  }))).Item as Record<string, unknown>);
+  const dealId = String(claim?.dealId || ''), linkId = String(claim?.linkId || '');
+  const state = dealId ? await getFinanceState(client, dealId) : null;
+  const link = dealId && linkId ? clean<Record<string, unknown>>((await client.send(new GetCommand({
+    TableName: TABLE_SPONSOR_CRM, Key: singleton(linkId), ConsistentRead: true,
+  }))).Item as Record<string, unknown>) : null;
+  const identityToken = paymentIdentity(source);
+  if (claim?.recordType !== 'sponsor-finance-claim' || claim.kind !== 'transaction'
+    || !state || state.voidedAt || !state.paymentLinkIds.includes(linkId)
+    || link?.recordType !== 'sponsor-finance-link' || link.kind !== 'transaction'
+    || link.dealId !== dealId || link.id !== linkId || link.sourceId !== input.sourceId
+    || link.identityToken !== identityToken || claim.identityToken !== identityToken) {
+    throw safeConflict();
+  }
+  const before = { amountEur: source.amountEur ?? null, rateSource: source.rateSource ?? null };
+  const after = { amountEur: input.amountEur, rateSource: input.rateSource };
+  const conversionRevision = source.conversionRevision === undefined ? 0 : Number(source.conversionRevision);
+  if (!Number.isSafeInteger(conversionRevision) || conversionRevision < 0) throw safeConflict();
+  const now = nowIso();
+  const audit = [
+    ...(Array.isArray(source.audit) ? source.audit : []),
+    { action: 'receipt-conversion-updated', actor: input.actorId, at: now, changes: {
+      amountEur: { from: before.amountEur, to: after.amountEur },
+      rateSource: { from: before.rateSource, to: after.rateSource },
+    } },
+  ].slice(-100);
+  try {
+    await client.send(new TransactWriteCommand({ TransactItems: [
+      adminCheck(input.actorId),
+      { ConditionCheck: { TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(dealId)),
+        ConditionExpression: '#version = :version AND attribute_not_exists(voidedAt)',
+        ExpressionAttributeNames: { '#version': 'version' }, ExpressionAttributeValues: { ':version': state.version } } },
+      { ConditionCheck: { TableName: TABLE_SPONSOR_CRM, Key: singleton(linkId),
+        ConditionExpression: 'recordType = :type AND kind = :kind AND dealId = :deal AND id = :link AND sourceId = :source AND identityToken = :identity',
+        ExpressionAttributeValues: { ':type': 'sponsor-finance-link', ':kind': 'transaction', ':deal': dealId,
+          ':link': linkId, ':source': input.sourceId, ':identity': identityToken } } },
+      { ConditionCheck: { TableName: TABLE_BOOKKEEPING, Key: singleton(claimKey('transaction', input.sourceId)),
+        ConditionExpression: 'recordType = :type AND kind = :kind AND dealId = :deal AND linkId = :link AND identityToken = :identity',
+        ExpressionAttributeValues: { ':type': 'sponsor-finance-claim', ':kind': 'transaction', ':deal': dealId,
+          ':link': linkId, ':identity': identityToken } } },
+      { Update: { TableName: TABLE_BOOKKEEPING, Key: singleton(sourceKey('transaction', input.sourceId)),
+        UpdateExpression: 'SET amountEur = :amountEur, rateSource = :rateSource, audit = :audit, conversionRevision = :nextRevision',
+        ConditionExpression: `id = :id AND updatedAt = :updatedAt AND amount = :amount AND currency = :currency AND statementRef = :reference AND sourceType = :sourceType AND entryType = :entryType AND ${source.conversionRevision === undefined ? 'attribute_not_exists(conversionRevision)' : 'conversionRevision = :expectedRevision'}`,
+        ExpressionAttributeValues: { ':amountEur': input.amountEur, ':rateSource': input.rateSource, ':audit': audit,
+          ':nextRevision': conversionRevision + 1, ':id': input.sourceId, ':updatedAt': source.updatedAt, ':amount': source.amount,
+          ':currency': source.currency, ':reference': source.statementRef, ':sourceType': 'sponsor-receipt', ':entryType': 'income',
+          ...(source.conversionRevision !== undefined ? { ':expectedRevision': conversionRevision } : {}) } } },
+    ] }));
+  } catch (error) {
+    const failure = error as Error & { CancellationReasons?: Array<{ Code?: string }> };
+    const reasons = failure.CancellationReasons || [];
+    if (failure.name === 'ConditionalCheckFailedException'
+      || (failure.name === 'TransactionCanceledException' && reasons.some((reason) => reason.Code === 'ConditionalCheckFailed')))
+      throw safeConflict();
+    throw error;
+  }
+  const { conversionRevision: _conversionRevision, ...canonicalSource } = source;
+  return { ...canonicalSource, amountEur: input.amountEur, rateSource: input.rateSource, audit };
+}
+
 /** Standard bookkeeping evidence, committed by the same trusted finance mutation.
  * Generic document-link writes remain locked for claimed invoices. This path
  * pins the existing finance claim, original bytes and finance link together.

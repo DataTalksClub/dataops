@@ -30,9 +30,14 @@ export interface ContractSigner {
   tokenHash?: string;
   tokenExpiresAt?: string;
   emailSentTo?: string;
+  emailSentAt?: string;
+  emailDeliveryState?: 'sent' | 'deferred' | 'skipped';
+  emailMessageId?: string;
+  emailReason?: string;
   viewedAt?: string;
   signedAt?: string;
   declinedAt?: string;
+  tokenUsedAt?: string;
   ip?: string;
   userAgent?: string;
 }
@@ -145,9 +150,14 @@ export function publicContract(contract: Record<string, any>) {
       role: signer.role, name: signer.name, email: signer.email, order: signer.order,
       ...(signer.tokenExpiresAt ? { tokenExpiresAt: signer.tokenExpiresAt } : {}),
       ...(signer.emailSentTo ? { emailSentTo: signer.emailSentTo } : {}),
+      ...(signer.emailSentAt ? { emailSentAt: signer.emailSentAt } : {}),
+      ...(signer.emailDeliveryState ? { emailDeliveryState: signer.emailDeliveryState } : {}),
+      ...(signer.emailMessageId ? { emailMessageId: signer.emailMessageId } : {}),
+      ...(signer.emailReason ? { emailReason: signer.emailReason } : {}),
       ...(signer.viewedAt ? { viewedAt: signer.viewedAt } : {}),
       ...(signer.signedAt ? { signedAt: signer.signedAt } : {}),
       ...(signer.declinedAt ? { declinedAt: signer.declinedAt } : {}),
+      ...(signer.tokenUsedAt ? { tokenUsedAt: signer.tokenUsedAt } : {}),
     })),
   };
 }

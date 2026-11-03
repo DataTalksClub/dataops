@@ -122,7 +122,6 @@ export function createSurfaceComposition(context) {
     getRenderAdminSurfaceView,
     getRenderBookkeepingSurface,
     getRenderFinanceOverviewSurface,
-    getRenderReconcileSurface,
     getRenderCalendarSurface,
     getRenderDocsSurface,
     getRenderNewsletterSurface,
@@ -164,7 +163,6 @@ export function createSurfaceComposition(context) {
     if (view === "users") return context.getRenderUsersSurfaceView()();
     if (view === "bookkeeping") return getRenderBookkeepingSurface()();
     if (view === "finance") return getRenderFinanceOverviewSurface()();
-    if (view === "reconcile") return getRenderReconcileSurface()();
     if (view === "sponsors") return getRenderSponsorCrmSurface()();
     if (view === "newsletter") return getRenderNewsletterSurface()();
     if (view === "calendar") return getRenderCalendarSurface()();

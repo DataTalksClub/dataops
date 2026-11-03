@@ -28,7 +28,6 @@ export const WORKSPACE_PATH_BY_VIEW = Object.freeze({
   admin: "/admin",
   users: "/users",
   finance: "/finance",
-  reconcile: "/finance/reconcile",
   bookkeeping: "/bookkeeping",
   sponsors: "/sponsors/pipeline",
   newsletter: "/newsletter",
@@ -59,9 +58,6 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   // Money in/out, net profit excluding VAT and the VAT position for one
   // month, a year or the year to date (exactly one of the three params).
   "/finance": { view: "finance", tasksSection: "queue", params: ["month", "year", "ytd"] },
-  // Month-end bank reconciliation; the bare path opens the previous month.
-  "/finance/reconcile": { view: "reconcile", tasksSection: "queue", params: ["status"] },
-  "/finance/reconcile/:period": { view: "reconcile", tasksSection: "queue", params: ["status"] },
   "/bookkeeping": {
     view: "bookkeeping",
     tasksSection: "queue",

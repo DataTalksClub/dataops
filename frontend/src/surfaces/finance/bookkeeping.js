@@ -33,7 +33,7 @@ import {
   MONEY_PATTERN,
   monthLabel,
   monthOf,
-  REPORT_EXEMPT_CATEGORIES,
+  isReportExempt,
   yearsOf,
 } from "./bookkeeping-format.js";
 
@@ -107,7 +107,7 @@ export function createBookkeepingSurface(context) {
         if (view === "package") renderPackageReview();
       },
     });
-    const isReportExemptEntry = (entry) => REPORT_EXEMPT_CATEGORIES.has(String(entry.category || "")) || financeSummary.hasMandatoryEntry(entry.id);
+    const isReportExemptEntry = (entry) => isReportExempt(entry) || financeSummary.hasMandatoryEntry(entry.id);
     let setupAccountsReady = false;
     // Clear transient confirmations after six seconds.
     let statusTimer = null;

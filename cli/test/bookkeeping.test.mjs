@@ -202,6 +202,27 @@ test("set is a dry run by default and applies stored values through audited ledg
   assert.equal(io.json().transaction.audit[0].action, "updated");
 });
 
+test("sponsor receipt conversion uses the owner-aware canonical receipt route", async () => {
+  const existing = { id: "receipt-synthetic", sourceType: "sponsor-receipt", amountEur: null };
+  const calls = fakePortal({
+    "GET /api/bookkeeping/transactions/receipt-synthetic": existing,
+    "PUT /api/sponsor-crm/finance/receipts/receipt-synthetic/conversion": ({ body }) => ({
+      status: 200, body: { ...existing, ...body, audit: [{ action: "receipt-conversion-updated" }] },
+    }),
+  });
+  const io = captureIo();
+  assert.equal(await run([
+    "bookkeeping", "set", "receipt-synthetic", "--amount-eur", "578.8",
+    "--rate-source", "ECB 30 Oct 2026", "--apply", "--json",
+  ], io), 0);
+  assert.deepEqual(calls.map((call) => call.route), [
+    "/api/bookkeeping/transactions/receipt-synthetic",
+    "/api/sponsor-crm/finance/receipts/receipt-synthetic/conversion",
+  ]);
+  assert.deepEqual(calls[1].body, { amountEur: "578.80", rateSource: "ECB 30 Oct 2026" });
+  assert.equal(io.json().transaction.audit[0].action, "receipt-conversion-updated");
+});
+
 test("classify --apply writes only the filled fields", async () => {
   const calls = fakePortal({
     "GET /api/bookkeeping/transactions": {

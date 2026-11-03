@@ -18,17 +18,9 @@ import {
   updateContract,
   validContractEmail,
 } from '../db/sponsorContracts';
-import {
-  DEFAULT_TOKEN_TTL_DAYS,
-  publicContract,
-  validateContractSigningLeadTime,
-  validateContractTerms,
-  type ContractRecord,
-  type ContractSigner,
-  type ContractStatus,
-} from '../sponsorContracts/types';
 import { renderContractPdf, sha256Hex, type AuditEvent } from '../sponsorContracts/pdf';
-import { deliverContractEmail } from '../sponsorContracts/emailDelivery';
+import { CONTRACT_EMAIL_FROM, DEFAULT_TOKEN_TTL_DAYS, publicContract, validateContractSigningLeadTime, validateContractTerms, type ContractRecord, type ContractSigner, type ContractStatus } from '../sponsorContracts/types';
+import { deliverContractEmail, type ContractEmailDelivery } from '../sponsorContracts/emailDelivery';
 import { readFile, saveFile } from '../storage';
 import { parseJsonObjectEvent as parse } from '../http';
 import { sponsorDocPortalBaseUrl } from './sponsorDocs';
@@ -62,6 +54,13 @@ function providedToken(event: LambdaEvent, body?: Record<string, unknown> | null
   return '';
 }
 
+function providedSignerEmail(event: LambdaEvent, body?: Record<string, unknown> | null): string {
+  const fromQuery = event.queryStringParameters?.email;
+  if (typeof fromQuery === 'string' && fromQuery.trim()) return fromQuery.trim().toLowerCase();
+  if (body && typeof body.email === 'string' && body.email.trim()) return body.email.trim().toLowerCase();
+  return '';
+}
+
 /** The signer whose turn it is: earliest order without a signedAt. */
 export function pendingSigner(contract: Record<string, any>): ContractSigner | undefined {
   return [...(contract.signers || [])].sort((a, b) => a.order - b.order).find((signer) => !signer.signedAt);
@@ -70,8 +69,12 @@ export function pendingSigner(contract: Record<string, any>): ContractSigner | u
 function findSignerByToken(contract: Record<string, any>, token: string, now = new Date()): ContractSigner | undefined {
   if (!token) return undefined;
   const hash = contractTokenHash(token);
-  return (contract.signers || []).find((signer: any) => signer.tokenHash === hash
-    && (!signer.tokenExpiresAt || Date.parse(signer.tokenExpiresAt) > now.getTime()));
+  return (contract.signers || []).find((signer: any) =>
+    signer.tokenHash === hash
+    && Boolean(signer.tokenExpiresAt && Date.parse(signer.tokenExpiresAt) > now.getTime())
+    && signer.emailDeliveryState === 'sent'
+    && Boolean(signer.emailSentTo && String(signer.emailSentTo).trim().toLowerCase() === String(signer.email || '').trim().toLowerCase())
+  );
 }
 
 /** Anonymous external requests: token-gated signing page reads and actions. */
@@ -109,14 +112,14 @@ export async function handleSponsorContractRoutes(reqPath: string, method: strin
   const body = parse(event);
   const query = event.queryStringParameters || {};
   const nowDate = new Date(Date.now());
+  const wallToday = berlinDate(nowDate);
   const rawToday = typeof query.today === 'string' && query.today ? query.today : (body && typeof body.today === 'string' ? body.today : undefined);
-  const explicitToday = realDate(rawToday);
-  const today = explicitToday ? String(rawToday) : berlinDate(nowDate);
+  const today = realDate(rawToday) && String(rawToday) > wallToday ? String(rawToday) : wallToday;
   const contractMatch = reqPath.match(/^\x2Fapi\x2Fsponsor-crm\x2Fcontracts\x2F([^\x2F]+)(\x2F.+)?$/);
   const contractId = contractMatch ? decodeURIComponent(contractMatch[1]) : '';
   // Anonymous token-gated signing endpoints never require a session.
   if (contractId && (reqPath.endsWith('/signing') || reqPath.endsWith('/sign') || reqPath.endsWith('/decline'))) {
-    return await handleSigningRequest(reqPath, m, event, client, contractId, body, today, nowDate, explicitToday);
+    return await handleSigningRequest(reqPath, m, event, client, contractId, body, today, nowDate);
   }
   if (!actor(event) && !opts.skipAuth) return json(401, { error: 'Unauthorized' });
 
@@ -192,9 +195,10 @@ export async function handleSponsorContractRoutes(reqPath: string, method: strin
     }
   }
 
-  // Staff: send (or resend). Mints an expiring token per signer, emails the
-  // sponsor signer, returns all signing URLs once (the counter-signer link is
-  // handed over by staff instead of being emailed).
+  // Staff: send (or resend). Mints an expiring single-use token for each
+  // unsigned signer, emails each signer their unique link at their recorded
+  // address in signing order, and records truthful per-signer delivery state
+  // and append-only audit events.
   if (contractId && (reqPath.endsWith('/send') || reqPath.endsWith('/resend')) && m === 'POST') {
     const contract = await getContract(client, contractId);
     if (!contract) return json(404, { error: 'Contract not found', code: 'contract_not_found' });
@@ -202,39 +206,134 @@ export async function handleSponsorContractRoutes(reqPath: string, method: strin
     if (contract.status === 'declined') return json(409, { error: 'Contract was declined; create a new contract', code: 'contract_declined' });
     const expiresDays = Number((body || {}).expiresDays || DEFAULT_TOKEN_TTL_DAYS);
     if (!Number.isInteger(expiresDays) || expiresDays < 1 || expiresDays > 60) return json(400, { error: 'expiresDays must be a whole number from 1 to 60' });
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + expiresDays * 86400000).toISOString();
-    const urls: Record<string, string> = {};
-    const signers: ContractSigner[] = (contract.signers || []).map((signer: any) => {
-      if (signer.signedAt) return signer;
-      const token = newSigningToken();
-      urls[signer.role] = signingUrl(event, contractId, token);
-      return Object.assign({}, signer, { tokenHash: contractTokenHash(token), tokenExpiresAt: expiresAt });
-    });
-    if (!urls.sponsor) return json(409, { error: 'No unsigned sponsor signer to send to', code: 'contract_no_pending_signer' });
-    const sponsorSigner = signers.find((signer) => signer.role === 'sponsor')!;
-    const emailDelivery = await deliverContractEmail({
-      to: sponsorSigner.email,
-      subject: 'DataTalks.Club sponsorship agreement - signature requested',
-      body: [
-        'Hello ' + (sponsorSigner.name || sponsorSigner.email) + ',',
-        '',
-        'Please review and sign the sponsorship agreement for ' + contract.terms.company + ':',
-        urls.sponsor,
-        '',
-        'The link is valid until ' + expiresAt + ' (UTC) and is meant for ' + sponsorSigner.email + ' only.',
-        'Signing happens electronically under EU regulation 910/2014 (eIDAS) as a Simple Electronic Signature.',
-      ].join(String.fromCharCode(10)),
-    });
+    const existingSigners: ContractSigner[] = [...(contract.signers || [])].sort((a, b) => a.order - b.order);
+    const unsignedSigners = existingSigners.filter((signer) => !signer.signedAt);
+    if (unsignedSigners.length === 0) return json(409, { error: 'No unsigned signer to send to', code: 'contract_no_pending_signer' });
     const resend = reqPath.endsWith('/resend');
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const expiresAt = new Date(now.getTime() + expiresDays * 86400000).toISOString();
+    const hasActiveSentLink = (signer: ContractSigner) =>
+      signer.emailDeliveryState === 'sent'
+      && Boolean(signer.emailSentTo && signer.tokenHash && signer.tokenExpiresAt && Date.parse(signer.tokenExpiresAt) > now.getTime());
+    const needsRetryOnly = !resend
+      && unsignedSigners.some((signer) => !hasActiveSentLink(signer))
+      && unsignedSigners.some((signer) => hasActiveSentLink(signer));
+    const urls: Record<string, string> = {};
+    const emailDeliveries: Record<string, ContractEmailDelivery> = {};
+    const signers: ContractSigner[] = [];
+    const auditEntries: Record<string, unknown>[] = [];
+    const staffActor = actor(event) || 'test-staff';
+
+    for (const signer of existingSigners) {
+      if (signer.signedAt) {
+        signers.push(signer);
+        continue;
+      }
+      if (needsRetryOnly && hasActiveSentLink(signer)) {
+        signers.push(signer);
+        emailDeliveries[signer.role] = {
+          state: 'sent',
+          from: CONTRACT_EMAIL_FROM,
+          to: signer.emailSentTo || signer.email,
+          subject: 'DataTalks.Club sponsorship agreement - signature requested',
+          ...(signer.emailMessageId ? { messageId: signer.emailMessageId } : {}),
+          ...(signer.emailSentAt ? { sentAt: signer.emailSentAt } : {}),
+        };
+        continue;
+      }
+      const token = newSigningToken();
+      const url = signingUrl(event, contractId, token);
+      const actionVerb = signer.role === 'counter' ? 'counter-sign' : 'sign';
+      const delivery = await deliverContractEmail({
+        to: signer.email,
+        subject: 'DataTalks.Club sponsorship agreement - signature requested',
+        body: [
+          'Hello ' + (signer.name || signer.email) + ',',
+          '',
+          'Please review and ' + actionVerb + ' the sponsorship agreement for ' + contract.terms.company + ':',
+          url,
+          '',
+          'The link is valid until ' + expiresAt + ' (UTC) and is meant for ' + signer.email + ' only.',
+          'Signing happens electronically under EU regulation 910/2014 (eIDAS) as a Simple Electronic Signature.',
+        ].join(String.fromCharCode(10)),
+      });
+      emailDeliveries[signer.role] = delivery;
+      const recipient = delivery.to || signer.email;
+      if (delivery.state === 'sent') {
+        urls[signer.role] = url;
+        signers.push({
+          role: signer.role,
+          name: signer.name,
+          email: signer.email,
+          order: signer.order,
+          ...(signer.viewedAt ? { viewedAt: signer.viewedAt } : {}),
+          tokenHash: contractTokenHash(token),
+          tokenExpiresAt: expiresAt,
+          emailSentTo: recipient,
+          emailSentAt: delivery.sentAt || nowIso,
+          emailDeliveryState: 'sent',
+          ...(delivery.messageId ? { emailMessageId: delivery.messageId } : {}),
+        });
+        auditEntries.push({
+          actorId: staffActor,
+          action: resend ? 'resent' : 'sent',
+          role: signer.role,
+          recipient,
+          deliveryState: 'sent',
+          ...(delivery.messageId ? { messageId: delivery.messageId } : {}),
+          detail: 'Signing link emailed to ' + recipient + (delivery.messageId ? ' (messageId ' + delivery.messageId + ')' : ''),
+        });
+      } else {
+        signers.push({
+          role: signer.role,
+          name: signer.name,
+          email: signer.email,
+          order: signer.order,
+          ...(signer.viewedAt ? { viewedAt: signer.viewedAt } : {}),
+          emailDeliveryState: delivery.state,
+          ...(delivery.reason ? { emailReason: delivery.reason } : {}),
+        });
+        auditEntries.push({
+          actorId: staffActor,
+          action: 'email-' + delivery.state,
+          role: signer.role,
+          recipient,
+          deliveryState: delivery.state,
+          ...(delivery.reason ? { reason: delivery.reason } : {}),
+          detail: 'Signing link email ' + delivery.state + ' for ' + recipient + (delivery.reason ? ' (' + delivery.reason + ')' : ''),
+        });
+      }
+    }
+
+    const allUnsignedEmailed = signers.every((signer) => Boolean(signer.signedAt || (signer.emailDeliveryState === 'sent' && signer.emailSentTo)));
+    const failedDelivery = Object.values(emailDeliveries).find((d) => d.state !== 'sent');
+    const primaryDelivery = failedDelivery
+      || emailDeliveries.sponsor
+      || emailDeliveries.counter
+      || Object.values(emailDeliveries)[0];
+    const nextStatus: ContractStatus = allUnsignedEmailed
+      ? (contract.status === 'draft' ? 'sent' : contract.status)
+      : contract.status;
+    const nextSentAt = allUnsignedEmailed
+      ? (contract.sentAt && resend ? contract.sentAt : (contract.sentAt || nowIso))
+      : contract.sentAt;
     const updated = await updateContract(client, contract, {
-      status: 'sent' as ContractStatus,
-      sentAt: contract.sentAt && resend ? contract.sentAt : now.toISOString(),
+      status: nextStatus,
+      sentAt: nextSentAt,
       signers,
-      emailState: emailDelivery.state,
-      emailReason: emailDelivery.reason,
-    }, { actorId: actor(event) || 'test-staff', action: resend ? 'resent' : 'sent', role: 'sponsor', detail: 'Signing link emailed to ' + sponsorSigner.email });
-    return json(200, { contract: publicContract(updated), emailDelivery, signingUrls: urls });
+      emailState: primaryDelivery?.state,
+      emailReason: failedDelivery?.reason,
+    }, auditEntries[0]);
+    for (const extraAudit of auditEntries.slice(1)) {
+      await appendContractAudit(client, contractId, extraAudit);
+    }
+    return json(200, {
+      contract: publicContract(updated),
+      emailDelivery: primaryDelivery,
+      emailDeliveries,
+      signingUrls: urls,
+    });
   }
   return json(404, { error: 'Not found' });
 }
@@ -248,6 +347,9 @@ function orderedSigners(sponsor: ContractSigner, counter: ContractSigner, order:
 
 async function resolveSponsorSigner(client: DynamoDBDocumentClient, body: Record<string, unknown>, deal: Record<string, any>): Promise<ContractSigner | string> {
   const raw = (body.sponsorSigner && typeof body.sponsorSigner === 'object' && !Array.isArray(body.sponsorSigner)) ? body.sponsorSigner as Record<string, unknown> : {};
+  if (raw.email !== undefined && !validContractEmail(raw.email)) {
+    return 'Invalid sponsor signer email';
+  }
   let email = validContractEmail(raw.email) ? String(raw.email).trim().toLowerCase() : '';
   let name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : '';
   if (deal.primaryContactId) {
@@ -265,8 +367,11 @@ async function resolveSponsorSigner(client: DynamoDBDocumentClient, body: Record
 
 function counterSignerFromBody(body: Record<string, unknown>): ContractSigner | string {
   const raw = (body.counterSigner && typeof body.counterSigner === 'object' && !Array.isArray(body.counterSigner)) ? body.counterSigner as Record<string, unknown> : {};
+  if (raw.email !== undefined && !validContractEmail(raw.email)) {
+    return 'Invalid counter signer email';
+  }
   const email = validContractEmail(raw.email) ? String(raw.email).trim().toLowerCase()
-    : validContractEmail(process.env.DATAOPS_CONTRACT_COUNTERSIGNER_EMAIL) ? String(process.env.DATAOPS_CONTRACT_COUNTERSIGNER_EMAIL) : 'alexey@datatalks.club';
+    : validContractEmail(process.env.DATAOPS_CONTRACT_COUNTERSIGNER_EMAIL) ? String(process.env.DATAOPS_CONTRACT_COUNTERSIGNER_EMAIL).trim().toLowerCase() : 'alexey@datatalks.club';
   const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : (process.env.DATAOPS_CONTRACT_COUNTERSIGNER_NAME || 'Alexey Grigorev (DataTalks.Club)');
   return { role: 'counter', name, email, order: 1 };
 }
@@ -280,7 +385,6 @@ async function handleSigningRequest(
   body: Record<string, unknown> | null,
   today = berlinDate(),
   nowDate = new Date(Date.now()),
-  explicitToday = false,
 ): Promise<LambdaResponse> {
   const ip = requestIp(event);
   const hashedIp = ipHash(ip);
@@ -290,7 +394,8 @@ async function handleSigningRequest(
   if (!contract) return json(404, { error: 'Contract not found', code: 'contract_not_found' });
   const token = providedToken(event, body);
   const signer = findSignerByToken(contract, token, nowDate);
-  if (!signer) {
+  const callerEmail = providedSignerEmail(event, body);
+  if (!signer || contract.status === 'draft' || (callerEmail && callerEmail !== String(signer.email || '').trim().toLowerCase())) {
     await recordContractFailedAttempt(client, contractId, hashedIp, nowDate);
     return json(403, { error: 'This signing link is invalid or expired', code: 'invalid_signing_token' });
   }
@@ -300,36 +405,47 @@ async function handleSigningRequest(
   if (isView) {
     if (m !== 'GET') return json(405, { error: 'Method not allowed' });
     let current: Record<string, any> = contract;
-    if (contract.status === 'sent' && !signer.viewedAt) {
+    if ((contract.status === 'sent' || contract.status === 'viewed') && !signer.viewedAt) {
       const signers = (contract.signers || []).map((item: any) => item.role === signer.role && !item.viewedAt ? Object.assign({}, item, { viewedAt: now }) : item);
-      current = await updateContract(client, contract, { status: 'viewed', viewedAt: now, signers }, { actorId: 'signer:' + signer.role, action: 'viewed', role: signer.role, ip, userAgent });
+      current = await updateContract(
+        client,
+        contract,
+        { status: 'viewed', viewedAt: contract.viewedAt || now, signers },
+        { actorId: 'signer:' + signer.role, action: 'viewed', role: signer.role, recipient: signer.emailSentTo || signer.email, ip, userAgent },
+      );
     }
     const pending = pendingSigner(current);
-    return json(200, { contract: publicContract(current), viewer: { role: signer.role, name: signer.name }, pendingRole: pending ? pending.role : null });
+    return json(200, { contract: publicContract(current), viewer: { role: signer.role, name: signer.name, email: signer.email }, pendingRole: pending ? pending.role : null });
   }
   if (m !== 'POST') return json(405, { error: 'Method not allowed' });
   if (contract.status === 'signed') return json(409, { error: 'Contract is already signed', code: 'contract_already_signed' });
   if (contract.status === 'declined') return json(409, { error: 'Contract was declined', code: 'contract_declined' });
+  if (signer.signedAt || signer.declinedAt || signer.tokenUsedAt) {
+    return json(409, { error: 'This signing link has already been used', code: 'signing_token_already_used' });
+  }
   const pending = pendingSigner(contract);
   if (!pending || pending.role !== signer.role) {
     return json(409, { error: 'Signing order: it is not this signer\x27s turn (next: ' + (pending ? pending.role : 'none') + ')', code: 'signer_out_of_order' });
   }
   const withStamp = (item: ContractSigner) => item.role === signer.role
-    ? Object.assign({}, item, reqPath.endsWith('/decline') ? { declinedAt: now, ip, userAgent } : { signedAt: now, ip, userAgent })
+    ? Object.assign({}, item, reqPath.endsWith('/decline')
+      ? { declinedAt: now, tokenUsedAt: now, ip, userAgent }
+      : { signedAt: now, tokenUsedAt: now, ip, userAgent })
     : item;
   const nextSigners = (contract.signers || []).map(withStamp);
   if (reqPath.endsWith('/decline')) {
-    const updated = await updateContract(client, contract, { status: 'declined', declinedAt: now, signers: nextSigners }, { actorId: 'signer:' + signer.role, action: 'declined', role: signer.role, ip, userAgent });
+    const updated = await updateContract(
+      client,
+      contract,
+      { status: 'declined', declinedAt: now, signers: nextSigners },
+      { actorId: 'signer:' + signer.role, action: 'declined', role: signer.role, recipient: signer.emailSentTo || signer.email, ip, userAgent },
+    );
     return json(200, { contract: publicContract(updated) });
   }
-  const createdDay = contract.createdAt && !Number.isNaN(Date.parse(String(contract.createdAt)))
-    ? berlinDate(new Date(String(contract.createdAt)))
-    : '';
-  const enforceWallClockSigners = !explicitToday || !createdDay || String(contract.terms?.startDate || '') >= createdDay;
   const leadTimeError = validateContractSigningLeadTime(
     contract.terms,
     today,
-    enforceWallClockSigners ? nextSigners : [],
+    nextSigners,
     (iso) => {
       const ms = Date.parse(iso);
       return Number.isNaN(ms) ? '' : berlinDate(new Date(ms));
@@ -339,23 +455,43 @@ async function handleSigningRequest(
     return json(409, { error: leadTimeError, code: 'contract_lead_time_expired' });
   }
   const allSigned = nextSigners.every((item: any) => item.signedAt);
+  const signDetail = 'Signed by ' + signer.name + ' (' + (signer.emailSentTo || signer.email) + ')';
   if (!allSigned) {
     const nextStatus = contract.status === 'sent' ? 'viewed' : contract.status;
-    const updated = await updateContract(client, contract, { status: nextStatus, signers: nextSigners }, { actorId: 'signer:' + signer.role, action: 'signed', role: signer.role, ip, userAgent });
-    await appendContractAudit(client, contractId, { actorId: 'signer:' + signer.role, action: 'signed', role: signer.role, detail: 'Signed by ' + signer.name, ip, userAgent });
+    const updated = await updateContract(
+      client,
+      contract,
+      { status: nextStatus, signers: nextSigners },
+      { actorId: 'signer:' + signer.role, action: 'signed', role: signer.role, recipient: signer.emailSentTo || signer.email, detail: signDetail, ip, userAgent },
+    );
     const stillPending = pendingSigner(updated as unknown as ContractRecord);
     return json(200, { contract: publicContract(updated), awaitingRole: stillPending ? stillPending.role : null });
   }
   // Final signature: render the flattened signed PDF with the audit page,
   // store it and keep its SHA-256 on the record for the tamper check.
+  const finalSignAudit = {
+    actorId: 'signer:' + signer.role,
+    action: 'signed',
+    role: signer.role,
+    recipient: signer.emailSentTo || signer.email,
+    detail: signDetail,
+    ip,
+    userAgent,
+  };
   const priorEvents = await listContractAudit(client, contractId);
   const auditEvents: AuditEvent[] = auditEventsOf(priorEvents);
-  auditEvents.push({ action: 'signed', at: now, role: signer.role, detail: 'Signed by ' + signer.name, ip, userAgent });
+  auditEvents.push({ action: 'signed', at: now, role: signer.role, detail: signDetail, ip, userAgent });
   auditEvents.push({ action: 'completed', at: now, detail: 'All signers have signed; document finalized and hashed' });
   const bytes = await renderContractPdf(contract.terms, { contractId, signers: nextSigners, auditEvents });
   const stored = await saveFile(contractId, 'contract-signed.pdf', Buffer.from(bytes), 'application/pdf');
   const signedPdf = { storageProvider: stored.storageProvider, storagePath: stored.storagePath, storageUri: stored.storageUri, sha256: sha256Hex(bytes) };
-  const updated = await updateContract(client, contract, { status: 'signed' as ContractStatus, signedAt: now, signers: nextSigners, signedPdf }, { actorId: 'signer:' + signer.role, action: 'completed', role: signer.role, detail: 'Final PDF stored (sha256 ' + signedPdf.sha256 + ')', ip, userAgent });
+  await appendContractAudit(client, contractId, finalSignAudit);
+  const updated = await updateContract(
+    client,
+    contract,
+    { status: 'signed' as ContractStatus, signedAt: now, signers: nextSigners, signedPdf },
+    { actorId: 'signer:' + signer.role, action: 'completed', role: signer.role, detail: 'Final PDF stored (sha256 ' + signedPdf.sha256 + ')', ip, userAgent },
+  );
   return json(200, { contract: publicContract(updated), sha256: signedPdf.sha256 });
 }
 

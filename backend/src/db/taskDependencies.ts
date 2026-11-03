@@ -1,8 +1,9 @@
-import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import type { ProjectedTask } from '../identity/projections';
 import type { Task, TaskStatus } from '../types';
 import { getCardConsistent } from './cards';
+import { TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM } from './tableNames';
 import { getTaskConsistent, listTasksByCardConsistent } from './tasks';
 
 /**
@@ -103,6 +104,38 @@ function cardIdOf(task: Task | null): string | null {
 }
 
 /**
+ * Resolve a `sponsor-deal` payment/receipt step prerequisite (`sourceId`) from
+ * the deal's committed `SPONSOR_FINANCE_LINK` and `BOOKKEEPING` rows.
+ */
+async function resolveDealPaymentStepPrerequisite(
+  client: DynamoDBDocumentClient,
+  dealId: string,
+  sourceId: string,
+): Promise<TaskReference | null> {
+  const linkKey = `SPONSOR_FINANCE_LINK#${dealId}#transaction#${sourceId}`;
+  const linkResult = await client.send(new GetCommand({
+    TableName: TABLE_SPONSOR_CRM,
+    Key: { PK: linkKey, SK: linkKey },
+    ConsistentRead: true,
+  }));
+  if (!linkResult.Item) return null;
+  const sourceKey = `BOOKKEEPING#${sourceId}`;
+  const sourceResult = await client.send(new GetCommand({
+    TableName: TABLE_BOOKKEEPING,
+    Key: { PK: sourceKey, SK: sourceKey },
+    ConsistentRead: true,
+  }));
+  const ref = typeof sourceResult.Item?.statementRef === 'string' && sourceResult.Item.statementRef.trim()
+    ? sourceResult.Item.statementRef.trim()
+    : sourceId;
+  return {
+    id: sourceId,
+    description: `Payment receipt ${ref}`,
+    status: 'done',
+  };
+}
+
+/**
  * Validate the shape of a supplied `dependsOn` value. An empty list means no
  * dependencies and is returned as `null`, the removal marker for the field.
  */
@@ -178,9 +211,10 @@ async function planTaskDependencyChecks(
   const deleting = before !== null && after === null;
   const movingCard = before !== null && after !== null && cardIdOf(before) !== cardIdOf(after);
   const priorCardId = cardIdOf(before);
+  const dealSubjectId = !cardId && after?.subject?.type === 'sponsor-deal' ? after.subject.id : null;
 
   if (after && dependsOn.length > 0) {
-    if (!cardId) {
+    if (!cardId && !dealSubjectId) {
       throw new TaskDependencyError(
         'dependencies-require-card',
         'Only a Task on a Card can depend on other Tasks',
@@ -278,6 +312,74 @@ async function planTaskDependencyChecks(
     }
   }
 
+  if (after && dealSubjectId && dependsOn.length > 0 && (edgesChanged || enteringDone)) {
+    const directTasks = await Promise.all(dependsOn.map((id) => getTaskConsistent(client, id)));
+    const paymentRefs = await Promise.all(dependsOn.map((id, index) => (
+      directTasks[index] ? Promise.resolve(null) : resolveDealPaymentStepPrerequisite(client, dealSubjectId, id)
+    )));
+
+    if (edgesChanged) {
+      const missing = dependsOn.filter((_, index) => !directTasks[index] && !paymentRefs[index]);
+      if (missing.length > 0) {
+        throw new TaskDependencyError(
+          'missing-dependency',
+          `Prerequisite Task or payment receipt not found on this deal: ${missing.join(', ')}`,
+          400,
+        );
+      }
+      const foreign = directTasks.filter(
+        (task): task is Task => task !== null && (task.subject?.type !== 'sponsor-deal' || task.subject.id !== dealSubjectId),
+      );
+      if (foreign.length > 0) {
+        throw new TaskDependencyError(
+          'dependencies-require-card',
+          `Only a Task on a Card can depend on other Tasks: ${names(foreign.map(reference))}`,
+          400,
+          foreign.map(reference),
+        );
+      }
+      const taskDepIds = dependsOn.filter((_, index) => directTasks[index] !== null);
+      if (taskDepIds.length > 0) {
+        dependsOn.forEach((id, index) => {
+          if (directTasks[index]) seed.set(id, directTasks[index]);
+        });
+        const walk = await walkPrerequisites(client, taskDepIds, after.id, seed);
+        if (walk.reachesTarget) {
+          throw new TaskDependencyError(
+            'cyclic-dependency',
+            'These prerequisites would make the Task depend on itself through a cycle',
+            400,
+          );
+        }
+        for (const [id, task] of walk.visited) {
+          if (task) guards.push({ taskId: id, version: task.version });
+        }
+      }
+    }
+
+    if (enteringDone) {
+      const unmet: TaskReference[] = [];
+      dependsOn.forEach((id, index) => {
+        const task = directTasks[index];
+        const payment = paymentRefs[index];
+        if (task) {
+          if (!isResolvedStatus(task.status)) unmet.push(reference(task));
+          else guards.push({ taskId: id, resolved: true });
+        } else if (!payment || !isResolvedStatus(payment.status)) {
+          unmet.push({ id, description: id, status: 'missing' });
+        }
+      });
+      if (unmet.length > 0) {
+        throw new TaskDependencyError(
+          'prerequisites-incomplete',
+          `Cannot mark task as done: complete or skip ${names(unmet)} first`,
+          409,
+          unmet,
+        );
+      }
+    }
+  }
+
   // A prerequisite leaves its dependents behind when it is reopened, deleted,
   // or moved to another Card.
   if (priorCardId && (reopening || deleting || movingCard)) {
@@ -345,11 +447,40 @@ async function attachPrerequisites<T extends Task>(
   const wanted = [...new Set(tasks.flatMap((task) => task.dependsOn || []))].filter((id) => !known.has(id));
   const loaded = await Promise.all(wanted.map(async (id) => [id, await getTaskConsistent(client, id)] as const));
   for (const [id, task] of loaded) known.set(id, task);
+
+  const dealPaymentRefs = new Map<string, TaskReference | null>();
+  const wantedDealPayments: Array<{ key: string; dealId: string; sourceId: string }> = [];
+  for (const task of tasks) {
+    if (task.subject?.type !== 'sponsor-deal' || !task.dependsOn?.length) continue;
+    for (const id of task.dependsOn) {
+      if (known.get(id)) continue;
+      const key = `${task.subject.id}#${id}`;
+      if (!dealPaymentRefs.has(key)) {
+        dealPaymentRefs.set(key, null);
+        wantedDealPayments.push({ key, dealId: task.subject.id, sourceId: id });
+      }
+    }
+  }
+  if (wantedDealPayments.length > 0) {
+    const resolved = await Promise.all(
+      wantedDealPayments.map(async ({ key, dealId, sourceId }) => (
+        [key, await resolveDealPaymentStepPrerequisite(client, dealId, sourceId)] as const
+      )),
+    );
+    for (const [key, ref] of resolved) dealPaymentRefs.set(key, ref);
+  }
+
   return tasks.map((task) => {
     if (!task.dependsOn?.length) return task;
+    const dealId = task.subject?.type === 'sponsor-deal' ? task.subject.id : null;
     const prerequisites = task.dependsOn.map((id): TaskReference => {
       const found = known.get(id);
-      return found ? reference(found) : { id, description: id, status: 'missing' };
+      if (found) return reference(found);
+      if (dealId) {
+        const paymentRef = dealPaymentRefs.get(`${dealId}#${id}`);
+        if (paymentRef) return paymentRef;
+      }
+      return { id, description: id, status: 'missing' };
     });
     return {
       ...task,

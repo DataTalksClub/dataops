@@ -31,21 +31,28 @@ import {
   EXCEPTION_KINDS,
   EXCEPTION_POLICIES,
   exceptionDigest,
+  isAccountantReportRowExcluded,
   pairAll,
+  withInvoiceCandidates,
   type BankTx,
   type ClassificationRule,
   type ExceptionKind,
+  type IssuedInvoiceCandidate,
   type LedgerRow,
   type ManualDecisions,
   type MonthTable,
+  type PendingEmailInvoice,
+  type ReceivedInvoiceDocumentCandidate,
   type ReconcileTolerances,
 } from "./month";
 import { listStatements, rowKeys, type StatementRecord } from "./service";
+import { listCrmRecords, scanCrmPrefix } from "../db/sponsorCrm";
 import { getIntakeItem } from "../db/intake";
-import { listInvoices } from "../invoices/store";
+import { getInvoice, listInvoices } from "../invoices/store";
+import type { Invoice } from "../invoices/model";
 import { isInvoiceIntakeRoute } from "../invoices/intakeRoute";
+import { getArtifact } from "../db/artifacts";
 import { normalizedAutoMatchVendor } from "../bookkeepingAutoMatch";
-import type { PendingEmailInvoice } from "./month";
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const LOG_LIMIT = 2000;
@@ -240,7 +247,7 @@ const signed = (amount: unknown, entryType: unknown) => {
 };
 
 export function ledgerRowsFrom(transactions: Array<Record<string, unknown>>, links: Array<Record<string, unknown>>): LedgerRow[] {
-  const documents = new Map<string, Array<{ id: string }>>();
+  const documents = new Map<string, LedgerRow["documents"]>();
   for (const link of links) {
     if (link.coverageType !== "evidence") continue;
     const list = documents.get(String(link.transactionId)) || [];
@@ -251,7 +258,18 @@ export function ledgerRowsFrom(transactions: Array<Record<string, unknown>>, lin
     .filter((item) => item.amount !== undefined && (item.paidDate || item.transactionDate))
     .map((item) => {
       const own = documents.get(String(item.id)) || [];
-      const extra = [item.invoiceId, item.documentArtifactId].filter((value) => typeof value === "string" && value).map((value) => ({ id: String(value) }));
+      const invoiceId = typeof item.invoiceId === "string" && item.invoiceId ? item.invoiceId : undefined;
+      const invoiceDocumentId = typeof item.documentArtifactId === "string" && item.documentArtifactId
+        ? item.documentArtifactId
+        : invoiceId;
+      const extra = invoiceDocumentId ? [{ id: invoiceDocumentId, ...(invoiceId ? { invoiceId } : {}) }] : [];
+      const projectedDocuments: LedgerRow["documents"] = own.map((document) => ({ ...document }));
+      for (const document of extra) {
+        const existing = projectedDocuments.find((candidate) => candidate.id === document.id);
+        if (existing) {
+          if (document.invoiceId) existing.invoiceId = document.invoiceId;
+        } else projectedDocuments.push(document);
+      }
       return {
         id: String(item.id),
         date: String(item.paidDate || item.transactionDate).slice(0, 10),
@@ -261,12 +279,13 @@ export function ledgerRowsFrom(transactions: Array<Record<string, unknown>>, lin
         counterparty: String(item.counterparty || item.description || ""),
         ...(item.description ? { description: String(item.description) } : {}),
         ...(item.category ? { category: String(item.category) } : {}),
+        ...(item.ownerPayType ? { ownerPayType: String(item.ownerPayType) } : {}),
         ...(item.subtype ? { subtype: String(item.subtype) } : {}),
         ...(item.rateSource ? { rateSource: String(item.rateSource) } : {}),
         ...(item.statementRef ? { statementRef: String(item.statementRef) } : {}),
         ...(item.invoiceNumber ? { invoiceNumber: String(item.invoiceNumber) } : {}),
         ...(item.sourceType ? { sourceType: String(item.sourceType) } : {}),
-        documents: [...own, ...extra.filter((doc) => !own.some((existing) => existing.id === doc.id))],
+        documents: projectedDocuments,
       };
     });
 }
@@ -282,10 +301,192 @@ export type MonthView = MonthTable & {
   log: MonthLogEntry[];
 };
 
-export type Snapshot = { bank: BankTx[]; ledger: LedgerRow[]; statements: StatementRecord[]; months: Map<string, MonthRecord>; config: ReconcileConfig; pendingEmailInvoices: PendingEmailInvoice[] };
+export type Snapshot = {
+  bank: BankTx[];
+  ledger: LedgerRow[];
+  issuedInvoices: IssuedInvoiceCandidate[];
+  receivedInvoiceDocuments: ReceivedInvoiceDocumentCandidate[];
+  statements: StatementRecord[];
+  months: Map<string, MonthRecord>;
+  config: ReconcileConfig;
+  pendingEmailInvoices: PendingEmailInvoice[];
+};
 
-async function listPendingEmailInvoices(client: DynamoDBDocumentClient): Promise<PendingEmailInvoice[]> {
-  const pending = (await listInvoices(client)).filter((invoice) => invoice.status === "pending"
+const DATE_PREFIX = /^\d{4}-\d{2}-\d{2}$/;
+
+function cleanDescriptionCounterparty(value: unknown): string {
+  const cleaned = String(value || "")
+    .trim()
+    .replace(/^\d{4}-\d{2}-\d{2}[-_\s]+/, "")
+    .replace(/\.(?:pdf|png|jpe?g)$/i, "")
+    .trim();
+  return /[a-z]/i.test(cleaned) ? cleaned : "";
+}
+
+export function issuedInvoicesFrom(
+  financeRaw: Array<Record<string, unknown>>,
+  deals: Array<Record<string, unknown>>,
+  organizations: Array<Record<string, unknown>>,
+  transactions: Array<Record<string, unknown>>,
+): IssuedInvoiceCandidate[] {
+  const orgName = new Map(organizations.map((org) => [String(org.id), String(org.name || "")]));
+  const dealById = new Map(deals.map((deal) => [String(deal.id), deal]));
+  return financeRaw
+    .filter((item) => typeof item.dealId === "string" && !item.voidedAt)
+    .flatMap((item): IssuedInvoiceCandidate[] => {
+      const dealId = String(item.dealId);
+      const invoiceNumber = typeof item.invoiceNumber === "string" ? item.invoiceNumber.trim() : "";
+      const amountDue = Number(item.amountDue || 0);
+      const date = String(item.issuedOn || item.dueOn || "").slice(0, 10);
+      if (!invoiceNumber || !(amountDue > 0) || !DATE_PREFIX.test(date)) return [];
+      const paymentLinkIds = Array.isArray(item.paymentLinkIds) ? item.paymentLinkIds : [];
+      const paid = paymentLinkIds.length > 0
+        || item.paymentState === "paid"
+        || transactions.some((tx) => String(tx.sponsorDealId || "") === dealId || String(tx.id || "") === dealId || String(tx.id || "").startsWith(`receipt-${dealId}`));
+      if (paid) return [];
+      const deal = dealById.get(dealId);
+      const organizationName = deal && typeof deal.organizationId === "string" ? orgName.get(deal.organizationId) : undefined;
+      const counterparty = String(organizationName || deal?.name || item.counterparty || "").trim();
+      if (!counterparty) return [];
+      return [{
+        id: dealId,
+        date,
+        amount: amountDue.toFixed(2),
+        currency: String(item.currency || "EUR").trim().toUpperCase(),
+        counterparty,
+        ...(deal?.name ? { description: String(deal.name) } : {}),
+        invoiceNumber,
+        paid: false,
+        voided: false,
+        documents: [{ id: dealId }],
+      }];
+    });
+}
+
+export function receivedInvoiceDocumentsFrom(
+  documents: Array<Record<string, unknown>>,
+  invoices: Invoice[],
+  transactions: Array<Record<string, unknown>>,
+  links: Array<Record<string, unknown>>,
+): ReceivedInvoiceDocumentCandidate[] {
+  const linkedDocIds = new Set(
+    links
+      .filter((link) => link.coverageType === "evidence" && link.documentId)
+      .map((link) => String(link.documentId)),
+  );
+  const txIds = new Set(transactions.map((tx) => String(tx.id)));
+  const txInvoiceIds = new Set(transactions.map((tx) => String(tx.invoiceId || "")).filter(Boolean));
+  const txArtifactIds = new Set(transactions.map((tx) => String(tx.documentArtifactId || "")).filter(Boolean));
+  const txSourceKeys = new Set(transactions.map((tx) => String(tx.sourceKey || "")).filter(Boolean));
+  const bookedChecksums = new Set<string>();
+
+  for (const doc of documents) {
+    if (linkedDocIds.has(String(doc.id)) || Number(doc.linkRefCount || 0) > 0) {
+      const sum = sourceChecksum(doc.sha256);
+      if (sum) bookedChecksums.add(sum);
+    }
+  }
+
+  const isInvoiceBooked = (invoice: Invoice) =>
+    txIds.has(invoice.id)
+    || Boolean(invoice.ledgerTransactionId && txIds.has(invoice.ledgerTransactionId))
+    || txInvoiceIds.has(invoice.id)
+    || Boolean(invoice.source?.artifactId && txArtifactIds.has(invoice.source.artifactId))
+    || Boolean(invoice.fields?.invoiceNumber && txSourceKeys.has(`credit-note:${invoice.fields.invoiceNumber}`));
+
+  for (const invoice of invoices) {
+    if (isInvoiceBooked(invoice)) {
+      const sum = sourceChecksum(invoice.source?.checksum);
+      if (sum) bookedChecksums.add(sum);
+    }
+  }
+
+  const out: ReceivedInvoiceDocumentCandidate[] = [];
+  const seenChecksums = new Set<string>();
+
+  for (const invoice of invoices) {
+    if (invoice.status === "rejected" || isInvoiceBooked(invoice)) continue;
+    if (invoice.status === "pending" && invoice.extraction?.needsReview === true) continue;
+    const date = String(invoice.fields?.paidDate || invoice.fields?.transactionDate || "").slice(0, 10);
+    const amount = Number(invoice.fields?.amount || 0);
+    const currency = String(invoice.fields?.currency || "").trim().toUpperCase();
+    const counterparty = String(
+      invoice.fields?.counterparty
+      || (invoice.fields?.invoiceNumber ? cleanDescriptionCounterparty(invoice.fields?.description) : "")
+      || "",
+    ).trim();
+    if (!DATE_PREFIX.test(date) || !(Number.isFinite(amount) && amount > 0) || !/^[A-Z]{3}$/.test(currency) || !counterparty) continue;
+    const direction = invoice.extraction?.direction === "income" ? "income" : "expense";
+    const amountEur = invoice.fields?.amountEur || invoice.fields?.grossAmountEur;
+    const artifactId = invoice.source?.artifactId || invoice.id;
+    const sum = sourceChecksum(invoice.source?.checksum);
+    if (sum) seenChecksums.add(sum);
+    out.push({
+      id: invoice.id,
+      documentId: artifactId,
+      invoiceId: invoice.id,
+      date,
+      amount: amount.toFixed(2),
+      currency,
+      ...(amountEur ? { amountEur: String(amountEur) } : {}),
+      counterparty,
+      ...(invoice.fields?.description ? { description: String(invoice.fields.description) } : {}),
+      ...(invoice.fields?.invoiceNumber ? { invoiceNumber: String(invoice.fields.invoiceNumber) } : {}),
+      direction,
+      ...(invoice.ledgerTransactionId ? { ledgerTransactionId: invoice.ledgerTransactionId } : {}),
+      ...(sum ? { sha256: sum } : {}),
+      needsReview: Boolean(invoice.extraction?.needsReview),
+      documents: [{ id: artifactId, invoiceId: invoice.id }],
+    });
+  }
+
+  for (const doc of documents) {
+    const docId = String(doc.id || "");
+    if (!docId || doc.status !== "active") continue;
+    if (!["invoice", "receipt", "credit-note"].includes(String(doc.documentType || ""))) continue;
+    if (linkedDocIds.has(docId) || Number(doc.linkRefCount || 0) > 0 || txIds.has(docId) || txArtifactIds.has(docId) || txInvoiceIds.has(docId)) continue;
+    const sum = sourceChecksum(doc.sha256);
+    if (sum && (bookedChecksums.has(sum) || seenChecksums.has(sum))) continue;
+    const facts = doc.facts && typeof doc.facts === "object" && !Array.isArray(doc.facts)
+      ? (doc.facts as Record<string, unknown>)
+      : doc;
+    const extraction = facts.extraction && typeof facts.extraction === "object" && !Array.isArray(facts.extraction)
+      ? (facts.extraction as Record<string, unknown>)
+      : undefined;
+    if (extraction?.needsReview === true || facts.needsReview === true || doc.needsReview === true) continue;
+    const date = String(facts.paidDate || facts.transactionDate || facts.date || doc.paidDate || doc.transactionDate || doc.date || "").slice(0, 10);
+    const amount = Number(facts.amount ?? facts.grossAmount ?? doc.amount ?? doc.grossAmount ?? 0);
+    const currency = String(facts.currency ?? doc.currency ?? "").trim().toUpperCase();
+    const counterparty = String(facts.counterparty ?? facts.vendor ?? doc.counterparty ?? doc.vendor ?? "").trim();
+    if (!DATE_PREFIX.test(date) || !(Number.isFinite(amount) && amount > 0) || !/^[A-Z]{3}$/.test(currency) || !counterparty) continue;
+    const rawDirection = String(extraction?.direction ?? facts.direction ?? facts.entryType ?? doc.direction ?? doc.entryType ?? "expense").toLowerCase();
+    const direction = rawDirection === "income" ? "income" : "expense";
+    const amountEur = facts.amountEur ?? facts.grossAmountEur ?? doc.amountEur ?? doc.grossAmountEur;
+    const invoiceNumber = facts.invoiceNumber ?? doc.invoiceNumber;
+    const description = facts.description ?? doc.description;
+    if (sum) seenChecksums.add(sum);
+    out.push({
+      id: docId,
+      documentId: docId,
+      date,
+      amount: amount.toFixed(2),
+      currency,
+      ...(amountEur !== undefined && Number(amountEur) > 0 ? { amountEur: String(amountEur) } : {}),
+      counterparty,
+      ...(description ? { description: String(description) } : {}),
+      ...(invoiceNumber ? { invoiceNumber: String(invoiceNumber) } : {}),
+      direction,
+      ...(sum ? { sha256: sum } : {}),
+      needsReview: false,
+      documents: [{ id: docId }],
+    });
+  }
+
+  return out;
+}
+
+async function listPendingEmailInvoices(client: DynamoDBDocumentClient, allInvoices?: Invoice[]): Promise<PendingEmailInvoice[]> {
+  const pending = (allInvoices || await listInvoices(client)).filter((invoice) => invoice.status === "pending"
     && Array.isArray(invoice.source?.intakeItemIds) && invoice.source.intakeItemIds.length > 0);
   const candidates = await Promise.all(pending.map(async (invoice) => {
     const intake = await getIntakeItem(client, invoice.source.intakeItemIds[0]);
@@ -302,12 +503,27 @@ async function listPendingEmailInvoices(client: DynamoDBDocumentClient): Promise
 }
 
 export async function snapshot(client: DynamoDBDocumentClient): Promise<Snapshot> {
-  const [statements, transactions, links, months, config, pendingEmailInvoices] = await Promise.all([
-    listStatements(client), listTransactions(client), listBookkeepingItems(client, "link"), listMonths(client), getConfig(client), listPendingEmailInvoices(client),
+  const [statements, transactions, links, documents, invoices, deals, organizations, financeRaw, months, config] = await Promise.all([
+    listStatements(client),
+    listTransactions(client),
+    listBookkeepingItems(client, "link"),
+    listBookkeepingItems(client, "document"),
+    listInvoices(client),
+    listCrmRecords(client, "deal"),
+    listCrmRecords(client, "organization"),
+    scanCrmPrefix(client, "SPONSOR_FINANCE#"),
+    listMonths(client),
+    getConfig(client),
   ]);
+  const pendingEmailInvoices = await listPendingEmailInvoices(client, invoices);
+  const baseLedger = ledgerRowsFrom(transactions, links);
+  const issuedInvoices = issuedInvoicesFrom(financeRaw, deals, organizations, transactions);
+  const receivedInvoiceDocuments = receivedInvoiceDocumentsFrom(documents, invoices, transactions, links);
   return {
     bank: bankRowsFrom(statements),
-    ledger: ledgerRowsFrom(transactions, links),
+    ledger: withInvoiceCandidates(baseLedger, { issuedInvoices, receivedInvoiceDocuments, tolerances: config.tolerances }),
+    issuedInvoices,
+    receivedInvoiceDocuments,
     statements,
     months: new Map(months.map((month) => [month.period, { ...month, decisions: withDefaults(month.decisions) }])),
     config,
@@ -329,7 +545,18 @@ export function mergedDecisions(months: Map<string, MonthRecord>): ManualDecisio
 
 function viewFor(period: string, data: Snapshot, pairing: ReturnType<typeof pairAll>, decisions: ManualDecisions): MonthView {
   const record = data.months.get(period) || emptyMonth(period);
-  const table = buildMonthTable({ period, bank: data.bank, ledger: data.ledger, pendingEmailInvoices: data.pendingEmailInvoices, decisions, rules: data.config.rules, tolerances: data.config.tolerances, pairing });
+  const table = buildMonthTable({
+    period,
+    bank: data.bank,
+    ledger: data.ledger,
+    issuedInvoices: data.issuedInvoices,
+    receivedInvoiceDocuments: data.receivedInvoiceDocuments,
+    pendingEmailInvoices: data.pendingEmailInvoices,
+    decisions,
+    rules: data.config.rules,
+    tolerances: data.config.tolerances,
+    pairing,
+  });
   const digest = exceptionDigest(table);
   return {
     ...table,
@@ -350,7 +577,10 @@ export async function buildMonths(client: DynamoDBDocumentClient, periods: strin
   for (const period of periods) if (!MONTH.test(period)) throw badRequest("period must be YYYY-MM");
   const data = await snapshot(client);
   const decisions = mergedDecisions(data.months);
-  const pairing = pairAll(data.bank, data.ledger, decisions, data.config.tolerances);
+  const pairing = pairAll(data.bank, data.ledger, decisions, data.config.tolerances, undefined, {
+    issuedInvoices: data.issuedInvoices,
+    receivedInvoiceDocuments: data.receivedInvoiceDocuments,
+  });
   return periods.map((period) => viewFor(period, data, pairing, decisions));
 }
 
@@ -377,9 +607,13 @@ async function requireBankRow(client: DynamoDBDocumentClient, bankKey: string): 
 
 async function requireLedger(client: DynamoDBDocumentClient, transactionId: string) {
   const item = await getBookkeepingItem(client, "bookkeeping", transactionId);
-  if (!item) throw notFound(`Ledger row ${transactionId} not found`);
-  if (item.voidStatus === "voided") throw Object.assign(new Error(`Ledger row ${transactionId} is voided; restore it first`), { statusCode: 409 });
-  return item;
+  if (item) {
+    if (item.voidStatus === "voided") throw Object.assign(new Error(`Ledger row ${transactionId} is voided; restore it first`), { statusCode: 409 });
+    return item;
+  }
+  const candidate = (await snapshot(client)).ledger.find((row) => row.id === transactionId);
+  if (candidate) return candidate;
+  throw notFound(`Ledger row ${transactionId} not found`);
 }
 
 async function requireActiveDocument(client: DynamoDBDocumentClient, documentId: string) {
@@ -757,22 +991,47 @@ export type PackageEntry = {
   documentId?: string;
   /** Email attachment a statement came from, when it arrived by email. */
   artifactId?: string;
+  /** Confirmed invoice whose private source PDF is downloaded through the invoice route. */
+  invoiceId?: string;
   originalFilename?: string;
   rowId?: string;
 };
 
+export type PackageBlocker = { rowId: string; reference: string; reason: string };
+
+function sourceChecksum(value: unknown): string | undefined {
+  const checksum = String(value || "").replace(/^sha256:/i, "").toLowerCase();
+  return /^[a-f0-9]{64}$/.test(checksum) ? checksum : undefined;
+}
+
+async function confirmedInvoiceSource(client: DynamoDBDocumentClient, document: LedgerRow["documents"][number]) {
+  if (!document.invoiceId) return null;
+  const invoice = await getInvoice(client, document.invoiceId);
+  if (!invoice || invoice.status !== "confirmed") return null;
+  const artifactId = invoice.source?.artifactId;
+  if (!artifactId || (document.id !== document.invoiceId && document.id !== artifactId)) return null;
+  const artifact = await getArtifact(client, artifactId);
+  const bucket = process.env.EMAIL_DOCUMENTS_BUCKET || "";
+  const prefix = (process.env.EMAIL_DOCUMENT_DESTINATION_PREFIX || "artifacts/").replace(/^\/+|\/+$/g, "");
+  const location = /^s3:\/\/([^/]+)\/(.+)$/.exec(artifact?.storageUri || "");
+  if (!artifact || artifact.metadata?.importState !== "complete" || artifact.contentType !== "application/pdf"
+    || !location || location[1] !== bucket || !location[2].startsWith(`${prefix}/`)) return null;
+  return { invoiceId: invoice.id, artifactId, checksum: sourceChecksum(invoice.source.checksum), filename: artifact.filename || artifact.title };
+}
+
 /**
  * The month package for the accountant as a manifest: deterministic
  * package paths (see naming.ts) for the report, every statement, each
- * row's invoice/receipt and payment proof. Taxes and health insurance stay
- * out, as in every report sent so far. Building it never sends anything.
+ * reportable row's invoice/receipt and payment proof. Taxes, health insurance,
+ * and confirmed owner withdrawals stay out. Building it never sends anything.
  */
-export async function monthPackage(client: DynamoDBDocumentClient, period: string, options: { draft?: boolean } = {}): Promise<{ period: string; state: MonthRecord["state"]; draft: boolean; entries: PackageEntry[]; csv: string }> {
+export async function monthPackage(client: DynamoDBDocumentClient, period: string, options: { draft?: boolean } = {}): Promise<{ period: string; state: MonthRecord["state"]; draft: boolean; entries: PackageEntry[]; blockers: PackageBlocker[]; csv: string }> {
   const view = await buildMonth(client, period);
   if (view.state !== "closed" && !options.draft) throw new MonthGateError(`Month ${period} is open; close it first (or build a draft package)`, []);
   const { REPORT_EXEMPT_CATEGORIES } = await import("../db/bookkeeping");
   const naming = await import("./naming");
   const entries: PackageEntry[] = [{ path: naming.packagePath(period, null, naming.reportName(period, "csv")), kind: "report" }];
+  const blockers: PackageBlocker[] = [];
   const statements = (await listStatements(client)).filter((record) => record.period === period);
   for (const record of statements) {
     const wallets = [...new Set(record.rows.map((row) => row.wallet || "main"))];
@@ -785,20 +1044,51 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
     });
   }
   const seenDocuments = new Set<string>();
+  const seenSourceChecksums = new Set<string>();
   for (const row of view.rows) {
-    if (row.tax) continue;
+    if (isAccountantReportRowExcluded(row)) continue;
     if (!row.ledger || REPORT_EXEMPT_CATEGORIES.has(row.ledger.category || "")) continue;
+    if (row.ledger.sourceType === "issued-invoice" || (row.ledger.sourceType === "invoice-document" && !row.bank)) continue;
     const folder = Number(row.ledger.amount) > 0 ? "income" : "expenses";
+    const invoiceSources = new Map<string, Awaited<ReturnType<typeof confirmedInvoiceSource>>>();
+    for (const document of row.documents) {
+      if (document.invoiceId && !invoiceSources.has(document.invoiceId)) {
+        invoiceSources.set(document.invoiceId, await confirmedInvoiceSource(client, document));
+      }
+    }
     for (const document of row.documents) {
       if (seenDocuments.has(document.id)) continue;
-      seenDocuments.add(document.id);
       const raw = await getRawDocument(client, document.id);
-      if (!raw) continue;
+      const checksum = sourceChecksum(raw?.sha256);
+      if (!raw) {
+        const invoice = document.invoiceId ? invoiceSources.get(document.invoiceId) : null;
+        if (!invoice) {
+          seenDocuments.add(document.id);
+          blockers.push({ rowId: row.id, reference: document.invoiceId || document.id, reason: "expected invoice document is missing or cannot be safely resolved" });
+          continue;
+        }
+        seenDocuments.add(document.id);
+        if (invoice.checksum && seenSourceChecksums.has(invoice.checksum)) continue;
+        entries.push({
+          path: naming.packagePath(period, folder, naming.documentName({ date: row.ledger.date, counterparty: row.ledger.counterparty, documentNumber: row.ledger.invoiceNumber, amount: row.ledger.amount, currency: row.ledger.currency, filename: String(invoice.filename || "invoice.pdf") })),
+          kind: "invoice", invoiceId: invoice.invoiceId, rowId: row.id,
+          ...(invoice.filename ? { originalFilename: String(invoice.filename) } : {}),
+        });
+        if (invoice.checksum) seenSourceChecksums.add(invoice.checksum);
+        continue;
+      }
+      const matchesInvoiceSource = checksum && [...invoiceSources.values()].some((invoice) => invoice?.checksum === checksum);
+      if (matchesInvoiceSource || (checksum && seenSourceChecksums.has(checksum))) {
+        seenDocuments.add(document.id);
+        continue;
+      }
+      seenDocuments.add(document.id);
       entries.push({
         path: naming.packagePath(period, folder, naming.documentName({ date: row.ledger.date, counterparty: row.ledger.counterparty, documentNumber: row.ledger.invoiceNumber, amount: row.ledger.amount, currency: row.ledger.currency, filename: String(raw.originalFilename || "x.pdf") })),
         kind: "invoice", documentId: document.id, rowId: row.id,
         ...(raw.originalFilename ? { originalFilename: String(raw.originalFilename) } : {}),
       });
+      if (checksum) seenSourceChecksums.add(checksum);
     }
     if (row.paymentProof && !seenDocuments.has(row.paymentProof.documentId)) {
       seenDocuments.add(row.paymentProof.documentId);
@@ -812,5 +1102,5 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
   const unique = naming.uniquePaths(entries.map((entry) => entry.path));
   entries.forEach((entry, index) => { entry.path = unique[index]; });
   const { tableCsv } = await import("./month");
-  return { period, state: view.state, draft: view.state !== "closed", entries, csv: tableCsv(view) };
+  return { period, state: view.state, draft: view.state !== "closed", entries, blockers, csv: tableCsv(view) };
 }

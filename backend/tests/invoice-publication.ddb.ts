@@ -80,13 +80,13 @@ test('simultaneous verified requests use the atomic revision and identity claim'
   assert.equal(responses.filter(result=>result.statusCode===200).length,1);assert.equal(responses.filter(result=>result.statusCode===409).length,1);assert.equal(writes,count+2);
 });
 
-test('a credit note books once as income keyed credit-note:<number>, linking an existing row instead of duplicating it',async()=>{
+test('a credit note books once as contra-expense keyed credit-note:<number>, linking an existing row instead of duplicating it',async()=>{
   const asCreditNote=async(label:string,number:string)=>{
     const {record}=await stage(label);const next=structuredClone(record);
     Object.assign(next.fields,{subtype:'Refund',invoiceNumber:number,amount:'646.63',currency:'USD',amountEur:'585.20',description:'Credit note: unused time'});
     return saveInvoice(client,next,record);
   };
-  // No row yet: publication creates the income row under the credit-note key.
+  // No row yet: publication creates the contra-expense row under the credit-note key.
   const fresh=await confirmInvoice(client,await asCreditNote('cn-fresh','A1B2C3D4-0001-CN-01'),'operator');
   const created=(await client.send(new GetCommand({TableName:TABLE_BOOKKEEPING,Key:{PK:`BOOKKEEPING#${fresh.id}`,SK:`BOOKKEEPING#${fresh.id}`}}))).Item!;
   assert.equal(created.entryType,'expense');assert.equal(created.subtype,'Refund');assert.equal(created.sourceKey,'credit-note:A1B2C3D4-0001-CN-01');

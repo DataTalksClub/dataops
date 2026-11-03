@@ -12,6 +12,7 @@ import {
   formatFullCsv,
   formatReportCsv,
   formatReportTsv,
+  isReportExempt,
   yearsOf,
 } from "../src/surfaces/finance/bookkeeping-format.js";
 
@@ -58,14 +59,29 @@ test("noncash settlement requires explicit approval fields and evidence and neve
   assert.deepEqual(calls[0][3], { expectedVersion: 4, amount: "5", currency: "EUR", reason: "Conversion fee accepted", approvedBy: "Owner", approvedOn: "2026-10-02", evidence: [{ kind: "document", ref: "owner-approval" }], replacesPaymentId: "reviewed-report" });
 });
 
-test("accountant CSV excludes mandatory payments classified by the finance summary", () => {
-  const csv = formatReportCsv([
+test("accountant report table, CSV, and email omit owner withdrawals but retain service invoices", () => {
+  const entries = [
     { transactionDate: "2026-09-04", paidDate: "2026-09-04", counterparty: "Synthetic ScaleVector", description: "Workshop", amount: "5950.00", currency: "EUR", entryType: "income", category: "Sponsorship", vatAmount: "950.00", vatCurrency: "EUR" },
     { transactionDate: "2026-09-16", counterparty: "Finanzamt", description: "UMS.ST", amount: "4581.14", currency: "EUR", entryType: "expense", category: "", mandatoryKind: "tax_debit" },
     { transactionDate: "2026-09-20", counterparty: "Techniker Krankenkasse", description: "Monthly contribution", amount: "1179.36", currency: "EUR", entryType: "expense", category: "", mandatoryKind: "tk_debit" },
-  ]);
+    { transactionDate: "2026-09-21", counterparty: "Synthetic Owner", description: "Synthetic owner draw", amount: "42.00", currency: "EUR", entryType: "expense", category: "Owner pay", ownerPayType: "draw" },
+    { transactionDate: "2026-09-22", counterparty: "Synthetic ILZ Services", description: "Monthly ILZ service", amount: "238.00", currency: "EUR", entryType: "expense", category: "Compliance & Taxes" },
+  ];
+  assert.equal(isReportExempt(entries[3]), true, "the accountant report table shares the owner-draw filter");
+  const csv = formatReportCsv(entries);
   assert.match(csv, /Synthetic ScaleVector/);
+  assert.match(csv, /Synthetic ILZ Services/);
   assert.doesNotMatch(csv, /Finanzamt|Techniker Krankenkasse/);
+  assert.doesNotMatch(csv, /Synthetic Owner|Owner pay/);
+  const email = formatReportTsv(entries);
+  assert.match(email, /Synthetic ILZ Services/);
+  assert.doesNotMatch(email, /Finanzamt|Techniker Krankenkasse|Synthetic Owner|Owner pay/);
+  const summaryExempt = formatReportTsv([
+    { id: "synthetic-summary-exempt", counterparty: "Synthetic mandatory row" },
+    { id: "synthetic-ilz-row", counterparty: "Synthetic ILZ Services" },
+  ], { isExempt: (entry) => entry.id === "synthetic-summary-exempt" });
+  assert.doesNotMatch(summaryExempt, /Synthetic mandatory row/);
+  assert.match(summaryExempt, /Synthetic ILZ Services/);
 });
 
 afterEach(() => {

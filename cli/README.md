@@ -151,7 +151,7 @@ On failure, the message goes to stderr — as `{"error": {"message", "exitCode",
 | 2 | usage: unknown command, bad or missing argument; nothing was sent |
 | 3 | not signed in, token rejected (401), or the role forbids it (403) |
 | 4 | not found (404) |
-| 5 | conflict (409): the record changed since it was read; re-read and retry |
+| 5 | conflict (409): the operation conflicts with current state; the API message explains the conflict |
 | 6 | the API rejected the input (400/422); the message names the problem |
 | 7 | server error or network failure; retry later |
 

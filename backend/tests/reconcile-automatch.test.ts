@@ -1,10 +1,13 @@
 import { before, after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
 import { createUserWithId } from '../src/db/users';
 import { putBookkeepingItem } from '../src/db/bookkeeping';
+import { createInvoice } from '../src/invoices/store';
+import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { handleReconcileRoutes } from '../src/routes/reconcile';
 import { saveStatement } from '../src/reconcile/service';
 import { autoMatchMonths, matchesOf } from '../src/reconcile/autoMatch';
@@ -37,6 +40,47 @@ describe('matcher scoring', () => {
       none(), DEFAULT_TOLERANCES,
     );
     assert.equal(pairing.pairs.get('b')?.confidence, 'exact');
+  });
+
+  it('scores a received-invoice-document-only candidate and an issued-invoice-only candidate against bank rows or lists them without a bank row', () => {
+    const fx = (currency: string) => (currency === 'USD' ? 1.1 : null);
+    const table = buildMonthTable({
+      period: '2026-10',
+      bank: [
+        bank('b-aws', { date: '2026-10-03', counterparty: 'AMAZON WEB SERVICES EMEA SARL', amount: '-90.91', currency: 'EUR' }),
+        bank('b-sponsor', { date: '2026-10-06', counterparty: 'ACME DATA INC.', reference: 'INV 202610/99', amount: '5000.00', currency: 'EUR' }),
+      ],
+      ledger: [],
+      receivedInvoiceDocuments: [
+        { id: 'doc-aws-only', date: '2026-10-02', amount: '100.00', currency: 'USD', counterparty: 'AWS', invoiceNumber: 'EUINDE26-100' },
+        { id: 'doc-unpaid-only', date: '2026-10-28', amount: '59.04', currency: 'EUR', counterparty: 'Google Cloud EMEA Limited', invoiceNumber: 'GC-5904' },
+      ],
+      issuedInvoices: [
+        { id: 'deal-acme', date: '2026-10-05', amount: '5000.00', currency: 'EUR', counterparty: 'Acme Data Inc.', invoiceNumber: '202610/99' },
+        { id: 'deal-unpaid-sponsor', date: '2026-10-20', amount: '3000.00', currency: 'EUR', counterparty: 'Pending Sponsor Corp', invoiceNumber: '202610/100' },
+      ],
+      decisions: none(),
+      rules: [],
+      fx,
+    });
+    const view = matchesOf(table);
+    assert.equal(view.counts.matched, 2);
+    assert.equal(view.counts.unmatchedBank, 0);
+    assert.equal(view.counts.invoicesWithoutBank, 2);
+    const matchedByBank = Object.fromEntries(view.matched.map((row) => [row.bankKey, row]));
+    assert.equal(matchedByBank['b-aws'].invoice.transactionId, 'doc-aws-only');
+    assert.equal(matchedByBank['b-aws'].basis, 'fx');
+    assert.equal(matchedByBank['b-aws'].confidence, 'strong');
+    assert.equal(matchedByBank['b-sponsor'].invoice.transactionId, 'deal-acme');
+    assert.equal(matchedByBank['b-sponsor'].basis, 'exact');
+    assert.equal(matchedByBank['b-sponsor'].confidence, 'exact');
+    assert.deepEqual(
+      view.invoicesWithoutBank.map((row) => [row.transactionId, row.counterparty, row.amount, row.currency, row.invoiceNumber]),
+      [
+        ['deal-unpaid-sponsor', 'Pending Sponsor Corp', '3000.00', 'EUR', '202610/100'],
+        ['doc-unpaid-only', 'Google Cloud EMEA Limited', '-59.04', 'EUR', 'GC-5904'],
+      ],
+    );
   });
 });
 
@@ -90,5 +134,123 @@ describe('auto-match after upload', () => {
     const response = await call('POST', '/api/reconcile/months/2026-07/auto-match');
     assert.equal(response.statusCode, 200, response.body);
     assert.equal(JSON.parse(response.body).autoMatch.attached, 0);
+  });
+
+  it('auto-matches and lists received invoice documents and issued invoices that have no bookkeeping ledger row yet', async () => {
+    const awsDoc = (await putBookkeepingItem(client, 'document', {
+      documentType: 'invoice',
+      status: 'active',
+      contentType: 'application/pdf',
+      originalFilename: 'aws-aug.pdf',
+      byteSize: 120,
+      sha256: '1'.repeat(64),
+      s3Key: 'documents/aws-aug.pdf',
+      facts: {
+        paidDate: '2026-08-02',
+        amount: '245.95',
+        currency: 'USD',
+        counterparty: 'AWS',
+        invoiceNumber: 'EUINDE26-8001',
+        extraction: { method: 'synthetic', needsReview: false, direction: 'expense' },
+      },
+    })).item;
+
+    const now = new Date().toISOString();
+    await createInvoice(client, {
+      id: '2'.repeat(64),
+      revision: 1,
+      status: 'pending',
+      fields: {
+        transactionDate: '2026-08-31',
+        counterparty: 'Contabo GmbH',
+        amount: '95.44',
+        currency: 'EUR',
+        invoiceNumber: '20262041335',
+      },
+      extraction: { method: 'synthetic', evidence: [], issues: [], needsReview: false, direction: 'expense' },
+      source: { intakeItemIds: ['intake-aug-contabo'], artifactId: 'email-doc-contabo', checksum: '3'.repeat(64) },
+      destinations: { dropbox: { state: 'pending', operationId: 'dbx' }, sheets: { state: 'pending', operationId: 'sh' } },
+      audit: [],
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await client.send(new PutCommand({
+      TableName: TABLE_SPONSOR_CRM,
+      Item: { PK: 'ORGANIZATION#org-aug', SK: 'ORGANIZATION#org-aug', id: 'org-aug', name: 'Sponsor Aug Corp', version: 1, createdAt: now, updatedAt: now },
+    }));
+    await client.send(new PutCommand({
+      TableName: TABLE_SPONSOR_CRM,
+      Item: { PK: 'DEAL#deal-aug-paid', SK: 'DEAL#deal-aug-paid', id: 'deal-aug-paid', organizationId: 'org-aug', name: 'Aug Sponsorship', status: 'agreed', version: 1, createdAt: now, updatedAt: now },
+    }));
+    await client.send(new PutCommand({
+      TableName: TABLE_SPONSOR_CRM,
+      Item: {
+        PK: 'SPONSOR_FINANCE#deal-aug-paid',
+        SK: 'SPONSOR_FINANCE#deal-aug-paid',
+        recordType: 'sponsor-finance',
+        dealId: 'deal-aug-paid',
+        invoiceNumber: '202608/42',
+        amountDue: '4000.00',
+        currency: 'EUR',
+        issuedOn: '2026-08-05',
+        dueOn: '2026-08-25',
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+    }));
+
+    await saveStatement(client, {
+      accountId: 'revolut',
+      period: '2026-08',
+      rows: [
+        {
+          date: '2026-08-03',
+          amount: '-208.33',
+          currency: 'EUR',
+          origAmount: '-245.95',
+          origCurrency: 'USD',
+          counterparty: 'AMAZON WEB SERVICES EMEA SARL',
+        },
+        {
+          date: '2026-08-06',
+          amount: '4000.00',
+          currency: 'EUR',
+          counterparty: 'SPONSOR AUG CORP',
+          reference: 'INV 202608/42',
+        },
+      ],
+    } as never);
+
+    const run = await autoMatchMonths(client, ['2026-08'], { fx: (currency) => (currency === 'USD' ? 1.18 : null) });
+    assert.equal(run.attached, 2);
+
+    const response = await call('GET', '/api/reconcile/months/2026-08/matches');
+    assert.equal(response.statusCode, 200, response.body);
+    const view = JSON.parse(response.body);
+    assert.deepEqual(view.counts, { matched: 2, autoMatched: 2, needsReview: 0, unmatchedBank: 0, invoicesWithoutBank: 1 });
+    assert.deepEqual(
+      view.matched.map((row: { invoice: { transactionId: string }; basis: string; confidence: string; auto: boolean }) => [
+        row.invoice.transactionId,
+        row.basis,
+        row.confidence,
+        row.auto,
+      ]),
+      [
+        [String(awsDoc.id), 'fx', 'exact', true],
+        ['deal-aug-paid', 'exact', 'exact', true],
+      ],
+    );
+    assert.deepEqual(
+      view.invoicesWithoutBank.map((row: { transactionId: string; counterparty: string; amount: string; currency: string; invoiceNumber?: string }) => [
+        row.transactionId,
+        row.counterparty,
+        row.amount,
+        row.currency,
+        row.invoiceNumber,
+      ]),
+      [['2'.repeat(64), 'Contabo GmbH', '-95.44', 'EUR', '20262041335']],
+    );
   });
 });

@@ -529,7 +529,10 @@ describe('CLI CRM hard delete', () => {
   test('sponsors delete deals previews by default, applies with confirmation and reports API exit codes', async () => {
     let status = 200;
     const calls = fakePortal({
-      'POST /api/sponsor-crm/deals/fixture/delete': (call) => ({ status, body: status === 200 ? { id: 'fixture', mode: call.body.apply ? 'applied' : 'dry-run', deletedDeliverableIds: ['d1'] } : { error: status === 404 ? 'Not found' : 'Deal has a deliverable (d1); hard delete is refused' } }),
+      'POST /api/sponsor-crm/deals/fixture/delete': (call) => ({ status, body: status === 200 ? {
+        id: 'fixture', mode: call.body.apply ? 'applied' : 'dry-run', deletedDeliverableIds: ['d1'],
+        detachedFinanceSourceIds: ['invoice-1'], retainedNewsletterSlotIds: ['issue-1'],
+      } : { error: status === 404 ? 'Not found' : 'Deal has a deliverable (d1); pass withDeliverables: true to remove them' } }),
     });
     try {
       assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--json'], captureIo()), EXIT.usage);
@@ -541,13 +544,20 @@ describe('CLI CRM hard delete', () => {
       assert.equal(calls.length, 0);
       const io = captureIo();
       assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--with-deliverables', '--expected-version', '3', '--json'], io), EXIT.ok);
-      assert.deepEqual(io.json(), { id: 'fixture', mode: 'dry-run', deletedDeliverableIds: ['d1'] });
+      assert.deepEqual(io.json(), {
+        id: 'fixture', mode: 'dry-run', deletedDeliverableIds: ['d1'],
+        detachedFinanceSourceIds: ['invoice-1'], retainedNewsletterSlotIds: ['issue-1'],
+      });
       assert.equal(calls[0].body.withDeliverables, true); assert.equal(calls[0].body.expectedVersion, 3); assert.equal(calls[0].body.apply, undefined);
       const human = captureIo();
       assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--with-deliverables'], human), EXIT.ok);
       assert.match(human.text(), /Dry run/);
       assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--with-deliverables', '--apply'], captureIo()), EXIT.ok);
       assert.equal(calls[2].body.apply, true);
+      status = 409;
+      const refusal = captureIo();
+      assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--with-deliverables', '--yes', '--json'], refusal), 5);
+      assert.ok(!refusal.errors.some((entry) => /record changed since it was read/i.test(entry)));
       status = 404;
       assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--with-deliverables', '--yes', '--json'], captureIo()), 4);
       status = 409;
