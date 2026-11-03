@@ -467,7 +467,7 @@ export function mountNewsletterEmailPieceSection({
     flow.append(node);
   }
 
-  let syncEditorCtaPill = () => {};
+  const syncEditorCtaPill = () => {};
   const ctaTextNode = fieldNodesByKey.get(ctaTextKey);
   const ctaUrlNode = fieldNodesByKey.get(ctaUrlKey);
   if (ctaTextNode || ctaUrlNode) {
@@ -475,33 +475,12 @@ export function mountNewsletterEmailPieceSection({
     ctaStep.dataset.sponsorEmailStep = "cta";
     ctaStep.dataset.sponsorCtaEditor = "";
 
-    const ctaPreviewRow = el("div", "sponsor-email-piece-card__cta-preview");
-    ctaPreviewRow.dataset.sponsorEditorCtaPreview = "";
-    const ctaPill = el("a", "sponsor-preview-canvas__cta-btn");
-    ctaPill.dataset.sponsorEditorCtaPill = "";
-    ctaPill.target = "_blank";
-    ctaPill.rel = "noopener noreferrer";
-    const ctaUrlPreview = el("span", "sponsor-preview-canvas__cta-url");
-    ctaUrlPreview.dataset.sponsorEditorCtaUrl = "";
-    ctaPreviewRow.append(ctaPill, ctaUrlPreview);
-
     const ctaFieldsGrid = el("div", "sponsor-email-piece-card__cta-fields");
     if (ctaTextNode) ctaFieldsGrid.append(ctaTextNode);
     if (ctaUrlNode) ctaFieldsGrid.append(ctaUrlNode);
 
-    ctaStep.append(ctaPreviewRow, ctaFieldsGrid);
+    ctaStep.append(ctaFieldsGrid);
     flow.append(ctaStep);
-
-    syncEditorCtaPill = () => {
-      const textVal = String(draftContent[ctaTextKey] || "").trim();
-      const urlVal = String(draftContent[ctaUrlKey] || "").trim();
-      const fallback = isStandalone ? "Closing CTA Button" : "Call to Action";
-      ctaPill.textContent = textVal || fallback;
-      ctaPill.classList.toggle("is-placeholder", !textVal);
-      ctaPill.href = safePreviewHref(urlVal);
-      ctaUrlPreview.textContent = urlVal || "https://...";
-    };
-    syncEditorCtaPill();
   }
 
   pieceCard.append(flow);

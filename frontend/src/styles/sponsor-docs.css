@@ -172,17 +172,6 @@
   gap: var(--dk-space-3);
 }
 
-.sponsor-email-piece-card__cta-preview {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--dk-space-2);
-  padding: var(--dk-space-3);
-  background-color: var(--dk-bg-muted);
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-}
-
 .sponsor-email-piece-card__cta-fields {
   display: grid;
   gap: var(--dk-space-3);

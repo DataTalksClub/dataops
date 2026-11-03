@@ -253,7 +253,7 @@ test("renders card-as-email layout (opening -> bullets -> closing -> CTA button)
   assert.ok(h.root.querySelector('[data-sponsor-field-error="ctaText"]'), "shows inline error for missing ctaText");
   assert.ok(h.root.querySelector('[data-sponsor-field-error="ctaUrl"]'), "shows inline error for missing ctaUrl");
 
-  // 4. Typing CTA label and URL without UTM updates the editor's CTA button pill and live preview, and shows soft UTM suggestion without rewriting
+  // 4. Typing CTA label and URL without UTM updates the live preview, and shows soft UTM suggestion without rewriting
   const ctaTextInput = h.root.querySelector("#sponsor-field-ctaText");
   const ctaUrlInput = h.root.querySelector("#sponsor-field-ctaUrl");
   assert.equal(ctaTextInput.getAttribute("aria-required"), "true");
@@ -264,9 +264,8 @@ test("renders card-as-email layout (opening -> bullets -> closing -> CTA button)
   ctaUrlInput.value = "https://modal.com/signup";
   await ctaUrlInput.dispatch("input");
 
-  const editorCtaPill = h.root.querySelector("[data-sponsor-editor-cta-pill]");
-  assert.equal(editorCtaPill.textContent, "Try Modal Free");
-  assert.equal(editorCtaPill.href, "https://modal.com/signup");
+  assert.equal(h.root.querySelector("[data-sponsor-editor-cta-preview]"), null, "inline CTA preview block is gone from the form");
+  assert.equal(h.root.querySelector("[data-sponsor-editor-cta-pill]"), null, "inline CTA pill is gone from the form");
   const updatedPreview = h.root.querySelector("[data-sponsor-live-preview]");
   assert.equal(updatedPreview.querySelector("[data-sponsor-preview-cta-link]").textContent, "Try Modal Free");
   assert.equal(updatedPreview.querySelector("[data-sponsor-preview-cta-link]").href, "https://modal.com/signup");
