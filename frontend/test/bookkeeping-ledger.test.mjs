@@ -22,10 +22,16 @@ import {
   vatPresentation,
   vocabulary,
 } from "../src/surfaces/finance/bookkeeping-ledger.js";
-import { createBookkeepingFinance, mandatoryPaymentsMarkup, monthlyLedgerEntries } from "../src/surfaces/finance/bookkeeping-vat.js";
+import {
+  createBookkeepingFinance,
+  mandatoryPaymentsMarkup,
+  monthlyLedgerEntries,
+  ownerWithdrawalEntries,
+  ownerWithdrawalsMarkup,
+} from "../src/surfaces/finance/bookkeeping-vat.js";
 
 import { escapeHtml } from "../src/core/html.js";
-import { cashDate, latestActivityMonth, monthOf } from "../src/surfaces/finance/bookkeeping-format.js";
+import { cashDate, formatFullCsv, isReportExempt, latestActivityMonth, monthOf } from "../src/surfaces/finance/bookkeeping-format.js";
 
 // Synthetic rows shaped like the imported sheet.
 const rows = Object.freeze([
@@ -393,22 +399,24 @@ test("linked active receipt PDFs render direct View actions for every evidence l
   assert.equal((markup.match(/>View PDF<\/button>/g) || []).length, 3);
 });
 
-test("the month bottom section lists classified mandatory payments once with a subtotal", () => {
+test("the month tax section lists debits, refunds, and health insurance with signed totals", () => {
   const markup = mandatoryPaymentsMarkup([
-    { id: "vat-april", month: "2026-04", date: "2026-04-14", direction: "out", line: "vat", mandatoryKind: "tax_debit", counterparty: "Finanzamt", description: "UMS.ST 2025", amount: "4581.14", currency: "EUR", eur: 4581.14 },
-    { id: "tk-april", month: "2026-04", date: "2026-04-16", direction: "out", line: "health-insurance", mandatoryKind: "tk_debit", counterparty: "Techniker Krankenkasse", description: "Beiträge", amount: "1179.36", currency: "EUR", eur: 1179.36 },
-    { id: "refund-april", month: "2026-04", date: "2026-04-20", direction: "in", line: "vat", mandatoryKind: "tax_debit", counterparty: "Finanzamt", description: "VAT refund", amount: "100", currency: "EUR", eur: 100 },
-    { id: "tax-may", month: "2026-05", date: "2026-05-14", direction: "out", line: "taxes", mandatoryKind: "tax_debit", counterparty: "Finanzamt", description: "EINK.ST", amount: "200", currency: "EUR", eur: 200 },
+    { id: "synthetic-vat-april", month: "2026-04", date: "2026-04-14", direction: "out", line: "vat", mandatoryKind: "tax_debit", counterparty: "Synthetic Tax Office", description: "Synthetic VAT debit", amount: "120.00", currency: "EUR", eur: 120 },
+    { id: "synthetic-tk-april", month: "2026-04", date: "2026-04-16", direction: "out", line: "health-insurance", mandatoryKind: "tk_debit", counterparty: "Synthetic Health Fund", description: "Synthetic health-insurance debit", amount: "40.00", currency: "EUR", eur: 40 },
+    { id: "synthetic-refund-april", month: "2026-04", date: "2026-04-20", direction: "in", line: "taxes", mandatoryKind: null, counterparty: "Synthetic Refund Office", description: "Synthetic tax credit", amount: "15.00", currency: "EUR", eur: 15 },
+    { id: "synthetic-tax-may", month: "2026-05", date: "2026-05-14", direction: "out", line: "taxes", mandatoryKind: "tax_debit", counterparty: "Synthetic Tax Office", description: "Synthetic other-tax debit", amount: "20.00", currency: "EUR", eur: 20 },
   ], "2026-04", escapeHtml);
 
-  assert.match(markup, /Mandatory payments · April 2026/);
-  assert.match(markup, /Finanzamt/);
+  assert.match(markup, /Taxes &amp; health insurance · April 2026/);
+  assert.match(markup, /Synthetic Tax Office/);
   assert.match(markup, /VAT \/ USt/);
-  assert.match(markup, /Techniker Krankenkasse/);
+  assert.match(markup, /Synthetic Health Fund/);
   assert.match(markup, /Health insurance \/ TK/);
-  assert.match(markup, /€5,760\.50/);
-  assert.doesNotMatch(markup, /VAT refund|EINK\.ST/);
-  assert.equal((markup.match(/<tr>/g) || []).length, 3, "two payments plus the table header");
+  assert.match(markup, /Other taxes refund/);
+  assert.match(markup, /€15\.00/);
+  assert.match(markup, /-€145\.00/);
+  assert.doesNotMatch(markup, /Synthetic other-tax debit/);
+  assert.equal((markup.match(/<tr>/g) || []).length, 4, "three current-month rows plus the table header");
   assert.equal(mandatoryPaymentsMarkup([], "2026", escapeHtml), "", "the section is specific to a selected month");
 });
 
@@ -461,17 +469,107 @@ test("suggested matches offer attaching a file or opening the sponsor deal", () 
 });
 
 
-test("monthly ledger omits only outgoing mandatory rows represented in the separate section", () => {
-  const rows = [{id: "tax"}, {id: "health"}, {id: "refund"}, {id: "consultant"}, {id: "other-month"}];
-  const finance = new Map([
-    ["tax", {month: "2026-04", direction: "out", mandatoryKind: "tax_debit"}],
-    ["health", {month: "2026-04", direction: "out", mandatoryKind: "tk_debit"}],
-    ["refund", {month: "2026-04", direction: "in", mandatoryKind: "tax_debit"}],
-    ["other-month", {month: "2026-05", direction: "out", mandatoryKind: "tax_debit"}],
+test("monthly tax partition keeps consulting fees and allocation totals in the ordinary ledger", () => {
+  const month = "2026-04";
+  const rows = [
+    { id: "synthetic-tax-debit", transactionDate: "2026-04-14", paidDate: "2026-04-14",
+      counterparty: "Synthetic Tax Office", description: "Synthetic tax debit", amount: "120.00", amountEur: "120.00",
+      currency: "EUR", entryType: "expense", category: "Taxes", statementRef: "Synthetic statement A" },
+    { id: "synthetic-tax-refund", transactionDate: "2026-04-20", paidDate: "2026-04-20",
+      counterparty: "Synthetic Refund Office", description: "Synthetic tax credit", amount: "25.00", amountEur: "25.00",
+      currency: "EUR", entryType: "income", category: "Taxes", statementRef: "Synthetic statement B" },
+    { id: "synthetic-health-debit", transactionDate: "2026-04-16", paidDate: "2026-04-16",
+      counterparty: "Synthetic Health Fund", description: "Synthetic health-insurance debit", amount: "10.00", amountEur: "10.00",
+      currency: "EUR", entryType: "expense", category: "Health Insurance", statementRef: "Synthetic statement C" },
+    { id: "synthetic-consulting-fee", transactionDate: "2026-04-18", paidDate: "2026-04-18",
+      counterparty: "Synthetic Compliance Advisor", description: "Synthetic monthly consulting fee", amount: "50.00", amountEur: "50.00",
+      currency: "EUR", entryType: "expense", category: "Compliance & Taxes", statementRef: "Synthetic statement D" },
+    { id: "synthetic-allocated-payment", transactionDate: "2026-04-22", paidDate: "2026-04-22",
+      counterparty: "Synthetic Combined Settlement", description: "Synthetic payment for two invoices", amount: "30.00", amountEur: "30.00",
+      currency: "EUR", entryType: "expense", category: "Infrastructure", allocations: [
+        { id: "synthetic-allocation-a", documentId: "synthetic-invoice-a", counterparty: "Synthetic Cloud Vendor",
+          description: "Synthetic compute charge", amount: "20.00", currency: "EUR", category: "Infrastructure" },
+        { id: "synthetic-allocation-b", documentId: "synthetic-invoice-b", counterparty: "Synthetic Domain Vendor",
+          description: "Synthetic domain charge", amount: "10.00", currency: "EUR", category: "Domains" },
+      ] },
+    { id: "synthetic-owner-draw", transactionDate: "2026-04-23", paidDate: "2026-04-23",
+      counterparty: "Synthetic Owner Transfer", description: "Synthetic owner draw", amount: "11.00", amountEur: "11.00",
+      currency: "EUR", entryType: "expense", category: "Owner pay", ownerPayType: "draw",
+      statementRef: "Synthetic statement E" },
+  ];
+  rows.push(bankOnlyEntryFromMonthRow({
+    date: "2026-04-24", counterparty: "Synthetic Statement Transfer", description: "Synthetic private withdrawal",
+    bank: { key: "synthetic-owner-bank-key", date: "2026-04-24", amount: "-7.00", currency: "EUR", accountId: "synthetic-account" },
+    exception: { kind: "owner_withdrawal", satisfied: true },
+  }));
+  const financeEntries = [
+    { id: "synthetic-tax-debit", month, date: "2026-04-14", direction: "out", line: "vat",
+      mandatoryKind: "tax_debit", refund: false, counterparty: "Synthetic Tax Office", amount: "120.00", currency: "EUR", eur: 120 },
+    { id: "synthetic-tax-refund", month, date: "2026-04-20", direction: "in", line: "taxes",
+      mandatoryKind: null, counterparty: "Synthetic Refund Office", amount: "25.00", currency: "EUR", eur: 25 },
+    { id: "synthetic-health-debit", month, date: "2026-04-16", direction: "out", line: "health-insurance",
+      mandatoryKind: "tk_debit", refund: false, counterparty: "Synthetic Health Fund", amount: "10.00", currency: "EUR", eur: 10 },
+  ];
+  const finance = new Map(financeEntries.map((entry) => [entry.id, entry]));
+  const before = JSON.stringify(rows);
+  const ordinary = monthlyLedgerEntries(rows, month, finance);
+
+  assert.deepEqual(ordinary.map((entry) => entry.id), ["synthetic-consulting-fee", "synthetic-allocated-payment"]);
+  assert.deepEqual(ordinary, rows.filter((entry) => !entry.reconciliationOnly && !isReportExempt(entry)),
+    "ordinary source rows match the report-exemptions rule after allocation");
+  const groups = groupByMonth(ordinary);
+  assert.equal(groups[0].moneyOut, -80, "ordinary totals exclude all tax and health-insurance amounts");
+  assert.equal(displayRowCount(groups[0].entries), 3, "two allocation rows and one consulting fee remain visible");
+  const ordinaryMarkup = ledgerTableMarkup({
+    groups, hasEvidence: () => false, vocab: {}, selectedId: "", e: escapeHtml,
+  });
+  assert.match(ordinaryMarkup, /Synthetic Compliance Advisor/);
+  assert.doesNotMatch(ordinaryMarkup, /Synthetic Tax Office|Synthetic Refund Office|Synthetic Health Fund/);
+  assert.equal((ordinaryMarkup.match(/bk-row--allocation-child/g) || []).length, 2);
+  assert.match(ordinaryMarkup, /out <span class="dk-mono">−€80\.00/);
+
+  const taxMarkup = mandatoryPaymentsMarkup(financeEntries, month, escapeHtml);
+  assert.equal((taxMarkup.match(/<tr>/g) || []).length, 4, "one row per classified exception plus the table header");
+  for (const counterparty of ["Synthetic Tax Office", "Synthetic Refund Office", "Synthetic Health Fund"])
+    assert.equal((taxMarkup.match(new RegExp(counterparty, "g")) || []).length, 1, `${counterparty} appears once`);
+  assert.match(taxMarkup, /Other taxes refund/);
+  assert.match(taxMarkup, /-€120\.00/);
+  assert.match(taxMarkup, /€25\.00/);
+  assert.match(taxMarkup, /-€10\.00/);
+  assert.match(taxMarkup, /-€105\.00/);
+  assert.doesNotMatch(taxMarkup, /Synthetic Compliance Advisor|Synthetic Combined Settlement/);
+
+  const withdrawals = ownerWithdrawalEntries(rows, month);
+  assert.deepEqual(withdrawals.map((entry) => entry.id), [
+    "synthetic-owner-draw", "bank-only:synthetic-owner-bank-key",
   ]);
-  assert.deepEqual(monthlyLedgerEntries(rows, "2026-04", finance).map(row => row.id), ["refund", "consultant", "other-month"]);
-  assert.deepEqual(monthlyLedgerEntries(rows, "2026", finance), rows);
-  assert.deepEqual(monthlyLedgerEntries(rows, "2026-04", new Map()), rows);
+  const ownerMarkup = ownerWithdrawalsMarkup(rows, month, {
+    hasEvidence: () => false,
+    hasInvoice: () => false,
+    getAllocationDocument: () => null,
+    vocab: {},
+    selectedId: "",
+    financeEntriesById: finance,
+    statementLinks: new Map(),
+    e: escapeHtml,
+  });
+  assert.match(ownerMarkup, /data-owner-withdrawals/);
+  assert.match(ownerMarkup, /Owner withdrawals · April 2026/);
+  assert.equal((ownerMarkup.match(/data-bank-only=/g) || []).length, 1,
+    "the classified bank-only owner projection stays visible in the owner section");
+  assert.equal((ownerMarkup.match(/data-tx="synthetic-owner-draw"/g) || []).length, 1,
+    "the owner-pay draw stays visible in the owner section");
+  assert.match(ownerMarkup, /Synthetic private withdrawal[\s\S]*Owner withdrawal · confirmed/);
+  assert.doesNotMatch(ownerMarkup, /Synthetic Tax Office|Synthetic Refund Office|Synthetic Health Fund|Synthetic Compliance Advisor/);
+
+  const fullCsv = formatFullCsv(rows.filter((entry) => !entry.reconciliationOnly));
+  for (const counterparty of ["Synthetic Tax Office", "Synthetic Refund Office", "Synthetic Health Fund", "Synthetic Compliance Advisor"])
+    assert.match(fullCsv, new RegExp(counterparty), `${counterparty} remains in the native export`);
+  assert.match(fullCsv, /Synthetic Owner Transfer/);
+  assert.equal((fullCsv.match(/Synthetic Combined Settlement/g) || []).length, 1,
+    "the native export keeps the one source payment row for an allocated payment");
+  assert.equal(JSON.stringify(rows), before, "the UI partition leaves source rows and statements unchanged");
+  assert.deepEqual(monthlyLedgerEntries(rows, "2026", finance), rows, "year and all-record views retain their existing behavior");
 });
 
 test("unmatched mandatory statement row appears only in the mandatory section", async () => {
@@ -495,7 +593,7 @@ test("unmatched mandatory statement row appears only in the mandatory section", 
   assert.deepEqual(monthlyLedgerEntries([row], "2026", finance.entryMap()), [row]);
 });
 
-test("an expense-encoded refund remains in the ledger and outside mandatory debit totals", () => {
+test("an expense-encoded tax refund moves to the separate section and reduces its net total", () => {
   const debit = { id: "synthetic-debit", month: "2026-04", date: "2026-04-16",
     direction: "out", line: "vat", mandatoryKind: "tax_debit", refund: false,
     counterparty: "Synthetic authority", amount: "100.00", currency: "EUR", eur: 100 };
@@ -503,12 +601,31 @@ test("an expense-encoded refund remains in the ledger and outside mandatory debi
     counterparty: "Synthetic refund", amount: "20.00", eur: 20 };
   const index = new Map([[debit.id, debit], [refund.id, refund]]);
   assert.deepEqual(monthlyLedgerEntries([{ id: debit.id }, { id: refund.id }], "2026-04", index),
-    [{ id: refund.id }]);
+    []);
   const markup = mandatoryPaymentsMarkup([debit, refund], "2026-04", escapeHtml);
   assert.match(markup, /Synthetic authority/);
-  assert.doesNotMatch(markup, /Synthetic refund/);
+  assert.match(markup, /Synthetic refund/);
+  assert.match(markup, /VAT \/ USt refund/);
   const subtotal = markup.match(/bk-mandatory-payments__subtotal[\s\S]*?<strong>(.*?)<\/strong>/)?.[1];
   assert.ok(subtotal);
-  assert.match(subtotal, /100\.00/);
-  assert.doesNotMatch(subtotal, /120\.00/);
+  assert.match(subtotal, /-€80\.00/);
+});
+
+test("tax lines are exact and explicit-kind fallback applies only when line is absent", () => {
+  const entries = [
+    { id: "synthetic-line-tax", month: "2026-04", direction: "in", line: "taxes", mandatoryKind: null,
+      counterparty: "Synthetic tax refund", amount: "12.00", currency: "EUR", eur: 12 },
+    { id: "synthetic-kind-only", month: "2026-04", direction: "out", mandatoryKind: "tax_debit",
+      counterparty: "Synthetic classified debit", amount: "20.00", currency: "EUR", eur: 20 },
+    { id: "synthetic-unrelated-line", month: "2026-04", direction: "out", line: "operating", mandatoryKind: "tax_debit",
+      counterparty: "Synthetic operating payment", amount: "30.00", currency: "EUR", eur: 30 },
+  ];
+  const rows = entries.map(({ id }) => ({ id }));
+  const index = new Map(entries.map((entry) => [entry.id, entry]));
+  assert.deepEqual(monthlyLedgerEntries(rows, "2026-04", index), [rows[2]]);
+  const markup = mandatoryPaymentsMarkup(entries, "2026-04", escapeHtml);
+  assert.match(markup, /Synthetic tax refund/);
+  assert.match(markup, /Synthetic classified debit/);
+  assert.doesNotMatch(markup, /Synthetic operating payment/);
+  assert.match(markup, /-€8\.00/);
 });
