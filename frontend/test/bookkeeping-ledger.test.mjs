@@ -85,6 +85,8 @@ test("the table renders one compact row per transaction without changing stored 
   assert.match(markup, /−€86\.00/);
   assert.match(markup, /\+€2,000\.00/);
   assert.match(markup, /title="Original −\$100\.00"/, "hovering the EUR value reveals the original amount");
+  assert.doesNotMatch(markup, /bk-col-original/, "the Original column is gone");
+  assert.match(markup, /EUR<\/th>\s*<th[^>]*class="[^"]*bk-col-vat[^"]*"[^>]*>VAT/, "VAT sits right after EUR");
   assert.match(markup, /<span class="bk-unconverted" title="No EUR value recorded yet/);
   assert.match(markup, /bk-col-eur is-unconverted/);
   assert.match(markup, />−\$15\.00<\/span>/, "a row without EUR shows its original value highlighted");

@@ -78,7 +78,7 @@
 .bk-scroll { overflow: auto; }
 /* With details open the pane repeats original amount, account and period,
    so the table drops them and keeps the counterparty readable. */
-.bk-split[data-pane="open"] :is(.bk-col-original, .bk-col-account, .bk-col-period) { display: none; }
+.bk-split[data-pane="open"] :is(.bk-col-account, .bk-col-period) { display: none; }
 
 /* ---- the table -------------------------------------------------------- */
 .bk-table {
@@ -145,12 +145,12 @@
 .bk-who:focus-visible { outline: 2px solid var(--dk-focus-ring); outline-offset: 2px; border-radius: var(--dk-radius-sm); }
 .bk-who__name { flex: none; max-width: 60%; overflow: hidden; color: var(--dk-text-heading); font-weight: var(--dk-weight-medium); text-overflow: ellipsis; }
 .bk-who__what { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--dk-text-muted); text-overflow: ellipsis; }
-.bk-col-money { width: 7.5em; overflow: hidden; font-family: var(--dk-font-mono); text-align: right; }
+.bk-col-money { width: 7.5em; overflow: hidden; font-variant-numeric: tabular-nums; text-align: right; }
 .bk-table th.bk-col-money { text-align: right; }
-.bk-col-vat { min-width: 8em; color: var(--dk-text-muted); }
+.bk-col-vat { min-width: 8em; color: var(--dk-text-muted); font-variant-numeric: tabular-nums; }
+.bk-month__totals .dk-mono { font-family: var(--dk-font-sans); }
 .bk-col-eur.is-unconverted { color: var(--dk-warning-text); }
 .bk-unconverted { font-weight: var(--dk-weight-semibold); }
-.bk-col-original { color: var(--dk-text-muted); }
 .bk-col-eur { color: var(--dk-text-heading); }
 .is-income .bk-col-eur { color: var(--dk-success-text); }
 .bk-missing { color: var(--dk-warning-text); font-family: var(--dk-font-sans); font-size: var(--dk-text-xs); font-weight: var(--dk-weight-semibold); }
@@ -282,7 +282,6 @@
   .bk-table thead { display: none; }
   .bk-month__head th { top: 0; }
   .bk-month__totals { display: none; }
-  .bk-col-original,
   .bk-col-account,
   .bk-col-class,
   .bk-col-flag { display: none; }

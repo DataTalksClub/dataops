@@ -217,16 +217,15 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
           >${showDescription ? html`<span class="bk-who__what" title="${e(description)}">${e(description)}</span>` : ""}</a
         >
       </td>
-      <td class="bk-col-money bk-col-original">${original === null ? "" : e(signedAmount(original, entry.currency))}</td>
       <td class="bk-col-money bk-col-eur${missingEur ? " is-unconverted" : ""}"${!missingEur && originalText ? ` title="Original ${e(originalText)}"` : ""}>${missingEur
         ? html`<span class="bk-unconverted" title="No EUR value recorded yet — convert it before the report">${e(originalText || "EUR?")}</span>`
         : e(signedAmount(eur, "EUR"))}</td>
+      <td class="bk-col-vat"${vat ? ` title="${e(vat)}"` : ""}>${e(vat || "—")}</td>
       <td class="bk-col-account">${e(accountOf(entry))}</td>
       ${CLASSIFICATION_FIELDS.map(({ field, label }) => html`<td class="bk-col-class bk-col-${field}">${selectMarkup({
         id: entry.id, field, label: `${label} for ${entry.counterparty || "transaction"}`,
         value: entry[field], options: vocab[field] || [], e,
       })}</td>`).join("")}
-      <td class="bk-col-vat"${vat ? ` title="${e(vat)}"` : ""}>${e(vat || "—")}</td>
       <td class="bk-col-flag">
         ${hasInvoice(entry.id)
           ? html`<span class="bk-invoice-icon" title="Invoice attached" aria-label="Invoice attached">${icon.receipt}</span>`
@@ -241,17 +240,16 @@ export function ledgerHeadMarkup() {
       <tr>
         <th scope="col" class="bk-col-date">Date</th>
         <th scope="col" class="bk-col-who">Counterparty · what</th>
-        <th scope="col" class="bk-col-money bk-col-original">Original</th>
         <th scope="col" class="bk-col-money bk-col-eur">EUR</th>
+        <th scope="col" class="bk-col-vat">VAT</th>
         <th scope="col" class="bk-col-account">Account</th>
         ${CLASSIFICATION_FIELDS.map(({ field, label }) => html`<th scope="col" class="bk-col-class bk-col-${field}">${label}</th>`).join("")}
-        <th scope="col" class="bk-col-vat">VAT</th>
         <th scope="col" class="bk-col-flag">Invoice</th>
       </tr>
     </thead>`;
 }
 
-const COLUMN_COUNT = 10;
+const COLUMN_COUNT = 9;
 
 export function ledgerTableMarkup({ groups, hasEvidence, hasInvoice = () => false, vocab, selectedId, financeEntriesById = new Map(), e }) {
   const body = groups.map((group) => {
