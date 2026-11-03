@@ -53,7 +53,12 @@ import type { Invoice } from "../invoices/model";
 import { isInvoiceIntakeRoute } from "../invoices/intakeRoute";
 import { getArtifact } from "../db/artifacts";
 import { normalizedAutoMatchVendor } from "../bookkeepingAutoMatch";
-import { formatAccountantCsv, selectAccountantReportRows, accountantCashDate } from "../finance/accountantReport";
+import {
+  accountantCashDate,
+  formatAccountantCsv,
+  selectAccountantReportRows,
+  unconvertedAccountantReportRows,
+} from "../finance/accountantReport";
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const LOG_LIMIT = 2000;
@@ -1045,6 +1050,13 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
   const entries: PackageEntry[] = [{ path: naming.packagePath(period, null, naming.reportName(period, "csv")), kind: "report" }];
   const blockers: PackageBlocker[] = [];
   const reportRows = selectAccountantReportRows(await listTransactions(client), period);
+  for (const row of unconvertedAccountantReportRows(reportRows)) {
+    blockers.push({
+      rowId: String(row.id || "unknown"),
+      reference: String(row.currency || ""),
+      reason: "foreign-currency transaction has no booked EUR value; convert it before preparing the package",
+    });
+  }
   const monthRowsByLedger = new Map(view.rows.filter((row) => row.ledger).map((row) => [row.ledger!.id, row]));
   const proofByDocument = new Map<string, { row: MonthRow; proof: NonNullable<MonthRow["paymentProof"]> }>();
   for (const reportRow of reportRows) {

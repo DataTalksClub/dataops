@@ -34,6 +34,22 @@ describe('reconciliation ledger projection', () => {
     assert.equal(row.rateSource, 'ECB 23 Oct 2026');
   });
 
+  it('blocks an accountant package row without a booked EUR conversion', async () => {
+    const period = '2027-06';
+    await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-unconverted-package-row', transactionDate: `${period}-08`, paidDate: `${period}-08`,
+      counterparty: 'Synthetic USD Vendor', description: 'Unconverted service', amount: '12.00',
+      currency: 'USD', entryType: 'expense',
+    });
+    const packageResult = await monthPackage(client, period, { draft: true });
+    assert.equal(packageResult.blockers.length, 1);
+    assert.deepEqual(packageResult.blockers[0], {
+      rowId: 'synthetic-unconverted-package-row',
+      reference: 'USD',
+      reason: 'foreign-currency transaction has no booked EUR value; convert it before preparing the package',
+    });
+  });
+
   it('projects a confirmed invoice intake artifact and blocks unresolved expected files in the package', async () => {
     const period = '2026-11';
     const invoiceId = 'c'.repeat(64);

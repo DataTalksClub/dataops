@@ -50,6 +50,14 @@ export function selectAccountantReportRows(transactions: AccountantReportEntry[]
   return accountantReportRowsForPeriod(transactions, period).filter(isAccountantReportRowIncluded);
 }
 
+/** Rows that cannot be represented in the EUR-only accountant report. */
+export function unconvertedAccountantReportRows(entries: AccountantReportEntry[]) {
+  return entries.filter((entry) =>
+    String(entry.currency || "EUR").toUpperCase() !== "EUR" &&
+    !String(entry.amountEur ?? "").trim(),
+  );
+}
+
 const HEADERS = ["Date", "Company", "What", "Amount, EUR"];
 
 function direction(entry: AccountantReportEntry) {

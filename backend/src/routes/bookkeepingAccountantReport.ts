@@ -7,6 +7,7 @@ import {
   formatAccountantCsv,
   formatAccountantTsv,
   isAccountantReportRowIncluded,
+  unconvertedAccountantReportRows,
 } from "../finance/accountantReport";
 import type { LambdaEvent, LambdaResponse } from "../types";
 import { json } from "./bookkeepingShared";
@@ -34,6 +35,13 @@ export async function handleBookkeepingAccountantReportRoutes(
   const transactions = await listTransactions(client);
   const reportRows = accountantReportRowsForPeriod(transactions, period === "all" ? "" : period);
   const included = reportRows.filter(isAccountantReportRowIncluded);
+  const unconverted = unconvertedAccountantReportRows(included);
+  if (unconverted.length) {
+    return json(409, {
+      error: `${unconverted.length} transaction(s) have no EUR value; convert them before preparing the package`,
+      unconvertedTransactionIds: unconverted.map((entry) => String(entry.id || "")),
+    });
+  }
   return json(200, {
     period,
     format,

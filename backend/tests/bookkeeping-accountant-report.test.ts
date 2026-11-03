@@ -154,6 +154,34 @@ describe("native accountant report API", () => {
     assert.doesNotMatch(report.content, /Synthetic Owner|Synthetic Tax Office/);
   });
 
+  it("refuses a foreign-currency accountant report row without a booked EUR value", async () => {
+    const unconverted = {
+      id: "synthetic-unconverted-usd",
+      transactionDate: "2026-10-08",
+      counterparty: "Synthetic USD Vendor",
+      description: "Unconverted service",
+      amount: "12.00",
+      currency: "USD",
+      entryType: "expense",
+    };
+    const response = await handleBookkeepingRoutes(
+      "/api/bookkeeping/reports/accountant",
+      "GET",
+      {
+        httpMethod: "GET",
+        path: "/api/bookkeeping/reports/accountant",
+        headers: {},
+        queryStringParameters: { period: "2026-10", format: "csv" },
+      },
+      { send: async () => ({ Items: [...entries, unconverted] }) } as unknown as DynamoDBDocumentClient,
+      true,
+    );
+    assert.equal(response.statusCode, 409);
+    const body = JSON.parse(response.body);
+    assert.match(body.error, /1 transaction\(s\) have no EUR value; convert them before preparing the package/);
+    assert.deepEqual(body.unconvertedTransactionIds, [unconverted.id]);
+  });
+
   it("expands one paid payment into the persisted invoice Company/What rows in native CSV and TSV", async () => {
     const allocatedPayment = {
       id: "synthetic-bundled-payment",

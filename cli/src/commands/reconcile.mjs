@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve, sep, posix, win32 } from "node:path";
 import { UsageError } from "../errors.mjs";
 import { enc, optionalString, positional } from "../format.mjs";
 import { apiFor } from "../session.mjs";
@@ -687,6 +687,44 @@ async function downloadBytes(api, entry) {
   return Buffer.from(await response.arrayBuffer());
 }
 
+function validatePackageEntries(entries, period, outRoot) {
+  if (!Array.isArray(entries)) throw new Error("Package manifest entries must be an array");
+  const monthRoot = resolve(outRoot, period);
+  return entries.map((entry) => {
+    const manifestPath = entry?.path;
+    if (typeof manifestPath !== "string" || !manifestPath || manifestPath.includes("\\") || manifestPath.includes("\0")
+      || posix.isAbsolute(manifestPath) || win32.isAbsolute(manifestPath) || /^[A-Za-z]:/.test(manifestPath)) {
+      throw new Error("Package manifest contains an invalid path");
+    }
+    const parts = manifestPath.split("/");
+    if (parts[0] !== period || parts.length < 2 || parts.some((part) => !part || part === "." || part === ".." || part.includes(":"))) {
+      throw new Error(`Package manifest path must stay inside ${period}: ${manifestPath}`);
+    }
+    const target = resolve(outRoot, ...parts);
+    const fromMonth = relative(monthRoot, target);
+    if (!fromMonth || fromMonth === ".." || fromMonth.startsWith(`..${sep}`) || resolve(monthRoot, fromMonth) !== target) {
+      throw new Error(`Package manifest path must stay inside ${period}: ${manifestPath}`);
+    }
+    return { entry, path: manifestPath, parts, target };
+  });
+}
+
+async function assertNoSymlinkComponents(monthRoot, parts) {
+  let current = monthRoot;
+  for (const [index, part] of parts.entries()) {
+    current = join(current, part);
+    try {
+      const info = await lstat(current);
+      if (info.isSymbolicLink()) throw new Error(`Package output path contains a symlink: ${current}`);
+      if (index < parts.length - 1 && !info.isDirectory()) {
+        throw new Error(`Package output path component is not a directory: ${current}`);
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+}
+
 async function createPackageArchive(out, written, zipPath) {
   const { default: yazl } = await import("yazl");
   const archive = new yazl.ZipFile();
@@ -713,17 +751,33 @@ export async function packageMonth(args, io) {
   const manifest = await api.get(`/api/reconcile/months/${period}/package`, { query: args.draft ? { draft: "true" } : {} });
   if (manifest.blockers?.length) {
     const details = manifest.blockers.map((blocker) => `${blocker.rowId}: ${blocker.reason}`).join("; ");
-    throw new Error(`Package is incomplete: ${manifest.blockers.length} expected document(s) could not be resolved. ${details}`);
+    throw new Error(`Package is incomplete: ${manifest.blockers.length} blocker(s) prevent export. ${details}`);
   }
   const out = optionalString(args, "out") || ".";
+  validatePackageEntries(manifest.entries, period, resolve(out));
+  await mkdir(out, { recursive: true });
+  const outRoot = await realpath(out);
+  const planned = validatePackageEntries(manifest.entries, period, outRoot);
+  const monthRoot = join(outRoot, period);
+  await mkdir(monthRoot, { recursive: true });
+  const monthInfo = await lstat(monthRoot);
+  const realMonthRoot = await realpath(monthRoot);
+  const monthFromOut = relative(outRoot, realMonthRoot);
+  if (monthInfo.isSymbolicLink() || !monthFromOut || monthFromOut === ".." || monthFromOut.startsWith(`..${sep}`)) {
+    throw new Error(`Package month directory must stay inside output directory: ${monthRoot}`);
+  }
+  for (const item of planned) await assertNoSymlinkComponents(monthRoot, item.parts.slice(1));
   const written = [];
-  for (const entry of manifest.entries) {
-    const target = join(out, entry.path);
+  for (const { entry, path, parts, target: plannedTarget } of planned) {
+    const target = resolve(outRoot, ...parts);
+    if (target !== plannedTarget) throw new Error(`Package output path changed during validation: ${path}`);
+    await assertNoSymlinkComponents(monthRoot, parts.slice(1, -1));
     await mkdir(dirname(target), { recursive: true });
+    await assertNoSymlinkComponents(monthRoot, parts.slice(1));
     if (entry.kind === "report") await writeFile(target, manifest.csv);
     else if (entry.documentId || entry.artifactId || entry.invoiceId) await writeFile(target, await downloadBytes(api, entry));
     else continue;
-    written.push(entry.path);
+    written.push(path);
   }
   let zip;
   const zipName = `datatalksclub-${period}${manifest.draft ? "-draft" : ""}.zip`;
