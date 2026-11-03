@@ -185,9 +185,12 @@ export function bookkeepingTransactionSummaryMarkup({
   const eurValue = signedValue(eurSource, sign);
   const invoiceList = invoiceDocuments({ invoice, invoices, documents });
   const vatCurrency = text(transaction.vatCurrency || currency).toUpperCase();
-  const vatValue = filled(transaction.vatAmount)
-    ? amount(transaction.vatAmount, vatCurrency)
-    : "No VAT recorded";
+  const eurVat = Number(transaction.vatEur);
+  const vatValue = Number.isFinite(eurVat)
+    ? amount(eurVat, "EUR")
+    : filled(transaction.vatAmount)
+      ? amount(transaction.vatAmount, vatCurrency)
+      : "No VAT recorded";
   const exchangeRate = text(transaction.exchangeRate);
   const transactionDate = text(transaction.transactionDate || transaction.paidDate || "Not recorded");
   const paidDate = filled(transaction.paidDate) && text(transaction.paidDate) !== transactionDate
@@ -206,9 +209,6 @@ export function bookkeepingTransactionSummaryMarkup({
     </div>`
     : "";
   const vatExtra = [
-    filled(transaction.vatRate)
-      ? `${e(transaction.vatRate)}${String(transaction.vatRate).trim().endsWith("%") ? "" : "%"}`
-      : "",
     transaction.reverseCharge === true || String(transaction.reverseCharge).toLowerCase() === "true" ? "Reverse charge" : "",
   ].filter(Boolean).join(" · ");
   const statementMarkup = statementLink

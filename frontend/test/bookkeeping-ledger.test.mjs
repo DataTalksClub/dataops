@@ -4,7 +4,6 @@ import { test } from "node:test";
 import {
   accountOf,
   accountsOf,
-  detailMarkup,
   eurValue,
   filterEntries,
   filtersFromParams,
@@ -12,6 +11,7 @@ import {
   inLens,
   ledgerTableMarkup,
   needsCategory,
+  netValue,
   originalValue,
   suggestionsMarkup,
   vatPresentation,
@@ -67,6 +67,15 @@ test("filters come from the URL and compose", () => {
   assert.equal(inLens(rows[2], "all"), true);
 });
 
+test("the net column subtracts VAT from the gross EUR value", () => {
+  const expense = { amount: "691.13", currency: "USD", amountEur: "614.63", entryType: "expense" };
+  assert.equal(netValue(expense, { vatEur: 98.14 }), -516.49);
+  assert.equal(netValue(expense, { vatEur: 0 }), -614.63, "VAT-free rows keep the gross value");
+  assert.equal(netValue(expense, null), -614.63, "missing statement context keeps the gross value");
+  assert.equal(netValue({ amount: "2700", currency: "EUR", entryType: "income" }, { vatEur: 0 }), 2700);
+  assert.equal(netValue({ amount: "100", currency: "USD", entryType: "expense" }, { vatEur: 5 }), null, "no EUR value means no net value");
+});
+
 test("month groups run newest first, rows oldest first, with EUR in/out totals", () => {
   const groups = groupByMonth(rows);
   assert.deepEqual(groups.map((g) => g.month), ["2026-09", "2026-08"]);
@@ -86,7 +95,7 @@ test("the table renders one compact row per transaction without changing stored 
   assert.match(markup, /\+€2,000\.00/);
   assert.match(markup, /title="Original −\$100\.00"/, "hovering the EUR value reveals the original amount");
   assert.doesNotMatch(markup, /bk-col-original/, "the Original column is gone");
-  assert.match(markup, /EUR<\/th>\s*<th[^>]*class="[^"]*bk-col-vat[^"]*"[^>]*>VAT/, "VAT sits right after EUR");
+  assert.match(markup, /Net<\/th>\s*<th[^>]*class="[^"]*bk-col-vat[^"]*"[^>]*>VAT/, "VAT sits right after net");
   assert.match(markup, /<span class="bk-unconverted" title="No EUR value recorded yet/);
   assert.match(markup, /bk-col-eur is-unconverted/);
   assert.match(markup, />−\$15\.00<\/span>/, "a row without EUR shows its original value highlighted");
@@ -180,22 +189,6 @@ test("finance summary ensure shares and awaits an in-flight year load", async ()
   assert.equal(refreshes.length, 2, "one refresh starts the load and one publishes its result");
 });
 
-test("details show every field, attached files one click away, and an attach action", () => {
-  const vocab = { subtype: ["Cloud purchase"], category: ["Infrastructure"], period: ["Monthly"] };
-  const withFile = detailMarkup({
-    entry: rows[0], documents: [{ id: "doc-1", documentType: "invoice", verifiedByteSize: 4096 }], vocab, e: escapeHtml,
-  });
-  for (const name of ["transactionDate", "paidDate", "counterparty", "description", "amount", "currency", "amountEur",
-    "entryType", "statementRef", "subtype", "category", "period", "quantity", "vatAmount", "vatCurrency", "comment"])
-    assert.match(withFile, new RegExp(`name="${name}"`), name);
-  assert.match(withFile, /data-view-document="doc-1"/);
-  assert.match(withFile, /invoice PDF · 4 KB/);
-  assert.match(withFile, /data-attach-file/);
-  const eurOnly = detailMarkup({ entry: rows[2], documents: [], vocab, e: escapeHtml });
-  assert.doesNotMatch(eurOnly, /name="amountEur"/, "EUR rows have no separate EUR value");
-  assert.match(eurOnly, /No receipt attached/);
-});
-
 test("suggested matches offer attaching a file or opening the sponsor deal", () => {
   assert.match(suggestionsMarkup({ suggestions: null, e: escapeHtml }), /Looking for matches/);
   assert.match(suggestionsMarkup({ suggestions: { documents: [], sponsor: { deals: [] } }, e: escapeHtml }), /No matching invoice or sponsor deal/);
@@ -218,8 +211,4 @@ test("suggested matches offer attaching a file or opening the sponsor deal", () 
   });
   assert.match(confirming, /Confirms the payment recorded on 2026-09-04/);
   assert.doesNotMatch(confirming, /outstanding/, "a paid deal shows no zero balance");
-  const claimed = detailMarkup({ entry: { ...rows[1], sponsorDealId: "deal-7" }, documents: [], vocab: {}, e: escapeHtml });
-  assert.match(claimed, /Payment for a sponsor deal/);
-  assert.match(claimed, /href="\/sponsors\/deals\/deal-7"/);
-  assert.match(claimed, /data-suggestions/);
 });

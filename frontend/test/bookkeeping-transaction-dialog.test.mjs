@@ -55,7 +55,25 @@ test("transaction summary shows invoice, canonical and raw vendor, signed values
   assert.match(markup, /Original amount<\/dt><dd>-178\.49 EUR<\/dd>/);
   assert.match(markup, /EUR amount<\/dt><dd>-178\.49 EUR<\/dd>/);
   assert.match(markup, /Category<\/dt><dd>Software and web services<\/dd>/);
-  assert.match(markup, /VAT<\/dt><dd>28\.50 EUR · 20%<\/dd>/);
+  assert.match(markup, /VAT<\/dt><dd>28\.50 EUR<\/dd>/);
+});
+
+test("dialog VAT prefers the converted EUR value", () => {
+  const markup = bookkeepingTransactionSummaryMarkup({
+    transaction: {
+      entryType: "expense",
+      counterparty: "Vendor",
+      transactionDate: "2026-09-12",
+      amount: "110.35",
+      currency: "USD",
+      vatAmount: "110.35",
+      vatCurrency: "USD",
+      vatEur: 98.12,
+    },
+    escape: escapeHtml,
+    formatAmount: amount,
+  });
+  assert.match(markup, /VAT<\/dt><dd>98\.12 EUR<\/dd>/);
 });
 
 test("summary clearly marks a missing invoice and presents conversion metadata", () => {

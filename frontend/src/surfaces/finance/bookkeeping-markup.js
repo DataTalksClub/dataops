@@ -64,19 +64,15 @@ export function bookkeepingSurfaceMarkup() {
           </div>
         </details>
       </div>
-      <div class="dk-split bk-split" data-bk-split data-view="list" data-pane="closed">
-        <div class="dk-split__list bk-split__list">
-          <div class="dk-split__scroll bk-scroll bookkeeping-ledger" aria-live="polite">Loading transactions…</div>
-        </div>
-        <aside class="dk-split__detail bk-detail" data-detail aria-labelledby="bk-detail-title" hidden></aside>
-      </div>
+      <div class="bookkeeping-ledger" aria-live="polite">Loading transactions…</div>
+      <dialog class="surface-dialog bk-transaction-dialog" id="bookkeeping-transaction-dialog" aria-labelledby="bookkeeping-transaction-dialog-title"></dialog>
     </div>
     <section id="bookkeeping-evidence" class="bookkeeping-section bookkeeping-evidence bk-secondary" data-secondary="files" aria-labelledby="bookkeeping-evidence-heading" hidden>
       ${backLink}
       ${financeSectionHead({
         id: "bookkeeping-evidence-heading",
         title: "Files & statements",
-        hint: "Private PDFs, grouped by month. Attach a matching invoice or receipt from a transaction's details.",
+        hint: "Private PDFs, grouped by month. Open a transaction to attach a matching invoice or receipt.",
         actions: html`<button class="dk-button dk-button--secondary dk-button--sm" type="button" data-setup-accounts disabled>
           Set up business accounts
         </button>`,
@@ -155,7 +151,7 @@ export function bookkeepingSurfaceMarkup() {
       <form method="dialog" novalidate>
         <header>
           <h3>Add transaction</h3>
-          <p>Fields marked * are required; everything else can be filled in later from the transaction's details.</p>
+          <p>Fields marked * are required; everything else can be filled in later.</p>
         </header>
         <div class="dialog-fields bookkeeping-entry-fields">
           <label
@@ -194,22 +190,6 @@ export function bookkeepingSurfaceMarkup() {
         <footer class="bookkeeping-actions">
           <button class="primary-button" data-save>Add transaction</button
           ><button value="cancel">Cancel</button>
-        </footer>
-      </form>
-    </dialog>
-    <dialog class="surface-dialog bookkeeping-delete-dialog">
-      <form method="dialog">
-        <header>
-          <h3>Delete this transaction?</h3>
-          <p>
-            <strong data-delete-entry-name>This transaction</strong> will be
-            permanently removed. Attached files are kept.
-          </p>
-        </header>
-        <footer>
-          <button type="button" class="danger-button" data-delete-confirm>
-            Delete transaction</button
-          ><button value="cancel" data-delete-cancel>Keep it</button>
         </footer>
       </form>
     </dialog>`;

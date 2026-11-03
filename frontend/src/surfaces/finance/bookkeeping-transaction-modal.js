@@ -15,6 +15,7 @@ export function createBookkeepingTransactionModal({
   suggestions,
   getSelectedId,
   getEntry,
+  getFinanceEntry = () => null,
   getAttached,
   openDocument,
   refreshEvidence,
@@ -31,9 +32,10 @@ export function createBookkeepingTransactionModal({
       return;
     }
     const attached = getAttached(entry.id);
+    const finance = getFinanceEntry(entry.id);
     const statement = statementContexts.get(entry.id);
     const summary = bookkeepingTransactionSummaryMarkup({
-      transaction: entry,
+      transaction: { ...entry, vatEur: finance?.vatEur ?? entry.vatEur },
       invoices: attached.filter((document) => document.documentType === "invoice"),
       statementLink: statement?.statementLink || null,
       statementCandidates: statement?.statementCandidates || [],

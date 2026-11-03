@@ -48,6 +48,16 @@ export function originalValue(entry) {
   return Number.isFinite(value) ? sign(entry) * value : null;
 }
 
+// Signed net EUR value: the gross amount minus VAT, in the transaction's
+// direction. VAT-free rows keep their gross value.
+export function netValue(entry, financeEntry) {
+  const gross = eurValue(entry);
+  if (gross === null) return null;
+  const vat = Number(financeEntry?.vatEur);
+  if (!Number.isFinite(vat) || vat === 0) return gross;
+  return Math.round((gross - Math.sign(gross || 1) * Math.abs(vat)) * 100) / 100;
+}
+
 const filled = (value) => String(value ?? "").trim() !== "";
 
 // A row still needs classifying while the sheet's Type or Category is blank.
@@ -196,9 +206,9 @@ const icon = {
 
 export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, vocab, selectedId, financeEntry, e }) {
   const direction = entryDirection(entry);
-  const eur = eurValue(entry);
+  const net = netValue(entry, financeEntry);
   const original = originalValue(entry);
-  const missingEur = eur === null;
+  const missingEur = net === null;
   const flagged = needsCategory(entry);
   const presentation = bookkeepingVendorPresentation(entry);
   const description = presentation.description;
@@ -216,7 +226,7 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
       </td>
       <td class="bk-col-money bk-col-eur${missingEur ? " is-unconverted" : ""}"${!missingEur && originalText ? ` title="Original ${e(originalText)}"` : ""}>${missingEur
         ? html`<span class="bk-unconverted" title="No EUR value recorded yet — convert it before the report">${e(originalText || "EUR?")}</span>`
-        : e(signedAmount(eur, "EUR"))}</td>
+        : e(signedAmount(net, "EUR"))}</td>
       <td class="bk-col-vat"${vat ? ` title="${e(vatTitle(financeEntry, vat))}"` : ""}>${e(vat || "—")}</td>
       <td class="bk-col-account">${e(accountOf(entry))}</td>
       ${CLASSIFICATION_FIELDS.map(({ field, label }) => html`<td class="bk-col-class bk-col-${field}">${selectMarkup({
@@ -237,7 +247,7 @@ export function ledgerHeadMarkup() {
       <tr>
         <th scope="col" class="bk-col-date">Date</th>
         <th scope="col" class="bk-col-who">Counterparty · what</th>
-        <th scope="col" class="bk-col-money bk-col-eur">EUR</th>
+        <th scope="col" class="bk-col-money bk-col-eur">Net</th>
         <th scope="col" class="bk-col-vat">VAT</th>
         <th scope="col" class="bk-col-account">Account</th>
         ${CLASSIFICATION_FIELDS.map(({ field, label }) => html`<th scope="col" class="bk-col-class bk-col-${field}">${label}</th>`).join("")}
@@ -279,59 +289,6 @@ export function emptyLedgerMarkup({ lensTitle, filtered, latest, e }) {
       <p class="dk-empty__title">No transactions recorded for ${e(lensTitle)}</p>
       ${latest ? html`<p class="dk-empty__desc">The latest recorded transaction is from ${e(ledgerDate(latest))}.</p>` : ""}
     </div>`;
-}
-
-// ---- detail panel ----------------------------------------------------------
-
-const DETAIL_FIELDS = [
-  { name: "transactionDate", label: "Date", type: "date" },
-  { name: "paidDate", label: "Paid", type: "date" },
-  { name: "counterparty", label: "Counterparty", wide: true },
-  { name: "description", label: "What", wide: true },
-  { name: "amount", label: "Amount", inputmode: "decimal" },
-  { name: "currency", label: "Currency", maxlength: 3 },
-  { name: "amountEur", label: "EUR value", inputmode: "decimal", foreignOnly: true },
-  { name: "entryType", label: "Direction", select: [["expense", "Expense (money out)"], ["income", "Income (money in)"]] },
-  { name: "statementRef", label: "Account / statement", wide: true },
-  { name: "subtype", label: "Type", list: "subtype" },
-  { name: "category", label: "Category", list: "category" },
-  { name: "period", label: "Period", list: "period" },
-  { name: "quantity", label: "Count", inputmode: "numeric" },
-  { name: "vatAmount", label: "VAT", inputmode: "decimal" },
-  { name: "vatCurrency", label: "VAT currency", maxlength: 3 },
-  { name: "comment", label: "Comment", wide: true, textarea: true },
-];
-
-function detailFieldMarkup(field, entry, e) {
-  const raw = entry[field.name];
-  const value = raw === null || raw === undefined ? "" : String(raw);
-  const id = `bk-detail-${field.name}`;
-  let control;
-  if (field.select) {
-    const current = value.toLowerCase();
-    control = html`<select class="dk-select" id="${id}" name="${field.name}">
-        <option value=""${current ? "" : " selected"}>Unclassified</option>
-        ${field.select.map(([option, label]) => html`<option value="${option}"${option === current ? " selected" : ""}>${label}</option>`).join("")}
-      </select>`;
-  } else if (field.textarea) {
-    control = html`<textarea class="dk-textarea" id="${id}" name="${field.name}" rows="2">${e(value)}</textarea>`;
-  } else {
-    control = html`<input class="dk-input" id="${id}" name="${field.name}" value="${e(value)}"${
-      field.type ? ` type="${field.type}"` : ""}${field.inputmode ? ` inputmode="${field.inputmode}"` : ""}${
-      field.maxlength ? ` maxlength="${field.maxlength}"` : ""}${field.list ? ` list="bk-list-${field.list}"` : ""} autocomplete="off" />`;
-  }
-  return html`<div class="bk-field${field.wide ? " bk-field--wide" : ""}" data-field="${field.name}">
-      <label class="dk-label" for="${id}">${field.label}</label>
-      ${control}
-      <small class="bk-field__error" data-field-error></small>
-    </div>`;
-}
-
-function documentLabel(document, humanize) {
-  const type = humanize ? humanize(document.documentType || "document") : String(document.documentType || "document");
-  const size = Number(document.verifiedByteSize || document.byteSize || 0);
-  const kb = size ? ` · ${Math.max(1, Math.round(size / 1024))} KB` : "";
-  return `${type} PDF${kb}`;
 }
 
 const capitalize = (text) => String(text || "").replace(/^./, (letter) => letter.toUpperCase());
@@ -404,69 +361,4 @@ export function suggestionLoader({ load, holder, render }) {
         });
     },
   };
-}
-
-export function detailMarkup({ entry, documents, vocab, humanize, e }) {
-  const eur = eurValue(entry);
-  const original = originalValue(entry);
-  const foreign = String(entry.currency || "EUR").toUpperCase() !== "EUR";
-  const fields = DETAIL_FIELDS.filter((field) => !field.foreignOnly || foreign)
-    .map((field) => detailFieldMarkup(field, entry, e)).join("");
-  const datalists = CLASSIFICATION_FIELDS.map(({ field }) => html`<datalist id="bk-list-${field}">${
-    (vocab[field] || []).map((option) => html`<option value="${e(option)}"></option>`).join("")}</datalist>`).join("");
-  const receipts = documents.length
-    ? html`<ul class="bk-receipts">${documents.map((document) => html`<li class="bk-receipt">
-          <span class="bk-receipt__name">${e(documentLabel(document, humanize))}</span>
-          <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-view-document="${e(document.id)}">View</button>
-        </li>`).join("")}</ul>`
-    : html`<p class="bk-receipts__none">No receipt attached.</p>`;
-  return html`<div class="dk-split__head bk-detail__head">
-      <button type="button" class="dk-split__back" data-close-detail>
-        <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6">
-          <path d="M10 3 5 8l5 5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        Transactions
-      </button>
-      <h2 class="dk-split__title" id="bk-detail-title">${e(entry.counterparty || "Transaction")}</h2>
-      <button type="button" class="dk-icon-button dk-icon-button--sm bk-detail__close" data-close-detail aria-label="Close details">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-      </button>
-    </div>
-    <div class="dk-split__scroll bk-detail__scroll">
-      <p class="bk-detail__summary">
-        <span class="bk-detail__amount dk-mono${eur !== null && eur >= 0 ? " is-income" : ""}">${
-          eur === null ? "EUR value missing" : e(signedAmount(eur, "EUR"))}</span>
-        ${original !== null ? html`<span class="bk-detail__original dk-mono">${e(signedAmount(original, entry.currency))}</span>` : ""}
-        <span class="bk-detail__date">${e(ledgerDate(entry.transactionDate))}</span>
-      </p>
-      <section class="bk-detail__section" aria-labelledby="bk-receipt-heading">
-        <h3 class="bk-detail__subhead" id="bk-receipt-heading">Invoice / receipt</h3>
-        ${receipts}
-        ${entry.sponsorDealId ? html`<p class="bk-sponsor-link">Payment for a sponsor deal; the deal holds its amount and date.
-          <a href="${e(sponsorRecordPath("deal", entry.sponsorDealId))}">Open deal</a></p>` : ""}
-        <div class="bk-attach">
-          <label class="dk-label" for="bk-attach-type">Attach a PDF</label>
-          <div class="bk-attach__row">
-            <select class="dk-select" id="bk-attach-type" data-attach-type>
-              <option value="invoice">Invoice</option>
-              <option value="receipt">Receipt</option>
-            </select>
-            <input class="dk-input" type="file" accept="application/pdf,.pdf" data-attach-file aria-label="PDF file" />
-          </div>
-        </div>
-      </section>
-      <section class="bk-detail__section" aria-labelledby="bk-suggest-heading">
-        <h3 class="bk-detail__subhead" id="bk-suggest-heading">Suggested matches</h3>
-        <div data-suggestions>${suggestionsMarkup({ suggestions: null, humanize, e })}</div>
-      </section>
-      <form class="bk-detail__form" data-detail-form data-id="${e(entry.id)}" novalidate>
-        <h3 class="bk-detail__subhead">Details</h3>
-        <p class="bk-detail__hint">Changes save as you leave each field. Amounts are positive; Direction sets the sign.</p>
-        <div class="bk-fields">${fields}</div>
-        ${datalists}
-      </form>
-      <div class="bk-detail__danger">
-        <button type="button" class="dk-button dk-button--danger dk-button--sm" data-delete="${e(entry.id)}">Delete transaction</button>
-      </div>
-    </div>`;
 }
