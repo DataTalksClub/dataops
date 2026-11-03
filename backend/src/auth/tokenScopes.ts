@@ -84,6 +84,10 @@ export function isScopedTokenRequestAllowed(
       : has(scopes, 'newsletter:write');
   }
 
+  if (matchesPrefix(path, '/api/email-templates')) {
+    return has(scopes, 'newsletter:write');
+  }
+
   if (
     matchesPrefix(path, '/api/newsletter-issues')
     || matchesPrefix(path, '/api/sponsor-crm/newsletters')

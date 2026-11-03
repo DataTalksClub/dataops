@@ -42,6 +42,8 @@ describe('scoped agent API tokens', () => {
     assert.equal(isScopedTokenRequestAllowed(['cards:write'], 'GET', '/api/newsletter-issues'), false);
     assert.equal(isScopedTokenRequestAllowed(['cards:write'], 'POST', '/api/sponsor-docs'), false);
     assert.equal(isScopedTokenRequestAllowed(['newsletter:write'], 'POST', '/api/sponsor-docs'), true);
+    assert.equal(isScopedTokenRequestAllowed(['newsletter:write'], 'POST', '/api/email-templates/send'), true);
+    assert.equal(isScopedTokenRequestAllowed(['cards:write'], 'POST', '/api/email-templates/send'), false);
     assert.equal(isScopedTokenRequestAllowed(['kb:write'], 'GET', '/api/team-members'), false);
   });
 
