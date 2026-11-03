@@ -40,6 +40,8 @@ import {
   toCalendarHoldView,
 } from '../events/service';
 
+import { realDate } from '../sponsorCrm/model';
+
 export { calendarInviteDeps, setCalendarHoldGoogleDepsForTests };
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({
@@ -47,10 +49,6 @@ const json = (statusCode: number, body: unknown): LambdaResponse => ({
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(body),
 });
-
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const realDate = (v: unknown): v is string =>
-  typeof v === 'string' && DATE.test(v) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
 
 const parse = (event: LambdaEvent): any => {
   try {

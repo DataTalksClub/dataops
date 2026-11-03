@@ -47,6 +47,7 @@ import {
   deleteCardCascade,
 } from '../db/cardDeletion';
 import { resolveInteractiveActor, type VerifiedActor } from '../identity/actor';
+import { realDate } from '../sponsorCrm/model';
 import { berlinDate } from '../sponsorFinance/core';
 import { cardDueDate, createDueIssueCards, loadCardSchedule, needsCard, type CardSchedule } from '../newsletter/cardSchedule';
 import { removeIssueCard } from '../newsletter/cardRemoval';
@@ -89,7 +90,6 @@ const json = (statusCode: number, body: unknown): LambdaResponse => ({
   body: JSON.stringify(body),
 });
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const KINDS = new Set<NewsletterIssueKind>(['weekly', 'standalone']);
 export const ISSUE_STATUSES = ['planned', 'drafting', 'review', 'scheduled', 'sent', 'cancelled'];
@@ -136,9 +136,6 @@ const parse = (event: LambdaEvent): Body | null => {
     return null;
   }
 };
-
-const realDate = (value: unknown) =>
-  typeof value === 'string' && DATE.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 
 const httpsUrl = (value: unknown) => {
   try {

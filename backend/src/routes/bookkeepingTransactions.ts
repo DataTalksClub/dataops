@@ -12,8 +12,8 @@ import { json, MONEY, MONTH, parse } from "./bookkeepingShared";
 import { autoAttachConfidentEvidence } from "./bookkeepingSuggestions";
 import { headerValue } from "../httpHeaders";
 import { canonicalBookkeepingCounterparty, bookkeepingTransactionView } from "../bookkeepingVendors";
+import { realDate } from "../sponsorCrm/model";
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const CURRENCY = /^[A-Z]{3}$/;
 const allowed = [
   "transactionDate",
@@ -123,16 +123,6 @@ function validateTransaction(input: Record<string, unknown>, partial = false) {
     if (typeof input.amount !== "string" || Number(input.amount) <= 0) errors.push("amount");
   }
   return [...new Set(errors)];
-}
-function realDate(value: unknown) {
-  if (typeof value !== "string" || !DATE.test(value)) return false;
-  const [y, m, d] = value.split("-").map(Number),
-    parsed = new Date(Date.UTC(y, m - 1, d));
-  return (
-    parsed.getUTCFullYear() === y &&
-    parsed.getUTCMonth() === m - 1 &&
-    parsed.getUTCDate() === d
-  );
 }
 function safeData(input: Record<string, unknown>) {
   return Object.fromEntries(
