@@ -560,11 +560,13 @@ test("package writes the month folder layout from the manifest and never sends a
       { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
       { path: "2026-10/statements/2026-10_finom-main.csv", kind: "statement", documentId: "doc-stmt" },
       { path: "2026-10/expenses/2026-10-14_google_1.99EUR.pdf", kind: "invoice", documentId: "doc-google" },
+      { path: "2026-10/expenses/2026-10-15_synthetic-vendor_SYN-1_9.00EUR.pdf", kind: "invoice", invoiceId: "synthetic-invoice" },
       { path: "2026-10/proofs/2026-10-14_google_a1c9d26b5312.pdf", kind: "proof", documentId: "doc-proof" },
     ] }],
     ["/documents/doc-stmt/download", { downloadUrl: "https://private.example.test/stmt" }],
     ["/documents/doc-google/download", { downloadUrl: "https://private.example.test/google" }],
     ["/documents/doc-proof/download", { downloadUrl: "https://private.example.test/proof" }],
+    ["/api/bookkeeping/invoices/synthetic-invoice/document", { url: "https://private.example.test/invoice" }],
     ["https://private.example.test/", "synthetic-bytes"],
   ], async (calls) => {
     const result = await commands.package({ ...args, _: ["2026-10"], out: directory }, {});
@@ -572,12 +574,23 @@ test("package writes the month folder layout from the manifest and never sends a
       "2026-10/2026-10_reconciliation_datatalksclub.csv",
       "2026-10/statements/2026-10_finom-main.csv",
       "2026-10/expenses/2026-10-14_google_1.99EUR.pdf",
+      "2026-10/expenses/2026-10-15_synthetic-vendor_SYN-1_9.00EUR.pdf",
       "2026-10/proofs/2026-10-14_google_a1c9d26b5312.pdf",
     ]);
     assert.equal(await (await import("node:fs/promises")).readFile(join(directory, "2026-10/proofs/2026-10-14_google_a1c9d26b5312.pdf"), "utf8"), "synthetic-bytes");
+    assert.equal(await (await import("node:fs/promises")).readFile(join(directory, "2026-10/expenses/2026-10-15_synthetic-vendor_SYN-1_9.00EUR.pdf"), "utf8"), "synthetic-bytes");
     assert.ok(!calls.some((call) => call.method === "POST"), "building a package never writes");
   });
   await rm(directory, { recursive: true, force: true });
+});
+
+test("package refuses to present an incomplete manifest as ready", async () => {
+  await withFakePortal([[
+    "/reconcile/months/2026-10/package",
+    { period: "2026-10", state: "open", draft: true, csv: "date,status\n", entries: [], blockers: [{ rowId: "ledger-1", reference: "invoice-1", reason: "expected invoice document is missing" }] },
+  ]], async () => {
+    await assert.rejects(commands.package({ ...args, _: ["2026-10"], draft: true }, {}), /Package is incomplete: 1 expected document/);
+  });
 });
 
 test("reconcile matches prints matched, unmatched bank and invoices without a bank row", async () => {

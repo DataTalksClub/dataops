@@ -98,7 +98,7 @@ export type BankTx = {
   relatedBankId?: string;
 };
 
-export type LedgerDocument = { id: string; label?: string };
+export type LedgerDocument = { id: string; label?: string; invoiceId?: string };
 
 export type LedgerRow = {
   id: string;

@@ -1,8 +1,11 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { createDocumentLink, putBookkeepingItem } from '../src/db/bookkeeping';
+import { createInvoice } from '../src/invoices/store';
+import { TABLE_ARTIFACTS } from '../src/db/tableNames';
 import { saveStatement } from '../src/reconcile/service';
 import { buildMonth, closeMonth, ledgerRowsFrom, monthPackage } from '../src/reconcile/monthService';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
@@ -28,6 +31,68 @@ describe('reconciliation ledger projection', () => {
     assert.equal(row.subtype, 'Subscription');
     assert.equal(row.amountEur, '-9.25');
     assert.equal(row.rateSource, 'ECB 23 Oct 2026');
+  });
+
+  it('projects a confirmed invoice intake artifact and blocks unresolved expected files in the package', async () => {
+    const period = '2026-11';
+    const invoiceId = 'c'.repeat(64);
+    const artifactId = 'synthetic-invoice-artifact';
+    const oldBucket = process.env.EMAIL_DOCUMENTS_BUCKET;
+    const oldPrefix = process.env.EMAIL_DOCUMENT_DESTINATION_PREFIX;
+    process.env.EMAIL_DOCUMENTS_BUCKET = 'synthetic-private-documents';
+    process.env.EMAIL_DOCUMENT_DESTINATION_PREFIX = 'artifacts/';
+    try {
+      await client.send(new PutCommand({
+        TableName: TABLE_ARTIFACTS,
+        Item: {
+          PK: `ARTIFACT#${artifactId}`, SK: `ARTIFACT#${artifactId}`, id: artifactId,
+          type: 'invoice', title: 'synthetic-source-invoice.pdf', filename: 'synthetic-source-invoice.pdf',
+          contentType: 'application/pdf', dataClass: 'sensitive', status: 'approved',
+          storageUri: `s3://synthetic-private-documents/artifacts/${artifactId}.pdf`,
+          metadata: { importState: 'complete' },
+        },
+      }));
+      await createInvoice(client, {
+        id: invoiceId, revision: 1, status: 'confirmed', fields: { transactionDate: '2026-11-02', paidDate: '2026-11-03', counterparty: 'Synthetic Vendor', amount: '24.00', currency: 'EUR', invoiceNumber: 'SYN-24' },
+        extraction: { method: 'synthetic', evidence: [], issues: [], direction: 'expense' },
+        source: { intakeItemIds: ['synthetic-intake'], artifactId, checksum: 'sha256:synthetic' },
+        destinations: { dropbox: { state: 'verified', operationId: 'dropbox' }, sheets: { state: 'verified', operationId: 'sheets' } },
+        audit: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), confirmedRevision: 1,
+      });
+      const ledger = (await putBookkeepingItem(client, 'bookkeeping', {
+        id: 'synthetic-invoice-ledger', transactionDate: '2026-11-02', paidDate: '2026-11-03',
+        counterparty: 'Synthetic Vendor', amount: '24.00', currency: 'EUR', entryType: 'expense',
+        invoiceNumber: 'SYN-24', invoiceId, documentArtifactId: artifactId, sourceType: 'invoice',
+      })).item;
+      assert.deepEqual(ledgerRowsFrom([ledger], [])[0].documents, [{ id: artifactId, invoiceId }]);
+      const packageResult = await monthPackage(client, period, { draft: true });
+      const entry = packageResult.entries.find((item) => item.invoiceId === invoiceId);
+      assert.ok(entry);
+      assert.equal(entry.kind, 'invoice');
+      assert.equal(entry.originalFilename, 'synthetic-source-invoice.pdf');
+      assert.deepEqual(packageResult.blockers, []);
+
+      await putBookkeepingItem(client, 'bookkeeping', {
+        id: 'synthetic-missing-invoice-ledger', transactionDate: '2026-11-04', paidDate: '2026-11-04',
+        counterparty: 'Synthetic Missing Vendor', amount: '10.00', currency: 'EUR', entryType: 'expense',
+        invoiceId: 'd'.repeat(64), documentArtifactId: 'synthetic-missing-artifact', sourceType: 'invoice',
+      });
+      await putBookkeepingItem(client, 'bookkeeping', {
+        id: 'synthetic-mismatched-invoice-ledger', transactionDate: '2026-11-05', paidDate: '2026-11-05',
+        counterparty: 'Synthetic Mismatch Vendor', amount: '11.00', currency: 'EUR', entryType: 'expense',
+        invoiceId, documentArtifactId: 'synthetic-unowned-artifact', sourceType: 'invoice',
+      });
+      const incomplete = await monthPackage(client, period, { draft: true });
+      assert.equal(incomplete.blockers.length, 2);
+      assert.deepEqual(incomplete.blockers.map((blocker) => blocker.rowId), [
+        'ledger:synthetic-missing-invoice-ledger',
+        'ledger:synthetic-mismatched-invoice-ledger',
+      ]);
+      assert.ok(incomplete.blockers.every((blocker) => /cannot be safely resolved/.test(blocker.reason)));
+    } finally {
+      if (oldBucket === undefined) delete process.env.EMAIL_DOCUMENTS_BUCKET; else process.env.EMAIL_DOCUMENTS_BUCKET = oldBucket;
+      if (oldPrefix === undefined) delete process.env.EMAIL_DOCUMENT_DESTINATION_PREFIX; else process.env.EMAIL_DOCUMENT_DESTINATION_PREFIX = oldPrefix;
+    }
   });
 
   it('includes ordinary Compliance & Taxes service invoices in the accountant CSV and package while excluding true taxes', async () => {
