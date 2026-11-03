@@ -27,9 +27,10 @@ def test_dedicated_mcp_proxies_with_caller_auth_and_has_no_data_role():
     assert properties["Handler"] == "src/lambda.handler"
     assert properties["Environment"]["Variables"] == {
         "DATAOPS_URL": {"GetAtt": "BackendFunctionUrl.FunctionUrl"},
+        "OAUTH_ISSUER_URL": {"Ref": "OauthIssuerUrl"},
     }
     # SAM supplies basic Lambda logging only. API access uses the caller's
-    # bearer token, never a shared database/secret role or stored credential.
+    # shared-issuer JWT, never a shared database/secret role or stored credential.
     assert "Role" not in properties
     assert not properties.get("Policies")
     assert properties["FunctionUrlConfig"]["AuthType"] == "NONE"
