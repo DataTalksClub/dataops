@@ -1115,7 +1115,7 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(emptyDiagnostics.locator('[data-diagnostic="knowledge-status"]')).toContainText('Loading availability');
     await expect(emptyDiagnostics.locator('[data-diagnostic="knowledge-publication"]')).toContainText('Loading availability');
     await expect(emptyDiagnostics.locator('[data-diagnostic="quality"]')).toContainText('0 quality findings; no validation errors.');
-    await expect(emptyDiagnostics.locator('[data-diagnostic="knowledge-status"]')).toContainText(/daily GitHub export/i);
+    await expect(emptyDiagnostics.locator('[data-diagnostic="knowledge-status"]')).toContainText(/daily knowledge backup/i);
     await expect(emptyDiagnostics.locator('[data-diagnostic="knowledge-publication"]')).toContainText('Current revision:');
     await clearFaults(empty.request);
     await empty.close();
@@ -1380,9 +1380,9 @@ test.describe('canonical frontend capability behavior', () => {
     await page.goto('/admin');
     await expect(page.locator('.ops-admin-card', { hasText: 'Diagnostics' })).toBeVisible();
     const diagnostics = page.getByRole('region', { name: 'Read-only diagnostics' });
-    await expect(diagnostics).toContainText('Diagnostics show saved knowledge and daily export status.');
+    await expect(diagnostics).toContainText('Diagnostics show saved knowledge and daily backup status.');
     await expect(diagnostics.locator('[data-diagnostic="quality"]')).toContainText(/quality findings?; (no|\d+) validation errors?/);
-    await expect(diagnostics.locator('[data-diagnostic="knowledge-status"]')).toContainText(/daily GitHub export/i);
+    await expect(diagnostics.locator('[data-diagnostic="knowledge-status"]')).toContainText(/daily knowledge backup/i);
     await expect(diagnostics.locator('[data-diagnostic="knowledge-publication"]')).toContainText('Current revision:');
 
     await setFaults(context.request, [
