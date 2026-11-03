@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
-  candidateId, ingestPaymentMail, matchPayment, parsePaymentMail, type PaymentMail,
+  candidateId, ingestPaymentMail, matchPaidRow, matchPayment, parsePaymentMail, type PaymentMail,
 } from '../src/sponsorFinance/paymentMail';
 import { pollPaymentMail, setPaymentMailPollDepsForTests } from '../src/sponsorFinance/paymentMailPoll';
 import { handleSponsorFinanceRoutes } from '../src/routes/sponsorFinance';
@@ -71,6 +71,31 @@ describe('payment matching', () => {
   });
 });
 
+// PhoenixData-shaped backfill: the paid deal predates the stored invoice number,
+// so the mail resolves against the paid row by amount, currency, sponsor and date.
+const paidRow = (over: Record<string, unknown>) => row({
+  paymentState: 'paid', invoiceNumber: undefined, outstanding: '0', paid: '3700', amountDue: '3700',
+  currency: 'EUR', lastPaymentOn: '2026-10-29', ...over,
+});
+const phoenixMail = () => parsePaymentMail({
+  from: 'Ramp <no-reply@ramp.com>', subject: 'Payment received: #202610/50',
+  body: 'PhoenixData has paid invoice #202610/50. Amount: EUR 3,700.00',
+})!;
+
+describe('already-paid fallback', () => {
+  it('resolves a paid deal without a stored invoice number', () => {
+    const hit = matchPaidRow(phoenixMail(), '2026-10-29', [paidRow({})])!;
+    assert.equal(hit.dealId, 'deal-1');
+  });
+  it('refuses ties, distant dates, wrong amounts and open rows', () => {
+    assert.equal(matchPaidRow(phoenixMail(), '2026-10-29', [paidRow({}), paidRow({ dealId: 'd2' })]), null);
+    assert.equal(matchPaidRow(phoenixMail(), '2026-12-31', [paidRow({})]), null);
+    assert.equal(matchPaidRow(phoenixMail(), '2026-10-29', [paidRow({ paid: '3600', amountDue: '3600' })]), null);
+    assert.equal(matchPaidRow(phoenixMail(), '2026-10-29', [row({})]), null);
+    assert.equal(matchPaidRow({ ...phoenixMail(), payer: undefined }, '2026-10-29', [paidRow({})]), null);
+  });
+});
+
 function fakeClient() {
   const store = new Map<string, any>();
   return {
@@ -106,6 +131,20 @@ describe('ingestion', () => {
     assert.equal(none.candidate?.status, 'unmatched');
     const [skip] = await ingestPaymentMail(client as never, [mail({ messageId: '<n>', subject: 'Newsletter', body: 'hello' })], []);
     assert.equal(skip.outcome, 'ignored');
+  });
+  it('marks a paid deal without a stored invoice number as an already-paid no-op', async () => {
+    const client = fakeClient();
+    const backfill: PaymentMail = {
+      messageId: '<ramp-20261050@ramp.com>', from: 'Ramp <no-reply@ramp.com>',
+      subject: 'Payment received: #202610/50',
+      body: 'PhoenixData has paid invoice #202610/50. Amount: EUR 3,700.00',
+      receivedAt: '2026-10-29T09:15:00Z',
+    };
+    const [result] = await ingestPaymentMail(client as never, [backfill], [paidRow({})]);
+    assert.equal(result.outcome, 'created');
+    assert.equal(result.candidate?.status, 'already-paid');
+    assert.equal(result.candidate?.match?.dealId, 'deal-1');
+    assert.ok((result.candidate?.match?.reasons || []).includes('already paid'));
   });
 });
 
