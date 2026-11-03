@@ -4,6 +4,7 @@ import {
   DeleteCommand,
   GetCommand,
   PutCommand,
+  QueryCommand,
   ScanCommand,
   TransactWriteCommand,
   UpdateCommand,
@@ -13,6 +14,16 @@ import { cleanItem } from "./cleanItem";
 import { TABLE_BOOKKEEPING } from "./tableNames";
 import { classifyMandatoryPayment } from "../finance/mandatoryPayments";
 import { isOwnerWithdrawalReportExempt } from "../finance/ownerPay";
+import {
+  BOOKKEEPING_AUDIT_PARTITION_PREFIX,
+  BOOKKEEPING_AUDIT_STORAGE_VERSION,
+  BookkeepingAuditIntegrityError,
+  bookkeepingAuditEvents,
+  bookkeepingAuditPartitionKey,
+  planBookkeepingAuditWrite,
+  type BookkeepingAuditEvent,
+  type BookkeepingAuditRow,
+} from "../bookkeepingAudit";
 
 export type BookkeepingItem = Record<string, unknown> & {
   id: string;
@@ -35,6 +46,13 @@ export class BookkeepingItemLockedError extends Error {
   constructor() {
     super("Bookkeeping item is claimed or changed");
     this.name = "BookkeepingItemLockedError";
+  }
+}
+
+export class BookkeepingTransactionLimitError extends Error {
+  constructor(message = "Bookkeeping update exceeds DynamoDB transaction limits") {
+    super(message);
+    this.name = "BookkeepingTransactionLimitError";
   }
 }
 const isConditionalMutationFailure = (error: unknown) =>
@@ -148,6 +166,19 @@ async function transact(
     });
   }
   input = { ...input, TransactItems: guarded };
+  if (guarded.length > 100) throw new BookkeepingTransactionLimitError();
+  const targets = new Set<string>();
+  for (const action of guarded) {
+    const operation = action.Put || action.Update || action.Delete || action.ConditionCheck;
+    if (!operation) continue;
+    const targetKey = "Item" in operation ? operation.Item : operation.Key;
+    if (!targetKey) continue;
+    const target = JSON.stringify([operation.TableName, targetKey.PK, targetKey.SK]);
+    if (targets.has(target)) {
+      throw new BookkeepingTransactionLimitError("Bookkeeping transaction targets one DynamoDB item more than once");
+    }
+    targets.add(target);
+  }
   try {
     await client.send(new TransactWriteCommand(input));
   } catch (error) {
@@ -311,7 +342,7 @@ export async function putBookkeepingTransactionWithItems(
   return { item: clean(item)!, duplicate: false };
 }
 
-export async function getBookkeepingItem(
+async function getBookkeepingItemRaw(
   client: DynamoDBDocumentClient,
   kind: string,
   id: string,
@@ -325,6 +356,94 @@ export async function getBookkeepingItem(
     }),
   );
   return clean(result.Item as Record<string, unknown>);
+}
+
+async function listBookkeepingAuditRows(
+  client: DynamoDBDocumentClient,
+  transactionId: string,
+): Promise<BookkeepingAuditRow[]> {
+  const rows: BookkeepingAuditRow[] = [];
+  let ExclusiveStartKey: Record<string, unknown> | undefined;
+  do {
+    const result = await client.send(new QueryCommand({
+      TableName: TABLE_BOOKKEEPING,
+      KeyConditionExpression: "PK = :pk",
+      ExpressionAttributeValues: { ":pk": bookkeepingAuditPartitionKey(transactionId) },
+      ConsistentRead: true,
+      ExclusiveStartKey,
+    }));
+    rows.push(...(result.Items || []) as BookkeepingAuditRow[]);
+    ExclusiveStartKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (ExclusiveStartKey);
+  return rows;
+}
+
+function bookkeepingAuditParentChanged(
+  previous: BookkeepingItem,
+  current: BookkeepingItem | null,
+) {
+  return !current
+    || previous.updatedAt !== current.updatedAt
+    || previous.auditStorageVersion !== current.auditStorageVersion
+    || previous.auditSequence !== current.auditSequence;
+}
+
+async function readBookkeepingAuditSnapshot(
+  client: DynamoDBDocumentClient,
+  transactionId: string,
+  initial?: BookkeepingItem | null,
+): Promise<{ item: BookkeepingItem; events: ReturnType<typeof bookkeepingAuditEvents> } | null> {
+  let item = initial;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    item ||= await getBookkeepingItemRaw(client, "bookkeeping", transactionId, true);
+    if (!item) return null;
+    const rows = await listBookkeepingAuditRows(client, transactionId);
+    try {
+      return { item, events: bookkeepingAuditEvents(item, rows) };
+    } catch (error) {
+      if (!(error instanceof BookkeepingAuditIntegrityError)) throw error;
+      const current = await getBookkeepingItemRaw(client, "bookkeeping", transactionId, true);
+      if (!current) return null;
+      if (!bookkeepingAuditParentChanged(item, current)) throw error;
+      if (attempt === 2) break;
+      item = current;
+    }
+  }
+  throw new BookkeepingAuditIntegrityError();
+}
+
+export async function getBookkeepingItem(
+  client: DynamoDBDocumentClient,
+  kind: string,
+  id: string,
+  consistentRead = false,
+) {
+  const item = await getBookkeepingItemRaw(client, kind, id, consistentRead || kind === "bookkeeping");
+  if (!item || kind !== "bookkeeping") return item;
+  if (item.auditStorageVersion === undefined && item.audit === undefined) return item;
+  const snapshot = await readBookkeepingAuditSnapshot(client, id, item);
+  if (!snapshot) return null;
+  if (snapshot.item.auditStorageVersion === BOOKKEEPING_AUDIT_STORAGE_VERSION
+    || snapshot.item.audit !== undefined || snapshot.events.length) {
+    return { ...snapshot.item, audit: snapshot.events.map((entry) => entry.event) };
+  }
+  return snapshot.item;
+}
+
+export async function getBookkeepingAuditPage(
+  client: DynamoDBDocumentClient,
+  transactionId: string,
+  afterSequence: number,
+  limit: number,
+): Promise<{ items: BookkeepingAuditEvent[]; nextCursor: string | null } | null> {
+  const snapshot = await readBookkeepingAuditSnapshot(client, transactionId);
+  if (!snapshot) return null;
+  const page = snapshot.events.filter((entry) => entry.sequence > afterSequence).slice(0, limit);
+  const hasMore = snapshot.events.some((entry) => entry.sequence > (page.at(-1)?.sequence ?? afterSequence));
+  return {
+    items: page.map((entry) => entry.event),
+    nextCursor: hasMore && page.length ? String(page[page.length - 1].sequence) : null,
+  };
 }
 
 export async function getRawDocument(client: DynamoDBDocumentClient, id: string) {
@@ -344,23 +463,53 @@ export async function listBookkeepingItems(
   consistentRead = false,
 ): Promise<BookkeepingItem[]> {
   const items: BookkeepingItem[] = [];
+  const auditRows = new Map<string, BookkeepingAuditRow[]>();
+  const transactionItems = kind.toLowerCase() === "bookkeeping";
   let ExclusiveStartKey: Record<string, unknown> | undefined;
   do {
     const result = await client.send(
       new ScanCommand({
         TableName: TABLE_BOOKKEEPING,
         ...(consistentRead ? { ConsistentRead: true } : {}),
-        FilterExpression: "begins_with(PK, :prefix)",
-        ExpressionAttributeValues: { ":prefix": `${kind.toUpperCase()}#` },
+        FilterExpression: transactionItems
+          ? "begins_with(PK, :prefix) OR begins_with(PK, :audit)"
+          : "begins_with(PK, :prefix)",
+        ExpressionAttributeValues: transactionItems
+          ? { ":prefix": "BOOKKEEPING#", ":audit": BOOKKEEPING_AUDIT_PARTITION_PREFIX }
+          : { ":prefix": `${kind.toUpperCase()}#` },
         ExclusiveStartKey,
       }),
     );
-    items.push(
-      ...(result.Items || []).map((item) => clean(item as Record<string, unknown>)!),
-    );
+    for (const item of result.Items || []) {
+      const pk = String(item.PK);
+      if (transactionItems && pk.startsWith(BOOKKEEPING_AUDIT_PARTITION_PREFIX)) {
+        const transactionId = pk.slice(BOOKKEEPING_AUDIT_PARTITION_PREFIX.length);
+        const rows = auditRows.get(transactionId) || [];
+        rows.push(item as BookkeepingAuditRow);
+        auditRows.set(transactionId, rows);
+      } else if (!transactionItems || String(item.PK) === String(item.SK)) {
+        items.push(clean(item as Record<string, unknown>)!);
+      }
+    }
     ExclusiveStartKey = result.LastEvaluatedKey;
   } while (ExclusiveStartKey);
-  return items.sort((a, b) =>
+
+  const readItems = transactionItems
+    ? await Promise.all(items.map(async (item) => {
+      if (item.auditStorageVersion === undefined && !auditRows.has(item.id)) return item;
+      try {
+        const events = bookkeepingAuditEvents(item, auditRows.get(item.id) || []);
+        return { ...item, audit: events.map((entry) => entry.event) };
+      } catch (error) {
+        if (!(error instanceof BookkeepingAuditIntegrityError)) throw error;
+        const snapshot = await readBookkeepingAuditSnapshot(client, item.id, item);
+        if (!snapshot) return item;
+        return { ...snapshot.item, audit: snapshot.events.map((entry) => entry.event) };
+      }
+    }))
+    : items;
+
+  return readItems.sort((a, b) =>
     String(b.transactionDate || b.createdAt).localeCompare(
       String(a.transactionDate || a.createdAt),
     ),
@@ -379,28 +528,55 @@ export async function listTransactions(
 ): Promise<BookkeepingItem[]> {
   const transactions: BookkeepingItem[] = [];
   const claims = new Map<string, string>();
+  const auditRows = new Map<string, BookkeepingAuditRow[]>();
   let ExclusiveStartKey: Record<string, unknown> | undefined;
   do {
     const result = await client.send(
       new ScanCommand({
         TableName: TABLE_BOOKKEEPING,
         ...(consistentRead ? { ConsistentRead: true } : {}),
-        FilterExpression: "begins_with(PK, :transaction) OR begins_with(PK, :claim)",
+        FilterExpression: "begins_with(PK, :transaction) OR begins_with(PK, :claim) OR begins_with(PK, :audit)",
         ExpressionAttributeValues: {
           ":transaction": "BOOKKEEPING#",
           ":claim": "SPONSOR_FINANCE_CLAIM#transaction#",
+          ":audit": BOOKKEEPING_AUDIT_PARTITION_PREFIX,
         },
         ExclusiveStartKey,
       }),
     );
     for (const item of result.Items || []) {
-      if (String(item.PK).startsWith("SPONSOR_FINANCE_CLAIM#"))
+      const pk = String(item.PK);
+      if (pk.startsWith("SPONSOR_FINANCE_CLAIM#")) {
         claims.set(String(item.sourceId), String(item.dealId));
-      else transactions.push(clean(item as Record<string, unknown>)!);
+      } else if (pk.startsWith(BOOKKEEPING_AUDIT_PARTITION_PREFIX)) {
+        const transactionId = pk.slice(BOOKKEEPING_AUDIT_PARTITION_PREFIX.length);
+        const rows = auditRows.get(transactionId) || [];
+        rows.push(item as BookkeepingAuditRow);
+        auditRows.set(transactionId, rows);
+      } else if (String(item.PK) === String(item.SK)) {
+        transactions.push(clean(item as Record<string, unknown>)!);
+      }
     }
     ExclusiveStartKey = result.LastEvaluatedKey;
   } while (ExclusiveStartKey);
-  return transactions
+  const withAudit = await Promise.all(transactions.map(async (item) => {
+    if (item.auditStorageVersion === undefined) {
+      if (!auditRows.has(item.id)) return item;
+      const snapshot = await readBookkeepingAuditSnapshot(client, item.id, item);
+      if (!snapshot) return item;
+      return { ...snapshot.item, audit: snapshot.events.map((entry) => entry.event) };
+    }
+    try {
+      const events = bookkeepingAuditEvents(item, auditRows.get(item.id) || []);
+      return { ...item, audit: events.map((entry) => entry.event) };
+    } catch (error) {
+      if (!(error instanceof BookkeepingAuditIntegrityError)) throw error;
+      const snapshot = await readBookkeepingAuditSnapshot(client, item.id, item);
+      if (!snapshot) return item;
+      return { ...snapshot.item, audit: snapshot.events.map((entry) => entry.event) };
+    }
+  }));
+  return withAudit
     .filter((item) => item.voidStatus !== "voided")
     .map((item) => (claims.has(item.id) ? { ...item, sponsorDealId: claims.get(item.id) } : item))
     .sort((a, b) =>
@@ -471,14 +647,70 @@ export async function updateBookkeepingTransaction(
   expectedRelatedTransaction?: { id: string; updatedAt: string },
   additionalTransactItems: BookkeepingTransactItem[] = [],
 ) {
-  const now = new Date().toISOString();
+  let mutationValue = value;
+  let auditTransactItems: BookkeepingTransactItem[] = [];
+  let expectedAuditSequence: number | undefined;
+  let expectedLegacyAuditStorage = false;
+  if (Array.isArray(value.audit) && value.audit.length) {
+    const candidate = value.audit[value.audit.length - 1];
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      const current = await getBookkeepingItemRaw(client, "bookkeeping", id, true);
+      if (!current || String(current.updatedAt || "") !== expectedUpdatedAt) {
+        throw new BookkeepingItemLockedError();
+      }
+      const sidecarRows = current.auditStorageVersion === BOOKKEEPING_AUDIT_STORAGE_VERSION
+        ? await listBookkeepingAuditRows(client, id)
+        : [];
+      let plan: ReturnType<typeof planBookkeepingAuditWrite>;
+      try {
+        plan = planBookkeepingAuditWrite({
+          transactionId: id,
+          transaction: current,
+          sidecarRows,
+          event: candidate as BookkeepingAuditEvent,
+          tableName: TABLE_BOOKKEEPING,
+        });
+      } catch (error) {
+        if (error instanceof BookkeepingAuditIntegrityError) {
+          const latest = await getBookkeepingItemRaw(client, "bookkeeping", id, true);
+          if (bookkeepingAuditParentChanged(current, latest)) throw new BookkeepingItemLockedError();
+        }
+        throw error;
+      }
+      auditTransactItems = plan.transactItems;
+      if (current.auditStorageVersion === BOOKKEEPING_AUDIT_STORAGE_VERSION) {
+        expectedAuditSequence = Number(current.auditSequence);
+      } else {
+        expectedLegacyAuditStorage = true;
+      }
+      mutationValue = {
+        ...value,
+        audit: undefined,
+        auditStorageVersion: BOOKKEEPING_AUDIT_STORAGE_VERSION,
+        auditSequence: plan.sequence,
+      };
+    }
+  }
+  const expectedTime = Date.parse(expectedUpdatedAt);
+  const now = new Date(Number.isFinite(expectedTime)
+    ? Math.max(Date.now(), expectedTime + 1)
+    : Date.now()).toISOString();
   const names: Record<string, string> = {};
   const values: Record<string, unknown> = {
     ":expected": expectedUpdatedAt,
     ":now": now,
     ":voided": "voided",
   };
-  const writableFields = Object.entries(value)
+  let auditCondition = "";
+  if (expectedAuditSequence !== undefined) {
+    names["#auditSequence"] = "auditSequence";
+    values[":expectedAuditSequence"] = expectedAuditSequence;
+    auditCondition = " AND #auditSequence = :expectedAuditSequence";
+  } else if (expectedLegacyAuditStorage) {
+    names["#auditStorageVersion"] = "auditStorageVersion";
+    auditCondition = " AND attribute_not_exists(#auditStorageVersion)";
+  }
+  const writableFields = Object.entries(mutationValue)
     .filter(([name]) => !["id", "createdAt", "updatedAt", "PK", "SK"].includes(name));
   const sets = writableFields
     .filter(([, child]) => child !== undefined)
@@ -502,8 +734,8 @@ export async function updateBookkeepingTransaction(
           Key: { PK: key("bookkeeping", id), SK: key("bookkeeping", id) },
           UpdateExpression: `SET ${[...sets, "updatedAt = :now"].join(", ")}${removes.length ? ` REMOVE ${removes.join(", ")}` : ""}`,
           ConditionExpression: expectedVoidStatus === "voided"
-            ? "updatedAt = :expected AND voidStatus = :voided"
-            : "updatedAt = :expected AND (attribute_not_exists(voidStatus) OR voidStatus <> :voided)",
+            ? `updatedAt = :expected AND voidStatus = :voided${auditCondition}`
+            : `updatedAt = :expected AND (attribute_not_exists(voidStatus) OR voidStatus <> :voided)${auditCondition}`,
           ExpressionAttributeNames: names,
           ExpressionAttributeValues: values,
         },
@@ -514,8 +746,8 @@ export async function updateBookkeepingTransaction(
           ConditionExpression: "updatedAt = :expected AND (attribute_not_exists(voidStatus) OR voidStatus <> :voided)",
           ExpressionAttributeValues: { ":expected": expectedRelatedTransaction.updatedAt, ":voided": "voided" },
         },
-      }] : []), ...additionalTransactItems],
-    }, false, additionalTransactItems.length > 0);
+      }] : []), ...auditTransactItems, ...additionalTransactItems],
+    }, false, auditTransactItems.length > 0 || additionalTransactItems.length > 0);
   } catch (error) {
     if (isConditionalMutationFailure(error))
       throw new BookkeepingItemLockedError();
