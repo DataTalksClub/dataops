@@ -87,9 +87,12 @@ describe('bookkeeping API',()=>{
     const ownerDraw=(await putBookkeepingItem(client,'bookkeeping',{transactionDate:'2026-09-11',paidDate:'2026-09-11',counterparty:'Synthetic Owner',description:'Synthetic private withdrawal',amount:'42.00',currency:'EUR',entryType:'expense',category:'Owner pay',ownerPayType:'draw'})).item;
     const ownerEvidence=(await putBookkeepingItem(client,'document',{documentType:'receipt',status:'active',originalFilename:'synthetic-owner-transfer.pdf',contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update('synthetic-owner-transfer').digest('hex'),s3Key:'documents/synthetic-owner-transfer'})).item;
     const ownerLink=await invoke('POST','/api/bookkeeping/links',{documentId:ownerEvidence.id,transactionId:ownerDraw.id,coverageType:'evidence'});assert.equal(ownerLink.statusCode,201);
-    const setup=await invoke('POST','/api/bookkeeping/accounts/setup');
-    for(const account of JSON.parse(setup.body).accounts) await putBookkeepingItem(client,'document',{documentType:'bank-statement',status:'active',accountId:account.id,statementMonth:'2026-09',originalFilename:'synthetic.pdf',contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update(`synthetic-vat-${account.id}`).digest('hex'),s3Key:`documents/${account.id}`});
-    const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-09',privateDocumentIds:[ownerEvidence.id]});assert.equal(snapshot.statusCode,201);
+    await invoke('POST','/api/bookkeeping/accounts/setup');
+    // Earlier tests leave additional active synthetic accounts in the shared Dynalite table.
+    const activeBusinessAccounts=JSON.parse((await invoke('GET','/api/bookkeeping/accounts')).body).items.filter((account:any)=>account.kind==='business'&&account.active!==false);
+    assert.ok(activeBusinessAccounts.length>=2);
+    for(const account of activeBusinessAccounts) await putBookkeepingItem(client,'document',{documentType:'bank-statement',status:'active',accountId:account.id,statementMonth:'2026-09',originalFilename:'synthetic.pdf',contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update(`synthetic-vat-${account.id}`).digest('hex'),s3Key:`documents/${account.id}`});
+    const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-09',privateDocumentIds:[ownerEvidence.id]});assert.equal(snapshot.statusCode,201,snapshot.body);
     const report=JSON.parse(snapshot.body).report;
     assert.equal(report.reconciliation.excludedTransactionCount,5);
     assert.deepEqual(report.transactionIds.length,2);
