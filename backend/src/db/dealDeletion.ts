@@ -1,4 +1,5 @@
 import { ScanCommand, TransactWriteCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { randomUUID } from 'node:crypto';
 
 import { usesLocalTransactionEmulation } from './client';
 import { emulateTransaction } from './cardDeletion';
@@ -44,12 +45,21 @@ async function scanMatching(client: DynamoDBDocumentClient, table: string, filte
 const list = (ids: unknown[]) => ids.map(String).join(', ');
 
 /** Why the deal cannot be deleted, one entry per blocking kind of result. */
-function blockers(id: string, owned: Dict[]): string[] {
+function placeholder(row: Dict): boolean {
+  return !row.newsletterIssueId && !row.scheduleEntryId && !row.cardId && !row.publishedAt &&
+    !row.requiredLinkUrl && !(Array.isArray(row.artifactUrls) && row.artifactUrls.length) &&
+    !row.plannedPublicationDate;
+}
+
+function blockers(id: string, owned: Dict[], allowPlaceholders = false): string[] {
   const reasons: string[] = [];
   const deliverables = owned.filter(row => String(row.PK).startsWith('DELIVERABLE#'));
-  const booked = deliverables.filter(row => row.newsletterIssueId);
-  if (booked.length) reasons.push(`a booked newsletter slot/issue (issue ${list([...new Set(booked.map(row => row.newsletterIssueId))])})`);
-  const plain = deliverables.filter(row => !row.newsletterIssueId);
+  const booked = deliverables.filter(row => row.newsletterIssueId || row.scheduleEntryId);
+  if (booked.length) {
+    const bookings = booked.map(row => row.newsletterIssueId ? `issue ${row.newsletterIssueId}` : `slot ${row.scheduleEntryId}`);
+    reasons.push(`a booked newsletter slot/issue (${list([...new Set(bookings)])})`);
+  }
+  const plain = deliverables.filter(row => !row.newsletterIssueId && !row.scheduleEntryId && !(allowPlaceholders && placeholder(row)));
   if (plain.length) reasons.push(`a deliverable (${list(plain.map(row => row.id))})`);
   const finance: string[] = [];
   const state = owned.find(row => row.PK === `SPONSOR_FINANCE#${id}`);
@@ -63,7 +73,12 @@ function blockers(id: string, owned: Dict[]): string[] {
   return reasons;
 }
 
-export async function hardDeleteDeal(client: DynamoDBDocumentClient, id: string, expectedVersion?: number) {
+export async function hardDeleteDeal(
+  client: DynamoDBDocumentClient,
+  id: string,
+  expectedVersion?: number,
+  options: { withDeliverables?: boolean; apply?: boolean; actorId?: string } = {},
+) {
   const existing = await getCrmRecord(client, 'deal', id);
   if (!existing) throw statusError('Not found', 404);
   if (expectedVersion !== undefined && expectedVersion !== existing.version) {
@@ -78,11 +93,29 @@ export async function hardDeleteDeal(client: DynamoDBDocumentClient, id: string,
     'dealId = :id OR PK = :history OR PK = :note OR PK = :target',
     { ':id': id, ':history': historyPk, ':note': notePk, ':target': targetPk }))
     .filter(row => row.PK !== `DEAL#${id}` && !String(row.PK).startsWith('MESSAGE#'));
-  const reasons = blockers(id, owned);
+  const reasons = blockers(id, owned, options.withDeliverables === true);
   if (reasons.length) throw statusError(`Deal has ${reasons.join('; ')}; hard delete is refused`, 409);
 
   const tasks = await scanMatching(client, TABLE_TASKS, 'begins_with(PK, :prefix) AND #subject.#id = :id AND #subject.#type = :type',
     { ':prefix': 'TASK#', ':id': id, ':type': 'sponsor-deal' }, { '#subject': 'subject', '#id': 'id', '#type': 'type' });
+
+  const deliverables = owned.filter(row => String(row.PK).startsWith('DELIVERABLE#'));
+  const snapshot = {
+    deal: existing,
+    deliverables,
+    deletedRelatedRowKeys: owned.filter(row => !deliverables.includes(row)).map(row => ({ PK: row.PK, SK: row.SK })),
+    deletedTaskIds: tasks.map(task => String(task.id)),
+  };
+  const apply = options.apply !== false;
+  const result = {
+    id,
+    mode: apply ? 'applied' : 'dry-run',
+    deleted: apply,
+    deletedDeliverableIds: deliverables.map(row => String(row.id)),
+    deletedTaskIds: tasks.map(task => String(task.id)),
+    auditSnapshotRetained: apply,
+  };
+  if (!apply) return result;
 
   const dealKey = { PK: `DEAL#${id}`, SK: `DEAL#${id}` };
   const writes: PlannedWrite[] = [{
@@ -101,8 +134,18 @@ export async function hardDeleteDeal(client: DynamoDBDocumentClient, id: string,
     const key = { PK: row.PK, SK: row.SK };
     writes.push({
       tableName: TABLE_SPONSOR_CRM, key,
-      item: { Delete: { TableName: TABLE_SPONSOR_CRM, Key: key } },
-      holds: () => true, after: () => null,
+      item: { Delete: {
+        TableName: TABLE_SPONSOR_CRM, Key: key,
+        ...(String(row.PK).startsWith('DELIVERABLE#') ? {
+          ConditionExpression: '#version = :version',
+          ExpressionAttributeNames: { '#version': 'version' },
+          ExpressionAttributeValues: { ':version': row.version },
+        } : {}),
+      } },
+      holds: current => String(row.PK).startsWith('DELIVERABLE#')
+        ? Boolean(current) && current!.version === row.version
+        : true,
+      after: () => null,
     });
   }
   for (const task of tasks) {
@@ -119,6 +162,26 @@ export async function hardDeleteDeal(client: DynamoDBDocumentClient, id: string,
       after: () => null,
     });
   }
+  const auditId = `${new Date().toISOString()}#${randomUUID()}`;
+  const auditKey = { PK: `DEAL_DELETE_AUDIT#${id}`, SK: auditId };
+  writes.push({
+    tableName: TABLE_SPONSOR_CRM,
+    key: auditKey,
+    item: { Put: {
+      TableName: TABLE_SPONSOR_CRM,
+      Item: {
+        ...auditKey,
+        entityKind: 'deal-delete-audit',
+        entityId: id,
+        actorId: options.actorId || 'unknown',
+        deletedAt: new Date().toISOString(),
+        snapshot,
+      },
+      ConditionExpression: 'attribute_not_exists(PK) AND attribute_not_exists(SK)',
+    } },
+    holds: current => !current,
+    after: () => ({ ...auditKey, entityKind: 'deal-delete-audit', entityId: id, actorId: options.actorId || 'unknown', deletedAt: new Date().toISOString(), snapshot }),
+  });
   // Never leave a half-deleted deal when its rows exceed the transaction limit.
   if (writes.length > MAX_ITEMS) throw statusError('Deal history exceeds the atomic hard-delete limit', 409);
 
@@ -129,5 +192,5 @@ export async function hardDeleteDeal(client: DynamoDBDocumentClient, id: string,
     if ((error as Error).name === 'TransactionCanceledException') throw statusError('Conflicting delete; reload and retry', 409);
     throw error;
   }
-  return { id, deleted: true, deletedTaskIds: tasks.map(task => String(task.id)) };
+  return { ...result, auditSnapshotRetained: true };
 }

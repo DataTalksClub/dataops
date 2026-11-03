@@ -4,7 +4,30 @@ import { run } from "../src/cli.mjs";
 import { mkdtemp, writeFile, unlink, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { attachInvoice, attachPaymentEvidence, receivePayment, correctPayment, approveSettlement, reverseSettlement, clearProposalClassification, recordThankYou, list, create } from "../src/commands/sponsors.mjs";
+import { attachInvoice, attachPaymentEvidence, receivePayment, correctPayment, approveSettlement, reverseSettlement, clearProposalClassification, recordThankYou, list, create, remove } from "../src/commands/sponsors.mjs";
+
+test("deal deletion previews by default and applies only with an explicit flag", async () => {
+  const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
+  process.env.DATAOPS_TOKEN = "sanitized-test-token";
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, ...options, body: options.body && JSON.parse(options.body) });
+    return new Response(JSON.stringify({ mode: options.body && JSON.parse(options.body).apply ? "applied" : "dry-run", deletedDeliverableIds: ["placeholder"] }));
+  };
+  const args = { _: ["deals", "synthetic-deal"], withDeliverables: true, expectedVersion: "4", url: "https://portal.example.test", json: true };
+  try {
+    const preview = await remove(args, { print() {} });
+    assert.equal(preview.mode, "dry-run");
+    assert.deepEqual(calls[0].body, { withDeliverables: true, expectedVersion: 4 });
+    const applied = await remove({ ...args, yes: true }, { print() {} });
+    assert.equal(applied.mode, "applied");
+    assert.deepEqual(calls[1].body, { withDeliverables: true, apply: true, expectedVersion: 4 });
+    assert.ok(calls.every((call) => call.method === "POST" && call.url.endsWith("/api/sponsor-crm/deals/synthetic-deal/delete")));
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
+  }
+});
 
 test("proposal correction previews first and applies with fresh versions and a stable retry key", async () => {
   const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;

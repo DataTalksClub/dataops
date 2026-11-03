@@ -283,6 +283,37 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
   const body = parse(event), user = actor(event) || defaultAssigneeId || '', today = todayOf(event);
   if (body && 'rehomedTo' in body) return json(400, { error: 'Archival provenance is read-only' });
 
+  const dealDeleteMatch = path.match(/^\/api\/sponsor-crm\/deals\/([^/]+)\/delete$/);
+  if (dealDeleteMatch && method === 'POST') {
+    const id = dealDeleteMatch[1];
+    if (!ID.test(id)) return json(400, { error: 'Invalid ID' });
+    if (!body || typeof body.withDeliverables !== 'boolean' || (body.apply !== undefined && typeof body.apply !== 'boolean')) {
+      return json(400, { error: 'Pass withDeliverables as a boolean and optional apply: true' });
+    }
+    const expectedVersion = body.expectedVersion === undefined ? undefined : Number(body.expectedVersion);
+    if (expectedVersion !== undefined && (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1)) {
+      return json(400, { error: 'expectedVersion must be a positive integer' });
+    }
+    const auth = await resolveInteractiveActor(client, event, 'work-write');
+    if (!auth.ok) return auth.response;
+    if (!auth.actor.isAdmin) return json(403, { error: 'Hard delete requires an active admin' });
+    try {
+      return json(200, await hardDeleteDeal(client, id, expectedVersion, {
+        withDeliverables: body.withDeliverables,
+        apply: body.apply === true,
+        actorId: auth.actor.id,
+      }));
+    } catch (error) {
+      const status = (error as { statusCode?: number }).statusCode;
+      if (status) return json(status, { error: (error as Error).message });
+      if ((error as Error).name.includes('Transaction') || (error as Error).name.includes('Conditional')) {
+        return json(409, { error: 'Conflicting delete; reload and retry' });
+      }
+      recordRequestError(error);
+      return json(500, { error: 'Could not confirm hard deletion; reload before retrying' });
+    }
+  }
+
   if (path === '/api/sponsor-crm/pipeline' && method === 'GET') {
     let query = event.queryStringParameters || {};
     const error = validateList(event);
@@ -886,8 +917,8 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
 
   if (method === 'DELETE' && id && kind !== 'deliverable') {
     if (event.queryStringParameters?.hard !== undefined) {
-      if (event.queryStringParameters.hard !== 'true' || (kind !== 'organization' && kind !== 'contact' && kind !== 'deal')) {
-        return json(400, { error: 'hard=true is supported only for organizations, contacts and deals' });
+      if (event.queryStringParameters.hard !== 'true' || (kind !== 'organization' && kind !== 'contact')) {
+        return json(400, { error: 'hard=true is supported only for organizations and contacts; use the deal delete preview route for deals' });
       }
       const auth = await resolveInteractiveActor(client, event, 'work-write');
       if (!auth.ok) return auth.response;
@@ -898,7 +929,7 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
         return json(400, { error: 'expectedVersion must be a positive integer' });
       }
       try {
-        return json(200, kind === 'deal' ? await hardDeleteDeal(client, id, expectedVersion) : await hardDeleteCrmRecord(client, kind, id, expectedVersion));
+        return json(200, await hardDeleteCrmRecord(client, kind, id, expectedVersion));
       } catch (error) {
         const status = (error as { statusCode?: number }).statusCode;
         if (status) return json(status, { error: (error as Error).message });

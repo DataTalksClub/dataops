@@ -32,9 +32,9 @@ Usage
       a deal only exists once a sale closes.
   dataops sponsors update <kind> <id> --data '{...}'
   dataops sponsors update leads <id> --data '{"status":"ignored","version":N}' [--reason TEXT]
-  dataops sponsors delete deals <id> --yes [--expected-version N]
-      Permanently delete a deal and its history, notes and Tasks (admin only). Refused with exit 5 when it
-      has a booked newsletter slot, a deliverable or finance (invoice, payment, settlement); exit 4 = not found.
+  dataops sponsors delete deals <id> --with-deliverables [--yes|--apply] [--expected-version N]
+      Preview by default. With --yes or --apply, permanently delete the deal and its placeholder deliverables,
+      retaining an audit snapshot (admin only). Refused with exit 5 for finance records or a booked newsletter slot.
   dataops sponsors messages <organization-id>          Communications with an organization
   dataops sponsors history <deal-id>                   A deal's change history
   dataops sponsors cold [--days N] [--remind]          Orgs/contacts with no contact for N days (defaults per relationship stage)
@@ -223,15 +223,21 @@ export async function update(args, io) {
 
 export async function remove(args, io) {
   const kind = kindOf(args);
-  if (kind !== "deals") throw new UsageError("Permanent deletion is supported for deals only: dataops sponsors delete deals <id> --yes [--expected-version N]");
-  const id = positional(args, 1, "dataops sponsors delete deals <id> --yes [--expected-version N]");
-  if (args.yes !== true) throw new UsageError("Permanent deletion requires --yes. Read the deal before deleting it.");
+  if (kind !== "deals") throw new UsageError("Permanent deletion is supported for deals only: dataops sponsors delete deals <id> --with-deliverables [--yes|--apply]");
+  const id = positional(args, 1, "dataops sponsors delete deals <id> --with-deliverables [--yes|--apply]");
+  if (args.withDeliverables !== true) throw new UsageError("Pass --with-deliverables to include placeholder deliverables in the deletion preview.");
   const expectedVersion = integer(optionalString(args, "expectedVersion"), "expected-version");
   if (expectedVersion !== undefined && !Number.isSafeInteger(expectedVersion)) throw new UsageError("expected-version must be a safe positive integer.");
-  const result = await apiFor(args).delete(`/api/sponsor-crm/deals/${enc(id)}`, undefined, {
-    query: { hard: "true", expectedVersion },
+  const apply = args.yes === true || args.apply === true;
+  const result = await apiFor(args).post(`/api/sponsor-crm/deals/${enc(id)}/delete`, {
+    withDeliverables: true,
+    ...(apply ? { apply: true } : {}),
+    ...(expectedVersion !== undefined ? { expectedVersion } : {}),
   });
-  if (!args.json) io.print(`Deleted deal ${id}.`);
+  if (!args.json) {
+    if (apply) io.print(`Deleted deal ${id}; audit snapshot retained.`);
+    else io.print(`Dry run: deal ${id} and ${result.deletedDeliverableIds?.length || 0} placeholder deliverable(s) can be deleted. Add --yes to apply.`);
+  }
   return result;
 }
 

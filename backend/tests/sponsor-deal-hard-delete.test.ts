@@ -7,7 +7,7 @@ import { TABLE_SPONSOR_CRM, TABLE_TASKS } from '../src/db/tableNames';
 import { createUserWithId } from '../src/db/users';
 import { createSession } from '../src/db/sessions';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { createCrmRecord } from '../src/db/sponsorCrm';
+import { createCrmRecord, getCrmRecord } from '../src/db/sponsorCrm';
 
 const invoke = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
   const url = new URL(path, 'http://crm.test');
@@ -15,7 +15,17 @@ const invoke = (method: string, path: string, body?: unknown, headers: Record<st
     queryStringParameters: Object.fromEntries(url.searchParams), body: body === undefined ? null : JSON.stringify(body) }, {});
 };
 const data = (response: any) => JSON.parse(response.body);
-const remove = (id: string, query = '') => invoke('DELETE', `/api/sponsor-crm/deals/${id}?hard=true${query}`);
+const remove = (id: string, query = '') => {
+  const params = new URLSearchParams(query.replace(/^&/, ''));
+  const expectedVersion = params.get('expectedVersion');
+  return invoke('POST', `/api/sponsor-crm/deals/${id}/delete`, {
+    withDeliverables: false,
+    apply: true,
+    ...(expectedVersion ? { expectedVersion: Number(expectedVersion) } : {}),
+  });
+};
+const removeWithDeliverables = (id: string, body: Record<string, unknown> = {}) =>
+  invoke('POST', `/api/sponsor-crm/deals/${id}/delete`, { withDeliverables: true, ...body });
 
 describe('CRM deal hard delete', () => {
   let client: DynamoDBDocumentClient;
@@ -62,7 +72,11 @@ describe('CRM deal hard delete', () => {
     assert.equal((await remove(target.id)).statusCode, 404);
 
     const afterCrm = await rows(TABLE_SPONSOR_CRM);
-    assert.ok(!afterCrm.some(row => JSON.stringify(row).includes(target.id) && !String(row.PK).startsWith('MESSAGE#')), 'no row of the deal remains');
+    assert.ok(!afterCrm.some(row => JSON.stringify(row).includes(target.id) &&
+      !String(row.PK).startsWith('MESSAGE#') && !String(row.PK).startsWith('DEAL_DELETE_AUDIT#')), 'no live row of the deal remains');
+    const audit = afterCrm.find(row => String(row.PK).startsWith(`DEAL_DELETE_AUDIT#${target.id}`));
+    assert.ok(audit, 'the deal deletion retains an audit snapshot');
+    assert.equal((audit.snapshot as any).deal.id, target.id);
     assert.ok(afterCrm.some(row => String(row.PK).startsWith('MESSAGE#')), 'the shared message record stays');
     assert.ok(afterCrm.some(row => row.PK === `DEAL#${other.id}`) && afterCrm.some(row => row.PK === `HISTORY#${other.id}`));
     const tasks = await rows(TABLE_TASKS);
@@ -80,6 +94,45 @@ describe('CRM deal hard delete', () => {
     const { deal: target } = await deal();
     await put(TABLE_SPONSOR_CRM, { PK: 'DELIVERABLE#plain', SK: 'DELIVERABLE#plain', id: 'plain', dealId: target.id, archivedAt: '2026-10-01T00:00:00Z', version: 1 });
     await refuses(target.id, /deliverable \(plain\)/);
+  });
+
+  it('previews then deletes a placeholder deliverable with the deal and keeps its audit snapshot', async () => {
+    const { deal: target } = await deal();
+    await put(TABLE_SPONSOR_CRM, {
+      PK: 'DELIVERABLE#placeholder', SK: 'DELIVERABLE#placeholder', id: 'placeholder',
+      dealId: target.id, channel: 'standalone', version: 1,
+    });
+    const preview = await removeWithDeliverables(target.id);
+    assert.equal(preview.statusCode, 200, preview.body);
+    assert.equal(data(preview).mode, 'dry-run');
+    assert.deepEqual(data(preview).deletedDeliverableIds, ['placeholder']);
+    assert.equal((await invoke('GET', `/api/sponsor-crm/deals/${target.id}`)).statusCode, 200);
+    assert.equal((await getCrmRecord(client, 'deal', target.id))?.id, target.id);
+
+    const applied = await removeWithDeliverables(target.id, { apply: true });
+    assert.equal(applied.statusCode, 200, applied.body);
+    assert.equal(data(applied).mode, 'applied');
+    assert.equal(data(applied).auditSnapshotRetained, true);
+    assert.equal((await invoke('GET', `/api/sponsor-crm/deals/${target.id}`)).statusCode, 404);
+    const after = await rows(TABLE_SPONSOR_CRM);
+    assert.ok(!after.some(row => row.PK === 'DELIVERABLE#placeholder'));
+    const audit = after.find(row => String(row.PK).startsWith(`DEAL_DELETE_AUDIT#${target.id}`));
+    assert.equal((audit?.snapshot as any)?.deliverables[0]?.id, 'placeholder');
+  });
+
+  it('with-deliverables deletion still refuses booked slots and finance records', async () => {
+    const { deal: booked } = await deal();
+    await put(TABLE_SPONSOR_CRM, { PK: 'DELIVERABLE#booked-new', SK: 'DELIVERABLE#booked-new', id: 'booked-new', dealId: booked.id, newsletterIssueId: 'issue-99', version: 1 });
+    const slot = await removeWithDeliverables(booked.id);
+    assert.equal(slot.statusCode, 409); assert.match(data(slot).error, /booked newsletter slot\/issue/);
+    assert.equal((await getCrmRecord(client, 'deal', booked.id))?.id, booked.id);
+
+    const { deal: financed } = await deal();
+    await put(TABLE_SPONSOR_CRM, { PK: 'DELIVERABLE#placeholder-finance', SK: 'DELIVERABLE#placeholder-finance', id: 'placeholder-finance', dealId: financed.id, channel: 'standalone', version: 1 });
+    await put(TABLE_SPONSOR_CRM, { PK: `SPONSOR_FINANCE#${financed.id}`, SK: `SPONSOR_FINANCE#${financed.id}`, dealId: financed.id, version: 1, invoiceNumber: 'INV-42' });
+    const finance = await removeWithDeliverables(financed.id);
+    assert.equal(finance.statusCode, 409); assert.match(data(finance).error, /finance \(invoice\)/);
+    assert.equal((await getCrmRecord(client, 'deal', financed.id))?.id, financed.id);
   });
 
   it('refuses finance: invoice, payment and settlement', async () => {
@@ -130,15 +183,23 @@ describe('CRM deal hard delete', () => {
 
   it('requires an authenticated active admin', async () => {
     const { deal: target } = await deal();
+    const { deal: cascadeTarget } = await deal();
     await createUserWithId(client, 'deal-delete-admin', { name: 'Admin', email: 'deal-admin@example.test', role: 'admin' });
     await createUserWithId(client, 'deal-delete-operator', { name: 'Operator', email: 'deal-operator@example.test', role: 'operator' });
     const admin = await createSession(client, 'deal-delete-admin'); const operator = await createSession(client, 'deal-delete-operator');
     process.env.SKIP_AUTH = 'false';
     try {
-      const path = `/api/sponsor-crm/deals/${target.id}?hard=true`;
-      assert.equal((await invoke('DELETE', path, undefined, { 'x-user-id': 'deal-delete-admin' })).statusCode, 401);
-      assert.equal((await invoke('DELETE', path, undefined, { Authorization: `Bearer ${operator.token}` })).statusCode, 403);
-      assert.equal((await invoke('DELETE', path, undefined, { Authorization: `Bearer ${admin.token}` })).statusCode, 200);
+      assert.equal((await invoke('DELETE', `/api/sponsor-crm/deals/${cascadeTarget.id}?hard=true`, undefined, { Authorization: `Bearer ${admin.token}` })).statusCode, 400);
+      const path = `/api/sponsor-crm/deals/${target.id}/delete`;
+      const body = { withDeliverables: false, apply: true };
+      assert.equal((await invoke('POST', path, body, { 'x-user-id': 'deal-delete-admin' })).statusCode, 401);
+      assert.equal((await invoke('POST', path, body, { Authorization: `Bearer ${operator.token}` })).statusCode, 403);
+      assert.equal((await invoke('POST', path, body, { Authorization: `Bearer ${admin.token}` })).statusCode, 200);
+      const cascadePath = `/api/sponsor-crm/deals/${cascadeTarget.id}/delete`;
+      const cascadeBody = { withDeliverables: true, apply: true };
+      assert.equal((await invoke('POST', cascadePath, cascadeBody, { 'x-user-id': 'deal-delete-admin' })).statusCode, 401);
+      assert.equal((await invoke('POST', cascadePath, cascadeBody, { Authorization: `Bearer ${operator.token}` })).statusCode, 403);
+      assert.equal((await invoke('POST', cascadePath, cascadeBody, { Authorization: `Bearer ${admin.token}` })).statusCode, 200);
     } finally { process.env.SKIP_AUTH = 'true'; }
   });
 });
