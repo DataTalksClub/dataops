@@ -55,9 +55,9 @@ test("transaction modal renders one dialog with summary, invoice state, and stat
 
   assert.equal(dialog.open, true);
   assert.doesNotMatch(dialog.innerHTML, /<dialog\b/);
-  assert.match(dialog.innerHTML, /GoDaddy/);
+  assert.match(dialog.innerHTML, /Go Daddy/);
   assert.match(dialog.innerHTML, /Raw bank name/);
-  assert.match(dialog.innerHTML, /Domain renewal/);
+  assert.match(dialog.innerHTML, /\.COM Domain Registration/);
   assert.match(dialog.innerHTML, /No invoice/);
   assert.match(dialog.innerHTML, /Not matched to a statement/);
   assert.equal(monthCalls.length, 1, "the selected date window stays in September");

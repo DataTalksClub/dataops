@@ -7,7 +7,7 @@ const { seedOperationsData } = require('./helpers/seed-operations-data');
 const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolated-capability-server');
 let server;
 const routes = [
-  ['/bookkeeping', '.bk-split'],
+  ['/bookkeeping', '.bookkeeping-ledger'],
   ['/sponsors', '.crm-master [data-crm-bookings] tbody tr, .crm-master [data-crm-bookings] .honest-state'],
   ['/tasks', '.ops-queue-list'], ['/cards', '.workflow-board-card'],
   ['/cards/archive', '.cards-archive-grid, .ops-honest-state'],

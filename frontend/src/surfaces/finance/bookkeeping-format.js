@@ -49,10 +49,19 @@ export function ledgerDate(value) {
   }).format(parsed);
 }
 
+// The cash date is the recorded payment date, falling back to the source
+// transaction's booking date when no payment date is available.
+export function cashDate(entry) {
+  const paidDate = String(entry?.paidDate || "").slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(paidDate)) return paidDate;
+  const transactionDate = String(entry?.transactionDate || "").slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(transactionDate) ? transactionDate : "";
+}
+
 // The month a ledger entry belongs to, in "YYYY-MM" form. Undated entries
 // have no month and only surface in the all-months view.
 export function monthOf(entry) {
-  const month = String(entry?.transactionDate || "").slice(0, 7);
+  const month = cashDate(entry).slice(0, 7);
   return /^\d{4}-\d{2}$/.test(month) ? month : "";
 }
 
@@ -123,7 +132,7 @@ export function yearsOf(entries, fallback) {
     if (/^\d{4}$/.test(y)) set.add(y);
   }
   (entries || []).forEach((e) => {
-    const y = String(e?.transactionDate || "").slice(0, 4);
+    const y = cashDate(e).slice(0, 4);
     if (/^\d{4}$/.test(y)) set.add(y);
   });
   return [...set].sort((a, b) => b.localeCompare(a));
@@ -155,59 +164,29 @@ export function isReportExempt(entry) {
     || isOwnerWithdrawalReportExempt(entry);
 }
 
-// Format ledger entries into the standard accountant tax report CSV.
-// Follows the DTC bookkeeping sheet specification (signed EUR prices, USD original prices).
-export function formatReportCsv(entries, options = {}) {
-  const excludeExempt = options.excludeExempt ?? true;
-  const isExempt = options.isExempt || isReportExempt;
-  const rows = excludeExempt
-    ? (entries || []).filter((e) => !isExempt(e))
-    : (entries || []);
-  const headers = [
-    "Date",
-    "Paid Date",
-    "Provider",
-    "Description",
-    "Price EUR",
-    "Price USD",
-    "Original Currency",
-    "VAT Amount",
-    "VAT Currency",
-    "Category",
-    "Type",
-    "Statement",
-  ];
-  const lines = [headers.map(csvCell).join(",")];
-  for (const entry of rows) {
-    const dir = entryDirection(entry);
-    const sign = dir === "expense" ? "-" : "";
-    const eurVal =
-      entry.currency === "EUR"
-        ? entry.amount
-        : entry.amountEur ?? "";
-    const priceEur = eurVal !== "" && eurVal != null ? `${sign}${eurVal}` : "";
-    const priceUsd =
-      entry.currency === "USD" ? `${sign}${entry.amount}` : "";
-    lines.push(
-      [
-        entry.transactionDate || "",
-        entry.paidDate || "",
-        entry.counterparty || "",
-        entry.description || "",
-        priceEur,
-        priceUsd,
-        entry.currency || "",
-        entry.vatAmount || "",
-        entry.vatCurrency || "",
-        entry.category || "",
-        dir === "income" ? "Income" : dir === "expense" ? "Expense" : entry.entryType || "",
-        entry.statementRef || "",
-      ]
-        .map((value, index) => csvCell([4, 5, 7].includes(index) ? value : spreadsheetText(value)))
-        .join(","),
-    );
-  }
-  return lines.join("\r\n") + "\r\n";
+/** Expand persisted allocations for package counts and previews. The parent remains the only ledger transaction. */
+export function expandReportEntries(entries) {
+  return (Array.isArray(entries) ? entries : []).flatMap((entry) => {
+    const allocations = Array.isArray(entry.allocations) ? entry.allocations : [];
+    if (!allocations.length) return [entry];
+    return allocations.map((allocation) => ({
+      ...entry,
+      ...allocation,
+      sourceTransactionId: entry.id,
+      transactionDate: allocation.transactionDate || entry.transactionDate,
+      paidDate: allocation.paidDate || entry.paidDate,
+      counterparty: allocation.counterparty || entry.counterparty,
+      description: allocation.description || entry.description,
+      amount: allocation.amount,
+      currency: allocation.currency || entry.currency,
+      amountEur: allocation.amountEur,
+      category: allocation.category || entry.category,
+      subtype: allocation.subtype || entry.subtype,
+      invoiceNumber: allocation.invoiceNumber,
+      allocationDocumentId: allocation.documentId,
+      allocations: undefined,
+    }));
+  });
 }
 
 // Format full raw ledger entries matching the backend snapshot format.
@@ -231,63 +210,6 @@ export function formatFullCsv(entries) {
     lines.push(columns.map((c) => csvCell(["amount", "amountEur", "vatAmount"].includes(c) ? entry[c] : spreadsheetText(entry[c]))).join(","));
   }
   return lines.join("\r\n") + "\r\n";
-}
-
-// Format tab-separated values ready for copy-pasting directly into Gmail or Google Sheets.
-export function formatReportTsv(entries, options = {}) {
-  const excludeExempt = options.excludeExempt ?? true;
-  const isExempt = options.isExempt || isReportExempt;
-  const rows = excludeExempt
-    ? (entries || []).filter((e) => !isExempt(e))
-    : (entries || []);
-  const headers = [
-    "Date",
-    "Paid Date",
-    "Provider",
-    "Description",
-    "Price EUR",
-    "Price USD",
-    "Currency",
-    "VAT",
-    "VAT Currency",
-    "Category",
-    "Type",
-    "Statement",
-  ];
-  const lines = [headers.join("\t")];
-  for (const entry of rows) {
-    const dir = entryDirection(entry);
-    const sign = dir === "expense" ? "-" : "";
-    const eurVal =
-      entry.currency === "EUR"
-        ? entry.amount
-        : entry.amountEur ?? "";
-    const priceEur = eurVal !== "" && eurVal != null ? `${sign}${eurVal}` : "";
-    const priceUsd =
-      entry.currency === "USD" ? `${sign}${entry.amount}` : "";
-    lines.push(
-      [
-        entry.transactionDate || "",
-        entry.paidDate || "",
-        entry.counterparty || "",
-        entry.description || "",
-        priceEur,
-        priceUsd,
-        entry.currency || "",
-        entry.vatAmount ?? "",
-        entry.vatCurrency || "",
-        entry.category || "",
-        dir === "income" ? "Income" : dir === "expense" ? "Expense" : entry.entryType || "",
-        entry.statementRef || "",
-      ]
-        .map((v, index) => {
-          const text = String(v ?? "").replace(/[\t\r\n]/g, " ");
-          return [4, 5, 7].includes(index) ? text : spreadsheetText(text);
-        })
-        .join("\t"),
-    );
-  }
-  return lines.join("\n");
 }
 
 // Trigger client-side file download.

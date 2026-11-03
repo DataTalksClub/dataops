@@ -24,7 +24,7 @@ test("transaction dialog shell uses a native, labelled dialog with an explicit c
   assert.match(markup, /<div class="bk-transaction-dialog__content"><p>Summary<\/p><\/div>/);
 });
 
-test("transaction summary shows invoice, canonical and raw vendor, signed values, category and VAT", () => {
+test("transaction summary shows invoice, saved and raw vendor, signed values, category and VAT", () => {
   const markup = bookkeepingTransactionSummaryMarkup({
     transaction: {
       id: "transaction-1",
@@ -47,9 +47,9 @@ test("transaction summary shows invoice, canonical and raw vendor, signed values
 
   assert.match(markup, /data-view-document="invoice-1"/);
   assert.match(markup, /Open invoice · domain-renewal\.pdf/);
-  assert.match(markup, />GoDaddy<\/h4>/);
+  assert.match(markup, />Go Daddy<\/h4>/);
   assert.match(markup, /Raw bank name<\/dt><dd>Go Daddy<\/dd>/);
-  assert.match(markup, /What for<\/span> Domain renewal/);
+  assert.match(markup, /What for<\/span> \.COM Domain Registration/);
   assert.match(markup, /Date<\/dt><dd>2026-09-12<\/dd>/);
   assert.match(markup, /Paid date<\/dt><dd>2026-09-13<\/dd>/);
   assert.match(markup, /Original amount<\/dt><dd>-178\.49 EUR<\/dd>/);
@@ -74,6 +74,21 @@ test("dialog VAT prefers the converted EUR value", () => {
     formatAmount: amount,
   });
   assert.match(markup, /VAT<\/dt><dd>98\.12 EUR<\/dd>/);
+});
+
+test("summary exposes every active receipt PDF without reclassifying the documents", () => {
+  const documents = [1, 2, 3].map((number) => ({
+    id: `receipt-${number}`, status: "active", documentType: "receipt",
+    originalFilename: `synthetic-${number}.pdf`,
+  }));
+  const markup = bookkeepingTransactionSummaryMarkup({
+    transaction: { counterparty: "Saved Vendor", description: "Saved purpose", amount: "123", currency: "EUR" },
+    documents: [...documents, { id: "inactive", status: "deleted", documentType: "receipt" }],
+    escape: escapeHtml, formatAmount: amount,
+  });
+  assert.equal((markup.match(/data-view-document="receipt-/g) || []).length, 3);
+  assert.doesNotMatch(markup, /data-view-document="inactive"|No invoice/);
+  assert.ok(documents.every((document) => document.documentType === "receipt"));
 });
 
 test("summary clearly marks a missing invoice and presents conversion metadata", () => {

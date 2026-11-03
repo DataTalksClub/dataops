@@ -1,15 +1,14 @@
 // Period selectors and client exports share the bookkeeping surface's lens.
 // Data and ledger mutations remain owned by bookkeeping.js.
 import {
-  copyToClipboard, downloadCsv, formatFullCsv, formatReportCsv,
-  formatReportTsv, isReportExempt, latestActivityMonth, monthLabel,
+  copyToClipboard, downloadCsv, formatFullCsv, latestActivityMonth, monthLabel,
   shiftMonth,
 } from "./bookkeeping-format.js";
 import { mountPeriodNav } from "../period-nav.js";
 
 export function mountBookkeepingNavigation({
-  surface, status, setLens, lensEntries, todayIsoDate, isExempt = isReportExempt, prepareExemptions = async () => {},
-  getEntries, getLens,
+  surface, status, setLens, lensEntries, todayIsoDate, prepareExemptions = async () => {},
+  getEntries, getLens, loadAccountantReport,
 }) {
   let lens = getLens();
   let entries = getEntries();
@@ -49,11 +48,9 @@ export function mountBookkeepingNavigation({
     await prepareExemptions();
     const period = lens === "all" ? "all-records" : lens;
     const filename = `datatalksclub-${period}.csv`;
-    const shown = lensEntries();
-    const csv = formatReportCsv(shown, { excludeExempt: true, isExempt });
-    downloadCsv(csv, filename);
-    const count = shown.filter((e) => !isExempt(e)).length;
-    status.textContent = `Exported report CSV (${filename}) with ${count} transactions.`;
+    const report = await loadAccountantReport(lens || "all", "csv");
+    downloadCsv(report.content, filename);
+    status.textContent = `Exported report CSV (${filename}) with ${report.count} transactions.`;
   };
   const exportFull = () => {
     const period = lens === "all" ? "all-records" : lens;
@@ -66,12 +63,10 @@ export function mountBookkeepingNavigation({
   const copyReport = async () => {
     await prepareExemptions();
     const period = monthLabel(lens);
-    const shown = lensEntries();
-    const tsv = formatReportTsv(shown, { excludeExempt: true, isExempt });
-    const count = shown.filter((e) => !isExempt(e)).length;
-    const ok = await copyToClipboard(tsv);
+    const report = await loadAccountantReport(lens || "all", "tsv");
+    const ok = await copyToClipboard(report.content);
     if (ok) {
-      status.textContent = `✓ Copied report table for ${period} (${count} transactions) to clipboard. Paste directly into email or spreadsheet.`;
+      status.textContent = `✓ Copied report table for ${period} (${report.count} transactions) to clipboard. Paste directly into email or spreadsheet.`;
     } else {
       status.textContent =
         "Could not access clipboard. Use Export accountant CSV instead.";

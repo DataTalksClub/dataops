@@ -4,14 +4,13 @@ import { afterEach, describe, test } from "node:test";
 import { formatAmount } from "../src/surfaces/finance/bookkeeping-format.js";
 
 import { createFinanceSurface } from "../src/surfaces/finance/index.js";
+import { ledgerRowMarkup } from "../src/surfaces/finance/bookkeeping-ledger.js";
 import { escapeHtml } from "../src/core/html.js";
 import { createSponsorFinance } from "../src/surfaces/finance/sponsor-finance.js";
 import { createFinanceRecordForms, followUpSummary, replaceablePayment } from "../src/surfaces/finance/sponsor-finance-records.js";
 import {
   copyToClipboard,
   formatFullCsv,
-  formatReportCsv,
-  formatReportTsv,
   isReportExempt,
   yearsOf,
 } from "../src/surfaces/finance/bookkeeping-format.js";
@@ -59,29 +58,52 @@ test("noncash settlement requires explicit approval fields and evidence and neve
   assert.deepEqual(calls[0][3], { expectedVersion: 4, amount: "5", currency: "EUR", reason: "Conversion fee accepted", approvedBy: "Owner", approvedOn: "2026-10-02", evidence: [{ kind: "document", ref: "owner-approval" }], replacesPaymentId: "reviewed-report" });
 });
 
-test("accountant report table, CSV, and email omit owner withdrawals but retain service invoices", () => {
-  const entries = [
-    { transactionDate: "2026-09-04", paidDate: "2026-09-04", counterparty: "Synthetic ScaleVector", description: "Workshop", amount: "5950.00", currency: "EUR", entryType: "income", category: "Sponsorship", vatAmount: "950.00", vatCurrency: "EUR" },
-    { transactionDate: "2026-09-16", counterparty: "Finanzamt", description: "UMS.ST", amount: "4581.14", currency: "EUR", entryType: "expense", category: "", mandatoryKind: "tax_debit" },
-    { transactionDate: "2026-09-20", counterparty: "Techniker Krankenkasse", description: "Monthly contribution", amount: "1179.36", currency: "EUR", entryType: "expense", category: "", mandatoryKind: "tk_debit" },
-    { transactionDate: "2026-09-21", counterparty: "Synthetic Owner", description: "Synthetic owner draw", amount: "42.00", currency: "EUR", entryType: "expense", category: "Owner pay", ownerPayType: "draw" },
-    { transactionDate: "2026-09-22", counterparty: "Synthetic ILZ Services", description: "Monthly ILZ service", amount: "238.00", currency: "EUR", entryType: "expense", category: "Compliance & Taxes" },
-  ];
-  assert.equal(isReportExempt(entries[3]), true, "the accountant report table shares the owner-draw filter");
-  const csv = formatReportCsv(entries);
-  assert.match(csv, /Synthetic ScaleVector/);
-  assert.match(csv, /Synthetic ILZ Services/);
-  assert.doesNotMatch(csv, /Finanzamt|Techniker Krankenkasse/);
-  assert.doesNotMatch(csv, /Synthetic Owner|Owner pay/);
-  const email = formatReportTsv(entries);
-  assert.match(email, /Synthetic ILZ Services/);
-  assert.doesNotMatch(email, /Finanzamt|Techniker Krankenkasse|Synthetic Owner|Owner pay/);
-  const summaryExempt = formatReportTsv([
-    { id: "synthetic-summary-exempt", counterparty: "Synthetic mandatory row" },
-    { id: "synthetic-ilz-row", counterparty: "Synthetic ILZ Services" },
-  ], { isExempt: (entry) => entry.id === "synthetic-summary-exempt" });
-  assert.doesNotMatch(summaryExempt, /Synthetic mandatory row/);
-  assert.match(summaryExempt, /Synthetic ILZ Services/);
+test("bookkeeping report exclusions identify owner withdrawals and mandatory payments", () => {
+  assert.equal(isReportExempt({ category: "Owner pay", ownerPayType: "draw" }), true);
+  assert.equal(isReportExempt({ category: "Taxes" }), true);
+  assert.equal(isReportExempt({ category: "Health Insurance" }), true);
+  assert.equal(isReportExempt({ category: "Consulting" }), false);
+});
+
+test("bookkeeping ledger shows persisted Company and What after an edit and reload", () => {
+  const row = ledgerRowMarkup({
+    id: "synthetic-edited-row",
+    transactionDate: "2026-10-01",
+    counterparty: "Edited Workshop Company",
+    counterpartyCanonical: "Stale Alias",
+    description: "Edited consulting service",
+    amount: "100.00",
+    currency: "EUR",
+    entryType: "expense",
+    category: "Consulting",
+  }, {
+    hasEvidence: () => true,
+    vocab: {},
+    selectedId: "",
+    e: escapeHtml,
+  });
+  assert.match(row, /Edited Workshop Company/);
+  assert.match(row, /Edited consulting service/);
+  assert.doesNotMatch(row, /Stale Alias|Cloud hosting/);
+
+  const ownerRow = ledgerRowMarkup({
+    id: "synthetic-owner-row",
+    transactionDate: "2026-10-02",
+    counterparty: "Synthetic Owner",
+    description: "Synthetic owner withdrawal",
+    amount: "25.00",
+    currency: "EUR",
+    entryType: "expense",
+    category: "Owner pay",
+    ownerPayType: "draw",
+  }, {
+    hasEvidence: () => true,
+    vocab: {},
+    selectedId: "",
+    e: escapeHtml,
+  });
+  assert.match(ownerRow, /Synthetic Owner/);
+  assert.match(ownerRow, /Synthetic owner withdrawal/);
 });
 
 afterEach(() => {
@@ -1222,20 +1244,16 @@ test("currency display uses separators and two decimals without throwing on unkn
   assert.equal(formatAmount(""), "—");
 });
 
-test("report exports preserve decimal precision, quote cells, and require a real EUR conversion", () => {
+test("full ledger export preserves decimal precision and quotes cells", () => {
   const entries = [
     { transactionDate: "2024-12-01", counterparty: 'Vendor, "quoted"', description: "First\nsecond", amount: "12.3456", currency: "USD", entryType: "expense", vatAmount: "0" },
     { transactionDate: "2024-12-02", counterparty: "Converted", amount: "5.1234", currency: "GBP", amountEur: "0", entryType: "expense" },
     { transactionDate: "2024-12-03", counterparty: "Tax", amount: "4", currency: "EUR", category: "Taxes", entryType: "expense" },
   ];
-  const report = formatReportCsv(entries);
-  assert.match(report, /"Vendor, ""quoted""","First\nsecond","","-12\.3456","USD","0"/);
-  assert.match(report, /"Converted","","-0","","GBP"/);
-  assert.doesNotMatch(report, /"Tax"/);
-  assert.match(formatFullCsv(entries), /"Tax"/);
-  const tsv = formatReportTsv(entries);
-  assert.match(tsv, /Vendor, "quoted"\tFirst second\t\t-12\.3456/);
-  assert.equal(tsv.split("\n").length, 3);
+  const csv = formatFullCsv(entries);
+  assert.match(csv, /"Vendor, ""quoted""","First\nsecond","12\.3456","USD"/);
+  assert.match(csv, /"Converted","","5\.1234","GBP","0"/);
+  assert.match(csv, /"Tax"/);
 });
 
 test("clipboard fallback reports failure when no copy command is available", async () => {
@@ -1244,16 +1262,12 @@ test("clipboard fallback reports failure when no copy command is available", asy
 });
 
 
-test("spreadsheet exports escape text formulas while retaining numeric expense signs and VAT currency", () => {
+test("full ledger CSV escapes spreadsheet formulas while retaining raw values", () => {
   const entries = [{ transactionDate: "2024-12-01", counterparty: "=1+1", description: " @SUM(A1)", amount: "12.3400", currency: "EUR", entryType: "expense", vatAmount: "1.2500", vatCurrency: "USD", category: "+formula", statementRef: "-formula" }];
-  const csv = formatReportCsv(entries);
-  assert.match(csv, /"'=1\+1","' @SUM\(A1\)","-12\.3400"/);
-  assert.match(csv, /"1\.2500","USD","'\+formula","Expense","'-formula"/);
-  assert.match(formatFullCsv(entries), /"'=1\+1","' @SUM\(A1\)","12\.3400"/);
-  const tsv = formatReportTsv(entries);
-  assert.match(tsv, /VAT\tVAT Currency/);
-  assert.match(tsv, /'=1\+1\t' @SUM\(A1\)\t-12\.3400/);
-  assert.match(tsv, /1\.2500\tUSD\t'\+formula/);
+  const csv = formatFullCsv(entries);
+  assert.match(csv, /"'=1\+1","' @SUM\(A1\)","12\.3400"/);
+  assert.match(csv, /"1\.2500","USD","'\+formula"/);
+  assert.match(csv, /"expense","'-formula"/);
 });
 
 test("sponsor finance panel leads with the derived next step, the blocker, payments and evidence", async () => {

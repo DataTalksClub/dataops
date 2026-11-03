@@ -14,6 +14,7 @@ import {
   filtersFromParams,
   groupByMonth,
   inLens,
+  linkedEvidenceDocuments,
   LEDGER_PARAMS,
   ledgerTableMarkup,
   needsCategory,
@@ -145,10 +146,11 @@ export function createBookkeepingSurface(context) {
 
     const hasEvidence = (id) =>
       links.some((l) => l.transactionId === id && l.coverageType === "evidence");
-    const hasInvoice = (id) => links.some((link) =>
-      link.transactionId === id && link.coverageType === "evidence" &&
-      documents.some((document) => document.id === link.documentId && document.documentType === "invoice"),
-    );
+    const hasInvoice = (id) => {
+      const entry = entries.find((candidate) => candidate.id === id);
+      const linked = linkedEvidenceDocuments(entry, links, documents);
+      return linked;
+    };
     const lensEntries = () => entries.filter((e) => inLens(e, lens));
     function setLens(month) {
       lens = month;
@@ -232,12 +234,6 @@ export function createBookkeepingSurface(context) {
     }
     function selectedEntry() {
       return entries.find((entry) => entry.id === selectedId) || null;
-    }
-    function attachedDocuments(id) {
-      return links
-        .filter((l) => l.transactionId === id && l.coverageType === "evidence")
-        .map((l) => documents.find((d) => d.id === l.documentId))
-        .filter(Boolean);
     }
     function openTransaction(id) {
       const entry = entries.find((e) => e.id === id);
@@ -465,7 +461,7 @@ export function createBookkeepingSurface(context) {
       getSelectedId: () => selectedId,
       getEntry: (id) => entries.find((entry) => entry.id === id) || null,
       getFinanceEntry: (id) => financeSummary.entryMap().get(id) || null,
-      getAttached: attachedDocuments,
+      getAttached: hasInvoice,
       openDocument: (id) => viewDocument(id),
       refreshEvidence,
       safeAction,
@@ -481,7 +477,8 @@ export function createBookkeepingSurface(context) {
 
     const navigation = mountBookkeepingNavigation({
       surface, status, setLens, lensEntries, todayIsoDate,
-      isExempt: isReportExemptEntry, prepareExemptions: () => financeSummary.ensure(),
+      prepareExemptions: () => financeSummary.ensure(),
+      loadAccountantReport: (period, format) => api(`/reports/accountant?period=${encodeURIComponent(period)}&format=${encodeURIComponent(format)}`),
       getEntries: () => entries, getLens: () => lens,
     });
 
@@ -508,6 +505,12 @@ export function createBookkeepingSurface(context) {
       syncUrl();
     });
     ledger.addEventListener("click", (event) => {
+      const documentId = event.target.closest("[data-view-document]")?.dataset.viewDocument;
+      if (documentId) {
+        event.preventDefault();
+        safeAction(() => viewDocument(documentId), "Could not open the file");
+        return;
+      }
       if (event.target.closest("[data-clear-filters]")) {
         filters = filtersFromParams(new URLSearchParams());
         renderFilterOptions();

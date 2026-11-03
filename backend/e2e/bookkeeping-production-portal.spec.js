@@ -1,4 +1,5 @@
 const { test, expect } = require("@playwright/test");
+const { uploadBookkeepingEvidence } = require("./helpers/bookkeeping-evidence");
 const { createDocsCacheRoot } = require("./helpers/docs-content-root");
 const {
   assertOwnedServerResponse,
@@ -55,28 +56,31 @@ test.describe("production portal bookkeeping", () => {
     await addButton.click();
     const createdRow = page.locator(".bk-row").filter({ hasText: "Synthetic Portal Vendor" });
     await expect(createdRow).toContainText("−€20.00");
-    // A new transaction opens in the details pane, ready to finish.
-    const detail = page.locator(".bk-detail");
-    await expect(detail.locator("[name=counterparty]")).toHaveValue("Synthetic Portal Vendor");
-    await detail.locator("[name=category]").fill("synthetic-testing");
-    await detail.locator("[name=category]").press("Tab");
-    await expect(page.locator("[data-bookkeeping-status]")).toContainText("Saved Category");
-    await page.reload();
-    await expect(createdRow).toContainText("Synthetic browser evidence");
-    await expect(createdRow.locator('[data-inline-field="category"]')).toHaveValue("synthetic-testing");
-
-    // The receipt is attached from the transaction itself.
-    await createdRow.locator(".bk-col-date").click();
-    await expect(detail).toContainText("No receipt attached.");
-    await detail.locator("[data-attach-type]").selectOption("receipt");
-    await detail.locator("[data-attach-file]").setInputFiles({
-      name: "synthetic-upload.pdf",
-      mimeType: "application/pdf",
-      buffer: Buffer.from("%PDF-1.4\nsynthetic real evidence\n%%EOF"),
-    });
-    await expect(page.locator("[data-bookkeeping-status]")).toContainText("PDF attached.");
-    await expect(detail.locator(".bk-receipts")).toContainText("Receipt PDF");
     const transactionId = await createdRow.getAttribute("data-tx");
+    const detail = page.locator("#bookkeeping-transaction-dialog");
+    await expect(detail).toBeVisible();
+    await expect(detail).toContainText("Synthetic Portal Vendor");
+    await expect(detail).toContainText("Synthetic browser evidence");
+    await page.keyboard.press("Escape");
+    const updated = await context.request.put(`/api/bookkeeping/transactions/${transactionId}`, {
+      data: { category: "synthetic-testing", counterparty: "Saved Portal Vendor", description: "Saved operator description" },
+    });
+    expect(updated.ok()).toBe(true);
+    await page.reload();
+    const savedRow = page.locator(`[data-tx="${transactionId}"]`);
+    await expect(savedRow).toContainText("Saved Portal Vendor");
+    await expect(savedRow).toContainText("Saved operator description");
+    await expect(savedRow.locator('[data-inline-field="category"]')).toHaveValue("synthetic-testing");
+    await uploadBookkeepingEvidence(page, context, transactionId, {
+      month: "2026-10", filename: "synthetic-upload.pdf",
+    });
+    await page.goto("/bookkeeping?month=2026-10");
+    await expect(savedRow.getByRole("button", { name: "View synthetic-upload.pdf", exact: true })).toHaveCount(1);
+    await savedRow.locator(".bk-col-date").click();
+    await expect(detail).toContainText("Saved Portal Vendor");
+    await expect(detail).toContainText("Saved operator description");
+    await expect(detail.getByRole("button", { name: /Open invoice/ })).toHaveCount(1);
+    await page.keyboard.press("Escape");
     const linksResponse = await context.request.get(
       `${server.baseURL}/api/bookkeeping/links`,
     );
@@ -100,7 +104,7 @@ test.describe("production portal bookkeeping", () => {
     await page.getByRole("button", { name: "Upload PDF" }).click();
     await expect(page.locator("[data-bookkeeping-status]")).toContainText("Choose a PDF first");
     await page.locator("#bookkeeping-evidence").getByRole("button", { name: "← Transactions" }).click();
-    await expect(createdRow).toBeVisible();
+    await expect(savedRow).toBeVisible();
 
     const faultResponse = await context.request.post(
       `${server.baseURL}/__e2e__/route-faults`,
@@ -130,7 +134,7 @@ test.describe("production portal bookkeeping", () => {
     );
     expect(clearFaults.ok()).toBe(true);
     await page.reload();
-    await expect(createdRow).toContainText("Synthetic Portal Vendor");
+    await expect(savedRow).toContainText("Saved Portal Vendor");
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => dakitShell.toggleDrawer(document.querySelector(".dk-shell"), false));

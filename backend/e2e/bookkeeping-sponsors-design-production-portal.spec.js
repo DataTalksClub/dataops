@@ -318,12 +318,11 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await page.screenshot({ path: path.join(SCREENSHOTS, "bookkeeping-mobile-light.png") });
 
     await studioRow.locator(".bk-col-date").click();
-    const deleteButton = page.getByRole("button", { name: "Delete transaction" });
-    await deleteButton.click();
-    const deleteDialog = page.locator(".bookkeeping-delete-dialog");
-    await expect(deleteDialog).toContainText("Attached files are kept");
-    await deleteDialog.getByRole("button", { name: "Keep it" }).click();
-    await expect(deleteButton).toBeFocused();
+    const transactionDialog = page.locator("#bookkeeping-transaction-dialog");
+    await expect(transactionDialog).toBeVisible();
+    await expect(transactionDialog).toContainText("Example Studio");
+    await transactionDialog.getByRole("button", { name: "Close transaction details" }).click();
+    await expect(transactionDialog).toBeHidden();
 
     const accessibility = await new AxeBuilder({ page }).include(".bookkeeping-surface").analyze();
     expect(accessibility.violations.filter((item) => ["critical", "serious"].includes(item.impact))).toEqual([]);

@@ -1,4 +1,3 @@
-import { bookkeepingVendorPresentation } from "./bookkeeping-vendors.js";
 import { bookkeepingTransactionSummaryMarkup } from "./bookkeeping-transaction-dialog.js";
 import {
   loadTransactionStatementContext,
@@ -36,7 +35,7 @@ export function createBookkeepingTransactionModal({
     const statement = statementContexts.get(entry.id);
     const summary = bookkeepingTransactionSummaryMarkup({
       transaction: { ...entry, vatEur: finance?.vatEur ?? entry.vatEur },
-      invoices: attached.filter((document) => document.documentType === "invoice"),
+      invoices: attached,
       statementLink: statement?.statementLink || null,
       statementCandidates: statement?.statementCandidates || [],
       statementPending: !statement,
@@ -44,7 +43,7 @@ export function createBookkeepingTransactionModal({
       escape: escapeHtml,
       formatAmount,
     });
-    const title = escapeHtml(`${bookkeepingVendorPresentation(entry).canonicalCounterparty} · ${entry.transactionDate || "Transaction"}`);
+    const title = escapeHtml(`${entry.counterparty || "Unknown"} · ${entry.transactionDate || "Transaction"}`);
     dialog.innerHTML = `<header class="bk-transaction-dialog__header">
         <h2 id="bookkeeping-transaction-dialog-title">${title}</h2>
         <button type="button" class="bk-transaction-dialog__close" data-close-transaction-dialog aria-label="Close transaction details">Close</button>
