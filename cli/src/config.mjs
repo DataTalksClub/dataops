@@ -163,10 +163,13 @@ export function resolveProfileFromDir(dir, options = {}) {
     options.url || process.env.DATAOPS_URL || store.defaultUrl || DEFAULT_URL,
   );
   const profile = (store.profiles || {})[url];
-  if (!profile?.token) return { url, token: "", source: "none" };
+  if (!profile || (!profile.token && !profile.accessToken && !profile.clientId)) {
+    return { url, token: "", source: "none" };
+  }
   return {
+    ...profile,
     url,
-    token: profile.token,
+    token: profile.token || "",
     tokenId: profile.tokenId || "",
     label: profile.label || "",
     scopes: Array.isArray(profile.scopes) ? profile.scopes : null,

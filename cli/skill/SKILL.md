@@ -15,29 +15,37 @@ family, and `dataops <family> --help` for flags and examples.
 ## Setup
 
 Interactive machines sign in with the device flow, and a person approves the code
-in the browser; headless Hub sessions on Hetzner obtain an admin-issued scoped
-API token without a browser.
+in the browser. A headless Hub session on Hetzner uses an admin-issued scoped
+agent token, so the Hub session itself needs no browser.
 
 ```bash
 # Headless Hub sessions on Hetzner (no browser; token is written directly to
-# ~/.config/agent-hub/shared/dataops/credentials.json and never printed):
+# ~/.config/agent-hub/shared/dataops/credentials.json with owner-only
+# permissions; the bearer value is never printed):
 dataops tokens create \
   --label "hub-sessions@hetzner" \
   --scope kb:write,templates:write,cards:write,newsletter:write
-dataops whoami                           # confirm agent identity, token label, and scopes
+dataops whoami                           # confirm user, agent label, and granted scopes
+dataops tokens list                      # admin: inspect active token metadata
+dataops tokens revoke <token-id>         # admin: revoke a token immediately
 
 # Interactive machines with a browser:
 dataops login --label "<agent>@<host>"   # prints a code; a human approves it in the browser
 dataops whoami                           # confirm identity and role before writing
 ```
 
-- Hub-managed sessions on Hetzner read the shared issuer JWT the same way as
-  people: `dataops login --label "<agent>@<host>"` stores the refreshable
-  session under `DATAOPS_CONFIG_DIR` (mode `0600`, never printed, even with
-  `--json`).
-- Label each host's session (`<agent>@<host>`) and revoke it with
-  `dataops logout` on that host, or revoke the whole refresh family at the
-  issuer.
+- `dataops tokens create` uses the host operator's DataOps credential directory
+  as the admin identity. Set `--admin-config-dir` when the admin profile is in
+  another directory. The agent credential goes to the Hub shared directory by
+  default; `--config-dir` changes that destination.
+- Token creation requires an admin. The credential is stored outside repos in
+  `credentials.json` (directory mode `0700`, file mode `0600`), including when
+  `--json` is used. `dataops whoami` shows the token label and scopes, never the
+  bearer value. Tokens expire after 90 days; `dataops logout` revokes the
+  current agent token and removes its local profile. An admin can revoke it
+  immediately with `dataops tokens revoke <token-id>`.
+- Human issuer sessions still refresh automatically; only a revoked or deleted
+  issuer family needs `dataops login` again (exit code 3).
 - Access tokens last an hour and refresh automatically; only a revoked or
   deleted issuer family needs `dataops login` again (exit code 3).
 - The portal defaults to `https://ops.dtcdev.click`; set `DATAOPS_URL` (or pass

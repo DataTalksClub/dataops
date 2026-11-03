@@ -2,14 +2,14 @@ import { createPublicKey, verify as verifySignature, type JsonWebKey } from 'nod
 
 /**
  * Shared-issuer access tokens (RFC 9068-shaped RS256 JWTs from the DTC
- * shared OAuth server at oauth.dtcdev.click) are the only machine
- * credentials this API accepts. Humans sign in through the issuer's device
- * or authorization-code flow (client `dtc-cli`) and hold tokens bound to
- * this API resource; deployment-managed services hold `client_credentials`
- * tokens bound to the same resource with issuer-registered scopes. Opaque
- * API tokens and static service secrets are gone: the issuer owns issuing,
- * refreshing and revoking; this module owns local verification against its
- * published JWKS.
+ * shared OAuth server at oauth.dtcdev.click) are the human and deployment
+ * service credentials this API accepts. Humans sign in through the issuer's
+ * device or authorization-code flow (client `dtc-cli`) and hold tokens bound
+ * to this API resource; deployment-managed services hold `client_credentials`
+ * tokens bound to the same resource with issuer-registered scopes. A separate
+ * admin-issued, narrowly scoped opaque credential supports headless Hub agents;
+ * its digest and revocation state live in `db/apiTokens.ts`. This module owns
+ * verification of issuer JWTs against the issuer's published JWKS.
  */
 export const DEFAULT_SHARED_ISSUER = 'https://oauth.dtcdev.click';
 export const DATAOPS_API_RESOURCE = 'https://ops.dtcdev.click';

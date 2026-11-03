@@ -810,45 +810,34 @@ export interface Session {
   sessionType?: 'browser';
 }
 
-// --- CLI device authorization and API tokens ---
+// --- Admin-issued scoped CLI API tokens ---
 
-/**
- * A pending CLI login. The device code is the CLI's secret; the user code is
- * the short string a human confirms in the portal. Both are stored hashed and
- * expire quickly.
- */
-export interface DeviceGrant {
-  id: string;
-  userCodeHash: string;
-  status: 'pending' | 'approved' | 'denied';
-  /** Set once a signed-in operator approves the grant. */
-  userId?: string;
-  /** Human-facing description of the machine that started the login. */
-  label: string;
-  requestIp: string;
-  createdAt: string;
-  expiresAt: string;
-  approvedAt?: string;
-  /** Confirmation attempts against this user code, for throttling. */
-  attempts: number;
-  ttl: number;
-}
-
-/** A long-lived bearer credential for non-browser clients. */
+/** A revocable, hashed bearer credential for a non-browser agent. */
 export interface ApiToken {
   id: string;
+  /** SHA-256 of the presented token; the raw token is stored only by the CLI. */
+  tokenHash: string;
   userId: string;
+  issuedBy: string;
   label: string;
+  scopes: string[];
   createdAt: string;
   expiresAt: string;
   lastUsedAt?: string;
-  /** Set when the token was minted by a device-code login. */
-  source: 'device' | 'manual';
-  /** Optional capability scopes; when set, token is restricted to matching routes. */
-  scopes?: string[];
-  /** User ID of the admin who issued this token, when created via POST /api/tokens. */
-  issuedBy?: string;
   ttl: number;
+}
+
+/** Safe metadata returned by the management API and `dataops whoami`. */
+export interface ApiTokenSummary {
+  id: string;
+  userId: string;
+  issuedBy: string;
+  label: string;
+  scopes: string[];
+  createdAt: string;
+  expiresAt: string;
+  lastUsedAt: string | null;
+  ttl?: number;
 }
 
 // --- Notification ---
