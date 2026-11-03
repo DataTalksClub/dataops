@@ -1485,8 +1485,8 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const path = `/api/sponsor-crm/finance/receipts/${sourceId}/metadata`;
     const idempotencyKey = idem('receipt-metadata-update');
     const body = { expectedUpdatedAt: String(before.updatedAt), counterparty: 'Edited Synthetic Sponsor',
-      description: 'Synthetic consulting service for October' };
-    const event = { headers: { 'x-user-id': adminId, 'idempotency-key': idempotencyKey }, body: JSON.stringify(body) };
+      description: 'Synthetic consulting service for October', idempotencyKey };
+    const event = { headers: { 'x-user-id': adminId }, body: JSON.stringify(body) };
 
     const response = await handleSponsorFinanceRoutes(path, 'PUT', event as any, client);
     assert.equal(response?.statusCode, 200, response?.body);
@@ -1517,12 +1517,18 @@ describe('sponsor finance production DynamoDB transactions', () => {
     await assert.rejects(() => updateBookkeepingTransaction(client, sourceId, String(updated.updatedAt), { description: 'Generic write is locked' }));
 
     const stale = await handleSponsorFinanceRoutes(path, 'PUT', { ...event,
-      headers: { 'x-user-id': adminId, 'idempotency-key': idem('stale-receipt-metadata') },
-      body: JSON.stringify({ ...body, expectedUpdatedAt: String(before.updatedAt), description: 'Stale write' }),
+      body: JSON.stringify({ ...body, idempotencyKey: idem('stale-receipt-metadata'),
+        expectedUpdatedAt: String(before.updatedAt), description: 'Stale write' }),
     } as any, client);
     assert.equal(stale?.statusCode, 409);
+    const headerOnly = await handleSponsorFinanceRoutes(path, 'PUT', { headers: {
+      'x-user-id': adminId, 'idempotency-key': idem('header-only-receipt-metadata'),
+    }, body: JSON.stringify({ expectedUpdatedAt: String(updated.updatedAt),
+      counterparty: body.counterparty, description: body.description }) } as any, client);
+    assert.equal(headerOnly?.statusCode, 400);
     const forbidden = await handleSponsorFinanceRoutes(path, 'PUT', { ...event,
-      headers: { 'x-user-id': 'finance-operator-1', 'idempotency-key': idem('non-admin-receipt-metadata') },
+      headers: { 'x-user-id': 'finance-operator-1' },
+      body: JSON.stringify({ ...body, idempotencyKey: idem('non-admin-receipt-metadata') }),
     } as any, client);
     assert.equal(forbidden?.statusCode, 403);
     const finalSource = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: sourceKey }))).Item!;

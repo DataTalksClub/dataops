@@ -141,10 +141,10 @@ export async function handleSponsorFinanceRoutes(
     if (!body) return json(400, { error: 'Invalid request' });
     try {
       const actor = await financeActor(client, header(event, 'x-user-id'), true);
-      const idempotencyKey = header(event, 'idempotency-key');
+      const idempotencyKey = body.idempotencyKey;
       if (typeof body.expectedUpdatedAt !== 'string' || typeof body.counterparty !== 'string'
-        || typeof body.description !== 'string' || !idempotencyKey) {
-        return json(400, { error: 'expectedUpdatedAt, counterparty, description and Idempotency-Key are required' });
+        || typeof body.description !== 'string' || typeof idempotencyKey !== 'string') {
+        return json(400, { error: 'expectedUpdatedAt, counterparty, description and idempotencyKey are required' });
       }
       return json(200, await updateReceiptMetadata(client, {
         actorId: actor.id,
