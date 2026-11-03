@@ -147,7 +147,7 @@ export async function handleReconcileRoutes(
     }
 
     if (action === "/statements/import" && method === "POST") {
-      // No account or period: the bank comes from the file, the months from its rows.
+      // No account or period: the bank and coverage period come from the file.
       const body = parse(event.body || null);
       if (!body) return json(400, { error: "Invalid JSON" });
       const documentId = String(body.documentId || "");

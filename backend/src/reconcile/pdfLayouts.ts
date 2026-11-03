@@ -11,9 +11,9 @@
  * row would otherwise flow into reconciliation unnoticed.
  */
 import { ParseError, parseAmount, parseStatementDate, sumAmounts } from "./parsers";
-import type { ParsedStatement, StatementBalance, StatementRow } from "./parsers";
+import type { ParsedStatement, StatementBalance, StatementPeriod, StatementRow } from "./parsers";
 
-export type StatementPeriod = { from: string; to: string };
+export type { StatementPeriod } from "./parsers";
 
 export type PdfParsedStatement = ParsedStatement & {
   /** Which fixed layout the statement was read with. */

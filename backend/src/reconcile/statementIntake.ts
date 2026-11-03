@@ -21,6 +21,7 @@ import {
   parseStatementDate,
   type ParsedStatement,
   type StatementAccount,
+  type StatementPeriod,
 } from "./parsers";
 import { detectPdfStatementAccount, parseFinomPdfText, parseRevolutPdfText } from "./pdfLayouts";
 import { saveStatement, type StatementRecord } from "./service";
@@ -49,6 +50,18 @@ const isPdf = (contentType: string, bytes: Buffer) => contentType === "applicati
 let statementPdfText = pdfText;
 export function setStatementPdfTextForTests(extractor?: typeof pdfText) {
   statementPdfText = extractor ?? pdfText;
+}
+
+export function statementPeriodForMonth(period: string, statementPeriod?: StatementPeriod): StatementPeriod | undefined {
+  if (!statementPeriod) return undefined;
+  const [year, month] = period.split("-").map(Number);
+  const monthStart = `${period}-01`;
+  const monthEnd = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+  const bounds = {
+    from: statementPeriod.from < monthStart ? monthStart : statementPeriod.from,
+    to: statementPeriod.to > monthEnd ? monthEnd : statementPeriod.to,
+  };
+  return bounds.from <= bounds.to ? bounds : undefined;
 }
 
 function safeFilename(filename?: string): string {
@@ -169,6 +182,7 @@ async function storeParsedStatement(
     if ((await getMonth(client, period)).state === "closed") { skippedClosedMonths.push(period); continue; }
     const rows = parsed.rows.filter((row) => row.date.startsWith(period));
     const balances = parsed.balances.filter((balance) => balance.asOf.startsWith(period));
+    const bounds = statementPeriodForMonth(period, parsed.period);
     const record = await saveStatement(client, {
       accountId: account,
       period,
@@ -177,6 +191,7 @@ async function storeParsedStatement(
       ...(source.filename ? { filename: source.filename.slice(0, 300) } : {}),
       contentType: source.contentType,
       rows,
+      ...(bounds ? { from: bounds.from, to: bounds.to } : {}),
       ...(balances.length ? { balances } : {}),
       ...(parsed.warnings.length && period === months.at(-1) ? { warnings: parsed.warnings } : {}),
     });

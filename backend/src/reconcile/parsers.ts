@@ -39,7 +39,8 @@ export type StatementBalance = {
   wallet?: string;
 };
 
-export type ParsedStatement = { rows: StatementRow[]; warnings: string[]; balances: StatementBalance[] };
+export type StatementPeriod = { from: string; to: string };
+export type ParsedStatement = { rows: StatementRow[]; warnings: string[]; balances: StatementBalance[]; period?: StatementPeriod };
 export type ParseOptions = { currency?: string };
 
 const CURRENCY = /^[A-Z]{3}$/;

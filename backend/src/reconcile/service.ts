@@ -67,6 +67,8 @@ export type StatementInput = {
   contentType?: string;
   rows: StatementRow[];
   balances?: StatementBalance[];
+  from?: string;
+  to?: string;
   warnings?: string[];
 };
 
@@ -143,8 +145,8 @@ export async function saveStatement(client: DynamoDBDocumentClient, input: State
     ...(input.contentType ? { contentType: input.contentType } : {}),
     rows: input.rows,
     ...(input.balances?.length ? { balances: input.balances } : {}),
-    from: sorted[0].date,
-    to: sorted[sorted.length - 1].date,
+    from: input.from || sorted[0].date,
+    to: input.to || sorted[sorted.length - 1].date,
     ...(input.warnings?.length ? { warnings: input.warnings.slice(0, 100) } : {}),
     createdAt: now,
     updatedAt: now,
