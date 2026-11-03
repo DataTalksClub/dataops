@@ -1454,6 +1454,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const updated = JSON.parse(response!.body);
     assert.equal(updated.amount, sourceBefore.amount);
     assert.equal(updated.currency, sourceBefore.currency);
+    assert.equal(updated.updatedAt, sourceBefore.updatedAt, 'conversion metadata must not change the finance identity token');
     assert.equal(updated.amountEur, '36.72');
     assert.equal(updated.rateSource, 'Synthetic ECB rate');
     assert.equal(updated.audit.at(-1).action, 'receipt-conversion-updated');
