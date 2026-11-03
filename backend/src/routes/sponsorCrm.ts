@@ -121,6 +121,7 @@ function validateOrganization(body: Record<string, unknown>, partial = false) {
   if (!validStamp(body.last_contact_at)) return 'Invalid last_contact_at';
   if (body.doNotContact !== undefined && typeof body.doNotContact !== 'boolean') return 'Invalid doNotContact flag';
   if (body.dnc !== undefined && typeof body.dnc !== 'boolean') return 'Invalid dnc flag';
+  if (body.owner !== undefined && body.owner !== null && body.owner !== '' && !ID.test(String(body.owner))) return 'Invalid owner';
   if (body.tags !== undefined) {
     const error = validateTags(body.tags);
     if (error) return error;
@@ -147,6 +148,7 @@ function validateContact(body: Record<string, unknown>, partial = false) {
   if (!validStamp(body.last_contact_at)) return 'Invalid last_contact_at';
   if (body.doNotContact !== undefined && typeof body.doNotContact !== 'boolean') return 'Invalid doNotContact flag';
   if (body.dnc !== undefined && typeof body.dnc !== 'boolean') return 'Invalid dnc flag';
+  if (body.owner !== undefined && body.owner !== null && body.owner !== '' && !ID.test(String(body.owner))) return 'Invalid owner';
   if (body.tags !== undefined) {
     const error = validateTags(body.tags);
     if (error) return error;
@@ -168,6 +170,7 @@ function validateDeal(body: Record<string, unknown>, partial = false, existing?:
   if (body.contractRequired !== undefined && typeof body.contractRequired !== 'boolean') return 'Invalid contractRequired';
   if (body.agreementDate != null && !realDate(body.agreementDate)) return 'Invalid agreementDate';
   if (body.primaryContactId != null && !ID.test(String(body.primaryContactId))) return 'Invalid primaryContactId';
+  if (body.owner !== undefined && body.owner !== null && body.owner !== '' && !ID.test(String(body.owner))) return 'Invalid owner';
   return '';
 }
 
@@ -231,6 +234,8 @@ const publicDealTask = (task: Task) => ({
   date: task.date,
   status: task.status,
   ...(task.assigneeId ? { assigneeId: task.assigneeId } : {}),
+  ...(task.instructionDocId ? { instructionDocId: task.instructionDocId } : {}),
+  ...(task.dependsOn?.length ? { dependsOn: task.dependsOn } : {}),
 });
 
 const publicMoney = (facts: DealMoneyFacts | undefined) => facts ? {

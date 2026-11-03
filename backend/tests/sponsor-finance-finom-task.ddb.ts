@@ -16,6 +16,8 @@ import type { LambdaEvent, LambdaResponse, Task } from '../src/types';
 describe('sponsor Finom invoice-paid tasks', () => {
   let client: DynamoDBDocumentClient;
   const ADMIN = 'finom-admin-1';
+  const DEAL_OWNER = 'finom-deal-owner-1';
+  const ORG_OWNER = 'finom-org-owner-1';
   const today = berlinToday();
   const day = (offset: number) => {
     const date = new Date(`${today}T00:00:00Z`);
@@ -46,11 +48,30 @@ describe('sponsor Finom invoice-paid tasks', () => {
 
   let sequence = 0;
   /** Seed an agreed deal with an issued, payable invoice of `amountDue` EUR, as raw fixture rows. */
-  async function bootstrapDeal(amountDue = '1000') {
+  async function bootstrapDeal(
+    amountDue = '1000',
+    options: { dealOwner?: string; orgOwner?: string; creatorId?: string } = {},
+  ) {
     sequence += 1;
-    const organization = await createOrganizationAtomic(client, { displayName: `Synthetic Finom Sponsor ${sequence}` }, ADMIN);
+    const creatorId = options.creatorId || ADMIN;
+    const organization = await createOrganizationAtomic(
+      client,
+      {
+        displayName: `Synthetic Finom Sponsor ${sequence}`,
+        ...(options.orgOwner ? { owner: options.orgOwner } : {}),
+      },
+      creatorId,
+    );
     const deal = await createDealAtomic(
-      client, { organizationId: organization.item.id, status: 'agreed', productKind: 'one-off', title: `Fall bundle ${sequence}` }, ADMIN,
+      client,
+      {
+        organizationId: organization.item.id,
+        status: 'agreed',
+        productKind: 'one-off',
+        title: `Fall bundle ${sequence}`,
+        ...(options.dealOwner ? { owner: options.dealOwner } : {}),
+      },
+      creatorId,
     );
     const dealId = deal.item.id;
     const issuedOn = day(-30);
@@ -110,6 +131,8 @@ describe('sponsor Finom invoice-paid tasks', () => {
     process.env.IS_LOCAL = 'true';
     process.env.SPONSOR_FINANCE_ENABLED = 'true';
     await put(TABLE_USERS, { PK: `USER#${ADMIN}`, SK: `USER#${ADMIN}`, id: ADMIN, role: 'admin', disabled: false });
+    await put(TABLE_USERS, { PK: `USER#${DEAL_OWNER}`, SK: `USER#${DEAL_OWNER}`, id: DEAL_OWNER, role: 'operator', disabled: false });
+    await put(TABLE_USERS, { PK: `USER#${ORG_OWNER}`, SK: `USER#${ORG_OWNER}`, id: ORG_OWNER, role: 'operator', disabled: false });
   });
 
   after(async () => {
@@ -119,15 +142,24 @@ describe('sponsor Finom invoice-paid tasks', () => {
   });
 
   it('creates the single Finom Task with instruction, owner, due date and payment dependency on receive-payment', async () => {
-    const { dealId } = await bootstrapDeal();
+    const { dealId } = await bootstrapDeal('1000', { dealOwner: DEAL_OWNER });
     const response = await receive(dealId, { amount: '1000' }, 'create');
     assert.strictEqual(response.status, 200, JSON.stringify(response.body));
+    const receiptSourceId = (response.body as { projection?: { payments?: Array<{ id: string }> } }).projection?.payments?.[0]?.id;
+    assert.ok(receiptSourceId, 'receive-payment returns the receipt sourceId in projection.payments');
 
     const [task] = await openFinomTasks(dealId);
     assert.ok(task, 'an open Finom Task exists after the receipt');
     assert.strictEqual(task.description, `Mark invoice FINOM-INV-${sequence} paid in Finom`);
     assert.strictEqual(task.instructionDocId, FINOM_PAID_INSTRUCTION_DOC_ID);
-    assert.strictEqual(task.assigneeId, ADMIN, 'the Task is assigned to the deal owner recording the payment');
+    assert.strictEqual(task.assigneeId, DEAL_OWNER, 'the Task is assigned to the deal owner rather than the payment actor');
+    assert.strictEqual(task.createdBy, ADMIN, 'createdBy records the payment actor');
+    assert.deepStrictEqual(task.dependsOn, [receiptSourceId], 'the Task dependsOn the payment/receipt step');
+    assert.strictEqual((task as unknown as { blocked?: boolean }).blocked, false, 'a committed receipt satisfies the payment prerequisite');
+    assert.deepStrictEqual(
+      (task as unknown as { prerequisites?: Array<{ id: string; status: string }> }).prerequisites?.map(({ id, status }) => ({ id, status })),
+      [{ id: receiptSourceId, status: 'done' }],
+    );
     assert.strictEqual(task.date, today, 'the Task is due the same day the payment step runs');
     assert.strictEqual(task.status, 'todo');
     assert.strictEqual(task.subject?.type, 'sponsor-deal');
@@ -135,15 +167,19 @@ describe('sponsor Finom invoice-paid tasks', () => {
     assert.strictEqual(task.source, FINOM_PAID_TASK_SOURCE);
     assert.deepStrictEqual(task.tags, [FINOM_PAID_TASK_TAG]);
 
-    // The dependency is structural: the payment-linked history event names the Task.
+    // The payment-linked history event also names the Task.
     const linked = (await listFinanceHistory(client, dealId)).find((item) => item.eventCode === 'payment-linked')!;
     assert.ok(linked);
     assert.strictEqual((linked.details as Record<string, unknown>).finomTaskId, task.id);
     assert.strictEqual((linked.details as Record<string, unknown>).finomTaskCreated, true);
 
-    // The deal view's openTasks (what `sponsors show` prints) list it.
+    // The deal view's openTasks (what `sponsors show` prints) list it with owner, instructionDocId and dependsOn.
     const dealView = await invoke('GET', `/api/sponsor-crm/deals/${dealId}`);
-    assert.ok(dealView.body.openTasks.some((item: { id: string }) => item.id === task.id));
+    const dealOpenTask = dealView.body.openTasks.find((item: { id: string }) => item.id === task.id);
+    assert.ok(dealOpenTask);
+    assert.strictEqual(dealOpenTask.assigneeId, DEAL_OWNER);
+    assert.strictEqual(dealOpenTask.instructionDocId, FINOM_PAID_INSTRUCTION_DOC_ID);
+    assert.deepStrictEqual(dealOpenTask.dependsOn, [receiptSourceId]);
   });
 
   it('replays a retried receive-payment to the same single Task', async () => {
@@ -162,13 +198,17 @@ describe('sponsor Finom invoice-paid tasks', () => {
     const { dealId } = await bootstrapDeal();
     const first = await receive(dealId, { amount: '400' }, 'partial-one');
     assert.strictEqual(first.status, 200, JSON.stringify(first.body));
+    const firstSourceId = String((first.body as { result?: { recordId?: string } }).result?.recordId || '').split('#').at(-1);
     const [open] = await openFinomTasks(dealId);
     assert.ok(open);
+    assert.deepStrictEqual(open.dependsOn, [firstSourceId]);
     const second = await receive(dealId, { amount: '600', reference: `synthetic-finom:partial-two-${sequence}` }, 'partial-two');
     assert.strictEqual(second.status, 200, JSON.stringify(second.body));
+    const secondSourceId = String((second.body as { result?: { recordId?: string } }).result?.recordId || '').split('#').at(-1);
     const tasks = await openFinomTasks(dealId);
     assert.strictEqual(tasks.length, 1);
     assert.strictEqual(tasks[0].id, open.id);
+    assert.deepStrictEqual(tasks[0].dependsOn, [firstSourceId, secondSourceId]);
     const linked = (await listFinanceHistory(client, dealId)).filter((item) => item.eventCode === 'payment-linked');
     // History lists newest first; the newest event is the second receipt's.
     assert.strictEqual((linked[0].details as Record<string, unknown>).finomTaskCreated, false);
@@ -192,7 +232,7 @@ describe('sponsor Finom invoice-paid tasks', () => {
   });
 
   it('link-payment creates the same Finom Task for a ledger row linked after the fact', async () => {
-    const { dealId } = await bootstrapDeal();
+    const { dealId } = await bootstrapDeal('1000', { orgOwner: ORG_OWNER });
     const transactionId = `tx-finom-${sequence}`;
     const source = {
       PK: `BOOKKEEPING#${transactionId}`, SK: `BOOKKEEPING#${transactionId}`,
@@ -211,7 +251,28 @@ describe('sponsor Finom invoice-paid tasks', () => {
     assert.ok(task);
     assert.strictEqual(task.description, `Mark invoice FINOM-INV-${sequence} paid in Finom`);
     assert.strictEqual(task.instructionDocId, FINOM_PAID_INSTRUCTION_DOC_ID);
+    assert.strictEqual(task.assigneeId, ORG_OWNER, 'falls back to organization owner when deal.owner is not set');
+    assert.strictEqual(task.createdBy, ADMIN);
+    assert.deepStrictEqual(task.dependsOn, [transactionId]);
+    assert.strictEqual((task as unknown as { blocked?: boolean }).blocked, false);
     assert.strictEqual(task.date, today);
+
+    // Unlinking the payment makes its prerequisite unmet and blocks completing the Finom Task.
+    const unlink = await invoke(
+      'DELETE',
+      `/api/sponsor-crm/deals/${dealId}/finance/payments/${transactionId}`,
+      {
+        dealVersion: 1,
+        expectedVersion: (await getFinanceState(client, dealId))!.version,
+      },
+      { 'x-user-id': ADMIN, 'idempotency-key': `finom-unlink-${sequence}-0123456789abcdef` },
+    );
+    assert.strictEqual(unlink.status, 200, JSON.stringify(unlink.body));
+    const blockedAttempt = await invoke('PUT', `/api/tasks/${task.id}`, {
+      status: 'done', expectedVersion: task.version,
+    }, { 'x-user-id': ADMIN });
+    assert.strictEqual(blockedAttempt.status, 409, JSON.stringify(blockedAttempt.body));
+    assert.strictEqual(blockedAttempt.body.code, 'prerequisites-incomplete');
   });
 
   it('concurrent receipts converge on exactly one open Finom Task', async () => {
