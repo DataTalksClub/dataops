@@ -74,7 +74,7 @@ describe('upcoming tax debits', () => {
       { id: 'vat-payment', date: '2026-11-10', amount: 123.45, kind: 'ledger', taxType: 'vat' },
     ] });
     const byId = Object.fromEntries(result.debits.map((debit) => [debit.scheduleId, debit]));
-    assert.equal(byId['vat-a'].matched?.id, 'vat-payment');
+    assert.equal(byId['vat-a'].status, 'scheduled');
     assert.equal(byId['vat-b'].status, 'scheduled');
     assert.equal(byId.tk.matched?.id, 'tk-payment');
     assert.equal(byId.other.status, 'scheduled');

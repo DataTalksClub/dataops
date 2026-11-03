@@ -110,7 +110,6 @@ export function upcomingDebits(input: {
   const days = input.days ?? 60;
   const from = shift(input.today, -(input.lookbackDays ?? 7));
   const to = shift(input.today, days);
-  const used = new Set<string>();
   const debits: Debit[] = [];
   for (const entry of input.schedule) {
     // Look a little past the window so a shifted date can still land in it.
@@ -120,9 +119,6 @@ export function upcomingDebits(input: {
       const moved = businessDay(due);
       if (moved.date < from || moved.date > to) continue;
       const amount = Number(entry.amount);
-      const tolerance = entry.approximate ? 7 : 5;
-      const match = (input.paid || []).find((p) => !used.has(p.id) && p.taxType === entry.taxType && cents(p.amount) === cents(amount) && Math.abs(daysBetween(moved.date, p.date)) <= tolerance) || null;
-      if (match) used.add(match.id);
       debits.push({
         scheduleId: entry.id,
         label: entry.label,
@@ -135,10 +131,26 @@ export function upcomingDebits(input: {
         source: entry.source,
         sourceRef: entry.sourceRef || null,
         approximate: !!entry.approximate,
-        status: match ? 'paid' : moved.date < input.today ? 'not-seen' : 'scheduled',
-        matched: match,
+        status: moved.date < input.today ? 'not-seen' : 'scheduled',
+        matched: null,
       });
     }
+  }
+  // A payment that fits multiple obligations cannot identify which one was paid.
+  // Deduplicate evidence IDs first so duplicate records cannot be consumed twice.
+  const uniquePaid = new Map((input.paid || []).map((item) => [item.id, item]));
+  const candidates = new Map<string, Debit[]>();
+  for (const item of uniquePaid.values()) {
+    const matches = debits.filter((debit) => item.taxType === debit.taxType
+      && cents(item.amount) === cents(debit.amount)
+      && Math.abs(daysBetween(debit.date, item.date)) <= (debit.approximate ? 7 : 5));
+    candidates.set(item.id, matches);
+  }
+  for (const item of uniquePaid.values()) {
+    const matches = candidates.get(item.id)!;
+    if (matches.length !== 1 || matches[0].matched) continue;
+    matches[0].matched = item;
+    matches[0].status = 'paid';
   }
   debits.sort((a, b) => a.date.localeCompare(b.date) || a.label.localeCompare(b.label));
   const open = debits.filter((d) => d.status !== 'paid' && d.date >= input.today);
