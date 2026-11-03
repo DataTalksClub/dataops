@@ -133,7 +133,7 @@ describe('finance tax schedule and upcoming debits API', () => {
     });
     for (const [id, amount] of [['synthetic-fx-ledger-paired', '170.00'], ['synthetic-fx-ledger-unpaired', '200.00']]) {
       await putBookkeepingItem(client, 'bookkeeping', {
-        id, transactionDate: '2023-04-17', paidDate: '2023-04-17',
+        id, transactionDate: '2023-04-16', paidDate: '2023-04-16',
         entryType: 'expense', amount, currency: 'USD', sourceType: 'manual',
         counterparty: 'Synthetic authority', category: 'VAT',
       });
@@ -141,7 +141,9 @@ describe('finance tax schedule and upcoming debits API', () => {
     const bank = bankRowsFrom(await listStatements(client)).find((item) => item.date === '2023-04-17')!;
     await pairRows(client, '2023-04', 'synthetic-operator', bank.key, 'synthetic-fx-ledger-paired');
     const result = await financeUpcoming(client, 14, '2023-04-17', async () => null);
-    assert.equal(result.debits.find((item) => item.scheduleId === 'synthetic-fx-paired')?.status, 'paid');
+    const paired = result.debits.find((item) => item.scheduleId === 'synthetic-fx-paired');
+    assert.equal(paired?.status, 'paid');
+    assert.equal(paired?.matched?.date, '2023-04-17', 'uses the bank date instead of the ledger date');
     assert.equal(result.debits.find((item) => item.scheduleId === 'synthetic-fx-unpaired')?.status, 'scheduled');
   });
 
