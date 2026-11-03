@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { upload, confirm, report, alias, aliases, balances, matches, attachDoc, deleteRow, note, commands } from "../src/commands/reconcile.mjs";
+import { upload, confirm, report, alias, aliases, balances, matches, attachDoc, voidLedger, restoreLedger, note, commands } from "../src/commands/reconcile.mjs";
 import { exitCodeFor, EXIT } from "../src/errors.mjs";
 
 const withFakePortal = async (routes, run) => {
@@ -223,28 +223,39 @@ for (const row of ["receipt-7aceb67624c4496bd10f1ffdb70e0f21f9974b2f", "ledger:r
   });
 }
 
-test("delete-row sends a dry run by default and applies only with --apply", async () => {
+test("void-ledger and restore-ledger require --yes to confirm and preserve explicit reasons", async () => {
   const sent = [];
   await withFakePortal([
-    ["/reconcile/months/2026-10/delete-row", (request) => {
-      sent.push(JSON.parse(request.options.body));
-      return { mode: sent.length === 1 ? "dry-run" : "apply", deleted: sent.length > 1, row: { date: "2026-10-01", amount: "48.32", currency: "USD", counterparty: "Teachable" }, holds: [], blockers: [] };
+    ["/reconcile/months/2026-10/void-ledger", (request) => {
+      const body = JSON.parse(request.options.body);
+      sent.push({ action: "void-ledger", ...body });
+      return { mode: body.confirm ? "voided" : "dry-run", voided: body.confirm, row: { date: "2026-10-01", amount: "48.32", currency: "USD", counterparty: "Teachable" }, holds: [] };
+    }],
+    ["/reconcile/months/2026-10/restore-ledger", (request) => {
+      const body = JSON.parse(request.options.body);
+      sent.push({ action: "restore-ledger", ...body });
+      return { mode: body.confirm ? "restored" : "dry-run", restored: body.confirm, row: { date: "2026-10-01", amount: "48.32", currency: "USD", counterparty: "Teachable" } };
     }],
   ], async () => {
-    const base = { ...args, _: ["ledger:dup-id"], period: "2026-10", reason: "same payout twice", duplicateOf: "keep-id" };
-    const dry = await deleteRow(base, { print() {} });
-    assert.equal(dry.deleted, false);
-    const applied = await deleteRow({ ...base, apply: true }, { print() {} });
-    assert.equal(applied.deleted, true);
-    const defaultReason = await deleteRow({ ...args, _: ["ledger:dup-id"], period: "2026-10", duplicateOf: "ledger:keep-id", apply: true }, { print() {} });
-    assert.equal(defaultReason.deleted, true);
+    const base = { ...args, _: ["ledger:dup-id"], period: "2026-10", reason: "duplicate of retained row", duplicateOf: "ledger:keep-id" };
+    const dry = await voidLedger(base, { print() {} });
+    assert.equal(dry.mode, "dry-run");
+    const applied = await voidLedger({ ...base, yes: true }, { print() {} });
+    assert.equal(applied.mode, "voided");
+    const restoreDry = await restoreLedger({ ...args, _: ["ledger:dup-id"], period: "2026-10", reason: "restore after review" }, { print() {} });
+    assert.equal(restoreDry.mode, "dry-run");
+    const restored = await restoreLedger({ ...args, _: ["ledger:dup-id"], period: "2026-10", reason: "restore after review", yes: true }, { print() {} });
+    assert.equal(restored.mode, "restored");
   });
   assert.deepEqual(sent, [
-    { transactionId: "dup-id", reason: "same payout twice", duplicateOf: "keep-id", apply: false },
-    { transactionId: "dup-id", reason: "same payout twice", duplicateOf: "keep-id", apply: true },
-    { transactionId: "dup-id", reason: "duplicate of keep-id", duplicateOf: "keep-id", apply: true },
+    { action: "void-ledger", transactionId: "dup-id", reason: "duplicate of retained row", duplicateOf: "keep-id", confirm: false },
+    { action: "void-ledger", transactionId: "dup-id", reason: "duplicate of retained row", duplicateOf: "keep-id", confirm: true },
+    { action: "restore-ledger", transactionId: "dup-id", reason: "restore after review", confirm: false },
+    { action: "restore-ledger", transactionId: "dup-id", reason: "restore after review", confirm: true },
   ]);
-  assert.ok(commands["delete-row"]);
+  assert.ok(commands["void-ledger"]);
+  assert.ok(commands["restore-ledger"]);
+  assert.equal(commands["delete-row"], undefined);
 });
 
 test("reconcile note updates the existing ledger comment", async () => {

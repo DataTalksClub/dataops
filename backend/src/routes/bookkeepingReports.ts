@@ -31,6 +31,9 @@ import {
 
 const csvCell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
 
+const activeLedgerRows = async (client: DynamoDBDocumentClient) =>
+  (await listBookkeepingItems(client, "bookkeeping")).filter((item) => item.voidStatus !== "voided");
+
 /**
  * Customer VAT report for the monthly pack (ZM / Mandantenserver upload):
  * every EU B2B customer's last known VIES state, cached-only so assembling
@@ -89,9 +92,8 @@ export async function handleBookkeepingReportRoutes(
         error: "Missing required business statements",
         missingAccountIds: missing.map((a) => a.id),
       });
-    const monthTransactions = (
-      await listBookkeepingItems(client, "bookkeeping")
-    ).filter((t) => String(t.transactionDate).startsWith(month));
+    const monthTransactions = (await activeLedgerRows(client))
+      .filter((t) => String(t.transactionDate).startsWith(month));
     const excludedTransactions = monthTransactions.filter(
       isReportExemptTransaction,
     );
@@ -173,7 +175,7 @@ export async function handleBookkeepingReportRoutes(
     const year = event.queryStringParameters?.year;
     if (year != null && !/^\d{4}$/.test(String(year)))
       return json(400, { error: "Invalid year" });
-    const withVat = (await listBookkeepingItems(client, "bookkeeping")).filter(
+    const withVat = (await activeLedgerRows(client)).filter(
       (t) => typeof t.vatAmount === "string" && MONEY.test(t.vatAmount),
     );
     const selected = year
