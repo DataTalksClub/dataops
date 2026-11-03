@@ -11,7 +11,7 @@ import { createDocumentLink, putBookkeepingItem } from '../src/db/bookkeeping';
 import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { setBookkeepingStorageForTests } from '../src/routes/bookkeepingShared';
 import { handleReconcileRoutes } from '../src/routes/reconcile';
-import { setStatementPdfTextForTests } from '../src/reconcile/statementIntake';
+import { setStatementPdfTextForTests, statementPeriodForMonth } from '../src/reconcile/statementIntake';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -94,6 +94,62 @@ describe('reconcile API', () => {
     const removed = await call('DELETE', `/api/reconcile/statements/${statement.id}`);
     assert.equal(removed.statusCode, 200);
     assert.equal(JSON.parse((await call('GET', '/api/reconcile/statements')).body).items.length, 0);
+  });
+
+  it('preserves PDF header coverage through import and idempotent re-upload', async () => {
+    assert.deepEqual(statementPeriodForMonth('2026-10', { from: '2026-09-15', to: '2026-11-02' }), { from: '2026-10-01', to: '2026-10-31' });
+    assert.deepEqual(statementPeriodForMonth('2026-09', { from: '2026-09-15', to: '2026-11-02' }), { from: '2026-09-15', to: '2026-09-30' });
+    assert.deepEqual(statementPeriodForMonth('2026-11', { from: '2026-09-15', to: '2026-11-02' }), { from: '2026-11-01', to: '2026-11-02' });
+    process.env.BOOKKEEPING_DOCUMENTS_BUCKET = 'synthetic-private-bucket';
+    const objectBytes = Buffer.from('%PDF-1.4 synthetic statement');
+    setBookkeepingStorageForTests({
+      send: async (command: { constructor: { name: string } }) => command.constructor.name === 'GetObjectCommand'
+        ? { Body: Readable.from(objectBytes), VersionId: 'synthetic' }
+        : {},
+    } as never);
+    setStatementPdfTextForTests(async () => [
+      'FINOM PAYMENTS B.V.',
+      'Finom   STATEMENT OF ACCOUNT',
+      'From: 01.10.2026',
+      'To: 31.10.2026',
+      'Opening balance: 100,00 €',
+      'Closing balance: 90,00 €',
+      'Completed   Description   Pay in/out',
+      '30.10.2026   Synthetic payment',
+      '- 10,00 €',
+    ].join('\n'));
+    let statementId: string | undefined;
+    try {
+      const document = (await putBookkeepingItem(client, 'document', {
+        documentType: 'bank-statement', status: 'active', contentType: 'application/pdf',
+        originalFilename: 'synthetic-finom-october.pdf', byteSize: objectBytes.length, sha256: 'a'.repeat(64), s3Key: 'documents/synthetic-finom-october',
+      })).item;
+      const importPdf = () => call('POST', '/api/reconcile/statements/import', { documentId: document.id, notify: false });
+      const first = await importPdf();
+      assert.equal(first.statusCode, 201, first.body);
+      const firstBody = JSON.parse(first.body);
+      statementId = firstBody.statements[0].id;
+      assert.deepEqual(firstBody.statements.map((statement: Record<string, unknown>) => [statement.from, statement.to]), [['2026-10-01', '2026-10-31']]);
+
+      const replay = await importPdf();
+      assert.equal(replay.statusCode, 201, replay.body);
+      const saved = JSON.parse((await call('GET', '/api/reconcile/statements')).body).items
+        .filter((statement: Record<string, unknown>) => statement.documentId === document.id);
+      assert.equal(saved.length, 1);
+      assert.deepEqual([saved[0].from, saved[0].to], ['2026-10-01', '2026-10-31']);
+      assert.equal(saved[0].rowCount, 1);
+
+      const report = JSON.parse((await invoke('GET', '/api/reconcile/report', undefined, AUTH, { period: '2026-10' })).body);
+      const finom = report.coverage.accounts.find((account: Record<string, unknown>) => account.accountId === 'finom');
+      assert.equal(finom.coveredDays, 31);
+      assert.deepEqual(finom.gaps, []);
+      const month = JSON.parse((await invoke('GET', '/api/reconcile/months/2026-10', undefined, AUTH)).body);
+      assert.equal(month.state, 'open');
+    } finally {
+      if (statementId) await call('DELETE', `/api/reconcile/statements/${statementId}`);
+      setStatementPdfTextForTests();
+      delete process.env.BOOKKEEPING_DOCUMENTS_BUCKET;
+    }
   });
 
   it('keeps a counterparty alias registry', async () => {
