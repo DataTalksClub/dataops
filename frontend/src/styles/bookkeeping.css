@@ -124,7 +124,7 @@
 }
 .bk-month__title { color: var(--dk-text-heading); font-size: var(--dk-text-sm); font-weight: var(--dk-weight-semibold); }
 .bk-month__count { margin-left: var(--dk-space-2); color: var(--dk-text-muted); font-size: var(--dk-text-xs); font-weight: var(--dk-weight-regular); }
-.bk-month__totals { display: inline-flex; gap: var(--dk-space-3); margin-left: var(--dk-space-4); color: var(--dk-text-muted); font-size: var(--dk-text-xs); font-weight: var(--dk-weight-regular); }
+.bk-month__totals { float: right; display: inline-flex; gap: var(--dk-space-3); margin: 2px 0 0 var(--dk-space-4); color: var(--dk-text-muted); font-size: var(--dk-text-xs); font-weight: var(--dk-weight-regular); }
 .bk-total.is-missing { color: var(--dk-warning-text); }
 
 .bk-col-date { width: 6.5em; color: var(--dk-text-muted); }
