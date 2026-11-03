@@ -672,6 +672,12 @@ export async function reopen(args, io) {
 }
 
 async function downloadBytes(api, entry) {
+  if (entry.invoiceId) {
+    const signed = await api.get(`/api/bookkeeping/invoices/${enc(entry.invoiceId)}/document`);
+    const response = await fetch(signed.url);
+    if (!response.ok) throw new Error(`Download failed for ${entry.path} (${response.status})`);
+    return Buffer.from(await response.arrayBuffer());
+  }
   const route = entry.documentId ? `/api/bookkeeping/documents/${enc(entry.documentId)}/download` : `/api/artifacts/${enc(entry.artifactId)}/download`;
   const signed = await api.get(route);
   const response = await fetch(signed.downloadUrl);
@@ -684,13 +690,17 @@ export async function packageMonth(args, io) {
   const period = periodArg(args, usage);
   const api = apiFor(args);
   const manifest = await api.get(`/api/reconcile/months/${period}/package`, { query: args.draft ? { draft: "true" } : {} });
+  if (manifest.blockers?.length) {
+    const details = manifest.blockers.map((blocker) => `${blocker.rowId}: ${blocker.reason}`).join("; ");
+    throw new Error(`Package is incomplete: ${manifest.blockers.length} expected document(s) could not be resolved. ${details}`);
+  }
   const out = optionalString(args, "out") || ".";
   const written = [];
   for (const entry of manifest.entries) {
     const target = join(out, entry.path);
     await mkdir(dirname(target), { recursive: true });
     if (entry.kind === "report") await writeFile(target, manifest.csv);
-    else if (entry.documentId || entry.artifactId) await writeFile(target, await downloadBytes(api, entry));
+    else if (entry.documentId || entry.artifactId || entry.invoiceId) await writeFile(target, await downloadBytes(api, entry));
     else continue;
     written.push(entry.path);
   }

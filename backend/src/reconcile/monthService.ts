@@ -42,8 +42,9 @@ import {
 } from "./month";
 import { listStatements, rowKeys, type StatementRecord } from "./service";
 import { getIntakeItem } from "../db/intake";
-import { listInvoices } from "../invoices/store";
+import { getInvoice, listInvoices } from "../invoices/store";
 import { isInvoiceIntakeRoute } from "../invoices/intakeRoute";
+import { getArtifact } from "../db/artifacts";
 import { normalizedAutoMatchVendor } from "../bookkeepingAutoMatch";
 import type { PendingEmailInvoice } from "./month";
 
@@ -251,7 +252,18 @@ export function ledgerRowsFrom(transactions: Array<Record<string, unknown>>, lin
     .filter((item) => item.amount !== undefined && (item.paidDate || item.transactionDate))
     .map((item) => {
       const own = documents.get(String(item.id)) || [];
-      const extra = [item.invoiceId, item.documentArtifactId].filter((value) => typeof value === "string" && value).map((value) => ({ id: String(value) }));
+      const invoiceId = typeof item.invoiceId === "string" && item.invoiceId ? item.invoiceId : undefined;
+      const invoiceDocumentId = typeof item.documentArtifactId === "string" && item.documentArtifactId
+        ? item.documentArtifactId
+        : invoiceId;
+      const extra = invoiceDocumentId ? [{ id: invoiceDocumentId, ...(invoiceId ? { invoiceId } : {}) }] : [];
+      const projectedDocuments = own.map((document) => ({ ...document }));
+      for (const document of extra) {
+        const existing = projectedDocuments.find((candidate) => candidate.id === document.id);
+        if (existing) {
+          if (document.invoiceId) existing.invoiceId = document.invoiceId;
+        } else projectedDocuments.push(document);
+      }
       return {
         id: String(item.id),
         date: String(item.paidDate || item.transactionDate).slice(0, 10),
@@ -266,7 +278,7 @@ export function ledgerRowsFrom(transactions: Array<Record<string, unknown>>, lin
         ...(item.statementRef ? { statementRef: String(item.statementRef) } : {}),
         ...(item.invoiceNumber ? { invoiceNumber: String(item.invoiceNumber) } : {}),
         ...(item.sourceType ? { sourceType: String(item.sourceType) } : {}),
-        documents: [...own, ...extra.filter((doc) => !own.some((existing) => existing.id === doc.id))],
+        documents: projectedDocuments,
       };
     });
 }
@@ -757,9 +769,28 @@ export type PackageEntry = {
   documentId?: string;
   /** Email attachment a statement came from, when it arrived by email. */
   artifactId?: string;
+  /** Confirmed invoice whose private source PDF is downloaded through the invoice route. */
+  invoiceId?: string;
   originalFilename?: string;
   rowId?: string;
 };
+
+export type PackageBlocker = { rowId: string; reference: string; reason: string };
+
+async function confirmedInvoiceSource(client: DynamoDBDocumentClient, row: LedgerRow, document: LedgerRow["documents"][number]) {
+  if (!document.invoiceId) return null;
+  const invoice = await getInvoice(client, document.invoiceId);
+  if (!invoice || invoice.status !== "confirmed") return null;
+  const artifactId = invoice.source?.artifactId;
+  if (!artifactId || (document.id !== document.invoiceId && document.id !== artifactId)) return null;
+  const artifact = await getArtifact(client, artifactId);
+  const bucket = process.env.EMAIL_DOCUMENTS_BUCKET || "";
+  const prefix = (process.env.EMAIL_DOCUMENT_DESTINATION_PREFIX || "artifacts/").replace(/^\/+|\/+$/g, "");
+  const location = /^s3:\/\/([^/]+)\/(.+)$/.exec(artifact?.storageUri || "");
+  if (!artifact || artifact.metadata?.importState !== "complete" || artifact.contentType !== "application/pdf"
+    || !location || location[1] !== bucket || !location[2].startsWith(`${prefix}/`)) return null;
+  return { invoiceId: invoice.id, artifactId, filename: artifact.filename || artifact.title };
+}
 
 /**
  * The month package for the accountant as a manifest: deterministic
@@ -767,12 +798,13 @@ export type PackageEntry = {
  * row's invoice/receipt and payment proof. Taxes and health insurance stay
  * out, as in every report sent so far. Building it never sends anything.
  */
-export async function monthPackage(client: DynamoDBDocumentClient, period: string, options: { draft?: boolean } = {}): Promise<{ period: string; state: MonthRecord["state"]; draft: boolean; entries: PackageEntry[]; csv: string }> {
+export async function monthPackage(client: DynamoDBDocumentClient, period: string, options: { draft?: boolean } = {}): Promise<{ period: string; state: MonthRecord["state"]; draft: boolean; entries: PackageEntry[]; blockers: PackageBlocker[]; csv: string }> {
   const view = await buildMonth(client, period);
   if (view.state !== "closed" && !options.draft) throw new MonthGateError(`Month ${period} is open; close it first (or build a draft package)`, []);
   const { REPORT_EXEMPT_CATEGORIES } = await import("../db/bookkeeping");
   const naming = await import("./naming");
   const entries: PackageEntry[] = [{ path: naming.packagePath(period, null, naming.reportName(period, "csv")), kind: "report" }];
+  const blockers: PackageBlocker[] = [];
   const statements = (await listStatements(client)).filter((record) => record.period === period);
   for (const record of statements) {
     const wallets = [...new Set(record.rows.map((row) => row.wallet || "main"))];
@@ -793,7 +825,19 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
       if (seenDocuments.has(document.id)) continue;
       seenDocuments.add(document.id);
       const raw = await getRawDocument(client, document.id);
-      if (!raw) continue;
+      if (!raw) {
+        const invoice = await confirmedInvoiceSource(client, row.ledger, document);
+        if (!invoice) {
+          blockers.push({ rowId: row.id, reference: document.invoiceId || document.id, reason: "expected invoice document is missing or cannot be safely resolved" });
+          continue;
+        }
+        entries.push({
+          path: naming.packagePath(period, folder, naming.documentName({ date: row.ledger.date, counterparty: row.ledger.counterparty, documentNumber: row.ledger.invoiceNumber, amount: row.ledger.amount, currency: row.ledger.currency, filename: String(invoice.filename || "invoice.pdf") })),
+          kind: "invoice", invoiceId: invoice.invoiceId, rowId: row.id,
+          ...(invoice.filename ? { originalFilename: String(invoice.filename) } : {}),
+        });
+        continue;
+      }
       entries.push({
         path: naming.packagePath(period, folder, naming.documentName({ date: row.ledger.date, counterparty: row.ledger.counterparty, documentNumber: row.ledger.invoiceNumber, amount: row.ledger.amount, currency: row.ledger.currency, filename: String(raw.originalFilename || "x.pdf") })),
         kind: "invoice", documentId: document.id, rowId: row.id,
@@ -812,5 +856,5 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
   const unique = naming.uniquePaths(entries.map((entry) => entry.path));
   entries.forEach((entry, index) => { entry.path = unique[index]; });
   const { tableCsv } = await import("./month");
-  return { period, state: view.state, draft: view.state !== "closed", entries, csv: tableCsv(view) };
+  return { period, state: view.state, draft: view.state !== "closed", entries, blockers, csv: tableCsv(view) };
 }
