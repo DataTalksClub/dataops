@@ -199,6 +199,24 @@ describe('finance tax schedule and upcoming debits API', () => {
     assert.equal(debits.find((debit: { scheduleId: string }) => debit.scheduleId === 'synthetic-fx-booked').status, 'paid');
   });
 
+  it('matches an explicitly stored other tax after normalizing whitespace and case', async () => {
+    const client = await getClient();
+    assert.equal((await invoke('PUT', '/api/finance/tax-schedule/synthetic-other-kind', {
+      label: 'Synthetic other tax', taxType: 'other', amount: '278.41', currency: 'EUR',
+      rule: { kind: 'once', date: '2022-06-15' }, source: 'recurring',
+    })).statusCode, 200);
+    await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-other-payment', transactionDate: '2022-06-15', paidDate: '2022-06-15',
+      entryType: 'expense', amount: '278.41', currency: 'EUR', category: 'Taxes',
+      taxType: ' Other ', counterparty: 'Synthetic authority', sourceType: 'manual',
+    });
+    const result = await financeUpcoming(client, 14, '2022-06-15', async () => null);
+    const debit = result.debits.find((item) => item.scheduleId === 'synthetic-other-kind');
+    assert.equal(debit?.status, 'paid');
+    assert.equal(debit?.matched?.id, 'synthetic-other-payment');
+    assert.equal(debit?.matched?.taxType, 'other');
+  });
+
   it('derives row VAT from the linked stored invoice facts', async () => {
     const client = await getClient();
     const transaction = (await putBookkeepingItem(client, 'bookkeeping', {
