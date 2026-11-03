@@ -254,6 +254,35 @@ describe('S3 authenticated knowledge content routes',()=>{
   const indexHistory = await call(ev('GET', '/knowledge/history', { query: { path: DOCUMENT_INDEX_PATH } }));
   assert.equal(sourceHistory.body.versions[0].revision, indexHistory.body.versions[0].revision);
  });
+ it('preserves frontmatter scalar types when changing document status', async () => {
+  const content = [
+   '---',
+   'id: ref.typed-status',
+   'title: Typed status reference',
+   'doc_type: reference',
+   'status: proposed',
+   "schema_version: '1'",
+   "review_cycle_days: '90'",
+   "last_reviewed_at: 'null'",
+   "next_review_at: 'null'",
+   '---',
+   '',
+   '# Typed status reference',
+  ].join('\n');
+  const created = await call(ev('POST', '/docs', {
+   body: { path: 'content/newsletter/typed-status.md', content, expectedRevision: revision, absent: true },
+  }));
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+
+  const archived = await call(ev('POST', '/docs/status', { body: { ref: 'ref.typed-status', status: 'archived' } }));
+  assert.equal(archived.status, 200, JSON.stringify(archived.body));
+  const stored = await call(ev('GET', '/docs', { query: { path: 'content/newsletter/typed-status.md' } }));
+  assert.match(stored.body.content, /^schema_version: 1$/m);
+  assert.match(stored.body.content, /^review_cycle_days: 90$/m);
+  assert.match(stored.body.content, /^last_reviewed_at: null$/m);
+  assert.match(stored.body.content, /^next_review_at: null$/m);
+  assert.doesNotMatch(stored.body.content, /(?:schema_version|review_cycle_days|last_reviewed_at|next_review_at): '(?:1|90|null)'/);
+ });
  it('renames atomically and rejects unsafe paths/stateless invalid parse',async()=>{
   const rename=await call(ev('POST','/docs/rename',{body:{old_path:'content/newsletter/reference.md',new_path:'content/newsletter/renamed.md',expectedRevision:revision}}));assert.equal(rename.status,200);
   assert.equal((await call(ev('GET','/docs',{query:{path:'content/newsletter/reference.md'}}))).status,404);
