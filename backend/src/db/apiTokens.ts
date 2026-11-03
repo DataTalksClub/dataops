@@ -117,7 +117,13 @@ export async function getApiToken(
     await deleteApiToken(client, apiToken.id);
     return null;
   }
-  await touchApiToken(client, apiToken, now);
+  try {
+    await touchApiToken(client, apiToken, now);
+  } catch (error: unknown) {
+    if (error && typeof error === 'object'
+      && (error as { name?: string }).name === 'ConditionalCheckFailedException') return null;
+    throw error;
+  }
   return { ...apiToken, lastUsedAt: now.toISOString() };
 }
 
