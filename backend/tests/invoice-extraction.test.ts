@@ -223,3 +223,34 @@ test('redacted empty-PDF fixture is flagged as a blank conversion, including whe
   const padded=Buffer.concat([blank,Buffer.alloc(MIN_BLANK_PDF_BYTES+1-blank.length,32)]);
   await assert.rejects(pdfText(padded),BlankConversionError);
 });
+
+test('trailing sentence punctuation on totals and single currency amounts does not drop the amount',()=>{
+  const period=extractInvoiceText('Example Service GmbH\nInvoice date: 2026-10-16\nTotal: $119.00.');
+  assert.equal(period.fields.amount,'119.00');
+  assert.equal(period.fields.currency,'USD');
+  const comma=extractInvoiceText('Example Service GmbH\nInvoice date: 2026-10-16\nTotal: $1,234.56, paid');
+  assert.equal(comma.fields.amount,'1234.56');
+  assert.equal(comma.fields.currency,'USD');
+  const single=extractInvoiceText('Example Service GmbH\nSubscription €726.59.');
+  assert.equal(single.fields.amount,'726.59');
+  assert.equal(single.fields.currency,'EUR');
+});
+
+test('small renderable PDF under 1 KB preserves its real extraction error instead of BlankConversionError',async()=>{
+  const stream='0 0 m 10 10 l S';
+  const objects=[
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R 3 0 R 3 0 R 3 0 R] /Count 4 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+  ];
+  let out='%PDF-1.4\n';const offsets=[0];
+  for(const [i,obj] of objects.entries()){offsets.push(Buffer.byteLength(out));out+=`${i+1} 0 obj\n${obj}\nendobj\n`;}
+  const xref=Buffer.byteLength(out);
+  out+='xref\n0 5\n0000000000 65535 f \n'+offsets.slice(1).map(x=>`${String(x).padStart(10,'0')} 00000 n \n`).join('')+`trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  const smallRenderable=Buffer.from(out);
+  assert.ok(smallRenderable.length<MIN_BLANK_PDF_BYTES);
+  await assert.rejects(pdfText(smallRenderable),/pdf-ocr-page-limit/);
+  const finance=await extractFinancePdf(smallRenderable,{llm:emptyReader});
+  assert.ok(finance.extraction.issues.includes('PDF text extraction failed: pdf-ocr-page-limit'));
+});

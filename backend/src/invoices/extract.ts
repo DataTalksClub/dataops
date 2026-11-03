@@ -133,24 +133,24 @@ function money(value: string): string | undefined {
 }
 const TOTAL_LABEL = /(?:grand\s+total|total\s+amount|amount\s+(?:due|charged|paid)|balance\s+due|order\s+total|total\s+due|gesamtsumme|rechnungsbetrag|total)\b[^\n]{0,80}/gi;
 function lineMoney(line: string): { amount: string; currency: 'USD' | 'EUR' } | undefined {
-  const match = /(?:(\$|€|\bUSD\b|\bEUR\b)\s*([\d][\d.,]*)\s*(?:USD|EUR)?)|([\d][\d.,]*)\s*(\$|€|\bUSD\b|\bEUR\b)/i.exec(line);
+  const match = /(?:(\$|€|\bUSD\b|\bEUR\b)\s*(\d(?:[\d.,]*\d)?)\s*(?:USD|EUR)?)|(\d(?:[\d.,]*\d)?)\s*(\$|€|\bUSD\b|\bEUR\b)/i.exec(line);
   if (!match) return undefined;
   const euro = (symbol: string) => symbol === '€' || /EUR/i.test(symbol);
   if (match[2] !== undefined) {
-    const amount = money(match[2]);
+    const amount = money(match[2].replace(/[.,]+$/, ''));
     return amount ? { amount, currency: euro(match[1]) ? 'EUR' : 'USD' } : undefined;
   }
-  const amount = money(match[3]);
+  const amount = money(match[3].replace(/[.,]+$/, ''));
   return amount ? { amount, currency: euro(match[4]) ? 'EUR' : 'USD' } : undefined;
 }
 // European comma decimals ("45,70 €") only inside an explicit € context.
 const COMMA_EURO = /((?:\d{1,3}(?:\.\d{3})+|\d{1,4}),\d{2})\s*€/;
-const CURRENCY_AMOUNT = /(?:(\$|€|\bUSD\b|\bEUR\b)\s*([\d][\d.,]*)|([\d][\d.,]*)\s*(\$|€|\bUSD\b|\bEUR\b))/gi;
+const CURRENCY_AMOUNT = /(?:(\$|€|\bUSD\b|\bEUR\b)\s*(\d(?:[\d.,]*\d)?)|(\d(?:[\d.,]*\d)?)\s*(\$|€|\bUSD\b|\bEUR\b))/gi;
 function soleCurrencyAmount(text: string): { amount: string; currency: 'USD' | 'EUR' } | undefined {
   const found = new Map<string, { amount: string; currency: 'USD' | 'EUR' }>();
   for (const match of text.matchAll(CURRENCY_AMOUNT)) {
     const symbol = match[1] ?? match[4] ?? '';
-    const amount = money(match[2] ?? match[3] ?? '');
+    const amount = money((match[2] ?? match[3] ?? '').replace(/[.,]+$/, ''));
     if (!amount) continue;
     const currency = symbol === '€' || /EUR/i.test(symbol) ? 'EUR' : 'USD';
     found.set(`${currency}:${amount}`, { amount, currency });
@@ -369,13 +369,12 @@ export async function pdfText(bytes: Buffer): Promise<string> {
   const pdfjs = await load();
   const task = pdfjs.getDocument({ data: new Uint8Array(bytes), isEvalSupported: false, useSystemFonts: false, verbosity: 0,
     standardFontDataUrl: join(dirname(require.resolve('pdfjs-dist/package.json')), 'standard_fonts') + '/' });
+  let text = '', hasRenderableContent = false;
   try {
     const doc = await task.promise;
     if (doc.numPages > 40) throw new Error('pdf-page-limit');
-    let text = '';
-    let hasRenderableContent = false;
     const sparsePages: number[] = [];
-    const visibleOperationNames = new Set(['stroke','closeStroke','fill','eoFill','fillStroke','eoFillStroke','closeFillStroke','closeEOFillStroke','shadingFill','showText','showSpacedText']);
+    const visibleOperationNames = new Set(['constructPath','stroke','closeStroke','fill','eoFill','fillStroke','eoFillStroke','closeFillStroke','closeEOFillStroke','shadingFill','showText','showSpacedText']);
     const visibleOperations = new Set<unknown>(Object.entries(pdfjs.OPS)
       .filter(([name]) => visibleOperationNames.has(name) || name.startsWith('paintImage') || name.startsWith('paintInlineImage') || name === 'paintJpegXObject' || name === 'paintSolidColorImageMask')
       .map(([, operation]) => operation));
@@ -384,7 +383,7 @@ export async function pdfText(bytes: Buffer): Promise<string> {
       const content = await page.getTextContent();
       let pageText = '';
       for (const item of content.items) {
-        if ('str' in item) pageText += item.str + (item.hasEOL ? '\n' : ' ');
+        if ('str' in item) { if (item.str.trim()) hasRenderableContent = true; pageText += item.str + (item.hasEOL ? '\n' : ' '); }
         if (text.length + pageText.length > 200000) throw new Error('pdf-text-limit');
       }
       text += pageText + '\n';
@@ -403,7 +402,7 @@ export async function pdfText(bytes: Buffer): Promise<string> {
     if (text.length > 200000) throw new Error('pdf-text-limit');
     return text;
   } catch(error) {
-    if(bytes.length<MIN_BLANK_PDF_BYTES && !(error instanceof BlankConversionError)) throw new BlankConversionError();
+    if(bytes.length<MIN_BLANK_PDF_BYTES && !text.replace(/\s/g, '').length && !hasRenderableContent && !(error instanceof BlankConversionError)) throw new BlankConversionError();
     throw error;
   } finally { await task.destroy(); }
 }
