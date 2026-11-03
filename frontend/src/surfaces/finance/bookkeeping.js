@@ -30,7 +30,7 @@ import { mountInvoiceReview } from "./invoices.js";
 import { createBookkeepingTransactionModal } from "./bookkeeping-transaction-modal.js";
 import { loadStatementLinkIndex } from "./bookkeeping-statement.js";
 import { openBookkeepingDialog } from "./bookkeeping-dialogs.js";
-import { createBookkeepingFinance } from "./bookkeeping-vat.js";
+import { createBookkeepingFinance, monthlyLedgerEntries } from "./bookkeeping-vat.js";
 import { html } from "./shared.js";
 import {
   FIELD_LABELS,
@@ -238,7 +238,7 @@ export function createBookkeepingSurface(context) {
       if (search.value !== filters.q) search.value = filters.q;
     }
     function renderLedger() {
-      const scoped = ledgerEntriesForLens();
+      const scoped = monthlyLedgerEntries(ledgerEntriesForLens(), lens, financeSummary.entryMap());
       const counts = {
         category: scoped.filter(needsCategory).length,
         receipt: scoped.filter((entry) => !hasEvidence(entry.id)).length,
