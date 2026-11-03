@@ -2,7 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { dedupe, resolvePeriod, summarize, unmatchedStatementLines, type LedgerRow, type RateLookup } from '../src/finance/summary';
 import { clearEcbRateCacheForTests, loadEcbRates, parseEcbCsv } from '../src/finance/rates';
-import { parsePeriodQuery } from '../src/finance/service';
+import { financeStatementLines, parsePeriodQuery } from '../src/finance/service';
+import { bankRowsFrom } from '../src/reconcile/monthService';
 import { businessAccountStatementRequirement } from '../src/finance/businessAccounts';
 
 // Synthetic fixture books for October 2026, every figure invented.
@@ -315,4 +316,21 @@ describe('ECB rates', () => {
     assert.deepEqual(errors, ['ECB USD: HTTP 503']);
     assert.equal(lookup('USD', '2026-10-25'), null);
   });
+});
+
+it('uses the reconciliation bank identity for mandatory statement entries', () => {
+  const statement = {
+    id: 'synthetic-statement', recordType: 'reconcile-statement', accountId: 'synthetic-account',
+    period: '2026-04', createdAt: '2026-05-01T00:00:00Z', updatedAt: '2026-05-01T00:00:00Z',
+    rows: [{ date: '2026-04-16', amount: '-123.45', currency: 'EUR',
+      counterparty: 'Techniker Krankenkasse', reference: 'synthetic contribution' }],
+  } as any;
+  const bank = bankRowsFrom([statement]);
+  const lines = financeStatementLines([statement]);
+  const summary = summarize({ today: '2026-05-01', query: { month: '2026-04' },
+    rates: noRates, rows: [], statementLines: lines });
+  assert.strictEqual(summary.entries.length, 1);
+  assert.strictEqual(summary.entries[0].bankKey, bank[0].key);
+  assert.notStrictEqual(summary.entries[0].id, bank[0].key);
+  assert.strictEqual(summary.entries[0].mandatoryKind, 'tk_debit');
 });

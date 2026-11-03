@@ -12,7 +12,7 @@ import type { BusinessAccountStatementRequirement } from './businessAccounts';
  */
 
 export type LedgerRow = Record<string, unknown> & { id: string };
-export type StatementLine = { id?: string; accountId: string; date: string; amount: string; currency: string; counterparty?: string; reference?: string };
+export type StatementLine = { id?: string; bankKey?: string; accountId: string; date: string; amount: string; currency: string; counterparty?: string; reference?: string };
 export type PendingInvoice = { id: string; date: string; amount?: string; currency?: string; counterparty?: string };
 export type StatementCoverage = { accountId: string; month: string };
 
@@ -27,6 +27,7 @@ export type Line = 'operating' | 'vat' | 'taxes' | 'health-insurance' | 'owner-p
 
 export type Entry = {
   id: string;
+  bankKey?: string;
   date: string;
   month: string;
   direction: 'in' | 'out';
@@ -411,7 +412,8 @@ function toMandatoryStatementEntry(line: StatementLine, index: number, rates: Ra
     category: mandatory.line === 'vat' ? 'VAT' : mandatory.line === 'taxes' ? 'Taxes' : 'Health Insurance',
     sourceType: 'statement',
   };
-  return toEntry(row, rates);
+  const entry = toEntry(row, rates);
+  return entry && line.bankKey ? { ...entry, bankKey: line.bankKey } : entry;
 }
 
 export type SummaryInput = {
