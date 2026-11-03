@@ -102,7 +102,10 @@ export function createBookkeepingFinance({ loadYear, getLens, getEntries, getTod
   }
 
   function indexEntries() {
-    entryIndex = new Map(entries().map((entry) => [entry.id, entry]));
+    entryIndex = new Map(entries().flatMap((entry) => [
+      [String(entry.id), entry],
+      ...(entry.bankKey ? [[`bank-only:${entry.bankKey}`, entry]] : []),
+    ]));
   }
 
   function invalidate() {

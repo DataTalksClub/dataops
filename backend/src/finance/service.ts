@@ -1,7 +1,8 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { listBookkeepingItems, listTransactions } from '../db/bookkeeping';
 import { listInvoices } from '../invoices/store';
-import { latestBalances, listStatements } from '../reconcile/service';
+import { latestBalances, listStatements, rowKeys, type StatementRecord } from '../reconcile/service';
+import { bankKeyFor } from '../reconcile/month';
 import { loadEcbRates } from './rates';
 import { bookingDate, summarize, unmatchedStatementLines, type FinanceSummary, type LedgerRow, type PeriodQuery, type StatementLine } from './summary';
 import { classifyMandatoryPayment } from './mandatoryPayments';
@@ -56,6 +57,19 @@ function linkedVatFacts(row: LedgerRow, documents: Array<Record<string, unknown>
   return exact.length > 1 && new Set(exact.map(vatFacts)).size === 1 ? exact[0] : undefined;
 }
 
+/** Use the same stable bank-row identity as reconciliation, including overlapping statements. */
+export function financeStatementLines(statements: StatementRecord[]): StatementLine[] {
+  return statements.flatMap((statement) => {
+    const keys = rowKeys(statement.rows);
+    return statement.rows.map((line, index) => ({
+      ...line,
+      id: `${statement.id}:${index}`,
+      bankKey: bankKeyFor(statement.accountId, keys[index]),
+      accountId: statement.accountId,
+    }));
+  });
+}
+
 export async function financeSummary(client: DynamoDBDocumentClient, query: PeriodQuery, today = berlinToday()): Promise<FinanceSummary & { rateErrors: string[] }> {
   const [rows, invoices, statements, accounts, documents, links] = await Promise.all([
     listTransactions(client),
@@ -81,11 +95,7 @@ export async function financeSummary(client: DynamoDBDocumentClient, query: Peri
     pendingInvoices: invoices
       .filter((invoice) => invoice.status === 'pending')
       .map((invoice) => ({ id: invoice.id, date: invoice.fields.paidDate || invoice.fields.transactionDate || invoice.createdAt.slice(0, 10), amount: invoice.fields.amount, currency: invoice.fields.currency, counterparty: invoice.fields.counterparty })),
-    statementLines: statements.flatMap((statement) => statement.rows.map((line, index) => ({
-      ...line,
-      id: `${statement.id}:${index}`,
-      accountId: statement.accountId,
-    }))),
+    statementLines: financeStatementLines(statements),
     businessAccounts: accounts
       .filter((account) => account.kind === 'business' && account.active !== false)
       .map((account) => businessAccountStatementRequirement(String(account.id))),

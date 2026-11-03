@@ -473,3 +473,24 @@ test("monthly ledger omits only outgoing mandatory rows represented in the separ
   assert.deepEqual(monthlyLedgerEntries(rows, "2026", finance), rows);
   assert.deepEqual(monthlyLedgerEntries(rows, "2026-04", new Map()), rows);
 });
+
+test("unmatched mandatory statement row appears only in the mandatory section", async () => {
+  const row = bankOnlyEntryFromMonthRow({
+    date: "2026-04-16", bank: { key: "synthetic-bank-key", amount: "-123.45", currency: "EUR" },
+    exception: { kind: "tk_debit", satisfied: true },
+  });
+  const finance = createBookkeepingFinance({
+    loadYear: async () => ({ entries: [{
+      id: "synthetic-statement:0", bankKey: "synthetic-bank-key", month: "2026-04",
+      date: "2026-04-16", direction: "out", line: "health-insurance",
+      mandatoryKind: "tk_debit", amount: "123.45", currency: "EUR", eur: 123.45,
+    }], months: [], totals: {} }),
+    getLens: () => "2026-04", getEntries: () => [], refresh: () => {},
+  });
+  assert.deepEqual(monthlyLedgerEntries([row], "2026-04", finance.entryMap()), [row],
+    "while the summary has not loaded, retain the bank row");
+  await finance.ensure();
+  assert.deepEqual(monthlyLedgerEntries([row], "2026-04", finance.entryMap()), []);
+  assert.match(finance.markup(escapeHtml), /Health insurance \/ TK/);
+  assert.deepEqual(monthlyLedgerEntries([row], "2026", finance.entryMap()), [row]);
+});
