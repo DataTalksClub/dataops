@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { handleBookkeepingRoutes } from "../src/routes/bookkeeping";
+import { selectAccountantReportRows } from "../src/finance/accountantReport";
 
 const entries = [
   {
@@ -84,6 +85,28 @@ const client = {
 } as unknown as DynamoDBDocumentClient;
 
 describe("native accountant report API", () => {
+  it("selects the cash period before applying allocation projection and report exclusions", () => {
+    const rows = selectAccountantReportRows([
+      { id: "moved", transactionDate: "2026-10-31", paidDate: "2026-11-02", amount: "30.00", currency: "EUR", entryType: "income", counterparty: "Synthetic Company", description: "Combined payment", allocations: [
+        { documentId: "synthetic-a", counterparty: "Synthetic A", description: "Consulting", amount: "10.00", currency: "EUR" },
+        { documentId: "synthetic-b", counterparty: "Synthetic B", description: "Hosting", amount: "20.00", currency: "EUR" },
+      ] },
+      { id: "owner", paidDate: "2026-11-03", amount: "4.00", currency: "EUR", entryType: "expense", category: "Owner pay", ownerPayType: "draw" },
+      { id: "tax", paidDate: "2026-11-04", amount: "5.00", currency: "EUR", entryType: "expense", category: "Taxes" },
+      { id: "tk", paidDate: "2026-11-05", amount: "6.00", currency: "EUR", entryType: "expense", category: "Health Insurance" },
+      { id: "tk-vendor", paidDate: "2026-11-05", amount: "7.00", currency: "EUR", entryType: "expense", counterparty: "Techniker Krankenkasse", description: "Health contribution" },
+      { id: "consulting", paidDate: "2026-11-06", amount: "9.00", currency: "EUR", entryType: "expense", category: "Consulting", counterparty: "Synthetic Consulting", description: "Monthly service" },
+    ], "2026-11");
+    assert.deepEqual(rows.map((row) => [row.id, row.counterparty, row.description, row.amount]), [
+      ["moved", "Synthetic A", "Consulting", "10.00"],
+      ["moved", "Synthetic B", "Hosting", "20.00"],
+      ["consulting", "Synthetic Consulting", "Monthly service", "9.00"],
+    ]);
+    assert.equal(selectAccountantReportRows([
+      { id: "moved", transactionDate: "2026-10-31", paidDate: "2026-11-02", amount: "30.00", currency: "EUR", entryType: "income" },
+    ], "2026-10").length, 0);
+  });
+
   it("serves persisted Company/What through the native CLI path and excludes owner draws and taxes", async () => {
     const response = await handleBookkeepingRoutes(
       "/api/bookkeeping/reports/accountant",

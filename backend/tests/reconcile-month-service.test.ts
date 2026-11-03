@@ -5,9 +5,9 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { createDocumentLink, getBookkeepingItem, putBookkeepingItem } from '../src/db/bookkeeping';
 import { createInvoice } from '../src/invoices/store';
-import { TABLE_ARTIFACTS } from '../src/db/tableNames';
+import { TABLE_ARTIFACTS, TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { saveStatement } from '../src/reconcile/service';
-import { buildMonth, closeMonth, getConfig, ledgerRowsFrom, monthPackage, saveConfig } from '../src/reconcile/monthService';
+import { attachProof, buildMonth, closeMonth, getConfig, ledgerRowsFrom, monthPackage, saveConfig } from '../src/reconcile/monthService';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 
 describe('reconciliation ledger projection', () => {
@@ -107,10 +107,10 @@ describe('reconciliation ledger projection', () => {
       });
       const incomplete = await monthPackage(client, period, { draft: true });
       assert.equal(incomplete.blockers.length, 2);
-      assert.deepEqual(incomplete.blockers.map((blocker) => blocker.rowId), [
+      assert.deepEqual(incomplete.blockers.map((blocker) => blocker.rowId).sort(), [
         'ledger:synthetic-missing-invoice-ledger',
         'ledger:synthetic-mismatched-invoice-ledger',
-      ]);
+      ].sort());
       assert.ok(incomplete.blockers.every((blocker) => /cannot be safely resolved/.test(blocker.reason)));
     } finally {
       if (oldBucket === undefined) delete process.env.EMAIL_DOCUMENTS_BUCKET; else process.env.EMAIL_DOCUMENTS_BUCKET = oldBucket;
@@ -301,5 +301,86 @@ describe('reconciliation ledger projection', () => {
     } finally {
       await saveConfig(client, previousConfig, 'tester');
     }
+  });
+
+  it('packages only selected cash rows, allocated invoice amounts, and registered proofs with proof-role precedence', async () => {
+    const period = '2027-01';
+    const makeDocument = async (id: string, filename: string, hash: string, type = 'invoice') => (await putBookkeepingItem(client, 'document', {
+      id, documentType: type, status: 'active', contentType: 'application/pdf', originalFilename: filename,
+      byteSize: 128, sha256: hash.repeat(64), s3Key: `documents/${filename}`,
+    })).item;
+
+    const allocationDocuments = [
+      await makeDocument('synthetic-package-allocation-one', 'synthetic-allocation-one.pdf', '1'),
+      await makeDocument('synthetic-package-allocation-two', 'synthetic-allocation-two.pdf', '2'),
+      await makeDocument('synthetic-package-allocation-three', 'synthetic-allocation-three.pdf', '5'),
+    ];
+    const allocatedPayment = (await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-package-allocated-income', transactionDate: '2026-12-30', paidDate: '2027-01-03',
+      counterparty: 'Synthetic Combined Client', description: 'Combined settlement', amount: '120.00', currency: 'EUR', entryType: 'income', category: 'Consulting',
+      allocations: [
+        { id: 'synthetic-allocation-one', documentId: allocationDocuments[0].id, invoiceNumber: 'SYN-A', counterparty: 'Synthetic Client A', description: 'Consulting milestone', amount: '70.00', currency: 'EUR' },
+        { id: 'synthetic-allocation-two', documentId: allocationDocuments[1].id, invoiceNumber: 'SYN-B', counterparty: 'Synthetic Client B', description: 'Support service', amount: '35.00', currency: 'EUR' },
+        { id: 'synthetic-allocation-three', documentId: allocationDocuments[2].id, invoiceNumber: 'SYN-C', counterparty: 'Synthetic Client C', description: 'Workshop delivery', amount: '15.00', currency: 'EUR' },
+      ],
+    })).item;
+    for (const document of allocationDocuments) {
+      await createDocumentLink(client, { documentId: document.id, transactionId: String(allocatedPayment.id), coverageType: 'evidence' });
+    }
+
+    const linkedProof = await makeDocument('synthetic-package-linked-proof', 'synthetic-payment-proof-one.pdf', '3');
+    const secondProof = await makeDocument('synthetic-package-second-proof', 'synthetic-payment-proof-two.pdf', '4', 'other-evidence');
+    const linkedProofTransaction = (await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-package-income-with-proof', transactionDate: '2027-01-05', paidDate: '2027-01-06',
+      counterparty: 'Synthetic Proof Client', description: 'Proof-linked income', amount: '12.00', currency: 'EUR', entryType: 'income', category: 'Consulting',
+    })).item;
+    const secondProofTransaction = (await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-package-proof-only-income', transactionDate: '2027-01-07', paidDate: '2027-01-08',
+      counterparty: 'Synthetic Other Client', description: 'Proof-only income', amount: '8.00', currency: 'EUR', entryType: 'income', category: 'Consulting',
+    })).item;
+    await createDocumentLink(client, { documentId: linkedProof.id, transactionId: String(linkedProofTransaction.id), coverageType: 'evidence' });
+    await attachProof(client, period, 'tester', String(linkedProofTransaction.id), linkedProof.id);
+    await attachProof(client, period, 'tester', String(secondProofTransaction.id), secondProof.id);
+
+    const unpaidDeal = 'synthetic-package-unpaid-deal';
+    const crmNow = new Date().toISOString();
+    await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: {
+      PK: `DEAL#${unpaidDeal}`, SK: `DEAL#${unpaidDeal}`, id: unpaidDeal, name: 'Synthetic Unpaid Client', version: 1, createdAt: crmNow, updatedAt: crmNow,
+    } }));
+    await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: {
+      PK: `SPONSOR_FINANCE#${unpaidDeal}`, SK: `SPONSOR_FINANCE#${unpaidDeal}`, id: 'synthetic-package-unpaid-invoice', dealId: unpaidDeal,
+      invoiceNumber: 'SYN-UNPAID', amountDue: '88.00', currency: 'EUR', issuedOn: '2027-01-09', createdAt: crmNow, updatedAt: crmNow,
+    } }));
+
+    const nextMonth = await monthPackage(client, period, { draft: true });
+    assert.match(nextMonth.csv, /Synthetic Client A/);
+    assert.match(nextMonth.csv, /Consulting milestone/);
+    assert.match(nextMonth.csv, /70\.00/);
+    assert.match(nextMonth.csv, /Synthetic Client B/);
+    assert.match(nextMonth.csv, /Support service/);
+    assert.match(nextMonth.csv, /35\.00/);
+    assert.match(nextMonth.csv, /Synthetic Client C/);
+    assert.match(nextMonth.csv, /Workshop delivery/);
+    assert.match(nextMonth.csv, /15\.00/);
+    assert.doesNotMatch(nextMonth.csv, /Synthetic Combined Client|Combined settlement|Synthetic Unpaid Client/);
+    assert.ok(nextMonth.entries.some((entry) => entry.documentId === allocationDocuments[0].id
+      && entry.path === '2027-01/income/2027-01-03_synthetic-client-a_SYN-A_70.00EUR.pdf'));
+    assert.ok(nextMonth.entries.some((entry) => entry.documentId === allocationDocuments[1].id
+      && entry.path === '2027-01/income/2027-01-03_synthetic-client-b_SYN-B_35.00EUR.pdf'));
+    assert.ok(nextMonth.entries.some((entry) => entry.documentId === allocationDocuments[2].id
+      && entry.path === '2027-01/income/2027-01-03_synthetic-client-c_SYN-C_15.00EUR.pdf'));
+    assert.equal(nextMonth.entries.filter((entry) => entry.documentId === linkedProof.id).length, 1);
+    assert.ok(nextMonth.entries.some((entry) => entry.kind === 'proof' && entry.documentId === linkedProof.id
+      && entry.path.startsWith('2027-01/proofs/')));
+    assert.ok(nextMonth.entries.some((entry) => entry.kind === 'proof' && entry.documentId === secondProof.id
+      && entry.path.startsWith('2027-01/proofs/')));
+    assert.equal(nextMonth.entries.filter((entry) => entry.kind === 'proof').length, 2);
+
+    const priorMonth = await monthPackage(client, '2026-12', { draft: true });
+    assert.doesNotMatch(priorMonth.csv, /Synthetic Client A|Synthetic Client B|Synthetic Proof Client/);
+    assert.ok(!priorMonth.entries.some((entry) => allocationDocuments.some((document) => entry.documentId === document.id)));
+    const unchangedParent = await getBookkeepingItem(client, 'bookkeeping', String(allocatedPayment.id));
+    assert.equal(unchangedParent?.amount, '120.00');
+    assert.equal((unchangedParent?.allocations as unknown[]).length, 3);
   });
 });
