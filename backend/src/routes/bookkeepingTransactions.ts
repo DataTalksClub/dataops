@@ -5,6 +5,7 @@ import {
   BookkeepingItemLockedError,
   bookkeepingItemId,
   documentLinkItem,
+  evidenceSourceVersionKey,
   getBookkeepingItem,
   listBookkeepingItems,
   listTransactions,
@@ -167,11 +168,14 @@ async function loadAllocationValidationContext(
   client: DynamoDBDocumentClient,
   transactionId: string,
 ) {
+  // Read versions before the consistent evidence scan. Any link change after
+  // this snapshot invalidates the corresponding version at transaction time.
+  const sourceVersions = await listBookkeepingItems(client, "evidence-source-version", true);
   const [documents, links, allTransactions, claims] = await Promise.all([
-    listBookkeepingItems(client, "document"),
-    listBookkeepingItems(client, "link"),
-    listTransactions(client),
-    listBookkeepingItems(client, "allocation-source-claim"),
+    listBookkeepingItems(client, "document", true),
+    listBookkeepingItems(client, "link", true),
+    listTransactions(client, true),
+    listBookkeepingItems(client, "allocation-source-claim", true),
   ]);
 
   const documentsById = new Map<string, AllocationDocumentContext>();
@@ -184,6 +188,7 @@ async function loadAllocationValidationContext(
       originalFilename:
         typeof doc.originalFilename === "string" ? doc.originalFilename : undefined,
       voidStatus: typeof doc.voidStatus === "string" ? doc.voidStatus : undefined,
+      linkRefCount: typeof doc.linkRefCount === "number" ? doc.linkRefCount : undefined,
       facts:
         doc.facts && typeof doc.facts === "object"
           ? (doc.facts as Record<string, unknown>)
@@ -256,6 +261,7 @@ async function loadAllocationValidationContext(
     links,
     documentsById,
     claims,
+    sourceVersions,
     otherAllocatedDocIds,
     otherAllocatedInvoiceIds,
     otherAllocatedSha256s,
@@ -315,6 +321,28 @@ function buildAllocationTransactItems(
   const now = new Date().toISOString();
   const nextClaims = allocationClaimsFor(transactionId, allocations, context.documentsById, now);
   const items: BookkeepingTransactItem[] = [];
+  const versions = new Map(context.sourceVersions.map((item) => [String(item.id), item.revision]));
+  const checkedVersions = new Set<string>();
+  for (const allocation of allocations) {
+    const document = context.documentsById.get(allocation.documentId);
+    const sha256 = String(document?.sha256 || "").trim().toLowerCase();
+    const sources: Array<["document" | "sha256", string]> = [
+      ["document", allocation.documentId],
+      ...(sha256 ? [["sha256", sha256] as ["sha256", string]] : []),
+    ];
+    for (const [kind, value] of sources) {
+      const source = evidenceSourceVersionKey(kind, value);
+      if (checkedVersions.has(source.id)) continue;
+      checkedVersions.add(source.id);
+      const revision = versions.get(source.id);
+      items.push({ ConditionCheck: {
+        TableName: TABLE_BOOKKEEPING,
+        Key: { PK: source.PK, SK: source.SK },
+        ConditionExpression: revision === undefined ? "attribute_not_exists(PK)" : "revision = :revision",
+        ...(revision === undefined ? {} : { ExpressionAttributeValues: { ":revision": revision } }),
+      } });
+    }
+  }
 
   for (const claim of nextClaims.values()) {
     items.push({ Put: {
@@ -375,6 +403,18 @@ function buildAllocationTransactItems(
     if (!document || document.status !== "active") {
       throw new AllocationValidationError(`Allocated document ${documentId} is not active.`, 409);
     }
+    // A normal link changes this counter. Pin it to the validation snapshot
+    // so a different parent's link cannot slip in after the preflight scan.
+    const refCondition = document.linkRefCount === undefined
+      ? "attribute_not_exists(linkRefCount)"
+      : "linkRefCount = :expectedRefCount";
+    const refValues = document.linkRefCount === undefined
+      ? {}
+      : { ":expectedRefCount": document.linkRefCount };
+    const shaCondition = document.sha256 === undefined
+      ? "attribute_not_exists(sha256)"
+      : "sha256 = :expectedSha256";
+    const shaValues = document.sha256 === undefined ? {} : { ":expectedSha256": document.sha256 };
     const existingEvidenceLink = context.links.find((link) =>
       String(link.transactionId || "") === transactionId
       && String(link.documentId || "") === documentId
@@ -398,9 +438,9 @@ function buildAllocationTransactItems(
       items.push({ ConditionCheck: {
         TableName: TABLE_BOOKKEEPING,
         Key: { PK: `DOCUMENT#${documentId}`, SK: `DOCUMENT#${documentId}` },
-        ConditionExpression: "#status = :active",
+        ConditionExpression: `#status = :active AND ${refCondition} AND ${shaCondition}`,
         ExpressionAttributeNames: { "#status": "status" },
-        ExpressionAttributeValues: { ":active": "active" },
+        ExpressionAttributeValues: { ":active": "active", ...refValues, ...shaValues },
       } });
       const sponsorClaim = `SPONSOR_FINANCE_CLAIM#document#${documentId}`;
       items.push({ ConditionCheck: {
@@ -426,9 +466,9 @@ function buildAllocationTransactItems(
       TableName: TABLE_BOOKKEEPING,
       Key: { PK: `DOCUMENT#${documentId}`, SK: `DOCUMENT#${documentId}` },
       UpdateExpression: "SET updatedAt = :now ADD linkRefCount :one",
-      ConditionExpression: "#status = :active",
+      ConditionExpression: `#status = :active AND ${refCondition} AND ${shaCondition}`,
       ExpressionAttributeNames: { "#status": "status" },
-      ExpressionAttributeValues: { ":one": 1, ":active": "active", ":now": now },
+      ExpressionAttributeValues: { ":one": 1, ":active": "active", ":now": now, ...refValues, ...shaValues },
     } });
   }
 
