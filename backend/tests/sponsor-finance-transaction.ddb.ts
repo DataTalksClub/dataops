@@ -68,7 +68,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
   const bookingId = 'booking-finance-1';
   const adminId = 'finance-admin-1';
 
-  async function bootstrapPayable(label: string, amountDue = '100') {
+  async function bootstrapPayable(label: string, amountDue = '100', currency = 'EUR') {
     const id = `booking-${label}`;
     await put(client, TABLE_SPONSOR_CRM, {
       ...key('DEAL', id), id, version: 1, status: 'agreed', active: true,
@@ -77,7 +77,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const classified = await classifyFinance(client, {
       actorId: adminId, dealId: id, dealVersion: 1,
       idempotencyKey: idem(`${label}-classify`),
-      body: { invoiceRequirement: 'required', amountDue, currency: 'EUR', taxMode: 'included' },
+      body: { invoiceRequirement: 'required', amountDue, currency, taxMode: 'included' },
     });
     const requested = await recordInvoiceRequest(client, {
       actorId: adminId, dealId: id, dealVersion: 1,
@@ -1439,7 +1439,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
 
   it('updates conversion metadata through the owner-aware canonical sponsor receipt route', async () => {
     process.env.SPONSOR_FINANCE_ENABLED = 'true';
-    const seeded = await bootstrapPayable('receipt-conversion-route', '100');
+    const seeded = await bootstrapPayable('receipt-conversion-route', '100', 'USD');
     const received = await receivePayment(client, { actorId: adminId, dealId: seeded.dealId, dealVersion: 1,
       expectedVersion: seeded.version, idempotencyKey: idem('conversion-route-receive'), receivedOn: '2026-10-02',
       amount: '40', currency: 'USD', reference: 'synthetic-bank:conversion-route', counterparty: 'Synthetic Sponsor' });
