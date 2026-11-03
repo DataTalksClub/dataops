@@ -954,6 +954,84 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.ok(staffExport.body.includes('Rehearse Tuesday'));
   });
 
+  it('keeps podcast research and host run sheets out of guest views and exports', async () => {
+    const card = await createCard(client, {
+      ...templateLink(),
+      title: '[Podcast] 2026-12-03 - Jane Doe',
+      anchorDate: '2026-12-03',
+      people: ['Jane Doe'],
+    });
+    const episode = await createPodcastEpisode(client, {
+      title: 'Shipping ML features',
+      guests: [{ name: 'Jane Doe' }],
+      status: 'booked',
+      recordingDate: '2026-12-03',
+      cardId: card.id,
+    });
+    const cases = [
+      {
+        template: 'podcast-guest-research' as const,
+        content: {
+          guestName: 'PRIVATE-RESEARCH-GUEST',
+          sourceLinks: 'PRIVATE-RESEARCH-SOURCE',
+          keyInsights: 'PRIVATE-RESEARCH-FINDING',
+          hostOnlyNotes: 'PRIVATE-RESEARCH-HOST-NOTE',
+        },
+      },
+      {
+        template: 'podcast-run-sheet' as const,
+        content: {
+          guestName: 'PRIVATE-RUN-SHEET-GUEST',
+          coldOpen: 'PRIVATE-RUN-SHEET-OPEN',
+          questionBlocks: 'PRIVATE-RUN-SHEET-QUESTIONS',
+          hostNotes: 'PRIVATE-RUN-SHEET-NOTE',
+        },
+      },
+    ];
+
+    for (const sample of cases) {
+      const createRes = await staffReq('POST', '/api/sponsor-docs', {
+        cardId: episode.id,
+        template: sample.template,
+        content: sample.content,
+      });
+      assert.equal(createRes.statusCode, 201, `${sample.template}: ${createRes.body}`);
+      const { doc } = JSON.parse(createRes.body);
+
+      const guestRes = await anonReq('GET', `/api/sponsor-docs/${doc.id}`, { codeHeader: doc.accessCode });
+      assert.equal(guestRes.statusCode, 403, `${sample.template}: ${guestRes.body}`);
+      assert.equal(JSON.parse(guestRes.body).code, 'staff_only_document');
+
+      const guestEdit = await anonReq('PUT', `/api/sponsor-docs/${doc.id}`, {
+        codeHeader: doc.accessCode,
+        body: { content: { guestName: 'GUEST-OVERWRITE' } },
+      });
+      assert.equal(guestEdit.statusCode, 403, `${sample.template}: ${guestEdit.body}`);
+
+      const guestSubmit = await anonReq('PUT', `/api/sponsor-docs/${doc.id}`, {
+        codeHeader: doc.accessCode,
+        body: { status: 'submitted' },
+      });
+      assert.equal(guestSubmit.statusCode, 403, `${sample.template}: ${guestSubmit.body}`);
+
+      const guestExport = await anonReq('GET', `/api/sponsor-docs/${doc.id}/export`, {
+        codeHeader: doc.accessCode,
+        query: { format: 'markdown' },
+      });
+      assert.equal(guestExport.statusCode, 403, `${sample.template}: ${guestExport.body}`);
+      assert.equal(JSON.parse(guestExport.body).code, 'staff_only_document');
+
+      const staffRes = await staffReq('GET', `/api/sponsor-docs/${doc.id}`);
+      assert.equal(staffRes.statusCode, 200, `${sample.template}: ${staffRes.body}`);
+      const staffDoc = JSON.parse(staffRes.body).doc;
+      assert.equal(staffDoc.status, 'draft');
+      assert.ok(staffDoc.templateDefinition.sections.every((section: { internal?: boolean }) => section.internal));
+      for (const value of Object.values(sample.content)) {
+        assert.equal(JSON.stringify(staffDoc).includes(value), true, `${sample.template} staff view hid ${value}`);
+      }
+    }
+  });
+
   it('switches a webinar form to the workshop type, keeping content and relinking the card', async () => {
     const card = await createCard(client, { ...templateLink(), title: '[Webinar] Synthetic switch', people: ['Test Speaker'] });
     const { doc } = JSON.parse((await staffReq('POST', '/api/sponsor-docs', { cardId: card.id })).body);

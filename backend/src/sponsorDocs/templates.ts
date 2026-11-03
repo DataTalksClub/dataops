@@ -55,6 +55,8 @@ export interface SponsorDocTemplateDefinition {
   shortLabel: string;
   defaultLinkType: string;
   intro: string;
+  /** Only staff may access this template; external document codes are not valid for it. */
+  staffOnly?: boolean;
   guidelinesUrl?: string;
   exampleText?: string;
   sections: SponsorDocSectionDefinition[];
@@ -706,11 +708,13 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
     shortLabel: 'Guest Research',
     defaultLinkType: 'Guest research',
     intro: 'Internal source-backed research for a podcast guest. Staff-only: do not share this document with the guest. Keep guest-facing questions in the episode brief or guest materials doc.',
+    staffOnly: true,
     sections: [
       {
         id: 'guest-identity',
         title: '1) Guest Identity',
         description: 'Who the guest is and why they are a good fit.',
+        internal: true,
         fields: [
           {
             key: 'guestName',
@@ -738,6 +742,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         id: 'links',
         title: '2) Profile & Source Links',
         description: 'Links for the episode brief and show notes, plus research sources.',
+        internal: true,
         fields: [
           {
             key: 'linkedinUrl',
@@ -776,6 +781,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         id: 'research',
         title: '3) Research Findings',
         description: 'Source-backed findings the host can rely on during the interview.',
+        internal: true,
         fields: [
           {
             key: 'keyInsights',
@@ -803,6 +809,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
       {
         id: 'internal',
         title: '4) Host-Only Notes (Internal)',
+        internal: true,
         fields: [
           {
             key: 'hostOnlyNotes',
@@ -823,10 +830,12 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
     shortLabel: 'Host Run Sheet',
     defaultLinkType: 'Host run sheet',
     intro: 'One-page live sheet for the host during recording. Staff-only: keep internal notes here, not in the guest-shared document.',
+    staffOnly: true,
     sections: [
       {
         id: 'setup',
         title: '1) Setup',
+        internal: true,
         fields: [
           {
             key: 'episodeTitle',
@@ -860,6 +869,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         id: 'flow',
         title: '2) Live Flow',
         description: 'Read top to bottom during the recording.',
+        internal: true,
         fields: [
           {
             key: 'coldOpen',
@@ -894,6 +904,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
       {
         id: 'host-only',
         title: '3) Host-Only Notes (Internal)',
+        internal: true,
         fields: [
           {
             key: 'hostNotes',

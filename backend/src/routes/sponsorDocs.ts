@@ -454,6 +454,15 @@ async function verifyExternalCodeForDoc(
   }
 
   await clearSponsorDocRateLimit(client, docId, ip);
+  if (getSponsorDocTemplate(loaded.doc.template).staffOnly) {
+    return {
+      ok: false,
+      response: json(403, {
+        error: 'This document is for staff only.',
+        code: 'staff_only_document',
+      }),
+    };
+  }
   return { ok: true, doc: loaded.doc };
 }
 
