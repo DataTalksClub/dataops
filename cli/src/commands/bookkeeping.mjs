@@ -8,7 +8,7 @@ export const summary = "Bookkeeping: sync from the spreadsheet, fill classificat
 const CSV_PULL_GUIDANCE = `From the dapier checkout, export one CSV per tab with the sanctioned google-data-pull skill:
   python3 .agents/skills/google-data-pull/gpull.py --agent admin-os --as "drive datatalks" drive sheet <spreadsheet-id> --out-dir <csv-dir>
 Then, from the DataOps checkout, run node <dataops>/cli/bin/dataops.mjs bookkeeping sync <csv-dir> (dry run by default). Keep the CSV export outside this repository.
-Precision requirement: the exporter must write original numeric values while keeping formatted date strings. The importer cannot recover precision rounded into displayed amounts, so do not use --apply until the Dapier export meets this requirement.`;
+Precision limitation: DataOps cannot tell from a CSV whether displayed amounts have been rounded, and it still accepts --apply for CSV directories. Do not apply this export until the Dapier pull is verified to write original numeric values, preserve formatted date strings, and avoid filename collisions.`;
 
 export const help = `dataops bookkeeping - keep DataOps transactions in step with the bookkeeping sheet
 

@@ -156,7 +156,7 @@ test("sync is a dry run until --apply, then creates and updates through the API"
   assert.equal(calls.filter((call) => call.method === "POST").length, 6);
 });
 
-test("CSV pull dry-run preserves raw amount precision and formatted dates end to end", async () => {
+test("CSV importer dry-run contract preserves raw amount precision and formatted dates", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "bookkeeping-precision-pull-"));
   writeFileSync(path.join(dir, "2026.csv"), [
     'Date sent,Date paid,Provider,What,"Price, EUR",Entry Type',
@@ -208,8 +208,8 @@ test("sync --sheet fails closed without reading a token or making a request", as
     assert.match(io.errors.join("\n"), /Direct --sheet mode is disabled/);
     assert.match(io.errors.join("\n"), /google-data-pull/);
     assert.match(io.errors.join("\n"), /bookkeeping sync <csv-dir>/);
-    assert.match(io.errors.join("\n"), /Precision requirement/);
-    assert.match(io.errors.join("\n"), /do not use --apply until the Dapier export meets this requirement/i);
+    assert.match(io.errors.join("\n"), /DataOps cannot tell from a CSV whether displayed amounts have been rounded/);
+    assert.match(io.errors.join("\n"), /still accepts --apply for CSV directories/);
   } finally {
     Object.defineProperty(process, "env", { configurable: true, enumerable: true, writable: true, value: originalEnv });
     globalThis.fetch = originalFetch;
