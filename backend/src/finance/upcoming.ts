@@ -30,7 +30,7 @@ export type ScheduleEntry = {
   version?: number;
 };
 export type Balance = { accountId: string; amount: number; currency: string; asOf: string; source: string };
-export type PaidEvidence = { id: string; date: string; amount: number; kind: 'ledger' | 'statement' };
+export type PaidEvidence = { id: string; date: string; amount: number; kind: 'ledger' | 'statement'; taxType: TaxType | null };
 
 export type Debit = {
   scheduleId: string;
@@ -121,7 +121,7 @@ export function upcomingDebits(input: {
       if (moved.date < from || moved.date > to) continue;
       const amount = Number(entry.amount);
       const tolerance = entry.approximate ? 7 : 5;
-      const match = (input.paid || []).find((p) => !used.has(p.id) && cents(p.amount) === cents(amount) && Math.abs(daysBetween(moved.date, p.date)) <= tolerance) || null;
+      const match = (input.paid || []).find((p) => !used.has(p.id) && p.taxType === entry.taxType && cents(p.amount) === cents(amount) && Math.abs(daysBetween(moved.date, p.date)) <= tolerance) || null;
       if (match) used.add(match.id);
       debits.push({
         scheduleId: entry.id,

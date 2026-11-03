@@ -52,7 +52,7 @@ describe('finance tax schedule and upcoming debits API', () => {
     assert.equal((await invoke('PUT', '/api/finance/tax-schedule/vat-once', { label: 'VAT one-off', taxType: 'vat', amount: '777.77', currency: 'EUR', rule: { kind: 'once', date: today }, source: 'USt-VA' })).statusCode, 200);
     await saveStatement(client, {
       accountId: 'finom', period: today.slice(0, 7), filename: 'synthetic-finom.csv',
-      rows: [{ date: today, amount: '-777.77', currency: 'EUR', counterparty: 'Finanzamt' }],
+      rows: [{ date: today, amount: '-777.77', currency: 'EUR', counterparty: 'Finanzamt', reference: 'Umsatzsteuer' }],
       balances: [{ currency: 'EUR', amount: '100.00', asOf: today }],
     });
     const body = JSON.parse((await invoke('GET', '/api/finance/upcoming', undefined, { days: '60' })).body);
@@ -145,6 +145,32 @@ describe('finance tax schedule and upcoming debits API', () => {
     assert.equal(paired?.status, 'paid');
     assert.equal(paired?.matched?.date, '2023-04-17', 'uses the bank date instead of the ledger date');
     assert.equal(result.debits.find((item) => item.scheduleId === 'synthetic-fx-unpaired')?.status, 'scheduled');
+  });
+
+  it('does not treat same-value insurance or unknown tax payments as a VAT debit', async () => {
+    const today = berlinToday();
+    const client = await getClient();
+    for (const [id, taxType] of [['synthetic-vat-kind', 'vat'], ['synthetic-tk-kind', 'health-insurance']]) {
+      assert.equal((await invoke('PUT', `/api/finance/tax-schedule/${id}`, {
+        label: id, taxType, amount: '123.45', currency: 'EUR',
+        rule: { kind: 'once', date: today }, source: 'recurring',
+      })).statusCode, 200);
+    }
+    await saveStatement(client, {
+      accountId: 'synthetic-kind-account', period: today.slice(0, 7), filename: 'synthetic-kind.csv',
+      rows: [
+        { date: today, amount: '-123.45', currency: 'EUR', counterparty: 'Techniker Krankenkasse' },
+        { date: today, amount: '-123.45', currency: 'EUR', counterparty: 'Finanzamt' },
+      ],
+    });
+    const response = await invoke('GET', '/api/finance/upcoming', undefined, { days: '10' });
+    assert.equal(response.statusCode, 200, response.body);
+    const debits = JSON.parse(response.body).debits;
+    const vat = debits.find((debit: { scheduleId: string }) => debit.scheduleId === 'synthetic-vat-kind');
+    const health = debits.find((debit: { scheduleId: string }) => debit.scheduleId === 'synthetic-tk-kind');
+    assert.equal(vat.status, 'scheduled');
+    assert.equal(health.status, 'paid');
+    assert.equal(health.matched.taxType, 'health-insurance');
   });
 
   it('derives row VAT from the linked stored invoice facts', async () => {
