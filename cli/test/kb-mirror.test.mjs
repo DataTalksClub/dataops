@@ -184,7 +184,8 @@ describe("kb mirror from a Git checkout", () => {
         versions: (history[query.path] || []).map((body) => ({ sha256: h(body), deleted: body === null, revision: `rev-${body}` })),
         cursor: null,
       }),
-      "GET /knowledge/version": ({ query }) => new Response(prodFiles[query.path] ?? "", { status: 200, headers: { "content-type": "application/octet-stream" } }),
+      "GET /knowledge/download": ({ query }) => ({ url: `https://portal.test/storage?path=${encodeURIComponent(query.path)}` }),
+      "GET /storage": ({ query }) => new Response(prodFiles[query.path] ?? "", { status: 200, headers: { "content-type": "application/octet-stream" } }),
     });
   }
 
@@ -249,6 +250,24 @@ describe("kb mirror from a Git checkout", () => {
     assert.equal(await run(["kb", "mirror", "--repo", repo], io), 0);
     assert.match(io.text(), /Mirrored 0 file/);
     assert.equal(calls.filter((call) => call.route === "/knowledge/version").length, 0);
+  });
+
+  test("downloads binary and large managed files through file storage", async () => {
+    const originalImage = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00]);
+    const prodImage = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x01]);
+    const originalLarge = Buffer.alloc(4_100_000, 0x41);
+    const prodLarge = Buffer.alloc(4_100_000, 0x42);
+    write("content/image.png", originalImage);
+    write("content/large.md", originalLarge);
+    commit("base");
+    portal(
+      { "content/image.png": prodImage, "content/large.md": prodLarge },
+      { "content/image.png": [prodImage, originalImage], "content/large.md": [prodLarge, originalLarge] },
+    );
+
+    assert.equal(await run(["kb", "mirror", "--repo", repo], captureIo()), 0);
+    assert.deepEqual(readFileSync(path.join(repo, "content/image.png")), prodImage);
+    assert.deepEqual(readFileSync(path.join(repo, "content/large.md")), prodLarge);
   });
 
   test("rejects an unresolvable commit", async () => {

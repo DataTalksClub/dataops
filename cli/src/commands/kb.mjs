@@ -510,7 +510,7 @@ export async function mirror(args, io) {
     recordedBytes: (file) => recorded.get(file)?.bytes ?? new Map(),
     page: (file, cursor) => api.get("/knowledge/history", { query: { path: file, cursor } }),
     version: (file) => manifest.entries[file]
-      ? api.get("/knowledge/version", { query: { path: file, revision: manifest.revision }, responseType: "bytes" })
+      ? downloadKnowledgeVersion(api, file, manifest.revision)
       : null,
   });
   const result = {
@@ -535,6 +535,33 @@ export async function mirror(args, io) {
     );
   }
   return result;
+}
+
+/** Fetch arbitrary managed-file versions through the authenticated download route. */
+async function downloadKnowledgeVersion(api, file, revision) {
+  const link = await api.get("/knowledge/download", { query: { path: file, revision } });
+  if (typeof link?.url !== "string" || !link.url) {
+    throw new Error(`The API did not return a download link for ${file}.`);
+  }
+  let target;
+  try {
+    target = new URL(link.url, api.base);
+  } catch {
+    throw new Error(`The download link for ${file} could not be resolved.`);
+  }
+  if (target.protocol !== "https:" && target.protocol !== "http:") {
+    throw new Error(`The download link for ${file} uses an unsupported scheme.`);
+  }
+  let response;
+  try {
+    response = await fetch(target, { headers: { Accept: "*/*" }, redirect: "error" });
+  } catch {
+    throw new Error(`Could not reach file storage to download ${file}.`);
+  }
+  if (!response.ok) {
+    throw new Error(`File storage refused ${file} (HTTP ${response.status}); retry the mirror.`);
+  }
+  return Buffer.from(await response.arrayBuffer());
 }
 
 /** Write one mirrored path into the working tree, pruning dirs prod emptied. */
