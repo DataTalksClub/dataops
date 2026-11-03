@@ -507,5 +507,8 @@ test("an expense-encoded refund remains in the ledger and outside mandatory debi
   const markup = mandatoryPaymentsMarkup([debit, refund], "2026-04", escapeHtml);
   assert.match(markup, /Synthetic authority/);
   assert.doesNotMatch(markup, /Synthetic refund/);
-  assert.match(markup, /100\.00/);
+  const subtotal = markup.match(/bk-mandatory-payments__subtotal[\s\S]*?<strong>(.*?)<\/strong>/)?.[1];
+  assert.ok(subtotal);
+  assert.match(subtotal, /100\.00/);
+  assert.doesNotMatch(subtotal, /120\.00/);
 });
