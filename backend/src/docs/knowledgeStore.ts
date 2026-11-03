@@ -1,7 +1,7 @@
 import { templateParser } from './templatePlaceholders';
 /** Private S3 knowledge: immutable blobs/manifests and one conditional publication pointer. */
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, statSync } from 'node:fs';
+import { linkSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, existsSync, statSync, type Dirent } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
 import {getSignedUrl} from '@aws-sdk/s3-request-presigner';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
@@ -122,6 +122,10 @@ export async function bounded<T>(items: T[], fn: (item:T)=>Promise<void>, limit=
   if(failed)throw firstError;
 }
 export function checksum(bytes:Uint8Array|string): string { return createHash('sha256').update(bytes).digest('hex'); }
+/** A Lambda request times out in 120 seconds; retain just-finished revision caches briefly for in-flight reads. */
+const CACHE_PRUNE_GRACE_MS=180_000;
+const CACHE_REVISION_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const CACHE_OBJECT_RE=/^[a-f0-9]{64}$/;
 /** One process document's latest change in the recent window. */
 export interface RecentDocChange {
   path:string; operation:KnowledgeChange['operation']; revision:string; actor:string; time:string; message:string;
@@ -191,15 +195,101 @@ export class KnowledgeStore {
     if(checksum(bytes)!==sha) throw new KnowledgeError('Knowledge payload checksum mismatch');
     return bytes;
   }
+  /**
+   * Keep one local copy of each immutable payload and link revision trees to
+   * it. New publications therefore reuse unchanged corpus files instead of
+   * downloading and storing a complete duplicate under /tmp per revision.
+   */
+  private async cachedBlob(entry:KnowledgeEntry):Promise<string> {
+    const target=resolve(this.cacheBase,'objects',entry.sha);
+    try {
+      const cached=statSync(target);
+      if(cached.isFile() && cached.size===entry.size) return target;
+    } catch(err) {if((err as NodeJS.ErrnoException).code!=='ENOENT') throw err;}
+    const bytes=await this.blobBytes(entry.sha);
+    if(bytes.length!==entry.size) throw new KnowledgeError(`Knowledge payload size mismatch for ${entry.path}`);
+    this.writeCached(target,bytes);
+    return target;
+  }
+  /** Replace a cached file atomically so a failed write cannot leave a truncated payload. */
+  private writeCached(target:string,bytes:Uint8Array):void {
+    const temp=resolve(this.cacheBase,'.tmp',randomUUID());
+    try {
+      mkdirSync(dirname(temp),{recursive:true});
+      mkdirSync(dirname(target),{recursive:true});
+      writeFileSync(temp,bytes,{flag:'wx'});
+      renameSync(temp,target);
+    } catch(err) {
+      try {rmSync(temp,{force:true});} catch {/* best-effort cleanup */}
+      throw err;
+    }
+  }
+  /** Materialize a revision path as a hard link to its immutable cached payload. */
+  private linkCached(target:string,source:string):void {
+    const temp=resolve(this.cacheBase,'.tmp',randomUUID());
+    try {
+      mkdirSync(dirname(temp),{recursive:true});
+      mkdirSync(dirname(target),{recursive:true});
+      linkSync(source,temp);
+      renameSync(temp,target);
+    } catch(err) {
+      try {rmSync(temp,{force:true});} catch {/* best-effort cleanup */}
+      throw err;
+    }
+  }
+  /** Remove expired revision trees and payloads no longer linked by any retained revision. */
+  private pruneStaleCache():void {
+    let names:Dirent[];
+    try {names=readdirSync(this.cacheBase,{withFileTypes:true});} catch {return;}
+    const keep=this.publication?.revision;
+    for(const item of names) {
+      if(!item.isDirectory() || !CACHE_REVISION_RE.test(item.name) || item.name===keep) continue;
+      const dir=resolve(this.cacheBase,item.name);
+      try {if(Date.now()-statSync(dir).mtimeMs<CACHE_PRUNE_GRACE_MS) continue;} catch {continue;}
+      try {rmSync(dir,{recursive:true,force:true});} catch {/* busy caches are retried on the next sync */}
+    }
+    const tempRoot=resolve(this.cacheBase,'.tmp');
+    try {
+      for(const item of readdirSync(tempRoot,{withFileTypes:true})) {
+        if(!item.isFile()) continue;
+        const temp=resolve(tempRoot,item.name);
+        try {if(Date.now()-statSync(temp).mtimeMs>=CACHE_PRUNE_GRACE_MS) rmSync(temp,{force:true});} catch {/* best-effort cleanup */}
+      }
+    } catch {/* no temporary files yet */}
+    const objectsRoot=resolve(this.cacheBase,'objects');
+    try {
+      for(const item of readdirSync(objectsRoot,{withFileTypes:true})) {
+        if(!item.isFile() || !CACHE_OBJECT_RE.test(item.name)) continue;
+        const object=resolve(objectsRoot,item.name);
+        try {
+          const details=statSync(object);
+          if(details.nlink===1 && Date.now()-details.mtimeMs>=CACHE_PRUNE_GRACE_MS) rmSync(object,{force:true});
+        } catch {/* best-effort cleanup */}
+      }
+    } catch {/* no payloads cached yet */}
+  }
+  private cacheEntry(entry:KnowledgeEntry):Promise<void> {
+    const target=this.localPath(entry.path);
+    const blob=resolve(this.cacheBase,'objects',entry.sha);
+    try {
+      const cached=statSync(target);
+      if(cached.isFile() && cached.size===entry.size) {
+        try {if(statSync(blob).ino===cached.ino) return Promise.resolve();}
+        catch {/* blob link missing; fall through and relink */}
+      }
+    } catch(err) {if((err as NodeJS.ErrnoException).code!=='ENOENT') throw err;}
+    return this.cachedBlob(entry).then(source=>this.linkCached(target,source));
+  }
   async sync():Promise<void> {
     if(this.hydrated) return;
     if(this.offline) {this.hydrated=true;return;}
     const publication=await this.pin();
+    mkdirSync(this.cacheBase,{recursive:true});
+    this.pruneStaleCache();
     mkdirSync(this.contentRoot,{recursive:true});
     // Binary assets remain lazy. Text used by registry/search/model is downloaded concurrently.
     await bounded(Object.values(publication.entries).filter(e=>/\.(md|ya?ml|csv|json)$/.test(e.path)), async e=> {
-      const path=this.localPath(e.path);
-      if(!existsSync(path)) {mkdirSync(dirname(path),{recursive:true});writeFileSync(path,await this.blobBytes(e.sha));}
+      await this.cacheEntry(e);
     });
     this.hydrated=true;
   }
@@ -207,14 +297,26 @@ export class KnowledgeStore {
     const clean=normalizeRepoPath(path);
     if(!this.offline) await this.pin();
     const target=this.localPath(clean);
-    if(existsSync(target)) return target;
-    if(this.offline && !existsSync(this.contentRoot)) throw new ContentRootUnavailableError(this.contentRoot);
-    const entry=this.offline ? null : (await this.tree())[clean];
+    if(this.offline) {
+      if(existsSync(target)) return target;
+      if(!existsSync(this.contentRoot)) throw new ContentRootUnavailableError(this.contentRoot);
+      const err=new Error('File not found') as NodeJS.ErrnoException;err.code='ENOENT';throw err;
+    }
+    const entry=(await this.tree())[clean];
     if(!entry) { const err=new Error('File not found') as NodeJS.ErrnoException;err.code='ENOENT';throw err; }
-    mkdirSync(dirname(target),{recursive:true});writeFileSync(target,await this.blobBytes(entry.sha));return target;
+    await this.cacheEntry(entry);
+    return target;
   }
-  async readFile(path:string):Promise<string> { return readFileSync(await this.ensureFile(path),'utf8'); }
-  async readBytes(path:string):Promise<Uint8Array> { return readFileSync(await this.ensureFile(path)); }
+  async readFile(path:string):Promise<string> {
+    const target=await this.ensureFile(path);
+    try {return readFileSync(target,'utf8');}
+    catch(err) {if((err as NodeJS.ErrnoException).code!=='ENOENT') throw err;return readFileSync(await this.ensureFile(path),'utf8');}
+  }
+  async readBytes(path:string):Promise<Uint8Array> {
+    const target=await this.ensureFile(path);
+    try {return readFileSync(target);}
+    catch(err) {if((err as NodeJS.ErrnoException).code!=='ENOENT') throw err;return readFileSync(await this.ensureFile(path));}
+  }
   updatedAt(path:string):number { const p=this.localPath(path);return existsSync(p)?Math.floor(statSync(p).mtimeMs/1000):0; }
   async publish(mutations:Mutation[], expectedRevision:string, actor:string, message:string):Promise<Publication> {
     if(!expectedRevision || !actor) throw new KnowledgeError('Expected revision and authenticated actor are required');
