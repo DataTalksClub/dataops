@@ -17,6 +17,15 @@ function mandatoryPaymentAmount(entry) {
     : "—";
 }
 
+// Exclude only rows actually represented in the selected month's mandatory section.
+export function monthlyLedgerEntries(entries, lens, financeEntriesById) {
+  if (!/^\d{4}-\d{2}$/.test(lens)) return entries;
+  return entries.filter((entry) => {
+    const mandatory = financeEntriesById.get(String(entry.id));
+    return !(mandatory?.month === lens && mandatory.direction === "out" && mandatory.mandatoryKind);
+  });
+}
+
 export function mandatoryPaymentsMarkup(entries, lens, escapeHtml, state = "ready") {
   if (!/^\d{4}-\d{2}$/.test(lens)) return "";
   const periodLabel = monthLabel(lens);

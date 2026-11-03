@@ -17,7 +17,7 @@ import {
   vatPresentation,
   vocabulary,
 } from "../src/surfaces/finance/bookkeeping-ledger.js";
-import { createBookkeepingFinance, mandatoryPaymentsMarkup } from "../src/surfaces/finance/bookkeeping-vat.js";
+import { createBookkeepingFinance, mandatoryPaymentsMarkup, monthlyLedgerEntries } from "../src/surfaces/finance/bookkeeping-vat.js";
 
 import { escapeHtml } from "../src/core/html.js";
 
@@ -222,4 +222,18 @@ test("suggested matches offer attaching a file or opening the sponsor deal", () 
   assert.match(claimed, /Payment for a sponsor deal/);
   assert.match(claimed, /href="\/sponsors\/deals\/deal-7"/);
   assert.match(claimed, /data-suggestions/);
+});
+
+
+test("monthly ledger omits only outgoing mandatory rows represented in the separate section", () => {
+  const rows = [{id: "tax"}, {id: "health"}, {id: "refund"}, {id: "consultant"}, {id: "other-month"}];
+  const finance = new Map([
+    ["tax", {month: "2026-04", direction: "out", mandatoryKind: "tax_debit"}],
+    ["health", {month: "2026-04", direction: "out", mandatoryKind: "tk_debit"}],
+    ["refund", {month: "2026-04", direction: "in", mandatoryKind: "tax_debit"}],
+    ["other-month", {month: "2026-05", direction: "out", mandatoryKind: "tax_debit"}],
+  ]);
+  assert.deepEqual(monthlyLedgerEntries(rows, "2026-04", finance).map(row => row.id), ["refund", "consultant", "other-month"]);
+  assert.deepEqual(monthlyLedgerEntries(rows, "2026", finance), rows);
+  assert.deepEqual(monthlyLedgerEntries(rows, "2026-04", new Map()), rows);
 });
