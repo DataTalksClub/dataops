@@ -233,15 +233,10 @@ export function vatTitle(entry, text) {
   return text || "";
 }
 
-// One date when transaction and paid dates agree; the paid date, muted,
-// only when it differs.
+// The cash date is primary; the source transaction date remains in the record.
 function dateCell(entry, e) {
-  const sent = String(entry.transactionDate || "");
-  const paid = String(entry.paidDate || "");
-  const paidNote = paid && paid !== sent
-    ? html`<span class="bk-date__paid" title="Paid ${e(ledgerDate(paid))}">paid ${e(ledgerDate(paid))}</span>`
-    : "";
-  return html`<time datetime="${e(sent)}">${e(ledgerDate(sent))}</time>${paidNote}`;
+  const date = cashDate(entry);
+  return html`<time datetime="${e(date)}">${e(ledgerDate(date))}</time>`;
 }
 
 function selectMarkup({ id, field, label, value, options, e }) {

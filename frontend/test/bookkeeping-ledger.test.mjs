@@ -114,6 +114,9 @@ test("cash month uses paid date only, falling back to the transaction booking da
   assert.equal(latestActivityMonth([paidInCurrentMonth], "2026-09"), "2026-10");
   assert.equal(inLens(paidInCurrentMonth, "2026-10"), true);
   assert.equal(inLens(paidInCurrentMonth, "2026-09"), false);
+  const paidMarkup = ledgerTableMarkup({ groups: groupByMonth([paidInCurrentMonth]), hasEvidence: () => false,
+    vocab: {}, selectedId: "", e: escapeHtml });
+  assert.match(paidMarkup, /<time datetime="2026-10-02">/, "the table date is the actual cash date");
   assert.equal(cashDate(bookingDateFallback), "2026-10-03");
   assert.deepEqual(groupByMonth([bookingDateFallback, paidInCurrentMonth]).map(({ month, entries }) =>
     [month, entries.map((entry) => entry.id)]), [
@@ -135,8 +138,8 @@ test("the table renders one compact row per transaction without changing stored 
   assert.match(markup, /<span class="bk-unconverted" title="No EUR value recorded yet/);
   assert.match(markup, /bk-col-eur is-unconverted/);
   assert.match(markup, />−\$15\.00<\/span>/, "a row without EUR shows its original value highlighted");
-  assert.match(markup, /paid 7 Sept/, "the paid date shows only when it differs");
-  assert.equal((markup.match(/paid /g) || []).length, 1);
+  assert.match(markup, /<time datetime="2026-09-07">/, "the cash date is primary when transaction and paid dates differ");
+  assert.equal((markup.match(/class="bk-date__paid"/g) || []).length, 0);
   assert.match(markup, /class="bk-row is-uncategorised is-income"\s+data-tx="b" aria-selected="true"/);
   assert.match(markup, /<option value="Infrastructure" selected>/);
   assert.match(markup, /No invoice/);
@@ -210,9 +213,9 @@ test("allocated invoice Net and VAT use each child's VAT rather than the payment
     vatAmount: "25.00",
     vatCurrency: "EUR",
     allocations: [
-      { id: "alloc-vat-123", documentId: "invoice-vat-123", counterparty: "Synthetic VAT Vendor A", description: "Gross 123 with VAT 23", amount: "123.00", currency: "EUR", vatAmount: "23.00", vatCurrency: "EUR" },
-      { id: "alloc-vat-20", documentId: "invoice-vat-20", counterparty: "Synthetic VAT Vendor B", description: "Gross 20 with VAT 2", amount: "20.00", currency: "EUR", vatAmount: "2.00", vatCurrency: "EUR" },
-      { id: "alloc-vat-3", documentId: "invoice-vat-3", counterparty: "Synthetic VAT Vendor C", description: "Gross 3 with no VAT", amount: "3.00", currency: "EUR" },
+      { id: "alloc-vat-123", documentId: "invoice-vat-123", transactionDate: "2026-09-30", counterparty: "Synthetic VAT Vendor A", description: "Gross 123 with VAT 23", amount: "123.00", currency: "EUR", vatAmount: "23.00", vatCurrency: "EUR" },
+      { id: "alloc-vat-20", documentId: "invoice-vat-20", transactionDate: "2026-09-30", counterparty: "Synthetic VAT Vendor B", description: "Gross 20 with VAT 2", amount: "20.00", currency: "EUR", vatAmount: "2.00", vatCurrency: "EUR" },
+      { id: "alloc-vat-3", documentId: "invoice-vat-3", transactionDate: "2026-09-30", counterparty: "Synthetic VAT Vendor C", description: "Gross 3 with no VAT", amount: "3.00", currency: "EUR" },
     ],
   };
   const markup = ledgerTableMarkup({
@@ -226,6 +229,8 @@ test("allocated invoice Net and VAT use each child's VAT rather than the payment
   });
   const rows = [...markup.matchAll(/<tr class="bk-row bk-row--allocation-child[^>]*>([\s\S]*?)<\/tr>/g)]
     .map((match) => match[1]);
+  assert.equal((markup.match(/<time datetime="2026-10-05">/g) || []).length, 3,
+    "each invoice row shows its payment cash date, not the invoice date");
   const cells = rows.map((row) => ({
     net: row.match(/<td class="bk-col-money bk-col-eur[^>]*>([\s\S]*?)<\/td>/)?.[1].replace(/<[^>]*>/g, "").trim(),
     vat: row.match(/<td class="bk-col-vat[^>]*>([\s\S]*?)<\/td>/)?.[1].replace(/<[^>]*>/g, "").trim(),

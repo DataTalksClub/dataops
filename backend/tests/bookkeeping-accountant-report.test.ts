@@ -104,8 +104,8 @@ describe("native accountant report API", () => {
     assert.equal(report.content,
       '"Date","Paid Date","Provider","Description","Price EUR","Price USD","Original Currency","VAT Amount","VAT Currency","Category","Type","Statement"\r\n'
       + '"2026-10-01","","Edited Workshop Company","Edited consulting service","-100.00","","EUR","","","Consulting","Expense",""\r\n'
-      + '"2026-09-30","2026-10-02","Synthetic Invoice Vendor","Invoice paid in October","-15.00","","EUR","","","Consulting","Expense",""\r\n');
-    assert.match(report.content, /"2026-09-30","2026-10-02","Synthetic Invoice Vendor","Invoice paid in October"/);
+      + '"2026-10-02","2026-10-02","Synthetic Invoice Vendor","Invoice paid in October","-15.00","","EUR","","","Consulting","Expense",""\r\n');
+    assert.match(report.content, /"2026-10-02","2026-10-02","Synthetic Invoice Vendor","Invoice paid in October"/);
     assert.doesNotMatch(report.content, /Stale Alias|Synthetic Owner|Synthetic Tax Office|Synthetic Prior Service/);
   });
 
@@ -141,9 +141,9 @@ describe("native accountant report API", () => {
       category: "Tools",
       statementRef: "Synthetic bank statement",
       allocations: [
-        { id: "alloc-100", documentId: "synthetic-doc-100", counterparty: "Synthetic Compute GmbH", description: "Dedicated cluster", amount: "100.00", currency: "EUR", amountEur: "100.00", category: "Infrastructure" },
-        { id: "alloc-20", documentId: "synthetic-doc-20", counterparty: "Synthetic Domain Ltd", description: "Domain renewal", amount: "20.00", currency: "EUR", amountEur: "20.00", category: "Domains" },
-        { id: "alloc-3", documentId: "synthetic-doc-3", counterparty: "Synthetic Mail BV", description: "Email service", amount: "3.00", currency: "EUR", amountEur: "3.00", category: "Services" },
+        { id: "alloc-100", documentId: "synthetic-doc-100", transactionDate: "2026-09-30", counterparty: "Synthetic Compute GmbH", description: "Dedicated cluster", amount: "100.00", currency: "EUR", amountEur: "100.00", category: "Infrastructure" },
+        { id: "alloc-20", documentId: "synthetic-doc-20", transactionDate: "2026-09-30", counterparty: "Synthetic Domain Ltd", description: "Domain renewal", amount: "20.00", currency: "EUR", amountEur: "20.00", category: "Domains" },
+        { id: "alloc-3", documentId: "synthetic-doc-3", transactionDate: "2026-09-30", counterparty: "Synthetic Mail BV", description: "Email service", amount: "3.00", currency: "EUR", amountEur: "3.00", category: "Services" },
       ],
     };
     const allocationClient = {
@@ -167,6 +167,7 @@ describe("native accountant report API", () => {
       assert.equal(report.excludedCount, 2, "owner and tax rows remain excluded");
       const lines = report.content.trim().split(/\r?\n/);
       assert.equal(lines.length, 6, "one header, two existing rows, and three allocated invoice rows");
+      const expectedCashDatePrefix = format === "csv" ? '"2026-10-04","2026-10-04"' : "2026-10-04\t2026-10-04";
       for (const [company, what, amount] of [
         ["Synthetic Compute GmbH", "Dedicated cluster", "100.00"],
         ["Synthetic Domain Ltd", "Domain renewal", "20.00"],
@@ -175,6 +176,8 @@ describe("native accountant report API", () => {
         assert.ok(report.content.includes(company), `${format} includes ${company}`);
         assert.ok(report.content.includes(what), `${format} includes ${what}`);
         assert.ok(report.content.includes(`-${amount}`), `${format} includes amount -${amount}`);
+        assert.ok(lines.some((line) => line.includes(company) && line.startsWith(expectedCashDatePrefix)),
+          `${format} shows the payment cash date for ${company}`);
       }
       assert.doesNotMatch(report.content, /Synthetic Card Settlement|Combined payment|Synthetic Owner|Synthetic Tax Office/);
     }

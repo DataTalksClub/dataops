@@ -67,7 +67,7 @@ function values(entry: ReportEntry) {
   const priceEur = eurValue !== "" && eurValue != null ? `${sign}${eurValue}` : "";
   const priceUsd = entry.currency === "USD" ? `${sign}${entry.amount}` : "";
   return [
-    entry.transactionDate || "",
+    cashDate(entry),
     entry.paidDate || "",
     entry.counterparty || "",
     entry.description || "",
