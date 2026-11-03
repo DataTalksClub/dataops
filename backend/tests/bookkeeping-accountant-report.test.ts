@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { handleBookkeepingRoutes } from "../src/routes/bookkeeping";
+import { formatAccountantCsv, selectAccountantReportRows } from "../src/finance/accountantReport";
 
 const entries = [
   {
@@ -84,6 +85,31 @@ const client = {
 } as unknown as DynamoDBDocumentClient;
 
 describe("native accountant report API", () => {
+  it("selects the cash period before applying allocation projection and report exclusions", () => {
+    const rows = selectAccountantReportRows([
+      { id: "moved", transactionDate: "2026-10-31", paidDate: "2026-11-02", amount: "30.00", currency: "EUR", entryType: "income", counterparty: "Synthetic Company", description: "Combined payment", allocations: [
+        { documentId: "synthetic-a", counterparty: "Synthetic A", description: "Consulting", amount: "10.00", currency: "EUR" },
+        { documentId: "synthetic-b", counterparty: "Synthetic B", description: "Hosting", amount: "20.00", currency: "EUR" },
+      ] },
+      { id: "owner", paidDate: "2026-11-03", amount: "4.00", currency: "EUR", entryType: "expense", category: "Owner pay", ownerPayType: "draw" },
+      { id: "tax", paidDate: "2026-11-04", amount: "5.00", currency: "EUR", entryType: "expense", category: "Taxes" },
+      { id: "tk", paidDate: "2026-11-05", amount: "6.00", currency: "EUR", entryType: "expense", category: "Health Insurance" },
+      { id: "tk-vendor", paidDate: "2026-11-05", amount: "7.00", currency: "EUR", entryType: "expense", counterparty: "Techniker Krankenkasse", description: "Health contribution" },
+      { id: "consulting", paidDate: "2026-11-06", amount: "9.00", currency: "EUR", entryType: "expense", category: "Consulting", counterparty: "Synthetic Consulting", description: "Monthly service" },
+    ], "2026-11");
+    assert.deepEqual(rows.map((row) => [row.id, row.counterparty, row.description, row.amount]), [
+      ["moved", "Synthetic A", "Consulting", "10.00"],
+      ["moved", "Synthetic B", "Hosting", "20.00"],
+      ["consulting", "Synthetic Consulting", "Monthly service", "9.00"],
+    ]);
+    assert.equal(selectAccountantReportRows([
+      { id: "moved", transactionDate: "2026-10-31", paidDate: "2026-11-02", amount: "30.00", currency: "EUR", entryType: "income" },
+    ], "2026-10").length, 0);
+    assert.equal(formatAccountantCsv([
+      { paidDate: "2026-11-07", transactionDate: "2026-10-30", counterparty: "Synthetic USD Vendor", description: "Converted service", amount: "10.00", amountEur: "9.25", currency: "USD", entryType: "expense" },
+    ]), '"Date","Company","What","Amount, EUR"\r\n"2026-11-07","Synthetic USD Vendor","Converted service","-9.25"\r\n');
+  });
+
   it("serves persisted Company/What through the native CLI path and excludes owner draws and taxes", async () => {
     const response = await handleBookkeepingRoutes(
       "/api/bookkeeping/reports/accountant",
@@ -102,11 +128,71 @@ describe("native accountant report API", () => {
     assert.equal(report.count, 2);
     assert.equal(report.excludedCount, 2);
     assert.equal(report.content,
-      '"Date","Paid Date","Provider","Description","Price EUR","Price USD","Original Currency","VAT Amount","VAT Currency","Category","Type","Statement"\r\n'
-      + '"2026-10-01","","Edited Workshop Company","Edited consulting service","-100.00","","EUR","","","Consulting","Expense",""\r\n'
-      + '"2026-10-02","2026-10-02","Synthetic Invoice Vendor","Invoice paid in October","-15.00","","EUR","","","Consulting","Expense",""\r\n');
-    assert.match(report.content, /"2026-10-02","2026-10-02","Synthetic Invoice Vendor","Invoice paid in October"/);
+      '"Date","Company","What","Amount, EUR"\r\n'
+      + '"2026-10-01","Edited Workshop Company","Edited consulting service","-100.00"\r\n'
+      + '"2026-10-02","Synthetic Invoice Vendor","Invoice paid in October","-15.00"\r\n');
+    assert.match(report.content, /"2026-10-02","Synthetic Invoice Vendor","Invoice paid in October","-15.00"/);
     assert.doesNotMatch(report.content, /Stale Alias|Synthetic Owner|Synthetic Tax Office|Synthetic Prior Service/);
+  });
+
+  it("uses normalized EUR currency for validation and the native accountant amount", async () => {
+    const normalizedEuroRows = [
+      {
+        PK: "BOOKKEEPING#synthetic-missing-currency-eur",
+        SK: "BOOKKEEPING#synthetic-missing-currency-eur",
+        id: "synthetic-missing-currency-eur",
+        transactionDate: "2026-10-08",
+        counterparty: "Synthetic Missing Currency Vendor",
+        description: "Missing currency service",
+        amount: "10.00",
+        entryType: "expense",
+      },
+      {
+        PK: "BOOKKEEPING#synthetic-lowercase-currency-eur",
+        SK: "BOOKKEEPING#synthetic-lowercase-currency-eur",
+        id: "synthetic-lowercase-currency-eur",
+        transactionDate: "2026-10-09",
+        counterparty: "Synthetic Lowercase Currency Vendor",
+        description: "Lowercase currency service",
+        amount: "20.00",
+        amountEur: "19.00",
+        currency: "eur",
+        entryType: "expense",
+      },
+      {
+        PK: "BOOKKEEPING#synthetic-padded-currency-eur",
+        SK: "BOOKKEEPING#synthetic-padded-currency-eur",
+        id: "synthetic-padded-currency-eur",
+        transactionDate: "2026-10-10",
+        counterparty: "Synthetic Padded Currency Vendor",
+        description: "Padded currency service",
+        amount: "30.00",
+        amountEur: "29.00",
+        currency: " EUR ",
+        entryType: "expense",
+      },
+    ];
+    const response = await handleBookkeepingRoutes(
+      "/api/bookkeeping/reports/accountant",
+      "GET",
+      {
+        httpMethod: "GET",
+        path: "/api/bookkeeping/reports/accountant",
+        headers: {},
+        queryStringParameters: { period: "2026-10", format: "csv" },
+      },
+      { send: async () => ({ Items: normalizedEuroRows }) } as unknown as DynamoDBDocumentClient,
+      true,
+    );
+
+    assert.equal(response.statusCode, 200);
+    const report = JSON.parse(response.body);
+    assert.equal(report.count, 3);
+    assert.equal(report.content,
+      '"Date","Company","What","Amount, EUR"\r\n'
+      + '"2026-10-10","Synthetic Padded Currency Vendor","Padded currency service","-30.00"\r\n'
+      + '"2026-10-09","Synthetic Lowercase Currency Vendor","Lowercase currency service","-20.00"\r\n'
+      + '"2026-10-08","Synthetic Missing Currency Vendor","Missing currency service","-10.00"\r\n');
   });
 
   it("uses the same accountant inclusion rules for copied TSV", async () => {
@@ -126,6 +212,34 @@ describe("native accountant report API", () => {
     assert.equal(report.count, 2);
     assert.match(report.content, /Edited Workshop Company\tEdited consulting service/);
     assert.doesNotMatch(report.content, /Synthetic Owner|Synthetic Tax Office/);
+  });
+
+  it("refuses a foreign-currency accountant report row without a booked EUR value", async () => {
+    const unconverted = {
+      id: "synthetic-unconverted-usd",
+      transactionDate: "2026-10-08",
+      counterparty: "Synthetic USD Vendor",
+      description: "Unconverted service",
+      amount: "12.00",
+      currency: "USD",
+      entryType: "expense",
+    };
+    const response = await handleBookkeepingRoutes(
+      "/api/bookkeeping/reports/accountant",
+      "GET",
+      {
+        httpMethod: "GET",
+        path: "/api/bookkeeping/reports/accountant",
+        headers: {},
+        queryStringParameters: { period: "2026-10", format: "csv" },
+      },
+      { send: async () => ({ Items: [...entries, unconverted] }) } as unknown as DynamoDBDocumentClient,
+      true,
+    );
+    assert.equal(response.statusCode, 409);
+    const body = JSON.parse(response.body);
+    assert.match(body.error, /1 transaction\(s\) have no EUR value; convert them before preparing the package/);
+    assert.deepEqual(body.unconvertedTransactionIds, [unconverted.id]);
   });
 
   it("expands one paid payment into the persisted invoice Company/What rows in native CSV and TSV", async () => {
@@ -168,7 +282,7 @@ describe("native accountant report API", () => {
       assert.equal(report.excludedCount, 2, "owner and tax rows remain excluded");
       const lines = report.content.trim().split(/\r?\n/);
       assert.equal(lines.length, 6, "one header, two existing rows, and three allocated invoice rows");
-      const expectedCashDatePrefix = format === "csv" ? '"2026-10-04","2026-10-04"' : "2026-10-04\t2026-10-04";
+      const expectedCashDatePrefix = format === "csv" ? '"2026-10-04"' : "2026-10-04";
       for (const [company, what, amount] of [
         ["Synthetic Compute GmbH", "Dedicated cluster", "100.00"],
         ["Synthetic Domain Ltd", "Domain renewal", "20.00"],
@@ -176,7 +290,7 @@ describe("native accountant report API", () => {
       ]) {
         assert.ok(report.content.includes(company), `${format} includes ${company}`);
         assert.ok(report.content.includes(what), `${format} includes ${what}`);
-        assert.ok(report.content.includes(`-${amount}`), `${format} includes amount -${amount}`);
+        assert.ok(report.content.includes(format === "csv" ? `"-${amount}"` : `-${amount}`), `${format} includes amount -${amount}`);
         assert.ok(lines.some((line) => line.includes(company) && line.startsWith(expectedCashDatePrefix)),
           `${format} shows the payment cash date for ${company}`);
       }

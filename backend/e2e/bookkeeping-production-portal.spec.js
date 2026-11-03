@@ -182,7 +182,7 @@ test.describe("production portal bookkeeping", () => {
     const page = await context.newPage();
     const samples = [
       { transactionDate: "2024-01-02", counterparty: "January Export Vendor", amount: "100.1234", currency: "EUR", entryType: "expense" },
-      { transactionDate: "2024-12-02", counterparty: 'December, "Export" Vendor', amount: "25.4321", currency: "USD", entryType: "income" },
+      { transactionDate: "2024-12-02", counterparty: 'December, "Export" Vendor', amount: "25.4321", currency: "USD", amountEur: "23.4500", rateSource: "Synthetic booked EUR fixture", entryType: "income" },
       { transactionDate: "2024-12-03", counterparty: "Excluded Export Tax", amount: "10.00", currency: "EUR", entryType: "expense", category: "Taxes" },
       { transactionDate: "2025-01-02", counterparty: "Next Year Export Vendor", amount: "20.00", currency: "EUR", entryType: "expense" },
     ];
@@ -221,8 +221,11 @@ test.describe("production portal bookkeeping", () => {
     const report = await reportDownload;
     expect(report.suggestedFilename()).toBe("datatalksclub-2024.csv");
     const reportText = await fs.readFile(await report.path(), "utf8");
-    expect(reportText).toContain('"-100.1234"');
-    expect(reportText).toContain('"December, ""Export"" Vendor","Export browser fixture","","25.4321","USD"');
+    expect(reportText.trim().split(/\r?\n/)).toEqual([
+      '"Date","Company","What","Amount, EUR"',
+      '"2024-12-02","December, ""Export"" Vendor","Export browser fixture","23.4500"',
+      '"2024-01-02","January Export Vendor","Export browser fixture","-100.1234"',
+    ]);
     expect(reportText).not.toContain("Excluded Export Tax");
     expect(reportText).not.toContain("Next Year Export Vendor");
 
@@ -238,7 +241,11 @@ test.describe("production portal bookkeeping", () => {
     await page.getByRole("menuitem", { name: "Copy accountant table", exact: true }).click();
     await expect(page.locator("[data-bookkeeping-status]")).toContainText("Copied report table for 2024 (2 transactions)");
     const copied = await page.evaluate(() => window.__copiedReport);
-    expect(copied).toContain("VAT\tVAT Currency");
+    expect(copied.trim().split(/\r?\n/)).toEqual([
+      "Date\tCompany\tWhat\tAmount, EUR",
+      '2024-12-02\tDecember, "Export" Vendor\tExport browser fixture\t23.4500',
+      "2024-01-02\tJanuary Export Vendor\tExport browser fixture\t-100.1234",
+    ]);
     expect(copied).toContain("January Export Vendor");
     expect(copied).not.toContain("Excluded Export Tax");
 

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import yauzl from "yauzl";
 import { upload, confirm, report, alias, aliases, balances, matches, attachDoc, voidLedger, restoreLedger, note, commands } from "../src/commands/reconcile.mjs";
 import { exitCodeFor, EXIT } from "../src/errors.mjs";
 
@@ -28,6 +29,28 @@ const withFakePortal = async (routes, run) => {
     if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
   }
 };
+
+const archiveEntries = (path) => new Promise((resolve, reject) => {
+  yauzl.open(path, { lazyEntries: true }, (error, zip) => {
+    if (error) return reject(error);
+    const entries = [];
+    zip.on("error", reject);
+    zip.on("entry", (entry) => {
+      zip.openReadStream(entry, (streamError, stream) => {
+        if (streamError) return reject(streamError);
+        const chunks = [];
+        stream.on("data", (chunk) => chunks.push(chunk));
+        stream.on("error", reject);
+        stream.on("end", () => {
+          entries.push([entry.fileName, Buffer.concat(chunks)]);
+          zip.readEntry();
+        });
+      });
+    });
+    zip.on("end", () => resolve(entries));
+    zip.readEntry();
+  });
+});
 
 const args = { url: "https://portal.example.test", json: true };
 
@@ -555,6 +578,9 @@ test("close shows the blocking rows when the portal refuses", async () => {
 
 test("package writes the month folder layout from the manifest and never sends anything", async () => {
   const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-test-"));
+  const stalePath = join(directory, "2026-10/expenses/2030-01_stale-unpaid-invoice.pdf");
+  await mkdir(join(directory, "2026-10/expenses"), { recursive: true });
+  await writeFile(stalePath, "pre-existing synthetic file");
   await withFakePortal([
     ["/reconcile/months/2026-10/package", { period: "2026-10", state: "closed", draft: false, csv: "date,status\n", entries: [
       { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
@@ -569,7 +595,8 @@ test("package writes the month folder layout from the manifest and never sends a
     ["/api/bookkeeping/invoices/synthetic-invoice/document", { url: "https://private.example.test/invoice" }],
     ["https://private.example.test/", "synthetic-bytes"],
   ], async (calls) => {
-    const result = await commands.package({ ...args, _: ["2026-10"], out: directory }, {});
+    const result = await commands.package({ ...args, _: ["2026-10"], out: directory, json: true }, {});
+    assert.equal(result.zip, join(directory, "datatalksclub-2026-10.zip"));
     assert.deepEqual(result.written, [
       "2026-10/2026-10_reconciliation_datatalksclub.csv",
       "2026-10/statements/2026-10_finom-main.csv",
@@ -579,6 +606,12 @@ test("package writes the month folder layout from the manifest and never sends a
     ]);
     assert.equal(await (await import("node:fs/promises")).readFile(join(directory, "2026-10/proofs/2026-10-14_google_a1c9d26b5312.pdf"), "utf8"), "synthetic-bytes");
     assert.equal(await (await import("node:fs/promises")).readFile(join(directory, "2026-10/expenses/2026-10-15_synthetic-vendor_SYN-1_9.00EUR.pdf"), "utf8"), "synthetic-bytes");
+    const zipped = await archiveEntries(result.zip);
+    assert.deepEqual(zipped.map(([path]) => path).sort(), [...result.written].sort());
+    assert.ok(!zipped.some(([path]) => path.endsWith("2030-01_stale-unpaid-invoice.pdf")));
+    assert.equal(await readFile(stalePath, "utf8"), "pre-existing synthetic file");
+    assert.equal(zipped.find(([path]) => path.endsWith("proofs/2026-10-14_google_a1c9d26b5312.pdf"))?.[1].toString(), "synthetic-bytes");
+    assert.match(zipped.find(([path]) => path.endsWith("reconciliation_datatalksclub.csv"))?.[1].toString() || "", /date,status/);
     assert.ok(!calls.some((call) => call.method === "POST"), "building a package never writes");
   });
   await rm(directory, { recursive: true, force: true });
@@ -589,8 +622,105 @@ test("package refuses to present an incomplete manifest as ready", async () => {
     "/reconcile/months/2026-10/package",
     { period: "2026-10", state: "open", draft: true, csv: "date,status\n", entries: [], blockers: [{ rowId: "ledger-1", reference: "invoice-1", reason: "expected invoice document is missing" }] },
   ]], async () => {
-    await assert.rejects(commands.package({ ...args, _: ["2026-10"], draft: true }, {}), /Package is incomplete: 1 expected document/);
+    await assert.rejects(commands.package({ ...args, _: ["2026-10"], draft: true }, {}), /Package is incomplete: 1 blocker\(s\) prevent export/);
   });
+});
+
+test("package rejects manifest paths that can escape the output month before writing files", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-path-test-"));
+  const absoluteOutsidePath = join(tmpdir(), `dataops-outside-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`);
+  try {
+    for (const path of [
+      "2026-10/../../outside.txt",
+      absoluteOutsidePath,
+      "C:\\temp\\dataops-outside.txt",
+      "2026-10\\..\\outside.txt",
+    ]) {
+      await withFakePortal([[
+        "/reconcile/months/2026-10/package",
+        { period: "2026-10", state: "closed", draft: false, csv: "synthetic report\n", entries: [
+          { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
+          { path, kind: "invoice", documentId: "synthetic-doc" },
+        ] },
+      ]], async () => {
+        await assert.rejects(commands.package({ ...args, _: ["2026-10"], out: directory, json: true }, {}), /Package manifest/);
+      });
+      assert.equal(await readFile(join(directory, "2026-10/2026-10_reconciliation_datatalksclub.csv"), "utf8").catch(() => null), null,
+        "a bad later entry must be rejected before the earlier report is written");
+    }
+    assert.equal(await readFile(join(directory, "outside.txt"), "utf8").catch(() => null), null);
+    assert.equal(await readFile(absoluteOutsidePath, "utf8").catch(() => null), null);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("package rejects a symlinked directory inside the month before writing the report", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-symlink-test-"));
+  const outside = await mkdtemp(join(tmpdir(), "dataops-reconcile-outside-test-"));
+  try {
+    await mkdir(join(directory, "2026-10"), { recursive: true });
+    try {
+      await symlink(outside, join(directory, "2026-10/expenses"), "dir");
+    } catch (error) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) return;
+      throw error;
+    }
+    await withFakePortal([[
+      "/reconcile/months/2026-10/package",
+      { period: "2026-10", state: "closed", draft: false, csv: "synthetic report\n", entries: [
+        { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
+        { path: "2026-10/expenses/2026-10_vendor.pdf", kind: "invoice", documentId: "synthetic-doc" },
+      ] },
+    ]], async () => {
+      await assert.rejects(commands.package({ ...args, _: ["2026-10"], out: directory, json: true }, {}), /symlink/);
+    });
+    assert.equal(await readFile(join(directory, "2026-10/2026-10_reconciliation_datatalksclub.csv"), "utf8").catch(() => null), null);
+    assert.deepEqual(await (await import("node:fs/promises")).readdir(outside), []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  }
+});
+
+test("package reports archive creation failures", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-test-"));
+  await mkdir(join(directory, "datatalksclub-2026-10.zip"));
+  try {
+    await withFakePortal([[
+      "/reconcile/months/2026-10/package",
+      { period: "2026-10", state: "closed", draft: false, csv: "date,status\n", entries: [
+        { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
+      ] },
+    ]], async () => {
+      await assert.rejects(
+        commands.package({ ...args, _: ["2026-10"], out: directory, json: true }, {}),
+        /Could not create package archive/,
+      );
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("package keeps the previous archive when a manifest file cannot be downloaded", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-prior-archive-test-"));
+  const zipPath = join(directory, "datatalksclub-2026-10.zip");
+  await writeFile(zipPath, "previous synthetic archive");
+  try {
+    await withFakePortal([[
+      "/reconcile/months/2026-10/package",
+      { period: "2026-10", state: "closed", draft: false, csv: "synthetic report\n", entries: [
+        { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
+        { path: "2026-10/statements/2026-10_finom.csv", kind: "statement", documentId: "synthetic-missing-document" },
+      ] },
+    ]], async () => {
+      await assert.rejects(commands.package({ ...args, _: ["2026-10"], out: directory, json: true }, {}));
+    });
+    assert.equal(await readFile(zipPath, "utf8"), "previous synthetic archive");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("reconcile matches prints matched, unmatched bank and invoices without a bank row", async () => {

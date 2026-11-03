@@ -4,10 +4,11 @@ import { PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { createDocumentLink, getBookkeepingItem, putBookkeepingItem } from '../src/db/bookkeeping';
+import { handleBookkeepingAccountantReportRoutes } from '../src/routes/bookkeepingAccountantReport';
 import { createInvoice } from '../src/invoices/store';
-import { TABLE_ARTIFACTS } from '../src/db/tableNames';
+import { TABLE_ARTIFACTS, TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { saveStatement } from '../src/reconcile/service';
-import { buildMonth, closeMonth, getConfig, ledgerRowsFrom, monthPackage, saveConfig } from '../src/reconcile/monthService';
+import { attachProof, buildMonth, closeMonth, getConfig, ledgerRowsFrom, monthPackage, saveConfig } from '../src/reconcile/monthService';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 
 describe('reconciliation ledger projection', () => {
@@ -31,6 +32,75 @@ describe('reconciliation ledger projection', () => {
     assert.equal(row.subtype, 'Subscription');
     assert.equal(row.amountEur, '-9.25');
     assert.equal(row.rateSource, 'ECB 23 Oct 2026');
+  });
+
+  it('blocks an accountant package row without a booked EUR conversion', async () => {
+    const period = '2027-06';
+    await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-unconverted-package-row', transactionDate: `${period}-08`, paidDate: `${period}-08`,
+      counterparty: 'Synthetic USD Vendor', description: 'Unconverted service', amount: '12.00',
+      currency: 'USD', entryType: 'expense',
+    });
+    const packageResult = await monthPackage(client, period, { draft: true });
+    assert.equal(packageResult.blockers.length, 1);
+    assert.deepEqual(packageResult.blockers[0], {
+      rowId: 'synthetic-unconverted-package-row',
+      reference: 'USD',
+      reason: 'foreign-currency transaction has no booked EUR value; convert it before preparing the package',
+    });
+  });
+
+  it('keeps accountant API and package CSV aligned for normalized EUR and blocks unconverted foreign currency', async () => {
+    const period = '2027-02';
+    const normalizedEuroRows = [
+      {
+        id: 'synthetic-package-missing-currency-eur', transactionDate: `${period}-08`, paidDate: `${period}-08`,
+        counterparty: 'Synthetic Missing Currency Vendor', description: 'Missing currency service', amount: '10.00',
+        entryType: 'expense',
+      },
+      {
+        id: 'synthetic-package-lowercase-currency-eur', transactionDate: `${period}-09`, paidDate: `${period}-09`,
+        counterparty: 'Synthetic Lowercase Currency Vendor', description: 'Lowercase currency service', amount: '20.00',
+        amountEur: '19.00', currency: 'eur', entryType: 'expense',
+      },
+      {
+        id: 'synthetic-package-padded-currency-eur', transactionDate: `${period}-10`, paidDate: `${period}-10`,
+        counterparty: 'Synthetic Padded Currency Vendor', description: 'Padded currency service', amount: '30.00',
+        amountEur: '29.00', currency: ' EUR ', entryType: 'expense',
+      },
+    ];
+    for (const row of normalizedEuroRows) await putBookkeepingItem(client, 'bookkeeping', row);
+
+    const packageResult = await monthPackage(client, period, { draft: true });
+    const accountant = await handleBookkeepingAccountantReportRoutes(
+      '/api/bookkeeping/reports/accountant', 'GET',
+      { httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period, format: 'csv' } } as any,
+      client,
+    );
+    assert.equal(accountant?.statusCode, 200);
+    const report = JSON.parse(accountant!.body);
+    assert.equal(report.count, 3);
+    assert.deepEqual(packageResult.blockers, []);
+    assert.equal(packageResult.csv, report.content);
+    assert.match(packageResult.csv, /Synthetic Missing Currency Vendor","Missing currency service","-10\.00/);
+    assert.match(packageResult.csv, /Synthetic Lowercase Currency Vendor","Lowercase currency service","-20\.00/);
+    assert.match(packageResult.csv, /Synthetic Padded Currency Vendor","Padded currency service","-30\.00/);
+    assert.doesNotMatch(packageResult.csv, /-19\.00|-29\.00/);
+
+    const unconverted = await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-package-unconverted-usd', transactionDate: `${period}-11`, paidDate: `${period}-11`,
+      counterparty: 'Synthetic Unconverted USD Vendor', description: 'Unconverted foreign service', amount: '12.00',
+      currency: 'USD', entryType: 'expense',
+    });
+    const blockedPackage = await monthPackage(client, period, { draft: true });
+    const blockedAccountant = await handleBookkeepingAccountantReportRoutes(
+      '/api/bookkeeping/reports/accountant', 'GET',
+      { httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period, format: 'csv' } } as any,
+      client,
+    );
+    assert.equal(blockedAccountant?.statusCode, 409);
+    assert.deepEqual(JSON.parse(blockedAccountant!.body).unconvertedTransactionIds, [unconverted.item.id]);
+    assert.deepEqual(blockedPackage.blockers.map((blocker) => blocker.rowId), [unconverted.item.id]);
   });
 
   it('projects a confirmed invoice intake artifact and blocks unresolved expected files in the package', async () => {
@@ -107,10 +177,10 @@ describe('reconciliation ledger projection', () => {
       });
       const incomplete = await monthPackage(client, period, { draft: true });
       assert.equal(incomplete.blockers.length, 2);
-      assert.deepEqual(incomplete.blockers.map((blocker) => blocker.rowId), [
+      assert.deepEqual(incomplete.blockers.map((blocker) => blocker.rowId).sort(), [
         'ledger:synthetic-missing-invoice-ledger',
         'ledger:synthetic-mismatched-invoice-ledger',
-      ]);
+      ].sort());
       assert.ok(incomplete.blockers.every((blocker) => /cannot be safely resolved/.test(blocker.reason)));
     } finally {
       if (oldBucket === undefined) delete process.env.EMAIL_DOCUMENTS_BUCKET; else process.env.EMAIL_DOCUMENTS_BUCKET = oldBucket;
@@ -228,7 +298,7 @@ describe('reconciliation ledger projection', () => {
     const pack = await monthPackage(client, period);
     assert.equal(pack.draft, false);
     assert.match(pack.csv, /Synthetic Advisory GmbH/);
-    assert.match(pack.csv, /Compliance & Taxes/);
+    assert.match(pack.csv, /Monthly compliance service fee/);
     assert.doesNotMatch(pack.csv, /Finanzamt Example/);
     assert.doesNotMatch(pack.csv, /Techniker Krankenkasse/);
     assert.doesNotMatch(pack.csv, /Synthetic Owner|Owner pay/);
@@ -291,7 +361,7 @@ describe('reconciliation ledger projection', () => {
       assert.equal(pack.draft, true);
       assert.equal(pack.csv.includes('Synthetic Owner'), false);
       assert.match(pack.csv, /Synthetic ILZ Services/);
-      assert.match(pack.csv, /Compliance & Taxes/);
+      assert.match(pack.csv, /Synthetic ordinary service invoice/);
       assert.ok(pack.entries.some((entry) => entry.documentId === serviceInvoice.id));
       assert.ok(pack.entries.some((entry) => entry.kind === 'statement'
         && entry.documentId === 'synthetic-original-statement'
@@ -301,5 +371,94 @@ describe('reconciliation ledger projection', () => {
     } finally {
       await saveConfig(client, previousConfig, 'tester');
     }
+  });
+
+  it('packages only selected cash rows, allocated invoice amounts, and registered proofs with proof-role precedence', async () => {
+    const period = '2027-01';
+    const makeDocument = async (id: string, filename: string, hash: string, type = 'invoice') => (await putBookkeepingItem(client, 'document', {
+      id, documentType: type, status: 'active', contentType: 'application/pdf', originalFilename: filename,
+      byteSize: 128, sha256: hash.repeat(64), s3Key: `documents/${filename}`,
+    })).item;
+
+    const allocationDocuments = [
+      await makeDocument('synthetic-package-allocation-one', 'synthetic-allocation-one.pdf', '1'),
+      await makeDocument('synthetic-package-allocation-two', 'synthetic-allocation-two.pdf', '2'),
+      await makeDocument('synthetic-package-allocation-three', 'synthetic-allocation-three.pdf', '5'),
+    ];
+    const allocatedPayment = (await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-package-allocated-income', transactionDate: '2026-12-30', paidDate: '2027-01-03',
+      counterparty: 'Synthetic Combined Client', description: 'Combined settlement', amount: '120.00', currency: 'EUR', entryType: 'income', category: 'Consulting',
+      allocations: [
+        { id: 'synthetic-allocation-one', documentId: allocationDocuments[0].id, invoiceNumber: 'SYN-A', counterparty: 'Synthetic Client A', description: 'Consulting milestone', amount: '70.00', currency: 'EUR' },
+        { id: 'synthetic-allocation-two', documentId: allocationDocuments[1].id, invoiceNumber: 'SYN-B', counterparty: 'Synthetic Client B', description: 'Support service', amount: '35.00', currency: 'EUR' },
+        { id: 'synthetic-allocation-three', documentId: allocationDocuments[2].id, invoiceNumber: 'SYN-C', counterparty: 'Synthetic Client C', description: 'Workshop delivery', amount: '15.00', currency: 'EUR' },
+      ],
+    })).item;
+    for (const document of allocationDocuments) {
+      await createDocumentLink(client, { documentId: document.id, transactionId: String(allocatedPayment.id), coverageType: 'evidence' });
+    }
+
+    const linkedProof = await makeDocument('synthetic-package-linked-proof', 'synthetic-payment-proof-one.pdf', '3');
+    const secondProof = await makeDocument('synthetic-package-second-proof', 'synthetic-payment-proof-two.pdf', '4', 'other-evidence');
+    const linkedProofTransaction = (await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-package-income-with-proof', transactionDate: '2027-01-05', paidDate: '2027-01-06',
+      counterparty: 'Synthetic Proof Client', description: 'Proof-linked income', amount: '12.00', currency: 'EUR', entryType: 'income', category: 'Consulting',
+    })).item;
+    const secondProofTransaction = (await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-package-proof-only-income', transactionDate: '2027-01-07', paidDate: '2027-01-08',
+      counterparty: 'Synthetic Other Client', description: 'Proof-only income', amount: '8.00', currency: 'EUR', entryType: 'income', category: 'Consulting',
+    })).item;
+    await createDocumentLink(client, { documentId: linkedProof.id, transactionId: String(linkedProofTransaction.id), coverageType: 'evidence' });
+    await attachProof(client, period, 'tester', String(linkedProofTransaction.id), linkedProof.id);
+    await attachProof(client, period, 'tester', String(secondProofTransaction.id), secondProof.id);
+
+    const unpaidDeal = 'synthetic-package-unpaid-deal';
+    const crmNow = new Date().toISOString();
+    await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: {
+      PK: `DEAL#${unpaidDeal}`, SK: `DEAL#${unpaidDeal}`, id: unpaidDeal, name: 'Synthetic Unpaid Client', version: 1, createdAt: crmNow, updatedAt: crmNow,
+    } }));
+    await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: {
+      PK: `SPONSOR_FINANCE#${unpaidDeal}`, SK: `SPONSOR_FINANCE#${unpaidDeal}`, id: 'synthetic-package-unpaid-invoice', dealId: unpaidDeal,
+      invoiceNumber: 'SYN-UNPAID', amountDue: '88.00', currency: 'EUR', issuedOn: '2027-01-09', createdAt: crmNow, updatedAt: crmNow,
+    } }));
+
+    const nextMonth = await monthPackage(client, period, { draft: true });
+    const accountant = await handleBookkeepingAccountantReportRoutes(
+      '/api/bookkeeping/reports/accountant', 'GET',
+      { httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period, format: 'csv' } } as any,
+      client,
+    );
+    assert.equal(accountant?.statusCode, 200);
+    assert.equal(nextMonth.csv, JSON.parse(accountant!.body).content,
+      'the package CSV is exactly the native accountant report for its cash period');
+    assert.match(nextMonth.csv, /Synthetic Client A/);
+    assert.match(nextMonth.csv, /Consulting milestone/);
+    assert.match(nextMonth.csv, /70\.00/);
+    assert.match(nextMonth.csv, /Synthetic Client B/);
+    assert.match(nextMonth.csv, /Support service/);
+    assert.match(nextMonth.csv, /35\.00/);
+    assert.match(nextMonth.csv, /Synthetic Client C/);
+    assert.match(nextMonth.csv, /Workshop delivery/);
+    assert.match(nextMonth.csv, /15\.00/);
+    assert.doesNotMatch(nextMonth.csv, /Synthetic Combined Client|Combined settlement|Synthetic Unpaid Client/);
+    assert.ok(nextMonth.entries.some((entry) => entry.documentId === allocationDocuments[0].id
+      && entry.path === '2027-01/income/2027-01-03_synthetic-client-a_SYN-A_70.00EUR.pdf'));
+    assert.ok(nextMonth.entries.some((entry) => entry.documentId === allocationDocuments[1].id
+      && entry.path === '2027-01/income/2027-01-03_synthetic-client-b_SYN-B_35.00EUR.pdf'));
+    assert.ok(nextMonth.entries.some((entry) => entry.documentId === allocationDocuments[2].id
+      && entry.path === '2027-01/income/2027-01-03_synthetic-client-c_SYN-C_15.00EUR.pdf'));
+    assert.equal(nextMonth.entries.filter((entry) => entry.documentId === linkedProof.id).length, 1);
+    assert.ok(nextMonth.entries.some((entry) => entry.kind === 'proof' && entry.documentId === linkedProof.id
+      && entry.path.startsWith('2027-01/proofs/')));
+    assert.ok(nextMonth.entries.some((entry) => entry.kind === 'proof' && entry.documentId === secondProof.id
+      && entry.path.startsWith('2027-01/proofs/')));
+    assert.equal(nextMonth.entries.filter((entry) => entry.kind === 'proof').length, 2);
+
+    const priorMonth = await monthPackage(client, '2026-12', { draft: true });
+    assert.doesNotMatch(priorMonth.csv, /Synthetic Client A|Synthetic Client B|Synthetic Proof Client/);
+    assert.ok(!priorMonth.entries.some((entry) => allocationDocuments.some((document) => entry.documentId === document.id)));
+    const unchangedParent = await getBookkeepingItem(client, 'bookkeeping', String(allocatedPayment.id));
+    assert.equal(unchangedParent?.amount, '120.00');
+    assert.equal((unchangedParent?.allocations as unknown[]).length, 3);
   });
 });
