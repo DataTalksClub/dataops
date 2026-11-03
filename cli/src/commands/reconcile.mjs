@@ -3,7 +3,6 @@ import { createWriteStream } from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import { dirname, join } from "node:path";
-import yazl from "yazl";
 import { UsageError } from "../errors.mjs";
 import { enc, optionalString, positional } from "../format.mjs";
 import { apiFor } from "../session.mjs";
@@ -699,6 +698,7 @@ async function packageFiles(directory, root = directory) {
 }
 
 async function createPackageArchive(out, period, zipPath) {
+  const { default: yazl } = await import("yazl");
   const archive = new yazl.ZipFile();
   const complete = pipeline(archive.outputStream, createWriteStream(zipPath)).then(() => null, (error) => error);
   try {
