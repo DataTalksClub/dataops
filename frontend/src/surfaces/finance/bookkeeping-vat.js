@@ -55,7 +55,8 @@ export function mandatoryPaymentsMarkup(entries, lens, escapeHtml, state = "read
   return html`<section class="bk-mandatory-payments" aria-labelledby="bk-mandatory-payments-heading" data-mandatory-payments>
     <h2 id="bk-mandatory-payments-heading">Mandatory payments · ${escapeHtml(periodLabel)}</h2>
     <p class="bk-mandatory-payments__hint">Shown separately for your review and excluded from the accountant report and package.</p>
-    <div class="bk-mandatory-payments__table-wrap"><table aria-label="Mandatory payments for ${escapeHtml(periodLabel)}">
+    <div class="bk-mandatory-payments__table-wrap" tabindex="0" role="region" aria-label="Scrollable mandatory payments">
+      <table aria-label="Mandatory payments for ${escapeHtml(periodLabel)}">
       <thead><tr><th>Date</th><th>Counterparty</th><th>Kind</th><th>Amount</th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
