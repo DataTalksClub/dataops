@@ -1079,6 +1079,9 @@ Resources:
       Handler: dist/handler.handler
       Timeout: 120
       MemorySize: 1024
+      # Knowledge revisions share immutable cached payloads; additional space
+      # gives publication bursts room while stale revision links are pruned.
+      EphemeralStorage: {Size: 2048}
       LoggingConfig:
         LogFormat: JSON
         LogGroup: !Ref ConversationalBackendLogGroup
