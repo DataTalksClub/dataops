@@ -132,6 +132,10 @@ describe('deterministic canonical frontend artifact verifier', () => {
   before(() => mkdirSync(generatedRoot, { recursive: true }));
   after(() => rmSync(generatedRoot, { recursive: true, force: true }));
 
+  test('includes the task checklist renderer in the production asset manifest', () => {
+    assert.ok(readFrontendAssetManifest().files.includes('src/surfaces/work-detail/task-checklist.js'));
+  });
+
   test('terminates a timed-out child and reports its phase', async () => {
     const child = spawn(process.execPath, ['--eval', 'setInterval(() => {}, 1000)'], {
       stdio: ['ignore', 'pipe', 'pipe'],
