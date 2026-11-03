@@ -114,7 +114,10 @@ export function mandatoryAllocationMarkup(entries, lens, escapeHtml, getAllocati
   return html`<section class="bk-mandatory-payments bk-mandatory-allocations" data-mandatory-allocations>
     <h2>Mandatory invoice allocations · ${escapeHtml(monthLabel(lens))}</h2>
     <p class="bk-mandatory-payments__hint">Excluded from the accountant package and shown once by allocation.</p>
-    <div class="bk-mandatory-payments__table-wrap"><table><thead><tr><th>Date</th><th>Counterparty</th><th>Category</th><th>Amount</th><th>Evidence</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="bk-mandatory-payments__table-wrap"><table>
+      <thead><tr><th>Date</th><th>Counterparty</th><th>Category</th><th>Amount</th><th>Evidence</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
   </section>`;
 }
 
