@@ -425,9 +425,12 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "FunctionUrlConfig" in backend
     assert "WORK_ENGINE_AUTH_MODE: portal" in backend
     assert "DATAOPS_DOCS_DOMAIN: " in backend
-    # GitHub access to the knowledge repo lives in the knowledge worker only.
+    # The knowledge worker now only backs up S3; the knowledge workflow owns GitHub access.
     assert "GITHUB_OWNER" not in backend
-    assert "GITHUB_OWNER: !Ref GitHubOwner" in _resource_block(template, "KnowledgeWorkerFunction")
+    knowledge_worker = _resource_block(template, "KnowledgeWorkerFunction")
+    assert "KNOWLEDGE_BACKUP_BUCKET: !Ref KnowledgeBackupBucketName" in knowledge_worker
+    assert "GITHUB_OWNER" not in knowledge_worker
+    assert "GITHUB_TOKEN_SECRET_NAME" not in knowledge_worker
     assert "AUTH_BASE_URL: !Ref AuthBaseUrl" in backend
     assert "AUTH_USER_POOL_ID:" not in backend
     assert "AUTH_ISSUER: !Ref AuthIssuer" in backend
