@@ -31,7 +31,7 @@ tasks:
 | `prefix`      | `""`                 | Prepended to every emitted task id. Internal `depends_on` refs track it; refs to tasks outside the block do not. |
 | `slot`        | `null`               | Sets `optional_group` on the block's `slot_tasks`; removes it when null/empty. |
 | `anchor`      | block `anchor_from`  | Rewrites every `depends_on` entry equal to the block's `anchor_from` (e.g. `schedule-email-newsletter`). |
-| `offset_days` | `0`                  | Added to each emitted task's own `schedule.offset_days` (tasks without one start from the block's `params.offset_days`). |
+| `offset_days` | unset (keep task offsets) | Pins `schedule.offset_days` for every emitted task when set (legacy one-offset-per-include behaviour). When omitted, each task keeps its own `schedule.offset_days`; tasks without one start from the block's `params.offset_days`. |
 | `name_prefix` | `""`                 | Prepended to every emitted task name.                          |
 | `only`        | all tasks            | Emit a subset by unprefixed block task id (e.g. only the send task for a secondary slot that reuses shared collect tasks). |
 
