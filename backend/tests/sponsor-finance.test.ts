@@ -21,7 +21,12 @@ import {
   deriveThankYou,
 } from '../src/sponsorFinance/thankYou';
 import { templateParser } from '../src/docs/templatePlaceholders';
-import { FINOM_PAID_INSTRUCTION_DOC_ID, finomPaidTaskDescription } from '../src/sponsorFinance/finomPaidTask';
+import {
+  FINOM_PAID_INSTRUCTION_DOC_ID,
+  finomPaidTaskActions,
+  finomPaidTaskDescription,
+  resolveDealOwnerId,
+} from '../src/sponsorFinance/finomPaidTask';
 
 describe('sponsor finance contracts', () => {
   it('uses exact four-place scaled integer money arithmetic', () => {
@@ -281,10 +286,56 @@ describe('sponsor finance contracts', () => {
     assert.throws(() => validateEvidence(Array.from({ length: 21 }, () => ({ kind: 'note', ref: 'x' }))));
   });
 
-  it('names the Finom follow-through Task after the invoice and pins its instruction doc', () => {
+  it('names the Finom follow-through Task after the invoice, links dependsOn to the payment step, and assigns the deal owner', async () => {
     assert.equal(finomPaidTaskDescription('202610/12'), 'Mark invoice 202610/12 paid in Finom');
     assert.equal(finomPaidTaskDescription(undefined), 'Mark the invoice paid in Finom');
     assert.equal(FINOM_PAID_INSTRUCTION_DOC_ID, 'sop.finance.bookkeeping.marking-invoice-as-paid-in-finom');
+
+    const mockClient = (rows: Record<string, Record<string, unknown>>) => ({
+      send: async (command: { constructor: { name: string }; input: Record<string, any> }) => {
+        if (command.constructor.name === 'GetCommand') {
+          const pk = String(command.input.Key?.PK || '');
+          return { Item: rows[pk] };
+        }
+        if (command.constructor.name === 'ScanCommand') {
+          return { Items: [], ScannedCount: 0 };
+        }
+        return {};
+      },
+    });
+
+    const dealOwnerClient = mockClient({
+      'DEAL#deal-1': { PK: 'DEAL#deal-1', SK: 'DEAL#deal-1', id: 'deal-1', organizationId: 'org-1', owner: 'deal-owner-1', version: 1, createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z' },
+      'USER#deal-owner-1': { PK: 'USER#deal-owner-1', SK: 'USER#deal-owner-1', id: 'deal-owner-1', role: 'operator', disabled: false },
+    });
+    assert.equal(await resolveDealOwnerId(dealOwnerClient as never, 'deal-1', 'payment-actor-1'), 'deal-owner-1');
+
+    const created = await finomPaidTaskActions(dealOwnerClient as never, {
+      actorId: 'payment-actor-1',
+      dealId: 'deal-1',
+      sourceId: 'receipt-step-1',
+      invoiceNumber: '202610/12',
+    });
+    assert.equal(created.created, true);
+    assert.equal(created.actions.length, 1);
+    const putItem = (created.actions[0] as { Put: { Item: Record<string, unknown> } }).Put.Item;
+    assert.deepEqual(putItem.dependsOn, ['receipt-step-1']);
+    assert.equal(putItem.assigneeId, 'deal-owner-1');
+    assert.equal(putItem.createdBy, 'payment-actor-1');
+    assert.equal(putItem.instructionDocId, FINOM_PAID_INSTRUCTION_DOC_ID);
+
+    const orgOwnerClient = mockClient({
+      'DEAL#deal-2': { PK: 'DEAL#deal-2', SK: 'DEAL#deal-2', id: 'deal-2', organizationId: 'org-2', version: 1, createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z' },
+      'ORGANIZATION#org-2': { PK: 'ORGANIZATION#org-2', SK: 'ORGANIZATION#org-2', id: 'org-2', owner: 'org-owner-2', version: 1, createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z' },
+      'USER#org-owner-2': { PK: 'USER#org-owner-2', SK: 'USER#org-owner-2', id: 'org-owner-2', role: 'operator', disabled: false },
+    });
+    assert.equal(await resolveDealOwnerId(orgOwnerClient as never, 'deal-2', 'payment-actor-1'), 'org-owner-2');
+
+    const disabledOwnerClient = mockClient({
+      'DEAL#deal-3': { PK: 'DEAL#deal-3', SK: 'DEAL#deal-3', id: 'deal-3', owner: 'disabled-owner', version: 1, createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z' },
+      'USER#disabled-owner': { PK: 'USER#disabled-owner', SK: 'USER#disabled-owner', id: 'disabled-owner', role: 'operator', disabled: true },
+    });
+    assert.equal(await resolveDealOwnerId(disabledOwnerClient as never, 'deal-3', 'payment-actor-1'), 'payment-actor-1');
   });
 
   it('derives the send-with-template payment thank-you contract when payment resolves and marks it recorded idempotently', async () => {

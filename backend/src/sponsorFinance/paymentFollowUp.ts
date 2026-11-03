@@ -191,7 +191,7 @@ export async function relatedDealTasks(client: DynamoDBDocumentClient, dealId: s
     const page = await client.send(new ScanCommand({
       TableName: TABLE_TASKS, ConsistentRead: true, Limit: 200,
       ...(key ? { ExclusiveStartKey: key } : {}),
-      ProjectionExpression: 'id, #version, description, #date, #status, subject, assigneeId, followUpAt, #source, tags',
+      ProjectionExpression: 'id, #version, description, #date, #status, subject, assigneeId, followUpAt, #source, tags, dependsOn, instructionDocId',
       ExpressionAttributeNames: { '#version': 'version', '#date': 'date', '#status': 'status', '#source': 'source' },
     }));
     evaluated += page.ScannedCount || 0;
