@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'crypto';
 import { DeleteCommand, GetCommand, PutCommand, ScanCommand, TransactWriteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { cleanItem } from './cleanItem';
 import { TABLE_SPONSOR_CRM } from './tableNames';
 import { usesLocalTransactionEmulation } from './client';
 import {
@@ -12,11 +13,7 @@ import {
 export type CrmRecord = Record<string, unknown> & { id: string; version: number; createdAt: string; updatedAt: string };
 const key = (kind: string, id: string) => `${kind.toUpperCase()}#${id}`;
 const compact = (record: Record<string, unknown>) => Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
-const clean = (item?: Record<string, unknown>): CrmRecord | null => {
-  if (!item) return null;
-  const { PK, SK, ...record } = item;
-  return record as CrmRecord;
-};
+const clean = cleanItem<CrmRecord>;
 // DynamoDB does not preserve map key order, so a record read back can list a
 // nested object's keys differently from the value that was written. Replay
 // checks compare a canonical form with object keys sorted.

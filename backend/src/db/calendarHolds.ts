@@ -55,6 +55,7 @@ export async function calendarInviteDeps(body: any, client: DynamoDBDocumentClie
 const PREFIX = 'CALHOLD#';
 const key = (id: string) => ({ PK: `${PREFIX}${id}`, SK: `${PREFIX}${id}` });
 
+// Kept separate from db/cleanItem: requires a string id and migrates generation/renderValues/policy shapes.
 function clean(item: Record<string, unknown> | undefined): CalendarHold | null {
   if (!item) return null;
   const { PK, SK, ...data } = item;

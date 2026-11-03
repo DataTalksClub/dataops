@@ -7,6 +7,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { cleanItem as cleanDbItem } from './cleanItem';
 import { TABLE_ARTIFACTS } from './tableNames';
 import type { ArtifactRecord } from '../types';
 
@@ -18,11 +19,7 @@ export interface ArtifactFilters {
   type?: string;
 }
 
-function cleanItem(item: Record<string, unknown> | undefined): ArtifactRecord | null {
-  if (!item) return null;
-  const { PK, SK, ...rest } = item;
-  return rest as unknown as ArtifactRecord;
-}
+const cleanItem = cleanDbItem<ArtifactRecord>;
 
 async function createArtifact(
   client: DynamoDBDocumentClient,

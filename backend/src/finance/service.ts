@@ -10,7 +10,9 @@ import { listTaxSchedule } from './taxSchedule';
 import { upcomingDebits, type Balance, type PaidEvidence } from './upcoming';
 import { businessAccountStatementRequirement } from './businessAccounts';
 
-export { berlinToday } from '../relativeDates';
+import { berlinToday } from '../relativeDates';
+
+export { berlinToday };
 
 function documentVatFacts(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;

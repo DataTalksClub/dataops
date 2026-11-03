@@ -107,6 +107,7 @@ function cardKey(id: string) {
 
 /**
  * Strip DynamoDB key attributes (PK, SK) from an item.
+ * Kept separate from db/cleanItem: validates canonical Card stage, task counts, version, and title structure.
  */
 function cleanItem(item: Record<string, unknown> | undefined): Card | null {
   if (!item) return null;

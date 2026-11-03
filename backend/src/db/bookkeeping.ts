@@ -8,6 +8,7 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { cleanItem } from "./cleanItem";
 import { TABLE_BOOKKEEPING } from "./tableNames";
 import { classifyMandatoryPayment } from "../finance/mandatoryPayments";
 
@@ -41,11 +42,7 @@ const isConditionalMutationFailure = (error: unknown) =>
 const key = (kind: string, id: string) => `${kind.toUpperCase()}#${id}`;
 const documentKey = (id: string) => key("document", id);
 const hashKey = (sha256: string) => `DOCUMENT_HASH#${sha256}`;
-const clean = (item?: Record<string, unknown>): BookkeepingItem | null => {
-  if (!item) return null;
-  const { PK: _pk, SK: _sk, ...value } = item;
-  return value as BookkeepingItem;
-};
+const clean = cleanItem<BookkeepingItem>;
 const raw = (item?: Record<string, unknown>) => item || null;
 let testTransactionLock = Promise.resolve();
 

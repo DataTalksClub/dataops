@@ -1,4 +1,5 @@
 import { QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { cleanRequiredItem as clean } from '../db/cleanItem';
 import { TABLE_SPONSOR_CRM } from '../db/tableNames';
 import { StoragePaginationError } from '../db/boundedPagination';
 
@@ -24,12 +25,7 @@ export function workspaceErrorOf(error: unknown, source: string): Error & { stat
   return error as Error & { statusCode?: number };
 }
 
-export const clean = (item: Record<string, unknown>): Record<string, unknown> => {
-  const { PK, SK, ...record } = item;
-  void PK;
-  void SK;
-  return record;
-};
+export { clean };
 
 export type MessageQueryTarget =
   | { targetType: 'organization' | 'deal'; targetId: string }

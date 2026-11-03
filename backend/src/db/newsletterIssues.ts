@@ -108,6 +108,7 @@ const RANGE = 'ISSUES';
 
 export const issueKey = (id: string) => ({ PK: `ISSUE#${id}`, SK: `ISSUE#${id}` });
 
+// Kept separate from db/cleanItem: also strips date-index attributes (rangeKey, publicationKey).
 const clean = (item: Record<string, unknown> | undefined): NewsletterIssue | null => {
   if (!item) return null;
   const { PK, SK, rangeKey, publicationKey, ...value } = item;

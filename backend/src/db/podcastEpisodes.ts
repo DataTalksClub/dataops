@@ -100,6 +100,7 @@ const key = (id: string) => `EPISODE#${id}`;
 /** Undated episodes sort last; the date is the episode's best known date. */
 const dateKey = (episode: Pick<PodcastEpisode, "id" | "releaseDate" | "recordingDate">) =>
   `${episode.releaseDate || episode.recordingDate || "9999"}#${episode.id}`;
+// Kept separate from db/cleanItem: also strips date-index attributes (rangeKey, dateKey).
 const clean = (item: Record<string, unknown> | undefined) => {
   if (!item) return null;
   const { PK, SK, rangeKey, dateKey: _dateKey, ...value } = item;

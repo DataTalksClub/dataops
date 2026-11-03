@@ -6,19 +6,13 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { cleanItem as cleanDbItem } from './cleanItem';
 import { TABLE_NOTIFICATIONS } from './tableNames';
 import { readCollectionPage } from './collectionPage';
 import { listTasksByStatus } from './tasks';
 import type { Notification, Task } from '../types';
 
-/**
- * Strip DynamoDB key attributes (PK, SK) from an item.
- */
-function cleanItem(item: Record<string, unknown> | undefined): Notification | null {
-  if (!item) return null;
-  const { PK, SK, ...rest } = item;
-  return rest as unknown as Notification;
-}
+const cleanItem = cleanDbItem<Notification>;
 
 /**
  * Create a new notification. Generates a UUID, sets createdAt.

@@ -7,6 +7,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { cleanItem as cleanDbItem } from './cleanItem';
 import { readAllPages } from './readAllPages';
 import { TABLE_TASKS } from './tableNames';
 import { loadAssignmentPolicy } from './workspaceSettings';
@@ -15,14 +16,7 @@ import { nextOccurrenceDate, parseCronExpression, scheduleOccursOn } from '../cr
 import { berlinDate } from '../sponsorFinance/core';
 import type { RecurringConfig, RecurringRun, RecurringRunOutcome, Task } from '../types';
 
-/**
- * Strip DynamoDB key attributes (PK, SK) from an item.
- */
-function cleanItem(item: Record<string, unknown> | undefined): RecurringConfig | null {
-  if (!item) return null;
-  const { PK, SK, ...rest } = item;
-  return rest as unknown as RecurringConfig;
-}
+const cleanItem = cleanDbItem<RecurringConfig>;
 
 function recurringRunKey(configId: string, date: string): { PK: string; SK: string } {
   const key = `RECURRINGRUN#${configId}#${date}`;

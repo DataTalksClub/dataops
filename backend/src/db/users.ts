@@ -7,17 +7,11 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { cleanItem as cleanDbItem } from './cleanItem';
 import { TABLE_USERS } from './tableNames';
 import type { FormerUser, User } from '../types';
 
-/**
- * Strip DynamoDB key attributes (PK, SK) from an item.
- */
-function cleanItem(item: Record<string, unknown> | undefined): User | null {
-  if (!item) return null;
-  const { PK, SK, ...rest } = item;
-  return rest as unknown as User;
-}
+const cleanItem = cleanDbItem<User>;
 
 /**
  * Mutable user attributes accepted by {@link updateUser}. PK/SK/id/createdAt

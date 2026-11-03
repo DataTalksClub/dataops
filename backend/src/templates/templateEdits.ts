@@ -1,3 +1,4 @@
+import { isDict } from '../records';
 import { templateDependencyIssues } from './taskDependencyGraph';
 import { templateFromYaml, templateToYaml, validateAuthoredTemplate } from './yamlTemplates';
 
@@ -80,10 +81,6 @@ export class TemplateDefinitionInvalidError extends Error {
     this.name = 'TemplateDefinitionInvalidError';
     this.issues = issues;
   }
-}
-
-function isDict(value: unknown): value is Dict {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function templateTypeIssues(type: unknown): string[] {

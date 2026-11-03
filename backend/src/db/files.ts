@@ -7,18 +7,12 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { cleanItem as cleanDbItem } from './cleanItem';
 import { TABLE_FILES } from './tableNames';
 import type { FileRecord } from '../types';
 import { readCollectionPage } from './collectionPage';
 
-/**
- * Strip DynamoDB key attributes (PK, SK) from an item.
- */
-function cleanItem(item: Record<string, unknown> | undefined): FileRecord | null {
-  if (!item) return null;
-  const { PK, SK, ...rest } = item;
-  return rest as unknown as FileRecord;
-}
+const cleanItem = cleanDbItem<FileRecord>;
 
 /**
  * Create a new file metadata record. Generates a UUID, sets createdAt.

@@ -8,6 +8,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_INTAKE } from './tableNames';
 import type { IntakeItem } from '../types';
 
+// Kept separate from db/cleanItem: also strips GSI attributes (sourceMessageKey, ownerStatusKey, assigneeStatusKey).
 function cleanItem(item: Record<string, unknown> | undefined): IntakeItem | null {
   if (!item) return null;
   const {

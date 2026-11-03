@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import { collectBoundedPages } from './boundedPagination';
 import { getCardConsistent } from './cards';
+import { cleanRequiredItem } from './cleanItem';
 import { TABLE_ARTIFACTS } from './tableNames';
 
 export const CARD_DOCUMENT_KINDS = ['transcript', 'timecodes', 'summary', 'note'] as const;
@@ -18,10 +19,7 @@ export interface CardDocumentRecord {
 export type CardDocumentSummary = Omit<CardDocumentRecord, 'content'>;
 export class CardDocumentVersionConflict extends Error {}
 const key = (id: string) => ({ PK: `CARD_DOCUMENT#${id}`, SK: `CARD_DOCUMENT#${id}` });
-function clean(item: Record<string, unknown>): CardDocumentRecord {
-  const { PK, SK, ...doc } = item;
-  return doc as unknown as CardDocumentRecord;
-}
+const clean = cleanRequiredItem<CardDocumentRecord>;
 export async function getCardDocument(client: DynamoDBDocumentClient, id: string): Promise<CardDocumentRecord | null> {
   const result = await client.send(new GetCommand({ TableName: TABLE_ARTIFACTS, Key: key(id), ConsistentRead: true }));
   if (!result.Item) return null;

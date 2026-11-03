@@ -7,6 +7,7 @@
 
 import { GetCommand, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { cleanItem } from '../db/cleanItem';
 import { TABLE_SPONSOR_CRM } from '../db/tableNames';
 import { normalizeVatId } from './format';
 
@@ -36,11 +37,7 @@ export type ViesCheck = {
 };
 
 const key = (vatId: string) => ({ PK: `${PREFIX}${vatId}`, SK: `${PREFIX}${vatId}` });
-const clean = (item?: Record<string, unknown>): ViesCheck | null => {
-  if (!item) return null;
-  const { PK: _pk, SK: _sk, ...record } = item;
-  return record as unknown as ViesCheck;
-};
+const clean = cleanItem<ViesCheck>;
 
 export async function getViesCheck(client: DynamoDBDocumentClient, vatId: string): Promise<ViesCheck | null> {
   return clean((await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: key(normalizeVatId(vatId)) }))).Item);
