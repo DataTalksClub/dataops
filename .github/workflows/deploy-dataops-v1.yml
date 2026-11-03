@@ -1,6 +1,22 @@
 name: Deploy DataOps V1 Lambda
 
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-dataops-v1.yml"
+      - "backend/**"
+      - "mcp/**"
+      - "content/**"
+      - "frontend/**"
+      - "infra/**"
+      - "Makefile"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/test-backend-transactions.sh"
+      - "samconfig.toml"
+      - "scripts/deploy/**"
   push:
     branches:
       - main
@@ -86,6 +102,7 @@ jobs:
 
   deploy:
     name: Deploy DataOps v1 app
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     needs: checks
     permissions:
