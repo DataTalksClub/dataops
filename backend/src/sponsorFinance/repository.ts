@@ -1041,6 +1041,8 @@ export async function updateReceiptConversion(
   }
   const before = { amountEur: source.amountEur ?? null, rateSource: source.rateSource ?? null };
   const after = { amountEur: input.amountEur, rateSource: input.rateSource };
+  const conversionRevision = source.conversionRevision === undefined ? 0 : Number(source.conversionRevision);
+  if (!Number.isSafeInteger(conversionRevision) || conversionRevision < 0) throw safeConflict();
   const now = nowIso();
   const audit = [
     ...(Array.isArray(source.audit) ? source.audit : []),
@@ -1064,11 +1066,12 @@ export async function updateReceiptConversion(
         ExpressionAttributeValues: { ':type': 'sponsor-finance-claim', ':kind': 'transaction', ':deal': dealId,
           ':link': linkId, ':identity': identityToken } } },
       { Update: { TableName: TABLE_BOOKKEEPING, Key: singleton(sourceKey('transaction', input.sourceId)),
-        UpdateExpression: 'SET amountEur = :amountEur, rateSource = :rateSource, audit = :audit, updatedAt = :now',
-        ConditionExpression: 'id = :id AND updatedAt = :updatedAt AND amount = :amount AND currency = :currency AND statementRef = :reference AND sourceType = :sourceType AND entryType = :entryType',
+        UpdateExpression: 'SET amountEur = :amountEur, rateSource = :rateSource, audit = :audit, conversionRevision = :nextRevision',
+        ConditionExpression: `id = :id AND updatedAt = :updatedAt AND amount = :amount AND currency = :currency AND statementRef = :reference AND sourceType = :sourceType AND entryType = :entryType AND ${source.conversionRevision === undefined ? 'attribute_not_exists(conversionRevision)' : 'conversionRevision = :expectedRevision'}`,
         ExpressionAttributeValues: { ':amountEur': input.amountEur, ':rateSource': input.rateSource, ':audit': audit,
-          ':now': now, ':id': input.sourceId, ':updatedAt': source.updatedAt, ':amount': source.amount,
-          ':currency': source.currency, ':reference': source.statementRef, ':sourceType': 'sponsor-receipt', ':entryType': 'income' } } },
+          ':nextRevision': conversionRevision + 1, ':id': input.sourceId, ':updatedAt': source.updatedAt, ':amount': source.amount,
+          ':currency': source.currency, ':reference': source.statementRef, ':sourceType': 'sponsor-receipt', ':entryType': 'income',
+          ...(source.conversionRevision !== undefined ? { ':expectedRevision': conversionRevision } : {}) } } },
     ] }));
   } catch (error) {
     const failure = error as Error & { CancellationReasons?: Array<{ Code?: string }> };
@@ -1078,7 +1081,8 @@ export async function updateReceiptConversion(
       throw safeConflict();
     throw error;
   }
-  return { ...source, amountEur: input.amountEur, rateSource: input.rateSource, audit, updatedAt: now };
+  const { conversionRevision: _conversionRevision, ...canonicalSource } = source;
+  return { ...canonicalSource, amountEur: input.amountEur, rateSource: input.rateSource, audit };
 }
 
 /** Standard bookkeeping evidence, committed by the same trusted finance mutation.
