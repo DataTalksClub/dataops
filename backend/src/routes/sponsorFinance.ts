@@ -26,6 +26,14 @@ import {
   voidFinance,
 } from '../sponsorFinance/repository';
 import { financeLedger } from '../sponsorFinance/ledger';
+import {
+  decidePaymentMailCandidate,
+  getPaymentMailCandidate,
+  ingestPaymentMail,
+  listPaymentMailCandidates,
+  validateMail,
+} from '../sponsorFinance/paymentMail';
+import { pollPaymentMail } from '../sponsorFinance/paymentMailPoll';
 import { dealProjectionContext } from '../sponsorFinance/context';
 import { OPAQUE } from '../sponsorFinance/core';
 import { parseJsonObjectEventOrEmpty as parse } from '../http';
@@ -61,6 +69,49 @@ export async function handleSponsorFinanceRoutes(
       return json(statusCode, {
         error: statusCode === 401 ? 'Unauthorized' : statusCode === 403 ? 'Forbidden' : 'Finance data is temporarily unavailable; retry',
       });
+    }
+  }
+  const paymentMailRoute = path.match(/^\/api\/sponsor-crm\/finance\/payment-mail(?:\/([^/]+))?(?:\/(confirmed|dismissed))?$/);
+  if (paymentMailRoute) {
+    const body = parse(event);
+    if (!body) return json(400, { error: 'Invalid request' });
+    try {
+      const [, id, decision] = paymentMailRoute;
+      const write = method !== 'GET';
+      const actor = await financeActor(client, header(event, 'x-user-id'), write);
+      if (!id && method === 'GET') {
+        return json(200, { items: await listPaymentMailCandidates(client, event.queryStringParameters?.status) });
+      }
+      if (id === 'ingest' && !decision && method === 'POST') {
+        if (!Array.isArray(body.mails)) return json(400, { error: 'mails must be an array' });
+        if (body.mails.length > 100) return json(413, { error: 'At most 100 mails can be ingested per request' });
+        const mails = body.mails.map(validateMail);
+        const rows = (await financeLedger(client)).rows;
+        return json(200, { results: await ingestPaymentMail(client, mails, rows) });
+      }
+      if (id === 'poll' && !decision && method === 'POST') {
+        const days = body.days === undefined ? 14 : Number(body.days);
+        if (!Number.isInteger(days) || days < 1 || days > 60) return json(400, { error: 'days must be a whole number from 1 to 60' });
+        const polled = await pollPaymentMail(days);
+        if (polled.state === 'deferred') return json(200, polled);
+        const rows = (await financeLedger(client)).rows;
+        const results = await ingestPaymentMail(client, polled.mails, rows);
+        return json(200, { state: 'ok', scanned: polled.mails.length, results });
+      }
+      if (id && !decision && method === 'GET') {
+        if (!/^pmc-[a-f0-9]{32}$/.test(id)) return json(404, { error: 'Payment mail candidate not found' });
+        const item = await getPaymentMailCandidate(client, id);
+        return item ? json(200, item) : json(404, { error: 'Payment mail candidate not found' });
+      }
+      if (id && decision && method === 'POST') {
+        if (!/^pmc-[a-f0-9]{32}$/.test(id)) return json(404, { error: 'Payment mail candidate not found' });
+        return json(200, await decidePaymentMailCandidate(client, id, decision as 'confirmed' | 'dismissed', actor.id));
+      }
+      return json(405, { error: 'Method not allowed' });
+    } catch (error) {
+      const statusCode = Number((error as { statusCode?: number }).statusCode || 503);
+      if (statusCode >= 500) recordRequestError(error);
+      return json(statusCode, { error: statusCode >= 500 ? 'Payment mail data is temporarily unavailable; retry' : (error as Error).message });
     }
   }
   const match = path.match(/^\/api\/sponsor-crm\/deals\/([^/]+)\/finance(?:\/(.*))?$/);

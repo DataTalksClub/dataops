@@ -41,6 +41,9 @@ Usage
   dataops sponsors touch <organization|contact> <id> --channel email [--note TEXT] [--date YYYY-MM-DD]
       Log an outreach and update lastOutbound, so the contact stops counting as cold
   dataops sponsors finance <deal-id> [history|candidates/invoices|candidates/payments]
+  dataops sponsors payment-mail <list|poll|ingest|confirm|dismiss> [ID] [--status candidate|unmatched|already-paid|confirmed|dismissed] [--days N] [--data @mails.json] [--apply]
+      Poll the existing Orin Gmail connection through Dapier, or ingest mails from an existing mailbox trigger.
+      Mail notifications are stored idempotently by message ID and matched as review candidates; nothing is paid until Orin confirms.
   dataops sponsors clear-proposal-classification <deal-id> --data @correction.json [--apply]
       Correct an unaccepted open quote imported as debt. Required: reason,evidence.
       Refuses any invoice request, issued invoice, receipt/report or settlement; retains an audit snapshot.
@@ -732,4 +735,77 @@ export async function contract(args, io) {
   }
   throw new UsageError("Unknown contract action: " + action + ". Use create, send, resend, status, audit or verify.");
 }
-export const commands = { pipeline, contact, list, show, create, update, delete: remove, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification, "record-thank-you": recordThankYou, contract };
+
+export async function paymentMail(args, io) {
+  const usage = "dataops sponsors payment-mail <list|poll|ingest|confirm|dismiss> [ID]";
+  const action = positional(args, 0, usage);
+  if (!["list", "poll", "ingest", "confirm", "dismiss"].includes(action)) throw new UsageError(usage);
+  const api = apiFor(args);
+  const base = "/api/sponsor-crm/finance/payment-mail";
+  const show = (candidate) => io.print(`${candidate.id}  ${candidate.status.padEnd(12)} ${candidate.provider}  ${candidate.receivedOn}  ${candidate.invoiceNumber ? `#${candidate.invoiceNumber}` : "(no invoice no.)"}  ${candidate.amount || "?"} ${candidate.currency || ""}  ${candidate.payer || ""}${candidate.match ? `  -> ${candidate.match.organizationName} (deal ${candidate.match.dealId}, ${candidate.match.confidence}: ${candidate.match.reasons.join("+")})` : ""}`);
+
+  if (action === "list") {
+    const status = optionalString(args, "status");
+    const result = await api.get(base, { query: status ? { status } : {} });
+    if (!args.json) {
+      for (const candidate of result.items || []) show(candidate);
+      if (!(result.items || []).length) io.print("No payment mail candidates.");
+    }
+    return result;
+  }
+  if (action === "poll") {
+    const days = integer(args.days, "days");
+    if (days !== undefined && days > 60) throw new UsageError("--days must be from 1 to 60.");
+    const result = await api.post(`${base}/poll`, days !== undefined ? { days } : {});
+    if (!args.json) io.print(result.state === "ok"
+      ? `Scanned ${result.scanned} mails: ${result.results.filter((item) => item.outcome === "created").length} new, ${result.results.filter((item) => item.outcome === "duplicate").length} already seen, ${result.results.filter((item) => item.outcome === "ignored").length} ignored.`
+      : `Deferred (${result.reason}): ${result.message}`);
+    return result;
+  }
+  if (action === "ingest") {
+    const data = jsonData(args);
+    const result = await api.post(`${base}/ingest`, Array.isArray(data) ? { mails: data } : data);
+    if (!args.json) for (const item of result.results || []) io.print(`${item.outcome}  ${item.messageId}${item.candidate ? `  ${item.candidate.id} ${item.candidate.status}` : ""}`);
+    return result;
+  }
+
+  const id = positional(args, 1, usage);
+  if (action === "dismiss") {
+    const result = await api.post(`${base}/${enc(id)}/dismissed`, {});
+    if (!args.json) io.print(`dismissed ${id}`);
+    return result;
+  }
+  const candidate = await api.get(`${base}/${enc(id)}`);
+  if (candidate.status !== "candidate" || !candidate.match?.dealId) {
+    throw new UsageError(`Candidate ${id} is ${candidate.status}; only a matched candidate can be confirmed.`);
+  }
+  if (!candidate.amount || !candidate.currency) {
+    throw new UsageError(`Candidate ${id} has no parsed amount/currency; record it with receive-payment by hand.`);
+  }
+  const dealId = candidate.match.dealId;
+  const [deal, projection] = await Promise.all([
+    api.get(`/api/sponsor-crm/deals/${enc(dealId)}`),
+    api.get(`/api/sponsor-crm/deals/${enc(dealId)}/finance`),
+  ]);
+  if (!projection?.finance) throw new UsageError(`Deal ${dealId} has no finance record.`);
+  const body = {
+    dealVersion: deal.version, expectedVersion: projection.finance.version,
+    receivedOn: candidate.receivedOn, amount: candidate.amount, currency: candidate.currency,
+    counterparty: candidate.payer || candidate.match.organizationName,
+    reference: `mail:${candidate.provider}:${candidate.invoiceNumber || candidate.id}`.slice(0, 200),
+  };
+  const result = { mode: args.apply ? "apply" : "dry-run", candidateId: id, dealId, plan: `${body.receivedOn} ${body.amount} ${body.currency} from ${body.counterparty}` };
+  if (args.apply) {
+    const response = await api.post(`/api/sponsor-crm/deals/${enc(dealId)}/finance/receipts`, body, {
+      headers: { "Idempotency-Key": `pmail-${id}`.slice(0, 128).padEnd(16, "0") },
+    });
+    await api.post(`${base}/${enc(id)}/confirmed`, {});
+    result.paymentState = response?.projection?.paymentState;
+  }
+  if (!args.json) {
+    io.print(`${result.mode}: receive ${result.plan}${result.paymentState ? ` (deal is now ${result.paymentState})` : ""}`);
+  }
+  return result;
+}
+
+export const commands = { "payment-mail": paymentMail, pipeline, contact, list, show, create, update, delete: remove, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification, "record-thank-you": recordThankYou, contract };
