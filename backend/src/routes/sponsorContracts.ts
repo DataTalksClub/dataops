@@ -109,14 +109,14 @@ export async function handleSponsorContractRoutes(reqPath: string, method: strin
   const body = parse(event);
   const query = event.queryStringParameters || {};
   const nowDate = new Date(Date.now());
+  const wallToday = berlinDate(nowDate);
   const rawToday = typeof query.today === 'string' && query.today ? query.today : (body && typeof body.today === 'string' ? body.today : undefined);
-  const explicitToday = realDate(rawToday);
-  const today = explicitToday ? String(rawToday) : berlinDate(nowDate);
+  const today = realDate(rawToday) && String(rawToday) > wallToday ? String(rawToday) : wallToday;
   const contractMatch = reqPath.match(/^\x2Fapi\x2Fsponsor-crm\x2Fcontracts\x2F([^\x2F]+)(\x2F.+)?$/);
   const contractId = contractMatch ? decodeURIComponent(contractMatch[1]) : '';
   // Anonymous token-gated signing endpoints never require a session.
   if (contractId && (reqPath.endsWith('/signing') || reqPath.endsWith('/sign') || reqPath.endsWith('/decline'))) {
-    return await handleSigningRequest(reqPath, m, event, client, contractId, body, today, nowDate, explicitToday);
+    return await handleSigningRequest(reqPath, m, event, client, contractId, body, today, nowDate);
   }
   if (!actor(event) && !opts.skipAuth) return json(401, { error: 'Unauthorized' });
 
@@ -280,7 +280,6 @@ async function handleSigningRequest(
   body: Record<string, unknown> | null,
   today = berlinDate(),
   nowDate = new Date(Date.now()),
-  explicitToday = false,
 ): Promise<LambdaResponse> {
   const ip = requestIp(event);
   const hashedIp = ipHash(ip);
@@ -322,14 +321,10 @@ async function handleSigningRequest(
     const updated = await updateContract(client, contract, { status: 'declined', declinedAt: now, signers: nextSigners }, { actorId: 'signer:' + signer.role, action: 'declined', role: signer.role, ip, userAgent });
     return json(200, { contract: publicContract(updated) });
   }
-  const createdDay = contract.createdAt && !Number.isNaN(Date.parse(String(contract.createdAt)))
-    ? berlinDate(new Date(String(contract.createdAt)))
-    : '';
-  const enforceWallClockSigners = !explicitToday || !createdDay || String(contract.terms?.startDate || '') >= createdDay;
   const leadTimeError = validateContractSigningLeadTime(
     contract.terms,
     today,
-    enforceWallClockSigners ? nextSigners : [],
+    nextSigners,
     (iso) => {
       const ms = Date.parse(iso);
       return Number.isNaN(ms) ? '' : berlinDate(new Date(ms));
