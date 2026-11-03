@@ -5,7 +5,7 @@ import { latestBalances, listStatements, rowKeys, type StatementRecord } from '.
 import { bankKeyFor, pairAll } from '../reconcile/month';
 import { mergedDecisions, snapshot, type Snapshot } from '../reconcile/monthService';
 import { loadEcbRates } from './rates';
-import { bookingDate, dedupe, enrichLedgerFromStatement, matchFinanceStatements, summarize, type FinanceSummary, type LedgerRow, type PeriodQuery, type StatementLine } from './summary';
+import { bookingDate, dedupe, enrichLedgerFromStatement, isRefundRow, matchFinanceStatements, summarize, type FinanceSummary, type LedgerRow, type PeriodQuery, type StatementLine } from './summary';
 import { classifyMandatoryPayment } from './mandatoryPayments';
 import { taxesReport } from './taxes';
 import { listTaxSchedule } from './taxSchedule';
@@ -164,7 +164,7 @@ export async function financeUpcoming(client: DynamoDBDocumentClient, days: numb
   const paid: PaidEvidence[] = [
     ...kept
       .map((row) => matches.byLedgerId.has(row.id) ? enrichLedgerFromStatement(row, matches.byLedgerId.get(row.id)!) : row)
-      .filter((row) => row.entryType === 'expense' && classifyMandatoryPayment(row))
+      .filter((row) => row.entryType === 'expense' && !isRefundRow(row) && classifyMandatoryPayment(row))
       .map((row) => ({ id: row.id, date: bookingDate(row), amount: Number(row.amountEur || row.amount), kind: 'ledger' as const })),
     ...matches.unmatched
       .filter((line) => line.currency === 'EUR' && Number(line.amount) < 0 && classifyMandatoryPayment(line))

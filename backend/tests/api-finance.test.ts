@@ -103,6 +103,21 @@ describe('finance tax schedule and upcoming debits API', () => {
     assert.equal((await upcoming()).debits.find((item) => item.scheduleId === 'synthetic-tk')?.matched?.kind, 'statement');
   });
 
+  it('does not treat an expense-encoded refund as a paid scheduled debit', async () => {
+    const client = await getClient();
+    assert.equal((await invoke('PUT', '/api/finance/tax-schedule/synthetic-refund-test', {
+      label: 'Synthetic tax debit', taxType: 'vat', amount: '456.78', currency: 'EUR',
+      rule: { kind: 'once', date: '2024-03-15' }, source: 'USt-VA',
+    })).statusCode, 200);
+    await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-tax-refund', transactionDate: '2024-03-15', paidDate: '2024-03-15',
+      entryType: 'expense', subtype: 'Refund', amount: '456.78', currency: 'EUR',
+      counterparty: 'Synthetic authority', category: 'VAT', sourceType: 'manual',
+    });
+    const upcoming = await financeUpcoming(client, 14, '2024-03-15', async () => null);
+    assert.equal(upcoming.debits.find((item) => item.scheduleId === 'synthetic-refund-test')?.status, 'scheduled');
+  });
+
   it('derives row VAT from the linked stored invoice facts', async () => {
     const client = await getClient();
     const transaction = (await putBookkeepingItem(client, 'bookkeeping', {
