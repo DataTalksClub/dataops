@@ -14,6 +14,8 @@ import { HOLD_REQUIRED_ATTENDEES, HOLD_ZOOM_LOCATION, confirmedTitle, holdDocume
 import type { Template } from '../src/types';
 import { EMPTY_TEMPLATE, templateLink } from './helpers/cardTemplate';
 import { holdGoogleProvider } from './helpers/hold-google';
+import { configureTaskChecklistStore } from '../src/taskChecklist';
+import { createTaskChecklistFixture } from './helpers/task-checklist-fixture';
 
 async function invoke(method: string, path: string, body?: unknown) {
   const response = await handler({ httpMethod: method, path, body: body ? JSON.stringify(body) : null, headers: {} });
@@ -29,14 +31,21 @@ const offline = () => setDapierBrokerClientsForTests({ readSecret: async () => {
 
 describe('calendar invite SOP contract', () => {
   let client: DynamoDBDocumentClient;
+  let checklistFixture: ReturnType<typeof createTaskChecklistFixture>;
   before(async () => {
+    checklistFixture = createTaskChecklistFixture();
+    configureTaskChecklistStore(checklistFixture.store);
     client = await getClient(await startLocal());
     await createTables(client);
     await saveCalendarOverlaySettings(client, { connectionId: 'orin-selected' }, 'test');
     offline();
   });
   afterEach(() => { setCalendarHoldGoogleDepsForTests({}); offline(); });
-  after(stopLocal);
+  after(async () => {
+    configureTaskChecklistStore(null);
+    checklistFixture.cleanup();
+    await stopLocal();
+  });
 
   it('propose → confirm → release: Orin organizer, two calendar blocks, one normal invitation', async () => {
     const google = holdGoogleProvider();
