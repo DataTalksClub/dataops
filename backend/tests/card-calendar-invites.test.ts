@@ -7,6 +7,7 @@ import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTask } from '../src/db/tasks';
 import { createTemplate } from '../src/db/templates';
+import { createPodcastEpisode } from '../src/db/podcastEpisodes';
 import { EMPTY_TEMPLATE_ID, putEmptyTemplate } from './helpers/cardTemplate';
 import { setCalendarHoldGoogleDepsForTests } from '../src/routes/calendarHolds';
 import { DEFAULT_HOLD_GOOGLE_CALENDARS, setDapierBrokerClientsForTests } from '../src/calendar/dapierBroker';
@@ -469,6 +470,91 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
         const organizer = [...google.events.values()].flatMap(store => [...store.values()]);
         assert.ok(organizer.length > 0);
         assert.ok(organizer.every(e => e.summary === 'Harish Shenoy at DataTalks.Club Podcast'), JSON.stringify(organizer.map(e => e.summary)));
+      } finally {
+        setCalendarHoldGoogleDepsForTests({});
+      }
+    });
+
+    it('uses the podcast guest title and links an already-confirmed hold through its episode in place', async () => {
+      const template = await createTemplate(client, { name: 'Podcast', type: 'podcast', taskDefinitions: [] });
+      const cardResponse = await invoke('POST', '/api/cards', {
+        templateId: template.id,
+        title: 'Database CI/CD',
+        anchorDate: '2026-12-08',
+      });
+      assert.strictEqual(cardResponse.statusCode, 201, cardResponse.body);
+      const card = parse(cardResponse).card;
+
+      const google = holdGoogleProvider();
+      setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
+      try {
+        const created = parse(await invoke('POST', '/api/calendar-holds', {
+          date: '2026-12-08',
+          window: 'midday',
+          title: 'Database CI/CD',
+          topic: 'Database CI/CD',
+          guestRef: 'harishshenoy552@gmail.com',
+        }));
+        const firstConfirmation = await invoke('POST', `/api/calendar-holds/${created.hold.id}/confirm`, {});
+        assert.strictEqual(firstConfirmation.statusCode, 200, firstConfirmation.body);
+        const originalHold = parse(firstConfirmation).hold;
+        const originalEventIds = originalHold.googleEventIds;
+
+        await createPodcastEpisode(client, {
+          title: 'Database CI/CD',
+          guests: [{ name: 'Harish Shenoy', email: 'harishshenoy552@gmail.com' }],
+          status: 'booked',
+          recordingDate: '2026-12-08',
+          cardId: card.id,
+          recordingHoldId: created.hold.id,
+        });
+        const currentCard = (await getCardConsistent(client, card.id))!;
+        await updateCard(client, card.id, {
+          expectedVersion: currentCard.version,
+          patch: {
+            eventTime: {
+              startIso: originalHold.startIso,
+              endIso: originalHold.endIso,
+              timeZone: originalHold.timeZone,
+              durationMinutes: originalHold.durationMinutes,
+              eventKey: created.hold.id,
+              googleEventIds: {},
+              sync: 'deferred',
+              syncStartedAt: new Date().toISOString(),
+            },
+          },
+        });
+
+        const previousCallCount = google.calls.length;
+        const confirmedAgain = await invoke('POST', `/api/calendar-holds/${created.hold.id}/confirm`, {});
+        assert.strictEqual(confirmedAgain.statusCode, 200, confirmedAgain.body);
+        const confirmedHold = parse(confirmedAgain).hold;
+        const expectedTitle = 'Harish Shenoy at DataTalks.Club Podcast';
+        assert.strictEqual(confirmedHold.id, originalHold.id);
+        assert.strictEqual(confirmedHold.cardId, card.id);
+        assert.strictEqual(confirmedHold.title, expectedTitle);
+        assert.strictEqual(confirmedHold.googleTitle, expectedTitle);
+        assert.strictEqual(confirmedHold.topic, 'Database CI/CD');
+        assert.deepStrictEqual(confirmedHold.googleEventIds, originalEventIds);
+
+        const followUpCalls = google.calls.slice(previousCallCount);
+        assert.ok(followUpCalls.some((call) => call.method === 'PATCH' && call.body?.summary === expectedTitle));
+        assert.strictEqual(
+          followUpCalls.filter((call) => call.method === 'POST' && call.url.pathname.endsWith('/import')).length,
+          0,
+          'reconfirm updates the original Google event ids instead of creating new events',
+        );
+        assert.ok([...google.events.values()].flatMap((events) => [...events.values()])
+          .every((event) => event.summary === expectedTitle));
+
+        const invites = parse(await invoke('GET', `/api/cards/${card.id}/calendar-invites`)).invites;
+        assert.deepStrictEqual(new Set(invites.map((item: any) => item.eventId)), new Set(Object.values(originalEventIds)));
+        assert.strictEqual((await getCardConsistent(client, card.id))?.eventTime?.eventKey, created.hold.id);
+
+        const syncedCallCount = google.calls.length;
+        const idempotent = await invoke('POST', `/api/calendar-holds/${created.hold.id}/confirm`, {});
+        assert.strictEqual(idempotent.statusCode, 200, idempotent.body);
+        assert.strictEqual(google.calls.length, syncedCallCount, 'a fully linked, confirmed invite does not notify guests again');
       } finally {
         setCalendarHoldGoogleDepsForTests({});
       }

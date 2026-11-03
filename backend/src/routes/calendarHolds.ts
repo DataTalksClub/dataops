@@ -30,7 +30,8 @@ import {
   setCalendarHoldGoogleDepsForTests,
 } from '../db/calendarHolds';
 import { CardVersionConflictError, getCardConsistent } from '../db/cards';
-import { CardInviteConflictError, CardInviteInputError, syncCardInvite } from '../calendar/cardInvite';
+import { listPodcastEpisodes, type PodcastEpisode } from '../db/podcastEpisodes';
+import { CardInviteConflictError, CardInviteInputError, resolvePodcastCardInviteTitle, syncCardInvite } from '../calendar/cardInvite';
 import { recordAutomationRun } from '../automations/runs';
 import {
   EventConflictError,
@@ -140,8 +141,9 @@ async function listRoute(event: LambdaEvent, client: DynamoDBDocumentClient): Pr
 }
 
 async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
-  let existing = await getCalendarHold(client, id);
-  if (!existing) return json(404, { error: 'Hold not found' });
+  const original = await getCalendarHold(client, id);
+  if (!original) return json(404, { error: 'Hold not found' });
+  let existing = original;
   const body = parse(event);
   if (!body || typeof body !== 'object' || Array.isArray(body)) return json(400, { error: 'Invalid confirmation body' });
   try {
@@ -153,12 +155,66 @@ async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocu
   } catch {
     return json(400, { error: 'The guest document must be an HTTPS URL.' });
   }
+  let card = existing.cardId ? await getCardConsistent(client, existing.cardId) : null;
+  let episode: PodcastEpisode | null = null;
+  try {
+    const episodes = await listPodcastEpisodes(client);
+    if (card) {
+      episode = episodes.find((item) => item.cardId === card!.id) || null;
+    } else {
+      episode = episodes.find((item) => item.recordingHoldId === existing.id && item.cardId) || null;
+      if (!episode) {
+        const guestEmail = existing.guestRef?.trim().toLowerCase();
+        const dateMatches = episodes.filter((item) => item.cardId && !item.recordingHoldId && item.recordingDate === existing.date);
+        episode = (guestEmail
+          ? dateMatches.find((item) => item.guests?.some((g) => String(g.email || '').trim().toLowerCase() === guestEmail))
+          : undefined) || (dateMatches.length === 1 ? dateMatches[0] : null) || null;
+      }
+      if (episode?.cardId) {
+        card = await getCardConsistent(client, episode.cardId);
+      }
+    }
+  } catch {
+    episode = null;
+  }
+  if (!existing.guestRef) {
+    const fallbackEmail = episode?.guests?.map((g) => String(g.email || '').trim()).find(Boolean)
+      || card?.guestEmails?.map((e) => String(e || '').trim()).find(Boolean);
+    if (fallbackEmail) existing = { ...existing, guestRef: fallbackEmail };
+  }
   if (!existing.guestRef || !holdGuestAttendees(existing.guestRef).includes(existing.guestRef.trim().toLowerCase())) {
     return json(422, { error: 'A guest email is required before sending the calendar invite.', code: 'guest_required' });
   }
+  const detailsChanged =
+    (existing.guestRef || '').trim().toLowerCase() !== (original.guestRef || '').trim().toLowerCase() ||
+    existing.documentUrl !== original.documentUrl;
+  const podcastTitle = card ? await resolvePodcastCardInviteTitle(client, card, undefined, episode) : undefined;
+  const desiredTitle = confirmedTitle(podcastTitle || existing.title || card?.title || 'DataTalks.Club event');
+  const eventIdEntries = Object.entries(existing.googleEventIds || {});
+  const cardHasInvite = Boolean(
+    card &&
+    card.eventTime?.eventKey === existing.id &&
+    card.eventTime?.sync === 'synced' &&
+    eventIdEntries.length > 0 &&
+    eventIdEntries.every(([calendar, eventId]) =>
+      card!.calendarInvites?.some((item) => item.calendar === calendar && item.eventId === eventId && !item.staleAt),
+    ),
+  );
+  if (
+    card &&
+    existing.status === 'confirmed' &&
+    existing.googleSync.state === 'synced' &&
+    cardHasInvite &&
+    existing.cardId === card.id &&
+    existing.title === desiredTitle &&
+    existing.googleTitle === desiredTitle &&
+    !detailsChanged
+  ) {
+    return json(200, { hold: existing });
+  }
   let next;
   try {
-    next = existing.status === 'confirmed' && existing.googleSync.state === 'deferred'
+    next = existing.status === 'confirmed' && (existing.googleSync.state === 'deferred' || Boolean(card))
       ? existing : confirmHoldRecord(existing);
   } catch (e: any) {
     return json(409, { error: String(e?.message || 'Cannot confirm hold'), code: e?.code || 'hold_state' });
@@ -170,13 +226,17 @@ async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocu
   // when mirrors exist, otherwise CREATE. Either way the mirror becomes the
   // guest invite immediately: confirmed title, Zoom location + description,
   // required attendees (never Meet, never deny-listed), window start −5 min.
-  const card = existing.cardId ? await getCardConsistent(client, existing.cardId) : null;
   const invite = confirmedHoldInvite(next);
   if (card) {
     try {
       const result = await syncCardInvite(client, card, {
         startIso: next.startIso, endIso: next.endIso, timeZone: next.timeZone, durationMinutes: next.durationMinutes,
-      }, [existing.guestRef!.trim().toLowerCase()], deps, actor(event), { ...existing, documentUrl: next.documentUrl });
+      }, [existing.guestRef!.trim().toLowerCase()], deps, actor(event), {
+        ...existing,
+        cardId: card.id,
+        ...(podcastTitle ? { title: podcastTitle } : {}),
+        documentUrl: next.documentUrl,
+      });
       return json(200, { hold: result.hold });
     } catch (error) {
       if (error instanceof CardVersionConflictError || error instanceof CardInviteConflictError) {
