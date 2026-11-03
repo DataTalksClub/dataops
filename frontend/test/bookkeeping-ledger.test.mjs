@@ -264,6 +264,8 @@ test("classified owner, fee, and TK statement rows stay visible without becoming
   assert.doesNotMatch(markup, /data-tx=|data-open-tx=|data-inline-field=/, "statement projections cannot open or write a nonexistent ledger row");
   assert.equal(bankOnlyEntryFromMonthRow({ ...monthRows[0], ledger: { id: "already-recorded" } }), null,
     "matched bank activity is not shown twice");
+  assert.equal(bankOnlyEntryFromMonthRow({ ...monthRows[1], ledger: { id: "recorded-fee" } }), null,
+    "a fee already represented by its canonical ledger row is not projected twice");
 });
 
 test("the VAT column shows document VAT, a zero rate, and reverse charge distinctly", () => {

@@ -357,7 +357,9 @@ function allocationChildMarkup(entry, allocation, { getAllocationDocument = () =
   const document = getAllocationDocument(entry, allocation);
   const pdfAction = document
     ? html`<button type="button" class="dk-button dk-button--secondary dk-button--sm bk-evidence-view"
-        data-view-document="${e(document.id)}" aria-label="View ${e(document.originalFilename || "invoice or receipt PDF")}" title="${e(document.originalFilename || "Invoice or receipt PDF")}">View PDF</button>`
+        data-view-document="${e(document.id)}"
+        aria-label="View ${e(document.originalFilename || "invoice or receipt PDF")}"
+        title="${e(document.originalFilename || "Invoice or receipt PDF")}">View PDF</button>`
     : html`<span class="bk-allocation-no-pdf">No linked PDF</span>`;
   return html`<tr class="bk-row bk-row--allocation-child" data-allocation-parent="${e(entry.id)}" data-allocation-document="${e(allocation.documentId || "")}">
       <td class="bk-col-date">${dateCell(child, e)}</td>
