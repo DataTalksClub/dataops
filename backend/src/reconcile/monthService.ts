@@ -1030,7 +1030,6 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
   if (view.state !== "closed" && !options.draft) throw new MonthGateError(`Month ${period} is open; close it first (or build a draft package)`, []);
   const { REPORT_EXEMPT_CATEGORIES } = await import("../db/bookkeeping");
   const naming = await import("./naming");
-  const ownerWithdrawalsConfirmed = view.exceptionConfirmation?.current === true;
   const entries: PackageEntry[] = [{ path: naming.packagePath(period, null, naming.reportName(period, "csv")), kind: "report" }];
   const blockers: PackageBlocker[] = [];
   const statements = (await listStatements(client)).filter((record) => record.period === period);
@@ -1047,7 +1046,7 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
   const seenDocuments = new Set<string>();
   const seenSourceChecksums = new Set<string>();
   for (const row of view.rows) {
-    if (isAccountantReportRowExcluded(row, ownerWithdrawalsConfirmed)) continue;
+    if (isAccountantReportRowExcluded(row)) continue;
     if (!row.ledger || REPORT_EXEMPT_CATEGORIES.has(row.ledger.category || "")) continue;
     if (row.ledger.sourceType === "issued-invoice" || (row.ledger.sourceType === "invoice-document" && !row.bank)) continue;
     const folder = Number(row.ledger.amount) > 0 ? "income" : "expenses";
@@ -1103,5 +1102,5 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
   const unique = naming.uniquePaths(entries.map((entry) => entry.path));
   entries.forEach((entry, index) => { entry.path = unique[index]; });
   const { tableCsv } = await import("./month");
-  return { period, state: view.state, draft: view.state !== "closed", entries, blockers, csv: tableCsv(view, { ownerWithdrawalsConfirmed }) };
+  return { period, state: view.state, draft: view.state !== "closed", entries, blockers, csv: tableCsv(view) };
 }

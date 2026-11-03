@@ -283,7 +283,7 @@ describe('month reconciliation', () => {
     assert.equal(withExplicitTaxException.rows[0].tax, true);
   });
 
-  it('omits confirmed owner withdrawals from accountant CSV while preserving reconciliation rows and counters', () => {
+  it('omits satisfied owner withdrawals from accountant CSV while preserving reconciliation rows and counters', () => {
     const ownerWithdrawalRule: ClassificationRule = {
       id: 'owner-withdrawal', kind: 'owner_withdrawal', direction: 'out',
       counterparty: 'synthetic owner', category: 'Owner pay',
@@ -306,16 +306,23 @@ describe('month reconciliation', () => {
     assert.equal(result.counters.matched, 2);
     assert.equal(result.counters.exceptions, 1);
 
-    const unconfirmedCsv = tableCsv(result);
-    assert.match(unconfirmedCsv, /Synthetic Owner/);
-    const confirmedCsv = tableCsv(result, { ownerWithdrawalsConfirmed: true });
-    assert.doesNotMatch(confirmedCsv, /Synthetic Owner|Owner pay/);
-    assert.match(confirmedCsv, /Synthetic ILZ Services/);
-    assert.match(confirmedCsv, /Compliance & Taxes/);
+    const csv = tableCsv(result);
+    assert.doesNotMatch(csv, /Synthetic Owner|Owner pay/);
+    assert.match(csv, /Synthetic ILZ Services/);
+    assert.match(csv, /Compliance & Taxes/);
     assert.equal(result.rows.includes(ownerRow), true);
     assert.equal(result.counters.rows, 2);
     assert.equal(result.counters.matched, 2);
     assert.equal(result.counters.exceptions, 1);
+
+    const unresolved = table(
+      [bank('b-owner-unresolved', { counterparty: 'Synthetic Owner', amount: '-42.00' })],
+      [],
+      { ...none(), exceptions: { 'bank:b-owner-unresolved': { kind: 'owner_withdrawal', by: 'operator', at: '2026-11-01T00:00:00Z' } } },
+      [],
+    );
+    assert.equal(unresolved.rows[0].exception?.satisfied, false);
+    assert.match(tableCsv(unresolved), /Synthetic Owner/);
   });
 
   it('links Revolut exchange legs through their related transaction ids', () => {
