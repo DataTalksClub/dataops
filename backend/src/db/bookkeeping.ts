@@ -378,6 +378,16 @@ async function listBookkeepingAuditRows(
   return rows;
 }
 
+function bookkeepingAuditParentChanged(
+  previous: BookkeepingItem,
+  current: BookkeepingItem | null,
+) {
+  return !current
+    || previous.updatedAt !== current.updatedAt
+    || previous.auditStorageVersion !== current.auditStorageVersion
+    || previous.auditSequence !== current.auditSequence;
+}
+
 async function readBookkeepingAuditSnapshot(
   client: DynamoDBDocumentClient,
   transactionId: string,
@@ -391,10 +401,12 @@ async function readBookkeepingAuditSnapshot(
     try {
       return { item, events: bookkeepingAuditEvents(item, rows) };
     } catch (error) {
-      if (!(error instanceof BookkeepingAuditIntegrityError)
-        || item.auditStorageVersion !== BOOKKEEPING_AUDIT_STORAGE_VERSION
-        || attempt === 2) throw error;
-      item = await getBookkeepingItemRaw(client, "bookkeeping", transactionId, true);
+      if (!(error instanceof BookkeepingAuditIntegrityError)) throw error;
+      const current = await getBookkeepingItemRaw(client, "bookkeeping", transactionId, true);
+      if (!current) return null;
+      if (!bookkeepingAuditParentChanged(item, current)) throw error;
+      if (attempt === 2) break;
+      item = current;
     }
   }
   throw new BookkeepingAuditIntegrityError();
@@ -649,13 +661,22 @@ export async function updateBookkeepingTransaction(
       const sidecarRows = current.auditStorageVersion === BOOKKEEPING_AUDIT_STORAGE_VERSION
         ? await listBookkeepingAuditRows(client, id)
         : [];
-      const plan = planBookkeepingAuditWrite({
-        transactionId: id,
-        transaction: current,
-        sidecarRows,
-        event: candidate as BookkeepingAuditEvent,
-        tableName: TABLE_BOOKKEEPING,
-      });
+      let plan: ReturnType<typeof planBookkeepingAuditWrite>;
+      try {
+        plan = planBookkeepingAuditWrite({
+          transactionId: id,
+          transaction: current,
+          sidecarRows,
+          event: candidate as BookkeepingAuditEvent,
+          tableName: TABLE_BOOKKEEPING,
+        });
+      } catch (error) {
+        if (error instanceof BookkeepingAuditIntegrityError) {
+          const latest = await getBookkeepingItemRaw(client, "bookkeeping", id, true);
+          if (bookkeepingAuditParentChanged(current, latest)) throw new BookkeepingItemLockedError();
+        }
+        throw error;
+      }
       auditTransactItems = plan.transactItems;
       if (current.auditStorageVersion === BOOKKEEPING_AUDIT_STORAGE_VERSION) {
         expectedAuditSequence = Number(current.auditSequence);
@@ -670,7 +691,10 @@ export async function updateBookkeepingTransaction(
       };
     }
   }
-  const now = new Date().toISOString();
+  const expectedTime = Date.parse(expectedUpdatedAt);
+  const now = new Date(Number.isFinite(expectedTime)
+    ? Math.max(Date.now(), expectedTime + 1)
+    : Date.now()).toISOString();
   const names: Record<string, string> = {};
   const values: Record<string, unknown> = {
     ":expected": expectedUpdatedAt,

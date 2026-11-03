@@ -16,6 +16,7 @@ import { handler } from "../src/handler";
 import { startLocal, stopLocal, createTables } from "../scripts/local-dynamodb";
 import { getClient } from "../src/db/client";
 import {
+  BookkeepingItemLockedError,
   BookkeepingTransactionLimitError,
   getBookkeepingItem,
   listBookkeepingItems,
@@ -23,7 +24,10 @@ import {
   updateBookkeepingTransaction,
   type BookkeepingTransactItem,
 } from "../src/db/bookkeeping";
-import { BookkeepingAuditTooLargeError } from "../src/bookkeepingAudit";
+import {
+  BookkeepingAuditIntegrityError,
+  BookkeepingAuditTooLargeError,
+} from "../src/bookkeepingAudit";
 import { handleBookkeepingTransactionRoutes } from "../src/routes/bookkeepingTransactions";
 import { TABLE_BOOKKEEPING } from "../src/db/tableNames";
 import { writePortableExport } from "../src/export/portable";
@@ -265,6 +269,128 @@ describe("bookkeeping audit sidecar", () => {
     assert.equal((updated.audit as unknown[]).length, 1);
     assert.equal(updated.auditSequence, 1);
     assert.equal((await auditRows(created.id)).filter((row) => row.recordType === "bookkeeping-audit-event").length, 1);
+  });
+
+  it("retries a read when legacy migration commits between parent and sidecar reads", async () => {
+    const transactionId = `read-race-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const inlineAudit = [{ action: "legacy-correction", actor: "synthetic-operator" }];
+    await putBookkeepingItem(client, "bookkeeping", {
+      ...validTransaction,
+      id: transactionId,
+      audit: inlineAudit,
+    });
+
+    const baseSend = client.send.bind(client);
+    let migrationCommitted = false;
+    const racingClient = Object.create(client) as DynamoDBDocumentClient;
+    racingClient.send = (async (command: unknown, ...args: unknown[]) => {
+      if (!migrationCommitted && command instanceof QueryCommand) {
+        migrationCommitted = true;
+        const raw = await baseSend(new GetCommand({
+          TableName: TABLE_BOOKKEEPING,
+          Key: { PK: `BOOKKEEPING#${transactionId}`, SK: `BOOKKEEPING#${transactionId}` },
+          ConsistentRead: true,
+        }));
+        const current = raw.Item;
+        assert.ok(current);
+        await updateBookkeepingTransaction(client, transactionId, String(current.updatedAt), {
+          comment: "concurrent migration",
+          audit: [...(current.audit as unknown[]), {
+            action: "updated",
+            actor: "synthetic-operator",
+            at: "2026-10-03T00:00:00.000Z",
+            changes: {},
+          }],
+        });
+      }
+      return (baseSend as (...parameters: unknown[]) => Promise<unknown>)(command, ...args);
+    }) as DynamoDBDocumentClient["send"];
+
+    const read = await getBookkeepingItem(racingClient, "bookkeeping", transactionId, true);
+    assert.equal(migrationCommitted, true);
+    assert.ok(read);
+    assert.equal(read.auditStorageVersion, 1);
+    assert.equal(read.comment, "concurrent migration");
+    assert.deepEqual((read.audit as unknown[])[0], inlineAudit[0]);
+    assert.equal((read.audit as Array<Record<string, unknown>>)[1].action, "updated");
+  });
+
+  it("returns a CAS conflict when an audited write crosses a concurrent sidecar update", async () => {
+    const created = await createTransaction();
+    const initial = await getBookkeepingItem(client, "bookkeeping", created.id, true);
+    assert.ok(initial);
+    const seeded = await updateBookkeepingTransaction(client, created.id, String(initial.updatedAt), {
+      comment: "seeded audit",
+      audit: [{ action: "updated", actor: "synthetic-operator", at: "2026-10-03T00:00:00.000Z" }],
+    });
+    assert.ok(seeded);
+    const beforeRace = await getBookkeepingItem(client, "bookkeeping", created.id, true);
+    assert.ok(beforeRace);
+
+    const baseSend = client.send.bind(client);
+    let concurrentCommitted = false;
+    const racingClient = Object.create(client) as DynamoDBDocumentClient;
+    racingClient.send = (async (command: unknown, ...args: unknown[]) => {
+      if (!concurrentCommitted && command instanceof QueryCommand) {
+        const concurrent = await getBookkeepingItem(client, "bookkeeping", created.id, true);
+        assert.ok(concurrent);
+        await updateBookkeepingTransaction(client, created.id, String(concurrent.updatedAt), {
+          comment: "concurrent writer",
+          audit: [
+            ...(concurrent.audit as unknown[]),
+            { action: "updated", actor: "synthetic-operator", at: "2026-10-03T00:00:01.000Z" },
+          ],
+        });
+        concurrentCommitted = true;
+      }
+      return (baseSend as (...parameters: unknown[]) => Promise<unknown>)(command, ...args);
+    }) as DynamoDBDocumentClient["send"];
+
+    await assert.rejects(
+      updateBookkeepingTransaction(racingClient, created.id, String(beforeRace.updatedAt), {
+        comment: "stale writer must not commit",
+        audit: [
+          ...(beforeRace.audit as unknown[]),
+          { action: "updated", actor: "synthetic-operator", at: "2026-10-03T00:00:02.000Z" },
+        ],
+      }),
+      (error: unknown) => error instanceof BookkeepingItemLockedError,
+    );
+    assert.equal(concurrentCommitted, true);
+    const afterRace = await getBookkeepingItem(client, "bookkeeping", created.id, true);
+    assert.ok(afterRace);
+    assert.equal(afterRace.comment, "concurrent writer");
+    assert.equal((afterRace.audit as unknown[]).length, 2);
+    assert.ok(!(afterRace.audit as Array<Record<string, unknown>>).some((entry) => entry.at === "2026-10-03T00:00:02.000Z"));
+    assert.equal((await auditRows(created.id)).filter((row) => row.recordType === "bookkeeping-audit-event").length, 2);
+  });
+
+  it("keeps stable audit corruption visible instead of retrying it as a race", async () => {
+    const created = await createTransaction();
+    const current = await getBookkeepingItem(client, "bookkeeping", created.id, true);
+    assert.ok(current);
+    await updateBookkeepingTransaction(client, created.id, String(current.updatedAt), {
+      comment: "create one sidecar event",
+      audit: [{ action: "updated", actor: "synthetic-operator", at: "2026-10-03T00:00:00.000Z" }],
+    });
+    const eventRow = (await auditRows(created.id)).find((row) => row.recordType === "bookkeeping-audit-event");
+    assert.ok(eventRow);
+    await client.send(new DeleteCommand({
+      TableName: TABLE_BOOKKEEPING,
+      Key: { PK: eventRow.PK, SK: eventRow.SK },
+    }));
+
+    try {
+      await assert.rejects(
+        getBookkeepingItem(client, "bookkeeping", created.id, true),
+        (error: unknown) => error instanceof BookkeepingAuditIntegrityError,
+      );
+    } finally {
+      await client.send(new PutCommand({
+        TableName: TABLE_BOOKKEEPING,
+        Item: eventRow,
+      }));
+    }
   });
 
   it("rejects an oversized new audit event before writing any part of the update", async () => {

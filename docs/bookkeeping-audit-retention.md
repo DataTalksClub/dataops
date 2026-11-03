@@ -80,6 +80,14 @@ event and transaction row share the `updatedAt` CAS condition plus an audit
 sequence or legacy-schema condition, so concurrent edits cannot commit an
 event without its corresponding transaction update or vice versa.
 
+Reads that observe a parent and sidecar set from opposite sides of a concurrent
+commit re-read the parent. They retry only when `updatedAt`, the storage version,
+or the audit sequence changed; a stable mismatch remains an integrity error.
+Audited writes that detect such a parent change return a CAS conflict before
+writing, so a race does not look like stored-history corruption. Updates advance
+`updatedAt` past the supplied CAS value even when two writes start in the same
+millisecond.
+
 These limits are documented by [DynamoDB transaction semantics](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/transaction-apis.html)
 and [DynamoDB item-size constraints](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Constraints.html).
 
