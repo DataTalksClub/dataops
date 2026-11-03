@@ -19,6 +19,7 @@ import { selectedTaskDefinitions, templateLinkage, templateTaskProjection } from
 import { cardCountValues } from '../templates/repeatedTasks';
 import { prerequisitesFirst, templateDependencyIssues } from '../templates/taskDependencyGraph';
 import { DEFINITION_FIELDS, TemplateDefinitionInvalidError, validateEffectiveDefinition } from '../templates/templateEdits';
+import { isDict } from '../records';
 import { loadAssignmentPolicy } from './workspaceSettings';
 
 export class TemplateVersionConflictError extends Error {
@@ -80,6 +81,7 @@ function typeGuardKey(type: string) {
 
 /**
  * Strip DynamoDB key attributes (PK, SK) from an item.
+ * Kept separate from db/cleanItem: asserts canonical Template version shape.
  */
 function cleanItem(item: Record<string, unknown> | undefined): Template | null {
   if (!item) return null;
@@ -468,10 +470,6 @@ function checkWritePair(
 ): void {
   if (current.version !== expectedVersion) throw new TemplateVersionConflictError();
   if (current.revision !== revision) throw new TemplateRevisionConflictError();
-}
-
-function isDict(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function definitionFieldsOf(item: Record<string, unknown>): Record<string, unknown> {

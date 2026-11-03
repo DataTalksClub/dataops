@@ -17,6 +17,8 @@
  * its Card (cardStatus.ts), whose Tasks carry their own proof.
  */
 
+import { isRecord } from '../records';
+
 export type PodcastPublication = {
   audioSchedule?: { scheduledAt: string; timezone: string; observedAt: string; proofUrl?: string };
   spotify?: { publicVerifiedAt: string; episodeUrl: string };
@@ -39,9 +41,6 @@ export type PublicationReadiness = {
 
 const SECTIONS = ['audioSchedule', 'spotify', 'transcript', 'website', 'websiteObserved'];
 const CLOCK_SKEW_MS = 5 * 60 * 1000;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 const httpsUrl = (value: unknown, max = 2000): URL | null => {
   if (typeof value !== 'string' || value.length > max) return null;

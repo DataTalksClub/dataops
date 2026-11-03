@@ -19,6 +19,7 @@ import {
   TemplateVersionConflictError,
 } from '../db/templates';
 import type { Template } from '../types';
+import { isDict } from '../records';
 import { templateFromYaml, templateToYaml, validateAuthoredTemplate } from './yamlTemplates';
 
 type Dict = Record<string, unknown>;
@@ -78,10 +79,6 @@ const AUTHORITATIVE_FIELDS = [
   'sourceRevision',
   'sourceBlobSha',
 ] as const;
-
-function isDict(value: unknown): value is Dict {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 function definitionFields(value: Dict): Dict {
   const definition: Dict = {};

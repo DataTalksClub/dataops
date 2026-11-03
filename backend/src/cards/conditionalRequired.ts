@@ -23,6 +23,7 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { listPodcastEpisodes } from '../db/podcastEpisodes';
+import { isRecord } from '../records';
 import type { TaskDefinition, Template } from '../types';
 
 /** Release signals the Template config may point at. */
@@ -38,10 +39,6 @@ export interface RequiredWhenConfig {
 export interface RequiredWhenOutcome {
   required: boolean;
   reason: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 /**

@@ -8,6 +8,7 @@ import { realDate } from '../sponsorCrm/model';
 import { PIPELINE_VIEWS, PIPELINE_STAGES, pipelineDateRangeError } from '../sponsorCrm/pipeline';
 import { DIRECTORY_RELATIONSHIPS } from './directory';
 import { clean, workspaceErrorOf } from './reads';
+import { isRecord } from '../records';
 
 export const VIEW_ENTITIES = ['companies', 'people', 'pipeline'] as const;
 export type ViewEntity = (typeof VIEW_ENTITIES)[number];
@@ -25,9 +26,6 @@ const viewPk = (ownerId: string) => `SAVEDVIEW#${ownerId}`;
 type RelativeDay = { daysAgo: number };
 type Filters = Record<string, unknown>;
 type StoredView = Record<string, unknown> & { id: string; version: number };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
 
 const canonical = (value: unknown): string =>
   JSON.stringify(value, (_key, item) =>

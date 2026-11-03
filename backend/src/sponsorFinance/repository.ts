@@ -10,6 +10,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { settlementBalance, validateSettlementAdjustment } from './settlementAdjustment';
 import { documentLinkItem } from '../db/bookkeeping';
+import { cleanItem as clean } from '../db/cleanItem';
 import { finomPaidTaskActions } from './finomPaidTask';
 import { TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_USERS } from '../db/tableNames';
 import {
@@ -52,11 +53,6 @@ import {
 } from './types';
 
 const singleton = (key: string) => ({ PK: key, SK: key });
-const clean = <T>(item?: Record<string, unknown>): T | null => {
-  if (!item) return null;
-  const { PK: _pk, SK: _sk, ...value } = item;
-  return value as T;
-};
 const userKey = (id: string) => ({ PK: `USER#${id}`, SK: `USER#${id}` });
 const dealKey = (id: string) => singleton(`DEAL#${id}`);
 const nowIso = () => new Date().toISOString();

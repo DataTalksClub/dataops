@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { GetCommand, PutCommand, QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { cleanItem } from './cleanItem';
 import { TABLE_BOOKKEEPING } from './tableNames';
 import { readAllPages } from './readAllPages';
 
@@ -9,10 +10,7 @@ export type TuitionAgreement = {
   trigger: string; amount?: string; currency?: string; dueOn?: string | null;
   notes?: string; taskIds?: string[]; createdAt: string; updatedAt: string;
 };
-const clean = (item?: Record<string, unknown>): TuitionAgreement | null => {
-  if (!item) return null;
-  const { PK, SK, ...record } = item; return record as TuitionAgreement;
-};
+const clean = cleanItem<TuitionAgreement>;
 export async function getTuitionAgreement(client: DynamoDBDocumentClient, id: string) {
   return clean((await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: { PK: 'TUITION', SK: id }, ConsistentRead: true }))).Item);
 }

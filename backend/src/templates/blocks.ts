@@ -54,6 +54,7 @@
  */
 
 import yaml from 'js-yaml';
+import { isDict } from '../records';
 
 type Dict = Record<string, unknown>;
 
@@ -79,10 +80,6 @@ export interface ParsedBlock {
 
 const SLUG = /^[a-z0-9][a-z0-9-]*$/;
 const INCLUDE_PARAMS = new Set(['include', 'prefix', 'slot', 'anchor', 'offset_days', 'name_prefix', 'only']);
-
-function isDict(value: unknown): value is Dict {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 function deepClone<T>(value: T): T {
   return structuredClone(value);

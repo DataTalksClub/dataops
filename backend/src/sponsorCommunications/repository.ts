@@ -17,6 +17,7 @@ import type {
 } from './types';
 
 export const itemKey = (kind: string, id: string) => ({ PK: `${kind}#${id}`, SK: `${kind}#${id}` });
+// Kept separate from db/cleanItem: also strips GSI1PK..GSI4SK attributes.
 export const clean = <T>(item?: Record<string, unknown>): T | null => {
   if (!item) return null;
   const { PK, SK, GSI1PK, GSI1SK, GSI2PK, GSI2SK, GSI3PK, GSI3SK, GSI4PK, GSI4SK, ...value } = item;

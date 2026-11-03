@@ -6,6 +6,7 @@ import {
   ScanCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { cleanItem } from "./cleanItem";
 import { TABLE_BOOKS } from "./tableNames";
 
 export type BookAuthor = { name: string; slug?: string };
@@ -32,11 +33,7 @@ export type Book = {
 };
 
 const key = (id: string) => `BOOK#${id}`;
-const clean = (item: Record<string, unknown> | undefined) => {
-  if (!item) return null;
-  const { PK, SK, ...value } = item;
-  return value as unknown as Book;
-};
+const clean = cleanItem<Book>;
 const stored = (book: Book) => ({
   PK: key(book.id),
   SK: key(book.id),

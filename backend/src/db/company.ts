@@ -14,6 +14,7 @@
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { isRecord } from '../records';
 import { TABLE_USERS } from './tableNames';
 
 const COMPANY_KEY = { PK: 'SETTINGS#company', SK: 'SETTINGS#company' } as const;
@@ -207,8 +208,4 @@ export async function removeBankAccountSummary(
     Item: { ...COMPANY_KEY, ...next },
   }));
   return next;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
 }

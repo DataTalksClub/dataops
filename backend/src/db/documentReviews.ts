@@ -15,6 +15,7 @@ export interface ReviewThread {
 export interface DocumentReviewer { id: string; name: string; createdAt: string; expiresAt: string }
 const partition = (id: string) => `DOCUMENT_REVIEW#${id}`;
 const hash = (token: string) => createHash('sha256').update(token).digest();
+// Kept separate from db/cleanItem: also strips tokenHash from reviewer records.
 const clean = <T>(item: Record<string, unknown>): T => {
   const { PK, SK, tokenHash, ...value } = item;
   return value as T;

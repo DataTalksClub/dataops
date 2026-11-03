@@ -55,6 +55,7 @@ class TaskVersionConflictError extends Error {
 
 /**
  * Strip DynamoDB key attributes (PK, SK) from an item, returning a clean object.
+ * Kept separate from db/cleanItem: asserts canonical Task version and taskHistory shape.
  */
 function cleanItem(item: Record<string, unknown> | undefined): Task | null {
   if (!item) return null;
