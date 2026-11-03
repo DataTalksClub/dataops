@@ -49,10 +49,19 @@ export function ledgerDate(value) {
   }).format(parsed);
 }
 
+// The cash date is the recorded payment date, falling back to the source
+// transaction's booking date when no payment date is available.
+export function cashDate(entry) {
+  const paidDate = String(entry?.paidDate || "").slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(paidDate)) return paidDate;
+  const transactionDate = String(entry?.transactionDate || "").slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(transactionDate) ? transactionDate : "";
+}
+
 // The month a ledger entry belongs to, in "YYYY-MM" form. Undated entries
 // have no month and only surface in the all-months view.
 export function monthOf(entry) {
-  const month = String(entry?.transactionDate || "").slice(0, 7);
+  const month = cashDate(entry).slice(0, 7);
   return /^\d{4}-\d{2}$/.test(month) ? month : "";
 }
 
@@ -123,7 +132,7 @@ export function yearsOf(entries, fallback) {
     if (/^\d{4}$/.test(y)) set.add(y);
   }
   (entries || []).forEach((e) => {
-    const y = String(e?.transactionDate || "").slice(0, 4);
+    const y = cashDate(e).slice(0, 4);
     if (/^\d{4}$/.test(y)) set.add(y);
   });
   return [...set].sort((a, b) => b.localeCompare(a));

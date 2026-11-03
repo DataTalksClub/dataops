@@ -62,6 +62,21 @@ const entries = [
     entryType: "expense",
     category: "Consulting",
   },
+  {
+    PK: "BOOKKEEPING#synthetic-invoice-paid-current",
+    SK: "BOOKKEEPING#synthetic-invoice-paid-current",
+    id: "synthetic-invoice-paid-current",
+    createdAt: "2026-09-30T00:00:00.000Z",
+    updatedAt: "2026-10-02T00:00:00.000Z",
+    transactionDate: "2026-09-30",
+    paidDate: "2026-10-02",
+    counterparty: "Synthetic Invoice Vendor",
+    description: "Invoice paid in October",
+    amount: "15.00",
+    currency: "EUR",
+    entryType: "expense",
+    category: "Consulting",
+  },
 ];
 
 const client = {
@@ -84,11 +99,13 @@ describe("native accountant report API", () => {
     );
     assert.equal(response.statusCode, 200);
     const report = JSON.parse(response.body);
-    assert.equal(report.count, 1);
+    assert.equal(report.count, 2);
     assert.equal(report.excludedCount, 2);
     assert.equal(report.content,
       '"Date","Paid Date","Provider","Description","Price EUR","Price USD","Original Currency","VAT Amount","VAT Currency","Category","Type","Statement"\r\n'
-      + '"2026-10-01","","Edited Workshop Company","Edited consulting service","-100.00","","EUR","","","Consulting","Expense",""\r\n');
+      + '"2026-10-01","","Edited Workshop Company","Edited consulting service","-100.00","","EUR","","","Consulting","Expense",""\r\n'
+      + '"2026-09-30","2026-10-02","Synthetic Invoice Vendor","Invoice paid in October","-15.00","","EUR","","","Consulting","Expense",""\r\n');
+    assert.match(report.content, /"2026-09-30","2026-10-02","Synthetic Invoice Vendor","Invoice paid in October"/);
     assert.doesNotMatch(report.content, /Stale Alias|Synthetic Owner|Synthetic Tax Office|Synthetic Prior Service/);
   });
 
@@ -106,7 +123,7 @@ describe("native accountant report API", () => {
       true,
     );
     const report = JSON.parse(response.body);
-    assert.equal(report.count, 1);
+    assert.equal(report.count, 2);
     assert.match(report.content, /Edited Workshop Company\tEdited consulting service/);
     assert.doesNotMatch(report.content, /Synthetic Owner|Synthetic Tax Office/);
   });
@@ -120,8 +137,27 @@ describe("native accountant report API", () => {
       true,
     );
     const listed = JSON.parse(response.body).items;
-    assert.equal(listed.length, 4);
+    assert.equal(listed.length, 5);
     assert.ok(listed.some((entry: Record<string, unknown>) => entry.id === "synthetic-owner"));
     assert.ok(listed.some((entry: Record<string, unknown>) => entry.id === "synthetic-tax"));
+  });
+
+  it("uses paidDate instead of also matching an older transactionDate", async () => {
+    const response = await handleBookkeepingRoutes(
+      "/api/bookkeeping/reports/accountant",
+      "GET",
+      {
+        httpMethod: "GET",
+        path: "/api/bookkeeping/reports/accountant",
+        headers: {},
+        queryStringParameters: { period: "2026-09", format: "csv" },
+      },
+      client,
+      true,
+    );
+    const report = JSON.parse(response.body);
+    assert.equal(report.count, 1);
+    assert.match(report.content, /Synthetic Prior Service/);
+    assert.doesNotMatch(report.content, /Synthetic Invoice Vendor/);
   });
 });

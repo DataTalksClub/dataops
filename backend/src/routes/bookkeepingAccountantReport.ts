@@ -14,6 +14,13 @@ const TSV_HEADERS = [
 
 type ReportEntry = Record<string, unknown>;
 
+function cashDate(entry: ReportEntry) {
+  const paidDate = String(entry.paidDate || "").slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(paidDate)) return paidDate;
+  const transactionDate = String(entry.transactionDate || "").slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(transactionDate) ? transactionDate : "";
+}
+
 function direction(entry: ReportEntry) {
   const type = String(entry.entryType || "").trim().toLowerCase();
   if (!type) return "";
@@ -93,7 +100,7 @@ export async function handleBookkeepingAccountantReportRoutes(
     return json(400, { error: "Invalid format" });
 
   const periodEntries = (await listTransactions(client)).filter((entry) =>
-    period === "all" || String(entry.transactionDate || "").startsWith(period),
+    period === "all" || cashDate(entry).startsWith(period),
   );
   const included = periodEntries.filter((entry) => !isReportExemptTransaction(entry));
   return json(200, {

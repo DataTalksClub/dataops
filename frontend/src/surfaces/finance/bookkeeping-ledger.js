@@ -5,7 +5,7 @@
 // surface (bookkeeping.js) owns fetching, events and saving.
 import { sponsorRecordPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
-import { entryDirection, formatAmount, ledgerDate, monthLabel, monthOf } from "./bookkeeping-format.js";
+import { cashDate, entryDirection, formatAmount, ledgerDate, monthLabel, monthOf } from "./bookkeeping-format.js";
 import { bookkeepingVendorPresentation } from "./bookkeeping-vendors.js";
 
 // Query parameters the bookkeeping route keeps in the URL.
@@ -80,15 +80,12 @@ const INVOICE_EVIDENCE_TYPES = new Set([
   "invoice", "receipt", "credit-note", "credit_note", "other-evidence", "proof",
 ]);
 
-/** Active invoice and receipt PDFs linked as evidence, including allocation documents. */
+/** Active invoice, receipt, credit note, and proof PDFs linked as evidence. */
 export function linkedEvidenceDocuments(entry, links, documents) {
   if (!entry?.id) return [];
   const ids = new Set((Array.isArray(links) ? links : [])
     .filter((link) => link.transactionId === entry.id && link.coverageType === "evidence")
     .map((link) => String(link.documentId || "")));
-  for (const allocation of Array.isArray(entry.allocations) ? entry.allocations : []) {
-    if (allocation?.documentId) ids.add(String(allocation.documentId));
-  }
   return (Array.isArray(documents) ? documents : []).filter((document) =>
     ids.has(String(document.id || ""))
       && document.status === "active"
@@ -127,19 +124,10 @@ export function filterEntries(entries, filters, { hasEvidence = () => true } = {
     if (filters.needs === "receipt" && hasEvidence(entry.id)) return false;
     if (query) {
       const presentation = bookkeepingVendorPresentation(entry);
-      const allocParts = Array.isArray(entry.allocations)
-        ? entry.allocations.flatMap((alloc) => [
-            alloc?.counterparty,
-            alloc?.description,
-            alloc?.amount,
-            alloc?.invoiceNumber,
-          ])
-        : [];
       const haystack = [
         entry.counterparty, presentation.canonicalCounterparty, presentation.description,
         entry.description, entry.statementRef, entry.subtype,
         entry.category, entry.period, entry.comment, entry.amount, entry.amountEur,
-        ...allocParts,
       ].join(" ").toLowerCase();
       if (!haystack.includes(query)) return false;
     }
@@ -148,7 +136,7 @@ export function filterEntries(entries, filters, { hasEvidence = () => true } = {
 }
 
 const byDateAsc = (a, b) =>
-  String(a.transactionDate || "").localeCompare(String(b.transactionDate || "")) ||
+  cashDate(a).localeCompare(cashDate(b)) ||
   String(a.sourceKey || a.id).localeCompare(String(b.sourceKey || b.id), undefined, { numeric: true });
 
 // Months newest first; inside a month the sheet's order (oldest first).
@@ -227,6 +215,7 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
   const direction = entryDirection(entry);
   const eur = eurValue(entry);
   const original = originalValue(entry);
+  const originalText = original === null ? "" : signedAmount(original, entry.currency);
   const missingEur = eur === null;
   const flagged = needsCategory(entry);
   const presentation = bookkeepingVendorPresentation(entry);
@@ -243,18 +232,13 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
     : hasInvoiceAttached
       ? html`<span class="bk-invoice-icon" title="Invoice attached" aria-label="Invoice attached">${icon.receipt}</span>`
       : html`<span class="bk-no-invoice">No invoice</span>`;
-  const allocCount = Array.isArray(entry.allocations) ? entry.allocations.length : 0;
-  const allocBadge = allocCount > 0
-    ? html`<span class="bk-alloc-badge" data-allocation-count="${allocCount}"
-        title="Allocated across ${allocCount} invoice rows">${allocCount} invoice${allocCount === 1 ? "" : "s"}</span>`
-    : "";
   return html`<tr class="bk-row${flagged ? " is-uncategorised" : ""}${direction === "income" ? " is-income" : ""}"
       data-tx="${e(entry.id)}"${entry.id === selectedId ? ' aria-selected="true"' : ""}>
       <td class="bk-col-date">${dateCell(entry, e)}</td>
       <td class="bk-col-who">
         <a class="bk-who" href="?tx=${encodeURIComponent(entry.id)}" data-open-tx="${e(entry.id)}"
           ><span class="bk-who__name">${e(counterparty)}</span
-          >${showDescription ? html`<span class="bk-who__what" title="${e(description)}">${e(description)}</span>` : ""}${allocBadge}</a
+          >${showDescription ? html`<span class="bk-who__what" title="${e(description)}">${e(description)}</span>` : ""}</a
         >
       </td>
       <td class="bk-col-money bk-col-eur${missingEur ? " is-unconverted" : ""}"${!missingEur && originalText ? ` title="Original ${e(originalText)}"` : ""}>${missingEur
@@ -447,81 +431,6 @@ export function suggestionLoader({ load, holder, render }) {
   };
 }
 
-function allocationDetailSectionMarkup(entry, documents, e) {
-  const existingAllocations = Array.isArray(entry?.allocations) ? entry.allocations : [];
-  const docList = Array.isArray(documents) ? documents : [];
-  if (existingAllocations.length === 0 && docList.length === 0) return "";
-  const currency = String(entry?.currency || "EUR").toUpperCase();
-  const docsById = new Map(docList.map((doc) => [String(doc.id), doc]));
-  const rowsToEdit = existingAllocations.length > 0
-    ? existingAllocations.map((alloc) => ({
-        documentId: String(alloc.documentId || ""),
-        counterparty: String(alloc.counterparty || ""),
-        description: String(alloc.description || ""),
-        amount: String(alloc.amount || ""),
-        invoiceNumber: String(alloc.invoiceNumber || ""),
-      }))
-    : docList.map((doc) => {
-        const facts = doc.facts || {};
-        return {
-          documentId: String(doc.id || ""),
-          counterparty: String(facts.counterparty || entry.counterparty || ""),
-          description: String(facts.description || doc.originalFilename || entry.description || ""),
-          amount: String(facts.amount || (docList.length === 1 ? entry.amount || "" : "")),
-          invoiceNumber: String(facts.invoiceNumber || ""),
-        };
-      });
-
-  const summaryList = existingAllocations.length > 0
-    ? html`<ul class="bk-allocations-readback" data-allocations-readback>${existingAllocations
-        .map((alloc) => {
-          const doc = docsById.get(String(alloc.documentId));
-          const pdfName = doc?.originalFilename || alloc.documentId;
-          return html`<li class="bk-allocation-item" data-allocation-summary="${e(alloc.documentId)}">
-            <span class="bk-allocation-item__who">${e(alloc.counterparty)}</span>
-            <span class="bk-allocation-item__what">${e(alloc.description)}</span>
-            <span class="bk-allocation-item__amount dk-mono">${e(formatAmount(alloc.amount, alloc.currency || currency))}</span>
-            <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-view-document="${e(alloc.documentId)}">PDF (${e(pdfName)})</button>
-          </li>`;
-        })
-        .join("")}</ul>`
-    : "";
-
-  const editorRows = rowsToEdit
-    .map((row, idx) => html`<div class="bk-allocation-row" data-allocation-row="${idx}">
-        <input type="hidden" data-allocation-doc value="${e(row.documentId)}" />
-        <label class="dk-label">Invoice #${idx + 1} (${e(row.documentId)}) Counterparty
-          <input class="dk-input" data-allocation-counterparty value="${e(row.counterparty)}" placeholder="Counterparty" />
-        </label>
-        <label class="dk-label">Description
-          <input class="dk-input" data-allocation-description value="${e(row.description)}" placeholder="Description" />
-        </label>
-        <label class="dk-label">Amount (${e(currency)})
-          <input class="dk-input" data-allocation-amount inputmode="decimal" value="${e(row.amount)}" placeholder="0.00" />
-        </label>
-        <label class="dk-label">Invoice number
-          <input class="dk-input" data-allocation-invoice-number value="${e(row.invoiceNumber)}" placeholder="Optional" />
-        </label>
-      </div>`)
-    .join("");
-
-  return html`<section class="bk-detail__section bk-detail__allocations" data-allocation-section aria-labelledby="bk-allocation-heading">
-      <h3 class="bk-detail__subhead" id="bk-allocation-heading">Invoice allocation (${e(formatAmount(entry.amount, currency))} total)</h3>
-      <p class="bk-detail__hint">Allocate one bank payment across separate invoice report rows. Amounts must sum to ${e(entry.amount)} ${e(currency)}.</p>
-      ${summaryList}
-      <div class="bk-allocation-editor" data-allocation-editor>
-        ${editorRows}
-        <p class="bk-field__error" data-allocation-error role="alert"></p>
-        <div class="bk-allocation-actions">
-          <button type="button" class="dk-button dk-button--primary dk-button--sm" data-save-allocations="${e(entry.id)}">Save invoice allocation</button>
-          ${existingAllocations.length > 0
-            ? html`<button type="button" class="dk-button dk-button--secondary dk-button--sm" data-clear-allocations="${e(entry.id)}">Clear allocation</button>`
-            : ""}
-        </div>
-      </div>
-    </section>`;
-}
-
 export function detailMarkup({ entry, documents, vocab, humanize, e }) {
   const eur = eurValue(entry);
   const original = originalValue(entry);
@@ -571,7 +480,6 @@ export function detailMarkup({ entry, documents, vocab, humanize, e }) {
           </div>
         </div>
       </section>
-      ${allocationDetailSectionMarkup(entry, documents, e)}
       <section class="bk-detail__section" aria-labelledby="bk-suggest-heading">
         <h3 class="bk-detail__subhead" id="bk-suggest-heading">Suggested matches</h3>
         <div data-suggestions>${suggestionsMarkup({ suggestions: null, humanize, e })}</div>

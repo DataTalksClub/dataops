@@ -145,12 +145,11 @@ export function createBookkeepingSurface(context) {
     }
 
     const hasEvidence = (id) =>
-      links.some((l) => l.transactionId === id && l.coverageType === "evidence") ||
-      Boolean(entries.find((e) => e.id === id)?.allocations?.length);
+      links.some((l) => l.transactionId === id && l.coverageType === "evidence");
     const hasInvoice = (id) => {
       const entry = entries.find((candidate) => candidate.id === id);
       const linked = linkedEvidenceDocuments(entry, links, documents);
-      return linked.length ? linked : Boolean(entry?.allocations?.length);
+      return linked;
     };
     const lensEntries = () => entries.filter((e) => inLens(e, lens));
     function setLens(month) {

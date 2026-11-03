@@ -22,6 +22,7 @@ import {
 import { createBookkeepingFinance, mandatoryPaymentsMarkup } from "../src/surfaces/finance/bookkeeping-vat.js";
 
 import { escapeHtml } from "../src/core/html.js";
+import { cashDate, latestActivityMonth, monthOf } from "../src/surfaces/finance/bookkeeping-format.js";
 
 // Synthetic rows shaped like the imported sheet.
 const rows = Object.freeze([
@@ -76,6 +77,38 @@ test("month groups run newest first, rows oldest first, with EUR in/out totals",
   assert.equal(groups[0].moneyIn, 2000);
   assert.equal(groups[0].moneyOut, -86);
   assert.equal(groups[0].unconverted, 1);
+});
+
+test("cash month uses paid date only, falling back to the transaction booking date", () => {
+  const paidInCurrentMonth = {
+    id: "synthetic-invoice-paid-current",
+    transactionDate: "2026-09-30",
+    paidDate: "2026-10-02",
+    counterparty: "Synthetic Invoice Vendor",
+    description: "Invoice paid in October",
+    amount: "10.00",
+    currency: "EUR",
+    entryType: "expense",
+  };
+  const bookingDateFallback = {
+    id: "synthetic-booking-fallback",
+    transactionDate: "2026-10-03",
+    paidDate: "",
+    amount: "20.00",
+    currency: "EUR",
+    entryType: "expense",
+  };
+
+  assert.equal(cashDate(paidInCurrentMonth), "2026-10-02");
+  assert.equal(monthOf(paidInCurrentMonth), "2026-10");
+  assert.equal(latestActivityMonth([paidInCurrentMonth], "2026-09"), "2026-10");
+  assert.equal(inLens(paidInCurrentMonth, "2026-10"), true);
+  assert.equal(inLens(paidInCurrentMonth, "2026-09"), false);
+  assert.equal(cashDate(bookingDateFallback), "2026-10-03");
+  assert.deepEqual(groupByMonth([bookingDateFallback, paidInCurrentMonth]).map(({ month, entries }) =>
+    [month, entries.map((entry) => entry.id)]), [
+    ["2026-10", ["synthetic-invoice-paid-current", "synthetic-booking-fallback"]],
+  ]);
 });
 
 test("the table renders one compact row per transaction without changing stored values", () => {
