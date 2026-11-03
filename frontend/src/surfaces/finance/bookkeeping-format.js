@@ -143,12 +143,16 @@ function spreadsheetText(value) {
   return /^\s*[=+@-]/.test(text) ? `'${text}` : text;
 }
 
-// Payment categories tracked in the ledger but kept out of accountant's
-// monthly package and taxable report.
+// Ledger entries kept out of the accountant's monthly package and tax report.
 export const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance", "VAT"]);
+export function isOwnerWithdrawalReportExempt(entry) {
+  return String(entry?.category || "").trim().toLowerCase() === "owner pay"
+    && String(entry?.ownerPayType || "").trim().toLowerCase() === "draw";
+}
 export function isReportExempt(entry) {
   return REPORT_EXEMPT_CATEGORIES.has(String(entry?.category || ""))
-    || ["tax_debit", "tk_debit"].includes(String(entry?.mandatoryKind || ""));
+    || ["tax_debit", "tk_debit"].includes(String(entry?.mandatoryKind || ""))
+    || isOwnerWithdrawalReportExempt(entry);
 }
 
 // Format ledger entries into the standard accountant tax report CSV.
@@ -232,8 +236,9 @@ export function formatFullCsv(entries) {
 // Format tab-separated values ready for copy-pasting directly into Gmail or Google Sheets.
 export function formatReportTsv(entries, options = {}) {
   const excludeExempt = options.excludeExempt ?? true;
+  const isExempt = options.isExempt || isReportExempt;
   const rows = excludeExempt
-    ? (entries || []).filter((e) => !isReportExempt(e))
+    ? (entries || []).filter((e) => !isExempt(e))
     : (entries || []);
   const headers = [
     "Date",

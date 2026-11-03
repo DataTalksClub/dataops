@@ -277,7 +277,7 @@ async function handleMonthRoutes(
   }
   if (!action && method === "GET") {
     const view = await buildMonth(client, period);
-    if (query.format === "csv") return { statusCode: 200, headers: { "Content-Type": "text/csv; charset=utf-8" }, body: tableCsv(view) };
+    if (query.format === "csv") return { statusCode: 200, headers: { "Content-Type": "text/csv; charset=utf-8" }, body: tableCsv(view, { ownerWithdrawalsConfirmed: view.exceptionConfirmation?.current === true }) };
     return json(200, view);
   }
   if (method !== "POST") return json(404, { error: "Not found" });
