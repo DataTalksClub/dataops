@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import { dirname, join } from "node:path";
 import { UsageError } from "../errors.mjs";
@@ -687,29 +687,21 @@ async function downloadBytes(api, entry) {
   return Buffer.from(await response.arrayBuffer());
 }
 
-async function packageFiles(directory, root = directory) {
-  const files = [];
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const target = join(directory, entry.name);
-    if (entry.isDirectory()) files.push(...await packageFiles(target, root));
-    else if (entry.isFile()) files.push({ target, archivePath: target.slice(root.length + 1).replaceAll("\\", "/") });
-  }
-  return files;
-}
-
-async function createPackageArchive(out, period, zipPath) {
+async function createPackageArchive(out, written, zipPath) {
   const { default: yazl } = await import("yazl");
   const archive = new yazl.ZipFile();
-  const complete = pipeline(archive.outputStream, createWriteStream(zipPath)).then(() => null, (error) => error);
+  const temporaryPath = `${zipPath}.${randomUUID()}.tmp`;
+  const complete = pipeline(archive.outputStream, createWriteStream(temporaryPath, { flags: "wx" })).then(() => null, (error) => error);
   try {
-    for (const file of await packageFiles(join(out, period), out)) archive.addFile(file.target, file.archivePath);
+    for (const path of written) archive.addFile(join(out, path), path.replaceAll("\\", "/"));
     archive.end();
     const error = await complete;
     if (error) throw error;
+    await rename(temporaryPath, zipPath);
   } catch (error) {
     archive.outputStream.destroy(error);
     await complete;
-    await rm(zipPath, { force: true }).catch(() => {});
+    await rm(temporaryPath, { force: true }).catch(() => {});
     throw new Error(`Could not create package archive ${zipPath}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
@@ -736,7 +728,7 @@ export async function packageMonth(args, io) {
   let zip;
   const zipName = `datatalksclub-${period}${manifest.draft ? "-draft" : ""}.zip`;
   zip = join(out, zipName);
-  await createPackageArchive(out, period, zip);
+  await createPackageArchive(out, written, zip);
   if (!args.json) {
     io.print(`${manifest.draft ? "DRAFT package (month still open)" : "Package"} ${period}: ${written.length} files in ${join(out, period)}, ${zip}. Nothing was sent.`);
     for (const path of written) io.print(`  ${path}`);
