@@ -49,6 +49,7 @@ import {
 } from './portableChecks';
 import type { ExportEntityName, Manifest } from './portable';
 import type { JsonRecord } from './portableMappers';
+import { bookkeepingAuditSnapshotErrors } from './bookkeepingAuditConsistency';
 
 /**
  * Portable export validation and dry-run import: checksum/count verification
@@ -149,6 +150,8 @@ export async function validatePortableExport(exportDir: string): Promise<Validat
       errors.push((err as Error).message);
     }
   }
+
+  errors.push(...bookkeepingAuditSnapshotErrors(recordsByEntity.bookkeeping_records || []));
 
   for (const [index, record] of (recordsByEntity.invoice_records || []).entries()) {
     const context = `invoice_records[${index}]`;
