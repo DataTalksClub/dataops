@@ -150,25 +150,22 @@ function signedAmount(value, currency) {
   return value < 0 ? `−${text}` : `+${text}`;
 }
 
-function vatRateLabel(value) {
-  if (value === null || value === undefined || String(value).trim() === "") return "";
-  const raw = String(value).trim().replace(/%$/, "");
-  const numeric = Number(raw);
-  if (!Number.isFinite(numeric)) return `${raw}%`;
-  const percent = numeric > 0 && numeric <= 1 ? numeric * 100 : numeric;
-  return `${Number.isInteger(percent) ? percent : Number(percent.toFixed(2))}%`;
-}
-
 export function vatPresentation(entry) {
   if (!entry) return "";
-  const rate = vatRateLabel(entry.vatRate);
-  if (entry.reverseCharge) return `Reverse charge${rate ? ` · ${rate}` : ""}`;
-  if (entry.zeroRated || (rate && Number(rate.slice(0, -1)) === 0)) return "0%";
-  if (entry.vatEur !== null && entry.vatEur !== undefined && String(entry.vatEur).trim() !== "")
-    return `${formatAmount(entry.vatEur, "EUR")}${rate ? ` (${rate})` : ""}`;
+  const eurVat = entry.vatEur !== null && entry.vatEur !== undefined && String(entry.vatEur).trim() !== ""
+    ? Number(entry.vatEur)
+    : null;
+  if (eurVat !== null && Number.isFinite(eurVat)) return formatAmount(eurVat, "EUR");
   if (entry.vatAmount !== null && entry.vatAmount !== undefined && String(entry.vatAmount).trim() !== "")
-    return `${formatAmount(entry.vatAmount, entry.vatCurrency || entry.currency || "EUR")}${rate ? ` (${rate})` : ""}`;
+    return formatAmount(entry.vatAmount, entry.vatCurrency || entry.currency || "EUR");
+  if (entry.reverseCharge) return "Reverse charge";
   return "";
+}
+
+/** Hover text for the VAT cell: reverse-charge rows explain themselves. */
+export function vatTitle(entry, text) {
+  if (entry?.reverseCharge) return "Reverse charge — VAT is accounted by the recipient";
+  return text || "";
 }
 
 // One date when transaction and paid dates agree; the paid date, muted,
@@ -220,7 +217,7 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
       <td class="bk-col-money bk-col-eur${missingEur ? " is-unconverted" : ""}"${!missingEur && originalText ? ` title="Original ${e(originalText)}"` : ""}>${missingEur
         ? html`<span class="bk-unconverted" title="No EUR value recorded yet — convert it before the report">${e(originalText || "EUR?")}</span>`
         : e(signedAmount(eur, "EUR"))}</td>
-      <td class="bk-col-vat"${vat ? ` title="${e(vat)}"` : ""}>${e(vat || "—")}</td>
+      <td class="bk-col-vat"${vat ? ` title="${e(vatTitle(financeEntry, vat))}"` : ""}>${e(vat || "—")}</td>
       <td class="bk-col-account">${e(accountOf(entry))}</td>
       ${CLASSIFICATION_FIELDS.map(({ field, label }) => html`<td class="bk-col-class bk-col-${field}">${selectMarkup({
         id: entry.id, field, label: `${label} for ${entry.counterparty || "transaction"}`,

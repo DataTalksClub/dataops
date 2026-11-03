@@ -110,11 +110,11 @@ test("the VAT column shows document VAT, a zero rate, and reverse charge distinc
     ]),
     e: escapeHtml,
   });
-  assert.match(markup, /€19\.00 \(19%\)/);
-  assert.match(markup, />0%<\/td>/);
-  assert.match(markup, /Reverse charge · 19%/);
-  assert.equal(vatPresentation({ vatAmount: "500.00", vatCurrency: "USD", vatRate: "0.19" }), "$500.00 (19%)");
-  assert.equal(vatPresentation({ vatAmount: "110.35", vatCurrency: "USD", vatEur: "98.12", vatRate: "0.19" }), "€98.12 (19%)", "VAT shows in EUR when converted");
+  assert.match(markup, /€19\.00/);
+  assert.match(markup, />€0\.00<\/td>/);
+  assert.match(markup, /title="Reverse charge — VAT is accounted by the recipient"/);
+  assert.equal(vatPresentation({ vatAmount: "500.00", vatCurrency: "USD" }), "$500.00");
+  assert.equal(vatPresentation({ vatAmount: "110.35", vatCurrency: "USD", vatEur: "98.12", vatRate: "0.19" }), "€98.12", "VAT shows in EUR");
 });
 
 test("ledger rows show canonical vendor names, concise purposes, and invoice state", () => {
