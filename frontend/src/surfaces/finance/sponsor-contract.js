@@ -26,9 +26,10 @@ export function wireSponsorContractDialog({ surface, api, safe, getDeals, setDea
     if (contract.signedPdf && contract.signedPdf.sha256) text += ' · sha256 ' + String(contract.signedPdf.sha256).slice(0, 12);
     return text;
   };
+  const canSend = (contract) => Boolean(contract && (contract.status === 'draft' || contract.status === 'sent' || contract.status === 'viewed'));
   const showContract = (contract) => {
     summary.textContent = summaryFor(contract);
-    sendButton.hidden = !(contract && (contract.status === 'sent' || contract.status === 'viewed'));
+    sendButton.hidden = !canSend(contract);
     if (contract && contract.status === 'signed' && contract.id) {
       links.hidden = false;
       const contractUrl = '/api/sponsor-crm/contracts/' + encodeURIComponent(contract.id);
@@ -107,7 +108,7 @@ export function wireSponsorContractDialog({ surface, api, safe, getDeals, setDea
       const fresh = await refresh(deal.id);
       deal = fresh;
       summary.textContent = summaryFor(fresh.contract);
-      sendButton.hidden = !(fresh.contract && (fresh.contract.status === 'sent' || fresh.contract.status === 'viewed'));
+      sendButton.hidden = !canSend(fresh.contract);
     }, 'Could not send the signing links');
   });
   return { open };
