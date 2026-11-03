@@ -1,6 +1,7 @@
 import { getClient } from '../db/client';
 import { getUser } from '../db/users';
 import { getSession, deleteSession } from '../db/sessions';
+import { deleteApiToken, getApiToken, projectApiToken } from '../db/apiTokens';
 import { verifySharedIssuerJwt } from '../auth/sharedIssuer';
 import { identityProjection } from '../identity/projections';
 import { getUsersByNormalizedEmail, normalizeEmail } from '../db/users';
@@ -49,10 +50,11 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
       if (token) {
         const jwt = await verifySharedIssuerJwt(token);
         if (!jwt) {
-          await deleteSession(client, token);
+          const apiToken = await getApiToken(client, token);
+          if (apiToken) await deleteApiToken(client, apiToken.id);
+          else await deleteSession(client, token);
         }
-        // Issuer sessions are revoked at the issuer (`dataops logout`);
-        // there is no local token store to delete here.
+        // Issuer sessions are revoked at the issuer (`dataops logout`).
       }
       return {
         statusCode: 204,
@@ -74,11 +76,12 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
 
       const session = await getSession(client, token);
       const claims = session ? null : await verifySharedIssuerJwt(token);
+      const apiToken = session || claims ? null : await getApiToken(client, token);
       const email = claims?.email;
       const jwtUserId = !session && typeof email === 'string' && email && (claims!.email_verified === true || claims!.email_verified === 'true')
         ? await findUserIdByEmail(client, email)
         : null;
-      const userId = session?.userId || jwtUserId;
+      const userId = session?.userId || jwtUserId || apiToken?.userId;
       if (!userId) {
         return {
           statusCode: 401,
@@ -101,7 +104,10 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
       return {
         statusCode: 200,
         headers: JSON_HEADERS,
-        body: JSON.stringify({ user: identityProjection(user) }),
+        body: JSON.stringify({
+          user: identityProjection(user),
+          ...(apiToken ? { apiToken: projectApiToken(apiToken) } : {}),
+        }),
       };
     }
 

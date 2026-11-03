@@ -269,7 +269,10 @@ export async function refreshTokens(profile) {
     refreshToken: body.refresh_token || profile.refreshToken,
     expiresAt: new Date(Date.now() + (Number(body.expires_in) || 3600) * 1000).toISOString(),
   };
-  saveProfile(profile.url, updated);
+  if (profile.configDir) {
+    const { configDir, ...stored } = updated;
+    saveProfileToDir(configDir, profile.url, stored);
+  } else saveProfile(profile.url, updated);
   return updated;
 }
 
@@ -280,6 +283,18 @@ export async function logout(args, io) {
   }
   if (!profile.token && !profile.accessToken && !profile.clientId) {
     io.print("Not signed in.");
+    return { status: "signed-out" };
+  }
+  if (profile.kind === "agent" && profile.tokenId) {
+    const client = createClient({ url: profile.url, credential: sessionCredential(profile) });
+    try {
+      await client.delete("/api/tokens/self");
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 401) throw error;
+      // An administrator may already have revoked the credential.
+    }
+    deleteProfile(profile.url);
+    io.print("Signed out and revoked this agent token.");
     return { status: "signed-out" };
   }
   // Revoke at the issuer first: deleting only the local copy leaves a live
@@ -313,6 +328,9 @@ export async function whoami(args, io) {
   if (args.json) return { ...result, portal: profile.url, credential: profile.source === "environment" ? "DATAOPS_TOKEN" : credentialsPath() };
   const user = result.user || {};
   io.print(result.service ? `${result.service.id} (${(result.service.scopes || []).join(", ")})` : `${user.name || "unknown"} <${user.email || "unknown"}>`);
+  if (result.apiToken) {
+    io.print(`agent: ${result.apiToken.label} (${(result.apiToken.scopes || []).join(", ")})`);
+  }
   if (user.role) io.print(`role: ${user.role}`);
   io.print(`portal: ${profile.url}`);
   io.print(`credential: ${profile.source === "environment" ? "DATAOPS_TOKEN" : credentialsPath()}`);
