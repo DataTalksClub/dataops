@@ -1763,7 +1763,7 @@ body[data-workspace-view="tasks"] .task-prerequisite-status {
   font-size: 0.9rem;
 }
 .task-checklist-section {
-  border: 1px solid var(--dk-border, #d7dce2);
+  border: 1px solid var(--dk-border-default, #d7dce2);
   border-radius: 12px;
   margin: 16px 0;
   padding: 14px 16px;
