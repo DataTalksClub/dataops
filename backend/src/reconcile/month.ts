@@ -16,7 +16,6 @@
  */
 import { createHash } from "crypto";
 import { normalizedAutoMatchVendor } from "../bookkeepingAutoMatch";
-import type { BookkeepingInvoiceAllocation } from "../bookkeepingAllocations";
 import { isOwnerWithdrawalReportExempt } from "../finance/ownerPay";
 
 const DAY = 86_400_000;
@@ -118,7 +117,6 @@ export type LedgerRow = {
   statementRef?: string;
   invoiceNumber?: string;
   sourceType?: string;
-  allocations?: BookkeepingInvoiceAllocation[];
   documents: LedgerDocument[];
 };
 
@@ -833,79 +831,12 @@ export function tableCsv(table: MonthTable): string {
     const text = value === undefined || value === null ? "" : String(value);
     return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
-  const lines = table.rows
-    .filter((row) => !isAccountantReportRowExcluded(row))
-    .flatMap((row) => {
-      const bankAccount = row.bank ? `${row.bank.accountId}${row.bank.wallet ? ` ${row.bank.wallet}` : ""}` : "";
-      const bankAmount = row.bank ? `${row.bank.amount} ${row.bank.currency}` : "";
-      const exceptionText = row.exception ? `${row.exception.kind}${row.exception.satisfied ? "" : " (proof missing)"}` : "";
-      const allocations = row.ledger?.allocations;
-      if (allocations && allocations.length > 0 && row.ledger) {
-        const sign = Number(row.ledger.amount || row.amount) < 0 ? "-" : "";
-        return allocations.map((alloc) => {
-          const signedAllocAmount = alloc.amount.startsWith("-") ? alloc.amount : `${sign}${alloc.amount}`;
-          const allocCurrency = alloc.currency || row.ledger!.currency || row.currency;
-          const allocDate = alloc.transactionDate || row.ledger!.date || row.date;
-          const allocCategory = alloc.category || row.ledger!.category;
-          const allocDocs = [
-            alloc.documentId,
-            ...(row.paymentProof ? [`proof:${row.paymentProof.documentId}`] : []),
-          ]
-            .filter(Boolean)
-            .join(" ");
-          return [
-            row.date,
-            row.status,
-            alloc.counterparty,
-            alloc.description,
-            signedAllocAmount,
-            allocCurrency,
-            bankAccount,
-            row.bank?.date,
-            bankAmount,
-            row.bank?.reference,
-            row.ledger!.id,
-            allocDate,
-            `${signedAllocAmount} ${allocCurrency}`,
-            allocCategory,
-            allocDocs,
-            row.pairBasis,
-            row.confidence,
-            exceptionText,
-            row.missing,
-          ]
-            .map(quote)
-            .join(",");
-        });
-      }
-      return [
-        [
-          row.date,
-          row.status,
-          row.counterparty,
-          row.description,
-          row.amount,
-          row.currency,
-          bankAccount,
-          row.bank?.date,
-          bankAmount,
-          row.bank?.reference,
-          row.ledger?.id,
-          row.ledger?.date,
-          row.ledger ? `${row.ledger.amount} ${row.ledger.currency}` : "",
-          row.ledger?.category,
-          [
-            ...row.documents.map((document) => document.id),
-            ...(row.paymentProof ? [`proof:${row.paymentProof.documentId}`] : []),
-          ].join(" "),
-          row.pairBasis,
-          row.confidence,
-          exceptionText,
-          row.missing,
-        ]
-          .map(quote)
-          .join(","),
-      ];
-    });
+  const lines = table.rows.filter((row) => !isAccountantReportRowExcluded(row)).map((row) => [
+    row.date, row.status, row.counterparty, row.description, row.amount, row.currency,
+    row.bank ? `${row.bank.accountId}${row.bank.wallet ? ` ${row.bank.wallet}` : ""}` : "", row.bank?.date, row.bank ? `${row.bank.amount} ${row.bank.currency}` : "", row.bank?.reference,
+    row.ledger?.id, row.ledger?.date, row.ledger ? `${row.ledger.amount} ${row.ledger.currency}` : "", row.ledger?.category,
+    [...row.documents.map((document) => document.id), ...(row.paymentProof ? [`proof:${row.paymentProof.documentId}`] : [])].join(" "), row.pairBasis, row.confidence,
+    row.exception ? `${row.exception.kind}${row.exception.satisfied ? "" : " (proof missing)"}` : "", row.missing,
+  ].map(quote).join(","));
   return [header.join(","), ...lines].join("\n") + "\n";
 }

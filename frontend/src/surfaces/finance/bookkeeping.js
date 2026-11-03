@@ -144,15 +144,11 @@ export function createBookkeepingSurface(context) {
     }
 
     const hasEvidence = (id) =>
-      links.some((l) => l.transactionId === id && l.coverageType === "evidence") ||
-      Boolean(entries.find((e) => e.id === id)?.allocations?.length);
-    const hasInvoice = (id) =>
-      links.some(
-        (link) =>
-          link.transactionId === id &&
-          link.coverageType === "evidence" &&
-          documents.some((document) => document.id === link.documentId && document.documentType === "invoice"),
-      ) || Boolean(entries.find((e) => e.id === id)?.allocations?.length);
+      links.some((l) => l.transactionId === id && l.coverageType === "evidence");
+    const hasInvoice = (id) => links.some((link) =>
+      link.transactionId === id && link.coverageType === "evidence" &&
+      documents.some((document) => document.id === link.documentId && document.documentType === "invoice"),
+    );
     const lensEntries = () => entries.filter((e) => inLens(e, lens));
     function setLens(month) {
       lens = month;
@@ -249,16 +245,9 @@ export function createBookkeepingSurface(context) {
         detail.innerHTML = "";
         return;
       }
-      const attachedIds = new Set(
-        links
-          .filter((l) => l.transactionId === entry.id && l.coverageType === "evidence")
-          .map((l) => String(l.documentId)),
-      );
-      for (const alloc of Array.isArray(entry.allocations) ? entry.allocations : []) {
-        if (alloc?.documentId) attachedIds.add(String(alloc.documentId));
-      }
-      const attached = [...attachedIds]
-        .map((docId) => documents.find((d) => d.id === docId))
+      const attached = links
+        .filter((l) => l.transactionId === entry.id && l.coverageType === "evidence")
+        .map((l) => documents.find((d) => d.id === l.documentId))
         .filter(Boolean);
       detail.innerHTML = detailMarkup({
         entry,
@@ -561,69 +550,6 @@ export function createBookkeepingSurface(context) {
           await refreshEvidence();
           status.textContent = "Attached the suggested file.";
         }, "Could not attach the file");
-      }
-      const saveAllocBtn = event.target.closest("[data-save-allocations]");
-      if (saveAllocBtn) {
-        const txId = saveAllocBtn.dataset.saveAllocations;
-        const currentEntry = entries.find((e) => e.id === txId);
-        const errorBox = detail.querySelector("[data-allocation-error]");
-        if (errorBox) errorBox.textContent = "";
-        const rows = [...detail.querySelectorAll("[data-allocation-row]")];
-        const allocations = rows.map((rowEl) => {
-          const documentId = rowEl.querySelector("[data-allocation-doc]")?.value?.trim() || "";
-          const counterparty = rowEl.querySelector("[data-allocation-counterparty]")?.value?.trim() || "";
-          const description = rowEl.querySelector("[data-allocation-description]")?.value?.trim() || "";
-          const amount = rowEl.querySelector("[data-allocation-amount]")?.value?.trim() || "";
-          const invoiceNumber = rowEl.querySelector("[data-allocation-invoice-number]")?.value?.trim() || "";
-          return {
-            documentId,
-            counterparty,
-            description,
-            amount,
-            ...(invoiceNumber ? { invoiceNumber } : {}),
-          };
-        });
-        safeAction(async () => {
-          try {
-            const saved = await api(`/transactions/${encodeURIComponent(txId)}/allocations`, {
-              method: "PUT",
-              body: JSON.stringify({
-                allocations,
-                expectedUpdatedAt: currentEntry?.updatedAt,
-              }),
-            });
-            replaceEntry(saved);
-            renderLedger();
-            renderDetail();
-            if (view === "package") renderPackageReview();
-            status.textContent = `Saved ${allocations.length} invoice allocations.`;
-          } catch (error) {
-            if (errorBox) errorBox.textContent = error.message;
-            throw error;
-          }
-        }, "Could not save invoice allocations");
-        return;
-      }
-      const clearAllocBtn = event.target.closest("[data-clear-allocations]");
-      if (clearAllocBtn) {
-        const txId = clearAllocBtn.dataset.clearAllocations;
-        const currentEntry = entries.find((e) => e.id === txId);
-        safeAction(async () => {
-          const saved = await api(`/transactions/${encodeURIComponent(txId)}/allocations`, {
-            method: "PUT",
-            body: JSON.stringify({
-              clear: true,
-              allocations: [],
-              expectedUpdatedAt: currentEntry?.updatedAt,
-            }),
-          });
-          replaceEntry(saved);
-          renderLedger();
-          renderDetail();
-          if (view === "package") renderPackageReview();
-          status.textContent = "Cleared invoice allocations.";
-        }, "Could not clear invoice allocations");
-        return;
       }
       const del = event.target.closest("[data-delete]")?.dataset.delete;
       if (del) {

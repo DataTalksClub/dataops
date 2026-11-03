@@ -45,7 +45,6 @@ import {
   type ReceivedInvoiceDocumentCandidate,
   type ReconcileTolerances,
 } from "./month";
-import { readTransactionAllocations } from "../bookkeepingAllocations";
 import { listStatements, rowKeys, type StatementRecord } from "./service";
 import { listCrmRecords, scanCrmPrefix } from "../db/sponsorCrm";
 import { getIntakeItem } from "../db/intake";
@@ -264,25 +263,12 @@ export function ledgerRowsFrom(transactions: Array<Record<string, unknown>>, lin
         ? item.documentArtifactId
         : invoiceId;
       const extra = invoiceDocumentId ? [{ id: invoiceDocumentId, ...(invoiceId ? { invoiceId } : {}) }] : [];
-      const allocations = readTransactionAllocations(item);
       const projectedDocuments: LedgerRow["documents"] = own.map((document) => ({ ...document }));
       for (const document of extra) {
         const existing = projectedDocuments.find((candidate) => candidate.id === document.id);
         if (existing) {
           if (document.invoiceId) existing.invoiceId = document.invoiceId;
         } else projectedDocuments.push(document);
-      }
-      for (const alloc of allocations) {
-        if (!alloc.documentId) continue;
-        const existing = projectedDocuments.find((candidate) => candidate.id === alloc.documentId);
-        if (existing) {
-          if (alloc.invoiceId && !existing.invoiceId) existing.invoiceId = alloc.invoiceId;
-        } else {
-          projectedDocuments.push({
-            id: alloc.documentId,
-            ...(alloc.invoiceId ? { invoiceId: alloc.invoiceId } : {}),
-          });
-        }
       }
       return {
         id: String(item.id),
@@ -299,7 +285,6 @@ export function ledgerRowsFrom(transactions: Array<Record<string, unknown>>, lin
         ...(item.statementRef ? { statementRef: String(item.statementRef) } : {}),
         ...(item.invoiceNumber ? { invoiceNumber: String(item.invoiceNumber) } : {}),
         ...(item.sourceType ? { sourceType: String(item.sourceType) } : {}),
-        ...(allocations.length > 0 ? { allocations } : {}),
         documents: projectedDocuments,
       };
     });
@@ -1070,43 +1055,6 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
       if (document.invoiceId && !invoiceSources.has(document.invoiceId)) {
         invoiceSources.set(document.invoiceId, await confirmedInvoiceSource(client, document));
       }
-    }
-    const allocations = row.ledger.allocations || [];
-    for (const alloc of allocations) {
-      if (!alloc.documentId || seenDocuments.has(alloc.documentId)) continue;
-      const raw = await getRawDocument(client, alloc.documentId);
-      const checksum = sourceChecksum(raw?.sha256);
-      const allocDate = alloc.transactionDate || row.ledger.date;
-      const allocCurrency = alloc.currency || row.ledger.currency;
-      const allocInvoiceNumber = alloc.invoiceNumber || row.ledger.invoiceNumber;
-      if (!raw) {
-        const invoice = alloc.invoiceId ? invoiceSources.get(alloc.invoiceId) : null;
-        if (!invoice) {
-          seenDocuments.add(alloc.documentId);
-          blockers.push({ rowId: row.id, reference: alloc.invoiceId || alloc.documentId, reason: "expected invoice document is missing or cannot be safely resolved" });
-          continue;
-        }
-        seenDocuments.add(alloc.documentId);
-        if (invoice.checksum && seenSourceChecksums.has(invoice.checksum)) continue;
-        entries.push({
-          path: naming.packagePath(period, folder, naming.documentName({ date: allocDate, counterparty: alloc.counterparty, documentNumber: allocInvoiceNumber, amount: alloc.amount, currency: allocCurrency, filename: String(invoice.filename || "invoice.pdf") })),
-          kind: "invoice", invoiceId: invoice.invoiceId, rowId: row.id,
-          ...(invoice.filename ? { originalFilename: String(invoice.filename) } : {}),
-        });
-        if (invoice.checksum) seenSourceChecksums.add(invoice.checksum);
-        continue;
-      }
-      if (checksum && seenSourceChecksums.has(checksum)) {
-        seenDocuments.add(alloc.documentId);
-        continue;
-      }
-      seenDocuments.add(alloc.documentId);
-      entries.push({
-        path: naming.packagePath(period, folder, naming.documentName({ date: allocDate, counterparty: alloc.counterparty, documentNumber: allocInvoiceNumber, amount: alloc.amount, currency: allocCurrency, filename: String(raw.originalFilename || "x.pdf") })),
-        kind: "invoice", documentId: alloc.documentId, rowId: row.id,
-        ...(raw.originalFilename ? { originalFilename: String(raw.originalFilename) } : {}),
-      });
-      if (checksum) seenSourceChecksums.add(checksum);
     }
     for (const document of row.documents) {
       if (seenDocuments.has(document.id)) continue;
