@@ -9,7 +9,6 @@ import { createBookkeepingReports } from "./bookkeeping-reporting.js";
 import {
   accountsOf,
   CLASSIFICATION_FIELDS,
-  detailMarkup,
   emptyLedgerMarkup,
   filterEntries,
   filtersFromParams,
@@ -25,11 +24,13 @@ import {
   vocabulary,
 } from "./bookkeeping-ledger.js";
 import { mountInvoiceReview } from "./invoices.js";
+import { createBookkeepingTransactionModal } from "./bookkeeping-transaction-modal.js";
 import { openBookkeepingDialog } from "./bookkeeping-dialogs.js";
 import { createBookkeepingFinance } from "./bookkeeping-vat.js";
 import { html } from "./shared.js";
 import {
   FIELD_LABELS,
+  formatAmount,
   latestActivityMonth,
   MONEY_PATTERN,
   monthLabel,
@@ -81,12 +82,11 @@ export function createBookkeepingSurface(context) {
     const loadTuition = createTuitionLoader(surface.querySelector("[data-tuition]"), context, initial.get("agreement"));
     let vocab = {};
     const suggestions = suggestionLoader({ load: (id) => api(`/transactions/${encodeURIComponent(id)}/suggestions`),
-      holder: (id) => (selectedId === id ? detail.querySelector("[data-suggestions]") : null),
+      holder: (id) => (selectedId === id ? transactionDialog.querySelector("[data-suggestions]") : null),
       render: (result) => suggestionsMarkup({ suggestions: result, humanize: humanizeOptionLabel, e: escapeHtml }) });
 
     const ledger = surface.querySelector(".bookkeeping-ledger"),
-      split = surface.querySelector("[data-bk-split]"),
-      detail = surface.querySelector("[data-detail]"),
+      transactionDialog = surface.querySelector("#bookkeeping-transaction-dialog"),
       entryDialog = surface.querySelector(".bookkeeping-entry-dialog"),
       form = entryDialog.querySelector("form"),
       status = surface.querySelector("[data-bookkeeping-status]");
@@ -162,15 +162,12 @@ export function createBookkeepingSurface(context) {
       renderFilterOptions();
       renderLedger();
       void financeSummary.ensure();
-      renderDetail();
       if (view === "package") renderPackageReview();
       syncUrl();
     }
     function renderView() {
       surface.dataset.bkView = view || "transactions";
       surface.querySelector("[data-bk-main]").hidden = Boolean(view);
-      // The split also hides, so the page scrolls normally in a secondary view.
-      split.hidden = Boolean(view);
       surface.classList.toggle("dk-fill", !view);
       surface.querySelectorAll("[data-secondary]").forEach((section) => {
         section.hidden = section.dataset.secondary !== view;
@@ -238,45 +235,22 @@ export function createBookkeepingSurface(context) {
     function selectedEntry() {
       return entries.find((entry) => entry.id === selectedId) || null;
     }
-    function renderDetail() {
-      const entry = selectedEntry();
-      split.dataset.pane = entry ? "open" : "closed";
-      split.dataset.view = entry ? "detail" : "list";
-      detail.hidden = !entry;
-      if (!entry) {
-        detail.innerHTML = "";
-        return;
-      }
-      const attached = links
-        .filter((l) => l.transactionId === entry.id && l.coverageType === "evidence")
+    function attachedDocuments(id) {
+      return links
+        .filter((l) => l.transactionId === id && l.coverageType === "evidence")
         .map((l) => documents.find((d) => d.id === l.documentId))
         .filter(Boolean);
-      detail.innerHTML = detailMarkup({
-        entry,
-        documents: attached,
-        vocab,
-        humanize: humanizeOptionLabel,
-        e: escapeHtml,
-      });
-      suggestions.show(entry.id);
     }
     function openTransaction(id) {
+      const entry = entries.find((e) => e.id === id);
+      if (!entry) return;
       selectedId = id;
-      renderDetail();
       ledger.querySelectorAll("[data-tx]").forEach((row) => {
         if (row.dataset.tx === id) row.setAttribute("aria-selected", "true");
         else row.removeAttribute("aria-selected");
       });
       syncUrl();
-      globalThis.dakitSplit?.show?.(split, "detail");
-    }
-    function closeTransaction() {
-      const previous = selectedId;
-      selectedId = "";
-      renderDetail();
-      ledger.querySelector('[aria-selected="true"]')?.removeAttribute("aria-selected");
-      syncUrl();
-      ledger.querySelector(`[data-open-tx="${CSS?.escape ? CSS.escape(previous) : previous}"]`)?.focus?.();
+      transactionModal.render(entry);
     }
     function replaceEntry(saved) {
       entries = entries.some((e) => e.id === saved.id)
@@ -466,7 +440,10 @@ export function createBookkeepingSurface(context) {
       financeSummary.invalidate();
       renderLedger();
       void financeSummary.ensure();
-      renderDetail();
+      if (selectedId && transactionDialog.open) {
+        const entry = entries.find((e) => e.id === selectedId);
+        if (entry) transactionModal.render(entry);
+      }
       if (view === "package") renderPackageReview();
     }
     async function refreshInvoiceCount() {
@@ -478,6 +455,31 @@ export function createBookkeepingSurface(context) {
         // The count is a hint; the view itself reports load failures.
       }
     }
+
+    const transactionModal = createBookkeepingTransactionModal({
+      dialog: transactionDialog,
+      request,
+      workApiUrl,
+      api,
+      escapeHtml,
+      formatAmount,
+      suggestions,
+      getSelectedId: () => selectedId,
+      getEntry: (id) => entries.find((entry) => entry.id === id) || null,
+      getFinanceEntry: (id) => financeSummary.entryMap().get(id) || null,
+      getAttached: attachedDocuments,
+      openDocument: (id) => viewDocument(id),
+      refreshEvidence,
+      safeAction,
+      setStatus: (text) => {
+        status.textContent = text;
+      },
+      onClose: () => {
+        selectedId = "";
+        ledger.querySelector('[aria-selected="true"]')?.removeAttribute("aria-selected");
+        syncUrl();
+      },
+    });
 
     const navigation = mountBookkeepingNavigation({
       surface, status, setLens, lensEntries, todayIsoDate,
@@ -544,75 +546,7 @@ export function createBookkeepingSurface(context) {
         const row = select.closest("[data-tx]");
         row?.classList.toggle("is-uncategorised", needsCategory(entry));
         status.textContent = `Saved ${entry.counterparty}.`;
-        if (selectedId === id) renderDetail();
       }, "Could not save");
-    });
-    detail.addEventListener("click", (event) => {
-      if (event.target.closest("[data-close-detail]")) closeTransaction();
-      const documentId = event.target.closest("[data-view-document]")?.dataset.viewDocument;
-      if (documentId) safeAction(() => viewDocument(documentId), "Could not open the file");
-      const suggested = event.target.closest("[data-attach-suggestion]");
-      if (suggested) {
-        const link = { documentId: suggested.dataset.attachSuggestion, transactionId: selectedId, coverageType: "evidence" };
-        safeAction(async () => {
-          await api("/links", { method: "POST", body: JSON.stringify(link) });
-          await refreshEvidence();
-          status.textContent = "Attached the suggested file.";
-        }, "Could not attach the file");
-      }
-      const del = event.target.closest("[data-delete]")?.dataset.delete;
-      if (del) {
-        const dialog = surface.querySelector(".bookkeeping-delete-dialog"),
-          item = entries.find((e) => e.id === del);
-        dialog.dataset.id = del;
-        dialog.querySelector("[data-delete-entry-name]").textContent =
-          item?.counterparty || "This transaction";
-        openBookkeepingDialog(dialog);
-      }
-    });
-    detail.addEventListener("change", (event) => {
-      const attach = event.target.closest("[data-attach-file]");
-      if (attach) {
-        const file = attach.files?.[0];
-        if (!file) return;
-        const id = selectedId;
-        safeAction(async () => {
-          status.textContent = "Uploading…";
-          const outcome = await uploadPdf({
-            file,
-            documentType: detail.querySelector("[data-attach-type]").value,
-            transactionId: id,
-          });
-          await refreshEvidence();
-          status.textContent = outcome === "existing" ? "That PDF was already on file; attached it." : "PDF attached.";
-        }, "Could not attach the PDF");
-        return;
-      }
-      const field = event.target.closest("[data-detail-form] [name]");
-      if (!field) return;
-      const id = detail.querySelector("[data-detail-form]").dataset.id;
-      const holder = field.closest("[data-field]");
-      const errorNote = holder?.querySelector("[data-field-error]");
-      if (errorNote) errorNote.textContent = "";
-      field.removeAttribute("aria-invalid");
-      safeAction(async () => {
-        const result = await saveField(id, field.name, field.value);
-        if (result.error) {
-          field.setAttribute("aria-invalid", "true");
-          if (errorNote) errorNote.textContent = result.error;
-          return;
-        }
-        if (result.unchanged) return;
-        holder?.classList.add("is-saved");
-        status.textContent = `Saved ${FIELD_LABELS[field.name] || field.name}.`;
-        renderLedger();
-        // Amount, currency and direction change the summary line.
-        if (["amount", "amountEur", "currency", "entryType", "counterparty", "transactionDate"].includes(field.name))
-          renderDetail();
-      }, "Could not save");
-    });
-    detail.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") closeTransaction();
     });
 
     const more = surface.querySelector("[data-more]");
@@ -722,28 +656,11 @@ export function createBookkeepingSurface(context) {
         if (month && lens !== "all" && !inLens(saved, lens)) lens = month;
         selectedId = saved.id;
         renderAll();
-        status.textContent = "Transaction added. Fill in the rest here.";
+        status.textContent = "Transaction added.";
+        transactionModal.render(saved);
       }, "Could not add the transaction");
     });
-    surface
-      .querySelector("[data-delete-cancel]")
-      .addEventListener("click", () =>
-        surface.querySelector(".bookkeeping-delete-dialog").close(),
-      );
-    surface
-      .querySelector("[data-delete-confirm]")
-      .addEventListener("click", () =>
-        safeAction(async () => {
-          const dialog = surface.querySelector(".bookkeeping-delete-dialog");
-          await api(`/transactions/${dialog.dataset.id}`, { method: "DELETE" });
-          entries = entries.filter((e) => e.id !== dialog.dataset.id);
-          financeSummary.invalidate();
-          if (selectedId === dialog.dataset.id) selectedId = "";
-          dialog.close();
-          renderAll();
-          status.textContent = "Transaction deleted.";
-        }, "Could not delete the transaction"),
-      );
+
     surface
       .querySelector("[data-setup-accounts]")
       .addEventListener("click", () =>
@@ -875,6 +792,7 @@ export function createBookkeepingSurface(context) {
       if (linked && !inLens(linked, lens)) lens = monthOf(linked) || lens;
       renderAll();
       await refreshEvidence();
+      if (selectedId) openTransaction(selectedId);
       if (view === "package") await renderVat();
       refreshInvoiceCount();
     } catch (error) {
