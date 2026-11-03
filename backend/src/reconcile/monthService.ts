@@ -36,7 +36,6 @@ import {
   type BankTx,
   type ClassificationRule,
   type ExceptionKind,
-  type LedgerDocument,
   type LedgerRow,
   type ManualDecisions,
   type MonthTable,
@@ -243,7 +242,7 @@ const signed = (amount: unknown, entryType: unknown) => {
 };
 
 export function ledgerRowsFrom(transactions: Array<Record<string, unknown>>, links: Array<Record<string, unknown>>): LedgerRow[] {
-  const documents = new Map<string, LedgerDocument[]>();
+  const documents = new Map<string, LedgerRow["documents"]>();
   for (const link of links) {
     if (link.coverageType !== "evidence") continue;
     const list = documents.get(String(link.transactionId)) || [];
@@ -785,7 +784,7 @@ function sourceChecksum(value: unknown): string | undefined {
   return /^[a-f0-9]{64}$/.test(checksum) ? checksum : undefined;
 }
 
-async function confirmedInvoiceSource(client: DynamoDBDocumentClient, document: LedgerDocument) {
+async function confirmedInvoiceSource(client: DynamoDBDocumentClient, document: LedgerRow["documents"][number]) {
   if (!document.invoiceId) return null;
   const invoice = await getInvoice(client, document.invoiceId);
   if (!invoice || invoice.status !== "confirmed") return null;
