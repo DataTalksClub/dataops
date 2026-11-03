@@ -1,12 +1,47 @@
 import {describe,it} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {existsSync,mkdtempSync,rmSync,statSync,utimesSync,writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {KnowledgeStore,RevisionConflict,KnowledgeError,normalizeRepoPath,bounded} from '../src/docs/knowledgeStore';
 import {KnowledgeJobs} from '../src/knowledge/worker';
 import {syntheticKnowledge} from './helpers/knowledge';
 
 describe('immutable S3 knowledge publications',()=>{
+ it('reuses unchanged payloads across publication revisions and prunes stale revision caches',async()=>{
+  const dir=mkdtempSync(resolve('../.tmp/knowledge-cache-test-'));
+  try {
+   const {store,s3,publication}=syntheticKnowledge({'content/a.md':'unchanged','content/b.md':'before'},dir);
+   await store.sync();
+   const firstRoot=store.root;const firstRevision=store.revision;
+   const unchangedInode=statSync(store.localPath('content/a.md')).ino;
+   const saved=await store.publish([{path:'content/b.md',bytes:'after'}],publication.revision,'actor','Edit');
+   const beforeSync=s3.calls.filter(call=>call.name==='GetObjectCommand'&&String(call.input.Key).startsWith('objects/')).length;
+   await store.sync();
+   const afterSync=s3.calls.filter(call=>call.name==='GetObjectCommand'&&String(call.input.Key).startsWith('objects/')).length;
+   assert.equal(afterSync-beforeSync,1,'only the changed payload is downloaded for the new revision');
+   assert.equal(statSync(store.localPath('content/a.md')).ino,unchangedInode,'unchanged files share the immutable cached payload');
+   assert.equal(await store.readFile('content/b.md'),'after');
+
+   const staleRoot=resolve(dir,firstRevision);const old=new Date(Date.now()-5*60_000);
+   utimesSync(staleRoot,old,old);
+   await store.refreshTree();await store.sync();
+   assert.equal(existsSync(staleRoot),false,'expired revision directories are removed on sync');
+   assert.ok(existsSync(store.root));
+   assert.notEqual(store.root,firstRoot);
+   assert.equal(store.revision,saved.revision);
+  } finally {rmSync(dir,{recursive:true,force:true});}
+ });
+ it('repairs truncated hydrated files instead of treating them as cached',async()=>{
+  const dir=mkdtempSync(resolve('../.tmp/knowledge-cache-test-'));
+  try {
+   const {store,publication}=syntheticKnowledge({'content/a.md':'complete payload'},dir);
+   await store.sync();
+   writeFileSync(store.localPath('content/a.md'),'');
+   await store.refreshTree();await store.sync();
+   assert.equal(await store.readFile('content/a.md'),'complete payload');
+   assert.equal(statSync(store.localPath('content/a.md')).size,publication.entries['content/a.md'].size);
+  } finally {rmSync(dir,{recursive:true,force:true});}
+ });
  it('pins coherent reads, rejects competing edits, publishes rename atomically and recovers deletion',async()=>{
   const dir=mkdtempSync(resolve('../.tmp/knowledge-test-'));
   try {
