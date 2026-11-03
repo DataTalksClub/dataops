@@ -271,29 +271,12 @@ export function readTab(tab, rows) {
 }
 
 /**
- * Every tab of the spreadsheet through the Sheets API (read-only GET). Numbers
- * come unformatted, so a cell shown as "15,204" still syncs as 15203.78;
- * dates come as the sheet displays them.
+ * Every `<tab>.csv` in a directory: an offline export of the same sheet. The
+ * exporter must write raw numeric cells and preserve formatted date strings;
+ * this parser cannot recover precision already rounded into a displayed value.
+ * The filename is the tab identity, so the exporter must also keep sanitized
+ * filenames unique before writing files to this directory.
  */
-export async function fetchSheet(spreadsheetId, accessToken, fetchImpl = fetch) {
-  const base = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}`;
-  const get = async (url) => {
-    const response = await fetchImpl(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-    if (!response.ok) throw new Error(`Google Sheets answered HTTP ${response.status}; check the sheet id and the token's account.`);
-    return response.json();
-  };
-  const meta = await get(`${base}?fields=sheets.properties.title`);
-  const titles = (meta.sheets || []).map((sheet) => sheet.properties.title);
-  if (!titles.length) throw new Error("The spreadsheet has no tabs.");
-  const query = new URLSearchParams({ valueRenderOption: "UNFORMATTED_VALUE", dateTimeRenderOption: "FORMATTED_STRING" });
-  for (const title of titles) query.append("ranges", `'${title.replace(/'/g, "''")}'`);
-  const values = await get(`${base}/values:batchGet?${query}`);
-  return (values.valueRanges || []).flatMap((range, index) =>
-    readTab(titles[index], (range.values || []).map((row) => row.map((cell) => (cell === null || cell === undefined ? "" : String(cell))))),
-  );
-}
-
-/** Every `<tab>.csv` in a directory: an offline export of the same sheet. */
 export function readSheetDir(dir) {
   const files = readdirSync(dir).filter((name) => name.toLowerCase().endsWith(".csv")).sort();
   if (!files.length) throw new Error(`No .csv files in ${dir}: export the sheet with one CSV per tab first.`);

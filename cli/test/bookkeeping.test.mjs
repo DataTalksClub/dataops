@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -156,26 +156,66 @@ test("sync is a dry run until --apply, then creates and updates through the API"
   assert.equal(calls.filter((call) => call.method === "POST").length, 6);
 });
 
-test("sync --sheet reads every tab through the Sheets API with the dapier token", async () => {
-  const google = [];
-  const portal = fakePortal({ "GET /api/bookkeeping/transactions": { items: [] } });
-  const portalFetch = globalThis.fetch;
-  globalThis.fetch = async (url, options = {}) => {
-    if (!String(url).startsWith("https://sheets.googleapis.com/")) return portalFetch(url, options);
-    google.push({ url: String(url), auth: options.headers?.Authorization });
-    if (String(url).includes("?fields=")) return new Response(JSON.stringify({ sheets: [{ properties: { title: "2026" } }] }));
-    return new Response(JSON.stringify({ valueRanges: [{ values: sheet.parseCsv(CURRENT).map((row) => row.map((cell) => (/^-?\d+(\.\d+)?$/.test(cell) ? Number(cell) : cell))) }] }));
+test("CSV importer dry-run contract preserves raw amount precision and formatted dates", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "bookkeeping-precision-pull-"));
+  writeFileSync(path.join(dir, "2026.csv"), [
+    'Date sent,Date paid,Provider,What,"Price, EUR",Entry Type',
+    "2 Sep 2026,2 Sep 2026,Example Precision Vendor,Annual license,-15203.78,Expense",
+  ].join("\n"));
+  try {
+    const [row] = sheet.readSheetDir(dir);
+    assert.equal(row.record.transactionDate, "2026-09-02");
+    assert.equal(row.record.paidDate, "2026-09-02");
+    assert.equal(row.record.amount, "15203.78");
+    const existing = { id: "ledger-precision", sourceType: "spreadsheet", sourceKey: row.sourceKey, ...row.record };
+    const calls = fakePortal({ "GET /api/bookkeeping/transactions": { items: [existing] } });
+    const io = captureIo();
+
+    assert.equal(await run(["bookkeeping", "sync", dir, "--json"], io), 0);
+    assert.deepEqual(io.json().counts, {
+      sheetRows: 1, create: 0, update: 0, locked: 0, unchanged: 1, orphans: 0, skipped: 0,
+    });
+    assert.deepEqual(calls.map((call) => call.method), ["GET"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("sync --sheet fails closed without reading a token or making a request", async () => {
+  const originalEnv = process.env;
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  let tokenReads = 0;
+  const guardedEnv = new Proxy(originalEnv, {
+    get(target, property, receiver) {
+      if (property === "DAPIER_ACCESS_TOKEN") {
+        tokenReads += 1;
+        throw new Error("test caught an attempted Google token read");
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  Object.defineProperty(process, "env", { configurable: true, enumerable: true, writable: true, value: guardedEnv });
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    return new Response("unexpected request", { status: 500 });
   };
-  process.env.DAPIER_ACCESS_TOKEN = "google-test-token";
   try {
     const io = captureIo();
-    assert.equal(await run(["bookkeeping", "sync", "--sheet", "sheet-id", "--json"], io), 0);
-    assert.equal(io.json().counts.create, 3);
-    assert.ok(google.every((call) => call.auth === "Bearer google-test-token"));
-    assert.match(google[1].url, /UNFORMATTED_VALUE/);
-    assert.equal(portal.length, 1);
+    assert.equal(await run(["bookkeeping", "sync", "--sheet", "synthetic-sheet-id"], io), 2);
+    assert.equal(tokenReads, 0);
+    assert.deepEqual(requests, []);
+    assert.match(io.errors.join("\n"), /Direct --sheet mode is disabled/);
+    assert.match(io.errors.join("\n"), /Before any pull or sync/);
+    assert.match(io.errors.join("\n"), /git merge-base --is-ancestor 2239cb08 HEAD/);
+    assert.match(io.errors.join("\n"), /Do not export or sync until intake 1d9cf506 confirms the operator path is verified/);
+    assert.match(io.errors.join("\n"), /google-data-pull/);
+    assert.match(io.errors.join("\n"), /bookkeeping sync <csv-dir>/);
+    assert.match(io.errors.join("\n"), /DataOps cannot tell from a CSV whether displayed amounts have been rounded/);
+    assert.match(io.errors.join("\n"), /still accepts --apply for CSV directories/);
   } finally {
-    delete process.env.DAPIER_ACCESS_TOKEN;
+    Object.defineProperty(process, "env", { configurable: true, enumerable: true, writable: true, value: originalEnv });
+    globalThis.fetch = originalFetch;
   }
 });
 
