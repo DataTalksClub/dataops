@@ -188,3 +188,24 @@ test("package preview expands one payment into invoice rows while keeping exempt
   assert.equal(reportRows[3].counterparty, "Synthetic Tax Advisory GmbH");
   assert.equal(reportRows[3].amount, "238.00");
 });
+
+
+test("switching from a month to a year disables package creation", () => {
+  let lens = "2026-10";
+  const nodes = new Map([
+    ["[data-package-review]", { innerHTML: "" }],
+    ["[data-report-month]", { value: "" }],
+    ["[data-report]", { disabled: true }],
+  ]);
+  const reports = createBookkeepingReports({
+    escapeHtml, getAccounts: () => [], getDocuments: () => [], getLens: () => lens,
+    getLinks: () => [], getReports: () => [], isReportExemptEntry: () => false,
+    lensEntries: () => [], surface: { querySelector: (selector) => nodes.get(selector) },
+  });
+  reports.renderPackageReview();
+  assert.equal(nodes.get("[data-report]").disabled, false);
+  lens = "2026";
+  reports.renderPackageReview();
+  assert.equal(nodes.get("[data-report]").disabled, true);
+  assert.match(nodes.get("[data-package-review]").innerHTML, /Choose a month/);
+});
