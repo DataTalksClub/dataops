@@ -6,6 +6,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { handler } from '../src/handler';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
+import { contractTokenHash, createContract, updateContract } from '../src/db/sponsorContracts';
 import { createUserWithId } from '../src/db/users';
 import { setContractEmailDepsForTests } from '../src/sponsorContracts/emailDelivery';
 import { renderContractPdf, sha256Hex } from '../src/sponsorContracts/pdf';
@@ -391,5 +392,113 @@ describe('sponsor contracts', () => {
     assert.ok(finalized.signedPdf?.sha256);
     const agreed = await invoke('PUT', '/api/sponsor-crm/deals/' + deal.id, { version: deal.version, status: 'agreed' });
     assert.equal(agreed.statusCode, 200, agreed.body);
+  });
+
+  it('refuses backdated today at creation and at signing even when synthetic startDate predates createdAt', async () => {
+    const { deal } = await seededDeal();
+
+    // Caller-supplied backdated query.today or body.today cannot create a contract with startDate before createdAt or < 30 days ahead.
+    const backdatedCreateQuery = await invoke('POST', '/api/sponsor-crm/contracts?today=' + day(-60), {
+      dealId: deal.id,
+      terms: { ...termsFor(), startDate: day(-15), endDate: day(60) },
+    });
+    assert.equal(backdatedCreateQuery.statusCode, 400, backdatedCreateQuery.body);
+    assert.match(String(data(backdatedCreateQuery).error), /lead time/);
+
+    const backdatedCreateBody = await invoke('POST', '/api/sponsor-crm/contracts', {
+      dealId: deal.id,
+      today: day(-60),
+      terms: { ...termsFor(), startDate: day(10), endDate: day(90) },
+    });
+    assert.equal(backdatedCreateBody.statusCode, 400, backdatedCreateBody.body);
+    assert.match(String(data(backdatedCreateBody).error), /lead time/);
+
+    // Seed a synthetic contract record whose terms.startDate predates createdAt.
+    const synthetic = await createContract(client, {
+      dealId: deal.id,
+      organizationId: deal.organizationId,
+      status: 'draft',
+      terms: { ...termsFor(), startDate: day(-15), endDate: day(60), signingOrder: 'sponsor-first' },
+      signers: [
+        { role: 'sponsor', name: 'Sponsor Person', email: 'sponsor@example.test', order: 0 },
+        { role: 'counter', name: 'Alexey Grigorev (DataTalks.Club)', email: 'alexey@datatalks.club', order: 1 },
+      ],
+    }, USER_ID);
+    assert.ok(String(synthetic.terms.startDate) < berlinDate(new Date(String(synthetic.createdAt))));
+
+    process.env.DAPIER_API_TOKEN = 'test-token';
+    setContractEmailDepsForTests({ fetchImpl: (async () => new Response(JSON.stringify({ access_token: 'tok' }), { status: 200 })) as any });
+    const sent = data(await invoke('POST', '/api/sponsor-crm/contracts/' + synthetic.id + '/send', { expiresDays: 14 }));
+    const sponsorToken = new URL(sent.signingUrls.sponsor).searchParams.get('token');
+    const counterToken = new URL(sent.signingUrls.counter).searchParams.get('token');
+    const auditBefore = data(await invoke('GET', '/api/sponsor-crm/contracts/' + synthetic.id + '/audit'));
+
+    // First signer cannot bypass wall-clock lead time by backdating query.today or body.today when startDate < createdAt.
+    const firstSignBackdatedQuery = await invoke(
+      'POST',
+      '/api/sponsor-crm/contracts/' + synthetic.id + '/sign?today=' + day(-60),
+      { token: sponsorToken },
+      { 'x-forwarded-for': '10.0.3.1', 'user-agent': 'BackdateSponsorQuery/1.0' },
+    );
+    assert.equal(firstSignBackdatedQuery.statusCode, 409, firstSignBackdatedQuery.body);
+    assert.equal(data(firstSignBackdatedQuery).code, 'contract_lead_time_expired');
+
+    const firstSignBackdatedBody = await invoke(
+      'POST',
+      '/api/sponsor-crm/contracts/' + synthetic.id + '/sign',
+      { token: sponsorToken, today: day(-60) },
+      { 'x-forwarded-for': '10.0.3.2', 'user-agent': 'BackdateSponsorBody/1.0' },
+    );
+    assert.equal(firstSignBackdatedBody.statusCode, 409, firstSignBackdatedBody.body);
+    assert.equal(data(firstSignBackdatedBody).code, 'contract_lead_time_expired');
+
+    const afterFirstRefusal = data(await invoke('GET', '/api/sponsor-crm/contracts/' + synthetic.id));
+    assert.equal(afterFirstRefusal.status, 'sent');
+    assert.equal(afterFirstRefusal.signers[0].signedAt, undefined);
+    const auditAfterFirstRefusal = data(await invoke('GET', '/api/sponsor-crm/contracts/' + synthetic.id + '/audit'));
+    assert.deepEqual(auditAfterFirstRefusal.items, auditBefore.items);
+
+    // Even if the first signer was synthetically recorded 60 days ago (>= 30 days before startDate),
+    // the finalizing signer cannot bypass wall-clock signer validation when startDate < createdAt.
+    const earlySignedAt = new Date(Date.parse(day(-60) + 'T12:00:00Z')).toISOString();
+    await updateContract(client, {
+      ...synthetic,
+      version: sent.contract.version,
+      status: 'viewed',
+      sentAt: sent.contract.sentAt,
+    }, {
+      status: 'viewed',
+      signers: [
+        { role: 'sponsor', name: 'Sponsor Person', email: 'sponsor@example.test', order: 0, signedAt: earlySignedAt },
+        {
+          role: 'counter',
+          name: 'Alexey Grigorev (DataTalks.Club)',
+          email: 'alexey@datatalks.club',
+          order: 1,
+          tokenHash: contractTokenHash(String(counterToken)),
+          tokenExpiresAt: sent.contract.signers[1].tokenExpiresAt,
+        },
+      ],
+    });
+
+    const finalSignBackdated = await invoke(
+      'POST',
+      '/api/sponsor-crm/contracts/' + synthetic.id + '/sign?today=' + day(-60),
+      { token: counterToken, today: day(-60) },
+      { 'x-forwarded-for': '10.0.3.3', 'user-agent': 'BackdateCounter/1.0' },
+    );
+    assert.equal(finalSignBackdated.statusCode, 409, finalSignBackdated.body);
+    assert.equal(data(finalSignBackdated).code, 'contract_lead_time_expired');
+
+    const afterFinalRefusal = data(await invoke('GET', '/api/sponsor-crm/contracts/' + synthetic.id));
+    assert.equal(afterFinalRefusal.status, 'viewed');
+    assert.equal(afterFinalRefusal.signedAt, undefined);
+    assert.equal(afterFinalRefusal.signedPdf, undefined);
+    assert.equal(afterFinalRefusal.signers[0].signedAt, earlySignedAt);
+    assert.equal(afterFinalRefusal.signers[1].signedAt, undefined);
+
+    const refusedAgreed = await invoke('PUT', '/api/sponsor-crm/deals/' + deal.id, { version: deal.version, status: 'agreed' });
+    assert.equal(refusedAgreed.statusCode, 422);
+    assert.equal(data(refusedAgreed).code, 'signed_contract_required');
   });
 });
