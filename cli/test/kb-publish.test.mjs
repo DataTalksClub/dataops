@@ -44,6 +44,16 @@ describe("derived documents", () => {
     assert.equal(isDerivedDocument("content/a/image.png", b(VIEW)), false);
   });
 
+  test("normalises a leading UTF-8 BOM before frontmatter matching", () => {
+    const b = (text) => Buffer.from(text);
+    const bom = "\ufeff";
+    assert.equal(isDerivedDocument("content/a/course-workflow.md", b(bom + VIEW)), true);
+    assert.equal(isDerivedDocument("content/a/document-index.md", b(bom + INDEX)), true);
+    assert.equal(isDerivedDocument("content/a/system-overview.md", b(bom + SYSTEM)), true);
+    assert.equal(isDerivedDocument("content/a/system-overview.md", b(bom + HUMAN_SYSTEM)), false);
+    assert.equal(isDerivedDocument("content/a/sop.md", b(bom + "---\nid: sop.a\n---\nbody")), false);
+  });
+
   test("a prod regeneration Git has never seen is published over, while human edits still conflict", async () => {
     const files = new Map(Object.entries({ "content/view.md": VIEW, "content/human.md": "git v2" })
       .map(([file, body]) => [file, { bytes: Buffer.from(body), sha: h(body) }]));

@@ -9,9 +9,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { ParseError, parse, parseFrontmatter } from '../src/docs/sop/parse';
+import { ParseError, parse, parseFrontmatter, splitFrontmatter, stripBom } from '../src/docs/sop/parse';
+import { lintText } from '../src/docs/sop/lint';
 import { buildRegistry, resolveReference } from '../src/docs/docRegistry';
-import { configureDocsRuntime, handleDocsRoutes, resetDocsRuntime } from '../src/docs/contentApi';
+import { configureDocsRuntime, handleDocsRoutes, resetDocsRuntime, updateFrontmatterParent } from '../src/docs/contentApi';
 import { syntheticKnowledge } from './helpers/knowledge';
 import type { LambdaEvent } from '../src/types';
 
@@ -197,5 +198,85 @@ describe('docs API with a colliding alias in one document', () => {
       "alias 'content/example/sops/old-name.md' from content/example/sops/new-name.md " +
         'conflicts with path from content/example/sops/old-name.md',
     ]);
+  });
+});
+
+describe('UTF-8 BOM normalization before frontmatter parsing', () => {
+  const BOM = '\ufeff';
+  const DOC = '---\nid: sop.example.bom-parity\ntitle: BOM parity\ndoc_type: sop\n---\n\n# BOM parity\n';
+  const MALFORMED = '---\ntitle: [unclosed\n---\n\nbody\n';
+
+  it('strips only a single leading BOM', () => {
+    assert.equal(stripBom(`${BOM}---\n`), '---\n');
+    assert.equal(stripBom(DOC), DOC);
+    assert.equal(stripBom('a' + BOM + 'b'), 'a' + BOM + 'b');
+  });
+
+  it('parses BOM-prefixed frontmatter identically to the plain form', () => {
+    assert.deepEqual(splitFrontmatter(`${BOM}${DOC}`), splitFrontmatter(DOC));
+    assert.deepEqual(parse(`${BOM}${DOC}`), parse(DOC));
+    assert.equal(parse(`${BOM}${DOC}`).frontmatter.id, 'sop.example.bom-parity');
+  });
+
+  it('returns BOM-prefixed bodies without frontmatter untouched', () => {
+    assert.deepEqual(splitFrontmatter(`${BOM}# Just a heading\n`), ['', `${BOM}# Just a heading\n`]);
+    assert.deepEqual(splitFrontmatter(''), ['', '']);
+  });
+
+  it('rejects malformed frontmatter consistently with and without a BOM', () => {
+    const without = (() => {
+      try {
+        parse(MALFORMED);
+      } catch (error) {
+        return error;
+      }
+      return null;
+    })();
+    const withBom = (() => {
+      try {
+        parse(`${BOM}${MALFORMED}`);
+      } catch (error) {
+        return error;
+      }
+      return null;
+    })();
+    assert.ok(without instanceof ParseError);
+    assert.ok(withBom instanceof ParseError);
+    assert.equal(withBom.toString(), without.toString());
+    assert.deepEqual(lintText(`${BOM}${MALFORMED}`), lintText(MALFORMED));
+    assert.deepEqual(lintText(`${BOM}${DOC}`), lintText(DOC));
+  });
+
+  it('keeps the stable frontmatter id for BOM-prefixed registry documents', () => {
+    const root = mkdtempSync(join(tmpdir(), 'frontmatter-bom-'));
+    try {
+      const contentRoot = join(root, 'content');
+      const plainDoc = DOC.replace('sop.example.bom-parity', 'sop.example.plain-doc');
+      writeDoc(contentRoot, 'example/sops/plain.md', plainDoc);
+      writeDoc(contentRoot, 'example/sops/bom.md', `${BOM}${DOC}`);
+      const registry = buildRegistry(contentRoot);
+      const plain = registry.byPath.get('content/example/sops/plain.md');
+      const bom = registry.byPath.get('content/example/sops/bom.md');
+      assert.ok(plain && bom);
+      assert.equal(plain.id, 'sop.example.plain-doc');
+      assert.equal(bom.id, 'sop.example.bom-parity');
+      assert.equal(bom.id_source, 'frontmatter');
+      assert.equal(plain.id_source, 'frontmatter');
+      assert.equal(bom.title, plain.title);
+      assert.deepEqual(bom.tags, plain.tags);
+      assert.deepEqual(registry.violations, []);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('updates the parent of BOM-prefixed documents without dropping the BOM', () => {
+    const updated = updateFrontmatterParent(`${BOM}${DOC}`, 'sop.example.parent');
+    assert.ok(updated.startsWith(BOM));
+    assert.match(updated, /^parent: "sop\.example\.parent"$/m);
+    assert.equal(parse(updated).frontmatter.id, 'sop.example.bom-parity');
+    const cleared = updateFrontmatterParent(updated, null);
+    assert.ok(cleared.startsWith(BOM));
+    assert.doesNotMatch(cleared, /^parent:/m);
   });
 });

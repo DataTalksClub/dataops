@@ -1006,27 +1006,29 @@ async function moveDoc(rt: DocsRuntime, body: Record<string, unknown>, actor: st
 }
 
 export function updateFrontmatterParent(content: string, parentId: string | null): string {
-  if (!content.startsWith('---\n') && !content.startsWith('---\r\n')) {
+  const bom = content.charCodeAt(0) === 0xfeff ? '\ufeff' : '';
+  const text = bom ? content.slice(1) : content;
+  if (!text.startsWith('---\n') && !text.startsWith('---\r\n')) {
     if (parentId) {
-      return `---\nparent: "${parentId}"\n---\n\n${content}`;
+      return `${bom}---\nparent: "${parentId}"\n---\n\n${text}`;
     }
     return content;
   }
 
-  const isCrlf = content.startsWith('---\r\n');
+  const isCrlf = text.startsWith('---\r\n');
   const newline = isCrlf ? '\r\n' : '\n';
   const startIdx = isCrlf ? 5 : 4;
   const closingPattern = `${newline}---`;
-  const endIdx = content.indexOf(closingPattern, startIdx);
+  const endIdx = text.indexOf(closingPattern, startIdx);
   if (endIdx === -1) {
     if (parentId) {
-      return `---\nparent: "${parentId}"\n---\n\n${content}`;
+      return `${bom}---\nparent: "${parentId}"\n---\n\n${text}`;
     }
     return content;
   }
 
-  const rawFm = content.slice(startIdx, endIdx);
-  const rest = content.slice(endIdx + closingPattern.length);
+  const rawFm = text.slice(startIdx, endIdx);
+  const rest = text.slice(endIdx + closingPattern.length);
   const lines = rawFm.split(/\r?\n/);
   const parentLineIdx = lines.findIndex((l) => /^parent\s*:/.test(l));
 
@@ -1050,7 +1052,7 @@ export function updateFrontmatterParent(content: string, parentId: string | null
   }
 
   const newFm = lines.join(newline);
-  return `---${newline}${newFm}${closingPattern}${rest}`;
+  return `${bom}---${newline}${newFm}${closingPattern}${rest}`;
 }
 
 // ── Lint / parse ──────────────────────────────────────────────────────────────

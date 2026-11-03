@@ -55,12 +55,15 @@ const GENERATED_SYSTEM_MARKER = "<!-- This system page is seeded from the audit 
 export function isDerivedDocument(file, bytes) {
   if (!file.endsWith(".md") || !bytes) return false;
   const text = bytes.toString("utf8");
-  if (!text.startsWith("---\n")) return false;
-  const end = text.indexOf("\n---", 4);
+  // A leading UTF-8 BOM is not content: normalize it before frontmatter
+  // matching so BOM-prefixed generated pages classify like their plain form.
+  const body = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  if (!body.startsWith("---\n")) return false;
+  const end = body.indexOf("\n---", 4);
   if (end === -1) return false;
-  const frontmatter = text.slice(4, end);
+  const frontmatter = body.slice(4, end);
   if (DERIVED_ID.test(frontmatter)) return true;
-  return /^doc_type:\s*["']?system-overview["']?\s*$/m.test(frontmatter) && text.slice(end).includes(GENERATED_SYSTEM_MARKER);
+  return /^doc_type:\s*["']?system-overview["']?\s*$/m.test(frontmatter) && body.slice(end).includes(GENERATED_SYSTEM_MARKER);
 }
 
 /** Prod's state before its first version of a path: absent, a state both sides share. */
