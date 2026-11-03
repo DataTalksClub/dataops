@@ -18,7 +18,6 @@ import {
 } from "../db/bookkeeping";
 import { preflightOrganizations } from '../vies/service';
 import { businessAccountRequiresStatement } from "../finance/businessAccounts";
-import { readTransactionAllocations } from "../bookkeepingAllocations";
 import {
   headDocumentObject,
   json,
@@ -113,15 +112,6 @@ export async function handleBookkeepingReportRoutes(
         .filter((link) => excludedTransactionIds.has(String(link.transactionId)))
         .map((link) => String(link.documentId)),
     );
-    for (const tx of transactions) {
-      for (const alloc of readTransactionAllocations(tx)) {
-        if (alloc.documentId) linkedIds.add(alloc.documentId);
-      }
-    }
-    const reportRowCount = transactions.reduce(
-      (sum, tx) => sum + Math.max(1, readTransactionAllocations(tx).length),
-      0,
-    );
     const selectedPrivate = new Set(
       Array.isArray(body?.privateDocumentIds)
         ? body!.privateDocumentIds.map(String)
@@ -155,7 +145,6 @@ export async function handleBookkeepingReportRoutes(
             documentIds: includedDocs.map((d) => d.id),
             reconciliation: {
               transactionCount: transactions.length,
-              reportRowCount,
               excludedTransactionCount: excludedTransactions.length,
               documentCount: includedDocs.length,
               businessStatementCount: accounts.length,
@@ -288,28 +277,10 @@ export async function handleBookkeepingReportRoutes(
       "entryType",
       "statementRef",
     ];
-    const expandedRows = transactions.flatMap((t) => {
-      const allocations = readTransactionAllocations(t);
-      if (allocations.length === 0) return [t];
-      return allocations.map((alloc) => ({
-        ...t,
-        transactionDate: alloc.transactionDate || t.transactionDate,
-        paidDate: alloc.paidDate || t.paidDate || t.transactionDate,
-        counterparty: alloc.counterparty,
-        description: alloc.description,
-        amount: alloc.amount,
-        currency: alloc.currency || t.currency,
-        amountEur: alloc.amountEur ?? (String(alloc.currency || t.currency || "EUR").toUpperCase() === "EUR" ? alloc.amount : ""),
-        vatAmount: alloc.vatAmount ?? "",
-        vatCurrency: alloc.vatCurrency ?? "",
-        category: alloc.category || t.category,
-        documentId: alloc.documentId,
-      }));
-    });
     const csv = Buffer.from(
       columns.join(",") +
         "\n" +
-        expandedRows
+        transactions
           .map((t) => columns.map((c) => csvCell(t[c])).join(","))
           .join("\n") +
         "\n",
