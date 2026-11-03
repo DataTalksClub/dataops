@@ -106,6 +106,12 @@ export async function handleBookkeepingReportRoutes(
         .filter((l) => transactions.some((t) => t.id === l.transactionId))
         .map((l) => String(l.documentId)),
     );
+    const excludedTransactionIds = new Set(excludedTransactions.map((transaction) => String(transaction.id)));
+    const excludedLinkedIds = new Set(
+      links
+        .filter((link) => excludedTransactionIds.has(String(link.transactionId)))
+        .map((link) => String(link.documentId)),
+    );
     const selectedPrivate = new Set(
       Array.isArray(body?.privateDocumentIds)
         ? body!.privateDocumentIds.map(String)
@@ -117,7 +123,7 @@ export async function handleBookkeepingReportRoutes(
           d.statementMonth === month &&
           accounts.some((a) => a.id === d.accountId)) ||
         linkedIds.has(d.id) ||
-        selectedPrivate.has(d.id),
+        (selectedPrivate.has(d.id) && !excludedLinkedIds.has(String(d.id))),
     );
     const reportId = createHash("sha256").update(`report#${month}`).digest("hex");
     const guarded: string[] = [];

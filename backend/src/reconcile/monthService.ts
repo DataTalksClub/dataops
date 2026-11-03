@@ -31,6 +31,7 @@ import {
   EXCEPTION_KINDS,
   EXCEPTION_POLICIES,
   exceptionDigest,
+  isAccountantReportRowExcluded,
   pairAll,
   type BankTx,
   type ClassificationRule,
@@ -274,6 +275,7 @@ export function ledgerRowsFrom(transactions: Array<Record<string, unknown>>, lin
         counterparty: String(item.counterparty || item.description || ""),
         ...(item.description ? { description: String(item.description) } : {}),
         ...(item.category ? { category: String(item.category) } : {}),
+        ...(item.ownerPayType ? { ownerPayType: String(item.ownerPayType) } : {}),
         ...(item.subtype ? { subtype: String(item.subtype) } : {}),
         ...(item.rateSource ? { rateSource: String(item.rateSource) } : {}),
         ...(item.statementRef ? { statementRef: String(item.statementRef) } : {}),
@@ -801,14 +803,15 @@ async function confirmedInvoiceSource(client: DynamoDBDocumentClient, document: 
 /**
  * The month package for the accountant as a manifest: deterministic
  * package paths (see naming.ts) for the report, every statement, each
- * row's invoice/receipt and payment proof. Taxes and health insurance stay
- * out, as in every report sent so far. Building it never sends anything.
+ * reportable row's invoice/receipt and payment proof. Taxes, health insurance,
+ * and confirmed owner withdrawals stay out. Building it never sends anything.
  */
 export async function monthPackage(client: DynamoDBDocumentClient, period: string, options: { draft?: boolean } = {}): Promise<{ period: string; state: MonthRecord["state"]; draft: boolean; entries: PackageEntry[]; blockers: PackageBlocker[]; csv: string }> {
   const view = await buildMonth(client, period);
   if (view.state !== "closed" && !options.draft) throw new MonthGateError(`Month ${period} is open; close it first (or build a draft package)`, []);
   const { REPORT_EXEMPT_CATEGORIES } = await import("../db/bookkeeping");
   const naming = await import("./naming");
+  const ownerWithdrawalsConfirmed = view.exceptionConfirmation?.current === true;
   const entries: PackageEntry[] = [{ path: naming.packagePath(period, null, naming.reportName(period, "csv")), kind: "report" }];
   const blockers: PackageBlocker[] = [];
   const statements = (await listStatements(client)).filter((record) => record.period === period);
@@ -825,7 +828,7 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
   const seenDocuments = new Set<string>();
   const seenSourceChecksums = new Set<string>();
   for (const row of view.rows) {
-    if (row.tax) continue;
+    if (isAccountantReportRowExcluded(row, ownerWithdrawalsConfirmed)) continue;
     if (!row.ledger || REPORT_EXEMPT_CATEGORIES.has(row.ledger.category || "")) continue;
     const folder = Number(row.ledger.amount) > 0 ? "income" : "expenses";
     const invoiceSources = new Map<string, Awaited<ReturnType<typeof confirmedInvoiceSource>>>();
@@ -880,5 +883,5 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
   const unique = naming.uniquePaths(entries.map((entry) => entry.path));
   entries.forEach((entry, index) => { entry.path = unique[index]; });
   const { tableCsv } = await import("./month");
-  return { period, state: view.state, draft: view.state !== "closed", entries, blockers, csv: tableCsv(view) };
+  return { period, state: view.state, draft: view.state !== "closed", entries, blockers, csv: tableCsv(view, { ownerWithdrawalsConfirmed }) };
 }

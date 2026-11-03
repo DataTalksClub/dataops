@@ -22,6 +22,12 @@ export function isOwnerPayRow(row: Record<string, unknown>) {
   return text(row.category).trim().toLowerCase() === OWNER_PAY_CATEGORY.toLowerCase();
 }
 
+/** A stored owner draw stays in the ledger but is omitted from accountant reports. */
+export function isOwnerWithdrawalReportExempt(row: { category?: unknown; ownerPayType?: unknown }) {
+  return text(row.category).trim().toLowerCase() === OWNER_PAY_CATEGORY.toLowerCase()
+    && ownerPayTypeOf(row.ownerPayType) === 'draw';
+}
+
 export type OwnerPayCandidate = { ownerPayType: OwnerPayType; reason: string };
 
 const SALARY = /gesch(?:ä|ae)ftsf(?:ü|ue)hrergehalt|\bgehalt\b|\blohn\b|salary|payroll|verg(?:ü|ue)tung/i;

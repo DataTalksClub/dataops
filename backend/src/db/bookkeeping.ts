@@ -11,6 +11,7 @@ import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { cleanItem } from "./cleanItem";
 import { TABLE_BOOKKEEPING } from "./tableNames";
 import { classifyMandatoryPayment } from "../finance/mandatoryPayments";
+import { isOwnerWithdrawalReportExempt } from "../finance/ownerPay";
 
 export type BookkeepingItem = Record<string, unknown> & {
   id: string;
@@ -23,7 +24,8 @@ export type BookkeepingItem = Record<string, unknown> & {
 export const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance"]);
 export function isReportExemptTransaction(item: Readonly<Record<string, unknown>>) {
   return REPORT_EXEMPT_CATEGORIES.has(String(item.category || ""))
-    || classifyMandatoryPayment(item) !== null;
+    || classifyMandatoryPayment(item) !== null
+    || isOwnerWithdrawalReportExempt(item);
 }
 
 // Raised when a conditional mutation loses its optimistic-concurrency race or
