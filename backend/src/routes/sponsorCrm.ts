@@ -1,5 +1,5 @@
 import { createNote } from '../crmWorkspace/notes';
-import { berlinDate } from '../sponsorFinance/core';
+import { todayOf } from '../crmWorkspace/berlin';
 import { isIndividualTuition } from '../tuition/classification';
 import { sponsorPipeline, PIPELINE_STAGES, PIPELINE_VIEWS, pipelineDateRangeError } from '../sponsorCrm/pipeline';
 import { resolveView } from '../crmWorkspace/views';
@@ -63,10 +63,6 @@ const page = (items: unknown[], event: LambdaEvent) => {
   const query = event.queryStringParameters || {}, limit = Number(query.limit || 50), cursor = Number(query.cursor || 0);
   const sliced = items.slice(cursor, cursor + limit);
   return { items: sliced, nextCursor: cursor + limit < items.length ? String(cursor + limit) : null };
-};
-const todayOf = (event: LambdaEvent) => {
-  const query = event.queryStringParameters || {};
-  return realDate(query.today) ? String(query.today) : berlinDate();
 };
 
 function validateList(event: LambdaEvent) {

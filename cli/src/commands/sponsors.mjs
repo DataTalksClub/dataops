@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { UsageError } from "../errors.mjs";
-import { enc, fields, integer, isoDate, jsonData, optionalString, positional, required, table } from "../format.mjs";
+import { berlinToday, enc, fields, integer, isoDate, jsonData, optionalString, positional, required, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import {
   THANK_YOU_EVIDENCE_LABEL,
@@ -605,7 +605,7 @@ export async function recordThankYou(args, io) {
   const ref = optionalString(args, "ref");
   if (!ref) throw new UsageError(`--ref is required. Usage: ${usage}`);
   const label = optionalString(args, "label") || THANK_YOU_EVIDENCE_LABEL;
-  const on = isoDate(args.date, "date") || new Date().toISOString().slice(0, 10);
+  const on = isoDate(args.date, "date") || berlinToday();
   const api = apiFor(args);
   const [deal, projection] = await Promise.all([
     api.get(`/api/sponsor-crm/deals/${enc(id)}`),

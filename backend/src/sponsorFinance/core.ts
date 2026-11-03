@@ -40,16 +40,7 @@ export function displayMoney(value: bigint): string {
 
 export { realDate } from '../sponsorCrm/model';
 
-export function berlinDate(value = new Date()): string {
-  const parts = new Intl.DateTimeFormat('en', {
-    timeZone: 'Europe/Berlin',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(value);
-  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)!.value;
-  return `${part('year')}-${part('month')}-${part('day')}`;
-}
+export { berlinToday as berlinDate } from '../relativeDates';
 
 export function invoiceIdentity(source: Record<string, unknown>): string {
   if (

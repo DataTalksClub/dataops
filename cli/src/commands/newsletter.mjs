@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { UsageError } from "../errors.mjs";
-import { enc, fields, integer, isoDate, optionalString, positional, table } from "../format.mjs";
+import { berlinToday, enc, fields, integer, isoDate, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { planNewsletterSync, readNewsletterCsv, sheetIssues } from "../newsletterSheet.mjs";
 import { rewriteVerificationUri } from "./auth.mjs";
@@ -691,7 +691,7 @@ export async function sync(args, io) {
   if (!args._[0]) throw new UsageError("Pass a CSV export of the Newsletter tab: `dataops newsletter sync <newsletter.csv>`.");
   const rows = readNewsletterCsv(args._[0]);
   const api = apiFor(args);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = berlinToday();
   const { issues: sheet, skipped } = sheetIssues(rows, today);
   const existing = (await api.get("/api/newsletter-issues", { query: { from: "2000-01-01" } })).items || [];
   const plan = planNewsletterSync(sheet, existing, await allPages(api, "/api/sponsor-crm/organizations"), today);
