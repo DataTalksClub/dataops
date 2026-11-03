@@ -10,7 +10,7 @@ export const EXIT = Object.freeze({
   usage: 2, // bad command, flag, or missing argument; nothing was sent
   auth: 3, // not signed in, token rejected (401), or role forbids it (403)
   notFound: 4, // 404
-  conflict: 5, // 409: the record changed; re-read and retry
+  conflict: 5, // 409: the operation conflicts with current state
   invalid: 6, // 400/422: the API rejected the input
   unavailable: 7, // 5xx or network failure; safe to retry later
 });
@@ -22,7 +22,7 @@ export class UsageError extends Error {
   }
 }
 
-/** The operation would overwrite changes it has not seen; nothing was written. */
+/** The operation conflicts with the current state; nothing was written. */
 export class ConflictError extends Error {
   constructor(message, details) {
     super(message);
@@ -65,8 +65,8 @@ export function errorPayload(error) {
 }
 
 export function hintFor(error) {
-  if (error instanceof ApiError && error.status === 409) {
-    return "The record changed since it was read. Re-read it and retry.";
+  if (error instanceof ApiError && error.status === 409 && /^Record was changed; reload and retry\.?$/i.test(error.message)) {
+    return "Re-read it and retry.";
   }
   if (error instanceof ApiError && error.status === 403) {
     return "Your role does not allow this. `dataops whoami` shows who you are signed in as.";

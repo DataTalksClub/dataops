@@ -3,7 +3,7 @@ import { after, before, describe, it } from 'node:test';
 import { PutCommand, ScanCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
-import { TABLE_SPONSOR_CRM, TABLE_TASKS } from '../src/db/tableNames';
+import { TABLE_BOOKKEEPING, TABLE_NEWSLETTER_SLOTS, TABLE_SPONSOR_CRM, TABLE_TASKS } from '../src/db/tableNames';
 import { createUserWithId } from '../src/db/users';
 import { createSession } from '../src/db/sessions';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
@@ -72,8 +72,14 @@ describe('CRM deal hard delete', () => {
     assert.equal((await remove(target.id)).statusCode, 404);
 
     const afterCrm = await rows(TABLE_SPONSOR_CRM);
+    assert.ok(!afterCrm.some(row => row.PK === `SPONSOR_FINANCE#${target.id}`), 'the active finance state is removed');
+    assert.ok(afterCrm.some(row => row.PK === `SPONSOR_FINANCE_ARCHIVE#${target.id}` && row.SK === 'STATE' &&
+      row.invoiceRequirement === 'required' && row.dealId === undefined), 'finance state is retained without its deal link');
+    assert.ok(afterCrm.some(row => row.PK === `SPONSOR_FINANCE_HISTORY#${target.id}`), 'finance audit history stays');
     assert.ok(!afterCrm.some(row => JSON.stringify(row).includes(target.id) &&
-      !String(row.PK).startsWith('MESSAGE#') && !String(row.PK).startsWith('DEAL_DELETE_AUDIT#')), 'no live row of the deal remains');
+      !String(row.PK).startsWith('MESSAGE#') && !String(row.PK).startsWith('DEAL_DELETE_AUDIT#') &&
+      !String(row.PK).startsWith('SPONSOR_FINANCE_ARCHIVE#') && !String(row.PK).startsWith('SPONSOR_FINANCE_HISTORY#')),
+    'no active row of the deal remains');
     const audit = afterCrm.find(row => String(row.PK).startsWith(`DEAL_DELETE_AUDIT#${target.id}`));
     assert.ok(audit, 'the deal deletion retains an audit snapshot');
     assert.equal((audit.snapshot as any).deal.id, target.id);
@@ -120,38 +126,83 @@ describe('CRM deal hard delete', () => {
     assert.equal((audit?.snapshot as any)?.deliverables[0]?.id, 'placeholder');
   });
 
-  it('with-deliverables deletion still refuses booked slots and finance records', async () => {
-    const { deal: booked } = await deal();
-    await put(TABLE_SPONSOR_CRM, { PK: 'DELIVERABLE#booked-new', SK: 'DELIVERABLE#booked-new', id: 'booked-new', dealId: booked.id, newsletterIssueId: 'issue-99', version: 1 });
-    const slot = await removeWithDeliverables(booked.id);
-    assert.equal(slot.statusCode, 409); assert.match(data(slot).error, /booked newsletter slot\/issue/);
-    assert.equal((await getCrmRecord(client, 'deal', booked.id))?.id, booked.id);
+  it('deletes real deliverables with explicit confirmation and keeps the booked newsletter slot', async () => {
+    const { org, deal: target } = await deal();
+    await put(TABLE_SPONSOR_CRM, {
+      PK: 'DELIVERABLE#booked-new', SK: 'DELIVERABLE#booked-new', id: 'booked-new',
+      dealId: target.id, newsletterIssueId: 'issue-99', version: 1, publishedAt: '2026-10-01T00:00:00Z',
+    });
+    await put(TABLE_SPONSOR_CRM, {
+      PK: 'DELIVERABLE#published', SK: 'DELIVERABLE#published', id: 'published',
+      dealId: target.id, version: 1, artifactUrls: ['https://files.test/published.pdf'],
+    });
+    await put(TABLE_NEWSLETTER_SLOTS, {
+      PK: 'ISSUE#issue-99', SK: 'ISSUE#issue-99', id: 'issue-99', kind: 'weekly', status: 'scheduled',
+      slots: { primary: { sponsor: 'Synthetic deal fixture', organizationId: org.id } }, version: 1,
+    });
 
-    const { deal: financed } = await deal();
-    await put(TABLE_SPONSOR_CRM, { PK: 'DELIVERABLE#placeholder-finance', SK: 'DELIVERABLE#placeholder-finance', id: 'placeholder-finance', dealId: financed.id, channel: 'standalone', version: 1 });
-    await put(TABLE_SPONSOR_CRM, { PK: `SPONSOR_FINANCE#${financed.id}`, SK: `SPONSOR_FINANCE#${financed.id}`, dealId: financed.id, version: 1, invoiceNumber: 'INV-42' });
-    const finance = await removeWithDeliverables(financed.id);
-    assert.equal(finance.statusCode, 409); assert.match(data(finance).error, /finance \(invoice\)/);
-    assert.equal((await getCrmRecord(client, 'deal', financed.id))?.id, financed.id);
+    const preview = await removeWithDeliverables(target.id);
+    assert.equal(preview.statusCode, 200, preview.body);
+    assert.deepEqual(data(preview).deletedDeliverableIds.sort(), ['booked-new', 'published']);
+    assert.deepEqual(data(preview).retainedNewsletterSlotIds, ['issue-99']);
+    assert.equal((await getCrmRecord(client, 'deal', target.id))?.id, target.id);
+
+    const applied = await removeWithDeliverables(target.id, { apply: true });
+    assert.equal(applied.statusCode, 200, applied.body);
+    assert.equal((await getCrmRecord(client, 'deal', target.id)), null);
+    const after = await rows(TABLE_SPONSOR_CRM);
+    assert.ok(!after.some(row => row.PK === 'DELIVERABLE#booked-new' || row.PK === 'DELIVERABLE#published'));
+    const issue = (await rows(TABLE_NEWSLETTER_SLOTS)).find(row => row.PK === 'ISSUE#issue-99');
+    assert.equal((issue?.slots as any)?.primary?.sponsor, 'Synthetic deal fixture');
   });
 
-  it('refuses finance: invoice, payment and settlement', async () => {
-    const state = (dealId: string, extra: Record<string, unknown>) => put(TABLE_SPONSOR_CRM, {
-      PK: `SPONSOR_FINANCE#${dealId}`, SK: `SPONSOR_FINANCE#${dealId}`, dealId, version: 1,
-      invoiceRequirement: 'required', paymentLinkIds: [], recordedPaymentIds: [], ...extra,
+  it('detaches finance links while retaining invoice, payment and finance records', async () => {
+    const { deal: target } = await deal();
+    const invoiceLinkId = `SPONSOR_FINANCE_LINK#${target.id}#document#invoice-42`;
+    const paymentLinkId = `SPONSOR_FINANCE_LINK#${target.id}#transaction#payment-42`;
+    const financeKey = `SPONSOR_FINANCE#${target.id}`;
+    const recordedPaymentKey = `SPONSOR_FINANCE_PAYMENT#${target.id}#recorded-42`;
+    await put(TABLE_SPONSOR_CRM, {
+      PK: financeKey, SK: financeKey, id: target.id, recordType: 'sponsor-finance', dealId: target.id, version: 2,
+      invoiceNumber: 'INV-42', amountDue: '100.00', invoiceLinkId, paymentLinkIds: [paymentLinkId],
+      recordedPaymentIds: [recordedPaymentKey], settlementAdjustment: { amount: '5.00', currency: 'EUR' },
     });
-    for (const [extra, pattern] of [
-      [{ invoiceNumber: 'INV-1' }, /finance \(invoice\)/],
-      [{ recordedPaymentIds: ['p1'] }, /finance \(payment\)/],
-      [{ settlementAdjustment: { amount: '1.00' } }, /finance \(settlement\)/],
-    ] as const) {
-      const { deal: target } = await deal();
-      await state(target.id, extra);
-      await refuses(target.id, pattern);
+    await put(TABLE_SPONSOR_CRM, {
+      PK: invoiceLinkId, SK: invoiceLinkId, id: invoiceLinkId, recordType: 'sponsor-finance-link',
+      dealId: target.id, kind: 'document', sourceId: 'invoice-42',
+    });
+    await put(TABLE_SPONSOR_CRM, {
+      PK: paymentLinkId, SK: paymentLinkId, id: paymentLinkId, recordType: 'sponsor-finance-link',
+      dealId: target.id, kind: 'transaction', sourceId: 'payment-42',
+    });
+    await put(TABLE_SPONSOR_CRM, {
+      PK: recordedPaymentKey, SK: recordedPaymentKey, id: recordedPaymentKey, paymentId: 'recorded-42',
+      recordType: 'sponsor-finance-payment', dealId: target.id, amount: '25.00', currency: 'EUR',
+    });
+    for (const [kind, sourceId, linkId] of [
+      ['document', 'invoice-42', invoiceLinkId], ['transaction', 'payment-42', paymentLinkId],
+    ]) {
+      const key = `SPONSOR_FINANCE_CLAIM#${kind}#${sourceId}`;
+      await put(TABLE_BOOKKEEPING, { PK: key, SK: key, recordType: 'sponsor-finance-claim', kind, sourceId, dealId: target.id, linkId });
     }
-    const { deal: linked } = await deal();
-    await put(TABLE_SPONSOR_CRM, { PK: `SPONSOR_FINANCE_LINK#${linked.id}#transaction#t1`, SK: `SPONSOR_FINANCE_LINK#${linked.id}#transaction#t1`, dealId: linked.id });
-    await refuses(linked.id, /finance \(payment\)/);
+    await put(TABLE_BOOKKEEPING, { PK: 'DOCUMENT#invoice-42', SK: 'DOCUMENT#invoice-42', id: 'invoice-42', documentType: 'invoice' });
+    await put(TABLE_BOOKKEEPING, { PK: 'BOOKKEEPING#payment-42', SK: 'BOOKKEEPING#payment-42', id: 'payment-42', amount: '75.00' });
+
+    const applied = await removeWithDeliverables(target.id, { apply: true });
+    assert.equal(applied.statusCode, 200, applied.body);
+    assert.deepEqual(data(applied).detachedFinanceSourceIds.sort(), ['invoice-42', 'payment-42']);
+    const crm = await rows(TABLE_SPONSOR_CRM);
+    assert.ok(!crm.some(row => row.PK === financeKey || row.PK === invoiceLinkId || row.PK === paymentLinkId || row.PK === recordedPaymentKey));
+    const archive = crm.filter(row => row.PK === `SPONSOR_FINANCE_ARCHIVE#${target.id}`);
+    assert.ok(archive.some(row => row.SK === 'STATE' && row.amountDue === '100.00' && row.dealId === undefined &&
+      row.invoiceNumber === 'INV-42' && row.settlementAdjustment &&
+      row.invoiceLinkId === undefined && row.paymentLinkIds === undefined));
+    assert.ok(archive.some(row => row.SK === 'PAYMENT#recorded-42' && row.amount === '25.00' && row.dealId === undefined));
+    const bookkeeping = await rows(TABLE_BOOKKEEPING);
+    assert.ok(bookkeeping.some(row => row.PK === 'DOCUMENT#invoice-42'), 'the invoice source remains');
+    assert.ok(bookkeeping.some(row => row.PK === 'BOOKKEEPING#payment-42'), 'the payment source remains');
+    assert.ok(!bookkeeping.some(row => row.PK === 'SPONSOR_FINANCE_CLAIM#document#invoice-42' ||
+      row.PK === 'SPONSOR_FINANCE_CLAIM#transaction#payment-42'), 'finance claims are released');
   });
 
   it('plans finance without concrete results do not block deletion', async () => {
