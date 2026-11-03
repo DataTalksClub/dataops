@@ -142,7 +142,7 @@ describe('template blocks', () => {
     assert.strictEqual((send.schedule as Record<string, unknown>).offset_days, 7);
   });
 
-  it('rewrites the anchor and adds the include offset to each task offset', () => {
+  it('rewrites the anchor and pins every emitted task when the include sets an offset', () => {
     const doc = templateWithTasks([
       { include: 'blocks/sponsor-performance.yaml', anchor: 'custom-anchor', offset_days: 9 },
     ]);
@@ -150,8 +150,84 @@ describe('template blocks', () => {
     const tasks = expanded.tasks as Array<Record<string, unknown>>;
     assert.deepStrictEqual(tasks[0].depends_on, ['custom-anchor']);
     for (const task of tasks) {
-      assert.strictEqual((task.schedule as Record<string, unknown>).offset_days, 16);
+      assert.strictEqual((task.schedule as Record<string, unknown>).offset_days, 9);
     }
+  });
+
+  it('keeps each task offset when the include sets no offset', () => {
+    const blocks = parseBlockFiles([{
+      path: 'workflow-templates/blocks/mixed-offsets.yaml',
+      revision: 'block-mixed',
+      content: [
+        'params:',
+        '  prefix: ""',
+        '  slot: null',
+        '  anchor: agree-on-a-date',
+        '  offset_days: -25',
+        '  name_prefix: ""',
+        'anchor_from: agree-on-a-date',
+        'slot_tasks: []',
+        'tasks:',
+        '  - id: early-task',
+        '    name: Early',
+        '    schedule: { offset_days: -28 }',
+        '    depends_on: [agree-on-a-date]',
+        '  - id: main-task',
+        '    name: Main',
+        '    schedule: { offset_days: -25 }',
+        '    depends_on: [agree-on-a-date]',
+        '  - id: late-task',
+        '    name: Late',
+        '    schedule: { offset_days: -2 }',
+        '    depends_on: [agree-on-a-date]',
+        '',
+      ].join('\n'),
+    }]);
+    const doc = templateWithTasks([
+      { id: 'agree-on-a-date', name: 'Agree', schedule: { offset_days: -30 } },
+      { include: 'blocks/mixed-offsets.yaml' },
+    ]);
+    const expanded = expandTemplateIncludes(doc, 'workflow-templates/podcast.yaml', blocks);
+    const tasks = expanded.tasks as Array<Record<string, unknown>>;
+    const byId = new Map(tasks.map((task) => [task.id, task]));
+    assert.strictEqual((byId.get('early-task')!.schedule as Record<string, unknown>).offset_days, -28);
+    assert.strictEqual((byId.get('main-task')!.schedule as Record<string, unknown>).offset_days, -25);
+    assert.strictEqual((byId.get('late-task')!.schedule as Record<string, unknown>).offset_days, -2);
+  });
+
+  it('falls back to the block default for tasks without their own offset', () => {
+    const blocks = parseBlockFiles([{
+      path: 'workflow-templates/blocks/partial-offsets.yaml',
+      revision: 'block-partial',
+      content: [
+        'params:',
+        '  prefix: ""',
+        '  slot: null',
+        '  anchor: agree-on-a-date',
+        '  offset_days: 4',
+        '  name_prefix: ""',
+        'anchor_from: agree-on-a-date',
+        'slot_tasks: []',
+        'tasks:',
+        '  - id: dated-task',
+        '    name: Dated',
+        '    schedule: { offset_days: 2 }',
+        '    depends_on: [agree-on-a-date]',
+        '  - id: undated-task',
+        '    name: Undated',
+        '    depends_on: [agree-on-a-date]',
+        '',
+      ].join('\n'),
+    }]);
+    const doc = templateWithTasks([
+      { id: 'agree-on-a-date', name: 'Agree', schedule: { offset_days: 0 } },
+      { include: 'blocks/partial-offsets.yaml' },
+    ]);
+    const expanded = expandTemplateIncludes(doc, 'workflow-templates/podcast.yaml', blocks);
+    const tasks = expanded.tasks as Array<Record<string, unknown>>;
+    const byId = new Map(tasks.map((task) => [task.id, task]));
+    assert.strictEqual((byId.get('dated-task')!.schedule as Record<string, unknown>).offset_days, 2);
+    assert.strictEqual((byId.get('undated-task')!.schedule as Record<string, unknown>).offset_days, 4);
   });
 
   it('leaves documents without includes untouched', () => {

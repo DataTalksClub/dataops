@@ -26,9 +26,10 @@
  * - `anchor` (slug, default block `anchor_from`): the task the block's
  *   anchor-dependents wait on. Every `depends_on` entry equal to the block's
  *   `anchor_from` is rewritten to this value.
- * - `offset_days` (integer, default 0): added to each emitted task's own
- *   `schedule.offset_days`. A task without its own offset starts from the
- *   block's `params.offset_days`.
+ * - `offset_days` (integer, default null): when set, pins `schedule`
+ *   for every emitted task (legacy one-offset-per-include behaviour). When
+ *   omitted, each task keeps its own `schedule.offset_days`; a task without
+ *   its own offset starts from the block's `params.offset_days`.
  * - `name_prefix` (string, default ""): prepended to every emitted name.
  * - `only` (list of unprefixed block task ids, default all): emit a subset,
  *   e.g. only the send task for a secondary slot that reuses shared collect
@@ -184,7 +185,7 @@ interface ResolvedInclude {
   prefix: string;
   slot: string | null;
   anchor: string;
-  offsetDays: number;
+  offsetDays: number | null;
   namePrefix: string;
   only: string[] | null;
 }
@@ -203,7 +204,7 @@ function resolveInclude(entry: Dict, templatePath: string, blocks: Map<string, P
   const prefixRaw: unknown = entry.prefix ?? block.params.prefix;
   const slotRaw: unknown = entry.slot ?? block.params.slot;
   const anchorRaw: unknown = entry.anchor ?? block.params.anchor;
-  const offsetDaysRaw: unknown = entry.offset_days ?? 0;
+  const offsetDaysRaw: unknown = entry.offset_days ?? null;
   const namePrefixRaw: unknown = entry.name_prefix ?? block.params.namePrefix;
   const onlyRaw: unknown = entry.only ?? null;
   if (typeof prefixRaw !== 'string') throw fail(templatePath, 'include prefix must be a string');
@@ -213,7 +214,7 @@ function resolveInclude(entry: Dict, templatePath: string, blocks: Map<string, P
   if (typeof anchorRaw !== 'string' || !SLUG.test(anchorRaw)) {
     throw fail(templatePath, 'include anchor must be a slug');
   }
-  if (typeof offsetDaysRaw !== 'number' || !Number.isInteger(offsetDaysRaw)) {
+  if (offsetDaysRaw !== null && (typeof offsetDaysRaw !== 'number' || !Number.isInteger(offsetDaysRaw))) {
     throw fail(templatePath, 'include offset_days must be an integer');
   }
   if (typeof namePrefixRaw !== 'string') throw fail(templatePath, 'include name_prefix must be a string');
@@ -231,7 +232,7 @@ function resolveInclude(entry: Dict, templatePath: string, blocks: Map<string, P
   const prefix: string = prefixRaw;
   const slot: string | null = slotRaw;
   const anchor: string = anchorRaw;
-  const offsetDays: number = offsetDaysRaw;
+  const offsetDays: number | null = offsetDaysRaw as number | null;
   const namePrefix: string = namePrefixRaw;
   return { block, prefix, slot, anchor, offsetDays, namePrefix, only };
 }
@@ -268,12 +269,13 @@ export function expandTemplateIncludes(document: Dict, templatePath: string, blo
       next.id = idMap.get(unprefixed);
       if (include.namePrefix) next.name = `${include.namePrefix}${String(candidate.name)}`;
       const schedule = next.schedule;
-      if (isDict(schedule) && typeof schedule.offset_days === 'number') {
-        schedule.offset_days += include.offsetDays;
-      } else if (isDict(schedule)) {
-        schedule.offset_days = block.params.offsetDays + include.offsetDays;
-      } else {
-        next.schedule = { offset_days: block.params.offsetDays + include.offsetDays };
+      if (include.offsetDays !== null) {
+        if (isDict(schedule)) schedule.offset_days = include.offsetDays;
+        else next.schedule = { offset_days: include.offsetDays };
+      } else if (!isDict(schedule)) {
+        next.schedule = { offset_days: block.params.offsetDays };
+      } else if (typeof schedule.offset_days !== 'number') {
+        schedule.offset_days = block.params.offsetDays;
       }
       if (block.slotTasks.has(unprefixed)) {
         if (include.slot) next.optional_group = include.slot;
