@@ -17,6 +17,19 @@ Usage
       Set classification and/or the booked EUR amount on an existing row.
       Dry-run by default; --apply writes the row and records an audit entry.
 
+  dataops bookkeeping allocate <transaction-id>
+      --invoice <document-id>:<amount>:<counterparty>:<description>[:<invoice-number>] ...
+      [--reason TEXT] [--expected-updated-at ISO] [--apply]
+  dataops bookkeeping allocate <transaction-id> --allocations-json '<json>' [--apply]
+  dataops bookkeeping allocate <transaction-id> --clear [--reason TEXT] [--apply]
+  dataops bookkeeping unallocate <transaction-id> [--reason TEXT] [--apply]
+      Allocate one bank payment across multiple invoice report rows (each with its
+      own PDF documentId, amount, counterparty and description) while preserving
+      the single bank transaction and original ledger total. Sum of invoice amounts
+      must equal the payment amount exactly; duplicate source allocations and
+      rounding ambiguity are rejected. Dry-run by default; --apply persists the
+      allocation with optimistic concurrency (CAS) and an audit entry.
+
   dataops bookkeeping sync --sheet <spreadsheet-id> [--apply]
   dataops bookkeeping sync <csv-dir> [--apply]
       Compare the bookkeeping sheet with DataOps transactions. Adds rows DataOps
@@ -418,4 +431,340 @@ export async function set(args, io) {
   return result;
 }
 
-export const commands = { show, set, sync, classify, facts, "add-income": addIncome };
+function parseStrictCentsCli(rawValue, label = "amount") {
+  const text = String(rawValue ?? "").trim();
+  if (!text) throw new UsageError(`Missing ${label}.`);
+  if (text.startsWith("-")) {
+    throw new UsageError(`Invalid ${label} "${text}": allocation amounts must be positive.`);
+  }
+  if (/[eE]/.test(text) || /^\d+\.\d{3,}$/.test(text)) {
+    throw new UsageError(
+      `Invoice allocation rejected due to rounding ambiguity in ${label} "${text}": amounts must have at most 2 decimal places.`,
+    );
+  }
+  const match = text.match(AMOUNT);
+  if (!match) {
+    throw new UsageError(`Invalid ${label} "${text}": expected a positive amount with up to two decimal places.`);
+  }
+  const cents = Number(match[1]) * 100 + Number((match[2] || "").padEnd(2, "0"));
+  if (!Number.isSafeInteger(cents) || cents <= 0) {
+    throw new UsageError(`Invalid ${label} "${text}": amount must be greater than zero.`);
+  }
+  return {
+    cents,
+    formatted: `${match[1]}.${(match[2] || "").padEnd(2, "0")}`,
+  };
+}
+
+function centsToFixedCli(cents) {
+  const abs = Math.abs(Math.round(cents));
+  return `${cents < 0 ? "-" : ""}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
+}
+
+function parseAllocationSpec(spec, index) {
+  if (spec && typeof spec === "object" && !Array.isArray(spec)) {
+    return { ...spec };
+  }
+  const trimmed = String(spec ?? "").trim();
+  if (!trimmed) {
+    throw new UsageError(`Allocation #${index + 1} cannot be empty.`);
+  }
+  if (trimmed.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("not an object");
+      }
+      return parsed;
+    } catch {
+      throw new UsageError(`Allocation #${index + 1} has invalid JSON.`);
+    }
+  }
+  if (/^[a-zA-Z]+=.+/.test(trimmed) && (trimmed.includes(",") || trimmed.includes(";"))) {
+    const obj = {};
+    for (const pair of trimmed.split(/[;,]/)) {
+      const eq = pair.indexOf("=");
+      if (eq <= 0) continue;
+      const k = pair.slice(0, eq).trim();
+      const v = pair.slice(eq + 1).trim();
+      obj[k] = v;
+    }
+    return obj;
+  }
+  const delimiter = trimmed.includes("|") ? "|" : ":";
+  const parts = trimmed.split(delimiter).map((part) => part.trim());
+  if (parts.length < 2) {
+    throw new UsageError(
+      `Allocation #${index + 1} "${trimmed}" must provide at least <document-id>:<amount>[:<counterparty>:<description>[:<invoice-number>]].`,
+    );
+  }
+  const [documentId, amount, counterparty, description, invoiceNumber] = parts;
+  return {
+    documentId,
+    amount,
+    ...(counterparty ? { counterparty } : {}),
+    ...(description ? { description } : {}),
+    ...(invoiceNumber ? { invoiceNumber } : {}),
+  };
+}
+
+function collectRawAllocationsFromArgs(args) {
+  const jsonInput = args.allocationsJson ?? args.allocations;
+  if (jsonInput !== undefined) {
+    if (typeof jsonInput !== "string" || !jsonInput.trim()) {
+      throw new UsageError("--allocations-json requires a JSON array of invoice allocations.");
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonInput);
+    } catch {
+      throw new UsageError("--allocations-json must be valid JSON.");
+    }
+    if (!Array.isArray(parsed)) {
+      throw new UsageError("--allocations-json must be a JSON array.");
+    }
+    return parsed.map((entry, idx) => parseAllocationSpec(entry, idx));
+  }
+  const specs = [
+    ...repeatable(args, "invoice"),
+    ...repeatable(args, "allocation"),
+    ...repeatable(args, "item"),
+  ];
+  return specs.map((spec, idx) => parseAllocationSpec(spec, idx));
+}
+
+export async function allocate(args, io) {
+  if (args._.length !== 1 || !String(args._[0]).trim()) {
+    throw new UsageError(
+      "Usage: dataops bookkeeping allocate <transaction-id> --invoice <doc-id>:<amount>:<counterparty>:<description> ... [--apply]",
+    );
+  }
+  const transactionId = String(args._[0]).trim();
+  const isClear = Boolean(args.clear);
+  const rawSpecs = isClear ? [] : collectRawAllocationsFromArgs(args);
+  if (!isClear && rawSpecs.length === 0) {
+    throw new UsageError(
+      "Pass one or more --invoice <doc-id>:<amount>:<counterparty>:<description> flags, --allocations-json '<json>', or --clear.",
+    );
+  }
+
+  const api = apiFor(args);
+  const transaction = await api.get(
+    `/api/bookkeeping/transactions/${encodeURIComponent(transactionId)}`,
+  );
+  const expectedUpdatedAt =
+    typeof args.expectedUpdatedAt === "string" && args.expectedUpdatedAt.trim()
+      ? args.expectedUpdatedAt.trim()
+      : transaction.updatedAt;
+  const reason =
+    typeof args.reason === "string" && args.reason.trim()
+      ? args.reason.trim()
+      : undefined;
+
+  if (expectedUpdatedAt && transaction.updatedAt && expectedUpdatedAt !== transaction.updatedAt) {
+    throw new UsageError(
+      `CAS conflict: expected updatedAt ${expectedUpdatedAt} does not match current transaction updatedAt ${transaction.updatedAt}.`,
+    );
+  }
+
+  if (isClear) {
+    const previousAllocations = Array.isArray(transaction.allocations)
+      ? transaction.allocations
+      : [];
+    const result = {
+      mode: args.apply ? "apply" : "dry-run",
+      action: "clear",
+      transactionId: transaction.id,
+      expectedUpdatedAt,
+      previousAllocations,
+      allocations: [],
+    };
+    if (args.apply) {
+      const updated = await api.put(
+        `/api/bookkeeping/transactions/${encodeURIComponent(transaction.id)}/allocations`,
+        {
+          clear: true,
+          allocations: [],
+          expectedUpdatedAt,
+          ...(reason ? { reason } : {}),
+        },
+      );
+      result.transaction = updated;
+    }
+    if (!args.json) {
+      io.print(
+        `${result.mode}: ${args.apply ? "cleared" : "would clear"} ${previousAllocations.length} invoice allocation(s) on ${transaction.id}`,
+      );
+    }
+    return result;
+  }
+
+  const needsDocumentLookup = rawSpecs.some(
+    (spec) => !String(spec.counterparty || "").trim() || !String(spec.description || "").trim(),
+  );
+  const documentsById = new Map();
+  if (needsDocumentLookup) {
+    const listedDocs = await api.get("/api/bookkeeping/documents");
+    for (const doc of Array.isArray(listedDocs?.items) ? listedDocs.items : []) {
+      documentsById.set(String(doc.id), doc);
+    }
+  }
+
+  const parentAmount = parseStrictCentsCli(transaction.amount, "transaction amount");
+  const parentCurrency = String(transaction.currency || "EUR").trim().toUpperCase();
+  const seenDocIds = new Set();
+  const seenInvoiceIds = new Set();
+  const seenVendorInvoices = new Set();
+  let sumCents = 0;
+
+  const normalized = rawSpecs.map((spec, idx) => {
+    if (
+      spec.percentage !== undefined ||
+      spec.share !== undefined ||
+      spec.ratio !== undefined ||
+      spec.weight !== undefined
+    ) {
+      throw new UsageError(
+        `Invoice allocation #${idx + 1} rejected due to rounding ambiguity: specify exact invoice amounts instead of percentages or shares.`,
+      );
+    }
+    const documentId = String(spec.documentId || spec.pdfDocumentId || "").trim();
+    if (!documentId) {
+      throw new UsageError(`Allocation #${idx + 1} is missing required documentId.`);
+    }
+    if (seenDocIds.has(documentId)) {
+      throw new UsageError(
+        `Duplicate source allocation: document ${documentId} is allocated more than once.`,
+      );
+    }
+    seenDocIds.add(documentId);
+
+    const invoiceId = String(spec.invoiceId || "").trim() || undefined;
+    if (invoiceId) {
+      if (seenInvoiceIds.has(invoiceId)) {
+        throw new UsageError(
+          `Duplicate source allocation: invoice ${invoiceId} is allocated more than once.`,
+        );
+      }
+      seenInvoiceIds.add(invoiceId);
+    }
+
+    const doc = documentsById.get(documentId);
+    const facts = doc?.facts && typeof doc.facts === "object" ? doc.facts : {};
+    const parsedAmount = parseStrictCentsCli(spec.amount, `allocation #${idx + 1} amount`);
+    const currency = String(spec.currency || parentCurrency).trim().toUpperCase();
+    if (currency !== parentCurrency) {
+      throw new UsageError(
+        `Allocation #${idx + 1} currency ${currency} does not match payment currency ${parentCurrency}.`,
+      );
+    }
+    sumCents += parsedAmount.cents;
+
+    const counterparty = String(spec.counterparty ?? facts.counterparty ?? "").trim();
+    if (!counterparty) {
+      throw new UsageError(
+        `Allocation #${idx + 1} (${documentId}) requires a counterparty.`,
+      );
+    }
+    const description = String(spec.description ?? facts.description ?? "").trim();
+    if (!description) {
+      throw new UsageError(
+        `Allocation #${idx + 1} (${documentId}) requires a description.`,
+      );
+    }
+    const invoiceNumber =
+      String(spec.invoiceNumber ?? facts.invoiceNumber ?? "").trim() || undefined;
+    if (invoiceNumber) {
+      const key = `${counterparty.toLowerCase()}#${invoiceNumber.toLowerCase().replace(/[^a-z0-9]+/g, "")}`;
+      if (seenVendorInvoices.has(key)) {
+        throw new UsageError(
+          `Duplicate source allocation: invoice ${invoiceNumber} for ${counterparty} is allocated more than once.`,
+        );
+      }
+      seenVendorInvoices.add(key);
+    }
+
+    return {
+      id: String(spec.id || `alloc-${idx + 1}`),
+      documentId,
+      ...(invoiceId ? { invoiceId } : {}),
+      ...(invoiceNumber ? { invoiceNumber } : {}),
+      counterparty,
+      description,
+      amount: parsedAmount.formatted,
+      currency: parentCurrency,
+      ...(spec.category ? { category: String(spec.category).trim() } : {}),
+      ...(spec.transactionDate ? { transactionDate: String(spec.transactionDate).trim() } : {}),
+    };
+  });
+
+  if (sumCents !== parentAmount.cents) {
+    throw new UsageError(
+      `Allocation sum mismatch: allocations total ${centsToFixedCli(sumCents)} ${parentCurrency} does not match payment amount ${parentAmount.formatted} ${parentCurrency}.`,
+    );
+  }
+
+  const result = {
+    mode: args.apply ? "apply" : "dry-run",
+    action: "allocate",
+    transactionId: transaction.id,
+    amount: parentAmount.formatted,
+    currency: parentCurrency,
+    expectedUpdatedAt,
+    previousAllocations: Array.isArray(transaction.allocations) ? transaction.allocations : null,
+    allocations: normalized,
+  };
+
+  if (args.apply) {
+    const updated = await api.put(
+      `/api/bookkeeping/transactions/${encodeURIComponent(transaction.id)}/allocations`,
+      {
+        allocations: normalized,
+        expectedUpdatedAt,
+        ...(reason ? { reason } : {}),
+      },
+    );
+    result.transaction = updated;
+    result.allocations = updated.allocations || normalized;
+  }
+
+  if (!args.json) {
+    io.print(
+      `${result.mode}: ${args.apply ? "allocated" : "would allocate"} ${transaction.id} (${parentAmount.formatted} ${parentCurrency}) across ${normalized.length} invoice row(s)`,
+    );
+    for (const item of result.allocations) {
+      io.print(
+        `  ${item.amount} ${item.currency}  ${item.counterparty}  ${item.description}  [${item.documentId}]`,
+      );
+    }
+  }
+  return result;
+}
+
+export async function unallocate(args, io) {
+  return allocate({ ...args, clear: true }, io);
+}
+
+export async function allocations(args, io) {
+  if (args._.length !== 1 || !String(args._[0]).trim()) {
+    throw new UsageError("Usage: dataops bookkeeping allocations <transaction-id> [--json]");
+  }
+  const api = apiFor(args);
+  const res = await api.get(
+    `/api/bookkeeping/transactions/${encodeURIComponent(args._[0])}/allocations`,
+  );
+  if (!args.json) io.print(JSON.stringify(res, null, 2));
+  return res;
+}
+
+export const commands = {
+  show,
+  set,
+  allocate,
+  unallocate,
+  allocations,
+  sync,
+  classify,
+  facts,
+  "add-income": addIncome,
+};

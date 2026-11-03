@@ -10,6 +10,7 @@ import {
   filtersFromParams,
   groupByMonth,
   inLens,
+  ledgerRowMarkup,
   ledgerTableMarkup,
   needsCategory,
   originalValue,
@@ -216,4 +217,59 @@ test("suggested matches offer attaching a file or opening the sponsor deal", () 
   assert.match(claimed, /Payment for a sponsor deal/);
   assert.match(claimed, /href="\/sponsors\/deals\/deal-7"/);
   assert.match(claimed, /data-suggestions/);
+});
+
+test("allocated payment preserves single ledger total while surfacing three invoice allocations and PDFs in detailMarkup", () => {
+  const allocatedEntry = {
+    id: "tx-42084",
+    transactionDate: "2026-10-18",
+    paidDate: "2026-10-18",
+    counterparty: "Synthetic Card Settlement",
+    description: "Combined settlement",
+    amount: "420.84",
+    currency: "EUR",
+    entryType: "expense",
+    subtype: "Subscription",
+    category: "Tools",
+    allocations: [
+      { id: "alloc-1", documentId: "doc-399", counterparty: "Synthetic Compute GmbH", description: "Dedicated cluster October", amount: "399.00", currency: "EUR" },
+      { id: "alloc-2", documentId: "doc-1499", counterparty: "Synthetic Domains Ltd", description: "Domain renewal", amount: "14.99", currency: "EUR" },
+      { id: "alloc-3", documentId: "doc-685", counterparty: "Synthetic Mail B.V.", description: "Transactional email usage", amount: "6.85", currency: "EUR" },
+    ],
+  };
+
+  const groups = groupByMonth([allocatedEntry]);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].entries.length, 1);
+  assert.equal(groups[0].moneyOut, -420.84);
+
+  const rowHtml = ledgerRowMarkup(allocatedEntry, {
+    hasEvidence: () => true,
+    hasInvoice: () => true,
+    vocab: {},
+    selectedId: "tx-42084",
+    e: escapeHtml,
+  });
+  assert.match(rowHtml, /data-allocation-count="3"/);
+  assert.match(rowHtml, /3 invoices/);
+
+  const detailHtml = detailMarkup({
+    entry: allocatedEntry,
+    documents: [
+      { id: "doc-399", documentType: "invoice", originalFilename: "compute-399.pdf" },
+      { id: "doc-1499", documentType: "invoice", originalFilename: "domains-1499.pdf" },
+      { id: "doc-685", documentType: "invoice", originalFilename: "mail-685.pdf" },
+    ],
+    vocab: {},
+    e: escapeHtml,
+  });
+  assert.match(detailHtml, /data-allocation-section/);
+  assert.match(detailHtml, /Synthetic Compute GmbH/);
+  assert.match(detailHtml, /Synthetic Domains Ltd/);
+  assert.match(detailHtml, /Synthetic Mail B\.V\./);
+  assert.match(detailHtml, /data-view-document="doc-399"/);
+  assert.match(detailHtml, /data-view-document="doc-1499"/);
+  assert.match(detailHtml, /data-view-document="doc-685"/);
+  assert.match(detailHtml, /data-save-allocations="tx-42084"/);
+  assert.match(detailHtml, /data-clear-allocations="tx-42084"/);
 });

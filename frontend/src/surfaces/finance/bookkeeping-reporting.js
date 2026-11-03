@@ -1,5 +1,5 @@
 // Package and VAT views for the bookkeeping surface.
-import { formatAmount, monthLabel } from "./bookkeeping-format.js";
+import { expandReportEntries, formatAmount, monthLabel } from "./bookkeeping-format.js";
 import { packageReviewMarkup } from "./bookkeeping-views.js";
 import { html } from "./shared.js";
 
@@ -43,12 +43,18 @@ export function createBookkeepingReports({
           lens <= account.statementRequiredThroughMonth),
     );
     const monthEntries = lensEntries().filter((entry) => !isReportExemptEntry(entry));
+    const reportRows = expandReportEntries(monthEntries);
     const excludedCount = lensEntries().filter(isReportExemptEntry).length;
     const linkedDocIds = new Set(
       links
         .filter((link) => monthEntries.some((entry) => entry.id === link.transactionId))
         .map((link) => String(link.documentId)),
     );
+    for (const entry of monthEntries) {
+      for (const alloc of Array.isArray(entry.allocations) ? entry.allocations : []) {
+        if (alloc?.documentId) linkedDocIds.add(String(alloc.documentId));
+      }
+    }
     const evidenceDocs = documents.filter(
       (document) => document.documentType !== "bank-statement" && linkedDocIds.has(document.id),
     );
@@ -84,7 +90,11 @@ export function createBookkeepingReports({
     const report = getReports().find(
       (item) => item.month === lens && ["ready", "generated"].includes(String(item.status)),
     );
-    const preview = html`<span class="dk-mono">${monthEntries.length}</span>&nbsp;transaction${monthEntries.length === 1 ? "" : "s"} ·
+    const reportRowSummary =
+      reportRows.length !== monthEntries.length
+        ? html` · <span class="dk-mono">${reportRows.length}</span>&nbsp;report row${reportRows.length === 1 ? "" : "s"}`
+        : "";
+    const preview = html`<span class="dk-mono">${monthEntries.length}</span>&nbsp;transaction${monthEntries.length === 1 ? "" : "s"}${reportRowSummary} ·
       <span class="dk-mono">${evidenceDocs.length}</span>&nbsp;linked document${evidenceDocs.length === 1 ? "" : "s"}
       · <span class="dk-mono">${excludedCount}</span>&nbsp;mandatory-payment ${excludedCount === 1 ? "entry" : "entries"} kept out`;
     review.innerHTML = packageReviewMarkup({

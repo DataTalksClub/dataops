@@ -412,9 +412,14 @@ function rowLine(row) {
   const docs = row.documents.length ? `docs ${row.documents.map((doc) => doc.id.slice(0, 12)).join(",")}` : "no invoice";
   const proof = row.paymentProof ? ` proof ${row.paymentProof.documentId.slice(0, 12)}` : "";
   const exception = row.exception ? ` exception ${row.exception.kind}${row.exception.satisfied ? "" : " (proof missing)"}` : "";
+  const allocations = Array.isArray(row.ledger?.allocations) ? row.ledger.allocations : [];
   return [
     `${row.date}  ${row.status.padEnd(21)} ${row.amount} ${row.currency}  ${row.counterparty}${row.description && row.description !== row.counterparty ? ` — ${row.description}` : ""}`,
     `    row ${row.id}  ${bank} | ${ledger} | ${docs}${proof}${exception}${row.pairBasis ? ` | ${row.pairBasis}/${row.confidence}` : ""}`,
+    ...allocations.map(
+      (alloc) =>
+        `    allocation: ${alloc.amount} ${alloc.currency || row.currency}  ${alloc.counterparty} — ${alloc.description} [doc ${alloc.documentId}]`,
+    ),
     ...(row.missing ? [`    missing: ${row.missing}`] : []),
     ...(row.candidates?.length ? [`    candidates: ${row.candidates.map((candidate) => candidate.transactionId || candidate.bankKey).join(", ")}`] : []),
   ];

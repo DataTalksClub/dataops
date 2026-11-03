@@ -336,20 +336,31 @@ export async function updateBookkeepingTransaction(
     ":now": now,
     ":voided": "voided",
   };
-  const sets = Object.entries(value)
+  const sets: string[] = [];
+  const removes: string[] = [];
+  Object.entries(value)
     .filter(([name]) => !["id", "createdAt", "updatedAt", "PK", "SK"].includes(name))
-    .map(([name, child], index) => {
+    .forEach(([name, child], index) => {
       names[`#field${index}`] = name;
-      values[`:value${index}`] = child;
-      return `#field${index} = :value${index}`;
+      if (child === undefined) {
+        removes.push(`#field${index}`);
+      } else {
+        values[`:value${index}`] = child;
+        sets.push(`#field${index} = :value${index}`);
+      }
     });
+  const setClause = [...sets, "updatedAt = :now"].join(", ");
+  const updateExpression =
+    removes.length > 0
+      ? `SET ${setClause} REMOVE ${removes.join(", ")}`
+      : `SET ${setClause}`;
   try {
     await transact(client, {
       TransactItems: [{
         Update: {
           TableName: TABLE_BOOKKEEPING,
           Key: { PK: key("bookkeeping", id), SK: key("bookkeeping", id) },
-          UpdateExpression: `SET ${sets.join(", ")}, updatedAt = :now`,
+          UpdateExpression: updateExpression,
           ConditionExpression: expectedVoidStatus === "voided"
             ? "updatedAt = :expected AND voidStatus = :voided"
             : "updatedAt = :expected AND (attribute_not_exists(voidStatus) OR voidStatus <> :voided)",
