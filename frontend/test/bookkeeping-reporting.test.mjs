@@ -6,6 +6,7 @@ import { expandReportEntries, isReportExempt } from "../src/surfaces/finance/boo
 import { createBookkeepingReports } from "../src/surfaces/finance/bookkeeping-reporting.js";
 
 test("current package preflight omits legacy accounts after their statement period", () => {
+  let lens = "2026-10";
   const nodes = new Map([
     ["[data-package-review]", { innerHTML: "" }],
     ["[data-report-month]", { value: "" }],
@@ -18,7 +19,7 @@ test("current package preflight omits legacy accounts after their statement peri
       { id: "business-1", displayName: "Primary legacy account", kind: "business", active: true, statementRequiredThroughMonth: "2026-09" },
       { id: "business-2", displayName: "Secondary legacy account", kind: "business", active: true, statementRequiredThroughMonth: "2026-09" },
       { id: "revolut", displayName: "Revolut Business EUR", kind: "business", active: true, statementRequiredFromMonth: "2026-10" },
-      { id: "finom", displayName: "Finom Business", kind: "business", active: true, statementRequiredFromMonth: "2026-10" },
+      { id: "finom", displayName: "Synthetic Business Account", kind: "business", active: true, statementRequiredFromMonth: "2026-10" },
     ],
     getDocuments: () => ["revolut", "finom"].map((accountId) => ({
       id: `${accountId}-statement`,
@@ -26,7 +27,7 @@ test("current package preflight omits legacy accounts after their statement peri
       accountId,
       statementMonth: "2026-10",
     })),
-    getLens: () => "2026-10",
+    getLens: () => lens,
     getLinks: () => [],
     getReports: () => [],
     isReportExemptEntry: () => false,
@@ -38,9 +39,17 @@ test("current package preflight omits legacy accounts after their statement peri
   reports.renderPackageReview();
   const markup = nodes.get("[data-package-review]").innerHTML;
   assert.match(markup, /Revolut Business EUR/);
-  assert.match(markup, /Finom Business/);
+  assert.match(markup, /Synthetic Business Account/);
   assert.doesNotMatch(markup, /Primary legacy account|Secondary legacy account/);
   assert.doesNotMatch(markup, /needs each business account's statement/);
+  assert.equal(nodes.get("[data-report]").disabled, false);
+  for (const period of ["2026", "all"]) {
+    lens = period;
+    reports.renderPackageReview();
+    assert.equal(nodes.get("[data-report]").disabled, true);
+    assert.equal(nodes.get("[data-report-month]").value, "");
+    assert.match(nodes.get("[data-package-review]").innerHTML, /Choose a month/);
+  }
 });
 test("the package button stays disabled while a row has no EUR value", () => {
   const reportButton = { disabled: true };
@@ -54,7 +63,7 @@ test("the package button stays disabled while a row has no EUR value", () => {
     escapeHtml,
     getAccounts: () => [
       { id: "revolut", displayName: "Revolut Business EUR", kind: "business", active: true, statementRequiredFromMonth: "2026-10" },
-      { id: "finom", displayName: "Finom Business", kind: "business", active: true, statementRequiredFromMonth: "2026-10" },
+      { id: "finom", displayName: "Synthetic Business Account", kind: "business", active: true, statementRequiredFromMonth: "2026-10" },
     ],
     getDocuments: () => ["revolut", "finom"].map((accountId) => ({
       id: `${accountId}-statement`,
@@ -81,43 +90,43 @@ test("the package button stays disabled while a row has no EUR value", () => {
 test("package preview expands one payment into invoice rows while keeping exempt owner and tax rows out", () => {
   const entries = [
     {
-      id: "tx-42084",
+      id: "synthetic-payment-123",
       transactionDate: "2026-10-18",
       paidDate: "2026-10-18",
       counterparty: "Synthetic Card Settlement",
       description: "Combined settlement",
-      amount: "420.84",
+      amount: "123.00",
       currency: "EUR",
       entryType: "expense",
       category: "Tools",
-      statementRef: "Finom Business",
+      statementRef: "Synthetic Business Account",
       allocations: [
         {
           id: "alloc-1",
-          documentId: "doc-399",
+          documentId: "synthetic-document-100",
           counterparty: "Synthetic Compute GmbH",
           description: "Dedicated cluster October",
-          amount: "399.00",
+          amount: "100.00",
           currency: "EUR",
           category: "Infrastructure",
           transactionDate: "2026-10-15",
         },
         {
           id: "alloc-2",
-          documentId: "doc-1499",
+          documentId: "synthetic-document-20",
           counterparty: "Synthetic Domains Ltd",
           description: "Domain renewal",
-          amount: "14.99",
+          amount: "20.00",
           currency: "EUR",
           category: "Domains",
           transactionDate: "2026-10-16",
         },
         {
           id: "alloc-3",
-          documentId: "doc-685",
+          documentId: "synthetic-document-3",
           counterparty: "Synthetic Mail B.V.",
           description: "Transactional email usage",
-          amount: "6.85",
+          amount: "3.00",
           currency: "EUR",
           category: "Tools",
           transactionDate: "2026-10-17",
@@ -135,7 +144,7 @@ test("package preview expands one payment into invoice rows while keeping exempt
       entryType: "expense",
       category: "Compliance & Taxes",
       subtype: "Services",
-      statementRef: "Finom Business",
+      statementRef: "Synthetic Business Account",
     },
     {
       id: "tx-owner",
@@ -148,7 +157,7 @@ test("package preview expands one payment into invoice rows while keeping exempt
       entryType: "expense",
       category: "Owner pay",
       ownerPayType: "draw",
-      statementRef: "Finom Business",
+      statementRef: "Synthetic Business Account",
     },
     {
       id: "tx-tax",
@@ -160,7 +169,7 @@ test("package preview expands one payment into invoice rows while keeping exempt
       currency: "EUR",
       entryType: "expense",
       category: "Taxes",
-      statementRef: "Finom Business",
+      statementRef: "Synthetic Business Account",
     },
   ];
 
@@ -172,9 +181,9 @@ test("package preview expands one payment into invoice rows while keeping exempt
   assert.equal(reportRows.length, 4, "three invoice children plus the ordinary consulting entry");
   assert.deepEqual(reportRows.slice(0, 3).map(({ counterparty, description, amount, sourceTransactionId }) =>
     [counterparty, description, amount, sourceTransactionId]), [
-    ["Synthetic Compute GmbH", "Dedicated cluster October", "399.00", "tx-42084"],
-    ["Synthetic Domains Ltd", "Domain renewal", "14.99", "tx-42084"],
-    ["Synthetic Mail B.V.", "Transactional email usage", "6.85", "tx-42084"],
+    ["Synthetic Compute GmbH", "Dedicated cluster October", "100.00", "synthetic-payment-123"],
+    ["Synthetic Domains Ltd", "Domain renewal", "20.00", "synthetic-payment-123"],
+    ["Synthetic Mail B.V.", "Transactional email usage", "3.00", "synthetic-payment-123"],
   ]);
   assert.equal(reportRows[3].counterparty, "Synthetic Tax Advisory GmbH");
   assert.equal(reportRows[3].amount, "238.00");

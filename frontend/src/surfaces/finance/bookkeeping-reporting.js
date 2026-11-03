@@ -27,6 +27,7 @@ export function createBookkeepingReports({
     const isMonth = /^\d{4}-\d{2}$/.test(lens);
     reportInput.value = isMonth ? lens : "";
     if (!isMonth) {
+      surface.querySelector("[data-report]").disabled = true;
       review.innerHTML = html`<div class="dk-empty dk-empty--compact">
           <p class="dk-empty__title">Choose a month</p>
           <p class="dk-empty__desc">The package follows the month picked in the navigator above.</p>

@@ -75,7 +75,7 @@ test.describe("production portal bookkeeping", () => {
       month: "2026-10", filename: "synthetic-upload.pdf",
     });
     await page.goto("/bookkeeping?month=2026-10");
-    await expect(savedRow.getByRole("button", { name: /View PDF/ })).toHaveCount(1);
+    await expect(savedRow.getByRole("button", { name: "View synthetic-upload.pdf", exact: true })).toHaveCount(1);
     await savedRow.locator(".bk-col-date").click();
     await expect(detail).toContainText("Saved Portal Vendor");
     await expect(detail).toContainText("Saved operator description");
