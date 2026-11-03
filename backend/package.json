@@ -25,6 +25,7 @@
     "seed:users": "tsx scripts/seed-users.ts",
     "seed:recurring": "tsx scripts/seed-recurring.ts",
     "export:data": "tsx scripts/export-execution-data.ts",
+    "sync:prod-data": "tsx scripts/sync-prod-to-local.ts",
     "backup:dynamo": "tsx scripts/backup-dynamo.ts",
     "validate:docs-links": "tsx scripts/validate-docs-links.ts --repo-root .. --content-root content",
     "validate:export": "tsx scripts/validate-execution-export.ts",
