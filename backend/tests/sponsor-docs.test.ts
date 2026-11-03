@@ -14,9 +14,50 @@ import { createPodcastEpisode } from '../src/db/podcastEpisodes';
 import { createUser } from '../src/db/users';
 import { createSession } from '../src/db/sessions';
 import { getSponsorDoc, updateSponsorDoc } from '../src/db/sponsorDocs';
-import { newsletterSponsorSubject, setSponsorDocEmailDepsForTests } from '../src/sponsorDocs/emailDelivery';
-import { renderSponsorEmailDraft } from '../src/sponsorDocs/templates';
+import { setSponsorDocEmailDepsForTests } from '../src/sponsorDocs/emailDelivery';
+import {
+  NEWSLETTER_SPONSOR_EMAIL_TEMPLATE_ID,
+  renderNewsletterSponsorEmail,
+  setKnowledgeEmailTemplateLoaderForTests,
+} from '../src/sponsorDocs/knowledgeEmailTemplate';
 import { templateLink } from './helpers/cardTemplate';
+
+const EMAIL_TEMPLATE_FIXTURE = [
+  '---',
+  `id: ${NEWSLETTER_SPONSOR_EMAIL_TEMPLATE_ID}`,
+  'doc_type: template',
+  '---',
+  'Use the appropriate subject title for the type of Newsletter:',
+  '',
+  '1. Main Slot',
+  '',
+  '<COMPANY> + DataTalks.Club Newsletter - MM-DD-YYYY',
+  '',
+  '2. Secondary Slot',
+  '',
+  '<COMPANY> + DataTalks.Club Newsletter (Secondary Slot) - MM-DD-YYYY',
+  '',
+  '3. Stand-alone Newsletter',
+  '',
+  '<COMPANY> + DataTalks.Club Newsletter (Stand-alone) - MM-DD-YYYY',
+  '',
+  '### Template 2: Initial Introduction to Sponsor (Scheduled Newsletter Date)',
+  '',
+  '```text',
+  'Hello <RECIPIENT_NAME>,',
+  '',
+  'Your <COMPANY_NAME> placement is on <NEWSLETTER_DATE>.',
+  'Document: <COPY_DOCUMENT_URL>',
+  'Code: <ACCESS_CODE>',
+  '',
+  'Past issue examples:',
+  '- [Example issue one](https://example.test/issue-one)',
+  '- [Example issue two](https://example.test/issue-two)',
+  '',
+  'Submit by <COPY_DEADLINE>.',
+  'Sender: <SENDER_NAME>.',
+  '```',
+].join('\n');
 
 describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
   let port: number;
@@ -26,6 +67,11 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
   let staffToken: string;
 
   before(async () => {
+    setKnowledgeEmailTemplateLoaderForTests(async (templateId) => ({
+      id: templateId,
+      revision: 'kb-fixture-revision',
+      markdown: EMAIL_TEMPLATE_FIXTURE,
+    }));
     port = await startLocal();
     client = await getClient(port);
     await createTables(client);
@@ -43,18 +89,32 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     staffToken = session.token;
   });
 
-  it('formats newsletter sponsor subject variants with the requested date shape', () => {
-    assert.equal(newsletterSponsorSubject('newsletter-main', 'Acme', '2026-11-16'), 'Acme + DataTalks.Club Newsletter - 11-16-2026');
-    assert.equal(newsletterSponsorSubject('newsletter-secondary', 'Acme', '2026-11-16'), 'Acme + DataTalks.Club Newsletter (Secondary Slot) - 11-16-2026');
-    assert.equal(newsletterSponsorSubject('newsletter-standalone', 'Acme', '2026-11-16'), 'Acme + DataTalks.Club Newsletter (Stand-alone) - 11-16-2026');
-    const draft = renderSponsorEmailDraft({ template: 'newsletter-main', sponsorName: 'Acme', publicationDate: '2026-11-16', shareUrl: 'https://example.test', accessCode: 'code' });
-    assert.equal(draft.subject, 'Acme + DataTalks.Club Newsletter - 11-16-2026');
-    assert.match(draft.body, /Nice to meet you! I'm Orin/);
-    assert.match(draft.body, /Acme's next sponsored slot in our newsletter is scheduled for November 16, 2026/);
-    assert.match(draft.body, /Access code: code/);
+  it('renders newsletter sponsor subjects and body from the loaded KB template', async () => {
+    const input = {
+      sponsorName: 'Acme',
+      publicationDate: '2026-11-16',
+      shareUrl: 'https://ops.example.test/sponsor-docs/test?code=abc',
+      accessCode: 'ABCD-1234',
+      recipientName: 'Alex',
+    };
+    const main = await renderNewsletterSponsorEmail({ ...input, template: 'newsletter-main' });
+    const secondary = await renderNewsletterSponsorEmail({ ...input, template: 'newsletter-secondary' });
+    const standalone = await renderNewsletterSponsorEmail({ ...input, template: 'newsletter-standalone' });
+
+    assert.equal(main.subject, 'Acme + DataTalks.Club Newsletter - 11-16-2026');
+    assert.equal(secondary.subject, 'Acme + DataTalks.Club Newsletter (Secondary Slot) - 11-16-2026');
+    assert.equal(standalone.subject, 'Acme + DataTalks.Club Newsletter (Stand-alone) - 11-16-2026');
+    assert.match(main.body, /Acme placement is on November 16, 2026/);
+    assert.match(main.body, /https:\/\/ops\.example\.test\/sponsor-docs\/test\?code=abc/);
+    assert.match(main.body, /ABCD-1234/);
+    assert.match(main.body, /https:\/\/example\.test\/issue-one/);
+    assert.match(main.body, /https:\/\/example\.test\/issue-two/);
+    assert.match(main.body, /Submit by 2026-11-06/);
+    assert.doesNotMatch(main.body, /<[^>]+>|\[[^\]]+\]\(/);
   });
 
   after(async () => {
+    setKnowledgeEmailTemplateLoaderForTests(null);
     await stopLocal();
     delete process.env.IS_LOCAL;
   });
@@ -709,6 +769,9 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       assert.deepEqual(Object.keys(sentMessages[0].sendBody), ['raw'], 'a missing threadId makes Gmail create a new thread');
       assert.ok(sentMessages[0].rawDecoded.includes(created.doc.shareUrl));
       assert.ok(sentMessages[0].rawDecoded.includes(created.doc.accessCode));
+      assert.match(sentMessages[0].rawDecoded, /placement is on November 16, 2026/);
+      assert.match(sentMessages[0].rawDecoded, /https:\/\/example\.test\/issue-one/);
+      assert.match(sentMessages[0].rawDecoded, /https:\/\/example\.test\/issue-two/);
 
       // Also verify POST /api/sponsor-docs/:id/send-email when gmail.send scope is missing (403)
       let retryConnection = '';
@@ -804,6 +867,68 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       assert.strictEqual(fallbackBody.emailDelivery?.messageId, 'gmail-msg-orin-fallback');
       const taskAfterRetry = await getTask(client, ownerTask.id);
       assert.match(taskAfterRetry?.notesLog?.at(-1)?.text || '', /gmail-msg-orin-fallback/);
+
+      const templatedMessages: Array<{ rawDecoded: string; sendBody: Record<string, unknown> }> = [];
+      setSponsorDocEmailDepsForTests({
+        brokerUrl: 'https://dapier.example.test',
+        credential: 'dp_test_orin_token',
+        fetchImpl: (async (input: string | URL | Request, init?: RequestInit) => {
+          const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+          if (url === 'https://dapier.example.test/api/agent/token') {
+            return new Response(JSON.stringify({
+              access_token: 'ya29.orin-generic-template',
+              provider_account_id: 'orin@datatalks.club',
+            }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          }
+          if (url === 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send') {
+            const sendBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
+            templatedMessages.push({
+              rawDecoded: Buffer.from(String(sendBody.raw || ''), 'base64url').toString('utf8'),
+              sendBody,
+            });
+            return new Response(JSON.stringify({ id: 'gmail-msg-generic-template', threadId: 'gmail-thread-generic-template' }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          throw new Error(`Unexpected fetch URL: ${url}`);
+        }) as typeof globalThis.fetch,
+      });
+
+      const genericRes = await staffReq('POST', '/api/email-templates/send', {
+        templateId: NEWSLETTER_SPONSOR_EMAIL_TEMPLATE_ID,
+        sectionHeading: 'Template 2: Initial Introduction to Sponsor (Scheduled Newsletter Date)',
+        subjectVariant: 'Secondary Slot',
+        recipientEmail: 'alexey.s.grigoriev@gmail.com',
+        recipientName: 'Alex',
+        taskId: ownerTask.id,
+        values: {
+          COMPANY: 'Acme',
+          COMPANY_NAME: 'Acme',
+          NEWSLETTER_DATE: 'November 16, 2026',
+          COPY_DOCUMENT_URL: 'https://ops.example.test/sponsor-docs/generic?code=xyz',
+          ACCESS_CODE: 'XYZ-9876',
+          COPY_DEADLINE: '2026-11-06',
+          'MM-DD-YYYY': '11-16-2026',
+        },
+      });
+      assert.equal(genericRes.statusCode, 200, genericRes.body);
+      const genericDelivery = JSON.parse(genericRes.body).emailDelivery;
+      assert.equal(genericDelivery.state, 'sent');
+      assert.equal(genericDelivery.messageId, 'gmail-msg-generic-template');
+      assert.equal(genericDelivery.taskId, ownerTask.id);
+      assert.equal(genericDelivery.templateRevision, 'kb-fixture-revision');
+      assert.equal(templatedMessages.length, 1);
+      assert.deepEqual(Object.keys(templatedMessages[0].sendBody), ['raw'], 'generic template sends always create a new thread');
+      assert.match(templatedMessages[0].rawDecoded, /From: Orin <orin@datatalks\.club>/);
+      assert.match(templatedMessages[0].rawDecoded, /To: alexey\.s\.grigoriev@gmail\.com/);
+      assert.match(templatedMessages[0].rawDecoded, /Cc: valeriia@datatalks\.club/);
+      assert.doesNotMatch(templatedMessages[0].rawDecoded, /grace@datatalks\.club/i);
+      assert.match(templatedMessages[0].rawDecoded, /Subject: Acme \+ DataTalks\.Club Newsletter \(Secondary Slot\) - 11-16-2026/);
+      assert.match(templatedMessages[0].rawDecoded, /https:\/\/example\.test\/issue-one/);
+      assert.match(templatedMessages[0].rawDecoded, /https:\/\/example\.test\/issue-two/);
+      const taskAfterGenericSend = await getTask(client, ownerTask.id);
+      assert.match(taskAfterGenericSend?.notesLog?.at(-1)?.text || '', /gmail-msg-generic-template/);
     } finally {
       setSponsorDocEmailDepsForTests({});
     }

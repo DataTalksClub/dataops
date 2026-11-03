@@ -30,12 +30,13 @@ import {
 } from '../calendar/dapierBroker';
 import { listCrmRecords } from '../db/sponsorCrm';
 import {
-  newsletterSponsorSubject,
+  KnowledgeEmailTemplateError,
+  renderNewsletterSponsorEmail,
+} from './knowledgeEmailTemplate';
+import {
   renderSponsorEmailDraft,
   type SponsorDocTemplateKey,
 } from './templates';
-
-export { newsletterSponsorSubject } from './templates';
 
 export const SPONSOR_DOC_EMAIL_FROM = 'orin@datatalks.club';
 export const SPONSOR_DOC_EMAIL_CC = 'valeriia@datatalks.club';
@@ -56,10 +57,17 @@ export interface SponsorDocEmailDelivery {
   connectionId?: string;
   messageId?: string;
   taskId?: string;
+  templateId?: string;
+  templateRevision?: string;
   threadId?: string;
   sentAt?: string;
   reason?: string;
   message?: string;
+}
+
+export interface TemplatedEmailDraft {
+  subject: string;
+  body: string;
 }
 
 export interface SponsorDocEmailDeps {
@@ -82,13 +90,6 @@ function isNewsletterSponsorTemplate(template: SponsorDocTemplateKey): boolean {
     || template === 'newsletter-secondary'
     || template === 'newsletter-standalone'
   );
-}
-
-function isValidIsoDate(value: string | null | undefined): boolean {
-  const raw = String(value || '').trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
-  const parsed = new Date(`${raw}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === raw;
 }
 
 export function isAutoSendEligibleTemplate(template: SponsorDocTemplateKey): boolean {
@@ -228,18 +229,15 @@ function summarizeDapierGmailTokenProblem(status: number, connectionId: string, 
   return `The Dapier Gmail token broker refused the request (HTTP ${status}).`;
 }
 
-export async function deliverSponsorDocEmail(
+export async function deliverRenderedEmail(
   client: DynamoDBDocumentClient,
   options: {
-    template: SponsorDocTemplateKey;
-    sponsorName?: string | null;
-    publicationDate?: string | null;
-    shareUrl: string;
-    accessCode: string;
+    draft: TemplatedEmailDraft;
     recipientEmail?: string | null;
     recipientName?: string | null;
     taskId?: string | null;
     organizationId?: string | null;
+    sponsorName?: string | null;
     connectionId?: string | null;
   },
 ): Promise<SponsorDocEmailDelivery> {
@@ -250,18 +248,7 @@ export async function deliverSponsorDocEmail(
     sponsorName: options.sponsorName,
   });
 
-  const draft = renderSponsorEmailDraft({
-    template: options.template,
-    sponsorName: options.sponsorName,
-    publicationDate: options.publicationDate,
-    shareUrl: options.shareUrl,
-    accessCode: options.accessCode,
-    recipientName: resolvedRecipient.recipientName,
-  });
-  const newsletterEmail = isNewsletterSponsorTemplate(options.template);
-  const subject = newsletterEmail
-    ? newsletterSponsorSubject(options.template, options.sponsorName, options.publicationDate)
-    : draft.subject;
+  const subject = options.draft.subject;
 
   if (resolvedRecipient.to?.toLowerCase() === 'grace@datatalks.club') {
     return {
@@ -285,19 +272,6 @@ export async function deliverSponsorDocEmail(
         'No sponsor recipient email on the request or CRM contact. '
         + 'Pass recipientEmail (or add an active contact email on the sponsor organization in CRM) '
         + `to auto-send from ${SPONSOR_DOC_EMAIL_FROM}.`,
-    };
-  }
-
-  if (newsletterEmail && (!options.sponsorName?.trim() || !isValidIsoDate(options.publicationDate))) {
-    return {
-      state: 'deferred',
-      from: SPONSOR_DOC_EMAIL_FROM,
-      to: resolvedRecipient.to,
-      cc: [SPONSOR_DOC_EMAIL_CC],
-      ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
-      subject,
-      reason: 'incomplete_newsletter_template_data',
-      message: 'Newsletter sponsor email needs a company name and valid publication date; no email was sent.',
     };
   }
 
@@ -359,7 +333,7 @@ export async function deliverSponsorDocEmail(
     to,
     cc,
     subject,
-    body: draft.body,
+    body: options.draft.body,
   });
 
   let preferredDeferred: SponsorDocEmailDelivery | null = null;
@@ -556,6 +530,20 @@ export async function deliverSponsorDocEmail(
       // Keep sent state even if response body is minimal.
     }
 
+    if (!sentPayload.id) {
+      return {
+        state: 'deferred',
+        from: SPONSOR_DOC_EMAIL_FROM,
+        to,
+        ...(cc.length > 0 ? { cc } : {}),
+        ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
+        subject,
+        connectionId,
+        reason: 'gmail_message_id_missing',
+        message: 'Gmail accepted the send but returned no message ID; task evidence was not recorded.',
+      };
+    }
+
     return {
       state: 'sent',
       from: SPONSOR_DOC_EMAIL_FROM,
@@ -583,4 +571,84 @@ export async function deliverSponsorDocEmail(
       message: 'The Dapier token broker could not be reached.',
     }
   );
+}
+
+export async function renderSponsorDocEmailDraft(options: {
+  template: SponsorDocTemplateKey;
+  sponsorName?: string | null;
+  publicationDate?: string | null;
+  shareUrl: string;
+  accessCode: string;
+  recipientName?: string | null;
+}): Promise<TemplatedEmailDraft & { templateId?: string; templateRevision?: string }> {
+  if (isNewsletterSponsorTemplate(options.template)) {
+    const rendered = await renderNewsletterSponsorEmail(options);
+    return {
+      subject: rendered.subject,
+      body: rendered.body,
+      templateId: rendered.id,
+      templateRevision: rendered.revision,
+    };
+  }
+  return renderSponsorEmailDraft(options);
+}
+
+export async function deliverSponsorDocEmail(
+  client: DynamoDBDocumentClient,
+  options: {
+    template: SponsorDocTemplateKey;
+    sponsorName?: string | null;
+    publicationDate?: string | null;
+    shareUrl: string;
+    accessCode: string;
+    recipientEmail?: string | null;
+    recipientName?: string | null;
+    taskId?: string | null;
+    organizationId?: string | null;
+    connectionId?: string | null;
+  },
+): Promise<SponsorDocEmailDelivery> {
+  const resolvedRecipient = await resolveSponsorDocRecipient(client, {
+    explicitEmail: options.recipientEmail,
+    explicitName: options.recipientName,
+    organizationId: options.organizationId,
+    sponsorName: options.sponsorName,
+  });
+
+  let draft: TemplatedEmailDraft & { templateId?: string; templateRevision?: string };
+  try {
+    draft = await renderSponsorDocEmailDraft({
+      template: options.template,
+      sponsorName: options.sponsorName,
+      publicationDate: options.publicationDate,
+      shareUrl: options.shareUrl,
+      accessCode: options.accessCode,
+      recipientName: resolvedRecipient.recipientName,
+    });
+  } catch (error) {
+    return {
+      state: 'deferred',
+      from: SPONSOR_DOC_EMAIL_FROM,
+      ...(resolvedRecipient.to ? { to: resolvedRecipient.to, cc: [SPONSOR_DOC_EMAIL_CC] } : {}),
+      ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
+      subject: '',
+      reason: error instanceof KnowledgeEmailTemplateError ? 'knowledge_template_unavailable' : 'template_render_failed',
+      message: 'The sponsor email template could not be loaded or rendered; no email was sent.',
+    };
+  }
+
+  const delivery = await deliverRenderedEmail(client, {
+    draft,
+    recipientEmail: resolvedRecipient.to,
+    recipientName: resolvedRecipient.recipientName,
+    taskId: options.taskId,
+    organizationId: options.organizationId,
+    sponsorName: options.sponsorName,
+    connectionId: options.connectionId,
+  });
+  return {
+    ...delivery,
+    ...(draft.templateId ? { templateId: draft.templateId } : {}),
+    ...(draft.templateRevision ? { templateRevision: draft.templateRevision } : {}),
+  };
 }

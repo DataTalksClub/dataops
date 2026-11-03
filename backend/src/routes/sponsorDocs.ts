@@ -38,6 +38,7 @@ import {
 import {
   deliverSponsorDocEmail,
   isAutoSendEligibleTemplate,
+  renderSponsorDocEmailDraft,
   type SponsorDocEmailDelivery,
 } from '../sponsorDocs/emailDelivery';
 import { resolveInteractiveActor } from '../identity/actor';
@@ -51,7 +52,6 @@ import {
   hydratePodcastGuestSlotOptions,
   isSponsorDocTemplateKey,
   renderSponsorDocMarkdownExport,
-  renderSponsorEmailDraft,
   speakerContentView,
   speakerTemplateView,
   type SponsorDocTemplateKey,
@@ -322,16 +322,21 @@ async function buildDocResponsePayload(
     const shareUrl = accessCode
       ? `${docUrl}?code=${encodeURIComponent(accessCode)}`
       : null;
-    const emailDraft = accessCode && shareUrl
-      ? renderSponsorEmailDraft({
-        template: doc.template,
-        sponsorName: doc.sponsorName,
-        recipientName: doc.emailDelivery?.recipientName || null,
-        publicationDate: doc.eventMetadata?.label || doc.publicationDate,
-        shareUrl,
-        accessCode,
-      })
-      : null;
+    let emailDraft = null;
+    if (accessCode && shareUrl) {
+      try {
+        emailDraft = await renderSponsorDocEmailDraft({
+          template: doc.template,
+          sponsorName: doc.sponsorName,
+          recipientName: doc.emailDelivery?.recipientName || null,
+          publicationDate: doc.eventMetadata?.label || doc.publicationDate,
+          shareUrl,
+          accessCode,
+        });
+      } catch {
+        // A form remains readable when the private email template is offline.
+      }
+    }
     return {
       ...doc,
       viewerRole: 'staff' as const,

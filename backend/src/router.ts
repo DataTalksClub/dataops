@@ -57,6 +57,7 @@ import { withCrmReadSnapshot } from './db/sponsorCrm';
 import { handleInvoiceReader } from './auth/invoiceReader';
 import { handleKnowledgePublisher } from './auth/knowledgePublisher';
 import { handleSponsorDocRoutes, isAnonymousSponsorDocRequest } from './routes/sponsorDocs';
+import { handleEmailTemplateRoutes } from './routes/emailTemplates';
 import { handleSponsorContractRoutes, isAnonymousSponsorContractRequest } from './routes/sponsorContracts';
 import { getDocument } from './db/documents';
 import { handleCardDocumentRoutes } from './routes/cardDocuments';
@@ -409,6 +410,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
 
     // ── Sponsor content document routes ────────────────────────────
+
+    if (reqPath.startsWith('/api/email-templates')) {
+      const result = await handleEmailTemplateRoutes(reqPath, method, event, client);
+      if (result) return result;
+    }
 
     if (reqPath.startsWith('/api/sponsor-docs')) {
       const result = await handleSponsorDocRoutes(reqPath, method, event, client);
