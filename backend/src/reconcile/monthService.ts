@@ -35,6 +35,7 @@ import {
   type BankTx,
   type ClassificationRule,
   type ExceptionKind,
+  type LedgerDocument,
   type LedgerRow,
   type ManualDecisions,
   type MonthTable,
@@ -241,7 +242,7 @@ const signed = (amount: unknown, entryType: unknown) => {
 };
 
 export function ledgerRowsFrom(transactions: Array<Record<string, unknown>>, links: Array<Record<string, unknown>>): LedgerRow[] {
-  const documents = new Map<string, Array<{ id: string }>>();
+  const documents = new Map<string, LedgerDocument[]>();
   for (const link of links) {
     if (link.coverageType !== "evidence") continue;
     const list = documents.get(String(link.transactionId)) || [];
@@ -782,7 +783,7 @@ function sourceChecksum(value: unknown): string | undefined {
   return /^[a-f0-9]{64}$/.test(checksum) ? checksum : undefined;
 }
 
-async function confirmedInvoiceSource(client: DynamoDBDocumentClient, row: LedgerRow, document: LedgerRow["documents"][number]) {
+async function confirmedInvoiceSource(client: DynamoDBDocumentClient, document: LedgerDocument) {
   if (!document.invoiceId) return null;
   const invoice = await getInvoice(client, document.invoiceId);
   if (!invoice || invoice.status !== "confirmed") return null;
@@ -830,7 +831,7 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
     const invoiceSources = new Map<string, Awaited<ReturnType<typeof confirmedInvoiceSource>>>();
     for (const document of row.documents) {
       if (document.invoiceId && !invoiceSources.has(document.invoiceId)) {
-        invoiceSources.set(document.invoiceId, await confirmedInvoiceSource(client, row.ledger, document));
+        invoiceSources.set(document.invoiceId, await confirmedInvoiceSource(client, document));
       }
     }
     for (const document of row.documents) {
