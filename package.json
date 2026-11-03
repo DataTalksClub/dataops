@@ -11,6 +11,7 @@
     "clean:backend": "npm run clean --workspace dataops-backend",
     "dev": "node scripts/dev-portal.mjs",
     "dev:prod": "node scripts/dev-prod-data.mjs",
+    "dev:live": "node scripts/dev-live.mjs",
     "dev:backend": "npm run dev --workspace dataops-backend",
     "dry-run:import:backend": "npm run dry-run:import --workspace dataops-backend --",
     "export:data:backend": "npm run export:data --workspace dataops-backend --",
