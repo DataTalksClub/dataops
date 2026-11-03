@@ -5,7 +5,7 @@ import { createTables } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { setBookkeepingArchiveUploaderForTests, setBookkeepingStorageForTests } from '../src/routes/bookkeepingShared';
-import { getBookkeepingItem, listBookkeepingItems, listTransactions, putBookkeepingItem } from '../src/db/bookkeeping';
+import { getBookkeepingItem, listBookkeepingItems, listTransactions, putBookkeepingItem, updateBookkeepingTransaction } from '../src/db/bookkeeping';
 import { TransactWriteCommand, UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createSession } from '../src/db/sessions';
 import { createHash } from 'crypto';
@@ -46,17 +46,37 @@ describe('bookkeeping API',()=>{
     assert.deepEqual(updated.audit.at(-1),{action:'updated',actor:'synthetic-operator',at:updated.audit.at(-1).at,changes:{category:{from:null,to:'Work-related'},subtype:{from:null,to:'Subscription'},amountEur:{from:null,to:'9.25'},rateSource:{from:null,to:'ECB 23 Oct 2026'}}});
     assert.ok(Number.isFinite(Date.parse(updated.audit.at(-1).at)));
   });
-  it('bounds audit history by serialized size while keeping the latest correction',async()=>{
+  it('rejects corrections over the audit byte budget without trimming retained history',async()=>{
     const created=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',valid)).body);
-    let updated:any;
+    let updated:any,lastComment:string|undefined,rejected=false;
     for(let index=0;index<100;index++){
-      const response=await invoke('PUT',`/api/bookkeeping/transactions/${created.id}`,{comment:`${index}: ${'x'.repeat(1950)}`});
+      const comment=`${index}: ${'x'.repeat(1950)}`;
+      const response=await invoke('PUT',`/api/bookkeeping/transactions/${created.id}`,{comment});
+      if(response.statusCode===413){rejected=true;break;}
       assert.equal(response.statusCode,200);
       updated=JSON.parse(response.body);
+      lastComment=comment;
     }
+    assert.equal(rejected,true);
     assert.ok(Buffer.byteLength(JSON.stringify(updated.audit),'utf8')<=128*1024);
     assert.ok(updated.audit.length<100);
-    assert.equal(updated.comment,`99: ${'x'.repeat(1950)}`);
+    assert.equal(updated.comment,lastComment);
+    const after=await getBookkeepingItem(client,'bookkeeping',created.id);
+    assert.deepEqual(after?.audit,updated.audit);
+    assert.equal(after?.comment,lastComment);
+  });
+  it('rejects an audit append over the byte budget without changing the transaction',async()=>{
+    const created=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',valid)).body);
+    const audit=[{action:'historic',payload:'x'.repeat(128*1024-100)}];
+    assert.ok(Buffer.byteLength(JSON.stringify(audit),'utf8')<=128*1024);
+    const seeded=await updateBookkeepingTransaction(client,created.id,String(created.updatedAt),{...created,audit});
+    const response=await invoke('PUT',`/api/bookkeeping/transactions/${created.id}`,{description:'Must not be stored'});
+    assert.equal(response.statusCode,413);
+    assert.match(JSON.parse(response.body).error,/no changes were saved/i);
+    const after=await getBookkeepingItem(client,'bookkeeping',created.id);
+    assert.deepEqual(after?.audit,seeded.audit);
+    assert.equal(after?.description,seeded.description);
+    assert.equal(after?.updatedAt,seeded.updatedAt);
   });
   it('rejects invalid data without echoing values',async()=>{const r=await invoke('POST','/api/bookkeeping/transactions',{...valid,amount:'NaN',currency:'EURO'});assert.equal(r.statusCode,400);assert.deepEqual(JSON.parse(r.body).fields.sort(),['amount','currency']);assert.ok(!r.body.includes('NaN'));});
   it('requires a real session for route-level CRUD without leaking records',async()=>{process.env.SKIP_AUTH='false';const unauthorized=await invoke('GET','/api/bookkeeping/transactions');assert.equal(unauthorized.statusCode,401);assert.equal(unauthorized.body.includes('Synthetic Vendor'),false);const session=await createSession(client,'synthetic-operator');const auth={Authorization:`Bearer ${session.token}`};const created=await invoke('POST','/api/bookkeeping/transactions',{...valid,description:'Session-authenticated synthetic'},auth);assert.equal(created.statusCode,201);const listed=await invoke('GET','/api/bookkeeping/transactions',undefined,auth);assert.equal(listed.statusCode,200);assert.ok(JSON.parse(listed.body).items.some((i:any)=>i.description==='Session-authenticated synthetic'));process.env.SKIP_AUTH='true';});
@@ -203,6 +223,23 @@ describe('bookkeeping API',()=>{
     });
     assert.equal(casRes.statusCode,409);
     assert.match(JSON.parse(casRes.body).error,/CAS conflict/i);
+
+    // Reject a multi-byte reason beyond the UTF-8 byte limit without partial writes.
+    const oversizedReasonRes=await invoke('PUT',`/api/bookkeeping/transactions/${payment.id}/allocations`,{
+      expectedUpdatedAt:payment.updatedAt,
+      reason:'💶'.repeat(600),
+      allocations:[
+        {documentId:docA.id,counterparty:'Synthetic Vendor A',description:'Synthetic service A',amount:'100.00'},
+        {documentId:docB.id,counterparty:'Synthetic Vendor B',description:'Synthetic service B',amount:'20.00'},
+        {documentId:docC.id,counterparty:'Synthetic Vendor C',description:'Synthetic service C',amount:'3.00'},
+      ],
+    });
+    assert.equal(oversizedReasonRes.statusCode,400);
+    assert.deepEqual(JSON.parse(oversizedReasonRes.body).fields,['reason']);
+    const unchangedPayment=await getBookkeepingItem(client,'bookkeeping',payment.id);
+    assert.equal(unchangedPayment?.allocations,undefined);
+    assert.deepEqual(unchangedPayment?.audit,payment.audit);
+    assert.deepEqual((await listBookkeepingItems(client,'link')).filter((link:any)=>String(link.transactionId)===payment.id).map((link:any)=>link.id),[manualLink.id]);
 
     // Valid exact allocation: 100.00 + 20.00 + 3.00 = 123.00 EUR
     const validAllocRes=await invoke('PUT',`/api/bookkeeping/transactions/${payment.id}/allocations`,{

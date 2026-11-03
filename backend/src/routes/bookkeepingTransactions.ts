@@ -29,6 +29,7 @@ import {
 const CURRENCY = /^[A-Z]{3}$/;
 const MAX_AUDIT_ENTRIES = 100;
 const MAX_AUDIT_BYTES = 128 * 1024;
+const MAX_AUDIT_REASON_BYTES = 2 * 1024;
 const allowed = [
   "transactionDate",
   "paidDate",
@@ -144,11 +145,11 @@ function safeData(input: Record<string, unknown>) {
   );
 }
 
-function boundedAudit(entries: unknown[]) {
+function boundedAudit(entries: unknown[]): unknown[] | null {
   const audit = entries.slice(-MAX_AUDIT_ENTRIES);
-  while (audit.length > 1 && Buffer.byteLength(JSON.stringify(audit), "utf8") > MAX_AUDIT_BYTES)
-    audit.shift();
-  return audit;
+  return Buffer.byteLength(JSON.stringify(audit), "utf8") <= MAX_AUDIT_BYTES
+    ? audit
+    : null;
 }
 
 function extractExpectedUpdatedAt(
@@ -573,6 +574,13 @@ export async function handleBookkeepingTransactionRoutes(
 
       const actor =
         headerValue(event.headers, "x-user-id") || "authenticated-operator";
+      if (
+        body.reason != null &&
+        (typeof body.reason !== "string" ||
+          Buffer.byteLength(body.reason, "utf8") > MAX_AUDIT_REASON_BYTES)
+      ) {
+        return json(400, { error: "Invalid audit reason", fields: ["reason"] });
+      }
       const reason =
         typeof body.reason === "string" && body.reason.trim()
           ? body.reason.trim()
@@ -602,6 +610,15 @@ export async function handleBookkeepingTransactionRoutes(
               },
             },
           };
+          const audit = boundedAudit([
+            ...(Array.isArray(previous.audit) ? previous.audit : []),
+            auditEntry,
+          ]);
+          if (!audit) {
+            return json(413, {
+              error: "Audit history size limit exceeded; no changes were saved",
+            });
+          }
           const updated = await updateBookkeepingTransaction(
             client,
             transactionId,
@@ -609,10 +626,7 @@ export async function handleBookkeepingTransactionRoutes(
             {
               ...previous,
               allocations: undefined,
-              audit: boundedAudit([
-                ...(Array.isArray(previous.audit) ? previous.audit : []),
-                auditEntry,
-              ]),
+              audit,
             },
             "active",
             undefined,
@@ -651,6 +665,15 @@ export async function handleBookkeepingTransactionRoutes(
             },
           },
         };
+        const audit = boundedAudit([
+          ...(Array.isArray(previous.audit) ? previous.audit : []),
+          auditEntry,
+        ]);
+        if (!audit) {
+          return json(413, {
+            error: "Audit history size limit exceeded; no changes were saved",
+          });
+        }
         const updated = await updateBookkeepingTransaction(
           client,
           transactionId,
@@ -658,10 +681,7 @@ export async function handleBookkeepingTransactionRoutes(
           {
             ...previous,
             allocations: normalizedAllocations,
-            audit: boundedAudit([
-              ...(Array.isArray(previous.audit) ? previous.audit : []),
-              auditEntry,
-            ]),
+            audit,
             },
             "active",
             undefined,
@@ -803,7 +823,7 @@ export async function handleBookkeepingTransactionRoutes(
             ...Object.keys(safeData(body)),
             ...(allocationsChanged ? ["allocations"] : []),
           ];
-          value.audit = boundedAudit([...(Array.isArray(previous!.audit) ? previous!.audit : []), {
+          const audit = boundedAudit([...(Array.isArray(previous!.audit) ? previous!.audit : []), {
             action: "updated",
             actor: headerValue(event.headers, "x-user-id") || "authenticated-operator",
             at: new Date().toISOString(),
@@ -812,6 +832,12 @@ export async function handleBookkeepingTransactionRoutes(
               to: value[field] ?? null,
             }])),
           }]);
+          if (!audit) {
+            return json(413, {
+              error: "Audit history size limit exceeded; no changes were saved",
+            });
+          }
+          value.audit = audit;
           const updated = await updateBookkeepingTransaction(
             client,
             match[1],
