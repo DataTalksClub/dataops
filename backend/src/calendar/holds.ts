@@ -227,6 +227,18 @@ export function confirmedTitle(title: string): string {
   return title.replace(/^(?:(?:\(Proposal\)|Proposed\s*[-–—:]?)\s*)+/i, '').trim();
 }
 
+/** SOP podcast convention: the confirmed invite is named for the guest, not the topic. */
+export const PODCAST_INVITE_SUFFIX = 'at DataTalks.Club Podcast';
+
+export function podcastInviteTitle(guestNames: string): string {
+  const names = String(guestNames || '').trim();
+  return names ? `${names} ${PODCAST_INVITE_SUFFIX}` : '';
+}
+
+export function isPodcastInviteTitle(title: string): boolean {
+  return /at DataTalks\.Club Podcast\s*$/i.test(String(title || '').trim());
+}
+
 export function parseHoldWindow(raw: unknown): CalendarHoldWindow {
   const v = String(raw ?? 'evening').trim().toLowerCase();
   if (v === 'midday' || v === 'evening') return v;
