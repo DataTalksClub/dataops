@@ -132,6 +132,34 @@ export type CandidateMatch = {
 const norm = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 const invoiceKey = (value: string) => value.trim().toUpperCase().replace(/\s+/g, '');
 
+const DAY_MS = 86_400_000;
+
+/**
+ * Already-paid fallback for deals whose finance state predates the stored
+ * invoice number (or never recorded one): a single paid row with the exact
+ * amount, currency and sponsor name, near the payment date. Never guesses
+ * between ties, and never fires while an open row still matches (open
+ * matching runs first). Informational only: nothing is marked paid.
+ */
+export function matchPaidRow(parsed: ParsedPayment, receivedOn: string, rows: LedgerRow[]): LedgerRow | null {
+  if (!parsed.amount || !parsed.currency || !parsed.payer) return null;
+  const payer = norm(parsed.payer);
+  if (payer.length < 3) return null;
+  const hits = rows.filter((row) => {
+    if (row.paymentState !== 'paid') return false;
+    if (!row.currency || row.currency !== parsed.currency) return false;
+    if (![row.paid, row.amountDue].some((value) => value && Number(value) === Number(parsed.amount))) return false;
+    const organization = norm(row.organizationName || '');
+    if (organization.length < 3 || (!organization.includes(payer) && !payer.includes(organization))) return false;
+    if (row.lastPaymentOn && receivedOn) {
+      const days = Math.abs(Math.round((Date.parse(receivedOn) - Date.parse(row.lastPaymentOn)) / DAY_MS));
+      if (!Number.isFinite(days) || days > 14) return false;
+    }
+    return true;
+  });
+  return hits.length === 1 ? hits[0] : null;
+}
+
 /** Invoice number first, then amount + sponsor name; never guesses between ties. */
 export function matchPayment(parsed: ParsedPayment, rows: LedgerRow[]): CandidateMatch | null {
   const open = rows.filter((row) => row.paymentState !== 'paid' && row.paymentState !== 'not-applicable');
@@ -213,6 +241,18 @@ export function validateMail(value: unknown): PaymentMail {
 
 export type IngestOutcome = { messageId: string; outcome: 'created' | 'duplicate' | 'ignored'; candidate?: PaymentMailCandidate };
 
+function describePaidRow(row: LedgerRow): CandidateMatch {
+  return {
+    dealId: row.dealId, organizationName: row.organizationName,
+    ...(row.dealTitle ? { dealTitle: row.dealTitle } : {}),
+    ...(row.invoiceNumber ? { invoiceNumber: row.invoiceNumber } : {}),
+    ...(row.paid ? { outstanding: row.paid } : {}),
+    ...(row.currency ? { currency: row.currency } : {}),
+    confidence: row.invoiceNumber ? 'invoice' : 'amount',
+    reasons: row.invoiceNumber ? ['invoice number', 'already paid'] : ['amount', 'currency', 'sponsor', 'already paid'],
+  };
+}
+
 /** Idempotent per message id: a re-ingested mail never overwrites a decided candidate. */
 export async function ingestPaymentMail(client: DynamoDBDocumentClient, mails: PaymentMail[], rows: LedgerRow[]): Promise<IngestOutcome[]> {
   const out: IngestOutcome[] = [];
@@ -221,11 +261,13 @@ export async function ingestPaymentMail(client: DynamoDBDocumentClient, mails: P
     if (!parsed) { out.push({ messageId: mail.messageId, outcome: 'ignored' }); continue; }
     const id = candidateId(mail.messageId);
     const match = matchPayment(parsed, rows);
-    const alreadyPaid = !match && !!parsed.invoiceNumber && rows.some((r) => r.invoiceNumber && invoiceKey(r.invoiceNumber) === invoiceKey(parsed.invoiceNumber!) && r.paymentState === 'paid');
-    const paidRow = parsed.invoiceNumber ? rows.find((r) => r.invoiceNumber && invoiceKey(r.invoiceNumber) === invoiceKey(parsed.invoiceNumber!) && r.paymentState === 'paid') : undefined;
+    const paidByInvoice = parsed.invoiceNumber ? rows.find((r) => r.invoiceNumber && invoiceKey(r.invoiceNumber) === invoiceKey(parsed.invoiceNumber!) && r.paymentState === 'paid') : undefined;
+    const receivedAt = new Date(mail.receivedAt).toISOString();
+    const paidFallback = !match && !paidByInvoice ? matchPaidRow(parsed, receivedAt.slice(0, 10), rows) : null;
+    const alreadyPaid = !!paidByInvoice || !!paidFallback;
+    const paidRow = paidByInvoice || paidFallback || undefined;
     const now = new Date().toISOString();
     const status: PaymentMailStatus = alreadyPaid ? 'already-paid' : match ? 'candidate' : 'unmatched';
-    const receivedAt = new Date(mail.receivedAt).toISOString();
     const candidate: PaymentMailCandidate = {
       id, recordType: 'payment-mail-candidate', messageId: mail.messageId.trim(), provider: parsed.provider,
       from: mail.from.slice(0, 320), subject: mail.subject.slice(0, 500), receivedAt, receivedOn: receivedAt.slice(0, 10),
@@ -234,7 +276,7 @@ export async function ingestPaymentMail(client: DynamoDBDocumentClient, mails: P
       ...(parsed.currency ? { currency: parsed.currency } : {}),
       ...(parsed.payer ? { payer: parsed.payer } : {}),
       status,
-      ...(match ? { match } : paidRow ? { match: { dealId: paidRow.dealId, organizationName: paidRow.organizationName, ...(paidRow.dealTitle ? { dealTitle: paidRow.dealTitle } : {}), ...(paidRow.invoiceNumber ? { invoiceNumber: paidRow.invoiceNumber } : {}), confidence: 'invoice' as const, reasons: ['invoice number', 'already paid'] } } : {}),
+      ...(match ? { match } : paidRow ? { match: describePaidRow(paidRow) } : {}),
       createdAt: now, updatedAt: now,
     };
     try {
