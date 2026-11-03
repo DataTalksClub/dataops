@@ -5,6 +5,7 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import type { LambdaEvent, LambdaResponse } from "../types";
 import {
+  BookkeepingItemLockedError,
   createDocumentLink,
   getBookkeepingItem,
   getRawDocument,
@@ -284,13 +285,20 @@ export async function handleBookkeepingSuggestionRoutes(
 /** Copy extraction evidence to a linked row without replacing bank amounts. */
 export async function applyDocumentFinance(client:DynamoDBDocumentClient, facts:DocumentFacts, transactionId:string) {
   if(!facts.extraction) return;
-  const row=await getBookkeepingItem(client,"bookkeeping",transactionId);
-  if(!row || JSON.stringify(row.documentExtraction)===JSON.stringify(facts)) return;
-  const patch:Record<string,unknown>={documentExtraction:facts};
-  if(!facts.extraction?.needsReview && facts.currency===row.currency) {
-    for(const field of ['netAmount','vatAmount','vatCurrency','vatRate','reverseCharge','grossAmountEur','netAmountEur','vatAmountEur','exchangeRate','exchangeRateDate','exchangeRateSource'] as const) {
-      if(facts[field]!==undefined && row[field]===undefined) patch[field]=facts[field];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const row=await getBookkeepingItem(client,"bookkeeping",transactionId,true);
+    if(!row || JSON.stringify(row.documentExtraction)===JSON.stringify(facts)) return;
+    const patch:Record<string,unknown>={documentExtraction:facts};
+    if(!facts.extraction?.needsReview && facts.currency===row.currency) {
+      for(const field of ['netAmount','vatAmount','vatCurrency','vatRate','reverseCharge','grossAmountEur','netAmountEur','vatAmountEur','exchangeRate','exchangeRateDate','exchangeRateSource'] as const) {
+        if(facts[field]!==undefined && row[field]===undefined) patch[field]=facts[field];
+      }
+    }
+    try {
+      await updateBookkeepingTransaction(client,transactionId,String(row.updatedAt),patch);
+      return;
+    } catch (error) {
+      if (!(error instanceof BookkeepingItemLockedError) || attempt === 2) throw error;
     }
   }
-  await updateBookkeepingTransaction(client,transactionId,String(row.updatedAt),patch);
 }

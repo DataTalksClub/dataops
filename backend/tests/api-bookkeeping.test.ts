@@ -5,7 +5,7 @@ import { createTables } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { setBookkeepingArchiveUploaderForTests, setBookkeepingStorageForTests } from '../src/routes/bookkeepingShared';
-import { getBookkeepingItem, listBookkeepingItems, putBookkeepingItem } from '../src/db/bookkeeping';
+import { getBookkeepingItem, listBookkeepingItems, listTransactions, putBookkeepingItem } from '../src/db/bookkeeping';
 import { TransactWriteCommand, UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createSession } from '../src/db/sessions';
 import { createHash } from 'crypto';
@@ -61,7 +61,7 @@ describe('bookkeeping API',()=>{
   });
   it('does not require legacy business setup statements for current monthly snapshots',async()=>{
     await invoke('POST','/api/bookkeeping/accounts/setup');
-    const currentAccounts=[['revolut','Revolut Business EUR'],['finom','Finom Business']];
+    const currentAccounts=[['synthetic-primary','Synthetic Business Account A'],['synthetic-secondary','Synthetic Business Account B']];
     const statementIds:string[]=[];
     for(const [id,displayName] of currentAccounts){
       await putBookkeepingItem(client,'account',{id,displayName,kind:'business',active:true},`business-account#current#${id}`);
@@ -122,24 +122,25 @@ describe('bookkeeping API',()=>{
     const retry=await invoke('POST',`/api/bookkeeping/reports/${report.id}/archive`);assert.equal(retry.statusCode,200);assert.equal(JSON.parse(retry.body).duplicate,true);
   });
 
-  it('allocates one bank payment (420.84 EUR) across three invoice rows with CAS, audit, duplicate/mismatch/rounding rejection, and reversible clear',async()=>{
-    const doc399=(await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:'inv-399.pdf',contentType:'application/pdf',byteSize:100,sha256:createHash('sha256').update('pdf-399').digest('hex'),s3Key:'documents/inv-399.pdf'})).item;
-    const doc1499=(await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:'inv-1499.pdf',contentType:'application/pdf',byteSize:100,sha256:createHash('sha256').update('pdf-1499').digest('hex'),s3Key:'documents/inv-1499.pdf'})).item;
-    const doc685=(await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:'inv-685.pdf',contentType:'application/pdf',byteSize:100,sha256:createHash('sha256').update('pdf-685').digest('hex'),s3Key:'documents/inv-685.pdf'})).item;
-    const docOther=(await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:'inv-other.pdf',contentType:'application/pdf',byteSize:100,sha256:createHash('sha256').update('pdf-other').digest('hex'),s3Key:'documents/inv-other.pdf'})).item;
+  it('allocates one synthetic 123 EUR payment across three invoice rows with CAS, audit, duplicate/mismatch/rounding rejection, and reversible clear',async()=>{
+    const docA=(await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:'synthetic-invoice-a.pdf',contentType:'application/pdf',byteSize:100,sha256:createHash('sha256').update('synthetic-invoice-a').digest('hex'),s3Key:'documents/synthetic-invoice-a.pdf'})).item;
+    const docB=(await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:'synthetic-invoice-b.pdf',contentType:'application/pdf',byteSize:100,sha256:createHash('sha256').update('synthetic-invoice-b').digest('hex'),s3Key:'documents/synthetic-invoice-b.pdf'})).item;
+    const docC=(await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:'synthetic-invoice-c.pdf',contentType:'application/pdf',byteSize:100,sha256:createHash('sha256').update('synthetic-invoice-c').digest('hex'),s3Key:'documents/synthetic-invoice-c.pdf'})).item;
+    const docOther=(await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:'synthetic-invoice-other.pdf',contentType:'application/pdf',byteSize:100,sha256:createHash('sha256').update('synthetic-invoice-other').digest('hex'),s3Key:'documents/synthetic-invoice-other.pdf'})).item;
 
-    const payment=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-18',paidDate:'2026-10-18',counterparty:'Synthetic Bundle Settlement',description:'Combined payment',amount:'420.84',currency:'EUR',entryType:'expense',category:'Tools'})).body);
-    const otherTx=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-19',counterparty:'Other Vendor',description:'Other service',amount:'50.00',currency:'EUR',entryType:'expense'})).body);
+    const paymentDate='2025-04-15';
+    const payment=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:paymentDate,paidDate:paymentDate,counterparty:'Synthetic Bundle Settlement',description:'Combined synthetic payment',amount:'123.00',currency:'EUR',entryType:'expense',category:'Tools'})).body);
+    const otherTx=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2025-04-16',counterparty:'Synthetic Other Vendor',description:'Other synthetic service',amount:'50.00',currency:'EUR',entryType:'expense'})).body);
     await invoke('POST','/api/bookkeeping/links',{documentId:docOther.id,transactionId:otherTx.id,coverageType:'evidence'});
-    const manualLink=JSON.parse((await invoke('POST','/api/bookkeeping/links',{documentId:doc399.id,transactionId:payment.id,coverageType:'evidence'})).body);
+    const manualLink=JSON.parse((await invoke('POST','/api/bookkeeping/links',{documentId:docA.id,transactionId:payment.id,coverageType:'evidence'})).body);
 
     // Reject sum mismatch
     const mismatchRes=await invoke('PUT',`/api/bookkeeping/transactions/${payment.id}/allocations`,{
       expectedUpdatedAt:payment.updatedAt,
       allocations:[
-        {documentId:doc399.id,counterparty:'Vendor A',description:'Cluster',amount:'399.00'},
-        {documentId:doc1499.id,counterparty:'Vendor B',description:'Domain',amount:'14.99'},
-        {documentId:doc685.id,counterparty:'Vendor C',description:'Email',amount:'6.84'},
+        {documentId:docA.id,counterparty:'Synthetic Vendor A',description:'Synthetic service A',amount:'100.00'},
+        {documentId:docB.id,counterparty:'Synthetic Vendor B',description:'Synthetic service B',amount:'20.00'},
+        {documentId:docC.id,counterparty:'Synthetic Vendor C',description:'Synthetic service C',amount:'2.99'},
       ],
     });
     assert.equal(mismatchRes.statusCode,400);
@@ -149,9 +150,9 @@ describe('bookkeeping API',()=>{
     const roundingRes=await invoke('PUT',`/api/bookkeeping/transactions/${payment.id}/allocations`,{
       expectedUpdatedAt:payment.updatedAt,
       allocations:[
-        {documentId:doc399.id,counterparty:'Vendor A',description:'Cluster',amount:'399.00'},
-        {documentId:doc1499.id,counterparty:'Vendor B',description:'Domain',amount:'14.995'},
-        {documentId:doc685.id,counterparty:'Vendor C',description:'Email',amount:'6.845'},
+        {documentId:docA.id,counterparty:'Synthetic Vendor A',description:'Synthetic service A',amount:'100.00'},
+        {documentId:docB.id,counterparty:'Synthetic Vendor B',description:'Synthetic service B',amount:'20.005'},
+        {documentId:docC.id,counterparty:'Synthetic Vendor C',description:'Synthetic service C',amount:'2.995'},
       ],
     });
     assert.equal(roundingRes.statusCode,400);
@@ -161,8 +162,8 @@ describe('bookkeeping API',()=>{
     const dupSameRes=await invoke('PUT',`/api/bookkeeping/transactions/${payment.id}/allocations`,{
       expectedUpdatedAt:payment.updatedAt,
       allocations:[
-        {documentId:doc399.id,counterparty:'Vendor A',description:'Cluster',amount:'399.00'},
-        {documentId:doc399.id,counterparty:'Vendor B',description:'Domain',amount:'21.84'},
+        {documentId:docA.id,counterparty:'Synthetic Vendor A',description:'Synthetic service A',amount:'100.00'},
+        {documentId:docA.id,counterparty:'Synthetic Vendor B',description:'Synthetic service B',amount:'23.00'},
       ],
     });
     assert.equal(dupSameRes.statusCode,400);
@@ -172,7 +173,7 @@ describe('bookkeeping API',()=>{
     const dupCrossRes=await invoke('PUT',`/api/bookkeeping/transactions/${payment.id}/allocations`,{
       expectedUpdatedAt:payment.updatedAt,
       allocations:[
-        {documentId:docOther.id,counterparty:'Vendor A',description:'Cluster',amount:'420.84'},
+        {documentId:docOther.id,counterparty:'Synthetic Vendor A',description:'Synthetic service A',amount:'123.00'},
       ],
     });
     assert.equal(dupCrossRes.statusCode,409);
@@ -182,45 +183,45 @@ describe('bookkeeping API',()=>{
     const casRes=await invoke('PUT',`/api/bookkeeping/transactions/${payment.id}/allocations`,{
       expectedUpdatedAt:'1999-01-01T00:00:00.000Z',
       allocations:[
-        {documentId:doc399.id,counterparty:'Vendor A',description:'Cluster',amount:'420.84'},
+        {documentId:docA.id,counterparty:'Synthetic Vendor A',description:'Synthetic service A',amount:'123.00'},
       ],
     });
     assert.equal(casRes.statusCode,409);
     assert.match(JSON.parse(casRes.body).error,/CAS conflict/i);
 
-    // Valid exact allocation: 399.00 + 14.99 + 6.85 = 420.84 EUR
+    // Valid exact allocation: 100.00 + 20.00 + 3.00 = 123.00 EUR
     const validAllocRes=await invoke('PUT',`/api/bookkeeping/transactions/${payment.id}/allocations`,{
       expectedUpdatedAt:payment.updatedAt,
-      reason:'Allocate bundled card charge across three invoices',
+      reason:'Allocate synthetic bundled payment across three invoices',
       allocations:[
-        {documentId:doc399.id,invoiceNumber:'INV-399',counterparty:'Synthetic Compute GmbH',description:'Dedicated cluster October',amount:'399.00'},
-        {documentId:doc1499.id,invoiceNumber:'INV-1499',counterparty:'Synthetic Domains Ltd',description:'Domain renewal',amount:'14.99'},
-        {documentId:doc685.id,invoiceNumber:'INV-685',counterparty:'Synthetic Mail B.V.',description:'Transactional email usage',amount:'6.85'},
+        {documentId:docA.id,invoiceNumber:'SYNTH-A',counterparty:'Synthetic Vendor A',description:'Synthetic service A',amount:'100.00'},
+        {documentId:docB.id,invoiceNumber:'SYNTH-B',counterparty:'Synthetic Vendor B',description:'Synthetic service B',amount:'20.00'},
+        {documentId:docC.id,invoiceNumber:'SYNTH-C',counterparty:'Synthetic Vendor C',description:'Synthetic service C',amount:'3.00'},
       ],
     },{'x-user-id':'synthetic-operator'});
     assert.equal(validAllocRes.statusCode,200,validAllocRes.body);
     const allocatedTx=JSON.parse(validAllocRes.body);
-    assert.equal(allocatedTx.amount,'420.84');
+    assert.equal(allocatedTx.amount,'123.00');
     assert.equal(allocatedTx.allocations.length,3);
     assert.equal(allocatedTx.audit.at(-1).action,'allocations-updated');
     assert.equal(allocatedTx.audit.at(-1).actor,'synthetic-operator');
-    assert.equal(allocatedTx.audit.at(-1).reason,'Allocate bundled card charge across three invoices');
+    assert.equal(allocatedTx.audit.at(-1).reason,'Allocate synthetic bundled payment across three invoices');
 
     // Readback on GET /api/bookkeeping/transactions/:id/allocations and GET /api/bookkeeping/transactions/:id
     const readback=JSON.parse((await invoke('GET',`/api/bookkeeping/transactions/${payment.id}/allocations`)).body);
-    assert.equal(readback.amount,'420.84');
+    assert.equal(readback.amount,'123.00');
     assert.equal(readback.allocations.length,3);
     assert.equal(readback.links.length,3);
-    assert.equal(readback.links.find((link:any)=>link.documentId===doc399.id).id,manualLink.id,
+    assert.equal(readback.links.find((link:any)=>link.documentId===docA.id).id,manualLink.id,
       'an operator-created evidence link is reused without being marked allocation-managed');
     assert.equal(readback.links.filter((link:any)=>link.allocationManaged===true).length,2);
-    for(const document of [doc399,doc1499,doc685])
+    for(const document of [docA,docB,docC])
       assert.equal((await getBookkeepingItem(client,'document',document.id))?.linkRefCount,1);
 
     // Single transaction preserved in ledger list (no duplicate expense rows created)
-    const allOct18=JSON.parse((await invoke('GET','/api/bookkeeping/transactions')).body).items.filter((i:any)=>i.transactionDate==='2026-10-18');
-    assert.equal(allOct18.length,1);
-    assert.equal(allOct18[0].amount,'420.84');
+    const sameDay=JSON.parse((await invoke('GET','/api/bookkeeping/transactions')).body).items.filter((i:any)=>i.transactionDate===paymentDate);
+    assert.equal(sameDay.length,1);
+    assert.equal(sameDay[0].amount,'123.00');
 
     // Reversible clear via DELETE /api/bookkeeping/transactions/:id/allocations
     const clearRes=await invoke('DELETE',`/api/bookkeeping/transactions/${payment.id}/allocations`,{
@@ -230,14 +231,28 @@ describe('bookkeeping API',()=>{
     assert.equal(clearRes.statusCode,200,clearRes.body);
     const clearedTx=JSON.parse(clearRes.body);
     assert.equal(clearedTx.allocations,undefined);
-    assert.equal(clearedTx.amount,'420.84');
+    assert.equal(clearedTx.amount,'123.00');
     assert.equal(clearedTx.audit.at(-1).action,'allocations-cleared');
     const clearedReadback=JSON.parse((await invoke('GET',`/api/bookkeeping/transactions/${payment.id}/allocations`)).body);
     assert.deepEqual(clearedReadback.links.map((link:any)=>link.id),[manualLink.id],
       'clearing removes only allocation-managed evidence and preserves operator evidence');
-    assert.equal((await getBookkeepingItem(client,'document',doc399.id))?.linkRefCount,1);
-    for(const document of [doc1499,doc685])
+    assert.equal((await getBookkeepingItem(client,'document',docA.id))?.linkRefCount,1);
+    for(const document of [docB,docC])
       assert.equal((await getBookkeepingItem(client,'document',document.id))?.linkRefCount,0);
+  });
+
+  it('replays atomic allocation transaction creates only for an identical source payload',async()=>{
+    const document=(await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:'synthetic-replay-invoice.pdf',contentType:'application/pdf',byteSize:100,sha256:createHash('sha256').update('synthetic-replay-invoice').digest('hex'),s3Key:'documents/synthetic-replay-invoice.pdf'})).item;
+    const request={...valid,sourceKey:'synthetic-allocation-create-replay',amount:'3.00',allocations:[{documentId:document.id,counterparty:'Synthetic Replay Vendor',description:'Synthetic replay service',amount:'3.00'}]};
+    const created=await invoke('POST','/api/bookkeeping/transactions',request);
+    assert.equal(created.statusCode,201,created.body);
+    const replay=await invoke('POST','/api/bookkeeping/transactions',request);
+    assert.equal(replay.statusCode,200,replay.body);
+    assert.equal(JSON.parse(replay.body).id,JSON.parse(created.body).id);
+    const conflicting=await invoke('POST','/api/bookkeeping/transactions',{...request,allocations:[{...request.allocations[0],description:'Different synthetic service'}]});
+    assert.equal(conflicting.statusCode,409,conflicting.body);
+    assert.equal((await listTransactions(client)).filter((row:any)=>row.sourceKey===request.sourceKey).length,1);
+    assert.equal((await getBookkeepingItem(client,'document',document.id))?.linkRefCount,1);
   });
 
   it('atomically rejects a parent CAS race without leaving allocation links, refcounts, or claims',async()=>{

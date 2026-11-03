@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   DeleteCommand,
   GetCommand,
@@ -266,7 +267,7 @@ export async function putBookkeepingItem(
   }
 }
 
-/** Create a ledger row and its allocation evidence/claims in one write. */
+/** Create a ledger row and any related evidence/claims atomically. */
 export async function putBookkeepingTransactionWithItems(
   client: DynamoDBDocumentClient,
   value: Record<string, unknown>,
@@ -291,21 +292,36 @@ export async function putBookkeepingTransactionWithItems(
       ],
     }, false, true);
   } catch (error) {
-    if (isConditionalMutationFailure(error)) throw new BookkeepingItemLockedError();
+    if (isConditionalMutationFailure(error)) {
+      if (unique) {
+        const existing = await getBookkeepingItem(client, "bookkeeping", id, true);
+        const generatedFields = new Set([
+          "PK", "SK", "id", "createdAt", "updatedAt", "addedAt", "counterpartyCanonical",
+        ]);
+        const sameInput = existing && Object.entries(value)
+          .filter(([field]) => !generatedFields.has(field))
+          .every(([field, requested]) => isDeepStrictEqual(existing[field], requested))
+          && isDeepStrictEqual(existing.allocations ?? null, value.allocations ?? null);
+        if (existing && sameInput) return { item: existing, duplicate: true };
+      }
+      throw new BookkeepingItemLockedError();
+    }
     throw error;
   }
-  return clean(item)!;
+  return { item: clean(item)!, duplicate: false };
 }
 
 export async function getBookkeepingItem(
   client: DynamoDBDocumentClient,
   kind: string,
   id: string,
+  consistentRead = false,
 ) {
   const result = await client.send(
     new GetCommand({
       TableName: TABLE_BOOKKEEPING,
       Key: { PK: key(kind, id), SK: key(kind, id) },
+      ...(consistentRead ? { ConsistentRead: true } : {}),
     }),
   );
   return clean(result.Item as Record<string, unknown>);

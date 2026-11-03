@@ -8,7 +8,6 @@ import {
   getBookkeepingItem,
   listBookkeepingItems,
   listTransactions,
-  putBookkeepingItem,
   putBookkeepingTransactionWithItems,
   updateBookkeepingTransaction,
   type BookkeepingTransactItem,
@@ -788,11 +787,14 @@ export async function handleBookkeepingTransactionRoutes(
       }
       try {
         const unique = typeof value.sourceKey === "string" ? `source#${value.sourceKey}` : undefined;
-        const created = Array.isArray(value.allocations) && value.allocations.length > 0
-          ? await putBookkeepingTransactionWithItems(client, value, allocationWriteItems, unique)
-          : (await putBookkeepingItem(client, "bookkeeping", value, unique)).item;
+        const created = await putBookkeepingTransactionWithItems(
+          client,
+          value,
+          allocationWriteItems,
+          unique,
+        );
         await autoAttachConfidentEvidence(client);
-        return json(201, created);
+        return json(created.duplicate ? 200 : 201, created.item);
       } catch (error) {
         if (error instanceof BookkeepingItemLockedError)
           return json(409, { error: "Transaction source or allocation is already claimed" });

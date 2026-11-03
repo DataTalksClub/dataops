@@ -72,7 +72,7 @@ export function parseStrictAllocationCents(
     );
   }
   if (!STRICT_TWO_DECIMAL_RE.test(trimmed)) {
-    throw new AllocationValidationError(`Invalid ${fieldLabel} "${trimmed}": expected decimal amount like 399.00.`);
+    throw new AllocationValidationError(`Invalid ${fieldLabel} "${trimmed}": expected decimal amount like 100.00.`);
   }
   const [wholePart, fracPart = ""] = trimmed.split(".");
   const cents = Number(wholePart) * 100 + Number((fracPart + "00").slice(0, 2));

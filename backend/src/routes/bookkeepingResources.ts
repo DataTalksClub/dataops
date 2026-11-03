@@ -1,6 +1,7 @@
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import type { LambdaEvent, LambdaResponse } from "../types";
 import {
+  BookkeepingItemLockedError,
   createDocumentLink,
   deleteBookkeepingItem,
   deleteDeletingReport,
@@ -95,7 +96,15 @@ export async function handleBookkeepingResourceRoutes(
           transactionId: String(body.transactionId),
           coverageType: String(body.coverageType),
         });
-        if(body.coverageType === "evidence" && targetDocument.facts) await applyDocumentFinance(client, targetDocument.facts as DocumentFacts, String(body.transactionId));
+        if(body.coverageType === "evidence" && targetDocument.facts) {
+          try {
+            await applyDocumentFinance(client, targetDocument.facts as DocumentFacts, String(body.transactionId));
+          } catch (error) {
+            if (error instanceof BookkeepingItemLockedError)
+              return json(409, { error: "Transaction changed while applying document facts; retry the link request." });
+            throw error;
+          }
+        }
         const safeLink = publicLink(result.item);
         return json(result.outcome === "created" ? 201 : 200, {
           ...safeLink,
