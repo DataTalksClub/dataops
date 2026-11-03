@@ -6,14 +6,19 @@ import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { setBookkeepingArchiveUploaderForTests, setBookkeepingStorageForTests } from '../src/routes/bookkeepingShared';
 import { getBookkeepingItem, listBookkeepingItems, listTransactions, putBookkeepingItem, updateBookkeepingTransaction } from '../src/db/bookkeeping';
-import { TransactWriteCommand, UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { ScanCommand, TransactWriteCommand, UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createSession } from '../src/db/sessions';
 import { createHash } from 'crypto';
 import { Readable } from 'stream';
 import { handleBookkeepingTransactionRoutes } from '../src/routes/bookkeepingTransactions';
+import { handleBookkeepingReportRoutes } from '../src/routes/bookkeepingReports';
+import { readBookkeepingReportSnapshotForItem } from '../src/db/bookkeepingReportSnapshots';
 import { TABLE_BOOKKEEPING } from '../src/db/tableNames';
 
 const invoke=(method:string,path:string,body?:unknown,headers?:Record<string,string>,query?:Record<string,string>)=>handler({httpMethod:method,path,headers:headers||{},body:body===undefined?null:JSON.stringify(body),queryStringParameters:query||null},{});
+const invokeReportRoute=(client:DynamoDBDocumentClient,method:string,path:string,body?:unknown)=>
+  handleBookkeepingReportRoutes(path,method,{body:body===undefined?null:JSON.stringify(body),queryStringParameters:null} as any,client);
+const installSyntheticStorage=()=>setBookkeepingStorageForTests({send:async()=>({})} as any,async()=> 'https://synthetic.invalid/archive' as any);
 const valid={transactionDate:'2026-07-01',counterparty:'Synthetic Vendor',description:'Synthetic service',amount:'10.25',currency:'EUR',sourceType:'manual'};
 describe('bookkeeping API',()=>{
   let client:DynamoDBDocumentClient;
@@ -89,7 +94,7 @@ describe('bookkeeping API',()=>{
     const receipt=(await putBookkeepingItem(client,'document',{documentType:'receipt',status:'active',originalFilename:'receipt.pdf',contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update('synthetic-receipt').digest('hex'),s3Key:'documents/synthetic-receipt'})).item;
     const link=await invoke('POST','/api/bookkeeping/links',{documentId:receipt.id,transactionId:transaction.id,coverageType:'evidence'});assert.equal(link.statusCode,201);
     const duplicate=await invoke('POST','/api/bookkeeping/links',{documentId:receipt.id,transactionId:transaction.id,coverageType:'evidence'});assert.equal(duplicate.statusCode,200);assert.equal(JSON.parse(duplicate.body).id,JSON.parse(link.body).id);
-    const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-08'});assert.equal(snapshot.statusCode,201);const report=JSON.parse(snapshot.body).report;assert.deepEqual(report.transactionIds,[transaction.id]);assert.equal(report.documentIds.length,3);
+    const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-08'});assert.equal(snapshot.statusCode,201);const report=JSON.parse(snapshot.body).report;const content=await readBookkeepingReportSnapshotForItem(client,report);assert.deepEqual(content.transactionIds,[transaction.id]);assert.equal(content.documentIds.length,3);
     const retry=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-08'});assert.equal(retry.statusCode,200);assert.equal(JSON.parse(retry.body).report.id,report.id);
   });
   it('does not require legacy business setup statements for current monthly snapshots',async()=>{
@@ -107,7 +112,213 @@ describe('bookkeeping API',()=>{
     assert.equal(snapshot.statusCode,201,snapshot.body);
     const report=JSON.parse(snapshot.body).report;
     assert.equal(report.reconciliation.businessStatementCount,2);
-    assert.ok(statementIds.every((id)=>report.documentIds.includes(id)));
+    const content=await readBookkeepingReportSnapshotForItem(client,report);
+    assert.ok(statementIds.every((id)=>content.documentIds.includes(id)));
+  });
+  it('snapshots mixed allocations by reportable child amount and selects only child evidence',async()=>{
+    const month='2026-11';
+    for(const [id,name] of [['synthetic-mixed-account-a','Synthetic Business Account A'],['synthetic-mixed-account-b','Synthetic Business Account B']])
+      await putBookkeepingItem(client,'account',{id,displayName:name,kind:'business',active:true,statementRequiredFromMonth:month},`business-account#${id}`);
+    const activeAccounts=JSON.parse((await invoke('GET','/api/bookkeeping/accounts')).body).items
+      .filter((account:any)=>account.kind==='business'&&account.active!==false);
+    for(const account of activeAccounts) await putBookkeepingItem(client,'document',{
+      documentType:'bank-statement',status:'active',accountId:account.id,statementMonth:month,
+      originalFilename:`${account.id}-november.pdf`,contentType:'application/pdf',byteSize:9,
+      sha256:createHash('sha256').update(`synthetic-mixed-statement-${account.id}`).digest('hex'),
+      s3Key:`documents/synthetic-mixed-${account.id}`,
+    },`synthetic-mixed-statement#${account.id}`);
+    const makeDoc=async(id:string)=> (await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:`${id}.pdf`,contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update(id).digest('hex'),s3Key:`documents/${id}`},`synthetic-mixed-doc#${id}`)).item;
+    const [ordinaryA,exemptA,ordinaryB,exemptB,parentEvidenceA,parentEvidenceB]=await Promise.all([
+      'ordinary-a','exempt-a','ordinary-b','exempt-b','parent-evidence-a','parent-evidence-b',
+    ].map(makeDoc));
+    const parentA=(await putBookkeepingItem(client,'bookkeeping',{
+      transactionDate:`${month}-02`,paidDate:`${month}-03`,counterparty:'Synthetic combined payee A',description:'Synthetic tax settlement',
+      amount:'30.00',amountEur:'30.00',currency:'EUR',entryType:'expense',category:'Taxes',mandatoryKind:'tax_debit',
+      allocations:[
+        {id:'ordinary-a',documentId:ordinaryA.id,counterparty:'Synthetic service A',description:'Service A',amount:'10.00',amountEur:'10.00',currency:'EUR',category:'Software'},
+        {id:'exempt-a',documentId:exemptA.id,counterparty:'Synthetic tax A',description:'Tax A',amount:'20.00',amountEur:'20.00',currency:'EUR',category:'Taxes'},
+      ],
+    },'synthetic-mixed-parent#a')).item;
+    const parentB=(await putBookkeepingItem(client,'bookkeeping',{
+      transactionDate:`${month}-04`,paidDate:`${month}-04`,counterparty:'Synthetic combined payee B',description:'Synthetic owner draw',
+      amount:'70.00',amountEur:'70.00',currency:'EUR',entryType:'expense',category:'Owner pay',ownerPayType:'draw',
+      allocations:[
+        {id:'exempt-b',documentId:exemptB.id,counterparty:'Synthetic tax B',description:'Tax B',amount:'30.00',amountEur:'30.00',currency:'EUR',category:'Taxes'},
+        {id:'ordinary-b',documentId:ordinaryB.id,counterparty:'Synthetic service B',description:'Service B',amount:'40.00',amountEur:'40.00',currency:'EUR',category:'Software'},
+      ],
+    },'synthetic-mixed-parent#b')).item;
+    for(const [parent,document] of [[parentA,parentEvidenceA],[parentB,parentEvidenceB]])
+      await putBookkeepingItem(client,'link',{transactionId:parent.id,documentId:document.id,coverageType:'evidence'},`synthetic-mixed-link#${parent.id}`);
+
+    const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{
+      month,privateDocumentIds:[exemptA.id,exemptB.id,parentEvidenceA.id,parentEvidenceB.id],
+    });
+    assert.equal(snapshot.statusCode,201,snapshot.body);
+    const report=JSON.parse(snapshot.body).report;
+    assert.equal(report.snapshotVersion,4);
+    const content=await readBookkeepingReportSnapshotForItem(client,report);
+    assert.equal(report.reconciliation.transactionCount,2);
+    assert.equal(report.reconciliation.excludedTransactionCount,2);
+    assert.deepEqual(content.transactionRows.map((row:any)=>[row.counterparty,row.amount,row.category]).sort((a:any[],b:any[])=>String(a[0]).localeCompare(String(b[0]))),[
+      ['Synthetic service A','10.00','Software'],['Synthetic service B','40.00','Software'],
+    ]);
+    assert.equal(content.transactionRows.reduce((sum:number,row:any)=>sum+Number(row.amount),0),50);
+    assert.ok(content.documentIds.includes(ordinaryA.id)&&content.documentIds.includes(ordinaryB.id));
+    assert.ok(![exemptA.id,exemptB.id,parentEvidenceA.id,parentEvidenceB.id].some((id:string)=>content.documentIds.includes(id)));
+    const retry=await invoke('POST','/api/bookkeeping/reports/snapshot',{month});
+    assert.equal(retry.statusCode,200);
+    assert.equal(JSON.parse(retry.body).report.id,report.id);
+  });
+  it('retries a legacy report snapshot migration after a deterministic concurrent CAS update',async()=>{
+    const month='2027-01';
+    const archive=(await putBookkeepingItem(client,'document',{
+      documentType:'monthly-report',status:'active',originalFilename:'synthetic-historical-report.zip',
+      contentType:'application/zip',byteSize:9,sha256:createHash('sha256').update('synthetic-historical-report').digest('hex'),
+      s3Key:'documents/synthetic-historical-report.zip',
+    },`synthetic-historical-archive#${month}`)).item;
+    const legacy=(await putBookkeepingItem(client,'report',{
+      month,status:'generated',snapshotVersion:2,transactionIds:['synthetic-v2-transaction'],
+      transactionRows:[{transactionDate:`${month}-04`,counterparty:'Synthetic historical vendor',description:'Preserved historical row',amount:'12.00',currency:'EUR'}],
+      documentIds:['synthetic-v2-source-document'],reconciliation:{transactionCount:1,documentCount:1},archiveDocumentId:archive.id,
+    },`synthetic-v2-report#${month}`)).item;
+    let raced=false;
+    const racingClient:any={send:async(command:any)=>{
+      if(!raced&&command.constructor.name==='UpdateCommand'&&String(command.input.UpdateExpression).includes('snapshotStorageId')){
+        raced=true;
+        await client.send(new UpdateCommand({TableName:TABLE_BOOKKEEPING,Key:{PK:`REPORT#${legacy.id}`,SK:`REPORT#${legacy.id}`},UpdateExpression:'SET updatedAt=:updatedAt',ExpressionAttributeValues:{':updatedAt':'2099-01-01T00:00:00.000Z'}}));
+      }
+      return client.send(command);
+    }} as DynamoDBDocumentClient;
+    const migratedResponse=await invokeReportRoute(racingClient,'POST','/api/bookkeeping/reports/snapshot',{month});
+    assert.equal(migratedResponse?.statusCode,200);
+    assert.equal(raced,true);
+    const migrated=await getBookkeepingItem(client,'report',legacy.id,true);
+    assert.equal(migrated?.snapshotVersion,4);
+    assert.equal(migrated?.status,'generated');
+    assert.equal(migrated?.archiveDocumentId,archive.id);
+    assert.equal('transactionRows' in (migrated||{}),false);
+    const historical=await readBookkeepingReportSnapshotForItem(client,migrated!);
+    assert.deepEqual(historical.transactionIds,['synthetic-v2-transaction']);
+    assert.deepEqual(historical.transactionRows,[{transactionDate:`${month}-04`,counterparty:'Synthetic historical vendor',description:'Preserved historical row',amount:'12.00',currency:'EUR'}]);
+    assert.deepEqual(historical.documentIds,['synthetic-v2-source-document']);
+    installSyntheticStorage();
+    const archiveResponse=await invokeReportRoute(client,'POST',`/api/bookkeeping/reports/${legacy.id}/archive`);
+    assert.equal(archiveResponse?.statusCode,200);
+    assert.equal(JSON.parse(archiveResponse!.body).duplicate,true);
+    assert.equal((await getBookkeepingItem(client,'document',archive.id))?.status,'active');
+  });
+  it('keeps the legacy report and archive available when snapshot migration fails',async()=>{
+    const month='2027-02';
+    const archive=(await putBookkeepingItem(client,'document',{
+      documentType:'monthly-report',status:'active',originalFilename:'synthetic-recoverable-report.zip',
+      contentType:'application/zip',byteSize:9,sha256:createHash('sha256').update('synthetic-recoverable-report').digest('hex'),
+      s3Key:'documents/synthetic-recoverable-report.zip',
+    },`synthetic-recoverable-archive#${month}`)).item;
+    const legacy=(await putBookkeepingItem(client,'report',{
+      month,status:'generated',snapshotVersion:2,transactionIds:['synthetic-recoverable-transaction'],
+      transactionRows:[{counterparty:'Synthetic recoverable vendor',amount:'8.00',currency:'EUR'}],
+      documentIds:['synthetic-recoverable-source'],reconciliation:{transactionCount:1},archiveDocumentId:archive.id,
+    },`synthetic-recoverable-report#${month}`)).item;
+    const failingClient:any={send:async(command:any)=>{
+      if(command.constructor.name==='UpdateCommand'&&String(command.input.UpdateExpression).includes('snapshotStorageId'))
+        throw new Error('synthetic report migration failure');
+      return client.send(command);
+    }} as DynamoDBDocumentClient;
+    const migrationResponse=await invokeReportRoute(failingClient,'POST','/api/bookkeeping/reports/snapshot',{month});
+    assert.equal(migrationResponse?.statusCode,503);
+    const unchanged=await getBookkeepingItem(client,'report',legacy.id,true);
+    assert.equal(unchanged?.snapshotVersion,2);
+    assert.equal(unchanged?.archiveDocumentId,archive.id);
+    assert.deepEqual(unchanged?.transactionRows,legacy.transactionRows);
+    assert.equal((await getBookkeepingItem(client,'document',archive.id))?.status,'active');
+    const storedChunks=await client.send(new ScanCommand({TableName:TABLE_BOOKKEEPING,FilterExpression:'reportId = :reportId',ExpressionAttributeValues:{':reportId':legacy.id}}));
+    assert.equal((storedChunks.Items||[]).length,0,'failed uncommitted chunks are removed');
+    installSyntheticStorage();
+    const archiveResponse=await invokeReportRoute(client,'POST',`/api/bookkeeping/reports/${legacy.id}/archive`);
+    assert.equal(archiveResponse?.statusCode,200);
+    assert.equal(JSON.parse(archiveResponse!.body).duplicate,true);
+  });
+  it('regenerates an archive from a nonempty v2 snapshot after chunk migration',async()=>{
+    const month='2027-03';
+    process.env.BOOKKEEPING_DOCUMENTS_BUCKET='synthetic-private-bucket';
+    process.env.BOOKKEEPING_DOCUMENTS_KMS_KEY='synthetic-kms-key';
+    const source=(await putBookkeepingItem(client,'document',{
+      documentType:'receipt',status:'active',originalFilename:'synthetic-historical-receipt.pdf',
+      contentType:'application/pdf',byteSize:16,sha256:createHash('sha256').update('synthetic-historical-receipt').digest('hex'),
+      s3Key:'documents/synthetic-historical-receipt.pdf',
+    },`synthetic-v2-source#${month}`)).item;
+    const legacy=(await putBookkeepingItem(client,'report',{
+      month,status:'ready',snapshotVersion:2,transactionIds:['synthetic-v2-row'],
+      transactionRows:[{transactionDate:`${month}-09`,counterparty:'Synthetic v2 provider',description:'Archived historical description',amount:'23.50',currency:'EUR'}],
+      documentIds:[source.id],reconciliation:{transactionCount:1,documentCount:1},
+    },`synthetic-v2-regeneration#${month}`)).item;
+    const pdf=Buffer.from('%PDF-synthetic-historical-receipt');
+    let archiveBytes:Buffer|undefined;
+    const fakeStorage:any={send:async(command:any)=>{
+      if(command.constructor.name==='GetObjectCommand')return{Body:Readable.from(pdf)};
+      if(command.constructor.name==='HeadObjectCommand')return{ContentLength:archiveBytes?.length||0,VersionId:'synthetic-archive-version'};
+      return{};
+    }};
+    setBookkeepingStorageForTests(fakeStorage,async()=> 'https://synthetic.invalid/archive' as any);
+    setBookkeepingArchiveUploaderForTests(async(params:any)=>{
+      const chunks:Buffer[]=[];
+      for await(const chunk of params.Body)chunks.push(Buffer.from(chunk));
+      archiveBytes=Buffer.concat(chunks);
+      return{VersionId:'synthetic-archive-version'} as any;
+    });
+    const response=await invokeReportRoute(client,'POST',`/api/bookkeeping/reports/${legacy.id}/archive`);
+    assert.equal(response?.statusCode,201);
+    assert.ok(archiveBytes?.subarray(0,2).toString()==='PK');
+    const generated=await getBookkeepingItem(client,'report',legacy.id,true);
+    assert.equal(generated?.snapshotVersion,4);
+    assert.equal(generated?.status,'generated');
+    assert.ok(typeof generated?.archiveDocumentId==='string');
+    const historical=await readBookkeepingReportSnapshotForItem(client,generated!);
+    assert.deepEqual(historical.transactionIds,['synthetic-v2-row']);
+    assert.deepEqual(historical.documentIds,[source.id]);
+    assert.deepEqual(historical.transactionRows,legacy.transactionRows);
+  });
+  it('stores and archives a valid month whose snapshot exceeds one DynamoDB item',async()=>{
+    const month='2026-12';
+    await invoke('POST','/api/bookkeeping/accounts/setup');
+    const accounts=JSON.parse((await invoke('GET','/api/bookkeeping/accounts')).body).items
+      .filter((account:any)=>account.kind==='business'&&account.active!==false);
+    for(const account of accounts)await putBookkeepingItem(client,'document',{
+      documentType:'bank-statement',status:'active',accountId:account.id,statementMonth:month,
+      originalFilename:`${account.id}-synthetic-december.pdf`,contentType:'application/pdf',byteSize:16,
+      sha256:createHash('sha256').update(`synthetic-large-statement-${account.id}`).digest('hex'),
+      s3Key:`documents/synthetic-large-${account.id}`,
+    },`synthetic-large-statement#${month}#${account.id}`);
+    const description='synthetic-large-month-entry-'.padEnd(28,'x')+'z'.repeat(25*1024);
+    for(let index=0;index<18;index++)await putBookkeepingItem(client,'bookkeeping',{
+      transactionDate:`${month}-15`,paidDate:`${month}-16`,counterparty:`Synthetic large vendor ${index}`,
+      description:`${description}${index}`,amount:'1.00',amountEur:'1.00',currency:'EUR',entryType:'expense',category:'Software',
+    },`synthetic-large-month-row#${month}#${index}`);
+    const response=await invoke('POST','/api/bookkeeping/reports/snapshot',{month});
+    assert.equal(response.statusCode,201,response.body);
+    const report=JSON.parse(response.body).report;
+    assert.equal(report.snapshotVersion,4);
+    assert.ok(report.snapshotByteSize>350*1024);
+    assert.ok(report.snapshotChunkCount>1);
+    const snapshot=await readBookkeepingReportSnapshotForItem(client,report);
+    assert.ok((snapshot.transactionRows as any[]).length>=18);
+    assert.ok((snapshot.transactionRows as any[]).some((row:any)=>row.counterparty==='Synthetic large vendor 17'));
+    let archiveBytes:Buffer|undefined;
+    const fakeStorage:any={send:async(command:any)=>{
+      if(command.constructor.name==='GetObjectCommand')return{Body:Readable.from(Buffer.from('%PDF-synthetic-statement'))};
+      if(command.constructor.name==='HeadObjectCommand')return{ContentLength:archiveBytes?.length||0,VersionId:'synthetic-large-archive-version'};
+      return{};
+    }};
+    setBookkeepingStorageForTests(fakeStorage,async()=> 'https://synthetic.invalid/large-archive' as any);
+    setBookkeepingArchiveUploaderForTests(async(params:any)=>{
+      const chunks:Buffer[]=[];
+      for await(const chunk of params.Body)chunks.push(Buffer.from(chunk));
+      archiveBytes=Buffer.concat(chunks);
+      return{VersionId:'synthetic-large-archive-version'} as any;
+    });
+    const archived=await invokeReportRoute(client,'POST',`/api/bookkeeping/reports/${report.id}/archive`);
+    assert.equal(archived?.statusCode,201,archived?.body);
+    assert.ok(archiveBytes?.subarray(0,2).toString()==='PK');
   });
   it('records VAT amounts and keeps tax and health-insurance entries out of monthly snapshots',async()=>{
     const bad=await invoke('POST','/api/bookkeeping/transactions',{...valid,description:'bad vat',vatAmount:'-1',vatCurrency:'eur'});assert.equal(bad.statusCode,400);assert.deepEqual(JSON.parse(bad.body).fields.sort(),['vatAmount','vatCurrency']);
@@ -118,6 +329,10 @@ describe('bookkeeping API',()=>{
     await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-09',counterparty:'Finanzamt',description:'UMS.ST 2026',entryType:'expense',amount:'500.00'});
     await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-10',counterparty:'Techniker Krankenkasse',description:'Monthly contribution',entryType:'expense',amount:'200.00'});
     const ownerDraw=(await putBookkeepingItem(client,'bookkeeping',{transactionDate:'2026-09-11',paidDate:'2026-09-11',counterparty:'Synthetic Owner',description:'Synthetic private withdrawal',amount:'42.00',currency:'EUR',entryType:'expense',category:'Owner pay',ownerPayType:'draw'})).item;
+    const mixedAllocationPayment=(await putBookkeepingItem(client,'bookkeeping',{transactionDate:'2026-09-12',paidDate:'2026-09-12',counterparty:'Synthetic Combined Vendor',description:'Synthetic mixed allocation payment',amount:'30.00',currency:'EUR',entryType:'expense',category:'Taxes',allocations:[
+      {id:'synthetic-tax-allocation',documentId:'synthetic-tax-invoice',counterparty:'Synthetic Tax Vendor',description:'Synthetic tax charge',amount:'10.00',currency:'EUR',category:'Taxes'},
+      {id:'synthetic-service-allocation',documentId:'synthetic-service-invoice',counterparty:'Synthetic Service Vendor',description:'Synthetic service charge',amount:'20.00',currency:'EUR',category:'Services'},
+    ]})).item;
     const ownerEvidence=(await putBookkeepingItem(client,'document',{documentType:'receipt',status:'active',originalFilename:'synthetic-owner-transfer.pdf',contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update('synthetic-owner-transfer').digest('hex'),s3Key:'documents/synthetic-owner-transfer'})).item;
     const ownerLink=await invoke('POST','/api/bookkeeping/links',{documentId:ownerEvidence.id,transactionId:ownerDraw.id,coverageType:'evidence'});assert.equal(ownerLink.statusCode,201);
     await invoke('POST','/api/bookkeeping/accounts/setup');
@@ -127,10 +342,12 @@ describe('bookkeeping API',()=>{
     for(const account of activeBusinessAccounts) await putBookkeepingItem(client,'document',{documentType:'bank-statement',status:'active',accountId:account.id,statementMonth:'2026-09',originalFilename:'synthetic.pdf',contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update(`synthetic-vat-${account.id}`).digest('hex'),s3Key:`documents/${account.id}`});
     const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-09',privateDocumentIds:[ownerEvidence.id]});assert.equal(snapshot.statusCode,201,snapshot.body);
     const report=JSON.parse(snapshot.body).report;
-    assert.equal(report.reconciliation.excludedTransactionCount,5);
-    assert.deepEqual(report.transactionIds.length,2);
-    assert.ok(!report.transactionIds.includes(ownerDraw.id));
-    assert.ok(!report.documentIds.includes(ownerEvidence.id));
+    assert.equal(report.reconciliation.excludedTransactionCount,6);
+    const content=await readBookkeepingReportSnapshotForItem(client,report);
+    assert.deepEqual(content.transactionIds.length,3);
+    assert.ok(content.transactionIds.includes(mixedAllocationPayment.id), 'a mixed payment remains in the accountant package for its non-exempt allocation');
+    assert.ok(!content.transactionIds.includes(ownerDraw.id));
+    assert.ok(!content.documentIds.includes(ownerEvidence.id));
     assert.ok(JSON.parse((await invoke('GET','/api/bookkeeping/transactions')).body).items.some((item:any)=>item.id===ownerDraw.id),'the owner draw remains in the internal ledger');
     assert.ok(JSON.parse((await invoke('GET','/api/bookkeeping/documents')).body).items.some((item:any)=>item.id===ownerEvidence.id),'its source document remains stored');
     const vat=await invoke('GET','/api/bookkeeping/reports/vat',undefined,undefined,{year:'2026'});assert.equal(vat.statusCode,200);

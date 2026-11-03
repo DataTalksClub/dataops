@@ -473,3 +473,33 @@ export function readTransactionAllocations(
   }
   return result;
 }
+
+/** Build accountant-facing child rows without inheriting parent-only classification markers. */
+export function projectTransactionAllocations(
+  transaction: Record<string, unknown>,
+): Record<string, unknown>[] {
+  return readTransactionAllocations(transaction).map((allocation) => {
+    const child: Record<string, unknown> = {
+      ...transaction,
+      ...allocation,
+      id: `${String(transaction.id || "transaction")}#${allocation.id}`,
+      sourceTransactionId: String(transaction.id || ""),
+      allocationDocumentId: allocation.documentId,
+      transactionDate: transaction.transactionDate,
+      paidDate: transaction.paidDate,
+      counterparty: allocation.counterparty,
+      description: allocation.description,
+      amount: allocation.amount,
+      currency: allocation.currency,
+      amountEur: allocation.amountEur,
+      vatAmount: allocation.vatAmount,
+      vatCurrency: allocation.vatCurrency,
+      category: allocation.category || transaction.category,
+      subtype: allocation.subtype || transaction.subtype,
+    };
+    delete child.mandatoryKind;
+    delete child.ownerPayType;
+    delete child.allocations;
+    return Object.fromEntries(Object.entries(child).filter(([, value]) => value !== undefined));
+  });
+}

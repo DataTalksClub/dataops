@@ -189,6 +189,60 @@ test("package preview expands one payment into invoice rows while keeping exempt
   assert.equal(reportRows[3].amount, "238.00");
 });
 
+test("mixed allocation package preview uses child amounts and only reportable evidence in both category directions", () => {
+  const entries = [
+    { id: "synthetic-parent-tax", transactionDate: "2026-11-02", paidDate: "2026-11-03", amount: "30.00", amountEur: "30.00",
+      currency: "EUR", entryType: "expense", category: "Taxes", mandatoryKind: "tax_debit", description: "Synthetic tax parent",
+      allocations: [
+        { id: "ordinary-a", documentId: "synthetic-doc-a", counterparty: "Synthetic service A", description: "Service A", amount: "10.00", amountEur: "10.00", currency: "EUR", category: "Software" },
+        { id: "exempt-a", documentId: "synthetic-doc-tax-a", counterparty: "Synthetic tax A", description: "Tax A", amount: "20.00", amountEur: "20.00", currency: "EUR", category: "Taxes" },
+      ] },
+    { id: "synthetic-parent-owner", transactionDate: "2026-11-04", paidDate: "2026-11-04", amount: "70.00", amountEur: "70.00",
+      currency: "EUR", entryType: "expense", category: "Owner pay", ownerPayType: "draw", description: "Synthetic owner draw",
+      allocations: [
+        { id: "exempt-b", documentId: "synthetic-doc-tax-b", counterparty: "Synthetic tax B", description: "Tax B", amount: "30.00", amountEur: "30.00", currency: "EUR", category: "Taxes" },
+        { id: "ordinary-b", documentId: "synthetic-doc-b", counterparty: "Synthetic service B", description: "Service B", amount: "40.00", amountEur: "40.00", currency: "EUR", category: "Software" },
+      ] },
+  ];
+  const projected = expandReportEntries(entries);
+  const reportable = projected.filter((entry) => !isReportExempt(entry));
+  const excluded = projected.filter(isReportExempt);
+  assert.deepEqual(reportable.map((entry) => [entry.counterparty, entry.amount, entry.allocationDocumentId]), [
+    ["Synthetic service A", "10.00", "synthetic-doc-a"],
+    ["Synthetic service B", "40.00", "synthetic-doc-b"],
+  ]);
+  assert.deepEqual(excluded.map((entry) => [entry.counterparty, entry.amount]), [
+    ["Synthetic tax A", "20.00"],
+    ["Synthetic tax B", "30.00"],
+  ]);
+  assert.equal(reportable.reduce((sum, entry) => sum + Number(entry.amount), 0), 50);
+  assert.equal(excluded.reduce((sum, entry) => sum + Number(entry.amount), 0), 50);
+  assert.equal(reportable.some((entry) => entry.ownerPayType || entry.mandatoryKind), false,
+    "parent owner/tax markers do not classify ordinary allocation children");
+
+  const nodes = new Map([
+    ["[data-package-review]", { innerHTML: "" }],
+    ["[data-report-month]", { value: "" }],
+    ["[data-report]", { disabled: true }],
+  ]);
+  const allDocs = ["synthetic-doc-a", "synthetic-doc-tax-a", "synthetic-doc-b", "synthetic-doc-tax-b"].map((id) => ({ id, documentType: "invoice" }));
+  const reports = createBookkeepingReports({
+    api: async () => ({ months: [] }), escapeHtml,
+    getAccounts: () => [], getDocuments: () => allDocs, getLens: () => "2026-11",
+    getLinks: () => [
+      { transactionId: "synthetic-parent-tax", documentId: "synthetic-doc-tax-a" },
+      { transactionId: "synthetic-parent-owner", documentId: "synthetic-doc-tax-b" },
+    ], getReports: () => [],
+    isReportExemptEntry: (entry) => isReportExempt(entry),
+    lensEntries: () => entries,
+    safeAction: async (action) => action(), surface: { querySelector: (selector) => nodes.get(selector) },
+  });
+  reports.renderPackageReview();
+  assert.match(nodes.get("[data-package-review]").innerHTML, /<span class="dk-mono">2<\/span>&nbsp;transactions/);
+  assert.match(nodes.get("[data-package-review]").innerHTML, /<span class="dk-mono">2<\/span>&nbsp;linked documents/);
+  assert.match(nodes.get("[data-package-review]").innerHTML, /<span class="dk-mono">2<\/span>&nbsp;mandatory-payment entries kept out/);
+});
+
 
 test("switching from a month to a year disables package creation", () => {
   let lens = "2026-10";

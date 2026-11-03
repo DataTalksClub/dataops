@@ -16,8 +16,17 @@ import {
   removeDocumentReportReference,
   type BookkeepingItem,
 } from "../db/bookkeeping";
+import {
+  attachBookkeepingReportSnapshot,
+  deleteBookkeepingReportSnapshot,
+  readBookkeepingReportSnapshotForItem,
+  storeBookkeepingReportSnapshot,
+  type BookkeepingReportSnapshot,
+  type StoredBookkeepingReportSnapshot,
+} from "../db/bookkeepingReportSnapshots";
 import { preflightOrganizations } from '../vies/service';
 import { businessAccountRequiresStatement } from "../finance/businessAccounts";
+import { projectTransactionAllocations, readTransactionAllocations } from "../bookkeepingAllocations";
 import {
   headDocumentObject,
   json,
@@ -30,9 +39,119 @@ import {
 } from "./bookkeepingShared";
 
 const csvCell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+const REPORT_SNAPSHOT_VERSION = 4;
+const SNAPSHOT_CSV_COLUMNS = [
+  "transactionDate", "paidDate", "counterparty", "description", "amount", "currency",
+  "amountEur", "vatAmount", "vatCurrency", "category", "entryType", "statementRef",
+];
+
+export function accountantSnapshotRows(transactions: Record<string, unknown>[]) {
+  return transactions.map((transaction) => Object.fromEntries(
+    SNAPSHOT_CSV_COLUMNS
+      .filter((column) => transaction[column] !== undefined)
+      .map((column) => [column, transaction[column]]),
+  ));
+}
+
+export function formatReportSnapshotCsv(transactions: Record<string, unknown>[]) {
+  return SNAPSHOT_CSV_COLUMNS.join(",") + "\n" + transactions
+    .map((transaction) => SNAPSHOT_CSV_COLUMNS.map((column) => csvCell(transaction[column])).join(","))
+    .join("\n") + "\n";
+}
 
 const activeLedgerRows = async (client: DynamoDBDocumentClient) =>
   (await listBookkeepingItems(client, "bookkeeping")).filter((item) => item.voidStatus !== "voided");
+
+function reportSnapshotFromLegacy(report: BookkeepingItem): BookkeepingReportSnapshot {
+  return {
+    transactionIds: Array.isArray(report.transactionIds) ? report.transactionIds : [],
+    transactionRows: Array.isArray(report.transactionRows) ? report.transactionRows : [],
+    documentIds: Array.isArray(report.documentIds) ? report.documentIds : [],
+    reconciliation: report.reconciliation && typeof report.reconciliation === "object"
+      ? report.reconciliation
+      : {},
+  };
+}
+
+async function ensureStoredReportSnapshot(
+  client: DynamoDBDocumentClient,
+  initial: BookkeepingItem,
+) {
+  let report = initial;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (Number(report.snapshotVersion) === REPORT_SNAPSHOT_VERSION) return report;
+
+    const snapshot = reportSnapshotFromLegacy(report);
+    const stored = await storeBookkeepingReportSnapshot(client, report.id, snapshot);
+    let migrated = false;
+    try {
+      migrated = await attachBookkeepingReportSnapshot(client, report, stored);
+    } catch (error) {
+      let current: BookkeepingItem | null;
+      try {
+        current = await getBookkeepingItem(client, "report", report.id, true);
+      } catch {
+        // Keep chunks when the outcome is unknown; the report may already point to them.
+        throw error;
+      }
+      if (current && Number(current.snapshotVersion) === REPORT_SNAPSHOT_VERSION) {
+        if (current.snapshotStorageId !== stored.snapshotStorageId)
+          await deleteBookkeepingReportSnapshot(client, stored.snapshotStorageId).catch(() => undefined);
+        return current;
+      }
+      await deleteBookkeepingReportSnapshot(client, stored.snapshotStorageId).catch(() => undefined);
+      throw error;
+    }
+
+    const current = await getBookkeepingItem(client, "report", report.id, true);
+    if (migrated && current && Number(current.snapshotVersion) === REPORT_SNAPSHOT_VERSION
+      && current.snapshotStorageId === stored.snapshotStorageId) return current;
+
+    if (current && Number(current.snapshotVersion) === REPORT_SNAPSHOT_VERSION) {
+      if (current.snapshotStorageId !== stored.snapshotStorageId)
+        await deleteBookkeepingReportSnapshot(client, stored.snapshotStorageId).catch(() => undefined);
+      return current;
+    }
+    await deleteBookkeepingReportSnapshot(client, stored.snapshotStorageId).catch(() => undefined);
+    if (!current || !["ready", "generated"].includes(String(current.status)))
+      throw new Error("Bookkeeping report changed before its snapshot could be migrated");
+    if (current.updatedAt === report.updatedAt
+      && Object.is(current.snapshotVersion, report.snapshotVersion))
+      throw new Error("Bookkeeping report snapshot migration lost its compare-and-swap");
+    report = current;
+  }
+  throw new Error("Bookkeeping report changed repeatedly during snapshot migration");
+}
+
+async function reportSnapshotContent(
+  client: DynamoDBDocumentClient,
+  report: BookkeepingItem,
+): Promise<BookkeepingReportSnapshot> {
+  return readBookkeepingReportSnapshotForItem(client, report);
+}
+
+async function releaseUnusedReportDocumentReferences(
+  client: DynamoDBDocumentClient,
+  reportId: string,
+  documentIds: string[],
+  current: BookkeepingItem | null,
+) {
+  let currentDocumentIds = new Set<string>();
+  if (current) {
+    try {
+      const snapshot = await reportSnapshotContent(client, current);
+      currentDocumentIds = new Set(
+        Array.isArray(snapshot.documentIds) ? snapshot.documentIds.map(String) : [],
+      );
+    } catch {
+      // Unknown winners keep their references; releasing one could unpin a live report.
+      return;
+    }
+  }
+  await Promise.all(documentIds
+    .filter((documentId) => !currentDocumentIds.has(documentId))
+    .map((documentId) => removeDocumentReportReference(client, documentId, reportId).catch(() => undefined)));
+}
 
 /**
  * Customer VAT report for the monthly pack (ZM / Mandantenserver upload):
@@ -67,11 +186,21 @@ export async function handleBookkeepingReportRoutes(
       month = String(body?.month || "");
     if (!MONTH.test(month)) return json(400, { error: "Invalid month" });
     const reports = await listBookkeepingItems(client, "report");
-    const existing = reports.find(
-      (r) =>
-        r.month === month && ["ready", "generated"].includes(String(r.status)),
-    );
-    if (existing) return json(200, { report: existing, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
+    const monthlyReports = reports.filter((report) => report.month === month
+      && ["ready", "generated"].includes(String(report.status)));
+    const existing = monthlyReports.find((report) => Number(report.snapshotVersion) === REPORT_SNAPSHOT_VERSION);
+    if (existing) {
+      return json(200, { report: existing, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
+    }
+    const legacy = monthlyReports.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0];
+    if (legacy) {
+      try {
+        const migrated = await ensureStoredReportSnapshot(client, legacy);
+        return json(200, { report: migrated, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
+      } catch {
+        return json(503, { error: "The existing report snapshot could not be migrated; retry the request." });
+      }
+    }
     const accounts = (await listBookkeepingItems(client, "account")).filter(
       (a) => a.kind === "business" && a.active !== false && businessAccountRequiresStatement(String(a.id), month),
     );
@@ -94,12 +223,12 @@ export async function handleBookkeepingReportRoutes(
       });
     const monthTransactions = (await activeLedgerRows(client))
       .filter((t) => String(t.transactionDate).startsWith(month));
-    const excludedTransactions = monthTransactions.filter(
-      isReportExemptTransaction,
-    );
-    const transactions = monthTransactions.filter(
-      (t) => !isReportExemptTransaction(t),
-    );
+    const projectedTransactions = monthTransactions.flatMap((transaction) => {
+      const allocations = projectTransactionAllocations(transaction);
+      return allocations.length ? allocations : [transaction];
+    });
+    const excludedTransactions = projectedTransactions.filter(isReportExemptTransaction);
+    const transactions = projectedTransactions.filter((transaction) => !isReportExemptTransaction(transaction));
     const unconverted = transactions.filter(
       (t) =>
         String(t.currency || "EUR").toUpperCase() !== "EUR" &&
@@ -111,17 +240,32 @@ export async function handleBookkeepingReportRoutes(
         unconvertedTransactionIds: unconverted.map((t) => String(t.id)),
       });
     const links = await listBookkeepingItems(client, "link");
-    const linkedIds = new Set(
-      links
-        .filter((l) => transactions.some((t) => t.id === l.transactionId))
-        .map((l) => String(l.documentId)),
-    );
-    const excludedTransactionIds = new Set(excludedTransactions.map((transaction) => String(transaction.id)));
+    const allocatedParentIds = new Set(monthTransactions
+      .filter((transaction) => readTransactionAllocations(transaction).length)
+      .map((transaction) => String(transaction.id)));
+    const includedParentIds = new Set(transactions.map((transaction) => String(transaction.sourceTransactionId || transaction.id)));
+    const linkedIds = new Set(links
+      .filter((link) => includedParentIds.has(String(link.transactionId))
+        && !allocatedParentIds.has(String(link.transactionId)))
+      .map((link) => String(link.documentId)));
+    for (const transaction of transactions) {
+      if (transaction.allocationDocumentId) linkedIds.add(String(transaction.allocationDocumentId));
+    }
+    const excludedTransactionIds = new Set(excludedTransactions.map((transaction) => String(transaction.sourceTransactionId || transaction.id)));
     const excludedLinkedIds = new Set(
       links
-        .filter((link) => excludedTransactionIds.has(String(link.transactionId)))
+        .filter((link) => excludedTransactionIds.has(String(link.transactionId))
+          && !includedParentIds.has(String(link.transactionId)))
         .map((link) => String(link.documentId)),
     );
+    for (const link of links) {
+      if (allocatedParentIds.has(String(link.transactionId)) && !linkedIds.has(String(link.documentId)))
+        excludedLinkedIds.add(String(link.documentId));
+    }
+    for (const transaction of excludedTransactions) {
+      if (transaction.allocationDocumentId)
+        excludedLinkedIds.add(String(transaction.allocationDocumentId));
+    }
     const selectedPrivate = new Set(
       Array.isArray(body?.privateDocumentIds)
         ? body!.privateDocumentIds.map(String)
@@ -135,54 +279,77 @@ export async function handleBookkeepingReportRoutes(
         linkedIds.has(d.id) ||
         (selectedPrivate.has(d.id) && !excludedLinkedIds.has(String(d.id))),
     );
-    const reportId = createHash("sha256").update(`report#${month}`).digest("hex");
+    const reportId = createHash("sha256").update(`report#${month}#snapshot-v4`).digest("hex");
+    const snapshotContent = {
+      transactionIds: [...new Set(transactions.map((t) => String(t.sourceTransactionId || t.id)))],
+      transactionRows: accountantSnapshotRows(transactions),
+      documentIds: includedDocs.map((d) => d.id),
+      reconciliation: {
+        transactionCount: transactions.length,
+        excludedTransactionCount: excludedTransactions.length,
+        documentCount: includedDocs.length,
+        businessStatementCount: accounts.length,
+      },
+    };
+    const snapshot = {
+      id: reportId,
+      month,
+      status: "ready",
+      reconciliation: snapshotContent.reconciliation,
+      snapshotVersion: REPORT_SNAPSHOT_VERSION,
+    };
     const guarded: string[] = [];
-    let report: BookkeepingItem;
+    let stored: StoredBookkeepingReportSnapshot | undefined;
+    let report: BookkeepingItem | undefined;
     try {
+      stored = await storeBookkeepingReportSnapshot(client, reportId, snapshotContent);
       for (const document of includedDocs) {
         if (await addDocumentReportReference(client, document.id, reportId))
           guarded.push(document.id);
       }
-      report = (
-        await putBookkeepingItem(
-          client,
-          "report",
-          {
-            id: reportId,
-            month,
-            status: "ready",
-            transactionIds: transactions.map((t) => t.id),
-            documentIds: includedDocs.map((d) => d.id),
-            reconciliation: {
-              transactionCount: transactions.length,
-              excludedTransactionCount: excludedTransactions.length,
-              documentCount: includedDocs.length,
-              businessStatementCount: accounts.length,
-            },
-            snapshotVersion: 2,
-          },
-          `report#${month}`,
-        )
-      ).item;
-    } catch (error) {
-      await Promise.all(
-        guarded.map((documentId) =>
-          removeDocumentReportReference(client, documentId, reportId).catch(
-            () => undefined,
-          ),
-        ),
+      const result = await putBookkeepingItem(
+        client,
+        "report",
+        { ...snapshot, ...stored },
+        `report#${month}#snapshot-v4`,
       );
+      report = result.item;
+      if (result.duplicate) {
+        if (result.item.snapshotStorageId !== stored.snapshotStorageId) {
+          await releaseUnusedReportDocumentReferences(client, reportId, guarded, result.item);
+          await deleteBookkeepingReportSnapshot(client, stored.snapshotStorageId);
+        }
+        return json(200, { report: result.item, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
+      }
+    } catch (error) {
+      let current: BookkeepingItem | null;
+      try {
+        current = await getBookkeepingItem(client, "report", reportId, true);
+      } catch {
+        // A write may have committed before its response was lost; retain its chunks until verified.
+        throw error;
+      }
+      if (current && Number(current.snapshotVersion) === REPORT_SNAPSHOT_VERSION) {
+        if (stored && current.snapshotStorageId === stored.snapshotStorageId)
+          return json(201, { report: current, duplicate: false, vatPreflight: await vatPreflightSummary(client) });
+        await releaseUnusedReportDocumentReferences(client, reportId, guarded, current);
+        if (stored)
+          await deleteBookkeepingReportSnapshot(client, stored.snapshotStorageId).catch(() => undefined);
+        return json(200, { report: current, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
+      }
+      await releaseUnusedReportDocumentReferences(client, reportId, guarded, current);
+      if (stored) await deleteBookkeepingReportSnapshot(client, stored.snapshotStorageId).catch(() => undefined);
       throw error;
     }
+    if (!report) throw new Error("Bookkeeping report snapshot was not stored");
     return json(201, {
       report,
       vatPreflight: await vatPreflightSummary(client),
       warnings: {
         missingEvidence: transactions.filter(
-          (t) =>
-            !links.some(
-              (l) => l.transactionId === t.id && l.coverageType === "evidence",
-            ),
+          (transaction) => transaction.allocationDocumentId
+            ? !linkedIds.has(String(transaction.allocationDocumentId))
+            : !links.some((link) => link.transactionId === transaction.id && link.coverageType === "evidence"),
         ).length,
       },
     });
@@ -233,7 +400,7 @@ export async function handleBookkeepingReportRoutes(
   }
   const archive = path.match(/^\/api\/bookkeeping\/reports\/([^/]+)\/archive$/);
   if (archive && method === "POST") {
-    const report = await getBookkeepingItem(client, "report", archive[1]);
+    let report = await getBookkeepingItem(client, "report", archive[1]);
     if (!report || !["ready", "generated"].includes(String(report.status)))
       return json(404, { error: "Ready report not found" });
     if (report.archiveDocumentId) {
@@ -242,7 +409,7 @@ export async function handleBookkeepingReportRoutes(
         "document",
         String(report.archiveDocumentId),
       );
-      if (doc) {
+      if (doc?.status === "active") {
         const url = await signUrl(
           s3,
           new GetObjectCommand({
@@ -253,49 +420,28 @@ export async function handleBookkeepingReportRoutes(
         );
         return json(200, { downloadUrl: url, expiresIn: 300, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
       }
+      if (report.status === "generated")
+        return json(409, { error: "The historical report archive is unavailable." });
     }
-    const transactionIds = Array.isArray(report.transactionIds)
-        ? report.transactionIds.map(String)
-        : [],
-      documentIds = Array.isArray(report.documentIds)
-        ? report.documentIds.map(String)
-        : [];
+    try {
+      report = await ensureStoredReportSnapshot(client, report);
+    } catch {
+      return json(503, { error: "The report snapshot could not be prepared for archive generation; retry the request." });
+    }
+    const snapshotContent = await reportSnapshotContent(client, report);
+    const documentIds = Array.isArray(snapshotContent.documentIds)
+      ? snapshotContent.documentIds.map(String)
+      : [];
     const maxFiles = Number(process.env.BOOKKEEPING_ARCHIVE_MAX_FILES || 500),
       maxBytes = Number(
       process.env.BOOKKEEPING_ARCHIVE_MAX_BYTES || 50 * 1024 * 1024,
       );
     if (documentIds.length + 1 > maxFiles)
       return json(413, { error: "Archive file limit exceeded" });
-    const transactions = (
-      await Promise.all(
-        transactionIds.map((id) =>
-          getBookkeepingItem(client, "bookkeeping", id),
-        ),
-      )
-    ).filter(Boolean) as Record<string, unknown>[];
-    const columns = [
-      "transactionDate",
-      "paidDate",
-      "counterparty",
-      "description",
-      "amount",
-      "currency",
-      "amountEur",
-      "vatAmount",
-      "vatCurrency",
-      "category",
-      "entryType",
-      "statementRef",
-    ];
-    const csv = Buffer.from(
-      columns.join(",") +
-        "\n" +
-        transactions
-          .map((t) => columns.map((c) => csvCell(t[c])).join(","))
-          .join("\n") +
-        "\n",
-      "utf8",
-    );
+    const transactions = Array.isArray(snapshotContent.transactionRows)
+      ? snapshotContent.transactionRows as Record<string, unknown>[]
+      : [];
+    const csv = Buffer.from(formatReportSnapshotCsv(transactions), "utf8");
     let total = csv.length;
     const snapshotDocs: BookkeepingItem[] = [];
     for (const id of documentIds) {

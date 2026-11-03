@@ -1,5 +1,5 @@
 // Package and VAT views for the bookkeeping surface.
-import { formatAmount, monthLabel } from "./bookkeeping-format.js";
+import { expandReportEntries, formatAmount, isReportExempt, monthLabel } from "./bookkeeping-format.js";
 import { eurValue } from "./bookkeeping-ledger.js";
 import { packageReviewMarkup } from "./bookkeeping-views.js";
 import { html } from "./shared.js";
@@ -43,15 +43,24 @@ export function createBookkeepingReports({
         (!account.statementRequiredThroughMonth ||
           lens <= account.statementRequiredThroughMonth),
     );
-    const monthEntries = lensEntries().filter((entry) => !isReportExemptEntry(entry));
+    const projectedEntries = expandReportEntries(lensEntries());
+    const reportable = (entry) => entry.sourceTransactionId ? !isReportExempt(entry) : !isReportExemptEntry(entry);
+    const monthEntries = projectedEntries.filter(reportable);
     const unconverted = monthEntries.filter((entry) => eurValue(entry) === null);
     surface.querySelector("[data-report]").disabled = !isMonth || unconverted.length > 0;
-    const excludedCount = lensEntries().filter(isReportExemptEntry).length;
+    const excludedCount = projectedEntries.filter((entry) => !reportable(entry)).length;
+    const ordinaryTransactionIds = new Set(monthEntries
+      .filter((entry) => !entry.sourceTransactionId)
+      .map((entry) => String(entry.id)));
+    const allocationDocumentIds = new Set(monthEntries
+      .map((entry) => String(entry.allocationDocumentId || ""))
+      .filter(Boolean));
     const linkedDocIds = new Set(
       links
-        .filter((link) => monthEntries.some((entry) => entry.id === link.transactionId))
+        .filter((link) => ordinaryTransactionIds.has(String(link.transactionId)))
         .map((link) => String(link.documentId)),
     );
+    allocationDocumentIds.forEach((id) => linkedDocIds.add(id));
     const evidenceDocs = documents.filter(
       (document) => document.documentType !== "bank-statement" && linkedDocIds.has(document.id),
     );

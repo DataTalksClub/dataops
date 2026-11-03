@@ -14,6 +14,7 @@ import { cleanItem } from "./cleanItem";
 import { TABLE_BOOKKEEPING } from "./tableNames";
 import { classifyMandatoryPayment } from "../finance/mandatoryPayments";
 import { isOwnerWithdrawalReportExempt } from "../finance/ownerPay";
+import { projectTransactionAllocations } from "../bookkeepingAllocations";
 import {
   BOOKKEEPING_AUDIT_PARTITION_PREFIX,
   BOOKKEEPING_AUDIT_STORAGE_VERSION,
@@ -33,11 +34,21 @@ export type BookkeepingItem = Record<string, unknown> & {
 
 // Payment categories tracked in the ledger but kept out of the accountant's
 // monthly package: they are settled from private money and reported separately.
-export const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance"]);
-export function isReportExemptTransaction(item: Readonly<Record<string, unknown>>) {
+export const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance", "VAT"]);
+function isReportExemptClassification(item: Readonly<Record<string, unknown>>) {
   return REPORT_EXEMPT_CATEGORIES.has(String(item.category || ""))
     || classifyMandatoryPayment(item) !== null
     || isOwnerWithdrawalReportExempt(item);
+}
+
+export function isReportExemptTransaction(item: Readonly<Record<string, unknown>>) {
+  const allocations = projectTransactionAllocations(item);
+  if (allocations.length) {
+    return allocations.every((allocation) =>
+      isReportExemptClassification(allocation),
+    );
+  }
+  return isReportExemptClassification(item);
 }
 
 // Raised when a conditional mutation loses its optimistic-concurrency race or
