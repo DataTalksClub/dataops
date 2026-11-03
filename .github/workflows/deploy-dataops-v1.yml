@@ -38,10 +38,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: dataops-v1-deploy
-  cancel-in-progress: false
-
 env:
   AWS_REGION: eu-west-1
   AWS_DEFAULT_REGION: eu-west-1
@@ -103,6 +99,9 @@ jobs:
   deploy:
     name: Deploy DataOps v1 app
     if: github.event_name != 'pull_request'
+    concurrency:
+      group: dataops-v1-deploy
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     needs: checks
     permissions:
