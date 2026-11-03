@@ -401,7 +401,16 @@ export async function set(args, io) {
     previous: Object.fromEntries(Object.keys(changes).map((field) => [field, transaction[field] ?? null])),
   };
   if (args.apply) {
-    result.transaction = await api.put(`/api/bookkeeping/transactions/${encodeURIComponent(transaction.id)}`, changes);
+    if (transaction.sourceType === "sponsor-receipt" && changes.amountEur) {
+      if (changes.category || changes.subtype)
+        throw new UsageError("Sponsor receipt conversion updates only accept --amount-eur and --rate-source.");
+      result.transaction = await api.put(
+        `/api/sponsor-crm/finance/receipts/${encodeURIComponent(transaction.id)}/conversion`,
+        { amountEur: changes.amountEur, rateSource: changes.rateSource },
+      );
+    } else {
+      result.transaction = await api.put(`/api/bookkeeping/transactions/${encodeURIComponent(transaction.id)}`, changes);
+    }
   }
   if (!args.json) {
     io.print(`${result.mode}: ${args.apply ? "updated" : "would update"} ${transaction.id}  ${describe(changes)}`);
