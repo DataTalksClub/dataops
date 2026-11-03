@@ -71,6 +71,7 @@ import {
   SLOT_POSITIONS,
   syncIssueSlotTasks,
 } from '../newsletter/issueCard';
+import { syncStandaloneMarkdownTask } from '../newsletter/markdownTask';
 import {
   buildIssueStatsReports,
   filterSponsorStatsReports,
@@ -725,6 +726,7 @@ async function updateRoute(id: string, body: Body, event: LambdaEvent, client: D
   }
   let cardSync = 'unchanged';
   let metricsTask = 'none';
+  let markdownTask = 'none';
   try {
     const slotTasks = await syncIssueSlotTasks(client, existing, next, actor.id || 'system');
     await pushIssueToCard(client, next);
@@ -734,11 +736,12 @@ async function updateRoute(id: string, body: Body, event: LambdaEvent, client: D
     }
     cardSync = slotTasks === 'synced' ? 'synced' : 'pushed';
     metricsTask = await maybeCloseMetricsTask(client, next, actor.id || 'system');
+    markdownTask = await syncStandaloneMarkdownTask(client, next, actor.id || 'system');
   } catch (failure) {
     console.error('Newsletter issue card sync failed:', failure);
     cardSync = 'failed';
   }
-  return json(200, await issueView(client, await withDueCard(client, actor, next), { cardSync, metricsTask }));
+  return json(200, await issueView(client, await withDueCard(client, actor, next), { cardSync, metricsTask, markdownTask }));
 }
 
 async function deleteRoute(id: string, body: Body, event: LambdaEvent, client: DynamoDBDocumentClient) {

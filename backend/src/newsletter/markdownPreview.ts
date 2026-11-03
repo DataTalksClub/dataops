@@ -25,6 +25,7 @@ import { TeamDirectory } from '../identity/directory';
 import { sponsorDocPortalBaseUrl } from '../routes/sponsorDocs';
 import type { Card, LambdaEvent, LambdaResponse } from '../types';
 import { issueLabel, SLOT_POSITIONS } from './issueCard';
+import { syncStandaloneMarkdownTask } from './markdownTask';
 import { parseJsonObjectBodyOrEmpty as parseBody } from '../http';
 import { headerValue } from '../httpHeaders';
 
@@ -724,6 +725,11 @@ export async function handleNewsletterMarkdownRoutes(
   await syncCardNewsletterMarkdownLink(client, updated.cardId, previewUrl).catch((err) => {
     console.error('Failed to sync Newsletter Markdown link to Card:', err);
   });
+
+  // Storing the Markdown is the "prepare and store" step's own completion;
+  // a sponsor-written or already-scheduled stand-alone skips it instead, so
+  // the step leaves the today/overdue queue. Never fails this write.
+  await syncStandaloneMarkdownTask(client, updated, resolved.actor.id || 'staff');
 
   return json(
     200,
