@@ -81,6 +81,15 @@ feature mid-flight; this branch folded it into the issuer seam —
 and per-route `templates:write` scope gates are removed, and issuer scopes
 govern at the credential gate (commits `4f50bb28`..`984cfd2a`).
 
+Post-push CI (2026-11-02): Validate Planning Docs green (infra contract
+`OAUTH_ISSUER_URL` expected), Validate CLI green on the follow-up main
+activity, and the frontend coverage gate was repaired on main by this
+session (`borders`/`colours`/`scale` violations came in with upstream's
+task-checklist panels on `417350d5`, which also left the Deploy job red via
+`calendar-invite-sop.test.ts` — the new checklist loader throws
+`KNOWLEDGE_BUCKET is not configured` outside its env; verified failing at
+that baseline, fix owned by the session pushing it).
+
 Deployment note: pushing `main` triggers the normal DataOps CI/CD (Lambda
 deploy with OIDC). The DataOps MCP Function URL is unchanged, so registered
 issuer audiences stay valid; the invoice-reader consumer (dapier) and Hub MCP
