@@ -329,7 +329,8 @@ export async function whoami(args, io) {
   const user = result.user || {};
   io.print(result.service ? `${result.service.id} (${(result.service.scopes || []).join(", ")})` : `${user.name || "unknown"} <${user.email || "unknown"}>`);
   if (result.apiToken) {
-    io.print(`agent: ${result.apiToken.label} (${(result.apiToken.scopes || []).join(", ")})`);
+    io.print(`token: ${result.apiToken.label} (${String(result.apiToken.id || "").slice(0, 8)})`);
+    io.print(`scopes: ${(result.apiToken.scopes || []).join(", ")}`);
   }
   if (user.role) io.print(`role: ${user.role}`);
   io.print(`portal: ${profile.url}`);
