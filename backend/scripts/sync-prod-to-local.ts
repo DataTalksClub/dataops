@@ -3,8 +3,10 @@
  * local dev portal shows the same data as prod.
  *
  * Reads prod with the ambient AWS credential chain (read-only: Scan only).
- * Writes only to the explicit loopback endpoint. The secrets table is never
- * copied. Document binaries stay in prod S3; rows referencing them copy over,
+ * Writes only to the explicit loopback endpoint. All tables are copied,
+ * including secrets: treat the local replica like prod and do not trigger
+ * send-actions (payment mails, Telegram) from it.
+ * Document binaries stay in prod S3; rows referencing them copy over,
  * but local download URLs will not open without prod S3 credentials.
  *
  * Usage: npm run sync:prod-data [-- --endpoint http://127.0.0.1:8000]
@@ -13,12 +15,12 @@ import { BatchWriteCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { DescribeTableCommand } from '@aws-sdk/client-dynamodb';
 
 import { getClient } from '../src/db/client';
-import { DATAOPS_TABLES, TABLE_SECRETS } from '../src/db/tableNames';
+import { DATAOPS_TABLES } from '../src/db/tableNames';
 import { createTables, deleteTables } from './local-dynamodb';
 
 const DEFAULT_LOCAL_ENDPOINT = 'http://127.0.0.1:8000';
 
-const tablesToCopy = (): string[] => DATAOPS_TABLES.filter((table) => table !== TABLE_SECRETS);
+const tablesToCopy = (): string[] => [...DATAOPS_TABLES];
 
 /** Wait until every copied table is ACTIVE (want=true) or fully absent (want=false). */
 async function waitForTables(
@@ -116,7 +118,7 @@ async function main(): Promise<void> {
     total += items.length;
     console.log(`${table}: ${items.length} rows copied`);
   }
-  console.log(`Skipped ${TABLE_SECRETS} (never copied locally). Total rows: ${total}.`);
+  console.log(`Total rows: ${total} (all tables, including secrets).`);
 }
 
 main().catch((error: unknown) => {

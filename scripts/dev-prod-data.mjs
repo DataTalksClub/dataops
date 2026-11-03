@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Start the local dev portal with production data: ensure the local dynalite
-// instance, copy prod DynamoDB tables into it (never secrets), then run the
+// instance, copy prod DynamoDB tables into it, then run the
 // normal dev stack against that copy.
 //
 // Usage: npm run dev:prod
@@ -66,7 +66,7 @@ process.once('SIGTERM', () => void shutdown().finally(() => process.exit(143)));
 
 try {
   dynalite = await ensureDynalite();
-  console.log('[dev:prod] copying prod DynamoDB tables to local (secrets excluded)');
+  console.log('[dev:prod] copying prod DynamoDB tables to local');
   await run('npx', ['tsx', 'backend/scripts/sync-prod-to-local.ts'], { ...process.env });
   console.log('[dev:prod] starting dev portal against the local copy');
   await run('npm', ['run', 'dev'], {
