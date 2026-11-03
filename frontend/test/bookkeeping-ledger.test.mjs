@@ -10,6 +10,8 @@ import {
   filtersFromParams,
   groupByMonth,
   inLens,
+  linkedEvidenceDocuments,
+  ledgerRowMarkup,
   ledgerTableMarkup,
   needsCategory,
   originalValue,
@@ -117,7 +119,7 @@ test("the VAT column shows document VAT, a zero rate, and reverse charge distinc
   assert.equal(vatPresentation({ vatAmount: "110.35", vatCurrency: "USD", vatEur: "98.12", vatRate: "0.19" }), "€98.12", "VAT shows in EUR");
 });
 
-test("ledger rows show canonical vendor names, concise purposes, and invoice state", () => {
+test("ledger rows show stored Company and What instead of normalized vendor labels", () => {
   const entries = [
     { id: "aws", transactionDate: "2026-09-01", counterparty: "Aws Emea", description: "long invoice details that should not spill into the table", category: "Software", amount: "10", currency: "EUR", entryType: "expense" },
     { id: "google", transactionDate: "2026-09-02", counterparty: "Google Cloud", description: "Google Cloud", amount: "20", currency: "EUR", entryType: "expense" },
@@ -126,15 +128,46 @@ test("ledger rows show canonical vendor names, concise purposes, and invoice sta
     groups: groupByMonth(entries), hasEvidence: () => false, hasInvoice: (id) => id === "google",
     vocab: {}, selectedId: "", e: escapeHtml,
   });
-  assert.match(markup, /Amazon Web Services/);
-  assert.match(markup, /Cloud hosting/);
+  assert.match(markup, /Aws Emea/);
+  assert.match(markup, /long invoice details that should not spill into the table/);
+  assert.doesNotMatch(markup, /Amazon Web Services|Cloud hosting/);
   assert.match(markup, /Invoice attached/);
   assert.match(markup, /No invoice/);
-  assert.doesNotMatch(markup, /long invoice details/);
   assert.deepEqual(
     filterEntries(entries, { q: "Amazon Web Services", account: "", dir: "", category: "", needs: "" }).map((entry) => entry.id),
     ["aws"],
   );
+});
+
+test("linked active receipt PDFs render direct View actions for every evidence link", () => {
+  const entry = { id: "synthetic-payment", counterparty: "Synthetic Processor", amount: "30.00", currency: "EUR", entryType: "expense" };
+  const documents = [1, 2, 3].map((number) => ({
+    id: `synthetic-receipt-${number}`,
+    status: "active",
+    documentType: "receipt",
+    originalFilename: `synthetic-invoice-${number}.pdf`,
+  }));
+  const links = documents.map((document) => ({
+    id: `synthetic-link-${document.id}`,
+    transactionId: entry.id,
+    documentId: document.id,
+    coverageType: "evidence",
+  }));
+  const invoiceDocuments = linkedEvidenceDocuments(entry, links, documents);
+  assert.deepEqual(invoiceDocuments.map((document) => document.id), documents.map((document) => document.id));
+
+  const markup = ledgerRowMarkup(entry, {
+    hasEvidence: () => true,
+    hasInvoice: () => invoiceDocuments,
+    vocab: {},
+    selectedId: "",
+    e: escapeHtml,
+  });
+  for (const document of documents) {
+    assert.match(markup, new RegExp(`data-view-document="${document.id}"`));
+    assert.match(markup, new RegExp(`aria-label="View ${document.originalFilename}"`));
+  }
+  assert.equal((markup.match(/>View PDF<\/button>/g) || []).length, 3);
 });
 
 test("the month bottom section lists classified mandatory payments once with a subtotal", () => {

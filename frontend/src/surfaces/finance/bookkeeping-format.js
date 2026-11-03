@@ -155,6 +155,31 @@ export function isReportExempt(entry) {
     || isOwnerWithdrawalReportExempt(entry);
 }
 
+/** Expand persisted allocations for package counts and previews. The parent remains the only ledger transaction. */
+export function expandReportEntries(entries) {
+  return (Array.isArray(entries) ? entries : []).flatMap((entry) => {
+    const allocations = Array.isArray(entry.allocations) ? entry.allocations : [];
+    if (!allocations.length) return [entry];
+    return allocations.map((allocation) => ({
+      ...entry,
+      ...allocation,
+      sourceTransactionId: entry.id,
+      transactionDate: allocation.transactionDate || entry.transactionDate,
+      paidDate: allocation.paidDate || entry.paidDate,
+      counterparty: allocation.counterparty || entry.counterparty,
+      description: allocation.description || entry.description,
+      amount: allocation.amount,
+      currency: allocation.currency || entry.currency,
+      amountEur: allocation.amountEur,
+      category: allocation.category || entry.category,
+      subtype: allocation.subtype || entry.subtype,
+      invoiceNumber: allocation.invoiceNumber,
+      allocationDocumentId: allocation.documentId,
+      allocations: undefined,
+    }));
+  });
+}
+
 // Format full raw ledger entries matching the backend snapshot format.
 export function formatFullCsv(entries) {
   const columns = [

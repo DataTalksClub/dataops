@@ -76,6 +76,26 @@ export function accountsOf(entries) {
   return [...new Set(entries.map(accountOf).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 }
 
+const INVOICE_EVIDENCE_TYPES = new Set([
+  "invoice", "receipt", "credit-note", "credit_note", "other-evidence", "proof",
+]);
+
+/** Active invoice and receipt PDFs linked as evidence, including allocation documents. */
+export function linkedEvidenceDocuments(entry, links, documents) {
+  if (!entry?.id) return [];
+  const ids = new Set((Array.isArray(links) ? links : [])
+    .filter((link) => link.transactionId === entry.id && link.coverageType === "evidence")
+    .map((link) => String(link.documentId || "")));
+  for (const allocation of Array.isArray(entry.allocations) ? entry.allocations : []) {
+    if (allocation?.documentId) ids.add(String(allocation.documentId));
+  }
+  return (Array.isArray(documents) ? documents : []).filter((document) =>
+    ids.has(String(document.id || ""))
+      && document.status === "active"
+      && INVOICE_EVIDENCE_TYPES.has(String(document.documentType || "")),
+  );
+}
+
 // URL state -> filters. Unknown values fall back to "show everything".
 export function filtersFromParams(params) {
   const get = (name) => String(params?.get?.(name) || "").trim();
@@ -214,6 +234,15 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
   const description = String(entry.description || "").trim() || presentation.description;
   const showDescription = Boolean(description);
   const vat = vatPresentation(financeEntry);
+  const invoiceEvidence = hasInvoice(entry.id);
+  const invoiceDocuments = Array.isArray(invoiceEvidence) ? invoiceEvidence : [];
+  const hasInvoiceAttached = invoiceDocuments.length > 0 || invoiceEvidence === true;
+  const invoiceActions = invoiceDocuments.length
+    ? invoiceDocuments.map((document) => html`<button type="button" class="dk-button dk-button--secondary dk-button--sm bk-evidence-view"
+        data-view-document="${e(document.id)}" aria-label="View ${e(document.originalFilename || "invoice or receipt PDF")}" title="${e(document.originalFilename || "Invoice or receipt PDF")}">View PDF</button>`).join("")
+    : hasInvoiceAttached
+      ? html`<span class="bk-invoice-icon" title="Invoice attached" aria-label="Invoice attached">${icon.receipt}</span>`
+      : html`<span class="bk-no-invoice">No invoice</span>`;
   const allocCount = Array.isArray(entry.allocations) ? entry.allocations.length : 0;
   const allocBadge = allocCount > 0
     ? html`<span class="bk-alloc-badge" data-allocation-count="${allocCount}"
@@ -238,9 +267,7 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
         value: entry[field], options: vocab[field] || [], e,
       })}</td>`).join("")}
       <td class="bk-col-flag">
-        ${hasInvoice(entry.id)
-          ? html`<span class="bk-invoice-icon" title="Invoice attached" aria-label="Invoice attached">${icon.receipt}</span>`
-          : html`<span class="bk-no-invoice">No invoice</span>`}
+        ${invoiceActions}
         ${hasEvidence(entry.id) ? "" : html`<span class="bk-flag" title="No receipt attached" aria-label="No receipt">${icon.receipt}</span>`}
       </td>
     </tr>`;

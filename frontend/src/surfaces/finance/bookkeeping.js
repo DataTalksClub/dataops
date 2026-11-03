@@ -15,6 +15,7 @@ import {
   filtersFromParams,
   groupByMonth,
   inLens,
+  linkedEvidenceDocuments,
   LEDGER_PARAMS,
   ledgerTableMarkup,
   needsCategory,
@@ -144,11 +145,13 @@ export function createBookkeepingSurface(context) {
     }
 
     const hasEvidence = (id) =>
-      links.some((l) => l.transactionId === id && l.coverageType === "evidence");
-    const hasInvoice = (id) => links.some((link) =>
-      link.transactionId === id && link.coverageType === "evidence" &&
-      documents.some((document) => document.id === link.documentId && document.documentType === "invoice"),
-    );
+      links.some((l) => l.transactionId === id && l.coverageType === "evidence") ||
+      Boolean(entries.find((e) => e.id === id)?.allocations?.length);
+    const hasInvoice = (id) => {
+      const entry = entries.find((candidate) => candidate.id === id);
+      const linked = linkedEvidenceDocuments(entry, links, documents);
+      return linked.length ? linked : Boolean(entry?.allocations?.length);
+    };
     const lensEntries = () => entries.filter((e) => inLens(e, lens));
     function setLens(month) {
       lens = month;
@@ -507,6 +510,12 @@ export function createBookkeepingSurface(context) {
       syncUrl();
     });
     ledger.addEventListener("click", (event) => {
+      const documentId = event.target.closest("[data-view-document]")?.dataset.viewDocument;
+      if (documentId) {
+        event.preventDefault();
+        safeAction(() => viewDocument(documentId), "Could not open the file");
+        return;
+      }
       if (event.target.closest("[data-clear-filters]")) {
         filters = filtersFromParams(new URLSearchParams());
         renderFilterOptions();
