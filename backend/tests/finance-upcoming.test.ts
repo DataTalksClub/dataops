@@ -43,7 +43,7 @@ describe('upcoming tax debits', () => {
   it('marks a debit paid once the ledger or a statement shows it, and flags a missed one', () => {
     const u = upcomingDebits({
       schedule: SCHEDULE, today: '2026-11-18', days: 30,
-      paid: [{ id: 'tx-vat', date: '2026-11-10', amount: 659.28, kind: 'ledger' }, { id: 'st-1:4', date: '2026-11-17', amount: 1179.36, kind: 'statement' }],
+      paid: [{ id: 'tx-vat', date: '2026-11-10', amount: 659.28, kind: 'ledger', taxType: 'vat' }, { id: 'st-1:4', date: '2026-11-17', amount: 1179.36, kind: 'statement', taxType: 'health-insurance' }],
       balance: { accountId: 'finom', amount: 40000, currency: 'EUR', asOf: '2026-11-01', source: 'statement' },
     });
     const by = Object.fromEntries(u.debits.map((d) => [`${d.scheduleId}@${d.date}`, d]));
@@ -56,6 +56,48 @@ describe('upcoming tax debits', () => {
     assert.equal(u.balance?.stale, true);
     assert.match(u.warnings.join('\n'), /Balance is 17 days old/);
     assert.match(u.warnings.join('\n'), /Trade tax prepayment due 2026-11-16 \(3296\.00 EUR\) is not in the ledger or a statement yet/);
+  });
+
+  it('matches only the same tax kind, ignores unknown evidence and uses each payment once', () => {
+    const base = { label: 'Synthetic', amount: '123.45', currency: 'EUR',
+      rule: { kind: 'once', date: '2026-11-10' }, source: 'recurring' } as const;
+    const schedule: ScheduleEntry[] = [
+      { ...base, id: 'vat-a', taxType: 'vat' },
+      { ...base, id: 'vat-b', taxType: 'vat' },
+      { ...base, id: 'tk', taxType: 'health-insurance' },
+      { ...base, id: 'other', taxType: 'other' },
+    ];
+    const result = upcomingDebits({ schedule, today: '2026-11-10', paid: [
+      { id: 'unknown', date: '2026-11-10', amount: 123.45, kind: 'statement', taxType: null },
+      { id: 'tk-payment', date: '2026-11-10', amount: 123.45, kind: 'statement', taxType: 'health-insurance' },
+      { id: 'vat-payment', date: '2026-11-10', amount: 123.45, kind: 'ledger', taxType: 'vat' },
+      { id: 'vat-payment', date: '2026-11-10', amount: 123.45, kind: 'ledger', taxType: 'vat' },
+    ] });
+    const byId = Object.fromEntries(result.debits.map((debit) => [debit.scheduleId, debit]));
+    assert.equal(byId['vat-a'].matched?.id, 'vat-payment');
+    assert.equal(byId['vat-b'].status, 'scheduled');
+    assert.equal(byId.tk.matched?.id, 'tk-payment');
+    assert.equal(byId.other.status, 'scheduled');
+  });
+
+  it('requires exact income, trade and explicitly other tax kinds and keeps date and amount limits', () => {
+    const base = { label: 'Synthetic', amount: '25.00', currency: 'EUR',
+      rule: { kind: 'once', date: '2026-11-10' }, source: 'recurring' } as const;
+    const schedule: ScheduleEntry[] = [
+      { ...base, id: 'income', taxType: 'income-tax' },
+      { ...base, id: 'trade', taxType: 'trade-tax' },
+      { ...base, id: 'other', taxType: 'other' },
+    ];
+    const result = upcomingDebits({ schedule, today: '2026-11-10', paid: [
+      { id: 'outside-date', date: '2026-11-04', amount: 25, kind: 'ledger', taxType: 'income-tax' },
+      { id: 'wrong-amount', date: '2026-11-10', amount: 26, kind: 'ledger', taxType: 'income-tax' },
+      { id: 'trade-proof', date: '2026-11-10', amount: 25, kind: 'ledger', taxType: 'trade-tax' },
+      { id: 'other-proof', date: '2026-11-10', amount: 25, kind: 'ledger', taxType: 'other' },
+    ] });
+    const byId = Object.fromEntries(result.debits.map((debit) => [debit.scheduleId, debit]));
+    assert.equal(byId.income.status, 'scheduled');
+    assert.equal(byId.trade.matched?.id, 'trade-proof');
+    assert.equal(byId.other.matched?.id, 'other-proof');
   });
 
   it('says so when no balance is known instead of guessing', () => {

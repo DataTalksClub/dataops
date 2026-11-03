@@ -6,7 +6,7 @@ import { bankKeyFor, pairAll } from '../reconcile/month';
 import { mergedDecisions, snapshot, type Snapshot } from '../reconcile/monthService';
 import { loadEcbRates } from './rates';
 import { bookingDate, dedupe, enrichLedgerFromStatement, isRefundRow, matchFinanceStatements, summarize, type FinanceSummary, type LedgerRow, type PeriodQuery, type StatementLine } from './summary';
-import { classifyMandatoryPayment } from './mandatoryPayments';
+import { classifyMandatoryPayment, taxTypeOf } from './mandatoryPayments';
 import { taxesReport } from './taxes';
 import { listTaxSchedule } from './taxSchedule';
 import { upcomingDebits, type Balance, type PaidEvidence } from './upcoming';
@@ -161,6 +161,13 @@ export async function financeUpcoming(client: DynamoDBDocumentClient, days: numb
   const pairs = new Map([...financePairings(reconciliation)].map(([key, id]) => [key, canonical.get(id) || id]));
   const statementLines = financeStatementLines(statements);
   const matches = matchFinanceStatements(statementLines, kept, pairs);
+  const evidenceTaxType = (item: Record<string, unknown>): PaidEvidence['taxType'] => {
+    const classification = classifyMandatoryPayment(item);
+    if (!classification) return null;
+    const kind = taxTypeOf(item, classification.line);
+    // Generic tax-authority text cannot distinguish an unknown tax from an explicitly recorded other tax.
+    return kind === 'other' && item.taxType !== 'other' ? null : kind;
+  };
   const paid: PaidEvidence[] = [
     ...kept.flatMap((row) => {
       const statement = matches.byLedgerId.get(row.id);
@@ -172,11 +179,11 @@ export async function financeUpcoming(client: DynamoDBDocumentClient, days: numb
       const nativeEur = String(row.currency || 'EUR').toUpperCase() === 'EUR' ? Number(row.amount) : null;
       const amount = bankEur ?? bookedEur ?? nativeEur;
       if (amount === null || !Number.isFinite(amount) || amount <= 0) return [];
-      return [{ id: row.id, date: statement?.date || bookingDate(row), amount, kind: 'ledger' as const }];
+      return [{ id: row.id, date: statement?.date || bookingDate(row), amount, kind: 'ledger' as const, taxType: evidenceTaxType(enriched) }];
     }),
     ...matches.unmatched
       .filter((line) => line.currency === 'EUR' && Number(line.amount) < 0 && classifyMandatoryPayment(line))
-      .map((line) => ({ id: line.id || '', date: line.date, amount: Math.abs(Number(line.amount)), kind: 'statement' as const })),
+      .map((line) => ({ id: line.id || '', date: line.date, amount: Math.abs(Number(line.amount)), kind: 'statement' as const, taxType: evidenceTaxType(line) })),
   ];
   return upcomingDebits({ schedule, today, days, paid, balance });
 }
