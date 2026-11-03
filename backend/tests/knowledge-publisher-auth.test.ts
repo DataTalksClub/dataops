@@ -66,7 +66,7 @@ describe('GitHub Actions OIDC knowledge publisher', () => {
   beforeEach(() => {
     mkdirSync(resolve('../.tmp'), { recursive: true });
     dir = mkdtempSync(resolve('../.tmp/publisher-'));
-    const fixture = syntheticKnowledge({ 'content/a.md': 'old' }, dir);
+    const fixture = syntheticKnowledge({ 'content/a.md': 'old' }, dir, async () => 'https://example.invalid/synthetic-download');
     configureDocsRuntime(fixture.store);
     revision = fixture.publication.revision;
     resetKnowledgePublisherCaches();
@@ -119,7 +119,7 @@ describe('GitHub Actions OIDC knowledge publisher', () => {
     }
   });
 
-  it('reads a stored file version as base64 bytes for the daily mirror', async () => {
+  it('reads inline versions and allows authenticated downloads for the mirror', async () => {
     const viaPublisher = await handler({
       httpMethod: 'GET', path: '/knowledge/version',
       queryStringParameters: { path: 'content/a.md', revision },
@@ -129,6 +129,13 @@ describe('GitHub Actions OIDC knowledge publisher', () => {
     assert.equal(viaPublisher.isBase64Encoded, true);
     assert.equal(Buffer.from(viaPublisher.body, 'base64').toString(), 'old');
     assert.notEqual((await request('GET', '/knowledge/version', token())).statusCode, 403);
+    const download = await handler({
+      httpMethod: 'GET', path: '/knowledge/download',
+      queryStringParameters: { path: 'content/a.md', revision },
+      headers: { Authorization: `Bearer ${token()}` }, body: null,
+    }, {});
+    assert.equal(download.statusCode, 200);
+    assert.deepEqual(JSON.parse(download.body), { url: 'https://example.invalid/synthetic-download', expiresIn: 300 });
   });
 
   it('accepts the schedule event the daily mirror runs on', async () => {

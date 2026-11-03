@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {KnowledgeStore,checksum,type Publication} from '../../src/docs/knowledgeStore';
+import {KnowledgeStore,checksum,type KnowledgeConfig,type Publication} from '../../src/docs/knowledgeStore';
 /** Faithful conditional-object semantics, injected at the SDK boundary; no GitHub calls. */
 export class MemoryS3 {
   objects=new Map<string,Buffer>(); etags=new Map<string,string>();calls:{name:string;input:any}[]=[];
@@ -31,6 +31,6 @@ export class MemoryS3 {
     this.objects.set(`${bucket}/publications/${p.revision}.json`,Buffer.from(JSON.stringify(p)));this.objects.set(`${bucket}/active.json`,Buffer.from(JSON.stringify({revision:p.revision})));this.etags.set(`${bucket}/active.json`,'"initial"');return p;
   }
 }
-export function syntheticKnowledge(files:Record<string,string|Uint8Array>,cacheDir?:string) {
-  const s3=new MemoryS3();const publication=s3.seed(files);const store=new KnowledgeStore({bucket:'test-knowledge',client:s3 as any,cacheDir,offline:false});return{s3,store,publication};
+export function syntheticKnowledge(files:Record<string,string|Uint8Array>,cacheDir?:string,signer?:KnowledgeConfig['signer']) {
+  const s3=new MemoryS3();const publication=s3.seed(files);const store=new KnowledgeStore({bucket:'test-knowledge',client:s3 as any,cacheDir,offline:false,signer});return{s3,store,publication};
 }
