@@ -1,5 +1,6 @@
 import * as cardDocuments from './commands/cardDocuments.mjs';
 import * as documents from './commands/documents.mjs';
+import * as email from './commands/email.mjs';
 import * as tuition from "./commands/tuition.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -72,6 +73,7 @@ export const FAMILIES = {
   tasks: { group: "Work", summary: tasks.summary, help: tasks.help, commands: tasks.commands },
   cards: { group: "Work", summary: cards.summary, help: cards.help, commands: cards.commands },
   templates: { group: "Work", summary: templates.summary, help: templates.help, commands: templates.commands },
+  email: { group: "Work", summary: email.summary, help: email.help, commands: email.commands },
   resources: { group: "Work", summary: resources.summary, help: resources.help, commands: resources.commands },
   recurring: {
     group: "Work",
@@ -209,7 +211,7 @@ export function usage() {
 }
 
 // Flags that may repeat; every other flag keeps its last value.
-const REPEATABLE = new Set(["link", "query", "field", "document", "evidence", "item"]);
+const REPEATABLE = new Set(["link", "query", "field", "document", "evidence", "item", "value"]);
 
 /**
  * Minimal flag parser: `--flag value`, `--flag=value`, and `--boolean`.
