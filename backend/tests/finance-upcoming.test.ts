@@ -100,6 +100,23 @@ describe('upcoming tax debits', () => {
     assert.equal(byId.other.matched?.id, 'other-proof');
   });
 
+  it('does not consume repeated evidence IDs twice when each payment has one matching obligation', () => {
+    const base = { label: 'Synthetic', amount: '25.00', currency: 'EUR',
+      taxType: 'vat', source: 'recurring' } as const;
+    const schedule: ScheduleEntry[] = [
+      { ...base, id: 'first', rule: { kind: 'once', date: '2026-11-10' } },
+      { ...base, id: 'second', rule: { kind: 'once', date: '2026-11-24' } },
+    ];
+    const proof = { id: 'same-proof', date: '2026-11-10', amount: 25,
+      kind: 'ledger', taxType: 'vat' } as const;
+    const result = upcomingDebits({ schedule, today: '2026-11-10', days: 30,
+      paid: [proof, { ...proof, date: '2026-11-24' }] });
+    const byId = Object.fromEntries(result.debits.map((debit) => [debit.scheduleId, debit]));
+    assert.equal(byId.first.status, 'scheduled');
+    assert.equal(byId.second.matched?.id, 'same-proof');
+    assert.equal(result.debits.filter((debit) => debit.matched?.id === 'same-proof').length, 1);
+  });
+
   it('says so when no balance is known instead of guessing', () => {
     const u = upcomingDebits({ schedule: SCHEDULE, today: '2026-10-31' });
     assert.equal(u.balance, null);
