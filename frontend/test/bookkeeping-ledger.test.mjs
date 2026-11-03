@@ -494,3 +494,18 @@ test("unmatched mandatory statement row appears only in the mandatory section", 
   assert.match(finance.markup(escapeHtml), /Health insurance \/ TK/);
   assert.deepEqual(monthlyLedgerEntries([row], "2026", finance.entryMap()), [row]);
 });
+
+test("an expense-encoded refund remains in the ledger and outside mandatory debit totals", () => {
+  const debit = { id: "synthetic-debit", month: "2026-04", date: "2026-04-16",
+    direction: "out", line: "vat", mandatoryKind: "tax_debit", refund: false,
+    counterparty: "Synthetic authority", amount: "100.00", currency: "EUR", eur: 100 };
+  const refund = { ...debit, id: "synthetic-refund", refund: true,
+    counterparty: "Synthetic refund", amount: "20.00", eur: 20 };
+  const index = new Map([[debit.id, debit], [refund.id, refund]]);
+  assert.deepEqual(monthlyLedgerEntries([{ id: debit.id }, { id: refund.id }], "2026-04", index),
+    [{ id: refund.id }]);
+  const markup = mandatoryPaymentsMarkup([debit, refund], "2026-04", escapeHtml);
+  assert.match(markup, /Synthetic authority/);
+  assert.doesNotMatch(markup, /Synthetic refund/);
+  assert.match(markup, /100\.00/);
+});

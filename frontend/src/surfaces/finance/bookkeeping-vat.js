@@ -22,7 +22,7 @@ export function monthlyLedgerEntries(entries, lens, financeEntriesById) {
   if (!/^\d{4}-\d{2}$/.test(lens)) return entries;
   return entries.filter((entry) => {
     const mandatory = financeEntriesById.get(String(entry.id));
-    return !(mandatory?.month === lens && mandatory.direction === "out" && mandatory.mandatoryKind);
+    return !(mandatory?.month === lens && mandatory.direction === "out" && mandatory.mandatoryKind && !mandatory.refund);
   });
 }
 
@@ -41,7 +41,7 @@ export function mandatoryPaymentsMarkup(entries, lens, escapeHtml, state = "read
     </section>`;
 
   const payments = (entries || [])
-    .filter((entry) => entry.month === lens && entry.direction === "out" && entry.mandatoryKind)
+    .filter((entry) => entry.month === lens && entry.direction === "out" && entry.mandatoryKind && !entry.refund)
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || ""))
       || String(a.id || "").localeCompare(String(b.id || "")));
   const subtotal = payments.reduce((sum, entry) => {
