@@ -455,7 +455,7 @@ describe('portal API request telemetry', () => {
   });
 
   it('maps every operational API route to its route family', () => {
-    assert.strictEqual(OPERATIONAL_API_ROUTES.length, 21);
+    assert.strictEqual(OPERATIONAL_API_ROUTES.length, 20);
     for (const [path, family] of OPERATIONAL_API_ROUTES) {
       assert.strictEqual(classifyApiRouteFamily(path), family, path);
     }
