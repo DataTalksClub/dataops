@@ -90,14 +90,6 @@ function statementLineMarkup(statementLink, { e, amount }) {
     ["Raw counterparty", line.counterparty],
     ["Reference", line.reference],
   ].filter(([, value]) => filled(value));
-  const bankKey = text(statementLink.bankKey);
-  const lineDate = text(line.date);
-  const period = /^\d{4}-\d{2}-\d{2}$/.test(lineDate)
-    ? lineDate.slice(0, 7)
-    : text(statementLink.statementPeriod);
-  const reconcileHref = bankKey && /^\d{4}-\d{2}$/.test(period)
-    ? `/finance/reconcile/${period}?bankKey=${encodeURIComponent(bankKey)}`
-    : "";
   const recordTarget = documentId
     ? ` data-view-document="${e(documentId)}"`
     : artifactId
@@ -115,7 +107,6 @@ function statementLineMarkup(statementLink, { e, amount }) {
     <dl class="bk-transaction-statement__facts">${details.map(([label, value]) =>
       `<dt>${e(label)}</dt><dd>${e(value)}</dd>`,
     ).join("")}${sourceLine}</dl>
-    ${reconcileHref ? `<a class="dk-button dk-button--secondary" href="${e(reconcileHref)}">View matching line in reconciliation</a>` : ""}
     ${openStatement}
   </section>`;
 }
