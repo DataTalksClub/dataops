@@ -387,6 +387,8 @@ async function deleteTables(client: DynamoDBDocumentClient): Promise<void> {
     TABLE_NEWSLETTER_SLOTS,
     TABLE_CALENDAR,
     TABLE_PODCAST_EPISODES,
+    TABLE_PEOPLE,
+    TABLE_BOOKS,
   ];
 
   for (const tableName of tableNames) {
