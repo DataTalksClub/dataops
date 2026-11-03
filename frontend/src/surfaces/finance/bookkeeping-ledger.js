@@ -228,7 +228,9 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
   const hasInvoiceAttached = invoiceDocuments.length > 0 || invoiceEvidence === true;
   const invoiceActions = invoiceDocuments.length
     ? invoiceDocuments.map((document) => html`<button type="button" class="dk-button dk-button--secondary dk-button--sm bk-evidence-view"
-        data-view-document="${e(document.id)}" aria-label="View ${e(document.originalFilename || "invoice or receipt PDF")}" title="${e(document.originalFilename || "Invoice or receipt PDF")}">View PDF</button>`).join("")
+        data-view-document="${e(document.id)}"
+        aria-label="View ${e(document.originalFilename || "invoice or receipt PDF")}"
+        title="${e(document.originalFilename || "Invoice or receipt PDF")}">View PDF</button>`).join("")
     : hasInvoiceAttached
       ? html`<span class="bk-invoice-icon" title="Invoice attached" aria-label="Invoice attached">${icon.receipt}</span>`
       : html`<span class="bk-no-invoice">No invoice</span>`;
