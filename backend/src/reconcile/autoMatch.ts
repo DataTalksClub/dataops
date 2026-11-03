@@ -38,7 +38,10 @@ export async function autoMatchMonths(client: DynamoDBDocumentClient, periods: s
       fx = (currency, date) => rates.lookup(currency, date)?.rate ?? null;
     }
   }
-  const pairing = pairAll(data.bank, data.ledger, mergedDecisions(data.months), data.config.tolerances, fx);
+  const pairing = pairAll(data.bank, data.ledger, mergedDecisions(data.months), data.config.tolerances, fx, {
+    issuedInvoices: data.issuedInvoices,
+    receivedInvoiceDocuments: data.receivedInvoiceDocuments,
+  });
   const bankByKey = new Map(data.bank.map((row) => [row.key, row]));
   const byPeriod = new Map<string, ManualPair[]>();
   for (const [bankKey, pair] of pairing.pairs) {
