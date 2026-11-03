@@ -526,31 +526,33 @@ describe('CLI CRM hard delete', () => {
       } finally { delete globalThis.fetch; }
     });
   }
-  test('sponsors delete deals requires confirmation, sends the hard delete and reports API exit codes', async () => {
+  test('sponsors delete deals previews by default, applies with confirmation and reports API exit codes', async () => {
     let status = 200;
     const calls = fakePortal({
-      'DELETE /api/sponsor-crm/deals/fixture': () => ({ status, body: status === 200 ? { id: 'fixture', deleted: true } : { error: status === 404 ? 'Not found' : 'Deal has a deliverable (d1); hard delete is refused' } }),
+      'POST /api/sponsor-crm/deals/fixture/delete': (call) => ({ status, body: status === 200 ? { id: 'fixture', mode: call.body.apply ? 'applied' : 'dry-run', deletedDeliverableIds: ['d1'] } : { error: status === 404 ? 'Not found' : 'Deal has a deliverable (d1); hard delete is refused' } }),
     });
     try {
       assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--json'], captureIo()), EXIT.usage);
       assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--yes=false', '--json'], captureIo()), EXIT.usage);
       for (const version of ['0', '-1', '1.5', 'invalid']) {
-        assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--yes', '--expected-version', version, '--json'], captureIo()), EXIT.usage);
+        assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--with-deliverables', '--expected-version', version, '--json'], captureIo()), EXIT.usage);
       }
       assert.equal(await run(['sponsors', 'delete', 'organizations', 'fixture', '--yes', '--json'], captureIo()), EXIT.usage);
       assert.equal(calls.length, 0);
       const io = captureIo();
-      assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--yes', '--expected-version', '3', '--json'], io), EXIT.ok);
-      assert.deepEqual(io.json(), { id: 'fixture', deleted: true });
-      assert.equal(calls[0].query.hard, 'true'); assert.equal(calls[0].query.expectedVersion, '3');
+      assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--with-deliverables', '--expected-version', '3', '--json'], io), EXIT.ok);
+      assert.deepEqual(io.json(), { id: 'fixture', mode: 'dry-run', deletedDeliverableIds: ['d1'] });
+      assert.equal(calls[0].body.withDeliverables, true); assert.equal(calls[0].body.expectedVersion, 3); assert.equal(calls[0].body.apply, undefined);
       const human = captureIo();
-      assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--yes'], human), EXIT.ok);
-      assert.match(human.text(), /Deleted deal/);
+      assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--with-deliverables'], human), EXIT.ok);
+      assert.match(human.text(), /Dry run/);
+      assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--with-deliverables', '--apply'], captureIo()), EXIT.ok);
+      assert.equal(calls[2].body.apply, true);
       status = 404;
-      assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--yes', '--json'], captureIo()), 4);
+      assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--with-deliverables', '--yes', '--json'], captureIo()), 4);
       status = 409;
       const conflict = captureIo();
-      assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--yes', '--json'], conflict), 5);
+      assert.equal(await run(['sponsors', 'delete', 'deals', 'fixture', '--with-deliverables', '--yes', '--json'], conflict), 5);
       assert.match(JSON.parse(conflict.errors.join('\n')).error.message, /deliverable/);
     } finally { delete globalThis.fetch; }
   });
