@@ -1,9 +1,13 @@
 import { UsageError } from "../errors.mjs";
-import { fetchSheet, readSheetDir, planClassification, planSync } from "../bookkeepingSheet.mjs";
+import { readSheetDir, planClassification, planSync } from "../bookkeepingSheet.mjs";
 import { linkEvidence, storeDocument } from "../documentUpload.mjs";
 import { apiFor } from "../session.mjs";
 
 export const summary = "Bookkeeping: sync from the spreadsheet, fill classification, read invoices";
+
+const CSV_PULL_GUIDANCE = `From the dapier checkout, export one CSV per tab with the sanctioned google-data-pull skill:
+  python3 .agents/skills/google-data-pull/gpull.py --agent admin-os --as "drive datatalks" drive sheet <spreadsheet-id> --out-dir <csv-dir>
+Then, from the DataOps checkout, run node <dataops>/cli/bin/dataops.mjs bookkeeping sync <csv-dir> (dry run by default). Keep the CSV export outside this repository.`;
 
 export const help = `dataops bookkeeping - keep DataOps transactions in step with the bookkeeping sheet
 
@@ -17,13 +21,11 @@ Usage
       Set classification and/or the booked EUR amount on an existing row.
       Dry-run by default; --apply writes the row and records an audit entry.
 
-  dataops bookkeeping sync --sheet <spreadsheet-id> [--apply]
   dataops bookkeeping sync <csv-dir> [--apply]
       Compare the bookkeeping sheet with DataOps transactions. Adds rows DataOps
       lacks and updates fields the sheet fills in differently. Never deletes, never
       clears a value the sheet leaves blank, never writes to the sheet.
-      --sheet reads every tab through the Sheets API with the Google access token in
-      DAPIER_ACCESS_TOKEN; <csv-dir> reads one <tab>.csv per tab instead.
+      Direct Google Sheets mode (--sheet) is disabled. Use the sanctioned CSV pull below.
   dataops bookkeeping classify [--since YYYY-MM-DD] [--apply]
       Fill a missing Type, Category or Period from the provider's other transactions
       when they all agree. Default --since 2025-01-01 (older tabs have no classification).
@@ -56,12 +58,8 @@ Usage
 Bookkeeping writes print a dry run unless --apply is given. Reconciliation void
 and restore print a dry run unless --yes is given. Run the preview first and read it.
 
-Sanctioned sheet pull without a Google token in the environment (run from the
-dapier checkout; the google-data-pull skill exports one <tab>.csv per tab):
-  python3 .agents/skills/google-data-pull/gpull.py --agent admin-os \\
-    --as "drive datatalks" drive sheet <spreadsheet-id> --out-dir <csv-dir>
-  node <dataops>/cli/bin/dataops.mjs bookkeeping sync <csv-dir>
-Keep any CSV export outside this repository: it is private finance data.
+Sanctioned sheet pull:
+  ${CSV_PULL_GUIDANCE.replaceAll("\n", "\n  ")}
 `;
 
 async function transactions(api) {
@@ -96,13 +94,10 @@ async function eachWithLimit(items, limit, work) {
 }
 
 async function sheetRows(args) {
-  if (typeof args.sheet === "string" && args.sheet) {
-    const token = process.env.DAPIER_ACCESS_TOKEN;
-    if (!token) throw new UsageError('--sheet needs a Google access token in DAPIER_ACCESS_TOKEN. The sanctioned route with no token in the environment exports the sheet to CSVs with the dapier google-data-pull skill (gpull.py), then runs `bookkeeping sync <csv-dir>`.');
-    return fetchSheet(args.sheet, token);
-  }
+  if (Object.hasOwn(args, "sheet"))
+    throw new UsageError(`Direct --sheet mode is disabled. DataOps will not read a Google token from the environment or fetch Google Sheets. ${CSV_PULL_GUIDANCE}`);
   if (args._[0]) return readSheetDir(args._[0]);
-  throw new UsageError("Pass --sheet <spreadsheet-id> or the directory holding a CSV export.");
+  throw new UsageError(`Pass the directory holding a CSV export. ${CSV_PULL_GUIDANCE}`);
 }
 
 export async function sync(args, io) {
