@@ -76,3 +76,24 @@ test("the package button stays disabled while a row has no EUR value", () => {
   assert.equal(reportButton.disabled, true);
   assert.match(nodes.get("[data-package-review]").innerHTML, /without a EUR value/);
 });
+
+
+test("switching from a month to a year disables package creation", () => {
+  let lens = "2026-10";
+  const nodes = new Map([
+    ["[data-package-review]", { innerHTML: "" }],
+    ["[data-report-month]", { value: "" }],
+    ["[data-report]", { disabled: true }],
+  ]);
+  const reports = createBookkeepingReports({
+    escapeHtml, getAccounts: () => [], getDocuments: () => [], getLens: () => lens,
+    getLinks: () => [], getReports: () => [], isReportExemptEntry: () => false,
+    lensEntries: () => [], surface: { querySelector: (selector) => nodes.get(selector) },
+  });
+  reports.renderPackageReview();
+  assert.equal(nodes.get("[data-report]").disabled, false);
+  lens = "2026";
+  reports.renderPackageReview();
+  assert.equal(nodes.get("[data-report]").disabled, true);
+  assert.match(nodes.get("[data-package-review]").innerHTML, /Choose a month/);
+});
