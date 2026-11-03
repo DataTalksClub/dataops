@@ -4,6 +4,7 @@ import { PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { createDocumentLink, getBookkeepingItem, putBookkeepingItem } from '../src/db/bookkeeping';
+import { handleBookkeepingAccountantReportRoutes } from '../src/routes/bookkeepingAccountantReport';
 import { createInvoice } from '../src/invoices/store';
 import { TABLE_ARTIFACTS, TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { saveStatement } from '../src/reconcile/service';
@@ -228,7 +229,7 @@ describe('reconciliation ledger projection', () => {
     const pack = await monthPackage(client, period);
     assert.equal(pack.draft, false);
     assert.match(pack.csv, /Synthetic Advisory GmbH/);
-    assert.match(pack.csv, /Compliance & Taxes/);
+    assert.match(pack.csv, /Monthly compliance service fee/);
     assert.doesNotMatch(pack.csv, /Finanzamt Example/);
     assert.doesNotMatch(pack.csv, /Techniker Krankenkasse/);
     assert.doesNotMatch(pack.csv, /Synthetic Owner|Owner pay/);
@@ -291,7 +292,7 @@ describe('reconciliation ledger projection', () => {
       assert.equal(pack.draft, true);
       assert.equal(pack.csv.includes('Synthetic Owner'), false);
       assert.match(pack.csv, /Synthetic ILZ Services/);
-      assert.match(pack.csv, /Compliance & Taxes/);
+      assert.match(pack.csv, /Synthetic ordinary service invoice/);
       assert.ok(pack.entries.some((entry) => entry.documentId === serviceInvoice.id));
       assert.ok(pack.entries.some((entry) => entry.kind === 'statement'
         && entry.documentId === 'synthetic-original-statement'
@@ -353,6 +354,14 @@ describe('reconciliation ledger projection', () => {
     } }));
 
     const nextMonth = await monthPackage(client, period, { draft: true });
+    const accountant = await handleBookkeepingAccountantReportRoutes(
+      '/api/bookkeeping/reports/accountant', 'GET',
+      { httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period, format: 'csv' } } as any,
+      client,
+    );
+    assert.equal(accountant?.statusCode, 200);
+    assert.equal(nextMonth.csv, JSON.parse(accountant!.body).content,
+      'the package CSV is exactly the native accountant report for its cash period');
     assert.match(nextMonth.csv, /Synthetic Client A/);
     assert.match(nextMonth.csv, /Consulting milestone/);
     assert.match(nextMonth.csv, /70\.00/);

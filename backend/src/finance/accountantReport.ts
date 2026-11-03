@@ -50,14 +50,7 @@ export function selectAccountantReportRows(transactions: AccountantReportEntry[]
   return accountantReportRowsForPeriod(transactions, period).filter(isAccountantReportRowIncluded);
 }
 
-const CSV_HEADERS = [
-  "Date", "Paid Date", "Provider", "Description", "Price EUR", "Price USD",
-  "Original Currency", "VAT Amount", "VAT Currency", "Category", "Type", "Statement",
-];
-const TSV_HEADERS = [
-  "Date", "Paid Date", "Provider", "Description", "Price EUR", "Price USD",
-  "Currency", "VAT", "VAT Currency", "Category", "Type", "Statement",
-];
+const HEADERS = ["Date", "Company", "What", "Amount, EUR"];
 
 function direction(entry: AccountantReportEntry) {
   const type = String(entry.entryType || "").trim().toLowerCase();
@@ -79,40 +72,31 @@ function values(entry: AccountantReportEntry) {
   const sign = dir === "expense" ? "-" : "";
   const eurValue = entry.currency === "EUR" ? entry.amount : entry.amountEur ?? "";
   const priceEur = eurValue !== "" && eurValue != null ? `${sign}${eurValue}` : "";
-  const priceUsd = entry.currency === "USD" ? `${sign}${entry.amount}` : "";
   return [
     accountantCashDate(entry),
-    entry.paidDate || "",
     entry.counterparty || "",
     entry.description || "",
     priceEur,
-    priceUsd,
-    entry.currency || "",
-    entry.vatAmount ?? "",
-    entry.vatCurrency || "",
-    entry.category || "",
-    dir === "income" ? "Income" : dir === "expense" ? "Expense" : entry.entryType || "",
-    entry.statementRef || "",
   ];
 }
 
 export function formatAccountantCsv(entries: AccountantReportEntry[]) {
-  const lines = [CSV_HEADERS.map(csvCell).join(",")];
+  const lines = [HEADERS.map(csvCell).join(",")];
   for (const entry of entries) {
     lines.push(values(entry)
-      .map((value, index) => csvCell([4, 5, 7].includes(index) ? value : spreadsheetText(value)))
+      .map((value, index) => csvCell(index === 3 ? value : spreadsheetText(value)))
       .join(","));
   }
   return `${lines.join("\r\n")}\r\n`;
 }
 
 export function formatAccountantTsv(entries: AccountantReportEntry[]) {
-  const lines = [TSV_HEADERS.join("\t")];
+  const lines = [HEADERS.join("\t")];
   for (const entry of entries) {
     lines.push(values(entry)
       .map((value, index) => {
         const text = String(value ?? "").replace(/[\t\r\n]/g, " ");
-        return [4, 5, 7].includes(index) ? text : spreadsheetText(text);
+        return index === 3 ? text : spreadsheetText(text);
       })
       .join("\t"));
   }
