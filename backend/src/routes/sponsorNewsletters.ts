@@ -7,7 +7,6 @@ import {
   updateCrmRecord,
   type CrmRecord,
 } from '../db/sponsorCrm';
-import { realDate } from '../sponsorCrm/model';
 import {
   NEWSLETTER_HEALTH,
   issueBelongsTo,
@@ -22,15 +21,12 @@ import {
   validateNewsletterIssue,
 } from '../sponsorCrm/newsletters';
 import { NEWSLETTER_ISSUE_KIND, upsertNewsletterIssue } from '../sponsorCrm/newsletterIssues';
+import { todayOf } from '../crmWorkspace/berlin';
 import { leadValue, parseSponsors, storeLead } from './sponsorLeads';
 
 const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const parse = (event: LambdaEvent) => { try { return event.body ? JSON.parse(String(event.body)) as Record<string, unknown> : null; } catch { return null; } };
-const todayOf = (event: LambdaEvent) => {
-  const query = event.queryStringParameters || {};
-  return realDate(query.today) ? String(query.today) : new Date().toISOString().slice(0, 10);
-};
 
 function validateList(event: LambdaEvent) {
   const query = event.queryStringParameters || {}, limit = Number(query.limit || 50), cursor = Number(query.cursor || 0);

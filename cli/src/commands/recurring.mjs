@@ -1,4 +1,5 @@
 import { apiFor } from "../session.mjs";
+import { berlinToday } from "../format.mjs";
 import { resolveDocument } from "./kb.mjs";
 
 const client = apiFor;
@@ -195,7 +196,7 @@ export async function remove(args, io) {
 }
 
 export async function generate(args, io) {
-  const date = String(args.date || new Date().toISOString().slice(0, 10));
+  const date = String(args.date || berlinToday());
   const result = await client(args).post("/api/recurring/generate", {
     startDate: date,
     endDate: args.until ? String(args.until) : date,

@@ -203,19 +203,12 @@ export function formatBerlinTime(isoString: string): string {
   }).format(new Date(isoString));
 }
 
-export function formatBerlinDate(isoString: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Berlin',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date(isoString));
-  const get = (type: string) => parts.find((p) => p.type === type)!.value;
-  return `${get('year')}-${get('month')}-${get('day')}`;
-}
+import { berlinToday } from '../relativeDates';
 
-export function berlinToday(): string {
-  return formatBerlinDate(new Date().toISOString());
+export { berlinToday };
+
+export function formatBerlinDate(isoString: string): string {
+  return berlinToday(new Date(isoString));
 }
 
 /**

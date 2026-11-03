@@ -10,10 +10,7 @@ import { listTaxSchedule } from './taxSchedule';
 import { upcomingDebits, type Balance, type PaidEvidence } from './upcoming';
 import { businessAccountStatementRequirement } from './businessAccounts';
 
-/** Today in Berlin, where the books are kept. */
-export function berlinToday(now = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
-}
+export { berlinToday } from '../relativeDates';
 
 function documentVatFacts(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
