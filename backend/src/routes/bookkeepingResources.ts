@@ -12,6 +12,10 @@ import {
   putBookkeepingItem,
   removeDocumentReportReference,
 } from "../db/bookkeeping";
+import {
+  deleteBookkeepingReportSnapshot,
+  readBookkeepingReportSnapshotForItem,
+} from "../db/bookkeepingReportSnapshots";
 import { applyDocumentFinance, type DocumentFacts } from "./bookkeepingSuggestions";
 import { json, MONTH, parse, publicDocument, publicLink } from "./bookkeepingShared";
 import { businessAccountStatementMetadata } from "../finance/businessAccounts";
@@ -153,10 +157,14 @@ export async function handleBookkeepingResourceRoutes(
       if (kind === "report") {
         const report = await getBookkeepingItem(client, "report", id);
         if (!report) return json(404, { error: "Not found" });
+        const snapshot = await readBookkeepingReportSnapshotForItem(client, report);
+        const snapshotStorageId = Number(report.snapshotVersion) === 4
+          ? String(report.snapshotStorageId || "")
+          : "";
         await markReportDeleting(client, id);
         let cleanupFailed = false;
-        for (const documentId of Array.isArray(report.documentIds)
-          ? report.documentIds.map(String)
+        for (const documentId of Array.isArray(snapshot.documentIds)
+          ? snapshot.documentIds.map(String)
           : [])
           await removeDocumentReportReference(client, documentId, id).catch(
             (error) => {
@@ -167,6 +175,8 @@ export async function handleBookkeepingResourceRoutes(
         if (cleanupFailed)
           return json(503, { error: "Report cleanup incomplete" });
         await deleteDeletingReport(client, id);
+        if (snapshotStorageId)
+          await deleteBookkeepingReportSnapshot(client, snapshotStorageId).catch(() => undefined);
         return { statusCode: 204, headers: {}, body: "" };
       }
       return (await deleteBookkeepingItem(client, kind, id))

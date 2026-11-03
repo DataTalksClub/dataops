@@ -1620,7 +1620,9 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const snapshot = await handleBookkeepingReportRoutes('/api/bookkeeping/reports/snapshot', 'POST', { body: JSON.stringify({ month: '2098-04' }) }, client);
     assert.equal(snapshot!.statusCode, 201, snapshot!.body);
     const report = JSON.parse(snapshot!.body).report;
-    assert.ok(report.documentIds.includes(invoiceId)); assert.ok(report.transactionIds.includes(cash.id));
+    const { readBookkeepingReportSnapshotForItem } = await import('../src/db/bookkeepingReportSnapshots');
+    const reportContent = await readBookkeepingReportSnapshotForItem(client, report);
+    assert.ok((reportContent.documentIds as string[]).includes(invoiceId)); assert.ok((reportContent.transactionIds as string[]).includes(cash.id));
     const storage = await import('../src/routes/bookkeepingShared');
     const { Readable } = await import('stream');
     const oldS3 = storage.s3, oldSigner = storage.signUrl, oldUploader = storage.uploadStream;
