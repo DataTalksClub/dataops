@@ -18,6 +18,7 @@ import {
   LEDGER_PARAMS,
   ledgerTableMarkup,
   needsCategory,
+  resolveAccountName,
   SECONDARY_VIEWS,
   suggestionLoader,
   suggestionsMarkup,
@@ -25,6 +26,7 @@ import {
 } from "./bookkeeping-ledger.js";
 import { mountInvoiceReview } from "./invoices.js";
 import { createBookkeepingTransactionModal } from "./bookkeeping-transaction-modal.js";
+import { loadStatementLinkIndex } from "./bookkeeping-statement.js";
 import { openBookkeepingDialog } from "./bookkeeping-dialogs.js";
 import { createBookkeepingFinance } from "./bookkeeping-vat.js";
 import { html } from "./shared.js";
@@ -70,7 +72,8 @@ export function createBookkeepingSurface(context) {
       documents = [],
       links = [],
       accounts = [],
-      reports = [];
+      reports = [],
+      statementLinks = new Map();
     const initial = new URLSearchParams(locationRef?.search || "");
     // The lens is a month ("YYYY-MM"), a year, or "all". Without one in the
     // URL it opens on the latest month that has transactions.
@@ -152,9 +155,32 @@ export function createBookkeepingSurface(context) {
       return linked;
     };
     const lensEntries = () => entries.filter((e) => inLens(e, lens));
+    let statementLinkLoad = 0;
+    function shiftMonth(period, delta) {
+      const [year, month] = period.split("-").map(Number);
+      const index = year * 12 + (month - 1) + delta;
+      return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
+    }
+    async function loadStatementLinks() {
+      const mine = ++statementLinkLoad;
+      const periods = /^\d{4}-\d{2}$/.test(lens)
+        ? [shiftMonth(lens, -1), lens, shiftMonth(lens, 1)]
+        : [...new Set(entries.map((e) => monthOf(e)).filter((m) => /^\d{4}-\d{2}$/.test(m)))].sort().slice(-13);
+      try {
+        const next = await loadStatementLinkIndex(periods, { request, workApiUrl });
+        if (mine !== statementLinkLoad) return;
+        statementLinks = next;
+      } catch {
+        if (mine !== statementLinkLoad) return;
+        statementLinks = new Map();
+      }
+      renderFilterOptions();
+      renderLedger();
+    }
     function setLens(month) {
       lens = month;
       renderAll();
+      void loadStatementLinks();
     }
     function renderAll() {
       navigation.refresh();
@@ -189,7 +215,7 @@ export function createBookkeepingSurface(context) {
     }
     function renderFilterOptions() {
       vocab = Object.fromEntries(CLASSIFICATION_FIELDS.map(({ field }) => [field, vocabulary(entries, field)]));
-      optionList(surface.querySelector('[data-filter="account"]'), accountsOf(entries), "All accounts", filters.account);
+      optionList(surface.querySelector('[data-filter="account"]'), accountsOf(entries, statementLinks), "All accounts", filters.account);
       optionList(surface.querySelector('[data-filter="category"]'), vocab.category, "All categories", filters.category);
       surface.querySelector('[data-filter="dir"]').value = filters.dir;
       const search = surface.querySelector('[data-filter="q"]');
@@ -206,7 +232,7 @@ export function createBookkeepingSurface(context) {
         button.setAttribute("aria-pressed", String(filters.needs === kind));
         surface.querySelector(`[data-needs-count="${kind}"]`).textContent = counts[kind] ? String(counts[kind]) : "";
       });
-      const shown = filterEntries(scoped, filters, { hasEvidence });
+      const shown = filterEntries(scoped, filters, { hasEvidence, accountNameOf: (entry) => resolveAccountName(entry, statementLinks) });
       surface.querySelector("[data-shown-count]").textContent =
         `${shown.length} of ${scoped.length}`;
       const active = ["account", "dir", "category", "needs"].filter((name) => filters[name]).length;
@@ -229,6 +255,7 @@ export function createBookkeepingSurface(context) {
         vocab,
         selectedId,
         financeEntriesById: financeSummary.entryMap(),
+        statementLinks,
         e: escapeHtml,
       }) + financeSummary.markup(escapeHtml);
     }
@@ -786,6 +813,7 @@ export function createBookkeepingSurface(context) {
       if (linked && !inLens(linked, lens)) lens = monthOf(linked) || lens;
       renderAll();
       await refreshEvidence();
+      void loadStatementLinks();
       if (selectedId) openTransaction(selectedId);
       if (view === "package") await renderVat();
       refreshInvoiceCount();

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  loadStatementLinkIndex,
   loadTransactionStatementContext,
   pairTransactionWithStatementRow,
   statementLinkForTransaction,
@@ -229,4 +230,38 @@ test("manual statement linking posts the selected bank key to its month pair end
     }),
     /valid statement candidate/,
   );
+});
+
+test("statement link index maps paired transactions to account names and documents", async () => {
+  const calls = [];
+  const request = async (url) => {
+    calls.push(url);
+    if (url.endsWith("/api/reconcile/months/2026-09")) {
+      return { month: { period: "2026-09", rows: [
+        { id: "r1", bank: { key: "rev:1", accountId: "revolut", statementId: "stmt-1", wallet: "", currency: "EUR" }, ledger: { id: "tx-1" } },
+        { id: "r2", bank: { key: "fin:1", accountId: "finom", statementId: "stmt-2", wallet: "", currency: "EUR" }, ledger: { id: "tx-2" } },
+        { id: "r3", ledger: { id: "tx-3" } },
+      ] } };
+    }
+    if (url.endsWith("/api/reconcile/months/2026-08") || url.endsWith("/api/reconcile/months/2026-10")) {
+      return { month: { period: "x", rows: [] } };
+    }
+    if (url.endsWith("/api/reconcile/statements/stmt-1")) {
+      return { statement: { id: "stmt-1", accountId: "revolut", period: "2026-09", documentId: "doc-1" } };
+    }
+    throw new Error(`unexpected ${url}`);
+  };
+  const index = await loadStatementLinkIndex(["2026-09", "2026-08"], { request, workApiUrl: (path) => `https://portal.test${path}` });
+  assert.equal(index.size, 2);
+  assert.deepEqual(index.get("tx-1"), {
+    transactionId: "tx-1",
+    accountId: "revolut",
+    accountName: "Revolut Business EUR",
+    statementPeriod: "2026-09",
+    statementDocumentId: "doc-1",
+    statementArtifactId: "",
+    bankKey: "rev:1",
+  });
+  assert.equal(index.get("tx-2").accountName, "Finom EUR");
+  assert.equal(index.get("tx-2").statementDocumentId, "", "a statement without a stored record keeps the name but no link");
 });

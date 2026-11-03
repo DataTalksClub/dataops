@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   accountOf,
+  resolveAccountName,
   accountsOf,
   eurValue,
   filterEntries,
@@ -68,6 +69,31 @@ test("filters come from the URL and compose", () => {
   assert.equal(inLens(rows[2], "2026"), true);
   assert.equal(inLens(rows[2], "2026-09"), false);
   assert.equal(inLens(rows[2], "all"), true);
+});
+
+test("account names resolve from the linked statement or a short label", () => {
+  const links = new Map([
+    ["a", { accountName: "Revolut Business", statementDocumentId: "doc-1", statementPeriod: "2026-09" }],
+  ]);
+  assert.equal(resolveAccountName({ id: "a", statementRef: "revolut EUR" }, links), "Revolut Business");
+  assert.equal(resolveAccountName({ id: "zzz", statementRef: "revolut EUR" }, links), "Revolut");
+  assert.equal(resolveAccountName({ id: "zzz", statementRef: "N96 - statement.pdf" }, links), "N26-personal");
+  assert.equal(resolveAccountName({ id: "zzz", statementRef: "finom" }, links), "Finom");
+  assert.equal(resolveAccountName({ id: "zzz", statementRef: "Paypal - x.pdf" }, links), "PayPal");
+  assert.equal(resolveAccountName({ id: "zzz", statementRef: "" }, links), "");
+  assert.equal(resolveAccountName({ id: "zzz", statementRef: "revolut:dtc:USD:stmt-abc:row-def" }, links), "");
+  assert.deepEqual(accountsOf(rows, links), ["Card", "Ledgerly", "Northbank", "Revolut Business"], "linked names win over refs");
+});
+
+test("the account column sits last and links to the uploaded statement", () => {
+  const links = new Map([
+    ["a", { accountName: "Revolut Business", statementDocumentId: "doc-1", statementPeriod: "2026-09" }],
+  ]);
+  const markup = ledgerTableMarkup({
+    groups: groupByMonth(rows), hasEvidence: () => false, vocab: {}, selectedId: "", statementLinks: links, e: escapeHtml,
+  });
+  assert.match(markup, /<th scope="col" class="bk-col-flag">Invoice<\/th>\s*<th scope="col" class="bk-col-account">Account<\/th>/);
+  assert.match(markup, /<button[^>]*data-view-document="doc-1"[^>]*>Revolut Business<\/button>/);
 });
 
 test("the net column subtracts VAT from the gross EUR value", () => {

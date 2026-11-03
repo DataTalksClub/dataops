@@ -144,7 +144,9 @@
 .bk-unconverted { font-weight: var(--dk-weight-semibold); }
 .bk-col-eur { color: var(--dk-text-heading); }
 .is-income .bk-col-eur { color: var(--dk-success-text); }
-.bk-col-account { max-width: 7em; overflow: hidden; color: var(--dk-text-muted); text-overflow: ellipsis; }
+.bk-col-account { max-width: 9em; overflow: hidden; color: var(--dk-text-muted); text-overflow: ellipsis; }
+.bk-account-link { padding: 0; border: 0; background: none; color: inherit; cursor: pointer; font: inherit; text-align: left; }
+.bk-account-link:hover { text-decoration: underline; }
 .bk-col-class { padding-left: var(--dk-space-1); padding-right: var(--dk-space-1); }
 .bookkeeping-surface .bk-col-subtype .bk-inline-select { width: 8.5em; }
 .bookkeeping-surface .bk-col-category .bk-inline-select { width: 10.5em; }
