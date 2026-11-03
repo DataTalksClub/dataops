@@ -59,14 +59,16 @@ function linkedVatFacts(row: LedgerRow, documents: Array<Record<string, unknown>
 
 /** Use the same stable bank-row identity as reconciliation, including overlapping statements. */
 export function financeStatementLines(statements: StatementRecord[]): StatementLine[] {
-  return statements.flatMap((statement) => {
+  const seen = new Set<string>();
+  const ordered = [...statements].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  return ordered.flatMap((statement) => {
     const keys = rowKeys(statement.rows);
-    return statement.rows.map((line, index) => ({
-      ...line,
-      id: `${statement.id}:${index}`,
-      bankKey: bankKeyFor(statement.accountId, keys[index]),
-      accountId: statement.accountId,
-    }));
+    return statement.rows.flatMap((line, index) => {
+      const bankKey = bankKeyFor(statement.accountId, keys[index]);
+      if (seen.has(bankKey)) return [];
+      seen.add(bankKey);
+      return [{ ...line, id: `${statement.id}:${index}`, bankKey, accountId: statement.accountId }];
+    });
   });
 }
 

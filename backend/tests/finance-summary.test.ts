@@ -334,3 +334,30 @@ it('uses the reconciliation bank identity for mandatory statement entries', () =
   assert.notStrictEqual(summary.entries[0].id, bank[0].key);
   assert.strictEqual(summary.entries[0].mandatoryKind, 'tk_debit');
 });
+
+it('deduplicates overlapping statements without merging genuine repeated payments', () => {
+  const payment = { date: '2026-04-16', amount: '-123.45', currency: 'EUR',
+    counterparty: 'Techniker Krankenkasse', reference: 'synthetic contribution' };
+  const original = { id: 'synthetic-original', recordType: 'reconcile-statement',
+    accountId: 'synthetic-account', period: '2026-04',
+    createdAt: '2026-05-01T00:00:00Z', updatedAt: '2026-05-01T00:00:00Z',
+    rows: [payment, { ...payment }] } as any;
+  const overlap = { ...original, id: 'synthetic-overlap', createdAt: '2026-05-02T00:00:00Z' };
+  const statements = [overlap, original];
+  const lines = financeStatementLines(statements);
+  const bank = bankRowsFrom(statements);
+  assert.strictEqual(lines.length, 2);
+  assert.deepStrictEqual(lines.map((line) => line.bankKey), bank.map((row) => row.key));
+  assert.deepStrictEqual(lines.map((line) => line.id), ['synthetic-original:0', 'synthetic-original:1']);
+  const unmatched = summarize({ today: '2026-05-03', query: { month: '2026-04' },
+    rates: noRates, rows: [], statementLines: lines });
+  assert.strictEqual(unmatched.entries.length, 2);
+  assert.strictEqual(unmatched.entries.reduce((sum, entry) => sum + (entry.eur || 0), 0), 246.90);
+  const onePayment = financeStatementLines([{ ...original, rows: [payment] }, { ...overlap, rows: [payment] }]);
+  const matched = summarize({ today: '2026-05-03', query: { month: '2026-04' }, rates: noRates,
+    rows: [row('synthetic-ledger', { transactionDate: '2026-04-16', paidDate: '2026-04-16',
+      entryType: 'expense', amount: '123.45', counterparty: 'Techniker Krankenkasse',
+      category: 'Health Insurance', description: 'synthetic contribution' })], statementLines: onePayment });
+  assert.strictEqual(matched.entries.length, 1);
+  assert.strictEqual(matched.entries[0].eur, 123.45);
+});
