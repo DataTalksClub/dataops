@@ -162,10 +162,18 @@ export async function financeUpcoming(client: DynamoDBDocumentClient, days: numb
   const statementLines = financeStatementLines(statements);
   const matches = matchFinanceStatements(statementLines, kept, pairs);
   const paid: PaidEvidence[] = [
-    ...kept
-      .map((row) => matches.byLedgerId.has(row.id) ? enrichLedgerFromStatement(row, matches.byLedgerId.get(row.id)!) : row)
-      .filter((row) => row.entryType === 'expense' && !isRefundRow(row) && classifyMandatoryPayment(row))
-      .map((row) => ({ id: row.id, date: bookingDate(row), amount: Number(row.amountEur || row.amount), kind: 'ledger' as const })),
+    ...kept.flatMap((row) => {
+      const statement = matches.byLedgerId.get(row.id);
+      const enriched = statement ? enrichLedgerFromStatement(row, statement) : row;
+      if (row.entryType !== 'expense' || isRefundRow(row) || !classifyMandatoryPayment(enriched)) return [];
+      const bankEur = statement?.currency === 'EUR' && Number(statement.amount) < 0
+        ? Math.abs(Number(statement.amount)) : null;
+      const bookedEur = String(row.amountEur ?? '').trim() ? Number(row.amountEur) : null;
+      const nativeEur = String(row.currency || 'EUR').toUpperCase() === 'EUR' ? Number(row.amount) : null;
+      const amount = bankEur ?? bookedEur ?? nativeEur;
+      if (amount === null || !Number.isFinite(amount) || amount <= 0) return [];
+      return [{ id: row.id, date: statement?.date || bookingDate(row), amount, kind: 'ledger' as const }];
+    }),
     ...matches.unmatched
       .filter((line) => line.currency === 'EUR' && Number(line.amount) < 0 && classifyMandatoryPayment(line))
       .map((line) => ({ id: line.id || '', date: line.date, amount: Math.abs(Number(line.amount)), kind: 'statement' as const })),
