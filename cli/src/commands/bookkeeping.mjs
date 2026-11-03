@@ -9,8 +9,8 @@ export const help = `dataops bookkeeping - keep DataOps transactions in step wit
 
 Usage
   dataops bookkeeping show <transaction-id> [--json]
-      Read all stored transaction fields and document/evidence links. No writes.
-      Absent bank, void or audit fields remain absent.
+      Read all stored transaction fields, void state, audit history and
+      document/evidence links. No writes.
 
   dataops bookkeeping set <transaction-id> [--category CATEGORY] [--subtype SUBTYPE]
       [--amount-eur AMOUNT --rate-source TEXT] [--apply]
@@ -49,10 +49,12 @@ Usage
       its date, amount and provider, so the row details can suggest a match.
       --retry also re-reads documents an earlier run could not read.
 
-  To remove or merge a duplicate ledger row during month reconciliation:
-  dataops reconcile delete-row <ledger-id> --period YYYY-MM --reason TEXT [--duplicate-of <ledger-id>] [--apply]
+  To void or restore a duplicate ledger row during month reconciliation (admin only):
+  dataops reconcile void-ledger <ledger-id> --period YYYY-MM --reason TEXT --duplicate-of <ledger-id> [--yes]
+  dataops reconcile restore-ledger <ledger-id> --period YYYY-MM --reason TEXT [--yes]
 
-Commands with writes print a dry run unless --apply is given. Run it first and read it.
+Bookkeeping writes print a dry run unless --apply is given. Reconciliation void
+and restore print a dry run unless --yes is given. Run the preview first and read it.
 
 Sanctioned sheet pull without a Google token in the environment (run from the
 dapier checkout; the google-data-pull skill exports one <tab>.csv per tab):

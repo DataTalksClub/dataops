@@ -4,22 +4,24 @@
  * pairs and unmatches, no-invoice exceptions, per-row payment proofs, the
  * approver's confirmation of the exception list, the open/closed state and
  * an append-only log of every action with who and when. Ledger rows, bank
- * rows and documents are never deleted except by the audited delete-row; a closed month refuses every
- * change until it is reopened.
+ * rows and documents are retained; audited void and restore actions change
+ * only whether a ledger row participates in ordinary totals and reconciliation.
+ * A closed month refuses every change until it is reopened.
  */
 import { createHash } from "crypto";
 import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { TABLE_BOOKKEEPING } from "../db/tableNames";
 import {
+  BookkeepingItemLockedError,
   createDocumentLink,
-  deleteBookkeepingItem,
-  deleteDocumentLink,
   getBookkeepingItem,
   getRawDocument,
   listBookkeepingItems,
   listTransactions,
   putBookkeepingItem,
+  transactionSponsorDeal,
+  updateBookkeepingTransaction,
 } from "../db/bookkeeping";
 import {
   bankKeyFor,
@@ -49,7 +51,7 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const LOG_LIMIT = 2000;
 
 export type MonthAction =
-  | "pair" | "unpair" | "exception" | "clear-exception" | "delete-row" | "attach-proof" | "attach-document"
+  | "pair" | "unpair" | "exception" | "clear-exception" | "void-ledger" | "restore-ledger" | "attach-proof" | "attach-document"
   | "auto-match" | "create-ledger" | "confirm-exceptions" | "close" | "reopen" | "summary";
 
 export type MonthLogEntry = { at: string; by: string; action: MonthAction; detail: Record<string, unknown> };
@@ -376,6 +378,7 @@ async function requireBankRow(client: DynamoDBDocumentClient, bankKey: string): 
 async function requireLedger(client: DynamoDBDocumentClient, transactionId: string) {
   const item = await getBookkeepingItem(client, "bookkeeping", transactionId);
   if (!item) throw notFound(`Ledger row ${transactionId} not found`);
+  if (item.voidStatus === "voided") throw Object.assign(new Error(`Ledger row ${transactionId} is voided; restore it first`), { statusCode: 409 });
   return item;
 }
 
@@ -420,39 +423,89 @@ export async function clearException(client: DynamoDBDocumentClient, period: str
 const sameName = (name: string) =>
   (normalizedAutoMatchVendor(name) || name.toLowerCase()).replace(/[^\p{L}\p{N}]+/gu, "");
 
-export type DeleteRowResult = {
-  mode: "dry-run" | "apply";
-  deleted: boolean;
+const ledgerDate = (item: Record<string, unknown>) => String(item.paidDate || item.transactionDate || "").slice(0, 10);
+const conflict = (message: string) => Object.assign(new Error(message), { statusCode: 409 });
+
+function duplicateMismatch(row: LedgerRow, other: LedgerRow, period: string): string | undefined {
+  if (other.id === row.id) return "a ledger row cannot be a duplicate of itself";
+  if (!other.date.startsWith(`${period}-`)) return `duplicate-of row ${other.id} is not in ${period}`;
+  if (Math.abs(Date.parse(`${other.date}T00:00:00Z`) - Date.parse(`${row.date}T00:00:00Z`)) > 3 * 86_400_000
+    || other.amount !== row.amount || other.currency !== row.currency
+    || sameName(other.counterparty) !== sameName(row.counterparty)) {
+    return `${other.id} is not an exact duplicate (amount, currency and counterparty must match, dates within 3 days)`;
+  }
+  return undefined;
+}
+
+async function ensureLedgerMonthAudit(
+  client: DynamoDBDocumentClient,
+  period: string,
+  by: string,
+  action: "void-ledger" | "restore-ledger",
+  eventId: string,
+  detail: Record<string, unknown>,
+) {
+  const record = await getMonth(client, period);
+  if (record.log.some((entry) => entry.action === action && entry.detail.eventId === eventId)) return;
+  await mutateMonth(client, period, by, action, { ...detail, eventId }, () => {}, { allowClosed: true });
+}
+
+export type VoidLedgerRowResult = {
+  mode: "dry-run" | "voided" | "already-voided";
+  voided: boolean;
   row: LedgerRow;
-  duplicateOf?: string;
-  /** What the row holds that makes a plain delete unsafe; allowed only for the exact duplicate being removed. */
+  duplicateOf: string;
+  reason: string;
   holds: string[];
-  blockers: string[];
 };
 
-/**
- * Delete one ledger row, audited on the month's history with the row's facts.
- * A row that holds a bank pairing, document, payment proof, exception or
- * invoice/deal link is refused unless duplicateOf names another ledger row
- * with the same date, signed amount, currency and counterparty.
- */
-export async function deleteLedgerRow(
+/** Void one verified duplicate row without deleting it or its evidence links. */
+export async function voidLedgerRow(
   client: DynamoDBDocumentClient,
   period: string,
   by: string,
   transactionId: string,
-  input: { reason: string; duplicateOf?: string; apply: boolean },
-): Promise<DeleteRowResult> {
-  const duplicateOf = input.duplicateOf ? input.duplicateOf.replace(/^ledger:/, "") : undefined;
-  const reason = (input.reason.trim() || (duplicateOf ? `duplicate of ${duplicateOf}` : "")).trim();
+  input: { reason: string; duplicateOf: string; confirm: boolean },
+): Promise<VoidLedgerRowResult> {
+  const duplicateOf = String(input.duplicateOf || "").replace(/^ledger:/, "");
+  const reason = input.reason.trim();
   if (!reason) throw badRequest("reason is required");
+  if (reason.length > 500) throw badRequest("reason must be 500 characters or fewer");
+  if (!duplicateOf) throw badRequest("duplicateOf is required");
   const month = await getMonth(client, period);
-  if (month.state === "closed") throw new MonthClosedError(period);
-  const raw = await requireLedger(client, transactionId);
+  const raw = await getBookkeepingItem(client, "bookkeeping", transactionId);
+  if (!raw) throw notFound(`Ledger row ${transactionId} not found`);
+  const date = ledgerDate(raw);
+  if (!date.startsWith(`${period}-`)) throw badRequest(`Ledger row ${transactionId} is dated ${date}, not in ${period}`);
+  if (duplicateOf === transactionId) throw badRequest("a ledger row cannot be a duplicate of itself");
+
   const data = await snapshot(client);
-  const row = data.ledger.find((candidate) => candidate.id === transactionId);
-  if (!row) throw notFound(`Ledger row ${transactionId} not found`);
-  if (!row.date.startsWith(period)) throw badRequest(`Ledger row ${transactionId} is dated ${row.date}, not in ${period}`);
+  const links = await listBookkeepingItems(client, "link");
+  const row = data.ledger.find((candidate) => candidate.id === transactionId)
+    || ledgerRowsFrom([raw], links).find((candidate) => candidate.id === transactionId);
+  if (!row) throw notFound(`Ledger row ${transactionId} has no usable transaction date or amount`);
+  const otherRaw = await getBookkeepingItem(client, "bookkeeping", duplicateOf);
+  if (!otherRaw || otherRaw.voidStatus === "voided") throw notFound(`Active duplicate-of ledger row ${duplicateOf} not found`);
+  const other = data.ledger.find((candidate) => candidate.id === duplicateOf);
+  if (!other) throw notFound(`Active duplicate-of ledger row ${duplicateOf} not found`);
+  const mismatch = duplicateMismatch(row, other, period);
+  if (mismatch) throw badRequest(mismatch);
+
+  if (raw.voidStatus === "voided") {
+    if (raw.voidDuplicateOf !== duplicateOf)
+      throw conflict(`Ledger row ${transactionId} is already voided against a different duplicate`);
+    const eventId = String(raw.voidEventId || `${transactionId}:voided:${raw.voidedAt}`);
+    await ensureLedgerMonthAudit(client, period, String(raw.voidedBy || by), "void-ledger", eventId, {
+      transactionId, reason: String(raw.voidReason || reason), duplicateOf, voidedAt: raw.voidedAt, row,
+    });
+    return { mode: "already-voided", voided: true, row, duplicateOf, reason: String(raw.voidReason || reason), holds: [] };
+  }
+  if (raw.voidStatus !== undefined && raw.voidStatus !== "restored")
+    throw conflict(`Ledger row ${transactionId} has an unknown void state`);
+  if (month.state === "closed") throw new MonthClosedError(period);
+  const sponsorDealId = raw.sponsorDealId || await transactionSponsorDeal(client, transactionId);
+  if (sponsorDealId) throw conflict(`Ledger row ${transactionId} is linked to sponsor deal ${String(sponsorDealId)}`);
+
   const decisions = mergedDecisions(data.months);
   const holds: string[] = [];
   const pairing = pairAll(data.bank, data.ledger, decisions, data.config.tolerances);
@@ -461,50 +514,111 @@ export async function deleteLedgerRow(
   if (row.documents.length) holds.push(`${row.documents.length} linked document(s)`);
   if (decisions.proofs[transactionId]) holds.push("a payment proof");
   if (decisions.exceptions[`ledger:${transactionId}`]) holds.push("a recorded exception");
-  if (raw.sponsorDealId) holds.push(`sponsor deal ${raw.sponsorDealId}`);
   if (row.invoiceNumber) holds.push(`invoice ${row.invoiceNumber}`);
+  const preview: VoidLedgerRowResult = { mode: input.confirm ? "voided" : "dry-run", voided: false, row, duplicateOf, reason, holds };
+  if (!input.confirm) return preview;
 
-  const blockers: string[] = [];
-  if (duplicateOf) {
-    const other = data.ledger.find((candidate) => candidate.id === duplicateOf);
-    if (duplicateOf === transactionId) blockers.push("a row cannot be a duplicate of itself");
-    else if (!other) blockers.push(`duplicate-of row ${duplicateOf} not found`);
-    else if (Math.abs(Date.parse(`${other.date}T00:00:00Z`) - Date.parse(`${row.date}T00:00:00Z`)) > 3 * 86_400_000 || other.amount !== row.amount || other.currency !== row.currency
-      || sameName(other.counterparty) !== sameName(row.counterparty)) {
-      blockers.push(`${duplicateOf} is not an exact duplicate (amount, currency and counterparty must match, dates within 3 days)`);
-    }
-  } else if (holds.length) {
-    blockers.push(`row holds ${holds.join(", ")}; unlink it first, or pass the ledger row it duplicates`);
-  }
-  const result: DeleteRowResult = { mode: input.apply ? "apply" : "dry-run", deleted: false, row, ...(duplicateOf ? { duplicateOf } : {}), holds, blockers };
-  if (blockers.length) {
-    if (input.apply) throw Object.assign(new MonthGateError(`Ledger row ${transactionId} not deleted: ${blockers.join("; ")}`, []), { statusCode: 409 });
-    return result;
-  }
-  if (!input.apply) return result;
-  const rowLinks = (await listBookkeepingItems(client, "link")).filter((link) => String(link.transactionId) === transactionId);
-  for (const link of rowLinks) {
-    if (duplicateOf) {
-      await createDocumentLink(client, {
-        documentId: String(link.documentId),
-        transactionId: duplicateOf,
-        coverageType: String(link.coverageType || "evidence"),
+  const at = new Date().toISOString();
+  const eventId = `${transactionId}:voided:${at}`;
+  const audit = [...(Array.isArray(raw.audit) ? raw.audit : []), {
+    action: "ledger-voided", actor: by, at, eventId, period, reason, duplicateOf,
+  }].slice(-100);
+  try {
+    await updateBookkeepingTransaction(client, transactionId, String(raw.updatedAt), {
+      voidStatus: "voided", voidedAt: at, voidedBy: by, voidReason: reason,
+      voidDuplicateOf: duplicateOf, voidEventId: eventId, audit,
+    }, "active", { id: duplicateOf, updatedAt: String(otherRaw.updatedAt) });
+  } catch (error) {
+    const current = await getBookkeepingItem(client, "bookkeeping", transactionId);
+    if (current?.voidStatus === "voided" && current.voidDuplicateOf === duplicateOf) {
+      await ensureLedgerMonthAudit(client, period, String(current.voidedBy || by), "void-ledger", String(current.voidEventId), {
+        transactionId, reason: String(current.voidReason || reason), duplicateOf, voidedAt: current.voidedAt, row,
       });
+      return { mode: "already-voided", voided: true, row, duplicateOf, reason: String(current.voidReason || reason), holds: [] };
     }
-    await deleteDocumentLink(client, link);
+    if (error instanceof BookkeepingItemLockedError) throw conflict(`Ledger row ${transactionId} is claimed or changed; read it again`);
+    throw error;
   }
-  const removed = await deleteBookkeepingItem(client, "bookkeeping", transactionId);
-  if (!removed) throw notFound(`Ledger row ${transactionId} not found`);
-  const { documents: _documents, ...facts } = row;
-  await mutateMonth(client, period, by, "delete-row", { transactionId, reason: reason.slice(0, 500), ...(duplicateOf ? { duplicateOf } : {}), holds, row: facts }, (record) => {
-    record.decisions.pairs = record.decisions.pairs.filter((pair) => pair.transactionId !== transactionId);
-    if (duplicateOf && record.decisions.proofs[transactionId] && !record.decisions.proofs[duplicateOf]) {
-      record.decisions.proofs[duplicateOf] = record.decisions.proofs[transactionId];
-    }
-    delete record.decisions.proofs[transactionId];
-    delete record.decisions.exceptions[`ledger:${transactionId}`];
+  await ensureLedgerMonthAudit(client, period, by, "void-ledger", eventId, {
+    transactionId, reason, duplicateOf, voidedAt: at, row, holds,
   });
-  return { ...result, deleted: true };
+  return { ...preview, mode: "voided", voided: true };
+}
+
+export type RestoreLedgerRowResult = {
+  mode: "dry-run" | "restored" | "already-restored";
+  restored: boolean;
+  row: LedgerRow;
+  duplicateOf: string;
+  reason: string;
+};
+
+/** Restore a previously voided duplicate after checking its surviving twin. */
+export async function restoreLedgerRow(
+  client: DynamoDBDocumentClient,
+  period: string,
+  by: string,
+  transactionId: string,
+  input: { reason: string; confirm: boolean },
+): Promise<RestoreLedgerRowResult> {
+  const reason = input.reason.trim();
+  if (!reason) throw badRequest("reason is required");
+  if (reason.length > 500) throw badRequest("reason must be 500 characters or fewer");
+  const month = await getMonth(client, period);
+  const raw = await getBookkeepingItem(client, "bookkeeping", transactionId);
+  if (!raw) throw notFound(`Ledger row ${transactionId} not found`);
+  const date = ledgerDate(raw);
+  if (!date.startsWith(`${period}-`)) throw badRequest(`Ledger row ${transactionId} is dated ${date}, not in ${period}`);
+  const links = await listBookkeepingItems(client, "link");
+  const row = ledgerRowsFrom([raw], links).find((candidate) => candidate.id === transactionId);
+  if (!row) throw notFound(`Ledger row ${transactionId} has no usable transaction date or amount`);
+  if (raw.voidStatus === "restored") {
+    const eventId = String(raw.restoreEventId || `${transactionId}:restored:${raw.restoredAt}`);
+    await ensureLedgerMonthAudit(client, period, String(raw.restoredBy || by), "restore-ledger", eventId, {
+      transactionId, reason: String(raw.restoreReason || reason), duplicateOf: raw.voidDuplicateOf,
+      restoredAt: raw.restoredAt, voidedAt: raw.voidedAt, row,
+    });
+    return { mode: "already-restored", restored: true, row, duplicateOf: String(raw.voidDuplicateOf || ""), reason: String(raw.restoreReason || reason) };
+  }
+  if (raw.voidStatus !== "voided") throw conflict(`Ledger row ${transactionId} is not voided`);
+  const duplicateOf = String(raw.voidDuplicateOf || "");
+  const data = await snapshot(client);
+  const otherRaw = await getBookkeepingItem(client, "bookkeeping", duplicateOf);
+  if (!otherRaw || otherRaw.voidStatus === "voided") throw conflict(`Cannot restore ${transactionId}: active duplicate-of row ${duplicateOf} is missing`);
+  const other = data.ledger.find((candidate) => candidate.id === duplicateOf);
+  if (!other) throw conflict(`Cannot restore ${transactionId}: active duplicate-of row ${duplicateOf} is missing`);
+  const mismatch = duplicateMismatch(row, other, period);
+  if (mismatch) throw conflict(`Cannot restore ${transactionId}: ${mismatch}`);
+  if (month.state === "closed") throw new MonthClosedError(period);
+
+  const preview: RestoreLedgerRowResult = { mode: input.confirm ? "restored" : "dry-run", restored: false, row, duplicateOf, reason };
+  if (!input.confirm) return preview;
+  const at = new Date().toISOString();
+  const eventId = `${transactionId}:restored:${at}`;
+  const audit = [...(Array.isArray(raw.audit) ? raw.audit : []), {
+    action: "ledger-restored", actor: by, at, eventId, period, reason, duplicateOf,
+  }].slice(-100);
+  try {
+    await updateBookkeepingTransaction(client, transactionId, String(raw.updatedAt), {
+      voidStatus: "restored", restoredAt: at, restoredBy: by, restoreReason: reason,
+      restoreEventId: eventId, audit,
+    }, "voided", { id: duplicateOf, updatedAt: String(otherRaw.updatedAt) });
+  } catch (error) {
+    const current = await getBookkeepingItem(client, "bookkeeping", transactionId);
+    if (current?.voidStatus === "restored") {
+      await ensureLedgerMonthAudit(client, period, String(current.restoredBy || by), "restore-ledger", String(current.restoreEventId), {
+        transactionId, reason: String(current.restoreReason || reason), duplicateOf: current.voidDuplicateOf,
+        restoredAt: current.restoredAt, voidedAt: current.voidedAt, row,
+      });
+      return { mode: "already-restored", restored: true, row, duplicateOf, reason: String(current.restoreReason || reason) };
+    }
+    if (error instanceof BookkeepingItemLockedError) throw conflict(`Ledger row ${transactionId} is claimed or changed; read it again`);
+    throw error;
+  }
+  await ensureLedgerMonthAudit(client, period, by, "restore-ledger", eventId, {
+    transactionId, reason, duplicateOf, restoredAt: at, voidedAt: raw.voidedAt, row,
+  });
+  return { ...preview, mode: "restored", restored: true };
 }
 
 /** A separate payment proof for one ledger row: the document stands in for its bank side. */

@@ -73,13 +73,44 @@ subcommands, flags, and examples.
 | `files`, `artifacts` | Task files and artifacts |
 | `sponsors` | CRM records, messages, deal history and finance |
 | `invoices` | bookkeeping invoice drafts |
-| `bookkeeping` | `show <transaction-id> [--json]` reads all stored fields and document/evidence links using portal authentication (GET only; absent bank/void/audit fields remain absent; unknown IDs exit 4, unauthorized exits 3), `set <transaction-id>` updates category, subtype, and/or booked EUR amount (dry run unless `--apply`; every update records before/after values and actor in the row audit), `sync` transactions from the bookkeeping sheet (dry run unless `--apply`), `classify` missing Type/Category/Period from a provider's history, `add-income` records a bank-less income row — a platform payout by default, or `--type refund` for a vendor refund/credit note (a contra-expense row credited to the vendor's balance, keyed `credit-note:<number>`, never a platform payout; `--evidence`/`--document` link the credit-note PDF), `facts` reads unattached invoice PDFs for match suggestions |
+| `bookkeeping` | `show <transaction-id> [--json]` reads all stored fields, void state, audit entries, and document/evidence links using portal authentication (GET only; unknown IDs exit 4, unauthorized exits 3), `set <transaction-id>` updates category, subtype, and/or booked EUR amount (dry run unless `--apply`; every update records before/after values and actor in the row audit), `sync` transactions from the bookkeeping sheet (dry run unless `--apply`), `classify` missing Type/Category/Period from a provider's history, `add-income` records a bank-less income row — a platform payout by default, or `--type refund` for a vendor refund/credit note (a contra-expense row credited to the vendor's balance, keyed `credit-note:<number>`, never a platform payout; `--evidence`/`--document` link the credit-note PDF), `facts` reads unattached invoice PDFs for match suggestions |
 | `company` | company/vendor details for sponsor onboarding (admin): `show` (`--section bank|tax|address`), `set` (`--data`), `set-bank`/`delete-bank`, `import --from-file` (dry run unless `--apply`); bank values encrypted in the secrets store, every bank read audited |
 | `team`, `users` | the team directory (ids for `--assignee`/`--owner`) and the workspace default assignee; adding a person: `add-user` (admin; only added people can sign in); a person leaving: `handover`, `reassign`, `disable-user`, `enable-user`, `delete-user` (admin); accounts (admin) |
 | `api` | any other route: `dataops api GET /api/<route>` |
 | `secrets` | team secrets store (admin): `list`, `get` (`--field`, `--out`), `set` (`--field KEY=VALUE`, bare `--field KEY` reads stdin, `--from-file`), `delete`; values encrypted at rest, every access audited |
 | `login`, `logout`, `whoami` | credentials |
 | `agent-guide` | the workflow guide for agents ([skill/SKILL.md](skill/SKILL.md)) |
+
+## Reconcile duplicate ledger rows
+
+Voiding and restoring a ledger row are admin-only, require a period and reason,
+and are dry runs unless `--yes` is supplied. Voiding also requires the active
+ledger ID it duplicates; the backend verifies that both rows are in the period
+and that their signed amount, currency and counterparty match within three days.
+
+```bash
+dataops reconcile void-ledger <duplicate-id> \
+  --period YYYY-MM \
+  --reason "duplicate of <retained-id>" \
+  --duplicate-of <retained-id>
+dataops reconcile void-ledger <duplicate-id> \
+  --period YYYY-MM \
+  --reason "duplicate of <retained-id>" \
+  --duplicate-of <retained-id> --yes
+dataops reconcile restore-ledger <duplicate-id> \
+  --period YYYY-MM \
+  --reason "restore after review"
+dataops reconcile restore-ledger <duplicate-id> \
+  --period YYYY-MM \
+  --reason "restore after review" --yes
+```
+
+Voided rows remain stored with their evidence links and row audit history, and
+their actions are recorded in the month's audit log. They leave normal ledger
+lists, totals and reconciliation. `dataops bookkeeping show <id> --json` reads
+the retained row and its audit. Restore is refused if its duplicate twin is no
+longer active with matching facts, or if the month is closed; reopen the month
+before making a correction.
 
 ## Template editing
 

@@ -77,13 +77,15 @@ Usage
   dataops reconcile create-ledger <bank-key> --period YYYY-MM [--category C] [--description D]
       Create the missing ledger row and pair it with the bank row. Repeating the
       command for the same bank row reuses that ledger row.
-  dataops reconcile delete-row <ledger-id> --period YYYY-MM --reason TEXT [--duplicate-of <ledger-id>] [--apply]
-      Delete one ledger row; dry run unless --apply. Audited on the month's
-      history with the row's facts. Refused for a row that holds a bank pairing,
-      document, payment proof, exception or invoice/deal link, unless
-      --duplicate-of names another ledger row with the same amount, currency and
-      counterparty name (ignoring case and punctuation) booked within 3 days
-      of it (the duplicate being removed).
+  dataops reconcile void-ledger <ledger-id> --period YYYY-MM --reason TEXT --duplicate-of <ledger-id> [--yes]
+      Soft-void one exact duplicate ledger row; dry run unless --yes. Requires
+      an admin, a reason, and an active duplicate row from the same period with
+      matching amount, currency and counterparty (dates within 3 days). Keeps
+      the row, its links and audit history; voided rows leave normal totals and
+      reconciliation until restored.
+  dataops reconcile restore-ledger <ledger-id> --period YYYY-MM --reason TEXT [--yes]
+      Restore a previously voided row after checking its active duplicate twin;
+      dry run unless --yes. Requires an admin and is recorded in the audit log.
   dataops reconcile note <ledger-id> --note TEXT
       Add or replace the note on an existing ledger row.
   dataops reconcile except <row> --kind KIND --period YYYY-MM [--proof TEXT] [--note TEXT]
@@ -575,21 +577,27 @@ export async function note(args, io) {
   return transaction;
 }
 
-export async function deleteRow(args, io) {
-  const usage = "dataops reconcile delete-row <ledger-id> --period YYYY-MM --reason TEXT [--duplicate-of <ledger-id>] [--apply]";
+export async function voidLedger(args, io) {
+  const usage = "dataops reconcile void-ledger <ledger-id> --period YYYY-MM --reason TEXT --duplicate-of <ledger-id> [--yes]";
   const transactionId = positional(args, 0, usage).replace(/^ledger:/, "");
   const period = periodOr(args);
   const duplicateOf = optionalString(args, "duplicateOf")?.replace(/^ledger:/, "");
-  const reason = optionalString(args, "reason") || (duplicateOf ? `duplicate of ${duplicateOf}` : undefined);
-  if (!reason) throw new UsageError(usage);
-  const result = await monthPost(args, period, "delete-row", { transactionId, reason, ...(duplicateOf ? { duplicateOf } : {}), apply: Boolean(args.apply) });
-  if (!args.json) {
-    const row = result.row || {};
-    const what = `${row.date || ""} ${row.amount || ""} ${row.currency || ""} ${row.counterparty || ""}`.trim();
-    if (result.deleted) io.print(`Deleted ledger row ${transactionId} (${what}) from ${period}; recorded on the month history.`);
-    else if (result.blockers?.length) io.print(`Would refuse to delete ${transactionId} (${what}): ${result.blockers.join("; ")}.`);
-    else io.print(`Dry run: would delete ledger row ${transactionId} (${what})${result.holds?.length ? `, which holds ${result.holds.join(", ")}` : ""}. Re-run with --apply.`);
-  }
+  const reason = optionalString(args, "reason");
+  if (!duplicateOf) throw new UsageError("--duplicate-of is required");
+  if (!reason) throw new UsageError("--reason is required");
+  const result = await monthPost(args, period, "void-ledger", { transactionId, reason, duplicateOf, confirm: Boolean(args.yes) });
+  if (!args.json) io.print(`${result.voided ? "Voided" : "Dry run"} ledger row ${transactionId}${result.mode === "already-voided" ? " (already voided)" : ""}${result.mode === "dry-run" ? "; re-run with --yes to confirm" : "."}`);
+  return result;
+}
+
+export async function restoreLedger(args, io) {
+  const usage = "dataops reconcile restore-ledger <ledger-id> --period YYYY-MM --reason TEXT [--yes]";
+  const transactionId = positional(args, 0, usage).replace(/^ledger:/, "");
+  const period = periodOr(args);
+  const reason = optionalString(args, "reason");
+  if (!reason) throw new UsageError("--reason is required");
+  const result = await monthPost(args, period, "restore-ledger", { transactionId, reason, confirm: Boolean(args.yes) });
+  if (!args.json) io.print(`${result.restored ? "Restored" : "Dry run"} ledger row ${transactionId}${result.mode === "already-restored" ? " (already restored)" : ""}${result.mode === "dry-run" ? "; re-run with --yes to confirm" : "."}`);
   return result;
 }
 
@@ -738,6 +746,6 @@ export async function alias(args, io) {
 
 export const commands = {
   upload, "import-document": importDocument, parse, balances, statements, statement, report, confirm, aliases, alias,
-  month, months, matches, "auto-match": autoMatch, match, unmatch, "attach-proof": attachProof, "attach-doc": attachDoc, "delete-row": deleteRow, "create-ledger": createLedger, note,
+  month, months, matches, "auto-match": autoMatch, match, unmatch, "attach-proof": attachProof, "attach-doc": attachDoc, "void-ledger": voidLedger, "restore-ledger": restoreLedger, "create-ledger": createLedger, note,
   except, "clear-except": clearExcept, "confirm-exceptions": confirmExceptions, close, reopen, package: packageMonth, config,
 };

@@ -26,7 +26,7 @@ import { recordRequestError } from "../requestErrorLog";
 import {
   assertMonthOpen,
   attachDocument,
-  deleteLedgerRow,
+  restoreLedgerRow,
   attachProof,
   buildMonth,
   buildMonths,
@@ -43,6 +43,7 @@ import {
   saveConfig,
   setException,
   unpairRows,
+  voidLedgerRow,
 } from "../reconcile/monthService";
 import { tableCsv } from "../reconcile/month";
 import { importStatement, recognizeStatement, UnrecognizedStatementError } from "../reconcile/statementIntake";
@@ -295,7 +296,18 @@ async function handleMonthRoutes(
   switch (action) {
     case "pair": return json(200, { month: await pairRows(client, period, actor.id, id("bankKey"), id("transactionId"), text(body.note)) });
     case "unpair": return json(200, { month: await unpairRows(client, period, actor.id, id("bankKey"), id("transactionId"), text(body.note)) });
-    case "delete-row": return json(200, await deleteLedgerRow(client, period, actor.id, id("transactionId"), { reason: String(body.reason || ""), ...(body.duplicateOf ? { duplicateOf: id("duplicateOf") } : {}), apply: body.apply === true }));
+    case "void-ledger": {
+      await financeActor(client, actor.id, true);
+      return json(200, await voidLedgerRow(client, period, actor.id, id("transactionId"), {
+        reason: String(body.reason || ""), duplicateOf: id("duplicateOf"), confirm: body.confirm === true,
+      }));
+    }
+    case "restore-ledger": {
+      await financeActor(client, actor.id, true);
+      return json(200, await restoreLedgerRow(client, period, actor.id, id("transactionId"), {
+        reason: String(body.reason || ""), confirm: body.confirm === true,
+      }));
+    }
     case "exception": return json(200, { month: await setException(client, period, actor.id, rowId(), String(body.kind || ""), text(body.proof), text(body.note)) });
     case "clear-exception": return json(200, { month: await clearException(client, period, actor.id, rowId()) });
     case "proof": return json(200, { month: await attachProof(client, period, actor.id, id("transactionId"), id("documentId")) });

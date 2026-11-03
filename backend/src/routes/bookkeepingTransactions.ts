@@ -2,7 +2,6 @@ import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import type { LambdaEvent, LambdaResponse } from "../types";
 import {
   BookkeepingItemLockedError,
-  deleteBookkeepingItem,
   getBookkeepingItem,
   listTransactions,
   putBookkeepingItem,
@@ -147,18 +146,7 @@ export async function handleBookkeepingTransactionRoutes(
       return item ? json(200, bookkeepingTransactionView(item)) : json(404, { error: "Not found" });
     }
     if (method === "DELETE" && match[1]) {
-      try {
-        return (await deleteBookkeepingItem(client, "bookkeeping", match[1]))
-          ? { statusCode: 204, headers: {}, body: "" }
-          : json(404, { error: "Not found" });
-      } catch (error) {
-        if (error instanceof BookkeepingItemLockedError)
-          return json(409, { error: "Transaction is locked or changed" });
-        console.error(
-          JSON.stringify({ message: "bookkeeping transaction delete failed", error: String(error) }),
-        );
-        return json(503, { error: "Transaction delete failed" });
-      }
+      return json(405, { error: "Ledger rows are retained. Use the reconciliation void-ledger action with a period, reason, duplicate row, and confirmation." });
     }
     if ((method === "POST" && !match[1]) || (method === "PUT" && match[1])) {
       const body = parse(event.body || null);

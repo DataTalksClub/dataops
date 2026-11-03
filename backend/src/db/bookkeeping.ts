@@ -104,8 +104,15 @@ async function transact(
               ConsistentRead: true,
             }),
           );
-          const wantsAbsent = action.ConditionCheck.ConditionExpression?.includes("attribute_not_exists");
-          if (wantsAbsent ? !!result.Item : !result.Item) throw new Error("Conditional check failed");
+          const expression = action.ConditionCheck.ConditionExpression || "";
+          const values = action.ConditionCheck.ExpressionAttributeValues || {};
+          const valid = expression === "attribute_not_exists(PK)"
+            ? !result.Item
+            : expression.includes("updatedAt = :expected")
+              ? result.Item?.updatedAt === values[":expected"]
+                && (result.Item?.voidStatus === undefined || result.Item?.voidStatus !== values[":voided"])
+              : !!result.Item;
+          if (!valid) throw new Error("Conditional check failed");
         } else if (action.Put) await client.send(new PutCommand(action.Put));
         else if (action.Update) await client.send(new UpdateCommand(action.Update));
         else if (action.Delete) await client.send(new DeleteCommand(action.Delete));
@@ -251,6 +258,7 @@ export async function listTransactions(
     ExclusiveStartKey = result.LastEvaluatedKey;
   } while (ExclusiveStartKey);
   return transactions
+    .filter((item) => item.voidStatus !== "voided")
     .map((item) => (claims.has(item.id) ? { ...item, sponsorDealId: claims.get(item.id) } : item))
     .sort((a, b) =>
       String(b.transactionDate || b.createdAt).localeCompare(String(a.transactionDate || a.createdAt)),
@@ -316,10 +324,16 @@ export async function updateBookkeepingTransaction(
   id: string,
   expectedUpdatedAt: string,
   value: Record<string, unknown>,
+  expectedVoidStatus: "active" | "voided" = "active",
+  expectedRelatedTransaction?: { id: string; updatedAt: string },
 ) {
   const now = new Date().toISOString();
   const names: Record<string, string> = {};
-  const values: Record<string, unknown> = { ":expected": expectedUpdatedAt, ":now": now };
+  const values: Record<string, unknown> = {
+    ":expected": expectedUpdatedAt,
+    ":now": now,
+    ":voided": "voided",
+  };
   const sets = Object.entries(value)
     .filter(([name]) => !["id", "createdAt", "updatedAt", "PK", "SK"].includes(name))
     .map(([name, child], index) => {
@@ -334,11 +348,20 @@ export async function updateBookkeepingTransaction(
           TableName: TABLE_BOOKKEEPING,
           Key: { PK: key("bookkeeping", id), SK: key("bookkeeping", id) },
           UpdateExpression: `SET ${sets.join(", ")}, updatedAt = :now`,
-          ConditionExpression: "updatedAt = :expected",
+          ConditionExpression: expectedVoidStatus === "voided"
+            ? "updatedAt = :expected AND voidStatus = :voided"
+            : "updatedAt = :expected AND (attribute_not_exists(voidStatus) OR voidStatus <> :voided)",
           ExpressionAttributeNames: names,
           ExpressionAttributeValues: values,
         },
-      }],
+      }, ...(expectedRelatedTransaction ? [{
+        ConditionCheck: {
+          TableName: TABLE_BOOKKEEPING,
+          Key: { PK: key("bookkeeping", expectedRelatedTransaction.id), SK: key("bookkeeping", expectedRelatedTransaction.id) },
+          ConditionExpression: "updatedAt = :expected AND (attribute_not_exists(voidStatus) OR voidStatus <> :voided)",
+          ExpressionAttributeValues: { ":expected": expectedRelatedTransaction.updatedAt, ":voided": "voided" },
+        },
+      }] : [])],
     });
   } catch (error) {
     if (isConditionalMutationFailure(error))
