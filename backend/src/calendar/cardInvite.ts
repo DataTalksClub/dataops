@@ -13,7 +13,9 @@ import { getTemplate } from '../db/templates';
 import { getCalendarHold, listCalendarHolds, putCalendarHold } from '../db/calendarHolds';
 import { calendarsMissingInvite, taskRequiresCalendarInvite, makeTaskHistoryEvent } from '../routes/taskValidation';
 import { dateFromTemplateOffset } from '../templates/cardTemplateProjection';
-import { confirmedHoldInvite, confirmedTitle, holdGuestAttendees, parseHoldDocumentUrl, HOLD_ATTENDEE_DENY_LIST, type CalendarHold } from './holds';
+import { confirmedHoldInvite, confirmedTitle, holdGuestAttendees, parseHoldDocumentUrl, podcastInviteTitle, HOLD_ATTENDEE_DENY_LIST, type CalendarHold } from './holds';
+import { listPodcastEpisodes } from '../db/podcastEpisodes';
+import { recordTemplateTypes } from '../cards/cardTitlePattern';
 import { createHoldGoogleEvents, deleteHoldGoogleEvents, findGoneGoogleEvents, syncLumaCalendarEvents, updateHoldGoogleEvents, type HoldGoogleDeps, type HoldGoogleResult } from './holdGoogleSync';
 import { lumaUrlForEventCard } from './lumaEvents';
 import { resolveHoldGoogleCalendars } from './dapierBroker';
@@ -234,6 +236,24 @@ export async function syncCardInvite(
   }
   const eventKey = card.eventTime?.eventKey || linkedHold?.id || `card:${card.id}`;
   const eventIds = card.eventTime?.googleEventIds || linkedHold?.googleEventIds || {};
+  // Podcast SOP: the confirmed invite is named for the guest, not the topic.
+  // A hold linked to an episode Card keeps the topic in `topic` but confirms as
+  // "<Guest> at DataTalks.Club Podcast", fixed in place (same Google event ids).
+  let podcastTitle: string | undefined;
+  try {
+    const episodes = await listPodcastEpisodes(client);
+    const episode = episodes.find(ep => ep.cardId === card.id);
+    const episodeGuests = episode?.guests?.map(g => String(g.name || '').trim()).filter(Boolean).join(' & ').trim();
+    if (episodeGuests) {
+      podcastTitle = podcastInviteTitle(episodeGuests);
+    } else if (template && typeof template.type === 'string' && (recordTemplateTypes('podcast-episode') as string[]).includes(template.type) && card.people?.length) {
+      const names = card.people.map(p => String(p || '').trim()).filter(Boolean).join(' & ').trim();
+      if (names) podcastTitle = podcastInviteTitle(names);
+    }
+  } catch {
+    podcastTitle = undefined;
+  }
+  const inviteTitle = podcastTitle || linkedHold?.title || card.title || 'DataTalks.Club event';
   const lumaUrl = await lumaUrlForEventCard(client, card);
   const silentLumaEvent = Boolean(lumaUrl && !linkedHold);
   if (silentLumaEvent && guests.length > 0) {
@@ -255,7 +275,7 @@ export async function syncCardInvite(
         || parseHoldDocumentUrl(linkedHold?.documentUrl) || cardDocument;
     } catch { throw new CardInviteInputError('The guest document must be an HTTPS URL.'); }
     invite = {
-      ...confirmedHoldInvite({ id: eventKey, title: linkedHold?.title || card.title || 'DataTalks.Club event', ...interval, documentUrl }, template?.type),
+      ...confirmedHoldInvite({ id: eventKey, title: inviteTitle, ...interval, documentUrl }, template?.type),
       timeZone: interval.timeZone,
       attendees: [...new Set(guests.flatMap(guest => holdGuestAttendees(guest)))],
     };
@@ -303,8 +323,8 @@ export async function syncCardInvite(
   let storedHold: CalendarHold | undefined;
   if (linkedHold) {
     storedHold = {
-      ...linkedHold, ...interval, date: new Intl.DateTimeFormat('en-CA', { timeZone: interval.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(interval.startIso)),
-      googleTitle: confirmedTitle(linkedHold.title), guestRef: guests[0], ...(documentUrl ? { documentUrl } : {}),
+      ...linkedHold, ...interval, title: confirmedTitle(inviteTitle), date: new Intl.DateTimeFormat('en-CA', { timeZone: interval.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(interval.startIso)),
+      googleTitle: confirmedTitle(inviteTitle), guestRef: guests[0], ...(documentUrl ? { documentUrl } : {}),
       status: 'confirmed', confirmedAt: linkedHold.confirmedAt || new Date().toISOString(),
       googleEventIds: sync.eventIds, googleSync: { state: sync.state, ...(sync.state === 'deferred' ? { reason: sync.reason } : {}) },
       updatedAt: new Date().toISOString(), version: linkedHold.version + 1,

@@ -420,5 +420,58 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
       const list = parse(await invoke('GET', `/api/cards/${card.id}/calendar-invites`));
       assert.deepStrictEqual(list.invites, []);
     });
+
+    it('confirm-hold on a podcast hold renames to the guest convention and links the card invite in place', async () => {
+      const { createTemplate } = await import('../src/db/templates');
+      const podcastTemplate = await createTemplate(client, {
+        name: 'Podcast',
+        type: 'podcast',
+        triggerType: 'manual',
+        taskDefinitions: [],
+      });
+      const podcastCard = parse(await invoke('POST', '/api/cards', {
+        title: 'Database CI/CD',
+        anchorDate: '2026-12-07',
+        templateId: podcastTemplate.id,
+      })).card;
+      const createdEpisode = await invoke('POST', '/api/podcast-episodes', {
+        title: 'Database CI/CD',
+        guests: [{ name: 'Harish Shenoy' }],
+        recordingDate: '2026-12-07',
+        status: 'booked',
+        cardId: podcastCard.id,
+      });
+      assert.strictEqual(createdEpisode.statusCode, 201, createdEpisode.body);
+      const google = holdGoogleProvider();
+      setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
+      try {
+        const created = parse(await invoke('POST', '/api/calendar-holds', {
+          date: '2026-12-07',
+          window: 'midday',
+          title: 'Database CI/CD',
+          topic: 'Database CI/CD',
+          cardId: podcastCard.id,
+          guestRef: 'harishshenoy552@gmail.com',
+        }));
+        const proposedIds = created.hold.googleEventIds;
+        assert.ok(Object.keys(proposedIds).length > 0, 'proposal mirrors Google event ids');
+        const confirmed = await invoke('POST', `/api/calendar-holds/${created.hold.id}/confirm`, {});
+        assert.strictEqual(confirmed.statusCode, 200, confirmed.body);
+        const hold = parse(confirmed).hold;
+        assert.strictEqual(hold.title, 'Harish Shenoy at DataTalks.Club Podcast');
+        assert.strictEqual(hold.googleTitle, 'Harish Shenoy at DataTalks.Club Podcast');
+        assert.deepStrictEqual(hold.googleEventIds, proposedIds, 'confirm fixes the event in place (same event ids)');
+        assert.strictEqual(hold.googleSync.state, 'synced');
+        const list = parse(await invoke('GET', `/api/cards/${podcastCard.id}/calendar-invites`));
+        assert.ok(list.invites.length >= 1, JSON.stringify(list.invites));
+        const inviteEventIds = new Set(list.invites.map((i: any) => i.eventId));
+        for (const eventId of Object.values(proposedIds)) assert.ok(inviteEventIds.has(eventId), `invite list links ${eventId}`);
+        const organizer = [...google.events.values()].flatMap(store => [...store.values()]);
+        assert.ok(organizer.length > 0);
+        assert.ok(organizer.every(e => e.summary === 'Harish Shenoy at DataTalks.Club Podcast'), JSON.stringify(organizer.map(e => e.summary)));
+      } finally {
+        setCalendarHoldGoogleDepsForTests({});
+      }
+    });
   });
 });
