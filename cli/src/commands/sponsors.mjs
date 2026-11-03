@@ -33,8 +33,9 @@ Usage
   dataops sponsors update <kind> <id> --data '{...}'
   dataops sponsors update leads <id> --data '{"status":"ignored","version":N}' [--reason TEXT]
   dataops sponsors delete deals <id> --with-deliverables [--yes|--apply] [--expected-version N]
-      Preview by default. With --yes or --apply, permanently delete the deal and its placeholder deliverables,
-      retaining an audit snapshot (admin only). Refused with exit 5 for finance records or a booked newsletter slot.
+      Preview by default. With --yes or --apply, permanently delete the deal and all its deliverables,
+      retaining an audit snapshot (admin only). Finance links are detached and their source records stay;
+      newsletter issue slots stay booked without a deliverable link.
   dataops sponsors messages <organization-id>          Communications with an organization
   dataops sponsors history <deal-id>                   A deal's change history
   dataops sponsors cold [--days N] [--remind]          Orgs/contacts with no contact for N days (defaults per relationship stage)
@@ -225,7 +226,7 @@ export async function remove(args, io) {
   const kind = kindOf(args);
   if (kind !== "deals") throw new UsageError("Permanent deletion is supported for deals only: dataops sponsors delete deals <id> --with-deliverables [--yes|--apply]");
   const id = positional(args, 1, "dataops sponsors delete deals <id> --with-deliverables [--yes|--apply]");
-  if (args.withDeliverables !== true) throw new UsageError("Pass --with-deliverables to include placeholder deliverables in the deletion preview.");
+  if (args.withDeliverables !== true) throw new UsageError("Pass --with-deliverables to allow deletion of deal deliverables.");
   const expectedVersion = integer(optionalString(args, "expectedVersion"), "expected-version");
   if (expectedVersion !== undefined && !Number.isSafeInteger(expectedVersion)) throw new UsageError("expected-version must be a safe positive integer.");
   const apply = args.yes === true || args.apply === true;
@@ -236,7 +237,9 @@ export async function remove(args, io) {
   });
   if (!args.json) {
     if (apply) io.print(`Deleted deal ${id}; audit snapshot retained.`);
-    else io.print(`Dry run: deal ${id} and ${result.deletedDeliverableIds?.length || 0} placeholder deliverable(s) can be deleted. Add --yes to apply.`);
+    else io.print(`Dry run: deal ${id} can be deleted with ${result.deletedDeliverableIds?.length || 0} deliverable(s); ` +
+      `finance links to ${result.detachedFinanceSourceIds?.length || 0} source(s) will be detached; ` +
+      `${result.retainedNewsletterSlotIds?.length || 0} newsletter slot(s) will remain booked. Add --yes to apply.`);
   }
   return result;
 }
