@@ -156,7 +156,8 @@ describe('headless scoped agent tokens', () => {
     });
     const whoamiIo = ioCapture();
     await auth.whoami({}, whoamiIo);
-    assert.match(whoamiIo.text(), /agent: hub-sessions@hetzner \(cards:write\)/);
+    assert.match(whoamiIo.text(), /token: hub-sessions@hetzner \(agent-to\)/);
+    assert.match(whoamiIo.text(), /scopes: cards:write/);
     assert.equal(whoamiIo.text().includes(RAW_TOKEN), false);
 
     const logoutIo = ioCapture();
