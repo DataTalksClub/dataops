@@ -46,6 +46,18 @@ describe('bookkeeping API',()=>{
     assert.deepEqual(updated.audit.at(-1),{action:'updated',actor:'synthetic-operator',at:updated.audit.at(-1).at,changes:{category:{from:null,to:'Work-related'},subtype:{from:null,to:'Subscription'},amountEur:{from:null,to:'9.25'},rateSource:{from:null,to:'ECB 23 Oct 2026'}}});
     assert.ok(Number.isFinite(Date.parse(updated.audit.at(-1).at)));
   });
+  it('bounds audit history by serialized size while keeping the latest correction',async()=>{
+    const created=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',valid)).body);
+    let updated:any;
+    for(let index=0;index<100;index++){
+      const response=await invoke('PUT',`/api/bookkeeping/transactions/${created.id}`,{comment:`${index}: ${'x'.repeat(1950)}`});
+      assert.equal(response.statusCode,200);
+      updated=JSON.parse(response.body);
+    }
+    assert.ok(Buffer.byteLength(JSON.stringify(updated.audit),'utf8')<=128*1024);
+    assert.ok(updated.audit.length<100);
+    assert.equal(updated.comment,`99: ${'x'.repeat(1950)}`);
+  });
   it('rejects invalid data without echoing values',async()=>{const r=await invoke('POST','/api/bookkeeping/transactions',{...valid,amount:'NaN',currency:'EURO'});assert.equal(r.statusCode,400);assert.deepEqual(JSON.parse(r.body).fields.sort(),['amount','currency']);assert.ok(!r.body.includes('NaN'));});
   it('requires a real session for route-level CRUD without leaking records',async()=>{process.env.SKIP_AUTH='false';const unauthorized=await invoke('GET','/api/bookkeeping/transactions');assert.equal(unauthorized.statusCode,401);assert.equal(unauthorized.body.includes('Synthetic Vendor'),false);const session=await createSession(client,'synthetic-operator');const auth={Authorization:`Bearer ${session.token}`};const created=await invoke('POST','/api/bookkeeping/transactions',{...valid,description:'Session-authenticated synthetic'},auth);assert.equal(created.statusCode,201);const listed=await invoke('GET','/api/bookkeeping/transactions',undefined,auth);assert.equal(listed.statusCode,200);assert.ok(JSON.parse(listed.body).items.some((i:any)=>i.description==='Session-authenticated synthetic'));process.env.SKIP_AUTH='true';});
   it('validates many-to-many links and creates an immutable monthly snapshot',async()=>{

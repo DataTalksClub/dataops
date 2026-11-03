@@ -27,6 +27,8 @@ import {
 } from "../bookkeepingAllocations";
 
 const CURRENCY = /^[A-Z]{3}$/;
+const MAX_AUDIT_ENTRIES = 100;
+const MAX_AUDIT_BYTES = 128 * 1024;
 const allowed = [
   "transactionDate",
   "paidDate",
@@ -140,6 +142,13 @@ function safeData(input: Record<string, unknown>) {
   return Object.fromEntries(
     allowed.filter((k) => input[k] !== undefined).map((k) => [k, input[k]]),
   );
+}
+
+function boundedAudit(entries: unknown[]) {
+  const audit = entries.slice(-MAX_AUDIT_ENTRIES);
+  while (audit.length > 1 && Buffer.byteLength(JSON.stringify(audit), "utf8") > MAX_AUDIT_BYTES)
+    audit.shift();
+  return audit;
 }
 
 function extractExpectedUpdatedAt(
@@ -600,10 +609,10 @@ export async function handleBookkeepingTransactionRoutes(
             {
               ...previous,
               allocations: undefined,
-              audit: [
+              audit: boundedAudit([
                 ...(Array.isArray(previous.audit) ? previous.audit : []),
                 auditEntry,
-              ].slice(-100),
+              ]),
             },
             "active",
             undefined,
@@ -649,10 +658,10 @@ export async function handleBookkeepingTransactionRoutes(
           {
             ...previous,
             allocations: normalizedAllocations,
-            audit: [
+            audit: boundedAudit([
               ...(Array.isArray(previous.audit) ? previous.audit : []),
               auditEntry,
-            ].slice(-100),
+            ]),
             },
             "active",
             undefined,
@@ -794,7 +803,7 @@ export async function handleBookkeepingTransactionRoutes(
             ...Object.keys(safeData(body)),
             ...(allocationsChanged ? ["allocations"] : []),
           ];
-          value.audit = [...(Array.isArray(previous!.audit) ? previous!.audit : []), {
+          value.audit = boundedAudit([...(Array.isArray(previous!.audit) ? previous!.audit : []), {
             action: "updated",
             actor: headerValue(event.headers, "x-user-id") || "authenticated-operator",
             at: new Date().toISOString(),
@@ -802,7 +811,7 @@ export async function handleBookkeepingTransactionRoutes(
               from: previous![field] ?? null,
               to: value[field] ?? null,
             }])),
-          }].slice(-100);
+          }]);
           const updated = await updateBookkeepingTransaction(
             client,
             match[1],
