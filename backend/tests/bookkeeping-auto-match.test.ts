@@ -186,4 +186,31 @@ describe("strict bookkeeping evidence auto-matching", () => {
       ["tx-2", "doc-b"],
     ]);
   });
+
+  it("matches supplier credit-note documents only to refund transactions, never regular expenses", () => {
+    const creditNoteDoc = document("doc-cn", {
+      facts: {
+        ...document("doc-cn").facts,
+        subtype: "Refund",
+        extraction: { needsReview: false, direction: "expense", documentType: "credit_note" },
+      },
+    });
+    assert.deepEqual(planEvidenceAutoMatches([transaction("tx-expense")], [creditNoteDoc], []), []);
+    assert.deepEqual(
+      planEvidenceAutoMatches(
+        [transaction("tx-refund", { subtype: "Refund" })],
+        [document("doc-regular")],
+        [],
+      ),
+      [],
+    );
+    assert.deepEqual(
+      planEvidenceAutoMatches(
+        [transaction("tx-refund", { subtype: "Refund" })],
+        [creditNoteDoc],
+        [],
+      ),
+      [{ transactionId: "tx-refund", documentId: "doc-cn", dateGapDays: 2, amount: "178.49", currency: "EUR" }],
+    );
+  });
 });

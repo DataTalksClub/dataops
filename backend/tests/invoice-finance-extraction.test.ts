@@ -118,5 +118,27 @@ test('the eval CLI checks recorded synthetic documents offline in both modes and
 test('a partial refund uses credited subtotal rather than the original invoice subtotal',async()=>{
  const text='Example Tools GmbH\nRefund\nInvoice number: EXAMPLE-123-CN-01\nDate issued: October 1, 2026\nOriginal subtotal $100.00\nSubtotal $100.00\nTotal $100.00\n$25.00 refunded on October 1, 2026\nCredited subtotal - $25.00\nCredited total - $25.00\nAdjusted invoice total $75.00';
  const r=await extractFinanceText(text,{llm:llm({...facts,docType:'credit_note',direction:'income',invoiceNumber:'EXAMPLE-123-CN-01',currency:'USD',gross:'25.00',net:null,vat:null,vatRate:null})});
- assert.equal(r.fields.amount,'25.00');assert.equal(r.fields.netAmount,'25.00');assert.equal(r.fields.vatAmount,'0.00');assert.equal(r.fields.subtype,'Refund');
+ assert.equal(r.fields.amount,'25.00');assert.equal(r.fields.netAmount,'25.00');assert.equal(r.fields.vatAmount,'0.00');assert.equal(r.fields.subtype,'Refund');assert.equal(r.extraction.direction,'expense');
+});
+
+test('distinguishes DataTalks.Club customer credit notes from supplier refunds and clears ambiguous credit-note amounts',async()=>{
+ const finomCn='DataTalks.Club\nMusterstraße 1\n10115 Berlin\nExample Agency\nCredit note No. 202604/24-CN\nCredit note date 24.04.2026\nDescription\nSponsorship adjustment\nVAT (%)\n1 0 -1.550,00 €\nTotal taxable -1.550,00 € -1.550,00 €\nCreated with Finom.co';
+ const customer=await extractFinanceText(finomCn);
+ assert.equal(customer.extraction.documentType,'credit_note');
+ assert.equal(customer.extraction.direction,'income');
+ assert.equal(customer.fields.subtype,undefined);
+ assert.equal(customer.fields.counterparty,'Example Agency');
+ assert.equal(customer.fields.amount,'1550.00');
+
+ const ambiguousText='Credit note\nCredit note number EX-0001-CN-01\nDate issued October 30, 2026\nExample Supplier GmbH\n$120.00 refunded on October 30, 2026\nCredited total $100.00\nAdjusted invoice total $20.00\n';
+ const ambiguous=await extractFinanceText(ambiguousText,{llm:llm({...facts,docType:'credit_note',direction:'expense',invoiceNumber:'EX-0001-CN-01',currency:'USD',gross:'100.00',net:'100.00',vat:'0.00',vatRate:'0'})});
+ assert.equal(ambiguous.fields.amount,undefined);
+ assert.equal(ambiguous.extraction.needsReview,true);
+ assert.deepEqual(ambiguous.extraction.candidates?.sort(),['100.00','120.00']);
+
+ const conflictingLlm='Credit note\nCredit note number EX-0002-CN-01\nDate issued October 30, 2026\nExample Supplier GmbH\n$100.00 refunded on October 30, 2026\nAdjusted invoice total $20.00\n';
+ const conflict=await extractFinanceText(conflictingLlm,{llm:llm({...facts,docType:'credit_note',direction:'expense',invoiceNumber:'EX-0002-CN-01',currency:'USD',gross:'20.00',net:'20.00',vat:'0.00',vatRate:'0'})});
+ assert.equal(conflict.fields.amount,undefined);
+ assert.equal(conflict.extraction.needsReview,true);
+ assert.deepEqual(conflict.extraction.candidates?.sort(),['100.00','20.00']);
 });
