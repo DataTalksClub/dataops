@@ -24,18 +24,9 @@ import {
   getMimeType,
 } from '../storage';
 import { resolveInteractiveActor } from '../identity/actor';
+import { jsonResponse, JSON_HEADERS } from '../http';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { recordRequestError } from '../requestErrorLog';
-
-const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
-
-function jsonResponse(statusCode: number, body: unknown): LambdaResponse {
-  return {
-    statusCode,
-    headers: JSON_HEADERS,
-    body: typeof body === 'string' ? body : JSON.stringify(body),
-  };
-}
 
 function paginationFailure(error: unknown): LambdaResponse | null {
   if (!(error instanceof CollectionCursorError)) return null;

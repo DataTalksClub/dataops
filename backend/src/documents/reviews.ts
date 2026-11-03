@@ -5,6 +5,7 @@ import { recordRequestError } from '../requestErrorLog';
 import { deleteDocumentThread, changeDocumentThread, createDocumentReviewer, createDocumentThread, DocumentReviewError, listDocumentReviewers, listDocumentThreads, revokeDocumentReviewer, verifyDocumentReviewer, type ReviewAuthor } from '../db/documentReviews';
 
 const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
+// Kept separate from ../http.noStoreJson: also includes Referrer-Policy: no-referrer for review token links.
 const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers, body: JSON.stringify(body) });
 function header(event: LambdaEvent, name: string): string {
   return Object.entries(event.headers || {}).find(([key]) => key.toLowerCase() === name)?.[1] || '';

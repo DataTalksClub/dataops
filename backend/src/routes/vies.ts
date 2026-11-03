@@ -1,10 +1,8 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { json, parseJsonObjectEvent as parse } from '../http';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { checkVatId, preflightOrganizations, refreshPreflight } from '../vies/service';
 import { normalizeVatId } from '../vies/format';
-
-const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-const parse = (event: LambdaEvent) => { try { const value = event.body ? JSON.parse(String(event.body)) : null; return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null; } catch { return null; } };
 
 /**
  * VAT validation endpoints. `POST /api/vies/check` runs (or forces) a VIES

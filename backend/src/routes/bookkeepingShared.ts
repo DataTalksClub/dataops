@@ -7,13 +7,10 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createHash } from "crypto";
 import { Upload } from "@aws-sdk/lib-storage";
+import { json, parseJsonBody as parse } from "../http";
 import type { LambdaResponse } from "../types";
 
-export const json = (statusCode: number, body: unknown): LambdaResponse => ({
-  statusCode,
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(body),
-});
+export { json, parse };
 export const MONTH = /^\d{4}-\d{2}$/;
 export const MONEY = /^(0|[1-9]\d{0,11})(\.\d{1,4})?$/;
 export let s3 = new S3Client({});
@@ -32,14 +29,6 @@ export function setBookkeepingStorageForTests(
 }
 export function setBookkeepingArchiveUploaderForTests(uploader: typeof uploadStream) {
   uploadStream = uploader;
-}
-
-export function parse(body: string | null): Record<string, unknown> | null {
-  try {
-    return body ? JSON.parse(body) : null;
-  } catch {
-    return null;
-  }
 }
 
 export function publicDocument(document: Record<string, unknown>) {

@@ -63,10 +63,9 @@ import {
   buildCardTemplateUpdatePlan,
   CardTemplateUpdateInvalidStateError,
 } from '../templates/cardTemplateUpdates';
+import { json, JSON_HEADERS } from '../http';
 import type { Card, CardCalendarInvite, LambdaEvent, LambdaResponse, Task } from '../types';
 import { recordRequestError } from '../requestErrorLog';
-
-const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
 class CardTemplateUpdateRequestError extends Error {
   constructor(readonly statusCode: number, readonly code: string, message: string) {
@@ -75,10 +74,7 @@ class CardTemplateUpdateRequestError extends Error {
   }
 }
 
-function json(statusCode: number, body: unknown): LambdaResponse {
-  return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) };
-}
-
+// Kept separate from http.parseJsonObjectBody: throws CardTemplateUpdateRequestError with distinct codes ('invalid-json' vs 'invalid-body').
 function parseObject(rawBody: string | null): Record<string, unknown> {
   let parsed: unknown;
   try {

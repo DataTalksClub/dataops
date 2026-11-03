@@ -71,6 +71,7 @@ class SponsorEmailTaskOwnerError extends Error {
   }
 }
 
+// Kept separate from http.json/http.noStoreJson: also sends Referrer-Policy: no-referrer, plus optional extraHeaders.
 function json(statusCode: number, body: unknown, extraHeaders?: Record<string, string>): LambdaResponse {
   return {
     statusCode,

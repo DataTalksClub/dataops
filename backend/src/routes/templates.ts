@@ -22,14 +22,9 @@ import {
   validateEffectiveDefinition,
 } from '../templates/templateEdits';
 import type { LambdaEvent, LambdaResponse, Template } from '../types';
+import { json } from '../http';
 import { recordRequestError } from '../requestErrorLog';
 import { isDocsDomainEnabled, regenerateKnowledgeForTemplates } from '../docs/contentApi';
-
-const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
-
-function json(statusCode: number, body: Record<string, unknown>): LambdaResponse {
-  return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) };
-}
 
 class TemplateRequestError extends Error {
   readonly statusCode: number;
@@ -43,6 +38,7 @@ class TemplateRequestError extends Error {
   }
 }
 
+// Kept separate from http.parseJsonObjectBody: throws TemplateRequestError with distinct codes ('invalid-json' vs 'invalid-body').
 function parseObject(rawBody: string | null): Record<string, unknown> {
   let parsed: unknown;
   try {

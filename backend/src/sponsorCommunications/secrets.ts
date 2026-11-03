@@ -23,6 +23,7 @@ const exactSecret = async (arn: string) => {
   return { value: response.SecretString, versionId: response.VersionId };
 };
 
+// Kept separate from ../http.parseJsonObjectBody: parses a Secrets Manager secret string and throws a labeled Error.
 const parse = (value: string, label: string): Record<string, unknown> => {
   try {
     const parsed = JSON.parse(value);

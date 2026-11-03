@@ -83,12 +83,7 @@ import {
   MailchimpMetricsError,
   pullIssueMailchimpMetrics,
 } from '../newsletter/mailchimpMetrics';
-
-const json = (statusCode: number, body: unknown): LambdaResponse => ({
-  statusCode,
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(body),
-});
+import { json, parseJsonObjectEvent } from '../http';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const KINDS = new Set<NewsletterIssueKind>(['weekly', 'standalone']);
@@ -128,14 +123,7 @@ const SLOT_STATS_FIELDS = new Set([...SLOT_STATS_COUNTS, ...SLOT_STATS_RATES, ..
 
 type Body = Record<string, any>;
 
-const parse = (event: LambdaEvent): Body | null => {
-  try {
-    const value = event.body ? JSON.parse(String(event.body)) : null;
-    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
-  } catch {
-    return null;
-  }
-};
+const parse = parseJsonObjectEvent<Body>;
 
 const httpsUrl = (value: unknown) => {
   try {

@@ -4,8 +4,8 @@ import { duplicateInvoiceIds, publicInvoice, validateFields, missingEvidence, ty
 import { getInvoice, listInvoices, saveInvoice } from '../invoices/store';
 import { confirmInvoice, documentUrl, processInvoiceIntake, publishInvoice, readiness, reextractInvoice, verifyInvoice } from '../invoices/service';
 import { InvoiceDocumentError, replaceInvoiceDocument } from '../invoices/replaceDocument';
+import { noStoreJson as json } from '../http';
 import { recordRequestError } from '../requestErrorLog';
-const json=(statusCode:number,body:unknown):LambdaResponse=>({statusCode,headers:{'Content-Type':'application/json','Cache-Control':'no-store'},body:JSON.stringify(body)});
 async function publicInvoiceResponse(client:DynamoDBDocumentClient,record:Invoice) {
   const records=await listInvoices(client);
   return publicInvoice(record,duplicateInvoiceIds(record,records));

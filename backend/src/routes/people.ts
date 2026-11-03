@@ -15,13 +15,9 @@ import {
   updatePerson,
   type Person,
 } from "../db/people";
+import { json, parseJsonObjectEventOrEmpty as parse } from "../http";
 import { resolveInteractiveActor } from "../identity/actor";
 
-const json = (statusCode: number, body: unknown): LambdaResponse => ({
-  statusCode,
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(body),
-});
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,199}$/;
 const WRITABLE = new Set(["name", "slug", "bio", "bioShort", "photoUrl", "links", "version"]);
@@ -72,15 +68,6 @@ function duplicateOf(candidate: Partial<Person>, people: Person[], selfId: strin
   }
   return "";
 }
-
-const parse = (event: LambdaEvent): Record<string, any> | null => {
-  try {
-    const value = event.body ? JSON.parse(String(event.body)) : {};
-    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-  } catch {
-    return null;
-  }
-};
 
 export async function handlePeopleRoutes(
   path: string,

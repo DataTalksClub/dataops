@@ -40,16 +40,12 @@ import {
   toCalendarHoldView,
 } from '../events/service';
 
+import { json } from '../http';
 import { realDate } from '../sponsorCrm/model';
 
 export { calendarInviteDeps, setCalendarHoldGoogleDepsForTests };
 
-const json = (statusCode: number, body: unknown): LambdaResponse => ({
-  statusCode,
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(body),
-});
-
+// Kept separate from http.parseJsonObjectEventOrEmpty: does not filter non-object JSON here (callers validate fields).
 const parse = (event: LambdaEvent): any => {
   try {
     return event.body ? JSON.parse(String(event.body)) : {};

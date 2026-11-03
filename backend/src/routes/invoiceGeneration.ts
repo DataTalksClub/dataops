@@ -1,15 +1,11 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { getBookkeepingItem, listBookkeepingItems, putBookkeepingItem } from '../db/bookkeeping';
-import { json as response, parse } from './bookkeepingShared';
+import { noStoreJson as json } from '../http';
+import { parse } from './bookkeepingShared';
 import { invoiceTotal, renderInvoice, validateTemplate, validateValues } from '../invoiceGeneration/pdf';
 
 const base = '/api/bookkeeping/invoice-generation';
-const json = (status: number, value: unknown): LambdaResponse => {
-  const result = response(status, value);
-  result.headers = { ...result.headers, 'Cache-Control': 'no-store' };
-  return result;
-};
 export async function handleInvoiceGenerationRoutes(path: string, method: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse | null> {
   if (!path.startsWith(base)) return null;
   try {

@@ -28,11 +28,12 @@ import {
 import { renderContractPdf, sha256Hex, type AuditEvent } from '../sponsorContracts/pdf';
 import { deliverContractEmail } from '../sponsorContracts/emailDelivery';
 import { readFile, saveFile } from '../storage';
+import { parseJsonObjectEvent as parse } from '../http';
 import { sponsorDocPortalBaseUrl } from './sponsorDocs';
 
+// Kept separate from http.json: also sends Cache-Control: no-store and Referrer-Policy: no-referrer, plus optional extraHeaders.
 const json = (statusCode: number, body: unknown, extraHeaders?: Record<string, string>): LambdaResponse => ({ statusCode, headers: Object.assign({ 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }, extraHeaders), body: JSON.stringify(body) });
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-const parse = (event: LambdaEvent) => { try { const value = event.body ? JSON.parse(String(event.body)) : null; return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null; } catch { return null; } };
 const actor = (event: LambdaEvent) => Object.entries(event.headers || {}).find(([entryKey]) => entryKey.toLowerCase() === 'x-user-id')?.[1] || '';
 
 function headerValue(headers: Record<string, string> | null | undefined, name: string): string {

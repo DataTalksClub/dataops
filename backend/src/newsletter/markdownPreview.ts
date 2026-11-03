@@ -25,6 +25,7 @@ import { TeamDirectory } from '../identity/directory';
 import { sponsorDocPortalBaseUrl } from '../routes/sponsorDocs';
 import type { Card, LambdaEvent, LambdaResponse } from '../types';
 import { issueLabel, SLOT_POSITIONS } from './issueCard';
+import { parseJsonObjectBodyOrEmpty as parseBody } from '../http';
 import { headerValue } from '../httpHeaders';
 
 export const NEWSLETTER_MARKDOWN_KINDS: readonly NewsletterMarkdownKind[] = ['issue', 'sources', 'brief'];
@@ -37,6 +38,7 @@ const JSON_HEADERS: Record<string, string> = {
   'Referrer-Policy': 'no-referrer',
 };
 
+// Kept separate from ../http.json: attaches no-store + no-referrer headers and merges optional extraHeaders.
 function json(statusCode: number, body: unknown, extraHeaders?: Record<string, string>): LambdaResponse {
   return {
     statusCode,
@@ -48,18 +50,6 @@ function json(statusCode: number, body: unknown, extraHeaders?: Record<string, s
 function requestIp(event: LambdaEvent): string {
   const forwarded = headerValue(event.headers, 'x-forwarded-for');
   return forwarded.split(',')[0].trim() || 'unknown';
-}
-
-function parseBody(rawBody: string | null | undefined): Record<string, unknown> | null {
-  if (!rawBody) return {};
-  if (typeof rawBody === 'object') return rawBody as Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(rawBody);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    return parsed as Record<string, unknown>;
-  } catch {
-    return null;
-  }
 }
 
 export function newsletterPreviewTargetId(issueId: string): string {

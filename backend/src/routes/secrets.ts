@@ -12,9 +12,8 @@ import {
 import { MAX_PAYLOAD_BYTES, resolveSecretCipher } from '../secrets/cipher';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { recordRequestError } from '../requestErrorLog';
+import { json } from '../http';
 import { headerValue } from '../httpHeaders';
-
-const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
 /** Names are stable, pipe-safe identifiers: lowercase, no spaces. */
 const SECRET_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -157,8 +156,4 @@ function invalidName(): LambdaResponse {
 
 function methodNotAllowed(): LambdaResponse {
   return json(405, { error: 'Method not allowed' });
-}
-
-function json(statusCode: number, body: unknown): LambdaResponse {
-  return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) };
 }

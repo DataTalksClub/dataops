@@ -8,14 +8,9 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { resolveInteractiveActor } from '../identity/actor';
+import { json } from '../http';
 import { REQUIRED_RESOURCES } from '../resources/vocabulary';
 import type { LambdaEvent, LambdaResponse } from '../types';
-
-const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
-
-function json(statusCode: number, body: unknown): LambdaResponse {
-  return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) };
-}
 
 export async function handleResourceRoutes(
   path: string,

@@ -85,6 +85,7 @@ import {
   validateTaskRefs,
   validateTaskTags,
 } from './taskValidation';
+import { jsonResponse, JSON_HEADERS, parseJsonEvent as parseBody } from '../http';
 
 /**
  * Task routes: create, list, read, update, delete, and the atomic follow-up
@@ -95,7 +96,6 @@ import {
  * handlers throw.
  */
 
-const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 const SUBJECT_WITH_CARD_ERROR = 'A Task belongs to a Card or has a subject, not both';
 
 /**
@@ -224,23 +224,6 @@ async function rescheduleDependents(
   return moved;
 }
 
-function jsonResponse(statusCode: number, body: unknown): LambdaResponse {
-  return {
-    statusCode,
-    headers: JSON_HEADERS,
-    body: typeof body === 'string' ? body : JSON.stringify(body),
-  };
-}
-
-function parseBody(event: LambdaEvent): Record<string, unknown> | null {
-  if (!event.body) return null;
-  if (typeof event.body === 'object') return event.body as Record<string, unknown>;
-  try {
-    return JSON.parse(event.body);
-  } catch {
-    return null;
-  }
-}
 /** Project a Task with its resolved prerequisites and blocked state. */
 async function projectWithPrerequisites(client: DynamoDBDocumentClient, task: Task) {
   const [withPrerequisites] = await attachLinkedCards(

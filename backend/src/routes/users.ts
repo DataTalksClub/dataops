@@ -10,9 +10,9 @@ import {
 } from '../db/userLifecycle';
 import type { LambdaEvent, LambdaResponse, UserRole } from '../types';
 import { recordRequestError } from '../requestErrorLog';
+import { JSON_HEADERS, parseJsonBody as parseBody } from '../http';
 import { headerValue } from '../httpHeaders';
 
-const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 const VALID_ROLES = new Set<UserRole>(['admin', 'operator']);
 
 /**
@@ -61,16 +61,6 @@ async function handleUserRoutes(path: string, method: string, rawBody: string | 
       headers: JSON_HEADERS,
       body: JSON.stringify({ error: 'Internal server error' }),
     };
-  }
-}
-
-function parseBody(rawBody: string | null): Record<string, unknown> | null {
-  if (!rawBody) return null;
-  if (typeof rawBody === 'object') return rawBody as Record<string, unknown>;
-  try {
-    return JSON.parse(rawBody);
-  } catch {
-    return null;
   }
 }
 

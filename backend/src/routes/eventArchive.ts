@@ -16,13 +16,8 @@ import {
   type ArchivedEvent,
 } from "../db/eventArchive";
 import { resolveInteractiveActor } from "../identity/actor";
+import { json, parseJsonObjectEventOrEmpty as parse } from "../http";
 import { realDate } from "../sponsorCrm/model";
-
-const json = (statusCode: number, body: unknown): LambdaResponse => ({
-  statusCode,
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(body),
-});
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,199}$/;
@@ -197,15 +192,6 @@ function isSameEventContent(existing: ArchivedEvent, candidate: Record<string, a
   ];
   return fields.every(([a, b]) => a === b);
 }
-
-const parse = (event: LambdaEvent): Record<string, any> | null => {
-  try {
-    const value = event.body ? JSON.parse(String(event.body)) : {};
-    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-  } catch {
-    return null;
-  }
-};
 
 export async function handleEventArchiveRoutes(
   path: string,
