@@ -180,10 +180,14 @@ export function expandReportEntries(entries) {
       amount: allocation.amount,
       currency: allocation.currency || entry.currency,
       amountEur: allocation.amountEur,
+      vatAmount: allocation.vatAmount,
+      vatCurrency: allocation.vatCurrency,
       category: allocation.category || entry.category,
       subtype: allocation.subtype || entry.subtype,
       invoiceNumber: allocation.invoiceNumber,
       allocationDocumentId: allocation.documentId,
+      mandatoryKind: undefined,
+      ownerPayType: undefined,
       allocations: undefined,
     }));
   });

@@ -22,7 +22,7 @@ export type BookkeepingItem = Record<string, unknown> & {
 
 // Payment categories tracked in the ledger but kept out of the accountant's
 // monthly package: they are settled from private money and reported separately.
-export const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance"]);
+export const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance", "VAT"]);
 function isReportExemptClassification(item: Readonly<Record<string, unknown>>) {
   return REPORT_EXEMPT_CATEGORIES.has(String(item.category || ""))
     || classifyMandatoryPayment(item) !== null

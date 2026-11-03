@@ -24,6 +24,7 @@ import {
 } from "../src/surfaces/finance/bookkeeping-ledger.js";
 import {
   createBookkeepingFinance,
+  mandatoryAllocationMarkup,
   mandatoryPaymentsMarkup,
   monthlyLedgerEntries,
   ownerWithdrawalEntries,
@@ -570,6 +571,49 @@ test("monthly tax partition keeps consulting fees and allocation totals in the o
     "the native export keeps the one source payment row for an allocated payment");
   assert.equal(JSON.stringify(rows), before, "the UI partition leaves source rows and statements unchanged");
   assert.deepEqual(monthlyLedgerEntries(rows, "2026", finance), rows, "year and all-record views retain their existing behavior");
+});
+
+test("mixed allocations appear once in ordinary and mandatory month sections with child amounts and evidence", () => {
+  const month = "2026-04";
+  const entries = [
+    { id: "synthetic-parent-tax", transactionDate: `${month}-02`, paidDate: `${month}-03`, amount: "30.00", amountEur: "30.00",
+      currency: "EUR", entryType: "expense", category: "Taxes", mandatoryKind: "tax_debit", description: "Synthetic tax parent",
+      allocations: [
+        { id: "ordinary-a", documentId: "synthetic-doc-a", counterparty: "Synthetic service A", description: "Service A", amount: "10.00", amountEur: "10.00", currency: "EUR", category: "Software" },
+        { id: "exempt-a", documentId: "synthetic-doc-tax-a", counterparty: "Synthetic tax A", description: "Tax A", amount: "20.00", amountEur: "20.00", currency: "EUR", category: "Taxes" },
+      ] },
+    { id: "synthetic-parent-owner", transactionDate: `${month}-04`, paidDate: `${month}-04`, amount: "70.00", amountEur: "70.00",
+      currency: "EUR", entryType: "expense", category: "Owner pay", ownerPayType: "draw", description: "Synthetic owner draw",
+      allocations: [
+        { id: "exempt-b", documentId: "synthetic-doc-tax-b", counterparty: "Synthetic tax B", description: "Tax B", amount: "30.00", amountEur: "30.00", currency: "EUR", category: "Taxes" },
+        { id: "ordinary-b", documentId: "synthetic-doc-b", counterparty: "Synthetic service B", description: "Service B", amount: "40.00", amountEur: "40.00", currency: "EUR", category: "Software" },
+      ] },
+  ];
+  const ordinary = monthlyLedgerEntries(entries, month, new Map());
+  assert.equal(ordinary.length, 2);
+  assert.deepEqual(ordinary.map((entry) => entry.allocations.map((allocation) => allocation.id)), [["ordinary-a"], ["ordinary-b"]]);
+  const groups = groupByMonth(ordinary);
+  assert.equal(groups[0].moneyOut, -50, "ordinary month total includes the two reportable allocations once");
+  assert.equal(displayRowCount(groups[0].entries), 2);
+  const ordinaryDocs = new Map([["synthetic-doc-a", { id: "synthetic-doc-a" }], ["synthetic-doc-b", { id: "synthetic-doc-b" }]]);
+  const ordinaryMarkup = ledgerTableMarkup({ groups, hasEvidence: () => false,
+    getAllocationDocument: (_entry, allocation) => ordinaryDocs.get(allocation.documentId),
+    vocab: {}, selectedId: "", e: escapeHtml });
+  assert.match(ordinaryMarkup, /Synthetic service A/);
+  assert.match(ordinaryMarkup, /Synthetic service B/);
+  assert.doesNotMatch(ordinaryMarkup, /Synthetic tax A|Synthetic tax B/);
+  assert.match(ordinaryMarkup, /out <span class="dk-mono">−€50\.00/);
+
+  const docs = new Map([["synthetic-doc-tax-a", { id: "synthetic-doc-tax-a" }], ["synthetic-doc-tax-b", { id: "synthetic-doc-tax-b" }]]);
+  const mandatoryMarkup = mandatoryAllocationMarkup(entries, month, escapeHtml, (_entry, allocation) => docs.get(allocation.documentId));
+  for (const id of ["synthetic-doc-tax-a", "synthetic-doc-tax-b"]) assert.match(mandatoryMarkup, new RegExp(id));
+  assert.match(mandatoryMarkup, /Synthetic tax A/);
+  assert.match(mandatoryMarkup, /Synthetic tax B/);
+  assert.equal((mandatoryMarkup.match(/data-allocation-parent=/g) || []).length, 2);
+  assert.equal((ordinaryMarkup.match(/data-allocation-document=/g) || []).length, 2,
+    "the ordinary section retains exactly its own two invoice evidence links");
+  for (const id of ordinaryDocs.keys()) assert.match(ordinaryMarkup, new RegExp(`data-view-document="${id}"`));
+  assert.doesNotMatch(ordinaryMarkup, /synthetic-doc-tax-/);
 });
 
 test("unmatched mandatory statement row appears only in the mandatory section", async () => {

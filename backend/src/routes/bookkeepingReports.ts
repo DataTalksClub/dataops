@@ -18,6 +18,7 @@ import {
 } from "../db/bookkeeping";
 import { preflightOrganizations } from '../vies/service';
 import { businessAccountRequiresStatement } from "../finance/businessAccounts";
+import { projectTransactionAllocations, readTransactionAllocations } from "../bookkeepingAllocations";
 import {
   headDocumentObject,
   json,
@@ -30,6 +31,16 @@ import {
 } from "./bookkeepingShared";
 
 const csvCell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+
+export function formatReportSnapshotCsv(transactions: Record<string, unknown>[]) {
+  const columns = [
+    "transactionDate", "paidDate", "counterparty", "description", "amount", "currency",
+    "amountEur", "vatAmount", "vatCurrency", "category", "entryType", "statementRef",
+  ];
+  return columns.join(",") + "\n" + transactions
+    .map((transaction) => columns.map((column) => csvCell(transaction[column])).join(","))
+    .join("\n") + "\n";
+}
 
 const activeLedgerRows = async (client: DynamoDBDocumentClient) =>
   (await listBookkeepingItems(client, "bookkeeping")).filter((item) => item.voidStatus !== "voided");
@@ -71,7 +82,11 @@ export async function handleBookkeepingReportRoutes(
       (r) =>
         r.month === month && ["ready", "generated"].includes(String(r.status)),
     );
-    if (existing) return json(200, { report: existing, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
+    if (existing) {
+      if (Number(existing.snapshotVersion) !== 3)
+        return json(409, { error: "Existing report predates allocation-safe projection and cannot be reused." });
+      return json(200, { report: existing, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
+    }
     const accounts = (await listBookkeepingItems(client, "account")).filter(
       (a) => a.kind === "business" && a.active !== false && businessAccountRequiresStatement(String(a.id), month),
     );
@@ -94,12 +109,12 @@ export async function handleBookkeepingReportRoutes(
       });
     const monthTransactions = (await activeLedgerRows(client))
       .filter((t) => String(t.transactionDate).startsWith(month));
-    const excludedTransactions = monthTransactions.filter(
-      isReportExemptTransaction,
-    );
-    const transactions = monthTransactions.filter(
-      (t) => !isReportExemptTransaction(t),
-    );
+    const projectedTransactions = monthTransactions.flatMap((transaction) => {
+      const allocations = projectTransactionAllocations(transaction);
+      return allocations.length ? allocations : [transaction];
+    });
+    const excludedTransactions = projectedTransactions.filter(isReportExemptTransaction);
+    const transactions = projectedTransactions.filter((transaction) => !isReportExemptTransaction(transaction));
     const unconverted = transactions.filter(
       (t) =>
         String(t.currency || "EUR").toUpperCase() !== "EUR" &&
@@ -111,17 +126,32 @@ export async function handleBookkeepingReportRoutes(
         unconvertedTransactionIds: unconverted.map((t) => String(t.id)),
       });
     const links = await listBookkeepingItems(client, "link");
-    const linkedIds = new Set(
-      links
-        .filter((l) => transactions.some((t) => t.id === l.transactionId))
-        .map((l) => String(l.documentId)),
-    );
-    const excludedTransactionIds = new Set(excludedTransactions.map((transaction) => String(transaction.id)));
+    const allocatedParentIds = new Set(monthTransactions
+      .filter((transaction) => readTransactionAllocations(transaction).length)
+      .map((transaction) => String(transaction.id)));
+    const includedParentIds = new Set(transactions.map((transaction) => String(transaction.sourceTransactionId || transaction.id)));
+    const linkedIds = new Set(links
+      .filter((link) => includedParentIds.has(String(link.transactionId))
+        && !allocatedParentIds.has(String(link.transactionId)))
+      .map((link) => String(link.documentId)));
+    for (const transaction of transactions) {
+      if (transaction.allocationDocumentId) linkedIds.add(String(transaction.allocationDocumentId));
+    }
+    const excludedTransactionIds = new Set(excludedTransactions.map((transaction) => String(transaction.sourceTransactionId || transaction.id)));
     const excludedLinkedIds = new Set(
       links
-        .filter((link) => excludedTransactionIds.has(String(link.transactionId)))
+        .filter((link) => excludedTransactionIds.has(String(link.transactionId))
+          && !includedParentIds.has(String(link.transactionId)))
         .map((link) => String(link.documentId)),
     );
+    for (const link of links) {
+      if (allocatedParentIds.has(String(link.transactionId)) && !linkedIds.has(String(link.documentId)))
+        excludedLinkedIds.add(String(link.documentId));
+    }
+    for (const transaction of excludedTransactions) {
+      if (transaction.allocationDocumentId)
+        excludedLinkedIds.add(String(transaction.allocationDocumentId));
+    }
     const selectedPrivate = new Set(
       Array.isArray(body?.privateDocumentIds)
         ? body!.privateDocumentIds.map(String)
@@ -151,7 +181,8 @@ export async function handleBookkeepingReportRoutes(
             id: reportId,
             month,
             status: "ready",
-            transactionIds: transactions.map((t) => t.id),
+            transactionIds: [...new Set(transactions.map((t) => String(t.sourceTransactionId || t.id)))],
+            transactionRows: transactions,
             documentIds: includedDocs.map((d) => d.id),
             reconciliation: {
               transactionCount: transactions.length,
@@ -159,7 +190,7 @@ export async function handleBookkeepingReportRoutes(
               documentCount: includedDocs.length,
               businessStatementCount: accounts.length,
             },
-            snapshotVersion: 2,
+            snapshotVersion: 3,
           },
           `report#${month}`,
         )
@@ -179,10 +210,9 @@ export async function handleBookkeepingReportRoutes(
       vatPreflight: await vatPreflightSummary(client),
       warnings: {
         missingEvidence: transactions.filter(
-          (t) =>
-            !links.some(
-              (l) => l.transactionId === t.id && l.coverageType === "evidence",
-            ),
+          (transaction) => transaction.allocationDocumentId
+            ? !linkedIds.has(String(transaction.allocationDocumentId))
+            : !links.some((link) => link.transactionId === transaction.id && link.coverageType === "evidence"),
         ).length,
       },
     });
@@ -236,6 +266,8 @@ export async function handleBookkeepingReportRoutes(
     const report = await getBookkeepingItem(client, "report", archive[1]);
     if (!report || !["ready", "generated"].includes(String(report.status)))
       return json(404, { error: "Ready report not found" });
+    if (Number(report.snapshotVersion) !== 3)
+      return json(409, { error: "Report archive is unavailable because the snapshot predates allocation-safe projection." });
     if (report.archiveDocumentId) {
       const doc = await getBookkeepingItem(
         client,
@@ -254,48 +286,19 @@ export async function handleBookkeepingReportRoutes(
         return json(200, { downloadUrl: url, expiresIn: 300, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
       }
     }
-    const transactionIds = Array.isArray(report.transactionIds)
-        ? report.transactionIds.map(String)
-        : [],
-      documentIds = Array.isArray(report.documentIds)
-        ? report.documentIds.map(String)
-        : [];
+    const documentIds = Array.isArray(report.documentIds)
+      ? report.documentIds.map(String)
+      : [];
     const maxFiles = Number(process.env.BOOKKEEPING_ARCHIVE_MAX_FILES || 500),
       maxBytes = Number(
       process.env.BOOKKEEPING_ARCHIVE_MAX_BYTES || 50 * 1024 * 1024,
       );
     if (documentIds.length + 1 > maxFiles)
       return json(413, { error: "Archive file limit exceeded" });
-    const transactions = (
-      await Promise.all(
-        transactionIds.map((id) =>
-          getBookkeepingItem(client, "bookkeeping", id),
-        ),
-      )
-    ).filter(Boolean) as Record<string, unknown>[];
-    const columns = [
-      "transactionDate",
-      "paidDate",
-      "counterparty",
-      "description",
-      "amount",
-      "currency",
-      "amountEur",
-      "vatAmount",
-      "vatCurrency",
-      "category",
-      "entryType",
-      "statementRef",
-    ];
-    const csv = Buffer.from(
-      columns.join(",") +
-        "\n" +
-        transactions
-          .map((t) => columns.map((c) => csvCell(t[c])).join(","))
-          .join("\n") +
-        "\n",
-      "utf8",
-    );
+    const transactions = Array.isArray(report.transactionRows)
+      ? report.transactionRows as Record<string, unknown>[]
+      : [];
+    const csv = Buffer.from(formatReportSnapshotCsv(transactions), "utf8");
     let total = csv.length;
     const snapshotDocs: BookkeepingItem[] = [];
     for (const id of documentIds) {

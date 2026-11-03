@@ -32,6 +32,7 @@ import { loadStatementLinkIndex } from "./bookkeeping-statement.js";
 import { openBookkeepingDialog } from "./bookkeeping-dialogs.js";
 import {
   createBookkeepingFinance,
+  mandatoryAllocationMarkup,
   monthlyLedgerEntries,
   ownerWithdrawalsMarkup,
 } from "./bookkeeping-vat.js";
@@ -256,6 +257,7 @@ export function createBookkeepingSurface(context) {
         e: escapeHtml,
       };
       const ownerSection = ownerWithdrawalsMarkup(sourceRows, lens, ledgerOptions);
+      const mandatoryAllocations = mandatoryAllocationMarkup(sourceRows, lens, escapeHtml, allocationDocument);
       const counts = {
         category: scoped.filter(needsCategory).length,
         receipt: scoped.filter((entry) => !hasEvidence(entry.id)).length,
@@ -278,13 +280,13 @@ export function createBookkeepingSurface(context) {
           filtered: filtered && scoped.length > 0,
           latest,
           e: escapeHtml,
-        }) + financeSummary.markup(escapeHtml) + ownerSection;
+        }) + financeSummary.markup(escapeHtml) + mandatoryAllocations + ownerSection;
         return;
       }
       ledger.innerHTML = ledgerTableMarkup({
         groups: groupByMonth(shown),
         ...ledgerOptions,
-      }) + financeSummary.markup(escapeHtml) + ownerSection;
+      }) + financeSummary.markup(escapeHtml) + mandatoryAllocations + ownerSection;
     }
     function reconciliationPeriods() {
       if (/^\d{4}-\d{2}$/.test(lens)) return [lens];

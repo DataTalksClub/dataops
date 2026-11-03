@@ -108,6 +108,49 @@ describe('bookkeeping API',()=>{
     assert.equal(report.reconciliation.businessStatementCount,2);
     assert.ok(statementIds.every((id)=>report.documentIds.includes(id)));
   });
+  it('snapshots mixed allocations by reportable child amount and selects only child evidence',async()=>{
+    const month='2026-11';
+    for(const [id,name] of [['synthetic-mixed-account-a','Synthetic Business Account A'],['synthetic-mixed-account-b','Synthetic Business Account B']]){
+      await putBookkeepingItem(client,'account',{id,displayName:name,kind:'business',active:true,statementRequiredFromMonth:month},`business-account#${id}`);
+      await putBookkeepingItem(client,'document',{documentType:'bank-statement',status:'active',accountId:id,statementMonth:month,originalFilename:`${id}.pdf`,contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update(id).digest('hex'),s3Key:`documents/${id}`});
+    }
+    const makeDoc=async(id:string)=> (await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:`${id}.pdf`,contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update(id).digest('hex'),s3Key:`documents/${id}`},`synthetic-mixed-doc#${id}`)).item;
+    const [ordinaryA,exemptA,ordinaryB,exemptB,parentEvidenceA,parentEvidenceB]=await Promise.all([
+      'ordinary-a','exempt-a','ordinary-b','exempt-b','parent-evidence-a','parent-evidence-b',
+    ].map(makeDoc));
+    const parentA=(await putBookkeepingItem(client,'bookkeeping',{
+      transactionDate:`${month}-02`,paidDate:`${month}-03`,counterparty:'Synthetic combined payee A',description:'Synthetic tax settlement',
+      amount:'30.00',amountEur:'30.00',currency:'EUR',entryType:'expense',category:'Taxes',mandatoryKind:'tax_debit',
+      allocations:[
+        {id:'ordinary-a',documentId:ordinaryA.id,counterparty:'Synthetic service A',description:'Service A',amount:'10.00',amountEur:'10.00',currency:'EUR',category:'Software'},
+        {id:'exempt-a',documentId:exemptA.id,counterparty:'Synthetic tax A',description:'Tax A',amount:'20.00',amountEur:'20.00',currency:'EUR',category:'Taxes'},
+      ],
+    },'synthetic-mixed-parent#a')).item;
+    const parentB=(await putBookkeepingItem(client,'bookkeeping',{
+      transactionDate:`${month}-04`,paidDate:`${month}-04`,counterparty:'Synthetic combined payee B',description:'Synthetic owner draw',
+      amount:'70.00',amountEur:'70.00',currency:'EUR',entryType:'expense',category:'Owner pay',ownerPayType:'draw',
+      allocations:[
+        {id:'exempt-b',documentId:exemptB.id,counterparty:'Synthetic tax B',description:'Tax B',amount:'30.00',amountEur:'30.00',currency:'EUR',category:'Taxes'},
+        {id:'ordinary-b',documentId:ordinaryB.id,counterparty:'Synthetic service B',description:'Service B',amount:'40.00',amountEur:'40.00',currency:'EUR',category:'Software'},
+      ],
+    },'synthetic-mixed-parent#b')).item;
+    for(const [parent,document] of [[parentA,parentEvidenceA],[parentB,parentEvidenceB]])
+      await putBookkeepingItem(client,'link',{transactionId:parent.id,documentId:document.id,coverageType:'evidence'},`synthetic-mixed-link#${parent.id}`);
+
+    const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{
+      month,privateDocumentIds:[exemptA.id,exemptB.id,parentEvidenceA.id,parentEvidenceB.id],
+    });
+    assert.equal(snapshot.statusCode,201,snapshot.body);
+    const report=JSON.parse(snapshot.body).report;
+    assert.equal(report.reconciliation.transactionCount,2);
+    assert.equal(report.reconciliation.excludedTransactionCount,2);
+    assert.deepEqual(report.transactionRows.map((row:any)=>[row.counterparty,row.amount,row.category]).sort((a:any[],b:any[])=>String(a[0]).localeCompare(String(b[0]))),[
+      ['Synthetic service A','10.00','Software'],['Synthetic service B','40.00','Software'],
+    ]);
+    assert.equal(report.transactionRows.reduce((sum:number,row:any)=>sum+Number(row.amount),0),50);
+    assert.ok(report.documentIds.includes(ordinaryA.id)&&report.documentIds.includes(ordinaryB.id));
+    assert.ok(![exemptA.id,exemptB.id,parentEvidenceA.id,parentEvidenceB.id].some((id:string)=>report.documentIds.includes(id)));
+  });
   it('records VAT amounts and keeps tax and health-insurance entries out of monthly snapshots',async()=>{
     const bad=await invoke('POST','/api/bookkeeping/transactions',{...valid,description:'bad vat',vatAmount:'-1',vatCurrency:'eur'});assert.equal(bad.statusCode,400);assert.deepEqual(JSON.parse(bad.body).fields.sort(),['vatAmount','vatCurrency']);
     const income=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-09-05',description:'VAT income',entryType:'income',vatAmount:'19.00',vatCurrency:'EUR'})).body);
@@ -130,7 +173,7 @@ describe('bookkeeping API',()=>{
     for(const account of activeBusinessAccounts) await putBookkeepingItem(client,'document',{documentType:'bank-statement',status:'active',accountId:account.id,statementMonth:'2026-09',originalFilename:'synthetic.pdf',contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update(`synthetic-vat-${account.id}`).digest('hex'),s3Key:`documents/${account.id}`});
     const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-09',privateDocumentIds:[ownerEvidence.id]});assert.equal(snapshot.statusCode,201,snapshot.body);
     const report=JSON.parse(snapshot.body).report;
-    assert.equal(report.reconciliation.excludedTransactionCount,5);
+    assert.equal(report.reconciliation.excludedTransactionCount,6);
     assert.deepEqual(report.transactionIds.length,3);
     assert.ok(report.transactionIds.includes(mixedAllocationPayment.id), 'a mixed payment remains in the accountant package for its non-exempt allocation');
     assert.ok(!report.transactionIds.includes(ownerDraw.id));

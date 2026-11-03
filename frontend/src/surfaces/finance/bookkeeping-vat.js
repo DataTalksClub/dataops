@@ -1,5 +1,5 @@
 import { html } from "./shared.js";
-import { formatAmount, isOwnerWithdrawalReportExempt, ledgerDate, monthLabel, monthOf } from "./bookkeeping-format.js";
+import { formatAmount, isOwnerWithdrawalReportExempt, isReportExempt, ledgerDate, monthLabel, monthOf } from "./bookkeeping-format.js";
 import { groupByMonth, ledgerTableMarkup } from "./bookkeeping-ledger.js";
 
 const MANDATORY_LABELS = {
@@ -47,12 +47,75 @@ function mandatoryLabel(entry) {
 // Share exact tax/health line classification and the guarded kind fallback between both views.
 export function monthlyLedgerEntries(entries, lens, financeEntriesById) {
   if (!/^\d{4}-\d{2}$/.test(lens)) return entries;
-  return entries.filter((entry) => {
+  return entries.flatMap((entry) => {
+    const allocations = Array.isArray(entry.allocations) ? entry.allocations : [];
+    if (allocations.length) {
+      const included = allocations.filter((allocation) => !isReportExempt({
+        ...entry, ...allocation,
+        category: allocation.category || entry.category,
+        subtype: allocation.subtype || entry.subtype,
+        description: allocation.description || "",
+        mandatoryKind: undefined,
+        ownerPayType: undefined,
+      }));
+      if (!included.length) return [];
+      if (included.length === allocations.length) return [entry];
+      const sumField = (field) => {
+        const values = included.map((allocation) => Number(allocation[field]));
+        return values.every(Number.isFinite)
+          ? (values.reduce((sum, value) => sum + value, 0)).toFixed(2)
+          : undefined;
+      };
+      return [{
+        ...entry,
+        allocations: included,
+        amount: sumField("amount") || entry.amount,
+        amountEur: sumField("amountEur"),
+        vatAmount: sumField("vatAmount"),
+        mandatoryKind: undefined,
+        ownerPayType: undefined,
+      }];
+    }
     const mandatory = financeEntriesById.get(String(entry.id));
     const taxHealth = mandatory?.month === lens && isTaxHealthEntry(mandatory);
     const ownerWithdrawal = monthOf(entry) === lens && isOwnerWithdrawalEntry(entry);
-    return !taxHealth && !ownerWithdrawal;
+    return !taxHealth && !ownerWithdrawal ? [entry] : [];
   });
+}
+
+export function mandatoryAllocationMarkup(entries, lens, escapeHtml, getAllocationDocument = () => null) {
+  if (!/^\d{4}-\d{2}$/.test(lens)) return "";
+  const children = (entries || []).flatMap((entry) =>
+    (Array.isArray(entry.allocations) ? entry.allocations : [])
+      .filter((allocation) => isReportExempt({
+        ...entry, ...allocation,
+        category: allocation.category || entry.category,
+        subtype: allocation.subtype || entry.subtype,
+        description: allocation.description || "",
+        mandatoryKind: undefined,
+        ownerPayType: undefined,
+      }))
+      .map((allocation) => ({ entry, allocation })),
+  );
+  if (!children.length) return "";
+  const rows = children.map(({ entry, allocation }) => {
+    const document = getAllocationDocument(entry, allocation);
+    const amount = Number(allocation.amountEur ?? allocation.amount);
+    const currency = allocation.amountEur !== undefined ? "EUR" : allocation.currency || entry.currency || "EUR";
+    const signed = entry.entryType === "income" ? Math.abs(amount) : -Math.abs(amount);
+    return html`<tr data-allocation-parent="${escapeHtml(entry.id)}">
+      <td>${escapeHtml(ledgerDate(entry.paidDate || entry.transactionDate || ""))}</td>
+      <td>${escapeHtml(allocation.counterparty || entry.counterparty || "")}</td>
+      <td>${escapeHtml(allocation.category || entry.category || "Mandatory payment")}</td>
+      <td>${escapeHtml(formatAmount(signed, currency))}</td>
+      <td>${document ? html`<button type="button" data-view-document="${escapeHtml(document.id)}">View PDF</button>` : "—"}</td>
+    </tr>`;
+  }).join("");
+  return html`<section class="bk-mandatory-payments bk-mandatory-allocations" data-mandatory-allocations>
+    <h2>Mandatory invoice allocations · ${escapeHtml(monthLabel(lens))}</h2>
+    <p class="bk-mandatory-payments__hint">Excluded from the accountant package and shown once by allocation.</p>
+    <div class="bk-mandatory-payments__table-wrap"><table><thead><tr><th>Date</th><th>Counterparty</th><th>Category</th><th>Amount</th><th>Evidence</th></tr></thead><tbody>${rows}</tbody></table></div>
+  </section>`;
 }
 
 export function ownerWithdrawalEntries(entries, lens) {

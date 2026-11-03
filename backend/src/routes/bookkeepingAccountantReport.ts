@@ -1,6 +1,6 @@
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { isReportExemptTransaction, listTransactions } from "../db/bookkeeping";
-import { readTransactionAllocations } from "../bookkeepingAllocations";
+import { projectTransactionAllocations, readTransactionAllocations } from "../bookkeepingAllocations";
 import type { LambdaEvent, LambdaResponse } from "../types";
 import { json } from "./bookkeepingShared";
 
@@ -26,22 +26,7 @@ export function accountantReportRows(transactions: ReportEntry[]) {
   return transactions.flatMap((entry) => {
     const allocations = readTransactionAllocations(entry);
     if (!allocations.length) return [entry];
-    return allocations.map((allocation) => ({
-      ...entry,
-      transactionDate: entry.transactionDate,
-      paidDate: entry.paidDate,
-      counterparty: allocation.counterparty,
-      description: allocation.description,
-      amount: allocation.amount,
-      currency: allocation.currency,
-      ...(allocation.amountEur !== undefined ? { amountEur: allocation.amountEur } : { amountEur: undefined }),
-      ...(allocation.vatAmount !== undefined ? { vatAmount: allocation.vatAmount } : { vatAmount: undefined }),
-      ...(allocation.vatCurrency !== undefined ? { vatCurrency: allocation.vatCurrency } : { vatCurrency: undefined }),
-      category: allocation.category || entry.category,
-      subtype: allocation.subtype || entry.subtype,
-      invoiceNumber: allocation.invoiceNumber,
-      allocations: undefined,
-    }));
+    return projectTransactionAllocations(entry);
   });
 }
 
