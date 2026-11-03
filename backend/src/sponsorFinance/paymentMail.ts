@@ -246,7 +246,6 @@ function describePaidRow(row: LedgerRow): CandidateMatch {
     dealId: row.dealId, organizationName: row.organizationName,
     ...(row.dealTitle ? { dealTitle: row.dealTitle } : {}),
     ...(row.invoiceNumber ? { invoiceNumber: row.invoiceNumber } : {}),
-    ...(row.paid ? { outstanding: row.paid } : {}),
     ...(row.currency ? { currency: row.currency } : {}),
     confidence: row.invoiceNumber ? 'invoice' : 'amount',
     reasons: row.invoiceNumber ? ['invoice number', 'already paid'] : ['amount', 'currency', 'sponsor', 'already paid'],
