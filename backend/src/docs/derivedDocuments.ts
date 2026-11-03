@@ -33,7 +33,7 @@ const INTEGER_KEYS = ['schema_version', 'review_cycle_days'];
 const NULLABLE_DATE_KEYS = ['last_reviewed_at', 'next_review_at'];
 
 /** Undo earlier stringification ('null', '1', '90') of the keys whose type is fixed by the schema. */
-function repairScalars(metadata: Record<string, unknown>): Record<string, unknown> {
+export function repairFrontmatterScalars(metadata: Record<string, unknown>): Record<string, unknown> {
   const repaired = { ...metadata };
   for (const key of INTEGER_KEYS) {
     const value = repaired[key];
@@ -47,7 +47,7 @@ function repairScalars(metadata: Record<string, unknown>): Record<string, unknow
 }
 
 function yamlFrontmatter(metadata: Record<string, unknown>): string {
-  return dumpYaml(repairScalars(metadata), { lineWidth: -1, noRefs: true }).trimEnd();
+  return dumpYaml(repairFrontmatterScalars(metadata), { lineWidth: -1, noRefs: true }).trimEnd();
 }
 
 /** Typed frontmatter read: null, integers and booleans keep their YAML types so a rewrite never stringifies them. */

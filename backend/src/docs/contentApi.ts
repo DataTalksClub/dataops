@@ -1,6 +1,7 @@
 import { templateParser } from './templatePlaceholders';
 import { dump as dumpYaml } from 'js-yaml';
 import { DOCX_CONTENT_TYPE, markdownToDocx } from './docxExport';
+import { repairFrontmatterScalars } from './derivedDocuments';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 /**
  * Docs content API.
@@ -770,7 +771,7 @@ async function updateDocStatus(rt: DocsRuntime, body: Record<string, unknown>, a
   catch (error) { if (error instanceof LookupError) throw new NotFound(error.message); throw error; }
   const content = await rt.store.readFile(document.path);
   const [raw, markdown] = splitFrontmatter(content);
-  const metadata: Record<string, unknown> = raw ? { ...parseFrontmatter(raw) } : {};
+  const metadata: Record<string, unknown> = repairFrontmatterScalars(raw ? { ...parseFrontmatter(raw) } : {});
   metadata.status = status;
   if (typeof body.replaced_by === 'string' && body.replaced_by.trim()) metadata.replaced_by = body.replaced_by.trim();
   const updated = `---\n${dumpYaml(metadata, { lineWidth: -1 })}---\n${markdown}`;
