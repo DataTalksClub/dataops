@@ -70,7 +70,7 @@ describe("vendor credit note bookkeeping", () => {
     assert.equal(summary.totals.netProfitExVat, 59.99);
   });
 
-  it("updates a credit note's free fields but rejects re-typing it as an expense", async () => {
+  it("updates a credit note's free fields but rejects re-typing it as income", async () => {
     const created = await post(client, { ...creditNote, statementRef: "SYN-CREDIT-NOTE-0002", sourceKey: "credit-note:SYN-CREDIT-NOTE-0002" });
     assert.equal(created?.statusCode, 201);
     const record = JSON.parse(created!.body);

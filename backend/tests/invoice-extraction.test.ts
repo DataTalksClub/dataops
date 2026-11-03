@@ -168,6 +168,17 @@ test('prose about a credit note on a replacement invoice is not a credit note; h
   assert.equal(extractInvoiceText('Receipt\nReceipt number ABCD \u0000 1234 \u0000 0001\nTotal $5.00').fields.invoiceNumber,'ABCD-1234-0001');
   assert.equal(extractInvoiceText('Invoice\nInvoice number F-0003-2026\nTotal 10.00 EUR').fields.invoiceNumber,'F-0003-2026');
 });
+test('customer credit note issued by DataTalks.Club keeps income direction without supplier Refund subtype',()=>{
+  const text='DataTalks.Club\nMusterstraße 1\n10115 Berlin\nExample Agency\nCredit note No. 202604/24-CN\nCredit note date 24.04.2026\nVAT (%)\n1 0 -1.550,00 €\nTotal taxable -1.550,00 € -1.550,00 €\nCreated with Finom.co';
+  const parsed=extractInvoiceText(text);
+  assert.equal(parsed.extraction.documentType,'credit_note');
+  assert.equal(parsed.extraction.direction,'income');
+  assert.equal(parsed.fields.subtype,undefined);
+  assert.equal(parsed.fields.counterparty,'Example Agency');
+  assert.equal(parsed.fields.invoiceNumber,'202604/24-CN');
+  assert.equal(parsed.fields.amount,'1550.00');
+  assert.equal(parsed.fields.currency,'EUR');
+});
 
 test('dot leaders do not hide invoice dates or labeled totals from Finance extraction',async()=>{
   const text='X Subscription\nInvoice number CF5469A422\nInvoice date ..... Oct 16, 2026\nTotal in EUR ....... € 2100.00';

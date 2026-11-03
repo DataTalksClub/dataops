@@ -187,7 +187,27 @@ function extractionNeedsReview(facts: Record<string, unknown>): boolean {
   );
 }
 
+function isRefundTransaction(transaction: AutoMatchTransaction): boolean {
+  return (
+    String(transaction.subtype || "").toLowerCase() === "refund" ||
+    String(transaction.sourceKey || "").startsWith("credit-note:")
+  );
+}
+
+function isSupplierCreditNoteDocument(facts: Record<string, unknown>): boolean {
+  if (String(facts.subtype || "").toLowerCase() === "refund") return true;
+  const extraction = facts.extraction;
+  if (!extraction || typeof extraction !== "object" || Array.isArray(extraction)) return false;
+  const docType = String((extraction as Record<string, unknown>).documentType || "").toLowerCase();
+  const direction = String((extraction as Record<string, unknown>).direction || "").toLowerCase();
+  return docType === "credit_note" && direction !== "income";
+}
+
 function directionMatches(transaction: AutoMatchTransaction, facts: Record<string, unknown>): boolean {
+  const refundTransaction = isRefundTransaction(transaction);
+  const refundDocument = isSupplierCreditNoteDocument(facts);
+  if (refundTransaction !== refundDocument) return false;
+  if (refundTransaction && refundDocument) return true;
   const extraction = facts.extraction;
   if (!extraction || typeof extraction !== "object" || Array.isArray(extraction)) return true;
   const extractedDirection = String((extraction as Record<string, unknown>).direction || "").toLowerCase();

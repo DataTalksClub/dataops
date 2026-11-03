@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EXTRACTION_SCHEMA, extractWithLlm, extractionModel } from '../src/invoices/llm';
 
-const answer = { docType: 'credit_note', direction: 'income', counterparty: 'Example Assist, LLC', invoiceNumber: 'A1B2C3D4-0059-CN-01', date: '2026-10-30', currency: 'USD', net: null, vat: null, gross: '646.63', vatRate: null, reverseCharge: false, paymentChannel: 'card', description: 'Unused time', confidence: 'high', uncertainFields: [] };
+const answer = { docType: 'credit_note', direction: 'expense', counterparty: 'Example Assist, LLC', invoiceNumber: 'A1B2C3D4-0059-CN-01', date: '2026-10-30', currency: 'USD', net: null, vat: null, gross: '646.63', vatRate: null, reverseCharge: false, paymentChannel: 'card', description: 'Unused time', confidence: 'high', uncertainFields: [] };
 const fakeApi = (calls: any[], reply: { status?: number; body: unknown }) => async (url: string, init: any) => {
   calls.push({ url, ...init, body: JSON.parse(init.body) });
   return { ok: (reply.status || 200) < 400, status: reply.status || 200, json: async () => reply.body };
