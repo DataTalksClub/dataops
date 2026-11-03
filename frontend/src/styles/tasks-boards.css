@@ -1525,7 +1525,7 @@ body[data-workspace-view="tasks"] .runtime-template-empty-clear {
 }
 .ops-queue-checklist-progress {
   align-self: baseline;
-  color: var(--dk-text-muted, #68717d);
+  color: var(--dk-text-muted);
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

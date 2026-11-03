@@ -1763,10 +1763,10 @@ body[data-workspace-view="tasks"] .task-prerequisite-status {
   font-size: 0.9rem;
 }
 .task-checklist-section {
-  border: 1px solid var(--dk-border-default, #d7dce2);
+  border: 1px solid var(--dk-border-default);
   border-radius: 12px;
   margin: 16px 0;
-  padding: 14px 16px;
+  padding: 16px;
 }
 
 .task-checklist-heading {
@@ -1782,13 +1782,13 @@ body[data-workspace-view="tasks"] .task-prerequisite-status {
 }
 
 .task-checklist-progress {
-  color: var(--dk-text-muted, #68717d);
+  color: var(--dk-text-muted);
   font-size: 0.82rem;
 }
 
 .task-checklist-items {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   list-style: none;
   margin: 12px 0 0;
   padding: 0;
@@ -1797,19 +1797,19 @@ body[data-workspace-view="tasks"] .task-prerequisite-status {
 .task-checklist-item {
   align-items: flex-start;
   display: grid;
-  gap: 10px;
+  gap: 12px;
   grid-template-columns: 20px minmax(0, 1fr);
 }
 
 .task-checklist-item > input {
   height: 18px;
-  margin: 2px 0 0;
+  margin: 0;
   width: 18px;
 }
 
 .task-checklist-item-content {
   display: grid;
-  gap: 3px;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -1818,13 +1818,13 @@ body[data-workspace-view="tasks"] .task-prerequisite-status {
 }
 
 .task-checklist-item[data-checked="true"] .task-checklist-item-text {
-  color: var(--dk-text-muted, #68717d);
+  color: var(--dk-text-muted);
   text-decoration: line-through;
 }
 
 .task-checklist-instruction,
 .task-checklist-evidence {
-  color: var(--dk-text-muted, #68717d);
+  color: var(--dk-text-muted);
   font-size: 0.8rem;
 }
 
