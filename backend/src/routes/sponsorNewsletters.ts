@@ -22,11 +22,10 @@ import {
 } from '../sponsorCrm/newsletters';
 import { NEWSLETTER_ISSUE_KIND, upsertNewsletterIssue } from '../sponsorCrm/newsletterIssues';
 import { todayOf } from '../crmWorkspace/berlin';
+import { json, parseJsonEvent as parse } from '../http';
 import { leadValue, parseSponsors, storeLead } from './sponsorLeads';
 
-const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-const parse = (event: LambdaEvent) => { try { return event.body ? JSON.parse(String(event.body)) as Record<string, unknown> : null; } catch { return null; } };
 
 function validateList(event: LambdaEvent) {
   const query = event.queryStringParameters || {}, limit = Number(query.limit || 50), cursor = Number(query.cursor || 0);

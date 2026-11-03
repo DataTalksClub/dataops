@@ -7,6 +7,7 @@ import type { LambdaEvent, LambdaResponse } from '../types';
 export async function handleDocumentExportRoutes(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse | null> {
   const match = /^\/api\/documents\/([^/]+)\/export\/?$/.exec(event.path || '');
   if (!match) return null;
+  // Kept separate from http.json: accepts an error message string and wraps it as `{ error }`.
   const json = (statusCode: number, error: string): LambdaResponse => ({ statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error }) });
   if ((event.httpMethod || 'GET') !== 'GET') return json(405, 'Method not allowed');
   const format = event.queryStringParameters?.format || 'md';

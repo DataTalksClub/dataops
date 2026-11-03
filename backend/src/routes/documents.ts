@@ -3,9 +3,9 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createDocument, deleteDocument, DOCUMENT_KINDS, DocumentRecord, DocumentVersionConflict, getDocument, listDocuments, updateDocument } from '../db/documents';
 import { resolveInteractiveActor } from '../identity/actor';
 import { getTask } from '../db/tasks';
+import { noStoreJson as json } from '../http';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
-const json = (statusCode: number, data: unknown): LambdaResponse => ({ statusCode, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify(data) });
 export function validateDocumentText(body: Record<string, unknown>): string | null {
   if (typeof body.title !== 'string' || !body.title.trim() || body.title.length > 200) return 'title must contain 1–200 characters';
   if (typeof body.content !== 'string' || Buffer.byteLength(body.content, 'utf8') > 250000) return 'content must be text of at most 250000 UTF-8 bytes';

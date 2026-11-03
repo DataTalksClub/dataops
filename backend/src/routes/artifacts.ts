@@ -11,9 +11,9 @@ import { getTask, updateTaskAdditive, TaskVersionConflictError } from '../db/tas
 import { isLocalFilesystemStorageAllowed } from '../storage';
 import type { ArtifactRecord, ArtifactRef, LambdaEvent, LambdaResponse } from '../types';
 import { recordRequestError } from '../requestErrorLog';
+import { jsonResponse, parseJsonEvent as parseBody } from '../http';
 import { headerValue } from '../httpHeaders';
 
-const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 const ARTIFACT_TYPES = new Set(['podcast-doc', 'transcript', 'recording', 'report', 'invoice', 'event-page', 'assistant-output', 'external-link', 'other']);
 const ARTIFACT_STATUSES = new Set(['draft', 'needs-review', 'approved', 'rejected', 'archived', 'superseded']);
 const STORAGE_PROVIDERS = new Set(['s3', 'dropbox', 'google-drive', 'github', 'external-url', 'local-dev', 'unknown']);
@@ -24,28 +24,10 @@ const SIGNED_URL_PATTERN = /(X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Tok
 let signArtifactUrl = getSignedUrl;
 let artifactS3Client: S3Client | null = null;
 
-function jsonResponse(statusCode: number, body: unknown): LambdaResponse {
-  return {
-    statusCode,
-    headers: JSON_HEADERS,
-    body: typeof body === 'string' ? body : JSON.stringify(body),
-  };
-}
-
 function publicArtifact(artifact: ArtifactRecord): ArtifactRecord {
   if (!artifact.storageUri?.startsWith('s3://')) return artifact;
   const { storageUri: _storageUri, ...safe } = artifact;
   return safe as ArtifactRecord;
-}
-
-function parseBody(event: LambdaEvent): Record<string, unknown> | null {
-  if (!event.body) return null;
-  if (typeof event.body === 'object') return event.body as Record<string, unknown>;
-  try {
-    return JSON.parse(event.body);
-  } catch {
-    return null;
-  }
 }
 
 function isNonEmptyString(value: unknown): value is string {

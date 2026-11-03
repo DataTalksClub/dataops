@@ -1,8 +1,8 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { getTuitionAgreement, listTuitionAgreements, saveTuitionAgreement, tuitionEvidence, type TuitionAgreement } from '../db/tuition';
+import { json } from '../http';
 import { realDate } from '../sponsorCrm/model';
-const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 export async function handleTuitionRoutes(path: string, method: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const match = path.match(/^\/api\/tuition(?:\/([^/]+))?$/);

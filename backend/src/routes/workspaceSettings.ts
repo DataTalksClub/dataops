@@ -21,6 +21,7 @@ import {
   validCadence,
 } from '../podcast/releaseSlots';
 import { resolveInteractiveActor, workAdminForbidden } from '../identity/actor';
+import { json, parseJsonObjectEvent as parseBody } from '../http';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 export const WORKSPACE_SETTINGS_PATH = '/api/workspace-settings';
@@ -28,20 +29,6 @@ const EDITABLE = new Set(['newsletterCardLeadDays', 'sponsorMaterialsReminderDay
 const COLD_STAGES = ['talking', 'customer', 'prospect', 'dormant'] as const;
 
 const isDayCount = (value: unknown, max: number) => Number.isInteger(value) && Number(value) >= 0 && Number(value) <= max;
-
-function json(statusCode: number, body: unknown): LambdaResponse {
-  return { statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
-}
-
-function parseBody(event: LambdaEvent): Record<string, unknown> | null {
-  if (!event.body) return null;
-  try {
-    const parsed = typeof event.body === 'object' ? event.body : JSON.parse(String(event.body));
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
-  } catch {
-    return null;
-  }
-}
 
 export async function handleWorkspaceSettingsRoutes(
   path: string,

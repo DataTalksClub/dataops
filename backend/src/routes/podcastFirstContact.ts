@@ -14,23 +14,7 @@ import {
   PODCAST_DOCS_URL,
   renderPodcastFirstContactEmail,
 } from '../podcast/firstContact';
-
-const json = (statusCode: number, body: unknown): LambdaResponse => ({
-  statusCode,
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(body),
-});
-
-const parse = (event: LambdaEvent): Record<string, unknown> | null => {
-  try {
-    const value = event.body ? JSON.parse(String(event.body)) : {};
-    return value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-};
+import { json, parseJsonObjectEventOrEmpty as parse } from '../http';
 
 export async function handlePodcastFirstContactRoutes(
   path: string,

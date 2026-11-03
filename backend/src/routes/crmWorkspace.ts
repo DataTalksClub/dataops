@@ -6,12 +6,7 @@ import { archiveView, unarchiveView, createView, getViewOne, listViews, resolveV
 import { workspaceErrorOf } from '../crmWorkspace/reads';
 import { createNote, deleteNote, getNote, listNotes, updateNote, type NoteTarget } from '../crmWorkspace/notes';
 import { readActivity, type ActivityTarget } from '../crmWorkspace/activity';
-
-const json = (statusCode: number, body: unknown): LambdaResponse => ({
-  statusCode,
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(body),
-});
+import { json, parseJsonEvent as parse } from '../http';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
@@ -25,14 +20,6 @@ function pathId(raw: string): { id: string } | { error: string } {
     return { error: 'Invalid ID' };
   }
 }
-
-const parse = (event: LambdaEvent): Record<string, unknown> | null => {
-  try {
-    return event.body ? (JSON.parse(String(event.body)) as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-};
 
 const actor = (event: LambdaEvent): string =>
   Object.entries(event.headers || {}).find(([key]) => key.toLowerCase() === 'x-user-id')?.[1] || '';

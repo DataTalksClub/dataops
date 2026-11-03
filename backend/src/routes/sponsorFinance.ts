@@ -28,6 +28,7 @@ import {
 import { financeLedger } from '../sponsorFinance/ledger';
 import { dealProjectionContext } from '../sponsorFinance/context';
 import { OPAQUE } from '../sponsorFinance/core';
+import { parseJsonObjectEventOrEmpty as parse } from '../http';
 import { recordRequestError } from '../requestErrorLog';
 
 const headers = {
@@ -35,13 +36,8 @@ const headers = {
   'Cache-Control': 'no-store',
   'X-Content-Type-Options': 'nosniff',
 };
+// Kept separate from http.noStoreJson: also includes X-Content-Type-Options: nosniff.
 const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers, body: JSON.stringify(body) });
-const parse = (event: LambdaEvent): Record<string, unknown> | null => {
-  try {
-    const body = event.body ? JSON.parse(String(event.body)) : {};
-    return body && typeof body === 'object' && !Array.isArray(body) ? body : null;
-  } catch { return null; }
-};
 const header = (event: LambdaEvent, name: string) => Object.entries(event.headers || {})
   .find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1] || '';
 

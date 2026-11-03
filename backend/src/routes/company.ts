@@ -31,9 +31,8 @@ import { getUser } from '../db/users';
 import { MAX_PAYLOAD_BYTES, resolveSecretCipher } from '../secrets/cipher';
 import { recordRequestError } from '../requestErrorLog';
 import type { LambdaEvent, LambdaResponse } from '../types';
+import { json } from '../http';
 import { headerValue } from '../httpHeaders';
-
-const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
 const ACCOUNT_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const FIELD_KEY = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
@@ -234,6 +233,7 @@ function splitAccount(id: string, fields: Record<string, string>): {
   return { id, label, currency, details };
 }
 
+// Kept separate from http.parseJsonObjectBody: throws CompanyInputError with distinct messages for missing, invalid, and non-object JSON.
 function parseBody(rawBody: string | null): Record<string, unknown> {
   if (!rawBody) throw new CompanyInputError('A JSON body is required');
   try {
@@ -367,8 +367,4 @@ function invalidAccountId(): LambdaResponse {
 
 function methodNotAllowed(): LambdaResponse {
   return json(405, { error: 'Method not allowed' });
-}
-
-function json(statusCode: number, body: unknown): LambdaResponse {
-  return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) };
 }

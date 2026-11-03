@@ -16,19 +16,16 @@ import {
   type OffersRecordChanges,
 } from '../db/offers';
 import { resolveInteractiveActor, workAdminForbidden } from '../identity/actor';
+import { json } from '../http';
 import { recordRequestError } from '../requestErrorLog';
 import { realDate } from '../sponsorCrm/model';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
-const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 
 class OffersInputError extends Error {}
 
-function json(statusCode: number, body: unknown): LambdaResponse {
-  return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) };
-}
-
+// Kept separate from http.parseJsonObjectBody: throws OffersInputError instead of returning null.
 function parseBody(rawBody: string | null | undefined): Record<string, unknown> {
   if (!rawBody) throw new OffersInputError('A JSON body is required');
   try {

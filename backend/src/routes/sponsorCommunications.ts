@@ -40,6 +40,7 @@ import type {
   CommunicationPrivatePayload,
   CommunicationSuggestion,
 } from '../sponsorCommunications/types';
+import { parseJsonObjectEventOrEmpty as parse } from '../http';
 
 const PRIVATE_HEADERS = {
   'Content-Type': 'application/json',
@@ -47,14 +48,8 @@ const PRIVATE_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
 };
+// Kept separate from http.json: attaches PRIVATE_HEADERS (no-store, nosniff, DENY framing).
 const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCode, headers: PRIVATE_HEADERS, body: JSON.stringify(body) });
-const parse = (event: LambdaEvent): Record<string, unknown> | null => {
-  try {
-    if (!event.body) return {};
-    const parsed = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
-  } catch { return null; }
-};
 const header = (event: LambdaEvent, name: string) => Object.entries(event.headers || {})
   .find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1] || '';
 const validId = (value: string) => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value);

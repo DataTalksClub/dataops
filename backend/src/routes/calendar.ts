@@ -10,10 +10,9 @@ import { newsletterCalendarOverlay } from '../calendar/newsletterOverlay';
 import { berlinToday, ownerCalendarOverlay, ownerCalendarRange, fetchDapierConnections, parseDurationMinutes, parseSlotWindow, DEFAULT_CALL_DURATION_MINUTES, type SlotWindow } from '../calendar/ownerCalendarOverlay';
 import { calendarHoldOverlay, suppressHeldSlots, suppressPublicEventSlots } from '../calendar/holdOverlay';
 import { listCalendarHolds } from '../db/calendarHolds';
+import { json, parseJsonEvent as parse } from '../http';
 import { realDate } from '../sponsorCrm/model';
-const json=(statusCode:number,body:unknown):LambdaResponse=>({statusCode,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
 const days=(a:string,b:string)=>(Date.parse(`${b}T00:00:00Z`)-Date.parse(`${a}T00:00:00Z`))/86400000;
-const parse=(event:LambdaEvent)=>{try{return event.body?JSON.parse(String(event.body)):null}catch{return null}};
 const actor=(event:LambdaEvent)=>Object.entries(event.headers||{}).find(([k])=>k.toLowerCase()==='x-user-id')?.[1]||'authenticated-operator';
 function range(event:LambdaEvent){const q=event.queryStringParameters||{},from=q.from,to=q.to;if(!realDate(from)||!realDate(to)||from!>to||days(from!,to!)>366)return null;return {from:from!,to:to!};}
 // The calendar is a read-only projection: event Cards, podcast episodes and

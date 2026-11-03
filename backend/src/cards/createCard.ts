@@ -19,16 +19,11 @@ import { parseCardTitle } from './cardTitleStructure';
 import { cardFieldTitleValues, renderCardTitle } from './cardTitlePattern';
 import { templateCardProjection } from '../templates/cardTemplateProjection';
 import { countValuesError } from '../templates/repeatedTasks';
+import { json } from '../http';
 import { workAdminForbidden, type VerifiedActor } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
 import type { PlannedWrite } from '../db/plannedWrite';
 import type { Card, LambdaResponse, Task, Template } from '../types';
-
-const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
-
-function json(statusCode: number, body: unknown): LambdaResponse {
-  return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) };
-}
 
 export type CardCreation =
   | { ok: true; card: Card; tasks: Task[]; template: Template }

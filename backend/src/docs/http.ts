@@ -13,6 +13,7 @@ export const DEFAULT_HEADERS: Record<string, string> = {
   'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
 };
 
+// Kept separate from ../http.jsonResponse: attaches docs CORS headers (DEFAULT_HEADERS) and always JSON-serializes body.
 export function jsonResponse(status: number, body: unknown): LambdaResponse {
   return { statusCode: status, headers: { ...DEFAULT_HEADERS }, body: JSON.stringify(body) };
 }

@@ -13,26 +13,8 @@ import {
   updateCampaignCalendarRow,
 } from '../db/campaignCalendar';
 import { resolveInteractiveActor } from '../identity/actor';
+import { noStoreJson as json, parseJsonEvent as parseBody } from '../http';
 import type { LambdaEvent, LambdaResponse } from '../types';
-
-const json = (statusCode: number, data: unknown): LambdaResponse => ({
-  statusCode,
-  headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
-  body: JSON.stringify(data),
-});
-
-function parseBody(event: LambdaEvent): Record<string, unknown> | null {
-  try {
-    const parsed =
-      typeof event.body === 'string'
-        ? JSON.parse(event.body)
-        : ((event.body || null) as unknown as Record<string, unknown>);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
 
 function pickRowPatch(body: Record<string, unknown>): Partial<CampaignCalendarRowInput> {
   const fields: Array<keyof CampaignCalendarRowInput> = [

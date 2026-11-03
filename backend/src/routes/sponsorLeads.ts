@@ -6,6 +6,7 @@ import { convertLead } from '../sponsorCrm/convertLead';
 import { recordInboxIssue } from '../sponsorCrm/newsletterIssues';
 import { TABLE_SPONSOR_CRM } from '../db/tableNames';
 import type { LambdaEvent, LambdaResponse } from '../types';
+import { parseJsonEvent as parseBody } from '../http';
 import { recordRequestError } from '../requestErrorLog';
 import {
   authenticateIntake as authenticate,
@@ -414,11 +415,6 @@ export async function handleSponsorLeadIntake(event: LambdaEvent, client: Dynamo
   audit(allDuplicate ? 'duplicate' : 'accepted', credential, correlation, sponsors.length);
   return response(allDuplicate ? 200 : 201, { status: allDuplicate ? 'duplicate' : 'accepted', issue: { id: issue.id }, leads });
 }
-
-const parseBody = (event: LambdaEvent) => {
-  try { return event.body ? JSON.parse(String(event.body)) as Record<string, unknown> : null; }
-  catch { return null; }
-};
 
 function publicLead(lead: CrmRecord): Record<string, unknown> {
   return {

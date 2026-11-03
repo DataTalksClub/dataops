@@ -18,21 +18,7 @@ import {
   toCalendarHoldView,
   type EventLifecycleResult,
 } from '../events/service';
-
-const json = (statusCode: number, body: unknown): LambdaResponse => ({
-  statusCode,
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(body),
-});
-
-function parseBody(raw: string | null | undefined): Record<string, any> | null {
-  try {
-    const val = raw ? JSON.parse(raw) : {};
-    return val && typeof val === 'object' && !Array.isArray(val) ? val : null;
-  } catch {
-    return null;
-  }
-}
+import { json, parseJsonObjectBodyOrEmpty as parseBody } from '../http';
 
 async function formatEventResponse(
   client: DynamoDBDocumentClient,

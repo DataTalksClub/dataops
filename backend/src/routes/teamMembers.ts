@@ -18,25 +18,10 @@ import {
 } from '../db/workspaceSettings';
 import { resolveInteractiveActor, workAdminForbidden } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
+import { json, parseJsonObjectEvent as parseBody } from '../http';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
-const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 const DEFAULT_ASSIGNEE_PATH = '/api/team-members/default-assignee';
-
-function json(statusCode: number, body: unknown): LambdaResponse {
-  return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) };
-}
-
-function parseBody(event: LambdaEvent): Record<string, unknown> | null {
-  if (!event.body) return null;
-  if (typeof event.body === 'object') return event.body as Record<string, unknown>;
-  try {
-    const parsed = JSON.parse(event.body);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
 
 export async function handleTeamMemberRoutes(
   path: string,

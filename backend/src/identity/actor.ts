@@ -25,9 +25,8 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getUser } from '../db/users';
+import { json } from '../http';
 import type { LambdaEvent, LambdaResponse, User, UserRole } from '../types';
-
-const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
 /** The workspace supports exactly these two roles. */
 const SUPPORTED_ROLES = new Set<UserRole>(['admin', 'operator']);
@@ -49,10 +48,6 @@ export interface VerifiedActor {
 export type ActorResolution =
   | { ok: true; actor: VerifiedActor }
   | { ok: false; response: LambdaResponse };
-
-function json(statusCode: number, body: unknown): LambdaResponse {
-  return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) };
-}
 
 export function isTestAuthBypass(): boolean {
   return process.env.NODE_ENV === 'test' && process.env.SKIP_AUTH === 'true';
