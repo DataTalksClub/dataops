@@ -65,6 +65,33 @@ function invoiceSectionMarkup(documents, e) {
   </section>`;
 }
 
+function allocationsSectionMarkup(transaction, sign, currency, { e, amount }) {
+  const allocations = Array.isArray(transaction?.allocations) ? transaction.allocations : [];
+  if (!allocations.length) return "";
+  const items = allocations
+    .map((alloc) => {
+      const allocCurrency = text(alloc?.currency || currency).toUpperCase();
+      const allocSigned = signedValue(alloc?.amount, sign);
+      const allocAmountText = signedAmountMarkup(allocSigned, allocCurrency, amount);
+      const docId = text(alloc?.documentId);
+      const invoiceNo = text(alloc?.invoiceNumber);
+      const pdfButton = docId
+        ? `<button type="button" class="dk-button dk-button--secondary dk-button--sm" data-view-document="${e(docId)}">Open PDF</button>`
+        : "";
+      return `<li class="bk-transaction-allocation" data-allocation-item="${e(docId)}">
+        <span class="bk-transaction-allocation__vendor">${e(alloc?.counterparty || "")}</span>
+        <span class="bk-transaction-allocation__desc">${e(alloc?.description || "")}${invoiceNo ? ` · #${e(invoiceNo)}` : ""}</span>
+        <span class="bk-transaction-allocation__amount dk-mono">${e(allocAmountText)}</span>
+        ${pdfButton}
+      </li>`;
+    })
+    .join("");
+  return `<section class="bk-transaction-allocations" aria-labelledby="bk-transaction-allocations-heading">
+    <h3 id="bk-transaction-allocations-heading">Allocated invoice rows (${allocations.length})</h3>
+    <ul class="bk-transaction-allocations__list">${items}</ul>
+  </section>`;
+}
+
 function statementLineMarkup(statementLink, { e, amount }) {
   const line = statementLink.line || {};
   const lineAmount = filled(line.amount)
@@ -183,7 +210,19 @@ export function bookkeepingTransactionSummaryMarkup({
   const originalValue = signedValue(transaction.amount, sign);
   const eurSource = currency === "EUR" ? transaction.amount : transaction.amountEur;
   const eurValue = signedValue(eurSource, sign);
-  const invoiceList = invoiceDocuments({ invoice, invoices, documents });
+  const explicitInvoices = invoiceDocuments({ invoice, invoices, documents });
+  const invoiceList =
+    explicitInvoices.length > 0
+      ? explicitInvoices
+      : Array.isArray(transaction.allocations)
+        ? transaction.allocations
+            .filter((alloc) => text(alloc?.documentId))
+            .map((alloc) => ({
+              id: text(alloc.documentId),
+              filename: `${text(alloc.counterparty)} (${text(alloc.amount)} ${text(alloc.currency || currency)})`,
+            }))
+        : [];
+  const allocationsMarkup = allocationsSectionMarkup(transaction, sign, currency, renderers);
   const vatCurrency = text(transaction.vatCurrency || currency).toUpperCase();
   const vatValue = filled(transaction.vatAmount)
     ? amount(transaction.vatAmount, vatCurrency)
@@ -218,7 +257,7 @@ export function bookkeepingTransactionSummaryMarkup({
       : unmatchedStatementMarkup(Array.isArray(statementCandidates) ? statementCandidates : [], renderers);
 
   return `${invoiceSectionMarkup(invoiceList, e)}
-    <section class="bk-transaction-summary" aria-labelledby="bk-transaction-summary-heading">
+    ${allocationsMarkup ? `${allocationsMarkup}\n    ` : ""}<section class="bk-transaction-summary" aria-labelledby="bk-transaction-summary-heading">
       <h3 id="bk-transaction-summary-heading">Transaction</h3>
       <h4 class="bk-transaction-summary__vendor">${e(presentation.canonicalCounterparty)}</h4>
       <p class="bk-transaction-summary__what"><span>What for</span> ${e(presentation.description)}</p>

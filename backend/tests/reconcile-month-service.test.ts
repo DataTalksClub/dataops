@@ -302,4 +302,143 @@ describe('reconciliation ledger projection', () => {
       await saveConfig(client, previousConfig, 'tester');
     }
   });
+
+  it('allocates one bank payment (420.84 EUR) across three invoice rows and three PDFs in the accountant package while preserving one bank/ledger pair', async () => {
+    const period = '2026-09';
+    const doc399 = (await putBookkeepingItem(client, 'document', {
+      documentType: 'invoice',
+      status: 'active',
+      contentType: 'application/pdf',
+      originalFilename: 'compute-399.pdf',
+      byteSize: 128,
+      sha256: '1'.repeat(64),
+      s3Key: 'documents/compute-399.pdf',
+    })).item;
+    const doc1499 = (await putBookkeepingItem(client, 'document', {
+      documentType: 'invoice',
+      status: 'active',
+      contentType: 'application/pdf',
+      originalFilename: 'domain-1499.pdf',
+      byteSize: 128,
+      sha256: '2'.repeat(64),
+      s3Key: 'documents/domain-1499.pdf',
+    })).item;
+    const doc685 = (await putBookkeepingItem(client, 'document', {
+      documentType: 'invoice',
+      status: 'active',
+      contentType: 'application/pdf',
+      originalFilename: 'mail-685.pdf',
+      byteSize: 128,
+      sha256: '3'.repeat(64),
+      s3Key: 'documents/mail-685.pdf',
+    })).item;
+
+    const bundledPayment = (await putBookkeepingItem(client, 'bookkeeping', {
+      transactionDate: '2026-09-18',
+      paidDate: '2026-09-18',
+      counterparty: 'Synthetic Card Settlement',
+      description: 'Combined invoice settlement',
+      amount: '420.84',
+      currency: 'EUR',
+      entryType: 'expense',
+      category: 'Tools',
+      sourceType: 'statement',
+      allocations: [
+        {
+          id: 'alloc-1',
+          documentId: doc399.id,
+          invoiceNumber: 'INV-399',
+          counterparty: 'Synthetic Compute GmbH',
+          counterpartyCanonical: 'Synthetic Compute GmbH',
+          description: 'Dedicated cluster September',
+          amount: '399.00',
+          currency: 'EUR',
+          category: 'Infrastructure',
+          transactionDate: '2026-09-15',
+        },
+        {
+          id: 'alloc-2',
+          documentId: doc1499.id,
+          invoiceNumber: 'INV-1499',
+          counterparty: 'Synthetic Domains Ltd',
+          counterpartyCanonical: 'Synthetic Domains Ltd',
+          description: 'Domain renewal',
+          amount: '14.99',
+          currency: 'EUR',
+          category: 'Domains',
+          transactionDate: '2026-09-16',
+        },
+        {
+          id: 'alloc-3',
+          documentId: doc685.id,
+          invoiceNumber: 'INV-685',
+          counterparty: 'Synthetic Mail B.V.',
+          counterpartyCanonical: 'Synthetic Mail B.V.',
+          description: 'Transactional email usage',
+          amount: '6.85',
+          currency: 'EUR',
+          category: 'Tools',
+          transactionDate: '2026-09-17',
+        },
+      ],
+    })).item;
+
+    for (const doc of [doc399, doc1499, doc685]) {
+      await createDocumentLink(client, {
+        documentId: doc.id,
+        transactionId: bundledPayment.id,
+        coverageType: 'evidence',
+      });
+    }
+
+    await saveStatement(client, {
+      accountId: 'finom',
+      period,
+      filename: 'finom-2026-09.pdf',
+      documentId: 'stmt-doc-2026-09',
+      rows: [
+        {
+          date: '2026-09-18',
+          amount: '-420.84',
+          currency: 'EUR',
+          counterparty: 'Synthetic Card Settlement',
+          reference: 'BATCH-42084',
+        },
+      ],
+    });
+
+    const view = await buildMonth(client, period);
+    assert.equal(view.rows.length, 1);
+    assert.equal(view.rows[0].status, 'matched');
+    assert.equal(view.rows[0].amount, '-420.84');
+    assert.equal(view.rows[0].ledger?.id, bundledPayment.id);
+    assert.equal(view.rows[0].ledger?.allocations?.length, 3);
+    assert.equal(view.statements.length, 1);
+
+    await closeMonth(client, period, 'tester');
+    const pack = await monthPackage(client, period);
+    assert.equal(pack.draft, false);
+    assert.deepEqual(pack.blockers, []);
+
+    const invoiceEntries = pack.entries.filter((entry) => entry.kind === 'invoice');
+    assert.equal(invoiceEntries.length, 3);
+    assert.deepEqual(
+      invoiceEntries.map((entry) => entry.documentId),
+      [doc399.id, doc1499.id, doc685.id],
+    );
+    assert.deepEqual(
+      invoiceEntries.map((entry) => entry.path),
+      [
+        '2026-09/expenses/2026-09-15_synthetic-compute-gmbh_INV-399_399.00EUR.pdf',
+        '2026-09/expenses/2026-09-16_synthetic-domains-ltd_INV-1499_14.99EUR.pdf',
+        '2026-09/expenses/2026-09-17_synthetic-mail-b-v_INV-685_6.85EUR.pdf',
+      ],
+    );
+
+    const csvLines = pack.csv.trim().split('\n');
+    assert.equal(csvLines.length, 4);
+    assert.match(csvLines[1], /Synthetic Compute GmbH,Dedicated cluster September,-399\.00,EUR,finom,2026-09-18,-420\.84 EUR,BATCH-42084/);
+    assert.match(csvLines[2], /Synthetic Domains Ltd,Domain renewal,-14\.99,EUR,finom,2026-09-18,-420\.84 EUR,BATCH-42084/);
+    assert.match(csvLines[3], /Synthetic Mail B\.V\.,Transactional email usage,-6\.85,EUR,finom,2026-09-18,-420\.84 EUR,BATCH-42084/);
+  });
 });

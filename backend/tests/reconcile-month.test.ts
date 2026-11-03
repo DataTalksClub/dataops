@@ -412,4 +412,127 @@ describe('month reconciliation', () => {
     // A no-invoice kind waives the document, never the payment.
     assert.equal(result.rows[0].status, 'payment-proof-missing');
   });
+
+  it('expands one bank payment (420.84 EUR) across three allocated invoice CSV rows while keeping internal reconciliation 1-to-1 and excluding owner withdrawals and true taxes', () => {
+    const result = buildMonthTable({
+      period: '2026-10',
+      bank: [
+        bank('b-42084', {
+          date: '2026-10-18',
+          amount: '-420.84',
+          currency: 'EUR',
+          counterparty: 'Synthetic Card Settlement',
+          reference: 'BATCH-42084',
+        }),
+        bank('b-owner', {
+          date: '2026-10-19',
+          amount: '-1200.00',
+          currency: 'EUR',
+          counterparty: 'Owner Person',
+          reference: 'Owner withdrawal',
+        }),
+        bank('b-consulting', {
+          date: '2026-10-20',
+          amount: '-238.00',
+          currency: 'EUR',
+          counterparty: 'Synthetic Tax Advisory GmbH',
+          reference: 'ADV-10',
+        }),
+        bank('b-tax', {
+          date: '2026-10-21',
+          amount: '-1500.00',
+          currency: 'EUR',
+          counterparty: 'Finanzamt Example',
+          reference: 'USt Q3',
+        }),
+      ],
+      ledger: [
+        ledger('l-42084', {
+          date: '2026-10-18',
+          amount: '-420.84',
+          currency: 'EUR',
+          counterparty: 'Synthetic Card Settlement',
+          description: 'Combined vendor settlement',
+          category: 'Tools',
+          documents: [{ id: 'doc-399' }, { id: 'doc-1499' }, { id: 'doc-685' }],
+          allocations: [
+            {
+              id: 'alloc-1',
+              documentId: 'doc-399',
+              invoiceNumber: 'INV-399',
+              counterparty: 'Synthetic Compute GmbH',
+              counterpartyCanonical: 'Synthetic Compute GmbH',
+              description: 'Dedicated cluster October',
+              amount: '399.00',
+              currency: 'EUR',
+              category: 'Infrastructure',
+              transactionDate: '2026-10-15',
+            },
+            {
+              id: 'alloc-2',
+              documentId: 'doc-1499',
+              invoiceNumber: 'INV-1499',
+              counterparty: 'Synthetic Domains Ltd',
+              counterpartyCanonical: 'Synthetic Domains Ltd',
+              description: 'Domain renewal',
+              amount: '14.99',
+              currency: 'EUR',
+              category: 'Domains',
+              transactionDate: '2026-10-16',
+            },
+            {
+              id: 'alloc-3',
+              documentId: 'doc-685',
+              invoiceNumber: 'INV-685',
+              counterparty: 'Synthetic Mail B.V.',
+              counterpartyCanonical: 'Synthetic Mail B.V.',
+              description: 'Transactional email usage',
+              amount: '6.85',
+              currency: 'EUR',
+              category: 'Tools',
+              transactionDate: '2026-10-17',
+            },
+          ],
+        }),
+        ledger('l-consulting', {
+          date: '2026-10-20',
+          amount: '-238.00',
+          currency: 'EUR',
+          counterparty: 'Synthetic Tax Advisory GmbH',
+          description: 'Monthly accounting and consulting fee',
+          category: 'Compliance & Taxes',
+          subtype: 'Services',
+          documents: [{ id: 'doc-consulting' }],
+        }),
+      ],
+      decisions: {
+        ...none(),
+        exceptions: {
+          'bank:b-owner': {
+            kind: 'owner_withdrawal',
+            proof: 'Owner draw October',
+            by: 'operator',
+            at: '2026-10-19T12:00:00Z',
+          },
+        },
+      },
+      rules: RULES,
+    });
+
+    // Internal reconciliation stays unchanged: 3 non-tax rows (b-42084, b-owner, b-consulting) + 1 tax row (b-tax).
+    assert.equal(result.counters.rows, 3);
+    assert.equal(result.counters.matched, 3);
+    assert.equal(result.counters.exceptions, 1);
+
+    const csv = tableCsv(result);
+    const lines = csv.trim().split('\n');
+    // Header + 3 allocated invoice rows + 1 consulting row = 5 lines (owner_withdrawal and true tax excluded).
+    assert.equal(lines.length, 5);
+    assert.match(lines[1], /Synthetic Compute GmbH,Dedicated cluster October,-399\.00,EUR,finom,2026-10-18,-420\.84 EUR,BATCH-42084,l-42084,2026-10-15,-399\.00 EUR,Infrastructure,doc-399/);
+    assert.match(lines[2], /Synthetic Domains Ltd,Domain renewal,-14\.99,EUR,finom,2026-10-18,-420\.84 EUR,BATCH-42084,l-42084,2026-10-16,-14\.99 EUR,Domains,doc-1499/);
+    assert.match(lines[3], /Synthetic Mail B\.V\.,Transactional email usage,-6\.85,EUR,finom,2026-10-18,-420\.84 EUR,BATCH-42084,l-42084,2026-10-17,-6\.85 EUR,Tools,doc-685/);
+    assert.match(lines[4], /Synthetic Tax Advisory GmbH,Monthly accounting and consulting fee,-238\.00,EUR/);
+    assert.doesNotMatch(csv, /Owner Person/);
+    assert.doesNotMatch(csv, /Finanzamt Example/);
+  });
 });

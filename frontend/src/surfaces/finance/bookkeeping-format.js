@@ -155,14 +155,41 @@ export function isReportExempt(entry) {
     || isOwnerWithdrawalReportExempt(entry);
 }
 
+export function expandReportEntries(entries) {
+  return (entries || []).flatMap((entry) => {
+    const allocations = Array.isArray(entry?.allocations) ? entry.allocations : [];
+    if (allocations.length === 0) return [entry];
+    return allocations.map((alloc) => ({
+      ...entry,
+      transactionDate: alloc.transactionDate || entry.transactionDate,
+      paidDate: alloc.paidDate || entry.paidDate || entry.transactionDate,
+      counterparty: alloc.counterparty || entry.counterparty,
+      description: alloc.description || entry.description,
+      amount: alloc.amount,
+      currency: alloc.currency || entry.currency,
+      amountEur:
+        alloc.amountEur ??
+        (String(alloc.currency || entry.currency || "EUR").toUpperCase() === "EUR"
+          ? alloc.amount
+          : ""),
+      vatAmount: alloc.vatAmount ?? "",
+      vatCurrency: alloc.vatCurrency ?? "",
+      category: alloc.category || entry.category,
+      documentId: alloc.documentId,
+      allocationId: alloc.id,
+    }));
+  });
+}
+
 // Format ledger entries into the standard accountant tax report CSV.
 // Follows the DTC bookkeeping sheet specification (signed EUR prices, USD original prices).
 export function formatReportCsv(entries, options = {}) {
   const excludeExempt = options.excludeExempt ?? true;
   const isExempt = options.isExempt || isReportExempt;
-  const rows = excludeExempt
+  const filtered = excludeExempt
     ? (entries || []).filter((e) => !isExempt(e))
     : (entries || []);
+  const rows = expandReportEntries(filtered);
   const headers = [
     "Date",
     "Paid Date",
@@ -237,9 +264,10 @@ export function formatFullCsv(entries) {
 export function formatReportTsv(entries, options = {}) {
   const excludeExempt = options.excludeExempt ?? true;
   const isExempt = options.isExempt || isReportExempt;
-  const rows = excludeExempt
+  const filtered = excludeExempt
     ? (entries || []).filter((e) => !isExempt(e))
     : (entries || []);
+  const rows = expandReportEntries(filtered);
   const headers = [
     "Date",
     "Paid Date",
