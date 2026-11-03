@@ -224,10 +224,10 @@ describe('bookkeeping API',()=>{
     assert.equal(casRes.statusCode,409);
     assert.match(JSON.parse(casRes.body).error,/CAS conflict/i);
 
-    // Reject a multi-byte reason beyond the UTF-8 byte limit without partial writes.
+    // Reject the first byte over the UTF-8 reason limit without partial writes.
     const oversizedReasonRes=await invoke('PUT',`/api/bookkeeping/transactions/${payment.id}/allocations`,{
       expectedUpdatedAt:payment.updatedAt,
-      reason:'💶'.repeat(600),
+      reason:'💶'.repeat(512)+'x',
       allocations:[
         {documentId:docA.id,counterparty:'Synthetic Vendor A',description:'Synthetic service A',amount:'100.00'},
         {documentId:docB.id,counterparty:'Synthetic Vendor B',description:'Synthetic service B',amount:'20.00'},
@@ -244,7 +244,7 @@ describe('bookkeeping API',()=>{
     // Valid exact allocation: 100.00 + 20.00 + 3.00 = 123.00 EUR
     const validAllocRes=await invoke('PUT',`/api/bookkeeping/transactions/${payment.id}/allocations`,{
       expectedUpdatedAt:payment.updatedAt,
-      reason:'Allocate synthetic bundled payment across three invoices',
+      reason:'💶'.repeat(512),
       allocations:[
         {documentId:docA.id,invoiceNumber:'SYNTH-A',counterparty:'Synthetic Vendor A',description:'Synthetic service A',amount:'100.00'},
         {documentId:docB.id,invoiceNumber:'SYNTH-B',counterparty:'Synthetic Vendor B',description:'Synthetic service B',amount:'20.00'},
@@ -257,7 +257,7 @@ describe('bookkeeping API',()=>{
     assert.equal(allocatedTx.allocations.length,3);
     assert.equal(allocatedTx.audit.at(-1).action,'allocations-updated');
     assert.equal(allocatedTx.audit.at(-1).actor,'synthetic-operator');
-    assert.equal(allocatedTx.audit.at(-1).reason,'Allocate synthetic bundled payment across three invoices');
+    assert.equal(Buffer.byteLength(allocatedTx.audit.at(-1).reason,'utf8'),2048);
 
     // Readback on GET /api/bookkeeping/transactions/:id/allocations and GET /api/bookkeeping/transactions/:id
     const readback=JSON.parse((await invoke('GET',`/api/bookkeeping/transactions/${payment.id}/allocations`)).body);
@@ -291,6 +291,35 @@ describe('bookkeeping API',()=>{
     assert.equal((await getBookkeepingItem(client,'document',docA.id))?.linkRefCount,1);
     for(const document of [docB,docC])
       assert.equal((await getBookkeepingItem(client,'document',document.id))?.linkRefCount,0);
+  });
+
+  it('rejects allocation PUT and DELETE over the audit byte budget without changing links, claims, or refcounts',async()=>{
+    const document=(await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:'synthetic-budget-invoice.pdf',contentType:'application/pdf',byteSize:100,sha256:createHash('sha256').update('synthetic-budget-invoice').digest('hex'),s3Key:'documents/synthetic-budget-invoice.pdf'})).item;
+    const payment=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2025-05-01',paidDate:'2025-05-01',counterparty:'Synthetic Budget Vendor',description:'Synthetic audit-budget payment',amount:'10.00',currency:'EUR',entryType:'expense'})).body);
+    const allocations=[{documentId:document.id,counterparty:'Synthetic Budget Vendor',description:'Synthetic invoice',amount:'10.00'}];
+    const allocatedResponse=await invoke('PUT',`/api/bookkeeping/transactions/${payment.id}/allocations`,{expectedUpdatedAt:payment.updatedAt,allocations});
+    assert.equal(allocatedResponse.statusCode,200,allocatedResponse.body);
+    const allocated=JSON.parse(allocatedResponse.body);
+    const audit=[{action:'historic',payload:'x'.repeat(128*1024-100)}];
+    assert.ok(Buffer.byteLength(JSON.stringify(audit),'utf8')<=128*1024);
+    const seeded=await updateBookkeepingTransaction(client,payment.id,String(allocated.updatedAt),{...allocated,audit});
+    const linksBefore=(await listBookkeepingItems(client,'link',true)).filter((link:any)=>String(link.transactionId)===payment.id);
+    const claimsBefore=(await listBookkeepingItems(client,'allocation-source-claim',true)).filter((claim:any)=>String(claim.transactionId)===payment.id);
+    const refCountBefore=(await getBookkeepingItem(client,'document',document.id))?.linkRefCount;
+    assert.equal(refCountBefore,1);
+
+    const rejectedPut=await invoke('PUT',`/api/bookkeeping/transactions/${payment.id}/allocations`,{expectedUpdatedAt:seeded!.updatedAt,allocations});
+    assert.equal(rejectedPut.statusCode,413);
+    const rejectedDelete=await invoke('DELETE',`/api/bookkeeping/transactions/${payment.id}/allocations`,{expectedUpdatedAt:seeded!.updatedAt,reason:'synthetic clear over audit budget'});
+    assert.equal(rejectedDelete.statusCode,413);
+
+    const after=await getBookkeepingItem(client,'bookkeeping',payment.id);
+    assert.deepEqual(after?.audit,seeded?.audit);
+    assert.deepEqual(after?.allocations,seeded?.allocations);
+    assert.equal(after?.updatedAt,seeded?.updatedAt);
+    assert.deepEqual((await listBookkeepingItems(client,'link',true)).filter((link:any)=>String(link.transactionId)===payment.id),linksBefore);
+    assert.deepEqual((await listBookkeepingItems(client,'allocation-source-claim',true)).filter((claim:any)=>String(claim.transactionId)===payment.id),claimsBefore);
+    assert.equal((await getBookkeepingItem(client,'document',document.id))?.linkRefCount,refCountBefore);
   });
 
   it('replays atomic allocation transaction creates only for an identical source payload',async()=>{
