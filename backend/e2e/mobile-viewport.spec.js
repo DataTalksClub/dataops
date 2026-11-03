@@ -33,7 +33,7 @@ const ROUTES = [
   { path: '/cards/archive', ready: '.ops-workflows-board', content: '.workflow-archive-tabs, .cards-archive-grid, .ops-honest-state' },
   { path: '/templates', ready: '.runtime-template-inspector .dk-split', content: '.runtime-template-inspector .dk-split' },
   { path: '/recurring', ready: '.ops-recurring-surface', content: '.ops-recurring-section' },
-  { path: '/bookkeeping', ready: '.bookkeeping-surface', content: '.bk-split' },
+  { path: '/bookkeeping', ready: '.bookkeeping-surface', content: '.bookkeeping-ledger' },
   { path: '/sponsors', ready: '.sponsor-crm-surface', content: '.crm-layout, .crm-pipeline-card, .crm-directory-row', contentReady: '.crm-master [data-crm-bookings] tbody tr, .crm-master [data-crm-bookings] .honest-state' },
   { path: '/newsletter', ready: '.newsletter-surface', content: '.newsletter-slot-row, .newsletter-slot-list, .newsletter-schedule' },
   { path: '/calendar', ready: '.calendar-surface', content: '.calendar-grid', contentReady: '.calendar-grid', mockCalendar: true },
@@ -260,7 +260,7 @@ test('bookkeeping at 375x667: no stat strip, period controls reflow, and the tra
   expect(new Set(periodBoxes.map((box) => Math.round(box.y + box.height / 2))).size).toBe(1);
   // The transaction list starts on the first screen and scrolls inside
   // itself; the document never scrolls sideways or down.
-  await expect(page.locator('.bk-split')).toBeInViewport();
+  await expect(page.locator('.bookkeeping-ledger')).toBeInViewport();
   expect(await page.evaluate(() => document.scrollingElement.scrollHeight <= innerHeight)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

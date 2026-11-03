@@ -1,3 +1,4 @@
+const { uploadBookkeepingEvidence } = require("./helpers/bookkeeping-evidence");
 const { test, expect } = require('@playwright/test');
 const { recordCapabilityEvidence } = require('./helpers/capability-evidence');
 const {
@@ -735,14 +736,15 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(row).toBeVisible();
     await expect(page.locator('.bk-month__head')).toContainText('out −€18.50');
 
-    // Evidence attaches from the transaction's details.
+    await uploadBookkeepingEvidence(page, context, transaction.id, {
+      month: '2026-08', filename: 'synthetic-evidence.pdf',
+    });
+    await page.goto('/bookkeeping?month=2026-08');
     await row.locator('.bk-col-date').click();
     await expect(page).toHaveURL(new RegExp(`tx=${transaction.id}`));
-    await page.locator('.bk-detail [data-attach-file]').setInputFiles({
-      name: 'synthetic-evidence.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\nsynthetic evidence\n%%EOF'),
-    });
-    await expect(page.locator('[data-bookkeeping-status]')).toContainText('PDF attached.');
-    await expect(page.locator('.bk-detail .bk-receipts')).toContainText('Invoice PDF');
+    const detail = page.locator('#bookkeeping-transaction-dialog');
+    await expect(detail.getByRole('button', { name: /Open invoice/ })).toHaveCount(1);
+    await page.keyboard.press('Escape');
     const links = await json(await context.request.get('/api/bookkeeping/links'));
     expect(links.items.some((link) => link.transactionId === transaction.id)).toBe(true);
 

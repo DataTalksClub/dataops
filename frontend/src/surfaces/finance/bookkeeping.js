@@ -285,12 +285,6 @@ export function createBookkeepingSurface(context) {
     function selectedEntry() {
       return entries.find((entry) => entry.id === selectedId) || null;
     }
-    function attachedDocuments(id) {
-      return links
-        .filter((l) => l.transactionId === id && l.coverageType === "evidence")
-        .map((l) => documents.find((d) => d.id === l.documentId))
-        .filter(Boolean);
-    }
     function openTransaction(id) {
       const entry = entries.find((e) => e.id === id);
       if (!entry) return;
@@ -519,7 +513,7 @@ export function createBookkeepingSurface(context) {
       getSelectedId: () => selectedId,
       getEntry: (id) => entries.find((entry) => entry.id === id) || null,
       getFinanceEntry: (id) => financeSummary.entryMap().get(id) || null,
-      getAttached: attachedDocuments,
+      getAttached: hasInvoice,
       openDocument: (id) => viewDocument(id),
       refreshEvidence,
       safeAction,
