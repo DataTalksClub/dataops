@@ -3,30 +3,35 @@ import { processInvoiceIntake, resolveInvoiceIntakeAfterImport } from '../invoic
 import { processStatementIntake } from '../reconcile/statementIntake';
 import { getInvoice } from '../invoices/store';
 import type { Invoice } from '../invoices/model';
-import { createHash, timingSafeEqual } from 'crypto';
 import { CopyObjectCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { readRuntimeSecret } from '../secrets/reader';
-import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import type { readRuntimeSecret } from '../secrets/reader';
+import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { createArtifactIfAbsent, deleteArtifact, getArtifact, updateArtifact } from '../db/artifacts';
 import { createIntakeItemIfAbsent, getIntakeItem, updateIntakeItem } from '../db/intake';
-import { TABLE_AUDIT_EVENTS } from '../db/tableNames';
 import type { ArtifactRecord, ArtifactRef, IntakeItem, LambdaEvent, LambdaResponse } from '../types';
+import {
+  authenticateIntake as authenticate,
+  digest,
+  intakeHeader as header,
+  intakeResponse as response,
+  rateLimitIntake,
+  resetIntakeAuthForTests,
+  safeError,
+  setIntakeSecretReaderForTests,
+  type IntakeCredential as Credential,
+} from './intakeAuth';
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const CONTRACT_VERSION = '2026-07-01';
 const MAX_DOCUMENTS = 25;
 const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
 const MAX_BODY_BYTES = 256 * 1024;
-const SECRET_CACHE_MS = 60_000;
 const TOP_LEVEL_FIELDS = new Set(['version', 'messageId', 'recipientRoute', 'from', 'subject', 'receivedAt', 'documents']);
 const DOCUMENT_FIELDS = new Set(['kind', 'storageUri', 'filename', 'contentType', 'sizeBytes', 'checksum']);
 const SENSITIVE_KEY = /^(secret|token|password|credential|authorization|signed[_-]?url|base64|body|data|bytes|fileContent|attachmentContent|rawEmail)$/i;
 const SIGNED_URL = /(x-amz-signature|x-amz-credential|x-amz-security-token|[?&](token|signature|sig)=)/i;
 
-let readSecret = readRuntimeSecret;
 let s3Client: S3Client | null = null;
-let cachedCredential: { value: string; id: string; expiresAt: number } | null = null;
 
 interface EmailDocument {
   kind: 'attachment' | 'rendered-email-pdf';
@@ -38,100 +43,10 @@ interface EmailDocument {
   source: { bucket: string; key: string };
 }
 
-interface Credential { value: string; id: string }
 interface SourceRule { bucket: string; prefix: string }
-
-function response(statusCode: number, body: unknown, headers: Record<string, string> = {}): LambdaResponse {
-  return { statusCode, headers: { ...JSON_HEADERS, ...headers }, body: JSON.stringify(body) };
-}
-
-function header(event: LambdaEvent, name: string): string {
-  const entry = Object.entries(event.headers || {}).find(([key]) => key.toLowerCase() === name.toLowerCase());
-  return entry ? String(entry[1]) : '';
-}
-
-function safeError(statusCode: number, status: string, code: string, message: string): LambdaResponse {
-  return response(statusCode, { status, error: { code, message } });
-}
-
-function digest(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
 
 function stableId(prefix: string, value: string): string {
   return `${prefix}-${digest(value).slice(0, 32)}`;
-}
-
-function parseCredential(raw: string): Credential {
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (typeof parsed.credential === 'string' && parsed.credential.length > 0) {
-      const configuredId = typeof parsed.id === 'string' && /^[a-zA-Z0-9._-]{1,64}$/.test(parsed.id) ? parsed.id : '';
-      return { value: parsed.credential, id: configuredId || digest(parsed.credential).slice(0, 12) };
-    }
-  } catch {
-    // Plain secret strings remain supported for pre-created credentials.
-  }
-  return { value: raw, id: digest(raw).slice(0, 12) };
-}
-
-async function loadCredential(force = false): Promise<Credential | null> {
-  const inline = process.env.EMAIL_DOCUMENT_INTAKE_SECRET;
-  if (inline) return parseCredential(inline);
-  if (!force && cachedCredential && cachedCredential.expiresAt > Date.now()) return cachedCredential;
-  const name = process.env.EMAIL_DOCUMENT_INTAKE_SECRET_NAME;
-  if (!name) return null;
-  const raw = await readSecret(name);
-  if (!raw) return null;
-  const parsed = parseCredential(raw);
-  cachedCredential = { ...parsed, expiresAt: Date.now() + SECRET_CACHE_MS };
-  return parsed;
-}
-
-function equalSecret(actual: string, expected: string): boolean {
-  const left = createHash('sha256').update(actual).digest();
-  const right = createHash('sha256').update(expected).digest();
-  const matches = timingSafeEqual(left, right);
-  return matches && actual.length > 0 && expected.length > 0;
-}
-
-async function authenticate(event: LambdaEvent): Promise<Credential | null> {
-  const actual = header(event, 'x-dataops-intake-secret');
-  let expected = await loadCredential(false);
-  if (!expected) return null;
-  if (equalSecret(actual, expected.value)) return expected;
-  // A mismatch bypasses the cache once so a newly rotated value works immediately.
-  expected = await loadCredential(true);
-  return expected && equalSecret(actual, expected.value) ? expected : null;
-}
-
-async function rateLimit(client: DynamoDBDocumentClient, credentialId: string): Promise<number | null> {
-  const configured = Number(process.env.EMAIL_DOCUMENT_RATE_LIMIT || '60');
-  const limit = Number.isSafeInteger(configured) && configured > 0 ? configured : 60;
-  const now = Date.now();
-  const windowStart = Math.floor(now / 60_000) * 60_000;
-  try {
-    await client.send(new UpdateCommand({
-      TableName: TABLE_AUDIT_EVENTS,
-      Key: {
-        PK: `RATE#EMAIL_DOCUMENT#${digest(credentialId).slice(0, 32)}`,
-        SK: `WINDOW#${windowStart}`,
-      },
-      UpdateExpression: 'SET expiresAt = :expiresAt ADD requestCount :one',
-      ConditionExpression: 'attribute_not_exists(requestCount) OR requestCount < :limit',
-      ExpressionAttributeValues: {
-        ':expiresAt': Math.floor((windowStart + 2 * 60_000) / 1000),
-        ':one': 1,
-        ':limit': limit,
-      },
-    }));
-    return null;
-  } catch (error) {
-    if ((error as { name?: string })?.name === 'ConditionalCheckFailedException') {
-      return Math.max(1, Math.ceil((windowStart + 60_000 - now) / 1000));
-    }
-    throw error;
-  }
 }
 
 function text(value: unknown, field: string, max = 500): string {
@@ -307,13 +222,12 @@ function audit(outcome: string, credential: Credential | null, correlation: stri
 }
 
 export function resetEmailDocumentIntakeStateForTests(): void {
-  cachedCredential = null;
-  readSecret = readRuntimeSecret;
+  resetIntakeAuthForTests();
   s3Client = null;
 }
 
 export function setEmailDocumentIntakeClientsForTests(clients: { readSecret?: typeof readRuntimeSecret; s3?: S3Client }): void {
-  if (clients.readSecret) readSecret = clients.readSecret;
+  if (clients.readSecret) setIntakeSecretReaderForTests(clients.readSecret);
   if (clients.s3) s3Client = clients.s3;
 }
 
@@ -329,7 +243,7 @@ export async function handleEmailDocumentIntake(event: LambdaEvent, client: Dyna
     return safeError(401, 'unauthorized', 'unauthorized', 'Unauthorized');
   }
   let retryAfter: number | null;
-  try { retryAfter = await rateLimit(client, credential.id); }
+  try { retryAfter = await rateLimitIntake(client, credential.id, 'EMAIL_DOCUMENT_RATE_LIMIT', 'EMAIL_DOCUMENT'); }
   catch { return safeError(503, 'configuration-error', 'rate-limit-unavailable', 'Request limiting is unavailable'); }
   if (retryAfter !== null) {
     audit('rate-limited', credential, 'unavailable', 0);
