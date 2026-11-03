@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
-import { createDocumentLink, putBookkeepingItem } from '../src/db/bookkeeping';
+import { createDocumentLink, getBookkeepingItem, putBookkeepingItem } from '../src/db/bookkeeping';
 import { createInvoice } from '../src/invoices/store';
 import { TABLE_ARTIFACTS } from '../src/db/tableNames';
 import { saveStatement } from '../src/reconcile/service';
@@ -138,6 +138,11 @@ describe('reconciliation ledger projection', () => {
       sha256: 'b'.repeat(64),
       s3Key: 'documents/synthetic-tax-notice.pdf',
     })).item;
+    const ownerTransferDoc = (await putBookkeepingItem(client, 'document', {
+      documentType: 'receipt', status: 'active', contentType: 'application/pdf',
+      originalFilename: 'synthetic-owner-transfer.pdf', byteSize: 128,
+      sha256: 'c'.repeat(64), s3Key: 'documents/synthetic-owner-transfer.pdf',
+    })).item;
 
     const serviceTx = (await putBookkeepingItem(client, 'bookkeeping', {
       transactionDate: '2026-10-07',
@@ -155,6 +160,18 @@ describe('reconciliation ledger projection', () => {
     await createDocumentLink(client, {
       documentId: serviceInvoiceDoc.id,
       transactionId: serviceTx.id,
+      coverageType: 'evidence',
+    });
+
+    const ownerTransferTx = (await putBookkeepingItem(client, 'bookkeeping', {
+      transactionDate: '2026-10-19', paidDate: '2026-10-19',
+      counterparty: 'Synthetic Owner', description: 'Synthetic owner draw', amount: '42.00',
+      currency: 'EUR', entryType: 'expense', category: 'Owner pay', ownerPayType: 'draw',
+      sourceType: 'manual',
+    })).item;
+    await createDocumentLink(client, {
+      documentId: ownerTransferDoc.id,
+      transactionId: ownerTransferTx.id,
       coverageType: 'evidence',
     });
 
@@ -184,6 +201,7 @@ describe('reconciliation ledger projection', () => {
         { date: '2026-10-08', amount: '-238.00', currency: 'EUR', counterparty: 'Synthetic Advisory GmbH', reference: 'SYN-2026-10' },
         { date: '2026-10-15', amount: '-1500.00', currency: 'EUR', counterparty: 'Finanzamt Example', reference: 'Steuer Q4' },
         { date: '2026-10-18', amount: '-540.00', currency: 'EUR', counterparty: 'Techniker Krankenkasse', reference: 'TK 10/2026' },
+        { date: '2026-10-19', amount: '-42.00', currency: 'EUR', counterparty: 'Synthetic Owner', reference: 'Synthetic private transfer' },
       ],
     });
 
@@ -193,6 +211,13 @@ describe('reconciliation ledger projection', () => {
     assert.equal(serviceRow.tax, false);
     assert.equal(serviceRow.status, 'matched');
     assert.equal(serviceRow.ledger?.category, 'Compliance & Taxes');
+
+    const ownerTransferRow = view.rows.find((row) => row.ledger?.id === ownerTransferTx.id);
+    assert.ok(ownerTransferRow);
+    assert.equal(ownerTransferRow.ledger?.ownerPayType, 'draw');
+    assert.equal(ownerTransferRow.status, 'matched');
+    assert.equal(view.counters.rows, view.rows.filter((row) => !row.tax).length);
+    assert.ok(view.counters.rows >= 2, 'owner draw remains in the internal month counters');
 
     const finanzamtRow = view.rows.find((row) => row.counterparty === 'Finanzamt Example');
     const tkRow = view.rows.find((row) => row.counterparty === 'Techniker Krankenkasse');
@@ -206,11 +231,15 @@ describe('reconciliation ledger projection', () => {
     assert.match(pack.csv, /Compliance & Taxes/);
     assert.doesNotMatch(pack.csv, /Finanzamt Example/);
     assert.doesNotMatch(pack.csv, /Techniker Krankenkasse/);
+    assert.doesNotMatch(pack.csv, /Synthetic Owner|Owner pay/);
 
     const invoiceEntries = pack.entries.filter((entry) => entry.kind === 'invoice');
     assert.equal(invoiceEntries.length, 1);
     assert.equal(invoiceEntries[0].documentId, serviceInvoiceDoc.id);
     assert.match(invoiceEntries[0].path, /^2026-10\/expenses\/2026-10-08_synthetic-advisory-gmbh_SYN-2026-10_238\.00EUR\.pdf$/);
     assert.ok(!pack.entries.some((entry) => entry.documentId === taxNoticeDoc.id));
+    assert.ok(!pack.entries.some((entry) => entry.documentId === ownerTransferDoc.id));
+    assert.ok(await getBookkeepingItem(client, 'document', ownerTransferDoc.id), 'owner transfer source document remains stored');
+    assert.ok(pack.entries.some((entry) => entry.kind === 'statement' && entry.documentId === 'stmt-doc-2026-10' && entry.originalFilename === 'finom-2026-10.pdf'), 'the original statement reference remains unchanged in the package');
   });
 });
