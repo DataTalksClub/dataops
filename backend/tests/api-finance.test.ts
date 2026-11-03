@@ -2,8 +2,9 @@ import { before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { handler } from '../src/handler';
 import { useTestDatabase } from './helpers/db';
-import { berlinToday } from '../src/finance/service';
-import { saveStatement } from '../src/reconcile/service';
+import { berlinToday, financeSummary, financeUpcoming } from '../src/finance/service';
+import { listStatements, saveStatement } from '../src/reconcile/service';
+import { bankRowsFrom, pairRows, unpairRows } from '../src/reconcile/monthService';
 import { getClient } from '../src/db/client';
 import { createDocumentLink, putBookkeepingItem } from '../src/db/bookkeeping';
 
@@ -61,6 +62,45 @@ describe('finance tax schedule and upcoming debits API', () => {
     assert.equal(vat.matched.kind, 'statement');
     assert.ok(body.dueNext30 >= 1200, 'the monthly 1,200 entry falls within 30 days');
     assert.equal(body.shortfall, true);
+  });
+
+  it('uses reconciliation ambiguity and manual choices for mandatory bank payments', async () => {
+    const client = await getClient();
+    await saveStatement(client, {
+      accountId: 'finom', period: '2024-02', filename: 'synthetic-finance-statement.csv',
+      rows: [{ date: '2024-02-16', amount: '-321.98', currency: 'EUR',
+        counterparty: 'Techniker Krankenkasse', reference: 'synthetic contribution' }],
+    });
+    for (const [id, counterparty] of [['synthetic-candidate-one', 'Alpha vendor'], ['synthetic-candidate-two', 'Beta vendor']]) {
+      await putBookkeepingItem(client, 'bookkeeping', {
+        id, transactionDate: '2024-02-16', paidDate: '2024-02-16',
+        entryType: 'expense', amount: '321.98', currency: 'EUR', sourceType: 'manual',
+        counterparty, description: '', category: 'Tools',
+      });
+    }
+    const bank = bankRowsFrom(await listStatements(client)).find((item) => item.date === '2024-02-16')!;
+    assert.equal((await invoke('PUT', '/api/finance/tax-schedule/synthetic-tk', {
+      label: 'Synthetic TK', taxType: 'health-insurance', amount: '321.98', currency: 'EUR',
+      rule: { kind: 'once', date: '2024-02-16' }, source: 'recurring',
+    })).statusCode, 200);
+    const upcoming = () => financeUpcoming(client, 14, '2024-02-16', async () => null);
+    assert.equal((await upcoming()).debits.find((item) => item.scheduleId === 'synthetic-tk')?.matched?.kind, 'statement');
+    const initial = await financeSummary(client, { month: '2024-02' }, '2024-03-01');
+    assert.ok(initial.entries.some((entry) => entry.bankKey === bank.key),
+      'an ambiguous bank payment remains visible');
+    await pairRows(client, '2024-02', 'synthetic-operator', bank.key, 'synthetic-candidate-one');
+    const paired = await financeSummary(client, { month: '2024-02' }, '2024-03-01');
+    assert.ok(!paired.entries.some((entry) => entry.bankKey === bank.key),
+      'a manual reconciliation pair explains the bank payment');
+    assert.equal(paired.entries.find((entry) => entry.id === 'synthetic-candidate-one')?.line, 'health-insurance',
+      'the matched bank counterparty classifies the payment');
+    assert.equal((await upcoming()).debits.find((item) => item.scheduleId === 'synthetic-tk')?.matched?.kind, 'ledger');
+    await unpairRows(client, '2024-02', 'synthetic-operator', bank.key, 'synthetic-candidate-one');
+    await unpairRows(client, '2024-02', 'synthetic-operator', bank.key, 'synthetic-candidate-two');
+    const rejected = await financeSummary(client, { month: '2024-02' }, '2024-03-01');
+    assert.ok(rejected.entries.some((entry) => entry.bankKey === bank.key),
+      'manual rejections keep the bank payment visible');
+    assert.equal((await upcoming()).debits.find((item) => item.scheduleId === 'synthetic-tk')?.matched?.kind, 'statement');
   });
 
   it('derives row VAT from the linked stored invoice facts', async () => {

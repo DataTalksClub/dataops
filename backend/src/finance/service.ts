@@ -2,9 +2,10 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { listBookkeepingItems, listTransactions } from '../db/bookkeeping';
 import { listInvoices } from '../invoices/store';
 import { latestBalances, listStatements, rowKeys, type StatementRecord } from '../reconcile/service';
-import { bankKeyFor } from '../reconcile/month';
+import { bankKeyFor, pairAll } from '../reconcile/month';
+import { mergedDecisions, snapshot, type Snapshot } from '../reconcile/monthService';
 import { loadEcbRates } from './rates';
-import { bookingDate, summarize, unmatchedStatementLines, type FinanceSummary, type LedgerRow, type PeriodQuery, type StatementLine } from './summary';
+import { bookingDate, dedupe, enrichLedgerFromStatement, matchFinanceStatements, summarize, type FinanceSummary, type LedgerRow, type PeriodQuery, type StatementLine } from './summary';
 import { classifyMandatoryPayment } from './mandatoryPayments';
 import { taxesReport } from './taxes';
 import { listTaxSchedule } from './taxSchedule';
@@ -72,6 +73,14 @@ export function financeStatementLines(statements: StatementRecord[]): StatementL
   });
 }
 
+/** Exactly the pairing used by reconciliation, including manual decisions. */
+export function financePairings(data: Snapshot): Map<string, string> {
+  const pairing = pairAll(data.bank, data.ledger, mergedDecisions(data.months), data.config.tolerances, undefined, {
+    issuedInvoices: data.issuedInvoices, receivedInvoiceDocuments: data.receivedInvoiceDocuments,
+  });
+  return new Map([...pairing.pairs].map(([key, pair]) => [key, pair.ledger.id]));
+}
+
 export async function financeSummary(client: DynamoDBDocumentClient, query: PeriodQuery, today = berlinToday()): Promise<FinanceSummary & { rateErrors: string[] }> {
   const [rows, invoices, statements, accounts, documents, links] = await Promise.all([
     listTransactions(client),
@@ -81,6 +90,11 @@ export async function financeSummary(client: DynamoDBDocumentClient, query: Peri
     listBookkeepingItems(client, 'document'),
     listBookkeepingItems(client, 'link'),
   ]);
+  const reconciliation = await snapshot(client, {
+    preloaded: { statements, transactions: rows, links, documents, invoices },
+    includePendingEmailInvoices: false,
+  });
+  const pairs = financePairings(reconciliation);
   const ledger = (rows as LedgerRow[]).map((row) => {
     const facts = linkedVatFacts(row, documents, links);
     return facts ? { ...row, documentExtraction: facts } : row;
@@ -98,6 +112,7 @@ export async function financeSummary(client: DynamoDBDocumentClient, query: Peri
       .filter((invoice) => invoice.status === 'pending')
       .map((invoice) => ({ id: invoice.id, date: invoice.fields.paidDate || invoice.fields.transactionDate || invoice.createdAt.slice(0, 10), amount: invoice.fields.amount, currency: invoice.fields.currency, counterparty: invoice.fields.counterparty })),
     statementLines: financeStatementLines(statements),
+    statementPairs: pairs,
     businessAccounts: accounts
       .filter((account) => account.kind === 'business' && account.active !== false)
       .map((account) => businessAccountStatementRequirement(String(account.id))),
@@ -137,17 +152,21 @@ export async function financeUpcoming(client: DynamoDBDocumentClient, days: numb
   const [schedule, rows, statements, balance] = await Promise.all([
     listTaxSchedule(client), listTransactions(client), listStatements(client), loadBalance(),
   ]);
+  const reconciliation = await snapshot(client, {
+    preloaded: { statements, transactions: rows }, includePendingEmailInvoices: false,
+  });
   const ledger = rows as LedgerRow[];
-  const statementLines = statements.flatMap((statement) => statement.rows.map((line, index) => ({
-    ...line,
-    id: `${statement.id}:${index}`,
-    accountId: statement.accountId,
-  }))) as StatementLine[];
+  const { kept, duplicates } = dedupe(ledger);
+  const canonical = new Map(duplicates.map((duplicate) => [duplicate.droppedId, duplicate.keptId]));
+  const pairs = new Map([...financePairings(reconciliation)].map(([key, id]) => [key, canonical.get(id) || id]));
+  const statementLines = financeStatementLines(statements);
+  const matches = matchFinanceStatements(statementLines, kept, pairs);
   const paid: PaidEvidence[] = [
-    ...ledger
+    ...kept
+      .map((row) => matches.byLedgerId.has(row.id) ? enrichLedgerFromStatement(row, matches.byLedgerId.get(row.id)!) : row)
       .filter((row) => row.entryType === 'expense' && classifyMandatoryPayment(row))
       .map((row) => ({ id: row.id, date: bookingDate(row), amount: Number(row.amountEur || row.amount), kind: 'ledger' as const })),
-    ...unmatchedStatementLines(statementLines, ledger)
+    ...matches.unmatched
       .filter((line) => line.currency === 'EUR' && Number(line.amount) < 0 && classifyMandatoryPayment(line))
       .map((line) => ({ id: line.id || '', date: line.date, amount: Math.abs(Number(line.amount)), kind: 'statement' as const })),
   ];

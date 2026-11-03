@@ -107,7 +107,7 @@ export const SOURCE_RULES = [
   'Confirmed ledger rows count, along with unmatched bank statement rows classified as TK or Finanzamt mandatory debits. Pending and rejected invoice drafts never count; they are listed as gaps.',
   'A row is booked in the month it was paid (paidDate), or its transactionDate when it has no paid date. entryType income is money in, expense is money out.',
   'Issued outgoing invoices count only once paid, through the payment row. An unpaid invoice is not income.',
-  'Bank statement lines matching a ledger row are counted once through that row. Unmatched TK and Finanzamt debit lines are counted directly; other unmatched statement lines are listed as gaps.',
+  'Bank statement lines paired by reconciliation to a retained ledger row are counted through that row, respecting manual choices. Overlapping statement copies are counted once. Unmatched TK and Finanzamt debit lines are counted directly; other unmatched statement lines are listed as gaps.',
   'A bookkeeping-sheet row that repeats an invoice, sponsor-payment or payout row (same direction, currency and amount, paid within 3 days, same payer or payee) is dropped and listed under duplicates; the non-sheet row is kept.',
   'EUR conversion: a EUR row is taken as is. A non-EUR row uses its booked EUR amount (amountEur, what the bank actually credited or debited), with the implied rate shown. Without one, the ECB reference rate for the paid date (or the last ECB business day before it) is used. A row that cannot be converted is excluded from the totals and listed as a gap.',
   'Lines: category VAT or a Finanzamt USt/UMS.ST purpose in the ledger row or its matched statement reference is VAT paid/refunded; other Finanzamt tax purposes are other taxes; TK/Health Insurance is health insurance. These mandatory payments do not affect operating profit.',
@@ -422,22 +422,28 @@ export type SummaryInput = {
   today: string;
   rates: RateLookup;
   pendingInvoices?: PendingInvoice[];
-  statementLines?: StatementLine[];
   businessAccounts?: BusinessAccountStatementRequirement[];
   statementCoverage?: StatementCoverage[];
   generatedAt?: string;
-};
+} & (
+  | { statementLines: StatementLine[]; statementPairs: ReadonlyMap<string, string> }
+  | { statementLines?: undefined; statementPairs?: undefined }
+);
 
 export function summarize(input: SummaryInput): FinanceSummary {
   const period = resolvePeriod(input.query, input.today);
   const inPeriod = (date: string) => date >= period.from && date <= period.to;
   const { kept, duplicates } = dedupe(input.rows);
-  const statementMatches = matchStatementLines(input.statementLines || [], kept);
+  if (input.statementLines && !input.statementPairs)
+    throw new Error('Reconciliation statement pairs are required');
+  const canonical = new Map(duplicates.map((duplicate) => [duplicate.droppedId, duplicate.keptId]));
+  const pairs = new Map([...input.statementPairs || []].map(([key, id]) => [key, canonical.get(id) || id]));
+  const statementMatches = matchFinanceStatements(input.statementLines || [], kept, pairs);
   const periodRows = kept
     .map((row) => {
-      const reference = statementMatches.byLedgerId.get(row.id)?.reference;
-      if (!reference) return row;
-      return { ...row, reference: [str(row.reference), reference].filter(Boolean).join(' ') };
+      const line = statementMatches.byLedgerId.get(row.id);
+      if (!line) return row;
+      return enrichLedgerFromStatement(row, line);
     })
     .filter((row) => inPeriod(bookingDate(row)));
   const gaps: Gap[] = [];
@@ -513,34 +519,31 @@ export function summarize(input: SummaryInput): FinanceSummary {
   };
 }
 
-/**
- * Statement lines no ledger row explains: same currency and absolute amount
- * (or the row's booked EUR amount against a EUR line), within the reconciliation
- * date-lag tolerance. Each ledger row explains at most one line.
- */
-function matchStatementLines(lines: StatementLine[], rows: LedgerRow[]) {
+export function enrichLedgerFromStatement(row: LedgerRow, line: StatementLine): LedgerRow {
+  return { ...row, reference: [str(row.reference), line.counterparty, line.reference].filter(Boolean).join(' ') };
+}
+
+/** Match only reconciliation's selected bank-to-ledger pairs. A pair to an
+ * invoice candidate without a retained finance ledger row remains unmatched. */
+export function matchFinanceStatements(lines: StatementLine[], rows: LedgerRow[], pairs: ReadonlyMap<string, string>) {
   const used = new Set<string>();
+  const byId = new Map(rows.map((row) => [row.id, row]));
   const unmatched: StatementLine[] = [];
   const byLedgerId = new Map<string, StatementLine>();
   for (const line of lines) {
-    const amount = positive(line.amount);
-    const match = rows.find((row) => {
-      if (used.has(row.id)) return false;
-      // A refund row is explained by the money that came back (a credit line).
-      if ((Number(line.amount) < 0) !== (str(row.entryType) === 'expense' && !isRefundRow(row))) return false;
-      if (dayDistance(bookingDate(row), line.date) > DEFAULT_TOLERANCES.dateLagDays) return false;
-      const sameCurrency = (str(row.currency) || 'EUR') === line.currency && positive(row.amount) === amount;
-      const bookedEur = line.currency === 'EUR' && positive(row.amountEur) === amount;
-      return sameCurrency || bookedEur;
-    });
-    if (match) {
-      used.add(match.id);
-      byLedgerId.set(match.id, line);
-    } else unmatched.push(line);
+    const ledgerId = line.bankKey ? pairs.get(line.bankKey) : undefined;
+    if (!ledgerId || !byId.has(ledgerId) || used.has(ledgerId)) {
+      unmatched.push(line);
+      continue;
+    }
+    used.add(ledgerId);
+    byLedgerId.set(ledgerId, line);
   }
   return { byLedgerId, unmatched };
 }
 
-export function unmatchedStatementLines(lines: StatementLine[], rows: LedgerRow[]): StatementLine[] {
-  return matchStatementLines(lines, rows).unmatched;
+export function unmatchedStatementLines(
+  lines: StatementLine[], rows: LedgerRow[], pairs: ReadonlyMap<string, string>,
+): StatementLine[] {
+  return matchFinanceStatements(lines, rows, pairs).unmatched;
 }
