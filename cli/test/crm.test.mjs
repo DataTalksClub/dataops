@@ -497,32 +497,54 @@ describe("CLI crm workspace", () => {
 describe('CLI CRM hard delete', () => {
   beforeEach(isolateConfig);
   for (const [entity, plural] of [['company', 'organizations'], ['person', 'contacts']]) {
-    test(`${entity} delete requires confirmation and reports API exit codes`, async () => {
+    test(`${entity} delete previews by default, applies with --yes and reports API exit codes`, async () => {
       let status = 200;
       const calls = fakePortal({
-        [`DELETE /api/sponsor-crm/${plural}/fixture`]: () => ({ status, body: status === 200 ? { id: 'fixture', deleted: true } : { error: status === 404 ? 'Not found' : 'Record has notes' } }),
+        [`DELETE /api/sponsor-crm/${plural}/fixture`]: (call) => ({ status, body: status === 200 ? {
+          id: 'fixture', mode: call.query.dryRun === 'true' ? 'dry-run' : 'applied',
+          deleted: call.query.dryRun !== 'true', historyRows: 1, indexRows: 2,
+          ...(call.query.dryRun !== 'true' ? { auditSnapshotRetained: true } : {}),
+        } : { error: status === 404 ? 'Not found' : 'Record has notes' } }),
       });
       try {
-        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--json'], captureIo()), EXIT.usage);
-        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes=false', '--json'], captureIo()), EXIT.usage);
         assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes', '--expected-version', '--json'], captureIo()), EXIT.usage);
         for (const version of ['0', '-1', '1.5', 'invalid', '9007199254740992']) {
           assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes', '--expected-version', version, '--json'], captureIo()), EXIT.usage);
         }
         assert.equal(calls.length, 0);
+        // Preview by default: the dry run carries hard=true + dryRun=true and
+        // no version when none was passed.
         const io = captureIo();
-        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes', '--expected-version', '3', '--json'], io), EXIT.ok);
-        assert.deepEqual(io.json(), { id: 'fixture', deleted: true });
-        assert.equal(calls[0].query.hard, 'true'); assert.equal(calls[0].query.expectedVersion, '3');
+        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--json'], io), EXIT.ok);
+        assert.deepEqual(io.json(), { id: 'fixture', mode: 'dry-run', deleted: false, historyRows: 1, indexRows: 2 });
+        assert.equal(calls[0].query.hard, 'true');
+        assert.equal(calls[0].query.dryRun, 'true');
+        assert.equal(calls[0].query.expectedVersion, undefined);
         const human = captureIo();
-        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes'], human), EXIT.ok);
-        assert.match(human.text(), /Deleted/);
+        assert.equal(await run(['crm', entity, 'delete', 'fixture'], human), EXIT.ok);
+        assert.match(human.text(), /Dry run/);
+        assert.match(human.text(), /--yes to apply/);
+        // --yes=false is not --yes: it stays a preview, matching `crm deal delete`.
+        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes=false', '--json'], captureIo()), EXIT.ok);
+        // --yes applies, carrying the version and no dryRun flag.
+        const applied = captureIo();
+        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes', '--expected-version', '3', '--json'], applied), EXIT.ok);
+        assert.deepEqual(applied.json(), { id: 'fixture', mode: 'applied', deleted: true, historyRows: 1, indexRows: 2, auditSnapshotRetained: true });
+        assert.equal(calls.at(-1).query.hard, 'true');
+        assert.equal(calls.at(-1).query.dryRun, undefined);
+        assert.equal(calls.at(-1).query.expectedVersion, '3');
+        const confirmed = captureIo();
+        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes'], confirmed), EXIT.ok);
+        assert.match(confirmed.text(), /Deleted/);
+        assert.match(confirmed.text(), /audit snapshot/);
         status = 404;
         assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes', '--json'], captureIo()), 4);
         status = 409;
         const conflict = captureIo();
         assert.equal(await run(['crm', entity, 'delete', 'fixture', '--yes', '--json'], conflict), 5);
         assert.match(JSON.parse(conflict.errors.join('\n')).error.message, /notes/);
+        // The preview runs the same guards, so a refusal exits 5 before --yes too.
+        assert.equal(await run(['crm', entity, 'delete', 'fixture', '--json'], captureIo()), 5);
       } finally { delete globalThis.fetch; }
     });
   }

@@ -96,7 +96,7 @@ export function archiveDisclosureMarkup(archive, context = {}) {
 }
 
 export function recordHeaderMarkup(company, options = {}, context = {}) {
-  const { selectedDeal = null, returnLabel = "Back", canArchive = false, canEdit = false } = options;
+  const { selectedDeal = null, returnLabel = "Back", canArchive = false, canEdit = false, canDelete = false } = options;
   const primary = company?.primaryPerson;
   const showPrimary = primary !== undefined
     || (company != null && Object.prototype.hasOwnProperty.call(company, "primaryPerson"));
@@ -130,6 +130,7 @@ export function recordHeaderMarkup(company, options = {}, context = {}) {
       ${canArchive ? (archived
         ? html`<button type="button" data-restore-company>Restore</button>`
         : html`<button type="button" data-archive-company>Archive</button>`) : ""}
+      ${canDelete ? html`<button type="button" data-delete-company>Delete</button>` : ""}
     </div>
   </header>`;
 }
@@ -151,6 +152,40 @@ export function deleteDealDialogMarkup() {
   </dialog>`;
 }
 
+/** Confirm dialog for permanently deleting the company; guard errors show in the alert. */
+export function deleteCompanyDialogMarkup() {
+  return html`<dialog class="surface-dialog" data-delete-company-dialog>
+    <form method="dialog">
+      <header>
+        <h3>Delete company</h3>
+        <p data-delete-company-description></p>
+      </header>
+      <p role="alert" data-delete-company-error></p>
+      <footer>
+        <button type="button" class="primary-button" data-delete-company-confirm>Delete company</button>
+        <button type="button" data-delete-company-cancel>Cancel</button>
+      </footer>
+    </form>
+  </dialog>`;
+}
+
+/** Confirm dialog for permanently deleting a person; guard errors show in the alert. */
+export function deletePersonDialogMarkup() {
+  return html`<dialog class="surface-dialog" data-delete-person-dialog>
+    <form method="dialog">
+      <header>
+        <h3>Delete person</h3>
+        <p data-delete-person-description></p>
+      </header>
+      <p role="alert" data-delete-person-error></p>
+      <footer>
+        <button type="button" class="primary-button" data-delete-person-confirm>Delete person</button>
+        <button type="button" data-delete-person-cancel>Cancel</button>
+      </footer>
+    </form>
+  </dialog>`;
+}
+
 export function recordTabsMarkup(active, context = {}) {
   return html`<div class="dk-tabs" role="tablist" aria-label="Company record sections" data-record-tabs>
     ${RECORD_TABS.map(
@@ -162,8 +197,8 @@ export function recordTabsMarkup(active, context = {}) {
 }
 
 export function recordShellMarkup(company, options = {}, context = {}) {
-  const { selectedDeal = null, returnLabel = "Back", activeTab = "overview", canArchive = false, canEdit = false } = options;
-  return html`${recordHeaderMarkup(company, { selectedDeal, returnLabel, canArchive, canEdit }, context)}
+  const { selectedDeal = null, returnLabel = "Back", activeTab = "overview", canArchive = false, canEdit = false, canDelete = false } = options;
+  return html`${recordHeaderMarkup(company, { selectedDeal, returnLabel, canArchive, canEdit, canDelete }, context)}
     ${recordTabsMarkup(activeTab, context)}
     ${RECORD_TABS.map(
       ([id]) => html`<section role="tabpanel" id="record-panel-${id}" aria-labelledby="record-tab-${id}"

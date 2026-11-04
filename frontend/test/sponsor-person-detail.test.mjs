@@ -464,6 +464,47 @@ test("edit, company anchor and back behavior are preserved", async () => {
   assert.ok(host.querySelector('[data-person-tab="activity"]').focused, "tabs are keyboard reachable");
 });
 
+test("person header deletes a person after confirmation, shows guard errors and closes the record", async () => {
+  let refuse = true;
+  const { host, calls, closed, detail } = personHarness({
+    routes: {
+      "GET /contacts/p1": person,
+      "GET /directory/companies/c1": { id: "c1", displayName: "Acme Co" },
+      "DELETE /contacts/p1?hard=true&expectedVersion=2": () => {
+        if (refuse) throw Object.assign(new Error("Contact is primary or linked on a deal or deliverable, including archived records"), { status: 409 });
+        return { id: "p1", mode: "applied", deleted: true, auditSnapshotRetained: true };
+      },
+    },
+  });
+  seedPersonPanels(host);
+  await detail.openPerson("p1");
+  assert.match(host.innerHTML, /data-delete-person-dialog/);
+  assert.match(host.innerHTML, /data-delete-person>Delete/, "the header offers permanent delete");
+  const dialog = new FakeNode("dialog");
+  const error = dialog.setQuery("[data-delete-person-error]", new FakeNode("p"));
+  dialog.setQuery("[data-delete-person-description]", new FakeNode("p"));
+  let shown = 0, dialogsClosed = 0;
+  dialog.showModal = () => { shown += 1; };
+  dialog.close = () => { dialogsClosed += 1; };
+  host.setQuery("[data-delete-person-dialog]", dialog);
+  await host.dispatch("click", { closestPatch: { "[data-delete-person]": new FakeNode("button") } });
+  assert.equal(shown, 1, "delete opens the confirm dialog");
+  assert.equal(calls.filter(({ method }) => method === "DELETE").length, 0, "nothing is deleted before confirming");
+  await host.dispatch("click", { closestPatch: { "[data-delete-person-cancel]": new FakeNode("button") } });
+  assert.equal(dialogsClosed, 1, "cancel closes the dialog");
+  await host.dispatch("click", { closestPatch: { "[data-delete-person]": new FakeNode("button") } });
+  await host.dispatch("click", { closestPatch: { "[data-delete-person-confirm]": new FakeNode("button") } });
+  assert.match(error.textContent, /deal or deliverable/, "the guard error shows in the dialog");
+  assert.equal(dialogsClosed, 1, "the dialog stays open on a refusal");
+  assert.deepEqual(closed, [], "the record stays open on a refusal");
+  refuse = false;
+  await host.dispatch("click", { closestPatch: { "[data-delete-person-confirm]": new FakeNode("button") } });
+  const deleteCalls = calls.filter(({ method, path }) => method === "DELETE" && path.startsWith("/contacts/p1"));
+  assert.equal(deleteCalls.length, 2, "the refused attempt and the applied delete both hit the hard-delete route");
+  assert.match(deleteCalls[1].path, /hard=true&expectedVersion=2/, "the hard delete carries the optimistic version");
+  assert.deepEqual(closed, [true], "E closeRecord restores the directory after deletion");
+});
+
 test("person markup escapes content and hides edit without an editor", () => {
   const header = personHeaderMarkup({ name: "<Bo>", role: "<x>", primary: true, organizationId: "c1" }, { companyName: "<Co>", canEdit: true }, context);
   assert.match(header, /&lt;Bo&gt;/);

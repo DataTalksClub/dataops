@@ -7,7 +7,7 @@ import {
   formatBerlinDateTime,
   wireActivityPanel,
 } from "./sponsor-activity.js";
-import { emptyMarkup, errorMarkup, loadingMarkup } from "./sponsor-record-markup.js";
+import { emptyMarkup, errorMarkup, loadingMarkup, deletePersonDialogMarkup } from "./sponsor-record-markup.js";
 
 /**
  * Person record: identity + Overview/Activity tabs with progressive
@@ -40,7 +40,7 @@ export const PERSON_TABS = Object.freeze([
 ]);
 
 export function personHeaderMarkup(person, options = {}, context = {}) {
-  const { companyName = null, returnLabel = "Back", canEdit = false } = options;
+  const { companyName = null, returnLabel = "Back", canEdit = false, canDelete = false } = options;
   const isDnc = Boolean(person?.doNotContact || (Array.isArray(person?.tags) && person.tags.includes("do-not-contact")));
   // The company link is a real canonical anchor so modified clicks and
   // open-in-new-tab keep working natively; only unmodified primary clicks
@@ -78,6 +78,7 @@ export function personHeaderMarkup(person, options = {}, context = {}) {
         ${isDnc ? "Remove DNC" : "Mark Do-Not-Contact"}
       </button>
       ${canEdit ? html`<button type="button" data-edit-person> Edit </button>` : ""}
+      ${canDelete ? html`<button type="button" data-delete-person>Delete</button>` : ""}
     </div>
   </header>`;
 }
@@ -128,7 +129,8 @@ export function personDetailMarkup(person, options = {}, context = {}) {
     ${PERSON_TABS.map(
       ([id]) => html`<section role="tabpanel" id="person-panel-${id}" aria-labelledby="person-tab-${id}"
         data-person-panel="${id}"${id === activeTab ? "" : " hidden"}></section>`,
-    ).join("")}`;
+    ).join("")}
+    ${options.canDelete ? deletePersonDialogMarkup() : ""}`;
 }
 
 /**
@@ -235,7 +237,7 @@ export function createSponsorPersonDetail(context) {
         companyName = null;
       }
     }
-    host.innerHTML = personDetailMarkup(person, { companyName, returnLabel, canEdit }, context);
+    host.innerHTML = personDetailMarkup(person, { companyName, returnLabel, canEdit, canDelete: true }, context);
     const overviewPanel = host.querySelector('[data-person-panel="overview"]');
     if (overviewPanel) overviewPanel.innerHTML = personOverviewMarkup(person, context);
     host.querySelector("[data-person-title]")?.focus?.();
@@ -328,6 +330,42 @@ export function createSponsorPersonDetail(context) {
           });
           await openPerson(person.id, currentOpts || {});
         }, "Could not update do-not-contact status");
+        return;
+      }
+      const deletePerson = event.target.closest("[data-delete-person]");
+      if (deletePerson && person) {
+        const dialog = root()?.querySelector("[data-delete-person-dialog]");
+        if (!dialog) return;
+        dialog.querySelector("[data-delete-person-description]").textContent =
+          "Permanently delete this person with their history? This cannot be undone. Deletion is refused while the person is still linked to a deal or deliverable, or has notes or human touches.";
+        dialog.querySelector("[data-delete-person-error]").textContent = "";
+        dialog.showModal();
+        return;
+      }
+      const cancelDeletePerson = event.target.closest("[data-delete-person-cancel]");
+      if (cancelDeletePerson) {
+        root()?.querySelector("[data-delete-person-dialog]")?.close();
+        return;
+      }
+      const confirmDeletePerson = event.target.closest("[data-delete-person-confirm]");
+      if (confirmDeletePerson && person) {
+        const dialog = root()?.querySelector("[data-delete-person-dialog]");
+        if (!dialog) return;
+        try {
+          // Admin-only permanent delete through the same hard-delete route
+          // `dataops crm person delete --yes` uses; guard errors (409) show
+          // in the dialog and the record view stays.
+          const query = new URLSearchParams({ hard: "true" });
+          if (person.version !== undefined) query.set("expectedVersion", String(person.version));
+          await api(`/contacts/${encodeURIComponent(person.id)}?${query}`, { method: "DELETE" });
+          dialog.close();
+          // The person record is gone: destroy local state and restore the
+          // directory through E's canonical closeRecord.
+          destroy();
+          closeRecord();
+        } catch (error) {
+          dialog.querySelector("[data-delete-person-error]").textContent = error?.message || "Could not delete the person";
+        }
         return;
       }
       const company = event.target.closest("[data-open-company]");

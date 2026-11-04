@@ -245,12 +245,19 @@ export async function updateCrmRecord(client: DynamoDBDocumentClient, kind: stri
 
 const deleteConflict = (message: string) => Object.assign(new Error(message), { statusCode: 409 });
 
-/** Delete only an unreferenced directory record and its own audit/index rows. */
+/**
+ * Delete only an unreferenced directory record and its own history/index rows.
+ * Every guard runs before anything is written, so a dry-run preview answers
+ * with the same status codes an apply would produce. An applied deletion
+ * retains a `<KIND>_DELETE_AUDIT#` snapshot row (same convention as deals):
+ * the record plus its history are gone, and the audit row is the only trace.
+ */
 export async function hardDeleteCrmRecord(
   client: DynamoDBDocumentClient,
   kind: 'organization' | 'contact',
   id: string,
   expectedVersion?: number,
+  options: { dryRun?: boolean; actorId?: string } = {},
 ) {
   const pk = key(kind, id);
   const existing = (await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: pk, SK: pk }, ConsistentRead: true }))).Item;
@@ -297,21 +304,48 @@ export async function hardDeleteCrmRecord(
     : isKind(row, 'PRIMARY') && row.contactId === id));
   const owned = [existing, ...history, ...indexes];
   // Keep cleanup atomic; never leave a half-deleted record when history is
-  // too large for DynamoDB's transaction limit.
-  if (owned.length > 100) throw deleteConflict('Record history exceeds the atomic hard-delete limit');
-  await transact(client, owned.map(row => ({ Delete: {
-    TableName: TABLE_SPONSOR_CRM,
-    Key: { PK: row.PK, SK: row.SK },
-    ...(row === existing ? {
-      ConditionExpression: '#version = :version',
-      ExpressionAttributeNames: { '#version': 'version' },
-      ExpressionAttributeValues: { ':version': existing.version },
-    } : indexes.includes(row) ? {
-      ConditionExpression: row.PK === messageTargetPk ? 'targetId = :owner' : isKind(row, 'DOMAIN') ? 'organizationId = :owner' : 'contactId = :owner',
-      ExpressionAttributeValues: { ':owner': row.PK === messageTargetPk || isKind(row, 'DOMAIN') ? id : row.contactId },
-    } : {}),
-  } })));
-  return { id, deleted: true };
+  // too large for DynamoDB's transaction limit. The delete-audit snapshot
+  // row commits in the same transaction, so it counts against the limit.
+  if (owned.length + 1 > 100) throw deleteConflict('Record history exceeds the atomic hard-delete limit');
+  const result = {
+    id,
+    mode: options.dryRun ? 'dry-run' : 'applied',
+    deleted: !options.dryRun,
+    historyRows: history.length,
+    indexRows: indexes.length,
+    auditSnapshotRetained: !options.dryRun,
+  };
+  if (options.dryRun) return result;
+  const auditId = `${new Date().toISOString()}#${randomUUID()}`;
+  const auditItem = compact({
+    PK: `${kind.toUpperCase()}_DELETE_AUDIT#${id}`,
+    SK: auditId,
+    entityKind: `${kind}-delete-audit`,
+    entityId: id,
+    actorId: options.actorId || 'unknown',
+    deletedAt: new Date().toISOString(),
+    snapshot: {
+      record: clean(existing),
+      historyRowKeys: history.map(row => ({ PK: row.PK, SK: row.SK })),
+      indexRowKeys: indexes.map(row => ({ PK: row.PK, SK: row.SK })),
+    },
+  });
+  await transact(client, [
+    ...owned.map(row => ({ Delete: {
+      TableName: TABLE_SPONSOR_CRM,
+      Key: { PK: row.PK, SK: row.SK },
+      ...(row === existing ? {
+        ConditionExpression: '#version = :version',
+        ExpressionAttributeNames: { '#version': 'version' },
+        ExpressionAttributeValues: { ':version': existing.version },
+      } : indexes.includes(row) ? {
+        ConditionExpression: row.PK === messageTargetPk ? 'targetId = :owner' : isKind(row, 'DOMAIN') ? 'organizationId = :owner' : 'contactId = :owner',
+        ExpressionAttributeValues: { ':owner': row.PK === messageTargetPk || isKind(row, 'DOMAIN') ? id : row.contactId },
+      } : {}),
+    } })),
+    { Put: { TableName: TABLE_SPONSOR_CRM, Item: auditItem, ConditionExpression: 'attribute_not_exists(PK) AND attribute_not_exists(SK)' } },
+  ]);
+  return result;
 }
 
 function domainLock(domain: string, organizationId: string) {

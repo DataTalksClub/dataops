@@ -23,7 +23,9 @@ import { createSponsorRecord } from "./sponsor-record.js";
  * editor instance), ownerName (E ownerDirectory.name), loadArchive/onReviewDraft
  * overrides, onRecordChanged
  * (called with the updated org after a successful archive/restore so E can
- * refresh its directory context).
+ * refresh its directory context), onDeleteCompany (admin-only permanent
+ * delete through the hard-delete route; on success the record closes itself
+ * and E refreshes through closeRecord).
  * Until E passes openContactEditor, person edit affordances stay hidden.
  */
 export function createSponsorCompanyDetail({
@@ -75,6 +77,7 @@ export function createSponsorCompanyDetail({
     onReviewDraft: onReviewDraft || onReviewDraftDefault,
     onArchiveCompany,
     onRestoreCompany,
+    onDeleteCompany,
     // Edit uses E's existing deal dialog via openDeal with the actual loaded
     // deal (object + optimistic version); error/conflict surfacing and the
     // post-save refresh stay in E's dialog wiring.
@@ -154,6 +157,20 @@ export function createSponsorCompanyDetail({
     });
     if (typeof onRecordChanged === "function") await onRecordChanged(updated);
     await reopenCompanyDetail({ id: company.id }, record.getSelectedDealId());
+  }
+
+  async function onDeleteCompany(company) {
+    // Admin-only permanent delete through the same hard-delete route
+    // `dataops crm company delete --yes` uses. The record shows the guard
+    // error (409: deals/linked contacts/notes/touches, version conflict,
+    // atomic limit) in its confirm dialog when this rejects; on success the
+    // record controller closes the record view and E's closeRecord refreshes
+    // the directory. An audit snapshot is retained server-side.
+    if (!company?.id) return;
+    const query = new URLSearchParams({ hard: "true" });
+    if (company.version !== undefined) query.set("expectedVersion", String(company.version));
+    await api(`/organizations/${encodeURIComponent(company.id)}?${query}`, { method: "DELETE" });
+    if (typeof onRecordChanged === "function") await onRecordChanged({ id: company.id });
   }
 
   function mount() {

@@ -921,6 +921,10 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
   }
 
   if (method === 'DELETE' && id && kind !== 'deliverable') {
+    // A bare DELETE is the archive verb; dryRun may only ride on a hard delete.
+    if (event.queryStringParameters?.dryRun !== undefined && event.queryStringParameters.hard !== 'true') {
+      return json(400, { error: 'dryRun=true requires hard=true' });
+    }
     if (event.queryStringParameters?.hard !== undefined) {
       if (event.queryStringParameters.hard !== 'true' || (kind !== 'organization' && kind !== 'contact')) {
         return json(400, { error: 'hard=true is supported only for organizations and contacts; use the deal delete preview route for deals' });
@@ -933,8 +937,12 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
       if (expectedVersion !== undefined && (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1)) {
         return json(400, { error: 'expectedVersion must be a positive integer' });
       }
+      const rawDryRun = event.queryStringParameters.dryRun;
+      if (rawDryRun !== undefined && rawDryRun !== 'true' && rawDryRun !== 'false') {
+        return json(400, { error: 'dryRun must be true or false' });
+      }
       try {
-        return json(200, await hardDeleteCrmRecord(client, kind, id, expectedVersion));
+        return json(200, await hardDeleteCrmRecord(client, kind, id, expectedVersion, { dryRun: rawDryRun === 'true', actorId: auth.actor.id }));
       } catch (error) {
         const status = (error as { statusCode?: number }).statusCode;
         if (status) return json(status, { error: (error as Error).message });
