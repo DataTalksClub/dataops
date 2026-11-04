@@ -30,12 +30,14 @@ Usage
   dataops kb recent [--limit N]                Recently changed docs, newest first: one row
                                                per doc with who changed it and how often
   dataops kb write <path> --file F [--create] [--title T] [--type T] [--dry-run]
+                                               Publish new content (as the web editor does)
   dataops kb regenerate --all|<id>           Regenerate task views, indexes, and system pages
   dataops kb deprecate <doc-id> [--replaced-by ID]
   dataops kb archive <doc-id>                Mark a document archived
   dataops kb create <path> --from <doc-id> [--title T] [--sop TARGET-SOP-ID]
+                                               Copy an existing document to a new path
   dataops kb export <doc-id> [--format md|docx|txt] [--output PATH]
-                                               Publish new content (as the web editor does)
+                                               Download a document; docx needs --output
   dataops kb import <path> --file F --source GOOGLE_DOC_URL --id ID --title T
       [--type template|reference] [--format text|markdown] [--output F]
                                                Import an authenticated Google Docs export;
