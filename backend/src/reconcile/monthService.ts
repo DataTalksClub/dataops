@@ -1049,7 +1049,9 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
   const naming = await import("./naming");
   const entries: PackageEntry[] = [{ path: naming.packagePath(period, null, naming.reportName(period, "csv")), kind: "report" }];
   const blockers: PackageBlocker[] = [];
-  const reportRows = selectAccountantReportRows(await listTransactions(client), period);
+  const transactions = await listTransactions(client);
+  const transactionsById = new Map(transactions.map((transaction) => [String(transaction.id), transaction]));
+  const reportRows = selectAccountantReportRows(transactions, period);
   for (const row of unconvertedAccountantReportRows(reportRows)) {
     blockers.push({
       rowId: String(row.id || "unknown"),
@@ -1058,10 +1060,10 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
     });
   }
   const monthRowsByLedger = new Map(view.rows.filter((row) => row.ledger).map((row) => [row.ledger!.id, row]));
-  const proofByDocument = new Map<string, { row: MonthRow; proof: NonNullable<MonthRow["paymentProof"]> }>();
+  const proofByDocument = new Map<string, { row: MonthRow; reportRow: Record<string, unknown>; proof: NonNullable<MonthRow["paymentProof"]> }>();
   for (const reportRow of reportRows) {
     const row = monthRowsByLedger.get(String(reportRow.id));
-    if (row?.ledger && row.paymentProof) proofByDocument.set(row.paymentProof.documentId, { row, proof: row.paymentProof });
+    if (row?.ledger && row.paymentProof) proofByDocument.set(row.paymentProof.documentId, { row, reportRow: transactionsById.get(String(reportRow.id)) || reportRow, proof: row.paymentProof });
   }
   const statements = (await listStatements(client)).filter((record) => record.period === period);
   for (const record of statements) {
@@ -1104,7 +1106,7 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
         seenDocuments.add(document.id);
         if (invoice.checksum && seenSourceChecksums.has(invoice.checksum)) continue;
         entries.push({
-          path: naming.packagePath(period, folder, naming.documentName({ date: accountantCashDate(reportRow), counterparty: reportRow.counterparty as string, documentNumber: reportRow.invoiceNumber as string, amount: reportRow.amount as string, currency: String(reportRow.currency || row.ledger.currency), filename: String(invoice.filename || "invoice.pdf") })),
+          path: naming.packagePath(period, folder, naming.documentName({ date: accountantCashDate(reportRow), counterparty: reportRow.counterparty as string, description: reportRow.description as string, amount: reportRow.amount as string, currency: String(reportRow.currency || row.ledger.currency), filename: String(invoice.filename || "invoice.pdf") })),
           kind: "invoice", invoiceId: invoice.invoiceId, rowId: row.id,
           ...(invoice.filename ? { originalFilename: String(invoice.filename) } : {}),
         });
@@ -1118,24 +1120,27 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
       }
       seenDocuments.add(document.id);
       entries.push({
-        path: naming.packagePath(period, folder, naming.documentName({ date: accountantCashDate(reportRow), counterparty: reportRow.counterparty as string, documentNumber: reportRow.invoiceNumber as string, amount: reportRow.amount as string, currency: String(reportRow.currency || row.ledger.currency), filename: String(raw.originalFilename || "x.pdf") })),
+        path: naming.packagePath(period, folder, naming.documentName({ date: accountantCashDate(reportRow), counterparty: reportRow.counterparty as string, description: reportRow.description as string, amount: reportRow.amount as string, currency: String(reportRow.currency || row.ledger.currency), filename: String(raw.originalFilename || "x.pdf") })),
         kind: "invoice", documentId: document.id, rowId: row.id,
         ...(raw.originalFilename ? { originalFilename: String(raw.originalFilename) } : {}),
       });
       if (checksum) seenSourceChecksums.add(checksum);
     }
   }
-  for (const [documentId, { row, proof }] of proofByDocument) {
+  for (const [documentId, { row, reportRow, proof }] of proofByDocument) {
     if (seenDocuments.has(documentId)) continue;
     const registeredProof = await getRawDocument(client, documentId);
     if (!registeredProof || registeredProof.status !== "active") continue;
     seenDocuments.add(documentId);
     entries.push({
-      path: naming.packagePath(period, "proofs", naming.proofName({ date: row.ledger!.date, counterparty: row.ledger!.counterparty, ledgerId: row.ledger!.id, filename: proof.filename })),
+      path: naming.packagePath(period, "proofs", naming.proofName({ date: accountantCashDate(reportRow), counterparty: reportRow.counterparty as string, description: reportRow.description as string, amount: reportRow.amount as string, currency: String(reportRow.currency || row.ledger!.currency), filename: proof.filename })),
       kind: "proof", documentId, rowId: row.id,
       ...(proof.filename ? { originalFilename: proof.filename } : {}),
     });
   }
+  // Source identity breaks ties before suffixing, independent of database scan order.
+  entries.sort((left, right) => left.path.localeCompare(right.path)
+    || String(left.documentId || left.invoiceId || left.artifactId || "").localeCompare(String(right.documentId || right.invoiceId || right.artifactId || "")));
   const unique = naming.uniquePaths(entries.map((entry) => entry.path));
   entries.forEach((entry, index) => { entry.path = unique[index]; });
   return { period, state: view.state, draft: view.state !== "closed", entries, blockers, csv: formatAccountantCsv(reportRows) };

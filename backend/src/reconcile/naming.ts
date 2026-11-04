@@ -3,10 +3,10 @@
  *
  *   YYYY-MM/
  *     YYYY-MM_reconciliation_datatalksclub.<csv|xlsx>
- *     statements/YYYY-MM_<bank>-<account>.<ext>
- *     income/YYYY-MM-DD_<counterparty>_<doc-number>_<amount><CUR>.pdf
- *     expenses/YYYY-MM-DD_<counterparty>_<doc-number>_<amount><CUR>.pdf
- *     proofs/YYYY-MM-DD_<counterparty>_<ledger-row>.pdf
+ *     statements/YYYY-MM_<bank>-<account>_statement.<ext>
+ *     income/YYYY-MM-DD_<company>_<what>_<amount><CUR>.pdf
+ *     expenses/YYYY-MM-DD_<company>_<what>_<amount><CUR>.pdf
+ *     proofs/YYYY-MM-DD_<company>_<what>_<amount><CUR>.pdf
  *     taxes/YYYY-MM-DD_<kind>_<period>.pdf
  *
  * The folder carries the type, so names inside it do not repeat it. Names
@@ -47,28 +47,21 @@ export function slug(value: string | undefined, max = DEFAULT_NAMING.slugMax): s
   return cut.replace(/-+$/, "") || "unknown";
 }
 
-/** A document number as it may appear in a name: keeps case, letters, digits and hyphens. */
-export function docToken(value: string | undefined): string {
-  return String(value || "").trim().replace(/[\/\\\s]+/g, "-").replace(/[^A-Za-z0-9._-]/g, "").replace(/^[-.]+|[-.]+$/g, "").slice(0, 40);
-}
-
-const amountToken = (amount: string | number, currency: string) => `${Math.abs(Number(amount)).toFixed(2)}${currency.toUpperCase()}`;
+const amountToken = (amount: string | number, currency: string) => `${Math.abs(Number(amount)).toFixed(2)}${currency.trim().toUpperCase()}`;
 const extension = (filename: string | undefined, fallback: string) => (String(filename || "").match(/\.([a-z0-9]{2,5})$/i)?.[1] || fallback).toLowerCase();
 
 export function statementName(period: string, bank: string, account: string, filename?: string): string {
-  return `${period}_${slug(bank, 20)}-${slug(account, 20)}.${extension(filename, "pdf")}`;
+  return `${period}_${slug(bank, 20)}-${slug(account, 20)}_statement.${extension(filename, "pdf")}`;
 }
 
-export function documentName(input: { date: string; counterparty?: string; documentNumber?: string; amount: string | number; currency: string; filename?: string }, config = DEFAULT_NAMING): string {
-  const parts = [input.date.slice(0, 10), slug(input.counterparty, config.slugMax)];
-  const number = docToken(input.documentNumber);
-  if (number) parts.push(number);
-  parts.push(amountToken(input.amount, input.currency));
-  return `${parts.join("_")}.${extension(input.filename, "pdf")}`;
+export type DocumentNamingInput = { date: string; counterparty?: string; description?: string; amount: string | number; currency: string; filename?: string };
+
+export function documentName(input: DocumentNamingInput, config = DEFAULT_NAMING): string {
+  return `${input.date.slice(0, 10)}_${slug(input.counterparty, config.slugMax)}_${slug(input.description, config.slugMax)}_${amountToken(input.amount, input.currency)}.${extension(input.filename, "pdf")}`;
 }
 
-export function proofName(input: { date: string; counterparty?: string; ledgerId: string; filename?: string }, config = DEFAULT_NAMING): string {
-  return `${input.date.slice(0, 10)}_${slug(input.counterparty, config.slugMax)}_${input.ledgerId.slice(0, 12)}.${extension(input.filename, "pdf")}`;
+export function proofName(input: DocumentNamingInput, config = DEFAULT_NAMING): string {
+  return documentName({ ...input, description: input.description ? `Payment proof ${input.description}` : "Payment proof" }, config);
 }
 
 export function taxName(input: { date: string; kind: TaxDocumentKind; period: string; filename?: string }): string {

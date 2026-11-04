@@ -306,7 +306,7 @@ describe('reconciliation ledger projection', () => {
     const invoiceEntries = pack.entries.filter((entry) => entry.kind === 'invoice');
     assert.equal(invoiceEntries.length, 1);
     assert.equal(invoiceEntries[0].documentId, serviceInvoiceDoc.id);
-    assert.match(invoiceEntries[0].path, /^2026-10\/expenses\/2026-10-08_synthetic-advisory-gmbh_SYN-2026-10_238\.00EUR\.pdf$/);
+    assert.match(invoiceEntries[0].path, /^2026-10\/expenses\/2026-10-08_synthetic-advisory-gmbh_monthly-compliance-service-fee_238\.00EUR\.pdf$/);
     assert.ok(!pack.entries.some((entry) => entry.documentId === taxNoticeDoc.id));
     assert.ok(!pack.entries.some((entry) => entry.documentId === ownerTransferDoc.id));
     assert.ok(await getBookkeepingItem(client, 'document', ownerTransferDoc.id), 'owner transfer source document remains stored');
@@ -398,6 +398,8 @@ describe('reconciliation ledger projection', () => {
       await createDocumentLink(client, { documentId: document.id, transactionId: String(allocatedPayment.id), coverageType: 'evidence' });
     }
 
+    const allocatedProof = await makeDocument('synthetic-package-allocated-proof', 'synthetic-parent-proof.pdf', '6', 'other-evidence');
+    await attachProof(client, '2027-01', 'synthetic-operator', String(allocatedPayment.id), String(allocatedProof.id));
     const linkedProof = await makeDocument('synthetic-package-linked-proof', 'synthetic-payment-proof-one.pdf', '3');
     const secondProof = await makeDocument('synthetic-package-second-proof', 'synthetic-payment-proof-two.pdf', '4', 'other-evidence');
     const linkedProofTransaction = (await putBookkeepingItem(client, 'bookkeeping', {
@@ -442,17 +444,19 @@ describe('reconciliation ledger projection', () => {
     assert.match(nextMonth.csv, /15\.00/);
     assert.doesNotMatch(nextMonth.csv, /Synthetic Combined Client|Combined settlement|Synthetic Unpaid Client/);
     assert.ok(nextMonth.entries.some((entry) => entry.documentId === allocationDocuments[0].id
-      && entry.path === '2027-01/income/2027-01-03_synthetic-client-a_SYN-A_70.00EUR.pdf'));
+      && entry.path === '2027-01/income/2027-01-03_synthetic-client-a_consulting-milestone_70.00EUR.pdf'));
     assert.ok(nextMonth.entries.some((entry) => entry.documentId === allocationDocuments[1].id
-      && entry.path === '2027-01/income/2027-01-03_synthetic-client-b_SYN-B_35.00EUR.pdf'));
+      && entry.path === '2027-01/income/2027-01-03_synthetic-client-b_support-service_35.00EUR.pdf'));
     assert.ok(nextMonth.entries.some((entry) => entry.documentId === allocationDocuments[2].id
-      && entry.path === '2027-01/income/2027-01-03_synthetic-client-c_SYN-C_15.00EUR.pdf'));
+      && entry.path === '2027-01/income/2027-01-03_synthetic-client-c_workshop-delivery_15.00EUR.pdf'));
     assert.equal(nextMonth.entries.filter((entry) => entry.documentId === linkedProof.id).length, 1);
     assert.ok(nextMonth.entries.some((entry) => entry.kind === 'proof' && entry.documentId === linkedProof.id
-      && entry.path.startsWith('2027-01/proofs/')));
+      && entry.path === '2027-01/proofs/2027-01-06_synthetic-proof-client_payment-proof-proof-linked-income_12.00EUR.pdf'));
     assert.ok(nextMonth.entries.some((entry) => entry.kind === 'proof' && entry.documentId === secondProof.id
-      && entry.path.startsWith('2027-01/proofs/')));
-    assert.equal(nextMonth.entries.filter((entry) => entry.kind === 'proof').length, 2);
+      && entry.path === '2027-01/proofs/2027-01-08_synthetic-other-client_payment-proof-proof-only-income_8.00EUR.pdf'));
+    assert.ok(nextMonth.entries.some((entry) => entry.kind === 'proof' && entry.documentId === allocatedProof.id
+      && entry.path === '2027-01/proofs/2027-01-03_synthetic-combined-client_payment-proof-combined-settlement_120.00EUR.pdf'));
+    assert.equal(nextMonth.entries.filter((entry) => entry.kind === 'proof').length, 3);
 
     const priorMonth = await monthPackage(client, '2026-12', { draft: true });
     assert.doesNotMatch(priorMonth.csv, /Synthetic Client A|Synthetic Client B|Synthetic Proof Client/);

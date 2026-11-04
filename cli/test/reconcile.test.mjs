@@ -584,10 +584,10 @@ test("package writes the month folder layout from the manifest and never sends a
   await withFakePortal([
     ["/reconcile/months/2026-10/package", { period: "2026-10", state: "closed", draft: false, csv: "date,status\n", entries: [
       { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
-      { path: "2026-10/statements/2026-10_finom-main.csv", kind: "statement", documentId: "doc-stmt" },
-      { path: "2026-10/expenses/2026-10-14_google_1.99EUR.pdf", kind: "invoice", documentId: "doc-google" },
-      { path: "2026-10/expenses/2026-10-15_synthetic-vendor_SYN-1_9.00EUR.pdf", kind: "invoice", invoiceId: "synthetic-invoice" },
-      { path: "2026-10/proofs/2026-10-14_google_a1c9d26b5312.pdf", kind: "proof", documentId: "doc-proof" },
+      { path: "2026-10/statements/2026-10_finom-main_statement.csv", kind: "statement", documentId: "doc-stmt" },
+      { path: "2026-10/expenses/2026-10-14_example-vendor_hosting_8.00EUR.pdf", kind: "invoice", documentId: "doc-google" },
+      { path: "2026-10/expenses/2026-10-15_synthetic-vendor_example-service_9.00EUR.pdf", kind: "invoice", invoiceId: "synthetic-invoice" },
+      { path: "2026-10/proofs/2026-10-14_example-vendor_payment-proof-hosting_8.00EUR.pdf", kind: "proof", documentId: "doc-proof" },
     ] }],
     ["/documents/doc-stmt/download", { downloadUrl: "https://private.example.test/stmt" }],
     ["/documents/doc-google/download", { downloadUrl: "https://private.example.test/google" }],
@@ -599,18 +599,18 @@ test("package writes the month folder layout from the manifest and never sends a
     assert.equal(result.zip, join(directory, "datatalksclub-2026-10.zip"));
     assert.deepEqual(result.written, [
       "2026-10/2026-10_reconciliation_datatalksclub.csv",
-      "2026-10/statements/2026-10_finom-main.csv",
-      "2026-10/expenses/2026-10-14_google_1.99EUR.pdf",
-      "2026-10/expenses/2026-10-15_synthetic-vendor_SYN-1_9.00EUR.pdf",
-      "2026-10/proofs/2026-10-14_google_a1c9d26b5312.pdf",
+      "2026-10/statements/2026-10_finom-main_statement.csv",
+      "2026-10/expenses/2026-10-14_example-vendor_hosting_8.00EUR.pdf",
+      "2026-10/expenses/2026-10-15_synthetic-vendor_example-service_9.00EUR.pdf",
+      "2026-10/proofs/2026-10-14_example-vendor_payment-proof-hosting_8.00EUR.pdf",
     ]);
-    assert.equal(await (await import("node:fs/promises")).readFile(join(directory, "2026-10/proofs/2026-10-14_google_a1c9d26b5312.pdf"), "utf8"), "synthetic-bytes");
-    assert.equal(await (await import("node:fs/promises")).readFile(join(directory, "2026-10/expenses/2026-10-15_synthetic-vendor_SYN-1_9.00EUR.pdf"), "utf8"), "synthetic-bytes");
+    assert.equal(await (await import("node:fs/promises")).readFile(join(directory, "2026-10/proofs/2026-10-14_example-vendor_payment-proof-hosting_8.00EUR.pdf"), "utf8"), "synthetic-bytes");
+    assert.equal(await (await import("node:fs/promises")).readFile(join(directory, "2026-10/expenses/2026-10-15_synthetic-vendor_example-service_9.00EUR.pdf"), "utf8"), "synthetic-bytes");
     const zipped = await archiveEntries(result.zip);
     assert.deepEqual(zipped.map(([path]) => path).sort(), [...result.written].sort());
     assert.ok(!zipped.some(([path]) => path.endsWith("2030-01_stale-unpaid-invoice.pdf")));
     assert.equal(await readFile(stalePath, "utf8"), "pre-existing synthetic file");
-    assert.equal(zipped.find(([path]) => path.endsWith("proofs/2026-10-14_google_a1c9d26b5312.pdf"))?.[1].toString(), "synthetic-bytes");
+    assert.equal(zipped.find(([path]) => path.endsWith("proofs/2026-10-14_example-vendor_payment-proof-hosting_8.00EUR.pdf"))?.[1].toString(), "synthetic-bytes");
     assert.match(zipped.find(([path]) => path.endsWith("reconciliation_datatalksclub.csv"))?.[1].toString() || "", /date,status/);
     assert.ok(!calls.some((call) => call.method === "POST"), "building a package never writes");
   });
