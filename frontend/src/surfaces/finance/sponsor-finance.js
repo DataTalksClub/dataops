@@ -536,7 +536,7 @@ export function createSponsorFinance(context) {
                   <code>${escapeHtml(thankYou.templateId)}</code>
                 </a>
                 (SOP Step ${escapeHtml(thankYou.sopStep || 10)}). Keep the thread's CC list.
-                <strong>Do not send the email</strong> — prepare a draft for Alexey to review and send.
+                <strong>Send it directly</strong> — no draft step: the template exists, so no Alexey approval is needed.
                 Suggested <code>&lt;WHAT_WAS_PAID&gt;</code>: <strong>${escapeHtml(thankYou.context?.whatWasPaid || "")}</strong>.
               </p>`}
           <div data-finance-thank-you-template>
