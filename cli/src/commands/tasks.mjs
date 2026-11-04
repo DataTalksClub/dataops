@@ -611,6 +611,16 @@ export async function show(args, io) {
     ["not before", task.notBeforeAt],
     ["external status", task.externalStatus],
     ["instruction doc", task.instructionDocId],
+  ]);
+  io.print("");
+  if (task.instructionDocId) {
+    io.print("Before executing this task, read its attached SOP:");
+    io.print(`  dataops kb show ${task.instructionDocId}`);
+  } else {
+    io.print("No SOP attached to this task.");
+  }
+  io.print("");
+  fields(io, [
     ["source docs", task.sourceDocIds],
     ["instructions", task.instructionsUrl],
     ["materials", task.materials?.length ? task.materials.map((m) => (m.label ? `${m.label} ${m.url}` : m.url)).join(", ") : ""],
