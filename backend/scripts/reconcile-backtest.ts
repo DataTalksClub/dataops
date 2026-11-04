@@ -18,7 +18,7 @@ import { bankRowsFrom, DEFAULT_RULES, ledgerRowsFrom, periodsBetween } from "../
 import { recognizeStatement } from "../src/reconcile/statementIntake";
 import type { StatementRecord } from "../src/reconcile/service";
 import { backtestMonth, expectedSource, type MonthBacktest, type TruthRow } from "../src/reconcile/backtest";
-import { documentName, packagePath, reportName, statementName, uniquePaths } from "../src/reconcile/naming";
+import { documentName, proofName, packagePath, reportName, statementName, uniquePaths } from "../src/reconcile/naming";
 
 function options(argv: string[]) {
   const values: Record<string, string[]> = {};
@@ -135,7 +135,7 @@ async function main() {
     for (const row of truth) {
       if (!row.docRef) continue;
       const folder = expectedSource(row.statementRef) === "separate-proof" && /statement/i.test(row.docRef) ? "proofs" : row.entryType === "income" ? "income" : "expenses";
-      const name = documentName({ date: row.paidDate || row.date, counterparty: row.counterparty, amount: row.amount, currency: row.currency, filename: row.docRef });
+      const name = (folder === "proofs" ? proofName : documentName)({ date: row.paidDate || row.date, counterparty: row.counterparty, description: row.description, amount: row.amount, currency: row.currency, filename: row.docRef });
       documentPaths.push(packagePath(period, folder, name));
     }
     const unique = uniquePaths([...manifest, ...documentPaths]);
