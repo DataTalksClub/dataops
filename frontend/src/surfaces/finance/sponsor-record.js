@@ -680,7 +680,7 @@ export function createSponsorRecord(context) {
         if (!deal || !dialog) return;
         dialog.dataset.dealId = deal.id;
         dialog.querySelector("[data-delete-deal-description]").textContent =
-          "Permanently delete this deal with its history, notes and Tasks? This cannot be undone.";
+          "Permanently delete this deal with its history, notes, deliverables and Tasks? This cannot be undone.";
         dialog.querySelector("[data-delete-deal-error]").textContent = "";
         dialog.showModal();
         return;

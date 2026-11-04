@@ -57,6 +57,10 @@ Usage
   dataops crm deal update <id> --data '{...}'    Must include the current version
   dataops crm deal archive <id>
   dataops crm deal unarchive <id>
+  dataops crm deal delete <id> [--with-deliverables] [--yes] [--expected-version N]
+      Preview by default. With --yes, permanently delete the deal (admin only) with its history, notes and Tasks,
+      and with --with-deliverables also its deliverables; an audit snapshot is retained. Exit 4 = not found,
+      exit 5 = guard/version conflict (reason in error).
   dataops crm activity <organization|contact|deal> <id> [--types note,touch,mail,history,deal-history]
       [--limit N] [--cursor C]
   dataops crm notes list <organization|contact|deal> <id> [--limit N] [--cursor C]
@@ -358,6 +362,25 @@ export async function dealUnarchive(args, io) {
   const id = positional(args, 0, "dataops crm deal unarchive <id>");
   const result = await apiFor(args).post(`/api/sponsor-crm/deals/${enc(id)}/unarchive`);
   if (!args.json) io.print(`Unarchived deal ${id}.`);
+  return result;
+}
+
+export async function dealDelete(args, io) {
+  const id = positional(args, 0, "dataops crm deal delete <id> [--with-deliverables] [--yes] [--expected-version N]");
+  const expectedVersion = integer(optionalString(args, "expectedVersion"), "expected-version");
+  if (expectedVersion !== undefined && !Number.isSafeInteger(expectedVersion)) throw new UsageError("expected-version must be a safe positive integer.");
+  const apply = args.yes === true;
+  const result = await apiFor(args).post(`/api/sponsor-crm/deals/${enc(id)}/delete`, {
+    withDeliverables: args.withDeliverables === true,
+    ...(apply ? { apply: true } : {}),
+    ...(expectedVersion !== undefined ? { expectedVersion } : {}),
+  });
+  if (!args.json) {
+    if (apply) io.print(`Deleted deal ${id}; audit snapshot retained.`);
+    else io.print(`Dry run: deal ${id} can be deleted with ${result.deletedDeliverableIds?.length || 0} deliverable(s); ` +
+      `finance links to ${result.detachedFinanceSourceIds?.length || 0} source(s) will be detached; ` +
+      `${result.retainedNewsletterSlotIds?.length || 0} newsletter slot(s) will remain booked. Add --yes to apply.`);
+  }
   return result;
 }
 
@@ -719,8 +742,8 @@ export const commands = {
     "dataops crm person <show|create|update|archive|unarchive|delete|dnc|followup> [...]"),
   deals: (args, io) => dispatch(args, io, { list: dealsList }, "dataops crm deals list [...]"),
   deal: (args, io) => dispatch(args, io,
-    { show: dealShow, create: dealCreate, update: dealUpdate, archive: dealArchive, unarchive: dealUnarchive },
-    "dataops crm deal <show|create|update|archive|unarchive> [...]"),
+    { show: dealShow, create: dealCreate, update: dealUpdate, archive: dealArchive, unarchive: dealUnarchive, delete: dealDelete },
+    "dataops crm deal <show|create|update|archive|unarchive|delete> [...]"),
   pipeline: (args, io) => dispatch(args, io, { list: pipelineList }, "dataops crm pipeline list [...]"),
   followups,
   archive,

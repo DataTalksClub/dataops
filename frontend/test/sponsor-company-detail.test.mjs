@@ -118,9 +118,9 @@ test("deals tab deletes a deal after confirmation and shows the guard error", as
       "GET /directory/companies/c1": organization,
       "GET /activity/organization/c1?limit=3": preview,
       "GET /deals?organizationId=c1&limit=50": { items: [deal], nextCursor: null },
-      "DELETE /deals/d1?hard=true&expectedVersion=7": () => {
-        if (refuse) throw Object.assign(new Error("Deal has a deliverable (x1); hard delete is refused"), { status: 409 });
-        return { id: "d1", deleted: true };
+      "POST /deals/d1/delete": () => {
+        if (refuse) throw Object.assign(new Error("Record was changed; reload and retry"), { status: 409 });
+        return { id: "d1", mode: "applied", deleted: true };
       },
     },
   });
@@ -142,14 +142,16 @@ test("deals tab deletes a deal after confirmation and shows the guard error", as
   button.dataset.deleteDeal = "d1";
   await wired.dispatch("click", { closestPatch: { "[data-delete-deal]": button } });
   assert.equal(shown, 1, "delete opens the confirm dialog");
-  assert.equal(calls.some(({ method }) => method === "DELETE"), false, "nothing is deleted before confirming");
+  const deleteCalls = () => calls.filter(({ method, path }) => method === "POST" && path === "/deals/d1/delete");
+  assert.equal(deleteCalls().length, 0, "nothing is deleted before confirming");
   await wired.dispatch("click", { closestPatch: { "[data-delete-deal-confirm]": new FakeNode("button") } });
-  assert.match(error.textContent, /deliverable/, "the guard error shows in the dialog");
+  assert.match(error.textContent, /changed/, "the guard error shows in the dialog");
   assert.equal(closed, 0, "the dialog stays open on a refusal");
   refuse = false;
   await wired.dispatch("click", { closestPatch: { "[data-delete-deal-confirm]": new FakeNode("button") } });
   assert.equal(closed, 1);
   assert.deepEqual(changed.map((item) => item.id), ["c1"]);
+  assert.deepEqual(deleteCalls()[0].body, { withDeliverables: true, apply: true, expectedVersion: 7 });
 });
 
 test("migration projects the B archive read-only without send hooks", async () => {
