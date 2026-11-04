@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { importStatementWithReview } from "../src/surfaces/finance/bookkeeping-statement-import.js";
+import { importStatementWithReview, statementHeaderReviewLines } from "../src/surfaces/finance/bookkeeping-statement-import.js";
+
+test("identical statement previews show exact issue dates, coverage, opening and closing for both sources", () => {
+  const headers = { issueDate: "2028-04-05", from: "2028-03-01", to: "2028-03-31", openingBalances: [{ asOf: "2028-03-01", amount: "100.00", currency: "EUR" }], balances: [{ asOf: "2028-03-31", amount: "76.50", currency: "EUR" }] };
+  const lines = statementHeaderReviewLines({ replacements: [{ difference: { identical: true, existing: [headers], candidate: { ...headers, issueDate: "2028-04-09" } } }] });
+  assert.deepEqual(lines, [
+    "Existing: Issue date 2028-04-05; From 2028-03-01; To 2028-03-31; Opening 2028-03-01 main 100.00 EUR; Closing 2028-03-31 main 76.50 EUR.",
+    "Incoming: Issue date 2028-04-09; From 2028-03-01; To 2028-03-31; Opening 2028-03-01 main 100.00 EUR; Closing 2028-03-31 main 76.50 EUR.",
+  ]);
+});
 
 test("statement replacement keeps the existing source unless explicitly confirmed", async () => {
   const calls = [];

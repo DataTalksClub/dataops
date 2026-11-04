@@ -142,7 +142,10 @@ function printStatementImport(result, io) {
     io.print(result.preview.message);
     for (const item of result.preview.replacements) {
       io.print(`${item.period}: ${item.difference.identical ? "no operation differences" : `${item.difference.added.reduce((n, row) => n + row.count, 0)} added, ${item.difference.removed.reduce((n, row) => n + row.count, 0)} removed`}; balances ${item.difference.balancesChanged ? "changed" : "unchanged"}; coverage ${item.difference.periodChanged ? "changed" : "unchanged"}`);
-      io.print(`  existing issue date: ${item.difference.existing.map((record) => record.issueDate || "not printed").join(", ")}; uploaded issue date: ${item.difference.candidate.issueDate || "not printed"}`);
+      const balances = (values) => (values || []).map((value) => `${value.asOf} ${value.wallet || "main"} ${value.amount} ${value.currency}`).join(", ") || "not printed";
+      for (const [label, record] of [...item.difference.existing.map((record) => ["Existing", record]), ["Incoming", item.difference.candidate]]) {
+        io.print(`  ${label}: Issue date ${record.issueDate || "not printed"}; From ${record.from || "not printed"}; To ${record.to || "not printed"}; Opening ${balances(record.openingBalances)}; Closing ${balances(record.balances)}.`);
+      }
     }
     if (!result.committed) io.print("No active statement changed. Review --json for row differences; use --replace to confirm replacement after review.");
   }

@@ -47,6 +47,7 @@ import { tableCsv } from "../reconcile/month";
 import { importStatement, recognizeStatement, UnrecognizedStatementError } from "../reconcile/statementIntake";
 import { autoMatchMonths, matchesOf } from "../reconcile/autoMatch";
 
+import { StatementAccountCollisionError } from "../reconcile/statementSelection";
 import { statementSourceBytes as documentBytes } from "../reconcile/statementSource";
 
 const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -61,6 +62,7 @@ function fail(error: unknown): LambdaResponse {
   if (statusCode === 401 || statusCode === 403) return json(statusCode, { error: statusCode === 401 ? "Unauthorized" : "Forbidden" });
   const message = (error as Error).message || "Reconcile request failed";
   if (error instanceof MonthGateError) return json(409, { ...(error.reportPeriod ? { reportPeriod: error.reportPeriod } : {}), error: message, blockers: error.blockers });
+  if (error instanceof StatementAccountCollisionError) return json(409, { error: message, identityConflicts: error.identityConflicts });
   if (statusCode) return json(statusCode, { error: message });
   return json(400, { error: message });
 }

@@ -1,5 +1,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { GetCommand, ScanCommand, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { createTables, startLocal, stopLocal } from "../scripts/local-dynamodb";
 import { getClient } from "../src/db/client";
@@ -12,7 +14,8 @@ import { setStatementPdfTextForTests } from "../src/reconcile/statementIntake";
 import type { ParsedStatement } from "../src/reconcile/parsers";
 import { parseRevolutPdfText } from "../src/reconcile/pdfLayouts";
 
-const parsed = (period = "2028-03", account = "invented-account-a"): ParsedStatement => ({
+const HEADER_ACCOUNT = createHash("sha256").update("EX0000000000").digest("hex").slice(0, 24);
+const parsed = (period = "2028-03", account = HEADER_ACCOUNT): ParsedStatement => ({
   rows: [{ date: `${period}-12`, amount: "-23.50", currency: "EUR", counterparty: "Example Hosting" }],
   period: { from: `${period}-01`, to: `${period}-31` }, issueDate: "2028-04-05", bankAccounts: { "main|EUR": account },
   openingBalances: [{ asOf: `${period}-01`, amount: "100.00", currency: "EUR" }],
@@ -60,9 +63,9 @@ describe("atomic statement import preview", () => {
     assert.equal((await listStatements(client))[0].documentId, "second");
   });
   it("keeps different actual accounts and atomically imports multiple wallets as one source batch", async () => {
-    const next = parsed("2028-05", "invented-account-other"); next.period!.to = "2028-05-31";
+    const next = parsed("2028-05"); next.period!.to = "2028-05-31";
     next.rows.push({ date: "2028-05-12", amount: "8.00", currency: "USD", wallet: "USD", counterparty: "Example Client" });
-    next.bankAccounts!["USD|USD"] = "invented-usd-account";
+    next.bankAccounts!["USD|USD"] = "invented-usd-wallet";
     next.balances.push({ currency: "USD", wallet: "USD", amount: "18.00", asOf: "2028-05-31" });
     const result = await prepareStatementImport(client, source("multi-wallet"), "revolut", next, {});
     assert.equal(result.statements.length, 1);
@@ -70,8 +73,15 @@ describe("atomic statement import preview", () => {
     const repeat = await prepareStatementImport(client, source("multi-wallet-again"), "revolut", next, { preview: true });
     assert.equal(repeat.preview.replacements.length, 1);
     assert.equal(repeat.preview.replacements[0].difference.identical, true);
-    const independent = await prepareStatementImport(client, source("different-account"), "finom", parsed("2028-03", "invented-independent-account"), {});
-    assert.equal(independent.preview.requiresConfirmation, false);
+    const before = await getMonth(client, "2028-03");
+    const historyCount = (await listStatementHistory(client)).length;
+    await assert.rejects(prepareStatementImport(client, source("different-account"), "finom", parsed("2028-03", "invented-independent-account"), {}), (error: any) => error.statusCode === 409 && error.identityConflicts.some((item: any) => item.kind === "operation"));
+    const differentOperations = parsed("2028-03", "invented-independent-account");
+    differentOperations.rows[0] = { ...differentOperations.rows[0], amount: "-24.50", counterparty: "Example Other Hosting" };
+    differentOperations.balances[0] = { ...differentOperations.balances[0], amount: "75.50" };
+    await assert.rejects(prepareStatementImport(client, source("different-account-balances"), "finom", differentOperations, { preview: true }), (error: any) => error.statusCode === 409 && error.identityConflicts.every((item: any) => item.kind === "balance"));
+    assert.deepEqual(await getMonth(client, "2028-03"), before);
+    assert.equal((await listStatementHistory(client)).length, historyCount, "collision must not persist another source or selection");
   });
   it("rejects missing account identity and uses the actual PDF header over historical metadata", async () => {
     await assert.rejects(prepareStatementImport(client, source("unidentified"), "finom", { ...parsed(), bankAccounts: {} }, {}), /identifier/);
@@ -137,7 +147,7 @@ FINOM, a limited liability company registered with the Netherlands Chamber of Co
     assert.ok(partial.problems.some((problem) => /every calendar day/.test(problem.reason)));
     setStatementSourceReaderForTests(); setStatementPdfTextForTests();
   });
-  it("atomically migrates historical identity metadata so retained other accounts remain active", async () => {
+  it("blocks colliding accounts and migrates historical metadata only on confirmed same-account replacement", async () => {
     const text = `Example Widgets GmbH   Statement of account
 Issue date:   05.01.2029
 From:   01.12.2028
@@ -152,15 +162,16 @@ FINOM, a limited liability company registered with the Netherlands Chamber of Co
     const previous = await saveStatement(client, { accountId: "finom", period: "2028-12", documentId: "legacy-identity-source", filename: "invented-legacy.pdf", contentType: "application/pdf", rows: parsed("2028-12").rows, balances: [{ currency: "EUR", amount: "76.50", asOf: "2028-12-30" }], from: "2028-12-01", to: "2028-12-30" });
     setStatementSourceReaderForTests(async () => ({ bytes: Buffer.from("%PDF-synthetic"), contentType: "application/pdf", filename: "invented-legacy.pdf" }));
     setStatementPdfTextForTests(async () => text);
-    const result = await prepareStatementImport(client, source("new-separate-account"), "finom", parsed("2028-12", "invented-other-account"), {});
-    assert.equal(result.committed, true); assert.equal(result.preview.requiresConfirmation, false);
-    const active = (await listStatements(client)).filter((item) => item.period === "2028-12");
-    assert.equal(active.length, 2);
-    const retained = active.find((item) => item.id === previous.id)!;
+    await assert.rejects(prepareStatementImport(client, source("new-separate-account"), "finom", parsed("2028-12", "invented-other-account"), {}), (error: any) => error.statusCode === 409);
+    assert.equal((await listStatementHistory(client)).filter((item) => item.period === "2028-12").length, 1);
+    const candidate = parsed("2028-12");
+    const review = await prepareStatementImport(client, source("same-account-replacement"), "finom", candidate, { preview: true });
+    await prepareStatementImport(client, source("same-account-replacement"), "finom", candidate, { replace: true, previewDigest: review.preview.digest });
+    const retained = (await listStatementHistory(client)).find((item) => item.id === previous.id)!;
     assert.ok(retained.bankAccounts?.["main|EUR"]);
     assert.equal(retained.to, "2028-12-31"); assert.equal(retained.balances![0].asOf, "2028-12-31");
-    assert.deepEqual(retained.rows, previous.rows, "monetary rows and statement identity are retained");
-    assert.equal((await statementPackageSources(client, "2028-12")).statements.length, 2);
+    assert.deepEqual(retained.rows, previous.rows, "monetary rows and historical source identity are retained");
+    assert.equal((await statementPackageSources(client, "2028-12")).statements.length, 1);
     setStatementSourceReaderForTests(); setStatementPdfTextForTests();
   });
   it("migrates unverified keys retained by another bank import before comparing a replacement", async () => {
@@ -194,5 +205,26 @@ Transaction types`;
     assert.ok(active.some((item) => item.documentId === "replacement-revolut"));
     assert.ok(!Object.keys((await getMonth(client, "2029-03")).statementSelection!).some((key) => key.includes("unverified:")));
     setStatementSourceReaderForTests(); setStatementPdfTextForTests();
+  });
+  it("strongly reloads selected sources missing from a history scan and refuses unavailable references", async () => {
+    const value = parsed("2029-05");
+    await prepareStatementImport(client, source("strong-selected"), "finom", value, {});
+    const before = await getMonth(client, "2029-05");
+    const send = client.send.bind(client);
+    let loseSelectedGet = false, writes = 0;
+    const lagging = { send: async (command: any) => {
+      if (command instanceof ScanCommand && command.input.ExpressionAttributeValues?.[":prefix"] === "STATEMENT#") return { Items: [] };
+      if (command instanceof GetCommand && String(command.input.Key?.PK).startsWith("STATEMENT#")) {
+        assert.equal(command.input.ConsistentRead, true);
+        if (loseSelectedGet) return {};
+      }
+      if (command instanceof TransactWriteCommand) writes++;
+      return send(command);
+    } } as unknown as DynamoDBDocumentClient;
+    const review = await prepareStatementImport(lagging, source("strong-candidate"), "finom", value, {});
+    assert.equal(review.committed, false); assert.equal(review.preview.requiresConfirmation, true);
+    loseSelectedGet = true;
+    await assert.rejects(prepareStatementImport(lagging, source("missing-selected-candidate"), "finom", value, {}), (error: any) => error.statusCode === 409 && /Selected statement source is unavailable/.test(error.message));
+    assert.equal(writes, 0); assert.deepEqual(await getMonth(client, "2029-05"), before);
   });
 });

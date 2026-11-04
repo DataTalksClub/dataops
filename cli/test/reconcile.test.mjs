@@ -508,7 +508,8 @@ test("statement preview does not commit and --replace confirms a current server 
   const directory = await mkdtemp(join(tmpdir(), "dataops-statement-replace-"));
   const path = join(directory, "invented.pdf");
   await writeFile(path, "%PDF-invented source");
-  const preview = { digest: "invented-current-digest", requiresConfirmation: true, replacements: [], message: "Existing statement; no differences. Replace?" };
+  const headers = { issueDate: "2028-04-05", from: "2028-03-01", to: "2028-03-31", openingBalances: [{ asOf: "2028-03-01", amount: "100.00", currency: "EUR" }], balances: [{ asOf: "2028-03-31", amount: "76.50", currency: "EUR" }] };
+  const preview = { digest: "invented-current-digest", requiresConfirmation: true, replacements: [{ period: "2028-03", difference: { identical: true, added: [], removed: [], balancesChanged: false, periodChanged: false, existing: [headers], candidate: { ...headers, issueDate: "2028-04-09" } } }], message: "Existing statement; no differences. Replace?" };
   try {
     await withFakePortal([
       ["/documents/prepare", { outcome: "existing", document: { id: "invented-source" } }],
@@ -518,8 +519,11 @@ test("statement preview does not commit and --replace confirms a current server 
         assert.equal(body.preview, true); return { committed: false, preview, statements: [] };
       }],
     ], async (calls) => {
-      const kept = await upload({ ...args, file: path, preview: true }, {});
+      const lines = [];
+      const kept = await upload({ ...args, json: false, file: path, preview: true }, { print: (line) => lines.push(line) });
       assert.equal(kept.committed, false);
+      assert.ok(lines.some((line) => line.includes("Existing: Issue date 2028-04-05; From 2028-03-01; To 2028-03-31; Opening 2028-03-01 main 100.00 EUR; Closing 2028-03-31 main 76.50 EUR")));
+      assert.ok(lines.some((line) => line.includes("Incoming: Issue date 2028-04-09; From 2028-03-01; To 2028-03-31; Opening 2028-03-01 main 100.00 EUR; Closing 2028-03-31 main 76.50 EUR")));
       const replaced = await upload({ ...args, file: path, replace: true }, {});
       assert.equal(replaced.committed, true);
       assert.equal(calls.filter((call) => call.body && JSON.parse(call.body).replace === true).length, 1);

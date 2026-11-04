@@ -1,11 +1,11 @@
 import { createHash } from "crypto";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
-import { transactBookkeeping } from "../db/bookkeeping";
+import { getBookkeepingItem, transactBookkeeping } from "../db/bookkeeping";
 import { TABLE_BOOKKEEPING } from "../db/tableNames";
 import { getMonth } from "./monthService";
-import { listStatementHistory, statementIdFor, type StatementRecord } from "./service";
+import { listStatementHistory, listStatements, statementIdFor, type StatementRecord } from "./service";
 import type { ParsedStatement, StatementAccount } from "./parsers";
-import { canonicalStatementValue, defaultStatementSelection, overlaps, selectedStatementRecords, statementDifferences, walletKey, verifiedStatementSelection } from "./statementSelection";
+import { assertNoStatementAccountCollisions, canonicalStatementValue, defaultStatementSelection, overlaps, selectedStatementRecords, statementDifferences, walletKey, verifiedStatementSelection } from "./statementSelection";
 import { statementSourceBytes } from "./statementSource";
 import type { StatementSource } from "./statementIntake";
 import { coverageGaps } from "./match";
@@ -48,6 +48,8 @@ export async function statementPackageSources(client: DynamoDBDocumentClient, pe
   }
   const selection = month.statementSelection ? verifiedStatementSelection(month.statementSelection, history, records) : defaultStatementSelection(records);
   const selected = selectedStatementRecords(records, selection);
+  try { assertNoStatementAccountCollisions(selected); }
+  catch (error) { problems.push({ rowId: period, reference: period, reason: (error as Error).message }); }
   for (const id of explicitIds || []) if (!history.some((record) => record.id === id)) problems.push({ rowId: id, reference: id, reason: "Selected statement source is unavailable" });
   if (!explicitIds && warnings.length) problems.push(...warnings);
   for (const key of Object.keys(selection).filter((key) => key.startsWith("finom|") && selection[key].some((ref) => selected.some((record) => record.id === ref.id && (record.contentType === "application/pdf" || /\.pdf$/i.test(record.filename || "")))))) {
@@ -80,6 +82,12 @@ export async function prepareStatementImport(client: DynamoDBDocumentClient, sou
   for (const month of months) {
     if (month.state === "closed") continue;
     const period = month.period;
+    for (const selectedId of new Set(Object.values(month.statementSelection || {}).flatMap((refs) => refs.map((ref) => ref.id)))) {
+      const selected = await getBookkeepingItem(client, "statement", selectedId, true) as unknown as StatementRecord | null;
+      if (!selected || selected.period !== period) throw conflict("Selected statement source is unavailable; no active source changed. Reload or repair the existing source before importing.");
+      const index = history.findIndex((record) => record.id === selectedId);
+      if (index < 0) history.push(selected); else history[index] = selected;
+    }
     const activeIds = month.statementSelection ? new Set(Object.values(month.statementSelection).flatMap((refs) => refs.map((ref) => ref.id))) : undefined;
     const own = history.filter((record) => record.period === period && (!activeIds || activeIds.has(record.id)));
     // Only this bank's sources need byte revalidation; other accounts stay untouched.
@@ -109,8 +117,11 @@ export async function prepareStatementImport(client: DynamoDBDocumentClient, sou
     if (existing.length) replacements.push({ period, wallets: keys, difference: statementDifferences(existing, candidate) });
     for (const key of keys) selection[key] = [...(selection[key] || []).filter((ref) => !overlaps(ref, candidate)), { id, from: candidate.from!, to: candidate.to! }];
     candidates.push(candidate);
-    plans.push({ month, selection, previous });
+    plans.push({ month, selection, previous, projected: selectedStatementRecords([...verified.filter((record) => record.id !== candidate.id), candidate], selection) });
   }
+  const affectedPeriods = new Set(candidates.map((record) => record.period));
+  const otherActive = (await listStatements(client)).filter((record) => !affectedPeriods.has(record.period));
+  assertNoStatementAccountCollisions([...otherActive, ...plans.flatMap((plan) => plan.projected)]);
   // Exclude the generated timestamp; bind confirmation to source bytes/parsed values and all current versions.
   const previewDigest = digest({ source, account, parsed, versions: months.map((month) => [month.period, month.version]), history: history.filter((record) => periods.includes(record.period)).map((record) => [record.id, record.updatedAt]).sort(), replacements });
   const requiresConfirmation = replacements.length > 0;

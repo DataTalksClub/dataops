@@ -791,7 +791,11 @@ export function createBookkeepingSurface(context) {
             : undefined,
         });
         status.textContent =
-          outcome === "statement-kept" ? "Existing statement kept. Uploaded PDF retained in source history." : outcome === "existing" ? "Matching PDF already verified." : "PDF uploaded and verified.";
+          outcome === "statement-kept"
+            ? "Existing statement kept. Uploaded PDF retained in source history."
+            : outcome === "existing"
+              ? "Matching PDF already verified."
+              : "PDF uploaded and verified.";
         await refreshEvidence();
       }, "Could not upload PDF"),
     );

@@ -1,9 +1,43 @@
 import type { StatementRecord } from "./service";
+import { rowKeys } from "./service";
+import { bankKeyFor } from "./month";
 import type { StatementRow, StatementBalance } from "./parsers";
 
 export type StatementSelection = Record<string, Array<{ id: string; from: string; to: string }>>;
 export const walletKey = (record: Pick<StatementRecord, "accountId" | "bankAccounts" | "id">, row: Pick<StatementRow, "wallet" | "currency">) => `${record.accountId}|${record.bankAccounts?.[`${row.wallet || "main"}|${row.currency}`] || `unverified:${record.id}`}|${row.wallet || "main"}|${row.currency}`;
 export const overlaps = (a: { from?: string; to?: string }, b: { from?: string; to?: string }) => !!(a.from && a.to && b.from && b.to && a.from <= b.to && b.from <= a.to);
+
+export class StatementAccountCollisionError extends Error {
+  statusCode = 409;
+  constructor(readonly identityConflicts: Array<{ kind: "operation" | "balance"; bank: string; currency: string; wallet: string; sourceIds: string[] }>) {
+    super("Distinct bank accounts would share an existing reconciliation operation or balance key. No active statement changed. Keep the existing sources; account-key migration is required before activating the additional account.");
+  }
+}
+
+/** Prevent silent collapse until existing bank-row and balance keys can be migrated safely. */
+export function assertNoStatementAccountCollisions(records: StatementRecord[]) {
+  const operations = new Map<string, { fingerprint: string; id: string }>();
+  const balances = new Map<string, { fingerprint: string; id: string }>();
+  const conflicts: ConstructorParameters<typeof StatementAccountCollisionError>[0] = [];
+  for (const record of records) {
+    const keys = rowKeys(record.rows);
+    for (const [index, row] of record.rows.entries()) {
+      const fingerprint = record.bankAccounts?.[`${row.wallet || "main"}|${row.currency}`];
+      if (!fingerprint) continue;
+      const key = bankKeyFor(record.accountId, keys[index]), existing = operations.get(key);
+      if (existing && existing.fingerprint !== fingerprint) conflicts.push({ kind: "operation", bank: record.accountId, currency: row.currency, wallet: row.wallet || "main", sourceIds: [existing.id, record.id] });
+      else operations.set(key, { fingerprint, id: record.id });
+    }
+    for (const balance of record.balances || []) {
+      const fingerprint = record.bankAccounts?.[`${balance.wallet || "main"}|${balance.currency}`];
+      if (!fingerprint) continue;
+      const key = `${record.accountId}|${balance.wallet || ""}|${balance.currency}`, existing = balances.get(key);
+      if (existing && existing.fingerprint !== fingerprint) conflicts.push({ kind: "balance", bank: record.accountId, currency: balance.currency, wallet: balance.wallet || "main", sourceIds: [existing.id, record.id] });
+      else balances.set(key, { fingerprint, id: record.id });
+    }
+  }
+  if (conflicts.length) throw new StatementAccountCollisionError(conflicts);
+}
 
 /** Earliest retained source is the default; an explicit month selection wins. */
 export function defaultStatementSelection(records: StatementRecord[]): StatementSelection {

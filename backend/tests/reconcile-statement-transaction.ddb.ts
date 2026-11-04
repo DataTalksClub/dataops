@@ -43,4 +43,12 @@ describe("native statement source transactions", () => {
     const active = (await listStatements(client)).filter((item) => item.period === "2032-03");
     assert.equal(active.length, 1); assert.equal(active[0].documentId, "native-replacement"); assert.equal(active[0].rows.length, 2);
   });
+  it("blocks colliding actual accounts without writing a source or changing any active wallet", async () => {
+    const before = await getMonth(client, "2032-01");
+    const historical = (await listStatementHistory(client)).filter((item) => item.period === "2032-01");
+    const candidate = parsed("2032-01"); candidate.bankAccounts!["main|EUR"] = "invented-native-second-account";
+    await assert.rejects(prepareStatementImport(client, source("native-colliding-account"), "revolut", candidate, {}), (error: any) => error.statusCode === 409 && error.identityConflicts.some((conflict: any) => conflict.kind === "operation"));
+    assert.deepEqual(await getMonth(client, "2032-01"), before);
+    assert.deepEqual((await listStatementHistory(client)).filter((item) => item.period === "2032-01"), historical);
+  });
 });
