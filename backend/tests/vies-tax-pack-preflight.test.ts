@@ -4,7 +4,8 @@ import { createHash } from 'crypto';
 import { handler } from '../src/handler';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
-import { putBookkeepingItem } from '../src/db/bookkeeping';
+import { attachProof } from '../src/reconcile/monthService';
+import { createDocumentLink, putBookkeepingItem } from '../src/db/bookkeeping';
 import { createCrmRecord } from '../src/db/sponsorCrm';
 import { putViesCheck } from '../src/vies/store';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -37,10 +38,14 @@ describe('VAT preflight on the monthly tax pack', () => {
         sha256: createHash('sha256').update(`synthetic-${account.id}`).digest('hex'), s3Key: `documents/${account.id}`,
       });
     }
-    await invoke('POST', '/api/bookkeeping/transactions', {
+    const paymentResponse = await invoke('POST', '/api/bookkeeping/transactions', {
       transactionDate: '2026-10-05', counterparty: 'Synthetic ApS', description: 'Sponsorship',
       amount: '500', currency: 'EUR', sourceType: 'manual',
     });
+    const payment = JSON.parse(paymentResponse.body);
+    const evidence = (await putBookkeepingItem(client, 'document', { documentType: 'receipt', status: 'active', originalFilename: 'synthetic-vies-payment.pdf' })).item;
+    await createDocumentLink(client, { documentId: evidence.id, transactionId: payment.id, coverageType: 'evidence' });
+    await attachProof(client, '2026-10', 'synthetic-operator', payment.id, evidence.id);
     // A clean customer, a customer VIES does not know, one without any VAT ID, and a domestic one.
     await createCrmRecord(client, 'organization', { displayName: 'Clean ApS', country: 'DK', vatId: 'DK12345678' });
     await createCrmRecord(client, 'organization', { displayName: 'Unknown IVS', country: 'DK', vatId: 'DK99999999' });

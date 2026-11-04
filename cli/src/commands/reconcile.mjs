@@ -14,7 +14,7 @@ export const summary = "Month-end reconciliation: bank statements, matching, pay
 export const help = `dataops reconcile - month-end reconciliation (the Finance views' command line)
 
 Usage
-  dataops reconcile upload --file statement.pdf [--quiet] [--preview|--replace] [--json]
+  dataops reconcile upload --file statement.pdf [--account finom|revolut] [--period YYYY-MM] [--quiet] [--preview|--replace] [--json]
       Finom and Revolut statements need no flags: the bank comes from the
       file, and its rows are stored as one statement per month, then each
       month is reconciled and summarised in a finance notification
@@ -23,20 +23,10 @@ Usage
       preview without changing active data. --replace explicitly confirms the
       current preview; --preview/--dry-run only previews. Both banks preserve
       original PDF history and use the printed account, wallet and month.
-  dataops reconcile upload --file statement.pdf --account revolut|finom|mercury|merchant --period YYYY-MM [--by-month] [--json]
-      Stores the raw statement as a verified private bank-statement document,
-      parses its rows server-side and saves them for matching. Re-uploading the
-      same file for the same account and period replaces the stored rows;
-      rows that overlap another statement of the same account (a year export
-      next to a month export) are counted once in the report.
-      Dedicated Finom and Revolut PDF layouts are parsed; every Revolut
-      currency wallet and its closing balance are retained.
-      --by-month stores a statement spanning several months (a year export)
-      as one statement per calendar month; --period then only labels the
-      stored document.
-  dataops reconcile import-document <document-id> [--quiet] [--json]
+  dataops reconcile import-document <document-id> [--period YYYY-MM] [--quiet] [--preview|--replace] [--json]
       Parse a bank-statement document DataOps already stores (bank detected
-      from its content) into per-month statements.
+      from its content) into per-month statements. The same preview and explicit
+      replacement rules apply; --period selects the month to import.
   dataops reconcile parse <document-id> --account revolut|finom|mercury|merchant [--json]
       The same parse without storing anything: prints the row count, incoming
       total, per-wallet closing balances and warnings for a stored
@@ -168,7 +158,7 @@ export async function upload(args, io) {
 }
 
 export async function importDocument(args, io) {
-  const usage = "dataops reconcile import-document <document-id> [--quiet] [--json]";
+  const usage = "dataops reconcile import-document <document-id> [--period YYYY-MM] [--quiet] [--preview|--replace] [--json]";
   const documentId = positional(args, 0, usage);
   const result = await importStoredStatement(apiFor(args), documentId, args);
   if (!args.json) printStatementImport(result, io);

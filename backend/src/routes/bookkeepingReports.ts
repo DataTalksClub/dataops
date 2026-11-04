@@ -17,17 +17,20 @@ import {
   type BookkeepingItem,
 } from "../db/bookkeeping";
 import { preflightOrganizations } from '../vies/service';
+import { assertAccountantPaymentReady, MonthGateError } from "../reconcile/monthService";
+import { accountantCashDate } from "../finance/accountantReport";
 import { businessAccountRequiresStatement } from "../finance/businessAccounts";
 import {
   headDocumentObject,
   json,
   MONEY,
-  MONTH,
   parse,
   s3,
   signUrl,
   uploadStream,
 } from "./bookkeepingShared";
+
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 const csvCell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
 
@@ -66,12 +69,19 @@ export async function handleBookkeepingReportRoutes(
     const body = parse(event.body || null),
       month = String(body?.month || "");
     if (!MONTH.test(month)) return json(400, { error: "Invalid month" });
+    const ledger = await activeLedgerRows(client);
+    let omitted: Set<string>;
+    try { omitted = await assertAccountantPaymentReady(client, month, ledger); }
+    catch (error) {
+      if (error instanceof MonthGateError) return json(409, { reportPeriod: month, error: error.message, blockers: error.blockers });
+      throw error;
+    }
     const reports = await listBookkeepingItems(client, "report");
     const existing = reports.find(
       (r) =>
         r.month === month && ["ready", "generated"].includes(String(r.status)),
     );
-    if (existing) return json(200, { report: existing, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
+    if (existing) return json(200, { reportPeriod: month, report: existing, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
     const accounts = (await listBookkeepingItems(client, "account")).filter(
       (a) => a.kind === "business" && a.active !== false && businessAccountRequiresStatement(String(a.id), month),
     );
@@ -92,8 +102,8 @@ export async function handleBookkeepingReportRoutes(
         error: "Missing required business statements",
         missingAccountIds: missing.map((a) => a.id),
       });
-    const monthTransactions = (await activeLedgerRows(client))
-      .filter((t) => String(t.transactionDate).startsWith(month));
+    const monthTransactions = ledger
+      .filter((t) => accountantCashDate(t).startsWith(month) && !omitted.has(String(t.id)));
     const excludedTransactions = monthTransactions.filter(
       isReportExemptTransaction,
     );
@@ -175,6 +185,7 @@ export async function handleBookkeepingReportRoutes(
       throw error;
     }
     return json(201, {
+      reportPeriod: month,
       report,
       vatPreflight: await vatPreflightSummary(client),
       warnings: {
@@ -236,6 +247,13 @@ export async function handleBookkeepingReportRoutes(
     const report = await getBookkeepingItem(client, "report", archive[1]);
     if (!report || !["ready", "generated"].includes(String(report.status)))
       return json(404, { error: "Ready report not found" });
+    const month = String(report.month || "");
+    if (!MONTH.test(month)) return json(400, { error: "Invalid month" });
+    try { await assertAccountantPaymentReady(client, month); }
+    catch (error) {
+      if (error instanceof MonthGateError) return json(409, { reportPeriod: month, error: error.message, blockers: error.blockers });
+      throw error;
+    }
     if (report.archiveDocumentId) {
       const doc = await getBookkeepingItem(
         client,
@@ -251,7 +269,7 @@ export async function handleBookkeepingReportRoutes(
           }),
           { expiresIn: 300 },
         );
-        return json(200, { downloadUrl: url, expiresIn: 300, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
+        return json(200, { reportPeriod: month, downloadUrl: url, expiresIn: 300, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
       }
     }
     const transactionIds = Array.isArray(report.transactionIds)
@@ -402,7 +420,7 @@ export async function handleBookkeepingReportRoutes(
       }),
       { expiresIn: 300 },
     );
-    return json(201, { downloadUrl: url, expiresIn: 300, vatPreflight: await vatPreflightSummary(client) });
+    return json(201, { reportPeriod: month, downloadUrl: url, expiresIn: 300, vatPreflight: await vatPreflightSummary(client) });
   }
   return null;
 }

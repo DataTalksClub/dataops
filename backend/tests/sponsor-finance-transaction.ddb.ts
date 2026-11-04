@@ -1586,7 +1586,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
     const versionWithoutInvoice = (await unlinkFinanceSource(client, { actorId: adminId, dealId: seeded.dealId, dealVersion: 1,
       expectedVersion: seeded.version, kind: 'document', sourceId: invoiceId, idempotencyKey: idem('late-evidence-unlink-original') })).financeVersion;
     const receipt = await receivePayment(client, { actorId: adminId, dealId: seeded.dealId, dealVersion: 1,
-      expectedVersion: versionWithoutInvoice, receivedOn: '2098-04-03', amount: '40', currency: 'EUR',
+      expectedVersion: versionWithoutInvoice, receivedOn: '2099-12-03', amount: '40', currency: 'EUR',
       reference: 'synthetic-account:late-evidence', counterparty: 'Synthetic Sponsor', idempotencyKey: idem('late-evidence-receipt') });
     const cash = (await projectFinance(client, seeded.dealId, 'admin')).payments[0];
     const tuple = documentLinkItem({ documentId: invoiceId, transactionId: cash.id, coverageType: 'evidence' });
@@ -1611,13 +1611,17 @@ describe('sponsor finance production DynamoDB transactions', () => {
     await assert.rejects(() => attachPaymentEvidence(client, { ...input, expectedVersion: relinked.financeVersion,
       transactionIds: ['not-allocated-to-this-deal'], idempotencyKey: idem('late-evidence-wrong-receipt') }));
     const { handleBookkeepingReportRoutes } = await import('../src/routes/bookkeepingReports');
+    // Isolate this archive consumer's cash month from other transaction fixtures.
+    const paymentProof = (await putBookkeepingItem(client, 'document', { id: 'synthetic-late-evidence-payment-proof', documentType: 'other-evidence', status: 'active', originalFilename: 'synthetic-payment-confirmation.pdf', s3Key: 'documents/synthetic-late-evidence-payment-proof', byteSize: 30 })).item;
+    const { attachProof } = await import('../src/reconcile/monthService');
+    await attachProof(client, '2099-12', adminId, cash.id, paymentProof.id);
     for (const accountId of ['statement-account-one', 'statement-account-two']) {
       await put(client, TABLE_BOOKKEEPING, { ...key('ACCOUNT', accountId), id: accountId, kind: 'business', active: true });
       const id = `statement-${accountId}`;
       await put(client, TABLE_BOOKKEEPING, { ...key('DOCUMENT', id), id, documentType: 'bank-statement', status: 'active',
-        accountId, statementMonth: '2098-04', s3Key: `documents/${id}`, byteSize: 30, linkRefCount: 0, reportRefCount: 0 });
+        accountId, statementMonth: '2099-12', s3Key: `documents/${id}`, byteSize: 30, linkRefCount: 0, reportRefCount: 0 });
     }
-    const snapshot = await handleBookkeepingReportRoutes('/api/bookkeeping/reports/snapshot', 'POST', { body: JSON.stringify({ month: '2098-04' }) }, client);
+    const snapshot = await handleBookkeepingReportRoutes('/api/bookkeeping/reports/snapshot', 'POST', { body: JSON.stringify({ month: '2099-12', privateDocumentIds: [paymentProof.id] }) }, client);
     assert.equal(snapshot!.statusCode, 201, snapshot!.body);
     const report = JSON.parse(snapshot!.body).report;
     assert.ok(report.documentIds.includes(invoiceId)); assert.ok(report.transactionIds.includes(cash.id));

@@ -85,12 +85,19 @@ export function mountBookkeepingNavigation({
         "Could not access clipboard. Use Export accountant CSV instead.";
     }
   };
-  surface.querySelector("[data-export-report-csv]").addEventListener("click", exportReport);
+  function reportFailed(error) {
+    const message = typeof error?.message === "string" ? error.message : "Could not prepare accountant report.";
+    const blockers = Array.isArray(error?.payload?.blockers) ? error.payload.blockers : [];
+    const rows = blockers.map((row) => [row?.rowId, row?.date, row?.counterparty, row?.amount, row?.currency, row?.reason]
+      .filter((value) => typeof value === "string" && value).join(" · ")).filter(Boolean);
+    status.textContent = [message, ...rows].join("\n");
+  }
+  surface.querySelector("[data-export-report-csv]").addEventListener("click", () => exportReport().catch(reportFailed));
   surface
     .querySelector("[data-export-full-csv]")
     ?.addEventListener("click", exportFull);
   surface
     .querySelector("[data-copy-report]")
-    ?.addEventListener("click", copyReport);
+    ?.addEventListener("click", () => copyReport().catch(reportFailed));
   return { refresh };
 }
