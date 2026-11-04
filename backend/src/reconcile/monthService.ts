@@ -1211,7 +1211,7 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
     if (!registeredProof || registeredProof.status !== "active") continue;
     seenDocuments.add(documentId);
     entries.push({
-      path: naming.packagePath(period, "proofs", naming.proofName({ date: accountantCashDate(reportRow), counterparty: reportRow.counterparty as string, description: reportRow.description as string, amount: reportRow.amount as string, currency: String(reportRow.currency || row.ledger!.currency), filename: proof.filename })),
+      path: naming.packagePath(period, "statements", naming.proofName({ date: accountantCashDate(reportRow), counterparty: reportRow.counterparty as string, description: reportRow.description as string, amount: reportRow.amount as string, currency: String(reportRow.currency || row.ledger!.currency), filename: proof.filename })),
       kind: "proof", documentId, rowId: row.id,
       ...(proof.filename ? { originalFilename: proof.filename } : {}),
     });

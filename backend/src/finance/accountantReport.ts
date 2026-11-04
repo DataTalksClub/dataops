@@ -92,9 +92,18 @@ function values(entry: AccountantReportEntry) {
   ];
 }
 
+/** Cash-date order, deterministic parent ties, and saved allocation order. */
+function chronologicalReportRows(entries: AccountantReportEntry[]) {
+  return entries.map((entry, index) => ({ entry, index }))
+    .sort((left, right) => accountantCashDate(left.entry).localeCompare(accountantCashDate(right.entry))
+      || String(left.entry.id || "").localeCompare(String(right.entry.id || ""))
+      || left.index - right.index)
+    .map(({ entry }) => entry);
+}
+
 export function formatAccountantCsv(entries: AccountantReportEntry[]) {
   const lines = [HEADERS.map(csvCell).join(",")];
-  for (const entry of entries) {
+  for (const entry of chronologicalReportRows(entries)) {
     lines.push(values(entry)
       .map((value, index) => csvCell(index === 3 ? value : spreadsheetText(value)))
       .join(","));
@@ -104,7 +113,7 @@ export function formatAccountantCsv(entries: AccountantReportEntry[]) {
 
 export function formatAccountantTsv(entries: AccountantReportEntry[]) {
   const lines = [HEADERS.join("\t")];
-  for (const entry of entries) {
+  for (const entry of chronologicalReportRows(entries)) {
     lines.push(values(entry)
       .map((value, index) => {
         const text = String(value ?? "").replace(/[\t\r\n]/g, " ");
