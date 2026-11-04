@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { handleBookkeepingRoutes } from "../src/routes/bookkeeping";
-import { formatAccountantCsv, selectAccountantReportRows } from "../src/finance/accountantReport";
+import { formatAccountantCsv, formatAccountantHtml, selectAccountantReportRows } from "../src/finance/accountantReport";
 import { monthPackage } from "../src/reconcile/monthService";
 
 const entries = [
@@ -123,7 +123,7 @@ describe("native accountant report API", () => {
     const expectedCompanies = ["Invented Early", "Invented Tie A", "Invented Allocation First", "Invented Allocation Second",
       "Invented Allocation Third", "Invented Tie Z", "Invented Late"];
     let csv = "";
-    for (const format of ["csv", "tsv"] as const) {
+    for (const format of ["csv", "tsv", "html"] as const) {
       const response = await handleBookkeepingRoutes("/api/bookkeeping/reports/accountant", "GET", {
         httpMethod: "GET", path: "/api/bookkeeping/reports/accountant", headers: {},
         queryStringParameters: { period, format },
@@ -131,8 +131,11 @@ describe("native accountant report API", () => {
       assert.equal(response.statusCode, 200, response.body);
       const report = JSON.parse(response.body);
       assert.equal(report.count, 7);
-      const cells = report.content.trim().split(/\r?\n/).slice(1).map((line: string) =>
-        format === "csv" ? line.split(",").map((value) => value.slice(1, -1)) : line.split("\t"));
+      const cells = format === "html"
+        ? [...report.content.matchAll(/<tbody>([\s\S]*)<\/tbody>/g)][0][1].split("</tr>").filter(Boolean)
+          .map((line: string) => [...line.matchAll(/<td[^>]*>(.*?)<\/td>/g)].map((match) => match[1]))
+        : report.content.trim().split(/\r?\n/).slice(1).map((line: string) =>
+          format === "csv" ? line.split(",").map((value) => value.slice(1, -1)) : line.split("\t"));
       assert.deepEqual(cells.map((row: string[]) => row[1]), expectedCompanies);
       assert.deepEqual(cells.map((row: string[]) => row[0]), ["2033-10-01", ...Array(5).fill("2033-10-16"), "2033-10-31"]);
       assert.deepEqual(cells.slice(2, 5).map((row: string[]) => row[3]), ["-5.00", "-7.00", "-11.00"]);
@@ -141,6 +144,60 @@ describe("native accountant report API", () => {
     const pack = await monthPackage(source, period, { draft: true });
     assert.equal(pack.csv, csv, "native and package CSV use the same ordering and formatter");
     assert.equal(JSON.stringify(rows), before, "formatting preserves source dates, amounts and allocation order");
+  });
+
+  it("serves a semantic HTML table with the same cells and cash order as TSV", async () => {
+    const rows = [...entries, { id: "html-special", paidDate: "2026-10-31", amount: "1.25", currency: "EUR", entryType: "expense",
+      counterparty: `Invented & <Vendor> "Quote" 'A'`, description: "<script>alert(1)</script>\nSecond line" }];
+    const source = verifiedClient(rows);
+    const response = await handleBookkeepingRoutes("/api/bookkeeping/reports/accountant", "GET", {
+      httpMethod: "GET", path: "/api/bookkeeping/reports/accountant", headers: {},
+      queryStringParameters: { period: "2026-10", format: "html" },
+    }, source, true);
+    assert.equal(response.statusCode, 200, response.body);
+    const report = JSON.parse(response.body);
+    assert.equal(report.format, "html");
+    assert.equal(report.count, 3);
+    assert.equal(report.excludedCount, 2);
+    assert.match(report.content, /^<table[^>]*><thead><tr>/);
+    assert.equal((report.content.match(/<th scope="col"/g) || []).length, 4);
+    assert.equal((report.content.match(/<td /g) || []).length, 12);
+    assert.match(report.content, /Invented &amp; &lt;Vendor&gt; &quot;Quote&quot; &#39;A&#39;/);
+    assert.match(report.content, /&lt;script&gt;alert\(1\)&lt;\/script&gt;\nSecond line/);
+    assert.doesNotMatch(report.content, /<script|Synthetic Owner|Synthetic Tax Office|Stale Alias/);
+    const decode = (value: string) => value.replace(/&(amp|lt|gt|quot|#39);/g, (_, entity: string) =>
+      ({ amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" })[entity]!);
+    const htmlCells = [...report.content.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((match) => decode(match[1]));
+    const tsvResponse = await handleBookkeepingRoutes("/api/bookkeeping/reports/accountant", "GET", {
+      httpMethod: "GET", path: "/api/bookkeeping/reports/accountant", headers: {},
+      queryStringParameters: { period: "2026-10", format: "tsv" },
+    }, source, true);
+    const tsvCells = JSON.parse(tsvResponse.body).content.split("\n").slice(1).flatMap((line: string) => line.split("\t"));
+    assert.deepEqual(htmlCells.map((cell) => cell.replace(/[\t\r\n]/g, " ")), tsvCells);
+    assert.match(formatAccountantHtml([]), /<tbody><\/tbody>/);
+    assert.equal(formatAccountantHtml([{ counterparty: "=text", description: "+text" }]).includes(">=text</td>"), true,
+      "HTML uses original text, without spreadsheet formula guards");
+  });
+
+  it("applies the same payment readiness and currency gates to HTML", async () => {
+    const row = { id: "invented-pending", transactionDate: "2033-10-01", amount: "5.00", currency: "EUR", entryType: "expense" };
+    const unverified = { send: async (command: any) => ({ Items: command.input.ExpressionAttributeValues?.[":transaction"] ? [row] : [] }) } as unknown as DynamoDBDocumentClient;
+    for (const format of ["csv", "tsv", "html"]) {
+      const response = await handleBookkeepingRoutes("/api/bookkeeping/reports/accountant", "GET", {
+        httpMethod: "GET", path: "/api/bookkeeping/reports/accountant", headers: {},
+        queryStringParameters: { period: "2033-10", format },
+      }, unverified, true);
+      assert.equal(response.statusCode, 409, response.body);
+      const body = JSON.parse(response.body);
+      assert.ok(body.blockers.length);
+      assert.equal(body.content, undefined);
+    }
+    const response = await handleBookkeepingRoutes("/api/bookkeeping/reports/accountant", "GET", {
+      httpMethod: "GET", path: "/api/bookkeeping/reports/accountant", headers: {},
+      queryStringParameters: { period: "2033-10", format: "html" },
+    }, verifiedClient([{ ...row, currency: "USD" }]), true);
+    assert.equal(response.statusCode, 409, response.body);
+    assert.deepEqual(JSON.parse(response.body).unconvertedTransactionIds, [row.id]);
   });
 
   it("selects the cash period before applying allocation projection and report exclusions", () => {

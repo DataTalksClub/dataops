@@ -5,6 +5,7 @@ import {
   accountantReportRows,
   accountantReportRowsForPeriod,
   formatAccountantCsv,
+  formatAccountantHtml,
   formatAccountantTsv,
   isAccountantReportRowIncluded,
   unconvertedAccountantReportRows,
@@ -13,11 +14,11 @@ import { assertAccountantPaymentReady, MonthGateError } from "../reconcile/month
 import type { LambdaEvent, LambdaResponse } from "../types";
 import { json } from "./bookkeepingShared";
 
-export { accountantReportRows, formatAccountantCsv, formatAccountantTsv };
+export { accountantReportRows, formatAccountantCsv, formatAccountantTsv, formatAccountantHtml };
 
 /**
- * The native accountant Copy/CSV formatter, also available to the generic
- * `dataops api` CLI. This is separate from the reconciliation package CSV.
+ * The native accountant CSV/TSV/HTML formatter, also available to the generic
+ * `dataops api` CLI. CSV cells and ordering are shared with the reconciliation package.
  */
 export async function handleBookkeepingAccountantReportRoutes(
   path: string,
@@ -30,7 +31,7 @@ export async function handleBookkeepingAccountantReportRoutes(
   const format = String(event.queryStringParameters?.format || "csv");
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period))
     return json(400, { error: "Select a report month: period must be YYYY-MM" });
-  if (format !== "csv" && format !== "tsv")
+  if (format !== "csv" && format !== "tsv" && format !== "html")
     return json(400, { error: "Invalid format" });
 
   const transactions = await listTransactions(client);
@@ -55,6 +56,7 @@ export async function handleBookkeepingAccountantReportRoutes(
     format,
     count: included.length,
     excludedCount: reportRows.length - included.length,
-    content: format === "csv" ? formatAccountantCsv(included) : formatAccountantTsv(included),
+    content: format === "html" ? formatAccountantHtml(included)
+      : format === "csv" ? formatAccountantCsv(included) : formatAccountantTsv(included),
   });
 }
