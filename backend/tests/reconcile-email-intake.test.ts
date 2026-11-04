@@ -77,7 +77,7 @@ describe('bank statements sent to the invoice intake address', () => {
     delete process.env.IS_LOCAL;
   });
 
-  it('detects, parses, stores and reconciles both banks with no flags, and reports an unknown CSV', async () => {
+  it('recognizes tabular bank sources, retains unidentified accounts for review and reports unknown CSV', async () => {
     const sent = await handler({
       httpMethod: 'POST', path: '/api/v1/intake/email-documents', headers: { 'x-dataops-intake-secret': SECRET },
       body: JSON.stringify({
@@ -87,30 +87,24 @@ describe('bank statements sent to the invoice intake address', () => {
     }, {});
     assert.equal(sent.statusCode, 202, sent.body);
     const body = JSON.parse(sent.body);
-    assert.deepEqual(body.statements, [
-      { account: 'revolut', months: ['2026-10'], rows: 5 },
-      { account: 'finom', months: ['2026-10'], rows: 7 },
-    ]);
-    assert.deepEqual(body.statementIssues, ['attachment 3: CSV is not a recognized Finom or Revolut statement export']);
-    // Statements are never drafted as invoices.
+    assert.deepEqual(body.statements, []);
+    assert.equal(body.statementIssues.length, 3);
+    assert.match(body.statementIssues[0], /stable bank account identifier/);
+    assert.match(body.statementIssues[1], /stable bank account identifier/);
+    assert.match(body.statementIssues[2], /CSV is not a recognized/);
+    // Recognized statements stay in source history for review and never become invoices.
     assert.deepEqual(body.invoices, []);
-
     const monthResponse = await handler({ httpMethod: 'GET', path: '/api/reconcile/months/2026-10', headers: { 'x-user-id': OPERATOR } }, {});
     assert.equal(monthResponse.statusCode, 200, monthResponse.body);
     const month = JSON.parse(monthResponse.body);
-    assert.equal(month.statements.length, 2);
-    const kinds = month.rows.map((row: { exception?: { kind: string } }) => row.exception?.kind).filter(Boolean);
-    assert.deepEqual(kinds.filter((kind: string) => kind === 'internal_transfer').length, 2, 'the Revolut EUR→USD exchange legs');
-    assert.ok(month.rows.every((row: { status: string }) => ['no-invoice', 'matched', 'needs-review'].includes(row.status)));
-    assert.match(month.rows.find((row: { counterparty: string }) => row.counterparty === 'Sponsor Two GmbH').missing, /no ledger row or invoice/);
-
+    assert.equal(month.statements.length, 0);
+    assert.equal(month.rows.length, 0);
     const balances = JSON.parse((await handler({ httpMethod: 'GET', path: '/api/reconcile/balances', headers: { 'x-user-id': OPERATOR }, queryStringParameters: { account: 'finom' } }, {})).body);
-    assert.deepEqual(balances.items.map((item: { amount: string; asOf: string }) => [item.amount, item.asOf]), [['3210.55', '2026-10-31']]);
-
+    assert.deepEqual(balances.items, []);
     const notifications = await listUndismissedNotifications(await getClient());
     const summaries = notifications.filter((item) => item.type === 'reconcile-month');
     assert.equal(summaries.length, 2);
-    assert.match(String(summaries[0].message), /Reconciliation 2026-10 \(open\)/);
+    assert.ok(summaries.every((item) => /Statement requires review/.test(String(item.message))));
 
     // Sending the same mail again changes nothing.
     const replay = await handler({

@@ -8,7 +8,7 @@
  * row when the report is built.
  */
 import { createHash } from "crypto";
-import { PutCommand } from "@aws-sdk/lib-dynamodb";
+import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { TABLE_BOOKKEEPING } from "../db/tableNames";
 import {
@@ -54,6 +54,9 @@ export type StatementRecord = {
   from?: string;
   to?: string;
   warnings?: string[];
+  bankAccounts?: Record<string, string>;
+  issueDate?: string;
+  openingBalances?: StatementBalance[];
   createdAt: string;
   updatedAt: string;
 };
@@ -70,6 +73,9 @@ export type StatementInput = {
   from?: string;
   to?: string;
   warnings?: string[];
+  bankAccounts?: Record<string, string>;
+  issueDate?: string;
+  openingBalances?: StatementBalance[];
 };
 
 export type AccountBalance = StatementBalance & { accountId: StatementAccount; statementId: string };
@@ -144,6 +150,9 @@ export async function saveStatement(client: DynamoDBDocumentClient, input: State
     ...(input.filename ? { filename: input.filename } : {}),
     ...(input.contentType ? { contentType: input.contentType } : {}),
     rows: input.rows,
+    ...(input.bankAccounts ? { bankAccounts: input.bankAccounts } : {}),
+    ...(input.issueDate ? { issueDate: input.issueDate } : {}),
+    ...(input.openingBalances ? { openingBalances: input.openingBalances } : {}),
     ...(input.balances?.length ? { balances: input.balances } : {}),
     from: input.from || sorted[0].date,
     to: input.to || sorted[sorted.length - 1].date,
@@ -163,8 +172,20 @@ export async function getStatement(client: DynamoDBDocumentClient, id: string): 
   return (await getBookkeepingItem(client, "statement", id)) as unknown as StatementRecord | null;
 }
 
-export async function listStatements(client: DynamoDBDocumentClient): Promise<StatementRecord[]> {
+export async function listStatementHistory(client: DynamoDBDocumentClient): Promise<StatementRecord[]> {
   return (await listBookkeepingItems(client, "statement")) as unknown as StatementRecord[];
+}
+
+export async function listStatements(client: DynamoDBDocumentClient): Promise<StatementRecord[]> {
+  const records = await listStatementHistory(client);
+  const { defaultStatementSelection, selectedStatementRecords } = await import("./statementSelection");
+  const active: StatementRecord[] = [];
+  for (const period of new Set(records.map((record) => record.period))) {
+    const own = records.filter((record) => record.period === period);
+    const result = await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: { PK: `RECONCILE-MONTH#${period}`, SK: `RECONCILE-MONTH#${period}` }, ConsistentRead: true }));
+    active.push(...selectedStatementRecords(own, result.Item?.statementSelection || defaultStatementSelection(own)));
+  }
+  return active;
 }
 
 /**

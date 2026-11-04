@@ -81,26 +81,20 @@ test("PDF upload stores the raw statement, parses it and saves rows for matching
       assert.equal(body.statementMonth, "2026-10");
       assert.equal(body.originalFilename, "statement.pdf");
       assert.equal(body.contentType, "application/pdf");
-      assert.match(body.idempotencyKey, /^statement-[0-9a-f]{64}$/);
+      assert.match(body.idempotencyKey, /^bank-statement-[0-9a-f]{64}$/);
       return { document: { id: "stmt-doc" }, uploadUrl: "https://private.example.test/object", uploadHeaders: { "content-type": "application/pdf" } };
     }],
     ["/documents/stmt-doc/complete", { document: { id: "stmt-doc" } }],
-    ["/reconcile/statements/parse", (request) => {
+    ["/reconcile/statements/import", (request) => {
       const body = JSON.parse(request.options.body);
-      assert.equal(body.documentId, "stmt-doc");
-      assert.equal(body.account, "revolut");
-      return { account: "revolut", documentId: "stmt-doc", contentType: "application/pdf", rowCount: 1, incomingCount: 1, incomingTotal: "1000.00", rows: parsedRows, warnings: [] };
-    }],
-    ["/reconcile/statements", (request) => {
-      const body = JSON.parse(request.options.body);
-      assert.equal(body.period, "2026-10");
-      assert.deepEqual(body.rows, parsedRows);
-      return { statement: { id: "stmt-1", accountId: "revolut", period: "2026-10", rows: parsedRows } };
+      assert.equal(body.documentId, "stmt-doc"); assert.equal(body.account, "revolut"); assert.equal(body.period, "2026-10");
+      assert.equal(body.rows, undefined, "rows are parsed by the server, never supplied by the CLI");
+      return { committed: true, statements: [{ id: "stmt-1", period: "2026-10", rowCount: 1 }], balances: [], summaries: [] };
     }],
   ], async (calls) => {
     const result = await upload({ ...args, file: path, account: "revolut", period: "2026-10" }, {});
     assert.equal(result.documentId, "stmt-doc");
-    assert.equal(result.statement.id, "stmt-1");
+    assert.equal(result.statements[0].id, "stmt-1");
     const put = calls.find((call) => call.method === "PUT");
     assert.ok(put && Buffer.isBuffer(put.body) && put.body.length > 0);
     assert.equal(put.headers.Authorization, undefined);
@@ -305,7 +299,7 @@ test("server PDF parser errors stop CLI upload before statement rows are saved",
         ["https://private.example.test/object", ""],
         ["/documents/prepare", { document: { id: "bad-statement" }, uploadUrl: "https://private.example.test/object", uploadHeaders: { "content-type": "application/pdf" } }],
         ["/documents/bad-statement/complete", { document: { id: "bad-statement" } }],
-        ["/reconcile/statements/parse", new Response(JSON.stringify({ error: "statement.pdf: line 12, source text \\\"broken row\\\": amount unreadable" }), { status: 422 })],
+        ["/reconcile/statements/import", new Response(JSON.stringify({ error: "statement.pdf: line 12, source text \\\"broken row\\\": amount unreadable" }), { status: 422 })],
       ], async (recorded) => {
         calls = recorded;
         await upload({ ...args, file: path, account: "revolut", period: "2026-10" }, {});
@@ -316,7 +310,7 @@ test("server PDF parser errors stop CLI upload before statement rows are saved",
         return true;
       },
     );
-    assert.ok(!calls.some((call) => call.url.includes("/api/reconcile/statements") && call.method === "POST" && !call.url.includes("/parse")));
+    assert.ok(!calls.some((call) => call.url.endsWith("/api/reconcile/statements") && call.method === "POST"));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -463,16 +457,10 @@ test("upload accepts a Finom PDF and stores its closing balance", async () => {
   const parsedBalances = [{ currency: "EUR", amount: "3000.00", asOf: "2026-10-05" }];
   await withFakePortal([
     ["/documents/prepare", { outcome: "existing", document: { id: "finom-doc" } }],
-    ["/reconcile/statements/parse", (request) => {
+    ["/reconcile/statements/import", (request) => {
       const body = JSON.parse(request.options.body);
-      assert.equal(body.account, "finom");
-      assert.equal(body.currency, undefined);
-      return { contentType: "application/pdf", rowCount: 1, incomingCount: 1, incomingTotal: "1000.00", rows, balances: parsedBalances, warnings: [] };
-    }],
-    ["/reconcile/statements", (request) => {
-      const body = JSON.parse(request.options.body);
-      assert.deepEqual(body.balances, parsedBalances);
-      return { statement: { id: "stmt-finom", accountId: "finom", period: "2026-10", rows, balances: parsedBalances } };
+      assert.equal(body.account, "finom"); assert.equal(body.documentId, "finom-doc"); assert.equal(body.rows, undefined);
+      return { committed: true, statements: [{ id: "stmt-finom", period: "2026-10", rowCount: 1 }], balances: parsedBalances, summaries: [] };
     }],
     ["/reconcile/balances", (request) => {
       assert.match(request.url, /account=finom/);
@@ -481,7 +469,7 @@ test("upload accepts a Finom PDF and stores its closing balance", async () => {
   ], async () => {
     const printed = [];
     const result = await upload({ url: args.url, file: path, account: "finom", period: "2026-10" }, { print: (line) => printed.push(line) });
-    assert.equal(result.statement.id, "stmt-finom");
+    assert.equal(result.statements[0].id, "stmt-finom");
     assert.ok(printed.some((line) => line === "balance 3000.00 EUR as of 2026-10-05"), printed.join("\n"));
     const listed = await balances({ ...args, account: "finom" }, {});
     assert.equal(listed.items[0].amount, "3000.00");
@@ -499,29 +487,44 @@ test("upload --by-month stores all Revolut currency wallets as one statement per
     { date: "2026-10-02", amount: "-1.00", currency: "EUR", counterparty: "C" },
     { date: "2026-10-02", amount: "2.00", currency: "USD", counterparty: "D", wallet: "USD" },
   ];
-  const saves = [];
   await withFakePortal([
     ["/documents/prepare", { outcome: "existing", document: { id: "year-doc" } }],
-    ["/reconcile/statements/parse", { contentType: "application/pdf", rowCount: 4, incomingCount: 2, incomingTotal: "12.00", rows, balances: [
-      { currency: "EUR", amount: "4.00", asOf: "2026-10-02", wallet: "EUR" },
-      { currency: "USD", amount: "12.00", asOf: "2026-10-02", wallet: "USD" },
-    ], warnings: [] }],
-    ["/reconcile/statements", (request) => {
+    ["/reconcile/statements/import", (request) => {
       const body = JSON.parse(request.options.body);
-      saves.push(body);
-      return { statement: { id: `stmt-${body.period}`, period: body.period, rows: body.rows } };
+      assert.equal(body.documentId, "year-doc"); assert.equal(body.period, undefined);
+      assert.equal(body.rows, undefined);
+      return { committed: true, statements: [{ id: "sep", period: "2026-09", rowCount: 1 }, { id: "oct", period: "2026-10", rowCount: 3 }], balances: [], summaries: [] };
     }],
-  ], async () => {
+  ], async (calls) => {
     const result = await upload({ ...args, file: path, account: "revolut", period: "2026-10", byMonth: true }, {});
-    assert.deepEqual(saves.map((save) => [save.period, save.rows.length, save.balances?.length ?? 0, save.warnings?.length ?? 0]), [
-      ["2026-09", 1, 0, 0],
-      ["2026-10", 3, 2, 0],
-    ]);
-    assert.deepEqual(new Set(saves[1].rows.map((row) => row.currency)), new Set(["EUR", "USD"]));
-    assert.equal(saves[0].documentId, "year-doc");
     assert.equal(result.statements.length, 2);
+    assert.equal(calls.filter((call) => call.url.endsWith("/reconcile/statements/import")).length, 1, "wallets/months are one server-side atomic batch");
+    assert.ok(!calls.some((call) => call.url.endsWith("/reconcile/statements")));
   });
   await rm(directory, { recursive: true, force: true });
+});
+
+test("statement preview does not commit and --replace confirms a current server digest", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-statement-replace-"));
+  const path = join(directory, "invented.pdf");
+  await writeFile(path, "%PDF-invented source");
+  const preview = { digest: "invented-current-digest", requiresConfirmation: true, replacements: [], message: "Existing statement; no differences. Replace?" };
+  try {
+    await withFakePortal([
+      ["/documents/prepare", { outcome: "existing", document: { id: "invented-source" } }],
+      ["/reconcile/statements/import", (request) => {
+        const body = JSON.parse(request.options.body);
+        if (body.replace) { assert.equal(body.previewDigest, preview.digest); return { committed: true, statements: [{ id: "replacement" }] }; }
+        assert.equal(body.preview, true); return { committed: false, preview, statements: [] };
+      }],
+    ], async (calls) => {
+      const kept = await upload({ ...args, file: path, preview: true }, {});
+      assert.equal(kept.committed, false);
+      const replaced = await upload({ ...args, file: path, replace: true }, {});
+      assert.equal(replaced.committed, true);
+      assert.equal(calls.filter((call) => call.body && JSON.parse(call.body).replace === true).length, 1);
+    });
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 const monthPayload = {

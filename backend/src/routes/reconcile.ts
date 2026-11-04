@@ -1,9 +1,7 @@
-import { GetObjectCommand } from "@aws-sdk/client-s3";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import type { LambdaEvent, LambdaResponse } from "../types";
 import { financeActor } from "../sponsorFinance/repository";
-import { getRawDocument } from "../db/bookkeeping";
-import { json, MONTH, parse, s3 } from "./bookkeepingShared";
+import { json, MONTH, parse } from "./bookkeepingShared";
 import {
   ParseError,
   statementTotal,
@@ -20,7 +18,6 @@ import {
   listAliases,
   listStatements,
   saveAlias,
-  saveStatement,
 } from "../reconcile/service";
 import { recordRequestError } from "../requestErrorLog";
 import {
@@ -50,6 +47,8 @@ import { tableCsv } from "../reconcile/month";
 import { importStatement, recognizeStatement, UnrecognizedStatementError } from "../reconcile/statementIntake";
 import { autoMatchMonths, matchesOf } from "../reconcile/autoMatch";
 
+import { statementSourceBytes as documentBytes } from "../reconcile/statementSource";
+
 const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const CURRENCY = /^[A-Z]{3}$/;
 
@@ -64,24 +63,6 @@ function fail(error: unknown): LambdaResponse {
   if (error instanceof MonthGateError) return json(409, { ...(error.reportPeriod ? { reportPeriod: error.reportPeriod } : {}), error: message, blockers: error.blockers });
   if (statusCode) return json(statusCode, { error: message });
   return json(400, { error: message });
-}
-
-async function documentBytes(client: DynamoDBDocumentClient, documentId: string): Promise<{ bytes: Buffer; contentType: string; filename?: string }> {
-  const document = await getRawDocument(client, documentId);
-  if (!document || document.status !== "active") throw Object.assign(new Error("Statement document not found"), { statusCode: 404 });
-  if (!["bank-statement", "private-account-statement"].includes(String(document.documentType)))
-    throw new Error("Document is not a bank statement");
-  const bucket = process.env.BOOKKEEPING_DOCUMENTS_BUCKET;
-  if (!bucket) throw Object.assign(new Error("Document storage unavailable"), { statusCode: 503 });
-  const object = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: String(document.s3Key) }));
-  if (!object.Body) throw new Error("Statement object is empty");
-  const chunks: Buffer[] = [];
-  for await (const part of object.Body as unknown as AsyncIterable<Uint8Array>) chunks.push(Buffer.from(part));
-  return {
-    bytes: Buffer.concat(chunks),
-    contentType: String(document.contentType || "application/octet-stream"),
-    filename: String(document.originalFilename || `document-${documentId}.pdf`),
-  };
 }
 
 export async function handleReconcileRoutes(
@@ -125,28 +106,6 @@ export async function handleReconcileRoutes(
       })) });
     }
 
-    if (action === "/statements" && method === "POST") {
-      const body = parse(event.body || null);
-      if (!body) return json(400, { error: "Invalid JSON" });
-      const account = String(body.account || "");
-      if (!STATEMENT_ACCOUNTS.includes(account as StatementAccount)) return json(400, { error: `account must be one of ${STATEMENT_ACCOUNTS.join(", ")}` });
-      const period = String(body.period || "");
-      if (!MONTH.test(period)) return json(400, { error: "period must be YYYY-MM" });
-      if (body.documentId !== undefined && !OPAQUE_ID.test(String(body.documentId))) return json(400, { error: "Invalid documentId" });
-      await assertMonthOpen(client, period);
-      const statement = await saveStatement(client, {
-        accountId: account as StatementAccount,
-        period,
-        ...(body.documentId ? { documentId: String(body.documentId) } : {}),
-        ...(body.filename ? { filename: String(body.filename).slice(0, 300) } : {}),
-        ...(body.contentType ? { contentType: String(body.contentType).slice(0, 120) } : {}),
-        rows: body.rows as never,
-        ...(body.balances !== undefined ? { balances: body.balances as never } : {}),
-        ...(Array.isArray(body.warnings) ? { warnings: body.warnings.filter((warning: unknown) => typeof warning === "string") as string[] } : {}),
-      });
-      return json(201, { statement });
-    }
-
     if (action === "/statements/import" && method === "POST") {
       // No account or period: the bank and coverage period come from the file.
       const body = parse(event.body || null);
@@ -155,10 +114,15 @@ export async function handleReconcileRoutes(
       if (!OPAQUE_ID.test(documentId)) return json(400, { error: "documentId is required" });
       const currency = body.currency === undefined ? undefined : String(body.currency).toUpperCase();
       if (currency !== undefined && !CURRENCY.test(currency)) return json(400, { error: "currency must be a 3-letter ISO code" });
-      const source = await documentBytes(client, documentId);
+      const source = await documentBytes(client, { documentId });
       try {
-        const result = await importStatement(client, source.bytes, { documentId, contentType: source.contentType, ...(source.filename ? { filename: source.filename } : {}) }, { ...(currency ? { currency } : {}), notify: body.notify !== false });
-        return json(201, {
+        const result = await importStatement(client, source.bytes, { documentId, contentType: source.contentType, ...(source.filename ? { filename: source.filename } : {}) }, { ...(currency ? { currency } : {}), notify: body.notify !== false,
+          preview: body.preview === true, replace: body.replace === true,
+          ...(typeof body.previewDigest === "string" ? { previewDigest: body.previewDigest } : {}),
+          ...(body.account ? { expectedAccount: String(body.account) as StatementAccount } : {}),
+          ...(body.period ? { expectedPeriod: String(body.period) } : {}), by: actor.id });
+        return json(result.committed ? 201 : 200, {
+          preview: result.preview, committed: result.committed, issueDate: result.parsed.issueDate,
           account: result.account, layout: result.layout, statements: result.statements, skippedClosedMonths: result.skippedClosedMonths,
           rowCount: result.parsed.rows.length, balances: result.parsed.balances, warnings: result.parsed.warnings, summaries: result.summaries,
           autoMatch: result.autoMatch, matches: result.matches,
@@ -178,7 +142,7 @@ export async function handleReconcileRoutes(
       if (!OPAQUE_ID.test(documentId)) return json(400, { error: "documentId is required" });
       const currency = body.currency === undefined ? undefined : String(body.currency).toUpperCase();
       if (currency !== undefined && !CURRENCY.test(currency)) return json(400, { error: "currency must be a 3-letter ISO code" });
-      const source = await documentBytes(client, documentId);
+      const source = await documentBytes(client, { documentId });
       let parsed: ParsedStatement;
       try {
         const recognized = await recognizeStatement(source.bytes, source.contentType, {

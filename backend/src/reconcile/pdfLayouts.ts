@@ -10,6 +10,7 @@
  * that does not reconcile throws, because a silently dropped or mis-signed
  * row would otherwise flow into reconciliation unnoticed.
  */
+import { createHash } from "crypto";
 import { ParseError, parseAmount, parseStatementDate, sumAmounts } from "./parsers";
 import type { ParsedStatement, StatementBalance, StatementPeriod, StatementRow } from "./parsers";
 
@@ -23,6 +24,11 @@ export type PdfParsedStatement = ParsedStatement & {
   /** Opening balance per wallet, as printed. */
   openingBalances: StatementBalance[];
 };
+
+function accountFingerprint(value: string | undefined): string | undefined {
+  const normalized = String(value || "").replace(/\s+/g, "").toUpperCase();
+  return normalized ? createHash("sha256").update(normalized).digest("hex").slice(0, 24) : undefined;
+}
 
 const CURRENCY_SYMBOLS: Record<string, string> = { "€": "EUR", "$": "USD", "£": "GBP" };
 
@@ -103,9 +109,13 @@ export function parseFinomPdfText(text: string): PdfParsedStatement {
   if (!layout) {
     throw new ParseError(`unrecognized finom PDF statement layout: column header ${[...headers].map((h) => `"${h}"`).join(", ") || "missing"}; expected one of ${FINOM_LAYOUTS.map((l) => `"${l.header}"`).join(", ")}`);
   }
-  const period = { from: parseStatementDate(finomLabel(text, "From")), to: parseStatementDate(finomLabel(text, "To")) };
-  const opening = parseAmount(finomLabel(text, "Opening balance"));
-  const closing = parseAmount(finomLabel(text, "Closing balance"));
+  const headerText = text.split(/^[ \t]*Completed\s/m)[0];
+  const period = { from: parseStatementDate(finomLabel(headerText, "From")), to: parseStatementDate(finomLabel(headerText, "To")) };
+  const issueDate = parseStatementDate(finomLabel(headerText, "Issue date"));
+  const accountId = accountFingerprint(headerText.match(/^IBAN:\s*([^\r\n]+)/m)?.[1]);
+  if (period.from > period.to) throw new ParseError("finom PDF statement header From is after To");
+  const opening = parseAmount(finomLabel(headerText, "Opening balance"));
+  const closing = parseAmount(finomLabel(headerText, "Closing balance"));
 
   type Block = { date: string; counterparty: string; details: string[]; amount?: string; balance?: string; orig?: { amount: string; currency: string } };
   const blocks: Block[] = [];
@@ -167,6 +177,8 @@ export function parseFinomPdfText(text: string): PdfParsedStatement {
     };
   });
 
+  if (rows.some((row) => row.date < period.from || row.date > period.to)) throw new ParseError("finom PDF statement row lies outside header From/To");
+
   // Rows are printed newest first; walk them oldest first against the balances.
   const net = cents(sumAmounts(rows));
   if (cents(opening) + net !== cents(closing)) {
@@ -183,6 +195,8 @@ export function parseFinomPdfText(text: string): PdfParsedStatement {
   }
   return {
     layout: layout.name,
+    issueDate,
+    bankAccounts: accountId ? { "main|EUR": accountId } : {},
     rows,
     warnings: [],
     period,
@@ -222,6 +236,7 @@ function revolutMoney(piece: string): Money | null {
 }
 
 type RevolutSection = {
+  accountId?: string;
   wallet?: string;
   currency?: string;
   opening?: Money;
@@ -244,6 +259,8 @@ export function parseRevolutPdfText(text: string): PdfParsedStatement {
   if (!REVOLUT_ENTITY.test(text) || !REVOLUT_SUMMARY.test(text)) {
     throw new ParseError("unrecognized revolut PDF statement layout: Revolut Bank UAB issuer and \"Balance summary\" not found");
   }
+  const generated = text.match(/Generated on the ([^\n\r]+)/)?.[1]?.trim();
+  const issueDate = generated ? parseStatementDate(generated) : undefined;
   const sections: RevolutSection[] = [];
   let section: RevolutSection | null = null;
   let inTable = false;
@@ -302,7 +319,8 @@ export function parseRevolutPdfText(text: string): PdfParsedStatement {
     }
     if (parts.length === 2) {
       const [label, value] = parts;
-      if (label === "Currency" && /^[A-Z]{3}$/.test(value)) section.currency = value;
+      if (["IBAN", "Account number"].includes(label)) section.accountId = accountFingerprint(value);
+      else if (label === "Currency" && /^[A-Z]{3}$/.test(value)) section.currency = value;
       else if (label === "Opening balance") section.opening = revolutSummary(section, label, value);
       else if (label === "Money in") section.moneyIn = revolutSummary(section, label, value);
       else if (label === "Money out") section.moneyOut = revolutSummary(section, label, value);
@@ -404,5 +422,6 @@ export function parseRevolutPdfText(text: string): PdfParsedStatement {
     from: periods.map((p) => p.from).sort()[0],
     to: periods.map((p) => p.to).sort().at(-1)!,
   };
-  return { layout: REVOLUT_LAYOUT, rows, warnings: [], period, openingBalances, balances };
+  if (!issueDate) throw new ParseError("unrecognized revolut PDF statement layout: no generated issue date");
+  return { layout: REVOLUT_LAYOUT, issueDate, bankAccounts: Object.fromEntries(sections.filter((section) => section.accountId).map((section) => [`${section.currency}|${section.currency}`, section.accountId!])), rows, warnings: [], period, openingBalances, balances };
 }

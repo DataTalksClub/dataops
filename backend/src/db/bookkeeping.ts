@@ -10,6 +10,7 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { usesLocalTransactionEmulation } from "./client";
 import { cleanItem } from "./cleanItem";
 import { TABLE_BOOKKEEPING } from "./tableNames";
 import { classifyMandatoryPayment } from "../finance/mandatoryPayments";
@@ -70,6 +71,11 @@ let testTransactionLock = Promise.resolve();
 export type BookkeepingTransactItem = NonNullable<
   ConstructorParameters<typeof TransactWriteCommand>[0]["TransactItems"]
 >[number];
+
+/** Shared atomic bookkeeping write, including the repository's explicit local test emulator. */
+export async function transactBookkeeping(client: DynamoDBDocumentClient, input: ConstructorParameters<typeof TransactWriteCommand>[0]) {
+  return transact(client, input, false, true);
+}
 
 export function bookkeepingItemId(unique?: string) {
   return unique ? createHash("sha256").update(unique).digest("hex") : randomUUID();
@@ -180,6 +186,7 @@ async function transact(
     targets.add(target);
   }
   try {
+    if (process.env.NODE_ENV === "test" && usesLocalTransactionEmulation()) throw Object.assign(new Error("Dynalite has no TransactWriteItems"), { name: "UnknownOperationException" });
     await client.send(new TransactWriteCommand(input));
   } catch (error) {
     if (process.env.NODE_ENV !== "test" || (error as Error).name !== "UnknownOperationException")

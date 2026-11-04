@@ -24,13 +24,16 @@ import {
   type StatementPeriod,
 } from "./parsers";
 import { detectPdfStatementAccount, parseFinomPdfText, parseRevolutPdfText } from "./pdfLayouts";
-import { saveStatement, type StatementRecord } from "./service";
-import { buildMonths, getMonth, monthSummary } from "./monthService";
+import type { StatementRecord } from "./service";
+import { prepareStatementImport, StatementIdentityReviewError, type StatementImportOptions } from "./statementImport";
+import { buildMonths, monthSummary } from "./monthService";
 import { autoMatchMonths, matchCountsText, matchesOf, type AutoMatchResult, type MatchesView } from "./autoMatch";
 
 export type StatementSource = { documentId?: string; artifactId?: string; filename?: string; contentType: string };
 
 export type ImportedStatement = {
+  preview?: Awaited<ReturnType<typeof prepareStatementImport>>["preview"];
+  committed?: boolean;
   account: StatementAccount;
   layout: string;
   statements: Array<Pick<StatementRecord, "id" | "period" | "from" | "to"> & { rowCount: number }>;
@@ -173,30 +176,12 @@ async function storeParsedStatement(
   account: StatementAccount,
   layout: string,
   parsed: ParsedStatement,
-  options: { currency?: string; notify?: boolean } = {},
+  options: { currency?: string; notify?: boolean } & StatementImportOptions = {},
 ): Promise<ImportedStatement> {
-  const months = [...new Set(parsed.rows.map((row) => row.date.slice(0, 7)))].sort();
-  const statements: ImportedStatement["statements"] = [];
-  const skippedClosedMonths: string[] = [];
-  for (const period of months) {
-    if ((await getMonth(client, period)).state === "closed") { skippedClosedMonths.push(period); continue; }
-    const rows = parsed.rows.filter((row) => row.date.startsWith(period));
-    const balances = parsed.balances.filter((balance) => balance.asOf.startsWith(period));
-    const bounds = statementPeriodForMonth(period, parsed.period);
-    const record = await saveStatement(client, {
-      accountId: account,
-      period,
-      ...(source.documentId ? { documentId: source.documentId } : {}),
-      ...(source.artifactId ? { artifactId: source.artifactId } : {}),
-      ...(source.filename ? { filename: source.filename.slice(0, 300) } : {}),
-      contentType: source.contentType,
-      rows,
-      ...(bounds ? { from: bounds.from, to: bounds.to } : {}),
-      ...(balances.length ? { balances } : {}),
-      ...(parsed.warnings.length && period === months.at(-1) ? { warnings: parsed.warnings } : {}),
-    });
-    statements.push({ id: record.id, period, from: record.from, to: record.to, rowCount: rows.length });
-  }
+  const plan = await prepareStatementImport(client, source, account, parsed, options);
+  const { statements, skippedClosedMonths } = plan;
+  if (!plan.committed) return { account, layout, statements, skippedClosedMonths, parsed, preview: plan.preview, committed: false,
+    summaries: [], autoMatch: { attached: 0, byPeriod: {}, skippedClosedMonths: [] }, matches: [] };
   const touched = statements.map((statement) => statement.period);
   // The matcher runs on every upload: confident pairs are persisted before the months are summarised.
   const autoMatch = await autoMatchMonths(client, touched);
@@ -211,14 +196,14 @@ async function storeParsedStatement(
       metadata: { period: latest.period, account, statements: statements.map((statement) => statement.id), counters: latest.counters, matches: matches[matches.length - 1], autoMatched: autoMatch.attached, blockers: latest.blockers, audience: "finance-operator" },
     });
   }
-  return { account, layout, statements, skippedClosedMonths, parsed, summaries, autoMatch, matches };
+  return { account, layout, statements, skippedClosedMonths, parsed, summaries, autoMatch, matches, preview: plan.preview, committed: true };
 }
 
 export async function importStatement(
   client: DynamoDBDocumentClient,
   bytes: Buffer,
   source: StatementSource,
-  options: { currency?: string; notify?: boolean } = {},
+  options: { currency?: string; notify?: boolean } & StatementImportOptions = {},
 ): Promise<ImportedStatement> {
   const recognized = await recognizeStatement(bytes, source.contentType, { ...options, filename: source.filename });
   return storeParsedStatement(client, source, recognized.account, recognized.layout, recognized.parsed, options);
@@ -228,7 +213,7 @@ async function importEmailStatement(
   client: DynamoDBDocumentClient,
   bytes: Buffer,
   source: StatementSource,
-  options: { currency?: string; notify?: boolean } = {},
+  options: { currency?: string; notify?: boolean } & StatementImportOptions = {},
 ): Promise<ImportedStatement> {
   const recognized = await recognizeEmailStatement(bytes, source.contentType, options);
   return storeParsedStatement(client, source, recognized.account, recognized.layout, recognized.parsed, options);
@@ -282,10 +267,22 @@ export async function processStatementIntake(client: DynamoDBDocumentClient, int
     }
     try {
       const result = await importEmailStatement(client, content.bytes, { artifactId: artifact.id, contentType: content.contentType, ...(content.filename ? { filename: content.filename } : {}) }, { notify: true });
+      if (!result.committed) {
+        issues.push(`${label}: ${result.preview?.message || "Statement requires review"} No active statement changed.`);
+        await updateArtifact(client, artifact.id, { metadata: { ...(artifact.metadata || {}), reconcileStatement: { account: result.account, statements: [], pendingReview: true, preview: result.preview } } });
+        await createNotification(client, { type: "reconcile-month", message: `Statement requires review: ${label}. ${result.preview?.message || "No active statement changed."}`, metadata: { artifactId: artifact.id, audience: "finance-operator", pendingReview: true } });
+        continue;
+      }
       imported.push(result);
       await updateArtifact(client, artifact.id, { metadata: { ...(artifact.metadata || {}), reconcileStatement: { account: result.account, statements: result.statements.map((statement) => statement.id) } } });
       if (result.skippedClosedMonths.length) issues.push(`${label}: months ${result.skippedClosedMonths.join(", ")} are closed; reopen them to import these rows`);
     } catch (error) {
+      if (error instanceof StatementIdentityReviewError) {
+        issues.push(`${label}: ${error.message}`);
+        await updateArtifact(client, artifact.id, { metadata: { ...(artifact.metadata || {}), reconcileStatement: { account: error.account, statements: [], pendingReview: true, reason: error.message } } });
+        await createNotification(client, { type: "reconcile-month", message: `Statement requires review: ${label}. ${error.message}`, metadata: { artifactId: artifact.id, audience: "finance-operator", pendingReview: true } });
+        continue;
+      }
       if (error instanceof UnrecognizedStatementError || error instanceof ParseError) {
         // A PDF that is no statement is an invoice or receipt: invoice processing takes it.
         if (!isPdf(content.contentType.toLowerCase(), content.bytes)) issues.push(`${label}: ${error.message.replace(/ \(headers: .*\)$/, "")}`);

@@ -11,6 +11,9 @@ import { createDocumentLink, putBookkeepingItem } from '../src/db/bookkeeping';
 import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { setBookkeepingStorageForTests } from '../src/routes/bookkeepingShared';
 import { handleReconcileRoutes } from '../src/routes/reconcile';
+import { defaultStatementSelection } from '../src/reconcile/statementSelection';
+import { listStatementHistory, saveStatement } from '../src/reconcile/service';
+import { assertMonthOpen, mutateMonth } from '../src/reconcile/monthService';
 import { setStatementPdfTextForTests, statementPeriodForMonth } from '../src/reconcile/statementIntake';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -20,6 +23,16 @@ const invoke = (method: string, path: string, body?: unknown, headers: Record<st
 
 let client: DynamoDBDocumentClient;
 const call = (method: string, path: string, body?: unknown) => handleReconcileRoutes(path, method, { httpMethod: method, path, headers: { 'x-user-id': OPERATOR }, body: body === undefined ? null : JSON.stringify(body), queryStringParameters: null }, client);
+
+async function seedStatement(body: Record<string, any>) {
+  try {
+    await assertMonthOpen(client, body.period);
+    const statement = await saveStatement(client, { ...body, accountId: body.account } as never);
+    const records = (await listStatementHistory(client)).filter((record) => record.period === body.period);
+    await mutateMonth(client, body.period, 'test-fixture', 'import-statement', {}, (month) => { month.statementSelection = defaultStatementSelection(records); });
+    return { statusCode: 201, body: JSON.stringify({ statement }) };
+  } catch (error) { return { statusCode: (error as { statusCode?: number }).statusCode || 400, body: JSON.stringify({ error: (error as Error).message }) }; }
+}
 
 const OPERATOR = 'reconcile-operator';
 const APPROVER = 'reconcile-approver';
@@ -61,39 +74,9 @@ describe('reconcile API', () => {
     assert.equal(forbidden.statusCode, 200);
   });
 
-  it('stores statements idempotently and rejects bad rows without echoing them', async () => {
-    const bad = await call('POST', '/api/reconcile/statements', {
-      account: 'revolut', period: '2026-10',
-      rows: [{ date: '2026-10-05', amount: 'NaN', currency: 'EUR', counterparty: 'x' }],
-    });
-    assert.equal(bad.statusCode, 400);
-    assert.ok(!JSON.parse(bad.body).error.includes('NaN'));
-    const wrongAccount = await call('POST', '/api/reconcile/statements', { account: 'paypal', period: '2026-10', rows: [row()] });
-    assert.equal(wrongAccount.statusCode, 400);
-
-    const documentId = 'stmt-doc-1';
-    const first = await call('POST', '/api/reconcile/statements', {
-      account: 'revolut', period: '2026-10', documentId, filename: 'statement.pdf', contentType: 'application/pdf',
-      rows: [row({ amount: '100.00', date: '2026-10-01' }), row({ amount: '-4.50', date: '2026-10-02' })],
-    });
-    assert.equal(first.statusCode, 201);
-    const statement = JSON.parse(first.body).statement;
-    assert.equal(statement.from, '2026-10-01');
-    assert.equal(statement.to, '2026-10-02');
-
-    const duplicate = await call('POST', '/api/reconcile/statements', {
-      account: 'revolut', period: '2026-10', documentId,
-      rows: [row({ amount: '100.00', date: '2026-10-01' }), row({ amount: '-4.50', date: '2026-10-02' })],
-    });
-    assert.equal(duplicate.statusCode, 201);
-    assert.equal(JSON.parse(duplicate.body).statement.id, statement.id);
-
-    const listed = JSON.parse((await call('GET', '/api/reconcile/statements')).body);
-    assert.equal(listed.items.length, 1);
-    assert.equal(listed.items[0].incomingTotal, '100.00');
-    const removed = await call('DELETE', `/api/reconcile/statements/${statement.id}`);
-    assert.equal(removed.statusCode, 200);
-    assert.equal(JSON.parse((await call('GET', '/api/reconcile/statements')).body).items.length, 0);
+  it('refuses the unvalidated caller-row statement endpoint', async () => {
+    const response = await call('POST', '/api/reconcile/statements', { account: 'finom', period: '2028-03', rows: [row()] });
+    assert.equal(response.statusCode, 404);
   });
 
   it('preserves PDF header coverage through import and idempotent re-upload', async () => {
@@ -110,6 +93,8 @@ describe('reconcile API', () => {
     setStatementPdfTextForTests(async () => [
       'FINOM PAYMENTS B.V.',
       'Finom   STATEMENT OF ACCOUNT',
+      'Issue date: 05.11.2026',
+      'IBAN: EX00 0000 0000',
       'From: 01.10.2026',
       'To: 31.10.2026',
       'Opening balance: 100,00 €',
@@ -132,7 +117,9 @@ describe('reconcile API', () => {
       assert.deepEqual(firstBody.statements.map((statement: Record<string, unknown>) => [statement.from, statement.to]), [['2026-10-01', '2026-10-31']]);
 
       const replay = await importPdf();
-      assert.equal(replay.statusCode, 201, replay.body);
+      assert.equal(replay.statusCode, 200, replay.body);
+      assert.equal(JSON.parse(replay.body).committed, false);
+      assert.equal(JSON.parse(replay.body).preview.requiresConfirmation, true);
       const saved = JSON.parse((await call('GET', '/api/reconcile/statements')).body).items
         .filter((statement: Record<string, unknown>) => statement.documentId === document.id);
       assert.equal(saved.length, 1);
@@ -197,7 +184,7 @@ describe('reconcile API', () => {
       assert.ok(!statements.some((statement: Record<string, unknown>) => statement.documentId === document.id));
     }
 
-    const legacy = await call('POST', '/api/reconcile/statements', {
+    const legacy = await seedStatement({
       account: 'revolut', period: '2030-01', documentId: 'legacy-csv-statement', filename: 'older-export.csv', contentType: 'text/csv', rows: [row({ date: '2030-01-02', amount: '20.00' })],
     });
     assert.equal(legacy.statusCode, 201, legacy.body);
@@ -225,6 +212,8 @@ describe('reconcile API', () => {
     const base = [
       'FINOM PAYMENTS B.V.',
       'Finom   STATEMENT',
+      'Issue date: 05.11.2026',
+      'IBAN: EX00 0000 0000',
       'From: 01.10.2026',
       'To: 31.10.2026',
       'Opening balance: 0,00 €',
@@ -235,26 +224,26 @@ describe('reconcile API', () => {
       {
         filename: 'finom-bad-row.pdf',
         text: [...base, '02.10.2026   Unfinished transfer'].join('\n'),
-        line: /line 8/,
+        line: /line 10/,
         source: /Unfinished transfer/,
       },
       {
         filename: 'finom-empty.pdf',
         text: base.join('\n'),
-        line: /line 7/,
+        line: /line 9/,
         source: /Completed\s+Description\s+Pay in\/out/,
       },
       {
         filename: 'finom-balance-mismatch.pdf',
-        text: [...base.slice(0, 5), 'Closing balance: 0,00 €', base[6], '02.10.2026   Customer', '1,00 €'].join('\n'),
-        line: /line 6/,
+        text: [...base, '02.10.2026   Customer', '1,00 ' + String.fromCharCode(0x20ac)].join('\n'),
+        line: /line 8/,
         source: /Closing balance: 0,00 €/,
         failure: /does not reconcile/,
       },
       {
         filename: 'finom-invalid-date.pdf',
-        text: [...base.slice(0, 5), 'Closing balance: 2,00 €', base[6], '02.10.2026   First customer', '1,00 €', '99.10.2026   Bad date customer', '1,00 €'].join('\n'),
-        line: /line 10/,
+        text: [...base.map((line) => line.startsWith('Closing balance:') ? line.replace('0,00', '2,00') : line), '02.10.2026   First customer', '1,00 ' + String.fromCharCode(0x20ac), '99.10.2026   Bad date customer', '1,00 ' + String.fromCharCode(0x20ac)].join('\n'),
+        line: /line 12/,
         source: /99\.10\.2026\s+Bad date customer/,
         failure: /date out of range/i,
       },
@@ -326,7 +315,7 @@ describe('reconcile API', () => {
       amount: '250.00', currency: 'EUR', entryType: 'income', sourceType: 'manual',
     })).item;
 
-    const statement = await call('POST', '/api/reconcile/statements', {
+    const statement = await seedStatement({
       account: 'revolut', period: '2026-10', documentId: 'report-doc-1',
       rows: [
         row({ date: '2026-10-05', amount: '1000.00', counterparty: 'Organization One OÜ', reference: '20261012' }),
@@ -380,7 +369,7 @@ describe('reconcile API', () => {
   });
 
   it('counts rows of overlapping statements once and keeps the latest wallet balance', async () => {
-    const year = await call('POST', '/api/reconcile/statements', {
+    const year = await seedStatement({
       account: 'finom', period: '2026-11', documentId: 'finom-year',
       rows: [
         row({ date: '2026-11-02', amount: '-40.00', counterparty: 'Example Bank' }),
@@ -391,7 +380,7 @@ describe('reconcile API', () => {
       balances: [{ currency: 'EUR', amount: '2000.00', asOf: '2026-11-03' }],
     });
     assert.equal(year.statusCode, 201, year.body);
-    const month = await call('POST', '/api/reconcile/statements', {
+    const month = await seedStatement({
       account: 'finom', period: '2026-11', documentId: 'finom-month',
       rows: [
         row({ date: '2026-11-02', amount: '-40.00', counterparty: 'EXAMPLE BANK' }),
@@ -405,7 +394,7 @@ describe('reconcile API', () => {
     });
     assert.equal(month.statusCode, 201, month.body);
     // Re-uploading the same document rewrites its statement instead of adding one.
-    const again = await call('POST', '/api/reconcile/statements', {
+    const again = await seedStatement({
       account: 'finom', period: '2026-11', documentId: 'finom-month', rows: JSON.parse(month.body).statement.rows,
       balances: [{ currency: 'EUR', amount: '2295.00', asOf: '2026-11-04' }],
     });
@@ -426,7 +415,7 @@ describe('reconcile API', () => {
     assert.deepEqual(balances.items.map((item: Record<string, string>) => [item.accountId, item.currency, item.amount, item.asOf]), [
       ['finom', 'EUR', '2295.00', '2026-11-04'],
     ]);
-    const badBalance = await call('POST', '/api/reconcile/statements', {
+    const badBalance = await seedStatement({
       account: 'finom', period: '2026-11', documentId: 'finom-bad', rows: [row()],
       balances: [{ currency: 'EUR', amount: 'lots', asOf: '2026-11-04' }],
     });
@@ -444,7 +433,7 @@ describe('reconcile API', () => {
       documentType: 'receipt', status: 'active', contentType: 'application/pdf', originalFilename: 'paired-receipt.pdf',
       byteSize: 10, sha256: 'f'.repeat(64), s3Key: 'documents/paired-receipt',
     })).item;
-    const saved = await operator('POST', '/api/reconcile/statements', {
+    const saved = await seedStatement({
       account: 'revolut', period, documentId: 'paired-statement',
       rows: [row({ date: `${period}-12`, amount: '-100.00', counterparty: 'Paired Synthetic Vendor', reference: 'Existing paired invoice' })],
     });
@@ -484,7 +473,7 @@ describe('reconcile API', () => {
     const cloud = (await putBookkeepingItem(client, 'bookkeeping', {
       transactionDate: '2026-12-03', paidDate: '2026-12-03', counterparty: 'Example Cloud', description: 'Hosting', amount: '48.60', currency: 'EUR', entryType: 'expense', sourceType: 'spreadsheet',
     })).item;
-    const saved = await operator('POST', '/api/reconcile/statements', {
+    const saved = await seedStatement({
       account: 'finom', period: '2026-12', documentId: 'finom-december',
       rows: [
         row({ date: '2026-12-04', amount: '-48.60', counterparty: 'Example Cloud' }),
@@ -563,12 +552,12 @@ describe('reconcile API', () => {
 
     // Closed means locked.
     assert.equal((await operator('POST', '/api/reconcile/months/2026-12/exception', { row: tax.id, kind: 'bank_fee' })).statusCode, 409);
-    assert.equal((await operator('POST', '/api/reconcile/statements', { account: 'finom', period: '2026-12', documentId: 'late', rows: [row({ date: '2026-12-30' })] })).statusCode, 409);
+    assert.equal((await seedStatement({ account: 'finom', period: '2026-12', documentId: 'late', rows: [row({ date: '2026-12-30' })] })).statusCode, 409);
     assert.equal((await operator('POST', '/api/reconcile/months/2026-12/reopen', {})).statusCode, 400);
     const reopened = JSON.parse((await operator('POST', '/api/reconcile/months/2026-12/reopen', { reason: 'late bank fee found' })).body).month;
     assert.equal(reopened.state, 'open');
     assert.equal(reopened.exceptionConfirmation, undefined);
-    assert.deepEqual(reopened.log.map((entry: { action: string }) => entry.action), ['attach-proof', 'attach-document', 'create-ledger', 'exception', 'exception', 'confirm-exceptions', 'close', 'reopen']);
+    assert.deepEqual(reopened.log.map((entry: { action: string }) => entry.action), ['import-statement', 'attach-proof', 'attach-document', 'create-ledger', 'exception', 'exception', 'confirm-exceptions', 'close', 'reopen']);
 
     const csv = await invoke('GET', '/api/reconcile/months/2026-12', undefined, AUTH, { format: 'csv' });
     assert.match(csv.body.split('\n')[0], /^date,status,counterparty/);

@@ -28,6 +28,7 @@ import {
 } from "./bookkeeping-ledger.js";
 import { mountInvoiceReview } from "./invoices.js";
 import { createBookkeepingTransactionModal } from "./bookkeeping-transaction-modal.js";
+import { importStatementWithReview, confirmStatementReplacement } from "./bookkeeping-statement-import.js";
 import { loadStatementLinkIndex } from "./bookkeeping-statement.js";
 import { openBookkeepingDialog } from "./bookkeeping-dialogs.js";
 import {
@@ -414,6 +415,11 @@ export function createBookkeepingSurface(context) {
           body: JSON.stringify(ownership),
         });
       }
+      if (documentType === "bank-statement") {
+        const imported = await importStatementWithReview(completed.document.id, { request, workApiUrl,
+          confirmReplacement: (preview) => confirmStatementReplacement(preview, { document, openDialog: openBookkeepingDialog }) });
+        if (!imported.committed) return "statement-kept";
+      }
       if (transactionId)
         await api("/links", {
           method: "POST",
@@ -785,7 +791,7 @@ export function createBookkeepingSurface(context) {
             : undefined,
         });
         status.textContent =
-          outcome === "existing" ? "Matching PDF already verified." : "PDF uploaded and verified.";
+          outcome === "statement-kept" ? "Existing statement kept. Uploaded PDF retained in source history." : outcome === "existing" ? "Matching PDF already verified." : "PDF uploaded and verified.";
         await refreshEvidence();
       }, "Could not upload PDF"),
     );
