@@ -337,7 +337,8 @@ export function createSponsorPersonDetail(context) {
         const dialog = root()?.querySelector("[data-delete-person-dialog]");
         if (!dialog) return;
         dialog.querySelector("[data-delete-person-description]").textContent =
-          "Permanently delete this person with their history? This cannot be undone. Deletion is refused while the person is still linked to a deal or deliverable, or has notes or human touches.";
+          "Permanently delete this person with their history? This cannot be undone. " +
+          "Deletion is refused while the person is still linked to a deal or deliverable, or has notes or human touches.";
         dialog.querySelector("[data-delete-person-error]").textContent = "";
         dialog.showModal();
         return;

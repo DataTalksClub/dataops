@@ -713,7 +713,8 @@ export function createSponsorRecord(context) {
         const dialog = root()?.querySelector("[data-delete-company-dialog]");
         if (!dialog || !record?.company) return;
         dialog.querySelector("[data-delete-company-description]").textContent =
-          "Permanently delete this company with its history? This cannot be undone. Deletion is refused while the company still has deals, linked contacts, notes or human touches.";
+          "Permanently delete this company with its history? This cannot be undone. " +
+          "Deletion is refused while the company still has deals, linked contacts, notes or human touches.";
         dialog.querySelector("[data-delete-company-error]").textContent = "";
         dialog.showModal();
         return;
