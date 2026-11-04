@@ -68,10 +68,10 @@ import { handleCampaignCalendarRoutes } from './routes/campaignCalendar';
 import { handleDocumentRoutes } from './routes/documents';
 import { handleDocumentReviewRoutes, isAnonymousDocumentReviewRequest } from './documents/reviews';
 import { isAnonymousNewsletterPreviewRequest } from './newsletter/markdownPreview';
+import { jsonResponse } from './http';
 import type { LambdaEvent, LambdaResponse } from './types';
 import { recordRequestError } from './requestErrorLog';
 
-const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 let cachedPortalSecret: string | null | undefined;
 
 // Routes that do NOT require authentication
@@ -148,14 +148,6 @@ async function portalTrustedUserId(event: LambdaEvent): Promise<string | null> {
   const providedSecret = headerValue(event.headers, 'x-portal-secret');
   if (!constantTimeEquals(providedSecret, expectedSecret)) return null;
   return headerValue(event.headers, 'x-user-id') || 'portal-admin';
-}
-
-function jsonResponse(statusCode: number, body: unknown): LambdaResponse {
-  return {
-    statusCode,
-    headers: JSON_HEADERS,
-    body: typeof body === 'string' ? body : JSON.stringify(body),
-  };
 }
 
 function decodeBase64Body(event: LambdaEvent): void {
