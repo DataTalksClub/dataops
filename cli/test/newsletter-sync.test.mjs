@@ -51,6 +51,15 @@ describe("newsletter sync", () => {
     assert.equal(calls.length, 0);
   });
 
+  test("the retired --sheet flag stays inert: no sheet is read, the CSV usage error remains", async () => {
+    const io = captureIo();
+    const calls = fakePortal({});
+    const exit = await run(["newsletter", "sync", "--sheet", "1AbC-retired-spreadsheet"], io);
+    assert.equal(exit, EXIT.usage);
+    assert.match(io.errors.join("\n"), /Pass a CSV export of the Newsletter tab/);
+    assert.equal(calls.length, 0);
+  });
+
   test("dry run over a banner-row CSV keeps an ambiguous company link and reports it", async () => {
     const io = captureIo();
     const calls = fakePortal(syncRoutes);
