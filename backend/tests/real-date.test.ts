@@ -4,6 +4,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { route } from '../src/router';
 import { validateRows } from '../src/reconcile/service';
 import { realDate } from '../src/sponsorCrm/model';
+import { isCalendarDate, resolveTaskDate } from '../src/relativeDates';
 
 const dummyClient = {
   send: async () => ({ Item: { id: 'op-1', email: 'op@datatalks.club', name: 'Op', role: 'operator' } }),
@@ -66,4 +67,17 @@ describe('realDate consolidation (month 00/13 returns 400, not 500/RangeError)',
       assert.equal(res.statusCode, 404);
     });
   }
+
+  it('isCalendarDate stays stricter than realDate for four-digit years below 0100 (documented divergence)', () => {
+    // Both agree on every realistic input, including impossible calendar days.
+    for (const value of ['2026-01-15', '2024-02-29', '2026-02-30', '2026-13-01', 'not-a-date']) {
+      assert.equal(isCalendarDate(value), realDate(value), value);
+    }
+    // The one deliberate divergence: realDate's parse-based roundtrip accepts
+    // years 0000-0099 while isCalendarDate's Date.UTC roundtrip rejects them,
+    // so relative task-date resolution never lands on a year-0099 date.
+    assert.equal(realDate('0099-01-01'), true);
+    assert.equal(isCalendarDate('0099-01-01'), false);
+    assert.equal(resolveTaskDate('0099-01-01', '2026-11-04'), null);
+  });
 });
