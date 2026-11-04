@@ -3,7 +3,7 @@ import { setDefaultAssignee } from '../src/db/workspaceSettings';
 import { before, after, describe, it } from 'node:test';
 import assert from 'node:assert';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { BatchWriteCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { BatchWriteCommand, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { readActivity } from '../src/crmWorkspace/activity';
 import { handler } from '../src/handler';
@@ -110,7 +110,7 @@ describe('crm workspace activity', () => {
     assert.ok(body.reads.queries.some((scan: any) => scan.kind === 'message'));
     assert.ok(body.reads.queries.some((scan: any) => scan.kind === 'note'));
     assert.ok(body.reads.historyReads.length >= 1);
-    assert.ok(body.reads.snapshot.includes('ORGANIZATION#'));
+    assert.ok(body.reads.snapshot.includes('DEAL#'), 'org deal history comes from the scoped DEAL# scan');
     void contact;
   });
 
@@ -257,6 +257,58 @@ describe('crm workspace activity', () => {
       assert.ok(calls.every((call) => call.Limit === 101), 'read cost must not grow with cursor depth');
       assert.ok(calls.slice(1).every((call) => call.ExclusiveStartKey?.PK === pk));
     }
+  });
+
+  it('assembles deal history from a paged organization-scoped scan, never the workspace snapshot', async () => {
+    const suffix = String(seedCount++);
+    const org = data(await invoke('POST', '/api/sponsor-crm/organizations', {
+      displayName: `Many Deals Org ${suffix}`, domain: `manydeals-${suffix}.example`, sourceKey: `ws-manydeals-org-${suffix}`,
+    }));
+    const dealIds: string[] = [];
+    for (let index = 0; index < 5; index++) {
+      const deal = data(await invoke('POST', '/api/sponsor-crm/deals', {
+        organizationId: org.id, status: 'open', sourceKey: `ws-manydeals-deal-${suffix}-${index}`,
+      }));
+      const fresh = data(await invoke('GET', `/api/sponsor-crm/deals/${deal.id}`));
+      await invoke('PUT', `/api/sponsor-crm/deals/${deal.id}`, { status: 'agreed', version: fresh.version, historyNote: `Phase ${index}` });
+      dealIds.push(deal.id);
+    }
+    // Every scan page is capped at 25 evaluated items so the organization's
+    // deals arrive across many storage pages, like on a prod-sized source.
+    const scans: any[] = [];
+    const observed = { send: async (command: any) => {
+      if (command instanceof ScanCommand) {
+        scans.push(command.input);
+        return client.send(new ScanCommand({ ...command.input, Limit: 25 }));
+      }
+      return client.send(command);
+    } } as unknown as DynamoDBDocumentClient;
+    const seen = new Set<string>();
+    const historyDeals = new Set<string>();
+    let cursor: string | undefined;
+    let pages = 0;
+    do {
+      const response = await readActivity(observed, 'organization', org.id, { limit: '2', cursor });
+      assert.equal(response.status, 200);
+      const body = response.body as any;
+      for (const item of body.items) {
+        const key = `${item.source}:${item.id}`;
+        assert.ok(!seen.has(key), `duplicate ${key}`);
+        seen.add(key);
+        if (item.source === 'deal-history') historyDeals.add(String(item.provenance.dealId));
+      }
+      cursor = body.nextCursor || undefined;
+      assert.ok(++pages < 200, 'pagination must advance to the end');
+    } while (cursor);
+    assert.ok(scans.length > 10, 'the deals scan must paginate across many storage pages');
+    // The too-large request is the whole-workspace snapshot scan (every prefix
+    // ORed together). Only the org-scoped DEAL# scan may ever fire.
+    assert.ok(scans.every((scan) =>
+      scan.FilterExpression === 'begins_with(PK, :deal) AND organizationId = :organizationId' &&
+      scan.ExpressionAttributeValues?.[':deal'] === 'DEAL#' &&
+      scan.ExpressionAttributeValues?.[':organizationId'] === org.id,
+    ), 'activity must scan only this organization\'s deals, never the whole workspace source');
+    assert.deepEqual([...historyDeals].sort(), [...dealIds].sort());
   });
 
   it('merges all sources without losing events on one-item pages', async () => {

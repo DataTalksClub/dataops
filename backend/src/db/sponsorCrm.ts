@@ -147,6 +147,28 @@ export async function listCrmRecords(
     a.id.localeCompare(b.id));
 }
 
+/**
+ * Deals of one organization for single-record reads. A DEAL#-only bounded scan
+ * filtered to the organization: it never populates or reads the workspace
+ * snapshot, and only this organization's deals accumulate inside the page loop,
+ * so prod-sized workspaces stay within the storage bounds.
+ */
+export async function listOrganizationDeals(client: DynamoDBDocumentClient, organizationId: string) {
+  const rows = await collectBoundedPages<Record<string, unknown>>({
+    loadPage: (ExclusiveStartKey, abortSignal) => client.send(
+      new ScanCommand({
+        TableName: TABLE_SPONSOR_CRM,
+        ConsistentRead: true,
+        FilterExpression: 'begins_with(PK, :deal) AND organizationId = :organizationId',
+        ExpressionAttributeValues: { ':deal': 'DEAL#', ':organizationId': organizationId },
+        ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
+      }),
+      { abortSignal },
+    ),
+  });
+  return rows.map(item => clean(item)!).sort((a, b) => a.id.localeCompare(b.id));
+}
+
 function messageTargetWrites(message: Record<string, unknown>) {
   const messageId = String(message.id);
   const sentAt = String(message.sentAt || message.createdAt || new Date().toISOString());
