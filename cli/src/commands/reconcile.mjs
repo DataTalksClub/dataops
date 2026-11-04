@@ -608,7 +608,7 @@ export async function disposition(args, io) {
   const kind = optionalString(args, "kind"), reason = optionalString(args, "reason"), evidence = optionalString(args, "evidence");
   const rowDigest = optionalString(args, "digest"), rawVersion = optionalString(args, "version");
   if (!kind || !reason || !evidence || !rowDigest || rawVersion === undefined || !/^\d+$/.test(rawVersion)) throw new UsageError(usage);
-  const targetPeriod = optionalString(args, "target-period");
+  const targetPeriod = optionalString(args, "targetPeriod");
   const result = await monthPost(args, periodOr(args), "invoice-disposition", { rowId, kind, reason, evidence, rowDigest, version: Number(rawVersion), ...(targetPeriod ? { targetPeriod } : {}) });
   if (!args.json) io.print(`Recorded ${kind} disposition for ${rowId}.`);
   return result;
