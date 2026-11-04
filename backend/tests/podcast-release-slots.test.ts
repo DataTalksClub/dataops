@@ -11,11 +11,10 @@ import {
   normalizeCadence,
   normalizeEpisodesPerSeason,
   takenReleaseDates,
-  todayInTimezone,
   validCadence,
-  zonedTimeToUtc,
   DEFAULT_PODCAST_RELEASE_CADENCE,
 } from "../src/podcast/releaseSlots";
+import { civilToUtc, todayIn } from "../src/relativeDates";
 
 const invoke = (method: string, path: string, body?: unknown, query: Record<string, string> = {}) =>
   handler(
@@ -45,9 +44,9 @@ describe("podcast release slots", () => {
 
   it("converts the wall time DST-aware", () => {
     // CEST (+02:00) before the autumn change, CET (+01:00) after it.
-    assert.equal(zonedTimeToUtc("2026-10-23", "19:00", "Europe/Berlin"), "2026-10-23T17:00:00.000Z");
-    assert.equal(zonedTimeToUtc("2026-10-30", "19:00", "Europe/Berlin"), "2026-10-30T18:00:00.000Z");
-    assert.equal(todayInTimezone("Europe/Berlin", new Date("2026-10-17T10:00:00Z")), "2026-10-17");
+    assert.equal(civilToUtc("2026-10-23", "19:00", "Europe/Berlin"), "2026-10-23T17:00:00.000Z");
+    assert.equal(civilToUtc("2026-10-30", "19:00", "Europe/Berlin"), "2026-10-30T18:00:00.000Z");
+    assert.equal(todayIn("Europe/Berlin", new Date("2026-10-17T10:00:00Z")), "2026-10-17");
   });
 
   it("takes a slot on a release date or a Spotify schedule date, ignoring cancelled episodes", () => {

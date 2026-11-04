@@ -13,6 +13,7 @@ import { getTemplate } from '../db/templates';
 import { getCalendarHold, listCalendarHolds, putCalendarHold } from '../db/calendarHolds';
 import { calendarsMissingInvite, taskRequiresCalendarInvite, makeTaskHistoryEvent } from '../routes/taskValidation';
 import { dateFromTemplateOffset } from '../templates/cardTemplateProjection';
+import { todayIn } from '../relativeDates';
 import { confirmedHoldInvite, confirmedTitle, holdGuestAttendees, isPodcastInviteTitle, parseHoldDocumentUrl, podcastInviteTitle, HOLD_ATTENDEE_DENY_LIST, type CalendarHold } from './holds';
 import { listPodcastEpisodes, type PodcastEpisode } from '../db/podcastEpisodes';
 import { recordTemplateTypes } from '../cards/cardTitlePattern';
@@ -352,7 +353,7 @@ export async function syncCardInvite(
   if (linkedHold) {
     const preservedTopic = linkedHold.topic || (podcastTitle && linkedHold.title && !isPodcastInviteTitle(linkedHold.title) ? confirmedTitle(linkedHold.title) : undefined);
     storedHold = {
-      ...linkedHold, ...interval, cardId: card.id, title: confirmedTitle(inviteTitle), ...(preservedTopic ? { topic: preservedTopic } : {}), date: new Intl.DateTimeFormat('en-CA', { timeZone: interval.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(interval.startIso)),
+      ...linkedHold, ...interval, cardId: card.id, title: confirmedTitle(inviteTitle), ...(preservedTopic ? { topic: preservedTopic } : {}), date: todayIn(interval.timeZone, new Date(interval.startIso)),
       googleTitle: confirmedTitle(inviteTitle), guestRef: guests[0], ...(documentUrl ? { documentUrl } : {}),
       status: 'confirmed', confirmedAt: linkedHold.confirmedAt || new Date().toISOString(),
       googleEventIds: sync.eventIds, googleSync: { state: sync.state, ...(sync.state === 'deferred' ? { reason: sync.reason } : {}) },
@@ -554,11 +555,6 @@ export async function unlinkCardInvite(
   return { card: updated, removed };
 }
 
-/** The event's local calendar date in its own time zone. */
-function localDate(iso: string, timeZone: string): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
-}
-
 /**
  * `cards time` dates an undated ("date TBD") event Card, and keeps a Card
  * whose date followed its invitation on the invitation's day: the Card date
@@ -569,8 +565,8 @@ export async function adoptEventDate(
   client: DynamoDBDocumentClient, card: Card, previous: Card['eventTime'],
 ): Promise<{ card: Card; movedTasks: number }> {
   if (!card.eventTime || card.eventTime.sync !== 'synced') return { card, movedTasks: 0 };
-  const date = localDate(card.eventTime.startIso, card.eventTime.timeZone);
-  const followed = !card.anchorDate || (previous && card.anchorDate === localDate(previous.startIso, previous.timeZone));
+  const date = todayIn(card.eventTime.timeZone, new Date(card.eventTime.startIso));
+  const followed = !card.anchorDate || (previous && card.anchorDate === todayIn(previous.timeZone, new Date(previous.startIso)));
   if (!followed || card.anchorDate === date) return { card, movedTasks: 0 };
   const updated = await updateCardAdditive(client, card, () => ({ anchorDate: date }));
   let movedTasks = 0;
