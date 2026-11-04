@@ -1,4 +1,5 @@
 const { uploadBookkeepingEvidence } = require("./helpers/bookkeeping-evidence");
+const { syntheticStatementPdf } = require('./helpers/bookkeeping-statement');
 const { test, expect } = require('@playwright/test');
 const { recordCapabilityEvidence } = require('./helpers/capability-evidence');
 const {
@@ -755,6 +756,7 @@ test.describe('canonical frontend capability behavior', () => {
     await page.getByRole('button', { name: 'Upload PDF' }).click();
     await expect(page.locator('[data-bookkeeping-status]')).toContainText('Choose a PDF first');
     for (const [index] of accounts.entries()) {
+      const bank = ['finom', 'revolut'][index];
       await page.getByLabel('Document type').selectOption('bank-statement');
       const accountSelect = page.locator('[data-account]');
       const renderedAccountId = await accountSelect.locator('option').nth(index + 1).getAttribute('value');
@@ -763,9 +765,29 @@ test.describe('canonical frontend capability behavior', () => {
       await page.getByLabel('Statement month').fill('2026-08');
       await page.locator('[data-pdf]').setInputFiles({
         name: `synthetic-statement-${index + 1}.pdf`, mimeType: 'application/pdf',
-        buffer: Buffer.from(`%PDF-1.4\nsynthetic statement ${index + 1}\n%%EOF`),
+        buffer: await syntheticStatementPdf(bank),
       });
+      // The configured business-* account is document metadata, not a bank
+      // enum. The import must recognize the issuer from the actual PDF bytes.
+      const previewResponse = page.waitForResponse((response) =>
+        response.url().endsWith('/api/reconcile/statements/import') && response.request().postDataJSON().preview === true);
+      const committedResponse = page.waitForResponse((response) =>
+        response.url().endsWith('/api/reconcile/statements/import') && response.status() === 201);
       await page.getByRole('button', { name: 'Upload PDF' }).click();
+      const preview = await previewResponse;
+      expect(preview.status()).toBe(200);
+      expect(preview.request().postDataJSON().account).toBeUndefined();
+      expect(preview.request().postDataJSON().period).toBe('2026-08');
+      expect(await json(preview)).toMatchObject({
+        account: bank, committed: false, rowCount: 1, issueDate: '2026-09-04',
+        preview: { requiresConfirmation: false, candidateIssueDate: '2026-09-04' },
+      });
+      const committed = await committedResponse;
+      expect(committed.request().postDataJSON().period).toBe('2026-08');
+      expect(await json(committed)).toMatchObject({
+        account: bank, committed: true,
+        statements: [{ period: '2026-08', from: '2026-08-01', to: '2026-08-31', rowCount: 1 }],
+      });
       await expect(page.locator('[data-bookkeeping-status]')).toContainText('PDF uploaded and verified');
       await expect(page.locator('.bookkeeping-documents article')).toHaveCount(index + 2);
     }

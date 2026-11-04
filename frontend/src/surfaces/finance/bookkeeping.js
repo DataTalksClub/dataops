@@ -416,7 +416,7 @@ export function createBookkeepingSurface(context) {
         });
       }
       if (documentType === "bank-statement") {
-        const imported = await importStatementWithReview(completed.document.id, { request, workApiUrl,
+        const imported = await importStatementWithReview(completed.document.id, { period: statementMonth, request, workApiUrl,
           confirmReplacement: (preview) => confirmStatementReplacement(preview, { document, openDialog: openBookkeepingDialog }) });
         if (!imported.committed) return "statement-kept";
       }

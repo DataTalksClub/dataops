@@ -1,7 +1,7 @@
 /** Both first imports and replacements use the server's byte-parsed batch. */
-export async function importStatementWithReview(documentId, { request, workApiUrl, confirmReplacement }) {
+export async function importStatementWithReview(documentId, { period, request, workApiUrl, confirmReplacement }) {
   const post = (body) => request(workApiUrl("/api/reconcile/statements/import"), {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ documentId, ...body }),
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ documentId, period, ...body }),
   });
   const result = await post({ preview: true });
   if (result.preview.requiresConfirmation && !await confirmReplacement(result.preview)) return { ...result, cancelled: true };

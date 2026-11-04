@@ -27,7 +27,8 @@ test("statement replacement submits the reviewed digest in one batch", async () 
     const body = JSON.parse(options.body); calls.push(body);
     return body.preview ? { committed: false, preview } : { committed: true, statements: [{ id: "one-source-many-wallets" }] };
   };
-  const result = await importStatementWithReview("invented-source", { request, workApiUrl: (path) => path, confirmReplacement: async () => true });
+  const result = await importStatementWithReview("invented-source", { period: "2028-03", request, workApiUrl: (path) => path, confirmReplacement: async () => true });
   assert.equal(result.committed, true);
-  assert.deepEqual(calls[1], { documentId: "invented-source", replace: true, previewDigest: "invented-reviewed-digest" });
+  assert.deepEqual(calls[0], { documentId: "invented-source", period: "2028-03", preview: true });
+  assert.deepEqual(calls[1], { documentId: "invented-source", period: "2028-03", replace: true, previewDigest: "invented-reviewed-digest" });
 });

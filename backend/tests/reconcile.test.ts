@@ -110,6 +110,13 @@ describe('reconcile API', () => {
         originalFilename: 'synthetic-finom-october.pdf', byteSize: objectBytes.length, sha256: 'a'.repeat(64), s3Key: 'documents/synthetic-finom-october',
       })).item;
       const importPdf = () => call('POST', '/api/reconcile/statements/import', { documentId: document.id, notify: false });
+      const beforeWrongMonth = JSON.parse((await call('GET', '/api/reconcile/statements')).body).items;
+      const wrongMonth = await call('POST', '/api/reconcile/statements/import', {
+        documentId: document.id, period: '2026-09', preview: true, notify: false,
+      });
+      assert.equal(wrongMonth.statusCode, 400, wrongMonth.body);
+      assert.match(JSON.parse(wrongMonth.body).error, /do not cover the selected month/);
+      assert.deepEqual(JSON.parse((await call('GET', '/api/reconcile/statements')).body).items, beforeWrongMonth);
       const first = await importPdf();
       assert.equal(first.statusCode, 201, first.body);
       const firstBody = JSON.parse(first.body);
