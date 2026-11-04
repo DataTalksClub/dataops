@@ -10,7 +10,9 @@ import { STATUS_LABELS, episodeCode, guestNames } from "../podcast/model.js";
 // due. The row already names the Card, and clicking it opens the Card, so
 // the summary repeats neither.
 
-const PODCAST_TYPES = new Set(["podcast"]);
+// Mirrors the backend's podcast-episode record (cardTitleTokens.json): every
+// template type the episode register can link a Card from shows episode facts.
+const PODCAST_TYPES = new Set(["podcast", "lightning-lesson-podcast"]);
 const NEWSLETTER_TYPES = new Set(["newsletter", "newsletter-standalone"]);
 
 function formatDay(iso, today) {
