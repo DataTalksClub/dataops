@@ -293,3 +293,15 @@ exit code 5 and HTTP status 409. `error.details` retains only the documented
 `reportPeriod` and `blockers` fields (including row identities and reasons).
 Native draft packages and direct accountant CSV/TSV API calls use the same error
 contract and write no report content or package files when blocked.
+
+The accountant report also accepts `format=html` through the same read-only API:
+
+```sh
+dataops api GET '/api/bookkeeping/reports/accountant?period=YYYY-MM&format=html' --json
+```
+
+The JSON response keeps `reportPeriod`, `format`, `count`, `excludedCount` and
+`content`; `content` is an escaped semantic four-column HTML table suitable for
+an email body. It uses the same report rows, cash-date ordering, EUR values and
+readiness gates as CSV/TSV. HTML retains the original cell text and line breaks;
+spreadsheet-only formula protection is unnecessary in escaped HTML text.

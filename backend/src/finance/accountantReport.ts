@@ -123,3 +123,14 @@ export function formatAccountantTsv(entries: AccountantReportEntry[]) {
   }
   return lines.join("\n");
 }
+
+/** Email-ready semantic table using the same cells and order as CSV/TSV. */
+export function formatAccountantHtml(entries: AccountantReportEntry[]) {
+  const escape = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]!);
+  const headers = HEADERS.map((header) => `<th scope="col" style="padding:2px 3px;vertical-align:middle;border:1px solid rgb(204,204,204);text-align:left;font-weight:bold">${escape(header)}</th>`).join("");
+  const rows = chronologicalReportRows(entries).map((entry) => `<tr>${values(entry).map((value, index) =>
+    `<td style="padding:2px 3px;vertical-align:middle;border:1px solid rgb(204,204,204);white-space:pre-wrap${index === 3 ? ";text-align:right" : ""}">${escape(value)}</td>`).join("")}</tr>`);
+  return `<table cellspacing="0" cellpadding="0" dir="ltr" border="1" style="font-size:10pt;font-family:Arial;border-collapse:collapse"><thead><tr>${headers}</tr></thead><tbody>${rows.join("")}</tbody></table>`;
+}
