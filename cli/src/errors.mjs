@@ -53,12 +53,32 @@ export function exitCodeFor(error) {
   return EXIT.error;
 }
 
+// Documented accountant readiness/package fields only: never serialize an API
+// response wholesale into CLI errors, including nested blocker metadata.
+const FINANCE_BLOCKER_FIELDS = [
+  "reportPeriod", "period", "rowId", "date", "counterparty", "amount", "currency",
+  "status", "reason", "rowDigest", "reference",
+];
+function financeGateDetails(error) {
+  const body = error.body;
+  if (error.status !== 409 || !body || typeof body !== "object" || typeof body.reportPeriod !== "string"
+    || !/^\d{4}-(0[1-9]|1[0-2])$/.test(body.reportPeriod)
+    || !Array.isArray(body.blockers)) return undefined;
+  const blockers = body.blockers.filter((row) => row && !Array.isArray(row)
+    && typeof row === "object" && typeof row.rowId === "string" && typeof row.reason === "string")
+    .map((row) => Object.fromEntries(FINANCE_BLOCKER_FIELDS
+      .filter((field) => typeof row[field] === "string").map((field) => [field, row[field]])));
+  return { reportPeriod: body.reportPeriod, blockers };
+}
+
 /** The machine-readable error printed under `--json`. */
 export function errorPayload(error) {
   const payload = { message: error.message, exitCode: exitCodeFor(error) };
   if (error instanceof ApiError) {
     payload.status = error.status;
     if (error.code) payload.code = error.code;
+    const details = financeGateDetails(error);
+    if (details) payload.details = details;
   }
   if (error instanceof ConflictError && error.details) payload.details = error.details;
   return { error: payload };

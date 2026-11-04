@@ -287,3 +287,9 @@ It requires the existing finance administrator permission. Stale month versions
 or source digests are rejected. Any later change to the reviewed invoice or
 payment facts invalidates the decision for export. Missing bank matches never
 create unpaid/deferred decisions automatically.
+
+For a finance export readiness conflict, `--json` writes its error to stderr with
+exit code 5 and HTTP status 409. `error.details` retains only the documented
+`reportPeriod` and `blockers` fields (including row identities and reasons).
+Native draft packages and direct accountant CSV/TSV API calls use the same error
+contract and write no report content or package files when blocked.
