@@ -384,19 +384,24 @@ filter) is read-only: it only changes what is listed, never who acts.
 ## Anything else
 
 CRM directory hard deletion is admin-only and permanent:
-`dataops crm person delete <id> --yes [--expected-version N]` and
-`dataops crm company delete <id> --yes [--expected-version N]`.
-Read the record first. The API refuses organizations with any deals or any
-remaining contacts (archived rows count), contacts linked as a primary or other
-contact on a deal/deliverable, and records with notes or human touches. Inline
-notes have no author provenance, so all nonempty inline notes are protected.
-Delete eligible people before their company; there is no cascading deletion.
-Success removes the record, its history and owned domain/primary/message target index entries;
-subsequent reads return 404. Other records are unchanged. Exit 4 means not found;
-exit 5 means a guard or version conflict; read the error reason before retrying.
-The API is `DELETE /api/sponsor-crm/organizations/<id>?hard=true` or
+`dataops crm person delete <id> [--yes] [--expected-version N]` and
+`dataops crm company delete <id> [--yes] [--expected-version N]`.
+Both preview by default (a dry run that runs every guard and deletes nothing);
+add `--yes` to apply. Read the record first. The API refuses organizations with
+any deals or any remaining contacts (archived rows count), contacts linked as a
+primary or other contact on a deal/deliverable, and records with notes or human
+touches. Inline notes have no author provenance, so all nonempty inline notes
+are protected. Delete eligible people before their company; there is no
+cascading deletion. Success removes the record, its history and owned
+domain/primary/message target index entries; subsequent reads return 404.
+Other records are unchanged, and an audit snapshot row
+(`ORGANIZATION_DELETE_AUDIT#` / `CONTACT_DELETE_AUDIT#`) records what was
+deleted and by whom. Exit 4 means not found; exit 5 means a guard or version
+conflict; read the error reason before retrying. The API is
+`DELETE /api/sponsor-crm/organizations/<id>?hard=true` or
 `DELETE /api/sponsor-crm/contacts/<id>?hard=true`, optionally with
-`&expectedVersion=N`. Without `hard=true`, DELETE still archives.
+`&expectedVersion=N` and `&dryRun=true` for a preview. Without `hard=true`,
+DELETE still archives.
 
 Deal hard deletion is separate and admin-only:
 `dataops crm deal delete <id> [--with-deliverables] [--yes] [--expected-version N]`.

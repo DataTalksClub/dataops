@@ -41,7 +41,21 @@ describe('CRM hard delete', () => {
       assert.equal((await remove(plural, id)).statusCode, 404);
     }
     const rows = (await client.send(new ScanCommand({ TableName: TABLE_SPONSOR_CRM }))).Items!;
-    assert.deepEqual(rows, beforeRows.filter(r => !String(r.PK).includes(company.id) && !String(r.PK).includes(contact.id) && r.organizationId !== company.id && r.contactId !== contact.id));
+    // The retained delete-audit snapshot rows are the only traces: everything
+    // else keyed to the deleted ids is gone. Scan order is not stable, so
+    // both sides are compared key-sorted.
+    const byKey = (x: any, y: any) => `${x.PK}\u0000${x.SK}`.localeCompare(`${y.PK}\u0000${y.SK}`);
+    const deletable = rows.filter(r => !String(r.PK).startsWith('ORGANIZATION_DELETE_AUDIT#') && !String(r.PK).startsWith('CONTACT_DELETE_AUDIT#'));
+    assert.deepEqual(
+      [...deletable].sort(byKey),
+      [...beforeRows.filter(r => !String(r.PK).includes(company.id) && !String(r.PK).includes(contact.id) && r.organizationId !== company.id && r.contactId !== contact.id)].sort(byKey),
+    );
+    for (const [prefix, entityId] of [['ORGANIZATION_DELETE_AUDIT', company.id], ['CONTACT_DELETE_AUDIT', contact.id]]) {
+      const audits = rows.filter(row => String(row.PK) === `${prefix}#${entityId}`);
+      assert.equal(audits.length, 1, `one ${prefix} snapshot`);
+      assert.equal(audits[0].entityKind, `${prefix === 'ORGANIZATION_DELETE_AUDIT' ? 'organization' : 'contact'}-delete-audit`);
+      assert.equal(audits[0].entityId, entityId);
+    }
     const replacement = await invoke('POST', '/api/sponsor-crm/organizations', { displayName: 'Replacement', domain: company.domain });
     assert.equal(replacement.statusCode, 201, replacement.body);
   });
@@ -63,7 +77,12 @@ describe('CRM hard delete', () => {
       `MESSAGE_TARGET#organization:${company.id}`, `MESSAGE_TARGET#contact:${contact.id}`,
     ]);
     const afterRows = (await client.send(new ScanCommand({ TableName: TABLE_SPONSOR_CRM }))).Items!;
-    assert.deepEqual(afterRows, beforeRows.filter(row => !ownedKeys.has(String(row.PK))));
+    const byKey = (x: any, y: any) => `${x.PK}\u0000${x.SK}`.localeCompare(`${y.PK}\u0000${y.SK}`);
+    const isDeleteAudit = (row: any) => String(row.PK).startsWith('ORGANIZATION_DELETE_AUDIT#') || String(row.PK).startsWith('CONTACT_DELETE_AUDIT#');
+    assert.deepEqual(
+      afterRows.filter(row => !isDeleteAudit(row)).sort(byKey),
+      [...beforeRows.filter(row => !ownedKeys.has(String(row.PK)) && !isDeleteAudit(row))].sort(byKey),
+    );
   });
 
   it('removes an organizations stale primary index after its contact is already gone', async () => {
@@ -138,6 +157,55 @@ describe('CRM hard delete', () => {
     assert.equal((await remove('organizations', company.id, '&expectedVersion=2')).statusCode, 200);
   });
 
+  it('previews a hard delete with dryRun=true without deleting anything', async () => {
+    const company = await org({ domain: 'dry.example.test' });
+    const beforeRows = (await client.send(new ScanCommand({ TableName: TABLE_SPONSOR_CRM }))).Items!;
+    const preview = await remove('organizations', company.id, '&dryRun=true');
+    assert.equal(preview.statusCode, 200);
+    assert.equal(data(preview).mode, 'dry-run');
+    assert.equal(data(preview).deleted, false);
+    assert.equal(data(preview).auditSnapshotRetained, false);
+    assert.equal(data(preview).historyRows >= 1, true, 'the preview names the owned history rows');
+    const untouched = (await client.send(new ScanCommand({ TableName: TABLE_SPONSOR_CRM }))).Items!;
+    assert.deepEqual(
+      [...untouched].sort((a, b) => `${a.PK}\u0000${a.SK}`.localeCompare(`${b.PK}\u0000${b.SK}`)),
+      [...beforeRows].sort((a, b) => `${a.PK}\u0000${a.SK}`.localeCompare(`${b.PK}\u0000${b.SK}`)),
+    );
+    // A preview runs the same referential guards as an apply.
+    const contact = await person(company.id, { primary: true });
+    const refused = await remove('organizations', company.id, '&dryRun=true');
+    assert.equal(refused.statusCode, 409);
+    assert.match(data(refused).error, /contacts/);
+    // dryRun never rides the archive verb, and its value is validated.
+    const bare = await invoke('DELETE', `/api/sponsor-crm/organizations/${company.id}?dryRun=true`);
+    assert.equal(bare.statusCode, 400);
+    assert.equal(data(await invoke('GET', `/api/sponsor-crm/organizations/${company.id}`)).archivedAt, undefined);
+    assert.equal((await remove('organizations', company.id, '&dryRun=maybe')).statusCode, 400);
+  });
+
+  it('retains one delete-audit snapshot with actor provenance', async () => {
+    const company = await org({ domain: 'audited.example.test' });
+    await createUserWithId(client, 'audit-admin', { name: 'Auditor', email: 'auditor@example.test', role: 'admin' });
+    const admin = await createSession(client, 'audit-admin');
+    process.env.SKIP_AUTH = 'false';
+    try {
+      const response = await invoke('DELETE', `/api/sponsor-crm/organizations/${company.id}?hard=true`, undefined, { Authorization: `Bearer ${admin.token}` });
+      assert.equal(response.statusCode, 200);
+      assert.equal(data(response).mode, 'applied');
+      assert.equal(data(response).deleted, true);
+      assert.equal(data(response).auditSnapshotRetained, true);
+      const rows = (await client.send(new ScanCommand({ TableName: TABLE_SPONSOR_CRM }))).Items!;
+      const audits = rows.filter(row => row.PK === `ORGANIZATION_DELETE_AUDIT#${company.id}`);
+      assert.equal(audits.length, 1);
+      assert.equal(audits[0].entityKind, 'organization-delete-audit');
+      assert.equal(audits[0].entityId, company.id);
+      assert.equal(audits[0].actorId, 'audit-admin');
+      assert.equal(audits[0].snapshot.record.displayName, 'Synthetic delete fixture');
+      assert.equal(audits[0].snapshot.record.domain, 'audited.example.test');
+    } finally { process.env.SKIP_AUTH = 'true'; }
+    assert.equal((await invoke('GET', `/api/sponsor-crm/organizations/${company.id}`)).statusCode, 404);
+  });
+
   it('rolls back the whole deletion when cleanup fails', async () => {
     const company = await org({ domain: 'rollback.example.test' });
     const beforeRows = (await client.send(new ScanCommand({ TableName: TABLE_SPONSOR_CRM }))).Items;
@@ -209,12 +277,18 @@ describe('CRM hard delete', () => {
     } } as any;
     process.env.NODE_ENV = 'production';
     try {
-      await hardDeleteCrmRecord(fake, 'organization', 'o');
+      await hardDeleteCrmRecord(fake, 'organization', 'o', undefined, { actorId: 'admin-1' });
       assert.equal(commands[0].input.ConsistentRead, true);
       assert.equal(commands[1].input.ConsistentRead, true);
       assert.equal(commands[2].constructor.name, 'TransactWriteCommand');
-      assert.equal(commands[2].input.TransactItems.length, 3);
+      assert.equal(commands[2].input.TransactItems.length, 4);
       assert.equal(commands[2].input.TransactItems[0].Delete.ExpressionAttributeValues[':version'], 7);
+      const audit = commands[2].input.TransactItems[3].Put.Item;
+      assert.equal(audit.PK, 'ORGANIZATION_DELETE_AUDIT#o');
+      assert.equal(audit.entityKind, 'organization-delete-audit');
+      assert.equal(audit.actorId, 'admin-1');
+      assert.equal(audit.snapshot.record.id, 'o');
+      assert.ok(!('PK' in audit.snapshot.record));
     } finally { process.env.NODE_ENV = previous; }
   });
 });
