@@ -1049,7 +1049,9 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
   const naming = await import("./naming");
   const entries: PackageEntry[] = [{ path: naming.packagePath(period, null, naming.reportName(period, "csv")), kind: "report" }];
   const blockers: PackageBlocker[] = [];
-  const reportRows = selectAccountantReportRows(await listTransactions(client), period);
+  const transactions = await listTransactions(client);
+  const transactionsById = new Map(transactions.map((transaction) => [String(transaction.id), transaction]));
+  const reportRows = selectAccountantReportRows(transactions, period);
   for (const row of unconvertedAccountantReportRows(reportRows)) {
     blockers.push({
       rowId: String(row.id || "unknown"),
@@ -1061,7 +1063,7 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
   const proofByDocument = new Map<string, { row: MonthRow; reportRow: Record<string, unknown>; proof: NonNullable<MonthRow["paymentProof"]> }>();
   for (const reportRow of reportRows) {
     const row = monthRowsByLedger.get(String(reportRow.id));
-    if (row?.ledger && row.paymentProof) proofByDocument.set(row.paymentProof.documentId, { row, reportRow, proof: row.paymentProof });
+    if (row?.ledger && row.paymentProof) proofByDocument.set(row.paymentProof.documentId, { row, reportRow: transactionsById.get(String(reportRow.id)) || reportRow, proof: row.paymentProof });
   }
   const statements = (await listStatements(client)).filter((record) => record.period === period);
   for (const record of statements) {
