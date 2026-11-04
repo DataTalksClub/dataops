@@ -126,6 +126,8 @@ export interface PlannedTaskUpdate {
   before: Task | null;
   target: TemplateTaskDefinitionSnapshot | null;
   changedFields: string[];
+  /** The update rewrites `before`'s Template ref to `taskRef` (renamed definition). */
+  adoptedRef?: boolean;
 }
 
 export interface CardTemplateUpdatePlan {
@@ -339,7 +341,6 @@ export function buildCardTemplateUpdatePlan(
 
   const taskUpdates: PlannedTaskUpdate[] = [];
   const taskChanges: TemplateTaskUpdatePreview[] = [];
-  const targetRefs = new Set<string>();
   const refByTaskId = new Map(tasks.map((task) => [task.id, task.templateTaskRef]));
 
   // A Card created without an optional group never receives that group's
@@ -365,9 +366,20 @@ export function buildCardTemplateUpdatePlan(
   const accountedRefs = new Set(card.templateDefinitionSnapshot.taskRefs);
   const repeatedRefs = new Set((template.taskDefinitions || [])
     .filter(({ repeat }) => repeat).map(({ refId }) => refId));
+  const targetRefs = new Set(definitions.map(({ refId }) => refId));
+  // Tasks this update would retire: their ref names no target definition, they
+  // are not repeated instances beyond a count, and they are not already
+  // retained for the current Template. A definition the Template renamed
+  // adopts such a Task by description instead of adding a copy next to it.
+  const retiringTasks = relevantTasks.filter((task) => {
+    const ref = task.templateTaskRef as string;
+    if (targetRefs.has(ref) || alreadyRetainedForCurrentTemplate(card, template, task)) return false;
+    const instance = parseRepeatInstanceRef(ref);
+    return !instance || !repeatedRefs.has(instance.refId);
+  });
+  const adoptedRetiring = new Set<string>();
   for (const [order, definition] of definitions.entries()) {
     const ref = definition.refId;
-    targetRefs.add(ref);
     const current = byRef.get(ref) || null;
     const target = templateTaskDefinitionSnapshot(template, definition, order, card.anchorDate, card.endDate);
     // A definition the Card already accounts for but holds no Task for was
@@ -390,6 +402,67 @@ export function buildCardTemplateUpdatePlan(
           changes: [], operatorOverrideFields: [],
         });
         continue;
+      }
+      // A definition the Template renamed under its Task adopts the Task it
+      // previously named, so the Card keeps one Task for the work instead of
+      // gaining a copy while this update retires the original. The same
+      // normalized description the manual adoption matches on is the key, and
+      // it must name exactly one definition and one retiring Task. A Task an
+      // earlier update already retired only comes back when no live Task
+      // carries the work; a live one is adopted in its place.
+      const label = target.description.trim().toLowerCase();
+      if (descriptionCounts.get(label) === 1) {
+        const previous = retiringTasks.filter((task) => !adoptedRetiring.has(task.id)
+          && task.description.trim().toLowerCase() === label);
+        const live = previous.filter((task) => !task.templateRetiredReason);
+        const match = live.length === 1
+          ? live[0]
+          : live.length === 0 && previous.length === 1
+            ? previous[0]
+            : null;
+        if (match) {
+          adoptedRetiring.add(match.id);
+          const changes = fieldChanges(
+            [...TASK_FIELDS, DEPENDENCY_FIELD],
+            { ...match, ...dependencyRefsOf(match, refByTaskId) } as unknown as Dict,
+            match.templateDefinitionSnapshot as unknown as Dict,
+            target as unknown as Dict,
+          );
+          // A Task this machinery skipped for the removed ref comes back; a
+          // resolved one keeps its resolution; an open Task takes the renamed
+          // definition's fields. All keep their id under the new ref.
+          const restored = match.templateRetiredReason === 'removed'
+            && match.status === 'skipped'
+            && match.skippedAt === match.templateRetiredAt;
+          const action: TemplateTaskUpdateAction = restored
+            ? 'restore'
+            : changes.length === 0 || match.status === 'done' || match.status === 'skipped'
+              ? 'adopt'
+              : 'update';
+          taskUpdates.push({
+            action,
+            taskRef: ref,
+            before: match,
+            target,
+            changedFields: action === 'adopt' ? [] : changes.map(({ field }) => field),
+            ...(action === 'adopt' ? {} : { adoptedRef: true }),
+          });
+          taskChanges.push({
+            action,
+            taskId: match.id,
+            taskRef: ref,
+            currentLabel: match.description,
+            targetLabel: target.description,
+            ...(action === 'adopt'
+              ? { reason: `The Template renamed ${match.templateTaskRef} to ${ref}; the Task keeps its state` }
+              : {}),
+            changes: action === 'adopt' ? [] : changes,
+            operatorOverrideFields: action === 'adopt'
+              ? []
+              : changes.filter(({ operatorOverride }) => operatorOverride).map(({ field }) => field),
+          });
+          continue;
+        }
       }
       taskUpdates.push({ action: 'add', taskRef: ref, before: null, target, changedFields: [...TASK_FIELDS] });
       taskChanges.push({
@@ -443,7 +516,7 @@ export function buildCardTemplateUpdatePlan(
 
   for (const current of relevantTasks) {
     const ref = current.templateTaskRef as string;
-    if (targetRefs.has(ref) || alreadyRetainedForCurrentTemplate(card, template, current)) continue;
+    if (targetRefs.has(ref) || adoptedRetiring.has(current.id) || alreadyRetainedForCurrentTemplate(card, template, current)) continue;
     // A repeated instance beyond a lowered count that nothing retained (it is
     // not done and links no Card) is removed. Otherwise a resolved Task keeps
     // its resolution and an open one is skipped.
@@ -533,7 +606,7 @@ function assertAcyclicAfterUpdate(tasks: Task[], updates: PlannedTaskUpdate[]): 
   const idByRef = new Map<string, string>();
   for (const task of tasks) if (task.templateTaskRef) idByRef.set(task.templateTaskRef, task.id);
   for (const update of updates) {
-    if (update.action === 'adopt') idByRef.set(update.taskRef, update.before!.id);
+    if (update.action === 'adopt' || update.adoptedRef) idByRef.set(update.taskRef, update.before!.id);
     if (update.action === 'add') idByRef.set(update.taskRef, `added:${update.taskRef}`);
   }
   const edges = new Map<string, string[]>(tasks.map((task) => [task.id, task.dependsOn || []]));

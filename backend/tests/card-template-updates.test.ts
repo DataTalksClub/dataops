@@ -22,6 +22,7 @@ import {
 import {
   applyCardTemplateUpdate,
   CardTemplateUpdateConflictError,
+  TEMPLATE_REMOVED_SKIP_REASON,
 } from '../src/db/cardTemplateUpdates';
 import {
   disableLocalTransactionEmulation,
@@ -585,5 +586,233 @@ describe('manual task adoption', () => {
     target.taskDefinitions!.push({ refId: 'closeout', description: 'Close out', offsetDays: 7, anchor: 'end' });
     const card = cardFrom(source);
     assert.throws(() => buildCardTemplateUpdatePlan(card, tasksFrom(source), target), /no endDate/);
+  });
+});
+
+describe('renamed definition adoption', () => {
+  const fake = { send: async (command: unknown) => { if (command instanceof GetCommand) return {}; return {}; } } as any;
+
+  it('adopts the Task a renamed definition previously named instead of adding a copy, then is a no-op', async () => {
+    const source = template(1);
+    const target = template(2);
+    target.taskDefinitions = target.taskDefinitions!.map((definition) => (
+      definition.refId === 'host' ? { ...definition, refId: 'host-session' } : definition
+    ));
+    const card = cardFrom(source);
+    const tasks = tasksFrom(source);
+
+    const plan = buildCardTemplateUpdatePlan(card, tasks, target);
+    const renamed = plan.taskUpdates.find(({ taskRef }) => taskRef === 'host-session');
+    assert.ok(renamed, 'the renamed definition is part of the plan');
+    assert.equal(renamed.action, 'adopt');
+    assert.equal(renamed.before?.id, 'task-host');
+    assert.equal(plan.taskUpdates.some(({ action }) => action === 'add' || action === 'skip-removed'), false);
+    assert.equal(
+      plan.preview.taskChanges.find(({ taskRef }) => taskRef === 'host-session')?.reason,
+      'The Template renamed host to host-session; the Task keeps its state',
+    );
+
+    disableLocalTransactionEmulation();
+    const result = await applyCardTemplateUpdate(fake, card, tasks, target, plan.preview.previewToken, 'operator');
+    const hosted = result.tasks.filter(({ description }) => description === 'Host');
+    assert.equal(hosted.length, 1, 'one Task for the renamed definition, not two');
+    assert.equal(hosted[0].id, 'task-host', 'the Task keeps its id');
+    assert.equal(hosted[0].templateTaskRef, 'host-session');
+    assert.equal(hosted[0].status, 'todo');
+    assert.equal(result.card.taskCount, 3);
+    assert.equal(result.card.openTaskCount, 3);
+
+    const next = buildCardTemplateUpdatePlan(result.card, result.tasks, target);
+    assert.equal(next.preview.state, 'current');
+    const retry = await applyCardTemplateUpdate(fake, result.card, result.tasks, target, next.preview.previewToken, 'operator');
+    assert.equal(retry.applied, false);
+    assert.equal(retry.tasks.filter(({ description }) => description === 'Host').length, 1);
+  });
+
+  it('updates a renamed definition in place when its content changed too', async () => {
+    const source = template(1);
+    const target = template(2);
+    target.taskDefinitions = target.taskDefinitions!.map((definition) => (
+      definition.refId === 'host' ? { ...definition, refId: 'host-session', offsetDays: 1 } : definition
+    ));
+    const card = cardFrom(source);
+    const tasks = tasksFrom(source);
+
+    const plan = buildCardTemplateUpdatePlan(card, tasks, target);
+    const renamed = plan.taskUpdates.find(({ taskRef }) => taskRef === 'host-session');
+    assert.ok(renamed, 'the renamed definition is part of the plan');
+    assert.equal(renamed.action, 'update');
+    assert.equal(renamed.adoptedRef, true);
+    assert.ok(renamed.changedFields.includes('date'));
+    assert.equal(plan.taskUpdates.some(({ action }) => action === 'add' || action === 'skip-removed'), false);
+
+    disableLocalTransactionEmulation();
+    const result = await applyCardTemplateUpdate(fake, card, tasks, target, plan.preview.previewToken, 'operator');
+    const hosted = result.tasks.filter(({ description }) => description === 'Host');
+    assert.equal(hosted.length, 1);
+    assert.equal(hosted[0].id, 'task-host');
+    assert.equal(hosted[0].templateTaskRef, 'host-session');
+    assert.equal(hosted[0].date, '2026-04-16');
+    assert.equal(hosted[0].templateOffsetDays, 1);
+    assert.equal(result.card.taskCount, 3);
+  });
+
+  it('keeps a completed Task when the Template renames its ref', async () => {
+    const source = template(1);
+    const target = template(2);
+    target.taskDefinitions = target.taskDefinitions!.map((definition) => (
+      definition.refId === 'host' ? { ...definition, refId: 'host-session', proofRequirement: { type: 'link' as const } } : definition
+    ));
+    const card = cardFrom(source);
+    const tasks = tasksFrom(source);
+    const host = tasks.find(({ templateTaskRef }) => templateTaskRef === 'host')!;
+    host.status = 'done';
+    host.completedAt = '2026-04-15T12:00:00.000Z';
+
+    const plan = buildCardTemplateUpdatePlan(card, tasks, target);
+    const renamed = plan.taskUpdates.find(({ taskRef }) => taskRef === 'host-session');
+    assert.ok(renamed, 'the renamed definition is part of the plan');
+    assert.equal(renamed.action, 'adopt');
+    assert.equal(plan.taskUpdates.some(({ action }) => action === 'add' || action === 'skip-removed'), false);
+
+    disableLocalTransactionEmulation();
+    const result = await applyCardTemplateUpdate(fake, card, tasks, target, plan.preview.previewToken, 'operator');
+    const hosted = result.tasks.filter(({ description }) => description === 'Host');
+    assert.equal(hosted.length, 1);
+    assert.equal(hosted[0].id, 'task-host');
+    assert.equal(hosted[0].templateTaskRef, 'host-session');
+    assert.equal(hosted[0].status, 'done', 'the resolution stays');
+    assert.equal(hosted[0].completedAt, '2026-04-15T12:00:00.000Z');
+  });
+
+  it('adds and retires when a renamed definition names different work', () => {
+    const source = template(1);
+    const target = template(2);
+    target.taskDefinitions = target.taskDefinitions!.map((definition) => (
+      definition.refId === 'host'
+        ? { ...definition, refId: 'host-session', description: 'Host the live session' }
+        : definition
+    ));
+    const card = cardFrom(source);
+    const tasks = tasksFrom(source);
+
+    const plan = buildCardTemplateUpdatePlan(card, tasks, target);
+    assert.deepEqual(
+      plan.taskUpdates
+        .filter(({ taskRef }) => taskRef === 'host-session' || taskRef === 'host')
+        .map(({ action, taskRef }) => [action, taskRef]),
+      [['add', 'host-session'], ['skip-removed', 'host']],
+      'distinct work is not merged',
+    );
+  });
+
+  it('keeps one Task across a manual adoption and a later rename', async () => {
+    // The Card predates the definition and holds the work as a manual Task;
+    // the Template adds the definition (manual adoption), then renames its
+    // ref. Both applications must leave one Task, updated in place.
+    const stripped = template(1);
+    stripped.taskDefinitions = stripped.taskDefinitions!.filter(({ refId }) => refId !== 'follow-up');
+    const added = template(2);
+    const renamed = template(3);
+    renamed.taskDefinitions = renamed.taskDefinitions!.map((definition) => (
+      definition.refId === 'follow-up' ? { ...definition, refId: 'follow-up-post' } : definition
+    ));
+
+    const card = cardFrom(stripped);
+    const manual: Task = {
+      id: 'manual-follow-up', version: 1, status: 'todo', source: 'manual', cardId: card.id,
+      description: 'Follow up', date: '2026-04-17',
+      taskHistory: [], createdAt: CREATED, updatedAt: CREATED,
+    };
+    const tasks = [...tasksFrom(stripped), manual];
+
+    const first = buildCardTemplateUpdatePlan(card, tasks, added);
+    assert.equal(first.taskUpdates.find(({ taskRef }) => taskRef === 'follow-up')?.action, 'adopt');
+    disableLocalTransactionEmulation();
+    const afterAdd = await applyCardTemplateUpdate(fake, card, tasks, added, first.preview.previewToken, 'operator');
+    assert.equal(afterAdd.tasks.filter(({ description }) => description === 'Follow up').length, 1);
+
+    const second = buildCardTemplateUpdatePlan(afterAdd.card, afterAdd.tasks, renamed);
+    const renamedUpdate = second.taskUpdates.find(({ taskRef }) => taskRef === 'follow-up-post');
+    assert.ok(renamedUpdate, 'the renamed definition is part of the plan');
+    assert.equal(renamedUpdate.action, 'adopt');
+    assert.equal(second.taskUpdates.some(({ action }) => action === 'add' || action === 'skip-removed'), false);
+    const afterRename = await applyCardTemplateUpdate(
+      fake, afterAdd.card, afterAdd.tasks, renamed, second.preview.previewToken, 'operator',
+    );
+    const followed = afterRename.tasks.filter(({ description }) => description === 'Follow up');
+    assert.equal(followed.length, 1, 'one Task after both applications, not two');
+    assert.equal(followed[0].id, 'manual-follow-up');
+    assert.equal(followed[0].templateTaskRef, 'follow-up-post');
+
+    const settled = buildCardTemplateUpdatePlan(afterRename.card, afterRename.tasks, renamed);
+    assert.equal(settled.preview.state, 'current');
+  });
+
+  it('adopts the live Task a later rename matches, not one an earlier update retired', async () => {
+    // The state a rename left before the fix: the original retired-skipped and
+    // a live copy under the renamed ref. Renaming again must move the live
+    // copy, not resurrect the archive or add a third Task.
+    const incident = template(2);
+    incident.taskDefinitions = incident.taskDefinitions!.map((definition) => (
+      definition.refId === 'host' ? { ...definition, refId: 'host-session' } : definition
+    ));
+    const next = structuredClone(incident) as Template;
+    next.version = 3;
+    next.sourceRevision = 'revision-3';
+    next.taskDefinitions = next.taskDefinitions!.map((definition) => (
+      definition.refId === 'host-session' ? { ...definition, refId: 'host-live' } : definition
+    ));
+    const card = cardFrom(incident);
+    card.templateDefinitionSnapshot = templateCardDefinitionSnapshot(
+      incident, incident.taskDefinitions!.map(({ refId }) => refId),
+    );
+    const retired = tasksFrom(incident).map((task) => (
+      task.templateTaskRef === 'host-session' ? null : task
+    )).filter(Boolean) as Task[];
+    const original = tasksFrom(template(1)).find(({ templateTaskRef }) => templateTaskRef === 'host')!;
+    original.status = 'skipped';
+    original.skipReason = TEMPLATE_REMOVED_SKIP_REASON;
+    original.skippedAt = '2026-04-10T00:00:00.000Z';
+    original.templateRetiredAt = original.skippedAt;
+    original.templateRetiredReason = 'removed';
+    const hostSession = incident.taskDefinitions!.find(({ refId }) => refId === 'host-session')!;
+    const copySnapshot = templateTaskDefinitionSnapshot(incident, hostSession, 1, card.anchorDate!);
+    const copy = {
+      id: 'template-task-copy',
+      version: 1,
+      taskHistory: [],
+      ...copySnapshot,
+      status: 'todo',
+      source: 'template',
+      cardId: card.id,
+      templateId: incident.id,
+      templateTaskRef: 'host-session',
+      templateVersion: incident.version,
+      templateSourceRevision: incident.sourceRevision,
+      templateDefinitionSnapshot: copySnapshot,
+      createdAt: CREATED,
+      updatedAt: CREATED,
+    } as unknown as Task;
+    const tasks = [...retired, original, copy];
+
+    const plan = buildCardTemplateUpdatePlan(card, tasks, next);
+    const renamed = plan.taskUpdates.find(({ taskRef }) => taskRef === 'host-live');
+    assert.ok(renamed, 'the renamed definition is part of the plan');
+    assert.equal(renamed.action, 'adopt');
+    assert.equal(renamed.before?.id, 'template-task-copy', 'the live Task is adopted');
+    assert.equal(plan.taskUpdates.some(({ action }) => action === 'add'), false, 'no third Task');
+    assert.equal(
+      plan.preview.taskChanges.find(({ taskId }) => taskId === original.id)?.action,
+      'retain-completed',
+      'the retired original stays archived',
+    );
+
+    disableLocalTransactionEmulation();
+    const result = await applyCardTemplateUpdate(fake, card, tasks, next, plan.preview.previewToken, 'operator');
+    const hosted = result.tasks.filter(({ description }) => description === 'Host');
+    assert.equal(hosted.length, 2, 'the archive plus the live Task, not three');
+    assert.equal(hosted.filter(({ status }) => status === 'todo').length, 1);
+    assert.equal(hosted.find(({ status }) => status === 'todo')?.templateTaskRef, 'host-live');
   });
 });

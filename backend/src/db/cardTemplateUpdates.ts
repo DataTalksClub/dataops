@@ -222,6 +222,9 @@ function appliedExistingTask(
       clearDefinitionFields(next);
       const { dependsOnRefs, ...definition } = structuredClone(update.target!);
       Object.assign(next, definition);
+      // A renamed definition re-targets the Task the Template previously
+      // named for it; the Task keeps its id.
+      if (update.adoptedRef) next.templateTaskRef = update.taskRef;
       // Edges are rewritten only when the Template changed them, so an update
       // to other fields keeps the dependencies an operator added.
       if (update.changedFields.includes('dependsOnRefs')) {
@@ -499,7 +502,7 @@ export async function applyCardTemplateUpdate(
   const idsByRef = new Map<string, string>();
   for (const task of tasks) if (task.templateTaskRef && task.templateId === template.id) idsByRef.set(task.templateTaskRef, task.id);
   for (const update of plan.taskUpdates) {
-    if (update.action === 'adopt') idsByRef.set(update.taskRef, update.before!.id);
+    if (update.action === 'adopt' || update.adoptedRef) idsByRef.set(update.taskRef, update.before!.id);
     if (update.action === 'add') idsByRef.set(update.taskRef, deterministicTaskId(card.id, template.id, update.taskRef));
   }
   const replacements = new Map<string, Task>();
