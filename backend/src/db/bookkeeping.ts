@@ -10,7 +10,6 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
-import { usesLocalTransactionEmulation } from "./client";
 import { cleanItem } from "./cleanItem";
 import { TABLE_BOOKKEEPING } from "./tableNames";
 import { classifyMandatoryPayment } from "../finance/mandatoryPayments";
@@ -186,7 +185,6 @@ async function transact(
     targets.add(target);
   }
   try {
-    if (process.env.NODE_ENV === "test" && usesLocalTransactionEmulation()) throw Object.assign(new Error("Dynalite has no TransactWriteItems"), { name: "UnknownOperationException" });
     await client.send(new TransactWriteCommand(input));
   } catch (error) {
     if (process.env.NODE_ENV !== "test" || (error as Error).name !== "UnknownOperationException")
