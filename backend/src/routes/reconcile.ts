@@ -42,6 +42,7 @@ import {
   reopenMonth,
   saveConfig,
   setException,
+  setInvoiceDisposition,
   unpairRows,
   voidLedgerRow,
 } from "../reconcile/monthService";
@@ -294,6 +295,14 @@ async function handleMonthRoutes(
     return value;
   };
   switch (action) {
+    case "invoice-disposition": {
+      await financeActor(client, actor.id, true);
+      return json(200, { month: await setInvoiceDisposition(client, period, actor.id, {
+        rowId: String(body.rowId || ""), kind: String(body.kind || ""), reason: String(body.reason || ""),
+        evidence: String(body.evidence || ""), rowDigest: String(body.rowDigest || ""), version: body.version as number,
+        ...(body.targetPeriod ? { targetPeriod: String(body.targetPeriod) } : {}),
+      }) });
+    }
     case "pair": return json(200, { month: await pairRows(client, period, actor.id, id("bankKey"), id("transactionId"), text(body.note)) });
     case "unpair": return json(200, { month: await unpairRows(client, period, actor.id, id("bankKey"), id("transactionId"), text(body.note)) });
     case "void-ledger": {

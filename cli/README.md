@@ -254,3 +254,30 @@ npm run test:e2e --workspace dataops-cli    # the real binary against a local ba
 Add a module under `src/commands/` that exports `summary`, `help`, and
 `commands`, and register it in `FAMILIES` in `src/cli.mjs`. `apiFor(args)` in
 `src/session.mjs` returns the signed-in client; it handles auth and errors.
+
+### Accountant payment readiness
+
+Native accountant CSV/TSV and month package exports return HTTP 409 with
+`blockers` when any selected month's payment, amount or required evidence is
+unresolved. Each blocker includes `period`, `rowId`, `rowDigest`, `status` and
+`reason`. `--draft` does not waive this check. Reconciliation previews remain
+available with `dataops reconcile month YYYY-MM --json`; the view includes
+`version`, `paymentReadiness`, and audited `invoiceDispositions`.
+
+An operator who has independently verified that an invoice remains unpaid can
+record that decision without deleting or altering its source:
+
+```sh
+dataops reconcile disposition ledger:invoice-id --period 2031-07 \
+  --kind verified-unpaid --reason "Invoice is still outstanding" \
+  --evidence "Receivables register verification reference" --digest CURRENT_ROW_DIGEST --version CURRENT_MONTH_VERSION
+```
+
+Use `--kind deferred --target-period 2031-08` for an explicitly verified later
+period. Both kinds require a reason and an evidence reference. The API is
+`POST /api/reconcile/months/YYYY-MM/invoice-disposition` with `rowId`, `kind`,
+`reason`, `evidence`, `rowDigest`, `version`, and (for deferred) `targetPeriod`.
+It requires the existing finance administrator permission. Stale month versions
+or source digests are rejected. Any later change to the reviewed invoice or
+payment facts invalidates the decision for export. Missing bank matches never
+create unpaid/deferred decisions automatically.

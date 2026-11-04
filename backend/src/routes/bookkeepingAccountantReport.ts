@@ -9,6 +9,7 @@ import {
   isAccountantReportRowIncluded,
   unconvertedAccountantReportRows,
 } from "../finance/accountantReport";
+import { assertAccountantPaymentReady, MonthGateError } from "../reconcile/monthService";
 import type { LambdaEvent, LambdaResponse } from "../types";
 import { json } from "./bookkeepingShared";
 
@@ -33,8 +34,14 @@ export async function handleBookkeepingAccountantReportRoutes(
     return json(400, { error: "Invalid format" });
 
   const transactions = await listTransactions(client);
+  let omitted: Set<string>;
+  try { omitted = await assertAccountantPaymentReady(client, period, transactions); }
+  catch (error) {
+    if (error instanceof MonthGateError) return json(409, { error: error.message, blockers: error.blockers });
+    throw error;
+  }
   const reportRows = accountantReportRowsForPeriod(transactions, period === "all" ? "" : period);
-  const included = reportRows.filter(isAccountantReportRowIncluded);
+  const included = reportRows.filter(isAccountantReportRowIncluded).filter((row) => !omitted.has(String(row.id)));
   const unconverted = unconvertedAccountantReportRows(included);
   if (unconverted.length) {
     return json(409, {

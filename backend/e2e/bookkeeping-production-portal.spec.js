@@ -189,6 +189,17 @@ test.describe("production portal bookkeeping", () => {
     for (const entry of samples) {
       const response = await context.request.post("/api/bookkeeping/transactions", { data: { description: "Export browser fixture", ...entry } });
       expect(response.ok(), await response.text()).toBe(true);
+      if (entry.category !== "Taxes") {
+        const created = await response.json();
+        const transaction = created.item || created.transaction || created;
+        const evidence = await uploadBookkeepingEvidence(page, context, transaction.id, {
+          month: entry.transactionDate.slice(0, 7), filename: `synthetic-export-${entry.transactionDate}.pdf`,
+        });
+        const proof = await context.request.post(`/api/reconcile/months/${entry.transactionDate.slice(0, 7)}/proof`, {
+          data: { transactionId: transaction.id, documentId: evidence.id },
+        });
+        expect(proof.ok(), await proof.text()).toBe(true);
+      }
     }
     await gotoOwnedBookkeepingPage(page);
     const period = page.locator("[data-period-toolbar]");

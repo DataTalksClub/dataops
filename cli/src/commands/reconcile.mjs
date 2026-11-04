@@ -93,6 +93,7 @@ Usage
       Mark a no-invoice row: tax_debit, tax_refund, tk_debit, platform_payout,
       internal_transfer, bank_fee, owner_withdrawal. Tax rows are listed separately.
   dataops reconcile clear-except <row> --period YYYY-MM
+  dataops reconcile disposition <row-id> --period YYYY-MM --kind verified-unpaid|deferred --reason TEXT --evidence TEXT --digest SHA256 --version N [--target-period YYYY-MM]
   dataops reconcile confirm-exceptions YYYY-MM
       Admin sign-off of the month's exception list (required before close).
   dataops reconcile close YYYY-MM
@@ -640,7 +641,7 @@ export async function clearExcept(args, io) {
 
 function printBlockers(io, error) {
   const blockers = error?.body?.blockers || error?.details?.blockers || [];
-  for (const blocker of blockers.slice(0, 50)) io.print(`  ${blocker.date || ""} ${blocker.status || blocker.kind || ""} ${blocker.amount || ""} ${blocker.currency || ""} ${blocker.counterparty || blocker.id}${blocker.missing ? ` — ${blocker.missing}` : ""}`);
+  for (const blocker of blockers.slice(0, 50)) io.print(`  ${blocker.date || ""} ${blocker.status || blocker.kind || ""} ${blocker.amount || ""} ${blocker.currency || ""} ${blocker.counterparty || blocker.rowId || blocker.id}${blocker.missing || blocker.reason ? ` — ${blocker.missing || blocker.reason}` : ""}`);
   if (blockers.length > 50) io.print(`  … and ${blockers.length - 50} more (dataops reconcile month <period> --status …)`);
 }
 
@@ -653,6 +654,18 @@ async function gate(args, io, action, usage, body = {}) {
     if (!args.json) { io.print(String(error.message || error)); printBlockers(io, error); }
     throw error;
   }
+}
+
+export async function disposition(args, io) {
+  const usage = "dataops reconcile disposition <row-id> --period YYYY-MM --kind verified-unpaid|deferred --reason TEXT --evidence TEXT --digest SHA256 --version N [--target-period YYYY-MM]";
+  const rowId = positional(args, 0, usage);
+  const kind = optionalString(args, "kind"), reason = optionalString(args, "reason"), evidence = optionalString(args, "evidence");
+  const rowDigest = optionalString(args, "digest"), rawVersion = optionalString(args, "version");
+  if (!kind || !reason || !evidence || !rowDigest || rawVersion === undefined || !/^\d+$/.test(rawVersion)) throw new UsageError(usage);
+  const targetPeriod = optionalString(args, "target-period");
+  const result = await monthPost(args, periodOr(args), "invoice-disposition", { rowId, kind, reason, evidence, rowDigest, version: Number(rawVersion), ...(targetPeriod ? { targetPeriod } : {}) });
+  if (!args.json) io.print(`Recorded ${kind} disposition for ${rowId}.`);
+  return result;
 }
 
 export async function confirmExceptions(args, io) {
@@ -834,5 +847,5 @@ export async function alias(args, io) {
 export const commands = {
   upload, "import-document": importDocument, parse, balances, statements, statement, report, confirm, aliases, alias,
   month, months, matches, "auto-match": autoMatch, match, unmatch, "attach-proof": attachProof, "attach-doc": attachDoc, "void-ledger": voidLedger, "restore-ledger": restoreLedger, "create-ledger": createLedger, note,
-  except, "clear-except": clearExcept, "confirm-exceptions": confirmExceptions, close, reopen, package: packageMonth, config,
+  disposition, except, "clear-except": clearExcept, "confirm-exceptions": confirmExceptions, close, reopen, package: packageMonth, config,
 };

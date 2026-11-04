@@ -8,7 +8,7 @@ import { handleBookkeepingAccountantReportRoutes } from '../src/routes/bookkeepi
 import { createInvoice } from '../src/invoices/store';
 import { TABLE_ARTIFACTS, TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { saveStatement } from '../src/reconcile/service';
-import { attachProof, buildMonth, closeMonth, getConfig, ledgerRowsFrom, monthPackage, saveConfig } from '../src/reconcile/monthService';
+import { attachProof, buildMonth, setInvoiceDisposition, setException, MonthGateError, closeMonth, getConfig, ledgerRowsFrom, monthPackage, saveConfig } from '../src/reconcile/monthService';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 
 describe('reconciliation ledger projection', () => {
@@ -18,6 +18,15 @@ describe('reconciliation ledger projection', () => {
     client = await getClient(await startLocal());
     await createTables(client);
   });
+
+  async function verifiedPayment(id: string, period: string, invoice = true) {
+    const document = (await putBookkeepingItem(client, 'document', {
+      id: `proof-${id}`, documentType: 'other-evidence', status: 'active', contentType: 'application/pdf',
+      originalFilename: `proof-${id}.pdf`, byteSize: 128, sha256: '9'.repeat(64), s3Key: `documents/proof-${id}.pdf`,
+    })).item;
+    if (invoice) await createDocumentLink(client, { documentId: document.id, transactionId: id, coverageType: 'evidence' });
+    await attachProof(client, period, 'synthetic-operator', id, document.id);
+  }
 
   after(async () => {
     await stopLocal();
@@ -41,6 +50,7 @@ describe('reconciliation ledger projection', () => {
       counterparty: 'Synthetic USD Vendor', description: 'Unconverted service', amount: '12.00',
       currency: 'USD', entryType: 'expense',
     });
+    await verifiedPayment("synthetic-unconverted-package-row", period);
     const packageResult = await monthPackage(client, period, { draft: true });
     assert.equal(packageResult.blockers.length, 1);
     assert.deepEqual(packageResult.blockers[0], {
@@ -69,7 +79,7 @@ describe('reconciliation ledger projection', () => {
         amountEur: '29.00', currency: ' EUR ', entryType: 'expense',
       },
     ];
-    for (const row of normalizedEuroRows) await putBookkeepingItem(client, 'bookkeeping', row);
+    for (const row of normalizedEuroRows) { await putBookkeepingItem(client, 'bookkeeping', row); await verifiedPayment(row.id, period); }
 
     const packageResult = await monthPackage(client, period, { draft: true });
     const accountant = await handleBookkeepingAccountantReportRoutes(
@@ -92,6 +102,7 @@ describe('reconciliation ledger projection', () => {
       counterparty: 'Synthetic Unconverted USD Vendor', description: 'Unconverted foreign service', amount: '12.00',
       currency: 'USD', entryType: 'expense',
     });
+    await verifiedPayment(String(unconverted.item.id), period);
     const blockedPackage = await monthPackage(client, period, { draft: true });
     const blockedAccountant = await handleBookkeepingAccountantReportRoutes(
       '/api/bookkeeping/reports/accountant', 'GET',
@@ -148,6 +159,7 @@ describe('reconciliation ledger projection', () => {
       await createDocumentLink(client, { documentId: attachedCopy.id, transactionId: String(ledger.id), coverageType: 'evidence' });
       await createDocumentLink(client, { documentId: distinctEvidence.id, transactionId: String(ledger.id), coverageType: 'evidence' });
       assert.deepEqual(ledgerRowsFrom([ledger], [])[0].documents, [{ id: artifactId, invoiceId }]);
+      await attachProof(client, period, "synthetic-operator", String(ledger.id), distinctEvidence.id);
       const packageResult = await monthPackage(client, period, { draft: true });
       const entry = packageResult.entries.find((item) => item.invoiceId === invoiceId);
       assert.ok(entry);
@@ -175,13 +187,16 @@ describe('reconciliation ledger projection', () => {
         counterparty: 'Synthetic Mismatch Vendor', amount: '11.00', currency: 'EUR', entryType: 'expense',
         invoiceId, documentArtifactId: 'synthetic-unowned-artifact', sourceType: 'invoice',
       });
-      const incomplete = await monthPackage(client, period, { draft: true });
-      assert.equal(incomplete.blockers.length, 2);
-      assert.deepEqual(incomplete.blockers.map((blocker) => blocker.rowId).sort(), [
-        'ledger:synthetic-missing-invoice-ledger',
-        'ledger:synthetic-mismatched-invoice-ledger',
-      ].sort());
-      assert.ok(incomplete.blockers.every((blocker) => /cannot be safely resolved/.test(blocker.reason)));
+      await attachProof(client, period, "synthetic-operator", String(missingLedger.id), unrelatedAttachment.id);
+      await attachProof(client, period, "synthetic-operator", "synthetic-mismatched-invoice-ledger", unrelatedAttachment.id);
+      await assert.rejects(() => monthPackage(client, period, { draft: true }), (error: any) => {
+        assert.ok(error instanceof MonthGateError);
+        assert.deepEqual(error.blockers.map((blocker: any) => blocker.rowId).sort(), [
+          'ledger:synthetic-missing-invoice-ledger', 'ledger:synthetic-mismatched-invoice-ledger',
+        ].sort());
+        assert.ok(error.blockers.every((blocker: any) => /missing or inactive/.test(blocker.reason)));
+        return true;
+      });
     } finally {
       if (oldBucket === undefined) delete process.env.EMAIL_DOCUMENTS_BUCKET; else process.env.EMAIL_DOCUMENTS_BUCKET = oldBucket;
       if (oldPrefix === undefined) delete process.env.EMAIL_DOCUMENT_DESTINATION_PREFIX; else process.env.EMAIL_DOCUMENT_DESTINATION_PREFIX = oldPrefix;
@@ -355,6 +370,7 @@ describe('reconciliation ledger projection', () => {
       assert.deepEqual([ownerRow.exception?.kind, ownerRow.exception?.satisfied], ['owner_withdrawal', true]);
       assert.equal(view.counters.rows, 2);
       assert.equal(view.counters.exceptions, 1);
+      await setException(client, period, "synthetic-operator", ownerRow.id, "owner_withdrawal", "Owner pay");
 
       const pack = await monthPackage(client, period, { draft: true });
       assert.equal(pack.state, 'open');
@@ -412,6 +428,7 @@ describe('reconciliation ledger projection', () => {
     })).item;
     await createDocumentLink(client, { documentId: linkedProof.id, transactionId: String(linkedProofTransaction.id), coverageType: 'evidence' });
     await attachProof(client, period, 'tester', String(linkedProofTransaction.id), linkedProof.id);
+    await createDocumentLink(client, { documentId: secondProof.id, transactionId: String(secondProofTransaction.id), coverageType: 'evidence' });
     await attachProof(client, period, 'tester', String(secondProofTransaction.id), secondProof.id);
 
     const unpaidDeal = 'synthetic-package-unpaid-deal';
@@ -424,6 +441,14 @@ describe('reconciliation ledger projection', () => {
       invoiceNumber: 'SYN-UNPAID', amountDue: '88.00', currency: 'EUR', issuedOn: '2027-01-09', createdAt: crmNow, updatedAt: crmNow,
     } }));
 
+    await assert.rejects(() => monthPackage(client, period, { draft: true }), MonthGateError);
+    let unresolved = await buildMonth(client, period);
+    const unpaidRow = unresolved.rows.find((row) => row.ledger?.id === unpaidDeal)!;
+    const { paymentRowDigest } = await import('../src/finance/accountantReadiness');
+    await setInvoiceDisposition(client, period, 'synthetic-operator', {
+      rowId: unpaidRow.id, kind: 'verified-unpaid', reason: 'Invoice remains outstanding', evidence: 'Synthetic operator checked receivable register',
+      rowDigest: paymentRowDigest(unpaidRow), version: unresolved.version,
+    });
     const nextMonth = await monthPackage(client, period, { draft: true });
     const accountant = await handleBookkeepingAccountantReportRoutes(
       '/api/bookkeeping/reports/accountant', 'GET',
@@ -465,4 +490,44 @@ describe('reconciliation ledger projection', () => {
     assert.equal(unchangedParent?.amount, '120.00');
     assert.equal((unchangedParent?.allocations as unknown[]).length, 3);
   });
+  it('blocks invoice-only rows for CSV/TSV/year/all and draft ZIP, requiring an audited current disposition', async () => {
+    const period = '2030-04';
+    const dealId = 'synthetic-readiness-receivable';
+    const now = new Date().toISOString();
+    await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: {
+      PK: `DEAL#${dealId}`, SK: `DEAL#${dealId}`, id: dealId, name: 'Invented Readiness Client', version: 1, createdAt: now, updatedAt: now,
+    } }));
+    const finance = { PK: `SPONSOR_FINANCE#${dealId}`, SK: `SPONSOR_FINANCE#${dealId}`, id: 'synthetic-readiness-invoice', dealId,
+      invoiceNumber: 'INVENTED-RECEIVABLE', amountDue: '73.00', currency: 'EUR', issuedOn: `${period}-09`, createdAt: now, updatedAt: now };
+    await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: finance }));
+    const report = (lens: string, format = 'csv') => handleBookkeepingAccountantReportRoutes('/api/bookkeeping/reports/accountant', 'GET', {
+      httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period: lens, format },
+    } as any, client);
+    for (const lens of [period, '2030', 'all']) for (const format of ['csv', 'tsv']) {
+      const result = await report(lens, format);
+      assert.equal(result?.statusCode, 409);
+      assert.ok(JSON.parse(result!.body).blockers.some((row: any) => row.rowId === `ledger:${dealId}` && row.status === 'payment-proof-missing'));
+      assert.equal(JSON.parse(result!.body).content, undefined);
+    }
+    await assert.rejects(() => monthPackage(client, period, { draft: true }), MonthGateError);
+    await assert.rejects(() => monthPackage(client, period), MonthGateError);
+    const view = await buildMonth(client, period);
+    const row = view.rows.find((row) => row.ledger?.id === dealId)!;
+    const { paymentRowDigest } = await import('../src/finance/accountantReadiness');
+    const input = { rowId: row.id, kind: 'deferred', reason: 'Operator verified later settlement', evidence: 'Invented receivable confirmation reference', targetPeriod: '2030-05', rowDigest: paymentRowDigest(row), version: view.version };
+    await assert.rejects(() => setInvoiceDisposition(client, period, 'synthetic-operator', { ...input, evidence: '' }), /reason and evidence/);
+    await assert.rejects(() => setInvoiceDisposition(client, period, 'synthetic-operator', { ...input, rowDigest: 'stale' }), /changed/);
+    const saved = await setInvoiceDisposition(client, period, 'synthetic-operator', input);
+    assert.equal(saved.log.at(-1)?.action, 'invoice-disposition');
+    await assert.rejects(() => setInvoiceDisposition(client, period, 'synthetic-operator', input), /changed/);
+    assert.equal((await report(period))?.statusCode, 200);
+    const pack = await monthPackage(client, period, { draft: true });
+    assert.doesNotMatch(pack.csv, /Invented Readiness Client/);
+    assert.equal((await buildMonth(client, period)).rows.find((item) => item.id === row.id)?.status, 'payment-proof-missing');
+    assert.equal((await buildMonth(client, period)).invoiceDispositions[row.id].kind, 'deferred');
+    await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { ...finance, amountDue: '74.00' } }));
+    assert.equal((await report(period))?.statusCode, 409, 'changed source amount invalidates the decision without changing the month version');
+    await assert.rejects(() => monthPackage(client, period, { draft: true }), MonthGateError);
+  });
+
 });

@@ -60,12 +60,14 @@ import {
   unconvertedAccountantReportRows,
 } from "../finance/accountantReport";
 
+import { accountantPaymentBlockers, paymentRowDigest, validUnpaidDisposition, type InvoiceDisposition } from "../finance/accountantReadiness";
+
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const LOG_LIMIT = 2000;
 
 export type MonthAction =
   | "pair" | "unpair" | "exception" | "clear-exception" | "void-ledger" | "restore-ledger" | "attach-proof" | "attach-document"
-  | "auto-match" | "create-ledger" | "confirm-exceptions" | "close" | "reopen" | "summary";
+  | "invoice-disposition" | "auto-match" | "create-ledger" | "confirm-exceptions" | "close" | "reopen" | "summary";
 
 export type MonthLogEntry = { at: string; by: string; action: MonthAction; detail: Record<string, unknown> };
 
@@ -75,6 +77,7 @@ export type MonthRecord = {
   period: string;
   state: "open" | "closed";
   decisions: ManualDecisions;
+  invoiceDispositions?: Record<string, InvoiceDisposition>;
   exceptionConfirmation?: { digest: string; by: string; at: string; count: number };
   closed?: { by: string; at: string };
   log: MonthLogEntry[];
@@ -298,6 +301,9 @@ export function ledgerRowsFrom(transactions: Array<Record<string, unknown>>, lin
 
 export type MonthView = MonthTable & {
   state: MonthRecord["state"];
+  paymentReadiness: ReturnType<typeof accountantPaymentBlockers>;
+  version: number;
+  invoiceDispositions: Record<string, InvoiceDisposition>;
   closed?: MonthRecord["closed"];
   exceptionConfirmation?: MonthRecord["exceptionConfirmation"] & { current: boolean };
   exceptionDigest: string;
@@ -578,7 +584,10 @@ function viewFor(period: string, data: Snapshot, pairing: ReturnType<typeof pair
   const digest = exceptionDigest(table);
   return {
     ...table,
+    paymentReadiness: accountantPaymentBlockers(period, table.rows, record.invoiceDispositions),
     state: record.state,
+    version: record.version,
+    invoiceDispositions: record.invoiceDispositions || {},
     ...(record.closed ? { closed: record.closed } : {}),
     ...(record.exceptionConfirmation ? { exceptionConfirmation: { ...record.exceptionConfirmation, current: record.exceptionConfirmation.digest === digest } } : {}),
     exceptionDigest: digest,
@@ -604,6 +613,64 @@ export async function buildMonths(client: DynamoDBDocumentClient, periods: strin
 
 export async function buildMonth(client: DynamoDBDocumentClient, period: string): Promise<MonthView> {
   return (await buildMonths(client, [period]))[0];
+}
+
+/** The export gate uses the cash-period lens, including invoice-only candidates. */
+export async function assertAccountantPaymentReady(
+  client: DynamoDBDocumentClient, lens: string,
+  transactions?: Awaited<ReturnType<typeof listTransactions>>,
+): Promise<Set<string>> {
+  const booked = transactions || await listTransactions(client);
+  const data = await snapshot(client, { preloaded: { transactions: booked } });
+  const decisions = mergedDecisions(data.months);
+  const pairing = pairAll(data.bank, data.ledger, decisions, data.config.tolerances);
+  const periods = new Set([...data.bank, ...data.ledger].map((row) => row.date.slice(0, 7))
+    .filter((period) => MONTH.test(period) && (lens === "all" || period.startsWith(lens))));
+  const omitted = new Set<string>();
+  const blockers: Array<Record<string, unknown>> = [];
+  const bookedIds = new Set(booked.map((row) => String(row.id)));
+  for (const period of [...periods].sort()) {
+    const view = viewFor(period, data, pairing, decisions);
+    blockers.push(...accountantPaymentBlockers(period, view.rows, view.invoiceDispositions));
+    for (const row of view.rows) {
+      if (validUnpaidDisposition(row, view.invoiceDispositions[row.id]) && row.ledger) omitted.add(row.ledger.id);
+      if (row.tax || (row.ledger && !selectAccountantReportRows([{ ...row.ledger, entryType: Number(row.amount) < 0 ? "expense" : "income" }], "").length)) continue;
+      if (row.status !== "matched") continue;
+      const unavailable: string[] = [];
+      if (row.paymentProof && (await getRawDocument(client, row.paymentProof.documentId))?.status !== "active") unavailable.push("required payment proof is missing or inactive");
+      for (const document of row.documents) {
+        const raw = await getRawDocument(client, document.id);
+        if (raw?.status !== "active" && !(await confirmedInvoiceSource(client, document))) unavailable.push(`required invoice/receipt ${document.id} is missing or inactive`);
+      }
+      if (row.ledger && !bookedIds.has(row.ledger.id)) unavailable.push("verified payment must be booked in the ledger before export");
+      for (const reason of unavailable) blockers.push({ period, rowId: row.id, date: row.date, counterparty: row.counterparty, amount: row.amount, currency: row.currency, status: row.status, reason, rowDigest: paymentRowDigest(row) });
+    }
+  }
+  if (blockers.length) throw new MonthGateError(`Accountant export blocked: ${blockers.length} unresolved payment/evidence item(s)`, blockers);
+  return omitted;
+}
+
+/** Explicit operator disposition; absence of a bank match alone never creates one. */
+export async function setInvoiceDisposition(client: DynamoDBDocumentClient, period: string, by: string, input: {
+  rowId: string; kind: string; reason: string; evidence: string; targetPeriod?: string; rowDigest: string; version: number;
+}) {
+  if (!["verified-unpaid", "deferred"].includes(input.kind)) throw badRequest("kind must be verified-unpaid or deferred");
+  if (!input.reason?.trim() || !input.evidence?.trim()) throw badRequest("reason and evidence are required");
+  if (input.kind === "deferred" && (!MONTH.test(input.targetPeriod || "") || input.targetPeriod! <= period)) throw badRequest("deferred requires a later targetPeriod (YYYY-MM)");
+  if (!Number.isInteger(input.version) || input.version < 0) throw badRequest("version is required");
+  const view = await buildMonth(client, period);
+  if (view.version !== input.version) throw new MonthConflictError();
+  const row = view.rows.find((row) => row.id === input.rowId);
+  if (!row || row.status !== "payment-proof-missing" || row.bank || row.paymentProof) throw badRequest("Only an invoice/ledger item without payment evidence can be marked unpaid or deferred");
+  if (paymentRowDigest(row) !== input.rowDigest) throw new MonthConflictError();
+  const disposition: InvoiceDisposition = {
+    kind: input.kind as InvoiceDisposition["kind"], reason: input.reason.trim().slice(0, 1000), evidence: input.evidence.trim().slice(0, 2000),
+    ...(input.kind === "deferred" ? { targetPeriod: input.targetPeriod } : {}), rowDigest: input.rowDigest, by, at: new Date().toISOString(),
+  };
+  return mutateMonth(client, period, by, "invoice-disposition", { rowId: row.id, ...disposition }, (record) => {
+    if (record.version !== input.version) throw new MonthConflictError();
+    record.invoiceDispositions = { ...record.invoiceDispositions, [row.id]: disposition };
+  });
 }
 
 export function periodsBetween(from: string, to: string): string[] {
@@ -1044,14 +1111,15 @@ async function confirmedInvoiceSource(client: DynamoDBDocumentClient, document: 
  * and confirmed owner withdrawals stay out. Building it never sends anything.
  */
 export async function monthPackage(client: DynamoDBDocumentClient, period: string, options: { draft?: boolean } = {}): Promise<{ period: string; state: MonthRecord["state"]; draft: boolean; entries: PackageEntry[]; blockers: PackageBlocker[]; csv: string }> {
+  const transactions = await listTransactions(client);
+  const omitted = await assertAccountantPaymentReady(client, period, transactions);
   const view = await buildMonth(client, period);
   if (view.state !== "closed" && !options.draft) throw new MonthGateError(`Month ${period} is open; close it first (or build a draft package)`, []);
   const naming = await import("./naming");
   const entries: PackageEntry[] = [{ path: naming.packagePath(period, null, naming.reportName(period, "csv")), kind: "report" }];
   const blockers: PackageBlocker[] = [];
-  const transactions = await listTransactions(client);
   const transactionsById = new Map(transactions.map((transaction) => [String(transaction.id), transaction]));
-  const reportRows = selectAccountantReportRows(transactions, period);
+  const reportRows = selectAccountantReportRows(transactions, period).filter((row) => !omitted.has(String(row.id)));
   for (const row of unconvertedAccountantReportRows(reportRows)) {
     blockers.push({
       rowId: String(row.id || "unknown"),
