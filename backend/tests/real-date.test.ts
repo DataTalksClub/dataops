@@ -53,7 +53,7 @@ describe('realDate consolidation (month 00/13 returns 400, not 500/RangeError)',
       assert.match(JSON.parse(res.body).error, /Invalid or unbounded range/i);
     });
 
-    it(`returns 400 validation problem (not RangeError) on POST /api/reconcile/statements with ${invalid}`, async () => {
+    it(`rejects the removed caller-row statement API with ${invalid}`, async () => {
       assert.deepEqual(
         validateRows([{ date: invalid, amount: '10.00', currency: 'EUR', counterparty: 'Vendor' }]),
         ['row 0 date'],
@@ -63,8 +63,7 @@ describe('realDate consolidation (month 00/13 returns 400, not 500/RangeError)',
         period: '2026-10',
         rows: [{ date: invalid, amount: '10.00', currency: 'EUR', counterparty: 'Vendor' }],
       });
-      assert.equal(res.statusCode, 400);
-      assert.match(JSON.parse(res.body).error, /row 0 date/);
+      assert.equal(res.statusCode, 404);
     });
   }
 });

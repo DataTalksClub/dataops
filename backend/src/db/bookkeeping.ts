@@ -71,6 +71,11 @@ export type BookkeepingTransactItem = NonNullable<
   ConstructorParameters<typeof TransactWriteCommand>[0]["TransactItems"]
 >[number];
 
+/** Shared atomic bookkeeping write, including the repository's explicit local test emulator. */
+export async function transactBookkeeping(client: DynamoDBDocumentClient, input: ConstructorParameters<typeof TransactWriteCommand>[0]) {
+  return transact(client, input, false, true);
+}
+
 export function bookkeepingItemId(unique?: string) {
   return unique ? createHash("sha256").update(unique).digest("hex") : randomUUID();
 }

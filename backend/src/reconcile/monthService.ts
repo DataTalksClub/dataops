@@ -67,7 +67,7 @@ const LOG_LIMIT = 2000;
 
 export type MonthAction =
   | "pair" | "unpair" | "exception" | "clear-exception" | "void-ledger" | "restore-ledger" | "attach-proof" | "attach-document"
-  | "invoice-disposition" | "auto-match" | "create-ledger" | "confirm-exceptions" | "close" | "reopen" | "summary";
+  | "invoice-disposition" | "import-statement" | "auto-match" | "create-ledger" | "confirm-exceptions" | "close" | "reopen" | "summary";
 
 export type MonthLogEntry = { at: string; by: string; action: MonthAction; detail: Record<string, unknown> };
 
@@ -81,6 +81,7 @@ export type MonthRecord = {
   exceptionConfirmation?: { digest: string; by: string; at: string; count: number };
   closed?: { by: string; at: string };
   log: MonthLogEntry[];
+  statementSelection?: import("./statementSelection").StatementSelection;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -1117,7 +1118,7 @@ async function confirmedInvoiceSource(client: DynamoDBDocumentClient, document: 
  * reportable row's invoice/receipt and payment proof. Taxes, health insurance,
  * and confirmed owner withdrawals stay out. Building it never sends anything.
  */
-export async function monthPackage(client: DynamoDBDocumentClient, period: string, options: { draft?: boolean } = {}): Promise<{ reportPeriod: string; period: string; state: MonthRecord["state"]; draft: boolean; entries: PackageEntry[]; blockers: PackageBlocker[]; csv: string }> {
+export async function monthPackage(client: DynamoDBDocumentClient, period: string, options: { draft?: boolean } = {}): Promise<{ reportPeriod: string; period: string; state: MonthRecord["state"]; draft: boolean; entries: PackageEntry[]; blockers: PackageBlocker[]; statementWarnings: PackageBlocker[]; csv: string }> {
   const transactions = await listTransactions(client);
   const omitted = await assertAccountantPaymentReady(client, period, transactions);
   const view = await buildMonth(client, period);
@@ -1140,7 +1141,9 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
     const row = monthRowsByLedger.get(String(reportRow.id));
     if (row?.ledger && row.paymentProof) proofByDocument.set(row.paymentProof.documentId, { row, reportRow: transactionsById.get(String(reportRow.id)) || reportRow, proof: row.paymentProof });
   }
-  const statements = (await listStatements(client)).filter((record) => record.period === period);
+  const { statementPackageSources } = await import("./statementImport");
+  const { statements, problems, warnings: statementWarnings } = await statementPackageSources(client, period);
+  blockers.push(...problems);
   for (const record of statements) {
     const wallets = [...new Set(record.rows.map((row) => row.wallet || "main"))];
     entries.push({
@@ -1218,5 +1221,5 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
     || String(left.documentId || left.invoiceId || left.artifactId || "").localeCompare(String(right.documentId || right.invoiceId || right.artifactId || "")));
   const unique = naming.uniquePaths(entries.map((entry) => entry.path));
   entries.forEach((entry, index) => { entry.path = unique[index]; });
-  return { reportPeriod: period, period, state: view.state, draft: view.state !== "closed", entries, blockers, csv: formatAccountantCsv(reportRows) };
+  return { reportPeriod: period, period, state: view.state, draft: view.state !== "closed", entries, blockers, statementWarnings, csv: formatAccountantCsv(reportRows) };
 }

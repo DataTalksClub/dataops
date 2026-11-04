@@ -280,7 +280,7 @@ describe('reconciliation ledger projection', () => {
     await saveStatement(client, {
       accountId: 'finom',
       period,
-      filename: 'finom-2026-10.pdf',
+      filename: 'synthetic-legacy-finom-2026-10.csv',
       documentId: 'stmt-doc-2026-10',
       rows: [
         { date: '2026-10-08', amount: '-238.00', currency: 'EUR', counterparty: 'Synthetic Advisory GmbH', reference: 'SYN-2026-10' },
@@ -325,7 +325,7 @@ describe('reconciliation ledger projection', () => {
     assert.ok(!pack.entries.some((entry) => entry.documentId === taxNoticeDoc.id));
     assert.ok(!pack.entries.some((entry) => entry.documentId === ownerTransferDoc.id));
     assert.ok(await getBookkeepingItem(client, 'document', ownerTransferDoc.id), 'owner transfer source document remains stored');
-    assert.ok(pack.entries.some((entry) => entry.kind === 'statement' && entry.documentId === 'stmt-doc-2026-10' && entry.originalFilename === 'finom-2026-10.pdf'), 'the original statement reference remains unchanged in the package');
+    assert.ok(pack.entries.some((entry) => entry.kind === 'statement' && entry.documentId === 'stmt-doc-2026-10' && entry.originalFilename === 'synthetic-legacy-finom-2026-10.csv'), 'the original statement reference remains unchanged in the package');
   });
 
   it('excludes a satisfied bank-only owner withdrawal from an open-month accountant export while retaining internal rows and source statements', async () => {
@@ -354,7 +354,7 @@ describe('reconciliation ledger projection', () => {
         documentId: serviceInvoice.id, transactionId: String(serviceTx.id), coverageType: 'evidence',
       });
       await saveStatement(client, {
-        accountId: 'finom', period, filename: 'synthetic-original-statement.pdf', documentId: 'synthetic-original-statement',
+        accountId: 'finom', period, filename: 'synthetic-original-statement.csv', documentId: 'synthetic-original-statement',
         rows: [
           { date: '2026-12-03', amount: '-42.00', currency: 'EUR', counterparty: 'Synthetic Owner', reference: 'Synthetic private transfer' },
           { date: '2026-12-05', amount: '-35.00', currency: 'EUR', counterparty: 'Synthetic ILZ Services', reference: 'SYN-ILZ-12' },
@@ -381,7 +381,7 @@ describe('reconciliation ledger projection', () => {
       assert.ok(pack.entries.some((entry) => entry.documentId === serviceInvoice.id));
       assert.ok(pack.entries.some((entry) => entry.kind === 'statement'
         && entry.documentId === 'synthetic-original-statement'
-        && entry.originalFilename === 'synthetic-original-statement.pdf'));
+        && entry.originalFilename === 'synthetic-original-statement.csv'));
       assert.equal(view.rows.includes(ownerRow), true, 'the internal reconciliation row remains visible');
       assert.equal(view.counters.rows, 2, 'month counters continue to include the owner transfer');
     } finally {
