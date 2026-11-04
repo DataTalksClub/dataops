@@ -257,8 +257,14 @@ Add a module under `src/commands/` that exports `summary`, `help`, and
 
 ### Accountant payment readiness
 
+Native accountant CSV/TSV requires an explicit `period=YYYY-MM` query;
+year/all/missing selections return a Select Month error. The portal uses its
+existing selected month. Native report, readiness, and package responses include
+`reportPeriod`; disposition fingerprints are bound to that month. Invoice issue
+dates alone never establish a cash payment month.
+
 Native accountant CSV/TSV and month package exports return HTTP 409 with
-`blockers` when any selected month's payment, amount or required evidence is
+`blockers` when the explicitly selected report month's payment, amount or required evidence is
 unresolved. Each blocker includes `period`, `rowId`, `rowDigest`, `status` and
 `reason`. `--draft` does not waive this check. Reconciliation previews remain
 available with `dataops reconcile month YYYY-MM --json`; the view includes

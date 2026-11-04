@@ -568,7 +568,7 @@ export function createBookkeepingSurface(context) {
     const navigation = mountBookkeepingNavigation({
       surface, status, setLens, lensEntries, todayIsoDate,
       prepareExemptions: () => financeSummary.ensure(),
-      loadAccountantReport: (period, format) => api(`/reports/accountant?period=${encodeURIComponent(period)}&format=${encodeURIComponent(format)}`),
+      loadAccountantReport: (reportPeriod, format) => api(`/reports/accountant?period=${encodeURIComponent(reportPeriod)}&format=${encodeURIComponent(format)}`),
       getEntries: () => entries, getLens: () => lens,
     });
 

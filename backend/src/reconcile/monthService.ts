@@ -111,7 +111,7 @@ export class MonthConflictError extends Error {
 }
 export class MonthGateError extends Error {
   statusCode = 409;
-  constructor(message: string, readonly blockers: unknown[]) { super(message); }
+  constructor(message: string, readonly blockers: unknown[], readonly reportPeriod?: string) { super(message); }
 }
 const badRequest = (message: string) => Object.assign(new Error(message), { statusCode: 400 });
 const notFound = (message: string) => Object.assign(new Error(message), { statusCode: 404 });
@@ -301,6 +301,7 @@ export function ledgerRowsFrom(transactions: Array<Record<string, unknown>>, lin
 
 export type MonthView = MonthTable & {
   state: MonthRecord["state"];
+  reportPeriod: string;
   paymentReadiness: ReturnType<typeof accountantPaymentBlockers>;
   version: number;
   invoiceDispositions: Record<string, InvoiceDisposition>;
@@ -584,6 +585,7 @@ function viewFor(period: string, data: Snapshot, pairing: ReturnType<typeof pair
   const digest = exceptionDigest(table);
   return {
     ...table,
+    reportPeriod: period,
     paymentReadiness: accountantPaymentBlockers(period, table.rows, record.invoiceDispositions),
     state: record.state,
     version: record.version,
@@ -620,6 +622,7 @@ export async function assertAccountantPaymentReady(
   client: DynamoDBDocumentClient, lens: string,
   transactions?: Awaited<ReturnType<typeof listTransactions>>,
 ): Promise<Set<string>> {
+  if (!MONTH.test(lens)) throw badRequest("Select a report month: reportPeriod must be YYYY-MM");
   const booked = transactions || await listTransactions(client);
   const data = await snapshot(client, { preloaded: { transactions: booked } });
   const decisions = mergedDecisions(data.months);
@@ -633,7 +636,7 @@ export async function assertAccountantPaymentReady(
     const view = viewFor(period, data, pairing, decisions);
     blockers.push(...accountantPaymentBlockers(period, view.rows, view.invoiceDispositions));
     for (const row of view.rows) {
-      if (validUnpaidDisposition(row, view.invoiceDispositions[row.id]) && row.ledger) omitted.add(row.ledger.id);
+      if (validUnpaidDisposition(row, view.invoiceDispositions[row.id], period) && row.ledger) omitted.add(row.ledger.id);
       if (row.tax || (row.ledger && !selectAccountantReportRows([{ ...row.ledger, entryType: Number(row.amount) < 0 ? "expense" : "income" }], "").length)) continue;
       if (row.status !== "matched") continue;
       const unavailable: string[] = [];
@@ -643,10 +646,10 @@ export async function assertAccountantPaymentReady(
         if (raw?.status !== "active" && !(await confirmedInvoiceSource(client, document))) unavailable.push(`required invoice/receipt ${document.id} is missing or inactive`);
       }
       if (row.ledger && !bookedIds.has(row.ledger.id)) unavailable.push("verified payment must be booked in the ledger before export");
-      for (const reason of unavailable) blockers.push({ period, rowId: row.id, date: row.date, counterparty: row.counterparty, amount: row.amount, currency: row.currency, status: row.status, reason, rowDigest: paymentRowDigest(row) });
+      for (const reason of unavailable) blockers.push({ reportPeriod: period, period, rowId: row.id, date: row.date, counterparty: row.counterparty, amount: row.amount, currency: row.currency, status: row.status, reason, rowDigest: paymentRowDigest(row, period) });
     }
   }
-  if (blockers.length) throw new MonthGateError(`Accountant export blocked: ${blockers.length} unresolved payment/evidence item(s)`, blockers);
+  if (blockers.length) throw new MonthGateError(`Accountant export blocked: ${blockers.length} unresolved payment/evidence item(s)`, blockers, lens);
   return omitted;
 }
 
@@ -661,10 +664,10 @@ export async function setInvoiceDisposition(client: DynamoDBDocumentClient, peri
   const view = await buildMonth(client, period);
   if (view.version !== input.version) throw new MonthConflictError();
   const row = view.rows.find((row) => row.id === input.rowId);
-  if (!row || row.status !== "payment-proof-missing" || row.bank || row.paymentProof) throw badRequest("Only an invoice/ledger item without payment evidence can be marked unpaid or deferred");
-  if (paymentRowDigest(row) !== input.rowDigest) throw new MonthConflictError();
+  if (!row || !["payment-proof-missing", "needs-review"].includes(row.status) || row.bank || row.paymentProof) throw badRequest("Only an invoice/ledger item without payment evidence can be marked unpaid or deferred");
+  if (paymentRowDigest(row, period) !== input.rowDigest) throw new MonthConflictError();
   const disposition: InvoiceDisposition = {
-    kind: input.kind as InvoiceDisposition["kind"], reason: input.reason.trim().slice(0, 1000), evidence: input.evidence.trim().slice(0, 2000),
+    reportPeriod: period, kind: input.kind as InvoiceDisposition["kind"], reason: input.reason.trim().slice(0, 1000), evidence: input.evidence.trim().slice(0, 2000),
     ...(input.kind === "deferred" ? { targetPeriod: input.targetPeriod } : {}), rowDigest: input.rowDigest, by, at: new Date().toISOString(),
   };
   return mutateMonth(client, period, by, "invoice-disposition", { rowId: row.id, ...disposition }, (record) => {
@@ -1110,7 +1113,7 @@ async function confirmedInvoiceSource(client: DynamoDBDocumentClient, document: 
  * reportable row's invoice/receipt and payment proof. Taxes, health insurance,
  * and confirmed owner withdrawals stay out. Building it never sends anything.
  */
-export async function monthPackage(client: DynamoDBDocumentClient, period: string, options: { draft?: boolean } = {}): Promise<{ period: string; state: MonthRecord["state"]; draft: boolean; entries: PackageEntry[]; blockers: PackageBlocker[]; csv: string }> {
+export async function monthPackage(client: DynamoDBDocumentClient, period: string, options: { draft?: boolean } = {}): Promise<{ reportPeriod: string; period: string; state: MonthRecord["state"]; draft: boolean; entries: PackageEntry[]; blockers: PackageBlocker[]; csv: string }> {
   const transactions = await listTransactions(client);
   const omitted = await assertAccountantPaymentReady(client, period, transactions);
   const view = await buildMonth(client, period);
@@ -1211,5 +1214,5 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
     || String(left.documentId || left.invoiceId || left.artifactId || "").localeCompare(String(right.documentId || right.invoiceId || right.artifactId || "")));
   const unique = naming.uniquePaths(entries.map((entry) => entry.path));
   entries.forEach((entry, index) => { entry.path = unique[index]; });
-  return { period, state: view.state, draft: view.state !== "closed", entries, blockers, csv: formatAccountantCsv(reportRows) };
+  return { reportPeriod: period, period, state: view.state, draft: view.state !== "closed", entries, blockers, csv: formatAccountantCsv(reportRows) };
 }

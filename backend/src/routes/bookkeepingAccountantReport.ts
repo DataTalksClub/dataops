@@ -26,10 +26,10 @@ export async function handleBookkeepingAccountantReportRoutes(
   client: DynamoDBDocumentClient,
 ): Promise<LambdaResponse | null> {
   if (path !== "/api/bookkeeping/reports/accountant" || method !== "GET") return null;
-  const period = String(event.queryStringParameters?.period || "all");
+  const period = String(event.queryStringParameters?.period || "");
   const format = String(event.queryStringParameters?.format || "csv");
-  if (!/^(all|\d{4}|\d{4}-(0[1-9]|1[0-2]))$/.test(period))
-    return json(400, { error: "Invalid period" });
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period))
+    return json(400, { error: "Select a report month: period must be YYYY-MM" });
   if (format !== "csv" && format !== "tsv")
     return json(400, { error: "Invalid format" });
 
@@ -37,20 +37,21 @@ export async function handleBookkeepingAccountantReportRoutes(
   let omitted: Set<string>;
   try { omitted = await assertAccountantPaymentReady(client, period, transactions); }
   catch (error) {
-    if (error instanceof MonthGateError) return json(409, { error: error.message, blockers: error.blockers });
+    if (error instanceof MonthGateError) return json(409, { reportPeriod: period, error: error.message, blockers: error.blockers });
     throw error;
   }
-  const reportRows = accountantReportRowsForPeriod(transactions, period === "all" ? "" : period);
+  const reportRows = accountantReportRowsForPeriod(transactions, period);
   const included = reportRows.filter(isAccountantReportRowIncluded).filter((row) => !omitted.has(String(row.id)));
   const unconverted = unconvertedAccountantReportRows(included);
   if (unconverted.length) {
     return json(409, {
+      reportPeriod: period,
       error: `${unconverted.length} transaction(s) have no EUR value; convert them before preparing the package`,
       unconvertedTransactionIds: unconverted.map((entry) => String(entry.id || "")),
     });
   }
   return json(200, {
-    period,
+    reportPeriod: period,
     format,
     count: included.length,
     excludedCount: reportRows.length - included.length,

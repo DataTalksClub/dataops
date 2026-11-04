@@ -582,7 +582,7 @@ test("package writes the month folder layout from the manifest and never sends a
   await mkdir(join(directory, "2026-10/expenses"), { recursive: true });
   await writeFile(stalePath, "pre-existing synthetic file");
   await withFakePortal([
-    ["/reconcile/months/2026-10/package", { period: "2026-10", state: "closed", draft: false, csv: "date,status\n", entries: [
+    ["/reconcile/months/2026-10/package", { reportPeriod: "2026-10", period: "2026-10", state: "closed", draft: false, csv: "date,status\n", entries: [
       { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
       { path: "2026-10/statements/2026-10_finom-main_statement.csv", kind: "statement", documentId: "doc-stmt" },
       { path: "2026-10/expenses/2026-10-14_example-vendor_hosting_8.00EUR.pdf", kind: "invoice", documentId: "doc-google" },
@@ -620,7 +620,7 @@ test("package writes the month folder layout from the manifest and never sends a
 test("package refuses to present an incomplete manifest as ready", async () => {
   await withFakePortal([[
     "/reconcile/months/2026-10/package",
-    { period: "2026-10", state: "open", draft: true, csv: "date,status\n", entries: [], blockers: [{ rowId: "ledger-1", reference: "invoice-1", reason: "expected invoice document is missing" }] },
+    { reportPeriod: "2026-10", period: "2026-10", state: "open", draft: true, csv: "date,status\n", entries: [], blockers: [{ rowId: "ledger-1", reference: "invoice-1", reason: "expected invoice document is missing" }] },
   ]], async () => {
     await assert.rejects(commands.package({ ...args, _: ["2026-10"], draft: true }, {}), /Package is incomplete: 1 blocker\(s\) prevent export/);
   });
@@ -638,7 +638,7 @@ test("package rejects manifest paths that can escape the output month before wri
     ]) {
       await withFakePortal([[
         "/reconcile/months/2026-10/package",
-        { period: "2026-10", state: "closed", draft: false, csv: "synthetic report\n", entries: [
+        { reportPeriod: "2026-10", period: "2026-10", state: "closed", draft: false, csv: "synthetic report\n", entries: [
           { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
           { path, kind: "invoice", documentId: "synthetic-doc" },
         ] },
@@ -668,7 +668,7 @@ test("package rejects a symlinked directory inside the month before writing the 
     }
     await withFakePortal([[
       "/reconcile/months/2026-10/package",
-      { period: "2026-10", state: "closed", draft: false, csv: "synthetic report\n", entries: [
+      { reportPeriod: "2026-10", period: "2026-10", state: "closed", draft: false, csv: "synthetic report\n", entries: [
         { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
         { path: "2026-10/expenses/2026-10_vendor.pdf", kind: "invoice", documentId: "synthetic-doc" },
       ] },
@@ -689,7 +689,7 @@ test("package reports archive creation failures", async () => {
   try {
     await withFakePortal([[
       "/reconcile/months/2026-10/package",
-      { period: "2026-10", state: "closed", draft: false, csv: "date,status\n", entries: [
+      { reportPeriod: "2026-10", period: "2026-10", state: "closed", draft: false, csv: "date,status\n", entries: [
         { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
       ] },
     ]], async () => {
@@ -710,7 +710,7 @@ test("package keeps the previous archive when a manifest file cannot be download
   try {
     await withFakePortal([[
       "/reconcile/months/2026-10/package",
-      { period: "2026-10", state: "closed", draft: false, csv: "synthetic report\n", entries: [
+      { reportPeriod: "2026-10", period: "2026-10", state: "closed", draft: false, csv: "synthetic report\n", entries: [
         { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
         { path: "2026-10/statements/2026-10_finom.csv", kind: "statement", documentId: "synthetic-missing-document" },
       ] },
@@ -754,4 +754,12 @@ test("disposition sends explicit verified-unpaid/deferred evidence with exact so
     assert.deepEqual(JSON.parse(calls[0].body), { rowId: "ledger:invented-invoice", kind: "deferred", reason: "Verified later settlement", evidence: "Invented receivables register", rowDigest: "a".repeat(64), version: 7, targetPeriod: "2031-08" });
   });
   await assert.rejects(() => commands.disposition({ _: ["ledger:invented-invoice"], period: "2031-07", kind: "verified-unpaid", reason: "Absent evidence" }, {}), /--evidence/);
+});
+
+
+test("package requires an explicit month and refuses a different reportPeriod before any output", async () => {
+  await assert.rejects(() => commands.package({ _: ["2031"] }, {}), /YYYY-MM/);
+  await withFakePortal([["/reconcile/months/2031-07/package", { reportPeriod: "2031-08", period: "2031-08", state: "open", draft: true, entries: [], csv: "" }]], async () => {
+    await assert.rejects(() => commands.package({ _: ["2031-07"], draft: true, json: true }, {}), /does not match selected report month 2031-07/);
+  });
 });

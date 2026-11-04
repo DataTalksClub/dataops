@@ -84,7 +84,7 @@ describe('reconciliation ledger projection', () => {
     const packageResult = await monthPackage(client, period, { draft: true });
     const accountant = await handleBookkeepingAccountantReportRoutes(
       '/api/bookkeeping/reports/accountant', 'GET',
-      { httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period, format: 'csv' } } as any,
+      { httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period: period, format: 'csv' } } as any,
       client,
     );
     assert.equal(accountant?.statusCode, 200);
@@ -106,7 +106,7 @@ describe('reconciliation ledger projection', () => {
     const blockedPackage = await monthPackage(client, period, { draft: true });
     const blockedAccountant = await handleBookkeepingAccountantReportRoutes(
       '/api/bookkeeping/reports/accountant', 'GET',
-      { httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period, format: 'csv' } } as any,
+      { httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period: period, format: 'csv' } } as any,
       client,
     );
     assert.equal(blockedAccountant?.statusCode, 409);
@@ -447,12 +447,12 @@ describe('reconciliation ledger projection', () => {
     const { paymentRowDigest } = await import('../src/finance/accountantReadiness');
     await setInvoiceDisposition(client, period, 'synthetic-operator', {
       rowId: unpaidRow.id, kind: 'verified-unpaid', reason: 'Invoice remains outstanding', evidence: 'Synthetic operator checked receivable register',
-      rowDigest: paymentRowDigest(unpaidRow), version: unresolved.version,
+      rowDigest: paymentRowDigest(unpaidRow, period), version: unresolved.version,
     });
     const nextMonth = await monthPackage(client, period, { draft: true });
     const accountant = await handleBookkeepingAccountantReportRoutes(
       '/api/bookkeeping/reports/accountant', 'GET',
-      { httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period, format: 'csv' } } as any,
+      { httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period: period, format: 'csv' } } as any,
       client,
     );
     assert.equal(accountant?.statusCode, 200);
@@ -490,7 +490,7 @@ describe('reconciliation ledger projection', () => {
     assert.equal(unchangedParent?.amount, '120.00');
     assert.equal((unchangedParent?.allocations as unknown[]).length, 3);
   });
-  it('blocks invoice-only rows for CSV/TSV/year/all and draft ZIP, requiring an audited current disposition', async () => {
+  it('requires an explicit report month and blocks invoice-only attribution for CSV/TSV and draft ZIP until an audited decision', async () => {
     const period = '2030-04';
     const dealId = 'synthetic-readiness-receivable';
     const now = new Date().toISOString();
@@ -503,10 +503,11 @@ describe('reconciliation ledger projection', () => {
     const report = (lens: string, format = 'csv') => handleBookkeepingAccountantReportRoutes('/api/bookkeeping/reports/accountant', 'GET', {
       httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period: lens, format },
     } as any, client);
-    for (const lens of [period, '2030', 'all']) for (const format of ['csv', 'tsv']) {
+    for (const lens of ['2030', 'all', '']) assert.equal((await report(lens))?.statusCode, 400);
+    for (const lens of [period]) for (const format of ['csv', 'tsv']) {
       const result = await report(lens, format);
       assert.equal(result?.statusCode, 409);
-      assert.ok(JSON.parse(result!.body).blockers.some((row: any) => row.rowId === `ledger:${dealId}` && row.status === 'payment-proof-missing'));
+      assert.ok(JSON.parse(result!.body).blockers.some((row: any) => row.rowId === `ledger:${dealId}` && row.status === 'needs-attribution'));
       assert.equal(JSON.parse(result!.body).content, undefined);
     }
     await assert.rejects(() => monthPackage(client, period, { draft: true }), MonthGateError);
@@ -514,20 +515,44 @@ describe('reconciliation ledger projection', () => {
     const view = await buildMonth(client, period);
     const row = view.rows.find((row) => row.ledger?.id === dealId)!;
     const { paymentRowDigest } = await import('../src/finance/accountantReadiness');
-    const input = { rowId: row.id, kind: 'deferred', reason: 'Operator verified later settlement', evidence: 'Invented receivable confirmation reference', targetPeriod: '2030-05', rowDigest: paymentRowDigest(row), version: view.version };
+    const input = { rowId: row.id, kind: 'deferred', reason: 'Operator verified later settlement', evidence: 'Invented receivable confirmation reference', targetPeriod: '2030-05', rowDigest: paymentRowDigest(row, period), version: view.version };
     await assert.rejects(() => setInvoiceDisposition(client, period, 'synthetic-operator', { ...input, evidence: '' }), /reason and evidence/);
     await assert.rejects(() => setInvoiceDisposition(client, period, 'synthetic-operator', { ...input, rowDigest: 'stale' }), /changed/);
     const saved = await setInvoiceDisposition(client, period, 'synthetic-operator', input);
     assert.equal(saved.log.at(-1)?.action, 'invoice-disposition');
     await assert.rejects(() => setInvoiceDisposition(client, period, 'synthetic-operator', input), /changed/);
     assert.equal((await report(period))?.statusCode, 200);
+    assert.equal(JSON.parse((await report(period))!.body).reportPeriod, period);
     const pack = await monthPackage(client, period, { draft: true });
     assert.doesNotMatch(pack.csv, /Invented Readiness Client/);
+    assert.equal(pack.reportPeriod, period);
+    assert.equal((await buildMonth(client, period)).reportPeriod, period);
+    assert.equal((await buildMonth(client, '2030-05')).statements.length, 0, 'verified deferral does not require future bank proof');
     assert.equal((await buildMonth(client, period)).rows.find((item) => item.id === row.id)?.status, 'payment-proof-missing');
     assert.equal((await buildMonth(client, period)).invoiceDispositions[row.id].kind, 'deferred');
     await client.send(new PutCommand({ TableName: TABLE_SPONSOR_CRM, Item: { ...finance, amountDue: '74.00' } }));
     assert.equal((await report(period))?.statusCode, 409, 'changed source amount invalidates the decision without changing the month version');
     await assert.rejects(() => monthPackage(client, period, { draft: true }), MonthGateError);
+  });
+
+  it('does not attribute an invoice issued in month A and paid in month B to A or require a B statement for A', async () => {
+    const invoiceId = '9'.repeat(64);
+    await createInvoice(client, {
+      id: invoiceId, revision: 1, status: 'confirmed', fields: { transactionDate: '2032-10-31', paidDate: '2032-11-02', counterparty: 'Invented Future Settlement Vendor', amount: '57.00', currency: 'EUR', invoiceNumber: 'INVENTED-FUTURE' },
+      extraction: { method: 'synthetic', evidence: [], issues: [], direction: 'expense' },
+      source: { intakeItemIds: ['invented-future-intake'], artifactId: 'invented-future-artifact', checksum: '7'.repeat(64) },
+      destinations: { dropbox: { state: 'verified', operationId: 'dropbox' }, sheets: { state: 'verified', operationId: 'sheets' } },
+      audit: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), confirmedRevision: 1,
+    });
+    const october = await handleBookkeepingAccountantReportRoutes('/api/bookkeeping/reports/accountant', 'GET', {
+      httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period: '2032-10', format: 'csv' },
+    } as any, client);
+    assert.equal(october?.statusCode, 200);
+    assert.equal(JSON.parse(october!.body).reportPeriod, '2032-10');
+    assert.equal(JSON.parse(october!.body).count, 0);
+    const pack = await monthPackage(client, '2032-10', { draft: true });
+    assert.equal(pack.reportPeriod, '2032-10');
+    assert.equal((await buildMonth(client, '2032-11')).statements.length, 0, 'no future-month bank statement was needed');
   });
 
 });

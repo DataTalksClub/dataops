@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import { it } from "node:test";
 import { accountantPaymentBlockers, paymentRowDigest, validUnpaidDisposition, type InvoiceDisposition } from "../src/finance/accountantReadiness";
 import type { MonthRow } from "../src/reconcile/month";
@@ -8,19 +8,21 @@ const invoice = (): MonthRow => ({
   ledger: { id: "invented-invoice", date: "2031-07-04", counterparty: "Invented Cloud Service", amount: "-41.00", currency: "EUR", sourceType: "invoice-document" },
   documents: [{ id: "invented-receipt" }], status: "payment-proof-missing", missing: "Payment unconfirmed",
 });
-const disposition = (row: MonthRow): InvoiceDisposition => ({ kind: "verified-unpaid", reason: "Operator verified outstanding receivable", evidence: "Invented receivables register reference", rowDigest: paymentRowDigest(row), by: "invented-operator", at: "2031-07-31T10:00:00Z" });
+const disposition = (row: MonthRow): InvoiceDisposition => ({ reportPeriod: "2031-07", kind: "verified-unpaid", reason: "Operator verified outstanding receivable", evidence: "Invented receivables register reference", rowDigest: paymentRowDigest(row, "2031-07"), by: "invented-operator", at: "2031-07-31T10:00:00Z" });
 
 it("requires explicit current audited unpaid evidence and keeps the unresolved source row intact", () => {
   const row = invoice();
   assert.equal(accountantPaymentBlockers("2031-07", [row]).length, 1);
   const decision = disposition(row);
+  assert.notEqual(paymentRowDigest(row, "2031-07"), paymentRowDigest(row, "2031-08"));
+  assert.equal(validUnpaidDisposition(row, decision, "2031-08"), false);
   assert.deepEqual(accountantPaymentBlockers("2031-07", [row], { [row.id]: decision }), []);
   assert.equal(row.status, "payment-proof-missing");
-  assert.equal(validUnpaidDisposition({ ...row, amount: "-42.00" }, decision), false);
-  assert.equal(validUnpaidDisposition({ ...row, currency: "USD" }, decision), false);
-  assert.equal(validUnpaidDisposition(row, { ...decision, evidence: "" }), false);
-  assert.equal(validUnpaidDisposition(row, { ...decision, kind: "deferred" }), false);
-  assert.equal(validUnpaidDisposition(row, { ...decision, kind: "deferred", targetPeriod: "2031-08" }), true);
+  assert.equal(validUnpaidDisposition({ ...row, amount: "-42.00" }, decision, "2031-07"), false);
+  assert.equal(validUnpaidDisposition({ ...row, currency: "USD" }, decision, "2031-07"), false);
+  assert.equal(validUnpaidDisposition(row, { ...decision, evidence: "" }, "2031-07"), false);
+  assert.equal(validUnpaidDisposition(row, { ...decision, kind: "deferred" }, "2031-07"), false);
+  assert.equal(validUnpaidDisposition(row, { ...decision, kind: "deferred", targetPeriod: "2031-08" }, "2031-07"), true);
 });
 
 it("blocks amount discrepancies, missing invoices and unconfirmed proofs even after a manual bank pair", () => {

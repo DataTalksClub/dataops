@@ -764,6 +764,7 @@ export async function packageMonth(args, io) {
   const period = periodArg(args, usage);
   const api = apiFor(args);
   const manifest = await api.get(`/api/reconcile/months/${period}/package`, { query: args.draft ? { draft: "true" } : {} });
+  if (manifest.reportPeriod !== period) throw new Error(`Package report month does not match selected report month ${period}`);
   if (manifest.blockers?.length) {
     const details = manifest.blockers.map((blocker) => `${blocker.rowId}: ${blocker.reason}`).join("; ");
     throw new Error(`Package is incomplete: ${manifest.blockers.length} blocker(s) prevent export. ${details}`);

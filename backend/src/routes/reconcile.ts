@@ -61,7 +61,7 @@ function fail(error: unknown): LambdaResponse {
   const statusCode = Number((error as { statusCode?: number }).statusCode || 0);
   if (statusCode === 401 || statusCode === 403) return json(statusCode, { error: statusCode === 401 ? "Unauthorized" : "Forbidden" });
   const message = (error as Error).message || "Reconcile request failed";
-  if (error instanceof MonthGateError) return json(409, { error: message, blockers: error.blockers });
+  if (error instanceof MonthGateError) return json(409, { ...(error.reportPeriod ? { reportPeriod: error.reportPeriod } : {}), error: message, blockers: error.blockers });
   if (statusCode) return json(statusCode, { error: message });
   return json(400, { error: message });
 }
