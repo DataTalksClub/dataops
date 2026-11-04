@@ -756,7 +756,7 @@ test("reconcile matches prints matched, unmatched bank and invoices without a ba
 
 test("disposition sends explicit verified-unpaid/deferred evidence with exact source digest and month CAS version", async () => {
   await withFakePortal([["/api/reconcile/months/2031-07/invoice-disposition", { month: { version: 8 } }]], async (calls) => {
-    const result = await commands.disposition({ _: ["ledger:invented-invoice"], period: "2031-07", kind: "deferred", reason: "Verified later settlement", evidence: "Invented receivables register", digest: "a".repeat(64), version: "7", "target-period": "2031-08", json: true }, {});
+    const result = await commands.disposition({ _: ["ledger:invented-invoice"], period: "2031-07", kind: "deferred", reason: "Verified later settlement", evidence: "Invented receivables register", digest: "a".repeat(64), version: "7", targetPeriod: "2031-08", json: true }, {});
     assert.equal(result.month.version, 8);
     assert.deepEqual(JSON.parse(calls[0].body), { rowId: "ledger:invented-invoice", kind: "deferred", reason: "Verified later settlement", evidence: "Invented receivables register", rowDigest: "a".repeat(64), version: 7, targetPeriod: "2031-08" });
   });
