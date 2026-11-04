@@ -44,11 +44,21 @@ export function mountBookkeepingNavigation({
       disabled: lens === "all",
     });
   }
+  function reportMonth() {
+    const selected = getLens();
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(selected)) {
+      status.textContent = "Select a month in the period selector before preparing the accountant report.";
+      return null;
+    }
+    return selected;
+  }
   const exportReport = async () => {
+    const period = reportMonth();
+    if (!period) return;
     await prepareExemptions();
-    const period = lens === "all" ? "all-records" : lens;
     const filename = `datatalksclub-${period}.csv`;
-    const report = await loadAccountantReport(lens || "all", "csv");
+    const report = await loadAccountantReport(period, "csv");
+    if (report.reportPeriod !== period) { status.textContent = "Report month changed. Select the report month again."; return; }
     downloadCsv(report.content, filename);
     status.textContent = `Exported report CSV (${filename}) with ${report.count} transactions.`;
   };
@@ -61,9 +71,12 @@ export function mountBookkeepingNavigation({
     status.textContent = `Exported full CSV (${filename}) with ${shown.length} transactions.`;
   };
   const copyReport = async () => {
+    const reportPeriod = reportMonth();
+    if (!reportPeriod) return;
     await prepareExemptions();
-    const period = monthLabel(lens);
-    const report = await loadAccountantReport(lens || "all", "tsv");
+    const period = monthLabel(reportPeriod);
+    const report = await loadAccountantReport(reportPeriod, "tsv");
+    if (report.reportPeriod !== reportPeriod) { status.textContent = "Report month changed. Select the report month again."; return; }
     const ok = await copyToClipboard(report.content);
     if (ok) {
       status.textContent = `✓ Copied report table for ${period} (${report.count} transactions) to clipboard. Paste directly into email or spreadsheet.`;

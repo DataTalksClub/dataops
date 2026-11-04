@@ -60,12 +60,14 @@ import {
   unconvertedAccountantReportRows,
 } from "../finance/accountantReport";
 
+import { accountantPaymentBlockers, paymentRowDigest, validUnpaidDisposition, type InvoiceDisposition } from "../finance/accountantReadiness";
+
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const LOG_LIMIT = 2000;
 
 export type MonthAction =
   | "pair" | "unpair" | "exception" | "clear-exception" | "void-ledger" | "restore-ledger" | "attach-proof" | "attach-document"
-  | "auto-match" | "create-ledger" | "confirm-exceptions" | "close" | "reopen" | "summary";
+  | "invoice-disposition" | "auto-match" | "create-ledger" | "confirm-exceptions" | "close" | "reopen" | "summary";
 
 export type MonthLogEntry = { at: string; by: string; action: MonthAction; detail: Record<string, unknown> };
 
@@ -75,6 +77,7 @@ export type MonthRecord = {
   period: string;
   state: "open" | "closed";
   decisions: ManualDecisions;
+  invoiceDispositions?: Record<string, InvoiceDisposition>;
   exceptionConfirmation?: { digest: string; by: string; at: string; count: number };
   closed?: { by: string; at: string };
   log: MonthLogEntry[];
@@ -108,7 +111,7 @@ export class MonthConflictError extends Error {
 }
 export class MonthGateError extends Error {
   statusCode = 409;
-  constructor(message: string, readonly blockers: unknown[]) { super(message); }
+  constructor(message: string, readonly blockers: unknown[], readonly reportPeriod?: string) { super(message); }
 }
 const badRequest = (message: string) => Object.assign(new Error(message), { statusCode: 400 });
 const notFound = (message: string) => Object.assign(new Error(message), { statusCode: 404 });
@@ -298,6 +301,10 @@ export function ledgerRowsFrom(transactions: Array<Record<string, unknown>>, lin
 
 export type MonthView = MonthTable & {
   state: MonthRecord["state"];
+  reportPeriod: string;
+  paymentReadiness: ReturnType<typeof accountantPaymentBlockers>;
+  version: number;
+  invoiceDispositions: Record<string, InvoiceDisposition>;
   closed?: MonthRecord["closed"];
   exceptionConfirmation?: MonthRecord["exceptionConfirmation"] & { current: boolean };
   exceptionDigest: string;
@@ -412,7 +419,6 @@ export function receivedInvoiceDocumentsFrom(
 
   for (const invoice of invoices) {
     if (invoice.status === "rejected" || isInvoiceBooked(invoice)) continue;
-    if (invoice.status === "pending" && invoice.extraction?.needsReview === true) continue;
     const date = String(invoice.fields?.paidDate || invoice.fields?.transactionDate || "").slice(0, 10);
     const amount = Number(invoice.fields?.amount || 0);
     const currency = String(invoice.fields?.currency || "").trim().toUpperCase();
@@ -421,7 +427,7 @@ export function receivedInvoiceDocumentsFrom(
       || (invoice.fields?.invoiceNumber ? cleanDescriptionCounterparty(invoice.fields?.description) : "")
       || "",
     ).trim();
-    if (!DATE_PREFIX.test(date) || !(Number.isFinite(amount) && amount > 0) || !/^[A-Z]{3}$/.test(currency) || !counterparty) continue;
+    if (!DATE_PREFIX.test(date)) continue;
     const direction = invoice.extraction?.direction === "income" ? "income" : "expense";
     const amountEur = invoice.fields?.amountEur || invoice.fields?.grossAmountEur;
     const artifactId = invoice.source?.artifactId || invoice.id;
@@ -432,7 +438,7 @@ export function receivedInvoiceDocumentsFrom(
       documentId: artifactId,
       invoiceId: invoice.id,
       date,
-      amount: amount.toFixed(2),
+      amount: Number.isFinite(amount) && amount > 0 ? amount.toFixed(2) : String(invoice.fields?.amount ?? ""),
       currency,
       ...(amountEur ? { amountEur: String(amountEur) } : {}),
       counterparty,
@@ -441,7 +447,7 @@ export function receivedInvoiceDocumentsFrom(
       direction,
       ...(invoice.ledgerTransactionId ? { ledgerTransactionId: invoice.ledgerTransactionId } : {}),
       ...(sum ? { sha256: sum } : {}),
-      needsReview: Boolean(invoice.extraction?.needsReview),
+      needsReview: Boolean(invoice.extraction?.needsReview) || !Number.isFinite(amount) || amount <= 0 || !/^[A-Z]{3}$/.test(currency) || !counterparty,
       documents: [{ id: artifactId, invoiceId: invoice.id }],
     });
   }
@@ -459,12 +465,11 @@ export function receivedInvoiceDocumentsFrom(
     const extraction = facts.extraction && typeof facts.extraction === "object" && !Array.isArray(facts.extraction)
       ? (facts.extraction as Record<string, unknown>)
       : undefined;
-    if (extraction?.needsReview === true || facts.needsReview === true || doc.needsReview === true) continue;
     const date = String(facts.paidDate || facts.transactionDate || facts.date || doc.paidDate || doc.transactionDate || doc.date || "").slice(0, 10);
     const amount = Number(facts.amount ?? facts.grossAmount ?? doc.amount ?? doc.grossAmount ?? 0);
     const currency = String(facts.currency ?? doc.currency ?? "").trim().toUpperCase();
     const counterparty = String(facts.counterparty ?? facts.vendor ?? doc.counterparty ?? doc.vendor ?? "").trim();
-    if (!DATE_PREFIX.test(date) || !(Number.isFinite(amount) && amount > 0) || !/^[A-Z]{3}$/.test(currency) || !counterparty) continue;
+    if (!DATE_PREFIX.test(date)) continue;
     const rawDirection = String(extraction?.direction ?? facts.direction ?? facts.entryType ?? doc.direction ?? doc.entryType ?? "expense").toLowerCase();
     const direction = rawDirection === "income" ? "income" : "expense";
     const amountEur = facts.amountEur ?? facts.grossAmountEur ?? doc.amountEur ?? doc.grossAmountEur;
@@ -475,7 +480,7 @@ export function receivedInvoiceDocumentsFrom(
       id: docId,
       documentId: docId,
       date,
-      amount: amount.toFixed(2),
+      amount: Number.isFinite(amount) && amount > 0 ? amount.toFixed(2) : String(facts.amount ?? facts.grossAmount ?? doc.amount ?? doc.grossAmount ?? ""),
       currency,
       ...(amountEur !== undefined && Number(amountEur) > 0 ? { amountEur: String(amountEur) } : {}),
       counterparty,
@@ -483,7 +488,7 @@ export function receivedInvoiceDocumentsFrom(
       ...(invoiceNumber ? { invoiceNumber: String(invoiceNumber) } : {}),
       direction,
       ...(sum ? { sha256: sum } : {}),
-      needsReview: false,
+      needsReview: extraction?.needsReview === true || facts.needsReview === true || doc.needsReview === true || !Number.isFinite(amount) || amount <= 0 || !/^[A-Z]{3}$/.test(currency) || !counterparty,
       documents: [{ id: docId }],
     });
   }
@@ -578,7 +583,11 @@ function viewFor(period: string, data: Snapshot, pairing: ReturnType<typeof pair
   const digest = exceptionDigest(table);
   return {
     ...table,
+    reportPeriod: period,
+    paymentReadiness: accountantPaymentBlockers(period, table.rows, record.invoiceDispositions),
     state: record.state,
+    version: record.version,
+    invoiceDispositions: record.invoiceDispositions || {},
     ...(record.closed ? { closed: record.closed } : {}),
     ...(record.exceptionConfirmation ? { exceptionConfirmation: { ...record.exceptionConfirmation, current: record.exceptionConfirmation.digest === digest } } : {}),
     exceptionDigest: digest,
@@ -604,6 +613,71 @@ export async function buildMonths(client: DynamoDBDocumentClient, periods: strin
 
 export async function buildMonth(client: DynamoDBDocumentClient, period: string): Promise<MonthView> {
   return (await buildMonths(client, [period]))[0];
+}
+
+/** The export gate uses the cash-period lens, including invoice-only candidates. */
+export async function assertAccountantPaymentReady(
+  client: DynamoDBDocumentClient, lens: string,
+  transactions?: Awaited<ReturnType<typeof listTransactions>>,
+): Promise<Set<string>> {
+  if (!MONTH.test(lens)) throw badRequest("Select a report month: reportPeriod must be YYYY-MM");
+  const booked = transactions || await listTransactions(client);
+  const data = await snapshot(client, { preloaded: { transactions: booked } });
+  const decisions = mergedDecisions(data.months);
+  const pairing = pairAll(data.bank, data.ledger, decisions, data.config.tolerances);
+  const periods = [lens];
+  const omitted = new Set<string>();
+  const blockers: Array<Record<string, unknown>> = [];
+  const bookedIds = new Set(booked.map((row) => String(row.id)));
+  for (const period of periods) {
+    const view = viewFor(period, data, pairing, decisions);
+    blockers.push(...accountantPaymentBlockers(period, view.rows, view.invoiceDispositions));
+    const visibleParents = new Set(view.rows.flatMap((row) => row.ledger ? [row.ledger.id] : []));
+    for (const parent of selectAccountantReportRows(booked, period)) {
+      if (visibleParents.has(String(parent.id))) continue;
+      blockers.push({ reportPeriod: period, period, rowId: `ledger:${parent.id}`, date: accountantCashDate(parent),
+        counterparty: String(parent.counterparty || ""), amount: String(parent.amount || ""), currency: String(parent.currency || "EUR"),
+        status: "needs-attribution", reason: "Selected cash report parent has no reconciliation row; resolve its source/payment attribution before export" });
+    }
+    for (const row of view.rows) {
+      if (validUnpaidDisposition(row, view.invoiceDispositions[row.id], period) && row.ledger) omitted.add(row.ledger.id);
+      if (row.tax || (row.exception?.satisfied && ["internal_transfer", "owner_withdrawal"].includes(row.exception.kind)) || (row.ledger && !selectAccountantReportRows([{ ...row.ledger, entryType: Number(row.amount) < 0 ? "expense" : "income" }], "").length)) continue;
+      if (row.status !== "matched") continue;
+      const unavailable: string[] = [];
+      if (row.paymentProof && (await getRawDocument(client, row.paymentProof.documentId))?.status !== "active") unavailable.push("required payment proof is missing or inactive");
+      for (const document of row.documents) {
+        const raw = await getRawDocument(client, document.id);
+        if (raw?.status !== "active" && !(await confirmedInvoiceSource(client, document))) unavailable.push(`required invoice/receipt ${document.id} is missing or inactive`);
+      }
+      if (!row.ledger || !bookedIds.has(row.ledger.id)) unavailable.push("verified payment must be booked in the ledger before export");
+      for (const reason of unavailable) blockers.push({ reportPeriod: period, period, rowId: row.id, date: row.date, counterparty: row.counterparty, amount: row.amount, currency: row.currency, status: row.status, reason, rowDigest: paymentRowDigest(row, period) });
+    }
+  }
+  if (blockers.length) throw new MonthGateError(`Accountant export blocked: ${blockers.length} unresolved payment/evidence item(s)`, blockers, lens);
+  return omitted;
+}
+
+/** Explicit operator disposition; absence of a bank match alone never creates one. */
+export async function setInvoiceDisposition(client: DynamoDBDocumentClient, period: string, by: string, input: {
+  rowId: string; kind: string; reason: string; evidence: string; targetPeriod?: string; rowDigest: string; version: number;
+}) {
+  if (!["verified-unpaid", "deferred"].includes(input.kind)) throw badRequest("kind must be verified-unpaid or deferred");
+  if (!input.reason?.trim() || !input.evidence?.trim()) throw badRequest("reason and evidence are required");
+  if (input.kind === "deferred" && (!MONTH.test(input.targetPeriod || "") || input.targetPeriod! <= period)) throw badRequest("deferred requires a later targetPeriod (YYYY-MM)");
+  if (!Number.isInteger(input.version) || input.version < 0) throw badRequest("version is required");
+  const view = await buildMonth(client, period);
+  if (view.version !== input.version) throw new MonthConflictError();
+  const row = view.rows.find((row) => row.id === input.rowId);
+  if (!row || !["payment-proof-missing", "needs-review"].includes(row.status) || row.bank || row.paymentProof) throw badRequest("Only an invoice/ledger item without payment evidence can be marked unpaid or deferred");
+  if (paymentRowDigest(row, period) !== input.rowDigest) throw new MonthConflictError();
+  const disposition: InvoiceDisposition = {
+    reportPeriod: period, kind: input.kind as InvoiceDisposition["kind"], reason: input.reason.trim().slice(0, 1000), evidence: input.evidence.trim().slice(0, 2000),
+    ...(input.kind === "deferred" ? { targetPeriod: input.targetPeriod } : {}), rowDigest: input.rowDigest, by, at: new Date().toISOString(),
+  };
+  return mutateMonth(client, period, by, "invoice-disposition", { rowId: row.id, ...disposition }, (record) => {
+    if (record.version !== input.version) throw new MonthConflictError();
+    record.invoiceDispositions = { ...record.invoiceDispositions, [row.id]: disposition };
+  });
 }
 
 export function periodsBetween(from: string, to: string): string[] {
@@ -1043,15 +1117,16 @@ async function confirmedInvoiceSource(client: DynamoDBDocumentClient, document: 
  * reportable row's invoice/receipt and payment proof. Taxes, health insurance,
  * and confirmed owner withdrawals stay out. Building it never sends anything.
  */
-export async function monthPackage(client: DynamoDBDocumentClient, period: string, options: { draft?: boolean } = {}): Promise<{ period: string; state: MonthRecord["state"]; draft: boolean; entries: PackageEntry[]; blockers: PackageBlocker[]; csv: string }> {
+export async function monthPackage(client: DynamoDBDocumentClient, period: string, options: { draft?: boolean } = {}): Promise<{ reportPeriod: string; period: string; state: MonthRecord["state"]; draft: boolean; entries: PackageEntry[]; blockers: PackageBlocker[]; csv: string }> {
+  const transactions = await listTransactions(client);
+  const omitted = await assertAccountantPaymentReady(client, period, transactions);
   const view = await buildMonth(client, period);
   if (view.state !== "closed" && !options.draft) throw new MonthGateError(`Month ${period} is open; close it first (or build a draft package)`, []);
   const naming = await import("./naming");
   const entries: PackageEntry[] = [{ path: naming.packagePath(period, null, naming.reportName(period, "csv")), kind: "report" }];
   const blockers: PackageBlocker[] = [];
-  const transactions = await listTransactions(client);
   const transactionsById = new Map(transactions.map((transaction) => [String(transaction.id), transaction]));
-  const reportRows = selectAccountantReportRows(transactions, period);
+  const reportRows = selectAccountantReportRows(transactions, period).filter((row) => !omitted.has(String(row.id)));
   for (const row of unconvertedAccountantReportRows(reportRows)) {
     blockers.push({
       rowId: String(row.id || "unknown"),
@@ -1143,5 +1218,5 @@ export async function monthPackage(client: DynamoDBDocumentClient, period: strin
     || String(left.documentId || left.invoiceId || left.artifactId || "").localeCompare(String(right.documentId || right.invoiceId || right.artifactId || "")));
   const unique = naming.uniquePaths(entries.map((entry) => entry.path));
   entries.forEach((entry, index) => { entry.path = unique[index]; });
-  return { period, state: view.state, draft: view.state !== "closed", entries, blockers, csv: formatAccountantCsv(reportRows) };
+  return { reportPeriod: period, period, state: view.state, draft: view.state !== "closed", entries, blockers, csv: formatAccountantCsv(reportRows) };
 }

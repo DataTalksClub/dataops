@@ -80,9 +80,25 @@ const entries = [
   },
 ];
 
-const client = {
-  send: async () => ({ Items: entries }),
-} as unknown as DynamoDBDocumentClient;
+// These formatter consumers use real reconciliation source shapes: invoice links,
+// active documents and explicitly attached personal payment proofs.
+function verifiedClient(rows: Array<Record<string, any>>): DynamoDBDocumentClient {
+  const documents = rows.map((row) => ({ PK: `DOCUMENT#proof-${row.id}`, SK: `DOCUMENT#proof-${row.id}`, id: `proof-${row.id}`, recordType: "document", status: "active", documentType: "receipt" }));
+  const months = [...new Set(rows.map((row) => String(row.paidDate || row.transactionDate).slice(0, 7)))].map((period) => ({
+    PK: `RECONCILE-MONTH#${period}`, SK: `RECONCILE-MONTH#${period}`, id: period, period, state: "open", version: 1, log: [],
+    decisions: { pairs: [], rejected: [], exceptions: {}, proofs: Object.fromEntries(rows.filter((row) => String(row.paidDate || row.transactionDate).startsWith(period)).map((row) => [row.id, { documentId: `proof-${row.id}`, by: "synthetic-operator", at: "2026-01-01T00:00:00Z" }])) },
+  }));
+  const links = rows.map((row) => ({ PK: `LINK#${row.id}`, SK: `LINK#${row.id}`, id: `link-${row.id}`, documentId: `proof-${row.id}`, transactionId: row.id, coverageType: "evidence" }));
+  return { send: async (command: any) => {
+    const input = command.input;
+    if (input.Key) return { Item: [...documents, ...months].find((row) => row.PK === input.Key.PK) };
+    const values = input.ExpressionAttributeValues || {};
+    if (values[":transaction"]) return { Items: rows };
+    const prefix = values[":prefix"];
+    return { Items: [...documents, ...months, ...links].filter((row) => prefix && row.PK.startsWith(prefix)) };
+  } } as unknown as DynamoDBDocumentClient;
+}
+const client = verifiedClient(entries);
 
 describe("native accountant report API", () => {
   it("selects the cash period before applying allocation projection and report exclusions", () => {
@@ -181,7 +197,7 @@ describe("native accountant report API", () => {
         headers: {},
         queryStringParameters: { period: "2026-10", format: "csv" },
       },
-      { send: async () => ({ Items: normalizedEuroRows }) } as unknown as DynamoDBDocumentClient,
+      verifiedClient(normalizedEuroRows),
       true,
     );
 
@@ -233,7 +249,7 @@ describe("native accountant report API", () => {
         headers: {},
         queryStringParameters: { period: "2026-10", format: "csv" },
       },
-      { send: async () => ({ Items: [...entries, unconverted] }) } as unknown as DynamoDBDocumentClient,
+      verifiedClient([...entries, unconverted]),
       true,
     );
     assert.equal(response.statusCode, 409);
@@ -261,9 +277,7 @@ describe("native accountant report API", () => {
       ],
     };
     const sourceAllocations = JSON.stringify(allocatedPayment.allocations);
-    const allocationClient = {
-      send: async () => ({ Items: [...entries, allocatedPayment] }),
-    } as unknown as DynamoDBDocumentClient;
+    const allocationClient = verifiedClient([...entries, allocatedPayment]);
     for (const format of ["csv", "tsv"] as const) {
       const response = await handleBookkeepingRoutes(
         "/api/bookkeeping/reports/accountant",

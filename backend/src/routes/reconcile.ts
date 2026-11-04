@@ -42,6 +42,7 @@ import {
   reopenMonth,
   saveConfig,
   setException,
+  setInvoiceDisposition,
   unpairRows,
   voidLedgerRow,
 } from "../reconcile/monthService";
@@ -60,7 +61,7 @@ function fail(error: unknown): LambdaResponse {
   const statusCode = Number((error as { statusCode?: number }).statusCode || 0);
   if (statusCode === 401 || statusCode === 403) return json(statusCode, { error: statusCode === 401 ? "Unauthorized" : "Forbidden" });
   const message = (error as Error).message || "Reconcile request failed";
-  if (error instanceof MonthGateError) return json(409, { error: message, blockers: error.blockers });
+  if (error instanceof MonthGateError) return json(409, { ...(error.reportPeriod ? { reportPeriod: error.reportPeriod } : {}), error: message, blockers: error.blockers });
   if (statusCode) return json(statusCode, { error: message });
   return json(400, { error: message });
 }
@@ -294,6 +295,14 @@ async function handleMonthRoutes(
     return value;
   };
   switch (action) {
+    case "invoice-disposition": {
+      await financeActor(client, actor.id, true);
+      return json(200, { month: await setInvoiceDisposition(client, period, actor.id, {
+        rowId: String(body.rowId || ""), kind: String(body.kind || ""), reason: String(body.reason || ""),
+        evidence: String(body.evidence || ""), rowDigest: String(body.rowDigest || ""), version: body.version as number,
+        ...(body.targetPeriod ? { targetPeriod: String(body.targetPeriod) } : {}),
+      }) });
+    }
     case "pair": return json(200, { month: await pairRows(client, period, actor.id, id("bankKey"), id("transactionId"), text(body.note)) });
     case "unpair": return json(200, { month: await unpairRows(client, period, actor.id, id("bankKey"), id("transactionId"), text(body.note)) });
     case "void-ledger": {
