@@ -6,9 +6,9 @@ import { getClient } from '../src/db/client';
 import { createDocumentLink, getBookkeepingItem, putBookkeepingItem } from '../src/db/bookkeeping';
 import { handleBookkeepingAccountantReportRoutes } from '../src/routes/bookkeepingAccountantReport';
 import { createInvoice } from '../src/invoices/store';
-import { TABLE_ARTIFACTS, TABLE_SPONSOR_CRM } from '../src/db/tableNames';
+import { TABLE_ARTIFACTS, TABLE_SPONSOR_CRM, TABLE_BOOKKEEPING } from '../src/db/tableNames';
 import { saveStatement } from '../src/reconcile/service';
-import { attachProof, buildMonth, setInvoiceDisposition, setException, MonthGateError, closeMonth, getConfig, ledgerRowsFrom, monthPackage, saveConfig } from '../src/reconcile/monthService';
+import { attachProof, buildMonth, setInvoiceDisposition, setException, pairRows, MonthGateError, closeMonth, getConfig, ledgerRowsFrom, monthPackage, saveConfig } from '../src/reconcile/monthService';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 
 describe('reconciliation ledger projection', () => {
@@ -553,6 +553,88 @@ describe('reconciliation ledger projection', () => {
     const pack = await monthPackage(client, '2032-10', { draft: true });
     assert.equal(pack.reportPeriod, '2032-10');
     assert.equal((await buildMonth(client, '2032-11')).statements.length, 0, 'no future-month bank statement was needed');
+  });
+
+  async function assertBothExportsBlocked(period: string, expected: RegExp) {
+    const response = await handleBookkeepingAccountantReportRoutes('/api/bookkeeping/reports/accountant', 'GET', {
+      httpMethod: 'GET', path: '/api/bookkeeping/reports/accountant', headers: {}, queryStringParameters: { period, format: 'csv' },
+    } as any, client);
+    assert.equal(response?.statusCode, 409);
+    assert.match(JSON.stringify(JSON.parse(response!.body).blockers), expected);
+    await assert.rejects(() => monthPackage(client, period, { draft: true }), (error: any) => {
+      assert.ok(error instanceof MonthGateError);
+      assert.match(JSON.stringify(error.blockers), expected);
+      return true;
+    });
+  }
+
+  it('blocks a matched bank-only fee omitted from the cash ledger and report', async () => {
+    const period = '2033-02';
+    await saveStatement(client, { accountId: 'finom', period, filename: 'invented-fee-statement.pdf', rows: [
+      { date: `${period}-06`, amount: '-17.00', currency: 'EUR', counterparty: 'Finom invented account fee' },
+    ] });
+    const view = await buildMonth(client, period);
+    assert.equal(view.rows[0].status, 'matched');
+    assert.equal(view.rows[0].ledger, undefined);
+    await assertBothExportsBlocked(period, /must be booked in the ledger/);
+  });
+
+  it('blocks a selected cash parent globally paired to a different month despite mismatched amount and inactive invoice evidence', async () => {
+    const period = '2033-10';
+    const transaction = (await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'invented-cross-month-cash', paidDate: `${period}-31`, transactionDate: `${period}-29`,
+      counterparty: 'Invented Cross Month Service', amount: '53.00', currency: 'EUR', entryType: 'expense',
+    })).item;
+    const document = (await putBookkeepingItem(client, 'document', {
+      id: 'invented-cross-month-receipt', documentType: 'invoice', status: 'active', contentType: 'application/pdf',
+      originalFilename: 'invented-cross-month.pdf', byteSize: 10, sha256: '6'.repeat(64), s3Key: 'documents/invented-cross-month.pdf',
+    })).item;
+    await createDocumentLink(client, { documentId: document.id, transactionId: String(transaction.id), coverageType: 'evidence' });
+    await client.send(new PutCommand({ TableName: TABLE_BOOKKEEPING, Item: { ...document, PK: `DOCUMENT#${document.id}`, SK: `DOCUMENT#${document.id}`, status: 'archived' } }));
+    await saveStatement(client, { accountId: 'finom', period: '2033-11', filename: 'invented-later-statement.pdf', rows: [
+      { date: '2033-11-01', amount: '-54.00', currency: 'EUR', counterparty: 'Invented Cross Month Service' },
+    ] });
+    const november = await buildMonth(client, '2033-11');
+    const bank = november.rows.find((row) => row.bank?.counterparty === 'Invented Cross Month Service')!.bank!;
+    await pairRows(client, period, 'invented-operator', bank.key, String(transaction.id));
+    const october = await buildMonth(client, period);
+    assert.ok(october.rows.some((row) => row.ledger?.id === transaction.id && row.bank?.date === '2033-11-01'));
+    await assertBothExportsBlocked(period, /Cash-month attribution conflict/);
+  });
+
+  it('retains selected-month needsReview invoice and receipt candidates for explicit attribution without sweeping future sources', async () => {
+    const period = '2034-06';
+    const invoiceId = '8'.repeat(64);
+    await createInvoice(client, {
+      id: invoiceId, revision: 1, status: 'pending', fields: { transactionDate: `${period}-30`, counterparty: 'Invented Draft Invoice Vendor', amount: '39.00', currency: 'EUR', invoiceNumber: 'INVENTED-REVIEW' },
+      extraction: { method: 'synthetic', evidence: [], issues: ['Synthetic attribution uncertainty'], needsReview: true, direction: 'expense' },
+      source: { intakeItemIds: ['invented-review-intake'], artifactId: 'invented-review-artifact', checksum: '4'.repeat(64) },
+      destinations: { dropbox: { state: 'verified', operationId: 'dropbox' }, sheets: { state: 'verified', operationId: 'sheets' } },
+      audit: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    const receipt = (await putBookkeepingItem(client, 'document', {
+      id: 'invented-review-receipt', documentType: 'receipt', status: 'active', needsReview: true,
+      transactionDate: `${period}-29`, counterparty: 'Invented Review Receipt Vendor', amount: '28.00', currency: 'EUR',
+    })).item;
+    await putBookkeepingItem(client, 'document', {
+      id: 'invented-future-review-receipt', documentType: 'receipt', status: 'active', needsReview: true,
+      transactionDate: '2034-07-02', counterparty: 'Invented Future Review Vendor', amount: '62.00', currency: 'EUR',
+    });
+    const view = await buildMonth(client, period);
+    assert.equal(view.rows.length, 2);
+    assert.ok(view.rows.every((row) => row.status === 'needs-review'));
+    await assertBothExportsBlocked(period, /needs-attribution/);
+    const { paymentRowDigest } = await import('../src/finance/accountantReadiness');
+    for (const id of [invoiceId, String(receipt.id)]) {
+      const current = await buildMonth(client, period);
+      const row = current.rows.find((row) => row.ledger?.id === id)!;
+      await setInvoiceDisposition(client, period, 'invented-operator', { rowId: row.id, kind: 'deferred',
+        reason: 'Verified outside selected cash month', evidence: 'Invented later-period attribution reference', targetPeriod: '2034-07', rowDigest: paymentRowDigest(row, period), version: current.version });
+    }
+    const pack = await monthPackage(client, period, { draft: true });
+    assert.equal(pack.csv.trim().split(/\r?\n/).length, 1);
+    assert.equal((await buildMonth(client, period)).rows.length, 2, 'unresolved source facts remain visible after the attribution decision');
+    assert.equal((await buildMonth(client, '2034-07')).statements.length, 0, 'future proof is not a prerequisite for selected-month attribution');
   });
 
 });

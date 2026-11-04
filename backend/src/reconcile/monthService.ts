@@ -419,7 +419,6 @@ export function receivedInvoiceDocumentsFrom(
 
   for (const invoice of invoices) {
     if (invoice.status === "rejected" || isInvoiceBooked(invoice)) continue;
-    if (invoice.status === "pending" && invoice.extraction?.needsReview === true) continue;
     const date = String(invoice.fields?.paidDate || invoice.fields?.transactionDate || "").slice(0, 10);
     const amount = Number(invoice.fields?.amount || 0);
     const currency = String(invoice.fields?.currency || "").trim().toUpperCase();
@@ -466,7 +465,6 @@ export function receivedInvoiceDocumentsFrom(
     const extraction = facts.extraction && typeof facts.extraction === "object" && !Array.isArray(facts.extraction)
       ? (facts.extraction as Record<string, unknown>)
       : undefined;
-    if (extraction?.needsReview === true || facts.needsReview === true || doc.needsReview === true) continue;
     const date = String(facts.paidDate || facts.transactionDate || facts.date || doc.paidDate || doc.transactionDate || doc.date || "").slice(0, 10);
     const amount = Number(facts.amount ?? facts.grossAmount ?? doc.amount ?? doc.grossAmount ?? 0);
     const currency = String(facts.currency ?? doc.currency ?? "").trim().toUpperCase();
@@ -490,7 +488,7 @@ export function receivedInvoiceDocumentsFrom(
       ...(invoiceNumber ? { invoiceNumber: String(invoiceNumber) } : {}),
       direction,
       ...(sum ? { sha256: sum } : {}),
-      needsReview: false,
+      needsReview: extraction?.needsReview === true || facts.needsReview === true || doc.needsReview === true,
       documents: [{ id: docId }],
     });
   }
@@ -627,17 +625,23 @@ export async function assertAccountantPaymentReady(
   const data = await snapshot(client, { preloaded: { transactions: booked } });
   const decisions = mergedDecisions(data.months);
   const pairing = pairAll(data.bank, data.ledger, decisions, data.config.tolerances);
-  const periods = new Set([...data.bank, ...data.ledger].map((row) => row.date.slice(0, 7))
-    .filter((period) => MONTH.test(period) && (lens === "all" || period.startsWith(lens))));
+  const periods = [lens];
   const omitted = new Set<string>();
   const blockers: Array<Record<string, unknown>> = [];
   const bookedIds = new Set(booked.map((row) => String(row.id)));
-  for (const period of [...periods].sort()) {
+  for (const period of periods) {
     const view = viewFor(period, data, pairing, decisions);
     blockers.push(...accountantPaymentBlockers(period, view.rows, view.invoiceDispositions));
+    const visibleParents = new Set(view.rows.flatMap((row) => row.ledger ? [row.ledger.id] : []));
+    for (const parent of selectAccountantReportRows(booked, period)) {
+      if (visibleParents.has(String(parent.id))) continue;
+      blockers.push({ reportPeriod: period, period, rowId: `ledger:${parent.id}`, date: accountantCashDate(parent),
+        counterparty: String(parent.counterparty || ""), amount: String(parent.amount || ""), currency: String(parent.currency || "EUR"),
+        status: "needs-attribution", reason: "Selected cash report parent has no reconciliation row; resolve its source/payment attribution before export" });
+    }
     for (const row of view.rows) {
       if (validUnpaidDisposition(row, view.invoiceDispositions[row.id], period) && row.ledger) omitted.add(row.ledger.id);
-      if (row.tax || (row.ledger && !selectAccountantReportRows([{ ...row.ledger, entryType: Number(row.amount) < 0 ? "expense" : "income" }], "").length)) continue;
+      if (row.tax || (row.exception?.satisfied && ["internal_transfer", "owner_withdrawal"].includes(row.exception.kind)) || (row.ledger && !selectAccountantReportRows([{ ...row.ledger, entryType: Number(row.amount) < 0 ? "expense" : "income" }], "").length)) continue;
       if (row.status !== "matched") continue;
       const unavailable: string[] = [];
       if (row.paymentProof && (await getRawDocument(client, row.paymentProof.documentId))?.status !== "active") unavailable.push("required payment proof is missing or inactive");
@@ -645,7 +649,7 @@ export async function assertAccountantPaymentReady(
         const raw = await getRawDocument(client, document.id);
         if (raw?.status !== "active" && !(await confirmedInvoiceSource(client, document))) unavailable.push(`required invoice/receipt ${document.id} is missing or inactive`);
       }
-      if (row.ledger && !bookedIds.has(row.ledger.id)) unavailable.push("verified payment must be booked in the ledger before export");
+      if (!row.ledger || !bookedIds.has(row.ledger.id)) unavailable.push("verified payment must be booked in the ledger before export");
       for (const reason of unavailable) blockers.push({ reportPeriod: period, period, rowId: row.id, date: row.date, counterparty: row.counterparty, amount: row.amount, currency: row.currency, status: row.status, reason, rowDigest: paymentRowDigest(row, period) });
     }
   }

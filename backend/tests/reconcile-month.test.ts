@@ -347,14 +347,20 @@ describe('month reconciliation', () => {
     assert.match(tableCsv(after), /proof:proof-doc/);
   });
 
-  it('pairs globally, so a boundary payment lands in one month only', () => {
+  it('keeps a booked cash-date conflict visible while an invoice candidate follows its globally paired payment month', () => {
     const bankRows = [bank('b-1', { counterparty: 'Example Cloud', date: '2026-11-02' })];
     const ledgerRows = [ledger('l-1', { counterparty: 'Example Cloud', date: '2026-10-31' })];
     const pairing = pairAll(bankRows, ledgerRows, none(), DEFAULT_TOLERANCES);
     const october = buildMonthTable({ period: '2026-10', bank: bankRows, ledger: ledgerRows, decisions: none(), rules: [], pairing });
     const november = buildMonthTable({ period: '2026-11', bank: bankRows, ledger: ledgerRows, decisions: none(), rules: [], pairing });
-    assert.equal(october.rows.length, 0);
+    assert.equal(october.rows.length, 1);
+    assert.equal(october.rows[0].status, 'needs-review');
+    assert.match(october.rows[0].missing!, /Cash-month attribution conflict/);
     assert.equal(november.rows[0].status, 'matched');
+    const invoiceCandidates = ledgerRows.map((row) => ({ ...row, invoiceCandidate: true as const, sourceType: 'invoice-document' }));
+    const candidatePairing = pairAll(bankRows, invoiceCandidates, none(), DEFAULT_TOLERANCES);
+    const invoiceOctober = buildMonthTable({ period: '2026-10', bank: bankRows, ledger: invoiceCandidates, decisions: none(), rules: [], pairing: candidatePairing });
+    assert.equal(invoiceOctober.rows.length, 0, 'an invoice issue date is not a conflicting booked cash date');
   });
 
   it('does not take a sponsor payment and a salary of the same amount for an internal transfer (backtest 2025-03)', () => {

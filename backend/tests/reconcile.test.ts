@@ -496,6 +496,10 @@ describe('reconcile API', () => {
     });
     assert.equal(saved.statusCode, 201, saved.body);
 
+    await putBookkeepingItem(client, 'bookkeeping', {
+      id: 'synthetic-booked-account-fee', transactionDate: '2026-12-10', paidDate: '2026-12-10',
+      counterparty: 'Finom account fee', description: 'Synthetic booked bank fee', amount: '15.00', currency: 'EUR', entryType: 'expense', category: 'Bank fees', sourceType: 'statement',
+    });
     const month = async () => JSON.parse((await operator('GET', '/api/reconcile/months/2026-12')).body);
     let view = await month();
     const status = (match: (row: Record<string, any>) => boolean) => view.rows.find(match)?.status;
