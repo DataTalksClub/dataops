@@ -737,9 +737,11 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(row).toBeVisible();
     await expect(page.locator('.bk-month__head')).toContainText('out −€18.50');
 
-    await uploadBookkeepingEvidence(page, context, transaction.id, {
+    const paymentEvidence = await uploadBookkeepingEvidence(page, context, transaction.id, {
       month: '2026-08', filename: 'synthetic-evidence.pdf',
     });
+    const proof = await context.request.post('/api/reconcile/months/2026-08/proof', { data: { transactionId: transaction.id, documentId: paymentEvidence.id } });
+    expect(proof.ok()).toBe(true);
     await page.goto('/bookkeeping?month=2026-08');
     await row.locator('.bk-col-date').click();
     await expect(page).toHaveURL(new RegExp(`tx=${transaction.id}`));

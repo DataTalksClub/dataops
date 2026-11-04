@@ -11,6 +11,7 @@ import { createSession } from '../src/db/sessions';
 import { createHash } from 'crypto';
 import { Readable } from 'stream';
 import { handleBookkeepingTransactionRoutes } from '../src/routes/bookkeepingTransactions';
+import { attachProof } from '../src/reconcile/monthService';
 import { TABLE_BOOKKEEPING } from '../src/db/tableNames';
 
 const invoke=(method:string,path:string,body?:unknown,headers?:Record<string,string>,query?:Record<string,string>)=>handler({httpMethod:method,path,headers:headers||{},body:body===undefined?null:JSON.stringify(body),queryStringParameters:query||null},{});
@@ -89,6 +90,7 @@ describe('bookkeeping API',()=>{
     const receipt=(await putBookkeepingItem(client,'document',{documentType:'receipt',status:'active',originalFilename:'receipt.pdf',contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update('synthetic-receipt').digest('hex'),s3Key:'documents/synthetic-receipt'})).item;
     const link=await invoke('POST','/api/bookkeeping/links',{documentId:receipt.id,transactionId:transaction.id,coverageType:'evidence'});assert.equal(link.statusCode,201);
     const duplicate=await invoke('POST','/api/bookkeeping/links',{documentId:receipt.id,transactionId:transaction.id,coverageType:'evidence'});assert.equal(duplicate.statusCode,200);assert.equal(JSON.parse(duplicate.body).id,JSON.parse(link.body).id);
+    await attachProof(client, '2026-08', 'synthetic-operator', transaction.id, receipt.id);
     const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-08'});assert.equal(snapshot.statusCode,201);const report=JSON.parse(snapshot.body).report;assert.deepEqual(report.transactionIds,[transaction.id]);assert.equal(report.documentIds.length,3);
     const retry=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-08'});assert.equal(retry.statusCode,200);assert.equal(JSON.parse(retry.body).report.id,report.id);
   });
@@ -125,6 +127,11 @@ describe('bookkeeping API',()=>{
     const activeBusinessAccounts=JSON.parse((await invoke('GET','/api/bookkeeping/accounts')).body).items.filter((account:any)=>account.kind==='business'&&account.active!==false);
     assert.ok(activeBusinessAccounts.length>=2);
     for(const account of activeBusinessAccounts) await putBookkeepingItem(client,'document',{documentType:'bank-statement',status:'active',accountId:account.id,statementMonth:'2026-09',originalFilename:'synthetic.pdf',contentType:'application/pdf',byteSize:9,sha256:createHash('sha256').update(`synthetic-vat-${account.id}`).digest('hex'),s3Key:`documents/${account.id}`});
+    for (const transaction of (await listTransactions(client)).filter((row) => String(row.transactionDate).startsWith('2026-09') && !['Taxes', 'Health Insurance', 'Owner pay'].includes(String(row.category)) && !['Finanzamt', 'Techniker Krankenkasse'].includes(String(row.counterparty)))) {
+      const evidence = (await putBookkeepingItem(client, 'document', { documentType: 'receipt', status: 'active', originalFilename: `synthetic-vat-${transaction.id}.pdf`, contentType: 'application/pdf', byteSize: 9, sha256: createHash('sha256').update(`synthetic-vat-proof-${transaction.id}`).digest('hex'), s3Key: `documents/synthetic-vat-${transaction.id}` })).item;
+      await invoke('POST', '/api/bookkeeping/links', { documentId: evidence.id, transactionId: transaction.id, coverageType: 'evidence' });
+      await attachProof(client, '2026-09', 'synthetic-operator', String(transaction.id), evidence.id);
+    }
     const snapshot=await invoke('POST','/api/bookkeeping/reports/snapshot',{month:'2026-09',privateDocumentIds:[ownerEvidence.id]});assert.equal(snapshot.statusCode,201,snapshot.body);
     const report=JSON.parse(snapshot.body).report;
     assert.equal(report.reconciliation.excludedTransactionCount,5);
