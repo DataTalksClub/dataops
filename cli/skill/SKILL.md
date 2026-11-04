@@ -398,6 +398,15 @@ The API is `DELETE /api/sponsor-crm/organizations/<id>?hard=true` or
 `DELETE /api/sponsor-crm/contacts/<id>?hard=true`, optionally with
 `&expectedVersion=N`. Without `hard=true`, DELETE still archives.
 
+Deal hard deletion is separate and admin-only:
+`dataops crm deal delete <id> [--with-deliverables] [--yes] [--expected-version N]`.
+It previews by default (a dry run naming deliverables, detached finance sources
+and retained newsletter slots); `--yes` permanently deletes the deal with its
+history, notes and Tasks, `--with-deliverables` includes the deal's
+deliverables, and an audit snapshot is always retained. Nothing is deleted
+without `--yes`. Exit 4 means not found; exit 5 means a guard or version
+conflict; read the error reason before retrying.
+
 Sponsors (`dataops sponsors`), commercial offers and rate card (`dataops offers`), reconciliation (`dataops reconcile`), calendar, recurring schedules, automations
 (`dataops automations`), invoices, files and artifacts have their own families.
 For commercial offers and the sponsor rate card (packages, EUR/USD prices, channels, validity dates, deliverables, pitch snippets, non-offers, and inbound routing), read via `dataops offers list --json` (optional `--channel <ch>` or `--tag <tag>`) or `dataops offers show <slug> --json`. Admins update a package or rate card via `dataops offers update <slug> --price <amount> [--channels ...] [--valid-from YYYY-MM-DD] [--valid-until YYYY-MM-DD] [--notes "..."]` or bulk-import via `dataops offers import --from-file offers.json`.

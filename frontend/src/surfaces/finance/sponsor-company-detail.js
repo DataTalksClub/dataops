@@ -78,8 +78,8 @@ export function createSponsorCompanyDetail({
     // Edit uses E's existing deal dialog via openDeal with the actual loaded
     // deal (object + optimistic version); error/conflict surfacing and the
     // post-save refresh stay in E's dialog wiring.
-    // The record shows the guard error (409: booked slot, deliverable,
-    // finance) in its confirm dialog when this rejects.
+    // The record shows the guard error (409: version conflict, atomic
+    // limit) in its confirm dialog when this rejects.
     onDeleteDeal,
     onEditDeal: onEditDeal || ((deal) => openDeal(deal)),
     onAddDeal: onAddDeal || ((organizationId) => openDeal({ organizationId, status: "open" })),
@@ -132,7 +132,15 @@ export function createSponsorCompanyDetail({
   }
 
   async function onDeleteDeal(deal) {
-    await api(`/deals/${encodeURIComponent(deal.id)}?hard=true&expectedVersion=${encodeURIComponent(deal.version)}`, { method: "DELETE" });
+    // The record shows the guard error (409: version conflict, atomic
+    // limit) in its confirm dialog when this rejects. Deliverables go with
+    // the deal through the same route `dataops crm deal delete --yes`
+    // uses; the newsletter slot rows stay behind and the deletion retains
+    // an audit snapshot.
+    await api(`/deals/${encodeURIComponent(deal.id)}/delete`, {
+      method: "POST",
+      body: JSON.stringify({ withDeliverables: true, apply: true, expectedVersion: deal.version }),
+    });
     if (typeof onRecordChanged === "function") await onRecordChanged({ id: deal.organizationId });
     await reopenCompanyDetail({ id: deal.organizationId });
   }
