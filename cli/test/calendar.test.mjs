@@ -372,6 +372,33 @@ describe("Calendar CLI commands", () => {
     ]);
   });
 
+  test("calendar day --window call prints free call start times", async () => {
+    const io = captureIo();
+    globalThis.fetch = async () => Response.json({ items: [
+      {
+        id: "owner-slot:2026-11-17:call:11:30",
+        provider: "owner-calendar",
+        isAvailableSlot: true,
+        slot: "call",
+        startDate: "2026-11-17",
+        label: "11:30 Available",
+      },
+      {
+        id: "owner-slot:2026-11-17:call:13:00",
+        provider: "owner-calendar",
+        isAvailableSlot: true,
+        slot: "call",
+        startDate: "2026-11-17",
+        label: "13:00 Available",
+      },
+    ] });
+
+    const code = await run(["calendar", "day", "2026-11-17", "--window", "call"], io);
+    assert.equal(code, 0);
+    assert.match(io.text(), /Call availability \(30 min, Europe\/Berlin\)/);
+    assert.match(io.text(), /2026-11-17: 11:30, 13:00/);
+  });
+
   test("calendar settings explains missing connection selection and discovery grants", async () => {
     globalThis.fetch = async () => Response.json({ settings: { connectionId: "" }, connections: [], connectionProblem: "Grant personal-scheduler the use operation in Dapier" });
     const io = captureIo();
@@ -441,6 +468,68 @@ describe("Calendar CLI commands", () => {
     assert.equal(savedSettings.connectionId, "personal-cal");
     assert.equal(savedSettings.filterBusy, false);
     assert.deepEqual(savedSettings.customKeywords, ["haircut", "dentist"]);
+  });
+
+  test("calendar settings updates call-slot Calendly parity fields", async () => {
+    const ioGet = captureIo();
+    let savedSettings = null;
+
+    globalThis.fetch = async (url, options = {}) => {
+      if (options.method === "PUT") {
+        savedSettings = JSON.parse(options.body);
+        return new Response(
+          JSON.stringify({ settings: savedSettings }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          settings: {
+            connectionId: "google-calendar",
+            callMinimumNoticeMinutes: 720,
+            callHorizonDays: 60,
+            callBufferBeforeMinutes: 0,
+            callBufferAfterMinutes: 0,
+          },
+          connections: [],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+
+    const codeGet = await run(["calendar", "settings"], ioGet);
+    assert.equal(codeGet, 0);
+    assert.match(ioGet.text(), /Minimum Notice \(minutes\):\s+720/);
+    assert.match(ioGet.text(), /Booking Horizon \(days\):\s+60/);
+
+    const ioPut = captureIo();
+    const codePut = await run(
+      [
+        "calendar",
+        "settings",
+        "--call-minimum-notice-minutes",
+        "90",
+        "--call-horizon-days",
+        "30",
+        "--call-buffer-before-minutes",
+        "5",
+        "--call-buffer-after-minutes",
+        "10",
+      ],
+      ioPut,
+    );
+    assert.equal(codePut, 0);
+    assert.equal(savedSettings.callMinimumNoticeMinutes, 90);
+    assert.equal(savedSettings.callHorizonDays, 30);
+    assert.equal(savedSettings.callBufferBeforeMinutes, 5);
+    assert.equal(savedSettings.callBufferAfterMinutes, 10);
+  });
+
+  test("calendar settings rejects negative call parity values", async () => {
+    globalThis.fetch = async () => { throw new Error("no request expected"); };
+    const io = captureIo();
+    const code = await run(["calendar", "settings", "--call-horizon-days", "-3"], io);
+    assert.notEqual(code, 0);
   });
 
   test("calendar dismiss-alert and sync-holidays post to their endpoints", async () => {

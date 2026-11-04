@@ -40,7 +40,13 @@ Operational windows (Europe/Berlin)
           start 17:00; 16:30 is workshop-only (90 min, needs 16:30–18:00 free).
   call    11:00–16:30 weekdays, 30-minute grid (matches the public 30-minute
           Calendly event; --window call defaults --duration to 30). Lunch and
-          Busy blocks are for event slots only and block calls.
+          Busy blocks are for event slots only and block calls. Call starts
+          also respect the Calendly event rules recorded in settings: a
+          minimum notice (default 720 minutes = 12 h), a booking horizon
+          (default 60 days) and event buffers (default 0). Verify them
+          against the Calendly link and tune with "dataops calendar settings
+          --call-minimum-notice-minutes/--call-horizon-days/--call-buffer-
+          before-minutes/--call-buffer-after-minutes".
   midday  11:30–14:00; podcast/webinar start 12:30 (60), workshop start 12:00 (90).
   Availability = a contiguous free block of at least --duration inside the
   chosen window(s). A public event reserves both windows for its date. Every
@@ -70,6 +76,8 @@ Google event read-back
 `; 
 export const DEFAULT_SLOT_DURATION_MINUTES = 60;
 export const DEFAULT_SLOT_WINDOW = "any";
+// --window call mirrors the public 30-minute Calendly event.
+export const DEFAULT_CALL_DURATION_MINUTES = 30;
 
 export function parseDurationMinutes(raw) {
   if (raw === undefined || raw === null || raw === "") return DEFAULT_SLOT_DURATION_MINUTES;
@@ -208,6 +216,14 @@ function toBoolean(val) {
   return Boolean(val);
 }
 
+function toNonNegativeInt(val, name) {
+  const n = typeof val === "number" ? val : Number(String(val).trim());
+  if (!Number.isInteger(n) || n < 0) {
+    throw new UsageError(`Invalid ${name}: must be a non-negative integer.`);
+  }
+  return n;
+}
+
 function formatBerlinDay(dateIso) {
   const parsed = new Date(`${dateIso}T12:00:00Z`);
   return parsed.toLocaleDateString("en-GB", {
@@ -286,8 +302,8 @@ export async function day(args, io) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateIso)) {
     throw new Error("Date must be formatted as YYYY-MM-DD.");
   }
-  const durationMinutes = parseDurationMinutes(args.duration);
   const window = parseSlotWindow(args.window);
+  const durationMinutes = window === "call" && args.duration === undefined ? DEFAULT_CALL_DURATION_MINUTES : parseDurationMinutes(args.duration);
 
   const api = client(args);
   const overlayQuery = new URLSearchParams({ from: dateIso, to: dateIso, includeAll: "true", duration: String(durationMinutes), window });
@@ -395,14 +411,14 @@ export async function day(args, io) {
 
   if (window === "call") {
     const byDate = {};
-    for (const item of items) {
+    for (const item of overlayItems) {
       if (item.provider === "owner-calendar" && item.isAvailableSlot && item.slot === "call") {
         (byDate[item.startDate] ||= []).push(item.label.split(" ")[0]);
       }
     }
     io.print(`\nCall availability (${durationMinutes} min, Europe/Berlin):`);
     for (const date of Object.keys(byDate).sort()) io.print(`  ${date}: ${byDate[date].join(", ")}`);
-    return { ...result, durationMinutes, window };
+    return payload;
   }
   const showMidday = window === "any" || window === "midday";
   const showEvening = window === "any" || window === "evening";
@@ -463,7 +479,7 @@ export async function slots(args, io) {
     from = to;
   }
   const window = parseSlotWindow(args.window);
-  const durationMinutes = window === "call" && !args.duration ? 30 : parseDurationMinutes(args.duration);
+  const durationMinutes = window === "call" && !args.duration ? DEFAULT_CALL_DURATION_MINUTES : parseDurationMinutes(args.duration);
 
   const api = client(args);
   const query = new URLSearchParams({ from, to, duration: String(durationMinutes), window });
@@ -565,6 +581,10 @@ export async function settings(args, io) {
     "filterFocus",
     "filterBusy",
     "customKeywords",
+    "callMinimumNoticeMinutes",
+    "callHorizonDays",
+    "callBufferBeforeMinutes",
+    "callBufferAfterMinutes",
   ];
 
   const hasUpdates = updateFields.some((f) => args[f] !== undefined);
@@ -606,6 +626,20 @@ export async function settings(args, io) {
         .map((k) => k.trim())
         .filter(Boolean);
     }
+    // Call-slot Calendly parity: minimum notice and buffers in minutes,
+    // booking horizon in days. Notice/horizon must mirror the public event.
+    if (args.callMinimumNoticeMinutes !== undefined) {
+      payload.callMinimumNoticeMinutes = toNonNegativeInt(args.callMinimumNoticeMinutes, "--call-minimum-notice-minutes");
+    }
+    if (args.callHorizonDays !== undefined) {
+      payload.callHorizonDays = toNonNegativeInt(args.callHorizonDays, "--call-horizon-days");
+    }
+    if (args.callBufferBeforeMinutes !== undefined) {
+      payload.callBufferBeforeMinutes = toNonNegativeInt(args.callBufferBeforeMinutes, "--call-buffer-before-minutes");
+    }
+    if (args.callBufferAfterMinutes !== undefined) {
+      payload.callBufferAfterMinutes = toNonNegativeInt(args.callBufferAfterMinutes, "--call-buffer-after-minutes");
+    }
 
     const saved = await api.put("/api/calendar-items/settings", payload);
     if (args.json) return saved;
@@ -632,6 +666,11 @@ export async function settings(args, io) {
   io.print(`  Filter Focus:                ${Boolean(s.filterFocus)}`);
   io.print(`  Filter Busy:                 ${Boolean(s.filterBusy)}`);
   io.print(`  Custom Keywords:             ${(s.customKeywords || []).join(", ") || "(none)"}`);
+  io.print("Call slots (Calendly parity — verify against the public Calendly event):");
+  io.print(`  Minimum Notice (minutes):    ${s.callMinimumNoticeMinutes ?? 720}`);
+  io.print(`  Booking Horizon (days):      ${s.callHorizonDays ?? 60}`);
+  io.print(`  Buffer Before (minutes):     ${s.callBufferBeforeMinutes ?? 0}`);
+  io.print(`  Buffer After (minutes):      ${s.callBufferAfterMinutes ?? 0}`);
 
   if (result.connectionProblem) io.print(`\nGoogle Calendar connection: ${result.connectionProblem}`);
   if (connections.length > 0) {

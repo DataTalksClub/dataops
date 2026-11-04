@@ -6,6 +6,7 @@ import {
   setOwnerCalendarProviderClientsForTests,
   shouldFilterOwnerCalendarEvent,
   ownerCalendarRange,
+  openCallStarts,
   parseSlotWindow,
 } from '../src/calendar/ownerCalendarOverlay';
 import { DEFAULT_CALENDAR_OVERLAY_SETTINGS as UNSELECTED_CALENDAR_SETTINGS } from '../src/db/calendar';
@@ -891,6 +892,126 @@ describe('owner calendar overlay and filtering', () => {
       assert.deepEqual(byDay('2026-10-10'), [], 'weekend');
       assert.ok(out.items.every((i: any) => i.slot === 'call' && i.isAvailableSlot));
       assert.equal(parseSlotWindow('call'), 'call');
+    });
+
+    it('offers call starts only after the Calendly minimum notice', async () => {
+      const mockFetch: typeof fetch = async (input) => {
+        const url = String(input);
+        if (url.endsWith('/api/agent/token')) {
+          return new Response(JSON.stringify({ access_token: 'g' }), { status: 200 });
+        }
+        if (url.includes('googleapis.com')) {
+          return new Response(JSON.stringify({ items: [] }), { status: 200 });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+      setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
+
+      // 2026-10-01 is a Thursday. The default 12 h notice from 00:30Z
+      // (02:30 Berlin) cuts off at 14:30 Berlin, so today only offers the
+      // 14:30-and-later grid starts.
+      const thursday: any = await selectedOwnerCalendarOverlay({
+        today: TODAY,
+        now: new Date('2026-10-01T00:30:00Z'),
+        brokerCredential: 't',
+        window: 'call',
+      }).project('2026-10-01', '2026-10-01');
+      const starts = (d: string) =>
+        thursday.items.filter((i: any) => i.startDate === d).map((i: any) => i.id.split(':call:')[1]);
+      assert.deepEqual(starts('2026-10-01'), ['14:30', '15:00', '15:30', '16:00']);
+
+      // Settings can shorten the notice to 0, restoring same-day starts
+      // from the current time onward.
+      const noNotice: any = await selectedOwnerCalendarOverlay({
+        today: TODAY,
+        now: new Date('2026-10-01T10:00:00Z'),
+        brokerCredential: 't',
+        window: 'call',
+        settings: { ...DEFAULT_CALENDAR_OVERLAY_SETTINGS, callMinimumNoticeMinutes: 0 },
+      }).project('2026-10-01', '2026-10-01');
+      assert.deepEqual(
+        noNotice.items.map((i: any) => i.id.split(':call:')[1]),
+        ['12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00'],
+      );
+    });
+
+    it('offers call starts only within the Calendly booking horizon', async () => {
+      const mockFetch: typeof fetch = async (input) => {
+        const url = String(input);
+        if (url.endsWith('/api/agent/token')) {
+          return new Response(JSON.stringify({ access_token: 'g' }), { status: 200 });
+        }
+        if (url.includes('googleapis.com')) {
+          return new Response(JSON.stringify({ items: [] }), { status: 200 });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+      setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
+
+      // The default 60-day horizon from 2026-10-01 (Berlin) ends 2026-11-30.
+      const defaultHorizon: any = await selectedOwnerCalendarOverlay({
+        today: TODAY,
+        now: new Date('2026-10-01T00:00:00Z'),
+        brokerCredential: 't',
+        window: 'call',
+      }).project('2026-11-27', '2026-12-02');
+      const dates = new Set(defaultHorizon.items.map((i: any) => i.startDate));
+      assert.equal(dates.has('2026-11-30'), true, '2026-11-30 is day 60');
+      assert.equal(dates.has('2026-12-01'), false, 'past the 60-day horizon');
+      assert.equal(dates.has('2026-12-02'), false);
+
+      // A shorter horizon from settings cuts the same shape earlier.
+      const shortHorizon: any = await selectedOwnerCalendarOverlay({
+        today: TODAY,
+        now: new Date('2026-10-01T00:00:00Z'),
+        brokerCredential: 't',
+        window: 'call',
+        settings: { ...DEFAULT_CALENDAR_OVERLAY_SETTINGS, callHorizonDays: 7 },
+      }).project('2026-10-08', '2026-10-09');
+      const shortDates = new Set(shortHorizon.items.map((i: any) => i.startDate));
+      assert.equal(shortDates.has('2026-10-08'), true, '2026-10-08 is day 7');
+      assert.equal(shortDates.has('2026-10-09'), false, 'past the 7-day horizon');
+    });
+
+    it('widens call busy checks by the configured Calendly buffers', async () => {
+      // Direct grid math: busy 12:00–12:30 blocks the 12:00 start; buffers
+      // additionally take out the starts adjacent to it.
+      const busy = [{ start: '12:00', end: '12:30' }];
+      assert.deepEqual(openCallStarts(busy, 30), ['11:00', '11:30', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00']);
+      // An after-buffer widens the 11:30 candidate into the busy 12:00 block;
+      // the 12:30 candidate starts after the busy interval, so it stays.
+      assert.deepEqual(openCallStarts(busy, 30, { after: 30 }), ['11:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00']);
+      assert.deepEqual(openCallStarts(busy, 30, { before: 30 }), ['11:00', '11:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00']);
+      assert.deepEqual(openCallStarts(busy, 30, { before: 30, after: 30 }), ['11:00', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00']);
+
+      // Settings buffers flow through the call projection.
+      const mockFetch: typeof fetch = async (input) => {
+        const url = String(input);
+        if (url.endsWith('/api/agent/token')) {
+          return new Response(JSON.stringify({ access_token: 'g' }), { status: 200 });
+        }
+        if (url.includes('googleapis.com')) {
+          return new Response(JSON.stringify({
+            items: [
+              // Monday 2026-10-12: a 12:00–12:30 gap that buffers widen.
+              { id: 'gap', summary: 'Gap', status: 'confirmed', start: { dateTime: '2026-10-12T12:00:00+02:00' }, end: { dateTime: '2026-10-12T12:30:00+02:00' } },
+            ],
+          }), { status: 200 });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+      setOwnerCalendarProviderClientsForTests({ fetch: mockFetch });
+      const buffered: any = await selectedOwnerCalendarOverlay({
+        today: TODAY,
+        now: new Date('2026-10-01T00:00:00Z'),
+        brokerCredential: 't',
+        window: 'call',
+        settings: { ...DEFAULT_CALENDAR_OVERLAY_SETTINGS, callBufferBeforeMinutes: 30, callBufferAfterMinutes: 30 },
+      }).project('2026-10-12', '2026-10-12');
+      assert.deepEqual(
+        buffered.items.map((i: any) => i.id.split(':call:')[1]),
+        ['11:00', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00'],
+      );
     });
   });
 });
