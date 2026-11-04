@@ -306,7 +306,7 @@ describe('reconciliation ledger projection', () => {
     const invoiceEntries = pack.entries.filter((entry) => entry.kind === 'invoice');
     assert.equal(invoiceEntries.length, 1);
     assert.equal(invoiceEntries[0].documentId, serviceInvoiceDoc.id);
-    assert.match(invoiceEntries[0].path, /^2026-10\/expenses\/2026-10-08_synthetic-advisory-gmbh_SYN-2026-10_238\.00EUR\.pdf$/);
+    assert.match(invoiceEntries[0].path, /^2026-10\/expenses\/2026-10-08_synthetic-advisory-gmbh_monthly-compliance-service-fee_238\.00EUR\.pdf$/);
     assert.ok(!pack.entries.some((entry) => entry.documentId === taxNoticeDoc.id));
     assert.ok(!pack.entries.some((entry) => entry.documentId === ownerTransferDoc.id));
     assert.ok(await getBookkeepingItem(client, 'document', ownerTransferDoc.id), 'owner transfer source document remains stored');
@@ -442,16 +442,16 @@ describe('reconciliation ledger projection', () => {
     assert.match(nextMonth.csv, /15\.00/);
     assert.doesNotMatch(nextMonth.csv, /Synthetic Combined Client|Combined settlement|Synthetic Unpaid Client/);
     assert.ok(nextMonth.entries.some((entry) => entry.documentId === allocationDocuments[0].id
-      && entry.path === '2027-01/income/2027-01-03_synthetic-client-a_SYN-A_70.00EUR.pdf'));
+      && entry.path === '2027-01/income/2027-01-03_synthetic-client-a_consulting-milestone_70.00EUR.pdf'));
     assert.ok(nextMonth.entries.some((entry) => entry.documentId === allocationDocuments[1].id
-      && entry.path === '2027-01/income/2027-01-03_synthetic-client-b_SYN-B_35.00EUR.pdf'));
+      && entry.path === '2027-01/income/2027-01-03_synthetic-client-b_support-service_35.00EUR.pdf'));
     assert.ok(nextMonth.entries.some((entry) => entry.documentId === allocationDocuments[2].id
-      && entry.path === '2027-01/income/2027-01-03_synthetic-client-c_SYN-C_15.00EUR.pdf'));
+      && entry.path === '2027-01/income/2027-01-03_synthetic-client-c_workshop-delivery_15.00EUR.pdf'));
     assert.equal(nextMonth.entries.filter((entry) => entry.documentId === linkedProof.id).length, 1);
     assert.ok(nextMonth.entries.some((entry) => entry.kind === 'proof' && entry.documentId === linkedProof.id
-      && entry.path.startsWith('2027-01/proofs/')));
+      && entry.path === '2027-01/proofs/2027-01-06_synthetic-proof-client_payment-proof-proof-linked-income_12.00EUR.pdf'));
     assert.ok(nextMonth.entries.some((entry) => entry.kind === 'proof' && entry.documentId === secondProof.id
-      && entry.path.startsWith('2027-01/proofs/')));
+      && entry.path === '2027-01/proofs/2027-01-08_synthetic-other-client_payment-proof-proof-only-income_8.00EUR.pdf'));
     assert.equal(nextMonth.entries.filter((entry) => entry.kind === 'proof').length, 2);
 
     const priorMonth = await monthPackage(client, '2026-12', { draft: true });
