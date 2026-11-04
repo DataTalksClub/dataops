@@ -261,6 +261,25 @@ Run this sequence end-to-end before production data becomes critical:
 - List files for a task (`GET /api/files?taskId=<id>`)
 - Export again and compare counts
 
+## AWS Leftovers Inventory
+
+The runtime has no relational database: every RDS instance or cluster in the
+account is a leftover to delete, and leftover backup vaults and unmanaged
+DynamoDB tables (dapier-*, restore-drill leftovers) need an owner or a deletion
+decision. Inventory them read-only:
+
+```bash
+npm run inventory:aws -- [--output-dir .tmp/inventory]
+```
+
+The script only issues describe/list reads (`rds:DescribeDBInstances`,
+`rds:DescribeDBClusters`, `backup:ListBackupVaults`,
+`backup:DescribeBackupVault`, `dynamodb:ListTables`) with the ambient AWS
+credential chain, writes one JSON evidence file plus a markdown summary under
+the output dir, and creates, modifies and deletes nothing. A section the
+credentials cannot read is recorded as an error while the rest of the
+inventory is still produced; a partially read inventory exits non-zero.
+
 ## Known Limitations
 
 - `generated_at` is the logical snapshot anchor. The export scans tables
