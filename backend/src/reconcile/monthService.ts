@@ -427,7 +427,7 @@ export function receivedInvoiceDocumentsFrom(
       || (invoice.fields?.invoiceNumber ? cleanDescriptionCounterparty(invoice.fields?.description) : "")
       || "",
     ).trim();
-    if (!DATE_PREFIX.test(date) || !(Number.isFinite(amount) && amount > 0) || !/^[A-Z]{3}$/.test(currency) || !counterparty) continue;
+    if (!DATE_PREFIX.test(date)) continue;
     const direction = invoice.extraction?.direction === "income" ? "income" : "expense";
     const amountEur = invoice.fields?.amountEur || invoice.fields?.grossAmountEur;
     const artifactId = invoice.source?.artifactId || invoice.id;
@@ -438,7 +438,7 @@ export function receivedInvoiceDocumentsFrom(
       documentId: artifactId,
       invoiceId: invoice.id,
       date,
-      amount: amount.toFixed(2),
+      amount: Number.isFinite(amount) && amount > 0 ? amount.toFixed(2) : String(invoice.fields?.amount ?? ""),
       currency,
       ...(amountEur ? { amountEur: String(amountEur) } : {}),
       counterparty,
@@ -447,7 +447,7 @@ export function receivedInvoiceDocumentsFrom(
       direction,
       ...(invoice.ledgerTransactionId ? { ledgerTransactionId: invoice.ledgerTransactionId } : {}),
       ...(sum ? { sha256: sum } : {}),
-      needsReview: Boolean(invoice.extraction?.needsReview),
+      needsReview: Boolean(invoice.extraction?.needsReview) || !Number.isFinite(amount) || amount <= 0 || !/^[A-Z]{3}$/.test(currency) || !counterparty,
       documents: [{ id: artifactId, invoiceId: invoice.id }],
     });
   }
@@ -469,7 +469,7 @@ export function receivedInvoiceDocumentsFrom(
     const amount = Number(facts.amount ?? facts.grossAmount ?? doc.amount ?? doc.grossAmount ?? 0);
     const currency = String(facts.currency ?? doc.currency ?? "").trim().toUpperCase();
     const counterparty = String(facts.counterparty ?? facts.vendor ?? doc.counterparty ?? doc.vendor ?? "").trim();
-    if (!DATE_PREFIX.test(date) || !(Number.isFinite(amount) && amount > 0) || !/^[A-Z]{3}$/.test(currency) || !counterparty) continue;
+    if (!DATE_PREFIX.test(date)) continue;
     const rawDirection = String(extraction?.direction ?? facts.direction ?? facts.entryType ?? doc.direction ?? doc.entryType ?? "expense").toLowerCase();
     const direction = rawDirection === "income" ? "income" : "expense";
     const amountEur = facts.amountEur ?? facts.grossAmountEur ?? doc.amountEur ?? doc.grossAmountEur;
@@ -480,7 +480,7 @@ export function receivedInvoiceDocumentsFrom(
       id: docId,
       documentId: docId,
       date,
-      amount: amount.toFixed(2),
+      amount: Number.isFinite(amount) && amount > 0 ? amount.toFixed(2) : String(facts.amount ?? facts.grossAmount ?? doc.amount ?? doc.grossAmount ?? ""),
       currency,
       ...(amountEur !== undefined && Number(amountEur) > 0 ? { amountEur: String(amountEur) } : {}),
       counterparty,
@@ -488,7 +488,7 @@ export function receivedInvoiceDocumentsFrom(
       ...(invoiceNumber ? { invoiceNumber: String(invoiceNumber) } : {}),
       direction,
       ...(sum ? { sha256: sum } : {}),
-      needsReview: extraction?.needsReview === true || facts.needsReview === true || doc.needsReview === true,
+      needsReview: extraction?.needsReview === true || facts.needsReview === true || doc.needsReview === true || !Number.isFinite(amount) || amount <= 0 || !/^[A-Z]{3}$/.test(currency) || !counterparty,
       documents: [{ id: docId }],
     });
   }

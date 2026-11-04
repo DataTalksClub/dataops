@@ -22,7 +22,7 @@ export function paymentRowDigest(row: MonthRow, reportPeriod: string): string {
   return createHash("sha256").update(JSON.stringify({
     reportPeriod, id: row.id, date: row.date, amount: row.amount, currency: row.currency,
     counterparty: row.counterparty, ledger: row.ledger, bank: row.bank,
-    documents: row.documents, paymentProof: row.paymentProof, status: row.status,
+    invoiceReview: row.invoiceReview, documents: row.documents, paymentProof: row.paymentProof, status: row.status,
   })).digest("hex");
 }
 
@@ -37,7 +37,7 @@ export function validUnpaidDisposition(row: MonthRow, disposition: InvoiceDispos
 
 function needsCashAttribution(row: MonthRow) {
   return !row.bank && !row.paymentProof
-    && ["issued-invoice", "invoice-document", "document"].includes(row.ledger?.sourceType || "");
+    && (Boolean(row.invoiceReview) || ["issued-invoice", "invoice-document", "document"].includes(row.ledger?.sourceType || ""));
 }
 
 export function accountantPaymentBlockers(period: string, rows: MonthRow[], dispositions: Record<string, InvoiceDisposition> = {}) {
@@ -47,6 +47,7 @@ export function accountantPaymentBlockers(period: string, rows: MonthRow[], disp
     .map((row): PaymentReadinessBlocker => {
       const attribution = needsCashAttribution(row);
       const reason = Number(row.amountDifference || 0) !== 0 ? "Bank and invoice amounts do not match"
+        : row.invoiceReview ? `Invoice source amount/currency is incomplete or unverified for ${period}; ${row.missing || "review the source and cash-month attribution"}`
         : attribution ? `Cash-month attribution unresolved for ${period}; verify payment in this month or record an evidenced unpaid/deferred disposition. Invoice issue date alone does not confirm payment.`
         : row.missing || "Payment and required evidence have not been verified";
       return {

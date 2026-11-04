@@ -223,6 +223,8 @@ export type MonthRow = {
     invoiceNumber?: string;
     directionConflict?: boolean;
   }>;
+  /** Invalid source facts retained for attribution review, never treated as money ledger. */
+  invoiceReview?: { sourceId: string };
   paymentProof?: PaymentProof;
   pairBasis?: PairBasis;
   /** The pair was made by the matcher after an upload, not by a person. */
@@ -768,6 +770,20 @@ export function buildMonthTable(input: MonthInput): MonthTable {
     }
     row.tax = isTaxRow(row);
     rows.push(row);
+  }
+
+  // Invalid/missing source amounts must remain reviewable; never invent zero
+  // money or discard a known-month source merely because normal projection fails.
+  for (const candidate of input.receivedInvoiceDocuments || []) {
+    if (!candidate.needsReview || !inPeriod(candidate.date)) continue;
+    if (rows.some((row) => row.ledger?.id === candidate.id || row.documents.some((document) => document.id === (candidate.documentId || candidate.id)))) continue;
+    rows.push({
+      id: `invoice-review:${candidate.id}`, date: candidate.date, counterparty: candidate.counterparty,
+      amount: candidate.amount, currency: candidate.currency,
+      invoiceReview: { sourceId: candidate.id },
+      documents: candidate.documents || [{ id: candidate.documentId || candidate.id, ...(candidate.invoiceId ? { invoiceId: candidate.invoiceId } : {}) }],
+      status: "needs-review", missing: "Invoice source facts or cash-month attribution remain unverified; review the original amount/currency or record an evidenced unpaid/deferred disposition",
+    });
   }
 
   rows.sort((left, right) => left.date.localeCompare(right.date) || left.id.localeCompare(right.id));

@@ -637,4 +637,33 @@ describe('reconciliation ledger projection', () => {
     assert.equal((await buildMonth(client, '2034-07')).statements.length, 0, 'future proof is not a prerequisite for selected-month attribution');
   });
 
+  it('blocks dated review sources with invalid or missing amounts without inventing money or a cash month', async () => {
+    const period = '2035-09';
+    const invoiceId = '5'.repeat(64);
+    await createInvoice(client, {
+      id: invoiceId, revision: 1, status: 'pending', fields: { transactionDate: `${period}-19`, counterparty: 'Invented Invalid Amount Vendor', amount: 'unreadable-amount', currency: 'EUR' },
+      extraction: { method: 'synthetic', evidence: [], issues: ['Amount unreadable'], needsReview: true, direction: 'expense' },
+      source: { intakeItemIds: ['invented-invalid-intake'], artifactId: 'invented-invalid-artifact', checksum: '2'.repeat(64) },
+      destinations: { dropbox: { state: 'verified', operationId: 'dropbox' }, sheets: { state: 'verified', operationId: 'sheets' } },
+      audit: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    await putBookkeepingItem(client, 'document', {
+      id: 'invented-missing-amount-source', documentType: 'receipt', status: 'active', needsReview: true,
+      transactionDate: `${period}-20`, counterparty: 'Invented Missing Amount Vendor', currency: 'EUR',
+    });
+    await putBookkeepingItem(client, 'document', {
+      id: 'invented-unknown-month-source', documentType: 'invoice', status: 'active', needsReview: true,
+      counterparty: 'Invented Unknown Month Vendor', amount: 'invalid', currency: 'EUR',
+    });
+    await putBookkeepingItem(client, 'document', {
+      id: 'invented-later-invalid-source', documentType: 'invoice', status: 'active', needsReview: true,
+      transactionDate: '2035-10-01', counterparty: 'Invented Later Month Vendor', amount: 'invalid', currency: 'EUR',
+    });
+    const view = await buildMonth(client, period);
+    assert.equal(view.rows.length, 2);
+    assert.deepEqual(view.rows.map((row) => row.amount).sort(), ['', 'unreadable-amount']);
+    assert.ok(view.rows.every((row) => row.invoiceReview && !row.ledger && row.status === 'needs-review'));
+    await assertBothExportsBlocked(period, /needs-attribution/);
+  });
+
 });
