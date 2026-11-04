@@ -359,6 +359,5 @@ export const commands = {
   list,
   show,
   update,
-  set: update,
   import: importOffers,
 };

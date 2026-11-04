@@ -731,7 +731,6 @@ export const commands = {
     { add: noteAdd, show: noteShow, update: noteUpdate, edit: noteUpdate, delete: noteDelete, remove: noteDelete },
     "dataops crm note <add|show|update|delete> <target> <id> [...]"),
   touch,
-  touches: touch,
   views: (args, io) => dispatch(args, io,
     { list: viewsList, show: viewsShow, create: viewsCreate, update: viewsUpdate, archive: viewsArchive, unarchive: viewsUnarchive },
     "dataops crm views <list|show|create|update|archive|unarchive> [...]"),
