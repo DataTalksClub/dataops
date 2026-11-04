@@ -119,6 +119,18 @@ describe('S3 authenticated knowledge content routes',()=>{
   const search=await call(ev('GET','/search',{query:{q:'password'}}));assert.ok(search.body.results.length);
   assert.equal((await call(ev('GET','/docs/resolve',{query:{ref:'ref.newsletter'}}))).status,200);
  });
+ it('resolves unresolvable path-shaped refs to a clean 404 like unknown dotted refs',async()=>{
+  const pathShaped=await call(ev('GET','/docs/resolve',{query:{ref:'00-start-here/no-such-doc'}}));
+  assert.equal(pathShaped.status,404,JSON.stringify(pathShaped.body));
+  assert.ok(String(pathShaped.body.error).startsWith('Document reference not found'));
+  const dotted=await call(ev('GET','/docs/resolve',{query:{ref:'sop.finance.does-not-exist-anywhere'}}));
+  assert.equal(dotted.status,404);
+  assert.ok(String(dotted.body.error).startsWith('Document reference not found'));
+  assert.equal((await call(ev('GET','/docs/resolve',{query:{ref:'ref.newsletter'}}))).status,200);
+  const pathAlias=await call(ev('GET','/docs/resolve',{query:{ref:'accounts/sops/reset-password.md'}}));
+  assert.equal(pathAlias.status,200,JSON.stringify(pathAlias.body));
+  assert.equal(pathAlias.body.document.path,'content/accounts/sops/reset-password.md');
+ });
  it('saves with revision, conflicts stale attempts, requires expected revision and records actor',async()=>{
   const path='content/accounts/sops/reset-password.md';
   assert.equal((await call(ev('PUT','/docs',{query:{path},body:{content:'draft'}}))).status,400);
