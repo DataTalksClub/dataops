@@ -1,6 +1,6 @@
 ---
 title: "Readme"
-summary: "Explains the repo-meta docs folder and points to content/ for operational documentation."
+summary: "Explains the repo-meta docs folder and points to the private knowledge repository for operational documentation."
 doc_type: reference
 tags: []
 systems: []
@@ -20,7 +20,6 @@ This folder holds plain-markdown documentation about the repo:
 - the structured-SOP spec
 - naming conventions
 - design notes
-- the archive of historical material
 
 The Lambda app doesn't serve this folder through the docs frontend, and the
 search index skips it.
@@ -53,26 +52,11 @@ Files that live here:
 - `STRUCTURE.md` - required frontmatter and section conventions.
 - `sop-format.md` - strict spec for the structured-SOP markdown format.
 - `sop-format-design.md` - design log and tooling notes.
-- `archive/` - deprecated or imported historical material.
 
-## content/ - transitional operational documentation
-
-Operational docs currently live under `content/`, alongside their image assets:
-
-- `content/<domain>/sops/`, `content/<domain>/templates/`, and related folders.
-- `content/media/` - podcast, video, webinar, workshops.
-- `content/maven/` - Maven-specific docs.
-- `content/prompts/` - maintained AI prompts.
-- `content/images/` - screenshots and other doc images.
-
-This repo is public. Treat `content/` as transitional migration debt and do not
-add new sensitive operational docs, screenshots, prompts, private links,
-contact details, sponsor or finance context, or generated artifacts here. The
-canonical operational knowledge target is a separate private
-`DataTalksClub/dataops-knowledge` repository.
-
-The Lambda app reads operational docs from the `content/` directory when it
-serves the docs frontend until private knowledge-repo sync is implemented.
+Operational documentation no longer lives in this repository: the process
+document corpus moved to the separate private
+`DataTalksClub/dataops-knowledge` repository, and the Lambda app serves the
+docs frontend from that repository over the GitHub Contents API.
 
 ## References
 
