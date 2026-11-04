@@ -1,5 +1,5 @@
 import { QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { getCrmRecord, listCrmRecords } from '../db/sponsorCrm';
+import { getCrmRecord, listOrganizationDeals } from '../db/sponsorCrm';
 import { listTasksByStatus } from '../db/tasks';
 import type { Task } from '../types';
 import { berlinToday } from './berlin';
@@ -228,7 +228,10 @@ export async function readActivity(
     }
 
     if (wanted.has('deal-history') && target === 'organization') {
-      const deals = (await listCrmRecords(client, 'deal')).filter((deal) => String(deal.organizationId) === id);
+      // Org-scoped DEAL# scan, never the whole-workspace snapshot: the snapshot
+      // scan trips the storage bounds on prod-sized sources and fails the whole
+      // read with workspace_source_too_large.
+      const deals = await listOrganizationDeals(client, id);
       for (const deal of deals) {
         const events = await readSource(`HISTORY#${deal.id}`);
         historyReads.push({ booking: deal.id, itemsRead: events.length });
@@ -349,7 +352,10 @@ export async function readActivity(
       relatedWork,
       tasksScope: 'open',
       reads: {
-        snapshot: ['ORGANIZATION#', 'CONTACT#', 'DEAL#', 'DELIVERABLE#'],
+        // What this read actually scanned: keyed queries plus, for organization
+        // deal history, one DEAL#-prefix scan scoped to the record. No
+        // whole-workspace snapshot scan takes place.
+        snapshot: wanted.has('deal-history') && target === 'organization' ? ['DEAL#'] : [],
         queries,
         historyReads,
       },
