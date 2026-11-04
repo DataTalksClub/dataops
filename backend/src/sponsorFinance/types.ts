@@ -182,7 +182,7 @@ export type FinanceProjection = {
   reconciliationStatus: 'coherent' | 'reconciliation-required';
   paymentLinkCount: number;
   paymentLinkLimit: number;
-  /** Required or recorded payment-received thank-you email draft contract once payment resolves. */
+  /** Required or recorded payment-received thank-you email contract once payment resolves. */
   thankYou?: SponsorThankYou;
   /** Open payment follow-up Tasks in the main task pool, attached at the route layer. */
   paymentFollowUp?: { tasks: PaymentFollowUpTaskView[]; existingTasks: PaymentFollowUpTaskView[] };
