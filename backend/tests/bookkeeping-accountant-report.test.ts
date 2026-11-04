@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { handleBookkeepingRoutes } from "../src/routes/bookkeeping";
 import { formatAccountantCsv, selectAccountantReportRows } from "../src/finance/accountantReport";
+import { monthPackage } from "../src/reconcile/monthService";
 
 const entries = [
   {
@@ -101,6 +102,47 @@ function verifiedClient(rows: Array<Record<string, any>>): DynamoDBDocumentClien
 const client = verifiedClient(entries);
 
 describe("native accountant report API", () => {
+  it("orders native CSV, copied TSV and package CSV by cash date with deterministic parents and saved allocation order", async () => {
+    const period = "2033-10";
+    const payment = (id: string, paidDate: string, counterparty: string) => ({
+      id, transactionDate: "2033-09-30", paidDate, counterparty, description: "Invented service",
+      amount: "23.00", currency: "EUR", entryType: "expense",
+    });
+    const rows = [
+      payment("invented-late", "2033-10-31", "Invented Late"),
+      payment("invented-tie-z", "2033-10-16", "Invented Tie Z"),
+      { ...payment("invented-tie-m", "2033-10-16", "Invented Parent"), allocations: [
+        { documentId: "invented-doc-z", counterparty: "Invented Allocation First", description: "Invented first", amount: "5.00", currency: "EUR" },
+        { documentId: "invented-doc-a", counterparty: "Invented Allocation Second", description: "Invented second", amount: "7.00", currency: "EUR" },
+        { documentId: "invented-doc-m", counterparty: "Invented Allocation Third", description: "Invented third", amount: "11.00", currency: "EUR" },
+      ] },
+      payment("invented-early", "2033-10-01", "Invented Early"),
+      payment("invented-tie-a", "2033-10-16", "Invented Tie A"),
+    ];
+    const before = JSON.stringify(rows), source = verifiedClient(rows);
+    const expectedCompanies = ["Invented Early", "Invented Tie A", "Invented Allocation First", "Invented Allocation Second",
+      "Invented Allocation Third", "Invented Tie Z", "Invented Late"];
+    let csv = "";
+    for (const format of ["csv", "tsv"] as const) {
+      const response = await handleBookkeepingRoutes("/api/bookkeeping/reports/accountant", "GET", {
+        httpMethod: "GET", path: "/api/bookkeeping/reports/accountant", headers: {},
+        queryStringParameters: { period, format },
+      }, source, true);
+      assert.equal(response.statusCode, 200, response.body);
+      const report = JSON.parse(response.body);
+      assert.equal(report.count, 7);
+      const cells = report.content.trim().split(/\r?\n/).slice(1).map((line: string) =>
+        format === "csv" ? line.split(",").map((value) => value.slice(1, -1)) : line.split("\t"));
+      assert.deepEqual(cells.map((row: string[]) => row[1]), expectedCompanies);
+      assert.deepEqual(cells.map((row: string[]) => row[0]), ["2033-10-01", ...Array(5).fill("2033-10-16"), "2033-10-31"]);
+      assert.deepEqual(cells.slice(2, 5).map((row: string[]) => row[3]), ["-5.00", "-7.00", "-11.00"]);
+      if (format === "csv") csv = report.content;
+    }
+    const pack = await monthPackage(source, period, { draft: true });
+    assert.equal(pack.csv, csv, "native and package CSV use the same ordering and formatter");
+    assert.equal(JSON.stringify(rows), before, "formatting preserves source dates, amounts and allocation order");
+  });
+
   it("selects the cash period before applying allocation projection and report exclusions", () => {
     const rows = selectAccountantReportRows([
       { id: "moved", transactionDate: "2026-10-31", paidDate: "2026-11-02", amount: "30.00", currency: "EUR", entryType: "income", counterparty: "Synthetic Company", description: "Combined payment", allocations: [
@@ -206,9 +248,9 @@ describe("native accountant report API", () => {
     assert.equal(report.count, 3);
     assert.equal(report.content,
       '"Date","Company","What","Amount, EUR"\r\n'
-      + '"2026-10-10","Synthetic Padded Currency Vendor","Padded currency service","-30.00"\r\n'
+      + '"2026-10-08","Synthetic Missing Currency Vendor","Missing currency service","-10.00"\r\n'
       + '"2026-10-09","Synthetic Lowercase Currency Vendor","Lowercase currency service","-20.00"\r\n'
-      + '"2026-10-08","Synthetic Missing Currency Vendor","Missing currency service","-10.00"\r\n');
+      + '"2026-10-10","Synthetic Padded Currency Vendor","Padded currency service","-30.00"\r\n');
   });
 
   it("uses the same accountant inclusion rules for copied TSV", async () => {

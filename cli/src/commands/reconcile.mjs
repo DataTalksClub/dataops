@@ -98,7 +98,7 @@ Usage
         YYYY-MM/YYYY-MM_reconciliation_datatalksclub.csv
         YYYY-MM/statements/YYYY-MM_<bank>-<account>_statement.<ext>
         YYYY-MM/income|expenses/YYYY-MM-DD_<company>_<what>_<amount><CUR>.pdf
-        YYYY-MM/proofs/YYYY-MM-DD_<company>_<payment-proof-what>_<amount><CUR>.pdf
+        YYYY-MM/statements/YYYY-MM-DD_<company>_<payment-proof-what>_<amount><CUR>.pdf
       plus datatalksclub-YYYY-MM.zip, created natively without an external zip
       command. Date is the cash date; company/what use the saved report values,
       and amount uses the invoice/allocation currency. Payment proofs name

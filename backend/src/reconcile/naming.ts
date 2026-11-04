@@ -6,11 +6,12 @@
  *     statements/YYYY-MM_<bank>-<account>_statement.<ext>
  *     income/YYYY-MM-DD_<company>_<what>_<amount><CUR>.pdf
  *     expenses/YYYY-MM-DD_<company>_<what>_<amount><CUR>.pdf
- *     proofs/YYYY-MM-DD_<company>_<what>_<amount><CUR>.pdf
+ *     statements/YYYY-MM-DD_<company>_<payment-proof-what>_<amount><CUR>.pdf
  *     taxes/YYYY-MM-DD_<kind>_<period>.pdf
  *
- * The folder carries the type, so names inside it do not repeat it. Names
- * sort by date, never collide (-2, -3 …) and are derived from data only, so
+ * Statements and payment proofs share one folder; payment-proof names keep
+ * their distinguishing prefix. Names sort by date, never collide (-2, -3 …)
+ * and are derived from data only, so
  * the same month always yields the same package. Originals keep their own
  * filename in document metadata.
  */
