@@ -10,6 +10,7 @@ import {
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { usesLocalTransactionEmulation } from './client';
+import { cleanItem as cleanDbItem } from './cleanItem';
 import { TABLE_SESSIONS } from './tableNames';
 import type { ApiToken, ApiTokenSummary } from '../types';
 
@@ -19,12 +20,6 @@ const INDEX_PK = 'APITOKENS';
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
-}
-
-function cleanItem<T>(item: Record<string, unknown> | undefined): T | null {
-  if (!item) return null;
-  const { PK, SK, ...rest } = item;
-  return rest as unknown as T;
 }
 
 function tokenKey(id: string) {
@@ -55,7 +50,7 @@ async function readApiTokenById(
 ): Promise<ApiToken | null> {
   try {
     const result = await client.send(new GetCommand({ TableName: TABLE_SESSIONS, Key: tokenKey(id) }));
-    return cleanItem<ApiToken>(result.Item as Record<string, unknown> | undefined);
+    return cleanDbItem<ApiToken>(result.Item as Record<string, unknown> | undefined);
   } catch (error: unknown) {
     if (isMissingTable(error)) return null;
     throw error;
@@ -192,7 +187,7 @@ export async function listApiTokens(
     throw error;
   }
   return items
-    .map((item) => cleanItem<ApiTokenSummary>(item))
+    .map((item) => cleanDbItem<ApiTokenSummary>(item))
     .filter((item): item is ApiTokenSummary => Boolean(item))
     .filter((item) => Date.parse(item.expiresAt) > now.getTime())
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));

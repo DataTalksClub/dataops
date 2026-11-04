@@ -16,27 +16,11 @@ import {
   type KnowledgeEmailTemplate,
   type RenderedKnowledgeEmail,
 } from '../sponsorDocs/knowledgeEmailTemplate';
+import { noStoreJson, parseJsonObjectEventOrEmpty } from '../http';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 const SEND_PATH = '/api/email-templates/send';
-const JSON_HEADERS = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function json(statusCode: number, body: unknown): LambdaResponse {
-  return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(body) };
-}
-
-function parseBody(event: LambdaEvent): Record<string, unknown> | null {
-  if (!event.body) return {};
-  try {
-    const value = JSON.parse(typeof event.body === 'string' ? event.body : JSON.stringify(event.body));
-    return value && typeof value === 'object' && !Array.isArray(value)
-      ? value as Record<string, unknown>
-      : null;
-  } catch {
-    return null;
-  }
-}
 
 function emailTemplateValues(raw: unknown, recipientName: string): Record<string, string> | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
@@ -102,12 +86,12 @@ export async function handleEmailTemplateRoutes(
   client: DynamoDBDocumentClient,
 ): Promise<LambdaResponse | null> {
   if (reqPath !== SEND_PATH) return null;
-  if (method.toUpperCase() !== 'POST') return json(405, { error: 'Method not allowed' });
+  if (method.toUpperCase() !== 'POST') return noStoreJson(405, { error: 'Method not allowed' });
   const actor = await resolveInteractiveActor(client, event, 'work-write');
   if (!actor.ok) return actor.response;
 
-  const body = parseBody(event);
-  if (!body) return json(400, { error: 'Invalid JSON body' });
+  const body = parseJsonObjectEventOrEmpty(event);
+  if (!body) return noStoreJson(400, { error: 'Invalid JSON body' });
   const templateId = typeof body.templateId === 'string' ? body.templateId.trim() : '';
   const sectionHeading = typeof body.sectionHeading === 'string' ? body.sectionHeading.trim() : '';
   const recipientEmail = typeof body.recipientEmail === 'string' ? body.recipientEmail.trim().toLowerCase() : '';
@@ -115,37 +99,37 @@ export async function handleEmailTemplateRoutes(
   const taskId = typeof body.taskId === 'string' ? body.taskId.trim() : '';
   const subjectVariant = typeof body.subjectVariant === 'string' ? body.subjectVariant.trim() : undefined;
 
-  if (!/^[a-z0-9][a-z0-9._-]{1,127}$/.test(templateId)) return json(400, { error: 'A valid templateId is required' });
+  if (!/^[a-z0-9][a-z0-9._-]{1,127}$/.test(templateId)) return noStoreJson(400, { error: 'A valid templateId is required' });
   if (!sectionHeading || sectionHeading.length > 200 || /[\r\n\x00-\x1f]/.test(sectionHeading)) {
-    return json(400, { error: 'A valid sectionHeading is required' });
+    return noStoreJson(400, { error: 'A valid sectionHeading is required' });
   }
   if (subjectVariant && (subjectVariant.length > 100 || /[\r\n\x00-\x1f]/.test(subjectVariant))) {
-    return json(400, { error: 'Invalid subjectVariant' });
+    return noStoreJson(400, { error: 'Invalid subjectVariant' });
   }
-  if (!EMAIL.test(recipientEmail)) return json(400, { error: 'A valid recipientEmail is required' });
+  if (!EMAIL.test(recipientEmail)) return noStoreJson(400, { error: 'A valid recipientEmail is required' });
   if (recipientEmail === 'grace@datatalks.club') {
-    return json(422, { error: 'Emails are never sent to grace@datatalks.club', code: 'blocked_recipient' });
+    return noStoreJson(422, { error: 'Emails are never sent to grace@datatalks.club', code: 'blocked_recipient' });
   }
-  if (!taskId || taskId.length > 128) return json(400, { error: 'An owning taskId is required' });
+  if (!taskId || taskId.length > 128) return noStoreJson(400, { error: 'An owning taskId is required' });
   const values = emailTemplateValues(body.values, recipientName);
-  if (!values) return json(400, { error: 'values must map uppercase placeholder names to strings; sender and recipient names are server-owned' });
+  if (!values) return noStoreJson(400, { error: 'values must map uppercase placeholder names to strings; sender and recipient names are server-owned' });
 
   const task = await getTaskConsistent(client, taskId);
-  if (!task) return json(404, { error: `Task ${taskId} not found` });
+  if (!task) return noStoreJson(404, { error: `Task ${taskId} not found` });
 
   let template: KnowledgeEmailTemplate;
   try {
     template = await loadKnowledgeEmailTemplate(templateId);
   } catch (error) {
-    if (error instanceof KnowledgeEmailTemplateError) return json(404, { error: error.message, code: 'email_template_not_found' });
-    return json(503, { error: 'The private knowledge template is unavailable', code: 'email_template_unavailable' });
+    if (error instanceof KnowledgeEmailTemplateError) return noStoreJson(404, { error: error.message, code: 'email_template_not_found' });
+    return noStoreJson(503, { error: 'The private knowledge template is unavailable', code: 'email_template_unavailable' });
   }
 
   let draft: RenderedKnowledgeEmail;
   try {
     draft = renderKnowledgeEmailTemplate(template, { sectionHeading, subjectVariant, values });
   } catch (error) {
-    if (error instanceof KnowledgeEmailTemplateError) return json(422, { error: error.message, code: 'email_template_render_failed' });
+    if (error instanceof KnowledgeEmailTemplateError) return noStoreJson(422, { error: error.message, code: 'email_template_render_failed' });
     throw error;
   }
 
@@ -162,7 +146,7 @@ export async function handleEmailTemplateRoutes(
     ...(emailDelivery.state === 'sent' ? { taskId } : {}),
   };
   if (delivery.state === 'sent') await recordEmailOnTask(client, taskId, template.id, delivery);
-  return json(200, {
+  return noStoreJson(200, {
     emailDelivery: delivery,
     sender: SPONSOR_DOC_EMAIL_FROM,
     cc: [SPONSOR_DOC_EMAIL_CC],
