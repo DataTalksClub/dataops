@@ -114,42 +114,35 @@ function pdfFailure(error: unknown, text: string, filename?: string): ParseError
   return new ParseError(`${safeFilename(filename)}: line ${source.number}, source text "${excerpt}": ${message}`);
 }
 
-/** Recognize and completely parse a supported bank PDF before any statement rows are stored. */
+/**
+ * Recognize and completely parse a supported bank statement before any rows
+ * are stored. PDFs are read through their bank's fixed layout; tabular
+ * exports (CSV, and XLSX from the email intake) are recognized from their
+ * header row against the same fixed layouts. Used by the explicit reconcile
+ * upload API, CLI, portal and the email intake.
+ */
 export async function recognizeStatement(bytes: Buffer, contentType: string, options: { currency?: string; expectedAccount?: StatementAccount; filename?: string } = {}): Promise<{ account: StatementAccount; layout: string; parsed: ParsedStatement }> {
   const type = contentType.split(";")[0].trim().toLowerCase();
-  if (!isPdf(type, bytes)) {
-    throw new UnrecognizedStatementError(`${safeFilename(options.filename)}: bank statement uploads accept PDF files only`);
+  if (isPdf(type, bytes)) {
+    let text: string;
+    try { text = await statementPdfText(bytes); }
+    catch (error) { throw pdfFailure(error, "", options.filename); }
+    const account = detectPdfStatementAccount(text);
+    if (!account) {
+      const message = "PDF is not a recognized Finom or Revolut statement";
+      throw new UnrecognizedStatementError(pdfFailure(message, text, options.filename).message);
+    }
+    if (options.expectedAccount && account !== options.expectedAccount) {
+      throw pdfFailure(`PDF contains a ${account} statement, not the selected ${options.expectedAccount} account`, text, options.filename);
+    }
+    try {
+      const parsed = account === "finom" ? parseFinomPdfText(text) : parseRevolutPdfText(text);
+      if (!parsed.rows.length) throw new ParseError("PDF statement parsed zero transaction rows");
+      return { account, layout: `${account} PDF statement`, parsed };
+    } catch (error) {
+      throw pdfFailure(error, text, options.filename);
+    }
   }
-
-  let text: string;
-  try { text = await statementPdfText(bytes); }
-  catch (error) { throw pdfFailure(error, "", options.filename); }
-  const account = detectPdfStatementAccount(text);
-  if (!account) {
-    const message = "PDF is not a recognized Finom or Revolut statement";
-    throw new UnrecognizedStatementError(pdfFailure(message, text, options.filename).message);
-  }
-  if (options.expectedAccount && account !== options.expectedAccount) {
-    throw pdfFailure(`PDF contains a ${account} statement, not the selected ${options.expectedAccount} account`, text, options.filename);
-  }
-
-  try {
-    const parsed = account === "finom" ? parseFinomPdfText(text) : parseRevolutPdfText(text);
-    if (!parsed.rows.length) throw new ParseError("PDF statement parsed zero transaction rows");
-    return { account, layout: `${account} PDF statement`, parsed };
-  } catch (error) {
-    throw pdfFailure(error, text, options.filename);
-  }
-}
-
-/**
- * Email document intake keeps its existing tabular attachment handling.
- * The explicit reconcile upload API, CLI and portal use recognizeStatement,
- * which accepts PDFs only.
- */
-async function recognizeEmailStatement(bytes: Buffer, contentType: string, options: { currency?: string } = {}): Promise<{ account: StatementAccount; layout: string; parsed: ParsedStatement }> {
-  const type = contentType.split(";")[0].trim().toLowerCase();
-  if (isPdf(type, bytes)) return recognizeStatement(bytes, type, options);
   if (XLSX.test(type)) {
     for (const account of ["revolut", "finom"] as StatementAccount[]) {
       try {
@@ -158,13 +151,16 @@ async function recognizeEmailStatement(bytes: Buffer, contentType: string, optio
         if (!(error instanceof ParseError) || !/unrecognized/.test(error.message)) throw error;
       }
     }
-    throw new UnrecognizedStatementError("workbook is not a recognized Finom or Revolut statement export");
+    throw new UnrecognizedStatementError(`${safeFilename(options.filename)}: workbook is not a recognized Finom or Revolut statement export`);
   }
   const text = bytes.toString("utf8");
   const headers = csvHeaders(text);
   const detected = detectStatementAccount(headers);
   if (!detected) {
-    throw new UnrecognizedStatementError(`CSV is not a recognized Finom or Revolut statement export (headers: ${headers.slice(0, 12).join(", ")}${headers.length > 12 ? ", …" : ""})`);
+    throw new UnrecognizedStatementError(`${safeFilename(options.filename)}: CSV is not a recognized Finom or Revolut statement export (headers: ${headers.slice(0, 12).join(", ")}${headers.length > 12 ? ", …" : ""})`);
+  }
+  if (options.expectedAccount && detected.account !== options.expectedAccount) {
+    throw new UnrecognizedStatementError(`${safeFilename(options.filename)}: CSV contains a ${detected.account} statement, not the selected ${options.expectedAccount} account`);
   }
   return { account: detected.account, layout: detected.layout, parsed: parseStatementCsv(text, detected.account, options) };
 }
@@ -215,7 +211,7 @@ async function importEmailStatement(
   source: StatementSource,
   options: { currency?: string; notify?: boolean } & StatementImportOptions = {},
 ): Promise<ImportedStatement> {
-  const recognized = await recognizeEmailStatement(bytes, source.contentType, options);
+  const recognized = await recognizeStatement(bytes, source.contentType, options);
   return storeParsedStatement(client, source, recognized.account, recognized.layout, recognized.parsed, options);
 }
 

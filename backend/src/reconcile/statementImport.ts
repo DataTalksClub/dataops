@@ -12,7 +12,7 @@ import { coverageGaps } from "./match";
 
 export class StatementIdentityReviewError extends Error {
   statusCode = 422;
-  constructor(readonly account: StatementAccount) { super("Statement header has no stable bank account identifier; an IBAN or account number is required before import. Source retained for review; no active statement changed."); }
+  constructor(readonly account: StatementAccount, message?: string) { super(message || "Statement header has no stable bank account identifier; an IBAN or account number is required before import. Source retained for review; no active statement changed."); }
 }
 
 export type StatementImportOptions = { preview?: boolean; replace?: boolean; previewDigest?: string; expectedAccount?: StatementAccount; expectedPeriod?: string; by?: string };
@@ -70,7 +70,10 @@ export async function prepareStatementImport(client: DynamoDBDocumentClient, sou
   if (options.expectedPeriod && !periods.includes(options.expectedPeriod)) throw new Error("Statement header/rows do not cover the selected month");
   if (periods.length > 24) throw new Error("Import at most 24 months in one statement batch");
   const missingIdentity = [...parsed.rows, ...parsed.balances].some((row) => !parsed.bankAccounts?.[`${row.wallet || "main"}|${row.currency}`]);
-  if (missingIdentity) throw new StatementIdentityReviewError(account);
+  // Tabular exports (Finom CSV) print no IBAN. They commit only when the
+  // operator explicitly selected the account, which stands in for the header
+  // identity; otherwise the source waits for review, as the email intake does.
+  if (missingIdentity && !options.expectedAccount) throw new StatementIdentityReviewError(account);
   const history = await listStatementHistory(client);
   const months = await Promise.all(periods.map((period) => getMonth(client, period)));
   const skippedClosedMonths = months.filter((month) => month.state === "closed").map((month) => month.period);
@@ -106,7 +109,11 @@ export async function prepareStatementImport(client: DynamoDBDocumentClient, sou
     const candidate: StatementRecord = { id, recordType: "reconcile-statement", accountId: account, period, ...source, rows, balances, ...bounds,
       bankAccounts: parsed.bankAccounts, ...(parsed.issueDate ? { issueDate: parsed.issueDate } : {}), ...(parsed.openingBalances ? { openingBalances: parsed.openingBalances.filter((balance) => balance.asOf.startsWith(period)) } : {}),
       warnings: parsed.warnings, createdAt: previous?.createdAt || now, updatedAt: now };
-    if (verified.some((record) => record.accountId === account && overlaps(record, candidate) && [...record.rows, ...(record.balances || [])].some((row) => !record.bankAccounts?.[`${row.wallet || "main"}|${row.currency}`]))) throw new StatementIdentityReviewError(account);
+    // Only a source with header identity may not coexist with an unverified one; two
+    // operator-asserted (identity-less) sources of the same account overlap harmlessly.
+    const candidateVerified = [...rows, ...balances].every((row) => parsed.bankAccounts?.[`${row.wallet || "main"}|${row.currency}`]);
+    if (candidateVerified && verified.some((record) => record.accountId === account && overlaps(record, candidate) && [...record.rows, ...(record.balances || [])].some((row) => !record.bankAccounts?.[`${row.wallet || "main"}|${row.currency}`])))
+      throw new StatementIdentityReviewError(account, "An overlapping statement source of this account carries no bank account identifier; delete or replace that source before importing a statement with verified identity. No active statement changed.");
     const keys = [...new Set([...rows, ...balances].map((row) => walletKey(candidate, row)))].sort();
     const existing = active.flatMap((record) => {
       if (record.accountId !== account || !overlaps(record, candidate)) return [];

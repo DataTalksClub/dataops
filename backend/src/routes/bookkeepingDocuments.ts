@@ -42,6 +42,8 @@ const DOCUMENT_TYPES = new Set([
   "private-account-statement",
   "other-evidence",
 ]);
+/** Bank statements may be PDFs or tabular CSV exports; every other document type stays PDF-only. */
+const STATEMENT_CONTENT_TYPES = new Set(["application/pdf", "text/csv"]);
 
 export async function handleBookkeepingDocumentRoutes(
   path: string,
@@ -57,8 +59,8 @@ export async function handleBookkeepingDocumentRoutes(
     const filenameProvided = body?.originalFilename !== undefined;
     const originalFilename = filenameProvided ? safeUploadFilename(body?.originalFilename) : "";
     const requestedContentType = String(body?.contentType || "application/pdf").split(";")[0].trim().toLowerCase();
-    if (statement && requestedContentType !== "application/pdf")
-      return json(400, { error: "Bank statement uploads accept PDF files only" });
+    if (statement && !STATEMENT_CONTENT_TYPES.has(requestedContentType))
+      return json(400, { error: "Bank statement uploads accept PDF or CSV files only" });
     const limit = Number(process.env.BOOKKEEPING_PDF_MAX_BYTES || 20 * 1024 * 1024);
     if (
       !body ||
@@ -74,7 +76,7 @@ export async function handleBookkeepingDocumentRoutes(
         (!OPAQUE.test(String(body.accountId || "")) ||
           !MONTH.test(String(body.statementMonth || "")) ||
           (body.contentType !== undefined &&
-            requestedContentType !== "application/pdf"))) ||
+            !STATEMENT_CONTENT_TYPES.has(requestedContentType)))) ||
       (!statement &&
         ((body.accountId !== undefined || body.statementMonth !== undefined) ||
           (body.contentType !== undefined && String(body.contentType) !== "application/pdf")))
@@ -366,7 +368,7 @@ export async function handleBookkeepingDocumentRoutes(
         ) {
           const message = !verified.contentOk
             ? ["bank-statement", "private-account-statement"].includes(String(doc.documentType))
-              ? "Bank statement uploads accept PDF files only"
+              ? "Bank statement uploads accept PDF or CSV files only"
               : "Evidence uploads accept PDF files only"
             : "Cleanup deferred";
           return json(message === "Cleanup deferred" ? 409 : 400, { error: message });
@@ -388,7 +390,7 @@ export async function handleBookkeepingDocumentRoutes(
       }
       const message = !verified.contentOk
         ? ["bank-statement", "private-account-statement"].includes(String(doc.documentType))
-          ? "Bank statement uploads accept PDF files only"
+          ? "Bank statement uploads accept PDF or CSV files only"
           : "Evidence uploads accept PDF files only"
         : "Uploaded object verification failed";
       return json(400, { error: message });

@@ -6,7 +6,7 @@ import { dirname, join, relative, resolve, sep, posix, win32 } from "node:path";
 import { UsageError } from "../errors.mjs";
 import { enc, optionalString, positional } from "../format.mjs";
 import { apiFor } from "../session.mjs";
-import { contentTypeFor, requirePdfBytes, storeDocument } from "../documentUpload.mjs";
+import { contentTypeFor, requireStatementBytes, storeDocument } from "../documentUpload.mjs";
 import { attachThankYouResult, printThankYouHint } from "../thank-you.mjs";
 
 export const summary = "Month-end reconciliation: bank statements, matching, payment confirm";
@@ -14,7 +14,7 @@ export const summary = "Month-end reconciliation: bank statements, matching, pay
 export const help = `dataops reconcile - month-end reconciliation (the Finance views' command line)
 
 Usage
-  dataops reconcile upload --file statement.pdf [--account finom|revolut] [--period YYYY-MM] [--quiet] [--preview|--replace] [--json]
+  dataops reconcile upload --file statement.pdf|statement.csv [--account finom|revolut] [--period YYYY-MM] [--quiet] [--preview|--replace] [--json]
       Finom and Revolut statements need no flags: the bank comes from the
       file, and its rows are stored as one statement per month, then each
       month is reconciled and summarised in a finance notification
@@ -23,6 +23,9 @@ Usage
       preview without changing active data. --replace explicitly confirms the
       current preview; --preview/--dry-run only previews. Both banks preserve
       original PDF history and use the printed account, wallet and month.
+      CSV exports (the Finom statement CSV) are accepted too; they carry no
+      IBAN, so pass --account to import them — without it the source is kept
+      for review and nothing changes.
   dataops reconcile import-document <document-id> [--period YYYY-MM] [--quiet] [--preview|--replace] [--json]
       Parse a bank-statement document DataOps already stores (bank detected
       from its content) into per-month statements. The same preview and explicit
@@ -145,11 +148,12 @@ function printStatementImport(result, io) {
 }
 
 export async function upload(args, io) {
-  if (!args.file) throw new UsageError("dataops reconcile upload --file statement.pdf [--account finom|revolut] [--period YYYY-MM] [--preview|--replace] [--json]");
+  if (!args.file) throw new UsageError("dataops reconcile upload --file statement.pdf|statement.csv [--account finom|revolut] [--period YYYY-MM] [--preview|--replace] [--json]");
   if (args.account && !ACCOUNTS.includes(String(args.account))) throw new UsageError(`--account must be one of ${ACCOUNTS.join(", ")}`);
   if (args.period) periodOr(args);
-  contentTypeFor(args.file);
-  requirePdfBytes(args.file, await readFile(String(args.file)));
+  const contentType = contentTypeFor(args.file);
+  const bytes = await readFile(String(args.file));
+  requireStatementBytes(args.file, bytes, contentType);
   const api = apiFor(args);
   const stored = await storeDocument(api, args.file, { documentType: "bank-statement", accountId: args.account || "auto", statementMonth: args.period || new Date().toISOString().slice(0, 7), sourceRef: "reconcile:upload" });
   const result = await importStoredStatement(api, stored.documentId, args);
@@ -792,7 +796,7 @@ export async function alias(args, io) {
 }
 
 export const commands = {
-  upload, "import-document": importDocument, parse, balances, statements, statement, report, confirm, aliases, alias,
+  upload, "upload-statement": upload, "import-document": importDocument, parse, balances, statements, statement, report, confirm, aliases, alias,
   month, months, matches, "auto-match": autoMatch, match, unmatch, "attach-proof": attachProof, "attach-doc": attachDoc, "void-ledger": voidLedger, "restore-ledger": restoreLedger, "create-ledger": createLedger, note,
   disposition, except, "clear-except": clearExcept, "confirm-exceptions": confirmExceptions, close, reopen, package: packageMonth, config,
 };
