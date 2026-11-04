@@ -777,6 +777,62 @@ describe("newsletter doc and podcast doc commands", () => {
     globalThis.fetch = globalFetch;
   });
 
+  test("sponsor doc create --from sends the copy source and keeps domain guards", async () => {
+    saveProfile("https://ops.dtcdev.click", { token: "dops_abc", tokenId: "id-1" });
+    const sent = [];
+    const fetch = fakeFetch({
+      "/api/sponsor-docs": (options) => {
+        if (options.method === "POST") {
+          const parsed = JSON.parse(options.body);
+          sent.push(parsed);
+          return {
+            status: 201,
+            body: {
+              doc: {
+                id: "doc-copy",
+                cardId: parsed.cardId,
+                template: parsed.template || "copied-from-source",
+                status: "draft",
+                version: 1,
+                docUrl: "https://ops.dtcdev.click/sponsor-docs/doc-copy",
+                shareUrl: "https://ops.dtcdev.click/sponsor-docs/doc-copy?code=CODE",
+                accessCode: "CODE",
+              },
+            },
+          };
+        }
+        return { body: { docs: [] } };
+      },
+    });
+    globalThis.fetch = fetch;
+
+    // A podcast copy without --template lets the server inherit the source template.
+    const ioPodcast = captureIo();
+    assert.equal(
+      await run(["podcast", "doc", "create", "card-pod-2", "--from", "https://ops.dtcdev.click/podcast-docs/source-doc", "--url", "https://ops.dtcdev.click"], ioPodcast),
+      0,
+    );
+    assert.deepEqual(sent[0], { cardId: "card-pod-2", from: "source-doc" });
+
+    const ioWebinar = captureIo();
+    assert.equal(
+      await run(["webinar", "doc", "create", "card-web-1", "--from", "source-webinar", "--url", "https://ops.dtcdev.click"], ioWebinar),
+      0,
+    );
+    assert.deepEqual(sent[1], { cardId: "card-web-1", template: "webinar", from: "source-webinar" });
+
+    // --from does not bypass the speaker-domain guards: newsletter slot flags stay non-applicable.
+    const ioSlot = captureIo();
+    assert.equal(
+      await run(["webinar", "doc", "create", "card-web-1", "--from", "source-webinar", "--slot", "primary", "--url", "https://ops.dtcdev.click"], ioSlot),
+      2,
+    );
+    assert.match(ioSlot.errors.join("\n"), /newsletter slot flags do not apply/);
+    assert.equal(sent.length, 2);
+
+    globalThis.fetch = globalFetch;
+  });
+
   test("newsletter markdown set, show, preview, and rotate-code store and print shareable preview links", async () => {
     const { writeFileSync } = await import("node:fs");
     const issuePath = path.join(configDir, "issue.md");
