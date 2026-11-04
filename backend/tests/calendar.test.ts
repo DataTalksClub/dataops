@@ -343,12 +343,21 @@ describe("operations calendar", () => {
     assert.equal(initial.settings.connectionId, "");
     assert.equal(initial.settings.filterLunch, true);
     assert.ok(Array.isArray(initial.connections));
+    // Call-slot Calendly parity defaults: 12 h notice, 60-day horizon, no buffers.
+    assert.equal(initial.settings.callMinimumNoticeMinutes, 720);
+    assert.equal(initial.settings.callHorizonDays, 60);
+    assert.equal(initial.settings.callBufferBeforeMinutes, 0);
+    assert.equal(initial.settings.callBufferAfterMinutes, 0);
 
     response = await invoke("PUT", "/api/calendar-items/settings", {
       connectionId: "work-calendar",
       filterLunch: false,
       filterBusy: true,
       customKeywords: ["dentist", "haircut"],
+      callMinimumNoticeMinutes: 90,
+      callHorizonDays: 30,
+      callBufferBeforeMinutes: 5,
+      callBufferAfterMinutes: 10,
     });
     assert.equal(response.statusCode, 200);
     const updated = parse(response).settings;
@@ -356,6 +365,10 @@ describe("operations calendar", () => {
     assert.equal(updated.filterLunch, false);
     assert.equal(updated.filterBusy, true);
     assert.deepEqual(updated.customKeywords, ["dentist", "haircut"]);
+    assert.equal(updated.callMinimumNoticeMinutes, 90);
+    assert.equal(updated.callHorizonDays, 30);
+    assert.equal(updated.callBufferBeforeMinutes, 5);
+    assert.equal(updated.callBufferAfterMinutes, 10);
 
     response = await invoke("GET", "/api/calendar-items/settings");
     assert.equal(response.statusCode, 200);
@@ -364,5 +377,19 @@ describe("operations calendar", () => {
     assert.equal(persisted.filterLunch, false);
     assert.equal(persisted.filterBusy, true);
     assert.deepEqual(persisted.customKeywords, ["dentist", "haircut"]);
+    assert.equal(persisted.callMinimumNoticeMinutes, 90);
+    assert.equal(persisted.callHorizonDays, 30);
+    assert.equal(persisted.callBufferBeforeMinutes, 5);
+    assert.equal(persisted.callBufferAfterMinutes, 10);
+
+    // A PUT without the call fields (e.g. the portal settings form) keeps them.
+    response = await invoke("PUT", "/api/calendar-items/settings", { filterBusy: false });
+    assert.equal(response.statusCode, 200);
+    const preserved = parse(response).settings;
+    assert.equal(preserved.filterBusy, false);
+    assert.equal(preserved.callMinimumNoticeMinutes, 90);
+    assert.equal(preserved.callHorizonDays, 30);
+    assert.equal(preserved.callBufferBeforeMinutes, 5);
+    assert.equal(preserved.callBufferAfterMinutes, 10);
   });
 });
