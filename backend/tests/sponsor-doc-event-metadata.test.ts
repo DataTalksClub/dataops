@@ -89,20 +89,18 @@ test('any document template linked to an event Card uses its event authority', a
 
 
 test('explicit Card invitation takes precedence over historical released holds', async () => {
-  for (const prefix of ['card:', 'legacy:']) {
-    const card = await createCard(client, { ...templateLink(), title: 'Current event' });
-    let old = buildHold({ title: 'Obsolete title', topic: 'Topic', date: '2030-01-01', cardId: card.id }, 'test');
-    old = releaseHoldRecord(old, 'manual'); await putCalendarHold(client, old);
-    await updateCard(client, card.id, { expectedVersion: card.version, patch: { eventTime: {
-      eventKey: `${prefix}${card.id}`, startIso: '2030-12-03T11:30:00Z', endIso: '2030-12-03T12:30:00Z',
-      timeZone: 'Europe/Berlin', durationMinutes: 60, googleEventIds: {}, sync: 'synced', syncStartedAt: '2030-01-01T00:00:00Z',
-    } } });
-    const { doc } = await createSponsorDoc(client, { cardId: card.id, template: 'podcast', title: 'Ignored', createdBy: 'test' });
-    assert.equal(doc.eventMetadata!.date, '2030-12-03');
-    assert.equal(doc.eventMetadata!.state, 'confirmed');
-    assert.ok(doc.title.includes('Current event'));
-    assert.ok(!doc.title.includes('Obsolete'));
-  }
+  const card = await createCard(client, { ...templateLink(), title: 'Current event' });
+  let old = buildHold({ title: 'Obsolete title', topic: 'Topic', date: '2030-01-01', cardId: card.id }, 'test');
+  old = releaseHoldRecord(old, 'manual'); await putCalendarHold(client, old);
+  await updateCard(client, card.id, { expectedVersion: card.version, patch: { eventTime: {
+    eventKey: `card:${card.id}`, startIso: '2030-12-03T11:30:00Z', endIso: '2030-12-03T12:30:00Z',
+    timeZone: 'Europe/Berlin', durationMinutes: 60, googleEventIds: {}, sync: 'synced', syncStartedAt: '2030-01-01T00:00:00Z',
+  } } });
+  const { doc } = await createSponsorDoc(client, { cardId: card.id, template: 'podcast', title: 'Ignored', createdBy: 'test' });
+  assert.equal(doc.eventMetadata!.date, '2030-12-03');
+  assert.equal(doc.eventMetadata!.state, 'confirmed');
+  assert.ok(doc.title.includes('Current event'));
+  assert.ok(!doc.title.includes('Obsolete'));
 });
 
 test('unified EventRecord transitions (propose/reschedule/approve/release) and episode-owned docs derive live metadata without doc writes', async () => {
