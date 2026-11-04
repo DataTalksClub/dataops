@@ -551,9 +551,9 @@ describe('reconcile API', () => {
     assert.doesNotMatch(pack.csv, /Finanzamt/);
     assert.doesNotMatch(pack.csv, /43633\.73/);
     assert.ok(paths.includes('2026-12/2026-12_reconciliation_datatalksclub.csv'), paths.join('\n'));
-    assert.ok(paths.some((path: string) => /^2026-12\/statements\/2026-12_finom-main\./.test(path)), paths.join('\n'));
-    assert.ok(paths.includes('2026-12/expenses/2026-12-14_google_1.99EUR.pdf'), paths.join('\n'));
-    assert.ok(paths.some((path: string) => path.startsWith('2026-12/proofs/2026-12-14_google_')), paths.join('\n'));
+    assert.ok(paths.some((path: string) => /^2026-12\/statements\/2026-12_finom-main_statement\./.test(path)), paths.join('\n'));
+    assert.ok(paths.includes('2026-12/expenses/2026-12-14_google_google-one_1.99EUR.pdf'), paths.join('\n'));
+    assert.ok(paths.includes('2026-12/proofs/2026-12-14_google_payment-proof-google-one_1.99EUR.pdf'), paths.join('\n'));
     // Taxes stay out of the accountant's package, as in every report sent so far.
     assert.ok(!paths.some((path: string) => /finanzamt/.test(path)));
 
