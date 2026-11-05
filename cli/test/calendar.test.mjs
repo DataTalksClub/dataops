@@ -859,3 +859,16 @@ describe("Calendar hold CLI commands", () => {
     assert.match(liveIo.text(), /task calendar-hold-expired-hold_exp1/);
   });
 });
+
+
+test("link-hold previews a verified association and requires reviewed versions on apply", async () => {
+  const requests=[];
+  globalThis.fetch=async (url, options={})=>{ requests.push({url:String(url),body:JSON.parse(options.body)});return Response.json({mode:'dry-run',googleWrites:0}); };
+  assert.equal(await run(['calendar','link-hold','hold-example','--card','card-example'],captureIo()),0);
+  assert.deepEqual(requests[0].body,{cardId:'card-example',apply:false});
+  assert.match(requests[0].url,/calendar-holds\/hold-example\/link-card$/);
+  assert.notEqual(await run(['calendar','link-hold','hold-example','--card','card-example','--apply'],captureIo()),0);
+  assert.equal(requests.length,1);
+  assert.equal(await run(['calendar','link-hold','hold-example','--card','card-example','--apply','--expected-card-version','3','--expected-hold-version','4','--expected-episode-version','2'],captureIo()),0);
+  assert.deepEqual(requests[1].body,{cardId:'card-example',expectedCardVersion:3,expectedHoldVersion:4,expectedEpisodeVersion:2,apply:true});
+});

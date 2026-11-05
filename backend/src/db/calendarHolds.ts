@@ -102,7 +102,7 @@ export async function getCalendarHold(
   client: DynamoDBDocumentClient,
   id: string,
 ): Promise<CalendarHold | null> {
-  const result = await client.send(new GetCommand({ TableName: TABLE_CALENDAR, Key: key(id) }));
+  const result = await client.send(new GetCommand({ TableName: TABLE_CALENDAR, Key: key(id), ConsistentRead: true }));
   return clean(result.Item as Record<string, unknown> | undefined);
 }
 
