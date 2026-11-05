@@ -8,6 +8,7 @@ describe('webinar speaker materials validation', () => {
   it('requires title, outline and bio, and makes summary and links optional', () => {
     const fields = getSponsorDocTemplate('webinar').sections.flatMap((s) => s.fields);
     assert.deepEqual(fields.filter((f) => f.required).map((f) => f.key), ['talkTitle', 'outline', 'bio']);
+    assert.ok(fields.some((f) => f.key === 'sponsorNotes' && !f.required), 'speaker notes field exists and is optional');
     assert.doesNotThrow(() => validateSubmittedContent('webinar', content));
     for (const key of ['talkTitle', 'outline', 'bio']) {
       assert.throws(() => validateSubmittedContent('webinar', { ...content, [key]: '  ' }), /required/);
@@ -26,8 +27,8 @@ describe('webinar speaker materials validation', () => {
     }
   });
   it('exports every supplied field and renders a speaker invite without sponsor or internal jargon', () => {
-    const exported = renderSponsorDocMarkdownExport({ id: 'synthetic-doc', title: 'Speaker materials', template: 'webinar', sponsorName: 'Test Speaker', status: 'submitted', lastEditedAt: '2026-10-23', lastEditedBy: 'sponsor', content: { ...content, summary: 'A practical introduction', linkedinUrl: 'https://example.test/linkedin', twitterUrl: 'https://example.test/x', githubUrl: 'https://example.test/github', websiteUrl: 'https://example.test/site' } });
-    for (const value of ['Practical pipelines', 'A practical introduction', '- Design', 'A data engineer.', '/linkedin', '/x', '/github', '/site', 'Speaker']) assert.ok(exported.includes(value));
+    const exported = renderSponsorDocMarkdownExport({ id: 'synthetic-doc', title: 'Speaker materials', template: 'webinar', sponsorName: 'Test Speaker', status: 'submitted', lastEditedAt: '2026-10-23', lastEditedBy: 'sponsor', content: { ...content, summary: 'A practical introduction', linkedinUrl: 'https://example.test/linkedin', twitterUrl: 'https://example.test/x', githubUrl: 'https://example.test/github', websiteUrl: 'https://example.test/site', sponsorNotes: 'Prefer the session not be recorded.' } });
+    for (const value of ['Practical pipelines', 'A practical introduction', '- Design', 'A data engineer.', '/linkedin', '/x', '/github', '/site', 'Speaker', '## Notes from the Speaker', 'Prefer the session not be recorded.']) assert.ok(exported.includes(value));
     const draft = renderSponsorEmailDraft({ template: 'webinar', shareUrl: 'https://example.test/form', accessCode: 'synthetic' });
     assert.ok(draft.body.includes('https://example.test/form'));
     assert.doesNotMatch(draft.subject + draft.body + exported, /sponsor|\bhub\b/i);

@@ -31,6 +31,7 @@ test("webinar help documents required fields; rejects newsletter flags", async (
   const io = captureIo();
   assert.equal(await run(["webinar", "doc", "--help"], io), 0);
   assert.match(io.text(), /talkTitle, outline.*bio/);
+  assert.match(io.text(), /sponsorNotes/);
   assert.equal(await run(["webinar", "doc", "create", "card-test", "--slot", "secondary"], captureIo()), 2);
   assert.equal(calls.length, 0);
 });
