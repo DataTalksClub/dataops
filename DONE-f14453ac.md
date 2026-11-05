@@ -55,3 +55,26 @@ needed again.
 Unarchiving and re-archiving the repo just to clear a frozen badge on a
 retired service is deliberately not attempted: it maintains a dead surface for
 no consumer.
+
+## CORRECTION (2026-11-05, re-verification by the handoff drain)
+
+Two statements above are wrong; the resolution conclusion changes:
+
+1. **"`48c1636` exists only in this repo" is false.** The commit exists
+   identically (same SHA) in `DataTalksClub/operational-mcp` — that repo IS the
+   continuation referenced by the intake title; `PocketShell-io/pocketshell-mcp`
+   is a same-history mirror of it. Both are archived.
+2. **"No fix lands" is false.** The exact fix preserved above as a patch was
+   landed ~40 minutes after the red run in `DataTalksClub/operational-mcp`:
+   - `721a187` "Bump body-parser to 2.4.0 and fast-uri to 3.1.9 via npm audit
+     fix" — lockfile-only (12+/12−), matching this file's patch point 1.
+   - `de894ae` "README: drop literal DataOps endpoint URL so check-public
+     passes" — matching patch point 2.
+   - CI "Test" run `40243627919` on main HEAD `de894ae` (branch main) is
+     **green**: https://github.com/DataTalksClub/operational-mcp/actions/runs/40243627919
+
+Resolution: fixed on main of the continuing repo (`DataTalksClub/operational-mcp`)
+the same evening; `PocketShell-io/pocketshell-mcp` remains a frozen archived
+mirror and is not the record of continuation. Evidence verified via
+`gh run view 40243627919` and the run log's advisory listing on 2026-11-05.
+
