@@ -177,7 +177,7 @@ describe('course event slots: event Cards instead of text', () => {
     assert.deepEqual(linked.invites.map((invite: any) => invite.state), ['live']);
   });
 
-  it('creates attendee-free public Luma entries idempotently and keeps guest calendar checks personal-only', async () => {
+  it('times a Luma cohort event onto the DTC events, Orin and Alexey personal calendars, attendee-free and idempotently', async () => {
     const google = holdGoogleProvider();
     setCalendarHoldGoogleDepsForTests({ fetchImpl: google.fetchImpl, credential: 'test', connectionId: 'orin' });
     try {
@@ -223,32 +223,50 @@ describe('course event slots: event Cards instead of text', () => {
       const first = await invoke('POST', `/api/cards/${qaCardId}/time`, { at: '2026-11-10 17:00' });
       assert.equal(first.statusCode, 200, first.body);
       assert.equal(parsed(first).invite.outcome, 'synced');
-      assert.deepEqual(parsed(first).card.calendarInvites.map((invite: any) => invite.calendar), [PUBLIC_DTC_EVENTS_CALENDAR]);
-      assert.deepEqual(Object.keys(parsed(first).card.eventTime.googleEventIds), [PUBLIC_DTC_EVENTS_CALENDAR]);
-      for (const calendar of [PUBLIC_DTC_EVENTS_CALENDAR]) {
+      // The cohort event lands on the DTC events calendar, Orin and Alexey personal.
+      assert.deepEqual(parsed(first).card.calendarInvites.map((invite: any) => invite.calendar),
+        [PUBLIC_DTC_EVENTS_CALENDAR, HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS]);
+      assert.deepEqual(Object.keys(parsed(first).card.eventTime.googleEventIds),
+        [PUBLIC_DTC_EVENTS_CALENDAR, HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS]);
+      for (const calendar of [PUBLIC_DTC_EVENTS_CALENDAR, HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS]) {
         const event = [...google.events.get(calendar)!.values()].find((item) => item.summary === 'Gen Media 2026: Pre-Course Live Q&A');
         assert.ok(event, `Q&A event exists on ${calendar}`);
         assert.equal(event.summary, 'Gen Media 2026: Pre-Course Live Q&A');
         assert.match(event.description, /Luma: https:\/\/lu\.ma\/production-ai-agents-qa/);
         assert.match(event.description, /Stream: https:\/\/www\.youtube\.com\/datatalksclub/);
         assert.equal(event.location, 'https://www.youtube.com/datatalksclub');
-        assert.deepEqual(event.attendees || [], [], 'public entries never contain guests');
+        // Public entry and organizer copy stay attendee-free; each personal
+        // copy lists only its own calendar (the Google import constraint).
+        if (DEFAULT_HOLD_GOOGLE_CALENDARS.includes(calendar as never)) {
+          assert.deepEqual(event.attendees, [{ email: calendar }]);
+        } else {
+          assert.deepEqual(event.attendees || [], [], 'public and organizer entries never contain guests');
+        }
+        assert.ok(!/zoom/i.test(JSON.stringify(event)), 'cohort event entries carry no Zoom details');
       }
+      assert.ok(!google.calls.some((call) => call.method === 'PATCH' && call.url.searchParams.get('sendUpdates') === 'all'),
+        'silent cohort copies never send updates');
       const imports = google.calls.filter((call) => call.method === 'POST' && call.url.pathname.endsWith('/events/import'));
-      assert.equal(imports.length, 0, 'public event uses its standalone insert path');
+      assert.equal(imports.length, 2, 'personal copies use the silent import path');
       assert.ok(imports.every((call) => !call.url.searchParams.has('sendUpdates')), 'Google import never sends invitations');
 
       const retry = await invoke('POST', `/api/cards/${qaCardId}/time`, { at: '2026-11-10 17:00' });
       assert.equal(retry.statusCode, 200, retry.body);
       assert.equal(google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.size, 2, 'retry does not add a duplicate public event');
+      assert.equal(google.events.get(HOLD_ORGANIZER)!.size, 1, 'retry does not add a duplicate organizer copy');
+      assert.equal(google.events.get(DEFAULT_HOLD_GOOGLE_CALENDARS[0])!.size, 1, 'retry does not add a duplicate personal copy');
 
       const stillMissingLaunch = await invoke('PUT', `/api/tasks/${prepare.id}`, { expectedVersion: prepare.version, status: 'done' });
       assert.equal(stillMissingLaunch.statusCode, 400, stillMissingLaunch.body);
       assert.match(parsed(stillMissingLaunch).error, /Launch is missing live calendar entries/i);
       const launchTime = await invoke('POST', `/api/cards/${launchCardId}/time`, { at: '2026-11-16 17:00' });
       assert.equal(launchTime.statusCode, 200, launchTime.body);
-      assert.deepEqual(parsed(launchTime).card.eventTime.googleEventIds, { [PUBLIC_DTC_EVENTS_CALENDAR]: 'manual-launch-dtc' });
-      assert.deepEqual(parsed(launchTime).card.calendarInvites.map((invite: any) => invite.eventId), ['manual-launch-dtc']);
+      assert.equal(parsed(launchTime).card.eventTime.googleEventIds[PUBLIC_DTC_EVENTS_CALENDAR], 'manual-launch-dtc');
+      assert.deepEqual(Object.keys(parsed(launchTime).card.eventTime.googleEventIds).sort(),
+        [HOLD_ORGANIZER, PUBLIC_DTC_EVENTS_CALENDAR, ...DEFAULT_HOLD_GOOGLE_CALENDARS].sort());
+      assert.ok(parsed(launchTime).card.calendarInvites.some((invite: any) => invite.eventId === 'manual-launch-dtc'));
+      assert.ok(parsed(launchTime).card.calendarInvites.some((invite: any) => invite.calendar === DEFAULT_HOLD_GOOGLE_CALENDARS[0]),
+        'the Launch also lands on Alexey personal');
       assert.equal(google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.size, 2, 'cards time adopts the existing public entry instead of adding a duplicate');
       const repeatLaunchTime = await invoke('POST', `/api/cards/${launchCardId}/time`, { at: '2026-11-16 17:00' });
       assert.equal(repeatLaunchTime.statusCode, 200, repeatLaunchTime.body);
@@ -268,8 +286,9 @@ describe('course event slots: event Cards instead of text', () => {
       assert.match(parsed(stillMissingOfficeHours).error, /Office Hours is missing live calendar entries/i);
       const officeHoursTime = await invoke('POST', `/api/cards/${officeHoursCardId}/time`, { at: '2026-11-14 17:00' });
       assert.equal(officeHoursTime.statusCode, 200, officeHoursTime.body);
-      assert.deepEqual(parsed(officeHoursTime).card.calendarInvites.map((invite: any) => invite.calendar), [PUBLIC_DTC_EVENTS_CALENDAR]);
-      for (const calendar of [PUBLIC_DTC_EVENTS_CALENDAR]) {
+      assert.deepEqual(parsed(officeHoursTime).card.calendarInvites.map((invite: any) => invite.calendar),
+        [PUBLIC_DTC_EVENTS_CALENDAR, HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS]);
+      for (const calendar of [PUBLIC_DTC_EVENTS_CALENDAR, HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS]) {
         assert.ok([...google.events.get(calendar)!.values()].some((item) => item.summary === 'Gen Media 2026: Office Hours'),
           `office hours event exists on ${calendar}`);
       }
@@ -284,10 +303,13 @@ describe('course event slots: event Cards instead of text', () => {
 
       const moved = await invoke('POST', `/api/cards/${qaCardId}/time`, { at: '2026-11-11 17:00' });
       assert.equal(moved.statusCode, 200, moved.body);
-      assert.deepEqual(Object.keys(parsed(moved).card.eventTime.googleEventIds), [PUBLIC_DTC_EVENTS_CALENDAR]);
+      assert.deepEqual(Object.keys(parsed(moved).card.eventTime.googleEventIds),
+        [PUBLIC_DTC_EVENTS_CALENDAR, HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS]);
       assert.ok(!parsed(moved).card.calendarInvites.find((invite: any) => invite.eventId === dtcEventId),
         'a cancelled public copy is replaced without retaining a stale duplicate row');
       assert.equal(google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.size, 4);
+      assert.equal(google.events.get(HOLD_ORGANIZER)!.size, 3, 'moving updates the organizer copy in place instead of duplicating');
+      assert.equal(google.events.get(DEFAULT_HOLD_GOOGLE_CALENDARS[0])!.size, 3, 'moving updates the personal copy in place instead of duplicating');
       assert.ok(google.calls.filter((call) => call.method === 'PATCH').every((call) => call.url.searchParams.get('sendUpdates') === 'none'));
 
       courseTasks = await listTasksByCard(client, created.card.id);
