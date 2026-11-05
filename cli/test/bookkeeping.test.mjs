@@ -36,6 +36,8 @@ test("sheet amounts and dates parse in every format the sheet uses", () => {
   assert.equal(sheet.sheetAmount("- 109,76").value, "109.76");
   assert.equal(sheet.sheetAmount("-5.086.00").value, "5086.00");
   assert.equal(sheet.sheetAmount("-247.76999999999998").value, "247.77");
+  assert.equal(sheet.sheetAmount("€12.50").value, "12.50");
+  assert.equal(sheet.sheetAmount("£13.25").value, "13.25");
   assert.equal(sheet.sheetAmount("N/A"), null);
   assert.equal(sheet.sheetAmount("-TODO"), null);
   assert.equal(sheet.sheetDate("2 Jan 2026"), "2026-01-02");
@@ -57,7 +59,7 @@ test("rows map to transactions with content keys that survive reordering", () =>
   assert.equal(sponsor.record.amount, "5000.00");
   assert.equal(tool.record.period, "Annually", "spelling variants collapse to one value");
   assert.equal(tool.record.category, "Work-related", "trimmed, and the old long spelling merges into the short one");
-  assert.deepEqual(todo, { tab: "2026", row: 5, skip: "no amount" });
+  assert.deepEqual(todo, { tab: "2026", row: 5, skip: "placeholder amount (TODO)" });
   const lines = CURRENT.split("\n");
   const reordered = sheet.readTab("2026", sheet.parseCsv([lines[0], lines[3], lines[1], lines[2]].join("\n")));
   assert.deepEqual(new Set(reordered.map((row) => row.sourceKey)), new Set(rows.filter((row) => row.record).map((row) => row.sourceKey)));
@@ -509,4 +511,106 @@ test("bookkeeping show requires exactly one id and encodes the path segment", as
   const io = captureIo();
   assert.equal(await run(["bookkeeping", "show", "a/b", "--json"], io), 0);
   assert.deepEqual(io.json(), { id: "a/b", links: [] });
+});
+
+
+test("TODO in either amount column skips a placeholder even with a valid other amount", () => {
+  const rows = sheet.readTab("2030", sheet.parseCsv('Date,Provider,"Price, $","Price, EUR"\n2030-02-01,Example Pending,-43.25,-TODO\n2030-02-02,Example Pending,-TODO,-38.10'));
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every((row) => row.skip === "placeholder amount (TODO)"));
+  assert.equal(sheet.planSync(rows, []).creates.length, 0);
+});
+
+test("explicit DataOps markers reuse canonical rows and preserve every existing field", () => {
+  const source = 'Date,Provider,What,"Price, EUR",Statement,Category\n2030-02-01,Example Stale,Stale label,-43.25,Bank [dataops:canonical-id],Stale category';
+  const rows = sheet.readTab("2030", sheet.parseCsv(source));
+  const canonical = { id: "canonical-id", sourceType: "invoice", sourceKey: "native-source", transactionDate: "2030-02-03", paidDate: "2030-02-05", amount: "47.00", currency: "EUR", counterparty: "Example Corrected", category: "Verified", sponsorDealId: "held-deal", audit: [{ action: "verified" }] };
+  const before = structuredClone(canonical);
+  const plan = sheet.planSync(rows, [canonical]);
+  assert.equal(plan.creates.length, 0);
+  assert.equal(plan.updates.length, 0);
+  assert.equal(plan.references[0].id, canonical.id);
+  assert.deepEqual(canonical, before);
+  assert.equal(plan.conflicts.length, 0);
+});
+
+test("invoice publication markers resolve an explicit ledger link without fuzzy amount/name pairing", () => {
+  const rows = sheet.readTab("2030", sheet.parseCsv('Date,Provider,"Price, EUR",Statement\n2030-02-01,Example Vendor,-43.25,[dataops:draft-id]'));
+  const ledger = [{ id: "credit-ledger", sourceType: "credit-note", sourceKey: "credit-note:synthetic-42", amount: "43.25", currency: "EUR" }];
+  const plan = sheet.planSync(rows, ledger, { invoiceLinks: [{ id: "draft-id", ledgerTransactionId: "credit-ledger" }] });
+  assert.equal(plan.creates.length, 0);
+  assert.equal(plan.references[0].id, "credit-ledger");
+  assert.equal(plan.updates.length, 0);
+  const unrelated = sheet.planSync(rows, ledger);
+  assert.equal(unrelated.creates.length, 0);
+  assert.equal(unrelated.conflicts.length, 1);
+  const unmarked = sheet.readTab("2030", sheet.parseCsv('Date,Provider,"Price, EUR"\n2030-02-01,Example Vendor,-43.25'));
+  assert.equal(sheet.planSync(unmarked, ledger).creates.length, 1, "equal values never suppress separate native cash");
+});
+
+test("missing, malformed, multiple and ambiguous publication references cannot become new transactions", () => {
+  const make = (ref) => sheet.readTab("2030", sheet.parseCsv(`Date,Provider,"Price, EUR",Statement\n2030-02-01,Example Vendor,-43.25,${ref}`));
+  for (const ref of ["[dataops:missing]", "[dataops:]", "[dataops:a] [dataops:b]"]) {
+    const plan = sheet.planSync(make(ref), []);
+    assert.equal(plan.creates.length, 0);
+    assert.equal(plan.conflicts.length, 1);
+  }
+  const ambiguous = sheet.planSync(make("[dataops:draft]"), [{ id: "first", invoiceId: "draft" }, { id: "second", invoiceId: "draft" }]);
+  assert.equal(ambiguous.creates.length, 0);
+  assert.match(ambiguous.conflicts[0].reason, /ambiguous/);
+});
+
+test("sync resolves a confirmed invoice ledger link through the CLI GET route", async () => {
+  const draftId = "d".repeat(64);
+  const dir = mkdtempSync(path.join(tmpdir(), "sync-linked-invoice-"));
+  writeFileSync(path.join(dir, "2030.csv"), `Date,Provider,"Price, EUR",Statement\n2030-02-01,Example Vendor,-43.25,[dataops:${draftId}]`);
+  const calls = fakePortal({
+    "GET /api/bookkeeping/transactions": { items: [{ id: "linked-ledger", sourceKey: "credit-note:synthetic", sourceType: "credit-note" }] },
+    [`GET /api/bookkeeping/invoices/${draftId}`]: { id: draftId, status: "confirmed", ledgerTransactionId: "linked-ledger" },
+  });
+  const io = captureIo();
+  assert.equal(await run(["bookkeeping", "sync", dir, "--apply", "--json"], io), 0);
+  assert.equal(io.json().counts.referenced, 1);
+  assert.equal(io.json().counts.create, 0);
+  assert.ok(calls.every((call) => call.method === "GET"));
+});
+
+test("sync apply refuses every write when a publication reference is unresolved", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "sync-reference-conflict-"));
+  writeFileSync(path.join(dir, "2030.csv"), 'Date,Provider,"Price, EUR",Statement\n2030-02-01,Example Missing,-43.25,[dataops:missing]\n2030-02-02,Example New,-12.00,');
+  const calls = fakePortal({ "GET /api/bookkeeping/transactions": { items: [] } });
+  const io = captureIo();
+  assert.notEqual(await run(["bookkeeping", "sync", dir, "--apply"], io), 0);
+  assert.match(io.errors.join(" "), /no writes performed/);
+  assert.ok(calls.every((call) => call.method === "GET"));
+});
+
+
+test("draft lookup absence stays a conflict and lookup denial is not an empty result", async () => {
+  const draftId = "e".repeat(64);
+  const dir = mkdtempSync(path.join(tmpdir(), "sync-draft-lookup-"));
+  writeFileSync(path.join(dir, "2030.csv"), `Date,Provider,"Price, EUR",Statement\n2030-02-01,Example Vendor,-43.25,[dataops:${draftId}]`);
+  for (const status of [404, 403]) {
+    const calls = fakePortal({
+      "GET /api/bookkeeping/transactions": { items: [] },
+      [`GET /api/bookkeeping/invoices/${draftId}`]: { status, body: { error: "synthetic lookup failure" } },
+    });
+    const io = captureIo();
+    const exit = await run(["bookkeeping", "sync", dir, "--json"], io);
+    if (status === 404) {
+      assert.equal(exit, 0);
+      assert.equal(io.json().counts.conflicts, 1);
+      assert.equal(io.json().counts.create, 0);
+    } else assert.notEqual(exit, 0);
+    assert.ok(calls.every((call) => call.method === "GET"));
+  }
+});
+
+test("an invoiceId source link reuses the ledger and voided references stay unresolved", () => {
+  const rows = sheet.readTab("2030", sheet.parseCsv('Date,Provider,"Price, EUR",Statement\n2030-02-01,Example Vendor,-43.25,[dataops:invoice-source]'));
+  const ledger = { id: "ledger-target", invoiceId: "invoice-source", sourceType: "invoice" };
+  assert.equal(sheet.planSync(rows, [ledger]).references[0].id, "ledger-target");
+  const voided = sheet.planSync(rows, [{ ...ledger, voidStatus: "voided" }]);
+  assert.equal(voided.conflicts.length, 1);
+  assert.equal(voided.creates.length, 0);
 });

@@ -467,3 +467,16 @@ route directly: `dataops api GET /api/<route>` (see `dataops api --help`).
 - Read before you write; prefer the smallest change that completes the Task.
 - Do not create Cards or Tasks speculatively; ask when the request is ambiguous.
 - Knowledge-base edits (`dataops kb write`) publish immediately for everyone.
+
+
+## Historical bookkeeping sheet reconciliation
+
+`dataops bookkeeping sync CSV_DIR` previews the historical sheet against DataOps.
+Published `[dataops:ID]` references reuse canonical ledger rows without replacing
+ledger metadata, source identity, amounts, dates, classification or audit. A
+confirmed invoice draft's explicit `ledgerTransactionId` also resolves the marker.
+TODO amount placeholders are skipped even if the other currency column has a
+number. Missing or ambiguous markers are reported as conflicts; `--apply` refuses
+all writes until those references are resolved. A matching amount/provider alone
+does not identify a native DataOps transaction. Keep exports private and inspect
+the complete preview before any separately authorized historical import.
