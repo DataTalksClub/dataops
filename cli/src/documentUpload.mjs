@@ -5,12 +5,13 @@ import { enc } from "./format.mjs";
 
 const CONTENT_TYPES = {
   ".pdf": "application/pdf",
+  ".csv": "text/csv",
 };
 
 function contentTypeFor(file) {
   const suffix = String(file).toLowerCase().match(/\.[a-z0-9]+$/)?.[0] || "";
   const contentType = CONTENT_TYPES[suffix];
-  if (!contentType) throw new UsageError("Document uploads accept PDF files only (.pdf)");
+  if (!contentType) throw new UsageError("Document uploads accept PDF files only (.pdf) — bank statements also accept CSV (.csv)");
   return contentType;
 }
 
@@ -20,19 +21,28 @@ function requirePdfBytes(file, bytes) {
   }
 }
 
-export { contentTypeFor, requirePdfBytes, originalFilename };
+/** Bank statements may be CSV exports: readable text, not a PDF or binary file renamed to .csv. */
+function requireStatementBytes(file, bytes, contentType) {
+  if (contentType === "application/pdf") return requirePdfBytes(file, bytes);
+  if (bytes.subarray(0, 5).toString("ascii") === "%PDF-" || bytes.includes(0)) {
+    throw new UsageError(`${file}: not a readable CSV statement export`);
+  }
+}
+
+export { contentTypeFor, requirePdfBytes, requireStatementBytes, originalFilename };
 
 function originalFilename(file) {
   return String(file).split(/[\\/]/).at(-1) || "document.pdf";
 }
 
-/** Upload one PDF through prepare/PUT/complete; a file already stored comes back as reused. */
+/** Upload one PDF (or a bank-statement CSV) through prepare/PUT/complete; a file already stored comes back as reused. */
 export async function storeDocument(api, file, { documentType, accountId, statementMonth, sourceRef }) {
   const contentType = contentTypeFor(file);
   const statement = ["bank-statement", "private-account-statement"].includes(documentType);
   if (!statement && contentType !== "application/pdf") throw new UsageError("invoices, receipts and proof screenshots must be PDF files");
   const bytes = await readFile(String(file));
-  requirePdfBytes(file, bytes);
+  if (statement) requireStatementBytes(file, bytes, contentType);
+  else requirePdfBytes(file, bytes);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   const idempotencyKey = `${documentType}-${sha256}`.slice(0, 120);
   let prepared = await api.post("/api/bookkeeping/documents/prepare", {

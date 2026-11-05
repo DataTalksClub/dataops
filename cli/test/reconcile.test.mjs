@@ -102,21 +102,54 @@ test("PDF upload stores the raw statement, parses it and saves rows for matching
   await rm(directory, { recursive: true, force: true });
 });
 
-test("upload rejects CSV and XLSX locally with a non-zero usage exit code", async () => {
+test("upload stores a Finom CSV statement and imports it under the named account", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-csv-"));
+  const path = join(directory, "finom-statement.csv");
+  await writeFile(path, [
+    "Completed date,Counterparty name,Reference,Amount,Balance",
+    "05.10.2026 08:00:00,Sponsor Three Ltd,202610/03,1 000.00,3 000.00",
+  ].join("\n"));
+  try {
+    await withFakePortal([
+      ["/documents/prepare", (request) => {
+        const body = JSON.parse(request.options.body);
+        assert.equal(body.documentType, "bank-statement");
+        assert.equal(body.accountId, "finom");
+        assert.equal(body.statementMonth, "2026-10");
+        assert.equal(body.originalFilename, "finom-statement.csv");
+        assert.equal(body.contentType, "text/csv");
+        assert.match(body.idempotencyKey, /^bank-statement-[0-9a-f]{64}$/);
+        return { outcome: "existing", document: { id: "finom-csv-doc" } };
+      }],
+      ["/reconcile/statements/import", (request) => {
+        const body = JSON.parse(request.options.body);
+        assert.equal(body.documentId, "finom-csv-doc"); assert.equal(body.account, "finom"); assert.equal(body.rows, undefined, "rows are parsed by the server, never supplied by the CLI");
+        return { committed: true, statements: [{ id: "stmt-finom-csv", period: "2026-10", rowCount: 1 }], balances: [], summaries: [] };
+      }],
+    ], async () => {
+      assert.equal(commands["upload-statement"], upload, "upload-statement is the same upload flow under its own name");
+      const result = await upload({ ...args, file: path, account: "finom", period: "2026-10" }, {});
+      assert.equal(result.documentId, "finom-csv-doc");
+      assert.equal(result.statements[0].id, "stmt-finom-csv");
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("upload refuses XLSX, PDF-mislabeled and binary CSV statements with a usage exit code", async () => {
   const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-pdf-only-"));
   try {
-    for (const extension of ["csv", "xlsx"]) {
-      const path = join(directory, `statement.${extension}`);
-      await writeFile(path, "synthetic bank export");
-      await assert.rejects(
-        upload({ ...args, file: path, account: "revolut", period: "2026-10" }, {}),
-        (error) => {
-          assert.match(error.message, /PDF files only/);
-          assert.equal(exitCodeFor(error), EXIT.usage);
-          return true;
-        },
-      );
-    }
+    const xlsx = join(directory, "statement.xlsx");
+    await writeFile(xlsx, "synthetic bank export");
+    await assert.rejects(
+      upload({ ...args, file: xlsx, account: "revolut", period: "2026-10" }, {}),
+      (error) => {
+        assert.match(error.message, /PDF files only/);
+        assert.equal(exitCodeFor(error), EXIT.usage);
+        return true;
+      },
+    );
     const invalidPdf = join(directory, "not-a-pdf.pdf");
     await writeFile(invalidPdf, "Date,Amount\n2026-10-01,1.00\n");
     await assert.rejects(
@@ -127,6 +160,28 @@ test("upload rejects CSV and XLSX locally with a non-zero usage exit code", asyn
         return true;
       },
     );
+    const binaryCsv = join(directory, "renamed-binary.csv");
+    await writeFile(binaryCsv, Buffer.from("PK\u0003\u0004synthetic workbook with NUL \u0000 bytes"));
+    await assert.rejects(
+      upload({ ...args, file: binaryCsv, account: "finom", period: "2026-10" }, {}),
+      (error) => {
+        assert.match(error.message, /not a readable CSV statement export/);
+        assert.equal(exitCodeFor(error), EXIT.usage);
+        return true;
+      },
+    );
+    const receiptCsv = join(directory, "receipt.csv");
+    await writeFile(receiptCsv, "Invoice,Total\n2026-101,12.00\n");
+    await withFakePortal([], async () => {
+      await assert.rejects(
+        attachDoc({ ...args, _: ["ledger:ledger-x", receiptCsv], period: "2026-10" }, {}),
+        (error) => {
+          assert.match(error.message, /invoices, receipts and proof screenshots must be PDF files/);
+          assert.equal(exitCodeFor(error), EXIT.usage);
+          return true;
+        },
+      );
+    });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
