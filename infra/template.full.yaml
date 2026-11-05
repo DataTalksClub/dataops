@@ -1251,14 +1251,14 @@ Resources:
             Resource:
               - !Sub ${TaskFilesBucket.Arn}/tasks/*
               - !Sub ${TaskFilesBucket.Arn}/cards/*/banners/*
-          - Statement:
-              Effect: Allow
-              Action: [lambda:InvokeFunction]
-              Resource: !Ref BannerRendererArn
-          - Statement:
-              Effect: Allow
-              Action: [sqs:SendMessage]
-              Resource: !GetAtt CardBannerQueue.Arn
+        - Statement:
+            Effect: Allow
+            Action: [lambda:InvokeFunction]
+            Resource: !Ref BannerRendererArn
+        - Statement:
+            Effect: Allow
+            Action: [sqs:SendMessage]
+            Resource: !GetAtt CardBannerQueue.Arn
         - Statement:
             Effect: Allow
             Action: [s3:GetObject]
