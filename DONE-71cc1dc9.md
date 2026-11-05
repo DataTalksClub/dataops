@@ -62,8 +62,49 @@ tests. No product code changes were needed.
   so prod runs the newsletter backend. Prod `https://ops.dtcdev.click/api/health`
   → `{"status":"ok"}`.
 
-BLOCKER: AC8's interactive live proof — an authenticated `dataops newsletter metrics
-299` read against prod plus a logged-in UI screenshot/HTML check — needs an
-operator/Orin-scoped credential. Per this session's instructions the hub CLI and
-credential lookup are not available on this desktop, and the triage credential is
-invoice-reader only, so the check could not be independently re-read here.
+BLOCKER (closed 2026-11-05, see addendum): AC8's interactive live proof — an
+authenticated `dataops newsletter metrics 299` read against prod plus a
+logged-in UI screenshot/HTML check — needed an operator/Orin-scoped credential.
+The 2026-11-05 session performed the authenticated prod reads (read-only GETs)
+and closed this blocker; the earlier session's desktop simply had no CLI access.
+
+## Addendum — 2026-11-05 re-verification (fresh worktree, origin/main 41f16668)
+
+All acceptance criteria re-verified on current origin/main; no product code
+changes needed. Targeted tests re-run in this worktree: backend
+`tests/newsletter-issues.test.ts` 20/20, CLI `test/work.test.mjs` 59/59
+(including "newsletter metrics and sponsor report"), frontend
+`test/planning-surface.test.mjs` 31/31 (one test added by a later intake).
+
+Live prod checks (read-only, `dataops` CLI, 2026-11-05):
+
+- `dataops newsletter list --from 2026-10-01 --to 2026-11-05 --json`: issues
+  #297/#298/#300 carry issue-level stats (e.g. #297: sent 130,878 · opens
+  40,719 · 31.11% · 831 clicks / 634 unique) and both slots carry per-slot
+  stats with LinkedIn/X post URLs. #301 (sent 2026-11-02) has none yet —
+  stats are recorded after send, as designed.
+- `dataops newsletter metrics 298` (read form, GET only) prints the Mailchimp
+  line and per-slot LinkedIn/X lines exactly as AC2 specifies.
+- `dataops newsletter report --sponsor Astronomer --from 2026-10-01
+  --to 2026-11-05` returns per-sponsor reports across #298/#300/#301 —
+  per-sponsor performance over time works live (AC4).
+- Card for #300 (`03870f8a`): collect-mailchimp-stats / collect-x-stats /
+  collect-linkedin-stats all done, Mailchimp task externalStatus proof reads
+  "Mailchimp stats recorded in DataOps: 40445 opens (30.82% open rate), 620
+  link clicks (475 unique)" (AC5); "Send the performance of the newsletter to
+  the sponsor" done; the retired "Add newsletter performance on the
+  spreadsheet" task is skipped — the tracking spreadsheet is replaced in
+  practice, not only in code.
+
+Aggregate/comparison view (AC2 gap check): covered by existing views over the
+records — portal Planning → Newsletter → Past renders the per-issue Mailchimp
+stats line on every past issue since 2000-01-01
+(`frontend/src/surfaces/planning-newsletter.js` past tab + `issueStatsSummaryMarkup`
+in `planning-newsletter-slots.js`), i.e. open rate over issues;
+`dataops newsletter report --sponsor` covers per-sponsor over time. No new
+storage or view was needed.
+
+CSV: the CLI produces no spreadsheet-shaped export, and none is required —
+`dataops newsletter sync <newsletter.csv>` only consumes the retired schedule
+sheet's CSV for the one-time migration (prod issues carry `sourceType:
+"xlsx-import"`); ongoing metrics live as structured records on the issues.
