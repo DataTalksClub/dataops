@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'crypto';
 import { portalRuntimeSecret } from './runtimeSecret';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { handleCardBannerRoutes } from './routes/cardBanners';
 import { handleCardRoutes } from './routes/cards';
 import { handleTemplateRoutes } from './routes/templates';
 import { handleRecurringRoutes } from './routes/recurring';
@@ -439,6 +440,8 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // ── Card routes ──────────────────────────────────────────────
 
     if (reqPath.startsWith('/api/cards')) {
+      const bannerResult = await handleCardBannerRoutes(event, client);
+      if (bannerResult) return bannerResult;
       const result = await handleCardRoutes(reqPath, method, event.body || null, event, client);
       if (result) return result;
     }

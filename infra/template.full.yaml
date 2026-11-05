@@ -3,6 +3,13 @@ Transform: AWS::Serverless-2016-10-31
 Description: DataTalksClub DataOps v1 protected Lambda app
 
 Parameters:
+  BannerRendererArn:
+    Type: String
+    Default: arn:aws:lambda:eu-west-1:817685572750:function:dataops-card-banner-renderer
+  BannerTemplateBundleKey:
+    Type: String
+    Default: banner-templates/b8b178ca24ec79395bd7d34636fc957377db324996a1e8c0be0407590b04194b/bundle.json
+    Description: Immutable private approved template bundle key
   KnowledgeBucketName:
     Type: String
     Default: dataops-knowledge-source-817685572750-eu-west-1
@@ -1069,6 +1076,20 @@ Resources:
             Action: [kms:Decrypt, kms:Encrypt, kms:GenerateDataKey]
             Resource: !GetAtt SponsorCommunicationPrivateArchiveKey.Arn
 
+  CardBannerDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+  CardBannerQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 720
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt CardBannerDeadLetterQueue.Arn
+        maxReceiveCount: 3
   BackendFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -1227,7 +1248,17 @@ Resources:
         - Statement:
             Effect: Allow
             Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
-            Resource: !Sub ${TaskFilesBucket.Arn}/tasks/*
+            Resource:
+              - !Sub ${TaskFilesBucket.Arn}/tasks/*
+              - !Sub ${TaskFilesBucket.Arn}/cards/*/banners/*
+          - Statement:
+              Effect: Allow
+              Action: [lambda:InvokeFunction]
+              Resource: !Ref BannerRendererArn
+          - Statement:
+              Effect: Allow
+              Action: [sqs:SendMessage]
+              Resource: !GetAtt CardBannerQueue.Arn
         - Statement:
             Effect: Allow
             Action: [s3:GetObject]
@@ -1268,6 +1299,10 @@ Resources:
           NEWSLETTER_OPEN_ALERT_LEAD_DAYS: !Ref NewsletterOpenAlertLeadDays
           NEWSLETTER_WORKFLOW_ALERT_LEAD_DAYS: !Ref NewsletterWorkflowAlertLeadDays
           BOOKKEEPING_DOCUMENTS_BUCKET: !Ref BookkeepingDocumentsBucket
+          BANNER_RENDERER_ARN: !Ref BannerRendererArn
+          BANNER_TEMPLATE_BUNDLE_KEY: !Ref BannerTemplateBundleKey
+          BANNER_QUEUE_URL: !Ref CardBannerQueue
+          BANNER_QUEUE_ARN: !GetAtt CardBannerQueue.Arn
           TASK_FILES_BUCKET: !Ref TaskFilesBucket
           DATAOPS_FILE_STORAGE_PROVIDER: s3
           BOOKKEEPING_DOCUMENTS_KMS_KEY: !Ref BookkeepingDocumentsKey
@@ -1461,6 +1496,11 @@ Resources:
             Action: [s3:PutObject]
             Resource: !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}/jobs/*
       Events:
+        CardBannerJobs:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt CardBannerQueue.Arn
+            BatchSize: 1
         DailyKnowledgeBackup:
           Type: Schedule
           Properties:

@@ -1,3 +1,4 @@
+import { banner } from './cardBanners.mjs';
 import { UsageError } from "../errors.mjs";
 import { calendarLabel, enc, fields, integer, isoDate, linkedCardLabel, list as csv, optionalString, portalUrl, positional, required, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
@@ -14,11 +15,16 @@ Usage
   dataops cards list [--owner me|team|unassigned|<user-id>] [--mine] [--stage S]
       [--status active|parked|archived] [--all] [--limit N]
                                                 Default: active and parked; --all adds archived
+  dataops cards banner <card-id> --event-type workshop|webinar|podcast --layout landscape|square
+      --speakers PERSON:PORTRAIT_FILE[,PERSON:PORTRAIT_FILE] --revision LABEL [--wait]
+                                                Generate a private Card cover using verified portraits
+  dataops cards banner <card-id> --job JOB_ID [--wait]
+                                                Read durable progress; completed images need review
   dataops cards show <card-id>                  The Card, its links, and its Tasks
   dataops cards create --date YYYY-MM-DD --template ID|TYPE|NAME [--title T]
       [--end-date YYYY-MM-DD] [--optional-groups a,b] [--count FIELD=N,...] [--stage S] [--description D] [--owner ID] [--tags a,b]
   dataops cards update <card-id> [--title T] [--description D] [--date D] [--end-date D] [--owner ID|none]
-      [--tags a,b]
+      [--tags a,b] [--people PERSON_ID,PERSON_ID|none]
   dataops cards update <card-id> --count FIELD=N[,FIELD=N] [--apply]
                                                 Change a count (e.g. workshops=3); preview by default
   dataops cards time <card-id> --at "YYYY-MM-DD HH:MM" [--duration 60] [--tz Europe/Berlin]
@@ -253,6 +259,7 @@ export async function update(args, io) {
   const owner = optionalString(args, "owner");
   if (owner !== undefined) body.ownerId = owner === "none" ? null : owner;
   if (args.tags !== undefined) body.tags = csv(args.tags);
+  if (args.people !== undefined) body.people = args.people === "none" ? [] : csv(args.people);
   if (!Object.keys(body).length) throw new UsageError("Nothing to change. See `dataops cards --help`.");
   return write(args, io, id, body, "Updated");
 }
@@ -474,6 +481,7 @@ export async function time(args, io) {
 }
 
 export const commands = {
+  banner,
   "dedupe-tasks": dedupeTasks,
   "event-slots": eventSlots,
   time,
