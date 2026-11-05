@@ -26,7 +26,7 @@ export async function handleCardDocumentRoutes(event: LambdaEvent, client: Dynam
     const doc = await getCardDocument(client, id);
     if (!doc) return json(404, { error: 'Document not found' });
     return { statusCode: 200, headers: {
-      'Content-Type': format === 'docx' ? DOCX_CONTENT_TYPE : 'text/plain; charset=utf-8',
+      'Content-Type': format === 'docx' ? DOCX_CONTENT_TYPE : format === 'md' ? 'text/markdown; charset=utf-8' : 'text/plain; charset=utf-8',
       'Content-Disposition': `attachment; filename="document.${format}"`, 'Cache-Control': 'no-store',
     }, body: format === 'docx' ? (await markdownToDocx(doc.content)).toString('base64') : doc.content,
     ...(format === 'docx' ? { isBase64Encoded: true } : {}) };

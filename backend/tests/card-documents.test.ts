@@ -72,7 +72,10 @@ describe('Staff-only card documents', () => {
       const result = await request('GET', `/${doc.id}/export`, undefined, { format });
       assert.equal(result.statusCode, 200);
       if (format === 'docx') assert.equal(Buffer.from(result.body, 'base64').subarray(0, 2).toString(), 'PK');
-      else assert.equal(result.body, doc.content);
+      else {
+        assert.equal(result.headers['Content-Type'], format === 'md' ? 'text/markdown; charset=utf-8' : 'text/plain; charset=utf-8');
+        assert.equal(result.body, doc.content);
+      }
     }
     assert.equal((await request('DELETE', `/${doc.id}`, undefined, { version: '2' })).statusCode, 409);
     assert.equal((await request('DELETE', `/${doc.id}`, undefined, { version: '1' })).statusCode, 200);
