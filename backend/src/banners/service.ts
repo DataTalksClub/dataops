@@ -5,6 +5,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getCardConsistent, updateCardAdditive } from '../db/cards';
 import { getPerson } from '../db/people';
 import { getFile } from '../db/files';
+import { getTemplate } from '../db/templates';
 import { createArtifactIfAbsent } from '../db/artifacts';
 import { readFile } from '../storage';
 import { getBannerJob, putBannerJob, transitionBannerJob } from './jobs';
@@ -36,6 +37,12 @@ export async function requestBanner(client: DynamoDBDocumentClient, cardId: stri
   const card = await getCardConsistent(client, cardId);
   if (!card?.title?.trim()) throw new BannerInputError('The Card must exist and have a title.');
   if (card.title.length > 180) throw new BannerInputError('Card title exceeds the banner limit of 180 characters.');
+  const cardTemplate = await getTemplate(client, card.templateId);
+  const classifications = new Set([cardTemplate?.type, ...(card.tags || [])]
+    .map(value => value?.trim().toLowerCase()).filter(value => ['workshop', 'webinar', 'podcast'].includes(value || '')));
+  if (classifications.size === 1 && !classifications.has(input.eventType)) {
+    throw new BannerInputError(`Event type contradicts this Card's ${[...classifications][0]} classification. Confirm/correct Card facts before choosing the icon.`);
+  }
   const speakers: BannerSpeaker[] = [];
   for (const selection of input.speakers) {
     if (!card.people?.includes(selection.personId)) throw new BannerInputError('Each speaker must be linked to this Card in the People register.');

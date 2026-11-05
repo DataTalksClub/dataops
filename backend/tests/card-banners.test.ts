@@ -140,3 +140,9 @@ test('sponsor logo needs explicit treatment, is Card-scoped, immutable and separ
   await renderBannerJob(client, pending.id);
   assert.equal((await getBannerJob(client, pending.id))?.error, 'sponsor-logo-changed');
 });
+test('rejects a known event-type contradiction without guessing from title or company', async () => {
+  await createCard(client, { id: 'classified', title: 'Synthetic event', tags: [' Workshop '], ...templateLink(), selectedOptionalGroups: [] });
+  await assert.rejects(requestBanner(client, 'classified', { ...input, eventType: 'webinar' }, 'operator'), /contradicts.*workshop/);
+  await createCard(client, { id: 'ambiguous', title: 'Workshop mentioned in a title', tags: ['Workshop', 'Webinar'], ...templateLink(), selectedOptionalGroups: [] });
+  await assert.rejects(requestBanner(client, 'ambiguous', { ...input, eventType: 'webinar' }, 'operator'), /speaker must be linked/);
+});

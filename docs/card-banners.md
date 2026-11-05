@@ -15,7 +15,7 @@ dataops artifacts download ARTIFACT_ID --output cover.png
 
 Supported event types are `workshop`, `webinar`, and `podcast`; each has landscape
 and square templates for one or two speakers. The event type chooses the icon
-as well as the label. The operator selects portraits whose identities and sources
+as well as the label. A selection that contradicts an unambiguous Card template/tag classification is rejected; unclassified or ambiguous Cards need an explicit selection. The operator selects portraits whose identities and sources
 have been checked. Portrait ownership and byte checksums are checked server-side.
 There is no renderer credential or local image path in the generation command.
 
