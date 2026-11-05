@@ -89,7 +89,7 @@ test("invoice originals upload privately and attach without creating or settling
   globalThis.fetch = async (url, options) => {
     calls.push({ url, ...options });
     let response = {};
-    if (url.endsWith("/finance")) response = { finance: { version: 2 } };
+    if (url.endsWith("/finance")) response = { finance: { version: 2, issuedOn: "2026-09-01" } };
     else if (url.endsWith("/deals/demo")) response = { version: 1 };
     else if (url.endsWith("/documents/prepare")) response = { document: { id: "original" }, uploadUrl: "https://private.example.test/object", uploadHeaders: { "content-type": "application/pdf" } };
     else if (url.endsWith("/complete")) response = { document: { id: "original" } };
