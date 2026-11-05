@@ -42,6 +42,12 @@ Usage
       [--type template|reference] [--format text|markdown] [--output F]
                                                Import an authenticated Google Docs export;
                                                --output prepares a local file without publishing
+  dataops kb import-gdoc --path <kb-path> --doc-id GOOGLE_DOC_ID_OR_URL --title T
+      [--id ID] [--type template|reference] [--format text|markdown] [--connection-id ID]
+      [--output F]
+                                               Fetch a Google Docs document through the Dapier
+                                               broker and import it like "kb import"; --output
+                                               prepares a local file without publishing
   dataops kb publish [--head REV] [--repo DIR] [--changed-since REV] [--dry-run]
                                                Make prod match a knowledge-repo commit; files
                                                edited in prod that Git has not seen are left
@@ -749,4 +755,36 @@ export async function importDoc(args, io) {
   return { ...result, id: args.id };
 }
 
-export const commands = { search, related, show, code, tree, ls, resolve, backlinks, history, recent, write, regenerate, deprecate, archive, publish, mirror, import: importDoc, create: copyKnowledgeDocument, export: exportKnowledgeDocument };
+
+export async function importGdoc(args, io) {
+  const { importGoogleDoc } = await import("../kbImport.mjs");
+  const usage = "dataops kb import-gdoc --path <kb-path> --doc-id GOOGLE_DOC_ID_OR_URL --title T";
+  const raw = optionalString(args, "path") || positional(args, 0, usage);
+  const docId = optionalString(args, "docId") || optionalString(args, "source");
+  if (!docId) throw new UsageError(`--doc-id is required (a Google Docs document id or URL). ${usage}`);
+  const path = raw.startsWith(CONTENT) ? raw : `${CONTENT}${raw.replace(/^\/+/, "")}`;
+  if (!path.endsWith(".md") || path.split("/").some((part) => !part || part === "." || part === "..")) throw new UsageError("Import path must be a content Markdown path");
+  const api = apiFor(args);
+  const connectionId = optionalString(args, "connectionId");
+  const fetched = await api.post("/api/kb/import-gdoc", { docId, ...(connectionId ? { connectionId } : {}) });
+  const id = optionalString(args, "id") || path.split("/").pop().replace(/\.md$/, "");
+  const content = importGoogleDoc({
+    source: fetched.source || docId, id,
+    title: optionalString(args, "title"), type: optionalString(args, "type"),
+    format: optionalString(args, "format"), bytes: new TextEncoder().encode(fetched.content),
+  });
+  await validateTemplate(content, { path });
+  const output = optionalString(args, "output");
+  if (output) {
+    writeFileSync(output, content, { flag: "wx", mode: 0o600 });
+    const result = { path, id, output, docId: fetched.docId, sha256: fetched.sha256 };
+    if (!args.json) io.print(`Prepared ${output} (${id}).`);
+    return result;
+  }
+  const { revision } = await api.get("/knowledge/publication");
+  const result = await api.post("/docs", { path, content, doc_type: args.type || "reference", absent: true, expectedRevision: revision });
+  if (!args.json) io.print(`Imported ${path} (${id}, revision ${result.revision}).`);
+  return { ...result, id, docId: fetched.docId };
+}
+
+export const commands = { search, related, show, code, tree, ls, resolve, backlinks, history, recent, write, regenerate, deprecate, archive, publish, mirror, import: importDoc, "import-gdoc": importGdoc, create: copyKnowledgeDocument, export: exportKnowledgeDocument };

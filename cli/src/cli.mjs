@@ -38,6 +38,7 @@ import * as crm from "./commands/crm.mjs";
 import * as vies from "./commands/vies.mjs";
 import * as tasks from "./commands/tasks.mjs";
 import * as templates from "./commands/templates.mjs";
+import * as textTemplates from "./commands/textTemplates.mjs";
 import { EXIT, UsageError, errorPayload, exitCodeFor, hintFor } from "./errors.mjs";
 
 const GUIDE_PATH = fileURLToPath(new URL("../skill/SKILL.md", import.meta.url));
@@ -74,6 +75,7 @@ export const FAMILIES = {
   tasks: { group: "Work", summary: tasks.summary, help: tasks.help, commands: tasks.commands },
   cards: { group: "Work", summary: cards.summary, help: cards.help, commands: cards.commands },
   templates: { group: "Work", summary: templates.summary, help: templates.help, commands: templates.commands },
+  "text-templates": { group: "Work", summary: textTemplates.summary, help: textTemplates.help, commands: textTemplates.commands },
   email: { group: "Work", summary: email.summary, help: email.help, commands: email.commands },
   resources: { group: "Work", summary: resources.summary, help: resources.help, commands: resources.commands },
   recurring: {

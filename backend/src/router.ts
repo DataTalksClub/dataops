@@ -11,6 +11,8 @@ import { handleAutomationRoutes } from './routes/automations';
 import { handleUserRoutes } from './routes/users';
 import { handleCompanyRoutes } from './routes/company';
 import { handleOffersRoutes } from './routes/offers';
+import { handleTextTemplateRoutes } from './routes/textTemplates';
+import { handleKbGdocImportRoutes } from './routes/kbGdocImport';
 import { handleSecretRoutes } from './routes/secrets';
 import { handleFileRoutes } from './routes/files';
 import { handleArtifactRoutes } from './routes/artifacts';
@@ -488,6 +490,16 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath === '/api/offers' || reqPath.startsWith('/api/offers/')) {
       const result = await handleOffersRoutes(reqPath, method, event, client);
+      if (result) return result;
+    }
+
+    if (reqPath === '/api/text-templates' || reqPath.startsWith('/api/text-templates/')) {
+      const result = await handleTextTemplateRoutes(reqPath, method, event, client);
+      if (result) return result;
+    }
+
+    if (reqPath === '/api/kb/import-gdoc') {
+      const result = await handleKbGdocImportRoutes(reqPath, method, event, client);
       if (result) return result;
     }
 
