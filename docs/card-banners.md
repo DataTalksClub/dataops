@@ -32,6 +32,13 @@ speaker provenance. Review title wrapping, icon, portraits, labels and cropping
 before approving. Generation does not publish an image to an external platform.
 Downloads verify the bytes and refuse to overwrite existing files.
 
+For a confirmed sponsored cover, explicitly add `--sponsor-logo FILE_ID
+--sponsor-treatment approved-logo`. Select a source-verified logo image already
+saved on the same Card. The service uses the approved logo slot and records the
+logo's file ID, checksum and treatment in the immutable job and image provenance.
+Omitting these flags selects the unchanged nonsponsored layout; a company name
+does not establish approval for logo treatment.
+
 ## Runtime
 
 The authenticated Card API writes `BANNERJOB#` records in the artifacts table
@@ -58,6 +65,8 @@ Approved template assets stay in private storage. Product source contains only
 the bundle contract: `schema: dataops.banner-templates.v1`, `sourceRevision`,
 optional shared `assets`, and `templates`. Each template declares `id`,
 `eventType`, `layout`, `speakerCount`, `width`, `height`, and self-contained `html`.
+Sponsored variants also declare `sponsorTreatment: approved-logo` and contain
+the `{{sponsorLogo}}` image field.
 Fields are `{{title}}`, `{{titleFontSize}}`, `{{speaker1Name}}`,
 `{{speaker1Portrait}}` and their speaker-2 equivalents. Shared asset field names
 start with `asset`. Text is escaped; the renderer blocks scripts and external

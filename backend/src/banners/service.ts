@@ -8,7 +8,7 @@ import { getFile } from '../db/files';
 import { createArtifactIfAbsent } from '../db/artifacts';
 import { readFile } from '../storage';
 import { getBannerJob, putBannerJob, transitionBannerJob } from './jobs';
-import { BannerInputError, bannerId, checksum, composeBanner, pngDimensions, portraitContentType, type BannerInput, type BannerSpeaker, type BannerJob, type BannerBundle } from './model';
+import { BannerInputError, bannerId, checksum, composeBanner, pngDimensions, portraitContentType, type BannerInput, type BannerSpeaker, type BannerJob, type BannerBundle, type BannerLogo } from './model';
 
 const s3 = new S3Client({});
 const lambda = new LambdaClient({});
@@ -47,9 +47,15 @@ export async function requestBanner(client: DynamoDBDocumentClient, cardId: stri
     }
     speakers.push({ ...selection, name: person.name, personVersion: person.version, checksum: file.checksum });
   }
-  const id = bannerId(card, input, speakers, config.bundleKey);
+  let sponsorLogo: BannerLogo | undefined;
+  if (input.sponsorLogoFileId) {
+    const file = await getFile(client, input.sponsorLogoFileId);
+    if (!file || file.cardId !== cardId || file.category !== 'image' || !file.checksum) throw new BannerInputError('The approved sponsor logo must be an image file saved on this Card.');
+    sponsorLogo = { fileId: file.id, checksum: file.checksum, treatment: 'approved-logo' };
+  }
+  const id = bannerId(card, input, speakers, config.bundleKey, sponsorLogo);
   const now = new Date().toISOString();
-  const job = await putBannerJob(client, { id, cardId, title: card.title, input, speakers, state: 'queued', createdBy: actorId, createdAt: now, updatedAt: now, bundleKey: config.bundleKey });
+  const job = await putBannerJob(client, { id, cardId, title: card.title, input, speakers, ...(sponsorLogo ? { sponsorLogo } : {}), state: 'queued', createdBy: actorId, createdAt: now, updatedAt: now, bundleKey: config.bundleKey });
   if (job.state === 'succeeded' || job.state === 'rendering') return job;
   // Failed delivery/render retries retain the same immutable renderer output key.
   if (job.state === 'failed') {
@@ -79,7 +85,7 @@ export async function renderBannerJob(client: DynamoDBDocumentClient, id: string
     if (!bundleHash || checksum(bundleBytes) !== `sha256:${bundleHash}`) throw new BannerFailure('template-checksum-mismatch');
     const bundle = JSON.parse(bundleBytes.toString('utf8')) as BannerBundle;
     if (bundle.schema !== 'dataops.banner-templates.v1' || !bundle.sourceRevision) throw new BannerFailure('invalid-template-bundle');
-    const template = bundle.templates.find(t => t.eventType === job.input.eventType && t.layout === job.input.layout && t.speakerCount === job.speakers.length);
+    const template = bundle.templates.find(t => t.eventType === job.input.eventType && t.layout === job.input.layout && t.speakerCount === job.speakers.length && t.sponsorTreatment === job.input.sponsorTreatment);
     if (!template || template.width < 1 || template.height < 1 || template.width > 4000 || template.height > 4000) throw new BannerFailure('unsupported-template');
     stage = 'portrait';
     const portraits: string[] = [];
@@ -90,7 +96,16 @@ export async function renderBannerJob(client: DynamoDBDocumentClient, id: string
       if (checksum(bytes) !== speaker.checksum) throw new BannerFailure('portrait-checksum-mismatch');
       portraits.push(`data:${portraitContentType(bytes)};base64,${bytes.toString('base64')}`);
     }
-    const html = composeBanner(template, job, portraits, bundle.assets);
+    let logoData: string | undefined;
+    if (job.sponsorLogo) {
+      stage = 'sponsor-logo';
+      const file = await getFile(client, job.sponsorLogo.fileId);
+      if (!file || file.cardId !== job.cardId || file.category !== 'image' || file.checksum !== job.sponsorLogo.checksum) throw new BannerFailure('sponsor-logo-changed');
+      const bytes = await readFile(file);
+      if (checksum(bytes) !== job.sponsorLogo.checksum) throw new BannerFailure('sponsor-logo-checksum-mismatch');
+      logoData = `data:${portraitContentType(bytes)};base64,${bytes.toString('base64')}`;
+    }
+    const html = composeBanner(template, job, portraits, bundle.assets, logoData);
     const prefix = `cards/${job.cardId}/banners/${id}`;
     const inputKey = `${prefix}/input.html`;
     const outputKey = `${prefix}/banner.png`;
@@ -118,7 +133,7 @@ export async function renderBannerJob(client: DynamoDBDocumentClient, id: string
       filename: `${job.input.eventType}-${job.input.layout}-${id.slice(0, 12)}.png`, contentType: 'image/png',
       checksum: checksum(bytes), sizeBytes: bytes.length, visibility: 'private', dataClass: 'internal',
       sourceType: 'system', createdBy: job.createdBy,
-      metadata: { bannerJobId: id, ...dimensions, format: 'png', templateId: template.id, templateSourceRevision: bundle.sourceRevision, templateBundleChecksum: checksum(bundleBytes), inputChecksum: checksum(Buffer.from(html)), eventType: job.input.eventType, layout: job.input.layout, title: job.title, speakers: job.speakers },
+      metadata: { bannerJobId: id, ...dimensions, format: 'png', templateId: template.id, templateSourceRevision: bundle.sourceRevision, templateBundleChecksum: checksum(bundleBytes), inputChecksum: checksum(Buffer.from(html)), eventType: job.input.eventType, layout: job.input.layout, title: job.title, speakers: job.speakers, ...(job.sponsorLogo ? { sponsorLogo: job.sponsorLogo } : {}) },
     });
     await updateCardAdditive(client, card, current => ({ artifactRefs: [...(current.artifactRefs || []).filter(ref => ref.artifactId !== artifactId), { artifactId, type: artifact.type, title: artifact.title, status: artifact.status }] }));
     await transitionBannerJob(client, claimed, 'succeeded', { artifactId, error: '' });

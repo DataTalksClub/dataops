@@ -29,7 +29,8 @@ const input = parseBannerInput({ eventType: 'workshop', layout: 'landscape', spe
 before(async () => {
   client = await getClient(await startLocal()); await createTables(client);
   Object.assign(process.env, { NODE_ENV: 'test', SKIP_AUTH: 'true', TASK_FILES_BUCKET: 'synthetic-files', KNOWLEDGE_BUCKET: 'synthetic-knowledge', BANNER_TEMPLATE_BUNDLE_KEY: 'templates/immutable.json', BANNER_RENDERER_ARN: 'synthetic-renderer', BANNER_QUEUE_URL: 'synthetic-queue' });
-  const bundle = Buffer.from(JSON.stringify({ schema: 'dataops.banner-templates.v1', sourceRevision: 'synthetic-commit', templates: [template] }));
+  const sponsored = { ...template, id: 'synthetic-approved-logo', sponsorTreatment: 'approved-logo', html: `${template.html}<img class="sponsor" src="{{sponsorLogo}}">` };
+  const bundle = Buffer.from(JSON.stringify({ schema: 'dataops.banner-templates.v1', sourceRevision: 'synthetic-commit', templates: [template, sponsored] }));
   const bundleKey = `banner-templates/${checksum(bundle).slice(7)}/bundle.json`;
   process.env.BANNER_TEMPLATE_BUNDLE_KEY = bundleKey;
   objects.set(bundleKey, bundle);
@@ -50,6 +51,7 @@ before(async () => {
   await createCard(client, { id: 'other-card', title: 'Other Card', ...templateLink(), selectedOptionalGroups: [] });
   await client.send(new PutCommand({ TableName: TABLE_PEOPLE, Item: { PK: 'PERSON#speaker', SK: 'PERSON#speaker', id: 'speaker', name: 'Synthetic & Speaker', version: 1 } }));
   await client.send(new PutCommand({ TableName: TABLE_FILES, Item: { PK: 'FILE#portrait', SK: 'FILE#portrait', id: 'portrait', cardId: 'card', taskId: 'task', category: 'image', contentType: 'image/png', checksum: checksum(png), storageProvider: 's3', storagePath: 'tasks/task/portrait.png', storageUri: 's3://synthetic-files/tasks/task/portrait.png' } }));
+  await client.send(new PutCommand({ TableName: TABLE_FILES, Item: { PK: 'FILE#logo', SK: 'FILE#logo', id: 'logo', cardId: 'card', taskId: 'task', category: 'image', contentType: 'application/octet-stream', checksum: checksum(png), storageProvider: 's3', storagePath: 'tasks/task/portrait.png', storageUri: 's3://synthetic-files/tasks/task/portrait.png' } }));
 });
 after(async () => { mock.restoreAll(); await stopLocal(); });
 
@@ -117,4 +119,24 @@ test('queue failure is durable, invalid speaker ownership rejected, HTML escaped
   const html = composeBanner(template, { title: '<script>', input, speakers: [{ name: 'A & B' }] } as BannerJob, ['data:image/png;base64,AA']);
   assert.match(html, /&lt;script&gt;/); assert.match(html, /A &amp; B/);
   assert.equal(bannerFailureCode({ name: 'AccessDeniedException', message: 'secret' }, 'renderer'), 'renderer-access-denied');
+});
+test('sponsor logo needs explicit treatment, is Card-scoped, immutable and separately attributed', async () => {
+  assert.throws(() => parseBannerInput({ ...input, sponsorLogoFileId: 'logo' }), /explicit approved-logo/);
+  const sponsored = parseBannerInput({ ...input, revision: 'logo-test', sponsorLogoFileId: 'logo', sponsorTreatment: 'approved-logo' });
+  const job = await requestBanner(client, 'card', sponsored, 'operator');
+  assert.deepEqual(job.sponsorLogo, { fileId: 'logo', checksum: checksum(png), treatment: 'approved-logo' });
+  await renderBannerJob(client, job.id);
+  const completed = (await getBannerJob(client, job.id))!;
+  assert.equal(completed.state, 'succeeded');
+  const artifact = (await getArtifact(client, completed.artifactId!))!;
+  assert.deepEqual(artifact.metadata?.sponsorLogo, job.sponsorLogo);
+  const html = objects.get(`cards/card/banners/${job.id}/input.html`)!.toString();
+  assert.match(html, /class="sponsor" src="data:image\/png/);
+  assert.equal((await requestBanner(client, 'card', sponsored, 'operator')).id, job.id);
+  assert.notEqual((await requestBanner(client, 'card', { ...input, revision: 'logo-test' }, 'operator')).id, job.id);
+  await assert.rejects(requestBanner(client, 'card', { ...sponsored, sponsorLogoFileId: 'portrait-from-another-card' }, 'operator'), /saved on this Card/);
+  const pending = await requestBanner(client, 'card', { ...sponsored, revision: 'logo-mutates' }, 'operator');
+  await client.send(new PutCommand({ TableName: TABLE_FILES, Item: { PK: 'FILE#logo', SK: 'FILE#logo', id: 'logo', cardId: 'other-card', category: 'image', checksum: checksum(png) } }));
+  await renderBannerJob(client, pending.id);
+  assert.equal((await getBannerJob(client, pending.id))?.error, 'sponsor-logo-changed');
 });

@@ -17,7 +17,9 @@ export async function banner(args, io) {
       if (pair.length !== 2 || pair.some(part => !part)) throw new UsageError('Each speaker must be PERSON_ID:PORTRAIT_FILE_ID.');
       return { personId: pair[0], portraitFileId: pair[1] };
     });
-    result = await api.post(base, { eventType: optionalString(args, 'eventType'), layout: optionalString(args, 'layout'), revision: optionalString(args, 'revision'), speakers });
+    result = await api.post(base, { eventType: optionalString(args, 'eventType'), layout: optionalString(args, 'layout'), revision: optionalString(args, 'revision'), speakers,
+      sponsorLogoFileId: optionalString(args, 'sponsorLogo'), sponsorTreatment: optionalString(args, 'sponsorTreatment'),
+    });
   }
   if (args.wait) {
     const deadline = Date.now() + 10 * 60 * 1000;

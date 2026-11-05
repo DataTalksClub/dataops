@@ -17,6 +17,7 @@ Usage
                                                 Default: active and parked; --all adds archived
   dataops cards banner <card-id> --event-type workshop|webinar|podcast --layout landscape|square
       --speakers PERSON:PORTRAIT_FILE[,PERSON:PORTRAIT_FILE] --revision LABEL [--wait]
+      [--sponsor-logo FILE_ID --sponsor-treatment approved-logo]
                                                 Generate a private Card cover using verified portraits
   dataops cards banner <card-id> --job JOB_ID [--wait]
                                                 Read durable progress; completed images need review

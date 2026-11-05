@@ -21,6 +21,11 @@ test('Card banner status and safe failure surface without new generation', async
   assert.notEqual(await run(['cards', 'banner', 'card', '--job', id], io), 0);
   assert.match(io.errors.join('\n'), /renderer-cold-activating/); assert.equal(calls.length, 1);
 });
+test('approved sponsor treatment uses a saved logo ID without a local path', async () => {
+  const calls = fakePortal({ 'POST /api/cards/card/banners': { job: { id: 'c'.repeat(64), state: 'queued' } } });
+  assert.equal(await run(['cards', 'banner', 'card', '--event-type', 'webinar', '--layout', 'square', '--speakers', 'person:portrait', '--revision', 'sponsor-v1', '--sponsor-logo', 'logo', '--sponsor-treatment', 'approved-logo', '--json'], captureIo()), 0);
+  assert.equal(calls[0].body.sponsorLogoFileId, 'logo'); assert.equal(calls[0].body.sponsorTreatment, 'approved-logo');
+});
 test('artifact download verifies bytes, strips traversal from default name, refuses overwrite', async () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'dataops-banner-download-'));
   const previous = process.cwd();
