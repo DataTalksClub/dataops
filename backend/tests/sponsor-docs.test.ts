@@ -1226,6 +1226,11 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       const markdown = await staffReq('GET', `/api/sponsor-docs/${copy.id}/export`, undefined, { format: 'md' });
       assert.equal(markdown.statusCode, 200);
       assert.ok(markdown.body.includes(copy.title));
+      assert.equal(markdown.headers?.['Content-Type'], 'text/markdown; charset=utf-8');
+      const txt = await staffReq('GET', `/api/sponsor-docs/${copy.id}/export`, undefined, { format: 'txt' });
+      assert.equal(txt.statusCode, 200);
+      assert.equal(txt.headers?.['Content-Type'], 'text/plain; charset=utf-8');
+      assert.equal(txt.body, markdown.body);
       const docx = await staffReq('GET', `/api/sponsor-docs/${copy.id}/export`, undefined, { format: 'docx' });
       assert.equal(docx.statusCode, 200);
       assert.equal(docx.isBase64Encoded, true);
