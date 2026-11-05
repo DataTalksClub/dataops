@@ -431,6 +431,15 @@ test("add-income --type refund validates type and period and dry-runs evidence w
   assert.equal(calls.filter((call) => call.method === "POST").length, 0, "a dry run neither uploads nor links");
 });
 
+test("agent-guide documents dataops bookkeeping add-income", async () => {
+  const io = captureIo();
+  const code = await run(["agent-guide"], io);
+  assert.equal(code, 0);
+  assert.match(io.text(), /dataops bookkeeping add-income --date YYYY-MM-DD/);
+  assert.match(io.text(), /under Platform payouts/);
+  assert.match(io.text(), /--type refund/);
+});
+
 test("facts reads only unattached invoices and receipts that were not read yet", async () => {
   const calls = fakePortal({
     "GET /api/bookkeeping/documents": {
