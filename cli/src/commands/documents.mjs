@@ -14,9 +14,19 @@ Usage
   dataops doc delete <id> --version N
   dataops doc export <id> [--format txt|md|docx] [--output PATH]
   dataops doc update <id> [--title TITLE] [--file PATH | --content TEXT] --version N
+  dataops doc comment list <id>
+  dataops doc comment add <id> --body TEXT [--quote TEXT]
+  dataops doc comment reply <id> <thread-id> --body TEXT --version N
+  dataops doc comment resolve <id> <thread-id> --version N [--reopen]
+  dataops doc comment delete <id> <thread-id> --version N
+  dataops doc reviewer list <id>
+  dataops doc reviewer add <id> --name NAME
+  dataops doc reviewer revoke <id> <reviewer-id>
 
 Content is plain text or Markdown. --version is the version you read before editing;
-a stale save fails without overwriting someone else's changes.
+a stale save fails without overwriting someone else's changes. Comment threads use the
+same --version optimistic locking. Reviewers get a read/comment link; they cannot edit
+the document or manage reviewers, and the link expires after 30 days or on revoke.
 `;
 function content(args) {
   if (args.file !== undefined && args.content !== undefined) throw new UsageError('Use --file or --content.');
@@ -59,4 +69,94 @@ export async function remove(args, io) {
   if (!args.json) io.print('Document deleted; guest review links are no longer usable.');
   return result;
 }
-export const commands = { list, show, create, update, export: exportTaskDocument, delete: remove };
+function editVersion(args) {
+  const version = Number(required(args, 'version', 'version'));
+  if (!Number.isSafeInteger(version) || version < 1) throw new UsageError('--version must be a positive integer.');
+  return version;
+}
+function summaryLine(thread) {
+  const last = thread.posts[thread.posts.length - 1];
+  return `${thread.posts.length} post${thread.posts.length === 1 ? '' : 's'}, last by ${last.author.name}: ${last.body}`;
+}
+async function commentList(args, io) {
+  const id = positional(args, 0, 'dataops doc comment list <id>');
+  const result = await apiFor(args).get(`/api/documents/${enc(id)}/comments`);
+  if (!args.json) {
+    table(io, result.threads, [
+      ['THREAD', t => t.id], ['QUOTE', t => t.quote || '-'], ['RESOLVED', t => (t.resolved ? `yes (${t.resolvedBy?.name || '?'})` : 'no')],
+      ['VERSION', t => t.version], ['UPDATED', t => t.updatedAt], ['LAST', summaryLine],
+    ], 'No comment threads.');
+  }
+  return result;
+}
+async function commentAdd(args, io) {
+  const id = positional(args, 0, 'dataops doc comment add <id> --body TEXT');
+  const body = { body: required(args, 'body', 'body'), ...(args.quote !== undefined ? { quote: args.quote } : {}) };
+  const result = await apiFor(args).post(`/api/documents/${enc(id)}/comments`, body);
+  if (!args.json) io.print(`Thread ${result.thread.id} created (version ${result.thread.version}).`);
+  return result;
+}
+async function commentReply(args, io) {
+  const usage = 'dataops doc comment reply <id> <thread-id> --body TEXT --version N';
+  const id = positional(args, 0, usage);
+  const threadId = positional(args, 1, usage);
+  const result = await apiFor(args).post(`/api/documents/${enc(id)}/comments/${enc(threadId)}/reply`, { body: required(args, 'body', 'body'), version: editVersion(args) });
+  if (!args.json) io.print(`Thread ${threadId} now has ${result.thread.posts.length} posts (version ${result.thread.version}).`);
+  return result;
+}
+async function commentResolve(args, io) {
+  const usage = 'dataops doc comment resolve <id> <thread-id> --version N [--reopen]';
+  const id = positional(args, 0, usage);
+  const threadId = positional(args, 1, usage);
+  const resolved = !args.reopen;
+  const result = await apiFor(args).post(`/api/documents/${enc(id)}/comments/${enc(threadId)}/resolve`, { resolved, version: editVersion(args) });
+  if (!args.json) io.print(`Thread ${threadId} ${resolved ? 'resolved' : 'reopened'} (version ${result.thread.version}).`);
+  return result;
+}
+async function commentDelete(args, io) {
+  const usage = 'dataops doc comment delete <id> <thread-id> --version N';
+  const id = positional(args, 0, usage);
+  const threadId = positional(args, 1, usage);
+  await apiFor(args).delete(`/api/documents/${enc(id)}/comments/${enc(threadId)}`, undefined, { query: { version: editVersion(args) } });
+  if (!args.json) io.print(`Thread ${threadId} deleted.`);
+  return { deleted: true };
+}
+export async function comment(args, io) {
+  return subcommand(commentCommands, args, io, 'dataops doc comment', 'comment');
+}
+async function reviewerList(args, io) {
+  const id = positional(args, 0, 'dataops doc reviewer list <id>');
+  const result = await apiFor(args).get(`/api/documents/${enc(id)}/reviewers`);
+  if (!args.json) table(io, result.reviewers, [['ID', r => r.id], ['NAME', r => r.name], ['CREATED', r => r.createdAt], ['EXPIRES', r => r.expiresAt]], 'No reviewers.');
+  return result;
+}
+async function reviewerAdd(args, io) {
+  const id = positional(args, 0, 'dataops doc reviewer add <id> --name NAME');
+  const result = await apiFor(args).post(`/api/documents/${enc(id)}/reviewers`, { name: required(args, 'name', 'name') });
+  if (!args.json) {
+    io.print(`Reviewer ${result.reviewer.id} (${result.reviewer.name}) added; link expires ${result.reviewer.expiresAt}.`);
+    io.print(`Review link: ${result.reviewPath}`);
+  }
+  return result;
+}
+async function reviewerRevoke(args, io) {
+  const usage = 'dataops doc reviewer revoke <id> <reviewer-id>';
+  const id = positional(args, 0, usage);
+  const reviewerId = positional(args, 1, usage);
+  await apiFor(args).delete(`/api/documents/${enc(id)}/reviewers/${enc(reviewerId)}`);
+  if (!args.json) io.print(`Reviewer ${reviewerId} revoked.`);
+  return { revoked: true };
+}
+export async function reviewer(args, io) {
+  return subcommand(reviewerCommands, args, io, 'dataops doc reviewer', 'reviewer');
+}
+function subcommand(map, args, io, prefix, name) {
+  const [action, ...rest] = args._ || [];
+  if (!action) throw new UsageError(`Missing ${name} action. One of: ${Object.keys(map).join(', ')} (usage: ${prefix} <${Object.keys(map).join('|')}> ...).`);
+  const fn = map[action];
+  if (!fn) throw new UsageError(`Unknown ${name} action: ${prefix} ${action}. One of: ${Object.keys(map).join(', ')}.`);
+  return fn({ ...args, _: rest }, io);
+}
+const commentCommands = { list: commentList, add: commentAdd, reply: commentReply, resolve: commentResolve, delete: commentDelete };
+const reviewerCommands = { list: reviewerList, add: reviewerAdd, revoke: reviewerRevoke };
+export const commands = { list, show, create, update, export: exportTaskDocument, delete: remove, comment, reviewer };
