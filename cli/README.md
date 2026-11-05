@@ -59,7 +59,7 @@ subcommands, flags, and examples.
 | `tasks` | the work queue (`list --mine --queue` is the starting point; `batches` or `list --batches` groups same-day Card/subject Tasks into ordered sittings; `--requires`, `--exclude-requires`, `--can-do` filter by required resources), `show` (with the notes log), `create`, `update` (`--depends-on` sets prerequisite Tasks; blocked Tasks cannot be completed), `done` with proof, `reopen`, `wait` / `followed-up` / `followup` / `snooze` / `unsnooze` / `unblock`, `note`, `handover`, `assign`, `delete` |
 | `resources` | `list` the resource ids a Task can require (youtube, luma, mailchimp, ...) |
 | `cards` | `list`, `show` (with Tasks), `create --template`, `update`, `stage`, `link`, `park` / `resume`, `template-update` |
-| `templates` | `list`, `show`, `create`, `update`, `reset`, `delete` (see Template editing below) |
+| `templates` | `list`, `show`, `create`, `update`, `reset`, `delete`, `sync` (see Template editing below) |
 | `kb` | knowledge base: `search`, `related <task|card>`, `show`, `tree`, `ls`, `resolve`, `backlinks`, `history`, `write`, `publish` |
 | `newsletter` | issues and their sponsor slots: `list`, `show`, `create`, `update`, `delete`, `dismiss-alert` |
 | `podcast` | episodes: `list`, `show`, `create`, `update`, `create-card` |
@@ -137,6 +137,24 @@ template-update preview/apply moves them.
   (`template-in-use` otherwise); Git templates are pinned, reset, or left
   alone. Creating and deleting require an admin; pinning and reset allow
   any active operator or admin.
+
+### Git stays canonical without a deploy
+
+A push to `dataops-knowledge` main runs its CI
+(`.github/workflows/validate.yml`): after validation and the knowledge
+publish, a `sync_workflow_templates` job runs `templates sync`, which calls
+`POST /api/templates/sync` under the workflow's GitHub OIDC identity and
+re-seeds the live Templates from `workflow-templates/*.yaml` — the same
+reconciliation a deploy runs. `sync` accepts no other credential: an
+interactive user (admin included) gets 405, by design. Templates edited here
+survive that sync: a pinned Template keeps its definition and follows the new
+Git base (the sync reports pinned types), and a custom Template is untouched
+unless a Git template later claims the same type, which fails closed instead
+of overwriting. The practical consequence for a non-developer operator:
+create, update, pin, and reset Templates self-serve through the CLI or the
+portal Templates page — no Git access and no Developer are involved, the
+server applies the same validators the knowledge repo's CI enforces, and a
+later knowledge-repo push never silently reverts an edit.
 
 ## Output and exit codes
 
