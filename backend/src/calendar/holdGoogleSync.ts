@@ -312,6 +312,38 @@ export interface LumaCalendarEvent {
   lumaUrl: string;
 }
 
+const YOUTUBE_STREAM_URL = 'https://www.youtube.com/datatalksclub';
+const PRIVATE_DETAIL_PATTERN = /zoom\.us|ops\.dtcdev\.click|conferenceData|passcode/i;
+
+function lumaHostOk(lumaUrl: string): boolean {
+  let lumaHost = '';
+  try { lumaHost = new URL(lumaUrl).hostname.toLowerCase().replace(/^www\./, ''); }
+  catch { /* invalid URL */ }
+  return ['luma.com', 'lu.ma'].some((domain) => lumaHost === domain || lumaHost.endsWith(`.${domain}`));
+}
+
+/** The public-safe body shared by the DTC events entry and its personal copies. */
+function lumaEventBodyParts(event: LumaCalendarEvent): { subtitle: string; description: string } {
+  const subtitle = event.subtitle?.trim() || '';
+  const description = [subtitle, `Stream: ${YOUTUBE_STREAM_URL}`, `Luma: ${event.lumaUrl}`].filter(Boolean).join('\n');
+  return { subtitle, description };
+}
+
+/**
+ * Combine independent Google legs (public DTC events entry + silent personal
+ * copies) into one result: synced only when every leg synced, otherwise
+ * deferred with the joined reasons while the written legs stay recorded.
+ */
+export function mergeHoldGoogleResults(...results: HoldGoogleResult[]): HoldGoogleResult {
+  const eventIds = Object.assign({}, ...results.map((result) => result.eventIds));
+  const reasons = results
+    .filter((result): result is Extract<HoldGoogleResult, { state: 'deferred' }> => result.state === 'deferred')
+    .map((result) => result.reason);
+  return reasons.length
+    ? { state: 'deferred', reason: reasons.join(' '), eventIds }
+    : { state: 'synced', eventIds };
+}
+
 /**
  * Public event copy rules. This path writes one standalone event owned by the
  * public calendar, without attendees or conference data. Existing manual SOP
@@ -324,14 +356,11 @@ export async function syncLumaCalendarEvents(
 ): Promise<HoldGoogleResult> {
   const eventIds = { ...existing };
   const deferred = (reason: string): HoldGoogleResult => ({ state: 'deferred', reason, eventIds });
-  let lumaHost = '';
-  try { lumaHost = new URL(event.lumaUrl).hostname.toLowerCase().replace(/^www\./, ''); }
-  catch { /* invalid URL handled below */ }
-  if (!['luma.com', 'lu.ma'].some((domain) => lumaHost === domain || lumaHost.endsWith(`.${domain}`))) {
+  if (!lumaHostOk(event.lumaUrl)) {
     return deferred('Public calendar entries require a Luma event URL.');
   }
-  const subtitle = event.subtitle?.trim() || '';
-  if (/zoom\.us|ops\.dtcdev\.click|conferenceData|passcode/i.test(subtitle)) {
+  const { subtitle, description } = lumaEventBodyParts(event);
+  if (PRIVATE_DETAIL_PATTERN.test(subtitle)) {
     return deferred('Public calendar subtitle contains private meeting or document details.');
   }
   const resolved = await accessToken(deps);
@@ -359,13 +388,13 @@ export async function syncLumaCalendarEvents(
   const dataopsEventKey = createHash('sha256').update(event.eventKey).digest('hex');
   const body = {
     summary: event.summary,
-    description: [subtitle, `Stream: https://www.youtube.com/datatalksclub`, `Luma: ${event.lumaUrl}`].filter(Boolean).join('\n'),
-    location: 'https://www.youtube.com/datatalksclub',
+    description,
+    location: YOUTUBE_STREAM_URL,
     start,
     end,
     extendedProperties: { private: { dataopsEventKey } },
   };
-  if (/zoom\.us|ops\.dtcdev\.click|conferenceData|passcode/i.test(body.description)) {
+  if (PRIVATE_DETAIL_PATTERN.test(body.description)) {
     return deferred('Public calendar entry contains private meeting or document details.');
   }
   try {
@@ -400,6 +429,42 @@ export async function syncLumaCalendarEvents(
   } catch {
     return deferred('Google Calendar public event sync could not complete; retry after checking the Orin connection.');
   }
+}
+
+/**
+ * Silent personal copies of a public Luma event. The SOP outcome for every
+ * DataTalks.Club live event (course Q&A and Launch included, see
+ * `sop.events.luma.creating-events-on-google-calendar`) is one entry on the
+ * DTC events calendar, orin@datatalks.club and Alexey's personal calendar.
+ * The public leg is `syncLumaCalendarEvents`; this adds the same content as
+ * organizer + personal hold copies: attendee-free, Zoom-free, and silent —
+ * imports send no email and with no attendees the organizer PATCH keeps
+ * `sendUpdates=none`, so nobody is ever invited or notified. The Luma event
+ * itself is created upstream by the event owner (see
+ * `sop.events.luma.creating-events-webinar-workshop-and-podcast-on-luma`);
+ * this path only mirrors an existing Luma link.
+ */
+export async function syncSilentGoogleCopies(
+  event: LumaCalendarEvent,
+  deps: HoldGoogleDeps,
+  existing: Record<string, string> = {},
+): Promise<HoldGoogleResult> {
+  if (!lumaHostOk(event.lumaUrl)) {
+    return { state: 'deferred', reason: 'Personal copies of a public event require a Luma event URL.', eventIds: { ...existing } };
+  }
+  const { subtitle, description } = lumaEventBodyParts(event);
+  if (PRIVATE_DETAIL_PATTERN.test(`${subtitle}\n${description}`)) {
+    return { state: 'deferred', reason: 'Personal copies of a public event cannot contain private meeting or document details.', eventIds: { ...existing } };
+  }
+  return syncEvents({
+    eventKey: event.eventKey,
+    summary: event.summary,
+    description,
+    location: YOUTUBE_STREAM_URL,
+    startIso: event.startIso,
+    endIso: event.endIso,
+    timeZone: event.timeZone,
+  }, deps, existing);
 }
 
 /** Cancel each copy; only the organizer sends cancellation notifications. */
