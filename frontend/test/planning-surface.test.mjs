@@ -1224,6 +1224,38 @@ describe("Planning surface production behavior", () => {
     assert.match(html, /data-issue-preview-link href="\/newsletter-issues\/22510fb3-4c75\/preview">Open Markdown &amp; HTML preview<\/a>/);
   });
 
+  test("the issue page shows a loading state until the issue arrives and then clears it", async () => {
+    const dom = createNewsletterDom();
+    let resolveIssue;
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      route: { params: new URLSearchParams({ issueId: "22510fb3-4c75" }) },
+      request: () => new Promise((resolve) => {
+        resolveIssue = resolve;
+      }),
+    });
+    const rendering = harness.surface.renderNewsletterSurface();
+    assert.match(
+      dom.surface.innerHTML,
+      /class="planner-load-state" role="status">Loading newsletter issue…</,
+      "the shell names the load in progress",
+    );
+    assert.equal(dom.issueBody.innerHTML, "", "no issue content before the data arrives");
+    assert.equal(harness.requests.length, 1);
+    assert.match(harness.requests[0].url, /\/api\/newsletter-issues\/22510fb3-4c75$/);
+    resolveIssue({
+      id: "22510fb3-4c75",
+      kind: "weekly",
+      label: "Weekly #42",
+      publicationDate: "2026-08-21",
+      status: "sent",
+      slots: {},
+    });
+    await rendering;
+    assert.equal(dom.status.textContent, "", "the loading state is cleared once the issue arrives");
+    assert.match(dom.issueBody.innerHTML, /data-issue-details/);
+  });
+
   test("the issue page shows honest empty states without stats, docs, number, or card", async () => {
     const dom = createNewsletterDom();
     const issue = {
