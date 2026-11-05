@@ -385,31 +385,47 @@ describe('API — CRUD for tasks', () => {
         createdIds.push(task.id);
       }
 
+      // GSI-Date reads are eventually consistent (GSI queries cannot be
+      // ConsistentRead), so immediately after a burst of 150 writes the index
+      // can briefly miss rows. The byte budget holds on every attempt; poll
+      // the paged read until it converges on all created tasks before
+      // asserting the exact pagination contract.
+      const fetchPage = async (cursor?: string) => {
+        const res = await handler({
+          httpMethod: 'GET',
+          path: '/api/tasks',
+          queryStringParameters: cursor ? { date, cursor } : { date },
+        }, {});
+        assert.strictEqual(res.statusCode, 200);
+        assert.ok(Buffer.byteLength(res.body) < 100_000, 'Page must stay well within size budget');
+        return JSON.parse(res.body) as { tasks: Array<{ id: string }>; nextCursor?: string };
+      };
+      const collectPages = async () => {
+        const pages: Array<{ tasks: Array<{ id: string }>; nextCursor?: string }> = [];
+        let cursor: string | undefined;
+        do {
+          const page = await fetchPage(cursor);
+          pages.push(page);
+          cursor = page.nextCursor;
+        } while (cursor);
+        return pages;
+      };
+
+      let pages: Array<{ tasks: Array<{ id: string }>; nextCursor?: string }> = [];
+      for (let attempt = 0; attempt < 30; attempt++) {
+        pages = await collectPages();
+        if (pages.reduce((sum, page) => sum + page.tasks.length, 0) === createdIds.length) break;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+
       // Default limit is 100
-      const page1Res = await handler({
-        httpMethod: 'GET',
-        path: '/api/tasks',
-        queryStringParameters: { date },
-      }, {});
-      assert.strictEqual(page1Res.statusCode, 200);
-      assert.ok(Buffer.byteLength(page1Res.body) < 100_000, 'Page 1 must stay well within size budget');
-      const page1 = JSON.parse(page1Res.body);
-      assert.strictEqual(page1.tasks.length, 100);
-      assert.ok(page1.nextCursor, 'Page 1 must return nextCursor');
+      assert.strictEqual(pages.length, 2, '150 rows at the 100 default must paginate into two pages');
+      assert.strictEqual(pages[0].tasks.length, 100);
+      assert.ok(pages[0].nextCursor, 'Page 1 must return nextCursor');
+      assert.strictEqual(pages[1].tasks.length, 50);
+      assert.strictEqual(pages[1].nextCursor, undefined);
 
-      // Fetch page 2 using cursor
-      const page2Res = await handler({
-        httpMethod: 'GET',
-        path: '/api/tasks',
-        queryStringParameters: { date, cursor: page1.nextCursor },
-      }, {});
-      assert.strictEqual(page2Res.statusCode, 200);
-      assert.ok(Buffer.byteLength(page2Res.body) < 100_000, 'Page 2 must stay well within size budget');
-      const page2 = JSON.parse(page2Res.body);
-      assert.strictEqual(page2.tasks.length, 50);
-      assert.strictEqual(page2.nextCursor, undefined);
-
-      const allFetchedIds = [...page1.tasks, ...page2.tasks].map((t: { id: string }) => t.id);
+      const allFetchedIds = pages.flatMap((page) => page.tasks).map((t) => t.id);
       assert.strictEqual(allFetchedIds.length, 150);
       assert.deepStrictEqual(new Set(allFetchedIds), new Set(createdIds), 'All items returned across pages without loss or duplication');
 
