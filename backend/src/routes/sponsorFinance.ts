@@ -17,6 +17,7 @@ import {
   recordInvoiceRequest,
   recordPayment,
   receivePayment,
+  correctInvoice,
   correctReceipt,
   updateReceiptConversion,
   updateReceiptMetadata,
@@ -248,6 +249,20 @@ export async function handleSponsorFinanceRoutes(
         issuedOn: String(body.issuedOn || ''),
         dueOn: String(body.dueOn || ''),
         ...(body.sentOn !== undefined ? { sentOn: String(body.sentOn) } : {}),
+      });
+      return json(200, { result, projection: await project() });
+    }
+    if (method === 'POST' && action === 'invoice-correction') {
+      const result = await correctInvoice(client, {
+        ...common,
+        expectedVersion: Number(body.expectedVersion),
+        reason: String(body.reason || ''),
+        ...(body.invoiceNumber !== undefined && body.invoiceNumber !== '' ? { invoiceNumber: String(body.invoiceNumber) } : {}),
+        issuedOn: String(body.issuedOn || ''),
+        dueOn: String(body.dueOn || ''),
+        ...(body.sentOn !== undefined && body.sentOn !== '' ? { sentOn: String(body.sentOn) } : {}),
+        ...(body.sourceId !== undefined && body.sourceId !== '' ? { sourceId: String(body.sourceId) } : {}),
+        ...(body.identityToken !== undefined && body.identityToken !== '' ? { identityToken: String(body.identityToken) } : {}),
       });
       return json(200, { result, projection: await project() });
     }

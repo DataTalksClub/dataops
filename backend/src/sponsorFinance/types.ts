@@ -46,6 +46,7 @@ export type FinanceState = {
   sentOn?: string;
   dueOn?: string;
   invoiceLinkId?: string;
+  invoiceCorrection?: InvoiceCorrection;
   settlementAdjustment?: SettlementAdjustment;
   paymentLinkIds: string[];
   recordedPaymentIds: string[];
@@ -58,6 +59,12 @@ export type FinanceState = {
   actorId: string;
   createdAt: string;
   updatedAt: string;
+};
+
+/** The latest recorded correction of the deal's issued invoice; full before/after lives in the history event. */
+export type InvoiceCorrection = {
+  at: string;
+  reason: string;
 };
 
 export type FinanceLink = {
@@ -153,6 +160,7 @@ export type FinanceProjection = {
     issuedOn?: string;
     sentOn?: string;
     dueOn?: string;
+    invoiceCorrection?: InvoiceCorrection;
     waitingOn?: WaitingOn;
     evidence?: FinanceEvidence[];
     voidedAt?: string;

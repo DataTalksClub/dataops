@@ -113,6 +113,7 @@ dataops sponsors finance <deal-id> --json
 dataops sponsors classify-finance <deal-id> --data @classification.json
 dataops sponsors record-invoice <deal-id> --data @invoice.json
 dataops sponsors attach-invoice <deal-id> --file original.pdf
+dataops sponsors correct-invoice <deal-id> --data @correction.json [--file corrected.pdf]
 dataops sponsors add-evidence <deal-id> --data @evidence.json
 dataops sponsors set-waiting <deal-id> --data @waiting.json
 ```
@@ -124,11 +125,22 @@ invoice also needs `amountDue` (decimal string), `currency` and `taxMode` (`unkn
 
 `record-invoice` records an already issued invoice; it does not generate a PDF,
 send email or record cash. First supply verified `issuedOn` and `dueOn`, with
-optional `invoiceNumber` and `sentOn`. Partial corrections preserve omitted fields;
-explicit `null` clears optional number/sent date. Never record `sentOn` before
+optional `invoiceNumber` and `sentOn`. Omitted fields stay unchanged; explicit
+`null` clears optional number/sent date. Never record `sentOn` before
 actual sending evidence. Attach the original PDF after recording its dates, or
 pass verified `--issued-on YYYY-MM-DD --due-on YYYY-MM-DD` to `attach-invoice`.
 Missing dates fail before upload. A retry reuses checksum-addressed storage.
+
+`correct-invoice` is the path for fixing an issued sponsor invoice. The
+corrected invoice itself must first be issued in Finom's UI (DataOps has no
+Finom API; same manual step as marking an invoice paid there). Record the
+correction with a required `reason` plus corrected `invoiceNumber`, `issuedOn`,
+`dueOn`, `sentOn` (omitted fields stay unchanged; explicit `null` clears the
+optional number/sent date), and pass the corrected PDF with `--file` so it
+supersedes the linked original in one audited step - the original document is
+retained, the history records what changed and why, and the projection's
+`finance.invoiceCorrection` shows the latest correction. The invoice stays
+`issued`; correction before anything was issued fails.
 
 An evidence entry is `{kind,ref,label?,on?}`; `add-evidence` appends it or updates
 the same kind/ref while preserving unrelated entries. Waiting data is

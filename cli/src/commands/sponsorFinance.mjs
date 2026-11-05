@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { UsageError } from "../errors.mjs";
 import { enc, isoDate, jsonData, positional } from "../format.mjs";
 import { apiFor } from "../session.mjs";
@@ -73,6 +74,86 @@ export async function recordInvoice(args, io) {
   // Empty strings explicitly clear optional metadata; omission preserves it.
   for (const key of ["invoiceNumber", "sentOn"]) if (values[key] === null) values[key] = "";
   return mutate(args, io, ctx, "post", "/issue", values);
+}
+
+/**
+ * Upload an invoice PDF through verified private storage and resolve it as the
+ * deal's finance invoice candidate. Shared by attach-invoice (the original)
+ * and correct-invoice (the corrected document that supersedes it).
+ */
+export async function uploadInvoiceDocument(api, dealId, bytes, sha256) {
+  let prepared = await api.post("/api/bookkeeping/documents/prepare", {
+    sha256, byteSize: bytes.length, documentType: "invoice", idempotencyKey: `sponsor-invoice-${sha256}`, sourceRef: `sponsor-deal:${dealId}`,
+  });
+  if (prepared.uploadUrl) {
+    const upload = await fetch(prepared.uploadUrl, { method: "PUT", body: bytes, headers: prepared.uploadHeaders });
+    if (!upload.ok) {
+      const failure = (await upload.text()).slice(0, 8192);
+      const code = failure.match(/<Code>([A-Za-z0-9_-]+)<\/Code>/)?.[1] || "UploadRejected";
+      throw new Error(`Invoice upload failed (${upload.status}, ${code}); retry the same file`);
+    }
+    prepared = await api.post(`/api/bookkeeping/documents/${enc(prepared.document.id)}/complete`, { idempotencyKey: `sponsor-invoice-${sha256}` });
+  }
+  let cursor, candidate;
+  do {
+    const page = await api.get(`/api/sponsor-crm/deals/${enc(dealId)}/finance/candidates/invoices`, { query: { limit: 50, cursor } });
+    candidate = (page.items || []).find((item) => item.id === prepared.document.id);
+    cursor = page.nextCursor;
+  } while (!candidate && cursor);
+  if (!candidate) throw new UsageError("Uploaded invoice is not an available candidate; check whether another deal already claims it.");
+  return { candidate, sha256 };
+}
+
+/**
+ * Correct an issued invoice with a required reason and the corrected metadata;
+ * optional corrected PDF (issued in Finom's UI first) supersedes the linked
+ * original in one audited step. No PDF is generated and no email is sent.
+ */
+export async function correctInvoice(args, io) {
+  const id = positional(args, 0, "dataops sponsors correct-invoice <deal-id> --data @correction.json [--file corrected.pdf] [--apply]");
+  const data = dataFields(jsonData(args), ["reason", ...INVOICE]);
+  if (typeof data.reason !== "string" || !data.reason.trim()) throw new UsageError("A nonempty correction reason is required");
+  const api = apiFor(args);
+  const [deal, projection] = await Promise.all([
+    api.get(`/api/sponsor-crm/deals/${enc(id)}`),
+    api.get(`/api/sponsor-crm/deals/${enc(id)}/finance`),
+  ]);
+  if (!projection.finance) throw new UsageError("Classify finance first with sponsors classify-finance");
+  const versions = {
+    dealVersion: version(args.dealVersion, deal.version, "deal-version"),
+    expectedVersion: version(args.expectedVersion, projection.finance.version || 0, "expected-version"),
+  };
+  const values = { ...pick(projection.finance, INVOICE), ...data, reason: data.reason.trim() };
+  for (const key of ["issuedOn", "dueOn"]) if (!values[key]) throw new UsageError(`${key} is required; record the issued invoice with sponsors record-invoice first`);
+  dates(values, ["issuedOn", "dueOn", "sentOn"]);
+  if (values.dueOn < values.issuedOn || (values.sentOn && values.sentOn < values.issuedOn)) throw new UsageError("Invoice due/sent dates must not precede its issue date");
+  // Empty strings explicitly clear optional metadata; omission preserves it.
+  for (const key of ["invoiceNumber", "sentOn"]) if (values[key] === null) values[key] = "";
+  let bytes, sha256;
+  if (args.file !== undefined) {
+    if (typeof args.file !== "string" || !args.file) throw new UsageError("--file must name the corrected invoice PDF");
+    bytes = await readFile(args.file);
+    if (!bytes.subarray(0, 5).equals(Buffer.from("%PDF-"))) throw new UsageError("--file must contain a PDF");
+    sha256 = createHash("sha256").update(bytes).digest("hex");
+  }
+  const idempotencyKey = args.idempotencyKey || randomUUID();
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) throw new UsageError("--idempotency-key must contain 16-128 letters, digits, underscores or hyphens");
+  const result = { mode: args.apply ? "apply" : "dry-run", dealId: id, idempotencyKey,
+    ...(sha256 ? { correctedDocument: { sha256, byteSize: bytes.length } } : {}),
+    request: { ...values, ...versions } };
+  if (args.apply) {
+    let document = {};
+    if (bytes) {
+      const { candidate } = await uploadInvoiceDocument(api, id, bytes, sha256);
+      document = { sourceId: candidate.id, identityToken: candidate.identityToken };
+    }
+    result.request = { ...values, ...document, ...versions };
+    Object.assign(result, await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/invoice-correction`, result.request, {
+      headers: { "Idempotency-Key": idempotencyKey },
+    }));
+  }
+  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  return result;
 }
 
 export async function addEvidence(args, io) {
