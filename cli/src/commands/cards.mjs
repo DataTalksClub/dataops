@@ -35,7 +35,8 @@ Usage
                                                 A course's event Cards (Q&A, launch, workshops);
                                                 --apply creates and links the missing ones, undated
   dataops cards stage <card-id> <preparation|announced|after-event>
-  dataops cards link <card-id> <link-name> <url>  Fill a Card link (e.g. a template's required link)
+  dataops cards link <card-id> <link-name> <url> [--add]
+                                                Fill a Card link; --add also creates a custom named link
   dataops cards invite add <card-id> <event-id> --calendar CAL [--label LABEL] [--json]
                                                 Adopt an existing Google event without editing it
   dataops cards invite list <card-id> [--json]  The Card's invites, checked in Google (gone = stale)
@@ -273,15 +274,17 @@ export async function stage(args, io) {
 }
 
 export async function link(args, io) {
-  const usage = "dataops cards link <card-id> <link-name> <url>";
+  const usage = "dataops cards link <card-id> <link-name> <url> [--add]";
   const id = positional(args, 0, usage);
   const name = positional(args, 1, usage);
   const url = positional(args, 2, usage);
   const api = apiFor(args);
   const { card } = await api.get(`/api/cards/${enc(id)}`);
   const links = Array.isArray(card.cardLinks) ? card.cardLinks : [];
+  // Bind the replacement array to the version it was derived from.
+  const pinnedArgs = { ...args, expectedVersion: args.expectedVersion ?? card.version };
   if (links.some((item) => (item.name || item.label) === name)) {
-    return write(args, io, id, {
+    return write(pinnedArgs, io, id, {
       cardLinks: links.map((item) => ((item.name || item.label) === name ? { ...item, url } : item)),
     }, `Saved "${name}" on`);
   }
@@ -289,11 +292,11 @@ export async function link(args, io) {
   // Card predates is added to the Card.
   const template = card.templateId ? await api.get(`/api/templates/${enc(card.templateId)}`).catch(() => null) : null;
   const defined = (template?.template || template)?.cardLinkDefinitions || [];
-  if (!defined.some((definition) => definition.name === name)) {
+  if (!args.add && !defined.some((definition) => definition.name === name)) {
     const known = [...new Set([...links.map((item) => item.name || item.label), ...defined.map((definition) => definition.name)])].join(", ") || "none";
-    throw new UsageError(`Card has no link named "${name}". Known links: ${known}.`);
+    throw new UsageError(`Card has no link named "${name}". Known links: ${known}. Use --add to create a custom named link.`);
   }
-  return write(args, io, id, { cardLinks: [...links, { name, url }] }, `Saved "${name}" on`);
+  return write(pinnedArgs, io, id, { cardLinks: [...links, { name, url }] }, `Saved "${name}" on`);
 }
 
 async function parkResume(args, io, verb) {
