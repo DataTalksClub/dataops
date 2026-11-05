@@ -17,7 +17,6 @@ import * as events from "./commands/events.mjs";
 import * as finance from "./commands/finance.mjs";
 import * as files from "./commands/files.mjs";
 import * as invoices from "./commands/invoices.mjs";
-import * as invoicePdfs from './invoicePdfs.mjs';
 import * as kb from "./commands/kb.mjs";
 import * as newsletter from "./commands/newsletter.mjs";
 import * as notifications from "./commands/notifications.mjs";
@@ -155,7 +154,6 @@ export const FAMILIES = {
       process: invoices.processIntake,
     },
   },
-  'invoice-pdfs': { group: 'Finance', summary: invoicePdfs.summary, help: invoicePdfs.help, commands: invoicePdfs.commands },
   team: { group: "People", summary: people.teamSummary, help: people.teamHelp, commands: people.teamCommands },
   users: { group: "People", summary: people.usersSummary, help: people.usersHelp, commands: people.usersCommands },
   login: { group: "Account", summary: "Sign in with a device code confirmed in the browser", help: AUTH_HELP, run: auth.login },
