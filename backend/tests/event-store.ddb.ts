@@ -3,10 +3,12 @@ import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CreateTableCommand, DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
-import { TABLE_CALENDAR, TABLE_CARDS } from '../src/db/tableNames';
+import { TABLE_CALENDAR, TABLE_CARDS, TABLE_PODCAST_EPISODES } from '../src/db/tableNames';
 import { createCard, getCardConsistent, updateCard } from '../src/db/cards';
+import { createPodcastEpisode, getPodcastEpisode, updatePodcastEpisode } from '../src/db/podcastEpisodes';
 import { planEventTransition, EventConflictError, type EventCommand, type EventRecord } from '../src/events/lifecycle';
 import { getEventRecord, commitEventTransition, claimEventOperation, completeEventOperation, getEventHistory } from '../src/events/store';
+import { buildEpisodeTransactionWrite } from '../src/events/service';
 import { policy } from './helpers/eventPolicy';
 import { templateLink } from './helpers/cardTemplate';
 
@@ -15,7 +17,7 @@ if (!endpoint || !/^http:\/\/127\.0\.0\.1:\d+$/.test(endpoint)) throw new Error(
 const raw = new DynamoDBClient({ endpoint, region: 'us-east-1', credentials: { accessKeyId: 'local', secretAccessKey: 'local' } });
 const client = DynamoDBDocumentClient.from(raw);
 before(async () => {
-  for (const TableName of [TABLE_CALENDAR, TABLE_CARDS]) {
+  for (const TableName of [TABLE_CALENDAR, TABLE_CARDS, TABLE_PODCAST_EPISODES]) {
     try { await raw.send(new CreateTableCommand({ TableName, BillingMode: 'PAY_PER_REQUEST',
       AttributeDefinitions: [{ AttributeName: 'PK', AttributeType: 'S' }, { AttributeName: 'SK', AttributeType: 'S' }],
       KeySchema: [{ AttributeName: 'PK', KeyType: 'HASH' }, { AttributeName: 'SK', KeyType: 'RANGE' }],
@@ -73,6 +75,67 @@ test('a stale Card version rolls back the event and all journals', async () => {
   assert.deepEqual(await getEventHistory(client, event.id), []);
   const op = await client.send(new GetCommand({ TableName: TABLE_CALENDAR, Key: { PK: `CALEVENTLOG#${event.id}`, SK: `OP#${event.operations[0].key}` } }));
   assert.equal(op.Item, undefined);
+});
+
+/** An episode linked to the event Card, holding the propose date. */
+async function setupEpisode(cardId: string, date: string) {
+  return createPodcastEpisode(client, {
+    title: 'Reschedule target',
+    guests: [],
+    status: 'booked',
+    recordingDate: date,
+    cardId,
+  });
+}
+
+test('a reschedule commit moves the event, Card and Episode projections in one transaction', async () => {
+  const { card, event } = await setup();
+  await commitEventTransition(client, card, 0, event);
+  const current = await finish(event);
+  const episode = await setupEpisode(card.id, current.date);
+  const change = command('reschedule', current.version); change.date = '2030-12-10';
+  const reschedule = planEventTransition(event.id, card.id, current, change);
+  const freshCard = (await getCardConsistent(client, card.id))!;
+  const freshEpisode = (await getPodcastEpisode(client, episode.id))!;
+  await commitEventTransition(client, freshCard, current.version, reschedule, buildEpisodeTransactionWrite(freshEpisode, reschedule, now));
+  const moved = (await getPodcastEpisode(client, episode.id))!;
+  assert.equal(moved.recordingDate, '2030-12-10');
+  assert.equal(moved.recordingTime, '12:30');
+  assert.equal(moved.recordingTimeZone, 'Europe/Berlin');
+  assert.equal(moved.recordingEventStatus, 'proposed');
+  assert.equal(moved.recordingHoldId, event.id);
+  assert.equal(moved.version, episode.version + 1);
+  const projected = (await getCardConsistent(client, card.id))!;
+  assert.equal(projected.anchorDate, '2030-12-10');
+  const stored = (await getEventRecord(client, event.id))!;
+  assert.equal(stored.date, '2030-12-10');
+});
+
+test('a stale Episode version rolls back the reschedule for event, Card and journals', async () => {
+  const { card, event } = await setup();
+  await commitEventTransition(client, card, 0, event);
+  const current = await finish(event);
+  const episode = await setupEpisode(card.id, current.date);
+  // A concurrent episode edit advances the stored version behind our back.
+  await updatePodcastEpisode(client, episode, { notes: 'Concurrent episode edit' });
+  const change = command('reschedule', current.version); change.date = '2030-12-10';
+  const reschedule = planEventTransition(event.id, card.id, current, change);
+  const freshCard = (await getCardConsistent(client, card.id))!;
+  await assert.rejects(
+    () => commitEventTransition(client, freshCard, current.version, reschedule, buildEpisodeTransactionWrite(episode, reschedule, now)),
+    EventConflictError,
+  );
+  const stored = (await getEventRecord(client, event.id))!;
+  assert.equal(stored.date, '2030-12-03');
+  assert.equal(stored.version, current.version);
+  assert.equal((await getCardConsistent(client, card.id))!.anchorDate, '2030-12-03');
+  assert.equal((await getEventHistory(client, event.id)).length, 1);
+  const op = await client.send(new GetCommand({ TableName: TABLE_CALENDAR, Key: { PK: `CALEVENTLOG#${event.id}`, SK: `OP#${reschedule.operations.at(-1)!.key}` } }));
+  assert.equal(op.Item, undefined);
+  const untouched = (await getPodcastEpisode(client, episode.id))!;
+  assert.equal(untouched.recordingDate, '2030-12-03');
+  assert.equal(untouched.recordingHoldId ?? undefined, undefined);
+  assert.equal(untouched.version, episode.version + 1);
 });
 
 test('concurrent approval and reschedule have one winner and cannot split Card/event dates', async () => {

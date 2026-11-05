@@ -56,6 +56,7 @@ if [ "$test_status" -eq 0 ]; then
   DYNAMODB_ENDPOINT="$endpoint" \
   DATAOPS_CARDS_TABLE=EventLifecycleTransactionCards \
   DATAOPS_CALENDAR_TABLE=EventLifecycleTransactionCalendar \
+  DATAOPS_PODCAST_EPISODES_TABLE=EventLifecycleTransactionPodcastEpisodes \
   AWS_ACCESS_KEY_ID=local \
   AWS_SECRET_ACCESS_KEY=local \
   AWS_REGION=us-east-1 \
