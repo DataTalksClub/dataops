@@ -86,6 +86,39 @@ describe("cards invite commands", () => {
     assert.match(io.errors.join("\n"), /Known links: Meetup, Meetup Global/);
   });
 
+  test("link --add appends a custom link without replacing other links or creating duplicates", async () => {
+    let card = { id: "ev-custom", title: "Event", stage: "preparation", version: 3, cardLinks: [{ name: "Existing", url: "https://example.test/old" }] };
+    const calls = fakePortal({
+      "GET /api/cards/ev-custom": () => ({ card }),
+      "PUT /api/cards/ev-custom": ({ body }) => {
+        assert.equal(body.expectedVersion, card.version);
+        assert.deepEqual(Object.keys(body).sort(), ["cardLinks", "expectedVersion"]);
+        card = { ...card, ...body, version: card.version + 1 };
+        return { card };
+      },
+    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      assert.equal(await run(["cards", "link", "ev-custom", "Custom", "https://example.test/new", "--add"], captureIo()), 0);
+    }
+    assert.deepEqual(card.cardLinks, [{ name: "Existing", url: "https://example.test/old" }, { name: "Custom", url: "https://example.test/new" }]);
+    assert.equal(calls.filter(call => call.method === "PUT").length, 2);
+  });
+
+  test("link pins the original Card version when another writer changes its links", async () => {
+    let reads = 0;
+    const initial = { id: "ev-race", title: "Event", stage: "preparation", version: 3, cardLinks: [{ name: "Existing", url: "https://example.test/old" }] };
+    const calls = fakePortal({
+      "GET /api/cards/ev-race": () => ({ card: ++reads === 1 ? initial : { ...initial, version: 4, cardLinks: [...initial.cardLinks, { name: "Concurrent", url: "https://example.test/concurrent" }] } }),
+      "PUT /api/cards/ev-race": ({ body }) => {
+        assert.equal(body.expectedVersion, 3);
+        return { status: 409, body: { error: { message: "Version conflict" } } };
+      },
+    });
+    const io = captureIo();
+    assert.notEqual(await run(["cards", "link", "ev-race", "Custom", "https://example.test/new", "--add"], io), 0);
+    assert.equal(calls.filter(call => call.method === "PUT").length, 1);
+  });
+
   test("invite list prints the invites table", async () => {
     fakePortal({
       "GET /api/cards/card-1/calendar-invites": (call) => {
