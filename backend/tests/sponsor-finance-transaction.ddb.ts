@@ -15,6 +15,7 @@ import { getClient } from '../src/db/client';
 import {
   classifyFinance,
   clearProposalClassification,
+  correctInvoice,
   deleteRecordedPayment,
   getFinanceState,
   issueInvoice,
@@ -40,6 +41,7 @@ import {
   claimKey,
   financeKey,
   invoiceIdentity,
+  linkKey,
   MAX_PAYMENT_LINK_TRANSACTION_ACTIONS,
   paymentIdentity,
 } from '../src/sponsorFinance/core';
@@ -1745,6 +1747,146 @@ describe('sponsor finance production DynamoDB transactions', () => {
     assert.equal(after.finance!.amountDue, '1200'); assert.equal(after.finance!.taxMode, 'included');
     assert.equal(after.paid, '1190'); assert.equal(after.adjusted, '10'); assert.equal(after.outstanding, '0');
     assert.equal(after.payments.length, 1); assert.equal(after.reconciliationStatus, 'coherent');
+  });
+
+  it('corrects an issued invoice with a reason, supersedes the linked PDF in one transaction, and refuses invalid corrections', async () => {
+    const dealId = 'booking-invoice-correction';
+    await put(client, TABLE_SPONSOR_CRM, {
+      ...key('DEAL', dealId), id: dealId, version: 1, status: 'agreed', active: true,
+      organizationId: 'organization-invoice-correction',
+    });
+    const base = { actorId: adminId, dealId, dealVersion: 1 };
+    let version = (await classifyFinance(client, {
+      ...base, idempotencyKey: idem('correction-classify'),
+      body: { invoiceRequirement: 'required', amountDue: '500', currency: 'EUR', taxMode: 'unknown' },
+    })).financeVersion;
+
+    // Nothing issued yet: the correction is refused before any state changes.
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('correction-unissued'), reason: 'Too early',
+      issuedOn: '2026-09-01', dueOn: '2026-10-01',
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 422);
+
+    version = (await issueInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('correction-issue'),
+      invoiceNumber: 'SYN/2026/9', issuedOn: '2026-09-01', dueOn: '2026-10-01',
+    })).financeVersion;
+    const original = {
+      ...key('DOCUMENT', 'invoice-correction-original'), id: 'invoice-correction-original',
+      documentType: 'invoice', status: 'active', sha256: 'c'.repeat(64),
+      objectVersionId: 'version-correction-original', verifiedByteSize: 800, byteSize: 800,
+      s3Key: 'documents/invoice-correction-original',
+      createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
+    };
+    await put(client, TABLE_BOOKKEEPING, original);
+    version = (await linkInvoice(client, {
+      ...base, expectedVersion: version, sourceId: original.id, identityToken: invoiceIdentity(original),
+      idempotencyKey: idem('correction-link-original'),
+    })).financeVersion;
+
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('correction-no-reason'), reason: '   ',
+      issuedOn: '2026-09-01', dueOn: '2026-10-01',
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 400);
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('correction-unchanged'), reason: 'No change here',
+      invoiceNumber: 'SYN/2026/9', issuedOn: '2026-09-01', dueOn: '2026-10-01',
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 422);
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version - 1, idempotencyKey: idem('correction-stale'), reason: 'Stale version',
+      issuedOn: '2026-09-01', dueOn: '2026-10-01',
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 409);
+
+    const metadataOnly = {
+      ...base, reason: 'Issued with the wrong due date',
+      invoiceNumber: 'SYN/2026/9', issuedOn: '2026-09-05', dueOn: '2026-10-05',
+    };
+    const datesInput = { ...metadataOnly, expectedVersion: version, idempotencyKey: idem('correction-dates') };
+    version = (await correctInvoice(client, datesInput)).financeVersion;
+    assert.equal((await correctInvoice(client, datesInput)).outcome, 'replayed');
+    const afterDates = await getFinanceState(client, dealId);
+    assert.equal(afterDates!.issuedOn, '2026-09-05');
+    assert.equal(afterDates!.dueOn, '2026-10-05');
+    assert.equal(afterDates!.invoiceCorrection!.reason, 'Issued with the wrong due date');
+    assert.equal(afterDates!.invoiceLinkId, linkKey(dealId, 'document', original.id));
+    const datesEvent = (await listFinanceHistory(client, dealId))
+      .find((item) => item.eventCode === 'invoice-corrected' && item.details.reason === 'Issued with the wrong due date')!;
+    assert.equal(datesEvent.details.reason, 'Issued with the wrong due date');
+    assert.deepEqual(datesEvent.details.changed, {
+      issuedOn: { before: '2026-09-01', after: '2026-09-05' },
+      dueOn: { before: '2026-10-01', after: '2026-10-05' },
+    });
+    assert.equal(datesEvent.details.replacedDocument, undefined);
+
+    const corrected = {
+      ...key('DOCUMENT', 'invoice-correction-corrected'), id: 'invoice-correction-corrected',
+      documentType: 'invoice', status: 'active', sha256: 'd'.repeat(64),
+      objectVersionId: 'version-correction-corrected', verifiedByteSize: 900, byteSize: 900,
+      s3Key: 'documents/invoice-correction-corrected',
+      createdAt: '2026-09-06T00:00:00.000Z', updatedAt: '2026-09-06T00:00:00.000Z',
+    };
+    await put(client, TABLE_BOOKKEEPING, corrected);
+
+    // The corrected document must differ from the linked original.
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('correction-same-doc'), reason: 'Same document again',
+      issuedOn: '2026-09-05', dueOn: '2026-10-05', sourceId: original.id, identityToken: invoiceIdentity(original),
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 422);
+
+    // A document another deal already claims cannot become this deal's corrected invoice.
+    await put(client, TABLE_BOOKKEEPING, {
+      PK: claimKey('document', corrected.id), SK: claimKey('document', corrected.id), recordType: 'sponsor-finance-claim',
+      kind: 'document', sourceId: corrected.id, dealId: 'booking-another-deal', linkId: 'SPONSOR_FINANCE_LINK#booking-another-deal#document#invoice-correction-corrected',
+      identityToken: invoiceIdentity(corrected), actorId: adminId, createdAt: '2026-09-06T00:00:00.000Z',
+    });
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('correction-claimed'), reason: 'Claimed elsewhere',
+      issuedOn: '2026-09-05', dueOn: '2026-10-05', sourceId: corrected.id, identityToken: invoiceIdentity(corrected),
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 409);
+    await client.send(new DeleteCommand({
+      TableName: TABLE_BOOKKEEPING, Key: { PK: claimKey('document', corrected.id), SK: claimKey('document', corrected.id) },
+    }));
+
+    version = (await correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('correction-supersede'), reason: 'Corrected totals issued in Finom',
+      invoiceNumber: 'SYN/2026/9-R', issuedOn: '2026-09-06', dueOn: '2026-10-06', sentOn: '2026-09-06',
+      sourceId: corrected.id, identityToken: invoiceIdentity(corrected),
+    })).financeVersion;
+    const swapped = await getFinanceState(client, dealId);
+    assert.equal(swapped!.invoiceLinkId, linkKey(dealId, 'document', corrected.id));
+    assert.equal(swapped!.invoiceNumber, 'SYN/2026/9-R');
+    assert.equal(swapped!.invoiceCorrection!.reason, 'Corrected totals issued in Finom');
+    const originalClaim = await client.send(new GetCommand({
+      TableName: TABLE_BOOKKEEPING, Key: { PK: claimKey('document', original.id), SK: claimKey('document', original.id) },
+    }));
+    assert.equal(originalClaim.Item, undefined, 'the superseded original no longer holds the deal claim');
+    const correctedClaim = await client.send(new GetCommand({
+      TableName: TABLE_BOOKKEEPING, Key: { PK: claimKey('document', corrected.id), SK: claimKey('document', corrected.id) },
+    }));
+    assert.equal(correctedClaim.Item!.dealId, dealId);
+    const originalLink = await client.send(new GetCommand({
+      TableName: TABLE_SPONSOR_CRM, Key: { PK: linkKey(dealId, 'document', original.id), SK: linkKey(dealId, 'document', original.id) },
+    }));
+    assert.equal(originalLink.Item, undefined, 'the superseded link row is gone');
+    const projection = await projectFinance(client, dealId, 'admin');
+    assert.equal(projection.invoiceState, 'issued');
+    assert.equal(projection.reconciliationStatus, 'coherent');
+    assert.equal(projection.invoice!.id, corrected.id);
+    assert.equal(projection.finance!.invoiceNumber, 'SYN/2026/9-R');
+    assert.equal(projection.finance!.invoiceCorrection!.reason, 'Corrected totals issued in Finom');
+    const supersedeEvent = (await listFinanceHistory(client, dealId))
+      .find((item) => item.eventCode === 'invoice-corrected' && item.details.replacedDocument !== undefined)!;
+    assert.deepEqual(supersedeEvent.details.replacedDocument, { previousSourceId: original.id, sourceId: corrected.id });
+    assert.ok(supersedeEvent.details.changed.invoiceNumber);
+
+    // A voided finance can never be corrected.
+    version = (await voidFinance(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('correction-void'), reason: 'Deal cancelled before payment',
+    })).financeVersion;
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('correction-after-void'), reason: 'Too late',
+      issuedOn: '2026-09-06', dueOn: '2026-10-06',
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 409);
   });
 
 });

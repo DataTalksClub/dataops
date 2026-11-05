@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "../src/cli.mjs";
-import { classifyFinance, recordInvoice, addEvidence, setWaiting } from "../src/commands/sponsorFinance.mjs";
+import { classifyFinance, recordInvoice, correctInvoice, addEvidence, setWaiting } from "../src/commands/sponsorFinance.mjs";
 import { attachInvoice } from "../src/commands/sponsors.mjs";
 
 const args = (data, extra = {}) => ({ _: ["synthetic-deal"], data: JSON.stringify(data), url: "https://portal.example.test", json: true, ...extra });
@@ -122,11 +122,69 @@ test("missing issued metadata fails before uploading an original; verified dates
   } finally { await rm(directory, { recursive: true }); }
 });
 
+test("correcting an issued invoice merges reviewed metadata, requires a reason, and posts one audited correction", async () => {
+  await mocked({ version: 8, invoiceNumber: "DEMO/12", issuedOn: "2026-09-01", dueOn: "2026-10-01", sentOn: "2026-09-02" }, async (calls) => {
+    await assert.rejects(correctInvoice(args({ dueOn: "2026-10-05" }), io), /reason is required/);
+    await assert.rejects(correctInvoice(args({ reason: "Wrong due date", dueOn: "2026-08-31" }), io), /must not precede/);
+    const preview = await correctInvoice(args({ reason: "Wrong due date", dueOn: "2026-10-05" }), io);
+    assert.deepEqual(preview.request, {
+      invoiceNumber: "DEMO/12", issuedOn: "2026-09-01", dueOn: "2026-10-05", sentOn: "2026-09-02",
+      reason: "Wrong due date", dealVersion: 3, expectedVersion: 8,
+    });
+    assert.ok(calls.every((call) => call.method === "GET"));
+    const applied = await correctInvoice(args({ reason: "Wrong due date", dueOn: "2026-10-05" }, { apply: true, idempotencyKey: "synthetic-correction-key" }), io);
+    assert.equal(applied.mode, "apply");
+    const write = calls.find((call) => call.method === "POST");
+    assert.ok(write.url.endsWith("/finance/invoice-correction"));
+    assert.deepEqual(write.body, preview.request);
+    assert.equal(write.headers["Idempotency-Key"], "synthetic-correction-key");
+    const cleared = await correctInvoice(args({ reason: "Number retired", invoiceNumber: null, sentOn: null }), io);
+    assert.equal(cleared.request.invoiceNumber, "");
+    assert.equal(cleared.request.sentOn, "");
+  });
+});
+
+test("correcting with a superseding PDF uploads it and links the corrected document; a dry run uploads nothing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-finance-cli-")), file = join(directory, "corrected.pdf");
+  await writeFile(file, "%PDF-1.7\nSynthetic corrected invoice\n%%EOF");
+  try {
+    await mocked({ version: 8, issuedOn: "2026-09-01", dueOn: "2026-10-01" }, async (calls) => {
+      const preview = await correctInvoice(args({ reason: "Amount was overstated" }, { file }), io);
+      assert.ok(calls.every((call) => call.method === "GET"), "dry run must not upload");
+      assert.equal(preview.request.reason, "Amount was overstated");
+      assert.ok(preview.correctedDocument.sha256);
+      const originalMock = globalThis.fetch;
+      let uploadedBody;
+      globalThis.fetch = async (url, options = {}) => {
+        if (url.endsWith("/documents/prepare")) return new Response(JSON.stringify({
+          document: { id: "stored-corrected" }, uploadUrl: "https://storage.example.test/put", uploadHeaders: { "x-test": "1" },
+        }));
+        if (url === "https://storage.example.test/put") { uploadedBody = options.body; return new Response("", { status: 200 }); }
+        if (url.endsWith("/complete")) return new Response(JSON.stringify({ document: { id: "stored-corrected" } }));
+        if (url.includes("/candidates/invoices")) return new Response(JSON.stringify({ items: [{ id: "stored-corrected", identityToken: "verified-corrected" }] }));
+        if (url.endsWith("/finance/invoice-correction")) {
+          const data = JSON.parse(options.body);
+          assert.equal(data.sourceId, "stored-corrected");
+          assert.equal(data.identityToken, "verified-corrected");
+          assert.equal(data.reason, "Amount was overstated");
+          assert.equal(data.issuedOn, "2026-09-01");
+          assert.equal(data.dueOn, "2026-10-01");
+          return new Response(JSON.stringify({ result: { financeVersion: 9 }, projection: { invoiceState: "issued" } }));
+        }
+        return originalMock(url, options);
+      };
+      const applied = await correctInvoice(args({ reason: "Amount was overstated" }, { file, apply: true }), io);
+      assert.equal(applied.request.sourceId, "stored-corrected");
+      assert.ok(uploadedBody);
+    });
+  } finally { await rm(directory, { recursive: true }); }
+});
+
 test("all lifecycle commands are dispatched by the public CLI, with no browser fallback", async () => {
   const lines = [];
   const code = await run(["sponsors", "--help"], { log: (line) => lines.push(line), error: assert.fail });
   assert.equal(code, 0);
-  for (const command of ["classify-finance", "record-invoice", "add-evidence", "set-waiting"]) assert.ok(lines.join("\n").includes(command));
+  for (const command of ["classify-finance", "record-invoice", "correct-invoice", "add-evidence", "set-waiting"]) assert.ok(lines.join("\n").includes(command));
   await mocked(undefined, async () => {
     const output = [];
     assert.equal(await run(["sponsors", "classify-finance", "synthetic-deal", "--data", '{"invoiceRequirement":"not-required"}', "--json"], { log: (line) => output.push(line), error: assert.fail }), 0);
