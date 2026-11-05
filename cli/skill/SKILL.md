@@ -103,6 +103,44 @@ and do not mark it waiting or done. A Task with no `requires` needs nothing
 beyond DataOps itself. If a Task obviously needs a resource it does not list,
 add it: `dataops tasks update <task-id> --requires youtube,luma`.
 
+## Sponsor invoice lifecycle
+
+Use the CLI for sponsor Finance records. These commands preview the exact request;
+add `--apply` only after reviewing its source-backed values:
+
+```bash
+dataops sponsors finance <deal-id> --json
+dataops sponsors classify-finance <deal-id> --data @classification.json
+dataops sponsors record-invoice <deal-id> --data @invoice.json
+dataops sponsors attach-invoice <deal-id> --file original.pdf
+dataops sponsors add-evidence <deal-id> --data @evidence.json
+dataops sponsors set-waiting <deal-id> --data @waiting.json
+```
+
+Classification needs `invoiceRequirement` (`required` or `not-required`). A required
+invoice also needs `amountDue` (decimal string), `currency` and `taxMode` (`unknown`,
+`included`, `added`, `not-applicable`). Optional `taxAmount`, `requestBy` and
+`expectedInvoiceBy` stay unchanged when omitted from an existing classification.
+
+`record-invoice` records an already issued invoice; it does not generate a PDF,
+send email or record cash. First supply verified `issuedOn` and `dueOn`, with
+optional `invoiceNumber` and `sentOn`. Partial corrections preserve omitted fields;
+explicit `null` clears optional number/sent date. Never record `sentOn` before
+actual sending evidence. Attach the original PDF after recording its dates, or
+pass verified `--issued-on YYYY-MM-DD --due-on YYYY-MM-DD` to `attach-invoice`.
+Missing dates fail before upload. A retry reuses checksum-addressed storage.
+
+An evidence entry is `{kind,ref,label?,on?}`; `add-evidence` appends it or updates
+the same kind/ref while preserving unrelated entries. Waiting data is
+`{party,reason,since,note?}`; `set-waiting --clear` clears only that field.
+See `dataops sponsors --help` for supported values. These actions do not send mail.
+
+Writes obtain current deal/finance versions and send `Idempotency-Key`. To replay
+an exact request, retain the preview's key and request, pass the same
+`--idempotency-key KEY --deal-version N --expected-version N`, and unchanged data.
+A conflict is surfaced for review; the CLI never silently retries a mutation
+against newer state.
+
 ## Browser requirement: headless machines
 
 `requires` names accounts; the separate `browserRequirement` classifies whether
