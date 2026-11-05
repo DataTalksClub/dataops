@@ -1248,9 +1248,11 @@ Resources:
         - Statement:
             Effect: Allow
             Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
-            Resource:
-              - !Sub ${TaskFilesBucket.Arn}/tasks/*
-              - !Sub ${TaskFilesBucket.Arn}/cards/*/banners/*
+            Resource: !Sub ${TaskFilesBucket.Arn}/tasks/*
+        - Statement:
+            Effect: Allow
+            Action: [s3:GetObject, s3:PutObject]
+            Resource: !Sub ${TaskFilesBucket.Arn}/cards/*/banners/*
         - Statement:
             Effect: Allow
             Action: [lambda:InvokeFunction]
@@ -1339,6 +1341,12 @@ Resources:
           SPONSOR_COMMUNICATION_SEND_ENABLED: !Ref SponsorCommunicationSendEnabled
           SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN: !Ref SponsorCommunicationTemplateSecretArn
           SPONSOR_COMMUNICATION_HMAC_SECRET_ARN: !Ref SponsorCommunicationHmacSecretArn
+      Events:
+        CardBannerJobs:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt CardBannerQueue.Arn
+            BatchSize: 1
       FunctionUrlConfig:
         AuthType: NONE
         Cors:
@@ -1496,11 +1504,6 @@ Resources:
             Action: [s3:PutObject]
             Resource: !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}/jobs/*
       Events:
-        CardBannerJobs:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt CardBannerQueue.Arn
-            BatchSize: 1
         DailyKnowledgeBackup:
           Type: Schedule
           Properties:
