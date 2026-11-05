@@ -1,5 +1,4 @@
 import { handleInvoiceRoutes } from "./invoices";
-import { handleInvoiceGenerationRoutes } from './invoiceGeneration';
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import type { LambdaEvent, LambdaResponse } from "../types";
 import { json } from "./bookkeepingShared";
@@ -23,7 +22,6 @@ export async function handleBookkeepingRoutes(
   return (
     (await handleBookkeepingAuditRoutes(path, method, event, client)) ??
     (await handleBookkeepingAccountantReportRoutes(path, method, event, client)) ??
-    (await handleInvoiceGenerationRoutes(path, method, event, client)) ??
     (await handleBookkeepingSuggestionRoutes(path, method, event, client)) ??
     (await handleBookkeepingTransactionRoutes(path, method, event, client)) ??
     (await handleBookkeepingDocumentRoutes(path, method, event, client)) ??
