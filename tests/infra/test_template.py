@@ -487,8 +487,9 @@ def test_single_backend_lambda_is_wired_to_dataops_tables_and_has_public_url():
     assert "WORK_ENGINE_PORTAL_SECRET_NAME: !Sub ${AWS::StackName}.work-engine.portal-secret" in backend
     assert "EMAIL_DOCUMENT_INTAKE_SECRET_NAME: !Sub ${AWS::StackName}.email-document-intake" in backend
     assert "!Ref EmailDocumentIntakeSecretArn" not in backend
-    # No cross-function invocation — the old two-Lambda proxy is gone.
-    assert "lambda:InvokeFunction" not in backend
+    # The retired app proxy stays gone; only the private renderer is callable.
+    assert backend.count("lambda:InvokeFunction") == 1
+    assert "Action: [lambda:InvokeFunction]\n            Resource: !Ref BannerRendererArn" in backend
 
 
 def test_email_document_intake_reads_team_store_without_sm_permissions():

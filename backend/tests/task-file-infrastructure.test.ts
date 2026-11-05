@@ -28,4 +28,11 @@ it('deploys durable private task storage and grants only the backend object acce
   const permission = backend.Policies.find((entry: any) => entry.Statement?.Resource?.Sub === '${TaskFilesBucket.Arn}/tasks/*');
   assert.ok(permission, 'Backend must have object access scoped to the task prefix');
   assert.deepEqual(permission.Statement.Action, ['s3:GetObject', 's3:PutObject', 's3:DeleteObject']);
+  const bannerPermission = backend.Policies.find((entry: any) => entry.Statement?.Resource?.Sub === '${TaskFilesBucket.Arn}/cards/*/banners/*');
+  assert.deepEqual(bannerPermission.Statement.Action, ['s3:GetObject', 's3:PutObject']);
+  assert.equal(stack.Resources.CardBannerQueue.Properties.SqsManagedSseEnabled, true);
+  assert.equal(stack.Resources.CardBannerDeadLetterQueue.Properties.SqsManagedSseEnabled, true);
+  assert.ok(stack.Resources.CardBannerQueue.Properties.VisibilityTimeout >= backend.Timeout * 6);
+  assert.deepEqual(backend.Events.CardBannerJobs.Properties.Queue, { GetAtt: 'CardBannerQueue.Arn' });
+  assert.equal(backend.Events.CardBannerJobs.Properties.BatchSize, 1);
 });

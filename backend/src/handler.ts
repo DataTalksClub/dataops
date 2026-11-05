@@ -1,3 +1,4 @@
+import { renderBannerJob } from './banners/service';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { route } from './router';
 import { getClient } from './db/client';
@@ -459,6 +460,16 @@ async function handler(
   event: LambdaEvent | Record<string, unknown>,
   context?: unknown
 ): Promise<LambdaResponse | CronRunnerResult> {
+  const records = (event as { Records?: { eventSource?: string; eventSourceARN?: string; body?: string }[] }).Records;
+  if (Array.isArray(records) && records.length > 0 && records.every(record => record.eventSource === 'aws:sqs' && record.eventSourceARN === process.env.BANNER_QUEUE_ARN)) {
+    const db = await getClient();
+    for (const record of records) {
+      const message = JSON.parse(record.body || '{}');
+      if (message.schema !== 'dataops.card-banner.v1' || !/^[a-f0-9]{64}$/.test(message.jobId)) throw new Error('Invalid banner queue message');
+      await renderBannerJob(db, message.jobId);
+    }
+    return { statusCode: 200, headers: {}, body: '{}' };
+  }
   if (
     isScheduledEvent(event)
     || isRuntimeSeedEvent(event)
