@@ -70,6 +70,19 @@ describe('workflow template API', () => {
     });
   }
 
+  it('template sync is CI-only: an interactive actor gets 405 without a side effect', async () => {
+    // `POST /api/templates/sync` is the knowledge publisher's route: the
+    // knowledge repository's validate.yml calls it with its GitHub OIDC
+    // identity (knowledgePublisher.ts routes it before the normal
+    // middleware). An interactive user — admin included — falls through to
+    // the template routes, where `/sync` as a template id with POST is 405.
+    // Operators self-serve through create/update/reset; the Git re-seed runs
+    // on knowledge-main pushes, not on request.
+    const response = await invoke('POST', '/api/templates/sync', {});
+    assert.strictEqual(response.statusCode, 405);
+    assert.strictEqual((await getTemplate(client, template.id))?.name, 'Synthetic Git projection');
+  });
+
   it('routes template mutations through validation instead of a blanket 405', async () => {
     // Invalid bodies are rejected without touching the stored projection.
     // (Unauthenticated and role-gate refusals live in api-authorization.test.ts.)
