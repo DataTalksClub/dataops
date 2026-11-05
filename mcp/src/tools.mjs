@@ -1,6 +1,7 @@
 /**
- * DataOps MCP tool definitions shared by the standalone proxy server and
- * documented here for the in-Lambda handler (backend/src/mcp.ts, same shape).
+ * DataOps MCP tool definitions shared by the standalone proxy server and the
+ * dedicated McpFunction Lambda adapter (mcp/src/lambda.mjs), which reuses the
+ * same proxy.
  *
  * The three tools are the complete DataOps surface: `dataops_read` covers
  * every read the CLI can do, `dataops_write` covers every mutation, and
