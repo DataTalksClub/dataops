@@ -144,9 +144,9 @@ against newer state.
 ## Browser requirement: headless machines
 
 `requires` names accounts; the separate `browserRequirement` classifies whether
-an interactive browser is needed at all. It is a human-made claim on the Task —
+an interactive browser is needed at all. It is a human-made claim on the Task â€”
 `required` (a browser is needed somewhere) or `headless` (the whole Task can
-finish without one) — and it is never inferred from a service name: a Typefully
+finish without one) â€” and it is never inferred from a service name: a Typefully
 or YouTube task may have a full API route. An unclassified Task (`show` prints
 "not classified") is unknown, not headless-safe.
 
@@ -248,14 +248,14 @@ and `dataops newsletter doc delete <doc-id> --yes` (and the matching
 `dataops podcast doc create <card-id> [--email]`, `show`, `export`, `delete` for podcast sponsorships;
 prep docs use `--template podcast-guest-research|podcast-run-sheet|podcast-episode-brief` for
 guest research, host run sheet, and episode planning brief (no Google Docs needed).
-The guest materials form (`podcast`) is optional for the guest — a short email
+The guest materials form (`podcast`) is optional for the guest â€” a short email
 reply works instead of filling it. Guest research and the host run sheet start
 only after the recording date is confirmed
 (`dataops podcast update <episode-id> --recording-date YYYY-MM-DD`); the episode
 brief is available before confirm.
 
 For a newsletter issue's Markdown package (`issue.md`, `sources.md`, `brief.md`):
-store it in DataOps on the newsletter issue — never commit it to Git:
+store it in DataOps on the newsletter issue â€” never commit it to Git:
 `dataops newsletter markdown set <issue-id> --issue-file issue.md --sources-file sources.md --brief-file brief.md`
 (or one file at a time with `dataops newsletter markdown set <issue-id> [issue|sources|brief] --file <path>`).
 It automatically populates the `"Newsletter Markdown"` link on the issue and its Card
@@ -285,7 +285,7 @@ For first contact with a new guest: `dataops podcast invite --guest "Full Name"
 --email guest@example.com --date YYYY-MM-DD --topic "Intended topic"
 [--title T] [--window evening|midday] [--duration 60]` proposes one tentative
 hold (the backend mirrors it as a Google "(Proposal)" event, or reports Google
-sync deferred), creates a standalone follow-up Task (no Card — the episode Card
+sync deferred), creates a standalone follow-up Task (no Card â€” the episode Card
 comes only after the recording date is confirmed), and prints the send-ready
 email from orin@datatalks.club with exactly one proposed slot, no topic ask,
 and the public podcast docs page link
@@ -358,14 +358,14 @@ dataops tasks update <task-id> --at none       # clear the moment
 ```
 
 Until the moment passes the Task stays out of the queue, `--today`,
-`--overdue`, and `--waiting` — then it is due like any other Task. `--tz`
+`--overdue`, and `--waiting` â€” then it is due like any other Task. `--tz`
 defaults to Europe/Berlin; an ISO instant with an offset needs no `--tz`.
 
 Chain work with `dataops tasks update <task-id> --after <parent-id>`
 (`none` clears; `--depends-on` is the multi-parent form, `depends_on` in Card
 Templates). A dependent cannot be completed until its parent is done or
 skipped, and when the parent's date or moment moves the dependents shift by
-the same offset, transitively — done work keeps its history. The queue still
+the same offset, transitively â€” done work keeps its history. The queue still
 lists blocked Tasks marked as blocked; the gate is on completion.
 
 Podcast releases ride the same machinery: recording `--spotify-schedule`
@@ -385,7 +385,7 @@ Follow-ups live in DataOps, not in any agent's memory, so any agent can pick
 up any queue:
 
 1. Look at their queue: `dataops tasks list --owner <agent-id> --queue --json`
-   (an id, email, or name — `dataops tasks list --owner orin`).
+   (an id, email, or name â€” `dataops tasks list --owner orin`).
    (`--mine` is shorthand for `--owner me`.)
 2. Take it over: `dataops tasks handover --from <agent-id> --to <agent-id>`
    for the whole open queue, or `dataops tasks handover <task-id> --to <agent-id>`
@@ -410,12 +410,12 @@ then Orin signs in on its host with Google SSO:
 dataops login --label "orin@<host>"
 ```
 
-Orin is an `operator`: it does all execution work — list, create, update,
-complete with proof, wait, follow-ups, snooze, notes — on its own, a
+Orin is an `operator`: it does all execution work â€” list, create, update,
+complete with proof, wait, follow-ups, snooze, notes â€” on its own, a
 teammate's, or unassigned Tasks, and new Tasks default to assigning to it.
 It cannot do administration: user/team management, the secrets store
 (admin-only, so Orin never touches secrets), deleting Tasks, or changing
-assignees (`tasks assign`, `tasks handover` need an admin — ask Alexey).
+assignees (`tasks assign`, `tasks handover` need an admin â€” ask Alexey).
 Viewing another queue (`tasks list --owner orin`, or the web queue's Assignee
 filter) is read-only: it only changes what is listed, never who acts.
 
@@ -480,3 +480,14 @@ number. Missing or ambiguous markers are reported as conflicts; `--apply` refuse
 all writes until those references are resolved. A matching amount/provider alone
 does not identify a native DataOps transaction. Keep exports private and inspect
 the complete preview before any separately authorized historical import.
+
+## Repair a detached confirmed calendar hold
+
+`dataops calendar link-hold HOLD_ID --card CARD_ID` verifies the existing private
+DataOps Google invitation and previews the Card/Hold/Podcast association. It does
+not edit Google, create another invite or notify guests. Resolve conflicting
+active holds or mismatched source facts first. To apply, retain the returned
+`--expected-card-version`, `--expected-hold-version` and, for a podcast,
+`--expected-episode-version`, then repeat with `--apply`. The core records link in
+one conditional transaction; the invite Task closes only after verified linkage.
+Use this for DataOps-created confirmed holds, never to adopt a hand-made event.

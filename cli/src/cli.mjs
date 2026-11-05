@@ -114,6 +114,7 @@ export const FAMILIES = {
       slots: calendar.slots,
       propose: calendar.propose,
       "confirm-hold": calendar.confirmHold,
+      "link-hold": calendar.linkHold,
       "move-hold": calendar.moveHold,
       "release-hold": calendar.releaseHold,
       "expire-holds": calendar.expireHolds,

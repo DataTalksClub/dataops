@@ -17,6 +17,7 @@ Usage
   dataops calendar day <date> [--duration MINUTES] [--window evening|midday|any]
   dataops calendar slots [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--all] [--duration MINUTES] [--window evening|midday|any|call]
   dataops calendar propose --date D --window evening|midday --duration N --title T --topic TOPIC [--guest-ref EMAIL] [--document-url URL] [--card ID] [--expires-days 7]
+  dataops calendar link-hold <id> --card CARD_ID [--apply] [--expected-card-version N --expected-hold-version N --expected-episode-version N]
   dataops calendar confirm-hold <id> [--guest-ref EMAIL] [--document-url URL]
   dataops calendar move-hold <id> --date D [--window evening|midday] [--time HH:MM] [--duration N] [--title T] [--topic TOPIC] [--guest-ref EMAIL] [--document-url URL]
   dataops calendar release-hold <id> [--reason manual]
@@ -935,5 +936,23 @@ export async function googleEvent(args, io) {
       io.print(`  ${entry.calendar}: deferred — ${entry.reason || "Google Calendar could not be read"}`);
     }
   }
+  return result;
+}
+
+/** Link an existing confirmed DataOps invitation without changing Google or sending updates. */
+export async function linkHold(args, io) {
+  const id = holdId(args);
+  if (!args.card) throw new UsageError("Usage: dataops calendar link-hold <id> --card CARD_ID [--apply]");
+  const payload = { cardId: args.card };
+  for (const flag of ["expectedCardVersion", "expectedHoldVersion", "expectedEpisodeVersion"]) {
+    if (args[flag] !== undefined) {
+      const value = Number(args[flag]);
+      if (args[flag] === true || !Number.isSafeInteger(value) || value < 0) throw new UsageError(`${flag} must be a nonnegative integer`);
+      payload[flag] = value;
+    }
+  }
+  if (args.apply && (payload.expectedCardVersion === undefined || payload.expectedHoldVersion === undefined)) throw new UsageError("Preview first, then apply with --expected-card-version and --expected-hold-version (and --expected-episode-version when present)");
+  const result = await client(args).post(`/api/calendar-holds/${encodeURIComponent(id)}/link-card`, { ...payload, apply: Boolean(args.apply) });
+  if (!args.json) io.print(JSON.stringify(result, null, 2));
   return result;
 }
