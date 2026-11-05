@@ -139,6 +139,15 @@ async function handleTemplateRoutes(
         if (isDryRun(event)) return json(200, { dryRun: true, effective: definition });
         const template = await createCustomTemplate(client, definition);
         invalidateTemplateTypeMap();
+        if (isDocsDomainEnabled()) {
+          // Same contract as pin and reset: a Template write never leaves a
+          // generated workflow view describing an older definition. For a
+          // fresh type there is usually no generated view yet and this is a
+          // no-op; when the type recreates one that already exists (a
+          // deleted Template's type can be recreated), the stale view is
+          // refreshed before the response.
+          await regenerateKnowledgeForTemplates([template], create.actor.id || 'template-create');
+        }
         return json(201, { template });
       }
       return json(405, { error: 'Method not allowed' });

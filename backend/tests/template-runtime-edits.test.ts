@@ -285,6 +285,56 @@ describe('Templates runtime editing', () => {
     }
   });
 
+  it('regenerates the workflow view when a custom Template recreates a type that still has one', async () => {
+    const previousDocsDomain = process.env.DATAOPS_DOCS_DOMAIN;
+    const docsDir = mkdtempSync(resolve('../.tmp/template-create-derived-'));
+    const viewPath = 'content/00-start-here/workflow-catalog/reference/create-regen-workflow.md';
+    const staleView = [
+      '---',
+      'id: task-template.tasks.create-regen',
+      'title: Create Regen Workflow View',
+      'doc_type: task-template',
+      'status: active',
+      'tags: [task-template, create-regen]',
+      '---',
+      '',
+      '<!-- GENERATED FILE: this view follows the current pinned DataOps Template. -->',
+      '',
+      '- Template version: `9`',
+      '',
+      '## Task definitions',
+      '',
+      '| # | Task | Primary instruction | Offset | Owner role |',
+      '| ---: | --- | --- | ---: | --- |',
+      '| 1 | `gone` Removed task | — | 0 | — |',
+    ].join('\n');
+    const fixture = syntheticKnowledge({
+      [DOCUMENT_INDEX_PATH]: [
+        '---', 'id: reference.indexes.document-index', 'title: Document index', 'doc_type: reference', 'status: active', '---', '', '# Old index',
+      ].join('\n'),
+      [viewPath]: staleView,
+    }, docsDir);
+    configureDocsRuntime(fixture.store);
+    process.env.DATAOPS_DOCS_DOMAIN = 'true';
+    try {
+      const response = await call('POST', '/api/templates', validCustomDefinition('create-regen', [
+        { id: 'solo', name: 'Solo task', schedule: { offset_days: 2 } },
+      ]), ADMIN_ID);
+      assert.equal(response.statusCode, 201, response.body);
+      const generated = await fixture.store.readFile(viewPath);
+      assert.match(generated, /Template version: `1`/);
+      assert.match(generated, /Name create-regen Workflow View/);
+      assert.match(generated, /`solo`/);
+      assert.doesNotMatch(generated, /Template version: `9`/);
+      assert.doesNotMatch(generated, /`gone`/);
+    } finally {
+      resetDocsRuntime();
+      if (previousDocsDomain === undefined) delete process.env.DATAOPS_DOCS_DOMAIN;
+      else process.env.DATAOPS_DOCS_DOMAIN = previousDocsDomain;
+      rmSync(docsDir, { recursive: true, force: true });
+    }
+  });
+
   it('instantiates from the pinned effective definition and freezes existing snapshots', async () => {
     const template = await createCustom('instantiate-me');
     const cardRes = await call('POST', '/api/cards', {
