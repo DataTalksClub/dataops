@@ -803,16 +803,30 @@ export async function paymentMail(args, io) {
     counterparty: candidate.payer || candidate.match.organizationName,
     reference: `mail:${candidate.provider}:${candidate.invoiceNumber || candidate.id}`.slice(0, 200),
   };
-  const result = { mode: args.apply ? "apply" : "dry-run", candidateId: id, dealId, plan: `${body.receivedOn} ${body.amount} ${body.currency} from ${body.counterparty}` };
+  let result = { mode: args.apply ? "apply" : "dry-run", candidateId: id, dealId, plan: `${body.receivedOn} ${body.amount} ${body.currency} from ${body.counterparty}` };
   if (args.apply) {
     const response = await api.post(`/api/sponsor-crm/deals/${enc(dealId)}/finance/receipts`, body, {
       headers: { "Idempotency-Key": `pmail-${id}`.slice(0, 128).padEnd(16, "0") },
     });
     await api.post(`${base}/${enc(id)}/confirmed`, {});
-    result.paymentState = response?.projection?.paymentState;
+    result = { ...result, ...response };
+    if (response?.projection?.paymentState && !result.paymentState) {
+      result.paymentState = response.projection.paymentState;
+    }
   }
+  attachThankYouResult(result, {
+    projection: result.projection,
+    beforeProjection: projection,
+    fallbackPaymentState: args.apply ? undefined : "paid",
+    dealTitle: deal?.title,
+    invoiceNumber: candidate.invoiceNumber,
+    amount: candidate.amount,
+    currency: candidate.currency,
+    receivedOn: candidate.receivedOn,
+  });
   if (!args.json) {
     io.print(`${result.mode}: receive ${result.plan}${result.paymentState ? ` (deal is now ${result.paymentState})` : ""}`);
+    printThankYouHint(io, result.thankYou);
   }
   return result;
 }

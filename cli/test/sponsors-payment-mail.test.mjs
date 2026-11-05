@@ -41,15 +41,25 @@ test("sponsors payment-mail lists, polls and confirms only with --apply", async 
     const dryRun = captureIo();
     assert.equal(await run(["sponsors", "payment-mail", "confirm", candidate.id, "--json"], dryRun), 0);
     assert.equal(dryRun.json().mode, "dry-run");
+    assert.equal(dryRun.json().thankYou.status, "required");
+    assert.equal(dryRun.json().nextStep.code, "thank-sponsor");
     assert.equal(calls.some((call) => call.route.endsWith("/receipts")), false);
 
     const applied = captureIo();
     assert.equal(await run(["sponsors", "payment-mail", "confirm", candidate.id, "--apply", "--json"], applied), 0);
     assert.equal(applied.json().mode, "apply");
+    assert.equal(applied.json().paymentState, "paid");
+    assert.equal(applied.json().thankYou.status, "required");
     const receipt = calls.find((call) => call.route.endsWith("/receipts"));
     assert.equal(receipt.body.reference, "mail:ramp:202610/50");
     assert.match(receipt.headers["Idempotency-Key"], /^pmail-/);
     assert.equal(calls.some((call) => call.route.endsWith("/confirmed")), true);
+
+    const human = captureIo();
+    assert.equal(await run(["sponsors", "payment-mail", "confirm", candidate.id, "--apply"], human), 0);
+    assert.match(human.text(), /deal is now paid/);
+    assert.match(human.text(), /next-step: send thank-you email from orin@/);
+    assert.match(human.text(), /<WHAT_WAS_PAID>="invoice 202610\/50"/);
   } finally {
     globalThis.fetch = originalFetch;
   }
