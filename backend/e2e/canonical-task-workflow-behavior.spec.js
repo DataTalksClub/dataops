@@ -25,7 +25,6 @@ aliases: []
 title: Synthetic Capability Procedure
 summary: Public-safe procedure used only by browser behavior tests.
 doc_type: sop
-schema_version: 1
 systems:
   - dataops
 tags:
@@ -34,37 +33,23 @@ tags:
 
 # Synthetic Capability Procedure
 
-<!-- sop-section-start: summary -->
 ## Summary
 Exercise a public-safe retained portal surface.
-<!-- sop-section-end -->
 
-<!-- sop-section-start: prerequisites -->
 ## Prerequisites
 Use synthetic records only.
-<!-- sop-section-end -->
 
-<!-- sop-section-start: procedure -->
 ## Procedure
-<!-- sop-step-start id=1 systems="dataops" -->
 1. Verify the synthetic capability.
-<!-- sop-step-end -->
-<!-- sop-section-end -->
 
-<!-- sop-section-start: validation -->
 ## Validation
 The visible state is reloadable.
-<!-- sop-section-end -->
 
-<!-- sop-section-start: troubleshooting -->
 ## Troubleshooting
 Retry the local request.
-<!-- sop-section-end -->
 
-<!-- sop-section-start: references -->
 ## References
 None.
-<!-- sop-section-end -->
 `;
 
 function baseUrl(server) {

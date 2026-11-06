@@ -88,7 +88,6 @@ aliases: []
 title: Synthetic parity process
 summary: Public-safe local fixture for canonical frontend behavior evidence.
 doc_type: sop
-schema_version: 1
 systems:
   - synthetic-system
 tags:
@@ -97,38 +96,24 @@ tags:
 
 # Synthetic parity process
 
-<!-- sop-section-start: summary -->
 ## Summary
 Public-safe local fixture for canonical frontend behavior evidence.
-<!-- sop-section-end -->
 
-<!-- sop-section-start: prerequisites -->
 ## Prerequisites
 Use synthetic records only.
-<!-- sop-section-end -->
 
-<!-- sop-section-start: procedure -->
 ## Procedure
-<!-- sop-step-start id=1 systems="synthetic-system" -->
 1. Verify synthetic proof.
 Record a synthetic completion note and confirm the local result.
-<!-- sop-step-end -->
-<!-- sop-section-end -->
 
-<!-- sop-section-start: validation -->
 ## Validation
 The local result is visible.
-<!-- sop-section-end -->
 
-<!-- sop-section-start: troubleshooting -->
 ## Troubleshooting
 Retry the local request.
-<!-- sop-section-end -->
 
-<!-- sop-section-start: references -->
 ## References
 None.
-<!-- sop-section-end -->
 `);
   return cacheRoot;
 }

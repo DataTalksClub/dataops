@@ -46,7 +46,6 @@ aliases: []
 title: Synthetic Capability Procedure
 summary: Public-safe procedure used only by browser behavior tests.
 doc_type: sop
-schema_version: 1
 systems:
   - dataops
 tags:
@@ -55,53 +54,51 @@ tags:
 
 # Synthetic Capability Procedure
 
-<!-- sop-section-start: summary -->
 ## Summary
 Exercise a public-safe retained portal surface.
-<!-- sop-section-end -->
 
-<!-- sop-section-start: prerequisites -->
 ## Prerequisites
 Use synthetic records only.
-<!-- sop-section-end -->
 
-<!-- sop-section-start: procedure -->
 ## Procedure
-<!-- sop-step-start id=1 systems="dataops" -->
 1. Verify the synthetic capability.
-<!-- sop-step-end -->
-<!-- sop-section-end -->
 
-<!-- sop-section-start: validation -->
 ## Validation
 The visible state is reloadable.
-<!-- sop-section-end -->
 
-<!-- sop-section-start: troubleshooting -->
 ## Troubleshooting
 Retry the local request.
-<!-- sop-section-end -->
 
-<!-- sop-section-start: references -->
 ## References
 None.
-<!-- sop-section-end -->
 `;
 
 function syntheticQualitySop(label) {
-  return syntheticSop
-    .replace(
-      'id: sop.synthetic.capability',
-      `id: sop.synthetic.quality.${label}`,
-    )
-    .replace(
-      'title: Synthetic Capability Procedure',
-      `title: Synthetic Quality Procedure ${label}`,
-    )
-    .replace(
-      '<!-- sop-step-start id=1 systems="dataops" -->',
-      '<!-- sop-step-start id=1 systems="dataops" action="frobnicate" -->',
-    );
+  // A code view that omits its `sop:` link: lint flags it, so the quality
+  // surface has a real process-doc finding to show.
+  return `---
+id: code-view.synthetic.quality.${label}
+aliases: []
+title: Synthetic Quality Procedure ${label}
+summary: Public-safe procedure used only by browser behavior tests.
+doc_type: code-view
+schema_version: 1
+systems:
+  - dataops
+tags:
+  - synthetic
+---
+
+# Synthetic Quality Procedure ${label}
+
+Run the synthetic check, then verify.
+
+\`\`\`bash file=synthetic-check.sh
+#!/usr/bin/env bash
+set -euo pipefail
+echo "synthetic check"
+\`\`\`
+`;
 }
 
 const syntheticQualityDocuments = [
@@ -182,7 +179,6 @@ async function openProcessQualityFindings(page) {
     return drilldown.evaluate((element) => element.open);
   }).toBe(true);
 }
-
 
 async function expectStackedQualityEmptyState(page) {
   const state = page.locator('.ops-quality-list > .ops-honest-state');

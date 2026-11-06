@@ -1052,8 +1052,6 @@ async function runCorpusLint(rt: DocsRuntime): Promise<LambdaResponse> {
   const results: { path: string; violations: string[] }[] = [];
   for (const file of collectMarkdown(rt.contentRoot).sort()) {
     const text = readFileSync(file, 'utf-8');
-    // Only report schema_version=1 docs (the spec) to avoid noise from legacy docs.
-    if (!text.includes('schema_version: 1')) continue;
     let violations: string[];
     try {
       violations = lintDocument(text);
@@ -1074,7 +1072,6 @@ async function processQuality(rt: DocsRuntime): Promise<LambdaResponse> {
   const validationErrors = buildRegistry(rt.contentRoot).violations;
   for (const file of collectMarkdown(rt.contentRoot).sort()) {
     const text = readFileSync(file, 'utf-8');
-    if (!text.includes('schema_version: 1')) continue;
     const path = repoRelative(rt.repoRoot, file);
     let violations: string[];
     try {
