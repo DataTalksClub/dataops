@@ -6,14 +6,8 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 /**
  * Docs content API.
  *
- * TypeScript port of `lambda-functions/src/lambda_functions/api_handler.py` and
- * the docs half of `search_handler.py`, wired onto the docs-domain seam. Routes
- * (`/docs`, `/images`, `/folders`, `/lint`, `/parse`, `/health`, `/search`) read
- * and write content through {@link KnowledgeStore} (S3 source of
- * truth + `/tmp` cache + commit-on-save), code-view bodies through
- * `./codeView`, and search through {@link ZeroSearchIndex} (#85). After a content
- * mutation the in-process search index is refreshed.
- *
+ * Documents are plain markdown with YAML frontmatter: the body is stored,
+ * rendered, and searched as-is, with no structured parsing or linting.
  * Served only when {@link isDocsDomainEnabled}.
  */
 
@@ -63,7 +57,6 @@ import {
 import { createSearchIndex, type SearchIndex } from './searchIndex';
 import { generatedId, iterContentDocs } from './search/extract';
 import { splitFrontmatter, parseFrontmatter } from './frontmatter';
-import { lintDocument, parseCodeView, CodeViewParseError, codeViewStructuredText } from './codeView';
 import { newDocContent } from './docScaffolds';
 import { DEFAULT_HEADERS, jsonResponse, method, queryParam } from './http';
 import { search } from './contentSearch';
@@ -83,8 +76,6 @@ export const DOCS_ROUTE_PREFIXES = [
   '/docs',
   '/images',
   '/folders',
-  '/lint',
-  '/parse',
   '/health',
   '/search',
   '/knowledge',
@@ -186,7 +177,7 @@ export class DocsRuntime {
 
   /** Rebuild the in-process search index from the content cache. */
   rebuildSearch(): void {
-    const docs = iterContentDocs(this.contentRoot, { structuredText: codeViewStructuredText });
+    const docs = iterContentDocs(this.contentRoot);
     const index = createSearchIndex();
     index.fit(docs);
     this.index = index;
@@ -591,8 +582,6 @@ async function dispatch(
   if (path === '/folders' && m === 'DELETE') return deleteFolder(rt, queryParam(event, 'path'), jsonBody(event), actor, await templatesFor(client));
   if (path === '/folders/rename' && m === 'POST') return renameFolder(rt, jsonBody(event), actor, await templatesFor(client));
 
-  if (path === '/lint' && m === 'GET') return runCorpusLint(rt);
-  if (path === '/parse' && m === 'POST') return parseContent(jsonBody(event));
   if (path === '/images' && m === 'POST') return uploadImage(rt, jsonBody(event), actor);
 
   return jsonResponse(404, { error: 'Not found' });
@@ -648,70 +637,26 @@ async function getDoc(rt: DocsRuntime, rawPath: string): Promise<LambdaResponse>
     updated: rt.store.updatedAt(repoPath),
     revision: rt.store.revision,
   };
-  await applyDocTypeAndCodeView(body, rt, repoPath, content);
+  await applyDocType(body, rt, repoPath, content);
   return jsonResponse(200, body);
 }
 
 /**
- * Attach the doc_type and the alternate code-view linkage to a doc payload.
- *
- * Every document reports `code_view: {path, title} | null` — the code-only
- * alternate view linked to it (SOP side), so agents and the UI can switch
- * without a second listing call. A `code-view` document instead carries its
- * parsed body (`parsed_code_view`) and the canonical `sop_doc` back-link.
- * Code-view linkage violations, and registry violations that name this
- * document, are reported as code_view_error while the document stays
- * readable; unrelated problems elsewhere in the corpus do not mark it. Storage/sync failures propagate normally.
+ * Attach the doc_type to a doc payload from the registry (falling back to
+ * the document's own frontmatter when the path is not registered).
  */
-async function applyDocTypeAndCodeView(
+async function applyDocType(
   body: Record<string, unknown>,
   rt: DocsRuntime,
   repoPath: string,
   content: string,
 ): Promise<void> {
-  const docType = frontmatterValue(content, 'doc_type');
-  body.doc_type = docType;
-  body.code_view_error = null;
-  let view: DocumentRecord | null = null;
-  let sopDoc: DocumentRecord | null = null;
-  // A storage failure is not evidence that this document has no alternate view.
+  body.doc_type = frontmatterValue(content, 'doc_type');
   await rt.ensureSynced();
-  // Linkage is corpus knowledge: the registry needs the whole synced tree,
-  // not just the one document this request read.
   const registry = buildRegistry(rt.contentRoot);
-  const problems = new Set([
-    ...registry.codeViewViolations,
-    ...registry.violations.filter((violation) => violation.includes(repoPath)),
-  ]);
-  if (problems.size) body.code_view_error = [...problems].join('\n');
   const record = registry.byPath.get(repoPath);
   if (record) {
     body.doc_type = record.doc_type;
-    if (record.doc_type === 'code-view') {
-      try {
-        sopDoc = resolveReference(registry, record.sop);
-      } catch {
-        // Unresolvable `sop` — reported as a registry violation.
-      }
-    } else {
-      view = registry.codeViewBySop.get(record.id) || null;
-    }
-  }
-  if (body.doc_type === 'code-view') {
-    try {
-      body.parsed_code_view = parseCodeView(content);
-    } catch (err) {
-      if (err instanceof CodeViewParseError) {
-        body.parsed_code_view = null;
-        body.parse_code_error = err.message;
-      } else {
-        throw err;
-      }
-    }
-    body.sop_doc = sopDoc ? { path: sopDoc.path, title: sopDoc.title } : null;
-    body.code_view = null;
-  } else {
-    body.code_view = view ? { path: view.path, title: view.title } : null;
   }
 }
 
@@ -795,12 +740,7 @@ async function saveDoc(
   );
   await rt.ensureSynced();
 
-  let warnings: string[] = [];
-  try {
-    warnings = lintDocument(content);
-  } catch {
-    warnings = [];
-  }
+  const warnings: string[] = [];
   rt.rebuildSearch();
   return jsonResponse(200, { path: repoPath, updated: rt.store.updatedAt(repoPath), warnings, revision:publication.revision, regenerated:publication.regenerated });
 }
@@ -829,15 +769,6 @@ async function createDoc(rt: DocsRuntime, body: Record<string, unknown>, actor:s
     // A copy has its own identity. Never steal aliases, hierarchy, or reviews
     // from the source document. Preserve the authored document and its type.
     for (const key of ['id', 'aliases', 'parent', 'last_reviewed_at', 'next_review_at', 'updated_at']) delete metadata[key];
-    if (source.doc_type === 'code-view') {
-      if (typeof body.sop !== 'string' || !body.sop.trim()) throw new BadRequest('Copying a code view requires sop: the target SOP ID');
-      const registry = buildRegistry(rt.contentRoot);
-      let target: DocumentRecord;
-      try { target = resolveReference(registry, body.sop); }
-      catch (error) { if (error instanceof LookupError) throw new NotFound(error.message); throw error; }
-      if (target.doc_type !== 'sop' || registry.codeViewBySop.has(target.id)) throw new BadRequest('Target must be a SOP without a code view');
-      metadata.sop = target.id;
-    }
     metadata.title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : source.title;
     metadata.doc_type = source.doc_type;
     metadata.id = generatedId(repoPath, source.doc_type);
@@ -1045,75 +976,19 @@ export function updateFrontmatterParent(content: string, parentId: string | null
   return `${bom}---${newline}${newFm}${closingPattern}${rest}`;
 }
 
-// ── Lint / parse ──────────────────────────────────────────────────────────────
-
-async function runCorpusLint(rt: DocsRuntime): Promise<LambdaResponse> {
-  await rt.ensureSynced();
-  const results: { path: string; violations: string[] }[] = [];
-  for (const file of collectMarkdown(rt.contentRoot).sort()) {
-    const text = readFileSync(file, 'utf-8');
-    let violations: string[];
-    try {
-      violations = lintDocument(text);
-    } catch (err) {
-      violations = [`lint failed: ${(err as Error).message}`];
-    }
-    if (violations.length) results.push({ path: repoRelative(rt.repoRoot, file), violations });
-  }
-  const totalViolations = results.reduce((sum, doc) => sum + doc.violations.length, 0);
-  return jsonResponse(200, { docs: results, total_violations: totalViolations });
-}
+// ── Process quality (registry validation only) ────────────────────────────────
 
 async function processQuality(rt: DocsRuntime): Promise<LambdaResponse> {
   await rt.ensureSynced();
-  const findings: Record<string, unknown>[] = [];
   // Registry violations (colliding aliases, unresolved references) are
   // reported here, one per entry; the docs endpoints keep serving.
   const validationErrors = buildRegistry(rt.contentRoot).violations;
-  for (const file of collectMarkdown(rt.contentRoot).sort()) {
-    const text = readFileSync(file, 'utf-8');
-    const path = repoRelative(rt.repoRoot, file);
-    let violations: string[];
-    try {
-      violations = lintDocument(text);
-    } catch (error) {
-      violations = [`lint failed: ${(error as Error).message}`];
-    }
-    for (const [index, violation] of violations.entries()) {
-      findings.push({
-        id: `docs-lint:${path}:${index + 1}`,
-        category: 'process-doc',
-        severity: 'warning',
-        title: 'Process document needs attention',
-        summary: violation,
-        source: 'local docs validation',
-        nextAction: 'open doc',
-        status: 'open',
-        docPath: path,
-      });
-    }
-  }
-  const warning = findings.length;
   return jsonResponse(200, {
-    ok: validationErrors.length === 0 && warning === 0,
-    findings,
-    summary: { total: warning, blocking: 0, warning, info: 0, byCategory: warning ? { 'process-doc': warning } : {} },
+    ok: validationErrors.length === 0,
+    findings: [],
+    summary: { total: 0, blocking: 0, warning: 0, info: 0, byCategory: {} },
     validationErrors,
   });
-}
-
-function parseContent(body: Record<string, unknown>): LambdaResponse {
-  const text = body.content;
-  if (typeof text !== 'string') throw new BadRequest('Request body must include string field: content');
-  if (body.kind !== 'code-view') throw new BadRequest("Request body must include field kind: 'code-view'");
-  try {
-    return jsonResponse(200, { parsed_code_view: parseCodeView(text) });
-  } catch (err) {
-    if (err instanceof CodeViewParseError) {
-      return jsonResponse(200, { parsed_code_view: null, error: err.message });
-    }
-    throw err;
-  }
 }
 
 // ── Backlinks ─────────────────────────────────────────────────────────────────

@@ -108,26 +108,17 @@ export function generatedId(repoPath: string, docType: string): string {
 /**
  * Build the indexed search body for a document.
  *
- * By default the cleaned raw markdown body is indexed. Callers may pass a
- * `structuredText` extractor (e.g. code-view extraction, where fenced code
- * is the content and the default cleaner would drop it); when it returns
- * `null` the cleaned raw body is used.
+ * Documents are plain markdown: the cleaned raw body is indexed as-is.
  */
 export function docToSearchText(
-  rawText: string,
+  _rawText: string,
   fallbackBody: string,
-  structuredText?: (rawText: string) => string | null,
 ): string {
-  if (structuredText) {
-    const structured = structuredText(rawText);
-    if (structured) return cleanText(structured);
-  }
   return markdownToSearchText(fallbackBody);
 }
 
-/** Options for {@link extractDoc}. */
+/** Options for {@link extractDoc}. Kept for call-site compatibility. */
 export interface ExtractOptions {
-  /** Optional structured-text extractor (e.g. code-view body extraction). */
   structuredText?: (rawText: string) => string | null;
 }
 
@@ -136,7 +127,7 @@ export interface ExtractOptions {
  * repo-relative path (e.g. `content/maven/index.md`). Mirrors the per-doc
  * record built by Python `iter_docs`.
  */
-export function extractDoc(repoPath: string, rawText: string, options: ExtractOptions = {}): SearchDocument {
+export function extractDoc(repoPath: string, rawText: string, _options: ExtractOptions = {}): SearchDocument {
   const [rawFrontmatter, body] = splitFrontmatter(rawText);
   const loaded = rawFrontmatter ? yaml.load(rawFrontmatter) : {};
   const metadata = loaded && typeof loaded === 'object' && !Array.isArray(loaded)
@@ -166,7 +157,7 @@ export function extractDoc(repoPath: string, rawText: string, options: ExtractOp
     tags: scalarFrontmatterValue(metadata.tags),
     systems: scalarFrontmatterValue(metadata.systems),
     headings: headings.join('\n'),
-    body: docToSearchText(rawText, body, options.structuredText),
+    body: docToSearchText(rawText, body),
   };
 }
 
@@ -195,12 +186,12 @@ export function collectMarkdown(dir: string): string[] {
  * `contentDir` is an absolute path; repo-relative paths are computed against
  * its parent (the repo root), matching Python `iter_docs`.
  */
-export function iterContentDocs(contentDir: string, options: ExtractOptions = {}): SearchDocument[] {
+export function iterContentDocs(contentDir: string, _options: ExtractOptions = {}): SearchDocument[] {
   const repoRoot = dirname(contentDir);
   const files = collectMarkdown(contentDir).sort();
   return files.map((file) => {
     const repoPath = file.slice(repoRoot.length + 1).split(sep).join(posix.sep);
     const rawText = readFileSync(file, 'utf-8');
-    return extractDoc(repoPath, rawText, options);
+    return extractDoc(repoPath, rawText);
   });
 }

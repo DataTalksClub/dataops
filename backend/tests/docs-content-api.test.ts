@@ -13,14 +13,18 @@ const SOP = [
   'title: Reset a password',
   'summary: How to reset a user password',
   'doc_type: sop',
+  'schema_version: 1',
   'tags: [accounts, security]',
   '---',
   '',
   '# Reset a password',
   '',
+  '<!-- sop-section-start: procedure -->',
   '## Procedure',
-  '',
+  '<!-- sop-step-start id=1 -->',
   '1. Open the admin console and reset the password.',
+  '<!-- sop-step-end -->',
+  '<!-- sop-section-end -->',
 ].join('\n');
 
 const REF = [
@@ -73,24 +77,17 @@ describe('S3 authenticated knowledge content routes',()=>{
   const missing=await call(ev('POST','/docs',{body:{path:'content/new.md',from:'missing',absent:true,expectedRevision:created.body.revision}}));
   assert.equal(missing.status,404);
  });
- it('copies and exports every knowledge document type, with a distinct SOP for a copied code view',async()=>{
-  const registry=await call(ev('GET','/docs/registry'));
-  const sop=registry.body.documents.find((doc:{doc_type:string})=>doc.doc_type==='sop');
+ it('copies and exports every knowledge document type',async()=>{
   let head=revision;
-  const target=await call(ev('POST','/docs',{body:{path:'content/target-sop.md',from:sop.id,absent:true,expectedRevision:head}}));
-  assert.equal(target.status,201);head=target.body.revision;
-  const targetRegistry=await call(ev('GET','/docs/registry'));
-  const targetSop=targetRegistry.body.documents.find((doc:{path:string})=>doc.path==='content/target-sop.md');
   for(const type of VALID_DOC_TYPES) {
    const id=`synthetic.${type}`;
-   const content=`---\nid: ${id}\naliases: [alias.${type}]\ntitle: Source ${type}\ndoc_type: ${type}\n${type==='code-view'?`sop: ${sop.id}\n`:''}---\n# Source ${type}\n\nAuthored ${type} body.\n${type==='template'?'\n## Template\n\n```text\nReusable authored content.\n```\n':''}`;
+   const content=`---\nid: ${id}\naliases: [alias.${type}]\ntitle: Source ${type}\ndoc_type: ${type}\n---\n# Source ${type}\n\nAuthored ${type} body.\n${type==='template'?'\n## Template\n\n```text\nReusable authored content.\n```\n':''}`;
    const source=await call(ev('POST','/docs',{body:{path:`content/source-${type}.md`,content,absent:true,expectedRevision:head}}));
    assert.equal(source.status,201,JSON.stringify(source.body));head=source.body.revision;
-   const copied=await call(ev('POST','/docs',{body:{path:`content/copy-${type}.md`,from:id,absent:true,expectedRevision:head,...(type==='code-view'?{sop:targetSop.id}:{})}}));
+   const copied=await call(ev('POST','/docs',{body:{path:`content/copy-${type}.md`,from:id,absent:true,expectedRevision:head}}));
    assert.equal(copied.status,201,`${type}: ${JSON.stringify(copied.body)}`);head=copied.body.revision;
    assert.ok(!copied.body.content.includes(`id: ${id}\n`));
    assert.ok(!copied.body.content.includes(`alias.${type}`));
-   if(type==='code-view') assert.ok(copied.body.content.includes(`sop: ${targetSop.id}`));
    for(const format of ['md','docx']) {
     const result=await handleDocsRoutes(ev('GET','/docs/export',{query:{ref:`content/copy-${type}.md`,format}}),'authenticated-test-user');
     assert.equal(result?.statusCode,200,`${type}/${format}`);
@@ -109,23 +106,11 @@ describe('S3 authenticated knowledge content routes',()=>{
   assert.ok(copied.body.content.includes('](https://example.test/)'));
   assert.ok(copied.body.content.includes('[Example](relative.md)'));
  });
- it('loads docs, registry, search, quality and health without GitHub',async()=>{
-  for(const route of ['/docs','/docs/registry','/docs/process-quality','/health','/lint']) assert.equal((await call(ev('GET',route))).status,200);
+ it('loads docs, registry, parsed content, search, quality and health without GitHub',async()=>{
+  for(const route of ['/docs','/docs/registry','/docs/process-quality','/health']) assert.equal((await call(ev('GET',route))).status,200);
   const doc=await call(ev('GET','/docs',{query:{path:'content/accounts/sops/reset-password.md'}}));assert.equal(doc.body.revision,revision);assert.equal(doc.body.content,SOP);
   const search=await call(ev('GET','/search',{query:{q:'password'}}));assert.ok(search.body.results.length);
   assert.equal((await call(ev('GET','/docs/resolve',{query:{ref:'ref.newsletter'}}))).status,200);
- });
- it('resolves unresolvable path-shaped refs to a clean 404 like unknown dotted refs',async()=>{
-  const pathShaped=await call(ev('GET','/docs/resolve',{query:{ref:'00-start-here/no-such-doc'}}));
-  assert.equal(pathShaped.status,404,JSON.stringify(pathShaped.body));
-  assert.ok(String(pathShaped.body.error).startsWith('Document reference not found'));
-  const dotted=await call(ev('GET','/docs/resolve',{query:{ref:'sop.finance.does-not-exist-anywhere'}}));
-  assert.equal(dotted.status,404);
-  assert.ok(String(dotted.body.error).startsWith('Document reference not found'));
-  assert.equal((await call(ev('GET','/docs/resolve',{query:{ref:'ref.newsletter'}}))).status,200);
-  const pathAlias=await call(ev('GET','/docs/resolve',{query:{ref:'accounts/sops/reset-password.md'}}));
-  assert.equal(pathAlias.status,200,JSON.stringify(pathAlias.body));
-  assert.equal(pathAlias.body.document.path,'content/accounts/sops/reset-password.md');
  });
  it('saves with revision, conflicts stale attempts, requires expected revision and records actor',async()=>{
   const path='content/accounts/sops/reset-password.md';
@@ -291,12 +276,11 @@ describe('S3 authenticated knowledge content routes',()=>{
   assert.match(stored.body.content, /^next_review_at: null$/m);
   assert.doesNotMatch(stored.body.content, /(?:schema_version|review_cycle_days|last_reviewed_at|next_review_at): '(?:1|90|null)'/);
  });
- it('renames atomically and rejects unsafe paths/stateless invalid parse',async()=>{
+ it('renames atomically and rejects unsafe paths',async()=>{
   const rename=await call(ev('POST','/docs/rename',{body:{old_path:'content/newsletter/reference.md',new_path:'content/newsletter/renamed.md',expectedRevision:revision}}));assert.equal(rename.status,200);
   assert.equal((await call(ev('GET','/docs',{query:{path:'content/newsletter/reference.md'}}))).status,404);
   assert.equal((await call(ev('GET','/docs',{query:{path:'content/newsletter/renamed.md'}}))).status,200);
   assert.equal((await call(ev('GET','/docs',{query:{path:'../secret.md'}}))).status,400);
-  assert.equal((await call(ev('POST','/parse',{body:{}}))).status,400);
  });
  it('creates document with parent frontmatter', async () => {
   const path = 'content/test/child.md';

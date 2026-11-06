@@ -79,12 +79,8 @@ export interface DocumentRegistry {
   byId: Map<string, DocumentRecord>;
   byAlias: Map<string, DocumentRecord>;
   byPath: Map<string, DocumentRecord>;
-  /** code-view records keyed by the resolved target SOP's id (one per SOP). */
-  codeViewBySop: Map<string, DocumentRecord>;
   /** Content problems found while building; empty for a clean corpus. */
   violations: string[];
-  /** The subset of `violations` about code-view ↔ SOP linkage. */
-  codeViewViolations: string[];
 }
 
 export function recordToDict(record: DocumentRecord): DocumentRecordDict {
@@ -172,7 +168,6 @@ export function buildRegistry(contentRoot: string): DocumentRegistry {
   const byId = new Map<string, DocumentRecord>();
   const byAlias = new Map<string, DocumentRecord>();
   const byPath = new Map<string, DocumentRecord>();
-  const codeViewBySop = new Map<string, DocumentRecord>();
 
   for (const record of records) {
     addUnique(byId, record.id, record, 'id', violations);
@@ -195,44 +190,9 @@ export function buildRegistry(contentRoot: string): DocumentRegistry {
   violations.push(...dropAliasConflicts(byAlias, byId, 'id'));
   violations.push(...dropAliasConflicts(byAlias, byPath, 'path'));
 
-  const codeViewViolations: string[] = [];
   const registry: DocumentRegistry = {
-    documents: records, byId, byAlias, byPath, codeViewBySop, violations, codeViewViolations,
+    documents: records, byId, byAlias, byPath, violations,
   };
-
-  // Resolve code-view → SOP links: the reference must exist and each SOP gets
-  // at most one code view, so the alternate view can never fork into copies.
-  for (const record of records) {
-    if (record.doc_type !== 'code-view') continue;
-    if (!record.sop) {
-      codeViewViolations.push(`${record.path}: code view is missing frontmatter \`sop\``);
-      continue;
-    }
-    let target: DocumentRecord;
-    try {
-      target = resolveReference(registry, record.sop);
-    } catch {
-      codeViewViolations.push(`${record.path}: sop reference not found: '${record.sop}'`);
-      continue;
-    }
-    if (target.path === record.path) {
-      codeViewViolations.push(`${record.path}: code view cannot target itself`);
-      continue;
-    }
-    if (target.doc_type !== 'sop') {
-      codeViewViolations.push(`${record.path}: sop reference must target a SOP, got '${target.doc_type}'`);
-      continue;
-    }
-    const existing = codeViewBySop.get(target.id);
-    if (existing) {
-      codeViewViolations.push(
-        `${record.path}: second code view for '${record.sop}' (already at ${existing.path})`,
-      );
-      continue;
-    }
-    codeViewBySop.set(target.id, record);
-  }
-  violations.push(...codeViewViolations);
 
   for (const record of records) {
     if (record.parent) {

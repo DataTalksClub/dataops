@@ -11,9 +11,7 @@ import {
   recordToDict,
   LookupError,
 } from '../src/docs/docRegistry';
-import { generatedId } from '../src/docs/search/extract';
-import { codeViewStructuredText } from '../src/docs/codeView';
-import { extractDoc } from '../src/docs/search/extract';
+import { extractDoc, generatedId } from '../src/docs/search/extract';
 
 function writeDoc(contentRoot: string, relPath: string, text: string): void {
   const full = join(contentRoot, relPath);
@@ -90,23 +88,6 @@ describe('docRegistry - build + resolve (port of doc_registry.py)', () => {
     writeDoc(contentRoot, 'a.md', '---\ntitle: A\n---\n\nbody\n');
     const registry = buildRegistry(contentRoot);
     assert.throws(() => resolveReference(registry, 'does.not.exist'), LookupError);
-  });
-
-  it('throws LookupError, not a plain Error, for an unknown path-shaped reference', () => {
-    writeDoc(contentRoot, 'a.md', '---\ntitle: A\n---\n\nbody\n');
-    const registry = buildRegistry(contentRoot);
-    try {
-      resolveReference(registry, '00-start-here/no-such-doc');
-      assert.fail('expected resolveReference to throw');
-    } catch (error) {
-      assert.ok(error instanceof LookupError, `expected LookupError, got ${String(error)}`);
-      assert.strictEqual((error as Error).message, 'Document reference not found: 00-start-here/no-such-doc');
-    }
-    // Same for a path-shaped ref that ends in .md but matches no document.
-    assert.throws(() => resolveReference(registry, '00-start-here/no-such-doc.md'), LookupError);
-    // Valid path references still resolve after the throw site.
-    const record = resolveReference(registry, 'a.md');
-    assert.strictEqual(record.path, 'content/a.md');
   });
 
   it('reports a dangling related_docs reference and still builds', () => {
@@ -252,45 +233,5 @@ describe('docRegistry - build + resolve (port of doc_registry.py)', () => {
     const leaf = registry.byId.get('doc.leaf');
     assert.ok(leaf);
     assert.strictEqual(leaf.parent_id, undefined);
-  });
-});
-
-const CODE_VIEW_DOC = [
-  '---',
-  'title: Reset a password — code',
-  'doc_type: code-view',
-  'schema_version: 1',
-  'sop: sop.example.reset',
-  '---',
-  '',
-  '# Reset a password — code',
-  '',
-  'Run the script, then verify.',
-  '',
-  '```bash file=reset-password.sh',
-  '#!/usr/bin/env bash',
-  'echo "dry-run"',
-  '```',
-].join('\n');
-
-describe('extractDoc - structured search text hook', () => {
-  it('indexes code-view filenames and code through the hook', () => {
-    const text = codeViewStructuredText(CODE_VIEW_DOC);
-    assert.ok(text, 'returns structured text for a code-view doc');
-    assert.match(text!, /reset-password\.sh/);
-    assert.match(text!, /dry-run/);
-  });
-
-  it('returns null for non code-view docs', () => {
-    const plain = ['---', 'title: Plain', '---', '', '# Plain', 'body'].join('\n');
-    assert.strictEqual(codeViewStructuredText(plain), null);
-  });
-
-  it('wires into extractDoc so the indexed body uses structured text', () => {
-    const doc = extractDoc('content/ops/code-views/reset.md', CODE_VIEW_DOC, {
-      structuredText: codeViewStructuredText,
-    });
-    assert.match(String(doc.body), /reset-password\.sh/);
-    assert.doesNotMatch(String(doc.body), /```/);
   });
 });

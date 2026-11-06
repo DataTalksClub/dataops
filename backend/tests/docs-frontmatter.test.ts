@@ -9,18 +9,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { ParseError, parseFrontmatter, splitFrontmatter, stripBom } from '../src/docs/frontmatter';
-import { lintDocument } from '../src/docs/codeView';
+import { FrontmatterParseError, parseFrontmatter, splitFrontmatter, stripBom } from '../src/docs/frontmatter';
 import { buildRegistry, resolveReference } from '../src/docs/docRegistry';
 import { configureDocsRuntime, handleDocsRoutes, resetDocsRuntime, updateFrontmatterParent } from '../src/docs/contentApi';
 import { syntheticKnowledge } from './helpers/knowledge';
 import type { LambdaEvent } from '../src/types';
-
-/** Frontmatter plus body of a plain-markdown document. */
-function docOf(text: string): { frontmatter: ReturnType<typeof parseFrontmatter>; body: string } {
-  const [raw, body] = splitFrontmatter(text);
-  return { frontmatter: parseFrontmatter(raw), body };
-}
 
 const UNINDENTED = [
   'id: sop.example.fill-in-the-sponsored-block',
@@ -74,16 +67,16 @@ describe('parseFrontmatter', () => {
     assert.equal(parseFrontmatter('updated: 2026-10-15').updated, '2026-10-15');
   });
 
-  it('raises ParseError at the document line of malformed YAML', () => {
+  it('raises FrontmatterParseError at the document line of malformed YAML', () => {
     assert.throws(
       () => parseFrontmatter('title: ok\ntags: [unclosed\n'),
-      (error: unknown) => error instanceof ParseError && error.line >= 2,
+      (error: unknown) => error instanceof FrontmatterParseError && error.line >= 2,
     );
   });
 
-  it('exposes the lists through the parsed document', () => {
-    const { frontmatter } = docOf(`---\n${UNINDENTED}\n---\n\n# Complete the Sponsored Block\n`);
-    assert.deepEqual(frontmatter.training_assets, [
+  it('exposes the lists through split frontmatter', () => {
+    const [raw] = splitFrontmatter(`---\n${UNINDENTED}\n---\n\n# Complete the Sponsored Block\n`);
+    assert.deepEqual(parseFrontmatter(raw).training_assets, [
       'https://www.loom.com/share/0000000000000000000000000000aaaa',
     ]);
   });
@@ -195,7 +188,7 @@ describe('docs API with a colliding alias in one document', () => {
 
     const unrelated = await call(ev('GET', '/docs', { path: 'content/example/reference/unrelated.md' }));
     assert.equal(unrelated.status, 200);
-    assert.equal(unrelated.body.code_view_error, null);
+    assert.equal(unrelated.body.doc_type, 'reference');
 
     const quality = await call(ev('GET', '/docs/process-quality'));
     assert.equal(quality.status, 200);
@@ -220,8 +213,8 @@ describe('UTF-8 BOM normalization before frontmatter parsing', () => {
 
   it('parses BOM-prefixed frontmatter identically to the plain form', () => {
     assert.deepEqual(splitFrontmatter(`${BOM}${DOC}`), splitFrontmatter(DOC));
-    assert.deepEqual(docOf(`${BOM}${DOC}`), docOf(DOC));
-    assert.equal(docOf(`${BOM}${DOC}`).frontmatter.id, 'sop.example.bom-parity');
+    const [raw] = splitFrontmatter(`${BOM}${DOC}`);
+    assert.equal(parseFrontmatter(raw).id, 'sop.example.bom-parity');
   });
 
   it('returns BOM-prefixed bodies without frontmatter untouched', () => {
@@ -230,9 +223,13 @@ describe('UTF-8 BOM normalization before frontmatter parsing', () => {
   });
 
   it('rejects malformed frontmatter consistently with and without a BOM', () => {
+    const read = (text: string) => {
+      const [raw] = splitFrontmatter(text);
+      return parseFrontmatter(raw);
+    };
     const without = (() => {
       try {
-        docOf(MALFORMED);
+        read(MALFORMED);
       } catch (error) {
         return error;
       }
@@ -240,17 +237,15 @@ describe('UTF-8 BOM normalization before frontmatter parsing', () => {
     })();
     const withBom = (() => {
       try {
-        docOf(`${BOM}${MALFORMED}`);
+        read(`${BOM}${MALFORMED}`);
       } catch (error) {
         return error;
       }
       return null;
     })();
-    assert.ok(without instanceof ParseError);
-    assert.ok(withBom instanceof ParseError);
+    assert.ok(without instanceof FrontmatterParseError);
+    assert.ok(withBom instanceof FrontmatterParseError);
     assert.equal(withBom.toString(), without.toString());
-    assert.deepEqual(lintDocument(`${BOM}${MALFORMED}`), lintDocument(MALFORMED));
-    assert.deepEqual(lintDocument(`${BOM}${DOC}`), lintDocument(DOC));
   });
 
   it('keeps the stable frontmatter id for BOM-prefixed registry documents', () => {
@@ -280,7 +275,7 @@ describe('UTF-8 BOM normalization before frontmatter parsing', () => {
     const updated = updateFrontmatterParent(`${BOM}${DOC}`, 'sop.example.parent');
     assert.ok(updated.startsWith(BOM));
     assert.match(updated, /^parent: "sop\.example\.parent"$/m);
-    assert.equal(docOf(updated).frontmatter.id, 'sop.example.bom-parity');
+    assert.equal(parseFrontmatter(splitFrontmatter(updated)[0]).id, 'sop.example.bom-parity');
     const cleared = updateFrontmatterParent(updated, null);
     assert.ok(cleared.startsWith(BOM));
     assert.doesNotMatch(cleared, /^parent:/m);

@@ -21,7 +21,6 @@ import { dirname, resolve } from 'node:path';
 
 import { createSearchIndex } from '../src/docs/searchIndex';
 import { iterContentDocs } from '../src/docs/search/extract';
-import { codeViewStructuredText } from '../src/docs/codeView';
 
 const repoRoot = resolve(__dirname, '..', '..');
 const DEFAULT_CONTENT_DIR = resolve(repoRoot, 'content');
@@ -47,9 +46,8 @@ function parseArgs(argv: string[]): Args {
 async function main(): Promise<void> {
   const { contentDir, output } = parseArgs(process.argv.slice(2));
 
-  // Route code-view docs through their extractor so fenced code is indexed —
-  // matching the in-process refresh performed by the content API after a save.
-  const docs = iterContentDocs(contentDir, { structuredText: codeViewStructuredText });
+  // Documents are plain markdown; the cleaned raw body is indexed as-is.
+  const docs = iterContentDocs(contentDir);
 
   mkdirSync(dirname(output), { recursive: true });
   const index = createSearchIndex();
