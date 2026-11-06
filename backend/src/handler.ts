@@ -1,3 +1,4 @@
+import { processGuestIntake, resumeGuestIntakes, pollGuestIntakeAcceptances } from './events/guestIntakeWorker';
 import { renderBannerJob } from './banners/service';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { route } from './router';
@@ -428,6 +429,14 @@ async function handleInvocation(
         }),
       };
     }
+    if (detail?.dataopsAction === 'guest-event-intake-resume') {
+      const result = await resumeGuestIntakes(client!);
+      return { statusCode: 200, headers: {}, body: JSON.stringify(result) };
+    }
+    if (detail?.dataopsAction === 'guest-event-acceptance-poll') {
+      const result = await pollGuestIntakeAcceptances(client!);
+      return { statusCode: 200, headers: {}, body: JSON.stringify(result) };
+    }
     if (detail?.dataopsAction === 'calendar-holds-expire') {
       const dryRun = detail.dryRun === true;
       const nowIso = typeof detail.now === 'string' && detail.now.trim() ? detail.now.trim() : undefined;
@@ -461,6 +470,15 @@ async function handler(
   context?: unknown
 ): Promise<LambdaResponse | CronRunnerResult> {
   const records = (event as { Records?: { eventSource?: string; eventSourceARN?: string; body?: string }[] }).Records;
+  if (Array.isArray(records) && records.length > 0 && records.every(record => record.eventSource === 'aws:dynamodb')) {
+    const db = await getClient();
+    for (const raw of records) {
+      const record = raw as unknown as { eventName: string; dynamodb?: { NewImage?: { guestIntake?: { M?: { jobId?: { S?: string } } } } } };
+      const jobId = record.dynamodb?.NewImage?.guestIntake?.M?.jobId?.S;
+      if (record.eventName === 'INSERT' && jobId && /^[a-f0-9]{64}$/.test(jobId)) await processGuestIntake(db, jobId);
+    }
+    return { statusCode: 200, headers: {}, body: '{}' };
+  }
   if (Array.isArray(records) && records.length > 0 && records.every(record => record.eventSource === 'aws:sqs' && record.eventSourceARN === process.env.BANNER_QUEUE_ARN)) {
     const db = await getClient();
     for (const record of records) {

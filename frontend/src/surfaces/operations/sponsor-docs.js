@@ -1,3 +1,4 @@
+import { appendGuestTimezoneSelector, appendTimeChoiceSave, guestSlotFieldDefinition, guestEventMetadataRow } from "./sponsor-doc-guest-schedule.js";
 import { formatUserCode } from "../../dakit/device-code.js";
 import { renderSponsorDocGate } from "./sponsor-doc-gate.js";
 import { appendSponsorDocRadioField } from "./sponsor-doc-radio.js";
@@ -256,7 +257,7 @@ export function createSponsorDocPage({
     }
   }
 
-  async function saveChanges(nextStatus) {
+  async function saveChanges(nextStatus, timeChoiceIntent) {
     if (busy || !doc) return;
     if (nextStatus === "submitted") {
       const validationErrors = validateSponsorDocDraft(doc.templateDefinition, draftContent);
@@ -279,6 +280,7 @@ export function createSponsorDocPage({
         (section.fields || []).filter(field => field.derived).map(field => field.key)));
       const body = { content: Object.fromEntries(Object.entries(draftContent).filter(([key]) => !derivedKeys.has(key))) };
       if (nextStatus) body.status = nextStatus;
+      if (timeChoiceIntent) body.timeChoiceIntent = timeChoiceIntent;
       const payload = await request(`/api/sponsor-docs/${encodeURIComponent(docId)}`, {
         method: "PUT",
         headers,
@@ -400,20 +402,14 @@ export function createSponsorDocPage({
     badge.dataset.sponsorDocStatus = doc.status;
     titleRow.append(el("h1", "sponsor-doc-title", formTitle), badge);
 
-    const metaRow = el("div", "sponsor-doc-meta");
-    metaRow.append(el("span", "dk-badge", tDef.label || doc.template));
-    if (doc.eventMetadata) {
-      const eventLabel = el("span", "", doc.eventMetadata.label);
-      eventLabel.dataset.sponsorDocEvent = "";
-      metaRow.append(eventLabel);
-    }
-    if (doc.publicationDate) metaRow.append(el("span", "", `Publication date: ${doc.publicationDate}`));
-    if (doc.sponsorName) metaRow.append(el("span", "", `${isSpeakerDoc(doc) ? "Speaker" : isPodcastGuestDoc(doc) ? "Guest" : "Sponsor"}: ${doc.sponsorName}`));
-    const editedSpan = el("span", "", formatEditorLabel(doc));
-    editedSpan.dataset.sponsorDocLastEdited = "";
-    metaRow.append(editedSpan);
+    const { metaRow, guestSchedule, guestZone } = guestEventMetadataRow({
+      el, doc, tDef, draftContent, isSpeakerDoc, isPodcastGuestDoc, formatEditorLabel,
+    });
     headWrap.append(titleRow, metaRow);
     headerCard.append(headWrap);
+    if (guestSchedule) appendGuestTimezoneSelector({
+      el, headerCard, guestZone, busy, draftContent, render,
+    });
 
     if (doc.viewerRole === "staff") {
       const staffBar = el("div", "sponsor-doc-staff-bar");
@@ -491,7 +487,7 @@ export function createSponsorDocPage({
       if (tDef.intro) body.append(el("p", "", tDef.intro));
       if (tDef.guidelinesUrl) {
         const guideP = el("p", "");
-        const guideLink = el("a", "", "View visual placement guide →");
+        const guideLink = el("a", "", tDef.guidelinesLabel || "View visual placement guide →");
         guideLink.href = tDef.guidelinesUrl;
         guideLink.target = "_blank";
         guideLink.rel = "noopener noreferrer";
@@ -606,6 +602,7 @@ export function createSponsorDocPage({
       };
 
       for (const fieldDef of sectionDef.fields || []) {
+        if (guestSchedule && ["guestTimezone", "proposedSlotLabel"].includes(fieldDef.key)) continue;
         const fieldWrap = el("div", "sponsor-doc-field");
         fieldWrap.dataset.sponsorFieldGroup = fieldDef.key;
         if (fieldDef.required) fieldWrap.dataset.sponsorFieldRequired = "true";
@@ -659,6 +656,7 @@ export function createSponsorDocPage({
 
         const isVisualField = fieldDef.key === "graphicsUrl" || Boolean(fieldDef.allowVisualUpload);
         const updateCount = (valText) => {
+          if (fieldDef.key === "photoUrl") { countEl.hidden = true; countEl.textContent = ""; return; }
           const text = String(valText || "");
           if (isVisualField && /^data:image\//i.test(text)) {
             countEl.textContent = uploadedVisualName ? `Uploaded (${uploadedVisualName})` : "Uploaded image";
@@ -693,13 +691,23 @@ export function createSponsorDocPage({
           appendSponsorDocRadioField({
             el,
             fieldWrap,
-            fieldDef,
+            fieldDef: guestSchedule
+              ? guestSlotFieldDefinition(fieldDef, doc.eventMetadata, guestZone)
+              : fieldDef,
             inputId,
             currentVal,
             busy,
             draftContent,
             updateLivePreview,
             top,
+          });
+          if (fieldDef.key === "slotChoice" && guestSchedule) appendTimeChoiceSave({
+            fieldWrap, actionBtn, busy, draftContent, metadata: doc.eventMetadata,
+            saveChanges, showWarning: message => {
+              feedbackMsg = message;
+              feedbackTone = "warning";
+              render();
+            },
           });
           appendErrorIfAny();
           appendFieldNode(fieldDef.key, fieldWrap);
@@ -824,6 +832,11 @@ export function createSponsorDocPage({
             if (!file) return;
             const dataUrl = await readVisualFileAsDataUrl(file);
             if (!dataUrl) return;
+            if (fieldDef.maxCharsHint && dataUrl.length > fieldDef.maxCharsHint) {
+              announce("This image is too large. Please use a smaller photo or paste an image URL.");
+              fileInput.value = "";
+              return;
+            }
             uploadedVisualName = file.name || "uploaded-visual.png";
             draftContent[fieldDef.key] = dataUrl;
             control.value = "";

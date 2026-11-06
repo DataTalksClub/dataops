@@ -21,8 +21,8 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     const dialog = page.locator('.quick-form-panel');
     await expect(dialog).toBeVisible();
     await expect(dialog.getByLabel('Date', { exact: true })).toHaveValue(/\d{4}-\d{2}-\d{2}/);
-    await expect(dialog.locator('select')).toBeEnabled();
-    expect(await dialog.locator('select option').count()).toBeGreaterThan(1);
+    await expect(dialog.getByRole('combobox', { name: 'Template', exact: true })).toBeEnabled();
+    expect(await dialog.getByRole('combobox', { name: 'Template', exact: true }).locator('option').count()).toBeGreaterThan(1);
     await expect(dialog).not.toContainText('template available');
     const field = await dialog.getByLabel('Card title').boundingBox();
     const panel = await dialog.boundingBox();

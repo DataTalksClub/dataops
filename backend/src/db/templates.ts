@@ -917,6 +917,7 @@ async function createCardFromTemplate(
   selectedGroups?: string[],
   companions: (card: Card) => PlannedWrite[] = () => [],
   counts?: Record<string, number>,
+  extraTasks?: (card: Card) => Task[],
 ): Promise<{ card: Card; tasks: Task[] }> {
   const resolved = await resolveTemplateConditionalValidation(client, template, anchorDate);
   const cardCounts = cardCountValues(resolved, counts);
@@ -940,6 +941,12 @@ async function createCardFromTemplate(
     updatedAt: now,
     ...templateTaskProjection(resolved, definition, definition.order!, anchorDate, card.id, assignment, idsByRef, endDate),
   }) as Task);
+  if (extraTasks) {
+    const additional = extraTasks(card);
+    tasks.push(...additional);
+    card.taskCount += additional.length;
+    card.openTaskCount += additional.filter(t => t.status === 'todo' || t.status === 'waiting').length;
+  }
 
   const companionWrites = companions(card);
   // Card Put + Template fenced Update + one Put per Task + the owner's writes.

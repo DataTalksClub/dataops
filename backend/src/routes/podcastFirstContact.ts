@@ -1,3 +1,4 @@
+import { loadGuestFirstContact } from '../events/guestFirstContact';
 /**
  * POST /api/podcast-first-contact/email: render Orin's first-contact email.
  *
@@ -10,11 +11,6 @@ import { randomUUID } from 'node:crypto';
 
 import { resolveInteractiveActor } from '../identity/actor';
 import type { LambdaEvent, LambdaResponse } from '../types';
-import {
-  PODCAST_DOCS_URL,
-  renderPodcastFirstContactEmail,
-  formatSlotLabel,
-} from '../podcast/firstContact';
 import { noStoreJson as json, parseJsonObjectEventOrEmpty as parse } from '../http';
 import { getTaskConsistent, updateTask, TaskVersionConflictError } from '../db/tasks';
 import { getCalendarHold } from '../db/calendarHolds';
@@ -78,7 +74,7 @@ export async function handlePodcastFirstContactRoutes(
     const formUrl = `${sponsorDocPortalBaseUrl(event)}/podcast-docs/${encodeURIComponent(doc.id)}?code=${encodeURIComponent(accessCode)}`;
     let email;
     try {
-      email = renderPodcastFirstContactEmail({ guestFirstName: guestName.trim().split(/\s+/)[0], slotLabel: formatSlotLabel(hold.startIso), topicSeed: hold.topic, formUrl });
+      email = await loadGuestFirstContact(client, { type: 'podcast', templateId: card.templateDefinitionSnapshot?.guestIntake?.emailTemplateId || 'podcast.first-contact', guestName, startIso: hold.startIso, topic: hold.topic, formUrl, accessCode });
     } catch (error) { return json(422, { error: (error as Error).message }); }
     const recipient = hold.guestRef!.trim().toLowerCase();
     // Use the existing Orin Google connection with verified Gmail scopes, also
@@ -111,13 +107,13 @@ export async function handlePodcastFirstContactRoutes(
   }
 
   try {
-    const email = renderPodcastFirstContactEmail({
-      guestFirstName: body.guestFirstName as string,
-      slotLabel: body.slotLabel as string,
-      formUrl: typeof body.formUrl === 'string' ? body.formUrl : undefined,
-      topicSeed: typeof body.topicSeed === 'string' ? body.topicSeed : undefined,
+    const email = await loadGuestFirstContact(client, {
+      type: 'podcast', templateId: 'podcast.first-contact', guestName: body.guestFirstName as string,
+      startIso: body.startIso as string, formUrl: body.formUrl as string,
+      topic: body.topicSeed as string, accessCode: body.accessCode as string,
+      guestTimezone: body.guestTimezone as string | undefined,
     });
-    return json(200, { ...email, docsPage: PODCAST_DOCS_URL });
+    return json(200, email);
   } catch (error) {
     return json(400, { error: (error as Error).message });
   }

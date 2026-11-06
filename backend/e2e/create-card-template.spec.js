@@ -11,7 +11,7 @@ test('Create card requires a Template and opens the Card linked to it', async ({
   await page.goto('/cards');
   await page.getByRole('button', { name: 'Create card', exact: true }).click();
   const form = page.locator('.quick-form-overlay');
-  await expect(form.locator('.quick-form-select')).toBeEnabled();
+  await expect(form.getByRole('combobox', { name: 'Template', exact: true })).toBeEnabled();
   const title = `Synthetic templated Card ${Date.now()}`;
   await form.getByLabel('Card title').fill(title);
 
@@ -19,7 +19,7 @@ test('Create card requires a Template and opens the Card linked to it', async ({
   await expect(form).toContainText('Select a template.');
   expect(posts).toHaveLength(0);
 
-  await form.locator('.quick-form-select').selectOption({ label: 'Synthetic Git-authored workflow' });
+  await form.getByRole('combobox', { name: 'Template', exact: true }).selectOption({ label: 'Synthetic Git-authored workflow' });
   const created = page.waitForResponse((response) => response.request().method() === 'POST'
     && new URL(response.url()).pathname === '/api/cards');
   await form.getByRole('button', { name: 'Create card' }).click();

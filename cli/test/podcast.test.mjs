@@ -407,7 +407,7 @@ describe("podcast publication evidence flags", () => {
     });
     const io = captureIo();
     const code = await run(
-      ["podcast", "invite", "--guest", "Sofiia", "--email", "sofiia@example.com", "--date", "2026-11-04", "--topic", "LLM evals in production"],
+      ["podcast", "invite", "--guest", "Sofiia", "--email", "sofiia@example.com", "--date", "2026-11-04", "--topic", "LLM evals in production", "--form-url", "https://ops.example.test/podcast-docs/doc?code=ABCD-EFGH"],
       io,
     );
     assert.equal(code, 0);
@@ -429,6 +429,7 @@ describe("podcast publication evidence flags", () => {
     assert.equal(calls[2].body.guestFirstName, "Sofiia");
     assert.match(calls[2].body.slotLabel, /12:30/);
     assert.equal(calls[2].body.topicSeed, "LLM evals in production");
+    assert.equal(calls[2].body.accessCode, "ABCD-EFGH");
     // Printed email: from orin@, one slot, docs URL, send reminder.
     assert.match(io.text(), /From: orin@datatalks\.club/);
     assert.match(io.text(), /To: sofiia@example\.com/);
@@ -461,7 +462,7 @@ describe("podcast publication evidence flags", () => {
       },
     });
     const code = await run(
-      ["podcast", "invite", "--guest", "Sofiia", "--email", "sofiia@example.com", "--date", "2026-11-04", "--topic", "LLM evals", "--window", "evening"],
+      ["podcast", "invite", "--guest", "Sofiia", "--email", "sofiia@example.com", "--date", "2026-11-04", "--topic", "LLM evals", "--window", "evening", "--form-url", "https://ops.example.test/podcast-docs/doc?code=ABCD-EFGH"],
       captureIo(),
     );
     assert.equal(code, 0);

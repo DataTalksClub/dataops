@@ -60,9 +60,9 @@ export function eventPolicyIssues(raw: unknown): string[] {
     }
   }
   const titles = object(p.titles, 'titles', ['proposed', 'approved']);
-  if (text(titles.proposed, 'titles.proposed', true, 500) && !titles.proposed.includes('(Proposal)')) fail('titles.proposed', 'must include (Proposal)');
+  if (text(titles.proposed, 'titles.proposed', true, 500) && !titles.proposed.includes('(Proposal)') && !titles.proposed.startsWith('[Proposed] ')) fail('titles.proposed', 'must start with [Proposed] (legacy (Proposal) is accepted)');
   text(titles.approved, 'titles.approved', true, 500);
-  if (typeof titles.approved === 'string' && titles.approved.includes('(Proposal)')) fail('titles.approved', 'must not include (Proposal)');
+  if (typeof titles.approved === 'string' && (titles.approved.includes('(Proposal)') || titles.approved.includes('[Proposed]'))) fail('titles.approved', 'must not include a proposal prefix');
   text(p.description, 'description', false);
   text(p.inviteText, 'inviteText', false);
   const guests = object(p.guests, 'guests', ['proposal', 'approved', 'requiredEmails', 'leadMinutes']);

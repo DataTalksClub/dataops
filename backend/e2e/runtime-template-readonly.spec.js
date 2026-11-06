@@ -54,7 +54,7 @@ test.describe('Git-authored runtime templates', () => {
 
     await projection.getByRole('button', { name: 'Start card' }).click();
     const form = page.locator('.quick-form-overlay');
-    await expect(form.locator('.quick-form-select')).toHaveValue(template.id);
+    await expect(form.getByRole('combobox', { name: 'Template', exact: true })).toHaveValue(template.id);
     await form.getByLabel('Card title').fill('Synthetic pinned card');
     const createdResponse = page.waitForResponse((response) => (
       response.request().method() === 'POST'

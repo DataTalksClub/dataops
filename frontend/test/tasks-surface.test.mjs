@@ -3992,7 +3992,7 @@ describe("Tasks surface boundary", () => {
     const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
     overlay.querySelector("select").value = "tpl-news";
     await overlay.querySelector("select").dispatch("change");
-    const boxes = overlay.querySelectorAll('input[type="checkbox"]');
+    const boxes = overlay.querySelectorAll('.quick-form-groups input[type="checkbox"]');
     assert.equal(boxes.length, 1);
     assert.match(boxes[0].parentElement.textContent, /secondary/);
     boxes[0].checked = true;
@@ -4456,4 +4456,166 @@ describe("Tasks surface boundary", () => {
     assert.equal(retainedInputs[0].value, "August newsletter");
     assert.equal(retainedInputs[1].value, "2026-08-20");
   });
+
+  test("guest event Card creation accepts email alone and keeps one key after a lost response", async () => {
+    const submissions = [];
+    const harness = createHarness({ request: async (url, options = {}) => {
+      if (url === "/api/templates") return { templates: [{ id: "event-template", type: "podcast", name: "Guest session", guestIntake: { enabled: true } }] };
+      if (url === "/api/cards") {
+        submissions.push(JSON.parse(options.body));
+        if (submissions.length === 1) throw new Error("Synthetic lost response");
+        return { card: { id: "guest-card" } };
+      }
+      throw new Error(`Unexpected request ${url}`);
+    } });
+    await harness.api.openQuickWorkflowForm();
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    const select = overlay.querySelector("select");
+    select.value = "event-template";
+    await select.dispatch("change");
+    assert.equal(overlay.querySelector('input[type="date"]').value, "");
+    const email = overlay.querySelector('[data-guest-email]');
+    email.value = "Guest@Example.test";
+    await email.dispatch("input");
+    assert.equal(overlay.querySelector('input[type="date"]').getAttribute("aria-required"), "false");
+    await submitQuickForm(overlay);
+    await nextTicks();
+    assert.equal(submissions.length, 1);
+    const first = submissions[0];
+    assert.equal(first.guestEmail, "guest@example.test");
+    assert.ok(first.creationKey);
+    for (const field of ["title", "anchorDate", "guestName", "topic", "skipEmail"]) assert.ok(!(field in first));
+    assert.match(overlay.textContent, /Synthetic lost response/);
+    await submitQuickForm(overlay);
+    await nextTicks();
+    assert.deepEqual(submissions[1], first);
+    assert.equal(overlay.removed, true);
+    assert.deepEqual(harness.openedCards, ["guest-card"]);
+  });
+
+  test("guest creation preserves an explicit date and skip-email when reviewing a conflict", async () => {
+    const submissions = [];
+    const harness = createHarness({ request: async (url, options = {}) => {
+      if (url === "/api/templates") return { templates: [{ id: "event-policy", name: "Guest session", type: "webinar", guestIntake: { enabled: true } }] };
+      if (url === "/api/cards") {
+        submissions.push(JSON.parse(options.body));
+        throw Object.assign(new Error("Synthetic conflict"), { status: 409 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    } });
+    await harness.api.openQuickWorkflowForm();
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay")[0];
+    const select = overlay.querySelector("select");
+    select.value = "event-policy";
+    await select.dispatch("change");
+    const date = overlay.querySelector('input[type="date"]');
+    date.value = "2026-12-14";
+    await date.dispatch("input");
+    const email = overlay.querySelector('[data-guest-email]');
+    email.value = "guest@example.test";
+    await email.dispatch("input");
+    overlay.querySelector('[data-guest-name]').value = "Synthetic Guest";
+    overlay.querySelector('[data-guest-topic]').value = "Practical workflows";
+    overlay.querySelector('[data-skip-email]').checked = true;
+    await submitQuickForm(overlay);
+    await nextTicks();
+    const first = submissions[0];
+    assert.equal(first.anchorDate, "2026-12-14");
+    assert.equal(first.skipEmail, true);
+    assert.equal(first.guestName, "Synthetic Guest");
+    await findByText(overlay, "Review latest Templates", "button").click();
+    await nextTicks(3);
+    const reopened = findAllByClass(harness.shellBody, "quick-form-overlay").at(-1);
+    assert.equal(reopened.querySelector('[data-skip-email]').checked, true);
+    assert.equal(reopened.querySelector('[data-guest-email]').value, "guest@example.test");
+    await submitQuickForm(reopened);
+    await nextTicks();
+    assert.deepEqual(submissions[1], first);
+  });
+  test("guest creation discloses automatic delivery and supports saved contacts across reload", async () => {
+    const oldStorage = globalThis.sessionStorage;
+    const storage = new Map();
+    globalThis.sessionStorage = { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) };
+    try {
+      const submissions = [];
+      const harness = createHarness({ request: async (url, options = {}) => {
+        if (url === "/api/templates") return { templates: [{ id: "podcast", type: "podcast", guestIntake: { enabled: true } }] };
+        if (url.startsWith("/api/sponsor-crm/directory/people?")) return { items: [{ id: "saved-contact", name: "Saved Guest", emails: ["saved@example.test"] }] };
+        if (url === "/api/cards") { submissions.push(JSON.parse(options.body)); throw new Error("Synthetic lost response"); }
+        throw new Error(`Unexpected request ${url}`);
+      } });
+      await harness.api.openQuickWorkflowForm();
+      let overlay = findAllByClass(harness.shellBody, "quick-form-overlay").at(-1);
+      const select = overlay.querySelector("select"); select.value = "podcast"; await select.dispatch("change");
+      await findByText(overlay, "Find guest", "button").click();
+      const saved = overlay.querySelector('[data-saved-guest]'); saved.value = "saved-contact"; await saved.dispatch("change");
+      assert.match(overlay.textContent, /saved@example.test will automatically receive an invitation email and a \[Proposed\] calendar invite/);
+      assert.ok(findByText(overlay, "Create and send invitation", "button"));
+      const skip = overlay.querySelector('[data-skip-email]'); skip.checked = true; await skip.dispatch("change");
+      assert.ok(findByText(overlay, "Create without email", "button"));
+      await submitQuickForm(overlay); await nextTicks();
+      assert.equal(submissions[0].guestPersonId, "saved-contact");
+      overlay.remove(); // Browser reload does not explicitly discard the draft.
+      await harness.api.openQuickWorkflowForm();
+      overlay = findAllByClass(harness.shellBody, "quick-form-overlay").at(-1);
+      assert.equal(overlay.querySelector('[data-guest-email]').value, "saved@example.test");
+      await submitQuickForm(overlay); await nextTicks();
+      assert.deepEqual(submissions[1], submissions[0]);
+      await findByText(overlay, "Close", "button").click();
+      assert.equal(storage.size, 0);
+    } finally { globalThis.sessionStorage = oldStorage; }
+  });
+
+  test("unapproved event types expose no automatic invitation fields", async () => {
+    const harness = createHarness({ request: async () => ({ templates: [{ id: "other", type: "office-hours", guestIntake: { enabled: true }, eventPolicy: {} }] }) });
+    await harness.api.openQuickWorkflowForm();
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay").at(-1);
+    const select = overlay.querySelector("select"); select.value = "other"; await select.dispatch("change");
+    assert.equal(overlay.querySelector('[data-guest-event-fields]').hidden, true);
+    assert.equal(overlay.querySelector('[data-guest-email]').disabled, true);
+  });
+
+  test("guest scheduling passes explicit local clock time and both time zones", async () => {
+    const calls = [];
+    const harness = createHarness({ request: async (url, options = {}) => {
+      if (url === "/api/templates") return { templates: [{ id: "workshop", type: "workshop", guestIntake: { enabled: true } }] };
+      calls.push(JSON.parse(options.body)); return { card: { id: "scheduled-card" } };
+    } });
+    await harness.api.openQuickWorkflowForm({ template: { id: "workshop" }, anchorDate: "2030-12-02", guestEmail: "guest@example.test" });
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay").at(-1);
+    overlay.querySelector('[data-guest-time]').value = "18:30";
+    overlay.querySelector('[data-schedule-time-zone]').value = "America/New_York";
+    overlay.querySelector('[data-guest-time-zone]').value = "Asia/Kolkata";
+    overlay.querySelector('[data-preferred-window]').value = "evening";
+    await submitQuickForm(overlay); await nextTicks();
+    assert.equal(calls[0].time, "18:30"); assert.equal(calls[0].timeZone, "America/New_York");
+    assert.equal(calls[0].guestTimezone, "Asia/Kolkata"); assert.equal(calls[0].window, "evening");
+    assert.equal(calls[0].anchorDate, "2030-12-02");
+  });
+
+  test("changing the recipient after an unknown create outcome keeps its key and surfaces conflict", async () => {
+    const submissions = [];
+    const harness = createHarness({ request: async (url, options = {}) => {
+      if (url === "/api/templates") return { templates: [{ id: "podcast", type: "podcast", guestIntake: { enabled: true } }] };
+      if (url === "/api/cards") {
+        submissions.push(JSON.parse(options.body));
+        if (submissions.length === 1) throw new Error("Synthetic unknown network outcome");
+        throw Object.assign(new Error("creationKey already belongs to a different Card request"), { status: 409 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    } });
+    await harness.api.openQuickWorkflowForm({ template: { id: "podcast" }, guestEmail: "first@example.test" });
+    const overlay = findAllByClass(harness.shellBody, "quick-form-overlay").at(-1);
+    await submitQuickForm(overlay); await nextTicks();
+    const email = overlay.querySelector('[data-guest-email]');
+    email.value = "second@example.test"; await email.dispatch("input");
+    await submitQuickForm(overlay); await nextTicks();
+    assert.equal(submissions.length, 2);
+    assert.equal(submissions[0].creationKey, submissions[1].creationKey);
+    assert.equal(submissions[1].guestEmail, "second@example.test");
+    assert.match(overlay.textContent, /creationKey already belongs to a different Card request/);
+    assert.equal(overlay.querySelector('[data-guest-email]').value, "second@example.test");
+    assert.equal(overlay.removed, false);
+  });
+
 });

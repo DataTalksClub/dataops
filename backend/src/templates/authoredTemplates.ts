@@ -64,6 +64,7 @@ const AUTHORITATIVE_FIELDS = [
   'icon',
   'cardTitle',
   'eventPolicy',
+  'guestIntake',
   'tags',
   'phases',
   'sourceDocIds',

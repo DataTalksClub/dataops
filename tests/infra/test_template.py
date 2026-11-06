@@ -296,6 +296,16 @@ def test_backend_schedules_are_explicit_identity_stable_resources_with_exact_beh
             "input": '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"dynamo-backup"}}',
         },
     }
+    for suffix, action, description in [
+        ("GuestEventIntakeResume", "guest-event-intake-resume", "Resume safe pending guest invitations every two minutes."),
+        ("GuestEventAcceptancePoll", "guest-event-acceptance-poll", "Apply guest time choices and poll new proposed guest invitations every two minutes."),
+    ]:
+        name = f"BackendFunction{suffix}"
+        schedules[name] = {
+            "target": "BackendTargetFunctionName", "description": description,
+            "expression": "rate(2 minutes)", "state": "ENABLED", "target_id": f"{name}LambdaTarget",
+            "input": '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"' + action + '"}}',
+        }
     for rule_id, expected in schedules.items():
         target = {
             "Arn": {"Sub": f"arn:${{AWS::Partition}}:lambda:${{AWS::Region}}:${{AWS::AccountId}}:function:${{{expected['target']}}}"},

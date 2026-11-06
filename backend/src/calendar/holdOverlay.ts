@@ -27,7 +27,7 @@ export function calendarHoldOverlay(holds: CalendarHold[]): CalendarOverlayProvi
           id: `calendar-hold:${hold.id}`,
           startDate: hold.date,
           endDate: hold.date,
-          label: `${hold.status === 'tentative' ? '(Proposal) ' : ''}${hold.title} · ${time}`,
+          label: `${hold.status === 'tentative' ? '[Proposed] ' : ''}${hold.title} · ${time}`,
           category: 'Calendar hold',
           slot: hold.window,
           isSlotEvent: true,

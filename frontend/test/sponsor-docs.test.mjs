@@ -700,3 +700,40 @@ test("event fields render read-only and are excluded from document saves", async
   const put = h.calls.find(([, opts]) => opts.method === "PUT");
   assert.deepEqual(JSON.parse(put[1].body).content, { goal: "Authored goal" });
 });
+
+
+test("guest portal shows dual zones and saves a time choice before required materials", async () => {
+  const definition = podcastTemplateDefinition();
+  definition.sections[0].fields[1].options[1] = { value: "slot:2030-12-03:evening", label: "Canonical choice", startIso: "2030-12-03T18:00:00Z", endIso: "2030-12-03T19:00:00Z" };
+  definition.sections[1].fields[1].required = true;
+  definition.sections[1].fields.push({ key: "photoUrl", label: "Photo", type: "text", allowVisualUpload: true, maxCharsHint: 300000 });
+  const h = harness({ href: "https://ops.example.test/podcast-docs/doc-pod?code=bcdfghjklmnpqrst", pathname: "/podcast-docs/doc-pod", docOverrides: {
+    template: "podcast", templateDefinition: definition,
+    eventMetadata: { label: "Canonical Berlin time", startIso: "2030-12-02T18:00:00Z", endIso: "2030-12-02T19:00:00Z", durationMinutes: 60, version: 1 },
+    content: { guestTimezone: "Asia/Kolkata" },
+  } });
+  await h.controller.start();
+  assert.match(h.root.querySelector('[data-sponsor-doc-event]').textContent, /Tue, 3 Dec 2030/);
+  assert.equal(h.root.querySelector('[data-sponsor-field-group="photoUrl"] .sponsor-doc-field__count').hidden, true);
+  assert.equal(h.root.querySelector("#sponsor-field-proposedSlotLabel"), null);
+  const zone = h.root.querySelector('[data-guest-timezone]');
+  zone.value = "America/New_York"; await zone.dispatch("change");
+  assert.match(h.root.querySelector('[data-sponsor-doc-event]').textContent, /America\/New_York/);
+  const radios = h.root.querySelectorAll('[data-sponsor-radios="slotChoice"] input');
+  await radios[1].dispatch("change");
+  assert.match(h.root.querySelector('[data-sponsor-radio-option="slot:2030-12-03:evening"]').textContent, /Tue, 3 Dec 2030/);
+  await h.root.querySelector('[data-sponsor-action="save-time-choice"]').click();
+  await nextTicks();
+  const putCall = h.calls.find(([, options]) => options.method === "PUT");
+  const body = JSON.parse(putCall[1].body);
+  assert.equal(body.content.slotChoice, "slot:2030-12-03:evening");
+  assert.equal(body.content.guestTimezone, "America/New_York");
+  assert.equal(body.status, undefined);
+  assert.equal(body.content.introduction, undefined);
+  assert.deepEqual(body.timeChoiceIntent, { choice: "slot:2030-12-03:evening", proposalStartIso: "2030-12-02T18:00:00Z", proposalVersion: 1 });
+  await h.root.querySelector('[data-sponsor-action="save-draft"]').click();
+  await nextTicks();
+  const ordinarySave = h.calls.filter(([, options]) => options.method === "PUT").at(-1);
+  assert.equal(JSON.parse(ordinarySave[1].body).timeChoiceIntent, undefined, "ordinary biography/material saves do not reconfirm the stored slot choice");
+  h.controller.destroy();
+});

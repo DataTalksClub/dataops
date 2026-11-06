@@ -1,3 +1,4 @@
+import { createQuickCardForm } from "./quick-card-create.js";
 import { createBrowserRequirementSelect } from "./browser-requirement.js";
 import { createProcessDocPicker } from "./process-doc-picker.js";
 import {
@@ -28,6 +29,20 @@ export function createQuickTaskActions(context) {
     todayIsoDate,
     workApiUrl,
   } = context;
+
+  const openQuickWorkflowForm = createQuickCardForm({
+    createQuickInput,
+    createQuickCheckbox,
+    createQuickFormOverlay,
+    addConflictReviewAction,
+    getActiveWorkspaceRouteToken,
+    isWorkspaceRouteFresh,
+    openCardPanel,
+    refreshOperationsWorkSnapshot,
+    request,
+    todayIsoDate,
+    workApiUrl,
+  });
 
   function addConflictReviewAction(feedback, label, onReview) {
     for (const stale of feedback.node.querySelectorAll(".quick-form-retry"))
@@ -137,295 +152,6 @@ export function createQuickTaskActions(context) {
     overlay.querySelector(".quick-form-body").append(form);
     descInput.input.focus();
     descInput.input.focus();
-  }
-
-  async function openQuickWorkflowForm(options = {}) {
-    const requestedTemplate = options.template || null;
-    const overlay = createQuickFormOverlay("Create card");
-    const form = document.createElement("form");
-    form.className = "quick-form";
-    form.addEventListener("submit", (event) => event.preventDefault());
-
-    const selectLabel = document.createElement("label");
-    selectLabel.className = "quick-form-label";
-    selectLabel.textContent = "Template";
-    const templateSelect = document.createElement("select");
-    templateSelect.className = "quick-form-select";
-    const loadingOpt = document.createElement("option");
-    loadingOpt.value = "";
-    loadingOpt.textContent = "Loading templates...";
-    templateSelect.append(loadingOpt);
-    templateSelect.disabled = true;
-    selectLabel.append(templateSelect);
-
-    const anchorInput = createQuickInput(
-      "Date",
-      "date",
-      options.anchorDate || todayIsoDate(),
-    );
-    const titleInput = createQuickInput("Card title", "text", options.title || "");
-    const templateControl = { label: selectLabel, input: templateSelect };
-    const templateState = document.createElement("p");
-    templateState.className = "quick-form-state";
-    templateState.setAttribute("role", "status");
-    templateState.setAttribute("aria-live", "polite");
-    templateState.textContent = "Loading templates…";
-    const groupsWrap = document.createElement("div");
-    groupsWrap.className = "quick-form-groups";
-    groupsWrap.hidden = true;
-    const feedback = createFormFeedback();
-
-    const createBtn = document.createElement("button");
-    createBtn.type = "submit";
-    createBtn.className = "task-action-btn is-primary";
-    createBtn.textContent = "Create card";
-    createBtn.disabled = true;
-    let cardSubmitInFlight = false;
-
-    form.append(
-      selectLabel,
-      templateState,
-      groupsWrap,
-      titleInput.label,
-      anchorInput.label,
-      feedback.node,
-      createBtn,
-    );
-    overlay.querySelector(".quick-form-body").append(form);
-    titleInput.input.focus();
-    titleInput.input.focus();
-
-    // Fetch live templates from the backend API (UUIDs, not doc slugs)
-    let liveTemplates = [];
-    try {
-      const payload = await request(workApiUrl("/api/templates"));
-      liveTemplates = Array.isArray(payload)
-        ? payload
-        : payload.templates || [];
-    } catch (error) {
-      templateSelect.replaceChildren();
-      const unavailable = document.createElement("option");
-      unavailable.value = "";
-      unavailable.textContent = "Templates unavailable";
-      templateSelect.append(unavailable);
-      templateSelect.disabled = true;
-      createBtn.disabled = true;
-      // The form stays open and offers its own recovery: a card cannot be
-      // created without templates, but the operator does not lose the dialog.
-      feedback
-        .failure(
-          `Templates could not be loaded: ${error.message || "request failed"}`,
-        )
-        .focus();
-      templateState.textContent = "No templates are available to select.";
-      const retry = document.createElement("button");
-      retry.type = "button";
-      retry.className = "quiet-button quick-form-retry";
-      retry.textContent = "Retry loading templates";
-      retry.addEventListener("click", () => {
-        overlay.close();
-        openQuickWorkflowForm(options);
-      });
-      feedback.node.append(retry);
-      return;
-    }
-
-    templateSelect.replaceChildren();
-    const placeholder = document.createElement("option");
-    placeholder.value = "";
-    placeholder.textContent = "Select template...";
-    templateSelect.append(placeholder);
-    for (const template of liveTemplates) {
-      const opt = document.createElement("option");
-      opt.value = template.id;
-      opt.textContent = template.name || template.title || template.id;
-      templateSelect.append(opt);
-    }
-    const matchedTemplate = findLiveWorkflowTemplate(
-      liveTemplates,
-      requestedTemplate,
-    );
-    if (matchedTemplate?.id) {
-      templateSelect.value = matchedTemplate.id;
-      if (!titleInput.input.value && requestedTemplate?.title)
-        titleInput.input.value = requestedTemplate.title;
-    }
-    templateSelect.disabled = false;
-    templateState.textContent =
-      liveTemplates.length > 0
-        ? ""
-        : "No templates are deployed, so no card can be created yet.";
-    // Optional task groups (e.g. a secondary sponsor block) instantiate
-    // only when checked. Unchecked groups stay out of the new Card.
-    const syncOptionalGroups = () => {
-      const selected = liveTemplates.find(
-        (template) => template.id === templateSelect.value,
-      );
-      const groups = [
-        ...new Set(
-          (selected?.taskDefinitions || [])
-            .map((definition) => definition?.optionalGroup)
-            .filter((group) => typeof group === "string" && group.length > 0),
-        ),
-      ];
-      groupsWrap.replaceChildren();
-      groupsWrap.hidden = groups.length === 0;
-      for (const group of groups) {
-        const label = document.createElement("label");
-        label.className = "quick-form-label quick-form-checkbox";
-        const box = document.createElement("input");
-        box.type = "checkbox";
-        box.value = group;
-        box.dataset.optionalGroup = group;
-        label.append(box, document.createTextNode(group === "sponsored" ? "Sponsored" : `Include ${group} tasks`));
-        groupsWrap.append(label);
-      }
-    };
-    // A Template with a card_title pattern names its Cards, so the title is
-    // optional there; any other Template needs one.
-    const selectedTitlePattern = () =>
-      liveTemplates.find((template) => template.id === templateSelect.value)?.cardTitle || "";
-    const syncTitleField = () => {
-      const generated = Boolean(selectedTitlePattern());
-      titleInput.label.textContent = generated ? "Card title (optional)" : "Card title";
-      titleInput.label.append(titleInput.input);
-      titleInput.input.setAttribute("aria-required", String(!generated));
-      titleInput.input.placeholder = generated ? "Generated from the template if left empty" : "";
-    };
-    templateSelect.addEventListener("change", () => {
-      syncOptionalGroups();
-      syncTitleField();
-    });
-    syncOptionalGroups();
-    syncTitleField();
-    if (liveTemplates.length > 0) createBtn.disabled = false;
-    else {
-      const emptyOpt = document.createElement("option");
-      emptyOpt.textContent = "No templates available";
-      templateSelect.append(emptyOpt);
-      templateSelect.disabled = true;
-    }
-
-    const submitCard = async () => {
-      if (cardSubmitInFlight) return;
-      const templateId = templateSelect.value;
-      const anchorDate = anchorInput.input.value;
-      const titleMissing = !titleInput.input.value.trim() && !selectedTitlePattern();
-      const invalid = reportFieldValidation([
-        [templateControl, templateId ? "" : "Select a template."],
-        [titleInput, templateId && titleMissing ? "Card title is required." : ""],
-        [anchorInput, anchorDate ? "" : "Date is required."],
-      ]);
-      if (invalid) {
-        feedback.clear();
-        return;
-      }
-      cardSubmitInFlight = true;
-      setControlPending(createBtn, {
-        pending: true,
-        pendingLabel: "Creating card…",
-      });
-      feedback.pending("Creating card…");
-      const routeToken = getActiveWorkspaceRouteToken();
-      try {
-        const body = { templateId, anchorDate };
-        const title = titleInput.input.value.trim();
-        if (title) body.title = title;
-        if (!groupsWrap.hidden) {
-          body.optionalGroups = [...groupsWrap.querySelectorAll("input[type=\"checkbox\"]")]
-            .filter((box) => box.checked)
-            .map((box) => box.value);
-        }
-        const result = await request(workApiUrl("/api/cards"), {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
-        const card = result?.card || result;
-        overlay.close();
-        if (!isWorkspaceRouteFresh(routeToken)) {
-          await refreshOperationsWorkSnapshot({ rerender: false });
-          return;
-        }
-        if (card?.id) openCardPanel(card.id);
-        await refreshOperationsWorkSnapshot({ rerender: true });
-      } catch (err) {
-        if (!isWorkspaceRouteFresh(routeToken)) {
-          overlay.close();
-          return;
-        }
-        if (err.status === 409 || err.code === "template_version_conflict") {
-          feedback
-            .conflict(
-              `The Template changed since this form was opened: ${err.message || "version conflict"}` +
-                ` The entries in this draft are retained. Select Create card to retry,` +
-                ` Close to discard this draft, or Review latest Templates to load the current list.`,
-            )
-            .focus();
-          addConflictReviewAction(
-            feedback,
-            "Review latest Templates",
-            () => {
-              const selectedTemplate =
-                liveTemplates.find((template) => template.id === templateId) ||
-                requestedTemplate;
-              options.template = selectedTemplate;
-              options.title = titleInput.input.value;
-              options.anchorDate = anchorDate;
-              overlay.close();
-              openQuickWorkflowForm(options);
-            },
-          );
-        } else {
-          feedback
-            .failure(
-              `Could not create card: ${err.message || "request failed"} Select Create card to retry.`,
-            )
-            .focus();
-        }
-        setControlPending(createBtn, { pending: false, label: "Create card" });
-      } finally {
-        cardSubmitInFlight = false;
-      }
-    };
-    form.addEventListener("submit", submitCard);
-  }
-
-  function findLiveWorkflowTemplate(liveTemplates, requestedTemplate) {
-    if (!requestedTemplate || !Array.isArray(liveTemplates)) return null;
-    const wantedId = normalizeTemplateMatchValue(
-      requestedTemplate.id ||
-        requestedTemplate.templateId ||
-        requestedTemplate.sourceTemplateId ||
-        requestedTemplate.canonicalTemplateId,
-    );
-    if (wantedId) {
-      const idMatches = liveTemplates.filter(
-        (template) => normalizeTemplateMatchValue(template.id) === wantedId,
-      );
-      return idMatches.length === 1 ? idMatches[0] : null;
-    }
-
-    const wantedSlug = normalizeTemplateMatchValue(
-      requestedTemplate.slug || requestedTemplate.type,
-    );
-    if (!wantedSlug) return null;
-    const slugMatches = liveTemplates.filter((template) => {
-      const templateSlug = normalizeTemplateMatchValue(
-        template.slug || template.type,
-      );
-      return templateSlug === wantedSlug;
-    });
-    return slugMatches.length === 1 ? slugMatches[0] : null;
-  }
-
-  function normalizeTemplateMatchValue(value) {
-    return String(value || "")
-      .trim()
-      .toLowerCase()
-      .replace(/\s+task template$/i, "")
-      .replace(/&/g, "and")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
   }
 
   function openRecurringForm(options = {}) {
@@ -828,7 +554,7 @@ export function createQuickTaskActions(context) {
 
     const backdrop = document.createElement("div");
     backdrop.className = "confirm-backdrop";
-    backdrop.addEventListener("click", () => overlay.close());
+    backdrop.addEventListener("click", () => { overlay.onDiscard?.(); overlay.close(); });
 
     const panel = document.createElement("div");
     panel.className = "confirm-panel quick-form-panel";
@@ -846,7 +572,7 @@ export function createQuickTaskActions(context) {
     closeBtn.type = "button";
     closeBtn.className = "quiet-button";
     closeBtn.textContent = "Close";
-    closeBtn.addEventListener("click", () => overlay.close());
+    closeBtn.addEventListener("click", () => { overlay.onDiscard?.(); overlay.close(); });
     header.append(title, closeBtn);
 
     const body = document.createElement("div");
@@ -858,6 +584,7 @@ export function createQuickTaskActions(context) {
       if (event.defaultPrevented) return;
       if (event.key === "Escape") {
         event.preventDefault();
+        overlay.onDiscard?.();
         overlay.close();
         return;
       }

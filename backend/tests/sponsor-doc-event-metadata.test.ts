@@ -1,3 +1,5 @@
+import { saveGuestIntakeJob } from '../src/events/guestIntakeStore';
+import { readDocumentEventMetadata } from '../src/sponsorDocs/eventMetadata';
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GetCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -24,7 +26,7 @@ test('every event document reads the live hold after move/approve/release withou
   const card = await createCard(client, { ...templateLink(), title: 'Synthetic event', anchorDate: '2030-11-04', people: ['Test guest'] });
   let hold = buildHold({ title: 'Synthetic event', topic: 'Synthetic topic', date: '2030-11-04', window: 'midday', cardId: card.id }, 'test');
   await putCalendarHold(client, hold);
-  const templates: SponsorDocTemplateKey[] = ['podcast', 'webinar', 'podcast-guest-research', 'podcast-run-sheet', 'podcast-episode-brief'];
+  const templates: SponsorDocTemplateKey[] = ['podcast', 'webinar', 'workshop', 'podcast-guest-research', 'podcast-run-sheet', 'podcast-episode-brief'];
   const docs = [];
   for (const template of templates) {
     const { doc } = await createSponsorDoc(client, { cardId: card.id, template, title: 'Old stored title', publicationDate: '1999-01-01', createdBy: 'test' });
@@ -41,6 +43,9 @@ test('every event document reads the live hold after move/approve/release withou
       const live = (await getSponsorDoc(client, doc.id))!;
       assert.equal(live.eventMetadata!.date, '2030-12-03');
       assert.equal(live.eventMetadata!.time, '12:30');
+      assert.equal(live.eventMetadata!.startIso, hold.startIso);
+      assert.equal(live.eventMetadata!.endIso, hold.endIso);
+      assert.equal(live.eventMetadata!.durationMinutes, 60);
       assert.equal(live.eventMetadata!.state, stage === 'move' ? 'tentative' : stage === 'approve' ? 'confirmed' : 'released');
       assert.match(live.title, /3 Dec 2030 12:30 Europe\/Berlin/);
       assert.ok(!live.title.includes('1999'));
@@ -198,3 +203,18 @@ test('unified EventRecord transitions (propose/reschedule/approve/release) and e
   }
 });
 
+
+
+test('event metadata projects saved guest timezone without changing the Berlin event authority', async () => {
+  const card = await createCard(client, { ...templateLink(), title: 'Synthetic zone event', anchorDate: '2030-12-02' });
+  const jobId = 'synthetic-zone-job';
+  await saveGuestIntakeJob(client, { id: jobId, cardId: card.id, taskId: 'synthetic-task', actorId: 'test', type: 'podcast', creationKey: 'synthetic-key', fingerprint: 'synthetic-fingerprint', status: 'queued', skipEmail: true, guestTimezone: 'Asia/Kolkata', createdAt: '2030-01-01T00:00:00Z', updatedAt: '2030-01-01T00:00:00Z' });
+  await updateCard(client, card.id, { expectedVersion: card.version, patch: { guestIntake: { jobId, taskId: 'synthetic-task', status: 'queued', skipEmail: true } } });
+  const hold = buildHold({ title: 'Synthetic zone event', topic: 'Synthetic topic', date: '2030-12-02', window: 'evening', cardId: card.id }, 'test');
+  await putCalendarHold(client, hold);
+  const metadata = await readDocumentEventMetadata(client, card.id, true);
+  assert.equal(metadata!.guestTimezone, 'Asia/Kolkata');
+  assert.equal(metadata!.timeZone, 'Europe/Berlin');
+  assert.equal(metadata!.startIso, hold.startIso);
+  assert.equal(metadata!.endIso, hold.endIso);
+});

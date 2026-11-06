@@ -766,6 +766,7 @@ function formatHold(hold) {
  * Propose a tentative hold: DataOps + Google "(Proposal)" events.
  */
 export async function propose(args, io) {
+  if (args.card) throw new UsageError("Use dataops event propose CARD_ID --date YYYY-MM-DD --guest-emails EMAIL for a linked [Proposed] guest invitation. calendar propose creates a private standalone hold.");
   const payload = proposeArgs(args);
   const result = await client(args).post("/api/calendar-holds", payload);
   if (args.json) return result;

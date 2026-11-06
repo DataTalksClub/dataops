@@ -431,6 +431,64 @@ describe("cards and templates", () => {
     assert.deepEqual(calls.at(-1).body, { anchorDate: "2026-11-02", templateId: "tpl-1" });
   });
 
+  test("guest event creation needs only template and email and creates a retry key", async () => {
+    const calls = fakePortal({
+      "GET /api/templates/event-type": { template: { id: "tpl-event", type: "event-type", guestIntake: { enabled: true } } },
+      "POST /api/cards": ({ body }) => ({ card: { id: "guest-card", ...body }, tasks: [] }),
+    });
+    assert.equal(await run(["cards", "create", "--template", "event-type", "--guest-email", "Guest@Example.test"], captureIo()), 0);
+    const sent = calls.at(-1).body;
+    assert.equal(sent.templateId, "tpl-event");
+    assert.equal(sent.guestEmail, "guest@example.test");
+    assert.match(sent.creationKey, /^[0-9a-f-]{36}$/);
+    for (const field of ["anchorDate", "title", "guestName", "topic"]) assert.ok(!(field in sent));
+    assert.ok(calls.every(({ route }) => !/gmail|send-invite/.test(route)));
+  });
+
+  test("guest event creation preserves explicit optional values, skip email and replay key", async () => {
+    const calls = fakePortal({
+      "GET /api/templates/event-type": { template: { id: "tpl-event", type: "event-type", eventPolicy: {} } },
+      "POST /api/cards": ({ body }) => ({ card: { id: "guest-card", ...body }, tasks: [] }),
+    });
+    const command = ["cards", "create", "--template", "event-type", "--guest-email", "guest@example.test", "--guest-name", "Synthetic Guest", "--topic", "Practical workflows", "--date", "2026-12-14", "--skip-email", "--key", "same-explicit-key"];
+    assert.equal(await run(command, captureIo()), 0);
+    const sent = calls.at(-1).body;
+    assert.deepEqual(sent, { templateId: "tpl-event", guestEmail: "guest@example.test", guestName: "Synthetic Guest", topic: "Practical workflows", anchorDate: "2026-12-14", skipEmail: true, creationKey: "same-explicit-key" });
+    assert.equal(await run(command, captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, sent);
+  });
+
+  test("saved guest references reuse the private contact without a required date", async () => {
+    const calls = fakePortal({
+      "GET /api/templates/podcast": { template: { id: "tpl-event", type: "podcast", guestIntake: { enabled: true } } },
+      "POST /api/cards": ({ body }) => ({ card: { id: "guest-card", ...body, guestIntake: { status: "queued", recipient: "saved@example.test" } } }),
+    });
+    const io = captureIo();
+    assert.equal(await run(["cards", "create", "--template", "podcast", "--guest-person", "saved-person"], io), 0);
+    assert.match(io.text(), /Invitation: queued to saved@example.test/);
+    assert.doesNotMatch(io.text(), /Invitation: sent/);
+    assert.equal(calls.at(-1).body.guestPersonId, "saved-person");
+    assert.ok(!("anchorDate" in calls.at(-1).body));
+    assert.match(calls.at(-1).body.creationKey, /^[0-9a-f-]{36}$/);
+  });
+
+  test("guest creation passes explicit scheduling inputs without converting their time zone", async () => {
+    const calls = fakePortal({
+      "GET /api/templates/podcast": { template: { id: "tpl-event" } },
+      "POST /api/cards": ({ body }) => ({ card: { id: "guest-card", ...body } }),
+    });
+    assert.equal(await run(["cards", "create", "--template", "podcast", "--guest-email", "guest@example.test", "--date", "2030-12-02", "--time", "18:30", "--time-zone", "America/New_York", "--guest-time-zone", "Asia/Kolkata", "--window", "evening"], captureIo()), 0);
+    const body = calls.at(-1).body;
+    assert.equal(body.time, "18:30"); assert.equal(body.timeZone, "America/New_York");
+    assert.equal(body.guestTimezone, "Asia/Kolkata"); assert.equal(body.window, "evening");
+  });
+
+  test("invalid guest email is rejected before creating a Card", async () => {
+    const calls = fakePortal({});
+    assert.equal(await run(["cards", "create", "--template", "event-type", "--guest-email", "not-an-email"], captureIo()), 2);
+    assert.equal(calls.length, 0);
+  });
+
   test("an unknown template is a usage error before anything is created", async () => {
     const calls = fakePortal({
       "GET /api/templates/nope": { status: 404, body: { error: "Template not found" } },

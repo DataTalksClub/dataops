@@ -1,4 +1,5 @@
 import { isOrdinaryRecordingDay } from '../podcast/recordingSlots';
+import { PODCAST_DOCS_URL } from '../podcast/firstContact';
 
 export type SponsorDocTemplateKey =
   | 'newsletter-main'
@@ -14,6 +15,8 @@ export type SponsorDocTemplateKey =
 export interface SponsorDocFieldOption {
   value: string;
   label: string;
+  startIso?: string;
+  endIso?: string;
 }
 
 export interface SponsorDocFieldDefinition {
@@ -58,6 +61,7 @@ export interface SponsorDocTemplateDefinition {
   /** Only staff may access this template; external document codes are not valid for it. */
   staffOnly?: boolean;
   guidelinesUrl?: string;
+  guidelinesLabel?: string;
   exampleText?: string;
   sections: SponsorDocSectionDefinition[];
 }
@@ -75,6 +79,19 @@ export const SPONSOR_DOC_TEMPLATE_KEYS: readonly SponsorDocTemplateKey[] = [
 ] as const;
 
 const VISUAL_GUIDELINES_URL = 'https://drive.google.com/file/d/1M_jEzcb1IWJmolx9N7e08gfdbctjcLH2/view?usp=sharing';
+
+function guestTimezoneField(): SponsorDocFieldDefinition {
+  return { key: 'guestTimezone', label: 'Your time zone', type: 'text', placeholder: 'For example, Asia/Kolkata', helpText: 'An IANA time zone used to show the event in your local time.' };
+}
+function guestEventSchedulingSection(): SponsorDocSectionDefinition {
+  return { id: 'scheduling', title: 'Event time', description: 'Confirm the proposed time or choose another available slot. You can save your time choice before completing the materials.', fields: [
+    { key: 'proposedSlotLabel', derived: 'event-datetime', label: 'Proposed time from the invite', type: 'text', placeholder: 'Provided by the DataTalks.Club team' },
+    { key: 'slotChoice', label: 'Event slot', type: 'radio', placeholder: 'Choose one', options: [
+      { value: 'confirm_proposed', label: 'The proposed time works for me' },
+      { value: 'none_fit', label: 'None of these work; I will reply to the invite email' },
+    ] }, guestTimezoneField(),
+  ] };
+}
 
 export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemplateDefinition> = {
   'newsletter-main': {
@@ -452,8 +469,9 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
     label: 'Webinar — Speaker Materials',
     shortLabel: 'Webinar',
     defaultLinkType: 'Speaker materials',
-    intro: 'Share your talk materials so we can prepare the event description. Talk title, 3–4 outline bullets, and speaker bio are required to submit. Summary, links, and notes are optional. You can save a draft and return using the same link.',
+    intro: 'Confirm or change the proposed webinar time, then share your talk materials so we can prepare the event description. Talk title, 3–4 outline bullets, and speaker bio are required to submit. Summary, links, and notes are optional. You can save a draft and return using the same link.',
     sections: [
+      guestEventSchedulingSection(),
       {
         id: 'talk',
         title: '1) Your Talk',
@@ -467,6 +485,8 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         id: 'speaker',
         title: '2) About You',
         fields: [
+          { key: 'photoUrl', label: 'Photo', type: 'text', placeholder: 'Upload a portrait or paste a photo URL', allowVisualUpload: true, maxCharsHint: 300000, helpText: 'For larger photos, share a link.' },
+          { key: 'preparationMaterials', label: 'Materials to help us prepare', type: 'textarea', rows: 3, placeholder: 'Relevant blog posts, talks, repositories, or other materials (optional)' },
           { key: 'bio', label: 'Speaker bio', type: 'textarea', rows: 4, required: true, placeholder: 'How should we introduce you in the event description?' },
         ],
       },
@@ -493,18 +513,20 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
 
   workshop: {
     key: 'workshop',
+    metadataSource: 'card-event',
     label: 'Workshop — Speaker Materials',
     shortLabel: 'Workshop',
     defaultLinkType: 'Workshop document',
-    intro: 'Share your workshop materials so we can prepare the event page. Workshop title, description, 3–6 outline bullets, and speaker bio are required to submit. Everything else is optional. You can save a draft and return using the same link.',
+    intro: 'Confirm or change the proposed workshop time, then share your workshop materials so we can prepare the event page. Workshop title, description, 3–6 outline bullets, and speaker bio are required to submit. Everything else is optional. You can save a draft and return using the same link.',
     sections: [
+      guestEventSchedulingSection(),
       {
         id: 'workshop',
         title: '1) Your Workshop',
         fields: [
           { key: 'talkTitle', label: 'Workshop title', type: 'text', required: true, placeholder: 'Title for the event page' },
           { key: 'summary', label: 'Subtitle (optional)', type: 'textarea', rows: 2, placeholder: 'One line under the title' },
-          { key: 'dateTime', label: 'Date and time', type: 'text', placeholder: 'e.g. 2026-11-12, 17:00 CET', helpText: 'Pre-filled by the DataTalks.Club team; tell us in the notes below if it does not work.' },
+          { key: 'dateTime', derived: 'event-datetime', label: 'Date and time', type: 'text', placeholder: 'e.g. 2026-11-12, 17:00 CET', helpText: 'Pre-filled by the DataTalks.Club team; tell us in the notes below if it does not work.' },
           { key: 'description', label: 'Description', type: 'textarea', rows: 5, required: true, placeholder: 'What the workshop is about and who it is for' },
           { key: 'outline', label: 'Outline (3–6 bullets)', type: 'bullets', required: true, minItems: 3, maxItems: 6, placeholder: 'Step or topic' },
           { key: 'prerequisites', label: 'Prerequisites (optional)', type: 'textarea', rows: 3, placeholder: 'Skills, accounts, or software attendees should prepare' },
@@ -515,6 +537,8 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         id: 'speaker',
         title: '2) About You',
         fields: [
+          { key: 'photoUrl', label: 'Photo', type: 'text', placeholder: 'Upload a portrait or paste a photo URL', allowVisualUpload: true, maxCharsHint: 300000, helpText: 'For larger photos, share a link.' },
+          { key: 'preparationMaterials', label: 'Materials to help us prepare', type: 'textarea', rows: 3, placeholder: 'Relevant blog posts, talks, repositories, or other materials (optional)' },
           { key: 'bio', label: 'Speaker bio', type: 'textarea', rows: 4, required: true, placeholder: 'How should we introduce you on the event page?' },
         ],
       },
@@ -555,7 +579,9 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
     label: 'Podcast — Materials from the Guest',
     shortLabel: 'Podcast',
     defaultLinkType: 'Guest materials',
-    intro: 'Use this form to confirm or change the recording slot, share your bio, and (if we have not already agreed) the topics you would most enjoy covering. Share as much or as little as you like. Write in plain text.',
+    intro: 'This is a live conversation with Alexey, with no slides to prepare. We agree on the topic and questions beforehand, meet on Zoom, and broadcast to YouTube. The audience can ask questions during the conversation. Afterwards, we publish the audio episode, transcript and show notes. Use this form to choose your recording time and share your bio, photo, profile links and preparation materials.',
+    guidelinesUrl: PODCAST_DOCS_URL,
+    guidelinesLabel: 'How the podcast works',
     sections: [
       {
         id: 'scheduling',
@@ -581,6 +607,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
               { value: 'none_fit', label: 'None of these work — just reply to the invite email and we’ll find an alternative' },
             ],
           },
+          guestTimezoneField(),
         ],
       },
       {
@@ -600,6 +627,12 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             type: 'textarea',
             rows: 3,
             placeholder: 'Short bio and career background for the episode introduction.',
+          },
+          {
+            key: 'photoUrl', label: 'Photo', type: 'text',
+            placeholder: 'Upload a portrait or paste a photo URL',
+            helpText: 'A portrait for the episode page and event image. For larger photos, share a link.',
+            allowVisualUpload: true, maxCharsHint: 300000,
           },
         ],
       },
@@ -659,6 +692,11 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             label: 'Website',
             type: 'text',
             placeholder: 'https://...',
+          },
+          {
+            key: 'preparationMaterials', label: 'Materials to help us prepare',
+            type: 'textarea', rows: 5,
+            placeholder: 'Links to relevant blog posts, talks, interviews, social posts, GitHub repositories or other materials. Add a short note about each if useful.',
           },
         ],
       },
@@ -1098,6 +1136,29 @@ export function hydratePodcastGuestSlotOptions(
   };
 }
 
+export interface GuestEventFreeSlotOption extends PodcastFreeSlotOption { startIso: string; endIso: string }
+
+/** Project only scheduler-supplied canonical slots; never compute availability here. */
+export function hydrateGuestEventSlotOptions(
+  template: SponsorDocTemplateDefinition,
+  freeSlots: GuestEventFreeSlotOption[],
+  proposed?: { label?: string | null; startIso?: string; endIso?: string },
+): SponsorDocTemplateDefinition {
+  if (!['podcast', 'webinar', 'workshop'].includes(template.key)) return template;
+  const ordinary = template.key === 'podcast' ? freeSlots.filter(slot =>
+    (slot.window === 'midday' || slot.window === 'evening') && isOrdinaryRecordingDay(slot.date)) : freeSlots;
+  const options: SponsorDocFieldOption[] = [
+    { value: PODCAST_CONFIRM_VALUE, label: proposed?.label ? `Confirm proposed time: ${proposed.label}` : 'The proposed time works for me',
+      ...(proposed?.startIso ? { startIso: proposed.startIso } : {}), ...(proposed?.endIso ? { endIso: proposed.endIso } : {}) },
+    ...ordinary.slice(0, 8).map(slot => ({ value: `slot:${slot.date}:${slot.window}`,
+      label: slot.label || `${slot.date} ${slot.localTime} Europe/Berlin`, startIso: slot.startIso, endIso: slot.endIso })),
+    { value: PODCAST_NONE_FIT_VALUE, label: PODCAST_NONE_FIT_LABEL },
+  ];
+  return { ...template, sections: template.sections.map(section => ({ ...section,
+    fields: section.fields.map(field => field.key === 'slotChoice' ? { ...field, options } : field),
+  })) };
+}
+
 /** Staff-readable rendering of a stored slotChoice (never a raw slot:… value). */
 export function humanizePodcastSlotChoice(value: string | undefined, proposedLabel?: string): string {
   const raw = (value || '').trim();
@@ -1379,6 +1440,9 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '### Introduction / Bio',
       valOrPlaceholder(c.introduction),
       '',
+      '### Photo',
+      /^data:image\//i.test(c.photoUrl || '') ? '[Uploaded photo]' : valOrPlaceholder(c.photoUrl),
+      '',
       '## 3) Topics',
       '',
       '### Current Focus',
@@ -1395,6 +1459,9 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       `- **X (Twitter):** ${valOrPlaceholder(c.twitterUrl)}`,
       `- **GitHub:** ${valOrPlaceholder(c.githubUrl)}`,
       `- **Website:** ${valOrPlaceholder(c.websiteUrl)}`,
+      '',
+      '### Materials to Help Us Prepare',
+      valOrPlaceholder(c.preparationMaterials),
       '',
       '## 5) Episode Story & Practical Takeaways',
       '',

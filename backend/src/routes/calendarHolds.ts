@@ -75,10 +75,7 @@ async function createRoute(event: LambdaEvent, client: DynamoDBDocumentClient): 
   const body = parse(event);
   if (!body || typeof body !== 'object' || Array.isArray(body)) return json(400, { error: 'Request body is required' });
   if (typeof body.cardId === 'string') {
-    const card = await getCardConsistent(client, body.cardId);
-    if (card?.eventTime || card?.calendarInvites?.length) {
-      return json(409, { error: 'This Card already owns an invitation. Change its time with dataops cards time.' });
-    }
+    return json(422, { error: 'Card-linked proposals use dataops event propose CARD_ID so the invitation stays linked and updateable. Standalone calendar propose creates only a private hold.', code: 'use_card_event_proposal' });
   }
   let hold;
   try {

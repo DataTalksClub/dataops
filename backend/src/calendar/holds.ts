@@ -19,7 +19,7 @@ export type CalendarHoldStatus = 'tentative' | 'confirmed' | 'released' | 'expir
 export type CalendarHoldReleaseReason = 'confirmed' | 'expired' | 'manual';
 export type CalendarHoldWindow = 'midday' | 'evening';
 
-export const HOLD_PROPOSAL_PREFIX = '(Proposal) ';
+export const HOLD_PROPOSAL_PREFIX = '[Proposed] ';
 export const HOLD_DEFAULT_DURATION_MINUTES = 60;
 export const HOLD_DEFAULT_WINDOW: CalendarHoldWindow = 'evening';
 export const HOLD_DEFAULT_TTL_DAYS = 7;
@@ -224,7 +224,7 @@ export function proposalTitle(title: string): string {
 }
 
 export function confirmedTitle(title: string): string {
-  return title.replace(/^(?:(?:\(Proposal\)|Proposed\s*[-–—:]?)\s*)+/i, '').trim();
+  return title.replace(/^(?:(?:\(Proposal\)|\[Proposed\]|Proposed\s*[-–—:]?)\s*)+/i, '').trim();
 }
 
 /** SOP podcast convention: the confirmed invite is named for the guest, not the topic. */

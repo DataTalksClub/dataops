@@ -417,7 +417,7 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
       const evId = proposed.event.googleEventIds[cal];
       assert.ok(evId, `Google event created on ${cal}`);
       const gEv = googleMock.calendars.get(cal)!.get(evId);
-      assert.equal(gEv.summary, '(Proposal) Podcast: Ian Whitestone - Agentic Data Stack');
+      assert.equal(gEv.summary, '[Proposed] Podcast: Ian Whitestone - Agentic Data Stack');
       assert.equal(gEv.location, '');
     }
     // Proposal transition email sent to guest
@@ -513,7 +513,7 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
     for (const cal of [HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS]) {
       const evId = rescheduled.event.googleEventIds[cal];
       const gEv = googleMock.calendars.get(cal)!.get(evId);
-      assert.equal(gEv.summary, '(Proposal) Podcast: Ian Whitestone - Agentic Data Stack');
+      assert.equal(gEv.summary, '[Proposed] Podcast: Ian Whitestone - Agentic Data Stack');
       assert.equal(gEv.location, '');
     }
     // Card, Episode, and linked Docs all reflect 2026-12-01 12:30 (tentative)
@@ -595,7 +595,7 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
     const orgId = prop.event.googleEventIds[HOLD_ORGANIZER];
     assert.equal(
       googleMock.getOrganizerEvent(orgId).summary,
-      '(Proposal) Webinar: Streaming Lakehouse in Practice',
+      '[Proposed] Webinar: Streaming Lakehouse in Practice',
     );
 
     // 1. Guest declines first -> recorded and surfaced, NEVER auto-releases

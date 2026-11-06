@@ -194,6 +194,8 @@ function cleanSponsorDoc(item: Record<string, unknown> | undefined): {
 }
 
 export interface CreateSponsorDocInput {
+  /** Internal durable orchestration identity. */
+  id?: string;
   cardId: string;
   template: SponsorDocTemplateKey;
   title: string;
@@ -209,7 +211,17 @@ export async function createSponsorDoc(
   client: DynamoDBDocumentClient,
   input: CreateSponsorDocInput,
 ): Promise<{ doc: SponsorDoc; accessCode: string }> {
-  const id = `sdoc-${randomBytes(8).toString('hex')}`;
+  const id = input.id || `sdoc-${randomBytes(8).toString('hex')}`;
+  if (input.id) {
+    const prior = await getSponsorDocWithAuthMaterial(client, id);
+    if (prior) {
+      if (prior.doc.cardId !== input.cardId || prior.doc.template !== input.template) throw new Error('Document identity belongs to another Card or type');
+      const accessCode = decryptSponsorDocAccessCode(id, prior.accessCodeCiphertext);
+      if (!accessCode) throw new Error('Saved guest document access code is unavailable');
+      await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { ...cardSponsorDocIndexKey(prior.doc.cardId, id), ...stripDerivedDocumentFields(toSummary(prior.doc)) } }));
+      return { doc: prior.doc, accessCode };
+    }
+  }
   const now = new Date().toISOString();
   const generated = generateSponsorDocAccessCode();
   const ciphertext = encryptAccessCode(id, generated.code);
@@ -251,7 +263,7 @@ export async function createSponsorDoc(
     ...stripDerivedDocumentFields(toSummary(doc)),
   };
 
-  await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: primaryItem }));
+  await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: primaryItem, ...(input.id ? { ConditionExpression: 'attribute_not_exists(PK)' } : {}) }));
   await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: indexItem }));
 
   return { doc, accessCode: generated.code };
@@ -324,7 +336,7 @@ export async function updateSponsorDoc(
   const nextTemplate = input.actorKind === 'staff' && input.template ? input.template : doc.template;
   let nextContent: Record<string, string>;
   if (nextTemplate !== doc.template) {
-    const carried: Record<string, unknown> = { ...doc.content, ...(input.content || {}) };
+    const carried: Record<string, unknown> = { ...loaded.doc.content, ...(input.content || {}) };
     nextContent = sanitizeTemplateContent(nextTemplate, carried, defaultContentForTemplate(nextTemplate));
     const dropped = Object.entries(carried)
       .filter(([key, value]) => !Object.hasOwn(nextContent, key) && String(value ?? '').trim());
