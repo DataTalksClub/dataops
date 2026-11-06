@@ -30,7 +30,7 @@ before(async () => {
   client = await getClient(await startLocal()); await createTables(client);
   Object.assign(process.env, { NODE_ENV: 'test', SKIP_AUTH: 'true', TASK_FILES_BUCKET: 'synthetic-files', KNOWLEDGE_BUCKET: 'synthetic-knowledge', BANNER_TEMPLATE_BUNDLE_KEY: 'templates/immutable.json', BANNER_RENDERER_ARN: 'synthetic-renderer', BANNER_QUEUE_URL: 'synthetic-queue' });
   const sponsored = { ...template, id: 'synthetic-approved-logo', sponsorTreatment: 'approved-logo', html: `${template.html}<img class="sponsor" src="{{sponsorLogo}}">` };
-  const bundle = Buffer.from(JSON.stringify({ schema: 'dataops.banner-templates.v1', sourceRevision: 'synthetic-commit', templates: [template, sponsored, { ...template, id: "synthetic-three", speakerCount: 3, html: template.html + "<p>{{speaker2Name}}</p><img src=\"{{speaker2Portrait}}\"><p>{{speaker3Name}}</p><img src=\"{{speaker3Portrait}}\">" }] }));
+  const bundle = Buffer.from(JSON.stringify({ schema: 'dataops.banner-templates.v1', sourceRevision: 'synthetic-commit', templates: [template, sponsored, { ...template, id: "synthetic-three", eventType: 'webinar', speakerCount: 3, html: "<span>{{eventLabel}}</span>" + template.html + "<p>{{speaker2Name}}</p><img src=\"{{speaker2Portrait}}\"><p>{{speaker3Name}}</p><img src=\"{{speaker3Portrait}}\">" }] }));
   const bundleKey = `banner-templates/${checksum(bundle).slice(7)}/bundle.json`;
   process.env.BANNER_TEMPLATE_BUNDLE_KEY = bundleKey;
   objects.set(bundleKey, bundle);
@@ -155,15 +155,19 @@ test('three speakers pass Card ownership, template composition and durable artif
     await client.send(new PutCommand({ TableName: TABLE_PEOPLE, Item: { PK: `PERSON#${selection.personId}`, SK: `PERSON#${selection.personId}`, id: selection.personId, name: `Panelist ${i + 1}`, version: 1 } }));
     await client.send(new PutCommand({ TableName: TABLE_FILES, Item: { PK: `FILE#${selection.portraitFileId}`, SK: `FILE#${selection.portraitFileId}`, id: selection.portraitFileId, cardId: 'panel-card', taskId: 'panel-task', category: 'image', checksum: checksum(png), storageProvider: 's3', storagePath: 'tasks/task/portrait.png', storageUri: 's3://synthetic-files/tasks/task/portrait.png' } }));
   }
-  const panel = parseBannerInput({ ...input, speakers: selections, revision: 'panel' });
+  const panel = parseBannerInput({ ...input, speakers: selections, revision: 'panel', eventLabel: 'Live Q&A', eventType: 'webinar' });
   const job = await requestBanner(client, 'panel-card', panel, 'operator');
   await renderBannerJob(client, job.id);
   const completed = (await getBannerJob(client, job.id))!;
   assert.equal(completed.state, 'succeeded', completed.error);
   const artifact = (await getArtifact(client, completed.artifactId!))!;
   assert.equal(artifact.metadata?.templateId, 'synthetic-three');
+  assert.equal(artifact.metadata?.eventLabel, 'Live Q&A');
+  assert.throws(() => parseBannerInput({ ...panel, eventType: 'workshop' }), /requires the webinar/);
+  assert.throws(() => parseBannerInput({ ...panel, eventLabel: 'invented' }), /only alternate event label/);
   assert.equal((artifact.metadata?.speakers as unknown[]).length, 3);
   const renderedInput = objects.get(`cards/panel-card/banners/${job.id}/input.html`)!.toString();
+  assert.match(renderedInput, /Live Q&amp;A/);
   for (const n of [1, 2, 3]) assert.match(renderedInput, new RegExp(`Panelist ${n}`));
   assert.throws(() => parseBannerInput({ ...panel, speakers: [...selections, { personId: 'fourth', portraitFileId: 'fourth-photo' }] }));
 });

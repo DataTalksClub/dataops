@@ -49,3 +49,10 @@ test('artifact download verifies bytes, strips traversal from default name, refu
     assert.equal(io.errors.join('\n').includes('signed=secret'), false);
   } finally { process.chdir(previous); }
 });
+
+
+test('explicit Q&A label is sent without changing the webinar event type', async () => {
+  const calls = fakePortal({ 'POST /api/cards/card/banners': { job: { id: 'd'.repeat(64), state: 'queued' } } });
+  assert.equal(await run(['cards', 'banner', 'card', '--event-type', 'webinar', '--event-label', 'Live Q&A', '--layout', 'square', '--speakers', 'a:pa,b:pb,c:pc', '--revision', 'qa-v1', '--json'], captureIo()), 0);
+  assert.equal(calls[0].body.eventLabel, 'Live Q&A'); assert.equal(calls[0].body.eventType, 'webinar'); assert.equal(calls[0].body.speakers.length, 3);
+});

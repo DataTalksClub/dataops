@@ -6,6 +6,7 @@ export type BannerInput = {
   layout: 'landscape' | 'square';
   speakers: { personId: string; portraitFileId: string }[];
   revision: string;
+  eventLabel?: 'Live Q&A';
   sponsorLogoFileId?: string;
   sponsorTreatment?: 'approved-logo';
 };
@@ -35,11 +36,13 @@ export function parseBannerInput(value: unknown): BannerInput {
     || typeof data.revision !== 'string' || !/^[a-zA-Z0-9._-]{1,100}$/.test(data.revision)) {
     throw new BannerInputError('Choose workshop|webinar|podcast, landscape|square, one to three distinct Card people with portrait file IDs, and a stable revision.');
   }
+  if (data.eventLabel !== undefined && (data.eventType !== 'webinar' || data.eventLabel !== 'Live Q&A')) throw new BannerInputError('Live Q&A is the only alternate event label and requires the webinar event type.');
   if ((data.sponsorLogoFileId !== undefined || data.sponsorTreatment !== undefined)
     && (typeof data.sponsorLogoFileId !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(data.sponsorLogoFileId) || data.sponsorTreatment !== 'approved-logo')) {
     throw new BannerInputError('A sponsored cover requires a verified Card logo file ID and explicit approved-logo treatment.');
   }
   return { eventType: data.eventType!, layout: data.layout!, speakers: data.speakers.map(s => ({ personId: s.personId, portraitFileId: s.portraitFileId })), revision: data.revision,
+    ...(data.eventLabel ? { eventLabel: data.eventLabel } : {}),
     ...(data.sponsorLogoFileId ? { sponsorLogoFileId: data.sponsorLogoFileId, sponsorTreatment: 'approved-logo' as const } : {}),
   };
 }
@@ -61,6 +64,7 @@ export function composeBanner(template: BannerTemplate, job: BannerJob, portrait
   const values: Record<string, string> = {
     ...Object.fromEntries(Object.entries(assets).filter(([key]) => /^asset[A-Za-z]+$/.test(key))),
     title: escapeHtml(job.title),
+    eventLabel: escapeHtml(job.input.eventLabel || job.input.eventType),
     titleFontSize: String(Math.min(150, Math.floor(Math.sqrt(titleArea / (Math.max(job.title.length, 20) * 0.72))))),
   };
   if (sponsorLogo) values.sponsorLogo = sponsorLogo;
