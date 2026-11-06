@@ -60,7 +60,7 @@ export function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 export function composeBanner(template: BannerTemplate, job: BannerJob, portraits: string[], assets: Record<string, string> = {}, sponsorLogo?: string): string {
-  const titleArea = job.input.layout === 'landscape' ? 1260 * 810 : 1800 * 600;
+  const titleArea = job.input.layout === 'landscape' ? (job.speakers.length === 3 ? 2120 * 390 : 1260 * 810) : 1800 * 600;
   const values: Record<string, string> = {
     ...Object.fromEntries(Object.entries(assets).filter(([key]) => /^asset[A-Za-z]+$/.test(key))),
     title: escapeHtml(job.title),
