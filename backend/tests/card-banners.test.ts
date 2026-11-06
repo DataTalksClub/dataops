@@ -171,3 +171,17 @@ test('three speakers pass Card ownership, template composition and durable artif
   for (const n of [1, 2, 3]) assert.match(renderedInput, new RegExp(`Panelist ${n}`));
   assert.throws(() => parseBannerInput({ ...panel, speakers: [...selections, { personId: 'fourth', portraitFileId: 'fourth-photo' }] }));
 });
+
+
+test('an older bundle rejects an explicit label it cannot render', async () => {
+  const oldKey = process.env.BANNER_TEMPLATE_BUNDLE_KEY!;
+  const bytes = Buffer.from(JSON.stringify({ schema: 'dataops.banner-templates.v1', sourceRevision: 'synthetic-old', templates: [{ ...template, eventType: 'webinar', speakerCount: 3 }] }));
+  const key = `banner-templates/${checksum(bytes).slice(7)}/bundle.json`;
+  objects.set(key, bytes); process.env.BANNER_TEMPLATE_BUNDLE_KEY = key;
+  try {
+    const speakers = [1, 2, 3].map(n => ({ personId: `panelist-${n}`, portraitFileId: `panelist-photo-${n}` }));
+    const job = await requestBanner(client, 'panel-card', parseBannerInput({ ...input, eventType: 'webinar', eventLabel: 'Live Q&A', speakers, revision: 'old-label' }), 'operator');
+    await renderBannerJob(client, job.id);
+    assert.equal((await getBannerJob(client, job.id))?.error, 'unsupported-event-label');
+  } finally { process.env.BANNER_TEMPLATE_BUNDLE_KEY = oldKey; }
+});
