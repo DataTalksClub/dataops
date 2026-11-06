@@ -336,7 +336,7 @@ export async function updateSponsorDoc(
   const nextTemplate = input.actorKind === 'staff' && input.template ? input.template : doc.template;
   let nextContent: Record<string, string>;
   if (nextTemplate !== doc.template) {
-    const carried: Record<string, unknown> = { ...doc.content, ...(input.content || {}) };
+    const carried: Record<string, unknown> = { ...loaded.doc.content, ...(input.content || {}) };
     nextContent = sanitizeTemplateContent(nextTemplate, carried, defaultContentForTemplate(nextTemplate));
     const dropped = Object.entries(carried)
       .filter(([key, value]) => !Object.hasOwn(nextContent, key) && String(value ?? '').trim());
