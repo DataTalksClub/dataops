@@ -1092,27 +1092,6 @@ Resources:
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt CardBannerDeadLetterQueue.Arn
         maxReceiveCount: 3
-  GuestEventIntakeDeadLetterQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      SqsManagedSseEnabled: true
-      MessageRetentionPeriod: 1209600
-
-  GuestEventIntakeDeadLetterAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub ${AWS::StackName}-guest-event-intake-dead-letter
-      Namespace: AWS/SQS
-      MetricName: ApproximateNumberOfMessagesVisible
-      Dimensions: [{Name: QueueName, Value: !GetAtt GuestEventIntakeDeadLetterQueue.QueueName}]
-      Statistic: Maximum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
-
   BackendFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -1134,10 +1113,6 @@ Resources:
             Effect: Allow
             Action: [dynamodb:GetRecords, dynamodb:GetShardIterator, dynamodb:DescribeStream, dynamodb:ListStreams]
             Resource: !GetAtt DataOpsCardsTable.StreamArn
-        - Statement:
-            Effect: Allow
-            Action: [sqs:SendMessage]
-            Resource: !GetAtt GuestEventIntakeDeadLetterQueue.Arn
         - Statement:
             Effect: Allow
             Action: s3:ListBucket
@@ -1373,6 +1348,8 @@ Resources:
           SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN: !Ref SponsorCommunicationTemplateSecretArn
           SPONSOR_COMMUNICATION_HMAC_SECRET_ARN: !Ref SponsorCommunicationHmacSecretArn
       Events:
+        # The atomic Card creation also persists its intake job. The independent
+        # two-minute resume rule recovers jobs even after a stream record expires.
         GuestEventCardCreated:
           Type: DynamoDB
           Properties:
@@ -1381,10 +1358,6 @@ Resources:
             BatchSize: 1
             MaximumRecordAgeInSeconds: 86400
             MaximumRetryAttempts: -1
-            DestinationConfig:
-              OnFailure:
-                Type: SQS
-                Destination: !GetAtt GuestEventIntakeDeadLetterQueue.Arn
             FilterCriteria:
               Filters:
                 - Pattern: '{"eventName":["INSERT"],"dynamodb":{"NewImage":{"guestIntake":{"M":{"jobId":{"S":[{"exists":true}]}}}}}}'
