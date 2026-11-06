@@ -14,7 +14,7 @@ export async function copyKnowledgeDocument(args, io) {
   if (!from) throw new UsageError("--from <doc-id> is required. Use kb write --create for new content.");
   const api = apiFor(args);
   const { revision } = await api.get("/knowledge/publication");
-  const result = await api.post("/docs", { path, from, title: optionalString(args, "title"), sop: optionalString(args, "sop"), absent: true, expectedRevision: revision });
+  const result = await api.post("/docs", { path, from, title: optionalString(args, "title"), absent: true, expectedRevision: revision });
   if (!args.json) io.print(`Created ${result.path} (revision ${result.revision}).`);
   return result;
 }
