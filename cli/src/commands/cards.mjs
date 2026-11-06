@@ -40,6 +40,9 @@ Usage
   dataops cards invite add <card-id> <event-id> --calendar CAL [--label LABEL] [--json]
                                                 Adopt an existing Google event without editing it
   dataops cards invite list <card-id> [--json]  The Card's invites, checked in Google (gone = stale)
+  dataops cards invite guests <card-id> --guests EMAIL,EMAIL [--json]
+                                                Add guests to its existing private Zoom invitation;
+                                                preserve attendees and notify via Google Calendar
   dataops cards invite remove <card-id> <event-id> [--calendar CAL] [--delete-event] [--json]
                                                 Unlink an invite from the Card; with --delete-event also
                                                 deletes the Google event (no guest notification)
@@ -385,9 +388,17 @@ function printCountPreview(io, preview) {
 
 export async function invite(args, io) {
   const usage = "dataops cards invite add <card-id> <event-id> --calendar CAL [--label LABEL]\n"
+    + "  dataops cards invite guests <card-id> --guests EMAIL,EMAIL\n"
     + "  dataops cards invite list <card-id>\n"
     + "  dataops cards invite remove <card-id> <event-id> [--calendar CAL] [--delete-event]";
   const action = positional(args, 0, usage);
+  if (action === "guests") {
+    const id = positional(args, 1, usage);
+    const guestEmails = csv(required(args, "guests", "guests"));
+    const result = await apiFor(args).patch(`/api/cards/${enc(id)}/calendar-invites`, { guestEmails });
+    if (!args.json) io.print(`Added ${result.added.length} guest(s) to private invite ${result.eventId}; existing attendees and event details retained.`);
+    return result;
+  }
   if (action === "add") {
     const id = positional(args, 1, usage);
     const eventId = positional(args, 2, usage);

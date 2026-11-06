@@ -1,6 +1,7 @@
 import { cardEventInterval } from '../calendar/cardEventTime';
 import { adoptCardInvite, adoptEventDate, CardInviteConflictError, CardInviteGoogleError, CardInviteInputError, cardGuests, cardHasHoldInvite, parseCardGuests, syncCardInvite, unlinkCardInvite, verifyCardInvites } from '../calendar/cardInvite';
 import { lumaUrlForEventCard } from '../calendar/lumaEvents';
+import { addPrivateInviteGuests, HOLD_ORGANIZER } from '../calendar/holdGoogleSync';
 import { calendarInviteDeps } from './calendarHolds';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
@@ -873,6 +874,28 @@ async function handleCardCalendarInvites(
   client: DynamoDBDocumentClient,
   event: LambdaEvent,
 ): Promise<LambdaResponse> {
+  if (method === 'PATCH') {
+    const actor = await resolveInteractiveActor(client, event, 'work-write');
+    if (!actor.ok) return actor.response;
+    const card = await getCardConsistent(client, id);
+    if (!card) return json(404, { error: 'Card not found' });
+    if (!mayAdministerCard(actor.actor, card)) return workAdminForbidden('Administering this Card requires its owner or an admin');
+    if (card.eventTime?.sync === 'syncing') return json(409, { error: 'The Card invitation is syncing; retry after it completes.' });
+    let guests: string[];
+    try { guests = parseCardGuests(JSON.parse(rawBody || '{}').guestEmails); }
+    catch (error) { return json(400, { error: error instanceof Error ? error.message : 'Invalid guests' }); }
+    const eventId = card.eventTime?.googleEventIds?.[HOLD_ORGANIZER];
+    if (!eventId || !card.calendarInvites?.some(invite => invite.eventId === eventId && invite.calendar === HOLD_ORGANIZER && !invite.staleAt)) {
+      return json(409, { error: 'The Card has no owned private organizer invitation. Create the private invitation before adding guests.' });
+    }
+    try {
+      const result = await addPrivateInviteGuests(card.eventTime!.eventKey, eventId, guests, await calendarInviteDeps({}, client));
+      await updateCardAdditive(client, card, current => ({ guestEmails: [...new Set([...(current.guestEmails || []), ...guests])] }));
+      return json(200, { eventId, calendar: HOLD_ORGANIZER, ...result });
+    } catch (error) {
+      return json(502, { error: error instanceof Error ? error.message : 'Private invitation update failed' });
+    }
+  }
   if (method === 'GET') {
     const readActor = await resolveInteractiveActor(client, event, 'work-read');
     if (!readActor.ok) return readActor.response;

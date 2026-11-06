@@ -3,6 +3,13 @@ import { test } from 'node:test';
 import { captureIo, fakePortal, isolateConfig } from './helpers.mjs';
 isolateConfig();
 const { run } = await import('../src/cli.mjs');
+test('cards invite guests explicitly adds guests to an existing private invitation', async () => {
+  const calls = fakePortal({ 'PATCH /api/cards/test/calendar-invites': { eventId: 'private-event', added: ['speaker@example.test'] } });
+  const io = captureIo();
+  assert.equal(await run(['cards', 'invite', 'guests', 'test', '--guests', 'speaker@example.test', '--json'], io), 0);
+  assert.deepEqual(calls[0].body, { guestEmails: ['speaker@example.test'] });
+  assert.equal(io.json().eventId, 'private-event');
+});
 test('cards time sends arbitrary wall time, zone, duration and Card guests; --json', async () => {
   const calls = fakePortal({
     'POST /api/cards/test/time': {
