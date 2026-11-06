@@ -85,8 +85,11 @@ subcommands, flags, and examples.
 ## Add speakers to an existing private invitation
 
 ```bash
-dataops cards invite guests CARD_ID --guests speaker@example.test,colleague@example.test --json
+dataops cards invite guests CARD_ID --guests 'speaker@example.test,colleague@example.test' --json
 ```
+
+Keep the comma-separated value quoted, especially in PowerShell: the npm
+PowerShell wrapper otherwise receives an array instead of one CSV argument.
 
 This adds attendees to the Card's existing private Zoom invitation and sends
 Google Calendar updates. Existing attendees, responses, time and meeting details
