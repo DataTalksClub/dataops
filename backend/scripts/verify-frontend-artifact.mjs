@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { basename, dirname, posix, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   manifestDirectories,
@@ -276,4 +277,4 @@ function main() {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) main();
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
