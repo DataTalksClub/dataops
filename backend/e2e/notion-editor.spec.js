@@ -2,6 +2,8 @@
 // with the keyboard model, "/" menu, block gutter, formatting toolbar and
 // smart paste. Fixtures are synthetic and public-safe; nothing is saved
 // to knowledge storage — every assertion reads the local draft (#editor).
+// SOPs are plain markdown: headings, lists and paragraphs render as generic
+// blocks, and edits keep the file free of marker comments.
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -22,7 +24,6 @@ const SOP = [
   'summary: Publish a synthetic episode with every step written down',
   '  so the folded summary survives an edit.',
   'doc_type: sop',
-  'schema_version: 1',
   'tags:',
   '- synthetic',
   '- notion',
@@ -31,60 +32,34 @@ const SOP = [
   '',
   '# Synthetic Notion SOP',
   '',
-  '<!-- sop-section-start: summary -->',
   '## Summary',
   '',
   '- Purpose: exercise the editor.',
   '- Outcome: a draft that round-trips.',
-  '<!-- sop-section-end -->',
   '',
-  '<!-- sop-section-start: prerequisites -->',
   '## Prerequisites',
   '',
   'A synthetic browser.',
-  '<!-- sop-section-end -->',
   '',
-  '<!-- sop-section-start: procedure -->',
   '## Procedure',
   '',
-  '<!-- sop-group-start: "Prepare" -->',
-  '### Prepare',
+  'Intro paragraph before the steps.',
   '',
-  '<!-- sop-prose-start -->',
-  'Intro prose inside the Prepare group.',
-  '<!-- sop-prose-end -->',
+  '1. Open the **synthetic** dashboard.',
+  '2. Upload the synthetic file.',
+  '3. Check the synthetic result.',
   '',
-  '<!-- sop-step-start id=1 action="click" -->',
-  '1.  Open the **synthetic** dashboard.',
-  '<!-- sop-step-end -->',
-  '',
-  '<!-- sop-step-start id=2 -->',
-  '2.  Upload the synthetic file.',
-  '<!-- sop-step-end -->',
-  '',
-  '<!-- sop-step-start id=3 -->',
-  '3.  Check the synthetic result.',
-  '<!-- sop-step-end -->',
-  '<!-- sop-group-end -->',
-  '<!-- sop-section-end -->',
-  '',
-  '<!-- sop-section-start: validation -->',
   '## Validation',
   '',
   'The synthetic result is visible.',
-  '<!-- sop-section-end -->',
   '',
-  '<!-- sop-section-start: troubleshooting -->',
   '## Troubleshooting',
   '',
   'Retry the synthetic upload.',
-  '<!-- sop-section-end -->',
   '',
-  '<!-- sop-section-start: references -->',
   '## References',
   '',
   'None.',
-  '<!-- sop-section-end -->',
   '',
 ].join('\n');
 
@@ -133,13 +108,13 @@ async function openDoc(page, docPath, title, viewport = DESKTOP) {
 }
 
 const draft = (page) => page.locator('#editor');
-const step = (page, id) => page.locator(`.block-step[data-step-id="${id}"] .block-step-body`);
+const item = (page, index) => page.locator('.notion-block-numbered .notion-list-item-text').nth(index);
 
 async function capture(page, name) {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, `${name}.png`), animations: 'disabled' });
 }
 
-test('an SOP reads as one document: title, properties, sections, no stat strip', async ({ page }) => {
+test('an SOP reads as one document: title, properties, headings and lists', async ({ page }) => {
   await openDoc(page, SOP_PATH, 'Synthetic Notion SOP');
   const view = page.locator('#rendered-view');
   const properties = view.locator('.doc-properties');
@@ -151,75 +126,58 @@ test('an SOP reads as one document: title, properties, sections, no stat strip',
   await expect(properties.locator('.doc-chip-label')).toHaveText(['synthetic', 'notion', 'browser']);
   await expect(view).not.toContainText('Edit metadata');
   await expect(view).not.toContainText(/\d+ steps?/);
-  // Prose stays inside its group, before the steps, as in the file.
-  await expect(view.locator('.block-group').first().locator('.block-prose, .block-step').first())
-    .toHaveClass(/block-prose/);
+  // Sections are plain heading blocks in document order, the steps a list.
+  await expect(view.locator('.notion-text-content.h2')).toHaveText([
+    'Summary', 'Prerequisites', 'Procedure', 'Validation', 'Troubleshooting', 'References',
+  ]);
+  await expect(view.locator('.notion-block-numbered .notion-list-item')).toHaveCount(3);
+  await expect(view.locator('.notion-block-paragraph', { hasText: 'Intro paragraph before the steps.' })).toBeVisible();
   // No save chrome until there is a draft.
   await expect(page.locator('#editor-save-button')).toBeHidden();
-  for (const block of [view.locator('.block-title'), step(page, 1), view.locator('.block-group-title')]) {
+  for (const block of [view.locator('.block-title'), item(page, 0)]) {
     await expect(block).toHaveAttribute('contenteditable', /true|plaintext-only/);
   }
   await capture(page, 'sop-desktop');
 });
 
-test('steps: Enter splits, Backspace merges, Shift+Tab groups, Tab joins, arrows move', async ({ page }) => {
+test('lists: Enter adds an item, Tab indents, Shift+Tab outdents, arrows move', async ({ page }) => {
   await openDoc(page, SOP_PATH, 'Synthetic Notion SOP');
-  await step(page, 2).click();
+  await item(page, 1).click();
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
-  await expect(step(page, 3)).toBeFocused();
+  await expect(item(page, 2)).toBeFocused();
   await page.keyboard.type('A step typed right after Enter.');
   await expect(draft(page)).toHaveValue(
-    /<!-- sop-step-start id=3 -->\n3\. {2}A step typed right after Enter\.\n<!-- sop-step-end -->/,
+    /2\. Upload the synthetic file\.\n3\. A step typed right after Enter\.\n4\. Check the synthetic result\./,
   );
   await expect(page.locator('#editor-save-state')).toHaveText('Draft saved');
-  // The untouched step after it was renumbered in place.
-  await expect(draft(page)).toHaveValue(/<!-- sop-step-start id=4 -->\n4\. {2}Check the synthetic result\./);
 
-  await page.keyboard.press('Home');
-  await page.keyboard.press('Backspace');
-  await expect(step(page, 2)).toBeFocused();
-  await expect(draft(page)).toHaveValue(/2\. {2}Upload the synthetic file\. A step typed right after Enter\./);
-  await page.keyboard.type('!');
-  await expect(draft(page)).toHaveValue(/Upload the synthetic file\. !A step typed/);
-
-  await step(page, 3).click();
-  await page.keyboard.press('Shift+Tab');
-  const newGroup = page.locator('.block-group-title').nth(1);
-  await expect(newGroup).toBeFocused();
-  await page.keyboard.type('Publish');
-  await expect(draft(page)).toHaveValue(
-    /<!-- sop-group-start: "Publish" -->\n### Publish\n\n<!-- sop-step-start id=3 -->/,
-  );
-  await step(page, 3).click();
+  // Tab indents the new item under its neighbour; Shift+Tab restores it.
   await page.keyboard.press('Home');
   await page.keyboard.press('Tab');
-  await expect(draft(page)).not.toHaveValue(/sop-group-start: "Publish"/);
-  await expect(page.locator('.block-group')).toHaveCount(1);
+  await expect(draft(page)).toHaveValue(/  1\. A step typed right after Enter\./);
+  await page.keyboard.press('Shift+Tab');
+  await expect(draft(page)).toHaveValue(/[^ ]3\. A step typed right after Enter\./);
 
-  // Up from the first line of a step lands at the end of the block above.
-  await step(page, 2).click();
+  // Up from the start of an item lands at the end of the one above.
+  await item(page, 1).click();
   await page.keyboard.press('Home');
   await page.keyboard.press('ArrowUp');
-  await expect(step(page, 1)).toBeFocused();
+  await expect(item(page, 0)).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(step(page, 1)).not.toBeFocused();
-  // Prose never left its group, and the procedure still parses the same way.
-  await expect(draft(page)).toHaveValue(
-    /### Prepare\n\n<!-- sop-prose-start -->\nIntro prose inside the Prepare group\.\n<!-- sop-prose-end -->/,
-  );
+  await expect(item(page, 0)).not.toBeFocused();
+  // Plain markdown throughout: no marker comments are ever written.
+  await expect(draft(page)).not.toHaveValue(/<!--/);
   await capture(page, 'sop-keyboard');
 });
 
 test('rich text stays markdown: formatting reads back verbatim', async ({ page }) => {
   await openDoc(page, SOP_PATH, 'Synthetic Notion SOP');
-  await expect(step(page, 1).locator('strong')).toHaveText('synthetic');
-  await step(page, 1).click();
+  await expect(item(page, 0).locator('strong')).toHaveText('synthetic');
+  await item(page, 0).click();
   await page.keyboard.press('End');
   await page.keyboard.type(' Then wait.');
-  await expect(draft(page)).toHaveValue(/1\. {2}Open the \*\*synthetic\*\* dashboard\. Then wait\./);
-  // The step's attributes survive a text edit.
-  await expect(draft(page)).toHaveValue(/<!-- sop-step-start id=1 action="click" -->/);
+  await expect(draft(page)).toHaveValue(/1\. Open the \*\*synthetic\*\* dashboard\. Then wait\./);
 });
 
 test('properties edit the frontmatter in place, keeping the file style', async ({ page }) => {
@@ -266,32 +224,31 @@ test('a plain page: Enter in lists, markdown shortcuts, Backspace un-formats', a
 test('"/" opens the block menu in place, filters as you type and inserts blocks', async ({ page }) => {
   await openDoc(page, SOP_PATH, 'Synthetic Notion SOP');
   const menu = page.locator('.block-slash-menu.is-inline');
-  await step(page, 3).click();
+  const refs = page.locator('#rendered-view .notion-block-paragraph .notion-text-content', { hasText: 'None.' });
+  await refs.click();
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
   await page.keyboard.type('/');
   await expect(menu.locator('.slash-menu-item strong')).toHaveText(
-    ['Step', 'Text', 'Group', 'Screenshot', 'Video', 'TODO'],
+    ['Text', 'Heading 1', 'Heading 2', 'Heading 3', 'Bulleted list', 'Numbered list',
+      'To-do list', 'Quote', 'Callout', 'Code', 'Divider', 'Image', 'Video', 'Sub-page'],
   );
-  await expect(step(page, 4)).toBeFocused();
-  await page.keyboard.type('tex');
-  await expect(menu.locator('.slash-menu-item strong')).toHaveText(['Text']);
+  await page.keyboard.type('h2');
+  await expect(menu.locator('.slash-menu-item strong')).toHaveText(['Heading 2']);
   await capture(page, 'sop-slash');
   await page.keyboard.press('Enter');
   await expect(menu).toHaveCount(0);
-  await page.keyboard.type('A note between steps.');
-  await expect(draft(page)).toHaveValue(
-    /3\. {2}Check the synthetic result\.\n<!-- sop-step-end -->\n\n<!-- sop-prose-start -->\nA note between steps\.\n<!-- sop-prose-end -->/,
-  );
-  await expect(draft(page)).not.toHaveValue(/\/tex/);
+  await page.keyboard.type('Slash heading');
+  await expect(draft(page)).toHaveValue(/None\.\n\n## Slash heading$/);
+  await expect(draft(page)).not.toHaveValue(/\/h2/);
 
   // Escape closes the menu and keeps what was typed, like Notion.
   await page.keyboard.press('Enter');
-  await page.keyboard.type('/gro');
+  await page.keyboard.type('/div');
   await expect(menu).toHaveCount(1);
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
-  await expect(page.locator('.block-prose-body').last()).toHaveText('/gro');
+  await expect(draft(page)).toHaveValue(/## Slash heading\n\n\/div$/);
 
   await openDoc(page, PLAIN_PATH, 'Synthetic Notion Page');
   const view = page.locator('#rendered-view');
@@ -310,24 +267,28 @@ test('"/" opens the block menu in place, filters as you type and inserts blocks'
 
 test('the gutter: hover shows "+" and the handle; drag shows a 1px line and moves; the handle opens the menu', async ({ page }) => {
   await openDoc(page, SOP_PATH, 'Synthetic Notion SOP');
-  const block = (id) => page.locator(`.block-step[data-step-id="${id}"]`);
-  const gutter = (id) => block(id).locator('> .block-gutter');
-  await expect(gutter(1)).toHaveCSS('opacity', '0');
-  await step(page, 1).hover();
-  await expect(gutter(1)).toHaveCSS('opacity', '1');
-  await expect(gutter(1).locator('.block-gutter-add')).toBeVisible();
+  const validation = () => page.locator('.notion-block-paragraph', { hasText: 'The synthetic result is visible.' });
+  const troubleshooting = () => page.locator('.notion-block-paragraph', { hasText: 'Retry the synthetic upload.' });
+  const gutter = (block) => block.locator('> .block-gutter');
+  await expect(gutter(validation())).toHaveCSS('opacity', '0');
+  await validation().locator('.notion-text-content').hover();
+  await expect(gutter(validation())).toHaveCSS('opacity', '1');
+  await expect(gutter(validation()).locator('.block-gutter-add')).toBeVisible();
   await capture(page, 'gutter-hover');
 
-  // Drag step 3 above step 1: a 1px neutral line marks the drop edge.
-  const handle = gutter(3).locator('.block-gutter-handle');
-  await step(page, 3).hover();
+  // Drag the validation paragraph above troubleshooting: a 1px neutral line
+  // marks the drop edge.
+  const handle = gutter(validation()).locator('.block-gutter-handle');
+  await validation().locator('.notion-text-content').hover();
   const from = await handle.boundingBox();
-  const to = await block(1).boundingBox();
+  const to = await troubleshooting().boundingBox();
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await page.mouse.down();
   await page.mouse.move(to.x + 40, to.y + 4, { steps: 8 });
-  await expect(block(1)).toHaveClass(/drop-above/);
-  const line = await block(1).evaluate((node) => {
+  // Short blocks need one more nudge so a final dragover lands on target.
+  await page.mouse.move(to.x + 40, to.y + 10, { steps: 3 });
+  await expect(troubleshooting()).toHaveClass(/drop-above/);
+  const line = await troubleshooting().evaluate((node) => {
     const after = getComputedStyle(node, '::after');
     return { height: after.height, top: after.top };
   });
@@ -335,32 +296,31 @@ test('the gutter: hover shows "+" and the handle; drag shows a 1px line and move
   await capture(page, 'gutter-drag');
   await page.mouse.up();
   await expect(draft(page)).toHaveValue(
-    /<!-- sop-step-start id=1 -->\n1\. {2}Check the synthetic result\.[\s\S]*<!-- sop-step-start id=2 action="click" -->\n2\. {2}Open the \*\*synthetic\*\* dashboard\./,
+    /The synthetic result is visible\.\n\nRetry the synthetic upload\./,
   );
-  // The prose stayed first in its group.
-  await expect(draft(page)).toHaveValue(/### Prepare\n\n<!-- sop-prose-start -->/);
 
-  await step(page, 2).hover();
-  await gutter(2).locator('.block-gutter-handle').click();
-  const menu = page.getByRole('menu', { name: 'Step actions' });
-  await expect(menu.getByRole('menuitem')).toHaveText([
-    'Turn into text', 'Start a group here⇧Tab', 'Duplicate', 'Add screenshot…', 'Step properties…',
-    'Move up', 'Move down', 'Delete',
-  ]);
+  await troubleshooting().locator('.notion-text-content').hover();
+  await gutter(troubleshooting()).locator('.block-gutter-handle').click();
+  const menu = page.getByRole('menu', { name: 'Block actions' });
+  await expect(menu.getByRole('menuitem', { name: 'Duplicate' })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'Move up' })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
   await capture(page, 'gutter-menu');
+  const paragraphs = page.locator('#rendered-view .notion-block-paragraph');
+  const before = await paragraphs.count();
   await menu.getByRole('menuitem', { name: 'Duplicate' }).click();
-  await expect(page.locator('.block-step')).toHaveCount(4);
-  await expect(draft(page)).toHaveValue(/2\. {2}Open the \*\*synthetic\*\* dashboard\.[\s\S]*3\. {2}Open the \*\*synthetic\*\* dashboard\./);
-  await step(page, 3).hover();
-  await gutter(3).locator('.block-gutter-handle').click();
-  await page.getByRole('menu', { name: 'Step actions' }).getByRole('menuitem', { name: 'Delete' }).click();
-  await expect(page.locator('.block-step')).toHaveCount(3);
+  await expect(paragraphs).toHaveCount(before + 1);
+  await expect(draft(page)).toHaveValue(/Retry the synthetic upload\.\n\nRetry the synthetic upload\./);
+  const firstTroubleshooting = () => page.locator('.notion-block-paragraph', { hasText: 'Retry the synthetic upload.' }).first();
+  await firstTroubleshooting().locator('.notion-text-content').hover();
+  await gutter(firstTroubleshooting()).locator('.block-gutter-handle').click();
+  await page.getByRole('menu', { name: 'Block actions' }).getByRole('menuitem', { name: 'Delete' }).click();
+  await expect(paragraphs).toHaveCount(before);
 
-  // "+" inserts a step below and opens the "/" menu in it.
-  await step(page, 1).hover();
-  await gutter(1).locator('.block-gutter-add').click();
+  // "+" inserts a block below and opens the "/" menu in it.
+  await validation().locator('.notion-text-content').hover();
+  await gutter(validation()).locator('.block-gutter-add').click();
   await expect(page.locator('.block-slash-menu.is-inline')).toBeVisible();
-  await expect(step(page, 2)).toBeFocused();
 });
 
 test.describe('on a touch phone', () => {
@@ -368,18 +328,19 @@ test.describe('on a touch phone', () => {
 
   test('the gutter appears above the block being edited and a tap opens its menu', async ({ page }) => {
     await openDoc(page, SOP_PATH, 'Synthetic Notion SOP', MOBILE);
-    const gutter = page.locator('.block-step[data-step-id="2"] > .block-gutter');
+    const target = page.locator('.notion-block-paragraph', { hasText: 'A synthetic browser.' });
+    const gutter = target.locator('> .block-gutter');
     await expect(gutter).toHaveCSS('opacity', '0');
-    await step(page, 2).tap();
+    await target.locator('.notion-text-content').tap();
     await expect(gutter).toHaveCSS('opacity', '1');
     const box = await gutter.boundingBox();
-    const blockBox = await page.locator('.block-step[data-step-id="2"]').boundingBox();
+    const blockBox = await target.boundingBox();
     expect(box.y + box.height).toBeLessThanOrEqual(blockBox.y + 1);
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(MOBILE.width);
     await capture(page, 'gutter-mobile');
     await gutter.locator('.block-gutter-handle').tap();
-    await expect(page.getByRole('menu', { name: 'Step actions' })).toBeVisible();
+    await expect(page.getByRole('menu', { name: 'Block actions' })).toBeVisible();
     await capture(page, 'gutter-mobile-menu');
   });
 });
@@ -388,30 +349,30 @@ test('selecting text shows a formatting toolbar; Cmd/Ctrl+B and K format too', a
   await openDoc(page, SOP_PATH, 'Synthetic Notion SOP');
   const toolbar = page.getByRole('toolbar', { name: 'Format text' });
   await expect(toolbar).toBeHidden();
-  // Select "file" in step 2 by double-clicking it.
-  await step(page, 2).getByText('Upload the synthetic file.').dblclick({ position: { x: 150, y: 8 } });
+  // Select "file" in the second step by double-clicking it.
+  await item(page, 1).getByText('Upload the synthetic file.').dblclick({ position: { x: 150, y: 8 } });
   await expect(toolbar).toBeVisible();
   await capture(page, 'selection-toolbar');
   const selected = await page.evaluate(() => getSelection().toString().trim());
-  await toolbar.getByRole('button', { name: 'Bold' }).click();
   const bolded = 'Upload the synthetic file.'.replace(selected, `**${selected}**`)
     .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  await expect(draft(page)).toHaveValue(new RegExp(`2\\. {2}${bolded}`));
+  await toolbar.getByRole('button', { name: 'Bold' }).click();
+  await expect(draft(page)).toHaveValue(new RegExp(`2\\. ${bolded}`));
   await expect(toolbar.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'true');
 
   // Cmd/Ctrl+K links the selection through a small inline field.
-  await step(page, 3).getByText('Check the synthetic result.').dblclick({ position: { x: 10, y: 8 } });
+  await item(page, 2).getByText('Check the synthetic result.').dblclick({ position: { x: 10, y: 8 } });
   await page.keyboard.press('ControlOrMeta+k');
   const field = page.getByRole('dialog', { name: 'Paste a link' }).locator('input');
   await expect(field).toBeFocused();
   await field.fill('https://example.test/result');
   await field.press('Enter');
-  await expect(draft(page)).toHaveValue(/3\. {2}\[Check\]\(https:\/\/example\.test\/result\) the synthetic result\./);
+  await expect(draft(page)).toHaveValue(/3\. \[Check\]\(https:\/\/example\.test\/result\) the synthetic result\./);
   // Typing **…** formats as you type and stays markdown.
-  await step(page, 3).click();
+  await item(page, 2).click();
   await page.keyboard.press('End');
   await page.keyboard.type(' Then **save** it.');
-  await expect(step(page, 3).locator('strong')).toHaveText('save');
+  await expect(item(page, 2).locator('strong')).toHaveText('save');
   await expect(draft(page)).toHaveValue(/the synthetic result\. Then \*\*save\*\* it\./);
 });
 
@@ -454,12 +415,13 @@ test('paste: video links embed, markdown becomes blocks, a link over text links 
   await expect(draft(page)).toHaveValue(/\[First\]\(https:\/\/example\.test\/first\) paragraph of the page\./);
   await capture(page, 'paste-plain');
 
-  // An image pasted into a step uploads as its screenshot.
+  // An image pasted into a paragraph uploads as an image block below it.
   await openDoc(page, SOP_PATH, 'Synthetic Notion SOP');
-  await step(page, 2).click();
-  await pasteInto(step(page, 2), { imageBase64: PIXEL_PNG });
-  await expect(page.locator('.block-step[data-step-id="2"] .block-screenshot img')).toHaveCount(1, { timeout: 15_000 });
+  const target = page.locator('#rendered-view .notion-block-paragraph', { hasText: 'None.' });
+  await target.locator('.notion-text-content').click();
+  await pasteInto(target.locator('.notion-text-content'), { imageBase64: PIXEL_PNG });
+  await expect(page.locator('.notion-block-image img')).toHaveCount(1, { timeout: 15_000 });
   await expect(draft(page)).toHaveValue(
-    /2\. {2}Upload the synthetic file\.\n\n {4}<!-- sop-screenshot-start -->\n {4}!\[\]\(content\/images\/[^)]+\.png\)\n {4}<!-- sop-screenshot-end -->\n<!-- sop-step-end -->/,
+    /None\.\n\n!\[\]\(content\/images\/[^)]+\.png\)/,
   );
 });

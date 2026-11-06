@@ -14,6 +14,7 @@ import {
   serializeBlocksToMarkdown,
   serializeListItems,
   splitBlock,
+  TEXT_TYPES,
 } from "./block-model.js";
 import { toVideoEmbed } from "./embeds.js";
 import { makeBlockGutter, openBlockMenu } from "./block-menu.js";

@@ -44,6 +44,7 @@ export function applyFormat(editable, kind) {
 
   if (kind === "strong" || kind === "em") {
     doc.execCommand(kind === "strong" ? "bold" : "italic");
+    notifyInput(editable, "formatBold");
     return;
   }
   if (kind === "code") {
