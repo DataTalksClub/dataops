@@ -83,12 +83,6 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      - name: Lint marked SOPs via Node CLI
-        run: |
-          files=$(grep -rl "schema_version: 1" .knowledge/content --include='*.md' | xargs grep -l "^doc_type: sop$" | tr '\n' ' ')
-          if [ -z "$(echo "$files" | tr -d '[:space:]')" ]; then echo 'No marked SOP files found' >&2; exit 1; fi
-          make sop-lint FILES="$files"
-
       - name: Run planning docs validation
         run: uv run --with pytest python -m pytest tests/planning_docs
 

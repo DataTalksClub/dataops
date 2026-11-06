@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from content_tools.sop_parse import parse_frontmatter, split_frontmatter
+from content_tools.frontmatter import parse_frontmatter, split_frontmatter
 
 
 DOCUMENT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")

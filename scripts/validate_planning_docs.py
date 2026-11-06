@@ -16,7 +16,8 @@ CONTENT_TOOLS_SRC = REPO_ROOT / "tools" / "content_tools"
 if str(CONTENT_TOOLS_SRC) not in sys.path:
     sys.path.insert(0, str(CONTENT_TOOLS_SRC))
 
-from content_tools import doc_registry, sop_parse  # noqa: E402
+from content_tools import doc_registry  # noqa: E402
+from content_tools.frontmatter import parse_frontmatter, split_frontmatter  # noqa: E402
 
 
 PROTECTED_MARKDOWN_GLOBS = [
@@ -51,13 +52,13 @@ STALE_PLANNING_DOCS_TEST_PATH = "tests/planningdocs/**"
 STALE_PLANNING_DOCS_TEST_COMMAND_PATH = "tests/planningdocs"
 CLEAN_HELP_DESCRIPTION = "Remove root generated search index and backend dist."
 STALE_WORK_ENGINE_HELP_PHRASE = "work-engine dist"
-TASK_TEMPLATE_SECTIONS = [
-    "summary",
-    "purpose",
-    "references",
-    "required-card-links",
-    "task-definitions",
-]
+TASK_TEMPLATE_SECTIONS = {
+    "summary": "Summary",
+    "purpose": "Purpose",
+    "references": "References",
+    "required-card-links": "Required Card Links",
+    "task-definitions": "Task Definitions",
+}
 TASK_TEMPLATE_SYSTEMS = {"dataops", "datatasks"}
 TASK_DEFINITIONS_TABLE_HEADERS = {
     "| # | Ref ID | Offset | Task | Requirements | Instructions |",
@@ -232,8 +233,8 @@ def validate_frontmatter_related_docs(repo_root: Path) -> list[str]:
     violations: list[str] = []
     registry = _build_registry_or_none(repo_root, violations)
     for markdown_path in protected_markdown_files(repo_root):
-        raw, _body = sop_parse.split_frontmatter(markdown_path.read_text(encoding="utf-8", errors="replace"))
-        metadata = sop_parse.parse_frontmatter(raw) if raw else {}
+        raw, _body = split_frontmatter(markdown_path.read_text(encoding="utf-8", errors="replace"))
+        metadata = parse_frontmatter(raw) if raw else {}
         for related in _strings(metadata.get("related_docs")):
             if _is_external_or_anchor(related):
                 continue
@@ -332,8 +333,8 @@ def validate_task_templates(repo_root: Path) -> list[str]:
     for template_path in template_paths:
         repo_path = _corpus_path(root, template_path)
         text = template_path.read_text(encoding="utf-8", errors="replace")
-        raw, body = sop_parse.split_frontmatter(text)
-        metadata = sop_parse.parse_frontmatter(raw) if raw else {}
+        raw, body = split_frontmatter(text)
+        metadata = parse_frontmatter(raw) if raw else {}
         title = str(metadata.get("title", "")).strip()
         if not title:
             violations.append(f"{repo_path}: frontmatter title is required")
@@ -353,8 +354,9 @@ def validate_task_templates(repo_root: Path) -> list[str]:
         tags = set(_strings(metadata.get("tags")))
         if "task-template" not in tags or template_path.stem not in tags:
             violations.append(f"{repo_path}: tags must include task-template and {template_path.stem}")
-        for section in TASK_TEMPLATE_SECTIONS:
-            if f"<!-- sop-section-start: {section} -->" not in body:
+        headings = {match.group("title").strip().lower() for match in HEADING_RE.finditer(body)}
+        for section, heading in TASK_TEMPLATE_SECTIONS.items():
+            if heading.lower() not in headings:
                 violations.append(f"{repo_path}: missing task-template section {section}")
         if not any(header in body for header in TASK_DEFINITIONS_TABLE_HEADERS):
             violations.append(f"{repo_path}: task definitions table header is missing or changed")

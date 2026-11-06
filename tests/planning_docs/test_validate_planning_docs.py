@@ -28,15 +28,10 @@ tags:
 
 # Newsletter
 
-<!-- sop-section-start: summary -->
 ## Summary
-<!-- sop-section-start: purpose -->
 ## Purpose
-<!-- sop-section-start: references -->
 ## References
-<!-- sop-section-start: required-card-links -->
 ## Required Card Links
-<!-- sop-section-start: task-definitions -->
 ## Task Definitions
 
 | # | Ref ID | Phase | Offset | Owner | Operator action | Context | Proof / closure | Waiting / follow-up |
@@ -136,15 +131,10 @@ tags:
 
 # Newsletter
 
-<!-- sop-section-start: summary -->
 ## Summary
-<!-- sop-section-start: purpose -->
 ## Purpose
-<!-- sop-section-start: references -->
 ## References
-<!-- sop-section-start: required-card-links -->
 ## Required Card Links
-<!-- sop-section-start: task-definitions -->
 ## Task Definitions
 
 | # | Ref ID | Phase | Offset | Owner | Operator action | Context | Proof / closure | Waiting / follow-up |
