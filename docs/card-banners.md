@@ -69,7 +69,7 @@ Sponsored variants also declare `sponsorTreatment: approved-logo` and contain
 the `{{sponsorLogo}}` image field.
 Fields are `{{title}}`, `{{titleFontSize}}`, `{{speaker1Name}}`,
 `{{speaker1Portrait}}` and their speaker-2/speaker-3 equivalents. Shared asset field names
-start with `asset`. Text is escaped; the renderer blocks scripts and external
+start with `asset`. An explicitly requested alternate label requires a template with the `{{eventLabel}}` field; an older bundle rejects it instead of silently using another badge. Text is escaped; the renderer blocks scripts and external
 resources. Publish bundles under a new content-addressed private key and update
 the application parameter for a template release.
 
