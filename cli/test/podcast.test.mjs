@@ -501,4 +501,11 @@ describe("podcast publication evidence flags", () => {
     assert.notEqual(await run(['podcast', 'send-invite', '--hold', 'hold-1'], captureIo()), 0);
     assert.equal(calls.length, 0);
   });
+
+  test("send-invite passes explicit safe recovery to DataOps, never a new Task", async () => {
+    const calls = fakePortal({ 'POST /api/podcast-first-contact/send': { emailDelivery: { state: 'sent', messageId: 'recovered' }, taskId: 'same-task' } });
+    assert.equal(await run(['podcast', 'send-invite', '--hold', 'hold-1', '--doc', 'doc-1', '--task', 'same-task', '--guest', 'Synthetic Guest', '--retry-pre-send'], captureIo()), 0);
+    assert.equal(calls[0].body.taskId, 'same-task');
+    assert.equal(calls[0].body.retryPreSend, true);
+  });
 });
