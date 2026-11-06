@@ -92,6 +92,23 @@ describe('docRegistry - build + resolve (port of doc_registry.py)', () => {
     assert.throws(() => resolveReference(registry, 'does.not.exist'), LookupError);
   });
 
+  it('throws LookupError, not a plain Error, for an unknown path-shaped reference', () => {
+    writeDoc(contentRoot, 'a.md', '---\ntitle: A\n---\n\nbody\n');
+    const registry = buildRegistry(contentRoot);
+    try {
+      resolveReference(registry, '00-start-here/no-such-doc');
+      assert.fail('expected resolveReference to throw');
+    } catch (error) {
+      assert.ok(error instanceof LookupError, `expected LookupError, got ${String(error)}`);
+      assert.strictEqual((error as Error).message, 'Document reference not found: 00-start-here/no-such-doc');
+    }
+    // Same for a path-shaped ref that ends in .md but matches no document.
+    assert.throws(() => resolveReference(registry, '00-start-here/no-such-doc.md'), LookupError);
+    // Valid path references still resolve after the throw site.
+    const record = resolveReference(registry, 'a.md');
+    assert.strictEqual(record.path, 'content/a.md');
+  });
+
   it('reports a dangling related_docs reference and still builds', () => {
     writeDoc(
       contentRoot,

@@ -1,4 +1,5 @@
 const { uploadBookkeepingEvidence } = require("./helpers/bookkeeping-evidence");
+const { syntheticStatementPdf } = require('./helpers/bookkeeping-statement');
 const { test, expect } = require('@playwright/test');
 const { recordCapabilityEvidence } = require('./helpers/capability-evidence');
 const {
@@ -732,9 +733,11 @@ test.describe('canonical frontend capability behavior', () => {
     await expect(row).toBeVisible();
     await expect(page.locator('.bk-month__head')).toContainText('out −€18.50');
 
-    await uploadBookkeepingEvidence(page, context, transaction.id, {
+    const paymentEvidence = await uploadBookkeepingEvidence(page, context, transaction.id, {
       month: '2026-08', filename: 'synthetic-evidence.pdf',
     });
+    const proof = await context.request.post('/api/reconcile/months/2026-08/proof', { data: { transactionId: transaction.id, documentId: paymentEvidence.id } });
+    expect(proof.ok()).toBe(true);
     await page.goto('/bookkeeping?month=2026-08');
     await row.locator('.bk-col-date').click();
     await expect(page).toHaveURL(new RegExp(`tx=${transaction.id}`));
@@ -751,6 +754,7 @@ test.describe('canonical frontend capability behavior', () => {
     await page.getByRole('button', { name: 'Upload PDF' }).click();
     await expect(page.locator('[data-bookkeeping-status]')).toContainText('Choose a PDF first');
     for (const [index] of accounts.entries()) {
+      const bank = ['finom', 'revolut'][index];
       await page.getByLabel('Document type').selectOption('bank-statement');
       const accountSelect = page.locator('[data-account]');
       const renderedAccountId = await accountSelect.locator('option').nth(index + 1).getAttribute('value');
@@ -759,12 +763,53 @@ test.describe('canonical frontend capability behavior', () => {
       await page.getByLabel('Statement month').fill('2026-08');
       await page.locator('[data-pdf]').setInputFiles({
         name: `synthetic-statement-${index + 1}.pdf`, mimeType: 'application/pdf',
-        buffer: Buffer.from(`%PDF-1.4\nsynthetic statement ${index + 1}\n%%EOF`),
+        buffer: await syntheticStatementPdf(bank),
       });
+      // The configured business-* account is document metadata, not a bank
+      // enum. The import must recognize the issuer from the actual PDF bytes.
+      const previewResponse = page.waitForResponse((response) =>
+        response.url().endsWith('/api/reconcile/statements/import') && response.request().postDataJSON().preview === true);
+      const committedResponse = page.waitForResponse((response) =>
+        response.url().endsWith('/api/reconcile/statements/import') && response.status() === 201);
       await page.getByRole('button', { name: 'Upload PDF' }).click();
+      const preview = await previewResponse;
+      expect(preview.status()).toBe(200);
+      expect(preview.request().postDataJSON().account).toBeUndefined();
+      expect(preview.request().postDataJSON().period).toBe('2026-08');
+      expect(await json(preview)).toMatchObject({
+        account: bank, committed: false, rowCount: 1, issueDate: '2026-09-04',
+        preview: { requiresConfirmation: false, candidateIssueDate: '2026-09-04' },
+      });
+      const committed = await committedResponse;
+      expect(committed.request().postDataJSON().period).toBe('2026-08');
+      expect(await json(committed)).toMatchObject({
+        account: bank, committed: true,
+        statements: [{ period: '2026-08', from: '2026-08-01', to: '2026-08-31', rowCount: 1 }],
+      });
       await expect(page.locator('[data-bookkeeping-status]')).toContainText('PDF uploaded and verified');
       await expect(page.locator('.bookkeeping-documents article')).toHaveCount(index + 2);
     }
+    // Book both actual payments parsed from the synthetic statement PDFs.
+    // Resolve evidence through the same operator APIs as the portal.
+    const monthResponse = await context.request.get('/api/reconcile/months/2026-08');
+    expect(monthResponse.status()).toBe(200);
+    const month = await json(monthResponse);
+    const hosting = month.rows.find((item) => item.bank?.counterparty === 'Example Hosting');
+    const tools = month.rows.find((item) => item.bank?.counterparty === 'Example Tools');
+    expect(hosting?.bank).toMatchObject({ date: '2026-08-12', amount: '-18.50', currency: 'EUR' });
+    expect(tools?.bank).toMatchObject({ date: '2026-08-15', amount: '-27.00', currency: 'EUR' });
+    const paired = await context.request.post('/api/reconcile/months/2026-08/pair', { data: {
+      bankKey: hosting.bank.key, transactionId: transaction.id,
+    } });
+    expect(paired.status()).toBe(200);
+    const booked = await context.request.post('/api/reconcile/months/2026-08/ledger', { data: {
+      bankKey: tools.bank.key, category: 'testing', description: 'Synthetic tools service',
+    } });
+    expect(booked.status()).toBe(201);
+    const toolsTransaction = (await json(booked)).transaction;
+    await uploadBookkeepingEvidence(page, context, toolsTransaction.id, {
+      month: '2026-08', filename: 'synthetic-tools-evidence.pdf',
+    });
     const retired = await context.request.post('/api/bookkeeping/documents/upload', { data: {
       filename: 'synthetic-evidence.pdf', contentType: 'application/pdf', byteSize: 34, documentType: 'receipt',
     } });
@@ -778,7 +823,7 @@ test.describe('canonical frontend capability behavior', () => {
     const packageReview = page.getByRole('region', { name: 'Accountant package', exact: true });
     await expect(packageReview.getByRole('heading', { name: 'August 2026 package', exact: true })).toBeVisible();
     await expect(packageReview).toContainText('Package ready.');
-    await expect(packageReview).toContainText('1 transactions and 3 documents inside.');
+    await expect(packageReview).toContainText('2 transactions and 4 documents inside.');
     // The archive is generated by the explicit download action; that is also
     // what files the ZIP as a private document.
     await page.getByRole('button', { name: 'Download package' }).click();
@@ -788,7 +833,7 @@ test.describe('canonical frontend capability behavior', () => {
     await page.goto('/bookkeeping?month=2026-08');
     await expect(row).toBeVisible();
     await page.goto('/bookkeeping?view=files&month=2026-08');
-    await expect(page.locator('.bookkeeping-documents article')).toHaveCount(4);
+    await expect(page.locator('.bookkeeping-documents article')).toHaveCount(5);
     await expect(page.locator('.bookkeeping-documents')).toContainText('datatalksclub-2026-08.zip');
     await context.close();
     recordCapabilityEvidence(testInfo, [{

@@ -182,13 +182,24 @@ test.describe("production portal bookkeeping", () => {
     const page = await context.newPage();
     const samples = [
       { transactionDate: "2024-01-02", counterparty: "January Export Vendor", amount: "100.1234", currency: "EUR", entryType: "expense" },
-      { transactionDate: "2024-12-02", counterparty: 'December, "Export" Vendor', amount: "25.4321", currency: "USD", entryType: "income" },
+      { transactionDate: "2024-12-02", counterparty: 'December, "Export" Vendor', amount: "25.4321", currency: "USD", amountEur: "23.4500", rateSource: "Synthetic booked EUR fixture", entryType: "income" },
       { transactionDate: "2024-12-03", counterparty: "Excluded Export Tax", amount: "10.00", currency: "EUR", entryType: "expense", category: "Taxes" },
       { transactionDate: "2025-01-02", counterparty: "Next Year Export Vendor", amount: "20.00", currency: "EUR", entryType: "expense" },
     ];
     for (const entry of samples) {
       const response = await context.request.post("/api/bookkeeping/transactions", { data: { description: "Export browser fixture", ...entry } });
       expect(response.ok(), await response.text()).toBe(true);
+      if (entry.category !== "Taxes") {
+        const created = await response.json();
+        const transaction = created.item || created.transaction || created;
+        const evidence = await uploadBookkeepingEvidence(page, context, transaction.id, {
+          month: entry.transactionDate.slice(0, 7), filename: `synthetic-export-${entry.transactionDate}.pdf`,
+        });
+        const proof = await context.request.post(`/api/reconcile/months/${entry.transactionDate.slice(0, 7)}/proof`, {
+          data: { transactionId: transaction.id, documentId: evidence.id },
+        });
+        expect(proof.ok(), await proof.text()).toBe(true);
+      }
     }
     await gotoOwnedBookkeepingPage(page);
     const period = page.locator("[data-period-toolbar]");
@@ -215,14 +226,22 @@ test.describe("production portal bookkeeping", () => {
     await expect(page.locator("[data-report]")).toBeDisabled();
     await page.locator("#bookkeeping-package").getByRole("button", { name: "← Transactions" }).click();
 
+    await more.click();
+    await page.getByRole("menuitem", { name: "Export accountant CSV", exact: true }).click();
+    await expect(page.locator("[data-bookkeeping-status]")).toContainText("Select a month");
+    await period.locator("[data-picker-toggle]").click();
+    await period.locator('[data-picker-month="11"]').click();
+    await expect(period.locator("[data-period-heading]")).toHaveText("December 2024");
     const reportDownload = page.waitForEvent("download");
     await more.click();
     await page.getByRole("menuitem", { name: "Export accountant CSV", exact: true }).click();
     const report = await reportDownload;
-    expect(report.suggestedFilename()).toBe("datatalksclub-2024.csv");
+    expect(report.suggestedFilename()).toBe("datatalksclub-2024-12.csv");
     const reportText = await fs.readFile(await report.path(), "utf8");
-    expect(reportText).toContain('"-100.1234"');
-    expect(reportText).toContain('"December, ""Export"" Vendor","Export browser fixture","","25.4321","USD"');
+    expect(reportText.trim().split(/\r?\n/)).toEqual([
+      '"Date","Company","What","Amount, EUR"',
+      '"2024-12-02","December, ""Export"" Vendor","Export browser fixture","23.4500"',
+    ]);
     expect(reportText).not.toContain("Excluded Export Tax");
     expect(reportText).not.toContain("Next Year Export Vendor");
 
@@ -230,16 +249,19 @@ test.describe("production portal bookkeeping", () => {
     await more.click();
     await page.getByRole("menuitem", { name: "Export all fields (CSV)", exact: true }).click();
     const full = await fullDownload;
-    expect(full.suggestedFilename()).toBe("datatalksclub-2024-full.csv");
+    expect(full.suggestedFilename()).toBe("datatalksclub-2024-12-full.csv");
     expect(await fs.readFile(await full.path(), "utf8")).toContain("Excluded Export Tax");
 
     await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text) => { window.__copiedReport = text; } } }));
     await more.click();
     await page.getByRole("menuitem", { name: "Copy accountant table", exact: true }).click();
-    await expect(page.locator("[data-bookkeeping-status]")).toContainText("Copied report table for 2024 (2 transactions)");
+    await expect(page.locator("[data-bookkeeping-status]")).toContainText("Copied report table for December 2024 (1 transactions)");
     const copied = await page.evaluate(() => window.__copiedReport);
-    expect(copied).toContain("VAT\tVAT Currency");
-    expect(copied).toContain("January Export Vendor");
+    expect(copied.trim().split(/\r?\n/)).toEqual([
+      "Date\tCompany\tWhat\tAmount, EUR",
+      '2024-12-02\tDecember, "Export" Vendor\tExport browser fixture\t23.4500',
+    ]);
+    expect(copied).not.toContain("January Export Vendor");
     expect(copied).not.toContain("Excluded Export Tax");
 
     const heading = period.locator("[data-period-heading]");

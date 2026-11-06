@@ -17,6 +17,14 @@ export interface CalendarOverlaySettings {
   filterDtcPlaceholders: boolean;
   filterTransparent: boolean;
   customKeywords: string[];
+  /** Call slots: minimum notice before a start, minutes (Calendly event default 12 h). */
+  callMinimumNoticeMinutes: number;
+  /** Call slots: how many days ahead a start is offered (Calendly event default 60). */
+  callHorizonDays: number;
+  /** Call slots: buffer required before a call start, minutes (Calendly event default 0). */
+  callBufferBeforeMinutes: number;
+  /** Call slots: buffer required after a call end, minutes (Calendly event default 0). */
+  callBufferAfterMinutes: number;
   updatedAt?: string;
   updatedBy?: string;
 }
@@ -32,6 +40,15 @@ export const DEFAULT_CALENDAR_OVERLAY_SETTINGS: CalendarOverlaySettings = {
   filterDtcPlaceholders: true,
   filterTransparent: true,
   customKeywords: [],
+  callMinimumNoticeMinutes: 720,
+  callHorizonDays: 60,
+  callBufferBeforeMinutes: 0,
+  callBufferAfterMinutes: 0,
+};
+
+const MIN_INT = (v: unknown, fallback: number, max: number): number => {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) && Number.isInteger(n) && n >= 0 && n <= max ? n : fallback;
 };
 
 const SETTINGS_PK = 'CONFIG#owner-calendar';
@@ -56,6 +73,10 @@ export async function getCalendarOverlaySettings(client: DynamoDBDocumentClient)
     filterDtcPlaceholders: typeof data.filterDtcPlaceholders === 'boolean' ? data.filterDtcPlaceholders : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterDtcPlaceholders,
     filterTransparent: typeof data.filterTransparent === 'boolean' ? data.filterTransparent : DEFAULT_CALENDAR_OVERLAY_SETTINGS.filterTransparent,
     customKeywords: Array.isArray(data.customKeywords) ? data.customKeywords.filter((k: any) => typeof k === 'string' && k.trim()) : [],
+    callMinimumNoticeMinutes: MIN_INT(data.callMinimumNoticeMinutes, DEFAULT_CALENDAR_OVERLAY_SETTINGS.callMinimumNoticeMinutes, 60 * 24 * 365),
+    callHorizonDays: MIN_INT(data.callHorizonDays, DEFAULT_CALENDAR_OVERLAY_SETTINGS.callHorizonDays, 3650),
+    callBufferBeforeMinutes: MIN_INT(data.callBufferBeforeMinutes, DEFAULT_CALENDAR_OVERLAY_SETTINGS.callBufferBeforeMinutes, 60 * 24),
+    callBufferAfterMinutes: MIN_INT(data.callBufferAfterMinutes, DEFAULT_CALENDAR_OVERLAY_SETTINGS.callBufferAfterMinutes, 60 * 24),
     updatedAt: data.updatedAt as string | undefined,
     updatedBy: data.updatedBy as string | undefined,
   };
@@ -83,6 +104,18 @@ export async function saveCalendarOverlaySettings(
           .map((k) => k.trim().slice(0, 100))
           .slice(0, 100)
       : current.customKeywords,
+    callMinimumNoticeMinutes: input.callMinimumNoticeMinutes === undefined
+      ? current.callMinimumNoticeMinutes
+      : MIN_INT(input.callMinimumNoticeMinutes, current.callMinimumNoticeMinutes, 60 * 24 * 365),
+    callHorizonDays: input.callHorizonDays === undefined
+      ? current.callHorizonDays
+      : MIN_INT(input.callHorizonDays, current.callHorizonDays, 3650),
+    callBufferBeforeMinutes: input.callBufferBeforeMinutes === undefined
+      ? current.callBufferBeforeMinutes
+      : MIN_INT(input.callBufferBeforeMinutes, current.callBufferBeforeMinutes, 60 * 24),
+    callBufferAfterMinutes: input.callBufferAfterMinutes === undefined
+      ? current.callBufferAfterMinutes
+      : MIN_INT(input.callBufferAfterMinutes, current.callBufferAfterMinutes, 60 * 24),
     updatedAt: new Date().toISOString(),
     updatedBy: actor,
   };

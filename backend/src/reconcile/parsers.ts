@@ -40,7 +40,7 @@ export type StatementBalance = {
 };
 
 export type StatementPeriod = { from: string; to: string };
-export type ParsedStatement = { rows: StatementRow[]; warnings: string[]; balances: StatementBalance[]; period?: StatementPeriod };
+export type ParsedStatement = { rows: StatementRow[]; warnings: string[]; balances: StatementBalance[]; period?: StatementPeriod; issueDate?: string; bankAccounts?: Record<string, string>; openingBalances?: StatementBalance[] };
 export type ParseOptions = { currency?: string };
 
 const CURRENCY = /^[A-Z]{3}$/;

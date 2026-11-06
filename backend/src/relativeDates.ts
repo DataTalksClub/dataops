@@ -35,6 +35,13 @@ export function addDays(day: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Kept separate from sponsorCrm/model.realDate: same YYYY-MM-DD contract, but
+ * this roundtrip through `Date.UTC` components rejects four-digit years
+ * 0000-0099 (Date.UTC maps them onto 1900-1999) where realDate's parse-based
+ * roundtrip accepts them. Task dates want the stricter gate; nothing may
+ * resolve a relative word onto a year-0099 date.
+ */
 export function isCalendarDate(value: unknown): value is string {
   if (typeof value !== 'string') return false;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;

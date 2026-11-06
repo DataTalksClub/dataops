@@ -142,3 +142,27 @@ test('distinguishes DataTalks.Club customer credit notes from supplier refunds a
  assert.equal(conflict.extraction.needsReview,true);
  assert.deepEqual(conflict.extraction.candidates?.sort(),['100.00','20.00']);
 });
+
+test('a reader misread of a supplier credit note stays flagged: forced credit-note type, cleared amounts, confidence gate',async()=>{
+ // Stripe-layout supplier credit note; synthetic vendor, numbers and amounts.
+ const text='Page 1 of 1\nRefund\nInvoice number PS7Q4M2K \u0000 0059\nDate issued November 3, 2026\nPro Sulum, LLC\nbilling@pro-sulum.example\nBill to\nExample Customer\ncustomer@example.test\n$646.63 refunded on November 3, 2026\nExample Vendor Assistant 1 $858.00 $858.00\nSubtotal $858.00\nTotal $858.00\nAmount paid $858.00\n \u0000 PS7Q4M2K \u0000 0059 \u0000 CN \u0000 01 \u0000 Unused time on Example Vendor Assistant after 3 Nov 2026\n1 $646.63 $646.63\nCredited subtotal $646.63\nCredited total $646.63\nAdjusted invoice total $211.37\n';
+ // The reader misclassifies the credit note as an invoice and reports the
+ // original invoice total; the deterministic layer must override it.
+ const misread=await extractFinanceText(text,{llm:llm({...facts,docType:'invoice',direction:'expense',counterparty:'Pro Sulum, LLC',invoiceNumber:'PS7Q4M2K-0059',date:'2026-11-03',currency:'USD',gross:'858.00',net:'858.00',vat:'0.00',vatRate:'0'})});
+ assert.equal(misread.extraction.documentType,'credit_note');
+ assert.equal(misread.extraction.needsReview,true);
+ assert.equal(misread.fields.amount,undefined);
+ assert.deepEqual(misread.extraction.candidates?.sort(),['646.63','858.00']);
+ assert.equal(misread.fields.subtype,'Refund');
+ assert.equal(misread.extraction.direction,'expense');
+ assert.ok(misread.extraction.issues.includes('Credit note with conflicting refunded amounts (646.63, 858.00): confirm the refunded amount'));
+ assert.ok(misread.extraction.issues.includes('disagreement:invoiceNumber'));
+ // Reader confidence below the repo's high-confidence threshold keeps the
+ // extracted values but still sends the draft to review.
+ const lowConfidence=await extractFinanceText(text,{llm:llm({...facts,docType:'credit_note',direction:'expense',counterparty:'Pro Sulum, LLC',invoiceNumber:'PS7Q4M2K-0059-CN-01',date:'2026-11-03',currency:'USD',gross:'646.63',net:'646.63',vat:'0.00',vatRate:'0',confidence:'low'})});
+ assert.equal(lowConfidence.fields.amount,'646.63');
+ assert.equal(lowConfidence.fields.invoiceNumber,'PS7Q4M2K-0059-CN-01');
+ assert.equal(lowConfidence.fields.subtype,'Refund');
+ assert.equal(lowConfidence.extraction.needsReview,true);
+ assert.ok(lowConfidence.extraction.issues.includes('confidence:low'));
+});

@@ -54,6 +54,7 @@ test('webinar workflow creates a form; speaker saves, validates and submits link
   await page.locator('#sponsor-field-twitterUrl').fill('https://example.test/x');
   await page.locator('#sponsor-field-githubUrl').fill('https://example.test/github');
   await page.locator('#sponsor-field-websiteUrl').fill('https://example.test/speaker');
+  await page.locator('#sponsor-field-sponsorNotes').fill('Prefer the session not be recorded.');
   await page.locator('[data-sponsor-action="submit-ready"]').click();
   await expect(page.locator('[data-sponsor-feedback]')).toContainText('Submitted and marked ready');
   await page.reload();
@@ -77,7 +78,7 @@ test('webinar workflow creates a form; speaker saves, validates and submits link
   const exported = await request.get(`${server.baseURL}${exportPath}`);
   expect(exported.status()).toBe(200);
   const markdown = await exported.text();
-  for (const value of ['Practical pipelines', 'Lessons from building pipelines', 'Design', 'Build', 'Monitor', 'A data engineer.', '/linkedin', 'X (Twitter): https://example.test/x', '/github', '/speaker']) {
+  for (const value of ['Practical pipelines', 'Lessons from building pipelines', 'Design', 'Build', 'Monitor', 'A data engineer.', '/linkedin', 'X (Twitter): https://example.test/x', '/github', '/speaker', 'Notes from the Speaker', 'Prefer the session not be recorded.']) {
     expect(markdown).toContain(value);
   }
 });

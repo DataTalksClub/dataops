@@ -416,7 +416,9 @@ function normalizeAlias(alias: string): string {
 
 function normalizePathAlias(alias: string): string {
   let path = alias.trim().replace(/\\/g, '/').replace(/^\/+/, '');
-  if (!path.endsWith('.md')) throw new Error(alias);
+  // LookupError (not a plain Error) so callers map an unresolvable path-shaped
+  // ref to 404 instead of surfacing it as an unexpected failure.
+  if (!path.endsWith('.md')) throw new LookupError(`Document reference not found: ${alias}`);
   if (!path.startsWith('content/')) path = `content/${path}`;
   return path;
 }

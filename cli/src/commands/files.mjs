@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 
@@ -27,6 +28,7 @@ export const artifactsHelp = `dataops artifacts - artifacts (drafts, outputs) li
 
 Usage
   dataops artifacts list [--task ID] [--card ID] [--status S] [--type T]
+  dataops artifacts download <artifact-id> [--output PATH]
   dataops artifacts show <artifact-id>
   dataops artifacts create --data '{...}'
   dataops artifacts update <artifact-id> --data '{...}'
@@ -204,7 +206,22 @@ export const filesCommands = {
   delete: filesDelete,
 };
 
+export async function artifactsDownload(args, io) {
+  const id = positional(args, 0, "dataops artifacts download <artifact-id> [--output PATH]");
+  const api = apiFor(args);
+  const { artifact } = await api.get(`/api/artifacts/${enc(id)}`);
+  const output = optionalString(args, "output") || (artifact.filename ? basename(artifact.filename.replace(/\\/g, "/")) : undefined);
+  if (!output) throw new UsageError("--output is required: the artifact has no stored filename.");
+  const link = await api.get(`/api/artifacts/${enc(id)}/download`);
+  const bytes = await fetchObjectBytes(link.downloadUrl, api.base);
+  verifyTransferredBytes(artifact, bytes);
+  writeFileSync(output, bytes, { flag: "wx" });
+  if (!args.json) io.print(`Saved ${output} (${bytes.length} bytes).`);
+  return { id, path: output, bytes: bytes.length };
+}
+
 export const artifactsCommands = {
+  download: artifactsDownload,
   list: artifactsList,
   show: artifactsShow,
   create: artifactsCreate,

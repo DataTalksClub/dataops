@@ -103,12 +103,62 @@ and do not mark it waiting or done. A Task with no `requires` needs nothing
 beyond DataOps itself. If a Task obviously needs a resource it does not list,
 add it: `dataops tasks update <task-id> --requires youtube,luma`.
 
+## Sponsor invoice lifecycle
+
+Use the CLI for sponsor Finance records. These commands preview the exact request;
+add `--apply` only after reviewing its source-backed values:
+
+```bash
+dataops sponsors finance <deal-id> --json
+dataops sponsors classify-finance <deal-id> --data @classification.json
+dataops sponsors record-invoice <deal-id> --data @invoice.json
+dataops sponsors attach-invoice <deal-id> --file original.pdf
+dataops sponsors correct-invoice <deal-id> --data @correction.json [--file corrected.pdf]
+dataops sponsors add-evidence <deal-id> --data @evidence.json
+dataops sponsors set-waiting <deal-id> --data @waiting.json
+```
+
+Classification needs `invoiceRequirement` (`required` or `not-required`). A required
+invoice also needs `amountDue` (decimal string), `currency` and `taxMode` (`unknown`,
+`included`, `added`, `not-applicable`). Optional `taxAmount`, `requestBy` and
+`expectedInvoiceBy` stay unchanged when omitted from an existing classification.
+
+`record-invoice` records an already issued invoice; it does not generate a PDF,
+send email or record cash. First supply verified `issuedOn` and `dueOn`, with
+optional `invoiceNumber` and `sentOn`. Omitted fields stay unchanged; explicit
+`null` clears optional number/sent date. Never record `sentOn` before
+actual sending evidence. Attach the original PDF after recording its dates, or
+pass verified `--issued-on YYYY-MM-DD --due-on YYYY-MM-DD` to `attach-invoice`.
+Missing dates fail before upload. A retry reuses checksum-addressed storage.
+
+`correct-invoice` is the path for fixing an issued sponsor invoice. The
+corrected invoice itself must first be issued in Finom's UI (DataOps has no
+Finom API; same manual step as marking an invoice paid there). Record the
+correction with a required `reason` plus corrected `invoiceNumber`, `issuedOn`,
+`dueOn`, `sentOn` (omitted fields stay unchanged; explicit `null` clears the
+optional number/sent date), and pass the corrected PDF with `--file` so it
+supersedes the linked original in one audited step - the original document is
+retained, the history records what changed and why, and the projection's
+`finance.invoiceCorrection` shows the latest correction. The invoice stays
+`issued`; correction before anything was issued fails.
+
+An evidence entry is `{kind,ref,label?,on?}`; `add-evidence` appends it or updates
+the same kind/ref while preserving unrelated entries. Waiting data is
+`{party,reason,since,note?}`; `set-waiting --clear` clears only that field.
+See `dataops sponsors --help` for supported values. These actions do not send mail.
+
+Writes obtain current deal/finance versions and send `Idempotency-Key`. To replay
+an exact request, retain the preview's key and request, pass the same
+`--idempotency-key KEY --deal-version N --expected-version N`, and unchanged data.
+A conflict is surfaced for review; the CLI never silently retries a mutation
+against newer state.
+
 ## Browser requirement: headless machines
 
 `requires` names accounts; the separate `browserRequirement` classifies whether
-an interactive browser is needed at all. It is a human-made claim on the Task —
+an interactive browser is needed at all. It is a human-made claim on the Task â€”
 `required` (a browser is needed somewhere) or `headless` (the whole Task can
-finish without one) — and it is never inferred from a service name: a Typefully
+finish without one) â€” and it is never inferred from a service name: a Typefully
 or YouTube task may have a full API route. An unclassified Task (`show` prints
 "not classified") is unknown, not headless-safe.
 
@@ -210,14 +260,14 @@ and `dataops newsletter doc delete <doc-id> --yes` (and the matching
 `dataops podcast doc create <card-id> [--email]`, `show`, `export`, `delete` for podcast sponsorships;
 prep docs use `--template podcast-guest-research|podcast-run-sheet|podcast-episode-brief` for
 guest research, host run sheet, and episode planning brief (no Google Docs needed).
-The guest materials form (`podcast`) is optional for the guest — a short email
+The guest materials form (`podcast`) is optional for the guest â€” a short email
 reply works instead of filling it. Guest research and the host run sheet start
 only after the recording date is confirmed
 (`dataops podcast update <episode-id> --recording-date YYYY-MM-DD`); the episode
 brief is available before confirm.
 
 For a newsletter issue's Markdown package (`issue.md`, `sources.md`, `brief.md`):
-store it in DataOps on the newsletter issue — never commit it to Git:
+store it in DataOps on the newsletter issue â€” never commit it to Git:
 `dataops newsletter markdown set <issue-id> --issue-file issue.md --sources-file sources.md --brief-file brief.md`
 (or one file at a time with `dataops newsletter markdown set <issue-id> [issue|sources|brief] --file <path>`).
 It automatically populates the `"Newsletter Markdown"` link on the issue and its Card
@@ -247,7 +297,7 @@ For first contact with a new guest: `dataops podcast invite --guest "Full Name"
 --email guest@example.com --date YYYY-MM-DD --topic "Intended topic"
 [--title T] [--window evening|midday] [--duration 60]` proposes one tentative
 hold (the backend mirrors it as a Google "(Proposal)" event, or reports Google
-sync deferred), creates a standalone follow-up Task (no Card — the episode Card
+sync deferred), creates a standalone follow-up Task (no Card â€” the episode Card
 comes only after the recording date is confirmed), and prints the send-ready
 email from orin@datatalks.club with exactly one proposed slot, no topic ask,
 and the public podcast docs page link
@@ -320,14 +370,14 @@ dataops tasks update <task-id> --at none       # clear the moment
 ```
 
 Until the moment passes the Task stays out of the queue, `--today`,
-`--overdue`, and `--waiting` — then it is due like any other Task. `--tz`
+`--overdue`, and `--waiting` â€” then it is due like any other Task. `--tz`
 defaults to Europe/Berlin; an ISO instant with an offset needs no `--tz`.
 
 Chain work with `dataops tasks update <task-id> --after <parent-id>`
 (`none` clears; `--depends-on` is the multi-parent form, `depends_on` in Card
 Templates). A dependent cannot be completed until its parent is done or
 skipped, and when the parent's date or moment moves the dependents shift by
-the same offset, transitively — done work keeps its history. The queue still
+the same offset, transitively â€” done work keeps its history. The queue still
 lists blocked Tasks marked as blocked; the gate is on completion.
 
 Podcast releases ride the same machinery: recording `--spotify-schedule`
@@ -347,7 +397,7 @@ Follow-ups live in DataOps, not in any agent's memory, so any agent can pick
 up any queue:
 
 1. Look at their queue: `dataops tasks list --owner <agent-id> --queue --json`
-   (an id, email, or name — `dataops tasks list --owner orin`).
+   (an id, email, or name â€” `dataops tasks list --owner orin`).
    (`--mine` is shorthand for `--owner me`.)
 2. Take it over: `dataops tasks handover --from <agent-id> --to <agent-id>`
    for the whole open queue, or `dataops tasks handover <task-id> --to <agent-id>`
@@ -372,38 +422,54 @@ then Orin signs in on its host with Google SSO:
 dataops login --label "orin@<host>"
 ```
 
-Orin is an `operator`: it does all execution work — list, create, update,
-complete with proof, wait, follow-ups, snooze, notes — on its own, a
+Orin is an `operator`: it does all execution work â€” list, create, update,
+complete with proof, wait, follow-ups, snooze, notes â€” on its own, a
 teammate's, or unassigned Tasks, and new Tasks default to assigning to it.
 It cannot do administration: user/team management, the secrets store
 (admin-only, so Orin never touches secrets), deleting Tasks, or changing
-assignees (`tasks assign`, `tasks handover` need an admin — ask Alexey).
+assignees (`tasks assign`, `tasks handover` need an admin â€” ask Alexey).
 Viewing another queue (`tasks list --owner orin`, or the web queue's Assignee
 filter) is read-only: it only changes what is listed, never who acts.
 
 ## Anything else
 
 CRM directory hard deletion is admin-only and permanent:
-`dataops crm person delete <id> --yes [--expected-version N]` and
-`dataops crm company delete <id> --yes [--expected-version N]`.
-Read the record first. The API refuses organizations with any deals or any
-remaining contacts (archived rows count), contacts linked as a primary or other
-contact on a deal/deliverable, and records with notes or human touches. Inline
-notes have no author provenance, so all nonempty inline notes are protected.
-Delete eligible people before their company; there is no cascading deletion.
-Success removes the record, its history and owned domain/primary/message target index entries;
-subsequent reads return 404. Other records are unchanged. Exit 4 means not found;
-exit 5 means a guard or version conflict; read the error reason before retrying.
-The API is `DELETE /api/sponsor-crm/organizations/<id>?hard=true` or
+`dataops crm person delete <id> [--yes] [--expected-version N]` and
+`dataops crm company delete <id> [--yes] [--expected-version N]`.
+Both preview by default (a dry run that runs every guard and deletes nothing);
+add `--yes` to apply. Read the record first. The API refuses organizations with
+any deals or any remaining contacts (archived rows count), contacts linked as a
+primary or other contact on a deal/deliverable, and records with notes or human
+touches. Inline notes have no author provenance, so all nonempty inline notes
+are protected. Delete eligible people before their company; there is no
+cascading deletion. Success removes the record, its history and owned
+domain/primary/message target index entries; subsequent reads return 404.
+Other records are unchanged, and an audit snapshot row
+(`ORGANIZATION_DELETE_AUDIT#` / `CONTACT_DELETE_AUDIT#`) records what was
+deleted and by whom. Exit 4 means not found; exit 5 means a guard or version
+conflict; read the error reason before retrying. The API is
+`DELETE /api/sponsor-crm/organizations/<id>?hard=true` or
 `DELETE /api/sponsor-crm/contacts/<id>?hard=true`, optionally with
-`&expectedVersion=N`. Without `hard=true`, DELETE still archives.
+`&expectedVersion=N` and `&dryRun=true` for a preview. Without `hard=true`,
+DELETE still archives.
+
+Deal hard deletion is separate and admin-only:
+`dataops crm deal delete <id> [--with-deliverables] [--yes] [--expected-version N]`.
+It previews by default (a dry run naming deliverables, detached finance sources
+and retained newsletter slots); `--yes` permanently deletes the deal with its
+history, notes and Tasks, `--with-deliverables` includes the deal's
+deliverables, and an audit snapshot is always retained. Nothing is deleted
+without `--yes`. Exit 4 means not found; exit 5 means a guard or version
+conflict; read the error reason before retrying.
 
 Sponsors (`dataops sponsors`), commercial offers and rate card (`dataops offers`), reconciliation (`dataops reconcile`), calendar, recurring schedules, automations
 (`dataops automations`), invoices, files and artifacts have their own families.
 For commercial offers and the sponsor rate card (packages, EUR/USD prices, channels, validity dates, deliverables, pitch snippets, non-offers, and inbound routing), read via `dataops offers list --json` (optional `--channel <ch>` or `--tag <tag>`) or `dataops offers show <slug> --json`. Admins update a package or rate card via `dataops offers update <slug> --price <amount> [--channels ...] [--valid-from YYYY-MM-DD] [--valid-until YYYY-MM-DD] [--notes "..."]` or bulk-import via `dataops offers import --from-file offers.json`.
 Whenever a sponsor payment is resolved or marked paid (`sponsors receive-payment`, `sponsors link-payment`, `sponsors approve-settlement`, `sponsors correct-payment`, or `reconcile confirm`), the CLI and `--json` response surface `thankYou` (and `nextStep` when `thankYou.status === "required"`), referencing `template.finance.bookkeeping.email-to-sponsor-when-payment-has-been-received` (SOP step 10). Send the thank-you directly from orin@ as a reply in the sponsor's invoice thread (no draft step). Rule: if a template exists, no Alexey approval is needed; if there is no template, Alexey approval is needed. This template exists, so send it using the `<NAME>`, `<WHAT_WAS_PAID>`, and `<SENDER_NAME>` placeholders, then record the message reference with `dataops sponsors record-thank-you <deal-id> --ref THREAD_REF --apply`.
+Payment notification mails from Ramp, Stripe and BILL become review candidates, never payments by themselves: `dataops sponsors payment-mail list [--status candidate|unmatched|already-paid|confirmed|dismissed]` shows them with their deal match and confidence, `payment-mail poll [--days N]` reads recent mails from Orin's Gmail through the existing Dapier connection (it reports `deferred` when that connection lacks Gmail read scope), and `payment-mail ingest --data @mails.json` stores mails an agent already read (idempotent per message ID). `payment-mail confirm <candidate-id>` previews the receive-payment it would record on the matched deal; `--apply` records that payment (idempotency key `pmail-<candidate-id>`, reference `mail:<provider>:<invoice-or-id>`) and marks the candidate confirmed. Only a matched (`status: candidate`) candidate with parsed amount and currency can be confirmed; `payment-mail dismiss <candidate-id>` rejects one without any payment. The thank-you next step above applies once the payment is recorded, including via `payment-mail confirm --apply`.
 For money in/out, net profit excluding VAT, the projected VAT position, taxes and TK, use `dataops finance summary --month YYYY-MM | --year YYYY | --ytd` (table; add `--json` for the same payload the portal's Finance page renders). Quote `totals.netProfitExVat` and `totals.projectedVat`, and always pass on the `gaps` list: rows without VAT, pending invoice drafts and missing statements make the numbers incomplete. Owner pay (`totals.ownerPay`, category Owner pay with ownerPayType salary|draw|reimbursement|unknown) is its own line below net profit, never an expense. For the tax ledger use `dataops finance taxes --month|--year|--ytd [--json]`: VAT projected (output - input) next to VAT actually paid/refunded and outstanding, other taxes by type (income-tax, trade-tax, other) and TK; an open period's VAT is a projection. Rules: `docs/finance-summary.md`.
 Before a tax or TK debit, check cover with `dataops finance upcoming [--days 60] [--json]`: scheduled auto-debits, the 30-day total and a shortfall flag against the latest account balance. When a new Bescheid or USt-VA arrives, update the schedule with `dataops finance schedule set <id> --file entry.json --expected-version N`.
+Non-sponsor income such as an affiliate or platform payout is recorded with `dataops bookkeeping add-income --date YYYY-MM-DD --amount AMOUNT --currency CUR --counterparty PLATFORM --reference REF --period YYYY-MM --category CATEGORY --comment TEXT`: dry run by default, `--apply` writes it, and the reference is the idempotency key. The payout appears in `dataops reconcile report` under Platform payouts for its income period and the month it was added. Vendor refunds and credit notes use `--type refund` and are never platform payouts.
 For a web view without a command, call its
 route directly: `dataops api GET /api/<route>` (see `dataops api --help`).
 
@@ -413,3 +479,27 @@ route directly: `dataops api GET /api/<route>` (see `dataops api --help`).
 - Read before you write; prefer the smallest change that completes the Task.
 - Do not create Cards or Tasks speculatively; ask when the request is ambiguous.
 - Knowledge-base edits (`dataops kb write`) publish immediately for everyone.
+
+
+## Historical bookkeeping sheet reconciliation
+
+`dataops bookkeeping sync CSV_DIR` previews the historical sheet against DataOps.
+Published `[dataops:ID]` references reuse canonical ledger rows without replacing
+ledger metadata, source identity, amounts, dates, classification or audit. A
+confirmed invoice draft's explicit `ledgerTransactionId` also resolves the marker.
+TODO amount placeholders are skipped even if the other currency column has a
+number. Missing or ambiguous markers are reported as conflicts; `--apply` refuses
+all writes until those references are resolved. A matching amount/provider alone
+does not identify a native DataOps transaction. Keep exports private and inspect
+the complete preview before any separately authorized historical import.
+
+## Repair a detached confirmed calendar hold
+
+`dataops calendar link-hold HOLD_ID --card CARD_ID` verifies the existing private
+DataOps Google invitation and previews the Card/Hold/Podcast association. It does
+not edit Google, create another invite or notify guests. Resolve conflicting
+active holds or mismatched source facts first. To apply, retain the returned
+`--expected-card-version`, `--expected-hold-version` and, for a podcast,
+`--expected-episode-version`, then repeat with `--apply`. The core records link in
+one conditional transaction; the invite Task closes only after verified linkage.
+Use this for DataOps-created confirmed holds, never to adopt a hand-made event.

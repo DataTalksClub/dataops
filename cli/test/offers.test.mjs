@@ -8,6 +8,7 @@ import { captureIo, fakePortal, isolateConfig } from "./helpers.mjs";
 
 isolateConfig();
 const { run } = await import("../src/cli.mjs");
+const { EXIT } = await import("../src/errors.mjs");
 
 const RATE_CARD = {
   meta: {
@@ -226,5 +227,21 @@ describe("CLI offers", () => {
     assert.match(io.text(), /dataops offers list --json/);
     assert.match(io.text(), /dataops offers show <slug> --json/);
     assert.match(io.text(), /dataops offers update/);
+  });
+
+  test("the retired offers set alias stays inert: unknown subcommand, no portal call", async () => {
+    const io = captureIo();
+    const portal = fake({});
+    try {
+      const code = await run(["offers", "set", "newsletter-primary", "--price", "1600"], io);
+      assert.equal(code, EXIT.usage);
+      assert.match(
+        io.errors.join("\n"),
+        /Unknown subcommand: offers set\. One of: list, show, update, import\./,
+      );
+      assert.equal(portal.calls.length, 0);
+    } finally {
+      portal.restore();
+    }
   });
 });

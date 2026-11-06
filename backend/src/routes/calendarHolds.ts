@@ -1,3 +1,4 @@
+import { linkConfirmedHold, HoldLinkError } from '../calendar/linkConfirmedHold';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import {
@@ -479,6 +480,25 @@ export async function handleCalendarHoldRoutes(
     if (method === 'POST') return createRoute(event, client);
     if (method === 'GET') return listRoute(event, client);
     return json(405, { error: 'Method not allowed' });
+  }
+  const link = path.match(/^\/api\/calendar-holds\/([^/]+)\/link-card$/);
+  if (link) {
+    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+    const auth = await resolveInteractiveActor(client, event, 'work-write');
+    if (!auth.ok) return auth.response;
+    if (!auth.actor.isAdmin && !auth.actor.testBypass) return json(403, { error: 'Calendar association repair requires an admin' });
+    const body = parse(event);
+    if (!body || typeof body.cardId !== 'string' || !body.cardId.trim()) return json(400, { error: 'cardId is required' });
+    for (const field of ['expectedCardVersion', 'expectedHoldVersion', 'expectedEpisodeVersion']) {
+      if (body[field] !== undefined && (!Number.isSafeInteger(body[field]) || body[field] < 0)) return json(400, { error: `${field} must be a nonnegative integer` });
+    }
+    if (body.apply === true && (body.expectedCardVersion === undefined || body.expectedHoldVersion === undefined)) return json(400, { error: 'Apply requires the reviewed Card and hold versions' });
+    try {
+      return json(200, await linkConfirmedHold(client, decodeURIComponent(link[1]), body.cardId.trim(), await calendarInviteDeps({}, client), auth.actor.id, body));
+    } catch (e) {
+      if (e instanceof HoldLinkError) return json(e.status, { error: e.message, code: 'hold_link_conflict' });
+      throw e;
+    }
   }
   const confirm = path.match(/^\/api\/calendar-holds\/([^/]+)\/confirm$/);
   if (confirm) {

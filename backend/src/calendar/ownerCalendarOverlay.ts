@@ -65,6 +65,16 @@ export const WORKSHOP_DURATION_MINUTES = 90;
 export const CALL_WINDOW = { start: '11:00', end: '16:30' } as const;
 export const CALL_GRID_MINUTES = 30;
 export const DEFAULT_CALL_DURATION_MINUTES = 30;
+/**
+ * Calendly parity for the public 30-minute call event: minimum notice before
+ * a start and how far ahead starts are offered. Defaults mirror the event
+ * parameters recorded by the ai-shipping-labs booking parity work (12 h
+ * notice, 60-day horizon, no buffers); operators verify and tune them via
+ * `dataops calendar settings --call-…` after checking the Calendly link.
+ */
+export const DEFAULT_CALL_MINIMUM_NOTICE_MINUTES = 720;
+export const DEFAULT_CALL_HORIZON_DAYS = 60;
+export const DEFAULT_CALL_BUFFER_MINUTES = 0;
 
 export function parseDurationMinutes(raw: unknown, def = DEFAULT_SLOT_DURATION_MINUTES): number {
   if (raw === undefined || raw === null || raw === '') return def;
@@ -142,19 +152,24 @@ export function isWindowFreeForDuration(
 
 /**
  * Open call start times (Berlin HH:MM) for one day: every grid start in the
- * call hours whose `durationMinutes` block overlaps no busy interval.
+ * call hours whose `durationMinutes` block — widened by the Calendly event
+ * buffers before and after — overlaps no busy interval.
  */
 export function openCallStarts(
   busy: Array<{ start: string; end: string }>,
   durationMinutes: number = DEFAULT_CALL_DURATION_MINUTES,
+  buffers: { before?: number; after?: number } = {},
 ): string[] {
+  const before = Math.max(0, Math.round(buffers.before ?? 0));
+  const after = Math.max(0, Math.round(buffers.after ?? 0));
   const out: string[] = [];
   const first = timeToMinutes(CALL_WINDOW.start);
   const last = timeToMinutes(CALL_WINDOW.end);
   for (let m = first; m + durationMinutes <= last; m += CALL_GRID_MINUTES) {
     const start = minutesToTime(m);
-    const end = minutesToTime(m + durationMinutes);
-    if (!busy.some((b) => b.start < end && b.end > start)) out.push(start);
+    const windowStart = minutesToTime(Math.max(0, m - before));
+    const windowEnd = minutesToTime(Math.min(24 * 60, m + durationMinutes + after));
+    if (!busy.some((b) => b.start < windowEnd && b.end > windowStart)) out.push(start);
   }
   return out;
 }
@@ -498,12 +513,23 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
 
       if (config?.window === 'call') {
         const callDuration = config.durationMinutes ?? DEFAULT_CALL_DURATION_MINUTES;
+        // Calendly parity: minimum notice, booking horizon and event buffers
+        // come from the overlay settings (defaults mirror the recorded public
+        // 30-minute event: 12 h notice, 60-day horizon, no buffers).
+        const noticeMinutes = activeSettings.callMinimumNoticeMinutes ?? DEFAULT_CALL_MINIMUM_NOTICE_MINUTES;
+        const horizonDays = activeSettings.callHorizonDays ?? DEFAULT_CALL_HORIZON_DAYS;
+        const bufferBeforeMinutes = activeSettings.callBufferBeforeMinutes ?? DEFAULT_CALL_BUFFER_MINUTES;
+        const bufferAfterMinutes = activeSettings.callBufferAfterMinutes ?? DEFAULT_CALL_BUFFER_MINUTES;
         const nowIso = (config.now ?? new Date()).toISOString();
-        const nowDate = formatBerlinDate(nowIso);
-        const nowTime = formatBerlinTime(nowIso);
+        const cutoffIso = new Date(Date.parse(nowIso) + noticeMinutes * 60000).toISOString();
+        const cutoffDate = formatBerlinDate(cutoffIso);
+        const cutoffTime = formatBerlinTime(cutoffIso);
+        const horizonDate = formatBerlinDate(new Date(Date.parse(nowIso) + horizonDays * 86400000).toISOString());
         for (const curDate of eachDayOfInterval(from, to)) {
           const dow = new Date(`${curDate}T12:00:00Z`).getUTCDay();
           if (dow === 0 || dow === 6) continue;
+          // Calendly offers starts only horizonDays ahead of today.
+          if (curDate > horizonDate) continue;
           // Calls ignore the Lunch/Busy/routine filters: every event that is
           // not marked free (transparent) and not cancelled blocks the call.
           const busy: Array<{ start: string; end: string }> = [];
@@ -525,8 +551,9 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
             });
           }
           if (dayBlocked) continue;
-          for (const start of openCallStarts(busy, callDuration)) {
-            if (curDate < nowDate || (curDate === nowDate && start <= nowTime)) continue;
+          for (const start of openCallStarts(busy, callDuration, { before: bufferBeforeMinutes, after: bufferAfterMinutes })) {
+            // A start must sit at least noticeMinutes in the future.
+            if (curDate < cutoffDate || (curDate === cutoffDate && start < cutoffTime)) continue;
             result.push({
               provider: 'owner-calendar',
               id: `owner-slot:${curDate}:call:${start}`,

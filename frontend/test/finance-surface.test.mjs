@@ -2988,6 +2988,10 @@ test("resolved sponsor payment renders the send-with-template thank-you template
   await sponsorFinance.loadFinance({ id: "deal-paid-1", version: 3 });
   assert.match(panel.innerHTML, /data-finance-thank-you="required"/);
   assert.match(panel.innerHTML, /Send from orin@ — template exists, no Alexey approval/);
+  assert.match(panel.innerHTML, /Send it directly/);
+  assert.match(panel.innerHTML, /no draft step: the template exists, so no Alexey approval is needed/);
+  assert.doesNotMatch(panel.innerHTML, /prepare a draft for Alexey/);
+  assert.doesNotMatch(panel.innerHTML, /Do not send the email/);
   assert.match(panel.innerHTML, /template\.finance\.bookkeeping\.email-to-sponsor-when-payment-has-been-received/);
   assert.match(panel.innerHTML, /invoice 202610\/37/);
   assert.equal(templateContainer.classList.contains("template-view"), true);

@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'crypto';
 import { portalRuntimeSecret } from './runtimeSecret';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { handleCardBannerRoutes } from './routes/cardBanners';
 import { handleCardRoutes } from './routes/cards';
 import { handleTemplateRoutes } from './routes/templates';
 import { handleRecurringRoutes } from './routes/recurring';
@@ -10,6 +11,8 @@ import { handleAutomationRoutes } from './routes/automations';
 import { handleUserRoutes } from './routes/users';
 import { handleCompanyRoutes } from './routes/company';
 import { handleOffersRoutes } from './routes/offers';
+import { handleTextTemplateRoutes } from './routes/textTemplates';
+import { handleKbGdocImportRoutes } from './routes/kbGdocImport';
 import { handleSecretRoutes } from './routes/secrets';
 import { handleFileRoutes } from './routes/files';
 import { handleArtifactRoutes } from './routes/artifacts';
@@ -68,10 +71,10 @@ import { handleCampaignCalendarRoutes } from './routes/campaignCalendar';
 import { handleDocumentRoutes } from './routes/documents';
 import { handleDocumentReviewRoutes, isAnonymousDocumentReviewRequest } from './documents/reviews';
 import { isAnonymousNewsletterPreviewRequest } from './newsletter/markdownPreview';
+import { jsonResponse } from './http';
 import type { LambdaEvent, LambdaResponse } from './types';
 import { recordRequestError } from './requestErrorLog';
 
-const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 let cachedPortalSecret: string | null | undefined;
 
 // Routes that do NOT require authentication
@@ -148,14 +151,6 @@ async function portalTrustedUserId(event: LambdaEvent): Promise<string | null> {
   const providedSecret = headerValue(event.headers, 'x-portal-secret');
   if (!constantTimeEquals(providedSecret, expectedSecret)) return null;
   return headerValue(event.headers, 'x-user-id') || 'portal-admin';
-}
-
-function jsonResponse(statusCode: number, body: unknown): LambdaResponse {
-  return {
-    statusCode,
-    headers: JSON_HEADERS,
-    body: typeof body === 'string' ? body : JSON.stringify(body),
-  };
 }
 
 function decodeBase64Body(event: LambdaEvent): void {
@@ -447,6 +442,8 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // ── Card routes ──────────────────────────────────────────────
 
     if (reqPath.startsWith('/api/cards')) {
+      const bannerResult = await handleCardBannerRoutes(event, client);
+      if (bannerResult) return bannerResult;
       const result = await handleCardRoutes(reqPath, method, event.body || null, event, client);
       if (result) return result;
     }
@@ -493,6 +490,16 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath === '/api/offers' || reqPath.startsWith('/api/offers/')) {
       const result = await handleOffersRoutes(reqPath, method, event, client);
+      if (result) return result;
+    }
+
+    if (reqPath === '/api/text-templates' || reqPath.startsWith('/api/text-templates/')) {
+      const result = await handleTextTemplateRoutes(reqPath, method, event, client);
+      if (result) return result;
+    }
+
+    if (reqPath === '/api/kb/import-gdoc') {
+      const result = await handleKbGdocImportRoutes(reqPath, method, event, client);
       if (result) return result;
     }
 

@@ -359,3 +359,51 @@ describe('kb template validation before mutation', () => {
     } finally { rmSync(dir,{recursive:true,force:true}); }
   });
 });
+
+describe("kb create --from and kb export", () => {
+  test("copy posts the source reference at the head revision", async () => {
+    const calls = fakePortal({
+      "GET /knowledge/publication": { revision: "rev-head" },
+      "POST /docs": ({ body }) => ({ status: 201, body: { path: body.path, revision: "rev-copy" } }),
+    });
+    const io = captureIo();
+    assert.equal(await run(["kb", "create", "content/newsletter/copied.md", "--from", "news.ref", "--title", "Copied reference"], io), 0);
+    const post = calls.find((call) => call.method === "POST");
+    assert.deepEqual(post.body, { path: "content/newsletter/copied.md", from: "news.ref", title: "Copied reference", absent: true, expectedRevision: "rev-head" });
+    assert.match(io.text(), /Created content\/newsletter\/copied\.md \(revision rev-copy\)\./);
+  });
+
+  test("copy without --from is a usage error and calls nothing", async () => {
+    const calls = fakePortal({});
+    const io = captureIo();
+    assert.equal(await run(["kb", "create", "content/newsletter/copied.md"], io), 2);
+    assert.match(io.errors.join("\n"), /--from <doc-id> is required/);
+    assert.equal(calls.length, 0);
+  });
+
+  test("export prints markdown by default and rejects unsupported formats", async () => {
+    const calls = fakePortal({ "GET /docs/export": () => new Response("# Copied reference\n") });
+    const io = captureIo();
+    assert.equal(await run(["kb", "export", "news.ref"], io), 0);
+    assert.equal(calls[0].query.ref, "news.ref");
+    assert.equal(calls[0].query.format, "md");
+    assert.equal(io.text(), "# Copied reference\n");
+    const bad = captureIo();
+    assert.equal(await run(["kb", "export", "news.ref", "--format", "pdf"], bad), 2);
+    assert.match(bad.errors.join("\n"), /--format must be md, docx, or txt/);
+  });
+
+  test("docx export writes the binary bytes to --output", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "kb-export-"));
+    try {
+      const bytes = Buffer.from([80, 75, 3, 4, 0, 255, 128, 42]);
+      const calls = fakePortal({ "GET /docs/export": () => new Response(bytes) });
+      const output = path.join(dir, "doc.docx");
+      const io = captureIo();
+      assert.equal(await run(["kb", "export", "news.ref", "--format", "docx", "--output", output], io), 0);
+      assert.equal(calls[0].query.format, "docx");
+      assert.deepEqual(readFileSync(output), bytes);
+      assert.match(io.text(), /Saved .*doc\.docx \(8 bytes\)\./);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});

@@ -44,8 +44,8 @@ to the same records; content changes still produce idempotency conflicts.
 npm ci
 ```
 
-Run installs from the repository root. DataOps uses a top-level npm workspace
-with `backend/` as the single Node package, and the root `package-lock.json`
+Run installs from the repository root. DataOps uses top-level npm workspaces
+(`backend/` and `cli/`), and the root `package-lock.json`
 is the only committed npm lockfile.
 
 ### Run the dev server
@@ -172,7 +172,9 @@ Requires Docker. Runs the Lambda handler in a container against DynamoDB Local.
 npm run build
 ```
 
-Compiles TypeScript to `dist/` (CommonJS) and copies `src/public/` and `src/pages/` static assets. The production Lambda handler entry point is `dist/handler.handler`.
+Compiles TypeScript to `dist/` (CommonJS), verifies the runtime boundary, then
+copies the canonical `frontend/` app into the artifact and verifies it. The
+production Lambda handler entry point is `dist/handler.handler`.
 
 ## Project Structure
 
@@ -181,8 +183,6 @@ src/
   db/          - DynamoDB data layer
   identity/    - Verified actor resolution, safe team/work projections, owner filters
   routes/      - Route handlers for tasks, cards, templates, artifacts, intake, and files
-  public/      - Frontend JS (vanilla, served as static files)
-  pages/       - HTML templates
   router.ts    - Request routing
   handler.ts   - Lambda entry point
   types.ts     - Shared TypeScript interfaces
@@ -225,19 +225,7 @@ never fall back to `system`, `portal-admin`, a requested owner, or an assignee.
 
 - [Imported source product specification](docs/specs.md)
 
-### Agent and invoice reader service credential
-
-Unattended invoice checks and agent CRM operations use a dedicated `dops_svc_` bearer credential.
-The backend stores only its SHA256 verifier, supplied by
-`InvoiceReaderTokenSha256` through CI's `INVOICE_READER_TOKEN_SHA256` secret.
-An empty verifier disables service access; replacing it invalidates the previous
-credential after deployment. This service holds `invoices:read`, `crm:read`, and
-`crm:write` scopes: it permits invoice reads, CRM directory and record operations,
-and CRM-associated task management. It cannot manage tokens, users, or unassociated
-operations data.
-
-The CLI supports `login --service-token-stdin --url <portal>` and verifies the
-credential before saving its existing owner-only profile. `whoami` identifies the
-service and its scopes (`invoices:read`, `crm:read`, `crm:write`). Service logout
-removes the local copy; global revocation is performed by rotating or disabling
-the deployment verifier.
+Unattended callers authenticate with shared-issuer credentials: human JWTs
+resolve to the workspace user by verified email, and deployment-managed
+services authenticate as client_credentials principals scoped by the issuer's
+service-client catalog (see `backend/src/auth/sharedIssuer.ts`).

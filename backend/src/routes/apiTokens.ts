@@ -4,7 +4,7 @@ import { API_TOKEN_SCOPES, parseApiTokenScopes } from '../auth/tokenScopes';
 import { deleteApiToken, createApiToken, listApiTokens, projectApiToken } from '../db/apiTokens';
 import { getUser } from '../db/users';
 import type { LambdaEvent, LambdaResponse } from '../types';
-import { noStoreJson, parseJsonObjectBody } from '../http';
+import { json, noStoreJson, parseJsonObjectBody } from '../http';
 import { headerValue } from '../httpHeaders';
 import { recordRequestError } from '../requestErrorLog';
 
@@ -92,8 +92,4 @@ async function requireAdmin(
     return { ok: false, response: json(403, { error: 'Admin access required' }) };
   }
   return { ok: true, actorId: user.id };
-}
-
-function json(statusCode: number, body: unknown): LambdaResponse {
-  return { statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
 }

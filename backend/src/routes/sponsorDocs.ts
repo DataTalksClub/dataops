@@ -831,7 +831,7 @@ export async function handleSponsorDocRoutes(
         return {
           statusCode: 200,
           headers: {
-            'Content-Type': 'text/markdown; charset=utf-8',
+            'Content-Type': format === 'txt' || format === 'text' ? 'text/plain; charset=utf-8' : 'text/markdown; charset=utf-8',
             'Cache-Control': 'no-store',
             'Referrer-Policy': 'no-referrer',
           },

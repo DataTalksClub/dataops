@@ -1,11 +1,12 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
-import { dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { createWriteStream } from "node:fs";
+import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { pipeline } from "node:stream/promises";
+import { dirname, join, relative, resolve, sep, posix, win32 } from "node:path";
 import { UsageError } from "../errors.mjs";
 import { enc, optionalString, positional } from "../format.mjs";
 import { apiFor } from "../session.mjs";
-import { contentTypeFor, originalFilename, requirePdfBytes, storeDocument } from "../documentUpload.mjs";
+import { contentTypeFor, requireStatementBytes, storeDocument } from "../documentUpload.mjs";
 import { attachThankYouResult, printThankYouHint } from "../thank-you.mjs";
 
 export const summary = "Month-end reconciliation: bank statements, matching, payment confirm";
@@ -13,26 +14,22 @@ export const summary = "Month-end reconciliation: bank statements, matching, pay
 export const help = `dataops reconcile - month-end reconciliation (the Finance views' command line)
 
 Usage
-  dataops reconcile upload --file statement.pdf [--quiet] [--json]
+  dataops reconcile upload --file statement.pdf|statement.csv [--account finom|revolut] [--period YYYY-MM] [--quiet] [--preview|--replace] [--json]
       Finom and Revolut statements need no flags: the bank comes from the
       file, and its rows are stored as one statement per month, then each
       month is reconciled and summarised in a finance notification
       (--quiet skips it, e.g. for history). A file that is no known
-      statement is refused.
-  dataops reconcile upload --file statement.pdf --account revolut|finom|mercury|merchant --period YYYY-MM [--by-month] [--json]
-      Stores the raw statement as a verified private bank-statement document,
-      parses its rows server-side and saves them for matching. Re-uploading the
-      same file for the same account and period replaces the stored rows;
-      rows that overlap another statement of the same account (a year export
-      next to a month export) are counted once in the report.
-      Dedicated Finom and Revolut PDF layouts are parsed; every Revolut
-      currency wallet and its closing balance are retained.
-      --by-month stores a statement spanning several months (a year export)
-      as one statement per calendar month; --period then only labels the
-      stored document.
-  dataops reconcile import-document <document-id> [--quiet] [--json]
+      statement is refused. An overlapping statement returns a difference
+      preview without changing active data. --replace explicitly confirms the
+      current preview; --preview/--dry-run only previews. Both banks preserve
+      original PDF history and use the printed account, wallet and month.
+      CSV exports (the Finom statement CSV) are accepted too; they carry no
+      IBAN, so pass --account to import them — without it the source is kept
+      for review and nothing changes.
+  dataops reconcile import-document <document-id> [--period YYYY-MM] [--quiet] [--preview|--replace] [--json]
       Parse a bank-statement document DataOps already stores (bank detected
-      from its content) into per-month statements.
+      from its content) into per-month statements. The same preview and explicit
+      replacement rules apply; --period selects the month to import.
   dataops reconcile parse <document-id> --account revolut|finom|mercury|merchant [--json]
       The same parse without storing anything: prints the row count, incoming
       total, per-wallet closing balances and warnings for a stored
@@ -92,6 +89,7 @@ Usage
       Mark a no-invoice row: tax_debit, tax_refund, tk_debit, platform_payout,
       internal_transfer, bank_fee, owner_withdrawal. Tax rows are listed separately.
   dataops reconcile clear-except <row> --period YYYY-MM
+  dataops reconcile disposition <row-id> --period YYYY-MM --kind verified-unpaid|deferred --reason TEXT --evidence TEXT --digest SHA256 --version N [--target-period YYYY-MM]
   dataops reconcile confirm-exceptions YYYY-MM
       Admin sign-off of the month's exception list (required before close).
   dataops reconcile close YYYY-MM
@@ -101,10 +99,13 @@ Usage
   dataops reconcile package YYYY-MM [--out DIR] [--draft] [--json]
       Build the accountant's month package locally (nothing is sent):
         YYYY-MM/YYYY-MM_reconciliation_datatalksclub.csv
-        YYYY-MM/statements/YYYY-MM_<bank>-<account>.<ext>
-        YYYY-MM/income|expenses/YYYY-MM-DD_<counterparty>_<doc-number>_<amount><CUR>.pdf
-        YYYY-MM/proofs/YYYY-MM-DD_<counterparty>_<ledger-row>.pdf
-      plus datatalksclub-YYYY-MM.zip when zip is installed. Names are
+        YYYY-MM/statements/YYYY-MM_<bank>-<account>_statement.<ext>
+        YYYY-MM/income|expenses/YYYY-MM-DD_<company>_<what>_<amount><CUR>.pdf
+        YYYY-MM/statements/YYYY-MM-DD_<company>_<payment-proof-what>_<amount><CUR>.pdf
+      plus datatalksclub-YYYY-MM.zip, created natively without an external zip
+      command. Date is the cash date; company/what use the saved report values,
+      and amount uses the invoice/allocation currency. Payment proofs name
+      their purpose in what. Invoice numbers stay in the source PDF. Text uses
       lowercase-hyphen slugs (max 40), collisions get -2, -3; originals keep
       their names in DataOps. Refused for an open month unless --draft.
   dataops reconcile config [--set rules.json] [--json]
@@ -122,95 +123,49 @@ function periodOr(args) {
   return period;
 }
 
-async function autoImport(args, io) {
-  const api = apiFor(args);
-  // The stored document is labelled with the upload month; the statements carry their own months.
-  const stored = await storeDocument(api, args.file, {
-    documentType: "bank-statement", accountId: "auto", statementMonth: new Date().toISOString().slice(0, 7), sourceRef: "reconcile:auto",
-  });
-  const result = await api.post("/api/reconcile/statements/import", { documentId: stored.documentId, ...(args.quiet ? { notify: false } : {}) });
-  if (!args.json) {
-    io.print(`${stored.reused ? "Reused" : "Stored"} document ${stored.documentId}: ${result.layout}, ${result.rowCount} rows.`);
-    for (const statement of result.statements) io.print(`  ${statement.period}: ${statement.rowCount} rows (statement ${statement.id})`);
-    for (const period of result.skippedClosedMonths || []) io.print(`  ${period}: month is closed, rows not imported (reopen it first)`);
-    for (const balance of result.balances || []) io.print(`balance ${balance.wallet ? `${balance.wallet} ` : ""}${balance.amount} ${balance.currency} as of ${balance.asOf}`);
-    for (const warning of (result.warnings || []).slice(0, 5)) io.print(`warning: ${warning}`);
-    for (const summary of result.summaries || []) io.print(summary);
-    for (const item of result.matches || []) io.print(matchLine(item.period, item));
+async function importStoredStatement(api, documentId, args) {
+  const input = { documentId, ...(args.account ? { account: args.account } : {}), ...(args.period && !args.byMonth ? { period: args.period } : {}), ...(args.quiet ? { notify: false } : {}) };
+  const result = await api.post("/api/reconcile/statements/import", { ...input, ...(args.preview || args.dryRun || args.replace ? { preview: true } : {}) });
+  if (args.replace && !args.preview && !args.dryRun) return api.post("/api/reconcile/statements/import", { ...input, replace: true, previewDigest: result.preview.digest });
+  return result;
+}
+
+function printStatementImport(result, io) {
+  if (result.preview) {
+    io.print(result.preview.message);
+    for (const item of result.preview.replacements) {
+      io.print(`${item.period}: ${item.difference.identical ? "no operation differences" : `${item.difference.added.reduce((n, row) => n + row.count, 0)} added, ${item.difference.removed.reduce((n, row) => n + row.count, 0)} removed`}; balances ${item.difference.balancesChanged ? "changed" : "unchanged"}; coverage ${item.difference.periodChanged ? "changed" : "unchanged"}`);
+      const balances = (values) => (values || []).map((value) => `${value.asOf} ${value.wallet || "main"} ${value.amount} ${value.currency}`).join(", ") || "not printed";
+      for (const [label, record] of [...item.difference.existing.map((record) => ["Existing", record]), ["Incoming", item.difference.candidate]]) {
+        io.print(`  ${label}: Issue date ${record.issueDate || "not printed"}; From ${record.from || "not printed"}; To ${record.to || "not printed"}; Opening ${balances(record.openingBalances)}; Closing ${balances(record.balances)}.`);
+      }
+    }
+    if (!result.committed) io.print("No active statement changed. Review --json for row differences; use --replace to confirm replacement after review.");
   }
-  return { documentId: stored.documentId, ...result };
+  for (const statement of result.statements || []) io.print(`${statement.period}: ${statement.rowCount} rows (statement ${statement.id})`);
+  for (const balance of result.balances || []) io.print(`balance ${balance.wallet ? `${balance.wallet} ` : ""}${balance.amount} ${balance.currency} as of ${balance.asOf}`);
+  for (const summary of result.summaries || []) io.print(summary);
 }
 
 export async function upload(args, io) {
-  const usage = "dataops reconcile upload --file statement.pdf --account revolut|finom|mercury|merchant --period YYYY-MM [--by-month] [--json]";
-  if (!args.file) throw new UsageError(usage);
-  if (args.account === undefined && args.period === undefined) return autoImport(args, io);
-  const account = String(args.account || "");
-  if (!ACCOUNTS.includes(account)) throw new UsageError(`--account must be one of ${ACCOUNTS.join(", ")}`);
-  const period = periodOr(args);
+  if (!args.file) throw new UsageError("dataops reconcile upload --file statement.pdf|statement.csv [--account finom|revolut] [--period YYYY-MM] [--preview|--replace] [--json]");
+  if (args.account && !ACCOUNTS.includes(String(args.account))) throw new UsageError(`--account must be one of ${ACCOUNTS.join(", ")}`);
+  if (args.period) periodOr(args);
   const contentType = contentTypeFor(args.file);
   const bytes = await readFile(String(args.file));
-  requirePdfBytes(args.file, bytes);
-  const sha256 = createHash("sha256").update(bytes).digest("hex");
-  const idempotencyKey = `statement-${sha256}`;
+  requireStatementBytes(args.file, bytes, contentType);
   const api = apiFor(args);
-  let prepared = await api.post("/api/bookkeeping/documents/prepare", {
-    sha256, byteSize: bytes.length, documentType: "bank-statement",
-    accountId: account, statementMonth: period, contentType, idempotencyKey,
-    originalFilename: originalFilename(args.file),
-    sourceRef: `reconcile:${account}:${period}`,
-  });
-  if (prepared.uploadUrl) {
-    const uploaded = await fetch(prepared.uploadUrl, { method: "PUT", body: bytes, headers: prepared.uploadHeaders });
-    if (!uploaded.ok) {
-      const failure = (await uploaded.text()).slice(0, 8192);
-      const code = failure.match(/<Code>([A-Za-z0-9_-]+)<\/Code>/)?.[1] || "UploadRejected";
-      throw new Error(`Statement upload failed (${uploaded.status}, ${code}); retry the same file`);
-    }
-    prepared = await api.post(`/api/bookkeeping/documents/${enc(prepared.document.id)}/complete`, { idempotencyKey });
-  }
-  const documentId = prepared.document.id;
-  const parsed = await api.post("/api/reconcile/statements/parse", { account, documentId });
-  const months = args.byMonth
-    ? [...new Set(parsed.rows.map((row) => row.date.slice(0, 7)))].sort()
-    : [period];
-  const statements = [];
-  for (const month of months) {
-    const rows = args.byMonth ? parsed.rows.filter((row) => row.date.startsWith(month)) : parsed.rows;
-    // Each month keeps the balances as of its own last day; the latest month carries the closing ones.
-    const balances = (parsed.balances || []).filter((balance) => !args.byMonth || balance.asOf.startsWith(month));
-    const saved = await api.post("/api/reconcile/statements", {
-      account, period: month, documentId,
-      ...(parsed.filename ? { filename: parsed.filename } : {}),
-      contentType: parsed.contentType,
-      rows,
-      ...(balances.length ? { balances } : {}),
-      ...(parsed.warnings?.length && month === months.at(-1) ? { warnings: parsed.warnings } : {}),
-    });
-    statements.push(saved.statement);
-  }
-  const statement = statements.at(-1);
-  if (!args.json) {
-    io.print(`${prepared.outcome === "existing" ? "Reused" : "Stored"} document ${documentId} (sha256 ${sha256.slice(0, 12)}…).`);
-    if (args.byMonth) {
-      for (const item of statements) io.print(`Statement ${item.id}: ${item.period}, ${item.rows.length} rows.`);
-    }
-    io.print(`${args.byMonth ? `${statements.length} statements` : `Statement ${statement.id}`}: ${parsed.rows.length} rows, ${parsed.incomingCount} incoming, incoming total ${parsed.incomingTotal} across ${account}.`);
-    for (const balance of parsed.balances || []) io.print(`balance ${balance.wallet ? `${balance.wallet} ` : ""}${balance.amount} ${balance.currency} as of ${balance.asOf}`);
-    for (const warning of (parsed.warnings || []).slice(0, 5)) io.print(`warning: ${warning}`);
-    if ((parsed.warnings || []).length > 5) io.print(`… and ${parsed.warnings.length - 5} more warnings (dataops reconcile statement ${statement.id} --json)`);
-    io.print(`Next: dataops reconcile report --period ${months.at(-1)}`);
-  }
-  return { documentId, statement, ...(args.byMonth ? { statements } : {}), parsed };
+  const stored = await storeDocument(api, args.file, { documentType: "bank-statement", accountId: args.account || "auto", statementMonth: args.period || new Date().toISOString().slice(0, 7), sourceRef: "reconcile:upload" });
+  const result = await importStoredStatement(api, stored.documentId, args);
+  if (!args.json) printStatementImport(result, io);
+  return { documentId: stored.documentId, ...result };
 }
 
 export async function importDocument(args, io) {
-  const usage = "dataops reconcile import-document <document-id> [--quiet] [--json]";
+  const usage = "dataops reconcile import-document <document-id> [--period YYYY-MM] [--quiet] [--preview|--replace] [--json]";
   const documentId = positional(args, 0, usage);
-  const result = await apiFor(args).post("/api/reconcile/statements/import", { documentId, ...(args.quiet ? { notify: false } : {}) });
-  if (!args.json) {
-    io.print(`${documentId}: ${result.layout}, ${result.rowCount} rows; ${result.statements.map((statement) => `${statement.period} ${statement.rowCount}`).join(", ")}${result.skippedClosedMonths?.length ? `; closed, skipped: ${result.skippedClosedMonths.join(", ")}` : ""}`);
-  }
+  const result = await importStoredStatement(apiFor(args), documentId, args);
+  if (!args.json) printStatementImport(result, io);
   return result;
 }
 
@@ -636,7 +591,7 @@ export async function clearExcept(args, io) {
 
 function printBlockers(io, error) {
   const blockers = error?.body?.blockers || error?.details?.blockers || [];
-  for (const blocker of blockers.slice(0, 50)) io.print(`  ${blocker.date || ""} ${blocker.status || blocker.kind || ""} ${blocker.amount || ""} ${blocker.currency || ""} ${blocker.counterparty || blocker.id}${blocker.missing ? ` — ${blocker.missing}` : ""}`);
+  for (const blocker of blockers.slice(0, 50)) io.print(`  ${blocker.date || ""} ${blocker.status || blocker.kind || ""} ${blocker.amount || ""} ${blocker.currency || ""} ${blocker.counterparty || blocker.rowId || blocker.id}${blocker.missing || blocker.reason ? ` — ${blocker.missing || blocker.reason}` : ""}`);
   if (blockers.length > 50) io.print(`  … and ${blockers.length - 50} more (dataops reconcile month <period> --status …)`);
 }
 
@@ -649,6 +604,18 @@ async function gate(args, io, action, usage, body = {}) {
     if (!args.json) { io.print(String(error.message || error)); printBlockers(io, error); }
     throw error;
   }
+}
+
+export async function disposition(args, io) {
+  const usage = "dataops reconcile disposition <row-id> --period YYYY-MM --kind verified-unpaid|deferred --reason TEXT --evidence TEXT --digest SHA256 --version N [--target-period YYYY-MM]";
+  const rowId = positional(args, 0, usage);
+  const kind = optionalString(args, "kind"), reason = optionalString(args, "reason"), evidence = optionalString(args, "evidence");
+  const rowDigest = optionalString(args, "digest"), rawVersion = optionalString(args, "version");
+  if (!kind || !reason || !evidence || !rowDigest || rawVersion === undefined || !/^\d+$/.test(rawVersion)) throw new UsageError(usage);
+  const targetPeriod = optionalString(args, "targetPeriod");
+  const result = await monthPost(args, periodOr(args), "invoice-disposition", { rowId, kind, reason, evidence, rowDigest, version: Number(rawVersion), ...(targetPeriod ? { targetPeriod } : {}) });
+  if (!args.json) io.print(`Recorded ${kind} disposition for ${rowId}.`);
+  return result;
 }
 
 export async function confirmExceptions(args, io) {
@@ -685,31 +652,105 @@ async function downloadBytes(api, entry) {
   return Buffer.from(await response.arrayBuffer());
 }
 
+function validatePackageEntries(entries, period, outRoot) {
+  if (!Array.isArray(entries)) throw new Error("Package manifest entries must be an array");
+  const monthRoot = resolve(outRoot, period);
+  return entries.map((entry) => {
+    const manifestPath = entry?.path;
+    if (typeof manifestPath !== "string" || !manifestPath || manifestPath.includes("\\") || manifestPath.includes("\0")
+      || posix.isAbsolute(manifestPath) || win32.isAbsolute(manifestPath) || /^[A-Za-z]:/.test(manifestPath)) {
+      throw new Error("Package manifest contains an invalid path");
+    }
+    const parts = manifestPath.split("/");
+    if (parts[0] !== period || parts.length < 2 || parts.some((part) => !part || part === "." || part === ".." || part.includes(":"))) {
+      throw new Error(`Package manifest path must stay inside ${period}: ${manifestPath}`);
+    }
+    const target = resolve(outRoot, ...parts);
+    const fromMonth = relative(monthRoot, target);
+    if (!fromMonth || fromMonth === ".." || fromMonth.startsWith(`..${sep}`) || resolve(monthRoot, fromMonth) !== target) {
+      throw new Error(`Package manifest path must stay inside ${period}: ${manifestPath}`);
+    }
+    return { entry, path: manifestPath, parts, target };
+  });
+}
+
+async function assertNoSymlinkComponents(monthRoot, parts) {
+  let current = monthRoot;
+  for (const [index, part] of parts.entries()) {
+    current = join(current, part);
+    try {
+      const info = await lstat(current);
+      if (info.isSymbolicLink()) throw new Error(`Package output path contains a symlink: ${current}`);
+      if (index < parts.length - 1 && !info.isDirectory()) {
+        throw new Error(`Package output path component is not a directory: ${current}`);
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+}
+
+async function createPackageArchive(out, written, zipPath) {
+  const { default: yazl } = await import("yazl");
+  const archive = new yazl.ZipFile();
+  const temporaryPath = `${zipPath}.${randomUUID()}.tmp`;
+  const complete = pipeline(archive.outputStream, createWriteStream(temporaryPath, { flags: "wx" })).then(() => null, (error) => error);
+  try {
+    for (const path of written) archive.addFile(join(out, path), path.replaceAll("\\", "/"));
+    archive.end();
+    const error = await complete;
+    if (error) throw error;
+    await rename(temporaryPath, zipPath);
+  } catch (error) {
+    archive.outputStream.destroy(error);
+    await complete;
+    await rm(temporaryPath, { force: true }).catch(() => {});
+    throw new Error(`Could not create package archive ${zipPath}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 export async function packageMonth(args, io) {
   const usage = "dataops reconcile package YYYY-MM [--out DIR] [--draft] [--json]";
   const period = periodArg(args, usage);
   const api = apiFor(args);
   const manifest = await api.get(`/api/reconcile/months/${period}/package`, { query: args.draft ? { draft: "true" } : {} });
+  if (manifest.reportPeriod !== period) throw new Error(`Package report month does not match selected report month ${period}`);
   if (manifest.blockers?.length) {
     const details = manifest.blockers.map((blocker) => `${blocker.rowId}: ${blocker.reason}`).join("; ");
-    throw new Error(`Package is incomplete: ${manifest.blockers.length} expected document(s) could not be resolved. ${details}`);
+    throw new Error(`Package is incomplete: ${manifest.blockers.length} blocker(s) prevent export. ${details}`);
   }
   const out = optionalString(args, "out") || ".";
+  validatePackageEntries(manifest.entries, period, resolve(out));
+  await mkdir(out, { recursive: true });
+  const outRoot = await realpath(out);
+  const planned = validatePackageEntries(manifest.entries, period, outRoot);
+  const monthRoot = join(outRoot, period);
+  await mkdir(monthRoot, { recursive: true });
+  const monthInfo = await lstat(monthRoot);
+  const realMonthRoot = await realpath(monthRoot);
+  const monthFromOut = relative(outRoot, realMonthRoot);
+  if (monthInfo.isSymbolicLink() || !monthFromOut || monthFromOut === ".." || monthFromOut.startsWith(`..${sep}`)) {
+    throw new Error(`Package month directory must stay inside output directory: ${monthRoot}`);
+  }
+  for (const item of planned) await assertNoSymlinkComponents(monthRoot, item.parts.slice(1));
   const written = [];
-  for (const entry of manifest.entries) {
-    const target = join(out, entry.path);
+  for (const { entry, path, parts, target: plannedTarget } of planned) {
+    const target = resolve(outRoot, ...parts);
+    if (target !== plannedTarget) throw new Error(`Package output path changed during validation: ${path}`);
+    await assertNoSymlinkComponents(monthRoot, parts.slice(1, -1));
     await mkdir(dirname(target), { recursive: true });
+    await assertNoSymlinkComponents(monthRoot, parts.slice(1));
     if (entry.kind === "report") await writeFile(target, manifest.csv);
     else if (entry.documentId || entry.artifactId || entry.invoiceId) await writeFile(target, await downloadBytes(api, entry));
     else continue;
-    written.push(entry.path);
+    written.push(path);
   }
   let zip;
   const zipName = `datatalksclub-${period}${manifest.draft ? "-draft" : ""}.zip`;
-  const zipped = spawnSync("zip", ["-qr", zipName, period], { cwd: out });
-  if (zipped.status === 0) zip = join(out, zipName);
+  zip = join(out, zipName);
+  await createPackageArchive(out, written, zip);
   if (!args.json) {
-    io.print(`${manifest.draft ? "DRAFT package (month still open)" : "Package"} ${period}: ${written.length} files in ${join(out, period)}${zip ? `, ${zip}` : " (zip not installed; folder only)"}. Nothing was sent.`);
+    io.print(`${manifest.draft ? "DRAFT package (month still open)" : "Package"} ${period}: ${written.length} files in ${join(out, period)}, ${zip}. Nothing was sent.`);
     for (const path of written) io.print(`  ${path}`);
   }
   return { ...manifest, written, ...(zip ? { zip } : {}) };
@@ -755,7 +796,7 @@ export async function alias(args, io) {
 }
 
 export const commands = {
-  upload, "import-document": importDocument, parse, balances, statements, statement, report, confirm, aliases, alias,
+  upload, "upload-statement": upload, "import-document": importDocument, parse, balances, statements, statement, report, confirm, aliases, alias,
   month, months, matches, "auto-match": autoMatch, match, unmatch, "attach-proof": attachProof, "attach-doc": attachDoc, "void-ledger": voidLedger, "restore-ledger": restoreLedger, "create-ledger": createLedger, note,
-  except, "clear-except": clearExcept, "confirm-exceptions": confirmExceptions, close, reopen, package: packageMonth, config,
+  disposition, except, "clear-except": clearExcept, "confirm-exceptions": confirmExceptions, close, reopen, package: packageMonth, config,
 };

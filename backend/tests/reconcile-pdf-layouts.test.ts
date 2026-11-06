@@ -179,6 +179,14 @@ describe('detectPdfStatementAccount', () => {
 });
 
 describe('parseFinomPdfText', () => {
+  it('requires an explicit issue date and validates the printed From/To header', () => {
+    assert.equal(parseFinomPdfText(FINOM_SOLARIS).issueDate, '2025-04-05');
+    assert.throws(() => parseFinomPdfText(FINOM_SOLARIS.replace(/^Issue date:.*\n/m, '')), /Issue date/);
+    assert.throws(() => parseFinomPdfText(FINOM_SOLARIS.replace('01.03.2025', '31.03.2025')), /outside header/);
+    assert.throws(() => parseFinomPdfText(FINOM_SOLARIS.replace('To:   31.03.2025', 'To:   01.02.2025')), /From is after To/);
+    assert.throws(() => parseFinomPdfText(FINOM_SOLARIS.replace(/^Opening balance:.*\n/m, '')), /Opening balance/);
+    assert.throws(() => parseFinomPdfText(FINOM_SOLARIS.replace(/^Closing balance:.*\n/m, '')), /Closing balance/);
+  });
   it('reads the Solaris layout: multi-line descriptions, page breaks, FX original amount', () => {
     const parsed = parseFinomPdfText(FINOM_SOLARIS);
     assert.match(parsed.layout, /Solaris/);

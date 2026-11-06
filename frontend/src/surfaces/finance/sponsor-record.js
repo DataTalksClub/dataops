@@ -14,6 +14,7 @@ import {
   overviewMarkup,
   peopleListMarkup,
   deleteDealDialogMarkup,
+  deleteCompanyDialogMarkup,
   recordHeaderMarkup,
   recordTabsMarkup,
 } from "./sponsor-record-markup.js";
@@ -203,6 +204,9 @@ export function createSponsorRecord(context) {
       // Archive goes away with integration); the buttons render only when
       // the migration wires the handlers.
       canArchive: typeof context.onArchiveCompany === "function" || typeof context.onRestoreCompany === "function",
+      // Admin-only permanent delete through the same hard-delete route the
+      // CLI uses; the button renders only when the handler is wired.
+      canDelete: typeof context.onDeleteCompany === "function",
     };
   }
 
@@ -249,7 +253,8 @@ export function createSponsorRecord(context) {
         ([id]) => html`<section role="tabpanel" id="record-panel-${id}" aria-labelledby="record-tab-${id}"
           data-record-panel="${id}"${id === "overview" ? "" : " hidden"}></section>`,
       ).join("")}
-      ${context.onDeleteDeal ? deleteDealDialogMarkup() : ""}`;
+      ${context.onDeleteDeal ? deleteDealDialogMarkup() : ""}
+      ${context.onDeleteCompany ? deleteCompanyDialogMarkup() : ""}`;
     host.querySelector("[data-record-title]")?.focus?.();
     await loadOverview(mine);
     return record;
@@ -680,7 +685,7 @@ export function createSponsorRecord(context) {
         if (!deal || !dialog) return;
         dialog.dataset.dealId = deal.id;
         dialog.querySelector("[data-delete-deal-description]").textContent =
-          "Permanently delete this deal with its history, notes and Tasks? This cannot be undone.";
+          "Permanently delete this deal with its history, notes, deliverables and Tasks? This cannot be undone.";
         dialog.querySelector("[data-delete-deal-error]").textContent = "";
         dialog.showModal();
         return;
@@ -700,6 +705,38 @@ export function createSponsorRecord(context) {
           dialog.close();
         } catch (error) {
           dialog.querySelector("[data-delete-deal-error]").textContent = error?.message || "Could not delete the deal";
+        }
+        return;
+      }
+      const deleteCompany = event.target.closest("[data-delete-company]");
+      if (deleteCompany && typeof context.onDeleteCompany === "function") {
+        const dialog = root()?.querySelector("[data-delete-company-dialog]");
+        if (!dialog || !record?.company) return;
+        dialog.querySelector("[data-delete-company-description]").textContent =
+          "Permanently delete this company with its history? This cannot be undone. " +
+          "Deletion is refused while the company still has deals, linked contacts, notes or human touches.";
+        dialog.querySelector("[data-delete-company-error]").textContent = "";
+        dialog.showModal();
+        return;
+      }
+      const cancelDeleteCompany = event.target.closest("[data-delete-company-cancel]");
+      if (cancelDeleteCompany) {
+        root()?.querySelector("[data-delete-company-dialog]")?.close();
+        return;
+      }
+      const confirmDeleteCompany = event.target.closest("[data-delete-company-confirm]");
+      if (confirmDeleteCompany && typeof context.onDeleteCompany === "function") {
+        const dialog = root()?.querySelector("[data-delete-company-dialog]");
+        if (!dialog || !record?.company) return;
+        try {
+          await context.onDeleteCompany(record.company);
+          dialog.close();
+          // The company record is gone: the Back/close lifecycle restores the
+          // directory list (and refreshes it through E's closeRecord).
+          destroy();
+          closer();
+        } catch (error) {
+          dialog.querySelector("[data-delete-company-error]").textContent = error?.message || "Could not delete the company";
         }
         return;
       }

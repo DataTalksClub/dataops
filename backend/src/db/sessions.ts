@@ -5,6 +5,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { cleanItem as cleanDbItem } from './cleanItem';
 import { TABLE_SESSIONS } from './tableNames';
 import type { Session } from '../types';
 
@@ -13,14 +14,7 @@ export interface BrowserSessionOptions {
   lifetimeSeconds: number;
 }
 
-/**
- * Strip DynamoDB key attributes (PK, SK) from an item.
- */
-function cleanItem(item: Record<string, unknown> | undefined): Session | null {
-  if (!item) return null;
-  const { PK, SK, ...rest } = item;
-  return rest as unknown as Session;
-}
+const cleanItem = cleanDbItem<Session>;
 
 /** Lifetime of a bearer session from `createSession` (local e2e and tests only). */
 const BEARER_SESSION_LIFETIME_SECONDS = 30 * 24 * 3600;

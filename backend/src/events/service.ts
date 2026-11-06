@@ -342,7 +342,7 @@ async function resolveProposalGuests(
   }
 }
 
-function buildEpisodeTransactionWrite(
+export function buildEpisodeTransactionWrite(
   episode: PodcastEpisode | null,
   next: EventRecord,
   at: string,

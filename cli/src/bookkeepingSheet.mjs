@@ -1,5 +1,5 @@
 // Read the bookkeeping spreadsheet (exported as one CSV per tab) and plan how
-// DataOps transactions catch up with it. The sheet is the source of truth:
+// DataOps transactions catch up with it. DataOps remains the operating register:
 // the plan adds rows DataOps is missing and updates fields the sheet fills in
 // differently. It never deletes a transaction and never clears a value the
 // sheet leaves blank, so classification done in DataOps survives a sync.
@@ -195,6 +195,8 @@ function isHeader(row) {
 export function rowRecord(fields, { taxes = false } = {}) {
   const transactionDate = sheetDate(fields.transactionDate) || sheetDate(fields.paidDate);
   if (!transactionDate) return { skip: "no date" };
+  if ([fields.usd, fields.eur].some((value) => /^[-+]?\s*(?:[$€£]\s*)?TODO\b/i.test(collapse(value))))
+    return { skip: "placeholder amount (TODO)" };
   const usd = sheetAmount(fields.usd);
   const eur = sheetAmount(fields.eur);
   const primary = usd || eur;
@@ -337,6 +339,20 @@ function changes(record, existing, fields) {
   return changed;
 }
 
+/** Explicit publication markers identify existing DataOps records, never new cash. */
+export function dataOpsReferences(record) {
+  const text = Object.values(record || {}).filter((value) => typeof value === "string").join("\n");
+  const references = [...text.matchAll(/\[dataops:([A-Za-z0-9_-]+)\]/g)].map((match) => match[1]);
+  return { ids: [...new Set(references)], malformed: (text.match(/\[dataops:/g) || []).length !== references.length };
+}
+
+function referenceTargets(id, transactions, invoiceLinks) {
+  const invoice = invoiceLinks.find((item) => item.id === id);
+  const linkedId = invoice?.ledgerTransactionId;
+  return transactions.filter((item) => item.id === id || item.invoiceId === id ||
+    (item.sourceType === "invoice" && item.sourceKey === id) || (linkedId && item.id === linkedId));
+}
+
 const tabOf = (key) => String(key || "").split(":")[1] || "";
 
 /**
@@ -384,10 +400,31 @@ function pairMoved(sheetRows, transactions) {
  * deal claimed as its payment is immutable: its differences are reported as
  * locked, not written.
  */
-export function planSync(sheetRows, transactions) {
+export function planSync(sheetRows, transactions, { invoiceLinks = [] } = {}) {
   const skipped = sheetRows.filter((row) => row.skip);
-  const rows = sheetRows.filter((row) => row.record);
-  const fromSheet = transactions.filter((item) => item.sourceType === SOURCE_TYPE);
+  const references = [];
+  const conflicts = [];
+  const referencedIds = new Set();
+  const rows = sheetRows.filter((row) => row.record).filter((row) => {
+    const refs = dataOpsReferences(row.record);
+    if (!refs.ids.length && !refs.malformed) return true;
+    if (refs.malformed || refs.ids.length !== 1) {
+      conflicts.push({ tab: row.tab, row: row.row, reason: "invalid or multiple DataOps references", references: refs.ids });
+      return false;
+    }
+    const targets = referenceTargets(refs.ids[0], transactions, invoiceLinks);
+    if (targets.length !== 1 || targets[0].voidStatus === "voided") {
+      conflicts.push({ tab: row.tab, row: row.row, reference: refs.ids[0], reason: targets.length > 1 ? "ambiguous DataOps reference" : "DataOps reference has no active ledger row" });
+      return false;
+    }
+    const target = targets[0];
+    referencedIds.add(target.id);
+    // The marker is a publication pointer. Never let a historical sheet replace
+    // the ledger's source identity, receipt dates, classifications or audit.
+    references.push({ tab: row.tab, row: row.row, id: target.id, reference: refs.ids[0] });
+    return false;
+  });
+  const fromSheet = transactions.filter((item) => item.sourceType === SOURCE_TYPE && !referencedIds.has(item.id));
   const byKey = new Map(fromSheet.map((item) => [item.sourceKey, item]));
   const used = new Set();
   const pairs = [];
@@ -432,7 +469,7 @@ export function planSync(sheetRows, transactions) {
     row: row.row,
     record: { ...row.record, sourceType: SOURCE_TYPE, sourceKey: row.sourceKey },
   }));
-  return { creates, updates, locked, unchanged, orphans: moved.left.map((item) => summary(item)), skipped };
+  return { creates, updates, locked, unchanged, orphans: moved.left.map((item) => summary(item)), skipped, references, conflicts };
 }
 
 const pick = (item, fields) => Object.fromEntries(fields.map((field) => [field, item[field] ?? null]));

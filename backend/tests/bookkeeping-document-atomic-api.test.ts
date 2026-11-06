@@ -105,43 +105,58 @@ describe("atomic bookkeeping document API", () => {
     assert.match(String(signedInputs.at(-1)?.Key), /^documents\//);
   });
 
-  it("rejects CSV/XLSX bank statement uploads with a PDF-only error at prepare and completion", async () => {
-    const ownership = { idempotencyKey: "statement-pdf-only-owner" };
-    for (const contentType of [
-      "text/csv",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ]) {
-      const response = await invoke("POST", "/api/bookkeeping/documents/prepare", {
-        sha256,
-        byteSize: pdf.length,
-        documentType: "bank-statement",
-        accountId: "revolut",
-        statementMonth: "2026-10",
-        ...ownership,
-        sourceRef: `pdf-only-${contentType}`,
-        contentType,
-      });
-      assert.equal(response.statusCode, 400);
-      assert.match(JSON.parse(response.body).error, /bank statement uploads accept PDF files only/i);
-    }
+  it("accepts text/csv bank statement uploads, still refuses XLSX, and keeps the declared-type check at completion", async () => {
+    const refused = await invoke("POST", "/api/bookkeeping/documents/prepare", {
+      sha256,
+      byteSize: pdf.length,
+      documentType: "bank-statement",
+      accountId: "revolut",
+      statementMonth: "2026-10",
+      idempotencyKey: "statement-xlsx-refused-owner",
+      sourceRef: "statement-xlsx-refused-source",
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    assert.equal(refused.statusCode, 400);
+    assert.match(JSON.parse(refused.body).error, /bank statement uploads accept PDF or CSV files only/i);
 
-    const csv = Buffer.from("Date,Description,Amount\n2026-10-01,Transfer,1.00\n");
+    const csv = Buffer.from("Completed date,Counterparty name,Reference,Amount,Balance\n01.10.2026 08:00:00,Sponsor One,202610/01,10.00,110.00\n");
     objectBytes = csv;
     const uploaded = await invoke("POST", "/api/bookkeeping/documents/prepare", {
       sha256: createHash("sha256").update(csv).digest("hex"),
       byteSize: csv.length,
+      documentType: "bank-statement",
+      accountId: "finom",
+      statementMonth: "2026-10",
+      originalFilename: "finom-statement.csv",
+      idempotencyKey: "statement-csv-owner",
+      sourceRef: "statement-csv-source",
+      contentType: "text/csv",
+    });
+    assert.equal(uploaded.statusCode, 201, uploaded.body);
+    const document = JSON.parse(uploaded.body).document;
+    const completed = await invoke("POST", `/api/bookkeeping/documents/${document.id}/complete`, {
+      idempotencyKey: "statement-csv-owner",
+    });
+    assert.equal(completed.statusCode, 200, completed.body);
+    assert.equal(JSON.parse(completed.body).outcome, "created");
+
+    const mismatchedBytes = Buffer.from("Date,Description,Amount\n2026-10-01,Transfer,1.00\n");
+    objectBytes = mismatchedBytes;
+    const mismatched = await invoke("POST", "/api/bookkeeping/documents/prepare", {
+      sha256: createHash("sha256").update(mismatchedBytes).digest("hex"),
+      byteSize: mismatchedBytes.length,
       documentType: "bank-statement",
       accountId: "revolut",
       statementMonth: "2026-10",
       idempotencyKey: "statement-pdf-only-body-owner",
       sourceRef: "statement-pdf-only-body-source",
     });
-    const document = JSON.parse(uploaded.body).document;
-    const completed = await invoke("POST", `/api/bookkeeping/documents/${document.id}/complete`, {
+    const mismatchDocument = JSON.parse(mismatched.body).document;
+    const completedCsvAsPdf = await invoke("POST", `/api/bookkeeping/documents/${mismatchDocument.id}/complete`, {
       idempotencyKey: "statement-pdf-only-body-owner",
     });
-    assert.equal(completed.statusCode, 400);
-    assert.match(JSON.parse(completed.body).error, /bank statement uploads accept PDF files only/i);
+    assert.equal(completedCsvAsPdf.statusCode, 400);
+    assert.match(JSON.parse(completedCsvAsPdf.body).error, /bank statement uploads accept PDF or CSV files only/i);
     assert.equal(deletedVersions.at(-1), "version-1");
     objectBytes = pdf;
   });

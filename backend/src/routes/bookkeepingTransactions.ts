@@ -2,6 +2,7 @@ import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { createHash } from "crypto";
 import type { LambdaEvent, LambdaResponse } from "../types";
 import {
+  BookkeepingTransactionLimitError,
   BookkeepingItemLockedError,
   bookkeepingItemId,
   documentLinkItem,
@@ -13,6 +14,10 @@ import {
   updateBookkeepingTransaction,
   type BookkeepingTransactItem,
 } from "../db/bookkeeping";
+import {
+  BookkeepingAuditTooLargeError,
+  MAX_BOOKKEEPING_AUDIT_ENTRIES,
+} from "../bookkeepingAudit";
 import { TABLE_BOOKKEEPING } from "../db/tableNames";
 import { json, MONEY, MONTH, parse } from "./bookkeepingShared";
 import { autoAttachConfidentEvidence } from "./bookkeepingSuggestions";
@@ -27,8 +32,6 @@ import {
 } from "../bookkeepingAllocations";
 
 const CURRENCY = /^[A-Z]{3}$/;
-const MAX_AUDIT_ENTRIES = 100;
-const MAX_AUDIT_BYTES = 128 * 1024;
 const MAX_AUDIT_REASON_BYTES = 2 * 1024;
 const allowed = [
   "transactionDate",
@@ -145,11 +148,15 @@ function safeData(input: Record<string, unknown>) {
   );
 }
 
-function boundedAudit(entries: unknown[]): unknown[] | null {
-  const audit = entries.slice(-MAX_AUDIT_ENTRIES);
-  return Buffer.byteLength(JSON.stringify(audit), "utf8") <= MAX_AUDIT_BYTES
-    ? audit
-    : null;
+function boundedAudit(entries: unknown[]): unknown[] {
+  return entries.slice(-MAX_BOOKKEEPING_AUDIT_ENTRIES);
+}
+
+function auditStorageLimitResponse(error: unknown): LambdaResponse | null {
+  if (!(error instanceof BookkeepingAuditTooLargeError || error instanceof BookkeepingTransactionLimitError)) {
+    return null;
+  }
+  return json(413, { error: "Audit update exceeds storage limits; no changes were saved" });
 }
 
 function extractExpectedUpdatedAt(
@@ -614,11 +621,6 @@ export async function handleBookkeepingTransactionRoutes(
             ...(Array.isArray(previous.audit) ? previous.audit : []),
             auditEntry,
           ]);
-          if (!audit) {
-            return json(413, {
-              error: "Audit history size limit exceeded; no changes were saved",
-            });
-          }
           const updated = await updateBookkeepingTransaction(
             client,
             transactionId,
@@ -634,6 +636,8 @@ export async function handleBookkeepingTransactionRoutes(
           );
           return json(200, bookkeepingTransactionView(updated!));
         } catch (error) {
+          const sizeError = auditStorageLimitResponse(error);
+          if (sizeError) return sizeError;
           if (error instanceof BookkeepingItemLockedError) {
             return json(409, { error: "Transaction is locked or changed" });
           }
@@ -669,11 +673,6 @@ export async function handleBookkeepingTransactionRoutes(
           ...(Array.isArray(previous.audit) ? previous.audit : []),
           auditEntry,
         ]);
-        if (!audit) {
-          return json(413, {
-            error: "Audit history size limit exceeded; no changes were saved",
-          });
-        }
         const updated = await updateBookkeepingTransaction(
           client,
           transactionId,
@@ -689,6 +688,8 @@ export async function handleBookkeepingTransactionRoutes(
         );
         return json(200, bookkeepingTransactionView(updated!));
       } catch (error) {
+        const sizeError = auditStorageLimitResponse(error);
+        if (sizeError) return sizeError;
         if (error instanceof AllocationValidationError) {
           return json(error.status, { error: error.message });
         }
@@ -832,11 +833,6 @@ export async function handleBookkeepingTransactionRoutes(
               to: value[field] ?? null,
             }])),
           }]);
-          if (!audit) {
-            return json(413, {
-              error: "Audit history size limit exceeded; no changes were saved",
-            });
-          }
           value.audit = audit;
           const updated = await updateBookkeepingTransaction(
             client,
@@ -852,6 +848,8 @@ export async function handleBookkeepingTransactionRoutes(
           }
           return json(200, updated);
         } catch (error) {
+          const sizeError = auditStorageLimitResponse(error);
+          if (sizeError) return sizeError;
           if (error instanceof BookkeepingItemLockedError)
             return json(409, { error: "Transaction is locked or changed" });
           console.error(

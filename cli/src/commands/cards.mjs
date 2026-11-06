@@ -1,3 +1,4 @@
+import { banner } from './cardBanners.mjs';
 import { UsageError } from "../errors.mjs";
 import { calendarLabel, enc, fields, integer, isoDate, linkedCardLabel, list as csv, optionalString, portalUrl, positional, required, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
@@ -14,11 +15,17 @@ Usage
   dataops cards list [--owner me|team|unassigned|<user-id>] [--mine] [--stage S]
       [--status active|parked|archived] [--all] [--limit N]
                                                 Default: active and parked; --all adds archived
+  dataops cards banner <card-id> --event-type workshop|webinar|podcast --layout landscape|square
+      --speakers PERSON:PORTRAIT_FILE[,PERSON:PORTRAIT_FILE] --revision LABEL [--wait]
+      [--sponsor-logo FILE_ID --sponsor-treatment approved-logo]
+                                                Generate a private Card cover using verified portraits
+  dataops cards banner <card-id> --job JOB_ID [--wait]
+                                                Read durable progress; completed images need review
   dataops cards show <card-id>                  The Card, its links, and its Tasks
   dataops cards create --date YYYY-MM-DD --template ID|TYPE|NAME [--title T]
       [--end-date YYYY-MM-DD] [--optional-groups a,b] [--count FIELD=N,...] [--stage S] [--description D] [--owner ID] [--tags a,b]
   dataops cards update <card-id> [--title T] [--description D] [--date D] [--end-date D] [--owner ID|none]
-      [--tags a,b]
+      [--tags a,b] [--people PERSON_ID,PERSON_ID|none]
   dataops cards update <card-id> --count FIELD=N[,FIELD=N] [--apply]
                                                 Change a count (e.g. workshops=3); preview by default
   dataops cards time <card-id> --at "YYYY-MM-DD HH:MM" [--duration 60] [--tz Europe/Berlin]
@@ -28,7 +35,8 @@ Usage
                                                 A course's event Cards (Q&A, launch, workshops);
                                                 --apply creates and links the missing ones, undated
   dataops cards stage <card-id> <preparation|announced|after-event>
-  dataops cards link <card-id> <link-name> <url>  Fill a Card link (e.g. a template's required link)
+  dataops cards link <card-id> <link-name> <url> [--add]
+                                                Fill a Card link; --add also creates a custom named link
   dataops cards invite add <card-id> <event-id> --calendar CAL [--label LABEL] [--json]
                                                 Adopt an existing Google event without editing it
   dataops cards invite list <card-id> [--json]  The Card's invites, checked in Google (gone = stale)
@@ -253,6 +261,7 @@ export async function update(args, io) {
   const owner = optionalString(args, "owner");
   if (owner !== undefined) body.ownerId = owner === "none" ? null : owner;
   if (args.tags !== undefined) body.tags = csv(args.tags);
+  if (args.people !== undefined) body.people = args.people === "none" ? [] : csv(args.people);
   if (!Object.keys(body).length) throw new UsageError("Nothing to change. See `dataops cards --help`.");
   return write(args, io, id, body, "Updated");
 }
@@ -265,15 +274,17 @@ export async function stage(args, io) {
 }
 
 export async function link(args, io) {
-  const usage = "dataops cards link <card-id> <link-name> <url>";
+  const usage = "dataops cards link <card-id> <link-name> <url> [--add]";
   const id = positional(args, 0, usage);
   const name = positional(args, 1, usage);
   const url = positional(args, 2, usage);
   const api = apiFor(args);
   const { card } = await api.get(`/api/cards/${enc(id)}`);
   const links = Array.isArray(card.cardLinks) ? card.cardLinks : [];
+  // Bind the replacement array to the version it was derived from.
+  const pinnedArgs = { ...args, expectedVersion: args.expectedVersion ?? card.version };
   if (links.some((item) => (item.name || item.label) === name)) {
-    return write(args, io, id, {
+    return write(pinnedArgs, io, id, {
       cardLinks: links.map((item) => ((item.name || item.label) === name ? { ...item, url } : item)),
     }, `Saved "${name}" on`);
   }
@@ -281,11 +292,11 @@ export async function link(args, io) {
   // Card predates is added to the Card.
   const template = card.templateId ? await api.get(`/api/templates/${enc(card.templateId)}`).catch(() => null) : null;
   const defined = (template?.template || template)?.cardLinkDefinitions || [];
-  if (!defined.some((definition) => definition.name === name)) {
+  if (!args.add && !defined.some((definition) => definition.name === name)) {
     const known = [...new Set([...links.map((item) => item.name || item.label), ...defined.map((definition) => definition.name)])].join(", ") || "none";
-    throw new UsageError(`Card has no link named "${name}". Known links: ${known}.`);
+    throw new UsageError(`Card has no link named "${name}". Known links: ${known}. Use --add to create a custom named link.`);
   }
-  return write(args, io, id, { cardLinks: [...links, { name, url }] }, `Saved "${name}" on`);
+  return write(pinnedArgs, io, id, { cardLinks: [...links, { name, url }] }, `Saved "${name}" on`);
 }
 
 async function parkResume(args, io, verb) {
@@ -474,6 +485,7 @@ export async function time(args, io) {
 }
 
 export const commands = {
+  banner,
   "dedupe-tasks": dedupeTasks,
   "event-slots": eventSlots,
   time,

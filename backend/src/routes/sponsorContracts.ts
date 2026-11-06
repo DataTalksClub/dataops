@@ -23,18 +23,13 @@ import { CONTRACT_EMAIL_FROM, DEFAULT_TOKEN_TTL_DAYS, publicContract, validateCo
 import { deliverContractEmail, type ContractEmailDelivery } from '../sponsorContracts/emailDelivery';
 import { readFile, saveFile } from '../storage';
 import { parseJsonObjectEvent as parse } from '../http';
+import { headerValue } from '../httpHeaders';
 import { sponsorDocPortalBaseUrl } from './sponsorDocs';
 
 // Kept separate from http.json: also sends Cache-Control: no-store and Referrer-Policy: no-referrer, plus optional extraHeaders.
 const json = (statusCode: number, body: unknown, extraHeaders?: Record<string, string>): LambdaResponse => ({ statusCode, headers: Object.assign({ 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }, extraHeaders), body: JSON.stringify(body) });
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const actor = (event: LambdaEvent) => Object.entries(event.headers || {}).find(([entryKey]) => entryKey.toLowerCase() === 'x-user-id')?.[1] || '';
-
-function headerValue(headers: Record<string, string> | null | undefined, name: string): string {
-  if (!headers) return '';
-  const match = Object.entries(headers).find(([entryKey]) => entryKey.toLowerCase() === name.toLowerCase());
-  return match ? String(match[1]) : '';
-}
 
 function requestIp(event: LambdaEvent): string {
   const forwarded = headerValue(event.headers, 'x-forwarded-for');

@@ -62,7 +62,7 @@ Run `make help` from the repository root to list all targets:
 | --- | --- | --- |
 | Planning / repo-meta docs | `make validate-planning-docs` | `uv run --with pytest python -m pytest tests/planning_docs` |
 | Docs links & registry | `npm --prefix backend run validate:docs-links -- --content-root ../dataops-knowledge/content` | `npx --prefix backend tsx backend/scripts/validate-docs-links.ts` |
-| Search index build | `npm --prefix backend run build:search-index -- --content-dir ../content --output ../.tmp/dataops-content-search.index` | `backend/scripts/build-search-index.ts` |
+| Search index build | `npm --prefix backend run build:search-index -- --content-dir ../dataops-knowledge/content --output ../.tmp/dataops-content-search.index` | `backend/scripts/build-search-index.ts` |
 | Frontend unit tests | `make test-frontend-unit` | `npm run test:frontend:unit` |
 | Frontend coverage | `make test-frontend-coverage` | `npm run test:frontend:coverage` |
 | Backend unit tests | `make test-backend` | `npm --prefix backend test` |

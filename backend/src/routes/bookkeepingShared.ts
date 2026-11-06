@@ -51,7 +51,7 @@ export function publicLink(link: Record<string, unknown>) {
   return safe;
 }
 
-/** Verify an uploaded evidence or bank-statement object: exact size, digest and PDF signature. */
+/** Verify an uploaded evidence or bank-statement object: exact size, digest and PDF signature (or readable CSV text for statement exports). */
 export async function verifyDocumentObject(bucket: string, document: Record<string, unknown>) {
   const object = await s3.send(
     new GetObjectCommand({ Bucket: bucket, Key: String(document.s3Key) }),
@@ -68,15 +68,25 @@ export async function verifyDocumentObject(bucket: string, document: Record<stri
       size > Number(process.env.BOOKKEEPING_PDF_MAX_BYTES || 20 * 1024 * 1024)
     )
       throw new Error("object-size-limit");
-    if (prefix.length < 5)
-      prefix = Buffer.concat([prefix, bytes.subarray(0, 5 - prefix.length)]);
+    if (prefix.length < 512)
+      prefix = Buffer.concat([prefix, bytes.subarray(0, 512 - prefix.length)]);
     digest.update(bytes);
   }
   const contentType = String(document.contentType || "application/pdf").split(";")[0].trim().toLowerCase();
+  const statementDocument = ["bank-statement", "private-account-statement"].includes(
+    String(document.documentType),
+  );
+  const statementCsv = statementDocument && contentType === "text/csv";
+  const looksLikeText =
+    prefix.length > 0 &&
+    !prefix.includes(0) &&
+    [...prefix].every((byte) => byte >= 0x20 || byte === 0x09 || byte === 0x0a || byte === 0x0d);
   return {
     size,
     sha256: digest.digest("hex"),
-    contentOk: contentType === "application/pdf" && prefix.toString("ascii") === "%PDF-",
+    contentOk: statementCsv
+      ? looksLikeText
+      : contentType === "application/pdf" && prefix.subarray(0, 5).toString("ascii") === "%PDF-",
     versionId: object.VersionId || "",
   };
 }

@@ -1452,6 +1452,58 @@ describe("Tasks surface boundary", () => {
     assert.equal(summary.querySelectorAll("a").length, 0);
   });
 
+  test("summarises a lightning-lesson-podcast Card with its linked episode too", async () => {
+    const card = {
+      id: "card-llp",
+      version: 1,
+      title: "Lightning lesson recording",
+      templateId: "tpl-llp",
+      stage: "preparation",
+      status: "active",
+      anchorDate: "2026-08-10",
+      taskCount: 12,
+      openTaskCount: 3,
+    };
+    const { api, documentList } = createHarness({
+      workSnapshot: {
+        cardsById: new Map([[card.id, card]]),
+        templates: [{ id: "tpl-llp", type: "lightning-lesson-podcast", name: "Maven Lightning Lesson Podcast", icon: "mic" }],
+      },
+      request: async (url) => (url === `/api/podcast-episodes?cardId=${card.id}`
+        ? { items: [{
+          id: "ep-llp",
+          season: 2,
+          episode: 1,
+          title: "Shipping LLM features",
+          guests: [{ name: "Grace Meyer" }],
+          status: "recorded",
+          recordingDate: "2026-08-03",
+          releaseDate: "2026-09-01",
+        }] }
+        : {}),
+      taskRouteContext: {
+        date: "",
+        tasks: [canonicalTask({ id: "l1", cardId: card.id, description: "Publish the lesson", date: "2026-08-12" })],
+        cardId: "", filterCard: null, contextCardId: "", contextCard: null, failures: [],
+      },
+    });
+    api.renderTasksSurface([], "queue");
+    const origin = findAllByClass(documentList, "ops-queue-origin")[0];
+    await origin.querySelector(".ops-queue-origin-info").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const summary = origin.querySelector(".card-hovercard");
+    const rows = summary.querySelectorAll(".card-hovercard__fact")
+      .map((row) => [row.querySelector("dt").textContent, row.querySelector("dd").textContent]);
+    assert.deepEqual(rows.slice(0, 5), [
+      ["Episode", "S2E1 · Shipping LLM features"],
+      ["Guests", "Grace Meyer"],
+      ["Status", "Recorded"],
+      ["Recording", "3 Aug"],
+      ["Release", "1 Sept"],
+    ]);
+    assert.deepEqual(rows.slice(5).map(([label]) => label), ["Progress", "Due"]);
+  });
+
   test("puts instructions and the task's material links behind one icon, not a note", () => {
     const tasks = [
       canonicalTask({

@@ -59,7 +59,7 @@ subcommands, flags, and examples.
 | `tasks` | the work queue (`list --mine --queue` is the starting point; `batches` or `list --batches` groups same-day Card/subject Tasks into ordered sittings; `--requires`, `--exclude-requires`, `--can-do` filter by required resources), `show` (with the notes log), `create`, `update` (`--depends-on` sets prerequisite Tasks; blocked Tasks cannot be completed), `done` with proof, `reopen`, `wait` / `followed-up` / `followup` / `snooze` / `unsnooze` / `unblock`, `note`, `handover`, `assign`, `delete` |
 | `resources` | `list` the resource ids a Task can require (youtube, luma, mailchimp, ...) |
 | `cards` | `list`, `show` (with Tasks), `create --template`, `update`, `stage`, `link`, `park` / `resume`, `template-update` |
-| `templates` | `list`, `show`, `create`, `update`, `reset`, `delete` (see Template editing below) |
+| `templates` | `list`, `show`, `create`, `update`, `reset`, `delete`, `sync` (see Template editing below) |
 | `kb` | knowledge base: `search`, `related <task|card>`, `show`, `tree`, `ls`, `resolve`, `backlinks`, `history`, `write`, `publish` |
 | `newsletter` | issues and their sponsor slots: `list`, `show`, `create`, `update`, `delete`, `dismiss-alert` |
 | `podcast` | episodes: `list`, `show`, `create`, `update`, `create-card` |
@@ -67,6 +67,7 @@ subcommands, flags, and examples.
 | `books` | Book of the Week entries: `list`, `show`, `create`, `update` |
 | `events` | past events archive (Luma descriptions, speakers, recordings): `list` (`--course`, `--date`), `show`, `create`, `update`, `delete`, `import` |
 | `calendar` | read-only events (Cards, podcast episodes, newsletter issues) and open slots |
+| `campaigns` | cohort campaign calendar / social post rows on a cohort Card (or the reusable `--template` rows): `list` (`--channel`, `--status`, `--phase`, `--owner`, `--format`), `show`, `import` (`--file`, `--from-template`, `--replace`), `create`, `update`, `delete` (optimistic `--version`) |
 | `recurring` | schedules that generate Tasks |
 | `automations` | `list` every scheduled or triggered job with its last and next run; `set` the settings they read (admin) |
 | `notifications` | `list`, `dismiss`, `dismiss-all` |
@@ -137,6 +138,24 @@ template-update preview/apply moves them.
   (`template-in-use` otherwise); Git templates are pinned, reset, or left
   alone. Creating and deleting require an admin; pinning and reset allow
   any active operator or admin.
+
+### Git stays canonical without a deploy
+
+A push to `dataops-knowledge` main runs its CI
+(`.github/workflows/validate.yml`): after validation and the knowledge
+publish, a `sync_workflow_templates` job runs `templates sync`, which calls
+`POST /api/templates/sync` under the workflow's GitHub OIDC identity and
+re-seeds the live Templates from `workflow-templates/*.yaml` — the same
+reconciliation a deploy runs. `sync` accepts no other credential: an
+interactive user (admin included) gets 405, by design. Templates edited here
+survive that sync: a pinned Template keeps its definition and follows the new
+Git base (the sync reports pinned types), and a custom Template is untouched
+unless a Git template later claims the same type, which fails closed instead
+of overwriting. The practical consequence for a non-developer operator:
+create, update, pin, and reset Templates self-serve through the CLI or the
+portal Templates page — no Git access and no Developer are involved, the
+server applies the same validators the knowledge repo's CI enforces, and a
+later knowledge-repo push never silently reverts an edit.
 
 ## Output and exit codes
 
@@ -254,3 +273,54 @@ npm run test:e2e --workspace dataops-cli    # the real binary against a local ba
 Add a module under `src/commands/` that exports `summary`, `help`, and
 `commands`, and register it in `FAMILIES` in `src/cli.mjs`. `apiFor(args)` in
 `src/session.mjs` returns the signed-in client; it handles auth and errors.
+
+### Accountant payment readiness
+
+Native accountant CSV/TSV requires an explicit `period=YYYY-MM` query;
+year/all/missing selections return a Select Month error. The portal uses its
+existing selected month. Native report, readiness, and package responses include
+`reportPeriod`; disposition fingerprints are bound to that month. Invoice issue
+dates alone never establish a cash payment month.
+
+Native accountant CSV/TSV and month package exports return HTTP 409 with
+`blockers` when the explicitly selected report month's payment, amount or required evidence is
+unresolved. Each blocker includes `period`, `rowId`, `rowDigest`, `status` and
+`reason`. `--draft` does not waive this check. Reconciliation previews remain
+available with `dataops reconcile month YYYY-MM --json`; the view includes
+`version`, `paymentReadiness`, and audited `invoiceDispositions`.
+
+An operator who has independently verified that an invoice remains unpaid can
+record that decision without deleting or altering its source:
+
+```sh
+dataops reconcile disposition ledger:invoice-id --period 2031-07 \
+  --kind verified-unpaid --reason "Invoice is still outstanding" \
+  --evidence "Receivables register verification reference" --digest CURRENT_ROW_DIGEST --version CURRENT_MONTH_VERSION
+```
+
+Use `--kind deferred --target-period 2031-08` for an explicitly verified later
+period. Both kinds require a reason and an evidence reference. The API is
+`POST /api/reconcile/months/YYYY-MM/invoice-disposition` with `rowId`, `kind`,
+`reason`, `evidence`, `rowDigest`, `version`, and (for deferred) `targetPeriod`.
+It requires the existing finance administrator permission. Stale month versions
+or source digests are rejected. Any later change to the reviewed invoice or
+payment facts invalidates the decision for export. Missing bank matches never
+create unpaid/deferred decisions automatically.
+
+For a finance export readiness conflict, `--json` writes its error to stderr with
+exit code 5 and HTTP status 409. `error.details` retains only the documented
+`reportPeriod` and `blockers` fields (including row identities and reasons).
+Native draft packages and direct accountant CSV/TSV API calls use the same error
+contract and write no report content or package files when blocked.
+
+The accountant report also accepts `format=html` through the same read-only API:
+
+```sh
+dataops api GET '/api/bookkeeping/reports/accountant?period=YYYY-MM&format=html' --json
+```
+
+The JSON response keeps `reportPeriod`, `format`, `count`, `excludedCount` and
+`content`; `content` is an escaped semantic four-column HTML table suitable for
+an email body. It uses the same report rows, cash-date ordering, EUR values and
+readiness gates as CSV/TSV. HTML retains the original cell text and line breaks;
+spreadsheet-only formula protection is unnecessary in escaped HTML text.

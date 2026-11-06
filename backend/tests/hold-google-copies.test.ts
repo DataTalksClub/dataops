@@ -6,7 +6,9 @@ import {
   HOLD_ORGANIZER,
   createHoldGoogleEvents,
   deleteHoldGoogleEvents,
+  mergeHoldGoogleResults,
   syncLumaCalendarEvents,
+  syncSilentGoogleCopies,
 } from '../src/calendar/holdGoogleSync';
 
 function captureGoogle() {
@@ -191,5 +193,76 @@ describe('hold google copies: importable payloads, silent copies', () => {
     assert.match(result.reason, /attendees or private meeting details/i);
     assert.equal(google.calls.some((call) => call.url.pathname.includes('/events') && (call.method === 'PATCH' || call.method === 'POST')), false);
     assert.match(google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.get('unsafe-live-copy')!.description, /zoom\.us/);
+  });
+
+  describe('silent personal copies of a public Luma event', () => {
+    const cohortEvent = {
+      eventKey: 'card:cohort-qa', summary: 'Gen AI 2026: Pre-Course Live Q&A', subtitle: 'Ask anything about the course',
+      startIso: '2026-11-10T16:00:00.000Z', endIso: '2026-11-10T17:00:00.000Z',
+      timeZone: 'Europe/Berlin', lumaUrl: 'https://lu.ma/cohort-qa',
+    };
+
+    it('mirror the public content on Orin and personal calendars without inviting or emailing anyone', async () => {
+      const google = captureGoogle();
+      const sync = await syncSilentGoogleCopies(cohortEvent, deps(google.fetchImpl));
+      assert.equal(sync.state, 'synced', JSON.stringify(sync));
+      assert.deepEqual(Object.keys(sync.eventIds).sort(), [HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS].sort());
+      assert.equal(google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)?.size || 0, 0, 'the public entry is the other leg, never this one');
+      for (const calendar of [HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS]) {
+        const stored = [...google.events.get(calendar)!.values()];
+        assert.equal(stored.length, 1);
+        assert.equal(stored[0].summary, cohortEvent.summary);
+        assert.equal(stored[0].description, `${cohortEvent.subtitle}\nStream: https://www.youtube.com/datatalksclub\nLuma: ${cohortEvent.lumaUrl}`);
+        assert.equal(stored[0].location, 'https://www.youtube.com/datatalksclub');
+        assert.ok(!/zoom/i.test(JSON.stringify(stored[0])), 'copies carry no Zoom details');
+        if (calendar === HOLD_ORGANIZER) {
+          assert.deepEqual(stored[0].attendees, [], 'the organizer copy stays attendee-free');
+        } else {
+          // The import constraint: a copy lists only its own calendar, so the
+          // silent PATCH can never email a real guest.
+          assert.deepEqual(stored[0].attendees, [{ email: calendar }]);
+        }
+      }
+      const patches = google.calls.filter((call) => call.method === 'PATCH');
+      assert.ok(patches.length >= 1);
+      for (const patch of patches) assert.equal(patch.url.searchParams.get('sendUpdates'), 'none', 'copies never send updates');
+    });
+
+    it('update in place on a rerun without new events', async () => {
+      const google = captureGoogle();
+      const first = await syncSilentGoogleCopies(cohortEvent, deps(google.fetchImpl));
+      assert.equal(first.state, 'synced');
+      google.calls.length = 0;
+      const again = await syncSilentGoogleCopies(cohortEvent, deps(google.fetchImpl), first.eventIds);
+      assert.equal(again.state, 'synced', JSON.stringify(again));
+      assert.deepEqual(again.eventIds, first.eventIds);
+      assert.equal(google.calls.filter((call) => call.method === 'POST' && call.url.pathname.endsWith('/import')).length, 0, 'a rerun imports nothing new');
+    });
+
+    it('refuse private details and non-Luma links before any Google write', async () => {
+      const google = captureGoogle();
+      const privateEvent = { ...cohortEvent, subtitle: 'Join Zoom link: https://zoom.us/j/123' };
+      const refused = await syncSilentGoogleCopies(privateEvent, deps(google.fetchImpl));
+      assert.equal(refused.state, 'deferred');
+      assert.match(refused.reason, /private meeting or document details/i);
+      const notLuma = { ...cohortEvent, lumaUrl: 'https://example.com/cohort-qa' };
+      const noLuma = await syncSilentGoogleCopies(notLuma, deps(google.fetchImpl));
+      assert.equal(noLuma.state, 'deferred');
+      assert.match(noLuma.reason, /Luma event URL/i);
+      assert.equal(google.calls.length, 0, 'nothing was written to Google');
+    });
+  });
+
+  it('mergeHoldGoogleResults merges ids and joins deferral reasons', () => {
+    const merged = mergeHoldGoogleResults(
+      { state: 'synced', eventIds: { public: 'p1' } },
+      { state: 'deferred', reason: 'copies failed', eventIds: { organizer: 'o1' } },
+    );
+    assert.deepEqual(merged, { state: 'deferred', reason: 'copies failed', eventIds: { public: 'p1', organizer: 'o1' } });
+    const allSynced = mergeHoldGoogleResults(
+      { state: 'synced', eventIds: { public: 'p1' } },
+      { state: 'synced', eventIds: { organizer: 'o1', personal: 'a1' } },
+    );
+    assert.deepEqual(allSynced, { state: 'synced', eventIds: { public: 'p1', organizer: 'o1', personal: 'a1' } });
   });
 });

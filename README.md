@@ -20,13 +20,13 @@ their outputs as artifacts.
 
 ## Layout
 
-- `content/` — operational documentation (SOPs, templates, references,
-  playbooks, prompts) and its image assets.
 - `backend/` — single TypeScript backend: docs content API, search, work
   execution, and portal/auth.
 - `docs/` — repo-meta docs (this README, `STRUCTURE.md`, `sop-format*.md`,
-  archived materials).
-- `docs/` — DataOps merge plan, development process, and planning notes.
+  decision records) and DataOps merge plan, development process, and planning
+  notes.
+- Operational documentation (SOPs, templates, references, playbooks, prompts)
+  lives in the private `DataTalksClub/dataops-knowledge` repository.
 - `frontend/` — static vanilla-JS app and its Dockerfile.
 - `infra/` — SAM/CloudFormation templates, OIDC deploy roles, runtime secrets.
 - `tools/content_tools/` — pure-Python content parsing helpers (document
@@ -52,7 +52,7 @@ flowchart TB
     Backend[Backend Lambda - TypeScript]
   end
 
-  GitHub[(GitHub repo: content/ markdown)]
+  GitHub[(GitHub repo: dataops-knowledge markdown)]
   Dynamo[(DynamoDB: execution state)]
   Secrets[(AWS Secrets Manager)]
 
@@ -129,8 +129,7 @@ does not require live AWS credentials or run `sam deploy`.
 
 ## Node workspace
 
-DataOps uses npm workspaces from the repository root. The single workspace is
-`backend/`.
+DataOps uses npm workspaces from the repository root: `backend/` and `cli/`.
 
 Install Node dependencies from the repo root:
 
@@ -147,7 +146,6 @@ npm run test:e2e:backend
 npm run typecheck:backend
 npm run build:backend
 npm run seed:backend
-npm run export:templates:backend
 npm run validate:export:backend -- <export-dir>
 npm run dry-run:import:backend -- <export-dir>
 npm run clean:backend

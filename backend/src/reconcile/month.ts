@@ -117,6 +117,9 @@ export type LedgerRow = {
   statementRef?: string;
   invoiceNumber?: string;
   sourceType?: string;
+  /** Projected invoice source, not a booked cash-ledger transaction. */
+  invoiceCandidate?: true;
+  needsReview?: boolean;
   documents: LedgerDocument[];
 };
 
@@ -220,6 +223,8 @@ export type MonthRow = {
     invoiceNumber?: string;
     directionConflict?: boolean;
   }>;
+  /** Invalid source facts retained for attribution review, never treated as money ledger. */
+  invoiceReview?: { sourceId: string };
   paymentProof?: PaymentProof;
   pairBasis?: PairBasis;
   /** The pair was made by the matcher after an upload, not by a person. */
@@ -422,6 +427,7 @@ export function withInvoiceCandidates(ledger: LedgerRow[], candidates: InvoiceCa
       ...(item.description ? { description: item.description } : {}),
       ...(item.invoiceNumber ? { invoiceNumber: item.invoiceNumber.trim() } : {}),
       sourceType: "issued-invoice",
+      invoiceCandidate: true,
       documents,
     });
     existingIds.add(item.id);
@@ -429,7 +435,6 @@ export function withInvoiceCandidates(ledger: LedgerRow[], candidates: InvoiceCa
   }
 
   for (const item of receivedInvoiceDocuments) {
-    if (item.needsReview) continue;
     if (!item.id || existingIds.has(item.id) || existingDocIds.has(item.id)) continue;
     if (item.documentId && (existingIds.has(item.documentId) || existingDocIds.has(item.documentId))) continue;
     if (item.invoiceId && (existingIds.has(item.invoiceId) || existingDocIds.has(item.invoiceId))) continue;
@@ -443,7 +448,7 @@ export function withInvoiceCandidates(ledger: LedgerRow[], candidates: InvoiceCa
     const signedAmount = (sign * rawAmount).toFixed(2);
     const rawEur = item.amountEur !== undefined ? Math.abs(amountNumber(item.amountEur)) : 0;
     const signedAmountEur = rawEur > 0 ? (sign * rawEur).toFixed(2) : undefined;
-    if (matchesExistingLedger(date, signedAmount, currency, counterparty, item.invoiceNumber, signedAmountEur)) continue;
+    if (!item.needsReview && matchesExistingLedger(date, signedAmount, currency, counterparty, item.invoiceNumber, signedAmountEur)) continue;
     const documents = item.documents?.length
       ? item.documents
       : [{ id: item.documentId || item.id, ...(item.invoiceId ? { invoiceId: item.invoiceId } : {}) }];
@@ -457,6 +462,8 @@ export function withInvoiceCandidates(ledger: LedgerRow[], candidates: InvoiceCa
       ...(item.description ? { description: item.description } : {}),
       ...(item.invoiceNumber ? { invoiceNumber: item.invoiceNumber.trim() } : {}),
       sourceType: item.invoiceId ? "invoice-document" : "document",
+      invoiceCandidate: true,
+      ...(item.needsReview ? { needsReview: true } : {}),
       documents,
     });
     existingIds.add(item.id);
@@ -493,7 +500,7 @@ export function pairAll(
   const usedLedger = new Set<string>();
   for (const pair of decisions.pairs) {
     const row = ledgerById.get(pair.transactionId);
-    if (!row || pairs.has(pair.bankKey) || usedLedger.has(row.id)) continue;
+    if (!row || row.needsReview || pairs.has(pair.bankKey) || usedLedger.has(row.id)) continue;
     const bankRow = bank.find((item) => item.key === pair.bankKey);
     const difference = bankRow && bankRow.currency === row.currency ? cents(Math.abs(amountNumber(bankRow.amount)) - Math.abs(amountNumber(row.amount))) : undefined;
     pairs.set(pair.bankKey, { ledger: row, basis: pair.auto?.basis ?? "manual", confidence: pair.auto?.confidence ?? "exact", ...(pair.auto ? { auto: true } : {}), ...(difference ? { difference } : {}) });
@@ -504,7 +511,7 @@ export function pairAll(
   // Bucket ledger rows by day so each bank row only scores rows inside the lag window.
   const byDay = new Map<number, LedgerRow[]>();
   for (const row of ledger) {
-    if (usedLedger.has(row.id) || !Number.isFinite(dayOf(row.date))) continue;
+    if (row.needsReview || usedLedger.has(row.id) || !Number.isFinite(dayOf(row.date))) continue;
     const day = dayOf(row.date) / DAY;
     byDay.set(day, [...(byDay.get(day) || []), row]);
   }
@@ -716,7 +723,10 @@ export function buildMonthTable(input: MonthInput): MonthTable {
   }
 
   for (const ledgerRow of ledger) {
-    if (!inPeriod(ledgerRow.date) || pairedLedger.has(ledgerRow.id)) continue;
+    if (!inPeriod(ledgerRow.date)) continue;
+    const pairedBankKey = pairedLedger.get(ledgerRow.id);
+    const crossPeriodBank = pairedBankKey ? bankByKey.get(pairedBankKey) : undefined;
+    if (pairedLedger.has(ledgerRow.id) && (ledgerRow.invoiceCandidate || !crossPeriodBank || inPeriod(crossPeriodBank.date))) continue;
     const recorded = input.decisions.exceptions[`ledger:${ledgerRow.id}`];
     const ambiguous = pairing.ambiguousLedger.get(ledgerRow.id);
     const row: MonthRow = {
@@ -749,8 +759,31 @@ export function buildMonthTable(input: MonthInput): MonthTable {
       row.status = "needs-review";
       row.missing = `${ambiguous.length} bank transactions fit equally; pick one`;
     }
+    if (ledgerRow.needsReview) {
+      row.status = "needs-review";
+      row.missing = "Invoice fields and cash-month attribution require review; verify the source or record an evidenced unpaid/deferred disposition";
+    }
+    if (crossPeriodBank) {
+      row.bank = crossPeriodBank;
+      row.status = "needs-review";
+      row.missing = `Cash-month attribution conflict: ledger cash date ${ledgerRow.date} is in ${input.period}, but its paired bank payment is dated ${crossPeriodBank.date}; reconcile the attribution before export`;
+    }
     row.tax = isTaxRow(row);
     rows.push(row);
+  }
+
+  // Invalid/missing source amounts must remain reviewable; never invent zero
+  // money or discard a known-month source merely because normal projection fails.
+  for (const candidate of input.receivedInvoiceDocuments || []) {
+    if (!candidate.needsReview || !inPeriod(candidate.date)) continue;
+    if (rows.some((row) => row.ledger?.id === candidate.id || row.documents.some((document) => document.id === (candidate.documentId || candidate.id)))) continue;
+    rows.push({
+      id: `invoice-review:${candidate.id}`, date: candidate.date, counterparty: candidate.counterparty,
+      amount: candidate.amount, currency: candidate.currency,
+      invoiceReview: { sourceId: candidate.id },
+      documents: candidate.documents || [{ id: candidate.documentId || candidate.id, ...(candidate.invoiceId ? { invoiceId: candidate.invoiceId } : {}) }],
+      status: "needs-review", missing: "Invoice source facts or cash-month attribution remain unverified; review the original amount/currency or record an evidenced unpaid/deferred disposition",
+    });
   }
 
   rows.sort((left, right) => left.date.localeCompare(right.date) || left.id.localeCompare(right.id));

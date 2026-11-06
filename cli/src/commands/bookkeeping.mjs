@@ -1,5 +1,5 @@
 import { UsageError } from "../errors.mjs";
-import { fetchSheet, readSheetDir, planClassification, planSync } from "../bookkeepingSheet.mjs";
+import { fetchSheet, readSheetDir, planClassification, planSync, dataOpsReferences } from "../bookkeepingSheet.mjs";
 import { linkEvidence, storeDocument } from "../documentUpload.mjs";
 import { apiFor } from "../session.mjs";
 
@@ -22,6 +22,10 @@ Usage
       Compare the bookkeeping sheet with DataOps transactions. Adds rows DataOps
       lacks and updates fields the sheet fills in differently. Never deletes, never
       clears a value the sheet leaves blank, never writes to the sheet.
+      Published [dataops:ID] markers reuse existing ledger rows without editing them,
+      including invoice drafts linked to another ledger row. TODO amounts are skipped.
+      Missing/ambiguous explicit references are conflicts; --apply refuses all writes
+      until they are resolved. No amount/name-only deduplication of native ledger rows.
       --sheet reads every tab through the Sheets API with the Google access token in
       DAPIER_ACCESS_TOKEN; <csv-dir> reads one <tab>.csv per tab instead.
   dataops bookkeeping classify [--since YYYY-MM-DD] [--apply]
@@ -108,7 +112,21 @@ async function sheetRows(args) {
 export async function sync(args, io) {
   const rows = await sheetRows(args);
   const api = apiFor(args);
-  const plan = planSync(rows, await transactions(api));
+  const ledger = await transactions(api);
+  const invoiceLinks = [];
+  const unresolved = new Set(rows.filter((row) => row.record).flatMap((row) => dataOpsReferences(row.record).ids)
+    .filter((id) => /^[a-f0-9]{64}$/.test(id) && !ledger.some((item) => item.id === id || item.invoiceId === id || (item.sourceType === "invoice" && item.sourceKey === id))));
+  for (const id of unresolved) {
+    try {
+      const invoice = await api.get(`/api/bookkeeping/invoices/${encodeURIComponent(id)}`);
+      if (invoice.id === id && invoice.status === "confirmed" && invoice.ledgerTransactionId) invoiceLinks.push({ id, ledgerTransactionId: invoice.ledgerTransactionId });
+    } catch (error) {
+      // A missing draft remains an explicit planning conflict; access/transport
+      // failures must not masquerade as absent source evidence.
+      if (error.status !== 404) throw error;
+    }
+  }
+  const plan = planSync(rows, ledger, { invoiceLinks });
   const counts = {
     sheetRows: rows.filter((row) => row.record).length,
     create: plan.creates.length,
@@ -117,8 +135,11 @@ export async function sync(args, io) {
     unchanged: plan.unchanged,
     orphans: plan.orphans.length,
     skipped: plan.skipped.length,
+    referenced: plan.references.length,
+    conflicts: plan.conflicts.length,
   };
   const result = { mode: args.apply ? "apply" : "dry-run", counts, plan };
+  if (args.apply && plan.conflicts.length) throw new UsageError(`Sync has ${plan.conflicts.length} unresolved DataOps reference conflicts; no writes performed. Run without --apply to inspect the plan.`);
   if (args.apply) {
     const created = await eachWithLimit(plan.creates, 4, (item) => api.post("/api/bookkeeping/transactions", item.record));
     const updated = await eachWithLimit(plan.updates, 4, (item) =>
@@ -133,6 +154,8 @@ export async function sync(args, io) {
       for (const item of plan.updates) io.print(`update  ${label(item)}  ${describe(item.changes)}`);
       for (const item of plan.locked) io.print(`locked  ${label(item)}  ${describe(item.changes)}  (sponsor deal ${item.sponsorDealId} holds this payment; not changed)`);
       for (const item of plan.orphans) io.print(`orphan  ${item.sourceKey}  ${item.transactionDate}  ${item.counterparty}  ${item.amount} ${item.currency}  (in DataOps, no longer in the sheet; left alone)`);
+      for (const item of plan.references) io.print(`linked  ${label(item)}  existing ledger ${item.id}  ([dataops:${item.reference}]; unchanged)`);
+      for (const item of plan.conflicts) io.print(`conflict ${label(item)}  ${item.reason}  ${item.reference || ""}`);
       for (const item of plan.skipped) io.print(`skip    ${label(item)}  ${item.skip}`);
     }
     io.print(`${result.mode}: ${Object.entries(counts).map(([name, value]) => `${name} ${value}`).join(", ")}`);

@@ -17,7 +17,6 @@ import * as events from "./commands/events.mjs";
 import * as finance from "./commands/finance.mjs";
 import * as files from "./commands/files.mjs";
 import * as invoices from "./commands/invoices.mjs";
-import * as invoicePdfs from './invoicePdfs.mjs';
 import * as kb from "./commands/kb.mjs";
 import * as newsletter from "./commands/newsletter.mjs";
 import * as notifications from "./commands/notifications.mjs";
@@ -38,6 +37,7 @@ import * as crm from "./commands/crm.mjs";
 import * as vies from "./commands/vies.mjs";
 import * as tasks from "./commands/tasks.mjs";
 import * as templates from "./commands/templates.mjs";
+import * as textTemplates from "./commands/textTemplates.mjs";
 import { EXIT, UsageError, errorPayload, exitCodeFor, hintFor } from "./errors.mjs";
 
 const GUIDE_PATH = fileURLToPath(new URL("../skill/SKILL.md", import.meta.url));
@@ -74,6 +74,7 @@ export const FAMILIES = {
   tasks: { group: "Work", summary: tasks.summary, help: tasks.help, commands: tasks.commands },
   cards: { group: "Work", summary: cards.summary, help: cards.help, commands: cards.commands },
   templates: { group: "Work", summary: templates.summary, help: templates.help, commands: templates.commands },
+  "text-templates": { group: "Work", summary: textTemplates.summary, help: textTemplates.help, commands: textTemplates.commands },
   email: { group: "Work", summary: email.summary, help: email.help, commands: email.commands },
   resources: { group: "Work", summary: resources.summary, help: resources.help, commands: resources.commands },
   recurring: {
@@ -114,6 +115,7 @@ export const FAMILIES = {
       slots: calendar.slots,
       propose: calendar.propose,
       "confirm-hold": calendar.confirmHold,
+      "link-hold": calendar.linkHold,
       "move-hold": calendar.moveHold,
       "release-hold": calendar.releaseHold,
       "expire-holds": calendar.expireHolds,
@@ -152,7 +154,6 @@ export const FAMILIES = {
       process: invoices.processIntake,
     },
   },
-  'invoice-pdfs': { group: 'Finance', summary: invoicePdfs.summary, help: invoicePdfs.help, commands: invoicePdfs.commands },
   team: { group: "People", summary: people.teamSummary, help: people.teamHelp, commands: people.teamCommands },
   users: { group: "People", summary: people.usersSummary, help: people.usersHelp, commands: people.usersCommands },
   login: { group: "Account", summary: "Sign in with a device code confirmed in the browser", help: AUTH_HELP, run: auth.login },

@@ -8,7 +8,6 @@ on:
       - ".github/workflows/deploy-dataops-v1.yml"
       - "backend/**"
       - "mcp/**"
-      - "content/**"
       - "frontend/**"
       - "infra/**"
       - "Makefile"
@@ -16,7 +15,6 @@ on:
       - "package-lock.json"
       - "scripts/test-backend-transactions.sh"
       - "samconfig.toml"
-      - "scripts/deploy/**"
   push:
     branches:
       - main
@@ -24,7 +22,6 @@ on:
       - ".github/workflows/deploy-dataops-v1.yml"
       - "backend/**"
       - "mcp/**"
-      - "content/**"
       - "frontend/**"
       - "infra/**"
       - "Makefile"
@@ -32,7 +29,6 @@ on:
       - "package-lock.json"
       - "scripts/test-backend-transactions.sh"
       - "samconfig.toml"
-      - "scripts/deploy/**"
   workflow_dispatch:
 
 permissions:

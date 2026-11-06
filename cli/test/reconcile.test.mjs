@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import yauzl from "yauzl";
 import { upload, confirm, report, alias, aliases, balances, matches, attachDoc, voidLedger, restoreLedger, note, commands } from "../src/commands/reconcile.mjs";
 import { exitCodeFor, EXIT } from "../src/errors.mjs";
 
@@ -28,6 +29,28 @@ const withFakePortal = async (routes, run) => {
     if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
   }
 };
+
+const archiveEntries = (path) => new Promise((resolve, reject) => {
+  yauzl.open(path, { lazyEntries: true }, (error, zip) => {
+    if (error) return reject(error);
+    const entries = [];
+    zip.on("error", reject);
+    zip.on("entry", (entry) => {
+      zip.openReadStream(entry, (streamError, stream) => {
+        if (streamError) return reject(streamError);
+        const chunks = [];
+        stream.on("data", (chunk) => chunks.push(chunk));
+        stream.on("error", reject);
+        stream.on("end", () => {
+          entries.push([entry.fileName, Buffer.concat(chunks)]);
+          zip.readEntry();
+        });
+      });
+    });
+    zip.on("end", () => resolve(entries));
+    zip.readEntry();
+  });
+});
 
 const args = { url: "https://portal.example.test", json: true };
 
@@ -58,26 +81,20 @@ test("PDF upload stores the raw statement, parses it and saves rows for matching
       assert.equal(body.statementMonth, "2026-10");
       assert.equal(body.originalFilename, "statement.pdf");
       assert.equal(body.contentType, "application/pdf");
-      assert.match(body.idempotencyKey, /^statement-[0-9a-f]{64}$/);
+      assert.match(body.idempotencyKey, /^bank-statement-[0-9a-f]{64}$/);
       return { document: { id: "stmt-doc" }, uploadUrl: "https://private.example.test/object", uploadHeaders: { "content-type": "application/pdf" } };
     }],
     ["/documents/stmt-doc/complete", { document: { id: "stmt-doc" } }],
-    ["/reconcile/statements/parse", (request) => {
+    ["/reconcile/statements/import", (request) => {
       const body = JSON.parse(request.options.body);
-      assert.equal(body.documentId, "stmt-doc");
-      assert.equal(body.account, "revolut");
-      return { account: "revolut", documentId: "stmt-doc", contentType: "application/pdf", rowCount: 1, incomingCount: 1, incomingTotal: "1000.00", rows: parsedRows, warnings: [] };
-    }],
-    ["/reconcile/statements", (request) => {
-      const body = JSON.parse(request.options.body);
-      assert.equal(body.period, "2026-10");
-      assert.deepEqual(body.rows, parsedRows);
-      return { statement: { id: "stmt-1", accountId: "revolut", period: "2026-10", rows: parsedRows } };
+      assert.equal(body.documentId, "stmt-doc"); assert.equal(body.account, "revolut"); assert.equal(body.period, "2026-10");
+      assert.equal(body.rows, undefined, "rows are parsed by the server, never supplied by the CLI");
+      return { committed: true, statements: [{ id: "stmt-1", period: "2026-10", rowCount: 1 }], balances: [], summaries: [] };
     }],
   ], async (calls) => {
     const result = await upload({ ...args, file: path, account: "revolut", period: "2026-10" }, {});
     assert.equal(result.documentId, "stmt-doc");
-    assert.equal(result.statement.id, "stmt-1");
+    assert.equal(result.statements[0].id, "stmt-1");
     const put = calls.find((call) => call.method === "PUT");
     assert.ok(put && Buffer.isBuffer(put.body) && put.body.length > 0);
     assert.equal(put.headers.Authorization, undefined);
@@ -85,21 +102,54 @@ test("PDF upload stores the raw statement, parses it and saves rows for matching
   await rm(directory, { recursive: true, force: true });
 });
 
-test("upload rejects CSV and XLSX locally with a non-zero usage exit code", async () => {
+test("upload stores a Finom CSV statement and imports it under the named account", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-csv-"));
+  const path = join(directory, "finom-statement.csv");
+  await writeFile(path, [
+    "Completed date,Counterparty name,Reference,Amount,Balance",
+    "05.10.2026 08:00:00,Sponsor Three Ltd,202610/03,1 000.00,3 000.00",
+  ].join("\n"));
+  try {
+    await withFakePortal([
+      ["/documents/prepare", (request) => {
+        const body = JSON.parse(request.options.body);
+        assert.equal(body.documentType, "bank-statement");
+        assert.equal(body.accountId, "finom");
+        assert.equal(body.statementMonth, "2026-10");
+        assert.equal(body.originalFilename, "finom-statement.csv");
+        assert.equal(body.contentType, "text/csv");
+        assert.match(body.idempotencyKey, /^bank-statement-[0-9a-f]{64}$/);
+        return { outcome: "existing", document: { id: "finom-csv-doc" } };
+      }],
+      ["/reconcile/statements/import", (request) => {
+        const body = JSON.parse(request.options.body);
+        assert.equal(body.documentId, "finom-csv-doc"); assert.equal(body.account, "finom"); assert.equal(body.rows, undefined, "rows are parsed by the server, never supplied by the CLI");
+        return { committed: true, statements: [{ id: "stmt-finom-csv", period: "2026-10", rowCount: 1 }], balances: [], summaries: [] };
+      }],
+    ], async () => {
+      assert.equal(commands["upload-statement"], upload, "upload-statement is the same upload flow under its own name");
+      const result = await upload({ ...args, file: path, account: "finom", period: "2026-10" }, {});
+      assert.equal(result.documentId, "finom-csv-doc");
+      assert.equal(result.statements[0].id, "stmt-finom-csv");
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("upload refuses XLSX, PDF-mislabeled and binary CSV statements with a usage exit code", async () => {
   const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-pdf-only-"));
   try {
-    for (const extension of ["csv", "xlsx"]) {
-      const path = join(directory, `statement.${extension}`);
-      await writeFile(path, "synthetic bank export");
-      await assert.rejects(
-        upload({ ...args, file: path, account: "revolut", period: "2026-10" }, {}),
-        (error) => {
-          assert.match(error.message, /PDF files only/);
-          assert.equal(exitCodeFor(error), EXIT.usage);
-          return true;
-        },
-      );
-    }
+    const xlsx = join(directory, "statement.xlsx");
+    await writeFile(xlsx, "synthetic bank export");
+    await assert.rejects(
+      upload({ ...args, file: xlsx, account: "revolut", period: "2026-10" }, {}),
+      (error) => {
+        assert.match(error.message, /PDF files only/);
+        assert.equal(exitCodeFor(error), EXIT.usage);
+        return true;
+      },
+    );
     const invalidPdf = join(directory, "not-a-pdf.pdf");
     await writeFile(invalidPdf, "Date,Amount\n2026-10-01,1.00\n");
     await assert.rejects(
@@ -110,6 +160,28 @@ test("upload rejects CSV and XLSX locally with a non-zero usage exit code", asyn
         return true;
       },
     );
+    const binaryCsv = join(directory, "renamed-binary.csv");
+    await writeFile(binaryCsv, Buffer.from("PK\u0003\u0004synthetic workbook with NUL \u0000 bytes"));
+    await assert.rejects(
+      upload({ ...args, file: binaryCsv, account: "finom", period: "2026-10" }, {}),
+      (error) => {
+        assert.match(error.message, /not a readable CSV statement export/);
+        assert.equal(exitCodeFor(error), EXIT.usage);
+        return true;
+      },
+    );
+    const receiptCsv = join(directory, "receipt.csv");
+    await writeFile(receiptCsv, "Invoice,Total\n2026-101,12.00\n");
+    await withFakePortal([], async () => {
+      await assert.rejects(
+        attachDoc({ ...args, _: ["ledger:ledger-x", receiptCsv], period: "2026-10" }, {}),
+        (error) => {
+          assert.match(error.message, /invoices, receipts and proof screenshots must be PDF files/);
+          assert.equal(exitCodeFor(error), EXIT.usage);
+          return true;
+        },
+      );
+    });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -282,7 +354,7 @@ test("server PDF parser errors stop CLI upload before statement rows are saved",
         ["https://private.example.test/object", ""],
         ["/documents/prepare", { document: { id: "bad-statement" }, uploadUrl: "https://private.example.test/object", uploadHeaders: { "content-type": "application/pdf" } }],
         ["/documents/bad-statement/complete", { document: { id: "bad-statement" } }],
-        ["/reconcile/statements/parse", new Response(JSON.stringify({ error: "statement.pdf: line 12, source text \\\"broken row\\\": amount unreadable" }), { status: 422 })],
+        ["/reconcile/statements/import", new Response(JSON.stringify({ error: "statement.pdf: line 12, source text \\\"broken row\\\": amount unreadable" }), { status: 422 })],
       ], async (recorded) => {
         calls = recorded;
         await upload({ ...args, file: path, account: "revolut", period: "2026-10" }, {});
@@ -293,7 +365,7 @@ test("server PDF parser errors stop CLI upload before statement rows are saved",
         return true;
       },
     );
-    assert.ok(!calls.some((call) => call.url.includes("/api/reconcile/statements") && call.method === "POST" && !call.url.includes("/parse")));
+    assert.ok(!calls.some((call) => call.url.endsWith("/api/reconcile/statements") && call.method === "POST"));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -440,16 +512,10 @@ test("upload accepts a Finom PDF and stores its closing balance", async () => {
   const parsedBalances = [{ currency: "EUR", amount: "3000.00", asOf: "2026-10-05" }];
   await withFakePortal([
     ["/documents/prepare", { outcome: "existing", document: { id: "finom-doc" } }],
-    ["/reconcile/statements/parse", (request) => {
+    ["/reconcile/statements/import", (request) => {
       const body = JSON.parse(request.options.body);
-      assert.equal(body.account, "finom");
-      assert.equal(body.currency, undefined);
-      return { contentType: "application/pdf", rowCount: 1, incomingCount: 1, incomingTotal: "1000.00", rows, balances: parsedBalances, warnings: [] };
-    }],
-    ["/reconcile/statements", (request) => {
-      const body = JSON.parse(request.options.body);
-      assert.deepEqual(body.balances, parsedBalances);
-      return { statement: { id: "stmt-finom", accountId: "finom", period: "2026-10", rows, balances: parsedBalances } };
+      assert.equal(body.account, "finom"); assert.equal(body.documentId, "finom-doc"); assert.equal(body.rows, undefined);
+      return { committed: true, statements: [{ id: "stmt-finom", period: "2026-10", rowCount: 1 }], balances: parsedBalances, summaries: [] };
     }],
     ["/reconcile/balances", (request) => {
       assert.match(request.url, /account=finom/);
@@ -458,7 +524,7 @@ test("upload accepts a Finom PDF and stores its closing balance", async () => {
   ], async () => {
     const printed = [];
     const result = await upload({ url: args.url, file: path, account: "finom", period: "2026-10" }, { print: (line) => printed.push(line) });
-    assert.equal(result.statement.id, "stmt-finom");
+    assert.equal(result.statements[0].id, "stmt-finom");
     assert.ok(printed.some((line) => line === "balance 3000.00 EUR as of 2026-10-05"), printed.join("\n"));
     const listed = await balances({ ...args, account: "finom" }, {});
     assert.equal(listed.items[0].amount, "3000.00");
@@ -476,29 +542,48 @@ test("upload --by-month stores all Revolut currency wallets as one statement per
     { date: "2026-10-02", amount: "-1.00", currency: "EUR", counterparty: "C" },
     { date: "2026-10-02", amount: "2.00", currency: "USD", counterparty: "D", wallet: "USD" },
   ];
-  const saves = [];
   await withFakePortal([
     ["/documents/prepare", { outcome: "existing", document: { id: "year-doc" } }],
-    ["/reconcile/statements/parse", { contentType: "application/pdf", rowCount: 4, incomingCount: 2, incomingTotal: "12.00", rows, balances: [
-      { currency: "EUR", amount: "4.00", asOf: "2026-10-02", wallet: "EUR" },
-      { currency: "USD", amount: "12.00", asOf: "2026-10-02", wallet: "USD" },
-    ], warnings: [] }],
-    ["/reconcile/statements", (request) => {
+    ["/reconcile/statements/import", (request) => {
       const body = JSON.parse(request.options.body);
-      saves.push(body);
-      return { statement: { id: `stmt-${body.period}`, period: body.period, rows: body.rows } };
+      assert.equal(body.documentId, "year-doc"); assert.equal(body.period, undefined);
+      assert.equal(body.rows, undefined);
+      return { committed: true, statements: [{ id: "sep", period: "2026-09", rowCount: 1 }, { id: "oct", period: "2026-10", rowCount: 3 }], balances: [], summaries: [] };
     }],
-  ], async () => {
+  ], async (calls) => {
     const result = await upload({ ...args, file: path, account: "revolut", period: "2026-10", byMonth: true }, {});
-    assert.deepEqual(saves.map((save) => [save.period, save.rows.length, save.balances?.length ?? 0, save.warnings?.length ?? 0]), [
-      ["2026-09", 1, 0, 0],
-      ["2026-10", 3, 2, 0],
-    ]);
-    assert.deepEqual(new Set(saves[1].rows.map((row) => row.currency)), new Set(["EUR", "USD"]));
-    assert.equal(saves[0].documentId, "year-doc");
     assert.equal(result.statements.length, 2);
+    assert.equal(calls.filter((call) => call.url.endsWith("/reconcile/statements/import")).length, 1, "wallets/months are one server-side atomic batch");
+    assert.ok(!calls.some((call) => call.url.endsWith("/reconcile/statements")));
   });
   await rm(directory, { recursive: true, force: true });
+});
+
+test("statement preview does not commit and --replace confirms a current server digest", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-statement-replace-"));
+  const path = join(directory, "invented.pdf");
+  await writeFile(path, "%PDF-invented source");
+  const headers = { issueDate: "2028-04-05", from: "2028-03-01", to: "2028-03-31", openingBalances: [{ asOf: "2028-03-01", amount: "100.00", currency: "EUR" }], balances: [{ asOf: "2028-03-31", amount: "76.50", currency: "EUR" }] };
+  const preview = { digest: "invented-current-digest", requiresConfirmation: true, replacements: [{ period: "2028-03", difference: { identical: true, added: [], removed: [], balancesChanged: false, periodChanged: false, existing: [headers], candidate: { ...headers, issueDate: "2028-04-09" } } }], message: "Existing statement; no differences. Replace?" };
+  try {
+    await withFakePortal([
+      ["/documents/prepare", { outcome: "existing", document: { id: "invented-source" } }],
+      ["/reconcile/statements/import", (request) => {
+        const body = JSON.parse(request.options.body);
+        if (body.replace) { assert.equal(body.previewDigest, preview.digest); return { committed: true, statements: [{ id: "replacement" }] }; }
+        assert.equal(body.preview, true); return { committed: false, preview, statements: [] };
+      }],
+    ], async (calls) => {
+      const lines = [];
+      const kept = await upload({ ...args, json: false, file: path, preview: true }, { print: (line) => lines.push(line) });
+      assert.equal(kept.committed, false);
+      assert.ok(lines.some((line) => line.includes("Existing: Issue date 2028-04-05; From 2028-03-01; To 2028-03-31; Opening 2028-03-01 main 100.00 EUR; Closing 2028-03-31 main 76.50 EUR")));
+      assert.ok(lines.some((line) => line.includes("Incoming: Issue date 2028-04-09; From 2028-03-01; To 2028-03-31; Opening 2028-03-01 main 100.00 EUR; Closing 2028-03-31 main 76.50 EUR")));
+      const replaced = await upload({ ...args, file: path, replace: true }, {});
+      assert.equal(replaced.committed, true);
+      assert.equal(calls.filter((call) => call.body && JSON.parse(call.body).replace === true).length, 1);
+    });
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 const monthPayload = {
@@ -555,13 +640,16 @@ test("close shows the blocking rows when the portal refuses", async () => {
 
 test("package writes the month folder layout from the manifest and never sends anything", async () => {
   const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-test-"));
+  const stalePath = join(directory, "2026-10/expenses/2030-01_stale-unpaid-invoice.pdf");
+  await mkdir(join(directory, "2026-10/expenses"), { recursive: true });
+  await writeFile(stalePath, "pre-existing synthetic file");
   await withFakePortal([
-    ["/reconcile/months/2026-10/package", { period: "2026-10", state: "closed", draft: false, csv: "date,status\n", entries: [
+    ["/reconcile/months/2026-10/package", { reportPeriod: "2026-10", period: "2026-10", state: "closed", draft: false, csv: "date,status\n", entries: [
       { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
-      { path: "2026-10/statements/2026-10_finom-main.csv", kind: "statement", documentId: "doc-stmt" },
-      { path: "2026-10/expenses/2026-10-14_google_1.99EUR.pdf", kind: "invoice", documentId: "doc-google" },
-      { path: "2026-10/expenses/2026-10-15_synthetic-vendor_SYN-1_9.00EUR.pdf", kind: "invoice", invoiceId: "synthetic-invoice" },
-      { path: "2026-10/proofs/2026-10-14_google_a1c9d26b5312.pdf", kind: "proof", documentId: "doc-proof" },
+      { path: "2026-10/statements/2026-10_finom-main_statement.csv", kind: "statement", documentId: "doc-stmt" },
+      { path: "2026-10/expenses/2026-10-14_example-vendor_hosting_8.00EUR.pdf", kind: "invoice", documentId: "doc-google" },
+      { path: "2026-10/expenses/2026-10-15_synthetic-vendor_example-service_9.00EUR.pdf", kind: "invoice", invoiceId: "synthetic-invoice" },
+      { path: "2026-10/statements/2026-10-14_example-vendor_payment-proof-hosting_8.00EUR.pdf", kind: "proof", documentId: "doc-proof" },
     ] }],
     ["/documents/doc-stmt/download", { downloadUrl: "https://private.example.test/stmt" }],
     ["/documents/doc-google/download", { downloadUrl: "https://private.example.test/google" }],
@@ -569,16 +657,23 @@ test("package writes the month folder layout from the manifest and never sends a
     ["/api/bookkeeping/invoices/synthetic-invoice/document", { url: "https://private.example.test/invoice" }],
     ["https://private.example.test/", "synthetic-bytes"],
   ], async (calls) => {
-    const result = await commands.package({ ...args, _: ["2026-10"], out: directory }, {});
+    const result = await commands.package({ ...args, _: ["2026-10"], out: directory, json: true }, {});
+    assert.equal(result.zip, join(directory, "datatalksclub-2026-10.zip"));
     assert.deepEqual(result.written, [
       "2026-10/2026-10_reconciliation_datatalksclub.csv",
-      "2026-10/statements/2026-10_finom-main.csv",
-      "2026-10/expenses/2026-10-14_google_1.99EUR.pdf",
-      "2026-10/expenses/2026-10-15_synthetic-vendor_SYN-1_9.00EUR.pdf",
-      "2026-10/proofs/2026-10-14_google_a1c9d26b5312.pdf",
+      "2026-10/statements/2026-10_finom-main_statement.csv",
+      "2026-10/expenses/2026-10-14_example-vendor_hosting_8.00EUR.pdf",
+      "2026-10/expenses/2026-10-15_synthetic-vendor_example-service_9.00EUR.pdf",
+      "2026-10/statements/2026-10-14_example-vendor_payment-proof-hosting_8.00EUR.pdf",
     ]);
-    assert.equal(await (await import("node:fs/promises")).readFile(join(directory, "2026-10/proofs/2026-10-14_google_a1c9d26b5312.pdf"), "utf8"), "synthetic-bytes");
-    assert.equal(await (await import("node:fs/promises")).readFile(join(directory, "2026-10/expenses/2026-10-15_synthetic-vendor_SYN-1_9.00EUR.pdf"), "utf8"), "synthetic-bytes");
+    assert.equal(await (await import("node:fs/promises")).readFile(join(directory, "2026-10/statements/2026-10-14_example-vendor_payment-proof-hosting_8.00EUR.pdf"), "utf8"), "synthetic-bytes");
+    assert.equal(await (await import("node:fs/promises")).readFile(join(directory, "2026-10/expenses/2026-10-15_synthetic-vendor_example-service_9.00EUR.pdf"), "utf8"), "synthetic-bytes");
+    const zipped = await archiveEntries(result.zip);
+    assert.deepEqual(zipped.map(([path]) => path).sort(), [...result.written].sort());
+    assert.ok(!zipped.some(([path]) => path.endsWith("2030-01_stale-unpaid-invoice.pdf")));
+    assert.equal(await readFile(stalePath, "utf8"), "pre-existing synthetic file");
+    assert.equal(zipped.find(([path]) => path.endsWith("statements/2026-10-14_example-vendor_payment-proof-hosting_8.00EUR.pdf"))?.[1].toString(), "synthetic-bytes");
+    assert.match(zipped.find(([path]) => path.endsWith("reconciliation_datatalksclub.csv"))?.[1].toString() || "", /date,status/);
     assert.ok(!calls.some((call) => call.method === "POST"), "building a package never writes");
   });
   await rm(directory, { recursive: true, force: true });
@@ -587,10 +682,107 @@ test("package writes the month folder layout from the manifest and never sends a
 test("package refuses to present an incomplete manifest as ready", async () => {
   await withFakePortal([[
     "/reconcile/months/2026-10/package",
-    { period: "2026-10", state: "open", draft: true, csv: "date,status\n", entries: [], blockers: [{ rowId: "ledger-1", reference: "invoice-1", reason: "expected invoice document is missing" }] },
+    { reportPeriod: "2026-10", period: "2026-10", state: "open", draft: true, csv: "date,status\n", entries: [], blockers: [{ rowId: "ledger-1", reference: "invoice-1", reason: "expected invoice document is missing" }] },
   ]], async () => {
-    await assert.rejects(commands.package({ ...args, _: ["2026-10"], draft: true }, {}), /Package is incomplete: 1 expected document/);
+    await assert.rejects(commands.package({ ...args, _: ["2026-10"], draft: true }, {}), /Package is incomplete: 1 blocker\(s\) prevent export/);
   });
+});
+
+test("package rejects manifest paths that can escape the output month before writing files", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-path-test-"));
+  const absoluteOutsidePath = join(tmpdir(), `dataops-outside-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`);
+  try {
+    for (const path of [
+      "2026-10/../../outside.txt",
+      absoluteOutsidePath,
+      "C:\\temp\\dataops-outside.txt",
+      "2026-10\\..\\outside.txt",
+    ]) {
+      await withFakePortal([[
+        "/reconcile/months/2026-10/package",
+        { reportPeriod: "2026-10", period: "2026-10", state: "closed", draft: false, csv: "synthetic report\n", entries: [
+          { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
+          { path, kind: "invoice", documentId: "synthetic-doc" },
+        ] },
+      ]], async () => {
+        await assert.rejects(commands.package({ ...args, _: ["2026-10"], out: directory, json: true }, {}), /Package manifest/);
+      });
+      assert.equal(await readFile(join(directory, "2026-10/2026-10_reconciliation_datatalksclub.csv"), "utf8").catch(() => null), null,
+        "a bad later entry must be rejected before the earlier report is written");
+    }
+    assert.equal(await readFile(join(directory, "outside.txt"), "utf8").catch(() => null), null);
+    assert.equal(await readFile(absoluteOutsidePath, "utf8").catch(() => null), null);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("package rejects a symlinked directory inside the month before writing the report", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-symlink-test-"));
+  const outside = await mkdtemp(join(tmpdir(), "dataops-reconcile-outside-test-"));
+  try {
+    await mkdir(join(directory, "2026-10"), { recursive: true });
+    try {
+      await symlink(outside, join(directory, "2026-10/expenses"), "dir");
+    } catch (error) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) return;
+      throw error;
+    }
+    await withFakePortal([[
+      "/reconcile/months/2026-10/package",
+      { reportPeriod: "2026-10", period: "2026-10", state: "closed", draft: false, csv: "synthetic report\n", entries: [
+        { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
+        { path: "2026-10/expenses/2026-10_vendor.pdf", kind: "invoice", documentId: "synthetic-doc" },
+      ] },
+    ]], async () => {
+      await assert.rejects(commands.package({ ...args, _: ["2026-10"], out: directory, json: true }, {}), /symlink/);
+    });
+    assert.equal(await readFile(join(directory, "2026-10/2026-10_reconciliation_datatalksclub.csv"), "utf8").catch(() => null), null);
+    assert.deepEqual(await (await import("node:fs/promises")).readdir(outside), []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  }
+});
+
+test("package reports archive creation failures", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-test-"));
+  await mkdir(join(directory, "datatalksclub-2026-10.zip"));
+  try {
+    await withFakePortal([[
+      "/reconcile/months/2026-10/package",
+      { reportPeriod: "2026-10", period: "2026-10", state: "closed", draft: false, csv: "date,status\n", entries: [
+        { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
+      ] },
+    ]], async () => {
+      await assert.rejects(
+        commands.package({ ...args, _: ["2026-10"], out: directory, json: true }, {}),
+        /Could not create package archive/,
+      );
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("package keeps the previous archive when a manifest file cannot be downloaded", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-reconcile-prior-archive-test-"));
+  const zipPath = join(directory, "datatalksclub-2026-10.zip");
+  await writeFile(zipPath, "previous synthetic archive");
+  try {
+    await withFakePortal([[
+      "/reconcile/months/2026-10/package",
+      { reportPeriod: "2026-10", period: "2026-10", state: "closed", draft: false, csv: "synthetic report\n", entries: [
+        { path: "2026-10/2026-10_reconciliation_datatalksclub.csv", kind: "report" },
+        { path: "2026-10/statements/2026-10_finom.csv", kind: "statement", documentId: "synthetic-missing-document" },
+      ] },
+    ]], async () => {
+      await assert.rejects(commands.package({ ...args, _: ["2026-10"], out: directory, json: true }, {}));
+    });
+    assert.equal(await readFile(zipPath, "utf8"), "previous synthetic archive");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("reconcile matches prints matched, unmatched bank and invoices without a bank row", async () => {
@@ -614,4 +806,22 @@ test("reconcile matches prints matched, unmatched bank and invoices without a ba
   });
   await assert.rejects(() => matches({ ...args }, {}), /matches --period YYYY-MM/);
   assert.equal(typeof commands.matches, "function");
+});
+
+
+test("disposition sends explicit verified-unpaid/deferred evidence with exact source digest and month CAS version", async () => {
+  await withFakePortal([["/api/reconcile/months/2031-07/invoice-disposition", { month: { version: 8 } }]], async (calls) => {
+    const result = await commands.disposition({ _: ["ledger:invented-invoice"], period: "2031-07", kind: "deferred", reason: "Verified later settlement", evidence: "Invented receivables register", digest: "a".repeat(64), version: "7", targetPeriod: "2031-08", json: true }, {});
+    assert.equal(result.month.version, 8);
+    assert.deepEqual(JSON.parse(calls[0].body), { rowId: "ledger:invented-invoice", kind: "deferred", reason: "Verified later settlement", evidence: "Invented receivables register", rowDigest: "a".repeat(64), version: 7, targetPeriod: "2031-08" });
+  });
+  await assert.rejects(() => commands.disposition({ _: ["ledger:invented-invoice"], period: "2031-07", kind: "verified-unpaid", reason: "Absent evidence" }, {}), /--evidence/);
+});
+
+
+test("package requires an explicit month and refuses a different reportPeriod before any output", async () => {
+  await assert.rejects(() => commands.package({ _: ["2031"] }, {}), /YYYY-MM/);
+  await withFakePortal([["/reconcile/months/2031-07/package", { reportPeriod: "2031-08", period: "2031-08", state: "open", draft: true, entries: [], csv: "" }]], async () => {
+    await assert.rejects(() => commands.package({ _: ["2031-07"], draft: true, json: true }, {}), /does not match selected report month 2031-07/);
+  });
 });

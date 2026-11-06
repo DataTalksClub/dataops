@@ -14,6 +14,7 @@
  */
 
 import { localDate, validTimezone } from "./publication";
+import { civilToUtc, todayIn } from "../relativeDates";
 import type { PodcastEpisode } from "../db/podcastEpisodes";
 
 export interface PodcastReleaseCadence {
@@ -95,11 +96,6 @@ export function normalizeEpisodesPerSeason(value: unknown): number {
     : DEFAULT_PODCAST_EPISODES_PER_SEASON;
 }
 
-/** YYYY-MM-DD of `now` on the wall clock of `timezone`. */
-export function todayInTimezone(timezone: string, now = new Date()): string {
-  return localDate(now.toISOString(), timezone);
-}
-
 /** ISO weekday (Mon 1 .. Sun 7) of a Berlin-calendar `date` read in `timezone`. */
 function weekdayOf(date: string, timezone: string): number {
   const weekday = new Intl.DateTimeFormat("en-US", {
@@ -113,41 +109,6 @@ function addDays(date: string, days: number): string {
   const parsed = new Date(`${date}T12:00:00Z`);
   parsed.setUTCDate(parsed.getUTCDate() + days);
   return parsed.toISOString().slice(0, 10);
-}
-
-function timezoneOffsetMs(timezone: string, utcMs: number): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date(utcMs));
-  const part = (type: string) => parts.find((entry) => entry.type === type)?.value;
-  const wallAsUtc = Date.UTC(
-    Number(part("year")),
-    Number(part("month")) - 1,
-    Number(part("day")),
-    Number(part("hour") === "24" ? "00" : part("hour")),
-    Number(part("minute")),
-    Number(part("second")),
-  );
-  return wallAsUtc - utcMs;
-}
-
-/**
- * The UTC instant of `time` on `date` in `timezone`, DST-aware: the offset is
- * resolved for that actual date, so a 19:00 Berlin slot is 17:00Z in summer
- * and 18:00Z in winter.
- */
-export function zonedTimeToUtc(date: string, time: string, timezone: string): string {
-  const wallAsUtc = Date.parse(`${date}T${time}:00Z`);
-  let utc = wallAsUtc - timezoneOffsetMs(timezone, wallAsUtc);
-  utc = wallAsUtc - timezoneOffsetMs(timezone, utc);
-  return new Date(utc).toISOString();
 }
 
 /**
@@ -222,7 +183,7 @@ export function nextReleaseSlots(input: {
   const episodesPerSeason = input.episodesPerSeason ?? DEFAULT_PODCAST_EPISODES_PER_SEASON;
   const count = input.count ?? 4;
   const taken = takenReleaseDates(input.episodes);
-  const fromDate = todayInTimezone(cadence.timezone, input.now ?? new Date());
+  const fromDate = todayIn(cadence.timezone, input.now ?? new Date());
   const dates = freeSlotDates(fromDate, count, cadence, taken);
   const numbered = nextEpisodeNumber(input.episodes, episodesPerSeason);
   return {
@@ -233,7 +194,7 @@ export function nextReleaseSlots(input: {
       date,
       localTime: cadence.time,
       timezone: cadence.timezone,
-      utcInstant: zonedTimeToUtc(date, cadence.time, cadence.timezone),
+      utcInstant: civilToUtc(date, cadence.time, cadence.timezone),
     })),
     takenDates: [...taken].sort(),
   };

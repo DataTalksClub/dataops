@@ -86,7 +86,7 @@ Usage
   dataops webinar doc templates
 
 Required to submit: talkTitle, outline (3–4 newline-separated bullets), bio.
-Optional: summary, linkedinUrl, twitterUrl, githubUrl, websiteUrl.
+Optional: summary, linkedinUrl, twitterUrl, githubUrl, websiteUrl, sponsorNotes.
 Create links the form to the webinar card. Copy the share link or invitation
 with email; these commands do not send messages.
 `;
@@ -168,10 +168,10 @@ export async function create(args, io) {
   const prefix = commandPrefix(args);
   const createUsage =
     SPEAKER_DOMAINS.includes(domain)
-      ? `${prefix} create <card-id> [--speaker NAME] [--date YYYY-MM-DD] [--email]`
+      ? `${prefix} create <card-id> [--from DOC-ID] [--speaker NAME] [--date YYYY-MM-DD] [--email]`
       : domain === "podcast"
-      ? `${prefix} create <card-id> [--template ${PODCAST_TEMPLATES.join("|")}] [--sponsor NAME] [--date YYYY-MM-DD] [--email]`
-      : `${prefix} create <issue-id|card-id> [--slot primary|secondary] [--standalone] [--email]`;
+      ? `${prefix} create <card-id> [--template ${PODCAST_TEMPLATES.join("|")}] [--from DOC-ID] [--sponsor NAME] [--date YYYY-MM-DD] [--email]`
+      : `${prefix} create <issue-id|card-id> [--slot primary|secondary] [--standalone] [--from DOC-ID] [--email]`;
 
   // Defensive recovery if a boolean flag (--standalone or --email) was placed immediately before the positional ID
   const positionals = [...(args._ || [])];

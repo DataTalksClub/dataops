@@ -1,8 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { UsageError } from "../errors.mjs";
+import { ApiError } from "../api.mjs";
 import { berlinToday, enc, fields, integer, isoDate, jsonData, optionalString, positional, required, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
+import { classifyFinance, recordInvoice, correctInvoice, addEvidence, setWaiting, uploadInvoiceDocument } from "./sponsorFinance.mjs";
 import {
   THANK_YOU_EVIDENCE_LABEL,
   attachThankYouResult,
@@ -42,6 +44,20 @@ Usage
   dataops sponsors touch <organization|contact> <id> --channel email [--note TEXT] [--date YYYY-MM-DD]
       Log an outreach and update lastOutbound, so the contact stops counting as cold
   dataops sponsors finance <deal-id> [history|candidates/invoices|candidates/payments]
+  dataops sponsors classify-finance <deal-id> --data @classification.json [--apply]
+      invoiceRequirement required|not-required; when required: amountDue, currency, taxMode.
+      Optional taxAmount, requestBy, expectedInvoiceBy. Omitted existing fields are preserved.
+  dataops sponsors record-invoice <deal-id> --data @invoice.json [--apply]
+      Record an already issued invoice: invoiceNumber, issuedOn, dueOn, sentOn.
+      Issue/due dates required on first recording. Omitted metadata stays unchanged;
+      null clears optional invoiceNumber/sentOn. Does not generate a PDF or send email.
+  dataops sponsors add-evidence <deal-id> --data @evidence.json [--apply]
+      Add/update one {kind,ref,label?,on?}, preserving all unrelated evidence.
+  dataops sponsors set-waiting <deal-id> --data @waiting.json [--apply]
+      {party: us|sponsor, reason, since, note?}; --clear instead of --data clears it.
+      These finance writes preview by default and send Idempotency-Key on --apply.
+      --expected-version N and --deal-version N pin reviewed versions (0 allowed for new finance).
+      For an exact retry use the same --idempotency-key, pinned versions and input.
   dataops sponsors payment-mail <list|poll|ingest|confirm|dismiss> [ID] [--status candidate|unmatched|already-paid|confirmed|dismissed] [--days N] [--data @mails.json] [--apply]
       Poll the existing Orin Gmail connection through Dapier, or ingest mails from an existing mailbox trigger.
       Mail notifications are stored idempotently by message ID and matched as review candidates; nothing is paid until Orin confirms.
@@ -50,8 +66,14 @@ Usage
       Refuses any invoice request, issued invoice, receipt/report or settlement; retains an audit snapshot.
   dataops sponsors follow-up <deal-id> [--date YYYY-MM-DD]  Queue the next finance action (classification, invoice, verification or payment)
       [--task ID | --review-existing]  Link an existing deal Task, or confirm review before adding separate work
-  dataops sponsors attach-invoice <deal-id> --file original.pdf [--apply]
+  dataops sponsors attach-invoice <deal-id> --file original.pdf [--issued-on D --due-on D] [--apply]
       Attach an original issued invoice through verified private storage; no payment is created.
+      Before uploading, record the issued invoice or supply its verified issue/due dates.
+  dataops sponsors correct-invoice <deal-id> --data @correction.json [--file corrected.pdf] [--apply]
+      Correct an issued invoice: required reason, corrected invoiceNumber/issuedOn/dueOn/sentOn
+      (omitted metadata stays unchanged; null clears optional number/sent date), and optionally
+      the corrected PDF issued in Finom's UI, which supersedes the linked original in one audited
+      step. The original document is retained; nothing is generated or emailed.
   dataops sponsors approve-settlement <deal-id> --data @approval.json [--apply]
       Explicit owner-approved noncash reduction; creates no bookkeeping income.
       Required: amount,currency,reason,approvedBy,approvedOn,evidence. Optional replacesPaymentId.
@@ -410,9 +432,22 @@ export async function followUp(args, io) {
   if (args.task) body.existingTaskId = String(args.task);
   if (args.reviewExisting) body.reviewedOpenTasks = (finance.paymentFollowUp?.existingTasks || [])
     .map(({ id, version }) => ({ id, version })).sort((a, b) => a.id.localeCompare(b.id));
-  const result = await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/follow-up`, body, {
-    headers: { "Idempotency-Key": randomUUID() },
-  });
+  let result;
+  try {
+    result = await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/follow-up`, body, {
+      headers: { "Idempotency-Key": randomUUID() },
+    });
+  } catch (error) {
+    // The finance endpoint returns the existing Task on a duplicate conflict;
+    // rereading versions cannot make a second open follow-up valid.
+    if (error instanceof ApiError && error.status === 409 && typeof error.body?.taskId === "string" && error.body.taskId) {
+      throw new ApiError(error.status, {
+        ...error.body,
+        error: `An open payment follow-up Task already exists for this deal: ${error.body.taskId}. Work it in the task pool: dataops tasks show ${error.body.taskId}`,
+      }, error.url);
+    }
+    throw error;
+  }
   if (!args.json) {
     const task = result.task || {};
     io.print(`${args.task ? "Linked existing" : "Created"} payment follow-up Task ${task.id} for deal ${id} (due ${task.date}).`);
@@ -432,32 +467,20 @@ export async function attachInvoice(args, io) {
     api.get(`/api/sponsor-crm/deals/${enc(id)}`), api.get(`/api/sponsor-crm/deals/${enc(id)}/finance`),
   ]);
   if (!projection.finance) throw new UsageError("Classify the invoice amount and currency first.");
-  if (projection.invoice) throw new UsageError("An invoice original is already attached; review it before replacing evidence.");
-  const result = { mode: args.apply ? "apply" : "dry-run", dealId: id, sha256, byteSize: bytes.length };
+  if (projection.finance.invoiceRequirement === "not-required") throw new UsageError("This deal is classified as invoice not required; review its classification before uploading.");
+  if (projection.invoice) throw new UsageError("An invoice original is already attached; replace it with sponsors correct-invoice.");
+  const issuedOn = isoDate(args.issuedOn, "issued-on"), dueOn = isoDate(args.dueOn, "due-on");
+  if (Boolean(issuedOn) !== Boolean(dueOn)) throw new UsageError("Supply both --issued-on and --due-on");
+  if (issuedOn && dueOn < issuedOn) throw new UsageError("Invoice due date must not precede its issue date");
+  if (!projection.finance.issuedOn && !issuedOn) throw new UsageError("Record the issued invoice with sponsors record-invoice first, or supply verified --issued-on and --due-on; nothing was uploaded.");
+  const invoiceDates = issuedOn ? { issuedOn, dueOn } : {};
+  const result = { mode: args.apply ? "apply" : "dry-run", dealId: id, sha256, byteSize: bytes.length, ...invoiceDates };
   if (args.apply) {
-    const idempotencyKey = `sponsor-invoice-${sha256}`;
-    let prepared = await api.post("/api/bookkeeping/documents/prepare", {
-      sha256, byteSize: bytes.length, documentType: "invoice", idempotencyKey, sourceRef: `sponsor-deal:${id}`,
-    });
-    if (prepared.uploadUrl) {
-      const upload = await fetch(prepared.uploadUrl, { method: "PUT", body: bytes, headers: prepared.uploadHeaders });
-      if (!upload.ok) {
-        const failure = (await upload.text()).slice(0, 8192);
-        const code = failure.match(/<Code>([A-Za-z0-9_-]+)<\/Code>/)?.[1] || "UploadRejected";
-        throw new Error(`Invoice upload failed (${upload.status}, ${code}); retry the same file`);
-      }
-      prepared = await api.post(`/api/bookkeeping/documents/${enc(prepared.document.id)}/complete`, { idempotencyKey });
-    }
-    let cursor, candidate;
-    do {
-      const page = await api.get(`/api/sponsor-crm/deals/${enc(id)}/finance/candidates/invoices`, { query: { limit: 50, cursor } });
-      candidate = (page.items || []).find((item) => item.id === prepared.document.id);
-      cursor = page.nextCursor;
-    } while (!candidate && cursor);
-    if (!candidate) throw new UsageError("Uploaded invoice is not an available candidate; check whether another deal already claims it.");
+    const { candidate } = await uploadInvoiceDocument(api, id, bytes, sha256);
     const linked = await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/invoice`, {
       dealVersion: deal.version, expectedVersion: projection.finance.version,
       sourceId: candidate.id, identityToken: candidate.identityToken,
+      ...invoiceDates,
     }, { headers: { "Idempotency-Key": args.idempotencyKey || randomUUID() } });
     result.documentId = candidate.id;
     result.invoiceState = linked.projection?.invoiceState;
@@ -803,18 +826,32 @@ export async function paymentMail(args, io) {
     counterparty: candidate.payer || candidate.match.organizationName,
     reference: `mail:${candidate.provider}:${candidate.invoiceNumber || candidate.id}`.slice(0, 200),
   };
-  const result = { mode: args.apply ? "apply" : "dry-run", candidateId: id, dealId, plan: `${body.receivedOn} ${body.amount} ${body.currency} from ${body.counterparty}` };
+  let result = { mode: args.apply ? "apply" : "dry-run", candidateId: id, dealId, plan: `${body.receivedOn} ${body.amount} ${body.currency} from ${body.counterparty}` };
   if (args.apply) {
     const response = await api.post(`/api/sponsor-crm/deals/${enc(dealId)}/finance/receipts`, body, {
       headers: { "Idempotency-Key": `pmail-${id}`.slice(0, 128).padEnd(16, "0") },
     });
     await api.post(`${base}/${enc(id)}/confirmed`, {});
-    result.paymentState = response?.projection?.paymentState;
+    result = { ...result, ...response };
+    if (response?.projection?.paymentState && !result.paymentState) {
+      result.paymentState = response.projection.paymentState;
+    }
   }
+  attachThankYouResult(result, {
+    projection: result.projection,
+    beforeProjection: projection,
+    fallbackPaymentState: args.apply ? undefined : "paid",
+    dealTitle: deal?.title,
+    invoiceNumber: candidate.invoiceNumber,
+    amount: candidate.amount,
+    currency: candidate.currency,
+    receivedOn: candidate.receivedOn,
+  });
   if (!args.json) {
     io.print(`${result.mode}: receive ${result.plan}${result.paymentState ? ` (deal is now ${result.paymentState})` : ""}`);
+    printThankYouHint(io, result.thankYou);
   }
   return result;
 }
 
-export const commands = { "payment-mail": paymentMail, pipeline, contact, list, show, create, update, delete: remove, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification, "record-thank-you": recordThankYou, contract };
+export const commands = { "classify-finance": classifyFinance, "record-invoice": recordInvoice, "correct-invoice": correctInvoice, "add-evidence": addEvidence, "set-waiting": setWaiting, "payment-mail": paymentMail, pipeline, contact, list, show, create, update, delete: remove, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification, "record-thank-you": recordThankYou, contract };

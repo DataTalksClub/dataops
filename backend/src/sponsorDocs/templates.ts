@@ -452,7 +452,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
     label: 'Webinar — Speaker Materials',
     shortLabel: 'Webinar',
     defaultLinkType: 'Speaker materials',
-    intro: 'Share your talk materials so we can prepare the event description. Talk title, 3–4 outline bullets, and speaker bio are required to submit. Summary and links are optional. You can save a draft and return using the same link.',
+    intro: 'Share your talk materials so we can prepare the event description. Talk title, 3–4 outline bullets, and speaker bio are required to submit. Summary, links, and notes are optional. You can save a draft and return using the same link.',
     sections: [
       {
         id: 'talk',
@@ -479,6 +479,13 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
           { key: 'twitterUrl', label: 'X (Twitter)', type: 'text', format: 'url', placeholder: 'https://x.com/...' },
           { key: 'githubUrl', label: 'GitHub', type: 'text', format: 'url', placeholder: 'https://github.com/...' },
           { key: 'websiteUrl', label: 'Website', type: 'text', format: 'url', placeholder: 'https://...' },
+        ],
+      },
+      {
+        id: 'notes',
+        title: '4) Notes for the DataTalks.Club Team (optional)',
+        fields: [
+          { key: 'sponsorNotes', label: 'Notes or questions', type: 'textarea', rows: 3, placeholder: 'Anything we should know' },
         ],
       },
     ],
@@ -1485,7 +1492,7 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
 
   if (c.sponsorNotes?.trim()) {
     const notesHeading = doc.template === 'podcast' ? '## Notes from the Guest'
-      : doc.template === 'workshop' ? '## Notes from the Speaker' : '## Notes from Sponsor';
+      : (doc.template === 'workshop' || doc.template === 'webinar') ? '## Notes from the Speaker' : '## Notes from Sponsor';
     lines.push(
       '',
       '---',

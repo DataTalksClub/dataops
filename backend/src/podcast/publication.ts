@@ -18,6 +18,7 @@
  */
 
 import { isRecord } from '../records';
+import { todayIn } from '../relativeDates';
 
 export type PodcastPublication = {
   audioSchedule?: { scheduledAt: string; timezone: string; observedAt: string; proofUrl?: string };
@@ -73,14 +74,7 @@ export function validTimezone(value: unknown): boolean {
 
 /** YYYY-MM-DD of `utcInstant` as read on the wall clock of `timezone`. */
 export function localDate(utcInstant: string, timezone: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date(utcInstant));
-  const part = (type: string) => parts.find((entry) => entry.type === type)?.value;
-  return `${part('year')}-${part('month')}-${part('day')}`;
+  return todayIn(timezone, new Date(utcInstant));
 }
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };

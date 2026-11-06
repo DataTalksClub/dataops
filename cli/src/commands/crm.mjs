@@ -43,7 +43,9 @@ Usage
   dataops crm company followup <id> --on YYYY-MM-DD|+7d [--status open|done] [--note TEXT] [--clear]
   dataops crm company archive <id>
   dataops crm company unarchive <id>
-  dataops crm company delete <id> --yes [--expected-version N]  Permanently delete (admin only)
+  dataops crm company delete <id> [--yes] [--expected-version N]
+      Preview by default. With --yes, permanently delete the company (admin only);
+      refused while it has deals, linked contacts, notes or human touches.
   dataops crm person show <id>                A unique 8+ character id prefix works
   dataops crm person create [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] [--follow-up-at DATE] [--follow-up-status open|done] [--follow-up-note TEXT] --data '{...}'      Through the canonical contact record
   dataops crm person update <id> [--tags a,b] [--first-contact-at DATE] [--last-contact-at DATE] [--follow-up-at DATE] [--follow-up-status open|done] [--follow-up-note TEXT] --data '{...}'  Must include the current version
@@ -51,12 +53,18 @@ Usage
   dataops crm person followup <id> --on YYYY-MM-DD|+7d [--status open|done] [--note TEXT] [--clear]
   dataops crm person archive <id>
   dataops crm person unarchive <id>
-  dataops crm person delete <id> --yes [--expected-version N]   Permanently delete (admin only)
+  dataops crm person delete <id> [--yes] [--expected-version N]
+      Preview by default. With --yes, permanently delete the person (admin only);
+      refused while linked to deals or deliverables, or with notes or touches.
   dataops crm deal show <id>                A unique 8+ character id prefix works
   dataops crm deal create --data '{...}'        Through the canonical deal record
   dataops crm deal update <id> --data '{...}'    Must include the current version
   dataops crm deal archive <id>
   dataops crm deal unarchive <id>
+  dataops crm deal delete <id> [--with-deliverables] [--yes] [--expected-version N]
+      Preview by default. With --yes, permanently delete the deal (admin only) with its history, notes and Tasks,
+      and with --with-deliverables also its deliverables; an audit snapshot is retained. Exit 4 = not found,
+      exit 5 = guard/version conflict (reason in error).
   dataops crm activity <organization|contact|deal> <id> [--types note,touch,mail,history,deal-history]
       [--limit N] [--cursor C]
   dataops crm notes list <organization|contact|deal> <id> [--limit N] [--cursor C]
@@ -78,6 +86,7 @@ Notes are attributed to you; update/delete notes with version check; retry safel
 Views are personal: builtins are read-only, yours are versioned, archive keeps the record.
 Hard delete refuses deals, linked contacts, notes and human touches; delete people before their company.
 Hard-delete errors: exit 4 = not found; exit 5 = guard/version conflict (reason in error).
+Applied hard deletes retain an audit snapshot row (ORGANIZATION_DELETE_AUDIT# / CONTACT_DELETE_AUDIT#).
 
 Examples
   dataops crm companies list --json | jq '.items[] | {displayName, relationship}'
@@ -312,14 +321,19 @@ export async function personUnarchive(args, io) {
 }
 
 async function deleteDirectoryRecord(args, io, entity, plural) {
-  const id = positional(args, 0, `dataops crm ${entity} delete <id> --yes [--expected-version N]`);
-  if (args.yes !== true) throw new UsageError('Permanent deletion requires --yes. Read the record before deleting it.');
+  const id = positional(args, 0, `dataops crm ${entity} delete <id> [--yes] [--expected-version N]`);
   const expectedVersion = integer(optionalString(args, 'expectedVersion'), 'expected-version');
   if (expectedVersion !== undefined && !Number.isSafeInteger(expectedVersion)) throw new UsageError('expected-version must be a safe positive integer.');
+  // Preview by default, matching `crm deal delete`: the dry run runs every
+  // server-side guard and deletes nothing; --yes applies the same request.
+  const apply = args.yes === true;
   const result = await apiFor(args).delete(`/api/sponsor-crm/${plural}/${enc(id)}`, undefined, {
-    query: { hard: 'true', expectedVersion },
+    query: { hard: 'true', dryRun: apply ? undefined : 'true', expectedVersion },
   });
-  if (!args.json) io.print(`Deleted ${entity} ${id}.`);
+  if (!args.json) {
+    if (apply) io.print(`Deleted ${entity} ${id}; audit snapshot retained.`);
+    else io.print(`Dry run: ${entity} ${id} can be deleted with ${result.historyRows || 0} history row(s) and ${result.indexRows || 0} index row(s) removed; add --yes to apply.`);
+  }
   return result;
 }
 
@@ -358,6 +372,25 @@ export async function dealUnarchive(args, io) {
   const id = positional(args, 0, "dataops crm deal unarchive <id>");
   const result = await apiFor(args).post(`/api/sponsor-crm/deals/${enc(id)}/unarchive`);
   if (!args.json) io.print(`Unarchived deal ${id}.`);
+  return result;
+}
+
+export async function dealDelete(args, io) {
+  const id = positional(args, 0, "dataops crm deal delete <id> [--with-deliverables] [--yes] [--expected-version N]");
+  const expectedVersion = integer(optionalString(args, "expectedVersion"), "expected-version");
+  if (expectedVersion !== undefined && !Number.isSafeInteger(expectedVersion)) throw new UsageError("expected-version must be a safe positive integer.");
+  const apply = args.yes === true;
+  const result = await apiFor(args).post(`/api/sponsor-crm/deals/${enc(id)}/delete`, {
+    withDeliverables: args.withDeliverables === true,
+    ...(apply ? { apply: true } : {}),
+    ...(expectedVersion !== undefined ? { expectedVersion } : {}),
+  });
+  if (!args.json) {
+    if (apply) io.print(`Deleted deal ${id}; audit snapshot retained.`);
+    else io.print(`Dry run: deal ${id} can be deleted with ${result.deletedDeliverableIds?.length || 0} deliverable(s); ` +
+      `finance links to ${result.detachedFinanceSourceIds?.length || 0} source(s) will be detached; ` +
+      `${result.retainedNewsletterSlotIds?.length || 0} newsletter slot(s) will remain booked. Add --yes to apply.`);
+  }
   return result;
 }
 
@@ -719,8 +752,8 @@ export const commands = {
     "dataops crm person <show|create|update|archive|unarchive|delete|dnc|followup> [...]"),
   deals: (args, io) => dispatch(args, io, { list: dealsList }, "dataops crm deals list [...]"),
   deal: (args, io) => dispatch(args, io,
-    { show: dealShow, create: dealCreate, update: dealUpdate, archive: dealArchive, unarchive: dealUnarchive },
-    "dataops crm deal <show|create|update|archive|unarchive> [...]"),
+    { show: dealShow, create: dealCreate, update: dealUpdate, archive: dealArchive, unarchive: dealUnarchive, delete: dealDelete },
+    "dataops crm deal <show|create|update|archive|unarchive|delete> [...]"),
   pipeline: (args, io) => dispatch(args, io, { list: pipelineList }, "dataops crm pipeline list [...]"),
   followups,
   archive,
@@ -731,7 +764,6 @@ export const commands = {
     { add: noteAdd, show: noteShow, update: noteUpdate, edit: noteUpdate, delete: noteDelete, remove: noteDelete },
     "dataops crm note <add|show|update|delete> <target> <id> [...]"),
   touch,
-  touches: touch,
   views: (args, io) => dispatch(args, io,
     { list: viewsList, show: viewsShow, create: viewsCreate, update: viewsUpdate, archive: viewsArchive, unarchive: viewsUnarchive },
     "dataops crm views <list|show|create|update|archive|unarchive> [...]"),

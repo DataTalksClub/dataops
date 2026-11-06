@@ -89,7 +89,7 @@ test("invoice originals upload privately and attach without creating or settling
   globalThis.fetch = async (url, options) => {
     calls.push({ url, ...options });
     let response = {};
-    if (url.endsWith("/finance")) response = { finance: { version: 2 } };
+    if (url.endsWith("/finance")) response = { finance: { version: 2, issuedOn: "2026-09-01" } };
     else if (url.endsWith("/deals/demo")) response = { version: 1 };
     else if (url.endsWith("/documents/prepare")) response = { document: { id: "original" }, uploadUrl: "https://private.example.test/object", uploadHeaders: { "content-type": "application/pdf" } };
     else if (url.endsWith("/complete")) response = { document: { id: "original" } };
@@ -322,6 +322,49 @@ test("sponsors follow-up explicitly links existing work or submits the reviewed 
     assert.deepEqual(posts[0], { dealVersion: 7, expectedVersion: 4, existingTaskId: "task-existing" });
     assert.equal(await run(["sponsors", "follow-up", "deal-demo", "--review-existing", "--json"], io), 0);
     assert.deepEqual(posts[1], { dealVersion: 7, expectedVersion: 4, reviewedOpenTasks: [{ id: "task-existing", version: 3 }] });
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
+    if (oldUrl === undefined) delete process.env.DATAOPS_URL; else process.env.DATAOPS_URL = oldUrl;
+  }
+});
+
+test("sponsors follow-up reports the existing Task instead of suggesting a stale-state retry", async () => {
+  const originalFetch = globalThis.fetch;
+  const oldToken = process.env.DATAOPS_TOKEN;
+  const oldUrl = process.env.DATAOPS_URL;
+  process.env.DATAOPS_TOKEN = "sanitized-test-token";
+  process.env.DATAOPS_URL = "https://portal.example.test";
+  let posts = 0;
+  let existingTaskId = "task-canonical";
+  globalThis.fetch = async (url, options) => {
+    if (options.method === "POST") {
+      posts += 1;
+      return new Response(JSON.stringify({
+        error: "Finance state changed; reload and retry",
+        ...(existingTaskId ? { taskId: existingTaskId } : {}),
+      }), { status: 409 });
+    }
+    return new Response(JSON.stringify(String(url).endsWith("/finance")
+      ? { finance: { version: 4 } } : { id: "deal-demo", version: 7 }));
+  };
+  try {
+    for (const json of [false, true]) {
+      const errors = [];
+      const io = { log() {}, error: (value) => errors.push(String(value)) };
+      const args = ["sponsors", "follow-up", "deal-demo", "--task", "task-other", ...(json ? ["--json"] : [])];
+      assert.equal(await run(args, io), 5);
+      const message = json ? JSON.parse(errors[0]).error.message : errors.join("\n");
+      assert.match(message, /An open payment follow-up Task already exists for this deal: task-canonical/);
+      assert.match(message, /dataops tasks show task-canonical/);
+      assert.doesNotMatch(message, /reload and retry/);
+      if (json) assert.equal(JSON.parse(errors[0]).error.status, 409);
+    }
+    assert.equal(posts, 2, "one request per invocation, without retrying or replacing work");
+    existingTaskId = "";
+    const errors = [];
+    assert.equal(await run(["sponsors", "follow-up", "deal-demo"], { log() {}, error: (value) => errors.push(String(value)) }), 5);
+    assert.match(errors.join("\n"), /Finance state changed; reload and retry/);
   } finally {
     globalThis.fetch = originalFetch;
     if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;

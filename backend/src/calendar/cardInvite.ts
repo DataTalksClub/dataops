@@ -13,10 +13,11 @@ import { getTemplate } from '../db/templates';
 import { getCalendarHold, listCalendarHolds, putCalendarHold } from '../db/calendarHolds';
 import { calendarsMissingInvite, taskRequiresCalendarInvite, makeTaskHistoryEvent } from '../routes/taskValidation';
 import { dateFromTemplateOffset } from '../templates/cardTemplateProjection';
+import { todayIn } from '../relativeDates';
 import { confirmedHoldInvite, confirmedTitle, holdGuestAttendees, isPodcastInviteTitle, parseHoldDocumentUrl, podcastInviteTitle, HOLD_ATTENDEE_DENY_LIST, type CalendarHold } from './holds';
 import { listPodcastEpisodes, type PodcastEpisode } from '../db/podcastEpisodes';
 import { recordTemplateTypes } from '../cards/cardTitlePattern';
-import { createHoldGoogleEvents, deleteHoldGoogleEvents, fetchGoogleEvent, findGoneGoogleEvents, syncLumaCalendarEvents, updateHoldGoogleEvents, type HoldGoogleDeps, type HoldGoogleResult } from './holdGoogleSync';
+import { createHoldGoogleEvents, deleteHoldGoogleEvents, fetchGoogleEvent, findGoneGoogleEvents, mergeHoldGoogleResults, syncLumaCalendarEvents, syncSilentGoogleCopies, updateHoldGoogleEvents, type HoldGoogleDeps, type HoldGoogleResult } from './holdGoogleSync';
 import { lumaUrlForEventCard } from './lumaEvents';
 import { PUBLIC_DTC_EVENTS_CALENDAR, resolveHoldGoogleCalendars } from './dapierBroker';
 
@@ -306,24 +307,38 @@ export async function syncCardInvite(
     expectedVersion: card.version,
     patch: { eventTime: pending, guestEmails: silentLumaEvent ? [] : guests },
   });
-  const sync = silentLumaEvent
-    ? await syncLumaCalendarEvents({
-      eventKey,
-      summary: card.title || 'DataTalks.Club event',
-      subtitle: card.description || undefined,
-      startIso: interval.startIso,
-      endIso: interval.endIso,
-      timeZone: interval.timeZone,
-      lumaUrl: lumaUrl!,
-    }, deps, { ...(eventIds[PUBLIC_DTC_EVENTS_CALENDAR] ? { [PUBLIC_DTC_EVENTS_CALENDAR]: eventIds[PUBLIC_DTC_EVENTS_CALENDAR] } : {}) })
+  // A silent Luma event (a course cohort Q&A or Launch and every other
+  // Luma-linked Card) gets the full SOP calendar set: the standalone public
+  // entry on the DTC events calendar plus the same content as silent
+  // organizer + personal hold copies (attendee-free, no email). Each leg is
+  // idempotent and recovers its partial writes on retry.
+  const publicCopyIds = { ...(eventIds[PUBLIC_DTC_EVENTS_CALENDAR] ? { [PUBLIC_DTC_EVENTS_CALENDAR]: eventIds[PUBLIC_DTC_EVENTS_CALENDAR] } : {}) };
+  const personalCopyIds = Object.fromEntries(Object.entries(eventIds).filter(([calendar]) => calendar !== PUBLIC_DTC_EVENTS_CALENDAR));
+  const lumaEvent = {
+    eventKey,
+    summary: card.title || 'DataTalks.Club event',
+    subtitle: card.description || undefined,
+    startIso: interval.startIso,
+    endIso: interval.endIso,
+    timeZone: interval.timeZone,
+    lumaUrl: lumaUrl!,
+  };
+  const sync: HoldGoogleResult = silentLumaEvent
+    ? mergeHoldGoogleResults(
+        await syncLumaCalendarEvents(lumaEvent, deps, publicCopyIds),
+        await syncSilentGoogleCopies(lumaEvent, deps, personalCopyIds),
+      )
     : Object.keys(eventIds).length
       ? await updateHoldGoogleEvents(eventIds, invite!, deps)
       : await createHoldGoogleEvents(invite!, deps);
   const updated = await updateCardAdditive(client, reserved, current => {
     const invites = [...(current.calendarInvites || [])];
     if (sync.state === 'synced') {
+      // Silent Luma events link every calendar copy they own (public entry,
+      // organizer and personal copies); guest invites never link the public
+      // calendar — its standalone entries are never invite copies.
       const linkedEventIds = Object.entries(sync.eventIds).filter(([calendar]) =>
-        silentLumaEvent ? calendar === PUBLIC_DTC_EVENTS_CALENDAR : calendar !== PUBLIC_DTC_EVENTS_CALENDAR);
+        silentLumaEvent || calendar !== PUBLIC_DTC_EVENTS_CALENDAR);
       if (silentLumaEvent && sync.state === 'synced') {
         for (let index = invites.length - 1; index >= 0; index--) {
           if (invites[index].calendar === PUBLIC_DTC_EVENTS_CALENDAR) invites.splice(index, 1);
@@ -352,7 +367,7 @@ export async function syncCardInvite(
   if (linkedHold) {
     const preservedTopic = linkedHold.topic || (podcastTitle && linkedHold.title && !isPodcastInviteTitle(linkedHold.title) ? confirmedTitle(linkedHold.title) : undefined);
     storedHold = {
-      ...linkedHold, ...interval, cardId: card.id, title: confirmedTitle(inviteTitle), ...(preservedTopic ? { topic: preservedTopic } : {}), date: new Intl.DateTimeFormat('en-CA', { timeZone: interval.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(interval.startIso)),
+      ...linkedHold, ...interval, cardId: card.id, title: confirmedTitle(inviteTitle), ...(preservedTopic ? { topic: preservedTopic } : {}), date: todayIn(interval.timeZone, new Date(interval.startIso)),
       googleTitle: confirmedTitle(inviteTitle), guestRef: guests[0], ...(documentUrl ? { documentUrl } : {}),
       status: 'confirmed', confirmedAt: linkedHold.confirmedAt || new Date().toISOString(),
       googleEventIds: sync.eventIds, googleSync: { state: sync.state, ...(sync.state === 'deferred' ? { reason: sync.reason } : {}) },
@@ -554,11 +569,6 @@ export async function unlinkCardInvite(
   return { card: updated, removed };
 }
 
-/** The event's local calendar date in its own time zone. */
-function localDate(iso: string, timeZone: string): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
-}
-
 /**
  * `cards time` dates an undated ("date TBD") event Card, and keeps a Card
  * whose date followed its invitation on the invitation's day: the Card date
@@ -569,8 +579,8 @@ export async function adoptEventDate(
   client: DynamoDBDocumentClient, card: Card, previous: Card['eventTime'],
 ): Promise<{ card: Card; movedTasks: number }> {
   if (!card.eventTime || card.eventTime.sync !== 'synced') return { card, movedTasks: 0 };
-  const date = localDate(card.eventTime.startIso, card.eventTime.timeZone);
-  const followed = !card.anchorDate || (previous && card.anchorDate === localDate(previous.startIso, previous.timeZone));
+  const date = todayIn(card.eventTime.timeZone, new Date(card.eventTime.startIso));
+  const followed = !card.anchorDate || (previous && card.anchorDate === todayIn(previous.timeZone, new Date(previous.startIso)));
   if (!followed || card.anchorDate === date) return { card, movedTasks: 0 };
   const updated = await updateCardAdditive(client, card, () => ({ anchorDate: date }));
   let movedTasks = 0;

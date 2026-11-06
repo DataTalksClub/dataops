@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { docToken, documentName, packagePath, proofName, reportName, slug, statementName, taxName, uniquePaths } from '../src/reconcile/naming';
+import { documentName, packagePath, proofName, reportName, slug, statementName, taxName, uniquePaths } from '../src/reconcile/naming';
 
 describe('month package naming', () => {
   it('slugs counterparties to lowercase ascii with hyphens, at most 40 characters', () => {
@@ -10,15 +10,14 @@ describe('month package naming', () => {
     assert.equal(slug('A'.repeat(30) + ' ' + 'B'.repeat(30)), 'a'.repeat(30));
     assert.ok(slug('x'.repeat(80)).length <= 40);
     assert.equal(slug(''), 'unknown');
-    assert.equal(docToken('202610/53'), '202610-53');
   });
 
   it('names each package part from its data', () => {
-    assert.equal(statementName('2026-10', 'finom', 'main', 'finom_2026-10_main.csv'), '2026-10_finom-main.csv');
-    assert.equal(statementName('2026-10', 'revolut', 'EUR', 'x.pdf'), '2026-10_revolut-eur.pdf');
-    assert.equal(documentName({ date: '2026-10-30', counterparty: 'Pro Sulum, LLC', documentNumber: 'D9D54E5A-0059-CN-01', amount: '-646.63', currency: 'usd' }), '2026-10-30_pro-sulum-llc_D9D54E5A-0059-CN-01_646.63USD.pdf');
-    assert.equal(documentName({ date: '2026-10-14', counterparty: 'Google', amount: -1.99, currency: 'EUR' }), '2026-10-14_google_1.99EUR.pdf');
-    assert.equal(proofName({ date: '2026-10-14', counterparty: 'Google', ledgerId: 'a1c9d26b53120ca5896d' }), '2026-10-14_google_a1c9d26b5312.pdf');
+    assert.equal(statementName('2028-03', 'finom', 'main', 'source.csv'), '2028-03_finom-main_statement.csv');
+    assert.equal(statementName('2028-03', 'revolut', 'EUR', 'x.pdf'), '2028-03_revolut-eur_statement.pdf');
+    assert.equal(documentName({ date: '2028-03-17', counterparty: 'Example Tools Ltd', description: 'Annual workspace license', amount: '-83.42', currency: 'usd' }), '2028-03-17_example-tools-ltd_annual-workspace-license_83.42USD.pdf');
+    assert.equal(documentName({ date: '2028-03-18', counterparty: 'Example Cloud', description: 'Hosting', amount: 27, currency: 'EUR' }), '2028-03-18_example-cloud_hosting_27.00EUR.pdf');
+    assert.equal(proofName({ date: '2028-03-18', counterparty: 'Example Cloud', description: 'Hosting', amount: 27, currency: 'EUR' }), '2028-03-18_example-cloud_payment-proof-hosting_27.00EUR.pdf');
     assert.equal(taxName({ date: '2026-11-10', kind: 'ust-va', period: '2026-10' }), '2026-11-10_ust-va_2026-10.pdf');
     assert.equal(reportName('2026-10', 'xlsx'), '2026-10_reconciliation_datatalksclub.xlsx');
     assert.equal(packagePath('2026-10', 'expenses', 'a.pdf'), '2026-10/expenses/a.pdf');
