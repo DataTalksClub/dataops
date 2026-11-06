@@ -76,8 +76,6 @@ class DocumentRegistry:
     by_id: dict[str, DocumentRecord]
     by_alias: dict[str, DocumentRecord]
     by_path: dict[str, DocumentRecord]
-    code_view_by_sop: dict[str, DocumentRecord]
-
     def to_dict(self) -> dict[str, Any]:
         return {"documents": [doc.to_dict() for doc in self.documents]}
 
@@ -127,9 +125,7 @@ def build_registry(content_root: Path, validate: bool = True) -> DocumentRegistr
         by_id=by_id,
         by_alias=by_alias,
         by_path=by_path,
-        code_view_by_sop={},
     )
-    violations.extend(validate_code_views(records, registry))
 
     if validate:
         violations.extend(validate_alias_conflicts(by_alias, by_id))
@@ -171,33 +167,6 @@ def normalize_reference(ref: str) -> str:
     if value.startswith("doc:"):
         value = value.removeprefix("doc:").strip()
     return value.strip()
-
-
-def validate_code_views(records: list[DocumentRecord], registry: DocumentRegistry) -> list[str]:
-    violations: list[str] = []
-    for record in records:
-        if record.doc_type != "code-view":
-            continue
-        if not record.sop:
-            violations.append(f"{record.path}: code view is missing frontmatter 'sop'")
-            continue
-        try:
-            target = resolve_reference(registry, record.sop)
-        except (LookupError, ValueError):
-            violations.append(f"{record.path}: sop reference not found: {record.sop!r}")
-            continue
-        if target.path == record.path:
-            violations.append(f"{record.path}: code view cannot target itself")
-            continue
-        if target.doc_type != "sop":
-            violations.append(f"{record.path}: sop reference must target a SOP, got {target.doc_type!r}")
-            continue
-        previous = registry.code_view_by_sop.get(target.id)
-        if previous:
-            violations.append(f"{record.path}: second code view for {record.sop!r} (already at {previous.path})")
-            continue
-        registry.code_view_by_sop[target.id] = record
-    return violations
 
 
 def validate_related_docs(records: list[DocumentRecord], registry: DocumentRegistry) -> list[str]:

@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { FrontmatterParseError, parseFrontmatter, splitFrontmatter, stripBom } from '../src/docs/frontmatter';
+import { ParseError, parseFrontmatter, splitFrontmatter, stripBom } from '../src/docs/frontmatter';
 import { buildRegistry, resolveReference } from '../src/docs/docRegistry';
 import { configureDocsRuntime, handleDocsRoutes, resetDocsRuntime, updateFrontmatterParent } from '../src/docs/contentApi';
 import { syntheticKnowledge } from './helpers/knowledge';
@@ -67,10 +67,10 @@ describe('parseFrontmatter', () => {
     assert.equal(parseFrontmatter('updated: 2026-10-15').updated, '2026-10-15');
   });
 
-  it('raises FrontmatterParseError at the document line of malformed YAML', () => {
+  it('raises ParseError at the document line of malformed YAML', () => {
     assert.throws(
       () => parseFrontmatter('title: ok\ntags: [unclosed\n'),
-      (error: unknown) => error instanceof FrontmatterParseError && error.line >= 2,
+      (error: unknown) => error instanceof ParseError && error.line >= 2,
     );
   });
 
@@ -243,8 +243,8 @@ describe('UTF-8 BOM normalization before frontmatter parsing', () => {
       }
       return null;
     })();
-    assert.ok(without instanceof FrontmatterParseError);
-    assert.ok(withBom instanceof FrontmatterParseError);
+    assert.ok(without instanceof ParseError);
+    assert.ok(withBom instanceof ParseError);
     assert.equal(withBom.toString(), without.toString());
   });
 
