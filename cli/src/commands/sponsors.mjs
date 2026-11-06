@@ -28,7 +28,7 @@ Usage
                                                       kind: ${KINDS.join(", ")}; deliverables filter by Airtable Content source
   dataops sponsors show <kind> <id>
   dataops sponsors create <kind> --data '{...}'        Fields as the web form sends them
-  dataops sponsors create leads --data '{"source":"newsletter","url":"https://â€¦","summary":"â€¦","observedAt":"ISO"}'
+  dataops sponsors create leads --data '{"source":"newsletter","url":"https://…","summary":"…","observedAt":"ISO"}'
       Record one outbound lead sighting. source: newsletter|social|influencer|paid;
       optional organizationId links a known company. Never creates a deal:
       a deal only exists once a sale closes.
@@ -304,7 +304,7 @@ export async function cold(args, io) {
     ["NAME", (item) => item.name],
     ["REL", (item) => item.relationship],
     ["QUIET", (item) => item.daysSince === null ? "never" : `${item.daysSince}d`],
-    ["LAST", (item) => String(item.lastInboundAt || item.lastOutboundAt || "â€”").slice(0, 10)],
+    ["LAST", (item) => String(item.lastInboundAt || item.lastOutboundAt || "—").slice(0, 10)],
     ["LIMIT", (item) => `${item.threshold}d`],
   ], "No cold contacts. Everyone has been talked to recently.");
   if (reminded) {
