@@ -8,7 +8,7 @@ Parameters:
     Default: arn:aws:lambda:eu-west-1:817685572750:function:dataops-card-banner-renderer
   BannerTemplateBundleKey:
     Type: String
-    Default: banner-templates/6b4d0c9362af19b1dec51d0553d39726db54a888648541c393bc7d3241b9007f/bundle.json
+    Default: banner-templates/52a584923d5eec1e53378e81aa22bc868a6c68980a454511d30a051f334b9f45/bundle.json
     Description: Immutable private approved template bundle key
   KnowledgeBucketName:
     Type: String
