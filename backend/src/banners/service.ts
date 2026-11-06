@@ -135,12 +135,12 @@ export async function renderBannerJob(client: DynamoDBDocumentClient, id: string
     if (!card) throw new BannerFailure('card-deleted');
     const artifactId = `banner-${id}`;
     const { artifact } = await createArtifactIfAbsent(client, {
-      id: artifactId, cardId: job.cardId, type: 'other', title: `${job.title} — ${job.input.layout} ${job.input.eventType} cover`,
+      id: artifactId, cardId: job.cardId, type: 'other', title: `${job.title} â€” ${job.input.layout} ${job.input.eventType} cover`,
       status: 'needs-review', storageProvider: 's3', storageUri: `s3://${config.bucket}/${outputKey}`,
       filename: `${job.input.eventType}-${job.input.layout}-${id.slice(0, 12)}.png`, contentType: 'image/png',
       checksum: checksum(bytes), sizeBytes: bytes.length, visibility: 'private', dataClass: 'internal',
       sourceType: 'system', createdBy: job.createdBy,
-      metadata: { bannerJobId: id, ...dimensions, format: 'png', templateId: template.id, templateSourceRevision: bundle.sourceRevision, templateBundleChecksum: checksum(bundleBytes), inputChecksum: checksum(Buffer.from(html)), eventType: job.input.eventType, layout: job.input.layout, title: job.title, speakers: job.speakers, ...(job.sponsorLogo ? { sponsorLogo: job.sponsorLogo } : {}) },
+      metadata: { bannerJobId: id, ...dimensions, format: 'png', templateId: template.id, templateSourceRevision: bundle.sourceRevision, templateBundleChecksum: checksum(bundleBytes), inputChecksum: checksum(Buffer.from(html)), eventType: job.input.eventType, eventLabel: job.input.eventLabel || job.input.eventType, layout: job.input.layout, title: job.title, speakers: job.speakers, ...(job.sponsorLogo ? { sponsorLogo: job.sponsorLogo } : {}) },
     });
     await updateCardAdditive(client, card, current => ({ artifactRefs: [...(current.artifactRefs || []).filter(ref => ref.artifactId !== artifactId), { artifactId, type: artifact.type, title: artifact.title, status: artifact.status }] }));
     await transitionBannerJob(client, claimed, 'succeeded', { artifactId, error: '' });
