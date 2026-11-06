@@ -646,6 +646,8 @@ export function renderCardGuestInvitation({ request, workApiUrl, reload, watch =
   const sent = intake.status === "sent" && Boolean(intake.messageId);
   heading.textContent = sent ? "Invitation sent"
     : intake.status === "skipped" ? "Invitation not sent"
+    : intake.status === "paused" ? "Invitation paused"
+    : intake.status === "cancelled" ? "Invitation cancelled"
     : intake.status === "contact-pending" ? "Guest contact details needed"
     : intake.status === "failed" ? "Invitation could not be sent" : "Invitation preparing";
   section.append(heading);
@@ -657,14 +659,18 @@ export function renderCardGuestInvitation({ request, workApiUrl, reload, watch =
   if (intake.startIso) {
     const time = document.createElement("p");
     const parsed = new Date(intake.startIso);
-    time.textContent = `Proposed time: ${Number.isNaN(parsed.getTime()) ? intake.startIso : new Intl.DateTimeFormat("en-GB", { dateStyle: "full", timeStyle: "short", timeZone: "Europe/Berlin" }).format(parsed)} (Berlin)`;
+    time.textContent = `Proposed time: ${Number.isNaN(parsed.getTime()) ? intake.startIso : new Intl.DateTimeFormat("en-GB", {
+      dateStyle: "full", timeStyle: "short", timeZone: "Europe/Berlin",
+    }).format(parsed)} (Berlin)`;
     section.append(time);
   }
   if (sent && intake.sentAt) {
     const delivered = document.createElement("p");
     const timestamp = new Date(intake.sentAt);
     delivered.dataset.invitationSentAt = "";
-    delivered.textContent = `Sent at: ${Number.isNaN(timestamp.getTime()) ? intake.sentAt : new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Berlin" }).format(timestamp)} (Berlin)`;
+    delivered.textContent = `Sent at: ${Number.isNaN(timestamp.getTime()) ? intake.sentAt : new Intl.DateTimeFormat("en-GB", {
+      dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Berlin",
+    }).format(timestamp)} (Berlin)`;
     section.append(delivered);
   }
   if (sent) {
@@ -711,7 +717,9 @@ export function renderCardGuestInvitation({ request, workApiUrl, reload, watch =
     });
     section.append(button, feedback);
   }
-  if (watch && ["queued", "preparing"].includes(intake.status)) {
+  const needsRefresh = value => ["queued", "preparing"].includes(value?.guestIntake?.status)
+    || (value?.guestIntake?.status === "paused" && value.status === "active");
+  if (watch && needsRefresh(card)) {
     let timer;
     let attempts = 0;
     let stopped = false;
@@ -726,7 +734,7 @@ export function renderCardGuestInvitation({ request, workApiUrl, reload, watch =
         if (next?.guestIntake) {
           const receipt = renderCardGuestInvitation({ request, workApiUrl, reload, watch: false }, next);
           section.replaceChildren(...receipt.childNodes);
-          if (!["queued", "preparing"].includes(next.guestIntake.status)) { stop(); return; }
+          if (!needsRefresh(next)) { stop(); return; }
         }
       } catch { /* Retain the last actual receipt and try within the bounded window. */ }
       if (!stopped) { timer = schedule(poll, 3000); timer?.unref?.(); }

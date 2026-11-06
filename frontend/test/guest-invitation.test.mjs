@@ -66,3 +66,17 @@ test('closing the Card stops pending invitation checks without another request',
   await scheduled[0]();
   assert.equal(requests, 0);
 });
+
+test('paused and cancelled receipts show honest states without background polling on parked Cards', () => {
+  for (const status of ['paused', 'cancelled']) {
+    const scheduled = [];
+    const section = render({ status }, { schedule: callback => { scheduled.push(callback); return 1; } });
+    assert.match(section.textContent, new RegExp(`Invitation ${status}`));
+    assert.doesNotMatch(section.textContent, /Invitation preparing/);
+    assert.equal(scheduled.length, 0);
+  }
+  globalThis.document = new FakeDocument();
+  const scheduled = [];
+  renderCardGuestInvitation({ request: async () => ({}), workApiUrl: x => x, schedule: callback => { scheduled.push(callback); return 1; } }, { id: 'active-card', status: 'active', guestIntake: { status: 'paused' } });
+  assert.equal(scheduled.length, 1, 'resumed active Card refreshes its paused receipt');
+});
