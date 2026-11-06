@@ -22,7 +22,7 @@ import {
   resolveReference,
   type DocumentRegistry,
 } from '../src/docs/docRegistry';
-import { ParseError, parseFrontmatter, splitFrontmatter, type Frontmatter } from '../src/docs/sop';
+import { ParseError, parseFrontmatter, splitFrontmatter, type Frontmatter } from '../src/docs/frontmatter';
 
 const PROCESS_MARKDOWN_DIRS = ['_docs', 'docs', 'templates'];
 const PROCESS_MARKDOWN_FILES = ['.goal-v1.md', 'PROJECT_PLAN.md', 'PORTAL_ANALYSIS.md', 'README.md'];

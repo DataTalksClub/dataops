@@ -13,18 +13,14 @@ const SOP = [
   'title: Reset a password',
   'summary: How to reset a user password',
   'doc_type: sop',
-  'schema_version: 1',
   'tags: [accounts, security]',
   '---',
   '',
   '# Reset a password',
   '',
-  '<!-- sop-section-start: procedure -->',
   '## Procedure',
-  '<!-- sop-step-start id=1 -->',
+  '',
   '1. Open the admin console and reset the password.',
-  '<!-- sop-step-end -->',
-  '<!-- sop-section-end -->',
 ].join('\n');
 
 const REF = [
@@ -113,7 +109,7 @@ describe('S3 authenticated knowledge content routes',()=>{
   assert.ok(copied.body.content.includes('](https://example.test/)'));
   assert.ok(copied.body.content.includes('[Example](relative.md)'));
  });
- it('loads docs, registry, parsed content, search, quality and health without GitHub',async()=>{
+ it('loads docs, registry, search, quality and health without GitHub',async()=>{
   for(const route of ['/docs','/docs/registry','/docs/process-quality','/health','/lint']) assert.equal((await call(ev('GET',route))).status,200);
   const doc=await call(ev('GET','/docs',{query:{path:'content/accounts/sops/reset-password.md'}}));assert.equal(doc.body.revision,revision);assert.equal(doc.body.content,SOP);
   const search=await call(ev('GET','/search',{query:{q:'password'}}));assert.ok(search.body.results.length);

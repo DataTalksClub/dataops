@@ -12,7 +12,7 @@ import {
   knowledgeStoreConfigFromEnv,
 } from './docs/knowledgeStore';
 import { buildRegistry, LookupError, resolveReference } from './docs/docRegistry';
-import { parse, splitFrontmatter } from './docs/sop';
+import { splitFrontmatter } from './docs/frontmatter';
 import type { Task, TaskChecklistItem } from './types';
 import { berlinToday } from './relativeDates';
 
@@ -56,40 +56,15 @@ function sourceStore(): KnowledgeStore {
   return checklistStore;
 }
 
-function procedureSteps(content: string, definition: ChecklistDefinition): Array<{ id: string; body: string; attrs: Record<string, unknown> }> {
-  let parsed;
-  try {
-    parsed = parse(content);
-  } catch (error) {
-    throw new TaskChecklistSourceError(
-      `Checklist ${definition.id} could not be parsed: ${error instanceof Error ? error.message : 'invalid document'}`,
-      422,
-    );
-  }
-
-  const procedure = parsed.sections.procedure;
-  if (procedure && 'groups' in procedure && !procedure.raw) {
-    const steps = [
-      ...procedure.groups.flatMap((group) => group.steps),
-      ...procedure.flat_steps,
-    ];
-    if (steps.length) {
-      return steps.map((step) => ({
-        id: String(step.id),
-        body: step.body_md,
-        attrs: step.attrs as Record<string, unknown>,
-      }));
-    }
-  }
-
-  // Legacy checklist documents may not have SOP boundary markers yet. Keep
-  // their ordered Markdown list usable until the corpus has migrated.
+function procedureSteps(content: string): Array<{ id: string; body: string }> {
+  // Checklist docs are plain markdown: every ordered-list or task-list item
+  // is one checklist item, in document order.
   const [, body] = splitFrontmatter(content);
   const rows = body.split(/\r?\n/).flatMap((line) => {
     const match = line.match(/^\s*(?:[-*+]\s+\[[ xX]\]\s+|\d+[.)]\s+)(.+?)\s*$/);
     return match ? [match[1]] : [];
   });
-  return rows.map((text, index) => ({ id: String(index + 1), body: text, attrs: {} }));
+  return rows.map((text, index) => ({ id: String(index + 1), body: text }));
 }
 
 function markdownTargets(body: string): Array<{ ref: string; stepId?: string }> {
@@ -128,25 +103,14 @@ function instructionForStep(
   registry: ReturnType<typeof buildRegistry>,
   checklistPath: string,
   body: string,
-  attrs: Record<string, unknown>,
 ): { instructionDocId?: string; instructionStepId?: string } {
-  const attrRef = [attrs.instructionDocId, attrs.instruction_doc_id, attrs.sop, attrs.doc]
-    .find((value) => typeof value === 'string' && value.trim());
-  const candidates = [
-    ...(typeof attrRef === 'string' ? [{ ref: attrRef }] : []),
-    ...markdownTargets(body),
-  ];
+  const candidates = markdownTargets(body);
   for (const target of candidates) {
     const doc = docReference(registry, checklistPath, target.ref);
     if (!doc || !['sop', 'checklist'].includes(doc.doc_type)) continue;
-    const instructionStepId = target.stepId || (typeof attrs.instructionStepId === 'string'
-      ? attrs.instructionStepId
-      : typeof attrs.instruction_step_id === 'string'
-        ? attrs.instruction_step_id
-        : undefined);
     return {
       instructionDocId: doc.id,
-      ...(instructionStepId ? { instructionStepId } : {}),
+      ...(target.stepId ? { instructionStepId: target.stepId } : {}),
     };
   }
   return {};
@@ -187,7 +151,7 @@ export async function loadTaskChecklistDefinition(reference: string): Promise<Ch
   const definition = { id: record.id, title: record.title, path: record.path, items: [] } satisfies ChecklistDefinition;
   const content = await store.readFile(record.path);
   const registry = buildRegistry(store.contentRoot);
-  const items = procedureSteps(content, definition).map((step) => {
+  const items = procedureSteps(content).map((step) => {
     const text = checklistItemText(step.body);
     if (!text) return null;
     if (text.length > MAX_CHECKLIST_ITEM_LENGTH) {
@@ -197,7 +161,7 @@ export async function loadTaskChecklistDefinition(reference: string): Promise<Ch
       id: `kb-${step.id}`,
       text,
       sourceStepId: step.id,
-      ...instructionForStep(registry, record.path, step.body, step.attrs),
+      ...instructionForStep(registry, record.path, step.body),
     } satisfies ChecklistItemSource;
   }).filter((item): item is ChecklistItemSource => item !== null);
   if (!items.length) throw new TaskChecklistSourceError(`Checklist ${record.id} has no actionable items`, 422);

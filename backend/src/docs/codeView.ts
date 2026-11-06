@@ -22,9 +22,8 @@
  * format spec is `docs/code-view-format.md`.
  */
 
-import { lintText } from './lint';
-import { ParseError, parseFrontmatter, splitFrontmatter, splitlines } from './parse';
-import type { Frontmatter } from './types';
+import { ParseError, parseFrontmatter, splitFrontmatter, splitlines } from './frontmatter';
+import type { Frontmatter } from './frontmatter';
 
 export interface CodeViewFile {
   name: string;
@@ -273,8 +272,9 @@ function repr(value: Frontmatter[string] | null | undefined): string {
 }
 
 /**
- * Route linting by the document's own `doc_type`: SOP engine rules for
- * sop/checklist, code-view rules for code-view, no rules for other types.
+ * Route linting by the document's own `doc_type`: code-view rules for
+ * code-view docs, no rules for other types. SOPs and checklists are plain
+ * markdown and need no structural lint.
  */
 export function lintDocument(text: string): string[] {
   const [rawFm] = splitFrontmatter(text);
@@ -286,6 +286,45 @@ export function lintDocument(text: string): string[] {
     throw error;
   }
   if (fm.doc_type === 'code-view') return lintCodeView(text);
-  if (fm.doc_type === 'sop' || fm.doc_type === 'checklist') return lintText(text);
   return [];
+}
+
+/**
+ * Structured search text for a `code-view` doc: filenames, prose, and code.
+ * The default cleaner drops fenced code, but for a recipe the code is the
+ * content. Returns `null` for anything else (or when the body fails to
+ * parse) so the caller falls back to the cleaned raw body.
+ */
+export function codeViewStructuredText(rawText: string): string | null {
+  const [rawFm] = splitFrontmatter(rawText);
+  let fm: Frontmatter = {};
+  try {
+    if (rawFm) fm = parseFrontmatter(rawFm);
+  } catch (error) {
+    if (error instanceof ParseError) return null;
+    throw error;
+  }
+  if (fm.doc_type !== 'code-view') return null;
+  let parsed: ParsedCodeView;
+  try {
+    parsed = parseCodeView(rawText);
+  } catch (err) {
+    if (err instanceof CodeViewParseError) return null;
+    throw err;
+  }
+  const chunks: string[] = [];
+  for (const key of ['title', 'summary'] as const) {
+    const value = parsed.frontmatter[key];
+    if (typeof value === 'string' && value) chunks.push(value);
+  }
+  for (const block of parsed.blocks) {
+    if (block.kind === 'file') {
+      chunks.push(block.name);
+      if (block.language) chunks.push(block.language);
+      chunks.push(block.code);
+    } else {
+      chunks.push(block.body_md);
+    }
+  }
+  return chunks.join('\n');
 }

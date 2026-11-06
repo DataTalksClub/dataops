@@ -2,7 +2,7 @@ import { CORE_SCHEMA, dump as dumpYaml, load as loadYaml } from 'js-yaml';
 import { posix } from 'node:path';
 
 import type { Template } from '../types';
-import { splitFrontmatter } from './sop';
+import { splitFrontmatter } from './frontmatter';
 
 export const DOCUMENT_INDEX_ID = 'reference.indexes.document-index';
 export const DOCUMENT_INDEX_PATH = 'content/07-internal-operations/manage-systems-library/reference/document-index.md';

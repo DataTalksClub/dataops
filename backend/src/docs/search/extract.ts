@@ -17,7 +17,7 @@ import { dirname, join, posix, sep } from 'node:path';
 import yaml from 'js-yaml';
 
 import type { SearchDocument } from '../searchIndex';
-import { splitFrontmatter } from '../sop/parse';
+import { splitFrontmatter } from '../frontmatter';
 
 // ── Markdown cleaning regexes (ported from docs_index.py) ─────────────────────
 
@@ -108,15 +108,10 @@ export function generatedId(repoPath: string, docType: string): string {
 /**
  * Build the indexed search body for a document.
  *
- * TODO(#86): SOP-structure-aware extraction. The Python `doc_to_search_text`
- * routes `schema_version: 1` SOPs through `sop_parse.parse()` so step bodies,
- * prose, and screenshot captions are indexed without marker noise. The SOP
- * engine port landed under `work-engine/src/docs/sop/` (#86) but is wired into
- * the live content path only at #87. Until then we index the cleaned raw
- * markdown body for every doc (recall-preserving; SOP step text is still
- * present in the raw body). To enable structured extraction, pass a
- * `structuredText` extractor here that calls `sopEngine.parse(rawText)` and
- * flattens sections/steps — this is the single integration point.
+ * By default the cleaned raw markdown body is indexed. Callers may pass a
+ * `structuredText` extractor (e.g. code-view extraction, where fenced code
+ * is the content and the default cleaner would drop it); when it returns
+ * `null` the cleaned raw body is used.
  */
 export function docToSearchText(
   rawText: string,
@@ -132,7 +127,7 @@ export function docToSearchText(
 
 /** Options for {@link extractDoc}. */
 export interface ExtractOptions {
-  /** Optional SOP structured-text extractor (TODO #86 integration point). */
+  /** Optional structured-text extractor (e.g. code-view body extraction). */
   structuredText?: (rawText: string) => string | null;
 }
 

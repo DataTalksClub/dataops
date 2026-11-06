@@ -9,8 +9,7 @@ import {
   CodeViewParseError,
   lintCodeView,
   lintDocument,
-  lintText,
-} from '../src/docs/sop/index';
+} from '../src/docs/codeView';
 import { buildRegistry } from '../src/docs/docRegistry';
 import { newDocContent } from '../src/docs/docScaffolds';
 import {
@@ -27,17 +26,13 @@ const SOP = [
   'title: Reset a password',
   'summary: How to reset a user password',
   'doc_type: sop',
-  'schema_version: 1',
   '---',
   '',
   '# Reset a password',
   '',
-  '<!-- sop-section-start: procedure -->',
   '## Procedure',
-  '<!-- sop-step-start id=1 -->',
+  '',
   '1. Open the admin console and reset the password.',
-  '<!-- sop-step-end -->',
-  '<!-- sop-section-end -->',
 ].join('\n');
 
 const CODE_VIEW = [
@@ -237,12 +232,9 @@ describe('code view lint and doc-type routing', () => {
     assert.match(violations[0], /^parse error: line \d+: /);
   });
 
-  it('routes by doc_type: SOPs get SOP lint, code views code-view lint, others none', () => {
+  it('routes by doc_type: code views get code-view lint, everything else none', () => {
     assert.deepEqual(lintDocument(CODE_VIEW), []);
-    const sopText = '---\ntitle: x\ndoc_type: sop\nschema_version: 1\n---\n\nbody\n';
-    const routed = lintDocument(sopText);
-    assert.ok(routed.some((v) => v.startsWith('missing required section:')));
-    assert.deepEqual(routed, lintText(sopText));
+    assert.deepEqual(lintDocument('---\ntitle: x\ndoc_type: sop\n---\n\nbody\n'), []);
     assert.deepEqual(lintDocument('---\ntitle: x\ndoc_type: reference\n---\n\nbody\n'), []);
   });
 });
@@ -410,7 +402,7 @@ describe('docs content API code view surface', () => {
     assert.equal(bad.body.parsed_code_view, null);
     assert.match(bad.body.error, /at least one/);
     const sopParse = await call(ev('POST', '/parse', { body: { content: SOP } }));
-    assert.equal(sopParse.body.parsed.sections.procedure.flat_steps.length, 1);
+    assert.equal(sopParse.status, 400);
   });
 
   it('routes save warnings and corpus lint through the code-view rules', async () => {

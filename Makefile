@@ -3,7 +3,7 @@ SAM_LOCAL_AWS_DIR := .tmp/aws-empty
 SAM_LOCAL_AWS_CONFIG := $(SAM_LOCAL_AWS_DIR)/config
 SAM_LOCAL_AWS_CREDENTIALS := $(SAM_LOCAL_AWS_DIR)/credentials
 
-.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs sop-lint test-frontend-unit test-frontend-coverage test-backend test-backend-transactions typecheck-backend build-backend test-backend-e2e test-cli test-cli-e2e sam-local-aws-config sam-validate sam-build test-sam-workspace-isolation verify-sam-frontend verify-sam-runtime-boundary test-sam-frontend-isolation ci clean
+.PHONY: help setup dev-frontend dev-compose dev search-index validate-planning-docs test-frontend-unit test-frontend-coverage test-backend test-backend-transactions typecheck-backend build-backend test-backend-e2e test-cli test-cli-e2e sam-local-aws-config sam-validate sam-build test-sam-workspace-isolation verify-sam-frontend verify-sam-runtime-boundary test-sam-frontend-isolation ci clean
 
 help:
 	@printf '%s\n' 'DataOps development targets:'
@@ -13,7 +13,6 @@ help:
 	@printf '%-28s %s\n' 'make dev' 'Run the consolidated backend (frontend + docs + work) on port 3000.'
 	@printf '%-28s %s\n' 'make dev-compose' 'Run the current Docker Compose portal stack in the foreground.'
 	@printf '%-28s %s\n' 'make validate-planning-docs' 'Run planning docs contract validation.'
-	@printf '%-28s %s\n' 'make sop-lint FILES=...' 'Lint marked SOP files; FILES is required.'
 	@printf '%-28s %s\n' 'make test-frontend-unit' 'Run fast frontend routing and work-model unit tests.'
 	@printf '%-28s %s\n' 'make test-frontend-coverage' 'Run frontend unit tests with all production modules in coverage.'
 	@printf '%-28s %s\n' 'make test-backend' 'Run backend unit tests.'
@@ -57,10 +56,6 @@ dev:
 
 validate-planning-docs:
 	uv run --with pytest python -m pytest tests/planning_docs
-
-sop-lint:
-	@if [ -z "$(strip $(FILES))" ]; then echo 'FILES is required. Usage: make sop-lint FILES="content/path/to/sop.md [...]"' >&2; exit 2; fi
-	npx --prefix backend tsx backend/scripts/sop.ts lint $(FILES)
 
 test-backend:
 	npm --prefix backend test

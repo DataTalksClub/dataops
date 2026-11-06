@@ -12,7 +12,7 @@ import {
   LookupError,
 } from '../src/docs/docRegistry';
 import { generatedId } from '../src/docs/search/extract';
-import { sopStructuredText } from '../src/docs/search/sopExtract';
+import { codeViewStructuredText } from '../src/docs/codeView';
 import { extractDoc } from '../src/docs/search/extract';
 
 function writeDoc(contentRoot: string, relPath: string, text: string): void {
@@ -238,55 +238,42 @@ describe('docRegistry - build + resolve (port of doc_registry.py)', () => {
   });
 });
 
-const STRUCTURED_SOP = [
+const CODE_VIEW_DOC = [
   '---',
-  'title: Reset a password',
-  'doc_type: sop',
+  'title: Reset a password — code',
+  'doc_type: code-view',
   'schema_version: 1',
+  'sop: sop.example.reset',
   '---',
   '',
-  '# Reset a password',
+  '# Reset a password — code',
   '',
-  '<!-- sop-section-start: summary -->',
-  '## Summary',
+  'Run the script, then verify.',
   '',
-  'Reset the account password safely.',
-  '<!-- sop-section-end -->',
-  '',
-  '<!-- sop-section-start: procedure -->',
-  '## Procedure',
-  '',
-  '<!-- sop-step-start id=1 -->',
-  '1. Open the admin console and find the user.',
-  '<!-- sop-step-end -->',
-  '',
-  '<!-- sop-step-start id=2 -->',
-  '2. Click reset and confirm the change.',
-  '<!-- sop-step-end -->',
-  '',
-  '<!-- sop-section-end -->',
+  '```bash file=reset-password.sh',
+  '#!/usr/bin/env bash',
+  'echo "dry-run"',
+  '```',
 ].join('\n');
 
-describe('sopExtract - structured search text (#86 hook)', () => {
-  it('flattens SOP step bodies and drops marker noise', () => {
-    const text = sopStructuredText(STRUCTURED_SOP);
-    assert.ok(text, 'returns structured text for a schema_version: 1 SOP');
-    assert.match(text!, /Open the admin console/);
-    assert.match(text!, /Click reset and confirm/);
-    assert.doesNotMatch(text!, /sop-step-start/);
-    assert.doesNotMatch(text!, /sop-section-start/);
+describe('extractDoc - structured search text hook', () => {
+  it('indexes code-view filenames and code through the hook', () => {
+    const text = codeViewStructuredText(CODE_VIEW_DOC);
+    assert.ok(text, 'returns structured text for a code-view doc');
+    assert.match(text!, /reset-password\.sh/);
+    assert.match(text!, /dry-run/);
   });
 
-  it('returns null for non schema_version 1 docs', () => {
+  it('returns null for non code-view docs', () => {
     const plain = ['---', 'title: Plain', '---', '', '# Plain', 'body'].join('\n');
-    assert.strictEqual(sopStructuredText(plain), null);
+    assert.strictEqual(codeViewStructuredText(plain), null);
   });
 
   it('wires into extractDoc so the indexed body uses structured text', () => {
-    const doc = extractDoc('content/ops/sops/reset.md', STRUCTURED_SOP, {
-      structuredText: sopStructuredText,
+    const doc = extractDoc('content/ops/code-views/reset.md', CODE_VIEW_DOC, {
+      structuredText: codeViewStructuredText,
     });
-    assert.match(String(doc.body), /Open the admin console/);
-    assert.doesNotMatch(String(doc.body), /sop-step-start/);
+    assert.match(String(doc.body), /reset-password\.sh/);
+    assert.doesNotMatch(String(doc.body), /```/);
   });
 });

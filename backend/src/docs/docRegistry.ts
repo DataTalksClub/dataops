@@ -17,8 +17,8 @@
 import { readFileSync, statSync } from 'node:fs';
 import { posix, sep } from 'node:path';
 
-import { ParseError, parseFrontmatter, splitFrontmatter } from './sop';
-import type { Frontmatter } from './sop';
+import { ParseError, parseFrontmatter, splitFrontmatter } from './frontmatter';
+import type { Frontmatter } from './frontmatter';
 import { collectMarkdown, generatedId, inferDocType, inferDomain } from './search/extract';
 
 const DOCUMENT_ID_RE = /^[a-z0-9][a-z0-9._-]*$/;

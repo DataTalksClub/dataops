@@ -46,7 +46,6 @@ function fullSopTemplate(title: string, docType: string, summary: string, parent
 title: "${title}"
 summary: "${summary}"
 doc_type: ${docType}
-schema_version: 1
 ${parentLine}tags: []
 systems: []
 related_docs: []
@@ -54,50 +53,36 @@ related_docs: []
 
 # ${title}
 
-<!-- sop-section-start: summary -->
 ## Summary
 
 - Purpose:
 - Outcome:
 - Trigger:
 - Frequency:
-<!-- sop-section-end -->
 
-<!-- sop-section-start: prerequisites -->
 ## Prerequisites
 
 - Access:
 - Tools:
 - Inputs:
-<!-- sop-section-end -->
 
-<!-- sop-section-start: procedure -->
 ## Procedure
 
-<!-- sop-step-start id=1 -->
-1.  Describe the first step.
-<!-- sop-step-end -->
+1. Describe the first step.
+2. Describe the second step.
 
-<!-- sop-section-end -->
-
-<!-- sop-section-start: validation -->
 ## Validation
 
 - How to confirm the work is done correctly.
-<!-- sop-section-end -->
 
-<!-- sop-section-start: troubleshooting -->
 ## Troubleshooting
 
 - Common issue:
 - Fix:
-<!-- sop-section-end -->
 
-<!-- sop-section-start: references -->
 ## References
 
 -
-<!-- sop-section-end -->
 `;
 }
 
@@ -107,7 +92,6 @@ function minimalSopTemplate(title: string, docType: string, summary: string, par
 title: "${title}"
 summary: "${summary}"
 doc_type: ${docType}
-schema_version: 1
 ${parentLine}tags: []
 systems: []
 related_docs: []
@@ -115,34 +99,19 @@ related_docs: []
 
 # ${title}
 
-<!-- sop-section-start: summary -->
 ## Summary
-<!-- sop-section-end -->
 
-<!-- sop-section-start: prerequisites -->
 ## Prerequisites
-<!-- sop-section-end -->
 
-<!-- sop-section-start: procedure -->
 ## Procedure
 
-<!-- sop-step-start id=1 -->
-1.
-<!-- sop-step-end -->
+1. Describe the first step.
 
-<!-- sop-section-end -->
-
-<!-- sop-section-start: validation -->
 ## Validation
-<!-- sop-section-end -->
 
-<!-- sop-section-start: troubleshooting -->
 ## Troubleshooting
-<!-- sop-section-end -->
 
-<!-- sop-section-start: references -->
 ## References
-<!-- sop-section-end -->
 `;
 }
 

@@ -10,8 +10,8 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
  * the docs half of `search_handler.py`, wired onto the docs-domain seam. Routes
  * (`/docs`, `/images`, `/folders`, `/lint`, `/parse`, `/health`, `/search`) read
  * and write content through {@link KnowledgeStore} (S3 source of
- * truth + `/tmp` cache + commit-on-save), lint/parse through the SOP engine
- * (`./sop`), and search through {@link ZeroSearchIndex} (#85). After a content
+ * truth + `/tmp` cache + commit-on-save), code-view bodies through
+ * `./codeView`, and search through {@link ZeroSearchIndex} (#85). After a content
  * mutation the in-process search index is refreshed.
  *
  * Served only when {@link isDocsDomainEnabled}.
@@ -62,8 +62,8 @@ import {
 } from './docRegistry';
 import { createSearchIndex, type SearchIndex } from './searchIndex';
 import { generatedId, iterContentDocs } from './search/extract';
-import { docsStructuredText } from './search/sopExtract';
-import { parse, ParseError, splitFrontmatter, parseFrontmatter, lintDocument, parseCodeView, CodeViewParseError } from './sop';
+import { splitFrontmatter, parseFrontmatter } from './frontmatter';
+import { lintDocument, parseCodeView, CodeViewParseError, codeViewStructuredText } from './codeView';
 import { newDocContent } from './docScaffolds';
 import { DEFAULT_HEADERS, jsonResponse, method, queryParam } from './http';
 import { search } from './contentSearch';
@@ -186,7 +186,7 @@ export class DocsRuntime {
 
   /** Rebuild the in-process search index from the content cache. */
   rebuildSearch(): void {
-    const docs = iterContentDocs(this.contentRoot, { structuredText: docsStructuredText });
+    const docs = iterContentDocs(this.contentRoot, { structuredText: codeViewStructuredText });
     const index = createSearchIndex();
     index.fit(docs);
     this.index = index;
@@ -648,16 +648,6 @@ async function getDoc(rt: DocsRuntime, rawPath: string): Promise<LambdaResponse>
     updated: rt.store.updatedAt(repoPath),
     revision: rt.store.revision,
   };
-  try {
-    body.parsed = parse(content);
-  } catch (err) {
-    if (err instanceof ParseError) {
-      body.parsed = null;
-      body.parse_error = err.message;
-    } else {
-      throw err;
-    }
-  }
   await applyDocTypeAndCodeView(body, rt, repoPath, content);
   return jsonResponse(200, body);
 }
@@ -1118,20 +1108,13 @@ async function processQuality(rt: DocsRuntime): Promise<LambdaResponse> {
 function parseContent(body: Record<string, unknown>): LambdaResponse {
   const text = body.content;
   if (typeof text !== 'string') throw new BadRequest('Request body must include string field: content');
-  if (body.kind === 'code-view') {
-    try {
-      return jsonResponse(200, { parsed_code_view: parseCodeView(text) });
-    } catch (err) {
-      if (err instanceof CodeViewParseError) {
-        return jsonResponse(200, { parsed_code_view: null, error: err.message });
-      }
-      throw err;
-    }
-  }
+  if (body.kind !== 'code-view') throw new BadRequest("Request body must include field kind: 'code-view'");
   try {
-    return jsonResponse(200, { parsed: parse(text) });
+    return jsonResponse(200, { parsed_code_view: parseCodeView(text) });
   } catch (err) {
-    if (err instanceof ParseError) return jsonResponse(200, { parsed: null, error: err.message });
+    if (err instanceof CodeViewParseError) {
+      return jsonResponse(200, { parsed_code_view: null, error: err.message });
+    }
     throw err;
   }
 }

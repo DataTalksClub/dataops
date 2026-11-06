@@ -21,7 +21,7 @@ import { dirname, resolve } from 'node:path';
 
 import { createSearchIndex } from '../src/docs/searchIndex';
 import { iterContentDocs } from '../src/docs/search/extract';
-import { docsStructuredText } from '../src/docs/search/sopExtract';
+import { codeViewStructuredText } from '../src/docs/codeView';
 
 const repoRoot = resolve(__dirname, '..', '..');
 const DEFAULT_CONTENT_DIR = resolve(repoRoot, 'content');
@@ -47,10 +47,9 @@ function parseArgs(argv: string[]): Args {
 async function main(): Promise<void> {
   const { contentDir, output } = parseArgs(process.argv.slice(2));
 
-  // Route schema_version: 1 SOPs through the SOP parser (#86) so step bodies,
-  // prose, and captions are indexed without marker noise — matching the
-  // in-process refresh performed by the content API after a save (#87).
-  const docs = iterContentDocs(contentDir, { structuredText: docsStructuredText });
+  // Route code-view docs through their extractor so fenced code is indexed —
+  // matching the in-process refresh performed by the content API after a save.
+  const docs = iterContentDocs(contentDir, { structuredText: codeViewStructuredText });
 
   mkdirSync(dirname(output), { recursive: true });
   const index = createSearchIndex();

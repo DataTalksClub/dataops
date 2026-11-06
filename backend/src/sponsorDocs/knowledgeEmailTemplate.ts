@@ -4,7 +4,7 @@ import {
   knowledgeStoreConfigFromEnv,
   type KnowledgeStore,
 } from '../docs/knowledgeStore';
-import { parseFrontmatter, splitFrontmatter } from '../docs/sop';
+import { parseFrontmatter, splitFrontmatter } from '../docs/frontmatter';
 
 export const NEWSLETTER_SPONSOR_EMAIL_TEMPLATE_ID =
   'template.newsletter.send-sponsorship-document-2-weeks-before';
