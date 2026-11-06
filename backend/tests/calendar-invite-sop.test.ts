@@ -2,7 +2,7 @@ import { after, before, afterEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_CARDS, TABLE_TEMPLATES } from '../src/db/tableNames';
-import { handler } from '../src/handler';
+import { invokeHistoricalHoldFixture as handler } from './helpers/historical-card-hold';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
 import { getCalendarHold, putCalendarHold } from '../src/db/calendarHolds';
@@ -54,7 +54,7 @@ describe('calendar invite SOP contract', () => {
     assert.equal(created.status, 201);
     const hold = created.hold;
     assert.equal(hold.title, input.title);
-    assert.equal(hold.googleTitle, `(Proposal) ${input.title}`);
+    assert.equal(hold.googleTitle, `[Proposed] ${input.title}`);
     assert.equal(hold.googleSync.state, 'synced', hold.googleSync.reason);
     assert.deepEqual(Object.keys(hold.googleEventIds).sort(), [HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS].sort());
     const proposals = [...google.events.values()].flatMap((store) => [...store.values()]);

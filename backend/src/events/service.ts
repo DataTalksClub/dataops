@@ -1,3 +1,8 @@
+import { cardEventInterval } from '../calendar/cardEventTime';
+import { manualCalendarPolicy } from './manualCalendarPolicy';
+import { claimGuestSlotAllocator, releaseAllocator } from './guestIntakeAllocator';
+import { guestEventSlots } from './guestIntakeSlots';
+import type { GuestIntakeJob } from './guestIntakeStore';
 import { resolveGuestAcceptanceTask } from './guestIntakeCompletion';
 import { randomUUID } from 'node:crypto';
 import {
@@ -639,6 +644,10 @@ export async function reconcileEventOperation(
 export interface EventTransitionInput {
   date?: string;
   time?: string;
+  timeZone?: string;
+  durationMinutes?: number;
+  /** Internal explicit manual policy, persisted on the Event rather than its Template. */
+  manualPolicy?: EventPolicy;
   window?: string;
   title?: string;
   topic?: string;
@@ -693,7 +702,10 @@ async function runTransition(
 
   let command: EventCommand;
   if (transition === 'propose' || transition === 'reschedule') {
-    const { templateId, templateVersion, policy } = await resolveCardEventPolicy(client, card);
+    const { templateId, templateVersion, policy } = input.manualPolicy
+      ? { templateId: card.templateId, templateVersion: card.templateVersion || 1, policy: parseEventPolicy(input.manualPolicy) }
+      : await resolveCardEventPolicy(client, card);
+    if (input.durationMinutes !== undefined && input.durationMinutes !== policy.durationMinutes) throw new EventInputError('duration conflicts with the configured event policy');
     // Newly proposed events use the current label; existing records keep their saved policy until a transition.
     policy.titles.proposed = '[Proposed] ' + policy.titles.proposed.replace(/^(?:\(Proposal\)|\[Proposed\])\s*/i, '');
     if (input.suppressGuestNotifications) {
@@ -738,7 +750,14 @@ async function runTransition(
         ? input.documentUrl
         : cardGuestDocument(card) || current?.renderValues?.documentUrl || '';
 
-    const time = input.time;
+    let time = input.time;
+    let proposalDate = input.date || current?.date || card.anchorDate;
+    if (time && proposalDate && input.timeZone && input.timeZone !== policy.timeZone) {
+      let instant: ReturnType<typeof cardEventInterval>;
+      try { instant = cardEventInterval(`${proposalDate} ${time}`, policy.durationMinutes, input.timeZone); } catch (error) { throw new EventInputError((error as Error).message); }
+      const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: policy.timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(instant.startIso)).map(p => [p.type,p.value]));
+      proposalDate = `${p.year}-${p.month}-${p.day}`; time = `${p.hour}:${p.minute}`;
+    }
     const window =
       input.window !== undefined
         ? input.window
@@ -752,7 +771,7 @@ async function runTransition(
       expectedVersion: current?.version ?? 0,
       actor,
       now,
-      date: input.date || current?.date || card.anchorDate,
+      date: proposalDate,
       ...(time !== undefined ? { time } : {}),
       ...(window !== undefined ? { window } : {}),
       proposal: {
@@ -876,6 +895,32 @@ async function buildResult(
   };
 }
 
+async function explicitManualTransition(client: DynamoDBDocumentClient, transition: 'propose' | 'reschedule', targetId: string, input: EventTransitionInput) {
+  const { card, event: current } = await resolveEventTarget(client, targetId);
+  try { await resolveCardEventPolicy(client, card); return runTransition(client, transition, targetId, input); }
+  catch (error) {
+    if (!(error instanceof EventInputError && error.message.includes('does not declare an eventPolicy'))) throw error;
+  }
+  if (!current && (!input.date || !input.time || !input.guestEmails?.length)) throw new EventInputError('An unconfigured Card needs --date, --time, --duration and --guest-emails for an explicit Calendar-only blocker');
+  let policy: EventPolicy;
+  try { policy = current?.policy || manualCalendarPolicy(input.durationMinutes, input.timeZone || 'Europe/Berlin'); }
+  catch (error) { throw new EventInputError((error as Error).message); }
+  if (input.durationMinutes !== undefined && input.durationMinutes !== policy.durationMinutes) throw new EventInputError('duration conflicts with the saved event policy');
+  const date = input.date || current?.date;
+  const time = input.time || (input.window ? policy.windows[input.window] : current?.time);
+  if (!date || !time) throw new EventInputError('Supply --date and --time for this Calendar-only blocker');
+  const owner = `manual-${randomUUID()}`;
+  if (!await claimGuestSlotAllocator(client, owner)) throw new EventConflictError('Another event is reserving a time; retry shortly');
+  try {
+    const check = { cardId: card.id, type: 'manual-calendar-blocker', requestedDate: date, requestedTime: time, timeZone: input.timeZone || policy.timeZone } as GuestIntakeJob;
+    const slots = await guestEventSlots(client, check, policy, 1).catch(error => { throw new EventInputError((error as Error).message); });
+    if (!slots.length) throw new EventInputError('The requested Calendar interval is unavailable');
+    // Normalize the explicit instant to the persisted policy zone without moving it.
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: policy.timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(slots[0].startIso)).map(p => [p.type,p.value]));
+    return await runTransition(client, transition, targetId, { ...input, date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}`, window: undefined, timeZone: policy.timeZone, manualPolicy: policy });
+  } finally { await releaseAllocator(client, owner); }
+}
+
 export async function proposeEvent(
   client: DynamoDBDocumentClient,
   targetId: string,
@@ -888,7 +933,7 @@ export async function proposeEvent(
       `Card '${card.id}' already has an active event (${current.id}, status=${current.status}). Use reschedule to change its date/time.`,
     );
   }
-  return runTransition(client, 'propose', targetId, input);
+  return explicitManualTransition(client, 'propose', targetId, input);
 }
 
 export async function approveEvent(
@@ -908,9 +953,9 @@ export async function rescheduleEvent(
 ): Promise<EventLifecycleResult> {
   const { event: current } = await resolveEventTarget(client, targetId);
   if (!current || current.status === 'released') {
-    return runTransition(client, 'propose', targetId, input);
+    return explicitManualTransition(client, 'propose', targetId, input);
   }
-  return runTransition(client, 'reschedule', targetId, input);
+  return explicitManualTransition(client, 'reschedule', targetId, input);
 }
 
 export async function releaseEvent(

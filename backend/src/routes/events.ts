@@ -42,6 +42,11 @@ async function formatEventResponse(
 }
 
 function parseTransitionInput(body: Record<string, any>, actorId: string) {
+  if (body.durationMinutes !== undefined && (!Number.isInteger(body.durationMinutes) || body.durationMinutes < 1 || body.durationMinutes > 1440)) throw new EventInputError('durationMinutes must be an explicit integer from 1 to 1440');
+  if (body.timeZone !== undefined) {
+    if (typeof body.timeZone !== 'string') throw new EventInputError('timeZone must be an IANA time zone');
+    try { new Intl.DateTimeFormat('en', { timeZone: body.timeZone }); } catch { throw new EventInputError('timeZone must be an IANA time zone'); }
+  }
   const guestEmails = Array.isArray(body.guestEmails)
     ? body.guestEmails.map((e: unknown) => String(e).trim()).filter(Boolean)
     : typeof body.guestEmail === 'string' && body.guestEmail.trim()
@@ -50,6 +55,8 @@ function parseTransitionInput(body: Record<string, any>, actorId: string) {
         ? [body.guestRef.trim()]
         : undefined;
   return {
+    ...(body.durationMinutes !== undefined ? { durationMinutes: Number(body.durationMinutes) } : {}),
+    ...(typeof body.timeZone === 'string' ? { timeZone: body.timeZone } : {}),
     ...(typeof body.date === 'string' && body.date.trim() ? { date: body.date.trim() } : {}),
     ...(typeof body.time === 'string' && body.time.trim() ? { time: body.time.trim() } : {}),
     ...(typeof body.window === 'string' && body.window.trim() ? { window: body.window.trim() } : {}),

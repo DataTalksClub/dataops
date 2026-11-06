@@ -27,7 +27,7 @@ test('reject invalid dates, DST gaps/folds, invalid zone and duration', () => {
 });
 
 import { before, after, describe } from 'node:test';
-import { handler } from '../src/handler';
+import { invokeHistoricalHoldFixture as handler } from './helpers/historical-card-hold';
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTemplate } from '../src/db/templates';

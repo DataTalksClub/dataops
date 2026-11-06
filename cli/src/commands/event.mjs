@@ -12,16 +12,20 @@ the same lifecycle:
 
 Per-type behaviour (Google Calendar titles, duration, windows, Zoom location,
 guest invites, transition emails, and guest calendar-accept auto-approval)
-comes strictly from the Card Template's eventPolicy.
+comes from the Card Template's eventPolicy. For a Card without a policy,
+provide --date, --time, --duration and --guest-emails explicitly. DataOps
+checks availability and saves a Calendar-only blocker policy on that event
+using the standard join lead, required attendees and Zoom. No first-contact
+email or automatic intake is enabled. Later changes reuse that saved policy.
 
 Usage
   dataops event propose <card|hold|episode> --date YYYY-MM-DD [--time HH:MM | --window NAME]
       [--title T] [--topic TOPIC] [--guest-names "Name, Name"]
-      [--guest-emails "a@b.c,d@e.f"] [--document-url URL]
+      [--guest-emails "a@b.c,d@e.f"] [--document-url URL] [--duration MINUTES] [--time-zone IANA]
   dataops event approve <card|hold|episode> [--guest-emails "a@b.c"] [--document-url URL]
   dataops event reschedule <card|hold|episode> --date YYYY-MM-DD [--time HH:MM | --window NAME]
       [--title T] [--topic TOPIC] [--guest-names "Name, Name"]
-      [--guest-emails "a@b.c,d@e.f"] [--document-url URL]
+      [--guest-emails "a@b.c,d@e.f"] [--document-url URL] [--duration MINUTES] [--time-zone IANA]
   dataops event release <card|hold|episode>
   dataops event show <card|hold|episode>
   dataops event retry <card|hold|episode> [--force-email-retry]
@@ -71,6 +75,10 @@ function buildTransitionPayload(args, { requireDate = false } = {}) {
   if (time !== undefined && !/^([01]\d|2[0-3]):([0-5]\d)$/.test(time)) {
     throw new UsageError("--time must be HH:MM (24h).");
   }
+  const duration = args.duration === undefined ? undefined : Number(args.duration);
+  if (duration !== undefined && (typeof args.duration === 'boolean' || !Number.isInteger(duration) || duration < 1 || duration > 1440)) throw new UsageError('--duration must be a positive number of minutes (at most 1440).');
+  const timeZone = optionalString(args, 'timeZone');
+  if (timeZone) { try { new Intl.DateTimeFormat('en', { timeZone }); } catch { throw new UsageError('--time-zone must be an IANA time zone.'); } }
   const title = optionalString(args, "title");
   const topic = optionalString(args, "topic");
   const guestNames = optionalString(args, "guestNames") ?? optionalString(args, "guest-names");
@@ -79,6 +87,8 @@ function buildTransitionPayload(args, { requireDate = false } = {}) {
   const operationKey = optionalString(args, "operationKey") ?? optionalString(args, "operation-key");
 
   return {
+    ...(duration !== undefined ? { durationMinutes: duration } : {}),
+    ...(timeZone ? { timeZone } : {}),
     ...(date !== undefined ? { date } : {}),
     ...(time !== undefined ? { time } : {}),
     ...(window !== undefined ? { window } : {}),

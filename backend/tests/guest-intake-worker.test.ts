@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { PutCommand, UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { createTemplate } from '../src/db/templates';
+import { createTemplate, getTemplate } from '../src/db/templates';
 import { getCardConsistent, parkCard, resumeCard } from '../src/db/cards';
 import { getTaskConsistent, updateTask, listTasksByCardConsistent } from '../src/db/tasks';
 import { getGuestIntakeJob } from '../src/events/guestIntakeStore';
@@ -257,4 +257,39 @@ test('parked Cards pause quietly and resume the same job; archived Cards cancel 
   await updateTask(db, cancelledTask.id, { currentTask: cancelledTask, expectedVersion: cancelledTask.version, patch: { status: 'todo', skipReason: null } });
   await processGuestIntake(db, archived.card.guestIntake.jobId);
   assert.equal(mails, beforeMails); assert.equal((await getGuestIntakeJob(db, archived.card.guestIntake.jobId))!.status, 'cancelled');
+});
+
+test('an unconfigured other-type Card supports explicit Calendar-only blockers without enabling intake', async () => {
+  const template = await createTemplate(db, { name: 'Synthetic office hours', type: 'office-hours', taskDefinitions: [] });
+  const created = await invoke('POST', '/api/cards', { templateId: template.id, title: 'Synthetic Calendar-only event', anchorDate: '2030-12-19' });
+  assert.equal(created.statusCode, 201, created.body);
+  const target = JSON.parse(created.body).card;
+  assert.equal(target.guestIntake, undefined);
+  const beforeMails = mails;
+  const missing = await invoke('POST', `/api/events/${target.id}/propose`, { date: '2030-12-19', time: '17:00', guestEmails: ['synthetic-guest@example.test'] });
+  assert.equal(missing.statusCode, 422, missing.body); assert.match(JSON.parse(missing.body).error, /duration/);
+  const proposed = await invoke('POST', `/api/events/${target.id}/propose`, { date: '2030-12-19', time: '12:00', timeZone: 'America/New_York', durationMinutes: 45, guestEmails: ['synthetic-guest@example.test'] });
+  assert.equal(proposed.statusCode, 201);
+  const event = JSON.parse(proposed.body).event;
+  assert.equal(event.durationMinutes, 45); assert.equal(event.startIso, '2030-12-19T17:00:00.000Z');
+  assert.equal(event.policy.guests.leadMinutes, 5); assert.equal(event.policy.zoom.enabled, true);
+  assert.equal(event.operations[0].desired.emails.length, 0); assert.equal(mails, beforeMails);
+  assert.equal((await getTemplate(db, template.id))!.eventPolicy, undefined);
+  assert.equal((await getCardConsistent(db, target.id))!.guestIntake, undefined);
+  const moved = await invoke('POST', `/api/events/${target.id}/reschedule`, { date: '2030-12-20', time: '12:00' });
+  assert.equal(moved.statusCode, 200);
+  const newEvent = JSON.parse(moved.body).event;
+  assert.equal(newEvent.durationMinutes, 45); assert.deepEqual(newEvent.googleEventIds, event.googleEventIds);
+  google.setAttendeeResponse(newEvent.googleEventIds[HOLD_ORGANIZER], 'synthetic-guest@example.test', 'accepted');
+  await pollGuestIntakeAcceptances(db);
+  assert.equal((await getEventRecord(db, event.id))!.status, 'approved'); assert.equal(mails, beforeMails);
+  const configured = await card('webinar', { skipEmail: true });
+  const conflict = await invoke('POST', `/api/events/${configured.card.id}/propose`, { date: '2030-12-20', time: '12:30', durationMinutes: 45, guestEmails: ['synthetic-guest@example.test'] });
+  assert.equal(conflict.statusCode, 422, conflict.body); assert.match(JSON.parse(conflict.body).error, /duration conflicts/);
+});
+
+test('new Card-linked blockers cannot be created through the private legacy hold endpoint', async () => {
+  const created = await card('webinar', { skipEmail: true });
+  const result = await invoke('POST', '/api/calendar-holds', { cardId: created.card.id, date: '2030-12-23', title: 'Synthetic blocker', topic: 'Synthetic topic', guestRef: 'synthetic-guest@example.test' });
+  assert.equal(result.statusCode, 422); assert.equal(JSON.parse(result.body).code, 'use_card_event_proposal');
 });
