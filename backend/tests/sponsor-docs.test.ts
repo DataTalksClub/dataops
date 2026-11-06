@@ -1159,6 +1159,8 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
 
   it('switches a webinar form to the workshop type, keeping content and relinking the card', async () => {
     const card = await createCard(client, { ...templateLink(), title: '[Webinar] Synthetic switch', people: ['Test Speaker'] });
+    const hold = buildHold({ title: 'Synthetic switch', topic: 'Synthetic topic', date: '2030-12-02', window: 'midday', cardId: card.id }, 'test');
+    await putCalendarHold(client, hold);
     const { doc } = JSON.parse((await staffReq('POST', '/api/sponsor-docs', { cardId: card.id })).body);
     await staffReq('PUT', `/api/sponsor-docs/${doc.id}`, { content: { talkTitle: 'Kept', bio: 'Bio. https://x.test/me' } });
     const switched = await staffReq('PUT', `/api/sponsor-docs/${doc.id}`, { template: 'workshop', content: { bio: 'Bio.', twitterUrl: 'https://x.test/me' } });
@@ -1167,6 +1169,12 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.equal(next.template, 'workshop');
     assert.equal(next.linkType, 'Workshop document');
     assert.deepEqual([next.content.talkTitle, next.content.bio, next.content.twitterUrl], ['Kept', 'Bio.', 'https://x.test/me']);
+    assert.equal(next.eventMetadata.startIso, hold.startIso);
+    assert.equal(next.content.proposedSlotLabel, next.eventMetadata.label);
+    const stored = (await client.send(new GetCommand({ TableName: TABLE_ARTIFACTS, Key: sponsorDocKey(doc.id) }))).Item!;
+    assert.equal(Object.hasOwn(stored.content, 'proposedSlotLabel'), false, 'a type switch must not turn a live event projection into authored content');
+    const derivedEdit = await staffReq('PUT', `/api/sponsor-docs/${doc.id}`, { content: { proposedSlotLabel: 'Invented time' } });
+    assert.equal(derivedEdit.statusCode, 422, 'an explicit derived-field edit remains forbidden');
     const reloaded = JSON.parse((await staffReq('GET', `/api/cards/${card.id}`)).body).card;
     assert.ok(reloaded.cardLinks.some((link: { name: string; url: string }) => link.name === 'Workshop document' && link.url === next.docUrl));
     assert.ok(!reloaded.cardLinks.some((link: { url: string }) => link.url.includes('/webinar-docs/')));
