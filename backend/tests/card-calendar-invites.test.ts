@@ -1,5 +1,6 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert';
+import { createHash } from 'node:crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { handler } from '../src/handler';
@@ -70,6 +71,32 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
   }
   const [PERSONAL] = DEFAULT_HOLD_GOOGLE_CALENDARS;
   const DTC = PUBLIC_DTC_EVENTS_CALENDAR;
+
+  it('adds guests only to an owned private organizer invitation, keeping public copies untouched', async () => {
+    const card = await createCard('Private speaker invitation');
+    const eventKey = `card:${card.id}`;
+    const organizer = 'orin@datatalks.club';
+    await linkInvites(card.id, [{ eventId: 'private-event', calendar: organizer }], {
+      eventKey, googleEventIds: { [organizer]: 'private-event' }, sync: 'synced',
+      startIso: '2026-11-09T16:00:00Z', endIso: '2026-11-09T17:00:00Z',
+      timeZone: 'Europe/Berlin', durationMinutes: 60, syncStartedAt: '2026-11-01T00:00:00Z',
+    });
+    const google = holdGoogleProvider();
+    google.events.set(organizer, new Map([['private-event', {
+      id: 'private-event', etag: '"one"', status: 'confirmed', organizer: { email: organizer },
+      iCalUID: `${createHash('sha256').update(eventKey).digest('hex')}@google.com`,
+      location: 'https://zoom.us/j/123456789', attendees: [{ email: 'original@example.test', responseStatus: 'accepted' }],
+    }]]));
+    setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
+    try {
+      const result = await invoke('PATCH', `/api/cards/${card.id}/calendar-invites`, { guestEmails: ['speaker@example.test'] });
+      assert.equal(result.statusCode, 200, result.body);
+      assert.deepEqual(parse(result).added, ['speaker@example.test']);
+      assert.deepEqual((await getCardConsistent(client, card.id))!.guestEmails, ['speaker@example.test']);
+      assert.ok(google.calls.filter(call => call.method === 'PATCH').every(call => decodeURIComponent(call.url.pathname).includes(`/calendars/${organizer}/`)));
+      assert.equal((await invoke('PATCH', `/api/cards/${card.id}/calendar-invites`, { guestEmails: [DTC] })).statusCode, 400);
+    } finally { setCalendarHoldGoogleDepsForTests({}); }
+  });
 
   describe('list, unlink and stale check', () => {
     it('lists existing invites and adopts a live Google event idempotently', async () => {

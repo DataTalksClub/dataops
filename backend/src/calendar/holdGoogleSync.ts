@@ -537,6 +537,43 @@ export async function fetchGoogleEvent(
   }
 }
 
+/** Add speakers only to the existing private organizer invitation. Never create
+ * an event or write a public/personal calendar copy through this operation. */
+export async function addPrivateInviteGuests(
+  eventKey: string, eventId: string, guests: string[], deps: HoldGoogleDeps,
+): Promise<{ added: string[]; attendees: string[] }> {
+  if (guests.some(email => email.toLowerCase() === PUBLIC_DTC_EVENTS_CALENDAR)) throw new Error('The public events calendar cannot be invited as a guest.');
+  const resolved = await accessToken(deps);
+  if ('problem' in resolved) throw new Error(resolved.problem);
+  const headers = { Authorization: `Bearer ${resolved.token}`, 'Content-Type': 'application/json' };
+  const request = async (url: string, init: RequestInit = {}) => {
+    const response = await googleFetch(deps, url, { ...init, headers: { ...headers, ...init.headers }, signal: AbortSignal.timeout(15000) });
+    if (!response.ok) throw new Error(googleErrorDetail(response.status, await readBodyText(response, GOOGLE_ERROR_BODY_LIMIT)));
+    return response.json() as Promise<any>;
+  };
+  const account = await request(`${GOOGLE}/calendars/primary`);
+  if (account.id?.toLowerCase() !== HOLD_ORGANIZER) throw new Error('Private invitations require the Orin Google Calendar connection.');
+  const url = `${eventsUrl(HOLD_ORGANIZER)}/${encodeURIComponent(eventId)}`;
+  const current = await request(url);
+  const uid = `${createHash('sha256').update(eventKey).digest('hex')}@google.com`;
+  if (current.id !== eventId || current.status === 'cancelled' || current.organizer?.email?.toLowerCase() !== HOLD_ORGANIZER
+    || current.iCalUID !== uid || !/^https:\/\/[^/]*zoom\.us\//i.test(current.location || '')
+    || !Array.isArray(current.attendees) || !current.attendees.length
+    || current.attendees.some((a: any) => a.email?.toLowerCase() === PUBLIC_DTC_EVENTS_CALENDAR)) {
+    throw new Error('The Card must own an existing private Zoom invitation; public or silent calendar entries cannot receive guests.');
+  }
+  const existing = new Set<string>(current.attendees.map((a: any) => String(a.email || '').toLowerCase()));
+  const added = guests.filter(email => !existing.has(email));
+  if (added.length) {
+    if (!current.etag) throw new Error('Google did not return an event revision; cannot safely update attendees.');
+    await request(`${url}?sendUpdates=all`, {
+      method: 'PATCH', headers: { 'If-Match': current.etag },
+      body: JSON.stringify({ attendees: [...current.attendees, ...added.map(email => ({ email }))] }),
+    });
+  }
+  return { added, attendees: [...existing, ...added] };
+}
+
 /**
  * Which of these calendar events Google no longer has: 404/410, or an event
  * whose status is `cancelled`. Read-only; nothing is ever deleted here.

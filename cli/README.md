@@ -82,6 +82,19 @@ subcommands, flags, and examples.
 | `login`, `logout`, `whoami` | credentials |
 | `agent-guide` | the workflow guide for agents ([skill/SKILL.md](skill/SKILL.md)) |
 
+## Add speakers to an existing private invitation
+
+```bash
+dataops cards invite guests CARD_ID --guests speaker@example.test,colleague@example.test --json
+```
+
+This adds attendees to the Card's existing private Zoom invitation and sends
+Google Calendar updates. Existing attendees, responses, time and meeting details
+are retained. Repeating the command does not send another update when everyone
+is already invited. Public listings and silent Luma calendar entries are rejected;
+the command does not create or convert calendar events. Use `cards invite list`
+and the calendar readback to verify the invitation afterward.
+
 ## Reconcile duplicate ledger rows
 
 Voiding and restoring a ledger row are admin-only, require a period and reason,

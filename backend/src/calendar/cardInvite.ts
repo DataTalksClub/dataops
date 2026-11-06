@@ -81,7 +81,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export function parseCardGuests(raw: unknown): string[] {
   if (!Array.isArray(raw) || !raw.length || raw.length > 20) throw new Error('guestEmails must contain 1 to 20 guest email addresses');
   const emails = [...new Set(raw.map(email => String(email).trim().toLowerCase()))];
-  if (emails.some(email => !EMAIL.test(email) || HOLD_ATTENDEE_DENY_LIST.includes(email))) throw new Error('Every guest needs a permitted email address');
+  if (emails.some(email => !EMAIL.test(email) || HOLD_ATTENDEE_DENY_LIST.includes(email) || email === PUBLIC_DTC_EVENTS_CALENDAR)) throw new Error('Every guest needs a permitted email address');
   return emails;
 }
 
