@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { UsageError } from "../errors.mjs";
+import { ApiError } from "../api.mjs";
 import { berlinToday, enc, fields, integer, isoDate, jsonData, optionalString, positional, required, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { classifyFinance, recordInvoice, correctInvoice, addEvidence, setWaiting, uploadInvoiceDocument } from "./sponsorFinance.mjs";
@@ -27,7 +28,7 @@ Usage
                                                       kind: ${KINDS.join(", ")}; deliverables filter by Airtable Content source
   dataops sponsors show <kind> <id>
   dataops sponsors create <kind> --data '{...}'        Fields as the web form sends them
-  dataops sponsors create leads --data '{"source":"newsletter","url":"https://…","summary":"…","observedAt":"ISO"}'
+  dataops sponsors create leads --data '{"source":"newsletter","url":"https://â€¦","summary":"â€¦","observedAt":"ISO"}'
       Record one outbound lead sighting. source: newsletter|social|influencer|paid;
       optional organizationId links a known company. Never creates a deal:
       a deal only exists once a sale closes.
@@ -303,7 +304,7 @@ export async function cold(args, io) {
     ["NAME", (item) => item.name],
     ["REL", (item) => item.relationship],
     ["QUIET", (item) => item.daysSince === null ? "never" : `${item.daysSince}d`],
-    ["LAST", (item) => String(item.lastInboundAt || item.lastOutboundAt || "—").slice(0, 10)],
+    ["LAST", (item) => String(item.lastInboundAt || item.lastOutboundAt || "â€”").slice(0, 10)],
     ["LIMIT", (item) => `${item.threshold}d`],
   ], "No cold contacts. Everyone has been talked to recently.");
   if (reminded) {
@@ -431,9 +432,22 @@ export async function followUp(args, io) {
   if (args.task) body.existingTaskId = String(args.task);
   if (args.reviewExisting) body.reviewedOpenTasks = (finance.paymentFollowUp?.existingTasks || [])
     .map(({ id, version }) => ({ id, version })).sort((a, b) => a.id.localeCompare(b.id));
-  const result = await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/follow-up`, body, {
-    headers: { "Idempotency-Key": randomUUID() },
-  });
+  let result;
+  try {
+    result = await api.post(`/api/sponsor-crm/deals/${enc(id)}/finance/follow-up`, body, {
+      headers: { "Idempotency-Key": randomUUID() },
+    });
+  } catch (error) {
+    // The finance endpoint returns the existing Task on a duplicate conflict;
+    // rereading versions cannot make a second open follow-up valid.
+    if (error instanceof ApiError && error.status === 409 && typeof error.body?.taskId === "string" && error.body.taskId) {
+      throw new ApiError(error.status, {
+        ...error.body,
+        error: `An open payment follow-up Task already exists for this deal: ${error.body.taskId}. Work it in the task pool: dataops tasks show ${error.body.taskId}`,
+      }, error.url);
+    }
+    throw error;
+  }
   if (!args.json) {
     const task = result.task || {};
     io.print(`${args.task ? "Linked existing" : "Created"} payment follow-up Task ${task.id} for deal ${id} (due ${task.date}).`);
