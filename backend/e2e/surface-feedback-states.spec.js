@@ -259,11 +259,12 @@ test.describe('issue 204 owning-surface feedback', () => {
 
     await page.getByRole('button', { name: 'Create card' }).click();
     const cardForm = page.locator('.quick-form');
-    await expect(cardForm.locator('select:not([disabled])')).toBeVisible();
-    const templateOption = cardForm.locator('select option:not([value=""])').first();
-    await expect(templateOption).toHaveCount(1);
-    await cardForm.locator('select').selectOption({ index: 1 });
-    const cardTitle = cardForm.locator('input[type="text"]');
+    const templateSelect = cardForm.getByRole('combobox', { name: 'Template', exact: true });
+    await expect(templateSelect).toBeVisible();
+    await expect(templateSelect).toBeEnabled();
+    const selectedTemplate = await templateSelect.selectOption({ index: 1 });
+    expect(selectedTemplate).toHaveLength(1);
+    const cardTitle = cardForm.getByRole('textbox', { name: /^Card title(?: \(optional\))?$/ });
     await cardTitle.fill('Synthetic public-safe card');
     await setFaults(context.request, [
       { method: 'POST', path: '/api/cards', status: 409, remaining: 2 },

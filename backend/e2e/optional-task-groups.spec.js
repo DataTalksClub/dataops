@@ -36,7 +36,7 @@ for (const includeOptional of [false, true]) {
       await page.goto(`/templates?templateId=${encodeURIComponent(template.id)}`);
       await page.locator('.runtime-template-projection').getByRole('button', { name: 'Start card' }).click();
       const form = page.locator('.quick-form-overlay');
-      await expect(form.locator('.quick-form-select')).toHaveValue(template.id);
+      await expect(form.getByRole('combobox', { name: 'Template', exact: true })).toHaveValue(template.id);
       const checkbox = form.getByRole('checkbox', { name: 'Include secondary tasks' });
       await expect(checkbox).not.toBeChecked();
       await expect(form.getByRole('checkbox')).toHaveCount(1);
