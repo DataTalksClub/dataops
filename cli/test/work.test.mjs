@@ -682,6 +682,24 @@ describe("agent guide", () => {
     assert.match(io.text(), /DATAOPS_CAPABILITIES/);
     assert.match(io.text(), /leave it for another agent/);
   });
+
+  test("the shipped guide puts the attached SOP first and uses creation-driven guest intake", async () => {
+    const io = captureIo();
+    assert.equal(await run(["agent-guide"], io), 0);
+    const guide = io.text();
+    const workflow = guide.slice(guide.indexOf('## Workflow: "here is a task, do it"'), guide.indexOf('## Workflow: complete a Task with proof'));
+    const taskRead = workflow.indexOf("dataops tasks show <task-id>");
+    const attachedRead = workflow.indexOf("dataops kb show <instructionDocId>");
+    const related = workflow.indexOf("dataops kb related <task-id|card-id>");
+    assert.ok(taskRead >= 0 && taskRead < attachedRead && attachedRead < related, "Task read and attached SOP precede supplemental discovery");
+    assert.match(guide, /dataops cards create --template podcast --guest-email/);
+    assert.match(guide, /\*\*podcast, webinar and workshop\*\*/);
+    assert.match(guide, /`\[Proposed\]` calendar invite/);
+    assert.match(guide, /--skip-email/);
+    for (const mode of ["--preview", "--send", "--retry-pre-send"]) assert.ok(guide.includes(`dataops cards invitation CARD_ID ${mode}`));
+    assert.ok(guide.includes("--time HH:MM --duration MINUTES --guest-emails"));
+    assert.doesNotMatch(guide, /Send the printed email from Orin|never mails the guest automatically/);
+  });
 });
 
 describe("team default assignee", () => {
