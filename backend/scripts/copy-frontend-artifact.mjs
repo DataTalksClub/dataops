@@ -1,5 +1,6 @@
 import { copyFileSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { readFrontendAssetManifest, resolveManifestFile } from './frontend-assets.mjs';
 
@@ -37,7 +38,7 @@ export function copyFrontendArtifact({ sourceRoot, artifactRoot }) {
   return manifest.files;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const files = copyFrontendArtifact(parseArguments(process.argv.slice(2)));
     console.log(`Copied ${files.length} canonical frontend assets.`);
