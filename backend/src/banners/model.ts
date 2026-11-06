@@ -29,11 +29,11 @@ export function parseBannerInput(value: unknown): BannerInput {
   const data = value as Partial<BannerInput> | null;
   if (!data || !['workshop', 'webinar', 'podcast'].includes(data.eventType || '')
     || !['landscape', 'square'].includes(data.layout || '')
-    || !Array.isArray(data.speakers) || data.speakers.length < 1 || data.speakers.length > 2
+    || !Array.isArray(data.speakers) || data.speakers.length < 1 || data.speakers.length > 3
     || data.speakers.some(s => !s || !/^[a-zA-Z0-9-]{1,100}$/.test(s.personId) || !/^[a-zA-Z0-9-]{1,100}$/.test(s.portraitFileId))
     || new Set(data.speakers.map(s => s.personId)).size !== data.speakers.length
     || typeof data.revision !== 'string' || !/^[a-zA-Z0-9._-]{1,100}$/.test(data.revision)) {
-    throw new BannerInputError('Choose workshop|webinar|podcast, landscape|square, one or two distinct Card people with portrait file IDs, and a stable revision.');
+    throw new BannerInputError('Choose workshop|webinar|podcast, landscape|square, one to three distinct Card people with portrait file IDs, and a stable revision.');
   }
   if ((data.sponsorLogoFileId !== undefined || data.sponsorTreatment !== undefined)
     && (typeof data.sponsorLogoFileId !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(data.sponsorLogoFileId) || data.sponsorTreatment !== 'approved-logo')) {

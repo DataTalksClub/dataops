@@ -30,7 +30,7 @@ before(async () => {
   client = await getClient(await startLocal()); await createTables(client);
   Object.assign(process.env, { NODE_ENV: 'test', SKIP_AUTH: 'true', TASK_FILES_BUCKET: 'synthetic-files', KNOWLEDGE_BUCKET: 'synthetic-knowledge', BANNER_TEMPLATE_BUNDLE_KEY: 'templates/immutable.json', BANNER_RENDERER_ARN: 'synthetic-renderer', BANNER_QUEUE_URL: 'synthetic-queue' });
   const sponsored = { ...template, id: 'synthetic-approved-logo', sponsorTreatment: 'approved-logo', html: `${template.html}<img class="sponsor" src="{{sponsorLogo}}">` };
-  const bundle = Buffer.from(JSON.stringify({ schema: 'dataops.banner-templates.v1', sourceRevision: 'synthetic-commit', templates: [template, sponsored] }));
+  const bundle = Buffer.from(JSON.stringify({ schema: 'dataops.banner-templates.v1', sourceRevision: 'synthetic-commit', templates: [template, sponsored, { ...template, id: "synthetic-three", speakerCount: 3, html: template.html + "<p>{{speaker2Name}}</p><img src=\"{{speaker2Portrait}}\"><p>{{speaker3Name}}</p><img src=\"{{speaker3Portrait}}\">" }] }));
   const bundleKey = `banner-templates/${checksum(bundle).slice(7)}/bundle.json`;
   process.env.BANNER_TEMPLATE_BUNDLE_KEY = bundleKey;
   objects.set(bundleKey, bundle);
@@ -145,4 +145,25 @@ test('rejects a known event-type contradiction without guessing from title or co
   await assert.rejects(requestBanner(client, 'classified', { ...input, eventType: 'webinar' }, 'operator'), /contradicts.*workshop/);
   await createCard(client, { id: 'ambiguous', title: 'Workshop mentioned in a title', tags: ['Workshop', 'Webinar'], ...templateLink(), selectedOptionalGroups: [] });
   await assert.rejects(requestBanner(client, 'ambiguous', { ...input, eventType: 'webinar' }, 'operator'), /speaker must be linked/);
+});
+
+
+test('three speakers pass Card ownership, template composition and durable artifact provenance', async () => {
+  const selections = [1, 2, 3].map(n => ({ personId: `panelist-${n}`, portraitFileId: `panelist-photo-${n}` }));
+  await createCard(client, { id: 'panel-card', title: 'Synthetic panel', people: selections.map(s => s.personId), ...templateLink(), selectedOptionalGroups: [] });
+  for (const [i, selection] of selections.entries()) {
+    await client.send(new PutCommand({ TableName: TABLE_PEOPLE, Item: { PK: `PERSON#${selection.personId}`, SK: `PERSON#${selection.personId}`, id: selection.personId, name: `Panelist ${i + 1}`, version: 1 } }));
+    await client.send(new PutCommand({ TableName: TABLE_FILES, Item: { PK: `FILE#${selection.portraitFileId}`, SK: `FILE#${selection.portraitFileId}`, id: selection.portraitFileId, cardId: 'panel-card', taskId: 'panel-task', category: 'image', checksum: checksum(png), storageProvider: 's3', storagePath: 'tasks/task/portrait.png', storageUri: 's3://synthetic-files/tasks/task/portrait.png' } }));
+  }
+  const panel = parseBannerInput({ ...input, speakers: selections, revision: 'panel' });
+  const job = await requestBanner(client, 'panel-card', panel, 'operator');
+  await renderBannerJob(client, job.id);
+  const completed = (await getBannerJob(client, job.id))!;
+  assert.equal(completed.state, 'succeeded', completed.error);
+  const artifact = (await getArtifact(client, completed.artifactId!))!;
+  assert.equal(artifact.metadata?.templateId, 'synthetic-three');
+  assert.equal((artifact.metadata?.speakers as unknown[]).length, 3);
+  const renderedInput = objects.get(`cards/panel-card/banners/${job.id}/input.html`)!.toString();
+  for (const n of [1, 2, 3]) assert.match(renderedInput, new RegExp(`Panelist ${n}`));
+  assert.throws(() => parseBannerInput({ ...panel, speakers: [...selections, { personId: 'fourth', portraitFileId: 'fourth-photo' }] }));
 });
