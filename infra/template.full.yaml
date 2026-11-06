@@ -1388,19 +1388,6 @@ Resources:
             FilterCriteria:
               Filters:
                 - Pattern: '{"eventName":["INSERT"],"dynamodb":{"NewImage":{"guestIntake":{"M":{"jobId":{"S":[{"exists":true}]}}}}}}'
-        GuestEventIntakeResume:
-          Type: Schedule
-          Properties:
-            Schedule: rate(2 minutes)
-            Enabled: true
-            Input: '{"source":"aws.events","detail":{"dataopsAction":"guest-event-intake-resume"}}'
-        GuestEventAcceptancePoll:
-          Type: Schedule
-          Properties:
-            Schedule: rate(2 minutes)
-            Enabled: true
-            Input: '{"source":"aws.events","detail":{"dataopsAction":"guest-event-acceptance-poll"}}'
-
         CardBannerJobs:
           Type: SQS
           Properties:
@@ -1450,6 +1437,44 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${McpFunction}
       RetentionInDays: 30
+
+  BackendFunctionGuestEventIntakeResume:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Resume safe pending guest invitations every two minutes.
+      ScheduleExpression: rate(2 minutes)
+      State: ENABLED
+      Targets:
+        - Arn: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${BackendTargetFunctionName}
+          Id: BackendFunctionGuestEventIntakeResumeLambdaTarget
+          Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"guest-event-intake-resume"}}'
+
+  BackendFunctionGuestEventIntakeResumePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BackendTargetFunctionName
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt BackendFunctionGuestEventIntakeResume.Arn
+
+  BackendFunctionGuestEventAcceptancePoll:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Apply guest time choices and poll new proposed guest invitations every two minutes.
+      ScheduleExpression: rate(2 minutes)
+      State: ENABLED
+      Targets:
+        - Arn: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${BackendTargetFunctionName}
+          Id: BackendFunctionGuestEventAcceptancePollLambdaTarget
+          Input: '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"guest-event-acceptance-poll"}}'
+
+  BackendFunctionGuestEventAcceptancePollPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BackendTargetFunctionName
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt BackendFunctionGuestEventAcceptancePoll.Arn
 
   BackendFunctionDailyBackendCron:
     Type: AWS::Events::Rule

@@ -26,24 +26,36 @@ async function projectJob(db: DynamoDBDocumentClient, job: GuestIntakeJob) {
     ...(job.guestEmail ? { recipient: job.guestEmail } : {}), ...(job.messageId ? { messageId: job.messageId } : {}), ...(job.sentAt ? { sentAt: job.sentAt } : {}), ...(job.startIso ? { startIso: job.startIso } : {}), ...(job.error ? { error: job.error } : {}) } }));
 }
 async function recordFailure(db: DynamoDBDocumentClient, job: GuestIntakeJob, error: unknown) {
+  const previousReportedError = job.lastReportedError;
   job.status = 'failed'; job.error = (error as Error).message || 'Invitation preparation failed';
   const task = await getTaskConsistent(db, job.taskId);
   // Any durable dispatch claim without proven pre-provider failure needs reconciliation, never a blind resend.
   const prior = task?.podcastFirstContact;
   job.retryable = !(prior && prior.state !== 'sent' && !(prior.state === 'deferred' && provenPreSendFailure(prior.delivery)));
+  job.lastReportedError = job.error;
   await saveGuestIntakeJob(db, job);
   await projectJob(db, job);
-  if (task) await updateTask(db, task.id, { currentTask: task, expectedVersion: task.version, patch: { comment: `${job.error}. ${job.retryable ? 'DataOps will resume this same invitation automatically after the issue is fixed.' : 'Delivery outcome requires reconciliation before any retry.'}` }, actorId: job.actorId, triggerKind: 'guest-intake-failed' });
+  if (task && previousReportedError !== job.error) await updateTask(db, task.id, { currentTask: task, expectedVersion: task.version, patch: { comment: `${job.error}. ${job.retryable ? 'DataOps will resume this same invitation automatically after the issue is fixed.' : 'Delivery outcome requires reconciliation before any retry.'}` }, actorId: job.actorId, triggerKind: 'guest-intake-failed' });
 }
 export async function processGuestIntake(db: DynamoDBDocumentClient, id: string): Promise<void> {
   let job = await getGuestIntakeJob(db, id);
-  if (!job || !APPROVED_GUEST_EVENT_TYPES.has(job.type) || ['sent', 'skipped', 'contact-pending'].includes(job.status) || job.retryable === false) return;
+  if (!job || !APPROVED_GUEST_EVENT_TYPES.has(job.type) || ['sent', 'skipped', 'contact-pending', 'cancelled'].includes(job.status) || job.retryable === false) return;
   if (!await claimGuestIntakeJob(db, job)) throw new Error('Invitation is already being prepared; retry after its lease');
   job = (await getGuestIntakeJob(db, id))!;
   let allocator = false;
   try {
     const card = await getCardConsistent(db, job.cardId);
-    if (!card || card.status !== 'active') throw new Error('An active guest Card is required');
+    if (!card || card.status === 'archived') {
+      job.status = 'cancelled'; job.retryable = false; job.error = 'Invitation cancelled because its Card was archived or removed';
+      await saveGuestIntakeJob(db, job); if (card) await projectJob(db, job); return;
+    }
+    if (card.status === 'parked') {
+      if (job.status !== 'paused') {
+        job.status = 'paused'; job.error = 'Invitation paused while its Card is parked';
+        await saveGuestIntakeJob(db, job); await projectJob(db, job);
+      }
+      return;
+    }
     if (!job.guestEmail || !job.policy?.enabled) throw new Error('Guest email and enabled event intake policy are required');
     job.status = 'preparing'; delete job.error;
     await saveGuestIntakeJob(db, job); await projectJob(db, job);
@@ -76,7 +88,10 @@ export async function processGuestIntake(db: DynamoDBDocumentClient, id: string)
       if (result.sync.state !== 'synced') throw new Error(`Calendar invitation is pending: ${result.sync.reason || 'provider unavailable'}`);
       event = result.event;
     } else {
-      if (event.status !== 'proposed' && event.status !== 'approved') throw new Error('The linked guest event was released; reconcile it before sending');
+      if (event.status !== 'proposed' && event.status !== 'approved') {
+        job.status = 'cancelled'; job.retryable = false; job.error = 'Invitation cancelled because its linked event was released';
+        await saveGuestIntakeJob(db, job); await projectJob(db, job); return;
+      }
       const op = event.operations.at(-1);
       if (op && op.state !== 'complete') {
         const result = await retryEventOperation(db, card.id, { operationKey: op.key, actor: job.actorId });
