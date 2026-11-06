@@ -49,11 +49,9 @@ async function fixtures(page, conflict = false) {
     }
     if (url.searchParams.has('path')) return route.fulfill({ json: {
       path: url.searchParams.get('path'), content: state.content, revision: state.revision, updated: 1,
-      parsed: { frontmatter: { title: 'Synthetic history' }, sections: [] },
     } });
     return route.fulfill({ json: { documents: [{ path: docPath, title: 'Synthetic history', doc_type: 'reference', systems: [], tags: [] }] } });
   });
-  await page.route('**/parse', (route) => route.fulfill({ json: { parsed: { frontmatter: { title: 'Synthetic history' }, sections: [] } } }));
   await page.route(/\/knowledge\/(publication|status|history|version|restore|download)(\?|$)/, async (route) => {
     const req = route.request(), url = new URL(req.url());
     if (url.pathname === '/knowledge/publication') return route.fulfill({ json: { revision: state.revision } });

@@ -36,45 +36,30 @@ function syntheticSop(title, summary, step) {
     '---',
     `title: "${title}"`,
     'doc_type: sop',
-    'schema_version: 1',
     'systems: [browser]',
     'tags: [slice-five]',
     '---',
     '',
     `# ${title}`,
     '',
-    '<!-- sop-section-start: summary -->',
     '## Summary',
     summary,
-    '<!-- sop-section-end -->',
     '',
-    '<!-- sop-section-start: prerequisites -->',
     '## Prerequisites',
     'Use only the synthetic browser fixture.',
-    '<!-- sop-section-end -->',
     '',
-    '<!-- sop-section-start: procedure -->',
     '## Procedure',
     '',
-    '<!-- sop-step-start id=1 action="verify" -->',
     `1.  ${step}`,
-    '<!-- sop-step-end -->',
-    '<!-- sop-section-end -->',
     '',
-    '<!-- sop-section-start: validation -->',
     '## Validation',
     'The visible editor state names the current synthetic document.',
-    '<!-- sop-section-end -->',
     '',
-    '<!-- sop-section-start: troubleshooting -->',
     '## Troubleshooting',
     'Retry the synthetic save if the route is temporarily unavailable.',
-    '<!-- sop-section-end -->',
     '',
-    '<!-- sop-section-start: references -->',
     '## References',
     'No external references are used.',
-    '<!-- sop-section-end -->',
     '',
   ].join('\n');
 }
@@ -211,10 +196,10 @@ test.describe('issue 204 slice 5 editor feedback and race evidence', () => {
     const saveButton = page.locator('#editor-save-button');
     const discardButton = page.locator('#editor-discard-button');
     const summaryBody = page.locator(
-      '.block-section[data-section="summary"] .block-section-body',
-    );
+      '#rendered-view .notion-block-paragraph .notion-text-content',
+    ).first();
     const stepBody = page.locator(
-      '.block-section[data-section="procedure"] .block-step[data-step-id="1"] .block-step-body',
+      '#rendered-view .notion-block-numbered .notion-list-item-text',
     );
 
     await expect(inlineStatus).toBeHidden();
@@ -223,7 +208,7 @@ test.describe('issue 204 slice 5 editor feedback and race evidence', () => {
 
     // Blocks are always editable: there is no edit mode to enter or commit.
     // Typing autosaves a local draft, and Escape only leaves the block.
-    const summaryText = summaryBody.locator('.notion-text-content').first();
+    const summaryText = summaryBody;
     await expect(summaryText).toHaveAttribute('contenteditable', 'true');
     await summaryText.click();
     await expect(summaryText).toBeFocused();
@@ -326,7 +311,7 @@ test.describe('issue 204 slice 5 editor feedback and race evidence', () => {
     await openFromProcesses(page, '/testing/slice5-race-old.md', RACE_OLD_TITLE);
 
     const oldStepBody = page.locator(
-      '.block-section[data-section="procedure"] .block-step[data-step-id="1"] .block-step-body',
+      '#rendered-view .notion-block-numbered .notion-list-item-text',
     );
     await oldStepBody.click();
     await oldStepBody.fill('A stale save must not repaint the newer route.');
