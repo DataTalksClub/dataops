@@ -11,7 +11,6 @@ import { createBlockEditor } from "./block-editor.js";
 import { makeBlock, parseMarkdownBlocks, serializeBlocksToMarkdown } from "./block-model.js";
 import { attachEditable, focusEditable, neighbourEditable } from "./editable.js";
 import { installSelectionToolbar } from "./selection-toolbar.js";
-import { createCodeViewSurface } from "../knowledge/code-view.js";
 import { createTemplateViewSurface } from "../knowledge/template-view.js";
 
 export function createDocumentRenderer(context, services) {
@@ -19,7 +18,7 @@ export function createDocumentRenderer(context, services) {
     apiUrl, basename, documentState, documentTitle, editor, editorView,
     fetchBacklinksForCurrentDoc, renderLoomBlock,
     renderRelatedDocsBlock, renderWarningsBlock, renderedView, request,
-    setRouteTitle, viewToggleButton,
+    setRouteTitle,
   } = context;
   const {
     fileToBase64, openLightbox, recordPublication, renderMarkdown, storeDraft, stripFrontmatter,
@@ -138,140 +137,19 @@ export function createDocumentRenderer(context, services) {
     "sop", "checklist", "template", "reference", "playbook", "prompt",
   ];
 
-  const codeViewSurface = createCodeViewSurface({});
   const templateViewSurface = createTemplateViewSurface({ clipboard: context.clipboard });
-  let codeViewRequest = 0;
-
-  async function fetchCodeViewPayload(codeViewPath) {
-    const url = apiUrl("/docs");
-    url.searchParams.set("path", codeViewPath);
-    return request(url);
-  }
 
   async function toggleViewMode() {
-    if (!documentState.currentDoc) return;
-    if (documentState.currentDoc.docType === "code-view" && documentState.currentDoc.sopDoc?.path) {
-      return context.openDocument(documentState.currentDoc.sopDoc.path);
-    }
-    if (editorView.dataset.mode === "code") {
-      return enterRenderedMode();
-    }
-    return enterCodeViewMode();
+    return enterRenderedMode();
   }
 
-  /** Show the linked SOP's alternate code view (or the open code-view doc). */
-  async function enterCodeViewMode() {
-    const doc = documentState.currentDoc;
-    if (!doc) return;
-    const openedPath = doc.path;
-    const requestId = ++codeViewRequest;
-    const isFresh = editorMutationGuard(context);
-    editorView.dataset.mode = "code";
-    let problem = doc.codeViewError || doc.parseCodeError || "";
-    let payload =
-      doc.docType === "code-view" ? documentState.currentParsedCodeView : null;
-    if (!payload && doc.codeView?.path) {
-      try {
-        const fetched = await fetchCodeViewPayload(doc.codeView.path);
-        if (!isFresh() || documentState.currentDoc?.path !== openedPath ||
-            requestId !== codeViewRequest || editorView.dataset.mode !== "code") return;
-        problem = fetched.code_view_error || fetched.parse_code_error || "";
-        payload = fetched.parsed_code_view || null;
-      } catch (error) {
-        if (!isFresh() || documentState.currentDoc?.path !== openedPath ||
-            requestId !== codeViewRequest || editorView.dataset.mode !== "code") return;
-        problem = error.message || "The linked code view could not be loaded.";
-      }
-    }
-    renderedView.replaceChildren();
-    renderedView.classList.remove("code-view", "template-view");
-    renderedView.dataset.editorRoot = "";
-    if (payload && !problem) {
-      codeViewSurface.renderCodeView(renderedView, payload, { renderMarkdown });
-    } else {
-      const note = document.createElement("div");
-      note.className = "code-view-unavailable";
-      note.setAttribute("role", problem ? "alert" : "status");
-      note.textContent = problem || (doc.codeView
-        ? "The linked code view could not be loaded."
-        : "No code view is linked to this document.");
-      renderedView.append(note);
-    }
-    resizeDocumentTitle();
-    updateViewToggleAvailability();
-  }
+  function updateViewToggleAvailability() {}
 
   async function enterRenderedMode() {
-    codeViewRequest += 1;
     const path = documentState.currentDoc?.path;
     const isFresh = editorMutationGuard(context);
     editorView.dataset.mode = "rendered";
-    updateViewToggleAvailability();
-    // If the user edited in raw mode without saving, re-parse the current
-    // textarea content so the block view reflects the latest draft.
-    if (documentState.currentDoc && editor.value && editor.value !== documentState.lastSavedContent) {
-      await reparseEditorContent();
-      if (!isFresh() || documentState.currentDoc?.path !== path) return;
-    }
     renderParsedDocument();
-  }
-
-  async function reparseEditorContent() {
-    // Only code-view docs have server-parsed structure; every other doc
-    // renders its generic blocks straight from the textarea content.
-    if (documentState.currentDoc?.docType !== "code-view") return;
-    const path = documentState.currentDoc?.path;
-    const isFresh = editorMutationGuard(context);
-    try {
-      const payload = await request(apiUrl("/parse"), {
-        method: "POST",
-        body: JSON.stringify({ content: editor.value, kind: "code-view" }),
-      });
-      if (!isFresh() || documentState.currentDoc?.path !== path) return;
-      documentState.currentParsedCodeView = payload.parsed_code_view || null;
-      documentState.currentDoc.parseCodeError = payload.error || null;
-    } catch {
-      if (!isFresh() || documentState.currentDoc?.path !== path) return;
-    }
-  }
-
-  function updateViewToggleAvailability() {
-    // The toggle switches between the normal document view and the Gist-style
-    // code view. It appears when the open doc IS a code view or has one linked
-    // (GET /docs → code_view); otherwise there is nothing to switch to.
-    const doc = documentState.currentDoc;
-    const available =
-      !!doc && (!!doc.codeView || doc.docType === "code-view" || !!doc.codeViewError);
-    viewToggleButton.hidden = !available;
-    viewToggleButton.textContent =
-      doc?.docType === "code-view" && doc.sopDoc ? "SOP view" :
-        editorView.dataset.mode === "code" ? "Document view" : "Code view";
-    if (doc && editorView.dataset.mode !== "rendered" && editorView.dataset.mode !== "code") {
-      enterRenderedMode();
-    }
-  }
-
-  async function refreshParsedFromApi() {
-    if (!documentState.currentDoc) return;
-    const path = documentState.currentDoc.path;
-    const isFresh = editorMutationGuard(context);
-    try {
-      const url = apiUrl("/docs");
-      url.searchParams.set("path", path);
-      const payload = await request(url);
-      if (!isFresh() || documentState.currentDoc?.path !== path) return;
-      documentState.currentParsedCodeView = payload.parsed_code_view || null;
-      if (documentState.currentDoc) {
-        documentState.currentDoc.docType = payload.doc_type || documentState.currentDoc.docType;
-        documentState.currentDoc.codeView = payload.code_view || null;
-        documentState.currentDoc.sopDoc = payload.sop_doc || null;
-        documentState.currentDoc.codeViewError = payload.code_view_error || null;
-        documentState.currentDoc.parseCodeError = payload.parse_code_error || null;
-      }
-      updateViewToggleAvailability();
-    } catch {
-      if (!isFresh() || documentState.currentDoc?.path !== path) return;
-    }
   }
 
   /** Frontmatter the rendered view needs, read live from the draft text. */
@@ -285,22 +163,7 @@ export function createDocumentRenderer(context, services) {
   }
 
   function renderParsedDocument(options = {}) {
-    renderedView.classList.remove("code-view", "template-view");
-    // A code-view document renders as its Gist-style body — files in author
-    // order, read-only — instead of the SOP block view.
-    if (
-      documentState.currentDoc?.docType === "code-view" &&
-      documentState.currentParsedCodeView
-    ) {
-      editorView.dataset.mode = "rendered";
-      renderedView.replaceChildren();
-      renderedView.dataset.editorRoot = "";
-      codeViewSurface.renderCodeView(renderedView, documentState.currentParsedCodeView, {
-        renderMarkdown,
-      });
-      updateViewToggleAvailability();
-      return;
-    }
+    renderedView.classList.remove("template-view");
     let templatePreview = null;
     if (documentState.currentDoc?.docType === "template") {
       const preview = document.createElement("section");
@@ -411,7 +274,10 @@ export function createDocumentRenderer(context, services) {
     const rawFull = editor.value || "";
     const fmRange = frontmatterRange(rawFull);
     const fmText = fmRange ? rawFull.slice(0, fmRange.end + 5) : "";
-    const bodyAfterFm = fmRange ? rawFull.slice(fmRange.end + 5) : rawFull;
+    // Mirror the read path (stripFrontmatter + stripLeadingHeading): the body
+    // may start with a blank line, and the leading H1/H2 renders as the page
+    // title rather than a block, so it is carried separately on every write.
+    const bodyAfterFm = (fmRange ? rawFull.slice(fmRange.end + 5) : rawFull).replace(/^\n+/, "");
     const h1Match = bodyAfterFm.match(/^#{1,2}\s+[^\n]*\n+/);
     const headingText = h1Match ? h1Match[0] : "";
     const newBodyMarkdown = serializeBlocksToMarkdown(newBlocks);
@@ -785,7 +651,7 @@ export function createDocumentRenderer(context, services) {
 
 
   return {
-    attachInlineEditor, emptyNote, enterRenderedMode, refreshParsedFromApi,
+    attachInlineEditor, emptyNote, enterRenderedMode,
     renderParsedDocument, toggleViewMode, updateViewToggleAvailability,
     uploadImage,
   };

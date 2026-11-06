@@ -16,7 +16,7 @@ export function createEditorChanges(context, services) {
     setRouteTitle, showLibrary, storage,
   } = context;
   const {
-    draftKey, listDraftPaths, recordPublication, showRevisionConflict, refreshKnowledgeStatus, refreshParsedFromApi, renderParsedDocument,
+    draftKey, listDraftPaths, recordPublication, showRevisionConflict, refreshKnowledgeStatus, renderParsedDocument,
     showDiffForDraft, titleFromMarkdown, updateSaveState,
   } = services;
   const showFeedback = editorFeedbackFor(context);
@@ -136,7 +136,6 @@ export function createEditorChanges(context, services) {
             titleFromMarkdown(editor.value) || basename(documentState.currentDoc.path);
           updateSaveState();
           if (editorView.dataset.mode === "rendered") {
-            await refreshParsedFromApi();
             renderParsedDocument();
           }
         }

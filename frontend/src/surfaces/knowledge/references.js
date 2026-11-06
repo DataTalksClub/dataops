@@ -109,20 +109,7 @@ export function createKnowledgeReferences(context, services) {
   }
 
   function renderWarningsBlock() {
-    if (!documentState.currentWarnings.length) return null;
-    const wrap = document.createElement("aside");
-    wrap.className = "block-warnings";
-    const head = document.createElement("h3");
-    head.textContent = `Lint warnings (${documentState.currentWarnings.length})`;
-    wrap.append(head);
-    const list = document.createElement("ul");
-    for (const warning of documentState.currentWarnings) {
-      const item = document.createElement("li");
-      item.textContent = warning;
-      list.append(item);
-    }
-    wrap.append(list);
-    return wrap;
+    return null;
   }
 
   function renderLoomBlock(frontmatter) {

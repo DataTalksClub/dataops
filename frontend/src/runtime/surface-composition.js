@@ -100,7 +100,6 @@ export function createSurfaceBridge() {
     "updateViewToggleAvailability",
     "emptyNote",
     "escapeRegex",
-    "openLintReport",
     "closeDiff",
     "closeLightbox",
   ]) {

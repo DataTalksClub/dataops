@@ -32,9 +32,6 @@ export function bindApplicationEvents(context) {
     dom,
     handlers: {
       ...callbacks,
-      hideLintModal: () => {
-        dom.lintModal.hidden = true;
-      },
       hideHelpModal: () => {
         helpModal.hidden = true;
       },

@@ -33,7 +33,6 @@
     <link rel="stylesheet" href="/src/styles/tasks-boards.css">
     <link rel="stylesheet" href="/src/styles/tasks-panels.css">
     <link rel="stylesheet" href="/src/styles/knowledge.css">
-    <link rel="stylesheet" href="/src/styles/code-view.css">
     <link rel="stylesheet" href="/src/styles/editor.css">
     <link rel="stylesheet" href="/src/styles/overrides.css">
     <link rel="stylesheet" href="/src/styles/responsive.css">
@@ -310,17 +309,6 @@
       <button id="undo-toast-button" class="quiet-button" type="button">Undo</button>
     </div>
 
-    <div id="lint-modal" class="diff-modal" hidden>
-      <div class="diff-backdrop" id="lint-backdrop"></div>
-      <div class="diff-panel">
-        <header class="diff-header">
-          <strong id="lint-modal-title">Corpus lint</strong>
-          <button id="lint-modal-close" class="quiet-button" type="button">Close</button>
-        </header>
-        <div id="lint-modal-body" class="lint-modal-body"></div>
-      </div>
-    </div>
-
     <div id="history-modal" class="diff-modal" hidden>
       <div class="diff-backdrop" id="history-backdrop"></div>
       <div class="diff-panel knowledge-history-panel" role="dialog" aria-modal="true" aria-labelledby="history-title">
@@ -335,10 +323,6 @@
         <p id="history-status" role="status" aria-live="polite"></p>
         <div id="history-versions"></div>
         <div id="history-comparison" hidden></div>
-        <section id="lint-section" class="lint-section" aria-label="Lint">
-          <button id="lint-open" class="quiet-button" type="button">Lint corpus</button>
-          <span id="lint-summary" class="lint-summary"></span>
-        </section>
       </div>
     </div>
 

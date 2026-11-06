@@ -196,6 +196,9 @@ export function createBlockEditor(context, services) {
           placeholderOnFocus: true,
           autoFocus: itemIdx === focusIndex,
           selectionRange: itemIdx === focusIndex ? focusSelection : null,
+          onFiles: (files) => {
+            services.insertImageBlocks?.(files, blocks, blockIndex, false, replace);
+          },
           onSplit: structural ? (before, after) => {
             if (!before.trim() && !after.trim() && !item.indent) {
               // Enter on an empty item leaves the list.

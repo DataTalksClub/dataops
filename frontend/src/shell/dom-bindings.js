@@ -11,12 +11,6 @@ const SELECTORS = Object.freeze({
   changesList: "#changes-list",
   changesSaveAll: "#changes-save-all",
   changesDiscardAll: "#changes-discard-all",
-  lintOpenButton: "#lint-open",
-  lintSummary: "#lint-summary",
-  lintModal: "#lint-modal",
-  lintBackdrop: "#lint-backdrop",
-  lintModalBody: "#lint-modal-body",
-  lintModalClose: "#lint-modal-close",
   knowledgeSection: "#knowledge-section",
   knowledgeStatusText: "#knowledge-status-text",
   historyButton: "#history-button",
@@ -106,9 +100,6 @@ export function queryAppDom(documentRef) {
 
 export function bindAppDomEvents(context) {
   const { documentRef, dom, handlers, windowRef } = context;
-  dom.lintOpenButton.addEventListener("click", handlers.openLintReport);
-  dom.lintBackdrop.addEventListener("click", handlers.hideLintModal);
-  dom.lintModalClose.addEventListener("click", handlers.hideLintModal);
   dom.knowledgeStatusButton.addEventListener("click", handlers.refreshKnowledgeStatus);
   dom.helpBackdrop.addEventListener("click", handlers.hideHelpModal);
   dom.helpClose.addEventListener("click", handlers.hideHelpModal);

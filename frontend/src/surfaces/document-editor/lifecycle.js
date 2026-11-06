@@ -13,8 +13,8 @@ export function createEditorLifecycle(context, services) {
     storage,
   } = context;
   const {
-    refreshChangesPanel, refreshKnowledgeStatus, refreshParsedFromApi,
-    renderParsedDocument, showChangesStatus, updateViewToggleAvailability,
+    refreshChangesPanel, refreshKnowledgeStatus,
+    renderParsedDocument, showChangesStatus,
   } = services;
 
   const DRAFT_PREFIX = "dtc-doc-draft:";
@@ -67,28 +67,9 @@ export function createEditorLifecycle(context, services) {
       } else {
         storeDraft();
       }
-      updateViewToggleAvailability();
-      if (editorView.dataset.mode === "rendered") {
-        // Body changed; reparse via API.
-        await refreshParsedFromApi();
-        if (!isCurrentDocument()) return;
-        renderParsedDocument();
-      }
       updateSaveState();
-      const warnings = Array.isArray(payload.warnings) ? payload.warnings : [];
-      documentState.currentWarnings = warnings;
-      if (warnings.length) {
-        flashSaveState(
-          `Saved with ${warnings.length} lint warning${warnings.length === 1 ? "" : "s"}`,
-        );
-        showEditorFeedback(
-          `Saved · ${warnings[0]}${warnings.length > 1 ? ` (and ${warnings.length - 1} more)` : ""}`,
-          { kind: "warning" },
-        );
-      } else {
-        flashSaveState("Saved");
-        showEditorFeedback(`Saved ${path}.`);
-      }
+      flashSaveState("Saved");
+      showEditorFeedback(`Saved ${path}.`);
       if (editorView.dataset.mode === "rendered") renderParsedDocument();
       refreshChangesPanel();
       refreshKnowledgeStatus();

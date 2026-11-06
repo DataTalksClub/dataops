@@ -49,7 +49,6 @@ export function createKnowledgeNavigation(context, services) {
     storage,
     titleFromMarkdown,
     updateSaveState,
-    updateViewToggleAvailability,
   } = context;
   const DOCS_UNAVAILABLE_STATUS = 503;
   let documentRequestId = 0;
@@ -183,8 +182,6 @@ export function createKnowledgeNavigation(context, services) {
     captureScrollPosition();
     clearDocumentStateNotice();
     documentState.currentDoc = null;
-    documentState.currentParsedCodeView = null;
-    documentState.currentWarnings = [];
     documentState.lastSavedContent = "";
     documentState.hasDraft = false;
     documentTitle.value = "";
@@ -214,14 +211,8 @@ export function createKnowledgeNavigation(context, services) {
         updated: payload.updated,
         revision: payload.revision,
         docType: payload.doc_type || "",
-        codeView: payload.code_view || null,
-        sopDoc: payload.sop_doc || null,
-        codeViewError: payload.code_view_error || null,
-        parseCodeError: payload.parse_code_error || null,
       };
       if (options.updateUrl !== false) setDocumentUrl(payload.path);
-      documentState.currentParsedCodeView = payload.parsed_code_view || null;
-      documentState.currentWarnings = [];
       documentState.lastSavedContent = payload.content;
       docMenuButton.hidden = false;
       const draft = storage.getItem(draftKey(payload.path));
@@ -241,9 +232,7 @@ export function createKnowledgeNavigation(context, services) {
       updateSaveState();
       setRouteTitle(documentTitle.value);
       renderDocReturnContext();
-      updateViewToggleAvailability();
-      // Default to the block view when the doc has parseable sections, so
-      // SOPs read as structured content rather than raw markdown.
+      // Documents are plain markdown: always render the block view.
       enterRenderedMode();
       const restoreTop = scrollPositions.get(payload.path) || 0;
       const scrollEl =

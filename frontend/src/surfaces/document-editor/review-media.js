@@ -1,8 +1,8 @@
 export function createEditorReviewMedia(context, services) {
   const {
     apiUrl, diffBody, diffModal, diffTitle, lightbox,
-    lightboxCaption, lightboxImg, lintModal, lintModalBody,
-    lintOpenButton, lintSummary, openDocument, request, storage,
+    lightboxCaption, lightboxImg,
+    openDocument, request, storage,
   } = context;
   const { draftKey, emptyNote } = services;
   let diffReturnFocus = null;
@@ -58,52 +58,6 @@ export function createEditorReviewMedia(context, services) {
     } else if (!event.shiftKey && (active === last || !activeInside)) {
       event.preventDefault();
       first.focus();
-    }
-  }
-
-  async function openLintReport() {
-    lintModal.hidden = false;
-    lintOpenButton.classList.add("is-busy");
-    lintModalBody.replaceChildren(emptyNote("Running lint…"));
-    try {
-      const payload = await request(apiUrl("/lint"));
-      const docs = payload.docs || [];
-      if (docs.length === 0) {
-        lintModalBody.replaceChildren(
-          emptyNote("No violations across the corpus 🎉"),
-        );
-        lintSummary.textContent = "clean";
-        return;
-      }
-      const total = payload.total_violations || 0;
-      lintSummary.textContent = `${docs.length} docs · ${total} violations`;
-      const rows = docs.map((entry) => {
-        const wrap = document.createElement("div");
-        wrap.className = "lint-row";
-        const heading = document.createElement("button");
-        heading.type = "button";
-        heading.className = "lint-row-path";
-        heading.textContent = entry.path;
-        heading.addEventListener("click", () => {
-          lintModal.hidden = true;
-          openDocument(entry.path);
-        });
-        wrap.append(heading);
-        const list = document.createElement("ul");
-        list.className = "lint-row-violations";
-        for (const v of entry.violations) {
-          const li = document.createElement("li");
-          li.textContent = v;
-          list.append(li);
-        }
-        wrap.append(list);
-        return wrap;
-      });
-      lintModalBody.replaceChildren(...rows);
-    } catch (err) {
-      lintModalBody.replaceChildren(emptyNote(`Lint failed: ${err.message}`));
-    } finally {
-      lintOpenButton.classList.remove("is-busy");
     }
   }
 
@@ -233,6 +187,6 @@ export function createEditorReviewMedia(context, services) {
 
   return {
     closeDiff, closeLightbox, fileToBase64,
-    openLightbox, openLintReport, showDiffForDraft,
+    openLightbox, showDiffForDraft,
   };
 }
