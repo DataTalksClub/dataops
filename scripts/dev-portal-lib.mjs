@@ -14,8 +14,6 @@ export const PROXY_FAMILIES = Object.freeze([
   '/docs',
   '/images',
   '/folders',
-  '/lint',
-  '/parse',
   '/health',
   '/search',
   '/git',

@@ -33,7 +33,7 @@ The current recommendation is to keep the sandbox lightweight:
 flowchart TB
   User[User browser] -->|HTTPS Lambda Function URL| Backend[BackendFunction]
   Backend -->|serves| Frontend[frontend/index.html and assets]
-  Backend -->|routes /docs, /folders, /images, /lint, /parse| DocsApi[Docs API]
+  Backend -->|routes /docs, /folders, /images| DocsApi[Docs API]
   Backend -->|routes /search| Search[Search handler]
   Backend -->|routes /api/*| WorkApi[Work API: tasks, cards, templates, etc]
   DocsApi --> Cache[/Lambda /tmp GitHub content cache/]
@@ -49,7 +49,7 @@ The deployed function is `BackendFunction`, a single TypeScript/Node Lambda
 (`backend/dist/handler.handler`). It owns:
 
 - Basic-auth protected frontend serving.
-- Docs CRUD and code-view parsing/linting.
+- Docs CRUD for plain-markdown documents (YAML frontmatter, raw body).
 - GitHub-backed persistence.
 - Search through a `zerosearch-node` index.
 - Read-only `GET /git/status` and `GET /git/log` diagnostics; every request to
@@ -96,7 +96,7 @@ sequenceDiagram
   G-->>L: Commit created on main
   L->>L: Invalidate cached GitHub tree
   L->>I: Rebuild zerosearch-node index
-  L-->>U: Save response with lint warnings, if any
+  L-->>U: Save response
 ```
 
 This means clicking `Save` in production already publishes the document to
@@ -130,7 +130,7 @@ sequenceDiagram
   L->>I: Build zerosearch-node index
 ```
 
-The docs runtime is created lazily. A collection read, corpus lint, registry,
+The docs runtime is created lazily. A collection read, registry,
 folder operation, save, or docs search calls `ensureSynced()`: the store fetches
 the configured branch's recursive Git tree once, then fetches a Blob for each
 canonical markdown file under `content/` and supported image under
@@ -277,7 +277,7 @@ GitHub.
 
 2. Add stricter content validation.
    The content workflow already validates links, wiki-style references, and
-   workflow document IDs. A later improvement can surface code-view lint
+   workflow document IDs.
    across changed files without changing the CI-to-runtime boundary.
 
 3. Keep content validation separate from app deployment.

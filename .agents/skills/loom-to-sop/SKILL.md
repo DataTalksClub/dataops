@@ -60,8 +60,9 @@ ffmpeg -i frames/042.png -q:v 2 \
 
 Copy the skeleton of an existing SOP (for example
 `content/06-finance-and-compliance/manage-bookkeeping/sops/get-invoices-from-mailchimp.md`)
-and keep the `sop-section` / `sop-step` / `sop-screenshot` markers. Frontmatter
-rules:
+and write plain markdown: headings, numbered steps, and inline images.
+Documents are stored, rendered, and searched as-is — there is no
+structured marker format and no linter. Frontmatter rules:
 
 - stable `id` using short department and system tokens, e.g.
   `sop.finance.bookkeeping.get-invoices-from-mailchimp`

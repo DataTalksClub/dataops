@@ -22,15 +22,15 @@ their outputs as artifacts.
 
 - `backend/` — single TypeScript backend: docs content API, search, work
   execution, and portal/auth.
-- `docs/` — repo-meta docs (this README, `STRUCTURE.md`, `sop-format*.md`,
+- `docs/` — repo-meta docs (this README, `STRUCTURE.md`,
   decision records) and DataOps merge plan, development process, and planning
   notes.
 - Operational documentation (SOPs, templates, references, playbooks, prompts)
   lives in the private `DataTalksClub/dataops-knowledge` repository.
 - `frontend/` — static vanilla-JS app and its Dockerfile.
 - `infra/` — SAM/CloudFormation templates, OIDC deploy roles, runtime secrets.
-- `tools/content_tools/` — pure-Python content parsing helpers (document
-  registry and SOP frontmatter) used by the planning-docs validator.
+- `tools/content_tools/` — pure-Python frontmatter and document-registry
+  helpers used by the planning-docs validator.
 - `scripts/` — repo tooling (planning-docs validator).
 
 ## Architecture
@@ -104,7 +104,7 @@ shell values still take precedence.
 
 ## Development commands
 
-`make help` lists the current setup, dev, test, SOP lint, SAM
+`make help` lists the current setup, dev, test, SAM
 validation/build, and CI-parity targets. These targets are thin wrappers around
 the package-local commands documented below so failures stay visible and package
 commands remain useful for troubleshooting.
@@ -122,7 +122,6 @@ make sam-build
 make ci
 ```
 
-Run `make sop-lint FILES="content/path/to/sop.md"` for marked SOP files.
 `make sam-validate` is local template validation only: it uses empty AWS config
 and credentials files under `.tmp/aws-empty/`, disables EC2 metadata lookup, and
 does not require live AWS credentials or run `sam deploy`.
@@ -227,9 +226,8 @@ lockfile; there is no nested `backend/package-lock.json`.
 - `Esc` leaves the block being edited and closes menus and modals.
 - `?` shows keyboard shortcut help.
 
-## SOP format
+## Document format
 
-SOPs are plain markdown: frontmatter plus `##` sections, numbered steps,
-and `![](...)` images with plain-paragraph captions. There are no parsing
-rules beyond that — the reader renders every doc as generic markdown
-blocks, and `code-view` docs carry the runnable alternate view.
+Documents are plain markdown: YAML frontmatter plus a markdown body.
+There are no parsing rules beyond that — the reader renders every doc
+as generic markdown blocks.
