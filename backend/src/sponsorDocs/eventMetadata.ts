@@ -1,4 +1,5 @@
 import { GetCommand, ScanCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { getGuestIntakeJob } from '../events/guestIntakeStore';
 import { getCardConsistent } from '../db/cards';
 import { getPodcastEpisode } from '../db/podcastEpisodes';
 import { TABLE_CALENDAR } from '../db/tableNames';
@@ -13,6 +14,10 @@ export interface DocumentEventMetadata {
   state: 'tentative' | 'confirmed' | 'released' | 'unscheduled';
   label: string;
   holdId?: string;
+  startIso?: string;
+  endIso?: string;
+  durationMinutes?: number;
+  guestTimezone?: string;
   version: number;
 }
 
@@ -23,6 +28,8 @@ interface StoredEventAuthority {
   renderValues?: { title?: string; guestNames?: string };
   status: 'tentative' | 'confirmed' | 'released' | 'expired' | 'proposed' | 'approved';
   startIso?: string;
+  endIso?: string;
+  durationMinutes?: number;
   timeZone?: string;
   documentUrl?: string;
   version?: number;
@@ -113,6 +120,9 @@ export async function readDocumentEventMetadata(
         ? 'tentative'
         : 'unscheduled';
   const startIso = hold?.startIso || card?.eventTime?.startIso || (episode as { recordingStartIso?: string | null } | null)?.recordingStartIso || undefined;
+  const endIso = hold?.endIso || card?.eventTime?.endIso;
+  const durationMinutes = startIso && endIso ? Math.round((Date.parse(endIso) - Date.parse(startIso)) / 60000) : hold?.durationMinutes;
+  const intakeJob = card?.guestIntake?.jobId ? await getGuestIntakeJob(client, card.guestIntake.jobId) : null;
   const timeZone = hold?.timeZone || card?.eventTime?.timeZone || card?.templateDefinitionSnapshot.eventPolicy?.timeZone || 'Europe/Berlin';
   let date = card?.anchorDate?.slice(0, 10) || episode?.recordingDate?.slice(0, 10) || null;
   let time: string | null = null;
@@ -136,6 +146,9 @@ export async function readDocumentEventMetadata(
     state,
     label,
     ...(hold ? { holdId: hold.id } : {}),
+    ...(startIso ? { startIso } : {}), ...(endIso ? { endIso } : {}),
+    ...(durationMinutes && Number.isFinite(durationMinutes) && durationMinutes > 0 ? { durationMinutes } : {}),
+    ...(intakeJob?.guestTimezone ? { guestTimezone: intakeJob.guestTimezone } : {}),
     version: hold?.version || card?.version || episode?.version || 1,
   };
 }

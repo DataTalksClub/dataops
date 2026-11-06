@@ -86,6 +86,7 @@ export function templateCardDefinitionSnapshot(
     taskRefs: [...new Set(taskRefs)].sort(),
     episodeStages: episodeStageRefs(template),
     eventPolicy: template.eventPolicy === undefined ? undefined : copy(template.eventPolicy),
+    guestIntake: template.guestIntake === undefined ? undefined : copy(template.guestIntake),
   });
 }
 

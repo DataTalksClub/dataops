@@ -394,6 +394,7 @@ export interface CardCalendarInvite {
 }
 
 export interface Card {
+  guestIntake?: { jobId: string; taskId: string; status: import('./events/guestIntakeStore').GuestIntakeStatus; skipEmail: boolean; recipient?: string; messageId?: string; sentAt?: string; startIso?: string; error?: string };
   id: string;
   /** Monotonic optimistic-concurrency token. */
   version: number;
@@ -611,6 +612,7 @@ export interface TaskDefinition {
 
 /** Definition-owned Card defaults captured when a Template is applied. */
 export interface TemplateCardDefinitionSnapshot {
+  guestIntake?: import('./events/guestIntakePolicy').GuestIntakePolicy;
   eventPolicy?: EventPolicy;
   tags: string[];
   sourceDocIds: string[];
@@ -670,6 +672,7 @@ export interface TemplateTaskDefinitionSnapshot {
 }
 
 export interface Template {
+  guestIntake?: import('./events/guestIntakePolicy').GuestIntakePolicy;
   eventPolicy?: EventPolicy;
   id: string;
   /** Authored identity and schema revision, separate from runtime id/version. */

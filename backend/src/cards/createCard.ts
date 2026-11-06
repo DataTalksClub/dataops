@@ -8,6 +8,9 @@
  */
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { prepareGuestIntake } from '../events/guestIntakeCreate';
+import { berlinToday } from '../calendar/ownerCalendarOverlay';
+import { GuestContactInputError } from '../events/guestContact';
 import { normalizeCardLinks } from '../artifactLinks';
 import {
   createCardFromTemplate,
@@ -168,25 +171,10 @@ export async function createCardFromInput(
   if (body.title !== undefined && typeof body.title !== 'string') {
     return fail(400, { error: 'title must be a string' });
   }
-  const undated = options.provisionalAnchorDate !== undefined;
-  if (undated && body.anchorDate !== undefined) {
-    return fail(400, { error: 'An undated Card takes no anchorDate' });
-  }
-  const anchorDate = undated ? options.provisionalAnchorDate : body.anchorDate;
-  if (!anchorDate) {
-    return fail(400, { error: 'Missing required field: anchorDate' });
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(anchorDate as string)) {
-    return fail(400, { error: 'Invalid anchorDate format, expected YYYY-MM-DD' });
-  }
-  if (body.endDate !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(body.endDate as string)) {
-    return fail(400, { error: 'Invalid endDate format, expected YYYY-MM-DD' });
-  }
-
   const systemOwnedFields = [
     'version', 'expectedVersion', 'status', 'taskCount', 'openTaskCount',
     'completedAt', 'completedBy', 'activeStageBeforeCompletion', 'auditEventRefs', 'selectedOptionalGroups',
-    'linkedFrom',
+    'linkedFrom', 'guestIntake',
   ];
   const suppliedSystemField = systemOwnedFields.find((field) => Object.hasOwn(body, field));
   if (suppliedSystemField) {
@@ -200,12 +188,38 @@ export async function createCardFromInput(
   const template = await getTemplate(client, body.templateId);
   if (!template) return fail(404, { error: 'Template not found' });
 
+  let intake: Awaited<ReturnType<typeof prepareGuestIntake>>;
+  try {
+    intake = await prepareGuestIntake(client, actor.id, template, body);
+  } catch (error) {
+    return fail(error instanceof GuestContactInputError ? error.statusCode : 400, { error: (error as Error).message });
+  }
+  if (intake) {
+    const existing = await intake.replay();
+    if (existing) return existing;
+  }
+  const undated = options.provisionalAnchorDate !== undefined || Boolean(intake && body.anchorDate === undefined);
+  if (undated && body.anchorDate !== undefined) {
+    return fail(400, { error: 'An undated Card takes no anchorDate' });
+  }
+  const anchorDate = undated ? (options.provisionalAnchorDate || berlinToday()) : body.anchorDate;
+  if (!anchorDate) {
+    return fail(400, { error: 'Missing required field: anchorDate' });
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(anchorDate as string)) {
+    return fail(400, { error: 'Invalid anchorDate format, expected YYYY-MM-DD' });
+  }
+  if (body.endDate !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(body.endDate as string)) {
+    return fail(400, { error: 'Invalid endDate format, expected YYYY-MM-DD' });
+  }
+
   // A Template with a card_title pattern names its Cards; otherwise the
   // caller must.
   let title = typeof body.title === 'string' ? body.title.trim() : '';
   if (!title && template.cardTitle) {
     title = renderCardTitle(template.cardTitle, cardFieldTitleValues(template.type || '', body)) || template.name;
   }
+  if (!title && intake) title = intake.title;
   if (!title) return fail(400, { error: 'Missing required field: title' });
 
   const VALID_STAGES = ['preparation', 'announced', 'after-event'];
@@ -279,6 +293,12 @@ export async function createCardFromInput(
     }
   }
 
+  if (intake) {
+    cardData.guestIntake = intake.marker;
+    if (intake.job.guestName && !cardData.people) cardData.people = [intake.job.guestName];
+    if (intake.job.guestEmail) cardData.guestEmails = [intake.job.guestEmail];
+  }
+
   const parsed = parseCardTitle(String(cardData.title || ''));
   if (parsed.tag && parsed.templateType) {
     if (cardData.issueNumber === undefined && parsed.issueNumber) {
@@ -337,11 +357,21 @@ export async function createCardFromInput(
       template,
       anchorDate as string,
       selectedGroups,
-      options.companions,
+      (card) => [...(options.companions?.(card) || []), ...(intake?.companions(card) || [])],
       body.counts as Record<string, number> | undefined,
+      intake?.tasks,
     );
     return { ok: true, card, tasks, template };
   } catch (error) {
+    if (intake) {
+      try {
+        const existing = await intake.replay();
+        if (existing) return existing;
+      } catch (replayError) {
+        if (replayError instanceof GuestContactInputError) return fail(replayError.statusCode, { error: replayError.message, code: replayError.code });
+        throw replayError;
+      }
+    }
     if (error instanceof TemplateVersionConflictError) {
       return fail(409, {
         code: 'template_version_conflict',

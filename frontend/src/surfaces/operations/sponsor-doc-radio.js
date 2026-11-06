@@ -68,6 +68,7 @@ export function appendSponsorDocRadioField({
         updateLivePreview();
       });
       const text = el("span", "sponsor-doc-radio__text", opt.label);
+      text.style.whiteSpace = "pre-line";
       label.append(input, text);
       radios.push(input);
       bandWrap.append(label);

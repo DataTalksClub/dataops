@@ -140,7 +140,14 @@ export function createQuickTaskActions(context) {
   }
 
   async function openQuickWorkflowForm(options = {}) {
+    const draftStorageKey = "dataops.guest-card-draft";
+    let savedDraft = {};
+    try { savedDraft = JSON.parse(globalThis.sessionStorage?.getItem(draftStorageKey) || "{}"); } catch {}
+    options = { ...savedDraft, ...options };
     const requestedTemplate = options.template || null;
+    const creationKey = options.creationKey || globalThis.crypto?.randomUUID?.()
+      || `card-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    options.creationKey = creationKey;
     const overlay = createQuickFormOverlay("Create card");
     const form = document.createElement("form");
     form.className = "quick-form";
@@ -161,9 +168,74 @@ export function createQuickTaskActions(context) {
     const anchorInput = createQuickInput(
       "Date",
       "date",
-      options.anchorDate || todayIsoDate(),
+      options.anchorDate ?? todayIsoDate(),
     );
+    let anchorEdited = Object.hasOwn(options, "anchorDate");
+    anchorInput.input.addEventListener("input", () => { anchorEdited = true; });
+    anchorInput.input.addEventListener("change", () => { anchorEdited = true; });
     const titleInput = createQuickInput("Card title", "text", options.title || "");
+    const guestWrap = document.createElement("div");
+    guestWrap.hidden = true;
+    guestWrap.className = "quick-form";
+    guestWrap.dataset.guestEventFields = "";
+    const guestEmail = createQuickInput("Guest email", "email", options.guestEmail || "");
+    guestEmail.input.dataset.guestEmail = "";
+    const guestName = createQuickInput("Guest name (optional)", "text", options.guestName || "");
+    guestName.input.dataset.guestName = "";
+    const topic = createQuickInput("Topic (optional)", "text", options.topic || "");
+    topic.input.dataset.guestTopic = "";
+    const guestSearch = createQuickInput("Find a saved guest", "search", "");
+    guestSearch.input.dataset.guestSearch = "";
+    const findGuest = document.createElement("button");
+    findGuest.type = "button";
+    findGuest.className = "quiet-button";
+    findGuest.textContent = "Find guest";
+    const guestOption = (label, value) => { const option = document.createElement("option"); option.textContent = label; option.value = value; return option; };
+    const savedGuest = document.createElement("select");
+    savedGuest.dataset.savedGuest = "";
+    savedGuest.className = "quick-form-select";
+    savedGuest.setAttribute("aria-label", "Saved guest");
+    savedGuest.append(guestOption("Select a saved guest (optional)", ""));
+    let savedPeople = [];
+    let savedPersonId = options.guestPersonId || options.guestContactId || "";
+    if (savedPersonId) savedGuest.append(guestOption(options.guestName || "Saved guest", savedPersonId));
+    savedGuest.value = savedPersonId;
+    findGuest.addEventListener("click", async () => {
+      findGuest.disabled = true;
+      try {
+        const query = new URLSearchParams({ active: "true", dnc: "false", limit: "50", search: guestSearch.input.value.trim() });
+        const payload = await request(workApiUrl(`/api/sponsor-crm/directory/people?${query}`));
+        savedPeople = payload.items || [];
+        savedGuest.replaceChildren(guestOption("Select a saved guest (optional)", ""));
+        for (const person of savedPeople) savedGuest.append(guestOption(`${person.name || "Saved guest"}${person.emails?.[0] ? ` (${person.emails[0]})` : " (email needed)"}`, person.id));
+        guestHint.textContent = savedPeople.length ? "Select a saved guest to reuse their contact details." : "No saved guests found.";
+      } catch (error) { guestHint.textContent = `Could not find guests: ${error.message || "request failed"}`; }
+      finally { findGuest.disabled = false; }
+    });
+    const time = createQuickInput("Time (optional)", "time", options.time || "");
+    time.input.dataset.guestTime = "";
+    const timeZone = createQuickInput("Schedule time zone", "text", options.timeZone || "Europe/Berlin");
+    timeZone.input.dataset.scheduleTimeZone = "";
+    const guestTimezone = createQuickInput("Guest time zone (optional)", "text", options.guestTimezone || "");
+    guestTimezone.input.dataset.guestTimeZone = "";
+    const preferredWindow = createQuickInput("Preferred time window (optional)", "text", options.window || "");
+    preferredWindow.input.placeholder = "For example, evening";
+    preferredWindow.input.dataset.preferredWindow = "";
+    const scheduling = document.createElement("details");
+    const schedulingLabel = document.createElement("summary");
+    schedulingLabel.textContent = "Scheduling preferences (optional)";
+    scheduling.append(schedulingLabel, time.label, timeZone.label, guestTimezone.label, preferredWindow.label);
+    const skipEmail = createQuickCheckbox("Do not send email", options.skipEmail);
+    skipEmail.input.dataset.skipEmail = "";
+    const guestHint = document.createElement("p");
+    guestHint.className = "quick-form-state";
+    guestHint.textContent = "With a guest email, DataOps proposes a time and sends the invitation automatically.";
+    const savedGuestLookup = document.createElement("details");
+    const lookupLabel = document.createElement("summary");
+    lookupLabel.textContent = "Use a saved guest (optional)";
+    savedGuestLookup.append(lookupLabel, guestSearch.label, findGuest, savedGuest);
+    guestWrap.append(savedGuestLookup, guestEmail.label, guestName.label, topic.label, scheduling, skipEmail.label, guestHint);
+    guestHint.setAttribute("aria-live", "polite");
     const templateControl = { label: selectLabel, input: templateSelect };
     const templateState = document.createElement("p");
     templateState.className = "quick-form-state";
@@ -188,6 +260,7 @@ export function createQuickTaskActions(context) {
       groupsWrap,
       titleInput.label,
       anchorInput.label,
+      guestWrap,
       feedback.node,
       createBtn,
     );
@@ -285,13 +358,50 @@ export function createQuickTaskActions(context) {
     // optional there; any other Template needs one.
     const selectedTitlePattern = () =>
       liveTemplates.find((template) => template.id === templateSelect.value)?.cardTitle || "";
+    const selectedGuestEvent = () => {
+      const selected = liveTemplates.find((template) => template.id === templateSelect.value);
+      return selected?.guestIntake?.enabled === true && ["podcast", "webinar", "workshop"].includes(selected.type);
+    };
+    const hasGuestEmail = () => selectedGuestEvent() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail.input.value.trim());
+    const hasGuest = () => selectedGuestEvent() && Boolean(guestEmail.input.value.trim() || savedPersonId || guestName.input.value.trim());
+    const buttonLabel = () => !hasGuestEmail() ? "Create card" : skipEmail.input.checked ? "Create without email" : "Create and send invitation";
+    const persistDraft = () => {
+      const selected = liveTemplates.find(template => template.id === templateSelect.value);
+      try { globalThis.sessionStorage?.setItem(draftStorageKey, JSON.stringify({ creationKey, template: selected, title: titleInput.input.value, ...(anchorEdited ? { anchorDate: anchorInput.input.value } : {}), guestEmail: guestEmail.input.value, guestName: guestName.input.value, guestPersonId: savedPersonId, topic: topic.input.value, time: time.input.value, timeZone: timeZone.input.value, guestTimezone: guestTimezone.input.value, window: preferredWindow.input.value, skipEmail: skipEmail.input.checked })); } catch {}
+    };
+    const clearDraft = () => { try { globalThis.sessionStorage?.removeItem(draftStorageKey); } catch {} };
+    overlay.onDiscard = clearDraft;
+    savedGuest.addEventListener("change", () => {
+      savedPersonId = savedGuest.value;
+      const person = savedPeople.find(person => person.id === savedPersonId);
+      if (person) { guestName.input.value = person.name || ""; guestEmail.input.value = person.emails?.[0] || ""; }
+      syncTitleField();
+      persistDraft();
+    });
     const syncTitleField = () => {
-      const generated = Boolean(selectedTitlePattern());
+      const event = selectedGuestEvent();
+      guestWrap.hidden = !event;
+      for (const control of [guestEmail, guestName, topic, time, timeZone, guestTimezone, preferredWindow, skipEmail]) control.input.disabled = !event;
+      if (!anchorEdited) anchorInput.input.value = event ? "" : todayIsoDate();
+      const generated = Boolean(selectedTitlePattern()) || hasGuest();
       titleInput.label.textContent = generated ? "Card title (optional)" : "Card title";
       titleInput.label.append(titleInput.input);
       titleInput.input.setAttribute("aria-required", String(!generated));
       titleInput.input.placeholder = generated ? "Generated from the template if left empty" : "";
+      anchorInput.label.textContent = hasGuest() ? "Date (optional)" : "Date";
+      anchorInput.label.append(anchorInput.input);
+      anchorInput.input.setAttribute("aria-required", String(!hasGuest()));
+      guestHint.textContent = skipEmail.input.checked
+        ? "The event and guest form will be prepared without sending an email or a calendar invite."
+        : hasGuestEmail() ? `After creating this card, ${guestEmail.input.value.trim()} will automatically receive an invitation email and a [Proposed] calendar invite.`
+        : "Add an email or choose a saved guest. Without an email, the card waits for contact details.";
+      if (!cardSubmitInFlight) createBtn.textContent = buttonLabel();
     };
+    guestEmail.input.addEventListener("input", syncTitleField);
+    guestName.input.addEventListener("input", syncTitleField);
+    form.addEventListener("input", persistDraft);
+    form.addEventListener("change", persistDraft);
+    skipEmail.input.addEventListener("change", syncTitleField);
     templateSelect.addEventListener("change", () => {
       syncOptionalGroups();
       syncTitleField();
@@ -310,11 +420,19 @@ export function createQuickTaskActions(context) {
       if (cardSubmitInFlight) return;
       const templateId = templateSelect.value;
       const anchorDate = anchorInput.input.value;
-      const titleMissing = !titleInput.input.value.trim() && !selectedTitlePattern();
+      const email = selectedGuestEvent() ? guestEmail.input.value.trim() : "";
+      const guestIntake = hasGuest();
+      persistDraft();
+      const titleMissing = !titleInput.input.value.trim() && !selectedTitlePattern() && !guestIntake;
+      const validZone = value => { try { new Intl.DateTimeFormat("en", { timeZone: value }).format(); return true; } catch { return false; } };
       const invalid = reportFieldValidation([
+        [time, !guestIntake || !time.input.value || anchorDate ? "" : "Choose a date with an explicit time."],
+        [timeZone, !guestIntake || validZone(timeZone.input.value.trim()) ? "" : "Enter an IANA time zone, for example Europe/Berlin."],
+        [guestTimezone, !guestIntake || !guestTimezone.input.value.trim() || validZone(guestTimezone.input.value.trim()) ? "" : "Enter an IANA time zone."],
         [templateControl, templateId ? "" : "Select a template."],
         [titleInput, templateId && titleMissing ? "Card title is required." : ""],
-        [anchorInput, anchorDate ? "" : "Date is required."],
+        [anchorInput, anchorDate || guestIntake ? "" : "Date is required."],
+        [guestEmail, !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? "" : "Enter a valid guest email."],
       ]);
       if (invalid) {
         feedback.clear();
@@ -328,7 +446,20 @@ export function createQuickTaskActions(context) {
       feedback.pending("Creating card…");
       const routeToken = getActiveWorkspaceRouteToken();
       try {
-        const body = { templateId, anchorDate };
+        const body = { templateId };
+        if (anchorDate) body.anchorDate = anchorDate;
+        if (guestIntake) {
+          if (email) body.guestEmail = email.toLowerCase();
+          if (savedPersonId) body.guestPersonId = savedPersonId;
+          body.creationKey = creationKey;
+          if (guestName.input.value.trim()) body.guestName = guestName.input.value.trim();
+          if (topic.input.value.trim()) body.topic = topic.input.value.trim();
+          if (skipEmail.input.checked) body.skipEmail = true;
+          if (time.input.value) body.time = time.input.value;
+          if (timeZone.input.value.trim() !== "Europe/Berlin") body.timeZone = timeZone.input.value.trim();
+          if (guestTimezone.input.value.trim()) body.guestTimezone = guestTimezone.input.value.trim();
+          if (preferredWindow.input.value.trim()) body.window = preferredWindow.input.value.trim();
+        }
         const title = titleInput.input.value.trim();
         if (title) body.title = title;
         if (!groupsWrap.hidden) {
@@ -341,6 +472,7 @@ export function createQuickTaskActions(context) {
           body: JSON.stringify(body),
         });
         const card = result?.card || result;
+        clearDraft();
         overlay.close();
         if (!isWorkspaceRouteFresh(routeToken)) {
           await refreshOperationsWorkSnapshot({ rerender: false });
@@ -371,6 +503,15 @@ export function createQuickTaskActions(context) {
               options.template = selectedTemplate;
               options.title = titleInput.input.value;
               options.anchorDate = anchorDate;
+              options.guestEmail = guestEmail.input.value;
+              options.guestName = guestName.input.value;
+              options.guestPersonId = savedPersonId;
+              options.topic = topic.input.value;
+              options.skipEmail = skipEmail.input.checked;
+              options.time = time.input.value;
+              options.timeZone = timeZone.input.value;
+              options.guestTimezone = guestTimezone.input.value;
+              options.window = preferredWindow.input.value;
               overlay.close();
               openQuickWorkflowForm(options);
             },
@@ -382,7 +523,7 @@ export function createQuickTaskActions(context) {
             )
             .focus();
         }
-        setControlPending(createBtn, { pending: false, label: "Create card" });
+        setControlPending(createBtn, { pending: false, label: buttonLabel() });
       } finally {
         cardSubmitInFlight = false;
       }
@@ -828,7 +969,7 @@ export function createQuickTaskActions(context) {
 
     const backdrop = document.createElement("div");
     backdrop.className = "confirm-backdrop";
-    backdrop.addEventListener("click", () => overlay.close());
+    backdrop.addEventListener("click", () => { overlay.onDiscard?.(); overlay.close(); });
 
     const panel = document.createElement("div");
     panel.className = "confirm-panel quick-form-panel";
@@ -846,7 +987,7 @@ export function createQuickTaskActions(context) {
     closeBtn.type = "button";
     closeBtn.className = "quiet-button";
     closeBtn.textContent = "Close";
-    closeBtn.addEventListener("click", () => overlay.close());
+    closeBtn.addEventListener("click", () => { overlay.onDiscard?.(); overlay.close(); });
     header.append(title, closeBtn);
 
     const body = document.createElement("div");
@@ -858,6 +999,7 @@ export function createQuickTaskActions(context) {
       if (event.defaultPrevented) return;
       if (event.key === "Escape") {
         event.preventDefault();
+        overlay.onDiscard?.();
         overlay.close();
         return;
       }

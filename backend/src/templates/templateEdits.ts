@@ -36,6 +36,7 @@ export const DEFINITION_FIELDS = [
   'icon',
   'cardTitle',
   'eventPolicy',
+  'guestIntake',
   'tags',
   'phases',
   'sourceDocIds',

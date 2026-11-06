@@ -633,3 +633,110 @@ function renderCardOverflowMenu(card, busy, deleteCardPanel, getCurrentOperator)
   wrap.append(trigger, menu);
   return wrap;
 }
+
+// Delivery receipts are evidence: a queued job or a sent status without its
+// provider receipt must never be presented as an invitation delivered.
+export function renderCardGuestInvitation({ request, workApiUrl, reload, watch = true, schedule = setTimeout, cancel = clearTimeout }, card) {
+  const intake = card?.guestIntake;
+  if (!intake) return null;
+  const section = document.createElement("section");
+  section.className = "workflow-detail-section";
+  section.dataset.guestInvitation = "";
+  const heading = document.createElement("strong");
+  const sent = intake.status === "sent" && Boolean(intake.messageId);
+  heading.textContent = sent ? "Invitation sent"
+    : intake.status === "skipped" ? "Invitation not sent"
+    : intake.status === "contact-pending" ? "Guest contact details needed"
+    : intake.status === "failed" ? "Invitation could not be sent" : "Invitation preparing";
+  section.append(heading);
+  if (intake.recipient) {
+    const recipient = document.createElement("p");
+    recipient.textContent = `Guest: ${intake.recipient}`;
+    section.append(recipient);
+  }
+  if (intake.startIso) {
+    const time = document.createElement("p");
+    const parsed = new Date(intake.startIso);
+    time.textContent = `Proposed time: ${Number.isNaN(parsed.getTime()) ? intake.startIso : new Intl.DateTimeFormat("en-GB", { dateStyle: "full", timeStyle: "short", timeZone: "Europe/Berlin" }).format(parsed)} (Berlin)`;
+    section.append(time);
+  }
+  if (sent && intake.sentAt) {
+    const delivered = document.createElement("p");
+    const timestamp = new Date(intake.sentAt);
+    delivered.dataset.invitationSentAt = "";
+    delivered.textContent = `Sent at: ${Number.isNaN(timestamp.getTime()) ? intake.sentAt : new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Berlin" }).format(timestamp)} (Berlin)`;
+    section.append(delivered);
+  }
+  if (sent) {
+    const mail = document.createElement("a");
+    mail.href = `https://mail.google.com/mail/u/orin@datatalks.club/#all/${encodeURIComponent(intake.messageId)}`;
+    mail.textContent = "View sent invitation";
+    opensInNewTab(mail);
+    section.append(mail);
+  }
+  if (intake.status === "failed" || intake.status === "contact-pending") {
+    if (intake.error) {
+      const message = document.createElement("p");
+      message.textContent = typeof intake.error === "string" ? intake.error : intake.error.message || "Check the linked task for details.";
+      section.append(message);
+    }
+    if (intake.taskId) {
+      const task = document.createElement("a");
+      task.href = `/tasks?taskId=${encodeURIComponent(intake.taskId)}`;
+      task.textContent = "Open invitation task";
+      section.append(task);
+    }
+  }
+  if (intake.status === "skipped") {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "task-action-btn";
+    button.textContent = "Send invitation";
+    const feedback = document.createElement("p");
+    feedback.setAttribute("role", "status");
+    button.addEventListener("click", async () => {
+      if (button.disabled) return;
+      button.disabled = true;
+      feedback.textContent = "Preparing invitation…";
+      try {
+        await request(workApiUrl(`/api/cards/${encodeURIComponent(card.id)}/guest-intake/send`), { method: "POST", body: "{}" });
+        button.remove();
+        heading.textContent = "Invitation preparing";
+        feedback.textContent = "";
+        await reload?.();
+      } catch (error) {
+        feedback.textContent = `Could not prepare invitation: ${error.message || "request failed"}`;
+        button.disabled = false;
+      }
+    });
+    section.append(button, feedback);
+  }
+  if (watch && ["queued", "preparing"].includes(intake.status)) {
+    let timer;
+    let attempts = 0;
+    let stopped = false;
+    let observer;
+    const stop = () => { stopped = true; if (timer) cancel(timer); observer?.disconnect(); };
+    const poll = async () => {
+      if (stopped || !section.isConnected || ++attempts > 40) { stop(); return; }
+      try {
+        const payload = await request(workApiUrl(`/api/cards/${encodeURIComponent(card.id)}`));
+        if (stopped || !section.isConnected) { stop(); return; }
+        const next = payload?.card || payload;
+        if (next?.guestIntake) {
+          const receipt = renderCardGuestInvitation({ request, workApiUrl, reload, watch: false }, next);
+          section.replaceChildren(...receipt.childNodes);
+          if (!["queued", "preparing"].includes(next.guestIntake.status)) { stop(); return; }
+        }
+      } catch { /* Retain the last actual receipt and try within the bounded window. */ }
+      if (!stopped) { timer = schedule(poll, 3000); timer?.unref?.(); }
+    };
+    timer = schedule(poll, 3000);
+    timer?.unref?.();
+    if (typeof MutationObserver !== "undefined") {
+      observer = new MutationObserver(() => { if (!section.isConnected) stop(); });
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+    }
+  }
+  return section;
+}

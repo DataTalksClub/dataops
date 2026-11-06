@@ -1,3 +1,6 @@
+import { PutCommand } from '@aws-sdk/lib-dynamodb';
+import { TABLE_USERS } from '../src/db/tableNames';
+import { renderGuestFirstContact } from '../src/events/guestFirstContact';
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -14,11 +17,25 @@ import { buildHold } from '../src/calendar/holds';
 import { templateLink } from './helpers/cardTemplate';
 import { setSponsorDocEmailDepsForTests } from '../src/sponsorDocs/emailDelivery';
 import {
-  PODCAST_DOCS_URL,
   PODCAST_FIRST_CONTACT_FROM,
   formatSlotLabel,
-  renderPodcastFirstContactEmail,
 } from '../src/podcast/firstContact';
+
+const approvedTemplate = `Subject: <FIRST_NAME_SUBJECT_PREFIX>DataTalks.Club Podcast\n\n<GREETING>
+
+I'm Orin, I help Alexey organize the DataTalks.Club podcast. We'd love to have you on the show<TOPIC_CLAUSE>.
+
+Would <WEEKDAY_DATE> at <TIME_TIMEZONE> work for you? You can confirm this time or choose another available slot in the form below. If none of the times work, just reply to this email and we'll find an alternative.
+
+The form also explains how our podcast works and asks for a short bio, photo, profile links, and any blog posts, talks, or other materials that could help us prepare.
+
+Here's the link:
+<GUEST_FORM_URL>
+
+If prompted, enter this access code: <ACCESS_CODE>
+
+Best regards,
+Orin Vale`;
 
 describe('podcast first-contact email (Orin ask)', () => {
   let client: DynamoDBDocumentClient;
@@ -30,6 +47,7 @@ describe('podcast first-contact email (Orin ask)', () => {
     const port = await startLocal();
     client = await getClient(port);
     await createTables(client);
+    await client.send(new PutCommand({ TableName: TABLE_USERS, Item: { PK: 'SETTINGS#text-templates', SK: 'SETTINGS#text-templates', version: 1, templates: [{ id: 'podcast.first-contact', title: 'Podcast first-contact', body: approvedTemplate, updatedAt: '2030-01-01T00:00:00Z' }] } }));
     process.env.IS_LOCAL = 'true';
     handler = (await import('../src/handler')).handler;
     const user = await createUser(client, {
@@ -63,131 +81,53 @@ describe('podcast first-contact email (Orin ask)', () => {
       body: body === undefined ? null : JSON.stringify(body),
     }, {});
 
-  it('sends from orin@ with one proposed slot, the docs URL, and no card', async () => {
-    const email = renderPodcastFirstContactEmail({
-      guestFirstName: 'Sofiia',
-      slotLabel: 'Tuesday, November 4 at 12:30 CET',
-    });
-    assert.strictEqual(email.from, PODCAST_FIRST_CONTACT_FROM);
-    assert.strictEqual(email.from, 'orin@datatalks.club');
-    assert.strictEqual(email.subject, 'Sofiia at DataTalks.Club Podcast');
-    assert.ok(email.body.includes('Tuesday, November 4 at 12:30 CET'));
-    assert.ok(email.body.includes(PODCAST_DOCS_URL));
-    assert.strictEqual(
-      PODCAST_DOCS_URL,
-      'https://datatalksclub.github.io/docs/activities/podcast/',
-    );
-    // No topic ask: the guest is never asked to propose topics in first contact.
-    assert.ok(!/ideas on the topic/i.test(email.body));
-    assert.ok(!/do you already have ideas/i.test(email.body));
-    // No draft card: the renderer returns copy only, never a card reference.
-    assert.ok(!/card/i.test(email.body));
-    assert.ok(!('cardId' in email));
-    // Exactly one slot: the single label appears once, no slot list.
-    assert.strictEqual(email.body.split('Tuesday, November 4 at 12:30 CET').length - 1, 1);
+  const renderInput = {
+    startIso: '2030-11-04T16:00:00.000Z', guestFirstName: 'Synthetic', slotLabel: 'Monday 4 November 2030 at 17:00 CET',
+    formUrl: 'https://ops.example.test/podcast-docs/synthetic?code=ABCD-EFGH',
+    accessCode: 'ABCD-EFGH', topicSeed: 'Reliable data agents',
+  };
+
+  it('renders the exact approved first-contact subject and body', () => {
+    const email = renderGuestFirstContact(approvedTemplate, { ...renderInput, type: 'podcast', templateId: 'podcast.first-contact', guestName: renderInput.guestFirstName, topic: renderInput.topicSeed });
+    assert.equal(email.from, PODCAST_FIRST_CONTACT_FROM);
+    assert.equal(email.subject, 'Synthetic at DataTalks.Club Podcast');
+    assert.equal(email.body, `Hi Synthetic,
+
+I'm Orin, I help Alexey organize the DataTalks.Club podcast. We'd love to have you on the show to discuss Reliable data agents.
+
+Would Monday 4 November 2030 at 17:00 CET work for you? You can confirm this time or choose another available slot in the form below. If none of the times work, just reply to this email and we'll find an alternative.
+
+The form also explains how our podcast works and asks for a short bio, photo, profile links, and any blog posts, talks, or other materials that could help us prepare.
+
+Here's the link:
+https://ops.example.test/podcast-docs/synthetic?code=ABCD-EFGH
+
+If prompted, enter this access code: ABCD-EFGH
+
+Best regards,
+Orin Vale`);
+    assert.ok(!/datatalksclub.github.io|Nice to meet you|Blog posts\n|do not invent/i.test(email.body));
   });
 
-  it('links the public docs page, never the old Google Doc', () => {
-    const email = renderPodcastFirstContactEmail({
-      guestFirstName: 'Jane',
-      slotLabel: 'Monday, November 3 at 12:30 CET',
-    });
-    assert.ok(!/docs\.google\.com/.test(email.body));
-    assert.ok(email.body.includes('https://datatalksclub.github.io/docs/activities/podcast/'));
+  it('supports email-only guests without inventing a name or topic', () => {
+    const email = renderGuestFirstContact(approvedTemplate, { ...renderInput, type: 'podcast', templateId: 'podcast.first-contact' });
+    assert.equal(email.subject, 'DataTalks.Club Podcast');
+    assert.match(email.body, /^Hi,\n/);
+    assert.ok(!email.body.includes('to discuss'));
+    assert.throws(() => renderGuestFirstContact(approvedTemplate, { ...renderInput, type: 'podcast', templateId: 'podcast.first-contact', accessCode: '' }), /access code/);
   });
 
-  it('rejects blank guest name or slot instead of rendering unresolved copy', () => {
-    assert.throws(
-      () => renderPodcastFirstContactEmail({ guestFirstName: '  ', slotLabel: 'Monday at 12:00' }),
-      /guestFirstName is required/,
-    );
-    assert.throws(
-      () => renderPodcastFirstContactEmail({ guestFirstName: 'Jane', slotLabel: '  ' }),
-      /slotLabel is required/,
-    );
+  it('formats the single saved slot with weekday, year and timezone', () => {
+    assert.equal(formatSlotLabel('2030-11-04T16:00:00.000Z'), renderInput.slotLabel);
+    assert.throws(() => formatSlotLabel('not-a-date'), /valid ISO/);
   });
 
-  it('formats a hold instant as a Berlin slot label', () => {
-    // 2026-11-04 16:30 Europe/Berlin (CET) == 15:30Z.
-    assert.strictEqual(
-      formatSlotLabel('2026-11-04T15:30:00.000Z'),
-      'Wednesday 4 November 2026 at 16:30 CET',
-    );
-    assert.throws(() => formatSlotLabel('not-a-date'), /startIso must be a valid ISO instant/);
-  });
-
-  it('POST /api/podcast-first-contact/email renders the same copy over HTTP', async () => {
-    const res = await staffReq('POST', '/api/podcast-first-contact/email', {
-      guestFirstName: 'Sofiia',
-      slotLabel: 'Tuesday, November 4 at 12:30 CET',
-    });
-    assert.strictEqual(res.statusCode, 200, res.body);
-    const payload = JSON.parse(res.body);
-    assert.strictEqual(payload.from, 'orin@datatalks.club');
-    assert.strictEqual(payload.subject, 'Sofiia at DataTalks.Club Podcast');
-    assert.ok(payload.body.includes('Tuesday, November 4 at 12:30 CET'));
-    assert.ok(payload.body.includes('https://datatalksclub.github.io/docs/activities/podcast/'));
-    assert.ok(!('cardId' in payload));
-    assert.ok(!('card' in payload));
-  });
-
-
-  it('does not ask the guest to invent alternate times; points at the form when given', () => {
-    const email = renderPodcastFirstContactEmail({
-      guestFirstName: 'Ian',
-      slotLabel: 'Monday, November 3 at 12:30 CET',
-      formUrl: 'https://ops.dtcdev.click/sponsor-docs/abc?code=CODE',
-      topicSeed: 'building developer platforms',
-    });
-    assert.ok(email.body.includes('building developer platforms'));
-    assert.ok(email.body.includes('https://ops.dtcdev.click/sponsor-docs/abc?code=CODE'));
-    assert.ok(/ordinary free Mon\/Tue slots/.test(email.body));
-    assert.ok(!/couple of sentences/i.test(email.body));
-    assert.ok(!/either way works/i.test(email.body));
-    assert.ok(/if none fit, just reply to this email/i.test(email.body));
-    assert.ok(!/[\u2013\u2014\u201c\u201d]/.test(email.body));
-    assert.ok(email.body.endsWith('Best regards,\nOrin Vale'));
-    assert.ok(!/custom/.test(email.body));
-    assert.equal(email.formUrl, 'https://ops.dtcdev.click/sponsor-docs/abc?code=CODE');
-    assert.equal(email.topicSeed, 'building developer platforms');
-  });
-
-  it('keeps example publication bullets consecutive (no blank line between items)', () => {
-    const email = renderPodcastFirstContactEmail({
-      guestFirstName: 'Sofiia',
-      slotLabel: 'Tuesday, November 4 at 12:30 CET',
-    });
-    // Valeria/Orin: Gmail showed extra blank lines between "- Blog posts" items
-    // when the renderer joined with empty string lines. Tight list = single \n.
-    assert.ok(
-      email.body.includes(
-        '1. Blog posts\n2. Talks and podcast interviews\n3. Social media posts\n4. Github repositories\n\n',
-      ),
-      'expected tight bullet block with single newlines between items',
-    );
-    assert.ok(
-      !email.body.includes('- Blog posts\n\n- Talks'),
-      'must not insert a blank line between consecutive list items',
-    );
-  });
-
-  it('form-only path: no reply-instead wording without formUrl either', () => {
-    const email = renderPodcastFirstContactEmail({
-      guestFirstName: 'Sofiia',
-      slotLabel: 'Tuesday, November 4 at 12:30 CET',
-    });
-    assert.ok(!/couple of sentences/i.test(email.body));
-    assert.ok(!/either way works/i.test(email.body));
-    assert.ok(!/reply to this email/i.test(email.body));
-    assert.ok(/via the form/i.test(email.body));
-    assert.ok(/do not invent alternate/i.test(email.body));
-  });
-
-  it('POST /api/podcast-first-contact/email 400s without a slot', async () => {
-    const res = await staffReq('POST', '/api/podcast-first-contact/email', {
-      guestFirstName: 'Sofiia',
-    });
-    assert.strictEqual(res.statusCode, 400, res.body);
+  it('renders through the API without sending or creating records', async () => {
+    const res = await staffReq('POST', '/api/podcast-first-contact/email', renderInput);
+    assert.equal(res.statusCode, 200, res.body);
+    assert.equal(JSON.parse(res.body).body, renderGuestFirstContact(approvedTemplate, { ...renderInput, type: 'podcast', templateId: 'podcast.first-contact', guestName: renderInput.guestFirstName, topic: renderInput.topicSeed }).body);
+    const missing = await staffReq('POST', '/api/podcast-first-contact/email', { ...renderInput, accessCode: '' });
+    assert.equal(missing.statusCode, 400, missing.body);
   });
 
   async function invitation() {
@@ -211,6 +151,7 @@ describe('podcast first-contact email (Orin ask)', () => {
     assert.match(output.email.body, /Monday 4 November 2030 at 17:00 CET/);
     assert.match(output.email.body, /Reliable data agents/);
     assert.match(output.email.formUrl, new RegExp(`/podcast-docs/${input.docId}\\?code=`));
+    assert.ok(output.email.body.includes(`If prompted, enter this access code: ${output.email.accessCode}`));
     assert.equal((await getTaskConsistent(client, input.taskId))!.podcastFirstContact, undefined);
   });
 

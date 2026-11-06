@@ -1,4 +1,5 @@
 import { eventPolicyIssues } from '../events/policy';
+import { guestIntakePolicyIssues } from '../events/guestIntakePolicy';
 /**
  * Git-authored workflow templates.
  *
@@ -40,6 +41,7 @@ const TEMPLATE_FIELDS = [
   ['icon', 'icon'],
   ['cardTitle', 'card_title'],
   ['eventPolicy', 'event_policy'],
+  ['guestIntake', 'guest_intake'],
   ['tags', 'tags'],
   ['sourceDocIds', 'source_document_ids'],
 ] as const;
@@ -275,6 +277,7 @@ export function validateAuthoredTemplate(
   if (doc.event_policy !== undefined) {
     for (const issue of eventPolicyIssues(doc.event_policy)) fail(issue);
   }
+  for (const issue of guestIntakePolicyIssues(doc.guest_intake, String(doc.type))) fail(issue);
 
   if (doc.card_title !== undefined) {
     for (const message of cardTitlePatternIssues(String(doc.type), doc.card_title)) fail(message);

@@ -1,3 +1,11 @@
+import { getSponsorDocWithAuthMaterial, decryptSponsorDocAccessCode } from '../db/sponsorDocs';
+import { getEventRecord } from '../events/store';
+import { loadGuestFirstContact } from '../events/guestFirstContact';
+import { provenPreSendFailure } from '../events/guestFirstContactDelivery';
+import { getTaskConsistent } from '../db/tasks';
+import { PutCommand } from '@aws-sdk/lib-dynamodb';
+import { TABLE_ARTIFACTS } from '../db/tableNames';
+import { getGuestIntakeJob, guestIntakeKey } from '../events/guestIntakeStore';
 import { cardEventInterval } from '../calendar/cardEventTime';
 import { adoptCardInvite, adoptEventDate, CardInviteConflictError, CardInviteGoogleError, CardInviteInputError, cardGuests, cardHasHoldInvite, parseCardGuests, syncCardInvite, unlinkCardInvite, verifyCardInvites } from '../calendar/cardInvite';
 import { lumaUrlForEventCard } from '../calendar/lumaEvents';
@@ -372,6 +380,40 @@ async function handleCardRoutes(
       return await handleSingleTemplateUpdate(
         method, templateUpdateMatch[1], rawBody, event, client,
       );
+    }
+
+    const firstInviteMatch = suffix.match(/^\/([^/]+)\/guest-intake(?:\/(send|retry))?\/?$/);
+    if (firstInviteMatch) {
+      const action = firstInviteMatch[2];
+      if (method !== (action ? 'POST' : 'GET')) return json(405, { error: 'Method not allowed' });
+      const actor = await resolveInteractiveActor(client, event, action ? 'work-write' : 'work-read');
+      if (!actor.ok) return actor.response;
+      const card = await getCardConsistent(client, firstInviteMatch[1]);
+      if (!card) return json(404, { error: 'Card not found' });
+      const job = card.guestIntake ? await getGuestIntakeJob(client, card.guestIntake.jobId) : null;
+      if (!job) return json(404, { error: 'This Card has no creation invitation' });
+      if (!action) {
+        let email;
+        if (event.queryStringParameters?.preview === '1' && job.docId && job.holdId && job.policy) {
+          const [loaded, hold] = await Promise.all([getSponsorDocWithAuthMaterial(client, job.docId), getEventRecord(client, job.holdId)]);
+          const code = loaded ? decryptSponsorDocAccessCode(job.docId, loaded.accessCodeCiphertext) : null;
+          if (loaded && hold && code) email = await loadGuestFirstContact(client, { type: job.type, templateId: job.policy.emailTemplateId, guestName: job.guestName, topic: job.topic, startIso: hold.startIso, guestTimezone: job.guestTimezone,
+            formUrl: `${(process.env.DATAOPS_PORTAL_URL || 'https://ops.dtcdev.click').replace(/\/$/, '')}/${job.policy.formTemplate}-docs/${encodeURIComponent(job.docId)}?code=${encodeURIComponent(code)}`, accessCode: code });
+        }
+        return json(200, { invitation: job, ...(email ? { preview: true, email: { ...email, to: job.guestEmail, cc: [] } } : {}) });
+      }
+      if (!mayAdministerCard(actor.actor, card)) return workAdminForbidden('Sending this invitation requires the Card owner or an admin');
+      if (action === 'send' && (job.status !== 'skipped' || !job.skipEmail)) return json(409, { error: 'Only a skipped initial invitation can be sent here; existing delivery attempts must be reconciled' });
+      if (action === 'retry') {
+        const task = await getTaskConsistent(client, job.taskId);
+        const prior = task?.podcastFirstContact;
+        if (job.status !== 'failed' || job.retryable !== true || (prior && prior.state !== 'sent' && !provenPreSendFailure(prior.delivery))) return json(409, { error: 'Only a proven safe preparation or pre-send failure can be retried; reconcile uncertain delivery first' });
+      }
+      const skipEmail = action === 'send' ? false : job.skipEmail;
+      await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { ...guestIntakeKey(job.id), ...job, status: 'queued', skipEmail, updatedAt: new Date().toISOString() },
+        ConditionExpression: '#s = :prior AND updatedAt = :updated', ExpressionAttributeNames: { '#s': 'status' }, ExpressionAttributeValues: { ':prior': job.status, ':updated': job.updatedAt } }));
+      const updated = await updateCardAdditive(client, card, c => ({ guestIntake: { ...c.guestIntake!, status: 'queued', skipEmail } }));
+      return json(202, { card: updated, invitation: { status: 'queued', recipient: job.guestEmail, taskId: job.taskId } });
     }
 
     // Route: /api/cards/:id/tasks

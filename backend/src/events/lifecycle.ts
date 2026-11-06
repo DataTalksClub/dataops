@@ -1,3 +1,4 @@
+import { formatSlotLabel } from '../podcast/firstContact';
 import { requireEventBytes } from './size';
 import { createHash } from 'node:crypto';
 import { cardEventInterval } from '../calendar/cardEventTime';
@@ -48,6 +49,8 @@ export interface EventRecord {
   startIso: string;
   endIso: string;
   durationMinutes: number;
+  guestTimezone?: string;
+  autoAcceptancePoll?: boolean;
   expiresAt: string;
   policy: EventPolicy;
   renderValues: EventRenderValues;
@@ -76,6 +79,7 @@ export interface EventCommand {
     guestNames: string;
     documentUrl: string;
     guestEmails: string[];
+    guestTimezone?: string;
   };
   approval?: { via: 'calendar-accept'; attendeeEmail: string; acceptedEmails: string[]; generation: number };
 }
@@ -136,6 +140,8 @@ export function planEventTransition(id: string, cardId: string, current: EventRe
       status: 'proposed', date: command.date!, time, ...interval,
       expiresAt: new Date(Date.parse(command.now) + policy.expiresDays * 86400000).toISOString(),
       policy, guestEmails,
+      autoAcceptancePoll: policy.calendarAcceptance.enabled,
+      ...((proposal.guestTimezone || current?.guestTimezone) ? { guestTimezone: proposal.guestTimezone || current?.guestTimezone } : {}),
       renderValues: {
         title: proposal.title, topic: proposal.topic, guestNames: proposal.guestNames,
         date: command.date!, time, timeZone: policy.timeZone, documentUrl: proposal.documentUrl,
@@ -162,13 +168,18 @@ export function planEventTransition(id: string, cardId: string, current: EventRe
   const inviteGuests = approved ? policy.guests.approved : policy.guests.proposal;
   const attendees = inviteGuests ? emails([...next.guestEmails, ...policy.guests.requiredEmails]) : [];
   const render = (text: string) => renderEventText(text, { ...renderValues, zoomUrl: approved ? renderValues.zoomUrl : '' });
+  let guestDetails = '';
+  if (next.guestTimezone) guestDetails = `Guest local time: ${formatSlotLabel(next.startIso, next.guestTimezone)} (${next.guestTimezone})`;
+  let formCode = '';
+  try { formCode = new URL(renderValues.documentUrl).searchParams.get('code') || ''; } catch { /* no linked guest form */ }
+  if (formCode) guestDetails += `${guestDetails ? '\n' : ''}Guest form: ${renderValues.documentUrl}\nAccess code: ${formCode}`;
   next.operations.push({
     key: command.operationKey, fingerprint: hash, transition, state: 'pending',
     desired: {
       summary: render(approved ? policy.titles.approved : policy.titles.proposed),
-      description: [render(policy.description), render(policy.inviteText)].filter(Boolean).join('\n\n'),
+      description: [render(policy.description), render(policy.inviteText), guestDetails].filter(Boolean).join('\n\n'),
       location: approved && policy.zoom.enabled ? policy.zoom.url! : '', attendees,
-      startIso: new Date(Date.parse(next.startIso) - (approved ? policy.guests.leadMinutes : 0) * 60000).toISOString(),
+      startIso: new Date(Date.parse(next.startIso) - policy.guests.leadMinutes * 60000).toISOString(),
       endIso: next.endIso, timeZone: next.timeZone,
       sendUpdates: policy.notifications[transition].calendar,
       emails: policy.notifications[transition].emails.map(email => ({

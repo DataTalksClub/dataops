@@ -1,4 +1,5 @@
 import { banner } from './cardBanners.mjs';
+import { randomUUID } from 'node:crypto';
 import { UsageError } from "../errors.mjs";
 import { calendarLabel, enc, fields, integer, isoDate, linkedCardLabel, list as csv, optionalString, portalUrl, positional, required, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
@@ -22,8 +23,20 @@ Usage
   dataops cards banner <card-id> --job JOB_ID [--wait]
                                                 Read durable progress; completed images need review
   dataops cards show <card-id>                  The Card, its links, and its Tasks
-  dataops cards create --date YYYY-MM-DD --template ID|TYPE|NAME [--title T]
+  dataops cards create --template ID|TYPE|NAME [--date YYYY-MM-DD] [--title T]
       [--end-date YYYY-MM-DD] [--optional-groups a,b] [--count FIELD=N,...] [--stage S] [--description D] [--owner ID] [--tags a,b]
+      [--guest-email EMAIL] [--guest-person ID | --guest-contact ID] [--guest-name NAME] [--topic TOPIC] [--time HH:MM] [--time-zone IANA_ZONE]
+      [--guest-time-zone IANA_ZONE] [--window WINDOW] [--skip-email] [--key KEY]
+                                                Podcast, webinar and workshop guest Cards send email
+                                                and a [Proposed] calendar invite automatically. Date, title, name and topic are optional.
+                                                --skip-email prepares its event and form without
+                                                contacting the guest. Reuse --key for a safe retry.
+  dataops cards invitation <card-id> [--preview | --send | --retry-pre-send] [--json]
+                                                Read first-invitation status; --preview renders without sending.
+                                                --send sends email AND a [Proposed] calendar invite only
+                                                for a previously skipped first invitation; never a resend.
+                                                --retry-pre-send resumes only a proven safe pre-send failure;
+                                                ambiguous delivery is blocked. The worker normally resumes automatically.
   dataops cards update <card-id> [--title T] [--description D] [--date D] [--end-date D] [--owner ID|none]
       [--tags a,b] [--people PERSON_ID,PERSON_ID|none]
   dataops cards update <card-id> --count FIELD=N[,FIELD=N] [--apply]
@@ -195,7 +208,46 @@ export async function show(args, io) {
 
 export async function create(args, io) {
   const api = apiFor(args);
-  const body = { anchorDate: isoDate(required(args, "date", "date"), "date") };
+  const body = {};
+  const guestEmail = optionalString(args, "guestEmail")?.trim();
+  if (guestEmail !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) {
+    throw new UsageError('--guest-email must be a valid email address.');
+  }
+  const guestPersonId = optionalString(args, "guestPerson");
+  const guestContactId = optionalString(args, "guestContact");
+  const hasGuest = Boolean(guestEmail || guestPersonId || guestContactId || optionalString(args, "guestName"));
+  const date = hasGuest ? optionalString(args, "date") : required(args, "date", "date");
+  if (guestPersonId) body.guestPersonId = guestPersonId;
+  if (guestContactId) body.guestContactId = guestContactId;
+  if (date !== undefined) body.anchorDate = isoDate(date, "date");
+  if (hasGuest) {
+    if (guestEmail) body.guestEmail = guestEmail.toLowerCase();
+    body.creationKey = optionalString(args, "key") || randomUUID();
+  } else if (args.key !== undefined) body.creationKey = optionalString(args, "key");
+  for (const field of ["guestName", "topic"]) {
+    const value = optionalString(args, field);
+    if (value !== undefined) body[field] = value.trim();
+  }
+  if (args.skipEmail !== undefined) {
+    if (![true, false, "true", "false"].includes(args.skipEmail)) {
+      throw new UsageError('--skip-email is a boolean flag.');
+    }
+    body.skipEmail = args.skipEmail === true || args.skipEmail === "true";
+  }
+  const time = optionalString(args, "time");
+  if (time !== undefined) {
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new UsageError('--time must be HH:MM.');
+    body.time = time;
+  }
+  for (const [flag, field] of [["timeZone", "timeZone"], ["guestTimeZone", "guestTimezone"]]) {
+    const zone = optionalString(args, flag);
+    if (zone !== undefined) {
+      try { new Intl.DateTimeFormat("en", { timeZone: zone }).format(); } catch { throw new UsageError(`--${flag === "timeZone" ? "time-zone" : "guest-time-zone"} must be an IANA time zone.`); }
+      body[field] = zone;
+    }
+  }
+  const window = optionalString(args, "window");
+  if (window !== undefined) body.window = window;
   const endDate = optionalString(args, "endDate");
   if (endDate !== undefined) body.endDate = isoDate(endDate, "end-date");
   const title = optionalString(args, "title");
@@ -214,6 +266,8 @@ export async function create(args, io) {
   const result = await api.post("/api/cards", body);
   if (args.json) return result;
   io.print(`Created Card ${result.card.id} - ${result.card.title} (${result.tasks?.length ?? 0} Tasks).`);
+  const intake = result.card.guestIntake;
+  if (intake) io.print(`Invitation: ${intake.status === "sent" && !intake.messageId ? "preparing" : intake.status}${intake.recipient ? ` to ${intake.recipient}` : ""}${intake.taskId ? ` (Task ${intake.taskId})` : ""}.`);
   for (const task of result.tasks || []) io.print(`  ${task.id}  ${task.date}  ${task.description}`);
   for (const slot of result.eventSlots || []) {
     if (slot.outcome === "created") io.print(`Event Card ${slot.cardId} - ${slot.cardTitle} (date TBD; set it with: dataops cards time ${slot.cardId} --at "YYYY-MM-DD HH:MM")`);
@@ -495,7 +549,34 @@ export async function time(args, io) {
   return result;
 }
 
+export async function invitation(args, io) {
+  const id = positional(args, 0, "dataops cards invitation <card-id> [--preview | --send | --retry-pre-send]");
+  const modes = ["preview", "send", "retryPreSend"].filter(flag => args[flag] !== undefined && args[flag] !== false && args[flag] !== "false");
+  if (modes.length > 1) throw new UsageError("Choose only one of --preview, --send or --retry-pre-send.");
+  for (const flag of modes) if (args[flag] !== true && args[flag] !== "true") throw new UsageError("Invitation action options are boolean flags.");
+  const api = apiFor(args);
+  const route = `/api/cards/${enc(id)}/guest-intake`;
+  const result = args.send === true || args.send === "true" ? await api.post(`${route}/send`, {})
+    : args.retryPreSend === true || args.retryPreSend === "true" ? await api.post(`${route}/retry`, {})
+    : await api.get(route, args.preview === true || args.preview === "true" ? { query: { preview: "1" } } : undefined);
+  if (args.json) return result;
+  const receipt = result.invitation || result.job || result.card?.guestIntake || result;
+  const state = receipt.status === "sent" && !receipt.messageId ? "preparing" : receipt.status || "unknown";
+  io.print(`First invitation: ${state}`);
+  for (const [label, value] of [["Recipient", receipt.recipient || receipt.guestEmail], ["Task", receipt.taskId], ["Gmail message ID", receipt.messageId], ["Sent at", receipt.sentAt], ["Error", receipt.error]]) {
+    if (value) io.print(`${label}: ${value}`);
+  }
+  const preview = result.email || (typeof result.preview === "object" ? result.preview : undefined);
+  if (preview?.subject && typeof preview.body === "string") {
+    io.print(`Subject: ${preview.subject}`);
+    io.print("");
+    io.print(preview.body);
+  } else if (modes.includes("preview")) io.print(JSON.stringify(preview || result, null, 2));
+  return result;
+}
+
 export const commands = {
+  invitation,
   banner,
   "dedupe-tasks": dedupeTasks,
   "event-slots": eventSlots,

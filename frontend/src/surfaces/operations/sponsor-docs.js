@@ -1,3 +1,4 @@
+import { guestEventTimeZone, dualZoneEventTime } from "./sponsor-doc-event-time.js";
 import { formatUserCode } from "../../dakit/device-code.js";
 import { renderSponsorDocGate } from "./sponsor-doc-gate.js";
 import { appendSponsorDocRadioField } from "./sponsor-doc-radio.js";
@@ -256,7 +257,7 @@ export function createSponsorDocPage({
     }
   }
 
-  async function saveChanges(nextStatus) {
+  async function saveChanges(nextStatus, timeChoiceIntent) {
     if (busy || !doc) return;
     if (nextStatus === "submitted") {
       const validationErrors = validateSponsorDocDraft(doc.templateDefinition, draftContent);
@@ -279,6 +280,7 @@ export function createSponsorDocPage({
         (section.fields || []).filter(field => field.derived).map(field => field.key)));
       const body = { content: Object.fromEntries(Object.entries(draftContent).filter(([key]) => !derivedKeys.has(key))) };
       if (nextStatus) body.status = nextStatus;
+      if (timeChoiceIntent) body.timeChoiceIntent = timeChoiceIntent;
       const payload = await request(`/api/sponsor-docs/${encodeURIComponent(docId)}`, {
         method: "PUT",
         headers,
@@ -402,9 +404,15 @@ export function createSponsorDocPage({
 
     const metaRow = el("div", "sponsor-doc-meta");
     metaRow.append(el("span", "dk-badge", tDef.label || doc.template));
+    const guestSchedule = ["podcast", "webinar", "workshop"].includes(doc.template) && doc.eventMetadata?.startIso;
+    const guestZone = guestEventTimeZone(draftContent.guestTimezone || doc.eventMetadata?.guestTimezone);
+    if (guestSchedule && !draftContent.guestTimezone) draftContent.guestTimezone = guestZone;
     if (doc.eventMetadata) {
-      const eventLabel = el("span", "", doc.eventMetadata.label);
+      const eventLabel = el("span", "", guestSchedule
+        ? dualZoneEventTime(doc.eventMetadata.startIso, doc.eventMetadata.endIso, guestZone, doc.eventMetadata.durationMinutes)
+        : doc.eventMetadata.label);
       eventLabel.dataset.sponsorDocEvent = "";
+      eventLabel.style.whiteSpace = "pre-line";
       metaRow.append(eventLabel);
     }
     if (doc.publicationDate) metaRow.append(el("span", "", `Publication date: ${doc.publicationDate}`));
@@ -414,6 +422,19 @@ export function createSponsorDocPage({
     metaRow.append(editedSpan);
     headWrap.append(titleRow, metaRow);
     headerCard.append(headWrap);
+    if (guestSchedule) {
+      const zoneLabel = el("label", "sponsor-doc-field__label", "Your time zone");
+      const zoneSelect = el("select", "dk-input");
+      zoneSelect.dataset.guestTimezone = "";
+      zoneSelect.setAttribute("aria-label", "Your time zone");
+      const zones = new Set([guestZone, "Europe/Berlin", "UTC", ...(Intl.supportedValuesOf?.("timeZone") || [])]);
+      for (const zone of zones) { const option = el("option", "", zone); option.value = zone; zoneSelect.append(option); }
+      zoneSelect.value = guestZone;
+      zoneSelect.disabled = busy;
+      zoneSelect.addEventListener("change", () => { draftContent.guestTimezone = zoneSelect.value; render(); });
+      zoneLabel.append(zoneSelect);
+      headerCard.append(zoneLabel, el("p", "dk-hint", "Times show the Berlin schedule and your local date and time. You can save a time choice now and complete the questionnaire later."));
+    }
 
     if (doc.viewerRole === "staff") {
       const staffBar = el("div", "sponsor-doc-staff-bar");
@@ -491,7 +512,7 @@ export function createSponsorDocPage({
       if (tDef.intro) body.append(el("p", "", tDef.intro));
       if (tDef.guidelinesUrl) {
         const guideP = el("p", "");
-        const guideLink = el("a", "", "View visual placement guide →");
+        const guideLink = el("a", "", tDef.guidelinesLabel || "View visual placement guide →");
         guideLink.href = tDef.guidelinesUrl;
         guideLink.target = "_blank";
         guideLink.rel = "noopener noreferrer";
@@ -606,6 +627,7 @@ export function createSponsorDocPage({
       };
 
       for (const fieldDef of sectionDef.fields || []) {
+        if (guestSchedule && ["guestTimezone", "proposedSlotLabel"].includes(fieldDef.key)) continue;
         const fieldWrap = el("div", "sponsor-doc-field");
         fieldWrap.dataset.sponsorFieldGroup = fieldDef.key;
         if (fieldDef.required) fieldWrap.dataset.sponsorFieldRequired = "true";
@@ -659,6 +681,7 @@ export function createSponsorDocPage({
 
         const isVisualField = fieldDef.key === "graphicsUrl" || Boolean(fieldDef.allowVisualUpload);
         const updateCount = (valText) => {
+          if (fieldDef.key === "photoUrl") { countEl.hidden = true; countEl.textContent = ""; return; }
           const text = String(valText || "");
           if (isVisualField && /^data:image\//i.test(text)) {
             countEl.textContent = uploadedVisualName ? `Uploaded (${uploadedVisualName})` : "Uploaded image";
@@ -693,7 +716,15 @@ export function createSponsorDocPage({
           appendSponsorDocRadioField({
             el,
             fieldWrap,
-            fieldDef,
+            fieldDef: fieldDef.key === "slotChoice" && guestSchedule ? {
+              ...fieldDef,
+              options: (fieldDef.options || []).map(option => {
+                const start = option.startIso || (option.value === "confirm_proposed" ? doc.eventMetadata.startIso : undefined);
+                const end = option.endIso || (option.value === "confirm_proposed" ? doc.eventMetadata.endIso : undefined);
+                const label = dualZoneEventTime(start, end, guestZone, doc.eventMetadata.durationMinutes);
+                return label ? { ...option, label: `${option.value === "confirm_proposed" ? "Confirm proposed time: " : ""}${label}` } : option;
+              }),
+            } : fieldDef,
             inputId,
             currentVal,
             busy,
@@ -701,6 +732,17 @@ export function createSponsorDocPage({
             updateLivePreview,
             top,
           });
+          if (fieldDef.key === "slotChoice" && guestSchedule) {
+            fieldWrap.append(actionBtn("dk-button dk-button--secondary", busy ? "Saving…" : "Save time choice", "save-time-choice", () => {
+              if (!draftContent.slotChoice) {
+                feedbackMsg = "Choose a time option first.";
+                feedbackTone = "warning";
+                render();
+                return;
+              }
+              saveChanges(undefined, { choice: draftContent.slotChoice, proposalStartIso: doc.eventMetadata.startIso, proposalVersion: doc.eventMetadata.version });
+            }, busy));
+          }
           appendErrorIfAny();
           appendFieldNode(fieldDef.key, fieldWrap);
           continue;
@@ -824,6 +866,11 @@ export function createSponsorDocPage({
             if (!file) return;
             const dataUrl = await readVisualFileAsDataUrl(file);
             if (!dataUrl) return;
+            if (fieldDef.maxCharsHint && dataUrl.length > fieldDef.maxCharsHint) {
+              announce("This image is too large. Please use a smaller photo or paste an image URL.");
+              fileInput.value = "";
+              return;
+            }
             uploadedVisualName = file.name || "uploaded-visual.png";
             draftContent[fieldDef.key] = dataUrl;
             control.value = "";

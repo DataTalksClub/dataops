@@ -41,7 +41,7 @@ describe('podcast guest form (radio slot picker + topics; email stays one slot)'
     assert.ok(!/couple of sentences/i.test(template.intro));
     assert.ok(!/either way works/i.test(template.intro));
     assert.ok(!/reply to our email/i.test(template.intro));
-    assert.ok(/confirm or change the recording slot/i.test(template.intro));
+    assert.match(template.sections.find(section => section.id === 'scheduling')?.description || '', /confirm it, pick another free slot/i);
     const story = template.sections.find((section) => section.id === 'detailed-questions');
     assert.equal(story?.collapsible, true);
     const notes = template.sections.find((section) => section.id === 'notes');

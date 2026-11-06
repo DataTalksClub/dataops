@@ -1,3 +1,4 @@
+import { resolveGuestAcceptanceTask } from './guestIntakeCompletion';
 import { randomUUID } from 'node:crypto';
 import {
   GetCommand,
@@ -642,6 +643,7 @@ export interface EventTransitionInput {
   title?: string;
   topic?: string;
   guestNames?: string;
+  guestTimezone?: string;
   guestEmails?: string[];
   documentUrl?: string;
   operationKey?: string;
@@ -649,6 +651,10 @@ export interface EventTransitionInput {
   now?: string;
   deps?: HoldGoogleDeps;
   approval?: EventCommand['approval'];
+  /** Internal creation orchestration: one skipEmail suppresses both outbound channels. */
+  suppressGuestNotifications?: boolean;
+  /** Bind an external guest action to the exact proposal they saw. */
+  expectedEventVersion?: number;
 }
 
 async function runTransition(
@@ -660,6 +666,7 @@ async function runTransition(
   const actor = input.actor || 'authenticated-operator';
   const now = input.now || new Date().toISOString();
   const { card, episode, event: current, holdId } = await resolveEventTarget(client, targetId);
+  if (input.expectedEventVersion !== undefined && current?.version !== input.expectedEventVersion) throw new EventConflictError('The proposal changed; reload the guest form before accepting a time');
   const deps = input.deps || (await calendarInviteDeps({}, client));
 
   // If the same operationKey was already committed and is pending/deferred, reconcile it
@@ -687,6 +694,20 @@ async function runTransition(
   let command: EventCommand;
   if (transition === 'propose' || transition === 'reschedule') {
     const { templateId, templateVersion, policy } = await resolveCardEventPolicy(client, card);
+    // Newly proposed events use the current label; existing records keep their saved policy until a transition.
+    policy.titles.proposed = '[Proposed] ' + policy.titles.proposed.replace(/^(?:\(Proposal\)|\[Proposed\])\s*/i, '');
+    if (input.suppressGuestNotifications) {
+      policy.guests.proposal = false;
+      policy.calendarAcceptance.enabled = false;
+      policy.notifications.propose.calendar = 'none';
+      policy.notifications.reschedule.calendar = 'none';
+      policy.notifications.propose.emails = [];
+      policy.notifications.reschedule.emails = [];
+    } else if (input.guestEmails?.length) {
+      policy.guests.proposal = true;
+      policy.calendarAcceptance.enabled = true;
+      policy.notifications.propose.calendar = 'all';
+    }
     const guestEmails = await resolveProposalGuests(
       client,
       card,
@@ -743,6 +764,7 @@ async function runTransition(
         guestNames,
         documentUrl,
         guestEmails,
+        ...(input.guestTimezone ? { guestTimezone: input.guestTimezone } : {}),
       },
     };
   } else {
@@ -874,7 +896,9 @@ export async function approveEvent(
   targetId: string,
   input: EventTransitionInput = {},
 ): Promise<EventLifecycleResult> {
-  return runTransition(client, 'approve', targetId, input);
+  const result = await runTransition(client, 'approve', targetId, input);
+  if (result.event.status === 'approved') await resolveGuestAcceptanceTask(client, result.card.id, result.event.id, input.actor || 'authenticated-operator');
+  return result;
 }
 
 export async function rescheduleEvent(
@@ -974,7 +998,7 @@ export interface CalendarAcceptancePollOutcome {
  */
 export async function pollEventCalendarAcceptances(
   client: DynamoDBDocumentClient,
-  options: { targetId?: string; deps?: HoldGoogleDeps; now?: string } = {},
+  options: { targetId?: string; deps?: HoldGoogleDeps; now?: string; automaticOnly?: boolean } = {},
 ): Promise<{ checked: number; outcomes: CalendarAcceptancePollOutcome[] }> {
   const deps = options.deps || (await calendarInviteDeps({}, client));
   const now = options.now || new Date().toISOString();
@@ -1004,6 +1028,7 @@ export async function pollEventCalendarAcceptances(
 
   const outcomes: CalendarAcceptancePollOutcome[] = [];
   for (const record of candidates) {
+    if (options.automaticOnly && record.autoAcceptancePoll !== true) continue;
     if (record.status !== 'proposed') {
       outcomes.push({
         holdId: record.id,
@@ -1093,10 +1118,9 @@ export async function pollEventCalendarAcceptances(
       }
     }
 
-    if (
-      live.start?.dateTime &&
-      Date.parse(live.start.dateTime) !== Date.parse(record.startIso)
-    ) {
+    const desiredInterval = record.operations.at(-1)?.desired;
+    if ((live.start?.dateTime && Date.parse(live.start.dateTime) !== Date.parse(desiredInterval?.startIso || record.startIso))
+      || (live.end?.dateTime && Date.parse(live.end.dateTime) !== Date.parse(desiredInterval?.endIso || record.endIso))) {
       outcomes.push({
         holdId: record.id,
         cardId: record.cardId,

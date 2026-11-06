@@ -24,7 +24,7 @@ Usage
                                    Create a Card, then calendar propose --card CARD-ID,
                                    then podcast doc create CARD-ID before sending.
   dataops podcast invite --guest "Full Name" --email guest@example.com --date YYYY-MM-DD --topic TOPIC
-      [--title T] [--window midday|evening] [--duration N] [--form-url URL]
+      --form-url URL [--access-code CODE] [--title T] [--window midday|evening] [--duration N]
                                    First contact: tentative Google "(Proposal)"
                                    hold for one slot, a standalone follow-up
                                    Task (no Card), and the send-ready email
@@ -109,7 +109,7 @@ edited, scheduled and published. --status corrects or cancels an episode.
 
 Examples
   dataops podcast list --status booked
-  dataops podcast invite --guest "Sofiia" --email sofiia@example.com --date 2026-11-04 --topic "LLM evals in production"
+  dataops podcast invite --guest "Sofiia" --email sofiia@example.com --date 2026-11-04 --topic "LLM evals in production" --form-url "https://ops.example.test/podcast-docs/DOC?code=CODE"
   dataops podcast create --guests "Jane Doe:jane-doe" --title "Shipping ML" --recording-date 2026-11-04
   dataops podcast update 6f1c... --status cancelled
   dataops podcast create-card 6f1c...
@@ -545,6 +545,12 @@ export async function invite(args, io) {
     throw new UsageError("--duration must be a positive integer number of minutes (podcasts use 60).");
   }
   const title = optionalString(args, "title") || `${guest} at DataTalks.Club Podcast`;
+  const formUrl = optionalString(args, "form-url") || optionalString(args, "formUrl");
+  if (!formUrl || !/^https:\/\//.test(formUrl)) throw new UsageError('--form-url must be an https guest materials share URL.');
+  let accessCode = optionalString(args, 'accessCode');
+  try { accessCode ||= new URL(formUrl).searchParams.get('code') || undefined; }
+  catch { throw new UsageError('--form-url must be a valid https URL.'); }
+  if (!accessCode) throw new UsageError('--access-code is required when the form URL has no code query.');
 
   const api = apiFor(args);
   const holdRes = await api.post("/api/calendar-holds", {
@@ -575,15 +581,13 @@ export async function invite(args, io) {
     }
   }
   const firstName = guest.split(/\s+/)[0];
-  const formUrl = optionalString(args, "form-url") || optionalString(args, "formUrl") || undefined;
-  if (formUrl && !/^https:\/\//.test(formUrl)) {
-    throw new UsageError("--form-url must be an https URL (guest materials share link).");
-  }
   const rendered = await api.post("/api/podcast-first-contact/email", {
     guestFirstName: firstName,
     slotLabel,
+    startIso: hold?.startIso,
     formUrl,
     topicSeed: topic,
+    accessCode,
   });
 
   if (args.json) return { hold, task, email: rendered };

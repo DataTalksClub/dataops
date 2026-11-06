@@ -701,26 +701,14 @@ describe("Calendar hold CLI commands", () => {
     assert.match(io.text(), /Google sync deferred/);
   });
 
-  test("calendar propose wires workshop flags: 90 min evening with card", async () => {
+  test("calendar propose directs Card-linked guest invitations to the unified event command before writing", async () => {
     const io = captureIo();
-    let seen = null;
-    globalThis.fetch = async (url, options = {}) => {
-      seen = { url: String(url), body: JSON.parse(options.body) };
-      return new Response(
-        JSON.stringify({ hold: { id: "hold_w9", date: "2026-10-27", window: "evening", durationMinutes: 90, title: "Workshop", status: "tentative" } }),
-        { status: 201 },
-      );
-    };
-    const code = await run(
-      ["calendar", "propose", "--date", "2026-10-27", "--window", "evening", "--duration", "90", "--title", "Workshop", "--topic", "Workshop topic", "--guest-ref", "guest@example.com", "--document-url", "https://example.com/outline", "--card", "card-1"],
-      io,
-    );
-    assert.equal(code, 0);
-    assert.equal(seen.body.durationMinutes, 90);
-    assert.equal(seen.body.window, "evening");
-    assert.equal(seen.body.cardId, "card-1");
-    assert.equal(seen.body.guestRef, "guest@example.com");
-    assert.equal(seen.body.documentUrl, "https://example.com/outline");
+    let calls = 0;
+    globalThis.fetch = async () => { calls++; throw new Error('No provider request expected'); };
+    const code = await run(["calendar", "propose", "--date", "2030-12-02", "--title", "Workshop", "--topic", "Workshop topic", "--card", "card-1"], io);
+    assert.equal(code, 2);
+    assert.equal(calls, 0);
+    assert.match(io.errors.join("\n"), /dataops event propose CARD_ID/);
   });
 
   test("calendar propose validates before sending", async () => {

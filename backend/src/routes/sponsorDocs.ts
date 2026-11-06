@@ -1,3 +1,5 @@
+import { guestPortalSlots, recordGuestPortalTimeChoice } from '../events/guestIntakePortal';
+import { hydrateGuestEventSlotOptions } from '../sponsorDocs/templates';
 import { projectDocumentEvent, readDocumentEventMetadata } from '../sponsorDocs/eventMetadata';
 import { randomUUID } from 'node:crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -302,7 +304,13 @@ async function buildDocResponsePayload(
   const docPath = sponsorDocPathForTemplate(doc.template);
   const docUrl = `${base}${docPath}/${encodeURIComponent(doc.id)}`;
   let templateDefinition = getSponsorDocTemplate(doc.template);
-  if (doc.template === 'podcast') {
+  let intakeSlots = null;
+  if (['podcast', 'webinar', 'workshop'].includes(doc.template)) {
+    try { intakeSlots = await guestPortalSlots(client, doc); } catch { /* Confirmation stays available when alternate availability is unavailable. */ }
+  }
+  if (intakeSlots) {
+    templateDefinition = hydrateGuestEventSlotOptions(templateDefinition, intakeSlots, { label: doc.eventMetadata?.label, startIso: doc.eventMetadata?.startIso, endIso: doc.eventMetadata?.endIso });
+  } else if (doc.template === 'podcast') {
     try {
       const next = await listNextRecordingSlots(client, 6);
       const proposedLabel = String(doc.content?.proposedSlotLabel || '').trim() || null;
@@ -1018,6 +1026,8 @@ export async function handleSponsorDocRoutes(
           status: body.status as SponsorDocStatus | undefined,
           actorKind: 'sponsor',
         });
+        try { if (updated && body.timeChoiceIntent !== undefined) await recordGuestPortalTimeChoice(client, updated, body.timeChoiceIntent); }
+        catch (error) { return json(422, { error: (error as Error).message, code: 'guest_time_choice_pending' }); }
         return json(200, {
           doc: await buildDocResponsePayload(updated!, event, client, { viewerRole: 'sponsor' }),
         });

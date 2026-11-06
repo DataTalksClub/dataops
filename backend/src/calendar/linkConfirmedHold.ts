@@ -66,7 +66,7 @@ export async function linkConfirmedHold(
       if (event.organizer?.email?.toLowerCase() !== HOLD_ORGANIZER || event.location !== HOLD_ZOOM_LOCATION
         || !expectedInvite.attendees.every(email => event.attendees?.some(a => a.email?.toLowerCase() === email))
         || guests.some(email => event.attendees?.some(a => a.email?.toLowerCase() === email && a.responseStatus === 'declined'))
-        || /^\(Proposal\)|^Proposed -/i.test(event.summary || '')
+        || /^\(Proposal\)|^\[Proposed\]|^Proposed -/i.test(event.summary || '')
         || event.attendees?.some(a => HOLD_ATTENDEE_DENY_LIST.includes(a.email?.toLowerCase() || ''))
         || event.attendees?.some(a => a.email === PUBLIC_DTC_EVENTS_CALENDAR)) throw new HoldLinkError('Google invitation organizer, guests or Zoom do not match the DataOps invitation');
     }
