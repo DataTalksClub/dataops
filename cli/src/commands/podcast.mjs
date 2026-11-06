@@ -15,6 +15,12 @@ export const help = `dataops podcast - the podcast episode register (the web Ope
 Usage
   dataops podcast list [--season N] [--status S] [--card <card-id>] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
   dataops podcast show <episode-id>
+  dataops podcast send-invite --hold HOLD-ID --doc DOC-ID --task TASK-ID --guest "Full Name" [--preview]
+                                   Send first contact through DataOps from orin@.
+                                   Reads the saved proposal, guest form and Task;
+                                   records Gmail evidence and prevents duplicate sends.
+                                   Create a Card, then calendar propose --card CARD-ID,
+                                   then podcast doc create CARD-ID before sending.
   dataops podcast invite --guest "Full Name" --email guest@example.com --date YYYY-MM-DD --topic TOPIC
       [--title T] [--window midday|evening] [--duration N] [--form-url URL]
                                    First contact: tentative Google "(Proposal)"
@@ -23,8 +29,8 @@ Usage
                                    from orin@ (one slot, form link, no invent-
                                    alternate ask). Midday 12:30–13:30 by default;
                                    evening 17:00–18:00 (workshop 12:00/16:30+90
-                                   never used for podcasts). Send from Orin's
-                                   mailbox; nothing is mailed automatically.
+                                   never used for podcasts). Preparation/render
+                                   only; use send-invite for DataOps delivery.
   dataops podcast schedule [--season N] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
                                   Publication schedule: audio time and timezone, Spotify
                                   public check, transcript review, website readiness
@@ -591,7 +597,7 @@ export async function invite(args, io) {
   io.print("");
   io.print(rendered.body);
   io.print("");
-  io.print(`Send the email above from Orin's mailbox (${PODCAST_FIRST_CONTACT_FROM}); nothing was mailed automatically.`);
+  io.print(`Preparation only (${PODCAST_FIRST_CONTACT_FROM}); nothing was mailed automatically. Use podcast send-invite with an associated Card proposal, guest document and Task for DataOps delivery.`);
   return { hold, task, email: rendered };
 }
 
@@ -599,10 +605,31 @@ export async function reschedule(args, io) {
   return eventCommands.reschedule(args, io);
 }
 
+export async function sendInvite(args, io) {
+  const payload = {};
+  for (const [flag, field] of [['hold', 'holdId'], ['doc', 'docId'], ['task', 'taskId'], ['guest', 'guestName']]) {
+    const value = optionalString(args, flag);
+    if (!value) throw new UsageError(`--${flag} is required.`);
+    payload[field] = value;
+  }
+  if (args.preview === true) payload.preview = true;
+  const result = await apiFor(args).post('/api/podcast-first-contact/send', payload);
+  if (args.json) return result;
+  if (result.preview) {
+    io.print(`From: ${result.email.from}\nTo: ${result.email.to}\nSubject: ${result.email.subject}\n\n${result.email.body}`);
+    io.print('Preview only; no email sent.');
+  } else {
+    const delivery = result.emailDelivery || {};
+    io.print(`Podcast invitation ${delivery.state || 'unknown'}${result.alreadySent ? ' (already sent; no duplicate)' : ''}: ${delivery.to || ''}${delivery.messageId ? `; Gmail message ${delivery.messageId}` : `; ${delivery.reason || ''}`}. Evidence on Task ${result.taskId}.`);
+  }
+  return result;
+}
+
 export const commands = {
   list,
   show,
   invite,
+  'send-invite': sendInvite,
   schedule,
   create,
   update,
