@@ -106,10 +106,10 @@ export function renderPodcastFirstContactEmail(
   lines.push(
     'Please share anything you published online that you think will help us prepare for the interview. For example:',
     '',
-    '- Blog posts',
-    '- Talks and podcast interviews',
-    '- Social media posts',
-    '- Github repositories',
+    '1. Blog posts',
+    '2. Talks and podcast interviews',
+    '3. Social media posts',
+    '4. Github repositories',
     '',
     `For the interview, will ${slotLabel} work for you?`,
     '',
@@ -117,7 +117,7 @@ export function renderPodcastFirstContactEmail(
 
   if (formUrl) {
     lines.push(
-      'Please use this form to confirm that time, pick another free recording slot if needed, share a bio, and (if we have not already set a topic) the topics you would most enjoy covering. Do not invent alternate times in email — the form lists ordinary free slots and has a “none fit / custom” option:',
+      'Please use this form to confirm that time, pick another free recording slot if needed, share a bio, and (if we have not already set a topic) the topics you would most enjoy covering. The form lists ordinary free Mon/Tue slots; if none fit, just reply to this email and we will find an alternative:',
       '',
       formUrl,
       '',
@@ -129,7 +129,7 @@ export function renderPodcastFirstContactEmail(
     );
   }
 
-  lines.push('Best,', senderName);
+  lines.push('Best regards,', 'Orin Vale');
 
   return {
     from: PODCAST_FIRST_CONTACT_FROM,
@@ -149,8 +149,9 @@ export function formatSlotLabel(startIso: string, timeZone = BERLIN_TZ): string 
     weekday: 'long',
     day: 'numeric',
     month: 'long',
+    year: 'numeric',
     timeZone,
-  }).format(new Date(instant));
+  }).format(new Date(instant)).replace(',', '');
   const time = new Intl.DateTimeFormat('en-GB', {
     hour: '2-digit',
     minute: '2-digit',

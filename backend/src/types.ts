@@ -270,6 +270,15 @@ export interface Task {
   comment?: string | null;
   /** Append-only notes: every note ever added, oldest first. `comment` stays the latest. */
   notesLog?: TaskNote[];
+  /** Server-owned claim and delivery evidence for one podcast first-contact send. */
+  podcastFirstContact?: {
+    holdId: string;
+    docId: string;
+    recipient: string;
+    state: 'sending' | 'sent' | 'deferred';
+    claimedAt: string;
+    delivery?: import('./sponsorDocs/emailDelivery').SponsorDocEmailDelivery;
+  };
   waitingFor?: string;
   followUpAt?: string;
   followUpChannel?: string;

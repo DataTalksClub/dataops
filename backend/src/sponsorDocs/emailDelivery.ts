@@ -239,6 +239,8 @@ export async function deliverRenderedEmail(
     organizationId?: string | null;
     sponsorName?: string | null;
     connectionId?: string | null;
+    /** Domain-owned recipients; sponsor content requests keep their default CC. */
+    cc?: string[];
   },
 ): Promise<SponsorDocEmailDelivery> {
   const resolvedRecipient = await resolveSponsorDocRecipient(client, {
@@ -289,7 +291,7 @@ export async function deliverRenderedEmail(
   }
 
   const to = resolvedRecipient.to;
-  const cc = [SPONSOR_DOC_EMAIL_CC];
+  const cc = options.cc ?? [SPONSOR_DOC_EMAIL_CC];
 
   const explicitConnectionId = (
     options.connectionId
