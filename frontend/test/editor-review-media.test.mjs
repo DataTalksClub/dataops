@@ -39,11 +39,6 @@ function createHarness(options = {}) {
   lightbox.hidden = true;
   const lightboxCaption = new FakeElement("p");
   const lightboxImg = new FakeElement("img");
-  const lintModal = new FakeElement("div");
-  lintModal.hidden = true;
-  const lintModalBody = new FakeElement("div");
-  const lintOpenButton = new FakeElement("button");
-  const lintSummary = new FakeElement("span");
   const document = new FakeDocument();
   globalThis.document = document;
   const requests = [];
@@ -58,15 +53,10 @@ function createHarness(options = {}) {
       lightbox,
       lightboxCaption,
       lightboxImg,
-      lintModal,
-      lintModalBody,
-      lintOpenButton,
-      lintSummary,
       openDocument: (path) => opened.push(path),
       request: async (url) => {
         requests.push(String(url));
         if (options.requestError) throw new Error(options.requestError);
-        if (String(url).includes("/lint")) return options.lintPayload || {};
         return options.docPayload || { content: "saved" };
       },
       storage: options.storage || storage({ "draft:content/process.md": "draft" }),
@@ -84,10 +74,6 @@ function createHarness(options = {}) {
     lightbox,
     lightboxCaption,
     lightboxImg,
-    lintModal,
-    lintModalBody,
-    lintOpenButton,
-    lintSummary,
     media,
     opened,
     requests,
@@ -95,51 +81,6 @@ function createHarness(options = {}) {
 }
 
 describe("Document Editor review and media behavior", () => {
-  test("renders a clean corpus lint result and always clears busy state", async () => {
-    const harness = createHarness({ lintPayload: { docs: [] } });
-    await harness.media.openLintReport();
-    assert.equal(harness.lintModal.hidden, false);
-    assert.equal(harness.lintSummary.textContent, "clean");
-    assert.equal(
-      harness.lintModalBody.textContent,
-      "No violations across the corpus 🎉",
-    );
-    assert.equal(harness.lintOpenButton.classList.contains("is-busy"), false);
-    assert.deepEqual(harness.requests, ["https://portal.test/lint"]);
-  });
-
-  test("renders lint violations and opens the selected internal Process Doc", async () => {
-    const harness = createHarness({
-      lintPayload: {
-        total_violations: 2,
-        docs: [
-          {
-            path: "content/process.md",
-            violations: ["Missing owner", "Missing validation"],
-          },
-        ],
-      },
-    });
-    await harness.media.openLintReport();
-    assert.equal(harness.lintSummary.textContent, "1 docs · 2 violations");
-    assert.equal(harness.lintModalBody.children.length, 1);
-    const row = harness.lintModalBody.children[0];
-    assert.equal(row.textContent.includes("Missing owner"), true);
-    await row.children[0].dispatch("click");
-    assert.equal(harness.lintModal.hidden, true);
-    assert.deepEqual(harness.opened, ["content/process.md"]);
-  });
-
-  test("keeps lint failures visible and recoverable", async () => {
-    const harness = createHarness({ requestError: "service unavailable" });
-    await harness.media.openLintReport();
-    assert.equal(
-      harness.lintModalBody.textContent,
-      "Lint failed: service unavailable",
-    );
-    assert.equal(harness.lintOpenButton.classList.contains("is-busy"), false);
-  });
-
   test("shows deterministic saved-versus-draft diffs and can close them", async () => {
     const harness = createHarness({
       docPayload: { content: "first\nsaved" },

@@ -150,6 +150,11 @@ test('lists: Enter adds an item, Tab indents, Shift+Tab outdents, arrows move', 
   await expect(draft(page)).toHaveValue(
     /2\. Upload the synthetic file\.\n3\. A step typed right after Enter\.\n4\. Check the synthetic result\./,
   );
+  // The leading H1 survives every rewrite: it renders as the page title
+  // and is carried separately from the block body.
+  await expect(draft(page)).toHaveValue(
+    /^---\ntitle: "Synthetic Notion SOP"\n[\s\S]*?---\n+# Synthetic Notion SOP\n+## Summary/,
+  );
   await expect(page.locator('#editor-save-state')).toHaveText('Draft saved');
 
   // Tab indents the new item under its neighbour; Shift+Tab restores it.
@@ -424,4 +429,9 @@ test('paste: video links embed, markdown becomes blocks, a link over text links 
   await expect(draft(page)).toHaveValue(
     /None\.\n\n!\[\]\(content\/images\/[^)]+\.png\)/,
   );
+
+  // An image pasted into a list item uploads the same way.
+  await item(page, 1).click();
+  await pasteInto(item(page, 1), { imageBase64: PIXEL_PNG });
+  await expect(page.locator('.notion-block-image img')).toHaveCount(2, { timeout: 15_000 });
 });

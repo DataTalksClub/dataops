@@ -217,8 +217,6 @@ function createEditorHarness(options = {}) {
       options.currentDoc === undefined
         ? { path: "content/processes/existing.md", updated: 10, revision: "r1" }
         : options.currentDoc,
-    currentParsedCodeView: options.parsedCodeView || null,
-    currentWarnings: options.warnings || [],
     lastSavedContent: initialContent,
     hasDraft: Boolean(options.hasDraft),
   };
@@ -249,9 +247,6 @@ function createEditorHarness(options = {}) {
     if (new URL(url).pathname === "/knowledge/publication") return { revision: "r1" };
     if (options.request) return options.request(url, requestOptions, entry);
     if (requestOptions.method === "PUT") return { updated: 20, warnings: [] };
-    if (new URL(url).pathname === "/parse") {
-      return { parsed_code_view: documentState.currentParsedCodeView };
-    }
     return {};
   };
   const nullableBlock = () => null;
@@ -369,7 +364,6 @@ describe("Document Editor surface boundary", () => {
       "listDraftPaths",
       "moveCurrentDoc",
       "openHistory",
-      "openLintReport",
       "refreshChangesPanel",
       "refreshKnowledgeStatus",
       "renameCurrentDoc",
@@ -710,7 +704,7 @@ describe("Document Editor surface boundary", () => {
     assert.equal(harness.routeTitles.at(-1), "Updated process");
   });
 
-  test("saves successfully, clears only its draft, and reports lint warnings", async () => {
+  test("saves successfully and clears only its draft", async () => {
     const harness = createEditorHarness({
       mode: "rendered",
       immediateTimers: true,
@@ -724,9 +718,8 @@ describe("Document Editor surface boundary", () => {
       request: async (url, requestOptions) => {
         const pathname = new URL(url).pathname;
         if (pathname === "/docs" && requestOptions.method === "PUT") {
-          return { updated: 42, warnings: ["summary is missing"] };
+          return { updated: 42, warnings: [] };
         }
-        if (pathname === "/docs") return {};
         if (pathname === "/knowledge/status") return { ok: true, count: 0, branch: "main" };
         return {};
       },
@@ -741,9 +734,6 @@ describe("Document Editor surface boundary", () => {
     );
     assert.equal(harness.documentState.currentDoc.updated, 42);
     assert.equal(harness.documentState.lastSavedContent, "# Updated\n");
-    assert.deepEqual(harness.documentState.currentWarnings, [
-      "summary is missing",
-    ]);
     assert.equal(harness.documentState.hasDraft, false);
     assert.equal(
       harness.storageValues.has(
@@ -757,7 +747,7 @@ describe("Document Editor surface boundary", () => {
     );
     assert.match(
       harness.elements.editorInlineStatus.textContent,
-      /^Saved · summary is missing/,
+      /^Saved content\/processes\/existing\.md/,
     );
     assert.equal(harness.loadCount(), 1);
     assert.equal(harness.document.activeElement, harness.elements.editorSaveState);
@@ -1102,7 +1092,6 @@ describe("Document Editor surface boundary", () => {
       editorValue: "# Local\n",
       request: async (url) => {
         const pathname = new URL(url).pathname;
-        if (pathname === "/parse") throw new Error("Parser offline");
         if (pathname === "/knowledge/status") throw new Error("Git offline");
         return {};
       },

@@ -21,7 +21,6 @@ const BACKEND_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
 const TMP_ROOT = path.join(REPO_ROOT, '.tmp', 'issue-159-capability-behavior');
 const ISSUE_196_SCREENSHOTS = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-196');
-const ISSUE_193_SCREENSHOTS = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-193');
 const ISSUE_200_SCREENSHOTS = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-200');
 const ISSUE_161_SCREENSHOTS = path.join(REPO_ROOT, '.tmp', 'screenshots', 'issue-161');
 const BOUNDARY_OPERATOR_DATE = berlinBusinessDate(BERLIN_MIDNIGHT_BOUNDARY_INSTANT);
@@ -75,30 +74,25 @@ None.
 `;
 
 function syntheticQualitySop(label) {
-  // A code view that omits its `sop:` link: lint flags it, so the quality
-  // surface has a real process-doc finding to show.
+  // A doc with an unresolvable related_docs link: the registry flags it,
+  // so the quality surface has a real validation error to show.
   return `---
-id: code-view.synthetic.quality.${label}
+id: sop.synthetic.quality.${label}
 aliases: []
 title: Synthetic Quality Procedure ${label}
 summary: Public-safe procedure used only by browser behavior tests.
-doc_type: code-view
-schema_version: 1
+doc_type: sop
 systems:
   - dataops
 tags:
   - synthetic
+related_docs:
+  - doc.missing.quality
 ---
 
 # Synthetic Quality Procedure ${label}
 
 Run the synthetic check, then verify.
-
-\`\`\`bash file=synthetic-check.sh
-#!/usr/bin/env bash
-set -euo pipefail
-echo "synthetic check"
-\`\`\`
 `;
 }
 
@@ -168,72 +162,6 @@ async function setFaults(request, faults) {
 async function clearFaults(request) {
   const response = await request.delete('/__e2e__/route-faults');
   expect(response.ok()).toBe(true);
-}
-
-async function openProcessQualityFindings(page) {
-  const drilldown = page.locator('.ops-quality-drilldown');
-  await expect(drilldown).toBeVisible();
-  await expect.poll(async () => {
-    await drilldown.evaluate((element) => {
-      element.open = true;
-    });
-    return drilldown.evaluate((element) => element.open);
-  }).toBe(true);
-}
-
-async function expectStackedQualityEmptyState(page) {
-  const state = page.locator('.ops-quality-list > .ops-honest-state');
-  fs.mkdirSync(ISSUE_193_SCREENSHOTS, { recursive: true });
-  await expect(state).toHaveCount(1);
-  await expect(state.locator('> strong')).toHaveText('No findings match filters');
-  await expect(state.locator('> span')).toHaveText(
-    'Change filters to inspect other process quality findings.',
-  );
-
-  const layout = await state.evaluate((element) => {
-    const label = element.querySelector(':scope > strong');
-    const guidance = element.querySelector(':scope > span');
-    const panel = element.closest('.ops-quality-drilldown');
-    const labelRect = label.getBoundingClientRect();
-    const guidanceRect = guidance.getBoundingClientRect();
-    const panelRect = panel.getBoundingClientRect();
-    const style = getComputedStyle(element);
-    return {
-      display: style.display,
-      rowGap: Number.parseFloat(style.rowGap),
-      visualGap: guidanceRect.top - labelRect.bottom,
-      labelOverlapsGuidance: guidanceRect.top < labelRect.bottom,
-      pageOverflow: Math.max(
-        document.documentElement.scrollWidth,
-        document.body.scrollWidth,
-      ) - window.innerWidth,
-      stateOverflow: element.scrollWidth - element.clientWidth,
-      panelOverflow: panel.scrollWidth - panel.clientWidth,
-      fitsPanelHorizontally:
-        labelRect.left >= panelRect.left - 0.5
-        && guidanceRect.left >= panelRect.left - 0.5
-        && labelRect.right <= panelRect.right + 0.5
-        && guidanceRect.right <= panelRect.right + 0.5,
-    };
-  });
-
-  expect(layout.display).toBe('grid');
-  expect(layout.rowGap).toBeGreaterThanOrEqual(4);
-  expect(layout.visualGap).toBeGreaterThanOrEqual(4);
-  expect(layout.labelOverlapsGuidance).toBe(false);
-  expect(layout.pageOverflow).toBeLessThanOrEqual(0);
-  expect(layout.stateOverflow).toBeLessThanOrEqual(0);
-  expect(layout.panelOverflow).toBeLessThanOrEqual(0);
-  expect(layout.fitsPanelHorizontally).toBe(true);
-
-  await page.screenshot({
-    path: path.join(
-      ISSUE_193_SCREENSHOTS,
-      page.viewportSize()?.width === 390 ? 'mobile.png' : 'desktop.png',
-    ),
-    animations: 'disabled',
-    ...(page.viewportSize()?.width === 390 ? { fullPage: true } : {}),
-  });
 }
 
 function observeBrowserErrors(page) {
@@ -1380,17 +1308,14 @@ test.describe('canonical frontend capability behavior', () => {
     const quality = await context.request.get('/docs/process-quality');
     expect(quality.status()).toBe(200);
     const qualityPayload = await json(quality);
-    expect(qualityPayload.summary.total).toBeGreaterThan(0);
-    expect(qualityPayload.findings.length).toBeGreaterThan(0);
-    // Runtime token-age findings disappeared with the GitHub read dependency.
-    // Filter the actual process-doc findings; empty quality is covered above.
-    const emptyQualityFilters = {
-      category: 'process-doc',
-      document: 'content/synthetic/quality-alpha.md',
-    };
-    expect(new Set(qualityPayload.findings.map((finding) => finding.category)))
-      .toEqual(new Set(['process-doc']));
-    expect(qualityPayload.findings.some((finding) => finding.docPath === emptyQualityFilters.document))
+    // Documents are plain markdown: the only quality signal is registry
+    // validation (unresolved references, colliding aliases). Lint findings
+    // no longer exist.
+    expect(qualityPayload.ok).toBe(false);
+    expect(qualityPayload.findings).toEqual([]);
+    expect(qualityPayload.summary.total).toBe(0);
+    expect(qualityPayload.validationErrors.length).toBeGreaterThan(0);
+    expect(qualityPayload.validationErrors.some((violation) => violation.includes('content/synthetic/quality-alpha.md')))
       .toBe(true);
     const gitStatus = await context.request.get('/knowledge/status');
     expect(gitStatus.status()).toBe(200);
@@ -1400,25 +1325,8 @@ test.describe('canonical frontend capability behavior', () => {
     expect(await json(gitHistory)).toHaveProperty('revision');
     await page.goto('/processes');
     await expect(page.locator('.ops-surface-docs')).toBeVisible();
-    await openProcessQualityFindings(page);
-    await expect(page.locator('.ops-quality-list .ops-quality-row').first()).toBeVisible();
-    const qualityFilters = page.locator('.ops-quality-filters');
-    const filterLabels = {
-      category: 'Category',
-      document: 'Document',
-    };
-    for (const [field, value] of Object.entries(emptyQualityFilters)) {
-      // Each filter change refreshes the Docs surface, which rebuilds the
-      // findings disclosure closed. Re-open before every selection.
-      await openProcessQualityFindings(page);
-      await qualityFilters.getByLabel(filterLabels[field], { exact: true }).selectOption(value);
-    }
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await openProcessQualityFindings(page);
-    await expect(page.locator('.ops-quality-list .ops-quality-row').first()).toBeVisible();
-    await page.setViewportSize({ width: 390, height: 844 });
-    await openProcessQualityFindings(page);
-    await expect(page.locator('.ops-quality-list .ops-quality-row').first()).toBeVisible();
+    // Without findings the quality drilldown does not render.
+    await expect(page.locator('.ops-quality-drilldown')).toHaveCount(0);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/admin');
     await expect(page.locator('.ops-admin-card', { hasText: 'Diagnostics' })).toBeVisible();
