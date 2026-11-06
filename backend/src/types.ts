@@ -278,6 +278,7 @@ export interface Task {
     state: 'sending' | 'sent' | 'deferred';
     claimedAt: string;
     delivery?: import('./sponsorDocs/emailDelivery').SponsorDocEmailDelivery;
+    attempts?: Array<{ claimedAt: string; delivery: import('./sponsorDocs/emailDelivery').SponsorDocEmailDelivery }>;
   };
   waitingFor?: string;
   followUpAt?: string;

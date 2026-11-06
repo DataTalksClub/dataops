@@ -15,10 +15,12 @@ export const help = `dataops podcast - the podcast episode register (the web Ope
 Usage
   dataops podcast list [--season N] [--status S] [--card <card-id>] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
   dataops podcast show <episode-id>
-  dataops podcast send-invite --hold HOLD-ID --doc DOC-ID --task TASK-ID --guest "Full Name" [--preview]
+  dataops podcast send-invite --hold HOLD-ID --doc DOC-ID --task TASK-ID --guest "Full Name" [--preview] [--retry-pre-send]
                                    Send first contact through DataOps from orin@.
                                    Reads the saved proposal, guest form and Task;
                                    records Gmail evidence and prevents duplicate sends.
+                                   --retry-pre-send recovers only a saved broker 404
+                                   before Gmail was called, on the same Task.
                                    Create a Card, then calendar propose --card CARD-ID,
                                    then podcast doc create CARD-ID before sending.
   dataops podcast invite --guest "Full Name" --email guest@example.com --date YYYY-MM-DD --topic TOPIC
@@ -613,6 +615,7 @@ export async function sendInvite(args, io) {
     payload[field] = value;
   }
   if (args.preview === true) payload.preview = true;
+  if (args.retryPreSend === true) payload.retryPreSend = true;
   const result = await apiFor(args).post('/api/podcast-first-contact/send', payload);
   if (args.json) return result;
   if (result.preview) {

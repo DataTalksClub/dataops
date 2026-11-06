@@ -51,7 +51,17 @@ export async function handlePodcastFirstContactRoutes(
       if (prior.holdId !== holdId || prior.docId !== docId) return json(409, { error: 'This Task already sent a different invitation' });
       return json(200, { emailDelivery: prior.delivery, taskId, alreadySent: true });
     }
-    if (task.podcastFirstContact) {
+    const prior = task.podcastFirstContact;
+    // This broker response happens before any Gmail send request. A provider
+    // timeout or missing response is deliberately never eligible for recovery.
+    const retryEligible = prior?.state === 'deferred'
+      && prior.delivery?.state === 'deferred'
+      && prior.delivery.reason === 'dapier_token_http_404'
+      && !prior.delivery.messageId
+      && prior.holdId === holdId && prior.docId === docId
+      && prior.recipient === hold.guestRef?.trim().toLowerCase();
+    if ((prior && (!retryEligible || (body.retryPreSend !== true && body.preview !== true)))
+      || (body.retryPreSend === true && !retryEligible)) {
       return json(409, { error: 'This Task already attempted delivery. Check its recorded result and Gmail before retrying.', code: 'invitation_already_attempted' });
     }
     const doc = loaded.doc;
@@ -71,16 +81,20 @@ export async function handlePodcastFirstContactRoutes(
       email = renderPodcastFirstContactEmail({ guestFirstName: guestName.trim().split(/\s+/)[0], slotLabel: formatSlotLabel(hold.startIso), topicSeed: hold.topic, formUrl });
     } catch (error) { return json(422, { error: (error as Error).message }); }
     const recipient = hold.guestRef!.trim().toLowerCase();
-    if (body.preview === true) return json(200, { preview: true, email: { ...email, to: recipient, cc: [] }, taskId, holdId, docId });
-    const claim = { holdId, docId, recipient, state: 'sending' as const, claimedAt: new Date().toISOString() };
+    // Use the existing Orin Google connection with verified Gmail scopes, also
+    // used by contract delivery. No new account, connection or grant is created.
+    const connectionId = process.env.DATAOPS_ORIN_GMAIL_CONNECTION_ID?.trim() || 'google-calendar-orin';
+    if (body.preview === true) return json(200, { preview: true, email: { ...email, to: recipient, cc: [] }, connectionId, retryEligible: Boolean(retryEligible), taskId, holdId, docId });
+    const attempts = prior ? [...(prior.attempts || []), { claimedAt: prior.claimedAt, delivery: prior.delivery! }] : [];
+    const claim = { holdId, docId, recipient, state: 'sending' as const, claimedAt: new Date().toISOString(), attempts };
     try {
       await updateTask(client, task.id, { currentTask: task, expectedVersion: task.version, patch: { podcastFirstContact: claim }, actorId: resolved.actor.id, triggerKind: 'podcast-first-contact-claim' });
     } catch (error) {
       if (error instanceof TaskVersionConflictError) return json(409, { error: 'Task changed; reread its delivery state before retrying' });
       throw error;
     }
-    // A claimed attempt is never automatically repeated, including an ambiguous provider timeout.
-    const delivery = await deliverRenderedEmail(client, { draft: email, recipientEmail: recipient, recipientName: guestName, taskId, cc: [] });
+    // Only the explicit, proven pre-Gmail recovery above can repeat an attempt.
+    const delivery = await deliverRenderedEmail(client, { draft: email, recipientEmail: recipient, recipientName: guestName, taskId, connectionId, cc: [] });
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const current = await getTaskConsistent(client, taskId);
       if (!current) throw new Error('Owning Task disappeared after invitation delivery');

@@ -207,6 +207,7 @@ describe('podcast first-contact email (Orin ask)', () => {
     const output = JSON.parse(res.body);
     assert.equal(output.email.to, 'guest@example.test');
     assert.deepEqual(output.email.cc, []);
+    assert.equal(output.connectionId, 'google-calendar-orin');
     assert.match(output.email.body, /Monday 4 November 2030 at 17:00 CET/);
     assert.match(output.email.body, /Reliable data agents/);
     assert.match(output.email.formUrl, new RegExp(`/podcast-docs/${input.docId}\\?code=`));
@@ -263,6 +264,49 @@ describe('podcast first-contact email (Orin ask)', () => {
     assert.equal(JSON.parse(res.body).emailDelivery.state, 'deferred');
     const replay = await staffReq('POST', '/api/podcast-first-contact/send', input);
     assert.equal(replay.statusCode, 409, replay.body);
+    const unsafeRetry = await staffReq('POST', '/api/podcast-first-contact/send', { ...input, retryPreSend: true });
+    assert.equal(unsafeRetry.statusCode, 409, unsafeRetry.body);
+    assert.equal(sends, 1);
+    setSponsorDocEmailDepsForTests({});
+  });
+
+  it('recovers the same Task only after explicit pre-Gmail broker404 retry and preserves the failed attempt', async () => {
+    const input = await invitation();
+    let brokerFails = true;
+    let sends = 0;
+    const connections: string[] = [];
+    setSponsorDocEmailDepsForTests({ credential: 'synthetic-credential', fetchImpl: async (url, init) => {
+      if (String(url).endsWith('/messages/send')) {
+        sends += 1;
+        return new Response(JSON.stringify({ id: 'recovered-message', threadId: 'recovered-thread' }), { status: 200 });
+      }
+      connections.push(JSON.parse(String(init?.body)).connection_id);
+      if (brokerFails) return new Response(JSON.stringify({ detail: 'Synthetic connection missing' }), { status: 404 });
+      return new Response(JSON.stringify({ access_token: 'synthetic-access', provider_account_id: 'orin@datatalks.club' }), { status: 200 });
+    } });
+    const failed = await staffReq('POST', '/api/podcast-first-contact/send', input);
+    assert.equal(failed.statusCode, 200, failed.body);
+    assert.equal(JSON.parse(failed.body).emailDelivery.reason, 'dapier_token_http_404');
+    assert.equal(sends, 0);
+    const noFlag = await staffReq('POST', '/api/podcast-first-contact/send', input);
+    assert.equal(noFlag.statusCode, 409);
+    const preview = await staffReq('POST', '/api/podcast-first-contact/send', { ...input, preview: true });
+    assert.equal(preview.statusCode, 200, preview.body);
+    assert.equal(JSON.parse(preview.body).retryEligible, true);
+    assert.equal(sends, 0);
+    brokerFails = false;
+    const recovered = await staffReq('POST', '/api/podcast-first-contact/send', { ...input, retryPreSend: true });
+    assert.equal(recovered.statusCode, 200, recovered.body);
+    assert.equal(JSON.parse(recovered.body).emailDelivery.messageId, 'recovered-message');
+    const task = (await getTaskConsistent(client, input.taskId))!;
+    assert.equal(task.podcastFirstContact!.attempts!.length, 1);
+    assert.equal(task.podcastFirstContact!.attempts![0].delivery.reason, 'dapier_token_http_404');
+    assert.ok(task.notesLog!.some(note => note.text.includes('dapier_token_http_404')));
+    assert.ok(task.notesLog!.some(note => note.text.includes('recovered-message')));
+    assert.deepEqual(connections, ['google-calendar-orin', 'google-calendar-orin']);
+    const replay = await staffReq('POST', '/api/podcast-first-contact/send', { ...input, retryPreSend: true });
+    assert.equal(replay.statusCode, 200, replay.body);
+    assert.equal(JSON.parse(replay.body).alreadySent, true);
     assert.equal(sends, 1);
     setSponsorDocEmailDepsForTests({});
   });
