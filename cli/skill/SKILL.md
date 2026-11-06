@@ -178,15 +178,21 @@ service name alone; classify it only when every step has a headless route.
 ## Workflow: "here is a task, do it"
 
 1. Find the work item if you were given words instead of an id:
-   `dataops tasks list --mine --json` or `dataops cards list --json`. Check its
-   `requires` against what you have access to before you start.
-2. Find the docs for it:
-   `dataops kb related <task-id|card-id>` lists the docs the Task, its Card, and its
-   Template link explicitly, then the best search matches for its title.
-3. Read the procedure: `dataops kb show <doc-id>` prints the markdown.
-4. If nothing is linked, search: `dataops kb search "<what you need to do>" --type sop`.
-   Narrow with `--type reference`, `--domain`, `--tag`; widen with `--limit`.
-5. Do the work, then close the Task with its proof (next section).
+   `dataops tasks list --mine --json` or `dataops cards list --json`.
+2. Read the current Task: `dataops tasks show <task-id>`. Check its `requires`
+   against your access and read its current notes, evidence and instruction binding.
+3. Read its attached procedure first: run the exact
+   `dataops kb show <instructionDocId>` command printed under
+   "Before executing this task, read its attached SOP" and read the complete
+   current document, including applicable linked prerequisites.
+4. For supplementary context, `dataops kb related <task-id|card-id>` lists
+   explicitly linked docs and search matches. It does not replace the Task's
+   attached SOP. If no instruction is attached, find the applicable one with
+   `dataops kb search "<what you need to do>" --type sop`, attach it with
+   `dataops tasks update <task-id> --instruction-doc <doc-id>`, then read it.
+   If retrieval fails, repair it before executing the business action.
+5. Read current Card/Template data as needed, do the work under the attached
+   procedure, then close the Task with its proof (next section).
 
 ## Workflow: complete a Task with proof
 
@@ -293,18 +299,78 @@ with `dataops podcast cadence --weekday 5 --time 19:00 --timezone Europe/Berlin
 --episodes-per-season 9`. Then record it before scheduling:
 `dataops podcast update <episode-id> --season S --episode E --release-date YYYY-MM-DD`.
 
-For first contact with a new guest: `dataops podcast invite --guest "Full Name"
---email guest@example.com --date YYYY-MM-DD --topic "Intended topic"
-[--title T] [--window evening|midday] [--duration 60]` proposes one tentative
-hold (the backend mirrors it as a Google "(Proposal)" event, or reports Google
-sync deferred), creates a standalone follow-up Task (no Card â€” the episode Card
-comes only after the recording date is confirmed), and prints the send-ready
-email from orin@datatalks.club with exactly one proposed slot, no topic ask,
-and the public podcast docs page link
-(`https://datatalksclub.github.io/docs/activities/podcast/`). Topics are
-collected later via the optional guest materials form, which has its own
-alternate-slot picker. Send the printed email from Orin's mailbox; DataOps
-never mails the guest automatically.
+### Workflow: start an approved guest event
+
+For enabled **podcast, webinar and workshop** Templates, creating a new guest
+Card triggers first contact automatically. A verified email alone is enough;
+name, topic, date, biography and preparation materials are not prerequisites.
+Use an existing private CRM person/contact when its saved email is available:
+
+```bash
+dataops cards create --template podcast --guest-email guest@example.test --key REQUEST_KEY
+dataops cards create --template webinar --guest-person CRM_PERSON_ID --key REQUEST_KEY
+dataops cards create --template workshop --guest-contact CRM_CONTACT_ID --skip-email --key REQUEST_KEY
+```
+
+The backend chooses an authoritative preliminary slot when none is supplied,
+creates one linked proposed event and the matching questionnaire, then sends
+an editable type-specific invitation email from Orin **and** a literal
+`[Proposed]` calendar invite. One `--skip-email` suppresses both guest
+notifications while still preparing the event and form. The UI/API use this
+same creation trigger; other types, guest-free Cards and existing Cards are
+not automatically contacted or backfilled. A known guest without an email
+gets a visible contact-pending Task, not an invented recipient.
+
+Optional `--guest-name`, `--topic`, `--date`, `--time HH:MM`,
+`--time-zone IANA_ZONE`, `--guest-time-zone IANA_ZONE` and `--window evening`
+carry known details and scheduling preferences. Reuse the same `--key` and
+unchanged input after an unknown outcome; changed input with that key conflicts.
+Do not create a new Card/Task/key or send a direct email to bypass that conflict.
+
+```bash
+dataops cards invitation CARD_ID                # actual status, Task and Gmail receipt
+dataops cards invitation CARD_ID --preview      # read-only rendered email
+dataops cards invitation CARD_ID --send         # first invitation only, after skip
+dataops cards invitation CARD_ID --retry-pre-send # guarded, proven safe recovery
+```
+
+`--send` sends both email and the proposed calendar invite, only for a previously
+skipped first invitation. The worker normally resumes eligible failures;
+`--retry-pre-send` does not permit ambiguous delivery or resend. A queued,
+preparing, paused or failed invitation is not sent evidence: inspect its linked
+Task and actual Gmail message ID. Later correspondence stays in that email
+thread through the authorized mailbox integration.
+
+The questionnaire collects bio, photo, profiles and preparation materials after
+first contact, with Berlin and guest-local times. Explicit **Save time choice**
+accepts a current proposal or available alternative without completed materials;
+ordinary draft/bio saves do not confirm a time. Calendar acceptance also counts.
+Keep the same event and Zoom link; the standard guest join lead is separate from
+the canonical event start. Read the owning Task's attached SOP for the process.
+
+`podcast invite` is historical preparation/rendering, not the normal new-Card
+trigger. Do not send its printed email as a substitute for automatic intake.
+
+### Manual Calendar-only Card proposals
+
+For a configured Card outside automatic intake, use
+`dataops event propose CARD_ID --date YYYY-MM-DD --window NAME`, inspect
+`dataops event show CARD_ID`, and approve the same event with
+`dataops event approve CARD_ID` after acceptance. Use `event reschedule` for
+an owned event rather than creating a replacement hold.
+
+For a Card without an event policy, supply explicit inputs:
+
+```bash
+dataops event propose CARD_ID --date YYYY-MM-DD --time HH:MM --duration MINUTES --guest-emails guest@example.test
+```
+
+Optional `--time-zone IANA_ZONE` sets the schedule zone. DataOps checks
+availability and saves a Calendar-only blocker policy with the standard Zoom,
+required attendees and guest join lead. It does not infer a type, enable guest
+intake or send a first-contact email. Later changes reuse that saved policy.
+`calendar propose --card` is not the Card event route. This private proposal
+is not public event publication.
 
 For website content: `dataops speakers list` (speaker/author profiles for
 `_people` pages; `--name/--slug/--bio/--photo-url/--github/--twitter/--linkedin/--website`),
