@@ -356,6 +356,7 @@ describe('API — Cards', () => {
     it('returns 400 when anchorDate is missing', async () => {
       const res = await invoke('POST', '/api/cards', {
         title: 'Test',
+        templateId: EMPTY_TEMPLATE_ID,
       });
 
       assert.strictEqual(res.statusCode, 400);
