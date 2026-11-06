@@ -16,7 +16,8 @@ export function formatGuestEventTime(startIso, endIso, zone, fallbackDuration, i
   const validEnd = endIso && !Number.isNaN(end.getTime()) && end > start;
   const dateFormat = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: zone });
   const timeFormat = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: zone });
-  const offset = instant => new Intl.DateTimeFormat("en-GB", { timeZone: zone, timeZoneName: "short" }).formatToParts(instant).find(part => part.type === "timeZoneName")?.value || zone;
+  const offsetFormat = new Intl.DateTimeFormat("en-GB", { timeZone: zone, timeZoneName: "short" });
+  const offset = instant => offsetFormat.formatToParts(instant).find(part => part.type === "timeZoneName")?.value || zone;
   let range = `${timeFormat.format(start)} ${offset(start)}`;
   if (validEnd) {
     const sameDay = dateFormat.format(start) === dateFormat.format(end);

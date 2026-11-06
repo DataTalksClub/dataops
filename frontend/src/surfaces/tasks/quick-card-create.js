@@ -87,7 +87,10 @@ export function createQuickCardForm(context) {
         const payload = await request(workApiUrl(`/api/sponsor-crm/directory/people?${query}`));
         savedPeople = payload.items || [];
         savedGuest.replaceChildren(guestOption("Select a saved guest (optional)", ""));
-        for (const person of savedPeople) savedGuest.append(guestOption(`${person.name || "Saved guest"}${person.emails?.[0] ? ` (${person.emails[0]})` : " (email needed)"}`, person.id));
+        for (const person of savedPeople) {
+          const address = person.emails?.[0] ? ` (${person.emails[0]})` : " (email needed)";
+          savedGuest.append(guestOption(`${person.name || "Saved guest"}${address}`, person.id));
+        }
         guestHint.textContent = savedPeople.length ? "Select a saved guest to reuse their contact details." : "No saved guests found.";
       } catch (error) { guestHint.textContent = `Could not find guests: ${error.message || "request failed"}`; }
       finally { findGuest.disabled = false; }
