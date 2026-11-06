@@ -94,6 +94,7 @@ export async function renderBannerJob(client: DynamoDBDocumentClient, id: string
     if (bundle.schema !== 'dataops.banner-templates.v1' || !bundle.sourceRevision) throw new BannerFailure('invalid-template-bundle');
     const template = bundle.templates.find(t => t.eventType === job.input.eventType && t.layout === job.input.layout && t.speakerCount === job.speakers.length && t.sponsorTreatment === job.input.sponsorTreatment);
     if (!template || template.width < 1 || template.height < 1 || template.width > 4000 || template.height > 4000) throw new BannerFailure('unsupported-template');
+    if (job.input.eventLabel && !template.html.includes('{{eventLabel}}')) throw new BannerFailure('unsupported-event-label');
     stage = 'portrait';
     const portraits: string[] = [];
     for (const speaker of job.speakers) {
@@ -140,7 +141,7 @@ export async function renderBannerJob(client: DynamoDBDocumentClient, id: string
       filename: `${job.input.eventType}-${job.input.layout}-${id.slice(0, 12)}.png`, contentType: 'image/png',
       checksum: checksum(bytes), sizeBytes: bytes.length, visibility: 'private', dataClass: 'internal',
       sourceType: 'system', createdBy: job.createdBy,
-      metadata: { bannerJobId: id, ...dimensions, format: 'png', templateId: template.id, templateSourceRevision: bundle.sourceRevision, templateBundleChecksum: checksum(bundleBytes), inputChecksum: checksum(Buffer.from(html)), eventType: job.input.eventType, layout: job.input.layout, title: job.title, speakers: job.speakers, ...(job.sponsorLogo ? { sponsorLogo: job.sponsorLogo } : {}) },
+      metadata: { bannerJobId: id, ...dimensions, format: 'png', templateId: template.id, templateSourceRevision: bundle.sourceRevision, templateBundleChecksum: checksum(bundleBytes), inputChecksum: checksum(Buffer.from(html)), eventType: job.input.eventType, eventLabel: job.input.eventLabel || job.input.eventType, layout: job.input.layout, title: job.title, speakers: job.speakers, ...(job.sponsorLogo ? { sponsorLogo: job.sponsorLogo } : {}) },
     });
     await updateCardAdditive(client, card, current => ({ artifactRefs: [...(current.artifactRefs || []).filter(ref => ref.artifactId !== artifactId), { artifactId, type: artifact.type, title: artifact.title, status: artifact.status }] }));
     await transitionBannerJob(client, claimed, 'succeeded', { artifactId, error: '' });

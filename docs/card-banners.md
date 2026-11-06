@@ -14,8 +14,8 @@ dataops artifacts download ARTIFACT_ID --output cover.png
 ```
 
 Supported event types are `workshop`, `webinar`, and `podcast`; each has landscape
-and square templates for one or two speakers. The event type chooses the icon
-as well as the label. A selection that contradicts an unambiguous Card template/tag classification is rejected; unclassified or ambiguous Cards need an explicit selection. The operator selects portraits whose identities and sources
+and square templates for one to three speakers. The event type chooses the icon
+as well as the label. For a live Q&A, use `--event-type webinar --event-label 'Live Q&A'` to retain the webinar icon with an explicit Q&A badge; other event types cannot use that override. A selection that contradicts an unambiguous Card template/tag classification is rejected; unclassified or ambiguous Cards need an explicit selection. The operator selects portraits whose identities and sources
 have been checked. Portrait ownership and byte checksums are checked server-side.
 There is no renderer credential or local image path in the generation command.
 
@@ -68,8 +68,8 @@ optional shared `assets`, and `templates`. Each template declares `id`,
 Sponsored variants also declare `sponsorTreatment: approved-logo` and contain
 the `{{sponsorLogo}}` image field.
 Fields are `{{title}}`, `{{titleFontSize}}`, `{{speaker1Name}}`,
-`{{speaker1Portrait}}` and their speaker-2 equivalents. Shared asset field names
-start with `asset`. Text is escaped; the renderer blocks scripts and external
+`{{speaker1Portrait}}` and their speaker-2/speaker-3 equivalents. Shared asset field names
+start with `asset`. An explicitly requested alternate label requires a template with the `{{eventLabel}}` field; an older bundle rejects it instead of silently using another badge. Text is escaped; the renderer blocks scripts and external
 resources. Publish bundles under a new content-addressed private key and update
 the application parameter for a template release.
 
