@@ -6,7 +6,6 @@
     "src/contract-sign-page.js",
     "src/contract-sign.html",
     "src/core/card-kind.js",
-    "src/core/code-highlight.js",
     "src/core/collection-loader.js",
     "src/core/dates.js",
     "src/core/hovercard.js",
