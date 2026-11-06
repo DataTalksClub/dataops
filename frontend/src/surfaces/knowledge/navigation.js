@@ -183,7 +183,6 @@ export function createKnowledgeNavigation(context, services) {
     captureScrollPosition();
     clearDocumentStateNotice();
     documentState.currentDoc = null;
-    documentState.currentParsed = null;
     documentState.currentParsedCodeView = null;
     documentState.currentWarnings = [];
     documentState.lastSavedContent = "";
@@ -221,7 +220,6 @@ export function createKnowledgeNavigation(context, services) {
         parseCodeError: payload.parse_code_error || null,
       };
       if (options.updateUrl !== false) setDocumentUrl(payload.path);
-      documentState.currentParsed = payload.parsed || null;
       documentState.currentParsedCodeView = payload.parsed_code_view || null;
       documentState.currentWarnings = [];
       documentState.lastSavedContent = payload.content;

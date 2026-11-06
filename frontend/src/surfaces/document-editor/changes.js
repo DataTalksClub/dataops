@@ -303,7 +303,6 @@ export function createEditorChanges(context, services) {
       storage.removeItem(draftKey(path));
       storage.removeItem(`dtc-doc-base:${path}`);
       documentState.currentDoc = null;
-      documentState.currentParsed = null;
       documentState.lastSavedContent = "";
       documentState.hasDraft = false;
       docMenuButton.hidden = true;

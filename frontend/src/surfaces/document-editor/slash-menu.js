@@ -22,8 +22,6 @@ export const BLOCK_ICONS = {
   image: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>'),
   embed: svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/>'),
   step: svg('<path d="M10 6h10M10 12h10M10 18h10"/><path d="M4 7V5h1v4M4 9h2"/><path d="M4 15h2v4H4"/>'),
-  prose: svg('<path d="M4 6h16M4 12h12M4 18h8"/>'),
-  group: svg('<path d="M4 5h16M4 5v14h16V5"/><path d="M8 10h8M8 14h5"/>'),
   note: svg('<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>'),
   page: svg(
     '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>' +
@@ -47,16 +45,6 @@ export const DOCUMENT_BLOCKS = [
   { type: "image", title: "Image", description: "Upload a screenshot or image.", shortcut: "image", keywords: "screenshot picture photo upload", template: "" },
   { type: "embed", title: "Video", description: "Embed a Loom, YouTube or Vimeo video.", shortcut: "video", keywords: "embed loom youtube vimeo", template: "" },
   { type: "page", title: "Sub-page", description: "A page nested inside this one.", shortcut: "page", keywords: "subpage child", template: "" },
-];
-
-/** What can be inserted inside an SOP procedure. */
-export const PROCEDURE_BLOCKS = [
-  { type: "step", title: "Step", description: "A numbered procedure step.", shortcut: "step", keywords: "numbered action" },
-  { type: "prose", title: "Text", description: "Free text between steps.", shortcut: "text", keywords: "paragraph prose note free" },
-  { type: "group", title: "Group", description: "Start a group of steps here.", shortcut: "group", keywords: "heading section phase" },
-  { type: "image", title: "Screenshot", description: "Upload a screenshot to this step.", shortcut: "image", keywords: "screenshot picture upload" },
-  { type: "embed", title: "Video", description: "Embed a Loom, YouTube or Vimeo video.", shortcut: "video", keywords: "embed loom youtube vimeo" },
-  { type: "todo", title: "TODO", description: "Flag missing information.", shortcut: "todo", keywords: "missing gap fixme", icon: BLOCK_ICONS.note },
 ];
 
 export function filterBlockTypes(items, query) {

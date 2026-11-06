@@ -67,7 +67,6 @@ export function createEditorLifecycle(context, services) {
       } else {
         storeDraft();
       }
-      documentState.currentParsed = null;
       updateViewToggleAvailability();
       if (editorView.dataset.mode === "rendered") {
         // Body changed; reparse via API.

@@ -101,7 +101,6 @@ export function createSurfaceBridge() {
     "emptyNote",
     "escapeRegex",
     "openLintReport",
-    "handleClipboardPaste",
     "closeDiff",
     "closeLightbox",
   ]) {

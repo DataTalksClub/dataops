@@ -62,6 +62,14 @@ export function parseMarkdownBlocks(markdown) {
       continue;
     }
 
+    // Full-line HTML comments are not content (legacy SOP markers were
+    // comments): drop them so old files edit cleanly and lose the comments
+    // on their next save.
+    if (/^\s*<!--[\s\S]*?-->\s*$/.test(lines[i])) {
+      i++;
+      continue;
+    }
+
     const startLine = lines[i];
 
     // Fenced code block:
@@ -173,6 +181,7 @@ export function parseMarkdownBlocks(markdown) {
     while (
       i < lines.length &&
       lines[i].trim() &&
+      !/^\s*<!--[\s\S]*?-->\s*$/.test(lines[i]) &&
       !/^```/.test(lines[i]) &&
       !/^>\s?/.test(lines[i]) &&
       !/^#{1,6}\s+/.test(lines[i]) &&

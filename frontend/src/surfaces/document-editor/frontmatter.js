@@ -9,6 +9,8 @@ function escapeRegex(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+export { escapeRegex };
+
 export function frontmatterRange(markdown) {
   const text = String(markdown ?? "");
   if (!text.startsWith("---\n")) return null;

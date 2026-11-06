@@ -55,9 +55,8 @@ export function createEditorMarkdown(context) {
   }
 
   function stripLeadingHeading(md) {
-    // Drop a duplicated body title. The reader already shows the document or
-    // section name in its own heading, so a leading # or ## must not render
-    // again. Display-only: the SOP parser still sees the original markdown.
+    // Drop a duplicated body title. The reader already shows the document
+    // title in its own heading, so a leading # or ## must not render again.
     return md.replace(/^#{1,2}\s+[^\n]*\n+/, "");
   }
 
@@ -87,6 +86,13 @@ export function createEditorMarkdown(context) {
     while (i < lines.length) {
       const line = lines[i];
       if (!line.trim()) {
+        i++;
+        continue;
+      }
+      // HTML comments are not content (legacy SOP markers were comments):
+      // skip them through the closing line so old files render cleanly.
+      if (/^\s*&lt;!--/.test(line)) {
+        while (i < lines.length && !/--&gt;/.test(lines[i])) i++;
         i++;
         continue;
       }

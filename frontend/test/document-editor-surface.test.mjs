@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
 import { createDocumentEditor } from "../src/surfaces/document-editor/index.js";
-import { createProcedureRenderer } from "../src/surfaces/document-editor/procedure-renderer.js";
 import {
   parseListItems,
   parseMarkdownBlocks,
@@ -13,9 +12,7 @@ import {
   createSlashMenu,
   DOCUMENT_BLOCKS,
   filterBlockTypes,
-  PROCEDURE_BLOCKS,
 } from "../src/surfaces/document-editor/slash-menu.js";
-import { emitProcedure, parseProcedure, stepsOf } from "../src/surfaces/document-editor/procedure-model.js";
 import { readFrontmatterScalar } from "../src/surfaces/document-editor/frontmatter.js";
 import { escapeHtml } from "../src/core/html.js";
 import {
@@ -220,7 +217,7 @@ function createEditorHarness(options = {}) {
       options.currentDoc === undefined
         ? { path: "content/processes/existing.md", updated: 10, revision: "r1" }
         : options.currentDoc,
-    currentParsed: options.parsed || null,
+    currentParsedCodeView: options.parsedCodeView || null,
     currentWarnings: options.warnings || [],
     lastSavedContent: initialContent,
     hasDraft: Boolean(options.hasDraft),
@@ -253,7 +250,7 @@ function createEditorHarness(options = {}) {
     if (options.request) return options.request(url, requestOptions, entry);
     if (requestOptions.method === "PUT") return { updated: 20, warnings: [] };
     if (new URL(url).pathname === "/parse") {
-      return { parsed: documentState.currentParsed };
+      return { parsed_code_view: documentState.currentParsedCodeView };
     }
     return {};
   };
@@ -369,7 +366,6 @@ describe("Document Editor surface boundary", () => {
       "emptyNote",
       "enterRenderedMode",
       "escapeRegex",
-        "handleClipboardPaste",
       "listDraftPaths",
       "moveCurrentDoc",
       "openHistory",
@@ -730,7 +726,7 @@ describe("Document Editor surface boundary", () => {
         if (pathname === "/docs" && requestOptions.method === "PUT") {
           return { updated: 42, warnings: ["summary is missing"] };
         }
-        if (pathname === "/docs") return { parsed: null };
+        if (pathname === "/docs") return {};
         if (pathname === "/knowledge/status") return { ok: true, count: 0, branch: "main" };
         return {};
       },
@@ -911,22 +907,7 @@ describe("Document Editor surface boundary", () => {
     assert.equal(findByText(harness.elements.historyVersions, "Restore version"), undefined);
   });
 
-  test("renders structured SOP properties, ordered sections, and procedure steps from the markdown", async () => {
-    const parsed = {
-      frontmatter: {
-        title: "Run newsletter",
-        doc_type: "sop",
-        systems: ["mailing"],
-        tags: ["weekly"],
-      },
-      sections: {
-        summary: {
-          raw: false,
-          body_md: "## Summary\n\nPrepare the weekly issue.",
-        },
-        procedure: { raw: false, groups: [], flat_steps: [], prose: [], todos: [] },
-      },
-    };
+  test("renders SOP properties, sections, and numbered steps as plain markdown blocks", async () => {
     const content = [
       "---",
       'title: "Run newsletter"',
@@ -937,28 +918,18 @@ describe("Document Editor surface boundary", () => {
       "---",
       "# Run newsletter",
       "",
-      "<!-- sop-section-start: summary -->",
       "## Summary",
       "",
       "Prepare the weekly issue.",
-      "<!-- sop-section-end -->",
       "",
-      "<!-- sop-section-start: procedure -->",
       "## Procedure",
       "",
-      '<!-- sop-todo: "Confirm links" -->',
-      "",
-      "<!-- sop-prose-start -->",
       "Before the steps.",
-      "<!-- sop-prose-end -->",
       "",
-      '<!-- sop-step-start id=1 action="click" systems="mailing" -->',
-      "1.  Send the newsletter.",
-      "<!-- sop-step-end -->",
-      "<!-- sop-section-end -->",
+      "1. Send the newsletter.",
+      "2. Confirm the links.",
     ].join("\n");
     const harness = createEditorHarness({
-      parsed,
       content,
       editorValue: content,
       mode: "raw",
@@ -977,19 +948,20 @@ describe("Document Editor surface boundary", () => {
       ["weekly", "mailing"]);
     assert.equal(findByText(view, "Edit metadata", "button"), undefined);
     assert.equal(findAllByClass(view, "fm-meta").length, 0);
-    assert.ok(findByText(view, "Summary", "h2"));
-    assert.ok(findByText(view, "Procedure", "h2"));
-    // The procedure renders from the markdown, in document order.
-    const procedure = view.querySelector('.block-section[data-section="procedure"] .block-section-body');
-    assert.deepEqual(
-      procedure.children.map((child) => child.className),
-      ["block-todos", "block-prose doc-block", "block-step doc-block", "doc-add-row"],
-    );
-    assert.equal(findByText(procedure, "1.").className, "block-step-num");
-    assert.equal(procedure.querySelector(".block-step-meta").textContent, "click · mailing");
-    const stepBody = findAllByClass(view, "block-step-body")[0];
-    assert.equal(stepBody.dataset.editable, "rich");
-    assert.equal(stepBody.innerHTML, "Send the newsletter.");
+    const textBlocks = findAllByClass(view, "notion-text-content").filter((el) => el.className.includes("h2"));
+    assert.deepEqual(textBlocks.map((el) => el.innerHTML), ["Summary", "Procedure"]);
+    // The body renders as generic blocks: no section wrappers, no step chrome.
+    assert.equal(view.querySelector(".block-section"), null);
+    assert.equal(view.querySelector(".block-step"), null);
+    const blocks = view.querySelector(".block-plain-body");
+    assert.ok(blocks);
+    const notionBlocks = findAllByClass(blocks, "notion-block");
+    assert.ok(notionBlocks.some((block) => block.className.includes("numbered")));
+    assert.deepEqual(findAllByClass(blocks, "notion-list-item-text").map((el) => el.innerHTML),
+      ["Send the newsletter.", "Confirm the links."]);
+    // Legacy HTML-comment markers never leak into rendered text.
+    assert.equal(view.textContent.includes("sop-section-start"), false);
+    assert.equal(view.textContent.includes("sop-step-start"), false);
   });
 
   test("keeps a custom frontmatter doc_type inert in the type selector", async () => {
@@ -1065,6 +1037,9 @@ describe("Document Editor surface boundary", () => {
 
   test("renders safe internal Markdown navigation and resolves relative media", async () => {
     const markdown = [
+      "---",
+      "title: Guide",
+      "---",
       "# Guide",
       "",
       "[[related-process|Review guide]]",
@@ -1075,7 +1050,6 @@ describe("Document Editor surface boundary", () => {
       "[External](https://example.com)",
     ].join("\n");
     const harness = createEditorHarness({
-      parsed: { frontmatter: { title: "Guide" }, sections: {} },
       content: markdown,
       editorValue: markdown,
     });
@@ -1106,40 +1080,19 @@ describe("Document Editor surface boundary", () => {
     ]);
   });
 
-  test("stores uploaded screenshots at their repository-absolute path", async () => {
-    const renderedView = new FakeElement("section");
-    const commits = [];
-    const editorInlineStatus = new FakeElement("div");
-    const model = parseProcedure("## Procedure\n\n<!-- sop-step-start id=1 -->\n1.  Upload.\n<!-- sop-step-end -->");
-    const [step] = stepsOf(model);
-    const rendererContext = {
-      apiUrl: (path) => new URL(path, "https://portal.test"),
-      documentState: { currentDoc: { path: "content/processes/existing.md" } },
-      editorInlineStatus,
-      renderedView,
-      request: async () => ({
-        path: "../images/existing/uploaded-shot.webp",
-        absolute_path: "content/images/existing/uploaded-shot.webp",
-      }),
-    };
-    const renderer = createProcedureRenderer(
-      rendererContext,
-      {
-        commitProcedure: (committed) => commits.push(emitProcedure(committed)),
-        recordPublication() {},
-        fileToBase64: async () => "YWJj",
-      },
-      {},
-    );
-
-    await renderer.addScreenshot(step, model, { name: "uploaded-shot.webp" });
-    assert.equal(step.screenshots[0].src, "content/images/existing/uploaded-shot.webp");
-    assert.equal(commits.length, 1);
-    assert.match(commits[0], /1\. {2}Upload\.\n\n {4}<!-- sop-screenshot-start -->\n {4}!\[\]\(content\/images\/existing\/uploaded-shot\.webp\)\n {4}<!-- sop-screenshot-end -->\n<!-- sop-step-end -->/);
-    assert.match(
-      editorInlineStatus.textContent,
-      /Uploaded content\/images\/existing\/uploaded-shot\.webp/,
-    );
+  test("drops legacy SOP marker comments from plain markdown blocks", async () => {
+    const legacy = [
+      "<!-- sop-section-start: procedure -->",
+      "## Procedure",
+      "",
+      "<!-- sop-step-start id=1 -->",
+      "1. Upload the file.",
+      "<!-- sop-step-end -->",
+      "<!-- sop-section-end -->",
+    ].join("\n");
+    const blocks = parseMarkdownBlocks(legacy);
+    assert.deepEqual(blocks.map((block) => block.type), ["h2", "numbered"]);
+    assert.equal(serializeBlocksToMarkdown(blocks), "## Procedure\n\n1. Upload the file.");
   });
 
   test("keeps dirty-leave and backup status failures recoverable", async () => {
@@ -1375,9 +1328,7 @@ describe("Document Editor surface boundary", () => {
     target.remove();
   });
 
-  test("procedure and document block catalogues match by title, shortcut and keyword", () => {
-    assert.deepEqual(filterBlockTypes(PROCEDURE_BLOCKS, "shot").map((item) => item.type), ["image"]);
-    assert.deepEqual(filterBlockTypes(PROCEDURE_BLOCKS, "loom").map((item) => item.type), ["embed"]);
+  test("document block catalogue matches by title, shortcut and keyword", () => {
     assert.deepEqual(filterBlockTypes(DOCUMENT_BLOCKS, "[]").map((item) => item.type), ["todo"]);
     assert.equal(filterBlockTypes(DOCUMENT_BLOCKS, "zzz").length, 0);
   });

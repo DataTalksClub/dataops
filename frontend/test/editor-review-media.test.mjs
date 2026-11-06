@@ -48,11 +48,6 @@ function createHarness(options = {}) {
   globalThis.document = document;
   const requests = [];
   const opened = [];
-  const screenshots = [];
-  const editorState = {
-    lastFocusedProcedure: options.procedure || { id: "procedure-1" },
-    lastFocusedStep: options.step || { id: "step-1" },
-  };
   const media = createEditorReviewMedia(
     {
       apiUrl: (path) => new URL(path, "https://portal.test"),
@@ -77,17 +72,14 @@ function createHarness(options = {}) {
       storage: options.storage || storage({ "draft:content/process.md": "draft" }),
     },
     {
-      addScreenshot: (...args) => screenshots.push(args),
       draftKey: (path) => `draft:${path}`,
       emptyNote: note,
     },
-    editorState,
   );
   return {
     diffBody,
     diffModal,
     diffTitle,
-    editorState,
     editorView,
     lightbox,
     lightboxCaption,
@@ -99,7 +91,6 @@ function createHarness(options = {}) {
     media,
     opened,
     requests,
-    screenshots,
   };
 }
 
@@ -190,34 +181,6 @@ describe("Document Editor review and media behavior", () => {
 
     harness.media.openLightbox("/media/no-caption.png", "");
     assert.equal(harness.lightboxCaption.hidden, true);
-  });
-
-  test("accepts only image clipboard files in a focused rendered procedure", () => {
-    const harness = createHarness();
-    let prevented = false;
-    const image = { name: "capture.jpg", type: "image/jpeg" };
-    harness.media.handleClipboardPaste({
-      clipboardData: {
-        items: [
-          { kind: "string" },
-          { kind: "file", getAsFile: () => image },
-        ],
-      },
-      preventDefault: () => {
-        prevented = true;
-      },
-    });
-    assert.equal(prevented, true);
-    assert.deepEqual(harness.screenshots, [
-      [harness.editorState.lastFocusedStep, harness.editorState.lastFocusedProcedure, image],
-    ]);
-
-    const sourceMode = createHarness({ mode: "source" });
-    sourceMode.media.handleClipboardPaste({
-      clipboardData: { items: [{ kind: "file", getAsFile: () => image }] },
-      preventDefault: () => assert.fail("source mode must not intercept paste"),
-    });
-    assert.deepEqual(sourceMode.screenshots, []);
   });
 
   test("encodes browser files as payload-only base64 and rejects read failures", async () => {

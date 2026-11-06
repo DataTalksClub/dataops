@@ -1,10 +1,10 @@
-export function createEditorReviewMedia(context, services, editorState) {
+export function createEditorReviewMedia(context, services) {
   const {
-    apiUrl, diffBody, diffModal, diffTitle, editorView, lightbox,
+    apiUrl, diffBody, diffModal, diffTitle, lightbox,
     lightboxCaption, lightboxImg, lintModal, lintModalBody,
     lintOpenButton, lintSummary, openDocument, request, storage,
   } = context;
-  const { addScreenshot, draftKey, emptyNote } = services;
+  const { draftKey, emptyNote } = services;
   let diffReturnFocus = null;
   let lightboxReturnFocus = null;
   const diffClose = diffModal?.querySelector?.("[data-diff-close]");
@@ -212,29 +212,6 @@ export function createEditorReviewMedia(context, services, editorState) {
     restoreFocus(returnFocus);
   }
 
-  function handleClipboardPaste(event) {
-    // Only intercept when we're in block view with a step focused or remembered.
-    if (editorView.dataset.mode !== "rendered") return;
-    if (!editorState.lastFocusedStep || !editorState.lastFocusedProcedure) return;
-    const items = event.clipboardData && event.clipboardData.items;
-    if (!items) return;
-    for (const item of items) {
-      if (item.kind !== "file") continue;
-      const file = item.getAsFile();
-      if (file && file.type.startsWith("image/")) {
-        event.preventDefault();
-        // Provide a default filename if the OS gave none.
-        if (!file.name || file.name === "image.png") {
-          const ts = new Date().toISOString().replace(/[:.]/g, "-");
-          const ext = file.type.split("/")[1] || "png";
-          Object.defineProperty(file, "name", { value: `paste-${ts}.${ext}` });
-        }
-        addScreenshot(editorState.lastFocusedStep, editorState.lastFocusedProcedure, file);
-        return;
-      }
-    }
-  }
-
   function fileToBase64(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -255,7 +232,7 @@ export function createEditorReviewMedia(context, services, editorState) {
   // `options` controls multi-line vs single-line and the editor class.
 
   return {
-    closeDiff, closeLightbox, fileToBase64, handleClipboardPaste,
+    closeDiff, closeLightbox, fileToBase64,
     openLightbox, openLintReport, showDiffForDraft,
   };
 }
