@@ -4,7 +4,7 @@ An alternate, code-only view of a SOP. One canonical representation per SOP:
 a separate knowledge document linked to the SOP — never a copy of its body and
 never independent instructions that can drift from it.
 
-The parser lives in `backend/src/docs/sop/codeView.ts`; the registry enforces
+The parser lives in `backend/src/docs/codeView.ts`; the registry enforces
 the linkage; the docs UI renders the view Gist-style (named files, author
 order, copyable, with the prose interleaved).
 
@@ -85,6 +85,6 @@ schema, parseability) instead of the SOP lint. The API's `/lint`,
   Registry validation faults are reported in `code_view_error`; an absent
   alternate has a null error. Storage failures fail the request rather than
   pretending no alternate exists.
-- `POST /parse` — `{content, kind: "sop" | "code-view"}` (default `"sop"`).
+- `POST /parse` — `{content, kind: "code-view"}` (code views only).
 - Search indexes a code view's filenames, languages, prose, and code.
 - CLI: `dataops kb code <ref>` prints the linked or own code view.

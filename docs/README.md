@@ -51,8 +51,6 @@ Files that live here:
 - `v1-execution-data-safety.md` - backup, restore, and portable export format
   for execution data and future database migration.
 - `STRUCTURE.md` - required frontmatter and section conventions.
-- `sop-format.md` - strict spec for the structured-SOP markdown format.
-- `sop-format-design.md` - design log and tooling notes.
 - `archive/` - deprecated or imported historical material.
 
 ## content/ - transitional operational documentation

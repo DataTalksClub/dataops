@@ -16,13 +16,14 @@ on:
       - "README.md"
       - "scripts/validate_planning_docs.py"
       - "tools/content_tools/content_tools/doc_registry.py"
+      - "tools/content_tools/content_tools/frontmatter.py"
       - "backend/scripts/validate-docs-links.ts"
       - "tests/planning_docs/**"
       - "tests/infra/**"
       - "infra/template.full.yaml"
       - ".github/workflows/deploy-dataops-v1.yml"
-      - "backend/src/docs/sop/**"
-      - "backend/scripts/sop.ts"
+      - "backend/src/docs/codeView.ts"
+      - "backend/src/docs/frontmatter.ts"
       - "Makefile"
   pull_request:
     paths:
@@ -37,13 +38,14 @@ on:
       - "README.md"
       - "scripts/validate_planning_docs.py"
       - "tools/content_tools/content_tools/doc_registry.py"
+      - "tools/content_tools/content_tools/frontmatter.py"
       - "backend/scripts/validate-docs-links.ts"
       - "tests/planning_docs/**"
       - "tests/infra/**"
       - "infra/template.full.yaml"
       - ".github/workflows/deploy-dataops-v1.yml"
-      - "backend/src/docs/sop/**"
-      - "backend/scripts/sop.ts"
+      - "backend/src/docs/codeView.ts"
+      - "backend/src/docs/frontmatter.ts"
       - "Makefile"
   workflow_dispatch:
 

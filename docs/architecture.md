@@ -49,7 +49,7 @@ The deployed function is `BackendFunction`, a single TypeScript/Node Lambda
 (`backend/dist/handler.handler`). It owns:
 
 - Basic-auth protected frontend serving.
-- Docs CRUD and structured-SOP parsing/linting.
+- Docs CRUD and code-view parsing/linting.
 - GitHub-backed persistence.
 - Search through a `zerosearch-node` index.
 - Read-only `GET /git/status` and `GET /git/log` diagnostics; every request to
@@ -277,8 +277,8 @@ GitHub.
 
 2. Add stricter content validation.
    The content workflow already validates links, wiki-style references, and
-   workflow document IDs. A later improvement can add SOP linting across changed
-   files without changing the CI-to-runtime boundary.
+   workflow document IDs. A later improvement can surface code-view lint
+   across changed files without changing the CI-to-runtime boundary.
 
 3. Keep content validation separate from app deployment.
    Code changes should run the full tests and SAM deploy. Content changes should

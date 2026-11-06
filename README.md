@@ -231,11 +231,7 @@ lockfile; there is no nested `backend/package-lock.json`.
 
 ## SOP format
 
-Every SOP is structured-markdown with HTML-comment markers (`<!-- sop-section-start: ... -->`
-etc.) — invisible on GitHub but machine-readable. See
-[`docs/sop-format.md`](docs/sop-format.md) for the strict spec and
-[`docs/sop-format-design.md`](docs/sop-format-design.md) for the design log.
-
-The Node CLI (`backend/scripts/sop.ts`) provides `parse` and `lint` subcommands;
-the Python parsing helpers used by the planning-docs validator live in
-`tools/content_tools/`.
+SOPs are plain markdown: frontmatter plus `##` sections, numbered steps,
+and `![](...)` images with plain-paragraph captions. There are no parsing
+rules beyond that — the reader renders every doc as generic markdown
+blocks, and `code-view` docs carry the runnable alternate view.
