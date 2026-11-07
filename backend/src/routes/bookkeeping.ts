@@ -9,6 +9,7 @@ import { handleBookkeepingResourceRoutes } from "./bookkeepingResources";
 import { handleBookkeepingSuggestionRoutes } from "./bookkeepingSuggestions";
 import { handleBookkeepingAccountantReportRoutes } from "./bookkeepingAccountantReport";
 import { handleBookkeepingAuditRoutes } from "./bookkeepingAudit";
+import { handleBookkeepingInventoryRoutes } from "./bookkeepingInventory";
 
 export async function handleBookkeepingRoutes(
   path: string,
@@ -27,6 +28,7 @@ export async function handleBookkeepingRoutes(
     (await handleBookkeepingDocumentRoutes(path, method, event, client)) ??
     (await handleBookkeepingReportRoutes(path, method, event, client)) ??
     (await handleBookkeepingResourceRoutes(path, method, event, client)) ??
+    (await handleBookkeepingInventoryRoutes(path, method, event, client)) ??
     json(404, { error: "Not found" })
   );
 }

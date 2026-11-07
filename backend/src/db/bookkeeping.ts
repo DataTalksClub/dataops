@@ -616,6 +616,62 @@ export async function setDocumentFacts(
   );
 }
 
+/**
+ * Read-merge-write one kind-keyed item with optimistic concurrency on
+ * updatedAt. Fields set to undefined are removed, mirroring
+ * updateBookkeepingTransaction; callers validate what they merge.
+ */
+export async function updateBookkeepingItem(
+  client: DynamoDBDocumentClient,
+  kind: string,
+  id: string,
+  expectedUpdatedAt: string | undefined,
+  value: Record<string, unknown>,
+) {
+  const existing = await getBookkeepingItem(client, kind, id, true);
+  if (!existing) return null;
+  const currentUpdatedAt = String(existing.updatedAt || "");
+  if (expectedUpdatedAt && currentUpdatedAt !== expectedUpdatedAt)
+    throw new BookkeepingItemLockedError();
+  const names: Record<string, string> = {};
+  const values: Record<string, unknown> = { ":expected": currentUpdatedAt };
+  const writable = Object.entries(value)
+    .filter(([name]) => !["id", "createdAt", "updatedAt", "PK", "SK"].includes(name));
+  const sets = writable
+    .filter(([, child]) => child !== undefined)
+    .map(([name, child], index) => {
+      names[`#field${index}`] = name;
+      values[`:value${index}`] = child;
+      return `#field${index} = :value${index}`;
+    });
+  const removes = writable
+    .filter(([, child]) => child === undefined)
+    .map(([name], index) => {
+      names[`#remove${index}`] = name;
+      return `#remove${index}`;
+    });
+  try {
+    await client.send(
+      new UpdateCommand({
+        TableName: TABLE_BOOKKEEPING,
+        Key: { PK: key(kind, id), SK: key(kind, id) },
+        UpdateExpression: `SET ${[...sets, "updatedAt = :now"].join(", ")}${removes.length ? ` REMOVE ${removes.join(", ")}` : ""}`,
+        ConditionExpression: "updatedAt = :expected",
+        ...(Object.keys(names).length ? { ExpressionAttributeNames: names } : {}),
+        ExpressionAttributeValues: {
+          ...values,
+          ":now": new Date().toISOString(),
+        },
+      }),
+    );
+  } catch (error) {
+    if (isConditionalMutationFailure(error))
+      throw new BookkeepingItemLockedError();
+    throw error;
+  }
+  return getBookkeepingItem(client, kind, id);
+}
+
 export async function deleteBookkeepingItem(
   client: DynamoDBDocumentClient,
   kind: string,
