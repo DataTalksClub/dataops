@@ -133,27 +133,92 @@ describe('inventory API', () => {
     assert.ok(stored.items.every((item: any) => item.transactionId && item.acquisitionDate));
   });
 
-  it('rejects invalid edits and updates status, notes and the disposed date', async () => {
+  it('exposes the ledger record each item was derived from', async () => {
+    const listed = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body);
+    const laptop = listed.items.find((item: any) => item.name === 'Laptop');
+    assert.deepEqual(laptop.source, {
+      transactionId: 'inv-tx-laptop',
+      description: 'Laptop',
+      counterparty: 'Synthetic Vendor',
+      date: '2026-03-19',
+      amount: '1813.58',
+      currency: 'EUR',
+      amountEur: '1813.58',
+    });
+    const allocationItem = listed.items.find((item: any) => item.allocationId === 'alloc-1');
+    assert.equal(allocationItem.source.allocationId, 'alloc-1');
+    assert.equal(allocationItem.source.description, 'Lenovo ThinkCentre M920q');
+    assert.equal(allocationItem.source.amount, '399.00');
+  });
+
+  it('rejects invalid edits and keeps ledger-seeded fields read-only', async () => {
     const items = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body).items;
     const item = items.find((candidate: any) => candidate.name === 'Laptop');
     const rejected = await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, { type: 'vehicle' });
     assert.equal(rejected.statusCode, 400);
     assert.deepEqual(JSON.parse(rejected.body).fields, ['type']);
+    // Status follows the disposal records; direct edits are rejected.
+    const statusPut = await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, { status: 'disposed' });
+    assert.equal(statusPut.statusCode, 400);
+    assert.deepEqual(JSON.parse(statusPut.body).fields, ['status']);
     // Ledger-seeded fields are not editable; naming none is a read-back.
     const noop = await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, { amount: '1.00' });
     assert.equal(noop.statusCode, 200);
     assert.equal(JSON.parse(noop.body).updatedAt, item.updatedAt);
+  });
 
-    const disposed = JSON.parse((await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, { status: 'disposed', disposedDate: '2027-01-15', notes: 'Sold' })).body);
-    assert.equal(disposed.status, 'disposed');
-    assert.equal(disposed.disposedDate, '2027-01-15');
-    assert.equal(disposed.notes, 'Sold');
+  it('records a sale as a disposal with proceeds and removes it again', async () => {
+    const items = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body).items;
+    const item = items.find((candidate: any) => candidate.name === 'Laptop');
+    const noProceeds = await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, { disposal: { kind: 'sold', date: '2027-01-15' } });
+    assert.equal(noProceeds.statusCode, 400);
+    assert.deepEqual(JSON.parse(noProceeds.body).fields, ['disposal.proceeds']);
+    const unknownKind = await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, { disposal: { kind: 'scrapped', date: '2027-01-15' } });
+    assert.equal(unknownKind.statusCode, 400);
+    assert.deepEqual(JSON.parse(unknownKind.body).fields, ['disposal.kind']);
 
-    const restored = JSON.parse((await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, { status: 'in-use', notes: null })).body);
+    const sold = JSON.parse((await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, {
+      disposal: { kind: 'sold', date: '2027-01-15', proceeds: '250', notes: 'eBay' },
+    })).body);
+    assert.equal(sold.status, 'disposed');
+    assert.equal(sold.disposedDate, '2027-01-15');
+    assert.equal(sold.disposals.length, 1);
+    assert.equal(sold.disposals[0].kind, 'sold');
+    assert.equal(sold.disposals[0].proceeds, '250');
+    assert.equal(sold.disposals[0].currency, 'EUR');
+    assert.equal(sold.disposals[0].notes, 'eBay');
+    assert.ok(sold.disposals[0].id);
+    // The response still carries the ledger record.
+    assert.equal(sold.source.transactionId, 'inv-tx-laptop');
+
+    const missing = await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, { removeDisposalId: 'no-such-record' });
+    assert.equal(missing.statusCode, 404);
+    const restored = JSON.parse((await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, {
+      removeDisposalId: sold.disposals[0].id,
+    })).body);
     assert.equal(restored.status, 'in-use');
     assert.equal(restored.disposedDate, undefined);
-    assert.equal(restored.notes, undefined);
-    assert.ok(restored.updatedAt > disposed.updatedAt);
+    assert.deepEqual(restored.disposals, []);
+    assert.ok(restored.updatedAt > sold.updatedAt);
+  });
+
+  it('records a decommission without proceeds and keeps the latest disposed date', async () => {
+    const items = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body).items;
+    const item = items.find((candidate: any) => candidate.name === 'UGREEN video capture card');
+    const scrapped = JSON.parse((await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, {
+      disposal: { kind: 'decommissioned', date: '2027-02-01' },
+    })).body);
+    assert.equal(scrapped.status, 'disposed');
+    assert.equal(scrapped.disposedDate, '2027-02-01');
+    assert.equal(scrapped.disposals.length, 1);
+    assert.equal(scrapped.disposals[0].kind, 'decommissioned');
+    assert.equal(scrapped.disposals[0].proceeds, undefined);
+
+    const later = JSON.parse((await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, {
+      disposal: { kind: 'decommissioned', date: '2027-04-10' },
+    })).body);
+    assert.equal(later.disposedDate, '2027-04-10');
+    assert.equal(later.disposals.length, 2);
   });
 
   it('rejects a stale optimistic-concurrency version with 409', async () => {
