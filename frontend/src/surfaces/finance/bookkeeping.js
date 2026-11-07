@@ -31,6 +31,7 @@ import { createBookkeepingTransactionModal } from "./bookkeeping-transaction-mod
 import { importStatementWithReview, confirmStatementReplacement } from "./bookkeeping-statement-import.js";
 import { loadStatementLinkIndex } from "./bookkeeping-statement.js";
 import { openBookkeepingDialog } from "./bookkeeping-dialogs.js";
+import { createBookkeepingInventory } from "./bookkeeping-inventory.js";
 import {
   createBookkeepingFinance,
   monthlyLedgerEntries,
@@ -223,6 +224,7 @@ export function createBookkeepingSurface(context) {
         invoicesMounted = true;
         mountInvoiceReview(surface.querySelector("[data-invoice-review]"), context);
       }
+      if (view === "inventory") inventory.renderInventory();
     }
     function optionList(select, values, allLabel, current) {
       select.innerHTML = [
@@ -569,6 +571,17 @@ export function createBookkeepingSurface(context) {
         ledger.querySelector('[aria-selected="true"]')?.removeAttribute("aria-selected");
         syncUrl();
       },
+    });
+
+    const inventory = createBookkeepingInventory({
+      surface,
+      api,
+      escapeHtml,
+      safeAction,
+      setStatus: (text) => {
+        status.textContent = text;
+      },
+      todayIsoDate,
     });
 
     const navigation = mountBookkeepingNavigation({

@@ -61,6 +61,7 @@ export function bookkeepingSurfaceMarkup() {
             <button type="button" class="dk-menu__item" role="menuitem" data-view-link="package">Accountant package &amp; VAT</button>
             <button type="button" class="dk-menu__item" role="menuitem" data-view-link="tuition">Tuition agreements &amp; installments</button>
             <button type="button" class="dk-menu__item" role="menuitem" data-view-link="invoices">Forwarded invoices <span class="bk-more__meta" data-invoices-meta></span></button>
+            <button type="button" class="dk-menu__item" role="menuitem" data-view-link="inventory">Inventory</button>
           </div>
         </details>
       </div>
@@ -146,6 +147,16 @@ export function bookkeepingSurfaceMarkup() {
     <section class="bookkeeping-section bk-secondary" data-secondary="tuition" hidden>
       ${backLink}
       <div data-tuition></div>
+    </section>
+    <section id="bookkeeping-inventory" class="bookkeeping-section bk-secondary" data-secondary="inventory" aria-labelledby="bookkeeping-inventory-heading" hidden>
+      ${backLink}
+      ${financeSectionHead({
+        id: "bookkeeping-inventory-heading",
+        title: "Inventory",
+        hint: "Physical purchases from the ledger since 2022 — computers, phones, audio, furniture. Scan the ledger after new expenses land.",
+        actions: html`<button type="button" class="dk-button dk-button--secondary dk-button--sm" data-inventory-scan>Scan ledger</button>`,
+      })}
+      <div class="bookkeeping-inventory" data-inventory aria-live="polite">Loading inventory…</div>
     </section>
     <dialog class="surface-dialog bookkeeping-entry-dialog">
       <form method="dialog" novalidate>

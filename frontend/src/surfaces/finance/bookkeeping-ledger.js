@@ -10,7 +10,7 @@ import { bookkeepingVendorPresentation } from "./bookkeeping-vendors.js";
 
 // Query parameters the bookkeeping route keeps in the URL.
 export const LEDGER_PARAMS = ["month", "q", "account", "dir", "category", "needs", "tx", "view"];
-export const SECONDARY_VIEWS = ["files", "package", "invoices", "tuition"];
+export const SECONDARY_VIEWS = ["files", "package", "invoices", "tuition", "inventory"];
 
 // The spreadsheet's classification columns, in its order and wording:
 // "Type" is stored as `subtype`, "Category" as `category`, "Period" as `period`.

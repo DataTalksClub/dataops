@@ -252,3 +252,24 @@
   .bk-who { min-height: var(--dk-size-touch); justify-content: center; }
   .bookkeeping-surface .bk-inline-select { height: var(--dk-size-touch); }
 }
+
+/* Inventory: physical purchases derived from the ledger. */
+.bk-inv-total {
+  margin: 0 0 var(--dk-space-2);
+  color: var(--dk-text-secondary);
+  font-size: var(--dk-text-sm);
+}
+.bk-inv-table .bk-row { cursor: default; }
+.bk-inv-what { display: flex; flex-direction: column; gap: var(--dk-space-1); min-width: 16em; }
+.bk-inv-vendor { font-size: var(--dk-text-xs); color: var(--dk-text-secondary); }
+.bk-inv-row.is-disposed .bk-who__name { color: var(--dk-text-secondary); text-decoration: line-through; }
+.bk-inv-disposed-date { margin-left: 0.5em; font-size: var(--dk-text-xs); color: var(--dk-text-secondary); }
+.bk-inv-note { min-width: 12em; }
+.bk-inv-actions { width: 2.5em; text-align: right; }
+.bk-inv-remove { color: var(--dk-text-secondary); }
+.bk-inv-remove:hover { color: var(--dk-danger-text); }
+
+@media (max-width: 820px) {
+  .bk-inv-what { min-width: 10em; }
+  .bk-inv-note { min-width: 8em; }
+}

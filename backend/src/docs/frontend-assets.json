@@ -99,6 +99,7 @@
     "src/surfaces/document-reviews.js",
     "src/surfaces/finance/bookkeeping-dialogs.js",
     "src/surfaces/finance/bookkeeping-format.js",
+    "src/surfaces/finance/bookkeeping-inventory.js",
     "src/surfaces/finance/bookkeeping-ledger.js",
     "src/surfaces/finance/bookkeeping-markup.js",
     "src/surfaces/finance/bookkeeping-navigation.js",
