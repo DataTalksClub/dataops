@@ -14,6 +14,7 @@ import { cleanItem } from "./cleanItem";
 import { TABLE_BOOKKEEPING } from "./tableNames";
 import { classifyMandatoryPayment } from "../finance/mandatoryPayments";
 import { isOwnerWithdrawalReportExempt } from "../finance/ownerPay";
+import { deriveInventoryItems, inventoryItemId, inventoryItemSeed } from "../finance/inventory";
 import {
   BOOKKEEPING_AUDIT_PARTITION_PREFIX,
   BOOKKEEPING_AUDIT_STORAGE_VERSION,
@@ -344,7 +345,44 @@ export async function putBookkeepingTransactionWithItems(
     }
     throw error;
   }
-  return { item: clean(item)!, duplicate: false };
+  const written = { item: clean(item)!, duplicate: false };
+  await syncInventoryForTransactions(client, [written.item]);
+  return written;
+}
+
+/**
+ * Derive inventory entries from freshly written ledger transactions so a
+ * physical purchase shows up in the inventory without a manual scan. Runs
+ * after the ledger write and is intentionally not atomic with it: entries are
+ * keyed by transaction/allocation seed and existing entries are left
+ * untouched, so manual inventory edits survive and a failed sync is repaired
+ * by the next "Scan ledger".
+ */
+export async function syncInventoryForTransactions(
+  client: DynamoDBDocumentClient,
+  transactions: readonly Record<string, unknown>[],
+) {
+  for (const candidate of deriveInventoryItems(transactions)) {
+    const entry: Record<string, unknown> = {
+      id: inventoryItemId(candidate.transactionId, candidate.allocationId),
+      transactionId: candidate.transactionId,
+      allocationId: candidate.allocationId,
+      name: candidate.name,
+      type: candidate.type,
+      vendor: candidate.vendor,
+      acquisitionDate: candidate.acquisitionDate,
+      amount: candidate.amount,
+      currency: candidate.currency,
+      amountEur: candidate.amountEur,
+      status: "in-use",
+    };
+    await putBookkeepingItem(
+      client,
+      "inventory",
+      Object.fromEntries(Object.entries(entry).filter(([, child]) => child !== undefined)),
+      inventoryItemSeed(candidate.transactionId, candidate.allocationId),
+    );
+  }
 }
 
 async function getBookkeepingItemRaw(
@@ -814,7 +852,9 @@ export async function updateBookkeepingTransaction(
       throw new BookkeepingItemLockedError();
     throw error;
   }
-  return getBookkeepingItem(client, "bookkeeping", id);
+  const updated = await getBookkeepingItem(client, "bookkeeping", id);
+  if (updated) await syncInventoryForTransactions(client, [updated]);
+  return updated;
 }
 
 export type PrepareDocumentInput = {
