@@ -17,6 +17,21 @@ export type InventoryType = (typeof INVENTORY_TYPES)[number];
 export const INVENTORY_STATUSES = ["in-use", "disposed"] as const;
 export type InventoryStatus = (typeof INVENTORY_STATUSES)[number];
 
+// A disposal is the exit record for an inventory item: sold off or
+// decommissioned (scrapped, recycled, given away without payment).
+export const INVENTORY_DISPOSAL_KINDS = ["sold", "decommissioned"] as const;
+export type InventoryDisposalKind = (typeof INVENTORY_DISPOSAL_KINDS)[number];
+
+export type InventoryDisposal = {
+  id: string;
+  kind: InventoryDisposalKind;
+  date: string;
+  /** Money received, required when the item was sold. */
+  proceeds?: string;
+  currency?: string;
+  notes?: string;
+};
+
 export const DEFAULT_INVENTORY_FROM_YEAR = 2022;
 
 // Ordered: the first matching bucket wins, so "Surface Pro 12" Keyboard"
@@ -85,8 +100,12 @@ type TransactionLike = {
 };
 
 const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
-const money = (value: unknown) =>
-  typeof value === "string" && /^(0|[1-9]\d{0,11})(\.\d{1,4})?$/.test(value) ? value : undefined;
+
+/** Non-negative decimal amount as stored on ledger items, e.g. "13.99". */
+export function isValidMoney(value: unknown): value is string {
+  return typeof value === "string" && /^(0|[1-9]\d{0,11})(\.\d{1,4})?$/.test(value);
+}
+const money = (value: unknown) => (isValidMoney(value) ? value : undefined);
 
 /**
  * Physical purchases among expense transactions from `fromYear` on. A payment
@@ -150,4 +169,78 @@ export function deriveInventoryItems(
     });
   }
   return candidates.filter((candidate) => candidate.transactionId && candidate.name && candidate.acquisitionDate);
+}
+
+export type InventorySourceRecord = {
+  transactionId: string;
+  allocationId?: string;
+  description: string;
+  counterparty: string;
+  date: string;
+  amount?: string;
+  currency?: string;
+  amountEur?: string;
+};
+
+/**
+ * The ledger record an inventory item came from, read back from the current
+ * transaction so the tab shows when it was bought and for what price even
+ * after the ledger row was corrected. Allocation-backed items describe
+ * themselves from their allocation row. Returns null when the transaction
+ * (or the referenced allocation row) no longer exists.
+ */
+export function inventorySourceRecord(
+  item: { transactionId?: unknown; allocationId?: unknown },
+  transaction: Record<string, unknown> | null | undefined,
+): InventorySourceRecord | null {
+  if (!transaction) return null;
+  const transactionId = text(transaction.id);
+  if (!transactionId || transactionId !== text(item.transactionId)) return null;
+  const date = text(transaction.paidDate) || text(transaction.transactionDate);
+  const base = {
+    transactionId,
+    date,
+    counterparty: text(transaction.counterparty),
+    amount: money(transaction.amount),
+    currency: text(transaction.currency),
+    amountEur: text(transaction.currency) === "EUR" ? money(transaction.amount) : money(transaction.amountEur),
+  };
+  const allocationId = text(item.allocationId);
+  if (!allocationId) return { ...base, description: text(transaction.description) };
+  const rows = Array.isArray(transaction.allocations) ? transaction.allocations : [];
+  const row = rows.find(
+    (candidate) => candidate && typeof candidate === "object" && text((candidate as Record<string, unknown>).id) === allocationId,
+  ) as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return {
+    transactionId,
+    allocationId,
+    description: text(row.description) || text(transaction.description),
+    counterparty: text(row.counterparty) || base.counterparty,
+    date: text(row.paidDate) || text(row.transactionDate) || base.date,
+    amount: money(row.amount) ?? money(row.grossAmountEur) ?? base.amount,
+    currency: text(row.currency) || base.currency,
+    amountEur: money(row.amountEur) ?? money(row.grossAmountEur)
+      ?? (text(row.currency) === "EUR" ? money(row.amount) : undefined) ?? base.amountEur,
+  };
+}
+
+/**
+ * Disposal records drive the item status: any record means disposed, and the
+ * disposed date is the latest record's date. Returns the writable fields for
+ * updateBookkeepingItem; `disposedDate: undefined` removes the stale stamp
+ * when the last record is gone.
+ */
+export function deriveInventoryDisposalState(
+  disposals: readonly InventoryDisposal[],
+): { disposals: InventoryDisposal[]; status: InventoryStatus; disposedDate?: string } {
+  const disposed = disposals.length > 0;
+  const records = [...disposals];
+  return {
+    disposals: records,
+    status: disposed ? "disposed" : "in-use",
+    disposedDate: disposed
+      ? records.reduce((latest, record) => (record.date > latest ? record.date : latest), records[0].date)
+      : undefined,
+  };
 }
