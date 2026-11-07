@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal, createTables } from '../scripts/local-dynamodb';
-import { putBookkeepingItem } from '../src/db/bookkeeping';
+import { putBookkeepingItem, putBookkeepingTransactionWithItems, updateBookkeepingTransaction, getBookkeepingItem } from '../src/db/bookkeeping';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
   classifyPhysicalItem,
@@ -239,5 +239,34 @@ describe('inventory API', () => {
     assert.equal(missing.statusCode, 404);
     const stored = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body);
     assert.equal(stored.items.some((candidate: any) => candidate.id === item.id), false);
+  });
+
+  it('adds inventory entries automatically when the ledger gains a physical purchase', async () => {
+    const before = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body).items.length;
+
+    await putBookkeepingTransactionWithItems(client, { ...transaction({ description: 'Standing desk', amount: '259.00' }), id: 'inv-tx-desk' }, []);
+    let listed = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body);
+    assert.equal(listed.items.length, before + 1);
+    const desk = listed.items.find((candidate: any) => candidate.transactionId === 'inv-tx-desk');
+    assert.equal(desk.type, 'furniture');
+    assert.equal(desk.acquisitionDate, '2026-03-19');
+    assert.equal(desk.status, 'in-use');
+
+    // A subscription never reaches the inventory.
+    await putBookkeepingTransactionWithItems(client, { ...transaction({ description: 'Mailchimp Standard plan' }), id: 'inv-tx-manual-subscription' }, []);
+    listed = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body);
+    assert.equal(listed.items.length, before + 1);
+
+    // Editing a transaction to carry physical allocation rows derives them too.
+    const stored = await getBookkeepingItem(client, 'bookkeeping', 'inv-tx-desk');
+    await updateBookkeepingTransaction(client, 'inv-tx-desk', String(stored.updatedAt), {
+      allocations: [
+        { id: 'auto-alloc-1', description: 'Lenovo ThinkCentre M920q', amount: '399.00', currency: 'EUR', amountEur: '399.00' },
+      ],
+    });
+    listed = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body);
+    const derived = listed.items.find((candidate: any) => candidate.allocationId === 'auto-alloc-1');
+    assert.equal(derived.type, 'computer');
+    assert.equal(derived.transactionId, 'inv-tx-desk');
   });
 });
