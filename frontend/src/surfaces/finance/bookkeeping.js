@@ -582,6 +582,8 @@ export function createBookkeepingSurface(context) {
         status.textContent = text;
       },
       todayIsoDate,
+      // Inventory rows link back to the ledger record they came from.
+      openTransaction: (id) => openTransaction(id),
     });
 
     const navigation = mountBookkeepingNavigation({

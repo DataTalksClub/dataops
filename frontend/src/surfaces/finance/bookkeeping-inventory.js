@@ -1,17 +1,24 @@
 // Inventory: physical purchases derived from the ledger, so the balance shows
 // what hardware, phones, audio and furniture the company owns. The view is a
 // table over /api/bookkeeping/inventory; "Scan ledger" runs the import that
-// turns 2022+ expenses (and per-invoice allocation rows) into items.
+// turns 2022+ expenses (and per-invoice allocation rows) into items. Every
+// item links back to the ledger record it came from, and selling or
+// decommissioning writes a disposal record so exits are documented too.
 import { html } from "./shared.js";
 import { formatAmount } from "./bookkeeping-format.js";
 
 const TYPES = ["computer", "phone", "audio", "furniture", "accessory", "other"];
+const DISPOSAL_KINDS = ["sold", "decommissioned"];
+const DISPOSAL_LABELS = { sold: "sold", decommissioned: "decommissioned" };
 
-export function createBookkeepingInventory({ surface, api, escapeHtml, safeAction, setStatus, todayIsoDate }) {
+export function createBookkeepingInventory({ surface, api, escapeHtml, safeAction, setStatus, todayIsoDate, openTransaction }) {
   const host = surface.querySelector("[data-inventory]");
   const scanButton = surface.querySelector("[data-inventory-scan]");
   let items = [];
+  // The in-row disposal form: one item records its exit at a time.
+  let disposeForm = null;
 
+  const today = () => todayIsoDate?.() || new Date().toISOString().slice(0, 10);
   const eurValue = (item) => {
     if (item.amountEur) return Number(item.amountEur);
     if (item.amount && String(item.currency || "").toUpperCase() === "EUR") return Number(item.amount);
@@ -22,6 +29,56 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
     : formatAmount(eurValue(item), "EUR");
   const sorted = () => [...items].sort((a, b) =>
     String(b.acquisitionDate || "").localeCompare(String(a.acquisitionDate || "")));
+  const disposalsOf = (item) => (Array.isArray(item.disposals) ? item.disposals : []);
+
+  function sourceMarkup(item) {
+    const source = item.source;
+    if (!source) return "";
+    return html`<button type="button" class="bk-inv-source" data-inv-source="${escapeHtml(source.transactionId)}"
+        title="Open the ledger record from ${escapeHtml(source.date || item.acquisitionDate || "")}"
+        aria-label="Open the ledger record for ${escapeHtml(item.name)}">↳ ledger: ${escapeHtml(source.description || item.name)}</button>`;
+  }
+
+  function statusMarkup(item) {
+    if (item.status === "disposed") {
+      return html`<span class="bk-inv-badge bk-inv-badge--disposed">disposed${item.disposedDate ? html` · ${escapeHtml(item.disposedDate)}` : ""}</span>`;
+    }
+    return html`<span class="bk-inv-badge">in use</span>
+      <button type="button" class="dk-button dk-button--sm bk-inv-dispose" data-inv-dispose="${escapeHtml(item.id)}"
+        title="Record selling or decommissioning ${escapeHtml(item.name)}">Dispose…</button>`;
+  }
+
+  function disposalsMarkup(item) {
+    const records = disposalsOf(item);
+    if (!records.length) return "";
+    return html`<tr class="bk-inv-extras"><td></td><td colspan="6" class="bk-inv-disposals">
+      ${records.map((record) => html`<span class="bk-inv-disposal">
+          <strong>${DISPOSAL_LABELS[record.kind] || escapeHtml(String(record.kind))}</strong> ${escapeHtml(String(record.date))}
+          ${record.proceeds ? html` · proceeds ${formatAmount(String(record.proceeds), String(record.currency || "EUR"))}` : ""}
+          ${record.notes ? html` · ${escapeHtml(String(record.notes))}` : ""}
+          <button type="button" class="dk-icon-button bk-inv-disposal-remove" data-inv-disposal-remove="${escapeHtml(String(record.id))}"
+            title="Remove this disposal record" aria-label="Remove the ${escapeHtml(String(record.kind))} record">✕</button>
+        </span>`).join("")}
+    </td></tr>`;
+  }
+
+  function disposeFormMarkup(item) {
+    if (disposeForm?.itemId !== item.id) return "";
+    const sold = disposeForm.kind === "sold";
+    return html`<tr class="bk-inv-extras"><td></td><td colspan="6" class="bk-inv-dispose">
+        <label>Kind
+          <select class="bk-inline-select" data-inv-disposal="kind" aria-label="Disposal kind">
+            ${DISPOSAL_KINDS.map((kind) => html`<option value="${kind}"${kind === disposeForm.kind ? " selected" : ""}>${DISPOSAL_LABELS[kind]}</option>`).join("")}
+          </select>
+        </label>
+        <label>Date <input type="date" class="dk-input" data-inv-disposal="date" value="${escapeHtml(disposeForm.date)}" aria-label="Disposal date" /></label>
+        ${sold ? html`<label>Proceeds <input class="dk-input bk-inv-proceeds" data-inv-disposal="proceeds" value="${escapeHtml(disposeForm.proceeds || "")}"
+            inputmode="decimal" placeholder="0.00" aria-label="Sale proceeds in EUR" /></label>` : ""}
+        <label>Note <input class="dk-input" data-inv-disposal="notes" value="${escapeHtml(disposeForm.notes || "")}" placeholder="optional" aria-label="Disposal note" /></label>
+        <button type="button" class="dk-button dk-button--sm dk-button--primary" data-inv-disposal-save>Record</button>
+        <button type="button" class="dk-button dk-button--sm dk-button--secondary" data-inv-disposal-cancel>Cancel</button>
+      </td></tr>`;
+  }
 
   function rowMarkup(item) {
     const disposed = item.status === "disposed";
@@ -30,6 +87,7 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
       <td class="bk-inv-what">
         <span class="bk-who__name">${escapeHtml(item.name)}</span>
         ${item.vendor ? html`<span class="bk-inv-vendor">${escapeHtml(item.vendor)}</span>` : ""}
+        ${sourceMarkup(item)}
       </td>
       <td class="bk-inv-type">
         <select class="bk-inline-select" data-inv-field="type" aria-label="Type of ${escapeHtml(item.name)}">
@@ -37,13 +95,7 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
         </select>
       </td>
       <td class="bk-col-money bk-col-eur">${amountText(item)}</td>
-      <td class="bk-inv-status">
-        <select class="bk-inline-select" data-inv-field="status" aria-label="Status of ${escapeHtml(item.name)}">
-          <option value="in-use"${!disposed ? " selected" : ""}>in use</option>
-          <option value="disposed"${disposed ? " selected" : ""}>disposed</option>
-        </select>
-        ${disposed && item.disposedDate ? html`<span class="bk-inv-disposed-date">${escapeHtml(item.disposedDate)}</span>` : ""}
-      </td>
+      <td class="bk-inv-status">${statusMarkup(item)}</td>
       <td class="bk-inv-notes">
         <input class="dk-input bk-inv-note" data-inv-field="notes" value="${escapeHtml(item.notes || "")}"
           placeholder="Note…" aria-label="Note for ${escapeHtml(item.name)}" />
@@ -83,7 +135,7 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
         <thead>
           <tr><th>Acquired</th><th>Item</th><th>Type</th><th class="bk-col-money">Paid</th><th>Status</th><th>Note</th><th></th></tr>
         </thead>
-        <tbody>${visible.map(rowMarkup).join("")}</tbody>
+        <tbody>${visible.map((item) => rowMarkup(item) + disposeFormMarkup(item) + disposalsMarkup(item)).join("")}</tbody>
       </table>`;
   }
 
@@ -97,9 +149,38 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
     return saved;
   }
 
+  function submitDisposal() {
+    if (!disposeForm) return;
+    const form = disposeForm;
+    if (!form.date) {
+      setStatus("Pick a disposal date.");
+      return;
+    }
+    disposeForm = null;
+    safeAction(async () => {
+      await save(form.itemId, { disposal: {
+        kind: form.kind,
+        date: form.date,
+        proceeds: form.kind === "sold" ? String(form.proceeds || "").trim() : undefined,
+        notes: String(form.notes || "").trim() || undefined,
+      } });
+      setStatus(form.kind === "sold" ? "Recorded the sale." : "Recorded the decommissioning.");
+    }, "Could not record the disposal");
+  }
+
   host.addEventListener("change", (event) => {
     if (event.target.closest("[data-inv-year]")) {
       render();
+      return;
+    }
+    const disposalField = event.target.closest("[data-inv-disposal]");
+    if (disposalField) {
+      // The kind decides whether proceeds apply; other form fields only
+      // update the draft, they never re-render mid-typing.
+      if (disposeForm && disposalField.dataset.invDisposal === "kind") {
+        disposeForm.kind = String(disposalField.value || "sold");
+        render();
+      }
       return;
     }
     const field = event.target.closest("[data-inv-field]");
@@ -111,16 +192,44 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
     field.disabled = true;
     safeAction(async () => {
       if (field.dataset.invField === "type") await save(item.id, { type: value });
-      else if (field.dataset.invField === "status")
-        await save(item.id, value === "disposed"
-          ? { status: "disposed", disposedDate: todayIsoDate?.() || new Date().toISOString().slice(0, 10) }
-          : { status: "in-use" });
       else if (field.dataset.invField === "notes") await save(item.id, { notes: value || null });
       field.disabled = false;
       setStatus("Inventory updated.");
     }, "Could not save the inventory change");
   });
+
   host.addEventListener("click", (event) => {
+    const source = event.target.closest("[data-inv-source]");
+    if (source) {
+      openTransaction?.(source.dataset.invSource);
+      return;
+    }
+    const disposeButton = event.target.closest("[data-inv-dispose]");
+    if (disposeButton) {
+      disposeForm = { itemId: disposeButton.dataset.invDispose, kind: "sold", date: today(), proceeds: "", notes: "" };
+      render();
+      return;
+    }
+    if (event.target.closest("[data-inv-disposal-cancel]")) {
+      disposeForm = null;
+      render();
+      return;
+    }
+    if (event.target.closest("[data-inv-disposal-save]")) {
+      submitDisposal();
+      return;
+    }
+    const removeDisposal = event.target.closest("[data-inv-disposal-remove]");
+    if (removeDisposal) {
+      const row = removeDisposal.closest("[data-inv]");
+      const item = items.find((candidate) => candidate.id === row?.dataset.inv);
+      if (!item) return;
+      safeAction(async () => {
+        await save(item.id, { removeDisposalId: removeDisposal.dataset.invDisposalRemove });
+        setStatus("Disposal record removed.");
+      }, "Could not remove the disposal record");
+      return;
+    }
     const button = event.target.closest("[data-inv-remove]");
     if (!button) return;
     const item = items.find((candidate) => candidate.id === button.dataset.invRemove);
@@ -132,9 +241,14 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
       setStatus(`Removed ${item.name} from the inventory.`);
     }, "Could not remove the inventory item");
   });
+
   host.addEventListener("input", (event) => {
     if (event.target.closest("[data-inv-year]")) render();
+    const disposalField = event.target.closest("[data-inv-disposal]");
+    if (disposalField && disposeForm && disposalField.dataset.invDisposal !== "kind")
+      disposeForm[disposalField.dataset.invDisposal] = disposalField.value;
   });
+
   scanButton.addEventListener("click", () =>
     safeAction(async () => {
       scanButton.disabled = true;
