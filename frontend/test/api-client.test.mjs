@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, test } from "node:test";
+import { after, describe, test } from "node:test";
 
 import { createApiClient } from "../src/shell/api.js";
 
@@ -89,6 +89,9 @@ describe("createApiClient fail-loud", () => {
         options.signal.addEventListener("abort", () => reject(options.signal.reason)),
       );
     });
+    // AbortSignal.timeout timers are unref'd in Node; hold the loop open until it fires.
+    const keepAlive = setTimeout(() => {}, 5000);
+    after(() => clearTimeout(keepAlive));
     await assert.rejects(request(new URL("https://ops.example.invalid/api/me?x=1")), (error) => {
       assert.equal(error.status, "timeout");
       assert.match(error.message, /Could not load \/api\/me: it took too long/);
