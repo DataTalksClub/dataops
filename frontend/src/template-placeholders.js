@@ -1,5 +1,5 @@
 /** Shared, dependency-free KB template convention. Names include their angle brackets. */
-const TOKEN = /<[A-Z][A-Z0-9_]*>/g;
+const TOKEN = /<[A-Z][A-Z0-9_]*(?:\/[A-Z][A-Z0-9_]*)*>/g;
 const HTML = new Set([
   'A ABBR ADDRESS AREA ARTICLE ASIDE AUDIO B BASE BDI BDO BLOCKQUOTE BODY',
   'BR BUTTON CANVAS CAPTION CITE CODE COL COLGROUP DATA DATALIST DD DEL DETAILS',
@@ -8,7 +8,7 @@ const HTML = new Set([
   'INPUT INS KBD LABEL LEGEND LI LINK MAIN MAP MARK MENU META METER',
   'NAV NOSCRIPT OBJECT OL OPTGROUP OPTION OUTPUT P PICTURE PRE PROGRESS Q RP',
   'RT RUBY S SAMP SCRIPT SEARCH SECTION SELECT SLOT SMALL SOURCE SPAN STRONG',
-  'STYLE SUB SUMMARY SUP TABLE TBODY TD TEMPLATE TEXTAREA TFOOT TH THEAD TIME',
+  'STYLE SUB SUMMARY SUP TABLE TBODY TD TEMPLATE TEXTAREA TFOOT TH THEAD',
   'TITLE TR TRACK U UL VAR VIDEO WBR',
 ].join(' ').split(' '));
 
@@ -79,7 +79,7 @@ export function parseTemplatePlaceholders(markdown) {
       for (const row of rows.slice(2)) {
         const values = cells(row);
         const name = (values[0] || '').replace(/^`([^`]+)`$/, '$1');
-        if (values.length !== 3 || !/^<[A-Z][A-Z0-9_]*>$/.test(name) || !values[1] || !values[2]) {
+        if (values.length !== 3 || !/^<[A-Z][A-Z0-9_]*(?:\/[A-Z][A-Z0-9_]*)*>$/.test(name) || !values[1] || !values[2]) {
           issue('malformed-row', 'Each placeholder row needs a <NAME>, explanation, and example.');
           continue;
         }

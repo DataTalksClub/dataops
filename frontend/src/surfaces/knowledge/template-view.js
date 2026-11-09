@@ -71,7 +71,7 @@ export function createTemplateViewSurface({ clipboard } = {}) {
     const tokens = new Set(templateTokens(variant.body));
     const textNode = (value) => (typeof doc.createTextNode === "function" ? doc.createTextNode(value) : value);
     let offset = 0;
-    for (const match of variant.body.matchAll(/<[A-Z][A-Z0-9_]*>/g)) {
+    for (const match of variant.body.matchAll(/<[A-Z][A-Z0-9_]*(?:\/[A-Z][A-Z0-9_]*)*>/g)) {
       if (!tokens.has(match[0])) continue;
       const entry = definitions.get(match[0]);
       body.append(textNode(variant.body.slice(offset, match.index)));

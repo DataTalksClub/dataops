@@ -10,7 +10,7 @@
  */
 
 /** Tokens include their angle brackets. */
-const TOKEN = /<[A-Z][A-Z0-9_]*>/g;
+const TOKEN = /<[A-Z][A-Z0-9_]*(?:\/[A-Z][A-Z0-9_]*)*>/g;
 
 /** Tag names that must never count as placeholders (same list as the KB convention). */
 const HTML_NAMES: ReadonlySet<string> = new Set([
@@ -21,7 +21,7 @@ const HTML_NAMES: ReadonlySet<string> = new Set([
   'INPUT INS KBD LABEL LEGEND LI LINK MAIN MAP MARK MENU META METER',
   'NAV NOSCRIPT OBJECT OL OPTGROUP OPTION OUTPUT P PICTURE PRE PROGRESS Q RP',
   'RT RUBY S SAMP SCRIPT SEARCH SECTION SELECT SLOT SMALL SOURCE SPAN STRONG',
-  'STYLE SUB SUMMARY SUP TABLE TBODY TD TEMPLATE TEXTAREA TFOOT TH THEAD TIME',
+  'STYLE SUB SUMMARY SUP TABLE TBODY TD TEMPLATE TEXTAREA TFOOT TH THEAD',
   'TITLE TR TRACK U UL VAR VIDEO WBR',
 ].join(' ').split(' '));
 
