@@ -143,6 +143,40 @@ describe("templates write commands", () => {
     assert.match(io.text(), /version 4/);
   });
 
+  test("add-task-refs appends only new refIds in order and never edits or removes", async () => {
+    const calls = fakePortal({
+      ...findRoutes,
+      "PUT /api/templates/tpl-1": { template: { ...template, version: 4 } },
+    });
+    const file = path.join(dir, "tasks.json");
+    writeFileSync(file, JSON.stringify([
+      { refId: "b", description: "Changed B", offsetDays: 99 },
+      { refId: "c", description: "Task C", offsetDays: 9 },
+      { refId: "d", description: "Task D", offsetDays: 10 },
+      { refId: "c", description: "Duplicate C", offsetDays: 1 },
+    ]));
+    const io = captureIo();
+    assert.equal(await run(["templates", "add-task-refs", "tpl-1", "--from-file", file], io), 0);
+    const put = calls.at(-1);
+    assert.deepEqual(put.body.definition.taskDefinitions, [
+      ...template.taskDefinitions,
+      { refId: "c", description: "Task C", offsetDays: 9 },
+      { refId: "d", description: "Task D", offsetDays: 10 },
+    ]);
+    assert.deepEqual({ expectedVersion: put.body.expectedVersion, revision: put.body.revision }, { expectedVersion: 3, revision: "rev-1" });
+    assert.match(io.text(), /Added c, d .*already present: b/);
+  });
+
+  test("add-task-refs with only known refIds writes nothing", async () => {
+    const calls = fakePortal(findRoutes);
+    const file = path.join(dir, "tasks.json");
+    writeFileSync(file, JSON.stringify({ taskDefinitions: [{ refId: "a", description: "again", offsetDays: 5 }] }));
+    const io = captureIo();
+    assert.equal(await run(["templates", "add-task-refs", "tpl-1", "--from-file", file], io), 0);
+    assert.ok(calls.every((call) => call.method === "GET"));
+    assert.match(io.text(), /Nothing to add/);
+  });
+
   test("explicit --expected-version/--revision win over a fresh fetch", async () => {
     const calls = fakePortal({
       ...findRoutes,
