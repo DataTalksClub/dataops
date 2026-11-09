@@ -15,6 +15,14 @@ describe('podcast doc emails', () => {
     assert.doesNotMatch(body, /Hi team|staff-only|Internal/);
   });
 
+  it('falls back to the guest name on the doc, then to a neutral greeting, never a placeholder', () => {
+    const fromDoc = renderSponsorEmailDraft({ ...base, template: 'podcast-episode-brief' }).body;
+    assert.match(fromDoc, /^Hi Sofiia,/);
+    const neutral = renderSponsorEmailDraft({ ...base, sponsorName: null, template: 'podcast-episode-brief' }).body;
+    assert.match(neutral, /^Hi there,/);
+    assert.doesNotMatch(neutral, /<NAME>/);
+  });
+
   for (const template of ['podcast-guest-research', 'podcast-run-sheet'] as const) {
     it(`keeps staff wording for ${template}`, () => {
       const { body } = renderSponsorEmailDraft({ ...base, template });
