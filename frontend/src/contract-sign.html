@@ -22,5 +22,21 @@
   </main>
   <div id="dk-live" class="dk-visually-hidden" aria-live="polite"></div>
   <script type="module" src="/src/contract-sign-page.js"></script>
+  <script>
+    // If the module graph fails to load the page script never runs; say so and report it instead of waiting forever.
+    setTimeout(() => {
+      if (document.documentElement.dataset.pageReady) return;
+      const identity = document.getElementById('contract-sign-identity');
+      if (identity) identity.textContent = 'Could not load this page. Reload to try again. The DataTalks.Club team has been notified.';
+      try {
+        fetch('/api/client-errors', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({ surface: 'contract-sign', check: 'page-script-load', message: 'page script did not start within 10s', page: location.pathname }),
+        }).catch(() => {});
+      } catch {}
+    }, 10000);
+  </script>
 </body>
 </html>

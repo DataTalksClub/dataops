@@ -199,6 +199,7 @@ export function isAnonymousSponsorDocAsset(method: string, path: string): boolea
   if (/^\/(sponsor-docs|podcast-docs|guest-docs|webinar-docs|workshop-docs)\/[^/]+\/?$/.test(path)) return true;
   return (
     path === '/src/sponsor-doc-page.js'
+    || path === '/src/core/guarded-fetch.js'
     || path === '/src/surfaces/operations/sponsor-docs.js'
     || path === '/src/surfaces/operations/sponsor-doc-gate.js'
     || path === '/src/surfaces/operations/sponsor-doc-select.js'

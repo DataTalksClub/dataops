@@ -24,11 +24,19 @@
   <div id="dk-live" class="dk-visually-hidden" aria-live="polite"></div>
   <script type="module" src="/src/sponsor-doc-page.js"></script>
   <script>
-    // If the module graph fails to load the page script never runs; say so instead of waiting forever.
+    // If the module graph fails to load the page script never runs; say so and report it instead of waiting forever.
     setTimeout(() => {
-      if (document.documentElement.dataset.sdocReady) return;
+      if (document.documentElement.dataset.pageReady) return;
       const identity = document.getElementById('sponsor-doc-identity');
-      if (identity) identity.textContent = 'Could not load this page. Reload, or ask the sender for a new link.';
+      if (identity) identity.textContent = 'Could not load this page. Reload to try again. The DataTalks.Club team has been notified.';
+      try {
+        fetch('/api/client-errors', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          keepalive: true,
+          body: JSON.stringify({ surface: 'sponsor-doc', check: 'page-script-load', message: 'page script did not start within 10s', page: location.pathname }),
+        }).catch(() => {});
+      } catch {}
     }, 10000);
   </script>
 </body>

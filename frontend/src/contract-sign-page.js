@@ -1,15 +1,19 @@
+import { guardedFetchJson } from './core/guarded-fetch.js';
 import { createContractSignPage } from './surfaces/operations/contract-sign.js';
 
 async function request(path, options = {}) {
-  const response = await fetch(/work, {
-    ...options,
-    cache: 'no-store',
-    headers: {
-      'content-type': 'application/json',
-      ...(options.headers || {}),
+  const { response, data } = await guardedFetchJson(
+    path,
+    {
+      ...options,
+      cache: 'no-store',
+      headers: {
+        'content-type': 'application/json',
+        ...(options.headers || {}),
+      },
     },
-  });
-  const data = response.status === 204 ? {} : await response.json().catch(() => ({}));
+    { surface: 'contract-sign', check: `${options.method || 'GET'} /api/sponsor-contracts`, what: 'load the signing page' },
+  );
   if (!response.ok) {
     const error = new Error(data.error || 'Signing request failed');
     error.status = response.status;
@@ -25,4 +29,5 @@ const page = createContractSignPage({
   request,
   locationRef: location,
 });
+document.documentElement.dataset.pageReady = 'true';
 page.start();

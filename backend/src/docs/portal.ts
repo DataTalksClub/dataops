@@ -25,6 +25,7 @@ import { RUNTIME_ROOT } from '../runtimePaths';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { isAnonymousDocumentReviewAsset, isAnonymousDocumentReviewRequest } from '../documents/reviews';
 import { isAnonymousSponsorDocAsset, isAnonymousSponsorDocRequest } from '../routes/sponsorDocs';
+import { isClientErrorReport } from '../routes/clientErrors';
 import { isAnonymousSponsorContractAsset } from '../routes/sponsorContracts';
 import {
   isAnonymousNewsletterPreviewAsset,
@@ -312,7 +313,7 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
       const fe = serveFrontend(event, method, path);
       if (fe) return { response: fe, authorized: false };
     }
-    if (isAnonymousDocumentReviewRequest(method, path) || isAnonymousSponsorDocRequest(method, path) || isAnonymousNewsletterPreviewRequest(method, path)) {
+    if (isAnonymousDocumentReviewRequest(method, path) || isAnonymousSponsorDocRequest(method, path) || isClientErrorReport(method, path) || isAnonymousNewsletterPreviewRequest(method, path)) {
       return { authorized: false };
     }
     // Existing non-browser bearer clients continue through the router's own

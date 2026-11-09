@@ -62,6 +62,7 @@ import { handleKnowledgePublisher } from './auth/knowledgePublisher';
 import { isScopedTokenRequestAllowed } from './auth/tokenScopes';
 import { getApiToken, projectApiToken } from './db/apiTokens';
 import { handleSponsorDocRoutes, isAnonymousSponsorDocRequest } from './routes/sponsorDocs';
+import { handleClientErrorRoute, isClientErrorReport } from './routes/clientErrors';
 import { handleEmailTemplateRoutes } from './routes/emailTemplates';
 import { handleApiTokenRoutes } from './routes/apiTokens';
 import { handleSponsorContractRoutes, isAnonymousSponsorContractRequest } from './routes/sponsorContracts';
@@ -86,6 +87,7 @@ const AUTH_EXEMPT_PATHS = new Set([
 function isAuthExempt(method: string, path: string): boolean {
   if (isAnonymousDocumentReviewRequest(method, path)) return true;
   if (isAnonymousSponsorDocRequest(method, path)) return true;
+  if (isClientErrorReport(method, path)) return true;
   if (isAnonymousSponsorContractRequest(method, path)) return true;
   if (isAnonymousNewsletterPreviewRequest(method, path)) return true;
   if (AUTH_EXEMPT_PATHS.has(path)) return true;
@@ -433,6 +435,8 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       const result = await handleEmailTemplateRoutes(reqPath, method, event, client);
       if (result) return result;
     }
+
+    if (isClientErrorReport(method, reqPath)) return handleClientErrorRoute(event);
 
     if (reqPath.startsWith('/api/sponsor-docs')) {
       const result = await handleSponsorDocRoutes(reqPath, method, event, client);
