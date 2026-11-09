@@ -1645,36 +1645,6 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
 
-  # Browser-reported failures (anonymous pages and the app shell post to
-  # /api/client-errors, which logs one ERROR client_check_failed line). Paged
-  # on the shared operator topic: this stack's own alarm topic has no
-  # subscribers, so alarms on it reach nobody.
-  ClientCheckFailedMetricFilter:
-    Type: AWS::Logs::MetricFilter
-    Properties:
-      LogGroupName: !Ref ConversationalBackendLogGroup
-      FilterPattern: '{ $.event = "client_check_failed" }'
-      MetricTransformations:
-        - MetricNamespace: DataOps/Client
-          MetricName: ClientCheckFailed
-          MetricValue: "1"
-          DefaultValue: 0
-
-  ClientCheckFailedAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub ${AWS::StackName}-client-check-failed
-      AlarmDescription: A browser reported a failed or timed-out page/API check (client_check_failed). See the backend log group.
-      Namespace: DataOps/Client
-      MetricName: ClientCheckFailed
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-      AlarmActions: [!Ref DynamoPitrAlertTopicArn]
-
 Outputs:
   ConversationalRolloutAlarmTopicArn:
     Value: !Ref ConversationalRolloutAlarmTopic
