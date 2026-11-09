@@ -20,6 +20,7 @@ Usage
       [--subject-type sponsor-deal|sponsor-company|sponsor-person|tuition-agreement --subject-id ID]
       [--comment C] [--link URL] [--tags a,b] [--required-link-name NAME] [--instruction-doc DOC-ID]
       [--checklist KB-CHECKLIST-ID] [--item "text"]... [--requires youtube,luma] [--browser required|headless] [--depends-on ID,ID]
+      [--proof-requirement url|file|artifact|comment|external-status [--proof-label L] [--proof-optional]]
   dataops tasks update <task-id> [--description D] [--date D] [--comment C] [--link URL]
       [--subject-type sponsor-deal|sponsor-company|sponsor-person|tuition-agreement --subject-id ID | --clear-subject]
       [--at "2026-10-23 19:00" --tz Europe/Berlin | --at +7d | --at none]
@@ -114,6 +115,10 @@ Proof
   closed through the follow-up "resolve" action, as in the web.
   Every write reads the Task's current version first (or pass --expected-version N);
   a 409 means someone else changed it: re-read and retry.
+
+  create/update --proof-requirement TYPE sets what proof completing the Task needs
+  (same types as the API and web); --proof-label names it, --proof-optional makes it
+  non-blocking.
 
 Task checklists
   --checklist copies the ordered items from a KB checklist; repeat --item to add
@@ -665,6 +670,30 @@ async function resolveAssignee(api, value) {
   return value;
 }
 
+const PROOF_REQUIREMENT_TYPES = ["url", "file", "artifact", "comment", "external-status"];
+
+/** The writable `proofRequirement` from --proof-requirement TYPE [--proof-label L] [--proof-optional]. */
+function proofRequirementField(args) {
+  if (args.proofRequirement === undefined) {
+    if (args.proofLabel !== undefined || args.proofOptional !== undefined) {
+      throw new UsageError("--proof-label and --proof-optional need --proof-requirement TYPE.");
+    }
+    return {};
+  }
+  const type = optionalString(args, "proofRequirement");
+  if (!PROOF_REQUIREMENT_TYPES.includes(type)) {
+    throw new UsageError(`--proof-requirement must be one of: ${PROOF_REQUIREMENT_TYPES.join(", ")}.`);
+  }
+  const label = optionalString(args, "proofLabel");
+  return {
+    proofRequirement: {
+      type,
+      ...(label === undefined ? {} : { label }),
+      ...(args.proofOptional === true ? { required: false } : {}),
+    },
+  };
+}
+
 function writableFields(args) {
   const body = {};
   if (args.clearSubject) {
@@ -715,6 +744,7 @@ function writableFields(args) {
     body.requires = requires === "none" ? [] : csv(requires);
   }
   Object.assign(body, browserRequirementField(args));
+  Object.assign(body, proofRequirementField(args));
   if (args.dependsOn !== undefined) {
     const dependsOn = required(args, "dependsOn", "depends-on");
     body.dependsOn = dependsOn === "none" ? [] : csv(dependsOn);
