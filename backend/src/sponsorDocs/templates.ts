@@ -1675,10 +1675,26 @@ export function renderSponsorEmailDraft(options: {
     return { subject, body };
   }
 
+  if (options.template === 'podcast-episode-brief') {
+    const firstName = options.recipientName?.trim().split(/\s+/)[0];
+    const body = [
+      firstName ? `Hi ${firstName},` : 'Hi <NAME>,',
+      '',
+      `Here is the episode brief with the structure and questions for ${pubDate}:`,
+      '',
+      options.shareUrl,
+      `(Access code if prompted: ${options.accessCode})`,
+      '',
+      'Please have a look and let us know if you would like any changes to the structure or the questions.',
+      '',
+      'Thank you!',
+    ].join('\n');
+    return { subject, body };
+  }
+
   if (
     options.template === 'podcast-guest-research'
     || options.template === 'podcast-run-sheet'
-    || options.template === 'podcast-episode-brief'
   ) {
     const body = [
       'Hi team,',
