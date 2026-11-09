@@ -24,10 +24,14 @@ describe('client error reports', () => {
 
   it('logs one structured ERROR line without query strings', () => {
     let status = 0;
+    let body: string | undefined;
     const lines = captureErrors(() => {
-      status = handleClientErrorRoute(event({ surface: 'sponsor-doc', check: 'GET /api/sponsor-docs', status: 503, message: 'x', page: '/sponsor-docs/sdoc-1?code=SECRET' }, '198.51.100.1')).statusCode;
+      const response = handleClientErrorRoute(event({ surface: 'sponsor-doc', check: 'GET /api/sponsor-docs', status: 503, message: 'x', page: '/sponsor-docs/sdoc-1?code=SECRET' }, '198.51.100.1'));
+      status = response.statusCode;
+      body = response.body;
     });
     assert.equal(status, 204);
+    assert.equal(body, '', 'a 204 must carry no body or browsers abort the response');
     assert.equal(lines.length, 1);
     const entry = JSON.parse(lines[0]);
     assert.equal(entry.event, 'client_check_failed');
