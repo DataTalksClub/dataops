@@ -1676,9 +1676,10 @@ export function renderSponsorEmailDraft(options: {
   }
 
   if (options.template === 'podcast-episode-brief') {
-    const firstName = options.recipientName?.trim().split(/\s+/)[0];
+    const guestName = options.recipientName?.trim() || options.sponsorName?.trim() || '';
+    const firstName = guestName.split(/\s+/)[0];
     const body = [
-      firstName ? `Hi ${firstName},` : 'Hi <NAME>,',
+      firstName ? `Hi ${firstName},` : 'Hi there,',
       '',
       `Here is the episode brief with the structure and questions for ${pubDate}:`,
       '',
