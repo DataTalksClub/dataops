@@ -737,3 +737,16 @@ test("guest portal shows dual zones and saves a time choice before required mate
   assert.equal(JSON.parse(ordinarySave[1].body).timeChoiceIntent, undefined, "ordinary biography/material saves do not reconfirm the stored slot choice");
   h.controller.destroy();
 });
+
+test("a valid code on a staff-only doc says it is staff only and keeps the stored code", async () => {
+  const h = harness({
+    request: async () => {
+      throw Object.assign(new Error("This document is for staff only."), { status: 403, code: "staff_only_document" });
+    },
+  });
+  await h.controller.start();
+
+  assert.match(h.root.textContent, /for staff only/);
+  assert.ok(!/Invalid access code/.test(h.root.textContent));
+  h.controller.destroy();
+});

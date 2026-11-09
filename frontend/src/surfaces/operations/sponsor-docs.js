@@ -242,6 +242,9 @@ export function createSponsorDocPage({
       } else if (err.status === 429) {
         phase = "gate";
         gateError = `Too many failed access code attempts. Please wait ${err.retryAfter || 60} seconds and try again.`;
+      } else if (err.status === 403 && err.code === "staff_only_document") {
+        phase = "gate";
+        gateError = "This document is for staff only. Use \"Staff sign in\" above with your DataTalks.Club account; an access code cannot open it.";
       } else if (err.status === 403) {
         saveStoredCode(docId, "");
         phase = "gate";
