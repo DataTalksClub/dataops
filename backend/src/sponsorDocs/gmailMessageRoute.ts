@@ -38,7 +38,13 @@ export async function resolveGmailMessageRoute(
     body: JSON.stringify({ connection_id: connectionId, agent: DAPIER_AGENT }),
     signal: AbortSignal.timeout(10000),
   }).catch(() => null);
-  if (!tokenRes?.ok) throw new GmailMessageRouteError(`The Dapier broker refused the Gmail token for connection "${connectionId}" (HTTP ${tokenRes?.status ?? 'unreachable'}).`);
+  if (tokenRes?.status === 404) {
+    throw new GmailMessageRouteError(
+      `Dapier has no connection "${connectionId}" for ${SPONSOR_DOC_EMAIL_FROM}. Expected the Dapier connection holding that account's Gmail `
+      + `(default "${DEFAULT_ORIN_GMAIL_CONNECTION_ID}"); set DATAOPS_ORIN_GMAIL_CONNECTION_ID to the right connection id.`,
+    );
+  }
+  if (!tokenRes?.ok) throw new GmailMessageRouteError(`The Dapier broker refused the Gmail token for connection "${connectionId}" (${SPONSOR_DOC_EMAIL_FROM}) (HTTP ${tokenRes?.status ?? 'unreachable'}).`);
   const token = (await tokenRes.json().catch(() => ({}))) as { access_token?: string; provider_account_id?: string };
   if (!token.access_token) throw new GmailMessageRouteError(`Dapier connection "${connectionId}" returned no access token.`);
   if (String(token.provider_account_id || '').toLowerCase() !== SPONSOR_DOC_EMAIL_FROM) {

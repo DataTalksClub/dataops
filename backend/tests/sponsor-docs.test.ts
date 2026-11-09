@@ -683,7 +683,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
                 access_token: 'ya29.orin-gmail-access-token',
                 expires_in: 3600,
                 token_type: 'Bearer',
-                connection_id: 'gmail-orin',
+                connection_id: 'google-calendar-orin',
               }),
               { status: 200, headers: { 'Content-Type': 'application/json' } },
             );
@@ -731,7 +731,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       assert.strictEqual(created.emailDelivery?.taskId, ownerTask.id);
       assert.match(created.emailDelivery?.subject || '', /^ClickHouse \+ DataTalks\.Club Newsletter - 11-16-2026$/);
       assert.strictEqual(created.doc.emailDelivery?.state, 'sent');
-      assert.deepEqual(requestedConnections, ['gmail-orin'], 'the dedicated send connection cannot be overridden by the API request');
+      assert.deepEqual(requestedConnections, ['google-calendar-orin'], 'the dedicated send connection cannot be overridden by the API request');
       const taskAfterCreate = await getTask(client, ownerTask.id);
       assert.match(taskAfterCreate?.notesLog?.[0]?.text || '', /gmail-msg-orin-1/);
       assert.equal(taskAfterCreate?.taskHistory.at(-1)?.action, 'noted');
@@ -819,7 +819,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       assert.strictEqual(retried.emailDelivery?.state, 'deferred');
       assert.strictEqual(retried.emailDelivery?.reason, 'insufficient_gmail_scope');
       assert.match(retried.emailDelivery?.message || '', /gmail\.send/);
-      assert.strictEqual(retryConnection, 'gmail-orin', 'the send-email API also pins the dedicated connection');
+      assert.strictEqual(retryConnection, 'google-calendar-orin', 'the send-email API also pins the dedicated connection');
 
       // Verify the dedicated gmail-orin connection sends after the prior scope failure.
       setSponsorDocEmailDepsForTests({
@@ -832,7 +832,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
             const connId = reqBody.connection_id || '';
             return new Response(
               JSON.stringify({
-                access_token: connId === 'gmail-orin' ? 'ya29.orin-dedicated-gmail' : 'ya29.orin-calendar-only',
+                access_token: connId === 'google-calendar-orin' ? 'ya29.orin-dedicated-gmail' : 'ya29.orin-calendar-only',
                 expires_in: 3600,
                 provider_account_id: 'orin@datatalks.club',
               }),
@@ -863,7 +863,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       assert.strictEqual(fallbackRes.statusCode, 200, fallbackRes.body);
       const fallbackBody = JSON.parse(fallbackRes.body);
       assert.strictEqual(fallbackBody.emailDelivery?.state, 'sent');
-      assert.strictEqual(fallbackBody.emailDelivery?.connectionId, 'gmail-orin');
+      assert.strictEqual(fallbackBody.emailDelivery?.connectionId, 'google-calendar-orin');
       assert.strictEqual(fallbackBody.emailDelivery?.messageId, 'gmail-msg-orin-fallback');
       const taskAfterRetry = await getTask(client, ownerTask.id);
       assert.match(taskAfterRetry?.notesLog?.at(-1)?.text || '', /gmail-msg-orin-fallback/);

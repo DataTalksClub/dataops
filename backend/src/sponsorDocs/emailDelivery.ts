@@ -10,8 +10,7 @@
  * 2. DataOps reads the machine credential `personal-scheduler.dapier-api-token`
  *    and exchanges it at `POST https://dapier.dtcdev.click/api/agent/token`
  *    for a short-lived Google access token on Orin's Dapier connection
- *    (`gmail-orin` or `DATAOPS_ORIN_GMAIL_CONNECTION_ID`), kept separate from
- *    the calendar connection so Gmail send scope does not widen calendar grants.
+ *    (`google-calendar-orin` or `DATAOPS_ORIN_GMAIL_CONNECTION_ID`).
  * 3. DataOps verifies that the Dapier connection is bound to
  *    `orin@datatalks.club` before sending, then posts a raw RFC 2822 MIME
  *    message to `POST https://gmail.googleapis.com/gmail/v1/users/me/messages/send`.
@@ -40,8 +39,8 @@ import {
 
 export const SPONSOR_DOC_EMAIL_FROM = 'orin@datatalks.club';
 export const SPONSOR_DOC_EMAIL_CC = 'valeriia@datatalks.club';
-export const DEFAULT_ORIN_GMAIL_CONNECTION_ID = 'gmail-orin';
-export const DEDICATED_ORIN_GMAIL_CONNECTION_ID = 'gmail-orin';
+/** Orin's Gmail grants live on her Google connection in Dapier (the one that also holds calendar). */
+export const DEFAULT_ORIN_GMAIL_CONNECTION_ID = 'google-calendar-orin';
 
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo';
@@ -212,7 +211,7 @@ function summarizeGmailError(status: number, bodyText: string, connectionId: str
       `Gmail API returned HTTP 403${detail ? ` (${detail})` : ''}. `
       + `Dapier connection "${connectionId}" (${SPONSOR_DOC_EMAIL_FROM}) needs the `
       + `https://www.googleapis.com/auth/gmail.send scope granted and re-consented in Dapier `
-      + `(or connect "${DEDICATED_ORIN_GMAIL_CONNECTION_ID}" as ${SPONSOR_DOC_EMAIL_FROM}).`
+      + `(set DATAOPS_ORIN_GMAIL_CONNECTION_ID to the Dapier connection holding ${SPONSOR_DOC_EMAIL_FROM}).`
     );
   }
   return `Gmail API returned HTTP ${status}${detail ? `: ${detail}` : ''}.`;
