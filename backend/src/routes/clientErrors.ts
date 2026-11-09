@@ -1,5 +1,5 @@
 import { headerValue } from '../httpHeaders';
-import { noStoreJson } from '../http';
+import { NO_STORE_JSON_HEADERS, noStoreJson } from '../http';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 /**
@@ -62,5 +62,6 @@ export function handleClientErrorRoute(event: LambdaEvent): LambdaResponse {
     page: field(body.page).split(/[?#]/)[0],
     userAgent: headerValue(event.headers, 'user-agent').slice(0, MAX_FIELD_LENGTH),
   }));
-  return noStoreJson(204, {});
+  // A 204 must have no body; a `{}` payload makes browsers abort the response.
+  return { statusCode: 204, headers: NO_STORE_JSON_HEADERS, body: '' };
 }
