@@ -84,6 +84,9 @@ import {
   MailchimpMetricsError,
   pullIssueMailchimpMetrics,
 } from '../newsletter/mailchimpMetrics';
+import { GmailMessageRouteError, resolveGmailMessageRoute } from '../sponsorDocs/gmailMessageRoute';
+import { applySponsorRoute, SponsorRouteError } from '../newsletter/sponsorRoute';
+import { ReportSendError, sendIssueReport } from '../newsletter/reportSend';
 import { json, parseJsonObjectEvent } from '../http';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -978,6 +981,47 @@ async function issueReportRoute(id: string, event: LambdaEvent, client: DynamoDB
   });
 }
 
+async function issueReportSendRoute(id: string, body: Body, event: LambdaEvent, client: DynamoDBDocumentClient) {
+  const resolved = await resolveInteractiveActor(client, event, 'work-write');
+  if (!resolved.ok) return resolved.response;
+  const item = await resolveNewsletterIssue(client, id);
+  if (!item) return json(404, { error: 'Not found' });
+  const slot = body.slot;
+  if (slot !== 'primary' && slot !== 'secondary') return json(400, { error: 'slot is required: primary or secondary' });
+  if (!(SLOT_POSITIONS[item.kind] as readonly string[]).includes(slot)) return json(400, { error: `A ${item.kind} issue has no ${slot} slot` });
+  try {
+    const sent = await sendIssueReport(client, item, {
+      slot,
+      contactName: typeof body.contactName === 'string' ? body.contactName : '',
+      actorId: resolved.actor.id,
+    });
+    return json(200, sent);
+  } catch (error) {
+    if (error instanceof ReportSendError) return json(error.statusCode, { error: error.message, code: error.code, ...error.detail });
+    throw error;
+  }
+}
+
+/** Adopt an `email-sponsor` message Orin already sent as the booking's route. */
+async function slotSponsorRouteRoute(id: string, position: string, body: Body, event: LambdaEvent, client: DynamoDBDocumentClient) {
+  const resolved = await resolveInteractiveActor(client, event, 'work-write');
+  if (!resolved.ok) return resolved.response;
+  const item = await resolveNewsletterIssue(client, id);
+  if (!item) return json(404, { error: 'Not found' });
+  if (position !== 'primary' && position !== 'secondary') return json(400, { error: 'The slot is primary or secondary' });
+  if (!item.cardId) return json(422, { error: `${item.id} has no Card` });
+  const messageId = typeof body.messageId === 'string' ? body.messageId.trim() : '';
+  if (!/^[A-Za-z0-9]{6,64}$/.test(messageId)) return json(400, { error: 'messageId is required: the Gmail message id of the email-sponsor send' });
+  try {
+    const route = await resolveGmailMessageRoute(messageId);
+    const taskIds = await applySponsorRoute(client, item.cardId, position, route);
+    return json(200, { issueId: item.id, slot: position, route, taskIds });
+  } catch (error) {
+    if (error instanceof GmailMessageRouteError || error instanceof SponsorRouteError) return json(422, { error: error.message, code: 'sponsor_route_not_set' });
+    throw error;
+  }
+}
+
 async function mailchimpMetricsRoute(id: string, body: Body, event: LambdaEvent, client: DynamoDBDocumentClient) {
   const existing = await resolveNewsletterIssue(client, id);
   if (!existing) return json(404, { error: 'Not found' });
@@ -1101,6 +1145,11 @@ export async function handleNewsletterIssueRoutes(
     if (method !== 'GET') return json(405, { error: 'Method not allowed' });
     return issueReportRoute(decodeURIComponent(issueReport[1]), event, client);
   }
+  const issueReportSend = path.match(/^\/api\/newsletter-issues\/([^/]+)\/report\/send$/);
+  if (issueReportSend) {
+    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+    return issueReportSendRoute(decodeURIComponent(issueReportSend[1]), parse(event) || {}, event, client);
+  }
   const mailchimpMetrics = path.match(/^\/api\/newsletter-issues\/([^/]+)\/mailchimp-metrics$/);
   if (mailchimpMetrics) {
     if (method !== 'POST') return json(405, { error: 'Method not allowed' });
@@ -1132,6 +1181,11 @@ export async function handleNewsletterIssueRoutes(
   if (path === '/api/newsletter-issues/sponsor-options') {
     if (method !== 'GET') return json(405, { error: 'Method not allowed' });
     return json(200, { items: await sponsorOptions(client) });
+  }
+  const slotRoute_ = path.match(/^\/api\/newsletter-issues\/([^/]+)\/slots\/([^/]+)\/route$/);
+  if (slotRoute_) {
+    if (method !== 'PUT') return json(405, { error: 'Method not allowed' });
+    return slotSponsorRouteRoute(decodeURIComponent(slotRoute_[1]), slotRoute_[2], parse(event) || {}, event, client);
   }
   const slot = path.match(/^\/api\/newsletter-issues\/([^/]+)\/slots\/([^/]+)$/);
   if (slot) {

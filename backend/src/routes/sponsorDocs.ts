@@ -59,6 +59,7 @@ import {
   speakerTemplateView,
   type SponsorDocTemplateKey,
 } from '../sponsorDocs/templates';
+import { recordSponsorRouteAfterSend, SponsorRouteError } from '../newsletter/sponsorRoute';
 import { listNextRecordingSlots } from '../podcast/resolveRecordingSlot';
 import type { Card, LambdaEvent, LambdaResponse } from '../types';
 
@@ -83,7 +84,19 @@ function json(statusCode: number, body: unknown, extraHeaders?: Record<string, s
   };
 }
 
+/** The task note for a sent email, then the sponsor route it fixes when the task is `email-sponsor`. */
 async function recordSponsorEmailOnTask(
+  client: DynamoDBDocumentClient,
+  taskId: string | null,
+  cardId: string,
+  delivery: SponsorDocEmailDelivery,
+): Promise<SponsorDocEmailDelivery> {
+  const recorded = await recordSponsorEmailNote(client, taskId, cardId, delivery);
+  if (taskId && recorded.state === 'sent') await recordSponsorRouteAfterSend(client, taskId, recorded);
+  return recorded;
+}
+
+async function recordSponsorEmailNote(
   client: DynamoDBDocumentClient,
   taskId: string | null,
   cardId: string,
@@ -1087,6 +1100,9 @@ export async function handleSponsorDocRoutes(
     }
     if (err instanceof SponsorEmailTaskOwnerError) {
       return json(err.statusCode, { error: err.message, code: 'invalid_email_task' });
+    }
+    if (err instanceof SponsorRouteError) {
+      return json(500, { error: err.message, code: 'sponsor_route_not_recorded' });
     }
     recordRequestError(err);
     return json(500, { error: 'Internal server error' });

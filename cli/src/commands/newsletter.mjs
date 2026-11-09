@@ -73,9 +73,17 @@ Usage
                                   Show, set, or pull from Mailchimp the issue metrics and
                                   per-slot (primary / secondary) link + LinkedIn + X metrics.
                                   With no metric flags it shows the current values.
-  dataops newsletter report <issue-id> [primary|secondary] [--contact NAME]
+  dataops newsletter report <issue-id> [primary|secondary] [--contact NAME] [--send]
   dataops newsletter report --sponsor <name> [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--contact NAME]
-                                  Sponsor performance report (template.newsletter.newsletter-performance)
+                                  Sponsor performance report (template.newsletter.newsletter-performance).
+                                  Prints the booking's To, Cc, sender and Gmail thread. --send
+                                  (needs a slot and --contact) replies in that thread from
+                                  orin@, then closes send-performance-to-sponsor with the Gmail
+                                  message id. A booking with no route is an error: nothing is guessed.
+  dataops newsletter route <issue-id> <primary|secondary> --message-id GMAIL_ID
+                                  Record the booking's route from an email-sponsor message Orin
+                                  already sent (To, Cc, sender, thread), and copy it onto the
+                                  slot's send Tasks. Sending email-sponsor does this itself.
   dataops newsletter sync <newsletter.csv> [--apply]
                                   Bring issues in line with a CSV export of the retired
                                   schedule sheet's Newsletter tab, every row back to the
@@ -546,6 +554,24 @@ export async function metrics(args, io) {
   return updated;
 }
 
+function printRoute(io, route) {
+  if (!route) {
+    io.print("Route: none recorded (send email-sponsor, or `dataops newsletter route`)");
+    return;
+  }
+  io.print(`To: ${route.to}`);
+  io.print(`Cc: ${route.cc.length ? route.cc.join(", ") : "-"}`);
+  io.print(`From: ${route.sender}`);
+  io.print(`threadRef: ${route.threadRef}`);
+}
+
+function printReport(io, item) {
+  io.print(`${item.label} · ${item.publicationDate} · ${item.slot} (${item.sponsor || "open"})`);
+  printRoute(io, item.route);
+  io.print("");
+  io.print(item.message);
+}
+
 export async function report(args, io) {
   const usage = "dataops newsletter report (<issue-id> [primary|secondary] | --sponsor <name>) [--contact <name>]";
   const sponsor = optionalString(args, "sponsor");
@@ -572,8 +598,7 @@ export async function report(args, io) {
     }
     for (const [index, item] of result.items.entries()) {
       if (index > 0) io.print("\n---\n");
-      io.print(`${item.label} · ${item.publicationDate} · ${item.slot} (${item.sponsor || "open"})`);
-      io.print(item.message);
+      printReport(io, item);
     }
     return result;
   }
@@ -585,12 +610,32 @@ export async function report(args, io) {
     ...(slot ? { slot } : {}),
     ...(contactName ? { contactName } : {}),
   };
+  if (args.send) {
+    if (!slot) throw new UsageError(`--send needs a slot. ${usage}`);
+    if (!contactName) throw new UsageError("--send needs --contact NAME: the greeting is never sent as <NAME>.");
+    const sent = await api.post(`/api/newsletter-issues/${enc(id)}/report/send`, { slot, contactName });
+    if (args.json) return sent;
+    const delivery = sent.emailDelivery;
+    io.print(`Replied in thread ${sent.route.threadRef} from ${delivery.from} to ${delivery.to}${delivery.cc?.length ? ` (cc ${delivery.cc.join(", ")})` : ""} (Gmail message ${delivery.messageId}).`);
+    io.print(`Closed task ${sent.taskId}.`);
+    return sent;
+  }
   const result = await api.get(`/api/newsletter-issues/${enc(id)}/report`, { query });
   if (args.json) return result;
   for (const [index, item] of (result.reports || []).entries()) {
     if (index > 0) io.print("\n---\n");
-    io.print(`${item.label} · ${item.publicationDate} · ${item.slot} (${item.sponsor || "open"})`);
-    io.print(item.message);
+    printReport(io, item);
+  }
+  return result;
+}
+
+export async function route(args, io) {
+  const { id, position } = slotArgs(args, "dataops newsletter route <issue-id> <primary|secondary> --message-id GMAIL_ID");
+  const messageId = optionalString(args, "message-id") ?? optionalString(args, "messageId");
+  if (!messageId) throw new UsageError("--message-id is required: the Gmail message id of the email-sponsor send.");
+  const result = await apiFor(args).put(`/api/newsletter-issues/${enc(id)}/slots/${position}/route`, { messageId });
+  if (!args.json) {
+    io.print(`Recorded the ${position} route on ${id}: To ${result.route.to}, Cc ${result.route.cc.join(", ") || "-"}, thread ${result.route.threadRef}; copied onto ${result.taskIds.length} task(s).`);
   }
   return result;
 }
@@ -973,6 +1018,7 @@ export const commands = {
   metrics,
   "pull-mailchimp": pullMailchimp,
   report,
+  route,
   delete: remove,
   sponsors,
   book,

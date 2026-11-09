@@ -1,5 +1,6 @@
 import type {
   NewsletterIssue,
+  SponsorEmailRoute,
   NewsletterIssueKind,
   NewsletterSlotPosition,
 } from '../db/newsletterIssues';
@@ -16,6 +17,8 @@ export interface SponsorStatsReport {
   sponsor: string | null;
   organizationId?: string;
   recordedAt: string | null;
+  /** Where the sponsor's emails go (To/Cc/sender/Gmail thread); null until `email-sponsor` was sent. */
+  route: SponsorEmailRoute | null;
   newsletter: {
     sent?: number;
     views?: number;
@@ -137,6 +140,7 @@ export function buildSponsorStatsReport(
     sponsor: slot.sponsor || null,
     ...(slot.organizationId ? { organizationId: slot.organizationId } : {}),
     recordedAt,
+    route: slot.route || null,
     newsletter,
     linkedin,
     x,
