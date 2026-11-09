@@ -16,6 +16,7 @@ Usage
   dataops templates update <id|id-prefix|type|name> (--from-file <definition.yaml|json>
       | --task <taskRef> --offset-days <int> [--anchor start|end] [--task-name <text>] [--name <text>])
       [--expected-version N] [--revision R] [--dry-run]
+  dataops templates add-task-refs <id|id-prefix|type|name> --from-file <tasks.yaml|json> [--expected-version N] [--revision R] [--dry-run]
   dataops templates reset <id|id-prefix|type|name> [--expected-version N] [--revision R] [--dry-run]
   dataops templates delete <id|id-prefix|type|name> --yes [--expected-version N] [--revision R]
   dataops templates sync
@@ -24,6 +25,10 @@ sync projects dataops-knowledge main (workflow-templates/) into the live
 Templates; it needs the knowledge repository's CI identity and runs in its
 publish workflow, so a push to main refreshes them without a deploy. Pinned
 (edited) Templates keep their pin and are reported.
+
+add-task-refs appends Task definitions (a list, or an object with taskDefinitions)
+whose refId the Template does not have yet, keeping order and the new definitions'
+own fields; refIds already present are skipped and nothing is ever removed or edited.
 
 Create a Card from one with: dataops cards create --title T --date D --template <id|type|name>
 
@@ -118,7 +123,7 @@ async function loadYaml() {
   }
 }
 
-async function definitionFile(args) {
+async function definitionFile(args, { allowList = false } = {}) {
   const path = optionalString(args, "fromFile");
   if (path === undefined) return undefined;
   let text;
@@ -136,7 +141,7 @@ async function definitionFile(args) {
     } else {
       parsed = JSON.parse(text);
     }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    if (!parsed || typeof parsed !== "object" || (Array.isArray(parsed) && !allowList)) {
       throw new UsageError(`--from-file ${path} must hold a template definition object.`);
     }
     return parsed;
@@ -337,6 +342,50 @@ export async function update(args, io) {
   return result;
 }
 
+/** Append Task definitions whose refId the Template lacks; existing ones are never changed or removed. */
+export async function addTaskRefs(args, io) {
+  const ref = positional(args, 0, "dataops templates add-task-refs <id|type|name> --from-file <tasks.yaml|json>");
+  const api = apiFor(args);
+  const parsed = await definitionFile(args, { allowList: true });
+  if (parsed === undefined) throw new UsageError("--from-file is required: a list of Task definitions, or an object with taskDefinitions.");
+  const incoming = Array.isArray(parsed) ? parsed : parsed.taskDefinitions;
+  if (!Array.isArray(incoming) || incoming.length === 0) throw new UsageError("--from-file must hold a non-empty list of Task definitions.");
+  const template = await findTemplate(api, ref);
+  const { expectedVersion, revision } = versionPair(args, template, undefined);
+  const base = stripServerOwned(structuredClone(template));
+  const definitions = [...(base.taskDefinitions || [])];
+  const known = new Set(definitions.map((definition) => definition.refId));
+  const added = [];
+  const skipped = [];
+  for (const definition of incoming) {
+    if (!definition || typeof definition.refId !== "string" || !definition.refId) {
+      throw new UsageError("Every Task definition needs a refId.");
+    }
+    if (known.has(definition.refId)) skipped.push(definition.refId);
+    else {
+      known.add(definition.refId);
+      definitions.push(definition);
+      added.push(definition.refId);
+    }
+  }
+  const summary = { template: template.id, added, skipped };
+  if (!added.length) {
+    if (args.json) return { ...summary, unchanged: true };
+    io.print(`Nothing to add: ${template.id} already has ${skipped.join(", ")}.`);
+    return { ...summary, unchanged: true };
+  }
+  const query = args.dryRun ? { dryRun: "true" } : undefined;
+  let result;
+  try {
+    result = await api.put(`/api/templates/${enc(template.id)}`, { expectedVersion, revision, definition: { ...base, taskDefinitions: definitions } }, { query });
+  } catch (error) {
+    describeTemplateWriteError(error, ref);
+  }
+  if (args.json) return { ...summary, result };
+  io.print(`${result.dryRun ? "Dry run: would add" : "Added"} ${added.join(", ")} to ${template.id}${skipped.length ? ` (already present: ${skipped.join(", ")})` : ""}.`);
+  return { ...summary, result };
+}
+
 export async function reset(args, io) {
   const ref = positional(args, 0, "dataops templates reset <id|type|name> [--expected-version N] [--revision R] [--dry-run]");
   const api = apiFor(args);
@@ -391,4 +440,4 @@ export async function sync(args, io) {
   return result;
 }
 
-export const commands = { list, show, create, update, reset, delete: remove, sync };
+export const commands = { list, show, create, update, "add-task-refs": addTaskRefs, reset, delete: remove, sync };
