@@ -33,3 +33,10 @@ test('joins variant fences and checks tokens across all variants', () => {
  assert.deepEqual(parseTemplatePlaceholders(markdown).variants,[{label:'Template',body:'Hello <NAME>'},{label:'Alternate',body:'Goodbye <NAME>'}]);
  assert.deepEqual(parseTemplatePlaceholders(markdown).issues,[]);
 });
+test('accepts literal placeholders such as <TIME> and <CET/CEST> in body and table', () => {
+  const rows = '| `<TIME>` | Start time | 18:00 |\n| `<CET/CEST>` | Timezone label | CET |';
+  const result = parseTemplatePlaceholders(doc('Call at <TIME> <CET/CEST>', rows));
+  assert.deepEqual(result.issues, []);
+  assert.deepEqual(result.placeholders.map(item => item.name), ['<TIME>', '<CET/CEST>']);
+  assert.ok(parseTemplatePlaceholders(doc('Call at <TIME>', '| `<NAME>` | Name | Alex |')).issues.some(i => i.code === 'missing-explanation'));
+});
