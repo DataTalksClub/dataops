@@ -1,9 +1,12 @@
 import { createSponsorDocPage } from "./surfaces/operations/sponsor-docs.js";
 
+const REQUEST_TIMEOUT_MS = 20000;
+
 async function request(path, options = {}) {
   const response = await fetch(path, {
     ...options,
     cache: "no-store",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     headers: {
       "content-type": "application/json",
       ...(options.headers || {}),
@@ -26,4 +29,5 @@ const page = createSponsorDocPage({
   locationRef: location,
   historyRef: history,
 });
+document.documentElement.dataset.sdocReady = "true";
 page.start();

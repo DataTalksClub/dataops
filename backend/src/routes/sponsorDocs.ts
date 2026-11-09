@@ -205,6 +205,8 @@ export function isAnonymousSponsorDocAsset(method: string, path: string): boolea
     || path === '/src/surfaces/operations/sponsor-doc-radio.js'
     || path === '/src/surfaces/operations/sponsor-doc-bullets.js'
     || path === '/src/surfaces/operations/sponsor-doc-email-card.js'
+    || path === '/src/surfaces/operations/sponsor-doc-event-time.js'
+    || path === '/src/surfaces/operations/sponsor-doc-guest-schedule.js'
     || path === '/src/styles/sponsor-docs.css'
     || path.startsWith('/src/dakit/')
   );
