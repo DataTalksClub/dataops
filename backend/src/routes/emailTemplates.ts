@@ -16,6 +16,7 @@ import {
   type KnowledgeEmailTemplate,
   type RenderedKnowledgeEmail,
 } from '../sponsorDocs/knowledgeEmailTemplate';
+import { recordSponsorRouteAfterSend, SponsorRouteError } from '../newsletter/sponsorRoute';
 import { noStoreJson, parseJsonObjectEventOrEmpty } from '../http';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
@@ -145,7 +146,15 @@ export async function handleEmailTemplateRoutes(
     templateRevision: template.revision,
     ...(emailDelivery.state === 'sent' ? { taskId } : {}),
   };
-  if (delivery.state === 'sent') await recordEmailOnTask(client, taskId, template.id, delivery);
+  if (delivery.state === 'sent') {
+    await recordEmailOnTask(client, taskId, template.id, delivery);
+    try {
+      await recordSponsorRouteAfterSend(client, taskId, delivery);
+    } catch (error) {
+      if (error instanceof SponsorRouteError) return noStoreJson(500, { error: error.message, code: 'sponsor_route_not_recorded', emailDelivery: delivery });
+      throw error;
+    }
+  }
   return noStoreJson(200, {
     emailDelivery: delivery,
     sender: SPONSOR_DOC_EMAIL_FROM,

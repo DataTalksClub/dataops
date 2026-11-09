@@ -280,6 +280,8 @@ export interface Task {
     delivery?: import('./sponsorDocs/emailDelivery').SponsorDocEmailDelivery;
     attempts?: Array<{ claimedAt: string; delivery: import('./sponsorDocs/emailDelivery').SponsorDocEmailDelivery }>;
   };
+  /** Sponsor email route copied from the newsletter slot booking; set on the sponsor send Tasks. */
+  sponsorRoute?: import('./db/newsletterIssues').SponsorEmailRoute;
   waitingFor?: string;
   followUpAt?: string;
   followUpChannel?: string;

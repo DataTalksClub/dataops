@@ -48,6 +48,15 @@ export interface NewsletterSlotStats {
   recordedAt: string;
 }
 
+/** Where the sponsor's emails for one booking go and which Gmail thread they continue. */
+export interface SponsorEmailRoute {
+  to: string;
+  cc: string[];
+  sender: string;
+  /** Gmail thread id of the `email-sponsor` send. */
+  threadRef: string;
+}
+
 export interface NewsletterSlot {
   /** The booked sponsor; an open slot has none. Booking adds the slot's Tasks to the Card. */
   sponsor?: string;
@@ -60,6 +69,8 @@ export interface NewsletterSlot {
   documentUrl?: string;
   /** Performance metrics for this slot's placement and sponsored social posts. */
   stats?: NewsletterSlotStats;
+  /** Set when `email-sponsor` is sent; `newsletter report --send` replies in this thread. */
+  route?: SponsorEmailRoute;
 }
 
 /** A link the issue keeps before (or without) a Card: a draft, a doc, a campaign. */

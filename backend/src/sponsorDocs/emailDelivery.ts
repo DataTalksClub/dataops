@@ -111,6 +111,8 @@ export function buildRawMimeEmail(input: {
   cc?: string[];
   subject: string;
   body: string;
+  /** Continue an existing Gmail thread: the Message-ID of its last message. */
+  inReplyTo?: string;
 }): string {
   const headers: string[] = [
     `From: Orin <${sanitizeHeaderValue(input.from)}>`,
@@ -124,6 +126,9 @@ export function buildRawMimeEmail(input: {
   }
   headers.push(
     `Subject: ${sanitizeHeaderValue(input.subject)}`,
+    ...(input.inReplyTo
+      ? [`In-Reply-To: ${sanitizeHeaderValue(input.inReplyTo)}`, `References: ${sanitizeHeaderValue(input.inReplyTo)}`]
+      : []),
     'MIME-Version: 1.0',
     'Content-Type: text/plain; charset="UTF-8"',
     'Content-Transfer-Encoding: 8bit',
@@ -229,6 +234,34 @@ function summarizeDapierGmailTokenProblem(status: number, connectionId: string, 
   return `The Dapier Gmail token broker refused the request (HTTP ${status}).`;
 }
 
+/** The thread's subject (as a reply) and the Message-ID of its last message; null when Gmail cannot read it. */
+async function readGmailThreadHeaders(
+  runFetch: typeof fetch,
+  authHeaders: Record<string, string>,
+  threadId: string,
+): Promise<{ subject: string; messageId: string } | null> {
+  let res: Response;
+  try {
+    res = await runFetch(
+      `${GMAIL_API_BASE}/threads/${encodeURIComponent(threadId)}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=Subject`,
+      { method: 'GET', headers: authHeaders, signal: AbortSignal.timeout(10000) },
+    );
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+  const thread = (await res.json().catch(() => null)) as
+    | { messages?: Array<{ payload?: { headers?: Array<{ name?: string; value?: string }> } }> }
+    | null;
+  const messages = thread?.messages || [];
+  const header = (index: number, name: string) => messages[index]?.payload?.headers
+    ?.find((item) => item.name?.toLowerCase() === name)?.value?.trim() || '';
+  const first = header(0, 'subject');
+  const messageId = header(messages.length - 1, 'message-id');
+  if (!first || !messageId) return null;
+  return { subject: /^re:/i.test(first) ? first : `Re: ${first}`, messageId };
+}
+
 export async function deliverRenderedEmail(
   client: DynamoDBDocumentClient,
   options: {
@@ -241,6 +274,8 @@ export async function deliverRenderedEmail(
     connectionId?: string | null;
     /** Domain-owned recipients; sponsor content requests keep their default CC. */
     cc?: string[];
+    /** Reply in this Gmail thread instead of starting a new one; the subject is taken from the thread. */
+    threadId?: string;
   },
 ): Promise<SponsorDocEmailDelivery> {
   const resolvedRecipient = await resolveSponsorDocRecipient(client, {
@@ -329,14 +364,6 @@ export async function deliverRenderedEmail(
       message: `${base} (form created; sponsor email auto-send deferred)`,
     };
   }
-
-  const raw = buildRawMimeEmail({
-    from: SPONSOR_DOC_EMAIL_FROM,
-    to,
-    cc,
-    subject,
-    body: options.draft.body,
-  });
 
   let preferredDeferred: SponsorDocEmailDelivery | null = null;
 
@@ -483,12 +510,40 @@ export async function deliverRenderedEmail(
       continue;
     }
 
+    let replySubject = subject;
+    let inReplyTo: string | undefined;
+    if (options.threadId) {
+      const thread = await readGmailThreadHeaders(runFetch, authHeaders, options.threadId);
+      if (!thread) {
+        return {
+          state: 'deferred',
+          from: SPONSOR_DOC_EMAIL_FROM,
+          to,
+          ...(cc.length > 0 ? { cc } : {}),
+          subject,
+          connectionId,
+          reason: 'thread_not_found',
+          message: `Gmail thread ${options.threadId} could not be read from ${SPONSOR_DOC_EMAIL_FROM}; no email was sent.`,
+        };
+      }
+      replySubject = thread.subject;
+      inReplyTo = thread.messageId;
+    }
+    const raw = buildRawMimeEmail({
+      from: SPONSOR_DOC_EMAIL_FROM,
+      to,
+      cc,
+      subject: replySubject,
+      body: options.draft.body,
+      inReplyTo,
+    });
+
     let sendRes: Response;
     try {
       sendRes = await runFetch(`${GMAIL_API_BASE}/messages/send`, {
         method: 'POST',
         headers: authHeaders,
-        body: JSON.stringify({ raw }),
+        body: JSON.stringify({ raw, ...(options.threadId ? { threadId: options.threadId } : {}) }),
         signal: AbortSignal.timeout(15000),
       });
     } catch {
