@@ -1,3 +1,9 @@
+import {
+  REQUEST_TIMEOUT_MS,
+  failureMessage,
+  reportClientFailure,
+} from "../core/guarded-fetch.js";
+
 export function resolveApiBase({ documentRef, windowRef }) {
   const meta = documentRef
     .querySelector('meta[name="api-base"]')
@@ -9,7 +15,12 @@ export function resolveApiBase({ documentRef, windowRef }) {
   return "";
 }
 
-export function createApiClient({ apiBase, fetchImpl, storage }) {
+export function createApiClient({
+  apiBase,
+  fetchImpl,
+  storage,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+}) {
   function apiUrl(path) {
     return new URL(path, apiBase);
   }
@@ -53,10 +64,38 @@ export function createApiClient({ apiBase, fetchImpl, storage }) {
       headers.Authorization = `Bearer ${token}`;
     }
     const { responseType, ...fetchOptions } = options;
-    const response = await fetchImpl(url, {
-      ...fetchOptions,
-      headers,
-    });
+    // Reads fail fast; writes and downloads may legitimately run as long as the
+    // Lambda (120s) before the visitor is told it failed.
+    const deadlineMs =
+      String(fetchOptions.method || "GET").toUpperCase() === "GET" &&
+      responseType !== "blob"
+        ? timeoutMs
+        : Math.max(timeoutMs, 120000);
+    const checkPath = new URL(String(url), apiBase || "http://localhost").pathname;
+    const what = `load ${checkPath}`;
+    // Every shell request has a deadline and a visible failure: a hung API call
+    // must reject with a message the surface renders, never spin forever.
+    let response;
+    try {
+      response = await fetchImpl(url, {
+        ...fetchOptions,
+        headers,
+        signal: fetchOptions.signal || AbortSignal.timeout(deadlineMs),
+      });
+    } catch (cause) {
+      if (fetchOptions.signal?.aborted && cause?.name === "AbortError") throw cause;
+      const status =
+        cause?.name === "TimeoutError" || cause?.name === "AbortError"
+          ? "timeout"
+          : "network";
+      reportClientFailure(
+        { surface: "app-shell", check: checkPath, status: null, message: status },
+        { fetchImpl },
+      );
+      const error = new Error(failureMessage(what, status));
+      error.status = status;
+      throw error;
+    }
 
     if (response.ok && responseType === "blob") return response.blob();
     const text = await response.text();
@@ -80,6 +119,18 @@ export function createApiClient({ apiBase, fetchImpl, storage }) {
       );
       error.status = response.status;
       throw error;
+    }
+
+    if (response.status >= 500) {
+      reportClientFailure(
+        {
+          surface: "app-shell",
+          check: checkPath,
+          status: response.status,
+          message: String(payload?.error || ""),
+        },
+        { fetchImpl },
+      );
     }
 
     if (!response.ok) {
