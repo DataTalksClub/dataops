@@ -1,5 +1,6 @@
 import { guestPortalSlots, recordGuestPortalTimeChoice } from '../events/guestIntakePortal';
 import { hydrateGuestEventSlotOptions } from '../sponsorDocs/templates';
+import { recordPortalDocEdit } from '../sponsorDocs/portalEditTask';
 import { projectDocumentEvent, readDocumentEventMetadata } from '../sponsorDocs/eventMetadata';
 import { randomUUID } from 'node:crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -1026,6 +1027,10 @@ export async function handleSponsorDocRoutes(
           status: body.status as SponsorDocStatus | undefined,
           actorKind: 'sponsor',
         });
+        if (updated) {
+          const docUrl = `${sponsorDocPortalBaseUrl(event)}${sponsorDocPathForTemplate(updated.template)}/${encodeURIComponent(updated.id)}`;
+          await recordPortalDocEdit(client, { before: verified.doc, after: updated, docUrl });
+        }
         try { if (updated && body.timeChoiceIntent !== undefined) await recordGuestPortalTimeChoice(client, updated, body.timeChoiceIntent); }
         catch (error) { return json(422, { error: (error as Error).message, code: 'guest_time_choice_pending' }); }
         return json(200, {
