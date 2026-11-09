@@ -1,15 +1,19 @@
+import { guardedFetchJson } from "./core/guarded-fetch.js";
 import { createNewsletterPreviewPage } from "./surfaces/operations/newsletter-preview.js";
 
 async function request(path, options = {}) {
-  const response = await fetch(path, {
-    ...options,
-    cache: "no-store",
-    headers: {
-      "content-type": "application/json",
-      ...(options.headers || {}),
+  const { response, data } = await guardedFetchJson(
+    path,
+    {
+      ...options,
+      cache: "no-store",
+      headers: {
+        "content-type": "application/json",
+        ...(options.headers || {}),
+      },
     },
-  });
-  const data = response.status === 204 ? {} : await response.json().catch(() => ({}));
+    { surface: "newsletter-preview", check: `${options.method || "GET"} /api/newsletter-issues`, what: "load the preview" },
+  );
   if (!response.ok) {
     const error = new Error(data.error || "Newsletter preview request failed");
     error.status = response.status;
@@ -26,4 +30,5 @@ const page = createNewsletterPreviewPage({
   locationRef: location,
   historyRef: history,
 });
+document.documentElement.dataset.pageReady = "true";
 page.start();

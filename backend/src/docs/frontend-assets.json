@@ -8,6 +8,7 @@
     "src/core/card-kind.js",
     "src/core/collection-loader.js",
     "src/core/dates.js",
+    "src/core/guarded-fetch.js",
     "src/core/hovercard.js",
     "src/core/html.js",
     "src/core/icons.js",

@@ -16,7 +16,7 @@ export function isAnonymousDocumentReviewRequest(method: string, path: string): 
 }
 export function isAnonymousDocumentReviewAsset(method: string, path: string): boolean {
   return method === 'GET' && (/^\/document-review\/[^/]+\/?$/.test(path)
-    || ['/src/document-review-page.js', '/src/surfaces/document-reviews.js'].includes(path));
+    || ['/src/document-review-page.js', '/src/core/guarded-fetch.js', '/src/surfaces/document-reviews.js'].includes(path));
 }
 // The document loader is provided by the run-document routes. All callers must
 // check existence here; a deleted document never remains accessible by a link.

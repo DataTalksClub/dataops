@@ -495,5 +495,5 @@ async function handleSigningRequest(
 export function isAnonymousSponsorContractAsset(method: string, path: string): boolean {
   if (method.toUpperCase() !== 'GET') return false;
   if (/^\x2Fcontracts\x2F[^\x2F]+\x2F?$/.test(path)) return true;
-  return path === '/src/contract-sign-page.js' || path === '/src/surfaces/operations/contract-sign.js';
+  return path === '/src/contract-sign-page.js' || path === '/src/core/guarded-fetch.js' || path === '/src/core/html.js' || path === '/src/surfaces/operations/contract-sign.js';
 }

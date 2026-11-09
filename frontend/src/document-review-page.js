@@ -1,3 +1,4 @@
+import { guardedFetchJson } from "./core/guarded-fetch.js";
 import { createDocumentReviewPanel } from "./surfaces/document-reviews.js";
 const root = document.getElementById("document-review-root");
 const id = decodeURIComponent(
@@ -12,20 +13,24 @@ try {
 // Keep the bearer secret out of the address bar and subsequent referrers.
 history.replaceState(null, "", location.pathname);
 async function request(path, options = {}) {
-  const response = await fetch(path, {
-    ...options,
-    cache: "no-store",
-    headers: {
-      "content-type": "application/json",
-      "x-document-review-token": token,
-      ...options.headers,
+  const { response, data } = await guardedFetchJson(
+    path,
+    {
+      ...options,
+      cache: "no-store",
+      headers: {
+        "content-type": "application/json",
+        "x-document-review-token": token,
+        ...options.headers,
+      },
     },
-  });
-  const data = await response.json();
+    { surface: "document-review", check: `${options.method || "GET"} /api/documents/review`, what: "load the document" },
+  );
   if (!response.ok)
     throw new Error(data.error || "Document review request failed");
   return data;
 }
+document.documentElement.dataset.pageReady = "true";
 try {
   if (!token)
     throw new Error(
