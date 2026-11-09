@@ -30,8 +30,8 @@ describe('client error reports', () => {
       status = response.statusCode;
       body = response.body;
     });
-    assert.equal(status, 204);
-    assert.equal(body, '', 'a 204 must carry no body or browsers abort the response');
+    assert.equal(status, 200, 'not 204: Chromium reports a 204 POST as ERR_ABORTED');
+    assert.equal(body, '{}');
     assert.equal(lines.length, 1);
     const entry = JSON.parse(lines[0]);
     assert.equal(entry.event, 'client_check_failed');

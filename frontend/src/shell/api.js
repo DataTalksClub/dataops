@@ -1,8 +1,13 @@
 import {
-  REQUEST_TIMEOUT_MS,
   failureMessage,
   reportClientFailure,
 } from "../core/guarded-fetch.js";
+
+// Shell reads can sit behind a cold Lambda start and a large listing, so they
+// get longer than the anonymous pages' 20s; writes get the full Lambda budget.
+const READ_TIMEOUT_MS = 30000;
+const WRITE_TIMEOUT_MS = 120000;
+const MAX_REPORTS_PER_PAGE = 5;
 
 export function resolveApiBase({ documentRef, windowRef }) {
   const meta = documentRef
@@ -19,7 +24,7 @@ export function createApiClient({
   apiBase,
   fetchImpl,
   storage,
-  timeoutMs = REQUEST_TIMEOUT_MS,
+  timeoutMs = READ_TIMEOUT_MS,
 }) {
   function apiUrl(path) {
     return new URL(path, apiBase);
@@ -29,6 +34,17 @@ export function createApiClient({
   // request fires once and every caller awaits the same promise. Mutations
   // and blob downloads never coalesce.
   const inflightGets = new Map();
+
+  // One failing page load fires many failing requests. Report each distinct
+  // (check, status) once, capped per page, so the server's per-IP budget is
+  // not spent on duplicates and no 429s show up as browser errors.
+  const reported = new Set();
+  function reportOnce(report) {
+    const key = `${report.check} ${report.status ?? report.message}`;
+    if (reported.has(key) || reported.size >= MAX_REPORTS_PER_PAGE) return;
+    reported.add(key);
+    reportClientFailure(report, { fetchImpl });
+  }
 
   async function request(url, options = {}) {
     const method = String(options.method || "GET").toUpperCase();
@@ -70,7 +86,7 @@ export function createApiClient({
       String(fetchOptions.method || "GET").toUpperCase() === "GET" &&
       responseType !== "blob"
         ? timeoutMs
-        : Math.max(timeoutMs, 120000);
+        : Math.max(timeoutMs, WRITE_TIMEOUT_MS);
     const checkPath = new URL(String(url), apiBase || "http://localhost").pathname;
     const what = `load ${checkPath}`;
     // Every shell request has a deadline and a visible failure: a hung API call
@@ -88,10 +104,7 @@ export function createApiClient({
         cause?.name === "TimeoutError" || cause?.name === "AbortError"
           ? "timeout"
           : "network";
-      reportClientFailure(
-        { surface: "app-shell", check: checkPath, status: null, message: status },
-        { fetchImpl },
-      );
+      reportOnce({ surface: "app-shell", check: checkPath, status: null, message: status });
       const error = new Error(failureMessage(what, status));
       error.status = status;
       throw error;
@@ -122,15 +135,12 @@ export function createApiClient({
     }
 
     if (response.status >= 500) {
-      reportClientFailure(
-        {
-          surface: "app-shell",
-          check: checkPath,
-          status: response.status,
-          message: String(payload?.error || ""),
-        },
-        { fetchImpl },
-      );
+      reportOnce({
+        surface: "app-shell",
+        check: checkPath,
+        status: response.status,
+        message: String(payload?.error || ""),
+      });
     }
 
     if (!response.ok) {

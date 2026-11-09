@@ -128,4 +128,23 @@ describe("createApiClient fail-loud", () => {
     await assert.rejects(request(new URL("https://ops.example.invalid/api/users")));
     assert.equal(reports.length, 0);
   });
+
+  test("repeated failures are reported once per check and capped per page", async () => {
+    const reports = [];
+    const { request } = client((url, options) => {
+      if (String(url).endsWith("/api/client-errors")) {
+        reports.push(JSON.parse(options.body));
+        return Promise.resolve({});
+      }
+      return Promise.resolve({ ok: false, status: 503, statusText: "", text: async () => "{}" });
+    });
+    for (let i = 0; i < 4; i += 1) {
+      await assert.rejects(request(new URL("https://ops.example.invalid/api/same"), { method: "POST" }));
+    }
+    for (let i = 0; i < 10; i += 1) {
+      await assert.rejects(request(new URL(`https://ops.example.invalid/api/many-${i}`)));
+    }
+    assert.equal(reports.filter((report) => report.check === "/api/same").length, 1);
+    assert.equal(reports.length, 5);
+  });
 });
