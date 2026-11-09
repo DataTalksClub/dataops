@@ -162,6 +162,12 @@ function observeErrors(page) {
  * @param {Array<object>} entries collected observer entries
  * @param {(entry: object) => boolean} [alsoAttributable] extra declared responses
  */
+// The shell reports each deliberate failure to /api/client-errors on a
+// best-effort basis. Those reports are a declared consequence of the outage: a
+// report may be cut off by navigation or throttled by the per-IP budget that
+// every test in a file shares.
+const isClientErrorReport = (entry) => new URL(entry.url).pathname === '/api/client-errors';
+
 function expectOnlyDeliberateDocsOutage(entries, alsoAttributable = () => false) {
   const docs503s = entries.filter(
     (entry) => entry.kind === 'response' && entry.status === 503 && isDocsUrl(entry.url),
@@ -174,12 +180,13 @@ function expectOnlyDeliberateDocsOutage(entries, alsoAttributable = () => false)
   const attributable = new Set([
     ...outageResponses,
     ...entries.filter((entry) => entry.kind === 'console' && outageUrls.has(entry.url)),
+    ...entries.filter(isClientErrorReport),
   ]);
   const unexpected = entries.filter((entry) => !attributable.has(entry)).map(describeEntry);
   expect(unexpected).toEqual([]);
   expect(docs503s.length).toBeGreaterThan(0);
   expect(entries.filter((entry) => entry.kind === 'pageerror').map(describeEntry)).toEqual([]);
-  expect(entries.filter((entry) => entry.kind === 'requestfailed').map(describeEntry)).toEqual([]);
+  expect(entries.filter((entry) => entry.kind === 'requestfailed' && !isClientErrorReport(entry)).map(describeEntry)).toEqual([]);
 }
 
 async function portalContext(browser, server, options = {}) {

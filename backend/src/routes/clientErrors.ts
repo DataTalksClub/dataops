@@ -1,5 +1,5 @@
 import { headerValue } from '../httpHeaders';
-import { NO_STORE_JSON_HEADERS, noStoreJson } from '../http';
+import { noStoreJson } from '../http';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 /**
@@ -62,6 +62,7 @@ export function handleClientErrorRoute(event: LambdaEvent): LambdaResponse {
     page: field(body.page).split(/[?#]/)[0],
     userAgent: headerValue(event.headers, 'user-agent').slice(0, MAX_FIELD_LENGTH),
   }));
-  // A 204 must have no body; a `{}` payload makes browsers abort the response.
-  return { statusCode: 204, headers: NO_STORE_JSON_HEADERS, body: '' };
+  // 200, not 204: Chromium reports a POST answered with 204 as net::ERR_ABORTED,
+  // which surfaces as a failed request in the browser and in e2e observers.
+  return noStoreJson(200, {});
 }

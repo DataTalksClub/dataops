@@ -179,7 +179,9 @@ function observeBrowserErrors(page) {
       message: message.text(),
     });
   });
-  page.on('requestfailed', (request) => entries.push({
+  // The shell reports deliberate failures to /api/client-errors best-effort; a
+  // report cut off by navigation is telemetry, not a page failure.
+  page.on('requestfailed', (request) => request.url().endsWith('/api/client-errors') || entries.push({
     kind: 'requestfailed',
     url: request.url(),
     failure: request.failure()?.errorText || 'unknown',

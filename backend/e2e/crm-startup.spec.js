@@ -103,7 +103,7 @@ function watchRequests(page) {
     });
   });
   page.on('requestfailed', (request) => {
-    if (!started.has(request)) return;
+    if (!started.has(request) || request.url().endsWith('/api/client-errors')) return;
     failed.push({
       method: request.method(),
       path: shortUrl(request.url()),
