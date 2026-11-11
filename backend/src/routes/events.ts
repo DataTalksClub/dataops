@@ -1,3 +1,5 @@
+import { checkTitle } from '../events/titleQuality';
+import { inspectEventTitle, approveEventTitle, TitleReviewInputError } from '../events/titleReview';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { resolveInteractiveActor } from '../identity/actor';
@@ -29,6 +31,7 @@ async function formatEventResponse(
   const templateIdByType = await getTemplateIdByType(client);
   const projectedCard = await projectCard(directory, result.card, undefined, templateIdByType);
   return {
+    titleQuality: checkTitle(result.event.renderValues.topic || result.event.renderValues.title),
     event: result.event,
     hold: toCalendarHoldView(result),
     history: result.history,
@@ -93,6 +96,25 @@ export async function handleEventRoutes(
   const actorId = resolved.actor.id || 'authenticated-operator';
 
   try {
+    const titleMatch = path.match(/^\/api\/events(?:\/([^/]+))?\/(title-check|approve-title)\/?$/);
+    if (titleMatch) {
+      if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+      const body = parseBody(event.body);
+      if (!body) return json(400, { error: 'Invalid JSON body' });
+      const targetId = titleMatch[1] ? decodeURIComponent(titleMatch[1]) : '';
+      try {
+        if (titleMatch[2] === 'title-check') return json(200, targetId
+          ? await inspectEventTitle(client, targetId) : checkTitle(body.title, Array.isArray(body.guests) ? body.guests.filter((guest: unknown) => typeof guest === 'string') : []));
+        if (!targetId) return json(400, { error: 'An event Card, episode or hold ID is required' });
+        return json(200, await approveEventTitle(client, targetId, body, actorId));
+      } catch (error) {
+        if (error instanceof EventConflictError) throw error;
+        if ((error as Error).name === 'CardVersionConflictError') return json(409, { error: 'Card changed; rerun title-check before approval' });
+        if (error instanceof TitleReviewInputError) return json(422, { error: error.message });
+        throw error;
+      }
+    }
+
     // POST /api/events/poll or POST /api/events/:targetId/poll
     const pollMatch = path.match(/^\/api\/events(?:\/([^/]+))?\/poll\/?$/);
     if (pollMatch) {

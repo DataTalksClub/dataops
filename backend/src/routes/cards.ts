@@ -1,3 +1,4 @@
+import { checkTitle } from '../events/titleQuality';
 import { getSponsorDocWithAuthMaterial, decryptSponsorDocAccessCode } from '../db/sponsorDocs';
 import { getEventRecord } from '../events/store';
 import { loadGuestFirstContact } from '../events/guestFirstContact';
@@ -579,7 +580,7 @@ async function handleCollection(
     const templateIdByType = await getTemplateIdByType(client);
     const tasks = slots.eventSlots.length ? await listTasksByCardConsistent(client, created.card.id) : created.tasks;
     const card = await projectCard(new TeamDirectory(client), created.card, tasks, templateIdByType);
-    return json(201, { card, tasks, ...slots });
+    return json(201, { card, tasks, ...slots, titleQuality: checkTitle(created.card.title, created.card.people) });
   }
 
   // Method not allowed
@@ -819,7 +820,7 @@ async function handleSingle(
       }
     }
     const templateIdByType = await getTemplateIdByType(client);
-    return json(200, { card: await projectCard(new TeamDirectory(client), card, undefined, templateIdByType) });
+    return json(200, { card: await projectCard(new TeamDirectory(client), card, undefined, templateIdByType), ...(body.title !== undefined ? { titleQuality: checkTitle(body.title, card.people) } : {}) });
   }
 
   if (method === 'DELETE') {

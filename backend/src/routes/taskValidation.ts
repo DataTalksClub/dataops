@@ -1,3 +1,4 @@
+import { inspectEventTitle, TitleReviewInputError } from '../events/titleReview';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getArtifact, listArtifacts } from '../db/artifacts';
@@ -625,6 +626,21 @@ export async function validateLinkedCardRequirement(
   return null;
 }
 
+/** A title-dependent approval/publication Task opts in through validation.titleQuality. */
+export async function validateTaskTitleQuality(client: DynamoDBDocumentClient, task: Record<string, unknown>): Promise<string | null> {
+  const validation = task.validation;
+  if (!validation || typeof validation !== 'object' || Array.isArray(validation)
+    || !['topic-approval', 'publication'].includes(String((validation as Record<string, unknown>).titleQuality))) return null;
+  if (typeof task.cardId !== 'string' || !task.cardId) return 'Title review requires a linked event Card';
+  try {
+    const check = await inspectEventTitle(client, task.cardId);
+    return check.approved ? null : `Cannot complete this title-dependent Task: ${check.nextStep} Run dataops event title-check ${task.cardId}.`;
+  } catch (error) {
+    if (error instanceof TitleReviewInputError) return error.message;
+    throw error;
+  }
+}
+
 export async function validateDoneProof(
   client: DynamoDBDocumentClient,
   id: string,
@@ -632,6 +648,8 @@ export async function validateDoneProof(
   updates: Record<string, unknown>
 ): Promise<string | null> {
   const taskData = { ...existing, ...updates };
+  const titleError = await validateTaskTitleQuality(client, taskData);
+  if (titleError) return titleError;
   if (skipClosureSuppresses(taskData, 'proof')) {
     return null;
   }
@@ -670,6 +688,8 @@ export async function validateDoneProof(
 }
 
 export async function validateDoneProofOnCreate(client: DynamoDBDocumentClient, taskData: Record<string, unknown>): Promise<string | null> {
+  const titleError = await validateTaskTitleQuality(client, taskData);
+  if (titleError) return titleError;
   const requiredLinkName = taskData.requiredLinkName as string | undefined;
   if (requiredLinkName && !isNonEmptyString(taskData.link) && !skipClosureSuppresses(taskData, 'requiredLink', requiredLinkName)) {
     return `Cannot mark task as done: required link '${requiredLinkName}' is not filled`;
