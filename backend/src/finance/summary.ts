@@ -39,7 +39,8 @@ export type Entry = {
   category: string;
   subtype: string;
   sourceType: string;
-  mandatoryKind: MandatoryPaymentKind | null;
+  /** tax_refund marks money in from the Finanzamt: a refund, never a debit. */
+  mandatoryKind: MandatoryPaymentKind | 'tax_refund' | null;
   /** Tax a vat/taxes/health-insurance entry belongs to. */
   taxType: TaxType | null;
   /** Set on owner-pay entries. */
@@ -380,6 +381,11 @@ function total(entries: Entry[]): Totals {
   };
 }
 
+function mandatoryKindOf(kind: MandatoryPaymentKind | undefined, entryType: string): Entry['mandatoryKind'] {
+  if (!kind) return null;
+  return kind === 'tax_debit' && entryType === 'income' ? 'tax_refund' : kind;
+}
+
 export function toEntry(row: LedgerRow, rates: RateLookup): Entry | null {
   const entryType = str(row.entryType);
   if (entryType !== 'income' && entryType !== 'expense') return null;
@@ -400,7 +406,7 @@ export function toEntry(row: LedgerRow, rates: RateLookup): Entry | null {
     category: str(row.category),
     subtype: str(row.subtype),
     sourceType: str(row.sourceType),
-    mandatoryKind: line === 'owner-pay' ? null : mandatory?.kind || null,
+    mandatoryKind: line === 'owner-pay' ? null : mandatoryKindOf(mandatory?.kind, entryType),
     taxType: line === 'vat' || line === 'taxes' || line === 'health-insurance' ? taxTypeOf(row, line) : null,
     ownerPayType: line === 'owner-pay' ? ownerPayTypeOf(row.ownerPayType) : null,
     amount: str(row.amount),

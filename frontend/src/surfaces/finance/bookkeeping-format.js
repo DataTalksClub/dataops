@@ -160,7 +160,7 @@ export function isOwnerWithdrawalReportExempt(entry) {
 }
 export function isReportExempt(entry) {
   return REPORT_EXEMPT_CATEGORIES.has(String(entry?.category || ""))
-    || ["tax_debit", "tk_debit"].includes(String(entry?.mandatoryKind || ""))
+    || ["tax_debit", "tax_refund", "tk_debit"].includes(String(entry?.mandatoryKind || ""))
     || isOwnerWithdrawalReportExempt(entry);
 }
 

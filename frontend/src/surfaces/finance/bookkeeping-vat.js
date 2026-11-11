@@ -8,7 +8,7 @@ const MANDATORY_LABELS = {
   "health-insurance": "Health insurance / TK",
 };
 const TAX_HEALTH_LINES = new Set(["vat", "taxes", "health-insurance"]);
-const TAX_HEALTH_KINDS = new Set(["tax_debit", "tk_debit"]);
+const TAX_HEALTH_KINDS = new Set(["tax_debit", "tax_refund", "tk_debit"]);
 
 function isTaxHealthEntry(entry) {
   const line = String(entry?.line || "");
