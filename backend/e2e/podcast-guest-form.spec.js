@@ -1,6 +1,7 @@
 // Podcast guest materials form: phone layout, radio slot picker, guest-only
 // wording, and the /podcast-docs/ alias (old /sponsor-docs/ links keep working).
 const { test, expect } = require("@playwright/test");
+const { releaseFriday } = require("./helpers/release-friday");
 const { createDocsCacheRoot } = require("./helpers/docs-content-root");
 const {
   startOwnedTestServer,
@@ -40,6 +41,8 @@ test.describe("podcast guest materials form", () => {
     const episode = await api("/api/podcast-episodes", {
       season: 25,
       episode: 9,
+      releaseAssignmentStatus: "provisional",
+      releaseDate: releaseFriday(14),
       title: "Guest form e2e",
       guests: [{ name: "E2E Guest" }],
       status: "booked",
@@ -101,7 +104,9 @@ test.describe("podcast guest materials form", () => {
     test.setTimeout(60_000);
     const episode = await api("/api/podcast-episodes", {
       season: 25,
-      episode: 10,
+      episode: 8,
+      releaseAssignmentStatus: "provisional",
+      releaseDate: releaseFriday(21),
       title: "Guest form alias e2e",
       guests: [{ name: "Alias Guest" }],
       status: "booked",
