@@ -376,7 +376,7 @@ export async function reconcileAuthoredTemplates(
       client,
       template.id,
       template.version,
-      template.revision,
+      template.revision as string,
     );
     if (!removed) continue;
     invalidateTemplateTypeMap();

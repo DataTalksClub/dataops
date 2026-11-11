@@ -866,7 +866,7 @@ async function deleteGitTemplate(
   if (!current) return null;
   checkWritePair(current, expectedVersion, revision);
   if (current.origin !== 'git') {
-    throw new TemplateEditForbiddenError('cannot-prune-non-git-template');
+    throw new TemplateEditForbiddenError('cannot-delete-git-template');
   }
   const expectedSeq = Number((current.cardCreateSeq as number | undefined) ?? 0);
   if (await templateInUse(client, id)) {
