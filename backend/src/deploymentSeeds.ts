@@ -15,6 +15,7 @@ export interface DeploymentSeedReport {
     created: number;
     updated: number;
     unchanged: number;
+    deleted: number;
   };
 }
 

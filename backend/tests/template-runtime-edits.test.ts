@@ -250,6 +250,7 @@ describe('Templates runtime editing', () => {
       [DOCUMENT_INDEX_PATH]: [
         '---', 'id: reference.indexes.document-index', 'title: Document index', 'doc_type: reference', 'status: active', '---', '', '# Old index',
       ].join('\n'),
+      'workflow-templates/maven-ll.yaml': 'type: maven-ll\nname: Name maven-ll\ntrigger:\n  mode: manual\ntasks: []\n',
       [viewPath]: frontmatter,
       'content/sops/old.md': doc('sop.events.calendar.old', 'Old event process'),
       'content/sops/new.md': doc('sop.events.calendar.new', 'New event process'),
@@ -372,7 +373,7 @@ describe('Templates runtime editing', () => {
   it('deletes unused custom templates, refuses Git rows and in-use rows, and releases the type', async () => {
     const template = await createCustom('delete-me');
     const gitSeeded = await reconcileAuthoredTemplates(client, [authored('git-kept', TWO_TASKS, 'rev-1')]);
-    assert.deepEqual(Object.keys(gitSeeded).sort(), ['created', 'total', 'unchanged', 'updated']);
+    assert.deepEqual(Object.keys(gitSeeded).sort(), ['created', 'deleted', 'total', 'unchanged', 'updated']);
     const git = bodyOf(await get('/api/templates')).templates.find((entry: { type: string }) => entry.type === 'git-kept');
 
     const gitDelete = await call('DELETE', `/api/templates/${git.id}`, { expectedVersion: 1, revision: git.revision });
@@ -416,7 +417,7 @@ describe('Templates runtime editing', () => {
 
   async function seedGit(type: string, tasks: unknown[] = TWO_TASKS, rev = 'rev-1') {
     const report = await reconcileAuthoredTemplates(client, [authored(type, tasks, rev)]);
-    assert.deepStrictEqual(report, { total: 1, created: 1, updated: 0, unchanged: 0 });
+    assert.deepStrictEqual(report, { total: 1, created: 1, updated: 0, unchanged: 0, deleted: 0 });
     return bodyOf(await get('/api/templates')).templates.find((entry: { type: string }) => entry.type === type);
   }
 
@@ -589,7 +590,7 @@ describe('Templates runtime editing', () => {
       },
     });
     const adopted = await reconcileAuthoredTemplates(client, [authored('pin-kept', TWO_TASKS, 'rev-git-1')]);
-    assert.deepStrictEqual(adopted, { total: 1, created: 0, updated: 0, unchanged: 1 });
+    assert.deepStrictEqual(adopted, { total: 1, created: 0, updated: 0, unchanged: 1, deleted: 0 });
     const effective = bodyOf(await get(`/api/templates/${seeded.id}`)).template;
     assert.equal(effective.id, seeded.id);
     assert.equal(effective.origin, 'git');
@@ -601,7 +602,7 @@ describe('Templates runtime editing', () => {
       { id: 'a', name: 'Task A', schedule: { offset_days: 30 } },
       { id: 'b', name: 'Task B', schedule: { offset_days: 31 }, depends_on: ['a'] },
     ], 'rev-git-2')]);
-    assert.deepStrictEqual(rebased, { total: 1, created: 0, updated: 1, unchanged: 0 });
+    assert.deepStrictEqual(rebased, { total: 1, created: 0, updated: 1, unchanged: 0, deleted: 0 });
     const afterSeed = bodyOf(await get(`/api/templates/${seeded.id}`)).template;
     assert.deepStrictEqual(afterSeed.taskDefinitions.map((task: { refId: string }) => task.refId), ['only']);
     assert.equal(afterSeed.baseSourceRevision, 'rev-git-2');
@@ -611,7 +612,7 @@ describe('Templates runtime editing', () => {
       { id: 'a', name: 'Task A', schedule: { offset_days: 30 } },
       { id: 'b', name: 'Task B', schedule: { offset_days: 31 }, depends_on: ['a'] },
     ], 'rev-git-2')]);
-    assert.deepStrictEqual(same, { total: 1, created: 0, updated: 0, unchanged: 1 });
+    assert.deepStrictEqual(same, { total: 1, created: 0, updated: 0, unchanged: 1, deleted: 0 });
 
     // Custom rows whose type is absent from Git survive.
     await createCustom('custom-kept');
@@ -619,17 +620,19 @@ describe('Templates runtime editing', () => {
       { id: 'a', name: 'Task A', schedule: { offset_days: 30 } },
       { id: 'b', name: 'Task B', schedule: { offset_days: 31 }, depends_on: ['a'] },
     ], 'rev-git-2')]);
-    assert.deepStrictEqual(keptSeed, { total: 1, created: 0, updated: 0, unchanged: 1 });
+    assert.deepStrictEqual(keptSeed, { total: 1, created: 0, updated: 0, unchanged: 1, deleted: 0 });
     assert.ok(bodyOf(await get('/api/templates')).templates.some((entry: { type: string }) => entry.type === 'custom-kept'));
   });
 
-  it('fails closed loudly on stale Git rows', async () => {
+  it('prunes source-absent Git rows during sync', async () => {
     await seedGit('pin-kept', TWO_TASKS, 'rev-git-2');
-    await createTemplate(client, { name: 'Stale', type: 'stale-git', sourcePath: 'workflow-templates/stale-git.yaml', sourceRevision: 'rev-1' });
-    await assert.rejects(
-      reconcileAuthoredTemplates(client, [authored('pin-kept', TWO_TASKS, 'rev-git-2')]),
-      /absent from Git: stale-git/,
-    );
+    const stale = await createTemplate(client, {
+      name: 'Stale', type: 'stale-git',
+      sourcePath: 'workflow-templates/stale-git.yaml', sourceRevision: 'rev-1',
+    });
+    const report = await reconcileAuthoredTemplates(client, [authored('pin-kept', TWO_TASKS, 'rev-git-2')]);
+    assert.deepEqual(report, { total: 1, created: 0, updated: 0, unchanged: 1, deleted: 1 });
+    assert.equal((await get(`/api/templates/${stale.id}`)).statusCode, 404);
   });
 
   it('fails closed loudly on explicit custom collisions, leaving the row alone', async () => {
