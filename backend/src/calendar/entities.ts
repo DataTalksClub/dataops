@@ -2,6 +2,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { listCards } from '../db/cards';
 import { listTemplates } from '../db/templates';
 import { listPodcastEpisodes, type PodcastEpisode } from '../db/podcastEpisodes';
+import { liveBackReferences } from '../db/taskCardLinks';
 import type { Card, Template } from '../types';
 
 /**
@@ -20,6 +21,10 @@ export type CalendarEntry = {
   status: string;
   entity: { type: 'card' | 'podcast-episode'; id: string };
   href: string;
+  /** A canonical relationship used to collapse duplicate calendar projections only. */
+  linkedHoldId?: string;
+  /** This entry remains available through its entity page but is represented by another tile. */
+  displayDuplicateOf?: string;
 };
 
 /**
@@ -49,6 +54,7 @@ export function cardCalendarEntry(card: Card, template: Template): CalendarEntry
     status: card.status === 'active' ? card.stage : card.status,
     entity: { type: 'card', id: card.id },
     href: `/cards?cardId=${encodeURIComponent(card.id)}`,
+    ...(card.eventTime?.eventKey ? { linkedHoldId: card.eventTime.eventKey } : {}),
   };
 }
 
@@ -64,11 +70,44 @@ export function podcastCalendarEntries(episode: PodcastEpisode): CalendarEntry[]
     status: episode.status,
     entity: { type: 'podcast-episode', id: episode.id },
     href: `/podcast?episodeId=${encodeURIComponent(episode.id)}`,
+    ...(kind === 'podcast-recording' && episode.recordingHoldId
+      ? { linkedHoldId: episode.recordingHoldId }
+      : {}),
   });
   return [
     ...(episode.recordingDate ? [entry('podcast-recording', 'Podcast recording', episode.recordingDate)] : []),
     ...(episode.releaseDate ? [entry('podcast-release', 'Podcast release', episode.releaseDate)] : []),
   ];
+}
+
+/**
+ * A course Card's linked webinar is its canonical launch event. Keep both
+ * entities in the read model, but identify the parent Card as represented by
+ * its linked webinar when both occupy the same calendar date.
+ */
+export function markCourseLaunchDuplicates(
+  entries: CalendarEntry[],
+  cards: Card[],
+  templateById: Map<string, Template>,
+  links: Array<{ sourceCardId: string; targetCardId: string }>,
+): CalendarEntry[] {
+  const cardsById = new Map(cards.map((card) => [card.id, card]));
+  const duplicateTargets = new Map<string, string>();
+
+  for (const link of links) {
+    const webinar = cardsById.get(link.targetCardId);
+    const course = cardsById.get(link.sourceCardId);
+    if (!webinar || !course) continue;
+    if (templateById.get(webinar.templateId)?.type !== 'webinar') continue;
+    if (templateById.get(course.templateId)?.type !== 'course') continue;
+    if (!course.anchorDate || course.anchorDate.slice(0, 10) !== webinar.anchorDate?.slice(0, 10)) continue;
+    duplicateTargets.set(`card:${course.id}`, `card:${webinar.id}`);
+  }
+
+  return entries.map((entry) => {
+    const displayDuplicateOf = duplicateTargets.get(entry.id);
+    return displayDuplicateOf ? { ...entry, displayDuplicateOf } : entry;
+  });
 }
 
 export async function projectCalendarEntities(client: DynamoDBDocumentClient, from: string, to: string): Promise<CalendarEntry[]> {
@@ -85,7 +124,25 @@ export async function projectCalendarEntities(client: DynamoDBDocumentClient, fr
     entries.push(cardCalendarEntry(card, template));
   }
   for (const episode of episodes) entries.push(...podcastCalendarEntries(episode));
-  return entries
+  const cardById = new Map(cards.map((card) => [card.id, card]));
+  const linkRefs = cards
+    .filter((target) => templateById.get(target.templateId)?.type === 'webinar'
+      && Boolean(target.anchorDate)
+      && String(target.anchorDate).slice(0, 10) >= from
+      && String(target.anchorDate).slice(0, 10) <= to)
+    .flatMap((target) => (target.linkedFrom || [])
+      .filter((reference) => {
+        const source = cardById.get(reference.cardId);
+        return templateById.get(source?.templateId || '')?.type === 'course'
+          && String(source?.anchorDate || '').slice(0, 10) === String(target.anchorDate).slice(0, 10);
+      })
+      .map((reference) => ({ target, reference })));
+  const liveLinks = (await Promise.all(linkRefs.map(async ({ target, reference }) => {
+    const [live] = await liveBackReferences(client, target.id, [reference]);
+    return live ? { sourceCardId: live.cardId, targetCardId: target.id } : null;
+  }))).filter((link): link is { sourceCardId: string; targetCardId: string } => link !== null);
+
+  return markCourseLaunchDuplicates(entries
     .filter((entry) => entry.date >= from && entry.date <= to)
-    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)), cards, templateById, liveLinks);
 }

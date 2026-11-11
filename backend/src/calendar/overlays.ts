@@ -12,12 +12,15 @@ export type CalendarOverlayItem = {
   slot?: 'midday' | 'evening' | 'call' | 'all-day' | 'outside';
   isSlotEvent?: boolean;
   isAvailableSlot?: boolean;
+  /** This overlay remains in the read model but is represented by a linked item. */
+  displayDuplicateOf?: string;
   /** A newsletter issue's kind, number and slot state (newsletter overlay only). */
   newsletter?: {
     kind: string;
     issueNumber: number | null;
     slots: { position: string; sponsor: string | null }[];
     booked: number;
+    openSlots: number;
     /** The issue's Card, or when the daily run creates it. */
     cardId: string | null;
     cardDueDate: string | null;

@@ -21,7 +21,8 @@ import { buildNewsletterIssue, issueItem, createNewsletterIssue } from "../src/d
 import { TABLE_NEWSLETTER_SLOTS } from "../src/db/tableNames";
 import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import { newsletterOverlayItem } from "../src/calendar/newsletterOverlay";
-import { suppressPublicEventSlots } from "../src/calendar/holdOverlay";
+import { markCourseLaunchDuplicates } from "../src/calendar/entities";
+import { calendarHoldOverlay, markDuplicateCalendarHolds, suppressPublicEventSlots } from "../src/calendar/holdOverlay";
 import { createTemplate } from "../src/db/templates";
 import { createPodcastEpisode } from "../src/db/podcastEpisodes";
 import { deleteCardCascade } from "../src/db/cardDeletion";
@@ -264,11 +265,55 @@ describe("operations calendar", () => {
     const response = await invoke("GET", "/api/calendar-items/overlays", undefined, {}, { from: "2027-04-12", to: "2027-04-12" });
     const items = parse(response).items.filter((i: any) => i.provider === "newsletter-issues-readonly");
     assert.equal(items.length, 1);
-    assert.equal(items[0].label, "Weekly #402 · Synthetic Alpha");
-    assert.equal(items[0].isAvailableSlot, true);
+    assert.equal(items[0].label, "Weekly #402 · Synthetic Alpha + open");
+    assert.equal(items[0].isAvailableSlot, false);
+    assert.equal(items[0].newsletter.openSlots, 1);
     const booked = newsletterOverlayItem({ ...issue, slots: { ...issue.slots, secondary: { sponsor: "Synthetic Beta" } } });
     assert.equal(booked.label, "Weekly #402 · Synthetic Alpha + Synthetic Beta");
     assert.equal(booked.isAvailableSlot, false);
+    const open = newsletterOverlayItem({ ...issue, slots: { primary: {}, secondary: {} } });
+    assert.equal(open.label, "Weekly #402 · open");
+    assert.equal(open.isAvailableSlot, true);
+    assert.deepEqual(issue.slots, { primary: { sponsor: "Synthetic Alpha" }, secondary: {} }, "projection leaves stored slot records unchanged");
+  });
+  it("collapses only canonically linked confirmed holds and linked course launch cards", async () => {
+    const holds: any[] = [
+      { id: "linked-confirmed", date: "2027-04-12", status: "confirmed", title: "Same event", window: "evening", startIso: "2027-04-12T17:00:00+02:00", endIso: "2027-04-12T18:00:00+02:00" },
+      { id: "linked-tentative", date: "2027-04-12", status: "tentative", title: "Same event", window: "evening", startIso: "2027-04-12T17:00:00+02:00", endIso: "2027-04-12T18:00:00+02:00" },
+      { id: "unlinked-confirmed", date: "2027-04-12", status: "confirmed", title: "Same event", window: "evening", startIso: "2027-04-12T17:00:00+02:00", endIso: "2027-04-12T18:00:00+02:00" },
+    ];
+    const holdItems = (await calendarHoldOverlay(holds).project("2027-04-12", "2027-04-12")).items;
+    assert.equal(holdItems[0].label, "Same event · 17:00-18:00");
+    const entries: any[] = [
+      { id: "podcast-recording:episode-1", date: "2027-04-12", linkedHoldId: "linked-confirmed" },
+      { id: "podcast-recording:episode-2", date: "2027-04-12", linkedHoldId: "linked-tentative" },
+      { id: "card:unrelated", date: "2027-04-12", title: "Same event" },
+    ];
+    const marked = markDuplicateCalendarHolds(holdItems, holds, entries);
+    assert.equal(marked.find((item) => item.id === "calendar-hold:linked-confirmed")?.displayDuplicateOf, "podcast-recording:episode-1");
+    assert.equal(marked.find((item) => item.id === "calendar-hold:linked-tentative")?.displayDuplicateOf, undefined);
+    assert.equal(marked.find((item) => item.id === "calendar-hold:unlinked-confirmed")?.displayDuplicateOf, undefined);
+
+    const cards: any[] = [
+      { id: "course-linked", templateId: "course-template", anchorDate: "2027-04-12" },
+      { id: "webinar-linked", templateId: "webinar-template", anchorDate: "2027-04-12", linkedFrom: [{ cardId: "course-linked", taskId: "task-1" }] },
+      { id: "course-unrelated", templateId: "course-template", anchorDate: "2027-04-12" },
+      { id: "webinar-unrelated", templateId: "webinar-template", anchorDate: "2027-04-12" },
+    ];
+    const templates = new Map([
+      ["course-template", { id: "course-template", type: "course" }],
+      ["webinar-template", { id: "webinar-template", type: "webinar" }],
+    ]);
+    const cardEntries: any[] = [
+      { id: "card:course-linked", date: "2027-04-12" },
+      { id: "card:webinar-linked", date: "2027-04-12" },
+      { id: "card:course-unrelated", date: "2027-04-12", title: "Same title" },
+      { id: "card:webinar-unrelated", date: "2027-04-12", title: "Same title" },
+    ];
+    const result = markCourseLaunchDuplicates(cardEntries, cards, templates as any, [{ sourceCardId: "course-linked", targetCardId: "webinar-linked" }]);
+    assert.equal(result.find((entry) => entry.id === "card:course-linked")?.displayDuplicateOf, "card:webinar-linked");
+    assert.equal(result.find((entry) => entry.id === "card:course-unrelated")?.displayDuplicateOf, undefined);
+    assert.equal(cardEntries[0].displayDuplicateOf, undefined, "display metadata does not mutate source entries");
   });
   it("projects newsletter records read-only and reopens changed dismissed alerts", async () => {
     await createNewsletterIssue(client, buildNewsletterIssue({

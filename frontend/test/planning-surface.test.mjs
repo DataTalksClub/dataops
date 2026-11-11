@@ -3,6 +3,7 @@ import { afterEach, describe, test } from "node:test";
 
 import { createPlanningSurface } from "../src/surfaces/planning.js";
 import { escapeHtml } from "../src/core/html.js";
+import { calendarDisplayEntries, calendarTileLabel, formatCalendarTimeRanges } from "../src/core/calendar-display.js";
 import { setupCalendarSettingsDialog, setupDayScheduleDialog } from "../src/surfaces/planning-calendar-dialogs.js";
 
 const originalDocument = globalThis.document;
@@ -331,6 +332,52 @@ function calendarEntry({ id, title, date, kind = "webinar", kindLabel = "Webinar
 }
 
 describe("Planning surface production behavior", () => {
+  test("calendar tile cleanup is display-only and keeps linked source entries available", () => {
+    const source = {
+      title: "[Webinar] 2026-NOV-07-Build a Media Agent · 12345678-1234-1234-1234-123456789012, 87654321-4321-4321-4321-210987654321",
+    };
+    const before = JSON.stringify(source);
+    assert.equal(calendarTileLabel(source.title), "Build a Media Agent");
+    assert.equal(calendarTileLabel("[Proposed] Finding a Job in Computer Vision · 12:30–13:30"), "Finding a Job in Computer Vision · 12:30-13:30");
+    assert.equal(formatCalendarTimeRanges("16:30–18:00 and 12:30—13:30"), "16:30-18:00 and 12:30-13:30");
+    assert.equal(JSON.stringify(source), before, "the source title remains unchanged");
+    const entries = [
+      { id: "card:course", displayDuplicateOf: "card:webinar" },
+      { id: "card:webinar" },
+      { id: "card:unlinked" },
+    ];
+    assert.deepEqual(calendarDisplayEntries(entries).map((entry) => entry.id), ["card:webinar", "card:unlinked"]);
+    assert.equal(entries[0].displayDuplicateOf, "card:webinar");
+  });
+
+  test("renders proposed status accessibly and keeps the Card destination inside its newsletter tile", async () => {
+    const dom = createCalendarDom();
+    const harness = createPlanningHarness({
+      calendar: dom,
+      request: async (url) => String(url).includes("/overlays")
+        ? {
+          items: [
+            { provider: "calendar-holds", id: "calendar-hold:proposed", startDate: "2026-08-12", endDate: "2026-08-12",
+              label: "[Proposed] Finding a Job in Computer Vision · 12:30–13:30", status: "tentative" },
+            { provider: "newsletter-issues-readonly", id: "issue-303", startDate: "2026-08-13", endDate: "2026-08-13",
+              label: "Weekly #303 · Astronomer + open", isAvailableSlot: false, href: "/newsletter?issueId=issue-303",
+              newsletter: { cardId: "newsletter-card-303" } },
+          ],
+          sources: {},
+        }
+        : { items: [], holidays: [], alerts: [] },
+    });
+    await harness.surface.renderCalendarSurface();
+    await nextTicks();
+    const html = dom.grid.innerHTML;
+    assert.match(html, /aria-label="Proposed, not confirmed" title="Proposed, not confirmed"/);
+    assert.match(html, /Finding a Job in Computer Vision · 12:30-13:30/);
+    assert.doesNotMatch(html, /\[Proposed\]|12:30–13:30/);
+    assert.match(html, /calendar-overlay-with-card[\s\S]*href="\/cards\?cardId=newsletter-card-303"/);
+    assert.match(html, /aria-label="Open Card for Weekly #303 · Astronomer \+ open"/);
+    assert.doesNotMatch(html, />Card<\/a>/);
+  });
+
   test("day schedule exposes a deferred Google sync reason on its saved hold", async () => {
     const dom = createCalendarDom();
     const dialog = setupDayScheduleDialog({
