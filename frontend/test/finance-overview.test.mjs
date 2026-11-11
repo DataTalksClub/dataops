@@ -11,14 +11,14 @@ import { escapeHtml as e } from "../src/core/html.js";
 const totals = (fields) => ({
   moneyIn: 0, moneyOut: 0, net: 0, operatingIncome: 0, operatingExpenses: 0, outputVat: 0, inputVat: 0,
   incomeNetOfVat: 0, expensesNetOfVat: 0, netProfitExVat: 0, projectedVat: 0, vatPaid: 0, vatRefunded: 0, ownerPay: 0,
-  otherTaxes: 0, healthInsurance: 0, netAfterTaxes: 0, entryCount: 0, unconvertedCount: 0, ...fields,
+  incomeTax: 0, tradeTax: 0, otherTaxes: 0, healthInsurance: 0, taxesTotal: 0, taxRefunds: 0, netAfterTaxes: 0, entryCount: 0, unconvertedCount: 0, ...fields,
 });
 const month = (m, fields, future = false) => ({ month: m, future, ...totals(fields) });
 
 const YEAR = {
   period: { kind: "year", label: "2026", from: "2026-01-01", to: "2026-12-31", months: ["2026-09", "2026-10", "2026-11"] },
-  totals: totals({ moneyIn: 3000, moneyOut: 1300, net: 1700, netProfitExVat: 2100, incomeNetOfVat: 2500, expensesNetOfVat: 400, projectedVat: 410.5, outputVat: 500, inputVat: 89.5, vatPaid: 300, otherTaxes: 400, healthInsurance: 20, ownerPay: 50, netAfterTaxes: 1680, netAfterOwnerPay: 1630, entryCount: 4 }),
-  months: [month("2026-09", { moneyIn: 1000, moneyOut: 1300, net: -300, netProfitExVat: -100, otherTaxes: -50, healthInsurance: 15, ownerPay: 100, outputVat: 50, inputVat: 15, vatPaid: 45, vatRefunded: 5, projectedVat: 35 }), month("2026-10", { moneyIn: 2000, net: 2000, netProfitExVat: 2200 }), month("2026-11", {}, true)],
+  totals: totals({ moneyIn: 3000, moneyOut: 1300, net: 1700, netProfitExVat: 2100, incomeNetOfVat: 2500, expensesNetOfVat: 400, projectedVat: 410.5, outputVat: 500, inputVat: 89.5, vatPaid: 300, incomeTax: 300, tradeTax: 100, healthInsurance: 20, taxesTotal: 420, taxRefunds: 43633.73, ownerPay: 50, netAfterTaxes: 1680, netAfterOwnerPay: 1630, entryCount: 4 }),
+  months: [month("2026-09", { moneyIn: 1000, moneyOut: 1300, net: -300, netProfitExVat: -100, incomeTax: 20, tradeTax: 10, healthInsurance: 15, taxesTotal: 45, ownerPay: 100, outputVat: 50, inputVat: 15, vatPaid: 45, vatRefunded: 5, projectedVat: 35 }), month("2026-10", { moneyIn: 2000, net: 2000, netProfitExVat: 2200, taxRefunds: 43633.73 }), month("2026-11", {}, true)],
   byCurrency: [
     { currency: "USD", moneyIn: "6000.00", moneyOut: "0.00", moneyInEur: 5360.49, moneyOutEur: 0 },
     { currency: "GBP", moneyIn: "25.00", moneyOut: "0.00", moneyInEur: 33.1, moneyOutEur: 0 },
@@ -27,6 +27,7 @@ const YEAR = {
     { id: "r1", date: "2026-10-23", amount: "6000", currency: "USD", amountEur: "5360.49", bookedRateSource: "ECB 23 Oct 2026", eur: 5360.49, rate: 1.1193, rateDate: "2026-10-23", rateSource: "ecb", counterparty: "<Payer & Co>", category: "Sponsorship", subtype: "Invoice" },
     { id: "r2", date: "2026-10-24", amount: "25", currency: "GBP", amountEur: null, eur: 33.1, rate: null, rateDate: null, rateSource: null, counterparty: "No-rate & Co" },
   ],
+  taxRefunds: [{ id: "ledger-refund-1", date: "2026-10-30", month: "2026-10", eur: 43633.73, taxType: "other", counterparty: "Finanzamt <Synthetic>", description: "Erstattung" }],
   duplicates: [{ keptId: "a", droppedId: "b", reason: "sheet row repeats sponsor-receipt row" }],
   gaps: [],
   rules: ["Ledger rows are the only thing counted."],
@@ -63,8 +64,8 @@ describe("finance overview", () => {
     assert.match(markup, /Net profit excluding VAT<\/h2>\s*<p class="fin-tile__value" data-fin-profit>2,100\.00/);
     assert.match(markup, /data-fin-vat>410\.50 <span class="fin-tile__unit">EUR<\/span><\/p>\s*<p class="fin-tile__sub">owed to the Finanzamt/);
     assert.match(markup, /Actually paid in this period: <strong>300\.00<\/strong>/);
-    assert.match(markup, /<dt>Taxes<\/dt><dd>\+420\.00<\/dd>/);
-    assert.doesNotMatch(markup, /Health insurance \(TK\)|Other taxes|and TK/);
+    assert.match(markup, /<dt>Taxes and TK paid<\/dt><dd data-fin-taxes-total>420\.00<\/dd>/);
+    assert.match(markup, /After taxes and TK paid 420\.00: <strong>1,680\.00<\/strong>/);
     assert.doesNotMatch(markup, /no VAT amount|vat-unknown/i);
     assert.ok(markup.indexOf("data-fin-profit") < markup.indexOf("<svg"));
   });
@@ -75,23 +76,48 @@ describe("finance overview", () => {
     assert.match(markup, /<th scope="row">Total<\/th>/);
     assert.match(markup, /<a class="fin-table__month-link" data-fin-month-link href="\/bookkeeping\?month=2026-11">2026-11<\/a> <small>\(not over\)<\/small>/);
     assert.match(markup, /dataops finance summary --year 2026/);
-    for (const header of ["Taxes", "Owner pay", "Output VAT", "Input VAT", "VAT paid", "VAT refunded", "VAT position"])
+    for (const header of ["ESt \\+ Soli", "GewSt", "TK", "Taxes total", "Tax refunds", "Owner pay", "Output VAT", "Input VAT", "VAT paid", "VAT refunded", "VAT position"])
       assert.match(markup, new RegExp(`<th scope="col">${header}</th>`));
     assert.match(markup, /<th scope="row"><a class="fin-table__month-link" data-fin-month-link href="\/bookkeeping\?month=2026-09">2026-09<\/a><\/th>/);
     assert.match(markup, /<th scope="row">Total<\/th>/);
     assert.doesNotMatch(markup.match(/<tr class="fin-table__total">[\s\S]*?<\/tr>/)?.[0] || "", /data-fin-bookkeeping-row|data-fin-month-link/);
   });
 
-  test("merges signed taxes and health insurance while keeping owner pay and VAT columns aligned", () => {
+  test("shows ESt, GewSt and TK separately and together per month, with refunds in their own column", () => {
     const markup = monthTableMarkup(YEAR, e);
-    assert.match(markup, /<th scope="col">Taxes<\/th><th scope="col">Owner pay<\/th><th scope="col">Output VAT<\/th>/);
-    assert.doesNotMatch(markup, /Other taxes|<th scope="col">TK<\/th>/);
-    const row = markup.match(/<tr class="" data-fin-bookkeeping-row>([\s\S]*?)<\/tr>/)?.[1] || "";
-    const cells = [...row.matchAll(/<td class="fin-num">([^<]+)<\/td>/g)].map((match) => match[1]);
-    assert.deepEqual(cells, [
-      "1,000.00", "1,300.00", "−300.00", "0.00", "0.00", "−100.00", "−35.00", "100.00",
+    assert.match(markup, /<th scope="col">ESt \+ Soli<\/th><th scope="col">GewSt<\/th><th scope="col">TK<\/th>\s*<th scope="col">Taxes total<\/th><th scope="col">Tax refunds<\/th><th scope="col">Owner pay<\/th>/);
+    assert.doesNotMatch(markup, /<th scope="col">Taxes<\/th>|Other taxes/);
+    const cellsOf = (row) => [...row.matchAll(/<td class="fin-num">([^<]+)<\/td>/g)].map((match) => match[1]);
+    const rows = [...markup.matchAll(/<tr class="[^"]*"(?: data-fin-bookkeeping-row)?>([\s\S]*?)<\/tr>/g)].map((m) => m[1]);
+    assert.deepEqual(cellsOf(rows[0]), [
+      "1,000.00", "1,300.00", "−300.00", "0.00", "0.00", "−100.00", "20.00", "10.00", "15.00", "45.00", "0.00", "100.00",
       "50.00", "15.00", "45.00", "5.00", "35.00", "0",
     ]);
+    // The October refund is a refund, not a negative tax: tax columns stay at zero.
+    assert.deepEqual(cellsOf(rows[1]).slice(6, 11), ["0.00", "0.00", "0.00", "0.00", "43,633.73"]);
+    const withOther = monthTableMarkup({ ...YEAR, months: [month("2026-09", { otherTaxes: 12, taxesTotal: 12 })] }, e);
+    assert.match(withOther, /<th scope="col">Other taxes<\/th>/);
+  });
+
+  test("shows taxes paid by type and combined, and lists tax refunds with ledger IDs outside taxes", () => {
+    const markup = overviewMarkup(YEAR, e);
+    assert.match(markup, /Taxes paid in 2026/);
+    assert.match(markup, /<dt>Einkommensteuer \+ Soli<\/dt><dd data-fin-tax="income-tax">300\.00/);
+    assert.match(markup, /<dt>Gewerbesteuer<\/dt><dd data-fin-tax="trade-tax">100\.00/);
+    assert.match(markup, /<dt>TK health insurance<\/dt><dd data-fin-tax="health-insurance">20\.00/);
+    assert.match(markup, /<dt>Total taxes and TK<\/dt><dd data-fin-tax="total">420\.00/);
+    assert.doesNotMatch(markup, /data-fin-tax="other"/);
+    assert.match(markup, /Tax refunds received: 43,633\.73 EUR/);
+    assert.match(markup, /never a negative tax in any year/);
+    assert.match(markup, /<a href="\/bookkeeping\?month=2026-10">2026-10-30<\/a>/);
+    assert.match(markup, /Finanzamt &lt;Synthetic&gt;/);
+    assert.match(markup, /<code>ledger-refund-1<\/code>/);
+    assert.doesNotMatch(overviewMarkup({ ...YEAR, taxRefunds: [] }, e), /data-fin-refunds/);
+  });
+
+  test("has no Data gaps or How these numbers are made section", () => {
+    const markup = overviewMarkup({ ...YEAR, gaps: [{ kind: "unconverted", message: "Rows without a rate", count: 2 }] }, e);
+    assert.doesNotMatch(markup, /Data gaps|How these numbers are made|fin-rules|fin-gaps-heading|Rows without a rate|dropped as duplicates/);
   });
 
   test("keeps the Finance annual report in EUR without a yearly currencies dump", () => {
@@ -99,7 +125,6 @@ describe("finance overview", () => {
     assert.doesNotMatch(markup, /Currencies|fin-currency__conversion|6000\.00 USD|25\.00 GBP/);
     assert.match(markup, /data-fin-profit>2,100\.00 <span class="fin-tile__unit">EUR/);
     assert.match(markup, /dataops finance summary --year 2026/);
-    assert.match(markup, /dropped as duplicates of invoice or receipt rows \(1\)/);
   });
 
   test("opens a monthly summary row in its matching Bookkeeping month without stealing selection or controls", () => {
