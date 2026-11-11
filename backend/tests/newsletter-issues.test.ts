@@ -408,7 +408,7 @@ describe("newsletter issues", () => {
     assert.equal(sent.label, "Weekly #297 · VectorAI DB + Astronomer");
     assert.equal(sent.isAvailableSlot, false);
     assert.deepEqual(sent.newsletter, {
-      kind: "weekly", issueNumber: 297, booked: 2, cardId: null, cardDueDate: null,
+      kind: "weekly", issueNumber: 297, booked: 2, openSlots: 0, cardId: null, cardDueDate: null,
       slots: [
         { position: "primary", sponsor: "VectorAI DB" },
         { position: "secondary", sponsor: "Astronomer" },
