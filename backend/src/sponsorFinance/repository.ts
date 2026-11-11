@@ -1046,10 +1046,13 @@ export async function receivePayment(
   },
 ) {
   try { scaledMoney(input.amount); if (input.amountEur !== undefined) scaledMoney(input.amountEur, true); } catch { throw Object.assign(new Error('Invalid received amount'), { statusCode: 400 }); }
+  if (!boundedText(input.reference, 200)) {
+    throw Object.assign(new Error('Receipt reference is required (bank/account + unique transaction ID; maximum 200 characters)'), { statusCode: 400 });
+  }
   if (!realDate(input.receivedOn) || !CURRENCY.test(input.currency)
-    || !boundedText(input.reference, 200) || !boundedText(input.counterparty, 300)
+    || !boundedText(input.counterparty, 300)
     || (input.category !== undefined && input.category !== '' && !boundedText(input.category, 300))) {
-    throw Object.assign(new Error('Receipt date, amount, currency, counterparty and statement reference are required'), { statusCode: 400 });
+    throw Object.assign(new Error('Receipt receivedOn, amount, currency and counterparty are required'), { statusCode: 400 });
   }
   // Version tokens guard a new write; they do not change the meaning of a
   // receipt retry after the CLI has re-read the newly committed version.

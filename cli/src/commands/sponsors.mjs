@@ -85,6 +85,7 @@ Usage
       New verified receipts include attached originals automatically; use this for late or repaired evidence.
   dataops sponsors receive-payment <deal-id> --data @receipt.json [--apply]
       Required: receivedOn, amount, currency, counterparty, reference (bank/account + unique transaction ID).
+      Use reference in JSON; statementRef is an internal ledger field, not a receipt input.
       Creates and links bookkeeping atomically. Optional: amountEur, category, replacesPaymentId.
       Link an existing ledger row instead of recreating it. Use --idempotency-key KEY for safe retries.
       On success prints the thank-you next step: send it from orin@ as a reply in the invoice
@@ -570,6 +571,8 @@ export async function attachPaymentEvidence(args, io) {
 export async function receivePayment(args, io) {
   const id = positional(args, 0, "dataops sponsors receive-payment <deal-id> --data @receipt.json [--apply]");
   const api = apiFor(args), data = jsonData(args);
+  if (Object.hasOwn(data, "statementRef")) throw new UsageError("Use reference in receipt JSON; statementRef is an internal ledger field.");
+  if (typeof data.reference !== "string" || !data.reference.trim()) throw new UsageError("Receipt reference is required (bank/account + unique transaction ID).");
   const [deal, projection] = await Promise.all([
     api.get(`/api/sponsor-crm/deals/${enc(id)}`), api.get(`/api/sponsor-crm/deals/${enc(id)}/finance`),
   ]);

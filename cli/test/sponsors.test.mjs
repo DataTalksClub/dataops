@@ -136,6 +136,8 @@ test("receipt commands preview actual amounts and apply through the verified rec
     await receivePayment({ ...args, apply: true, idempotencyKey: "receipt-test-stable-012345" }, {});
     const create = calls.find((call) => call.method === "POST");
     assert.ok(create.url.endsWith("/finance/receipts"));
+    assert.equal(create.body.reference, "bank:account:txn-123");
+    assert.equal(Object.hasOwn(create.body, "statementRef"), false);
     assert.equal(create.body.amount, "95"); assert.equal(create.body.amountDue, undefined);
     assert.equal(create.body.expectedVersion, 4); assert.equal(create.body.dealVersion, 2);
     assert.equal(create.headers["Idempotency-Key"], "receipt-test-stable-012345");
@@ -554,4 +556,21 @@ test("sponsors create leads posts the outbound sighting to the CRM leads collect
     globalThis.fetch = originalFetch;
     if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
   }
+});
+
+
+test("receipt input names reference and rejects the internal ledger field before API calls", async () => {
+  const lines = [];
+  assert.equal(await run(["sponsors", "receive-payment", "--help"], { log: (line) => lines.push(line), error: assert.fail }), 0);
+  assert.match(lines.join("\n"), /Required: receivedOn, amount, currency, counterparty, reference/);
+  assert.match(lines.join("\n"), /statementRef is an internal ledger field/);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => assert.fail("invalid receipt must not call the API");
+  try {
+    for (const data of [{}, { reference: " " }, { statementRef: "bank:txn" },
+      { reference: "bank:txn", statementRef: "bank:txn" },
+      { reference: "bank:txn", statementRef: "different" }]) {
+      await assert.rejects(receivePayment({ _: ["synthetic-deal"], data: JSON.stringify(data) }, {}), /reference/);
+    }
+  } finally { globalThis.fetch = originalFetch; }
 });
