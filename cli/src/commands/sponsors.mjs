@@ -19,6 +19,12 @@ const KINDS = ["organizations", "contacts", "deals", "deliverables", "leads", "n
 export const help = `dataops sponsors - the sponsor CRM (the web Finance > Sponsors views)
 
 Usage
+  dataops sponsors readiness <deliverable-id> [show|check|confirm|material-change|revoke]
+      --data '{"version":N,"materialVersion":N,"checkId":"checkpoint","criterion":"materials-approved","link":"https://..."}'
+      Criteria: materials-submitted, materials-approved, block-assembled, send-approved, payment.
+      check inherits only the same criterion/revision; confirm records your identity and server date.
+      material-change records content edits at unchanged URLs and invalidates old checks.
+      revoke uses checkId of an original confirmation. URL replacements invalidate automatically.
   dataops sponsors pipeline [--view actionable|active|all|closed|unscheduled|early|overdue|reply] [--stage open|agreed|invoiced|running|closed|lost]
       [--search TEXT] [--company ID] [--owner ID] [--sort next-action|recent] [--limit N] [--cursor N]
       [--next-action-from YYYY-MM-DD] [--next-action-before YYYY-MM-DD]  Inclusive bounds
@@ -857,4 +863,14 @@ export async function paymentMail(args, io) {
   return result;
 }
 
-export const commands = { "classify-finance": classifyFinance, "record-invoice": recordInvoice, "correct-invoice": correctInvoice, "add-evidence": addEvidence, "set-waiting": setWaiting, "payment-mail": paymentMail, pipeline, contact, list, show, create, update, delete: remove, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification, "record-thank-you": recordThankYou, contract };
+export async function readiness(args, io) {
+  const id = positional(args, 0, "dataops sponsors readiness <deliverable-id> [show|check|confirm|material-change|revoke]");
+  const action = args._[1] || "show";
+  if (!["show", "check", "confirm", "material-change", "revoke"].includes(action)) throw new UsageError("Invalid readiness action");
+  const path = `/api/sponsor-crm/deliverables/${enc(id)}/readiness`;
+  const result = action === "show" ? await apiFor(args).get(path) : await apiFor(args).post(path, { ...jsonData(args), action });
+  if (!args.json) io.print(JSON.stringify(result, null, 2));
+  return result;
+}
+
+export const commands = { readiness, "classify-finance": classifyFinance, "record-invoice": recordInvoice, "correct-invoice": correctInvoice, "add-evidence": addEvidence, "set-waiting": setWaiting, "payment-mail": paymentMail, pipeline, contact, list, show, create, update, delete: remove, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification, "record-thank-you": recordThankYou, contract };

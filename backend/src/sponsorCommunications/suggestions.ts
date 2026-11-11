@@ -1,3 +1,4 @@
+import { hasValidMaterialConfirmation } from '../sponsorCrm/readiness';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { deterministicCrmId, listCrmRecords } from '../db/sponsorCrm';
 import { COMMUNICATION_TYPES, type CommunicationType } from './core';
@@ -22,7 +23,7 @@ export function communicationCandidates(
   for (const deliverable of deliverables) {
     const publication = String(deliverable.plannedPublicationDate || '');
     const deadline = String(deliverable.materialDeadline || '');
-    const hasMaterials = Array.isArray(deliverable.artifactUrls) && deliverable.artifactUrls.length > 0;
+    const hasMaterials = hasValidMaterialConfirmation(deliverable);
     const published = String(deliverable.publishedAt || '').slice(0, 10);
     if (deal.status === 'agreed' && publication && !hasMaterials && !published) {
       const days = dayDiff(today, publication);
