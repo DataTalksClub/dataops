@@ -1,0 +1,84 @@
+/* Inbox: the materials queue as a list–detail surface. Dakit owns buttons,
+   pills, callouts and the list–detail split; this file only lays out the
+   panes and the detail body. */
+body[data-workspace-view="inbox"] .document-list {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.inbox-surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--dk-gap-block);
+  min-width: 0;
+}
+
+.inbox-filters {
+  display: flex;
+  gap: var(--dk-space-2);
+}
+
+.inbox-columns {
+  display: grid;
+  gap: var(--dk-space-4);
+}
+
+.inbox-list {
+  display: grid;
+  gap: var(--dk-space-2);
+}
+
+.inbox-row {
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  padding: var(--dk-space-3) var(--dk-space-4);
+  background: var(--dk-bg-default);
+}
+
+.inbox-row__title {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: var(--dk-weight-semibold);
+  color: var(--dk-text-link);
+  cursor: pointer;
+  text-align: left;
+}
+
+.inbox-row__meta {
+  margin: var(--dk-space-1) 0;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}
+
+.inbox-detail {
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  padding: var(--dk-space-4);
+  background: var(--dk-bg-default);
+  display: grid;
+  gap: var(--dk-space-3);
+}
+
+.inbox-detail__summary {
+  color: var(--dk-text-muted);
+}
+
+.inbox-detail__body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--dk-font-mono);
+  font-size: var(--dk-text-sm);
+  background: var(--dk-bg-muted);
+  border-radius: var(--dk-radius-sm);
+  padding: var(--dk-space-3);
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.inbox-detail__actions {
+  display: flex;
+  gap: var(--dk-space-2);
+}

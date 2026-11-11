@@ -58,6 +58,7 @@ function createSurfaceHarness(options = {}) {
       "bookkeeping",
       "calendar",
       "docs",
+      "inbox",
       "newsletter",
       "sponsors",
       "tasks",
@@ -90,6 +91,7 @@ function createSurfaceHarness(options = {}) {
     getRenderBookkeepingSurface: () => renders.bookkeeping,
     getRenderCalendarSurface: () => renders.calendar,
     getRenderDocsSurface: () => renders.docs,
+    getRenderInboxSurface: () => renders.inbox,
     getRenderNewsletterSurface: () => renders.newsletter,
     getRenderSponsorCrmSurface: () => renders.sponsors,
     getRenderTasksSurface: () => renders.tasks,
@@ -211,6 +213,7 @@ describe("runtime surface composition", () => {
       ["sponsors", "sponsors"],
       ["newsletter", "newsletter"],
       ["calendar", "calendar"],
+      ["inbox", "inbox"],
     ]) {
       harness.workspaceState.activeWorkspaceView = view;
       harness.composition.renderOperationsWorkspace(documents);
@@ -275,7 +278,7 @@ describe("runtime surface composition", () => {
   });
 
   test("a landing bootstrap snapshot never repaints a surface that loads its own data", async () => {
-    for (const view of ["bookkeeping", "calendar", "newsletter", "podcast", "sponsors", "users"]) {
+    for (const view of ["bookkeeping", "calendar", "inbox", "newsletter", "podcast", "sponsors", "users"]) {
       const harness = createSurfaceHarness({ view });
       assert.equal(harness.composition.showsSharedSnapshots(), false, view);
       await harness.composition.refreshOperationsRecurringSnapshot({ background: true });

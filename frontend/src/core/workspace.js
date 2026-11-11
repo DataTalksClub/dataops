@@ -33,6 +33,7 @@ export const WORKSPACE_PATH_BY_VIEW = Object.freeze({
   newsletter: "/newsletter",
   calendar: "/calendar",
   podcast: "/podcast",
+  inbox: "/inbox",
 });
 
 export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
@@ -94,6 +95,7 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/newsletter": { view: "newsletter", tasksSection: "queue", params: [] },
   "/newsletter/:issueId": { view: "newsletter", tasksSection: "queue", params: [] },
   "/calendar": { view: "calendar", tasksSection: "queue", params: [] },
+  "/inbox": { view: "inbox", tasksSection: "queue", params: ["status", "item"] },
   // ?view=list swaps the seasons overview for the plain episode list.
   "/podcast": { view: "podcast", tasksSection: "queue", params: ["view"] },
   "/podcast/schedule": { view: "podcast", tasksSection: "queue", params: [] },

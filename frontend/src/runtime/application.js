@@ -35,6 +35,7 @@ import { createWorkDetailSurface } from "../surfaces/work-detail/index.js";
 import { createKnowledgeSurface } from "../surfaces/knowledge/index.js";
 import { createDocumentEditor } from "../surfaces/document-editor/index.js";
 import { createPodcastSurface } from "../surfaces/podcast/index.js";
+import { createInboxSurface } from "../surfaces/inbox.js";
 import { createOperatingModelSurface } from "../surfaces/operating-model.js";
 import { createApiClient, resolveApiBase } from "../shell/api.js";
 import { createFeedbackShell } from "../shell/feedback.js";
@@ -52,6 +53,7 @@ import { createSurfaceBridge, createSurfaceComposition } from "./surface-composi
 let knowledgeSurface;
 let documentEditorSurface;
 let podcastSurface;
+let inboxSurface;
 let operatingModelSurface;
 let navigationShell;
 
@@ -161,6 +163,7 @@ const {
   getRenderFinanceOverviewSurface: () => renderFinanceOverviewSurface,
   getRenderCalendarSurface: () => renderCalendarSurface,
   getRenderDocsSurface: () => renderDocsSurface,
+  getRenderInboxSurface: () => inboxSurface?.renderInbox || (() => undefined),
   getRenderNewsletterSurface: () => renderNewsletterSurface,
   getRenderOperatingModel: () => operatingModelSurface?.renderOperatingModel || (() => undefined),
   getRenderPodcastSurface: () =>
@@ -585,6 +588,16 @@ podcastSurface = createPodcastSurface({
   setRouteTitle,
 });
 
+inboxSurface = createInboxSurface({
+  apiUrl,
+  documentList,
+  getActiveWorkspaceRoute,
+  navigateCanonicalWorkspace,
+  request,
+  setRouteTitle,
+  workApiUrl,
+});
+
 knowledgeSurface = createKnowledgeSurface({
   knowledgeTools: document.querySelector("#knowledge-tools"),
   renderInBackground,
@@ -890,6 +903,10 @@ initializeAppShell({
   updateSaveState,
   windowRef: window,
 });
+
+// The inbox badge carries the persistent unprocessed count, so it refreshes
+// once at startup even when the operator never opens the inbox.
+inboxSurface.refreshInboxBadge();
 
 // Refresh "Saved · 2 min ago" every minute so the relative time stays current.
 setInterval(() => {
