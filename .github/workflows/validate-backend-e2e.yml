@@ -61,8 +61,28 @@ jobs:
       - name: Install Node workspace dependencies
         run: npm ci
 
+      # Runner apt mirrors and DNS fail transiently ("Temporary failure
+      # resolving archive.ubuntu.com", then "no installation candidate").
+      # apt retries each fetch, and the whole install (apt-get update, the
+      # OS packages, and the browser download) is retried with backoff.
+      # Only this setup step is retried; the E2E step below runs once.
       - name: Install backend Playwright Chromium
-        run: npm exec --workspace dataops-backend -- playwright install --with-deps chromium
+        timeout-minutes: 20
+        run: |
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80-ci-retries >/dev/null
+          delays=(0 15 30 60 120)
+          for attempt in "${!delays[@]}"; do
+            if (( attempt > 0 )); then
+              echo "::warning::Playwright install attempt ${attempt} failed; retrying in ${delays[$attempt]}s"
+              sleep "${delays[$attempt]}"
+            fi
+            if npm exec --workspace dataops-backend -- playwright install --with-deps chromium; then
+              exit 0
+            fi
+          done
+          echo "::error::Playwright install failed after ${#delays[@]} attempts"
+          exit 1
 
       - name: Run backend Playwright E2E
         run: npm --prefix backend run test:e2e
