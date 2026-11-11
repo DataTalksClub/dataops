@@ -12,7 +12,7 @@ const { run } = await import("../src/cli.mjs");
 const totals = (fields) => ({
   moneyIn: 0, moneyOut: 0, net: 0, operatingIncome: 0, operatingExpenses: 0, outputVat: 0, inputVat: 0,
   incomeNetOfVat: 0, expensesNetOfVat: 0, netProfitExVat: 0, projectedVat: 0, vatPaid: 0, vatRefunded: 0,
-  otherTaxes: 0, healthInsurance: 0, netAfterTaxes: 0, entryCount: 0, unconvertedCount: 0, ...fields,
+  incomeTax: 0, tradeTax: 0, otherTaxes: 0, healthInsurance: 0, taxesTotal: 0, taxRefunds: 0, netAfterTaxes: 0, entryCount: 0, unconvertedCount: 0, ...fields,
 });
 const OCTOBER = {
   period: { kind: "month", label: "2026-10", from: "2026-10-01", to: "2026-10-31", months: ["2026-10"] },
@@ -28,6 +28,7 @@ const OCTOBER = {
     { id: "r1", date: "2026-10-23", amount: "6000", currency: "USD", eur: 5360.49, rate: 1.1193, rateDate: "2026-10-23", rateSource: "ecb", counterparty: "Payer & Co" },
     { id: "r2", date: "2026-10-24", amount: "25", currency: "GBP", eur: 33.1, rate: null, rateDate: null, rateSource: null, counterparty: "No-rate Ltd" },
   ],
+  taxRefunds: [],
   duplicates: [],
   gaps: [],
   rules: ["Ledger rows are the only thing counted."],
@@ -132,8 +133,8 @@ describe("dataops finance upcoming and schedule", () => {
 });
 
 describe("dataops finance taxes", () => {
-  const bucket = { "income-tax": 1000, "trade-tax": 3296, other: 0 };
-  const t = { outputVat: 190, inputVat: 19, projectedVat: 171, vatPaid: 100, vatRefunded: 0, vatSettled: 100, vatOutstanding: 71, taxes: bucket, otherTaxes: 4296, healthInsurance: 1179.36, totalTaxesAndTk: 5575.36 };
+  const bucket = { "income-tax": 1000, "trade-tax": 3296, "health-insurance": 1179.36, other: 0 };
+  const t = { outputVat: 190, inputVat: 19, projectedVat: 171, vatPaid: 100, vatRefunded: 0, vatSettled: 100, vatOutstanding: 71, taxes: bucket, taxesTotal: 5475.36, taxRefunds: 0, totalTaxesAndTk: 5575.36 };
   const TAXES = {
     period: OCTOBER.period, baseCurrency: "EUR", open: false, netProfitExVat: 900, totals: t,
     months: [{ month: "2026-10", future: false, ...t }], entries: [], gaps: [], rules: ["Taxes come from the same entries."],
@@ -158,6 +159,20 @@ describe("dataops finance taxes", () => {
     assert.equal(await run(["finance", "taxes", "--ytd", "--json"], io), 0);
     assert.deepEqual(io.json(), TAXES);
     assert.notEqual(await run(["finance", "taxes"], captureIo()), 0);
+  });
+
+  test("summary shows ESt, GewSt and TK separately and together, and lists refunds outside taxes", async () => {
+    const totalsWithTaxes = { ...OCTOBER.totals, incomeTax: 1000, tradeTax: 3296, healthInsurance: 1179.36, taxesTotal: 5475.36, taxRefunds: 43633.73 };
+    fakePortal({ "GET /api/finance/summary": { ...OCTOBER, totals: totalsWithTaxes, taxRefunds: [{ id: "ledger-refund", date: "2026-10-30", month: "2026-10", eur: 43633.73, taxType: "other", counterparty: "Finanzamt", description: "Erstattung" }] } });
+    const io = captureIo();
+    assert.equal(await run(["finance", "summary", "--month", "2026-10"], io), 0);
+    const text = io.text();
+    assert.match(text, /Einkommensteuer \+ Soli\s+-1,000\.00/);
+    assert.match(text, /Gewerbesteuer\s+-3,296\.00/);
+    assert.match(text, /Health insurance \(TK\)\s+-1,179\.36/);
+    assert.match(text, /Taxes and TK paid\s+-5,475\.36/);
+    assert.match(text, /Tax refunds received \(cash, not a negative tax\)\s+43,633\.73/);
+    assert.match(text, /2026-10-30\s+43,633\.73\s+ledger-refund/);
   });
 
   test("summary shows owner pay on its own line", async () => {

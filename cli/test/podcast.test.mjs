@@ -539,3 +539,30 @@ describe("podcast publication evidence flags", () => {
     assert.equal(calls[0].body.retryPreSend, true);
   });
 });
+
+ test('delete requires a flag, previews with GET only, and cannot bypass blockers', async () => {
+  let calls = fakePortal({});
+  assert.equal(await run(['podcast', 'delete', 'ep-1'], captureIo()), 2);
+  assert.equal(calls.length, 0);
+  calls = fakePortal({ 'GET /api/podcast-episodes/ep-1': { dryRun: true, eligible: false, blockers: ['Exact episode identity is not confirmed'], version: 4 } });
+  const io = captureIo();
+  assert.equal(await run(['podcast', 'delete', 'ep-1', '--dry-run', '--yes', '--json'], io), 0);
+  assert.equal(io.json().eligible, false);
+  assert.deepEqual(calls[0].query, { deletePreview: 'true' });
+  assert.equal(await run(['podcast', 'delete', 'ep-1', '--yes'], captureIo()), 2);
+  assert.ok(calls.every(call => call.method === 'GET'));
+});
+
+ test('delete sends preview version and explicit yes; show maps missing row to exit 4', async () => {
+  const calls = fakePortal({
+    'GET /api/podcast-episodes/ep-1': { eligible: true, version: 4 },
+    'DELETE /api/podcast-episodes/ep-1': ({ body }) => {
+      assert.deepEqual(body, { version: 4, yes: true });
+      return { deleted: true, id: 'ep-1' };
+    },
+  });
+  assert.equal(await run(['podcast', 'delete', 'ep-1', '--yes'], captureIo()), 0);
+  assert.deepEqual(calls.map(call => call.method), ['GET', 'DELETE']);
+  fakePortal({ 'GET /api/podcast-episodes/ep-1': { status: 404, body: { error: 'Not found' } } });
+  assert.equal(await run(['podcast', 'show', 'ep-1'], captureIo()), 4);
+});

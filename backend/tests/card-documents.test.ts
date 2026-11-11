@@ -43,11 +43,28 @@ describe('Staff-only card documents', () => {
     const doc = await createCardDocument(client, { cardId: 'webinar', kind: 'note', title: 'Secret', content: 'Private' });
     delete process.env.SKIP_AUTH;
     try {
-      for (const [method, suffix] of [['GET', ''], ['GET', `/${doc.id}`], ['GET', `/${doc.id}/export`], ['POST', ''], ['PUT', `/${doc.id}`], ['DELETE', `/${doc.id}`]]) {
+      for (const [method, suffix] of [['GET', ''], ['GET', `/${doc.id}`], ['GET', `/${doc.id}/export`], ['GET', `/${doc.id}/preview`],  ['POST', ''], ['PUT', `/${doc.id}`], ['DELETE', `/${doc.id}`]]) {
         const result = await request(method, suffix, { cardId: 'webinar', title: 'Secret', content: '', kind: 'note', version: 1, code: 'guest-code' }, { cardId: 'webinar', code: 'guest-code', version: '1' }, { 'x-sponsor-doc-code': 'guest-code', 'x-document-review-token': 'review-token' });
         assert.equal(result.statusCode, 401, `${method} ${suffix}`);
       }
     } finally { process.env.SKIP_AUTH = 'true'; }
+  });
+  it('serves a private preview and PDF of the same pinned saved version', async () => {
+    const doc = await createCardDocument(client, { cardId: 'workshop', kind: 'note', title: 'Draft', content: 'DRAFT\n\n1. Terms\n\nExact private terms.' });
+    const preview = await request('GET', `/${doc.id}/preview`);
+    assert.equal(preview.statusCode, 200);
+    assert.match(preview.headers['Content-Type'], /text\/html/);
+    assert.match(preview.headers['Cache-Control'], /no-store/);
+    assert.match(preview.headers['X-Robots-Tag'], /noindex/);
+    assert.match(preview.headers['Content-Security-Policy'], /frame-ancestors 'none'/);
+    assert.match(preview.body, /Exact private terms/);
+    const pdf = await request('GET', `/${doc.id}/export`, undefined, { format: 'pdf', version: '1' });
+    assert.equal(pdf.statusCode, 200);
+    assert.equal(Buffer.from(pdf.body, 'base64').subarray(0, 4).toString(), '%PDF');
+    assert.equal(pdf.headers['X-Document-Source-SHA256'], preview.headers['X-Document-Source-SHA256']);
+    assert.equal((await request('GET', `/${doc.id}/export`, undefined, { format: 'pdf', version: '2' })).statusCode, 409);
+    const unsupported = await createCardDocument(client, { cardId: 'workshop', kind: 'note', title: 'Unicode', content: '日本語' });
+    assert.equal((await request('GET', `/${unsupported.id}/export`, undefined, { format: 'pdf' })).statusCode, 422);
   });
   it('validates input and rejects disabled or unsupported identities', async () => {
     const body = { cardId: 'webinar', kind: 'note', title: 'Host', content: '' };

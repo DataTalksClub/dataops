@@ -8,7 +8,13 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { TABLE_CARDS, TABLE_TASKS, TABLE_TEMPLATES } from './tableNames';
+import {
+  TABLE_CALENDAR,
+  TABLE_CARDS,
+  TABLE_NOTIFICATIONS,
+  TABLE_TASKS,
+  TABLE_TEMPLATES,
+} from './tableNames';
 import { buildCard, cardKey, getCard } from './cards';
 import { usesLocalTransactionEmulation } from './client';
 import { compact, type PlannedWrite } from './plannedWrite';
@@ -723,23 +729,63 @@ async function resetTemplateOverride(
   return { template: cleanItem(item) as Template, applied: true };
 }
 
+async function templatesInUse(client: DynamoDBDocumentClient, ids: string[]): Promise<Set<string>> {
+  const uniqueIds = [...new Set(ids.filter(Boolean))];
+  const inUse = new Set<string>();
+  const batchSize = 100;
+
+  for (let offset = 0; offset < uniqueIds.length; offset += batchSize) {
+    const batch = uniqueIds.slice(offset, offset + batchSize);
+    const placeholders = batch.map((_, index) => `:templateId${index}`);
+    const values = Object.fromEntries(batch.map((id, index) => [placeholders[index], id]));
+    const filter = batch.length === 1
+      ? `#templateId = ${placeholders[0]}`
+      : `#templateId IN (${placeholders.join(', ')})`;
+
+    // Workflow Template ids can be held directly by Cards and Tasks, or by
+    // calendar and notification records created from them. Scan every owning
+    // entity table; a filtered Scan must follow LastEvaluatedKey because its
+    // limit/page boundary counts evaluated rows, not matching rows.
+    for (const TableName of [TABLE_CARDS, TABLE_TASKS, TABLE_CALENDAR, TABLE_NOTIFICATIONS]) {
+      let exclusiveStartKey: Record<string, unknown> | undefined;
+      do {
+        const result = await client.send(new ScanCommand({
+          TableName,
+          FilterExpression: filter,
+          ExpressionAttributeNames: { '#templateId': 'templateId' },
+          ExpressionAttributeValues: values,
+          ProjectionExpression: '#templateId',
+          ConsistentRead: true,
+          ...(exclusiveStartKey ? { ExclusiveStartKey: exclusiveStartKey } : {}),
+        }));
+        for (const item of (result.Items || []) as Array<Record<string, unknown>>) {
+          if (typeof item.templateId === 'string' && batch.includes(item.templateId)) {
+            inUse.add(item.templateId);
+          }
+        }
+        exclusiveStartKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+      } while (exclusiveStartKey);
+      if (batch.every((id) => inUse.has(id))) break;
+    }
+  }
+
+  return inUse;
+}
+
 async function templateInUse(client: DynamoDBDocumentClient, id: string): Promise<boolean> {
-  const result = await client.send(new ScanCommand({
-    TableName: TABLE_CARDS,
-    FilterExpression: 'templateId = :id',
-    ExpressionAttributeValues: { ':id': id },
-    Limit: 1,
-    Select: 'COUNT',
-    ConsistentRead: true,
-  }));
-  return (result.Count || 0) > 0;
+  // Workflow Template ids can be held directly by Cards and Tasks, or by
+  // calendar and notification records created from them. Scan every owning
+  // entity table; a filtered Scan must follow LastEvaluatedKey because its
+  // limit/page boundary counts evaluated rows, not matching rows.
+  return (await templatesInUse(client, [id])).has(id);
 }
 
 /**
  * Delete an unused custom template and release its `type` atomically.
  * Only canonical `origin === 'custom'` templates with a matching
  * `(expectedVersion, revision)` pair and zero referencing Cards may be
- * deleted; Git-origin or unclassified rows fail closed.
+ * deleted; Git-origin or unclassified rows fail closed. Any live Card, Task,
+ * Calendar record or notification that cites the Template prevents deletion.
  */
 async function deleteCustomTemplate(
   client: DynamoDBDocumentClient,
@@ -770,6 +816,77 @@ async function deleteCustomTemplate(
         + ' AND (#cardCreateSeq = :expectedSeq OR (attribute_not_exists(#cardCreateSeq) AND :expectedSeq = :zero))',
       ExpressionAttributeNames: { '#version': 'version', '#revision': 'revision', '#cardCreateSeq': 'cardCreateSeq' },
       ExpressionAttributeValues: {
+        ':expectedVersion': expectedVersion,
+        ':expectedRevision': revision,
+        ':expectedSeq': expectedSeq,
+        ':zero': 0,
+      },
+    },
+  }];
+  if (typeof current.type === 'string' && current.type) {
+    const guard = await client.send(new GetCommand({
+      TableName: TABLE_TEMPLATES, Key: typeGuardKey(current.type), ConsistentRead: true,
+    }));
+    if ((guard.Item as Record<string, unknown> | undefined)?.templateId === id) {
+      items.push({
+        Delete: {
+          TableName: TABLE_TEMPLATES,
+          Key: typeGuardKey(current.type),
+          ConditionExpression: 'attribute_exists(PK) AND templateId = :templateId',
+          ExpressionAttributeValues: { ':templateId': id },
+        },
+      });
+    }
+  }
+  try {
+    await templateTransact(client, items);
+  } catch (error) {
+    if (error instanceof TemplateVersionConflictError) {
+      const reread = await rawTemplate(client, id);
+      if (!reread) return null;
+    }
+    throw error;
+  }
+  return cleanItem(current) as Template;
+}
+
+/**
+ * Remove a Git-origin Template only as part of authored-template reconciliation.
+ * This is deliberately not exposed by the interactive DELETE route: Git owns
+ * the source, and reconciliation may remove its projection only after the
+ * source file disappears and the Card-use fence proves it is unused.
+ */
+async function deleteGitTemplate(
+  client: DynamoDBDocumentClient,
+  id: string,
+  expectedVersion: number,
+  revision: string,
+): Promise<Template | null> {
+  const current = await rawTemplate(client, id);
+  if (!current) return null;
+  checkWritePair(current, expectedVersion, revision);
+  if (current.origin !== 'git') {
+    throw new TemplateEditForbiddenError('cannot-delete-git-template');
+  }
+  const expectedSeq = Number((current.cardCreateSeq as number | undefined) ?? 0);
+  if (await templateInUse(client, id)) {
+    throw new TemplateEditForbiddenError('template-in-use');
+  }
+  const items: TemplateTransactItem[] = [{
+    Delete: {
+      TableName: TABLE_TEMPLATES,
+      Key: templateKey(id),
+      ConditionExpression: 'attribute_exists(PK) AND #origin = :origin AND #version = :expectedVersion'
+        + ' AND #revision = :expectedRevision'
+        + ' AND (#cardCreateSeq = :expectedSeq OR (attribute_not_exists(#cardCreateSeq) AND :expectedSeq = :zero))',
+      ExpressionAttributeNames: {
+        '#origin': 'origin',
+        '#version': 'version',
+        '#revision': 'revision',
+        '#cardCreateSeq': 'cardCreateSeq',
+      },
+      ExpressionAttributeValues: {
+        ':origin': 'git',
         ':expectedVersion': expectedVersion,
         ':expectedRevision': revision,
         ':expectedSeq': expectedSeq,
@@ -1050,6 +1167,8 @@ export {
   getTemplate,
   updateTemplate,
   deleteCustomTemplate,
+  deleteGitTemplate,
+  templatesInUse,
   deleteTemplate,
   listTemplates,
   instantiateTemplate,

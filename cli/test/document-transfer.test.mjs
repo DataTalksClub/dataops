@@ -61,3 +61,13 @@ test("sponsor doc send-email uses the shared API and reports the Gmail message I
   assert.match(lines[0], /Gmail message gmail-message-1/);
   assert.equal(result.emailDelivery.messageId, "gmail-message-1");
 });
+
+ test("card PDF export requires a file and preserves binary bytes", async () => {
+  const formats = ["md", "txt", "docx", "pdf"];
+  await assert.rejects(exportDocument({ format: "pdf" }, io, "unused", "id", formats), /--output/);
+  const bytes = Buffer.from([37, 80, 68, 70, 255, 0]);
+  fakePortal({ "GET /api/card-documents/id/export": () => new Response(bytes) });
+  const output = join(directory, "draft.pdf");
+  await exportDocument({ format: "pdf", output }, io, "/api/card-documents/id/export", "id", formats);
+  assert.deepEqual(readFileSync(output), bytes);
+});

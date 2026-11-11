@@ -77,7 +77,7 @@ describe('handler - IAM-only deployment seeds', () => {
     assert.strictEqual(firstResponse.statusCode, 200);
     const first = JSON.parse(firstResponse.body);
     assert.deepStrictEqual(first, {
-      templates: { total: 11, created: 11, updated: 0, unchanged: 0 },
+      templates: { total: 11, created: 11, updated: 0, unchanged: 0, deleted: 0 },
     });
     const firstTemplates = await listTemplates(client);
     assert.strictEqual(firstTemplates.length, 11);
@@ -95,7 +95,7 @@ describe('handler - IAM-only deployment seeds', () => {
     assert.strictEqual(secondResponse.statusCode, 200);
     const second = JSON.parse(secondResponse.body);
     assert.deepStrictEqual(second, {
-      templates: { total: 11, created: 0, updated: 0, unchanged: 11 },
+      templates: { total: 11, created: 0, updated: 0, unchanged: 11, deleted: 0 },
     });
     assert.deepStrictEqual(
       (await listTemplates(client)).sort((left, right) => left.id.localeCompare(right.id)),

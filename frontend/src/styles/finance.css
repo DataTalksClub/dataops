@@ -1471,6 +1471,28 @@ closes on every tab switch (see setView), so it never covers list content. */
   font-size: var(--dk-text-xs);
   color: var(--dk-text-muted);
 }
+.fin-period [data-fin-year] { color-scheme: light; }
+:root[data-theme="dark"] .fin-period [data-fin-year] { color-scheme: dark; }
+.fin-period [data-fin-year] option {
+  background-color: var(--dk-bg-surface);
+  color: var(--dk-text-primary);
+}
+.fin-period [data-fin-year] option:checked {
+  background-color: var(--dk-accent-deep);
+  color: var(--dk-text-on-deep);
+}
+.fin-period [data-fin-year] option:hover:not(:disabled) {
+  background-color: var(--dk-bg-hover);
+  color: var(--dk-text-primary);
+}
+.fin-period [data-fin-year] option:focus-visible {
+  outline: 2px solid var(--dk-focus-ring);
+  outline-offset: -2px;
+}
+.fin-period [data-fin-year] option:disabled {
+  background-color: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
+}
 .fin-period [aria-pressed="true"] {
   background: var(--dk-accent-soft);
   border-color: var(--dk-border-strong);
@@ -1544,6 +1566,9 @@ closes on every tab switch (see setView), so it never covers list content. */
   font-size: var(--dk-text-xs);
   color: var(--dk-text-muted);
 }
+.fin-stats .fin-stats__total {
+  border: 1px solid var(--dk-border-strong);
+}
 .fin-stats dd {
   margin: 0;
   font-size: var(--dk-text-md);
@@ -1594,7 +1619,7 @@ closes on every tab switch (see setView), so it never covers list content. */
   border-radius: var(--dk-radius-full);
   background: var(--dk-text-heading);
 }
-.fin-chart__grid { stroke: var(--dk-border-default); stroke-width: 1; }
+.fin-chart__grid { stroke: var(--dk-border-default); stroke-opacity: 0.55; stroke-width: 1; }
 .fin-chart__base { stroke: var(--dk-border-strong); }
 .fin-chart__tick {
   fill: var(--dk-text-muted);
@@ -1635,12 +1660,19 @@ closes on every tab switch (see setView), so it never covers list content. */
   font-size: var(--dk-text-md);
   color: var(--dk-text-heading);
 }
-.fin-count {
-  padding: 0 var(--dk-space-2);
-  border-radius: var(--dk-radius-full);
-  background: var(--dk-warning-bg);
-  color: var(--dk-warning-text);
-  font-size: var(--dk-text-xs);
+.fin-block__subtitle {
+  margin: 0;
+  font-size: var(--dk-text-sm);
+  color: var(--dk-text-heading);
+}
+.fin-refunds {
+  display: grid;
+  gap: var(--dk-space-2);
+  min-width: 0;
+}
+.fin-refunds .fin-muted {
+  margin: 0;
+  font-size: var(--dk-text-sm);
 }
 .fin-table-wrap {
   overflow-x: auto;
@@ -1665,13 +1697,19 @@ closes on every tab switch (see setView), so it never covers list content. */
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-.fin-currency__conversion {
-  display: block;
-  margin-top: var(--dk-space-1);
-  color: var(--dk-text-muted);
-  font-size: var(--dk-text-xs);
-  font-weight: 400;
-  white-space: normal;
+.fin-table tr[data-fin-bookkeeping-row] { cursor: pointer; }
+.fin-table tr[data-fin-bookkeeping-row]:hover { background: var(--dk-bg-hover); }
+.fin-table__month-link {
+  color: inherit;
+  text-decoration-color: var(--dk-border-strong);
+  text-underline-offset: 2px;
+}
+.fin-table__month-link:focus-visible {
+  position: relative;
+  z-index: 1;
+  border-radius: var(--dk-radius-sm);
+  outline: 2px solid var(--dk-focus-ring);
+  outline-offset: 2px;
 }
 .fin-table__total th,
 .fin-table__total td {
@@ -1698,14 +1736,6 @@ closes on every tab switch (see setView), so it never covers list content. */
   margin: 0;
   padding-left: var(--dk-space-5);
   font-size: var(--dk-text-sm);
-}
-.fin-rules {
-  font-size: var(--dk-text-sm);
-  color: var(--dk-text-muted);
-}
-.fin-rules summary {
-  cursor: pointer;
-  color: var(--dk-text-link);
 }
 .fin-error {
   margin: 0;

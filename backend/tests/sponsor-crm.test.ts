@@ -205,6 +205,8 @@ describe('sponsor CRM', () => {
     assert.ok(notifications.some((n) => (n.metadata as any)?.sponsorDeliverableId === slot.id));
     const updated = data(await invoke('PUT', `/api/sponsor-crm/deliverables/${slot.id}`, { version: slot.version, artifactUrls: ['https://example.invalid/material.pdf'] }));
     assert.equal(updated.artifactUrls.length, 1);
+    const confirmed = await invoke('POST', `/api/sponsor-crm/deliverables/${slot.id}/readiness`, { version: updated.version, materialVersion: 2, action: 'confirm', criterion: 'materials-approved', checkId: 'approval', link: 'https://example.invalid/review' }, { 'x-user-id': GRACE_USER_ID });
+    assert.equal(confirmed.statusCode, 200, confirmed.body);
     const resolved = await evaluateSponsorBookingAlerts(client, '2026-07-05');
     assert.ok(resolved.resolved >= 1);
   });
@@ -416,7 +418,7 @@ describe('sponsor CRM', () => {
     for (const code of ['materials-missing-14d', 'materials-missing-10d', 'materials-missing-3d', 'agreed-missing-primary-contact', 'newsletter-workflow-incomplete', 'performance-follow-up-due']) {
       assert.ok(codes.has(code), code);
     }
-    const cleared = data(await invoke('PUT', `/api/sponsor-crm/deliverables/${ten.id}`, { version: ten.version, artifactUrls: ['https://example.invalid/material.pdf'] }));
+    const cleared = data(await invoke('POST', `/api/sponsor-crm/deliverables/${ten.id}/readiness`, { version: ten.version, materialVersion: 1, action: 'confirm', criterion: 'materials-approved', checkId: 'approval', link: 'https://example.invalid/review' }, { 'x-user-id': GRACE_USER_ID }));
     await evaluateSponsorBookingAlerts(client, '2026-07-01');
     const recurring = data(await invoke('PUT', `/api/sponsor-crm/deliverables/${ten.id}`, { version: cleared.version, artifactUrls: [] }));
     assert.deepEqual(recurring.artifactUrls, []);

@@ -749,6 +749,10 @@ def test_browser_e2e_is_visible_but_cannot_block_or_queue_deployment():
     assert "Tested commit:" in e2e_workflow
     assert "timeout-minutes: 45" in e2e_workflow
     assert "playwright install --with-deps chromium" in e2e_workflow
+    # A single runner apt/DNS outage must not fail the job: apt retries each
+    # fetch and the whole Playwright install is retried with backoff.
+    assert 'Acquire::Retries "5"' in e2e_workflow
+    assert "delays=(0 15 30 60 120)" in e2e_workflow
     assert "npm --prefix backend run test:e2e" in e2e_workflow
     assert "if: failure()" in e2e_workflow
     assert "backend/playwright-report/" in e2e_workflow

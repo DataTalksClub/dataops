@@ -56,9 +56,8 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
     params: ["templateId"],
   },
   "/recurring": { view: "tasks", tasksSection: "recurring", params: [] },
-  // Money in/out, net profit excluding VAT and the VAT position for one
-  // month, a year or the year to date (exactly one of the three params).
-  "/finance": { view: "finance", tasksSection: "queue", params: ["month", "year", "ytd"] },
+  // Annual money in/out, net profit excluding VAT and the VAT position.
+  "/finance": { view: "finance", tasksSection: "queue", params: ["year"] },
   "/bookkeeping": {
     view: "bookkeeping",
     tasksSection: "queue",

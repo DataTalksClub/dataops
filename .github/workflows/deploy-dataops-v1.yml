@@ -275,11 +275,11 @@ jobs:
             .statusCode == 200
             and ((.body | fromjson) as $body
               | ($body | keys == ["templates"])
-              and ($body.templates | keys == ["created", "total", "unchanged", "updated"])
+              and ($body.templates | keys == ["created", "deleted", "total", "unchanged", "updated"])
               # Authored templates come from the private knowledge branch, whose
               # valid template count changes independently of application code.
               and ($body.templates.total | nonnegative_integer and . > 0)
-              and ([$body.templates.created, $body.templates.updated, $body.templates.unchanged] | all(.[]; nonnegative_integer))
+              and ([$body.templates.created, $body.templates.updated, $body.templates.unchanged, $body.templates.deleted] | all(.[]; nonnegative_integer))
               and ($body.templates.created + $body.templates.updated + $body.templates.unchanged == $body.templates.total)
             )
           ' "$seed_response" >/dev/null; then
@@ -294,7 +294,7 @@ jobs:
             ' "$seed_response" >&2 || true
             exit 1
           fi
-          jq -c '(.body | fromjson) | {templates: {created: .templates.created, total: .templates.total, unchanged: .templates.unchanged, updated: .templates.updated}}' "$seed_response"
+          jq -c '(.body | fromjson) | {templates: {created: .templates.created, deleted: .templates.deleted, total: .templates.total, unchanged: .templates.unchanged, updated: .templates.updated}}' "$seed_response"
           echo "Authored workflow templates projected."
 
       - name: Verify scheduled calendar hold expiry

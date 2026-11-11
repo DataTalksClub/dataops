@@ -87,6 +87,20 @@ describe("templates read commands", () => {
   });
 });
 
+describe("template sync", () => {
+  test("reports Git templates removed because their source files disappeared", async () => {
+    fakePortal({
+      "POST /api/templates/sync": {
+        templates: { total: 24, created: 0, updated: 0, unchanged: 24, deleted: 13 },
+        pinnedTypes: [],
+      },
+    });
+    const io = captureIo();
+    assert.equal(await run(["templates", "sync"], io), 0);
+    assert.match(io.text(), /24 Templates from Git: 0 created, 0 updated, 24 unchanged, 13 deleted/);
+  });
+});
+
 describe("templates write commands", () => {
   let dir;
   beforeEach(() => {

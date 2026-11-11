@@ -87,7 +87,9 @@ describe('finance summary', () => {
     });
     assert.equal(s.totals.healthInsurance, 1179.36);
     assert.equal(s.totals.vatPaid, 4581.14);
-    assert.equal(s.totals.otherTaxes, 1000);
+    assert.equal(s.totals.incomeTax, 1000);
+    assert.equal(s.totals.otherTaxes, 0);
+    assert.equal(s.totals.taxesTotal, 2179.36);
     assert.equal(s.totals.moneyOut, 6760.5);
     assert.equal(s.totals.entryCount, 3);
     assert.equal(s.gaps.find((gap) => gap.kind === 'bank-line-without-ledger-row')?.count, 1);
@@ -108,7 +110,33 @@ describe('finance summary', () => {
     const aug = summarize({ today: '2026-10-31', query: { month: '2026-08' }, rates: noRates, rows });
     assert.equal(feb.totals.vatPaid, 1029.96);
     assert.equal(aug.totals.vatPaid, 4196.6);
-    assert.equal(aug.totals.otherTaxes, 3296);
+    assert.equal(aug.totals.tradeTax, 3296);
+    assert.equal(aug.totals.otherTaxes, 0);
+    const jun = summarize({ today: '2026-10-31', query: { month: '2026-06' }, rates: noRates, rows });
+    assert.equal(jun.totals.incomeTax, 11042);
+  });
+
+  it('splits generic Finanzamt Taxes rows into GewSt and ESt by the matched bank purpose', () => {
+    const generic = { entryType: 'expense', category: 'Taxes', counterparty: 'Finanzamt Synthetic', description: 'Finanzamt Synthetic' };
+    const s = summarize({
+      today: '2026-12-31', query: { year: '2026' }, rates: noRates,
+      rows: [
+        row('gewst-q1', { ...generic, amount: '3296.00', paidDate: '2026-02-17' }),
+        row('est-q1', { ...generic, amount: '11042.00', paidDate: '2026-03-17' }),
+        row('refund', { entryType: 'income', category: 'Taxes', amount: '43633.73', counterparty: 'Finanzamt Synthetic', description: 'Erstattung', paidDate: '2026-10-30' }),
+      ],
+      statementLines: [
+        { id: 'f:1', bankKey: 'bank-gewst', accountId: 'finom', date: '2026-02-17', amount: '-3296.00', currency: 'EUR', counterparty: 'Finanzamter', reference: 'STEUERNR 00/000/00000 GEW.ST 1VJ.26 3.296,00EUR' },
+        { id: 'f:2', bankKey: 'bank-est', accountId: 'finom', date: '2026-03-17', amount: '-11042.00', currency: 'EUR', counterparty: 'Finanzamter', reference: 'STEUERNR 00/000/00000 EINK.ST 1VJ.26 11.042,00EUR' },
+      ],
+      statementPairs: new Map([['bank-gewst', 'gewst-q1'], ['bank-est', 'est-q1']]),
+    });
+    assert.equal(s.totals.tradeTax, 3296);
+    assert.equal(s.totals.incomeTax, 11042);
+    assert.equal(s.totals.otherTaxes, 0);
+    assert.equal(s.totals.taxesTotal, 14338);
+    assert.equal(s.totals.taxRefunds, 43633.73);
+    assert.equal(s.months.find((m) => m.month === '2026-10')?.taxesTotal, 0);
   });
 
   it('uses the matched statement purpose to classify a generic Taxes ledger row as VAT paid', () => {
@@ -217,11 +245,51 @@ describe('finance summary', () => {
     assert.equal(t.vatPaid, 150);
     assert.equal(t.otherTaxes, 3296);
     assert.equal(t.healthInsurance, 1179.36);
+    assert.equal(t.taxesTotal, 4475.36);
     assert.equal(t.netAfterTaxes, -2665.36);
     assert.equal('vatUnknownCount' in t, false);
     assert.equal(summary.gaps.some((gap) => gap.kind === 'vat-unknown'), false);
     assert.equal(t.moneyOut, 4854.36);
     assert.equal(t.moneyIn, 2190);
+  });
+
+  it('keeps tax refunds in cash, out of revenue and profit, and never as a negative tax', () => {
+    const rows = [
+      row('sale', { entryType: 'income', amount: '1190', vatAmount: '190', paidDate: '2026-10-02' }),
+      row('tax-refund', { entryType: 'income', amount: '4000', category: 'Taxes', counterparty: 'Finanzamt', description: 'ESt prepayment refund', paidDate: '2026-10-03' }),
+      row('tax-payment', { entryType: 'expense', amount: '100', category: 'Taxes', counterparty: 'Finanzamt', description: 'EINK.ST', paidDate: '2026-10-04' }),
+      row('insurance', { entryType: 'expense', amount: '1179.36', category: 'Health Insurance', counterparty: 'TK', paidDate: '2026-10-05' }),
+      row('owner-draw', { entryType: 'expense', amount: '2500', category: 'Owner pay', ownerPayType: 'draw', paidDate: '2026-10-06' }),
+      row('vat-refund', { entryType: 'income', amount: '30', category: 'VAT', counterparty: 'Finanzamt', description: 'UMS.ST refund', paidDate: '2026-10-07' }),
+    ];
+    const summary = summarize({ today: '2026-10-31', query: { month: '2026-10' }, rates: noRates, rows });
+    const t = summary.totals;
+    assert.equal(t.moneyIn, 5220);
+    assert.equal(t.moneyOut, 3779.36);
+    assert.equal(t.net, 1440.64);
+    assert.equal(t.operatingIncome, 1190);
+    assert.equal(t.netProfitExVat, 1000);
+    assert.equal(t.incomeTax, 100);
+    assert.equal(t.tradeTax, 0);
+    assert.equal(t.otherTaxes, 0);
+    assert.equal(t.healthInsurance, 1179.36);
+    assert.equal(t.taxesTotal, 1279.36);
+    assert.equal(t.taxRefunds, 4000);
+    assert.equal(t.vatRefunded, 30);
+    assert.equal(t.ownerPay, 2500);
+    assert.equal(t.netAfterTaxes, -279.36);
+    assert.equal(t.netAfterOwnerPay, -2779.36);
+    assert.deepEqual(summary.taxRefunds.map(({ id, date, eur }) => [id, date, eur]), [['tax-refund', '2026-10-03', 4000]]);
+    assert.equal(summary.months[0].taxRefunds, 4000);
+    assert.equal(summary.months[0].otherTaxes, 0);
+    assert.deepEqual(summary.entries.map(({ id, line, direction }) => [id, line, direction]), [
+      ['sale', 'operating', 'in'],
+      ['tax-refund', 'taxes', 'in'],
+      ['tax-payment', 'taxes', 'out'],
+      ['insurance', 'health-insurance', 'out'],
+      ['owner-draw', 'owner-pay', 'out'],
+      ['vat-refund', 'vat', 'in'],
+    ]);
   });
 
   it('books a credit-note row as contra-expense: not money in, not revenue, whatever its entryType', () => {

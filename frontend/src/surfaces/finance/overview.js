@@ -1,6 +1,6 @@
-// Finance overview: money in, money out and net per month, year or YTD,
-// with the two numbers that matter on top (net profit excluding VAT and the
-// projected VAT position). Every figure comes from GET /api/finance/summary,
+// Finance overview: an annual report of money in, money out and net, with the
+// two numbers that matter on top (net profit excluding VAT and the projected
+// VAT position). Every figure comes from GET /api/finance/summary,
 // the same payload `dataops finance summary --json` prints, so the portal and
 // the CLI cannot disagree. Pure markup helpers are exported for tests.
 import { html } from "./shared.js";
@@ -8,11 +8,14 @@ import { html } from "./shared.js";
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const YEAR = /^\d{4}$/;
 
+export function bookkeepingMonthUrl(month) {
+  if (!MONTH.test(month)) return "";
+  return `/bookkeeping?${new URLSearchParams({ month })}`;
+}
+
 export function periodFromParams(params, today) {
-  if (MONTH.test(params.get("month") || "")) return { month: params.get("month") };
-  if (YEAR.test(params.get("year") || "")) return { year: params.get("year") };
-  if (params.get("ytd")) return { ytd: "1" };
-  return { ytd: "1", implicit: true, today };
+  const year = params.get("year") || "";
+  return { year: YEAR.test(year) ? year : today.slice(0, 4) };
 }
 
 export function formatEur(value, { sign = false } = {}) {
@@ -25,6 +28,14 @@ export function formatEur(value, { sign = false } = {}) {
 
 const shortMonth = (month) =>
   new Date(`${month}-01T00:00:00Z`).toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+
+function berlinToday() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
 
 const headRow = (labels) => html`<thead><tr>${labels.map((label) => html`<th scope="col">${label}</th>`).join("")}</tr></thead>`;
 
@@ -39,7 +50,7 @@ export function headlineMarkup(summary, e) {
         <p class="fin-tile__value" data-fin-profit>${formatEur(t.netProfitExVat)} <span class="fin-tile__unit">EUR</span></p>
         <p class="fin-tile__sub">Income net of VAT ${formatEur(t.incomeNetOfVat)}
           − expenses net of VAT ${formatEur(t.expensesNetOfVat)}</p>
-        <p class="fin-tile__sub">After taxes ${formatEur(t.otherTaxes)} and TK ${formatEur(t.healthInsurance)}: <strong>${formatEur(t.netAfterTaxes)}</strong></p>
+        <p class="fin-tile__sub">After taxes and TK paid ${formatEur(t.taxesTotal)}: <strong>${formatEur(t.netAfterTaxes)}</strong></p>
       </section>
       <section class="fin-tile fin-tile--hero" aria-labelledby="fin-vat-label">
         <h2 id="fin-vat-label" class="fin-tile__label">Projected VAT position</h2>
@@ -52,11 +63,52 @@ export function headlineMarkup(summary, e) {
       <div><dt>Money in</dt><dd>${formatEur(t.moneyIn)}</dd></div>
       <div><dt>Money out</dt><dd>${formatEur(t.moneyOut)}</dd></div>
       <div><dt>Net (cash)</dt><dd>${formatEur(t.net, { sign: true })}</dd></div>
-      <div><dt>Other taxes</dt><dd>${formatEur(t.otherTaxes)}</dd></div>
-      <div><dt>Health insurance (TK)</dt><dd>${formatEur(t.healthInsurance)}</dd></div>
+      <div><dt>Taxes and TK paid</dt><dd data-fin-taxes-total>${formatEur(t.taxesTotal)}</dd></div>
       <div><dt>Owner pay (below net profit)</dt><dd data-fin-owner-pay>${formatEur(t.ownerPay)}</dd></div>
       <div><dt>Net after owner pay</dt><dd>${formatEur(t.netAfterOwnerPay, { sign: true })}</dd></div>
     </dl>`;
+}
+
+/**
+ * Taxes paid this year by type and together. Only payments count: a refund
+ * is never a negative tax, so it is listed on its own below.
+ */
+export function taxesMarkup(summary, e) {
+  const t = summary.totals;
+  const lines = [
+    ["Einkommensteuer + Soli", t.incomeTax, "income-tax"],
+    ["Gewerbesteuer", t.tradeTax, "trade-tax"],
+    ["TK health insurance", t.healthInsurance, "health-insurance"],
+    ...(t.otherTaxes ? [["Other taxes", t.otherTaxes, "other"]] : []),
+  ];
+  return html`<section class="fin-block" aria-labelledby="fin-taxes-heading">
+      <h2 id="fin-taxes-heading" class="fin-block__title">Taxes paid in ${e(summary.period.label)}</h2>
+      <dl class="fin-stats">
+        ${lines.map(([label, value, key]) => html`<div><dt>${label}</dt><dd data-fin-tax="${key}">${formatEur(value)}</dd></div>`).join("")}
+        <div class="fin-stats__total"><dt>Total taxes and TK</dt><dd data-fin-tax="total">${formatEur(t.taxesTotal)}</dd></div>
+      </dl>
+      ${refundsMarkup(summary, e)}
+    </section>`;
+}
+
+/** Refunds stay visible as cash with their ledger rows; they are not tax, revenue or profit. */
+export function refundsMarkup(summary, e) {
+  const refunds = summary.taxRefunds || [];
+  if (!refunds.length) return "";
+  const t = summary.totals;
+  return html`<div class="fin-refunds" data-fin-refunds>
+      <h3 class="fin-block__subtitle">Tax refunds received: ${formatEur(t.taxRefunds)} EUR</h3>
+      <p class="fin-muted">Counted in money in and net cash (${formatEur(t.moneyIn)} money in includes them).
+        Not revenue (income net of VAT ${formatEur(t.incomeNetOfVat)} excludes them), not profit, and never a negative tax in any year:
+        a refund settles an earlier assessed year.</p>
+      <div class="fin-table-wrap"><table class="fin-table">
+        ${headRow(["Bank date", "Amount", "From", "Booking text", "Ledger row"])}
+        <tbody>${refunds.map((r) => html`<tr>
+          <td>${MONTH.test(r.month) ? html`<a href="${e(bookkeepingMonthUrl(r.month))}">${e(r.date)}</a>` : e(r.date)}</td>
+          <td class="fin-num">${formatEur(r.eur)}</td><td>${e(r.counterparty)}</td><td>${e(r.description)}</td>
+          <td><code>${e(r.id)}</code></td></tr>`).join("")}</tbody>
+      </table></div>
+    </div>`;
 }
 
 // Bar path with a 4px rounded data end and a flat end on the baseline.
@@ -130,7 +182,7 @@ export function profitChartMarkup(months, e) {
   const y = (v) => top + ((top0 - v) / range) * plotH;
   const slot = plotW / months.length;
   const barW = Math.max(6, Math.min(28, slot * 0.5));
-  const ticks = [...new Set([top0, 0, bot0])];
+  const ticks = [...new Set(Array.from({ length: 5 }, (_, index) => top0 - (range * index) / 4))];
   const grid = ticks.map((v) => html`<line class="fin-chart__grid${v === 0 ? " fin-chart__base" : ""}" x1="${left}" x2="${W - right}" y1="${y(v)}" y2="${y(v)}"/>
       <text class="fin-chart__tick" x="${left - 6}" y="${y(v) + 4}" text-anchor="end">${v < 0 ? "−" : ""}${compact(Math.abs(v))}</text>`).join("");
   const marks = months.map((m, i) => {
@@ -149,85 +201,62 @@ export function profitChartMarkup(months, e) {
 }
 
 export function monthTableMarkup(summary, e) {
-  const rows = summary.months.length > 1 ? [...summary.months, { month: "Total", ...summary.totals, total: true }] : summary.months;
+  const rows = [...summary.months, { month: "Total", ...summary.totals, total: true }];
   const cell = (v, opts) => html`<td class="fin-num">${formatEur(v, opts)}</td>`;
+  const otherTaxes = rows.some((r) => r.otherTaxes);
   return html`<div class="fin-table-wrap"><table class="fin-table">
       <caption class="fin-sr">Per month, EUR</caption>
       <thead><tr><th scope="col">Month</th><th scope="col">Money in</th><th scope="col">Money out</th><th scope="col">Net</th>
         <th scope="col">Income net of VAT</th><th scope="col">Expenses net of VAT</th><th scope="col">Profit ex VAT</th>
-        <th scope="col">Other taxes</th><th scope="col">TK</th><th scope="col">Output VAT</th><th scope="col">Input VAT</th>
+        <th scope="col">ESt + Soli</th><th scope="col">GewSt</th><th scope="col">TK</th>${otherTaxes ? html`<th scope="col">Other taxes</th>` : ""}
+        <th scope="col">Taxes total</th><th scope="col">Tax refunds</th><th scope="col">Owner pay</th><th scope="col">Output VAT</th><th scope="col">Input VAT</th>
         <th scope="col">VAT paid</th><th scope="col">VAT refunded</th><th scope="col">VAT position</th><th scope="col">Rows</th></tr></thead>
-      <tbody>${rows.map((r) => html`<tr class="${r.total ? "fin-table__total" : r.future ? "is-future" : ""}">
-        <th scope="row">${e(r.month)}${r.future ? " <small>(not over)</small>" : ""}</th>
+      <tbody>${rows.map((r) => {
+        const href = !r.total && MONTH.test(r.month) ? bookkeepingMonthUrl(r.month) : "";
+        const month = href
+          ? html`<a class="fin-table__month-link" data-fin-month-link href="${e(href)}">${e(r.month)}</a>`
+          : e(r.month);
+        return html`<tr class="${r.total ? "fin-table__total" : r.future ? "is-future" : ""}"${href ? " data-fin-bookkeeping-row" : ""}>
+        <th scope="row">${month}${r.future ? " <small>(not over)</small>" : ""}</th>
         ${cell(r.moneyIn)}${cell(r.moneyOut)}${cell(r.net, { sign: true })}${cell(r.incomeNetOfVat)}${cell(r.expensesNetOfVat)}
-        ${cell(r.netProfitExVat, { sign: true })}${cell(r.otherTaxes)}${cell(r.healthInsurance)}${cell(r.ownerPay)}${cell(r.outputVat)}${cell(r.inputVat)}
+        ${cell(r.netProfitExVat, { sign: true })}${cell(r.incomeTax)}${cell(r.tradeTax)}${cell(r.healthInsurance)}${otherTaxes ? cell(r.otherTaxes) : ""}
+        ${cell(r.taxesTotal)}${cell(r.taxRefunds)}${cell(r.ownerPay)}${cell(r.outputVat)}${cell(r.inputVat)}
         ${cell(r.vatPaid)}${cell(r.vatRefunded)}${cell(r.projectedVat)}
-        <td class="fin-num">${e(String(r.entryCount))}</td></tr>`).join("")}</tbody>
+        <td class="fin-num">${e(String(r.entryCount))}</td></tr>`;
+      }).join("")}</tbody>
     </table></div>`;
 }
 
-export function currencyMarkup(summary, e) {
-  if (!summary.byCurrency.length) return "";
-  const source = { booked: "Booked by the bank", ecb: "ECB reference rate", eur: "EUR" };
-  const conversionsByCurrency = new Map();
-  for (const entry of summary.entries) {
-    if (entry.currency === "EUR") continue;
-    const entries = conversionsByCurrency.get(entry.currency) || [];
-    entries.push(entry);
-    conversionsByCurrency.set(entry.currency, entries);
+export function activateFinanceMonthlyRow(event, selection = globalThis.getSelection?.()) {
+  if (event.defaultPrevented) return false;
+  const target = event.target;
+  const row = target?.closest?.("tr[data-fin-bookkeeping-row]");
+  const link = row?.querySelector?.("[data-fin-month-link]");
+  if (!link) return false;
+
+  if (event.detail > 0 && selection && !selection.isCollapsed && selection.toString()) {
+    if (target.closest?.("[data-fin-month-link]")) event.preventDefault?.();
+    return false;
   }
-  return html`<section class="fin-block" aria-labelledby="fin-currency-heading">
-      <h2 id="fin-currency-heading" class="fin-block__title">Currencies</h2>
-      <table class="fin-table">
-        ${headRow(["Currency", "In (original)", "In (EUR)", "Out (original)", "Out (EUR)"])}
-        <tbody>${summary.byCurrency.map((c) => html`<tr><th scope="row">${e(c.currency)}${(conversionsByCurrency.get(c.currency) || []).map((entry) => {
-          const original = `${e(formatEur(entry.amount))} ${e(entry.currency)}`;
-          const eur = entry.eur === null ? "not converted" : `${formatEur(entry.eur)} EUR`;
-          const rate = entry.rate ? ` · ${e(String(entry.rate))} per EUR` : "";
-          const rateInfo = [source[entry.rateSource], entry.rateDate].filter(Boolean).join(" ");
-          const counterparty = entry.counterparty ? `${e(entry.counterparty)}: ` : "";
-          const category = [entry.category, entry.subtype].filter(Boolean).join(" · ");
-          const classification = category ? ` · ${e(category)}` : "";
-          const booked = entry.amountEur ? ` · booked ${formatEur(entry.amountEur)} EUR` : "";
-          const bookedSource = entry.bookedRateSource ? ` · ${e(entry.bookedRateSource)}` : "";
-          const sourceAndDate = rateInfo ? ` (${e(rateInfo)})` : "";
-          return html`<small class="fin-currency__conversion">${e(entry.date)}: ${counterparty}${original} → ${e(eur)}${rate}${sourceAndDate}`
-            + html`${booked}${bookedSource}${classification}</small>`;
-        }).join("")}</th>
-          ${[c.moneyIn, c.moneyInEur, c.moneyOut, c.moneyOutEur].map((v) => html`<td class="fin-num">${formatEur(v)}</td>`).join("")}</tr>`).join("")}</tbody>
-      </table>
-    </section>`;
+  if (target.closest?.("[data-fin-month-link],button,input,select,textarea,summary,[contenteditable='true'],[role='button']")) return false;
+  if ((event.button !== undefined && event.button !== 0) || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+  link.click();
+  return true;
 }
 
-export function gapsMarkup(summary, e) {
-  const notes = [
-    ...summary.gaps.map((g) => `${g.month ? `${g.month}: ` : ""}${g.message} (${g.count})`),
-    ...(summary.duplicates.length ? [`Bookkeeping-sheet rows dropped as duplicates of invoice or receipt rows (${summary.duplicates.length})`] : []),
-    ...(summary.rateErrors || []).map((message) => `Exchange-rate lookup failed: ${message}`),
-  ];
-  return html`<section class="fin-block" aria-labelledby="fin-gaps-heading">
-      <h2 id="fin-gaps-heading" class="fin-block__title">Data gaps ${notes.length ? html`<span class="fin-count">${notes.length}</span>` : ""}</h2>
-      ${notes.length ? html`<ul class="fin-gaps">${notes.map((n) => html`<li>${e(n)}</li>`).join("")}</ul>` : html`<p class="fin-muted">None found for this period.</p>`}
-      <details class="fin-rules"><summary>How these numbers are made</summary>
-        <ol>${summary.rules.map((rule) => html`<li>${e(rule)}</li>`).join("")}</ol>
-      </details>
-    </section>`;
-}
-
-function periodControlsMarkup(period, today, e) {
-  const year = period.year || (period.month || today).slice(0, 4);
-  const month = period.month || today.slice(0, 7);
+export function periodControlsMarkup(period, today, e) {
+  const currentYear = today.slice(0, 4);
+  const year = period.year || currentYear;
   const years = [];
-  for (let y = Number(today.slice(0, 4)); y >= 2024; y -= 1) years.push(String(y));
-  const pressed = (kind) => (kind in period && !period.implicit) || (kind === "ytd" && period.implicit) ? "true" : "false";
+  for (let y = Number(currentYear); y >= 2024; y -= 1) years.push(String(y));
+  if (!years.includes(year)) years.push(year);
+  years.sort((a, b) => Number(b) - Number(a));
   return html`<div class="fin-period" role="group" aria-label="Period">
-      <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-fin-period="ytd" aria-pressed="${pressed("ytd")}">Year to date</button>
+      <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-fin-period="current-year" aria-pressed="${String(year) === currentYear}">Current year</button>
       <label class="fin-period__field"><span>Year</span>
-        <select class="dk-select" data-fin-year aria-pressed="${pressed("year")}">
+        <select class="dk-select" data-fin-year aria-label="Finance report year">
           ${years.map((y) => html`<option value="${y}"${y === year ? " selected" : ""}>${y}</option>`).join("")}
         </select></label>
-      <label class="fin-period__field"><span>Month</span>
-        <input class="dk-input" type="month" data-fin-month value="${e(month)}" aria-pressed="${pressed("month")}" /></label>
     </div>`;
 }
 
@@ -259,19 +288,16 @@ export function upcomingMarkup(u, e) {
     </section>`;
 }
 
-const cliFlag = (period) =>
-  period.kind === "month" ? `--month ${period.label}` : period.kind === "year" ? `--year ${period.label}` : "--ytd";
+const cliFlag = (period) => `--year ${period.label}`;
 
 export function overviewMarkup(summary, e) {
-  const multi = summary.months.length > 1;
   return html`${headlineMarkup(summary, e)}
-    ${multi ? cashChartMarkup(summary.months, e) + profitChartMarkup(summary.months, e) : ""}
+    ${cashChartMarkup(summary.months, e) + profitChartMarkup(summary.months, e)}
+    ${taxesMarkup(summary, e)}
     <section class="fin-block" aria-labelledby="fin-months-heading">
-      <h2 id="fin-months-heading" class="fin-block__title">${multi ? "By month" : "This month"}</h2>
+      <h2 id="fin-months-heading" class="fin-block__title">By month</h2>
       ${monthTableMarkup(summary, e)}
     </section>
-    ${currencyMarkup(summary, e)}
-    ${gapsMarkup(summary, e)}
     <p class="fin-muted">Same numbers on the command line: <code>dataops finance summary ${e(cliFlag(summary.period))}</code></p>`;
 }
 
@@ -282,7 +308,7 @@ export function createFinanceOverviewSurface(context) {
   let generation = 0;
 
   async function renderFinanceOverviewSurface() {
-    const today = typeof todayIsoDate === "function" ? todayIsoDate() : new Date().toISOString().slice(0, 10);
+    const today = typeof todayIsoDate === "function" ? todayIsoDate() : berlinToday();
     let period = periodFromParams(new URLSearchParams(locationRef?.search || ""), today);
     documentList.replaceChildren();
     const surface = document.createElement("section");
@@ -311,7 +337,7 @@ export function createFinanceOverviewSurface(context) {
 
     async function load() {
       const mine = ++generation;
-      const query = new URLSearchParams(Object.entries(period).filter(([key]) => ["month", "year", "ytd"].includes(key)));
+      const query = new URLSearchParams(Object.entries(period).filter(([key]) => key === "year"));
       body.setAttribute("aria-busy", "true");
       try {
         const summary = await request(workApiUrl(`/api/finance/summary?${query}`));
@@ -329,19 +355,19 @@ export function createFinanceOverviewSurface(context) {
 
     function choose(next) {
       period = next;
-      const params = new URLSearchParams(Object.entries(next).filter(([key]) => ["month", "year", "ytd"].includes(key)));
+      const params = new URLSearchParams(Object.entries(next).filter(([key]) => key === "year"));
       historyRef?.pushState?.({}, "", `${locationRef?.pathname || "/finance"}?${params}`);
       surface.querySelector("[data-fin-controls]").innerHTML = periodControlsMarkup(period, today, escapeHtml);
       load();
     }
 
     surface.addEventListener("click", (event) => {
-      if (event.target.closest("[data-fin-period='ytd']")) choose({ ytd: "1" });
+      activateFinanceMonthlyRow(event, document.getSelection?.());
+      if (event.target.closest("[data-fin-period='current-year']")) choose({ year: today.slice(0, 4) });
       if (event.target.closest("[data-fin-retry]")) load();
     });
     surface.addEventListener("change", (event) => {
       if (event.target.matches("[data-fin-year]")) choose({ year: event.target.value });
-      if (event.target.matches("[data-fin-month]") && MONTH.test(event.target.value)) choose({ month: event.target.value });
     });
     surface.addEventListener("pointerover", (event) => {
       const mark = event.target.closest?.("[data-fin-hover]");

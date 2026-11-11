@@ -11,7 +11,7 @@ import yaml from 'js-yaml';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
-import { createTemplate, listTemplates } from '../src/db/templates';
+import { createTemplate, deleteGitTemplate, listTemplates } from '../src/db/templates';
 import { truncateTestTables } from './helpers/db';
 import {
   loadAuthoredTemplatesFromDirectory,
@@ -206,7 +206,7 @@ describe('Git-authored template projection', () => {
       content: yaml.dump(document),
     }]);
     const created = await reconcileAuthoredTemplates(client, definitions);
-    assert.deepStrictEqual(created, { total: 1, created: 1, updated: 0, unchanged: 0 });
+    assert.deepStrictEqual(created, { total: 1, created: 1, updated: 0, unchanged: 0, deleted: 0 });
     const original = (await listTemplates(client))[0];
     assert.deepStrictEqual(templateToYaml({ ...original }), document);
     assert.notStrictEqual(original.id, document.id);
@@ -235,7 +235,7 @@ describe('Git-authored template projection', () => {
       content: yaml.dump(changedDocument),
     }]);
     const updated = await reconcileAuthoredTemplates(client, changed);
-    assert.deepStrictEqual(updated, { total: 1, created: 0, updated: 1, unchanged: 0 });
+    assert.deepStrictEqual(updated, { total: 1, created: 0, updated: 1, unchanged: 0, deleted: 0 });
     const replacement = (await listTemplates(client))[0];
     assert.deepStrictEqual(templateToYaml({ ...replacement }), changedDocument);
     assert.strictEqual(replacement.id, original.id);
@@ -246,13 +246,13 @@ describe('Git-authored template projection', () => {
     assert.strictEqual(replacement.version, original.version + 1);
 
     const unchanged = await reconcileAuthoredTemplates(client, changed);
-    assert.deepStrictEqual(unchanged, { total: 1, created: 0, updated: 0, unchanged: 1 });
+    assert.deepStrictEqual(unchanged, { total: 1, created: 0, updated: 0, unchanged: 1, deleted: 0 });
     assert.strictEqual((await listTemplates(client))[0].version, replacement.version);
 
     const reduced = parseAuthoredTemplateFiles([{
       path: 'workflow-templates/alpha.yaml', revision: 'blob-c', content: authored('alpha'),
     }]);
-    assert.deepStrictEqual(await reconcileAuthoredTemplates(client, reduced), { total: 1, created: 0, updated: 1, unchanged: 0 });
+    assert.deepStrictEqual(await reconcileAuthoredTemplates(client, reduced), { total: 1, created: 0, updated: 1, unchanged: 0, deleted: 0 });
     const withoutMetadata = (await listTemplates(client))[0];
     assert.deepStrictEqual(templateToYaml({ ...withoutMetadata }), yaml.load(authored('alpha')));
     for (const field of ['authoredId', 'schemaVersion', 'department', 'businessSystem', 'ownerRole', 'status',
@@ -263,7 +263,7 @@ describe('Git-authored template projection', () => {
     assert.strictEqual(withoutMetadata.createdAt, original.createdAt);
     assert.strictEqual(withoutMetadata.version, replacement.version + 1);
     assert.strictEqual(withoutMetadata.sourceRevision, 'blob-c');
-    assert.deepStrictEqual(await reconcileAuthoredTemplates(client, reduced), { total: 1, created: 0, updated: 0, unchanged: 1 });
+    assert.deepStrictEqual(await reconcileAuthoredTemplates(client, reduced), { total: 1, created: 0, updated: 0, unchanged: 1, deleted: 0 });
     assert.deepStrictEqual((await listTemplates(client))[0], withoutMetadata);
   });
 
@@ -279,7 +279,7 @@ describe('Git-authored template projection', () => {
       content: authored('alpha'),
     }]);
     const seeded = await reconcileAuthoredTemplates(client, alpha);
-    assert.deepStrictEqual(seeded, { total: 1, created: 1, updated: 0, unchanged: 0 });
+    assert.deepStrictEqual(seeded, { total: 1, created: 1, updated: 0, unchanged: 0, deleted: 0 });
     const kept = (await listTemplates(client)).find((item) => item.type === 'runtime-only');
     assert.ok(kept);
     assert.strictEqual(kept.origin, 'custom');
@@ -306,23 +306,153 @@ describe('Git-authored template projection', () => {
     assert.strictEqual(kept?.version, 1);
   });
 
-  it('fails closed loudly on stale Git rows', async () => {
-    await createTemplate(client, {
-      type: 'stale-git',
-      name: 'Stale Git',
-      sourcePath: 'workflow-templates/stale-git.yaml',
-      sourceRevision: 'rev-1',
-      taskDefinitions: [{ refId: 'one', description: 'One', offsetDays: 0 }],
-    });
+  it('prunes source-absent Git rows through sync and releases their type guard', async () => {
+    const stale = parseAuthoredTemplateFiles([{
+      path: 'workflow-templates/stale-git.yaml',
+      revision: 'rev-1',
+      content: authored('stale-git'),
+    }]);
+    await reconcileAuthoredTemplates(client, stale);
+    const original = (await listTemplates(client)).find((item) => item.type === 'stale-git');
+    assert.ok(original);
+
     const alpha = parseAuthoredTemplateFiles([{
       path: 'workflow-templates/alpha.yaml',
       revision: 'blob-c',
       content: authored('alpha'),
     }]);
-    await assert.rejects(
-      reconcileAuthoredTemplates(client, alpha),
-      /absent from Git: stale-git/,
-    );
+    assert.deepStrictEqual(await reconcileAuthoredTemplates(client, alpha), {
+      total: 1, created: 1, updated: 0, unchanged: 0, deleted: 1,
+    });
+    assert.deepStrictEqual((await listTemplates(client)).map((item) => item.type), ['alpha']);
+
+    assert.deepStrictEqual(await reconcileAuthoredTemplates(client, [...alpha, ...stale]), {
+      total: 2, created: 1, updated: 0, unchanged: 1, deleted: 0,
+    });
+    const restored = (await listTemplates(client)).find((item) => item.type === 'stale-git');
+    assert.ok(restored);
+    assert.notStrictEqual(restored.id, original.id);
+  });
+
+  it('preserves a source-absent Git Template when any Card still uses it', async () => {
+    const stale = parseAuthoredTemplateFiles([{
+      path: 'workflow-templates/stale-git.yaml',
+      revision: 'rev-1',
+      content: authored('stale-git'),
+    }]);
+    await reconcileAuthoredTemplates(client, stale);
+    const original = (await listTemplates(client)).find((item) => item.type === 'stale-git');
+    assert.ok(original);
+    const { PutCommand } = await import('@aws-sdk/lib-dynamodb');
+    const { TABLE_CARDS } = await import('../src/db/tableNames');
+    await client.send(new PutCommand({
+      TableName: TABLE_CARDS,
+      Item: { PK: 'CARD#still-uses-stale-git', SK: 'CARD#still-uses-stale-git', templateId: original.id },
+    }));
+
+    const alpha = parseAuthoredTemplateFiles([{
+      path: 'workflow-templates/alpha.yaml',
+      revision: 'blob-c',
+      content: authored('alpha'),
+    }]);
+    await assert.rejects(reconcileAuthoredTemplates(client, alpha), /template-in-use/);
+    const preserved = (await listTemplates(client)).find((item) => item.type === 'stale-git');
+    assert.ok(preserved);
+    assert.strictEqual(preserved.id, original.id);
+    assert.deepStrictEqual((await listTemplates(client)).map((item) => item.type), ['stale-git']);
+  });
+
+  it('preserves a source-absent Git Template when an independent Task cites it', async () => {
+    const stale = parseAuthoredTemplateFiles([{
+      path: 'workflow-templates/stale-git.yaml',
+      revision: 'rev-1',
+      content: authored('stale-git'),
+    }]);
+    await reconcileAuthoredTemplates(client, stale);
+    const original = (await listTemplates(client)).find((item) => item.type === 'stale-git');
+    assert.ok(original);
+    const { PutCommand } = await import('@aws-sdk/lib-dynamodb');
+    const { TABLE_TASKS } = await import('../src/db/tableNames');
+    await client.send(new PutCommand({
+      TableName: TABLE_TASKS,
+      Item: { PK: 'TASK#independent-stale-template-use', SK: 'TASK#independent-stale-template-use', templateId: original.id },
+    }));
+
+    const alpha = parseAuthoredTemplateFiles([{
+      path: 'workflow-templates/alpha.yaml',
+      revision: 'blob-c',
+      content: authored('alpha'),
+    }]);
+    await assert.rejects(reconcileAuthoredTemplates(client, alpha), /template-in-use/);
+    const preserved = (await listTemplates(client)).find((item) => item.type === 'stale-git');
+    assert.ok(preserved);
+    assert.strictEqual(preserved.id, original.id);
+    assert.deepStrictEqual((await listTemplates(client)).map((item) => item.type), ['stale-git']);
+  });
+
+  it('preflights every stale Git Template before deleting any of them', async () => {
+    const stale = parseAuthoredTemplateFiles([
+      {
+        path: 'workflow-templates/first-stale.yaml',
+        revision: 'rev-first',
+        content: authored('first-stale'),
+      },
+      {
+        path: 'workflow-templates/second-stale.yaml',
+        revision: 'rev-second',
+        content: authored('second-stale'),
+      },
+    ]);
+    await reconcileAuthoredTemplates(client, stale);
+    const before = await listTemplates(client);
+    assert.equal(before.length, 2);
+
+    // Reference the second row in reconciliation order. A per-row delete loop
+    // would remove the first row before discovering this use.
+    const referenced = before[1];
+    const { PutCommand } = await import('@aws-sdk/lib-dynamodb');
+    const { TABLE_CARDS } = await import('../src/db/tableNames');
+    await client.send(new PutCommand({
+      TableName: TABLE_CARDS,
+      Item: { PK: 'CARD#still-uses-second-stale', SK: 'CARD#still-uses-second-stale', templateId: referenced.id },
+    }));
+
+    const alpha = parseAuthoredTemplateFiles([{
+      path: 'workflow-templates/alpha.yaml',
+      revision: 'blob-c',
+      content: authored('alpha'),
+    }]);
+    await assert.rejects(reconcileAuthoredTemplates(client, alpha), /template-in-use/);
+
+    const after = await listTemplates(client);
+    assert.deepStrictEqual(after.map((item) => item.id).sort(), before.map((item) => item.id).sort());
+    assert.deepStrictEqual(after.map((item) => item.type).sort(), ['first-stale', 'second-stale']);
+  });
+
+  it('checks later filtered Scan pages before pruning a Git Template', async () => {
+    const row = {
+      PK: 'TEMPLATE#stale-git-id', SK: 'TEMPLATE#stale-git-id', id: 'stale-git-id',
+      type: 'stale-git', name: 'Stale Git', version: 1, revision: 'rev-1',
+      origin: 'git', pinned: false, base: {}, cardCreateSeq: 0,
+    };
+    const scans: Record<string, unknown>[] = [];
+    const paginatedClient = {
+      send: async (command: { constructor: { name: string }; input: Record<string, unknown> }) => {
+        if (command.constructor.name === 'GetCommand') return { Item: row };
+        if (command.constructor.name === 'ScanCommand') {
+          scans.push(command.input);
+          return scans.length === 1
+            ? { Count: 0, LastEvaluatedKey: { PK: 'next', SK: 'next' } }
+            : { Count: 1, Items: [{ templateId: row.id }] };
+        }
+        throw new Error(`Unexpected command ${command.constructor.name}`);
+      },
+    } as unknown as DynamoDBDocumentClient;
+
+    await assert.rejects(deleteGitTemplate(paginatedClient, row.id, row.version, row.revision), /template-in-use/);
+    assert.equal(scans.length, 2);
+    assert.equal(scans[0].Limit, undefined);
+    assert.deepEqual(scans[1].ExclusiveStartKey, { PK: 'next', SK: 'next' });
   });
 
   it('fails closed loudly on unclassified rows', async () => {

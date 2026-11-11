@@ -4,11 +4,11 @@ import { enc, optionalString, positional } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 
 /** Download bytes through the authenticated client, preserving binary exports. */
-export async function exportDocument(args, io, route, id) {
+export async function exportDocument(args, io, route, id, formats = ["md", "docx", "txt"]) {
   const format = optionalString(args, "format") || "md";
-  if (!["md", "docx", "txt"].includes(format)) throw new UsageError("--format must be md, docx, or txt.");
+  if (!formats.includes(format)) throw new UsageError(`--format must be ${formats.slice(0, -1).join(", ")}, or ${formats.at(-1)}.`);
   const output = optionalString(args, "output");
-  if (format === "docx" && !output) throw new UsageError("--output PATH is required for DOCX export.");
+  if (["docx", "pdf"].includes(format) && !output) throw new UsageError("--output PATH is required for binary export.");
   const bytes = await apiFor(args).get(route, { query: { format }, responseType: "bytes" });
   if (output) {
     writeFileSync(output, bytes);
@@ -22,6 +22,6 @@ export async function exportDocument(args, io, route, id) {
 }
 
 export async function exportTaskDocument(args, io) {
-  const id = positional(args, 0, "dataops doc export <doc-id> [--format md|docx|txt] [--output PATH]");
-  return exportDocument(args, io, `/api/documents/${enc(id)}/export`, id);
+  const id = positional(args, 0, "dataops doc export <doc-id> [--format md|docx|txt|pdf] [--output PATH]");
+  return exportDocument(args, io, `/api/documents/${enc(id)}/export`, id, ["md", "txt", "docx", "pdf"]);
 }

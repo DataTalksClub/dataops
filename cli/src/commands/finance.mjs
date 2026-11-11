@@ -97,8 +97,11 @@ export function printSummary(io, s) {
     ["Money out", (r) => money(r.moneyOut), "right"],
     ["Net", (r) => money(r.net), "right"],
     ["Profit ex VAT", (r) => money(r.netProfitExVat), "right"],
-    ["Taxes", (r) => money(r.otherTaxes), "right"],
+    ["ESt+Soli", (r) => money(r.incomeTax), "right"],
+    ["GewSt", (r) => money(r.tradeTax), "right"],
     ["TK", (r) => money(r.healthInsurance), "right"],
+    ["Taxes total", (r) => money(r.taxesTotal), "right"],
+    ["Tax refunds", (r) => money(r.taxRefunds), "right"],
     ["Owner pay", (r) => money(r.ownerPay || 0), "right"],
     ["VAT position", (r) => money(r.projectedVat), "right"],
     ["VAT paid", (r) => money(r.vatPaid - r.vatRefunded), "right"],
@@ -109,15 +112,24 @@ export function printSummary(io, s) {
     ["Income net of VAT", t.incomeNetOfVat],
     ["Expenses net of VAT", -t.expensesNetOfVat],
     ["Net profit excluding VAT", t.netProfitExVat],
-    ["Other taxes (Gewerbesteuer, prepayments)", -t.otherTaxes],
+    ["Einkommensteuer + Soli", -t.incomeTax],
+    ["Gewerbesteuer", -t.tradeTax],
+    ["Other taxes", -t.otherTaxes],
     ["Health insurance (TK)", -t.healthInsurance],
+    ["Taxes and TK paid", -t.taxesTotal],
     ["Net after taxes and TK", t.netAfterTaxes],
+    ["Tax refunds received (cash, not a negative tax)", t.taxRefunds],
     ["Owner pay (below net profit)", -(t.ownerPay || 0)],
     ["Net after owner pay", t.netAfterOwnerPay ?? t.netAfterTaxes],
     ["Output VAT", t.outputVat],
     ["Input VAT", -t.inputVat],
     ["VAT paid to / refunded by the Finanzamt", -(t.vatPaid - t.vatRefunded)],
   ], [["Line", (r) => r[0]], ["EUR", (r) => money(r[1]), "right"]]);
+  if (s.taxRefunds.length) {
+    io.print("");
+    io.print("Tax refunds (money in; not revenue, not a negative tax)");
+    for (const r of s.taxRefunds) io.print(`  ${r.date}  ${money(r.eur)}  ${r.id}  ${r.counterparty}`);
+  }
   if (s.byCurrency.length) {
     io.print("");
     grid(io, s.byCurrency, [
@@ -167,7 +179,9 @@ export function printTaxes(io, r) {
     ["Income tax+Soli", (m) => money(m.taxes["income-tax"]), "right"],
     ["Trade tax", (m) => money(m.taxes["trade-tax"]), "right"],
     ["Other tax", (m) => money(m.taxes.other), "right"],
-    ["TK", (m) => money(m.healthInsurance), "right"],
+    ["TK", (m) => money(m.taxes["health-insurance"]), "right"],
+    ["Taxes total", (m) => money(m.taxesTotal), "right"],
+    ["Tax refunds", (m) => money(m.taxRefunds), "right"],
   ]);
   if (r.months.some((m) => m.future)) io.print("* not over yet");
   if (r.gaps.length) {

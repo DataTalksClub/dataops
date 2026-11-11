@@ -128,6 +128,7 @@ export async function getPodcastEpisode(
     new GetCommand({
       TableName: TABLE_PODCAST_EPISODES,
       Key: { PK: key(id), SK: key(id) },
+      ConsistentRead: true,
     }),
   );
   return clean(result.Item as Record<string, unknown> | undefined);

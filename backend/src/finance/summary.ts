@@ -77,8 +77,21 @@ export type Totals = {
   projectedVat: number;
   vatPaid: number;
   vatRefunded: number;
+  /** Einkommensteuer, Körperschaftsteuer and Soli paid. Payments only. */
+  incomeTax: number;
+  /** Gewerbesteuer paid. Payments only. */
+  tradeTax: number;
+  /** Finanzamt taxes of no decisive type paid. Payments only. */
   otherTaxes: number;
+  /** TK health insurance paid. Payments only. */
   healthInsurance: number;
+  /** incomeTax + tradeTax + otherTaxes + healthInsurance. */
+  taxesTotal: number;
+  /**
+   * Tax and TK refunds received: money in, never revenue and never a negative
+   * tax in any year, because a refund settles an earlier assessed year.
+   */
+  taxRefunds: number;
   netAfterTaxes: number;
   /** Paid to the owner personally; shown below net profit, not an expense. */
   ownerPay: number;
@@ -90,6 +103,9 @@ export type Totals = {
 export type Gap = { kind: string; month?: string; message: string; count: number; ids?: string[] };
 export type Duplicate = { keptId: string; droppedId: string; reason: string };
 
+/** A Finanzamt or TK refund: listed with its ledger row, never netted. */
+export type TaxRefund = { id: string; bankKey?: string; date: string; month: string; eur: number | null; taxType: TaxType | null; counterparty: string; description: string };
+
 export type FinanceSummary = {
   period: Period;
   baseCurrency: 'EUR';
@@ -98,6 +114,7 @@ export type FinanceSummary = {
   months: Array<{ month: string; future: boolean } & Totals>;
   byCurrency: Array<{ currency: string; moneyIn: string; moneyOut: string; moneyInEur: number; moneyOutEur: number }>;
   entries: Entry[];
+  taxRefunds: TaxRefund[];
   duplicates: Duplicate[];
   gaps: Gap[];
   rules: string[];
@@ -111,11 +128,12 @@ export const SOURCE_RULES = [
   'A bookkeeping-sheet row that repeats an invoice, sponsor-payment or payout row (same direction, currency and amount, paid within 3 days, same payer or payee) is dropped and listed under duplicates; the non-sheet row is kept.',
   'EUR conversion: a EUR row is taken as is. A non-EUR row uses its booked EUR amount (amountEur, what the bank actually credited or debited), with the implied rate shown. Without one, the ECB reference rate for the paid date (or the last ECB business day before it) is used. A row that cannot be converted is excluded from the totals and listed as a gap.',
   'Lines: category VAT or a Finanzamt USt/UMS.ST purpose in the ledger row or its matched statement reference is VAT paid/refunded; other Finanzamt tax purposes are other taxes; TK/Health Insurance is health insurance. These mandatory payments do not affect operating profit.',
+  'Taxes paid are shown per type: Einkommensteuer (with Soli and Körperschaftsteuer), Gewerbesteuer, TK and other, and as one combined total. Only payments count. A Finanzamt or TK refund is money in and is listed as a tax refund with its ledger row; it is not revenue, not profit, and never a negative tax in any year, because it settles an earlier assessed year.',
   'VAT uses the reviewed ledger vatAmount first, then linked stored document VAT facts. If VAT amount is absent, an explicit VAT rate and net amount or the document gross-minus-net amount determine it; explicit 0% remains zero. Reverse-charge VAT is derived only from an explicit rate and net amount and is counted as both output and input VAT. No rate or source VAT fields means zero VAT.',
   'Refunds from suppliers (credit notes: rows with subtype Refund or a credit-note:<number> source key) are contra-expense: they reduce operating expenses, their VAT reduces input VAT, and they are not money in and not revenue.',
   'Owner pay: ledger rows with category Owner pay (ownerPayType salary, draw, reimbursement or unknown, decided from the booking text and counterparty) are money paid to the owner personally. They are money out, never operating expenses, and appear on their own line below net profit; net after owner pay = net after taxes and TK - owner pay.',
   'Tax types: a mandatory payment carries a taxType (vat, income-tax, trade-tax, health-insurance, other), the stored row value first, otherwise derived from the booking text (Gewerbesteuer = trade-tax; Einkommensteuer, Körperschaftsteuer, Soli = income-tax). Category VAT without a decisive text stays vat. dataops finance taxes shows them per period.',
-  'Net profit excluding VAT = (operating income - output VAT) - (operating expenses - input VAT); supplier refunds reduce the expense side. Taxes and TK are shown as their own lines and in net after taxes; VAT payments and refunds are not profit or loss.',
+  'Net profit excluding VAT = (operating income - output VAT) - (operating expenses - input VAT); supplier refunds reduce the expense side. Net after taxes = net profit excluding VAT - taxes and TK paid; tax refunds and VAT payments and refunds are not profit or loss.',
   'Projected VAT position = output VAT - input VAT: positive is owed to the Finanzamt, negative is a refund. Missing VAT fields contribute zero and do not create a warning.',
 ];
 
@@ -293,11 +311,15 @@ function emptyTotals(): Totals {
   return {
     moneyIn: 0, moneyOut: 0, net: 0, operatingIncome: 0, operatingExpenses: 0, outputVat: 0, inputVat: 0,
     incomeNetOfVat: 0, expensesNetOfVat: 0, netProfitExVat: 0, projectedVat: 0, vatPaid: 0, vatRefunded: 0,
-    otherTaxes: 0, healthInsurance: 0, netAfterTaxes: 0, ownerPay: 0, netAfterOwnerPay: 0, entryCount: 0, unconvertedCount: 0,
+    incomeTax: 0, tradeTax: 0, otherTaxes: 0, healthInsurance: 0, taxesTotal: 0, taxRefunds: 0, netAfterTaxes: 0, ownerPay: 0, netAfterOwnerPay: 0, entryCount: 0, unconvertedCount: 0,
   };
 }
 
-const SUMMED: Array<keyof Totals> = ['moneyIn', 'moneyOut', 'operatingIncome', 'operatingExpenses', 'outputVat', 'inputVat', 'vatPaid', 'vatRefunded', 'otherTaxes', 'healthInsurance', 'ownerPay'];
+const SUMMED: Array<keyof Totals> = ['moneyIn', 'moneyOut', 'operatingIncome', 'operatingExpenses', 'outputVat', 'inputVat', 'vatPaid', 'vatRefunded', 'incomeTax', 'tradeTax', 'otherTaxes', 'healthInsurance', 'taxRefunds', 'ownerPay'];
+
+const TAX_TOTAL: Partial<Record<TaxType, 'incomeTax' | 'tradeTax' | 'otherTaxes'>> = {
+  'income-tax': 'incomeTax', 'trade-tax': 'tradeTax', other: 'otherTaxes',
+};
 
 /** Totals in integer cents, then derived figures, then back to EUR. */
 function total(entries: Entry[]): Totals {
@@ -332,13 +354,15 @@ function total(entries: Entry[]): Totals {
       }
       else { c.operatingIncome += value; c.outputVat += vat; }
     } else if (entry.line === 'vat') c[entry.direction === 'out' ? 'vatPaid' : 'vatRefunded'] += value;
-    else if (entry.line === 'taxes') c.otherTaxes += entry.direction === 'out' ? value : -value;
     else if (entry.line === 'owner-pay') c.ownerPay += entry.direction === 'out' ? value : -value;
-    else c.healthInsurance += entry.direction === 'out' ? value : -value;
+    else if (entry.direction === 'in') c.taxRefunds += value;
+    else if (entry.line === 'health-insurance' || entry.taxType === 'health-insurance') c.healthInsurance += value;
+    else c[TAX_TOTAL[entry.taxType || 'other'] || 'otherTaxes'] += value;
   }
   const incomeNetOfVat = c.operatingIncome - (c.outputVat - reverseChargeOutputVat);
   const expensesNetOfVat = c.operatingExpenses - (c.inputVat - reverseChargeInputVat);
   const netProfitExVat = incomeNetOfVat - expensesNetOfVat;
+  const taxesTotal = c.incomeTax + c.tradeTax + c.otherTaxes + c.healthInsurance;
   const out = emptyTotals();
   for (const key of SUMMED) (out[key] as number) = fromCents(c[key]);
   return {
@@ -348,8 +372,9 @@ function total(entries: Entry[]): Totals {
     expensesNetOfVat: fromCents(expensesNetOfVat),
     netProfitExVat: fromCents(netProfitExVat),
     projectedVat: fromCents(c.outputVat - c.inputVat),
-    netAfterTaxes: fromCents(netProfitExVat - c.otherTaxes - c.healthInsurance),
-    netAfterOwnerPay: fromCents(netProfitExVat - c.otherTaxes - c.healthInsurance - c.ownerPay),
+    taxesTotal: fromCents(taxesTotal),
+    netAfterTaxes: fromCents(netProfitExVat - taxesTotal),
+    netAfterOwnerPay: fromCents(netProfitExVat - taxesTotal - c.ownerPay),
     entryCount: entries.length,
     unconvertedCount,
   };
@@ -513,6 +538,11 @@ export function summarize(input: SummaryInput): FinanceSummary {
       moneyOutEur: fromCents(b.outEur),
     })),
     entries,
+    taxRefunds: entries
+      .filter((entry) => (entry.line === 'taxes' || entry.line === 'health-insurance') && entry.direction === 'in')
+      .map(({ id, bankKey, date, month, eur, taxType, counterparty, description }) => ({
+        id, ...(bankKey ? { bankKey } : {}), date, month, eur, taxType, counterparty, description,
+      })),
     duplicates: periodDuplicates,
     gaps,
     rules: SOURCE_RULES,

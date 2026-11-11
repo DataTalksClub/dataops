@@ -62,7 +62,7 @@ subcommands, flags, and examples.
 | `templates` | `list`, `show`, `create`, `update`, `reset`, `delete`, `sync` (see Template editing below) |
 | `kb` | knowledge base: `search`, `related <task|card>`, `show`, `tree`, `ls`, `resolve`, `backlinks`, `history`, `write`, `publish` |
 | `newsletter` | issues and their sponsor slots: `list`, `show`, `create`, `update`, `delete`, `dismiss-alert` |
-| `podcast` | episodes: `list`, `show`, `create`, `update`, `create-card` |
+| `podcast` | episodes: `list`, `show`, `create`, `update`, `create-card`, `delete` |
 | `speakers` | website speaker/author profiles: `list`, `show`, `create`, `update` |
 | `books` | Book of the Week entries: `list`, `show`, `create`, `update` |
 | `events` | past events archive (Luma descriptions, speakers, recordings): `list` (`--course`, `--date`), `show`, `create`, `update`, `delete`, `import` |
@@ -341,3 +341,19 @@ The JSON response keeps `reportPeriod`, `format`, `count`, `excludedCount` and
 an email body. It uses the same report rows, cash-date ordering, EUR values and
 readiness gates as CSV/TSV. HTML retains the original cell text and line breaks;
 spreadsheet-only formula protection is unnecessary in escaped HTML text.
+
+Podcast register deletion is admin-only. Inspect with
+`dataops podcast delete <episode-id> --dry-run` (read-only); execute with `--yes`.
+The server requires an allowlisted, exactly confirmed episode version, cancelled
+status, no publication/history evidence, no existing Card or Tasks, and no active
+recording hold. A stale `cardId` whose Card and Tasks are gone is safe. Preview
+reports blockers and identity fields; `--yes` cannot override them. Only the row
+is removed: no email, calendar cancellation, or public event changes occur.
+After deletion, `podcast show` exits 4 and both default and cancelled lists omit
+the id (the date index can briefly lag the write).
+
+Candidate policy entries are deliberately unconfirmed. Confirmation requires a
+reviewed change to `backend/src/podcast/episodeDeletion.ts` after the exact UUIDs
+are confirmed on the private intake; record the observed version and evidence
+reference, without copying private operational details into this repository.
+Names and CLI flags cannot grant authorization.

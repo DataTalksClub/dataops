@@ -13,6 +13,8 @@ import { TABLE_CARDS, TABLE_PODCAST_EPISODES } from "../src/db/tableNames";
 import { buildHold } from "../src/calendar/holds";
 import { getCalendarHold, listCalendarHolds, putCalendarHold } from "../src/db/calendarHolds";
 import { handlePodcastEpisodeRoutes } from "../src/routes/podcastEpisodes";
+import { executeEpisodeDeletion } from '../src/podcast/episodeDeletion';
+import { getPodcastEpisode } from '../src/db/podcastEpisodes';
 import { EPISODE_STAGES, statusFromCard } from "../src/podcast/cardStatus";
 import { addDays, isoWeekday, takenRecordingDates } from "../src/podcast/recordingSlots";
 import { berlinToday, setOwnerCalendarProviderClientsForTests } from "../src/calendar/ownerCalendarOverlay";
@@ -89,7 +91,21 @@ describe("podcast episodes", () => {
     assert.equal(data(await invoke("GET", `/api/podcast-episodes/${episode.id}`)).version, 3);
 
     assert.equal((await invoke("DELETE", `/api/podcast-episodes/${episode.id}`, { version: 2 })).statusCode, 409);
-    assert.equal((await invoke("DELETE", `/api/podcast-episodes/${episode.id}`, { version: 3 })).statusCode, 204);
+    assert.equal((await invoke("DELETE", `/api/podcast-episodes/${episode.id}`, { version: 3, yes: true })).statusCode, 409);
+    const cancelled = data(await invoke("PUT", `/api/podcast-episodes/${episode.id}`, { version: 3, status: "cancelled" }));
+    const result = await executeEpisodeDeletion(client, (await getPodcastEpisode(client, episode.id))!, {
+      [episode.id]: {
+        version: cancelled.version,
+        evidence: "synthetic identity confirmation",
+        title: booked.title,
+        guests: booked.guests.map(g => g.name),
+        recordingDate: booked.recordingDate,
+      },
+    });
+    assert.equal(result.deleted, true);
+    for (const query of [{}, { status: "cancelled" }]) {
+      assert.ok(!data(await invoke("GET", "/api/podcast-episodes", undefined, query)).items.some((item: any) => item.id === episode.id));
+    }
     assert.equal((await invoke("GET", `/api/podcast-episodes/${episode.id}`)).statusCode, 404);
   });
 

@@ -11,9 +11,12 @@ import { expandTemplateIncludes, parseBlockFiles, type AuthoredBlockFile } from 
 import { invalidateTemplateTypeMap } from '../cards/createCard';
 import {
   createTemplateWithGuard,
+  deleteGitTemplate,
   ensureTypeGuard,
   listTemplates,
   replaceSeedTemplate,
+  TemplateEditForbiddenError,
+  templatesInUse,
   writeSeedTemplateFields,
   TemplateDuplicateTypeError,
   TemplateVersionConflictError,
@@ -43,6 +46,7 @@ export interface TemplateReconciliationResult {
   created: number;
   updated: number;
   unchanged: number;
+  deleted: number;
 }
 
 const AUTHORITATIVE_FIELDS = [
@@ -285,10 +289,10 @@ function isCanonicalGitRow(template: Template): boolean {
  * Reconcile Git definitions into their DynamoDB projection.
  *
  * Classification is pure and runs before any write. Canonical `git` rows
- * follow the normal update path; malformed `git` rows, explicit `custom`
- * rows colliding with an authored type, and any unclassified rows fail
- * closed before writes. No silent adoption, no silent deletion, no per-row
- * fallbacks.
+ * follow the normal update path; canonical Git rows whose source disappeared
+ * are removed only through the guarded Git sync path. Malformed `git` rows,
+ * explicit `custom` rows colliding with an authored type, and unclassified
+ * rows fail closed before writes. No silent adoption or per-row fallbacks.
  */
 export async function reconcileAuthoredTemplates(
   client: DynamoDBDocumentClient,
@@ -300,6 +304,7 @@ export async function reconcileAuthoredTemplates(
 
   const existing = await listTemplates(client);
   const byType = runtimeTypes(existing);
+  const staleGitTemplates: Template[] = [];
   const duplicateRuntimeTypes = [...byType.entries()]
     .filter(([, templates]) => templates.length > 1)
     .map(([type]) => type || '(missing)')
@@ -314,12 +319,11 @@ export async function reconcileAuthoredTemplates(
     const type = String(template.type || '');
     const origin = template.origin;
     if (origin === 'git') {
-      if (!type || !authoredTypes.has(type)) {
-        throw new Error(`Runtime workflow template types are absent from Git: ${type || '(missing)'}`);
-      }
       if (!isCanonicalGitRow(template)) {
         throw new Error(`Malformed canonical Git workflow template ${template.id}: missing revision, pinned, or base`);
       }
+      if (!type) throw new Error(`Malformed canonical Git workflow template ${template.id}: missing type`);
+      if (!authoredTypes.has(type)) staleGitTemplates.push(template);
       continue;
     }
     if (origin === 'custom') {
@@ -346,6 +350,14 @@ export async function reconcileAuthoredTemplates(
     }
   }
 
+  // Check the entire stale set before any deletion or type-guard write. A
+  // removed source with any live Card, Task, Calendar record, or notification
+  // reference stops the sync before it can prune a subset of the templates.
+  if (staleGitTemplates.length > 0) {
+    const inUse = await templatesInUse(client, staleGitTemplates.map((template) => template.id));
+    if (inUse.size > 0) throw new TemplateEditForbiddenError('template-in-use');
+  }
+
   // Claim or verify TEMPLATE_TYPE# guards before any create.
   // A guard owned by another row is a real duplicate the seed must not silently merge.
   for (const template of existing) {
@@ -357,7 +369,19 @@ export async function reconcileAuthoredTemplates(
     created: 0,
     updated: 0,
     unchanged: 0,
+    deleted: 0,
   };
+  for (const template of staleGitTemplates) {
+    const removed = await deleteGitTemplate(
+      client,
+      template.id,
+      template.version,
+      template.revision as string,
+    );
+    if (!removed) continue;
+    invalidateTemplateTypeMap();
+    result.deleted += 1;
+  }
   for (const definition of authored) {
     const fields = definitionFields(definition);
     const base = { ...fields };

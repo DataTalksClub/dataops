@@ -1,3 +1,4 @@
+import { advanceForMaterialChange } from '../sponsorCrm/readiness';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'crypto';
 import { DeleteCommand, GetCommand, PutCommand, ScanCommand, TransactWriteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
@@ -397,6 +398,8 @@ export async function createDeliverableAtomic(client:DynamoDBDocumentClient,valu
 
 export async function updateDeliverableAtomic(client:DynamoDBDocumentClient,existing:CrmRecord,value:Record<string,unknown>,actorId:string){
   const now=new Date().toISOString(),next={...existing,...value,id:existing.id,createdAt:existing.createdAt,updatedAt:now,version:existing.version+1} as CrmRecord,previous=String(existing.scheduleEntryId||''),target=String(next.scheduleEntryId||'');
+  const advanced = advanceForMaterialChange(existing, value);
+  if (advanced) next.readiness = advanced;
   // A null link clears it.
   for(const name of ['cardId','newsletterIssueId'])if(next[name]===null)delete next[name];
   const items:any[]=[{Put:{TableName:TABLE_SPONSOR_CRM,Item:stored('deliverable',next),ConditionExpression:'#version = :version',ExpressionAttributeNames:{'#version':'version'},ExpressionAttributeValues:{':version':existing.version}}},historyPut(`deliverable:${existing.id}`,{actorId,entityKind:'deliverable',entityId:existing.id,action:'updated'})];

@@ -1,3 +1,4 @@
+import { resolveProfile } from '../config.mjs';
 import { exportTaskDocument } from './documents-transfer.mjs';
 import { readFileSync } from 'node:fs';
 import { UsageError } from '../errors.mjs';
@@ -10,9 +11,10 @@ export const help = `dataops doc - editable task documents
 Usage
   dataops doc list --task ID
   dataops doc show <id>
+  dataops doc preview <id>
   dataops doc create --task ID --kind transcript|timecodes|summary|note --title TITLE [--file PATH | --content TEXT] [--from ID]
   dataops doc delete <id> --version N
-  dataops doc export <id> [--format txt|md|docx] [--output PATH]
+  dataops doc export <id> [--format txt|md|docx|pdf] [--output PATH]
   dataops doc update <id> [--title TITLE] [--file PATH | --content TEXT] --version N
   dataops doc comment list <id>
   dataops doc comment add <id> --body TEXT [--quote TEXT]
@@ -159,4 +161,10 @@ function subcommand(map, args, io, prefix, name) {
 }
 const commentCommands = { list: commentList, add: commentAdd, reply: commentReply, resolve: commentResolve, delete: commentDelete };
 const reviewerCommands = { list: reviewerList, add: reviewerAdd, revoke: reviewerRevoke };
-export const commands = { list, show, create, update, export: exportTaskDocument, delete: remove, comment, reviewer };
+function preview(args, io) {
+  const id = positional(args, 0, 'dataops doc preview <id>');
+  const url = `${resolveProfile(args).url}/api/documents/${enc(id)}/preview`;
+  if (!args.json) io.print(url);
+  return { url };
+}
+export const commands = { preview, list, show, create, update, export: exportTaskDocument, delete: remove, comment, reviewer };
