@@ -63,9 +63,9 @@ jobs:
 
       - name: Install backend Playwright Chromium
         run: |
-          # The runner's Azure mirror can fail DNS before Playwright installs
-          # dependencies. Use Ubuntu's HTTPS archive directly for this job.
-          sudo sed -i 's|mirror+file:/etc/apt/apt-mirrors.txt|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
+          # Apt also reads mirror-list sources on the runner. Replace that list
+          # directly so no source can select the failing Azure mirror.
+          printf '%s\n' 'https://archive.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors.txt > /dev/null
           npm exec --workspace dataops-backend -- playwright install --with-deps chromium
 
       - name: Run backend Playwright E2E
