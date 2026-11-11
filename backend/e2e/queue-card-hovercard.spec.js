@@ -3,6 +3,7 @@
 // podcast Card. A phone has no hover: the info button beside the name opens
 // the summary and a tap on the name opens the Card.
 const { test, expect } = require('@playwright/test');
+const { releaseFriday } = require('./helpers/release-friday');
 const { setupPageWithAuth } = require('./helpers/auth');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolated-capability-server');
@@ -43,7 +44,8 @@ test.beforeAll(async () => {
     guests: [{ name: 'Hova Example' }],
     status: 'recorded',
     recordingDate: isoDate(-3),
-    releaseDate: isoDate(20),
+    releaseAssignmentStatus: 'final',
+    releaseDate: releaseFriday(20),
     links: { youtube: 'https://www.youtube.com/watch?v=synthetic-hover' },
   });
   card = (await api('POST', `/api/podcast-episodes/${episode.id}/card`, { version: episode.version })).card;

@@ -1,11 +1,12 @@
 // Podcast: the episode register as a dakit list–detail split. /podcast opens
-// on the seasons overview; /podcast?view=list is the plain list, which opens
-// on what's in flight. A row or cell opens /podcast/<id> in place, the detail
+// on the Pipeline lane (what's in flight); /podcast?view=seasons is the seasons
+// overview. A row or cell opens /podcast/<id> in place, the detail
 // link survives a reload, and Create card makes the episode's Card from the
 // podcast Template and links it. A phone shows one pane with Back.
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
+const { releaseFriday } = require('./helpers/release-friday');
 const { setupPageWithAuth } = require('./helpers/auth');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolated-capability-server');
@@ -46,15 +47,15 @@ test.beforeAll(async () => {
     },
   });
   const fixtures = [
-    ['next', { season: 25, episode: 4, title: 'Shipping models on a budget', guests: [{ name: 'Ada Example' }], status: 'booked', recordingDate: isoDate(5) }],
+    ['next', { season: 25, episode: 4, releaseAssignmentStatus: 'provisional', releaseDate: releaseFriday(35), title: 'Shipping models on a budget', guests: [{ name: 'Ada Example' }], status: 'booked', recordingDate: isoDate(5) }],
     ['edited', {
-      season: 25, episode: 3, title: 'Data contracts in practice', guests: [{ name: 'Bo Placeholder' }], status: 'edited',
-      recordingDate: isoDate(-12), releaseDate: isoDate(9), notes: 'Synthetic note: trim the intro.',
+      season: 25, episode: 3, releaseAssignmentStatus: 'final', title: 'Data contracts in practice', guests: [{ name: 'Bo Placeholder' }], status: 'edited',
+      recordingDate: isoDate(-12), releaseDate: releaseFriday(16), notes: 'Synthetic note: trim the intro.',
     }],
-    ['later', { season: 25, episode: 5, title: 'Feature stores revisited', guests: [{ name: 'Cy Sample' }, { name: 'Di Mock' }], status: 'booked', recordingDate: isoDate(19) }],
+    ['later', { season: 25, episode: 5, releaseAssignmentStatus: 'provisional', releaseDate: releaseFriday(42), title: 'Feature stores revisited', guests: [{ name: 'Cy Sample' }, { name: 'Di Mock' }], status: 'booked', recordingDate: isoDate(19) }],
     ['published', {
-      season: 25, episode: 2, title: 'From notebook to service', guests: [{ name: 'Eve Fixture' }], status: 'published',
-      recordingDate: isoDate(-60), releaseDate: isoDate(-30),
+      season: 25, episode: 2, releaseAssignmentStatus: 'final', title: 'From notebook to service', guests: [{ name: 'Eve Fixture' }], status: 'published',
+      recordingDate: isoDate(-60), releaseDate: releaseFriday(-30),
       publication: { spotify: { publicVerifiedAt: new Date(Date.now() - 29 * 86400000).toISOString(), episodeUrl: 'https://open.spotify.com/episode/synthetic1' } },
       links: {
         youtube: 'https://www.youtube.com/watch?v=synthetic1',
@@ -63,7 +64,7 @@ test.beforeAll(async () => {
         website: 'https://datatalks.example/podcast/s25e2',
       },
     }],
-    ['older', { season: 24, episode: 9, title: 'Hiring your first data engineer', guests: [{ name: 'Fay Dummy' }], status: 'published', releaseDate: isoDate(-200), publication: { spotify: { publicVerifiedAt: new Date(Date.now() - 199 * 86400000).toISOString(), episodeUrl: 'https://open.spotify.com/episode/synthetic0' } } }],
+    ['older', { season: 24, episode: 9, releaseAssignmentStatus: 'final', title: 'Hiring your first data engineer', guests: [{ name: 'Fay Dummy' }], status: 'published', releaseDate: releaseFriday(-200), publication: { spotify: { publicVerifiedAt: new Date(Date.now() - 199 * 86400000).toISOString(), episodeUrl: 'https://open.spotify.com/episode/synthetic0' } } }],
   ];
   for (const [key, body] of fixtures) episodes[key] = await api('POST', '/api/podcast-episodes', body);
 });
@@ -83,7 +84,7 @@ async function shoot(page, name) {
 test('podcast list opens an episode in place, deep-links it, and creates its card', async ({ page }) => {
   await page.setViewportSize(DESKTOP);
   await setupPageWithAuth(page);
-  await page.goto(`${server.baseURL}/podcast?view=list`);
+  await page.goto(`${server.baseURL}/podcast`);
   await expect(page.getByRole('heading', { level: 1, name: 'Podcast' })).toBeVisible();
   await expect(page.locator('#podcast-nav-button')).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('.dk-stat-strip')).toHaveCount(0);
@@ -93,16 +94,18 @@ test('podcast list opens an episode in place, deep-links it, and creates its car
   await expect(rows.first()).toContainText('Ada Example — Shipping models on a budget');
   await expect(rows.nth(1)).toContainText('S25E3');
 
-  await page.getByRole('radio', { name: 'All' }).click();
-  await expect(rows).toHaveCount(5);
-  await expect(page.locator('.podcast-group__label')).toHaveText(['Upcoming', 'Season 25', 'Season 24']);
-  await page.getByRole('searchbox', { name: 'Search episodes by guest or title' }).fill('eve');
+  // The list is the Pipeline lane: published episodes live on the seasons overview.
+  await page.getByRole('radio', { name: 'Edited' }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText('S25E3');
+  await page.getByRole('radio', { name: 'Pipeline' }).click();
+  await expect(rows).toHaveCount(3);
+  await page.getByRole('searchbox', { name: 'Search episodes by guest or title' }).fill('cy');
   await expect(rows).toHaveCount(1);
   await page.getByRole('searchbox', { name: 'Search episodes by guest or title' }).fill('');
   await shoot(page, 'list');
 
-  await page.locator(`[data-episode-id="${episodes.published.id}"]`).click();
-  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.published.id}\\?view=list$`));
+  await page.goto(`${server.baseURL}/podcast/${episodes.published.id}?view=seasons`);
   const detail = page.getByRole('region', { name: 'Selected episode' });
   await expect(detail.locator('.dk-split__title')).toHaveText('From notebook to service');
   await expect(detail.locator('.podcast-link')).toHaveText(['YouTube', 'Spotify', 'Apple Podcasts', 'Website']);
@@ -114,8 +117,9 @@ test('podcast list opens an episode in place, deep-links it, and creates its car
   await expect(detail.getByRole('button', { name: 'Create card' })).toHaveCount(0);
   await shoot(page, 'detail-links');
 
+  await page.goto(`${server.baseURL}/podcast`);
   await page.locator(`[data-episode-id="${episodes.next.id}"]`).click();
-  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.next.id}\\?view=list$`));
+  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.next.id}$`));
   await page.reload();
   await expect(detail.locator('.dk-split__title')).toHaveText('Shipping models on a budget');
   await expect(page.locator(`[data-episode-id="${episodes.next.id}"]`)).toHaveAttribute('aria-current', 'true');
@@ -131,7 +135,7 @@ test('podcast list opens an episode in place, deep-links it, and creates its car
   expect(linked.card.id).toBeTruthy();
   // The Card opens over the episode; Back closes it there.
   await chip.click();
-  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.next.id}\\?view=list&card=${linked.card.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.next.id}\\?card=${linked.card.id}$`));
   await expect(page.locator('#card-panel')).toBeVisible();
   await page.goBack();
   await expect(page.locator('#card-panel')).toBeHidden();
@@ -168,7 +172,7 @@ test('an edit made elsewhere is a conflict that keeps the typed values', async (
 test('New episode loads before it opens and lands on the created episode', async ({ page }) => {
   await page.setViewportSize(DESKTOP);
   await setupPageWithAuth(page);
-  await page.goto(`${server.baseURL}/podcast`);
+  await page.goto(`${server.baseURL}/podcast?view=seasons`);
   await expect(page.locator('.podcast-season').first()).toBeVisible();
   await page.keyboard.press('c');
   const dialog = page.getByRole('dialog', { name: 'New episode' });
@@ -210,8 +214,8 @@ test('a phone shows the list, then the deep-linked episode with Back', async ({ 
 test('schedule shows not-recorded without evidence and keeps plan apart from evidence', async ({ page }) => {
   await page.setViewportSize(DESKTOP);
   const gated = await api('POST', '/api/podcast-episodes', {
-    season: 26, episode: 1, title: 'Synthetic gated episode', guests: [{ name: 'Gil Gate' }],
-    status: 'edited', recordingDate: isoDate(-20), releaseDate: isoDate(5),
+    season: 26, episode: 1, releaseAssignmentStatus: 'final', title: 'Synthetic gated episode', guests: [{ name: 'Gil Gate' }],
+    status: 'edited', recordingDate: isoDate(-20), releaseDate: releaseFriday(5),
   });
   await setupPageWithAuth(page);
   await page.goto(`${server.baseURL}/podcast`);
@@ -238,7 +242,7 @@ test('schedule shows not-recorded without evidence and keeps plan apart from evi
   await detail.getByLabel('Spotify scheduled for').fill(future);
   await detail.getByRole('button', { name: 'Save episode' }).click();
   await expect(detail.locator('[data-track="spotify"]')).toHaveText('Scheduled in Spotify');
-  expect((await api('GET', `/api/podcast-episodes/${gated.id}`)).releaseDate).toBe(isoDate(5));
+  expect((await api('GET', `/api/podcast-episodes/${gated.id}`)).releaseDate).toBe(releaseFriday(5));
 
   // Transcript review needs proof.
   await detail.getByRole('button', { name: 'Edit' }).click();
@@ -269,29 +273,23 @@ test('schedule shows not-recorded without evidence and keeps plan apart from evi
 
 // The API refuses a second episode with the same number, so duplicates are
 // covered by the unit tests; here the overview shows gaps.
-test('seasons overview shows each season as status cells, the Pipeline lane and gaps', async ({ page }) => {
+test('seasons overview shows each season as status cells and gaps, and Pipeline flags a stuck episode', async ({ page }) => {
   const stuck = await api('POST', '/api/podcast-episodes', {
     title: 'Synthetic stuck interview', guests: [{ name: 'Hal Stuck' }], status: 'recorded', recordingDate: isoDate(-120),
   });
   await page.setViewportSize(DESKTOP);
   await setupPageWithAuth(page);
-  await page.goto(`${server.baseURL}/podcast`);
+  await page.goto(`${server.baseURL}/podcast?view=seasons`);
   await expect(page.locator('.podcast-views [data-podcast-view="seasons"]')).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('.podcast-season')).toHaveCount(3);
   await expect(page.locator('.podcast-season__title')).toHaveText(['Season 26', 'Season 25', 'Season 24']);
   const s25 = page.locator('.podcast-season[data-season="25"]');
-  await expect(s25.locator('.podcast-cell')).toHaveText(['E1', 'E2', 'E3', 'E4', 'E5', 'E6']);
+  await expect(s25.locator('.podcast-cell')).toHaveText(['E1', 'E2', 'E3', 'E4', 'E5']);
   await expect(s25.locator('.podcast-cell--gap')).toHaveText(['E1']);
   await expect(s25.locator(`[data-episode-id="${episodes.edited.id}"]`)).toHaveAttribute('data-status', 'edited');
   const s24 = page.locator('.podcast-season[data-season="24"]');
   await expect(s24.locator('.podcast-season__head')).toHaveText(/^Season 24\s*1 published$/);
   await expect(s24.locator('.podcast-cell--gap')).toHaveCount(8);
-  const lane = page.locator('.podcast-pipeline');
-  await expect(lane.locator('.podcast-group__label')).toHaveText('Pipeline');
-  await expect(lane.locator('.dk-split__item')).toHaveCount(1);
-  await expect(lane.locator(`[data-episode-id="${stuck.id}"]`)).toContainText('Stuck');
-  await expect(lane.locator(`[data-episode-id="${stuck.id}"] .podcast-row__flag`))
-    .toHaveAttribute('title', 'Stuck: recorded 4 months ago, still not edited');
   // Nothing open: no detail pane, the overview takes the whole width.
   const detail = page.getByRole('region', { name: 'Selected episode' });
   await expect(detail).toHaveCount(0);
@@ -301,6 +299,14 @@ test('seasons overview shows each season as status cells, the Pipeline lane and 
   expect(listBox.width).toBeGreaterThan(splitBox.width - 4);
   await expect(page.locator('.dk-stat-strip')).toHaveCount(0);
   await shoot(page, 'seasons');
+
+  // In-flight episodes with no season live in the Pipeline view, flagged when stuck.
+  await page.goto(`${server.baseURL}/podcast`);
+  const stuckRow = page.locator(`[data-episode-id="${stuck.id}"]`);
+  await expect(stuckRow).toContainText('Stuck');
+  await expect(stuckRow.locator('.podcast-row__flag'))
+    .toHaveAttribute('title', 'Stuck: recorded 4 months ago, still not edited');
+  await page.goto(`${server.baseURL}/podcast?view=seasons`);
 
   // Hover shows the summary; a click opens the episode in the detail pane.
   const cell = s25.locator(`[data-episode-id="${episodes.published.id}"]`);
@@ -312,7 +318,7 @@ test('seasons overview shows each season as status cells, the Pipeline lane and 
   await shoot(page, 'seasons-hover');
   await page.mouse.move(0, 0);
   await cell.click();
-  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.published.id}$`));
+  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.published.id}\\?view=seasons$`));
   await expect(detail.locator('.dk-split__title')).toHaveText('From notebook to service');
   await expect(cell).toHaveAttribute('aria-current', 'true');
   expect((await page.locator('.podcast-split > .dk-split__list').boundingBox()).width).toBeLessThan(splitBox.width - 200);
@@ -320,7 +326,7 @@ test('seasons overview shows each season as status cells, the Pipeline lane and 
 
   // Close puts the overview back at full width; the episode reopens from its cell.
   await detail.getByRole('button', { name: 'Close episode' }).click();
-  await expect(page).toHaveURL(/\/podcast$/);
+  await expect(page).toHaveURL(/\/podcast\?view=seasons$/);
   await expect(detail).toHaveCount(0);
   await cell.click();
   await expect(detail.locator('.dk-split__title')).toHaveText('From notebook to service');
@@ -331,15 +337,15 @@ test('seasons overview shows each season as status cells, the Pipeline lane and 
   await page.keyboard.press('Tab');
   await expect(page.locator('.podcast-peek-card')).toContainText('Fay Dummy — Hiring your first data engineer');
 
-  // The list is one URL away and keeps the open episode.
-  await page.locator('.podcast-views [data-podcast-view="list"]').click();
-  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.published.id}\\?view=list$`));
+  // The Pipeline is one URL away and keeps the open episode.
+  await page.locator('.podcast-views [data-podcast-view="pipeline"]').click();
+  await expect(page).toHaveURL(new RegExp(`/podcast/${episodes.published.id}$`));
   await expect(page.locator('.podcast-status-filter')).toBeVisible();
   await page.reload();
-  await expect(page.locator('.podcast-views [data-podcast-view="list"]')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('.podcast-views [data-podcast-view="pipeline"]')).toHaveAttribute('aria-current', 'page');
 
   await page.setViewportSize(NARROW);
-  await page.goto(`${server.baseURL}/podcast`);
+  await page.goto(`${server.baseURL}/podcast?view=seasons`);
   await expect(page.locator('.podcast-season').first()).toBeVisible();
   await expect(page.locator('.dk-split__detail')).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);

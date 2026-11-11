@@ -82,7 +82,7 @@ describe("seasons model", () => {
   });
 });
 
-function harness({ routeId = "", view = "" } = {}) {
+function harness({ routeId = "", view = "seasons" } = {}) {
   const documentList = new FakeElement("main");
   const body = new FakeElement("body");
   const document = new FakeDocument(documentList, body);
@@ -115,14 +115,14 @@ function harness({ routeId = "", view = "" } = {}) {
   return { surface, documentList, calls };
 }
 
-describe("Podcast seasons view", () => {
-  test("is the default: cells per season, gaps, duplicates, and the Pipeline lane, full width", async () => {
+describe("Podcast Seasons / Episodes view", () => {
+  test("shows the season register in its own pane, with gaps and duplicates", async () => {
     const { surface, documentList } = harness();
     surface.renderPodcastSurface();
     await nextTicks(4);
     const tabs = documentList.querySelector(".podcast-views");
     assert.equal(tabs.querySelector('[data-podcast-view="seasons"]').getAttribute("aria-current"), "page");
-    assert.equal(tabs.querySelector('[data-podcast-view="list"]').href, "/podcast?view=list");
+    assert.equal(tabs.querySelector('[data-podcast-view="pipeline"]').href, "/podcast");
     assert.equal(documentList.querySelector(".dk-split").dataset.dkSplit, "podcast-seasons");
     assert.equal(documentList.querySelector(".podcast-status-filter"), null, "the grid has no status filter");
 
@@ -135,17 +135,12 @@ describe("Podcast seasons view", () => {
     assert.equal(findAllByClass(s3, "podcast-cell--gap").length, 2);
     const duplicate = s3.querySelector('[data-episode-id="s3e4a"]');
     assert.ok(duplicate.classList.contains("podcast-cell--duplicate"));
-    assert.match(duplicate.getAttribute("aria-label"), /^S3E4, Published, Guest s3e4a — Synthetic s3e4a, number used twice$/);
+    assert.match(duplicate.getAttribute("aria-label"), /^S3E4, Published, Guest s3e4a — Synthetic s3e4a, number used twice, Unassigned release assignment$/);
     const recorded = documentList.querySelector('[data-episode-id="s4e2"]');
     assert.equal(recorded.dataset.status, "recorded");
     assert.equal(recorded.dataset.flag, undefined, "recorded two weeks ago is not stuck");
 
-    const lane = documentList.querySelector(".podcast-pipeline");
-    assert.ok(findByText(lane, "Pipeline", "h3"));
-    assert.deepEqual(findAllByClass(lane, "dk-split__item").map((row) => row.dataset.episodeId), ["kim", "late", "booked"]);
-    const stuck = findByText(lane.querySelector('[data-episode-id="kim"]'), "Stuck");
-    assert.equal(stuck.title, "Stuck: recorded 4 months ago, still not edited");
-    assert.ok(findByText(lane.querySelector('[data-episode-id="late"]'), "Late"));
+    assert.equal(documentList.querySelector(".podcast-pipeline"), null, "Pipeline is a separate pane");
     assert.ok(findByText(documentList, "No season", "h3"));
 
     const split = documentList.querySelector(".dk-split");
@@ -153,23 +148,23 @@ describe("Podcast seasons view", () => {
     assert.equal(documentList.querySelector(".dk-split__detail"), null, "no pane until an episode opens");
   });
 
-  test("a cell opens the episode in place; Back and the List tab keep the view in the URL", async () => {
+  test("a cell opens the episode in place; Back and the Pipeline tab keep the view in the URL", async () => {
     const { surface, documentList, calls } = harness();
     surface.renderPodcastSurface();
     await nextTicks(4);
     await documentList.querySelector('.podcast-cell[data-episode-id="s3e4b"]').dispatch("click", { button: 0 });
-    assert.deepEqual(calls.at(-1), ["navigate", "/podcast/s3e4b", {}, { render: false }]);
+    assert.deepEqual(calls.at(-1), ["navigate", "/podcast/s3e4b", { view: "seasons" }, { render: false }]);
     assert.equal(documentList.querySelector('.podcast-cell[data-episode-id="s3e4b"]').getAttribute("aria-current"), "true");
     assert.equal(documentList.querySelector(".dk-split").dataset.pane, "open");
     assert.ok(findByText(documentList.querySelector(".dk-split__detail"), "Synthetic s3e4b", "h2"));
 
     await documentList.querySelector(".podcast-detail-close").dispatch("click");
-    assert.deepEqual(calls.at(-1), ["navigate", "/podcast", {}, { restoreFocus: { kind: "split-list" } }]);
+    assert.deepEqual(calls.at(-1), ["navigate", "/podcast", { view: "seasons" }, { restoreFocus: { kind: "split-list" } }]);
     assert.equal(documentList.querySelector(".dk-split__detail"), null);
     await documentList.querySelector('.podcast-cell[data-episode-id="s3e4b"]').dispatch("click", { button: 0 });
 
-    await documentList.querySelector('[data-podcast-view="list"]').dispatch("click", { button: 0 });
-    assert.deepEqual(calls.at(-1), ["navigate", "/podcast/s3e4b", { view: "list" }, {}]);
+    await documentList.querySelector('[data-podcast-view="pipeline"]').dispatch("click", { button: 0 });
+    assert.deepEqual(calls.at(-1), ["navigate", "/podcast/s3e4b", {}, {}]);
     assert.ok(documentList.querySelector(".podcast-status-filter"), "the list keeps its filters");
     assert.equal(documentList.querySelector(".podcast-season"), null);
   });

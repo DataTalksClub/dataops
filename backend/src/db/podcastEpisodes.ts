@@ -30,6 +30,8 @@ export const EPISODE_LINK_KINDS = [
 ] as const;
 
 export type PodcastGuest = { name: string; slug?: string; email?: string };
+export const RELEASE_ASSIGNMENT_STATUSES = ["unassigned", "provisional", "final"] as const;
+export type ReleaseAssignmentStatus = (typeof RELEASE_ASSIGNMENT_STATUSES)[number];
 /**
  * One page-content transcript row, mirroring the website `_podcast/*.md`
  * front matter: either a `{ header }` section marker or a spoken `{ line }`
@@ -70,6 +72,8 @@ export type PodcastEpisode = {
   recordingEventStatus?: "proposed" | "approved" | "released" | "tentative" | "confirmed" | "expired" | null;
   recordingHoldId?: string | null;
   releaseDate?: string | null;
+  /** Current release tuple state: planning only, confirmed after the stream, or empty. */
+  releaseAssignmentStatus?: ReleaseAssignmentStatus;
   status: (typeof EPISODE_STATUSES)[number];
   links?: Partial<Record<(typeof EPISODE_LINK_KINDS)[number], string>>;
   websiteSlug?: string | null;

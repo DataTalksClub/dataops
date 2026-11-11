@@ -45,6 +45,7 @@ Usage
                                   public check, transcript review, website readiness
   dataops podcast create [--title T] [--guests "Name[:slug],Name"] [--season N] [--episode N]
       [--recording-date YYYY-MM-DD] [--release-date YYYY-MM-DD] [--status S]
+      [--release-assignment unassigned|provisional|final]  (required with --season/--episode/--release-date)
       [--youtube URL] [--spotify URL] [--apple URL] [--anchor URL] [--website URL]
       [--slug website-slug] [--card ID] [--notes TEXT]
       [--short T] [--description T] [--intro T] [--topics "a,b"] [--duration PT..]
@@ -59,6 +60,12 @@ Usage
                                    Pass --recording-date to override.
   dataops podcast update <episode-id> [same flags as create]
                                   "none" clears a date, link, slug, card, notes or episode number
+  dataops podcast assign-release <episode-id> --state provisional|final
+      [--season N] [--episode N] [--release-date YYYY-MM-DD]
+                                   Assign a provisional slot while planning, then set only
+                                   --state final immediately after the episode is recorded.
+                                   With no slot flags, keep the episode's current season,
+                                   episode and release date. Both states reserve the slot.
                                   Page content (what the website page renders):
       --short TEXT --description TEXT --intro TEXT --topics "a,b,c"
       --duration PT1H2M3S --image-url https://...
@@ -95,6 +102,7 @@ Usage
                           [--episodes-per-season N]
                                    Show the release cadence, or set it (admin)
 
+Release assignment states: unassigned, provisional, final.
 Statuses: ${STATUSES.join(", ")}.
 Publication evidence is recorded with update flags; each observation is stamped now:
   --spotify-schedule "2026-11-20T06:00:00+01:00" --timezone Europe/Berlin [--schedule-proof URL]
@@ -152,13 +160,22 @@ const jsonFile = (value, flag) => {
   }
 };
 
-function episodeBody(args) {
+function episodeBody(args, { requireAssignment = true } = {}) {
   const body = {};
   nullable(args, "title", "title", body);
   nullable(args, "season", "season", body, (value) => integer(value, "season"));
   nullable(args, "episode", "episode", body, (value) => integer(value, "episode"));
   nullable(args, "recordingDate", "recordingDate", body, (value) => isoDate(value, "recording-date"));
   nullable(args, "releaseDate", "releaseDate", body, (value) => isoDate(value, "release-date"));
+  const releaseAssignment = optionalString(args, "releaseAssignment");
+  if (releaseAssignment !== undefined) {
+    if (!["unassigned", "provisional", "final"].includes(releaseAssignment))
+      throw new UsageError("--release-assignment must be unassigned, provisional or final.");
+    body.releaseAssignmentStatus = releaseAssignment;
+  }
+  const releaseTupleChanged = ["season", "episode", "releaseDate"].some((name) => Object.hasOwn(body, name));
+  if (requireAssignment && releaseTupleChanged && releaseAssignment === undefined)
+    throw new UsageError("Pass --release-assignment provisional|final when assigning a season, episode or release date.");
   nullable(args, "slug", "websiteSlug", body);
   nullable(args, "card", "cardId", body);
   nullable(args, "notes", "notes", body);
@@ -219,6 +236,7 @@ export async function list(args, io) {
   table(io, result.items || [], [
     ["ID", (episode) => episode.id],
     ["EPISODE", (episode) => episodeCode(episode)],
+    ["RELEASE ASSIGNMENT", (episode) => episode.releaseAssignmentStatus || "unassigned"],
     ["STATUS", (episode) => episode.status],
     ["RECORDING", (episode) => episode.recordingDate || ""],
     ["RELEASE", (episode) => episode.releaseDate || ""],
@@ -315,6 +333,9 @@ export async function show(args, io) {
     ...(episode.recordingEventStatus ? [["recordingEventStatus", episode.recordingEventStatus]] : []),
     ...(episode.recordingHoldId ? [["recordingHoldId", episode.recordingHoldId]] : []),
     ["releaseDate", episode.releaseDate],
+    ["releaseAssignmentStatus", episode.releaseAssignmentStatus || "unassigned"],
+    ["fullyScheduled", episode.release ? String(episode.release.fullyScheduled) : undefined],
+    ...(episode.release?.warnings || []).map((warning) => ["warning", `${warning.code}: ${warning.message}`]),
     ...Object.entries(episode.links || {}),
     ["websiteSlug", episode.websiteSlug],
     ["short", episode.short],
@@ -401,6 +422,32 @@ export async function update(args, io) {
   return episode;
 }
 
+/** Assign a release slot or finalize the provisional tuple after recording. */
+export async function assignRelease(args, io) {
+  const id = positional(args, 0, "dataops podcast assign-release <episode-id> --state provisional|final [--season N --episode N --release-date YYYY-MM-DD]");
+  const state = optionalString(args, "state");
+  if (state !== "provisional" && state !== "final")
+    throw new UsageError("--state must be provisional or final.");
+  const { body, links } = episodeBody(args, { requireAssignment: false });
+  if (Object.keys(links).length || Object.keys(body).some((name) => !["season", "episode", "releaseDate", "releaseAssignmentStatus"].includes(name)))
+    throw new UsageError("assign-release accepts only --state and release slot fields.");
+  const api = apiFor(args);
+  const current = await api.get(`/api/podcast-episodes/${enc(id)}`);
+  const assignment = {
+    season: Object.hasOwn(body, "season") ? body.season : current.season,
+    episode: Object.hasOwn(body, "episode") ? body.episode : current.episode,
+    releaseDate: Object.hasOwn(body, "releaseDate") ? body.releaseDate : current.releaseDate,
+    releaseAssignmentStatus: state,
+  };
+  const episode = await api.put(`/api/podcast-episodes/${enc(id)}`, { ...assignment, version: current.version });
+  if (args.json) return episode;
+  io.print(`Release assignment for ${episode.id}: ${episode.releaseAssignmentStatus} (${episodeCode(episode) || "no episode number"}, ${episode.releaseDate || "no release date"}).`);
+  for (const move of episode.publicationAnchor?.moved || [])
+    io.print(`  moved ${move.templateTaskRef || move.taskId}: ${move.from} -> ${move.to} (publication anchor)`);
+  for (const warning of episode.release?.warnings || []) io.print(`  warning: ${warning.message}`);
+  return episode;
+}
+
 export async function createCard(args, io) {
   const id = positional(args, 0, "dataops podcast create-card <episode-id>");
   const api = apiFor(args);
@@ -437,7 +484,7 @@ export async function nextSlot(args, io) {
   ], "No free slots in range.");
   if ((result.takenDates || []).length) io.print(`Taken: ${result.takenDates.join(", ")}`);
   const first = (result.slots || [])[0];
-  if (first) io.print(`To book one: dataops podcast update <episode-id> --season ${result.season} --episode ${result.episode} --release-date ${first.date}`);
+  if (first) io.print(`To book one: dataops podcast assign-release <episode-id> --state provisional --season ${result.season} --episode ${result.episode} --release-date ${first.date}`);
   return result;
 }
 
@@ -665,6 +712,7 @@ export const commands = {
   schedule,
   create,
   update,
+  "assign-release": assignRelease,
   reschedule,
   "create-card": createCard,
   doc,

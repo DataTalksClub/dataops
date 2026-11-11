@@ -1,8 +1,6 @@
-// Podcast: the episode register as a list–detail split (dakit
-// docs/list-detail.md). The list pane is the seasons overview (the default,
-// /podcast) or the plain episode list (/podcast?view=list); the detail is the
-// selected episode, addressed by /podcast/<id> so it can be linked, reloaded
-// and reached with Back on a phone.
+// Podcast: distinct Pipeline and Seasons / Episodes panes, each with a
+// selected-episode detail split. The active pane stays in the URL so a
+// selected episode can be linked, reloaded and reached with Back on a phone.
 import "../../dakit/collection.js";
 import { createPageHeader } from "../operations-overview.js";
 import { openCreateEpisodeDialog } from "./create-dialog.js";
@@ -10,10 +8,10 @@ import { renderEpisodeDetail } from "./detail.js";
 import { element, emptyState, formatDate, select, statusChip } from "./dom.js";
 import { renderSchedule } from "./schedule.js";
 import { renderSeasonsOverview } from "./seasons.js";
-import { buildSeasonGrid } from "./seasons-model.js";
+import { buildSeasonGrid, episodeFlag } from "./seasons-model.js";
 import {
   episodeCode, episodeKeyDate, episodeSummary, filterEpisodes, groupEpisodes,
-  matchesStatusFilter, seasonsOf, STATUS_FILTERS,
+  matchesStatusFilter, releaseAssignmentLabel, releaseAssignmentState, seasonsOf, STATUS_FILTERS,
 } from "./model.js";
 
 const enc = encodeURIComponent;
@@ -50,13 +48,13 @@ export function createPodcastSurface(context) {
     return getActiveWorkspaceRoute()?.params?.get("episodeId") || "";
   }
 
-  /** "seasons" (the default) or "list", from ?view= on /podcast and /podcast/<id>. */
+  /** Pipeline is the default; Seasons / Episodes is selected with ?view=seasons. */
   function currentView() {
-    return getActiveWorkspaceRoute()?.params?.get("view") === "list" ? "list" : "seasons";
+    return getActiveWorkspaceRoute()?.params?.get("view") === "seasons" ? "seasons" : "pipeline";
   }
 
   function viewParams(view = currentView()) {
-    return view === "list" ? { view: "list" } : {};
+    return view === "seasons" ? { view: "seasons" } : {};
   }
 
   function isScheduleRoute() {
@@ -254,7 +252,7 @@ export function createPodcastSurface(context) {
   function renderRow(episode, selectedId, flag = null) {
     const item = element(documentRef, "li");
     const row = element(documentRef, "a", "dk-split__item podcast-row");
-    row.href = `/podcast/${enc(episode.id)}${currentView() === "list" ? "?view=list" : ""}`;
+    row.href = `/podcast/${enc(episode.id)}${currentView() === "seasons" ? "?view=seasons" : ""}`;
     row.dataset.episodeId = episode.id;
     if (episode.id === selectedId) row.setAttribute("aria-current", "true");
     const name = element(documentRef, "span", "dk-split__name");
@@ -263,6 +261,15 @@ export function createPodcastSurface(context) {
     name.append(element(documentRef, "span", "podcast-row__summary", episodeSummary(episode)));
     const meta = element(documentRef, "span", "dk-split__meta");
     meta.append(statusChip(documentRef, episode.status));
+    const assignmentState = releaseAssignmentState(episode);
+    const assignment = element(
+      documentRef,
+      "span",
+      `dk-badge podcast-release-assignment podcast-release-assignment--${assignmentState}`,
+      releaseAssignmentLabel(assignmentState),
+    );
+    assignment.dataset.assignment = assignmentState;
+    meta.append(assignment);
     if (flag) {
       const late = element(documentRef, "span", "dk-badge dk-badge--warning podcast-row__flag", flag.kind === "stale" ? "Stuck" : "Late");
       late.title = flag.text;
@@ -292,7 +299,7 @@ export function createPodcastSurface(context) {
     const pane = element(documentRef, "section", "dk-split__list podcast-list");
     pane.setAttribute("aria-labelledby", "podcast-episodes-title");
     const header = globalThis.dakitCollection.header({
-      title: "Episodes",
+      title: view === "seasons" ? "Seasons / Episodes" : "Pipeline",
       titleId: "podcast-episodes-title",
       className: "dk-split__head podcast-list-head",
       create: createButton(),
@@ -316,12 +323,15 @@ export function createPodcastSurface(context) {
       pane.append(scroll, element(documentRef, "div", "dk-split__handle"));
       return { pane, scroll };
     }
-    const shown = filterEpisodes(state.episodes, { status: state.filter, season: state.season, query: state.query });
+    const pipelineEpisodes = state.episodes.filter(
+      (episode) => episode.status !== "published" && episode.status !== "cancelled",
+    );
+    const shown = filterEpisodes(pipelineEpisodes, { status: state.filter, season: state.season, query: state.query });
     if (!shown.length) {
-      const filtered = state.query || state.season || state.filter === "published";
+      const filtered = state.query || state.season || state.filter !== "upcoming";
       const empty = filtered
         ? emptyState(documentRef, "No matches", "Try another season, status or search.")
-        : emptyState(documentRef, "Nothing upcoming", "Every booked episode is out. Book the next guest with New episode.");
+        : emptyState(documentRef, "Pipeline is clear", "No new or planned episodes are waiting. Add the next guest with New episode.");
       empty.classList.add("dk-empty--compact");
       scroll.append(empty);
     }
@@ -332,7 +342,7 @@ export function createPodcastSurface(context) {
       label.id = `podcast-group-${group.id}`;
       const list = element(documentRef, "ul", "dk-split__items");
       list.setAttribute("aria-labelledby", label.id);
-      for (const episode of group.episodes) list.append(renderRow(episode, selectedId));
+      for (const episode of group.episodes) list.append(renderRow(episode, selectedId, episodeFlag(episode, today())));
       section.append(label, list);
       scroll.append(section);
     }
@@ -340,18 +350,18 @@ export function createPodcastSurface(context) {
     return { pane, scroll };
   }
 
-  // Seasons and List keep the open episode; Schedule is its own page.
+  // Pipeline and Seasons / Episodes keep the open episode; Schedule is its own page.
   function renderViewTabs(schedule) {
     const nav = element(documentRef, "nav", "dk-tabs dk-tabs--sm podcast-views");
     nav.setAttribute("aria-label", "Podcast views");
     const openId = schedule ? "" : routeEpisodeId();
     const base = openId ? `/podcast/${enc(openId)}` : "/podcast";
     const current = schedule ? "schedule" : currentView();
-    for (const [view, label] of [["seasons", "Seasons"], ["list", "List"], ["schedule", "Schedule"]]) {
+    for (const [view, label] of [["pipeline", "Pipeline"], ["seasons", "Seasons / Episodes"], ["schedule", "Schedule"]]) {
       const path = view === "schedule" ? "/podcast/schedule" : base;
-      const params = view === "list" ? { view: "list" } : {};
+      const params = view === "seasons" ? { view: "seasons" } : {};
       const tab = element(documentRef, "a", "dk-tab", label);
-      tab.href = view === "list" ? `${path}?view=list` : path;
+      tab.href = view === "seasons" ? `${path}?view=seasons` : path;
       tab.dataset.podcastView = view;
       if (view === current) tab.setAttribute("aria-current", "page");
       tab.addEventListener("click", (event) => {

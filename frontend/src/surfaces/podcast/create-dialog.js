@@ -2,7 +2,10 @@
 // (dakit load-before-open), so its season and episode numbers start at the
 // next free pair rather than at whatever the page happened to cache.
 import { button, element, field, input, select } from "./dom.js";
-import { EPISODE_STATUSES, parseGuestNames, statusLabel, suggestNextNumber } from "./model.js";
+import {
+  EPISODE_STATUSES, parseGuestNames, RELEASE_ASSIGNMENT_STATES, releaseAssignmentLabel,
+  statusLabel, suggestNextNumber,
+} from "./model.js";
 
 function buildDialog(documentRef) {
   const dialog = element(documentRef, "dialog", "dk-dialog podcast-dialog");
@@ -30,12 +33,17 @@ function buildDialog(documentRef) {
 /** The POST body from the form values; empty fields are left out. */
 export function createBody(values) {
   const text = (value) => String(value ?? "").trim();
+  const releaseAssignmentStatus = text(values.releaseAssignmentStatus) || "unassigned";
   const body = { status: text(values.status) || "booked" };
   if (text(values.title)) body.title = text(values.title);
   const guests = parseGuestNames(values.guests);
   if (guests.length) body.guests = guests;
-  for (const name of ["season", "episode"]) if (text(values[name])) body[name] = Number(text(values[name]));
+  if (releaseAssignmentStatus !== "unassigned") {
+    for (const name of ["season", "episode"]) if (text(values[name])) body[name] = Number(text(values[name]));
+    if (text(values.releaseDate)) body.releaseDate = text(values.releaseDate);
+  }
   if (text(values.recordingDate)) body.recordingDate = text(values.recordingDate);
+  body.releaseAssignmentStatus = releaseAssignmentStatus;
   return body;
 }
 
@@ -56,6 +64,13 @@ export function openCreateEpisodeDialog({ documentRef, trigger, load, create, on
       season: input(documentRef, "season", suggestion.season, "number"),
       episode: input(documentRef, "episode", suggestion.episode, "number"),
       recordingDate: input(documentRef, "recordingDate", "", "date"),
+      releaseDate: input(documentRef, "releaseDate", "", "date"),
+      releaseAssignmentStatus: select(
+        documentRef,
+        "releaseAssignmentStatus",
+        RELEASE_ASSIGNMENT_STATES.map((value) => [value, releaseAssignmentLabel(value)]),
+        "unassigned",
+      ),
       status: select(documentRef, "status", EPISODE_STATUSES.map((status) => [status, statusLabel(status)]), "booked"),
     };
     controls.guests.placeholder = "Jane Doe, John Roe";
@@ -75,6 +90,11 @@ export function openCreateEpisodeDialog({ documentRef, trigger, load, create, on
       ),
       field(documentRef, "Status", controls.status),
     );
+    const release = element(documentRef, "div", "podcast-form-pair");
+    release.append(
+      field(documentRef, "Intended release date", controls.releaseDate, "Friday 19:00 Europe/Berlin. A booking blocks this release slot."),
+      field(documentRef, "Release assignment", controls.releaseAssignmentStatus, "Use Provisional while planning; Final after the stream/recording."),
+    );
     const error = element(documentRef, "p", "dk-field-error podcast-dialog-error");
     error.setAttribute("role", "alert");
     error.hidden = true;
@@ -83,6 +103,7 @@ export function openCreateEpisodeDialog({ documentRef, trigger, load, create, on
       field(documentRef, "Episode topic / working title", controls.title, "Set at invite time — the theme agreed with the guest."),
       numbers,
       timing,
+      release,
       error,
     );
     body.append(form);
@@ -97,6 +118,25 @@ export function openCreateEpisodeDialog({ documentRef, trigger, load, create, on
       event.preventDefault();
       const values = Object.fromEntries(Object.entries(controls).map(([name, control]) => [name, control.value]));
       const payload = createBody(values);
+      if (values.releaseAssignmentStatus === "unassigned" && values.releaseDate) {
+        error.textContent = "Choose Provisional when you assign a release date.";
+        error.hidden = false;
+        controls.releaseAssignmentStatus.focus();
+        return;
+      }
+      if (payload.releaseAssignmentStatus !== "unassigned" &&
+          (!payload.season || !payload.episode || !payload.releaseDate)) {
+        error.textContent = "A provisional or final assignment needs a season, episode and Friday release date.";
+        error.hidden = false;
+        controls.releaseDate.focus();
+        return;
+      }
+      if (payload.releaseAssignmentStatus === "final" && payload.status === "booked") {
+        error.textContent = "Set the assignment to Final after the episode is recorded.";
+        error.hidden = false;
+        controls.status.focus();
+        return;
+      }
       if (!payload.title && !payload.guests) {
         error.textContent = "Add a guest or a title.";
         error.hidden = false;

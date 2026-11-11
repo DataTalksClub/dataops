@@ -105,6 +105,11 @@ function weekdayOf(date: string, timezone: string): number {
   return { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[weekday] ?? 0;
 }
 
+/** Whether `date` is a date in the configured release cadence timezone. */
+export function isReleaseCadenceDate(date: string, cadence: PodcastReleaseCadence): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && weekdayOf(date, cadence.timezone) === cadence.weekday;
+}
+
 function addDays(date: string, days: number): string {
   const parsed = new Date(`${date}T12:00:00Z`);
   parsed.setUTCDate(parsed.getUTCDate() + days);

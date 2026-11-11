@@ -54,6 +54,10 @@ body[data-workspace-view="podcast"] .document-list {
 .podcast-row[aria-current="true"] .podcast-row__code { color: inherit; }
 .podcast-row__summary { min-width: 0; }
 .podcast-row__date { display: inline-flex; gap: var(--dk-space-1); font-variant-numeric: tabular-nums; }
+.podcast-release-assignment { white-space: nowrap; }
+.podcast-release-assignment--unassigned { color: var(--dk-text-muted); }
+.podcast-release-assignment--provisional { background: var(--dk-warning-bg); color: var(--dk-warning-text); }
+.podcast-release-assignment--final { background: var(--dk-success-bg); color: var(--dk-success-text); }
 
 /* Detail */
 .podcast-detail { display: flex; flex-direction: column; gap: var(--dk-gap-section); }
@@ -141,7 +145,7 @@ body[data-workspace-view="podcast"] .document-list {
 /* Seasons overview: the list pane holds one row of status cells per season.
    Status is the cell's fill; a number nobody holds is a dashed empty cell; a
    number two episodes claim is a danger fill; a dot marks stuck or late. */
-.podcast-split--seasons { --dk-split-list: 36rem; }
+.podcast-split--seasons { --dk-split-list: 42rem; }
 .podcast-seasons-scroll { padding-bottom: var(--dk-space-4); }
 .podcast-legend {
   display: flex;
@@ -236,4 +240,14 @@ a.podcast-cell:focus-visible { outline: 3px solid var(--dk-focus-ring); outline-
   .podcast-detail-close { display: none; }
   .podcast-form-pair { grid-template-columns: minmax(0, 1fr); }
   .podcast-status-controls { margin-left: 0; }
+}
+
+.podcast-release-warnings {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+  color: var(--dk-warning-text);
+}
+.podcast-release-assignment__scheduled {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
 }

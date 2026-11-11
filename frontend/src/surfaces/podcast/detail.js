@@ -10,7 +10,8 @@ import { buildPublication, samePublication } from "./publication-model.js";
 import { publicationFormFields, publicationSection } from "./publication-section.js";
 import {
   cardStageLabel, EPISODE_STATUSES, episodeCode, episodeTitle, guestNames, isUpcoming, LINK_KINDS,
-  parseGuestNames, statusLabel,
+  parseGuestNames, releaseAssignmentLabel, releaseAssignmentState, RELEASE_ASSIGNMENT_STATES,
+  statusLabel,
 } from "./model.js";
 
 const NOTES_MAX = 2000;
@@ -178,6 +179,60 @@ function factsSection(documentRef, episode) {
   return section;
 }
 
+function releaseAssignmentSection(documentRef, episode, actions, messages) {
+  const section = element(documentRef, "section", "podcast-section podcast-release-assignment-section");
+  section.append(element(documentRef, "h3", "podcast-section__title", "Release assignment"));
+  const state = releaseAssignmentState(episode);
+  const summary = element(documentRef, "p", "podcast-release-assignment__summary");
+  const code = episodeCode(episode) || "No episode number";
+  const date = formatDate(episode.releaseDate) || "No release date";
+  summary.append(
+    element(documentRef, "span", "dk-mono", code),
+    element(documentRef, "span", "", ` · ${date} · `),
+    element(documentRef, `span`, `dk-badge podcast-release-assignment podcast-release-assignment--${state}`, releaseAssignmentLabel(state)),
+  );
+  summary.dataset.assignment = state;
+  section.append(summary);
+  const release = episode.release || { fullyScheduled: false, warnings: [] };
+  const scheduled = element(
+    documentRef,
+    "p",
+    "podcast-release-assignment__scheduled",
+    release.fullyScheduled
+      ? "Fully scheduled: final slot with provider schedule proof on the same date."
+      : "Not fully scheduled: a DataOps date alone needs provider schedule proof.",
+  );
+  scheduled.dataset.fullyScheduled = String(Boolean(release.fullyScheduled));
+  section.append(scheduled);
+  if (release.warnings?.length) {
+    const list = element(documentRef, "ul", "podcast-release-warnings");
+    for (const warning of release.warnings) {
+      const item = element(documentRef, "li", "podcast-release-warning", warning.message);
+      item.dataset.code = warning.code;
+      list.append(item);
+    }
+    section.append(list);
+  }
+  if (state === "provisional" && episode.status !== "booked") {
+    const finalize = button(documentRef, "Finalize after recording", "secondary", "");
+    finalize.dataset.podcastAction = "finalize-release-assignment";
+    finalize.addEventListener("click", async () => {
+      finalize.setAttribute("aria-busy", "true");
+      finalize.setAttribute("aria-disabled", "true");
+      messages.clear();
+      try {
+        await actions.update(episode, { releaseAssignmentStatus: "final" });
+      } catch (error) {
+        finalize.removeAttribute("aria-busy");
+        finalize.removeAttribute("aria-disabled");
+        showFailure(documentRef, messages, error, "finalize the release assignment", actions, episode);
+      }
+    });
+    section.append(finalize);
+  }
+  return section;
+}
+
 function notesSection(documentRef, episode) {
   const section = element(documentRef, "section", "podcast-section");
   section.append(element(documentRef, "h3", "podcast-section__title", "Notes"));
@@ -210,6 +265,11 @@ export function formChanges(episode, values, nowIso = new Date().toISOString()) 
     const next = nullable(values[name]);
     if (next !== (episode[name] || null)) changes[name] = next;
   }
+  const assignmentState = values.releaseAssignmentStatus || "unassigned";
+  if (assignmentState !== releaseAssignmentState(episode))
+    changes.releaseAssignmentStatus = assignmentState;
+  if (["season", "episode", "releaseDate"].some((name) => Object.hasOwn(changes, name)))
+    changes.releaseAssignmentStatus = assignmentState;
   if (Object.hasOwn(values, "audioScheduledLocal")) {
     const built = buildPublication(episode.publication, values, nowIso);
     if (built.error) throw new Error(built.error);
@@ -237,6 +297,12 @@ function editForm(documentRef, episode, actions, messages) {
     episode: input(documentRef, "episode", episode.episode, "number"),
     recordingDate: input(documentRef, "recordingDate", episode.recordingDate, "date"),
     releaseDate: input(documentRef, "releaseDate", episode.releaseDate, "date"),
+    releaseAssignmentStatus: select(
+      documentRef,
+      "releaseAssignmentStatus",
+      RELEASE_ASSIGNMENT_STATES.map((value) => [value, releaseAssignmentLabel(value)]),
+      releaseAssignmentState(episode),
+    ),
     websiteSlug: input(documentRef, "websiteSlug", episode.websiteSlug),
     notes: element(documentRef, "textarea", "dk-textarea"),
   };
@@ -253,7 +319,10 @@ function editForm(documentRef, episode, actions, messages) {
   const numbers = element(documentRef, "div", "podcast-form-pair");
   numbers.append(field(documentRef, "Season", controls.season), field(documentRef, "Episode", controls.episode));
   const dates = element(documentRef, "div", "podcast-form-pair");
-  dates.append(field(documentRef, "Recording date", controls.recordingDate), field(documentRef, "Intended release date", controls.releaseDate));
+  dates.append(
+    field(documentRef, "Recording date", controls.recordingDate),
+    field(documentRef, "Intended release date", controls.releaseDate, "Choose a Friday release slot. Provisional and final assignments reserve it."),
+  );
   const links = element(documentRef, "fieldset", "podcast-form-links");
   links.append(element(documentRef, "legend", "dk-label", "Links"));
   for (const kind of LINK_KINDS) {
@@ -267,6 +336,7 @@ function editForm(documentRef, episode, actions, messages) {
     field(documentRef, "Guests", controls.guests, "Comma-separated names."),
     numbers,
     dates,
+    field(documentRef, "Release assignment", controls.releaseAssignmentStatus, "Set to Provisional while planning; set to Final immediately after the stream/recording."),
     links,
     publication.fieldset,
     field(documentRef, "Website slug", controls.websiteSlug),
@@ -299,6 +369,19 @@ function editForm(documentRef, episode, actions, messages) {
     }
     if (!String(values.title || "").trim() && !(changes.guests ?? episode.guests ?? []).length) {
       messages.show("error", "An episode needs a title or at least one guest.");
+      return;
+    }
+    const assigned = values.releaseAssignmentStatus === "provisional" || values.releaseAssignmentStatus === "final";
+    if (assigned && (!String(values.season || "").trim() || !String(values.episode || "").trim() || !String(values.releaseDate || "").trim())) {
+      messages.show("error", "A provisional or final assignment needs a season, episode and Friday release date.");
+      return;
+    }
+    if (!assigned && String(values.releaseDate || "").trim()) {
+      messages.show("error", "Choose Provisional when you assign a release date.");
+      return;
+    }
+    if (values.releaseAssignmentStatus === "final" && episode.status === "booked") {
+      messages.show("error", "Set the assignment to Final after the episode is recorded.");
       return;
     }
     save.setAttribute("aria-busy", "true");
@@ -344,6 +427,7 @@ export function renderEpisodeDetail(pane, { documentRef, episode, editing, notic
       statusSection(documentRef, episode, actions, messages),
       messages.node,
       ...(episode.card || episode.cardId || isUpcoming(episode) ? [cardSection(documentRef, episode, actions, messages)] : []),
+      releaseAssignmentSection(documentRef, episode, actions, messages),
       publicationSection(documentRef, episode),
       factsSection(documentRef, episode),
       notesSection(documentRef, episode),
