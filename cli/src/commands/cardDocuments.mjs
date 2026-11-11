@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { UsageError } from '../errors.mjs';
 import { enc, fields, positional, required, table } from '../format.mjs';
 import { apiFor } from '../session.mjs';
+import { resolveProfile } from '../config.mjs';
 
 export const summary = 'Staff-only card documents';
 export const help = `dataops card-doc - staff-only card documents
@@ -10,9 +11,10 @@ export const help = `dataops card-doc - staff-only card documents
 Usage
   dataops card-doc list --card ID
   dataops card-doc show <id>
+  dataops card-doc preview <id>
   dataops card-doc create --card ID --kind transcript|timecodes|summary|note --title TITLE [--file PATH | --content TEXT] [--from ID]
   dataops card-doc delete <id> --version N
-  dataops card-doc export <id> [--format txt|md|docx] [--output PATH]
+  dataops card-doc export <id> [--format txt|md|docx|pdf] [--output PATH]
   dataops card-doc update <id> [--title TITLE] [--file PATH | --content TEXT] --version N
 
 Content is plain text or Markdown. --version is the version you read before editing;
@@ -61,6 +63,12 @@ export async function remove(args, io) {
 }
 async function exportCardDocument(args, io) {
   const id = positional(args, 0, 'card-doc export <id>');
-  return exportDocument(args, io, `/api/card-documents/${enc(id)}/export`, id);
+  return exportDocument(args, io, `/api/card-documents/${enc(id)}/export`, id, ["md", "txt", "docx", "pdf"]);
 }
-export const commands = { list, show, create, update, export: exportCardDocument, delete: remove };
+function preview(args, io) {
+  const id = positional(args, 0, 'card-doc preview <id>');
+  const url = `${resolveProfile(args).url}/api/card-documents/${enc(id)}/preview`;
+  if (!args.json) io.print(url);
+  return { url };
+}
+export const commands = { preview, list, show, create, update, export: exportCardDocument, delete: remove };

@@ -32,6 +32,27 @@ describe('Task document workspace', () => {
     const listed = await request('GET', '/api/documents', undefined, { taskId: 'doc-task' });
     assert.equal(listed.body.documents.length, 4);
   });
+  it('previews and exports the saved draft under staff authorization with pinned versions', async () => {
+    const doc = await createDocument(client, { taskId: 'doc-task', kind: 'note', title: 'Draft', content: 'Private draft terms.' });
+    const event = { httpMethod: 'GET', path: `/api/documents/${doc.id}/preview` };
+    const preview = await handleDocumentRoutes(event, client);
+    assert.equal(preview?.statusCode, 200);
+    assert.match(preview!.body, new RegExp(`/api/documents/${doc.id}/export`));
+    assert.match(preview!.headers['Cache-Control'], /no-store/);
+    assert.match(preview!.headers['X-Robots-Tag'], /noindex/);
+    const pdf = await handleDocumentRoutes({ ...event, path: `/api/documents/${doc.id}/export`, queryStringParameters: { format: 'pdf', version: '1' } }, client);
+    assert.equal(pdf?.statusCode, 200);
+    assert.equal(pdf!.headers['X-Document-Source-SHA256'], preview!.headers['X-Document-Source-SHA256']);
+    const stale = await handleDocumentRoutes({ ...event, path: `/api/documents/${doc.id}/export`, queryStringParameters: { format: 'pdf', version: '2' } }, client);
+    assert.equal(stale?.statusCode, 409);
+    delete process.env.SKIP_AUTH;
+    try {
+      for (const action of ['preview', 'export']) {
+        const denied = await handleDocumentRoutes({ ...event, path: `/api/documents/${doc.id}/${action}`, headers: { 'x-document-review-token': 'guest', 'x-sponsor-doc-code': 'guest' }, queryStringParameters: { format: 'pdf' } }, client);
+        assert.equal(denied?.statusCode, 401);
+      }
+    } finally { process.env.SKIP_AUTH = 'true'; }
+  });
   it('does not create orphan or oversized documents and requires a bounded task query', async () => {
     const body = { taskId: 'missing', kind: 'summary', title: 'Title', content: '' };
     assert.equal((await request('POST', '/api/documents', body)).status, 404);
@@ -60,7 +81,7 @@ describe('Task document workspace', () => {
       if (format === 'docx') { assert.equal(result.isBase64Encoded, true); assert.equal(Buffer.from(result.body, 'base64').subarray(0, 2).toString(), 'PK'); }
       else assert.equal(result.body, doc.content);
     }
-    assert.equal((await request('GET', `/api/documents/${doc.id}/export`, undefined, { format: 'pdf' })).status, 400);
+    assert.equal((await request('GET', `/api/documents/${doc.id}/export`, undefined, { format: 'unsupported' })).status, 400);
   });
   it('denies anonymous, disabled and unsupported actors including token-only guests', async () => {
     delete process.env.SKIP_AUTH;

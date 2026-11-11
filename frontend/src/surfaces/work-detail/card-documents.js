@@ -129,7 +129,13 @@ export function renderCardDocuments({ card, request, workApiUrl }) {
       finally { save.disabled = false; }
     });
     const exports = document.createElement('div'); exports.className = 'card-docs__exports';
-    for (const format of ['txt', 'docx']) {
+    const preview = document.createElement('a');
+    preview.className = 'dk-button dk-button--secondary dk-button--sm';
+    preview.textContent = 'Read private draft / PDF';
+    preview.href = workApiUrl(`/api/card-documents/${encodeURIComponent(doc.id)}/preview`);
+    preview.target = '_blank'; preview.rel = 'noreferrer noopener';
+    exports.append(preview);
+    for (const format of ['txt', 'docx', 'pdf']) {
       const button = document.createElement('button'); button.type = 'button';
       button.className = 'dk-button dk-button--secondary dk-button--sm'; button.textContent = `Export ${format.toUpperCase()}`;
       button.addEventListener('click', async () => {

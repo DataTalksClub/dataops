@@ -1,3 +1,4 @@
+import { privateDocumentHeaders, privateDocumentResponse } from '../documents/privatePreview';
 import { DOCX_CONTENT_TYPE, markdownToDocx } from '../docs/docxExport';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createCardDocument, deleteCardDocument, CARD_DOCUMENT_KINDS, CardDocumentRecord, CardDocumentVersionConflict, getCardDocument, listCardDocuments, updateCardDocument } from '../db/cardDocuments';
@@ -13,7 +14,7 @@ export function validateDocumentText(body: Record<string, unknown>): string | nu
 }
 export async function handleCardDocumentRoutes(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse | null> {
   const path = event.path || '';
-  const match = /^\/api\/card-documents(?:\/([^/]+)(?:\/(export))?)?\/?$/.exec(path);
+  const match = /^\/api\/card-documents(?:\/([^/]+)(?:\/(export|preview))?)?\/?$/.exec(path);
   if (!match) return null;
   const method = event.httpMethod || 'GET';
   const actor = await resolveInteractiveActor(client, event, method === 'GET' ? 'work-read' : 'work-write');
@@ -22,12 +23,14 @@ export async function handleCardDocumentRoutes(event: LambdaEvent, client: Dynam
   if (match[2]) {
     if (method !== 'GET') return json(405, { error: 'Method not allowed' });
     const format = event.queryStringParameters?.format || 'md';
-    if (!['md', 'txt', 'docx'].includes(format)) return json(400, { error: 'format must be md, txt, or docx' });
+    if (!['md', 'txt', 'docx', 'pdf'].includes(format)) return json(400, { error: 'format must be md, txt, docx, or pdf' });
     const doc = await getCardDocument(client, id);
     if (!doc) return json(404, { error: 'Document not found' });
+    const preview = await privateDocumentResponse(doc, 'card-documents', match[2], format, event.queryStringParameters?.version);
+    if (preview) return preview;
     return { statusCode: 200, headers: {
       'Content-Type': format === 'docx' ? DOCX_CONTENT_TYPE : format === 'md' ? 'text/markdown; charset=utf-8' : 'text/plain; charset=utf-8',
-      'Content-Disposition': `attachment; filename="document.${format}"`, 'Cache-Control': 'no-store',
+      'Content-Disposition': `attachment; filename="document.${format}"`, ...privateDocumentHeaders,
     }, body: format === 'docx' ? (await markdownToDocx(doc.content)).toString('base64') : doc.content,
     ...(format === 'docx' ? { isBase64Encoded: true } : {}) };
   }
