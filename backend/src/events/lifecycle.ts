@@ -4,9 +4,11 @@ import { createHash } from 'node:crypto';
 import { cardEventInterval } from '../calendar/cardEventTime';
 import { EVENT_TRANSITIONS, parseEventPolicy, renderEventText, type EventPolicy, type EventRenderValues, type EventTransition } from './policy';
 
+export const EVENT_OPERATION_TRANSITIONS = [...EVENT_TRANSITIONS, 'update'] as const;
+export type EventOperationTransition = typeof EVENT_OPERATION_TRANSITIONS[number];
 export type EventStatus = 'proposed' | 'approved' | 'released';
 export interface EventHistoryEntry {
-  transition: EventTransition;
+  transition: EventOperationTransition;
   generation: number;
   operationKey: string;
   at: string;
@@ -17,7 +19,7 @@ export interface EventHistoryEntry {
 export interface EventOperation {
   key: string;
   fingerprint: string;
-  transition: EventTransition;
+  transition: EventOperationTransition;
   state: 'pending' | 'complete' | 'outcome-unknown';
   result?: { googleEventIds: Record<string, string> };
   /** Fully resolved desired payload: a retry must never reread mutable Card values. */
@@ -61,7 +63,7 @@ export interface EventRecord {
   operations: EventOperation[];
 }
 export interface EventCommand {
-  transition: EventTransition;
+  transition: EventOperationTransition;
   operationKey: string;
   expectedVersion: number;
   actor: string;
@@ -81,6 +83,13 @@ export interface EventCommand {
     guestEmails: string[];
     guestTimezone?: string;
   };
+  /** Silent metadata reconciliation on the existing event without changing time, generation, or attendees. */
+  metadata?: {
+    title: string;
+    topic: string;
+    guestNames: string;
+    documentUrl: string;
+  };
   approval?: { via: 'calendar-accept'; attendeeEmail: string; acceptedEmails: string[]; generation: number };
 }
 export class EventConflictError extends Error {}
@@ -99,7 +108,7 @@ function fingerprint(command: EventCommand): string {
 
 /** Pure transition planner. The persistence layer commits its result with a CAS transaction. */
 export function planEventTransition(id: string, cardId: string, current: EventRecord | null, command: EventCommand): EventRecord {
-  if (!EVENT_TRANSITIONS.includes(command.transition)) throw new Error('Unknown event transition');
+  if (!EVENT_OPERATION_TRANSITIONS.includes(command.transition)) throw new Error('Unknown event transition');
   if (current && (current.id !== id || current.cardId !== cardId)) throw new EventConflictError('Event ownership does not match the Card');
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(command.operationKey)) throw new Error('A valid operation key is required');
   if (!Number.isFinite(Date.parse(command.now))) throw new Error('A valid operation timestamp is required');
@@ -119,6 +128,7 @@ export function planEventTransition(id: string, cardId: string, current: EventRe
   if (command.approval && transition !== 'approve') throw new Error('Calendar acceptance can only approve');
   const isProposal = transition === 'propose' || transition === 'reschedule';
   if (!isProposal && (command.date !== undefined || command.time !== undefined || command.window !== undefined || command.proposal !== undefined)) throw new Error('Only propose or reschedule can change event time or policy');
+  if (transition !== 'update' && command.metadata !== undefined) throw new Error('Only update can reconcile event metadata');
   let next = structuredClone(current) as EventRecord;
   if (isProposal) {
     if (!command.proposal) throw new Error('The Card Template must supply event policy and render inputs');
@@ -151,9 +161,24 @@ export function planEventTransition(id: string, cardId: string, current: EventRe
       previousGoogleEventIds: [ ...structuredClone(current?.previousGoogleEventIds || []), ...(current?.status === 'released' ? [structuredClone(current.googleEventIds)] : []) ],
       history: structuredClone(current?.history || []), operations: structuredClone(current?.operations || []),
     };
+  } else if (transition === 'update') {
+    if (!command.metadata) throw new Error('Event update requires resolved metadata inputs');
+    next.version++;
+    next.renderValues = {
+      ...next.renderValues,
+      title: command.metadata.title,
+      topic: command.metadata.topic,
+      guestNames: command.metadata.guestNames,
+      documentUrl: command.metadata.documentUrl,
+      zoomUrl: next.policy.zoom.enabled ? next.policy.zoom.url! : '',
+    };
   } else {
     next.version++;
     next.status = transition === 'approve' ? 'approved' : 'released';
+    next.renderValues = {
+      ...next.renderValues,
+      zoomUrl: next.policy.zoom.enabled ? next.policy.zoom.url! : '',
+    };
   }
   if (command.approval) {
     const email = command.approval.attendeeEmail.toLowerCase();
@@ -167,7 +192,8 @@ export function planEventTransition(id: string, cardId: string, current: EventRe
   const approved = next.status === 'approved';
   const inviteGuests = approved ? policy.guests.approved : policy.guests.proposal;
   const attendees = inviteGuests ? emails([...next.guestEmails, ...policy.guests.requiredEmails]) : [];
-  const render = (text: string) => renderEventText(text, { ...renderValues, zoomUrl: approved ? renderValues.zoomUrl : '' });
+  const render = (text: string) => renderEventText(text, renderValues);
+  const inviteText = !renderValues.zoomUrl && policy.inviteText.includes('{zoomUrl}') ? '' : render(policy.inviteText);
   let guestDetails = '';
   if (next.guestTimezone) guestDetails = `Guest local time: ${formatSlotLabel(next.startIso, next.guestTimezone)} (${next.guestTimezone})`;
   let formCode = '';
@@ -177,12 +203,12 @@ export function planEventTransition(id: string, cardId: string, current: EventRe
     key: command.operationKey, fingerprint: hash, transition, state: 'pending',
     desired: {
       summary: render(approved ? policy.titles.approved : policy.titles.proposed),
-      description: [render(policy.description), render(policy.inviteText), guestDetails].filter(Boolean).join('\n\n'),
-      location: approved && policy.zoom.enabled ? policy.zoom.url! : '', attendees,
+      description: [render(policy.description), inviteText, guestDetails].filter(Boolean).join('\n\n'),
+      location: policy.zoom.enabled ? policy.zoom.url! : '', attendees,
       startIso: new Date(Date.parse(next.startIso) - policy.guests.leadMinutes * 60000).toISOString(),
       endIso: next.endIso, timeZone: next.timeZone,
-      sendUpdates: policy.notifications[transition].calendar,
-      emails: policy.notifications[transition].emails.map(email => ({
+      sendUpdates: transition === 'update' ? 'none' : policy.notifications[transition].calendar,
+      emails: transition === 'update' ? [] : policy.notifications[transition].emails.map(email => ({
         to: email.to === 'guests' ? [...next.guestEmails] : emails(policy.guests.requiredEmails),
         subject: render(email.subject), body: render(email.body),
       })),

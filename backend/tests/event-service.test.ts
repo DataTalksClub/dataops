@@ -410,7 +410,7 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
     assert.equal(proposed.event.generation, 1);
     assert.equal(proposed.sync.state, 'synced');
 
-    // Verify Google Calendar events on organizer + both target calendars have (Proposal) title and no Zoom link yet
+    // Verify Google Calendar events on organizer + both target calendars have [Proposed] title and Zoom link from policy
     const orgEventId = proposed.event.googleEventIds[HOLD_ORGANIZER];
     assert.ok(orgEventId);
     for (const cal of [HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS]) {
@@ -418,7 +418,8 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
       assert.ok(evId, `Google event created on ${cal}`);
       const gEv = googleMock.calendars.get(cal)!.get(evId);
       assert.equal(gEv.summary, '[Proposed] Podcast: Ian Whitestone - Agentic Data Stack');
-      assert.equal(gEv.location, '');
+      assert.equal(gEv.location, 'https://zoom.us/j/999111222');
+      assert.match(gEv.description, /Zoom: https:\/\/zoom\.us\/j\/999111222/);
     }
     // Proposal transition email sent to guest
     assert.equal(sentEmails.length, 1);
@@ -514,7 +515,8 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
       const evId = rescheduled.event.googleEventIds[cal];
       const gEv = googleMock.calendars.get(cal)!.get(evId);
       assert.equal(gEv.summary, '[Proposed] Podcast: Ian Whitestone - Agentic Data Stack');
-      assert.equal(gEv.location, '');
+      assert.equal(gEv.location, 'https://zoom.us/j/999111222');
+      assert.match(gEv.description, /Zoom: https:\/\/zoom\.us\/j\/999111222/);
     }
     // Card, Episode, and linked Docs all reflect 2026-12-01 12:30 (tentative)
     assert.equal((await getCardConsistent(client, card.id))?.anchorDate, '2026-12-01');
@@ -680,5 +682,100 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
     const wsOrgEv = googleMock.getOrganizerEvent(wsApprove.event.googleEventIds[HOLD_ORGANIZER]);
     assert.equal(wsOrgEv.summary, 'Workshop: Hands-On DuckDB');
     assert.equal(wsOrgEv.location, '');
+  });
+
+  it('reconciles stale title/topic and missing Zoom metadata in place on an already-sent proposed event with sendUpdates=none and no duplicate email', async () => {
+    sentEmails = [];
+    googleMock = createMockGoogleCalendar();
+    setCalendarHoldGoogleDepsForTests({
+      credential: 'test-machine',
+      connectionId: 'orin-calendar',
+      fetchImpl: googleMock.fetchImpl,
+    });
+
+    const podcastTemplate = {
+      id: podcastTemplateId,
+      name: 'Podcast Episode',
+      type: 'podcast-record',
+      version: 1,
+      eventPolicy: buildTemplatePolicy('podcast'),
+      taskDefinitions: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as any;
+
+    const card = await createCard(client, {
+      ...templateLink(podcastTemplate),
+      title: 'Finding a Computer Vision Job in Berlin: A Practical Job Search Approach',
+      anchorDate: '2026-11-23',
+      people: ['Stacy Sand'],
+      guestEmails: ['guest@example.invalid'],
+    });
+
+    const proposeRes = await invoke('POST', `/api/events/${card.id}/propose`, {
+      date: '2026-11-23',
+      time: '12:30',
+      documentUrl: 'https://ops.dtcdev.click/sponsor-docs/doc-stacy?code=1111-2222-3333-4444',
+    });
+    assert.equal(proposeRes.statusCode, 201, proposeRes.body);
+    const proposed = parse(proposeRes);
+    const initialGoogleIds = { ...proposed.event.googleEventIds };
+    assert.equal(sentEmails.length, 1);
+
+    // Simulate historical pre-fix state on Google Calendar (missing location and empty Zoom: line)
+    for (const cal of [HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS]) {
+      const evId = initialGoogleIds[cal];
+      const gEv = googleMock.calendars.get(cal)!.get(evId);
+      gEv.location = '';
+      gEv.description = String(gEv.description).replace('Zoom: https://zoom.us/j/999111222', 'Zoom: ');
+    }
+    googleMock.setAttendeeResponse(initialGoogleIds[HOLD_ORGANIZER], 'guest@example.invalid', 'tentative');
+
+    // Operator updates the Card title to "Finding a Job in Computer Vision"
+    const latestCard = (await getCardConsistent(client, card.id))!;
+    const cardUpdateRes = await invoke('PUT', `/api/cards/${card.id}`, {
+      expectedVersion: latestCard.version,
+      title: 'Finding a Job in Computer Vision',
+    });
+    assert.equal(cardUpdateRes.statusCode, 200, cardUpdateRes.body);
+
+    const callsBeforeUpdate = googleMock.calls.length;
+    const updateRes = await invoke('POST', `/api/events/${card.id}/update`, {});
+    assert.equal(updateRes.statusCode, 200, updateRes.body);
+    const updated = parse(updateRes);
+
+    // Same event identity, status, generation, and interval; no emails or reschedule tasks
+    assert.equal(updated.event.id, proposed.event.id);
+    assert.equal(updated.event.status, 'proposed');
+    assert.equal(updated.event.generation, 1);
+    assert.equal(updated.event.identityGeneration, 1);
+    assert.equal(updated.event.startIso, proposed.event.startIso);
+    assert.equal(updated.event.endIso, proposed.event.endIso);
+    assert.deepEqual(updated.event.googleEventIds, initialGoogleIds);
+    assert.equal(updated.rescheduleTaskId, undefined);
+    assert.equal(sentEmails.length, 1, 'No email may be sent on silent metadata update');
+
+    // Every Google Calendar PATCH during update must carry sendUpdates=none
+    const updatePatchCalls = googleMock.calls
+      .slice(callsBeforeUpdate)
+      .filter((c) => c.method === 'PATCH');
+    assert.equal(updatePatchCalls.length, 2);
+    for (const call of updatePatchCalls) {
+      assert.equal(new URL(call.url).searchParams.get('sendUpdates'), 'none');
+    }
+
+    // Live Google events now have reconciled title, Zoom location, Zoom line in description, and preserved Access code + RSVP
+    for (const cal of [HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS]) {
+      const evId = updated.event.googleEventIds[cal];
+      const gEv = googleMock.calendars.get(cal)!.get(evId);
+      assert.equal(gEv.summary, '[Proposed] Podcast: Finding a Job in Computer Vision');
+      assert.equal(gEv.location, 'https://zoom.us/j/999111222');
+      assert.match(gEv.description, /Topic: Finding a Job in Computer Vision/);
+      assert.match(gEv.description, /Zoom: https:\/\/zoom\.us\/j\/999111222/);
+      assert.match(gEv.description, /Access code: 1111-2222-3333-4444/);
+    }
+    const orgEv = googleMock.getOrganizerEvent(initialGoogleIds[HOLD_ORGANIZER]);
+    const guestAttendee = orgEv.attendees.find((a: any) => a.email === 'guest@example.invalid');
+    assert.equal(guestAttendee?.responseStatus, 'tentative');
   });
 });

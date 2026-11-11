@@ -2,7 +2,7 @@ import { UsageError } from "../errors.mjs";
 import { enc, fields, isoDate, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 
-export const summary = "Unified event lifecycle (propose, approve, reschedule, release, show, retry, poll)";
+export const summary = "Unified event lifecycle (propose, approve, reschedule, update, release, show, retry, poll)";
 
 export const help = `dataops event - unified event lifecycle driven by Card Templates
 
@@ -26,6 +26,8 @@ Usage
   dataops event reschedule <card|hold|episode> --date YYYY-MM-DD [--time HH:MM | --window NAME]
       [--title T] [--topic TOPIC] [--guest-names "Name, Name"]
       [--guest-emails "a@b.c,d@e.f"] [--document-url URL] [--duration MINUTES] [--time-zone IANA]
+  dataops event update <card|hold|episode> [--title T] [--topic TOPIC]
+      [--guest-names "Name, Name"] [--document-url URL]
   dataops event release <card|hold|episode>
   dataops event show <card|hold|episode>
   dataops event retry <card|hold|episode> [--force-email-retry]
@@ -147,6 +149,30 @@ export async function reschedule(args, io) {
   return result;
 }
 
+export async function update(args, io) {
+  const target = resolveTarget(
+    args,
+    "dataops event update <card|hold|episode> [--title T] [--topic TOPIC] [--guest-names \"Name, Name\"] [--document-url URL]",
+  );
+  const payload = buildTransitionPayload(args, { requireDate: false });
+  if (
+    payload.date !== undefined ||
+    payload.time !== undefined ||
+    payload.window !== undefined ||
+    payload.durationMinutes !== undefined ||
+    payload.timeZone !== undefined ||
+    payload.guestEmails !== undefined
+  ) {
+    throw new UsageError(
+      "dataops event update only reconciles metadata (--title, --topic, --guest-names, --document-url, and policy Zoom); use reschedule to change date, time, or attendees.",
+    );
+  }
+  const result = await apiFor(args).post(`/api/events/${enc(target)}/update`, payload);
+  if (args.json) return result;
+  printLifecycleSummary(io, "Updated", result);
+  return result;
+}
+
 export async function release(args, io) {
   const target = resolveTarget(args, "dataops event release <card|hold|episode>");
   const payload = buildTransitionPayload(args, { requireDate: false });
@@ -236,6 +262,7 @@ export const commands = {
   propose,
   approve,
   reschedule,
+  update,
   release,
   show,
   retry,

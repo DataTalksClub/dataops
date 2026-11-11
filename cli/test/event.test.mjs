@@ -82,6 +82,17 @@ describe("Unified Event Lifecycle CLI (AC2)", () => {
         status: 200,
         body: sampleLifecycleResponse({ status: "proposed", date: body.date, time: body.time || "17:00" }),
       }),
+      "POST /api/events/card-1/update": ({ body }) => ({
+        status: 200,
+        body: sampleLifecycleResponse({
+          status: "proposed",
+          event: { renderValues: { title: body.title || "Finding a Job in Computer Vision" } },
+          hold: {
+            title: body.title || "Finding a Job in Computer Vision",
+            googleTitle: `[Proposed] ${body.title || "Finding a Job in Computer Vision"}`,
+          },
+        }),
+      }),
       "POST /api/events/card-1/release": () => ({
         status: 200,
         body: sampleLifecycleResponse({ status: "released" }),
@@ -161,6 +172,38 @@ describe("Unified Event Lifecycle CLI (AC2)", () => {
     assert.match(ioResched.text(), /Rescheduled event hold_card-1.*\[proposed\] 2026-11-25/);
     assert.deepEqual(calls[2].body, { date: "2026-11-25", window: "evening" });
 
+    const ioUpdate = captureIo();
+    assert.equal(
+      await run(
+        [
+          "event",
+          "update",
+          "card-1",
+          "--title",
+          "Finding a Job in Computer Vision",
+          "--topic",
+          "Finding a Job in Computer Vision",
+        ],
+        ioUpdate,
+      ),
+      0,
+    );
+    assert.match(
+      ioUpdate.text(),
+      /Updated event hold_card-1.*\[proposed\].*\[Proposed\] Finding a Job in Computer Vision/,
+    );
+    assert.deepEqual(calls[3].body, {
+      title: "Finding a Job in Computer Vision",
+      topic: "Finding a Job in Computer Vision",
+    });
+
+    const ioUpdateBad = captureIo();
+    assert.equal(
+      await run(["event", "update", "card-1", "--date", "2026-11-25"], ioUpdateBad),
+      2,
+    );
+    assert.match(ioUpdateBad.errors.join("\n"), /only reconciles metadata/);
+
     const ioRelease = captureIo();
     assert.equal(await run(["event", "release", "card-1"], ioRelease), 0);
     assert.match(ioRelease.text(), /Released event hold_card-1.*\[released\]/);
@@ -171,7 +214,7 @@ describe("Unified Event Lifecycle CLI (AC2)", () => {
 
     const ioRetry = captureIo();
     assert.equal(await run(["event", "retry", "card-1", "--force-email-retry"], ioRetry), 0);
-    assert.deepEqual(calls[5].body, { forceEmailRetry: true });
+    assert.deepEqual(calls[6].body, { forceEmailRetry: true });
 
     const ioPoll = captureIo();
     assert.equal(await run(["event", "poll"], ioPoll), 0);

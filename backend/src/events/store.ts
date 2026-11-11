@@ -101,10 +101,23 @@ export async function commitEventTransition(
     } },
     { Update: {
       TableName: TABLE_CARDS, Key: cardKey(card.id),
-      UpdateExpression: 'SET anchorDate = :date, eventTime = :time, updatedAt = :at ADD #version :one',
+      UpdateExpression: operation.transition === 'update'
+        ? 'SET #title = :title, anchorDate = :date, eventTime = :time, updatedAt = :at ADD #version :one'
+        : 'SET anchorDate = :date, eventTime = :time, updatedAt = :at ADD #version :one',
       ConditionExpression: '#version = :expected AND (attribute_not_exists(eventTime.eventKey) OR eventTime.eventKey = :event)',
-      ExpressionAttributeNames: { '#version': 'version' },
-      ExpressionAttributeValues: { ':date': next.date, ':time': projectedTime(next, 'syncing', history.at), ':at': history.at, ':one': 1, ':expected': card.version, ':event': next.id },
+      ExpressionAttributeNames: {
+        '#version': 'version',
+        ...(operation.transition === 'update' ? { '#title': 'title' } : {}),
+      },
+      ExpressionAttributeValues: {
+        ...(operation.transition === 'update' ? { ':title': next.renderValues.title } : {}),
+        ':date': next.date,
+        ':time': projectedTime(next, 'syncing', history.at),
+        ':at': history.at,
+        ':one': 1,
+        ':expected': card.version,
+        ':event': next.id,
+      },
     } },
     { Put: { TableName: TABLE_CALENDAR, Item: { ...logKey(next.id, operation.key), operation, generation: next.generation, previousGoogleEventIds }, ConditionExpression: 'attribute_not_exists(PK)' } },
     { Put: { TableName: TABLE_CALENDAR, Item: {

@@ -40,13 +40,14 @@ import {
   type HoldGoogleResult,
 } from '../calendar/holdGoogleSync';
 import type { Card } from '../types';
-import { parseEventPolicy, type EventPolicy, type EventTransition } from './policy';
+import { parseEventPolicy, type EventPolicy } from './policy';
 import {
   EventConflictError,
   planEventTransition,
   type EventCommand,
   type EventHistoryEntry,
   type EventOperation,
+  type EventOperationTransition,
   type EventRecord,
 } from './lifecycle';
 import {
@@ -668,7 +669,7 @@ export interface EventTransitionInput {
 
 async function runTransition(
   client: DynamoDBDocumentClient,
-  transition: EventTransition,
+  transition: EventOperationTransition,
   targetId: string,
   input: EventTransitionInput = {},
 ): Promise<EventLifecycleResult> {
@@ -748,7 +749,7 @@ async function runTransition(
     const documentUrl =
       input.documentUrl !== undefined
         ? input.documentUrl
-        : cardGuestDocument(card) || current?.renderValues?.documentUrl || '';
+        : current?.renderValues?.documentUrl || cardGuestDocument(card) || '';
 
     let time = input.time;
     let proposalDate = input.date || current?.date || card.anchorDate;
@@ -784,6 +785,56 @@ async function runTransition(
         documentUrl,
         guestEmails,
         ...(input.guestTimezone ? { guestTimezone: input.guestTimezone } : {}),
+      },
+    };
+  } else if (transition === 'update') {
+    if (!current) {
+      throw new EventConflictError('Propose an event before updating its metadata');
+    }
+    if (
+      input.date !== undefined ||
+      input.time !== undefined ||
+      input.window !== undefined ||
+      input.durationMinutes !== undefined ||
+      input.timeZone !== undefined ||
+      input.guestEmails !== undefined
+    ) {
+      throw new EventInputError(
+        'event update only reconciles metadata (title, topic, guestNames, documentUrl, Zoom); use reschedule to change date, time, or attendees.',
+      );
+    }
+    const title =
+      input.title?.trim() ||
+      card.title?.trim() ||
+      current.renderValues.title ||
+      episode?.title ||
+      'DataTalks.Club Event';
+    const topic =
+      input.topic?.trim() ||
+      (current.renderValues.topic === current.renderValues.title
+        ? title
+        : current.renderValues.topic || title);
+    const guestNames =
+      input.guestNames?.trim() ||
+      current.renderValues.guestNames ||
+      (card.people?.length
+        ? card.people.join(', ')
+        : episode?.guests?.map((g) => g.name).join(', ') || '');
+    const documentUrl =
+      input.documentUrl !== undefined
+        ? input.documentUrl
+        : current.renderValues.documentUrl || cardGuestDocument(card) || '';
+    command = {
+      transition: 'update',
+      operationKey,
+      expectedVersion: current.version,
+      actor,
+      now,
+      metadata: {
+        title,
+        topic,
+        guestNames,
+        documentUrl,
       },
     };
   } else {
@@ -964,6 +1015,14 @@ export async function releaseEvent(
   input: EventTransitionInput = {},
 ): Promise<EventLifecycleResult> {
   return runTransition(client, 'release', targetId, input);
+}
+
+export async function updateEvent(
+  client: DynamoDBDocumentClient,
+  targetId: string,
+  input: EventTransitionInput = {},
+): Promise<EventLifecycleResult> {
+  return runTransition(client, 'update', targetId, input);
 }
 
 export async function retryEventOperation(

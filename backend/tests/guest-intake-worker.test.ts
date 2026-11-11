@@ -47,7 +47,8 @@ before(async () => {
 after(async () => { configureTaskChecklistStore(null); checklist.cleanup(); setCalendarHoldGoogleDepsForTests({}); setSponsorDocEmailDepsForTests({}); setOwnerCalendarProviderClientsForTests({}); await stopLocal(); });
 async function card(type: 'podcast'|'webinar'|'workshop', extra: Record<string, unknown> = {}) {
   const eventPolicy = policy(type);
-  eventPolicy.zoom = { enabled: false }; eventPolicy.guests.leadMinutes = 5;
+  if (type === 'workshop') eventPolicy.zoom = { enabled: false };
+  eventPolicy.guests.leadMinutes = 5;
   for (const notification of Object.values(eventPolicy.notifications)) notification.emails = [];
   const template = await createTemplate(db, { name: type, type, eventPolicy, guestIntake: { enabled: true, emailTemplateId: `${type}.first-contact`, formTemplate: type, followUpDays: 7, ...(type === 'podcast' ? { weekdays: [1,2], firstContactTaskRefs: ['obtain-speaker-email','create-proposed-calendar-invite'] } : {}) }, taskDefinitions: type === 'podcast' ? [
     { refId: 'obtain-speaker-email', description: 'Obtain guest email', offsetDays: 0, requiredLinkName: 'Guest email', proofRequirement: { type: 'url', required: true } },
@@ -71,6 +72,8 @@ test('creation queues a durable job with email alone; one worker sends both chan
   const event = (await getEventRecord(db, job.holdId!))!;
   assert.equal(event.durationMinutes, 60);
   assert.equal(event.operations[0].desired.startIso, new Date(Date.parse(event.startIso)-5*60000).toISOString()); assert.match(event.operations[0].desired.summary, /^\[Proposed\] /);
+  assert.equal(event.operations[0].desired.location, 'https://zoom.us/j/123456789');
+  assert.match(event.operations[0].desired.description, /https:\/\/zoom\.us\/j\/123456789/);
   assert.ok(event.operations[0].desired.attendees.includes(created.body.guestEmail));
   assert.equal(event.operations[0].desired.sendUpdates, 'all');
   assert.match(event.operations[0].desired.description, /Access code:/); assert.match(event.operations[0].desired.description, /America\/New_York/);
