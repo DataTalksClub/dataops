@@ -1,3 +1,4 @@
+import { hasValidMaterialConfirmation } from '../sponsorCrm/readiness';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createNotification, dismissNotification, listAllNotifications } from '../db/notifications';
 import { listCrmRecords } from '../db/sponsorCrm';
@@ -42,7 +43,7 @@ function rulesForDeliverable(
   const rules: Rule[] = [];
   const publication = String(deliverable.plannedPublicationDate || '');
   const deadline = String(deliverable.materialDeadline || '');
-  const hasMaterials = Array.isArray(deliverable.artifactUrls) && deliverable.artifactUrls.length > 0;
+  const hasMaterials = hasValidMaterialConfirmation(deliverable);
   const published = String(deliverable.publishedAt || '').slice(0, 10);
   const base = {
     dealId: String(deal.id),

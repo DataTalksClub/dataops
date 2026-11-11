@@ -1,6 +1,7 @@
+import { sponsorReminderTiming } from '../sponsorCrm/alerts';
 import { randomUUID } from 'crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { getCrmRecord, listCrmRecords } from '../db/sponsorCrm';
+import { deterministicCrmId, getCrmRecord, listCrmRecords } from '../db/sponsorCrm';
 import { getUser } from '../db/users';
 import type { LambdaEvent, LambdaResponse, User } from '../types';
 import {
@@ -32,7 +33,7 @@ import {
   putConfig,
   removeSuppression,
 } from '../sponsorCommunications/repositoryConfig';
-import { evaluateCommunicationSuggestions } from '../sponsorCommunications/suggestions';
+import { communicationCandidates, evaluateCommunicationSuggestions } from '../sponsorCommunications/suggestions';
 import { loadHmacKeyring, loadTemplateSet, renderTemplate } from '../sponsorCommunications/secrets';
 import type {
   CommunicationDraftVersion,
@@ -89,6 +90,13 @@ async function sourceRecords(
     || !Array.isArray(contact.emails) || contact.emails.length < 1
   ) throw Object.assign(new Error('Current sponsor recipient is not eligible'), { statusCode: 409 });
   const deliverables = (await listCrmRecords(client, 'deliverable')).filter((item) => item.dealId === booking.id);
+  if (suggestion.communicationType === 'materials-reminder') {
+    const timing = await sponsorReminderTiming(client);
+    const eligible = deliverables.find(deliverable => communicationCandidates(booking, [deliverable], new Date().toISOString().slice(0, 10), timing)
+      .some(candidate => candidate.type === 'materials-reminder' && candidate.occurrenceKey === suggestion.occurrenceKey));
+    if (!eligible) throw Object.assign(new Error('Materials reminder is no longer eligible'), { statusCode: 409 });
+    return { booking, organization, contact, deliverable: eligible };
+  }
   const slot = deliverables.find((item) => item.plannedPublicationDate) || deliverables[0] || {};
   return { booking, organization, contact, deliverable: slot };
 }
@@ -240,6 +248,18 @@ export async function handleSponsorCommunicationRoutes(
         limit,
         cursor: event.queryStringParameters?.cursor,
       });
+      // Stored suggestions are historical occurrences. Show current readiness,
+      // including confirmations recorded since the last scheduler run.
+      const booking = await getCrmRecord(client, 'deal', bookingList[1]);
+      if (booking && history.items.some(item => item.communicationType === 'materials-reminder')) {
+        const deliverables = (await listCrmRecords(client, 'deliverable')).filter(item => item.dealId === booking.id);
+        const timing = await sponsorReminderTiming(client);
+        const currentIds = new Set(communicationCandidates(booking, deliverables, new Date().toISOString().slice(0, 10), timing)
+          .filter(candidate => candidate.type === 'materials-reminder')
+          .map(candidate => deterministicCrmId('communication-suggestion', `${booking.id}:${candidate.type}:${candidate.occurrenceKey}`)));
+        history.items = history.items.map(item => item.communicationType === 'materials-reminder'
+          ? { ...item, eligible: item.eligible === true && currentIds.has(String(item.id)) } : item);
+      }
       return json(200, {
         ...history,
         config: configResponse(await getCurrentConfig(client)),

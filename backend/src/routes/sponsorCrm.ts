@@ -1,3 +1,4 @@
+import { changeReadiness, readinessView } from '../sponsorCrm/readiness';
 import { createNote } from '../crmWorkspace/notes';
 import { todayOf } from '../crmWorkspace/berlin';
 import { isIndividualTuition } from '../tuition/classification';
@@ -175,6 +176,7 @@ function validateDeal(body: Record<string, unknown>, partial = false, existing?:
 }
 
 function validateDeliverable(body: Record<string, unknown>, partial = false, existing?: CrmRecord) {
+  if ('readiness' in body) return 'Readiness is managed through the readiness endpoint';
   if (!partial && !ID.test(String(body.dealId || ''))) return 'Invalid dealId';
   if ((!partial || body.channel !== undefined) && !CHANNELS.has(String(body.channel))) return 'Invalid channel';
   for (const name of ['plannedPublicationDate', 'materialDeadline']) if (body[name] != null && !realDate(body[name])) return `Invalid ${name}`;
@@ -287,6 +289,29 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
   const defaultAssigneeId = await resolveDefaultAssigneeId(client);
   const body = parse(event), user = actor(event) || defaultAssigneeId || '', today = todayOf(event);
   if (body && 'rehomedTo' in body) return json(400, { error: 'Archival provenance is read-only' });
+
+  const readinessMatch = path.match(/^\/api\/sponsor-crm\/deliverables\/([^/]+)\/readiness$/);
+  if (readinessMatch) {
+    if (!ID.test(readinessMatch[1])) return json(400, { error: 'Invalid ID' });
+    const existing = await getCrmRecord(client, 'deliverable', readinessMatch[1]);
+    if (!existing) return json(404, { error: 'Not found' });
+    if (method === 'GET') return json(200, { version: existing.version, ...readinessView(existing) });
+    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+    const auth = await resolveInteractiveActor(client, event, 'work-write');
+    if (!auth.ok) return auth.response;
+    if (!body) return json(400, { error: 'Invalid JSON' });
+    if (existing.archivedAt || existing.active === false) return json(409, { error: 'Deliverable is archived or inactive' });
+    if (body.version !== existing.version) return json(409, { error: 'Record was changed; reload and retry' });
+    try {
+      const readiness = changeReadiness(existing, body, auth.actor.id);
+      const next = await updateDeliverableAtomic(client, existing, { readiness }, auth.actor.id);
+      return json(200, { version: next.version, ...readinessView(next) });
+    } catch (error) {
+      const conflict = (error as Error).name.includes('Transaction') || (error as Error).name.includes('Conditional');
+      const status = (error as { statusCode?: number }).statusCode || (conflict ? 409 : 500);
+      return json(status, { error: status === 500 ? 'Could not record readiness' : (error as Error).message });
+    }
+  }
 
   const dealDeleteMatch = path.match(/^\/api\/sponsor-crm\/deals\/([^/]+)\/delete$/);
   if (dealDeleteMatch && method === 'POST') {
