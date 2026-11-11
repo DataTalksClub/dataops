@@ -1101,6 +1101,35 @@ body[data-workspace-view="tasks"] .runtime-template-readonly-tasks li span {
   white-space: nowrap;
 }
 
+/* A Steps row is a button that opens that step's own bindings in place. */
+body[data-workspace-view="tasks"] .runtime-template-readonly-tasks li.runtime-template-step {
+  flex-wrap: wrap;
+}
+body[data-workspace-view="tasks"] .runtime-template-step-toggle {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--dk-space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+body[data-workspace-view="tasks"] .runtime-template-step-browser {
+  display: inline-block;
+  vertical-align: -2px;
+  color: var(--dk-text-muted);
+}
+body[data-workspace-view="tasks"] .runtime-template-step-detail {
+  flex: 1 0 100%;
+  margin: var(--dk-space-2) 0 0;
+}
+
 /* Live Cards: the pane names what is already running so the expensive review
    step is only worth taking when something is actually behind. */
 body[data-workspace-view="tasks"] .runtime-template-live-cards {
