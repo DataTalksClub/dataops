@@ -66,6 +66,7 @@ subcommands, flags, and examples.
 | `speakers` | website speaker/author profiles: `list`, `show`, `create`, `update` |
 | `books` | Book of the Week entries: `list`, `show`, `create`, `update` |
 | `events` | past events archive (Luma descriptions, speakers, recordings): `list` (`--course`, `--date`), `show`, `create`, `update`, `delete`, `import` |
+| `event` | unified Card event lifecycle: `propose`, `approve`, `reschedule`, `update` (silent in-place metadata/Zoom reconciliation with `sendUpdates=none`), `release`, `show`, `retry`, `poll` |
 | `calendar` | read-only events (Cards, podcast episodes, newsletter issues) and open slots |
 | `campaigns` | cohort campaign calendar / social post rows on a cohort Card (or the reusable `--template` rows): `list` (`--channel`, `--status`, `--phase`, `--owner`, `--format`), `show`, `import` (`--file`, `--from-template`, `--replace`), `create`, `update`, `delete` (optimistic `--version`) |
 | `recurring` | schedules that generate Tasks |

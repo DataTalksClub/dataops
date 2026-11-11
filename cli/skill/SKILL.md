@@ -357,7 +357,15 @@ For a configured Card outside automatic intake, use
 `dataops event propose CARD_ID --date YYYY-MM-DD --window NAME`, inspect
 `dataops event show CARD_ID`, and approve the same event with
 `dataops event approve CARD_ID` after acceptance. Use `event reschedule` for
-an owned event rather than creating a replacement hold.
+an owned event rather than creating a replacement hold. To reconcile title,
+topic, guest names, guest form URL, or policy Zoom location/description in place
+on an already-sent proposed or approved event without changing the date/time,
+event identity, or sending duplicate invite/email notifications (`sendUpdates=none`),
+use:
+
+```bash
+dataops event update CARD_ID [--title "..."] [--topic "..."] [--guest-names "Name, Name"] [--document-url URL]
+```
 
 For a Card without an event policy, supply explicit inputs:
 

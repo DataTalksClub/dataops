@@ -25,7 +25,12 @@ test('three template types follow the same full lifecycle with template-derived 
     assert.equal(event.status, 'proposed'); assert.equal(event.generation, 1);
     assert.equal(event.time, type === 'workshop' ? '12:00' : '12:30');
     assert.equal(event.operations[0].desired.summary, `(Proposal) ${type}: Synthetic event`);
-    assert.equal(event.operations[0].desired.location, '');
+    assert.equal(event.operations[0].desired.location, type === 'workshop' ? '' : 'https://zoom.us/j/123456789');
+    if (type === 'workshop') {
+      assert.doesNotMatch(event.operations[0].desired.description, /zoom\.us/);
+    } else {
+      assert.match(event.operations[0].desired.description, /https:\/\/zoom\.us\/j\/123456789/);
+    }
     event = planEventTransition(event.id, event.cardId, complete(event), command('approve', event.version));
     assert.equal(event.status, 'approved'); assert.equal(event.generation, 1);
     assert.equal(event.operations.at(-1)!.desired.location, type === 'workshop' ? '' : 'https://zoom.us/j/123456789');
@@ -130,4 +135,86 @@ test('rendered expansion and dynamic email headers are validated before persiste
   p.title = 'Topic\nInjected header'; p.policy.description = '{topic}';
   const event = complete(planEventTransition('hold', 'card', null, command('propose', 0, { date: '2030-12-03', time: '12:30', proposal: p })));
   assert.throws(() => planEventTransition('hold', 'card', event, command('approve', 1)), /single line/);
+});
+
+test('update reconciles title, topic and Zoom metadata in place with sendUpdates=none and no emails', () => {
+  const p = proposal('podcast');
+  p.policy.titles.proposed = '[Proposed] {title}';
+  p.policy.inviteText = 'Zoom: {zoomUrl}';
+  p.policy.zoom = { enabled: true, url: 'https://zoom.us/j/94755324762' };
+  p.title = 'Finding a Computer Vision Job in Berlin: A Practical Job Search Approach';
+  p.topic = 'Finding a Computer Vision Job in Berlin: A Practical Job Search Approach';
+  p.guestNames = 'Stacy Sand';
+  p.documentUrl = 'https://ops.dtcdev.click/sponsor-docs/doc-1?code=ABCD-EFGH';
+
+  const proposed = complete(
+    planEventTransition('hold-stacy', 'card-stacy', null, command('propose', 0, {
+      date: '2026-11-23',
+      time: '12:30',
+      proposal: p,
+    })),
+  );
+  proposed.googleEventIds = {
+    'orin@datatalks.club': 'gev_org_1',
+    'alexey.s.grigoriev@gmail.com': 'gev_alexey_1',
+  };
+  // Simulate historical propose operation that omitted Zoom location and left "Zoom: " empty
+  proposed.operations[0].desired.location = '';
+  proposed.operations[0].desired.description = proposed.operations[0].desired.description.replace(
+    'Zoom: https://zoom.us/j/94755324762',
+    'Zoom: ',
+  );
+
+  const updated = planEventTransition(
+    proposed.id,
+    proposed.cardId,
+    proposed,
+    command('update', proposed.version, {
+      metadata: {
+        title: 'Finding a Job in Computer Vision',
+        topic: 'Finding a Job in Computer Vision',
+        guestNames: 'Stacy Sand',
+        documentUrl: 'https://ops.dtcdev.click/sponsor-docs/doc-1?code=ABCD-EFGH',
+      },
+    }),
+  );
+
+  assert.equal(updated.status, 'proposed');
+  assert.equal(updated.version, proposed.version + 1);
+  assert.equal(updated.generation, proposed.generation);
+  assert.equal(updated.identityGeneration, proposed.identityGeneration);
+  assert.equal(updated.startIso, proposed.startIso);
+  assert.equal(updated.endIso, proposed.endIso);
+  assert.deepEqual(updated.googleEventIds, proposed.googleEventIds);
+  assert.equal(updated.renderValues.title, 'Finding a Job in Computer Vision');
+  assert.equal(updated.renderValues.topic, 'Finding a Job in Computer Vision');
+  assert.equal(updated.renderValues.zoomUrl, 'https://zoom.us/j/94755324762');
+
+  const op = updated.operations.at(-1)!;
+  assert.equal(op.transition, 'update');
+  assert.equal(op.desired.sendUpdates, 'none');
+  assert.deepEqual(op.desired.emails, []);
+  assert.equal(op.desired.summary, '[Proposed] Finding a Job in Computer Vision');
+  assert.equal(op.desired.location, 'https://zoom.us/j/94755324762');
+  assert.match(op.desired.description, /Zoom: https:\/\/zoom\.us\/j\/94755324762/);
+  assert.match(op.desired.description, /Access code: ABCD-EFGH/);
+
+  assert.throws(
+    () =>
+      planEventTransition(
+        updated.id,
+        updated.cardId,
+        complete(updated),
+        command('update', updated.version, {
+          date: '2026-11-24',
+          metadata: {
+            title: 'Finding a Job in Computer Vision',
+            topic: 'Finding a Job in Computer Vision',
+            guestNames: 'Stacy Sand',
+            documentUrl: '',
+          },
+        }),
+      ),
+    /Only propose or reschedule/,
+  );
 });

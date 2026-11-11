@@ -16,6 +16,7 @@ import {
   rescheduleEvent,
   retryEventOperation,
   toCalendarHoldView,
+  updateEvent,
   type EventLifecycleResult,
 } from '../events/service';
 import { json, parseJsonObjectBodyOrEmpty as parseBody } from '../http';
@@ -128,13 +129,13 @@ export async function handleEventRoutes(
 
     // POST /api/events/:action or POST /api/events/:targetId/:action
     const actionMatch = path.match(
-      /^\/api\/events(?:\/([^/]+))?\/(propose|approve|reschedule|release|retry)\/?$/,
+      /^\/api\/events(?:\/([^/]+))?\/(propose|approve|reschedule|update|release|retry)\/?$/,
     );
     if (actionMatch) {
       if (method !== 'POST') return json(405, { error: 'Method not allowed' });
       const body = parseBody(event.body);
       if (!body) return json(400, { error: 'Invalid JSON body' });
-      const action = actionMatch[2] as 'propose' | 'approve' | 'reschedule' | 'release' | 'retry';
+      const action = actionMatch[2] as 'propose' | 'approve' | 'reschedule' | 'update' | 'release' | 'retry';
       const targetId = actionMatch[1]
         ? decodeURIComponent(actionMatch[1])
         : String(body.targetId || body.cardId || body.holdId || body.episodeId || '').trim();
@@ -154,6 +155,8 @@ export async function handleEventRoutes(
         result = await approveEvent(client, targetId, parseTransitionInput(body, actorId));
       } else if (action === 'reschedule') {
         result = await rescheduleEvent(client, targetId, parseTransitionInput(body, actorId));
+      } else if (action === 'update') {
+        result = await updateEvent(client, targetId, parseTransitionInput(body, actorId));
       } else {
         result = await releaseEvent(client, targetId, parseTransitionInput(body, actorId));
       }
