@@ -1566,6 +1566,9 @@ closes on every tab switch (see setView), so it never covers list content. */
   font-size: var(--dk-text-xs);
   color: var(--dk-text-muted);
 }
+.fin-stats .fin-stats__total {
+  border: 1px solid var(--dk-border-strong);
+}
 .fin-stats dd {
   margin: 0;
   font-size: var(--dk-text-md);
@@ -1657,12 +1660,19 @@ closes on every tab switch (see setView), so it never covers list content. */
   font-size: var(--dk-text-md);
   color: var(--dk-text-heading);
 }
-.fin-count {
-  padding: 0 var(--dk-space-2);
-  border-radius: var(--dk-radius-full);
-  background: var(--dk-warning-bg);
-  color: var(--dk-warning-text);
-  font-size: var(--dk-text-xs);
+.fin-block__subtitle {
+  margin: 0;
+  font-size: var(--dk-text-sm);
+  color: var(--dk-text-heading);
+}
+.fin-refunds {
+  display: grid;
+  gap: var(--dk-space-2);
+  min-width: 0;
+}
+.fin-refunds .fin-muted {
+  margin: 0;
+  font-size: var(--dk-text-sm);
 }
 .fin-table-wrap {
   overflow-x: auto;
@@ -1726,14 +1736,6 @@ closes on every tab switch (see setView), so it never covers list content. */
   margin: 0;
   padding-left: var(--dk-space-5);
   font-size: var(--dk-text-sm);
-}
-.fin-rules {
-  font-size: var(--dk-text-sm);
-  color: var(--dk-text-muted);
-}
-.fin-rules summary {
-  cursor: pointer;
-  color: var(--dk-text-link);
 }
 .fin-error {
   margin: 0;

@@ -43,7 +43,6 @@ const vatWord = (value) => (value > 0 ? "owed to the Finanzamt" : value < 0 ? "r
 
 export function headlineMarkup(summary, e) {
   const t = summary.totals;
-  const taxes = t.otherTaxes + t.healthInsurance;
   const settled = t.vatPaid - t.vatRefunded;
   return html`<div class="fin-hero">
       <section class="fin-tile fin-tile--hero" aria-labelledby="fin-profit-label">
@@ -51,7 +50,7 @@ export function headlineMarkup(summary, e) {
         <p class="fin-tile__value" data-fin-profit>${formatEur(t.netProfitExVat)} <span class="fin-tile__unit">EUR</span></p>
         <p class="fin-tile__sub">Income net of VAT ${formatEur(t.incomeNetOfVat)}
           − expenses net of VAT ${formatEur(t.expensesNetOfVat)}</p>
-        <p class="fin-tile__sub">After taxes ${formatEur(taxes)}: <strong>${formatEur(t.netAfterTaxes)}</strong></p>
+        <p class="fin-tile__sub">After taxes and TK paid ${formatEur(t.taxesTotal)}: <strong>${formatEur(t.netAfterTaxes)}</strong></p>
       </section>
       <section class="fin-tile fin-tile--hero" aria-labelledby="fin-vat-label">
         <h2 id="fin-vat-label" class="fin-tile__label">Projected VAT position</h2>
@@ -64,10 +63,52 @@ export function headlineMarkup(summary, e) {
       <div><dt>Money in</dt><dd>${formatEur(t.moneyIn)}</dd></div>
       <div><dt>Money out</dt><dd>${formatEur(t.moneyOut)}</dd></div>
       <div><dt>Net (cash)</dt><dd>${formatEur(t.net, { sign: true })}</dd></div>
-      <div><dt>Taxes</dt><dd>${formatEur(taxes, { sign: true })}</dd></div>
+      <div><dt>Taxes and TK paid</dt><dd data-fin-taxes-total>${formatEur(t.taxesTotal)}</dd></div>
       <div><dt>Owner pay (below net profit)</dt><dd data-fin-owner-pay>${formatEur(t.ownerPay)}</dd></div>
       <div><dt>Net after owner pay</dt><dd>${formatEur(t.netAfterOwnerPay, { sign: true })}</dd></div>
     </dl>`;
+}
+
+/**
+ * Taxes paid this year by type and together. Only payments count: a refund
+ * is never a negative tax, so it is listed on its own below.
+ */
+export function taxesMarkup(summary, e) {
+  const t = summary.totals;
+  const lines = [
+    ["Einkommensteuer + Soli", t.incomeTax, "income-tax"],
+    ["Gewerbesteuer", t.tradeTax, "trade-tax"],
+    ["TK health insurance", t.healthInsurance, "health-insurance"],
+    ...(t.otherTaxes ? [["Other taxes", t.otherTaxes, "other"]] : []),
+  ];
+  return html`<section class="fin-block" aria-labelledby="fin-taxes-heading">
+      <h2 id="fin-taxes-heading" class="fin-block__title">Taxes paid in ${e(summary.period.label)}</h2>
+      <dl class="fin-stats">
+        ${lines.map(([label, value, key]) => html`<div><dt>${label}</dt><dd data-fin-tax="${key}">${formatEur(value)}</dd></div>`).join("")}
+        <div class="fin-stats__total"><dt>Total taxes and TK</dt><dd data-fin-tax="total">${formatEur(t.taxesTotal)}</dd></div>
+      </dl>
+      ${refundsMarkup(summary, e)}
+    </section>`;
+}
+
+/** Refunds stay visible as cash with their ledger rows; they are not tax, revenue or profit. */
+export function refundsMarkup(summary, e) {
+  const refunds = summary.taxRefunds || [];
+  if (!refunds.length) return "";
+  const t = summary.totals;
+  return html`<div class="fin-refunds" data-fin-refunds>
+      <h3 class="fin-block__subtitle">Tax refunds received: ${formatEur(t.taxRefunds)} EUR</h3>
+      <p class="fin-muted">Counted in money in and net cash (${formatEur(t.moneyIn)} money in includes them).
+        Not revenue (income net of VAT ${formatEur(t.incomeNetOfVat)} excludes them), not profit, and never a negative tax in any year:
+        a refund settles an earlier assessed year.</p>
+      <div class="fin-table-wrap"><table class="fin-table">
+        ${headRow(["Bank date", "Amount", "From", "Booking text", "Ledger row"])}
+        <tbody>${refunds.map((r) => html`<tr>
+          <td>${MONTH.test(r.month) ? html`<a href="${e(bookkeepingMonthUrl(r.month))}">${e(r.date)}</a>` : e(r.date)}</td>
+          <td class="fin-num">${formatEur(r.eur)}</td><td>${e(r.counterparty)}</td><td>${e(r.description)}</td>
+          <td><code>${e(r.id)}</code></td></tr>`).join("")}</tbody>
+      </table></div>
+    </div>`;
 }
 
 // Bar path with a 4px rounded data end and a flat end on the baseline.
@@ -162,11 +203,13 @@ export function profitChartMarkup(months, e) {
 export function monthTableMarkup(summary, e) {
   const rows = [...summary.months, { month: "Total", ...summary.totals, total: true }];
   const cell = (v, opts) => html`<td class="fin-num">${formatEur(v, opts)}</td>`;
+  const otherTaxes = rows.some((r) => r.otherTaxes);
   return html`<div class="fin-table-wrap"><table class="fin-table">
       <caption class="fin-sr">Per month, EUR</caption>
       <thead><tr><th scope="col">Month</th><th scope="col">Money in</th><th scope="col">Money out</th><th scope="col">Net</th>
         <th scope="col">Income net of VAT</th><th scope="col">Expenses net of VAT</th><th scope="col">Profit ex VAT</th>
-        <th scope="col">Taxes</th><th scope="col">Owner pay</th><th scope="col">Output VAT</th><th scope="col">Input VAT</th>
+        <th scope="col">ESt + Soli</th><th scope="col">GewSt</th><th scope="col">TK</th>${otherTaxes ? html`<th scope="col">Other taxes</th>` : ""}
+        <th scope="col">Taxes total</th><th scope="col">Tax refunds</th><th scope="col">Owner pay</th><th scope="col">Output VAT</th><th scope="col">Input VAT</th>
         <th scope="col">VAT paid</th><th scope="col">VAT refunded</th><th scope="col">VAT position</th><th scope="col">Rows</th></tr></thead>
       <tbody>${rows.map((r) => {
         const href = !r.total && MONTH.test(r.month) ? bookkeepingMonthUrl(r.month) : "";
@@ -176,7 +219,8 @@ export function monthTableMarkup(summary, e) {
         return html`<tr class="${r.total ? "fin-table__total" : r.future ? "is-future" : ""}"${href ? " data-fin-bookkeeping-row" : ""}>
         <th scope="row">${month}${r.future ? " <small>(not over)</small>" : ""}</th>
         ${cell(r.moneyIn)}${cell(r.moneyOut)}${cell(r.net, { sign: true })}${cell(r.incomeNetOfVat)}${cell(r.expensesNetOfVat)}
-        ${cell(r.netProfitExVat, { sign: true })}${cell(r.otherTaxes + r.healthInsurance, { sign: true })}${cell(r.ownerPay)}${cell(r.outputVat)}${cell(r.inputVat)}
+        ${cell(r.netProfitExVat, { sign: true })}${cell(r.incomeTax)}${cell(r.tradeTax)}${cell(r.healthInsurance)}${otherTaxes ? cell(r.otherTaxes) : ""}
+        ${cell(r.taxesTotal)}${cell(r.taxRefunds)}${cell(r.ownerPay)}${cell(r.outputVat)}${cell(r.inputVat)}
         ${cell(r.vatPaid)}${cell(r.vatRefunded)}${cell(r.projectedVat)}
         <td class="fin-num">${e(String(r.entryCount))}</td></tr>`;
       }).join("")}</tbody>
@@ -198,21 +242,6 @@ export function activateFinanceMonthlyRow(event, selection = globalThis.getSelec
   if ((event.button !== undefined && event.button !== 0) || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
   link.click();
   return true;
-}
-
-export function gapsMarkup(summary, e) {
-  const notes = [
-    ...summary.gaps.map((g) => `${g.month ? `${g.month}: ` : ""}${g.message} (${g.count})`),
-    ...(summary.duplicates.length ? [`Bookkeeping-sheet rows dropped as duplicates of invoice or receipt rows (${summary.duplicates.length})`] : []),
-    ...(summary.rateErrors || []).map((message) => `Exchange-rate lookup failed: ${message}`),
-  ];
-  return html`<section class="fin-block" aria-labelledby="fin-gaps-heading">
-      <h2 id="fin-gaps-heading" class="fin-block__title">Data gaps ${notes.length ? html`<span class="fin-count">${notes.length}</span>` : ""}</h2>
-      ${notes.length ? html`<ul class="fin-gaps">${notes.map((n) => html`<li>${e(n)}</li>`).join("")}</ul>` : html`<p class="fin-muted">None found for this period.</p>`}
-      <details class="fin-rules"><summary>How these numbers are made</summary>
-        <ol>${summary.rules.map((rule) => html`<li>${e(rule)}</li>`).join("")}</ol>
-      </details>
-    </section>`;
 }
 
 export function periodControlsMarkup(period, today, e) {
@@ -264,11 +293,11 @@ const cliFlag = (period) => `--year ${period.label}`;
 export function overviewMarkup(summary, e) {
   return html`${headlineMarkup(summary, e)}
     ${cashChartMarkup(summary.months, e) + profitChartMarkup(summary.months, e)}
+    ${taxesMarkup(summary, e)}
     <section class="fin-block" aria-labelledby="fin-months-heading">
       <h2 id="fin-months-heading" class="fin-block__title">By month</h2>
       ${monthTableMarkup(summary, e)}
     </section>
-    ${gapsMarkup(summary, e)}
     <p class="fin-muted">Same numbers on the command line: <code>dataops finance summary ${e(cliFlag(summary.period))}</code></p>`;
 }
 
