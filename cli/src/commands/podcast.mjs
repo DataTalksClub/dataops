@@ -14,6 +14,13 @@ export const help = `dataops podcast - the podcast episode register (the web Ope
 
 Usage
   dataops podcast list [--season N] [--status S] [--card <card-id>] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+  dataops podcast delete <episode-id> --dry-run
+  dataops podcast delete <episode-id> --yes
+                                   Admin only: permanently delete an allowlisted, confirmed
+                                   cancelled test row after reference/publication checks.
+                                   --dry-run reads only and reports blockers, including
+                                   pending exact identity confirmation. --yes cannot bypass
+                                   safeguards. No email, calendar or public event writes.
   dataops podcast show <episode-id>
   dataops podcast send-invite --hold HOLD-ID --doc DOC-ID --task TASK-ID --guest "Full Name" [--preview] [--retry-pre-send]
                                    Send first contact through DataOps from orin@.
@@ -333,6 +340,23 @@ export async function show(args, io) {
   return episode;
 }
 
+export async function deleteEpisode(args, io) {
+  const id = positional(args, 0, "dataops podcast delete <episode-id> --dry-run|--yes");
+  if (args.dryRun !== true && args.yes !== true) throw new UsageError("Pass --dry-run to inspect, or --yes to delete a confirmed test episode.");
+  if (args.dryRun !== undefined && args.dryRun !== true) throw new UsageError("--dry-run is a boolean flag.");
+  const api = apiFor(args);
+  const route = `/api/podcast-episodes/${enc(id)}`;
+  const preview = await api.get(route, { query: { deletePreview: "true" } });
+  if (args.dryRun === true) {
+    if (!args.json) io.print(JSON.stringify(preview, null, 2));
+    return preview;
+  }
+  if (!preview.eligible) throw new UsageError(`Episode deletion blocked: ${(preview.blockers || []).join("; ")}`);
+  const result = await api.delete(route, { version: preview.version, yes: true });
+  if (!args.json) io.print(`Deleted episode ${id}.`);
+  return result;
+}
+
 export async function create(args, io) {
   const { body, links } = episodeBody(args);
   const setLinks = Object.fromEntries(Object.entries(links).filter(([, value]) => value));
@@ -633,6 +657,7 @@ export async function sendInvite(args, io) {
 }
 
 export const commands = {
+  delete: deleteEpisode,
   list,
   show,
   invite,
