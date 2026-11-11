@@ -137,6 +137,11 @@ describe('finance summary', () => {
     assert.equal(s.totals.taxesTotal, 14338);
     assert.equal(s.totals.taxRefunds, 43633.73);
     assert.equal(s.months.find((m) => m.month === '2026-10')?.taxesTotal, 0);
+    const credit = s.entries.find((e) => e.id === 'refund');
+    assert.equal(credit?.direction, 'in');
+    assert.equal(credit?.mandatoryKind, 'tax_refund');
+    assert.deepEqual(s.taxRefunds.map(({ id, eur }) => [id, eur]), [['refund', 43633.73]]);
+    assert.equal(s.entries.find((e) => e.id === 'gewst-q1')?.mandatoryKind, 'tax_debit');
   });
 
   it('uses the matched statement purpose to classify a generic Taxes ledger row as VAT paid', () => {
