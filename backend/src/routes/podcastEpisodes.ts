@@ -34,7 +34,14 @@ import {
   MAX_NEXT_SLOT_COUNT,
   nextReleaseSlots,
 } from "../podcast/releaseSlots";
-import { isReleaseAssignmentStatus, releaseDateConflict, validateReleaseAssignment } from "../podcast/releaseAssignment";
+import {
+  effectiveReleaseAssignment,
+  isReleaseAssignmentStatus,
+  releaseDateConflict,
+  releaseWarnings,
+  validateReleaseAssignment,
+} from "../podcast/releaseAssignment";
+import { syncPublicationAnchor } from "../podcast/publicationAnchor";
 import {
   MAX_NEXT_RECORDING_SLOT_COUNT,
 } from "../podcast/recordingSlots";
@@ -357,9 +364,11 @@ async function resolveEpisodeEventAuthority(client: DynamoDBDocumentClient, epis
 /** The episode as every response shows it: status, readiness, and hold-owned recording datetime derived on read. */
 const presented = async (client: DynamoDBDocumentClient, episode: PodcastEpisode) => {
   const authority = await resolveEpisodeEventAuthority(client, episode);
+  const readiness = derivePublicationReadiness(episode.publication);
   return {
     ...episode,
-    releaseAssignmentStatus: episode.releaseAssignmentStatus ?? "unassigned",
+    releaseAssignmentStatus: effectiveReleaseAssignment(episode),
+    release: releaseWarnings(episode, readiness.scheduledLocalDate),
     ...(authority
       ? {
           recordingDate: authority.date,
@@ -374,7 +383,7 @@ const presented = async (client: DynamoDBDocumentClient, episode: PodcastEpisode
         ? { recordingTimeZone: "Europe/Berlin" }
         : {}),
     status: await derivedStatus(client, episode),
-    readiness: derivePublicationReadiness(episode.publication),
+    readiness,
   };
 };
 
@@ -582,7 +591,17 @@ export async function handlePodcastEpisodeRoutes(
     const scheduleSync = Object.hasOwn(changes, "publication")
       ? await syncVerifyTaskTime(client, next, existing.publication?.audioSchedule?.scheduledAt ?? null)
       : null;
-    const sync = scheduleSync ? { scheduleSync } : {};
+    // The publication date is the Card's second anchor: a changed date or a
+    // newly confirmed slot moves unfinished publication-anchored Tasks.
+    const anchorSync =
+      next.cardId &&
+      next.releaseDate &&
+      (linking ||
+        next.releaseDate !== existing.releaseDate ||
+        next.releaseAssignmentStatus !== existing.releaseAssignmentStatus)
+        ? await syncPublicationAnchor(client, next)
+        : null;
+    const sync = { ...(scheduleSync ? { scheduleSync } : {}), ...(anchorSync ? { publicationAnchor: anchorSync } : {}) };
     if (
       next.cardId &&
       (linking ||
@@ -652,6 +671,7 @@ async function createEpisodeCard(
       {
         title: working.title || `Podcast with ${guests.join(" & ")}`,
         anchorDate: working.recordingDate,
+        ...(working.releaseDate ? { endDate: working.releaseDate } : {}),
         ...(guests.length ? { people: guests } : {}),
       },
       podcastEpisodeTitleValues(working),

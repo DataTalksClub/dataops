@@ -45,3 +45,63 @@ export function releaseDateConflict(
   if (!takenReleaseDates(others).has(candidate.releaseDate)) return "";
   return `Release date ${candidate.releaseDate} is already held by another episode`;
 }
+
+/**
+ * The release tuple state every response shows. A stored state wins; a slot
+ * saved without one reads as provisional, never final: final needs an
+ * explicit confirmation after the stream.
+ */
+export function effectiveReleaseAssignment(episode: Partial<PodcastEpisode>): ReleaseAssignmentStatus {
+  if (episode.releaseAssignmentStatus) return episode.releaseAssignmentStatus;
+  return episode.releaseDate || episode.season != null || episode.episode != null ? "provisional" : "unassigned";
+}
+
+export type ReleaseWarningCode =
+  | "missing-release-slot"
+  | "slot-not-final"
+  | "missing-provider-schedule"
+  | "provider-date-mismatch";
+
+export interface ReleaseWarning {
+  code: ReleaseWarningCode;
+  message: string;
+}
+
+/**
+ * Release readiness warnings. A DataOps release date alone never makes an
+ * episode fully scheduled: that needs the provider schedule proof
+ * (`publication.audioSchedule` with a proofUrl) on the same local date.
+ */
+export function releaseWarnings(
+  episode: Partial<PodcastEpisode>,
+  scheduledLocalDate: string | null,
+): { fullyScheduled: boolean; warnings: ReleaseWarning[] } {
+  const warnings: ReleaseWarning[] = [];
+  if (episode.status === "cancelled" || episode.status === "published") return { fullyScheduled: episode.status === "published", warnings };
+  const state = effectiveReleaseAssignment(episode);
+  const recorded = episode.status !== "booked";
+  if (state === "unassigned" || !episode.releaseDate) {
+    warnings.push({
+      code: "missing-release-slot",
+      message: recorded
+        ? "Recorded without a season, episode and publication date: assign the final slot"
+        : "No preliminary season, episode and publication date yet",
+    });
+  } else if (state === "provisional" && recorded) {
+    warnings.push({ code: "slot-not-final", message: "Recorded, but the release slot is still provisional: confirm the final slot" });
+  }
+  const proof = episode.publication?.audioSchedule?.proofUrl;
+  if (state === "final" && episode.releaseDate && !proof)
+    warnings.push({
+      code: "missing-provider-schedule",
+      message: "Final slot booked in DataOps only: record the Spotify for Creators schedule proof",
+    });
+  if (proof && episode.releaseDate && scheduledLocalDate && scheduledLocalDate !== episode.releaseDate)
+    warnings.push({
+      code: "provider-date-mismatch",
+      message: `Spotify schedule is ${scheduledLocalDate} but the DataOps publication date is ${episode.releaseDate}`,
+    });
+  const fullyScheduled =
+    state === "final" && Boolean(proof) && Boolean(episode.releaseDate) && scheduledLocalDate === episode.releaseDate;
+  return { fullyScheduled, warnings };
+}
