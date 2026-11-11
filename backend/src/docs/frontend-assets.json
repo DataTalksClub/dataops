@@ -5,6 +5,7 @@
     "src/app.js",
     "src/contract-sign-page.js",
     "src/contract-sign.html",
+    "src/core/calendar-display.js",
     "src/core/card-kind.js",
     "src/core/collection-loader.js",
     "src/core/dates.js",
