@@ -38,6 +38,7 @@ Usage
                                   public check, transcript review, website readiness
   dataops podcast create [--title T] [--guests "Name[:slug],Name"] [--season N] [--episode N]
       [--recording-date YYYY-MM-DD] [--release-date YYYY-MM-DD] [--status S]
+      [--release-assignment unassigned|provisional|final]  (required with --season/--episode/--release-date)
       [--youtube URL] [--spotify URL] [--apple URL] [--anchor URL] [--website URL]
       [--slug website-slug] [--card ID] [--notes TEXT]
       [--short T] [--description T] [--intro T] [--topics "a,b"] [--duration PT..]
@@ -159,13 +160,13 @@ function episodeBody(args, { requireAssignment = true } = {}) {
   nullable(args, "episode", "episode", body, (value) => integer(value, "episode"));
   nullable(args, "recordingDate", "recordingDate", body, (value) => isoDate(value, "recording-date"));
   nullable(args, "releaseDate", "releaseDate", body, (value) => isoDate(value, "release-date"));
-  const releaseAssignment = optionalString(args, "release-assignment");
+  const releaseAssignment = optionalString(args, "releaseAssignment");
   if (releaseAssignment !== undefined) {
     if (!["unassigned", "provisional", "final"].includes(releaseAssignment))
       throw new UsageError("--release-assignment must be unassigned, provisional or final.");
     body.releaseAssignmentStatus = releaseAssignment;
   }
-  const releaseTupleChanged = ["season", "episode", "releaseDate"].some((name) => optionalString(args, name === "releaseDate" ? "release-date" : name) !== undefined);
+  const releaseTupleChanged = ["season", "episode", "releaseDate"].some((name) => Object.hasOwn(body, name));
   if (requireAssignment && releaseTupleChanged && releaseAssignment === undefined)
     throw new UsageError("Pass --release-assignment provisional|final when assigning a season, episode or release date.");
   nullable(args, "slug", "websiteSlug", body);

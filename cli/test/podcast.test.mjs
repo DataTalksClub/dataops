@@ -39,7 +39,7 @@ describe("podcast", () => {
     const io = captureIo();
     assert.equal(await run(["podcast", "list", "--season", "25", "--status", "booked", "--from", "2026-11-01"], io), 0);
     assert.deepEqual(calls[0].query, { season: "25", status: "booked", from: "2026-11-01" });
-    assert.match(io.text(), /S25E3\s+booked\s+2026-11-04/);
+    assert.match(io.text(), /S25E3\s+unassigned\s+booked\s+2026-11-04/);
     assert.match(io.text(), /Test Guest - Synthetic episode/);
     assert.match(io.text(), /unassigned/);
   });
