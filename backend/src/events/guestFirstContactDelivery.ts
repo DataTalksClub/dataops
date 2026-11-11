@@ -27,7 +27,7 @@ export async function deliverGuestFirstContact(db: DynamoDBDocumentClient, input
     claimedAt: new Date().toISOString(), attempts: prior ? [...(prior.attempts || []), { claimedAt: prior.claimedAt, delivery: prior.delivery! }] : [] };
   await updateTask(db, task.id, { currentTask: task, expectedVersion: task.version, patch: { podcastFirstContact: claim }, actorId: input.actorId, triggerKind: 'guest-first-contact-claim' });
   const result = await deliverRenderedEmail(db, { draft: email, recipientEmail: input.recipient, recipientName: input.guestName || '', taskId: task.id,
-    connectionId: process.env.DATAOPS_ORIN_GMAIL_CONNECTION_ID?.trim() || 'google-calendar-orin', cc: [] });
+    connectionId: process.env.DATAOPS_ORIN_GMAIL_CONNECTION_ID?.trim() || 'google-calendar-orin', cc: email.cc });
   const delivery = { ...result, templateId: email.templateId, templateRevision: email.templateUpdatedAt };
   const current = await getTaskConsistent(db, task.id);
   if (!current) throw new Error('Invitation Task disappeared after provider delivery');

@@ -1,6 +1,8 @@
 import { loadGuestFirstContact } from '../events/guestFirstContact';
+import { preparePodcastGuestReply, type PodcastGuestReplyInput } from '../podcast/firstContact';
 /**
  * POST /api/podcast-first-contact/email: render Orin's first-contact email.
+ * POST /api/podcast-first-contact/reply: prepare or send an Orin-driven reply in a podcast guest thread.
  *
  * The render endpoint is side-effect free. The send endpoint reads an existing
  * tentative proposal, guest materials document and owning Task, then delivers
@@ -25,13 +27,45 @@ export async function handlePodcastFirstContactRoutes(
   event: LambdaEvent,
   client: DynamoDBDocumentClient,
 ): Promise<LambdaResponse> {
-  if (!['/api/podcast-first-contact/email', '/api/podcast-first-contact/send'].includes(path)) return json(404, { error: 'Not found' });
+  if (!['/api/podcast-first-contact/email', '/api/podcast-first-contact/send', '/api/podcast-first-contact/reply'].includes(path)) return json(404, { error: 'Not found' });
   if (method !== 'POST') return json(405, { error: 'Method not allowed' });
   const resolved = await resolveInteractiveActor(client, event, 'work-write');
   if (!resolved.ok) return resolved.response;
 
   const body = parse(event);
   if (!body) return json(400, { error: 'Invalid JSON' });
+
+  if (path.endsWith('/reply')) {
+    try {
+      const prepared = preparePodcastGuestReply({
+        to: String(body.to ?? body.recipientEmail ?? ''),
+        subject: String(body.subject ?? ''),
+        body: String(body.body ?? ''),
+        threadId: typeof body.threadId === 'string' ? body.threadId : undefined,
+        inReplyTo: typeof body.inReplyTo === 'string' ? body.inReplyTo : undefined,
+        cc: Array.isArray(body.cc) ? (body.cc as string[]) : undefined,
+      } satisfies PodcastGuestReplyInput);
+      if (body.send !== true || body.preview === true) {
+        return json(200, { preview: true, email: prepared });
+      }
+      const taskId = typeof body.taskId === 'string' ? body.taskId.trim() : '';
+      if (!taskId || !prepared.threadId) {
+        return json(400, { error: 'taskId and threadId are required when sending a podcast guest reply' });
+      }
+      const connectionId = process.env.DATAOPS_ORIN_GMAIL_CONNECTION_ID?.trim() || 'google-calendar-orin';
+      const delivery = await deliverRenderedEmail(client, {
+        draft: { subject: prepared.subject, body: prepared.body },
+        recipientEmail: prepared.to,
+        taskId,
+        connectionId,
+        cc: prepared.cc,
+        threadId: prepared.threadId,
+      });
+      return json(200, { emailDelivery: delivery, email: prepared, taskId, threadId: prepared.threadId });
+    } catch (error) {
+      return json(400, { error: (error as Error).message });
+    }
+  }
 
   if (path.endsWith('/send')) {
     const { holdId, docId, taskId, guestName } = body;
@@ -74,13 +108,13 @@ export async function handlePodcastFirstContactRoutes(
     const formUrl = `${sponsorDocPortalBaseUrl(event)}/podcast-docs/${encodeURIComponent(doc.id)}?code=${encodeURIComponent(accessCode)}`;
     let email;
     try {
-      email = await loadGuestFirstContact(client, { type: 'podcast', templateId: card.templateDefinitionSnapshot?.guestIntake?.emailTemplateId || 'podcast.first-contact', guestName, startIso: hold.startIso, topic: hold.topic, formUrl, accessCode });
+      email = await loadGuestFirstContact(client, { type: 'podcast', templateId: card.templateDefinitionSnapshot?.guestIntake?.emailTemplateId || 'podcast.first-contact', guestName, startIso: hold.startIso, topic: hold.topic, formUrl, accessCode, cc: card.templateDefinitionSnapshot?.guestIntake?.cc });
     } catch (error) { return json(422, { error: (error as Error).message }); }
     const recipient = hold.guestRef!.trim().toLowerCase();
     // Use the existing Orin Google connection with verified Gmail scopes, also
     // used by contract delivery. No new account, connection or grant is created.
     const connectionId = process.env.DATAOPS_ORIN_GMAIL_CONNECTION_ID?.trim() || 'google-calendar-orin';
-    if (body.preview === true) return json(200, { preview: true, email: { ...email, to: recipient, cc: [] }, connectionId, retryEligible: Boolean(retryEligible), taskId, holdId, docId });
+    if (body.preview === true) return json(200, { preview: true, email: { ...email, to: recipient, cc: email.cc }, connectionId, retryEligible: Boolean(retryEligible), taskId, holdId, docId });
     const attempts = prior ? [...(prior.attempts || []), { claimedAt: prior.claimedAt, delivery: prior.delivery! }] : [];
     const claim = { holdId, docId, recipient, state: 'sending' as const, claimedAt: new Date().toISOString(), attempts };
     try {
@@ -90,7 +124,7 @@ export async function handlePodcastFirstContactRoutes(
       throw error;
     }
     // Only the explicit, proven pre-Gmail recovery above can repeat an attempt.
-    const delivery = await deliverRenderedEmail(client, { draft: email, recipientEmail: recipient, recipientName: guestName, taskId, connectionId, cc: [] });
+    const delivery = await deliverRenderedEmail(client, { draft: email, recipientEmail: recipient, recipientName: guestName, taskId, connectionId, cc: email.cc });
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const current = await getTaskConsistent(client, taskId);
       if (!current) throw new Error('Owning Task disappeared after invitation delivery');

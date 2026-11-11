@@ -1,10 +1,17 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderSponsorEmailDraft } from '../src/sponsorDocs/templates';
+import { defaultCcForSponsorDocTemplate } from '../src/sponsorDocs/emailDelivery';
 
 const base = { sponsorName: 'Sofiia Hordiienko', publicationDate: '2026-11-20 15:00', shareUrl: 'https://example.test/doc', accessCode: 'code-1' };
 
 describe('podcast doc emails', () => {
+  it('uses alexey@datatalks.club as the single observer Cc for podcast doc emails', () => {
+    assert.deepEqual(defaultCcForSponsorDocTemplate('podcast'), ['alexey@datatalks.club']);
+    assert.deepEqual(defaultCcForSponsorDocTemplate('podcast-episode-brief'), ['alexey@datatalks.club']);
+    assert.deepEqual(defaultCcForSponsorDocTemplate('webinar'), []);
+    assert.deepEqual(defaultCcForSponsorDocTemplate('workshop'), []);
+  });
   it('renders a guest email for the episode brief', () => {
     const { body } = renderSponsorEmailDraft({ ...base, template: 'podcast-episode-brief', recipientName: 'Sofiia Hordiienko' });
     assert.match(body, /Hi Sofiia,/);

@@ -36,6 +36,7 @@ import {
   renderSponsorEmailDraft,
   type SponsorDocTemplateKey,
 } from './templates';
+import { PODCAST_FIRST_CONTACT_CC } from '../podcast/firstContact';
 
 export const SPONSOR_DOC_EMAIL_FROM = 'orin@datatalks.club';
 export const SPONSOR_DOC_EMAIL_CC = 'valeriia@datatalks.club';
@@ -316,7 +317,7 @@ export async function deliverRenderedEmail(
       state: 'deferred',
       from: SPONSOR_DOC_EMAIL_FROM,
       to: resolvedRecipient.to,
-      cc: [SPONSOR_DOC_EMAIL_CC],
+      cc: options.cc ?? [SPONSOR_DOC_EMAIL_CC],
       ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
       subject,
       reason: 'task_required',
@@ -649,6 +650,16 @@ export async function renderSponsorDocEmailDraft(options: {
   return renderSponsorEmailDraft(options);
 }
 
+export function defaultCcForSponsorDocTemplate(template: SponsorDocTemplateKey): string[] {
+  if (template === 'podcast' || template.startsWith('podcast-')) {
+    return [...PODCAST_FIRST_CONTACT_CC];
+  }
+  if (template === 'webinar' || template === 'workshop') {
+    return [];
+  }
+  return [SPONSOR_DOC_EMAIL_CC];
+}
+
 export async function deliverSponsorDocEmail(
   client: DynamoDBDocumentClient,
   options: {
@@ -662,6 +673,8 @@ export async function deliverSponsorDocEmail(
     taskId?: string | null;
     organizationId?: string | null;
     connectionId?: string | null;
+    cc?: string[];
+    threadId?: string;
   },
 ): Promise<SponsorDocEmailDelivery> {
   const resolvedRecipient = await resolveSponsorDocRecipient(client, {
@@ -670,6 +683,7 @@ export async function deliverSponsorDocEmail(
     organizationId: options.organizationId,
     sponsorName: options.sponsorName,
   });
+  const cc = options.cc ?? defaultCcForSponsorDocTemplate(options.template);
 
   let draft: TemplatedEmailDraft & { templateId?: string; templateRevision?: string };
   try {
@@ -685,7 +699,7 @@ export async function deliverSponsorDocEmail(
     return {
       state: 'deferred',
       from: SPONSOR_DOC_EMAIL_FROM,
-      ...(resolvedRecipient.to ? { to: resolvedRecipient.to, cc: [SPONSOR_DOC_EMAIL_CC] } : {}),
+      ...(resolvedRecipient.to ? { to: resolvedRecipient.to, ...(cc.length > 0 ? { cc } : {}) } : {}),
       ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
       subject: '',
       reason: error instanceof KnowledgeEmailTemplateError ? 'knowledge_template_unavailable' : 'template_render_failed',
@@ -701,6 +715,8 @@ export async function deliverSponsorDocEmail(
     organizationId: options.organizationId,
     sponsorName: options.sponsorName,
     connectionId: options.connectionId,
+    cc,
+    ...(options.threadId ? { threadId: options.threadId } : {}),
   });
   return {
     ...delivery,

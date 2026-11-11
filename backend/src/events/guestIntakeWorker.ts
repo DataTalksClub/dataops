@@ -82,7 +82,7 @@ export async function processGuestIntake(db: DynamoDBDocumentClient, id: string)
       const slot = slots[0]; job.selectedDate = slot.date; job.selectedTime = slot.time; job.selectedWindow = slot.window; job.startIso = slot.startIso;
       await saveGuestIntakeJob(db, job);
       // Validate the editable copy before the first guest-facing Calendar operation.
-      if (!job.skipEmail) await loadGuestFirstContact(db, { type: job.type, templateId: job.policy.emailTemplateId, guestName: job.guestName, topic: job.topic, startIso: slot.startIso, guestTimezone: job.guestTimezone, formUrl, accessCode: created.accessCode });
+      if (!job.skipEmail) await loadGuestFirstContact(db, { type: job.type, templateId: job.policy.emailTemplateId, guestName: job.guestName, topic: job.topic, startIso: slot.startIso, guestTimezone: job.guestTimezone, formUrl, accessCode: created.accessCode, cc: job.policy.cc });
       const result = await proposeEvent(db, card.id, { date: slot.date, time: slot.time, title: card.title, topic: job.topic, guestNames: job.guestName, guestTimezone: job.guestTimezone, guestEmails: [job.guestEmail], documentUrl: formUrl,
         operationKey: `guest-intake-${id.slice(0,32)}`, actor: job.actorId, suppressGuestNotifications: job.skipEmail });
       if (result.sync.state !== 'synced') throw new Error(`Calendar invitation is pending: ${result.sync.reason || 'provider unavailable'}`);
@@ -112,7 +112,7 @@ export async function processGuestIntake(db: DynamoDBDocumentClient, id: string)
       job.status = 'skipped'; await saveGuestIntakeJob(db, job); await projectJob(db, job); return;
     }
     const delivery = await deliverGuestFirstContact(db, { type: job.type, templateId: job.policy.emailTemplateId, guestName: job.guestName, topic: job.topic, startIso: event.startIso, guestTimezone: job.guestTimezone,
-      formUrl, accessCode: created.accessCode, taskId: job.taskId, holdId: event.id, docId: job.docId, recipient: job.guestEmail, actorId: job.actorId });
+      formUrl, accessCode: created.accessCode, taskId: job.taskId, holdId: event.id, docId: job.docId, recipient: job.guestEmail, actorId: job.actorId, cc: job.policy.cc });
     if (delivery.state !== 'sent' || !delivery.messageId) throw new Error(`First-contact email is pending: ${delivery.reason || delivery.state}`);
     job.messageId = delivery.messageId; job.sentAt = delivery.sentAt || new Date().toISOString(); delete job.error;
     const task = await getTaskConsistent(db, job.taskId);

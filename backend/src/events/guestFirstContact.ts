@@ -2,11 +2,12 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getTextTemplatesRecord } from '../db/textTemplates';
 import { renderTextTemplate } from '../textTemplates/render';
 import { PODCAST_FIRST_CONTACT_FROM, formatSlotLabel } from '../podcast/firstContact';
-import { APPROVED_GUEST_EVENT_TYPES } from './guestIntakePolicy';
+import { APPROVED_GUEST_EVENT_TYPES, guestFirstContactCc } from './guestIntakePolicy';
 
 export interface GuestFirstContactInput {
   type: string; templateId: string; guestName?: string; topic?: string;
   startIso: string; guestTimezone?: string; formUrl: string; accessCode: string;
+  cc?: readonly string[];
 }
 export function guestFirstContactValues(input: GuestFirstContactInput): Record<string, string> {
   if (!APPROVED_GUEST_EVENT_TYPES.has(input.type)) throw new Error('This event type has no enabled guest invitation');
@@ -29,7 +30,8 @@ export function renderGuestFirstContact(template: string, input: GuestFirstConta
   if (rendered.missing.length) throw new Error(`Invitation template is missing values: ${rendered.missing.join(', ')}`);
   const match = /^Subject: ([^\r\n]+)\r?\n\r?\n([\s\S]+)$/.exec(rendered.text);
   if (!match || !match[1].trim() || !match[2].trim()) throw new Error('Invitation template must contain Subject: followed by a blank line and body');
-  return { from: PODCAST_FIRST_CONTACT_FROM, subject: match[1], body: match[2].replace(/\r\n/g, '\n').replace(/\n$/, ''), formUrl: input.formUrl, topicSeed: input.topic || '', accessCode: input.accessCode };
+  const cc = guestFirstContactCc(input.type, input.cc);
+  return { from: PODCAST_FIRST_CONTACT_FROM, cc, subject: match[1], body: match[2].replace(/\r\n/g, '\n').replace(/\n$/, ''), formUrl: input.formUrl, topicSeed: input.topic || '', accessCode: input.accessCode };
 }
 export async function loadGuestFirstContact(db: DynamoDBDocumentClient, input: GuestFirstContactInput) {
   const record = await getTextTemplatesRecord(db);

@@ -18,7 +18,9 @@ import { templateLink } from './helpers/cardTemplate';
 import { setSponsorDocEmailDepsForTests } from '../src/sponsorDocs/emailDelivery';
 import {
   PODCAST_FIRST_CONTACT_FROM,
+  PODCAST_FIRST_CONTACT_CC,
   formatSlotLabel,
+  preparePodcastGuestReply,
 } from '../src/podcast/firstContact';
 
 const approvedTemplate = `Subject: <FIRST_NAME_SUBJECT_PREFIX>DataTalks.Club Podcast\n\n<GREETING>
@@ -90,6 +92,7 @@ describe('podcast first-contact email (Orin ask)', () => {
   it('renders the exact approved first-contact subject and body', () => {
     const email = renderGuestFirstContact(approvedTemplate, { ...renderInput, type: 'podcast', templateId: 'podcast.first-contact', guestName: renderInput.guestFirstName, topic: renderInput.topicSeed });
     assert.equal(email.from, PODCAST_FIRST_CONTACT_FROM);
+    assert.deepEqual(email.cc, [...PODCAST_FIRST_CONTACT_CC]);
     assert.equal(email.subject, 'Synthetic at DataTalks.Club Podcast');
     assert.equal(email.body, `Hi Synthetic,
 
@@ -146,7 +149,7 @@ Orin Vale`);
     assert.equal(res.statusCode, 200, res.body);
     const output = JSON.parse(res.body);
     assert.equal(output.email.to, 'guest@example.test');
-    assert.deepEqual(output.email.cc, []);
+    assert.deepEqual(output.email.cc, ['alexey@datatalks.club']);
     assert.equal(output.connectionId, 'google-calendar-orin');
     assert.match(output.email.body, /Monday 4 November 2030 at 17:00 CET/);
     assert.match(output.email.body, /Reliable data agents/);
@@ -172,16 +175,90 @@ Orin Vale`);
     assert.equal(results.filter(result => result.statusCode === 409).length, 1);
     assert.equal(sends, 1);
     assert.match(mime, /To: guest@example.test/);
-    assert.ok(!mime.includes('Cc:'));
+    assert.match(mime, /Cc: alexey@datatalks\.club\r\n/);
+    assert.doesNotMatch(mime, /grace@datatalks\.club|alexey\.s\.grigoriev@gmail\.com|valeriia@datatalks\.club/i);
     assert.match(mime, /Best regards,\r\nOrin Vale/);
     const saved = (await getTaskConsistent(client, input.taskId))!;
     assert.equal(saved.podcastFirstContact!.state, 'sent');
     assert.equal(saved.podcastFirstContact!.delivery!.messageId, 'synthetic-message');
+    assert.deepEqual(saved.podcastFirstContact!.delivery!.cc, ['alexey@datatalks.club']);
     assert.ok(saved.notesLog!.some(note => note.text.includes('synthetic-message')));
     const replay = await staffReq('POST', '/api/podcast-first-contact/send', input);
     assert.equal(replay.statusCode, 200, replay.body);
     assert.equal(JSON.parse(replay.body).alreadySent, true);
     assert.equal(sends, 1);
+    setSponsorDocEmailDepsForTests({});
+  });
+
+  it('prepares and delivers Orin-driven guest thread replies with alexey@datatalks.club in Cc and no extra recipients', async () => {
+    const prepared = preparePodcastGuestReply({
+      to: 'guest@example.test',
+      subject: 'Sofiia at DataTalks.Club Podcast',
+      body: 'Thanks! Tuesday at 17:00 CET works well.',
+      threadId: 'thread-guest-1',
+      inReplyTo: '<msg-1@mail.gmail.com>',
+      cc: ['orin@datatalks.club', 'guest@example.test'],
+    });
+    assert.equal(prepared.from, 'orin@datatalks.club');
+    assert.equal(prepared.to, 'guest@example.test');
+    assert.deepEqual(prepared.cc, ['alexey@datatalks.club']);
+    assert.equal(prepared.subject, 'Re: Sofiia at DataTalks.Club Podcast');
+    assert.equal(prepared.threadId, 'thread-guest-1');
+    assert.equal(prepared.inReplyTo, '<msg-1@mail.gmail.com>');
+
+    for (const forbidden of ['grace@datatalks.club', 'alexey.s.grigoriev@gmail.com', 'valeriia@datatalks.club', 'extra@example.test']) {
+      assert.throws(() => preparePodcastGuestReply({
+        to: 'guest@example.test',
+        subject: 'Re: Sofiia at DataTalks.Club Podcast',
+        body: 'Confirming slot.',
+        cc: ['alexey@datatalks.club', forbidden],
+      }), /Forbidden|Unexpected extra/);
+    }
+
+    const previewRes = await staffReq('POST', '/api/podcast-first-contact/reply', {
+      to: 'guest@example.test',
+      subject: 'Re: Sofiia at DataTalks.Club Podcast',
+      body: 'Confirming Tuesday at 17:00 CET.',
+      threadId: 'thread-guest-1',
+    });
+    assert.equal(previewRes.statusCode, 200, previewRes.body);
+    const previewBody = JSON.parse(previewRes.body);
+    assert.equal(previewBody.preview, true);
+    assert.deepEqual(previewBody.email.cc, ['alexey@datatalks.club']);
+    assert.equal(previewBody.email.subject, 'Re: Sofiia at DataTalks.Club Podcast');
+
+    const input = await invitation();
+    let replyMime = '';
+    let sentThreadId = '';
+    setSponsorDocEmailDepsForTests({ credential: 'synthetic-credential', fetchImpl: async (url, init) => {
+      if (String(url).includes('/threads/thread-guest-1')) {
+        return new Response(JSON.stringify({
+          messages: [{ payload: { headers: [{ name: 'Subject', value: 'Sofiia at DataTalks.Club Podcast' }, { name: 'Message-ID', value: '<msg-1@mail.gmail.com>' }] } }],
+        }), { status: 200 });
+      }
+      if (String(url).endsWith('/messages/send')) {
+        const parsed = JSON.parse(String(init?.body));
+        sentThreadId = parsed.threadId;
+        replyMime = Buffer.from(parsed.raw, 'base64url').toString('utf8');
+        return new Response(JSON.stringify({ id: 'reply-message-1', threadId: 'thread-guest-1' }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ access_token: 'synthetic-access', provider_account_id: 'orin@datatalks.club' }), { status: 200 });
+    } });
+    const sendRes = await staffReq('POST', '/api/podcast-first-contact/reply', {
+      to: 'guest@example.test',
+      subject: 'Sofiia at DataTalks.Club Podcast',
+      body: 'Confirming Tuesday at 17:00 CET.',
+      threadId: 'thread-guest-1',
+      taskId: input.taskId,
+      send: true,
+    });
+    assert.equal(sendRes.statusCode, 200, sendRes.body);
+    assert.equal(sentThreadId, 'thread-guest-1');
+    assert.match(replyMime, /From: Orin <orin@datatalks\.club>\r\n/);
+    assert.match(replyMime, /To: guest@example\.test\r\n/);
+    assert.match(replyMime, /Cc: alexey@datatalks\.club\r\n/);
+    assert.match(replyMime, /In-Reply-To: <msg-1@mail\.gmail\.com>\r\n/);
+    assert.doesNotMatch(replyMime, /grace@datatalks\.club|alexey\.s\.grigoriev@gmail\.com|valeriia@datatalks\.club/i);
     setSponsorDocEmailDepsForTests({});
   });
 
