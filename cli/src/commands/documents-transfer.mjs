@@ -6,7 +6,7 @@ import { apiFor } from "../session.mjs";
 /** Download bytes through the authenticated client, preserving binary exports. */
 export async function exportDocument(args, io, route, id, formats = ["md", "docx", "txt"]) {
   const format = optionalString(args, "format") || "md";
-  if (!formats.includes(format)) throw new UsageError(`--format must be ${formats.join(", ")}.`);
+  if (!formats.includes(format)) throw new UsageError(`--format must be ${formats.slice(0, -1).join(", ")}, or ${formats.at(-1)}.`);
   const output = optionalString(args, "output");
   if (["docx", "pdf"].includes(format) && !output) throw new UsageError("--output PATH is required for binary export.");
   const bytes = await apiFor(args).get(route, { query: { format }, responseType: "bytes" });
