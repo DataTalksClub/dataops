@@ -1,6 +1,7 @@
 import type { CalendarHold } from './holds';
 import { formatBerlinTime } from './ownerCalendarOverlay';
 import type { CalendarOverlayItem, CalendarOverlayProvider } from './overlays';
+import type { CalendarEntry } from './entities';
 
 /**
  * Active holds (tentative + confirmed) as a hard-occupancy overlay. Unlike
@@ -18,7 +19,7 @@ export function calendarHoldOverlay(holds: CalendarHold[]): CalendarOverlayProvi
         if (hold.status !== 'tentative' && hold.status !== 'confirmed') continue;
         let time: string;
         try {
-          time = `${formatBerlinTime(hold.startIso)}–${formatBerlinTime(hold.endIso)}`;
+          time = `${formatBerlinTime(hold.startIso)}-${formatBerlinTime(hold.endIso)}`;
         } catch {
           time = hold.window;
         }
@@ -40,6 +41,35 @@ export function calendarHoldOverlay(holds: CalendarHold[]): CalendarOverlayProvi
       return { items, connection: { state: 'connected' } };
     },
   };
+}
+
+/**
+ * Mark a confirmed hold as a duplicate only when the event read model carries
+ * the hold's canonical relationship. Matching titles or dates alone never
+ * suppress an item, and tentative holds always remain visible.
+ */
+export function markDuplicateCalendarHolds(
+  items: CalendarOverlayItem[],
+  holds: CalendarHold[],
+  entries: CalendarEntry[],
+): CalendarOverlayItem[] {
+  const confirmedHoldById = new Map(
+    holds.filter((hold) => hold.status === 'confirmed').map((hold) => [hold.id, hold]),
+  );
+  const entryByHoldId = new Map<string, CalendarEntry>();
+  for (const entry of entries) {
+    if (!entry.linkedHoldId) continue;
+    entryByHoldId.set(`${entry.linkedHoldId}#${entry.date}`, entry);
+  }
+
+  return items.map((item) => {
+    if (item.provider !== 'calendar-holds' || !item.id.startsWith('calendar-hold:')) return item;
+    const holdId = item.id.slice('calendar-hold:'.length);
+    const hold = confirmedHoldById.get(holdId);
+    if (!hold) return item;
+    const linkedEntry = entryByHoldId.get(`${holdId}#${hold.date}`);
+    return linkedEntry ? { ...item, displayDuplicateOf: linkedEntry.id } : item;
+  });
 }
 
 /** Owner available slots a hold covers are no longer offered as free. */

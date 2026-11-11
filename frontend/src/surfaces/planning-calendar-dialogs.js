@@ -1,4 +1,6 @@
 
+import { calendarDisplayEntries, formatCalendarTimeRanges } from "../core/calendar-display.js";
+
 export function setupDayScheduleDialog(options) {
   const {
     surface,
@@ -45,11 +47,11 @@ export function setupDayScheduleDialog(options) {
 
     const { items = [], holidays = [], overlays = [] } = getCalendarState();
 
-    const dayEvents = items.filter((item) => item.date === dateIso);
+    const dayEvents = calendarDisplayEntries(items).filter((item) => item.date === dateIso);
     const dayHolidays = holidays.filter(
       (h) => h.startDate <= dateIso && h.endDate >= dateIso
     );
-    const dayNewsletters = overlays.filter(
+    const dayNewsletters = calendarDisplayEntries(overlays).filter(
       (o) => o.provider === "newsletter-issues-readonly" && o.startDate <= dateIso && o.endDate >= dateIso
     );
     const ownerCalendarItems = overlayItems.filter((o) => o.provider === "owner-calendar");
@@ -80,7 +82,7 @@ export function setupDayScheduleDialog(options) {
         <div class="calendar-slot-card">
           <div class="calendar-slot-card-header">
             <span class="calendar-slot-card-title">Midday Event Slot</span>
-            <span class="calendar-slot-card-time">11:30–14:00</span>
+            <span class="calendar-slot-card-time">11:30-14:00</span>
           </div>
           <span class="calendar-slot-status-pill ${isMiddayAvailable ? "is-available" : "is-busy"}">
             ${isMiddayAvailable ? "● Available" : "● Busy / Reserved"}
@@ -95,7 +97,7 @@ export function setupDayScheduleDialog(options) {
         <div class="calendar-slot-card">
           <div class="calendar-slot-card-header">
             <span class="calendar-slot-card-title">Evening Event Slot</span>
-            <span class="calendar-slot-card-time">16:30–18:30</span>
+            <span class="calendar-slot-card-time">16:30-18:30</span>
           </div>
           <span class="calendar-slot-status-pill ${isEveningAvailable ? "is-available" : "is-busy"}">
             ${isEveningAvailable ? "● Available" : "● Busy / Reserved"}
@@ -152,11 +154,14 @@ export function setupDayScheduleDialog(options) {
       let timeLabel = "All day";
       let sortTime = "00:00";
       let title = e.label;
-      const match = e.label.match(/^(\d{2}:\d{2}(?:–\d{2}:\d{2})?)\s+(.+)$/);
+      const ownerLabel = formatCalendarTimeRanges(e.label);
+      const match = ownerLabel.match(/^(\d{2}:\d{2}(?:-\d{2}:\d{2})?)\s+(.+)$/);
       if (match) {
         timeLabel = match[1];
         sortTime = match[1].slice(0, 5);
         title = match[2];
+      } else {
+        title = ownerLabel;
       }
       let tagClass = "is-other";
       let tagLabel = "Other event";

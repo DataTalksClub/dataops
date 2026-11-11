@@ -25,9 +25,10 @@ function slotSummary(issue: NewsletterIssue) {
  */
 export function newsletterOverlayItem(issue: NewsletterIssue, card: { cardDueDate: string | null } = { cardDueDate: null }): CalendarOverlayItem {
   const summary = slotSummary(issue);
-  const names = summary.slots
-    .filter((slot) => slot.sponsor || (slot.position === 'primary' && issue.status !== 'cancelled'))
-    .map((slot) => slot.sponsor || 'open');
+  const canBook = !['sent', 'cancelled'].includes(issue.status);
+  const openSlots = canBook ? summary.slots.filter((slot) => !slot.sponsor).length : 0;
+  const names = summary.slots.filter((slot) => slot.sponsor).map((slot) => slot.sponsor!);
+  if (openSlots && (summary.booked > 0 || names.length === 0)) names.push('open');
   return {
     provider: NEWSLETTER_OVERLAY,
     id: issue.id,
@@ -36,11 +37,14 @@ export function newsletterOverlayItem(issue: NewsletterIssue, card: { cardDueDat
     label: [issueLabel(issue), names.join(' + ')].filter(Boolean).join(' · '),
     status: issue.status,
     href: `/newsletter?issueId=${encodeURIComponent(issue.id)}`,
-    isAvailableSlot: !['sent', 'cancelled'].includes(issue.status) && summary.booked < summary.slots.length,
+    // The green free-slot state describes a wholly open issue. A partially
+    // booked issue still names its remaining open slot, but never looks free.
+    isAvailableSlot: canBook && summary.booked === 0,
     newsletter: {
       kind: issue.kind,
       issueNumber: issue.issueNumber ?? null,
       ...summary,
+      openSlots,
       cardId: issue.cardId || null,
       cardDueDate: issue.cardId ? null : card.cardDueDate,
     },
