@@ -1485,7 +1485,7 @@ closes on every tab switch (see setView), so it never covers list content. */
   background-color: var(--dk-bg-hover);
   color: var(--dk-text-primary);
 }
-.fin-period [data-fin-year] option:focus {
+.fin-period [data-fin-year] option:focus-visible {
   outline: 2px solid var(--dk-focus-ring);
   outline-offset: -2px;
 }

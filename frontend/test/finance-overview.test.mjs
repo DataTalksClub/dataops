@@ -149,7 +149,7 @@ describe("finance overview", () => {
   test("styles the native Finance year popup with theme tokens and distinct native states", () => {
     const css = readFileSync(new URL("../src/styles/finance.css", import.meta.url), "utf8");
     assert.match(css, /:root\[data-theme="dark"\] \.fin-period \[data-fin-year\] \{ color-scheme: dark; \}/);
-    for (const state of [":checked", ":hover", ":focus", ":disabled"])
+    for (const state of [":checked", ":hover", ":focus-visible", ":disabled"])
       assert.match(css, new RegExp(`\\[data-fin-year\\] option${state}`));
     assert.match(css, /var\(--dk-bg-surface\)/);
     assert.match(css, /var\(--dk-text-primary\)/);
