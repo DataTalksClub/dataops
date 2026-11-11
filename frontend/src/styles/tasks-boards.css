@@ -1120,6 +1120,12 @@ body[data-workspace-view="tasks"] .runtime-template-step-toggle {
   text-align: left;
   cursor: pointer;
 }
+body[data-workspace-view="tasks"] .runtime-template-step-name {
+  min-width: 0;
+}
+body[data-workspace-view="tasks"] .runtime-template-step-due {
+  margin-left: auto;
+}
 body[data-workspace-view="tasks"] .runtime-template-step-browser {
   display: inline-block;
   vertical-align: -2px;
