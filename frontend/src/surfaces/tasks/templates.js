@@ -1,12 +1,13 @@
 import { SPLIT_BACK_ICON } from "../split-back-icon.js";
 import { createTemplateListController } from "./template-list.js";
-import { browserRequirementParts } from "../../core/task-display.js";
+import { createTemplateSteps } from "./template-steps.js";
 
 export function createTemplatesSurface(context) {
   const {
     countLabel,
     getAllDocuments,
     getWorkspaceEntityState,
+    resolveDocReference = () => null,
     isWorkspaceRouteFresh,
     navigateCanonicalWorkspace,
     openQuickWorkflowForm,
@@ -37,6 +38,13 @@ export function createTemplatesSurface(context) {
   // Selecting a Template re-renders the whole surface (route change plus a
   // fresh fetch), which recreates the list element. The list controller owns
   // the scroll offset, filter text, and collapsed groups across rerenders.
+  const { renderTemplateStep } = createTemplateSteps({
+    appendDefinition: (...args) => appendDefinition(...args),
+    dayOffsetLabel: (...args) => dayOffsetLabel(...args),
+    humanize: (...args) => humanize(...args),
+    resolveDocReference,
+  });
+
   const templateList = createTemplateListController({
     renderHonestState,
     renderRow: (template) => renderTemplateRow(template),
@@ -328,22 +336,11 @@ export function createTemplatesSurface(context) {
     const stepsSection = document.createElement("section");
     stepsSection.className = "runtime-template-block";
     const stepsHeading = document.createElement("h5");
-    stepsHeading.textContent = "What a new card runs";
+    stepsHeading.textContent = "Steps";
     const tasks = document.createElement("ol");
     tasks.className = "runtime-template-readonly-tasks";
     for (const task of selected.taskDefinitions || []) {
-      const item = document.createElement("li");
-      const name = document.createElement("strong");
-      name.textContent = task.description || task.refId || "Untitled task";
-      const meta = document.createElement("span");
-      // The authored execution need rides the step line, so an operator
-      // starting a card knows which steps need a browser before they exist.
-      const browser = browserRequirementParts(task.browserRequirement);
-      meta.textContent = browser.classified
-        ? `${dayOffsetLabel(task.offsetDays, task.anchor)} · ${browser.label}`
-        : dayOffsetLabel(task.offsetDays, task.anchor);
-      item.append(name, meta);
-      tasks.append(item);
+      tasks.append(renderTemplateStep(selected, task));
     }
     if (!(selected.taskDefinitions || []).length) {
       tasks.append(renderHonestState(

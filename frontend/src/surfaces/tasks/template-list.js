@@ -158,6 +158,17 @@ export function createTemplateListController(context) {
     list.scrollTop = listScrollTop;
   }
 
+  // The pane is built detached and attached by the surface afterwards; a
+  // detached element ignores scrollTop, so the offset is restored again once
+  // the list is in the document (next frame, or a microtask without rAF).
+  function restoreScrollWhenAttached(list) {
+    const restore = () => {
+      if (listElement === list && list.isConnected) list.scrollTop = listScrollTop;
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(restore);
+    else queueMicrotask(restore);
+  }
+
   function renderListPane({ ordered, loaded, error }) {
     const pane = document.createElement("section");
     pane.className = "dk-split__list";
@@ -222,6 +233,7 @@ export function createTemplateListController(context) {
     searchClear.addEventListener("click", () => clearTemplateSearch());
     refreshList();
     pane.append(head, search, list);
+    restoreScrollWhenAttached(list);
     return pane;
   }
 
