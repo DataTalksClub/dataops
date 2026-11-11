@@ -9,7 +9,7 @@ assert.ok(filter, 'deployment must validate the Lambda seed response');
 
 function response(templateTotal: number) {
   return { statusCode: 200, body: JSON.stringify({
-    templates: { total: templateTotal, created: 0, updated: 0, unchanged: templateTotal },
+    templates: { total: templateTotal, created: 0, updated: 0, unchanged: templateTotal, deleted: 0 },
   }) };
 }
 function accepted(value: unknown) {
@@ -51,20 +51,20 @@ test('deploy seed step configures bounded standard throttling retries while fail
   assert.match(seedStep, /if \[ "\$seed_error" != "None" \]; then\s+echo "Runtime seed failed inside the deployed Lambda" >&2\s+exit 1\s+fi/);
 });
 
-test('deploy seed step logs only template created, total, unchanged, and updated counts after validation', () => {
+test('deploy seed step logs only template created, deleted, total, unchanged, and updated counts after validation', () => {
   const summaryFilter = workflow.match(/fi\s+jq -c '([^']+)' "\$seed_response"\s+echo "Authored workflow templates projected\."/)?.[1];
   assert.ok(summaryFilter, 'deployment must log a compact counts-only summary after validation');
   const sample = {
     statusCode: 200,
     headers: { 'x-internal': 'do-not-log' },
     body: JSON.stringify({
-      templates: { created: 0, total: 30, unchanged: 30, updated: 0 },
+      templates: { created: 0, deleted: 0, total: 30, unchanged: 30, updated: 0 },
     }),
   };
   const result = spawnSync('jq', ['-c', summaryFilter!], { input: JSON.stringify(sample), encoding: 'utf8' });
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0);
   assert.deepEqual(JSON.parse(result.stdout.trim()), {
-    templates: { created: 0, total: 30, unchanged: 30, updated: 0 },
+    templates: { created: 0, deleted: 0, total: 30, unchanged: 30, updated: 0 },
   });
 });

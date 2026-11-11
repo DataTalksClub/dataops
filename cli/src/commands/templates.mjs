@@ -21,10 +21,12 @@ Usage
   dataops templates delete <id|id-prefix|type|name> --yes [--expected-version N] [--revision R]
   dataops templates sync
 
-sync projects dataops-knowledge main (workflow-templates/) into the live
+sync reconciles dataops-knowledge main (workflow-templates/) with live Git
 Templates; it needs the knowledge repository's CI identity and runs in its
-publish workflow, so a push to main refreshes them without a deploy. Pinned
-(edited) Templates keep their pin and are reported.
+publish workflow, so a push to main refreshes them without a deploy. A Git
+Template whose source file was removed is deleted only when no Card uses it;
+custom Templates are untouched. Pinned Templates keep their pin while their
+source remains and are reported.
 
 add-task-refs appends Task definitions (a list, or an object with taskDefinitions)
 whose refId the Template does not have yet, keeping order and the new definitions'
@@ -42,8 +44,9 @@ saved GET response) supplies them instead; explicit flags always win. Only a
 fresh fetch covers the fetch-to-submit window the server CAS guards, so apply
 stale offline files with the pair they were read at. The server enforces both
 and reports the current pair on conflict. Custom templates can be created and
-deleted by admins; Git templates are pinned, reset, or left alone, never
-deleted. A deleted template's type can be recreated fresh.
+deleted by admins. Git templates are pinned or reset by operators; the publish
+sync removes one only after its source file is removed and no Card uses it. A
+deleted template's type can be recreated fresh.
 
 Examples
   dataops templates list --json
@@ -432,8 +435,8 @@ export async function remove(args, io) {
 export async function sync(args, io) {
   const result = await apiFor(args).post("/api/templates/sync", {});
   if (args.json) return result;
-  const { total, created, updated, unchanged } = result.templates;
-  io.print(`Synced ${total} Templates from Git: ${created} created, ${updated} updated, ${unchanged} unchanged.`);
+  const { total, created, updated, unchanged, deleted } = result.templates;
+  io.print(`Synced ${total} Templates from Git: ${created} created, ${updated} updated, ${unchanged} unchanged, ${deleted} deleted.`);
   if (result.pinnedTypes?.length) {
     io.print(`Pinned (live definition differs from Git, base follows Git): ${result.pinnedTypes.join(", ")}`);
   }

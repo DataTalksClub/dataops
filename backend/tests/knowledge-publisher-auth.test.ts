@@ -7,7 +7,8 @@ import { handler } from '../src/handler';
 import { configureDocsRuntime, handleDocsRoutes, resetDocsRuntime } from '../src/docs/contentApi';
 import { resetKnowledgePublisherCaches } from '../src/auth/knowledgePublisher';
 import { syntheticKnowledge } from './helpers/knowledge';
-import { useTestDatabase } from './helpers/db';
+import { truncateTestTables, useTestDatabase } from './helpers/db';
+import { listTemplates } from '../src/db/templates';
 import { setDeploymentTemplateLoaderForTest } from '../src/deploymentSeeds';
 import { loadAuthoredTemplatesFromKnowledge } from '../src/templates/authoredTemplates';
 import { syntheticAuthoredFiles, syntheticKnowledgeStore } from './helpers/authoredTemplates';
@@ -105,10 +106,10 @@ describe('GitHub Actions OIDC knowledge publisher', () => {
       const first = await request('POST', '/api/templates/sync', token());
       assert.equal(first.statusCode, 200);
       assert.deepEqual(JSON.parse(first.body), {
-        templates: { total: 3, created: 3, updated: 0, unchanged: 0 }, pinnedTypes: [], triggeredBy: SHA,
+        templates: { total: 3, created: 3, updated: 0, unchanged: 0, deleted: 0 }, pinnedTypes: [], triggeredBy: SHA,
       });
       const again = JSON.parse((await request('POST', '/api/templates/sync', token())).body);
-      assert.deepEqual(again.templates, { total: 3, created: 0, updated: 0, unchanged: 3 });
+      assert.deepEqual(again.templates, { total: 3, created: 0, updated: 0, unchanged: 3, deleted: 0 });
       setDeploymentTemplateLoaderForTest(async () => { throw new Error('invalid template: broken.yaml'); });
       const failed = await request('POST', '/api/templates/sync', token());
       assert.equal(failed.statusCode, 409);
@@ -116,6 +117,65 @@ describe('GitHub Actions OIDC knowledge publisher', () => {
       assert.equal((await request('GET', '/api/templates/sync', token())).statusCode, 403);
     } finally {
       setDeploymentTemplateLoaderForTest(null);
+    }
+  });
+
+  it('does not regenerate a deleted Git Template view while publishing its source removal', async () => {
+    const authored = syntheticAuthoredFiles(2);
+    const deletedType = 'synthetic-1';
+    const keptType = 'synthetic-2';
+    const viewPath = (type: string) => `content/00-start-here/workflow-catalog/reference/${type}-workflow.md`;
+    const view = (type: string) => [
+      '---',
+      `id: task-template.tasks.${type}`,
+      `title: Synthetic ${type} Workflow View`,
+      'doc_type: task-template',
+      'schema_version: 1',
+      'department: synthetic-department',
+      'business_system: synthetic-system',
+      'owner_role: synthetic-owner',
+      'status: proposed',
+      '---',
+      '',
+      `# Synthetic ${type} Workflow View`,
+      '',
+    ].join('\n');
+    const files: Record<string, string> = Object.fromEntries(authored.map((file) => [file.path, file.content]));
+    files[viewPath(deletedType)] = view(deletedType);
+    files[viewPath(keptType)] = view(keptType);
+    const fixture = syntheticKnowledge(files, dir, async () => 'https://example.invalid/synthetic-download');
+    configureDocsRuntime(fixture.store);
+    const { client } = await useTestDatabase();
+    await truncateTestTables(client);
+    setDeploymentTemplateLoaderForTest(() => loadAuthoredTemplatesFromKnowledge(fixture.store));
+    try {
+      const seeded = await request('POST', '/api/templates/sync', token());
+      assert.equal(seeded.statusCode, 200, seeded.body);
+      assert.equal(JSON.parse(seeded.body).templates.created, 2);
+
+      const published = await request('POST', '/knowledge/publish', token(), {
+        expectedRevision: fixture.store.revision,
+        mutations: [
+          { path: `workflow-templates/${deletedType}.yaml` },
+          { path: viewPath(deletedType) },
+        ],
+      });
+      assert.equal(published.statusCode, 200, published.body);
+      let tree = await fixture.store.tree();
+      assert.equal(tree[`workflow-templates/${deletedType}.yaml`], undefined);
+      assert.equal(tree[viewPath(deletedType)], undefined);
+      assert.ok(tree[`workflow-templates/${keptType}.yaml`]);
+      assert.ok(tree[viewPath(keptType)]);
+
+      const synced = await request('POST', '/api/templates/sync', token());
+      assert.equal(synced.statusCode, 200, synced.body);
+      assert.equal(JSON.parse(synced.body).templates.deleted, 1);
+      assert.deepEqual((await listTemplates(client)).map((template) => template.type), [keptType]);
+      tree = await fixture.store.tree();
+      assert.equal(tree[viewPath(deletedType)], undefined);
+    } finally {
+      setDeploymentTemplateLoaderForTest(null);
+      await truncateTestTables(client);
     }
   });
 

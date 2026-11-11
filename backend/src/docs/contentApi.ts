@@ -234,6 +234,30 @@ interface KnowledgePlan {
   regenerated: string[];
 }
 
+function isAuthoredTemplatePath(path: string): boolean {
+  return /^workflow-templates\/[^/]+\.ya?ml$/i.test(path);
+}
+
+async function authoredTemplatePathsAfterMutations(
+  rt: DocsRuntime,
+  mutations: Mutation[],
+): Promise<Set<string>> {
+  const tree = await rt.store.tree();
+  const paths = new Set(Object.values(tree)
+    .filter((entry) => entry.type === 'blob' && isAuthoredTemplatePath(entry.path))
+    .map((entry) => entry.path));
+  for (const mutation of mutations) {
+    const path = normalizeRepoPath(mutation.path);
+    if (!isAuthoredTemplatePath(path)) continue;
+    if (mutation.bytes !== undefined || mutation.sourcePath !== undefined || mutation.restoreRevision !== undefined) {
+      paths.add(path);
+    } else {
+      paths.delete(path);
+    }
+  }
+  return paths;
+}
+
 function readMarkdownCorpus(rt: DocsRuntime): Map<string, string> {
   const files = new Map<string, string>();
   const visit = (directory: string): void => {
@@ -286,7 +310,12 @@ async function prepareKnowledgePlan(
   await rt.ensureSynced();
   const current = readMarkdownCorpus(rt);
   const candidate = await applyMutationsToCorpus(rt, current, sourceMutations);
-  const generated = regenerateDerivedDocuments(candidate, templates, selection);
+  const authoredPaths = await authoredTemplatePathsAfterMutations(rt, sourceMutations);
+  const publishableTemplates = templates.filter((template) =>
+    template.origin !== 'git'
+    || typeof template.sourcePath !== 'string'
+    || authoredPaths.has(template.sourcePath));
+  const generated = regenerateDerivedDocuments(candidate, publishableTemplates, selection);
   const mutations = sourceMutations.map((mutation) => ({ ...mutation }));
   const regenerated: string[] = [];
 
