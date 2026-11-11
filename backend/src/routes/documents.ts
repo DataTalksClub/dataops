@@ -14,7 +14,7 @@ export function validateDocumentText(body: Record<string, unknown>): string | nu
 export async function handleDocumentRoutes(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse | null> {
   const path = event.path || '';
   const match = /^\/api\/documents(?:\/([^/]+))?\/?$/.exec(path);
-  if (!match && !/^\/api\/documents\/[^/]+\/export\/?$/.test(path)) return null;
+  if (!match && !/^\/api\/documents\/[^/]+\/(?:export|preview)\/?$/.test(path)) return null;
   const method = event.httpMethod || 'GET';
   const actor = await resolveInteractiveActor(client, event, method === 'GET' ? 'work-read' : 'work-write');
   if (!actor.ok) return actor.response;

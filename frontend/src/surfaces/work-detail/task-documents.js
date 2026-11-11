@@ -59,7 +59,12 @@ export function renderTaskDocuments({ task, request, workApiUrl }) {
       finally { save.disabled = false; }
     });
     const exports = document.createElement('div');
-    for (const format of ['txt', 'docx']) {
+    const preview = document.createElement('a');
+    preview.textContent = 'Read private draft / PDF';
+    preview.href = workApiUrl(`/api/documents/${encodeURIComponent(doc.id)}/preview`);
+    preview.target = '_blank'; preview.rel = 'noreferrer noopener';
+    exports.append(preview);
+    for (const format of ['txt', 'docx', 'pdf']) {
       const button = document.createElement('button'); button.type = 'button'; button.textContent = `Export ${format.toUpperCase()}`;
       button.addEventListener('click', async () => {
         button.disabled = true;
