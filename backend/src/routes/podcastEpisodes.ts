@@ -11,7 +11,6 @@ import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import type { LambdaEvent, LambdaResponse } from "../types";
 import {
   createPodcastEpisode,
-  deletePodcastEpisode,
   EPISODE_LINK_KINDS,
   EPISODE_STATUSES,
   getPodcastEpisode,
@@ -51,6 +50,7 @@ import {
   summarizeCard,
 } from "../cards/recordCardLink";
 import { json, parseJsonObjectEventOrEmpty as parse } from "../http";
+import { previewEpisodeDeletion, executeEpisodeDeletion } from '../podcast/episodeDeletion';
 import { realDate } from "../sponsorCrm/model";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -456,6 +456,12 @@ export async function handlePodcastEpisodeRoutes(
     });
   }
 
+  if (method === "GET" && id && event.queryStringParameters?.deletePreview === "true") {
+    if (!resolved.actor.isAdmin) return json(403, { error: "Episode deletion requires an admin" });
+    const episode = await getPodcastEpisode(client, id);
+    return episode ? json(200, { dryRun: true, ...(await previewEpisodeDeletion(client, episode)) }) : json(404, { error: "Not found" });
+  }
+
   if (method === "GET" && id) {
     const episode = await getPodcastEpisode(client, id);
     return episode ? json(200, await withCard(client, episode)) : json(404, { error: "Not found" });
@@ -564,11 +570,14 @@ export async function handlePodcastEpisodeRoutes(
   }
 
   if (method === "DELETE") {
+    if (!resolved.actor.isAdmin) return json(403, { error: "Episode deletion requires an admin" });
+    if (body.yes !== true) return json(400, { error: "Explicit yes confirmation is required" });
     try {
-      await deletePodcastEpisode(client, existing);
-      return { statusCode: 204, headers: {}, body: "" };
-    } catch {
-      return json(409, { error: "Conflicting delete" });
+      const result = await executeEpisodeDeletion(client, existing);
+      return result.deleted ? json(200, result) : json(409, { error: "Episode deletion blocked", ...result });
+    } catch (error) {
+      if ((error as Error).name === "ConditionalCheckFailedException") return json(409, { error: "Conflicting delete" });
+      throw error;
     }
   }
   return json(405, { error: "Method not allowed" });
