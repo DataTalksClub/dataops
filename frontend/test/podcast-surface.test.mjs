@@ -334,10 +334,10 @@ describe("Podcast surface", () => {
 
     await documentList.querySelector('[data-podcast-action="edit"]').click();
     const again = documentList.querySelector(".podcast-edit-form");
-    again.querySelector('[name="releaseDate"]').value = "2026-12-24";
+    again.querySelector('[name="notes"]').value = "Second note";
     await again.dispatch("submit");
     await nextTicks(2);
-    assert.deepEqual(calls.filter(([method]) => method === "PUT").at(-1)[2], { releaseDate: "2026-12-24", version: 2 });
+    assert.deepEqual(calls.filter(([method]) => method === "PUT").at(-1)[2], { notes: "Second note", version: 2 });
     assert.ok(findByText(documentList, "Episode saved."));
   });
 
@@ -430,7 +430,7 @@ describe("Podcast surface", () => {
     await form.dispatch("submit");
     await nextTicks(2);
     assert.deepEqual(calls.find(([method]) => method === "POST")[2], {
-      status: "recorded", guests: [{ name: "Ada Example" }], season: 25, episode: 6,
+      status: "recorded", guests: [{ name: "Ada Example" }], releaseAssignmentStatus: "unassigned",
     });
     assert.deepEqual(calls.filter(([kind]) => kind === "navigate").at(-1), ["navigate", "/podcast/new-1", {}, {}]);
     assert.ok(findByText(documentList, "Episode created."));

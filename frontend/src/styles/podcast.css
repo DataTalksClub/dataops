@@ -241,3 +241,13 @@ a.podcast-cell:focus-visible { outline: 3px solid var(--dk-focus-ring); outline-
   .podcast-form-pair { grid-template-columns: minmax(0, 1fr); }
   .podcast-status-controls { margin-left: 0; }
 }
+
+.podcast-release-warnings {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+  color: var(--dk-warning-text, #8a5300);
+}
+.podcast-release-assignment__scheduled {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+}

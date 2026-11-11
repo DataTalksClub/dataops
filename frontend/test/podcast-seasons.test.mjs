@@ -135,7 +135,7 @@ describe("Podcast Seasons / Episodes view", () => {
     assert.equal(findAllByClass(s3, "podcast-cell--gap").length, 2);
     const duplicate = s3.querySelector('[data-episode-id="s3e4a"]');
     assert.ok(duplicate.classList.contains("podcast-cell--duplicate"));
-    assert.match(duplicate.getAttribute("aria-label"), /^S3E4, Published, Guest s3e4a — Synthetic s3e4a, number used twice$/);
+    assert.match(duplicate.getAttribute("aria-label"), /^S3E4, Published, Guest s3e4a — Synthetic s3e4a, number used twice, Unassigned release assignment$/);
     const recorded = documentList.querySelector('[data-episode-id="s4e2"]');
     assert.equal(recorded.dataset.status, "recorded");
     assert.equal(recorded.dataset.flag, undefined, "recorded two weeks ago is not stuck");

@@ -193,6 +193,26 @@ function releaseAssignmentSection(documentRef, episode, actions, messages) {
   );
   summary.dataset.assignment = state;
   section.append(summary);
+  const release = episode.release || { fullyScheduled: false, warnings: [] };
+  const scheduled = element(
+    documentRef,
+    "p",
+    "podcast-release-assignment__scheduled",
+    release.fullyScheduled
+      ? "Fully scheduled: final slot with provider schedule proof on the same date."
+      : "Not fully scheduled: a DataOps date alone needs provider schedule proof.",
+  );
+  scheduled.dataset.fullyScheduled = String(Boolean(release.fullyScheduled));
+  section.append(scheduled);
+  if (release.warnings?.length) {
+    const list = element(documentRef, "ul", "podcast-release-warnings");
+    for (const warning of release.warnings) {
+      const item = element(documentRef, "li", "podcast-release-warning", warning.message);
+      item.dataset.code = warning.code;
+      list.append(item);
+    }
+    section.append(list);
+  }
   if (state === "provisional" && episode.status !== "booked") {
     const finalize = button(documentRef, "Finalize after recording", "secondary", "");
     finalize.dataset.podcastAction = "finalize-release-assignment";
