@@ -25,7 +25,7 @@ export function validateReleaseAssignment(
     return hasSlotField ? "Clear season, episode and releaseDate when the release assignment is unassigned" : "";
   if (!positive(episode.season) || !positive(episode.episode) || !episode.releaseDate)
     return "A provisional or final release assignment needs season, episode and releaseDate";
-  if (episode.episode > episodesPerSeason)
+  if (Number(episode.episode) > episodesPerSeason)
     return `episode must be 1 to ${episodesPerSeason} for the configured season length`;
   if (state === "final" && episode.status === "booked")
     return "A release assignment can be final only after the episode is recorded";

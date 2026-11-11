@@ -239,7 +239,7 @@ describe("podcast next-slot API", () => {
     await client.send(new PutCommand({ TableName: TABLE_TEMPLATES, Item: pinnedTemplate }));
 
     const collision = await invoke("POST", "/api/podcast-episodes", booked({
-      season: 26,
+      season: 30,
       episode: 1,
       releaseDate: "2026-11-13",
       releaseAssignmentStatus: "provisional",

@@ -326,6 +326,8 @@ export async function show(args, io) {
     ...(episode.recordingHoldId ? [["recordingHoldId", episode.recordingHoldId]] : []),
     ["releaseDate", episode.releaseDate],
     ["releaseAssignmentStatus", episode.releaseAssignmentStatus || "unassigned"],
+    ["fullyScheduled", episode.release ? String(episode.release.fullyScheduled) : undefined],
+    ...(episode.release?.warnings || []).map((warning) => ["warning", `${warning.code}: ${warning.message}`]),
     ...Object.entries(episode.links || {}),
     ["websiteSlug", episode.websiteSlug],
     ["short", episode.short],
@@ -415,6 +417,9 @@ export async function assignRelease(args, io) {
   const episode = await api.put(`/api/podcast-episodes/${enc(id)}`, { ...assignment, version: current.version });
   if (args.json) return episode;
   io.print(`Release assignment for ${episode.id}: ${episode.releaseAssignmentStatus} (${episodeCode(episode) || "no episode number"}, ${episode.releaseDate || "no release date"}).`);
+  for (const move of episode.publicationAnchor?.moved || [])
+    io.print(`  moved ${move.templateTaskRef || move.taskId}: ${move.from} -> ${move.to} (publication anchor)`);
+  for (const warning of episode.release?.warnings || []) io.print(`  warning: ${warning.message}`);
   return episode;
 }
 
