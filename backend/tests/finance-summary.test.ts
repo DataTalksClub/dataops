@@ -224,6 +224,38 @@ describe('finance summary', () => {
     assert.equal(t.moneyIn, 2190);
   });
 
+  it('keeps tax refunds in cash and below operating profit, with taxes, TK and owner pay on their own lines', () => {
+    const rows = [
+      row('sale', { entryType: 'income', amount: '1190', vatAmount: '190', paidDate: '2026-10-02' }),
+      row('tax-refund', { entryType: 'income', amount: '4000', category: 'Taxes', counterparty: 'Finanzamt', description: 'ESt prepayment refund', paidDate: '2026-10-03' }),
+      row('tax-payment', { entryType: 'expense', amount: '100', category: 'Taxes', counterparty: 'Finanzamt', description: 'EINK.ST', paidDate: '2026-10-04' }),
+      row('insurance', { entryType: 'expense', amount: '1179.36', category: 'Health Insurance', counterparty: 'TK', paidDate: '2026-10-05' }),
+      row('owner-draw', { entryType: 'expense', amount: '2500', category: 'Owner pay', ownerPayType: 'draw', paidDate: '2026-10-06' }),
+      row('vat-refund', { entryType: 'income', amount: '30', category: 'VAT', counterparty: 'Finanzamt', description: 'UMS.ST refund', paidDate: '2026-10-07' }),
+    ];
+    const summary = summarize({ today: '2026-10-31', query: { month: '2026-10' }, rates: noRates, rows });
+    const t = summary.totals;
+    assert.equal(t.moneyIn, 5220);
+    assert.equal(t.moneyOut, 3779.36);
+    assert.equal(t.net, 1440.64);
+    assert.equal(t.operatingIncome, 1190);
+    assert.equal(t.netProfitExVat, 1000);
+    assert.equal(t.otherTaxes, -3900);
+    assert.equal(t.healthInsurance, 1179.36);
+    assert.equal(t.vatRefunded, 30);
+    assert.equal(t.ownerPay, 2500);
+    assert.equal(t.netAfterTaxes, 3720.64);
+    assert.equal(t.netAfterOwnerPay, 1220.64);
+    assert.deepEqual(summary.entries.map(({ id, line, direction }) => [id, line, direction]), [
+      ['sale', 'operating', 'in'],
+      ['tax-refund', 'taxes', 'in'],
+      ['tax-payment', 'taxes', 'out'],
+      ['insurance', 'health-insurance', 'out'],
+      ['owner-draw', 'owner-pay', 'out'],
+      ['vat-refund', 'vat', 'in'],
+    ]);
+  });
+
   it('books a credit-note row as contra-expense: not money in, not revenue, whatever its entryType', () => {
     const rows = [
       row('cn', { entryType: 'expense', amount: '646.63', currency: 'USD', paidDate: '2026-10-30', sourceType: 'manual', sourceKey: 'credit-note:A1B2C3D4-0059-CN-01' }),
