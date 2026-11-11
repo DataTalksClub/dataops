@@ -206,6 +206,7 @@
     "src/surfaces/tasks/quick-create.js",
     "src/surfaces/tasks/recurring.js",
     "src/surfaces/tasks/template-list.js",
+    "src/surfaces/tasks/template-steps.js",
     "src/surfaces/tasks/templates.js",
     "src/surfaces/work-detail/artifact-rows.js",
     "src/surfaces/work-detail/card-actions.js",
