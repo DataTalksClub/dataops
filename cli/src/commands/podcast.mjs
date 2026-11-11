@@ -599,6 +599,9 @@ export async function invite(args, io) {
   io.print("");
   io.print(`From: ${rendered.from}`);
   io.print(`To: ${email}`);
+  if (Array.isArray(rendered.cc) && rendered.cc.length > 0) {
+    io.print(`Cc: ${rendered.cc.join(", ")}`);
+  }
   io.print(`Subject: ${rendered.subject}`);
   io.print("");
   io.print(rendered.body);
@@ -623,7 +626,8 @@ export async function sendInvite(args, io) {
   const result = await apiFor(args).post('/api/podcast-first-contact/send', payload);
   if (args.json) return result;
   if (result.preview) {
-    io.print(`From: ${result.email.from}\nTo: ${result.email.to}\nSubject: ${result.email.subject}\n\n${result.email.body}`);
+    const ccLine = Array.isArray(result.email.cc) && result.email.cc.length > 0 ? `\nCc: ${result.email.cc.join(', ')}` : '';
+    io.print(`From: ${result.email.from}\nTo: ${result.email.to}${ccLine}\nSubject: ${result.email.subject}\n\n${result.email.body}`);
     io.print('Preview only; no email sent.');
   } else {
     const delivery = result.emailDelivery || {};

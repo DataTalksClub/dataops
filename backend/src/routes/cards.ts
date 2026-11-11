@@ -398,9 +398,9 @@ async function handleCardRoutes(
           const [loaded, hold] = await Promise.all([getSponsorDocWithAuthMaterial(client, job.docId), getEventRecord(client, job.holdId)]);
           const code = loaded ? decryptSponsorDocAccessCode(job.docId, loaded.accessCodeCiphertext) : null;
           if (loaded && hold && code) email = await loadGuestFirstContact(client, { type: job.type, templateId: job.policy.emailTemplateId, guestName: job.guestName, topic: job.topic, startIso: hold.startIso, guestTimezone: job.guestTimezone,
-            formUrl: `${(process.env.DATAOPS_PORTAL_URL || 'https://ops.dtcdev.click').replace(/\/$/, '')}/${job.policy.formTemplate}-docs/${encodeURIComponent(job.docId)}?code=${encodeURIComponent(code)}`, accessCode: code });
+            formUrl: `${(process.env.DATAOPS_PORTAL_URL || 'https://ops.dtcdev.click').replace(/\/$/, '')}/${job.policy.formTemplate}-docs/${encodeURIComponent(job.docId)}?code=${encodeURIComponent(code)}`, accessCode: code, cc: job.policy.cc });
         }
-        return json(200, { invitation: job, ...(email ? { preview: true, email: { ...email, to: job.guestEmail, cc: [] } } : {}) });
+        return json(200, { invitation: job, ...(email ? { preview: true, email: { ...email, to: job.guestEmail, cc: email.cc } } : {}) });
       }
       if (!mayAdministerCard(actor.actor, card)) return workAdminForbidden('Sending this invitation requires the Card owner or an admin');
       if (action === 'send' && (job.status !== 'skipped' || !job.skipEmail)) return json(409, { error: 'Only a skipped initial invitation can be sent here; existing delivery attempts must be reconciled' });

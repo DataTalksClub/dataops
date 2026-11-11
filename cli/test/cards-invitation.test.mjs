@@ -6,13 +6,14 @@ const originalFetch = globalThis.fetch;
 const { run } = await import('../src/cli.mjs');
 afterEach(() => { globalThis.fetch = originalFetch; });
 test('invitation status and preview are read-only, preserve evidence and show rendered copy', async () => {
-  const calls = fakePortal({ 'GET /api/cards/synthetic-card/guest-intake': ({ query }) => ({ invitation: { status: 'sent', recipient: 'guest@example.test', taskId: 'task-test', messageId: 'gmail-test' }, ...(query.preview ? { preview: true, email: { subject: 'Synthetic guest', body: 'Synthetic invitation body.' } } : {}) }) });
+  const calls = fakePortal({ 'GET /api/cards/synthetic-card/guest-intake': ({ query }) => ({ invitation: { status: 'sent', recipient: 'guest@example.test', taskId: 'task-test', messageId: 'gmail-test' }, ...(query.preview ? { preview: true, email: { cc: ['alexey@datatalks.club'], subject: 'Synthetic guest', body: 'Synthetic invitation body.' } } : {}) }) });
   const status = captureIo();
   assert.equal(await run(['cards', 'invitation', 'synthetic-card'], status), 0);
   assert.match(status.text(), /First invitation: sent/);
   assert.match(status.text(), /Gmail message ID: gmail-test/);
   const preview = captureIo();
   assert.equal(await run(['cards', 'invitation', 'synthetic-card', '--preview'], preview), 0);
+  assert.match(preview.text(), /Cc: alexey@datatalks\.club/);
   assert.match(preview.text(), /Subject: Synthetic guest/);
   assert.match(preview.text(), /Synthetic invitation body/);
   assert.equal(calls.at(-1).query.preview, '1');

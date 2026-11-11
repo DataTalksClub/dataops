@@ -394,6 +394,7 @@ describe("podcast publication evidence flags", () => {
     };
     const email = {
       from: "orin@datatalks.club",
+      cc: ["alexey@datatalks.club"],
       subject: "Sofiia at DataTalks.Club Podcast",
       body: "Hi Sofiia,\n\nFor the interview, will Wednesday 4 November at 12:30 CET work for you?\n\nPlease do not invent alternate times in email.\n\nhttps://datatalksclub.github.io/docs/activities/podcast/",
       docsUrl: "https://datatalksclub.github.io/docs/activities/podcast/",
@@ -433,6 +434,7 @@ describe("podcast publication evidence flags", () => {
     // Printed email: from orin@, one slot, docs URL, send reminder.
     assert.match(io.text(), /From: orin@datatalks\.club/);
     assert.match(io.text(), /To: sofiia@example\.com/);
+    assert.match(io.text(), /Cc: alexey@datatalks\.club/);
     assert.match(io.text(), /Sofiia at DataTalks\.Club Podcast/);
     assert.match(io.text(), /datatalksclub\.github\.io\/docs\/activities\/podcast\//);
     assert.match(io.text(), /No Card created/);
@@ -489,11 +491,12 @@ describe("podcast publication evidence flags", () => {
 
   test("send-invite delegates saved records to DataOps and supports a non-sending preview", async () => {
     const calls = fakePortal({
-      'POST /api/podcast-first-contact/send': { preview: true, email: { from: 'orin@datatalks.club', to: 'guest@example.test', subject: 'Guest at DataTalks.Club Podcast', body: 'Synthetic preview' } },
+      'POST /api/podcast-first-contact/send': { preview: true, email: { from: 'orin@datatalks.club', to: 'guest@example.test', cc: ['alexey@datatalks.club'], subject: 'Guest at DataTalks.Club Podcast', body: 'Synthetic preview' } },
     });
     const io = captureIo();
     assert.equal(await run(['podcast', 'send-invite', '--hold', 'hold-1', '--doc', 'doc-1', '--task', 'task-1', '--guest', 'Synthetic Guest', '--preview'], io), 0);
     assert.deepEqual(calls[0].body, { holdId: 'hold-1', docId: 'doc-1', taskId: 'task-1', guestName: 'Synthetic Guest', preview: true });
+    assert.match(io.text(), /Cc: alexey@datatalks\.club/);
     assert.match(io.text(), /Preview only; no email sent/);
   });
 

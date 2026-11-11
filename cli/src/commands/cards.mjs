@@ -568,6 +568,9 @@ export async function invitation(args, io) {
   }
   const preview = result.email || (typeof result.preview === "object" ? result.preview : undefined);
   if (preview?.subject && typeof preview.body === "string") {
+    if (Array.isArray(preview.cc) && preview.cc.length > 0) {
+      io.print(`Cc: ${preview.cc.join(", ")}`);
+    }
     io.print(`Subject: ${preview.subject}`);
     io.print("");
     io.print(preview.body);
