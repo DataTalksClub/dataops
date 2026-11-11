@@ -87,7 +87,9 @@ describe('finance summary', () => {
     });
     assert.equal(s.totals.healthInsurance, 1179.36);
     assert.equal(s.totals.vatPaid, 4581.14);
-    assert.equal(s.totals.otherTaxes, 1000);
+    assert.equal(s.totals.incomeTax, 1000);
+    assert.equal(s.totals.otherTaxes, 0);
+    assert.equal(s.totals.taxesTotal, 2179.36);
     assert.equal(s.totals.moneyOut, 6760.5);
     assert.equal(s.totals.entryCount, 3);
     assert.equal(s.gaps.find((gap) => gap.kind === 'bank-line-without-ledger-row')?.count, 1);
@@ -108,7 +110,10 @@ describe('finance summary', () => {
     const aug = summarize({ today: '2026-10-31', query: { month: '2026-08' }, rates: noRates, rows });
     assert.equal(feb.totals.vatPaid, 1029.96);
     assert.equal(aug.totals.vatPaid, 4196.6);
-    assert.equal(aug.totals.otherTaxes, 3296);
+    assert.equal(aug.totals.tradeTax, 3296);
+    assert.equal(aug.totals.otherTaxes, 0);
+    const jun = summarize({ today: '2026-10-31', query: { month: '2026-06' }, rates: noRates, rows });
+    assert.equal(jun.totals.incomeTax, 11042);
   });
 
   it('uses the matched statement purpose to classify a generic Taxes ledger row as VAT paid', () => {
@@ -217,6 +222,7 @@ describe('finance summary', () => {
     assert.equal(t.vatPaid, 150);
     assert.equal(t.otherTaxes, 3296);
     assert.equal(t.healthInsurance, 1179.36);
+    assert.equal(t.taxesTotal, 4475.36);
     assert.equal(t.netAfterTaxes, -2665.36);
     assert.equal('vatUnknownCount' in t, false);
     assert.equal(summary.gaps.some((gap) => gap.kind === 'vat-unknown'), false);
@@ -224,7 +230,7 @@ describe('finance summary', () => {
     assert.equal(t.moneyIn, 2190);
   });
 
-  it('keeps tax refunds in cash and below operating profit, with taxes, TK and owner pay on their own lines', () => {
+  it('keeps tax refunds in cash, out of revenue and profit, and never as a negative tax', () => {
     const rows = [
       row('sale', { entryType: 'income', amount: '1190', vatAmount: '190', paidDate: '2026-10-02' }),
       row('tax-refund', { entryType: 'income', amount: '4000', category: 'Taxes', counterparty: 'Finanzamt', description: 'ESt prepayment refund', paidDate: '2026-10-03' }),
@@ -240,12 +246,19 @@ describe('finance summary', () => {
     assert.equal(t.net, 1440.64);
     assert.equal(t.operatingIncome, 1190);
     assert.equal(t.netProfitExVat, 1000);
-    assert.equal(t.otherTaxes, -3900);
+    assert.equal(t.incomeTax, 100);
+    assert.equal(t.tradeTax, 0);
+    assert.equal(t.otherTaxes, 0);
     assert.equal(t.healthInsurance, 1179.36);
+    assert.equal(t.taxesTotal, 1279.36);
+    assert.equal(t.taxRefunds, 4000);
     assert.equal(t.vatRefunded, 30);
     assert.equal(t.ownerPay, 2500);
-    assert.equal(t.netAfterTaxes, 3720.64);
-    assert.equal(t.netAfterOwnerPay, 1220.64);
+    assert.equal(t.netAfterTaxes, -279.36);
+    assert.equal(t.netAfterOwnerPay, -2779.36);
+    assert.deepEqual(summary.taxRefunds.map(({ id, date, eur }) => [id, date, eur]), [['tax-refund', '2026-10-03', 4000]]);
+    assert.equal(summary.months[0].taxRefunds, 4000);
+    assert.equal(summary.months[0].otherTaxes, 0);
     assert.deepEqual(summary.entries.map(({ id, line, direction }) => [id, line, direction]), [
       ['sale', 'operating', 'in'],
       ['tax-refund', 'taxes', 'in'],

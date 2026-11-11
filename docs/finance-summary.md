@@ -70,7 +70,7 @@ Rates are quoted as units of the currency per 1 EUR, the ECB convention.
 | Category | Line |
 |---|---|
 | `VAT`, or Finanzamt purpose `USt` / `UMS.ST` in the row or its matched statement reference | VAT paid or refunded |
-| `Taxes`, except an USt / `UMS.ST` purpose | Other taxes: Gewerbesteuer, income/corporate tax prepayments |
+| `Taxes`, except an USt / `UMS.ST` purpose | Taxes by type: Einkommensteuer + Soli (`incomeTax`), Gewerbesteuer (`tradeTax`), other (`otherTaxes`) |
 | `Health Insurance`, or TK statement debit | Health insurance |
 | anything else | Operating income or expense |
 
@@ -83,10 +83,20 @@ never booked twice). The refund reduces operating expenses, and its VAT
 reduces input VAT; it is not money in and not revenue. A row with a
 `credit-note:` key is a refund even without the subtype.
 
+**Tax refunds.** Only payments count as taxes. A Finanzamt or TK refund
+(money in on the taxes or health-insurance line) is listed in `taxRefunds`
+with its ledger row and summed in `totals.taxRefunds`. It is money in and part
+of net cash, but it is not revenue, not profit, and never a negative tax in any
+year: a refund settles an earlier assessed year, and the bank date says
+nothing about which one. Bookkeeping keeps the row with its real date and
+amount.
+
 - **Net profit excluding VAT** = (operating income − output VAT) − (operating
-  expenses − input VAT); supplier refunds reduce the expense side. Taxes and TK
-  are shown as their own lines and in *net after taxes and TK*. VAT payments
-  and refunds are neither profit nor loss.
+  expenses − input VAT); supplier refunds reduce the expense side.
+- **Taxes and TK paid** (`taxesTotal`) = `incomeTax` + `tradeTax` +
+  `otherTaxes` + `healthInsurance`, each shown on its own as well. *Net after
+  taxes and TK* = net profit excluding VAT − taxes and TK paid. VAT payments
+  and refunds, and tax refunds, are neither profit nor loss.
 - **Projected VAT position** = output VAT − input VAT. Positive is owed to the
   Finanzamt, negative is a refund. It is shown next to what was actually paid
   or refunded in the same period.
@@ -156,6 +166,8 @@ period it shows:
   `taxType` also moves a mislabelled row (for example 2024 "VAT Advance payment"
   rows that are really ESt + Soli) between the VAT and taxes lines.
 - **TK** health insurance, on its own line.
+- **Tax refunds** (`taxRefunds`) on their own line; never netted into a tax
+  type.
 
 Tax payments are never expenses: they sit below net profit excluding VAT.
 
