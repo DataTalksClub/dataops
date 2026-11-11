@@ -7,15 +7,34 @@ import { handlePodcastEpisodeRoutes } from '../src/routes/podcastEpisodes';
 import { templateLink } from './helpers/cardTemplate';
 import { TABLE_CARDS, TABLE_PODCAST_EPISODES } from '../src/db/tableNames';
 
-const episode: PodcastEpisode = { id: 'synthetic-test', guests: [], status: 'cancelled', version: 2, createdAt: '', updatedAt: '', cardId: 'gone-card' };
-const confirmed = { [episode.id]: { version: 2, evidence: 'synthetic exact identity approval' } };
-function storage(options: { card?: boolean; tasks?: boolean; hold?: string; conflict?: boolean; operator?: boolean } = {}) {
+const episode: PodcastEpisode = {
+  id: 'synthetic-test',
+  title: 'Synthetic Test Title',
+  guests: [{ name: 'Synthetic Guest' }],
+  recordingDate: '2026-11-01',
+  status: 'cancelled',
+  version: 2,
+  createdAt: '',
+  updatedAt: '',
+  cardId: 'gone-card',
+};
+const confirmed = {
+  [episode.id]: {
+    version: 2,
+    evidence: 'synthetic exact identity approval',
+    title: 'Synthetic Test Title',
+    guests: ['Synthetic Guest'],
+    recordingDate: '2026-11-01',
+  },
+};
+function storage(options: { card?: boolean; tasks?: boolean; hold?: string; conflict?: boolean; operator?: boolean; episodeOverride?: PodcastEpisode } = {}) {
   const calls: string[] = [];
+  const activeEpisode = options.episodeOverride ?? episode;
   const client = { send: async (command: any) => {
     const name = command.constructor.name;
     calls.push(name);
     if (name === 'DeleteCommand' && options.conflict) throw Object.assign(new Error('changed'), { name: 'ConditionalCheckFailedException' });
-    if (name === 'GetCommand') return { Item: command.input.TableName === TABLE_PODCAST_EPISODES ? episode
+    if (name === 'GetCommand') return { Item: command.input.TableName === TABLE_PODCAST_EPISODES ? activeEpisode
       : command.input.TableName === TABLE_CARDS ? options.card ? { id: 'gone-card', version: 1, taskCount: 0, openTaskCount: 0, status: 'active', stage: 'preparation', ...templateLink() } : undefined
       : options.operator ? { id: 'operator', role: 'operator' } : undefined };
     if (name === 'QueryCommand') return { Items: options.tasks ? [{ id: 'orphan-task', version: 1, taskHistory: [] }] : [] };
@@ -25,10 +44,29 @@ function storage(options: { card?: boolean; tasks?: boolean; hold?: string; conf
   return { client, calls };
 }
 
-test('all production candidates are unconfirmed; arbitrary and real identities are refused', () => {
-  for (const id of Object.keys(EPISODE_DELETION_POLICY)) {
-    assert.ok(deletionBlockers({ ...episode, id }, EPISODE_DELETION_POLICY).includes('Exact episode identity is not confirmed'));
+test('only the four confirmed test UUIDs are allowlisted; unconfirmed, mismatched, arbitrary, and real identities are refused', () => {
+  assert.deepEqual(Object.keys(EPISODE_DELETION_POLICY), [
+    '0ba64623-47cb-40d8-a395-e1131d5f0b8d',
+    'c452570a-f682-49d5-8b4b-0837cf71e47c',
+    'faa77c54-e560-435f-9199-6574b84d84ae',
+    'bcbfb38a-0bd0-4996-bf9c-ae89f3b86042',
+  ]);
+  for (const [id, entry] of Object.entries(EPISODE_DELETION_POLICY)) {
+    assert.ok(entry?.evidence);
+    const matching: PodcastEpisode = {
+      ...episode,
+      id,
+      version: entry!.version,
+      title: entry!.title,
+      guests: entry!.guests.map(name => ({ name })),
+      recordingDate: entry!.recordingDate,
+    };
+    assert.deepEqual(deletionBlockers(matching, EPISODE_DELETION_POLICY), []);
+    assert.ok(deletionBlockers({ ...matching, title: 'Different Title' }, EPISODE_DELETION_POLICY).includes('Confirmed episode identity fields changed'));
+    assert.ok(deletionBlockers({ ...matching, guests: [{ name: 'Different Guest' }] }, EPISODE_DELETION_POLICY).includes('Confirmed episode identity fields changed'));
+    assert.ok(deletionBlockers({ ...matching, recordingDate: '2026-12-31' }, EPISODE_DELETION_POLICY).includes('Confirmed episode identity fields changed'));
   }
+  assert.ok(deletionBlockers(episode, { [episode.id]: null }).includes('Exact episode identity is not confirmed'));
   for (const id of ['unknown', '12182f05-0dc0-4e75-9232-02eb0a3b1541', '622b0b8b-817d-4bf8-be94-1be467406810', 'aedaf06e-187f-48c7-8096-477d34db097f']) {
     assert.ok(deletionBlockers({ ...episode, id }, EPISODE_DELETION_POLICY).includes('Episode is not allowlisted'));
   }
