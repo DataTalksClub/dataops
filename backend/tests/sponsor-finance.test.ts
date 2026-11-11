@@ -135,6 +135,61 @@ describe('sponsor finance contracts', () => {
     }
   });
 
+  it('records reference-only receipt JSON as ledger statementRef using a stubbed database', async () => {
+    const previous = process.env.SPONSOR_FINANCE_ENABLED;
+    process.env.SPONSOR_FINANCE_ENABLED = 'true';
+    const state = { id: 'synthetic-deal', recordType: 'sponsor-finance', dealId: 'synthetic-deal',
+      version: 1, invoiceRequirement: 'required', amountDue: '100', currency: 'EUR', taxMode: 'not-applicable',
+      issuedOn: '2026-10-01', paymentLinkIds: [], recordedPaymentIds: [] };
+    const deal = { id: 'synthetic-deal', active: true, status: 'agreed', owner: 'admin-1' };
+    const writes: any[] = [];
+    const client = { send: async (command: { constructor: { name: string }; input: any }) => {
+      const name = command.constructor.name;
+      if (name === 'GetCommand') {
+        const pk = command.input.Key.PK;
+        return { Item: pk.startsWith('USER#') ? { id: 'admin-1', role: 'admin' }
+          : pk === 'SPONSOR_FINANCE#synthetic-deal' ? state
+          : pk === 'DEAL#synthetic-deal' ? deal : undefined };
+      }
+      if (name === 'TransactGetCommand') return { Responses: [{ Item: state }, { Item: deal }] };
+      if (name === 'TransactWriteCommand') { writes.push(command.input); return {}; }
+      if (name === 'QueryCommand' || name === 'ScanCommand') return { Items: [], ScannedCount: 0 };
+      assert.fail(`Unexpected database command: ${name}`);
+    } };
+    const base = { dealVersion: 1, expectedVersion: 1, receivedOn: '2026-10-01', amount: '40',
+      currency: 'EUR', counterparty: 'Synthetic Sponsor' };
+    const request = (data: Record<string, unknown>) => handleSponsorFinanceRoutes(
+      '/api/sponsor-crm/deals/synthetic-deal/finance/receipts', 'POST', {
+        headers: { 'x-user-id': 'admin-1', 'idempotency-key': 'synthetic-receipt-key-0123456789' },
+        body: JSON.stringify({ ...base, ...data }),
+      }, client as never);
+    try {
+      const response = await request({ reference: 'synthetic-bank:account:txn-1' });
+      assert.equal(response?.statusCode, 200, response?.body);
+      assert.equal(writes.length, 1);
+      const ledger = writes[0].TransactItems.find((item: any) => item.Put?.Item.sourceType === 'sponsor-receipt').Put.Item;
+      assert.equal(ledger.statementRef, 'synthetic-bank:account:txn-1');
+      assert.equal(ledger.sourceKey, ledger.statementRef);
+      assert.equal(ledger.amount, '40');
+      for (const reference of [undefined, '', ' ', 'x'.repeat(201)]) {
+        const invalid = await request({ reference });
+        assert.equal(invalid?.statusCode, 400);
+        assert.match(JSON.parse(invalid!.body).error, /Receipt reference is required/);
+      }
+      for (const data of [{ statementRef: 'synthetic-bank:txn' },
+        { reference: 'synthetic-bank:txn', statementRef: 'synthetic-bank:txn' },
+        { reference: 'synthetic-bank:txn', statementRef: 'different' }]) {
+        const invalid = await request(data);
+        assert.equal(invalid?.statusCode, 400);
+        assert.match(JSON.parse(invalid!.body).error, /Use reference in receipt JSON/);
+      }
+      assert.equal(writes.length, 1, 'invalid inputs must not reach a write');
+    } finally {
+      if (previous === undefined) delete process.env.SPONSOR_FINANCE_ENABLED;
+      else process.env.SPONSOR_FINANCE_ENABLED = previous;
+    }
+  });
+
   it('explicitly omits every sponsor-finance record family from public restore data', () => {
     for (const name of [
       'sponsor_finance_state',

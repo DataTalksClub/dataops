@@ -293,6 +293,9 @@ export async function handleSponsorFinanceRoutes(
       return json(200, { result, projection: await project() });
     }
     if (method === 'POST' && action === 'receipts') {
+      if (Object.hasOwn(body, 'statementRef')) {
+        return json(400, { error: 'Use reference in receipt JSON; statementRef is an internal ledger field.' });
+      }
       const result = await receivePayment(client, {
         ...common, expectedVersion: Number(body.expectedVersion),
         receivedOn: String(body.receivedOn || ''), amount: String(body.amount || ''),
