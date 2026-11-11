@@ -116,6 +116,29 @@ describe('finance summary', () => {
     assert.equal(jun.totals.incomeTax, 11042);
   });
 
+  it('splits generic Finanzamt Taxes rows into GewSt and ESt by the matched bank purpose', () => {
+    const generic = { entryType: 'expense', category: 'Taxes', counterparty: 'Finanzamt Synthetic', description: 'Finanzamt Synthetic' };
+    const s = summarize({
+      today: '2026-12-31', query: { year: '2026' }, rates: noRates,
+      rows: [
+        row('gewst-q1', { ...generic, amount: '3296.00', paidDate: '2026-02-17' }),
+        row('est-q1', { ...generic, amount: '11042.00', paidDate: '2026-03-17' }),
+        row('refund', { entryType: 'income', category: 'Taxes', amount: '43633.73', counterparty: 'Finanzamt Synthetic', description: 'Erstattung', paidDate: '2026-10-30' }),
+      ],
+      statementLines: [
+        { id: 'f:1', bankKey: 'bank-gewst', accountId: 'finom', date: '2026-02-17', amount: '-3296.00', currency: 'EUR', counterparty: 'Finanzamter', reference: 'STEUERNR 00/000/00000 GEW.ST 1VJ.26 3.296,00EUR' },
+        { id: 'f:2', bankKey: 'bank-est', accountId: 'finom', date: '2026-03-17', amount: '-11042.00', currency: 'EUR', counterparty: 'Finanzamter', reference: 'STEUERNR 00/000/00000 EINK.ST 1VJ.26 11.042,00EUR' },
+      ],
+      statementPairs: new Map([['bank-gewst', 'gewst-q1'], ['bank-est', 'est-q1']]),
+    });
+    assert.equal(s.totals.tradeTax, 3296);
+    assert.equal(s.totals.incomeTax, 11042);
+    assert.equal(s.totals.otherTaxes, 0);
+    assert.equal(s.totals.taxesTotal, 14338);
+    assert.equal(s.totals.taxRefunds, 43633.73);
+    assert.equal(s.months.find((m) => m.month === '2026-10')?.taxesTotal, 0);
+  });
+
   it('uses the matched statement purpose to classify a generic Taxes ledger row as VAT paid', () => {
     const s = summarize({
       today: '2026-08-31', query: { month: '2026-08' }, rates: noRates,
