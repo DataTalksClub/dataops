@@ -15,6 +15,8 @@ import {
   ensureTypeGuard,
   listTemplates,
   replaceSeedTemplate,
+  TemplateEditForbiddenError,
+  templatesInUse,
   writeSeedTemplateFields,
   TemplateDuplicateTypeError,
   TemplateVersionConflictError,
@@ -346,6 +348,14 @@ export async function reconcileAuthoredTemplates(
         `${definition.sourcePath}: authored workflow template validation failed (${issues.length} issues)`,
       );
     }
+  }
+
+  // Check the entire stale set before any deletion or type-guard write. A
+  // removed source with any live Card, Task, Calendar record, or notification
+  // reference stops the sync before it can prune a subset of the templates.
+  if (staleGitTemplates.length > 0) {
+    const inUse = await templatesInUse(client, staleGitTemplates.map((template) => template.id));
+    if (inUse.size > 0) throw new TemplateEditForbiddenError('template-in-use');
   }
 
   // Claim or verify TEMPLATE_TYPE# guards before any create.

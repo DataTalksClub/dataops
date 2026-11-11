@@ -729,28 +729,55 @@ async function resetTemplateOverride(
   return { template: cleanItem(item) as Template, applied: true };
 }
 
+async function templatesInUse(client: DynamoDBDocumentClient, ids: string[]): Promise<Set<string>> {
+  const uniqueIds = [...new Set(ids.filter(Boolean))];
+  const inUse = new Set<string>();
+  const batchSize = 100;
+
+  for (let offset = 0; offset < uniqueIds.length; offset += batchSize) {
+    const batch = uniqueIds.slice(offset, offset + batchSize);
+    const placeholders = batch.map((_, index) => `:templateId${index}`);
+    const values = Object.fromEntries(batch.map((id, index) => [placeholders[index], id]));
+    const filter = batch.length === 1
+      ? `#templateId = ${placeholders[0]}`
+      : `#templateId IN (${placeholders.join(', ')})`;
+
+    // Workflow Template ids can be held directly by Cards and Tasks, or by
+    // calendar and notification records created from them. Scan every owning
+    // entity table; a filtered Scan must follow LastEvaluatedKey because its
+    // limit/page boundary counts evaluated rows, not matching rows.
+    for (const TableName of [TABLE_CARDS, TABLE_TASKS, TABLE_CALENDAR, TABLE_NOTIFICATIONS]) {
+      let exclusiveStartKey: Record<string, unknown> | undefined;
+      do {
+        const result = await client.send(new ScanCommand({
+          TableName,
+          FilterExpression: filter,
+          ExpressionAttributeNames: { '#templateId': 'templateId' },
+          ExpressionAttributeValues: values,
+          ProjectionExpression: '#templateId',
+          ConsistentRead: true,
+          ...(exclusiveStartKey ? { ExclusiveStartKey: exclusiveStartKey } : {}),
+        }));
+        for (const item of (result.Items || []) as Array<Record<string, unknown>>) {
+          if (typeof item.templateId === 'string' && batch.includes(item.templateId)) {
+            inUse.add(item.templateId);
+          }
+        }
+        exclusiveStartKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+      } while (exclusiveStartKey);
+      if (batch.every((id) => inUse.has(id))) break;
+    }
+  }
+
+  return inUse;
+}
+
 async function templateInUse(client: DynamoDBDocumentClient, id: string): Promise<boolean> {
   // Workflow Template ids can be held directly by Cards and Tasks, or by
   // calendar and notification records created from them. Scan every owning
   // entity table; a filtered Scan must follow LastEvaluatedKey because its
   // limit/page boundary counts evaluated rows, not matching rows.
-  for (const TableName of [TABLE_CARDS, TABLE_TASKS, TABLE_CALENDAR, TABLE_NOTIFICATIONS]) {
-    let exclusiveStartKey: Record<string, unknown> | undefined;
-    do {
-      const result = await client.send(new ScanCommand({
-        TableName,
-        FilterExpression: '#templateId = :id',
-        ExpressionAttributeNames: { '#templateId': 'templateId' },
-        ExpressionAttributeValues: { ':id': id },
-        Select: 'COUNT',
-        ConsistentRead: true,
-        ...(exclusiveStartKey ? { ExclusiveStartKey: exclusiveStartKey } : {}),
-      }));
-      if ((result.Count || 0) > 0) return true;
-      exclusiveStartKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-    } while (exclusiveStartKey);
-  }
-  return false;
+  return (await templatesInUse(client, [id])).has(id);
 }
 
 /**
@@ -1141,6 +1168,7 @@ export {
   updateTemplate,
   deleteCustomTemplate,
   deleteGitTemplate,
+  templatesInUse,
   deleteTemplate,
   listTemplates,
   instantiateTemplate,
