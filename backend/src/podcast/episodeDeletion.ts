@@ -4,17 +4,46 @@ import { getCardConsistent } from '../db/cards';
 import { listTasksByCard } from '../db/tasks';
 import { listCalendarHolds } from '../db/calendarHolds';
 
-export type DeletionConfirmation = { version: number; evidence: string };
+export type DeletionConfirmation = {
+  version: number;
+  evidence: string;
+  title: string;
+  guests: readonly string[];
+  recordingDate: string;
+};
 export type DeletionPolicy = Readonly<Record<string, DeletionConfirmation | null>>;
 
-// Candidate identities only. Null deliberately blocks deletion. Replace an entry
-// only after exact identity confirmation is recorded on the private intake, with
-// the reviewed episode version and an evidence reference. Never infer from names.
+// Confirmed against private intake f41f6f0c-d9f6-41cc-95f9-755743b9410f (seq 34)
+// and screenshot SHA256 cc2921aa661540d4d39bd761a2b0361d241590912833d7de595d6ff2faf61d7f.
 export const EPISODE_DELETION_POLICY: DeletionPolicy = Object.freeze({
-  '0ba64623-47cb-40d8-a395-e1131d5f0b8d': null,
-  'c452570a-f682-49d5-8b4b-0837cf71e47c': null,
-  'faa77c54-e560-435f-9199-6574b84d84ae': null,
-  'bcbfb38a-0bd0-4996-bf9c-ae89f3b86042': null,
+  '0ba64623-47cb-40d8-a395-e1131d5f0b8d': {
+    version: 3,
+    evidence: 'intake f41f6f0c-d9f6-41cc-95f9-755743b9410f seq 34 (t2020u/t2067u/t2088u, sha256 cc2921aa661540d4d39bd761a2b0361d241590912833d7de595d6ff2faf61d7f)',
+    title: 'auto-slot portal verify 170342',
+    guests: ['Portal Deploy Verify'],
+    recordingDate: '2026-10-22',
+  },
+  'c452570a-f682-49d5-8b4b-0837cf71e47c': {
+    version: 2,
+    evidence: 'intake f41f6f0c-d9f6-41cc-95f9-755743b9410f seq 34 (t2020u/t2067u/t2088u, sha256 cc2921aa661540d4d39bd761a2b0361d241590912833d7de595d6ff2faf61d7f)',
+    title: 't518u midday verify 171702',
+    guests: ['Portal Midday1230 Verify'],
+    recordingDate: '2026-10-23',
+  },
+  'faa77c54-e560-435f-9199-6574b84d84ae': {
+    version: 3,
+    evidence: 'intake f41f6f0c-d9f6-41cc-95f9-755743b9410f seq 34 (t2020u/t2067u/t2088u, sha256 cc2921aa661540d4d39bd761a2b0361d241590912833d7de595d6ff2faf61d7f)',
+    title: 'Content management with AI at DataTalks.Club',
+    guests: ['Valeriia Kuka'],
+    recordingDate: '2026-11-10',
+  },
+  'bcbfb38a-0bd0-4996-bf9c-ae89f3b86042': {
+    version: 3,
+    evidence: 'intake f41f6f0c-d9f6-41cc-95f9-755743b9410f seq 34 (t2020u/t2067u/t2088u, sha256 cc2921aa661540d4d39bd761a2b0361d241590912833d7de595d6ff2faf61d7f)',
+    title: 'TEST: Alexey self-invite (invite-flow check)',
+    guests: ['Alexey Grigorev'],
+    recordingDate: '2026-11-16',
+  },
 });
 
 export function deletionBlockers(episode: PodcastEpisode, policy: DeletionPolicy): string[] {
@@ -22,7 +51,18 @@ export function deletionBlockers(episode: PodcastEpisode, policy: DeletionPolicy
   if (!Object.hasOwn(policy, episode.id)) reasons.push('Episode is not allowlisted');
   const confirmation = policy[episode.id];
   if (!confirmation?.evidence?.trim()) reasons.push('Exact episode identity is not confirmed');
-  else if (confirmation.version !== episode.version) reasons.push('Confirmed episode version changed');
+  else {
+    if (confirmation.version !== episode.version) reasons.push('Confirmed episode version changed');
+    const liveGuests = (episode.guests || []).map(guest => guest.name);
+    if (
+      confirmation.title !== (episode.title ?? '') ||
+      confirmation.recordingDate !== (episode.recordingDate ?? '') ||
+      confirmation.guests.length !== liveGuests.length ||
+      confirmation.guests.some((name, idx) => name !== liveGuests[idx])
+    ) {
+      reasons.push('Confirmed episode identity fields changed');
+    }
+  }
   if (episode.status !== 'cancelled') reasons.push('Episode must already be cancelled');
   if (episode.season || episode.episode || episode.releaseDate || episode.websiteSlug || episode.scheduleSourceKey
     || Object.values(episode.links || {}).some(Boolean)
