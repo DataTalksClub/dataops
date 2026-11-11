@@ -390,6 +390,45 @@ describe('Git-authored template projection', () => {
     assert.deepStrictEqual((await listTemplates(client)).map((item) => item.type), ['stale-git']);
   });
 
+  it('preflights every stale Git Template before deleting any of them', async () => {
+    const stale = parseAuthoredTemplateFiles([
+      {
+        path: 'workflow-templates/first-stale.yaml',
+        revision: 'rev-first',
+        content: authored('first-stale'),
+      },
+      {
+        path: 'workflow-templates/second-stale.yaml',
+        revision: 'rev-second',
+        content: authored('second-stale'),
+      },
+    ]);
+    await reconcileAuthoredTemplates(client, stale);
+    const before = await listTemplates(client);
+    assert.equal(before.length, 2);
+
+    // Reference the second row in reconciliation order. A per-row delete loop
+    // would remove the first row before discovering this use.
+    const referenced = before[1];
+    const { PutCommand } = await import('@aws-sdk/lib-dynamodb');
+    const { TABLE_CARDS } = await import('../src/db/tableNames');
+    await client.send(new PutCommand({
+      TableName: TABLE_CARDS,
+      Item: { PK: 'CARD#still-uses-second-stale', SK: 'CARD#still-uses-second-stale', templateId: referenced.id },
+    }));
+
+    const alpha = parseAuthoredTemplateFiles([{
+      path: 'workflow-templates/alpha.yaml',
+      revision: 'blob-c',
+      content: authored('alpha'),
+    }]);
+    await assert.rejects(reconcileAuthoredTemplates(client, alpha), /template-in-use/);
+
+    const after = await listTemplates(client);
+    assert.deepStrictEqual(after.map((item) => item.id).sort(), before.map((item) => item.id).sort());
+    assert.deepStrictEqual(after.map((item) => item.type).sort(), ['first-stale', 'second-stale']);
+  });
+
   it('checks later filtered Scan pages before pruning a Git Template', async () => {
     const row = {
       PK: 'TEMPLATE#stale-git-id', SK: 'TEMPLATE#stale-git-id', id: 'stale-git-id',
@@ -404,7 +443,7 @@ describe('Git-authored template projection', () => {
           scans.push(command.input);
           return scans.length === 1
             ? { Count: 0, LastEvaluatedKey: { PK: 'next', SK: 'next' } }
-            : { Count: 1 };
+            : { Count: 1, Items: [{ templateId: row.id }] };
         }
         throw new Error(`Unexpected command ${command.constructor.name}`);
       },
