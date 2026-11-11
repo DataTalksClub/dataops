@@ -93,7 +93,13 @@ describe("podcast episodes", () => {
     assert.equal((await invoke("DELETE", `/api/podcast-episodes/${episode.id}`, { version: 3, yes: true })).statusCode, 409);
     const cancelled = data(await invoke("PUT", `/api/podcast-episodes/${episode.id}`, { version: 3, status: "cancelled" }));
     const result = await executeEpisodeDeletion(client, (await getPodcastEpisode(client, episode.id))!, {
-      [episode.id]: { version: cancelled.version, evidence: "synthetic identity confirmation" },
+      [episode.id]: {
+        version: cancelled.version,
+        evidence: "synthetic identity confirmation",
+        title: booked.title,
+        guests: booked.guests.map(g => g.name),
+        recordingDate: booked.recordingDate,
+      },
     });
     assert.equal(result.deleted, true);
     for (const query of [{}, { status: "cancelled" }]) {
