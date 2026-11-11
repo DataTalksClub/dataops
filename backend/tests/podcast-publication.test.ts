@@ -119,16 +119,20 @@ describe("podcast publication API", () => {
     invoke("PUT", `/api/podcast-episodes/${episode.id}`, { version: episode.version, ...body });
 
   it("keeps the intended release date apart from evidenced Spotify scheduling", async () => {
-    const episode = await create({ releaseDate: "2099-01-05" });
+    const episode = await create({
+      season: 1, episode: 1, releaseDate: "2026-11-20", releaseAssignmentStatus: "provisional",
+    });
     assert.equal(episode.readiness.spotify, "not-recorded");
     const scheduled = await put(episode, { publication: { audioSchedule: API_SCHEDULE } });
     assert.equal(scheduled.statusCode, 200, scheduled.body);
     const body = data(scheduled);
-    assert.equal(body.releaseDate, "2099-01-05", "the intended date is not rewritten by schedule evidence");
+    assert.equal(body.releaseDate, "2026-11-20", "the intended date is not rewritten by schedule evidence");
     assert.equal(body.readiness.scheduledLocalDate, "2099-01-02");
     assert.equal(body.readiness.spotify, "scheduled");
     assert.equal(body.status, "edited");
-    const dated = (await create({ releaseDate: "2099-02-01" }));
+    const dated = (await create({
+      season: 1, episode: 2, releaseDate: "2026-11-27", releaseAssignmentStatus: "provisional",
+    }));
     assert.equal(dated.publication, undefined);
     assert.equal(dated.readiness.spotify, "not-recorded", "an intended date alone claims nothing external");
   });

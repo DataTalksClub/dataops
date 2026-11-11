@@ -1,12 +1,13 @@
-// The seasons overview: what the podcast has, season by season. Each season
-// is a row of numbered cells coloured by status, with the numbers nobody
-// holds drawn as dashed gaps and the numbers two episodes claim marked as
-// duplicates. Above them, the Pipeline: in-flight episodes with no number yet.
-// Hovering or focusing a cell shows the episode's summary; clicking opens it
-// in the detail pane.
+// The Seasons / Episodes register: each season is a row of numbered cells
+// coloured by status, with unused numbers drawn as dashed gaps and duplicate
+// numbers marked. Hovering or focusing a cell shows its episode; clicking
+// opens the episode in the detail pane.
 import { attachHovercard } from "../../core/hovercard.js";
 import { element, emptyState, formatDate, icon, statusChip } from "./dom.js";
-import { episodeCode, episodeSummary, LINK_KINDS, matchesSearch, statusLabel } from "./model.js";
+import {
+  episodeCode, episodeSummary, LINK_KINDS, matchesSearch, releaseAssignmentLabel,
+  releaseAssignmentState, statusLabel,
+} from "./model.js";
 import { countsLabel, GRID_STATUSES } from "./seasons-model.js";
 
 const enc = encodeURIComponent;
@@ -16,6 +17,7 @@ function cellLabel(cell, season) {
   const parts = [code, statusLabel(cell.episode.status), episodeSummary(cell.episode)];
   if (cell.duplicate) parts.push("number used twice");
   if (cell.flag) parts.push(cell.flag.text);
+  parts.push(`${releaseAssignmentLabel(cell.episode)} release assignment`);
   return parts.join(", ");
 }
 
@@ -26,6 +28,15 @@ export function episodePeek(documentRef, episode, { flag = null, duplicateOf = [
   const code = episodeCode(episode);
   if (code) head.append(element(documentRef, "span", "dk-mono", code));
   head.append(statusChip(documentRef, episode.status));
+  const assignmentState = releaseAssignmentState(episode);
+  const assignment = element(
+    documentRef,
+    "span",
+    `dk-badge podcast-release-assignment podcast-release-assignment--${assignmentState}`,
+    releaseAssignmentLabel(assignmentState),
+  );
+  assignment.dataset.assignment = assignmentState;
+  head.append(assignment);
   peek.append(head, element(documentRef, "p", "podcast-peek__title", episodeSummary(episode)));
   const facts = element(documentRef, "dl", "podcast-peek__facts");
   const dates = [["Recorded", episode.recordingDate], ["Released", episode.releaseDate]].filter(([, value]) => value);
@@ -146,28 +157,16 @@ function renderLegend(documentRef) {
  */
 export function renderSeasonsOverview(scroll, { documentRef, grid, query, selectedId, onSelect, renderRow }) {
   const options = { selectedId, query, onSelect };
-  const pipeline = grid.pipeline.filter((item) => matchesSearch(item.episode, query));
   const seasons = grid.seasons.filter(
     (row) => !query || row.cells.some((cell) => cell.kind === "episode" && matchesSearch(cell.episode, query)),
   );
   const loose = grid.loose.filter((episode) => matchesSearch(episode, query));
   scroll.append(renderLegend(documentRef));
-  if (!pipeline.length && !seasons.length && !loose.length) {
+  if (!seasons.length && !loose.length) {
     const empty = emptyState(documentRef, "No matches", "Try another guest, title or code.");
     empty.classList.add("dk-empty--compact");
     scroll.append(empty);
     return;
-  }
-  if (pipeline.length) {
-    const section = element(documentRef, "section", "podcast-group podcast-pipeline");
-    section.dataset.group = "pipeline";
-    const label = element(documentRef, "h3", "podcast-group__label", "Pipeline");
-    label.id = "podcast-group-pipeline";
-    const list = element(documentRef, "ul", "dk-split__items");
-    list.setAttribute("aria-labelledby", label.id);
-    for (const item of pipeline) list.append(renderRow(item.episode, selectedId, item.flag));
-    section.append(label, list);
-    scroll.append(section);
   }
   if (seasons.length) {
     const block = element(documentRef, "section", "podcast-seasons");

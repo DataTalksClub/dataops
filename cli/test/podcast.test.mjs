@@ -19,6 +19,7 @@ const episode = (fields) => ({
   title: "Synthetic episode",
   guests: [{ name: "Test Guest", slug: "test-guest" }],
   status: "booked",
+  releaseAssignmentStatus: "unassigned",
   recordingDate: "2026-11-04",
   links: { youtube: "https://youtube.example/watch" },
   version: 4,
@@ -40,6 +41,7 @@ describe("podcast", () => {
     assert.deepEqual(calls[0].query, { season: "25", status: "booked", from: "2026-11-01" });
     assert.match(io.text(), /S25E3\s+booked\s+2026-11-04/);
     assert.match(io.text(), /Test Guest - Synthetic episode/);
+    assert.match(io.text(), /unassigned/);
   });
 
   test("list refuses an unknown status before calling the API", async () => {
@@ -54,6 +56,7 @@ describe("podcast", () => {
     const io = captureIo();
     assert.equal(await run(["podcast", "show", "ep-1"], io), 0);
     assert.match(io.text(), /episode:\s+S25E3/);
+    assert.match(io.text(), /releaseAssignmentStatus:\s+unassigned/);
     assert.match(io.text(), /youtube:\s+https:\/\/youtube\.example\/watch/);
     assert.match(io.text(), /card: Podcast with Test Guest \[preparation\] 7\/9 Tasks open/);
     const json = captureIo();
@@ -120,12 +123,14 @@ describe("podcast", () => {
     });
     const io = captureIo();
     assert.equal(
-      await run(["podcast", "create", "--guests", "Jane Doe:jane-doe", "--season", "26", "--episode", "1", "--recording-date", "2026-12-01", "--spotify", "https://spotify.example/e", "--json"], io),
+      await run(["podcast", "create", "--guests", "Jane Doe:jane-doe", "--season", "26", "--episode", "1", "--release-date", "2026-11-20", "--release-assignment", "provisional", "--recording-date", "2026-12-01", "--spotify", "https://spotify.example/e", "--json"], io),
       0,
     );
     assert.deepEqual(calls[0].body, {
       season: 26,
       episode: 1,
+      releaseDate: "2026-11-20",
+      releaseAssignmentStatus: "provisional",
       recordingDate: "2026-12-01",
       status: "booked",
       guests: [{ name: "Jane Doe", slug: "jane-doe" }],
@@ -141,15 +146,39 @@ describe("podcast", () => {
       "PUT /api/podcast-episodes/ep-1": ({ body }) => episode({ ...body, version: 5 }),
     });
     assert.equal(
-      await run(["podcast", "update", "ep-1", "--status", "recorded", "--release-date", "none", "--apple", "https://apple.example/e", "--youtube", "none"], captureIo()),
+      await run(["podcast", "update", "ep-1", "--status", "recorded", "--season", "none", "--episode", "none", "--release-date", "none", "--release-assignment", "unassigned", "--apple", "https://apple.example/e", "--youtube", "none"], captureIo()),
       0,
     );
     assert.deepEqual(calls.at(-1).body, {
+      season: null,
+      episode: null,
       releaseDate: null,
+      releaseAssignmentStatus: "unassigned",
       status: "recorded",
       links: { apple: "https://apple.example/e" },
       version: 4,
     });
+  });
+
+  test("assign-release sends the explicit state and keeps the current tuple when finalizing", async () => {
+    const calls = fakePortal({
+      "GET /api/podcast-episodes/ep-1": episode({
+        status: "recorded", season: 26, episode: 1, releaseDate: "2026-11-20",
+        releaseAssignmentStatus: "provisional", version: 7,
+      }),
+      "PUT /api/podcast-episodes/ep-1": ({ body }) => episode({ ...body, status: "recorded", version: 8 }),
+    });
+    const io = captureIo();
+    assert.equal(await run(["podcast", "assign-release", "ep-1", "--state", "final"], io), 0);
+    assert.deepEqual(calls.at(-1).body, {
+      season: 26,
+      episode: 1,
+      releaseDate: "2026-11-20",
+      releaseAssignmentStatus: "final",
+      version: 7,
+    });
+    assert.match(io.text(), /Release assignment for ep-1: final \(S26E1, 2026-11-20\)/);
+    assert.equal(await run(["podcast", "assign-release", "ep-1", "--state", "booked"], captureIo()), 2);
   });
 
   test("update sends page content flags, topics and JSON files", async () => {

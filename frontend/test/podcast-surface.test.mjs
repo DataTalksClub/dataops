@@ -73,6 +73,7 @@ describe("podcast model", () => {
     assert.deepEqual(filterEpisodes(REGISTER, { status: "all", query: "guest pub-25" }).map((item) => item.id), ["pub-25"]);
     assert.deepEqual(filterEpisodes(REGISTER, { status: "all", query: "s24e9" }).map((item) => item.id), ["pub-24"]);
     assert.deepEqual(seasonsOf(REGISTER), [25, 24]);
+    assert.deepEqual(filterEpisodes(REGISTER, { status: "recorded" }).map((item) => item.id), []);
   });
 
   test("suggests the next free number and keeps guest slugs by name", () => {
@@ -86,13 +87,21 @@ describe("podcast model", () => {
     assert.deepEqual(
       formChanges(record, {
         title: record.title, guests: "Guest e", season: "25", episode: "2", recordingDate: "2026-11-04",
-        releaseDate: "2026-12-24", websiteSlug: "", notes: "", "link-youtube": "", "link-spotify": "https://s.example/1",
+        releaseDate: "2026-12-25", releaseAssignmentStatus: "provisional", websiteSlug: "", notes: "", "link-youtube": "", "link-spotify": "https://s.example/1",
       }),
-      { episode: 2, releaseDate: "2026-12-24", notes: null, links: { spotify: "https://s.example/1" } },
+      { episode: 2, releaseDate: "2026-12-25", releaseAssignmentStatus: "provisional", notes: null, links: { spotify: "https://s.example/1" } },
     );
-    assert.deepEqual(createBody({ guests: "Ada", title: "", season: "26", episode: "", status: "" }), {
-      status: "booked", guests: [{ name: "Ada" }], season: 26,
+    assert.deepEqual(createBody({ guests: "Ada", title: "", season: "26", episode: "1", releaseDate: "2026-11-20", releaseAssignmentStatus: "provisional", status: "" }), {
+      status: "booked", guests: [{ name: "Ada" }], season: 26, episode: 1, releaseDate: "2026-11-20", releaseAssignmentStatus: "provisional",
     });
+    assert.deepEqual(
+      formChanges(episode("p", { season: 26, episode: 1, releaseDate: "2026-11-20", releaseAssignmentStatus: "provisional" }), {
+        title: "Synthetic p", guests: "Guest p", season: "26", episode: "1", recordingDate: "2026-11-04",
+        releaseDate: "2026-11-20", releaseAssignmentStatus: "final", websiteSlug: "", notes: "",
+        "link-youtube": "", "link-spotify": "",
+      }),
+      { releaseAssignmentStatus: "final" },
+    );
   });
 });
 
@@ -161,16 +170,18 @@ function rows(root) {
 
 describe("Podcast surface", () => {
   test("loads, lists upcoming episodes grouped, and filters with the segmented control", async () => {
-    const { surface, documentList, calls } = harness({ view: "list" });
+    const { surface, documentList, calls } = harness();
     surface.renderPodcastSurface();
     assert.ok(findByText(documentList, "Loading episodes…"));
     await nextTicks(4);
     assert.ok(findByText(documentList, "Podcast", "h1"));
     assert.ok(calls.some(([kind, title]) => kind === "title" && title === "Podcast"));
     const head = documentList.querySelector(".dk-split__head.dk-collection-header");
-    assert.ok(findByText(head, "Episodes", "h2"));
+    assert.ok(findByText(head, "Pipeline", "h2"));
     assert.ok(head.querySelector("[data-dk-create]"), "New episode carries the c shortcut");
     assert.equal(documentList.querySelector(".dk-split").dataset.view, "list");
+    assert.equal(documentList.querySelector('[data-podcast-view="pipeline"]').getAttribute("aria-current"), "page");
+    assert.equal(documentList.querySelector('[data-podcast-view="seasons"]').href, "/podcast?view=seasons");
     assert.deepEqual(rows(documentList), ["booked-soon", "scheduled", "booked-late"]);
     assert.ok(findByText(documentList, "Upcoming", "h3"));
     assert.equal(documentList.querySelector(".dk-stat-strip"), null);
@@ -179,14 +190,14 @@ describe("Podcast surface", () => {
 
     const tabs = documentList.querySelector('.podcast-status-filter[role="radiogroup"]');
     assert.equal(tabs.querySelector('[data-filter="upcoming"]').getAttribute("aria-checked"), "true");
-    await tabs.querySelector('[data-filter="all"]').click();
-    assert.deepEqual(rows(documentList), ["booked-soon", "scheduled", "booked-late", "pub-25", "pub-24", "cancelled", "loose"]);
-    assert.ok(findByText(documentList, "Season 24", "h3"));
+    await tabs.querySelector('[data-filter="booked"]').click();
+    assert.deepEqual(rows(documentList), ["booked-soon", "booked-late"]);
+    assert.equal(documentList.querySelector(".podcast-season"), null, "Pipeline does not contain the season register");
 
     const season = documentList.querySelector(".podcast-season-filter");
-    season.value = "24";
+    season.value = "25";
     await season.dispatch("change");
-    assert.deepEqual(rows(documentList), ["pub-24", "cancelled"]);
+    assert.deepEqual(rows(documentList), ["booked-soon", "booked-late"]);
 
     const search = documentList.querySelector(".podcast-search");
     search.value = "nobody";
@@ -195,18 +206,33 @@ describe("Podcast surface", () => {
     assert.equal(documentList.querySelector(".podcast-search").value, "nobody");
   });
 
+  test("Pipeline and Seasons / Episodes are separate panes", async () => {
+    const { surface, documentList } = harness();
+    surface.renderPodcastSurface();
+    await nextTicks(4);
+    assert.deepEqual(rows(documentList), ["booked-soon", "scheduled", "booked-late"]);
+    assert.equal(documentList.querySelector(".podcast-season"), null);
+    assert.equal(documentList.querySelector('[data-podcast-view="pipeline"]').getAttribute("aria-current"), "page");
+    await documentList.querySelector('[data-podcast-view="seasons"]').dispatch("click", { button: 0 });
+    assert.deepEqual(documentList.querySelectorAll(".podcast-season").map((season) => season.dataset.season), ["25", "24"]);
+    assert.equal(documentList.querySelector(".podcast-pipeline"), null);
+    assert.equal(documentList.querySelector(".podcast-status-filter"), null);
+    assert.equal(documentList.querySelector('[data-podcast-view="seasons"]').getAttribute("aria-current"), "page");
+  });
+
   test("rows read code, guest — title, status and date, and open in place", async () => {
-    const { surface, documentList, calls, shown } = harness({ view: "list" });
+    const { surface, documentList, calls, shown } = harness();
     surface.renderPodcastSurface();
     await nextTicks(4);
     const row = documentList.querySelector('[data-episode-id="booked-soon"]');
-    assert.equal(row.href, "/podcast/booked-soon?view=list");
+    assert.equal(row.href, "/podcast/booked-soon");
     assert.ok(findByText(row, "S25E4", ".podcast-row__code"));
     assert.ok(findByText(row, "Guest booked-soon — Synthetic booked-soon"));
     assert.ok(findByText(row, "Booked", ".podcast-status"));
+    assert.equal(row.querySelector("[data-assignment]").textContent, "Unassigned");
     assert.ok(findByText(row, "2 Nov 2026"));
     await row.dispatch("click", { button: 0 });
-    assert.deepEqual(calls.find(([kind]) => kind === "navigate"), ["navigate", "/podcast/booked-soon", { view: "list" }, { render: false }]);
+    assert.deepEqual(calls.find(([kind]) => kind === "navigate"), ["navigate", "/podcast/booked-soon", {}, { render: false }]);
     assert.deepEqual(shown, ["detail"]);
     assert.equal(documentList.querySelector(".dk-split").dataset.view, "detail");
     assert.equal(documentList.querySelector('[data-episode-id="booked-soon"]').getAttribute("aria-current"), "true");
@@ -214,7 +240,7 @@ describe("Podcast surface", () => {
 
     await documentList.querySelector(".dk-split__back").click();
     assert.deepEqual(calls.filter(([kind]) => kind === "navigate").at(-1), [
-      "navigate", "/podcast", { view: "list" }, { restoreFocus: { kind: "split-list" } },
+      "navigate", "/podcast", {}, { restoreFocus: { kind: "split-list" } },
     ]);
   });
 
@@ -249,6 +275,27 @@ describe("Podcast surface", () => {
     assert.ok(documentList.querySelector(".podcast-card-chip"), "the card summary survives a save");
     // A link to the Card's own page: the app opens it over the episode.
     assert.equal(documentList.querySelector(".podcast-card-chip").href, "/cards?cardId=card-1");
+  });
+
+  test("the release assignment is explicit and can be finalized after recording", async () => {
+    const planned = episode("planned", {
+      season: 26,
+      episode: 1,
+      releaseDate: "2026-11-20",
+      releaseAssignmentStatus: "provisional",
+      status: "recorded",
+      version: 4,
+    });
+    const { surface, documentList, calls } = harness({ episodes: [planned], routeId: "planned" });
+    surface.renderPodcastSurface();
+    await nextTicks(4);
+    assert.equal(documentList.querySelector(".podcast-release-assignment__summary").dataset.assignment, "provisional");
+    assert.ok(findByText(documentList, "Provisional", ".podcast-release-assignment"));
+    await documentList.querySelector('[data-podcast-action="finalize-release-assignment"]').click();
+    assert.deepEqual(calls.find(([method]) => method === "PUT"), [
+      "PUT", "/api/podcast-episodes/planned", { releaseAssignmentStatus: "final", version: 4 },
+    ]);
+    assert.ok(findByText(documentList, "Final", ".podcast-release-assignment"));
   });
 
   test("an episode without a Card is set by hand, with no evidence gate", async () => {
@@ -409,7 +456,7 @@ describe("Podcast surface", () => {
 
     let fail = true;
     const outage = harness({
-      view: "list",
+      view: "pipeline",
       handlers: {
         "GET /api/podcast-episodes": (payload, records) => {
           if (fail) throw new Error("Synthetic outage");

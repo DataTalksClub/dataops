@@ -13,6 +13,14 @@ export const EPISODE_STATUSES = Object.freeze([
 
 export const UPCOMING_STATUSES = Object.freeze(["booked", "recorded", "edited", "scheduled"]);
 
+export const RELEASE_ASSIGNMENT_STATES = Object.freeze(["unassigned", "provisional", "final"]);
+
+export const RELEASE_ASSIGNMENT_LABELS = Object.freeze({
+  unassigned: "Unassigned",
+  provisional: "Provisional",
+  final: "Final",
+});
+
 export const STATUS_LABELS = Object.freeze({
   booked: "Booked",
   recorded: "Recorded",
@@ -23,9 +31,11 @@ export const STATUS_LABELS = Object.freeze({
 });
 
 export const STATUS_FILTERS = Object.freeze([
-  Object.freeze(["upcoming", "Upcoming"]),
-  Object.freeze(["published", "Published"]),
-  Object.freeze(["all", "All"]),
+  Object.freeze(["upcoming", "Pipeline"]),
+  Object.freeze(["booked", "Booked"]),
+  Object.freeze(["recorded", "Recorded"]),
+  Object.freeze(["edited", "Edited"]),
+  Object.freeze(["scheduled", "Scheduled"]),
 ]);
 
 export const LINK_KINDS = Object.freeze([
@@ -42,6 +52,19 @@ export function isUpcoming(episode) {
 
 export function statusLabel(status) {
   return STATUS_LABELS[status] || String(status || "Unknown");
+}
+
+export function releaseAssignmentState(episode) {
+  return RELEASE_ASSIGNMENT_STATES.includes(episode?.releaseAssignmentStatus)
+    ? episode.releaseAssignmentStatus
+    : "unassigned";
+}
+
+export function releaseAssignmentLabel(episodeOrState) {
+  const state = typeof episodeOrState === "string"
+    ? RELEASE_ASSIGNMENT_STATES.includes(episodeOrState) ? episodeOrState : "unassigned"
+    : releaseAssignmentState(episodeOrState);
+  return RELEASE_ASSIGNMENT_LABELS[state];
 }
 
 /** S25E3, S25 for an unnumbered episode, "" without a season. */
@@ -105,6 +128,7 @@ function byEpisodeDescending(left, right) {
 export function matchesStatusFilter(episode, filter) {
   if (filter === "upcoming") return isUpcoming(episode);
   if (filter === "published") return episode?.status === "published";
+  if (UPCOMING_STATUSES.includes(filter)) return episode?.status === filter;
   return true;
 }
 

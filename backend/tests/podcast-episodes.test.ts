@@ -54,6 +54,7 @@ describe("podcast episodes", () => {
       title: "Synthetic Published Episode",
       guests: [{ name: "Grace Sample" }],
       releaseDate: "2027-01-15",
+      releaseAssignmentStatus: "final",
       status: "published",
       publication: { spotify: { publicVerifiedAt: "2026-01-15T09:00:00Z", episodeUrl: "https://open.spotify.com/episode/synthetic" } },
       websiteSlug: "synthetic-published-episode",
@@ -156,20 +157,28 @@ describe("podcast episodes", () => {
       ...booked,
       season: 31,
       episode: 2,
+      releaseDate: "2027-05-07",
+      releaseAssignmentStatus: "provisional",
       websiteSlug: "synthetic-duplicate",
       scheduleSourceKey: "schedule-synthetic-1",
     }));
     for (const clash of [
       { websiteSlug: "synthetic-duplicate" },
       { scheduleSourceKey: "schedule-synthetic-1" },
-      { season: 31, episode: 2 },
+      { season: 31, episode: 2, releaseDate: "2027-05-14", releaseAssignmentStatus: "provisional" },
     ]) {
       const response = await invoke("POST", "/api/podcast-episodes", { ...booked, ...clash });
       assert.equal(response.statusCode, 409, JSON.stringify(clash));
     }
-    const other = data(await invoke("POST", "/api/podcast-episodes", { ...booked, season: 31, episode: 3 }));
-    assert.equal((await invoke("PUT", `/api/podcast-episodes/${other.id}`, { version: other.version, episode: 2 })).statusCode, 409);
-    assert.equal((await invoke("PUT", `/api/podcast-episodes/${first.id}`, { version: first.version, episode: 2, title: "Same Number Kept" })).statusCode, 200);
+    const other = data(await invoke("POST", "/api/podcast-episodes", {
+      ...booked, season: 31, episode: 3, releaseDate: "2027-05-14", releaseAssignmentStatus: "provisional",
+    }));
+    assert.equal((await invoke("PUT", `/api/podcast-episodes/${other.id}`, {
+      version: other.version, episode: 2, releaseAssignmentStatus: "provisional",
+    })).statusCode, 409);
+    assert.equal((await invoke("PUT", `/api/podcast-episodes/${first.id}`, {
+      version: first.version, episode: 2, releaseAssignmentStatus: "provisional", title: "Same Number Kept",
+    })).statusCode, 200);
   });
 
   it("links podcast Cards uniquely, pushes guests and dates, and creates Cards with rollback", async () => {

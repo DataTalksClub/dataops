@@ -34,6 +34,7 @@ import {
   MAX_NEXT_SLOT_COUNT,
   nextReleaseSlots,
 } from "../podcast/releaseSlots";
+import { isReleaseAssignmentStatus, releaseDateConflict, validateReleaseAssignment } from "../podcast/releaseAssignment";
 import {
   MAX_NEXT_RECORDING_SLOT_COUNT,
 } from "../podcast/recordingSlots";
@@ -63,6 +64,7 @@ const WRITABLE = new Set([
   "recordingDate",
   "recordingTime",
   "releaseDate",
+  "releaseAssignmentStatus",
   "status",
   "links",
   "websiteSlug",
@@ -137,6 +139,8 @@ function validate(body: Record<string, any>): string {
   if (body.recordingTime != null && (typeof body.recordingTime !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.recordingTime)))
     return "Invalid recordingTime";
   if (!EPISODE_STATUSES.includes(body.status)) return "Invalid status";
+  if (body.releaseAssignmentStatus !== undefined && !isReleaseAssignmentStatus(body.releaseAssignmentStatus))
+    return "Invalid releaseAssignmentStatus";
   if (body.links != null) {
     if (typeof body.links !== "object" || Array.isArray(body.links)) return "Invalid links";
     for (const [kind, url] of Object.entries(body.links))
@@ -246,6 +250,7 @@ function duplicateOf(
     if (candidate.scheduleSourceKey && other.scheduleSourceKey === candidate.scheduleSourceKey)
       return `scheduleSourceKey already used by episode ${other.id}`;
     if (
+      other.status !== "cancelled" &&
       candidate.season != null &&
       candidate.episode != null &&
       other.season === candidate.season &&
@@ -354,6 +359,7 @@ const presented = async (client: DynamoDBDocumentClient, episode: PodcastEpisode
   const authority = await resolveEpisodeEventAuthority(client, episode);
   return {
     ...episode,
+    releaseAssignmentStatus: episode.releaseAssignmentStatus ?? "unassigned",
     ...(authority
       ? {
           recordingDate: authority.date,
@@ -466,7 +472,11 @@ export async function handlePodcastEpisodeRoutes(
 
   if (method === "POST" && !id) {
     if (Object.hasOwn(body, "version")) return json(400, { error: "version is system-owned" });
-    const candidate = { guests: [], ...body } as Record<string, any>;
+    const candidate = {
+      guests: [],
+      releaseAssignmentStatus: body.releaseAssignmentStatus ?? "unassigned",
+      ...body,
+    } as Record<string, any>;
     const recordingDateProvided = Object.hasOwn(body, "recordingDate") && body.recordingDate != null && body.recordingDate !== "";
     let autoRecordingSlot = null;
     if (!recordingDateProvided) {
@@ -480,9 +490,18 @@ export async function handlePodcastEpisodeRoutes(
     }
     const error = validate(candidate) || applyPublication(candidate, true);
     if (error) return json(400, { error });
+    const settings = await getWorkspaceSettings(client);
+    const assignmentError = validateReleaseAssignment(
+      candidate,
+      settings.podcastReleaseCadence,
+      settings.podcastEpisodesPerSeason,
+    );
+    if (assignmentError) return json(400, { error: assignmentError });
     const episodes = await listPodcastEpisodes(client);
     const duplicate = duplicateOf(candidate, episodes, null);
     if (duplicate) return json(409, { error: duplicate });
+    const releaseConflict = releaseDateConflict(candidate, episodes, null);
+    if (releaseConflict) return json(409, { error: releaseConflict });
     if (candidate.cardId) {
       const link = await checkEpisodeCardLink(client, candidate.cardId, null, episodes);
       if (!link.ok) return json(link.statusCode, { error: link.error });
@@ -512,9 +531,21 @@ export async function handlePodcastEpisodeRoutes(
         .filter((name) => name !== "version")
         .map((name) => [name, Object.hasOwn(changes, name) ? changes[name] : (existing as any)[name]]),
     );
+    const slotFieldsChanged = (["season", "episode", "releaseDate"] as const).some(
+      (name) => Object.hasOwn(changes, name) && changes[name] !== (existing as any)[name],
+    );
+    if (slotFieldsChanged && !Object.hasOwn(changes, "releaseAssignmentStatus"))
+      return json(400, { error: "Include releaseAssignmentStatus when changing the release slot" });
     const error =
       validate(merged) || applyPublication(merged, Object.hasOwn(changes, "publication"));
     if (error) return json(400, { error });
+    const settings = await getWorkspaceSettings(client);
+    const assignmentError = validateReleaseAssignment(
+      merged,
+      settings.podcastReleaseCadence,
+      settings.podcastEpisodesPerSeason,
+    );
+    if (assignmentError) return json(400, { error: assignmentError });
     if (Object.hasOwn(changes, "publication")) changes.publication = merged.publication;
     const recordingChanged =
       (Object.hasOwn(changes, "recordingDate") && changes.recordingDate !== existing.recordingDate) ||
@@ -533,6 +564,8 @@ export async function handlePodcastEpisodeRoutes(
     const episodes = await listPodcastEpisodes(client);
     const duplicate = duplicateOf(merged, episodes, id);
     if (duplicate) return json(409, { error: duplicate });
+    const releaseConflict = releaseDateConflict(merged, episodes, id);
+    if (releaseConflict) return json(409, { error: releaseConflict });
     const linking = changes.cardId != null && changes.cardId !== existing.cardId;
     if (linking) {
       const link = await checkEpisodeCardLink(client, changes.cardId, id, episodes);
