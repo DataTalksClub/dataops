@@ -19,6 +19,14 @@ using the standard join lead, required attendees and Zoom. No first-contact
 email or automatic intake is enabled. Later changes reuse that saved policy.
 
 Usage
+  dataops event title-check [<card|hold|episode>] [--title TITLE]
+  dataops event approve-title <card|hold|episode> --meaningful --broad --consistent
+      --note "Agreed topic and title copies reviewed" --expected-version N
+  Title checks allow Draft/TBD planning saves. Topic approval records a review
+  of the exact title; it never renames, publishes, emails or sends invitations.
+  Calendar approve remains the scheduling action, separate from topic approval.
+  Title-dependent Tasks may set validation.titleQuality to "topic-approval"
+  or "publication" to require the current review before completion.
   dataops event propose <card|hold|episode> --date YYYY-MM-DD [--time HH:MM | --window NAME]
       [--title T] [--topic TOPIC] [--guest-names "Name, Name"]
       [--guest-emails "a@b.c,d@e.f"] [--document-url URL] [--duration MINUTES] [--time-zone IANA]
@@ -258,7 +266,37 @@ export async function poll(args, io) {
   return result;
 }
 
+export async function titleCheck(args, io) {
+  const target = args._[0];
+  const title = optionalString(args, "title");
+  if (!target && title === undefined) throw new UsageError('Use dataops event title-check <card|hold|episode> or --title TITLE');
+  if (target && title !== undefined) throw new UsageError('Check either an existing event or --title, not both');
+  const result = await apiFor(args).post(target ? `/api/events/${enc(target)}/title-check` : '/api/events/title-check', { ...(title !== undefined ? { title } : {}) });
+  if (!args.json) printTitleCheck(result, io);
+  return result;
+}
+function printTitleCheck(result, io) {
+  io.print(`Title: ${result.title}`);
+  for (const issue of result.issues || []) io.print(`${issue.code}: ${issue.message}`);
+  for (const [key, text] of Object.entries(result.checklist || {})) io.print(`${key}: ${text}`);
+  if (result.expectedVersion) io.print(`expectedVersion: ${result.expectedVersion}`);
+  if (result.nextStep) io.print(result.nextStep);
+  if (result.approved) io.print('Topic approved for this exact title.');
+}
+export async function approveTitle(args, io) {
+  const target = resolveTarget(args, 'dataops event approve-title <card|hold|episode>');
+  for (const flag of ['meaningful', 'broad', 'consistent']) if (args[flag] !== true) throw new UsageError(`--${flag} must be explicitly confirmed after review`);
+  const note = optionalString(args, 'note');
+  const version = Number(args.expectedVersion);
+  if (!note?.trim() || !Number.isInteger(version) || version < 1) throw new UsageError('--note and --expected-version N are required');
+  const result = await apiFor(args).post(`/api/events/${enc(target)}/approve-title`, { meaningful: true, broad: true, consistent: true, note, expectedVersion: version });
+  if (!args.json) printTitleCheck(result, io);
+  return result;
+}
+
 export const commands = {
+  "title-check": titleCheck,
+  "approve-title": approveTitle,
   propose,
   approve,
   reschedule,

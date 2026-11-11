@@ -1,3 +1,4 @@
+import { checkTitle } from '../events/titleQuality';
 /**
  * /api/podcast-episodes: the podcast episode register.
  *
@@ -354,6 +355,7 @@ const presented = async (client: DynamoDBDocumentClient, episode: PodcastEpisode
   const authority = await resolveEpisodeEventAuthority(client, episode);
   return {
     ...episode,
+    titleQuality: checkTitle(episode.title, episode.guests.map(guest => guest.name)),
     ...(authority
       ? {
           recordingDate: authority.date,
