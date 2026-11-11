@@ -8,7 +8,7 @@ import { renderEpisodeDetail } from "./detail.js";
 import { element, emptyState, formatDate, select, statusChip } from "./dom.js";
 import { renderSchedule } from "./schedule.js";
 import { renderSeasonsOverview } from "./seasons.js";
-import { buildSeasonGrid } from "./seasons-model.js";
+import { buildSeasonGrid, episodeFlag } from "./seasons-model.js";
 import {
   episodeCode, episodeKeyDate, episodeSummary, filterEpisodes, groupEpisodes,
   matchesStatusFilter, releaseAssignmentLabel, releaseAssignmentState, seasonsOf, STATUS_FILTERS,
@@ -342,7 +342,7 @@ export function createPodcastSurface(context) {
       label.id = `podcast-group-${group.id}`;
       const list = element(documentRef, "ul", "dk-split__items");
       list.setAttribute("aria-labelledby", label.id);
-      for (const episode of group.episodes) list.append(renderRow(episode, selectedId));
+      for (const episode of group.episodes) list.append(renderRow(episode, selectedId, episodeFlag(episode, today())));
       section.append(label, list);
       scroll.append(section);
     }
