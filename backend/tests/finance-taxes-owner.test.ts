@@ -58,13 +58,16 @@ describe('tax types and the tax report', () => {
   it('derives the tax type from booking text and honours a stored taxType', () => {
     assert.equal(taxTypeOf({ description: 'Gewerbesteuer' }, 'taxes'), 'trade-tax');
     assert.equal(taxTypeOf({ description: 'ESt + Soli' }, 'taxes'), 'income-tax');
+    assert.equal(taxTypeOf({ description: 'GEW.ST 2026' }, 'taxes'), 'trade-tax');
+    assert.equal(taxTypeOf({ description: 'EINK.ST 2024' }, 'taxes'), 'income-tax');
     assert.equal(taxTypeOf({ description: 'Steuer' }, 'taxes'), 'other');
     assert.equal(taxTypeOf({ description: 'x', taxType: 'income-tax' }, 'vat'), 'income-tax');
   });
   it('a stored taxType moves a mislabelled VAT row onto the taxes line', () => {
     const s = run([row('adv', { entryType: 'expense', amount: '12240', category: 'VAT', taxType: 'income-tax', paidDate: '2026-10-10' })]);
     assert.equal(s.totals.vatPaid, 0);
-    assert.equal(s.totals.otherTaxes, 12240);
+    assert.equal(s.totals.incomeTax, 12240);
+    assert.equal(s.totals.otherTaxes, 0);
   });
   it('reports VAT projected next to paid, other taxes by type and TK', () => {
     const r = taxesReport(run(books), '2026-11-02');
@@ -76,8 +79,18 @@ describe('tax types and the tax report', () => {
     assert.equal(r.totals.vatOutstanding, 71);
     assert.equal(r.totals.taxes['trade-tax'], 3296);
     assert.equal(r.totals.taxes['income-tax'], 1000);
-    assert.equal(r.totals.healthInsurance, 1179.36);
+    assert.equal(r.totals.taxes['health-insurance'], 1179.36);
+    assert.equal(r.totals.taxesTotal, 3296 + 1000 + 1179.36);
     assert.equal(r.entries.length, 4);
+  });
+  it('lists a Finanzamt refund as a refund, never as a negative tax', () => {
+    const r = taxesReport(run([
+      ...books,
+      row('erstattung', { entryType: 'income', amount: '43633.73', category: 'Taxes', counterparty: 'Finanzamt Synthetic', description: 'Erstattung', paidDate: '2026-10-30' }),
+    ]), '2026-11-02');
+    assert.equal(r.totals.taxRefunds, 43633.73);
+    assert.deepEqual(r.totals.taxes, { 'income-tax': 1000, 'trade-tax': 3296, 'health-insurance': 1179.36, other: 0 });
+    assert.equal(r.totals.taxesTotal, 3296 + 1000 + 1179.36);
   });
   it('marks the current period open and sums year months', () => {
     const r = taxesReport(run(books, { ytd: true }, '2026-10-31'), '2026-10-31');

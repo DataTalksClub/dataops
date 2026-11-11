@@ -59,8 +59,8 @@ export function classifyMandatoryPayment(value: unknown): MandatoryPaymentClassi
 export type TaxType = 'vat' | 'income-tax' | 'trade-tax' | 'health-insurance' | 'other';
 export const TAX_TYPES: TaxType[] = ['vat', 'income-tax', 'trade-tax', 'health-insurance', 'other'];
 
-const TRADE_TAX_TEXT = /gewerbesteuer|\bgewst\b|trade\s*tax/i;
-const INCOME_TAX_TEXT = /einkommensteuer|\best\b|k(?:ö|oe)rperschaftsteuer|\bkst\b|solidarit(?:ä|ae)ts|\bsoli\b|income\s*tax|corporate\s*tax/i;
+const TRADE_TAX_TEXT = /gewerbesteuer|\bgew\.?\s?st\b|trade\s*tax/i;
+const INCOME_TAX_TEXT = /einkommensteuer|\best\b|\beink\.?\s?st\b|k(?:ö|oe)rperschaftsteuer|\bkst\b|solidarit(?:ä|ae)ts|\bsoli\b|income\s*tax|corporate\s*tax/i;
 
 /**
  * The tax a mandatory payment belongs to. A stored row taxType wins; otherwise
