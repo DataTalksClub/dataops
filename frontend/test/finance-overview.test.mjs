@@ -1,19 +1,24 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
 
-import { cashChartMarkup, formatEur, overviewMarkup, periodFromParams } from "../src/surfaces/finance/overview.js";
+import {
+  activateFinanceMonthlyRow, bookkeepingMonthUrl, cashChartMarkup, formatEur,
+  monthTableMarkup, overviewMarkup, periodControlsMarkup, periodFromParams,
+  profitChartMarkup,
+} from "../src/surfaces/finance/overview.js";
 import { escapeHtml as e } from "../src/core/html.js";
 const totals = (fields) => ({
   moneyIn: 0, moneyOut: 0, net: 0, operatingIncome: 0, operatingExpenses: 0, outputVat: 0, inputVat: 0,
-  incomeNetOfVat: 0, expensesNetOfVat: 0, netProfitExVat: 0, projectedVat: 0, vatPaid: 0, vatRefunded: 0,
+  incomeNetOfVat: 0, expensesNetOfVat: 0, netProfitExVat: 0, projectedVat: 0, vatPaid: 0, vatRefunded: 0, ownerPay: 0,
   otherTaxes: 0, healthInsurance: 0, netAfterTaxes: 0, entryCount: 0, unconvertedCount: 0, ...fields,
 });
 const month = (m, fields, future = false) => ({ month: m, future, ...totals(fields) });
 
 const YEAR = {
   period: { kind: "year", label: "2026", from: "2026-01-01", to: "2026-12-31", months: ["2026-09", "2026-10", "2026-11"] },
-  totals: totals({ moneyIn: 3000, moneyOut: 1300, net: 1700, netProfitExVat: 2100, incomeNetOfVat: 2500, expensesNetOfVat: 400, projectedVat: 410.5, outputVat: 500, inputVat: 89.5, vatPaid: 300, otherTaxes: 400, healthInsurance: 0, netAfterTaxes: 1700, entryCount: 4 }),
-  months: [month("2026-09", { moneyIn: 1000, moneyOut: 1300, net: -300, netProfitExVat: -100, outputVat: 50, inputVat: 15, vatPaid: 45, vatRefunded: 5, projectedVat: 35 }), month("2026-10", { moneyIn: 2000, net: 2000, netProfitExVat: 2200 }), month("2026-11", {}, true)],
+  totals: totals({ moneyIn: 3000, moneyOut: 1300, net: 1700, netProfitExVat: 2100, incomeNetOfVat: 2500, expensesNetOfVat: 400, projectedVat: 410.5, outputVat: 500, inputVat: 89.5, vatPaid: 300, otherTaxes: 400, healthInsurance: 20, ownerPay: 50, netAfterTaxes: 1680, netAfterOwnerPay: 1630, entryCount: 4 }),
+  months: [month("2026-09", { moneyIn: 1000, moneyOut: 1300, net: -300, netProfitExVat: -100, otherTaxes: -50, healthInsurance: 15, ownerPay: 100, outputVat: 50, inputVat: 15, vatPaid: 45, vatRefunded: 5, projectedVat: 35 }), month("2026-10", { moneyIn: 2000, net: 2000, netProfitExVat: 2200 }), month("2026-11", {}, true)],
   byCurrency: [
     { currency: "USD", moneyIn: "6000.00", moneyOut: "0.00", moneyInEur: 5360.49, moneyOutEur: 0 },
     { currency: "GBP", moneyIn: "25.00", moneyOut: "0.00", moneyInEur: 33.1, moneyOutEur: 0 },
@@ -29,10 +34,21 @@ const YEAR = {
 };
 
 describe("finance overview", () => {
-  test("reads the period from the URL and defaults to the year to date", () => {
-    assert.deepEqual(periodFromParams(new URLSearchParams("month=2026-10"), "2026-10-31"), { month: "2026-10" });
+  test("reads only an annual year from the URL and defaults to the current calendar year", () => {
+    assert.deepEqual(periodFromParams(new URLSearchParams("month=2025-10"), "2026-10-31"), { year: "2026" });
     assert.deepEqual(periodFromParams(new URLSearchParams("year=2025"), "2026-10-31"), { year: "2025" });
-    assert.equal(periodFromParams(new URLSearchParams("month=2026-13"), "2026-10-31").ytd, "1");
+    assert.deepEqual(periodFromParams(new URLSearchParams("ytd=1"), "2031-01-01"), { year: "2031" });
+    assert.deepEqual(periodFromParams(new URLSearchParams("year=bad&month=2026-10"), "2026-10-31"), { year: "2026" });
+  });
+
+  test("offers a dynamic Current year action and an annual year selector only", () => {
+    const current = periodControlsMarkup({ year: "2031" }, "2031-01-01", e);
+    assert.match(current, /data-fin-period="current-year" aria-pressed="true">Current year/);
+    assert.match(current, /<option value="2031" selected>2031<\/option>/);
+    assert.doesNotMatch(current, /Year to date|data-fin-month|type="month"/);
+    const historical = periodControlsMarkup({ year: "2025" }, "2031-01-01", e);
+    assert.match(historical, /data-fin-period="current-year" aria-pressed="false">Current year/);
+    assert.match(historical, /<option value="2025" selected>2025<\/option>/);
   });
 
   test("formats EUR with a true minus sign and no negative zero", () => {
@@ -47,6 +63,8 @@ describe("finance overview", () => {
     assert.match(markup, /Net profit excluding VAT<\/h2>\s*<p class="fin-tile__value" data-fin-profit>2,100\.00/);
     assert.match(markup, /data-fin-vat>410\.50 <span class="fin-tile__unit">EUR<\/span><\/p>\s*<p class="fin-tile__sub">owed to the Finanzamt/);
     assert.match(markup, /Actually paid in this period: <strong>300\.00<\/strong>/);
+    assert.match(markup, /<dt>Taxes<\/dt><dd>\+420\.00<\/dd>/);
+    assert.doesNotMatch(markup, /Health insurance \(TK\)|Other taxes|and TK/);
     assert.doesNotMatch(markup, /no VAT amount|vat-unknown/i);
     assert.ok(markup.indexOf("data-fin-profit") < markup.indexOf("<svg"));
   });
@@ -55,29 +73,59 @@ describe("finance overview", () => {
     const markup = overviewMarkup(YEAR, e);
     assert.equal((markup.match(/<svg /g) || []).length, 2);
     assert.match(markup, /<th scope="row">Total<\/th>/);
-    assert.match(markup, /2026-11 <small>\(not over\)<\/small>/);
+    assert.match(markup, /<a class="fin-table__month-link" data-fin-month-link href="\/bookkeeping\?month=2026-11">2026-11<\/a> <small>\(not over\)<\/small>/);
     assert.match(markup, /dataops finance summary --year 2026/);
-    for (const header of ["Output VAT", "Input VAT", "VAT paid", "VAT refunded", "VAT position"])
+    for (const header of ["Taxes", "Owner pay", "Output VAT", "Input VAT", "VAT paid", "VAT refunded", "VAT position"])
       assert.match(markup, new RegExp(`<th scope="col">${header}</th>`));
-    assert.match(markup, /<th scope="row">2026-09<\/th>[\s\S]*?<td class="fin-num">50\.00<\/td>\s*<td class="fin-num">15\.00<\/td>\s*<td class="fin-num">45\.00<\/td>\s*<td class="fin-num">5\.00<\/td>\s*<td class="fin-num">35\.00<\/td>/);
+    assert.match(markup, /<th scope="row"><a class="fin-table__month-link" data-fin-month-link href="\/bookkeeping\?month=2026-09">2026-09<\/a><\/th>/);
+    assert.match(markup, /<th scope="row">Total<\/th>/);
+    assert.doesNotMatch(markup.match(/<tr class="fin-table__total">[\s\S]*?<\/tr>/)?.[0] || "", /data-fin-bookkeeping-row|data-fin-month-link/);
   });
 
-  test("a single month has no chart, only its table", () => {
-    const one = { ...YEAR, period: { ...YEAR.period, kind: "month", label: "2026-10" }, months: [YEAR.months[1]] };
-    const markup = overviewMarkup(one, e);
-    assert.doesNotMatch(markup, /<svg /);
-    assert.doesNotMatch(markup, /scope="row">Total/);
-    assert.match(markup, /--month 2026-10/);
+  test("merges signed taxes and health insurance while keeping owner pay and VAT columns aligned", () => {
+    const markup = monthTableMarkup(YEAR, e);
+    assert.match(markup, /<th scope="col">Taxes<\/th><th scope="col">Owner pay<\/th><th scope="col">Output VAT<\/th>/);
+    assert.doesNotMatch(markup, /Other taxes|<th scope="col">TK<\/th>/);
+    const row = markup.match(/<tr class="" data-fin-bookkeeping-row>([\s\S]*?)<\/tr>/)?.[1] || "";
+    const cells = [...row.matchAll(/<td class="fin-num">([^<]+)<\/td>/g)].map((match) => match[1]);
+    assert.deepEqual(cells, [
+      "1,000.00", "1,300.00", "−300.00", "0.00", "0.00", "−100.00", "−35.00", "100.00",
+      "50.00", "15.00", "45.00", "5.00", "35.00", "0",
+    ]);
   });
 
-  test("shows conversions inline in currency rows and includes rates when available", () => {
+  test("keeps the Finance annual report in EUR without a yearly currencies dump", () => {
     const markup = overviewMarkup(YEAR, e);
-    assert.match(markup, /<th scope="row">USD<small class="fin-currency__conversion">2026-10-23: &lt;Payer &amp; Co&gt;: 6,000\.00 USD → 5,360\.49 EUR · 1\.1193 per EUR \(ECB reference rate 2026-10-23\) · booked 5,360\.49 EUR · ECB 23 Oct 2026 · Sponsorship · Invoice<\/small><\/th>/);
-    assert.match(markup, /<th scope="row">GBP<small class="fin-currency__conversion">2026-10-24: No-rate &amp; Co: 25\.00 GBP → 33\.10 EUR<\/small><\/th>/);
-    assert.doesNotMatch(markup.match(/<th scope="row">GBP[\s\S]*?<\/th>/)?.[0] || "", /per EUR/);
-    assert.doesNotMatch(markup, /Conversions to EUR/);
-    assert.doesNotMatch(markup, /class="fin-table__caption"/);
+    assert.doesNotMatch(markup, /Currencies|fin-currency__conversion|6000\.00 USD|25\.00 GBP/);
+    assert.match(markup, /data-fin-profit>2,100\.00 <span class="fin-tile__unit">EUR/);
+    assert.match(markup, /dataops finance summary --year 2026/);
     assert.match(markup, /dropped as duplicates of invoice or receipt rows \(1\)/);
+  });
+
+  test("opens a monthly summary row in its matching Bookkeeping month without stealing selection or controls", () => {
+    assert.equal(bookkeepingMonthUrl("2026-09"), "/bookkeeping?month=2026-09");
+    assert.equal(bookkeepingMonthUrl("Total"), "");
+    const row = { querySelector: () => link };
+    let opened = 0;
+    const link = { click: () => { opened += 1; } };
+    const target = (options = {}) => ({
+      closest(selector) {
+        if (selector === "tr[data-fin-bookkeeping-row]") return options.total ? null : row;
+        if (selector.includes("[data-fin-month-link]") && options.link) return link;
+        if (selector.includes("button") && options.control) return options.control;
+        return null;
+      },
+    });
+    const event = (options = {}) => ({ target: target(options), detail: 1, button: 0, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } });
+    assert.equal(activateFinanceMonthlyRow(event()), true);
+    assert.equal(opened, 1);
+    assert.equal(activateFinanceMonthlyRow(event({ total: true })), false);
+    assert.equal(activateFinanceMonthlyRow(event({ control: {} })), false);
+    assert.equal(activateFinanceMonthlyRow(event(), { isCollapsed: false, toString: () => "select text" }), false);
+    assert.equal(opened, 1);
+    const selectedLinkEvent = event({ link: true });
+    assert.equal(activateFinanceMonthlyRow(selectedLinkEvent, { isCollapsed: false, toString: () => "select month" }), false);
+    assert.equal(selectedLinkEvent.defaultPrevented, true);
   });
 
   test("puts money out below the baseline and labels every month for hover and screen readers", () => {
@@ -85,6 +133,27 @@ describe("finance overview", () => {
     assert.equal((svg.match(/data-fin-hover=/g) || []).length, 3);
     assert.match(svg, /2026-09: in 1,000\.00, out 1,300\.00, net −300\.00 EUR/);
     assert.match(svg, /class="fin-chart__month is-future"/);
+  });
+
+  test("adds intermediate EUR grid labels for positive and negative monthly profit", () => {
+    const svg = profitChartMarkup([
+      month("2026-01", { netProfitExVat: 50000 }),
+      month("2026-02", { netProfitExVat: 25000 }),
+      month("2026-03", { netProfitExVat: -12500 }),
+    ], e);
+    assert.equal((svg.match(/class="fin-chart__grid/g) || []).length, 5);
+    for (const tick of ["50k", "25k", "−25k", "−50k"])
+      assert.match(svg, new RegExp(`>${tick}<\\/text>`));
+  });
+
+  test("styles the native Finance year popup with theme tokens and distinct native states", () => {
+    const css = readFileSync(new URL("../src/styles/finance.css", import.meta.url), "utf8");
+    assert.match(css, /:root\[data-theme="dark"\] \.fin-period \[data-fin-year\] \{ color-scheme: dark; \}/);
+    for (const state of [":checked", ":hover", ":focus", ":disabled"])
+      assert.match(css, new RegExp(`\\[data-fin-year\\] option${state}`));
+    assert.match(css, /var\(--dk-bg-surface\)/);
+    assert.match(css, /var\(--dk-text-primary\)/);
+    assert.doesNotMatch(css, /\.fin-period \[data-fin-year\][^{]*\{[^}]*appearance:\s*none/s);
   });
 });
 

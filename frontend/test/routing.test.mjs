@@ -81,6 +81,16 @@ describe("canonical workspace routing", () => {
     ]);
   });
 
+  test("Finance routes only annual reports while Bookkeeping keeps explicit month filters", () => {
+    assert.deepEqual(WORKSPACE_ROUTE_DEFINITIONS["/finance"].params, ["year"]);
+    assert.equal(canonicalWorkspaceUrl("/finance", { year: "2025" }), "/finance?year=2025");
+    assert.equal(canonicalWorkspaceUrl("/finance", { month: "2026-10", ytd: "1" }), "/finance");
+    const staleMonthlyUrl = parseWorkspaceLocation("/finance?month=2026-10", browserLocation("/finance?month=2026-10"));
+    assert.equal(staleMonthlyUrl.canonicalUrl, "/finance");
+    assert.equal(staleMonthlyUrl.normalized, true);
+    assert.equal(canonicalWorkspaceUrl("/bookkeeping", { month: "2026-09" }), "/bookkeeping?month=2026-09");
+  });
+
   test("gives every Sponsors tab and record its own path", () => {
     for (const [tab] of SPONSORS_TABS) {
       const url = sponsorsPath(tab);
