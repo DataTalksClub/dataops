@@ -71,6 +71,7 @@ describe("canonical workspace routing", () => {
       "/newsletter",
       "/newsletter/:issueId",
       "/calendar",
+      "/inbox",
       "/podcast",
       "/podcast/schedule",
       "/podcast/:episodeId",

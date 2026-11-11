@@ -70,6 +70,7 @@ import { getDocument } from './db/documents';
 import { handleCardDocumentRoutes } from './routes/cardDocuments';
 import { handleCampaignCalendarRoutes } from './routes/campaignCalendar';
 import { handleDocumentRoutes } from './routes/documents';
+import { handleInboxRoutes } from './routes/inbox';
 import { handleDocumentReviewRoutes, isAnonymousDocumentReviewRequest } from './documents/reviews';
 import { isAnonymousNewsletterPreviewRequest } from './newsletter/markdownPreview';
 import { jsonResponse } from './http';
@@ -427,6 +428,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (review) return review;
       const document = await handleDocumentRoutes(event, client);
       if (document) return document;
+    }
+
+    if (reqPath.startsWith('/api/inbox')) {
+      const inbox = await handleInboxRoutes(event, client);
+      if (inbox) return inbox;
     }
 
     // ── Sponsor content document routes ────────────────────────────

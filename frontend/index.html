@@ -39,6 +39,7 @@
     <link rel="stylesheet" href="/src/styles/shell.css">
     <link rel="stylesheet" href="/src/styles/period-nav.css">
     <link rel="stylesheet" href="/src/styles/podcast.css">
+    <link rel="stylesheet" href="/src/styles/inbox.css">
     <link rel="stylesheet" href="/src/styles/bookkeeping.css">
   </head>
   <body data-view="library">
@@ -67,6 +68,7 @@
           <a class="dk-nav-item workspace-nav-button" href="/cards" data-tasks-section="workflows"><span class="dk-nav-item__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="9.5" y="4" width="5" height="16" rx="1.5"/><rect x="16" y="4" width="5" height="16" rx="1.5"/></svg></span><span class="dk-nav-item__label">Cards</span></a>
           <a class="dk-nav-item workspace-nav-button" href="/templates" data-tasks-section="templates"><span class="dk-nav-item__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M3.5 9.5h17M9.5 9.5V20"/></svg></span><span class="dk-nav-item__label">Templates</span></a>
           <a class="dk-nav-item workspace-nav-button" href="/recurring" data-tasks-section="recurring"><span class="dk-nav-item__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v4h-4"/></svg></span><span class="dk-nav-item__label">Recurring</span></a>
+          <a id="inbox-nav-button" class="dk-nav-item workspace-nav-button" href="/inbox" data-workspace-view="inbox"><span class="dk-nav-item__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H4Z"/><path d="M4 16l4-8h8l4 8M10 20h4"/></svg></span><span class="dk-nav-item__label">Inbox</span><span id="inbox-nav-count" class="dk-count" hidden></span></a>
           </div><div class="dk-nav-group"><h2 class="dk-nav-group__label">Operations</h2>
           <a id="newsletter-nav-button" class="dk-nav-item workspace-nav-button" href="/newsletter" data-workspace-view="newsletter"><span class="dk-nav-item__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><span class="dk-nav-item__label">Newsletter</span></a>
           <a id="calendar-nav-button" class="dk-nav-item workspace-nav-button" href="/calendar" data-workspace-view="calendar"><span class="dk-nav-item__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M7 14h2M11 14h2M15 14h2M7 18h2M11 18h2"/></svg></span><span class="dk-nav-item__label">Calendar</span></a>

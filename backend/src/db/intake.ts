@@ -1,6 +1,7 @@
 import {
   GetCommand,
   PutCommand,
+  ScanCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -164,8 +165,32 @@ async function updateIntakeItem(
   return cleanItem(result.Attributes as Record<string, unknown>);
 }
 
+export const MATERIALS_INBOX_TAG = 'materials-inbox';
+
+/**
+ * List materials-inbox intake items (tagged `materials-inbox`), newest first.
+ * The inbox is a small operator queue; a bounded scan keeps the read cheap
+ * while the collection stays well under DynamoDB's 1MB scan page.
+ */
+async function listMaterialsInboxItems(client: DynamoDBDocumentClient): Promise<IntakeItem[]> {
+  const result = await client.send(new ScanCommand({
+    TableName: TABLE_INTAKE,
+    FilterExpression: 'begins_with(PK, :prefix) AND contains(#tags, :tag)',
+    ExpressionAttributeNames: { '#tags': 'tags' },
+    ExpressionAttributeValues: { ':prefix': 'INTAKE#', ':tag': MATERIALS_INBOX_TAG },
+  }));
+  const items = (result.Items || [])
+    .map((row) => cleanItem(row as Record<string, unknown>))
+    .filter((item): item is IntakeItem => item !== null);
+  return items.sort((left, right) =>
+    right.sourceReceivedAt.localeCompare(left.sourceReceivedAt)
+    || right.createdAt.localeCompare(left.createdAt)
+    || left.id.localeCompare(right.id));
+}
+
 export {
   createIntakeItemIfAbsent,
   getIntakeItem,
+  listMaterialsInboxItems,
   updateIntakeItem,
 };
