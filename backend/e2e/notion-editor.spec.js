@@ -236,7 +236,7 @@ test('"/" opens the block menu in place, filters as you type and inserts blocks'
   await page.keyboard.type('/');
   await expect(menu.locator('.slash-menu-item strong')).toHaveText(
     ['Text', 'Heading 1', 'Heading 2', 'Heading 3', 'Bulleted list', 'Numbered list',
-      'To-do list', 'Quote', 'Callout', 'Code', 'Divider', 'Image', 'Video', 'Sub-page'],
+      'To-do list', 'Quote', 'Callout', 'Code', 'Divider', 'Table', 'Image', 'Video', 'Sub-page'],
   );
   await page.keyboard.type('h2');
   await expect(menu.locator('.slash-menu-item strong')).toHaveText(['Heading 2']);

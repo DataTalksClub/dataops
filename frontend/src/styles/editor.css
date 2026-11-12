@@ -2090,3 +2090,192 @@ blockquote p,
 .selection-toolbar-button.is-code {
   font-family: var(--dk-font-mono);
 }
+
+/* Table blocks (table-block.js). Cells are always-editable fields. Columns
+   size to their content and wrap between words, never inside one: the
+   break-word rule below overrides the page-wide "anywhere" on editables,
+   which would let a narrow column cut "transcript" in two. A table wider
+   than the page scrolls inside its own box. */
+.notion-table {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  width: 100%;
+}
+
+.notion-table-scroll {
+  grid-column: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.notion-table-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--dk-text-body);
+}
+
+.notion-table-grid th,
+.notion-table-grid td {
+  border: 1px solid var(--dk-border-default);
+  padding: 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.notion-table-grid thead th {
+  background: var(--dk-bg-muted);
+  font-weight: 600;
+}
+
+.notion-table-cell[data-editable] {
+  min-width: 6ch;
+  min-height: var(--dk-space-8);
+  padding: var(--dk-space-1) var(--dk-space-2);
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: manual;
+  line-height: 1.5;
+}
+
+.notion-table-cell[data-editable]:focus {
+  background: var(--dk-accent-soft);
+}
+
+.notion-table-cell[data-editable]:focus-visible {
+  outline: 2px solid var(--dk-focus-ring);
+  outline-offset: -2px;
+}
+
+/* The grips live in a gutter column and a strip above the header, outside
+   the cell grid, and show on hover or focus (always on touch). */
+.notion-table-grid .notion-table-grips th,
+.notion-table-grid th.notion-table-gutter,
+.notion-table-grid td.notion-table-gutter {
+  width: var(--dk-space-6);
+  min-width: var(--dk-space-6);
+  border: 0;
+  background: transparent;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.notion-table-grips th {
+  height: var(--dk-space-5);
+}
+
+.notion-table-grip {
+  display: inline-grid;
+  place-items: center;
+  width: var(--dk-space-5);
+  height: var(--dk-space-5);
+  border: 0;
+  border-radius: var(--dk-radius-sm);
+  background: transparent;
+  color: var(--dk-text-faint);
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.notion-table-column-grip svg {
+  transform: rotate(0deg);
+}
+
+.notion-table-row-grip svg {
+  transform: rotate(90deg);
+}
+
+.notion-table-grip svg {
+  width: var(--dk-space-4);
+  height: var(--dk-space-4);
+}
+
+.notion-table-grip svg circle {
+  fill: currentColor;
+}
+
+.notion-table:hover .notion-table-grip,
+.notion-table:focus-within .notion-table-grip,
+.notion-table-grip[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.notion-table-grip:hover,
+.notion-table-grip[aria-expanded="true"] {
+  background: var(--dk-bg-hover);
+  color: var(--dk-text-muted);
+}
+
+.notion-table-row-grip {
+  cursor: grab;
+}
+
+.notion-table-grid tr.is-dragging {
+  opacity: 0.4;
+}
+
+.notion-table-grid tr.drop-above td:not(.notion-table-gutter) {
+  background: var(--dk-bg-hover);
+  border-top: 1px solid var(--dk-border-strong);
+}
+
+.notion-table-grid tr.drop-below td:not(.notion-table-gutter) {
+  background: var(--dk-bg-hover);
+  border-bottom: 1px solid var(--dk-border-strong);
+}
+
+.notion-table-add {
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--dk-radius-sm);
+  background: transparent;
+  color: var(--dk-text-faint);
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.notion-table-add svg {
+  width: var(--dk-space-4);
+  height: var(--dk-space-4);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.notion-table-add-column {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: stretch;
+  width: var(--dk-space-5);
+  margin-top: var(--dk-space-5);
+}
+
+.notion-table-add-row {
+  grid-column: 1;
+  grid-row: 2;
+  width: 100%;
+  height: var(--dk-space-5);
+}
+
+.notion-table:hover .notion-table-add,
+.notion-table:focus-within .notion-table-add {
+  opacity: 1;
+}
+
+.notion-table-add:hover {
+  background: var(--dk-bg-hover);
+  color: var(--dk-text-muted);
+}
+
+@media (hover: none) {
+  .notion-table-grip,
+  .notion-table-add {
+    opacity: 1;
+  }
+}

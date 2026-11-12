@@ -29,6 +29,13 @@ export const BLOCK_ICONS = {
     '<line x1="16" y1="17" x2="8" y2="17"/>'),
 };
 
+const TABLE_TEMPLATE = [
+  "| Column 1 | Column 2 | Column 3 |",
+  "| --- | --- | --- |",
+  "|  |  |  |",
+  "|  |  |  |",
+].join("\n");
+
 /** Block types for documents and ordinary SOP sections. */
 export const DOCUMENT_BLOCKS = [
   { type: "paragraph", title: "Text", description: "Plain text.", shortcut: "text", keywords: "paragraph p", template: "" },
@@ -42,6 +49,10 @@ export const DOCUMENT_BLOCKS = [
   { type: "callout", title: "Callout", description: "Make a note stand out.", shortcut: "callout", keywords: "note tip warning", template: "> [!NOTE]\n> Note text" },
   { type: "code", title: "Code", description: "A code snippet.", shortcut: "code", keywords: "snippet ```", template: "```\n\n```" },
   { type: "divider", title: "Divider", description: "Separate blocks with a line.", shortcut: "hr", keywords: "line separator ---", template: "---" },
+  {
+    type: "table", title: "Table", description: "Rows and columns you edit in place.",
+    shortcut: "table", keywords: "grid rows columns", template: TABLE_TEMPLATE,
+  },
   { type: "image", title: "Image", description: "Upload a screenshot or image.", shortcut: "image", keywords: "screenshot picture photo upload", template: "" },
   { type: "embed", title: "Video", description: "Embed a Loom, YouTube or Vimeo video.", shortcut: "video", keywords: "embed loom youtube vimeo", template: "" },
   { type: "page", title: "Sub-page", description: "A page nested inside this one.", shortcut: "page", keywords: "subpage child", template: "" },

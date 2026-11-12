@@ -17,6 +17,7 @@ import {
   TEXT_TYPES,
 } from "./block-model.js";
 import { toVideoEmbed } from "./embeds.js";
+import { renderTableBlock } from "./table-block.js";
 import { makeBlockGutter, openBlockMenu } from "./block-menu.js";
 import { pickImageFiles, promptInline } from "./inline-prompt.js";
 import { createSlashMenu, DOCUMENT_BLOCKS } from "./slash-menu.js";
@@ -107,7 +108,9 @@ export function createBlockEditor(context, services) {
   function focusBlockTarget(container, target) {
     const blockEl = container.querySelectorAll(":scope > .notion-block")[target.index];
     if (!blockEl) return;
-    let editable = target.item != null
+    let editable = target.cell
+      ? blockEl.querySelector(`[data-row="${target.cell.row}"][data-col="${target.cell.column}"]`)
+      : target.item != null
       ? blockEl.querySelectorAll(".notion-list-item-text")[target.item]
       : blockEl.querySelector(".inline-editable");
     if (!editable) return;
@@ -352,6 +355,12 @@ export function createBlockEditor(context, services) {
       const at = place({ ...makeBlock("embed", url) });
       blocks.splice(at + 1, 0, makeBlock("paragraph", ""));
       replace({ index: at + 1, at: "start" });
+      return;
+    }
+    if (item.type === "table") {
+      const at = place({ id: blockId(), type: "table", raw: item.template });
+      blocks.splice(at + 1, 0, makeBlock("paragraph", ""));
+      replace({ index: at, cell: { row: -1, column: 0 } });
       return;
     }
     if (item.type === "divider") {
@@ -697,6 +706,22 @@ export function createBlockEditor(context, services) {
       iframe.title = block.raw.trim();
       wrap.append(iframe);
       content.append(wrap);
+    } else if (block.type === "table") {
+      content.append(renderTableBlock({
+        block,
+        attachInlineEditor,
+        commitTable: (raw, focus) => {
+          if (!focus) {
+            onChange(index, raw, { rerender: !structural });
+          } else if (structural) {
+            // Keystrokes replace the block object in the list; write to the live one.
+            blocks[index] = { ...blocks[index], raw };
+            replace({ index, cell: focus });
+          } else {
+            onChange(index, raw, { focusBlockIndex: index });
+          }
+        },
+      }));
     } else if (block.type === "bullet" || block.type === "numbered") {
       content.append(renderNotionListBlock({
         block, blockIndex: index, onChange, onDeleteBlock, onInsertBlock, structural, blocks, replace,
