@@ -255,7 +255,7 @@ try {
   await page.click("[data-picker-toggle]");
   await page.click('[data-picker-shortcut="year"]');
   assert.deepEqual(await page.$$eval(".bk-month", (els) => els.map((el) => el.dataset.month)), ["2026-09", "2026-08", "2026-07"]);
-  assert.match(await page.$eval(".bk-month__head", (el) => el.textContent), /out\s*−€/);
+  assert.match(await page.$eval(".bk-month__totals-row", (el) => el.textContent), /Money out\s*€/);
 
   // Secondary views live behind the ⋯ menu.
   await page.click(".bk-more > summary");

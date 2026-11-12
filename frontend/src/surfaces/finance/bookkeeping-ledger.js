@@ -289,6 +289,13 @@ const icon = {
   receipt: '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">'
     + '<path d="M4 1.5h8v13l-2-1.2-2 1.2-2-1.2-2 1.2z" stroke-linejoin="round"/>'
     + '<path d="M6 5.5h4M6 8h4" stroke-linecap="round"/></svg>',
+  pdf: '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">'
+    + '<path d="M4 1.5h5.5L13 5v9.5H4z" stroke-linejoin="round"/>'
+    + '<path d="M9.5 1.5V5H13" stroke-linejoin="round"/>'
+    + '<path d="M6 8.5h4M6 11h3" stroke-linecap="round"/></svg>',
+  bank: '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">'
+    + '<path d="M2 6 8 2.5 14 6" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<path d="M3.5 6.5V12M6.5 6.5V12M9.5 6.5V12M12.5 6.5V12M2.5 12.5h11" stroke-linecap="round"/></svg>',
 };
 
 export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, vocab, selectedId, financeEntry, statementLinks = new Map(), e }) {
@@ -306,11 +313,13 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
   const invoiceEvidence = hasInvoice(entry.id);
   const invoiceDocuments = Array.isArray(invoiceEvidence) ? invoiceEvidence : [];
   const hasInvoiceAttached = invoiceDocuments.length > 0 || invoiceEvidence === true;
+  // One compact icon per invoice PDF; the filename lives in the tooltip
+  // instead of a wide "View PDF" button on every row.
   const invoiceActions = invoiceDocuments.length
-    ? invoiceDocuments.map((document) => html`<button type="button" class="dk-button dk-button--secondary dk-button--sm bk-evidence-view"
+    ? invoiceDocuments.map((document) => html`<button type="button" class="dk-icon-button dk-icon-button--sm bk-evidence-view"
         data-view-document="${e(document.id)}"
         aria-label="View ${e(document.originalFilename || "invoice or receipt PDF")}"
-        title="${e(document.originalFilename || "Invoice or receipt PDF")}">View PDF</button>`).join("")
+        title="${e(document.originalFilename || "Invoice or receipt PDF")}">${icon.pdf}</button>`).join("")
     : hasInvoiceAttached
       ? html`<span class="bk-invoice-icon" title="Invoice attached" aria-label="Invoice attached">${icon.receipt}</span>`
       : html`<span class="bk-no-invoice">No invoice</span>`;
@@ -320,7 +329,10 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
     ? `${accountDoc.statementPeriod} statement`
     : "statement";
   const accountCell = accountDoc?.statementDocumentId
-    ? html`<button type="button" class="bk-account-link" data-view-document="${e(accountDoc.statementDocumentId)}" title="Open ${e(accountStatementTitle)}">${e(account)}</button>`
+    ? html`<button type="button" class="dk-icon-button dk-icon-button--sm bk-account-view"
+        data-view-document="${e(accountDoc.statementDocumentId)}"
+        aria-label="${e(account)} — open ${e(accountStatementTitle)}"
+        title="${e(account)} — open ${e(accountStatementTitle)}">${icon.bank}</button>`
     : e(account || "—");
   return html`<tr class="bk-row${flagged ? " is-uncategorised" : ""}${direction === "income" ? " is-income" : ""}"
       data-tx="${e(entry.id)}"${entry.id === selectedId ? ' aria-selected="true"' : ""}>
@@ -401,15 +413,16 @@ function allocationChildMarkup(entry, allocation, { getAllocationDocument = () =
     ? `${statementLink.statementPeriod} statement`
     : "statement";
   const accountCell = statementLink?.statementDocumentId
-    ? html`<button type="button" class="bk-account-link" data-view-document="${
-      e(statementLink.statementDocumentId)
-    }" title="Open ${e(accountStatementTitle)}">${e(accountName)}</button>`
+    ? html`<button type="button" class="dk-icon-button dk-icon-button--sm bk-account-view"
+        data-view-document="${e(statementLink.statementDocumentId)}"
+        aria-label="${e(accountName)} — open ${e(accountStatementTitle)}"
+        title="${e(accountName)} — open ${e(accountStatementTitle)}">${icon.bank}</button>`
     : e(accountName || "—");
   const pdfAction = document
-    ? html`<button type="button" class="dk-button dk-button--secondary dk-button--sm bk-evidence-view"
+    ? html`<button type="button" class="dk-icon-button dk-icon-button--sm bk-evidence-view"
         data-view-document="${e(document.id)}"
         aria-label="View ${e(document.originalFilename || "invoice or receipt PDF")}"
-        title="${e(document.originalFilename || "Invoice or receipt PDF")}">View PDF</button>`
+        title="${e(document.originalFilename || "Invoice or receipt PDF")}">${icon.pdf}</button>`
     : html`<span class="bk-allocation-no-pdf">No linked PDF</span>`;
   return html`<tr class="bk-row bk-row--allocation-child" data-allocation-parent="${e(entry.id)}" data-allocation-document="${e(allocation.documentId || "")}">
       <td class="bk-col-date">${dateCell(child, e)}</td>
@@ -446,6 +459,28 @@ export function ledgerHeadMarkup() {
 
 const COLUMN_COUNT = 9;
 
+// One totals row at the bottom of a month: money in and money out, no net.
+// The figures are the Finance overview's own (financeTotals from
+// /api/finance/summary) whenever that month is loaded, so the two pages show
+// the same numbers; otherwise the visible rows are summed as an interim.
+// Unconverted-row counts always come from the visible rows.
+export function monthTotalsRowMarkup(group, financeTotals, e) {
+  const moneyIn = Number(financeTotals?.moneyIn ?? group.moneyIn);
+  const moneyOut = Math.abs(Number(financeTotals?.moneyOut ?? group.moneyOut));
+  return html`<tr class="bk-month__totals-row">
+      <th colspan="${COLUMN_COUNT}" scope="rowgroup" data-month-total="${e(group.month)}"${financeTotals ? " data-finance-total" : ""}>
+        <span class="bk-month__totals-inner">
+          <span class="bk-month__totals-label">Total</span>
+          <span class="bk-month__totals-figures">
+            <span class="bk-month__totals-figure">Money in <span class="dk-mono">${e(formatAmount(moneyIn, "EUR"))}</span></span>
+            <span class="bk-month__totals-figure">Money out <span class="dk-mono">${e(formatAmount(moneyOut, "EUR"))}</span></span>
+            ${group.unconverted ? html`<span class="bk-total is-missing">${group.unconverted} without EUR</span>` : ""}
+          </span>
+        </span>
+      </th>
+    </tr>`;
+}
+
 export function ledgerTableMarkup({
   groups,
   hasEvidence,
@@ -454,24 +489,22 @@ export function ledgerTableMarkup({
   vocab,
   selectedId,
   financeEntriesById = new Map(),
+  financeMonthTotals = null,
+  // A single-month lens already names the month in the period navigator, so
+  // the in-table month group head would repeat it in every section.
+  hideGroupHead = false,
   statementLinks = new Map(),
   e,
 }) {
   const body = groups.map((group) => {
     const visibleRowCount = displayRowCount(group.entries);
-    const totals = [
-      group.moneyOut ? html`<span class="bk-total">out <span class="dk-mono">${e(signedAmount(group.moneyOut, "EUR"))}</span></span>` : "",
-      group.moneyIn ? html`<span class="bk-total">in <span class="dk-mono">${e(signedAmount(group.moneyIn, "EUR"))}</span></span>` : "",
-      group.unconverted ? html`<span class="bk-total is-missing">${group.unconverted} without EUR</span>` : "",
-    ].filter(Boolean).join("");
     return html`<tbody class="bk-month" data-month="${e(group.month)}">
-        <tr class="bk-month__head">
+        ${hideGroupHead ? "" : html`<tr class="bk-month__head">
           <th scope="rowgroup" colspan="${COLUMN_COUNT}">
             <span class="bk-month__title">${e(group.month ? monthLabel(group.month) : "No date")}</span>
             <span class="bk-month__count dk-mono">${visibleRowCount}</span>
-            <span class="bk-month__totals">${totals}</span>
           </th>
-        </tr>
+        </tr>`}
         ${group.entries.map((entry) => {
           if (entry.reconciliationOnly) return bankOnlyRowMarkup(entry, e);
           const allocations = Array.isArray(entry.allocations) ? entry.allocations : [];
@@ -482,6 +515,7 @@ export function ledgerTableMarkup({
           }
           return ledgerRowMarkup(entry, { hasEvidence, hasInvoice, vocab, selectedId, financeEntry: financeEntriesById.get(entry.id), statementLinks, e });
         }).join("")}
+        ${monthTotalsRowMarkup(group, typeof financeMonthTotals === "function" ? financeMonthTotals(group.month) : null, e)}
       </tbody>`;
   }).join("");
   return html`<table class="bk-table">${ledgerHeadMarkup()}${body}</table>`;

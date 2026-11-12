@@ -124,8 +124,53 @@
 }
 .bk-month__title { color: var(--dk-text-heading); font-size: var(--dk-text-sm); font-weight: var(--dk-weight-semibold); }
 .bk-month__count { margin-left: var(--dk-space-2); color: var(--dk-text-muted); font-size: var(--dk-text-xs); font-weight: var(--dk-weight-regular); }
-.bk-month__totals { float: right; display: inline-flex; gap: var(--dk-space-3); margin: var(--dk-space-1) 0 0 var(--dk-space-4); color: var(--dk-text-muted); font-size: var(--dk-text-xs); font-weight: var(--dk-weight-regular); }
 .bk-total.is-missing { color: var(--dk-warning-text); }
+
+/* One totals row closes each month: the Finance overview's money in and
+   money out for that month (no net), so the table bottom matches /finance.
+   The cell stays a table-cell; the inner span carries the flex layout. The
+   extra specificity keeps the mandatory-payments th styling from re-styling
+   the row inside the owner-withdrawals table. */
+tr.bk-month__totals-row > th {
+  padding: 0 var(--dk-space-2);
+  border-bottom: 1px solid var(--dk-border-default);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-primary);
+  font-weight: var(--dk-weight-regular);
+  text-align: left;
+  text-transform: none;
+  white-space: nowrap;
+}
+.bk-month__totals-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--dk-space-3);
+  min-height: 30px;
+  padding: var(--dk-space-1) 0;
+}
+.bk-month__totals-label {
+  flex: none;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-xs);
+  font-weight: var(--dk-weight-semibold);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.bk-month__totals-figures {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--dk-space-1) var(--dk-space-4);
+  min-width: 0;
+  margin-left: auto;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-xs);
+}
+.bk-month__totals-figure .dk-mono {
+  color: var(--dk-text-heading);
+  font-weight: var(--dk-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
 
 .bk-col-date { width: 6.5em; color: var(--dk-text-muted); }
 .bk-col-date time { color: var(--dk-text-body); }
@@ -138,20 +183,25 @@
 .bk-who__what { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--dk-text-muted); text-overflow: ellipsis; }
 .bk-col-money { width: 7.5em; overflow: hidden; font-variant-numeric: tabular-nums; text-align: right; }
 .bk-table th.bk-col-money { text-align: right; }
-.bk-col-vat { min-width: 8em; color: var(--dk-text-muted); font-variant-numeric: tabular-nums; }
-.bk-month__totals .dk-mono { font-family: var(--dk-font-sans); }
+/* VAT can squeeze: the amount keeps an ellipsis instead of forcing the table
+   past the viewport on narrow or zoomed screens. */
+.bk-col-vat { min-width: 4em; max-width: 8em; overflow: hidden; color: var(--dk-text-muted); font-variant-numeric: tabular-nums; text-overflow: ellipsis; }
 .bk-col-eur.is-unconverted { color: var(--dk-warning-text); }
 .bk-unconverted { font-weight: var(--dk-weight-semibold); }
 .bk-col-eur { color: var(--dk-text-heading); }
 .is-income .bk-col-eur { color: var(--dk-success-text); }
-.bk-col-account { max-width: 9em; overflow: hidden; color: var(--dk-text-muted); text-overflow: ellipsis; }
-.bk-account-link { padding: 0; border: 0; background: none; color: inherit; cursor: pointer; font: inherit; text-align: left; }
-.bk-account-link:hover { text-decoration: underline; }
-.bk-col-class { padding-left: var(--dk-space-1); padding-right: var(--dk-space-1); }
+.bk-col-account { color: var(--dk-text-muted); }
+/* Invoice and account actions are compact icons; the full names they carry
+   (filename, account, statement period) live in the tooltip. */
+.bk-col-flag .dk-icon-button,
+.bk-col-account .dk-icon-button { color: var(--dk-text-muted); vertical-align: middle; }
+.bk-col-flag .dk-icon-button:hover,
+.bk-col-account .dk-icon-button:hover { color: var(--dk-text-primary); }
+.bk-col-class { padding-left: var(--dk-space-1); padding-right: var(--dk-space-1); overflow: hidden; }
 .bookkeeping-surface .bk-col-subtype .bk-inline-select { width: 8.5em; }
 .bookkeeping-surface .bk-col-category .bk-inline-select { width: 10.5em; }
 .bookkeeping-surface .bk-col-period .bk-inline-select { width: 6.5em; }
-.bk-col-flag { width: 6.5em; padding-right: var(--dk-space-3); text-align: center; }
+.bk-col-flag { width: 4em; padding-right: var(--dk-space-3); text-align: center; }
 .bk-flag { display: inline-flex; color: var(--dk-text-faint); }
 .bk-flag svg { width: 14px; height: 14px; }
 .bk-no-invoice { color: var(--dk-text-muted); font-size: var(--dk-text-xs); white-space: nowrap; }
@@ -231,8 +281,8 @@
   }
   .bk-table thead { display: none; }
   .bk-month__head th { top: 0; }
-  .bk-month__totals { display: none; }
   .bk-col-account,
+  .bk-col-vat,
   .bk-col-class,
   .bk-col-flag { display: none; }
   .bk-table td { height: 44px; }
@@ -242,6 +292,11 @@
   .bk-who__name { max-width: 100%; }
   .bk-who__what { font-size: var(--dk-text-xs); }
   .bk-col-money { width: auto; }
+  /* The month totals row is the only place money in/out live now; let its
+     figures wrap instead of pushing the table past the viewport. */
+  .bk-month__totals-row th { white-space: normal; }
+  /* The tax and health-insurance review table wraps instead of scrolling. */
+  .bk-mandatory-payments table { min-width: 0; }
 }
 
 /* Touch: every control in the page meets the 44px target. */

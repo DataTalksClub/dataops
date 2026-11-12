@@ -63,13 +63,12 @@ export function ownerWithdrawalEntries(entries, lens) {
 
 export function ownerWithdrawalsMarkup(entries, lens, ledgerOptions) {
   if (!/^\d{4}-\d{2}$/.test(lens)) return "";
-  const e = ledgerOptions.e;
   const withdrawals = ownerWithdrawalEntries(entries, lens);
   const rows = withdrawals.length
-    ? ledgerTableMarkup({ ...ledgerOptions, groups: groupByMonth(withdrawals) })
+    ? ledgerTableMarkup({ ...ledgerOptions, groups: groupByMonth(withdrawals), hideGroupHead: true })
     : html`<p class="bk-mandatory-payments__state">No owner withdrawals recorded for this month.</p>`;
   return html`<section class="bk-mandatory-payments bk-owner-withdrawals" aria-labelledby="bk-owner-withdrawals-heading" data-owner-withdrawals>
-    <h2 id="bk-owner-withdrawals-heading">Owner withdrawals · ${e(monthLabel(lens))}</h2>
+    <h2 id="bk-owner-withdrawals-heading">Owner withdrawals</h2>
     <p class="bk-mandatory-payments__hint">Shown separately for internal review; source and reconciliation rows remain visible.</p>
     ${rows}
   </section>`;
@@ -78,7 +77,7 @@ export function ownerWithdrawalsMarkup(entries, lens, ledgerOptions) {
 export function mandatoryPaymentsMarkup(entries, lens, escapeHtml, state = "ready") {
   if (!/^\d{4}-\d{2}$/.test(lens)) return "";
   const periodLabel = monthLabel(lens);
-  const sectionTitle = `Taxes & health insurance · ${periodLabel}`;
+  const sectionTitle = "Taxes & health insurance";
   if (state === "loading")
     return html`<section class="bk-mandatory-payments" aria-labelledby="bk-mandatory-payments-heading">
       <h2 id="bk-mandatory-payments-heading">${escapeHtml(sectionTitle)}</h2>
@@ -245,5 +244,14 @@ export function createBookkeepingFinance({ loadYear, getLens, getEntries, getTod
     return isTaxHealthEntry(entryIndex.get(String(id)));
   }
 
-  return { ensure, entries, entryMap: () => entryIndex, hasMandatoryEntry, invalidate, markup };
+  // The Finance overview's own figures for one month ("YYYY-MM"), or null
+  // when that year's summary is not loaded (or has no such month). The
+  // ledger's month totals row shows these so Bookkeeping and Finance cannot
+  // disagree.
+  function monthTotals(month) {
+    if (!/^\d{4}-\d{2}$/.test(month)) return null;
+    return summaries.get(month.slice(0, 4))?.months?.find((entry) => entry.month === month) || null;
+  }
+
+  return { ensure, entries, entryMap: () => entryIndex, hasMandatoryEntry, invalidate, markup, monthTotals };
 }

@@ -33,7 +33,9 @@ payload unchanged. YTD runs from 1 January to today (Europe/Berlin).
 | Other bank statement lines | No | Evidence only; a line no ledger row explains remains a gap |
 
 A row is booked in the month it was **paid** (`paidDate`, else
-`transactionDate`). `entryType: income` is money in, `expense` is money out.
+`transactionDate`). `entryType: income` is money in, `expense` is money out —
+except Finanzamt, TK and owner-pay refunds coming back in, which stay out of
+money in (see *Tax refunds* below).
 
 ## No double counting
 
@@ -85,13 +87,13 @@ reduces input VAT; it is not money in and not revenue. A row with a
 
 **Tax refunds.** Only payments count as taxes. A Finanzamt or TK refund
 (money in on the taxes or health-insurance line) is listed in `taxRefunds`
-with its ledger row and summed in `totals.taxRefunds`. It is money in and part
-of net cash, but it is not revenue, not profit, and never a negative tax in any
-year: a refund settles an earlier assessed year, and the bank date says
-nothing about which one. When a refund row carries `taxYearAttribution`
-(mapping each assessed `YYYY` to its EUR amount), each attributed part is
-reported in its assessed tax year while Bookkeeping keeps the row with its real
-date and amount.
+with its ledger row and summed in `totals.taxRefunds`. It is kept out of
+money in and net cash: a refund is not income. It is not revenue, not profit,
+and never a negative tax in any year: a refund settles an earlier assessed
+year, and the bank date says nothing about which one. When a refund row
+carries `taxYearAttribution` (mapping each assessed `YYYY` to its EUR amount),
+each attributed part is reported in its assessed tax year while Bookkeeping
+keeps the row with its real date and amount.
 
 - **Net profit excluding VAT** = (operating income − output VAT) − (operating
   expenses − input VAT); supplier refunds reduce the expense side.
