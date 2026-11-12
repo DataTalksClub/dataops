@@ -198,6 +198,7 @@ export function taxEstimateMarkup(est, e) {
         <div><dt>Already paid</dt><dd data-fin-est-paid>${formatEur(est.paidTotal)}</dd></div>
         <div><dt>${est.remaining >= 0 ? "Still to pay" : "Paid ahead"}</dt><dd data-fin-est-remaining>${formatEur(Math.abs(est.remaining))}</dd></div>
         <div><dt>Safe to withdraw now</dt><dd data-fin-planning-safe>${safe}</dd></div>
+        <div><dt>Projected year-end after tax</dt><dd data-fin-planning-after-tax>${formatEur(est.planning.projectedAfterTaxEur)}</dd></div>
       </dl>
     </div>`;
 }

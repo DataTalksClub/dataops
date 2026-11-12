@@ -152,12 +152,13 @@ describe("finished years show actuals only", () => {
 });
 
 describe("planning estimate for the running year", () => {
-  test("shows expected tax, paid, remaining and safe to withdraw, without the inputs and formula block", () => {
+  test("shows expected tax, paid, remaining, safe to withdraw and projected year-end after tax", () => {
     const markup = taxEstimateMarkup(ESTIMATE, e);
     assert.match(markup, /<dt>Expected tax for 2026<\/dt><dd data-fin-est-total>412\.00/);
     assert.match(markup, /<dt>Already paid<\/dt><dd data-fin-est-paid>400\.00/);
     assert.match(markup, /<dt>Still to pay<\/dt><dd data-fin-est-remaining>12\.00/);
     assert.match(markup, /<dt>Safe to withdraw now<\/dt><dd data-fin-planning-safe>950\.00/);
+    assert.match(markup, /<dt>Projected year-end after tax<\/dt><dd data-fin-planning-after-tax>1,688\.00/);
     assert.doesNotMatch(markup, /Inputs, formula|statutory|input line|formula line|§ 32a|rough<\/p>/);
   });
 
