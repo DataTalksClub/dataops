@@ -459,7 +459,7 @@ export function createTaskEvidence(context) {
     })) return;
     try {
       const url = workApiUrl(`/api/files/${encodeURIComponent(fileId)}`);
-      const response = await fetch(url, { method: "DELETE" });
+      const response = await fetchResource(url, { method: "DELETE" });
       if (!response.ok && response.status !== 204) {
         finishEvidenceMutation("task", taskId, token, {
           phase: "error",
