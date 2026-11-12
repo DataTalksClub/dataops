@@ -72,6 +72,18 @@ jobs:
       - name: Run DataOps MCP tests
         run: npm run test:mcp
 
+      # The transaction suites start amazon/dynamodb-local. Pull it up front
+      # with retries so a transient Docker Hub/network blip on the runner does
+      # not turn into a red run (and a failure mail) for unrelated changes.
+      - name: Pull DynamoDB Local image
+        run: |
+          for attempt in 1 2 3 4 5; do
+            docker pull amazon/dynamodb-local:latest && exit 0
+            echo "docker pull failed (attempt $attempt); retrying in $((attempt * 10))s" >&2
+            sleep $((attempt * 10))
+          done
+          exit 1
+
       - name: Gate all backend DynamoDB transactions
         run: npm run test:backend:transactions
 
