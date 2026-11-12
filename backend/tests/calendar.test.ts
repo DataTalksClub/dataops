@@ -266,18 +266,21 @@ describe("operations calendar", () => {
     const response = await invoke("GET", "/api/calendar-items/overlays", undefined, {}, { from: "2027-04-12", to: "2027-04-12" });
     const items = parse(response).items.filter((i: any) => i.provider === "newsletter-issues-readonly");
     assert.equal(items.length, 1);
-    assert.equal(items[0].label, "Weekly #402 · Synthetic Alpha + open");
+    assert.equal(items[0].label, "Weekly #402 · Synthetic Alpha");
+    assert.equal(items[0].href, "/cards?cardId=calendar-one-item-card");
     assert.equal(items[0].isAvailableSlot, false);
     assert.equal(items[0].newsletter.openSlots, 1);
     const booked = newsletterOverlayItem({ ...issue, slots: { ...issue.slots, secondary: { sponsor: "Synthetic Beta" } } });
     assert.equal(booked.label, "Weekly #402 · Synthetic Alpha + Synthetic Beta");
+    assert.equal(booked.href, "/cards?cardId=calendar-one-item-card");
     assert.equal(booked.isAvailableSlot, false);
-    const open = newsletterOverlayItem({ ...issue, slots: { primary: {}, secondary: {} } });
+    const open = newsletterOverlayItem({ ...issue, cardId: undefined, slots: { primary: {}, secondary: {} } });
     assert.equal(open.label, "Weekly #402 · open");
+    assert.equal(open.href, `/newsletter?issueId=${encodeURIComponent(issue.id)}`);
     assert.equal(open.isAvailableSlot, true);
     assert.deepEqual(issue.slots, { primary: { sponsor: "Synthetic Alpha" }, secondary: {} }, "projection leaves stored slot records unchanged");
   });
-  it("collapses only canonically linked confirmed holds and linked course launch cards", async () => {
+  it("collapses canonically linked active holds and linked course launch cards", async () => {
     const holds: any[] = [
       { id: "linked-confirmed", date: "2027-04-12", status: "confirmed", title: "Same event", window: "evening", startIso: "2027-04-12T17:00:00+02:00", endIso: "2027-04-12T18:00:00+02:00" },
       { id: "linked-tentative", date: "2027-04-12", status: "tentative", title: "Same event", window: "evening", startIso: "2027-04-12T17:00:00+02:00", endIso: "2027-04-12T18:00:00+02:00" },
@@ -292,7 +295,7 @@ describe("operations calendar", () => {
     ];
     const marked = markDuplicateCalendarHolds(holdItems, holds, entries);
     assert.equal(marked.find((item) => item.id === "calendar-hold:linked-confirmed")?.displayDuplicateOf, "podcast-recording:episode-1");
-    assert.equal(marked.find((item) => item.id === "calendar-hold:linked-tentative")?.displayDuplicateOf, undefined);
+    assert.equal(marked.find((item) => item.id === "calendar-hold:linked-tentative")?.displayDuplicateOf, "podcast-recording:episode-2");
     assert.equal(marked.find((item) => item.id === "calendar-hold:unlinked-confirmed")?.displayDuplicateOf, undefined);
 
     const cards: any[] = [

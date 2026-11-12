@@ -21,6 +21,11 @@ export type CalendarEntry = {
   status: string;
   entity: { type: 'card' | 'podcast-episode'; id: string };
   href: string;
+  /** Scheduled or held start and end ISO timestamps when known. */
+  startsAt?: string;
+  endsAt?: string;
+  /** Whether the event time is still proposed (tentative) or confirmed. */
+  timeStatus?: 'proposed' | 'confirmed';
   /** A canonical relationship used to collapse duplicate calendar projections only. */
   linkedHoldId?: string;
   /** This entry remains available through its entity page but is represented by another tile. */
@@ -29,7 +34,9 @@ export type CalendarEntry = {
 
 /**
  * Template types whose Cards are dated events. Podcast Cards are shown through
- * their episode and newsletter Cards through their issue, so neither is listed.
+ * their episode when one exists (or directly when a proposed/confirmed time is
+ * held on the Card before an episode record is created); newsletter Cards show
+ * through their issue.
  */
 export const EVENT_CARD_TYPES = new Set([
   'webinar',
@@ -45,22 +52,40 @@ const withPeople = (title: string, people: string[]) =>
   [title, people.filter(Boolean).join(', ')].filter(Boolean).join(' · ');
 
 export function cardCalendarEntry(card: Card, template: Template): CalendarEntry {
+  const isPodcast = template.type === 'podcast';
+  const eventTime = card.eventTime && card.eventTime.status !== 'released' ? card.eventTime : undefined;
+  const timeStatus = eventTime
+    ? (eventTime.status === 'proposed' ? 'proposed' : 'confirmed')
+    : undefined;
   return {
     id: `card:${card.id}`,
-    kind: template.type || 'event',
-    kindLabel: template.name,
+    kind: isPodcast ? 'podcast-recording' : (template.type || 'event'),
+    kindLabel: isPodcast ? 'Podcast recording' : template.name,
     title: withPeople(card.title || template.name, card.people || []),
     date: String(card.anchorDate).slice(0, 10),
     status: card.status === 'active' ? card.stage : card.status,
     entity: { type: 'card', id: card.id },
     href: `/cards?cardId=${encodeURIComponent(card.id)}`,
-    ...(card.eventTime?.eventKey ? { linkedHoldId: card.eventTime.eventKey } : {}),
+    ...(eventTime?.eventKey ? { linkedHoldId: eventTime.eventKey } : {}),
+    ...(eventTime?.startIso ? { startsAt: eventTime.startIso } : {}),
+    ...(eventTime?.endIso ? { endsAt: eventTime.endIso } : {}),
+    ...(timeStatus ? { timeStatus } : {}),
   };
 }
 
-export function podcastCalendarEntries(episode: PodcastEpisode): CalendarEntry[] {
+export function podcastCalendarEntries(episode: PodcastEpisode, linkedCard?: Card): CalendarEntry[] {
   if (episode.status === 'cancelled') return [];
   const title = withPeople(episode.title || 'Podcast', episode.guests.map((guest) => guest.name));
+  const cardEventTime = linkedCard?.eventTime && linkedCard.eventTime.status !== 'released'
+    ? linkedCard.eventTime
+    : undefined;
+  const recordingHoldId = episode.recordingHoldId || cardEventTime?.eventKey;
+  const recordingStartsAt = episode.recordingStartIso || cardEventTime?.startIso;
+  const recordingEndsAt = episode.recordingEndIso || cardEventTime?.endIso;
+  const recordingRawStatus = episode.recordingEventStatus || cardEventTime?.status;
+  const recordingTimeStatus = recordingRawStatus === 'proposed'
+    ? 'proposed'
+    : (recordingRawStatus || recordingStartsAt ? 'confirmed' : undefined);
   const entry = (kind: 'podcast-recording' | 'podcast-release', kindLabel: string, date: string): CalendarEntry => ({
     id: `${kind}:${episode.id}`,
     kind,
@@ -70,8 +95,17 @@ export function podcastCalendarEntries(episode: PodcastEpisode): CalendarEntry[]
     status: episode.status,
     entity: { type: 'podcast-episode', id: episode.id },
     href: `/podcast?episodeId=${encodeURIComponent(episode.id)}`,
-    ...(kind === 'podcast-recording' && episode.recordingHoldId
-      ? { linkedHoldId: episode.recordingHoldId }
+    ...(kind === 'podcast-recording' && recordingHoldId
+      ? { linkedHoldId: recordingHoldId }
+      : {}),
+    ...(kind === 'podcast-recording' && recordingStartsAt
+      ? { startsAt: recordingStartsAt }
+      : {}),
+    ...(kind === 'podcast-recording' && recordingEndsAt
+      ? { endsAt: recordingEndsAt }
+      : {}),
+    ...(kind === 'podcast-recording' && recordingTimeStatus
+      ? { timeStatus: recordingTimeStatus }
       : {}),
   });
   return [
@@ -117,14 +151,28 @@ export async function projectCalendarEntities(client: DynamoDBDocumentClient, fr
     listPodcastEpisodes(client),
   ]);
   const templateById = new Map(templates.map((template) => [template.id, template]));
+  const cardById = new Map(cards.map((card) => [card.id, card]));
+  const podcastCardIdsWithEpisodeRecording = new Set(
+    episodes
+      .filter((episode) => episode.status !== 'cancelled' && episode.cardId && episode.recordingDate)
+      .map((episode) => episode.cardId!),
+  );
   const entries: CalendarEntry[] = [];
   for (const card of cards) {
     const template = templateById.get(card.templateId);
-    if (!template || !EVENT_CARD_TYPES.has(String(template.type)) || !card.anchorDate) continue;
+    if (!template || !card.anchorDate) continue;
+    const isEventCard = EVENT_CARD_TYPES.has(String(template.type));
+    const isUnlinkedPodcastCard =
+      template.type === 'podcast' &&
+      card.status === 'active' &&
+      Boolean(card.eventTime && card.eventTime.status !== 'released') &&
+      !podcastCardIdsWithEpisodeRecording.has(card.id);
+    if (!isEventCard && !isUnlinkedPodcastCard) continue;
     entries.push(cardCalendarEntry(card, template));
   }
-  for (const episode of episodes) entries.push(...podcastCalendarEntries(episode));
-  const cardById = new Map(cards.map((card) => [card.id, card]));
+  for (const episode of episodes) {
+    entries.push(...podcastCalendarEntries(episode, episode.cardId ? cardById.get(episode.cardId) : undefined));
+  }
   const linkRefs = cards
     .filter((target) => templateById.get(target.templateId)?.type === 'webinar'
       && Boolean(target.anchorDate)

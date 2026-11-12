@@ -201,6 +201,46 @@ body[data-workspace-view="sponsors"] .library-view {
   .newsletter-surface {
     gap: 4px !important;
   }
+  .calendar-day-dialog {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+  .calendar-day-dialog-head {
+    padding: var(--dk-space-3) var(--dk-space-4);
+  }
+  .calendar-day-dialog-body {
+    padding: var(--dk-space-3) var(--dk-space-4);
+    max-height: calc(100dvh - 64px);
+  }
+  .calendar-day-row,
+  .calendar-day-row.is-other-event {
+    grid-template-columns: 72px minmax(0, 1fr);
+    column-gap: var(--dk-space-2);
+    row-gap: var(--dk-space-2);
+  }
+  .calendar-day-row-actions {
+    grid-column: 2;
+  }
+  .calendar-day-propose-btn,
+  .calendar-day-action-quiet,
+  .calendar-day-action-primary {
+    min-height: 36px;
+  }
+  .calendar-day-propose-field,
+  .calendar-day-propose-inline {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--dk-space-1);
+  }
+  .calendar-day-propose-form input,
+  .calendar-day-propose-form select {
+    min-height: 44px;
+    font-size: var(--dk-text-base);
+  }
 }
 
 @media (max-width: 420px) {.calendar-alert { display: grid; grid-template-columns: minmax(0, 1fr) auto; }.calendar-alert button { align-self: center; }.calendar-content-header { display: grid; gap: 4px; }.newsletter-slot-row { grid-template-columns: minmax(0, 1fr); }.newsletter-slot-date { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; white-space: nowrap; }.newsletter-date-meta { margin-top: 0; }.newsletter-slot-actions { grid-column: 1; }.newsletter-slot-title { align-items: start; }.planner-form-grid { grid-template-columns: minmax(0, 1fr); }.planner-field-wide { grid-column: 1; }.crm-filters {

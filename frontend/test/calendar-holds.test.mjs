@@ -24,11 +24,11 @@ describe("calendar holds web parity", () => {
     assert.match(planning, /\/overlays\?from=.*&duration=.*&window=/);
   });
 
-  test("portal grid renders calendar holds as their own layer entry", async () => {
+  test("portal grid suppresses separate calendar-holds tiles and shows proposed status on the event tile", async () => {
     const planning = read("frontend/src/surfaces/planning.js");
-    assert.match(planning, /calendar-holds/);
-    assert.match(planning, /Calendar hold/);
-    assert.match(planning, /is-hold/);
+    assert.match(planning, /overlay\.provider === "calendar-holds"/);
+    assert.match(planning, /calendar-proposed-icon/);
+    assert.match(planning, /is-proposed/);
   });
 
   test("portal day dialog proposes, confirms, and releases holds for the Orin workflow", async () => {

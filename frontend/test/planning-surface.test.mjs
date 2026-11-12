@@ -350,7 +350,7 @@ describe("Planning surface production behavior", () => {
     assert.equal(entries[0].displayDuplicateOf, "card:webinar");
   });
 
-  test("renders proposed status accessibly and keeps the Card destination inside its newsletter tile", async () => {
+  test("renders proposed status on the event tile header, suppresses separate hold tiles, and opens the Card directly from a newsletter tile", async () => {
     const dom = createCalendarDom();
     const harness = createPlanningHarness({
       calendar: dom,
@@ -360,22 +360,37 @@ describe("Planning surface production behavior", () => {
             { provider: "calendar-holds", id: "calendar-hold:proposed", startDate: "2026-08-12", endDate: "2026-08-12",
               label: "[Proposed] Finding a Job in Computer Vision · 12:30–13:30", status: "tentative" },
             { provider: "newsletter-issues-readonly", id: "issue-303", startDate: "2026-08-13", endDate: "2026-08-13",
-              label: "Weekly #303 · Astronomer + open", isAvailableSlot: false, href: "/newsletter?issueId=issue-303",
+              label: "Weekly #303 · Astronomer", isAvailableSlot: false, href: "/cards?cardId=newsletter-card-303",
               newsletter: { cardId: "newsletter-card-303" } },
           ],
           sources: {},
         }
-        : { items: [], holidays: [], alerts: [] },
+        : {
+          items: [
+            {
+              ...calendarEntry({
+                id: "card-cv",
+                title: "Finding a Job in Computer Vision · Stacy Sand",
+                date: "2026-08-12",
+                kind: "podcast-recording",
+                kindLabel: "Podcast recording",
+                status: "preparation",
+              }),
+              timeStatus: "proposed",
+            },
+          ],
+          holidays: [],
+          alerts: [],
+        },
     });
     await harness.surface.renderCalendarSurface();
     await nextTicks();
     const html = dom.grid.innerHTML;
-    assert.match(html, /aria-label="Proposed, not confirmed" title="Proposed, not confirmed"/);
-    assert.match(html, /Finding a Job in Computer Vision · 12:30-13:30/);
-    assert.doesNotMatch(html, /\[Proposed\]|12:30–13:30/);
-    assert.match(html, /calendar-overlay-with-card[\s\S]*href="\/cards\?cardId=newsletter-card-303"/);
-    assert.match(html, /aria-label="Open Card for Weekly #303 · Astronomer \+ open"/);
-    assert.doesNotMatch(html, />Card<\/a>/);
+    assert.match(html, /class="calendar-tile-head"><small>Podcast recording<\/small><span class="calendar-proposed-icon"[^>]*aria-label="Proposed, not confirmed" title="Proposed, not confirmed"/);
+    assert.match(html, /Finding a Job in Computer Vision · Stacy Sand/);
+    assert.doesNotMatch(html, /Calendar hold|\[Proposed\]|12:30–13:30|\+ open/);
+    assert.match(html, /class="calendar-overlay is-newsletter" href="\/cards\?cardId=newsletter-card-303" title="Weekly #303 · Astronomer"/);
+    assert.doesNotMatch(html, /calendar-overlay-with-card|calendar-overlay-card|Open Card/);
   });
 
   test("day schedule exposes a deferred Google sync reason on its saved hold", async () => {
@@ -1065,12 +1080,13 @@ describe("Planning surface production behavior", () => {
 
     assert.equal(dom.dayDialog.open, true);
     assert.match(dom.dayTitle.textContent, /13 August 2026/);
-    assert.match(dom.daySubtitle.textContent, /2026-08-13/);
+    assert.equal(dom.daySubtitle.textContent, "Berlin time");
 
-    // Verify dayBody contains slot availability & both slot and other events
-    assert.match(dom.dayBody.innerHTML, /Midday Event Slot/);
-    assert.match(dom.dayBody.innerHTML, /Evening Event Slot/);
+    // Verify dayBody contains unified chronological rows & collapsed other calendar events
+    assert.match(dom.dayBody.innerHTML, /Midday slot · busy/);
+    assert.match(dom.dayBody.innerHTML, /Evening slot · free/);
     assert.match(dom.dayBody.innerHTML, /Podcast with Guest/);
+    assert.match(dom.dayBody.innerHTML, /2 other calendar events/);
     assert.match(dom.dayBody.innerHTML, /Team sync/);
     assert.match(dom.dayBody.innerHTML, /Partner discussion/);
     // The event links to its Card in the same tab; owner-calendar events open Google in a new one.

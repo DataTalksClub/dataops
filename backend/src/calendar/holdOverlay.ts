@@ -44,30 +44,39 @@ export function calendarHoldOverlay(holds: CalendarHold[]): CalendarOverlayProvi
 }
 
 /**
- * Mark a confirmed hold as a duplicate only when the event read model carries
- * the hold's canonical relationship. Matching titles or dates alone never
- * suppress an item, and tentative holds always remain visible.
+ * Mark an active hold (tentative or confirmed) as a duplicate when the event
+ * read model carries the hold's canonical relationship (`linkedHoldId` or
+ * `cardId`). Matching titles or dates alone never suppress an item.
  */
 export function markDuplicateCalendarHolds(
   items: CalendarOverlayItem[],
   holds: CalendarHold[],
   entries: CalendarEntry[],
 ): CalendarOverlayItem[] {
-  const confirmedHoldById = new Map(
-    holds.filter((hold) => hold.status === 'confirmed').map((hold) => [hold.id, hold]),
+  const activeHoldById = new Map(
+    holds
+      .filter((hold) => hold.status === 'tentative' || hold.status === 'confirmed')
+      .map((hold) => [hold.id, hold]),
   );
   const entryByHoldId = new Map<string, CalendarEntry>();
+  const entryByCardId = new Map<string, CalendarEntry>();
   for (const entry of entries) {
-    if (!entry.linkedHoldId) continue;
-    entryByHoldId.set(`${entry.linkedHoldId}#${entry.date}`, entry);
+    if (entry.linkedHoldId) {
+      entryByHoldId.set(`${entry.linkedHoldId}#${entry.date}`, entry);
+    }
+    if (entry.entity?.type === 'card') {
+      entryByCardId.set(`${entry.entity.id}#${entry.date}`, entry);
+    }
   }
 
   return items.map((item) => {
     if (item.provider !== 'calendar-holds' || !item.id.startsWith('calendar-hold:')) return item;
     const holdId = item.id.slice('calendar-hold:'.length);
-    const hold = confirmedHoldById.get(holdId);
+    const hold = activeHoldById.get(holdId);
     if (!hold) return item;
-    const linkedEntry = entryByHoldId.get(`${holdId}#${hold.date}`);
+    const linkedEntry =
+      entryByHoldId.get(`${holdId}#${hold.date}`) ||
+      (hold.cardId ? entryByCardId.get(`${hold.cardId}#${hold.date}`) : undefined);
     return linkedEntry ? { ...item, displayDuplicateOf: linkedEntry.id } : item;
   });
 }

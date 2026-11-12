@@ -306,8 +306,8 @@
 .calendar-alert-list { display: grid; gap: 8px; padding: 0 10px 10px; }
 .calendar-surface .calendar-activity,
 .calendar-surface .calendar-overlay { flex-direction: column; align-items: flex-start; gap: 3px; min-height: 34px; }
-.calendar-surface .calendar-activity span,
-.calendar-surface .calendar-overlay span { width: 100%; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
+.calendar-surface .calendar-activity > span,
+.calendar-surface .calendar-overlay > span { width: 100%; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
  .calendar-surface .calendar-overlay.is-available-slot { color: var(--dk-success-text); background: var(--dk-success-bg); }
 .calendar-surface .calendar-overlay.is-available-slot small { color: var(--dk-success-text); background: var(--dk-success-bg); }
 

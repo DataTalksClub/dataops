@@ -415,8 +415,18 @@ describe("newsletter issues", () => {
         { position: "secondary", sponsor: "Astronomer" },
       ],
     });
+    const partial = newsletterOverlayItem({
+      ...base,
+      status: "planned",
+      cardId: "card-297",
+      slots: { primary: { sponsor: "Astronomer" }, secondary: {} },
+    });
+    assert.equal(partial.label, "Weekly #297 · Astronomer");
+    assert.equal(partial.href, "/cards?cardId=card-297");
+    assert.equal(partial.isAvailableSlot, false);
     const open = newsletterOverlayItem({ ...base, status: "planned", slots: { primary: {}, secondary: {} } });
     assert.equal(open.label, "Weekly #297 · open");
+    assert.equal(open.href, "/newsletter?issueId=i1");
     assert.equal(open.isAvailableSlot, true);
   });
 
