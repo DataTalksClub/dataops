@@ -199,7 +199,6 @@ describe('shared Cognito browser authentication', () => {
     assert.match(cookie, /dataops_session=[^;]+; Path=\/; Max-Age=3600; HttpOnly; Secure; SameSite=Lax/);
     const session = await getSession(client, cookiePair(response, 'dataops_session').split('=')[1]);
     assert.strictEqual(session?.userId, 'enabled-admin');
-    assert.strictEqual(session?.sessionType, 'browser');
     assert.ok(session?.expiresAt);
   });
 

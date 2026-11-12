@@ -41,7 +41,7 @@ describe('Sessions DB layer', () => {
     const retrieved = await getSession(client, created.token);
 
     assert.ok(retrieved, 'should find the session');
-    assert.strictEqual(retrieved!.token, created.token);
+    assert.strictEqual((retrieved as any).token, undefined, 'the raw token is never stored or returned');
     assert.strictEqual(retrieved!.userId, 'user-456');
     assert.ok(retrieved!.createdAt);
   });
@@ -53,11 +53,33 @@ describe('Sessions DB layer', () => {
 
   it('getSession refuses a session stored without expiresAt', async () => {
     const token = 'unbounded-session-token';
+    const digest = createHash('sha256').update(token).digest('hex');
     await client.send(new PutCommand({
       TableName: TABLE_SESSIONS,
-      Item: { PK: `SESSION#${token}`, SK: `SESSION#${token}`, token, userId: 'user-000', createdAt: new Date().toISOString() },
+      Item: { PK: `SESSION#${digest}`, SK: `SESSION#${digest}`, userId: 'user-000', createdAt: new Date().toISOString() },
     }));
     assert.strictEqual(await getSession(client, token), null);
+  });
+
+  it('stores the session under a digest key and never the raw token', async () => {
+    const created = await newSession(client, 'user-digest-check');
+
+    const rawLookup = await client.send(new GetCommand({
+      TableName: TABLE_SESSIONS,
+      Key: { PK: `SESSION#${created.token}`, SK: `SESSION#${created.token}` },
+    }));
+    assert.strictEqual(rawLookup.Item, undefined, 'no row is keyed by the raw token');
+
+    const scan = await client.send(new ScanCommand({
+      TableName: TABLE_SESSIONS,
+      FilterExpression: 'userId = :userId',
+      ExpressionAttributeValues: { ':userId': 'user-digest-check' },
+    }));
+    assert.strictEqual(scan.Items?.length, 1);
+    const stored = scan.Items![0] as Record<string, unknown>;
+    assert.notStrictEqual(stored.PK, `SESSION#${created.token}`);
+    assert.strictEqual(stored.token, undefined, 'the plaintext token is not an attribute');
+    assert.match(String(stored.PK), /^SESSION#[0-9a-f]{64}$/);
   });
 
   it('deleteSession removes the session', async () => {

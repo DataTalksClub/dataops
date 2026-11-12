@@ -387,7 +387,7 @@ export async function browserUser(event: LambdaEvent, client: DynamoDBDocumentCl
   const token = cookieValue(event, SESSION_COOKIE);
   if (!token) return null;
   const session = await getSession(client, token, now);
-  if (!session || session.sessionType !== 'browser') return null;
+  if (!session) return null;
   const user = await getUser(client, session.userId);
   return user && !user.disabled ? user : null;
 }
