@@ -14,7 +14,7 @@ const doc = (id, title, body, related = []) => `---\nid: ${id}\ntitle: ${title}\
 let server;
 test.beforeAll(async () => {
   server = await startOwnedTestServer({ environment: { DTC_CACHE_ROOT: createDocsCacheRoot('sop-reader', {
-    [SOP]: doc('sop.workshop', 'Run a synthetic workshop', `## Summary\n\n${'Workshop summary text with enough words to wrap within the page column. '.repeat(12)}\n\n## Prerequisites\n\n- ${'Prerequisite text '.repeat(40)}\n- https://example.test/${'long-path'.repeat(40)}\n\n[Podcast reference](/tasks/podcast.md)`, targets.map(t => t[0])),
+    [SOP]: doc('sop.workshop', 'Run a synthetic workshop', `## Summary\n\n${'Workshop summary text with enough words to wrap within the page column. '.repeat(12)}\n\n## Soft wrapping\n\nFirst source line.\nSecond source line.\nThird source line.\n\n## Prerequisites\n\n- ${'Prerequisite text '.repeat(40)}\n- https://example.test/${'long-path'.repeat(40)}\n\n[Podcast reference](/tasks/podcast.md)`, targets.map(t => t[0])),
     ...Object.fromEntries(targets.map(([id, path, title]) => [path, doc(id, title, 'Target document content.')])),
   }) } });
 });
@@ -37,6 +37,13 @@ test('loaded SOP clears loading and save chrome and fits the desktop column', as
   const column = await page.locator('.rendered-view').boundingBox();
   const summary = await page.locator('.notion-text-content').first().boundingBox();
   expect(summary.x + summary.width).toBeLessThanOrEqual(column.x + column.width + 1);
+  const prose = page.locator('.notion-text-content').filter({ hasText: 'First source line.' });
+  const proseBox = await prose.boundingBox();
+  expect(proseBox.x).toBeCloseTo(column.x, 0);
+  expect(proseBox.width).toBeCloseTo(column.width, 0);
+  const lineHeight = await prose.evaluate(el => parseFloat(getComputedStyle(el).lineHeight));
+  expect(proseBox.height).toBeLessThan(lineHeight * 1.5);
+
 });
 test('every Related link shows its title and navigates; ordinary markdown links follow on click', async ({ page }) => {
   for (const [, path, title] of targets) {

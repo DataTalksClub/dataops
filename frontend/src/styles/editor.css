@@ -1744,6 +1744,12 @@ blockquote p,
   white-space: pre-wrap;
 }
 
+/* Markdown source wraps are spaces in rendered prose. Explicit editor line
+   breaks remain br elements; code and source mode keep their whitespace. */
+.rendered-view [data-editable="rich"] {
+  white-space: normal;
+}
+
 [data-editable].is-source {
   border-radius: var(--dk-radius-sm);
   background: var(--dk-bg-muted);
