@@ -30,6 +30,8 @@ export type Entry = {
   bankKey?: string;
   date: string;
   month: string;
+  /** Assessed tax year when a tax refund is attributed across years. */
+  taxYear?: string;
   direction: 'in' | 'out';
   line: Line;
   /** Supplier credit note (contra-expense): reduces operating expenses. */
@@ -105,7 +107,7 @@ export type Gap = { kind: string; month?: string; message: string; count: number
 export type Duplicate = { keptId: string; droppedId: string; reason: string };
 
 /** A Finanzamt or TK refund: listed with its ledger row, never netted. */
-export type TaxRefund = { id: string; bankKey?: string; date: string; month: string; eur: number | null; taxType: TaxType | null; counterparty: string; description: string };
+export type TaxRefund = { id: string; bankKey?: string; date: string; month: string; taxYear?: string; eur: number | null; taxType: TaxType | null; counterparty: string; description: string };
 
 export type FinanceSummary = {
   period: Period;
@@ -129,7 +131,7 @@ export const SOURCE_RULES = [
   'A bookkeeping-sheet row that repeats an invoice, sponsor-payment or payout row (same direction, currency and amount, paid within 3 days, same payer or payee) is dropped and listed under duplicates; the non-sheet row is kept.',
   'EUR conversion: a EUR row is taken as is. A non-EUR row uses its booked EUR amount (amountEur, what the bank actually credited or debited), with the implied rate shown. Without one, the ECB reference rate for the paid date (or the last ECB business day before it) is used. A row that cannot be converted is excluded from the totals and listed as a gap.',
   'Lines: category VAT or a Finanzamt USt/UMS.ST purpose in the ledger row or its matched statement reference is VAT paid/refunded; other Finanzamt tax purposes are other taxes; TK/Health Insurance is health insurance. These mandatory payments do not affect operating profit.',
-  'Taxes paid are shown per type: Einkommensteuer (with Soli and Körperschaftsteuer), Gewerbesteuer, TK and other, and as one combined total. Only payments count. A Finanzamt or TK refund is money in and is listed as a tax refund with its ledger row; it is not revenue, not profit, and never a negative tax in any year, because it settles an earlier assessed year.',
+  'Taxes paid are shown per type: Einkommensteuer (with Soli and Körperschaftsteuer), Gewerbesteuer, TK and other, and as one combined total. Only payments count. A Finanzamt or TK refund is money in and is listed as a tax refund with its ledger row; it is not revenue, not profit, and never a negative tax in any year, because it settles an earlier assessed year. When a refund row carries taxYearAttribution, each attributed part is reported in its assessed tax year while Bookkeeping keeps the bank row on its paid date.',
   'VAT uses the reviewed ledger vatAmount first, then linked stored document VAT facts. If VAT amount is absent, an explicit VAT rate and net amount or the document gross-minus-net amount determine it; explicit 0% remains zero. Reverse-charge VAT is derived only from an explicit rate and net amount and is counted as both output and input VAT. No rate or source VAT fields means zero VAT.',
   'Refunds from suppliers (credit notes: rows with subtype Refund or a credit-note:<number> source key) are contra-expense: they reduce operating expenses, their VAT reduces input VAT, and they are not money in and not revenue.',
   'Owner pay: ledger rows with category Owner pay (ownerPayType salary, draw, reimbursement or unknown, decided from the booking text and counterparty) are money paid to the owner personally. They are money out, never operating expenses, and appear on their own line below net profit; net after owner pay = net after taxes and TK - owner pay.',
@@ -172,6 +174,16 @@ const positive = (value: unknown) => {
 
 export function bookingDate(row: LedgerRow) {
   return str(row.paidDate) || str(row.transactionDate);
+}
+
+export function taxYearAttributionOf(row: LedgerRow): Array<{ taxYear: string; amount: string }> | null {
+  const raw = row.taxYearAttribution;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const entries = Object.entries(raw as Record<string, unknown>)
+    .filter(([year, amount]) => YEAR.test(year) && positive(amount) !== null && (positive(amount) || 0) > 0)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([taxYear, amount]) => ({ taxYear, amount: (positive(amount) || 0).toFixed(2) }));
+  return entries.length ? entries : null;
 }
 
 /** A supplier credit note however its entryType was recorded. */
@@ -394,10 +406,12 @@ export function toEntry(row: LedgerRow, rates: RateLookup): Entry | null {
   const mandatory = classifyMandatoryPayment(row);
   const vat = vatAmounts(row, conversion, rates);
   const line = isOwnerPayRow(row) ? 'owner-pay' : mandatory?.line || lineOf(row);
+  const taxYear = str(row.taxYear);
   return {
     id: row.id,
     date,
     month: date.slice(0, 7),
+    ...(YEAR.test(taxYear) ? { taxYear } : {}),
     direction: entryType === 'income' ? 'in' : 'out',
     line,
     refund: isRefundRow(row),
@@ -470,13 +484,26 @@ export function summarize(input: SummaryInput): FinanceSummary {
   const canonical = new Map(duplicates.map((duplicate) => [duplicate.droppedId, duplicate.keptId]));
   const pairs = new Map([...input.statementPairs || []].map(([key, id]) => [key, canonical.get(id) || id]));
   const statementMatches = matchFinanceStatements(input.statementLines || [], kept, pairs);
+  const periodYear = period.from.slice(0, 4);
+  const attributedInPeriod = (taxYear: string, date: string) => {
+    if (period.kind === 'year') return taxYear === period.label;
+    if (period.kind === 'ytd') return taxYear === periodYear && date <= period.to;
+    return taxYear === periodYear && inPeriod(date);
+  };
   const periodRows = kept
     .map((row) => {
       const line = statementMatches.byLedgerId.get(row.id);
       if (!line) return row;
       return enrichLedgerFromStatement(row, line);
     })
-    .filter((row) => inPeriod(bookingDate(row)));
+    .flatMap((row) => {
+      const date = bookingDate(row);
+      const attributed = taxYearAttributionOf(row);
+      if (!attributed) return inPeriod(date) ? [row] : [];
+      return attributed
+        .filter(({ taxYear }) => attributedInPeriod(taxYear, date))
+        .map(({ taxYear, amount }) => ({ ...row, amount, amountEur: undefined, taxYear }));
+    });
   const gaps: Gap[] = [];
   const entries: Entry[] = [];
   const noDirection: string[] = [];
@@ -546,8 +573,8 @@ export function summarize(input: SummaryInput): FinanceSummary {
     entries,
     taxRefunds: entries
       .filter((entry) => (entry.line === 'taxes' || entry.line === 'health-insurance') && entry.direction === 'in')
-      .map(({ id, bankKey, date, month, eur, taxType, counterparty, description }) => ({
-        id, ...(bankKey ? { bankKey } : {}), date, month, eur, taxType, counterparty, description,
+      .map(({ id, bankKey, date, month, taxYear, eur, taxType, counterparty, description }) => ({
+        id, ...(bankKey ? { bankKey } : {}), date, month, ...(taxYear ? { taxYear } : {}), eur, taxType, counterparty, description,
       })),
     duplicates: periodDuplicates,
     gaps,

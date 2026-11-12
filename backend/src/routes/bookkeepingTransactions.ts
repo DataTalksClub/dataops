@@ -54,7 +54,24 @@ const allowed = [
   "category",
   "sourceType",
   "sourceKey",
+  "taxYearAttribution",
 ];
+
+function validTaxYearAttribution(value: unknown, amount: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (!entries.length) return false;
+  let sumCents = 0;
+  for (const [year, part] of entries) {
+    if (!/^\d{4}$/.test(year)) return false;
+    if (typeof part !== "string" || !MONEY.test(part) || Number(part) <= 0) return false;
+    sumCents += Math.round(Number(part) * 100);
+  }
+  if (typeof amount === "string" && MONEY.test(amount)) {
+    if (sumCents !== Math.round(Number(amount) * 100)) return false;
+  }
+  return true;
+}
 
 function validateTransaction(input: Record<string, unknown>, partial = false) {
   const errors: string[] = [];
@@ -124,6 +141,8 @@ function validateTransaction(input: Record<string, unknown>, partial = false) {
     errors.push("quantity");
   if (input.incomePeriod != null && (typeof input.incomePeriod !== "string" || !MONTH.test(input.incomePeriod)))
     errors.push("incomePeriod");
+  if (input.taxYearAttribution != null && !validTaxYearAttribution(input.taxYearAttribution, input.amount))
+    errors.push("taxYearAttribution");
   if (input.sourceType === "platform-payout") {
     if (input.entryType !== "income") errors.push("entryType");
     if (typeof input.sourceKey !== "string" || !input.sourceKey.startsWith("platform-payout:") || input.sourceKey.length > 300)
@@ -144,7 +163,9 @@ function validateTransaction(input: Record<string, unknown>, partial = false) {
 }
 function safeData(input: Record<string, unknown>) {
   return Object.fromEntries(
-    allowed.filter((k) => input[k] !== undefined).map((k) => [k, input[k]]),
+    allowed
+      .filter((k) => input[k] !== undefined)
+      .map((k) => [k, k === "taxYearAttribution" && input[k] === null ? undefined : input[k]]),
   );
 }
 

@@ -48,6 +48,22 @@ describe('bookkeeping API',()=>{
     assert.deepEqual(updated.audit.at(-1),{action:'updated',actor:'synthetic-operator',at:updated.audit.at(-1).at,changes:{category:{from:null,to:'Work-related'},subtype:{from:null,to:'Subscription'},amountEur:{from:null,to:'9.25'},rateSource:{from:null,to:'ECB 23 Oct 2026'}}});
     assert.ok(Number.isFinite(Date.parse(updated.audit.at(-1).at)));
   });
+  it('validates and persists taxYearAttribution on a tax refund transaction without mutating other fields',async()=>{
+    const refund=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-30',paidDate:'2026-10-30',counterparty:'ZAHLUNGSVERKEHR BERLINER',description:'Finanzamt tax refund (Erstattung)',amount:'43633.73',currency:'EUR',entryType:'income',category:'Taxes',sourceType:'statement'})).body);
+    const badSum=await invoke('PUT',`/api/bookkeeping/transactions/${refund.id}`,{taxYearAttribution:{'2024':'27729.10','2025':'15904.00'},expectedUpdatedAt:refund.updatedAt});
+    assert.equal(badSum.statusCode,400);
+    assert.deepEqual(JSON.parse(badSum.body).fields,['taxYearAttribution']);
+    const badYear=await invoke('PUT',`/api/bookkeeping/transactions/${refund.id}`,{taxYearAttribution:{'24':'43633.73'},expectedUpdatedAt:refund.updatedAt});
+    assert.equal(badYear.statusCode,400);
+    assert.deepEqual(JSON.parse(badYear.body).fields,['taxYearAttribution']);
+    const ok=await invoke('PUT',`/api/bookkeeping/transactions/${refund.id}`,{taxYearAttribution:{'2024':'27729.10','2025':'15904.63'},expectedUpdatedAt:refund.updatedAt},{'x-user-id':'synthetic-operator'});
+    assert.equal(ok.statusCode,200,ok.body);
+    const updated=JSON.parse(ok.body);
+    assert.deepEqual(updated.taxYearAttribution,{'2024':'27729.10','2025':'15904.63'});
+    assert.equal(updated.paidDate,'2026-10-30');
+    assert.equal(updated.amount,'43633.73');
+    assert.deepEqual(Object.keys(updated.audit.at(-1).changes),['taxYearAttribution']);
+  });
   it('keeps 100 correction events when their combined UTF-8 payload exceeds the former byte budget',async()=>{
     const created=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',valid)).body);
     let updated:any,lastComment:string|undefined;
