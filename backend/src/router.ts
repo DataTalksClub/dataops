@@ -517,15 +517,23 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath.startsWith('/api/notifications')) {
       const rawUserId = event.headers?.['x-user-id'] || undefined;
-      const userId = rawUserId === 'portal-admin' ? undefined : rawUserId;
-      const result = await handleNotificationRoutes(reqPath, method, event.body || null, event.queryStringParameters || null, userId);
-      if (result) return result;
+      if (rawUserId === 'portal-admin') {
+        // The trusted portal placeholder keeps its deliberately unscoped
+        // operator read and admin dismissal authority.
+        const result = await handleNotificationRoutes(reqPath, method, event.body || null, event.queryStringParameters || null, undefined, true);
+        if (result) return result;
+      } else {
+        const viewer = await resolveInteractiveActor(client, event, method === 'GET' ? 'work-read' : 'work-write');
+        if (!viewer.ok) return viewer.response;
+        const result = await handleNotificationRoutes(reqPath, method, event.body || null, event.queryStringParameters || null, viewer.actor.id, viewer.actor.isAdmin);
+        if (result) return result;
+      }
     }
 
     // ── Cron routes ───────────────────────────────────────────────
 
     if (reqPath.startsWith('/api/cron')) {
-      const result = await handleCronRoutes(reqPath, method);
+      const result = await handleCronRoutes(reqPath, method, event);
       if (result) return result;
     }
 

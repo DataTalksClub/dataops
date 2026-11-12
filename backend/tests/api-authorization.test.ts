@@ -105,6 +105,11 @@ const ADMIN_ONLY_MUTATIONS: RouteCase[] = [
   { method: 'POST', path: '/api/recurring', body: { description: 'x', cronExpression: '0 9 * * 1' } },
   { method: 'PUT', path: '/api/recurring/some-config', body: { description: 'x' } },
   { method: 'DELETE', path: '/api/recurring/some-config' },
+  // Manual cron triggers dump tables and write exports; dismiss-all clears
+  // every user's notifications. Both are admin actions.
+  { method: 'POST', path: '/api/cron/run', body: {} },
+  { method: 'POST', path: '/api/cron/export', body: {} },
+  { method: 'PUT', path: '/api/notifications/dismiss-all', body: {} },
 ];
 
 /** The exact shape the session middleware in `src/router.ts` refuses with. */

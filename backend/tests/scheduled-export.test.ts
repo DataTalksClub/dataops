@@ -39,7 +39,7 @@ describe('scheduled export route (POST /api/cron/export)', () => {
   });
 
   it('rejects non-POST methods', async () => {
-    const result = await handleCronRoutes('/api/cron/export', 'GET');
+    const result = await handleCronRoutes('/api/cron/export', 'GET', { httpMethod: 'GET', path: '/api/cron/export' });
     assert.ok(result);
     assert.strictEqual(result!.statusCode, 405);
   });
@@ -48,7 +48,7 @@ describe('scheduled export route (POST /api/cron/export)', () => {
     const saved = process.env.EXPORT_OUTPUT_DIR;
     delete process.env.EXPORT_OUTPUT_DIR;
     try {
-      const result = await handleCronRoutes('/api/cron/export', 'POST');
+      const result = await handleCronRoutes('/api/cron/export', 'POST', { httpMethod: 'POST', path: '/api/cron/export' });
       assert.ok(result);
       assert.strictEqual(result!.statusCode, 400);
       const body = JSON.parse(result!.body);
@@ -61,7 +61,7 @@ describe('scheduled export route (POST /api/cron/export)', () => {
   it('produces a valid export and returns manifest summary', async () => {
     await createTask(client, { description: 'Export test task', date: '2026-06-27' });
 
-    const result = await handleCronRoutes('/api/cron/export', 'POST');
+    const result = await handleCronRoutes('/api/cron/export', 'POST', { httpMethod: 'POST', path: '/api/cron/export' });
     assert.ok(result);
     assert.strictEqual(result!.statusCode, 200);
 
@@ -86,7 +86,7 @@ describe('scheduled export route (POST /api/cron/export)', () => {
     process.env.DATAOPS_EXPORT_ARCHIVE_PREFIX = 'execution-exports';
     process.env.DATAOPS_ENV = 'staging';
 
-    const result = await handleCronRoutes('/api/cron/export', 'POST');
+    const result = await handleCronRoutes('/api/cron/export', 'POST', { httpMethod: 'POST', path: '/api/cron/export' });
     assert.ok(result);
     assert.strictEqual(result!.statusCode, 200);
 
@@ -114,7 +114,7 @@ describe('scheduled export route (POST /api/cron/export)', () => {
     process.env.DATAOPS_EXPORT_ARCHIVE_PREFIX = 'execution-exports';
     process.env.DATAOPS_ENV = 'sandbox';
 
-    const result = await handleCronRoutes('/api/cron/export', 'POST');
+    const result = await handleCronRoutes('/api/cron/export', 'POST', { httpMethod: 'POST', path: '/api/cron/export' });
     assert.ok(result);
     assert.strictEqual(result!.statusCode, 200);
     const body = JSON.parse(result!.body);

@@ -158,11 +158,11 @@ describe('raw DynamoDB dump', { concurrency: 1 }, () => {
     process.env.DATAOPS_ENV = 'staging';
     delete process.env.DATAOPS_EXPORT_ARCHIVE_BUCKET;
     try {
-      const denied = await handleCronRoutes('/api/cron/dynamo-backup', 'GET');
+      const denied = await handleCronRoutes('/api/cron/dynamo-backup', 'GET', { httpMethod: 'GET', path: '/api/cron/dynamo-backup' });
       assert.ok(denied);
       assert.strictEqual(denied!.statusCode, 405);
 
-      const result = await handleCronRoutes('/api/cron/dynamo-backup', 'POST');
+      const result = await handleCronRoutes('/api/cron/dynamo-backup', 'POST', { httpMethod: 'POST', path: '/api/cron/dynamo-backup' });
       assert.ok(result);
       assert.strictEqual(result!.statusCode, 200);
       const body = JSON.parse(result!.body);
