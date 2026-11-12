@@ -90,8 +90,7 @@ export function createTaskPanel(context) {
           const card = payload?.card || payload;
           if (card?.id && state.workSnapshot.cardsById) state.workSnapshot.cardsById.set(cardId, card);
           return card;
-        })
-        .catch(() => null),
+        }),
     resolveAssigneeLabel: (id) => resolveAssigneeLabel(id),
     resolveCard: (cardId) => resolveCard(cardId),
     resolveCardLabel: (cardId) => resolveCardLabel(cardId),
