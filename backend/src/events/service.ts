@@ -721,7 +721,6 @@ async function runTransition(
     policy.titles.proposed = '[Proposed] ' + policy.titles.proposed.replace(/^(?:\(Proposal\)|\[Proposed\])\s*/i, '');
     if (input.suppressGuestNotifications) {
       policy.guests.proposal = false;
-      policy.guests.leadMinutes = 0;
       policy.calendarAcceptance.enabled = false;
       policy.notifications.propose.calendar = 'none';
       policy.notifications.reschedule.calendar = 'none';

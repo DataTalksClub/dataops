@@ -386,6 +386,29 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
     assert.deepEqual(sentEmails, []);
   });
 
+  it('approve applies the SOP 5-minute join lead after a silent (suppressed) proposal', async () => {
+    sentEmails = [];
+    googleMock = createMockGoogleCalendar();
+    setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', connectionId: 'orin-calendar', fetchImpl: googleMock.fetchImpl });
+    const card = await createCard(client, {
+      ...templateLink({ id: podcastTemplateId, version: 1 } as any),
+      title: 'Synthetic join lead', anchorDate: '2026-12-15', people: ['Unknown guest'],
+    });
+    const proposed = await invoke('POST', `/api/events/${card.id}/propose`, {
+      date: '2026-12-15', time: '18:00', suppressGuestNotifications: true, now: '2026-11-06T19:57:06Z',
+    });
+    assert.equal(proposed.statusCode, 201, proposed.body);
+    const proposedDesired = parse(proposed).event.operations.at(-1).desired;
+    assert.equal(proposedDesired.startIso, '2026-12-15T17:00:00.000Z');
+    const approved = await invoke('POST', `/api/events/${card.id}/approve`, {});
+    assert.equal(approved.statusCode, 200, approved.body);
+    const result = parse(approved);
+    assert.equal(result.event.status, 'approved');
+    const desired = result.event.operations.at(-1).desired;
+    assert.equal(desired.startIso, '2026-12-15T16:55:00.000Z');
+    assert.equal(desired.endIso, '2026-12-15T18:00:00.000Z');
+  });
+
   it('AC3 + AC4 + AC5 + AC7 + AC9: podcast full lifecycle (propose -> approve -> reschedule -> approve -> release) syncs Card, Episode, Google calendars, emails, tasks, and linked docs atomically', async () => {
     sentEmails = [];
     googleMock = createMockGoogleCalendar();

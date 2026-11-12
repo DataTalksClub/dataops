@@ -2,6 +2,7 @@ import { formatSlotLabel } from '../podcast/firstContact';
 import { requireEventBytes } from './size';
 import { createHash } from 'node:crypto';
 import { cardEventInterval } from '../calendar/cardEventTime';
+import { HOLD_INVITE_LEAD_MINUTES } from '../calendar/holds';
 import { EVENT_TRANSITIONS, parseEventPolicy, renderEventText, type EventPolicy, type EventRenderValues, type EventTransition } from './policy';
 
 export const EVENT_OPERATION_TRANSITIONS = [...EVENT_TRANSITIONS, 'update'] as const;
@@ -205,7 +206,7 @@ export function planEventTransition(id: string, cardId: string, current: EventRe
       summary: render(approved ? policy.titles.approved : policy.titles.proposed),
       description: [render(policy.description), inviteText, guestDetails].filter(Boolean).join('\n\n'),
       location: policy.zoom.enabled ? policy.zoom.url! : '', attendees,
-      startIso: new Date(Date.parse(next.startIso) - policy.guests.leadMinutes * 60000).toISOString(),
+      startIso: new Date(Date.parse(next.startIso) - (approved ? Math.max(policy.guests.leadMinutes, HOLD_INVITE_LEAD_MINUTES) : policy.guests.proposal ? policy.guests.leadMinutes : 0) * 60000).toISOString(),
       endIso: next.endIso, timeZone: next.timeZone,
       sendUpdates: transition === 'update' ? 'none' : policy.notifications[transition].calendar,
       emails: transition === 'update' ? [] : policy.notifications[transition].emails.map(email => ({
