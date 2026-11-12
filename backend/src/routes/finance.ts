@@ -1,6 +1,7 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
-import { financeSummary, financeTaxes, financeUpcoming, parsePeriodQuery } from '../finance/service';
+import { financeSummary, financeTaxes, financeTaxEstimate, financeUpcoming, parsePeriodQuery } from '../finance/service';
+import { INCOME_TARIFFS } from '../finance/taxEstimate';
 import { listTaxSchedule, putTaxScheduleEntry, ScheduleVersionConflict } from '../finance/taxSchedule';
 import { validateScheduleEntry, type ScheduleEntry } from '../finance/upcoming';
 import { json, parse } from './bookkeepingShared';
@@ -9,6 +10,7 @@ import { json, parse } from './bookkeepingShared';
  * Finance views:
  *   GET /api/finance/summary?month=|year=|ytd=1
  *   GET /api/finance/taxes?month=|year=|ytd=1   VAT expected vs paid, other taxes by type, TK
+ *   GET /api/finance/tax-estimate?year=YYYY     rough ESt/Soli/GewSt estimate for the profit earned so far
  *   GET /api/finance/upcoming?days=60          scheduled tax/TK debits + balance check
  *   GET /api/finance/tax-schedule              the schedule those debits come from
  *   PUT /api/finance/tax-schedule/<id>         create/replace one entry (expectedVersion)
@@ -25,6 +27,14 @@ export async function handleFinanceRoutes(path: string, method: string, event: L
     const query = parsePeriodQuery(event.queryStringParameters);
     if (typeof query === 'string') return json(400, { error: query });
     return json(200, await financeTaxes(client, query));
+  }
+  if (path === '/api/finance/tax-estimate') {
+    if (method !== 'GET') return json(405, { error: 'Method not allowed' });
+    const raw = event.queryStringParameters?.year || '';
+    if (!/^\d{4}$/.test(raw)) return json(400, { error: 'year must be YYYY' });
+    const year = Number(raw);
+    if (!INCOME_TARIFFS[year]) return json(400, { error: `No statutory tariff for ${year}; supported years: ${Object.keys(INCOME_TARIFFS).sort().join(', ')}` });
+    return json(200, await financeTaxEstimate(client, year));
   }
   if (path === '/api/finance/upcoming') {
     if (method !== 'GET') return json(405, { error: 'Method not allowed' });

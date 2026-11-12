@@ -8,6 +8,7 @@ import { loadEcbRates } from './rates';
 import { bookingDate, dedupe, enrichLedgerFromStatement, isRefundRow, matchFinanceStatements, summarize, type FinanceSummary, type LedgerRow, type PeriodQuery, type StatementLine } from './summary';
 import { classifyMandatoryPayment, taxTypeOf } from './mandatoryPayments';
 import { taxesReport } from './taxes';
+import { estimateTaxes } from './taxEstimate';
 import { listTaxSchedule } from './taxSchedule';
 import { upcomingDebits, type Balance, type PaidEvidence } from './upcoming';
 import { businessAccountStatementRequirement } from './businessAccounts';
@@ -125,6 +126,32 @@ export async function financeSummary(client: DynamoDBDocumentClient, query: Peri
 
 export async function financeTaxes(client: DynamoDBDocumentClient, query: PeriodQuery, today = berlinToday()) {
   return taxesReport(await financeSummary(client, query, today), today);
+}
+
+/**
+ * Rough German tax estimate for one year from the profit actually earned so
+ * far: § 32a EStG tariff plus Soli and Berlin Gewerbesteuer, § 35 relief
+ * applied, compared with the taxes already paid in that year. Refunds from
+ * earlier years are never a negative tax here: the paid numbers come from the
+ * same payment-only buckets the taxes report uses.
+ */
+export async function financeTaxEstimate(client: DynamoDBDocumentClient, year: number, today = berlinToday()) {
+  const summary = await financeSummary(client, { year: String(year) }, today);
+  const report = taxesReport(summary, today);
+  const profit = summary.totals.netProfitExVat;
+  const estimate = estimateTaxes(year, profit);
+  const paid = {
+    incomeTax: report.totals.taxes['income-tax'],
+    tradeTax: report.totals.taxes['trade-tax'],
+  };
+  const paidTotal = Math.round((paid.incomeTax + paid.tradeTax) * 100) / 100;
+  return {
+    ...estimate,
+    paid,
+    paidTotal,
+    /** Positive: still to pay; negative: paid more than the estimate. */
+    remaining: Math.round((estimate.totalEstimate - paidTotal) * 100) / 100,
+  };
 }
 
 export function parsePeriodQuery(params: Record<string, string | undefined> | null | undefined): PeriodQuery | string {
