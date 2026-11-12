@@ -1,6 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { createHash } from 'node:crypto';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
@@ -212,6 +213,20 @@ describe('API — Auth', () => {
       assert.strictEqual(res.statusCode, 204);
       assert.ok(await getSession(client, session.token), 'only the cookie logout ends a browser session');
     });
+  });
+
+  it("refuses a disabled user's API token with 401", async () => {
+    const savedSkipAuth = process.env.SKIP_AUTH;
+    process.env.SKIP_AUTH = 'false';
+    try {
+      const { token } = await createApiToken(client, { userId: disabledId, issuedBy: graceId, label: 'disabled user', scopes: ['cards:write'] });
+      for (const path of ['/api/me', '/api/cards']) {
+        const res = await invoke('GET', path, undefined, token);
+        assert.strictEqual(res.statusCode, 401, `${path} must refuse a disabled user's API token`);
+      }
+    } finally {
+      if (savedSkipAuth === undefined) delete process.env.SKIP_AUTH; else process.env.SKIP_AUTH = savedSkipAuth;
+    }
   });
 
   describe('POST /api/auth/logout', () => {

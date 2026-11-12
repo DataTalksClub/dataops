@@ -27,6 +27,7 @@ describe('Portal broker authentication', () => {
     await createUserWithId(client, 'ops-manager', { name: 'Ops Manager', email: 'ops-manager@datatalks.club', role: 'operator' });
     await createUserWithId(client, 'ops-admin', { name: 'Ops Admin', email: 'ops-admin@datatalks.club', role: 'admin' });
     await createUserWithId(client, 'legacy-user', { name: 'Legacy client', email: 'legacy@datatalks.club', role: 'operator' });
+    await createUserWithId(client, 'ops-disabled', { name: 'Ops Disabled', email: 'ops-disabled@datatalks.club', role: 'admin', disabled: true });
   });
 
   after(async () => {
@@ -291,6 +292,28 @@ describe('Portal broker authentication', () => {
     // write is never attributed to it.
     assert.strictEqual(response.statusCode, 401);
     assert.deepStrictEqual(JSON.parse(response.body), { error: 'Unauthorized' });
+  });
+
+  it('refuses brokered headers naming a disabled user, including on routes that never resolve an actor', async () => {
+    process.env.SKIP_AUTH = 'false';
+    process.env.WORK_ENGINE_AUTH_MODE = 'portal';
+    process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
+
+    for (const path of ['/api/me', '/api/tokens', '/api/cards', '/api/notifications']) {
+      const response = await handler(
+        {
+          httpMethod: 'GET',
+          path,
+          headers: {
+            'x-portal-auth': 'true',
+            'x-portal-secret': 'test-portal-secret',
+            'x-user-id': 'ops-disabled',
+          },
+        },
+        {},
+      );
+      assert.strictEqual(response.statusCode, 401, `${path} must refuse a disabled brokered user`);
+    }
   });
 
   it('returns a portal actor for /api/me in portal mode', async () => {
