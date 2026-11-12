@@ -21,6 +21,7 @@ import {
   setIntakeSecretReaderForTests,
   type IntakeCredential as Credential,
 } from './intakeAuth';
+import { emailDocumentsBucket } from '../runtimePaths';
 
 const CONTRACT_VERSION = '2026-07-01';
 const MAX_DOCUMENTS = 25;
@@ -440,7 +441,7 @@ async function importDocumentWithClient(item: IntakeItem, document: EmailDocumen
   const existing = await getArtifact(client, id);
   if (existing?.metadata?.importState === 'complete') return existing;
   await verifyDocumentSource(document, rules);
-  const bucket = process.env.EMAIL_DOCUMENTS_BUCKET as string;
+  const bucket = emailDocumentsBucket();
   const prefix = (process.env.EMAIL_DOCUMENT_DESTINATION_PREFIX || 'artifacts/').replace(/^\/+|\/+$/g, '');
   const safeFilename = document.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
   const key = `${prefix}/${item.id}/${id}/${index}-${safeFilename}`;

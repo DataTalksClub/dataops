@@ -29,6 +29,7 @@ import {
   signUrl,
   uploadStream,
 } from "./bookkeepingShared";
+import { bookkeepingDocumentsBucket } from "../runtimePaths";
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -264,7 +265,7 @@ export async function handleBookkeepingReportRoutes(
         const url = await signUrl(
           s3,
           new GetObjectCommand({
-            Bucket: process.env.BOOKKEEPING_DOCUMENTS_BUCKET,
+            Bucket: bookkeepingDocumentsBucket(),
             Key: String(doc.s3Key),
           }),
           { expiresIn: 300 },
@@ -330,6 +331,7 @@ export async function handleBookkeepingReportRoutes(
         return json(413, { error: "Archive byte limit exceeded" });
       snapshotDocs.push(doc);
     }
+    const bucket = bookkeepingDocumentsBucket();
     const archiveId = crypto.randomUUID(),
       archiveKey = `reports/${report.id}/${archiveId}.zip`;
     const generationLock = await putBookkeepingItem(
@@ -345,7 +347,7 @@ export async function handleBookkeepingReportRoutes(
     zip.addBuffer(csv, `datatalksclub-${report.month}.csv`);
     for (const doc of snapshotDocs) {
       const object = await s3.send(new GetObjectCommand({
-        Bucket: process.env.BOOKKEEPING_DOCUMENTS_BUCKET,
+        Bucket: bucket,
         Key: String(doc.s3Key),
       }));
       const body = object.Body as unknown as Readable;
@@ -359,7 +361,7 @@ export async function handleBookkeepingReportRoutes(
     zip.outputStream.pipe(meter);
     try {
       const uploadPromise = uploadStream({
-        Bucket: process.env.BOOKKEEPING_DOCUMENTS_BUCKET,
+        Bucket: bucket,
         Key: archiveKey,
         Body: meter,
         ContentType: "application/zip",
@@ -372,7 +374,7 @@ export async function handleBookkeepingReportRoutes(
       archiveVersionId = uploaded?.VersionId;
       if (!archiveVersionId) {
         const head = await headDocumentObject(
-          process.env.BOOKKEEPING_DOCUMENTS_BUCKET || "",
+          bucket,
           archiveKey,
         );
         archiveVersionId = head?.VersionId;
@@ -406,7 +408,7 @@ export async function handleBookkeepingReportRoutes(
       await markReportGenerated(client, report.id, archiveDoc.id);
       await deleteBookkeepingItem(client, "generation", generationLock.item.id);
     } catch (error) {
-      await s3.send(new DeleteObjectCommand({ Bucket: process.env.BOOKKEEPING_DOCUMENTS_BUCKET, Key: archiveKey, VersionId: archiveVersionId! })).catch(() => undefined);
+      await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: archiveKey, VersionId: archiveVersionId! })).catch(() => undefined);
       await deleteBookkeepingItem(client, "document", archiveId).catch(() => undefined);
       await deleteBookkeepingItem(client, "generation", generationLock.item.id);
       throw error;
@@ -414,7 +416,7 @@ export async function handleBookkeepingReportRoutes(
     const url = await signUrl(
       s3,
       new GetObjectCommand({
-        Bucket: process.env.BOOKKEEPING_DOCUMENTS_BUCKET,
+        Bucket: bucket,
         Key: archiveKey,
         ResponseContentDisposition: `attachment; filename="datatalksclub-${report.month}.zip"`,
       }),

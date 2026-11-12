@@ -23,6 +23,7 @@ import { financeLedger, type LedgerRow } from "../sponsorFinance/ledger";
 import { financeEnabled } from "../sponsorFinance/repository";
 import { json, publicDocument, s3 } from "./bookkeepingShared";
 import { recordRequestError } from '../requestErrorLog';
+import { bookkeepingDocumentsBucket } from "../runtimePaths";
 
 type Record_ = Record<string, unknown>;
 export type DocumentFacts = InvoiceFields & {
@@ -142,7 +143,7 @@ export function scoreSponsorDeal(transaction: Record_, row: LedgerRow) {
 
 async function readPdf(document: Record_) {
   const object = await s3.send(
-    new GetObjectCommand({ Bucket: process.env.BOOKKEEPING_DOCUMENTS_BUCKET, Key: String(document.s3Key) }),
+    new GetObjectCommand({ Bucket: bookkeepingDocumentsBucket(), Key: String(document.s3Key) }),
   );
   if (!object.Body) throw new Error("document-object-missing");
   const parts: Buffer[] = [];
