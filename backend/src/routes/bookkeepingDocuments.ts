@@ -27,6 +27,7 @@ import {
 } from "./bookkeepingShared";
 
 import { extractDocumentFacts } from "./bookkeepingSuggestions";
+import { bookkeepingDocumentsBucket } from "../runtimePaths";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const OPAQUE = /^[a-zA-Z0-9._:-]{1,160}$/;
@@ -264,7 +265,7 @@ export async function handleBookkeepingDocumentRoutes(
       Date.parse(String(document.uploadAuthorizationExpiresAt || "")) >= Date.now()
     )
       return json(409, { error: "Upload lease active" });
-    const bucket = process.env.BOOKKEEPING_DOCUMENTS_BUCKET || "";
+    const bucket = bookkeepingDocumentsBucket();
     try {
       if (document.status === "pending")
         await markDocumentCleanupRequired(
@@ -310,7 +311,7 @@ export async function handleBookkeepingDocumentRoutes(
       doc.creatorIdempotencyKey !== body.idempotencyKey
     )
       return json(409, { error: "Completion refused" });
-    const bucket = process.env.BOOKKEEPING_DOCUMENTS_BUCKET || "";
+    const bucket = bookkeepingDocumentsBucket();
     let verified: Awaited<ReturnType<typeof verifyDocumentObject>>;
     try {
       verified = await verifyDocumentObject(bucket, await getRawDocument(client, complete[1]) || doc);
@@ -462,7 +463,7 @@ export async function handleBookkeepingDocumentRoutes(
     const downloadUrl = await signUrl(
       s3,
       new GetObjectCommand({
-        Bucket: process.env.BOOKKEEPING_DOCUMENTS_BUCKET,
+        Bucket: bookkeepingDocumentsBucket(),
         Key: String(doc.s3Key),
         ResponseContentDisposition: `${inline ? "inline" : "attachment"}; filename="${filename}"`,
         ...(inline && String(doc.contentType || "application/pdf") === "application/pdf"
