@@ -126,8 +126,12 @@ describe("finished years show actuals only", () => {
     const markup = overviewMarkup(CLOSED, e, "2026-11-12");
     assert.equal(statusLine(CLOSED, "2026-11-12"), "2025 · closed · assessed per Bescheid");
     assert.match(markup, /Taxes assessed<\/h2>\s*<p class="fin-tile__value" data-fin-taxes-total>1,150\.00/);
-    assert.match(markup, /data-fin-official-income-tax><th scope="row">Income tax \+ Soli<\/th><td class="fin-num">950\.00<\/td><td class="fin-num">1,060\.00/);
-    assert.match(markup, /data-fin-official-trade-tax><th scope="row">Trade tax<\/th><td class="fin-num">200\.00<\/td><td class="fin-num">250\.00/);
+    assert.match(markup, /<th scope="col"><\/th><th scope="col" class="fin-num">Assessed<\/th><th scope="col" class="fin-num">Paid<\/th><th scope="col" class="fin-num">Balance<\/th>/);
+    assert.match(markup, /data-fin-official-income-tax><th scope="row">Income tax<\/th><td class="fin-num">900\.00<\/td><td class="fin-num">1,000\.00<\/td><td class="fin-num">−100\.00/);
+    assert.match(markup, /data-fin-official-soli><th scope="row">Solidarity surcharge<\/th><td class="fin-num">50\.00<\/td><td class="fin-num">60\.00<\/td><td class="fin-num">−10\.00/);
+    assert.match(markup, /data-fin-official-trade-tax><th scope="row">Trade tax<\/th><td class="fin-num">200\.00<\/td><td class="fin-num">250\.00<\/td><td class="fin-num">−50\.00/);
+    assert.match(markup, /data-fin-official-vat><th scope="row">VAT<\/th><td class="fin-num">70\.00<\/td><td class="fin-num">70\.00<\/td><td class="fin-num">0\.00/);
+    assert.match(markup, /data-fin-official-balance><th scope="row">Total<\/th><td class="fin-num">1,220\.00<\/td><td class="fin-num">1,380\.00<\/td><td class="fin-num">−160\.00/);
     assert.match(markup, /data-fin-official-refund><th scope="row">Refunded for 2025 <span class="fin-muted">paid out 2026-10-30<\/span><\/th>\s*<td><\/td><td class="fin-num">160\.00/);
     assert.doesNotMatch(markup, /data-fin-estimate|estimate|Projected|Safe to withdraw|Expected tax|in progress/i);
     assert.equal((markup.match(/data-fin-bookkeeping-row/g) || []).length, 2);

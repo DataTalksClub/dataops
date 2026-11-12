@@ -91,7 +91,7 @@ export function headlineMarkup(summary, e) {
 }
 
 const taxRow = (label, cells, attr = "") => html`<tr${attr ? ` ${attr}` : ""}><th scope="row">${label}</th>${cells
-  .map((v) => html`<td class="fin-num">${v === null ? "" : formatEur(v)}</td>`).join("")}</tr>`;
+  .map((v) => html`<td class="fin-num">${v === null ? "" : typeof v === "string" ? v : formatEur(v)}</td>`).join("")}</tr>`;
 
 /**
  * Taxes for the year. A closed year shows the official numbers only: assessed
@@ -105,6 +105,9 @@ export function taxesMarkup(summary, e) {
   const official = summary.taxReturn;
   if (official) {
     const a = official.assessed, p = official.paid;
+    const assessedTotal = a.incomeTax + a.soli + a.tradeTax + a.vat;
+    const paidTotal = p.incomeTax + p.soli + p.tradeTax + p.vat;
+    const balance = (assessed, paid) => formatEur(assessed - paid, { sign: true });
     const carried = official.offsets?.length
       ? html`<p class="fin-muted">Not paid out but carried: ${official.offsets
           .map((o) => html`<strong>${formatEur(o.amount)}</strong> to ${e(o.target)}`).join("; ")}.</p>`
@@ -113,17 +116,22 @@ export function taxesMarkup(summary, e) {
       <h2 id="fin-taxes-heading" class="fin-block__title">Taxes for ${year}
         <span class="fin-badge" data-fin-closed-badge>closed</span></h2>
       <div class="fin-table-wrap"><table class="fin-table fin-table--compact">
-        ${headRow(["", "Assessed", "Paid"])}
+        ${headRow(["", "Assessed", "Paid", "Balance"])}
         <tbody>
-          ${taxRow("Income tax + Soli", [a.incomeTax + a.soli, p.incomeTax + p.soli], "data-fin-official-income-tax")}
-          ${taxRow("Trade tax", [a.tradeTax, p.tradeTax], "data-fin-official-trade-tax")}
-          ${taxRow("VAT", [a.vat, p.vat], "data-fin-official-vat")}
-          ${taxRow("TK health insurance", [null, t.healthInsurance], 'data-fin-tax="health-insurance"')}
+          ${taxRow("Income tax", [a.incomeTax, p.incomeTax, balance(a.incomeTax, p.incomeTax)], "data-fin-official-income-tax")}
+          ${taxRow("Solidarity surcharge", [a.soli, p.soli, balance(a.soli, p.soli)], "data-fin-official-soli")}
+          ${taxRow("Trade tax", [a.tradeTax, p.tradeTax, balance(a.tradeTax, p.tradeTax)], "data-fin-official-trade-tax")}
+          ${taxRow("VAT", [a.vat, p.vat, balance(a.vat, p.vat)], "data-fin-official-vat")}
+          ${taxRow("TK health insurance", [null, t.healthInsurance, null], 'data-fin-tax="health-insurance"')}
         </tbody>
-        <tfoot><tr class="fin-table__total" data-fin-official-refund><th scope="row">Refunded for ${year}${official.refundedOn
+        <tfoot>
+          ${taxRow("Total", [assessedTotal, paidTotal, balance(assessedTotal, paidTotal)], "class=\"fin-table__total\" data-fin-official-balance")}
+          <tr class="fin-table__total" data-fin-official-refund><th scope="row">Refunded for ${year}${official.refundedOn
           ? html` <span class="fin-muted">paid out ${e(official.refundedOn)}</span>` : ""}</th>
-          <td></td><td class="fin-num">${formatEur(official.refunded)}</td></tr></tfoot>
+          <td></td><td class="fin-num">${formatEur(official.refunded)}</td><td></td></tr>
+        </tfoot>
       </table></div>
+      <p class="fin-muted">Balance is assessed minus paid; refunds and amounts carried forward are shown separately.</p>
       ${carried}
       ${refundsMarkup(summary, e)}
       <details class="fin-details" data-fin-official-sources>
@@ -191,16 +199,6 @@ export function taxEstimateMarkup(est, e) {
         <div><dt>${est.remaining >= 0 ? "Still to pay" : "Paid ahead"}</dt><dd data-fin-est-remaining>${formatEur(Math.abs(est.remaining))}</dd></div>
         <div><dt>Safe to withdraw now</dt><dd data-fin-planning-safe>${safe}</dd></div>
       </dl>
-      <details class="fin-details" data-fin-est-details>
-        <summary>How the expected tax splits</summary>
-        <div class="fin-table-wrap"><table class="fin-table fin-table--compact"><tbody>
-          <tr><th scope="row">Profit so far, excluding VAT</th><td class="fin-num">${formatEur(est.profitEur)}</td></tr>
-          <tr><th scope="row">Income tax</th><td class="fin-num" data-fin-est-income-tax>${formatEur(est.incomeTax.einkommensteuer)}</td></tr>
-          <tr><th scope="row">Soli</th><td class="fin-num" data-fin-est-soli>${formatEur(est.soli)}</td></tr>
-          <tr><th scope="row">Trade tax</th><td class="fin-num" data-fin-est-trade-tax>${formatEur(est.tradeTax.steuer)}</td></tr>
-          <tr><th scope="row">Money after tax at year end</th><td class="fin-num" data-fin-planning-after-tax>${formatEur(est.planning.projectedAfterTaxEur)}</td></tr>
-        </tbody></table></div>
-      </details>
     </div>`;
 }
 
