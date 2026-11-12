@@ -3,7 +3,7 @@ import { after, before, describe, it } from 'node:test';
 import { ScanCommand } from '@aws-sdk/lib-dynamodb';
 
 import { isScopedTokenRequestAllowed, parseApiTokenScopes } from '../src/auth/tokenScopes';
-import { createSession } from '../src/db/sessions';
+import { humanBearer } from './helpers/human-bearer';
 import { createUserWithId } from '../src/db/users';
 import { handleApiTokenRoutes } from '../src/routes/apiTokens';
 import { handler } from '../src/handler';
@@ -28,7 +28,7 @@ describe('scoped agent API tokens', () => {
     await createUserWithId(client, OPERATOR_ID, {
       name: 'Token operator', email: 'token-operator@example.test', role: 'operator',
     });
-    adminSession = (await createSession(client, ADMIN_ID)).token;
+    adminSession = await humanBearer(client, ADMIN_ID);
   });
 
   it('accepts only the four named write scopes and enforces route boundaries', () => {

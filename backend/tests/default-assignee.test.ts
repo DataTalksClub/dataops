@@ -12,7 +12,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { createSession } from '../src/db/sessions';
+import { humanBearer } from './helpers/human-bearer';
 import { createUserWithId, listUsers, updateUser } from '../src/db/users';
 import { resolveDefaultAssigneeId } from '../src/db/workspaceSettings';
 import { route } from '../src/router';
@@ -48,7 +48,7 @@ describe('workspace default assignee', () => {
     await createUserWithId(client, ADMIN, { name: 'Dana Admin', email: 'dana@example.test', role: 'admin' });
     await createUserWithId(client, OPERATOR, { name: 'Oli Operator', email: 'oli@example.test', role: 'operator' });
     await createUserWithId(client, TEAMMATE, { name: 'Tess Teammate', email: 'tess@example.test', role: 'operator' });
-    for (const id of [ADMIN, OPERATOR, TEAMMATE]) sessions[id] = (await createSession(client, id)).token;
+    for (const id of [ADMIN, OPERATOR, TEAMMATE]) sessions[id] = await humanBearer(client, id);
   });
 
   after(async () => {

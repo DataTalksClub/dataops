@@ -5,7 +5,9 @@ import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
-import { createSession, getSession, deleteSession } from '../src/db/sessions';
+import { createBrowserSession, getSession, deleteSession } from '../src/db/sessions';
+import { createApiToken } from '../src/db/apiTokens';
+import { humanBearer } from './helpers/human-bearer';
 import { TABLE_SESSIONS } from '../src/db/tableNames';
 import { createUserWithId } from '../src/db/users';
 
@@ -22,8 +24,10 @@ describe('Sessions DB layer', () => {
     await stopLocal();
   });
 
-  it('createSession returns a session with token, userId, createdAt', async () => {
-    const session = await createSession(client, 'user-123');
+  const newSession = (c: DynamoDBDocumentClient, userId: string) => createBrowserSession(c, userId, { lifetimeSeconds: 3600 });
+
+  it('createBrowserSession returns a session with token, userId, createdAt', async () => {
+    const session = await newSession(client, 'user-123');
 
     assert.ok(session.token, 'should have token');
     assert.strictEqual(session.userId, 'user-123');
@@ -33,7 +37,7 @@ describe('Sessions DB layer', () => {
   });
 
   it('getSession returns the session by token', async () => {
-    const created = await createSession(client, 'user-456');
+    const created = await newSession(client, 'user-456');
     const retrieved = await getSession(client, created.token);
 
     assert.ok(retrieved, 'should find the session');
@@ -57,7 +61,7 @@ describe('Sessions DB layer', () => {
   });
 
   it('deleteSession removes the session', async () => {
-    const created = await createSession(client, 'user-789');
+    const created = await newSession(client, 'user-789');
 
     // Verify it exists
     const before = await getSession(client, created.token);
@@ -72,8 +76,8 @@ describe('Sessions DB layer', () => {
   });
 
   it('each session has a unique token (UUID)', async () => {
-    const s1 = await createSession(client, 'user-111');
-    const s2 = await createSession(client, 'user-111');
+    const s1 = await newSession(client, 'user-111');
+    const s2 = await newSession(client, 'user-111');
 
     assert.notStrictEqual(s1.token, s2.token, 'each session should have unique token');
   });
@@ -83,6 +87,7 @@ describe('API — Auth', () => {
   let handler: typeof import('../src/handler').handler;
   let client: DynamoDBDocumentClient;
   const graceId = '00000000-0000-0000-0000-000000000001';
+  const disabledId = '00000000-0000-0000-0000-0000000000d1';
 
   before(async () => {
     const port = await startLocal();
@@ -98,6 +103,13 @@ describe('API — Auth', () => {
     await createUserWithId(client, graceId, {
       name: 'Grace',
       email: 'grace@datatalks.club',
+      role: 'admin',
+    });
+    await createUserWithId(client, disabledId, {
+      name: 'Disabled',
+      email: 'disabled@example.test',
+      role: 'operator',
+      disabled: true,
     });
   });
 
@@ -119,10 +131,10 @@ describe('API — Auth', () => {
     return handler(event, {});
   }
 
-  // Sign-in is SSO in the browser and the device flow for the CLI; a bearer
-  // session comes from one of those, never from a password.
+  // Sign-in is SSO in the browser and the device flow for the CLI; a human
+  // bearer is a shared-issuer JWT, never a password or a session token.
   async function signedInToken(): Promise<string> {
-    return (await createSession(client, graceId)).token;
+    return humanBearer(client, graceId);
   }
 
   it('has no password login', async () => {
@@ -151,9 +163,38 @@ describe('API — Auth', () => {
     });
   });
 
+  describe('browser session token presented as a bearer', () => {
+    // A browser session authenticates only as the HttpOnly portal cookie. The
+    // same opaque value replayed as `Authorization: Bearer` must not be a second
+    // auth path, least of all for a disabled account.
+    const savedSkipAuth = process.env.SKIP_AUTH;
+    before(() => { process.env.SKIP_AUTH = 'false'; });
+    after(() => {
+      if (savedSkipAuth === undefined) delete process.env.SKIP_AUTH; else process.env.SKIP_AUTH = savedSkipAuth;
+    });
+
+    for (const [label, userId] of [['an enabled user', graceId], ['a disabled user', disabledId]] as const) {
+      it(`is rejected for ${label} on /api/me and protected routes`, async () => {
+        const session = await createBrowserSession(client, userId, { lifetimeSeconds: 3600 });
+        assert.ok(await getSession(client, session.token), 'the browser session itself is valid');
+        for (const path of ['/api/me', '/api/notifications', '/api/files', '/api/cards', '/api/bookkeeping/transactions']) {
+          const res = await invoke('GET', path, undefined, session.token);
+          assert.strictEqual(res.statusCode, 401, `${path} must refuse a session bearer`);
+        }
+      });
+    }
+
+    it('bearer logout does not revoke a browser session', async () => {
+      const session = await createBrowserSession(client, graceId, { lifetimeSeconds: 3600 });
+      const res = await invoke('POST', '/api/auth/logout', undefined, session.token);
+      assert.strictEqual(res.statusCode, 204);
+      assert.ok(await getSession(client, session.token), 'only the cookie logout ends a browser session');
+    });
+  });
+
   describe('POST /api/auth/logout', () => {
-    it('invalidates the session (subsequent /api/me returns 401)', async () => {
-      const token = await signedInToken();
+    it('revokes an API token (subsequent /api/me returns 401)', async () => {
+      const { token } = await createApiToken(client, { userId: graceId, issuedBy: graceId, label: 'logout test', scopes: ['cards:write'] });
       const meBeforeRes = await invoke('GET', '/api/me', undefined, token);
       assert.strictEqual(meBeforeRes.statusCode, 200);
 

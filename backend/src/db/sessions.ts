@@ -16,38 +16,6 @@ export interface BrowserSessionOptions {
 
 const cleanItem = cleanDbItem<Session>;
 
-/** Lifetime of a bearer session from `createSession` (local e2e and tests only). */
-const BEARER_SESSION_LIFETIME_SECONDS = 30 * 24 * 3600;
-
-/**
- * Create a new bounded bearer session. Generates a UUID token and sets
- * createdAt and expiresAt.
- */
-async function createSession(client: DynamoDBDocumentClient, userId: string): Promise<Session> {
-  const token = crypto.randomUUID();
-  const now = new Date();
-  const expiresAt = new Date(now.getTime() + BEARER_SESSION_LIFETIME_SECONDS * 1000).toISOString();
-
-  const item = {
-    PK: `SESSION#${token}`,
-    SK: `SESSION#${token}`,
-    token,
-    userId,
-    createdAt: now.toISOString(),
-    expiresAt,
-    ttl: Math.floor(Date.parse(expiresAt) / 1000),
-  };
-
-  await client.send(
-    new PutCommand({
-      TableName: TABLE_SESSIONS,
-      Item: item,
-    })
-  );
-
-  return cleanItem(item) as Session;
-}
-
 /** Create a bounded opaque browser session. */
 async function createBrowserSession(
   client: DynamoDBDocumentClient,
@@ -113,7 +81,6 @@ async function deleteSession(client: DynamoDBDocumentClient, token: string): Pro
 }
 
 export {
-  createSession,
   createBrowserSession,
   getSession,
   deleteSession,

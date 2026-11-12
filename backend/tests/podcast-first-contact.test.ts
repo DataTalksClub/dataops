@@ -8,7 +8,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createUser } from '../src/db/users';
-import { createSession } from '../src/db/sessions';
+import { humanBearer } from './helpers/human-bearer';
 import { createTask, getTaskConsistent } from '../src/db/tasks';
 import { createCard } from '../src/db/cards';
 import { createSponsorDoc } from '../src/db/sponsorDocs';
@@ -57,8 +57,7 @@ describe('podcast first-contact email (Orin ask)', () => {
       role: 'admin',
     });
     staffUserId = user.id;
-    const session = await createSession(client, staffUserId);
-    staffToken = session.token;
+    staffToken = await humanBearer(client, staffUserId);
   });
 
   after(async () => {

@@ -5,7 +5,7 @@ import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { TABLE_BOOKKEEPING, TABLE_NEWSLETTER_SLOTS, TABLE_SPONSOR_CRM, TABLE_TASKS } from '../src/db/tableNames';
 import { createUserWithId } from '../src/db/users';
-import { createSession } from '../src/db/sessions';
+import { humanBearer } from './helpers/human-bearer';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createCrmRecord, getCrmRecord } from '../src/db/sponsorCrm';
 
@@ -237,20 +237,20 @@ describe('CRM deal hard delete', () => {
     const { deal: cascadeTarget } = await deal();
     await createUserWithId(client, 'deal-delete-admin', { name: 'Admin', email: 'deal-admin@example.test', role: 'admin' });
     await createUserWithId(client, 'deal-delete-operator', { name: 'Operator', email: 'deal-operator@example.test', role: 'operator' });
-    const admin = await createSession(client, 'deal-delete-admin'); const operator = await createSession(client, 'deal-delete-operator');
+    const admin = await humanBearer(client, 'deal-delete-admin'); const operator = await humanBearer(client, 'deal-delete-operator');
     process.env.SKIP_AUTH = 'false';
     try {
-      assert.equal((await invoke('DELETE', `/api/sponsor-crm/deals/${cascadeTarget.id}?hard=true`, undefined, { Authorization: `Bearer ${admin.token}` })).statusCode, 400);
+      assert.equal((await invoke('DELETE', `/api/sponsor-crm/deals/${cascadeTarget.id}?hard=true`, undefined, { Authorization: `Bearer ${admin}` })).statusCode, 400);
       const path = `/api/sponsor-crm/deals/${target.id}/delete`;
       const body = { withDeliverables: false, apply: true };
       assert.equal((await invoke('POST', path, body, { 'x-user-id': 'deal-delete-admin' })).statusCode, 401);
-      assert.equal((await invoke('POST', path, body, { Authorization: `Bearer ${operator.token}` })).statusCode, 403);
-      assert.equal((await invoke('POST', path, body, { Authorization: `Bearer ${admin.token}` })).statusCode, 200);
+      assert.equal((await invoke('POST', path, body, { Authorization: `Bearer ${operator}` })).statusCode, 403);
+      assert.equal((await invoke('POST', path, body, { Authorization: `Bearer ${admin}` })).statusCode, 200);
       const cascadePath = `/api/sponsor-crm/deals/${cascadeTarget.id}/delete`;
       const cascadeBody = { withDeliverables: true, apply: true };
       assert.equal((await invoke('POST', cascadePath, cascadeBody, { 'x-user-id': 'deal-delete-admin' })).statusCode, 401);
-      assert.equal((await invoke('POST', cascadePath, cascadeBody, { Authorization: `Bearer ${operator.token}` })).statusCode, 403);
-      assert.equal((await invoke('POST', cascadePath, cascadeBody, { Authorization: `Bearer ${admin.token}` })).statusCode, 200);
+      assert.equal((await invoke('POST', cascadePath, cascadeBody, { Authorization: `Bearer ${operator}` })).statusCode, 403);
+      assert.equal((await invoke('POST', cascadePath, cascadeBody, { Authorization: `Bearer ${admin}` })).statusCode, 200);
     } finally { process.env.SKIP_AUTH = 'true'; }
   });
 });

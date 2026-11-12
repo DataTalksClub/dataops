@@ -17,7 +17,7 @@ import { recordAutomationRun } from '../src/automations/runs';
 import { automationsOverview, dailyCronTime, nextRunAt, scheduleLabel } from '../src/automations/view';
 import { runCron } from '../src/cron/runner';
 import { getClient } from '../src/db/client';
-import { createSession } from '../src/db/sessions';
+import { humanBearer } from './helpers/human-bearer';
 import { createTemplate } from '../src/db/templates';
 import { createUserWithId } from '../src/db/users';
 import { route } from '../src/router';
@@ -114,8 +114,8 @@ describe('GET /api/automations', () => {
     await createTables(client);
     await createUserWithId(client, 'ada-admin', { name: 'Ada Admin', email: 'ada@example.test', role: 'admin' });
     await createUserWithId(client, 'otto-operator', { name: 'Otto Operator', email: 'otto@example.test', role: 'operator' });
-    sessions.admin = (await createSession(client, 'ada-admin')).token;
-    sessions.operator = (await createSession(client, 'otto-operator')).token;
+    sessions.admin = await humanBearer(client, 'ada-admin');
+    sessions.operator = await humanBearer(client, 'otto-operator');
   });
 
   after(async () => {

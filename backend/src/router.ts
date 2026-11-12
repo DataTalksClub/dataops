@@ -48,7 +48,6 @@ import { handleResourceRoutes } from './routes/resources';
 import { handleTaskRoutes } from './routes/tasks';
 import { resolveInteractiveActor } from './identity/actor';
 import { identityProjection } from './identity/projections';
-import { getSession } from './db/sessions';
 import { headerValue } from './httpHeaders';
 import { getUser, getUsersByNormalizedEmail, normalizeEmail } from './db/users';
 import { userDisplayNames } from './identity/directory';
@@ -239,14 +238,12 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           ? jsonResponse(200, { user: identityProjection(user) })
           : jsonResponse(401, { error: 'Unauthorized' });
       }
-      // Preserve the existing non-browser bearer-session contract, and accept
-      // shared-issuer JWTs: `whoami` for CLI/MCP clients runs through here.
+      // Non-browser clients identify with an API token or a shared-issuer
+      // JWT: `whoami` for CLI/MCP clients runs through here.
       const bearer = extractToken(event);
-      const session = bearer ? await getSession(client, bearer) : null;
-      const apiToken = bearer && !session ? await getApiToken(client, bearer) : null;
-      const bearerUserId = session?.userId
-        || apiToken?.userId
-        || (bearer && !session && !apiToken ? await sharedIssuerUserId(client, bearer) : null) || '';
+      const apiToken = bearer ? await getApiToken(client, bearer) : null;
+      const bearerUserId = apiToken?.userId
+        || (bearer && !apiToken ? await sharedIssuerUserId(client, bearer) : null) || '';
       if (bearerUserId) {
         const user = await getUser(client, bearerUserId);
         return user && !user.disabled
@@ -271,10 +268,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
 
     // ── Auth middleware ───────────────────────────────────────────
-    // All /api/* routes (except exempt ones) require a valid session.
+    // All /api/* routes (except exempt ones) require a verified identity: the
+    // portal browser cookie above, or a bearer API token or shared-issuer JWT
+    // here. Browser session tokens are never accepted as bearers.
     // In test mode (NODE_ENV=test), auth can be bypassed with SKIP_AUTH=true.
-    // Portal browser cookies and legacy bearer sessions are independent. The
-    // generic bearer middleware below remains available in portal mode.
     // A portal pass without an identity (local development with browser auth
     // unconfigured) must not skip bearer validation: without it no x-user-id
     // is ever established and every interactive route fails closed.
@@ -293,13 +290,12 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
           return jsonResponse(401, { error: 'Unauthorized' });
         }
       } else {
-        const session = await getSession(client, token);
-        const apiToken = session ? null : await getApiToken(client, token);
-        // Machine and CLI clients present a shared-issuer JWT instead of a
-        // session; its verified email resolves to the same user, so every
-        // downstream role check is unchanged.
-        const jwtUserId = session || apiToken ? null : await sharedIssuerUserId(client, token);
-        if (!session && !apiToken && !jwtUserId) {
+        const apiToken = await getApiToken(client, token);
+        // Humans on the CLI present a shared-issuer JWT; its verified email
+        // resolves to an enabled user, so every downstream role check is
+        // unchanged.
+        const jwtUserId = apiToken ? null : await sharedIssuerUserId(client, token);
+        if (!apiToken && !jwtUserId) {
           if (!exempt) {
             return jsonResponse(401, { error: 'Unauthorized' });
           }
@@ -315,7 +311,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
         } else {
           // Attach userId to event headers for downstream use
           if (!event.headers) event.headers = {};
-          event.headers['x-user-id'] = session ? session.userId : jwtUserId!;
+          event.headers['x-user-id'] = jwtUserId!;
         }
       }
     }

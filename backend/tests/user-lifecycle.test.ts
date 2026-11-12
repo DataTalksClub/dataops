@@ -18,7 +18,7 @@ import { templateLink } from './helpers/cardTemplate';
 import { resetSharedIssuerCaches } from '../src/auth/sharedIssuer';
 import { generateSigningKey, mintJwt, humanClaims, startJwksServer } from './helpers/issuer-rig';
 import { createRecurringConfig, generateRecurringTasks, getRecurringConfig } from '../src/db/recurring';
-import { createSession, getSession } from '../src/db/sessions';
+import { createBrowserSession, getSession } from '../src/db/sessions';
 import { createCrmRecord, getCrmRecord } from '../src/db/sponsorCrm';
 import { TABLE_AUDIT_EVENTS, TABLE_USERS } from '../src/db/tableNames';
 import { createTask, getTask } from '../src/db/tasks';
@@ -161,7 +161,7 @@ describe('user lifecycle: handover, disable, delete', () => {
   });
 
   it('disables: new default, open work handed over, credentials revoked', async () => {
-    const session = await createSession(client, LEAVER);
+    const session = await createBrowserSession(client, LEAVER, { lifetimeSeconds: 3600 });
     // The leaver's CLI holds a shared-issuer JWT mapped by verified email.
     const leaverToken = mintJwt(humanClaims(issuerBase, { email: 'lee@example.test', aud: 'https://ops.dtcdev.click' }), { privateKey: signingKey.privateKey, kid: KID });
 

@@ -7,7 +7,8 @@ import { handler } from "../src/handler";
 import { createTables } from "../scripts/local-dynamodb";
 import { getClient } from "../src/db/client";
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { createSession } from "../src/db/sessions";
+import { createUserWithId } from "../src/db/users";
+import { humanBearer } from "./helpers/human-bearer";
 import {
   builtInHolidayGeneration,
   holidaySnapshot,
@@ -113,8 +114,8 @@ describe("operations calendar", () => {
       (await invoke("GET", "/api/calendar-items", undefined, {}, { from: "2030-05-01", to: "2030-05-31" })).statusCode,
       401,
     );
-    const session = await createSession(client, "calendar-operator"),
-      auth = { authorization: `Bearer ${session.token}` };
+    await createUserWithId(client, "calendar-operator", { name: "Calendar operator", email: "calendar-operator@example.test", role: "operator" });
+    const auth = { authorization: `Bearer ${await humanBearer(client, "calendar-operator")}` };
     process.env.SKIP_AUTH = "true";
     const webinar = await createTemplate(client, { name: "Webinar", type: "webinar", taskDefinitions: [] });
     const newsletter = await createTemplate(client, { name: "Newsletter", type: "newsletter", taskDefinitions: [] });
