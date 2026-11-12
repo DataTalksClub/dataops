@@ -1,3 +1,4 @@
+import { holdReservationOptions } from "./event.mjs";
 import { apiFor } from "../session.mjs";
 import { UsageError } from "../errors.mjs";
 
@@ -19,7 +20,7 @@ Usage
   dataops calendar propose --date D --window evening|midday --duration N --title T --topic TOPIC [--guest-ref EMAIL] [--document-url URL] [--card ID] [--expires-days 7]
   dataops calendar link-hold <id> --card CARD_ID [--apply] [--expected-card-version N --expected-hold-version N --expected-episode-version N]
   dataops calendar confirm-hold <id> [--guest-ref EMAIL] [--document-url URL]
-  dataops calendar move-hold <id> --date D [--window evening|midday] [--time HH:MM] [--duration N] [--title T] [--topic TOPIC] [--guest-ref EMAIL] [--document-url URL]
+  dataops calendar move-hold <id> --date D [--window evening|midday] [--time HH:MM] [--duration N] [--title T] [--topic TOPIC] [--guest-ref EMAIL] [--document-url URL] [--no-guest-notifications] [--expires-days N]
   dataops calendar release-hold <id> [--reason manual]
   dataops calendar expire-holds [--dry-run] [--now ISO]
   dataops calendar holds [--status tentative|confirmed|released|expired] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
@@ -806,6 +807,7 @@ export async function moveHold(args, io) {
     );
   }
   const payload = {
+    ...holdReservationOptions(args),
     date: args.date,
     ...(args.window !== undefined ? { window: String(args.window).trim().toLowerCase() } : {}),
     ...(args.time !== undefined ? { time: String(args.time).trim() } : {}),

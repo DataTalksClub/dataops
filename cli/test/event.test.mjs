@@ -259,3 +259,20 @@ describe("Unified Event Lifecycle CLI (AC2)", () => {
     assert.deepEqual(calls[1].body, { date: "2026-12-03", window: "evening" });
   });
 });
+
+test("silent reservation flags reach both rescheduling API paths", async () => {
+  const calls = fakePortal({
+    "POST /api/events/card-1/reschedule": () => ({ status: 200, body: sampleLifecycleResponse() }),
+    "POST /api/calendar-holds/hold-1/move": () => ({ status: 200, body: sampleLifecycleResponse() }),
+  });
+  for (const command of [["event", "reschedule", "card-1"], ["calendar", "move-hold", "hold-1"]]) {
+    const io = captureIo();
+    assert.equal(await run([...command, "--date", "2026-12-15", "--time", "18:00", "--no-guest-notifications", "--expires-days", "60", "--json"], io), 0);
+    assert.equal(calls.at(-1).body.suppressGuestNotifications, true);
+    assert.equal(calls.at(-1).body.expiresDays, 60);
+    for (const days of ["0", "366", "1.5"]) {
+      assert.equal(await run([...command, "--date", "2026-12-15", "--expires-days", days], captureIo()), 2);
+    }
+    assert.equal(await run([...command, "--date", "2026-12-15", "--no-guest-notifications=false"], captureIo()), 2);
+  }
+});

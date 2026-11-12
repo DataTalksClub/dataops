@@ -306,7 +306,12 @@ async function moveRoute(
   // Delegate to unified event lifecycle service if the hold is backed by a Card with an eventPolicy
   if (existing.cardId) {
     try {
+      if (body.suppressGuestNotifications !== undefined && typeof body.suppressGuestNotifications !== 'boolean') {
+        throw new EventInputError('suppressGuestNotifications must be a boolean');
+      }
       const result = await rescheduleEvent(client, id, {
+        ...(body.suppressGuestNotifications === true ? { suppressGuestNotifications: true } : {}),
+        ...(body.expiresDays !== undefined ? { expiresDays: body.expiresDays } : {}),
         ...(typeof body.date === 'string' ? { date: body.date } : {}),
         ...(typeof body.time === 'string' ? { time: body.time } : {}),
         ...(typeof body.window === 'string' ? { window: body.window } : {}),
@@ -362,7 +367,7 @@ async function moveRoute(
     return json(400, { error: String(e?.message || 'Invalid hold move') });
   }
 
-  const deps = await calendarInviteDeps(body, client);
+  const deps = { ...await calendarInviteDeps(body, client), ...(body.suppressGuestNotifications === true ? { sendUpdates: 'none' as const } : {}) };
   const payload = googlePayload(existing, proposalTitle(rebuilt.title), rebuilt.startIso, rebuilt.endIso);
   const sync = Object.keys(existing.googleEventIds || {}).length
     ? await updateHoldGoogleEvents(existing.googleEventIds, payload, deps)

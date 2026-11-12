@@ -18,6 +18,10 @@ checks availability and saves a Calendar-only blocker policy on that event
 using the standard join lead, required attendees and Zoom. No first-contact
 email or automatic intake is enabled. Later changes reuse that saved policy.
 
+For an attendee-free reservation with no guest email, use
+--no-guest-notifications to suppress invitations and transition emails.
+--expires-days N renews the proposal expiry from now (1–365 days).
+
 Usage
   dataops event propose <card|hold|episode> --date YYYY-MM-DD [--time HH:MM | --window NAME]
       [--title T] [--topic TOPIC] [--guest-names "Name, Name"]
@@ -26,6 +30,7 @@ Usage
   dataops event reschedule <card|hold|episode> --date YYYY-MM-DD [--time HH:MM | --window NAME]
       [--title T] [--topic TOPIC] [--guest-names "Name, Name"]
       [--guest-emails "a@b.c,d@e.f"] [--document-url URL] [--duration MINUTES] [--time-zone IANA]
+      [--no-guest-notifications] [--expires-days N]
   dataops event update <card|hold|episode> [--title T] [--topic TOPIC]
       [--guest-names "Name, Name"] [--document-url URL]
   dataops event release <card|hold|episode>
@@ -63,6 +68,22 @@ function parseGuestEmailsFlag(args) {
     .filter(Boolean);
 }
 
+export function holdReservationOptions(args) {
+  const payload = {};
+  if (args.noGuestNotifications !== undefined) {
+    if (args.noGuestNotifications !== true) throw new UsageError('--no-guest-notifications is a boolean flag.');
+    payload.suppressGuestNotifications = true;
+  }
+  if (args.expiresDays !== undefined) {
+    const days = Number(args.expiresDays);
+    if (typeof args.expiresDays === 'boolean' || !Number.isInteger(days) || days < 1 || days > 365) {
+      throw new UsageError('--expires-days must be an integer from 1 to 365.');
+    }
+    payload.expiresDays = days;
+  }
+  return payload;
+}
+
 function buildTransitionPayload(args, { requireDate = false } = {}) {
   const dateRaw = optionalString(args, "date");
   if (requireDate && !dateRaw) {
@@ -89,6 +110,7 @@ function buildTransitionPayload(args, { requireDate = false } = {}) {
   const operationKey = optionalString(args, "operationKey") ?? optionalString(args, "operation-key");
 
   return {
+    ...holdReservationOptions(args),
     ...(duration !== undefined ? { durationMinutes: duration } : {}),
     ...(timeZone ? { timeZone } : {}),
     ...(date !== undefined ? { date } : {}),

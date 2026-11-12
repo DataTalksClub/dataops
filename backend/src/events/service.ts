@@ -647,6 +647,7 @@ export interface EventTransitionInput {
   time?: string;
   timeZone?: string;
   durationMinutes?: number;
+  expiresDays?: number;
   /** Internal explicit manual policy, persisted on the Event rather than its Template. */
   manualPolicy?: EventPolicy;
   window?: string;
@@ -661,7 +662,7 @@ export interface EventTransitionInput {
   now?: string;
   deps?: HoldGoogleDeps;
   approval?: EventCommand['approval'];
-  /** Internal creation orchestration: one skipEmail suppresses both outbound channels. */
+  /** Reserve silently: suppress both calendar invitations and transition emails. */
   suppressGuestNotifications?: boolean;
   /** Bind an external guest action to the exact proposal they saw. */
   expectedEventVersion?: number;
@@ -673,6 +674,9 @@ async function runTransition(
   targetId: string,
   input: EventTransitionInput = {},
 ): Promise<EventLifecycleResult> {
+  if (transition !== 'propose' && transition !== 'reschedule' && (input.suppressGuestNotifications !== undefined || input.expiresDays !== undefined)) {
+    throw new EventInputError('Reservation notification and expiry options only apply to propose or reschedule');
+  }
   const actor = input.actor || 'authenticated-operator';
   const now = input.now || new Date().toISOString();
   const { card, episode, event: current, holdId } = await resolveEventTarget(client, targetId);
@@ -707,10 +711,17 @@ async function runTransition(
       ? { templateId: card.templateId, templateVersion: card.templateVersion || 1, policy: parseEventPolicy(input.manualPolicy) }
       : await resolveCardEventPolicy(client, card);
     if (input.durationMinutes !== undefined && input.durationMinutes !== policy.durationMinutes) throw new EventInputError('duration conflicts with the configured event policy');
+    if (input.expiresDays !== undefined) {
+      if (!Number.isInteger(input.expiresDays) || input.expiresDays < 1 || input.expiresDays > 365) {
+        throw new EventInputError('expiresDays must be an integer from 1 to 365');
+      }
+      policy.expiresDays = input.expiresDays;
+    }
     // Newly proposed events use the current label; existing records keep their saved policy until a transition.
     policy.titles.proposed = '[Proposed] ' + policy.titles.proposed.replace(/^(?:\(Proposal\)|\[Proposed\])\s*/i, '');
     if (input.suppressGuestNotifications) {
       policy.guests.proposal = false;
+      policy.guests.leadMinutes = 0;
       policy.calendarAcceptance.enabled = false;
       policy.notifications.propose.calendar = 'none';
       policy.notifications.reschedule.calendar = 'none';
