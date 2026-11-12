@@ -63,6 +63,41 @@ function countsSummary(result: unknown): string {
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
+type FailureNotification = Parameters<typeof createNotification>[1];
+
+/**
+ * Report a failure without throwing. The outage that failed a step often fails
+ * the notification write too, and an error escaping here would skip every
+ * later step of the pass.
+ */
+async function notifyFailure(client: DynamoDBDocumentClient, notification: FailureNotification): Promise<void> {
+  try {
+    await createNotification(client, notification);
+  } catch (err: unknown) {
+    console.error(`Cron failure notification failed: ${notification.message}: ${(err as Error)?.message || 'unknown error'}`);
+  }
+}
+
+/**
+ * Run one cron step. A failure is reported through `failed` and returned as its
+ * error message (null on success) for the caller to count; it never escapes,
+ * so one failing step cannot stop the steps after it.
+ */
+async function runStep(
+  client: DynamoDBDocumentClient,
+  step: () => Promise<void>,
+  failed: (message: string) => FailureNotification,
+): Promise<string | null> {
+  try {
+    await step();
+    return null;
+  } catch (err: unknown) {
+    const message = (err as Error)?.message || 'unknown error';
+    await notifyFailure(client, failed(message));
+    return message;
+  }
+}
+
 /**
  * Format an anchor date as a human-readable string (e.g., "Mar 15").
  */
@@ -180,26 +215,24 @@ async function runCron(
     ['sponsor-communication-suggestions', 'sponsor communication suggestions', sponsorEvaluators.communicationSuggestions],
   ] as const;
   for (const [automationId, name, evaluate] of sponsorAutomations) {
-    try {
+    const error = await runStep(client, async () => {
       const result = await evaluate(client, todayDate);
       await recordAutomationRun(client, automationId, { ok: true, summary: countsSummary(result) }, today);
-    } catch (err: unknown) {
-      failures++;
-      await recordAutomationRun(client, automationId, { ok: false, summary: `Failed: ${(err as Error)?.message || 'unknown error'}` }, today);
+    }, () => {
       console.error(`Sponsor automation evaluator failed: ${name}`);
-      try {
-        await createNotification(client, {
-          type: 'automation-failure',
-          message: `Sponsor automation evaluator failed: ${name} for ${todayDate}`,
-          dueAt: todayDate,
-        });
-      } catch {
-        console.error(`Sponsor automation failure notification failed: ${name}`);
-      }
+      return {
+        type: 'automation-failure',
+        message: `Sponsor automation evaluator failed: ${name} for ${todayDate}`,
+        dueAt: todayDate,
+      };
+    });
+    if (error !== null) {
+      failures++;
+      await recordAutomationRun(client, automationId, { ok: false, summary: `Failed: ${error}` }, today);
     }
   }
 
-  try {
+  const recurringError = await runStep(client, async () => {
     const recurringResult = await generateRecurringTasks(client, todayDate, todayDate);
     recurringSkipped = recurringResult.skipped;
     recurringFailures = recurringResult.failures;
@@ -207,50 +240,49 @@ async function runCron(
     for (const task of recurringResult.generated) {
       recurringGenerated.push(task.id);
     }
-  } catch (err: unknown) {
+  }, (message) => ({
+    type: 'automation-failure',
+    message: `Recurring task generation failed for ${todayDate}: ${message}`,
+    dueAt: todayDate,
+  }));
+  if (recurringError !== null) {
     failures++;
     recurringFailures++;
-    await createNotification(client, {
-      type: 'automation-failure',
-      message: `Recurring task generation failed for ${todayDate}: ${(err as Error).message}`,
-      dueAt: todayDate,
-    });
-  } finally {
-    await recordAutomationRun(client, 'recurring-tasks', {
-      ok: recurringFailures === 0,
-      summary: [
-        `${plural(recurringGenerated.length, 'task')} created`,
-        ...(recurringFailures ? [plural(recurringFailures, 'failure')] : []),
-      ].join(', '),
-    }, today);
-    // The function's error metrics cannot see a pass that never ran, so the
-    // pass reports itself: no datapoint means a missed day, and a datapoint
-    // carrying a failure count says the recurring schedules are broken.
-    emitRecurringCronMetrics({ passes: 1, failures: recurringFailures });
   }
+  await recordAutomationRun(client, 'recurring-tasks', {
+    ok: recurringFailures === 0,
+    summary: [
+      `${plural(recurringGenerated.length, 'task')} created`,
+      ...(recurringFailures ? [plural(recurringFailures, 'failure')] : []),
+    ].join(', '),
+  }, today);
+  // The function's error metrics cannot see a pass that never ran, so the
+  // pass reports itself: no datapoint means a missed day, and a datapoint
+  // carrying a failure count says the recurring schedules are broken.
+  emitRecurringCronMetrics({ passes: 1, failures: recurringFailures });
 
   // Newsletter issue Cards come due a set number of days before the issue.
   const newsletterCards: CronRunnerResult['newsletterCards'] = { created: [], failures: [] };
-  try {
+  const newsletterError = await runStep(client, async () => {
     const run = await createDueIssueCards(client, todayDate);
     newsletterCards.created = run.created;
     newsletterCards.failures = run.failures;
     failures += run.failures.length;
     for (const failure of run.failures) {
-      await createNotification(client, {
+      await notifyFailure(client, {
         type: 'automation-failure',
         message: `Newsletter Card for ${failure.label} was not created on ${todayDate}: ${failure.error}`,
         dueAt: todayDate,
       });
     }
-  } catch (err: unknown) {
+  }, (message) => ({
+    type: 'automation-failure',
+    message: `Newsletter Card creation failed for ${todayDate}: ${message}`,
+    dueAt: todayDate,
+  }));
+  if (newsletterError !== null) {
     failures++;
-    newsletterCards.failures.push({ issueId: '', label: 'newsletter issues', error: (err as Error).message });
-    await createNotification(client, {
-      type: 'automation-failure',
-      message: `Newsletter Card creation failed for ${todayDate}: ${(err as Error).message}`,
-      dueAt: todayDate,
-    });
+    newsletterCards.failures.push({ issueId: '', label: 'newsletter issues', error: newsletterError });
   }
   await recordAutomationRun(client, 'newsletter-cards', {
     ok: newsletterCards.failures.length === 0,
@@ -261,7 +293,7 @@ async function runCron(
   }, today);
 
   for (const template of autoTemplates) {
-    try {
+    const templateError = await runStep(client, async () => {
       // 3. The anchors whose Cards come due today. A schedule date on a
       // Saturday or Sunday occurs on the following Monday, so weekend passes
       // create nothing and Monday's pass handles the weekend's dates too.
@@ -269,7 +301,7 @@ async function runCron(
       // a weekend: no Card is anchored on a Saturday or Sunday, and the
       // Tasks dated from the anchor follow it.
       const cron = parseCronExpression(template.triggerSchedule!);
-      if (!cron) continue;
+      if (!cron) return;
       const leadDays = template.triggerLeadDays || 0;
       const scheduleDatesByAnchor = new Map<string, string[]>();
       for (const scheduleDate of scheduleDatesOccurringOn(cron, todayDate)) {
@@ -289,19 +321,19 @@ async function runCron(
           recovered += outcome.recovered;
         }
       }
-    } catch (err: unknown) {
+    }, (message) => ({
+      type: 'automation-failure',
+      message: `Automatic template generation failed for ${template.name} (${template.id}) on ${todayDate}: ${message}`,
+      templateId: template.id,
+      dueAt: todayDate,
+      metadata: {
+        templateId: template.id,
+        date: todayDate,
+      },
+    }));
+    if (templateError !== null) {
       failures++;
       templateFailures++;
-      await createNotification(client, {
-        type: 'automation-failure',
-        message: `Automatic template generation failed for ${template.name} (${template.id}) on ${todayDate}: ${(err as Error).message}`,
-        templateId: template.id,
-        dueAt: todayDate,
-        metadata: {
-          templateId: template.id,
-          date: todayDate,
-        },
-      });
     }
   }
 
@@ -317,34 +349,32 @@ async function runCron(
   // Sponsor draft and review hygiene used to ride the send worker's recovery
   // tick. Nothing sends anymore, but abandoned drafts and expired one-time
   // reviews still need to be marked so the history reads honestly.
-  try {
+  const hygieneError = await runStep(client, async () => {
     await reconcileAbandonedSponsorPayloads(client, today.toISOString());
-  } catch (err: unknown) {
-    failures++;
-    await createNotification(client, {
-      type: 'automation-failure',
-      message: `Sponsor draft hygiene failed for ${todayDate}: ${(err as Error).message}`,
-      dueAt: todayDate,
-    });
-  }
+  }, (message) => ({
+    type: 'automation-failure',
+    message: `Sponsor draft hygiene failed for ${todayDate}: ${message}`,
+    dueAt: todayDate,
+  }));
+  if (hygieneError !== null) failures++;
 
   // Release tentative calendar holds whose TTL (default 7 days) has passed,
   // delete their Google (Proposal) blocks, and surface Orin follow-ups without
   // sending guest email.
   const calendarHolds: CronRunnerResult['calendarHolds'] = { expired: [], followUps: [] };
   let calendarHoldFailures = 0;
-  try {
+  const holdError = await runStep(client, async () => {
     const expiredRun = await expireCalendarHolds(client, today.toISOString());
     calendarHolds.expired = expiredRun.expired.map((hold) => hold.id);
     calendarHolds.followUps = expiredRun.followUps;
-  } catch (err: unknown) {
+  }, (message) => ({
+    type: 'automation-failure',
+    message: `Calendar hold expiry failed for ${todayDate}: ${message}`,
+    dueAt: todayDate,
+  }));
+  if (holdError !== null) {
     failures++;
     calendarHoldFailures++;
-    await createNotification(client, {
-      type: 'automation-failure',
-      message: `Calendar hold expiry failed for ${todayDate}: ${(err as Error).message}`,
-      dueAt: todayDate,
-    });
   }
   await recordAutomationRun(client, 'calendar-hold-expiry', {
     ok: calendarHoldFailures === 0,
