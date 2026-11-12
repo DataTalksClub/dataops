@@ -8,13 +8,11 @@ const MANDATORY_LABELS = {
   "health-insurance": "Health insurance / TK",
 };
 const TAX_HEALTH_LINES = new Set(["vat", "taxes", "health-insurance"]);
-const TAX_HEALTH_KINDS = new Set(["tax_debit", "tax_refund", "tk_debit"]);
 
+// Classification is the backend `line` on both ledger transactions and
+// finance-summary entries; the UI never re-derives it from kinds or text.
 function isTaxHealthEntry(entry) {
-  const line = String(entry?.line || "");
-  if (TAX_HEALTH_LINES.has(line)) return true;
-  if (line) return false;
-  return TAX_HEALTH_KINDS.has(String(entry?.mandatoryKind || ""));
+  return TAX_HEALTH_LINES.has(String(entry?.line || ""));
 }
 
 function isOwnerWithdrawalEntry(entry) {
@@ -44,10 +42,13 @@ function mandatoryLabel(entry) {
   return isRefund(entry) ? `${label} refund` : label;
 }
 
-// Share exact tax/health line classification and the guarded kind fallback between both views.
+// The backend classifies ledger transactions (`line`), so tax and
+// health-insurance rows leave the ordinary ledger on the first render — the
+// finance summary only refines bank-only statement projections.
 export function monthlyLedgerEntries(entries, lens, financeEntriesById) {
   if (!/^\d{4}-\d{2}$/.test(lens)) return entries;
   return entries.filter((entry) => {
+    if (monthOf(entry) === lens && isTaxHealthEntry(entry)) return false;
     const mandatory = financeEntriesById.get(String(entry.id));
     const taxHealth = mandatory?.month === lens && isTaxHealthEntry(mandatory);
     const ownerWithdrawal = monthOf(entry) === lens && isOwnerWithdrawalEntry(entry);
@@ -93,10 +94,13 @@ export function mandatoryPaymentsMarkup(entries, lens, escapeHtml, state = "read
     .filter((entry) => entry.month === lens && isTaxHealthEntry(entry))
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || ""))
       || String(a.id || "").localeCompare(String(b.id || "")));
-  const subtotal = exceptions.reduce((sum, entry) => {
+  // Money out only: a refund settles an earlier assessed year, so it is listed
+  // but never offsets this month's tax and health-insurance payments.
+  const outflow = exceptions.reduce((sum, entry) => {
+    if (isRefund(entry)) return sum;
     const value = Number(entry.eur);
     return entry.eur !== null && entry.eur !== undefined && Number.isFinite(value)
-      ? sum + (isRefund(entry) ? Math.abs(value) : -Math.abs(value))
+      ? sum + Math.abs(value)
       : sum;
   }, 0);
   const unconvertedCount = exceptions.filter((entry) => entry.eur === null
@@ -119,7 +123,7 @@ export function mandatoryPaymentsMarkup(entries, lens, escapeHtml, state = "read
       <tbody>${rows}</tbody>
     </table></div>
     <p class="bk-mandatory-payments__subtotal">
-      <span>Net month total</span><strong>${escapeHtml(formatAmount(subtotal, "EUR"))}</strong>
+      <span>Money out total</span><strong>${escapeHtml(formatAmount(-outflow, "EUR"))}</strong>
       ${unconvertedCount ? html`<span class="bk-mandatory-payments__unconverted">
         ${unconvertedCount} amount${unconvertedCount === 1 ? "" : "s"} without an EUR conversion
       </span>` : ""}

@@ -399,7 +399,7 @@ test("linked active receipt PDFs render direct View actions for every evidence l
   assert.equal((markup.match(/>View PDF<\/button>/g) || []).length, 3);
 });
 
-test("the month tax section lists debits, refunds, and health insurance with signed totals", () => {
+test("the month tax section lists debits and refunds with a money-out total", () => {
   const markup = mandatoryPaymentsMarkup([
     { id: "synthetic-vat-april", month: "2026-04", date: "2026-04-14", direction: "out", line: "vat", mandatoryKind: "tax_debit", counterparty: "Synthetic Tax Office", description: "Synthetic VAT debit", amount: "120.00", currency: "EUR", eur: 120 },
     { id: "synthetic-tk-april", month: "2026-04", date: "2026-04-16", direction: "out", line: "health-insurance", mandatoryKind: "tk_debit", counterparty: "Synthetic Health Fund", description: "Synthetic health-insurance debit", amount: "40.00", currency: "EUR", eur: 40 },
@@ -414,7 +414,8 @@ test("the month tax section lists debits, refunds, and health insurance with sig
   assert.match(markup, /Health insurance \/ TK/);
   assert.match(markup, /Other taxes refund/);
   assert.match(markup, /€15\.00/);
-  assert.match(markup, /-€145\.00/);
+  assert.match(markup, /Money out total/);
+  assert.match(markup, /-€160\.00/, "refunds are listed but never offset the month's outflow");
   assert.doesNotMatch(markup, /Synthetic other-tax debit/);
   assert.equal((markup.match(/<tr>/g) || []).length, 4, "three current-month rows plus the table header");
   assert.equal(mandatoryPaymentsMarkup([], "2026", escapeHtml), "", "the section is specific to a selected month");
@@ -536,7 +537,7 @@ test("monthly tax partition keeps consulting fees and allocation totals in the o
   assert.match(taxMarkup, /-€120\.00/);
   assert.match(taxMarkup, /€25\.00/);
   assert.match(taxMarkup, /-€10\.00/);
-  assert.match(taxMarkup, /-€105\.00/);
+  assert.match(taxMarkup, /-€130\.00/, "the money-out total counts only the debits, not the refund");
   assert.doesNotMatch(taxMarkup, /Synthetic Compliance Advisor|Synthetic Combined Settlement/);
 
   const withdrawals = ownerWithdrawalEntries(rows, month);
@@ -593,7 +594,7 @@ test("unmatched mandatory statement row appears only in the mandatory section", 
   assert.deepEqual(monthlyLedgerEntries([row], "2026", finance.entryMap()), [row]);
 });
 
-test("an expense-encoded tax refund moves to the separate section and reduces its net total", () => {
+test("an expense-encoded tax refund moves to the separate section and never offsets the money-out total", () => {
   const debit = { id: "synthetic-debit", month: "2026-04", date: "2026-04-16",
     direction: "out", line: "vat", mandatoryKind: "tax_debit", refund: false,
     counterparty: "Synthetic authority", amount: "100.00", currency: "EUR", eur: 100 };
@@ -608,10 +609,11 @@ test("an expense-encoded tax refund moves to the separate section and reduces it
   assert.match(markup, /VAT \/ USt refund/);
   const subtotal = markup.match(/bk-mandatory-payments__subtotal[\s\S]*?<strong>(.*?)<\/strong>/)?.[1];
   assert.ok(subtotal);
-  assert.match(subtotal, /-€80\.00/);
+  assert.match(markup, /Money out total/);
+  assert.match(subtotal, /-€100\.00/, "the refund is listed but the total counts only the debit");
 });
 
-test("tax lines are exact and explicit-kind fallback applies only when line is absent", () => {
+test("the backend line alone classifies; a kind without one is not moved", () => {
   const entries = [
     { id: "synthetic-line-tax", month: "2026-04", direction: "in", line: "taxes", mandatoryKind: null,
       counterparty: "Synthetic tax refund", amount: "12.00", currency: "EUR", eur: 12 },
@@ -622,10 +624,32 @@ test("tax lines are exact and explicit-kind fallback applies only when line is a
   ];
   const rows = entries.map(({ id }) => ({ id }));
   const index = new Map(entries.map((entry) => [entry.id, entry]));
-  assert.deepEqual(monthlyLedgerEntries(rows, "2026-04", index), [rows[2]]);
+  assert.deepEqual(monthlyLedgerEntries(rows, "2026-04", index), [rows[1], rows[2]],
+    "only the explicit backend line moves a row out of the ordinary ledger");
   const markup = mandatoryPaymentsMarkup(entries, "2026-04", escapeHtml);
   assert.match(markup, /Synthetic tax refund/);
-  assert.match(markup, /Synthetic classified debit/);
-  assert.doesNotMatch(markup, /Synthetic operating payment/);
-  assert.match(markup, /-€8\.00/);
+  assert.doesNotMatch(markup, /Synthetic classified debit|Synthetic operating payment/);
+  assert.match(markup, /€12\.00/);
+});
+
+test("backend-classified ledger rows leave the ordinary ledger on the first render", () => {
+  const month = "2026-10";
+  const rows = [
+    { id: "synthetic-tk-oct", transactionDate: "2026-10-16", paidDate: "2026-10-16",
+      line: "health-insurance", counterparty: "Techniker Krankenkasse", description: "Health insurance",
+      amount: "1179.36", currency: "EUR", entryType: "expense", category: "" },
+    { id: "synthetic-finanzamt-oct", transactionDate: "2026-10-30", paidDate: "2026-10-30",
+      line: "taxes", counterparty: "ZAHLUNGSVERKEHR BERLINER", description: "Finanzamt Einkommensteuer",
+      amount: "500.00", currency: "EUR", entryType: "expense", category: "" },
+    { id: "synthetic-client-oct", transactionDate: "2026-10-12", paidDate: "2026-10-12",
+      line: "operating", counterparty: "Synthetic Sponsor", description: "Synthetic sponsorship",
+      amount: "5000.00", currency: "EUR", entryType: "income", category: "Sponsorship" },
+  ];
+  const beforeSummary = monthlyLedgerEntries(rows, month, new Map());
+  assert.deepEqual(beforeSummary.map((entry) => entry.id), ["synthetic-client-oct"],
+    "tax and health-insurance rows never appear in the ordinary ledger, summary loaded or not");
+  const afterSummary = monthlyLedgerEntries(rows, month, new Map([
+    ["synthetic-tk-oct", { id: "synthetic-tk-oct", month, date: "2026-10-16", direction: "out", line: "health-insurance" }],
+  ]));
+  assert.deepEqual(afterSummary, beforeSummary, "loading the finance summary moves no row");
 });

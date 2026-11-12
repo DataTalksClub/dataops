@@ -867,7 +867,7 @@ export async function handleBookkeepingTransactionRoutes(
           if (["transactionDate", "paidDate", "counterparty", "amount", "amountEur", "currency"].some((field) => body[field] !== undefined)) {
             await autoAttachConfidentEvidence(client);
           }
-          return json(200, updated);
+          return json(200, bookkeepingTransactionView(updated!));
         } catch (error) {
           const sizeError = auditStorageLimitResponse(error);
           if (sizeError) return sizeError;
@@ -888,7 +888,7 @@ export async function handleBookkeepingTransactionRoutes(
           unique,
         );
         await autoAttachConfidentEvidence(client);
-        return json(created.duplicate ? 200 : 201, created.item);
+        return json(created.duplicate ? 200 : 201, bookkeepingTransactionView(created.item));
       } catch (error) {
         if (error instanceof BookkeepingItemLockedError)
           return json(409, { error: "Transaction source or allocation is already claimed" });
