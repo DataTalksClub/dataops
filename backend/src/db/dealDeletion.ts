@@ -1,8 +1,7 @@
-import { ScanCommand, TransactWriteCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { ScanCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'node:crypto';
 
-import { usesLocalTransactionEmulation } from './client';
-import { emulateTransaction } from './cardDeletion';
+import { transactWrite } from './transactWrite';
 import { getCrmRecord } from './sponsorCrm';
 import type { PlannedWrite } from './plannedWrite';
 import { TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_TASKS } from './tableNames';
@@ -279,8 +278,7 @@ export async function hardDeleteDeal(
   if (writes.length > MAX_ITEMS) throw statusError('Deal history exceeds the atomic hard-delete limit', 409);
 
   try {
-    if (usesLocalTransactionEmulation()) await emulateTransaction(client, writes);
-    else await client.send(new TransactWriteCommand({ TransactItems: writes.map(({ item }) => item) }));
+    await transactWrite(client, writes.map(({ item }) => item));
   } catch (error) {
     if ((error as Error).name === 'TransactionCanceledException') throw statusError('Conflicting delete; reload and retry', 409);
     throw error;

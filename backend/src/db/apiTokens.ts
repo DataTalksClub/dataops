@@ -1,15 +1,12 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
-  DeleteCommand,
   GetCommand,
-  PutCommand,
   QueryCommand,
-  TransactWriteCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { usesLocalTransactionEmulation } from './client';
+import { transactWrite } from './transactWrite';
 import { cleanItem as cleanDbItem } from './cleanItem';
 import { TABLE_SESSIONS } from './tableNames';
 import type { ApiToken, ApiTokenSummary } from '../types';
@@ -80,7 +77,7 @@ export async function createApiToken(
   };
   const summary = projectApiToken(apiToken);
 
-  await writeTransaction(client, [
+  await transactWrite(client, [
       { Put: { TableName: TABLE_SESSIONS, Item: { ...tokenKey(apiToken.id), ...apiToken } } },
       { Put: { TableName: TABLE_SESSIONS, Item: { ...hashKey(tokenHash), id: apiToken.id, expiresAt, ttl } } },
       { Put: { TableName: TABLE_SESSIONS, Item: { ...listKey(apiToken.id), ...summary, ttl } } },
@@ -200,27 +197,12 @@ export async function deleteApiToken(
 ): Promise<boolean> {
   const apiToken = await readApiTokenById(client, id);
   if (!apiToken) return false;
-  await writeTransaction(client, [
+  await transactWrite(client, [
       { Delete: { TableName: TABLE_SESSIONS, Key: tokenKey(apiToken.id) } },
       { Delete: { TableName: TABLE_SESSIONS, Key: hashKey(apiToken.tokenHash) } },
       { Delete: { TableName: TABLE_SESSIONS, Key: listKey(apiToken.id) } },
   ]);
   return true;
-}
-
-/** Dynalite has no transactions; this branch is enabled only by test tooling. */
-async function writeTransaction(
-  client: DynamoDBDocumentClient,
-  transactItems: NonNullable<ConstructorParameters<typeof TransactWriteCommand>[0]['TransactItems']>,
-): Promise<void> {
-  if (usesLocalTransactionEmulation()) {
-    for (const action of transactItems) {
-      if (action.Put) await client.send(new PutCommand(action.Put));
-      else if (action.Delete) await client.send(new DeleteCommand(action.Delete));
-    }
-    return;
-  }
-  await client.send(new TransactWriteCommand({ TransactItems: transactItems }));
 }
 
 export function projectApiToken(apiToken: ApiToken): ApiTokenSummary {

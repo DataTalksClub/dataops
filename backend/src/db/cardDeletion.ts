@@ -1,16 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
 import {
-  DeleteCommand,
-  GetCommand,
-  PutCommand,
   ScanCommand,
-  TransactWriteCommand,
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 
 import type { Card, Task } from '../types';
-import { usesLocalTransactionEmulation } from './client';
+import { transactWrite } from './transactWrite';
 import {
   CardNotFoundError,
   CardVersionConflictError,
@@ -389,62 +385,6 @@ async function loadDeletionPlan(
   return { writes, auditEvent, unlinked };
 }
 
-let testTransactionTail: Promise<void> = Promise.resolve();
-
-/**
- * Dynalite has no TransactWriteItems. Apply the planned writes in order with
- * the same conditions, restoring every touched row if any condition or write
- * fails, serialized like the other local transaction emulators.
- */
-async function emulateTransaction(client: DynamoDBDocumentClient, writes: PlannedWrite[]): Promise<void> {
-  const previous = testTransactionTail;
-  let release!: () => void;
-  testTransactionTail = new Promise<void>((resolve) => { release = resolve; });
-  await previous;
-  try {
-    const snapshots: Array<{ write: PlannedWrite; current: Dict | undefined }> = [];
-    for (const write of writes) {
-      const current = (await client.send(new GetCommand({
-        TableName: write.tableName,
-        Key: write.key,
-        ConsistentRead: true,
-      }))).Item as Dict | undefined;
-      if (!write.holds(current)) {
-        const error = new Error('Emulated transaction condition failed');
-        error.name = 'TransactionCanceledException';
-        throw error;
-      }
-      snapshots.push({ write, current });
-    }
-    let applied = 0;
-    try {
-      for (const { write, current } of snapshots) {
-        const next = write.after(current || {});
-        if (next) {
-          await client.send(new PutCommand({ TableName: write.tableName, Item: next }));
-        } else {
-          await client.send(new DeleteCommand({ TableName: write.tableName, Key: write.key }));
-        }
-        applied += 1;
-        if (Number(process.env.CARD_DELETION_TEST_FAIL_AFTER || 0) === applied) {
-          throw new Error('Injected Card deletion transaction failure');
-        }
-      }
-    } catch (error) {
-      for (const { write, current } of snapshots.slice(0, applied).reverse()) {
-        if (current) {
-          await client.send(new PutCommand({ TableName: write.tableName, Item: current }));
-        } else {
-          await client.send(new DeleteCommand({ TableName: write.tableName, Key: write.key }));
-        }
-      }
-      throw error;
-    }
-  } finally {
-    release();
-  }
-}
-
 async function deleteCardCascade(
   client: DynamoDBDocumentClient,
   cardId: string,
@@ -463,11 +403,7 @@ async function deleteCardCascade(
   if (writes.length > 100) throw new CardDeletionTooLargeError(cardId, writes.length);
 
   try {
-    if (usesLocalTransactionEmulation()) {
-      await emulateTransaction(client, writes);
-    } else {
-      await client.send(new TransactWriteCommand({ TransactItems: writes.map(({ item }) => item) }));
-    }
+    await transactWrite(client, writes.map(({ item }) => item));
   } catch (error) {
     if ((error as { name?: string })?.name !== 'TransactionCanceledException') throw error;
     const current = await getCardConsistent(client, cardId);
@@ -491,7 +427,6 @@ export {
   CardDeletionTooLargeError,
   cardBlockingReferences,
   deleteCardCascade,
-  emulateTransaction,
   listCardArtifacts,
 };
 export type {

@@ -10,14 +10,12 @@
  * looks the Tasks up itself.
  */
 import {
-  GetCommand,
-  PutCommand,
   TransactWriteCommand,
   type DynamoDBDocumentClient,
 } from '@aws-sdk/lib-dynamodb';
 
 import type { Card, Task, TaskCardBackReference } from '../types';
-import { usesLocalTransactionEmulation } from './client';
+import { transactWrite } from './transactWrite';
 import { cardKey, getCardConsistent } from './cards';
 import { compact } from './plannedWrite';
 import { TABLE_CARDS, TABLE_TASKS } from './tableNames';
@@ -108,33 +106,11 @@ export async function setTaskLinkedCard(
     })),
   ];
 
-  if (usesLocalTransactionEmulation()) {
-    await emulate(client, transaction);
-    return nextTask;
-  }
   try {
-    await client.send(new TransactWriteCommand({ TransactItems: transaction }));
+    await transactWrite(client, transaction);
   } catch (error) {
     if ((error as Error).name === 'TransactionCanceledException') throw new TaskCardLinkConflictError();
     throw error;
   }
   return nextTask;
-}
-
-/** Local DynamoDB without transactions: check every condition, then write. */
-async function emulate(client: DynamoDBDocumentClient, transaction: TransactionItems): Promise<void> {
-  for (const { Put } of transaction) {
-    const item = Put!.Item as Dict;
-    const current = await client.send(new GetCommand({
-      TableName: Put!.TableName,
-      Key: { PK: item.PK, SK: item.SK },
-      ConsistentRead: true,
-    }));
-    if (current.Item?.version !== Put!.ExpressionAttributeValues?.[':expectedVersion']) {
-      throw new TaskCardLinkConflictError();
-    }
-  }
-  for (const { Put } of transaction) {
-    await client.send(new PutCommand({ TableName: Put!.TableName, Item: Put!.Item as Dict }));
-  }
 }
