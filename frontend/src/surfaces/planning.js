@@ -1,6 +1,7 @@
 import "../dakit/collection.js";
 import { createPageHeader } from "./operations-overview.js";
 import { parseIsoDateValue } from "../core/workspace.js";
+import { formatDayMonth } from "../core/dates.js";
 import { createNewsletterPlanner } from "./planning-newsletter.js";
 import { cardDueLabel } from "./planning-newsletter-slots.js";
 import { setupDayScheduleDialog, setupCalendarSettingsDialog } from "./planning-calendar-dialogs.js";
@@ -51,17 +52,6 @@ export function createPlanningSurface(context) {
     if (["reserved", "drafting", "scheduled", "announced"].includes(value)) return "is-info";
     if (["tentative", "open"].includes(value)) return "is-warning";
     return "";
-  }
-
-  function formatShortPlanningDate(iso) {
-    const parsed = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
-    return Number.isNaN(parsed.getTime())
-      ? String(iso)
-      : new Intl.DateTimeFormat("en-GB", {
-          day: "numeric",
-          month: "short",
-          timeZone: "UTC",
-        }).format(parsed);
   }
 
   function calendarAlertCopy(reasonCode) {
@@ -638,7 +628,7 @@ export function createPlanningSurface(context) {
             .map((id) => {
               const item = itemById.get(id);
               if (!item) return "";
-              return `${item.title} — ${formatShortPlanningDate(item.date)}`;
+              return `${item.title} — ${formatDayMonth(item.date)}`;
             })
             .filter(Boolean)
             .join(" · ");

@@ -1,6 +1,7 @@
 // The per-issue page at /newsletter/<issueId>: one newsletter issue's
 // details, reached from the planner's rows and addressable as a deep link.
 // Read-only: the planner's rows and its dialog stay the editing surfaces.
+import { formatIssueDate } from "../core/dates.js";
 import { sponsorRecordPath } from "../core/sponsor-routes.js";
 import { renderPageHeaderMarkup } from "./operations-overview.js";
 import {
@@ -14,19 +15,6 @@ import {
 } from "./planning-newsletter-slots.js";
 
 const enc = encodeURIComponent;
-
-function formatIssueDate(iso) {
-  const parsed = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
-  return Number.isNaN(parsed.getTime())
-    ? String(iso)
-    : new Intl.DateTimeFormat("en-GB", {
-        weekday: "long",
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-        timeZone: "UTC",
-      }).format(parsed);
-}
 
 export function createNewsletterIssuePage(context) {
   const {
@@ -123,7 +111,7 @@ export function createNewsletterIssuePage(context) {
           <small class="newsletter-kind-badge">${item.kind === "standalone" ? "Stand-alone" : "Weekly"}</small>
         </div>
         <dl class="newsletter-issue-facts">
-          <div><dt>Date</dt><dd><time datetime="${escapeHtml(item.publicationDate)}">${escapeHtml(formatIssueDate(item.publicationDate))}</time>${timeMarkup}</dd></div>
+          <div><dt>Date</dt><dd><time datetime="${escapeHtml(item.publicationDate)}">${escapeHtml(formatIssueDate(item.publicationDate, { weekday: "long" }))}</time>${timeMarkup}</dd></div>
           ${numberMarkup}
           <div><dt>Kind</dt><dd>${item.kind === "standalone" ? "Stand-alone" : "Weekly"}</dd></div>
           <div><dt>Sponsors</dt><dd>${sponsorsMarkup(item)}</dd></div>

@@ -1,3 +1,4 @@
+import { formatEditedTimestamp } from "../../core/dates.js";
 import {
   bindCodeInput,
   describeUserCodeError,
@@ -11,11 +12,6 @@ export const NEWSLETTER_PREVIEW_CODE_LENGTH = 16;
 function extractIssueId(pathname) {
   const match = /^\/newsletter-issues\/([^/?#]+)\/preview\/?$/.exec(String(pathname || ""));
   return match ? decodeURIComponent(match[1]) : "";
-}
-
-function formatEditedTimestamp(iso) {
-  if (!iso) return "";
-  return String(iso).slice(0, 16).replace("T", " ") + " UTC";
 }
 
 function formatEditorLabel(md) {

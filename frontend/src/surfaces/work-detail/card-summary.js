@@ -1,3 +1,4 @@
+import { formatIssueDate, formatUtcMinute } from "../../core/dates.js";
 import { escapeHtml } from "../../core/html.js";
 import { renderIcon } from "../../core/icons.js";
 import { opensInNewTab } from "../../core/links.js";
@@ -60,19 +61,6 @@ export function renderCardTemplateLink(
 const newsletterIssueCache = new Map();
 const newsletterIssueFreshMs = 30_000;
 
-function formatIssueDate(iso) {
-  const parsed = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
-  return Number.isNaN(parsed.getTime())
-    ? String(iso || "")
-    : new Intl.DateTimeFormat("en-GB", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-        timeZone: "UTC",
-      }).format(parsed);
-}
-
 export function renderCardNewsletterIssue(
   { request, workApiUrl, reload },
   card,
@@ -113,7 +101,7 @@ export function renderCardNewsletterIssue(
       row.className = "card-newsletter-slot__row";
       const link = document.createElement("a");
       link.href = `/newsletter?issueId=${encodeURIComponent(issue.id)}`;
-      link.textContent = `${issue.label || "Newsletter issue"} · ${formatIssueDate(issue.publicationDate)}`;
+      link.textContent = `${issue.label || "Newsletter issue"} · ${formatIssueDate(issue.publicationDate || "", { weekday: "short" })}`;
       opensInNewTab(link);
       const status = document.createElement("span");
       status.className = "card-newsletter-slot__status";
@@ -217,7 +205,7 @@ export function renderCardSponsorDocsSection(card) {
     metaLine.className = "card-checklist-note";
     metaLine.dataset.sponsorDocEdited = "";
     const editedTime = doc.lastEditedAt
-      ? String(doc.lastEditedAt).slice(0, 16).replace("T", " ")
+      ? formatUtcMinute(doc.lastEditedAt)
       : "";
     const editedBy = doc.lastEditedBy || "staff";
     metaLine.textContent = editedTime
@@ -385,7 +373,7 @@ export function createCardSummary(context) {
     completion.className = "card-completion-meta";
     const actor = state.workSnapshot.usersById?.get(card.completedBy);
     const completedBy = actor?.name || card.completedBy;
-    completion.textContent = `${String(card.completedAt).slice(0, 16).replace("T", " ")} · ${completedBy} · from ${labelizeWorkValue(card.activeStageBeforeCompletion)}`;
+    completion.textContent = `${formatUtcMinute(card.completedAt)} · ${completedBy} · from ${labelizeWorkValue(card.activeStageBeforeCompletion)}`;
     stageLabel.append(completion);
   } else {
     stageLabel.textContent = "Stage ";

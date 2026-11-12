@@ -1,4 +1,5 @@
 import "../dakit/collection.js";
+import { formatDayMonth } from "../core/dates.js";
 import {
   renderNewsletterDialogMarkup,
   setupNewsletterDialog,
@@ -27,17 +28,6 @@ export function createNewsletterPlanner(context) {
     workApiUrl,
   } = context;
   const { renderNewsletterIssuePage } = createNewsletterIssuePage(context);
-
-  function formatShortPlanningDate(iso) {
-    const parsed = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
-    return Number.isNaN(parsed.getTime())
-      ? String(iso)
-      : new Intl.DateTimeFormat("en-GB", {
-          day: "numeric",
-          month: "short",
-          timeZone: "UTC",
-        }).format(parsed);
-  }
 
   /**
    * How far the issue is from today, on every row and in one short form:
@@ -94,7 +84,7 @@ export function createNewsletterPlanner(context) {
       const card = item.card;
       const mismatch = card.anchorDate && card.anchorDate !== item.publicationDate
         ? `<span class="newsletter-card-chip__warning" data-card-date-mismatch><span class="newsletter-card-chip__warning-label">Card dated </span>${
-          escapeHtml(formatShortPlanningDate(card.anchorDate))}</span>`
+          escapeHtml(formatDayMonth(card.anchorDate))}</span>`
         : "";
       const name = `Open card: ${card.title || "Untitled card"}`;
       return `
@@ -188,7 +178,7 @@ export function createNewsletterPlanner(context) {
     function newsletterAlertMarkup(alert) {
       const issue = (items || []).find((candidate) => candidate.id === alert.issueId);
       const naming = issue
-        ? `${issue.label || "Issue"}${issue.publicationDate ? ` — ${formatShortPlanningDate(issue.publicationDate)}` : ""}`
+        ? `${issue.label || "Issue"}${issue.publicationDate ? ` — ${formatDayMonth(issue.publicationDate)}` : ""}`
         : "";
       return `
         <article class="planner-alert is-${escapeHtml(alert.severity || "warning")}">
