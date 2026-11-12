@@ -183,7 +183,9 @@ tr.bk-month__totals-row > th {
 .bk-who__what { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--dk-text-muted); text-overflow: ellipsis; }
 .bk-col-money { width: 7.5em; overflow: hidden; font-variant-numeric: tabular-nums; text-align: right; }
 .bk-table th.bk-col-money { text-align: right; }
-.bk-col-vat { min-width: 8em; color: var(--dk-text-muted); font-variant-numeric: tabular-nums; }
+/* VAT can squeeze: the amount keeps an ellipsis instead of forcing the table
+   past the viewport on narrow or zoomed screens. */
+.bk-col-vat { min-width: 4em; max-width: 8em; overflow: hidden; color: var(--dk-text-muted); font-variant-numeric: tabular-nums; text-overflow: ellipsis; }
 .bk-col-eur.is-unconverted { color: var(--dk-warning-text); }
 .bk-unconverted { font-weight: var(--dk-weight-semibold); }
 .bk-col-eur { color: var(--dk-text-heading); }
@@ -195,7 +197,7 @@ tr.bk-month__totals-row > th {
 .bk-col-account .dk-icon-button { color: var(--dk-text-muted); vertical-align: middle; }
 .bk-col-flag .dk-icon-button:hover,
 .bk-col-account .dk-icon-button:hover { color: var(--dk-text-primary); }
-.bk-col-class { padding-left: var(--dk-space-1); padding-right: var(--dk-space-1); }
+.bk-col-class { padding-left: var(--dk-space-1); padding-right: var(--dk-space-1); overflow: hidden; }
 .bookkeeping-surface .bk-col-subtype .bk-inline-select { width: 8.5em; }
 .bookkeeping-surface .bk-col-category .bk-inline-select { width: 10.5em; }
 .bookkeeping-surface .bk-col-period .bk-inline-select { width: 6.5em; }
@@ -280,6 +282,7 @@ tr.bk-month__totals-row > th {
   .bk-table thead { display: none; }
   .bk-month__head th { top: 0; }
   .bk-col-account,
+  .bk-col-vat,
   .bk-col-class,
   .bk-col-flag { display: none; }
   .bk-table td { height: 44px; }
