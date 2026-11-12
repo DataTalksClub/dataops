@@ -1669,6 +1669,28 @@ describe("Knowledge surface boundary", () => {
     assert.equal(missing.elements.editor.disabled, true);
   });
 
+  test("invalid document errors identify the requested path and clear after a successful load", async () => {
+    let invalid = true;
+    const harness = createKnowledgeHarness({
+      request: async () => {
+        if (invalid) {
+          const error = new Error("Document path may only contain letters, numbers, slash, dash, underscore, and .md");
+          error.status = 400;
+          throw error;
+        }
+        return { path: "content/valid.md", content: "# Valid", updated: 1 };
+      },
+    });
+    await harness.api.openDocument("content/reference.invalid path");
+    const notice = harness.elements.docState.children[0];
+    assert.equal(notice.dataset.documentState, "error");
+    assert.ok(notice.textContent.includes("content/reference.invalid path"));
+    assert.ok(notice.textContent.includes("Document path may only contain"));
+    invalid = false;
+    await harness.api.openDocument("content/valid.md");
+    assert.equal(harness.elements.docState.hidden, true);
+  });
+
   test("renders related Process Docs and hides or lists backlinks truthfully", async () => {
     const host = new FakeElement("section");
     host.id = "backlinks-host";
