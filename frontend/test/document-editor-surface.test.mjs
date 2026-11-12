@@ -1061,11 +1061,12 @@ describe("Document Editor surface boundary", () => {
 
     const links = paragraph.querySelectorAll("[data-doc-path]");
     assert.equal(links.length, 2);
-    // A plain click places the caret; Cmd/Ctrl+click follows the link.
+    // Document links follow on an ordinary click as well as Cmd/Ctrl+click.
     await links[1].dispatch("click", { metaKey: false });
-    assert.deepEqual(harness.openedDocuments, []);
+    assert.deepEqual(harness.openedDocuments, ["content/processes/related.md"]);
     await links[1].dispatch("click", { metaKey: true });
     assert.deepEqual(harness.openedDocuments, [
+      "content/processes/related.md",
       "content/processes/related.md",
     ]);
   });

@@ -241,12 +241,12 @@ export function attachEditable(el, options) {
     markEmpty();
   }
 
-  // Links in text are text: a click places the caret. A wiki link (an atom)
-  // or a Cmd/Ctrl+click follows the link.
+  // Document links navigate on an ordinary click, including inside editable
+  // text. Other text remains available for caret placement and editing.
   function onLinkClick(event) {
     const link = event.currentTarget;
     const atom = link.closest?.(".md-atom");
-    if (!atom && !event.metaKey && !event.ctrlKey) return;
+    if (!atom && !link.getAttribute("data-doc-path") && !event.metaKey && !event.ctrlKey) return;
     event.preventDefault();
     event.stopPropagation();
     options.onFollowLink?.(link);

@@ -247,7 +247,7 @@ test("captures Knowledge family after screenshots", async ({ page }) => {
   await expect(page.getByText("Choose File")).toHaveCount(0);
   await expect(page.locator("#document-path")).toBeHidden();
   await expect(page.getByRole("heading", { name: "Related" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Functions" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Functions" })).toBeVisible();
   await scrollReaderToEnd(page);
   await expectAboveFooter(page, "The table is the last block so a sticky footer cannot hide it.");
   await screenshot(page, "process-docs-reader-overview-desktop-1440-light");

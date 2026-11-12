@@ -1542,7 +1542,7 @@ describe("Knowledge surface boundary", () => {
     const failed = createKnowledgeHarness({
       request: async () => {
         const error = new Error("Document service timed out");
-        error.status = 500;
+        error.status = "timeout";
         throw error;
       },
     });
@@ -1669,6 +1669,28 @@ describe("Knowledge surface boundary", () => {
     assert.equal(missing.elements.editor.disabled, true);
   });
 
+  test("invalid document errors identify the requested path and clear after a successful load", async () => {
+    let invalid = true;
+    const harness = createKnowledgeHarness({
+      request: async () => {
+        if (invalid) {
+          const error = new Error("Document path may only contain letters, numbers, slash, dash, underscore, and .md");
+          error.status = 400;
+          throw error;
+        }
+        return { path: "content/valid.md", content: "# Valid", updated: 1 };
+      },
+    });
+    await harness.api.openDocument("content/reference.invalid path");
+    const notice = harness.elements.docState.children[0];
+    assert.equal(notice.dataset.documentState, "error");
+    assert.ok(notice.textContent.includes("content/reference.invalid path"));
+    assert.ok(notice.textContent.includes("Document path may only contain"));
+    invalid = false;
+    await harness.api.openDocument("content/valid.md");
+    assert.equal(harness.elements.docState.hidden, true);
+  });
+
   test("renders related Process Docs and hides or lists backlinks truthfully", async () => {
     const host = new FakeElement("section");
     host.id = "backlinks-host";
@@ -1694,8 +1716,8 @@ describe("Knowledge surface boundary", () => {
       related_docs: ["../policies/review.md"],
     });
     assert.ok(findByText(related, "Related", "h2"));
-    assert.ok(findByText(related, "review.md", "button"));
-    assert.equal(findByText(related, "../policies/review.md", "button"), undefined);
+    assert.ok(findByText(related, "review.md", "a"));
+    assert.equal(findByText(related, "../policies/review.md", "a"), undefined);
 
     await harness.api.fetchBacklinksForCurrentDoc();
     assert.equal(host.hidden, false);
@@ -1713,6 +1735,23 @@ describe("Knowledge surface boundary", () => {
     unavailable.elements.renderedView.append(unavailableHost);
     await unavailable.api.fetchBacklinksForCurrentDoc();
     assert.equal(unavailableHost.hidden, true);
+  });
+
+  test("resolves Related IDs and aliases before relative paths and keeps same-origin markdown links internal", () => {
+    const target = { id: "reference.events", aliases: ["reference.old-events"], path: "content/reference/events.md", title: "Live events" };
+    const harness = createKnowledgeHarness({
+      documentState: { currentDoc: { path: "content/sops/workshop.md" } },
+      knowledgeState: { allDocuments: [target], documentIdMap: new Map([[target.id, target], [target.aliases[0], target], [target.path, target], ["reference/events.md", target]]) },
+    });
+    const related = harness.api.renderRelatedDocsBlock({ related_docs: [target.id, target.aliases[0], "../reference/events.md"] });
+    const links = related.querySelectorAll("a");
+    assert.equal(links.length, 3);
+    for (const link of links) {
+      assert.equal(link.textContent, "Live events");
+      assert.equal(link.href, "/reference/events.md");
+    }
+    assert.equal(harness.api.resolveMarkdownDocLink("http://portal.test/reference/events.md#schedule"), target);
+    assert.equal(harness.api.resolveMarkdownDocLink("https://external.test/reference/events.md"), null);
   });
 
   test("lists a document's training_assets as its Loom recordings", () => {

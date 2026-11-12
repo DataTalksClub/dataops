@@ -153,7 +153,7 @@ export function createKnowledgeNavigation(context, services) {
   function showDocumentError(path, error) {
     const node = renderHonestState(
       "Could not load Process Doc",
-      error?.message || `The document at ${path} could not be loaded.`,
+      `Could not load "${path}": ${error?.message || "The document request failed."}`,
     );
     appendDocumentRetry(node, path);
     setDocumentStateNode(node, "error");
@@ -193,7 +193,7 @@ export function createKnowledgeNavigation(context, services) {
 
     documentTitle.disabled = true;
     editor.disabled = true;
-    setSaveState("Loading...");
+    updateSaveState();
     setView("editor");
     setRouteTitle(basename(path));
     documentPath.textContent = path;

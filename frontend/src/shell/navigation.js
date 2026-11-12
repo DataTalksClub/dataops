@@ -12,7 +12,6 @@ export function createNavigationShell(context) {
     ensureSharedSnapshots,
     folderExists,
     folderPathFromLocation,
-    getDocsAvailability,
     getKnowledgeState,
     getTasksSectionForLegacyView,
     historyRef,
@@ -503,19 +502,12 @@ export function createNavigationShell(context) {
     }
     const docPath = context.docPathFromLocation();
     if (docPath) {
-      const exists = getKnowledgeState().allDocuments.some(
-        (doc) => doc.path === docPath,
-      );
-      // During a docs outage the catalog is empty for every document, so a
-      // bookmarked document URL must still open the editor: it reports the
-      // outage there instead of silently dropping the operator on the queue.
-      const docsUnavailable = getDocsAvailability().state === "unavailable";
-      if (exists || docsUnavailable) {
-        activateDocumentWorkspace();
-        await openDocument(docPath, {
-          updateUrl: false,
-        });
-      }
+      // The document endpoint owns not-found and outage feedback. A stale or
+      // missing catalog entry must not turn a bookmarked link into a dead end.
+      activateDocumentWorkspace();
+      await openDocument(docPath, {
+        updateUrl: false,
+      });
       return;
     }
     const folderPath = folderPathFromLocation();

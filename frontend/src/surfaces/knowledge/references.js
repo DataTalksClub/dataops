@@ -12,7 +12,12 @@ export function createKnowledgeReferences(context, services) {
   const visibleDocUrl = documentHref;
 
   function resolveMarkdownDocLink(href) {
-    if (!href || /^(https?:|mailto:|#)/i.test(href)) return null;
+    if (!href || /^(mailto:|#)/i.test(href)) return null;
+    if (/^https?:/i.test(href)) {
+      const url = new URL(href);
+      if (url.origin !== context.locationAdapter?.origin) return null;
+      href = url.pathname;
+    }
     if (href.startsWith("doc:")) return resolveDocReference(href.slice(4));
     const clean = href.split("#")[0].split("?")[0];
     if (!clean.endsWith(".md")) return null;
@@ -77,14 +82,18 @@ export function createKnowledgeReferences(context, services) {
     const list = document.createElement("ul");
     for (const related of items) {
       const item = document.createElement("li");
-      const button = document.createElement("button");
-      button.type = "button";
+      const button = document.createElement("a");
       button.className = "block-related-row";
-      const path = resolveRelatedPath(related);
-      const doc = resolveDocReference(path);
+      const doc = resolveDocReference(related) || resolveDocReference(resolveRelatedPath(related));
+      const path = doc?.path || resolveRelatedPath(related);
+      button.href = visibleDocUrl(path);
       button.textContent = doc?.title || basename(path);
       button.title = doc?.title || basename(path);
-      button.addEventListener("click", () => openDocument(path));
+      button.addEventListener("click", (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        openDocument(path);
+      });
       item.append(button);
       list.append(item);
     }
