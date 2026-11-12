@@ -17,3 +17,42 @@ export function formatDayLabel(value, today) {
   const short = DAY_MONTH.format(date);
   return match[1] === String(today || "").slice(0, 4) ? short : `${short} ${match[1]}`;
 }
+
+// "18 Jan" for the calendar day an ISO date or timestamp names, read in UTC.
+// Anything that does not parse comes back as `String(value)`.
+export function formatDayMonth(value) {
+  const parsed = parseUtcDay(value);
+  return parsed ? DAY_MONTH.format(parsed) : String(value);
+}
+
+const ISSUE_DATE = {
+  long: new Intl.DateTimeFormat("en-GB", {
+    weekday: "long", day: "numeric", month: "short", year: "numeric", timeZone: "UTC",
+  }),
+  short: new Intl.DateTimeFormat("en-GB", {
+    weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC",
+  }),
+};
+
+// "Wednesday, 18 Jan 2027" (weekday "long") or "Wed, 18 Jan 2027" ("short")
+// for a newsletter issue's publication day, read in UTC. Anything that does
+// not parse comes back as `String(value)`.
+export function formatIssueDate(value, { weekday }) {
+  const parsed = parseUtcDay(value);
+  return parsed ? ISSUE_DATE[weekday].format(parsed) : String(value);
+}
+
+// "2027-01-18 09:30": an ISO timestamp cut to the minute, as stored (UTC).
+export function formatUtcMinute(value) {
+  return String(value).slice(0, 16).replace("T", " ");
+}
+
+// "2027-01-18 09:30 UTC" for an edit/send timestamp; empty when there is none.
+export function formatEditedTimestamp(value) {
+  return value ? `${formatUtcMinute(value)} UTC` : "";
+}
+
+function parseUtcDay(value) {
+  const parsed = new Date(`${String(value).slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
