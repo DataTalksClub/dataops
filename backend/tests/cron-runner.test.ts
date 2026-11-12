@@ -14,6 +14,8 @@ import { runCron, formatAnchorDate } from '../src/cron/runner';
 import { buildHold } from '../src/calendar/holds';
 import { getCalendarHold, putCalendarHold, setCalendarHoldGoogleDepsForTests } from '../src/db/calendarHolds';
 import { saveCalendarOverlaySettings } from '../src/db/calendar';
+import { TABLE_NOTIFICATIONS, TABLE_TASKS } from '../src/db/tableNames';
+import { getAutomationRuns } from '../src/automations/runs';
 
 /** Captures the EMF records the pass writes, so tests can read the metric it emits. */
 function captureRecurringMetrics() {
@@ -761,6 +763,55 @@ describe('Cron runner', () => {
       }
     });
   }
+
+  it('keeps running later steps when a step fails and its failure notification cannot be written', async () => {
+    const template = await createTemplate(client, {
+      name: 'Survives notification outage',
+      type: 'notification-outage',
+      triggerType: 'automatic',
+      triggerSchedule: '0 9 7 * *',
+      taskDefinitions: [{ refId: 'only', description: 'Only step', offsetDays: 0 }],
+    });
+    let recurringScanFailed = false;
+    const outage = new Proxy(client, {
+      get(target, property, receiver) {
+        if (property !== 'send') return Reflect.get(target, property, receiver);
+        return async (command: { constructor: { name: string }; input: { TableName?: string } }) => {
+          if (command.input.TableName === TABLE_NOTIFICATIONS) throw new Error('injected notification outage');
+          if (!recurringScanFailed && command.constructor.name === 'ScanCommand' && command.input.TableName === TABLE_TASKS) {
+            recurringScanFailed = true;
+            throw new Error('injected recurring failure');
+          }
+          return target.send(command as never);
+        };
+      },
+    });
+    const logs: string[] = [];
+    const originalError = console.error;
+    console.error = (...values: unknown[]) => logs.push(values.map(String).join(' '));
+    let result;
+    try {
+      result = await runCron(outage, new Date('2045-03-07T09:00:00Z'), {
+        bookingAlerts: async () => {},
+        financeAlerts: async () => {},
+        communicationSuggestions: async () => {},
+      });
+    } finally {
+      console.error = originalError;
+    }
+
+    assert.ok(recurringScanFailed, 'the recurring step must have failed');
+    assert.equal(result.recurring.failures, 1);
+    assert.equal(result.failures, 1);
+    assert.ok(logs.some((line) => line.startsWith(
+      'Cron failure notification failed: Recurring task generation failed for 2045-03-07: injected recurring failure',
+    )));
+    const card = (await listCards(client)).find((candidate) => candidate.templateId === template.id);
+    assert.ok(card, 'the automatic template step still ran after the failed recurring step');
+    assert.ok(result.created.includes(card.id));
+    const runs = await getAutomationRuns(client, ['calendar-hold-expiry']);
+    assert.equal(runs.get('calendar-hold-expiry')?.at, '2045-03-07T09:00:00.000Z');
+  });
 
   it('expires tentative calendar holds past TTL during the scheduled cron pass, leaves unexpired/confirmed holds untouched, and is idempotent on re-run', async () => {
     const deleteCalls: string[] = [];
