@@ -1460,42 +1460,35 @@ closes on every tab switch (see setView), so it never covers list content. */
   margin: 0 auto;
 }
 .fin-period {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: var(--dk-space-3);
-}
-.fin-period__field {
-  display: grid;
+  display: inline-flex;
   gap: var(--dk-space-1);
-  font-size: var(--dk-text-xs);
+  padding: var(--dk-space-1);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background: var(--dk-bg-muted);
+}
+.fin-period__year {
+  min-height: 32px;
+  padding: 0 var(--dk-space-3);
+  border: 0;
+  border-radius: var(--dk-radius-sm);
+  background: transparent;
   color: var(--dk-text-muted);
+  font: inherit;
+  font-size: var(--dk-text-sm);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
 }
-.fin-period [data-fin-year] { color-scheme: light; }
-:root[data-theme="dark"] .fin-period [data-fin-year] { color-scheme: dark; }
-.fin-period [data-fin-year] option {
-  background-color: var(--dk-bg-surface);
-  color: var(--dk-text-primary);
-}
-.fin-period [data-fin-year] option:checked {
-  background-color: var(--dk-accent-deep);
-  color: var(--dk-text-on-deep);
-}
-.fin-period [data-fin-year] option:hover:not(:disabled) {
-  background-color: var(--dk-bg-hover);
-  color: var(--dk-text-primary);
-}
-.fin-period [data-fin-year] option:focus-visible {
+.fin-period__year:hover { color: var(--dk-text-primary); }
+.fin-period__year:focus-visible {
   outline: 2px solid var(--dk-focus-ring);
-  outline-offset: -2px;
+  outline-offset: 1px;
 }
-.fin-period [data-fin-year] option:disabled {
-  background-color: var(--dk-bg-muted);
-  color: var(--dk-text-muted);
-}
-.fin-period [aria-pressed="true"] {
-  background: var(--dk-accent-soft);
-  border-color: var(--dk-border-strong);
+.fin-period__year[aria-pressed="true"] {
+  background: var(--dk-bg-surface);
+  color: var(--dk-text-heading);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--dk-border-default);
 }
 .fin-period-label,
 .fin-muted {
@@ -1503,71 +1496,90 @@ closes on every tab switch (see setView), so it never covers list content. */
   color: var(--dk-text-muted);
   font-size: var(--dk-text-sm);
 }
+.fin-period-label {
+  max-width: 1120px;
+  width: 100%;
+  margin: 0 auto var(--dk-space-4);
+}
+.fin-body { gap: var(--dk-space-6); }
+.fin-top {
+  display: grid;
+  gap: var(--dk-space-3);
+  min-width: 0;
+}
 .fin-hero {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--dk-space-4);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--dk-space-5);
+  padding-bottom: var(--dk-space-4);
+  border-bottom: 1px solid var(--dk-border-default);
 }
 .fin-tile {
   display: grid;
+  align-content: start;
   gap: var(--dk-space-1);
-  padding: var(--dk-space-4) var(--dk-space-5);
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-lg);
-  background: var(--dk-bg-surface);
+  min-width: 0;
 }
 .fin-tile__label {
   margin: 0;
   font-size: var(--dk-text-sm);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--dk-text-muted);
 }
 .fin-tile__value {
   margin: 0;
-  font-size: var(--dk-text-xl);
+  font-size: var(--dk-text-2xl, 1.75rem);
   font-weight: 650;
+  line-height: 1.15;
   font-variant-numeric: tabular-nums;
   color: var(--dk-text-heading);
-}
-.fin-tile__unit {
-  font-size: var(--dk-text-sm);
-  font-weight: 500;
-  color: var(--dk-text-muted);
+  overflow-wrap: anywhere;
 }
 .fin-tile__sub {
   margin: 0;
+  font-size: var(--dk-text-xs);
+  color: var(--dk-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.fin-cashline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--dk-space-1) var(--dk-space-2);
+  margin: 0;
   font-size: var(--dk-text-sm);
   color: var(--dk-text-muted);
   font-variant-numeric: tabular-nums;
 }
-.fin-tile__sub strong {
+.fin-cashline strong {
+  font-weight: 600;
   color: var(--dk-text-primary);
 }
-.fin-tile__warn {
-  margin: var(--dk-space-1) 0 0;
-  padding: var(--dk-space-1) var(--dk-space-2);
-  border-radius: var(--dk-radius-sm);
-  background: var(--dk-warning-bg);
-  color: var(--dk-warning-text);
+.fin-cashline .fin-muted {
+  margin-left: auto;
   font-size: var(--dk-text-xs);
+}
+.fin-badge {
+  display: inline-block;
+  margin-left: var(--dk-space-1);
+  padding: 0 var(--dk-space-2);
+  border-radius: var(--dk-radius-full);
+  background: var(--dk-bg-muted);
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-xs);
+  font-weight: 500;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 .fin-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--dk-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--dk-space-4);
   margin: 0;
-}
-.fin-stats div {
-  padding: var(--dk-space-2) var(--dk-space-3);
-  border-radius: var(--dk-radius-md);
-  background: var(--dk-bg-muted);
 }
 .fin-stats dt {
   font-size: var(--dk-text-xs);
   color: var(--dk-text-muted);
-}
-.fin-stats .fin-stats__total {
-  border: 1px solid var(--dk-border-strong);
 }
 .fin-stats dd {
   margin: 0;
@@ -1576,12 +1588,18 @@ closes on every tab switch (see setView), so it never covers list content. */
   font-variant-numeric: tabular-nums;
   color: var(--dk-text-primary);
 }
+.fin-details > summary {
+  width: fit-content;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+  cursor: pointer;
+}
+.fin-details > summary:hover { color: var(--dk-text-primary); }
+.fin-details[open] > summary { margin-bottom: var(--dk-space-2); }
+.fin-details > * + * { margin-top: var(--dk-space-2); }
 .fin-chart {
   margin: 0;
-  padding: var(--dk-space-3) var(--dk-space-4);
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-lg);
-  background: var(--dk-bg-surface);
+  max-width: 720px;
 }
 .fin-chart svg {
   display: block;
@@ -1596,10 +1614,6 @@ closes on every tab switch (see setView), so it never covers list content. */
   margin-bottom: var(--dk-space-2);
   font-size: var(--dk-text-sm);
   color: var(--dk-text-muted);
-}
-.fin-chart__title {
-  font-weight: 600;
-  color: var(--dk-text-primary);
 }
 .fin-legend {
   display: inline-flex;
@@ -1627,8 +1641,7 @@ closes on every tab switch (see setView), so it never covers list content. */
   font-variant-numeric: tabular-nums;
 }
 .fin-chart__in { fill: var(--dk-accent-default); }
-.fin-chart__out,
-.fin-chart__loss { fill: var(--dk-text-faint); }
+.fin-chart__out { fill: var(--dk-text-faint); }
 .fin-chart__net {
   fill: var(--dk-text-heading);
   stroke: var(--dk-bg-surface);
@@ -1636,7 +1649,7 @@ closes on every tab switch (see setView), so it never covers list content. */
 }
 .fin-chart__hit { fill: transparent; }
 .fin-chart__month:hover .fin-chart__hit { fill: var(--dk-bg-hover); }
-.fin-chart__month.is-future { opacity: 0.45; }
+.fin-chart__month.is-in-progress { opacity: 0.55; }
 .fin-tooltip {
   position: absolute;
   z-index: 5;
@@ -1660,20 +1673,6 @@ closes on every tab switch (see setView), so it never covers list content. */
   font-size: var(--dk-text-md);
   color: var(--dk-text-heading);
 }
-.fin-block__subtitle {
-  margin: 0;
-  font-size: var(--dk-text-sm);
-  color: var(--dk-text-heading);
-}
-.fin-refunds {
-  display: grid;
-  gap: var(--dk-space-2);
-  min-width: 0;
-}
-.fin-refunds .fin-muted {
-  margin: 0;
-  font-size: var(--dk-text-sm);
-}
 .fin-table-wrap {
   overflow-x: auto;
 }
@@ -1682,16 +1681,33 @@ closes on every tab switch (see setView), so it never covers list content. */
   border-collapse: collapse;
   font-size: var(--dk-text-sm);
 }
+.fin-table--compact { max-width: 560px; }
+.fin-table tbody th,
+.fin-table tfoot th { font-weight: 400; }
+.fin-table thead th.fin-num { text-align: right; }
+.fin-table th:first-child,
+.fin-table td:first-child { padding-left: 0; }
+.fin-table__split th,
+.fin-table__split td {
+  border-bottom: 0;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-xs);
+  text-align: right;
+  white-space: normal;
+}
+.fin-table__split th { text-align: left; }
+.fin-table tr.is-in-progress td { color: var(--dk-text-muted); }
 .fin-table th,
 .fin-table td {
-  padding: var(--dk-space-1) var(--dk-space-2);
+  padding: var(--dk-space-2) var(--dk-space-3);
   border-bottom: 1px solid var(--dk-border-default);
   text-align: left;
   white-space: nowrap;
 }
 .fin-table thead th {
   color: var(--dk-text-muted);
-  font-weight: 600;
+  font-size: var(--dk-text-xs);
+  font-weight: 500;
 }
 .fin-table .fin-num {
   text-align: right;
@@ -1711,19 +1727,20 @@ closes on every tab switch (see setView), so it never covers list content. */
   outline: 2px solid var(--dk-focus-ring);
   outline-offset: 2px;
 }
-.fin-table__total th,
-.fin-table__total td {
+.fin-table .fin-table__total th,
+.fin-table .fin-table__total td {
   font-weight: 650;
   border-top: 1px solid var(--dk-border-strong);
 }
-.fin-table tr.is-future {
-  color: var(--dk-text-faint);
-}
-.fin-table__caption {
-  padding: var(--dk-space-2) 0;
-  text-align: left;
-  font-weight: 600;
-  color: var(--dk-text-primary);
+.fin-table tr.is-done { color: var(--dk-text-faint); }
+@media (max-width: 640px) {
+  .fin-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--dk-space-3);
+  }
+  .fin-cashline .fin-muted { margin-left: 0; flex-basis: 100%; }
+  .fin-table th,
+  .fin-table td { padding: var(--dk-space-2); }
 }
 .fin-sr {
   position: absolute;
