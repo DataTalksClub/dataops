@@ -182,7 +182,7 @@ function mapRenderedOffset(rendered, markdown, offset) {
  * Options: getValue, commit, restore, multiline, singleLine, plain,
  * placeholder, placeholderOnFocus, autoFocus, selectionRange, onSplit,
  * onEnterNewBlock, onMergePrevious, onDeleteBlock, onIndent, onOutdent,
- * onSlash, onBlockShortcut, onEscape, onPasteText, onFiles, renderAtom,
+ * onSlash, onBlockShortcut, neighbour, onEscape, onPasteText, onFiles, renderAtom,
  * onActivity.
  */
 export function attachEditable(el, options) {
@@ -507,7 +507,8 @@ export function attachEditable(el, options) {
     if (!current || !current.range.collapsed) return;
     const up = event.key === "ArrowUp";
     if (up ? !onFirstLine(el, current.range) : !onLastLine(el, current.range)) return;
-    const target = neighbourEditable(el, up ? -1 : 1);
+    // A grid (a table) names the cell above or below; the page order is the fallback.
+    const target = options.neighbour?.(up ? -1 : 1) || neighbourEditable(el, up ? -1 : 1);
     if (!target) return;
     event.preventDefault();
     flush();

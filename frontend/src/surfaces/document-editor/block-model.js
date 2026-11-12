@@ -2,6 +2,7 @@
 // the keyboard makes to them. Pure functions; block-editor.js renders them.
 
 import { toVideoEmbed } from "./embeds.js";
+import { startsTable, tableEnd } from "./table-model.js";
 
 export function parseListItems(raw, type) {
   const lines = (raw || "").split("\n");
@@ -159,6 +160,14 @@ export function parseMarkdownBlocks(markdown) {
         i++;
       }
       blocks.push({ id: blockId(), type: "numbered", raw: buf.join("\n") });
+      continue;
+    }
+
+    // Table: a piped header over a delimiter row, then piped rows.
+    if (startsTable(lines, i)) {
+      const end = tableEnd(lines, i);
+      blocks.push({ id: blockId(), type: "table", raw: lines.slice(i, end).join("\n") });
+      i = end;
       continue;
     }
 
