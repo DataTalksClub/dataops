@@ -5,7 +5,7 @@ import { describe, test } from "node:test";
 import {
   activateFinanceMonthlyRow, bookkeepingMonthUrl, cashChartMarkup, formatEur,
   monthTableMarkup, overviewMarkup, periodControlsMarkup, periodFromParams,
-  profitChartMarkup, taxEstimateMarkup, taxEstimateSectionMarkup,
+  profitChartMarkup, taxesMarkup, taxEstimateMarkup, taxEstimateSectionMarkup,
 } from "../src/surfaces/finance/overview.js";
 import { escapeHtml as e } from "../src/core/html.js";
 const totals = (fields) => ({
@@ -187,19 +187,52 @@ const ESTIMATE = {
   incomeTax: { tariflich: 30865, section35Relief: 10570, einkommensteuer: 20295 },
   soli: 0, tradeTax: { messbetrag: 2642.5, steuer: 10834.25 }, totalEstimate: 31129.25,
   paid: { incomeTax: 300, tradeTax: 100 }, paidTotal: 400, remaining: 30729.25,
+  planning: {
+    ownerPayEur: 12000, projectedAfterTaxEur: 68870.75, safeToWithdrawEur: 4521.25,
+    businessBalance: { totalEur: 5250.50, accounts: [{ accountId: "finom", wallet: "", amountEur: 5000, asOf: "2026-11-12" }, { accountId: "revolut", wallet: "", amountEur: 250.5, asOf: "2026-11-12" }] },
+    formula: [
+      "Projected year-end money after tax = profit earned so far (100000 EUR) − total tax estimate (31129.25 EUR) = 68870.75 EUR.",
+      "Safe to withdraw now = business account balance (finom 5000.00 EUR + revolut 250.50 EUR) − estimated remaining tax for 2026 (30729.25 EUR) = 4521.25 EUR.",
+      "Owner withdrawals already made in 2026 (12000.00 EUR) are not added back: that money has already left the balance.",
+    ],
+  },
   inputs: ["Profit earned so far in 2026 (net profit excluding VAT from the finance summary): 100000 EUR"],
   formula: ["Einkommensteuer: § 32a Abs. 1 EStG Grundtarif on zvE 100000 EUR → 30865 EUR, minus § 35 Abs. 1 EStG relief (4 × Messbetrag, max Gewerbesteuer) 10570 EUR → 20295 EUR."],
   sources: ["§ 32a Abs. 1 EStG, ab VZ 2026 (gesetze-im-internet.de/estg/__32a.html; Grundfreibetrag 12.348 €, Steuerbetrag aufgerundet)"],
   disclaimer: "Rough estimate, not a tax return: statutory tariffs applied to the profit booked so far.",
 };
 
+const ASSESSMENT_2025 = {
+  year: 2025, closed: true,
+  assessed: { incomeTax: 27542, soli: 721.37, tradeTax: 17174.90, vat: 13945.51 },
+  paid: { incomeTax: 41252, soli: 2916, tradeTax: 13184, vat: 4581.14 },
+  refunded: 15904.63, refundedOn: "2026-10-30",
+  notes: ["Ausgezahlt wurden 15.904,63 € am 30.10.2026 (ESt 13.710,00 € + Soli 2.194,63 €)."],
+  sources: ["Bescheid vom 29.10.2026 über Einkommensteuer und Solidaritätszuschlag für 2025, FA Pankow/Weißensee (zvE 127.811 €, §-35-Ermäßigung 16.756 €)"],
+};
+
 describe("tax estimate block", () => {
-  test("offers a Calculate tax button in the annual overview", () => {
+  test("fills itself when the year loads, with no Calculate tax button", () => {
     const markup = overviewMarkup(YEAR, e);
     assert.match(markup, /Tax estimate <span class="fin-muted">rough, Berlin, from the profit earned so far in 2026/);
-    assert.match(markup, /<button type="button" class="dk-button dk-button--secondary dk-button--sm" data-fin-tax-estimate>Calculate tax<\/button>/);
-    assert.match(markup, /data-fin-estimate-body/);
+    assert.match(markup, /data-fin-estimate-body><p class="fin-muted">Calculating…<\/p><\/div>/);
+    assert.doesNotMatch(markup, /data-fin-tax-estimate|Calculate tax/);
     assert.doesNotMatch(markup, /data-fin-estimate-result/);
+  });
+
+  test("renders the after-tax planning numbers next to the estimate for an open year", () => {
+    const markup = taxEstimateMarkup(ESTIMATE, e);
+    assert.match(markup, /data-fin-planning-after-tax>68,870\.75/);
+    assert.match(markup, /data-fin-planning-safe>4,521\.25/);
+    assert.match(markup, /data-fin-planning-owner-pay>12,000\.00/);
+    assert.match(markup, /Safe to withdraw now <span class="fin-muted">rough<\/span>/);
+    assert.match(markup, /Safe to withdraw now = business account balance \(finom 5000\.00 EUR \+ revolut 250\.50 EUR\)/);
+    assert.match(markup, /Owner withdrawals already made in 2026 \(12000\.00 EUR\) are not added back/);
+  });
+
+  test("shows an unknown balance as not-yet-available instead of a number", () => {
+    const markup = taxEstimateMarkup({ ...ESTIMATE, planning: { ...ESTIMATE.planning, safeToWithdrawEur: null, businessBalance: { totalEur: null, accounts: [] } } }, e);
+    assert.match(markup, /data-fin-planning-safe><span class="fin-muted">unknown until a bank statement is uploaded<\/span>/);
   });
 
   test("renders ESt, Soli and GewSt separately and in total, labelled as an estimate", () => {
@@ -222,8 +255,40 @@ describe("tax estimate block", () => {
     assert.doesNotMatch(markup, /still to pay in 2026/);
   });
 
+  test("cites the Bescheid as the paid source and drops the planning numbers for a closed year", () => {
+    const markup = taxEstimateMarkup({ ...ESTIMATE, year: 2025, assessment: ASSESSMENT_2025 }, e);
+    assert.match(markup, /data-fin-est-paid-line>Per the Bescheid, prepaid in 2025/);
+    assert.doesNotMatch(markup, /data-fin-planning|Safe to withdraw now|projected year-end/i);
+    assert.match(markup, /gesetze-im-internet\.de\/estg\/__32a\.html/);
+  });
+
   test("keeps the estimate section year-scoped", () => {
     assert.match(taxEstimateSectionMarkup("2025", e), /profit earned so far in 2025/);
+    assert.match(taxEstimateSectionMarkup("2025", e), /Calculating…/);
+  });
+});
+
+describe("closed-year taxes from the stored Bescheid", () => {
+  const CLOSED_YEAR = { ...YEAR, period: { ...YEAR.period, label: "2025" }, taxReturn: ASSESSMENT_2025 };
+
+  test("fills the tax figures from the Bescheid instead of the ledger buckets", () => {
+    const markup = overviewMarkup(CLOSED_YEAR, e);
+    assert.match(markup, /Taxes in 2025\s+<span class="fin-muted" data-fin-closed-badge>closed — figures per Bescheid<\/span>/);
+    assert.match(markup, /data-fin-official-income-tax>assessed 28,263\.37 · prepaid 44,168\.00/);
+    assert.match(markup, /data-fin-official-trade-tax>assessed 17,174\.90 · prepaid 13,184\.00/);
+    assert.match(markup, /data-fin-official-vat>assessed 13,945\.51 · paid 4,581\.14/);
+    assert.match(markup, /data-fin-official-refund>15,904\.63 <span class="fin-muted">paid out 2026-10-30<\/span>/);
+    assert.doesNotMatch(markup, /Taxes paid in 2025/);
+  });
+
+  test("shows offsets, notes and the Bescheid sources, and keeps TK on the ledger", () => {
+    const markup = taxesMarkup({ ...CLOSED_YEAR, totals: totals({ healthInsurance: 1179.36 }) }, e);
+    assert.match(markup, /<dt>TK health insurance<\/dt><dd data-fin-tax="health-insurance">1,179\.36<\/dd>/);
+    assert.match(markup, /data-fin-official-sources/);
+    assert.match(markup, /Ausgezahlt wurden 15\.904,63 € am 30\.10\.2026/);
+    assert.match(markup, /Bescheid vom 29\.10\.2026 über Einkommensteuer und Solidaritätszuschlag für 2025/);
+    const withOffsets = taxesMarkup({ ...CLOSED_YEAR, taxReturn: { ...ASSESSMENT_2025, offsets: [{ amount: 1116.9, target: "Gewerbesteuer 2025" }] } }, e);
+    assert.match(withOffsets, /Not paid out but carried: <strong>1,116\.90<\/strong> to Gewerbesteuer 2025\./);
   });
 });
 
