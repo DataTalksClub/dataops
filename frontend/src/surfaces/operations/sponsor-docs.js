@@ -1,4 +1,5 @@
 import { appendGuestTimezoneSelector, appendTimeChoiceSave, guestSlotFieldDefinition, guestEventMetadataRow } from "./sponsor-doc-guest-schedule.js";
+import { formatEditedTimestamp } from "../../core/dates.js";
 import { formatUserCode } from "../../dakit/device-code.js";
 import { renderSponsorDocGate } from "./sponsor-doc-gate.js";
 import { appendSponsorDocRadioField } from "./sponsor-doc-radio.js";
@@ -102,10 +103,6 @@ const isSpeakerDoc = (doc) => doc?.template === "webinar" || doc?.template === "
 function guestRoleLabel(doc) {
   if (isSpeakerDoc(doc)) return "speaker";
   return isPodcastGuestDoc(doc) ? "guest" : "sponsor";
-}
-
-function formatEditedTimestamp(iso) {
-  return iso ? `${String(iso).slice(0, 16).replace("T", " ")} UTC` : "";
 }
 
 function formatEditorLabel(doc) {
