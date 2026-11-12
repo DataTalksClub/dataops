@@ -290,6 +290,9 @@ export function createBookkeepingSurface(context) {
         // The month totals row shows the Finance overview's figures so both
         // pages match; the owner-withdrawal table below stays row-summed.
         financeMonthTotals: (month) => financeSummary.monthTotals(month),
+        // The period navigator already names a single month at the top of
+        // the page; only a year or "all records" needs in-table month heads.
+        hideGroupHead: /^\d{4}-\d{2}$/.test(lens),
       }) + financeSummary.markup(escapeHtml) + ownerSection;
     }
     function reconciliationPeriods() {

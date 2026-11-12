@@ -477,18 +477,21 @@ export function ledgerTableMarkup({
   selectedId,
   financeEntriesById = new Map(),
   financeMonthTotals = null,
+  // A single-month lens already names the month in the period navigator, so
+  // the in-table month group head would repeat it in every section.
+  hideGroupHead = false,
   statementLinks = new Map(),
   e,
 }) {
   const body = groups.map((group) => {
     const visibleRowCount = displayRowCount(group.entries);
     return html`<tbody class="bk-month" data-month="${e(group.month)}">
-        <tr class="bk-month__head">
+        ${hideGroupHead ? "" : html`<tr class="bk-month__head">
           <th scope="rowgroup" colspan="${COLUMN_COUNT}">
             <span class="bk-month__title">${e(group.month ? monthLabel(group.month) : "No date")}</span>
             <span class="bk-month__count dk-mono">${visibleRowCount}</span>
           </th>
-        </tr>
+        </tr>`}
         ${group.entries.map((entry) => {
           if (entry.reconciliationOnly) return bankOnlyRowMarkup(entry, e);
           const allocations = Array.isArray(entry.allocations) ? entry.allocations : [];

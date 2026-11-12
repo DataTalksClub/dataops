@@ -409,7 +409,10 @@ test("the month tax section lists debits and refunds with a money-out total", ()
     { id: "synthetic-tax-may", month: "2026-05", date: "2026-05-14", direction: "out", line: "taxes", mandatoryKind: "tax_debit", counterparty: "Synthetic Tax Office", description: "Synthetic other-tax debit", amount: "20.00", currency: "EUR", eur: 20 },
   ], "2026-04", escapeHtml);
 
-  assert.match(markup, /Taxes &amp; health insurance · April 2026/);
+  assert.match(markup, /<h2 id="bk-mandatory-payments-heading">Taxes &amp; health insurance<\/h2>/,
+    "the section heading carries no month; the period navigator names it once at the top");
+  assert.match(markup, /Taxes and health insurance for April 2026/,
+    "the table's accessible label keeps the period");
   assert.match(markup, /Synthetic Tax Office/);
   assert.match(markup, /VAT \/ USt/);
   assert.match(markup, /Synthetic Health Fund/);
@@ -557,7 +560,10 @@ test("monthly tax partition keeps consulting fees and allocation totals in the o
     e: escapeHtml,
   });
   assert.match(ownerMarkup, /data-owner-withdrawals/);
-  assert.match(ownerMarkup, /Owner withdrawals · April 2026/);
+  assert.match(ownerMarkup, /<h2 id="bk-owner-withdrawals-heading">Owner withdrawals<\/h2>/,
+    "the section heading carries no month; the period navigator names it once at the top");
+  assert.doesNotMatch(ownerMarkup, /bk-month__head/,
+    "a single-month section has no in-table month group head row");
   assert.equal((ownerMarkup.match(/data-bank-only=/g) || []).length, 1,
     "the classified bank-only owner projection stays visible in the owner section");
   assert.equal((ownerMarkup.match(/data-tx="synthetic-owner-draw"/g) || []).length, 1,
@@ -686,6 +692,12 @@ test("the month totals row shows the finance summary figures, not the visible-ro
   assert.doesNotMatch(fallback, /data-finance-total/);
   assert.match(fallback, /Money in <span class="dk-mono">€2,000\.00<\/span>/);
   assert.match(fallback, /Money out <span class="dk-mono">€86\.00<\/span>/);
+
+  // A single-month lens names the month in the period navigator, so the
+  // in-table month group head stays out of every section.
+  const headless = ledgerTableMarkup({ groups, hasEvidence: () => false, vocab: {}, selectedId: "", e: escapeHtml, hideGroupHead: true });
+  assert.doesNotMatch(headless, /bk-month__head/);
+  assert.match(headless, /bk-month__totals-row/);
 });
 
 test("bookkeeping finance monthTotals reads the finance summary month the totals row shows", async () => {
