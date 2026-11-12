@@ -22,3 +22,4 @@ backend/test-results/
 backend/playwright-report/
 backend/e2e/.auth-state.json
 .knowledge/
+/DONE-*.md
