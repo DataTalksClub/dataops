@@ -94,10 +94,13 @@ export function mandatoryPaymentsMarkup(entries, lens, escapeHtml, state = "read
     .filter((entry) => entry.month === lens && isTaxHealthEntry(entry))
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || ""))
       || String(a.id || "").localeCompare(String(b.id || "")));
-  const subtotal = exceptions.reduce((sum, entry) => {
+  // Money out only: a refund settles an earlier assessed year, so it is listed
+  // but never offsets this month's tax and health-insurance payments.
+  const outflow = exceptions.reduce((sum, entry) => {
+    if (isRefund(entry)) return sum;
     const value = Number(entry.eur);
     return entry.eur !== null && entry.eur !== undefined && Number.isFinite(value)
-      ? sum + (isRefund(entry) ? Math.abs(value) : -Math.abs(value))
+      ? sum + Math.abs(value)
       : sum;
   }, 0);
   const unconvertedCount = exceptions.filter((entry) => entry.eur === null
@@ -120,7 +123,7 @@ export function mandatoryPaymentsMarkup(entries, lens, escapeHtml, state = "read
       <tbody>${rows}</tbody>
     </table></div>
     <p class="bk-mandatory-payments__subtotal">
-      <span>Net month total</span><strong>${escapeHtml(formatAmount(subtotal, "EUR"))}</strong>
+      <span>Money out total</span><strong>${escapeHtml(formatAmount(-outflow, "EUR"))}</strong>
       ${unconvertedCount ? html`<span class="bk-mandatory-payments__unconverted">
         ${unconvertedCount} amount${unconvertedCount === 1 ? "" : "s"} without an EUR conversion
       </span>` : ""}
