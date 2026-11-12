@@ -1,10 +1,10 @@
-// Finance overview: an annual report of money in, money out and net, with the
-// two numbers that matter on top (net profit excluding VAT and the projected
-// VAT position). Every figure comes from GET /api/finance/summary,
-// the same payload `dataops finance summary --json` prints, so the portal and
-// the CLI cannot disagree; the tax estimate comes from
-// GET /api/finance/tax-estimate?year=YYYY. Pure markup helpers are exported
-// for tests.
+// Finance overview: one calm annual report. Three key numbers on top (profit,
+// taxes, owner pay), then taxes, one chart and a short month table; everything
+// else sits behind a disclosure. A finished year shows actuals only (assessed
+// per Bescheid, paid, refunded) and never an estimate; the running year adds a
+// rough planning estimate. Every figure comes from GET /api/finance/summary,
+// the payload Bookkeeping month totals and `dataops finance summary` also use,
+// so the three cannot disagree. Pure markup helpers are exported for tests.
 import { html } from "./shared.js";
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -39,163 +39,168 @@ function berlinToday() {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-const headRow = (labels) => html`<thead><tr>${labels.map((label) => html`<th scope="col">${label}</th>`).join("")}</tr></thead>`;
+const headRow = (labels) => html`<thead><tr>${labels.map((label, i) => html`<th scope="col"${i ? ' class="fin-num"' : ""}>${label}</th>`).join("")}</tr></thead>`;
 
-const vatWord = (value) => (value > 0 ? "owed to the Finanzamt" : value < 0 ? "refund from the Finanzamt" : "nothing owed");
+const longMonth = (month) =>
+  new Date(`${month}-01T00:00:00Z`).toLocaleString("en-US", { month: "long", timeZone: "UTC" });
 
-export function headlineMarkup(summary, e) {
-  const t = summary.totals;
-  const settled = t.vatPaid - t.vatRefunded;
-  return html`<div class="fin-hero">
-      <section class="fin-tile fin-tile--hero" aria-labelledby="fin-profit-label">
-        <h2 id="fin-profit-label" class="fin-tile__label">Net profit excluding VAT</h2>
-        <p class="fin-tile__value" data-fin-profit>${formatEur(t.netProfitExVat)} <span class="fin-tile__unit">EUR</span></p>
-        <p class="fin-tile__sub">Income net of VAT ${formatEur(t.incomeNetOfVat)}
-          − expenses net of VAT ${formatEur(t.expensesNetOfVat)}</p>
-        <p class="fin-tile__sub">After taxes and TK paid ${formatEur(t.taxesTotal)}: <strong>${formatEur(t.netAfterTaxes)}</strong></p>
-      </section>
-      <section class="fin-tile fin-tile--hero" aria-labelledby="fin-vat-label">
-        <h2 id="fin-vat-label" class="fin-tile__label">Projected VAT position</h2>
-        <p class="fin-tile__value" data-fin-vat>${formatEur(t.projectedVat)} <span class="fin-tile__unit">EUR</span></p>
-        <p class="fin-tile__sub">${vatWord(t.projectedVat)} · output VAT ${formatEur(t.outputVat)} − input VAT ${formatEur(t.inputVat)}</p>
-        <p class="fin-tile__sub">Actually ${settled < 0 ? "refunded" : "paid"} in this period: <strong>${formatEur(Math.abs(settled))}</strong></p>
-      </section>
-    </div>
-    <dl class="fin-stats">
-      <div><dt>Money in</dt><dd>${formatEur(t.moneyIn)}</dd></div>
-      <div><dt>Money out</dt><dd>${formatEur(t.moneyOut)}</dd></div>
-      <div><dt>Net (cash)</dt><dd>${formatEur(t.net, { sign: true })}</dd></div>
-      <div><dt>Taxes and TK paid</dt><dd data-fin-taxes-total>${formatEur(t.taxesTotal)}</dd></div>
-      <div><dt>Owner pay (below net profit)</dt><dd data-fin-owner-pay>${formatEur(t.ownerPay)}</dd></div>
-      <div><dt>Net after owner pay</dt><dd>${formatEur(t.netAfterOwnerPay, { sign: true })}</dd></div>
-    </dl>`;
+/** A year is finished once it is assessed (stored Bescheid) or simply over. */
+export function isFinishedYear(summary, today) {
+  return Boolean(summary.taxReturn?.closed) || Number(summary.period.label) < Number(today.slice(0, 4));
 }
 
+/** Months worth showing: never a future month; the running month is flagged. */
+export function shownMonths(summary, today) {
+  const current = today.slice(0, 7);
+  return summary.months
+    .filter((m) => !m.future && m.month <= current)
+    .map((m) => ({ ...m, inProgress: m.month === current }));
+}
+
+export function statusLine(summary, today) {
+  const year = summary.period.label;
+  if (summary.taxReturn?.closed) return `${year} · closed · assessed per Bescheid`;
+  if (isFinishedYear(summary, today)) return `${year} · finished · actual figures`;
+  const current = today.slice(0, 7);
+  return current.startsWith(year) ? `${year} · in progress · through ${longMonth(current)}` : year;
+}
+
+const tile = (label, value, sub, attr) => html`<section class="fin-tile">
+      <h2 class="fin-tile__label">${label}</h2>
+      <p class="fin-tile__value" ${attr}>${value}</p>
+      <p class="fin-tile__sub">${sub}</p>
+    </section>`;
+
+/** Key numbers first: profit, taxes, owner pay; cash in/out as one quiet line. */
+export function headlineMarkup(summary, e) {
+  const t = summary.totals;
+  const official = summary.taxReturn;
+  const assessed = official ? official.assessed.incomeTax + official.assessed.soli + official.assessed.tradeTax : 0;
+  const taxes = official
+    ? tile("Taxes assessed", formatEur(assessed), html`Income tax, Soli and trade tax per Bescheid · refunded ${formatEur(official.refunded)}`, "data-fin-taxes-total")
+    : tile("Taxes paid", formatEur(t.taxesTotal), "Income tax, trade tax and TK actually paid", "data-fin-taxes-total");
+  return html`<div class="fin-top"><div class="fin-hero">
+      ${tile("Profit", formatEur(t.netProfitExVat), html`Income ${formatEur(t.incomeNetOfVat)} − expenses ${formatEur(t.expensesNetOfVat)}, excluding VAT`, "data-fin-profit")}
+      ${taxes}
+      ${tile("Owner pay", formatEur(t.ownerPay), "Actual withdrawals to the owner", "data-fin-owner-pay")}
+    </div>
+    <p class="fin-cashline" data-fin-cash>Money in <strong>${formatEur(t.moneyIn)}</strong>
+      <span aria-hidden="true">·</span> Money out <strong>${formatEur(t.moneyOut)}</strong>
+      <span aria-hidden="true">·</span> Net cash <strong>${formatEur(t.net, { sign: true })}</strong>
+      <span class="fin-muted">EUR, same totals as Bookkeeping</span></p></div>`;
+}
+
+const taxRow = (label, cells, attr = "") => html`<tr${attr ? ` ${attr}` : ""}><th scope="row">${label}</th>${cells
+  .map((v) => html`<td class="fin-num">${v === null ? "" : formatEur(v)}</td>`).join("")}</tr>`;
+
 /**
- * Taxes paid this year by type and together. Only payments count: a refund
- * is never a negative tax, so it is listed on its own below. Once the year
- * has a stored Bescheid record it is closed: the tax figures become the
- * official assessed/prepaid/refunded numbers instead of the ledger buckets.
+ * Taxes for the year. A closed year shows the official numbers only: assessed
+ * per Bescheid, paid, and the refund that belongs to that tax year. An open
+ * year shows what was actually paid, by type. Only payments count: a refund
+ * is never a negative tax.
  */
 export function taxesMarkup(summary, e) {
   const t = summary.totals;
+  const year = e(summary.period.label);
   const official = summary.taxReturn;
   if (official) {
-    const estSoli = formatEur(official.assessed.incomeTax + official.assessed.soli);
-    const paidSoli = formatEur(official.paid.incomeTax + official.paid.soli);
-    const refunded = html`${formatEur(official.refunded)}${official.refundedOn
-      ? html` <span class="fin-muted">paid out ${e(official.refundedOn)}</span>` : ""}`;
+    const a = official.assessed, p = official.paid;
     const carried = official.offsets?.length
       ? html`<p class="fin-muted">Not paid out but carried: ${official.offsets
           .map((o) => html`<strong>${formatEur(o.amount)}</strong> to ${e(o.target)}`).join("; ")}.</p>`
       : "";
     return html`<section class="fin-block" aria-labelledby="fin-taxes-heading">
-      <h2 id="fin-taxes-heading" class="fin-block__title">Taxes in ${e(summary.period.label)}
-        <span class="fin-muted" data-fin-closed-badge>closed — figures per Bescheid</span></h2>
-      <dl class="fin-stats">
-        <div><dt>Einkommensteuer + Soli</dt><dd data-fin-official-income-tax>assessed ${estSoli} · prepaid ${paidSoli}</dd></div>
-        <div><dt>Gewerbesteuer</dt><dd data-fin-official-trade-tax>assessed ${formatEur(official.assessed.tradeTax)} · prepaid ${formatEur(official.paid.tradeTax)}</dd></div>
-        <div><dt>Umsatzsteuer</dt><dd data-fin-official-vat>assessed ${formatEur(official.assessed.vat)} · paid ${formatEur(official.paid.vat)}</dd></div>
-        <div><dt>TK health insurance</dt><dd data-fin-tax="health-insurance">${formatEur(t.healthInsurance)}</dd></div>
-        <div class="fin-stats__total"><dt>Refunded for ${e(summary.period.label)}</dt><dd data-fin-official-refund>${refunded}</dd></div>
-      </dl>
+      <h2 id="fin-taxes-heading" class="fin-block__title">Taxes for ${year}
+        <span class="fin-badge" data-fin-closed-badge>closed</span></h2>
+      <div class="fin-table-wrap"><table class="fin-table fin-table--compact">
+        ${headRow(["", "Assessed", "Paid"])}
+        <tbody>
+          ${taxRow("Income tax + Soli", [a.incomeTax + a.soli, p.incomeTax + p.soli], "data-fin-official-income-tax")}
+          ${taxRow("Trade tax", [a.tradeTax, p.tradeTax], "data-fin-official-trade-tax")}
+          ${taxRow("VAT", [a.vat, p.vat], "data-fin-official-vat")}
+          ${taxRow("TK health insurance", [null, t.healthInsurance], 'data-fin-tax="health-insurance"')}
+        </tbody>
+        <tfoot><tr class="fin-table__total" data-fin-official-refund><th scope="row">Refunded for ${year}${official.refundedOn
+          ? html` <span class="fin-muted">paid out ${e(official.refundedOn)}</span>` : ""}</th>
+          <td></td><td class="fin-num">${formatEur(official.refunded)}</td></tr></tfoot>
+      </table></div>
       ${carried}
-      <details class="fin-estimate-details" data-fin-official-sources>
-        <summary>Sources and notes (Bescheide, filed returns)</summary>
-        ${official.notes?.length ? html`<ul class="fin-gaps">${official.notes.map((note) => html`<li>${e(note)}</li>`).join("")}</ul>` : ""}
-        <ul class="fin-gaps">${official.sources.map((source) => html`<li><em>${e(source)}</em></li>`).join("")}</ul>
-      </details>
       ${refundsMarkup(summary, e)}
+      <details class="fin-details" data-fin-official-sources>
+        <summary>Documents these figures come from</summary>
+        ${official.notes?.length ? html`<ul class="fin-gaps">${official.notes.map((note) => html`<li>${e(note)}</li>`).join("")}</ul>` : ""}
+        <ul class="fin-gaps">${official.sources.map((source) => html`<li>${e(source)}</li>`).join("")}</ul>
+      </details>
     </section>`;
   }
   const lines = [
-    ["Einkommensteuer + Soli", t.incomeTax, "income-tax"],
-    ["Gewerbesteuer", t.tradeTax, "trade-tax"],
+    ["Income tax + Soli", t.incomeTax, "income-tax"],
+    ["Trade tax", t.tradeTax, "trade-tax"],
     ["TK health insurance", t.healthInsurance, "health-insurance"],
     ...(t.otherTaxes ? [["Other taxes", t.otherTaxes, "other"]] : []),
   ];
   return html`<section class="fin-block" aria-labelledby="fin-taxes-heading">
-      <h2 id="fin-taxes-heading" class="fin-block__title">Taxes paid in ${e(summary.period.label)}</h2>
-      <dl class="fin-stats">
-        ${lines.map(([label, value, key]) => html`<div><dt>${label}</dt><dd data-fin-tax="${key}">${formatEur(value)}</dd></div>`).join("")}
-        <div class="fin-stats__total"><dt>Total taxes and TK</dt><dd data-fin-tax="total">${formatEur(t.taxesTotal)}</dd></div>
-      </dl>
+      <h2 id="fin-taxes-heading" class="fin-block__title">Taxes paid in ${year}</h2>
+      <div class="fin-table-wrap"><table class="fin-table fin-table--compact">
+        <tbody>${lines.map(([label, value, key]) => html`<tr><th scope="row">${label}</th>
+          <td class="fin-num" data-fin-tax="${key}">${formatEur(value)}</td></tr>`).join("")}</tbody>
+        <tfoot><tr class="fin-table__total"><th scope="row">Total</th><td class="fin-num" data-fin-tax="total">${formatEur(t.taxesTotal)}</td></tr></tfoot>
+      </table></div>
+      ${t.vatPaid || t.vatRefunded ? html`<p class="fin-muted" data-fin-vat>VAT passed on to the Finanzamt:
+        ${formatEur(t.vatPaid - t.vatRefunded)} (not a cost, so not in the total).</p>` : ""}
       ${refundsMarkup(summary, e)}
     </section>`;
 }
 
-/**
- * "Tax estimate" block for the selected year: it fills itself when the year
- * loads (no button), so every year view immediately shows the rough estimate
- * and, for an open year, the after-tax planning numbers.
- */
+/** Refund payments that belong to this tax year, on demand, with the bank date they arrived on. */
+export function refundsMarkup(summary, e) {
+  const refunds = summary.taxRefunds || [];
+  if (!refunds.length) return "";
+  const sum = refunds.reduce((total, r) => total + (r.eur || 0), 0);
+  return html`<details class="fin-details" data-fin-refunds>
+      <summary>Refunds for ${e(summary.period.label)}: ${formatEur(sum)} in ${refunds.length} payment${refunds.length === 1 ? "" : "s"}</summary>
+      <p class="fin-muted">A refund belongs to the tax year it settles, not the year the money arrived. It is never income, profit or a negative tax.</p>
+      <div class="fin-table-wrap"><table class="fin-table fin-table--compact">
+        ${headRow(["Received", "Amount"])}
+        <tbody>${refunds.map((r) => html`<tr>
+          <th scope="row">${MONTH.test(r.month) ? html`<a href="${e(bookkeepingMonthUrl(r.month))}">${e(r.date)}</a>` : e(r.date)}
+            <span class="fin-muted">${e(r.counterparty)}</span></th>
+          <td class="fin-num">${formatEur(r.eur)}</td></tr>`).join("")}</tbody>
+      </table></div>
+    </details>`;
+}
+
+/** Placeholder for the running year's rough estimate; finished years never get one. */
 export function taxEstimateSectionMarkup(year, e) {
   return html`<section class="fin-block" aria-labelledby="fin-estimate-heading" data-fin-estimate>
-      <h2 id="fin-estimate-heading" class="fin-block__title">Tax estimate <span class="fin-muted">rough, Berlin, from the profit earned so far in ${e(year)}</span></h2>
+      <h2 id="fin-estimate-heading" class="fin-block__title">Planning for ${e(year)} <span class="fin-badge">rough estimate</span></h2>
       <div data-fin-estimate-body><p class="fin-muted">Calculating…</p></div>
     </section>`;
 }
 
-/**
- * The estimate itself: Einkommensteuer (§ 32a tariff after § 35 relief),
- * Solidaritätszuschlag and Gewerbesteuer separately and in total, the
- * comparison with the taxes already paid that year (official Bescheid figures
- * once the year is assessed), the after-tax planning numbers for an open
- * year, and the inputs, formula and statutory sources behind the numbers.
- */
+/** Running year only: expected tax, what is already paid, and what is safe to take out. */
 export function taxEstimateMarkup(est, e) {
-  const remainingWord = est.remaining >= 0
-    ? html`an estimated <strong>${formatEur(est.remaining)}</strong> still to pay in ${e(String(est.year))}`
-    : html`already <strong>${formatEur(-est.remaining)}</strong> more paid than this rough estimate`;
-  const afterTax = formatEur(est.planning.projectedAfterTaxEur);
+  if (est.assessment) return "";
   const safe = est.planning.safeToWithdrawEur === null
-    ? html`<span class="fin-muted">unknown until a bank statement is uploaded</span>`
+    ? html`<span class="fin-muted">needs a bank statement</span>`
     : formatEur(est.planning.safeToWithdrawEur);
-  const planning = est.assessment ? "" : html`<dl class="fin-stats" data-fin-planning>
-        <div><dt>Projected year-end money after tax <span class="fin-muted">rough</span></dt><dd data-fin-planning-after-tax>${afterTax}</dd></div>
-        <div><dt>Safe to withdraw now <span class="fin-muted">rough</span></dt><dd data-fin-planning-safe>${safe}</dd></div>
-        <div><dt>Owner pay already taken</dt><dd data-fin-planning-owner-pay>${formatEur(est.planning.ownerPayEur)}</dd></div>
-      </dl>`;
   return html`<div data-fin-estimate-result>
-      ${planning}
-      <dl class="fin-stats">
-        <div><dt>Profit earned so far (ex VAT)</dt><dd>${formatEur(est.profitEur)}</dd></div>
-        <div><dt>Einkommensteuer <span class="fin-muted">after § 35 relief</span></dt><dd data-fin-est-income-tax>${formatEur(est.incomeTax.einkommensteuer)}</dd></div>
-        <div><dt>Solidaritätszuschlag</dt><dd data-fin-est-soli>${formatEur(est.soli)}</dd></div>
-        <div><dt>Gewerbesteuer <span class="fin-muted">Berlin Hebesatz 410 %</span></dt><dd data-fin-est-trade-tax>${formatEur(est.tradeTax.steuer)}</dd></div>
-        <div class="fin-stats__total"><dt>Total tax estimate</dt><dd data-fin-est-total>${formatEur(est.totalEstimate)}</dd></div>
+      <dl class="fin-stats" data-fin-planning>
+        <div><dt>Expected tax for ${e(String(est.year))}</dt><dd data-fin-est-total>${formatEur(est.totalEstimate)}</dd></div>
+        <div><dt>Already paid</dt><dd data-fin-est-paid>${formatEur(est.paidTotal)}</dd></div>
+        <div><dt>${est.remaining >= 0 ? "Still to pay" : "Paid ahead"}</dt><dd data-fin-est-remaining>${formatEur(Math.abs(est.remaining))}</dd></div>
+        <div><dt>Safe to withdraw now</dt><dd data-fin-planning-safe>${safe}</dd></div>
       </dl>
-      <p class="fin-muted" data-fin-est-paid-line>${est.assessment ? "Per the Bescheid, prepaid" : "Already paid"} in ${e(String(est.year))}:
-        ESt + Soli ${formatEur(est.paid.incomeTax)}, GewSt ${formatEur(est.paid.tradeTax)}
-        — total <strong>${formatEur(est.paidTotal)}</strong>. Compared with the estimate: ${remainingWord}.
-        Refunds for earlier years never count as negative tax.</p>
-      <details class="fin-estimate-details" data-fin-est-details>
-        <summary>Inputs, formula and statutory sources</summary>
-        <ul class="fin-gaps">${[...est.inputs, ...est.formula, ...(est.assessment ? [] : est.planning.formula)]
-          .map((line) => html`<li>${e(line)}</li>`).join("")}</ul>
-        <ul class="fin-gaps">${est.sources.map((line) => html`<li><em>${e(line)}</em></li>`).join("")}</ul>
-        <p class="fin-muted">${e(est.disclaimer)}</p>
+      <details class="fin-details" data-fin-est-details>
+        <summary>How the expected tax splits</summary>
+        <div class="fin-table-wrap"><table class="fin-table fin-table--compact"><tbody>
+          <tr><th scope="row">Profit so far, excluding VAT</th><td class="fin-num">${formatEur(est.profitEur)}</td></tr>
+          <tr><th scope="row">Income tax</th><td class="fin-num" data-fin-est-income-tax>${formatEur(est.incomeTax.einkommensteuer)}</td></tr>
+          <tr><th scope="row">Soli</th><td class="fin-num" data-fin-est-soli>${formatEur(est.soli)}</td></tr>
+          <tr><th scope="row">Trade tax</th><td class="fin-num" data-fin-est-trade-tax>${formatEur(est.tradeTax.steuer)}</td></tr>
+          <tr><th scope="row">Money after tax at year end</th><td class="fin-num" data-fin-planning-after-tax>${formatEur(est.planning.projectedAfterTaxEur)}</td></tr>
+        </tbody></table></div>
       </details>
-    </div>`;
-}
-
-/** Refunds stay visible as cash with their ledger rows; they are not tax, revenue or profit. */
-export function refundsMarkup(summary, e) {
-  const refunds = summary.taxRefunds || [];
-  if (!refunds.length) return "";
-  const t = summary.totals;
-  return html`<div class="fin-refunds" data-fin-refunds>
-      <h3 class="fin-block__subtitle">Tax refunds received: ${formatEur(t.taxRefunds)} EUR</h3>
-      <p class="fin-muted">Counted in money in and net cash (${formatEur(t.moneyIn)} money in includes them).
-        Not revenue (income net of VAT ${formatEur(t.incomeNetOfVat)} excludes them), not profit, and never a negative tax in any year:
-        a refund settles an earlier assessed year.</p>
-      <div class="fin-table-wrap"><table class="fin-table">
-        ${headRow(["Bank date", "Amount", "From", "Booking text", "Ledger row"])}
-        <tbody>${refunds.map((r) => html`<tr>
-          <td>${MONTH.test(r.month) ? html`<a href="${e(bookkeepingMonthUrl(r.month))}">${e(r.date)}</a>` : e(r.date)}</td>
-          <td class="fin-num">${formatEur(r.eur)}</td><td>${e(r.counterparty)}</td><td>${e(r.description)}</td>
-          <td><code>${e(r.id)}</code></td></tr>`).join("")}</tbody>
-      </table></div>
     </div>`;
 }
 
@@ -240,7 +245,7 @@ export function cashChartMarkup(months, e) {
     const cx = left + slot * i + slot / 2;
     const x = cx - barW / 2;
     const label = `${m.month}: in ${formatEur(m.moneyIn)}, out ${formatEur(m.moneyOut)}, net ${formatEur(m.net, { sign: true })} EUR`;
-    return html`<g class="fin-chart__month${m.future ? " is-future" : ""}" data-fin-hover="${e(label)}">
+    return html`<g class="fin-chart__month${m.inProgress ? " is-in-progress" : ""}" data-fin-hover="${e(label)}">
         <rect class="fin-chart__hit" x="${left + slot * i}" y="${top}" width="${slot}" height="${plotH}"><title>${e(label)}</title></rect>
         <path class="fin-chart__in" d="${bar(x, barW, y(0) - 1, y(m.moneyIn))}"/>
         <path class="fin-chart__out" d="${bar(x, barW, y(0) + 1, y(-m.moneyOut))}"/>
@@ -250,68 +255,41 @@ export function cashChartMarkup(months, e) {
   }).join("");
   return html`<figure class="fin-chart">
       <figcaption class="fin-chart__caption">
-        <span class="fin-chart__title">Money in and out per month (EUR)</span>
-        <span class="fin-legend"><span class="fin-legend__swatch fin-legend__swatch--in"></span>Money in (above)</span>
-        <span class="fin-legend"><span class="fin-legend__swatch fin-legend__swatch--out"></span>Money out (below)</span>
+                <span class="fin-legend"><span class="fin-legend__swatch fin-legend__swatch--in"></span>Money in</span>
+        <span class="fin-legend"><span class="fin-legend__swatch fin-legend__swatch--out"></span>Money out</span>
         <span class="fin-legend"><span class="fin-legend__dot"></span>Net</span>
       </figcaption>
       <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Money in and out per month; the table below has the same numbers">${grid}${marks}</svg>
     </figure>`;
 }
 
-export function profitChartMarkup(months, e) {
-  const W = 720, H = 180, left = 48, right = 12, top = 12, bottom = 28;
-  const plotW = W - left - right, plotH = H - top - bottom;
-  const values = months.map((m) => m.netProfitExVat);
-  const hi = Math.max(0, ...values), lo = Math.min(0, ...values);
-  const span = niceMax(Math.max(hi, -lo, 1));
-  const top0 = hi > 0 ? span : 0, bot0 = lo < 0 ? -span : 0;
-  const range = top0 - bot0 || 1;
-  const y = (v) => top + ((top0 - v) / range) * plotH;
-  const slot = plotW / months.length;
-  const barW = Math.max(6, Math.min(28, slot * 0.5));
-  const ticks = [...new Set(Array.from({ length: 5 }, (_, index) => top0 - (range * index) / 4))];
-  const grid = ticks.map((v) => html`<line class="fin-chart__grid${v === 0 ? " fin-chart__base" : ""}" x1="${left}" x2="${W - right}" y1="${y(v)}" y2="${y(v)}"/>
-      <text class="fin-chart__tick" x="${left - 6}" y="${y(v) + 4}" text-anchor="end">${v < 0 ? "−" : ""}${compact(Math.abs(v))}</text>`).join("");
-  const marks = months.map((m, i) => {
-    const cx = left + slot * i + slot / 2;
-    const label = `${m.month}: net profit excluding VAT ${formatEur(m.netProfitExVat, { sign: true })} EUR`;
-    return html`<g class="fin-chart__month${m.future ? " is-future" : ""}" data-fin-hover="${e(label)}">
-        <rect class="fin-chart__hit" x="${left + slot * i}" y="${top}" width="${slot}" height="${plotH}"><title>${e(label)}</title></rect>
-        <path class="${m.netProfitExVat < 0 ? "fin-chart__loss" : "fin-chart__in"}" d="${bar(cx - barW / 2, barW, y(0), y(m.netProfitExVat))}"/>
-        <text class="fin-chart__tick" x="${cx}" y="${H - 8}" text-anchor="middle">${shortMonth(m.month)}</text>
-      </g>`;
-  }).join("");
-  return html`<figure class="fin-chart">
-      <figcaption class="fin-chart__caption"><span class="fin-chart__title">Net profit excluding VAT per month (EUR)</span></figcaption>
-      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Net profit excluding VAT per month; the table below has the same numbers">${grid}${marks}</svg>
-    </figure>`;
-}
-
-export function monthTableMarkup(summary, e) {
-  const rows = [...summary.months, { month: "Total", ...summary.totals, total: true }];
+/**
+ * One row per month that has happened: money in and out (the Bookkeeping
+ * totals), profit, one combined taxes figure and the owner's withdrawals. The
+ * split of taxes by type appears once, under the year total.
+ */
+export function monthTableMarkup(summary, e, today = "9999-12-31") {
+  const months = shownMonths(summary, today);
+  const t = summary.totals;
   const cell = (v, opts) => html`<td class="fin-num">${formatEur(v, opts)}</td>`;
-  const otherTaxes = rows.some((r) => r.otherTaxes);
-  return html`<div class="fin-table-wrap"><table class="fin-table">
+  const cash = (v) => html`<td class="fin-num fin-col-cash">${formatEur(v)}</td>`;
+  const cells = (r) => html`${cash(r.moneyIn)}${cash(r.moneyOut)}${cell(r.netProfitExVat, { sign: true })}${cell(r.taxesTotal)}${cell(r.ownerPay)}`;
+  const split = [["Income tax + Soli", t.incomeTax], ["Trade tax", t.tradeTax], ["TK", t.healthInsurance], ...(t.otherTaxes ? [["Other", t.otherTaxes]] : [])]
+    .map(([label, value]) => html`${label} ${formatEur(value)}`).join(" · ");
+  return html`<div class="fin-table-wrap"><table class="fin-table fin-table--months">
       <caption class="fin-sr">Per month, EUR</caption>
-      <thead><tr><th scope="col">Month</th><th scope="col">Money in</th><th scope="col">Money out</th><th scope="col">Net</th>
-        <th scope="col">Income net of VAT</th><th scope="col">Expenses net of VAT</th><th scope="col">Profit ex VAT</th>
-        <th scope="col">ESt + Soli</th><th scope="col">GewSt</th><th scope="col">TK</th>${otherTaxes ? html`<th scope="col">Other taxes</th>` : ""}
-        <th scope="col">Taxes total</th><th scope="col">Tax refunds</th><th scope="col">Owner pay</th><th scope="col">Output VAT</th><th scope="col">Input VAT</th>
-        <th scope="col">VAT paid</th><th scope="col">VAT refunded</th><th scope="col">VAT position</th><th scope="col">Rows</th></tr></thead>
-      <tbody>${rows.map((r) => {
-        const href = !r.total && MONTH.test(r.month) ? bookkeepingMonthUrl(r.month) : "";
-        const month = href
-          ? html`<a class="fin-table__month-link" data-fin-month-link href="${e(href)}">${e(r.month)}</a>`
-          : e(r.month);
-        return html`<tr class="${r.total ? "fin-table__total" : r.future ? "is-future" : ""}"${href ? " data-fin-bookkeeping-row" : ""}>
-        <th scope="row">${month}${r.future ? " <small>(not over)</small>" : ""}</th>
-        ${cell(r.moneyIn)}${cell(r.moneyOut)}${cell(r.net, { sign: true })}${cell(r.incomeNetOfVat)}${cell(r.expensesNetOfVat)}
-        ${cell(r.netProfitExVat, { sign: true })}${cell(r.incomeTax)}${cell(r.tradeTax)}${cell(r.healthInsurance)}${otherTaxes ? cell(r.otherTaxes) : ""}
-        ${cell(r.taxesTotal)}${cell(r.taxRefunds)}${cell(r.ownerPay)}${cell(r.outputVat)}${cell(r.inputVat)}
-        ${cell(r.vatPaid)}${cell(r.vatRefunded)}${cell(r.projectedVat)}
-        <td class="fin-num">${e(String(r.entryCount))}</td></tr>`;
+      <thead><tr><th scope="col">Month</th><th scope="col" class="fin-num fin-col-cash">Money in</th>
+        <th scope="col" class="fin-num fin-col-cash">Money out</th><th scope="col" class="fin-num">Profit</th>
+        <th scope="col" class="fin-num">Taxes</th><th scope="col" class="fin-num">Owner pay</th></tr></thead>
+      <tbody>${months.map((r) => {
+        const href = MONTH.test(r.month) ? bookkeepingMonthUrl(r.month) : "";
+        const name = html`${e(longMonth(r.month))}`;
+        return html`<tr${r.inProgress ? ' class="is-in-progress" data-fin-in-progress' : ""}${href ? " data-fin-bookkeeping-row" : ""}>
+        <th scope="row">${href ? html`<a class="fin-table__month-link" data-fin-month-link href="${e(href)}">${name}</a>` : name}${r.inProgress
+          ? html` <span class="fin-badge">in progress</span>` : ""}</th>${cells(r)}</tr>`;
       }).join("")}</tbody>
+      <tfoot><tr class="fin-table__total" data-fin-year-total><th scope="row">${e(summary.period.label)} total</th>${cells(t)}</tr>
+        <tr class="fin-table__split" data-fin-tax-split><th scope="row">Taxes by type</th><td colspan="5">${split}</td></tr></tfoot>
     </table></div>`;
 }
 
@@ -339,55 +317,50 @@ export function periodControlsMarkup(period, today, e) {
   for (let y = Number(currentYear); y >= 2024; y -= 1) years.push(String(y));
   if (!years.includes(year)) years.push(year);
   years.sort((a, b) => Number(b) - Number(a));
-  return html`<div class="fin-period" role="group" aria-label="Period">
-      <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-fin-period="current-year" aria-pressed="${String(year) === currentYear}">Current year</button>
-      <label class="fin-period__field"><span>Year</span>
-        <select class="dk-select" data-fin-year aria-label="Finance report year">
-          ${years.map((y) => html`<option value="${y}"${y === year ? " selected" : ""}>${y}</option>`).join("")}
-        </select></label>
+  return html`<div class="fin-period" role="group" aria-label="Year">
+      ${years.map((y) => html`<button type="button" class="fin-period__year" data-fin-year="${e(y)}" aria-pressed="${y === year}">${e(y)}</button>`).join("")}
     </div>`;
 }
 
 const TAX_TYPE = { "income-tax": "Income tax + Soli", "trade-tax": "Trade tax", vat: "VAT", "health-insurance": "Health insurance (TK)", other: "Other" };
 
-/** Scheduled tax and TK auto-debits, the 30-day total and the balance check. */
+/** Next tax and TK auto-debits: the amount due and the balance first, the schedule on demand. */
 export function upcomingMarkup(u, e) {
   const balance = u.balance
-    ? html`${formatEur(u.balance.amount)} ${e(u.balance.currency)}
-        <span class="fin-muted">(${e(u.balance.accountId)}, as of ${e(u.balance.asOf)}${u.balance.stale ? ", stale" : ""})</span>`
+    ? html`${formatEur(u.balance.amount)} <span class="fin-muted">as of ${e(u.balance.asOf)}${u.balance.stale ? ", stale" : ""}</span>`
     : html`<span class="fin-muted">unknown</span>`;
-  const status = (d) => (d.status === "paid" ? `Paid (${d.matched.kind} ${d.matched.date})` : d.status === "not-seen" ? "Not seen yet" : "Scheduled");
+  const status = (d) => (d.status === "paid" ? `Paid ${d.matched.date}` : d.status === "not-seen" ? "Not seen yet" : "Scheduled");
   return html`<section class="fin-block" aria-labelledby="fin-upcoming-heading">
-      <h2 id="fin-upcoming-heading" class="fin-block__title">Upcoming tax debits <span class="fin-muted">next ${e(String(u.days))} days, auto-debited</span></h2>
+      <h2 id="fin-upcoming-heading" class="fin-block__title">Upcoming tax debits</h2>
       <dl class="fin-stats">
         <div><dt>Due in the next 30 days</dt><dd data-fin-due30>${formatEur(u.dueNext30)}</dd></div>
         <div><dt>Due in the next ${e(String(u.days))} days</dt><dd>${formatEur(u.dueInWindow)}</dd></div>
         <div><dt>Account balance</dt><dd>${balance}</dd></div>
       </dl>
       ${u.shortfall ? html`<p class="fin-error" role="alert">Shortfall: the balance does not cover the ${formatEur(u.dueNext30)} EUR due in the next 30 days.</p>` : ""}
-      ${u.debits.length ? html`<div class="fin-table-wrap"><table class="fin-table">
-        ${headRow(["Date", "Amount", "Tax type", "What", "Source", "Status"])}
-        <tbody>${u.debits.map((d) => html`<tr class="${d.status === "paid" ? "is-future" : ""}">
-          <td>${e(d.date)}${d.approximate ? " ~" : ""}${d.shifted ? html`<br><small class="fin-muted">${e(d.shifted)}</small>` : ""}</td>
-          <td class="fin-num">${formatEur(d.amount)}</td><td>${e(TAX_TYPE[d.taxType] || d.taxType)}</td><td>${e(d.label)}</td>
-          <td>${e(d.sourceRef ? `${d.source} ${d.sourceRef}` : d.source)}</td><td>${e(status(d))}</td></tr>`).join("")}</tbody>
-      </table></div>` : html`<p class="fin-muted">No scheduled debits in this window.</p>`}
+      ${u.debits.length ? html`<details class="fin-details" data-fin-upcoming-schedule>
+        <summary>Schedule: ${u.debits.length} debit${u.debits.length === 1 ? "" : "s"}</summary>
+        <div class="fin-table-wrap"><table class="fin-table fin-table--compact">
+        ${headRow(["Date", "Amount", "Tax", "Status"])}
+        <tbody>${u.debits.map((d) => html`<tr class="${d.status === "paid" ? "is-done" : ""}">
+          <th scope="row">${e(d.date)}${d.approximate ? " ~" : ""}${d.shifted ? html` <span class="fin-muted">${e(d.shifted)}</span>` : ""}</th>
+          <td class="fin-num">${formatEur(d.amount)}</td><td class="fin-num">${e(TAX_TYPE[d.taxType] || d.taxType)}</td>
+          <td class="fin-num">${e(status(d))}</td></tr>`).join("")}</tbody>
+      </table></div></details>` : html`<p class="fin-muted">No scheduled debits in this window.</p>`}
       ${u.warnings.length ? html`<ul class="fin-gaps">${u.warnings.map((w) => html`<li>${e(w)}</li>`).join("")}</ul>` : ""}
     </section>`;
 }
 
-const cliFlag = (period) => `--year ${period.label}`;
-
-export function overviewMarkup(summary, e) {
+export function overviewMarkup(summary, e, today = "9999-12-31") {
+  const finished = isFinishedYear(summary, today);
   return html`${headlineMarkup(summary, e)}
-    ${cashChartMarkup(summary.months, e) + profitChartMarkup(summary.months, e)}
     ${taxesMarkup(summary, e)}
-    ${taxEstimateSectionMarkup(summary.period.label, e)}
+    ${finished ? "" : taxEstimateSectionMarkup(summary.period.label, e)}
     <section class="fin-block" aria-labelledby="fin-months-heading">
       <h2 id="fin-months-heading" class="fin-block__title">By month</h2>
-      ${monthTableMarkup(summary, e)}
-    </section>
-    <p class="fin-muted">Same numbers on the command line: <code>dataops finance summary ${e(cliFlag(summary.period))}</code></p>`;
+      ${cashChartMarkup(shownMonths(summary, today), e)}
+      ${monthTableMarkup(summary, e, today)}
+    </section>`;
 }
 
 export function createFinanceOverviewSurface(context) {
@@ -403,9 +376,9 @@ export function createFinanceOverviewSurface(context) {
     const surface = document.createElement("section");
     surface.className = "finance-overview-surface";
     documentList.append(surface);
-    setRouteTitle("Finance overview");
+    setRouteTitle("Finance");
     surface.innerHTML = html`<header class="dk-page-header">
-        <div class="dk-page-header__main"><h1 class="dk-page-header__title">Finance overview</h1></div>
+        <div class="dk-page-header__main"><h1 class="dk-page-header__title">Finance</h1></div>
         <div data-fin-controls>${periodControlsMarkup(period, today, escapeHtml)}</div>
       </header>
       <p class="fin-period-label" data-fin-label></p>
@@ -448,10 +421,13 @@ export function createFinanceOverviewSurface(context) {
       try {
         const summary = await request(workApiUrl(`/api/finance/summary?${query}`));
         if (mine !== generation) return;
-        surface.querySelector("[data-fin-label]").textContent =
-          `${summary.period.label} · ${summary.period.from} to ${summary.period.to} · EUR${summary.taxReturn?.closed ? " · year closed (assessed per Bescheid)" : ""}`;
-        body.innerHTML = overviewMarkup(summary, escapeHtml);
-        loadTaxEstimate();
+        surface.querySelector("[data-fin-label]").textContent = statusLine(summary, today);
+        body.innerHTML = overviewMarkup(summary, escapeHtml, today);
+        // A finished year is actuals only: no estimate is even requested.
+        estimateClosed = isFinishedYear(summary, today);
+        estimatePending = !estimateClosed;
+        if (estimateClosed) syncUpcoming();
+        else loadTaxEstimate();
       } catch (error) {
         if (mine !== generation) return;
         body.innerHTML = html`<p class="fin-error" role="alert">Could not load the finance summary: ${escapeHtml(error?.message || "request failed")}</p>
@@ -496,12 +472,10 @@ export function createFinanceOverviewSurface(context) {
 
     surface.addEventListener("click", (event) => {
       activateFinanceMonthlyRow(event, document.getSelection?.());
-      if (event.target.closest("[data-fin-period='current-year']")) choose({ year: today.slice(0, 4) });
+      const yearButton = event.target.closest("[data-fin-year]");
+      if (yearButton && yearButton.getAttribute("data-fin-year") !== period.year) choose({ year: yearButton.getAttribute("data-fin-year") });
       if (event.target.closest("[data-fin-retry]")) load();
       if (event.target.closest("[data-fin-tax-estimate]")) loadTaxEstimate();
-    });
-    surface.addEventListener("change", (event) => {
-      if (event.target.matches("[data-fin-year]")) choose({ year: event.target.value });
     });
     surface.addEventListener("pointerover", (event) => {
       const mark = event.target.closest?.("[data-fin-hover]");
