@@ -81,6 +81,7 @@ export function isAnonymousNewsletterPreviewAsset(method: string, path: string):
   return (
     path === '/src/newsletter-preview-page.js'
     || path === '/src/core/guarded-fetch.js'
+    || path === '/src/core/dates.js'
     || path === '/src/surfaces/operations/newsletter-preview.js'
     || path === '/src/styles/newsletter-preview.css'
     || path === '/src/styles/sponsor-docs.css'

@@ -214,6 +214,7 @@ export function isAnonymousSponsorDocAsset(method: string, path: string): boolea
   return (
     path === '/src/sponsor-doc-page.js'
     || path === '/src/core/guarded-fetch.js'
+    || path === '/src/core/dates.js'
     || path === '/src/surfaces/operations/sponsor-docs.js'
     || path === '/src/surfaces/operations/sponsor-doc-gate.js'
     || path === '/src/surfaces/operations/sponsor-doc-select.js'
