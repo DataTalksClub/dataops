@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { WORKSHOP_DURATION_MINUTES } from './ownerCalendarOverlay';
+import { OWNER_PERSONAL_CALENDAR, OWNER_WORK_EMAIL, SPONSOR_DOC_REVIEWER } from '../identity/operatingIdentities';
 
 /**
  * Calendar holds: tentative event reservations (DataOps + Google) with a 7d
@@ -35,11 +36,8 @@ export const HOLD_DEFAULT_TTL_DAYS = 7;
  * attendee-free.
  */
 export const HOLD_ZOOM_LOCATION = 'https://zoom.us/j/94755324762';
-export const HOLD_REQUIRED_ATTENDEES: readonly string[] = [
-  'alexey@datatalks.club',
-  'alexey.s.grigoriev@gmail.com',
-];
-export const HOLD_ATTENDEE_DENY_LIST: readonly string[] = ['valeriia@datatalks.club'];
+export const HOLD_REQUIRED_ATTENDEES: readonly string[] = [OWNER_WORK_EMAIL, OWNER_PERSONAL_CALENDAR];
+export const HOLD_ATTENDEE_DENY_LIST: readonly string[] = [SPONSOR_DOC_REVIEWER];
 export const HOLD_INVITE_LEAD_MINUTES = 5;
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

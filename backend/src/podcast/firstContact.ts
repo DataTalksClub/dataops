@@ -1,5 +1,7 @@
+import { OPERATIONS_SENDER } from '../identity/operatingIdentities';
+
 /** Approved first-contact copy. Rendering creates no records and sends no mail. */
-export const PODCAST_FIRST_CONTACT_FROM = 'orin@datatalks.club';
+export const PODCAST_FIRST_CONTACT_FROM = OPERATIONS_SENDER;
 export const PODCAST_DOCS_URL = 'https://datatalksclub.github.io/docs/activities/podcast/';
 
 const BERLIN_TZ = 'Europe/Berlin';
