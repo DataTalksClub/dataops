@@ -1230,6 +1230,65 @@ describe("Planning surface production behavior", () => {
     assert.match(dom.slots.innerHTML, /class="newsletter-issue-link" href="\/newsletter\/issue-past"\s*title="Open issue page"/);
   });
 
+  test("a failed load for a view the user already left does not replace the current view", async () => {
+    const dom = createNewsletterDom();
+    const upcoming = weeklyIssue({ id: "issue-up", label: "Weekly #42", publicationDate: "2026-08-21", status: "planned" });
+    const past = weeklyIssue({ id: "issue-past", label: "Weekly #40", publicationDate: "2026-08-01", status: "sent" });
+    const pending = [];
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      request: (url) => new Promise((resolve, reject) => {
+        pending.push({ past: Boolean(new URL(String(url)).searchParams.get("to")), resolve, reject });
+      }),
+    });
+    const first = harness.surface.renderNewsletterSurface();
+    await nextTicks();
+    dom.viewPast.onclick();
+    await nextTicks();
+    assert.equal(pending.length, 2);
+    assert.deepEqual(pending.map((entry) => entry.past), [false, true]);
+
+    pending[1].resolve({ alerts: [], items: [past] });
+    await nextTicks();
+    pending[0].reject(new Error("upstream timeout"));
+    await first;
+    await nextTicks();
+
+    assert.match(dom.slots.innerHTML, /href="\/newsletter\/issue-past"/);
+    assert.doesNotMatch(dom.slots.innerHTML, /Newsletter schedule unavailable/);
+    assert.equal(dom.status.textContent, "");
+  });
+
+  test("two loads of the same view resolve to the latest response", async () => {
+    const dom = createNewsletterDom();
+    const pending = [];
+    const harness = createPlanningHarness({
+      newsletter: dom,
+      request: () => new Promise((resolve, reject) => pending.push({ resolve, reject })),
+    });
+    const first = harness.surface.renderNewsletterSurface();
+    await nextTicks();
+    dom.viewUpcoming.onclick();
+    await nextTicks();
+    assert.equal(pending.length, 2);
+
+    pending[1].resolve({ alerts: [], items: [weeklyIssue({ id: "issue-new", label: "Weekly #43", publicationDate: "2026-08-28" })] });
+    await nextTicks();
+    pending[0].resolve({ alerts: [], items: [weeklyIssue({ id: "issue-old", label: "Weekly #42", publicationDate: "2026-08-21" })] });
+    await first;
+    await nextTicks();
+    assert.match(dom.slots.innerHTML, /href="\/newsletter\/issue-new"/);
+    assert.doesNotMatch(dom.slots.innerHTML, /issue-old/);
+
+    // The latest load failing still shows the honest failure state.
+    dom.viewUpcoming.onclick();
+    await nextTicks();
+    pending[2].reject(new Error("upstream timeout"));
+    await nextTicks();
+    assert.match(dom.slots.innerHTML, /Newsletter schedule unavailable/);
+    assert.equal(dom.status.textContent, "Could not load newsletter schedule: upstream timeout");
+  });
+
   test("the issue page shows one issue's details with company, doc, stats, and card links", async () => {
     const dom = createNewsletterDom();
     const issue = {

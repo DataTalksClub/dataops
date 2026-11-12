@@ -323,12 +323,16 @@ export function createNewsletterPlanner(context) {
       `;
     }
 
+    // Only the latest load may write the view: a slower or failed response
+    // for a view the user already left must not replace the current one.
+    let loadRevision = 0;
     async function load() {
+      const revision = ++loadRevision;
       status.textContent = "Loading newsletter issues…";
       try {
         const view = currentView;
         const result = await api(`?${new URLSearchParams(ranges[view])}`);
-        if (view !== currentView) return;
+        if (revision !== loadRevision) return;
         items = result.items || [];
 
         // Alerts are about what is still to come.
@@ -365,6 +369,7 @@ export function createNewsletterPlanner(context) {
           `;
         status.textContent = "";
       } catch (error) {
+        if (revision !== loadRevision) return;
         status.textContent = `Could not load newsletter schedule: ${error.message}`;
         surface.querySelector("[data-alerts]").replaceChildren();
         surface.querySelector("[data-slots]").innerHTML = `
