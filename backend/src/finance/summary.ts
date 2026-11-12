@@ -67,6 +67,7 @@ export type Entry = {
 };
 
 export type Totals = {
+  /** Operating income received: tax and TK refunds are kept out of money in. */
   moneyIn: number;
   moneyOut: number;
   net: number;
@@ -91,8 +92,9 @@ export type Totals = {
   /** incomeTax + tradeTax + otherTaxes + healthInsurance. */
   taxesTotal: number;
   /**
-   * Tax and TK refunds received: money in, never revenue and never a negative
-   * tax in any year, because a refund settles an earlier assessed year.
+   * Tax and TK refunds received: listed on their own, kept out of money in
+   * and net cash, never revenue and never a negative tax in any year,
+   * because a refund settles an earlier assessed year.
    */
   taxRefunds: number;
   netAfterTaxes: number;
@@ -125,13 +127,13 @@ export type FinanceSummary = {
 
 export const SOURCE_RULES = [
   'Confirmed ledger rows count, along with unmatched bank statement rows classified as TK or Finanzamt mandatory debits. Pending and rejected invoice drafts never count; they are listed as gaps.',
-  'A row is booked in the month it was paid (paidDate), or its transactionDate when it has no paid date. entryType income is money in, expense is money out.',
+  'A row is booked in the month it was paid (paidDate), or its transactionDate when it has no paid date. entryType income is money in, expense is money out; Finanzamt, TK and owner-pay refunds coming back in are the one exception and stay out of money in.',
   'Issued outgoing invoices count only once paid, through the payment row. An unpaid invoice is not income.',
   'Bank statement lines paired by reconciliation to a retained ledger row are counted through that row, respecting manual choices. Overlapping statement copies are counted once. Unmatched TK and Finanzamt debit lines are counted directly; other unmatched statement lines are listed as gaps.',
   'A bookkeeping-sheet row that repeats an invoice, sponsor-payment or payout row (same direction, currency and amount, paid within 3 days, same payer or payee) is dropped and listed under duplicates; the non-sheet row is kept.',
   'EUR conversion: a EUR row is taken as is. A non-EUR row uses its booked EUR amount (amountEur, what the bank actually credited or debited), with the implied rate shown. Without one, the ECB reference rate for the paid date (or the last ECB business day before it) is used. A row that cannot be converted is excluded from the totals and listed as a gap.',
   'Lines: category VAT or a Finanzamt USt/UMS.ST purpose in the ledger row or its matched statement reference is VAT paid/refunded; other Finanzamt tax purposes are other taxes; TK/Health Insurance is health insurance. These mandatory payments do not affect operating profit.',
-  'Taxes paid are shown per type: Einkommensteuer (with Soli and Körperschaftsteuer), Gewerbesteuer, TK and other, and as one combined total. Only payments count. A Finanzamt or TK refund is money in and is listed as a tax refund with its ledger row; it is not revenue, not profit, and never a negative tax in any year, because it settles an earlier assessed year. When a refund row carries taxYearAttribution, each attributed part is reported in its assessed tax year while Bookkeeping keeps the bank row on its paid date.',
+  'Taxes paid are shown per type: Einkommensteuer (with Soli and Körperschaftsteuer), Gewerbesteuer, TK and other, and as one combined total. Only payments count. A Finanzamt or TK refund is listed as a tax refund with its ledger row and kept out of money in and net cash: it is not income, not revenue, and never a negative tax in any year, because it settles an earlier assessed year. When a refund row carries taxYearAttribution, each attributed part is reported in its assessed tax year while Bookkeeping keeps the bank row on its paid date.',
   'VAT uses the reviewed ledger vatAmount first, then linked stored document VAT facts. If VAT amount is absent, an explicit VAT rate and net amount or the document gross-minus-net amount determine it; explicit 0% remains zero. Reverse-charge VAT is derived only from an explicit rate and net amount and is counted as both output and input VAT. No rate or source VAT fields means zero VAT.',
   'Refunds from suppliers (credit notes: rows with subtype Refund or a credit-note:<number> source key) are contra-expense: they reduce operating expenses, their VAT reduces input VAT, and they are not money in and not revenue.',
   'Owner pay: ledger rows with category Owner pay (ownerPayType salary, draw, reimbursement or unknown, decided from the booking text and counterparty) are money paid to the owner personally. They are money out, never operating expenses, and appear on their own line below net profit; net after owner pay = net after taxes and TK - owner pay.',
@@ -356,7 +358,11 @@ function total(entries: Entry[]): Totals {
       reverseChargeOutputVat -= reverseChargeVat;
       continue;
     }
-    c[entry.direction === 'in' ? 'moneyIn' : 'moneyOut'] += value;
+    // Money in is operating income only: a refund on the VAT, taxes,
+    // health-insurance or owner-pay line is cash back, not income, and stays
+    // out of money in and net cash (it is reported on its own line below).
+    if (entry.direction === 'out') c.moneyOut += value;
+    else if (entry.line === 'operating') c.moneyIn += value;
     if (entry.line === 'operating') {
       if (entry.direction === 'out') {
         c.operatingExpenses += value;
@@ -529,6 +535,7 @@ export function summarize(input: SummaryInput): FinanceSummary {
   const currencies = new Map<string, { in: number; out: number; inEur: number; outEur: number }>();
   for (const entry of entries) {
     if (entry.refund) continue; // contra-expense: never money in or out
+    if (entry.direction === 'in' && entry.line !== 'operating') continue; // refunds: not money in
     const bucket = currencies.get(entry.currency) || { in: 0, out: 0, inEur: 0, outEur: 0 };
     const original = cents(positive(entry.amount) || 0);
     const eur = entry.eur === null ? 0 : cents(entry.eur);

@@ -312,7 +312,7 @@ describe('finance summary', () => {
     assert.equal(t.moneyIn, 2190);
   });
 
-  it('keeps tax refunds in cash, out of revenue and profit, and never as a negative tax', () => {
+  it('keeps tax refunds out of money in and net cash, lists them separately, and never as a negative tax', () => {
     const rows = [
       row('sale', { entryType: 'income', amount: '1190', vatAmount: '190', paidDate: '2026-10-02' }),
       row('tax-refund', { entryType: 'income', amount: '4000', category: 'Taxes', counterparty: 'Finanzamt', description: 'ESt prepayment refund', paidDate: '2026-10-03' }),
@@ -323,9 +323,13 @@ describe('finance summary', () => {
     ];
     const summary = summarize({ today: '2026-10-31', query: { month: '2026-10' }, rates: noRates, rows });
     const t = summary.totals;
-    assert.equal(t.moneyIn, 5220);
+    // Money in is operating income only: a Finanzamt refund is cash back, not
+    // income, and stays out of money in and net cash.
+    assert.equal(t.moneyIn, 1190);
+    assert.equal(summary.months[0].moneyIn, 1190);
     assert.equal(t.moneyOut, 3779.36);
-    assert.equal(t.net, 1440.64);
+    assert.equal(t.net, -2589.36);
+    assert.equal(summary.months[0].net, -2589.36);
     assert.equal(t.operatingIncome, 1190);
     assert.equal(t.netProfitExVat, 1000);
     assert.equal(t.incomeTax, 100);
