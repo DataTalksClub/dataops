@@ -208,9 +208,9 @@ describe("tax estimate block", () => {
     assert.match(markup, /data-fin-est-soli>0\.00/);
     assert.match(markup, /Gewerbesteuer <span class="fin-muted">Berlin Hebesatz 410 %<\/span><\/dt><dd data-fin-est-trade-tax>10,834\.25/);
     assert.match(markup, /data-fin-est-total>31,129\.25/);
-    assert.match(markup, /data-fin-est-paid-line>Already paid in 2026: ESt \+ Soli 300\.00, GewSt 100\.00 — total <strong>400\.00<\/strong>/);
-    assert.match(markup, /an estimated <strong>30,729\.25<\/strong> still to pay in 2026/);
-    assert.match(markup, /Refunds for earlier years never count as negative tax in 2026/);
+    assert.match(markup, /data-fin-est-paid-line>Already paid in 2026:\s+ESt \+ Soli 300\.00, GewSt 100\.00\s+— total <strong>400\.00<\/strong>/);
+    assert.match(markup, /Compared with the estimate:\s+an estimated <strong>30,729\.25<\/strong> still to pay in 2026/);
+    assert.match(markup, /Refunds for earlier years never count as negative tax/);
     assert.match(markup, /Rough estimate, not a tax return/);
     assert.match(markup, /§ 32a Abs\. 1 EStG Grundtarif on zvE 100000 EUR/);
     assert.match(markup, /gesetze-im-internet\.de\/estg\/__32a\.html/);

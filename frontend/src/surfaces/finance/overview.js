@@ -125,7 +125,10 @@ export function taxEstimateMarkup(est, e) {
         <div><dt>Gewerbesteuer <span class="fin-muted">Berlin Hebesatz 410 %</span></dt><dd data-fin-est-trade-tax>${formatEur(est.tradeTax.steuer)}</dd></div>
         <div class="fin-stats__total"><dt>Total tax estimate</dt><dd data-fin-est-total>${formatEur(est.totalEstimate)}</dd></div>
       </dl>
-      <p class="fin-muted" data-fin-est-paid-line>Already paid in ${e(String(est.year))}: ESt + Soli ${formatEur(est.paid.incomeTax)}, GewSt ${formatEur(est.paid.tradeTax)} — total <strong>${formatEur(est.paidTotal)}</strong>. Compared with the estimate: ${remainingWord}. Refunds for earlier years never count as negative tax in ${e(String(est.year))}.</p>
+      <p class="fin-muted" data-fin-est-paid-line>Already paid in ${e(String(est.year))}:
+        ESt + Soli ${formatEur(est.paid.incomeTax)}, GewSt ${formatEur(est.paid.tradeTax)}
+        — total <strong>${formatEur(est.paidTotal)}</strong>. Compared with the estimate: ${remainingWord}.
+        Refunds for earlier years never count as negative tax.</p>
       <details class="fin-estimate-details" data-fin-est-details>
         <summary>Inputs, formula and statutory sources</summary>
         <ul class="fin-gaps">${[...est.inputs, ...est.formula].map((line) => html`<li>${e(line)}</li>`).join("")}</ul>
