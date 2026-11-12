@@ -193,7 +193,7 @@ export function createKnowledgeNavigation(context, services) {
 
     documentTitle.disabled = true;
     editor.disabled = true;
-    setSaveState("Loading...");
+    updateSaveState();
     setView("editor");
     setRouteTitle(basename(path));
     documentPath.textContent = path;

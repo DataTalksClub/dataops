@@ -466,8 +466,7 @@ describe("canonical navigation shell behavior", () => {
       { updateUrl: false },
     ]);
 
-    // A healthy corpus that simply does not contain the document keeps today's
-    // behavior; only a docs outage opens the document anyway.
+    // Missing catalog entries still reach the loader's not-found/retry UI.
     const unknownDoc = createNavigationHarness({
       documents: [],
       docPath: "process/example.md",
@@ -477,7 +476,7 @@ describe("canonical navigation shell behavior", () => {
     await unknownDoc.shell.initializeRouting(Promise.resolve());
     assert.equal(
       unknownDoc.calls.some(([name]) => name === "open-doc"),
-      false,
+      true,
     );
 
     const outageDoc = createNavigationHarness({

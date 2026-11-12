@@ -524,6 +524,7 @@ textarea.inline-editor {
 
 .notion-blocks-container {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   width: 100%;
 }
@@ -532,6 +533,7 @@ textarea.inline-editor {
   display: flex;
   align-items: flex-start;
   width: 100%;
+  min-width: 0;
   border-radius: 6px;
   transition: background 0.12s ease;
   min-height: 28px;
@@ -870,10 +872,16 @@ blockquote p,
 .rendered-view {
   display: block;
   min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--dk-text-primary);
   font-size: var(--dk-text-lg);
   line-height: 1.6;
   padding-bottom: calc(2 * var(--dk-space-8));
+}
+
+.doc-state[hidden],
+.doc-context-return[hidden] {
+  display: none;
 }
 
 .rendered-empty {
@@ -1145,6 +1153,10 @@ blockquote p,
   background: var(--dk-bg-inset);
   padding: var(--dk-space-3) var(--dk-space-4);
   font-size: var(--dk-text-body);
+}
+
+.rendered-view :not(pre) > code {
+  white-space: pre-wrap;
 }
 
 .rendered-view pre code {
@@ -1559,6 +1571,10 @@ blockquote p,
 /* Plain documents use the shared block list; on the page it is borderless. */
 .rendered-view .notion-blocks-container {
   gap: 0;
+}
+
+.block-plain-body {
+  min-width: 0;
 }
 
 .rendered-view .notion-block:hover {
