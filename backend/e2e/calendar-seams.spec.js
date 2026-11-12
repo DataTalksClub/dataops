@@ -494,9 +494,46 @@ test("the API never reads the owner's calendar for a past range", async ({ reque
   expect(Object.keys((await past.json()).sources)).toEqual(["newsletter-issues-readonly", "calendar-holds"]);
 });
 
-test("newsletter with a Card and tentative calendar hold share the compact calendar tile layout", async ({ page }) => {
+test("newsletter Card tile, proposed event tile without hold tiles, and unified day schedule modal", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-11-16T12:00:00Z"));
   await page.setViewportSize({ width: 1280, height: 800 });
+  await page.route("**/api/calendar-holds**", (route) => {
+    const u = new URL(route.request().url());
+    const from = u.searchParams.get("from");
+    if (from === "2026-11-24") {
+      return route.fulfill({
+        json: {
+          holds: [
+            {
+              id: "hold_ce45e320-abfb-45c5-a2dd-9e091aca665c",
+              cardId: "ce45e320-abfb-45c5-a2dd-9e091aca665c",
+              date: "2026-11-24",
+              window: "evening",
+              durationMinutes: 60,
+              startIso: "2026-11-24T16:00:00.000Z",
+              endIso: "2026-11-24T17:00:00.000Z",
+              title: "Madhu Gurramkonda at DataTalks.Club Podcast",
+              topic: "From Ad-Hoc SQL to AI Agents",
+              status: "confirmed",
+              googleSync: { state: "synced" },
+            },
+            {
+              id: "hold_released_old",
+              date: "2026-11-24",
+              window: "evening",
+              durationMinutes: 60,
+              startIso: "2026-11-24T16:00:00.000Z",
+              endIso: "2026-11-24T17:00:00.000Z",
+              title: "Madhu Gurramkonda at DataTalks.Club Podcast",
+              topic: "From Ad-Hoc SQL to AI Agents",
+              status: "released",
+            },
+          ],
+        },
+      });
+    }
+    return route.fulfill({ json: { holds: [] } });
+  });
   await page.route("**/api/calendar-items**", (route) => {
     const u = new URL(route.request().url());
     if (u.pathname.endsWith("/overlays")) {
@@ -522,6 +559,24 @@ test("newsletter with a Card and tentative calendar hold share the compact calen
               },
             },
             {
+              provider: "newsletter-issues-readonly",
+              id: "issue-304",
+              startDate: "2026-11-23",
+              endDate: "2026-11-23",
+              label: "Weekly #304 · open",
+              status: "planned",
+              isAvailableSlot: true,
+              href: "/cards?cardId=card-304",
+              newsletter: {
+                kind: "weekly",
+                issueNumber: 304,
+                booked: 0,
+                openSlots: 2,
+                cardId: "card-304",
+                cardDueDate: null,
+              },
+            },
+            {
               provider: "calendar-holds",
               id: "calendar-hold:hold-cv",
               startDate: "2026-11-23",
@@ -529,6 +584,16 @@ test("newsletter with a Card and tentative calendar hold share the compact calen
               label: "[Proposed] Finding a Job in Computer Vision · 12:30–13:30",
               category: "Calendar hold",
               status: "tentative",
+              isAvailableSlot: false,
+            },
+            {
+              provider: "owner-calendar",
+              id: "owner-calendar:madhu-google",
+              startDate: "2026-11-24",
+              endDate: "2026-11-24",
+              label: "17:00–18:00 Madhu Gurramkonda at DataTalks.Club Podcast",
+              slot: "evening",
+              isSlotEvent: true,
               isAvailableSlot: false,
             },
           ],
@@ -549,6 +614,48 @@ test("newsletter with a Card and tentative calendar hold share the compact calen
             entity: { type: "card", id: "webinar-launch" },
             href: "/cards?cardId=webinar-launch",
           },
+          {
+            id: "card:41c424a9-ddc4-4b86-94cb-b610979abaac",
+            kind: "podcast-recording",
+            kindLabel: "Podcast recording",
+            title: "Finding a Job in Computer Vision · Stacy Sand",
+            date: "2026-11-23",
+            status: "preparation",
+            entity: { type: "card", id: "41c424a9-ddc4-4b86-94cb-b610979abaac" },
+            href: "/cards?cardId=41c424a9-ddc4-4b86-94cb-b610979abaac",
+            startsAt: "2026-11-23T11:30:00.000Z",
+            endsAt: "2026-11-23T12:30:00.000Z",
+            timeStatus: "proposed",
+            linkedHoldId: "hold-cv",
+          },
+          {
+            id: "podcast-recording:622b0b8b-817d-4bf8-be94-1be467406810",
+            kind: "podcast-recording",
+            kindLabel: "Podcast recording",
+            title: "From Ad-Hoc SQL to AI Agents · Madhu Gurramkonda",
+            date: "2026-11-24",
+            status: "booked",
+            entity: { type: "podcast-episode", id: "622b0b8b-817d-4bf8-be94-1be467406810" },
+            href: "/podcast?episodeId=622b0b8b-817d-4bf8-be94-1be467406810",
+            startsAt: "2026-11-24T16:00:00.000Z",
+            endsAt: "2026-11-24T17:00:00.000Z",
+            timeStatus: "confirmed",
+            linkedHoldId: "hold_ce45e320-abfb-45c5-a2dd-9e091aca665c",
+          },
+          {
+            id: "podcast-recording:bfdd04c8-ced4-4b55-b770-8b3eb4b5a05f",
+            kind: "podcast-recording",
+            kindLabel: "Podcast recording",
+            title: "From HR Reports to People Analytics with AI · Sofiia Hordiienko",
+            date: "2026-11-30",
+            status: "booked",
+            entity: { type: "podcast-episode", id: "bfdd04c8-ced4-4b55-b770-8b3eb4b5a05f" },
+            href: "/podcast?episodeId=bfdd04c8-ced4-4b55-b770-8b3eb4b5a05f",
+            startsAt: "2026-11-30T11:30:00.000Z",
+            endsAt: "2026-11-30T12:30:00.000Z",
+            timeStatus: "confirmed",
+            linkedHoldId: "hold_1de2e0923d85",
+          },
         ],
         holidays: [],
         holidayMetadata: {},
@@ -556,23 +663,29 @@ test("newsletter with a Card and tentative calendar hold share the compact calen
       },
     });
   });
-  await page.route("**/api/**", (route) =>
-    new URL(route.request().url()).pathname.includes("/calendar-items")
+  await page.route("**/api/**", (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    return pathname.includes("/calendar-items") || pathname.includes("/calendar-holds")
       ? route.fallback()
-      : route.fulfill({ json: { items: [] } }),
-  );
+      : route.fulfill({ json: { items: [] } });
+  });
   await page.goto(`${frontendBase}/calendar`);
   const surface = page.locator(".calendar-surface");
-  const newsletterTile = surface.locator('.calendar-overlay.is-newsletter', { hasText: "Weekly #303 · Astronomer" });
-  const holdTile = surface.locator('.calendar-overlay.is-hold', { hasText: "Finding a Job in Computer Vision · 12:30-13:30" });
+  const newsletterTile = surface.locator(".calendar-overlay.is-newsletter", { hasText: "Weekly #303 · Astronomer" });
+  const proposedPodcastTile = surface.locator(".calendar-activity.is-proposed", { hasText: "Finding a Job in Computer Vision · Stacy Sand" });
+  const sofiiaTile = surface.locator(".calendar-activity", { hasText: "From HR Reports to People Analytics with AI · Sofiia Hordiienko" });
   await expect(newsletterTile).toBeVisible();
   await expect(newsletterTile).toHaveAttribute("href", "/cards?cardId=card-303");
   await expect(surface.locator(".calendar-overlay-card")).toHaveCount(0);
   await expect(surface.getByText("+ open")).toHaveCount(0);
-  await expect(holdTile).toBeVisible();
-  // The clock icon sits on the same header line as the "Calendar hold" tag,
+  await expect(surface.locator(".calendar-overlay.is-hold")).toHaveCount(0);
+  await expect(surface.getByText("Calendar hold")).toHaveCount(0);
+  await expect(proposedPodcastTile).toBeVisible();
+  await expect(proposedPodcastTile).toHaveAttribute("href", "/cards?cardId=41c424a9-ddc4-4b86-94cb-b610979abaac");
+  await expect(sofiiaTile).toHaveCount(1);
+  // The clock icon sits on the same header line as the "Podcast recording" tag,
   // never as a separate row between the tag and the title.
-  const holdLayout = await holdTile.evaluate((node) => {
+  const proposedLayout = await proposedPodcastTile.evaluate((node) => {
     const tag = node.querySelector("small").getBoundingClientRect();
     const icon = node.querySelector(".calendar-proposed-icon").getBoundingClientRect();
     const title = node.querySelector(":scope > span").getBoundingClientRect();
@@ -582,9 +695,27 @@ test("newsletter with a Card and tentative calendar hold share the compact calen
       titleBelowHeader: title.top >= Math.max(tag.bottom, icon.bottom) - 1,
     };
   });
-  expect(holdLayout).toEqual({
+  expect(proposedLayout).toEqual({
     iconBesideTag: true,
     iconRightOfTag: true,
     titleBelowHeader: true,
   });
+
+  // Open Tue 24 Nov 2026 Day Schedule modal and verify unified single-list layout.
+  await surface.locator('[data-open-day="2026-11-24"]').click();
+  const dayDialog = surface.locator("[data-day-dialog]");
+  await expect(dayDialog).toBeVisible();
+  await expect(dayDialog.locator("[data-day-subtitle]")).toHaveText("Berlin time");
+  await expect(dayDialog.getByText("Midday slot · free")).toBeVisible();
+  await expect(dayDialog.getByRole("link", { name: "From Ad-Hoc SQL to AI Agents · Madhu Gurramkonda" })).toBeVisible();
+  await expect(dayDialog.getByText("Google Calendar synced")).toHaveCount(0);
+  await expect(dayDialog.getByText("released", { exact: false })).toHaveCount(0);
+  await dayDialog.locator('[data-propose-slot="midday"]').click();
+  await expect(dayDialog.locator("form[data-hold-propose]")).toBeVisible();
+  const desktopOverflow = await dayDialog.evaluate((node) => node.scrollWidth > node.clientWidth);
+  expect(desktopOverflow).toBe(false);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileOverflow = await dayDialog.evaluate((node) => node.scrollWidth > node.clientWidth);
+  expect(mobileOverflow).toBe(false);
 });

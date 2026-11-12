@@ -1,5 +1,41 @@
 
-import { calendarDisplayEntries, formatCalendarTimeRanges } from "../core/calendar-display.js";
+import {
+  calendarDisplayEntries,
+  calendarTileLabel,
+  formatCalendarTimeRanges,
+} from "../core/calendar-display.js";
+
+function formatBerlinTime(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Europe/Berlin",
+  }).format(date);
+}
+
+function formatBerlinRange(startIso, endIso, fallbackWindow) {
+  const start = formatBerlinTime(startIso);
+  const end = formatBerlinTime(endIso);
+  if (start && end) return `${start}-${end}`;
+  if (start) return start;
+  if (fallbackWindow === "midday") return "11:30-14:00";
+  if (fallbackWindow === "evening") return "16:30-18:30";
+  return "All day";
+}
+
+function windowForRange(timeRange, explicitWindow) {
+  if (explicitWindow === "midday" || explicitWindow === "evening") return explicitWindow;
+  const match = String(timeRange || "").match(/^(\d{2}):(\d{2})/);
+  if (!match) return "";
+  const minutes = Number(match[1]) * 60 + Number(match[2]);
+  if (minutes >= 11 * 60 && minutes <= 14 * 60 + 30) return "midday";
+  if (minutes >= 15 * 60 + 30 && minutes <= 19 * 60 + 30) return "evening";
+  return "";
+}
 
 export function setupDayScheduleDialog(options) {
   const {
@@ -20,10 +56,49 @@ export function setupDayScheduleDialog(options) {
     dayCloseFootBtn = dayDialog?.querySelector("[data-day-close-foot]");
 
   let selectedDayIso = "";
+  let proposeSlot = "";
   const dayOverlayCache = new Map();
   let lastOverlayItems;
   let lastOverlayError = "";
   let holdsForDay = { date: "", holds: null, error: "", busy: "" };
+
+  function proposeFormHtml(windowKey, busyAttr) {
+    return `
+      <form class="calendar-day-propose-form" data-hold-propose>
+        <input type="hidden" name="window" value="${escapeHtml(windowKey)}">
+        <label class="calendar-day-propose-field">
+          <span>Title</span>
+          <input name="title" type="text" placeholder="Name at DataTalks.Club Podcast / Webinar" required maxlength="200"
+            aria-label="Hold title"${busyAttr}>
+        </label>
+        <label class="calendar-day-propose-field">
+          <span>Topic</span>
+          <input name="topic" type="text" placeholder="Intended episode topic" required maxlength="300"
+            aria-label="Intended episode topic"${busyAttr}>
+        </label>
+        <label class="calendar-day-propose-field">
+          <span>Guest</span>
+          <input name="guestRef" type="email" placeholder="guest@example.com" required
+            aria-label="Guest email"${busyAttr}>
+        </label>
+        <div class="calendar-day-propose-field">
+          <span>Length</span>
+          <div class="calendar-day-propose-inline">
+            <select name="duration" aria-label="Hold duration"${busyAttr}>
+              <option value="60" selected>60 min</option>
+              <option value="90">90 min</option>
+            </select>
+            <input name="documentUrl" type="url" placeholder="Outline doc URL (optional)"
+              aria-label="Guest document URL"${busyAttr}>
+          </div>
+        </div>
+        <div class="calendar-day-propose-actions">
+          <button type="button" class="calendar-day-action-quiet" data-propose-cancel${busyAttr}>Cancel</button>
+          <button type="submit" class="primary-button calendar-day-action-primary"${busyAttr}>Propose</button>
+        </div>
+      </form>
+    `;
+  }
 
   function renderDaySchedule(dateIso, nextOverlays, nextError) {
     if (nextOverlays !== undefined) lastOverlayItems = nextOverlays;
@@ -46,7 +121,6 @@ export function setupDayScheduleDialog(options) {
     }
 
     const { items = [], holidays = [], overlays = [] } = getCalendarState();
-
     const dayEvents = calendarDisplayEntries(items).filter((item) => item.date === dateIso);
     const dayHolidays = holidays.filter(
       (h) => h.startDate <= dateIso && h.endDate >= dateIso
@@ -54,253 +128,265 @@ export function setupDayScheduleDialog(options) {
     const dayNewsletters = calendarDisplayEntries(overlays).filter(
       (o) => o.provider === "newsletter-issues-readonly" && o.startDate <= dateIso && o.endDate >= dateIso
     );
-    const ownerCalendarItems = overlayItems.filter((o) => o.provider === "owner-calendar");
-
-    // Operational Slot Availability
-    const blockers = ownerCalendarItems.filter(
-      (e) => e.slot === "all-day" || /vacation|holiday|flight|conference|trip/i.test(e.label)
+    const ownerCalendarItems = overlayItems.filter(
+      (o) => o.provider === "owner-calendar" && !o.isAvailableSlot
     );
-    const middayEvents = ownerCalendarItems.filter((e) => e.slot === "midday");
-    const isMiddayAvailable = blockers.length === 0 && middayEvents.length === 0;
 
-    const eveningEvents = ownerCalendarItems.filter((e) => e.slot === "evening");
-    const isEveningAvailable = blockers.length === 0 && eveningEvents.length === 0;
+    const holdsState = holdsForDay.date === dateIso
+      ? holdsForDay
+      : { holds: null, error: "", busy: "" };
+    const activeHolds = Array.isArray(holdsState.holds)
+      ? holdsState.holds.filter((h) => h.status === "tentative" || h.status === "confirmed")
+      : [];
+    const busyAttr = holdsState.busy ? " disabled" : "";
+    const isPast = dateIso < todayIsoDate();
 
-    const blockerAlert = blockers.length > 0
-      ? `
-        <div class="calendar-alert planner-alert is-warning" style="margin-bottom: 14px">
-          <div>
-            <strong>All-day Blocker</strong>
-            <p>${escapeHtml(blockers.map((b) => b.label).join(" · "))}</p>
-          </div>
-        </div>
-      `
-      : "";
+    const matchedHoldIds = new Set();
+    const holdByEventId = new Map();
+    for (const event of dayEvents) {
+      const matched = activeHolds.find((h) => {
+        if (matchedHoldIds.has(h.id)) return false;
+        if (event.linkedHoldId && event.linkedHoldId === h.id) return true;
+        if (h.cardId && event.entity?.id === h.cardId) return true;
+        return false;
+      });
+      if (matched) {
+        matchedHoldIds.add(matched.id);
+        holdByEventId.set(event.id, matched);
+      }
+    }
+    for (const event of dayEvents) {
+      if (holdByEventId.has(event.id)) continue;
+      const eventLabel = calendarTileLabel(event.title).toLowerCase();
+      const matched = activeHolds.find((h) => {
+        if (matchedHoldIds.has(h.id)) return false;
+        const holdTitle = calendarTileLabel(h.title || "").toLowerCase();
+        const holdTopic = calendarTileLabel(h.topic || "").toLowerCase();
+        return (holdTitle && (eventLabel.includes(holdTitle) || holdTitle.includes(eventLabel)))
+          || (holdTopic && (eventLabel.includes(holdTopic) || holdTopic.includes(eventLabel)));
+      });
+      if (matched) {
+        matchedHoldIds.add(matched.id);
+        holdByEventId.set(event.id, matched);
+      }
+    }
+    const unlinkedHolds = activeHolds.filter((h) => !matchedHoldIds.has(h.id));
 
-    const slotCardsHtml = `
-      <div class="calendar-slot-summary-grid">
-        <div class="calendar-slot-card">
-          <div class="calendar-slot-card-header">
-            <span class="calendar-slot-card-title">Midday Event Slot</span>
-            <span class="calendar-slot-card-time">11:30-14:00</span>
-          </div>
-          <span class="calendar-slot-status-pill ${isMiddayAvailable ? "is-available" : "is-busy"}">
-            ${isMiddayAvailable ? "● Available" : "● Busy / Reserved"}
-          </span>
-          <div class="calendar-slot-card-detail">
-            ${isMiddayAvailable
-              ? "No conflicts. Preferred operational window for podcasts and lunch discussions."
-              : escapeHtml(middayEvents.map((e) => e.label).join(", ")
-                  || (blockers.length ? "Blocked by all-day event" : "Slot reserved"))}
-          </div>
-        </div>
-        <div class="calendar-slot-card">
-          <div class="calendar-slot-card-header">
-            <span class="calendar-slot-card-title">Evening Event Slot</span>
-            <span class="calendar-slot-card-time">16:30-18:30</span>
-          </div>
-          <span class="calendar-slot-status-pill ${isEveningAvailable ? "is-available" : "is-busy"}">
-            ${isEveningAvailable ? "● Available" : "● Busy / Reserved"}
-          </span>
-          <div class="calendar-slot-card-detail">
-            ${isEveningAvailable
-              ? "No conflicts. Preferred operational window for workshops, live Q&As and webinars."
-              : escapeHtml(eveningEvents.map((e) => e.label).join(", ")
-                  || (blockers.length ? "Blocked by all-day event" : "Slot reserved"))}
-          </div>
-        </div>
-      </div>
-    `;
-
-    // Timeline entries
-    const timelineEntries = [];
+    const occupiedWindows = new Set();
+    const rows = [];
 
     for (const h of dayHolidays) {
-      timelineEntries.push({
-        time: "All day",
-        title: h.name,
+      rows.push({
         sortTime: "00:00",
-        tagClass: "is-holiday",
-        tagLabel: h.kind === "berlin-school-holiday" ? "School holiday" : "Public holiday",
+        time: "All day",
+        titleHtml: `<span class="calendar-day-timeline-title">${escapeHtml(h.name)}</span>`,
+        metaHtml: `<span class="calendar-day-row-meta">${h.kind === "berlin-school-holiday" ? "School holiday" : "Public holiday"}</span>`,
+        actionsHtml: "",
+        extraHtml: "",
       });
     }
 
-    // Events open their Card or episode in the portal.
-    for (const event of dayEvents) {
-      timelineEntries.push({
+    const blockers = ownerCalendarItems.filter(
+      (e) => e.slot === "all-day" || /vacation|holiday|flight|conference|trip/i.test(e.label)
+    );
+    const usedOwnerItemIds = new Set(blockers.map((b) => b.id));
+    for (const b of blockers) {
+      rows.push({
+        sortTime: "00:01",
         time: "All day",
-        title: event.title,
-        sortTime: "00:00",
-        tagClass: "is-activity",
-        tagLabel: event.kindLabel,
-        href: event.href,
-        internal: true,
+        titleHtml: `<span class="calendar-day-timeline-title">${escapeHtml(formatCalendarTimeRanges(b.label))}</span>`,
+        metaHtml: `<span class="calendar-day-row-meta"><span class="planner-status is-danger">Blocked</span> · no slots today</span>`,
+        actionsHtml: "",
+        extraHtml: "",
       });
     }
 
     for (const n of dayNewsletters) {
-      timelineEntries.push({
-        time: "Scheduled",
-        title: n.label,
+      const issueCard = n.newsletter || {};
+      const href = issueCard.cardId
+        ? `/cards?cardId=${encodeURIComponent(issueCard.cardId)}`
+        : n.href;
+      const label = calendarTileLabel(n.label);
+      rows.push({
         sortTime: "08:00",
-        tagClass: "is-activity",
-        tagLabel: "Newsletter",
-        href: n.href,
-        internal: true,
+        time: "Scheduled",
+        titleHtml: href
+          ? `<a class="calendar-day-timeline-title" href="${escapeHtml(href)}">${escapeHtml(label)}</a>`
+          : `<span class="calendar-day-timeline-title">${escapeHtml(label)}</span>`,
+        metaHtml: `<span class="calendar-day-row-meta">Newsletter</span>`,
+        actionsHtml: "",
+        extraHtml: "",
       });
     }
 
-    for (const e of ownerCalendarItems) {
-      let timeLabel = "All day";
-      let sortTime = "00:00";
-      let title = e.label;
+    for (const event of dayEvents) {
+      const hold = holdByEventId.get(event.id);
+      const time = formatBerlinRange(
+        hold?.startIso || event.startsAt,
+        hold?.endIso || event.endsAt,
+        hold?.window
+      );
+      const sortTime = time === "All day" ? "00:02" : time.slice(0, 5);
+      const w = windowForRange(time, hold?.window);
+      if (w) occupiedWindows.add(w);
+      const isProposed = hold ? hold.status === "tentative" : event.timeStatus === "proposed";
+      const label = calendarTileLabel(event.title);
+      const titleHtml = event.href
+        ? `<a class="calendar-day-timeline-title" href="${escapeHtml(event.href)}">${escapeHtml(label)}</a>`
+        : `<span class="calendar-day-timeline-title">${escapeHtml(label)}</span>`;
+      const metaParts = [escapeHtml(event.kindLabel)];
+      if (hold?.topic && !label.toLowerCase().includes(hold.topic.toLowerCase())) {
+        metaParts.push(`Topic: ${escapeHtml(hold.topic)}`);
+      }
+      if (isProposed) {
+        metaParts.push('<span class="planner-status is-warning">Proposed</span>');
+      }
+      let actionsHtml = "";
+      if (hold) {
+        if (hold.status === "tentative") {
+          actionsHtml = `
+            <button type="button" class="primary-button calendar-day-action-primary" data-hold-confirm="${escapeHtml(hold.id)}"${busyAttr}>Confirm</button>
+            <button type="button" class="calendar-day-action-quiet" data-hold-release="${escapeHtml(hold.id)}"${busyAttr}>Release</button>
+          `;
+        } else if (hold.googleSync?.state === "deferred") {
+          actionsHtml = `<button type="button" class="calendar-day-action-quiet" data-hold-confirm="${escapeHtml(hold.id)}"${busyAttr}>Retry</button>`;
+        }
+      }
+      const extraHtml = hold?.googleSync?.state === "deferred"
+        ? `<p class="planner-form-error calendar-day-sync-error" role="alert">Google sync deferred: ${escapeHtml(hold.googleSync.reason || "Calendar connection unavailable")}</p>`
+        : "";
+      rows.push({
+        sortTime,
+        time,
+        titleHtml,
+        metaHtml: `<span class="calendar-day-row-meta">${metaParts.join(" · ")}</span>`,
+        actionsHtml,
+        extraHtml,
+      });
+    }
+
+    for (const hold of unlinkedHolds) {
+      const time = formatBerlinRange(hold.startIso, hold.endIso, hold.window);
+      const sortTime = /^\d{2}:\d{2}/.test(time)
+        ? time.slice(0, 5)
+        : hold.window === "midday" ? "12:30" : "17:00";
+      const w = windowForRange(time, hold.window);
+      if (w) occupiedWindows.add(w);
+      const isProposed = hold.status === "tentative";
+      const label = calendarTileLabel(hold.title || "Calendar hold");
+      const metaParts = [];
+      if (hold.topic) metaParts.push(`Topic: ${escapeHtml(hold.topic)}`);
+      metaParts.push(isProposed ? '<span class="planner-status is-warning">Proposed</span>' : "Confirmed");
+      const retryBtn = !isProposed && hold.googleSync?.state === "deferred"
+        ? `<button type="button" class="calendar-day-action-quiet" data-hold-confirm="${escapeHtml(hold.id)}"${busyAttr}>Retry</button>`
+        : "";
+      const actionsHtml = isProposed
+        ? `<button type="button" class="primary-button calendar-day-action-primary" data-hold-confirm="${escapeHtml(hold.id)}"${busyAttr}>Confirm</button>
+           <button type="button" class="calendar-day-action-quiet" data-hold-release="${escapeHtml(hold.id)}"${busyAttr}>Release</button>`
+        : `${retryBtn}<button type="button" class="calendar-day-action-quiet" data-hold-release="${escapeHtml(hold.id)}"${busyAttr}>Release</button>`;
+      const extraHtml = hold.googleSync?.state === "deferred"
+        ? `<p class="planner-form-error calendar-day-sync-error" role="alert">Google sync deferred: ${escapeHtml(hold.googleSync.reason || "Calendar connection unavailable")}</p>`
+        : "";
+      rows.push({
+        sortTime,
+        time,
+        titleHtml: `<span class="calendar-day-timeline-title">${escapeHtml(label)}</span>`,
+        metaHtml: `<span class="calendar-day-row-meta">${metaParts.join(" · ")}</span>`,
+        actionsHtml,
+        extraHtml,
+      });
+    }
+
+    if (!isPast && blockers.length === 0) {
+      const slotDefs = [
+        { key: "midday", label: "Midday slot", time: "11:30-14:00", sortTime: "11:30" },
+        { key: "evening", label: "Evening slot", time: "16:30-18:30", sortTime: "16:30" },
+      ];
+      for (const slotDef of slotDefs) {
+        const slotOwnerEvents = ownerCalendarItems.filter((e) => e.slot === slotDef.key);
+        if (occupiedWindows.has(slotDef.key)) {
+          for (const e of slotOwnerEvents) usedOwnerItemIds.add(e.id);
+          continue;
+        }
+        if (slotOwnerEvents.length > 0) {
+          for (const e of slotOwnerEvents) usedOwnerItemIds.add(e.id);
+          const busyMeta = slotOwnerEvents.map((e) => formatCalendarTimeRanges(e.label)).join(" · ");
+          rows.push({
+            sortTime: slotDef.sortTime,
+            time: slotDef.time,
+            titleHtml: `<span class="calendar-day-timeline-title is-muted">${slotDef.label} · busy</span>`,
+            metaHtml: `<span class="calendar-day-row-meta">${escapeHtml(busyMeta)}</span>`,
+            actionsHtml: "",
+            extraHtml: "",
+          });
+        } else {
+          const isOpenForm = proposeSlot === slotDef.key;
+          const expanded = isOpenForm ? "true" : "false";
+          const proposeBtn = typeof holdsApi === "function"
+            ? `<button type="button" class="calendar-day-propose-btn" data-propose-slot="${slotDef.key}" ` +
+              `aria-expanded="${expanded}"${busyAttr}>Propose</button>`
+            : "";
+          rows.push({
+            sortTime: slotDef.sortTime,
+            time: slotDef.time,
+            titleHtml: `<span class="calendar-day-timeline-title is-free-slot">${slotDef.label} · free</span>`,
+            metaHtml: "",
+            actionsHtml: proposeBtn,
+            extraHtml: isOpenForm ? proposeFormHtml(slotDef.key, busyAttr) : "",
+          });
+        }
+      }
+    }
+
+    rows.sort((a, b) => a.sortTime.localeCompare(b.sortTime));
+
+    const otherOwnerEvents = ownerCalendarItems.filter((e) => !usedOwnerItemIds.has(e.id));
+    const otherRowsHtml = otherOwnerEvents.map((e) => {
       const ownerLabel = formatCalendarTimeRanges(e.label);
       const match = ownerLabel.match(/^(\d{2}:\d{2}(?:-\d{2}:\d{2})?)\s+(.+)$/);
-      if (match) {
-        timeLabel = match[1];
-        sortTime = match[1].slice(0, 5);
-        title = match[2];
-      } else {
-        title = ownerLabel;
-      }
-      let tagClass = "is-other";
-      let tagLabel = "Other event";
-      if (e.slot === "midday") {
-        tagClass = "is-midday";
-        tagLabel = "Midday slot";
-      } else if (e.slot === "evening") {
-        tagClass = "is-evening";
-        tagLabel = "Evening slot";
-      } else if (e.slot === "all-day") {
-        tagClass = "is-blocker";
-        tagLabel = "Blocker";
-      }
-
-      timelineEntries.push({
-        time: timeLabel,
-        title,
-        sortTime,
-        tagClass,
-        tagLabel,
-        href: e.href,
-      });
-    }
-
-    timelineEntries.sort((a, b) => a.sortTime.localeCompare(b.sortTime));
-
-    const timelineRowsHtml = timelineEntries.length === 0
-      ? `<p class="planner-empty-hint">No events or activities scheduled on this date.</p>`
-      : timelineEntries
-          .map(
-            (entry) => `
-              <div class="calendar-day-timeline-row">
-                <div class="calendar-day-timeline-main">
-                  <span class="calendar-day-timeline-time">${escapeHtml(entry.time)}</span>
-                  ${entry.href
-                    ? `<a class="calendar-day-timeline-title" href="${escapeHtml(entry.href)}"${
-                      entry.internal ? "" : ' target="_blank" rel="noreferrer"'}>${escapeHtml(entry.title)}</a>`
-                    : `<span class="calendar-day-timeline-title">${escapeHtml(entry.title)}</span>`}
-                </div>
-                <div class="calendar-day-timeline-tags">
-                  <span class="calendar-slot-tag ${entry.tagClass}">${escapeHtml(entry.tagLabel)}</span>
-                </div>
-              </div>
-            `
-          )
-          .join("");
-
-    // A past day has no slots left to offer, so it shows only what happened.
-    const isPast = dateIso < todayIsoDate();
-    dayBody.innerHTML = `
-      ${isPast ? "" : `${blockerAlert}
-      <div>
-        <h3 class="calendar-day-section-title">Operational Slot Availability</h3>
-        ${slotCardsHtml}
-      </div>`}
-      ${holdsSectionHtml(dateIso)}
-      <div>
-        <h3 class="calendar-day-section-title">
-          <span>Full Schedule & Other Events</span>
-          <small class="calendar-day-section-count">${timelineEntries.length} ${timelineEntries.length === 1 ? "entry" : "entries"}</small>
-        </h3>
-        <div class="calendar-day-timeline-list">
-          ${timelineRowsHtml}
-        </div>
-      </div>
-    `;
-  }
-
-  function holdsSectionHtml(dateIso) {
-    if (typeof holdsApi !== "function") return "";
-    const isPast = dateIso < todayIsoDate();
-    const state = holdsForDay.date === dateIso
-      ? holdsForDay
-      : { holds: null, error: "", busy: "" };
-    let listHtml;
-    if (state.error && state.holds === null) {
-      listHtml = `<p class="planner-form-error" role="alert">${escapeHtml(state.error)}</p>`;
-    } else if (state.holds === null) {
-      listHtml = `<p class="planner-load-state">Loading holds…</p>`;
-    } else if (state.holds.length === 0) {
-      listHtml = `<p class="planner-empty-hint">No holds on this date. Propose one to reserve the window.</p>`;
-    } else {
-      listHtml = state.holds.map((hold) => {
-        const active = hold.status === "tentative" || hold.status === "confirmed";
-        const retryInvite = hold.status === "confirmed" && hold.googleSync?.state === "deferred"
-          ? `<button type="button" data-hold-confirm="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Retry invite</button>`
-          : "";
-        const actions = !active
-          ? `<span class="calendar-slot-tag">${escapeHtml(hold.status)}</span>`
-          : hold.status === "tentative"
-            ? `<button type="button" data-hold-confirm="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Confirm</button>
-               <button type="button" data-hold-release="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Release</button>`
-            : `${retryInvite}<button type="button" data-hold-release="${escapeHtml(hold.id)}"${state.busy ? " disabled" : ""}>Release</button>`;
-        const title = hold.status === "tentative" ? `(Proposal) ${hold.title}` : hold.title;
-        const topic = hold.topic ? `<span class="calendar-day-timeline-topic">Topic: ${escapeHtml(hold.topic)}</span>` : "";
-        return `
-          <div class="calendar-day-timeline-row">
-            <div class="calendar-day-timeline-main">
-              <span class="calendar-day-timeline-time">${escapeHtml(hold.window)} · ${escapeHtml(String(hold.durationMinutes))} min</span>
-              <span class="calendar-day-timeline-title">${escapeHtml(title)}</span>
-              ${topic}
-              ${hold.googleSync?.state === "deferred"
-                ? `<span class="planner-form-error" role="alert">Google sync deferred: ${escapeHtml(hold.googleSync.reason || "Calendar connection unavailable")}</span>`
-                : hold.googleSync?.state === "synced" ? '<span>Google Calendar synced</span>' : ""}
-            </div>
-            <div class="calendar-day-timeline-tags">${actions}</div>
+      const timeLabel = match ? match[1] : "All day";
+      const title = match ? match[2] : ownerLabel;
+      return `
+        <div class="calendar-day-row is-other-event">
+          <span class="calendar-day-timeline-time">${escapeHtml(timeLabel)}</span>
+          <div class="calendar-day-row-main">
+            ${e.href
+              ? `<a class="calendar-day-timeline-title" href="${escapeHtml(e.href)}" target="_blank" rel="noreferrer">${escapeHtml(title)}</a>`
+              : `<span class="calendar-day-timeline-title">${escapeHtml(title)}</span>`}
           </div>
-        `;
-      }).join("");
-    }
-    const count = state.holds === null ? "" : `${state.holds.length} ${state.holds.length === 1 ? "hold" : "holds"}`;
-    return `
-      <div>
-        <h3 class="calendar-day-section-title">
-          <span>Calendar holds</span>
-          <small class="calendar-day-section-count">${escapeHtml(count)}</small>
-        </h3>
-        <div data-holds-list>${listHtml}</div>
-        ${isPast ? "" : `
-        <form data-hold-propose>
-          <input name="title" type="text" placeholder="Name at DataTalks.Club Podcast / Webinar / Workshop" required maxlength="200"
-            aria-label="Hold title"${state.busy ? " disabled" : ""}>
-          <input name="topic" type="text" placeholder="Intended episode topic (agreed at invite time)" required maxlength="300"
-            aria-label="Intended episode topic"${state.busy ? " disabled" : ""}>
-          <input name="guestRef" type="email" placeholder="Guest email" required aria-label="Guest email"${state.busy ? " disabled" : ""}>
-          <input name="documentUrl" type="url" placeholder="Podcast or outline document URL" aria-label="Guest document URL"${state.busy ? " disabled" : ""}>
-          <select name="window" aria-label="Hold window">
-            <option value="evening">Evening 17:00 (90-min workshop starts 16:30)</option>
-            <option value="midday">Midday 12:30 (workshop 12:00 @ 90 min)</option>
-          </select>
-          <select name="duration" aria-label="Hold duration">
-            <option value="60">60 min</option>
-            <option value="90">90 min</option>
-          </select>
-          <button type="submit"${state.busy ? " disabled" : ""}>Propose hold</button>
-        </form>`}
-        ${state.error && state.holds !== null ? `<p class="planner-form-error" role="alert">${escapeHtml(state.error)}</p>` : ""}
-        ${state.busy ? `<p class="planner-load-state">${escapeHtml(state.busy)}</p>` : ""}
+        </div>
+      `;
+    }).join("");
+    const otherEventsHtml = otherOwnerEvents.length > 0
+      ? `
+        <details class="calendar-day-other-events">
+          <summary>${otherOwnerEvents.length} other calendar ${otherOwnerEvents.length === 1 ? "event" : "events"}</summary>
+          <div class="calendar-day-list is-compact">${otherRowsHtml}</div>
+        </details>
+      `
+      : "";
+
+    const rowsHtml = rows.length === 0
+      ? `<p class="planner-empty-hint">No events or activities scheduled on this date.</p>`
+      : rows.map((row) => `
+          <div class="calendar-day-row">
+            <span class="calendar-day-timeline-time">${escapeHtml(row.time)}</span>
+            <div class="calendar-day-row-main">
+              ${row.titleHtml}
+              ${row.metaHtml}
+              ${row.extraHtml}
+            </div>
+            ${row.actionsHtml ? `<div class="calendar-day-row-actions">${row.actionsHtml}</div>` : ""}
+          </div>
+        `).join("");
+
+    dayBody.innerHTML = `
+      <div class="calendar-day-list" data-holds-list>
+        ${rowsHtml}
       </div>
+      ${otherEventsHtml}
+      ${holdsState.error ? `<p class="planner-form-error" role="alert">${escapeHtml(holdsState.error)}</p>` : ""}
+      ${holdsState.busy ? `<p class="planner-load-state">${escapeHtml(holdsState.busy)}</p>` : ""}
     `;
   }
 
@@ -338,6 +424,7 @@ export function setupDayScheduleDialog(options) {
             duration: Number(data.get("duration") || 60),
           }),
         });
+        proposeSlot = "";
       } else if (kind === "confirm") {
         await holdsApi(`/${encodeURIComponent(id)}/confirm`, { method: "POST", body: "{}" });
       } else {
@@ -370,6 +457,7 @@ export function setupDayScheduleDialog(options) {
   async function openDayDialog(dateIso) {
     if (!dayDialog || !dateIso) return;
     selectedDayIso = dateIso;
+    proposeSlot = "";
     holdsForDay = { date: dateIso, holds: null, error: "", busy: "" };
 
     const formattedHeading = new Date(`${dateIso}T12:00:00Z`).toLocaleDateString("en-GB", {
@@ -381,10 +469,7 @@ export function setupDayScheduleDialog(options) {
     });
 
     if (dayTitle) dayTitle.textContent = formattedHeading;
-    if (daySubtitle) {
-      daySubtitle.textContent =
-        `Europe/Berlin time · Full schedule & availability for event planning (${dateIso})`;
-    }
+    if (daySubtitle) daySubtitle.textContent = "Berlin time";
 
     renderDaySchedule(dateIso, null);
     dayDialog.showModal();
@@ -413,6 +498,19 @@ export function setupDayScheduleDialog(options) {
   if (dayCloseFootBtn) dayCloseFootBtn.onclick = () => dayDialog.close();
   if (dayBody) {
     dayBody.addEventListener("click", (event) => {
+      const proposeBtn = event.target.closest("[data-propose-slot]");
+      if (proposeBtn) {
+        const next = proposeBtn.dataset.proposeSlot;
+        proposeSlot = proposeSlot === next ? "" : next;
+        renderDaySchedule(selectedDayIso);
+        return;
+      }
+      const cancelBtn = event.target.closest("[data-propose-cancel]");
+      if (cancelBtn) {
+        proposeSlot = "";
+        renderDaySchedule(selectedDayIso);
+        return;
+      }
       const confirmBtn = event.target.closest("[data-hold-confirm]");
       const releaseBtn = event.target.closest("[data-hold-release]");
       if (confirmBtn) holdAction("confirm", confirmBtn.dataset.holdConfirm);

@@ -280,7 +280,7 @@ describe("operations calendar", () => {
     assert.equal(open.isAvailableSlot, true);
     assert.deepEqual(issue.slots, { primary: { sponsor: "Synthetic Alpha" }, secondary: {} }, "projection leaves stored slot records unchanged");
   });
-  it("collapses only canonically linked confirmed holds and linked course launch cards", async () => {
+  it("collapses canonically linked active holds and linked course launch cards", async () => {
     const holds: any[] = [
       { id: "linked-confirmed", date: "2027-04-12", status: "confirmed", title: "Same event", window: "evening", startIso: "2027-04-12T17:00:00+02:00", endIso: "2027-04-12T18:00:00+02:00" },
       { id: "linked-tentative", date: "2027-04-12", status: "tentative", title: "Same event", window: "evening", startIso: "2027-04-12T17:00:00+02:00", endIso: "2027-04-12T18:00:00+02:00" },
@@ -295,7 +295,7 @@ describe("operations calendar", () => {
     ];
     const marked = markDuplicateCalendarHolds(holdItems, holds, entries);
     assert.equal(marked.find((item) => item.id === "calendar-hold:linked-confirmed")?.displayDuplicateOf, "podcast-recording:episode-1");
-    assert.equal(marked.find((item) => item.id === "calendar-hold:linked-tentative")?.displayDuplicateOf, undefined);
+    assert.equal(marked.find((item) => item.id === "calendar-hold:linked-tentative")?.displayDuplicateOf, "podcast-recording:episode-2");
     assert.equal(marked.find((item) => item.id === "calendar-hold:unlinked-confirmed")?.displayDuplicateOf, undefined);
 
     const cards: any[] = [
