@@ -4720,4 +4720,44 @@ describe("Work Detail optional sections surface load failures", () => {
     assert.equal(failure.getAttribute("role"), "alert");
     assert.equal(failure.textContent, "Could not load the card: Synthetic card outage");
   });
+
+  test("removing a Task file sends the DELETE through the injected fetchResource", async () => {
+    const task = { id: "task-file-remove", version: 1, taskHistory: [], description: "Attach evidence", status: "todo", requiresFile: true };
+    const resourceCalls = [];
+    let removed = false;
+    const originalFetch = globalThis.fetch;
+    const globalFetchCalls = [];
+    globalThis.fetch = async (...args) => {
+      globalFetchCalls.push(args);
+      throw new Error("global fetch must not be used");
+    };
+    try {
+      const harness = createHarness({
+        fetchResource: async (url, options = {}) => {
+          resourceCalls.push({ url: String(url), method: options.method });
+          removed = true;
+          return { ok: true, status: 204 };
+        },
+        request: async (url, requestOptions = {}) => {
+          if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
+          if (url.startsWith(`/api/files?taskId=${task.id}`)) {
+            return { files: { items: removed ? [] : [{ id: "file-remove-1", filename: "evidence.txt" }] } };
+          }
+          return filesAndArtifacts(url) || {};
+        },
+      });
+      await hydrateTask(harness, task);
+      const remove = await waitFor(
+        () => harness.taskPanelBody.querySelector(".task-file-remove"),
+        "file remove button",
+      );
+      await remove.click();
+      await waitFor(() => removed && !harness.taskPanelBody.querySelector(".task-file-item"), "file removed");
+      assert.deepEqual(resourceCalls, [{ url: "/api/files/file-remove-1", method: "DELETE" }]);
+      assert.deepEqual(globalFetchCalls, []);
+      assert.deepEqual(harness.errors, []);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
