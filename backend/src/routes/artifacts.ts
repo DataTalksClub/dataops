@@ -9,6 +9,7 @@ import { getCard, updateCardAdditive } from '../db/cards';
 import { getFile } from '../db/files';
 import { getTask, updateTaskAdditive, TaskVersionConflictError } from '../db/tasks';
 import { isLocalFilesystemStorageAllowed } from '../storage';
+import { resolveInteractiveActor } from '../identity/actor';
 import type { ArtifactRecord, ArtifactRef, LambdaEvent, LambdaResponse } from '../types';
 import { recordRequestError } from '../requestErrorLog';
 import { jsonResponse, parseJsonEvent as parseBody } from '../http';
@@ -373,6 +374,19 @@ async function handleArtifactRoutes(event: LambdaEvent): Promise<LambdaResponse 
 
   const client = await getClient();
   const suffix = reqPath.slice('/api/artifacts'.length);
+
+  // Every artifact route resolves the interactive actor here so no handler can
+  // forget the check. Private download minting additionally refuses scoped
+  // agent tokens: a presigned URL for a sensitive email document or a card
+  // banner is a human decision, not an automation capability.
+  if (method === 'GET' && /^\/[^/]+\/download\/?$/.test(suffix) && headerValue(event.headers, 'x-api-token-id')) {
+    return jsonResponse(403, {
+      error: 'Private artifact download requires an interactive session',
+      code: 'artifact_download_interactive_only',
+    });
+  }
+  const viewer = await resolveInteractiveActor(client, event, method === 'GET' ? 'work-read' : 'work-write');
+  if (!viewer.ok) return viewer.response;
 
   try {
     if ((suffix === '' || suffix === '/') && method === 'POST') return await handleCreate(event, client);

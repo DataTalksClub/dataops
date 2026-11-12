@@ -1,23 +1,39 @@
 import { getClient } from '../db/client';
+import { resolveInteractiveActor } from '../identity/actor';
 import { runCron } from '../cron/runner';
 import { writePortableExportArchive } from '../export/archive';
 import { backupConfigFromEnv, writeRawDynamoBackup } from '../export/dynamoBackup';
 import { writePortableExport } from '../export/portable';
-import type { LambdaResponse } from '../types';
+import type { LambdaEvent, LambdaResponse } from '../types';
 import { recordRequestError } from '../requestErrorLog';
 
 const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json' };
 
 /**
  * Handle /api/cron routes: run recurring tasks, scheduled export, and Dynamo dumps.
+ *
+ * The schedules run as EventBridge events handled directly in `handler.ts`;
+ * these HTTP routes are manual triggers only, and every one of them dumps
+ * tables or writes exports, so they require an interactive admin.
  */
-async function handleCronRoutes(path: string, method: string): Promise<LambdaResponse | null> {
+async function handleCronRoutes(path: string, method: string, event: LambdaEvent): Promise<LambdaResponse | null> {
   if (
     path !== '/api/cron/run'
     && path !== '/api/cron/export'
     && path !== '/api/cron/dynamo-backup'
   ) {
     return null;
+  }
+
+  const adminGateClient = await getClient();
+  const viewer = await resolveInteractiveActor(adminGateClient, event, 'work-write');
+  if (!viewer.ok) return viewer.response;
+  if (!viewer.actor.isAdmin) {
+    return {
+      statusCode: 403,
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ error: 'Cron triggers require an admin' }),
+    };
   }
 
   if (path === '/api/cron/export') {

@@ -137,10 +137,18 @@ async function handleFileRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
   }
 
   const client = await getClient();
+  const suffix = reqPath.slice('/api/files'.length);
+
+  // The local-content route is authenticated by its own short-lived HMAC link;
+  // every other files route resolves the interactive actor once here, so no
+  // handler can forget the check.
+  const viewer = /^\/[^/]+\/content$/.test(suffix)
+    ? null
+    : await resolveInteractiveActor(client, event, method === 'GET' ? 'work-read' : 'work-write');
+  if (viewer && !viewer.ok) return viewer.response;
+  const actorId = viewer && viewer.ok ? viewer.actor.id : '';
 
   try {
-    const suffix = reqPath.slice('/api/files'.length);
-
     // Route: POST /api/files (upload)
     if (method === 'POST' && (suffix === '' || suffix === '/')) {
       return await handleUpload(event, client);
@@ -148,7 +156,7 @@ async function handleFileRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
 
     // Route: GET /api/files (list with query params)
     if (method === 'GET' && (suffix === '' || suffix === '/')) {
-      return await handleList(event, client);
+      return await handleList(actorId, event, client);
     }
 
     // Route: GET /api/files/:id/download — mint a short-lived download link
@@ -267,10 +275,8 @@ async function handleUpload(event: LambdaEvent, client: DynamoDBDocumentClient):
 /**
  * Handle GET /api/files - list files with query params.
  */
-async function handleList(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+async function handleList(actorId: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   try {
-    const viewer = await resolveInteractiveActor(client, event, 'work-read');
-    if (!viewer.ok) return viewer.response;
     const params = event.queryStringParameters || {};
     const taskId = typeof params.taskId === 'string' ? params.taskId.trim() : '';
     const filters = {
@@ -280,7 +286,7 @@ async function handleList(event: LambdaEvent, client: DynamoDBDocumentClient): P
     const binding = {
       collection: 'files',
       filters: { taskId: taskId || null, category: filters.category || null, tag: filters.tag || null },
-      principal: fileViewer(viewer.actor.id),
+      principal: fileViewer(actorId),
     };
     const page = taskId
       ? await listFilesByTaskPage(client, taskId, binding, params)

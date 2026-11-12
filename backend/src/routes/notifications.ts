@@ -17,8 +17,12 @@ const JSON_HEADERS: Record<string, string> = { 'Content-Type': 'application/json
 
 /**
  * Handle all /api/notifications routes.
+ *
+ * The router resolves the interactive actor before dispatch and passes the
+ * viewer id and whether it carries admin authority; `dismiss-all` clears
+ * every user's notifications and is therefore admin-only.
  */
-async function handleNotificationRoutes(path: string, method: string, _rawBody: string | null, queryParams?: Record<string, string> | null, userId?: string): Promise<LambdaResponse | null> {
+async function handleNotificationRoutes(path: string, method: string, _rawBody: string | null, queryParams?: Record<string, string> | null, userId?: string, isAdmin?: boolean): Promise<LambdaResponse | null> {
   if (!path.startsWith('/api/notifications')) {
     return null;
   }
@@ -54,6 +58,13 @@ async function handleNotificationRoutes(path: string, method: string, _rawBody: 
 
     // Route: PUT /api/notifications/dismiss-all
     if (suffix === '/dismiss-all' && method === 'PUT') {
+      if (!isAdmin) {
+        return {
+          statusCode: 403,
+          headers: JSON_HEADERS,
+          body: JSON.stringify({ error: 'Dismissing all notifications requires an admin' }),
+        };
+      }
       const count = await dismissAllNotifications(client);
       return {
         statusCode: 200,
