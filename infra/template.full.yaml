@@ -1597,6 +1597,41 @@ Resources:
       TreatMissingData: breaching
       AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
 
+  # The daily DataOps -> Git mirror runs in GitHub Actions and reports through
+  # POST /knowledge/mirror-heartbeat (see backend/src/knowledge/mirrorHeartbeat.ts).
+  KnowledgeMirrorFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-knowledge-mirror-failed
+      AlarmDescription: The daily DataOps -> Git knowledge mirror reported a failed run; web edits are not in dataops-knowledge. Run history is in the dataops-knowledge Actions tab.
+      Namespace: DataOps/Knowledge
+      MetricName: Failure
+      Dimensions: [{Name: Job, Value: knowledge-mirror}]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref DynamoPitrAlertTopicArn]
+      OKActions: [!Ref DynamoPitrAlertTopicArn]
+  KnowledgeMirrorStaleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-knowledge-mirror-stale
+      AlarmDescription: No successful DataOps -> Git knowledge mirror run reported for a whole UTC day (scheduled at 04:00 UTC); Git may be behind the active DataOps revision.
+      Namespace: DataOps/Knowledge
+      MetricName: Success
+      Dimensions: [{Name: Job, Value: knowledge-mirror}]
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref DynamoPitrAlertTopicArn]
+      OKActions: [!Ref DynamoPitrAlertTopicArn]
+
   RecurringCronErrorsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:

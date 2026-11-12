@@ -99,6 +99,28 @@ describe('GitHub Actions OIDC knowledge publisher', () => {
     assert.equal(stale.statusCode, 409);
   });
 
+  it('turns the mirror workflow heartbeat into knowledge-mirror metrics and rejects other credentials', async () => {
+    const records: Record<string, unknown>[] = [];
+    const write = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      try { records.push(JSON.parse(String(chunk))); } catch { return write(chunk); }
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      const failed = await request('POST', '/knowledge/mirror-heartbeat', token(claims({ event_name: 'schedule' })), { outcome: 'failure', revision: 'rev1', commit: SHA });
+      assert.equal(failed.statusCode, 200);
+      const ok = await request('POST', '/knowledge/mirror-heartbeat', token(), { outcome: 'success', revision: 'rev1' });
+      assert.equal(ok.statusCode, 200);
+      assert.equal((await request('POST', '/knowledge/mirror-heartbeat', token(), { outcome: 'maybe' })).statusCode, 400);
+      assert.equal((await request('POST', '/knowledge/mirror-heartbeat', token(claims(), strangerKey))).statusCode, 401);
+      assert.equal((await request('GET', '/knowledge/mirror-heartbeat', token())).statusCode, 403);
+    } finally {
+      process.stdout.write = write;
+    }
+    const mirror = records.filter((record) => record.Job === 'knowledge-mirror');
+    assert.deepEqual(mirror.map((record) => [record.Success, record.Failure]), [[0, 1], [1, 0]]);
+  });
+
   it('syncs authored templates on request and reports failures', async () => {
     const { store } = syntheticKnowledgeStore(syntheticAuthoredFiles(3));
     setDeploymentTemplateLoaderForTest(() => loadAuthoredTemplatesFromKnowledge(store));
