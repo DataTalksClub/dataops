@@ -145,14 +145,23 @@ async function sharedIssuerUserId(client: DynamoDBDocumentClient, token: string)
   return user && !user.disabled ? user.id : null;
 }
 
-async function portalTrustedUserId(event: LambdaEvent): Promise<string | null> {
+/**
+ * A brokered identity is trusted only when it does not name a disabled
+ * account: routes that never resolve an actor (reads, `/api/tokens`) would
+ * otherwise serve a disabled user. The `portal-admin` placeholder and other
+ * non-user ids pass through unchanged; actor resolution still refuses them on
+ * attributed writes.
+ */
+async function portalTrustedUserId(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<string | null> {
   if (process.env.WORK_ENGINE_AUTH_MODE !== 'portal') return null;
   const portalAuth = headerValue(event.headers, 'x-portal-auth');
   if (portalAuth !== 'true') return null;
   const expectedSecret = await portalSecret();
   const providedSecret = headerValue(event.headers, 'x-portal-secret');
   if (!constantTimeEquals(providedSecret, expectedSecret)) return null;
-  return headerValue(event.headers, 'x-user-id') || 'portal-admin';
+  const userId = headerValue(event.headers, 'x-user-id') || 'portal-admin';
+  const user = await getUser(client, userId);
+  return user?.disabled ? null : userId;
 }
 
 function decodeBase64Body(event: LambdaEvent): void {
@@ -200,7 +209,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
 
     // ── Auth routes (exempt from middleware) ─────────────────────
-    const portalUserId = await portalTrustedUserId(event);
+    const portalUserId = await portalTrustedUserId(event, client);
     // x-user-id is an internal identity propagation header, never a client
     // credential. Preserve it only in the explicit test auth bypass; all real
     // requests must replace it with an identity established below.
