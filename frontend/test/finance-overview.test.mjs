@@ -90,7 +90,7 @@ describe("finance overview", () => {
     assert.deepEqual([...markup.matchAll(/<th scope="col"[^>]*>([^<]*)<\/th>/g)].map((m) => m[1]),
       ["Month", "Money in", "Money out", "Profit", "Taxes", "Owner pay"]);
     assert.doesNotMatch(markup, /Tax refunds|ESt \+ Soli|GewSt|VAT/);
-    const cellsOf = (row) => [...row.matchAll(/<td class="fin-num">([^<]+)<\/td>/g)].map((m) => m[1]);
+    const cellsOf = (row) => [...row.matchAll(/<td class="fin-num[^"]*">([^<]+)<\/td>/g)].map((m) => m[1]);
     const rows = [...markup.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)].map((m) => m[1]);
     assert.deepEqual(cellsOf(rows[1]), ["1,000.00", "1,300.00", "−100.00", "45.00", "100.00"]);
     // A refund received in October is not a tax and has no column of its own.

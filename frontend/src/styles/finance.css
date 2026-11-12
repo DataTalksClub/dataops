@@ -1588,6 +1588,10 @@ closes on every tab switch (see setView), so it never covers list content. */
   font-variant-numeric: tabular-nums;
   color: var(--dk-text-primary);
 }
+.fin-stats dd .fin-muted {
+  font-weight: 400;
+  white-space: nowrap;
+}
 .fin-details > summary {
   width: fit-content;
   color: var(--dk-text-muted);
@@ -1687,15 +1691,15 @@ closes on every tab switch (see setView), so it never covers list content. */
 .fin-table thead th.fin-num { text-align: right; }
 .fin-table th:first-child,
 .fin-table td:first-child { padding-left: 0; }
-.fin-table__split th,
-.fin-table__split td {
+.fin-table .fin-table__split th,
+.fin-table .fin-table__split td {
   border-bottom: 0;
   color: var(--dk-text-muted);
   font-size: var(--dk-text-xs);
-  text-align: right;
   white-space: normal;
 }
-.fin-table__split th { text-align: left; }
+.fin-table .fin-table__split th { white-space: nowrap; }
+.fin-table .fin-table__total .fin-muted { font-weight: 400; }
 .fin-table tr.is-in-progress td { color: var(--dk-text-muted); }
 .fin-table th,
 .fin-table td {
@@ -1741,6 +1745,9 @@ closes on every tab switch (see setView), so it never covers list content. */
   .fin-cashline .fin-muted { margin-left: 0; flex-basis: 100%; }
   .fin-table th,
   .fin-table td { padding: var(--dk-space-2); }
+  .fin-table th:first-child { white-space: normal; }
+  /* The chart and the cash line above carry money in and out on a phone. */
+  .fin-table--months .fin-col-cash { display: none; }
 }
 .fin-sr {
   position: absolute;

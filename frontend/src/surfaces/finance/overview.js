@@ -272,12 +272,15 @@ export function monthTableMarkup(summary, e, today = "9999-12-31") {
   const months = shownMonths(summary, today);
   const t = summary.totals;
   const cell = (v, opts) => html`<td class="fin-num">${formatEur(v, opts)}</td>`;
-  const cells = (r) => html`${cell(r.moneyIn)}${cell(r.moneyOut)}${cell(r.netProfitExVat, { sign: true })}${cell(r.taxesTotal)}${cell(r.ownerPay)}`;
+  const cash = (v) => html`<td class="fin-num fin-col-cash">${formatEur(v)}</td>`;
+  const cells = (r) => html`${cash(r.moneyIn)}${cash(r.moneyOut)}${cell(r.netProfitExVat, { sign: true })}${cell(r.taxesTotal)}${cell(r.ownerPay)}`;
   const split = [["Income tax + Soli", t.incomeTax], ["Trade tax", t.tradeTax], ["TK", t.healthInsurance], ...(t.otherTaxes ? [["Other", t.otherTaxes]] : [])]
     .map(([label, value]) => html`${label} ${formatEur(value)}`).join(" · ");
   return html`<div class="fin-table-wrap"><table class="fin-table fin-table--months">
       <caption class="fin-sr">Per month, EUR</caption>
-      ${headRow(["Month", "Money in", "Money out", "Profit", "Taxes", "Owner pay"])}
+      <thead><tr><th scope="col">Month</th><th scope="col" class="fin-num fin-col-cash">Money in</th>
+        <th scope="col" class="fin-num fin-col-cash">Money out</th><th scope="col" class="fin-num">Profit</th>
+        <th scope="col" class="fin-num">Taxes</th><th scope="col" class="fin-num">Owner pay</th></tr></thead>
       <tbody>${months.map((r) => {
         const href = MONTH.test(r.month) ? bookkeepingMonthUrl(r.month) : "";
         const name = html`${e(longMonth(r.month))}`;
