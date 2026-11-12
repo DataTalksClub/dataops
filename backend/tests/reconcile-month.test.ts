@@ -180,7 +180,7 @@ describe('month reconciliation', () => {
   it('classifies taxes and health insurance separately without blocking month close', () => {
     assert.equal(classify(bank('x', { counterparty: 'Techniker Krankenkasse' }), RULES)?.kind, 'tk_debit');
     assert.equal(classify(bank('x', { counterparty: 'Techniker Krankenkasse', amount: '5.00' }), RULES), undefined);
-    assert.deepEqual(classify(bank('refund', { counterparty: 'Finanzamt refund', amount: '43633.73' }), []), {
+    assert.deepEqual(classify(bank('refund', { counterparty: 'Finanzamt Example', amount: '1234.56' }), []), {
       kind: 'tax_refund', ruleId: 'tax-refund', category: 'Taxes',
     });
     const result = table(
@@ -199,7 +199,7 @@ describe('month reconciliation', () => {
     assert.deepEqual([byId['b-tax'].exception?.kind, byId['b-tax'].status, byId['b-tax'].tax], ['tax_debit', 'matched', true]);
     assert.deepEqual([byId['b-tax'].exception?.proof, byId['b-tax'].exception?.satisfied], ['category', true]);
     const refundAndTk = table([
-      bank('b-refund', { counterparty: 'Finanzamt refund', amount: '43633.73' }),
+      bank('b-refund', { counterparty: 'Finanzamt Example', amount: '1234.56' }),
       bank('b-tk', { counterparty: 'Techniker Krankenkasse', amount: '-534.20' }),
     ], []);
     assert.deepEqual(refundAndTk.rows.map((row) => [row.exception?.kind, row.tax, row.status]), [

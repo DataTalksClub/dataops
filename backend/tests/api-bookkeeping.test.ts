@@ -32,7 +32,7 @@ describe('bookkeeping API',()=>{
   });
   it('classifies tax and health-insurance rows on the backend in every transaction view',async()=>{
     const tk=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-16',paidDate:'2026-10-16',counterparty:'Techniker Krankenkasse',description:'Health insurance',amount:'1179.36',entryType:'expense'})).body);
-    const tax=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-30',paidDate:'2026-10-30',counterparty:'ZAHLUNGSVERKEHR BERLINER',description:'Finanzamt Einkommensteuer',amount:'500.00',entryType:'expense'})).body);
+    const tax=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-15',paidDate:'2026-10-15',counterparty:'Finanzamt Example',description:'Income tax payment',amount:'500.00',entryType:'expense'})).body);
     const vat=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-28',counterparty:'Finanzamt',description:'UMS.ST 2026',category:'VAT',amount:'50.00',entryType:'expense'})).body);
     const plain=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-05',counterparty:'Synthetic Cloud Vendor',description:'Synthetic compute',amount:'20.00',entryType:'expense'})).body);
     assert.equal(tk.line,'health-insurance');assert.equal(tax.line,'taxes');assert.equal(vat.line,'vat');assert.equal(plain.line,'operating');
@@ -67,19 +67,19 @@ describe('bookkeeping API',()=>{
     assert.ok(Number.isFinite(Date.parse(updated.audit.at(-1).at)));
   });
   it('validates and persists taxYearAttribution on a tax refund transaction without mutating other fields',async()=>{
-    const refund=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-30',paidDate:'2026-10-30',counterparty:'ZAHLUNGSVERKEHR BERLINER',description:'Finanzamt tax refund (Erstattung)',amount:'43633.73',currency:'EUR',entryType:'income',category:'Taxes',sourceType:'statement'})).body);
-    const badSum=await invoke('PUT',`/api/bookkeeping/transactions/${refund.id}`,{taxYearAttribution:{'2024':'27729.10','2025':'15904.00'},expectedUpdatedAt:refund.updatedAt});
+    const refund=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-15',paidDate:'2026-10-15',counterparty:'Finanzamt Example',description:'Synthetic tax refund',amount:'1234.56',currency:'EUR',entryType:'income',category:'Taxes',sourceType:'statement'})).body);
+    const badSum=await invoke('PUT',`/api/bookkeeping/transactions/${refund.id}`,{taxYearAttribution:{'2024':'700.00','2025':'534.00'},expectedUpdatedAt:refund.updatedAt});
     assert.equal(badSum.statusCode,400);
     assert.deepEqual(JSON.parse(badSum.body).fields,['taxYearAttribution']);
-    const badYear=await invoke('PUT',`/api/bookkeeping/transactions/${refund.id}`,{taxYearAttribution:{'24':'43633.73'},expectedUpdatedAt:refund.updatedAt});
+    const badYear=await invoke('PUT',`/api/bookkeeping/transactions/${refund.id}`,{taxYearAttribution:{'24':'1234.56'},expectedUpdatedAt:refund.updatedAt});
     assert.equal(badYear.statusCode,400);
     assert.deepEqual(JSON.parse(badYear.body).fields,['taxYearAttribution']);
-    const ok=await invoke('PUT',`/api/bookkeeping/transactions/${refund.id}`,{taxYearAttribution:{'2024':'27729.10','2025':'15904.63'},expectedUpdatedAt:refund.updatedAt},{'x-user-id':'synthetic-operator'});
+    const ok=await invoke('PUT',`/api/bookkeeping/transactions/${refund.id}`,{taxYearAttribution:{'2024':'700.00','2025':'534.56'},expectedUpdatedAt:refund.updatedAt},{'x-user-id':'synthetic-operator'});
     assert.equal(ok.statusCode,200,ok.body);
     const updated=JSON.parse(ok.body);
-    assert.deepEqual(updated.taxYearAttribution,{'2024':'27729.10','2025':'15904.63'});
-    assert.equal(updated.paidDate,'2026-10-30');
-    assert.equal(updated.amount,'43633.73');
+    assert.deepEqual(updated.taxYearAttribution,{'2024':'700.00','2025':'534.56'});
+    assert.equal(updated.paidDate,'2026-10-15');
+    assert.equal(updated.amount,'1234.56');
     assert.deepEqual(Object.keys(updated.audit.at(-1).changes),['taxYearAttribution']);
   });
   it('keeps 100 correction events when their combined UTF-8 payload exceeds the former byte budget',async()=>{

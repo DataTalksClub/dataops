@@ -58,12 +58,12 @@ test("statement list displays the incoming amount", async () => {
   await withFakePortal([
     ["/reconcile/statements", (request) => {
       assert.equal(new URL(request.url).searchParams.get("period"), "2026-10");
-      return { items: [{ id: "stmt-finom", accountId: "finom", period: "2026-10", rowCount: 7, incomingCount: 1, incomingTotal: "43633.73" }] };
+      return { items: [{ id: "stmt-finom", accountId: "finom", period: "2026-10", rowCount: 7, incomingCount: 1, incomingTotal: "1234.56" }] };
     }],
   ], async () => {
     const io = { lines: [], print(line) { this.lines.push(String(line)); } };
     await commands.statements({ ...args, json: false, period: "2026-10" }, io);
-    assert.match(io.lines[0], /7 rows \(43633\.73 incoming\)/);
+    assert.match(io.lines[0], /7 rows \(1234\.56 incoming\)/);
   });
 });
 
