@@ -249,9 +249,8 @@ export function createEditorLifecycle(context, services) {
     } else {
       setSaveState("");
     }
-    const hasUnsaved = hasChanges || Boolean(documentState.hasDraft);
     if (footer) {
-      footer.classList.toggle("has-unsaved", hasUnsaved);
+      footer.classList.toggle("has-unsaved", hasChanges);
     }
   }
 

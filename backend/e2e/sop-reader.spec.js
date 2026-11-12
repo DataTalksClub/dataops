@@ -63,6 +63,20 @@ test('save actions appear only after editing and disappear after discard', async
   await expect(page.locator('#editor-save-button')).toBeHidden();
 });
 
+test('an identical stored draft does not show save controls without edits', async ({ page }) => {
+  const response = await page.request.get(`${server.baseURL}/docs?path=${encodeURIComponent(SOP)}`);
+  expect(response.status()).toBe(200);
+  const { content } = await response.json();
+  await page.addInitScript(({ path, content }) => {
+    localStorage.setItem(`dtc-doc-draft:${path}`, content);
+  }, { path: SOP, content });
+  await open(page);
+  await expect(page.locator('#doc-state')).toBeHidden();
+  await expect(page.locator('#editor-save-state')).toBeHidden();
+  await expect(page.locator('#editor-save-button')).toBeHidden();
+  await expect(page.locator('#editor-discard-button')).toBeHidden();
+});
+
 test('a missing document shows a visible error with retry and no loading state', async ({ page }) => {
   await setupPageWithAuth(page);
   await page.goto(`${server.baseURL}/missing.md`);
