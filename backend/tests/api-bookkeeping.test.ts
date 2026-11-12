@@ -30,6 +30,24 @@ describe('bookkeeping API',()=>{
     const updated=JSON.parse((await invoke('PUT',`/api/bookkeeping/transactions/${created.id}`,{counterparty:'Google Workspace'})).body);
     assert.equal(updated.counterparty,'Google Workspace');assert.equal(updated.counterpartyCanonical,'Google');
   });
+  it('classifies tax and health-insurance rows on the backend in every transaction view',async()=>{
+    const tk=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-16',paidDate:'2026-10-16',counterparty:'Techniker Krankenkasse',description:'Health insurance',amount:'1179.36',entryType:'expense'})).body);
+    const tax=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-30',paidDate:'2026-10-30',counterparty:'ZAHLUNGSVERKEHR BERLINER',description:'Finanzamt Einkommensteuer',amount:'500.00',entryType:'expense'})).body);
+    const vat=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-28',counterparty:'Finanzamt',description:'UMS.ST 2026',category:'VAT',amount:'50.00',entryType:'expense'})).body);
+    const plain=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-05',counterparty:'Synthetic Cloud Vendor',description:'Synthetic compute',amount:'20.00',entryType:'expense'})).body);
+    assert.equal(tk.line,'health-insurance');assert.equal(tax.line,'taxes');assert.equal(vat.line,'vat');assert.equal(plain.line,'operating');
+    const listed=JSON.parse((await invoke('GET','/api/bookkeeping/transactions')).body).items;
+    for(const [item,line] of [[tk,'health-insurance'],[tax,'taxes'],[vat,'vat'],[plain,'operating']] as const){
+      const row=listed.find((candidate:any)=>candidate.id===item.id);
+      assert.equal(row.line,line,`${item.counterparty} is classified in the list response`);
+      const stored=await getBookkeepingItem(client,'bookkeeping',String(item.id));
+      assert.equal(stored?.line,undefined,'the classification is derived on read, not stored');
+    }
+    const moved=JSON.parse((await invoke('PUT',`/api/bookkeeping/transactions/${plain.id}`,{category:'Taxes'})).body);
+    assert.equal(moved.line,'taxes','reclassification follows the stored row on update');
+    const refund=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-02',counterparty:'Finanzamt',description:'Einkommensteuererstattung 2023',amount:'45000.00',entryType:'income'})).body);
+    assert.equal(refund.line,'taxes','a Finanzamt refund for a prior year is still a tax row');
+  });
   it('backfills exact confident invoice matches through the protected operation',async()=>{
     const transaction=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'1980-09-12',counterparty:'Go Daddy',amount:'178.49'})).body);
     const document=(await putBookkeepingItem(client,'document',{status:'active',documentType:'invoice',originalFilename:'domain-renewal.pdf',facts:{counterparty:'GoDaddy',amount:'178.49',currency:'EUR',transactionDate:'1980-09-10'}})).item;

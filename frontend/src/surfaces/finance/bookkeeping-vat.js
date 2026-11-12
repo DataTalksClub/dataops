@@ -8,13 +8,11 @@ const MANDATORY_LABELS = {
   "health-insurance": "Health insurance / TK",
 };
 const TAX_HEALTH_LINES = new Set(["vat", "taxes", "health-insurance"]);
-const TAX_HEALTH_KINDS = new Set(["tax_debit", "tax_refund", "tk_debit"]);
 
+// Classification is the backend `line` on both ledger transactions and
+// finance-summary entries; the UI never re-derives it from kinds or text.
 function isTaxHealthEntry(entry) {
-  const line = String(entry?.line || "");
-  if (TAX_HEALTH_LINES.has(line)) return true;
-  if (line) return false;
-  return TAX_HEALTH_KINDS.has(String(entry?.mandatoryKind || ""));
+  return TAX_HEALTH_LINES.has(String(entry?.line || ""));
 }
 
 function isOwnerWithdrawalEntry(entry) {
@@ -44,10 +42,13 @@ function mandatoryLabel(entry) {
   return isRefund(entry) ? `${label} refund` : label;
 }
 
-// Share exact tax/health line classification and the guarded kind fallback between both views.
+// The backend classifies ledger transactions (`line`), so tax and
+// health-insurance rows leave the ordinary ledger on the first render — the
+// finance summary only refines bank-only statement projections.
 export function monthlyLedgerEntries(entries, lens, financeEntriesById) {
   if (!/^\d{4}-\d{2}$/.test(lens)) return entries;
   return entries.filter((entry) => {
+    if (monthOf(entry) === lens && isTaxHealthEntry(entry)) return false;
     const mandatory = financeEntriesById.get(String(entry.id));
     const taxHealth = mandatory?.month === lens && isTaxHealthEntry(mandatory);
     const ownerWithdrawal = monthOf(entry) === lens && isOwnerWithdrawalEntry(entry);

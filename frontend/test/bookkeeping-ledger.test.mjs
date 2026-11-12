@@ -611,7 +611,7 @@ test("an expense-encoded tax refund moves to the separate section and reduces it
   assert.match(subtotal, /-€80\.00/);
 });
 
-test("tax lines are exact and explicit-kind fallback applies only when line is absent", () => {
+test("the backend line alone classifies; a kind without one is not moved", () => {
   const entries = [
     { id: "synthetic-line-tax", month: "2026-04", direction: "in", line: "taxes", mandatoryKind: null,
       counterparty: "Synthetic tax refund", amount: "12.00", currency: "EUR", eur: 12 },
@@ -622,10 +622,32 @@ test("tax lines are exact and explicit-kind fallback applies only when line is a
   ];
   const rows = entries.map(({ id }) => ({ id }));
   const index = new Map(entries.map((entry) => [entry.id, entry]));
-  assert.deepEqual(monthlyLedgerEntries(rows, "2026-04", index), [rows[2]]);
+  assert.deepEqual(monthlyLedgerEntries(rows, "2026-04", index), [rows[1], rows[2]],
+    "only the explicit backend line moves a row out of the ordinary ledger");
   const markup = mandatoryPaymentsMarkup(entries, "2026-04", escapeHtml);
   assert.match(markup, /Synthetic tax refund/);
-  assert.match(markup, /Synthetic classified debit/);
-  assert.doesNotMatch(markup, /Synthetic operating payment/);
-  assert.match(markup, /-€8\.00/);
+  assert.doesNotMatch(markup, /Synthetic classified debit|Synthetic operating payment/);
+  assert.match(markup, /€12\.00/);
+});
+
+test("backend-classified ledger rows leave the ordinary ledger on the first render", () => {
+  const month = "2026-10";
+  const rows = [
+    { id: "synthetic-tk-oct", transactionDate: "2026-10-16", paidDate: "2026-10-16",
+      line: "health-insurance", counterparty: "Techniker Krankenkasse", description: "Health insurance",
+      amount: "1179.36", currency: "EUR", entryType: "expense", category: "" },
+    { id: "synthetic-finanzamt-oct", transactionDate: "2026-10-30", paidDate: "2026-10-30",
+      line: "taxes", counterparty: "ZAHLUNGSVERKEHR BERLINER", description: "Finanzamt Einkommensteuer",
+      amount: "500.00", currency: "EUR", entryType: "expense", category: "" },
+    { id: "synthetic-client-oct", transactionDate: "2026-10-12", paidDate: "2026-10-12",
+      line: "operating", counterparty: "Synthetic Sponsor", description: "Synthetic sponsorship",
+      amount: "5000.00", currency: "EUR", entryType: "income", category: "Sponsorship" },
+  ];
+  const beforeSummary = monthlyLedgerEntries(rows, month, new Map());
+  assert.deepEqual(beforeSummary.map((entry) => entry.id), ["synthetic-client-oct"],
+    "tax and health-insurance rows never appear in the ordinary ledger, summary loaded or not");
+  const afterSummary = monthlyLedgerEntries(rows, month, new Map([
+    ["synthetic-tk-oct", { id: "synthetic-tk-oct", month, date: "2026-10-16", direction: "out", line: "health-insurance" }],
+  ]));
+  assert.deepEqual(afterSummary, beforeSummary, "loading the finance summary moves no row");
 });

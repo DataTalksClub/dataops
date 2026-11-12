@@ -1,3 +1,5 @@
+import { lineOf, type Line } from "./finance/summary";
+
 const aliases: Array<{ canonical: string; names: string[] }> = [
   { canonical: "Amazon Web Services", names: ["aws", "aws emea", "amazon web services", "amazon web services emea"] },
   { canonical: "Google", names: ["google", "google cloud", "google cloud platform", "google cloud emea", "google workspace", "google workspace emea", "google one"] },
@@ -22,6 +24,14 @@ export function canonicalBookkeepingCounterparty(value: unknown) {
   return aliases.find((rule) => rule.names.some((name) => vendorKey(name) === key))?.canonical || raw || "Unknown vendor";
 }
 
-export function bookkeepingTransactionView<T extends Record<string, unknown>>(item: T): T & { counterpartyCanonical: string } {
-  return { ...item, counterpartyCanonical: canonicalBookkeepingCounterparty(item.counterparty) };
+/** The ledger row as the portal sees it: canonical vendor label plus the
+ * finance line (operating/vat/taxes/health-insurance/owner-pay) so the UI can
+ * place tax and health-insurance rows on the first render, before the finance
+ * summary loads. Derived on read; never stored. */
+export function bookkeepingTransactionView<T extends Record<string, unknown>>(item: T): T & { counterpartyCanonical: string; line: Line } {
+  return {
+    ...item,
+    counterpartyCanonical: canonicalBookkeepingCounterparty(item.counterparty),
+    line: lineOf(item as Parameters<typeof lineOf>[0]),
+  };
 }
