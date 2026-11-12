@@ -1,6 +1,8 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
-import { financeSummary, financeTaxes, financeUpcoming, parsePeriodQuery } from '../finance/service';
+import { financeSummary, financeTaxes, financeTaxEstimate, financeUpcoming, parsePeriodQuery } from '../finance/service';
+import { INCOME_TARIFFS } from '../finance/taxEstimate';
+import { putTaxReturn, validateTaxReturnRecord, type TaxReturnRecord } from '../finance/taxReturns';
 import { listTaxSchedule, putTaxScheduleEntry, ScheduleVersionConflict } from '../finance/taxSchedule';
 import { validateScheduleEntry, type ScheduleEntry } from '../finance/upcoming';
 import { json, parse } from './bookkeepingShared';
@@ -9,9 +11,12 @@ import { json, parse } from './bookkeepingShared';
  * Finance views:
  *   GET /api/finance/summary?month=|year=|ytd=1
  *   GET /api/finance/taxes?month=|year=|ytd=1   VAT expected vs paid, other taxes by type, TK
+ *   GET /api/finance/tax-estimate?year=YYYY     rough ESt/Soli/GewSt estimate for the profit earned so far,
+ *                                               with the stored Bescheid figures and the after-tax planning numbers
  *   GET /api/finance/upcoming?days=60          scheduled tax/TK debits + balance check
  *   GET /api/finance/tax-schedule              the schedule those debits come from
  *   PUT /api/finance/tax-schedule/<id>         create/replace one entry (expectedVersion)
+ *   PUT /api/finance/tax-returns/<year>        store one year's official Bescheid figures (marks the year closed)
  */
 export async function handleFinanceRoutes(path: string, method: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse | null> {
   if (path === '/api/finance/summary') {
@@ -25,6 +30,14 @@ export async function handleFinanceRoutes(path: string, method: string, event: L
     const query = parsePeriodQuery(event.queryStringParameters);
     if (typeof query === 'string') return json(400, { error: query });
     return json(200, await financeTaxes(client, query));
+  }
+  if (path === '/api/finance/tax-estimate') {
+    if (method !== 'GET') return json(405, { error: 'Method not allowed' });
+    const raw = event.queryStringParameters?.year || '';
+    if (!/^\d{4}$/.test(raw)) return json(400, { error: 'year must be YYYY' });
+    const year = Number(raw);
+    if (!INCOME_TARIFFS[year]) return json(400, { error: `No statutory tariff for ${year}; supported years: ${Object.keys(INCOME_TARIFFS).sort().join(', ')}` });
+    return json(200, await financeTaxEstimate(client, year));
   }
   if (path === '/api/finance/upcoming') {
     if (method !== 'GET') return json(405, { error: 'Method not allowed' });
@@ -54,6 +67,18 @@ export async function handleFinanceRoutes(path: string, method: string, event: L
       if (error instanceof ScheduleVersionConflict) return json(409, { error: error.message, current: (await listTaxSchedule(client)).find((e) => e.id === entry[1]) || null });
       throw error;
     }
+  }
+  const taxReturn = path.match(/^\/api\/finance\/tax-returns\/(\d{4})$/);
+  if (taxReturn) {
+    if (method !== 'PUT') return json(405, { error: 'Method not allowed' });
+    const body = parse(event.body || null);
+    if (!body) return json(400, { error: 'JSON body required' });
+    const { updatedAt: _at, updatedBy: _by, ...fields } = body;
+    const value = { ...fields, year: Number(taxReturn[1]) } as Record<string, unknown>;
+    const errors = validateTaxReturnRecord(value);
+    if (errors.length) return json(400, { error: 'Invalid tax return record', fields: errors });
+    const actor = String(event.headers?.['x-user-id'] || 'unknown');
+    return json(200, await putTaxReturn(client, value as unknown as TaxReturnRecord, actor));
   }
   return null;
 }

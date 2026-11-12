@@ -8,6 +8,8 @@ import { loadEcbRates } from './rates';
 import { bookingDate, dedupe, enrichLedgerFromStatement, isRefundRow, matchFinanceStatements, summarize, type FinanceSummary, type LedgerRow, type PeriodQuery, type StatementLine } from './summary';
 import { classifyMandatoryPayment, taxTypeOf } from './mandatoryPayments';
 import { taxesReport } from './taxes';
+import { estimateTaxes } from './taxEstimate';
+import { getTaxReturn, type TaxReturnRecord } from './taxReturns';
 import { listTaxSchedule } from './taxSchedule';
 import { upcomingDebits, type Balance, type PaidEvidence } from './upcoming';
 import { businessAccountStatementRequirement } from './businessAccounts';
@@ -81,7 +83,7 @@ export function financePairings(data: Snapshot): Map<string, string> {
   return new Map([...pairing.pairs].map(([key, pair]) => [key, pair.ledger.id]));
 }
 
-export async function financeSummary(client: DynamoDBDocumentClient, query: PeriodQuery, today = berlinToday()): Promise<FinanceSummary & { rateErrors: string[] }> {
+export async function financeSummary(client: DynamoDBDocumentClient, query: PeriodQuery, today = berlinToday()): Promise<FinanceSummary & { rateErrors: string[]; taxReturn: TaxReturnRecord | null }> {
   const [rows, invoices, statements, accounts, documents, links] = await Promise.all([
     listTransactions(client),
     listInvoices(client),
@@ -120,11 +122,84 @@ export async function financeSummary(client: DynamoDBDocumentClient, query: Peri
       .filter((document) => document.documentType === 'bank-statement' && document.status === 'active')
       .map((document) => ({ accountId: String(document.accountId), month: String(document.statementMonth) })),
   });
-  return { ...summary, rateErrors: errors };
+  // A stored Bescheid record closes the year: the summary carries the official
+  // figures next to the ledger-based payment buckets.
+  const taxReturn = 'year' in query ? await getTaxReturn(client, Number(query.year)) : null;
+  return { ...summary, rateErrors: errors, taxReturn };
 }
 
 export async function financeTaxes(client: DynamoDBDocumentClient, query: PeriodQuery, today = berlinToday()) {
   return taxesReport(await financeSummary(client, query, today), today);
+}
+
+/**
+ * Rough German tax estimate for one year from the profit actually earned so
+ * far: § 32a EStG tariff plus Soli and Berlin Gewerbesteuer, § 35 relief
+ * applied, compared with the taxes already paid in that year. Refunds from
+ * earlier years are never a negative tax here: the paid numbers come from the
+ * same payment-only buckets the taxes report uses — or, once a year has a
+ * stored Bescheid record, from the assessment itself. Alongside the estimate
+ * it answers the planning questions: how much money the year leaves after
+ * tax, and how much of the business balance is safe to withdraw now because
+ * no tax is still owed on it.
+ */
+export async function financeTaxEstimate(client: DynamoDBDocumentClient, year: number, today = berlinToday()) {
+  const [summary, balances] = await Promise.all([
+    financeSummary(client, { year: String(year) }, today),
+    latestBalances(client),
+  ]);
+  const assessment = summary.taxReturn;
+  const report = taxesReport(summary, today);
+  const profit = summary.totals.netProfitExVat;
+  const estimate = estimateTaxes(year, profit);
+  const ledgerPaid = {
+    incomeTax: report.totals.taxes['income-tax'],
+    tradeTax: report.totals.taxes['trade-tax'],
+  };
+  const paid = assessment
+    ? { incomeTax: assessment.paid.incomeTax + assessment.paid.soli, tradeTax: assessment.paid.tradeTax }
+    : ledgerPaid;
+  const paidTotal = Math.round((paid.incomeTax + paid.tradeTax) * 100) / 100;
+  const remaining = Math.round((estimate.totalEstimate - paidTotal) * 100) / 100;
+
+  // Planning numbers per Alexey's ask: money left after tax, and the balance
+  // that can be withdrawn because no estimated tax is still owed on it.
+  const ownerPayEur = Math.round(summary.totals.ownerPay * 100) / 100;
+  const eurBalances = balances.filter((b) => b.currency === 'EUR' && Number.isFinite(Number(b.amount)));
+  const accounts = eurBalances.map((b) => ({
+    accountId: b.accountId,
+    wallet: b.wallet || '',
+    amountEur: Math.round(Number(b.amount) * 100) / 100,
+    asOf: b.asOf,
+  }));
+  const balanceTotalEur = accounts.length
+    ? Math.round(accounts.reduce((sum, a) => sum + a.amountEur, 0) * 100) / 100
+    : null;
+  const projectedAfterTaxEur = Math.round((profit - estimate.totalEstimate) * 100) / 100;
+  const safeToWithdrawEur = balanceTotalEur === null ? null : Math.round((balanceTotalEur - remaining) * 100) / 100;
+  const balanceLabel = accounts.map((a) => `${a.accountId}${a.wallet ? `/${a.wallet}` : ''} ${a.amountEur.toFixed(2)} EUR (as of ${a.asOf})`).join(' + ');
+  const planningFormula = [
+    `Projected year-end money after tax = profit earned so far (${estimate.profitEur} EUR) − total tax estimate (${estimate.totalEstimate} EUR) = ${projectedAfterTaxEur} EUR. The year is not over, so this moves with every booking.`,
+    `Safe to withdraw now = business account balance (${balanceLabel || 'no statements uploaded yet'}) − estimated remaining tax for ${year} (${remaining.toFixed(2)} EUR = total estimate minus taxes already paid/prepaid; negative means paid ahead, which comes back) = ${safeToWithdrawEur === null ? 'unknown until a statement is uploaded' : `${safeToWithdrawEur.toFixed(2)} EUR`}.`,
+    `Owner withdrawals already made in ${year} (${ownerPayEur.toFixed(2)} EUR) are not added back: that money has already left the balance.`,
+  ];
+
+  return {
+    ...estimate,
+    paid,
+    paidTotal,
+    /** Positive: still to pay; negative: paid more than the estimate. */
+    remaining,
+    /** The stored Bescheid figures for this year, when the year is assessed. */
+    assessment,
+    planning: {
+      ownerPayEur,
+      businessBalance: { totalEur: balanceTotalEur, accounts },
+      projectedAfterTaxEur,
+      safeToWithdrawEur,
+      formula: planningFormula,
+    },
+  };
 }
 
 export function parsePeriodQuery(params: Record<string, string | undefined> | null | undefined): PeriodQuery | string {

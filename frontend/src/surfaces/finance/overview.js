@@ -2,7 +2,9 @@
 // two numbers that matter on top (net profit excluding VAT and the projected
 // VAT position). Every figure comes from GET /api/finance/summary,
 // the same payload `dataops finance summary --json` prints, so the portal and
-// the CLI cannot disagree. Pure markup helpers are exported for tests.
+// the CLI cannot disagree; the tax estimate comes from
+// GET /api/finance/tax-estimate?year=YYYY. Pure markup helpers are exported
+// for tests.
 import { html } from "./shared.js";
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -71,10 +73,41 @@ export function headlineMarkup(summary, e) {
 
 /**
  * Taxes paid this year by type and together. Only payments count: a refund
- * is never a negative tax, so it is listed on its own below.
+ * is never a negative tax, so it is listed on its own below. Once the year
+ * has a stored Bescheid record it is closed: the tax figures become the
+ * official assessed/prepaid/refunded numbers instead of the ledger buckets.
  */
 export function taxesMarkup(summary, e) {
   const t = summary.totals;
+  const official = summary.taxReturn;
+  if (official) {
+    const estSoli = formatEur(official.assessed.incomeTax + official.assessed.soli);
+    const paidSoli = formatEur(official.paid.incomeTax + official.paid.soli);
+    const refunded = html`${formatEur(official.refunded)}${official.refundedOn
+      ? html` <span class="fin-muted">paid out ${e(official.refundedOn)}</span>` : ""}`;
+    const carried = official.offsets?.length
+      ? html`<p class="fin-muted">Not paid out but carried: ${official.offsets
+          .map((o) => html`<strong>${formatEur(o.amount)}</strong> to ${e(o.target)}`).join("; ")}.</p>`
+      : "";
+    return html`<section class="fin-block" aria-labelledby="fin-taxes-heading">
+      <h2 id="fin-taxes-heading" class="fin-block__title">Taxes in ${e(summary.period.label)}
+        <span class="fin-muted" data-fin-closed-badge>closed — figures per Bescheid</span></h2>
+      <dl class="fin-stats">
+        <div><dt>Einkommensteuer + Soli</dt><dd data-fin-official-income-tax>assessed ${estSoli} · prepaid ${paidSoli}</dd></div>
+        <div><dt>Gewerbesteuer</dt><dd data-fin-official-trade-tax>assessed ${formatEur(official.assessed.tradeTax)} · prepaid ${formatEur(official.paid.tradeTax)}</dd></div>
+        <div><dt>Umsatzsteuer</dt><dd data-fin-official-vat>assessed ${formatEur(official.assessed.vat)} · paid ${formatEur(official.paid.vat)}</dd></div>
+        <div><dt>TK health insurance</dt><dd data-fin-tax="health-insurance">${formatEur(t.healthInsurance)}</dd></div>
+        <div class="fin-stats__total"><dt>Refunded for ${e(summary.period.label)}</dt><dd data-fin-official-refund>${refunded}</dd></div>
+      </dl>
+      ${carried}
+      <details class="fin-estimate-details" data-fin-official-sources>
+        <summary>Sources and notes (Bescheide, filed returns)</summary>
+        ${official.notes?.length ? html`<ul class="fin-gaps">${official.notes.map((note) => html`<li>${e(note)}</li>`).join("")}</ul>` : ""}
+        <ul class="fin-gaps">${official.sources.map((source) => html`<li><em>${e(source)}</em></li>`).join("")}</ul>
+      </details>
+      ${refundsMarkup(summary, e)}
+    </section>`;
+  }
   const lines = [
     ["Einkommensteuer + Soli", t.incomeTax, "income-tax"],
     ["Gewerbesteuer", t.tradeTax, "trade-tax"],
@@ -89,6 +122,61 @@ export function taxesMarkup(summary, e) {
       </dl>
       ${refundsMarkup(summary, e)}
     </section>`;
+}
+
+/**
+ * "Tax estimate" block for the selected year: it fills itself when the year
+ * loads (no button), so every year view immediately shows the rough estimate
+ * and, for an open year, the after-tax planning numbers.
+ */
+export function taxEstimateSectionMarkup(year, e) {
+  return html`<section class="fin-block" aria-labelledby="fin-estimate-heading" data-fin-estimate>
+      <h2 id="fin-estimate-heading" class="fin-block__title">Tax estimate <span class="fin-muted">rough, Berlin, from the profit earned so far in ${e(year)}</span></h2>
+      <div data-fin-estimate-body><p class="fin-muted">Calculating…</p></div>
+    </section>`;
+}
+
+/**
+ * The estimate itself: Einkommensteuer (§ 32a tariff after § 35 relief),
+ * Solidaritätszuschlag and Gewerbesteuer separately and in total, the
+ * comparison with the taxes already paid that year (official Bescheid figures
+ * once the year is assessed), the after-tax planning numbers for an open
+ * year, and the inputs, formula and statutory sources behind the numbers.
+ */
+export function taxEstimateMarkup(est, e) {
+  const remainingWord = est.remaining >= 0
+    ? html`an estimated <strong>${formatEur(est.remaining)}</strong> still to pay in ${e(String(est.year))}`
+    : html`already <strong>${formatEur(-est.remaining)}</strong> more paid than this rough estimate`;
+  const afterTax = formatEur(est.planning.projectedAfterTaxEur);
+  const safe = est.planning.safeToWithdrawEur === null
+    ? html`<span class="fin-muted">unknown until a bank statement is uploaded</span>`
+    : formatEur(est.planning.safeToWithdrawEur);
+  const planning = est.assessment ? "" : html`<dl class="fin-stats" data-fin-planning>
+        <div><dt>Projected year-end money after tax <span class="fin-muted">rough</span></dt><dd data-fin-planning-after-tax>${afterTax}</dd></div>
+        <div><dt>Safe to withdraw now <span class="fin-muted">rough</span></dt><dd data-fin-planning-safe>${safe}</dd></div>
+        <div><dt>Owner pay already taken</dt><dd data-fin-planning-owner-pay>${formatEur(est.planning.ownerPayEur)}</dd></div>
+      </dl>`;
+  return html`<div data-fin-estimate-result>
+      ${planning}
+      <dl class="fin-stats">
+        <div><dt>Profit earned so far (ex VAT)</dt><dd>${formatEur(est.profitEur)}</dd></div>
+        <div><dt>Einkommensteuer <span class="fin-muted">after § 35 relief</span></dt><dd data-fin-est-income-tax>${formatEur(est.incomeTax.einkommensteuer)}</dd></div>
+        <div><dt>Solidaritätszuschlag</dt><dd data-fin-est-soli>${formatEur(est.soli)}</dd></div>
+        <div><dt>Gewerbesteuer <span class="fin-muted">Berlin Hebesatz 410 %</span></dt><dd data-fin-est-trade-tax>${formatEur(est.tradeTax.steuer)}</dd></div>
+        <div class="fin-stats__total"><dt>Total tax estimate</dt><dd data-fin-est-total>${formatEur(est.totalEstimate)}</dd></div>
+      </dl>
+      <p class="fin-muted" data-fin-est-paid-line>${est.assessment ? "Per the Bescheid, prepaid" : "Already paid"} in ${e(String(est.year))}:
+        ESt + Soli ${formatEur(est.paid.incomeTax)}, GewSt ${formatEur(est.paid.tradeTax)}
+        — total <strong>${formatEur(est.paidTotal)}</strong>. Compared with the estimate: ${remainingWord}.
+        Refunds for earlier years never count as negative tax.</p>
+      <details class="fin-estimate-details" data-fin-est-details>
+        <summary>Inputs, formula and statutory sources</summary>
+        <ul class="fin-gaps">${[...est.inputs, ...est.formula, ...(est.assessment ? [] : est.planning.formula)]
+          .map((line) => html`<li>${e(line)}</li>`).join("")}</ul>
+        <ul class="fin-gaps">${est.sources.map((line) => html`<li><em>${e(line)}</em></li>`).join("")}</ul>
+        <p class="fin-muted">${e(est.disclaimer)}</p>
+      </details>
+    </div>`;
 }
 
 /** Refunds stay visible as cash with their ledger rows; they are not tax, revenue or profit. */
@@ -294,6 +382,7 @@ export function overviewMarkup(summary, e) {
   return html`${headlineMarkup(summary, e)}
     ${cashChartMarkup(summary.months, e) + profitChartMarkup(summary.months, e)}
     ${taxesMarkup(summary, e)}
+    ${taxEstimateSectionMarkup(summary.period.label, e)}
     <section class="fin-block" aria-labelledby="fin-months-heading">
       <h2 id="fin-months-heading" class="fin-block__title">By month</h2>
       ${monthTableMarkup(summary, e)}
@@ -326,13 +415,30 @@ export function createFinanceOverviewSurface(context) {
 
     const body = surface.querySelector("[data-fin-body]");
     const tooltip = surface.querySelector("[data-fin-tooltip]");
+    const currentYear = today.slice(0, 4);
 
-    // The debit schedule does not depend on the period, so it loads once.
+    // The upcoming-debit schedule and its balance check are period-independent,
+    // so the markup is fetched once; whether it shows is a per-year decision:
+    // they belong to the live current year only, never to a closed year.
+    let upcomingHtml = "";
+    let estimateClosed = false;
+    let estimatePending = true;
+
+    function syncUpcoming() {
+      const box = surface.querySelector("[data-fin-upcoming]");
+      if (!box) return;
+      box.innerHTML = !estimatePending && period.year === currentYear && !estimateClosed ? upcomingHtml : "";
+    }
+
     request(workApiUrl("/api/finance/upcoming?days=60"))
-      .then((u) => { surface.querySelector("[data-fin-upcoming]").innerHTML = upcomingMarkup(u, escapeHtml); })
+      .then((u) => {
+        upcomingHtml = upcomingMarkup(u, escapeHtml);
+        syncUpcoming();
+      })
       .catch((error) => {
         const message = escapeHtml(error?.message || "request failed");
-        surface.querySelector("[data-fin-upcoming]").innerHTML = html`<p class="fin-error" role="alert">Could not load upcoming tax debits: ${message}</p>`;
+        const box = surface.querySelector("[data-fin-upcoming]");
+        if (box) box.innerHTML = html`<p class="fin-error" role="alert">Could not load upcoming tax debits: ${message}</p>`;
       });
 
     async function load() {
@@ -342,14 +448,41 @@ export function createFinanceOverviewSurface(context) {
       try {
         const summary = await request(workApiUrl(`/api/finance/summary?${query}`));
         if (mine !== generation) return;
-        surface.querySelector("[data-fin-label]").textContent = `${summary.period.label} · ${summary.period.from} to ${summary.period.to} · EUR`;
+        surface.querySelector("[data-fin-label]").textContent =
+          `${summary.period.label} · ${summary.period.from} to ${summary.period.to} · EUR${summary.taxReturn?.closed ? " · year closed (assessed per Bescheid)" : ""}`;
         body.innerHTML = overviewMarkup(summary, escapeHtml);
+        loadTaxEstimate();
       } catch (error) {
         if (mine !== generation) return;
         body.innerHTML = html`<p class="fin-error" role="alert">Could not load the finance summary: ${escapeHtml(error?.message || "request failed")}</p>
           <button type="button" class="dk-button dk-button--secondary" data-fin-retry>Retry</button>`;
       } finally {
         if (mine === generation) body.removeAttribute("aria-busy");
+      }
+    }
+
+    /** The estimate renders itself when a year loads; no button. */
+    async function loadTaxEstimate() {
+      const mine = generation;
+      const box = surface.querySelector("[data-fin-estimate-body]");
+      if (!box) return;
+      estimatePending = true;
+      box.innerHTML = html`<p class="fin-muted">Calculating…</p>`;
+      try {
+        const estimate = await request(workApiUrl(`/api/finance/tax-estimate?year=${encodeURIComponent(period.year)}`));
+        if (mine !== generation) return;
+        estimateClosed = Boolean(estimate.assessment?.closed);
+        estimatePending = false;
+        box.innerHTML = taxEstimateMarkup(estimate, escapeHtml);
+        syncUpcoming();
+      } catch (error) {
+        if (mine !== generation) return;
+        estimateClosed = false;
+        estimatePending = false;
+        const message = escapeHtml(error?.message || "request failed");
+        box.innerHTML = html`<p class="fin-error" role="alert">Could not calculate the tax estimate: ${message}</p>
+          <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-fin-tax-estimate>Retry</button>`;
+        syncUpcoming();
       }
     }
 
@@ -365,6 +498,7 @@ export function createFinanceOverviewSurface(context) {
       activateFinanceMonthlyRow(event, document.getSelection?.());
       if (event.target.closest("[data-fin-period='current-year']")) choose({ year: today.slice(0, 4) });
       if (event.target.closest("[data-fin-retry]")) load();
+      if (event.target.closest("[data-fin-tax-estimate]")) loadTaxEstimate();
     });
     surface.addEventListener("change", (event) => {
       if (event.target.matches("[data-fin-year]")) choose({ year: event.target.value });
