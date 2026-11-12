@@ -4631,3 +4631,93 @@ describe("Work Detail surface boundary", () => {
     }
   });
 });
+
+describe("Work Detail optional sections surface load failures", () => {
+  const filesAndArtifacts = (url) => {
+    if (url.startsWith("/api/files")) return { files: { items: [] } };
+    if (url.startsWith("/api/artifacts")) return { artifacts: [] };
+    return undefined;
+  };
+
+  test("a rejected newsletter issue load on a Card shows the slot error, not an empty Card", async () => {
+    const card = { id: "card-nl-load-failure", version: 1, title: "Weekly email", status: "active", stage: "preparation", references: [] };
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${card.id}` && !requestOptions.method) return card;
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [] };
+        if (url === `/api/newsletter-issues?cardId=${card.id}`) throw new Error("Synthetic newsletter outage");
+        return filesAndArtifacts(url) || {};
+      },
+    });
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    const failure = await waitFor(
+      () => harness.cardPanelBody.querySelector(".card-newsletter-slot__error"),
+      "newsletter issue load failure",
+    );
+    assert.equal(failure.getAttribute("role"), "alert");
+    assert.equal(failure.textContent, "Could not load the newsletter issue: Synthetic newsletter outage");
+    assert.equal(harness.cardPanelBody.querySelector("[data-card-newsletter-issue]").hidden, false);
+  });
+
+  test("a Card's newsletter issue still renders and shows no error when it loads", async () => {
+    const card = { id: "card-nl-load-ok", version: 1, title: "Weekly email", status: "active", stage: "preparation", references: [] };
+    const harness = createHarness({
+      cards: [card],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/cards/${card.id}` && !requestOptions.method) return card;
+        if (url === `/api/tasks?cardId=${card.id}`) return { tasks: [] };
+        if (url === `/api/newsletter-issues?cardId=${card.id}`) {
+          return { items: [{ id: "issue-ok", label: "Weekly #300", publicationDate: "2026-08-21", status: "planned", slots: {} }] };
+        }
+        return filesAndArtifacts(url) || {};
+      },
+    });
+    harness.api.prepareCardPanel(card.id);
+    await harness.api.hydrateCardPanel(card.id, 1);
+    const row = await waitFor(
+      () => harness.cardPanelBody.querySelector(".card-newsletter-slot__row"),
+      "newsletter issue row",
+    );
+    assert.match(row.textContent, /Weekly #300/);
+    assert.equal(harness.cardPanelBody.querySelector(".card-newsletter-slot__error"), null);
+  });
+
+  test("a rejected load of the Card's tasks says so in the dependency section", async () => {
+    const task = { id: "task-deps-load-failure", cardId: "card-deps-failure", version: 1, taskHistory: [], description: "Publish page", status: "todo", date: "2026-08-12" };
+    const harness = createHarness({
+      cards: [{ id: task.cardId, version: 1, title: "Episode" }],
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
+        if (url === `/api/tasks?cardId=${task.cardId}`) throw new Error("Synthetic tasks outage");
+        return filesAndArtifacts(url) || {};
+      },
+    });
+    await hydrateTask(harness, task);
+    const failure = await waitFor(
+      () => harness.taskPanelBody.querySelector(".task-dependencies-error"),
+      "card tasks load failure",
+    );
+    assert.equal(failure.getAttribute("role"), "alert");
+    assert.equal(failure.textContent, "Could not load this card's tasks: Synthetic tasks outage");
+  });
+
+  test("a rejected Card load on a deep-linked Task says so instead of a bare card id", async () => {
+    const task = { id: "task-card-load-failure", cardId: "card-unknown", version: 1, taskHistory: [], description: "Announce in Slack", status: "todo", date: "2026-08-20" };
+    const harness = createHarness({
+      request: async (url, requestOptions = {}) => {
+        if (url === `/api/tasks/${task.id}` && !requestOptions.method) return task;
+        if (url === `/api/cards/${task.cardId}`) throw new Error("Synthetic card outage");
+        return filesAndArtifacts(url) || {};
+      },
+    });
+    await hydrateTask(harness, task);
+    const failure = await waitFor(
+      () => harness.taskPanelBody.querySelector(".task-context-card-error"),
+      "card load failure",
+    );
+    assert.equal(failure.getAttribute("role"), "alert");
+    assert.equal(failure.textContent, "Could not load the card: Synthetic card outage");
+  });
+});

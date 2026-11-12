@@ -142,7 +142,12 @@ export function renderCardNewsletterIssue(
       newsletterIssueCache.set(card.id, { issues, at: Date.now() });
       fill(issues);
     },
-    () => {},
+    // A failed load is not "no issue": say so instead of hiding the section.
+    (error) => {
+      section.hidden = false;
+      slotError.textContent = `Could not load the newsletter issue: ${error?.message || "request failed"}`;
+      section.append(slotError);
+    },
   );
   return section;
 }

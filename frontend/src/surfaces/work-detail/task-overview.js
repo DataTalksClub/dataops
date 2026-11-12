@@ -42,9 +42,18 @@ export function renderTaskContext(task, view, deps) {
     // A deep link can open the task before the work snapshot knows its card;
     // the card is fetched once and the name filled in when it arrives.
     if (!card?.title) {
-      deps.fetchCard(task.cardId).then((fetched) => {
-        if (fetched?.title && name.isConnected) name.textContent = deps.workCardTitle(fetched);
-      });
+      deps.fetchCard(task.cardId).then(
+        (fetched) => {
+          if (fetched?.title && name.isConnected) name.textContent = deps.workCardTitle(fetched);
+        },
+        (error) => {
+          const failed = document.createElement("span");
+          failed.className = "task-context-card-error";
+          failed.setAttribute("role", "alert");
+          failed.textContent = `Could not load the card: ${error?.message || "request failed"}`;
+          text.append(failed);
+        },
+      );
     }
     const meta = document.createElement("span");
     meta.textContent = kind ? `${kind.name} card` : "Card";

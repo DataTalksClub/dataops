@@ -50,7 +50,14 @@ export function renderTaskDependencies(
       .then((cardTasks) => {
         if (Array.isArray(cardTasks) && cardTasks.length > 0) render(cardTasks);
       })
-      .catch(() => {});
+      .catch((error) => {
+        // Without the card's tasks "Unblocks" is unknown, not empty.
+        const failed = document.createElement("p");
+        failed.className = "task-dependencies-error";
+        failed.setAttribute("role", "alert");
+        failed.textContent = `Could not load this card's tasks: ${error?.message || "request failed"}`;
+        container.append(failed);
+      });
   }
   return { element: container, editable };
 }
