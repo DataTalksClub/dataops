@@ -2,7 +2,9 @@
 // two numbers that matter on top (net profit excluding VAT and the projected
 // VAT position). Every figure comes from GET /api/finance/summary,
 // the same payload `dataops finance summary --json` prints, so the portal and
-// the CLI cannot disagree. Pure markup helpers are exported for tests.
+// the CLI cannot disagree; the tax estimate comes from
+// GET /api/finance/tax-estimate?year=YYYY. Pure markup helpers are exported
+// for tests.
 import { html } from "./shared.js";
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -89,6 +91,48 @@ export function taxesMarkup(summary, e) {
       </dl>
       ${refundsMarkup(summary, e)}
     </section>`;
+}
+
+/**
+ * "Calculate tax" block for the selected year: the button starts a rough
+ * ESt/Soli/GewSt estimate from the profit earned so far; the result (or the
+ * retry error) replaces the body content.
+ */
+export function taxEstimateSectionMarkup(year, e) {
+  return html`<section class="fin-block" aria-labelledby="fin-estimate-heading" data-fin-estimate>
+      <h2 id="fin-estimate-heading" class="fin-block__title">Tax estimate <span class="fin-muted">rough, Berlin, from the profit earned so far in ${e(year)}</span></h2>
+      <div data-fin-estimate-body>
+        <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-fin-tax-estimate>Calculate tax</button>
+      </div>
+    </section>`;
+}
+
+/**
+ * The estimate itself: Einkommensteuer (§ 32a tariff after § 35 relief),
+ * Solidaritätszuschlag and Gewerbesteuer separately and in total, the
+ * comparison with the taxes already paid that year, and the inputs, formula
+ * and statutory sources behind the numbers.
+ */
+export function taxEstimateMarkup(est, e) {
+  const remainingWord = est.remaining >= 0
+    ? html`an estimated <strong>${formatEur(est.remaining)}</strong> still to pay in ${e(String(est.year))}`
+    : html`already <strong>${formatEur(-est.remaining)}</strong> more paid than this rough estimate`;
+  return html`<div data-fin-estimate-result>
+      <dl class="fin-stats">
+        <div><dt>Profit earned so far (ex VAT)</dt><dd>${formatEur(est.profitEur)}</dd></div>
+        <div><dt>Einkommensteuer <span class="fin-muted">after § 35 relief</span></dt><dd data-fin-est-income-tax>${formatEur(est.incomeTax.einkommensteuer)}</dd></div>
+        <div><dt>Solidaritätszuschlag</dt><dd data-fin-est-soli>${formatEur(est.soli)}</dd></div>
+        <div><dt>Gewerbesteuer <span class="fin-muted">Berlin Hebesatz 410 %</span></dt><dd data-fin-est-trade-tax>${formatEur(est.tradeTax.steuer)}</dd></div>
+        <div class="fin-stats__total"><dt>Total tax estimate</dt><dd data-fin-est-total>${formatEur(est.totalEstimate)}</dd></div>
+      </dl>
+      <p class="fin-muted" data-fin-est-paid-line>Already paid in ${e(String(est.year))}: ESt + Soli ${formatEur(est.paid.incomeTax)}, GewSt ${formatEur(est.paid.tradeTax)} — total <strong>${formatEur(est.paidTotal)}</strong>. Compared with the estimate: ${remainingWord}. Refunds for earlier years never count as negative tax in ${e(String(est.year))}.</p>
+      <details class="fin-estimate-details" data-fin-est-details>
+        <summary>Inputs, formula and statutory sources</summary>
+        <ul class="fin-gaps">${[...est.inputs, ...est.formula].map((line) => html`<li>${e(line)}</li>`).join("")}</ul>
+        <ul class="fin-gaps">${est.sources.map((line) => html`<li><em>${e(line)}</em></li>`).join("")}</ul>
+        <p class="fin-muted">${e(est.disclaimer)}</p>
+      </details>
+    </div>`;
 }
 
 /** Refunds stay visible as cash with their ledger rows; they are not tax, revenue or profit. */
@@ -294,6 +338,7 @@ export function overviewMarkup(summary, e) {
   return html`${headlineMarkup(summary, e)}
     ${cashChartMarkup(summary.months, e) + profitChartMarkup(summary.months, e)}
     ${taxesMarkup(summary, e)}
+    ${taxEstimateSectionMarkup(summary.period.label, e)}
     <section class="fin-block" aria-labelledby="fin-months-heading">
       <h2 id="fin-months-heading" class="fin-block__title">By month</h2>
       ${monthTableMarkup(summary, e)}
@@ -353,6 +398,20 @@ export function createFinanceOverviewSurface(context) {
       }
     }
 
+    async function loadTaxEstimate() {
+      const box = surface.querySelector("[data-fin-estimate-body]");
+      if (!box) return;
+      box.innerHTML = html`<p class="fin-muted">Calculating…</p>`;
+      try {
+        const estimate = await request(workApiUrl(`/api/finance/tax-estimate?year=${encodeURIComponent(period.year)}`));
+        box.innerHTML = taxEstimateMarkup(estimate, escapeHtml);
+      } catch (error) {
+        const message = escapeHtml(error?.message || "request failed");
+        box.innerHTML = html`<p class="fin-error" role="alert">Could not calculate the tax estimate: ${message}</p>
+          <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-fin-tax-estimate>Retry</button>`;
+      }
+    }
+
     function choose(next) {
       period = next;
       const params = new URLSearchParams(Object.entries(next).filter(([key]) => key === "year"));
@@ -365,6 +424,7 @@ export function createFinanceOverviewSurface(context) {
       activateFinanceMonthlyRow(event, document.getSelection?.());
       if (event.target.closest("[data-fin-period='current-year']")) choose({ year: today.slice(0, 4) });
       if (event.target.closest("[data-fin-retry]")) load();
+      if (event.target.closest("[data-fin-tax-estimate]")) loadTaxEstimate();
     });
     surface.addEventListener("change", (event) => {
       if (event.target.matches("[data-fin-year]")) choose({ year: event.target.value });

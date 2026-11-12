@@ -5,7 +5,7 @@ import { describe, test } from "node:test";
 import {
   activateFinanceMonthlyRow, bookkeepingMonthUrl, cashChartMarkup, formatEur,
   monthTableMarkup, overviewMarkup, periodControlsMarkup, periodFromParams,
-  profitChartMarkup,
+  profitChartMarkup, taxEstimateMarkup, taxEstimateSectionMarkup,
 } from "../src/surfaces/finance/overview.js";
 import { escapeHtml as e } from "../src/core/html.js";
 const totals = (fields) => ({
@@ -179,6 +179,51 @@ describe("finance overview", () => {
     assert.match(css, /var\(--dk-bg-surface\)/);
     assert.match(css, /var\(--dk-text-primary\)/);
     assert.doesNotMatch(css, /\.fin-period \[data-fin-year\][^{]*\{[^}]*appearance:\s*none/s);
+  });
+});
+
+const ESTIMATE = {
+  year: 2026, basis: "grundtarif-berlin", profitEur: 100000, zvEEur: 100000,
+  incomeTax: { tariflich: 30865, section35Relief: 10570, einkommensteuer: 20295 },
+  soli: 0, tradeTax: { messbetrag: 2642.5, steuer: 10834.25 }, totalEstimate: 31129.25,
+  paid: { incomeTax: 300, tradeTax: 100 }, paidTotal: 400, remaining: 30729.25,
+  inputs: ["Profit earned so far in 2026 (net profit excluding VAT from the finance summary): 100000 EUR"],
+  formula: ["Einkommensteuer: § 32a Abs. 1 EStG Grundtarif on zvE 100000 EUR → 30865 EUR, minus § 35 Abs. 1 EStG relief (4 × Messbetrag, max Gewerbesteuer) 10570 EUR → 20295 EUR."],
+  sources: ["§ 32a Abs. 1 EStG, ab VZ 2026 (gesetze-im-internet.de/estg/__32a.html; Grundfreibetrag 12.348 €, Steuerbetrag aufgerundet)"],
+  disclaimer: "Rough estimate, not a tax return: statutory tariffs applied to the profit booked so far.",
+};
+
+describe("tax estimate block", () => {
+  test("offers a Calculate tax button in the annual overview", () => {
+    const markup = overviewMarkup(YEAR, e);
+    assert.match(markup, /Tax estimate <span class="fin-muted">rough, Berlin, from the profit earned so far in 2026/);
+    assert.match(markup, /<button type="button" class="dk-button dk-button--secondary dk-button--sm" data-fin-tax-estimate>Calculate tax<\/button>/);
+    assert.match(markup, /data-fin-estimate-body/);
+    assert.doesNotMatch(markup, /data-fin-estimate-result/);
+  });
+
+  test("renders ESt, Soli and GewSt separately and in total, labelled as an estimate", () => {
+    const markup = taxEstimateMarkup(ESTIMATE, e);
+    assert.match(markup, /data-fin-est-income-tax>20,295\.00/);
+    assert.match(markup, /data-fin-est-soli>0\.00/);
+    assert.match(markup, /Gewerbesteuer <span class="fin-muted">Berlin Hebesatz 410 %<\/span><\/dt><dd data-fin-est-trade-tax>10,834\.25/);
+    assert.match(markup, /data-fin-est-total>31,129\.25/);
+    assert.match(markup, /data-fin-est-paid-line>Already paid in 2026: ESt \+ Soli 300\.00, GewSt 100\.00 — total <strong>400\.00<\/strong>/);
+    assert.match(markup, /an estimated <strong>30,729\.25<\/strong> still to pay in 2026/);
+    assert.match(markup, /Refunds for earlier years never count as negative tax in 2026/);
+    assert.match(markup, /Rough estimate, not a tax return/);
+    assert.match(markup, /§ 32a Abs\. 1 EStG Grundtarif on zvE 100000 EUR/);
+    assert.match(markup, /gesetze-im-internet\.de\/estg\/__32a\.html/);
+  });
+
+  test("shows overpayment as paid more than the estimate, never as a negative tax", () => {
+    const markup = taxEstimateMarkup({ ...ESTIMATE, remaining: -650.5 }, e);
+    assert.match(markup, /already <strong>650\.50<\/strong> more paid than this rough estimate/);
+    assert.doesNotMatch(markup, /still to pay in 2026/);
+  });
+
+  test("keeps the estimate section year-scoped", () => {
+    assert.match(taxEstimateSectionMarkup("2025", e), /profit earned so far in 2025/);
   });
 });
 
