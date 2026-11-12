@@ -104,6 +104,7 @@ export function createNewsletterIssuePage(context) {
       ? ` <span>Time: ${escapeHtml(item.publicationTime)} Europe/Berlin</span>`
       : "";
     const docLinks = docLinksMarkup(item);
+    const publicationLabel = formatIssueDate(item.publicationDate, { weekday: "long" });
     return `
       <article class="newsletter-issue-details" data-issue-details>
         <div class="newsletter-slot-title">
@@ -111,7 +112,7 @@ export function createNewsletterIssuePage(context) {
           <small class="newsletter-kind-badge">${item.kind === "standalone" ? "Stand-alone" : "Weekly"}</small>
         </div>
         <dl class="newsletter-issue-facts">
-          <div><dt>Date</dt><dd><time datetime="${escapeHtml(item.publicationDate)}">${escapeHtml(formatIssueDate(item.publicationDate, { weekday: "long" }))}</time>${timeMarkup}</dd></div>
+          <div><dt>Date</dt><dd><time datetime="${escapeHtml(item.publicationDate)}">${escapeHtml(publicationLabel)}</time>${timeMarkup}</dd></div>
           ${numberMarkup}
           <div><dt>Kind</dt><dd>${item.kind === "standalone" ? "Stand-alone" : "Weekly"}</dd></div>
           <div><dt>Sponsors</dt><dd>${sponsorsMarkup(item)}</dd></div>
