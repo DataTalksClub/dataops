@@ -245,5 +245,14 @@ export function createBookkeepingFinance({ loadYear, getLens, getEntries, getTod
     return isTaxHealthEntry(entryIndex.get(String(id)));
   }
 
-  return { ensure, entries, entryMap: () => entryIndex, hasMandatoryEntry, invalidate, markup };
+  // The Finance overview's own figures for one month ("YYYY-MM"), or null
+  // when that year's summary is not loaded (or has no such month). The
+  // ledger's month totals row shows these so Bookkeeping and Finance cannot
+  // disagree.
+  function monthTotals(month) {
+    if (!/^\d{4}-\d{2}$/.test(month)) return null;
+    return summaries.get(month.slice(0, 4))?.months?.find((entry) => entry.month === month) || null;
+  }
+
+  return { ensure, entries, entryMap: () => entryIndex, hasMandatoryEntry, invalidate, markup, monthTotals };
 }

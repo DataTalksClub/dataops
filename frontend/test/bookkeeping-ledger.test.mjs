@@ -177,7 +177,9 @@ test("the table renders one compact row per transaction without changing stored 
   assert.match(markup, /<option value="Infrastructure" selected>/);
   assert.match(markup, /No invoice/);
   assert.match(markup, /Invoice<\/th>/);
-  assert.match(markup, /out <span class="dk-mono">−€86\.00/);
+  assert.match(markup, /Money out <span class="dk-mono">€86\.00<\/span>/, "the month totals row closes the table with money out");
+  assert.match(markup, /Money in <span class="dk-mono">€2,000\.00<\/span>/);
+  assert.doesNotMatch(markup, /Net total|Net <span/, "no net total, per the earlier rule");
   assert.equal(JSON.stringify(rows), before);
 });
 
@@ -228,7 +230,7 @@ test("allocated invoices replace the aggregate row while totals and payment dril
   assert.equal((markup.match(/class="bk-row/g) || []).length, 3, "the main table shows only the three invoice rows");
   assert.match(markup, /class="bk-month__count dk-mono">3<\/span>/, "the visible row count follows expanded rows");
   assert.doesNotMatch(markup, /Synthetic Card Settlement/, "the opaque payment total is not a fourth monetary row");
-  assert.match(markup, /out <span class="dk-mono">−€123\.00/, "the month total still counts the payment once");
+  assert.match(markup, /Money out <span class="dk-mono">€123\.00<\/span>/, "the month total still counts the payment once");
   assert.match(markup, /Synthetic Compute GmbH[\s\S]*Dedicated cluster[\s\S]*−€100\.00/);
   assert.match(markup, /Synthetic Domain Ltd[\s\S]*Domain renewal[\s\S]*−€20\.00/);
   assert.match(markup, /Synthetic Mail BV[\s\S]*Email service[\s\S]*−€3\.00/);
@@ -295,7 +297,7 @@ test("allocated invoice Net and VAT use each child's VAT rather than the payment
     { net: "−€3.00", vat: "—" },
   ]);
   assert.equal(payment.allocations[0].paidDate, "2026-09-30", "the stored invoice date remains untouched by projection");
-  assert.match(markup, /out <span class="dk-mono">−€146\.00/, "the original payment remains the sole month-total source");
+  assert.match(markup, /Money out <span class="dk-mono">€146\.00<\/span>/, "the original payment remains the sole month-total source");
 });
 
 test("classified owner, fee, and TK statement rows stay visible without becoming editable ledger records", () => {
@@ -527,7 +529,7 @@ test("monthly tax partition keeps consulting fees and allocation totals in the o
   assert.match(ordinaryMarkup, /Synthetic Compliance Advisor/);
   assert.doesNotMatch(ordinaryMarkup, /Synthetic Tax Office|Synthetic Refund Office|Synthetic Health Fund/);
   assert.equal((ordinaryMarkup.match(/bk-row--allocation-child/g) || []).length, 2);
-  assert.match(ordinaryMarkup, /out <span class="dk-mono">−€80\.00/);
+  assert.match(ordinaryMarkup, /Money out <span class="dk-mono">€80\.00<\/span>/);
 
   const taxMarkup = mandatoryPaymentsMarkup(financeEntries, month, escapeHtml);
   assert.equal((taxMarkup.match(/<tr>/g) || []).length, 4, "one row per classified exception plus the table header");
@@ -652,4 +654,59 @@ test("backend-classified ledger rows leave the ordinary ledger on the first rend
     ["synthetic-tk-oct", { id: "synthetic-tk-oct", month, date: "2026-10-16", direction: "out", line: "health-insurance" }],
   ]));
   assert.deepEqual(afterSummary, beforeSummary, "loading the finance summary moves no row");
+});
+
+test("the month totals row shows the finance summary figures, not the visible-row sums", () => {
+  // The visible rows sum to money in €2,000 / money out €86 (the ledger's
+  // interim math), while Finance counts the same October as €4,700 in and
+  // €3,620.94 out — tax rows, owner pay and refunds sit outside the table.
+  // The closing row must carry the Finance numbers so both pages match.
+  const octoberRows = [
+    { id: "in-1", transactionDate: "2026-10-02", paidDate: "2026-10-02", counterparty: "Synthetic Sponsor",
+      description: "Sponsorship", amount: "2000", currency: "EUR", entryType: "income", statementRef: "Northbank" },
+    { id: "out-1", transactionDate: "2026-10-05", paidDate: "2026-10-05", counterparty: "Synthetic Vendor",
+      description: "Cloud services", amount: "86.00", currency: "EUR", entryType: "expense", statementRef: "Northbank" },
+  ];
+  const groups = groupByMonth(octoberRows);
+  assert.equal(groups[0].month, "2026-10");
+  const financeMonths = { "2026-10": { month: "2026-10", moneyIn: 4700, moneyOut: 3620.94 } };
+  const markup = ledgerTableMarkup({
+    groups, hasEvidence: () => false, vocab: {}, selectedId: "", e: escapeHtml,
+    financeMonthTotals: (month) => financeMonths[month] || null,
+  });
+  const total = markup.match(/<tr class="bk-month__totals-row">[\s\S]*?<\/tr>/)[0];
+  assert.match(total, /data-month-total="2026-10" data-finance-total/);
+  assert.match(total, /Money in <span class="dk-mono">€4,700\.00<\/span>/);
+  assert.match(total, /Money out <span class="dk-mono">€3,620\.94<\/span>/);
+  assert.doesNotMatch(total, /€2,000\.00|€86\.00/, "row sums never leak into the finance-sourced totals row");
+  assert.doesNotMatch(total, /\bNet\b/, "no net total in the month totals row");
+
+  // Before the year summary loads, the row falls back to the visible-row sums.
+  const fallback = ledgerTableMarkup({ groups, hasEvidence: () => false, vocab: {}, selectedId: "", e: escapeHtml });
+  assert.doesNotMatch(fallback, /data-finance-total/);
+  assert.match(fallback, /Money in <span class="dk-mono">€2,000\.00<\/span>/);
+  assert.match(fallback, /Money out <span class="dk-mono">€86\.00<\/span>/);
+});
+
+test("bookkeeping finance monthTotals reads the finance summary month the totals row shows", async () => {
+  const summary = {
+    totals: {},
+    months: [
+      { month: "2026-10", moneyIn: 4700, moneyOut: 3620.94 },
+      { month: "2026-11", moneyIn: 0, moneyOut: 0 },
+    ],
+    entries: [],
+  };
+  let loads = 0;
+  const finance = createBookkeepingFinance({
+    loadYear: async () => { loads += 1; return summary; },
+    getLens: () => "2026-10",
+    getEntries: () => [{ paidDate: "2026-10-05" }],
+    refresh: () => {},
+  });
+  await finance.ensure();
+  assert.deepEqual(finance.monthTotals("2026-10"), { month: "2026-10", moneyIn: 4700, moneyOut: 3620.94 });
+  assert.equal(finance.monthTotals("2025-01"), null, "a year that never loaded has no month totals");
+  assert.equal(finance.monthTotals(""), null, "undated groups have no finance month");
+  assert.equal(loads, 1, "the lens year is the only summary load");
 });

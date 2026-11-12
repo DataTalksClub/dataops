@@ -446,6 +446,28 @@ export function ledgerHeadMarkup() {
 
 const COLUMN_COUNT = 9;
 
+// One totals row at the bottom of a month: money in and money out, no net.
+// The figures are the Finance overview's own (financeTotals from
+// /api/finance/summary) whenever that month is loaded, so the two pages show
+// the same numbers; otherwise the visible rows are summed as an interim.
+// Unconverted-row counts always come from the visible rows.
+export function monthTotalsRowMarkup(group, financeTotals, e) {
+  const moneyIn = Number(financeTotals?.moneyIn ?? group.moneyIn);
+  const moneyOut = Math.abs(Number(financeTotals?.moneyOut ?? group.moneyOut));
+  return html`<tr class="bk-month__totals-row">
+      <th colspan="${COLUMN_COUNT}" scope="rowgroup" data-month-total="${e(group.month)}"${financeTotals ? " data-finance-total" : ""}>
+        <span class="bk-month__totals-inner">
+          <span class="bk-month__totals-label">Total</span>
+          <span class="bk-month__totals-figures">
+            <span class="bk-month__totals-figure">Money in <span class="dk-mono">${e(formatAmount(moneyIn, "EUR"))}</span></span>
+            <span class="bk-month__totals-figure">Money out <span class="dk-mono">${e(formatAmount(moneyOut, "EUR"))}</span></span>
+            ${group.unconverted ? html`<span class="bk-total is-missing">${group.unconverted} without EUR</span>` : ""}
+          </span>
+        </span>
+      </th>
+    </tr>`;
+}
+
 export function ledgerTableMarkup({
   groups,
   hasEvidence,
@@ -454,22 +476,17 @@ export function ledgerTableMarkup({
   vocab,
   selectedId,
   financeEntriesById = new Map(),
+  financeMonthTotals = null,
   statementLinks = new Map(),
   e,
 }) {
   const body = groups.map((group) => {
     const visibleRowCount = displayRowCount(group.entries);
-    const totals = [
-      group.moneyOut ? html`<span class="bk-total">out <span class="dk-mono">${e(signedAmount(group.moneyOut, "EUR"))}</span></span>` : "",
-      group.moneyIn ? html`<span class="bk-total">in <span class="dk-mono">${e(signedAmount(group.moneyIn, "EUR"))}</span></span>` : "",
-      group.unconverted ? html`<span class="bk-total is-missing">${group.unconverted} without EUR</span>` : "",
-    ].filter(Boolean).join("");
     return html`<tbody class="bk-month" data-month="${e(group.month)}">
         <tr class="bk-month__head">
           <th scope="rowgroup" colspan="${COLUMN_COUNT}">
             <span class="bk-month__title">${e(group.month ? monthLabel(group.month) : "No date")}</span>
             <span class="bk-month__count dk-mono">${visibleRowCount}</span>
-            <span class="bk-month__totals">${totals}</span>
           </th>
         </tr>
         ${group.entries.map((entry) => {
@@ -482,6 +499,7 @@ export function ledgerTableMarkup({
           }
           return ledgerRowMarkup(entry, { hasEvidence, hasInvoice, vocab, selectedId, financeEntry: financeEntriesById.get(entry.id), statementLinks, e });
         }).join("")}
+        ${monthTotalsRowMarkup(group, typeof financeMonthTotals === "function" ? financeMonthTotals(group.month) : null, e)}
       </tbody>`;
   }).join("");
   return html`<table class="bk-table">${ledgerHeadMarkup()}${body}</table>`;

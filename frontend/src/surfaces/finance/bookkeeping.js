@@ -287,6 +287,9 @@ export function createBookkeepingSurface(context) {
       ledger.innerHTML = ledgerTableMarkup({
         groups: groupByMonth(shown),
         ...ledgerOptions,
+        // The month totals row shows the Finance overview's figures so both
+        // pages match; the owner-withdrawal table below stays row-summed.
+        financeMonthTotals: (month) => financeSummary.monthTotals(month),
       }) + financeSummary.markup(escapeHtml) + ownerSection;
     }
     function reconciliationPeriods() {
