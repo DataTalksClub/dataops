@@ -46,11 +46,18 @@ test.beforeAll(async () => {
       E2E_SEED_PODCAST_TEMPLATE: '1',
     },
   });
+  // The Pipeline list sorts upcoming episodes by key date ascending: booked
+  // episodes by recordingDate (T+5 and T+19 here), later stages by releaseDate.
+  // releaseFriday rounds forward and lands anywhere in [T+o, T+o+6], so the
+  // edited episode's release offset (12) keeps it strictly between the two
+  // recordings on every run weekday while never colliding with the schedule
+  // test's releaseFriday(5) slot (which lands by T+11); release dates are
+  // unique across episodes.
   const fixtures = [
     ['next', { season: 25, episode: 4, releaseAssignmentStatus: 'provisional', releaseDate: releaseFriday(35), title: 'Shipping models on a budget', guests: [{ name: 'Ada Example' }], status: 'booked', recordingDate: isoDate(5) }],
     ['edited', {
       season: 25, episode: 3, releaseAssignmentStatus: 'final', title: 'Data contracts in practice', guests: [{ name: 'Bo Placeholder' }], status: 'edited',
-      recordingDate: isoDate(-12), releaseDate: releaseFriday(16), notes: 'Synthetic note: trim the intro.',
+      recordingDate: isoDate(-12), releaseDate: releaseFriday(12), notes: 'Synthetic note: trim the intro.',
     }],
     ['later', { season: 25, episode: 5, releaseAssignmentStatus: 'provisional', releaseDate: releaseFriday(42), title: 'Feature stores revisited', guests: [{ name: 'Cy Sample' }, { name: 'Di Mock' }], status: 'booked', recordingDate: isoDate(19) }],
     ['published', {
