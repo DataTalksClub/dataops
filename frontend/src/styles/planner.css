@@ -418,15 +418,13 @@
 /* Alexey's own calendar is the neutral layer beside the four toned ones. */
 .calendar-overlay.is-owner-calendar { background: var(--dk-bg-muted); color: var(--dk-text-heading); }
 .calendar-overlay:hover { border-color: var(--dk-border-strong); }
-.calendar-overlay-with-card {
+.calendar-tile-head {
   display: flex;
+  width: 100%;
   min-width: 0;
-  align-items: stretch;
-}
-.calendar-overlay-with-card .calendar-overlay {
-  flex: 1 1 auto;
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
 }
 .calendar-proposed-icon {
   display: inline-flex !important;
@@ -448,8 +446,7 @@
   stroke-linejoin: round;
   stroke-width: 1.5;
 }
-.calendar-proposed-icon:focus-visible,
-.calendar-overlay-card:focus-visible {
+.calendar-proposed-icon:focus-visible {
   outline: 2px solid var(--dk-focus-ring);
   outline-offset: 2px;
 }
@@ -930,39 +927,13 @@ a.calendar-day-timeline-title:hover {
   white-space: nowrap;
 }
 .newsletter-card-create:hover { border-color: var(--dk-border-strong); }
-/* The calendar's newsletter item: its Card, or when the Card comes. */
+/* The calendar's newsletter item: when its Card comes. */
 .calendar-overlay .calendar-overlay-card-due {
   background: none;
   color: var(--dk-text-muted);
   text-transform: none;
   letter-spacing: 0;
   font-weight: 400;
-}
-.calendar-overlay-card {
-  display: inline-flex;
-  flex: 0 0 24px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--dk-border-default);
-  border-left: 0;
-  border-radius: 0 var(--dk-radius-sm) var(--dk-radius-sm) 0;
-  background: var(--dk-info-bg);
-  color: var(--dk-text-muted);
-  font-size: var(--dk-text-xs);
-  text-decoration: none;
-}
-.calendar-overlay-card:hover {
-  border-color: var(--dk-border-strong);
-  color: var(--dk-text-heading);
-}
-.calendar-overlay-card svg {
-  width: 13px;
-  height: 13px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.25;
 }
 .newsletter-card-chip {
   display: inline-flex;

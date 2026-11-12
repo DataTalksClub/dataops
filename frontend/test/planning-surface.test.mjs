@@ -350,7 +350,7 @@ describe("Planning surface production behavior", () => {
     assert.equal(entries[0].displayDuplicateOf, "card:webinar");
   });
 
-  test("renders proposed status accessibly and keeps the Card destination inside its newsletter tile", async () => {
+  test("renders proposed status in the tile header and opens the Card directly from a newsletter tile", async () => {
     const dom = createCalendarDom();
     const harness = createPlanningHarness({
       calendar: dom,
@@ -360,7 +360,7 @@ describe("Planning surface production behavior", () => {
             { provider: "calendar-holds", id: "calendar-hold:proposed", startDate: "2026-08-12", endDate: "2026-08-12",
               label: "[Proposed] Finding a Job in Computer Vision · 12:30–13:30", status: "tentative" },
             { provider: "newsletter-issues-readonly", id: "issue-303", startDate: "2026-08-13", endDate: "2026-08-13",
-              label: "Weekly #303 · Astronomer + open", isAvailableSlot: false, href: "/newsletter?issueId=issue-303",
+              label: "Weekly #303 · Astronomer", isAvailableSlot: false, href: "/cards?cardId=newsletter-card-303",
               newsletter: { cardId: "newsletter-card-303" } },
           ],
           sources: {},
@@ -370,12 +370,11 @@ describe("Planning surface production behavior", () => {
     await harness.surface.renderCalendarSurface();
     await nextTicks();
     const html = dom.grid.innerHTML;
-    assert.match(html, /aria-label="Proposed, not confirmed" title="Proposed, not confirmed"/);
+    assert.match(html, /class="calendar-tile-head"><small>Calendar hold<\/small><span class="calendar-proposed-icon"[^>]*aria-label="Proposed, not confirmed" title="Proposed, not confirmed"/);
     assert.match(html, /Finding a Job in Computer Vision · 12:30-13:30/);
-    assert.doesNotMatch(html, /\[Proposed\]|12:30–13:30/);
-    assert.match(html, /calendar-overlay-with-card[\s\S]*href="\/cards\?cardId=newsletter-card-303"/);
-    assert.match(html, /aria-label="Open Card for Weekly #303 · Astronomer \+ open"/);
-    assert.doesNotMatch(html, />Card<\/a>/);
+    assert.doesNotMatch(html, /\[Proposed\]|12:30–13:30|\+ open/);
+    assert.match(html, /class="calendar-overlay is-newsletter" href="\/cards\?cardId=newsletter-card-303" title="Weekly #303 · Astronomer"/);
+    assert.doesNotMatch(html, /calendar-overlay-with-card|calendar-overlay-card|Open Card/);
   });
 
   test("day schedule exposes a deferred Google sync reason on its saved hold", async () => {

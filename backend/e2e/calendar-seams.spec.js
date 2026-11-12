@@ -493,3 +493,98 @@ test("the API never reads the owner's calendar for a past range", async ({ reque
   // range; only the owner's calendar must stay out of a past range.
   expect(Object.keys((await past.json()).sources)).toEqual(["newsletter-issues-readonly", "calendar-holds"]);
 });
+
+test("newsletter with a Card and tentative calendar hold share the compact calendar tile layout", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-11-16T12:00:00Z"));
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.route("**/api/calendar-items**", (route) => {
+    const u = new URL(route.request().url());
+    if (u.pathname.endsWith("/overlays")) {
+      return route.fulfill({
+        json: {
+          items: [
+            {
+              provider: "newsletter-issues-readonly",
+              id: "issue-303",
+              startDate: "2026-11-16",
+              endDate: "2026-11-16",
+              label: "Weekly #303 · Astronomer",
+              status: "planned",
+              isAvailableSlot: false,
+              href: "/cards?cardId=card-303",
+              newsletter: {
+                kind: "weekly",
+                issueNumber: 303,
+                booked: 1,
+                openSlots: 1,
+                cardId: "card-303",
+                cardDueDate: null,
+              },
+            },
+            {
+              provider: "calendar-holds",
+              id: "calendar-hold:hold-cv",
+              startDate: "2026-11-23",
+              endDate: "2026-11-23",
+              label: "[Proposed] Finding a Job in Computer Vision · 12:30–13:30",
+              category: "Calendar hold",
+              status: "tentative",
+              isAvailableSlot: false,
+            },
+          ],
+          sources: {},
+        },
+      });
+    }
+    return route.fulfill({
+      json: {
+        items: [
+          {
+            id: "card:webinar-launch",
+            kind: "webinar",
+            kindLabel: "Webinar",
+            title: "Production AI Agents for Generative Media: Course Launch",
+            date: "2026-11-16",
+            status: "announced",
+            entity: { type: "card", id: "webinar-launch" },
+            href: "/cards?cardId=webinar-launch",
+          },
+        ],
+        holidays: [],
+        holidayMetadata: {},
+        alerts: [],
+      },
+    });
+  });
+  await page.route("**/api/**", (route) =>
+    new URL(route.request().url()).pathname.includes("/calendar-items")
+      ? route.fallback()
+      : route.fulfill({ json: { items: [] } }),
+  );
+  await page.goto(`${frontendBase}/calendar`);
+  const surface = page.locator(".calendar-surface");
+  const newsletterTile = surface.locator('.calendar-overlay.is-newsletter', { hasText: "Weekly #303 · Astronomer" });
+  const holdTile = surface.locator('.calendar-overlay.is-hold', { hasText: "Finding a Job in Computer Vision · 12:30-13:30" });
+  await expect(newsletterTile).toBeVisible();
+  await expect(newsletterTile).toHaveAttribute("href", "/cards?cardId=card-303");
+  await expect(surface.locator(".calendar-overlay-card")).toHaveCount(0);
+  await expect(surface.getByText("+ open")).toHaveCount(0);
+  await expect(holdTile).toBeVisible();
+  // The clock icon sits on the same header line as the "Calendar hold" tag,
+  // never as a separate row between the tag and the title.
+  const holdLayout = await holdTile.evaluate((node) => {
+    const tag = node.querySelector("small").getBoundingClientRect();
+    const icon = node.querySelector(".calendar-proposed-icon").getBoundingClientRect();
+    const title = node.querySelector(":scope > span").getBoundingClientRect();
+    return {
+      iconBesideTag: Math.abs((tag.top + tag.bottom) / 2 - (icon.top + icon.bottom) / 2) <= 6,
+      iconRightOfTag: icon.left >= tag.right,
+      titleBelowHeader: title.top >= Math.max(tag.bottom, icon.bottom) - 1,
+    };
+  });
+  expect(holdLayout).toEqual({
+    iconBesideTag: true,
+    iconRightOfTag: true,
+    titleBelowHeader: true,
+  });
+});

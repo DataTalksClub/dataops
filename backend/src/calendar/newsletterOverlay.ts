@@ -18,17 +18,18 @@ function slotSummary(issue: NewsletterIssue) {
 
 /**
  * One calendar item per newsletter issue, labelled with its sponsors, e.g.
- * `Weekly #297 · VectorAI DB + Astronomer` or `Weekly #302 · open`: the
- * primary slot (unless the week is cancelled), the secondary once booked. An issue with a slot
- * nobody has booked is offered as available. `cardDueDate` is when the
- * daily run creates the issue's Card, for an issue that has none yet.
+ * `Weekly #297 · VectorAI DB + Astronomer`, `Weekly #303 · Astronomer` or
+ * `Weekly #302 · open`: booked sponsors are named, and an unbooked issue says
+ * `open`. Clicking the tile opens its Card once one exists, or the issue until
+ * `cardDueDate` when the daily run creates it.
  */
 export function newsletterOverlayItem(issue: NewsletterIssue, card: { cardDueDate: string | null } = { cardDueDate: null }): CalendarOverlayItem {
   const summary = slotSummary(issue);
   const canBook = !['sent', 'cancelled'].includes(issue.status);
   const openSlots = canBook ? summary.slots.filter((slot) => !slot.sponsor).length : 0;
   const names = summary.slots.filter((slot) => slot.sponsor).map((slot) => slot.sponsor!);
-  if (openSlots && (summary.booked > 0 || names.length === 0)) names.push('open');
+  if (openSlots && names.length === 0) names.push('open');
+  const cardId = issue.cardId || null;
   return {
     provider: NEWSLETTER_OVERLAY,
     id: issue.id,
@@ -36,17 +37,19 @@ export function newsletterOverlayItem(issue: NewsletterIssue, card: { cardDueDat
     endDate: issue.publicationDate,
     label: [issueLabel(issue), names.join(' + ')].filter(Boolean).join(' · '),
     status: issue.status,
-    href: `/newsletter?issueId=${encodeURIComponent(issue.id)}`,
+    href: cardId
+      ? `/cards?cardId=${encodeURIComponent(cardId)}`
+      : `/newsletter?issueId=${encodeURIComponent(issue.id)}`,
     // The green free-slot state describes a wholly open issue. A partially
-    // booked issue still names its remaining open slot, but never looks free.
+    // booked issue shows its booked sponsor and never looks free.
     isAvailableSlot: canBook && summary.booked === 0,
     newsletter: {
       kind: issue.kind,
       issueNumber: issue.issueNumber ?? null,
       ...summary,
       openSlots,
-      cardId: issue.cardId || null,
-      cardDueDate: issue.cardId ? null : card.cardDueDate,
+      cardId,
+      cardDueDate: cardId ? null : card.cardDueDate,
     },
   };
 }

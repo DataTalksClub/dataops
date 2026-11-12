@@ -473,11 +473,17 @@ export function createPlanningSurface(context) {
               : isAvailable
                 ? (isOwnerCalendar ? "Open event slot" : "Free newsletter slot")
                 : overlay.category || "Newsletter";
-            const hrefAttr = overlay.href ? `href="${escapeHtml(overlay.href)}"` : "";
-            const tag = overlay.href ? "a" : (isAvailable ? "button type=\"button\"" : "span");
+            // A newsletter issue opens its Card once it exists, and until
+            // then opens the issue and says when the daily run creates the Card.
+            const issueCard = overlay.newsletter || {};
+            const overlayHref = issueCard.cardId
+              ? `/cards?cardId=${encodeURIComponent(issueCard.cardId)}`
+              : overlay.href;
+            const hrefAttr = overlayHref ? `href="${escapeHtml(overlayHref)}"` : "";
+            const tag = overlayHref ? "a" : (isAvailable ? "button type=\"button\"" : "span");
             const conflict = isAvailable && blockingHoliday;
             const slotClass = `${isAvailable ? " is-available-slot" : ""}${conflict ? " is-holiday-conflict" : ""}`;
-            const openDayAttr = isAvailable && !overlay.href ? ` data-open-day="${escapeHtml(date)}"` : "";
+            const openDayAttr = isAvailable && !overlayHref ? ` data-open-day="${escapeHtml(date)}"` : "";
             const overlayLabel = calendarTileLabel(overlay.label);
             const title = conflict
               ? `${category}: ${overlayLabel} (conflicts with ${blockingHoliday.name})`
@@ -487,30 +493,19 @@ export function createPlanningSurface(context) {
                   <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>
                 </span>`
               : "";
-            // A newsletter issue links its Card once it exists, and until
-            // then says when the daily run creates it.
-            const issueCard = overlay.newsletter || {};
             const cardDue = !issueCard.cardId && issueCard.cardDueDate
               ? `<small class="calendar-overlay-card-due">${escapeHtml(cardDueLabel(issueCard.cardDueDate, todayIso))}</small>`
-              : "";
-            const cardLink = issueCard.cardId
-              ? `<a class="calendar-overlay-card" href="/cards?cardId=${encodeURIComponent(issueCard.cardId)}"
-                  aria-label="${escapeHtml(`Open Card for ${overlayLabel}`)}" title="Open Card">
-                  <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="8" height="9" rx="1"/><path d="M5.5 1.5h7a1 1 0 0 1 1 1v8"/></svg>
-                </a>`
               : "";
             const overlayClass = isOwnerCalendar
               ? "is-owner-calendar"
               : isHold ? "is-hold" : "is-newsletter";
-            const tile = `
+            return `
               <${tag} class="calendar-overlay ${overlayClass}${slotClass}" ${hrefAttr}${openDayAttr} title="${escapeHtml(title)}">
-                <small>${conflict ? "Blocked" : escapeHtml(category)}</small>
-                ${proposedIcon}
+                <div class="calendar-tile-head"><small>${conflict ? "Blocked" : escapeHtml(category)}</small>${proposedIcon}</div>
                 <span>${escapeHtml(overlayLabel)}</span>
                 ${cardDue}
               </${tag}>
             `;
-            return cardLink ? `<div class="calendar-overlay-with-card">${tile}${cardLink}</div>` : tile;
           }).join("");
         if (dayOfWeek === 1) {
           const currentWeek = weekNumber(dateValue);
