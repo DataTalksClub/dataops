@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   PutCommand,
   GetCommand,
@@ -16,31 +17,45 @@ export interface BrowserSessionOptions {
 
 const cleanItem = cleanDbItem<Session>;
 
+/**
+ * Session rows are keyed by a one-way digest of the token, matching how API
+ * tokens are stored in the same table: a dump of the table must not hold
+ * usable credentials. The raw token is returned to the caller exactly once
+ * (as the browser session cookie) and never persisted.
+ */
+function hashSessionToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function sessionKey(token: string) {
+  const digest = hashSessionToken(token);
+  return { PK: `SESSION#${digest}`, SK: `SESSION#${digest}` };
+}
+
 /** Create a bounded opaque browser session. */
 async function createBrowserSession(
   client: DynamoDBDocumentClient,
   userId: string,
   options: BrowserSessionOptions,
-): Promise<Session> {
+): Promise<Session & { token: string }> {
   const token = crypto.randomUUID() + crypto.randomUUID().replaceAll('-', '');
   const now = options.now || new Date();
   const expiresAt = new Date(now.getTime() + options.lifetimeSeconds * 1000).toISOString();
   const item = {
-    PK: `SESSION#${token}`,
-    SK: `SESSION#${token}`,
-    token,
+    ...sessionKey(token),
     userId,
     createdAt: now.toISOString(),
     expiresAt,
     ttl: Math.floor(Date.parse(expiresAt) / 1000),
-    sessionType: 'browser',
   };
   await client.send(new PutCommand({ TableName: TABLE_SESSIONS, Item: item }));
-  return cleanItem(item) as Session;
+  return { ...cleanItem(item) as Session, token };
 }
 
 /**
- * Get a session by token. Returns null if not found.
+ * Look up a session by its raw token (hashed before the read). Returns null
+ * when no row exists, the table is missing, or the session has expired; an
+ * expired row is deleted on the way out.
  */
 async function getSession(client: DynamoDBDocumentClient, token: string, now = new Date()): Promise<Session | null> {
   let result;
@@ -48,7 +63,7 @@ async function getSession(client: DynamoDBDocumentClient, token: string, now = n
     result = await client.send(
       new GetCommand({
         TableName: TABLE_SESSIONS,
-        Key: { PK: `SESSION#${token}`, SK: `SESSION#${token}` },
+        Key: sessionKey(token),
       })
     );
   } catch (err: unknown) {
@@ -75,7 +90,7 @@ async function deleteSession(client: DynamoDBDocumentClient, token: string): Pro
   await client.send(
     new DeleteCommand({
       TableName: TABLE_SESSIONS,
-      Key: { PK: `SESSION#${token}`, SK: `SESSION#${token}` },
+      Key: sessionKey(token),
     })
   );
 }

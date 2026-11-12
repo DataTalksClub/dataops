@@ -816,13 +816,11 @@ export interface FormerUser {
 // --- Session ---
 
 export interface Session {
-  token: string;
   userId: string;
   createdAt: string;
   expiresAt: string;
   /** DynamoDB TTL epoch seconds. */
   ttl?: number;
-  sessionType?: 'browser';
 }
 
 // --- Admin-issued scoped CLI API tokens ---
