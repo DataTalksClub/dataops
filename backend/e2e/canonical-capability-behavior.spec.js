@@ -661,7 +661,7 @@ test.describe('canonical frontend capability behavior', () => {
     await page.goto('/bookkeeping?month=2026-08');
     const row = page.locator('.bk-row').filter({ hasText: counterparty });
     await expect(row).toBeVisible();
-    await expect(page.locator('.bk-month__head')).toContainText('out −€18.50');
+    await expect(page.locator('.bk-month__totals-row')).toContainText('Money out €18.50');
 
     const paymentEvidence = await uploadBookkeepingEvidence(page, context, transaction.id, {
       month: '2026-08', filename: 'synthetic-evidence.pdf',
