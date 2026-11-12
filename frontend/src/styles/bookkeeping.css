@@ -188,14 +188,18 @@ tr.bk-month__totals-row > th {
 .bk-unconverted { font-weight: var(--dk-weight-semibold); }
 .bk-col-eur { color: var(--dk-text-heading); }
 .is-income .bk-col-eur { color: var(--dk-success-text); }
-.bk-col-account { max-width: 9em; overflow: hidden; color: var(--dk-text-muted); text-overflow: ellipsis; }
-.bk-account-link { padding: 0; border: 0; background: none; color: inherit; cursor: pointer; font: inherit; text-align: left; }
-.bk-account-link:hover { text-decoration: underline; }
+.bk-col-account { color: var(--dk-text-muted); }
+/* Invoice and account actions are compact icons; the full names they carry
+   (filename, account, statement period) live in the tooltip. */
+.bk-col-flag .dk-icon-button,
+.bk-col-account .dk-icon-button { color: var(--dk-text-muted); vertical-align: middle; }
+.bk-col-flag .dk-icon-button:hover,
+.bk-col-account .dk-icon-button:hover { color: var(--dk-text-primary); }
 .bk-col-class { padding-left: var(--dk-space-1); padding-right: var(--dk-space-1); }
 .bookkeeping-surface .bk-col-subtype .bk-inline-select { width: 8.5em; }
 .bookkeeping-surface .bk-col-category .bk-inline-select { width: 10.5em; }
 .bookkeeping-surface .bk-col-period .bk-inline-select { width: 6.5em; }
-.bk-col-flag { width: 6.5em; padding-right: var(--dk-space-3); text-align: center; }
+.bk-col-flag { width: 4em; padding-right: var(--dk-space-3); text-align: center; }
 .bk-flag { display: inline-flex; color: var(--dk-text-faint); }
 .bk-flag svg { width: 14px; height: 14px; }
 .bk-no-invoice { color: var(--dk-text-muted); font-size: var(--dk-text-xs); white-space: nowrap; }

@@ -101,7 +101,10 @@ test("the account column sits last and links to the uploaded statement", () => {
     groups: groupByMonth(rows), hasEvidence: () => false, vocab: {}, selectedId: "", statementLinks: links, e: escapeHtml,
   });
   assert.match(markup, /<th scope="col" class="bk-col-flag">Invoice<\/th>\s*<th scope="col" class="bk-col-account">Account<\/th>/);
-  assert.match(markup, /<button[^>]*data-view-document="doc-1"[^>]*>Revolut Business<\/button>/);
+  assert.match(markup, /<button[^>]*class="dk-icon-button dk-icon-button--sm bk-account-view"[^>]*data-view-document="doc-1"[\s\S]*?>[\s\S]*?<\/button>/,
+    "the linked statement is one compact account icon");
+  assert.match(markup, /title="Revolut Business — open 2026-09 statement"/,
+    "the tooltip carries the full account name and statement period");
 });
 
 test("the net column subtracts VAT from the gross EUR value", () => {
@@ -240,10 +243,10 @@ test("allocated invoices replace the aggregate row while totals and payment dril
   }
   assert.equal((markup.match(/data-open-tx="synthetic-payment"/g) || []).length, 3,
     "each invoice row drills through to the one original payment");
-  assert.equal((markup.match(/class="bk-account-link" data-view-document="bank-statement-2026-10"/g) || []).length, 3,
+  assert.equal((markup.match(/bk-account-view"\s+data-view-document="bank-statement-2026-10"/g) || []).length, 3,
     "each visible invoice row keeps the parent payment's linked statement account action");
-  assert.equal((markup.match(/Synthetic Revolut Business EUR/g) || []).length, 3,
-    "the account name remains visible on all expanded invoice rows");
+  assert.equal((markup.match(/title="Synthetic Revolut Business EUR — open/g) || []).length, 3,
+    "the full account name remains in the account icon's tooltip on all expanded invoice rows");
   const header = markup.match(/<thead>([\s\S]*?)<\/thead>/)?.[1] || "";
   assert.ok(header.indexOf("bk-col-account") > header.indexOf("bk-col-flag"), "Account follows Invoice in the header");
   const childRows = [...markup.matchAll(/<tr class="bk-row bk-row--allocation-child[^>]*>([\s\S]*?)<\/tr>/g)]
@@ -398,7 +401,8 @@ test("linked active receipt PDFs render direct View actions for every evidence l
     assert.match(markup, new RegExp(`data-view-document="${document.id}"`));
     assert.match(markup, new RegExp(`aria-label="View ${document.originalFilename}"`));
   }
-  assert.equal((markup.match(/>View PDF<\/button>/g) || []).length, 3);
+  assert.equal((markup.match(/class="dk-icon-button dk-icon-button--sm bk-evidence-view"/g) || []).length, 3,
+    "each invoice PDF is one compact icon, not a wide View PDF button");
 });
 
 test("the month tax section lists debits and refunds with a money-out total", () => {
