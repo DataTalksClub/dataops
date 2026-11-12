@@ -4,7 +4,7 @@
  * sponsor-doc email send). No new credentials: when the connection lacks Gmail
  * read access the poll reports `deferred` and the push path still works.
  */
-import { DAPIER_AGENT, DAPIER_BASE_URL, dapierTokenProblem, readDapierCredential } from '../calendar/dapierBroker';
+import { getDapierAccessToken } from '../calendar/dapierBroker';
 import { DEFAULT_ORIN_GMAIL_CONNECTION_ID } from '../sponsorDocs/emailDelivery';
 import type { PaymentMail } from './paymentMail';
 
@@ -33,23 +33,16 @@ function textOf(part: any): string {
 
 export async function pollPaymentMail(days = 14): Promise<PollResult> {
   const run = deps.fetchImpl || fetch;
-  let credential = deps.credential || process.env.DAPIER_API_TOKEN;
-  if (!credential) {
-    const resolved = await readDapierCredential(undefined);
-    if (!resolved.credential) return { state: 'deferred', reason: 'missing_dapier_credential', message: resolved.problem || 'No Dapier broker credential' };
-    credential = resolved.credential;
-  }
   const connectionId = (process.env.DATAOPS_ORIN_GMAIL_CONNECTION_ID || '').trim() || DEFAULT_ORIN_GMAIL_CONNECTION_ID;
-  const brokerUrl = (process.env.DAPIER_BASE_URL || DAPIER_BASE_URL).replace(/\/$/, '');
+  const exchanged = await getDapierAccessToken(connectionId, deps);
+  if (!exchanged.ok) {
+    if (exchanged.reason === 'dapier_unreachable' || exchanged.reason === 'invalid_token_response') {
+      return { state: 'deferred', reason: 'dapier_unreachable', message: 'The Dapier token broker or Gmail could not be reached.' };
+    }
+    return { state: 'deferred', reason: exchanged.reason, message: exchanged.message };
+  }
   try {
-    const tokenRes = await run(`${brokerUrl}/api/agent/token`, {
-      method: 'POST', headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ connection_id: connectionId, agent: DAPIER_AGENT }), signal: AbortSignal.timeout(10000),
-    });
-    if (!tokenRes.ok) return { state: 'deferred', reason: `dapier_token_http_${tokenRes.status}`, message: dapierTokenProblem(tokenRes.status, connectionId) };
-    const token = ((await tokenRes.json()) as { access_token?: string }).access_token;
-    if (!token) return { state: 'deferred', reason: 'empty_access_token', message: `Dapier connection "${connectionId}" returned no access token.` };
-    const auth = { Authorization: `Bearer ${token}` };
+    const auth = { Authorization: `Bearer ${exchanged.accessToken}` };
     const ids: string[] = [];
     let pageToken = '';
     let pages = 0;

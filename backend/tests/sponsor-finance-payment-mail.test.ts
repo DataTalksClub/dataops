@@ -226,4 +226,20 @@ describe('mailbox poll', () => {
     assert.equal(denied.state, 'deferred');
     setPaymentMailPollDepsForTests({});
   });
+
+  it('defers with the broker reason when the Dapier token exchange fails', async () => {
+    const reasonFor = async (fetchImpl: unknown) => {
+      setPaymentMailPollDepsForTests({ credential: 'test-credential', fetchImpl: fetchImpl as never });
+      const result = await pollPaymentMail();
+      return result.state === 'deferred' ? result.reason : result.state;
+    };
+    try {
+      assert.equal(await reasonFor(async () => new Response('{}', { status: 404 })), 'dapier_token_http_404');
+      assert.equal(await reasonFor(async () => { throw new TypeError('fetch failed'); }), 'dapier_unreachable');
+      assert.equal(await reasonFor(async () => new Response('not json')), 'dapier_unreachable');
+      assert.equal(await reasonFor(async () => new Response('{}')), 'empty_access_token');
+    } finally {
+      setPaymentMailPollDepsForTests({});
+    }
+  });
 });

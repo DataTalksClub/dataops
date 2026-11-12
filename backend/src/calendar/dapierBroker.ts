@@ -112,6 +112,59 @@ export async function readDapierCredential(explicit?: string): Promise<DapierCre
   };
 }
 
+export type DapierAccessToken =
+  | { ok: true; accessToken: string; providerAccountId: string }
+  | { ok: false; reason: 'missing_dapier_credential'; message: string }
+  | { ok: false; reason: 'dapier_unreachable'; message: string }
+  | { ok: false; reason: `dapier_token_http_${number}`; status: number; message: string }
+  | { ok: false; reason: 'invalid_token_response'; message: string }
+  | { ok: false; reason: 'empty_access_token'; message: string };
+
+/**
+ * Exchange the Dapier machine credential for a short-lived provider access
+ * token on `connectionId` via POST /api/agent/token.
+ *
+ * Credential: non-empty `credential`, else DAPIER_API_TOKEN, else the team
+ * store. Broker: DAPIER_BASE_URL, else the default. Failure reasons are stable
+ * strings (`dapier_token_http_404` is matched by callers); messages are generic
+ * so callers can substitute their own wording per reason.
+ */
+export async function getDapierAccessToken(
+  connectionId: string,
+  deps: { fetchImpl?: typeof fetch; credential?: string } = {},
+): Promise<DapierAccessToken> {
+  let credential = deps.credential || process.env.DAPIER_API_TOKEN;
+  if (!credential) {
+    const resolved = await readDapierCredential(undefined);
+    if (!resolved.credential) return { ok: false, reason: 'missing_dapier_credential', message: resolved.problem || `No Dapier broker credential. ${CREDENTIAL_OPERATOR_HINT}` };
+    credential = resolved.credential;
+  }
+  const brokerUrl = (process.env.DAPIER_BASE_URL || DAPIER_BASE_URL).replace(/\/$/, '');
+  const tokenRes = await (deps.fetchImpl || fetch)(`${brokerUrl}/api/agent/token`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ connection_id: connectionId, agent: DAPIER_AGENT }),
+    signal: AbortSignal.timeout(10000),
+  }).catch(() => null);
+  if (!tokenRes) return { ok: false, reason: 'dapier_unreachable', message: 'The Dapier token broker could not be reached.' };
+  if (!tokenRes.ok) {
+    return {
+      ok: false,
+      reason: `dapier_token_http_${tokenRes.status}`,
+      status: tokenRes.status,
+      message: dapierTokenProblem(tokenRes.status, connectionId),
+    };
+  }
+  let body: { access_token?: string; provider_account_id?: string };
+  try {
+    body = (await tokenRes.json()) as typeof body;
+  } catch {
+    return { ok: false, reason: 'invalid_token_response', message: `Dapier connection "${connectionId}" returned an unreadable token response.` };
+  }
+  if (!body?.access_token) return { ok: false, reason: 'empty_access_token', message: `Dapier connection "${connectionId}" returned no access token.` };
+  return { ok: true, accessToken: body.access_token, providerAccountId: String(body.provider_account_id || '') };
+}
+
 /** Calendar ids for hold Proposal mirrors (personal calendars only). */
 export function resolveHoldGoogleCalendars(explicit?: string[]): string[] {
   if (explicit && explicit.length) return explicit;
