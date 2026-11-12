@@ -219,6 +219,7 @@ export function formatBerlinTime(isoString: string): string {
 }
 
 import { berlinToday } from '../relativeDates';
+import { OWNER_PERSONAL_CALENDAR } from '../identity/operatingIdentities';
 
 export { berlinToday };
 
@@ -484,8 +485,7 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
       // 2. Query Google Calendar API
       const timeMin = `${from}T00:00:00Z`;
       const timeMax = `${to}T23:59:59Z`;
-      const ownerCalendar = 'alexey.s.grigoriev@gmail.com';
-      const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(ownerCalendar)}/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime&maxResults=2500`;
+      const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(OWNER_PERSONAL_CALENDAR)}/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime&maxResults=2500`;
 
       let calRes: Response;
       try {

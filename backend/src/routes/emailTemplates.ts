@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { resolveInteractiveActor } from '../identity/actor';
+import { isBlockedRecipient } from '../identity/operatingIdentities';
 import { getTaskConsistent, TaskVersionConflictError, updateTask } from '../db/tasks';
 import {
   deliverRenderedEmail,
@@ -108,8 +109,8 @@ export async function handleEmailTemplateRoutes(
     return noStoreJson(400, { error: 'Invalid subjectVariant' });
   }
   if (!EMAIL.test(recipientEmail)) return noStoreJson(400, { error: 'A valid recipientEmail is required' });
-  if (recipientEmail === 'grace@datatalks.club') {
-    return noStoreJson(422, { error: 'Emails are never sent to grace@datatalks.club', code: 'blocked_recipient' });
+  if (isBlockedRecipient(recipientEmail)) {
+    return noStoreJson(422, { error: `Emails are never sent to ${recipientEmail}`, code: 'blocked_recipient' });
   }
   if (!taskId || taskId.length > 128) return noStoreJson(400, { error: 'An owning taskId is required' });
   const values = emailTemplateValues(body.values, recipientName);
