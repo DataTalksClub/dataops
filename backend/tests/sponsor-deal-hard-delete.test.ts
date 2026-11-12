@@ -224,9 +224,9 @@ describe('CRM deal hard delete', () => {
   it('archives without hard=true and rolls back when cleanup fails', async () => {
     const { deal: target } = await deal();
     const beforeRows = await rows(TABLE_SPONSOR_CRM);
-    process.env.SPONSOR_CRM_TEST_FAIL_AFTER = '1'; process.env.CARD_DELETION_TEST_FAIL_AFTER = '1';
+    process.env.SPONSOR_CRM_TEST_FAIL_AFTER = '1'; process.env.LOCAL_TRANSACTION_TEST_FAIL_AFTER = '1';
     try { assert.equal((await remove(target.id)).statusCode, 500); }
-    finally { delete process.env.SPONSOR_CRM_TEST_FAIL_AFTER; delete process.env.CARD_DELETION_TEST_FAIL_AFTER; }
+    finally { delete process.env.SPONSOR_CRM_TEST_FAIL_AFTER; delete process.env.LOCAL_TRANSACTION_TEST_FAIL_AFTER; }
     assert.deepEqual(await rows(TABLE_SPONSOR_CRM), beforeRows);
     assert.equal((await invoke('DELETE', `/api/sponsor-crm/deals/${target.id}`)).statusCode, 200);
     assert.ok(data(await invoke('GET', `/api/sponsor-crm/deals/${target.id}`)).archivedAt);

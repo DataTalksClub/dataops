@@ -31,7 +31,7 @@ describe('DELETE /api/cards/:id', () => {
   });
 
   afterEach(() => {
-    delete process.env.CARD_DELETION_TEST_FAIL_AFTER;
+    delete process.env.LOCAL_TRANSACTION_TEST_FAIL_AFTER;
   });
 
   function remove(cardId: string, body: unknown) {
@@ -149,7 +149,7 @@ describe('DELETE /api/cards/:id', () => {
 
   it('rolls every write back when the transaction fails part-way', async () => {
     const { card, first, second } = await seed('Synthetic rollback card');
-    process.env.CARD_DELETION_TEST_FAIL_AFTER = '3';
+    process.env.LOCAL_TRANSACTION_TEST_FAIL_AFTER = '3';
     const res = await remove(card.id, { expectedVersion: card.version });
     assert.strictEqual(res.statusCode, 500, res.body);
     assert.deepStrictEqual(await getCard(client, card.id), card);
