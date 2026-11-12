@@ -12,7 +12,9 @@ describe("portal package payment readiness", () => {
   let client: DynamoDBDocumentClient;
   let writes = 0, signs = 0, objectOperations = 0, uploads = 0;
   const originalStorage = { s3: storage.s3, signUrl: storage.signUrl, uploadStream: storage.uploadStream };
+  const originalBucket = process.env.BOOKKEEPING_DOCUMENTS_BUCKET;
   before(async () => {
+    process.env.BOOKKEEPING_DOCUMENTS_BUCKET = "synthetic-bookkeeping-documents";
     const underlying = await getClient(await startLocal());
     await createTables(underlying);
     client = { send: async (command: any) => {
@@ -26,6 +28,8 @@ describe("portal package payment readiness", () => {
   after(async () => {
     storage.setBookkeepingStorageForTests(originalStorage.s3, originalStorage.signUrl);
     storage.setBookkeepingArchiveUploaderForTests(originalStorage.uploadStream);
+    if (originalBucket === undefined) delete process.env.BOOKKEEPING_DOCUMENTS_BUCKET;
+    else process.env.BOOKKEEPING_DOCUMENTS_BUCKET = originalBucket;
     await stopLocal();
   });
   const invoke = (path: string, body: unknown = {}) => handleBookkeepingReportRoutes(path, "POST", {
