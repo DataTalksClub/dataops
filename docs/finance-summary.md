@@ -88,8 +88,10 @@ reduces input VAT; it is not money in and not revenue. A row with a
 with its ledger row and summed in `totals.taxRefunds`. It is money in and part
 of net cash, but it is not revenue, not profit, and never a negative tax in any
 year: a refund settles an earlier assessed year, and the bank date says
-nothing about which one. Bookkeeping keeps the row with its real date and
-amount.
+nothing about which one. When a refund row carries `taxYearAttribution`
+(mapping each assessed `YYYY` to its EUR amount), each attributed part is
+reported in its assessed tax year while Bookkeeping keeps the row with its real
+date and amount.
 
 - **Net profit excluding VAT** = (operating income − output VAT) − (operating
   expenses − input VAT); supplier refunds reduce the expense side.

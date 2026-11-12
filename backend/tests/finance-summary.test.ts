@@ -144,6 +144,60 @@ describe('finance summary', () => {
     assert.equal(s.entries.find((e) => e.id === 'gewst-q1')?.mandatoryKind, 'tax_debit');
   });
 
+  it('attributes a multi-year Finanzamt refund to its assessed tax years and omits it from the bank year', () => {
+    const refundId = '37865149b2143fc299d8e635bda9fb5cac57e43e8f5c5c2837049bbf53b1febd';
+    const rows = [
+      row('est-2024', { entryType: 'expense', category: 'Taxes', amount: '881.09', counterparty: 'Finanzamt Synthetic', description: 'EINK.ST 2024', paidDate: '2024-06-10' }),
+      row('est-2025', { entryType: 'expense', category: 'Taxes', amount: '11042.00', counterparty: 'Finanzamt Synthetic', description: 'EINK.ST 2025', paidDate: '2025-03-10' }),
+      row('gewst-2026', { entryType: 'expense', category: 'Taxes', amount: '3296.00', counterparty: 'Finanzamt Synthetic', description: 'GEW.ST 2026', paidDate: '2026-08-15' }),
+      row(refundId, {
+        entryType: 'income',
+        category: 'Taxes',
+        amount: '43633.73',
+        counterparty: 'ZAHLUNGSVERKEHR BERLINER',
+        description: 'Finanzamt tax refund (Erstattung)',
+        paidDate: '2026-10-30',
+        sourceType: 'statement',
+        taxYearAttribution: { '2024': '27729.10', '2025': '15904.63' },
+      }),
+    ];
+    const statementLines = [
+      { id: 'finom:refund', bankKey: 'bank-refund', accountId: 'finom', date: '2026-10-30', amount: '43633.73', currency: 'EUR', counterparty: 'ZAHLUNGSVERKEHR BERLINER', reference: 'Finanzamt Erstattung' },
+    ];
+    const statementPairs = new Map([['bank-refund', refundId]]);
+
+    const y2026 = summarize({ today: '2026-11-12', query: { year: '2026' }, rates: noRates, rows, statementLines, statementPairs });
+    assert.equal(y2026.totals.taxRefunds, 0);
+    assert.deepEqual(y2026.taxRefunds, []);
+    assert.equal(y2026.totals.tradeTax, 3296);
+    assert.equal(y2026.totals.otherTaxes, 0);
+    assert.equal(y2026.totals.taxesTotal, 3296);
+    assert.equal(y2026.months.find((m) => m.month === '2026-10')?.taxRefunds, 0);
+    assert.equal(y2026.gaps.some((g) => g.kind === 'bank-line-without-ledger-row'), false);
+
+    const m202610 = summarize({ today: '2026-11-12', query: { month: '2026-10' }, rates: noRates, rows, statementLines, statementPairs });
+    assert.equal(m202610.totals.taxRefunds, 0);
+    assert.deepEqual(m202610.taxRefunds, []);
+
+    const y2024 = summarize({ today: '2026-11-12', query: { year: '2024' }, rates: noRates, rows, statementLines, statementPairs });
+    assert.equal(y2024.totals.taxRefunds, 27729.1);
+    assert.equal(y2024.totals.incomeTax, 881.09);
+    assert.equal(y2024.totals.otherTaxes, 0);
+    assert.equal(y2024.totals.taxesTotal, 881.09);
+    assert.deepEqual(y2024.taxRefunds.map(({ id, date, month, taxYear, eur }) => ({ id, date, month, taxYear, eur })), [
+      { id: refundId, date: '2026-10-30', month: '2026-10', taxYear: '2024', eur: 27729.1 },
+    ]);
+
+    const y2025 = summarize({ today: '2026-11-12', query: { year: '2025' }, rates: noRates, rows, statementLines, statementPairs });
+    assert.equal(y2025.totals.taxRefunds, 15904.63);
+    assert.equal(y2025.totals.incomeTax, 11042);
+    assert.equal(y2025.totals.otherTaxes, 0);
+    assert.equal(y2025.totals.taxesTotal, 11042);
+    assert.deepEqual(y2025.taxRefunds.map(({ id, date, month, taxYear, eur }) => ({ id, date, month, taxYear, eur })), [
+      { id: refundId, date: '2026-10-30', month: '2026-10', taxYear: '2025', eur: 15904.63 },
+    ]);
+  });
+
   it('uses the matched statement purpose to classify a generic Taxes ledger row as VAT paid', () => {
     const s = summarize({
       today: '2026-08-31', query: { month: '2026-08' }, rates: noRates,
