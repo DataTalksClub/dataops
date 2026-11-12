@@ -5,7 +5,7 @@
  * keys and the configured repository, branch and workflow file.
  *
  * The principal is not an interactive user. It may read the knowledge
- * manifest, file history and file versions, publish knowledge files and
+ * manifest, file history and file versions, publish knowledge files, report the daily mirror's outcome and
  * project the Git-authored workflow templates into the live runtime, nothing
  * else, and its publication actor and message name the verified commit rather
  * than anything the request body claims. Version reads carry the daily mirror:
@@ -19,6 +19,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { seedDeploymentRuntime } from '../deploymentSeeds';
 import { handleDocsRoutes, isDocsDomainEnabled, regenerateKnowledgeForTemplates } from '../docs/contentApi';
 import { listTemplates } from '../db/templates';
+import { parseMirrorHeartbeat, recordMirrorHeartbeat } from '../knowledge/mirrorHeartbeat';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
 export const GITHUB_OIDC_ISSUER = 'https://token.actions.githubusercontent.com';
@@ -127,9 +128,15 @@ export async function handleKnowledgePublisher(
   const method = (event.httpMethod || 'GET').toUpperCase();
   const path = event.path || '/';
   if (method === 'POST' && path === '/api/templates/sync') return syncTemplates(client, claims);
+  if (method === 'POST' && path === '/knowledge/mirror-heartbeat') {
+    const heartbeat = parseMirrorHeartbeat(event.body);
+    if (!heartbeat) return response(400, { error: 'outcome must be success or failure' });
+    recordMirrorHeartbeat(heartbeat);
+    return response(200, { recorded: heartbeat.outcome });
+  }
   const allowed = (method === 'GET' && (path === '/knowledge/manifest' || path === '/knowledge/history' || path === '/knowledge/version' || path === '/knowledge/download'))
     || (method === 'POST' && path === '/knowledge/publish');
-  if (!allowed) return response(403, { error: 'Knowledge publisher may only read the manifest, file history and versions, publish knowledge files and sync workflow templates' });
+  if (!allowed) return response(403, { error: 'Knowledge publisher may only read the manifest, file history and versions, publish knowledge files, report mirror heartbeats and sync workflow templates' });
   const repo = claims.repository.split('/')[1];
   const result = await handleDocsRoutes(event, `git:${repo}@${claims.sha.slice(0, 12)}`, `Publish ${repo} ${claims.sha}`, undefined, client);
   return result || response(404, { error: 'Not found' });
