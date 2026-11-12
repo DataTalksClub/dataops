@@ -40,3 +40,15 @@ test('a missing Dapier connection names the connection and account', async () =>
       && /DATAOPS_ORIN_GMAIL_CONNECTION_ID/.test(error.message),
   );
 });
+
+test('broker failures keep their Gmail route wording', async () => {
+  delete process.env.DATAOPS_ORIN_GMAIL_CONNECTION_ID;
+  const expect = async (fetchImpl: typeof fetch, pattern: RegExp) => assert.rejects(
+    resolveGmailMessageRoute('m1', { fetchImpl, credential: 'c' }),
+    (error: unknown) => error instanceof GmailMessageRouteError && pattern.test(error.message),
+  );
+  await expect((async () => new Response('{}', { status: 403 })) as unknown as typeof fetch, /refused the Gmail token .* \(HTTP 403\)/);
+  await expect((async () => { throw new TypeError('fetch failed'); }) as unknown as typeof fetch, /refused the Gmail token .* \(HTTP unreachable\)/);
+  await expect((async () => new Response('not json')) as unknown as typeof fetch, /returned no access token/);
+  await expect((async () => Response.json({ access_token: 't', provider_account_id: 'other@example.com' })) as unknown as typeof fetch, /is not verified as orin@datatalks\.club/);
+});
