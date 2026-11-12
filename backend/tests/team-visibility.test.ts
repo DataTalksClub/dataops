@@ -21,7 +21,8 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { createBrowserSession, createSession } from '../src/db/sessions';
+import { createBrowserSession } from '../src/db/sessions';
+import { humanBearer, humanBearerForEmail } from './helpers/human-bearer';
 import { createUserWithId, updateUser } from '../src/db/users';
 import { createCard, getCardConsistent } from '../src/db/cards';
 import { EMPTY_TEMPLATE_ID, putEmptyTemplate, templateLink } from './helpers/cardTemplate';
@@ -168,7 +169,7 @@ describe('signed-in identity, teammate projections, and the work authorization b
     await createUserWithId(client, ROWAN, { name: 'Rowan Unsupported', email: 'rowan@example.test', role: 'auditor' });
 
     for (const userId of [AVERY, MORGAN, CASEY, RILEY, ROWAN]) {
-      sessions[userId] = (await createSession(client, userId)).token;
+      sessions[userId] = await humanBearer(client, userId);
       cookies[userId] = (await createBrowserSession(client, userId, { lifetimeSeconds: 3600 })).token;
     }
     work = await seedWork();
@@ -244,13 +245,16 @@ describe('signed-in identity, teammate projections, and the work authorization b
 
   it('answers a missing, unknown, disabled, or deleted identity with JSON 401', async () => {
     usePortalCookieMode();
-    const deletedSession = (await createSession(client, GHOST)).token;
+    // A verified issuer identity whose account was deleted, and a live browser
+    // session value replayed as a bearer: neither is an identity here.
+    const deletedSession = await humanBearerForEmail('ghost-teammate@example.test');
     const cases: Request[] = [
       { path: '/api/me' },
       { path: '/api/me', bearer: 'not-a-real-token' },
       { path: '/api/me', cookie: 'not-a-real-cookie' },
       { path: '/api/me', cookie: cookies[CASEY] },
       { path: '/api/me', bearer: deletedSession },
+      { path: '/api/me', bearer: cookies[AVERY] },
     ];
     for (const request of cases) {
       const response = await invoke(request);
@@ -832,7 +836,7 @@ describe('signed-in identity, teammate projections, and the work authorization b
     const promoted = await createUserWithId(client, 'quinn-temporary', {
       name: 'Quinn Temporary', email: 'quinn@example.test', role: 'operator',
     });
-    const token = (await createSession(client, promoted.id)).token;
+    const token = await humanBearer(client, promoted.id);
     const task = (await getTaskConsistent(client, 'task-morgan'))!;
 
     const asOperator = await invoke({

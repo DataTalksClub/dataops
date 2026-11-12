@@ -1,7 +1,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { test, expect } = require('@playwright/test');
-const { loginAndSetupPage } = require('./helpers/auth');
+const { setupPageWithAuth } = require('./helpers/auth');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolated-capability-server');
 let server;
@@ -21,7 +21,7 @@ test.afterAll(async () => stopOwnedTestServer(server));
 test('completion stays struck through, supports reopening, and survives reload in history', async ({ page }) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await loginAndSetupPage(page, { get: route => page.request.get(`${server.baseURL}${route}`) });
+  await setupPageWithAuth(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`${server.baseURL}/tasks?assignee=all`);
   const row = page.locator(`.ops-queue-row[data-task-id="${task.id}"]`);

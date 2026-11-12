@@ -6,7 +6,8 @@ import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createNotification } from '../src/db/notifications';
-import { createSession } from '../src/db/sessions';
+import { createBrowserSession } from '../src/db/sessions';
+import { humanBearer } from './helpers/human-bearer';
 import { createUserWithId } from '../src/db/users';
 import { EMPTY_TEMPLATE_ID, putEmptyTemplate } from './helpers/cardTemplate';
 
@@ -135,19 +136,19 @@ describe('Portal broker authentication', () => {
     assert.deepStrictEqual(JSON.parse(response.body), { error: 'Not found' });
   });
 
-  it('preserves existing bearer sessions for /api/me in portal mode', async () => {
+  it('resolves a shared-issuer bearer for /api/me in portal mode', async () => {
     process.env.SKIP_AUTH = 'false';
     process.env.WORK_ENGINE_AUTH_MODE = 'portal';
     process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
 
     const client = await getClient();
-    const session = await createSession(client, 'legacy-user');
+    const bearer = await humanBearer(client, 'legacy-user');
 
     const response = await handler(
       {
         httpMethod: 'GET',
         path: '/api/me',
-        headers: { Authorization: `Bearer ${session.token}` },
+        headers: { Authorization: `Bearer ${bearer}` },
       },
       {},
     );
@@ -156,17 +157,34 @@ describe('Portal broker authentication', () => {
     assert.strictEqual(JSON.parse(response.body).user.id, 'legacy-user');
   });
 
-  it('preserves legacy bearer clients on protected API routes without a browser cookie', async () => {
+  it('refuses a browser session token presented as a bearer in portal mode', async () => {
     process.env.SKIP_AUTH = 'false';
     process.env.WORK_ENGINE_AUTH_MODE = 'portal';
     process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
     const client = await getClient();
-    const session = await createSession(client, 'legacy-user');
+    const session = await createBrowserSession(client, 'legacy-user', { lifetimeSeconds: 3600 });
+
+    for (const path of ['/api/me', '/api/users']) {
+      const response = await handler({
+        httpMethod: 'GET',
+        path,
+        headers: { authorization: `Bearer ${session.token}` },
+      }, {});
+      assert.strictEqual(response.statusCode, 401, `${path} must refuse a session bearer`);
+    }
+  });
+
+  it('accepts shared-issuer bearer clients on protected API routes without a browser cookie', async () => {
+    process.env.SKIP_AUTH = 'false';
+    process.env.WORK_ENGINE_AUTH_MODE = 'portal';
+    process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
+    const client = await getClient();
+    const bearer = await humanBearer(client, 'legacy-user');
 
     const response = await handler({
       httpMethod: 'GET',
       path: '/api/users',
-      headers: { authorization: `Bearer ${session.token}` },
+      headers: { authorization: `Bearer ${bearer}` },
     }, {});
 
     assert.strictEqual(response.statusCode, 200);
@@ -188,17 +206,17 @@ describe('Portal broker authentication', () => {
     assert.deepStrictEqual(JSON.parse(response.body), { error: 'Unauthorized' });
   });
 
-  it('ignores a mismatched raw x-user-id and resolves a valid bearer to its session user', async () => {
+  it('ignores a mismatched raw x-user-id and resolves a valid bearer to its own user', async () => {
     process.env.SKIP_AUTH = 'false';
     process.env.WORK_ENGINE_AUTH_MODE = 'portal';
     process.env.WORK_ENGINE_PORTAL_SECRET = 'test-portal-secret';
     const client = await getClient();
-    const session = await createSession(client, 'legacy-user');
+    const bearer = await humanBearer(client, 'legacy-user');
 
     const response = await handler({
       httpMethod: 'GET',
       path: '/api/me',
-      headers: { authorization: `Bearer ${session.token}`, 'x-user-id': 'ops-manager' },
+      headers: { authorization: `Bearer ${bearer}`, 'x-user-id': 'ops-manager' },
     }, {});
 
     assert.strictEqual(response.statusCode, 200);
@@ -514,7 +532,7 @@ describe('Portal broker authentication', () => {
     process.env.DATAOPS_DOCS_DOMAIN = 'true';
     try {
       const client = await getClient();
-      const session = await createSession(client, 'ops-admin');
+      const bearer = await humanBearer(client, 'ops-admin');
 
       const anonymous = await handler(
         {
@@ -532,7 +550,7 @@ describe('Portal broker authentication', () => {
           httpMethod: 'GET',
           path: '/api/tasks',
           queryStringParameters: { date: '2028-10-04' },
-          headers: { Authorization: `Bearer ${session.token}` },
+          headers: { Authorization: `Bearer ${bearer}` },
         },
         {},
       );

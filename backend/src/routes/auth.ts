@@ -1,6 +1,5 @@
 import { getClient } from '../db/client';
 import { getUser } from '../db/users';
-import { getSession, deleteSession } from '../db/sessions';
 import { deleteApiToken, getApiToken, projectApiToken } from '../db/apiTokens';
 import { verifySharedIssuerJwt } from '../auth/sharedIssuer';
 import { identityProjection } from '../identity/projections';
@@ -30,8 +29,10 @@ export function extractToken(event: LambdaEvent): string | null {
 }
 
 /**
- * Handle /api/auth/logout and /api/me for bearer sessions. Sign-in is SSO
- * (browser) or the device flow (CLI and agents); there is no password login.
+ * Handle /api/auth/logout and /api/me for bearer clients: API tokens and
+ * shared-issuer JWTs. Sign-in is SSO (browser, cookie session) or the device
+ * flow (CLI and agents); there is no password login, and a browser session
+ * token is never accepted as a bearer.
  */
 async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | null> {
   const method = event.httpMethod || 'GET';
@@ -52,7 +53,6 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
         if (!jwt) {
           const apiToken = await getApiToken(client, token);
           if (apiToken) await deleteApiToken(client, apiToken.id);
-          else await deleteSession(client, token);
         }
         // Issuer sessions are revoked at the issuer (`dataops logout`).
       }
@@ -74,14 +74,13 @@ async function handleAuthRoutes(event: LambdaEvent): Promise<LambdaResponse | nu
         };
       }
 
-      const session = await getSession(client, token);
-      const claims = session ? null : await verifySharedIssuerJwt(token);
-      const apiToken = session || claims ? null : await getApiToken(client, token);
+      const claims = await verifySharedIssuerJwt(token);
+      const apiToken = claims ? null : await getApiToken(client, token);
       const email = claims?.email;
-      const jwtUserId = !session && typeof email === 'string' && email && (claims!.email_verified === true || claims!.email_verified === 'true')
+      const jwtUserId = typeof email === 'string' && email && (claims!.email_verified === true || claims!.email_verified === 'true')
         ? await findUserIdByEmail(client, email)
         : null;
-      const userId = session?.userId || jwtUserId || apiToken?.userId;
+      const userId = jwtUserId || apiToken?.userId;
       if (!userId) {
         return {
           statusCode: 401,

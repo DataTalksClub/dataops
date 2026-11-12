@@ -6,7 +6,7 @@ import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createCard } from '../src/db/cards';
 import { createTask, getTaskConsistent, listTasksByCardConsistent, listTasksByStatus, updateTask } from '../src/db/tasks';
 import { createUser } from '../src/db/users';
-import { createSession } from '../src/db/sessions';
+import { humanBearer } from './helpers/human-bearer';
 import { createPodcastEpisode } from '../src/db/podcastEpisodes';
 import { getWorkspaceSettings, setDefaultAssignee } from '../src/db/workspaceSettings';
 import { PORTAL_EDIT_TASK_SOURCE } from '../src/sponsorDocs/portalEditTask';
@@ -26,7 +26,7 @@ describe('portal doc edits create one open Task for the owner team', () => {
     handler = (await import('../src/handler')).handler;
     const user = await createUser(client, { email: 'orin@datatalks.club', name: 'Orin', passwordHash: 'unused', role: 'admin' });
     staffUserId = user.id;
-    staffToken = (await createSession(client, staffUserId)).token;
+    staffToken = await humanBearer(client, staffUserId);
     const settings = await getWorkspaceSettings(client);
     await setDefaultAssignee(client, { defaultAssigneeId: staffUserId, expectedVersion: settings.version });
   });

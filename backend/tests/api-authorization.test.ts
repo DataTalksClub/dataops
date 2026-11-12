@@ -4,7 +4,7 @@
  * The rest of the unit suite runs with `SKIP_AUTH=true` (see the `test` script
  * in `package.json`), so almost nothing proves that a route rejects an
  * unauthenticated or under-privileged caller. This file sets
- * `SKIP_AUTH=false` for its own process and drives the real bearer-session
+ * `SKIP_AUTH=false` for its own process and drives the real bearer (shared-issuer JWT)
  * middleware in `src/router.ts`.
  *
  * It is deliberately table-driven over the route surface rather than
@@ -24,7 +24,7 @@ import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
-import { createSession } from '../src/db/sessions';
+import { humanBearer } from './helpers/human-bearer';
 import { createUserWithId } from '../src/db/users';
 import type { LambdaResponse } from '../src/types';
 
@@ -134,7 +134,7 @@ describe('/api/* authorization with authentication enabled', () => {
     await createTables(client);
     await createUserWithId(client, ADMIN_ID, { name: 'Authz admin', email: 'authz-admin@example.test', role: 'admin' });
     await createUserWithId(client, OPERATOR_ID, { name: 'Authz operator', email: 'authz-operator@example.test', role: 'operator' });
-    operatorToken = (await createSession(client, OPERATOR_ID)).token;
+    operatorToken = await humanBearer(client, OPERATOR_ID);
   });
 
   after(async () => {

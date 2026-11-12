@@ -7,7 +7,7 @@ import { authErrorPage, handleCallback, logout, resetBrowserAuthCaches, signInRe
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
-import { createBrowserSession, createSession, getSession } from '../src/db/sessions';
+import { createBrowserSession, getSession } from '../src/db/sessions';
 import { createUserWithId, getFormerUserByEmail, getUser, getUsersByNormalizedEmail, listUsers } from '../src/db/users';
 import { deleteUser, disableUser } from '../src/db/userLifecycle';
 import { handleUserRoutes } from '../src/routes/users';
@@ -423,12 +423,12 @@ describe('shared Cognito browser authentication', () => {
     assert.strictEqual(page.headers?.location, '/login');
   });
 
-  it('expires and revokes browser and bearer sessions', async () => {
+  it('expires and revokes browser sessions', async () => {
     const expired = await createBrowserSession(client, 'enabled-admin', { now: new Date(Date.now() - 7200_000), lifetimeSeconds: 3600 });
     assert.strictEqual(await getSession(client, expired.token), null);
-    const bearer = await createSession(client, 'enabled-admin');
-    assert.ok(await getSession(client, bearer.token));
-    assert.strictEqual(await getSession(client, bearer.token, new Date('2100-01-01')), null);
+    const live = await createBrowserSession(client, 'enabled-admin', { lifetimeSeconds: 3600 });
+    assert.ok(await getSession(client, live.token));
+    assert.strictEqual(await getSession(client, live.token, new Date('2100-01-01')), null);
 
     const response = await complete();
     const browserCookie = cookiePair(response, 'dataops_session');

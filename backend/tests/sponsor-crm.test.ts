@@ -11,7 +11,7 @@ import { handler } from '../src/handler';
 import { createTables } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { createSession } from '../src/db/sessions';
+import { humanBearer } from './helpers/human-bearer';
 import { evaluateSponsorBookingAlerts } from '../src/sponsorCrm/alerts';
 import { listAllNotifications } from '../src/db/notifications';
 import { createOrganizationAtomic, deterministicCrmId, listBookingHistory } from '../src/db/sponsorCrm';
@@ -391,7 +391,8 @@ describe('sponsor CRM', () => {
     const slot = data(await invoke('POST', '/api/sponsor-crm/deliverables', { dealId: deal.id, channel: 'standalone', notes: 'private booking note', artifactUrls: ['https://example.invalid/private.pdf'], sourceKey: 'contract-slot' }));
     process.env.SKIP_AUTH = 'false';
     assert.equal((await invoke('GET', `/api/sponsor-crm/integrations/newsletter/deliverables/${slot.id}`)).statusCode, 401);
-    const session = await createSession(client, 'newsletter-scheduler'), auth = { authorization: `Bearer ${session.token}` };
+    await createUserWithId(client, 'newsletter-scheduler', { name: 'Newsletter scheduler', email: 'newsletter-scheduler@example.test', role: 'operator' });
+    const auth = { authorization: `Bearer ${await humanBearer(client, 'newsletter-scheduler')}` };
     const lookup = await invoke('GET', `/api/sponsor-crm/integrations/newsletter/deliverables/${slot.id}`, undefined, auth);
     assert.equal(lookup.statusCode, 200);
     assert.equal(lookup.body.includes('private booking note'), false);

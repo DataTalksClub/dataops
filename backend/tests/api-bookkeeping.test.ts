@@ -7,7 +7,8 @@ import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { setBookkeepingArchiveUploaderForTests, setBookkeepingStorageForTests } from '../src/routes/bookkeepingShared';
 import { getBookkeepingItem, listBookkeepingItems, listTransactions, putBookkeepingItem, updateBookkeepingTransaction } from '../src/db/bookkeeping';
 import { TransactWriteCommand, UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { createSession } from '../src/db/sessions';
+import { createUserWithId } from '../src/db/users';
+import { humanBearer } from './helpers/human-bearer';
 import { createHash } from 'crypto';
 import { Readable } from 'stream';
 import { handleBookkeepingTransactionRoutes } from '../src/routes/bookkeepingTransactions';
@@ -81,7 +82,7 @@ describe('bookkeeping API',()=>{
     assert.notEqual(after?.updatedAt,seeded?.updatedAt);
   });
   it('rejects invalid data without echoing values',async()=>{const r=await invoke('POST','/api/bookkeeping/transactions',{...valid,amount:'NaN',currency:'EURO'});assert.equal(r.statusCode,400);assert.deepEqual(JSON.parse(r.body).fields.sort(),['amount','currency']);assert.ok(!r.body.includes('NaN'));});
-  it('requires a real session for route-level CRUD without leaking records',async()=>{process.env.SKIP_AUTH='false';const unauthorized=await invoke('GET','/api/bookkeeping/transactions');assert.equal(unauthorized.statusCode,401);assert.equal(unauthorized.body.includes('Synthetic Vendor'),false);const session=await createSession(client,'synthetic-operator');const auth={Authorization:`Bearer ${session.token}`};const created=await invoke('POST','/api/bookkeeping/transactions',{...valid,description:'Session-authenticated synthetic'},auth);assert.equal(created.statusCode,201);const listed=await invoke('GET','/api/bookkeeping/transactions',undefined,auth);assert.equal(listed.statusCode,200);assert.ok(JSON.parse(listed.body).items.some((i:any)=>i.description==='Session-authenticated synthetic'));process.env.SKIP_AUTH='true';});
+  it('requires a real session for route-level CRUD without leaking records',async()=>{process.env.SKIP_AUTH='false';const unauthorized=await invoke('GET','/api/bookkeeping/transactions');assert.equal(unauthorized.statusCode,401);assert.equal(unauthorized.body.includes('Synthetic Vendor'),false);await createUserWithId(client,'synthetic-operator',{name:'Synthetic operator',email:'synthetic-operator@example.test',role:'operator'});const auth={Authorization:`Bearer ${await humanBearer(client,'synthetic-operator')}`};const created=await invoke('POST','/api/bookkeeping/transactions',{...valid,description:'Session-authenticated synthetic'},auth);assert.equal(created.statusCode,201);const listed=await invoke('GET','/api/bookkeeping/transactions',undefined,auth);assert.equal(listed.statusCode,200);assert.ok(JSON.parse(listed.body).items.some((i:any)=>i.description==='Session-authenticated synthetic'));process.env.SKIP_AUTH='true';});
   it('validates many-to-many links and creates an immutable monthly snapshot',async()=>{
     const setup=await invoke('POST','/api/bookkeeping/accounts/setup');assert.equal(setup.statusCode,200);assert.equal(JSON.parse(setup.body).accounts.length,2);const setupRetry=await invoke('POST','/api/bookkeeping/accounts/setup');assert.equal(setupRetry.statusCode,200);assert.deepEqual(JSON.parse(setupRetry.body).accounts.map((a:any)=>a.id),JSON.parse(setup.body).accounts.map((a:any)=>a.id));
     const transaction=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-08-10'})).body);

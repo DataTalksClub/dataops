@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
-const { loginAndSetupPage } = require('./helpers/auth');
+const { setupPageWithAuth } = require('./helpers/auth');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolated-capability-server');
 let server, task, card;
@@ -36,7 +36,7 @@ for (const variant of [{ name: 'dark-desktop', width: 1280, height: 1000, theme:
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.setViewportSize({width: variant.width, height: variant.height});
-    await loginAndSetupPage(page, { get: route => page.request.get(`${server.baseURL}${route}`) });
+    await setupPageWithAuth(page);
     await page.goto(`${server.baseURL}/tasks?assignee=all`);
     await page.locator('.ops-queue-waiting > summary').click();
     const queueTask = page.locator('.ops-queue-waiting .ops-queue-row', { hasText: 'Prepare the sponsor invoice' });
@@ -77,7 +77,7 @@ for (const variant of [{ name: 'dark-desktop', width: 1280, height: 1000, theme:
   });
 }
 test('open and completed work keep their detail and evidence accessible', async ({ page }) => {
-  await loginAndSetupPage(page, { get: route => page.request.get(`${server.baseURL}${route}`) });
+  await setupPageWithAuth(page);
   await page.setViewportSize({ width: 1280, height: 1000 });
   await page.goto(`${server.baseURL}/cards?cardId=${card.id}&taskId=${task.id}`);
   const panel = page.locator('#task-panel');

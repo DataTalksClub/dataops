@@ -12,7 +12,7 @@ import { createCard } from '../src/db/cards';
 import { createTask, getTask } from '../src/db/tasks';
 import { createPodcastEpisode } from '../src/db/podcastEpisodes';
 import { createUser } from '../src/db/users';
-import { createSession } from '../src/db/sessions';
+import { humanBearer } from './helpers/human-bearer';
 import { getSponsorDoc, updateSponsorDoc } from '../src/db/sponsorDocs';
 import { setSponsorDocEmailDepsForTests } from '../src/sponsorDocs/emailDelivery';
 import {
@@ -85,8 +85,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       role: 'admin',
     });
     staffUserId = user.id;
-    const session = await createSession(client, staffUserId);
-    staffToken = session.token;
+    staffToken = await humanBearer(client, staffUserId);
   });
 
   it('renders newsletter sponsor subjects and body from the loaded KB template', async () => {

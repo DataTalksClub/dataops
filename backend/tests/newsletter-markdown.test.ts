@@ -12,7 +12,7 @@ import {
   updateNewsletterIssue,
 } from '../src/db/newsletterIssues';
 import { createUser } from '../src/db/users';
-import { createSession } from '../src/db/sessions';
+import { humanBearer } from './helpers/human-bearer';
 import { templateLink } from './helpers/cardTemplate';
 
 describe('Newsletter Markdown Storage & HTML Preview (/api/newsletter-issues/:id/markdown)', () => {
@@ -36,8 +36,7 @@ describe('Newsletter Markdown Storage & HTML Preview (/api/newsletter-issues/:id
       role: 'admin',
     });
     staffUserId = user.id;
-    const session = await createSession(client, staffUserId);
-    staffToken = session.token;
+    staffToken = await humanBearer(client, staffUserId);
   });
 
   after(async () => {

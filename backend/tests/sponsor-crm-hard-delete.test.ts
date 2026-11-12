@@ -5,7 +5,7 @@ import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { createUserWithId } from '../src/db/users';
-import { createSession } from '../src/db/sessions';
+import { humanBearer } from './helpers/human-bearer';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createCrmRecord, hardDeleteCrmRecord } from '../src/db/sponsorCrm';
 
@@ -186,10 +186,10 @@ describe('CRM hard delete', () => {
   it('retains one delete-audit snapshot with actor provenance', async () => {
     const company = await org({ domain: 'audited.example.test' });
     await createUserWithId(client, 'audit-admin', { name: 'Auditor', email: 'auditor@example.test', role: 'admin' });
-    const admin = await createSession(client, 'audit-admin');
+    const admin = await humanBearer(client, 'audit-admin');
     process.env.SKIP_AUTH = 'false';
     try {
-      const response = await invoke('DELETE', `/api/sponsor-crm/organizations/${company.id}?hard=true`, undefined, { Authorization: `Bearer ${admin.token}` });
+      const response = await invoke('DELETE', `/api/sponsor-crm/organizations/${company.id}?hard=true`, undefined, { Authorization: `Bearer ${admin}` });
       assert.equal(response.statusCode, 200);
       assert.equal(data(response).mode, 'applied');
       assert.equal(data(response).deleted, true);
@@ -219,13 +219,13 @@ describe('CRM hard delete', () => {
     const company = await org();
     await createUserWithId(client, 'delete-admin', { name: 'Admin', email: 'admin@example.test', role: 'admin' });
     await createUserWithId(client, 'delete-operator', { name: 'Operator', email: 'operator@example.test', role: 'operator' });
-    const admin = await createSession(client, 'delete-admin'); const operator = await createSession(client, 'delete-operator');
+    const admin = await humanBearer(client, 'delete-admin'); const operator = await humanBearer(client, 'delete-operator');
     process.env.SKIP_AUTH = 'false';
     try {
       const path = `/api/sponsor-crm/organizations/${company.id}?hard=true`;
       assert.equal((await invoke('DELETE', path, undefined, { 'x-user-id': 'delete-admin' })).statusCode, 401);
-      assert.equal((await invoke('DELETE', path, undefined, { Authorization: `Bearer ${operator.token}`, 'x-user-id': 'delete-admin' })).statusCode, 403);
-      assert.equal((await invoke('DELETE', path, undefined, { Authorization: `Bearer ${admin.token}` })).statusCode, 200);
+      assert.equal((await invoke('DELETE', path, undefined, { Authorization: `Bearer ${operator}`, 'x-user-id': 'delete-admin' })).statusCode, 403);
+      assert.equal((await invoke('DELETE', path, undefined, { Authorization: `Bearer ${admin}` })).statusCode, 200);
     } finally { process.env.SKIP_AUTH = 'true'; }
   });
 
