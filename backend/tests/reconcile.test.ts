@@ -548,7 +548,7 @@ describe('reconcile API', () => {
         row({ date: '2026-12-04', amount: '-48.60', counterparty: 'Example Cloud' }),
         row({ date: '2026-12-10', amount: '-15.00', counterparty: 'Finom account fee' }),
         row({ date: '2026-12-15', amount: '-3296.00', counterparty: 'Finanzamt Example' }),
-        row({ date: '2026-12-16', amount: '43633.73', counterparty: 'Finanzamt refund' }),
+        row({ date: '2026-12-16', amount: '1234.56', counterparty: 'Finanzamt refund' }),
         row({ date: '2026-12-20', amount: '-12.00', counterparty: 'Unbooked Shop' }),
       ],
     });
@@ -611,7 +611,7 @@ describe('reconcile API', () => {
     assert.equal(pack.draft, false);
     const paths = pack.entries.map((entry: { path: string }) => entry.path);
     assert.doesNotMatch(pack.csv, /Finanzamt/);
-    assert.doesNotMatch(pack.csv, /43633\.73/);
+    assert.doesNotMatch(pack.csv, /1234\.56/);
     assert.ok(paths.includes('2026-12/2026-12_reconciliation_datatalksclub.csv'), paths.join('\n'));
     assert.ok(paths.some((path: string) => /^2026-12\/statements\/2026-12_finom-main_statement\./.test(path)), paths.join('\n'));
     assert.ok(paths.includes('2026-12/expenses/2026-12-14_google_google-one_1.99EUR.pdf'), paths.join('\n'));

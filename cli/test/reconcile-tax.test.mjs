@@ -13,7 +13,7 @@ test("month output places tax and health insurance rows in a separate final sect
       counters: { rows: 1, matched: 0, bankWithoutInvoice: 1, ledgerWithoutBank: 0, amountMismatch: 0, needsReview: 0, exceptions: 0 },
       statements: [], rows: [
         { id: "ordinary", date: "2026-10-02", status: "no-invoice", amount: "-20.00", currency: "EUR", counterparty: "Vendor", documents: [], missing: "no ledger row" },
-        { id: "tax-refund", date: "2026-10-03", status: "matched", tax: true, amount: "43633.73", currency: "EUR", counterparty: "Finanzamt refund", documents: [], exception: { kind: "tax_refund", proof: "category", satisfied: true } },
+        { id: "tax-refund", date: "2026-10-03", status: "matched", tax: true, amount: "1234.56", currency: "EUR", counterparty: "Finanzamt Example", documents: [], exception: { kind: "tax_refund", proof: "category", satisfied: true } },
       ],
     }));
   };

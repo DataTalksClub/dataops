@@ -162,8 +162,8 @@ describe("dataops finance taxes", () => {
   });
 
   test("summary shows ESt, GewSt and TK separately and together, and lists refunds outside taxes", async () => {
-    const totalsWithTaxes = { ...OCTOBER.totals, incomeTax: 1000, tradeTax: 3296, healthInsurance: 1179.36, taxesTotal: 5475.36, taxRefunds: 43633.73 };
-    fakePortal({ "GET /api/finance/summary": { ...OCTOBER, totals: totalsWithTaxes, taxRefunds: [{ id: "ledger-refund", date: "2026-10-30", month: "2026-10", eur: 43633.73, taxType: "other", counterparty: "Finanzamt", description: "Erstattung" }] } });
+    const totalsWithTaxes = { ...OCTOBER.totals, incomeTax: 1000, tradeTax: 3296, healthInsurance: 1179.36, taxesTotal: 5475.36, taxRefunds: 1234.56 };
+    fakePortal({ "GET /api/finance/summary": { ...OCTOBER, totals: totalsWithTaxes, taxRefunds: [{ id: "ledger-refund", date: "2026-10-15", month: "2026-10", eur: 1234.56, taxType: "other", counterparty: "Finanzamt Example", description: "Synthetic refund" }] } });
     const io = captureIo();
     assert.equal(await run(["finance", "summary", "--month", "2026-10"], io), 0);
     const text = io.text();
@@ -171,8 +171,8 @@ describe("dataops finance taxes", () => {
     assert.match(text, /Gewerbesteuer\s+-3,296\.00/);
     assert.match(text, /Health insurance \(TK\)\s+-1,179\.36/);
     assert.match(text, /Taxes and TK paid\s+-5,475\.36/);
-    assert.match(text, /Tax refunds received \(cash, not a negative tax\)\s+43,633\.73/);
-    assert.match(text, /2026-10-30\s+43,633\.73\s+ledger-refund/);
+    assert.match(text, /Tax refunds received \(cash, not a negative tax\)\s+1,234\.56/);
+    assert.match(text, /2026-10-15\s+1,234\.56\s+ledger-refund/);
   });
 
   test("summary shows owner pay on its own line", async () => {
