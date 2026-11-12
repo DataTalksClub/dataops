@@ -4,6 +4,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { handler } from '../src/handler';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { getClient } from '../src/db/client';
+import { expireCalendarHolds } from '../src/db/calendarHolds';
 import { createTemplate } from '../src/db/templates';
 import { createCard, getCardConsistent } from '../src/db/cards';
 import { createTask, getTask } from '../src/db/tasks';
@@ -336,6 +337,53 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
     configureTaskChecklistStore(null);
     checklistFixture.cleanup();
     await stopLocal();
+  });
+
+  it('silently reschedules a hold without guest email and renews expiry through both CLI API paths', async () => {
+    sentEmails = [];
+    googleMock = createMockGoogleCalendar();
+    setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', connectionId: 'orin-calendar', fetchImpl: googleMock.fetchImpl });
+    const card = await createCard(client, {
+      ...templateLink({ id: podcastTemplateId, version: 1 } as any),
+      title: 'Synthetic pending guest', anchorDate: '2026-12-01', people: ['Unknown guest'],
+    });
+    const proposed = await invoke('POST', `/api/events/${card.id}/propose`, {
+      date: '2026-12-01', time: '18:00', suppressGuestNotifications: true, now: '2026-11-06T19:57:06Z',
+    });
+    assert.equal(proposed.statusCode, 201, proposed.body);
+    const original = parse(proposed);
+    assert.equal(original.event.expiresAt, '2026-11-13T19:57:06.000Z');
+    const rejected = await invoke('POST', `/api/events/${card.id}/reschedule`, { date: '2026-12-15', time: '18:00' });
+    assert.equal(rejected.statusCode, 422);
+    for (const path of [`/api/events/${card.id}/reschedule`, `/api/calendar-holds/${original.event.id}/move`]) {
+      for (const expiresDays of [0, 366, 1.5, '60']) {
+        const invalid = await invoke('POST', path, { date: '2026-12-15', expiresDays, suppressGuestNotifications: true });
+        assert.equal(invalid.statusCode, 422, invalid.body);
+      }
+      const start = googleMock.calls.length;
+      const moved = await invoke('POST', path, {
+        date: '2026-12-15', time: '18:00', suppressGuestNotifications: true, expiresDays: 60,
+      });
+      assert.equal(moved.statusCode, 200, moved.body);
+      const result = parse(moved);
+      assert.equal(result.event.status, 'proposed');
+      assert.deepEqual(result.event.guestEmails, []);
+      assert.deepEqual(result.event.googleEventIds, original.event.googleEventIds);
+      assert.ok(result.event.expiresAt > '2026-12-15T19:00:00Z');
+      const desired = result.event.operations.at(-1).desired;
+      assert.deepEqual(desired.attendees, []);
+      assert.deepEqual(desired.emails, []);
+      assert.equal(desired.sendUpdates, 'none');
+      assert.equal(desired.startIso, '2026-12-15T17:00:00.000Z');
+      assert.equal(desired.endIso, '2026-12-15T18:00:00.000Z');
+      const writes = googleMock.calls.slice(start).filter(call => ['POST', 'PATCH', 'DELETE'].includes(call.method) && call.url.includes('/calendar/v3/'));
+      assert.ok(writes.length);
+      assert.ok(writes.every(call => !call.url.includes('sendUpdates=all')));
+      assert.ok(writes.every(call => !call.body?.attendees?.length));
+      const expiry = await expireCalendarHolds(client, '2026-11-13T19:57:07Z', { dryRun: true });
+      assert.ok(!expiry.expired.some(hold => hold.id === original.event.id));
+    }
+    assert.deepEqual(sentEmails, []);
   });
 
   it('AC3 + AC4 + AC5 + AC7 + AC9: podcast full lifecycle (propose -> approve -> reschedule -> approve -> release) syncs Card, Episode, Google calendars, emails, tasks, and linked docs atomically', async () => {

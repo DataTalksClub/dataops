@@ -55,7 +55,10 @@ function parseTransitionInput(body: Record<string, any>, actorId: string) {
       : typeof body.guestRef === 'string' && body.guestRef.includes('@')
         ? [body.guestRef.trim()]
         : undefined;
+  if (body.suppressGuestNotifications !== undefined && typeof body.suppressGuestNotifications !== 'boolean') throw new EventInputError('suppressGuestNotifications must be a boolean');
   return {
+    ...(body.suppressGuestNotifications === true ? { suppressGuestNotifications: true } : {}),
+    ...(body.expiresDays !== undefined ? { expiresDays: body.expiresDays } : {}),
     ...(body.durationMinutes !== undefined ? { durationMinutes: Number(body.durationMinutes) } : {}),
     ...(typeof body.timeZone === 'string' ? { timeZone: body.timeZone } : {}),
     ...(typeof body.date === 'string' && body.date.trim() ? { date: body.date.trim() } : {}),
