@@ -17,12 +17,17 @@ import {
   decryptSponsorDocAccessCode,
   encryptSponsorDocAccessCode,
   generateSponsorDocAccessCode,
+  getSponsorDoc,
+  listSponsorDocSummariesByCardId,
   recordSponsorDocFailedAttempt,
   verifySponsorDocCodeConstantTime,
 } from '../db/sponsorDocs';
 import { resolveInteractiveActor } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
+import { savePublicImage } from '../publicImages';
+import { extractMultipartImageBuffer, publicImagePayload } from '../routes/publicImages';
 import { sponsorDocPortalBaseUrl } from '../routes/sponsorDocs';
+import { FileStorageError } from '../storage';
 import type { Card, LambdaEvent, LambdaResponse } from '../types';
 import { issueLabel, SLOT_POSITIONS } from './issueCard';
 import { syncStandaloneMarkdownTask } from './markdownTask';
@@ -98,6 +103,28 @@ function escapeHtml(raw: string): string {
     .replace(/'/g, '&#39;');
 }
 
+const KNOWN_COURSE_BANNERS: Readonly<Record<string, { alt: string; url: string }>> = {
+  'ai dev tools zoomcamp': {
+    alt: 'AI Dev Tools Zoomcamp',
+    url: 'https://mcusercontent.com/0d7822ab98152f5afc118c176/images/c39d593c-3435-b19e-3a98-d2d110924dc8.png',
+  },
+  'machine learning zoomcamp': {
+    alt: 'Machine Learning Zoomcamp',
+    url: 'https://mcusercontent.com/0d7822ab98152f5afc118c176/images/f6aee0bd-8307-6d8e-2e90-355ccb46929d.png',
+  },
+};
+
+export interface SponsoredGraphicAsset {
+  url: string;
+  alt: string;
+  ctaUrl?: string;
+}
+
+function isHostedImageUrl(rawUrl: string): boolean {
+  const trimmed = String(rawUrl || '').trim();
+  return /^https?:\/\//i.test(trimmed) || trimmed.startsWith('/');
+}
+
 function sanitizeHref(rawUrl: string): string | null {
   const trimmed = String(rawUrl || '').trim();
   if (/^(https?:\/\/|mailto:)/i.test(trimmed)) return trimmed;
@@ -148,12 +175,37 @@ export function renderNewsletterMarkdownHtml(markdown: string): string {
     if (!paragraphLines.length) return;
     const joined = paragraphLines.join(' ');
     paragraphLines = [];
+    const trimmedJoined = joined.trim();
+    // Known course banner marker: [Banner: Course name]
+    const bannerMatch = /^\[Banner:\s*([^\]]+)\]$/i.exec(trimmedJoined);
+    if (bannerMatch) {
+      const knownBanner = KNOWN_COURSE_BANNERS[bannerMatch[1].trim().toLowerCase()];
+      if (knownBanner) {
+        blocks.push(
+          `<figure class="newsletter-preview-figure newsletter-preview-banner"><img src="${escapeHtml(knownBanner.url)}" alt="${escapeHtml(knownBanner.alt)}" loading="lazy"></figure>`,
+        );
+        return;
+      }
+    }
+    // Standalone linked image block: [![alt](src)](https://...)
+    const linkedImageMatch = /^\[!\[([^\]]*)\]\(([^)]+)\)\]\((https?:\/\/[^)]+)\)$/i.exec(trimmedJoined);
+    if (linkedImageMatch) {
+      const alt = escapeHtml(linkedImageMatch[1].trim());
+      const srcRaw = linkedImageMatch[2].trim();
+      const safeHref = sanitizeHref(linkedImageMatch[3].trim());
+      if (isHostedImageUrl(srcRaw) && safeHref) {
+        blocks.push(
+          `<figure class="newsletter-preview-figure"><a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(srcRaw)}" alt="${alt}" loading="lazy"></a>${alt ? `<figcaption>${alt}</figcaption>` : ''}</figure>`,
+        );
+        return;
+      }
+    }
     // Standalone image block: ![alt](src)
-    const imageMatch = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(joined.trim());
+    const imageMatch = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(trimmedJoined);
     if (imageMatch) {
       const alt = escapeHtml(imageMatch[1].trim());
       const srcRaw = imageMatch[2].trim();
-      if (/^https?:\/\//i.test(srcRaw) || srcRaw.startsWith('/')) {
+      if (isHostedImageUrl(srcRaw)) {
         blocks.push(
           `<figure class="newsletter-preview-figure"><img src="${escapeHtml(srcRaw)}" alt="${alt}" loading="lazy">${alt ? `<figcaption>${alt}</figcaption>` : ''}</figure>`,
         );
@@ -165,7 +217,7 @@ export function renderNewsletterMarkdownHtml(markdown: string): string {
       return;
     }
     // Standalone CTA link block: [Label](https://...)
-    const ctaMatch = /^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/i.exec(joined.trim());
+    const ctaMatch = /^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/i.exec(trimmedJoined);
     if (ctaMatch) {
       const label = renderInlineMarkdown(escapeHtml(ctaMatch[1].trim()));
       const safeHref = sanitizeHref(ctaMatch[2].trim());
@@ -247,11 +299,59 @@ export interface ParsedNewsletterIssueMarkdown {
   bodyHtml: string;
 }
 
+const SECTION_BOUNDARY_RE = /^(?:\[Divider\]|\[Banner:|-{3,}|\*{3,}|(?:#{1,4}\s+)?(?:EVENTS|RECORDINGS|ARTICLES|JOBS|COMMUNITY|TOOLS|COURSES)\s*$)/i;
+
+/**
+ * Insert the sponsor's hosted graphic (linked to the tracked CTA) right after
+ * the `SPONSORED` marker when the section does not already contain an image.
+ */
+export function injectSponsoredGraphic(
+  bodyMarkdown: string,
+  graphic: SponsoredGraphicAsset | null | undefined,
+): string {
+  if (!graphic || !isHostedImageUrl(graphic.url)) return bodyMarkdown;
+  const lines = String(bodyMarkdown || '').split('\n');
+  const sponsoredIdx = lines.findIndex((line) => /^(?:#{1,4}\s+)?SPONSORED\s*$/i.test(line.trim()));
+  if (sponsoredIdx < 0) return bodyMarkdown;
+
+  let sectionEnd = lines.length;
+  for (let i = sponsoredIdx + 1; i < lines.length; i++) {
+    if (SECTION_BOUNDARY_RE.test(lines[i].trim())) {
+      sectionEnd = i;
+      break;
+    }
+  }
+
+  let fallbackCtaUrl: string | undefined;
+  for (let i = sponsoredIdx + 1; i < sectionEnd; i++) {
+    const trimmed = lines[i].trim();
+    if (/!\[[^\]]*\]\([^)]+\)/.test(trimmed)) {
+      return bodyMarkdown;
+    }
+    if (!fallbackCtaUrl) {
+      const ctaMatch = /^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/i.exec(trimmed);
+      if (ctaMatch) fallbackCtaUrl = ctaMatch[2].trim();
+    }
+  }
+
+  const alt = String(graphic.alt || 'Sponsor').replace(/[\[\]]/g, '').trim() || 'Sponsor';
+  const imgMd = `![${alt}](${graphic.url})`;
+  const safeCta = sanitizeHref(graphic.ctaUrl || fallbackCtaUrl || '');
+  const lineToInsert = safeCta ? `[${imgMd}](${safeCta})` : imgMd;
+
+  const next = [...lines];
+  next.splice(sponsoredIdx + 1, 0, '', lineToInsert);
+  return next.join('\n');
+}
+
 /**
  * Parse `issue.md` into frontmatter metadata, `Subject:` / `Preview:` lines,
  * and rendered HTML email body.
  */
-export function parseNewsletterIssueMarkdown(rawIssueMd: string): ParsedNewsletterIssueMarkdown {
+export function parseNewsletterIssueMarkdown(
+  rawIssueMd: string,
+  sponsoredGraphic?: SponsoredGraphicAsset | null,
+): ParsedNewsletterIssueMarkdown {
   const normalized = String(rawIssueMd || '').replace(/\r\n/g, '\n');
   const frontmatter: Record<string, string> = {};
   let rest = normalized;
@@ -297,12 +397,13 @@ export function parseNewsletterIssueMarkdown(rawIssueMd: string): ParsedNewslett
   }
 
   const bodyMarkdown = bodyLines.join('\n').trim();
+  const effectiveBody = injectSponsoredGraphic(bodyMarkdown, sponsoredGraphic);
   return {
     frontmatter,
     subject,
     previewText,
     bodyMarkdown,
-    bodyHtml: renderNewsletterMarkdownHtml(bodyMarkdown),
+    bodyHtml: renderNewsletterMarkdownHtml(effectiveBody),
   };
 }
 
@@ -404,17 +505,59 @@ async function resolveStaffOrExternalAccess(
   return { isStaff: false };
 }
 
+async function resolveIssueSponsorGraphic(
+  client: DynamoDBDocumentClient,
+  issue: NewsletterIssue,
+  event: LambdaEvent,
+): Promise<SponsoredGraphicAsset | null> {
+  const candidateIds: string[] = [];
+  if (issue.cardId) {
+    const docs = await listSponsorDocSummariesByCardId(client, issue.cardId);
+    const preferredOrder = issue.kind === 'standalone'
+      ? ['newsletter-standalone', 'newsletter-main', 'newsletter-secondary']
+      : ['newsletter-main', 'newsletter-standalone', 'newsletter-secondary'];
+    for (const tpl of preferredOrder) {
+      for (const doc of docs) {
+        if (doc.template === tpl && !candidateIds.includes(doc.id)) {
+          candidateIds.push(doc.id);
+        }
+      }
+    }
+  }
+  const slotUrl = issue.slots?.primary?.documentUrl || '';
+  const urlMatch = /\/sponsor-docs\/(sdoc-[a-z0-9]+)/i.exec(slotUrl);
+  if (urlMatch && !candidateIds.includes(urlMatch[1])) {
+    candidateIds.push(urlMatch[1]);
+  }
+
+  for (const docId of candidateIds) {
+    const doc = await getSponsorDoc(client, docId);
+    if (!doc) continue;
+    const rawGraphics = String(doc.content?.graphicsUrl || '').trim();
+    if (!isHostedImageUrl(rawGraphics)) continue;
+    const url = rawGraphics.startsWith('/')
+      ? `${sponsorDocPortalBaseUrl(event)}${rawGraphics}`
+      : rawGraphics;
+    const rawCta = String(doc.content?.ctaUrl || '').trim();
+    const ctaUrl = sanitizeHref(rawCta) || undefined;
+    const alt = String(doc.sponsorName || issue.slots?.primary?.sponsor || 'Sponsor').trim() || 'Sponsor';
+    return { url, alt, ctaUrl };
+  }
+  return null;
+}
+
 function buildPreviewResponsePayload(
   issue: NewsletterIssue,
   event: LambdaEvent,
   options: {
     viewerRole: 'staff' | 'external';
     accessCode?: string | null;
+    sponsoredGraphic?: SponsoredGraphicAsset | null;
   },
 ) {
   const previewUrl = newsletterIssuePreviewUrl(event, issue.id);
   const md: NewsletterMarkdownPackage = issue.markdown || {};
-  const parsedIssue = parseNewsletterIssueMarkdown(md.issue || '');
+  const parsedIssue = parseNewsletterIssueMarkdown(md.issue || '', options.sponsoredGraphic);
   const sourcesHtml = renderNewsletterMarkdownHtml(md.sources || '');
   const briefHtml = renderNewsletterMarkdownHtml(md.brief || '');
 
@@ -548,11 +691,13 @@ export async function handleNewsletterMarkdownRoutes(
     if (access.isStaff) {
       if (!existing) return json(404, { error: 'Newsletter issue not found', code: 'issue_not_found' });
       const ensured = await ensureIssueHasPreviewCode(client, existing);
+      const sponsoredGraphic = await resolveIssueSponsorGraphic(client, ensured.issue, event);
       return json(
         200,
         buildPreviewResponsePayload(ensured.issue, event, {
           viewerRole: 'staff',
           accessCode: ensured.accessCode,
+          sponsoredGraphic,
         }),
       );
     }
@@ -604,7 +749,8 @@ export async function handleNewsletterMarkdownRoutes(
     }
 
     await clearSponsorDocRateLimit(client, rateTargetId, ip);
-    return json(200, buildPreviewResponsePayload(existing, event, { viewerRole: 'external' }));
+    const sponsoredGraphic = await resolveIssueSponsorGraphic(client, existing, event);
+    return json(200, buildPreviewResponsePayload(existing, event, { viewerRole: 'external', sponsoredGraphic }));
   }
 
   if (action === 'rotate-code') {
@@ -625,11 +771,13 @@ export async function handleNewsletterMarkdownRoutes(
     } catch {
       return json(409, { error: 'Issue changed; reload and retry' });
     }
+    const sponsoredGraphic = await resolveIssueSponsorGraphic(client, updated, event);
     return json(
       200,
       buildPreviewResponsePayload(updated, event, {
         viewerRole: 'staff',
         accessCode: generated.code,
+        sponsoredGraphic,
       }),
     );
   }
@@ -733,11 +881,45 @@ export async function handleNewsletterMarkdownRoutes(
   // the step leaves the today/overdue queue. Never fails this write.
   await syncStandaloneMarkdownTask(client, updated, resolved.actor.id || 'staff');
 
+  const sponsoredGraphic = await resolveIssueSponsorGraphic(client, updated, event);
   return json(
     200,
     buildPreviewResponsePayload(updated, event, {
       viewerRole: 'staff',
       accessCode,
+      sponsoredGraphic,
     }),
   );
+}
+
+/**
+ * Upload a newsletter issue image to durable public hosting (`/api/public-images/:id`)
+ * and return its public URL for use in `issue.md` / Markdown preview.
+ */
+export async function handleNewsletterImageUpload(
+  idOrCardId: string,
+  event: LambdaEvent,
+  client: DynamoDBDocumentClient,
+): Promise<LambdaResponse> {
+  const resolved = await resolveInteractiveActor(client, event, 'work-write');
+  if (!resolved.ok) return resolved.response;
+
+  const existing = await resolveIssueByIdOrCardId(client, idOrCardId);
+  if (!existing) {
+    return json(404, { error: 'Newsletter issue not found', code: 'issue_not_found' });
+  }
+
+  try {
+    const buffer = extractMultipartImageBuffer(event);
+    const saved = await savePublicImage(buffer);
+    return json(201, {
+      issueId: existing.id,
+      image: publicImagePayload(saved, event),
+    });
+  } catch (err: unknown) {
+    if (err instanceof FileStorageError) {
+      return json(err.statusCode, { error: err.message, code: err.code });
+    }
+    throw err;
+  }
 }

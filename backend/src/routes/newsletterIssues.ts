@@ -77,6 +77,7 @@ import {
   filterSponsorStatsReports,
 } from '../newsletter/statsReport';
 import {
+  handleNewsletterImageUpload,
   handleNewsletterMarkdownRoutes,
   publicNewsletterIssueFields,
 } from '../newsletter/markdownPreview';
@@ -1155,6 +1156,11 @@ export async function handleNewsletterIssueRoutes(
     if (method !== 'POST') return json(405, { error: 'Method not allowed' });
     const body = parse(event) || {};
     return mailchimpMetricsRoute(decodeURIComponent(mailchimpMetrics[1]), body, event, client);
+  }
+  const imageRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/images\/?$/);
+  if (imageRoute) {
+    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+    return handleNewsletterImageUpload(decodeURIComponent(imageRoute[1]), event, client);
   }
   const rotateMdCode = path.match(/^\/api\/newsletter-issues\/([^/]+)\/markdown\/rotate-code\/?$/);
   if (rotateMdCode) {

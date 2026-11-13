@@ -1,5 +1,8 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
@@ -11,7 +14,9 @@ import {
   getNewsletterIssue,
   updateNewsletterIssue,
 } from '../src/db/newsletterIssues';
+import { createSponsorDoc } from '../src/db/sponsorDocs';
 import { createUser } from '../src/db/users';
+import { renderNewsletterMarkdownHtml } from '../src/newsletter/markdownPreview';
 import { humanBearer } from './helpers/human-bearer';
 import { templateLink } from './helpers/cardTemplate';
 
@@ -264,5 +269,149 @@ describe('Newsletter Markdown Storage & HTML Preview (/api/newsletter-issues/:id
     });
     assert.strictEqual(fifth.statusCode, 429);
     assert.strictEqual(JSON.parse(fifth.body).code, 'rate_limited');
+  });
+
+  it('uploads newsletter images to durable public hosting, resolves known course banners, and auto-inserts the sponsor graphic with tracked CTA', async () => {
+    const prevDir = process.env.UPLOAD_DIR;
+    const prevProvider = process.env.DATAOPS_FILE_STORAGE_PROVIDER;
+    const prevBucket = process.env.TASK_FILES_BUCKET;
+    const dir = mkdtempSync(join(tmpdir(), 'nl-img-test-'));
+    process.env.UPLOAD_DIR = dir;
+    process.env.DATAOPS_FILE_STORAGE_PROVIDER = 'local-dev';
+    delete process.env.TASK_FILES_BUCKET;
+
+    try {
+      const card = await createCard(client, {
+        title: 'Weekly #303',
+        dueDate: '2026-11-16',
+        ...templateLink(),
+        stage: 'Planning',
+      });
+      const createdIssue = await createNewsletterIssue(
+        client,
+        buildNewsletterIssue({
+          kind: 'weekly',
+          publicationDate: '2026-11-16',
+          issueNumber: 303,
+          slots: { primary: { sponsor: 'Astronomer' }, secondary: {} },
+        }),
+      );
+      const issue = await updateNewsletterIssue(client, createdIssue, { cardId: card.id });
+
+      // 1. Upload valid PNG via POST /api/newsletter-issues/:id/images
+      const png = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2ZkAAAAASUVORK5CYII=',
+        'base64',
+      );
+      const boundary = '----nl-img-boundary';
+      const partHeader = Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="sponsor.png"\r\nContent-Type: image/png\r\n\r\n`,
+        'binary',
+      );
+      const partFooter = Buffer.from(`\r\n--${boundary}--\r\n`, 'binary');
+      const multipartBody = Buffer.concat([partHeader, png, partFooter]).toString('base64');
+
+      const uploadRes = await handler(
+        {
+          httpMethod: 'POST',
+          path: `/api/newsletter-issues/${issue.id}/images`,
+          headers: {
+            authorization: `Bearer ${staffToken}`,
+            'x-user-id': staffUserId,
+            host: 'ops.dtcdev.click',
+            'content-type': `multipart/form-data; boundary=${boundary}`,
+          },
+          body: multipartBody,
+          isBase64Encoded: true,
+        },
+        {} as never,
+      );
+      assert.strictEqual(uploadRes.statusCode, 201, uploadRes.body);
+      const uploaded = JSON.parse(uploadRes.body);
+      assert.strictEqual(uploaded.issueId, issue.id);
+      assert.match(uploaded.image.url, /^https:\/\/ops\.dtcdev\.click\/api\/public-images\/[0-9a-f-]+\.png$/);
+
+      // Invalid image rejected loudly
+      const badBody = Buffer.concat([
+        Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="bad.txt"\r\n\r\n`, 'binary'),
+        Buffer.from('not an image', 'utf8'),
+        partFooter,
+      ]).toString('base64');
+      const badRes = await handler(
+        {
+          httpMethod: 'POST',
+          path: `/api/newsletter-issues/${issue.id}/images`,
+          headers: {
+            authorization: `Bearer ${staffToken}`,
+            'x-user-id': staffUserId,
+            host: 'ops.dtcdev.click',
+            'content-type': `multipart/form-data; boundary=${boundary}`,
+          },
+          body: badBody,
+          isBase64Encoded: true,
+        },
+        {} as never,
+      );
+      assert.strictEqual(badRes.statusCode, 400);
+      assert.strictEqual(JSON.parse(badRes.body).code, 'unsupported_image_format');
+
+      // 2. Link a newsletter-main sponsor doc with hosted graphicsUrl and tracked ctaUrl
+      const trackedCta = 'https://www.astronomer.io/events/webinars/test/?utm_source=data-talks-club';
+      await createSponsorDoc(client, {
+        title: '2026-11-16 - Astronomer',
+        sponsorName: 'Astronomer',
+        template: 'newsletter-main',
+        cardId: card.id,
+        content: {
+          title: 'How to run AI pipelines',
+          graphicsUrl: uploaded.image.url,
+          ctaUrl: trackedCta,
+          ctaText: 'Register now',
+        },
+        createdBy: staffUserId,
+      });
+
+      const issueMd = [
+        'SPONSORED',
+        '',
+        '## How to run AI pipelines',
+        '',
+        `[Register now](${trackedCta})`,
+        '',
+        '[Banner: Production AI Agents for Generative Media (not made yet; fallback heading: Course Start)]',
+        '',
+        '[Banner: AI Dev Tools Zoomcamp]',
+        '',
+        '[Banner: Machine Learning Zoomcamp]',
+      ].join('\n');
+
+      const putRes = await staffReq('PUT', `/api/newsletter-issues/${issue.id}/markdown`, {
+        issue: issueMd,
+      });
+      assert.strictEqual(putRes.statusCode, 200, putRes.body);
+      const preview = JSON.parse(putRes.body);
+      const html: string = preview.rendered.issueHtml;
+
+      // Sponsor graphic auto-inserted with tracked CTA on both image and button
+      assert.ok(html.includes(`<img src="${uploaded.image.url}" alt="Astronomer"`), 'should auto-insert sponsor graphic img');
+      const ctaMatches = html.match(new RegExp(trackedCta.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || [];
+      assert.strictEqual(ctaMatches.length, 2, 'tracked CTA should appear on both the image link and the button');
+
+      // Known course banners resolved; missing banner NOT invented
+      assert.ok(html.includes('https://mcusercontent.com/0d7822ab98152f5afc118c176/images/c39d593c-3435-b19e-3a98-d2d110924dc8.png'));
+      assert.ok(html.includes('https://mcusercontent.com/0d7822ab98152f5afc118c176/images/f6aee0bd-8307-6d8e-2e90-355ccb46929d.png'));
+      assert.ok(html.includes('Production AI Agents for Generative Media (not made yet'));
+      assert.strictEqual((html.match(/<img\b/g) || []).length, 3, 'exactly 3 images: sponsor + 2 known course banners');
+
+      // 3. Direct renderNewsletterMarkdownHtml linked-image syntax renders as figure (not button)
+      const linkedHtml = renderNewsletterMarkdownHtml(`[![Alt](${uploaded.image.url})](${trackedCta})`);
+      assert.ok(linkedHtml.includes('<figure class="newsletter-preview-figure">'));
+      assert.ok(!linkedHtml.includes('newsletter-preview-cta__link'));
+    } finally {
+      if (prevDir === undefined) delete process.env.UPLOAD_DIR; else process.env.UPLOAD_DIR = prevDir;
+      if (prevProvider === undefined) delete process.env.DATAOPS_FILE_STORAGE_PROVIDER; else process.env.DATAOPS_FILE_STORAGE_PROVIDER = prevProvider;
+      if (prevBucket !== undefined) process.env.TASK_FILES_BUCKET = prevBucket;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
