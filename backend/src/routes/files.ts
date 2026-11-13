@@ -41,7 +41,7 @@ function fileViewer(actorId: string): string {
  * Simple multipart/form-data parser.
  * Extracts fields and file content from the raw body string.
  */
-interface ParsedMultipart {
+export interface ParsedMultipart {
   fields: Record<string, string>;
   file?: {
     filename: string;
@@ -50,7 +50,7 @@ interface ParsedMultipart {
   };
 }
 
-function parseMultipart(body: string, contentType: string): ParsedMultipart {
+export function parseMultipart(body: string, contentType: string): ParsedMultipart {
   const result: ParsedMultipart = { fields: {} };
 
   // Extract boundary from Content-Type header

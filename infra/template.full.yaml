@@ -1257,6 +1257,10 @@ Resources:
             Resource: !Sub ${TaskFilesBucket.Arn}/tasks/*
         - Statement:
             Effect: Allow
+            Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+            Resource: !Sub ${TaskFilesBucket.Arn}/public-images/*
+        - Statement:
+            Effect: Allow
             Action: [s3:GetObject, s3:PutObject]
             Resource: !Sub ${TaskFilesBucket.Arn}/cards/*/banners/*
         - Statement:
