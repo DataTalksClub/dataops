@@ -48,6 +48,7 @@ import { resolveInteractiveActor } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
 import { projectCard } from '../identity/projections';
 import { recordRequestError } from '../requestErrorLog';
+import { createNotification } from '../db/notifications';
 import { FileStorageError } from '../storage';
 import { savePublicImage } from '../publicImages';
 import { extractMultipartImageBuffer, publicImagePayload } from './publicImages';
@@ -960,11 +961,13 @@ export async function handleSponsorDocRoutes(
       if (m !== 'POST') return json(405, { error: 'Method not allowed' });
       const docId = decodeURIComponent(imagesMatch[1]);
       const access = await resolveStaffOrSponsorAccess(client, event, 'work-write');
+      let docTitle = docId;
       if (access.isStaff) {
         const loaded = await getSponsorDocWithAuthMaterial(client, docId);
         if (!loaded) {
           return json(404, { error: 'Document not found', code: 'sponsor_doc_not_found' });
         }
+        docTitle = loaded.doc.title || docId;
       } else {
         const verified = await verifyExternalCodeForDoc(
           client,
@@ -973,10 +976,34 @@ export async function handleSponsorDocRoutes(
           extractProvidedAccessCode(event),
         );
         if (!verified.ok) return verified.response;
+        docTitle = verified.doc.title || docId;
       }
-      const buffer = extractMultipartImageBuffer(event);
-      const saved = await savePublicImage(buffer);
-      return json(201, { image: publicImagePayload(saved, event) });
+      try {
+        const buffer = extractMultipartImageBuffer(event);
+        const saved = await savePublicImage(buffer);
+        return json(201, { image: publicImagePayload(saved, event) });
+      } catch (err: unknown) {
+        if (err instanceof FileStorageError) {
+          console.error(JSON.stringify({
+            event: 'sponsor_image_upload_failed',
+            level: 'ERROR',
+            docId,
+            code: err.code,
+            statusCode: err.statusCode,
+            message: err.message,
+          }));
+          try {
+            await createNotification(client, {
+              type: 'sponsor-image-upload-failed',
+              message: `Sponsor image upload failed for "${docTitle}" (${docId}): ${err.message}`,
+              metadata: { docId, code: err.code, statusCode: err.statusCode },
+            });
+          } catch (notifyErr) {
+            console.error('Failed to persist sponsor image upload alert notification:', notifyErr);
+          }
+        }
+        throw err;
+      }
     }
 
     // Single resource: GET, PUT, DELETE /api/sponsor-docs/:id

@@ -1203,8 +1203,23 @@ export function sanitizeTemplateContent(
       }
       if (Object.hasOwn(raw, field.key)) {
         const val = raw[field.key];
-        const maxLen = field.key === 'graphicsUrl' || field.allowVisualUpload ? 300000 : 20000;
-        next[field.key] = val === null || val === undefined ? '' : String(val).slice(0, maxLen);
+        const str = val === null || val === undefined ? '' : String(val);
+        if (field.key === 'graphicsUrl' || field.allowVisualUpload) {
+          const trimmed = str.trim();
+          if (/^data:image\//i.test(trimmed)) {
+            throw new SponsorDocValidationError({
+              [field.key]: `${field.label} must be uploaded as an image file or provided as a hosted URL, not a data URI.`,
+            });
+          }
+          if (trimmed.length > 2048) {
+            throw new SponsorDocValidationError({
+              [field.key]: `${field.label} URL is too long (maximum 2048 characters). Please upload the image file instead.`,
+            });
+          }
+          next[field.key] = trimmed;
+        } else {
+          next[field.key] = str.slice(0, 20000);
+        }
       }
     }
   }
