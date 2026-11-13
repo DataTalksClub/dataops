@@ -4,6 +4,7 @@ import { formatUserCode } from "../../dakit/device-code.js";
 import { renderSponsorDocGate } from "./sponsor-doc-gate.js";
 import { appendSponsorDocRadioField } from "./sponsor-doc-radio.js";
 import { appendSponsorDocSelectField } from "./sponsor-doc-select.js";
+import { mountSponsorDocVisualControls } from "./sponsor-doc-visual.js";
 import {
   appendSponsorDocBulletsField,
   parseSponsorBulletItems,
@@ -786,70 +787,24 @@ export function createSponsorDocPage({
         });
 
         if (isVisualField) {
-          const visualControls = el("div", "sponsor-doc-visual-upload");
-          visualControls.dataset.sponsorVisualControls = fieldDef.key;
-          const fileInputId = `sponsor-visual-file-${fieldDef.key}`;
-          const uploadClass = "dk-button dk-button--secondary dk-button--sm sponsor-doc-visual-upload__label";
-          const uploadLabel = el("label", uploadClass, "Upload visual");
-          uploadLabel.setAttribute("for", fileInputId);
-          const fileInput = el("input", "sponsor-doc-visual-upload__input");
-          fileInput.type = "file";
-          fileInput.id = fileInputId;
-          fileInput.accept = "image/*";
-          fileInput.dataset.sponsorVisualUpload = fieldDef.key;
-          fileInput.disabled = busy;
-          const statusSpan = el("span", "sponsor-doc-visual-upload__status");
-          statusSpan.dataset.sponsorVisualStatus = "";
-          const clearBtn = actionBtn("dk-button dk-button--secondary dk-button--sm", "Remove visual", "clear-visual", () => {
-            uploadedVisualName = "";
-            draftContent[fieldDef.key] = "";
-            control.value = "";
-            control.placeholder = fieldDef.placeholder || "";
-            fileInput.value = "";
-            updateCount("");
-            syncVisualControls();
-            updateLivePreview();
+          mountSponsorDocVisualControls({
+            el,
+            actionBtn,
+            fieldWrap,
+            fieldDef,
+            control,
+            docId,
+            accessCode,
+            request,
+            busy,
+            draftContent,
+            fieldErrors,
+            getUploadedVisualName: () => uploadedVisualName,
+            setUploadedVisualName: (name) => { uploadedVisualName = name; },
+            updateCount,
+            updateLivePreview,
+            announce,
           });
-
-          function syncVisualControls() {
-            const v = String(draftContent[fieldDef.key] || "").trim();
-            if (/^data:image\//i.test(v)) {
-              statusSpan.textContent = uploadedVisualName
-                ? `Uploaded visual: ${uploadedVisualName}`
-                : "Uploaded visual attached";
-              clearBtn.hidden = false;
-            } else if (v) {
-              statusSpan.textContent = "Using linked image URL";
-              clearBtn.hidden = false;
-            } else {
-              statusSpan.textContent = "Upload PNG, JPG, WebP, or GIF to preview right away";
-              clearBtn.hidden = true;
-            }
-          }
-
-          fileInput.addEventListener("change", async (event) => {
-            const file = fileInput.files?.[0] || event?.target?.files?.[0] || event?.detail?.file;
-            if (!file) return;
-            const dataUrl = await readVisualFileAsDataUrl(file);
-            if (!dataUrl) return;
-            if (fieldDef.maxCharsHint && dataUrl.length > fieldDef.maxCharsHint) {
-              announce("This image is too large. Please use a smaller photo or paste an image URL.");
-              fileInput.value = "";
-              return;
-            }
-            uploadedVisualName = file.name || "uploaded-visual.png";
-            draftContent[fieldDef.key] = dataUrl;
-            control.value = "";
-            control.placeholder = attachedPh;
-            updateCount(dataUrl);
-            syncVisualControls();
-            updateLivePreview();
-            announce(`Uploaded visual ${uploadedVisualName} for live preview.`);
-          });
-          control.addEventListener("input", () => syncVisualControls());
-          syncVisualControls();
-          visualControls.append(uploadLabel, fileInput, statusSpan, clearBtn);
-          fieldWrap.append(visualControls);
         }
 
         appendErrorIfAny();

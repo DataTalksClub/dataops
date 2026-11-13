@@ -528,6 +528,18 @@ export function createNewsletterPreviewPage({
 
     const rendered = previewData.rendered || {};
     const md = previewData.markdown || {};
+    const attachBrokenImageFallbacks = (container) => {
+      const imgs = container?.querySelectorAll?.("img");
+      if (!imgs) return;
+      for (const img of imgs) {
+        img.addEventListener("error", () => {
+          img.hidden = true;
+          const err = el("div", "sponsor-doc-visual-error", `Could not load image (${img.getAttribute("src") || ""}).`);
+          err.setAttribute("role", "alert");
+          img.after(err);
+        });
+      }
+    };
 
     if (activeTab === "issue") {
       if (rendered.subject || rendered.previewText || Object.keys(rendered.frontmatter || {}).length > 0) {
@@ -586,6 +598,7 @@ export function createNewsletterPreviewPage({
       canvas.dataset.previewCanvas = "issue";
       if (rendered.issueHtml) {
         canvas.innerHTML = rendered.issueHtml;
+        attachBrokenImageFallbacks(canvas);
       } else {
         canvas.append(el("p", "dk-hint", "No issue.md content has been uploaded for this newsletter issue yet."));
       }
@@ -595,6 +608,7 @@ export function createNewsletterPreviewPage({
       canvas.dataset.previewCanvas = "brief";
       if (rendered.briefHtml) {
         canvas.innerHTML = rendered.briefHtml;
+        attachBrokenImageFallbacks(canvas);
       } else {
         canvas.append(el("p", "dk-hint", "No brief.md content recorded."));
       }
@@ -604,6 +618,7 @@ export function createNewsletterPreviewPage({
       canvas.dataset.previewCanvas = "sources";
       if (rendered.sourcesHtml) {
         canvas.innerHTML = rendered.sourcesHtml;
+        attachBrokenImageFallbacks(canvas);
       } else {
         canvas.append(el("p", "dk-hint", "No sources.md content recorded."));
       }
