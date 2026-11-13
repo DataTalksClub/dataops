@@ -14,6 +14,7 @@ import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createBrowserSession } from '../src/db/sessions';
 import { createUserWithId } from '../src/db/users';
+import { savePublicImage } from '../src/publicImages';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent } from '../src/types';
 
@@ -102,6 +103,33 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
       assert.deepStrictEqual(JSON.parse(res.body), { error: 'Unauthorized' }, path);
       assert.strictEqual(res.headers?.['www-authenticate'], undefined, path);
       assert.match(res.headers?.['content-type'] || '', /application\/json/, path);
+    }
+  });
+
+  it('serves hosted public images to anonymous viewers while uploads and deletes stay signed-in only', async () => {
+    const prevDir = process.env.UPLOAD_DIR;
+    const prevProvider = process.env.DATAOPS_FILE_STORAGE_PROVIDER;
+    const prevBucket = process.env.TASK_FILES_BUCKET;
+    const dir = mkdtempSync(join(tmpdir(), 'portal-public-img-'));
+    process.env.UPLOAD_DIR = dir;
+    process.env.DATAOPS_FILE_STORAGE_PROVIDER = 'local-dev';
+    delete process.env.TASK_FILES_BUCKET;
+    try {
+      const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2ZkAAAAASUVORK5CYII=', 'base64');
+      const saved = await savePublicImage(png);
+      const read = await route(ev('GET', saved.path), client);
+      assert.strictEqual(read.statusCode, 200, read.body);
+      assert.strictEqual(read.headers?.['Content-Type'], 'image/png');
+      assert.deepStrictEqual(Buffer.from(read.body, 'base64'), png);
+      const missing = await route(ev('GET', '/api/public-images/00000000-0000-4000-8000-000000000000.png'), client);
+      assert.notStrictEqual(missing.statusCode, 401);
+      assert.strictEqual((await route(ev('POST', '/api/public-images'), client)).statusCode, 401);
+      assert.strictEqual((await route(ev('DELETE', saved.path), client)).statusCode, 401);
+    } finally {
+      if (prevDir === undefined) delete process.env.UPLOAD_DIR; else process.env.UPLOAD_DIR = prevDir;
+      if (prevProvider === undefined) delete process.env.DATAOPS_FILE_STORAGE_PROVIDER; else process.env.DATAOPS_FILE_STORAGE_PROVIDER = prevProvider;
+      if (prevBucket !== undefined) process.env.TASK_FILES_BUCKET = prevBucket;
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
