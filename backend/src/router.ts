@@ -15,6 +15,7 @@ import { handleTextTemplateRoutes } from './routes/textTemplates';
 import { handleKbGdocImportRoutes } from './routes/kbGdocImport';
 import { handleSecretRoutes } from './routes/secrets';
 import { handleFileRoutes } from './routes/files';
+import { handlePublicImageRoutes, isAnonymousPublicImageRequest } from './routes/publicImages';
 import { handleArtifactRoutes } from './routes/artifacts';
 import { handleDocsRoutes, isDocsDomainEnabled, isDocsRoute } from './docs';
 import { handlePortal, serveCanonicalFrontend, servePortalContentAsset } from './docs/portal';
@@ -90,6 +91,7 @@ function isAuthExempt(method: string, path: string): boolean {
   if (isClientErrorReport(method, path)) return true;
   if (isAnonymousSponsorContractRequest(method, path)) return true;
   if (isAnonymousNewsletterPreviewRequest(method, path)) return true;
+  if (isAnonymousPublicImageRequest(method, path)) return true;
   if (AUTH_EXEMPT_PATHS.has(path)) return true;
   if (method === 'POST' && path === '/api/v1/intake/email-documents') return true;
   if (method === 'POST' && path === '/api/v1/intake/leads') return true;
@@ -415,6 +417,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
 
     if (reqPath.startsWith('/api/files')) {
       const result = await handleFileRoutes(event);
+      if (result) return result;
+    }
+
+    if (reqPath.startsWith('/api/public-images')) {
+      const result = await handlePublicImageRoutes(event, client);
       if (result) return result;
     }
 

@@ -2,15 +2,17 @@ import { guardedFetchJson } from "./core/guarded-fetch.js";
 import { createSponsorDocPage } from "./surfaces/operations/sponsor-docs.js";
 
 async function request(path, options = {}) {
+  const isFormData = typeof FormData === "function" && options.body instanceof FormData;
+  const headers = { ...(options.headers || {}) };
+  if (!isFormData && !headers["content-type"] && !headers["Content-Type"]) {
+    headers["content-type"] = "application/json";
+  }
   const { response, data } = await guardedFetchJson(
     path,
     {
       ...options,
       cache: "no-store",
-      headers: {
-        "content-type": "application/json",
-        ...(options.headers || {}),
-      },
+      headers,
     },
     { surface: "sponsor-doc", check: `${options.method || "GET"} /api/sponsor-docs`, what: "load the document" },
   );

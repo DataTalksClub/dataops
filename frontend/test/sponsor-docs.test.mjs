@@ -129,6 +129,18 @@ function harness(options = {}) {
         }
       }
 
+      if (opts.method === "POST" && url.endsWith("/images")) {
+        return {
+          image: {
+            id: "11111111-1111-4111-8111-111111111111.png",
+            path: "/api/public-images/11111111-1111-4111-8111-111111111111.png",
+            url: "https://ops.example.test/api/public-images/11111111-1111-4111-8111-111111111111.png",
+            contentType: "image/png",
+            sizeBytes: 8,
+          },
+        };
+      }
+
       if (opts.method === "PUT") {
         const body = JSON.parse(opts.body);
         currentDoc = {
@@ -458,9 +470,13 @@ test("keeps structured Main Body Opening, Bulleted List, and Closing fields and 
   await visualFileInput.dispatch("change");
   await nextTicks();
 
+  const inlineImg = h.root.querySelector('img[data-sponsor-visual-image="graphicsUrl"]');
+  assert.ok(inlineImg, "Inline brief image element is rendered in the field after upload");
+  assert.equal(inlineImg.src, "https://ops.example.test/api/public-images/11111111-1111-4111-8111-111111111111.png");
+
   const previewImg = preview.querySelector("img[data-sponsor-preview-image]");
   assert.ok(previewImg, "Preview image element is rendered after visual upload");
-  assert.match(previewImg.src, /^data:image\/png;base64,/);
+  assert.equal(previewImg.src, "https://ops.example.test/api/public-images/11111111-1111-4111-8111-111111111111.png");
   assert.match(
     preview.querySelector("[data-sponsor-preview-visual-caption]").textContent,
     /acme-architecture\.png/,
@@ -488,7 +504,10 @@ test("keeps structured Main Body Opening, Bulleted List, and Closing fields and 
     ].join("\n"),
   );
   assert.equal(savedBody.content.closing, "Join the live engineering session on Thursday.");
-  assert.match(savedBody.content.graphicsUrl, /^data:image\/png;base64,/);
+  assert.equal(
+    savedBody.content.graphicsUrl,
+    "https://ops.example.test/api/public-images/11111111-1111-4111-8111-111111111111.png",
+  );
   h.controller.destroy();
 });
 
@@ -748,5 +767,64 @@ test("a valid code on a staff-only doc says it is staff only and keeps the store
 
   assert.match(h.root.textContent, /for staff only/);
   assert.ok(!/Invalid access code/.test(h.root.textContent));
+  h.controller.destroy();
+});
+
+test("guest brief renders uploaded photo inline immediately and shows visible error for broken or bare-filename images", async () => {
+  const guestDocOverrides = {
+    template: "podcast",
+    viewerRole: "sponsor",
+    templateDefinition: {
+      key: "podcast",
+      label: "Podcast Guest Brief",
+      intro: "Share your photo and bio.",
+      sections: [
+        {
+          id: "guest",
+          title: "Guest profile",
+          fields: [
+            { key: "guestName", label: "Name", type: "text", required: true },
+            { key: "photoUrl", label: "Photo", type: "text", allowVisualUpload: true },
+          ],
+        },
+      ],
+    },
+    content: {
+      guestName: "Ada Lovelace",
+      photoUrl: "ada-headshot.png",
+    },
+  };
+
+  // 1. Existing brief holding only a bare filename shows a visible error, not a silent blank
+  const h = harness({
+    href: "https://ops.example.test/podcast-docs/doc-abc?code=bcdfghjklmnpqrst",
+    pathname: "/podcast-docs/doc-abc",
+    docOverrides: guestDocOverrides,
+  });
+  await h.controller.start();
+  const filenameErr = h.root.querySelector('[data-sponsor-visual-error="photoUrl"]');
+  assert.ok(filenameErr, "Bare filename shows visible error instead of silent blank");
+  assert.match(filenameErr.textContent, /ada-headshot\.png/);
+
+  // 2. Uploading a photo in the guest brief renders the image inline immediately (no reload)
+  const fileInput = h.root.querySelector('[data-sponsor-visual-upload="photoUrl"]');
+  const fakePngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  fileInput.files = [
+    { name: "ada.png", type: "image/png", arrayBuffer: async () => fakePngBytes.buffer },
+  ];
+  await fileInput.dispatch("change");
+  await nextTicks();
+
+  const inlineImg = h.root.querySelector('img[data-sponsor-visual-image="photoUrl"]');
+  assert.ok(inlineImg, "Guest brief renders inline image immediately after upload");
+  assert.equal(inlineImg.src, "https://ops.example.test/api/public-images/11111111-1111-4111-8111-111111111111.png");
+  assert.equal(h.root.querySelector('[data-sponsor-visual-error="photoUrl"]'), null);
+
+  // 3. If an image fails to load, a visible error is shown and the broken img is hidden
+  await inlineImg.dispatch("error");
+  assert.equal(inlineImg.hidden, true);
+  const brokenErr = h.root.querySelector('[data-sponsor-visual-error="photoUrl"]');
+  assert.ok(brokenErr, "Broken image shows visible error");
+  assert.match(brokenErr.textContent, /Could not load image/);
   h.controller.destroy();
 });

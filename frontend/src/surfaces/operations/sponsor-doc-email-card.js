@@ -488,6 +488,51 @@ export function mountNewsletterEmailPieceSection({
   return syncEditorCtaPill;
 }
 
+export function isLoadableImageSrc(raw) {
+  return /^(?:data:image\/|https?:\/\/|\/|blob:)/i.test(String(raw || "").trim());
+}
+
+/**
+ * Render an inline <img> inside `container` with a visible error fallback
+ * if the image fails to load (never a silent blank).
+ */
+export function mountInlineImageWithFallback({
+  el,
+  container,
+  src,
+  alt,
+  imgClass,
+  imgDatasetKey,
+  imgDatasetValue = "",
+  errorDatasetKey,
+  errorDatasetValue = "",
+}) {
+  const img = el("img", imgClass);
+  if (imgDatasetKey) img.dataset[imgDatasetKey] = imgDatasetValue;
+  img.src = src;
+  img.alt = alt;
+
+  const showError = (message) => {
+    img.hidden = true;
+    container.querySelector(".sponsor-doc-visual-error")?.remove?.();
+    const errBox = el("div", "sponsor-doc-visual-error", message);
+    errBox.setAttribute("role", "alert");
+    if (errorDatasetKey) errBox.dataset[errorDatasetKey] = errorDatasetValue;
+    container.append(errBox);
+  };
+
+  img.addEventListener("error", () => {
+    showError(`Could not load image (${src}). Check the URL or upload a new image.`);
+  });
+  img.addEventListener("load", () => {
+    img.hidden = false;
+    container.querySelector(".sponsor-doc-visual-error")?.remove?.();
+  });
+
+  container.append(img);
+  return { img, showError };
+}
+
 export function renderNewsletterLivePreview({
   el,
   previewCard,
@@ -574,14 +619,18 @@ export function renderNewsletterLivePreview({
   const visualWrap = el("div", "sponsor-preview-canvas__visual");
   visualWrap.dataset.sponsorPreviewVisual = "";
   const visualVal = val("graphicsUrl") || val("imageUrl");
-  if (/^(?:data:image\/|https?:\/\/|\/|blob:)/i.test(visualVal)) {
+  if (isLoadableImageSrc(visualVal)) {
     const figure = el("figure", "sponsor-preview-figure");
-    const img = el("img", "sponsor-preview-figure__img");
-    img.dataset.sponsorPreviewImage = "";
-    img.src = visualVal;
-    img.alt = titleVal || doc.sponsorName || "Sponsor visual";
-    figure.append(img);
-    if (uploadedVisualName || /^data:image\//i.test(visualVal)) {
+    mountInlineImageWithFallback({
+      el,
+      container: figure,
+      src: visualVal,
+      alt: titleVal || doc.sponsorName || "Sponsor visual",
+      imgClass: "sponsor-preview-figure__img",
+      imgDatasetKey: "sponsorPreviewImage",
+      errorDatasetKey: "sponsorPreviewVisualError",
+    });
+    if (uploadedVisualName || /^data:image\//i.test(visualVal) || /\/api\/public-images\//.test(visualVal)) {
       const capText = uploadedVisualName ? `Uploaded visual: ${uploadedVisualName}` : "Uploaded visual";
       const caption = el("figcaption", "sponsor-preview-figure__caption", capText);
       caption.dataset.sponsorPreviewVisualCaption = "";
@@ -589,9 +638,14 @@ export function renderNewsletterLivePreview({
     }
     visualWrap.append(figure);
   } else if (visualVal) {
-    const noteBox = el("div", "sponsor-preview-visual-placeholder", `Visual note: ${visualVal}`);
-    noteBox.dataset.sponsorPreviewVisualNote = "";
-    visualWrap.append(noteBox);
+    const errBox = el(
+      "div",
+      "sponsor-doc-visual-error",
+      `Image cannot be displayed: "${visualVal}" is not a hosted image URL. Upload the image or paste a full https:// URL.`,
+    );
+    errBox.setAttribute("role", "alert");
+    errBox.dataset.sponsorPreviewVisualError = "";
+    visualWrap.append(errBox);
   } else {
     const phText = "Visual placement — upload an image or paste an image URL to preview it here.";
     const ph = el("div", "sponsor-preview-visual-placeholder is-placeholder", phText);

@@ -48,6 +48,9 @@ import { resolveInteractiveActor } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
 import { projectCard } from '../identity/projections';
 import { recordRequestError } from '../requestErrorLog';
+import { FileStorageError } from '../storage';
+import { savePublicImage } from '../publicImages';
+import { extractMultipartImageBuffer, publicImagePayload } from './publicImages';
 import {
   SPONSOR_DOC_TEMPLATES,
   SponsorDocValidationError,
@@ -201,6 +204,9 @@ export function isAnonymousSponsorDocRequest(method: string, path: string): bool
   if (m === 'GET' && /^\/api\/sponsor-docs\/[^/]+\/export\/?$/.test(path)) {
     return true;
   }
+  if (m === 'POST' && /^\/api\/sponsor-docs\/[^/]+\/images\/?$/.test(path)) {
+    return true;
+  }
   return false;
 }
 
@@ -220,6 +226,7 @@ export function isAnonymousSponsorDocAsset(method: string, path: string): boolea
     || path === '/src/surfaces/operations/sponsor-doc-select.js'
     || path === '/src/surfaces/operations/sponsor-doc-radio.js'
     || path === '/src/surfaces/operations/sponsor-doc-bullets.js'
+    || path === '/src/surfaces/operations/sponsor-doc-visual.js'
     || path === '/src/surfaces/operations/sponsor-doc-email-card.js'
     || path === '/src/surfaces/operations/sponsor-doc-event-time.js'
     || path === '/src/surfaces/operations/sponsor-doc-guest-schedule.js'
@@ -947,6 +954,31 @@ export async function handleSponsorDocRoutes(
       });
     }
 
+    // POST /api/sponsor-docs/:id/images — upload an inline brief image to shared durable public hosting
+    const imagesMatch = suffix.match(/^\/([^/]+)\/images\/?$/);
+    if (imagesMatch) {
+      if (m !== 'POST') return json(405, { error: 'Method not allowed' });
+      const docId = decodeURIComponent(imagesMatch[1]);
+      const access = await resolveStaffOrSponsorAccess(client, event, 'work-write');
+      if (access.isStaff) {
+        const loaded = await getSponsorDocWithAuthMaterial(client, docId);
+        if (!loaded) {
+          return json(404, { error: 'Document not found', code: 'sponsor_doc_not_found' });
+        }
+      } else {
+        const verified = await verifyExternalCodeForDoc(
+          client,
+          event,
+          docId,
+          extractProvidedAccessCode(event),
+        );
+        if (!verified.ok) return verified.response;
+      }
+      const buffer = extractMultipartImageBuffer(event);
+      const saved = await savePublicImage(buffer);
+      return json(201, { image: publicImagePayload(saved, event) });
+    }
+
     // Single resource: GET, PUT, DELETE /api/sponsor-docs/:id
     const idMatch = suffix.match(/^\/([^/]+)\/?$/);
     if (idMatch) {
@@ -1096,6 +1128,9 @@ export async function handleSponsorDocRoutes(
 
     return json(404, { error: 'Not found' });
   } catch (err: unknown) {
+    if (err instanceof FileStorageError) {
+      return json(err.statusCode, { error: err.message, code: err.code });
+    }
     if (err instanceof SponsorDocValidationError) {
       return json(422, { error: err.message, code: 'invalid_content', fields: err.fields });
     }

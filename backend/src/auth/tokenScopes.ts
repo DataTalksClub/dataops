@@ -78,6 +78,12 @@ export function isScopedTokenRequestAllowed(
       : has(scopes, 'templates:write');
   }
 
+  if (matchesPrefix(path, '/api/public-images')) {
+    return isRead
+      ? true
+      : has(scopes, 'newsletter:write') || has(scopes, 'cards:write');
+  }
+
   if (matchesPrefix(path, '/api/sponsor-docs')) {
     return isRead
       ? allowsRead(scopes, 'cards:write', 'newsletter:write')
