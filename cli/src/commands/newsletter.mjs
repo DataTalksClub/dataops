@@ -6,6 +6,7 @@ import { apiFor } from "../session.mjs";
 import { planNewsletterSync, readNewsletterCsv, sheetIssues } from "../newsletterSheet.mjs";
 import { rewriteVerificationUri } from "./auth.mjs";
 import { domainDocCommand } from "./sponsorDocs.mjs";
+import { multipart } from "./tasks.mjs";
 
 export const summary = "Plan newsletter issues, their sponsor slots, and their Cards";
 
@@ -63,6 +64,9 @@ Usage
   dataops newsletter markdown show <issue-id> [issue|sources|brief]
   dataops newsletter markdown preview <issue-id>
   dataops newsletter markdown rotate-code <issue-id>
+  dataops newsletter image upload <issue-id> <path>
+                                  Upload an image (PNG, JPEG, GIF, or WebP) to durable
+                                  public hosting for the issue and print its https:// URL
   dataops newsletter metrics <issue-id> [primary|secondary]
       [--sent N] [--opens N] [--clicks N] [--unique-clicks N]
       [--open-rate PCT] [--click-rate PCT]
@@ -840,6 +844,9 @@ Usage
   dataops newsletter markdown show <issue-id> [issue|sources|brief]
   dataops newsletter markdown preview <issue-id>
   dataops newsletter markdown rotate-code <issue-id>
+  dataops newsletter image upload <issue-id> <path>
+                                  Upload an image (PNG, JPEG, GIF, or WebP) to durable
+                                  public hosting for the issue and print its https:// URL
 `;
 
 function normalizeMarkdownPayloadUrls(payload, baseUrl) {
@@ -1008,12 +1015,82 @@ export async function markdown(args, io) {
   return fn({ ...args, _: rest }, io);
 }
 
+export const newsletterImageHelp = `dataops newsletter image - upload durable public images for Newsletter Markdown
+
+Usage
+  dataops newsletter image upload <issue-id> <path>
+
+Uploads a PNG, JPEG, GIF, or WebP image (up to 4 MiB) to durable public
+hosting (/api/public-images) and prints its public https:// URL for use
+in issue.md and the HTML preview.
+`;
+
+export { newsletterImageHelp as imageHelp };
+
+async function imageUpload(args, io) {
+  const usage = "dataops newsletter image upload <issue-id> <path>";
+  const id = positional(args, 0, usage);
+  const filePath = positional(args, 1, usage);
+  let bytes;
+  try {
+    bytes = readFileSync(filePath);
+  } catch (err) {
+    throw new UsageError(`Could not read image file "${filePath}": ${err.message}`);
+  }
+  if (!bytes || bytes.length === 0) {
+    throw new UsageError(`Image file "${filePath}" is empty.`);
+  }
+  const api = apiFor(args);
+  const { body, contentType } = multipart({}, { name: basename(filePath), bytes });
+  const rawResult = await api.post(`/api/newsletter-issues/${enc(id)}/images`, undefined, {
+    rawBody: body,
+    contentType,
+  });
+  const imageObj = rawResult?.image
+    ? {
+        ...rawResult.image,
+        url: rawResult.image.url ? rewriteVerificationUri(rawResult.image.url, api.base) : rawResult.image.url,
+      }
+    : rawResult?.image;
+  const result = { ...rawResult, image: imageObj };
+  if (!args.json) {
+    if (!imageObj?.url) {
+      throw new UsageError("Upload succeeded but did not return a public image URL.");
+    }
+    io.print(imageObj.url);
+  }
+  return result;
+}
+
+const imageSubcommands = {
+  upload: imageUpload,
+};
+
+export async function image(args, io) {
+  const [action, ...rest] = args._ || [];
+  if (!action || action === "help") {
+    if (!action) {
+      throw new UsageError("Missing image action. Usage: dataops newsletter image upload <issue-id> <path>");
+    }
+    io.print(newsletterImageHelp);
+    return undefined;
+  }
+  const fn = imageSubcommands[action];
+  if (!fn) {
+    throw new UsageError(
+      `Unknown subcommand: dataops newsletter image ${action}. One of: ${Object.keys(imageSubcommands).join(", ")}.`,
+    );
+  }
+  return fn({ ...args, _: rest }, io);
+}
+
 export const commands = {
   list,
   show,
   create,
   update,
   doc,
+  image,
   markdown,
   metrics,
   "pull-mailchimp": pullMailchimp,

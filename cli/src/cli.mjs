@@ -299,6 +299,10 @@ export async function run(argv, io = console) {
       print(sponsorDocs.newsletterDocHelp);
       return EXIT.ok;
     }
+    if (commandName === "newsletter" && rest[0] === "image") {
+      print(newsletter.imageHelp);
+      return EXIT.ok;
+    }
     if (commandName === "webinar" && rest[0] === "doc") {
       print(sponsorDocs.webinarDocHelp);
       return EXIT.ok;
