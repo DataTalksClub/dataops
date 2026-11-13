@@ -281,6 +281,7 @@ and prints the shareable HTML preview link (`/newsletter-issues/<id>/preview?cod
 Use `dataops newsletter markdown show <issue-id> [issue|sources|brief]` to read it,
 `dataops newsletter markdown preview <issue-id>` to print the shareable link, and
 `dataops newsletter markdown rotate-code <issue-id>` to rotate the preview access code.
+Use `dataops newsletter image upload <issue-id> <path>` to upload a newsletter image (PNG, JPEG, GIF, or WebP) to durable public hosting and print its public `https://` URL for `issue.md` and the HTML preview.
 
 For a podcast episode: `dataops podcast list --status booked` (or `--season N`),
 `dataops podcast create --guests "Name[:slug]" --title "..." --recording-date YYYY-MM-DD`,
