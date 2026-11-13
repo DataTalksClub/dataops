@@ -138,3 +138,80 @@
   border-bottom: 1px solid var(--dk-border-default);
   padding-bottom: var(--dk-space-3);
 }
+
+/* Long-line containment (t2320u): every grid level is pinned to the card width
+   so an unbreakable URL or inline code span can never stretch a track past the
+   card. Prose and inline code wrap; code blocks scroll inside the card. */
+.newsletter-preview-shell,
+.newsletter-preview-shell > .sponsor-doc-card,
+.newsletter-email-canvas,
+.newsletter-envelope {
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.newsletter-preview-shell > .sponsor-doc-card > *,
+.newsletter-email-canvas > *,
+.newsletter-envelope > * {
+  min-width: 0;
+}
+
+.newsletter-email-canvas,
+.newsletter-envelope,
+.newsletter-preview-shell .sponsor-doc-field,
+.newsletter-preview-shell .sponsor-doc-title-row,
+.newsletter-preview-shell .sponsor-doc-meta {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.newsletter-email-canvas a,
+.newsletter-email-canvas code,
+.newsletter-envelope a,
+.newsletter-envelope code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.newsletter-email-canvas :not(pre) > code {
+  white-space: normal;
+}
+
+.newsletter-email-canvas pre {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+  padding: var(--dk-space-3);
+  background-color: var(--dk-bg-muted);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+}
+
+.newsletter-email-canvas pre code {
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.newsletter-email-canvas img,
+.newsletter-email-canvas table {
+  max-width: 100%;
+}
+
+.newsletter-email-canvas table {
+  display: block;
+  overflow-x: auto;
+}
+
+.newsletter-preview-shell .sponsor-doc-export-pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+@media (max-width: 480px) {
+  .newsletter-email-canvas {
+    padding: var(--dk-space-4) var(--dk-space-3);
+  }
+}

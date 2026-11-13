@@ -501,13 +501,19 @@ export function createNewsletterPreviewPage({
     const previewCard = el("div", "sponsor-doc-card");
     previewCard.dataset.previewSection = "rendered";
 
+    // Brief, Sources and Raw are internal working material: only staff get the
+    // tab bar. The shareable (code-gated) preview shows the reader-facing issue.
+    const isStaff = previewData.viewerRole === "staff";
+    if (!isStaff) activeTab = "issue";
     const tabsBar = el("div", "newsletter-preview-tabs");
-    const tabDefs = [
-      { id: "issue", label: "Email Preview (issue.md)" },
-      { id: "brief", label: "Brief (brief.md)" },
-      { id: "sources", label: "Sources (sources.md)" },
-      { id: "raw", label: "Raw Markdown" },
-    ];
+    const tabDefs = isStaff
+      ? [
+        { id: "issue", label: "Email Preview (issue.md)" },
+        { id: "brief", label: "Brief (brief.md)" },
+        { id: "sources", label: "Sources (sources.md)" },
+        { id: "raw", label: "Raw Markdown" },
+      ]
+      : [];
     for (const tabDef of tabDefs) {
       const btn = el(
         "button",
@@ -524,7 +530,7 @@ export function createNewsletterPreviewPage({
       });
       tabsBar.append(btn);
     }
-    previewCard.append(tabsBar);
+    if (isStaff) previewCard.append(tabsBar);
 
     const rendered = previewData.rendered || {};
     const md = previewData.markdown || {};
