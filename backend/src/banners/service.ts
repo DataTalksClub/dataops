@@ -9,7 +9,7 @@ import { getTemplate } from '../db/templates';
 import { createArtifactIfAbsent } from '../db/artifacts';
 import { readFile } from '../storage';
 import { getBannerJob, putBannerJob, transitionBannerJob } from './jobs';
-import { BannerInputError, bannerId, checksum, composeBanner, pngDimensions, portraitContentType, type BannerInput, type BannerSpeaker, type BannerJob, type BannerBundle, type BannerLogo } from './model';
+import { BannerInputError, bannerId, bannerSchedule, checksum, composeBanner, pngDimensions, portraitContentType, type BannerInput, type BannerSpeaker, type BannerJob, type BannerBundle, type BannerLogo } from './model';
 
 const s3 = new S3Client({});
 const lambda = new LambdaClient({});
@@ -60,9 +60,10 @@ export async function requestBanner(client: DynamoDBDocumentClient, cardId: stri
     if (!file || file.cardId !== cardId || file.category !== 'image' || !file.checksum) throw new BannerInputError('The approved sponsor logo must be an image file saved on this Card.');
     sponsorLogo = { fileId: file.id, checksum: file.checksum, treatment: 'approved-logo' };
   }
-  const id = bannerId(card, input, speakers, config.bundleKey, sponsorLogo);
+  const schedule = bannerSchedule(card);
+  const id = bannerId(card, input, speakers, config.bundleKey, sponsorLogo, schedule);
   const now = new Date().toISOString();
-  const job = await putBannerJob(client, { id, cardId, title: card.title, input, speakers, ...(sponsorLogo ? { sponsorLogo } : {}), state: 'queued', createdBy: actorId, createdAt: now, updatedAt: now, bundleKey: config.bundleKey });
+  const job = await putBannerJob(client, { id, cardId, title: card.title, input, speakers, ...(sponsorLogo ? { sponsorLogo } : {}), ...(schedule ? { schedule } : {}), state: 'queued', createdBy: actorId, createdAt: now, updatedAt: now, bundleKey: config.bundleKey });
   if (job.state === 'succeeded' || job.state === 'rendering') return job;
   // Failed delivery/render retries retain the same immutable renderer output key.
   if (job.state === 'failed') {

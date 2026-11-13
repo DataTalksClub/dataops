@@ -18,7 +18,10 @@ export type BannerJob = {
   createdBy: string; createdAt: string; updatedAt: string;
   artifactId?: string; error?: string; leaseUntil?: number; attempt?: number;
   sponsorLogo?: BannerLogo;
+  /** Event date/time captured from the Card when the job was requested. */
+  schedule?: BannerSchedule;
 };
+export type BannerSchedule = { date?: string; time?: string };
 export type BannerTemplate = {
   id: string; eventType: BannerInput['eventType']; layout: BannerInput['layout'];
   speakerCount: number; width: number; height: number; html: string;
@@ -46,8 +49,24 @@ export function parseBannerInput(value: unknown): BannerInput {
     ...(data.sponsorLogoFileId ? { sponsorLogoFileId: data.sponsorLogoFileId, sponsorTreatment: 'approved-logo' as const } : {}),
   };
 }
-export function bannerId(card: Card, input: BannerInput, speakers: BannerSpeaker[], bundleKey: string, sponsorLogo?: BannerLogo): string {
-  return createHash('sha256').update(JSON.stringify({ cardId: card.id, title: card.title, input, speakers, bundleKey, sponsorLogo })).digest('hex');
+export function bannerSchedule(card: Card): BannerSchedule | undefined {
+  const start = card.eventTime?.startIso ? new Date(card.eventTime.startIso) : undefined;
+  if (start && !Number.isNaN(start.getTime())) {
+    const timeZone = card.eventTime!.timeZone || 'Europe/Berlin';
+    try {
+      return {
+        date: new Intl.DateTimeFormat('en-GB', { timeZone, weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }).format(start),
+        time: new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hour12: false, timeZoneName: 'short' }).format(start).replace(/^.*?(\d\d:\d\d)/, '$1'),
+      };
+    } catch { /* invalid zone: fall back to the Card date */ }
+  }
+  if (card.anchorDate && /^\d{4}-\d{2}-\d{2}$/.test(card.anchorDate)) {
+    return { date: new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(`${card.anchorDate}T12:00:00Z`)) };
+  }
+  return undefined;
+}
+export function bannerId(card: Card, input: BannerInput, speakers: BannerSpeaker[], bundleKey: string, sponsorLogo?: BannerLogo, schedule?: BannerSchedule): string {
+  return createHash('sha256').update(JSON.stringify({ cardId: card.id, title: card.title, input, speakers, bundleKey, sponsorLogo, ...(schedule ? { schedule } : {}) })).digest('hex');
 }
 export function checksum(bytes: Buffer): string { return `sha256:${createHash('sha256').update(bytes).digest('hex')}`; }
 export function portraitContentType(bytes: Buffer): string {
@@ -65,6 +84,9 @@ export function composeBanner(template: BannerTemplate, job: BannerJob, portrait
     ...Object.fromEntries(Object.entries(assets).filter(([key]) => /^asset[A-Za-z]+$/.test(key))),
     title: escapeHtml(job.title),
     eventLabel: escapeHtml(job.input.eventLabel || job.input.eventType),
+    eventDate: escapeHtml(job.schedule?.date || ''),
+    eventTime: escapeHtml(job.schedule?.time || ''),
+    eventWhen: escapeHtml([job.schedule?.date, job.schedule?.time].filter(Boolean).join(' · ')),
     titleFontSize: String(Math.min(150, Math.floor(Math.sqrt(titleArea / (Math.max(job.title.length, 20) * 0.72))))),
   };
   if (sponsorLogo) values.sponsorLogo = sponsorLogo;
