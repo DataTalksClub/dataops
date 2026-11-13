@@ -303,7 +303,7 @@ test.describe("sponsor newsletter catalog", () => {
 
     const previewImg = preview.locator("img[data-sponsor-preview-image]");
     await expect(previewImg).toBeVisible();
-    await expect(previewImg).toHaveAttribute("src", /^data:image\/png;base64,/);
+    await expect(previewImg).toHaveAttribute("src", /\/api\/public-images\/[0-9a-f-]+\.png$/);
     await expect(preview.locator("[data-sponsor-preview-visual-caption]")).toContainText("estuary-banner.png");
 
     // 5. Required CTA button label & URL validation blocks submission while empty
