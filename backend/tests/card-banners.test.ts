@@ -185,3 +185,12 @@ test('an older bundle rejects an explicit label it cannot render', async () => {
     assert.equal((await getBannerJob(client, job.id))?.error, 'unsupported-event-label');
   } finally { process.env.BANNER_TEMPLATE_BUNDLE_KEY = oldKey; }
 });
+
+test('captures event date and time from the Card and exposes them to templates', async () => {
+  const { bannerSchedule } = await import('../src/banners/model');
+  assert.deepEqual(bannerSchedule({ eventTime: { startIso: '2026-11-24T16:00:00.000Z', timeZone: 'Europe/Berlin' }, anchorDate: '2026-11-01' } as never), { date: 'Tue, 24 November 2026', time: '17:00 CET' });
+  assert.deepEqual(bannerSchedule({ anchorDate: '2026-11-24' } as never), { date: 'Tue, 24 November 2026' });
+  assert.equal(bannerSchedule({} as never), undefined);
+  const html = composeBanner({ ...template, html: '<p>{{eventWhen}}|{{eventDate}}|{{eventTime}}</p>' }, { ...(await getBannerJob(client, (await requestBanner(client, 'card', input, 'operator')).id))!, schedule: { date: 'Tue, 24 November 2026', time: '17:00 CET' } }, ['data:image/png;base64,AA']);
+  assert.equal(html, '<p>Tue, 24 November 2026 · 17:00 CET|Tue, 24 November 2026|17:00 CET</p>');
+});
