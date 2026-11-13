@@ -145,7 +145,7 @@ function harness(options = {}) {
   return { root, identity, live, calls, history, copied, store, controller };
 }
 
-test("newsletter preview page unlocks with ?code= query parameter, strips code from URL, and renders HTML preview tabs", async () => {
+test("newsletter preview page unlocks with ?code= query parameter, strips code from URL, and renders only the reader-facing issue", async () => {
   const { root, identity, history, copied, controller } = harness();
   await controller.start();
   await nextTicks();
@@ -168,18 +168,12 @@ test("newsletter preview page unlocks with ?code= query parameter, strips code f
   await nextTicks();
   assert.equal(copied.at(-1), "Free summit");
 
-  // Switch to brief tab, sources tab, and raw tab
-  root.querySelector('[data-preview-tab="brief"]').dispatch("click");
-  assert.ok(root.querySelector('[data-preview-canvas="brief"]'));
-
-  root.querySelector('[data-preview-tab="sources"]').dispatch("click");
-  assert.ok(root.querySelector('[data-preview-canvas="sources"]'));
-
-  root.querySelector('[data-preview-tab="raw"]').dispatch("click");
-  const copyRawIssue = root.querySelector('[data-preview-action="copy-raw-issue"]');
-  copyRawIssue.dispatch("click");
-  await nextTicks();
-  assert.match(copied.at(-1), /Subject: Next Query 2026/);
+  // Shareable (code) preview is reader-facing only: no Brief/Sources/Raw tabs.
+  for (const tab of ["issue", "brief", "sources", "raw"]) {
+    assert.equal(root.querySelector(`[data-preview-tab="${tab}"]`), null);
+  }
+  assert.equal(root.querySelector('[data-preview-canvas="sources"]'), null);
+  assert.equal(root.querySelector('[data-preview-action="copy-raw-issue"]'), null);
 
   // Lock returns to gate
   const lockBtn = identity.querySelector('[data-preview-action="lock"]');
@@ -221,6 +215,19 @@ test("staff viewer sees shareable preview link, rotates code, and edits Markdown
   await nextTicks();
 
   assert.ok(root.querySelector("[data-preview-staff-bar]"));
+
+  // Switch to brief tab, sources tab, and raw tab
+  root.querySelector('[data-preview-tab="brief"]').dispatch("click");
+  assert.ok(root.querySelector('[data-preview-canvas="brief"]'));
+
+  root.querySelector('[data-preview-tab="sources"]').dispatch("click");
+  assert.ok(root.querySelector('[data-preview-canvas="sources"]'));
+
+  root.querySelector('[data-preview-tab="raw"]').dispatch("click");
+  const copyRawIssue = root.querySelector('[data-preview-action="copy-raw-issue"]');
+  copyRawIssue.dispatch("click");
+  await nextTicks();
+  assert.match(copied.at(-1), /Subject: Next Query 2026/);
 
   const copyShareBtn = root.querySelector('[data-preview-action="copy-share-url"]');
   copyShareBtn.dispatch("click");
