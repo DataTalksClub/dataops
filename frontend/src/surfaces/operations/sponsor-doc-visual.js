@@ -45,7 +45,29 @@ export function mountSponsorDocVisualControls({
   const visualPreview = el("div", "sponsor-doc-visual-preview");
   visualPreview.dataset.sponsorVisualPreview = fieldDef.key;
 
+  function reportClientUploadAlert(status, message) {
+    if (typeof fetch !== "function") return;
+    const page = typeof window !== "undefined" && window.location ? window.location.pathname : "";
+    try {
+      Promise.resolve(fetch("/api/client-errors", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          surface: "sponsor-doc-visual",
+          check: `image-upload:${fieldDef.key}`,
+          status,
+          message,
+          page,
+        }),
+      })).catch(() => {});
+    } catch {
+      // ignore non-browser test environments
+    }
+  }
+
   function showVisualError(message) {
+    fieldErrors[fieldDef.key] = message;
+    control.setAttribute("aria-invalid", "true");
     visualPreview.hidden = false;
     visualPreview.replaceChildren();
     const errBox = el("div", "sponsor-doc-visual-error", message);
@@ -116,6 +138,7 @@ export function mountSponsorDocVisualControls({
       showVisualError(msg);
       statusSpan.textContent = msg;
       announce(msg);
+      reportClientUploadAlert(413, msg);
       fileInput.value = "";
       return;
     }

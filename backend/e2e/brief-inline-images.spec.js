@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { deflateSync } = require('node:zlib');
 const { createDocsCacheRoot } = require('./helpers/docs-content-root');
 const { startOwnedTestServer, stopOwnedTestServer } = require('./helpers/isolated-capability-server');
 
@@ -7,6 +8,50 @@ const VALID_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2ZkAAAAASUVORK5CYII=',
   'base64',
 );
+
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    c ^= buf[i];
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length, 0);
+  const typeAndData = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(typeAndData), 0);
+  return Buffer.concat([len, typeAndData, crc]);
+}
+
+function buildLargePng(width, height) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  const stride = 1 + width * 3;
+  const raw = Buffer.alloc(stride * height);
+  let seed = 0x12345678;
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * stride;
+    raw[rowStart] = 0;
+    for (let x = 1; x < stride; x++) {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      raw[rowStart + x] = (seed >>> 24) & 0xff;
+    }
+  }
+  const idat = deflateSync(raw, { level: 1 });
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', idat),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
 
 let server;
 test.use({ screenshot: 'off', trace: 'off', video: 'off' });
@@ -142,4 +187,82 @@ test('sponsor and guest brief editors upload images durably and render them inli
   await page.locator('#sponsor-field-photoUrl').fill('portrait-only-filename.jpg');
   await expect(page.locator('[data-sponsor-visual-error="photoUrl"]')).toBeVisible();
   await expect(page.locator('[data-sponsor-visual-error="photoUrl"]')).toContainText('portrait-only-filename.jpg');
+});
+
+test('sponsor graphic >300KB PNG round-trips byte-identical and renders in newsletter preview, while truncated PNG fails loudly', async ({ page, request }) => {
+  test.setTimeout(90_000);
+
+  const nlTplRes = await request.post(`${server.baseURL}/__e2e__/template-fixtures`, {
+    data: {
+      name: 'Synthetic newsletter (>300KB graphic)',
+      type: 'newsletter',
+      sourcePath: 'workflow-templates/synthetic-newsletter-large-png.yaml',
+      taskDefinitions: [],
+    },
+  });
+  expect(nlTplRes.status()).toBe(201);
+  const { template: nlTpl } = await nlTplRes.json();
+
+  const nlCardRes = await request.post(`${server.baseURL}/api/cards`, {
+    data: { templateId: nlTpl.id, title: 'Large PNG regression test', anchorDate: '2026-12-15' },
+  });
+  expect(nlCardRes.status()).toBe(201);
+  const { card: nlCard } = await nlCardRes.json();
+
+  const sDocRes = await request.post(`${server.baseURL}/api/sponsor-docs`, {
+    data: {
+      cardId: nlCard.id,
+      template: 'newsletter-main',
+      sponsorName: 'Astronomer Test',
+      autoSendEmail: false,
+    },
+  });
+  expect(sDocRes.status()).toBe(201);
+  const { doc: sponsorDoc } = await sDocRes.json();
+
+  const largePng = buildLargePng(400, 300);
+  expect(largePng.length).toBeGreaterThan(300_000);
+
+  await page.setExtraHTTPHeaders({ 'x-sponsor-doc-anonymous': 'true' });
+  await page.goto(`${server.baseURL}/sponsor-docs/${sponsorDoc.id}?code=${encodeURIComponent(sponsorDoc.accessCode)}`);
+  await expect(page.locator('[data-sponsor-view="editor"]')).toBeVisible();
+
+  await page.locator('[data-sponsor-visual-upload="graphicsUrl"]').setInputFiles({
+    name: 'large-sponsor-graphic.png',
+    mimeType: 'image/png',
+    buffer: largePng,
+  });
+
+  const previewImg = page.locator('img[data-sponsor-preview-image]');
+  await expect(previewImg).toBeVisible();
+  await expect.poll(() => previewImg.evaluate((el) => ({
+    complete: el.complete,
+    w: el.naturalWidth,
+    h: el.naturalHeight,
+  }))).toEqual({ complete: true, w: 400, h: 300 });
+
+  const hostedUrl = await page.locator('#sponsor-field-graphicsUrl').inputValue();
+  expect(hostedUrl).toMatch(/\/api\/public-images\/[0-9a-f-]+\.png$/);
+
+  await page.locator('[data-sponsor-action="save-draft"]').click();
+  await expect(page.locator('[data-sponsor-feedback]')).toContainText('Saved draft');
+
+  // Verify the stored file round-trips byte-identical
+  const fetched = await request.get(hostedUrl);
+  expect(fetched.status()).toBe(200);
+  const fetchedBody = await fetched.body();
+  expect(Buffer.compare(fetchedBody, largePng)).toBe(0);
+
+  // Truncated PNG (missing IEND) fails loudly with a visible form error
+  const truncatedPng = largePng.subarray(0, 300_000);
+  await page.locator('[data-sponsor-visual-upload="graphicsUrl"]').setInputFiles({
+    name: 'truncated-graphic.png',
+    mimeType: 'image/png',
+    buffer: truncatedPng,
+  });
+
+  const errorBox = page.locator('[data-sponsor-visual-error="graphicsUrl"]');
+  await expect(errorBox).toBeVisible();
+  await expect(errorBox).toHaveAttribute('role', 'alert');
+  await expect(errorBox).toContainText(/truncated|corrupted|decoded/i);
 });
