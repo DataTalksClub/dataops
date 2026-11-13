@@ -467,8 +467,12 @@ function buildPreviewResponsePayload(
     };
   }
 
+  // The shareable (code-gated) preview is reader-facing only: brief.md and
+  // sources.md are internal working notes and never leave the staff view.
   return {
     ...basePayload,
+    markdown: { ...basePayload.markdown, sources: '', brief: '' },
+    rendered: { ...basePayload.rendered, sourcesHtml: '', briefHtml: '' },
     viewerRole: 'external' as const,
   };
 }

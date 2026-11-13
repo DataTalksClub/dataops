@@ -232,6 +232,12 @@ describe('Newsletter Markdown Storage & HTML Preview (/api/newsletter-issues/:id
     assert.strictEqual(extPayload.accessCode, undefined);
     assert.strictEqual(extPayload.shareUrl, undefined);
     assert.strictEqual(extPayload.rendered.subject, 'Next Query 2026: How data teams build for analytics and AI');
+    // Shareable preview is reader-facing only: no internal brief/sources.
+    assert.strictEqual(extPayload.markdown.issue, issueMd);
+    assert.strictEqual(extPayload.markdown.sources, '');
+    assert.strictEqual(extPayload.markdown.brief, '');
+    assert.strictEqual(extPayload.rendered.sourcesHtml, '');
+    assert.strictEqual(extPayload.rendered.briefHtml, '');
 
     // Rotate code -> old code fails, new code works
     const rotateRes = await staffReq('POST', `/api/newsletter-issues/${issue.id}/markdown/rotate-code`, {});
