@@ -223,6 +223,8 @@ test('schedule shows not-recorded without evidence and keeps plan apart from evi
   const gated = await api('POST', '/api/podcast-episodes', {
     season: 26, episode: 1, releaseAssignmentStatus: 'final', title: 'Synthetic gated episode', guests: [{ name: 'Gil Gate' }],
     status: 'edited', recordingDate: isoDate(-20), releaseDate: releaseFriday(5),
+    // Synthetic fixture: deliberately dated near-term ahead of the lower-numbered S25 seeds.
+    releaseOrderOverride: { reason: 'e2e fixture needs a near-term schedule row' },
   });
   await setupPageWithAuth(page);
   await page.goto(`${server.baseURL}/podcast`);
