@@ -36,6 +36,7 @@ import * as sponsorDocs from "./commands/sponsorDocs.mjs";
 import * as crm from "./commands/crm.mjs";
 import * as vies from "./commands/vies.mjs";
 import * as academyLeads from "./commands/academyLeads.mjs";
+import * as academyPageviews from "./commands/academyPageviews.mjs";
 import * as tasks from "./commands/tasks.mjs";
 import * as templates from "./commands/templates.mjs";
 import * as textTemplates from "./commands/textTemplates.mjs";
@@ -77,6 +78,7 @@ export const FAMILIES = {
   templates: { group: "Work", summary: templates.summary, help: templates.help, commands: templates.commands },
   "text-templates": { group: "Work", summary: textTemplates.summary, help: textTemplates.help, commands: textTemplates.commands },
   email: { group: "Work", summary: email.summary, help: email.help, commands: email.commands },
+  "academy-pageviews": { group: "Planning", summary: academyPageviews.summary, help: academyPageviews.help, run: academyPageviews.run },
   "academy-leads": { group: "Planning", summary: academyLeads.summary, help: academyLeads.help, run: academyLeads.run },
   resources: { group: "Work", summary: resources.summary, help: resources.help, commands: resources.commands },
   recurring: {
