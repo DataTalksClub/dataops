@@ -1,4 +1,4 @@
-import { listAcademyLeads } from '../academyLeads/service';
+import { listAcademyLeads, type AcademyLeadStatus } from '../academyLeads/service';
 import { json } from '../http';
 import type { LambdaEvent, LambdaResponse } from '../types';
 
@@ -12,6 +12,8 @@ export async function handleAcademyLeadsRoutes(
   const includeTests = qs.includeTests === 'true' || qs.includeTests === '1';
   const track = typeof qs.track === 'string' ? qs.track : '';
   const source = typeof qs.source === 'string' ? qs.source : '';
-  const data = await listAcademyLeads({ includeTests, track, source });
+  const status: AcademyLeadStatus =
+    qs.status === 'pending' || qs.status === 'all' ? qs.status : 'confirmed';
+  const data = await listAcademyLeads({ includeTests, track, source, status });
   return json(200, data);
 }

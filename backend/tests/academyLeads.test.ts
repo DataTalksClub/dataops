@@ -25,13 +25,15 @@ test('listAcademyLeads hides is_test rows by default and computes track + utm su
       created_at: '2026-11-14T08:00:00+00:00',
       email: 'a@real.org',
       track: 'agentic-engineering',
+      confirmed: true,
       first_utm: { utm_source: 'meta', utm_medium: 'paid-social', utm_content: 'seats' },
       is_test: false,
     },
     {
-      created_at: '2026-11-14T08:05:00+0+0:00',
+      created_at: '2026-11-14T08:05:00+00:00',
       email: 'b@real.org',
       track: 'ai-engineering',
+      confirmed: true,
       first_utm: { utm_source: 'meta', utm_medium: 'paid-social', utm_content: 'seats' },
       is_test: false,
     },
@@ -39,6 +41,15 @@ test('listAcademyLeads hides is_test rows by default and computes track + utm su
       created_at: '2026-11-14T08:10:00+00:00',
       email: 'a@real.org',
       track: 'ai-engineering',
+      confirmed: true,
+      first_utm: { utm_source: 'meta', utm_medium: 'paid-social', utm_content: 'seats' },
+      is_test: false,
+    },
+    {
+      created_at: '2026-11-14T08:12:00+00:00',
+      email: 'pending@real.org',
+      track: 'agentic-engineering',
+      confirmed: false,
       first_utm: { utm_source: 'meta', utm_medium: 'paid-social', utm_content: 'seats' },
       is_test: false,
     },
@@ -46,6 +57,7 @@ test('listAcademyLeads hides is_test rows by default and computes track + utm su
       created_at: '2026-11-14T08:15:00+00:00',
       email: 'dev+academytest@dtcdev.click',
       track: 'agentic-engineering',
+      confirmed: true,
       first_utm: { utm_source: 'devtest', utm_content: 'live' },
       is_test: true,
     },
@@ -53,6 +65,7 @@ test('listAcademyLeads hides is_test rows by default and computes track + utm su
 
   const hidden = await listAcademyLeads({ scanItems: async () => items });
   assert.equal(hidden.leads.length, 3);
+  assert.equal(hidden.summary.pendingCount, 1);
   assert.equal(hidden.summary.testCount, 1);
   assert.equal(hidden.summary.byTrack['agentic-engineering'], 1);
   assert.equal(hidden.summary.byTrack['ai-engineering'], 2);
@@ -60,6 +73,13 @@ test('listAcademyLeads hides is_test rows by default and computes track + utm su
   assert.deepEqual(hidden.summary.byUtm, [
     { utm_source: 'meta', utm_content: 'seats', agentic: 1, ai: 2, other: 0, total: 3, interest: {} },
   ]);
+
+  const pending = await listAcademyLeads({ status: 'pending', scanItems: async () => items });
+  assert.equal(pending.leads.length, 1);
+  assert.equal(pending.leads[0].email, 'pending@real.org');
+
+  const all = await listAcademyLeads({ status: 'all', scanItems: async () => items });
+  assert.equal(all.leads.length, 4);
 
   const withTests = await listAcademyLeads({ includeTests: true, scanItems: async () => items });
   assert.equal(withTests.leads.length, 4);
