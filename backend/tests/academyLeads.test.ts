@@ -58,7 +58,7 @@ test('listAcademyLeads hides is_test rows by default and computes track + utm su
   assert.equal(hidden.summary.byTrack['ai-engineering'], 2);
   assert.deepEqual(hidden.summary.firstChoice, { 'agentic only': 0, 'AI only': 1, both: 1 });
   assert.deepEqual(hidden.summary.byUtm, [
-    { utm_source: 'meta', utm_content: 'seats', agentic: 1, ai: 2, other: 0, total: 3 },
+    { utm_source: 'meta', utm_content: 'seats', agentic: 1, ai: 2, other: 0, total: 3, interest: {} },
   ]);
 
   const withTests = await listAcademyLeads({ includeTests: true, scanItems: async () => items });
@@ -107,4 +107,33 @@ test('listAcademyLeads filters by source and normalizes layoff_proof + confirmed
   assert.equal(filtered.leads[0].status, 'job_hunting');
   assert.equal(filtered.leads[0].berlin_germany, 'yes');
   assert.equal(filtered.leads[0].bildungsgutschein, 'yes');
+});
+
+test('layoff_proof leads expose survey fields and count by track of interest, session and QR session', async () => {
+  const base = { source: 'layoff_proof', sk: 'SOURCE#layoff_proof', is_test: false, confirmed: true };
+  const items = [
+    { ...base, created_at: '2026-11-14T09:00:00+00:00', email: 'a@real.org', sessions: ['session-1', 'session-2'], track_interest: 'agentic', years_dev: '7', based_in: 'berlin', bildungsgutschein: 'dont_know', free_text: 'evals', academy_optin: 'yes', first_utm: { utm_source: 'genau', utm_content: 'a' } },
+    { ...base, created_at: '2026-11-14T09:01:00+00:00', email: 'b@real.org', sessions: ['session-2'], track_interest: 'both', first_utm: { utm_source: 'genau', utm_content: 'a' } },
+    { ...base, created_at: '2026-11-14T09:02:00+00:00', email: 'c@real.org', sessions: [], session: 'session-1', qr_sessions: new Set(['session-1', 'session-3']), unsubscribed: true, first_utm: { utm_source: 'zoom', utm_medium: 'qr', utm_content: 'session1' } },
+    { created_at: '2026-11-14T08:00:00+00:00', email: 'z@real.org', track: 'ai-engineering', is_test: false },
+  ];
+  const res = await listAcademyLeads({ source: 'layoff_proof', scanItems: async () => items });
+  assert.equal(res.leads.length, 3);
+  assert.deepEqual(res.summary.byTrackInterest, { agentic: 1, both: 1, unspecified: 1 });
+  assert.deepEqual(res.summary.bySession, { 'session-1': 1, 'session-2': 2 });
+  assert.deepEqual(res.summary.byQrSession, { 'session-1': 1, 'session-3': 1 });
+  assert.equal(res.summary.byTrack[''], undefined);
+  const ada = res.leads.find((l) => l.email === 'a@real.org')!;
+  assert.equal(ada.track_interest, 'agentic');
+  assert.equal(ada.years_dev, '7');
+  assert.equal(ada.based_in, 'berlin');
+  assert.equal(ada.bildungsgutschein, 'dont_know');
+  assert.equal(ada.free_text, 'evals');
+  assert.equal(ada.academy_optin, 'yes');
+  const qr = res.leads.find((l) => l.email === 'c@real.org')!;
+  assert.deepEqual(qr.qr_sessions, ['session-1', 'session-3']);
+  assert.equal(qr.session, 'session-1');
+  assert.equal(qr.unsubscribed, true);
+  const genau = res.summary.byUtm.find((b) => b.utm_source === 'genau')!;
+  assert.deepEqual(genau.interest, { agentic: 1, both: 1 });
 });
