@@ -309,4 +309,49 @@ describe("podcast next-slot API", () => {
     assert.ok(next.takenDates.includes("2026-11-20"));
     assert.ok(next.slots.every((slot: any) => slot.date !== "2026-11-20"));
   });
+  it("blocks create and update that invert episode order or double an ISO week, with a logged override and a dry run", async () => {
+    const low = data(await invoke("POST", "/api/podcast-episodes", booked({
+      season: 40, episode: 1, releaseDate: "2027-03-05", releaseAssignmentStatus: "provisional", recordingDate: "2027-02-01",
+    })));
+    assert.ok(low.id);
+    // Higher number before the lower scheduled one.
+    const inverted = await invoke("POST", "/api/podcast-episodes", booked({
+      season: 40, episode: 2, releaseDate: "2027-02-26", releaseAssignmentStatus: "provisional", recordingDate: "2027-02-02",
+    }));
+    assert.equal(inverted.statusCode, 409, inverted.body);
+    assert.equal(data(inverted).code, "release_order_violation");
+    assert.equal(data(inverted).violations[0].code, "episode-order");
+    // Same ISO week (Friday 5 Mar vs Sunday 7 Mar is not a cadence day, so use update path below).
+    const high = data(await invoke("POST", "/api/podcast-episodes", booked({
+      season: 40, episode: 2, releaseDate: "2027-03-12", releaseAssignmentStatus: "provisional", recordingDate: "2027-02-03",
+    })));
+    // Dry-run update to an inverted date is rejected and writes nothing.
+    const dry = await invoke("PUT", `/api/podcast-episodes/${high.id}`, {
+      version: high.version, releaseDate: "2027-02-26", releaseAssignmentStatus: "provisional", dryRun: true,
+    });
+    assert.equal(dry.statusCode, 409, dry.body);
+    const unchanged = data(await invoke("GET", `/api/podcast-episodes/${high.id}`));
+    assert.equal(unchanged.releaseDate, "2027-03-12");
+    assert.equal(unchanged.version, high.version);
+    // Override needs a reason, is echoed and logged.
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (line: unknown) => { warnings.push(String(line)); };
+    let overridden;
+    try {
+      overridden = await invoke("PUT", `/api/podcast-episodes/${high.id}`, {
+        version: high.version, releaseDate: "2027-02-26", releaseAssignmentStatus: "provisional",
+        releaseOrderOverride: { reason: "operator confirmed" },
+      });
+    } finally {
+      console.warn = originalWarn;
+    }
+    assert.equal(overridden.statusCode, 200, overridden.body);
+    assert.equal(data(overridden).releaseOrderOverride.reason, "operator confirmed");
+    assert.ok(warnings.some((line) => line.includes("podcast.release_order_override") && line.includes("operator confirmed")));
+    // An unrelated edit does not re-run the check on an inverted episode.
+    const current = data(await invoke("GET", `/api/podcast-episodes/${high.id}`));
+    const noteEdit = await invoke("PUT", `/api/podcast-episodes/${high.id}`, { version: current.version, notes: "hello" });
+    assert.equal(noteEdit.statusCode, 200, noteEdit.body);
+  });
 });

@@ -16,6 +16,7 @@
 import { localDate, validTimezone } from "./publication";
 import { civilToUtc, todayIn } from "../relativeDates";
 import type { PodcastEpisode } from "../db/podcastEpisodes";
+import { releaseDateViolations } from "./releaseOrder";
 
 export interface PodcastReleaseCadence {
   /** ISO weekday: Monday 1 .. Sunday 7. Friday is 5. */
@@ -54,6 +55,8 @@ export interface NextSlotResult {
   code: string;
   slots: ReleaseSlot[];
   takenDates: string[];
+  /** Why no slot is offered (set only when `slots` is empty). */
+  blockedReasons?: string[];
 }
 
 const TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -167,11 +170,12 @@ export function freeSlotDates(
   count: number,
   cadence: PodcastReleaseCadence,
   taken: Set<string>,
+  accept: (date: string) => boolean = () => true,
 ): string[] {
   const free: string[] = [];
   let date = fromDate;
   for (let step = 0; step < 730 && free.length < count; step += 1) {
-    if (weekdayOf(date, cadence.timezone) === cadence.weekday && !taken.has(date)) free.push(date);
+    if (weekdayOf(date, cadence.timezone) === cadence.weekday && !taken.has(date) && accept(date)) free.push(date);
     date = addDays(date, 1);
   }
   return free;
@@ -189,12 +193,33 @@ export function nextReleaseSlots(input: {
   const count = input.count ?? 4;
   const taken = takenReleaseDates(input.episodes);
   const fromDate = todayIn(cadence.timezone, input.now ?? new Date());
-  const dates = freeSlotDates(fromDate, count, cadence, taken);
   const numbered = nextEpisodeNumber(input.episodes, episodesPerSeason);
+  // Never propose a date the release-order validator would reject for the
+  // episode that will take this number (order inversion or same ISO week).
+  const dates = freeSlotDates(fromDate, count, cadence, taken, (date) =>
+    releaseDateViolations(
+      { season: numbered.season, episode: numbered.episode, releaseDate: date },
+      input.episodes.map((episode, index) => ({ id: `register-${index}`, ...episode })),
+    ).length === 0,
+  );
+  let blockedReasons: string[] | undefined;
+  if (!dates.length) {
+    const [probe] = freeSlotDates(fromDate, 1, cadence, taken);
+    if (probe)
+      blockedReasons = [
+        ...new Set(
+          releaseDateViolations(
+            { season: numbered.season, episode: numbered.episode, releaseDate: probe },
+            input.episodes.map((episode, index) => ({ id: `register-${index}`, ...episode })),
+          ).map((violation) => violation.message),
+        ),
+      ];
+  }
   return {
     cadence,
     episodesPerSeason,
     ...numbered,
+    ...(blockedReasons ? { blockedReasons } : {}),
     slots: dates.map((date) => ({
       date,
       localTime: cadence.time,

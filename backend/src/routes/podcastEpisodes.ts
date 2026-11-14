@@ -59,6 +59,7 @@ import {
 } from "../cards/recordCardLink";
 import { json, parseJsonObjectEventOrEmpty as parse } from "../http";
 import { previewEpisodeDeletion, executeEpisodeDeletion } from '../podcast/episodeDeletion';
+import { formatViolations, releaseDateViolations } from "../podcast/releaseOrder";
 import { realDate } from "../sponsorCrm/model";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -110,6 +111,48 @@ const httpUrl = (value: unknown) => {
     return false;
   }
 };
+
+/**
+ * Release-order gate shared by create and update. Returns an error response to
+ * send, or the override record to log and echo. `override` must be an object
+ * with a non-empty reason; it never changes any other episode.
+ */
+function releaseOrderGate(
+  candidate: Record<string, any>,
+  episodes: Awaited<ReturnType<typeof listPodcastEpisodes>>,
+  selfId: string | null,
+  override: unknown,
+  actorLabel: string,
+) {
+  const violations = releaseDateViolations({ ...candidate, id: selfId }, episodes);
+  if (!violations.length) return { ok: true as const, violations };
+  const reason =
+    override && typeof override === "object" && typeof (override as any).reason === "string"
+      ? (override as any).reason.trim()
+      : "";
+  if (!reason)
+    return {
+      ok: false as const,
+      response: json(409, {
+        error: `Release date rejected: ${formatViolations(violations)} Pass releaseOrderOverride { reason } (CLI --allow-release-order-violation "<reason>") to override; the override is logged.`,
+        code: "release_order_violation",
+        violations,
+      }),
+    };
+  console.warn(
+    JSON.stringify({
+      event: "podcast.release_order_override",
+      episodeId: selfId,
+      season: candidate.season ?? null,
+      episode: candidate.episode ?? null,
+      releaseDate: candidate.releaseDate,
+      actor: actorLabel,
+      reason,
+      violations,
+    }),
+  );
+  return { ok: true as const, violations, override: { reason, actor: actorLabel, violations } };
+}
 
 /** Validate a full episode shape (after merging a PUT onto the current one). */
 function validate(body: Record<string, any>): string {
@@ -484,6 +527,11 @@ export async function handlePodcastEpisodeRoutes(
 
   const body = parse(event);
   if (!body) return json(400, { error: "Invalid JSON" });
+  // Request controls, not episode fields.
+  const releaseOrderOverride = body.releaseOrderOverride;
+  const dryRun = body.dryRun === true;
+  delete body.releaseOrderOverride;
+  delete body.dryRun;
 
   if (method === "POST" && !id) {
     if (Object.hasOwn(body, "version")) return json(400, { error: "version is system-owned" });
@@ -517,18 +565,21 @@ export async function handlePodcastEpisodeRoutes(
     if (duplicate) return json(409, { error: duplicate });
     const releaseConflict = releaseDateConflict(candidate, episodes, null);
     if (releaseConflict) return json(409, { error: releaseConflict });
+    const createGate = releaseOrderGate(candidate, episodes, null, releaseOrderOverride, resolved.actor.id ?? "unknown");
+    if (!createGate.ok) return createGate.response;
     if (candidate.cardId) {
       const link = await checkEpisodeCardLink(client, candidate.cardId, null, episodes);
       if (!link.ok) return json(link.statusCode, { error: link.error });
     }
+    const createOverride = createGate.override ? { releaseOrderOverride: createGate.override } : {};
     const created = await createPodcastEpisode(
       client,
       candidate as Parameters<typeof createPodcastEpisode>[1],
     );
     const autoMeta = autoRecordingSlot ? { recordingSlot: autoRecordingSlot, recordingDateAutoSelected: true } : {};
     if (created.cardId)
-      return json(201, { ...(await presented(client, created)), cardSync: await pushEpisodeToCard(client, created), ...autoMeta });
-    return json(201, { ...(await presented(client, created)), ...autoMeta });
+      return json(201, { ...(await presented(client, created)), cardSync: await pushEpisodeToCard(client, created), ...autoMeta, ...createOverride });
+    return json(201, { ...(await presented(client, created)), ...autoMeta, ...createOverride });
   }
 
   if (!id) return json(405, { error: "Method not allowed" });
@@ -581,6 +632,17 @@ export async function handlePodcastEpisodeRoutes(
     if (duplicate) return json(409, { error: duplicate });
     const releaseConflict = releaseDateConflict(merged, episodes, id);
     if (releaseConflict) return json(409, { error: releaseConflict });
+    // Only re-check when this write touches the release tuple, so unrelated
+    // edits to episodes with historical inversions keep working.
+    const releaseTouched = (["season", "episode", "releaseDate", "status"] as const).some(
+      (name) => Object.hasOwn(changes, name) && changes[name] !== (existing as any)[name],
+    );
+    const updateGate = releaseTouched
+      ? releaseOrderGate(merged, episodes, id, releaseOrderOverride, resolved.actor.id ?? "unknown")
+      : { ok: true as const, violations: [] as any[] };
+    if (!updateGate.ok) return updateGate.response;
+    if (dryRun)
+      return json(200, { dryRun: true, valid: true, violations: updateGate.violations, ...(("override" in updateGate && updateGate.override) ? { releaseOrderOverride: updateGate.override } : {}) });
     const linking = changes.cardId != null && changes.cardId !== existing.cardId;
     if (linking) {
       const link = await checkEpisodeCardLink(client, changes.cardId, id, episodes);
@@ -607,7 +669,8 @@ export async function handlePodcastEpisodeRoutes(
         next.releaseAssignmentStatus !== existing.releaseAssignmentStatus)
         ? await syncPublicationAnchor(client, next)
         : null;
-    const sync = { ...(scheduleSync ? { scheduleSync } : {}), ...(anchorSync ? { publicationAnchor: anchorSync } : {}) };
+    const updateOverride = "override" in updateGate && updateGate.override ? { releaseOrderOverride: updateGate.override } : {};
+    const sync = { ...updateOverride, ...(scheduleSync ? { scheduleSync } : {}), ...(anchorSync ? { publicationAnchor: anchorSync } : {}) };
     if (
       next.cardId &&
       (linking ||

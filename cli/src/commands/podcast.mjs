@@ -58,7 +58,12 @@ Usage
                                    Occupancy: owner Google calendar + CalendarHolds
                                    + episodes + event Cards.
                                    Pass --recording-date to override.
-  dataops podcast update <episode-id> [same flags as create]
+  dataops podcast update <episode-id> [same flags as create] [--dry-run]
+                                  --dry-run validates the release date and reports violations; writes nothing
+                                  Release dates must keep strict episode-number order and one
+                                  episode per ISO week (Friday 19:00 Berlin cadence). A
+                                  violating create/update/assign-release is rejected unless you
+                                  pass --allow-release-order-violation "<reason>" (logged).
                                   "none" clears a date, link, slug, card, notes or episode number
   dataops podcast assign-release <episode-id> --state provisional|final
       [--season N] [--episode N] [--release-date YYYY-MM-DD]
@@ -92,7 +97,8 @@ Usage
   dataops podcast next-slot [--count N]
                                    Next free release slots and the next season/episode
                                    number (stacking rule: next free Friday 19:00
-                                   Europe/Berlin, 9 episodes per season)
+                                   Europe/Berlin, 9 episodes per season). Never offers a date
+                                   that breaks number order or doubles an ISO week.
   dataops podcast next-recording-slot [--count N]
                                    Next free recording windows (prefer midday ~12:30
                                    Europe/Berlin, else evening ~17:00 Mon/Tue; not
@@ -159,6 +165,17 @@ const jsonFile = (value, flag) => {
     throw new UsageError(`--${flag} must be a readable JSON file.`);
   }
 };
+
+/** Release-order override and dry-run request controls (not episode fields). */
+function releaseControls(args) {
+  const controls = {};
+  const reason = optionalString(args, "allowReleaseOrderViolation");
+  if (reason !== undefined) {
+    if (!reason.trim() || reason === "true") throw new UsageError('--allow-release-order-violation needs a reason: --allow-release-order-violation "<why>".');
+    controls.releaseOrderOverride = { reason: reason.trim() };
+  }
+  return controls;
+}
 
 function episodeBody(args, { requireAssignment = true } = {}) {
   const body = {};
@@ -385,8 +402,9 @@ export async function create(args, io) {
   if (!body.title && !body.guests?.length) throw new UsageError("--title or --guests is required.");
   body.status = body.status || "booked";
   for (const [key, value] of Object.entries(body)) if (value === null) delete body[key];
-  const episode = await apiFor(args).post("/api/podcast-episodes", body);
+  const episode = await apiFor(args).post("/api/podcast-episodes", { ...body, ...releaseControls(args) });
   if (args.json) return episode;
+  if (episode.releaseOrderOverride) io.print(`Release-order override logged: ${episode.releaseOrderOverride.violations.map((v) => v.message).join(" ")}`);
   io.print(`Created episode ${episode.id}: ${describe(episode)} [${episode.status}].`);
   if (episode.recordingDateAutoSelected && episode.recordingSlot) {
     const slot = episode.recordingSlot;
@@ -410,8 +428,18 @@ export async function update(args, io) {
     const merged = { ...(current.links || {}), ...links };
     body.links = Object.fromEntries(Object.entries(merged).filter(([, value]) => value));
   }
-  const episode = await api.put(`/api/podcast-episodes/${enc(id)}`, { ...body, version: current.version });
+  const controls = releaseControls(args);
+  if (args.dryRun !== undefined && args.dryRun !== true) throw new UsageError("--dry-run is a boolean flag.");
+  if (args.dryRun === true) {
+    const preview = await api.put(`/api/podcast-episodes/${enc(id)}`, { ...body, ...controls, dryRun: true, version: current.version });
+    if (args.json) return preview;
+    io.print(`Dry run: update to episode ${id} passes validation; nothing written.`);
+    for (const violation of preview.violations || []) io.print(`  overridden: ${violation.message}`);
+    return preview;
+  }
+  const episode = await api.put(`/api/podcast-episodes/${enc(id)}`, { ...body, ...controls, version: current.version });
   if (args.json) return episode;
+  if (episode.releaseOrderOverride) io.print(`Release-order override logged: ${episode.releaseOrderOverride.violations.map((v) => v.message).join(" ")}`);
   io.print(`Updated episode ${episode.id}: ${describe(episode)} [${episode.status}]${episode.cardId ? `, Card ${episode.cardId}` : ""}.`);
   if (episode.cardSync === "failed") io.print("The linked Card did not take the new date or guests; update it with `dataops cards update`.");
   if (episode.scheduleSync?.notBeforeAt) {
@@ -439,7 +467,7 @@ export async function assignRelease(args, io) {
     releaseDate: Object.hasOwn(body, "releaseDate") ? body.releaseDate : current.releaseDate,
     releaseAssignmentStatus: state,
   };
-  const episode = await api.put(`/api/podcast-episodes/${enc(id)}`, { ...assignment, version: current.version });
+  const episode = await api.put(`/api/podcast-episodes/${enc(id)}`, { ...assignment, ...releaseControls(args), version: current.version });
   if (args.json) return episode;
   io.print(`Release assignment for ${episode.id}: ${episode.releaseAssignmentStatus} (${episodeCode(episode) || "no episode number"}, ${episode.releaseDate || "no release date"}).`);
   for (const move of episode.publicationAnchor?.moved || [])
@@ -482,6 +510,7 @@ export async function nextSlot(args, io) {
     ["LOCAL", (slot) => `${slot.localTime} ${slot.timezone}`],
     ["UTC", (slot) => slot.utcInstant],
   ], "No free slots in range.");
+  for (const reason of result.blockedReasons || []) io.print(`No slot offered: ${reason}`);
   if ((result.takenDates || []).length) io.print(`Taken: ${result.takenDates.join(", ")}`);
   const first = (result.slots || [])[0];
   if (first) io.print(`To book one: dataops podcast assign-release <episode-id> --state provisional --season ${result.season} --episode ${result.episode} --release-date ${first.date}`);
