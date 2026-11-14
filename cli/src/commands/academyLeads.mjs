@@ -5,10 +5,12 @@ export const summary = "Academy shortlist signups and UTM attribution across tra
 export const help = `dataops academy-leads - list academy.datatalks.club shortlist signups and /sessions (source=layoff_proof) leads
 
 Usage
-  dataops academy-leads [--include-tests] [--track <track>] [--source <source>] [--json]
+  dataops academy-leads [--include-tests] [--status <confirmed|pending|all>] [--pending] [--track <track>] [--source <source>] [--json]
 
 Options
   --include-tests     Include is_test rows (hidden by default)
+  --status STATUS     Filter confirmation status: confirmed (default), pending, or all
+  --pending           Shorthand for --status pending
   --track TRACK       Filter to one track (agentic-engineering or ai-engineering)
   --source SOURCE     Filter to one lead source (e.g. shortlist or layoff_proof)
   --json              Output raw JSON payload
@@ -18,6 +20,8 @@ export async function run(args, io) {
   const api = apiFor(args);
   const query = {};
   if (args["include-tests"] || args.includeTests) query.includeTests = "true";
+  if (args.pending) query.status = "pending";
+  else if (args.status) query.status = String(args.status);
   if (args.track) query.track = String(args.track);
   if (args.source) query.source = String(args.source);
   const qs = new URLSearchParams(query).toString();
@@ -27,7 +31,7 @@ export async function run(args, io) {
   const byTrack = s.byTrack || {};
   const fc = s.firstChoice || {};
   io.print(
-    `Academy leads: ${s.total || 0} shown (${s.testCount || 0} test rows total) | ` +
+    `Academy leads: ${s.total || 0} shown (${s.pendingCount || 0} pending, ${s.testCount || 0} test rows total) | ` +
       `agentic-engineering: ${byTrack["agentic-engineering"] || 0}, ` +
       `ai-engineering: ${byTrack["ai-engineering"] || 0} | ` +
       `unique: agentic only=${fc["agentic only"] || 0}, AI only=${fc["AI only"] || 0}, both=${fc.both || 0}`,

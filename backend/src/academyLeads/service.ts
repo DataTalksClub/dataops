@@ -53,8 +53,11 @@ export interface AcademyUtmBucket {
   interest: Record<string, number>;
 }
 
+export type AcademyLeadStatus = 'confirmed' | 'pending' | 'all';
+
 export interface AcademyLeadsSummary {
   total: number;
+  pendingCount: number;
   testCount: number;
   byTrack: Record<string, number>;
   firstChoice: {
@@ -192,7 +195,7 @@ export function normalizeAcademyLead(item: RawItem): AcademyLead {
   };
 }
 
-export function summarizeAcademyLeads(leads: AcademyLead[], testCount: number): AcademyLeadsSummary {
+export function summarizeAcademyLeads(leads: AcademyLead[], testCount: number, pendingCount = 0): AcademyLeadsSummary {
   const byTrack: Record<string, number> = {
     'agentic-engineering': 0,
     'ai-engineering': 0,
@@ -252,6 +255,7 @@ export function summarizeAcademyLeads(leads: AcademyLead[], testCount: number): 
 
   return {
     total: leads.length,
+    pendingCount,
     testCount,
     byTrack,
     firstChoice,
@@ -301,6 +305,7 @@ export async function listAcademyLeads(options?: {
   includeTests?: boolean;
   track?: string;
   source?: string;
+  status?: AcademyLeadStatus;
   scanItems?: () => Promise<RawItem[]>;
 }): Promise<AcademyLeadsResponse> {
   const rawItems = await (options?.scanItems ? options.scanItems() : scanAcademySignups());
@@ -309,18 +314,27 @@ export async function listAcademyLeads(options?: {
   const includeTests = options?.includeTests === true;
   const trackFilter = options?.track?.trim() || '';
   const sourceFilter = options?.source?.trim() || '';
+  const statusFilter: AcademyLeadStatus =
+    options?.status === 'pending' || options?.status === 'all' ? options.status : 'confirmed';
 
-  const leads = normalized
-    .filter(
-      (l) =>
-        (includeTests || !l.is_test) &&
-        (!trackFilter || l.track === trackFilter) &&
-        (!sourceFilter || l.source === sourceFilter),
-    )
+  const baseFiltered = normalized.filter(
+    (l) =>
+      (includeTests || !l.is_test) &&
+      (!trackFilter || l.track === trackFilter) &&
+      (!sourceFilter || l.source === sourceFilter),
+  );
+  const pendingCount = baseFiltered.filter((l) => !l.confirmed).length;
+
+  const leads = baseFiltered
+    .filter((l) => {
+      if (statusFilter === 'confirmed') return l.confirmed;
+      if (statusFilter === 'pending') return !l.confirmed;
+      return true;
+    })
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 
   return {
     leads,
-    summary: summarizeAcademyLeads(leads, testCount),
+    summary: summarizeAcademyLeads(leads, testCount, pendingCount),
   };
 }

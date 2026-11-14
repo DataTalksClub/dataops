@@ -27,6 +27,7 @@ export function createAcademyLeadsSurface(context) {
   let leads = [];
   let summary = {
     total: 0,
+    pendingCount: 0,
     testCount: 0,
     byTrack: { "agentic-engineering": 0, "ai-engineering": 0 },
     firstChoice: { "agentic only": 0, "AI only": 0, both: 0 },
@@ -47,11 +48,13 @@ export function createAcademyLeadsSurface(context) {
     const includeTestsVal = readParam(route?.params, "includeTests");
     const includeTests = includeTestsVal === "true" || includeTestsVal === "1";
     const track = readParam(route?.params, "track");
-    return { includeTests, track };
+    const rawStatus = readParam(route?.params, "status");
+    const status = rawStatus === "pending" || rawStatus === "all" ? rawStatus : "confirmed";
+    return { includeTests, track, status };
   }
 
-  function filterKey({ includeTests, track }) {
-    return `${includeTests ? "1" : "0"}:${track}`;
+  function filterKey({ includeTests, track, status }) {
+    return `${includeTests ? "1" : "0"}:${track}:${status}`;
   }
 
   async function load(filters = currentFilters()) {
@@ -63,6 +66,7 @@ export function createAcademyLeadsSurface(context) {
       const query = {};
       if (filters.includeTests) query.includeTests = "true";
       if (filters.track) query.track = filters.track;
+      if (filters.status && filters.status !== "confirmed") query.status = filters.status;
       const payload = await request(workApiUrl("/api/academy-leads", query));
       leads = Array.isArray(payload?.leads) ? payload.leads : [];
       summary = payload?.summary || summary;
@@ -76,7 +80,7 @@ export function createAcademyLeadsSurface(context) {
 
   function downloadCsv() {
     const cols = [
-      "created_at", "email", "track",
+      "created_at", "email", "confirmed", "confirmed_at", "track",
       "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
       "last_utm_source", "last_utm_medium", "last_utm_campaign", "last_utm_content", "last_utm_term",
       "referrer", "page", "is_test", "answers",
@@ -112,9 +116,32 @@ export function createAcademyLeadsSurface(context) {
       navigateCanonicalWorkspace("/academy-leads", {
         ...(checkbox.checked ? { includeTests: "true" } : {}),
         ...(filters.track ? { track: filters.track } : {}),
+        ...(filters.status !== "confirmed" ? { status: filters.status } : {}),
       });
     });
     toggleLabel.append(checkbox, documentRef.createTextNode(` Show test leads (${summary.testCount || 0})`));
+
+    const statusSelect = documentRef.createElement("select");
+    statusSelect.setAttribute("aria-label", "Filter by confirmation status");
+    statusSelect.dataset.academyStatusFilter = "true";
+    for (const [val, label] of [
+      ["confirmed", "Confirmed only"],
+      ["pending", `Pending (${summary.pendingCount || 0})`],
+      ["all", "All statuses"],
+    ]) {
+      const opt = documentRef.createElement("option");
+      opt.value = val;
+      opt.textContent = label;
+      opt.selected = filters.status === val;
+      statusSelect.append(opt);
+    }
+    statusSelect.addEventListener("change", () => {
+      navigateCanonicalWorkspace("/academy-leads", {
+        ...(filters.includeTests ? { includeTests: "true" } : {}),
+        ...(filters.track ? { track: filters.track } : {}),
+        ...(statusSelect.value !== "confirmed" ? { status: statusSelect.value } : {}),
+      });
+    });
 
     const trackSelect = documentRef.createElement("select");
     trackSelect.setAttribute("aria-label", "Filter by track");
@@ -134,6 +161,7 @@ export function createAcademyLeadsSurface(context) {
       navigateCanonicalWorkspace("/academy-leads", {
         ...(filters.includeTests ? { includeTests: "true" } : {}),
         ...(trackSelect.value ? { track: trackSelect.value } : {}),
+        ...(filters.status !== "confirmed" ? { status: filters.status } : {}),
       });
     });
 
@@ -146,7 +174,7 @@ export function createAcademyLeadsSurface(context) {
     exportBtn.disabled = leads.length === 0;
     exportBtn.addEventListener("click", downloadCsv);
 
-    bar.append(toggleLabel, trackSelect, refreshBtn, exportBtn);
+    bar.append(toggleLabel, statusSelect, trackSelect, refreshBtn, exportBtn);
     root.append(bar);
   }
 
@@ -157,7 +185,7 @@ export function createAcademyLeadsSurface(context) {
     const ai = summary.byTrack?.["ai-engineering"] || 0;
     const fc = summary.firstChoice || { "agentic only": 0, "AI only": 0, both: 0 };
     trackCounts.textContent =
-      `Total: ${summary.total || 0} | agentic-engineering: ${ag} | ai-engineering: ${ai} ` +
+      `Total: ${summary.total || 0} (pending: ${summary.pendingCount || 0}) | agentic-engineering: ${ag} | ai-engineering: ${ai} ` +
       `(unique leads — agentic only: ${fc["agentic only"] || 0}, AI only: ${fc["AI only"] || 0}, both: ${fc.both || 0})`;
     section.append(trackCounts);
 
