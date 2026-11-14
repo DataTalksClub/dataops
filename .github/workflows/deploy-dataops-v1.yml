@@ -146,9 +146,6 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Install Node workspace dependencies
-        run: npm ci
-
       - name: Set up SAM
         uses: aws-actions/setup-sam@v3
         with:
@@ -233,7 +230,8 @@ jobs:
           if ! node -e "const b = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')); process.exit(b.assets?.assetLogo ? 0 : 1)" "$RUNNER_TEMP/current-bundle.json"; then
             aws s3 cp "s3://$knowledge_bucket/$default_key" "$RUNNER_TEMP/current-bundle.json"
           fi
-          bundle_key="$(node --import tsx backend/scripts/build-banner-bundle.ts \
+          npm --prefix "$RUNNER_TEMP/tsx" install --no-save tsx >/dev/null
+          bundle_key="$(node --import "$RUNNER_TEMP/tsx/node_modules/tsx/dist/loader.mjs" backend/scripts/build-banner-bundle.ts \
             --current "$RUNNER_TEMP/current-bundle.json" \
             --out-dir "$RUNNER_TEMP/banner-bundle")"
           if ! aws s3 ls "s3://$knowledge_bucket/$bundle_key" >/dev/null 2>&1; then
