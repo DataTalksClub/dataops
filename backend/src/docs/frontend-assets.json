@@ -147,6 +147,7 @@
     "src/surfaces/finance/sponsors.js",
     "src/surfaces/finance/tuition.js",
     "src/surfaces/inbox.js",
+    "src/surfaces/academy-leads.js",
     "src/surfaces/knowledge/catalog.js",
     "src/surfaces/knowledge/filters.js",
     "src/surfaces/knowledge/index.js",

@@ -1,4 +1,5 @@
 import { handleTuitionRoutes } from './routes/tuition';
+import { handleAcademyLeadsRoutes } from './routes/academyLeads';
 import { timingSafeEqual } from 'crypto';
 import { portalRuntimeSecret } from './runtimeSecret';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -368,6 +369,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       return await handleReconcileRoutes(reqPath, method, event, client);
     }
     if (reqPath === '/api/tuition' || reqPath.startsWith('/api/tuition/')) return await handleTuitionRoutes(reqPath, method, event, client);
+    if (reqPath === '/api/academy-leads') {
+      const academy = await handleAcademyLeadsRoutes(reqPath, method, event);
+      if (academy) return academy;
+    }
     if (reqPath.startsWith('/api/sponsor-crm/contracts')) {
       return await handleSponsorContractRoutes(reqPath, method, event, client, { skipAuth });
     }

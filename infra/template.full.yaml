@@ -152,6 +152,16 @@ Parameters:
     Type: String
     Default: sponsor-communications
     AllowedPattern: "^[A-Za-z0-9_.\\/-]+$"
+  AcademySignupsTableName:
+    Type: String
+    Default: academy-signups
+  AcademySignupsRegion:
+    Type: String
+    Default: eu-west-1
+  AcademySignupsReaderRoleArn:
+    Type: String
+    Default: arn:aws:iam::387546586013:role/academy-signups-dataops-reader
+    AllowedPattern: "^$|^arn:[a-z0-9-]+:iam::[0-9]{12}:role/.+$"
 Rules:
   SponsorSendRequiresPrivateConfiguration:
     Assertions:
@@ -1298,8 +1308,15 @@ Resources:
               Action: [kms:Decrypt]
               Resource: !Ref EmailDocumentExternalSourceKmsKeyArn
           - !Ref AWS::NoValue
+        - Statement:
+            Effect: Allow
+            Action: [sts:AssumeRole]
+            Resource: !Ref AcademySignupsReaderRoleArn
       Environment:
         Variables:
+          ACADEMY_SIGNUPS_TABLE: !Ref AcademySignupsTableName
+          ACADEMY_SIGNUPS_REGION: !Ref AcademySignupsRegion
+          ACADEMY_SIGNUPS_READER_ROLE_ARN: !Ref AcademySignupsReaderRoleArn
           DATAOPS_ENV: !Ref DataOpsEnvironment
           DATAOPS_TABLE_PREFIX: !Ref AWS::StackName
           DATAOPS_PODCAST_EPISODES_TABLE: !Ref DataOpsPodcastEpisodesTable

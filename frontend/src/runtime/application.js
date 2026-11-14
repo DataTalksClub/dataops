@@ -36,6 +36,7 @@ import { createKnowledgeSurface } from "../surfaces/knowledge/index.js";
 import { createDocumentEditor } from "../surfaces/document-editor/index.js";
 import { createPodcastSurface } from "../surfaces/podcast/index.js";
 import { createInboxSurface } from "../surfaces/inbox.js";
+import { createAcademyLeadsSurface } from "../surfaces/academy-leads.js";
 import { createOperatingModelSurface } from "../surfaces/operating-model.js";
 import { createApiClient, resolveApiBase } from "../shell/api.js";
 import { createFeedbackShell } from "../shell/feedback.js";
@@ -158,6 +159,7 @@ const {
   getKnowledgeSelectedFolder: () => knowledgeState.selectedFolder,
   getNormalizeOperationsRecurringSnapshot: () =>
     normalizeOperationsRecurringSnapshot,
+  getRenderAcademyLeadsSurface: () => academyLeadsSurface?.renderAcademyLeads || (() => undefined),
   getRenderAdminSurfaceView: () => renderAdminSurfaceView,
   getRenderBookkeepingSurface: () => renderBookkeepingSurface,
   getRenderFinanceOverviewSurface: () => renderFinanceOverviewSurface,
@@ -590,6 +592,15 @@ podcastSurface = createPodcastSurface({
 
 inboxSurface = createInboxSurface({
   apiUrl,
+  documentList,
+  getActiveWorkspaceRoute,
+  navigateCanonicalWorkspace,
+  request,
+  setRouteTitle,
+  workApiUrl,
+});
+
+const academyLeadsSurface = createAcademyLeadsSurface({
   documentList,
   getActiveWorkspaceRoute,
   navigateCanonicalWorkspace,
