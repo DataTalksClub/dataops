@@ -15,6 +15,15 @@ export interface AcademyLead {
   status: string;
   berlin_germany: string;
   bildungsgutschein: string;
+  track_interest: string;
+  years_dev: string;
+  based_in: string;
+  free_text: string;
+  academy_optin: string;
+  session: string;
+  qr_sessions: string[];
+  unsubscribed: boolean;
+  emails_sent: string[];
   utm_source: string;
   utm_medium: string;
   utm_campaign: string;
@@ -41,6 +50,7 @@ export interface AcademyUtmBucket {
   ai: number;
   other: number;
   total: number;
+  interest: Record<string, number>;
 }
 
 export interface AcademyLeadsSummary {
@@ -53,6 +63,12 @@ export interface AcademyLeadsSummary {
     both: number;
   };
   byUtm: AcademyUtmBucket[];
+  /** layoff_proof leads by their stated track of interest (agentic, ai, both, not_sure, unspecified). */
+  byTrackInterest: Record<string, number>;
+  /** layoff_proof leads by registered session (session-1..3). */
+  bySession: Record<string, number>;
+  /** "Get the recording and materials" QR form leads by session. */
+  byQrSession: Record<string, number>;
 }
 
 export interface AcademyLeadsResponse {
@@ -108,6 +124,11 @@ function asString(v: unknown): string {
   return typeof v === 'string' ? v : '';
 }
 
+function asStringList(v: unknown): string[] {
+  const list = v instanceof Set ? Array.from(v) : Array.isArray(v) ? v : [];
+  return list.filter((x): x is string => typeof x === 'string').sort();
+}
+
 function asMap(v: unknown): Record<string, string> | null {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
   const out: Record<string, string> = {};
@@ -142,6 +163,15 @@ export function normalizeAcademyLead(item: RawItem): AcademyLead {
     status: asString(item.status),
     berlin_germany: asString(item.berlin_germany),
     bildungsgutschein: asString(item.bildungsgutschein),
+    track_interest: asString(item.track_interest),
+    years_dev: asString(item.years_dev),
+    based_in: asString(item.based_in),
+    free_text: asString(item.free_text),
+    academy_optin: asString(item.academy_optin),
+    session: asString(item.session),
+    qr_sessions: asStringList(item.qr_sessions),
+    unsubscribed: item.unsubscribed === true,
+    emails_sent: asStringList(item.emails_sent),
     utm_source: utm('utm_source'),
     utm_medium: utm('utm_medium'),
     utm_campaign: utm('utm_campaign'),
@@ -170,8 +200,18 @@ export function summarizeAcademyLeads(leads: AcademyLead[], testCount: number): 
   const byEmail = new Map<string, Set<string>>();
   const utmBuckets = new Map<string, AcademyUtmBucket>();
 
+  const byTrackInterest: Record<string, number> = {};
+  const bySession: Record<string, number> = {};
+  const byQrSession: Record<string, number> = {};
+
   for (const lead of leads) {
-    byTrack[lead.track] = (byTrack[lead.track] || 0) + 1;
+    if (lead.track) byTrack[lead.track] = (byTrack[lead.track] || 0) + 1;
+    if (lead.source === 'layoff_proof') {
+      const interest = lead.track_interest || 'unspecified';
+      byTrackInterest[interest] = (byTrackInterest[interest] || 0) + 1;
+      for (const sid of lead.sessions) bySession[sid] = (bySession[sid] || 0) + 1;
+      for (const sid of lead.qr_sessions) byQrSession[sid] = (byQrSession[sid] || 0) + 1;
+    }
     let tracks = byEmail.get(lead.email);
     if (!tracks) {
       tracks = new Set<string>();
@@ -184,13 +224,17 @@ export function summarizeAcademyLeads(leads: AcademyLead[], testCount: number): 
     const key = `${src}\u0000${content}`;
     let bucket = utmBuckets.get(key);
     if (!bucket) {
-      bucket = { utm_source: src, utm_content: content, agentic: 0, ai: 0, other: 0, total: 0 };
+      bucket = { utm_source: src, utm_content: content, agentic: 0, ai: 0, other: 0, total: 0, interest: {} };
       utmBuckets.set(key, bucket);
     }
     if (lead.track === 'agentic-engineering') bucket.agentic += 1;
     else if (lead.track === 'ai-engineering') bucket.ai += 1;
     else bucket.other += 1;
     bucket.total += 1;
+    if (lead.source === 'layoff_proof') {
+      const interest = lead.track_interest || 'unspecified';
+      bucket.interest[interest] = (bucket.interest[interest] || 0) + 1;
+    }
   }
 
   const firstChoice = { 'agentic only': 0, 'AI only': 0, both: 0 };
@@ -212,6 +256,9 @@ export function summarizeAcademyLeads(leads: AcademyLead[], testCount: number): 
     byTrack,
     firstChoice,
     byUtm,
+    byTrackInterest,
+    bySession,
+    byQrSession,
   };
 }
 

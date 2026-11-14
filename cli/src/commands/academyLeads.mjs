@@ -2,7 +2,7 @@ import { apiFor } from "../session.mjs";
 
 export const summary = "Academy shortlist signups and UTM attribution across tracks";
 
-export const help = `dataops academy-leads - list academy.datatalks.club shortlist signups
+export const help = `dataops academy-leads - list academy.datatalks.club shortlist signups and /sessions (source=layoff_proof) leads
 
 Usage
   dataops academy-leads [--include-tests] [--track <track>] [--source <source>] [--json]
@@ -32,10 +32,32 @@ export async function run(args, io) {
       `ai-engineering: ${byTrack["ai-engineering"] || 0} | ` +
       `unique: agentic only=${fc["agentic only"] || 0}, AI only=${fc["AI only"] || 0}, both=${fc.both || 0}`,
   );
+  const interest = s.byTrackInterest || {};
+  if (Object.keys(interest).length > 0) {
+    io.print(
+      "Track of interest (layoff_proof): " +
+        ["agentic", "ai", "both", "not_sure", "unspecified"]
+          .filter((k) => interest[k])
+          .map((k) => `${k}=${interest[k]}`)
+          .join(", "),
+    );
+    const fmt = (m) =>
+      Object.keys(m || {})
+        .sort()
+        .map((k) => `${k}=${m[k]}`)
+        .join(", ") || "none";
+    io.print(`Registered per session: ${fmt(s.bySession)}`);
+    io.print(`Recording form per session: ${fmt(s.byQrSession)}`);
+  }
   if (Array.isArray(s.byUtm) && s.byUtm.length > 0) {
     io.print("\nBy utm_source / utm_content:");
     for (const b of s.byUtm) {
-      io.print(`  ${b.utm_source} / ${b.utm_content}: agentic=${b.agentic}, ai=${b.ai}, total=${b.total}`);
+      const mix = Object.entries(b.interest || {})
+        .map(([k, n]) => `${k}=${n}`)
+        .join(",");
+      io.print(
+        `  ${b.utm_source} / ${b.utm_content}: agentic=${b.agentic}, ai=${b.ai}, total=${b.total}${mix ? `, interest ${mix}` : ""}`,
+      );
     }
   }
   if (Array.isArray(data.leads) && data.leads.length > 0) {
@@ -53,8 +75,16 @@ export async function run(args, io) {
         row.name ? `name=${row.name}` : "",
         Array.isArray(row.sessions) && row.sessions.length ? `sessions=${row.sessions.join(",")}` : "",
         row.status ? `status=${row.status}` : "",
+        row.track_interest ? `track=${row.track_interest}` : "",
+        row.years_dev ? `years=${row.years_dev}` : "",
+        row.based_in ? `based_in=${row.based_in}` : "",
         row.berlin_germany ? `berlin=${row.berlin_germany}` : "",
         row.bildungsgutschein ? `bg=${row.bildungsgutschein}` : "",
+        row.session ? `qr_session=${row.session}` : "",
+        Array.isArray(row.qr_sessions) && row.qr_sessions.length ? `qr_sessions=${row.qr_sessions.join(",")}` : "",
+        row.academy_optin ? `april_optin=${row.academy_optin}` : "",
+        row.unsubscribed ? "unsubscribed" : "",
+        row.free_text ? `wants_to_learn=${JSON.stringify(row.free_text)}` : "",
       ]
         .filter(Boolean)
         .join("  ");
