@@ -4,7 +4,7 @@ import { dedupe, resolvePeriod, summarize, unmatchedStatementLines, type LedgerR
 import { clearEcbRateCacheForTests, loadEcbRates, parseEcbCsv } from '../src/finance/rates';
 import { financeStatementLines, parsePeriodQuery } from '../src/finance/service';
 import { bankRowsFrom } from '../src/reconcile/monthService';
-import { pairAll, DEFAULT_TOLERANCES } from '../src/reconcile/month';
+import { ownerWithdrawalBankKeys, pairAll, DEFAULT_TOLERANCES } from '../src/reconcile/month';
 import { businessAccountStatementRequirement } from '../src/finance/businessAccounts';
 
 // Synthetic fixture books for October 2026, every figure invented.
@@ -565,4 +565,47 @@ it('preserves extra bank evidence when two pairs collapse to one deduplicated le
     ], statementPairs: new Map([['bank-one', 'system'], ['bank-two', 'sheet']]) });
   assert.strictEqual(result.entries.length, 2);
   assert.ok(result.entries.some((entry) => entry.bankKey === 'bank-two'));
+});
+
+it('counts unmatched owner_withdrawal statement lines as ownerPay without flagging a gap', () => {
+  const s = summarize({
+    today: '2026-10-31',
+    query: { month: '2026-10' },
+    rates: noRates,
+    rows: [
+      row('in1', { entryType: 'income', amount: '5000', paidDate: '2026-10-05', sourceType: 'sponsor-receipt' }),
+    ],
+    statementLines: [
+      { id: 'st:0', bankKey: 'bank-owner', accountId: 'revolut', date: '2026-10-27', amount: '-3500.00', currency: 'EUR', counterparty: 'Synthetic Owner', reference: 'Hey', kind: 'owner_withdrawal' },
+    ],
+    statementPairs: new Map(),
+  });
+  assert.strictEqual(s.totals.operatingIncome, 5000);
+  assert.strictEqual(s.totals.operatingExpenses, 0);
+  assert.strictEqual(s.totals.netProfitExVat, 5000);
+  assert.strictEqual(s.totals.ownerPay, 3500);
+  assert.strictEqual(s.totals.moneyOut, 3500);
+  assert.strictEqual(s.totals.net, 1500);
+  assert.strictEqual(s.totals.netAfterOwnerPay, 1500);
+  assert.strictEqual(s.gaps.some((g) => g.kind === 'bank-line-without-ledger-row'), false);
+});
+
+it('ownerWithdrawalBankKeys matches reconciliation rules while excluding internal transfers and paired rows', () => {
+  const bank = [
+    { key: 'draw-1', accountId: 'revolut', statementId: 's1', date: '2026-10-27', amount: '-3500.00', currency: 'EUR', counterparty: 'Synthetic Owner', reference: 'Hey' },
+    { key: 'xfer-out', accountId: 'finom', statementId: 's2', date: '2026-10-10', amount: '-1000.00', currency: 'EUR', counterparty: 'Synthetic Owner', reference: 'Transfer' },
+    { key: 'xfer-in', accountId: 'revolut', statementId: 's1', date: '2026-10-10', amount: '1000.00', currency: 'EUR', counterparty: 'Synthetic Owner', reference: 'Transfer' },
+    { key: 'paired-1', accountId: 'revolut', statementId: 's1', date: '2026-10-15', amount: '-500.00', currency: 'EUR', counterparty: 'Synthetic Owner', reference: 'Already in ledger' },
+  ];
+  const rules = [
+    { id: 'owner', kind: 'owner_withdrawal' as const, direction: 'out' as const, counterparty: 'Synthetic Owner' },
+  ];
+  const keys = ownerWithdrawalBankKeys(
+    bank,
+    rules,
+    DEFAULT_TOLERANCES,
+    { pairs: {}, unmatches: {}, exceptions: {}, comments: {}, dispositions: {} },
+    new Set(['paired-1']),
+  );
+  assert.deepEqual([...keys], ['draw-1']);
 });
