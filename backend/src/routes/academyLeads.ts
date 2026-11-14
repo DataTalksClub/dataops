@@ -11,6 +11,7 @@ export async function handleAcademyLeadsRoutes(
   const qs = event.queryStringParameters || {};
   const includeTests = qs.includeTests === 'true' || qs.includeTests === '1';
   const track = typeof qs.track === 'string' ? qs.track : '';
-  const data = await listAcademyLeads({ includeTests, track });
+  const source = typeof qs.source === 'string' ? qs.source : '';
+  const data = await listAcademyLeads({ includeTests, track, source });
   return json(200, data);
 }

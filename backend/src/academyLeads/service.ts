@@ -7,6 +7,14 @@ export interface AcademyLead {
   updated_at: string;
   email: string;
   track: string;
+  source: string;
+  confirmed: boolean;
+  confirmed_at: string;
+  name: string;
+  sessions: string[];
+  status: string;
+  berlin_germany: string;
+  bildungsgutschein: string;
   utm_source: string;
   utm_medium: string;
   utm_campaign: string;
@@ -115,12 +123,25 @@ export function normalizeAcademyLead(item: RawItem): AcademyLead {
   const answers = asMap(item.answers) ?? {};
   const utm = (key: string) => (firstUtm ? firstUtm[key] || '' : asString(item[key]));
   const lastUtmVal = (key: string) => (lastUtm ? lastUtm[key] || '' : asString(item[`last_${key}`]));
+  const sk = asString(item.sk);
+  const source = asString(item.source) || (sk.startsWith('SOURCE#') ? sk.slice(7) : 'shortlist');
+  const sessions = Array.isArray(item.sessions)
+    ? item.sessions.filter((s): s is string => typeof s === 'string')
+    : [];
 
   return {
     created_at: asString(item.created_at),
     updated_at: asString(item.updated_at),
     email: asString(item.email),
     track: asString(item.track),
+    source,
+    confirmed: item.confirmed === true,
+    confirmed_at: asString(item.confirmed_at),
+    name: asString(item.name),
+    sessions,
+    status: asString(item.status),
+    berlin_germany: asString(item.berlin_germany),
+    bildungsgutschein: asString(item.bildungsgutschein),
     utm_source: utm('utm_source'),
     utm_medium: utm('utm_medium'),
     utm_campaign: utm('utm_campaign'),
@@ -232,6 +253,7 @@ export async function scanAcademySignups(options?: {
 export async function listAcademyLeads(options?: {
   includeTests?: boolean;
   track?: string;
+  source?: string;
   scanItems?: () => Promise<RawItem[]>;
 }): Promise<AcademyLeadsResponse> {
   const rawItems = await (options?.scanItems ? options.scanItems() : scanAcademySignups());
@@ -239,9 +261,15 @@ export async function listAcademyLeads(options?: {
   const testCount = normalized.filter((l) => l.is_test).length;
   const includeTests = options?.includeTests === true;
   const trackFilter = options?.track?.trim() || '';
+  const sourceFilter = options?.source?.trim() || '';
 
   const leads = normalized
-    .filter((l) => (includeTests || !l.is_test) && (!trackFilter || l.track === trackFilter))
+    .filter(
+      (l) =>
+        (includeTests || !l.is_test) &&
+        (!trackFilter || l.track === trackFilter) &&
+        (!sourceFilter || l.source === sourceFilter),
+    )
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 
   return {
