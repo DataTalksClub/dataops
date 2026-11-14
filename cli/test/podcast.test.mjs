@@ -342,6 +342,33 @@ describe("podcast next-slot and cadence", () => {
     assert.equal(await run(["podcast", "next-slot", "--count", "99"], captureIo()), 2);
   });
 
+  test("next-slot prints why no slot is offered", async () => {
+    fakePortal({ "GET /api/podcast-episodes/next-slot": { ...nextSlotResponse, slots: [], blockedReasons: ["S25E9 cannot get 2026-10-23 while S25E8 has no release date yet."] } });
+    const io = captureIo();
+    assert.equal(await run(["podcast", "next-slot"], io), 0);
+    assert.match(io.text(), /No slot offered: S25E9 cannot get 2026-10-23/);
+  });
+
+  test("update sends dry-run and a logged override reason; a bare override flag is a usage error", async () => {
+    const calls = fakePortal({
+      "GET /api/podcast-episodes/ep-1": episode({}),
+      "PUT /api/podcast-episodes/ep-1": { dryRun: true, valid: true, violations: [{ message: "S25E9 on 2026-10-23 would come out before S25E8." }] },
+    });
+    const io = captureIo();
+    assert.equal(
+      await run(["podcast", "update", "ep-1", "--release-date", "2026-10-23", "--release-assignment", "provisional", "--dry-run", "--allow-release-order-violation", "owner asked"], io),
+      0,
+    );
+    const put = calls.find((call) => call.method === "PUT");
+    assert.equal(put.body.dryRun, true);
+    assert.deepEqual(put.body.releaseOrderOverride, { reason: "owner asked" });
+    assert.match(io.text(), /Dry run: .*nothing written/);
+    assert.equal(
+      await run(["podcast", "update", "ep-1", "--release-date", "2026-10-23", "--release-assignment", "provisional", "--allow-release-order-violation"], captureIo()),
+      2,
+    );
+  });
+
   test("cadence shows the stored setting and sets it with the version", async () => {
     const calls = fakePortal({
       "GET /api/workspace-settings": {
