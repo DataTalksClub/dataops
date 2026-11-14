@@ -195,6 +195,7 @@ export function summarizeAcademyLeads(leads: AcademyLead[], testCount: number): 
 }
 
 export async function scanAcademySignups(options?: {
+  prefix?: string;
   tableName?: string;
   region?: string;
   roleArn?: string;
@@ -218,7 +219,7 @@ export async function scanAcademySignups(options?: {
       new ScanCommand({
         TableName: tableName,
         FilterExpression: 'begins_with(pk, :p)',
-        ExpressionAttributeValues: { ':p': 'SIGNUP#' },
+        ExpressionAttributeValues: { ':p': options?.prefix || 'SIGNUP#' },
         ...(exclusiveStartKey ? { ExclusiveStartKey: exclusiveStartKey } : {}),
       }),
     );

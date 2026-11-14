@@ -112,7 +112,7 @@ export function isScopedTokenRequestAllowed(
     return allowsRead(scopes, 'templates:write', 'cards:write', 'newsletter:write');
   }
 
-  if (isRead && matchesPrefix(path, '/api/academy-leads')) {
+  if (isRead && (matchesPrefix(path, '/api/academy-leads') || matchesPrefix(path, '/api/academy-pageviews'))) {
     return allowsRead(scopes, 'cards:write', 'newsletter:write');
   }
 
