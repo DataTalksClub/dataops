@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cardEventInterval } from '../src/calendar/cardEventTime';
-import { confirmedHoldInvite } from '../src/calendar/holds';
+import { buildGuestInvite } from '../src/calendar/guestInvite';
 
 test('Card event time supports arbitrary minutes and Berlin winter/summer; invite is T-5..end', () => {
   for (const [at, start] of [['2026-11-09 14:30', '2026-11-09T13:30:00.000Z'], ['2026-07-09 14:37', '2026-07-09T12:37:00.000Z']]) {
     const interval = cardEventInterval(at);
     assert.equal(interval.startIso, start);
-    const invite = confirmedHoldInvite({ id: 'test', title: 'Podcast', guestRef: 'guest@example.test', ...interval });
+    const invite = buildGuestInvite({ eventKey: 'test', title: 'Podcast', guests: ['guest@example.test'], ...interval });
     assert.equal(Date.parse(invite.startIso), Date.parse(start) - 300000);
     assert.equal(Date.parse(invite.endIso), Date.parse(start) + 3600000);
   }

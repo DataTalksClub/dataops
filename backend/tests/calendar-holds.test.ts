@@ -22,8 +22,8 @@ import {
   HOLD_ATTENDEE_DENY_LIST,
   holdGuestAttendees,
   confirmedHoldDescription,
-  confirmedHoldInvite,
 } from "../src/calendar/holds";
+import { buildGuestInvite } from "../src/calendar/guestInvite";
 import { suppressHeldSlots } from "../src/calendar/holdOverlay";
 
 const invoke = (
@@ -414,8 +414,9 @@ describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
   it("invite window: start = slot start − 5 min, end = slot end (12:30–13:30 → 12:25–13:30)", () => {
     const midday = holdInterval("2026-11-16", "midday", 60); // 12:30–13:30 Berlin (CET, +01:00)
     assert.equal(midday.startIso, "2026-11-16T11:30:00.000Z");
-    const invite = confirmedHoldInvite({
-      id: "hold_window1",
+    const invite = buildGuestInvite({
+      eventKey: "hold_window1",
+      guests: [],
       title: "(Proposal) Podcast recording",
       startIso: midday.startIso,
       endIso: midday.endIso,

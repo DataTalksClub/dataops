@@ -513,28 +513,38 @@ export type GoogleEventFetch =
   | { state: 'gone' }
   | { state: 'deferred'; reason: string };
 
+/** Read several live Google events with one broker token: `gone` covers 404/410 and `cancelled`. */
+export async function fetchGoogleEvents(
+  targets: Array<{ eventId: string; calendar: string }>,
+  deps: HoldGoogleDeps,
+): Promise<GoogleEventFetch[]> {
+  const resolved = await accessToken(deps);
+  if ('problem' in resolved) return targets.map(() => ({ state: 'deferred', reason: resolved.problem }));
+  const headers = { Authorization: `Bearer ${resolved.token}`, 'Content-Type': 'application/json' };
+  return Promise.all(targets.map(async ({ eventId, calendar }): Promise<GoogleEventFetch> => {
+    try {
+      const url = `${eventsUrl(calendar)}/${encodeURIComponent(eventId)}`;
+      const response = await googleFetch(deps, url, { headers, signal: AbortSignal.timeout(15000) });
+      if (response.status === 404 || response.status === 410) return { state: 'gone' };
+      if (!response.ok) {
+        return { state: 'deferred', reason: googleErrorDetail(response.status, await readBodyText(response, GOOGLE_ERROR_BODY_LIMIT)) };
+      }
+      const event = (await response.json()) as LiveGoogleEvent;
+      if (event.status === 'cancelled') return { state: 'gone' };
+      return { state: 'ok', event };
+    } catch {
+      return { state: 'deferred', reason: `Google Calendar event could not be read from ${calendar}.` };
+    }
+  }));
+}
+
 /** Read one live Google event: `gone` covers 404/410 and `cancelled`. */
 export async function fetchGoogleEvent(
   eventId: string,
   calendar: string,
   deps: HoldGoogleDeps,
 ): Promise<GoogleEventFetch> {
-  const resolved = await accessToken(deps);
-  if ('problem' in resolved) return { state: 'deferred', reason: resolved.problem };
-  const headers = { Authorization: `Bearer ${resolved.token}`, 'Content-Type': 'application/json' };
-  try {
-    const url = `${eventsUrl(calendar)}/${encodeURIComponent(eventId)}`;
-    const response = await googleFetch(deps, url, { headers, signal: AbortSignal.timeout(15000) });
-    if (response.status === 404 || response.status === 410) return { state: 'gone' };
-    if (!response.ok) {
-      return { state: 'deferred', reason: googleErrorDetail(response.status, await readBodyText(response, GOOGLE_ERROR_BODY_LIMIT)) };
-    }
-    const event = (await response.json()) as LiveGoogleEvent;
-    if (event.status === 'cancelled') return { state: 'gone' };
-    return { state: 'ok', event };
-  } catch {
-    return { state: 'deferred', reason: `Google Calendar event could not be read from ${calendar}.` };
-  }
+  return (await fetchGoogleEvents([{ eventId, calendar }], deps))[0];
 }
 
 /** Add speakers only to the existing private organizer invitation. Never create

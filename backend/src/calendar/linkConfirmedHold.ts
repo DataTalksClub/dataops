@@ -4,7 +4,8 @@ import { getCardConsistent } from '../db/cards';
 import { getCalendarHold, listCalendarHolds } from '../db/calendarHolds';
 import type { PodcastEpisode } from '../db/podcastEpisodes';
 import { adoptEventDate, calendarInviteUrl, closeCardInviteTasks, parseCardGuests } from './cardInvite';
-import { confirmedHoldInvite, HOLD_ZOOM_LOCATION, HOLD_ATTENDEE_DENY_LIST } from './holds';
+import { HOLD_ZOOM_LOCATION, HOLD_ATTENDEE_DENY_LIST } from './holds';
+import { buildGuestInvite } from './guestInvite';
 import { fetchGoogleEvent, HOLD_ORGANIZER, type HoldGoogleDeps } from './holdGoogleSync';
 import { PUBLIC_DTC_EVENTS_CALENDAR } from './dapierBroker';
 
@@ -55,7 +56,7 @@ export async function linkConfirmedHold(
   ] as const) if (requested !== undefined && requested !== actual) throw new HoldLinkError(`${label} changed; reread before linking`);
   const eventIds = hold.googleEventIds || {};
   if (!eventIds[HOLD_ORGANIZER] || eventIds[PUBLIC_DTC_EVENTS_CALENDAR]) throw new HoldLinkError('The hold must own a private organizer invitation and no public calendar entry');
-  const expectedInvite = confirmedHoldInvite(hold);
+  const expectedInvite = buildGuestInvite({ eventKey: hold.id, title: hold.title, documentUrl: hold.documentUrl, guests: hold.guestRef ? [hold.guestRef] : [], startIso: hold.startIso, endIso: hold.endIso });
   for (const [calendar, eventId] of Object.entries(eventIds)) {
     const read = await fetchGoogleEvent(eventId, calendar, deps);
     if (read.state !== 'ok') throw new HoldLinkError(read.state === 'gone' ? 'A linked Google event is gone' : read.reason, 422);

@@ -3,6 +3,7 @@ import { requireEventBytes } from './size';
 import { createHash } from 'node:crypto';
 import { cardEventInterval } from '../calendar/cardEventTime';
 import { HOLD_INVITE_LEAD_MINUTES } from '../calendar/holds';
+import { buildGuestInvite } from '../calendar/guestInvite';
 import { EVENT_TRANSITIONS, parseEventPolicy, renderEventText, type EventPolicy, type EventRenderValues, type EventTransition } from './policy';
 
 export const EVENT_OPERATION_TRANSITIONS = [...EVENT_TRANSITIONS, 'update'] as const;
@@ -91,6 +92,12 @@ export interface EventCommand {
     guestNames: string;
     documentUrl: string;
   };
+  /**
+   * Podcast guest invites (resolved by the service from the Card's Template):
+   * title, description, location and guest set come from the shared guest-invite
+   * builder instead of the Template's free-text policy.
+   */
+  guestInvite?: { eventType: string; guestTitle?: string };
   approval?: { via: 'calendar-accept'; attendeeEmail: string; acceptedEmails: string[]; generation: number };
 }
 export class EventConflictError extends Error {}
@@ -200,14 +207,28 @@ export function planEventTransition(id: string, cardId: string, current: EventRe
   let formCode = '';
   try { formCode = new URL(renderValues.documentUrl).searchParams.get('code') || ''; } catch { /* no linked guest form */ }
   if (formCode) guestDetails += `${guestDetails ? '\n' : ''}Guest form: ${renderValues.documentUrl}\nAccess code: ${formCode}`;
+  const leadMinutes = approved ? Math.max(policy.guests.leadMinutes, HOLD_INVITE_LEAD_MINUTES) : policy.guests.proposal ? policy.guests.leadMinutes : 0;
+  // A guest-bearing podcast invite is the canonical invite, built by the shared builder.
+  const canonical = command.guestInvite && attendees.length > 0
+    ? buildGuestInvite({
+      eventKey: id, eventType: command.guestInvite.eventType, title: renderValues.title, guestTitle: command.guestInvite.guestTitle,
+      documentUrl: renderValues.documentUrl, guests: next.guestEmails, startIso: next.startIso, endIso: next.endIso,
+      timeZone: next.timeZone, proposed: !approved, leadMinutes,
+    })
+    : null;
   next.operations.push({
     key: command.operationKey, fingerprint: hash, transition, state: 'pending',
     desired: {
-      summary: render(approved ? policy.titles.approved : policy.titles.proposed),
-      description: [render(policy.description), inviteText, guestDetails].filter(Boolean).join('\n\n'),
-      location: policy.zoom.enabled ? policy.zoom.url! : '', attendees,
-      startIso: new Date(Date.parse(next.startIso) - (approved ? Math.max(policy.guests.leadMinutes, HOLD_INVITE_LEAD_MINUTES) : policy.guests.proposal ? policy.guests.leadMinutes : 0) * 60000).toISOString(),
-      endIso: next.endIso, timeZone: next.timeZone,
+      ...(canonical ? {
+        summary: canonical.summary, description: canonical.description, location: canonical.location, attendees: canonical.attendees,
+        startIso: canonical.startIso, endIso: canonical.endIso, timeZone: canonical.timeZone,
+      } : {
+        summary: render(approved ? policy.titles.approved : policy.titles.proposed),
+        description: [render(policy.description), inviteText, guestDetails].filter(Boolean).join('\n\n'),
+        location: policy.zoom.enabled ? policy.zoom.url! : '', attendees,
+        startIso: new Date(Date.parse(next.startIso) - leadMinutes * 60000).toISOString(),
+        endIso: next.endIso, timeZone: next.timeZone,
+      }),
       sendUpdates: transition === 'update' ? 'none' : policy.notifications[transition].calendar,
       emails: transition === 'update' ? [] : policy.notifications[transition].emails.map(email => ({
         to: email.to === 'guests' ? [...next.guestEmails] : emails(policy.guests.requiredEmails),

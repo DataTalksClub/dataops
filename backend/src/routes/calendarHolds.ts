@@ -4,7 +4,6 @@ import type { LambdaEvent, LambdaResponse } from '../types';
 import {
   buildHold,
   confirmHoldRecord,
-  confirmedHoldInvite,
   confirmedTitle,
   holdGuestAttendees,
   parseHoldDocumentUrl,
@@ -20,6 +19,8 @@ import {
   HOLD_ORGANIZER,
   updateHoldGoogleEvents,
 } from '../calendar/holdGoogleSync';
+import { buildGuestInvite, GuestInviteValidationError } from '../calendar/guestInvite';
+import { reportGuestInviteFailure, writeGuestInvite } from '../calendar/guestInviteSync';
 import { PUBLIC_DTC_EVENTS_CALENDAR, resolveHoldGoogleCalendars } from '../calendar/dapierBroker';
 import { resolveInteractiveActor } from '../identity/actor';
 import {
@@ -224,7 +225,10 @@ async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocu
   // when mirrors exist, otherwise CREATE. Either way the mirror becomes the
   // guest invite immediately: confirmed title, Zoom location + description,
   // required attendees (never Meet, never deny-listed), window start −5 min.
-  const invite = confirmedHoldInvite(next);
+  const invite = buildGuestInvite({
+    eventKey: next.id, title: next.title, documentUrl: next.documentUrl, guests: next.guestRef ? [next.guestRef] : [],
+    startIso: next.startIso, endIso: next.endIso,
+  }, deps.calendarIds);
   if (card) {
     try {
       const result = await syncCardInvite(client, card, {
@@ -246,9 +250,15 @@ async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocu
   }
   const inviteEventIds = Object.fromEntries(Object.entries(existing.googleEventIds || {})
     .filter(([calendar]) => calendar !== PUBLIC_DTC_EVENTS_CALENDAR));
-  const sync = Object.keys(inviteEventIds).length
-    ? await updateHoldGoogleEvents(inviteEventIds, invite, deps)
-    : await createHoldGoogleEvents(invite, deps);
+  let sync;
+  try { sync = await writeGuestInvite(invite, inviteEventIds, deps); }
+  catch (error) {
+    if (error instanceof GuestInviteValidationError) {
+      await reportGuestInviteFailure(client, error, { actorId: actor(event) });
+      return json(502, { error: error.message, code: 'guest_invite_validation_failed', problems: error.problems });
+    }
+    throw error;
+  }
   const stored = {
     ...next,
     version: existing.version + 1,
