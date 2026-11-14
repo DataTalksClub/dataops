@@ -36,10 +36,17 @@ export function createAcademyLeadsSurface(context) {
   let error = "";
   let loadedKey = null;
 
+  function readParam(params, name) {
+    if (!params) return "";
+    if (typeof params.get === "function") return params.get(name) || "";
+    return params[name] || "";
+  }
+
   function currentFilters() {
     const route = getActiveWorkspaceRoute();
-    const includeTests = route?.params?.includeTests === "true" || route?.params?.includeTests === "1";
-    const track = route?.params?.track || "";
+    const includeTestsVal = readParam(route?.params, "includeTests");
+    const includeTests = includeTestsVal === "true" || includeTestsVal === "1";
+    const track = readParam(route?.params, "track");
     return { includeTests, track };
   }
 

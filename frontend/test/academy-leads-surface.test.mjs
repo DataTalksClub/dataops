@@ -104,3 +104,42 @@ test("createAcademyLeadsSurface renders summary and leads table", async () => {
   assert.match(documentList.textContent, /ada@example\.org/);
   assert.match(documentList.textContent, /agentic-engineering: 1/);
 });
+
+test("createAcademyLeadsSurface reads URLSearchParams filters (includeTests and track)", async () => {
+  const dom = createFakeDom();
+  const documentList = dom.createElement("div");
+  const requests = [];
+
+  const surface = createAcademyLeadsSurface({
+    documentList,
+    documentRef: dom,
+    getActiveWorkspaceRoute: () => ({
+      view: "academy-leads",
+      params: new URLSearchParams("includeTests=true&track=agentic-engineering"),
+    }),
+    navigateCanonicalWorkspace: () => {},
+    request: async (url) => {
+      requests.push(url);
+      return {
+        leads: [],
+        summary: {
+          total: 0,
+          testCount: 0,
+          byTrack: { "agentic-engineering": 0, "ai-engineering": 0 },
+          firstChoice: { "agentic only": 0, "AI only": 0, both: 0 },
+          byUtm: [],
+        },
+      };
+    },
+    setRouteTitle: () => {},
+    workApiUrl: (path, query = {}) => {
+      const qs = new URLSearchParams(query).toString();
+      return qs ? `${path}?${qs}` : path;
+    },
+  });
+
+  surface.renderAcademyLeads();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0], "/api/academy-leads?includeTests=true&track=agentic-engineering");
+});
