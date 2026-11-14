@@ -153,17 +153,20 @@ export function normalizeAcademyLead(item: RawItem): AcademyLead {
     ? item.sessions.filter((s): s is string => typeof s === 'string')
     : [];
 
+  const status = asString(item.status);
+  const confirmed = typeof item.confirmed === 'boolean' ? item.confirmed : status !== 'pending';
+
   return {
     created_at: asString(item.created_at),
     updated_at: asString(item.updated_at),
     email: asString(item.email),
     track: asString(item.track),
     source,
-    confirmed: item.confirmed === true,
+    confirmed,
     confirmed_at: asString(item.confirmed_at),
     name: asString(item.name),
     sessions,
-    status: asString(item.status),
+    status,
     berlin_germany: asString(item.berlin_germany),
     bildungsgutschein: asString(item.bildungsgutschein),
     track_interest: asString(item.track_interest),
