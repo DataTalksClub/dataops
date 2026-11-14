@@ -71,3 +71,40 @@ test('summarizeAcademyLeads handles empty list', () => {
   assert.equal(summary.total, 0);
   assert.deepEqual(summary.byUtm, []);
 });
+
+test('listAcademyLeads filters by source and normalizes layoff_proof + confirmed fields', async () => {
+  const items = [
+    {
+      created_at: '2026-11-14T08:00:00+00:00',
+      email: 'a@real.org',
+      track: 'agentic-engineering',
+      is_test: false,
+    },
+    {
+      created_at: '2026-11-14T09:00:00+00:00',
+      sk: 'SOURCE#layoff_proof',
+      source: 'layoff_proof',
+      email: 'b@real.org',
+      name: 'Ada',
+      sessions: ['session-1', 'session-2'],
+      status: 'job_hunting',
+      berlin_germany: 'yes',
+      bildungsgutschein: 'yes',
+      confirmed: true,
+      confirmed_at: '2026-11-14T09:05:00+00:00',
+      first_utm: { utm_source: 'linkedin', utm_content: 'post1' },
+      is_test: false,
+    },
+  ];
+
+  const filtered = await listAcademyLeads({ source: 'layoff_proof', scanItems: async () => items });
+  assert.equal(filtered.leads.length, 1);
+  assert.equal(filtered.leads[0].source, 'layoff_proof');
+  assert.equal(filtered.leads[0].confirmed, true);
+  assert.equal(filtered.leads[0].confirmed_at, '2026-11-14T09:05:00+00:00');
+  assert.equal(filtered.leads[0].name, 'Ada');
+  assert.deepEqual(filtered.leads[0].sessions, ['session-1', 'session-2']);
+  assert.equal(filtered.leads[0].status, 'job_hunting');
+  assert.equal(filtered.leads[0].berlin_germany, 'yes');
+  assert.equal(filtered.leads[0].bildungsgutschein, 'yes');
+});
