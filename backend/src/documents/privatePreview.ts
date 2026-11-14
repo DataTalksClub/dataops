@@ -1,7 +1,10 @@
 import type { LambdaResponse } from '../types';
 import { noStoreJson as json } from '../http';
 import { createHash } from 'node:crypto';
-import { PDFDocument, StandardFonts, rgb, type PDFFont } from 'pdf-lib';
+import { PDFDocument, rgb, type PDFFont } from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
+import { liberationSerifRegular } from './fonts/liberationSerifRegular';
+import { liberationSerifBold } from './fonts/liberationSerifBold';
 
 export interface PreviewDocument { id: string; title: string; content: string; version: number }
 export const privateDocumentHeaders = {
@@ -29,49 +32,84 @@ export function renderPrivateDocumentHtml(doc: PreviewDocument, collection: 'doc
 }
 export class DocumentPdfEncodingError extends Error {}
 
+const LIST_ITEM = /^([\t ]*)([-*] )/;
+/** Wrap one source line at `width`. Whitespace never starts a wrapped row: it stays at the end of the row it follows. */
+function wrapLine(line: string, font: PDFFont, size: number, width: number): string[] {
+  const lines: string[] = [];
+  let row = '';
+  for (const token of line.match(/\s+|\S+/g) || []) {
+    if (/^\s/.test(token)) { row += token; continue; }
+    if (row.trim() && font.widthOfTextAtSize(row + token, size) > width) { lines.push(row); row = ''; }
+    // Split very long words without clipping.
+    for (const char of token) {
+      if (row.trim() && font.widthOfTextAtSize(row + char, size) > width) { lines.push(row); row = ''; }
+      row += char;
+    }
+  }
+  lines.push(row);
+  return lines;
+}
+
 /** Same exact saved source as the HTML. No legal boilerplate, normalization or truncation. */
 export async function renderPrivateDocumentPdf(doc: PreviewDocument): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
-  const regular = pdf.embedStandardFont(StandardFonts.TimesRoman);
-  const bold = pdf.embedStandardFont(StandardFonts.TimesRomanBold);
-  const ui = pdf.embedStandardFont(StandardFonts.Helvetica);
+  pdf.registerFontkit(fontkit);
+  // Embedded (subset) TrueType fonts with Identity-H encoding and a ToUnicode map, so text is Unicode end to end.
+  const regular = await pdf.embedFont(Buffer.from(liberationSerifRegular, 'base64'), { subset: true });
+  const bold = await pdf.embedFont(Buffer.from(liberationSerifBold, 'base64'), { subset: true });
   // Fail explicitly rather than dropping/replacing unsupported source characters.
-  try { regular.encodeText(doc.content.replace(/[\r\n\t]/g, ' ')); }
-  catch { throw new DocumentPdfEncodingError('PDF cannot encode this document’s characters. Use Print / Save as PDF or download the unchanged source text.'); }
-  const width = 470, left = 60, bottom = 65, top = 774;
+  for (const font of [regular, bold]) {
+    const supported = new Set(font.getCharacterSet());
+    for (const char of doc.content.replace(/[\r\n\t]/g, '')) {
+      if (!supported.has(char.codePointAt(0)!)) throw new DocumentPdfEncodingError('PDF cannot encode this document’s characters. Use Print / Save as PDF or download the unchanged source text.');
+    }
+  }
+  const width = 470, left = 60, bottom = 65, top = 774, hang = 18;
   let page = pdf.addPage([595.28, 841.89]), y = top;
   const newPage = (): void => { page = pdf.addPage([595.28, 841.89]); y = top; };
-  function rows(value: string, font: PDFFont, size: number): string[] {
-    const lines: string[] = [];
-    for (const sourceLine of value.split(/\r?\n/)) {
-      let row = '';
-      // Retain whitespace as well as words; split very long words without clipping.
-      for (const word of sourceLine.replace(/\t/g, '    ').match(/\s+|\S+/g) || []) {
-        if (row && font.widthOfTextAtSize(row + word, size) > width) { lines.push(row); row = ''; }
-        for (const char of word) {
-          if (font.widthOfTextAtSize(row + char, size) > width) { lines.push(row); row = ''; }
-          row += char;
-        }
+  type Row = { text: string; x: number; marker?: string; markerX?: number };
+  const blocks = documentBlocks(doc.content);
+  const titleIndex = blocks.findIndex(block => !/^\s*$/.test(block.text));
+  blocks.forEach((block, blockIndex) => {
+    if (/^\s*$/.test(block.text)) { y -= 12; return; }
+    const title = blockIndex === titleIndex && block.heading && !/^\d+\. /.test(block.text);
+    const size = title ? 20 : block.heading ? 13 : 11.5, font = title || block.heading ? bold : regular, leading = title ? 28 : block.heading ? 19 : 17;
+    const rows: Row[] = [];
+    let indent = 0; // hanging indent of the current list item, for its continuation lines
+    for (const sourceLine of block.text.replace(/\t/g, '    ').split(/\r?\n/)) {
+      const item = LIST_ITEM.exec(sourceLine);
+      if (item) {
+        const level = Math.min(Math.floor(item[1].length / 2), 4);
+        indent = hang * (level + 1);
+        const [first, ...rest] = wrapLine(sourceLine.slice(item[0].length), font, size, width - indent);
+        rows.push({ text: first, x: left + indent, marker: item[0], markerX: left + indent - hang + 4 }, ...rest.map(text => ({ text, x: left + indent })));
+      } else {
+        // A non-blank line directly after a list item continues it (Markdown lazy continuation).
+        if (!sourceLine.trim()) indent = 0;
+        const lineIndent = indent;
+        // Inside a list item the source indentation is replaced by the hanging indent.
+        rows.push(...wrapLine(lineIndent ? sourceLine.trimStart() : sourceLine, font, size, width - lineIndent).map(text => ({ text, x: left + lineIndent })));
       }
-      lines.push(row);
     }
-    return lines;
-  }
-  for (const block of documentBlocks(doc.content)) {
-    if (/^\s*$/.test(block.text)) { y -= 12; continue; }
-    const size = block.heading ? 13 : 11.5, font = block.heading ? bold : regular, leading = block.heading ? 19 : 17;
-    const lines = rows(block.text, font, size);
     // Keep a heading with the next paragraph, and at least two lines at a page boundary.
-    if (y - leading * Math.min(lines.length + (block.heading ? 2 : 0), 4) < bottom) newPage();
-    for (let index = 0; index < lines.length; index++) {
-      if (y < bottom || (lines.length - index === 2 && y - leading < bottom)) newPage();
-      page.drawText(lines[index], { x: left, y, font, size }); y -= leading;
+    if (y - leading * Math.min(rows.length + (block.heading ? 2 : 0), 4) < bottom) newPage();
+    for (let index = 0; index < rows.length; index++) {
+      if (y < bottom || (rows.length - index === 2 && y - leading < bottom)) newPage();
+      const row = rows[index];
+      if (row.marker !== undefined) {
+        // Visible bullet is a vector mark; the source marker ("- ") stays in the text layer, transparent,
+        // so copied/extracted text remains identical to the source.
+        page.drawCircle({ x: row.markerX! + 2.5, y: y + size * 0.3, size: 1.9, color: rgb(0, 0, 0) });
+        page.drawText(row.marker.trimStart(), { x: row.markerX!, y, font, size, opacity: 0 });
+      }
+      page.drawText(row.text, { x: row.x, y, font, size }); y -= leading;
     }
-  }
+    if (title) y -= 8;
+  });
   const pages = pdf.getPages();
   pages.forEach((value, index) => {
-    value.drawText('PRIVATE / DRAFT FOR REVIEW', { x: left, y: 810, font: ui, size: 8, color: rgb(.35, .35, .35) });
-    value.drawText(`Version ${doc.version} | Page ${index + 1} of ${pages.length}`, { x: left, y: 35, font: ui, size: 8 });
+    value.drawText('PRIVATE / DRAFT FOR REVIEW', { x: left, y: 810, font: regular, size: 8, color: rgb(.35, .35, .35) });
+    value.drawText(`Version ${doc.version} | Page ${index + 1} of ${pages.length}`, { x: left, y: 35, font: regular, size: 8 });
   });
   pdf.setTitle('Private document - draft for review');
   pdf.setSubject(`Source SHA-256: ${sourceHash(doc.content)}`);
