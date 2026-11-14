@@ -5,11 +5,12 @@ export const summary = "Academy shortlist signups and UTM attribution across tra
 export const help = `dataops academy-leads - list academy.datatalks.club shortlist signups
 
 Usage
-  dataops academy-leads [--include-tests] [--track <track>] [--json]
+  dataops academy-leads [--include-tests] [--track <track>] [--source <source>] [--json]
 
 Options
   --include-tests     Include is_test rows (hidden by default)
   --track TRACK       Filter to one track (agentic-engineering or ai-engineering)
+  --source SOURCE     Filter to one lead source (e.g. shortlist or layoff_proof)
   --json              Output raw JSON payload
 `;
 
@@ -18,6 +19,7 @@ export async function run(args, io) {
   const query = {};
   if (args["include-tests"] || args.includeTests) query.includeTests = "true";
   if (args.track) query.track = String(args.track);
+  if (args.source) query.source = String(args.source);
   const qs = new URLSearchParams(query).toString();
   const data = await api.get(`/api/academy-leads${qs ? `?${qs}` : ""}`);
 
@@ -45,8 +47,19 @@ export async function run(args, io) {
       const ans = Object.entries(row.answers || {})
         .map(([k, v]) => `${k}=${v}`)
         .join(",");
+      const conf = row.confirmed ? `confirmed=${row.confirmed_at || "yes"}` : "unconfirmed";
+      const label = row.source && row.source !== "shortlist" ? `source=${row.source}` : row.track;
+      const extra = [
+        row.name ? `name=${row.name}` : "",
+        Array.isArray(row.sessions) && row.sessions.length ? `sessions=${row.sessions.join(",")}` : "",
+        row.status ? `status=${row.status}` : "",
+        row.berlin_germany ? `berlin=${row.berlin_germany}` : "",
+        row.bildungsgutschein ? `bg=${row.bildungsgutschein}` : "",
+      ]
+        .filter(Boolean)
+        .join("  ");
       io.print(
-        `  ${row.created_at}  ${row.email}${row.is_test ? " [test]" : ""}  ${row.track}  utm=${utm}  page=${row.page || "-"}${ans ? `  answers=${ans}` : ""}`,
+        `  ${row.created_at}  ${row.email}${row.is_test ? " [test]" : ""}  ${label}  ${conf}  utm=${utm}  page=${row.page || "-"}${ans ? `  answers=${ans}` : ""}${extra ? `  ${extra}` : ""}`,
       );
     }
   }
