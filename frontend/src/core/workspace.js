@@ -95,6 +95,7 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/newsletter/:issueId": { view: "newsletter", tasksSection: "queue", params: [] },
   "/calendar": { view: "calendar", tasksSection: "queue", params: [] },
   "/inbox": { view: "inbox", tasksSection: "queue", params: ["status", "item"] },
+  "/academy-leads": { view: "academy-leads", tasksSection: "queue", params: ["includeTests", "track"] },
   // ?view=list swaps the seasons overview for the plain episode list.
   "/podcast": { view: "podcast", tasksSection: "queue", params: ["view"] },
   "/podcast/schedule": { view: "podcast", tasksSection: "queue", params: [] },

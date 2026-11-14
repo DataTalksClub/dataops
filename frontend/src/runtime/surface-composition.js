@@ -117,6 +117,7 @@ export function createSurfaceComposition(context) {
     getCanLeaveDocumentEditor,
     getCanLeaveFinanceSurface,
     getKnowledgeSelectedFolder,
+    getRenderAcademyLeadsSurface,
     getRenderAdminSurfaceView,
     getRenderBookkeepingSurface,
     getRenderFinanceOverviewSurface,
@@ -166,6 +167,7 @@ export function createSurfaceComposition(context) {
     if (view === "newsletter") return getRenderNewsletterSurface()();
     if (view === "calendar") return getRenderCalendarSurface()();
     if (view === "inbox") return getRenderInboxSurface()();
+    if (view === "academy-leads") return getRenderAcademyLeadsSurface()();
     if (view === "podcast") return getRenderPodcastSurface()();
     return getRenderTasksSurface()(documents, "queue");
   }
