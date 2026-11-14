@@ -86,32 +86,6 @@ export function inviteStartIso(slotStartIso: string): string {
   return new Date(Date.parse(slotStartIso) - HOLD_INVITE_LEAD_MINUTES * 60000).toISOString();
 }
 
-/** The confirmed mirror IS the guest invite: Zoom + attendees, start −5 min. */
-export function confirmedHoldInvite(
-  hold: Pick<CalendarHold, 'id' | 'title' | 'guestRef' | 'startIso' | 'endIso' | 'documentUrl'>,
-  eventType?: string,
-): {
-  summary: string;
-  eventKey: string;
-  description: string;
-  location: string;
-  attendees: string[];
-  startIso: string;
-  endIso: string;
-  timeZone: string;
-} {
-  return {
-    eventKey: hold.id,
-    summary: confirmedTitle(hold.title),
-    description: confirmedHoldDescription(hold.documentUrl, hold.title, eventType),
-    location: HOLD_ZOOM_LOCATION,
-    attendees: holdGuestAttendees(hold.guestRef),
-    startIso: inviteStartIso(hold.startIso),
-    endIso: hold.endIso,
-    timeZone: HOLD_TIME_ZONE,
-  };
-}
-
 export const HOLD_WINDOW_START: Record<CalendarHoldWindow, string> = {
   midday: '12:30', // podcast/webinar 60 → 12:30–13:30
   evening: '17:00', // podcast/webinar 60 → 17:00–18:00

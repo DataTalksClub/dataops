@@ -14,10 +14,12 @@ import { getCalendarHold, listCalendarHolds, putCalendarHold } from '../db/calen
 import { calendarsMissingInvite, taskRequiresCalendarInvite, makeTaskHistoryEvent } from '../routes/taskValidation';
 import { dateFromTemplateOffset } from '../templates/cardTemplateProjection';
 import { todayIn } from '../relativeDates';
-import { confirmedHoldInvite, confirmedTitle, holdGuestAttendees, isPodcastInviteTitle, parseHoldDocumentUrl, podcastInviteTitle, HOLD_ATTENDEE_DENY_LIST, type CalendarHold } from './holds';
+import { buildGuestInvite, GuestInviteValidationError, type GuestInvite } from './guestInvite';
+import { reportGuestInviteFailure, writeGuestInvite } from './guestInviteSync';
+import { confirmedTitle, isPodcastInviteTitle, parseHoldDocumentUrl, podcastInviteTitle, HOLD_ATTENDEE_DENY_LIST, type CalendarHold } from './holds';
 import { listPodcastEpisodes, type PodcastEpisode } from '../db/podcastEpisodes';
 import { recordTemplateTypes } from '../cards/cardTitlePattern';
-import { createHoldGoogleEvents, deleteHoldGoogleEvents, fetchGoogleEvent, findGoneGoogleEvents, mergeHoldGoogleResults, syncLumaCalendarEvents, syncSilentGoogleCopies, updateHoldGoogleEvents, type HoldGoogleDeps, type HoldGoogleResult } from './holdGoogleSync';
+import { deleteHoldGoogleEvents, fetchGoogleEvent, findGoneGoogleEvents, mergeHoldGoogleResults, syncLumaCalendarEvents, syncSilentGoogleCopies, type HoldGoogleDeps, type HoldGoogleResult } from './holdGoogleSync';
 import { lumaUrlForEventCard } from './lumaEvents';
 import { PUBLIC_DTC_EVENTS_CALENDAR, resolveHoldGoogleCalendars } from './dapierBroker';
 
@@ -290,7 +292,7 @@ export async function syncCardInvite(
     ...interval, eventKey, googleEventIds: eventIds, sync: 'syncing', syncStartedAt: new Date().toISOString(),
   };
   let documentUrl: string | undefined;
-  let invite: ReturnType<typeof confirmedHoldInvite> | undefined;
+  let invite: GuestInvite | undefined;
   if (!silentLumaEvent) {
     try {
       const cardDocument = cardGuestDocument(card);
@@ -298,9 +300,10 @@ export async function syncCardInvite(
         || parseHoldDocumentUrl(linkedHold?.documentUrl) || cardDocument;
     } catch { throw new CardInviteInputError('The guest document must be an HTTPS URL.'); }
     invite = {
-      ...confirmedHoldInvite({ id: eventKey, title: inviteTitle, ...interval, documentUrl }, template?.type),
-      timeZone: interval.timeZone,
-      attendees: [...new Set(guests.flatMap(guest => holdGuestAttendees(guest)))],
+      ...buildGuestInvite({
+        eventKey, eventType: template?.type, title: inviteTitle, guestTitle: podcastTitle, documentUrl, guests,
+        startIso: interval.startIso, endIso: interval.endIso, timeZone: interval.timeZone,
+      }, deps.calendarIds),
     };
   }
   const reserved = await updateCard(client, card.id, {
@@ -323,14 +326,18 @@ export async function syncCardInvite(
     timeZone: interval.timeZone,
     lumaUrl: lumaUrl!,
   };
-  const sync: HoldGoogleResult = silentLumaEvent
-    ? mergeHoldGoogleResults(
-        await syncLumaCalendarEvents(lumaEvent, deps, publicCopyIds),
-        await syncSilentGoogleCopies(lumaEvent, deps, personalCopyIds),
-      )
-    : Object.keys(eventIds).length
-      ? await updateHoldGoogleEvents(eventIds, invite!, deps)
-      : await createHoldGoogleEvents(invite!, deps);
+  let sync: HoldGoogleResult;
+  try {
+    sync = silentLumaEvent
+      ? mergeHoldGoogleResults(
+          await syncLumaCalendarEvents(lumaEvent, deps, publicCopyIds),
+          await syncSilentGoogleCopies(lumaEvent, deps, personalCopyIds),
+        )
+      : await writeGuestInvite(invite!, eventIds, deps);
+  } catch (error) {
+    if (error instanceof GuestInviteValidationError) await reportGuestInviteFailure(client, error, { cardId: card.id, actorId });
+    throw error;
+  }
   const updated = await updateCardAdditive(client, reserved, current => {
     const invites = [...(current.calendarInvites || [])];
     if (sync.state === 'synced') {

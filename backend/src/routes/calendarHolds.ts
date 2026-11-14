@@ -4,7 +4,6 @@ import type { LambdaEvent, LambdaResponse } from '../types';
 import {
   buildHold,
   confirmHoldRecord,
-  confirmedHoldInvite,
   confirmedTitle,
   holdGuestAttendees,
   parseHoldDocumentUrl,
@@ -20,6 +19,8 @@ import {
   HOLD_ORGANIZER,
   updateHoldGoogleEvents,
 } from '../calendar/holdGoogleSync';
+import { buildGuestInvite, GuestInviteValidationError, validateGuestInviteReadback } from '../calendar/guestInvite';
+import { reportGuestInviteFailure, writeGuestInvite } from '../calendar/guestInviteSync';
 import { PUBLIC_DTC_EVENTS_CALENDAR, resolveHoldGoogleCalendars } from '../calendar/dapierBroker';
 import { resolveInteractiveActor } from '../identity/actor';
 import {
@@ -224,7 +225,10 @@ async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocu
   // when mirrors exist, otherwise CREATE. Either way the mirror becomes the
   // guest invite immediately: confirmed title, Zoom location + description,
   // required attendees (never Meet, never deny-listed), window start −5 min.
-  const invite = confirmedHoldInvite(next);
+  const invite = buildGuestInvite({
+    eventKey: next.id, title: next.title, documentUrl: next.documentUrl, guests: next.guestRef ? [next.guestRef] : [],
+    startIso: next.startIso, endIso: next.endIso,
+  }, deps.calendarIds);
   if (card) {
     try {
       const result = await syncCardInvite(client, card, {
@@ -246,9 +250,15 @@ async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocu
   }
   const inviteEventIds = Object.fromEntries(Object.entries(existing.googleEventIds || {})
     .filter(([calendar]) => calendar !== PUBLIC_DTC_EVENTS_CALENDAR));
-  const sync = Object.keys(inviteEventIds).length
-    ? await updateHoldGoogleEvents(inviteEventIds, invite, deps)
-    : await createHoldGoogleEvents(invite, deps);
+  let sync;
+  try { sync = await writeGuestInvite(invite, inviteEventIds, deps); }
+  catch (error) {
+    if (error instanceof GuestInviteValidationError) {
+      await reportGuestInviteFailure(client, error, { actorId: actor(event) });
+      return json(502, { error: error.message, code: 'guest_invite_validation_failed', problems: error.problems });
+    }
+    throw error;
+  }
   const stored = {
     ...next,
     version: existing.version + 1,
@@ -468,6 +478,27 @@ async function googleEventRoute(eventId: string, event: LambdaEvent, client: Dyn
   return json(200, { eventId, events });
 }
 
+/**
+ * Dry-run read-back of a confirmed hold's live Google invite against the
+ * canonical format. Read-only: no Google writes, no guest notifications.
+ */
+async function verifyInviteRoute(id: string, event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+  const actor = await resolveInteractiveActor(client, event, 'work-read');
+  if (!actor.ok) return actor.response;
+  const hold = await getCalendarHold(client, id);
+  if (!hold) return json(404, { error: 'Hold not found' });
+  if (hold.status !== 'confirmed') return json(409, { error: `Only a confirmed hold carries a guest invite (now ${hold.status}).`, code: 'hold_state' });
+  const deps = await calendarInviteDeps({}, client);
+  const card = hold.cardId ? await getCardConsistent(client, hold.cardId) : null;
+  const guestTitle = card ? await resolvePodcastCardInviteTitle(client, card) : undefined;
+  const expected = buildGuestInvite({
+    eventKey: hold.id, title: hold.title, guestTitle, documentUrl: hold.documentUrl, guests: hold.guestRef ? [hold.guestRef] : [],
+    startIso: hold.startIso, endIso: hold.endIso,
+  }, deps.calendarIds);
+  const problems = await validateGuestInviteReadback(expected, hold.googleEventIds || {}, deps);
+  return json(200, { holdId: hold.id, ok: problems.length === 0, problems, expected, googleWrites: 0, notificationsSent: 0 });
+}
+
 export async function handleCalendarHoldRoutes(
   path: string,
   method: string,
@@ -516,6 +547,11 @@ export async function handleCalendarHoldRoutes(
   if (move) {
     if (method !== 'POST') return json(405, { error: 'Method not allowed' });
     return moveRoute(decodeURIComponent(move[1]), event, client);
+  }
+  const verify = path.match(/^\/api\/calendar-holds\/([^/]+)\/verify-invite$/);
+  if (verify) {
+    if (method !== 'GET') return json(405, { error: 'Method not allowed' });
+    return verifyInviteRoute(decodeURIComponent(verify[1]), event, client);
   }
   const googleEvent = path.match(/^\/api\/calendar-holds\/google-events\/([^/]+)$/);
   if (googleEvent) {

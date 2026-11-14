@@ -28,7 +28,12 @@ import {
   cardGuests,
   closeCardInviteTasks,
   parseCardGuests,
+  resolvePodcastCardInviteTitle,
 } from '../calendar/cardInvite';
+import { GuestInviteValidationError, isPodcastTemplateType, type GuestInvite } from '../calendar/guestInvite';
+import { reportGuestInviteFailure, writeGuestInvite } from '../calendar/guestInviteSync';
+import { podcastInviteTitle } from '../calendar/holds';
+import { resolveHoldGoogleCalendars } from '../calendar/dapierBroker';
 import {
   createHoldGoogleEvents,
   deleteHoldGoogleEvents,
@@ -431,15 +436,14 @@ export async function reconcileEventOperation(
       sendUpdates: op.desired.sendUpdates,
     });
   } else {
-    const googlePayload: HoldGoogleEvent = {
-      eventKey: googleEventKey,
-      summary: op.desired.summary,
-      description: op.desired.description,
-      location: op.desired.location,
-      attendees: op.desired.attendees,
-      startIso: op.desired.startIso,
-      endIso: op.desired.endIso,
-      timeZone: op.desired.timeZone,
+    // Guest invites are written, then read back from Google and validated.
+    const invite: GuestInvite = {
+      eventKey: googleEventKey, summary: op.desired.summary, description: op.desired.description,
+      location: op.desired.location, attendees: op.desired.attendees,
+      calendars: resolveHoldGoogleCalendars(deps.calendarIds),
+      startIso: op.desired.startIso, endIso: op.desired.endIso, timeZone: op.desired.timeZone,
+    };
+    const extras = {
       extendedProperties: {
         private: {
           dataopsHoldId: current.id,
@@ -452,15 +456,23 @@ export async function reconcileEventOperation(
     };
     const existingIds =
       (logRow.partialGoogleEventIds as Record<string, string>) || current.googleEventIds || {};
-    sync = Object.keys(existingIds).length
-      ? await updateHoldGoogleEvents(existingIds, googlePayload, {
-          ...deps,
-          sendUpdates: op.desired.sendUpdates,
-        })
-      : await createHoldGoogleEvents(googlePayload, {
-          ...deps,
-          sendUpdates: op.desired.sendUpdates,
-        });
+    try {
+      sync = await writeGuestInvite(invite, existingIds, { ...deps, sendUpdates: op.desired.sendUpdates },
+        extras,
+        { validate: invite.attendees.length > 0 });
+    } catch (error) {
+      if (!(error instanceof GuestInviteValidationError)) throw error;
+      // Google was written but the event is not canonical: keep the operation
+      // unfinished (retry/resend re-validates), tell Orin, fail the Task.
+      await client.send(new UpdateCommand({
+        TableName: TABLE_CALENDAR, Key: logKey(eventId, operationKey),
+        UpdateExpression: 'SET operation.#state = :unknown, lastSyncReason = :reason REMOVE leaseToken, leaseUntil',
+        ExpressionAttributeNames: { '#state': 'state' },
+        ExpressionAttributeValues: { ':unknown': 'outcome-unknown', ':reason': error.message.slice(0, 1000) },
+      }));
+      await reportGuestInviteFailure(client, error, { cardId: current.cardId, actorId: actor });
+      throw error;
+    }
   }
 
   if (sync.state === 'deferred') {
@@ -705,6 +717,16 @@ async function runTransition(
     }
   }
 
+  // Podcast guest invites come from the shared guest-invite builder (see lifecycle.ts).
+  const template = transition === 'release' ? null : await getTemplate(client, card.templateId);
+  const guestInvite = template && typeof template.type === 'string' && isPodcastTemplateType(template.type)
+    ? {
+      eventType: template.type,
+      guestTitle: await resolvePodcastCardInviteTitle(client, card, template, episode)
+        || podcastInviteTitle(input.guestNames?.trim() || current?.renderValues?.guestNames || '') || undefined,
+    }
+    : undefined;
+
   let command: EventCommand;
   if (transition === 'propose' || transition === 'reschedule') {
     const { templateId, templateVersion, policy } = input.manualPolicy
@@ -782,6 +804,7 @@ async function runTransition(
       expectedVersion: current?.version ?? 0,
       actor,
       now,
+      ...(guestInvite ? { guestInvite } : {}),
       date: proposalDate,
       ...(time !== undefined ? { time } : {}),
       ...(window !== undefined ? { window } : {}),
@@ -840,6 +863,7 @@ async function runTransition(
       expectedVersion: current.version,
       actor,
       now,
+      ...(guestInvite ? { guestInvite } : {}),
       metadata: {
         title,
         topic,
@@ -867,6 +891,7 @@ async function runTransition(
       expectedVersion: current.version,
       actor,
       now,
+      ...(guestInvite ? { guestInvite } : {}),
       ...(input.approval ? { approval: input.approval } : {}),
     };
   }

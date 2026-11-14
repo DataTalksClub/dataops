@@ -1,4 +1,5 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { GuestInviteValidationError } from '../calendar/guestInvite';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { resolveInteractiveActor } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
@@ -186,6 +187,9 @@ export async function handleEventRoutes(
     }
     if (err instanceof EventInputError) {
       return json(422, { error: err.message, code: 'event_input_error' });
+    }
+    if (err instanceof GuestInviteValidationError) {
+      return json(502, { error: err.message, code: 'guest_invite_validation_failed', problems: err.problems });
     }
     throw err;
   }

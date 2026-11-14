@@ -1,4 +1,5 @@
 import { getSponsorDocWithAuthMaterial, decryptSponsorDocAccessCode } from '../db/sponsorDocs';
+import { GuestInviteValidationError } from '../calendar/guestInvite';
 import { getEventRecord } from '../events/store';
 import { loadGuestFirstContact } from '../events/guestFirstContact';
 import { provenPreSendFailure } from '../events/guestFirstContactDelivery';
@@ -1089,6 +1090,7 @@ async function handleCardTime(method: string, id: string, rawBody: string | null
     if (error instanceof CardVersionConflictError) return json(409, { error: 'Card invitation changed or is syncing; reload and retry' });
     if (error instanceof CardInviteConflictError) return json(409, { error: error.message });
     if (error instanceof CardInviteInputError) return json(422, { error: error.message });
+    if (error instanceof GuestInviteValidationError) return json(502, { error: error.message, code: 'guest_invite_validation_failed', problems: error.problems });
     throw error;
   }
 }
