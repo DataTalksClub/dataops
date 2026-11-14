@@ -1,6 +1,9 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { handler } from '../src/handler';
+import { buildHold, confirmHoldRecord } from '../src/calendar/holds';
+import { putCalendarHold } from '../src/db/calendarHolds';
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTemplate } from '../src/db/templates';
@@ -202,5 +205,26 @@ describe('shared podcast guest-invite builder (Hub intake 0d56721e)', () => {
       }, [GUEST], { ...deps(), fetchImpl: unreadable }, 'test-operator'),
       (error: unknown) => error instanceof GuestInviteValidationError && error.problems.some(p => p.includes(PERSONAL) && /could not read the event back/.test(p)),
     );
+  });
+  it('verify-invite is a read-only dry-run read-back of a confirmed hold', async () => {
+    google = holdGoogleProvider();
+    setCalendarHoldGoogleDepsForTests({ ...deps() });
+    const card = await podcastCard();
+    const sync = await syncCardInvite(client, card, {
+      startIso: '2026-12-15T17:00:00.000Z', endIso: '2026-12-15T18:00:00.000Z', timeZone: 'Europe/Berlin', durationMinutes: 60,
+    }, [GUEST], deps(), 'test-operator');
+    const hold = confirmHoldRecord(buildHold({
+      date: '2026-12-15', title: `${GUEST_NAME} at DataTalks.Club Podcast`, topic: 'Topic', guestRef: GUEST, documentUrl: DOC, cardId: card.id,
+    }, 'test-operator'));
+    await putCalendarHold(client, { ...hold, startIso: '2026-12-15T17:00:00.000Z', endIso: '2026-12-15T18:00:00.000Z', googleEventIds: sync.sync.eventIds, googleSync: { state: 'synced' } });
+    const verify = () => handler({ httpMethod: 'GET', path: `/api/calendar-holds/${hold.id}/verify-invite`, body: null, headers: { 'x-user-id': 'test-operator' }, queryStringParameters: {} });
+    const writesBefore = google.calls.filter(c => c.method !== 'GET' && c.url.pathname.includes('/events')).length;
+    const ok = JSON.parse((await verify()).body);
+    assert.equal(ok.ok, true, JSON.stringify(ok.problems));
+    google.events.get(HOLD_ORGANIZER)!.get(sync.sync.eventIds[HOLD_ORGANIZER])!.summary = 'Podcast conversation with Julien Khaleghy';
+    const bad = JSON.parse((await verify()).body);
+    assert.equal(bad.ok, false);
+    assert.ok(bad.problems.some((p: string) => /title is/.test(p)));
+    assert.equal(google.calls.filter(c => c.method !== 'GET' && c.url.pathname.includes('/events')).length, writesBefore, 'no Google writes');
   });
 });
