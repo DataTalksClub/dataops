@@ -146,6 +146,9 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      - name: Install Node workspace dependencies
+        run: npm ci
+
       - name: Set up SAM
         uses: aws-actions/setup-sam@v3
         with:
@@ -214,6 +217,30 @@ jobs:
       - name: Test packaged frontend isolation
         run: make test-sam-frontend-isolation
 
+      - name: Build and upload banner template bundle
+        run: |
+          set -euo pipefail
+          stack_params="$(aws cloudformation describe-stacks \
+            --stack-name dataops-v1 \
+            --region "$AWS_REGION" \
+            --query 'Stacks[0].Parameters' \
+            --output json)"
+          knowledge_bucket="$(jq -er '.[] | select(.ParameterKey == "KnowledgeBucketName") | .ParameterValue' <<<"$stack_params")"
+          current_key="$(jq -r '.[] | select(.ParameterKey == "BannerTemplateBundleKey") | .ParameterValue // empty' <<<"$stack_params")"
+          default_key="$(awk '/BannerTemplateBundleKey:/{found=1} found && /Default:/{print $2; exit}' infra/template.full.yaml)"
+          : "${current_key:=$default_key}"
+          aws s3 cp "s3://$knowledge_bucket/$current_key" "$RUNNER_TEMP/current-bundle.json"
+          if ! node -e "const b = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')); process.exit(b.assets?.assetLogo ? 0 : 1)" "$RUNNER_TEMP/current-bundle.json"; then
+            aws s3 cp "s3://$knowledge_bucket/$default_key" "$RUNNER_TEMP/current-bundle.json"
+          fi
+          bundle_key="$(node --import tsx backend/scripts/build-banner-bundle.ts \
+            --current "$RUNNER_TEMP/current-bundle.json" \
+            --out-dir "$RUNNER_TEMP/banner-bundle")"
+          if ! aws s3 ls "s3://$knowledge_bucket/$bundle_key" >/dev/null 2>&1; then
+            aws s3 cp "$RUNNER_TEMP/banner-bundle/$bundle_key" "s3://$knowledge_bucket/$bundle_key" --content-type application/json
+          fi
+          echo "BANNER_TEMPLATE_BUNDLE_KEY=$bundle_key" >> "$GITHUB_ENV"
+
       - name: Deploy DataOps v1 stack
         run: |
           set -euo pipefail
@@ -249,6 +276,7 @@ jobs:
               "ParameterKey=SponsorCommunicationSendEnabled,ParameterValue=$SPONSOR_COMMUNICATION_SEND_ENABLED" \
               "ParameterKey=SponsorCommunicationTemplateSecretArn,ParameterValue=$SPONSOR_COMMUNICATION_TEMPLATE_SECRET_ARN" \
               "ParameterKey=SponsorCommunicationHmacSecretArn,ParameterValue=$SPONSOR_COMMUNICATION_HMAC_SECRET_ARN" \
+              "ParameterKey=BannerTemplateBundleKey,ParameterValue=$BANNER_TEMPLATE_BUNDLE_KEY" \
 
       - name: Project authored workflow templates
         timeout-minutes: 10
