@@ -70,8 +70,7 @@ the `{{sponsorLogo}}` image field.
 Fields are `{{title}}`, `{{titleFontSize}}`, `{{eventDate}}`, `{{eventTime}}` and `{{eventWhen}}` (from the Card's scheduled event time, else its date; empty when neither exists), `{{speaker1Name}}`,
 `{{speaker1Portrait}}` and their speaker-2/speaker-3 equivalents. Shared asset field names
 start with `asset`. An explicitly requested alternate label requires a template with the `{{eventLabel}}` field; an older bundle rejects it instead of silently using another badge. Text is escaped; the renderer blocks scripts and external
-resources. Publish bundles under a new content-addressed private key and update
-the application parameter for a template release.
+resources. The deploy pipeline (`deploy-dataops-v1.yml`) builds the content-addressed bundle, uploads it to `banner-templates/*` in the knowledge bucket if missing, and passes `BannerTemplateBundleKey` on stack deploy.
 
 Safe failure codes distinguish queue delivery, template configuration, portrait
 changes/checksums, renderer cold activation/access, invalid completion/output,
@@ -81,4 +80,4 @@ request after activation completes.
 
 ## One-speaker podcast layout
 
-The one-speaker podcast covers are generated from `backend/src/banners/podcastLayout.ts` (flow layout: the title sizes to its text and the portrait takes the remaining height, so a short title cannot leave a gap or push the name pill off the canvas). `backend/scripts/build-banner-bundle.ts` rewrites those two templates and adds the `assetLogo` DataTalks.Club logo into a new content-addressed bundle; upload it and update `BannerTemplateBundleKey`. `backend/e2e/banner-podcast-layout.spec.ts` renders both sizes in Chromium and asserts geometry.
+The one-speaker podcast covers are generated from `backend/src/banners/podcastLayout.ts` (flow layout: the title sizes to its text and the portrait takes the remaining height, so a short title cannot leave a gap or push the name pill off the canvas). During deployment, `deploy-dataops-v1.yml` runs `backend/scripts/build-banner-bundle.ts` to rewrite those two templates with `assetLogo` into a content-addressed bundle, uploads it to the knowledge bucket if missing, and passes `BannerTemplateBundleKey` to CloudFormation. `backend/e2e/banner-podcast-layout.spec.ts` renders both sizes in Chromium and asserts geometry.
