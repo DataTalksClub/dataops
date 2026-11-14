@@ -12,7 +12,7 @@ import type { BusinessAccountStatementRequirement } from './businessAccounts';
  */
 
 export type LedgerRow = Record<string, unknown> & { id: string };
-export type StatementLine = { id?: string; bankKey?: string; accountId: string; date: string; amount: string; currency: string; counterparty?: string; reference?: string };
+export type StatementLine = { id?: string; bankKey?: string; accountId: string; date: string; amount: string; currency: string; counterparty?: string; reference?: string; kind?: string };
 export type PendingInvoice = { id: string; date: string; amount?: string; currency?: string; counterparty?: string };
 export type StatementCoverage = { accountId: string; month: string };
 
@@ -447,10 +447,28 @@ export function toEntry(row: LedgerRow, rates: RateLookup): Entry | null {
   };
 }
 
-function toMandatoryStatementEntry(line: StatementLine, index: number, rates: RateLookup): Entry | null {
-  const mandatory = classifyMandatoryPayment(line);
+function toClassifiedStatementEntry(line: StatementLine, index: number, rates: RateLookup): Entry | null {
   const amount = positive(line.amount);
-  if (!mandatory || amount === null || amount === 0) return null;
+  if (amount === null || amount === 0) return null;
+  if (line.kind === 'owner_withdrawal') {
+    const row: LedgerRow = {
+      id: line.id || `statement:${line.accountId}:${line.date}:${index}`,
+      transactionDate: line.date,
+      paidDate: line.date,
+      entryType: Number(line.amount) < 0 ? 'expense' : 'income',
+      amount: String(amount),
+      currency: line.currency || 'EUR',
+      counterparty: line.counterparty || '',
+      description: line.reference || '',
+      category: 'Owner pay',
+      ownerPayType: 'draw',
+      sourceType: 'statement',
+    };
+    const entry = toEntry(row, rates);
+    return entry && line.bankKey ? { ...entry, bankKey: line.bankKey } : entry;
+  }
+  const mandatory = classifyMandatoryPayment(line);
+  if (!mandatory) return null;
   const row: LedgerRow = {
     id: line.id || `statement:${line.accountId}:${line.date}:${index}`,
     transactionDate: line.date,
@@ -520,7 +538,7 @@ export function summarize(input: SummaryInput): FinanceSummary {
   }
   const unmatched = statementMatches.unmatched.filter((line) => inPeriod(line.date));
   for (const [index, line] of unmatched.entries()) {
-    const entry = toMandatoryStatementEntry(line, index, input.rates);
+    const entry = toClassifiedStatementEntry(line, index, input.rates);
     if (entry) entries.push(entry);
   }
   entries.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
@@ -551,7 +569,7 @@ export function summarize(input: SummaryInput): FinanceSummary {
   const pending = (input.pendingInvoices || []).filter((invoice) => inPeriod(invoice.date));
   if (pending.length) gaps.push({ kind: 'pending-invoices', message: 'Incoming invoice drafts not yet verified; not counted until confirmed and published', count: pending.length, ids: pending.map((p) => p.id) });
 
-  const unclassified = unmatched.filter((line) => !classifyMandatoryPayment(line));
+  const unclassified = unmatched.filter((line) => !classifyMandatoryPayment(line) && line.kind !== 'owner_withdrawal');
   if (unclassified.length) gaps.push({ kind: 'bank-line-without-ledger-row', message: 'Unclassified statement lines with no ledger row; not counted until a row is recorded', count: unclassified.length });
 
   const today = input.today.slice(0, 7);

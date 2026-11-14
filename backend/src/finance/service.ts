@@ -2,7 +2,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { listBookkeepingItems, listTransactions } from '../db/bookkeeping';
 import { listInvoices } from '../invoices/store';
 import { latestBalances, listStatements, rowKeys, type StatementRecord } from '../reconcile/service';
-import { bankKeyFor, pairAll } from '../reconcile/month';
+import { bankKeyFor, ownerWithdrawalBankKeys, pairAll } from '../reconcile/month';
 import { mergedDecisions, snapshot, type Snapshot } from '../reconcile/monthService';
 import { loadEcbRates } from './rates';
 import { bookingDate, dedupe, enrichLedgerFromStatement, isRefundRow, matchFinanceStatements, summarize, type FinanceSummary, type LedgerRow, type PeriodQuery, type StatementLine } from './summary';
@@ -97,13 +97,28 @@ export async function financeSummary(client: DynamoDBDocumentClient, query: Peri
     includePendingEmailInvoices: false,
   });
   const pairs = financePairings(reconciliation);
+  const ownerWithdrawals = ownerWithdrawalBankKeys(
+    reconciliation.bank,
+    reconciliation.config.rules,
+    reconciliation.config.tolerances,
+    mergedDecisions(reconciliation.months),
+    new Set(pairs.keys()),
+  );
+  const statementLines = financeStatementLines(statements).map((line) =>
+    line.bankKey && ownerWithdrawals.has(line.bankKey) ? { ...line, kind: 'owner_withdrawal' } : line,
+  );
   const ledger = (rows as LedgerRow[]).map((row) => {
     const facts = linkedVatFacts(row, documents, links);
     return facts ? { ...row, documentExtraction: facts } : row;
   });
-  const needs = ledger
-    .filter((row) => row.currency && row.currency !== 'EUR' && !row.amountEur)
-    .map((row) => ({ currency: String(row.currency), date: bookingDate(row) }));
+  const needs = [
+    ...ledger
+      .filter((row) => row.currency && row.currency !== 'EUR' && !row.amountEur)
+      .map((row) => ({ currency: String(row.currency), date: bookingDate(row) })),
+    ...statementLines
+      .filter((line) => line.currency && line.currency !== 'EUR' && (line.kind === 'owner_withdrawal' || classifyMandatoryPayment(line) !== null))
+      .map((line) => ({ currency: String(line.currency), date: line.date })),
+  ];
   const { lookup, errors } = await loadEcbRates(needs);
   const summary = summarize({
     rows: ledger,
@@ -113,7 +128,7 @@ export async function financeSummary(client: DynamoDBDocumentClient, query: Peri
     pendingInvoices: invoices
       .filter((invoice) => invoice.status === 'pending')
       .map((invoice) => ({ id: invoice.id, date: invoice.fields.paidDate || invoice.fields.transactionDate || invoice.createdAt.slice(0, 10), amount: invoice.fields.amount, currency: invoice.fields.currency, counterparty: invoice.fields.counterparty })),
-    statementLines: financeStatementLines(statements),
+    statementLines,
     statementPairs: pairs,
     businessAccounts: accounts
       .filter((account) => account.kind === 'business' && account.active !== false)

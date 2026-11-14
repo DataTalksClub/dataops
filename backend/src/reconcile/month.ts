@@ -576,6 +576,30 @@ export function classify(bank: BankTx, rules: ClassificationRule[]): MonthRow["c
 }
 
 /**
+ * Bank keys of unmatched statement lines that month reconciliation classifies
+ * as `owner_withdrawal` (after counter-leg internal-transfer precedence and
+ * manual exception overrides).
+ */
+export function ownerWithdrawalBankKeys(
+  bank: BankTx[],
+  rules: ClassificationRule[],
+  tolerances: ReconcileTolerances,
+  decisions: ManualDecisions,
+  pairedBankKeys: ReadonlySet<string>,
+): Set<string> {
+  const legs = internalTransferLegs(bank, tolerances);
+  const out = new Set<string>();
+  for (const bankRow of bank) {
+    if (pairedBankKeys.has(bankRow.key)) continue;
+    const classification = legs.has(bankRow.key) ? { kind: "internal_transfer" as const } : classify(bankRow, rules);
+    const recorded = decisions.exceptions[`bank:${bankRow.key}`];
+    const kind = recorded?.kind || (classification && classification.kind !== "known_vendor" ? classification.kind : undefined);
+    if (kind === "owner_withdrawal") out.add(bankRow.key);
+  }
+  return out;
+}
+
+/**
  * Both legs of a move between own accounts: opposite amounts in two
  * different accounts or wallets inside the lag window, or Revolut rows that
  * name each other as related.
