@@ -722,8 +722,11 @@ async function runTransition(
   const guestInvite = template && typeof template.type === 'string' && isPodcastTemplateType(template.type)
     ? {
       eventType: template.type,
-      guestTitle: await resolvePodcastCardInviteTitle(client, card, template, episode)
-        || podcastInviteTitle(input.guestNames?.trim() || current?.renderValues?.guestNames || '') || undefined,
+      // Explicit operator input wins over stored episode/card guests, which may hold the stale spelling being corrected.
+      guestTitle: (input.guestNames?.trim() ? podcastInviteTitle(input.guestNames.trim()) : '')
+        || (input.title?.trim() ? input.title.trim() : '')
+        || await resolvePodcastCardInviteTitle(client, card, template, episode)
+        || podcastInviteTitle(current?.renderValues?.guestNames || '') || undefined,
     }
     : undefined;
 
