@@ -65,6 +65,9 @@ Usage
   dataops cards delete <card-id> --yes          Delete the Card and all its Tasks (admin)
   dataops cards dedupe-tasks --card ID|--all [--dry-run] [--apply]
                                                 Skip manual duplicates; preview by default
+  dataops cards redate-tasks <card-id> [--apply] [--json]
+                                                Re-date open Template Tasks to anchorDate + offset
+                                                without touching the calendar hold; preview by default
   dataops cards template-update <card-id> [--optional-groups a,b|none] [--count FIELD=N] [--apply]
                                                 Review Template and Card option changes
 
@@ -575,10 +578,31 @@ export async function invitation(args, io) {
   return result;
 }
 
+/** Re-date open Template Tasks to anchorDate + templateOffsetDays without touching any calendar hold. */
+export async function redateTasks(args, io) {
+  const id = positional(args, 0, "dataops cards redate-tasks <card-id> [--apply]");
+  const api = apiFor(args);
+  const route = `/api/cards/${enc(id)}/redate-tasks`;
+  const result = args.apply ? await api.post(route, { dryRun: false }) : await api.get(route);
+  if (args.json) return result;
+  const changes = result.changes || [];
+  if (!changes.length) {
+    io.print(`No open Template Tasks need re-dating on ${id} (anchorDate ${result.anchorDate || "unset"}).`);
+    return result;
+  }
+  io.print(`${args.apply ? "Re-dated" : "Preview:"} ${changes.length} open Template Task(s) on ${id} (anchorDate ${result.anchorDate}):`);
+  for (const change of changes) {
+    io.print(`  ${change.taskId}  [${change.status}]  ${change.from} -> ${change.to}  ${change.description}`);
+  }
+  if (!args.apply) io.print(`Apply with: dataops cards redate-tasks ${id} --apply`);
+  return result;
+}
+
 export const commands = {
   invitation,
   banner,
   "dedupe-tasks": dedupeTasks,
+  "redate-tasks": redateTasks,
   "event-slots": eventSlots,
   time,
   list,

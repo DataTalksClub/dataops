@@ -27,6 +27,7 @@ import {
 } from '../db/cards';
 import { attachLinkedCards, cardBackReferences } from '../cards/taskCardLinkView';
 import { ensureEventSlotCards } from '../cards/eventSlots';
+import { redateCardTemplateTasks } from '../cards/redateTemplateTasks';
 import {
   CardDeletionBlockedError,
   CardDeletionConflictError,
@@ -435,6 +436,9 @@ async function handleCardRoutes(
 
     const eventSlotsMatch = suffix.match(/^\/([^/]+)\/event-slots\/?$/);
     if (eventSlotsMatch) return await handleCardEventSlots(method, eventSlotsMatch[1], client, event);
+
+    const redateMatch = suffix.match(/^\/([^/]+)\/redate-tasks\/?$/);
+    if (redateMatch) return await handleCardRedateTasks(method, redateMatch[1], rawBody, client, event);
 
     // Route: /api/cards/:id/calendar-invites
     const invitesMatch = suffix.match(/^\/([^/]+)\/calendar-invites\/?$/);
@@ -1093,4 +1097,42 @@ async function handleCardTime(method: string, id: string, rawBody: string | null
     if (error instanceof GuestInviteValidationError) return json(502, { error: error.message, code: 'guest_invite_validation_failed', problems: error.problems });
     throw error;
   }
+}
+
+async function handleCardRedateTasks(
+  method: string,
+  id: string,
+  rawBody: string | null,
+  client: DynamoDBDocumentClient,
+  event: LambdaEvent,
+): Promise<LambdaResponse> {
+  if (method !== 'GET' && method !== 'POST') return json(405, { error: 'Method not allowed' });
+  const resolved = await resolveInteractiveActor(client, event, method === 'GET' ? 'work-read' : 'work-write');
+  if (!resolved.ok) return resolved.response;
+  const card = await getCardConsistent(client, id);
+  if (!card) return json(404, { error: 'Card not found', code: 'card_not_found' });
+  if (!card.anchorDate) return json(400, { error: 'Card has no anchorDate to re-date Tasks from.' });
+
+  let dryRun = method === 'GET';
+  if (method === 'POST' && rawBody?.trim()) {
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return json(400, { error: 'Invalid JSON body' });
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return json(400, { error: 'Request body must be a JSON object' });
+    }
+    if (body.dryRun !== undefined && typeof body.dryRun !== 'boolean') {
+      return json(400, { error: 'dryRun must be a boolean' });
+    }
+    dryRun = body.dryRun === true;
+  }
+
+  const result = await redateCardTemplateTasks(client, card, {
+    dryRun,
+    actorId: resolved.actor.id,
+  });
+  return json(200, result);
 }

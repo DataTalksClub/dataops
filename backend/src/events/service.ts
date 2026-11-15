@@ -14,6 +14,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { TABLE_CALENDAR, TABLE_CARDS, TABLE_PODCAST_EPISODES } from '../db/tableNames';
 import { getCardConsistent, updateCardAdditive } from '../db/cards';
+import { redateCardTemplateTasks } from '../cards/redateTemplateTasks';
 import { getTemplate } from '../db/templates';
 import { getPodcastEpisode, listPodcastEpisodes, type PodcastEpisode } from '../db/podcastEpisodes';
 import { calendarInviteDeps } from '../db/calendarHolds';
@@ -932,6 +933,17 @@ async function runTransition(
     : undefined;
 
   await commitEventTransition(client, freshCard, current?.version ?? 0, planned, relatedWrites);
+
+  if (planned.date && planned.date !== freshCard.anchorDate) {
+    await redateCardTemplateTasks(
+      client,
+      { ...freshCard, anchorDate: planned.date },
+      {
+        actorId: actor,
+        reason: `Event ${transition} set Card anchorDate to ${planned.date}`,
+      },
+    );
+  }
 
   const rescheduleTask = transition === 'reschedule'
     ? await ensureEventRescheduleTask(client, {
