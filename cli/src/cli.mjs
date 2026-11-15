@@ -20,6 +20,7 @@ import * as invoices from "./commands/invoices.mjs";
 import * as kb from "./commands/kb.mjs";
 import * as newsletter from "./commands/newsletter.mjs";
 import * as notifications from "./commands/notifications.mjs";
+import * as queue from "./commands/queue.mjs";
 import * as people from "./commands/people.mjs";
 import * as books from "./commands/books.mjs";
 import * as company from "./commands/company.mjs";
@@ -97,6 +98,7 @@ export const FAMILIES = {
   },
   automations: { group: "Work", summary: automations.summary, help: automations.help, commands: automations.commands },
   notifications: { group: "Work", summary: notifications.summary, help: notifications.help, commands: notifications.commands },
+  queue: { group: "Work", summary: queue.summary, help: queue.help, commands: queue.commands },
   files: { group: "Work", summary: files.filesSummary, help: files.filesHelp, commands: files.filesCommands },
   artifacts: { group: "Work", summary: files.artifactsSummary, help: files.artifactsHelp, commands: files.artifactsCommands },
   kb: { group: "Knowledge", summary: kb.summary, help: kb.help, commands: kb.commands },

@@ -132,6 +132,7 @@ export function isScopedTokenRequestAllowed(
     || matchesPrefix(path, '/api/podcast-first-contact')
     || matchesPrefix(path, '/api/calendar-holds')
     || matchesPrefix(path, '/api/calendar-items')
+    || matchesPrefix(path, '/api/queue')
   ) {
     return has(scopes, 'cards:write');
   }

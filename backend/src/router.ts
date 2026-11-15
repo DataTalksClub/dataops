@@ -73,6 +73,7 @@ import { handleCardDocumentRoutes } from './routes/cardDocuments';
 import { handleCampaignCalendarRoutes } from './routes/campaignCalendar';
 import { handleDocumentRoutes } from './routes/documents';
 import { handleInboxRoutes } from './routes/inbox';
+import { ADHOC_QUEUE_POST_PATH, handleAdhocQueueRoutes } from './routes/adhocQueue';
 import { handleDocumentReviewRoutes, isAnonymousDocumentReviewRequest } from './documents/reviews';
 import { isAnonymousNewsletterPreviewRequest } from './newsletter/markdownPreview';
 import { jsonResponse } from './http';
@@ -188,6 +189,10 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     }
     if (method === 'POST' && reqPath === '/api/v1/intake/leads') {
       return await handleSponsorLeadIntake(event, client);
+    }
+    // Ad-hoc queue posts authenticate with a per-source token, never a session.
+    if (method === 'POST' && reqPath === ADHOC_QUEUE_POST_PATH) {
+      return (await handleAdhocQueueRoutes(event, client))!;
     }
 
     decodeBase64Body(event);
@@ -450,6 +455,11 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       if (review) return review;
       const document = await handleDocumentRoutes(event, client);
       if (document) return document;
+    }
+
+    if (reqPath === '/api/queue' || reqPath.startsWith('/api/queue/')) {
+      const queue = await handleAdhocQueueRoutes(event, client);
+      if (queue) return queue;
     }
 
     if (reqPath.startsWith('/api/inbox')) {
