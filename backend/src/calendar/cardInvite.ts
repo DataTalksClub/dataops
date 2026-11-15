@@ -12,7 +12,7 @@ import { scanCrmPrefix } from '../db/sponsorCrm';
 import { getTemplate } from '../db/templates';
 import { getCalendarHold, listCalendarHolds, putCalendarHold } from '../db/calendarHolds';
 import { calendarsMissingInvite, taskRequiresCalendarInvite, makeTaskHistoryEvent } from '../routes/taskValidation';
-import { dateFromTemplateOffset } from '../templates/cardTemplateProjection';
+import { redateCardTemplateTasks } from '../cards/redateTemplateTasks';
 import { todayIn } from '../relativeDates';
 import { buildGuestInvite, GuestInviteValidationError, type GuestInvite } from './guestInvite';
 import { reportGuestInviteFailure, writeGuestInvite } from './guestInviteSync';
@@ -590,20 +590,8 @@ export async function adoptEventDate(
   const followed = !card.anchorDate || (previous && card.anchorDate === todayIn(previous.timeZone, new Date(previous.startIso)));
   if (!followed || card.anchorDate === date) return { card, movedTasks: 0 };
   const updated = await updateCardAdditive(client, card, () => ({ anchorDate: date }));
-  let movedTasks = 0;
-  for (const task of await listTasksByCardConsistent(client, card.id)) {
-    if (!['todo', 'waiting'].includes(task.status) || typeof task.templateOffsetDays !== 'number') continue;
-    if ((task as { templateAnchor?: string }).templateAnchor === 'end') continue;
-    const taskDate = dateFromTemplateOffset(date, task.templateOffsetDays);
-    if (task.date === taskDate) continue;
-    await updateTask(client, task.id, {
-      expectedVersion: task.version, currentTask: task,
-      patch: {
-        date: taskDate,
-        ...(task.templateDefinitionSnapshot ? { templateDefinitionSnapshot: { ...task.templateDefinitionSnapshot, date: taskDate } } : {}),
-      },
-    });
-    movedTasks += 1;
-  }
-  return { card: (await getCardConsistent(client, updated.id))!, movedTasks };
+  const { updatedCount } = await redateCardTemplateTasks(client, { ...updated, anchorDate: date }, {
+    reason: `Adopted event date ${date}`,
+  });
+  return { card: (await getCardConsistent(client, updated.id))!, movedTasks: updatedCount };
 }

@@ -317,3 +317,76 @@ test('podcast first-contact fails loudly with a Task error if required Cc cannot
   assert.match(deferred.message || '', /could not be added/);
   assert.equal(mails, beforeMails);
 });
+
+test('first-contact Card with event hold dates Template Tasks from proposed anchorDate, and redate-tasks repairs existing hold-owned Cards without touching the hold', async () => {
+  const { dateFromTemplateOffset } = await import('../src/templates/cardTemplateProjection');
+  const eventPolicy = policy('podcast');
+  eventPolicy.guests.leadMinutes = 5;
+  for (const notification of Object.values(eventPolicy.notifications)) notification.emails = [];
+  const template = await createTemplate(db, {
+    name: 'Podcast with offsets',
+    type: 'podcast',
+    eventPolicy,
+    guestIntake: { enabled: true, emailTemplateId: 'podcast.first-contact', formTemplate: 'podcast', followUpDays: 7, weekdays: [1, 2] },
+    taskDefinitions: [
+      { refId: 'prep', description: 'Prep guest', offsetDays: -14 },
+      { refId: 'stream', description: 'Actual stream', offsetDays: 0 },
+      { refId: 'followup', description: 'Post-stream followup', offsetDays: 5 },
+      { refId: 'release', description: 'Publish episode', offsetDays: -2, anchor: 'end' },
+    ],
+  });
+  const createdRes = await invoke('POST', '/api/cards', {
+    templateId: template.id,
+    guestEmail: 'synthetic-guest@example.test',
+    creationKey: crypto.randomUUID(),
+    endDate: '2035-06-01',
+  });
+  assert.equal(createdRes.statusCode, 201, createdRes.body);
+  const createdCard = JSON.parse(createdRes.body).card;
+  await processGuestIntake(db, createdCard.guestIntake.jobId);
+
+  const cardAfter = (await getCardConsistent(db, createdCard.id))!;
+  assert.ok(cardAfter.anchorDate, 'event hold should set card.anchorDate');
+  const eventBefore = (await getEventRecord(db, cardAfter.eventTime!.eventKey))!;
+  const tasksAfter = await listTasksByCardConsistent(db, createdCard.id);
+  const byRef = new Map(tasksAfter.filter((t) => t.templateTaskRef).map((t) => [t.templateTaskRef!, t]));
+  assert.equal(byRef.get('prep')!.date, dateFromTemplateOffset(cardAfter.anchorDate!, -14));
+  assert.equal(byRef.get('stream')!.date, cardAfter.anchorDate);
+  assert.equal(byRef.get('followup')!.date, dateFromTemplateOffset(cardAfter.anchorDate!, 5));
+  assert.equal(byRef.get('release')!.date, '2035-05-30');
+
+  // Simulate an existing hold-owned Card whose open tasks were mis-dated to creation day,
+  // with one done task and one skipped task that must remain untouched.
+  const prepTask = byRef.get('prep')!;
+  await updateTask(db, prepTask.id, { currentTask: prepTask, expectedVersion: prepTask.version, patch: { status: 'done', completedAt: new Date().toISOString(), date: '2020-01-01' } });
+  const followupTask = byRef.get('followup')!;
+  await updateTask(db, followupTask.id, { currentTask: followupTask, expectedVersion: followupTask.version, patch: { status: 'skipped', skipReason: 'Not needed', date: '2020-01-02' } });
+  const streamTask = byRef.get('stream')!;
+  await updateTask(db, streamTask.id, { currentTask: streamTask, expectedVersion: streamTask.version, patch: { date: '2020-01-03' } });
+
+  const previewRes = await invoke('GET', `/api/cards/${createdCard.id}/redate-tasks`);
+  assert.equal(previewRes.statusCode, 200, previewRes.body);
+  const preview = JSON.parse(previewRes.body);
+  assert.equal(preview.dryRun, true);
+  assert.equal(preview.updatedCount, 0);
+  assert.equal(preview.changes.length, 1);
+  assert.equal(preview.changes[0].taskId, streamTask.id);
+  assert.equal(preview.changes[0].from, '2020-01-03');
+  assert.equal(preview.changes[0].to, cardAfter.anchorDate);
+  assert.equal((await getTaskConsistent(db, streamTask.id))!.date, '2020-01-03');
+
+  const beforeMails = mails;
+  const applyRes = await invoke('POST', `/api/cards/${createdCard.id}/redate-tasks`, { dryRun: false });
+  assert.equal(applyRes.statusCode, 200, applyRes.body);
+  const applied = JSON.parse(applyRes.body);
+  assert.equal(applied.dryRun, false);
+  assert.equal(applied.updatedCount, 1);
+  assert.equal((await getTaskConsistent(db, streamTask.id))!.date, cardAfter.anchorDate);
+  assert.equal((await getTaskConsistent(db, prepTask.id))!.date, '2020-01-01');
+  assert.equal((await getTaskConsistent(db, followupTask.id))!.date, '2020-01-02');
+  assert.equal((await getTaskConsistent(db, byRef.get('release')!.id))!.date, '2035-05-30');
+  assert.equal(mails, beforeMails);
+  const eventAfter = (await getEventRecord(db, cardAfter.eventTime!.eventKey))!;
+  assert.equal(eventAfter.version, eventBefore.version);
+  assert.deepEqual(eventAfter.googleEventIds, eventBefore.googleEventIds);
+});
