@@ -15,6 +15,7 @@ export interface AcademyLead {
   status: string;
   berlin_germany: string;
   bildungsgutschein: string;
+  payment_plan: string;
   track_interest: string;
   years_dev: string;
   based_in: string;
@@ -169,6 +170,7 @@ export function normalizeAcademyLead(item: RawItem): AcademyLead {
     status,
     berlin_germany: asString(item.berlin_germany),
     bildungsgutschein: asString(item.bildungsgutschein),
+    payment_plan: asString(item.payment_plan),
     track_interest: asString(item.track_interest),
     years_dev: asString(item.years_dev),
     based_in: asString(item.based_in),

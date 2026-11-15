@@ -84,6 +84,7 @@ export async function run(args, io) {
         row.based_in ? `based_in=${row.based_in}` : "",
         row.berlin_germany ? `berlin=${row.berlin_germany}` : "",
         row.bildungsgutschein ? `bg=${row.bildungsgutschein}` : "",
+        row.payment_plan ? `payment_plan=${row.payment_plan}` : "",
         row.session ? `qr_session=${row.session}` : "",
         Array.isArray(row.qr_sessions) && row.qr_sessions.length ? `qr_sessions=${row.qr_sessions.join(",")}` : "",
         row.academy_optin ? `april_optin=${row.academy_optin}` : "",

@@ -157,3 +157,18 @@ test('layoff_proof leads expose survey fields and count by track of interest, se
   const genau = res.summary.byUtm.find((b) => b.utm_source === 'genau')!;
   assert.deepEqual(genau.interest, { agentic: 1, both: 1 });
 });
+
+test('normalizeAcademyLead preserves payment_plan when present and leaves it empty for existing rows', () => {
+  const withPlan = normalizeAcademyLead({
+    email: 'dev+pay@dtcdev.click',
+    track: 'agentic-engineering',
+    payment_plan: 'Bildungsgutschein',
+  });
+  assert.equal(withPlan.payment_plan, 'Bildungsgutschein');
+
+  const legacy = normalizeAcademyLead({
+    email: 'legacy@example.com',
+    track: 'ai-engineering',
+  });
+  assert.equal(legacy.payment_plan, '');
+});
