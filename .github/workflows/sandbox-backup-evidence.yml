@@ -83,6 +83,23 @@ jobs:
           done
           exit "$failed"
 
+      - name: Prove the backup freshness alarm reaches a subscriber
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          alarm="$RUNNER_TEMP/knowledge-backup-stale.json"
+          # Success=1 per daily backup; alarm when the 2-day sum is <1 or missing.
+          jq -e '.[0] | .Namespace == "DataOps/Knowledge" and .MetricName == "Success"
+            and .Threshold == 1 and .ComparisonOperator == "LessThanThreshold"
+            and .TreatMissingData == "breaching"' "$alarm" >/dev/null
+          for topic in $(jq -r '.[0].AlarmActions[]' "$alarm"); do
+            confirmed=$(aws sns list-subscriptions-by-topic --topic-arn "$topic" --output json \
+              | jq '[.Subscriptions[] | select(.SubscriptionArn != "PendingConfirmation")] | length')
+            echo "$topic confirmed subscriptions: $confirmed"
+            [ "$confirmed" -ge 1 ]
+          done
+
       - name: Read actual knowledge success datapoints
         if: ${{ !cancelled() }}
         shell: bash

@@ -968,3 +968,20 @@ def test_dynamo_pitr_guard_checks_dataops_and_dapier_tables_and_pages_dev_mailbo
     assert "table/dapier-*" in backend
     assert "dataopsAction\":\"dynamo-pitr-check\"" in rule
 
+
+
+def test_knowledge_backup_alarms_page_the_monitored_operator_topic():
+    """Backup freshness must reach a human: the rollout topic has no subscribers."""
+    resources = _load_template()["Resources"]
+    stale = resources["KnowledgeBackupStaleAlarm"]["Properties"]
+    assert stale["Namespace"] == "DataOps/Knowledge"
+    assert stale["MetricName"] == "Success"
+    assert stale["Dimensions"] == [{"Name": "Job", "Value": "knowledge-backup"}]
+    assert stale["Statistic"] == "Sum"
+    assert stale["Threshold"] == 1
+    assert stale["ComparisonOperator"] == "LessThanThreshold"
+    assert stale["TreatMissingData"] == "breaching"
+    for name in ("KnowledgeBackupStaleAlarm", "KnowledgeWorkerFailureAlarm"):
+        props = resources[name]["Properties"]
+        assert props["AlarmActions"] == [{"Ref": "DynamoPitrAlertTopicArn"}], name
+        assert props["OKActions"] == [{"Ref": "DynamoPitrAlertTopicArn"}], name
