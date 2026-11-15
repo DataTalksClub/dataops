@@ -24,6 +24,7 @@ const DESKTOP = { width: 1440, height: 900 };
 const MOBILE = { width: 390, height: 844 };
 
 const EDITOR_PATH = 'content/testing/slice5-editor.md';
+const WARNING_PATH = 'content/testing/slice5-warning.md';
 const RACE_OLD_PATH = 'content/testing/slice5-race-old.md';
 const RACE_NEW_PATH = 'content/testing/slice5-race-new.md';
 const EDITOR_TITLE = 'Synthetic Slice Five Editor';
@@ -34,9 +35,9 @@ const UPDATED_STEP_TEXT = 'Commit the updated synthetic editor step.';
 function syntheticSop(title, summary, step) {
   return [
     '---',
+    `id: sop.synthetic.${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
     `title: "${title}"`,
     'doc_type: sop',
-    'systems: [browser]',
     'tags: [slice-five]',
     '---',
     '',
@@ -151,6 +152,7 @@ test.describe('issue 204 slice 5 editor feedback and race evidence', () => {
     server = await startOwnedTestServer({
       environment: {
         DTC_CACHE_ROOT: createDocsCacheRoot('issue-204-slice-5-editor', {
+          [WARNING_PATH]: syntheticSop('Synthetic Content Warning', 'Draft controls are visible to the author.', 'Complete the draft controls.'),
           [EDITOR_PATH]: syntheticSop(
             EDITOR_TITLE,
             'A public-safe fixture for visible editor feedback and keyboard behavior.',
@@ -182,6 +184,29 @@ test.describe('issue 204 slice 5 editor feedback and race evidence', () => {
 
   test.afterAll(async () => {
     await stopOwnedTestServer(server);
+  });
+
+  test('announces incomplete draft controls in the editor after a successful save', async ({ browser }) => {
+    const context = await ownedContext(browser, { viewport: DESKTOP });
+    const current = await (await context.request.get(`/docs?path=${encodeURIComponent(WARNING_PATH)}`)).json();
+    const saved = await context.request.put(`/docs?path=${encodeURIComponent(WARNING_PATH)}`, {
+      data: { content: current.content.replace(/^id:.*\n/m, ''), expectedRevision: current.revision },
+    });
+    expect(saved.ok()).toBe(true);
+    expect((await saved.json()).warnings).toContain(`${WARNING_PATH}: missing stable id`);
+    const page = await context.newPage();
+    await setupPageWithAuth(page);
+    await openFromProcesses(page, '/testing/slice5-warning.md', 'Synthetic Content Warning');
+    const step = page.locator('#rendered-view .notion-block-numbered .notion-list-item-text');
+    await step.fill('Check the visible draft controls.');
+    await step.press('Escape');
+    await page.locator('#editor-save-button').click();
+    const status = page.locator('#editor-inline-status');
+    await expect(status).toContainText('Saved with content gate warnings');
+    await expect(status).toContainText('missing stable id');
+    await expect(status).toHaveAttribute('role', 'alert');
+    await expect(status).toHaveAttribute('aria-live', 'assertive');
+    await expect(status).toBeVisible();
   });
 
   test('keeps editor outcomes visible, keyboard-editable, focused, and usable on mobile', async ({ browser }) => {
