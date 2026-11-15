@@ -88,7 +88,7 @@ Parameters:
   DynamoPitrAlertTopicArn:
     Type: String
     Default: arn:aws:sns:eu-west-1:817685572750:dapier-AlarmTopic-6LjEWSJwA6Ya
-    Description: Shared operator alarm SNS topic paged when the daily PITR guard finds DynamoDB point-in-time recovery disabled (delivers via AlarmNotifyFunction to dev@dtcdev.click).
+    Description: Shared operator alarm SNS topic (delivers via AlarmNotifyFunction to dev@dtcdev.click). Paged by the daily PITR guard, the knowledge backup/mirror alarms and store failures.
   DynamoPitrAlertEmail:
     Type: String
     Default: dev@dtcdev.click
@@ -1601,7 +1601,11 @@ Resources:
       Threshold: 1
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
-      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+      AlarmActions: [!Ref DynamoPitrAlertTopicArn]
+      OKActions: [!Ref DynamoPitrAlertTopicArn]
+  # Backup freshness: the worker writes Success=1 after each daily snapshot.
+  # It pages the shared operator topic (monitored inbox); the rollout topic has
+  # no subscribers, so an alarm there reached nobody.
   KnowledgeBackupStaleAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -1616,7 +1620,8 @@ Resources:
       Threshold: 1
       ComparisonOperator: LessThanThreshold
       TreatMissingData: breaching
-      AlarmActions: [!Ref ConversationalRolloutAlarmTopic]
+      AlarmActions: [!Ref DynamoPitrAlertTopicArn]
+      OKActions: [!Ref DynamoPitrAlertTopicArn]
 
   # The daily DataOps -> Git mirror runs in GitHub Actions and reports through
   # POST /knowledge/mirror-heartbeat (see backend/src/knowledge/mirrorHeartbeat.ts).
