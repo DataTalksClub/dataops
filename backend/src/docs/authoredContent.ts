@@ -50,7 +50,7 @@ export function authoredContentIssues(path: string, text: string): string[] {
     });
     if (/<!-- sop-caption-start -->\s*This screenshot\b/i.test(text)) issues.push('generated screenshot caption is not step-specific');
     const summary = section(text, 'Summary');
-    if (summary && !meaningful(summary)) issues.push('active document has empty Summary section');
+    if (summary !== undefined && !meaningful(summary)) issues.push('active document has empty Summary section');
   }
   const required: string[] = [];
   if (metadata.doc_type === 'sop' && !archived) required.push('Validation', 'Troubleshooting', 'References');

@@ -16,6 +16,7 @@ test('content gates reject debt and privacy findings without echoing sensitive v
     assert.ok(!issues.join(' ').includes(value));
   }
   assert.deepEqual(authoredContentIssues('content/example.md', document('Ready')), []);
+  assert.ok(authoredContentIssues('content/example.md', document('## Summary\n')).some(issue => issue.includes('empty Summary')));
   assert.deepEqual(authoredContentIssues('content/example.md', document('person@example.test').replace('internal', 'restricted-internal')), []);
   assert.deepEqual(authoredContentIssues('content/example.md', document('TODO').replace('proposed', 'archived')), []);
   assert.ok(authoredContentIssues('content/example.md', document('person@example.test').replace('proposed', 'archived')).length);
