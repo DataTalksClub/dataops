@@ -80,7 +80,7 @@ export function createAcademyLeadsSurface(context) {
 
   function downloadCsv() {
     const cols = [
-      "created_at", "email", "confirmed", "confirmed_at", "track",
+      "created_at", "email", "confirmed", "confirmed_at", "track", "payment_plan",
       "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
       "last_utm_source", "last_utm_medium", "last_utm_campaign", "last_utm_content", "last_utm_term",
       "referrer", "page", "is_test", "answers",
@@ -230,7 +230,7 @@ export function createAcademyLeadsSurface(context) {
     const wrap = el(documentRef, "div", "dk-table-wrap");
     const table = el(documentRef, "table", "dk-table");
     const cols = [
-      "created_at", "email", "track",
+      "created_at", "email", "track", "payment_plan",
       "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
       "referrer", "page", "answers",
     ];
