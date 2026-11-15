@@ -20,6 +20,8 @@ export function createInboxSurface(context) {
   let detailError = "";
   let detailLoadingId = null;
   let loadedStatus = null;
+  let queueItems = [];
+  let queueError = "";
 
   function syncInboxBadge() {
     const badge = documentRef.querySelector("#inbox-nav-count");
@@ -64,6 +66,72 @@ export function createInboxSurface(context) {
       syncInboxBadge();
       renderInbox();
     }
+  }
+
+  // Ad-hoc queue: items other systems (AISL first) post to /api/v1/queue/items.
+  async function loadQueue() {
+    try {
+      const payload = await request(workApiUrl("/api/queue", { status: "open" }));
+      queueItems = Array.isArray(payload?.items) ? payload.items : [];
+      queueError = "";
+    } catch (caught) {
+      queueError = caught?.message || "System queue is unavailable";
+    }
+    renderInbox();
+  }
+
+  async function setQueueStatus(id, status) {
+    let note;
+    if (status === "done") {
+      note = globalThis.prompt?.("What was done?") || "";
+      if (!note.trim()) return;
+    }
+    try {
+      await request(workApiUrl(`/api/queue/${encodeURIComponent(id)}/status`), { method: "PUT", body: JSON.stringify({ status, note }) });
+    } catch (caught) {
+      queueError = caught?.message || "Could not update the queue item";
+    }
+    await loadQueue();
+  }
+
+  function renderQueue(root) {
+    if (!queueError && queueItems.length === 0) return;
+    const section = el(documentRef, "section", "inbox-queue");
+    section.setAttribute("aria-label", "System queue");
+    section.append(el(documentRef, "h2", "", `System queue · ${queueItems.length} open`));
+    if (queueError) {
+      const callout = el(documentRef, "div", "dk-callout dk-callout--danger", queueError);
+      callout.setAttribute("role", "alert");
+      section.append(callout);
+    }
+    const list = el(documentRef, "div", "inbox-list");
+    for (const item of queueItems) {
+      const row = el(documentRef, "article", "inbox-row");
+      row.append(el(documentRef, "p", "inbox-row__title", item.title || item.kind));
+      row.append(el(documentRef, "p", "inbox-row__meta", `${String(item.receivedAt || "").slice(0, 16)} · ${item.source} · ${item.kind} · ${item.status}`));
+      for (const link of item.links || []) {
+        const anchor = el(documentRef, "a", "inbox-row__meta", link.label || link.url);
+        anchor.href = link.url;
+        anchor.target = "_blank";
+        anchor.rel = "noopener";
+        row.append(anchor);
+      }
+      const actions = el(documentRef, "div", "inbox-detail__actions");
+      if (item.status === "new") {
+        const ack = el(documentRef, "button", "dk-button dk-button--secondary dk-button--sm", "Ack");
+        ack.type = "button";
+        ack.addEventListener("click", () => setQueueStatus(item.id, "acked"));
+        actions.append(ack);
+      }
+      const done = el(documentRef, "button", "dk-button dk-button--primary dk-button--sm", "Done");
+      done.type = "button";
+      done.addEventListener("click", () => setQueueStatus(item.id, "done"));
+      actions.append(done);
+      row.append(actions);
+      list.append(row);
+    }
+    section.append(list);
+    root.append(section);
   }
 
   async function loadDetail(id) {
@@ -233,9 +301,11 @@ export function createInboxSurface(context) {
     const status = currentStatus();
     if (!loading && loadedStatus !== status) {
       load(status);
+      loadQueue();
     }
     const root = el(documentRef, "div", "inbox-surface");
     header(root);
+    renderQueue(root);
     filterBar(root);
     const columns = el(documentRef, "div", "inbox-columns");
     const listWrap = el(documentRef, "div", "inbox-list-wrap");
