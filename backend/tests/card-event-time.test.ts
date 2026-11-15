@@ -312,6 +312,76 @@ describe('Card-owned invitation lifecycle', () => {
     assert.equal(third.data.taskClosure.outcome, 'already_closed');
     assert.equal(third.data.taskClosure.tasks[0].outcome, 'already_closed');
   });
+
+  test('allows moving or clearing anchorDate and eventTime when eventTime is phantom (no Event record, no live Google invites) without creating invites', async () => {
+    const provider = google();
+    const c = await card('aishl-workshop');
+
+    // Seed phantom eventTime (no Event record, empty googleEventIds, no calendarInvites)
+    const seeded = await updateCard(db, c.id, {
+      expectedVersion: c.version,
+      patch: {
+        eventTime: {
+          ...cardEventInterval('2026-11-16 14:00', 120, 'Europe/Berlin'),
+          eventKey: `card:${c.id}`,
+          googleEventIds: {},
+          sync: 'synced',
+          syncStartedAt: new Date().toISOString(),
+        },
+        calendarInvites: [],
+      },
+    });
+
+    const eventsBefore = provider.events.get(HOLD_ORGANIZER)?.size || 0;
+
+    // Move anchorDate and eventTime without creating any Google Calendar invite or Event hold
+    const moved = await invoke('PUT', `/api/cards/${c.id}`, {
+      expectedVersion: seeded.version,
+      anchorDate: '2026-11-24',
+      eventTime: { at: '2026-11-24 14:00', duration: 120, tz: 'Europe/Berlin' },
+    });
+    assert.equal(moved.code, 200, moved.raw);
+    assert.equal(moved.data.card.anchorDate, '2026-11-24');
+    assert.equal(moved.data.card.eventTime.startIso, '2026-11-24T13:00:00.000Z');
+    assert.equal(moved.data.card.eventTime.endIso, '2026-11-24T15:00:00.000Z');
+    assert.equal(moved.data.card.eventTime.timeZone, 'Europe/Berlin');
+    assert.equal(moved.data.card.eventTime.durationMinutes, 120);
+    assert.deepEqual(moved.data.card.eventTime.googleEventIds, {});
+    assert.equal(provider.events.get(HOLD_ORGANIZER)?.size || 0, eventsBefore);
+
+    const eventCheck = await invoke('GET', `/api/events/${c.id}`);
+    assert.equal(eventCheck.code, 404);
+
+    // Clear anchorDate and eventTime
+    const cleared = await invoke('PUT', `/api/cards/${c.id}`, {
+      expectedVersion: moved.data.card.version,
+      anchorDate: null,
+      eventTime: null,
+    });
+    assert.equal(cleared.code, 200, cleared.raw);
+    assert.equal(cleared.data.card.anchorDate, undefined);
+    assert.equal(cleared.data.card.eventTime, undefined);
+  });
+
+  test('still blocks anchorDate and eventTime changes when a live Google invite is attached', async () => {
+    google();
+    const c = await card('podcast-episode');
+
+    const timed = await invoke('POST', `/api/cards/${c.id}/time`, {
+      at: '2026-12-01 12:30',
+      duration: 60,
+      tz: 'Europe/Berlin',
+      guestEmails: ['guest@example.test'],
+    });
+    assert.equal(timed.code, 200, timed.raw);
+
+    const blocked = await invoke('PUT', `/api/cards/${c.id}`, {
+      expectedVersion: timed.data.card.version,
+      anchorDate: '2026-12-05',
+    });
+    assert.equal(blocked.code, 409);
+    assert.equal(blocked.data.code, 'event_hold_owns_date');
+  });
 });
 
 import { mapCard } from '../src/export/portableMappers';

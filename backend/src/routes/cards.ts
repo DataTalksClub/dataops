@@ -767,21 +767,44 @@ async function handleSingle(
       'sourceDocIds', 'artifactRefs', 'intakeRefs',
       'people', 'sponsor', 'secondarySponsors', 'issueNumber',
     ];
+    if (body.anchorDate !== undefined && body.anchorDate !== null
+      && (typeof body.anchorDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.anchorDate))) {
+      return json(400, { error: 'Invalid anchorDate format, expected YYYY-MM-DD' });
+    }
     if (body.endDate !== undefined && body.endDate !== null
       && !/^\d{4}-\d{2}-\d{2}$/.test(body.endDate as string)) {
       return json(400, { error: 'Invalid endDate format, expected YYYY-MM-DD' });
     }
-    if (
+    const changingAnchorDate =
       body.anchorDate !== undefined &&
-      body.anchorDate !== existing.anchorDate &&
+      (body.anchorDate ?? undefined) !== existing.anchorDate;
+    const changingEventTime = body.eventTime !== undefined;
+    if (
+      (changingAnchorDate || changingEventTime) &&
       existing.eventTime?.eventKey &&
       existing.eventTime.status !== 'released'
     ) {
-      return json(409, {
-        error: `Card date is owned by event hold ${existing.eventTime.eventKey}. Use 'dataops event reschedule ${existing.id} --date ${body.anchorDate}' so the calendar hold and Card move together.`,
-        code: 'event_hold_owns_date',
-        holdId: existing.eventTime.eventKey,
-      });
+      const eventRecord = await getEventRecord(client, existing.eventTime.eventKey);
+      const hasLiveInvite =
+        (existing.calendarInvites || []).some((invite) => !invite.staleAt) ||
+        Object.keys(existing.eventTime.googleEventIds || {}).length > 0;
+      if (eventRecord && eventRecord.status !== 'released') {
+        const targetDate = typeof body.anchorDate === 'string'
+          ? body.anchorDate
+          : existing.anchorDate || 'YYYY-MM-DD';
+        return json(409, {
+          error: `Card date is owned by event hold ${existing.eventTime.eventKey}. Use 'dataops event reschedule ${existing.id} --date ${targetDate}' so the calendar hold and Card move together.`,
+          code: 'event_hold_owns_date',
+          holdId: existing.eventTime.eventKey,
+        });
+      }
+      if (hasLiveInvite) {
+        return json(409, {
+          error: `Card date is owned by a live calendar invite (${existing.eventTime.eventKey}). Use 'dataops cards time ${existing.id} --at "YYYY-MM-DD HH:MM"' to move it, or 'dataops cards invite remove ${existing.id} <event-id>' if the invite is gone.`,
+          code: 'event_hold_owns_date',
+          holdId: existing.eventTime.eventKey,
+        });
+      }
     }
     const updates: Record<string, unknown> = {};
     for (const field of allowedFields) {
@@ -793,6 +816,31 @@ async function handleSingle(
         } else {
           updates[field] = body[field];
         }
+      }
+    }
+    if (body.eventTime !== undefined) {
+      if (body.eventTime === null) {
+        updates.eventTime = null;
+      } else if (body.eventTime && typeof body.eventTime === 'object' && !Array.isArray(body.eventTime)) {
+        const eventTimeInput = body.eventTime as Record<string, unknown>;
+        try {
+          const interval = cardEventInterval(
+            eventTimeInput.at,
+            eventTimeInput.duration ?? existing.eventTime?.durationMinutes ?? 60,
+            eventTimeInput.tz ?? existing.eventTime?.timeZone ?? 'Europe/Berlin',
+          );
+          updates.eventTime = {
+            ...interval,
+            eventKey: existing.eventTime?.eventKey || `card:${existing.id}`,
+            googleEventIds: {},
+            sync: 'synced' as const,
+            syncStartedAt: new Date().toISOString(),
+          };
+        } catch (error) {
+          return json(400, { error: error instanceof Error ? error.message : 'Invalid eventTime' });
+        }
+      } else {
+        return json(400, { error: 'eventTime must be { at, duration?, tz? } or null' });
       }
     }
     if (owner.supplied && !('invalid' in owner)) {

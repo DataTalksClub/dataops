@@ -62,4 +62,57 @@ describe("cards redate-tasks and update error exit codes", () => {
     assert.equal(exitCode, 5);
     assert.match(io.errors.join("\n"), /error: Card date is owned by event hold hold_card-1/);
   });
+
+  test("cards update supports --date none, --event-time, --duration, --tz, and --event-time none", async () => {
+    const calls = fakePortal({
+      "GET /api/cards/card-1": { card: { id: "card-1", version: 3, anchorDate: "2026-11-16" } },
+      "PUT /api/cards/card-1": ({ body }) => ({ card: { id: "card-1", version: body.expectedVersion + 1, ...body } }),
+    });
+
+    const moveIo = captureIo();
+    assert.equal(
+      await run(["cards", "update", "card-1", "--date", "2026-11-24", "--event-time", "2026-11-24 14:00", "--duration", "120", "--tz", "Europe/Berlin", "--json"], moveIo),
+      0,
+    );
+    assert.deepEqual(calls[1].body, {
+      expectedVersion: 3,
+      anchorDate: "2026-11-24",
+      eventTime: { at: "2026-11-24 14:00", duration: 120, tz: "Europe/Berlin" },
+    });
+
+    const clearIo = captureIo();
+    assert.equal(
+      await run(["cards", "update", "card-1", "--date", "none", "--event-time", "none", "--json"], clearIo),
+      0,
+    );
+    assert.deepEqual(calls[3].body, {
+      expectedVersion: 3,
+      anchorDate: null,
+      eventTime: null,
+    });
+  });
+
+  test("cards link --remove drops a named link from cardLinks", async () => {
+    const calls = fakePortal({
+      "GET /api/cards/card-1": {
+        card: {
+          id: "card-1",
+          version: 7,
+          cardLinks: [
+            { name: "Event page", url: "https://aishippinglabs.com/events/69" },
+            { name: "Calendar event", url: "https://calendar.google.com/calendar/event?eid=stale" },
+          ],
+        },
+      },
+      "PUT /api/cards/card-1": ({ body }) => ({ card: { id: "card-1", version: 8, cardLinks: body.cardLinks } }),
+    });
+
+    const io = captureIo();
+    assert.equal(await run(["cards", "link", "card-1", "Calendar event", "--remove", "--json"], io), 0);
+    const putCall = calls.find((c) => c.method === "PUT");
+    assert.deepEqual(putCall.body, {
+      expectedVersion: 7,
+      cardLinks: [{ name: "Event page", url: "https://aishippinglabs.com/events/69" }],
+    });
+  });
 });
