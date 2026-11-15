@@ -155,7 +155,7 @@ function storageFailed(operation: string, error: unknown): LambdaResponse {
   writeEmbeddedMetric({
     _aws: {
       Timestamp: Date.now(),
-      CloudWatchMetrics: [{ Namespace: 'DataOps/AdhocQueue', Dimensions: [['Operation']], Metrics: [{ Name: 'StoreFailure', Unit: 'Count' }] }],
+      CloudWatchMetrics: [{ Namespace: 'DataOps/AdhocQueue', Dimensions: [[]], Metrics: [{ Name: 'StoreFailure', Unit: 'Count' }] }],
     },
     Operation: operation,
     StoreFailure: 1,

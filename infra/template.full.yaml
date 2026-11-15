@@ -1731,6 +1731,24 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref DynamoPitrAlertTopicArn]
 
+  # Ad-hoc queue (backend/src/routes/adhocQueue.ts) writes DataOps/AdhocQueue
+  # StoreFailure=1 when it cannot store or update an item. Paged on the shared
+  # operator topic so a lost callback is never silent.
+  AdhocQueueStoreFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-adhoc-queue-store-failure
+      AlarmDescription: The ad-hoc queue failed to store or update an item (callers got 503 and must retry). See the backend log group for api_request_failed.
+      Namespace: DataOps/AdhocQueue
+      MetricName: StoreFailure
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref DynamoPitrAlertTopicArn]
+
 Outputs:
   ConversationalRolloutAlarmTopicArn:
     Value: !Ref ConversationalRolloutAlarmTopic
