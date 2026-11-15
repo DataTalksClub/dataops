@@ -21,6 +21,7 @@
  */
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { isBlockedRecipient, OWNER_WORK_EMAIL } from '../identity/operatingIdentities';
 import {
   CREDENTIAL_OPERATOR_HINT,
   DAPIER_AGENT,
@@ -117,9 +118,13 @@ export function buildRawMimeEmail(input: {
     `From: Orin <${sanitizeHeaderValue(input.from)}>`,
     `To: ${sanitizeHeaderValue(input.to)}`,
   ];
-  const ccList = (input.cc || [])
-    .map((addr) => sanitizeHeaderValue(addr))
-    .filter((addr) => EMAIL_PATTERN.test(addr));
+  const rawCc = input.cc || [];
+  const ccList = rawCc.map((addr) => sanitizeHeaderValue(addr));
+  for (const addr of ccList) {
+    if (!EMAIL_PATTERN.test(addr)) {
+      throw new Error(`Invalid Cc email address: "${addr}"`);
+    }
+  }
   if (ccList.length > 0) {
     headers.push(`Cc: ${ccList.join(', ')}`);
   }
@@ -233,16 +238,22 @@ function summarizeDapierGmailTokenProblem(status: number, connectionId: string, 
   return `The Dapier Gmail token broker refused the request (HTTP ${status}).`;
 }
 
-/** The thread's subject (as a reply) and the Message-ID of its last message; null when Gmail cannot read it. */
+const ADDRESS_PATTERN = /[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/g;
+
+function extractEmails(value: string): string[] {
+  return (value.match(ADDRESS_PATTERN) || []).map((item) => item.toLowerCase());
+}
+
+/** The thread's subject (as a reply), the Message-ID of its last message, and any Cc addresses on the thread; null when Gmail cannot read it. */
 async function readGmailThreadHeaders(
   runFetch: typeof fetch,
   authHeaders: Record<string, string>,
   threadId: string,
-): Promise<{ subject: string; messageId: string } | null> {
+): Promise<{ subject: string; messageId: string; cc: string[] } | null> {
   let res: Response;
   try {
     res = await runFetch(
-      `${GMAIL_API_BASE}/threads/${encodeURIComponent(threadId)}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=Subject`,
+      `${GMAIL_API_BASE}/threads/${encodeURIComponent(threadId)}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=Subject&metadataHeaders=Cc`,
       { method: 'GET', headers: authHeaders, signal: AbortSignal.timeout(10000) },
     );
   } catch {
@@ -258,7 +269,13 @@ async function readGmailThreadHeaders(
   const first = header(0, 'subject');
   const messageId = header(messages.length - 1, 'message-id');
   if (!first || !messageId) return null;
-  return { subject: /^re:/i.test(first) ? first : `Re: ${first}`, messageId };
+  const ccSet = new Set<string>();
+  for (let index = 0; index < messages.length; index += 1) {
+    for (const addr of extractEmails(header(index, 'cc'))) {
+      if (EMAIL_PATTERN.test(addr)) ccSet.add(addr);
+    }
+  }
+  return { subject: /^re:/i.test(first) ? first : `Re: ${first}`, messageId, cc: [...ccSet] };
 }
 
 export async function deliverRenderedEmail(
@@ -273,6 +290,8 @@ export async function deliverRenderedEmail(
     connectionId?: string | null;
     /** Domain-owned recipients; sponsor content requests keep their default CC. */
     cc?: string[];
+    /** Addresses that must be present on the outgoing Cc header; fails pre-send if any cannot be added. */
+    requiredCc?: string[];
     /** Reply in this Gmail thread instead of starting a new one; the subject is taken from the thread. */
     threadId?: string;
   },
@@ -326,6 +345,32 @@ export async function deliverRenderedEmail(
 
   const to = resolvedRecipient.to;
   const cc = options.cc ?? [SPONSOR_DOC_EMAIL_CC];
+  const requiredCc = (options.requiredCc || []).map((addr) => sanitizeHeaderValue(addr).toLowerCase());
+  const validateCcList = (list: string[]): string | null => {
+    for (const rawAddr of list) {
+      const addr = sanitizeHeaderValue(rawAddr);
+      if (!EMAIL_PATTERN.test(addr)) return `Invalid Cc email address: "${rawAddr}"`;
+      if (isBlockedRecipient(addr)) return `Cc email address is blocked: "${addr}"`;
+    }
+    const normalized = list.map((addr) => sanitizeHeaderValue(addr).toLowerCase());
+    for (const req of requiredCc) {
+      if (!req || !EMAIL_PATTERN.test(req)) return `Required Cc email address is invalid: "${req}"`;
+      if (isBlockedRecipient(req)) return `Required Cc email address is blocked: "${req}"`;
+      if (!normalized.includes(req)) return `Required Cc email address could not be added: "${req}"`;
+    }
+    return null;
+  };
+  const preSendCcProblem = validateCcList(cc);
+  if (preSendCcProblem) {
+    return {
+      state: 'deferred',
+      from: SPONSOR_DOC_EMAIL_FROM,
+      to,
+      subject,
+      reason: 'invalid_cc',
+      message: `${preSendCcProblem}; no email was sent.`,
+    };
+  }
 
   const explicitConnectionId = (
     options.connectionId
@@ -511,6 +556,7 @@ export async function deliverRenderedEmail(
 
     let replySubject = subject;
     let inReplyTo: string | undefined;
+    let effectiveCc = cc;
     if (options.threadId) {
       const thread = await readGmailThreadHeaders(runFetch, authHeaders, options.threadId);
       if (!thread) {
@@ -527,11 +573,33 @@ export async function deliverRenderedEmail(
       }
       replySubject = thread.subject;
       inReplyTo = thread.messageId;
+      if (options.cc === undefined) {
+        effectiveCc = thread.cc;
+      } else {
+        const ownerEmail = OWNER_WORK_EMAIL.toLowerCase();
+        const hasOwnerOnThread = thread.cc.includes(ownerEmail);
+        const hasOwnerInCc = effectiveCc.some((addr) => sanitizeHeaderValue(addr).toLowerCase() === ownerEmail);
+        if (hasOwnerOnThread && !hasOwnerInCc) {
+          effectiveCc = [...effectiveCc, OWNER_WORK_EMAIL];
+        }
+      }
+      const threadCcProblem = validateCcList(effectiveCc);
+      if (threadCcProblem) {
+        return {
+          state: 'deferred',
+          from: SPONSOR_DOC_EMAIL_FROM,
+          to,
+          subject: replySubject,
+          connectionId,
+          reason: 'invalid_cc',
+          message: `${threadCcProblem}; no email was sent.`,
+        };
+      }
     }
     const raw = buildRawMimeEmail({
       from: SPONSOR_DOC_EMAIL_FROM,
       to,
-      cc,
+      cc: effectiveCc,
       subject: replySubject,
       body: options.draft.body,
       inReplyTo,
@@ -604,7 +672,7 @@ export async function deliverRenderedEmail(
       state: 'sent',
       from: SPONSOR_DOC_EMAIL_FROM,
       to,
-      ...(cc.length > 0 ? { cc } : {}),
+      ...(effectiveCc.length > 0 ? { cc: effectiveCc } : {}),
       ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
       subject,
       connectionId,
@@ -693,6 +761,7 @@ export async function deliverSponsorDocEmail(
     };
   }
 
+  const isPodcast = options.template === 'podcast';
   const delivery = await deliverRenderedEmail(client, {
     draft,
     recipientEmail: resolvedRecipient.to,
@@ -701,6 +770,7 @@ export async function deliverSponsorDocEmail(
     organizationId: options.organizationId,
     sponsorName: options.sponsorName,
     connectionId: options.connectionId,
+    ...(isPodcast ? { cc: [OWNER_WORK_EMAIL], requiredCc: [OWNER_WORK_EMAIL] } : {}),
   });
   return {
     ...delivery,

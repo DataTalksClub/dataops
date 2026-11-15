@@ -145,7 +145,7 @@ Orin Vale`);
     assert.equal(res.statusCode, 200, res.body);
     const output = JSON.parse(res.body);
     assert.equal(output.email.to, 'guest@example.test');
-    assert.deepEqual(output.email.cc, []);
+    assert.deepEqual(output.email.cc, ['alexey@datatalks.club']);
     assert.equal(output.connectionId, 'google-calendar-orin');
     assert.match(output.email.body, /Monday 4 November 2030 at 17:00 CET/);
     assert.match(output.email.body, /Reliable data agents/);
@@ -171,7 +171,7 @@ Orin Vale`);
     assert.equal(results.filter(result => result.statusCode === 409).length, 1);
     assert.equal(sends, 1);
     assert.match(mime, /To: guest@example.test/);
-    assert.ok(!mime.includes('Cc:'));
+    assert.match(mime, /^Cc: alexey@datatalks\.club$/m);
     assert.match(mime, /Best regards,\r\nOrin Vale/);
     const saved = (await getTaskConsistent(client, input.taskId))!;
     assert.equal(saved.podcastFirstContact!.state, 'sent');
@@ -248,6 +248,71 @@ Orin Vale`);
     assert.equal(replay.statusCode, 200, replay.body);
     assert.equal(JSON.parse(replay.body).alreadySent, true);
     assert.equal(sends, 1);
+    setSponsorDocEmailDepsForTests({});
+  });
+
+  it('keeps Cc: alexey@datatalks.club on later Orin-driven replies in podcast guest threads and fails loudly if Cc cannot be added', async () => {
+    const { deliverRenderedEmail } = await import('../src/sponsorDocs/emailDelivery');
+    const input = await invitation();
+    const mimes: string[] = [];
+    setSponsorDocEmailDepsForTests({ credential: 'synthetic-credential', fetchImpl: async (url, init) => {
+      const target = String(url);
+      if (target.includes('/threads/podcast-thread-1')) {
+        return new Response(JSON.stringify({
+          messages: [{
+            payload: {
+              headers: [
+                { name: 'Subject', value: 'Synthetic Guest at DataTalks.Club Podcast' },
+                { name: 'Message-ID', value: '<msg-1@mail.example>' },
+                { name: 'Cc', value: 'alexey@datatalks.club' },
+              ],
+            },
+          }],
+        }), { status: 200 });
+      }
+      if (target.endsWith('/messages/send')) {
+        mimes.push(Buffer.from(JSON.parse(String(init?.body)).raw, 'base64url').toString('utf8'));
+        return new Response(JSON.stringify({ id: `reply-${mimes.length}`, threadId: 'podcast-thread-1' }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ access_token: 'synthetic-access', provider_account_id: 'orin@datatalks.club' }), { status: 200 });
+    } });
+
+    const replyDefaultCc = await deliverRenderedEmail(client, {
+      draft: { subject: 'Ignored', body: 'Following up on our podcast recording.' },
+      recipientEmail: 'guest@example.test',
+      taskId: input.taskId,
+      threadId: 'podcast-thread-1',
+    });
+    assert.equal(replyDefaultCc.state, 'sent');
+    assert.deepEqual(replyDefaultCc.cc, ['alexey@datatalks.club']);
+
+    const replyExplicitEmptyCc = await deliverRenderedEmail(client, {
+      draft: { subject: 'Ignored', body: 'Second follow-up.' },
+      recipientEmail: 'guest@example.test',
+      taskId: input.taskId,
+      threadId: 'podcast-thread-1',
+      cc: [],
+    });
+    assert.equal(replyExplicitEmptyCc.state, 'sent');
+    assert.deepEqual(replyExplicitEmptyCc.cc, ['alexey@datatalks.club']);
+
+    assert.equal(mimes.length, 2);
+    for (const raw of mimes) {
+      assert.match(raw, /^Cc: alexey@datatalks\.club$/m);
+      assert.match(raw, /^Subject: Re: Synthetic Guest at DataTalks\.Club Podcast$/m);
+      assert.match(raw, /^In-Reply-To: <msg-1@mail\.example>$/m);
+    }
+
+    const failedCc = await deliverRenderedEmail(client, {
+      draft: { subject: 'Test', body: 'Body' },
+      recipientEmail: 'guest@example.test',
+      taskId: input.taskId,
+      cc: ['not-an-email'],
+      requiredCc: ['not-an-email'],
+    });
+    assert.equal(failedCc.state, 'deferred');
+    assert.equal(failedCc.reason, 'invalid_cc');
+    assert.equal(mimes.length, 2);
     setSponsorDocEmailDepsForTests({});
   });
 });

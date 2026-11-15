@@ -16,6 +16,7 @@ import { getTaskConsistent, updateTask, TaskVersionConflictError } from '../db/t
 import { getCalendarHold } from '../db/calendarHolds';
 import { getCardConsistent } from '../db/cards';
 import { getSponsorDocWithAuthMaterial, decryptSponsorDocAccessCode } from '../db/sponsorDocs';
+import { OWNER_WORK_EMAIL } from '../identity/operatingIdentities';
 import { deliverRenderedEmail } from '../sponsorDocs/emailDelivery';
 import { sponsorDocPortalBaseUrl } from './sponsorDocs';
 
@@ -80,7 +81,7 @@ export async function handlePodcastFirstContactRoutes(
     // Use the existing Orin Google connection with verified Gmail scopes, also
     // used by contract delivery. No new account, connection or grant is created.
     const connectionId = process.env.DATAOPS_ORIN_GMAIL_CONNECTION_ID?.trim() || 'google-calendar-orin';
-    if (body.preview === true) return json(200, { preview: true, email: { ...email, to: recipient, cc: [] }, connectionId, retryEligible: Boolean(retryEligible), taskId, holdId, docId });
+    if (body.preview === true) return json(200, { preview: true, email: { ...email, to: recipient, cc: [OWNER_WORK_EMAIL] }, connectionId, retryEligible: Boolean(retryEligible), taskId, holdId, docId });
     const attempts = prior ? [...(prior.attempts || []), { claimedAt: prior.claimedAt, delivery: prior.delivery! }] : [];
     const claim = { holdId, docId, recipient, state: 'sending' as const, claimedAt: new Date().toISOString(), attempts };
     try {
@@ -90,7 +91,7 @@ export async function handlePodcastFirstContactRoutes(
       throw error;
     }
     // Only the explicit, proven pre-Gmail recovery above can repeat an attempt.
-    const delivery = await deliverRenderedEmail(client, { draft: email, recipientEmail: recipient, recipientName: guestName, taskId, connectionId, cc: [] });
+    const delivery = await deliverRenderedEmail(client, { draft: email, recipientEmail: recipient, recipientName: guestName, taskId, connectionId, cc: [OWNER_WORK_EMAIL], requiredCc: [OWNER_WORK_EMAIL] });
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const current = await getTaskConsistent(client, taskId);
       if (!current) throw new Error('Owning Task disappeared after invitation delivery');
