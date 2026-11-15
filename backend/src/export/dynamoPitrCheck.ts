@@ -207,37 +207,29 @@ async function checkDynamoPitrStatus(
 }
 
 /**
- * Publish a PITR breach alert to the shared operator SNS alarm topic so
- * `AlarmNotifyFunction` emails `dev@dtcdev.click` via SES.
+ * Publish one alarm-shaped message to the shared operator SNS alarm topic
+ * (`DYNAMO_PITR_ALERT_TOPIC_ARN`), which `AlarmNotifyFunction` emails to
+ * `dev@dtcdev.click`. The backend Lambda already holds sns:Publish on it, so
+ * runtime paths can page loudly without a new CloudWatch alarm resource.
  */
-async function publishPitrGuardAlert(
-  result: PitrCheckResult,
-  deps: PitrAlertDeps = {},
-): Promise<{ published: boolean; topicArn?: string; alertEmail: string }> {
+async function publishOperatorAlarm(
+  alarm: { alarmName: string; description: string; reason: string; subject: string; details?: Record<string, unknown> },
+  deps: Omit<PitrAlertDeps, 'alertEmail'> = {},
+): Promise<{ published: boolean; topicArn?: string }> {
   const topicArn = (deps.topicArn ?? process.env.DYNAMO_PITR_ALERT_TOPIC_ARN ?? '').trim();
-  const alertEmail = (deps.alertEmail ?? process.env.DYNAMO_PITR_ALERT_EMAIL ?? DEFAULT_ALERT_EMAIL).trim() || DEFAULT_ALERT_EMAIL;
-  if (!topicArn) {
-    return { published: false, alertEmail };
-  }
-
+  if (!topicArn) return { published: false };
   const arnParts = topicArn.split(':');
   const region = arnParts[3] || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'eu-west-1';
-  const reason = result.disabledTables.length > 0
-    ? `DynamoDB PITR disabled on ${result.disabledTables.length} table(s): ${result.disabledTables.join(', ')} (recipient: ${alertEmail})`
-    : `DynamoDB PITR status unknown for all ${result.tableCount} tables (recipient: ${alertEmail})`;
-
+  const now = deps.now || new Date();
   const message = JSON.stringify({
-    AlarmName: 'dataops-v1-dynamo-pitr-disabled',
-    AlarmDescription: `Daily DynamoDB PITR guard alert for ${alertEmail}`,
+    AlarmName: alarm.alarmName,
+    AlarmDescription: alarm.description,
     NewStateValue: 'ALARM',
-    NewStateReason: reason,
-    StateChangeTime: result.generatedAt,
-    AlertRecipient: alertEmail,
-    DisabledTables: result.disabledTables,
-    UnknownTables: result.unknownTables,
-    TableCount: result.tableCount,
+    NewStateReason: alarm.reason,
+    StateChangeTime: now.toISOString(),
+    ...(alarm.details || {}),
   });
-  const subject = `[DataOps] DynamoDB PITR disabled (${result.disabledTables.length || 'unknown'})`;
+  const subject = alarm.subject;
   const body = new URLSearchParams({
     Action: 'Publish',
     Version: '2010-03-31',
@@ -253,7 +245,6 @@ async function publishPitrGuardAlert(
       : defaultProvider();
   const creds = await resolveCreds();
 
-  const now = deps.now || new Date();
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
   const dateStamp = amzDate.slice(0, 8);
   const host = `sns.${region}.amazonaws.com`;
@@ -303,11 +294,46 @@ async function publishPitrGuardAlert(
     const errText = await response.text().catch(() => '');
     throw new Error(`SNS Publish failed with HTTP ${response.status}: ${errText.slice(0, 200)}`);
   }
+  return { published: true, topicArn };
+}
+
+
+/**
+ * Publish a PITR breach alert to the shared operator SNS alarm topic so
+ * `AlarmNotifyFunction` emails `dev@dtcdev.click` via SES.
+ */
+async function publishPitrGuardAlert(
+  result: PitrCheckResult,
+  deps: PitrAlertDeps = {},
+): Promise<{ published: boolean; topicArn?: string; alertEmail: string }> {
+  const topicArn = (deps.topicArn ?? process.env.DYNAMO_PITR_ALERT_TOPIC_ARN ?? '').trim();
+  const alertEmail = (deps.alertEmail ?? process.env.DYNAMO_PITR_ALERT_EMAIL ?? DEFAULT_ALERT_EMAIL).trim() || DEFAULT_ALERT_EMAIL;
+  if (!topicArn) {
+    return { published: false, alertEmail };
+  }
+
+  const reason = result.disabledTables.length > 0
+    ? `DynamoDB PITR disabled on ${result.disabledTables.length} table(s): ${result.disabledTables.join(', ')} (recipient: ${alertEmail})`
+    : `DynamoDB PITR status unknown for all ${result.tableCount} tables (recipient: ${alertEmail})`;
+  await publishOperatorAlarm({
+    alarmName: 'dataops-v1-dynamo-pitr-disabled',
+    description: `Daily DynamoDB PITR guard alert for ${alertEmail}`,
+    reason,
+    subject: `[DataOps] DynamoDB PITR disabled (${result.disabledTables.length || 'unknown'})`,
+    details: {
+      StateChangeTime: result.generatedAt,
+      AlertRecipient: alertEmail,
+      DisabledTables: result.disabledTables,
+      UnknownTables: result.unknownTables,
+      TableCount: result.tableCount,
+    },
+  }, { ...deps, topicArn });
   return { published: true, topicArn, alertEmail };
 }
 
 export {
   checkDynamoPitrStatus,
+  publishOperatorAlarm,
   publishPitrGuardAlert,
   DEFAULT_ALERT_EMAIL,
   METRIC_NAMESPACE,
