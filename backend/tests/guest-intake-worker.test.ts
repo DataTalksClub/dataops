@@ -27,6 +27,7 @@ let db: DynamoDBDocumentClient;
 let google = createMockGoogleCalendar();
 const checklist = createTaskChecklistFixture();
 let mails = 0;
+let sentMimes: string[] = [];
 let ownerEvents: unknown[] = [];
 let failMail = false;
 let onMailSend: (() => Promise<void>) | undefined;
@@ -37,8 +38,8 @@ before(async () => {
   await saveCalendarOverlaySettings(db, { connectionId: 'synthetic-google' }, 'synthetic-actor');
   setCalendarHoldGoogleDepsForTests({ credential: 'synthetic', connectionId: 'synthetic-google', fetchImpl: google.fetchImpl });
   setOwnerCalendarProviderClientsForTests({ readSecret: async () => 'synthetic', fetch: async (url) => new Response(JSON.stringify(String(url).endsWith('/api/agent/token') ? { access_token: 'synthetic' } : { items: ownerEvents }), { status: 200 }) });
-  setSponsorDocEmailDepsForTests({ credential: 'synthetic', fetchImpl: async (url) => {
-    if (String(url).endsWith('/messages/send')) { mails++; if (onMailSend) { const callback = onMailSend; onMailSend = undefined; await callback(); } if (failMail) throw new Error('synthetic ambiguous timeout'); return new Response(JSON.stringify({ id: `synthetic-mail-${mails}` }), { status: 200 }); }
+  setSponsorDocEmailDepsForTests({ credential: 'synthetic', fetchImpl: async (url, init) => {
+    if (String(url).endsWith('/messages/send')) { mails++; if (onMailSend) { const callback = onMailSend; onMailSend = undefined; await callback(); } if (failMail) throw new Error('synthetic ambiguous timeout'); sentMimes.push(Buffer.from(JSON.parse(String(init?.body)).raw, 'base64url').toString('utf8')); return new Response(JSON.stringify({ id: `synthetic-mail-${mails}` }), { status: 200 }); }
     if (String(url).includes('userinfo')) return new Response(JSON.stringify({ email: 'orin@datatalks.club' }), { status: 200 });
     return new Response(JSON.stringify({ access_token: 'synthetic', provider_account_id: 'orin@datatalks.club', scopes: ['https://www.googleapis.com/auth/gmail.send'] }), { status: 200 });
   } });
@@ -69,6 +70,7 @@ test('creation queues a durable job with email alone; one worker sends both chan
   await handler({ Records: [{ eventSource: 'aws:dynamodb', eventName: 'INSERT', dynamodb: { NewImage: { guestIntake: { M: { jobId: { S: created.card.guestIntake.jobId } } } } } }] });
   const job = (await getGuestIntakeJob(db, created.card.guestIntake.jobId))!;
   assert.equal(job.status, 'sent'); assert.equal(mails, beforeMails + 1);
+  assert.match(sentMimes.at(-1) || '', /^Cc: alexey@datatalks\.club$/m);
   const event = (await getEventRecord(db, job.holdId!))!;
   assert.equal(event.durationMinutes, 60);
   assert.equal(event.operations[0].desired.startIso, new Date(Date.parse(event.startIso)-5*60000).toISOString()); assert.match(event.operations[0].desired.summary, /^\[Proposed\] /);
@@ -296,4 +298,22 @@ test('new Card-linked blockers cannot be created through the private legacy hold
   const created = await card('webinar', { skipEmail: true });
   const result = await invoke('POST', '/api/calendar-holds', { cardId: created.card.id, date: '2030-12-23', title: 'Synthetic blocker', topic: 'Synthetic topic', guestRef: 'synthetic-guest@example.test' });
   assert.equal(result.statusCode, 422); assert.equal(JSON.parse(result.body).code, 'use_card_event_proposal');
+});
+
+test('podcast first-contact fails loudly with a Task error if required Cc cannot be added', async () => {
+  const { deliverRenderedEmail } = await import('../src/sponsorDocs/emailDelivery');
+  const created = await card('podcast');
+  const beforeMails = mails;
+  const taskId = created.card.guestIntake.taskId;
+  const deferred = await deliverRenderedEmail(db, {
+    draft: { subject: 'Test', body: 'Body' },
+    recipientEmail: 'synthetic-guest@example.test',
+    taskId,
+    cc: [],
+    requiredCc: ['alexey@datatalks.club'],
+  });
+  assert.equal(deferred.state, 'deferred');
+  assert.equal(deferred.reason, 'invalid_cc');
+  assert.match(deferred.message || '', /could not be added/);
+  assert.equal(mails, beforeMails);
 });
