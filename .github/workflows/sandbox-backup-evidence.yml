@@ -1,14 +1,14 @@
 name: Sandbox Backup Evidence (read-only)
 
-# Dispatch-only job that records independent, read-only live evidence for the
-# knowledge-backup stale alarm and the deployed knowledge worker: alarm state
-# (whose StateReason names the recent Success datapoints), the deployed
-# function configuration, and best-effort metric/snapshot reads. It runs no
-# writes: every command is a describe/get/list, and the two reads the deploy
-# role is not scoped for are allowed to fail without failing the job.
+# Dispatch-only, read-only proof under the CI OIDC role. Permission failures
+# and missing alarms fail this job; a green run means evidence was collected.
+# No snapshots, tokens, or application data are printed.
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/sandbox-backup-evidence.yml
 
 permissions:
   contents: read
@@ -23,7 +23,17 @@ env:
   AWS_ROLE_ARN: arn:aws:iam::817685572750:role/dataops-github-actions-deploy
 
 jobs:
+  validate:
+    name: Validate backup evidence workflow
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check workflow syntax and shell
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 .github/workflows/sandbox-backup-evidence.yml
+
   evidence:
+    if: github.event_name == 'workflow_dispatch'
     name: Read alarm state and worker config
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -39,87 +49,53 @@ jobs:
           role-session-name: sandbox-backup-evidence
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Knowledge backup stale alarm state
+      - name: Read each backup and scheduled-run alarm
+        if: ${{ !cancelled() }}
+        shell: bash
         run: |
-          aws cloudwatch describe-alarms --alarm-names dataops-v1-knowledge-backup-stale \
-            --query 'MetricAlarms[0]' \
-            --output json --region "$AWS_REGION"
+          set -uo pipefail
+          failed=0
+          for suffix in knowledge-backup-stale knowledge-worker-failure knowledge-mirror-stale knowledge-mirror-failed recurring-cron-pass-missed recurring-cron-failure recurring-cron-errors; do
+            name="dataops-v1-$suffix"
+            if ! aws cloudwatch describe-alarms --alarm-names "$name" \
+              --query 'MetricAlarms' --output json > "$RUNNER_TEMP/$suffix.json"; then
+              failed=1
+              continue
+            fi
+            cat "$RUNNER_TEMP/$suffix.json"
+            jq -e 'length == 1 and .[0].ActionsEnabled == true and (.[0].AlarmActions | length > 0)' \
+              "$RUNNER_TEMP/$suffix.json" >/dev/null || failed=1
+          done
+          exit "$failed"
 
-      - name: Knowledge worker function configuration
+      - name: Read alarm topic subscriptions
+        if: ${{ !cancelled() }}
+        shell: bash
         run: |
-          function_name="$(aws cloudformation describe-stack-resource \
-            --stack-name dataops-v1 \
-            --logical-resource-id KnowledgeWorkerFunction \
-            --query 'StackResourceDetail.PhysicalResourceId' \
-            --output text --region "$AWS_REGION")"
-          echo "Function: $function_name"
-          aws lambda get-function-configuration --function-name "$function_name" \
-            --query '{
-              FunctionName: FunctionName,
-              MemorySize: MemorySize,
-              LastModified: LastModified,
-              LastUpdateStatus: LastUpdateStatus,
-              Version: Version,
-              CodeSha256: CodeSha256,
-              Runtime: Runtime
-            }' \
-            --output json --region "$AWS_REGION"
+          set -uo pipefail
+          failed=0
+          for topic in dataops-v1-conversational-rollout-alarms dapier-AlarmTopic-6LjEWSJwA6Ya; do
+            echo "Topic: $topic"
+            aws sns list-subscriptions-by-topic \
+              --topic-arn "arn:aws:sns:$AWS_REGION:817685572750:$topic" \
+              --query 'Subscriptions[].{Protocol:Protocol,Endpoint:Endpoint,SubscriptionArn:SubscriptionArn}' \
+              --output json || failed=1
+          done
+          exit "$failed"
 
-      - name: Success metric datapoints (best effort)
-        continue-on-error: true
+      - name: Read actual knowledge success datapoints
+        if: ${{ !cancelled() }}
+        shell: bash
         run: |
-          start="$(date -u -d '8 days ago' +%Y-%m-%dT%H:%M:%SZ)"
-          aws cloudwatch get-metric-statistics \
-            --namespace DataOps/Knowledge \
-            --metric-name Success \
-            --dimensions Name=Job,Value=knowledge-backup \
-            --start-time "$start" \
-            --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --period 86400 \
-            --statistics Sum \
-            --output json --region "$AWS_REGION" || echo "metric read not permitted for this role"
-
-      - name: Latest snapshot objects (best effort)
-        continue-on-error: true
-        run: |
-          aws s3api list-objects-v2 \
-            --bucket dataops-knowledge-protected-817685572750-eu-west-1 \
-            --prefix snapshots/ \
-            --query 'sort_by(Contents, &LastModified)[-3:].{Key: Key, Size: Size, LastModified: LastModified}' \
-            --output json --region "$AWS_REGION" || echo "snapshot listing not permitted for this role"
-
-      - name: Backend function configuration and recurring cron alarm (best effort)
-        continue-on-error: true
-        run: |
-          backend_fn="$(aws cloudformation describe-stack-resource \
-            --stack-name dataops-v1 \
-            --logical-resource-id BackendFunction \
-            --query 'StackResourceDetail.PhysicalResourceId' \
-            --output text --region "$AWS_REGION")"
-          echo "BackendFunction: $backend_fn"
-          aws lambda get-function-configuration --function-name "$backend_fn" \
-            --query '{
-              FunctionName: FunctionName,
-              MemorySize: MemorySize,
-              LastModified: LastModified,
-              LastUpdateStatus: LastUpdateStatus,
-              Version: Version,
-              CodeSha256: CodeSha256,
-              Runtime: Runtime
-            }' \
-            --output json --region "$AWS_REGION"
-          aws lambda get-function-concurrency --function-name "$backend_fn" \
-            --output json --region "$AWS_REGION"
-          aws cloudwatch describe-alarms --alarm-names dataops-v1-recurring-cron-errors \
-            --query 'MetricAlarms[0]' \
-            --output json --region "$AWS_REGION" || echo "recurring-cron-errors alarm read not permitted for this role"
-          start="$(date -u -d '2 days ago' +%Y-%m-%dT%H:%M:%SZ)"
-          aws cloudwatch get-metric-statistics \
-            --namespace AWS/Lambda \
-            --metric-name Errors \
-            --dimensions "Name=FunctionName,Value=$backend_fn" \
-            --start-time "$start" \
-            --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --period 86400 \
-            --statistics Sum \
-            --output json --region "$AWS_REGION" || echo "BackendFunction Errors metric read not permitted for this role"
+          set -uo pipefail
+          failed=0
+          for job in knowledge-backup knowledge-mirror knowledge-repo-backup; do
+            echo "Job: $job"
+            aws cloudwatch get-metric-statistics \
+              --namespace DataOps/Knowledge --metric-name Success \
+              --dimensions "Name=Job,Value=$job" \
+              --start-time "$(date -u -d '8 days ago' +%Y-%m-%dT%H:%M:%SZ)" \
+              --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --period 3600 --statistics Sum --output json || failed=1
+          done
+          exit "$failed"
