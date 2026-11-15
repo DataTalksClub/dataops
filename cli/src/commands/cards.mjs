@@ -37,8 +37,9 @@ Usage
                                                 for a previously skipped first invitation; never a resend.
                                                 --retry-pre-send resumes only a proven safe pre-send failure;
                                                 ambiguous delivery is blocked. The worker normally resumes automatically.
-  dataops cards update <card-id> [--title T] [--description D] [--date D] [--end-date D] [--owner ID|none]
-      [--tags a,b] [--people PERSON_ID,PERSON_ID|none]
+  dataops cards update <card-id> [--title T] [--description D] [--date D|none] [--end-date D]
+      [--event-time "YYYY-MM-DD HH:MM"|none] [--duration M] [--tz IANA_ZONE]
+      [--owner ID|none] [--tags a,b] [--people PERSON_ID,PERSON_ID|none]
   dataops cards update <card-id> --count FIELD=N[,FIELD=N] [--apply]
                                                 Change a count (e.g. workshops=3); preview by default
   dataops cards time <card-id> --at "YYYY-MM-DD HH:MM" [--duration 60] [--tz Europe/Berlin]
@@ -50,6 +51,8 @@ Usage
   dataops cards stage <card-id> <preparation|announced|after-event>
   dataops cards link <card-id> <link-name> <url> [--add]
                                                 Fill a Card link; --add also creates a custom named link
+  dataops cards link <card-id> <link-name> --remove
+                                                Remove a link from the Card
   dataops cards invite add <card-id> <event-id> --calendar CAL [--label LABEL] [--json]
                                                 Adopt an existing Google event without editing it
   dataops cards invite list <card-id> [--json]  The Card's invites, checked in Google (gone = stale)
@@ -305,7 +308,7 @@ export function parseCounts(value) {
 export async function update(args, io) {
   const id = positional(args, 0, "dataops cards update <card-id> [--title T] ...");
   if (args.count !== undefined) {
-    const other = ["title", "description", "date", "endDate", "owner", "tags"].find((flag) => args[flag] !== undefined);
+    const other = ["title", "description", "date", "endDate", "eventTime", "duration", "tz", "owner", "tags"].find((flag) => args[flag] !== undefined);
     if (other) throw new UsageError(`--count is a reviewed change of its own; run --${other} separately.`);
     return templateUpdate(args, io);
   }
@@ -314,10 +317,27 @@ export async function update(args, io) {
     const value = optionalString(args, flag);
     if (value !== undefined) body[key] = value;
   }
-  const date = isoDate(args.date, "date");
-  if (date) body.anchorDate = date;
+  const date = optionalString(args, "date");
+  if (date !== undefined) body.anchorDate = date === "none" ? null : isoDate(date, "date");
   const endDate = optionalString(args, "endDate");
   if (endDate !== undefined) body.endDate = isoDate(endDate, "end-date");
+  const eventTime = optionalString(args, "eventTime");
+  if (eventTime !== undefined) {
+    if (eventTime === "none") {
+      if (args.duration !== undefined || args.tz !== undefined) {
+        throw new UsageError("--duration and --tz cannot be used with --event-time none.");
+      }
+      body.eventTime = null;
+    } else {
+      body.eventTime = {
+        at: eventTime,
+        ...(args.duration !== undefined ? { duration: integer(args.duration, "duration") } : {}),
+        ...(args.tz !== undefined ? { tz: optionalString(args, "tz") } : {}),
+      };
+    }
+  } else if (args.duration !== undefined || args.tz !== undefined) {
+    throw new UsageError("--duration and --tz require --event-time.");
+  }
   const owner = optionalString(args, "owner");
   if (owner !== undefined) body.ownerId = owner === "none" ? null : owner;
   if (args.tags !== undefined) body.tags = csv(args.tags);
@@ -334,15 +354,24 @@ export async function stage(args, io) {
 }
 
 export async function link(args, io) {
-  const usage = "dataops cards link <card-id> <link-name> <url> [--add]";
+  const usage = "dataops cards link <card-id> <link-name> <url> [--add]\n  dataops cards link <card-id> <link-name> --remove";
   const id = positional(args, 0, usage);
   const name = positional(args, 1, usage);
-  const url = positional(args, 2, usage);
   const api = apiFor(args);
   const { card } = await api.get(`/api/cards/${enc(id)}`);
   const links = Array.isArray(card.cardLinks) ? card.cardLinks : [];
   // Bind the replacement array to the version it was derived from.
   const pinnedArgs = { ...args, expectedVersion: args.expectedVersion ?? card.version };
+  if (args.remove) {
+    if (args._?.[2] !== undefined) throw new UsageError("Do not pass a URL with --remove.");
+    if (!links.some((item) => (item.name || item.label) === name)) {
+      throw new UsageError(`Card has no link named "${name}".`);
+    }
+    return write(pinnedArgs, io, id, {
+      cardLinks: links.filter((item) => (item.name || item.label) !== name),
+    }, `Removed "${name}" from`);
+  }
+  const url = positional(args, 2, usage);
   if (links.some((item) => (item.name || item.label) === name)) {
     return write(pinnedArgs, io, id, {
       cardLinks: links.map((item) => ((item.name || item.label) === name ? { ...item, url } : item)),
