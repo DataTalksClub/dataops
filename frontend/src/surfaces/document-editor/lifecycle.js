@@ -69,7 +69,9 @@ export function createEditorLifecycle(context, services) {
       }
       updateSaveState();
       flashSaveState("Saved");
-      showEditorFeedback(`Saved ${path}.`);
+      showEditorFeedback(payload.warnings?.length
+        ? `Saved with content gate warnings. Fix before Git mirroring: ${payload.warnings.join("; ")}`
+        : `Saved ${path}.`, { kind: payload.warnings?.length ? "error" : "success" });
       if (editorView.dataset.mode === "rendered") renderParsedDocument();
       refreshChangesPanel();
       refreshKnowledgeStatus();
@@ -156,7 +158,9 @@ export function createEditorLifecycle(context, services) {
       if (!isFresh()) return;
       await openDocument(payload.path);
       if (documentState.currentDoc?.path !== payload.path) return;
-      showEditorFeedback(`Created ${payload.path}.`);
+      showEditorFeedback(payload.warnings?.length
+        ? `Created with content gate warnings. Complete before Git mirroring: ${payload.warnings.join("; ")}`
+        : `Created ${payload.path}.`, { kind: payload.warnings?.length ? "error" : "success" });
     } catch (error) {
       if (!isFresh()) return;
       setCreateStatus(error.message, feedbackKindForError(error));

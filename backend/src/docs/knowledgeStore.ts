@@ -1,3 +1,4 @@
+import { blockingAuthoredContentIssues } from './authoredContent';
 import { templateParser } from './templatePlaceholders';
 /** Private S3 knowledge: immutable blobs/manifests and one conditional publication pointer. */
 import { createHash, randomUUID } from 'node:crypto';
@@ -333,6 +334,8 @@ export class KnowledgeStore {
         : mutation.sourcePath ? await this.blobBytes(previous.entries[normalizeRepoPath(mutation.sourcePath)]?.sha || '')
         : await this.versionBytes(path, mutation.restoreRevision!);
       const content = typeof bytes === 'string' ? bytes : Buffer.from(bytes).toString('utf8');
+      const contentIssues = blockingAuthoredContentIssues(path, content);
+      if (contentIssues.length) throw new KnowledgeError(`${path}: Authored-content validation failed: ${contentIssues.join('; ')}`);
       const parser = await templateParser();
       const old = previous.entries[path] ? (await this.blobBytes(previous.entries[path].sha)).toString('utf8') : '';
       if (parser.isTemplateDocument(content, {path}) || (!parser.documentType(content) && parser.isTemplateDocument(old, {path}))) {

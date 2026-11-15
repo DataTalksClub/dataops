@@ -1,3 +1,4 @@
+import { authoredContentIssues, blockingAuthoredContentIssues } from './authoredContent';
 import { templateParser } from './templatePlaceholders';
 import { dump as dumpYaml } from 'js-yaml';
 import { DOCX_CONTENT_TYPE, markdownToDocx } from './docxExport';
@@ -439,7 +440,23 @@ export async function handleDocsRoutes(
   }
 
   try {
-    return await dispatch(event, path, actor, publishMessage, actorNames, client);
+    const rt = runtime || new DocsRuntime(createKnowledgeStore(knowledgeStoreConfigFromEnv()));
+    const response = await dispatch(event, path, actor, publishMessage, actorNames, client, rt);
+    if (response && response.statusCode >= 200 && response.statusCode < 300
+      && path !== '/docs/preview-write' && ['PUT', 'POST', 'PATCH'].includes(method(event))) {
+      const publication = await rt.store.pin();
+      const payload = JSON.parse(response.body);
+      const warnings: string[] = [];
+      if (payload.revision === publication.revision) {
+        for (const change of publication.changes) {
+          if (!publication.entries[change.path] || !change.path.startsWith(CONTENT_PREFIX) || !change.path.endsWith('.md')) continue;
+          const content = await rt.store.readFile(change.path);
+          warnings.push(...authoredContentIssues(change.path, content).map(issue => `${change.path}: ${issue}`));
+        }
+      }
+      if (warnings.length) response.body = JSON.stringify({ ...payload, warnings });
+    }
+    return response;
   } catch (err) {
     if (err instanceof HttpError) return jsonResponse(err.status, { error: err.message });
     if (err instanceof DerivedDocumentNotFound) return jsonResponse(404, { error: err.message });
@@ -500,9 +517,9 @@ async function dispatch(
   publishMessage?: string,
   actorNames?: ActorNameResolver,
   client?: DynamoDBDocumentClient,
+  rt = runtime || new DocsRuntime(createKnowledgeStore(knowledgeStoreConfigFromEnv())),
 ): Promise<LambdaResponse> {
   const m = method(event);
-  const rt = runtime || new DocsRuntime(createKnowledgeStore(knowledgeStoreConfigFromEnv()));
 
   if (rt.store.offline && path.startsWith('/knowledge/')) await rt.ensureSynced();
   if (path === '/health') return jsonResponse(200, { ok: true });
@@ -702,6 +719,8 @@ async function previewWrite(rt: DocsRuntime, body: Record<string, unknown>, temp
   if (body.create === true && exists) throw new BadRequest('Document already exists');
   if (body.create !== true && !exists) throw new NotFound('Document not found. Pass --create to add it.');
 
+  const contentIssues = blockingAuthoredContentIssues(path, body.content);
+  if (contentIssues.length) throw new BadRequest(`${path}: Authored-content validation failed: ${contentIssues.join('; ')}`);
   const { isTemplateDocument, parseTemplatePlaceholders, documentType } = await templateParser();
   const oldContent = current.get(path) || '';
   const doc = { path, doc_type: typeof body.doc_type === 'string' ? body.doc_type : undefined };
@@ -716,6 +735,7 @@ async function previewWrite(rt: DocsRuntime, body: Record<string, unknown>, temp
   const plan = await prepareKnowledgePlan(rt, [source], templates);
   return jsonResponse(200, {
     dryRun: true,
+    warnings: authoredContentIssues(path, body.content).map(issue => `${path}: ${issue}`),
     revision: rt.store.revision,
     changes: [...new Set(plan.mutations.map((mutation) => mutation.path))].sort(),
     regenerated: plan.regenerated,
