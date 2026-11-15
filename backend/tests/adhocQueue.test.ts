@@ -7,6 +7,7 @@ import {
   adhocQueueItemId,
   handleAdhocQueueRoutes,
   setAdhocQueueSecretReaderForTests,
+  setAdhocQueueOperatorPagerForTests,
 } from '../src/routes/adhocQueue';
 
 const TOKEN = 'synthetic-aisl-queue-token';
@@ -111,6 +112,8 @@ describe('Ad-hoc queue', () => {
     (process.stdout as unknown as { write: (s: string) => boolean }).write = (chunk: string) => { written.push(String(chunk)); return true; };
     const originalError = console.error;
     console.error = () => {};
+    const pages: Array<{ alarmName: string; reason: string }> = [];
+    setAdhocQueueOperatorPagerForTests(async (alarm) => { pages.push(alarm); return { published: true, topicArn: 'arn:test' }; });
     try {
       const res = await handleAdhocQueueRoutes({
         httpMethod: 'POST', path: '/api/v1/queue/items',
@@ -121,8 +124,12 @@ describe('Ad-hoc queue', () => {
     } finally {
       (process.stdout as unknown as { write: typeof original }).write = original;
       console.error = originalError;
+      setAdhocQueueOperatorPagerForTests(null);
     }
     assert.ok(written.some((line) => line.includes('"StoreFailure":1') && line.includes('DataOps/AdhocQueue')));
+    assert.equal(pages.length, 1);
+    assert.equal(pages[0].alarmName, 'dataops-v1-adhoc-queue-store-failure');
+    assert.match(pages[0].reason, /table missing/);
   });
 
   it('lets an operator ack and mark done with a note; done items leave the open list', async () => {

@@ -4,6 +4,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { TABLE_INTAKE } from '../db/tableNames';
 import { writeEmbeddedMetric } from '../embeddedMetrics';
+import { publishOperatorAlarm } from '../export/dynamoPitrCheck';
 import { headerValue } from '../httpHeaders';
 import { noStoreJson as json } from '../http';
 import { resolveInteractiveActor } from '../identity/actor';
@@ -149,8 +150,16 @@ function clean(row: Record<string, unknown> | undefined): AdhocQueueItem | null 
   return rest as unknown as AdhocQueueItem;
 }
 
-function storageFailed(operation: string, error: unknown): LambdaResponse {
-  // Loud: the 5xx boundary log line plus a metric the operator alarm pages on.
+// Injectable for tests; production pages the shared operator SNS topic.
+let pageOperator: typeof publishOperatorAlarm = publishOperatorAlarm;
+
+export function setAdhocQueueOperatorPagerForTests(pager: typeof publishOperatorAlarm | null): void {
+  pageOperator = pager || publishOperatorAlarm;
+}
+
+async function storageFailed(operation: string, error: unknown): Promise<LambdaResponse> {
+  // Loud: the 5xx boundary log line, a metric, and a direct page on the shared
+  // operator SNS topic (emails dev@dtcdev.click), so a lost item is never silent.
   recordRequestError(error);
   writeEmbeddedMetric({
     _aws: {
@@ -160,6 +169,19 @@ function storageFailed(operation: string, error: unknown): LambdaResponse {
     Operation: operation,
     StoreFailure: 1,
   });
+  const detail = `${(error as Error)?.name || 'Error'}: ${(error as Error)?.message || 'unknown error'}`;
+  try {
+    const result = await pageOperator({
+      alarmName: 'dataops-v1-adhoc-queue-store-failure',
+      description: 'The ad-hoc queue failed to store or update an item; the caller got 503 and must retry.',
+      reason: `Ad-hoc queue ${operation} failed: ${detail}`.slice(0, 1000),
+      subject: '[DataOps] Ad-hoc queue store failure',
+      details: { Operation: operation },
+    });
+    if (!result.published) console.error(`adhoc_queue_page_skipped: no operator topic configured (${operation}: ${detail})`);
+  } catch (pageError) {
+    console.error(`adhoc_queue_page_failed: ${(pageError as Error)?.message || 'unknown error'}`);
+  }
   return json(503, { error: { code: 'queue_storage_failed', message: 'The queue could not store the item; retry later.' } });
 }
 
@@ -183,7 +205,7 @@ async function handlePost(event: LambdaEvent, client: DynamoDBDocumentClient): P
     expected = await sourceToken(sourceForAuth, false);
     if (expected && !sameSecret(token, expected)) expected = await sourceToken(sourceForAuth, true);
   } catch (error) {
-    return storageFailed('auth', error);
+    return await storageFailed('auth', error);
   }
   if (!expected || !sameSecret(token, expected)) {
     return json(401, { error: { code: 'unauthorized', message: 'token is not valid for this source' } });
@@ -215,10 +237,10 @@ async function handlePost(event: LambdaEvent, client: DynamoDBDocumentClient): P
         const existing = await getAdhocQueueItem(client, id);
         return json(200, { item: existing, created: false, duplicate: true });
       } catch (readError) {
-        return storageFailed('read', readError);
+        return await storageFailed('read', readError);
       }
     }
-    return storageFailed('put', error);
+    return await storageFailed('put', error);
   }
 }
 
@@ -313,7 +335,7 @@ export async function handleAdhocQueueRoutes(event: LambdaEvent, client: DynamoD
       if ((error as { name?: string })?.name === 'ConditionalCheckFailedException') {
         return json(404, { error: { code: 'not_found', message: `queue item ${id} not found` } });
       }
-      return storageFailed('update', error);
+      return await storageFailed('update', error);
     }
   }
 
