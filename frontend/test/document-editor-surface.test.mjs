@@ -753,6 +753,17 @@ describe("Document Editor surface boundary", () => {
     assert.equal(harness.document.activeElement, harness.elements.editorSaveState);
   });
 
+  test("save content warnings remain visible in an assertive editor alert", async () => {
+    const harness = createEditorHarness({
+      editorValue: "# Draft", immediateTimers: true,
+      request: async () => ({ updated: 42, revision: "r2", warnings: ["content/example.md: missing stable id"] }),
+    });
+    await harness.api.saveCurrentDocument();
+    assert.match(harness.elements.editorInlineStatus.textContent, /Saved with content gate warnings.*missing stable id/);
+    assert.equal(harness.elements.editorInlineStatus.getAttribute("role"), "alert");
+    assert.equal(harness.elements.editorInlineStatus.hidden, false);
+  });
+
   test("retains the local draft across validation, conflict, network, and permission save failures", async () => {
     for (const message of [
       "Validation failed: title is required",

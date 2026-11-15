@@ -165,6 +165,7 @@ export function createEditorChanges(context, services) {
     showChangesStatus("Saving drafts…");
     let failed = 0;
     let savedCount = 0;
+    const contentWarnings = [];
     for (const path of paths) {
       const draft = storage.getItem(draftKey(path));
       if (draft === null) continue;
@@ -180,6 +181,7 @@ export function createEditorChanges(context, services) {
         storage.removeItem(draftKey(path));
         storage.removeItem(`dtc-doc-base:${path}`);
         savedCount += 1;
+        contentWarnings.push(...(result.warnings || []));
         if (documentState.currentDoc && documentState.currentDoc.path === path) {
           documentState.lastSavedContent = draft;
           documentState.hasDraft = false;
@@ -194,7 +196,10 @@ export function createEditorChanges(context, services) {
     changesSaveAll.disabled = false;
     changesSaveAll.classList.remove("is-busy");
     changesDiscardAll.disabled = false;
-    if (failed) {
+    if (contentWarnings.length) {
+      refreshChangesPanel({ keepVisibleAfterAction: true });
+      showChangesStatus(`Saved ${savedCount}, ${failed} failed. Content gate warnings: ${contentWarnings.join("; ")}`, { isError: true });
+    } else if (failed) {
       refreshChangesPanel({ keepVisibleAfterAction: true });
       showChangesStatus(`Saved ${savedCount}, ${failed} failed.`, {
         isError: true,
