@@ -1,0 +1,50 @@
+[
+ {
+  "template": "podcast-1-speaker-luma",
+  "sourceFrame": "Podcast - 1 speaker (Luma)",
+  "figmaNode": "3613:146",
+  "eventType": "podcast",
+  "layout": "square",
+  "width": 2000,
+  "height": 2000,
+  "speakerCount": 1,
+  "sponsorLogo": false,
+  "label": {
+   "key": "label",
+   "default": "PODCAST",
+   "fontSize": 80.0,
+   "pill": {
+    "pillWidth": 422.0,
+    "pillX": 1272.0,
+    "textPad": 20.45
+   }
+  },
+  "title": {
+   "keys": [
+    "title_line_1",
+    "title_line_2",
+    "title_line_3"
+   ],
+   "fontSize": 150.0,
+   "align": "center",
+   "widestExampleLine": 1624
+  },
+  "speakers": [
+   {
+    "nameKeys": [
+     "speaker1_name_line_1",
+     "speaker1_name_line_2"
+    ],
+    "fontSize": 85.0,
+    "portrait": "speaker1_portrait",
+    "pill": {
+     "pillWidth": 960.0,
+     "pillX": 1483.0,
+     "textPad": 189.35,
+     "hug": false,
+     "centerX": 1959.09
+    }
+   }
+  ]
+ }
+]

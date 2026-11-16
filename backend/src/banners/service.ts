@@ -19,6 +19,7 @@ export function bannerFailureCode(error: unknown, stage: string): string {
   if (error instanceof BannerFailure) return error.code;
   const name = (error as { name?: string })?.name;
   if (name === 'CodeArtifactUserPendingException' || name === 'ResourceNotReadyException') return 'renderer-cold-activating';
+  if (name === 'CoverFitError') return 'title-or-name-does-not-fit-template';
   if (name === 'AccessDeniedException' || name === 'AccessDenied') return `${stage}-access-denied`;
   if (name === 'TooManyRequestsException' || name === 'TimeoutError' || name === 'ServiceException') return `${stage}-temporarily-unavailable`;
   return `${stage}-failed`;
@@ -95,7 +96,7 @@ export async function renderBannerJob(client: DynamoDBDocumentClient, id: string
     if (bundle.schema !== 'dataops.banner-templates.v1' || !bundle.sourceRevision) throw new BannerFailure('invalid-template-bundle');
     const template = bundle.templates.find(t => t.eventType === job.input.eventType && t.layout === job.input.layout && t.speakerCount === job.speakers.length && t.sponsorTreatment === job.input.sponsorTreatment);
     if (!template || template.width < 1 || template.height < 1 || template.width > 4000 || template.height > 4000) throw new BannerFailure('unsupported-template');
-    if (job.input.eventLabel && !template.html.includes('{{eventLabel}}')) throw new BannerFailure('unsupported-event-label');
+    if (job.input.eventLabel && !(template.html.includes('{{eventLabel}}') || template.html.includes('{{label}}'))) throw new BannerFailure('unsupported-event-label');
     stage = 'portrait';
     const portraits: string[] = [];
     for (const speaker of job.speakers) {
@@ -114,7 +115,7 @@ export async function renderBannerJob(client: DynamoDBDocumentClient, id: string
       if (checksum(bytes) !== job.sponsorLogo.checksum) throw new BannerFailure('sponsor-logo-checksum-mismatch');
       logoData = `data:${portraitContentType(bytes)};base64,${bytes.toString('base64')}`;
     }
-    const html = composeBanner(template, job, portraits, bundle.assets, logoData);
+    const html = composeBanner(template, job, portraits, bundle.assets, logoData, bundle.fontAdvances);
     const prefix = `cards/${job.cardId}/banners/${id}`;
     const inputKey = `${prefix}/input.html`;
     const outputKey = `${prefix}/banner.png`;
