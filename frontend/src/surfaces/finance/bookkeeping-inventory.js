@@ -31,12 +31,19 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
     String(b.acquisitionDate || "").localeCompare(String(a.acquisitionDate || "")));
   const disposalsOf = (item) => (Array.isArray(item.disposals) ? item.disposals : []);
 
-  function sourceMarkup(item) {
+  // One quiet provenance line under the item name: the vendor and a link to
+  // the ledger record the item was derived from. Clicking anywhere on the
+  // record (not its controls) opens that ledger record too.
+  function metaMarkup(item) {
     const source = item.source;
-    if (!source) return "";
-    return html`<button type="button" class="bk-inv-source" data-inv-source="${escapeHtml(source.transactionId)}"
-        title="Open the ledger record from ${escapeHtml(source.date || item.acquisitionDate || "")}"
-        aria-label="Open the ledger record for ${escapeHtml(item.name)}">↳ ledger: ${escapeHtml(source.description || item.name)}</button>`;
+    const parts = [
+      item.vendor ? html`<span class="bk-inv-vendor">${escapeHtml(item.vendor)}</span>` : "",
+      source ? html`<button type="button" class="bk-inv-source" data-inv-source="${escapeHtml(source.transactionId)}"
+          title="Open the ledger record from ${escapeHtml(source.date || item.acquisitionDate || "")}"
+          aria-label="Open the ledger record for ${escapeHtml(item.name)}">↳ ledger: ${escapeHtml(source.description || item.name)}</button>` : "",
+    ].filter(Boolean);
+    if (!parts.length) return "";
+    return html`<span class="bk-inv-meta">${parts.join(html`<span class="bk-inv-meta-sep"> · </span>`)}</span>`;
   }
 
   function statusMarkup(item) {
@@ -82,12 +89,11 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
 
   function rowMarkup(item) {
     const disposed = item.status === "disposed";
-    return html`<tr class="bk-row bk-inv-row${disposed ? " is-disposed" : ""}" data-inv="${escapeHtml(item.id)}">
+    return html`<tr class="bk-row bk-inv-row${disposed ? " is-disposed" : ""}${item.source ? " is-openable" : ""}" data-inv="${escapeHtml(item.id)}">
       <td class="bk-col-date">${escapeHtml(item.acquisitionDate || "")}</td>
       <td class="bk-inv-what">
         <span class="bk-who__name">${escapeHtml(item.name)}</span>
-        ${item.vendor ? html`<span class="bk-inv-vendor">${escapeHtml(item.vendor)}</span>` : ""}
-        ${sourceMarkup(item)}
+        ${metaMarkup(item)}
       </td>
       <td class="bk-inv-type">
         <select class="bk-inline-select" data-inv-field="type" aria-label="Type of ${escapeHtml(item.name)}">
@@ -231,15 +237,24 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
       return;
     }
     const button = event.target.closest("[data-inv-remove]");
-    if (!button) return;
-    const item = items.find((candidate) => candidate.id === button.dataset.invRemove);
-    if (!item || !globalThis.confirm?.(`Remove ${item.name} from the inventory?`)) return;
-    safeAction(async () => {
-      await api(`/inventory/${encodeURIComponent(item.id)}`, { method: "DELETE" });
-      items = items.filter((candidate) => candidate.id !== item.id);
-      render();
-      setStatus(`Removed ${item.name} from the inventory.`);
-    }, "Could not remove the inventory item");
+    if (button) {
+      const item = items.find((candidate) => candidate.id === button.dataset.invRemove);
+      if (!item || !globalThis.confirm?.(`Remove ${item.name} from the inventory?`)) return;
+      safeAction(async () => {
+        await api(`/inventory/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+        items = items.filter((candidate) => candidate.id !== item.id);
+        render();
+        setStatus(`Removed ${item.name} from the inventory.`);
+      }, "Could not remove the inventory item");
+      return;
+    }
+    // The record itself opens the ledger entry it was derived from; clicks
+    // inside its controls (type select, note input) stay edits.
+    if (event.target.closest("input, select, button, a")) return;
+    const row = event.target.closest("[data-inv]");
+    const item = items.find((candidate) => candidate.id === row?.dataset.inv);
+    if (!item?.source) return;
+    openTransaction?.(item.source.transactionId);
   });
 
   host.addEventListener("input", (event) => {
