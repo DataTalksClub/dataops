@@ -215,13 +215,16 @@ export function createBookkeepingSurface(context) {
     function renderView() {
       surface.dataset.bkView = view || "transactions";
       // The sidebar's Inventory entry lives outside the surface and follows
-      // the in-page view, which changes without a route commit.
-      document.querySelectorAll("[data-bookkeeping-view]").forEach((item) => {
+      // the in-page view, which changes without a route commit. It is owned
+      // through the surface's own document, so mounts under a DOM subset
+      // without a sidebar simply skip it.
+      const navItems = surface.ownerDocument?.querySelectorAll("[data-bookkeeping-view]") ?? [];
+      for (const item of navItems) {
         const active = item.dataset.bookkeepingView === view;
         item.classList.toggle("is-active", active);
         if (active) item.setAttribute("aria-current", "page");
         else item.removeAttribute("aria-current");
-      });
+      }
       surface.querySelector("[data-bk-main]").hidden = Boolean(view);
       surface.classList.toggle("dk-fill", !view);
       surface.querySelectorAll("[data-secondary]").forEach((section) => {
