@@ -4,6 +4,10 @@
 .dk-nav-item__icon svg { width: 20px; height: 20px; }
 .dk-sidebar svg, .dk-topbar svg, .dk-account-menu svg, .dk-notif-panel svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .dk-nav-group__label { font-weight: var(--dk-weight-semibold); }
+/* A sub-view entry (Bookkeeping → Inventory) nests under its parent item. */
+.dk-nav-item--sub { padding-left: var(--dk-space-6); }
+.dk-nav-item--sub .dk-nav-item__icon svg { width: 16px; height: 16px; }
+.dk-nav-item--sub .dk-nav-item__label { font-size: var(--dk-text-sm); }
 .knowledge-tools { width: 100%; margin: 0; }
 .docs-create-slot { display: contents; }
 body:not([data-workspace-view="docs"]) .knowledge-tools { display: none; }

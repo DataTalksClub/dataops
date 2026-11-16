@@ -285,6 +285,10 @@ export function createSurfaceComposition(context) {
     body.dataset.workspaceView = activeView;
     searchInput.placeholder = "Search work and docs";
     for (const button of workspaceNavButtons) {
+      // Sub-view entries (Bookkeeping → Inventory) follow the surface's own
+      // ?view= state, which changes without a route commit; renderView owns
+      // them, the generic pass would wrongly light them on every page.
+      if (button.dataset.bookkeepingView) continue;
       const active = button.dataset.workspaceView === activeView;
       button.classList.toggle("is-active", active);
       if (active) button.setAttribute("aria-current", "page");
