@@ -87,15 +87,17 @@ test('newsletter preview wraps long URLs and inline code on every tab; shareable
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 });
 
-    // Internal (staff) page: all four tabs, each contained.
+    // Internal (staff) page: all five tabs (Draft, Final render, Brief, Sources, Raw), each contained.
     await page.setExtraHTTPHeaders({});
     await page.goto(`${server.baseURL}/newsletter-issues/${issue.id}/preview`);
     await expect(page.locator('[data-preview-staff-bar]')).toBeVisible();
-    await expect(page.locator('[data-preview-tab]')).toHaveCount(4);
-    for (const tab of ['issue', 'brief', 'sources', 'raw']) {
+    await expect(page.locator('[data-preview-tab]')).toHaveCount(5);
+    for (const tab of ['issue', 'final', 'brief', 'sources', 'raw']) {
       await page.locator(`[data-preview-tab="${tab}"]`).click();
       if (tab === 'raw') {
         await expect(page.locator('pre.sponsor-doc-export-pre')).toHaveCount(3);
+      } else if (tab === 'final') {
+        await expect(page.locator('[data-preview-canvas="final"]')).toBeVisible();
       } else {
         await expect(page.locator(`[data-preview-canvas="${tab}"] code`).first()).toBeVisible();
       }
@@ -103,7 +105,7 @@ test('newsletter preview wraps long URLs and inline code on every tab; shareable
       if (SCREENSHOTS) await page.screenshot({ path: `${SCREENSHOTS}/staff-${tab}-${width}.png`, fullPage: true });
     }
 
-    // Shareable link: anonymous viewer with the access code sees only the issue.
+    // Shareable link: anonymous viewer with the access code sees Draft + Final render only.
     const external = await page.context().browser().newContext({
       viewport: { width, height: 900 },
       extraHTTPHeaders: { 'x-newsletter-preview-anonymous': 'true' },
@@ -113,7 +115,9 @@ test('newsletter preview wraps long URLs and inline code on every tab; shareable
     await expect(extPage.locator('[data-preview-canvas="issue"]')).toBeVisible();
     await expect(extPage.locator('[data-preview-canvas="issue"] code').first()).toBeVisible();
     await expect(extPage.locator('[data-preview-staff-bar]')).toHaveCount(0);
-    await expect(extPage.locator('[data-preview-tab]')).toHaveCount(0);
+    await expect(extPage.locator('[data-preview-tab]')).toHaveCount(2);
+    await expect(extPage.locator('[data-preview-tab="issue"]')).toBeVisible();
+    await expect(extPage.locator('[data-preview-tab="final"]')).toBeVisible();
     await expect(extPage.locator('body')).not.toContainText('INTERNAL-SOURCES-MARKER');
     await expect(extPage.locator('body')).not.toContainText('Sources (sources.md)');
     await expect(extPage.locator('body')).not.toContainText('Raw Markdown');
