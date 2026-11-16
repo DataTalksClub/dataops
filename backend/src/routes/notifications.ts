@@ -37,7 +37,6 @@ async function handleNotificationRoutes(path: string, method: string, rawBody: s
     // Route: GET /api/notifications (with optional ?all=true)
     if ((suffix === '' || suffix === '/') && method === 'GET') {
       await createDueFollowUpNotifications(client);
-      await createDueTaskNotifications(client, { todayDate: berlinDate(new Date()) });
       const all = Boolean(queryParams && queryParams['all'] === 'true');
       const binding = {
         collection: 'notifications',
