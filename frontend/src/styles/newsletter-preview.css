@@ -131,6 +131,16 @@
   border: 1px solid var(--dk-border-default);
 }
 
+.newsletter-final-frame {
+  width: 100%;
+  min-height: 75vh;
+  height: 820px;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background-color: var(--dk-bg-surface);
+  display: block;
+}
+
 .newsletter-preview-tabs {
   display: flex;
   flex-wrap: wrap;
