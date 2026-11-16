@@ -293,7 +293,7 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     // The page is the transaction list for the latest month with activity.
     await expect(page.locator("[data-period-heading]")).toHaveText("July 2026");
     const studioRow = page.locator(".bk-row").filter({ hasText: "Example Studio" });
-    await expect(studioRow.locator(".bk-flag")).toHaveAttribute("aria-label", "No receipt");
+    await expect(studioRow.locator(".bk-cell-icon--missing")).toHaveAttribute("aria-label", "No invoice attached");
     await expect(studioRow.locator(".bk-col-eur")).toHaveText("−€320.00");
     await expectPalette(page, false);
     await expectNoPageOverflow(page, 1440);
