@@ -106,3 +106,32 @@ test('managed-engine sessions resolve the shared Hub DataOps credential director
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('managed-engine sessions resolve shared Hub DataOps config even with forward-slash XDG_CONFIG_HOME', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'hub-config-slash-'));
+  try {
+    const sharedDir = path.join(root, 'shared', 'dataops');
+    const engineConfig = path.join(root, 'managed-engines', 'hub-antigravity-1', 'home', '.config').replace(/\\/g, '/');
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import assert from 'node:assert/strict';
+      const { hubSharedConfigDir, hostOperatorConfigDir, saveProfileToDir, resolveProfile, credentialsPath } = await import(${JSON.stringify(configModule)});
+      assert.equal(hubSharedConfigDir(), ${JSON.stringify(sharedDir)});
+      assert.equal(hostOperatorConfigDir(), ${JSON.stringify(path.join(path.dirname(root), 'dataops'))});
+      saveProfileToDir(${JSON.stringify(sharedDir)}, 'https://ops.dtcdev.click', {
+        token: 'dops_shared_slash_token',
+        tokenId: 'shared-slash-id',
+        label: 'hub-sessions@windows',
+        scopes: ['kb:write'],
+        kind: 'agent',
+      });
+      assert.equal(credentialsPath(), ${JSON.stringify(path.join(sharedDir, 'credentials.json'))});
+      assert.equal(resolveProfile({ url: 'https://ops.dtcdev.click' }).token, 'dops_shared_slash_token');
+    `], {
+      env: { ...process.env, DATAOPS_CONFIG_DIR: '', DATAOPS_TOKEN: '', DATAOPS_URL: '', XDG_CONFIG_HOME: engineConfig },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -231,6 +231,18 @@ describe("shared-issuer login", () => {
     );
   });
 
+  test("surfaces target URL, HTTP status, and error detail when device start fails", async () => {
+    globalThis.fetch = async (url) => {
+      assert.equal(String(url), `${issuer}/oauth/device`);
+      return json({ error: "Unauthorized" }, 401);
+    };
+    const { login } = await import("../src/commands/auth.mjs");
+    await assert.rejects(
+      () => login({ url: "https://portal.test" }, { print: () => {} }),
+      /Device login start failed at https:\/\/issuer\.test\/oauth\/device \(HTTP 401\): Unauthorized/,
+    );
+  });
+
   test("refreshes the session on 401 and rotates the single-use refresh token", async () => {
     fakeIssuer({
       tokenResponse: { body: { access_token: REFRESHED_TOKEN, refresh_token: "rt-2", expires_in: 3600 } },
