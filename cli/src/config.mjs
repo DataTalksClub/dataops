@@ -17,19 +17,28 @@ const CREDENTIALS_PATH = path.join(CONFIG_DIR, "credentials.json");
 export const DEFAULT_URL = "https://ops.dtcdev.click";
 
 /**
+ * Extract the `<hub-config>` root when running inside a Hub managed engine
+ * (`<hub-config>/managed-engines/<engine>/home`). Matches both `/` and `\` so
+ * Windows paths with mixed separators still resolve the shared Hub config.
+ */
+function findHubRoot() {
+  for (const candidate of [XDG_BASE, homedir()]) {
+    const match = /[\\/]managed-engines[\\/]/.exec(candidate);
+    if (match && match.index > 0) {
+      return candidate.slice(0, match.index);
+    }
+  }
+  return null;
+}
+
+/**
  * Resolve the Hub-owned shared DataOps credential directory (`<hub-config>/shared/dataops`).
  * Inside a Hub managed session, HOME/XDG_CONFIG_HOME lives under
  * `<hub-config>/managed-engines/<engine>/home`.
  */
 export function hubSharedConfigDir() {
-  const marker = `${path.sep}managed-engines${path.sep}`;
-  for (const candidate of [XDG_BASE, homedir()]) {
-    const idx = candidate.indexOf(marker);
-    if (idx > 0) {
-      const hubRoot = candidate.slice(0, idx);
-      return path.join(hubRoot, "shared", "dataops");
-    }
-  }
+  const hubRoot = findHubRoot();
+  if (hubRoot) return path.join(hubRoot, "shared", "dataops");
   return path.join(XDG_BASE, "agent-hub", "shared", "dataops");
 }
 
@@ -39,22 +48,15 @@ export function hubSharedConfigDir() {
  * admin credential to mint a scoped shared session token.
  */
 export function hostOperatorConfigDir() {
-  const marker = `${path.sep}managed-engines${path.sep}`;
-  for (const candidate of [XDG_BASE, homedir()]) {
-    const idx = candidate.indexOf(marker);
-    if (idx > 0) {
-      const hubRoot = candidate.slice(0, idx);
-      return path.join(path.dirname(hubRoot), "dataops");
-    }
-  }
+  const hubRoot = findHubRoot();
+  if (hubRoot) return path.join(path.dirname(hubRoot), "dataops");
   return CONFIG_DIR;
 }
 
 function activeCredentialsPath() {
   if (process.env.DATAOPS_CONFIG_DIR) return CREDENTIALS_PATH;
   if (existsSync(CREDENTIALS_PATH)) return CREDENTIALS_PATH;
-  const marker = `${path.sep}managed-engines${path.sep}`;
-  if (XDG_BASE.includes(marker) || homedir().includes(marker)) {
+  if (findHubRoot()) {
     const sharedPath = path.join(hubSharedConfigDir(), "credentials.json");
     if (existsSync(sharedPath)) return sharedPath;
   }

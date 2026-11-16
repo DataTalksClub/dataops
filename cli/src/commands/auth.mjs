@@ -143,6 +143,10 @@ async function issuerDeviceLogin({ label, prompt, presentUri }) {
     } catch {
       parsed = null;
     }
+    if (target.endsWith("/oauth/device") && (response.status !== 200 || !parsed?.device_code || !parsed?.user_code)) {
+      const detail = parsed?.error_description || parsed?.error || text.trim().slice(0, 200) || "missing device_code/user_code";
+      throw new Error(`Device login start failed at ${target} (HTTP ${response.status}): ${detail}`);
+    }
     return { status: response.status, body: parsed };
   };
   try {
