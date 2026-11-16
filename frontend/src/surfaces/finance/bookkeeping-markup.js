@@ -1,8 +1,9 @@
 import "../../dakit/collection.js";
 // Static shell for the bookkeeping surface. The page is the transaction
 // list: header with the month navigator and actions, one filter row, the
-// table with its detail pane. Files, the accountant package/VAT and
-// forwarded invoices are secondary views (?view=…) reached from the ⋯ menu.
+// table with its detail pane. Inventory is a tab next to Transactions;
+// files, the accountant package/VAT, tuition and forwarded invoices are
+// secondary views (?view=…) reached from the ⋯ menu.
 import { financeSectionHead, html } from "./shared.js";
 import { periodNavMarkup } from "../period-nav.js";
 
@@ -26,6 +27,10 @@ export function bookkeepingSurfaceMarkup() {
         })}
       </div>
     </header>
+    <nav class="dk-tabs dk-tabs--sm bk-view-tabs" data-bk-view-tabs aria-label="Bookkeeping views">
+      <button type="button" class="dk-tab" data-view-link="" aria-current="page">Transactions</button>
+      <button type="button" class="dk-tab" data-view-link="inventory">Inventory</button>
+    </nav>
     <p data-bookkeeping-status class="dk-toast bk-status" role="status"></p>
     <div class="bk-main dk-fill" data-bk-main>
       <div class="bk-filters" role="search" aria-label="Filter transactions" data-filters>
@@ -61,7 +66,6 @@ export function bookkeepingSurfaceMarkup() {
             <button type="button" class="dk-menu__item" role="menuitem" data-view-link="package">Accountant package &amp; VAT</button>
             <button type="button" class="dk-menu__item" role="menuitem" data-view-link="tuition">Tuition agreements &amp; installments</button>
             <button type="button" class="dk-menu__item" role="menuitem" data-view-link="invoices">Forwarded invoices <span class="bk-more__meta" data-invoices-meta></span></button>
-            <button type="button" class="dk-menu__item" role="menuitem" data-view-link="inventory">Inventory</button>
           </div>
         </details>
       </div>
@@ -149,7 +153,6 @@ export function bookkeepingSurfaceMarkup() {
       <div data-tuition></div>
     </section>
     <section id="bookkeeping-inventory" class="bookkeeping-section bk-secondary" data-secondary="inventory" aria-labelledby="bookkeeping-inventory-heading" hidden>
-      ${backLink}
       ${financeSectionHead({
         id: "bookkeeping-inventory-heading",
         title: "Inventory",

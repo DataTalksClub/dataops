@@ -214,6 +214,10 @@ export function createBookkeepingSurface(context) {
     }
     function renderView() {
       surface.dataset.bkView = view || "transactions";
+      surface.querySelectorAll("[data-bk-view-tabs] [data-view-link]").forEach((tab) => {
+        if (tab.dataset.viewLink === view) tab.setAttribute("aria-current", "page");
+        else tab.removeAttribute("aria-current");
+      });
       surface.querySelector("[data-bk-main]").hidden = Boolean(view);
       surface.classList.toggle("dk-fill", !view);
       surface.querySelectorAll("[data-secondary]").forEach((section) => {
