@@ -214,9 +214,13 @@ export function createBookkeepingSurface(context) {
     }
     function renderView() {
       surface.dataset.bkView = view || "transactions";
-      surface.querySelectorAll("[data-bk-view-tabs] [data-view-link]").forEach((tab) => {
-        if (tab.dataset.viewLink === view) tab.setAttribute("aria-current", "page");
-        else tab.removeAttribute("aria-current");
+      // The sidebar's Inventory entry lives outside the surface and follows
+      // the in-page view, which changes without a route commit.
+      document.querySelectorAll("[data-bookkeeping-view]").forEach((item) => {
+        const active = item.dataset.bookkeepingView === view;
+        item.classList.toggle("is-active", active);
+        if (active) item.setAttribute("aria-current", "page");
+        else item.removeAttribute("aria-current");
       });
       surface.querySelector("[data-bk-main]").hidden = Boolean(view);
       surface.classList.toggle("dk-fill", !view);
