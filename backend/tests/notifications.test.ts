@@ -8,13 +8,14 @@ import { createTables } from '../scripts/local-dynamodb';
 import {
   createNotification,
   createDueFollowUpNotifications,
+  createDueTaskNotifications,
   getNotification,
   dismissNotification,
   listUndismissedNotifications,
   listAllNotifications,
   dismissAllNotifications,
 } from '../src/db/notifications';
-import { createCard } from '../src/db/cards';
+import { createCard, parkCard } from '../src/db/cards';
 import { templateLink } from './helpers/cardTemplate';
 import { createTask, updateTask } from '../src/db/tasks';
 
@@ -310,5 +311,82 @@ describe('Notifications data layer', () => {
     // Now dismiss again — should return 0
     const count = await dismissAllNotifications(client);
     assert.strictEqual(count, 0);
+  });
+
+  it('createDueTaskNotifications creates user-scoped task-due notifications for active due todo tasks', async () => {
+    const orinId = '59fb73a3-7436-45df-a003-e1114721d830';
+    await createCard(client, {
+      ...templateLink(),
+      id: 'card-task-due-active',
+      title: 'Course Launch Active',
+      anchorDate: '2098-04-01',
+      status: 'active',
+    });
+    const parkedCard = await createCard(client, {
+      ...templateLink(),
+      id: 'card-task-due-parked',
+      title: 'Course Launch Parked',
+      anchorDate: '2098-04-01',
+    });
+    await parkCard(client, parkedCard.id, parkedCard.version);
+
+    const dueTask = await createTask(client, {
+      description: 'Review and update course emails/templates after pre-course Q&A',
+      date: '2098-04-01',
+      status: 'todo',
+      assigneeId: orinId,
+      cardId: 'card-task-due-active',
+    });
+    await createTask(client, {
+      description: 'Already done task should not notify',
+      date: '2098-04-01',
+      status: 'done',
+      assigneeId: orinId,
+      cardId: 'card-task-due-active',
+    });
+    const snoozedTask = await createTask(client, {
+      description: 'Snoozed task should not notify',
+      date: '2098-04-01',
+      status: 'todo',
+      assigneeId: orinId,
+      cardId: 'card-task-due-active',
+    });
+    await updateTask(client, snoozedTask.id, {
+      expectedVersion: snoozedTask.version,
+      patch: { snoozedUntil: '2098-04-05', snoozeReason: 'Waiting for cohort' },
+    });
+    await createTask(client, {
+      description: 'Parked card task should not notify',
+      date: '2098-04-01',
+      status: 'todo',
+      assigneeId: orinId,
+      cardId: 'card-task-due-parked',
+    });
+
+    const dryRunResult = await createDueTaskNotifications(client, {
+      todayDate: '2098-04-01',
+      dryRun: true,
+    });
+    assert.strictEqual(dryRunResult.created.length, 0);
+    assert.strictEqual(dryRunResult.candidates.length, 1);
+    assert.strictEqual(dryRunResult.candidates[0].type, 'task-due');
+    assert.strictEqual(dryRunResult.candidates[0].taskId, dueTask.id);
+    assert.strictEqual(dryRunResult.candidates[0].userId, orinId);
+
+    const first = await createDueTaskNotifications(client, { todayDate: '2098-04-01' });
+    assert.strictEqual(first.created.length, 1);
+    assert.strictEqual(first.created[0].type, 'task-due');
+    assert.strictEqual(first.created[0].taskId, dueTask.id);
+    assert.strictEqual(first.created[0].cardId, 'card-task-due-active');
+    assert.strictEqual(first.created[0].userId, orinId);
+    assert.strictEqual(first.created[0].dueAt, '2098-04-01');
+
+    // Idempotent on repeat runs and after dismissal
+    const second = await createDueTaskNotifications(client, { todayDate: '2098-04-01' });
+    assert.strictEqual(second.created.length, 0);
+
+    await dismissNotification(client, first.created[0].id);
+    const afterDismiss = await createDueTaskNotifications(client, { todayDate: '2098-04-01' });
+    assert.strictEqual(afterDismiss.created.length, 0);
   });
 });

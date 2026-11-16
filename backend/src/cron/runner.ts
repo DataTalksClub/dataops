@@ -2,7 +2,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { createCardFromTemplate, listTemplates, instantiateTemplate } from '../db/templates';
 import { listCards } from '../db/cards';
-import { createNotification } from '../db/notifications';
+import { createDueTaskNotifications, createNotification } from '../db/notifications';
 import { generateRecurringTasks } from '../db/recurring';
 import { emitRecurringCronMetrics } from './recurringMetrics';
 import { addCivilDays, moveWeekendToMonday, parseCronExpression, scheduleDatesOccurringOn } from './cronMatch';
@@ -376,6 +376,16 @@ async function runCron(
     failures++;
     calendarHoldFailures++;
   }
+
+  const activeCardIds = new Set(allCards.filter((card) => card.status === 'active').map((card) => card.id));
+  const dueTaskError = await runStep(client, async () => {
+    await createDueTaskNotifications(client, { todayDate, activeCardIds });
+  }, (message) => ({
+    type: 'automation-failure',
+    message: `Due task notifications failed for ${todayDate}: ${message}`,
+    dueAt: todayDate,
+  }));
+  if (dueTaskError !== null) failures++;
   await recordAutomationRun(client, 'calendar-hold-expiry', {
     ok: calendarHoldFailures === 0,
     summary: [

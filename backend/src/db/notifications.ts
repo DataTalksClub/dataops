@@ -9,7 +9,8 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { cleanItem as cleanDbItem } from './cleanItem';
 import { TABLE_NOTIFICATIONS } from './tableNames';
 import { readCollectionPage } from './collectionPage';
-import { listTasksByStatus } from './tasks';
+import { getCard } from './cards';
+import { listTasksByDate, listTasksByStatus } from './tasks';
 import type { Notification, Task } from '../types';
 
 const cleanItem = cleanDbItem<Notification>;
@@ -90,6 +91,88 @@ async function createDueFollowUpNotifications(
   }
 
   return created;
+}
+
+export interface DueTaskNotificationCandidate {
+  type: 'task-due';
+  message: string;
+  taskId: string;
+  cardId?: string;
+  userId?: string;
+  dueAt: string;
+}
+
+function isDueTodoTask(task: Task, todayDate: string): boolean {
+  return (
+    task.status === 'todo' &&
+    typeof task.date === 'string' &&
+    task.date === todayDate &&
+    (!task.snoozedUntil || task.snoozedUntil <= todayDate)
+  );
+}
+
+/**
+ * Create one `task-due` notification for each open `todo` task whose due date
+ * matches `todayDate` (and is not snoozed past `todayDate` or on a non-active Card).
+ * Dismissed notifications still count as generated so dismissing a reminder does
+ * not recreate it for the same task and due date.
+ */
+async function createDueTaskNotifications(
+  client: DynamoDBDocumentClient,
+  options: {
+    todayDate: string;
+    activeCardIds?: ReadonlySet<string>;
+    dryRun?: boolean;
+  },
+): Promise<{ created: Notification[]; candidates: DueTaskNotificationCandidate[] }> {
+  const { todayDate, activeCardIds, dryRun = false } = options;
+  const tasks = (await listTasksByDate(client, todayDate)).filter((task) => isDueTodoTask(task, todayDate));
+  if (tasks.length === 0) {
+    return { created: [], candidates: [] };
+  }
+
+  let resolvedActiveCardIds = activeCardIds;
+  if (!resolvedActiveCardIds) {
+    const uniqueCardIds = [...new Set(tasks.map((task) => task.cardId).filter((id): id is string => Boolean(id)))];
+    const cards = await Promise.all(uniqueCardIds.map((cardId) => getCard(client, cardId)));
+    resolvedActiveCardIds = new Set(
+      cards.filter((card): card is NonNullable<typeof card> => Boolean(card && card.status === 'active')).map((card) => card.id),
+    );
+  }
+
+  const existing = await listAllNotifications(client);
+  const existingKeys = new Set(
+    existing
+      .filter((notification) => notification.type === 'task-due' && notification.taskId && notification.dueAt)
+      .map((notification) => `task#${notification.taskId}#${notification.dueAt}`),
+  );
+
+  const candidates: DueTaskNotificationCandidate[] = [];
+  for (const task of tasks) {
+    if (task.cardId && !resolvedActiveCardIds.has(task.cardId)) continue;
+    const key = `task#${task.id}#${task.date}`;
+    if (existingKeys.has(key)) continue;
+
+    candidates.push({
+      type: 'task-due',
+      message: task.description,
+      taskId: task.id,
+      ...(task.cardId ? { cardId: task.cardId } : {}),
+      ...(task.assigneeId ? { userId: task.assigneeId } : {}),
+      dueAt: task.date!,
+    });
+    existingKeys.add(key);
+  }
+
+  if (dryRun) {
+    return { created: [], candidates };
+  }
+
+  const created: Notification[] = [];
+  for (const candidate of candidates) {
+    created.push(await createNotification(client, candidate as unknown as Record<string, unknown>));
+  }
+  return { created, candidates };
 }
 
 /**
@@ -256,6 +339,7 @@ async function dismissAllNotifications(client: DynamoDBDocumentClient): Promise<
 export {
   createNotification,
   createDueFollowUpNotifications,
+  createDueTaskNotifications,
   getNotification,
   dismissNotification,
   listUndismissedNotifications,

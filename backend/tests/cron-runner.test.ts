@@ -802,7 +802,8 @@ describe('Cron runner', () => {
 
     assert.ok(recurringScanFailed, 'the recurring step must have failed');
     assert.equal(result.recurring.failures, 1);
-    assert.equal(result.failures, 1);
+    // Both recurring and due-task-notifications fail under the injected TABLE_NOTIFICATIONS outage.
+    assert.equal(result.failures, 2);
     assert.ok(logs.some((line) => line.startsWith(
       'Cron failure notification failed: Recurring task generation failed for 2045-03-07: injected recurring failure',
     )));
