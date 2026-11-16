@@ -1,39 +1,37 @@
 /**
- * Build the next private banner template bundle from the current one: replaces the
- * one-speaker podcast covers with the flow layout in src/banners/podcastLayout.ts and
- * ensures the DataTalks.Club logo asset is embedded. Writes the content-addressed bundle
- * to --out-dir and prints its key.
+ * Build the next private banner template bundle from the current one: every event cover
+ * that has a Figma frame (Banner Generator `dtc-event`, Figma node 3613:146) is replaced
+ * by that frame, exactly as designed (no date line, no logo). Combinations Figma has no
+ * frame for (e.g. three speakers) keep the current bundle's template. Writes the
+ * content-addressed bundle to --out-dir and prints its key.
  *
- *   tsx scripts/build-banner-bundle.ts --current bundle.json [--logo logo.svg] --out-dir DIR
+ *   tsx scripts/build-banner-bundle.ts --current bundle.json --figma-dir DIR/banner_generator/templates/dtc-event \
+ *       --figma-revision SHA --out-dir DIR
  */
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { BannerBundle } from '../src/banners/model';
-import { podcastOneSpeakerTemplate } from '../src/banners/podcastLayout';
+import { loadFigmaSource } from '../src/banners/figmaCover';
 
-const optionalArg = (name: string) => { const i = process.argv.indexOf(`--${name}`); return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : undefined; };
-const arg = (name: string) => { const v = optionalArg(name); if (!v) throw new Error(`--${name} is required`); return v; };
+const arg = (name: string) => { const i = process.argv.indexOf(`--${name}`); if (i < 0 || !process.argv[i + 1]) throw new Error(`--${name} is required`); return process.argv[i + 1]; };
 const bundle = JSON.parse(readFileSync(arg('current'), 'utf8')) as BannerBundle;
-const logoPath = optionalArg('logo');
-const assetLogo = logoPath ? `data:image/svg+xml;base64,${readFileSync(logoPath).toString('base64')}` : bundle.assets?.assetLogo;
-if (!assetLogo) throw new Error('--logo is required when current bundle has no assets.assetLogo');
-const replaced = new Set<string>();
-const templates = bundle.templates.map(t => {
-  if (t.eventType === 'podcast' && t.speakerCount === 1 && !t.sponsorTreatment) { replaced.add(t.layout); return podcastOneSpeakerTemplate(t.layout); }
-  return t;
-});
-if (replaced.size !== 2) throw new Error('Current bundle has no one-speaker podcast square+landscape templates to replace');
-const baseRevision = bundle.sourceRevision.replace(/;podcast-flow-layout-v2$/, '');
+const figma = loadFigmaSource(arg('figma-dir'));
+const revision = arg('figma-revision');
+if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error('--figma-revision must be a full commit SHA of AI-Shipping-Labs/banner-generator');
+const key = (t: { eventType: string; layout: string; speakerCount: number; sponsorTreatment?: string }) => `${t.eventType}/${t.layout}/${t.speakerCount}/${t.sponsorTreatment || ''}`;
+const figmaKeys = new Set(figma.templates.map(key));
+const kept = bundle.templates.filter(t => !figmaKeys.has(key(t)));
 const next: BannerBundle = {
   ...bundle,
-  sourceRevision: `${baseRevision};podcast-flow-layout-v2`,
-  assets: { ...bundle.assets, assetLogo },
-  templates,
+  sourceRevision: `banner-generator:${revision};figma-3613-146`,
+  assets: { ...bundle.assets, ...figma.assets },
+  fontAdvances: figma.advances,
+  templates: [...figma.templates, ...kept],
 };
 const bytes = Buffer.from(JSON.stringify(next));
 const hash = createHash('sha256').update(bytes).digest('hex');
-const key = `banner-templates/${hash}/bundle.json`;
+const out = `banner-templates/${hash}/bundle.json`;
 mkdirSync(join(arg('out-dir'), 'banner-templates', hash), { recursive: true });
-writeFileSync(join(arg('out-dir'), key), bytes);
-console.log(key);
+writeFileSync(join(arg('out-dir'), out), bytes);
+console.log(out);

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Card } from '../types';
+import { fitCover } from './figmaCover';
 
 export type BannerInput = {
   eventType: 'workshop' | 'webinar' | 'podcast';
@@ -22,12 +23,21 @@ export type BannerJob = {
   schedule?: BannerSchedule;
 };
 export type BannerSchedule = { date?: string; time?: string };
+/** Slot spec of a Figma frame from Banner Generator's `dtc-event/manifest.json` (see figmaCover.ts). */
+export type FigmaPill = { pillWidth: number; pillX: number; textPad: number; hug?: boolean; centerX?: number };
+export type FigmaCoverSpec = {
+  title: { keys: string[]; fontSize: number; widestExampleLine: number };
+  label: { key: string; default: string; fontSize: number; pill: FigmaPill };
+  speakers: { nameKeys: string[]; fontSize: number; portrait: string; pill: Required<FigmaPill> }[];
+};
 export type BannerTemplate = {
   id: string; eventType: BannerInput['eventType']; layout: BannerInput['layout'];
   speakerCount: number; width: number; height: number; html: string;
   sponsorTreatment?: 'approved-logo';
+  /** Present on templates imported from the Figma event banners: text is fitted into the frame's fixed slots. */
+  figma?: FigmaCoverSpec;
 };
-export type BannerBundle = { schema: 'dataops.banner-templates.v1'; sourceRevision: string; assets?: Record<string, string>; templates: BannerTemplate[] };
+export type BannerBundle = { schema: 'dataops.banner-templates.v1'; sourceRevision: string; assets?: Record<string, string>; fontAdvances?: Record<string, number>; templates: BannerTemplate[] };
 export class BannerInputError extends Error {}
 export function parseBannerInput(value: unknown): BannerInput {
   const data = value as Partial<BannerInput> | null;
@@ -78,7 +88,7 @@ export function portraitContentType(bytes: Buffer): string {
 export function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
-export function composeBanner(template: BannerTemplate, job: BannerJob, portraits: string[], assets: Record<string, string> = {}, sponsorLogo?: string): string {
+export function composeBanner(template: BannerTemplate, job: BannerJob, portraits: string[], assets: Record<string, string> = {}, sponsorLogo?: string, fontAdvances: Record<string, number> = {}): string {
   const titleArea = job.input.layout === 'landscape' ? (job.speakers.length === 3 ? 2120 * 390 : 1260 * 810) : 1800 * 600;
   const values: Record<string, string> = {
     ...Object.fromEntries(Object.entries(assets).filter(([key]) => /^asset[A-Za-z]+$/.test(key))),
@@ -89,9 +99,15 @@ export function composeBanner(template: BannerTemplate, job: BannerJob, portrait
     eventWhen: escapeHtml([job.schedule?.date, job.schedule?.time].filter(Boolean).join(' · ')),
     titleFontSize: String(Math.min(150, Math.floor(Math.sqrt(titleArea / (Math.max(job.title.length, 20) * 0.72))))),
   };
-  if (sponsorLogo) values.sponsorLogo = sponsorLogo;
-  job.speakers.forEach((s, i) => { values[`speaker${i + 1}Name`] = escapeHtml(s.name); values[`speaker${i + 1}Portrait`] = portraits[i]; });
-  const html = template.html.replace(/\{\{([a-zA-Z0-9]+)\}\}/g, (_, key: string) => {
+  if (sponsorLogo) { values.sponsorLogo = sponsorLogo; values.sponsor_logo = sponsorLogo; }
+  job.speakers.forEach((s, i) => { values[`speaker${i + 1}Name`] = escapeHtml(s.name); values[`speaker${i + 1}Portrait`] = portraits[i]; values[`speaker${i + 1}_portrait`] = portraits[i]; });
+  if (template.figma) {
+    // Figma frames fix the line count and pill sizes: fit the card's text into them (no date line, no logo: not in the design).
+    const override = job.input.eventLabel ? (template.figma.label.default === template.figma.label.default.toUpperCase() ? job.input.eventLabel.toUpperCase() : job.input.eventLabel) : undefined;
+    const fitted = fitCover(template.figma, fontAdvances, job.title, job.speakers.map(s => s.name), override);
+    for (const [key, value] of Object.entries(fitted)) values[key] = escapeHtml(value);
+  }
+  const html = template.html.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_, key: string) => {
     if (!(key in values)) throw new Error('Unknown banner template field');
     return values[key];
   });

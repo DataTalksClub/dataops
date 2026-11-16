@@ -78,6 +78,23 @@ and attachment failure. Provider payloads and signed URLs are excluded from
 durable errors. A renderer cold-activation failure can be retried with the same
 request after activation completes.
 
-## One-speaker podcast layout
+## Design source: the Figma frames
 
-The one-speaker podcast covers are generated from `backend/src/banners/podcastLayout.ts` (flow layout: the title sizes to its text and the portrait takes the remaining height, so a short title cannot leave a gap or push the name pill off the canvas). During deployment, `deploy-dataops-v1.yml` runs `backend/scripts/build-banner-bundle.ts` to rewrite those two templates with `assetLogo` into a content-addressed bundle, uploads it to the knowledge bucket if missing, and passes `BannerTemplateBundleKey` to CloudFormation. `backend/e2e/banner-podcast-layout.spec.ts` renders both sizes in Chromium and asserts geometry.
+Cover designs have a single source: the exported Figma frames of *Templates -> Event Banners*
+(node 3613:146) in Banner Generator, `banner_generator/templates/dtc-event/` (see its
+`manifest.json`). Do not author layouts in DataOps. `infra/banner-generator-revision` pins the
+Banner Generator commit; `deploy-dataops-v1.yml` checks it out and runs
+`backend/scripts/build-banner-bundle.ts`, which replaces every bundle template that has a Figma frame
+(event type x layout x speaker count x sponsored) with that frame and keeps the current bundle's
+template for combinations Figma has no frame for (for example three speakers). The content-addressed
+bundle is uploaded to the knowledge bucket if missing and passed as `BannerTemplateBundleKey`.
+
+Figma fixes the line count of title and names, so `composeBanner` fits the Card text into the frame
+(`backend/src/banners/figmaCover.ts`, mirror of Banner Generator `event_cover.py`): balanced wrapping of
+the title into the frame's lines at the Figma font size (shrinks to at most 55% only for long titles),
+name split over two lines where the frame has two, hugging name pills and the label pill sized to
+the text. A title or name that cannot fit fails the job with `title-or-name-does-not-fit-template`.
+The Figma designs contain no date line and no DataTalks.Club logo outside the frames that draw one
+themselves; `eventDate`/`eventTime`/`eventWhen` stay available to templates but Figma frames do not use them.
+To change a design, change it in Figma, re-import into Banner Generator
+(`scripts/import_figma_event_banners.py`), then bump `infra/banner-generator-revision`.
