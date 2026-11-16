@@ -453,7 +453,7 @@ a.bk-cell-icon:focus-visible { outline: 2px solid var(--dk-focus-ring); outline-
 .bk-transaction-statement__record:hover { background: var(--dk-bg-hover); }
 .bk-transaction-statement__none { margin: 0 0 var(--dk-space-2); color: var(--dk-text-muted); }
 .bk-transaction-statement__candidate-label { display: flex; flex-direction: column; gap: var(--dk-space-1); margin-bottom: var(--dk-space-2); color: var(--dk-text-muted); font-size: var(--dk-text-sm); }
-.bk-transaction-statement__candidate-label select { padding: var(--dk-space-2); border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-sm); background: transparent; color: var(--dk-text-body); font: inherit; }
+.bk-transaction-statement__candidate-label select { padding: var(--dk-space-2); border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-sm); color: var(--dk-text-body); font: inherit; }
 @media (max-width: 640px) {
   .bk-transaction-dialog { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; }
   .bk-transaction-dialog__content { padding: var(--dk-space-3); }

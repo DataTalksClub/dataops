@@ -413,7 +413,8 @@ function bankOnlyRowMarkup(entry, e) {
         : e(signedAmount(eur, "EUR"))}</td>
       <td class="bk-col-vat">—</td>
       ${CLASSIFICATION_FIELDS.map(({ field }) => html`<td class="bk-col-class bk-col-${field}">${e(entry[field] || "")}</td>`).join("")}
-      <td class="bk-col-flag"><span class="bk-cell-icon bk-cell-icon--quiet" title="Bank statement line, no invoice needed" aria-label="Bank statement line">${icon.bank}</span></td>
+      <td class="bk-col-flag"><span class="bk-cell-icon bk-cell-icon--quiet"
+        title="Bank statement line, no invoice needed" aria-label="Bank statement line">${icon.bank}</span></td>
       <td class="bk-col-account">${accountCellMarkup(accountOf(entry), null, e)}</td>
     </tr>`;
 }
