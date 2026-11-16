@@ -497,23 +497,25 @@ export function createNewsletterPreviewPage({
       renderStaffEditorCard();
     }
 
-    // Rendered preview card with tabs for issue.md, brief.md, sources.md, and raw Markdown
+    // Rendered preview card with Draft + Final render tabs for all viewers,
+    // plus Brief, Sources, and Raw Markdown tabs for staff.
     const previewCard = el("div", "sponsor-doc-card");
     previewCard.dataset.previewSection = "rendered";
-
-    // Brief, Sources and Raw are internal working material: only staff get the
-    // tab bar. The shareable (code-gated) preview shows the reader-facing issue.
     const isStaff = previewData.viewerRole === "staff";
-    if (!isStaff) activeTab = "issue";
+    if (!isStaff && activeTab !== "issue" && activeTab !== "final") activeTab = "issue";
     const tabsBar = el("div", "newsletter-preview-tabs");
-    const tabDefs = isStaff
-      ? [
-        { id: "issue", label: "Email Preview (issue.md)" },
-        { id: "brief", label: "Brief (brief.md)" },
-        { id: "sources", label: "Sources (sources.md)" },
-        { id: "raw", label: "Raw Markdown" },
-      ]
-      : [];
+    tabsBar.setAttribute("role", "tablist");
+    const tabDefs = [
+      { id: "issue", label: "Draft" },
+      { id: "final", label: "Final render" },
+      ...(isStaff
+        ? [
+          { id: "brief", label: "Brief (brief.md)" },
+          { id: "sources", label: "Sources (sources.md)" },
+          { id: "raw", label: "Raw Markdown" },
+        ]
+        : []),
+    ];
     for (const tabDef of tabDefs) {
       const btn = el(
         "button",
@@ -523,6 +525,8 @@ export function createNewsletterPreviewPage({
         tabDef.label,
       );
       btn.type = "button";
+      btn.setAttribute("role", "tab");
+      btn.setAttribute("aria-selected", activeTab === tabDef.id ? "true" : "false");
       btn.dataset.previewTab = tabDef.id;
       btn.addEventListener("click", () => {
         activeTab = tabDef.id;
@@ -530,7 +534,7 @@ export function createNewsletterPreviewPage({
       });
       tabsBar.append(btn);
     }
-    if (isStaff) previewCard.append(tabsBar);
+    previewCard.append(tabsBar);
 
     const rendered = previewData.rendered || {};
     const md = previewData.markdown || {};
@@ -547,58 +551,78 @@ export function createNewsletterPreviewPage({
       }
     };
 
-    if (activeTab === "issue") {
-      if (rendered.subject || rendered.previewText || Object.keys(rendered.frontmatter || {}).length > 0) {
-        const env = el("div", "newsletter-envelope");
-        if (rendered.subject) {
-          const row = el("div", "newsletter-envelope__row");
-          row.append(
-            el("span", "newsletter-envelope__label", "Subject"),
-            el("span", "newsletter-envelope__value", rendered.subject),
-          );
-          const copySubj = el("button", "dk-button dk-button--secondary dk-button--sm", "Copy subject");
-          copySubj.type = "button";
-          copySubj.dataset.previewAction = "copy-subject";
-          copySubj.addEventListener("click", () =>
-            copyText(rendered.subject, "Copied email subject line."),
-          );
-          row.append(copySubj);
-          env.append(row);
-        }
-        if (rendered.previewText) {
-          const row = el("div", "newsletter-envelope__row");
-          row.append(
-            el("span", "newsletter-envelope__label", "Preview"),
-            el("span", "newsletter-envelope__value", rendered.previewText),
-          );
-          const copyPrev = el("button", "dk-button dk-button--secondary dk-button--sm", "Copy preview");
-          copyPrev.type = "button";
-          copyPrev.dataset.previewAction = "copy-preview-text";
-          copyPrev.addEventListener("click", () =>
-            copyText(rendered.previewText, "Copied email preview text."),
-          );
-          row.append(copyPrev);
-          env.append(row);
-        }
-        const fm = rendered.frontmatter || {};
-        const fmKeys = Object.keys(fm);
-        if (fmKeys.length > 0) {
-          const meta = el("div", "newsletter-envelope__meta");
-          for (const key of fmKeys) {
-            if (key === "mailchimp_campaign" && /^https?:\/\//i.test(fm[key])) {
-              const link = el("a", "", "Open Mailchimp campaign →");
-              link.href = fm[key];
-              link.target = "_blank";
-              link.rel = "noopener noreferrer";
-              meta.append(link);
-            } else {
-              meta.append(el("span", "", `${key}: ${fm[key]}`));
-            }
-          }
-          env.append(meta);
-        }
-        previewCard.append(env);
+    const renderEnvelope = ({ subject, previewText, frontmatter, webViewUrl, updatedAt, updatedByName }) => {
+      const fm = frontmatter || {};
+      const fmKeys = Object.keys(fm);
+      if (!subject && !previewText && fmKeys.length === 0 && !webViewUrl && !updatedAt) return;
+
+      const env = el("div", "newsletter-envelope");
+      if (subject) {
+        const row = el("div", "newsletter-envelope__row");
+        row.append(
+          el("span", "newsletter-envelope__label", "Subject"),
+          el("span", "newsletter-envelope__value", subject),
+        );
+        const copySubj = el("button", "dk-button dk-button--secondary dk-button--sm", "Copy subject");
+        copySubj.type = "button";
+        copySubj.dataset.previewAction = "copy-subject";
+        copySubj.addEventListener("click", () =>
+          copyText(subject, "Copied email subject line."),
+        );
+        row.append(copySubj);
+        env.append(row);
       }
+      if (previewText) {
+        const row = el("div", "newsletter-envelope__row");
+        row.append(
+          el("span", "newsletter-envelope__label", "Preview"),
+          el("span", "newsletter-envelope__value", previewText),
+        );
+        const copyPrev = el("button", "dk-button dk-button--secondary dk-button--sm", "Copy preview");
+        copyPrev.type = "button";
+        copyPrev.dataset.previewAction = "copy-preview-text";
+        copyPrev.addEventListener("click", () =>
+          copyText(previewText, "Copied email preview text."),
+        );
+        row.append(copyPrev);
+        env.append(row);
+      }
+      if (fmKeys.length > 0 || webViewUrl || updatedAt) {
+        const meta = el("div", "newsletter-envelope__meta");
+        for (const key of fmKeys) {
+          if (key === "mailchimp_campaign" && /^https?:\/\//i.test(fm[key])) {
+            const link = el("a", "", "Open Mailchimp campaign →");
+            link.href = fm[key];
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            meta.append(link);
+          } else {
+            meta.append(el("span", "", `${key}: ${fm[key]}`));
+          }
+        }
+        if (webViewUrl && /^https?:\/\//i.test(webViewUrl)) {
+          const link = el("a", "", "Open Relay web view →");
+          link.href = webViewUrl;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.dataset.previewAction = "open-relay-web-view";
+          meta.append(link);
+        }
+        if (updatedAt) {
+          const who = updatedByName || "Relay";
+          meta.append(el("span", "", `Synced ${formatEditedTimestamp(updatedAt)} by ${who}`));
+        }
+        env.append(meta);
+      }
+      previewCard.append(env);
+    };
+
+    if (activeTab === "issue") {
+      renderEnvelope({
+        subject: rendered.subject,
+        previewText: rendered.previewText,
+        frontmatter: rendered.frontmatter,
+      });
 
       const canvas = el("article", "newsletter-email-canvas");
       canvas.dataset.previewCanvas = "issue";
@@ -609,6 +633,37 @@ export function createNewsletterPreviewPage({
         canvas.append(el("p", "dk-hint", "No issue.md content has been uploaded for this newsletter issue yet."));
       }
       previewCard.append(canvas);
+    } else if (activeTab === "final") {
+      renderEnvelope({
+        subject: rendered.finalSubject || rendered.subject,
+        previewText: rendered.finalPreviewText || rendered.previewText,
+        webViewUrl: rendered.finalWebViewUrl,
+        updatedAt: rendered.finalUpdatedAt,
+        updatedByName: rendered.finalUpdatedByName,
+      });
+
+      if (rendered.finalHtml) {
+        const frame = el("iframe", "newsletter-final-frame");
+        frame.dataset.previewCanvas = "final";
+        frame.title = "Final email render";
+        frame.setAttribute("sandbox", "allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation");
+        frame.setAttribute("srcdoc", rendered.finalHtml);
+        frame.srcdoc = rendered.finalHtml;
+        previewCard.append(frame);
+      } else if (rendered.finalError) {
+        const errBox = el("div", "dk-callout dk-callout--warning");
+        errBox.setAttribute("role", "alert");
+        errBox.dataset.previewCanvas = "final";
+        errBox.append(el("div", "dk-callout__body", rendered.finalError));
+        previewCard.append(errBox);
+      } else {
+        const canvas = el("article", "newsletter-email-canvas");
+        canvas.dataset.previewCanvas = "final";
+        canvas.append(
+          el("p", "dk-hint", "No final Relay render has been attached to this newsletter issue yet."),
+        );
+        previewCard.append(canvas);
+      }
     } else if (activeTab === "brief") {
       const canvas = el("article", "newsletter-email-canvas");
       canvas.dataset.previewCanvas = "brief";
@@ -689,6 +744,10 @@ export function createNewsletterPreviewPage({
   async function start() {
     const url = new URL(locationRef.href);
     issueId = extractIssueId(url.pathname);
+    const queryTab = url.searchParams.get("tab");
+    if (queryTab === "final" || queryTab === "issue") {
+      activeTab = queryTab;
+    }
     const queryCode = url.searchParams.get("code");
     if (queryCode !== null) {
       accessCode = formatUserCode(queryCode);

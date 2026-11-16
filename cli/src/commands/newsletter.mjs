@@ -64,6 +64,10 @@ Usage
   dataops newsletter markdown show <issue-id> [issue|sources|brief]
   dataops newsletter markdown preview <issue-id>
   dataops newsletter markdown rotate-code <issue-id>
+  dataops newsletter final-render <issue-id> [--html-file <path>] [--web-view-url <url>]
+      [--relay-key <key>] [--subject <text>] [--preview <text>] [--clear]
+                                  Attach Relay's rendered email HTML or web-view URL to
+                                  the issue's Final render preview tab
   dataops newsletter image upload <issue-id> <path>
                                   Upload an image (PNG, JPEG, GIF, or WebP) to durable
                                   public hosting for the issue and print its https:// URL
@@ -844,6 +848,10 @@ Usage
   dataops newsletter markdown show <issue-id> [issue|sources|brief]
   dataops newsletter markdown preview <issue-id>
   dataops newsletter markdown rotate-code <issue-id>
+  dataops newsletter final-render <issue-id> [--html-file <path>] [--web-view-url <url>]
+      [--relay-key <key>] [--subject <text>] [--preview <text>] [--clear]
+                                  Attach Relay's rendered email HTML or web-view URL to
+                                  the issue's Final render preview tab
   dataops newsletter image upload <issue-id> <path>
                                   Upload an image (PNG, JPEG, GIF, or WebP) to durable
                                   public hosting for the issue and print its https:// URL
@@ -1084,6 +1092,45 @@ export async function image(args, io) {
   return fn({ ...args, _: rest }, io);
 }
 
+export async function finalRender(args, io) {
+  const usage =
+    "dataops newsletter final-render <issue-id> [--html-file <path>] [--web-view-url <url>] [--relay-key <key>] [--subject <text>] [--preview <text>] [--clear]";
+  const id = positional(args, 0, usage);
+  const api = apiFor(args);
+
+  const body = {};
+  if (args.clear) {
+    body.clear = true;
+  } else {
+    const htmlFile = optionalString(args, "htmlFile") ?? optionalString(args, "file");
+    if (htmlFile) {
+      if (!fs.existsSync(htmlFile)) throw new UsageError(`File not found: ${htmlFile}`);
+      body.html = fs.readFileSync(htmlFile, "utf8");
+    }
+    const webViewUrl = optionalString(args, "webViewUrl");
+    if (webViewUrl !== undefined) body.webViewUrl = webViewUrl;
+    const relayIssueKey = optionalString(args, "relayKey") ?? optionalString(args, "relayIssueKey");
+    if (relayIssueKey !== undefined) body.relayIssueKey = relayIssueKey;
+    const subject = optionalString(args, "subject");
+    if (subject !== undefined) body.subject = subject;
+    const previewText = optionalString(args, "preview");
+    if (previewText !== undefined) body.previewText = previewText;
+    if (Object.keys(body).length === 0) {
+      throw new UsageError(`Provide at least one flag. Usage: ${usage}`);
+    }
+  }
+
+  const rawResult = await api.put(`/api/newsletter-issues/${enc(id)}/final-render`, body);
+  const result = rewritePreviewUrls(rawResult, api.base);
+  if (!args.json) {
+    if (result.shareUrl) io.print(`shareUrl: ${result.shareUrl}`);
+    else if (result.previewUrl) io.print(`previewUrl: ${result.previewUrl}`);
+    if (result.rendered?.finalWebViewUrl) io.print(`webViewUrl: ${result.rendered.finalWebViewUrl}`);
+    io.print(`finalHtml: ${result.rendered?.finalHtml ? `${result.rendered.finalHtml.length} chars` : "none"}`);
+  }
+  return result;
+}
+
 export const commands = {
   list,
   show,
@@ -1092,6 +1139,7 @@ export const commands = {
   doc,
   image,
   markdown,
+  "final-render": finalRender,
   metrics,
   "pull-mailchimp": pullMailchimp,
   report,

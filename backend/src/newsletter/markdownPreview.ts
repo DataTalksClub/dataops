@@ -6,6 +6,7 @@ import {
   listNewsletterIssuesByCardId,
   resolveNewsletterIssue,
   updateNewsletterIssue,
+  type NewsletterFinalRender,
   type NewsletterIssue,
   type NewsletterIssueLink,
   type NewsletterMarkdownKind,
@@ -27,6 +28,7 @@ import { TeamDirectory } from '../identity/directory';
 import { savePublicImage } from '../publicImages';
 import { extractMultipartImageBuffer, publicImagePayload } from '../routes/publicImages';
 import { sponsorDocPortalBaseUrl } from '../routes/sponsorDocs';
+import { readRuntimeSecret } from '../secrets/reader';
 import { FileStorageError } from '../storage';
 import type { Card, LambdaEvent, LambdaResponse } from '../types';
 import { issueLabel, SLOT_POSITIONS } from './issueCard';
@@ -37,6 +39,9 @@ import { headerValue } from '../httpHeaders';
 export const NEWSLETTER_MARKDOWN_KINDS: readonly NewsletterMarkdownKind[] = ['issue', 'sources', 'brief'];
 export const NEWSLETTER_MARKDOWN_LINK_NAME = 'Newsletter Markdown';
 export const MAX_NEWSLETTER_MARKDOWN_LENGTH = 200_000;
+export const MAX_NEWSLETTER_FINAL_HTML_LENGTH = 500_000;
+const DEFAULT_RELAY_URL = 'https://relay.datatalks.club';
+const RELAY_FETCH_TIMEOUT_MS = 6_000;
 
 const JSON_HEADERS: Record<string, string> = {
   'Content-Type': 'application/json',
@@ -546,6 +551,129 @@ async function resolveIssueSponsorGraphic(
   return null;
 }
 
+export interface ResolvedFinalRender {
+  html: string;
+  subject: string;
+  previewText: string;
+  webViewUrl: string;
+  relayIssueKey: string;
+  updatedAt: string | null;
+  updatedByName: string | null;
+  error: string | null;
+}
+
+function relayBaseUrl(): string {
+  return (process.env.RELAY_URL || DEFAULT_RELAY_URL).replace(/\/+$/, '');
+}
+
+export function isAllowedRelayWebViewUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'https:') return false;
+    const configuredHost = new URL(relayBaseUrl()).hostname.toLowerCase();
+    const host = parsed.hostname.toLowerCase();
+    const allowedHosts = new Set(['relay.datatalks.club', 'dev.relay.datatalks.club', configuredHost]);
+    return allowedHosts.has(host) && parsed.pathname.startsWith('/newsletter/view/');
+  } catch {
+    return false;
+  }
+}
+
+async function resolveRelayApiKey(): Promise<string> {
+  const fromEnv = (process.env.RELAY_API_KEY || '').trim();
+  if (fromEnv) return fromEnv;
+  if (!process.env.DATAOPS_SECRETS_TABLE || !process.env.DATAOPS_SECRETS_KMS_KEY) return '';
+  try {
+    return (await readRuntimeSecret('relay_api_key')).trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Resolve the subscriber-exact final email HTML from Relay:
+ * 1) Live fetch from a stored Relay signed web-view URL (`finalRender.webViewUrl`)
+ * 2) Live render via Relay API (`POST /api/newsletter-issues/:key/preview`) when configured
+ * 3) Stored Relay HTML snapshot (`finalRender.html`) as fallback or direct upload
+ */
+export async function resolveFinalRender(
+  issue: NewsletterIssue,
+  fetchImpl: typeof fetch = globalThis.fetch,
+): Promise<ResolvedFinalRender> {
+  const stored = issue.finalRender || {};
+  const webViewUrl = (stored.webViewUrl || '').trim();
+  const relayIssueKey = (stored.relayIssueKey || '').trim();
+  const storedHtml = stored.html || '';
+  let subject = stored.subject || '';
+  const previewText = stored.previewText || '';
+  let html = '';
+  let error: string | null = null;
+
+  if (webViewUrl && isAllowedRelayWebViewUrl(webViewUrl) && typeof fetchImpl === 'function') {
+    try {
+      const res = await fetchImpl(webViewUrl, {
+        method: 'GET',
+        headers: { accept: 'text/html' },
+        signal: AbortSignal.timeout(RELAY_FETCH_TIMEOUT_MS),
+      });
+      if (res.ok) {
+        html = await res.text();
+      } else {
+        error = `Could not load Relay render (HTTP ${res.status}).`;
+      }
+    } catch (err: unknown) {
+      error = `Could not load Relay render (${err instanceof Error ? err.message : 'network error'}).`;
+    }
+  } else if (relayIssueKey && typeof fetchImpl === 'function') {
+    const apiKey = await resolveRelayApiKey();
+    if (apiKey) {
+      try {
+        const res = await fetchImpl(
+          `${relayBaseUrl()}/api/newsletter-issues/${encodeURIComponent(relayIssueKey)}/preview`,
+          {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${apiKey}`,
+              'content-type': 'application/json',
+            },
+            body: '{}',
+            signal: AbortSignal.timeout(RELAY_FETCH_TIMEOUT_MS),
+          },
+        );
+        if (res.ok) {
+          const payload = (await res.json()) as { preview?: { html_body?: string; subject?: string } };
+          if (payload?.preview?.html_body) {
+            html = payload.preview.html_body;
+            if (!subject && payload.preview.subject) subject = payload.preview.subject;
+          } else {
+            error = 'Relay preview response did not include html_body.';
+          }
+        } else {
+          error = `Could not load Relay render (HTTP ${res.status}).`;
+        }
+      } catch (err: unknown) {
+        error = `Could not load Relay render (${err instanceof Error ? err.message : 'network error'}).`;
+      }
+    }
+  }
+
+  if (!html && storedHtml) {
+    html = storedHtml;
+    error = null;
+  }
+
+  return {
+    html,
+    subject,
+    previewText,
+    webViewUrl,
+    relayIssueKey,
+    updatedAt: stored.updatedAt || null,
+    updatedByName: stored.updatedByName || null,
+    error,
+  };
+}
+
 function buildPreviewResponsePayload(
   issue: NewsletterIssue,
   event: LambdaEvent,
@@ -553,6 +681,7 @@ function buildPreviewResponsePayload(
     viewerRole: 'staff' | 'external';
     accessCode?: string | null;
     sponsoredGraphic?: SponsoredGraphicAsset | null;
+    finalRender?: ResolvedFinalRender;
   },
 ) {
   const previewUrl = newsletterIssuePreviewUrl(event, issue.id);
@@ -560,6 +689,16 @@ function buildPreviewResponsePayload(
   const parsedIssue = parseNewsletterIssueMarkdown(md.issue || '', options.sponsoredGraphic);
   const sourcesHtml = renderNewsletterMarkdownHtml(md.sources || '');
   const briefHtml = renderNewsletterMarkdownHtml(md.brief || '');
+  const finalRender = options.finalRender || {
+    html: issue.finalRender?.html || '',
+    subject: issue.finalRender?.subject || '',
+    previewText: issue.finalRender?.previewText || '',
+    webViewUrl: issue.finalRender?.webViewUrl || '',
+    relayIssueKey: issue.finalRender?.relayIssueKey || '',
+    updatedAt: issue.finalRender?.updatedAt || null,
+    updatedByName: issue.finalRender?.updatedByName || null,
+    error: null,
+  };
 
   const sponsors: Record<string, string> = {};
   for (const pos of SLOT_POSITIONS[issue.kind]) {
@@ -593,6 +732,14 @@ function buildPreviewResponsePayload(
       issueHtml: parsedIssue.bodyHtml,
       sourcesHtml,
       briefHtml,
+      finalHtml: finalRender.html,
+      finalSubject: finalRender.subject,
+      finalPreviewText: finalRender.previewText,
+      finalWebViewUrl: finalRender.webViewUrl,
+      finalRelayIssueKey: finalRender.relayIssueKey,
+      finalUpdatedAt: finalRender.updatedAt,
+      finalUpdatedByName: finalRender.updatedByName,
+      finalError: finalRender.error,
     },
     version: issue.version,
   };
@@ -695,13 +842,17 @@ export async function handleNewsletterMarkdownRoutes(
     if (access.isStaff) {
       if (!existing) return json(404, { error: 'Newsletter issue not found', code: 'issue_not_found' });
       const ensured = await ensureIssueHasPreviewCode(client, existing);
-      const sponsoredGraphic = await resolveIssueSponsorGraphic(client, ensured.issue, event);
+      const [sponsoredGraphic, finalRender] = await Promise.all([
+        resolveIssueSponsorGraphic(client, ensured.issue, event),
+        resolveFinalRender(ensured.issue),
+      ]);
       return json(
         200,
         buildPreviewResponsePayload(ensured.issue, event, {
           viewerRole: 'staff',
           accessCode: ensured.accessCode,
           sponsoredGraphic,
+          finalRender,
         }),
       );
     }
@@ -753,8 +904,14 @@ export async function handleNewsletterMarkdownRoutes(
     }
 
     await clearSponsorDocRateLimit(client, rateTargetId, ip);
-    const sponsoredGraphic = await resolveIssueSponsorGraphic(client, existing, event);
-    return json(200, buildPreviewResponsePayload(existing, event, { viewerRole: 'external', sponsoredGraphic }));
+    const [sponsoredGraphic, finalRender] = await Promise.all([
+      resolveIssueSponsorGraphic(client, existing, event),
+      resolveFinalRender(existing),
+    ]);
+    return json(
+      200,
+      buildPreviewResponsePayload(existing, event, { viewerRole: 'external', sponsoredGraphic, finalRender }),
+    );
   }
 
   if (action === 'rotate-code') {
@@ -926,4 +1083,112 @@ export async function handleNewsletterImageUpload(
     }
     throw err;
   }
+}
+
+const FINAL_RENDER_FIELDS = new Set(['html', 'subject', 'previewText', 'webViewUrl', 'relayIssueKey', 'clear', 'version']);
+
+/**
+ * Store or clear the Relay final-render reference/snapshot on a newsletter issue
+ * (`PUT /api/newsletter-issues/:id/final-render`).
+ */
+export async function handleNewsletterFinalRenderRoute(
+  idOrCardId: string,
+  event: LambdaEvent,
+  client: DynamoDBDocumentClient,
+): Promise<LambdaResponse> {
+  const resolved = await resolveInteractiveActor(client, event, 'work-write');
+  if (!resolved.ok) return resolved.response;
+
+  const body = parseBody(event.body);
+  if (!body) return json(400, { error: 'Invalid JSON' });
+
+  const unknownKey = Object.keys(body).find((k) => !FINAL_RENDER_FIELDS.has(k));
+  if (unknownKey) return json(400, { error: `Unknown final-render field: ${unknownKey}` });
+
+  const existing = await resolveIssueByIdOrCardId(client, idOrCardId);
+  if (!existing) return json(404, { error: 'Newsletter issue not found', code: 'issue_not_found' });
+
+  if (body.version !== undefined && Number(body.version) !== existing.version) {
+    return json(409, { error: 'Issue changed; reload and retry' });
+  }
+
+  let nextFinalRender: NewsletterFinalRender | undefined;
+  if (body.clear === true) {
+    nextFinalRender = undefined;
+  } else {
+    const patch: NewsletterFinalRender = { ...(existing.finalRender || {}) };
+    let changed = false;
+
+    if (body.html !== undefined) {
+      if (typeof body.html !== 'string') return json(400, { error: 'html must be a string' });
+      if (body.html.length > MAX_NEWSLETTER_FINAL_HTML_LENGTH) {
+        return json(400, { error: `html exceeds maximum length (${MAX_NEWSLETTER_FINAL_HTML_LENGTH} characters)` });
+      }
+      patch.html = body.html;
+      changed = true;
+    }
+    if (body.subject !== undefined) {
+      if (typeof body.subject !== 'string') return json(400, { error: 'subject must be a string' });
+      if (body.subject.length > 500) return json(400, { error: 'subject exceeds maximum length (500 characters)' });
+      patch.subject = body.subject.trim();
+      changed = true;
+    }
+    if (body.previewText !== undefined) {
+      if (typeof body.previewText !== 'string') return json(400, { error: 'previewText must be a string' });
+      if (body.previewText.length > 1000) return json(400, { error: 'previewText exceeds maximum length (1000 characters)' });
+      patch.previewText = body.previewText.trim();
+      changed = true;
+    }
+    if (body.webViewUrl !== undefined) {
+      if (typeof body.webViewUrl !== 'string') return json(400, { error: 'webViewUrl must be a string' });
+      const trimmed = body.webViewUrl.trim();
+      if (trimmed && !isAllowedRelayWebViewUrl(trimmed)) {
+        return json(400, { error: 'webViewUrl must be an https:// Relay /newsletter/view/... URL' });
+      }
+      patch.webViewUrl = trimmed;
+      changed = true;
+    }
+    if (body.relayIssueKey !== undefined) {
+      if (typeof body.relayIssueKey !== 'string') return json(400, { error: 'relayIssueKey must be a string' });
+      if (body.relayIssueKey.length > 200) return json(400, { error: 'relayIssueKey exceeds maximum length (200 characters)' });
+      patch.relayIssueKey = body.relayIssueKey.trim();
+      changed = true;
+    }
+
+    if (!changed) {
+      return json(400, { error: 'Provide at least one of html, webViewUrl, relayIssueKey, subject, previewText, or clear' });
+    }
+
+    let actorName: string | null = null;
+    if (resolved.actor.id) {
+      const proj = await new TeamDirectory(client).project(resolved.actor.id);
+      actorName = proj.name;
+    }
+    patch.updatedAt = new Date().toISOString();
+    patch.updatedBy = resolved.actor.id || 'staff';
+    patch.updatedByName = actorName || 'DataOps Staff';
+    nextFinalRender = patch;
+  }
+
+  const ensured = await ensureIssueHasPreviewCode(client, existing);
+  let updated: NewsletterIssue;
+  try {
+    updated = await updateNewsletterIssue(client, ensured.issue, { finalRender: nextFinalRender });
+  } catch {
+    return json(409, { error: 'Issue changed; reload and retry' });
+  }
+
+  const [sponsoredGraphic, finalRender] = await Promise.all([
+    resolveIssueSponsorGraphic(client, updated, event),
+    resolveFinalRender(updated),
+  ]);
+  return json(
+    200,
+    buildPreviewResponsePayload(updated, event, {
+      viewerRole: 'staff',
+      accessCode: ensured.accessCode,
+      sponsoredGraphic,
+      finalRender,
+    }),
+  );
 }

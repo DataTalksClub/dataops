@@ -168,12 +168,21 @@ test("newsletter preview page unlocks with ?code= query parameter, strips code f
   await nextTicks();
   assert.equal(copied.at(-1), "Free summit");
 
-  // Shareable (code) preview is reader-facing only: no Brief/Sources/Raw tabs.
-  for (const tab of ["issue", "brief", "sources", "raw"]) {
+  // Shareable (code) preview shows Draft + Final render tabs, but no internal Brief/Sources/Raw tabs.
+  assert.equal(root.querySelector('[data-preview-tab="issue"]')?.textContent, "Draft");
+  assert.equal(root.querySelector('[data-preview-tab="final"]')?.textContent, "Final render");
+  for (const tab of ["brief", "sources", "raw"]) {
     assert.equal(root.querySelector(`[data-preview-tab="${tab}"]`), null);
   }
   assert.equal(root.querySelector('[data-preview-canvas="sources"]'), null);
   assert.equal(root.querySelector('[data-preview-action="copy-raw-issue"]'), null);
+
+  // Switching to Final render shows empty state when no Relay render is attached yet.
+  root.querySelector('[data-preview-tab="final"]').dispatch("click");
+  assert.match(
+    root.querySelector('[data-preview-canvas="final"]').textContent,
+    /No final Relay render has been attached/,
+  );
 
   // Lock returns to gate
   const lockBtn = identity.querySelector('[data-preview-action="lock"]');
@@ -261,4 +270,38 @@ test("staff viewer sees shareable preview link, rotates code, and edits Markdown
     root.querySelector("[data-preview-feedback]").textContent,
     /Rotated preview access code/,
   );
+});
+
+test("Final render tab displays Relay email HTML in sandboxed iframe and Relay web-view link", async () => {
+  const { root, controller } = harness({
+    href: "https://ops.example.test/newsletter-issues/issue-phoenix/preview?code=23456789abcdefgh",
+    payloadOverrides: {
+      rendered: {
+        ...samplePreviewPayload().rendered,
+        finalHtml: "<html><body><table><tr><td>Relay Exact Email</td></tr></table></body></html>",
+        finalSubject: "Relay Subject #303",
+        finalPreviewText: "Relay Preview Text",
+        finalWebViewUrl: "https://relay.datatalks.club/newsletter/view/signed-tok",
+        finalUpdatedAt: "2026-11-16T08:30:00.000Z",
+        finalUpdatedByName: "Relay",
+      },
+    },
+  });
+  await controller.start();
+  await nextTicks();
+
+  root.querySelector('[data-preview-tab="final"]').dispatch("click");
+  const frame = root.querySelector('[data-preview-canvas="final"]');
+  assert.ok(frame);
+  assert.equal(frame.tagName, "IFRAME");
+  assert.match(frame.srcdoc, /Relay Exact Email/);
+  assert.equal(
+    frame.getAttribute("sandbox"),
+    "allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation",
+  );
+  const relayLink = root.querySelector('[data-preview-action="open-relay-web-view"]');
+  assert.ok(relayLink);
+  assert.equal(relayLink.href, "https://relay.datatalks.club/newsletter/view/signed-tok");
+  assert.match(root.textContent, /Relay Subject #303/);
+  controller.destroy();
 });

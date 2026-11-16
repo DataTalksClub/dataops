@@ -90,6 +90,17 @@ export interface NewsletterMarkdownPackage {
   updatedByName?: string | null;
 }
 
+export interface NewsletterFinalRender {
+  html?: string;
+  subject?: string;
+  previewText?: string;
+  webViewUrl?: string;
+  relayIssueKey?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+  updatedByName?: string | null;
+}
+
 export type NewsletterIssue = {
   id: string;
   kind: NewsletterIssueKind;
@@ -103,6 +114,7 @@ export type NewsletterIssue = {
   cardId?: string;
   links?: NewsletterIssueLink[];
   markdown?: NewsletterMarkdownPackage;
+  finalRender?: NewsletterFinalRender;
   previewAccessCodeHash?: string;
   previewAccessCodeCiphertext?: string;
   publicUrl?: string;

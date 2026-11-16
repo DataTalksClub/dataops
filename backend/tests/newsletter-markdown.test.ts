@@ -16,7 +16,11 @@ import {
 } from '../src/db/newsletterIssues';
 import { createSponsorDoc } from '../src/db/sponsorDocs';
 import { createUser } from '../src/db/users';
-import { renderNewsletterMarkdownHtml } from '../src/newsletter/markdownPreview';
+import {
+  isAllowedRelayWebViewUrl,
+  renderNewsletterMarkdownHtml,
+  resolveFinalRender,
+} from '../src/newsletter/markdownPreview';
 import { humanBearer } from './helpers/human-bearer';
 import { templateLink } from './helpers/cardTemplate';
 
@@ -419,5 +423,96 @@ describe('Newsletter Markdown Storage & HTML Preview (/api/newsletter-issues/:id
       if (prevBucket !== undefined) process.env.TASK_FILES_BUCKET = prevBucket;
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('stores and clears Relay final-render snapshot/webViewUrl and exposes it to code-gated viewers', async () => {
+    const issue = buildNewsletterIssue(
+      {
+        kind: 'weekly',
+        publicationDate: '2026-11-23',
+        issueNumber: 304,
+        status: 'drafting',
+        slots: {},
+      },
+      'issue-final-render-test',
+    );
+    await createNewsletterIssue(client, issue);
+
+    // Rejects non-Relay webViewUrl
+    const badRes = await staffReq('PUT', `/api/newsletter-issues/${issue.id}/final-render`, {
+      webViewUrl: 'https://evil.example.com/newsletter/view/abc',
+    });
+    assert.strictEqual(badRes.statusCode, 400);
+    assert.strictEqual(isAllowedRelayWebViewUrl('https://relay.datatalks.club/newsletter/view/abc'), true);
+    assert.strictEqual(isAllowedRelayWebViewUrl('https://evil.example.com/newsletter/view/abc'), false);
+
+    // Stores final HTML snapshot + metadata
+    const putRes = await staffReq('PUT', `/api/newsletter-issues/${issue.id}/final-render`, {
+      html: '<html><body><table><tr><td>Relay Weekly #304</td></tr></table></body></html>',
+      subject: 'Weekly #304 | DataTalks.Club Weekly',
+      previewText: 'Preview line #304',
+    });
+    assert.strictEqual(putRes.statusCode, 200, putRes.body);
+    const putData = JSON.parse(putRes.body);
+    assert.match(putData.rendered.finalHtml, /Relay Weekly #304/);
+    assert.strictEqual(putData.rendered.finalSubject, 'Weekly #304 | DataTalks.Club Weekly');
+    assert.strictEqual(putData.rendered.finalPreviewText, 'Preview line #304');
+    assert.ok(putData.accessCode);
+
+    // External ?code= viewer sees finalHtml in GET /markdown
+    const extRes = await handler(
+      {
+        httpMethod: 'GET',
+        path: `/api/newsletter-issues/${issue.id}/markdown`,
+        headers: {
+          host: 'ops.dtcdev.click',
+          'x-newsletter-preview-code': putData.accessCode,
+          'x-forwarded-for': '198.51.100.44',
+        },
+        queryStringParameters: {},
+      } as never,
+      {} as never,
+    );
+    assert.strictEqual(extRes.statusCode, 200, extRes.body);
+    const extData = JSON.parse(extRes.body);
+    assert.match(extData.rendered.finalHtml, /Relay Weekly #304/);
+
+    // Clear resets finalHtml
+    const clearRes = await staffReq('PUT', `/api/newsletter-issues/${issue.id}/final-render`, { clear: true });
+    assert.strictEqual(clearRes.statusCode, 200, clearRes.body);
+    assert.strictEqual(JSON.parse(clearRes.body).rendered.finalHtml, '');
+  });
+
+  it('resolveFinalRender fetches live HTML from Relay webViewUrl and falls back to stored html on error', async () => {
+    const issueWithUrl = buildNewsletterIssue(
+      {
+        kind: 'weekly',
+        publicationDate: '2026-11-30',
+        issueNumber: 305,
+        status: 'drafting',
+        slots: {},
+        finalRender: {
+          webViewUrl: 'https://relay.datatalks.club/newsletter/view/tok123',
+          html: '<html><body>Fallback snapshot</body></html>',
+        },
+      },
+      'issue-relay-fetch-test',
+    );
+
+    const liveResult = await resolveFinalRender(issueWithUrl, (async () => ({
+      ok: true,
+      status: 200,
+      text: async () => '<html><body>Live Relay HTML</body></html>',
+    })) as unknown as typeof fetch);
+    assert.strictEqual(liveResult.html, '<html><body>Live Relay HTML</body></html>');
+    assert.strictEqual(liveResult.error, null);
+
+    const fallbackResult = await resolveFinalRender(issueWithUrl, (async () => ({
+      ok: false,
+      status: 502,
+      text: async () => '',
+    })) as unknown as typeof fetch);
+    assert.strictEqual(fallbackResult.html, '<html><body>Fallback snapshot</body></html>');
+    assert.strictEqual(fallbackResult.error, null);
   });
 });
