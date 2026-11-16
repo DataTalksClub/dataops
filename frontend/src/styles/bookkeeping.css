@@ -314,17 +314,32 @@ tr.bk-month__totals-row > th {
   color: var(--dk-text-secondary);
   font-size: var(--dk-text-sm);
 }
-.bk-inv-table .bk-row { cursor: default; }
-.bk-inv-what { display: flex; flex-direction: column; gap: var(--dk-space-1); min-width: 16em; }
-.bk-inv-vendor { font-size: var(--dk-text-xs); color: var(--dk-text-secondary); }
+/* Inventory rows are two lines — item name over a quiet provenance line —
+   so they size themselves instead of borrowing the single-line ledger row
+   height. The stacks sit on the cells' children: a td keeps its table-cell
+   display or the columns stop aligning. A record with a ledger source opens
+   it when clicked. */
+.bk-inv-table td { height: auto; padding-top: var(--dk-space-2); padding-bottom: var(--dk-space-2); }
+.bk-inv-row.is-openable { cursor: pointer; }
+.bk-inv-what > * { display: block; }
+.bk-inv-what > * + * { margin-top: var(--dk-space-1); }
+.bk-inv-what { min-width: 16em; }
+.bk-inv-meta { display: flex; align-items: baseline; gap: var(--dk-space-1); min-width: 0; font-size: var(--dk-text-xs); color: var(--dk-text-secondary); }
+.bk-inv-meta-sep { color: var(--dk-text-faint); }
+.bk-inv-vendor { flex: none; font-size: var(--dk-text-xs); color: var(--dk-text-secondary); }
 .bk-inv-row.is-disposed .bk-who__name { color: var(--dk-text-secondary); text-decoration: line-through; }
 .bk-inv-disposed-date { margin-left: 0.5em; font-size: var(--dk-text-xs); color: var(--dk-text-secondary); }
-.bk-inv-note { min-width: 12em; }
+.bk-inv-note { min-width: 12em; border-color: transparent; background: transparent; }
+.bk-inv-note:hover { border-color: var(--dk-border-control-hover); }
 .bk-inv-actions { width: 2.5em; text-align: right; }
 .bk-inv-remove { color: var(--dk-text-secondary); }
 .bk-inv-remove:hover { color: var(--dk-danger-text); }
-.bk-inv-source {
-  align-self: flex-start;
+/* Scoped under the surface and table so the plain-button rule
+   (.bookkeeping-surface button:not(…), two classes deep) cannot box this
+   provenance link into a button. */
+.bookkeeping-surface .bk-inv-table .bk-inv-source {
+  min-width: 0;
+  max-width: 100%;
   padding: 0;
   border: none;
   background: none;
@@ -334,13 +349,17 @@ tr.bk-month__totals-row > th {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 22em;
   text-align: left;
 }
-.bk-inv-source:hover { color: var(--dk-accent-hover); text-decoration: underline; }
-.bk-inv-status { display: flex; flex-direction: column; align-items: flex-start; gap: var(--dk-space-1); }
+.bookkeeping-surface .bk-inv-table .bk-inv-source:hover { color: var(--dk-accent-hover); text-decoration: underline; }
+.bk-inv-status > * { display: block; width: max-content; }
+.bk-inv-status > * + * { margin-top: var(--dk-space-1); }
 .bk-inv-badge { font-size: var(--dk-text-xs); color: var(--dk-text-secondary); }
 .bk-inv-badge--disposed { color: var(--dk-danger-text); }
+/* Dispose reads as text until hovered: the row already carries enough
+   chrome (type, note, remove) without a boxed button on every line. */
+.bk-inv-status .bk-inv-dispose { padding: 0; border: none; background: none; color: var(--dk-text-secondary); }
+.bk-inv-status .bk-inv-dispose:hover { background: none; color: var(--dk-accent-hover); text-decoration: underline; }
 .bk-inv-extras td { padding-top: 0; }
 .bk-inv-disposals { display: flex; flex-wrap: wrap; gap: var(--dk-space-2); font-size: var(--dk-text-xs); color: var(--dk-text-secondary); }
 .bk-inv-disposal { display: inline-flex; align-items: center; gap: 0.35em; }

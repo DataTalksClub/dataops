@@ -215,3 +215,26 @@ test("declined confirmation leaves the row in place", async () => {
     globalThis.confirm = originalConfirm;
   }
 });
+
+test("clicking the record opens the ledger record it came from", async () => {
+  const { view, click, opened } = mount({ inventoryPages: [[laptop]] });
+  await view.renderInventory();
+  click({ "[data-inv]": { dataset: { inv: laptop.id } } });
+  assert.deepEqual(opened, [laptop.source.transactionId]);
+});
+
+test("clicks inside the note or type controls never open the ledger", async () => {
+  const { view, click, opened } = mount({ inventoryPages: [[laptop]] });
+  await view.renderInventory();
+  click({ "input, select, button, a": { dataset: {} } });
+  assert.deepEqual(opened, []);
+});
+
+test("a record without a ledger source is not clickable", async () => {
+  const orphan = { ...laptop, id: "inv-orphan", source: undefined };
+  const { view, host, click, opened } = mount({ inventoryPages: [[laptop, orphan]] });
+  await view.renderInventory();
+  assert.doesNotMatch(host.innerHTML, /is-openable[^>]*data-inv="inv-orphan"/);
+  click({ "[data-inv]": { dataset: { inv: "inv-orphan" } } });
+  assert.deepEqual(opened, []);
+});
