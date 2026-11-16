@@ -16,6 +16,8 @@ import {
   filtersFromParams,
   groupByMonth,
   inLens,
+  INVOICE_SOURCE_PREFIX,
+  invoiceSourceDocuments,
   linkedEvidenceDocuments,
   LEDGER_PARAMS,
   ledgerTableMarkup,
@@ -160,7 +162,8 @@ export function createBookkeepingSurface(context) {
 
     const hasEvidence = (id) =>
       bankOnlyEntries.some((entry) => entry.id === id)
-      || links.some((l) => l.transactionId === id && l.coverageType === "evidence");
+      || links.some((l) => l.transactionId === id && l.coverageType === "evidence")
+      || invoiceSourceDocuments(entries.find((candidate) => candidate.id === id)).length > 0;
     const hasInvoice = (id) => {
       const entry = entries.find((candidate) => candidate.id === id);
       const linked = linkedEvidenceDocuments(entry, links, documents);
@@ -455,11 +458,15 @@ export function createBookkeepingSurface(context) {
     async function viewDocument(id) {
       const tab = globalThis.open?.("", "_blank");
       try {
-        const result = await api(`/documents/${encodeURIComponent(id)}/download?disposition=inline`);
+        const fromInvoice = String(id).startsWith(INVOICE_SOURCE_PREFIX);
+        const result = fromInvoice
+          ? await api(`/invoices/${encodeURIComponent(String(id).slice(INVOICE_SOURCE_PREFIX.length))}/document`)
+          : await api(`/documents/${encodeURIComponent(id)}/download?disposition=inline`);
+        const url = fromInvoice ? result.url : result.downloadUrl;
         if (tab) {
           tab.opener = null;
-          tab.location.href = result.downloadUrl;
-        } else openPrivateDownload(result.downloadUrl);
+          tab.location.href = url;
+        } else openPrivateDownload(url);
       } catch (error) {
         tab?.close?.();
         throw error;
@@ -644,6 +651,12 @@ export function createBookkeepingSurface(context) {
         renderFilterOptions();
         renderLedger();
         syncUrl();
+        return;
+      }
+      const opener = event.target.closest("button[data-open-tx]");
+      if (opener) {
+        event.preventDefault();
+        openTransaction(opener.dataset.openTx);
         return;
       }
       if (event.target.closest("select, button, input")) return;
