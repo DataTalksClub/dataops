@@ -1,6 +1,6 @@
 // The transaction table: one dense row per transaction, the same columns
 // as the bookkeeping spreadsheet it replaces (date, counterparty, what,
-// original amount, EUR amount, account, type, category, period). Pure
+// original amount, EUR amount, account, type, category). Pure
 // functions from records to markup and from URL state to filters; the
 // surface (bookkeeping.js) owns fetching, events and saving.
 import { sponsorRecordPath } from "../../core/sponsor-routes.js";
@@ -12,12 +12,12 @@ import { bookkeepingVendorPresentation } from "./bookkeeping-vendors.js";
 export const LEDGER_PARAMS = ["month", "q", "account", "dir", "category", "needs", "tx", "view"];
 export const SECONDARY_VIEWS = ["files", "package", "invoices", "tuition", "inventory"];
 
-// The spreadsheet's classification columns, in its order and wording:
-// "Type" is stored as `subtype`, "Category" as `category`, "Period" as `period`.
+// The classification columns: "Type" is stored as `subtype`, "Category" as
+// `category`. The spreadsheet's Period column is not shown in the table: it
+// was copied in with the sheet layout (efdd13e5), nobody asked for it.
 export const CLASSIFICATION_FIELDS = [
   { field: "subtype", label: "Type" },
   { field: "category", label: "Category" },
-  { field: "period", label: "Period" },
 ];
 
 // The account a transaction went through. The sheet's Statement column holds
@@ -126,11 +126,32 @@ export function linkedEvidenceDocuments(entry, links, documents) {
   const ids = new Set((Array.isArray(links) ? links : [])
     .filter((link) => link.transactionId === entry.id && link.coverageType === "evidence")
     .map((link) => String(link.documentId || "")));
-  return (Array.isArray(documents) ? documents : []).filter((document) =>
+  const linked = (Array.isArray(documents) ? documents : []).filter((document) =>
     ids.has(String(document.id || ""))
       && document.status === "active"
       && INVOICE_EVIDENCE_TYPES.has(String(document.documentType || "")),
   );
+  return linked.length ? linked : invoiceSourceDocuments(entry);
+}
+
+export const INVOICE_SOURCE_PREFIX = "invoice:";
+
+/**
+ * Rows the invoice intake booked (sourceType "invoice") hold their PDF as the
+ * confirmed invoice's source artifact, not as a bookkeeping document link, so
+ * /links never lists it. The month package already resolves it that way; the
+ * table does the same and opens it through /invoices/:id/document.
+ */
+export function invoiceSourceDocuments(entry) {
+  const invoiceId = String(entry?.invoiceId || "").trim();
+  if (!invoiceId || !String(entry?.documentArtifactId || "").trim()) return [];
+  const number = String(entry.invoiceNumber || "").trim();
+  return [{
+    id: `${INVOICE_SOURCE_PREFIX}${invoiceId}`,
+    status: "active",
+    documentType: "invoice",
+    originalFilename: number ? `Invoice ${number}` : `Invoice from ${entry.counterparty || "vendor"}`,
+  }];
 }
 
 // URL state -> filters. Unknown values fall back to "show everything".
@@ -296,7 +317,41 @@ const icon = {
   bank: '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">'
     + '<path d="M2 6 8 2.5 14 6" stroke-linecap="round" stroke-linejoin="round"/>'
     + '<path d="M3.5 6.5V12M6.5 6.5V12M9.5 6.5V12M12.5 6.5V12M2.5 12.5h11" stroke-linecap="round"/></svg>',
+  missing: '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">'
+    + '<path d="M4 1.5h5.5L13 5v9.5H4z" stroke-linejoin="round" stroke-dasharray="2 1.6"/>'
+    + '<path d="M6.5 9.5h3" stroke-linecap="round"/></svg>',
 };
+
+// Invoice cell: always one control on the same axis. Attached -> one PDF icon
+// (with a count when several); missing -> one muted dashed icon.
+function invoiceCellMarkup(documents, hasAttachedFlag, e, txId) {
+  const count = documents.length;
+  if (count === 1) {
+    const [document] = documents;
+    const label = document.originalFilename || "invoice or receipt PDF";
+    return html`<button type="button" class="dk-icon-button dk-icon-button--sm bk-cell-icon bk-cell-icon--invoice bk-evidence-view" data-view-document="${e(document.id)}"
+        aria-label="View ${e(label)}" title="${e(label)}">${icon.pdf}</button>`;
+  }
+  if (count > 1)
+    return html`<button type="button" class="dk-icon-button dk-icon-button--sm bk-cell-icon bk-cell-icon--invoice bk-evidence-view" data-open-tx="${e(txId)}"
+        aria-label="${count} invoices attached, open details" title="${count} invoices attached">${icon.pdf}<span class="bk-cell-icon__count">${count}</span></button>`;
+  if (hasAttachedFlag)
+    return html`<span class="bk-cell-icon bk-cell-icon--invoice" title="Invoice attached" aria-label="Invoice attached">${icon.receipt}</span>`;
+  return html`<span class="bk-cell-icon bk-cell-icon--missing" title="No invoice attached" aria-label="No invoice attached">${icon.missing}</span>`;
+}
+
+// Account cell: bank icon (opens the statement when matched), a muted bank
+// icon with the account name in the tooltip when there is only a label, and
+// a dash when there is nothing.
+function accountCellMarkup(account, accountDoc, e) {
+  const title = accountDoc?.statementPeriod ? `${account} — open ${accountDoc.statementPeriod} statement` : account;
+  if (accountDoc?.statementDocumentId)
+    return html`<button type="button" class="dk-icon-button dk-icon-button--sm bk-cell-icon bk-account-view" data-view-document="${e(accountDoc.statementDocumentId)}"
+        aria-label="${e(title)}" title="${e(title)}">${icon.bank}</button>`;
+  if (account)
+    return html`<span class="bk-cell-icon bk-cell-icon--quiet" title="${e(account)}" aria-label="${e(account)}">${icon.bank}</span>`;
+  return html`<span class="bk-cell-icon bk-cell-icon--empty" aria-label="No account" title="No account">—</span>`;
+}
 
 export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, vocab, selectedId, financeEntry, statementLinks = new Map(), e }) {
   const direction = entryDirection(entry);
@@ -313,27 +368,8 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
   const invoiceEvidence = hasInvoice(entry.id);
   const invoiceDocuments = Array.isArray(invoiceEvidence) ? invoiceEvidence : [];
   const hasInvoiceAttached = invoiceDocuments.length > 0 || invoiceEvidence === true;
-  // One compact icon per invoice PDF; the filename lives in the tooltip
-  // instead of a wide "View PDF" button on every row.
-  const invoiceActions = invoiceDocuments.length
-    ? invoiceDocuments.map((document) => html`<button type="button" class="dk-icon-button dk-icon-button--sm bk-evidence-view"
-        data-view-document="${e(document.id)}"
-        aria-label="View ${e(document.originalFilename || "invoice or receipt PDF")}"
-        title="${e(document.originalFilename || "Invoice or receipt PDF")}">${icon.pdf}</button>`).join("")
-    : hasInvoiceAttached
-      ? html`<span class="bk-invoice-icon" title="Invoice attached" aria-label="Invoice attached">${icon.receipt}</span>`
-      : html`<span class="bk-no-invoice">No invoice</span>`;
   const account = resolveAccountName(entry, statementLinks);
   const accountDoc = statementLinks instanceof Map ? statementLinks.get(String(entry.id || "")) : null;
-  const accountStatementTitle = accountDoc?.statementPeriod
-    ? `${accountDoc.statementPeriod} statement`
-    : "statement";
-  const accountCell = accountDoc?.statementDocumentId
-    ? html`<button type="button" class="dk-icon-button dk-icon-button--sm bk-account-view"
-        data-view-document="${e(accountDoc.statementDocumentId)}"
-        aria-label="${e(account)} — open ${e(accountStatementTitle)}"
-        title="${e(account)} — open ${e(accountStatementTitle)}">${icon.bank}</button>`
-    : e(account || "—");
   return html`<tr class="bk-row${flagged ? " is-uncategorised" : ""}${direction === "income" ? " is-income" : ""}"
       data-tx="${e(entry.id)}"${entry.id === selectedId ? ' aria-selected="true"' : ""}>
       <td class="bk-col-date">${dateCell(entry, e)}</td>
@@ -351,11 +387,8 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
         id: entry.id, field, label: `${label} for ${entry.counterparty || "transaction"}`,
         value: entry[field], options: vocab[field] || [], e,
       })}</td>`).join("")}
-      <td class="bk-col-flag">
-        ${invoiceActions}
-        ${hasEvidence(entry.id) ? "" : html`<span class="bk-flag" title="No receipt attached" aria-label="No receipt">${icon.receipt}</span>`}
-      </td>
-      <td class="bk-col-account">${accountCell}</td>
+      <td class="bk-col-flag">${invoiceCellMarkup(invoiceDocuments, hasInvoiceAttached, e, entry.id)}</td>
+      <td class="bk-col-account">${accountCellMarkup(account, accountDoc, e)}</td>
     </tr>`;
 }
 
@@ -380,8 +413,8 @@ function bankOnlyRowMarkup(entry, e) {
         : e(signedAmount(eur, "EUR"))}</td>
       <td class="bk-col-vat">—</td>
       ${CLASSIFICATION_FIELDS.map(({ field }) => html`<td class="bk-col-class bk-col-${field}">${e(entry[field] || "")}</td>`).join("")}
-      <td class="bk-col-flag"><span class="bk-statement-source">Bank statement</span></td>
-      <td class="bk-col-account">${e(accountOf(entry))}</td>
+      <td class="bk-col-flag"><span class="bk-cell-icon bk-cell-icon--quiet" title="Bank statement line, no invoice needed" aria-label="Bank statement line">${icon.bank}</span></td>
+      <td class="bk-col-account">${accountCellMarkup(accountOf(entry), null, e)}</td>
     </tr>`;
 }
 
@@ -409,21 +442,7 @@ function allocationChildMarkup(entry, allocation, { getAllocationDocument = () =
   const document = getAllocationDocument(entry, allocation);
   const accountName = resolveAccountName(entry, statementLinks);
   const statementLink = statementLinks instanceof Map ? statementLinks.get(String(entry.id || "")) : null;
-  const accountStatementTitle = statementLink?.statementPeriod
-    ? `${statementLink.statementPeriod} statement`
-    : "statement";
-  const accountCell = statementLink?.statementDocumentId
-    ? html`<button type="button" class="dk-icon-button dk-icon-button--sm bk-account-view"
-        data-view-document="${e(statementLink.statementDocumentId)}"
-        aria-label="${e(accountName)} — open ${e(accountStatementTitle)}"
-        title="${e(accountName)} — open ${e(accountStatementTitle)}">${icon.bank}</button>`
-    : e(accountName || "—");
-  const pdfAction = document
-    ? html`<button type="button" class="dk-icon-button dk-icon-button--sm bk-evidence-view"
-        data-view-document="${e(document.id)}"
-        aria-label="View ${e(document.originalFilename || "invoice or receipt PDF")}"
-        title="${e(document.originalFilename || "Invoice or receipt PDF")}">${icon.pdf}</button>`
-    : html`<span class="bk-allocation-no-pdf">No linked PDF</span>`;
+  const pdfAction = invoiceCellMarkup(document ? [document] : [], false, e, entry.id);
   return html`<tr class="bk-row bk-row--allocation-child" data-allocation-parent="${e(entry.id)}" data-allocation-document="${e(allocation.documentId || "")}">
       <td class="bk-col-date">${dateCell(child, e)}</td>
       <td class="bk-col-who">
@@ -439,7 +458,7 @@ function allocationChildMarkup(entry, allocation, { getAllocationDocument = () =
       <td class="bk-col-vat"${vat ? ` title="${e(vatTitle(child, vat))}"` : ""}>${e(vat || "—")}</td>
       ${CLASSIFICATION_FIELDS.map(({ field }) => html`<td class="bk-col-class bk-col-${field}">${e(allocation[field] || "")}</td>`).join("")}
       <td class="bk-col-flag">${pdfAction}</td>
-      <td class="bk-col-account">${accountCell}</td>
+      <td class="bk-col-account">${accountCellMarkup(accountName, statementLink, e)}</td>
     </tr>`;
 }
 
@@ -457,7 +476,7 @@ export function ledgerHeadMarkup() {
     </thead>`;
 }
 
-const COLUMN_COUNT = 9;
+const COLUMN_COUNT = 8;
 
 // One totals row at the bottom of a month: money in and money out, no net.
 // The figures are the Finance overview's own (financeTotals from

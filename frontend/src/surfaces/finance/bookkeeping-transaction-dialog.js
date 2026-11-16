@@ -43,22 +43,20 @@ function invoiceMarkup(document, index, e) {
   const id = text(document?.id || document?.documentId);
   const filename = text(document?.filename || document?.originalFilename || document?.fileName || document?.name);
   const label = filename ? `Open invoice · ${filename}` : "Open invoice";
-  const buttonParts = [
-    '<button type="button" class="dk-button dk-button--primary dk-button--lg bk-transaction-invoice__open"',
-    `data-view-document="${e(id)}"`,
-    `aria-label="${e(label)}">${e(label)}</button>`,
-  ];
   const control = id
-    ? buttonParts.join(" ")
+    ? `<span class="bk-transaction-invoice__name" title="${e(filename)}">${e(filename || `Attached invoice ${index + 1}`)}</span>
+      <button type="button" class="dk-button dk-button--primary dk-button--sm bk-transaction-invoice__open"
+        data-view-document="${e(id)}" aria-label="${e(label)}">View invoice</button>`
     : `<span class="bk-transaction-invoice__name">${e(filename || `Attached invoice ${index + 1}`)}</span>`;
   return `<li class="bk-transaction-invoice">${control}</li>`;
 }
 
 function invoiceSectionMarkup(documents, e) {
   if (!documents.length) {
-    return `<section class="bk-transaction-invoices" aria-labelledby="bk-transaction-invoices-heading">
+    return `<section class="bk-transaction-invoices bk-transaction-invoices--missing" aria-labelledby="bk-transaction-invoices-heading">
       <h3 id="bk-transaction-invoices-heading">Invoice</h3>
       <p class="bk-transaction-invoices__none">No invoice</p>
+      <p class="bk-transaction-invoices__hint">Nothing is attached to this transaction yet. Attach one from the suggestions below.</p>
     </section>`;
   }
   return `<section class="bk-transaction-invoices" aria-labelledby="bk-transaction-invoices-heading">
@@ -223,6 +221,7 @@ export function bookkeepingTransactionSummaryMarkup({
     <section class="bk-transaction-summary" aria-labelledby="bk-transaction-summary-heading">
       <h3 id="bk-transaction-summary-heading">Transaction</h3>
       <h4 class="bk-transaction-summary__vendor">${e(transaction.counterparty || "Unknown")}</h4>
+      <p class="bk-transaction-summary__amount">${e(signedAmountMarkup(eurValue, "EUR", amount))}</p>
       <p class="bk-transaction-summary__what"><span>What for</span> ${e(transaction.description || "Not recorded")}</p>
       <dl class="bk-transaction-summary__facts">
         ${fieldMarkup("Raw bank name", e(presentation.rawCounterparty || "Unknown"), e)}

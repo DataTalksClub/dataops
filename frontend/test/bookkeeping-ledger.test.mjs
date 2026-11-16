@@ -13,6 +13,8 @@ import {
   groupByMonth,
   inLens,
   linkedEvidenceDocuments,
+  invoiceSourceDocuments,
+  ledgerHeadMarkup,
   ledgerRowMarkup,
   ledgerTableMarkup,
   needsCategory,
@@ -101,7 +103,7 @@ test("the account column sits last and links to the uploaded statement", () => {
     groups: groupByMonth(rows), hasEvidence: () => false, vocab: {}, selectedId: "", statementLinks: links, e: escapeHtml,
   });
   assert.match(markup, /<th scope="col" class="bk-col-flag">Invoice<\/th>\s*<th scope="col" class="bk-col-account">Account<\/th>/);
-  assert.match(markup, /<button[^>]*class="dk-icon-button dk-icon-button--sm bk-account-view"[^>]*data-view-document="doc-1"[\s\S]*?>[\s\S]*?<\/button>/,
+  assert.match(markup, /<button[^>]*class="dk-icon-button dk-icon-button--sm bk-cell-icon bk-account-view"[^>]*data-view-document="doc-1"[\s\S]*?>[\s\S]*?<\/button>/,
     "the linked statement is one compact account icon");
   assert.match(markup, /title="Revolut Business — open 2026-09 statement"/,
     "the tooltip carries the full account name and statement period");
@@ -253,7 +255,7 @@ test("allocated invoices replace the aggregate row while totals and payment dril
     .map((match) => match[1]);
   assert.equal(childRows.length, 3);
   for (const row of childRows) {
-    assert.equal((row.match(/<td class="bk-col-/g) || []).length, 9);
+    assert.equal((row.match(/<td class="bk-col-/g) || []).length, 8);
     assert.ok(row.indexOf("bk-col-account") > row.indexOf("bk-col-flag"), "Account is the last allocation cell");
   }
   assert.match(markup, /aria-label="Open original payment for Synthetic Compute GmbH"/);
@@ -324,7 +326,7 @@ test("classified owner, fee, and TK statement rows stay visible without becoming
   const markup = ledgerTableMarkup({ groups, hasEvidence: () => true, vocab: {}, selectedId: "", e: escapeHtml });
   assert.equal((markup.match(/data-bank-only=/g) || []).length, 3);
   const bankRow = markup.match(/<tr class="bk-row bk-row--statement-only[^>]*>([\s\S]*?)<\/tr>/)?.[1] || "";
-  assert.equal((bankRow.match(/<td class="bk-col-/g) || []).length, 9);
+  assert.equal((bankRow.match(/<td class="bk-col-/g) || []).length, 8);
   assert.ok(bankRow.indexOf("bk-col-account") > bankRow.indexOf("bk-col-flag"), "Account is the last bank-only cell");
   assert.match(markup, /Synthetic Owner Transfer[\s\S]*Owner withdrawal · confirmed/);
   assert.match(markup, /Monthly account fee[\s\S]*Bank fee · confirmed/);
@@ -397,12 +399,30 @@ test("linked active receipt PDFs render direct View actions for every evidence l
     selectedId: "",
     e: escapeHtml,
   });
-  for (const document of documents) {
-    assert.match(markup, new RegExp(`data-view-document="${document.id}"`));
-    assert.match(markup, new RegExp(`aria-label="View ${document.originalFilename}"`));
-  }
-  assert.equal((markup.match(/class="dk-icon-button dk-icon-button--sm bk-evidence-view"/g) || []).length, 3,
-    "each invoice PDF is one compact icon, not a wide View PDF button");
+  assert.equal((markup.match(/bk-evidence-view/g) || []).length, 1,
+    "several invoices are one icon with a count, so the column never shifts");
+  assert.match(markup, /<span class="bk-cell-icon__count">3<\/span>/);
+  assert.match(markup, /data-open-tx="synthetic-payment"/, "the count icon opens the detail panel that lists every invoice");
+});
+
+test("the table has no Period column and the invoice cell has one consistent state", () => {
+  const entry = { id: "t1", counterparty: "Synthetic Vendor", amount: "10.00", currency: "EUR", entryType: "expense", period: "Monthly" };
+  const head = ledgerHeadMarkup();
+  assert.doesNotMatch(head, />Period</);
+  const none = ledgerRowMarkup(entry, { hasEvidence: () => false, hasInvoice: () => [], vocab: {}, selectedId: "", e: escapeHtml });
+  assert.match(none, /bk-cell-icon--missing/);
+  assert.doesNotMatch(none, /No invoice<|bk-no-invoice|bk-col-period/);
+  assert.match(none, /bk-cell-icon--empty/, "an empty account is a centred dash cell, same cell as icons");
+});
+
+test("an invoice-intake row shows its source PDF although no bookkeeping link exists", () => {
+  const entry = { id: "inv-1", counterparty: "Google Commerce Limited", invoiceId: "inv-1", documentArtifactId: "email-document-x", invoiceNumber: "SOP.1", sourceType: "invoice" };
+  assert.deepEqual(invoiceSourceDocuments({ id: "m", counterparty: "Manual" }), []);
+  const docs = linkedEvidenceDocuments(entry, [], []);
+  assert.deepEqual(docs.map((d) => d.id), ["invoice:inv-1"]);
+  const markup = ledgerRowMarkup(entry, { hasEvidence: () => true, hasInvoice: () => docs, vocab: {}, selectedId: "", e: escapeHtml });
+  assert.match(markup, /data-view-document="invoice:inv-1"/);
+  assert.match(markup, /aria-label="View Invoice SOP.1"/);
 });
 
 test("the month tax section lists debits and refunds with a money-out total", () => {
