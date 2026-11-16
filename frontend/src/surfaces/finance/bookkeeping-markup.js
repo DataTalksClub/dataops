@@ -67,7 +67,6 @@ export function bookkeepingSurfaceMarkup() {
         </details>
       </div>
       <div class="bookkeeping-ledger" aria-live="polite">Loading transactions…</div>
-      <dialog class="surface-dialog bk-transaction-dialog" id="bookkeeping-transaction-dialog" aria-labelledby="bookkeeping-transaction-dialog-title"></dialog>
     </div>
     <section id="bookkeeping-evidence" class="bookkeeping-section bookkeeping-evidence bk-secondary" data-secondary="files" aria-labelledby="bookkeeping-evidence-heading" hidden>
       ${backLink}
@@ -159,6 +158,10 @@ export function bookkeepingSurfaceMarkup() {
       })}
       <div class="bookkeeping-inventory" data-inventory aria-live="polite">Loading inventory…</div>
     </section>
+    <!-- Lives at the surface root, outside the ledger pane: the pane is hidden
+         while a secondary view (inventory, files, VAT) is open, and a dialog
+         inside a hidden ancestor cannot be shown. -->
+    <dialog class="surface-dialog bk-transaction-dialog" id="bookkeeping-transaction-dialog" aria-labelledby="bookkeeping-transaction-dialog-title"></dialog>
     <dialog class="surface-dialog bookkeeping-entry-dialog">
       <form method="dialog" novalidate>
         <header>
