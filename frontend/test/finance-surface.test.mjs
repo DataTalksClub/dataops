@@ -305,6 +305,10 @@ class FakeElement {
     this.scrolled = true;
   }
 
+  contains() {
+    return false;
+  }
+
   closest() {
     return null;
   }
@@ -352,7 +356,7 @@ function humanizeOptionLabel(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function createHarness({ request, route = null, setupSurface, pipelineRows = [] } = {}) {
+function createHarness({ request, route = null, setupSurface, pipelineRows = [], locationRef, historyRef } = {}) {
   const documentList = new FakeElement("main");
   const document = new FakeDocument(setupSurface);
   const requests = [];
@@ -364,8 +368,10 @@ function createHarness({ request, route = null, setupSurface, pipelineRows = [] 
     documentList,
     escapeHtml,
     getPendingLegacyRoute: () => route,
+    historyRef,
     humanizeOptionLabel,
     isWorkspaceRouteFresh: () => true,
+    locationRef,
     navigateCanonicalWorkspace: (path, params) => navigations.push({ path, params: { ...(params || {}) } }),
     request: async (url, options = {}) => {
       requests.push({ url, options });
@@ -564,6 +570,77 @@ describe("Finance surface boundary", () => {
     assert.match(ledger.innerHTML, /Synthetic Owner Transfer[\s\S]*Owner withdrawal · confirmed/);
     assert.doesNotMatch(ledger.innerHTML, /data-tx="synthetic-owner-row"|data-inline-field=/);
     assert.ok(requests.some(({ url }) => requestPath(url) === "/api/reconcile/months/2026-08"));
+  });
+
+  test("opening /invertory mounts the inventory page and keeps its bare address", async () => {
+    const replaced = [];
+    const { document: doc, finance, requests } = createHarness({
+      locationRef: { pathname: "/invertory", search: "" },
+      historyRef: { state: null, replaceState: (state, _title, url) => replaced.push(url) },
+      setupSurface: (surface) => {
+        const section = new FakeElement("section");
+        section.dataset.secondary = "inventory";
+        surface.setQueryAll("[data-secondary]", [section]);
+      },
+      request: async (url) => {
+        const path = requestPath(url);
+        if (path === "/api/bookkeeping/inventory") return { items: [{
+          id: "inv-laptop", transactionId: "tx-1", name: "Laptop", type: "computer", vendor: "Amazon",
+          acquisitionDate: "2026-03-19", amount: "1813.58", currency: "EUR", amountEur: "1813.58",
+          status: "in-use",
+          source: { transactionId: "tx-1", description: "MacBook Pro 14", counterparty: "Amazon",
+            date: "2026-03-19", amount: "1813.58", currency: "EUR", amountEur: "1813.58" },
+        }] };
+        if (["/api/bookkeeping/transactions", "/api/bookkeeping/documents", "/api/bookkeeping/links",
+          "/api/bookkeeping/accounts", "/api/bookkeeping/reports", "/api/bookkeeping/invoices"].includes(path))
+          return { items: [] };
+        if (path === "/api/finance/summary") return { entries: [], months: [], totals: {} };
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    });
+
+    await finance.renderBookkeepingSurface();
+    await settle();
+    assert.ok(requests.some(({ url }) => requestPath(url) === "/api/bookkeeping/inventory"));
+    const section = doc.surface.querySelectorAll("[data-secondary]")[0];
+    assert.equal(section.hidden, false, "the inventory section is the visible view");
+    assert.equal(doc.surface.querySelector("[data-bk-main]").hidden, true, "the ledger pane is hidden");
+    assert.match(doc.surface.querySelector("[data-inventory]").innerHTML, /Laptop/);
+    assert.deepEqual(replaced, [], "/invertory is already canonical; nothing rewrites it");
+  });
+
+  test("leaving the inventory page returns the ledger to /bookkeeping", async () => {
+    const replaced = [];
+    const { document: doc, finance } = createHarness({
+      locationRef: { pathname: "/invertory", search: "" },
+      historyRef: { state: null, replaceState: (state, _title, url) => replaced.push(url) },
+      setupSurface: (surface) => {
+        const section = new FakeElement("section");
+        section.dataset.secondary = "inventory";
+        surface.setQueryAll("[data-secondary]", [section]);
+      },
+      request: async (url) => {
+        const path = requestPath(url);
+        if (path === "/api/bookkeeping/inventory") return { items: [] };
+        if (["/api/bookkeeping/transactions", "/api/bookkeeping/documents", "/api/bookkeeping/links",
+          "/api/bookkeeping/accounts", "/api/bookkeeping/reports", "/api/bookkeeping/invoices"].includes(path))
+          return { items: [] };
+        if (path === "/api/finance/summary") return { entries: [], months: [], totals: {} };
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    });
+
+    await finance.renderBookkeepingSurface();
+    await settle();
+    await doc.surface.dispatch("click", {
+      target: {
+        closest: (selector) =>
+          selector === "[data-view-link]" ? { dataset: { viewLink: "" } } : null,
+      },
+    });
+    assert.deepEqual(replaced, ["/bookkeeping"]);
+    assert.equal(doc.surface.querySelectorAll("[data-secondary]")[0].hidden, true);
+    assert.equal(doc.surface.querySelector("[data-bk-main]").hidden, false);
   });
 
   test("keeps sponsor alert failures truthful and retries pages without duplicates", async () => {

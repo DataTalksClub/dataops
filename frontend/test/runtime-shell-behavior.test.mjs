@@ -418,6 +418,11 @@ function createBindingDom() {
   dom.documentTitle = element("document-title", "input");
   dom.workspaceNavButtons = [element("home-nav", "button")];
   dom.workspaceNavButtons[0].dataset.workspaceTarget = "tasks";
+  const inventoryNav = element("inventory-nav", "button");
+  inventoryNav.dataset.workspaceView = "bookkeeping";
+  inventoryNav.dataset.bookkeepingView = "inventory";
+  inventoryNav.setAttribute("href", "/invertory");
+  dom.workspaceNavButtons.push(inventoryNav);
   dom.tasksNavSectionButtons = [element("cards-nav", "button")];
   dom.tasksNavSectionButtons[0].dataset.tasksSection = "cards";
   dom.helpModal.hidden = true;
@@ -871,6 +876,12 @@ describe("runtime and shell production behavior", () => {
 
     await dom.tasksNavSectionButtons[0].click();
     assert.equal(calls.some(([name, path]) => name === "navigate" && path === "/tasks/cards"), true);
+
+    // The Inventory entry is a sub-view of Bookkeeping: its click navigates
+    // to its own address instead of the bare parent view.
+    await dom.workspaceNavButtons[1].click();
+    assert.equal(calls.some(([name, path]) => name === "navigate" && path === "/invertory"), true);
+    assert.equal(calls.some(([name, view]) => name === "workspace" && view === "bookkeeping"), false);
     await dom.editor.dispatch("input");
     assert.equal(calls.some(([name]) => name === "storeDraft"), true);
     assert.equal(calls.some(([name]) => name === "updateSaveState"), true);

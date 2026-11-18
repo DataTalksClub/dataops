@@ -55,6 +55,7 @@ describe("canonical workspace routing", () => {
       "/recurring",
       "/finance",
       "/bookkeeping",
+      "/invertory",
       "/sponsors",
       "/sponsors/pipeline",
       "/sponsors/companies",
@@ -89,6 +90,13 @@ describe("canonical workspace routing", () => {
     assert.equal(staleMonthlyUrl.canonicalUrl, "/finance");
     assert.equal(staleMonthlyUrl.normalized, true);
     assert.equal(canonicalWorkspaceUrl("/bookkeeping", { month: "2026-09" }), "/bookkeeping?month=2026-09");
+  });
+
+  test("the inventory page answers on its own /invertory address", () => {
+    const route = parseWorkspaceLocation("/invertory", browserLocation("/invertory"));
+    assert.equal(route.view, "bookkeeping");
+    assert.equal(route.canonicalUrl, "/invertory");
+    assert.equal(route.normalized, false);
   });
 
   test("gives every Sponsors tab and record its own path", () => {

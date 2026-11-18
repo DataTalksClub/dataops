@@ -1,10 +1,10 @@
 import "../../dakit/collection.js";
 // Static shell for the bookkeeping surface. The page is the transaction
 // list: header with the month navigator and actions, one filter row, the
-// table with its detail pane. Inventory hangs off the sidebar under
-// Bookkeeping (?view=inventory); files, the accountant package/VAT,
-// tuition and forwarded invoices are secondary views (?view=…) reached
-// from the ⋯ menu.
+// table with its detail pane. Inventory is its own page at /invertory
+// reached from the sidebar; files, the accountant package/VAT, tuition
+// and forwarded invoices are secondary views (?view=…) reached from the
+// ⋯ menu.
 import { financeSectionHead, html } from "./shared.js";
 import { periodNavMarkup } from "../period-nav.js";
 

@@ -10,10 +10,11 @@ function shell() {
   return bookkeepingSurfaceMarkup();
 }
 
-test("the sidebar hangs Inventory under Bookkeeping with the deep link", () => {
+test("the sidebar hangs Inventory under Bookkeeping, addressed at /invertory", () => {
   const index = readFileSync(new URL("../index.html", import.meta.url), "utf8");
   const item = index.match(/<a[^>]*data-bookkeeping-view="inventory"[^>]*>[\s\S]*?<\/a>/)?.[0] ?? "";
-  assert.match(item, /href="\/bookkeeping\?view=inventory"/);
+  assert.match(item, /href="\/invertory"/);
+  assert.doesNotMatch(item, /bookkeeping\?view=inventory/);
   assert.match(item, /data-workspace-view="bookkeeping"/);
   assert.match(item, /class="dk-nav-item workspace-nav-button"/);
   assert.doesNotMatch(item, /dk-nav-item--sub/);
