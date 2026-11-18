@@ -94,7 +94,7 @@ describe("canonical workspace routing", () => {
 
   test("the inventory page answers on its own /invertory address", () => {
     const route = parseWorkspaceLocation("/invertory", browserLocation("/invertory"));
-    assert.equal(route.view, "bookkeeping");
+    assert.equal(route.view, "inventory");
     assert.equal(route.canonicalUrl, "/invertory");
     assert.equal(route.normalized, false);
   });

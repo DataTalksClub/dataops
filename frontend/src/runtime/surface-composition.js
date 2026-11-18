@@ -120,6 +120,7 @@ export function createSurfaceComposition(context) {
     getRenderAdminSurfaceView,
     getRenderBookkeepingSurface,
     getRenderFinanceOverviewSurface,
+    getRenderInventorySurface,
     getRenderCalendarSurface,
     getRenderDocsSurface,
     getRenderInboxSurface,
@@ -161,6 +162,7 @@ export function createSurfaceComposition(context) {
     if (view === "admin") return getRenderAdminSurfaceView()(documents);
     if (view === "users") return context.getRenderUsersSurfaceView()();
     if (view === "bookkeeping") return getRenderBookkeepingSurface()();
+    if (view === "inventory") return getRenderInventorySurface()();
     if (view === "finance") return getRenderFinanceOverviewSurface()();
     if (view === "sponsors") return getRenderSponsorCrmSurface()();
     if (view === "newsletter") return getRenderNewsletterSurface()();
@@ -285,10 +287,6 @@ export function createSurfaceComposition(context) {
     body.dataset.workspaceView = activeView;
     searchInput.placeholder = "Search work and docs";
     for (const button of workspaceNavButtons) {
-      // Sub-view entries (Bookkeeping → Inventory) follow the surface's own
-      // ?view= state, which changes without a route commit; renderView owns
-      // them, the generic pass would wrongly light them on every page.
-      if (button.dataset.bookkeepingView) continue;
       const active = button.dataset.workspaceView === activeView;
       button.classList.toggle("is-active", active);
       if (active) button.setAttribute("aria-current", "page");

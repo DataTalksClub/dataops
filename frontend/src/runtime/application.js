@@ -161,6 +161,7 @@ const {
   getRenderAdminSurfaceView: () => renderAdminSurfaceView,
   getRenderBookkeepingSurface: () => renderBookkeepingSurface,
   getRenderFinanceOverviewSurface: () => renderFinanceOverviewSurface,
+  getRenderInventorySurface: () => renderInventorySurface,
   getRenderCalendarSurface: () => renderCalendarSurface,
   getRenderDocsSurface: () => renderDocsSurface,
   getRenderInboxSurface: () => inboxSurface?.renderInbox || (() => undefined),
@@ -204,6 +205,7 @@ const {
   canLeaveFinanceSurface,
   renderBookkeepingSurface,
   renderFinanceOverviewSurface,
+  renderInventorySurface,
   renderSponsorCrmSurface,
 } = createFinanceSurface({
   documentList,

@@ -1,10 +1,9 @@
 import "../../dakit/collection.js";
 // Static shell for the bookkeeping surface. The page is the transaction
 // list: header with the month navigator and actions, one filter row, the
-// table with its detail pane. Inventory is its own page at /invertory
-// reached from the sidebar; files, the accountant package/VAT, tuition
+// table with its detail pane. Files, the accountant package/VAT, tuition
 // and forwarded invoices are secondary views (?view=…) reached from the
-// ⋯ menu.
+// ⋯ menu. Inventory is a separate surface at /invertory.
 import { financeSectionHead, html } from "./shared.js";
 import { periodNavMarkup } from "../period-nav.js";
 
@@ -148,18 +147,8 @@ export function bookkeepingSurfaceMarkup() {
       ${backLink}
       <div data-tuition></div>
     </section>
-    <section id="bookkeeping-inventory" class="bookkeeping-section bk-secondary" data-secondary="inventory" aria-labelledby="bookkeeping-inventory-heading" hidden>
-      ${backLink}
-      ${financeSectionHead({
-        id: "bookkeeping-inventory-heading",
-        title: "Inventory",
-        hint: "Physical purchases from the ledger since 2022 — computers, phones, audio, furniture. Scan the ledger after new expenses land.",
-        actions: html`<button type="button" class="dk-button dk-button--secondary dk-button--sm" data-inventory-scan>Scan ledger</button>`,
-      })}
-      <div class="bookkeeping-inventory" data-inventory aria-live="polite">Loading inventory…</div>
-    </section>
     <!-- Lives at the surface root, outside the ledger pane: the pane is hidden
-         while a secondary view (inventory, files, VAT) is open, and a dialog
+         while a secondary view (files, VAT) is open, and a dialog
          inside a hidden ancestor cannot be shown. -->
     <dialog class="surface-dialog bk-transaction-dialog" id="bookkeeping-transaction-dialog" aria-labelledby="bookkeeping-transaction-dialog-title"></dialog>
     <dialog class="surface-dialog bookkeeping-entry-dialog">

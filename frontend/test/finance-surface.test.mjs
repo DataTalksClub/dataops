@@ -455,6 +455,7 @@ describe("Finance surface boundary", () => {
       "canLeaveFinanceSurface",
       "renderBookkeepingSurface",
       "renderFinanceOverviewSurface",
+      "renderInventorySurface",
       "renderSponsorCrmSurface",
     ]);
   });
@@ -572,16 +573,8 @@ describe("Finance surface boundary", () => {
     assert.ok(requests.some(({ url }) => requestPath(url) === "/api/reconcile/months/2026-08"));
   });
 
-  test("opening /invertory mounts the inventory page and keeps its bare address", async () => {
-    const replaced = [];
-    const { document: doc, finance, requests } = createHarness({
-      locationRef: { pathname: "/invertory", search: "" },
-      historyRef: { state: null, replaceState: (state, _title, url) => replaced.push(url) },
-      setupSurface: (surface) => {
-        const section = new FakeElement("section");
-        section.dataset.secondary = "inventory";
-        surface.setQueryAll("[data-secondary]", [section]);
-      },
+  test("the inventory surface mounts standalone and fetches its items", async () => {
+    const { document: doc, finance, requests, routeTitles } = createHarness({
       request: async (url) => {
         const path = requestPath(url);
         if (path === "/api/bookkeeping/inventory") return { items: [{
@@ -591,56 +584,63 @@ describe("Finance surface boundary", () => {
           source: { transactionId: "tx-1", description: "MacBook Pro 14", counterparty: "Amazon",
             date: "2026-03-19", amount: "1813.58", currency: "EUR", amountEur: "1813.58" },
         }] };
-        if (["/api/bookkeeping/transactions", "/api/bookkeeping/documents", "/api/bookkeeping/links",
-          "/api/bookkeeping/accounts", "/api/bookkeeping/reports", "/api/bookkeeping/invoices"].includes(path))
-          return { items: [] };
-        if (path === "/api/finance/summary") return { entries: [], months: [], totals: {} };
         throw new Error(`Unexpected request: ${url}`);
       },
     });
 
-    await finance.renderBookkeepingSurface();
+    await finance.renderInventorySurface();
     await settle();
+    assert.equal(routeTitles.at(-1), "Inventory");
     assert.ok(requests.some(({ url }) => requestPath(url) === "/api/bookkeeping/inventory"));
-    const section = doc.surface.querySelectorAll("[data-secondary]")[0];
-    assert.equal(section.hidden, false, "the inventory section is the visible view");
-    assert.equal(doc.surface.querySelector("[data-bk-main]").hidden, true, "the ledger pane is hidden");
     assert.match(doc.surface.querySelector("[data-inventory]").innerHTML, /Laptop/);
-    assert.deepEqual(replaced, [], "/invertory is already canonical; nothing rewrites it");
+    assert.deepEqual(
+      requests.filter(({ url }) => requestPath(url) === "/api/bookkeeping/transactions"),
+      [],
+      "the inventory surface never loads the ledger",
+    );
   });
 
-  test("leaving the inventory page returns the ledger to /bookkeeping", async () => {
-    const replaced = [];
-    const { document: doc, finance } = createHarness({
-      locationRef: { pathname: "/invertory", search: "" },
-      historyRef: { state: null, replaceState: (state, _title, url) => replaced.push(url) },
-      setupSurface: (surface) => {
-        const section = new FakeElement("section");
-        section.dataset.secondary = "inventory";
-        surface.setQueryAll("[data-secondary]", [section]);
-      },
+  test("clicking an inventory record fetches and opens the original ledger transaction", async () => {
+    const { document: doc, finance, requests } = createHarness({
       request: async (url) => {
         const path = requestPath(url);
-        if (path === "/api/bookkeeping/inventory") return { items: [] };
-        if (["/api/bookkeeping/transactions", "/api/bookkeeping/documents", "/api/bookkeeping/links",
-          "/api/bookkeeping/accounts", "/api/bookkeeping/reports", "/api/bookkeeping/invoices"].includes(path))
+        if (path === "/api/bookkeeping/inventory") return { items: [{
+          id: "inv-laptop", transactionId: "tx-1", name: "Laptop", type: "computer", vendor: "Amazon",
+          acquisitionDate: "2026-03-19", amount: "1813.58", currency: "EUR", amountEur: "1813.58",
+          status: "in-use",
+          source: { transactionId: "tx-1", description: "MacBook Pro 14", counterparty: "Amazon",
+            date: "2026-03-19", amount: "1813.58", currency: "EUR", amountEur: "1813.58" },
+        }] };
+        if (path === "/api/bookkeeping/transactions/tx-1")
+          return { id: "tx-1", counterparty: "Amazon", transactionDate: "2026-03-19",
+            description: "MacBook Pro 14", amount: "-1813.58", currency: "EUR",
+            amountEur: "-1813.58", entryType: "expense" };
+        if (path === "/api/bookkeeping/documents" || path === "/api/bookkeeping/links")
           return { items: [] };
-        if (path === "/api/finance/summary") return { entries: [], months: [], totals: {} };
+        if (path === "/api/bookkeeping/transactions/tx-1/suggestions")
+          return { documents: [], sponsor: { deals: [] } };
+        if (path.startsWith("/api/reconcile/months/")) return { month: { rows: [] } };
         throw new Error(`Unexpected request: ${url}`);
       },
     });
 
-    await finance.renderBookkeepingSurface();
+    await finance.renderInventorySurface();
     await settle();
-    await doc.surface.dispatch("click", {
+    await doc.surface.querySelector("[data-inventory]").dispatch("click", {
       target: {
         closest: (selector) =>
-          selector === "[data-view-link]" ? { dataset: { viewLink: "" } } : null,
+          selector === "[data-inv]" ? { dataset: { inv: "inv-laptop" } } : null,
       },
     });
-    assert.deepEqual(replaced, ["/bookkeeping"]);
-    assert.equal(doc.surface.querySelectorAll("[data-secondary]")[0].hidden, true);
-    assert.equal(doc.surface.querySelector("[data-bk-main]").hidden, false);
+    await settle();
+    await settle();
+    const dialog = doc.surface.querySelector("[data-inventory-transaction-dialog]");
+    assert.match(dialog.innerHTML, /Amazon/);
+    assert.match(dialog.innerHTML, /MacBook Pro 14/);
+    assert.ok(
+      requests.some(({ url }) => requestPath(url) === "/api/bookkeeping/transactions/tx-1"),
+      "the record dialog fetches the original ledger transaction",
+    );
   });
 
   test("keeps sponsor alert failures truthful and retries pages without duplicates", async () => {
