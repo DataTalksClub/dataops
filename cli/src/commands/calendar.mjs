@@ -1,6 +1,7 @@
 import { holdReservationOptions } from "./event.mjs";
 import { apiFor } from "../session.mjs";
 import { UsageError } from "../errors.mjs";
+import { berlinToday } from "../format.mjs";
 
 const client = apiFor;
 
@@ -174,12 +175,7 @@ function busyIntervalsForDay(ownerItems, window) {
 }
 
 function todayBerlin() {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Berlin",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  return berlinToday();
 }
 
 function currentMonthBounds() {

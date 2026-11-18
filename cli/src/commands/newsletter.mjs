@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { UsageError } from "../errors.mjs";
 import { berlinToday, enc, fields, integer, isoDate, optionalString, positional, table } from "../format.mjs";
@@ -279,6 +279,18 @@ export async function show(args, io) {
   }
   if (issue.previewShareUrl || issue.previewUrl) {
     io.print(`preview link: ${rewriteVerificationUri(issue.previewShareUrl || issue.previewUrl, apiFor(args).base)}`);
+  }
+  const finalRender = issue.finalRender;
+  if (finalRender && typeof finalRender === "object") {
+    io.print("final render:");
+    if (finalRender.webViewUrl) io.print(`  web view: ${finalRender.webViewUrl}`);
+    if (finalRender.relayIssueKey) io.print(`  relay key: ${finalRender.relayIssueKey}`);
+    if (finalRender.subject) io.print(`  subject: ${finalRender.subject}`);
+    if (finalRender.previewText) io.print(`  preview: ${finalRender.previewText}`);
+    io.print(`  html snapshot: ${finalRender.html ? `${finalRender.html.length} chars` : "none"}`);
+    if (finalRender.updatedAt) {
+      io.print(`  updated: ${finalRender.updatedAt}${finalRender.updatedByName ? ` by ${finalRender.updatedByName}` : ""}`);
+    }
   }
   return issue;
 }
@@ -1104,8 +1116,8 @@ export async function finalRender(args, io) {
   } else {
     const htmlFile = optionalString(args, "htmlFile") ?? optionalString(args, "file");
     if (htmlFile) {
-      if (!fs.existsSync(htmlFile)) throw new UsageError(`File not found: ${htmlFile}`);
-      body.html = fs.readFileSync(htmlFile, "utf8");
+      if (!existsSync(htmlFile)) throw new UsageError(`File not found: ${htmlFile}`);
+      body.html = readFileSync(htmlFile, "utf8");
     }
     const webViewUrl = optionalString(args, "webViewUrl");
     if (webViewUrl !== undefined) body.webViewUrl = webViewUrl;
@@ -1121,7 +1133,7 @@ export async function finalRender(args, io) {
   }
 
   const rawResult = await api.put(`/api/newsletter-issues/${enc(id)}/final-render`, body);
-  const result = rewritePreviewUrls(rawResult, api.base);
+  const result = normalizeMarkdownPayloadUrls(rawResult, api.base);
   if (!args.json) {
     if (result.shareUrl) io.print(`shareUrl: ${result.shareUrl}`);
     else if (result.previewUrl) io.print(`previewUrl: ${result.previewUrl}`);
