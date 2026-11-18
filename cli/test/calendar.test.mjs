@@ -6,8 +6,6 @@ import { describe, test } from "node:test";
 
 const configDir = mkdtempSync(path.join(tmpdir(), "dataops-cli-cal-"));
 process.env.DATAOPS_CONFIG_DIR = configDir;
-// Fixtures use fixed November 2026 dates; pin "today" so past-date filtering stays stable.
-process.env.DATAOPS_TODAY = "2026-11-16";
 
 const { run } = await import("../src/cli.mjs");
 const { saveProfile } = await import("../src/config.mjs");
@@ -311,26 +309,26 @@ describe("Calendar CLI commands", () => {
     const io = captureIo();
     globalThis.fetch = async () => Response.json({
       items: [
-        { provider: "owner-calendar", isAvailableSlot: true, slot: "midday", startDate: "2026-11-09", label: "12:30 Available" },
+        { provider: "owner-calendar", isAvailableSlot: true, slot: "midday", startDate: "2030-01-08", label: "12:30 Available" },
       ],
     });
 
-    const code = await run(["calendar", "slots", "--from", "2026-11-16", "--to", "2026-11-24"], io);
+    const code = await run(["calendar", "slots", "--from", "2030-01-14", "--to", "2030-01-22"], io);
     assert.equal(code, 0);
-    assert.match(io.text(), /2026-11-17: midday busy · evening busy/);
-    assert.match(io.text(), /2026-11-24: midday busy · evening busy/);
+    assert.match(io.text(), /2030-01-14: midday busy · evening busy/);
+    assert.match(io.text(), /2030-01-22: midday busy · evening busy/);
   });
 
   test("calendar slots --json keeps every requested date in its availability summary", async () => {
     const io = captureIo();
     globalThis.fetch = async () => Response.json({ items: [] });
 
-    const code = await run(["calendar", "slots", "--from", "2026-11-17", "--to", "2026-11-18", "--json"], io);
+    const code = await run(["calendar", "slots", "--from", "2030-01-14", "--to", "2030-01-15", "--json"], io);
     assert.equal(code, 0);
     const payload = JSON.parse(io.text());
     assert.deepEqual(payload.availability, [
-      { date: "2026-11-17", midday: "BUSY", evening: "BUSY" },
-      { date: "2026-11-18", midday: "BUSY", evening: "BUSY" },
+      { date: "2030-01-14", midday: "BUSY", evening: "BUSY" },
+      { date: "2030-01-15", midday: "BUSY", evening: "BUSY" },
     ]);
   });
 
@@ -340,17 +338,17 @@ describe("Calendar CLI commands", () => {
     globalThis.fetch = async (url) => {
       const value = String(url);
       requests.push(value);
-      if (value.includes("includeAll=true")) return Response.json({ items: [{ provider: "owner-calendar", label: "12:30–13:30 Meeting", startDate: "2026-11-17" }] });
-      return Response.json({ items: [{ provider: "owner-calendar", isAvailableSlot: true, slot: "evening", startDate: "2026-11-17" }] });
+      if (value.includes("includeAll=true")) return Response.json({ items: [{ provider: "owner-calendar", label: "12:30–13:30 Meeting", startDate: "2030-01-14" }] });
+      return Response.json({ items: [{ provider: "owner-calendar", isAvailableSlot: true, slot: "evening", startDate: "2030-01-14" }] });
     };
 
-    const code = await run(["calendar", "slots", "--from", "2026-11-17", "--to", "2026-11-17", "--json"], io);
+    const code = await run(["calendar", "slots", "--from", "2030-01-14", "--to", "2030-01-14", "--json"], io);
     assert.equal(code, 0);
     assert.equal(requests.length, 2);
     assert.match(requests[1], /includeAll=false/);
     const payload = JSON.parse(io.text());
     assert.deepEqual(payload.availability, [
-      { date: "2026-11-17", midday: "BUSY", evening: "AVAILABLE" },
+      { date: "2030-01-14", midday: "BUSY", evening: "AVAILABLE" },
     ]);
   });
 
@@ -358,19 +356,19 @@ describe("Calendar CLI commands", () => {
     const io = captureIo();
     globalThis.fetch = async () => Response.json({ items: [
       {
-        id: "owner-slot:2026-11-17:call:11:30",
+        id: "owner-slot:2030-01-14:call:11:30",
         provider: "owner-calendar",
         isAvailableSlot: true,
         slot: "call",
-        startDate: "2026-11-17",
+        startDate: "2030-01-14",
       },
     ] });
 
-    const code = await run(["calendar", "slots", "--from", "2026-11-17", "--to", "2026-11-17", "--window", "call", "--json"], io);
+    const code = await run(["calendar", "slots", "--from", "2030-01-14", "--to", "2030-01-14", "--window", "call", "--json"], io);
     assert.equal(code, 0);
     const payload = JSON.parse(io.text());
     assert.deepEqual(payload.availability, [
-      { date: "2026-11-17", callStarts: ["11:30"] },
+      { date: "2030-01-14", callStarts: ["11:30"] },
     ]);
   });
 
@@ -592,7 +590,7 @@ describe("Calendar CLI commands", () => {
       return new Response(
         JSON.stringify({
           items: [
-            { provider: "owner-calendar", category: "Available slot", label: "17:00 Available", startDate: "2026-11-17", slot: "evening", isAvailableSlot: true },
+            { provider: "owner-calendar", category: "Available slot", label: "17:00 Available", startDate: "2030-01-14", slot: "evening", isAvailableSlot: true },
           ],
           sources: {},
         }),
@@ -600,7 +598,7 @@ describe("Calendar CLI commands", () => {
       );
     };
     const code = await run(
-      ["calendar", "slots", "--from", "2026-11-17", "--to", "2026-11-17", "--duration", "90", "--window", "evening"],
+      ["calendar", "slots", "--from", "2030-01-14", "--to", "2030-01-14", "--duration", "90", "--window", "evening"],
       io,
     );
     assert.equal(code, 0);
