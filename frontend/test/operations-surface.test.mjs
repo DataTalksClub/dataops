@@ -209,6 +209,14 @@ describe("Operations surface boundary", () => {
       },
     });
     harness.api.renderAdminSurfaceView([]);
+    assert.equal(
+      harness.documentList.querySelector(".ops-admin-intake-recovery"),
+      null,
+    );
+    assert.equal(
+      harness.documentList.querySelector("[data-invoice-process]"),
+      null,
+    );
     const pendingDiagnostics = harness.documentList.querySelector(
       ".ops-admin-diagnostics",
     );

@@ -494,8 +494,7 @@ body[data-workspace-view] .task-modal-panel button,
 .invoice-fields select { width: 100%; }
 .invoice-destinations { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--dk-space-4); padding: 0; list-style: none; }
 .invoice-destinations li { border: 1px solid var(--dk-border-default); padding: var(--dk-space-4); overflow-wrap: anywhere; }
-[data-invoice-detail] details,
-[data-invoice-process] { margin: var(--dk-space-4) 0; }
+[data-invoice-detail] details { margin: var(--dk-space-4) 0; }
 [data-invoice-detail] fieldset { margin-top: var(--dk-space-4); }
 [data-invoice-detail] small { display: block; }
 .invoice-ledger-summary { margin: 0 0 var(--dk-space-2); color: var(--dk-text-muted); font-size: var(--dk-text-sm); }
