@@ -29,6 +29,7 @@ export const WORKSPACE_PATH_BY_VIEW = Object.freeze({
   users: "/users",
   finance: "/finance",
   bookkeeping: "/bookkeeping",
+  inventory: "/invertory",
   sponsors: "/sponsors/pipeline",
   newsletter: "/newsletter",
   calendar: "/calendar",
@@ -63,8 +64,8 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
     tasksSection: "queue",
     params: ["month", "q", "account", "dir", "category", "needs", "tx", "view", "agreement"],
   },
-  // The inventory page answers on its own bare path under Bookkeeping.
-  "/invertory": { view: "bookkeeping", tasksSection: "queue", params: [] },
+  // Inventory is its own top-level surface; its address is the path.
+  "/invertory": { view: "inventory", tasksSection: "queue", params: [] },
   // Bare /sponsors opens the default tab; every tab and record is a path.
   // Directory tabs declare their filter/sort/page params so filter state
   // survives navigation, refresh and back/forward through canonical URLs.

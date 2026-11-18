@@ -33,7 +33,6 @@ import { createBookkeepingTransactionModal } from "./bookkeeping-transaction-mod
 import { importStatementWithReview, confirmStatementReplacement } from "./bookkeeping-statement-import.js";
 import { loadStatementLinkIndex } from "./bookkeeping-statement.js";
 import { openBookkeepingDialog } from "./bookkeeping-dialogs.js";
-import { createBookkeepingInventory } from "./bookkeeping-inventory.js";
 import {
   createBookkeepingFinance,
   monthlyLedgerEntries,
@@ -91,12 +90,9 @@ export function createBookkeepingSurface(context) {
     let lens = LENS.test(initial.get("month") || "") ? initial.get("month") : "";
     let filters = filtersFromParams(initial);
     let selectedId = initial.get("tx") || "";
-    // Inventory answers on its own /invertory address; the other secondary
-    // views ride ?view= on the ledger path.
-    const requestedView =
-      (locationRef?.pathname || "") === "/invertory"
-        ? "inventory"
-        : initial.get("view") || "";
+    // Secondary views (files, package/VAT, invoices, tuition) ride ?view= on
+    // the ledger path; inventory is a separate surface at /invertory.
+    const requestedView = initial.get("view") || "";
     let view = SECONDARY_VIEWS.includes(requestedView) ? requestedView : "";
     let defaultLens = "", invoicesMounted = false;
     const reconciliationCache = new Map();
@@ -158,16 +154,15 @@ export function createBookkeepingSurface(context) {
       if (view === "tuition" || !historyRef?.replaceState || !locationRef) return;
       const params = new URLSearchParams();
       // The default month (latest with transactions) stays out of the URL.
-      // Inventory's address is the path, so its view never rides the query.
       const values = {
         month: lens === defaultLens ? "" : lens,
         ...filters,
         tx: selectedId,
-        view: view === "inventory" ? "" : view,
+        view,
       };
       for (const name of LEDGER_PARAMS) if (values[name]) params.set(name, values[name]);
       const query = params.toString();
-      const next = `${view === "inventory" ? "/invertory" : "/bookkeeping"}${query ? `?${query}` : ""}`;
+      const next = `/bookkeeping${query ? `?${query}` : ""}`;
       if (`${locationRef.pathname}${locationRef.search}` !== next)
         historyRef.replaceState(historyRef.state, "", next);
     }
@@ -229,17 +224,6 @@ export function createBookkeepingSurface(context) {
     }
     function renderView() {
       surface.dataset.bkView = view || "transactions";
-      // The sidebar's Inventory entry lives outside the surface and follows
-      // the in-page view, which changes without a route commit. It is owned
-      // through the surface's own document, so mounts under a DOM subset
-      // without a sidebar simply skip it.
-      const navItems = surface.ownerDocument?.querySelectorAll("[data-bookkeeping-view]") ?? [];
-      for (const item of navItems) {
-        const active = item.dataset.bookkeepingView === view;
-        item.classList.toggle("is-active", active);
-        if (active) item.setAttribute("aria-current", "page");
-        else item.removeAttribute("aria-current");
-      }
       surface.querySelector("[data-bk-main]").hidden = Boolean(view);
       surface.classList.toggle("dk-fill", !view);
       surface.querySelectorAll("[data-secondary]").forEach((section) => {
@@ -250,7 +234,6 @@ export function createBookkeepingSurface(context) {
         invoicesMounted = true;
         mountInvoiceReview(surface.querySelector("[data-invoice-review]"), context);
       }
-      if (view === "inventory") inventory.renderInventory();
     }
     function optionList(select, values, allLabel, current) {
       select.innerHTML = [
@@ -607,19 +590,6 @@ export function createBookkeepingSurface(context) {
         ledger.querySelector('[aria-selected="true"]')?.removeAttribute("aria-selected");
         syncUrl();
       },
-    });
-
-    const inventory = createBookkeepingInventory({
-      surface,
-      api,
-      escapeHtml,
-      safeAction,
-      setStatus: (text) => {
-        status.textContent = text;
-      },
-      todayIsoDate,
-      // Inventory rows link back to the ledger record they came from.
-      openTransaction: (id) => openTransaction(id),
     });
 
     const navigation = mountBookkeepingNavigation({

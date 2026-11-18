@@ -49,11 +49,7 @@ export function bindApplicationEvents(context) {
                 button.dataset.workspaceTarget ||
                 button.dataset.workspaceView ||
                 "tasks",
-              // A sub-view entry (Bookkeeping → Inventory) addresses its own
-              // page, so it navigates by href instead of the parent view.
-              path: button.dataset.bookkeepingView
-                ? button.getAttribute("href")
-                : "",
+              path: "",
             },
           }),
         ),
