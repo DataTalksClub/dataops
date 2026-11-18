@@ -14,6 +14,7 @@ import {
   markReportGenerated,
   putBookkeepingItem,
   removeDocumentReportReference,
+  sweepInventory,
   type BookkeepingItem,
 } from "../db/bookkeeping";
 import { preflightOrganizations } from '../vies/service';
@@ -255,6 +256,9 @@ export async function handleBookkeepingReportRoutes(
       if (error instanceof MonthGateError) return json(409, { reportPeriod: month, error: error.message, blockers: error.blockers });
       throw error;
     }
+    // Generating the pack is the monthly bookkeeping landmark: catch the
+    // inventory up on every physical purchase seen since the last run.
+    const inventorySweep = await sweepInventory(client);
     if (report.archiveDocumentId) {
       const doc = await getBookkeepingItem(
         client,
@@ -270,7 +274,7 @@ export async function handleBookkeepingReportRoutes(
           }),
           { expiresIn: 300 },
         );
-        return json(200, { reportPeriod: month, downloadUrl: url, expiresIn: 300, duplicate: true, vatPreflight: await vatPreflightSummary(client) });
+        return json(200, { reportPeriod: month, downloadUrl: url, expiresIn: 300, duplicate: true, inventoryItemsAdded: inventorySweep.created.length, vatPreflight: await vatPreflightSummary(client) });
       }
     }
     const transactionIds = Array.isArray(report.transactionIds)
@@ -422,7 +426,7 @@ export async function handleBookkeepingReportRoutes(
       }),
       { expiresIn: 300 },
     );
-    return json(201, { reportPeriod: month, downloadUrl: url, expiresIn: 300, vatPreflight: await vatPreflightSummary(client) });
+    return json(201, { reportPeriod: month, downloadUrl: url, expiresIn: 300, inventoryItemsAdded: inventorySweep.created.length, vatPreflight: await vatPreflightSummary(client) });
   }
   return null;
 }

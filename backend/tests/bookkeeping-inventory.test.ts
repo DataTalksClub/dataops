@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal, createTables } from '../scripts/local-dynamodb';
-import { putBookkeepingItem, putBookkeepingTransactionWithItems, updateBookkeepingTransaction, getBookkeepingItem } from '../src/db/bookkeeping';
+import { putBookkeepingItem, putBookkeepingTransactionWithItems, sweepInventory, updateBookkeepingTransaction, getBookkeepingItem } from '../src/db/bookkeeping';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
   classifyPhysicalItem,
@@ -101,7 +101,7 @@ describe('inventory API', () => {
   });
   after(stopLocal);
 
-  it('imports physical purchases from the ledger, idempotently', async () => {
+  it('sweeps physical purchases from the ledger, idempotently', async () => {
     await putBookkeepingItem(client, 'bookkeeping', { ...transaction({ description: 'Laptop', amount: '1813.58' }), id: 'inv-tx-laptop' });
     await putBookkeepingItem(client, 'bookkeeping', { ...transaction({ description: 'Mailchimp Standard plan' }), id: 'inv-tx-subscription' });
     await putBookkeepingItem(client, 'bookkeeping', { ...transaction({
@@ -112,22 +112,20 @@ describe('inventory API', () => {
       ],
     }), id: 'inv-tx-split' });
 
-    const dry = JSON.parse((await invoke('POST', '/api/bookkeeping/inventory/import', {})).body);
-    assert.equal(dry.dryRun, true);
-    assert.equal(dry.matched, 3);
-    assert.equal(dry.created, 0);
-    const listed = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body);
-    assert.deepEqual(listed.items, []);
-
-    const applied = JSON.parse((await invoke('POST', '/api/bookkeeping/inventory/import', { apply: true })).body);
-    assert.equal(applied.created, 3);
-    const names = applied.items.map((item: any) => item.name).sort();
+    const first = await sweepInventory(client);
+    assert.equal(first.matched, 3);
+    assert.equal(first.created.length, 3);
+    const names = first.created.map((item) => String(item.name)).sort();
     assert.deepEqual(names, ['Laptop', 'Lenovo ThinkCentre M920q', 'UGREEN video capture card']);
-    assert.ok(applied.items.every((item: any) => item.status === 'in-use'));
+    assert.ok(first.created.every((item) => item.status === 'in-use' && item.usage === 'active'));
 
-    const again = JSON.parse((await invoke('POST', '/api/bookkeeping/inventory/import', { apply: true })).body);
+    const again = await sweepInventory(client);
     assert.equal(again.matched, 0);
-    assert.equal(again.created, 0);
+    assert.equal(again.created.length, 0);
+
+    const swept = JSON.parse((await invoke('POST', '/api/bookkeeping/inventory/sweep', {})).body);
+    assert.equal(swept.created, 0);
+    assert.deepEqual(swept.items, []);
     const stored = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body);
     assert.equal(stored.items.length, 3);
     assert.ok(stored.items.every((item: any) => item.transactionId && item.acquisitionDate));
@@ -161,6 +159,12 @@ describe('inventory API', () => {
     const statusPut = await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, { status: 'disposed' });
     assert.equal(statusPut.statusCode, 400);
     assert.deepEqual(JSON.parse(statusPut.body).fields, ['status']);
+    const returnedDatePut = await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, { returnedDate: '2027-01-01' });
+    assert.equal(returnedDatePut.statusCode, 400);
+    assert.deepEqual(JSON.parse(returnedDatePut.body).fields, ['returnedDate']);
+    const usagePut = await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, { usage: 'sometimes' });
+    assert.equal(usagePut.statusCode, 400);
+    assert.deepEqual(JSON.parse(usagePut.body).fields, ['usage']);
     // Ledger-seeded fields are not editable; naming none is a read-back.
     const noop = await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, { amount: '1.00' });
     assert.equal(noop.statusCode, 200);
@@ -219,6 +223,107 @@ describe('inventory API', () => {
     })).body);
     assert.equal(later.disposedDate, '2027-04-10');
     assert.equal(later.disposals.length, 2);
+  });
+
+  it('records a return, and a later sale takes over the status', async () => {
+    const items = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body).items;
+    const item = items.find((candidate: any) => candidate.name === 'Lenovo ThinkCentre M920q');
+    const returned = JSON.parse((await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, {
+      disposal: { kind: 'returned', date: '2026-12-01', notes: 'refund received' },
+    })).body);
+    assert.equal(returned.status, 'returned');
+    assert.equal(returned.returnedDate, '2026-12-01');
+    assert.equal(returned.disposedDate, undefined);
+    assert.equal(returned.disposals[0].kind, 'returned');
+    assert.equal(returned.disposals[0].proceeds, undefined);
+
+    const sold = JSON.parse((await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, {
+      disposal: { kind: 'sold', date: '2027-01-15', proceeds: '100' },
+    })).body);
+    assert.equal(sold.status, 'disposed');
+    assert.equal(sold.disposedDate, '2027-01-15');
+    assert.equal(sold.returnedDate, undefined);
+    assert.equal(sold.disposals.length, 2);
+  });
+
+  it('tracks whether an item is actively used', async () => {
+    const items = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body).items;
+    const item = items.find((candidate: any) => candidate.name === 'Laptop');
+    const idle = JSON.parse((await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, { usage: 'idle' })).body);
+    assert.equal(idle.usage, 'idle');
+    assert.equal(idle.status, 'in-use');
+    const active = JSON.parse((await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, { usage: 'active' })).body);
+    assert.equal(active.usage, 'active');
+  });
+
+  it('keeps pictures on an item', async () => {
+    const items = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body).items;
+    const item = items.find((candidate: any) => candidate.name === 'Laptop');
+    const bad = await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, { addImage: { url: 'not-a-url' } });
+    assert.equal(bad.statusCode, 400);
+    assert.deepEqual(JSON.parse(bad.body).fields, ['addImage.url']);
+
+    const first = JSON.parse((await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, {
+      addImage: { url: 'https://m.media-amazon.com/images/front.jpg', caption: 'front' },
+    })).body);
+    assert.equal(first.images.length, 1);
+    assert.equal(first.images[0].url, 'https://m.media-amazon.com/images/front.jpg');
+    assert.equal(first.images[0].caption, 'front');
+
+    const second = JSON.parse((await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, {
+      addImage: { url: 'https://example.com/back.jpg' },
+    })).body);
+    assert.equal(second.images.length, 2);
+
+    const removed = JSON.parse((await invoke('PUT', `/api/bookkeeping/inventory/${item.id}`, {
+      removeImageUrl: 'https://m.media-amazon.com/images/front.jpg',
+    })).body);
+    assert.equal(removed.images.length, 1);
+    assert.equal(removed.images[0].url, 'https://example.com/back.jpg');
+  });
+
+  it('records items by hand from an invoice and splits one payment into several', async () => {
+    await putBookkeepingTransactionWithItems(
+      client,
+      { ...transaction({ description: 'Headphones and webcam', amount: '150.00' }), id: 'inv-tx-duo' },
+      [],
+    );
+    // The automatic transaction-level item exists, so hand-recording is refused.
+    const denied = await invoke('POST', '/api/bookkeeping/inventory/items', { transactionId: 'inv-tx-duo' });
+    assert.equal(denied.statusCode, 409);
+
+    const unknown = await invoke('POST', '/api/bookkeeping/inventory/items', { transactionId: 'inv-tx-missing' });
+    assert.equal(unknown.statusCode, 404);
+    const badType = await invoke('POST', '/api/bookkeeping/inventory/items', { transactionId: 'inv-tx-duo', name: 'X', type: 'vehicle' });
+    assert.equal(badType.statusCode, 400);
+
+    // Remove the automatic item, then record the two real items it stands for.
+    const listed = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body);
+    const automatic = listed.items.find((candidate: any) => candidate.transactionId === 'inv-tx-duo');
+    const removed = await invoke('DELETE', `/api/bookkeeping/inventory/${automatic.id}`);
+    assert.equal(removed.statusCode, 204);
+
+    const one = JSON.parse((await invoke('POST', '/api/bookkeeping/inventory/items', {
+      transactionId: 'inv-tx-duo', name: 'Sennheiser HD 450BT', type: 'audio',
+    })).body);
+    assert.equal(one.manual, true);
+    assert.equal(one.status, 'in-use');
+    assert.equal(one.usage, 'active');
+    assert.equal(one.source.transactionId, 'inv-tx-duo');
+    assert.equal(one.source.amount, '150.00');
+    assert.equal(one.amount, '150.00');
+    const two = JSON.parse((await invoke('POST', '/api/bookkeeping/inventory/items', {
+      transactionId: 'inv-tx-duo', name: 'Logitech C920', type: 'accessory', notes: 'studio camera',
+    })).body);
+    assert.equal(two.notes, 'studio camera');
+    assert.notEqual(one.id, two.id);
+
+    // Both items share the invoice, and the sweep never re-adds the automatic one.
+    const after = JSON.parse((await invoke('GET', '/api/bookkeeping/inventory')).body);
+    const duo = after.items.filter((candidate: any) => candidate.transactionId === 'inv-tx-duo');
+    assert.equal(duo.length, 2);
+    const swept = await sweepInventory(client);
+    assert.equal(swept.created.some((candidate) => candidate.transactionId === 'inv-tx-duo'), false);
   });
 
   it('rejects a stale optimistic-concurrency version with 409', async () => {

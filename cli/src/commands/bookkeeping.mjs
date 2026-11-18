@@ -53,12 +53,12 @@ Usage
       its date, amount and provider, so the row details can suggest a match.
       --retry also re-reads documents an earlier run could not read.
 
-  dataops bookkeeping inventory-import [--since YYYY] [--apply]
-      Find physical purchases (computers, phones, audio, furniture, accessories)
-      among ledger expenses and add them to the inventory. One payment that
-      bought several things adds one item per invoice allocation row. Idempotent:
-      purchases already in the inventory are skipped. Dry-run by default; --apply
-      adds the items. --since sets the first year (default 2022).
+  dataops bookkeeping inventory-sync
+      Catch the inventory up with the ledger: add items for physical purchases
+      (computers, phones, audio, furniture, accessories) that have none yet. One
+      payment that bought several things adds one item per invoice allocation
+      row. Idempotent; items you removed or recorded by hand are never
+      re-added. The monthly report pack runs the same sweep automatically.
 
   To void or restore a duplicate ledger row during month reconciliation (admin only):
   dataops reconcile void-ledger <ledger-id> --period YYYY-MM --reason TEXT --duplicate-of <ledger-id> [--yes]
@@ -448,28 +448,20 @@ export async function set(args, io) {
   return result;
 }
 
-export async function inventoryImport(args, io) {
+export async function inventorySync(args, io) {
   const api = apiFor(args);
-  const fromYear = args.since ? String(args.since).slice(0, 4) : undefined;
-  if (fromYear && !/^\d{4}$/.test(fromYear))
-    throw new UsageError("--since needs a four-digit year, e.g. --since 2022.");
-  const result = await api.post("/api/bookkeeping/inventory/import", {
-    ...(fromYear ? { fromYear: Number(fromYear) } : {}),
-    apply: Boolean(args.apply),
-  });
+  const result = await api.post("/api/bookkeeping/inventory/sweep", {});
   const outcome = {
-    mode: args.apply ? "apply" : "dry-run",
     matched: result.matched,
     created: result.created,
     items: result.items,
   };
   if (!args.json) {
-    io.print(`${outcome.mode}: ${result.created} new ${result.created === 1 ? "item" : "items"} from ${result.matched} physical ${result.matched === 1 ? "purchase" : "purchases"}`);
+    io.print(`${result.created} new ${result.created === 1 ? "item" : "items"} from ${result.matched} physical ${result.matched === 1 ? "purchase" : "purchases"}`);
     for (const item of result.items)
       io.print(`  ${item.acquisitionDate}  ${String(item.type || "").padEnd(10)}  ${item.name}${item.allocationId ? " (allocation)" : ""}`);
-    if (!args.apply) io.print("Dry run. Pass --apply to add these to the inventory.");
   }
   return outcome;
 }
 
-export const commands = { show, set, sync, classify, facts, "add-income": addIncome, "inventory-import": inventoryImport };
+export const commands = { show, set, sync, classify, facts, "add-income": addIncome, "inventory-sync": inventorySync };
