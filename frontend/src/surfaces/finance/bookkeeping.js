@@ -91,7 +91,13 @@ export function createBookkeepingSurface(context) {
     let lens = LENS.test(initial.get("month") || "") ? initial.get("month") : "";
     let filters = filtersFromParams(initial);
     let selectedId = initial.get("tx") || "";
-    let view = SECONDARY_VIEWS.includes(initial.get("view")) ? initial.get("view") : "";
+    // Inventory answers on its own /invertory address; the other secondary
+    // views ride ?view= on the ledger path.
+    const requestedView =
+      (locationRef?.pathname || "") === "/invertory"
+        ? "inventory"
+        : initial.get("view") || "";
+    let view = SECONDARY_VIEWS.includes(requestedView) ? requestedView : "";
     let defaultLens = "", invoicesMounted = false;
     const reconciliationCache = new Map();
     let reconciliationGeneration = 0;
@@ -152,10 +158,16 @@ export function createBookkeepingSurface(context) {
       if (view === "tuition" || !historyRef?.replaceState || !locationRef) return;
       const params = new URLSearchParams();
       // The default month (latest with transactions) stays out of the URL.
-      const values = { month: lens === defaultLens ? "" : lens, ...filters, tx: selectedId, view };
+      // Inventory's address is the path, so its view never rides the query.
+      const values = {
+        month: lens === defaultLens ? "" : lens,
+        ...filters,
+        tx: selectedId,
+        view: view === "inventory" ? "" : view,
+      };
       for (const name of LEDGER_PARAMS) if (values[name]) params.set(name, values[name]);
       const query = params.toString();
-      const next = `${locationRef.pathname || "/bookkeeping"}${query ? `?${query}` : ""}`;
+      const next = `${view === "inventory" ? "/invertory" : "/bookkeeping"}${query ? `?${query}` : ""}`;
       if (`${locationRef.pathname}${locationRef.search}` !== next)
         historyRef.replaceState(historyRef.state, "", next);
     }

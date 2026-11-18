@@ -49,6 +49,11 @@ export function bindApplicationEvents(context) {
                 button.dataset.workspaceTarget ||
                 button.dataset.workspaceView ||
                 "tasks",
+              // A sub-view entry (Bookkeeping → Inventory) addresses its own
+              // page, so it navigates by href instead of the parent view.
+              path: button.dataset.bookkeepingView
+                ? button.getAttribute("href")
+                : "",
             },
           }),
         ),
@@ -58,7 +63,9 @@ export function bindApplicationEvents(context) {
         );
       },
       navigateWorkspaceEvent: (event) =>
-        callbacks.showWorkspaceSurface(event.detail?.view || "tasks"),
+        event.detail?.path
+          ? callbacks.navigateCanonicalWorkspace(event.detail.path)
+          : callbacks.showWorkspaceSurface(event.detail?.view || "tasks"),
       documentTitleKeydown: (event) => {
         if (event.key === "Enter") {
           event.preventDefault();
