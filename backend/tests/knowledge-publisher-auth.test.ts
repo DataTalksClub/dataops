@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { handler } from '../src/handler';
 import { configureDocsRuntime, handleDocsRoutes, resetDocsRuntime } from '../src/docs/contentApi';
 import { resetKnowledgePublisherCaches } from '../src/auth/knowledgePublisher';
-import { syntheticKnowledge } from './helpers/knowledge';
+import { syntheticKnowledge, MemoryS3 } from './helpers/knowledge';
 import { truncateTestTables, useTestDatabase } from './helpers/db';
 import { listTemplates } from '../src/db/templates';
 import { setDeploymentTemplateLoaderForTest } from '../src/deploymentSeeds';
@@ -50,6 +50,7 @@ const request = (method: string, path: string, credential: string, body: unknown
 describe('GitHub Actions OIDC knowledge publisher', () => {
   let dir: string;
   let revision: string;
+  let s3: MemoryS3;
   before(async () => {
     Object.assign(process.env, config);
     await useTestDatabase();
@@ -69,6 +70,7 @@ describe('GitHub Actions OIDC knowledge publisher', () => {
     dir = mkdtempSync(resolve('../.tmp/publisher-'));
     const fixture = syntheticKnowledge({ 'content/a.md': 'old' }, dir, async () => 'https://example.invalid/synthetic-download');
     configureDocsRuntime(fixture.store);
+    s3 = fixture.s3;
     revision = fixture.publication.revision;
     resetKnowledgePublisherCaches();
   });
@@ -119,6 +121,13 @@ describe('GitHub Actions OIDC knowledge publisher', () => {
     }
     const mirror = records.filter((record) => record.Job === 'knowledge-mirror');
     assert.deepEqual(mirror.map((record) => [record.Success, record.Failure]), [[0, 1], [1, 0]]);
+    // The last report persists for the repo-backup freshness check: it compares
+    // the mirrored HEAD against the S3 backup manifest's commit. The success
+    // heartbeat above (without a commit) overwrote the failure report.
+    const stored = JSON.parse(s3.objects.get(`test-knowledge/jobs/knowledge-mirror/last-report.json`)!.toString());
+    assert.equal(stored.outcome, 'success');
+    assert.equal(stored.revision, 'rev1');
+    assert.ok(stored.at);
   });
 
   it('syncs authored templates on request and reports failures', async () => {

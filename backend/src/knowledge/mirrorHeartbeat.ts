@@ -11,8 +11,16 @@
  * Failure, and on any UTC day without a Success (the dead-man check: the
  * schedule stopped, the workflow was disabled, or it never reached the
  * report step), and send the recovery notice when the next success lands.
+ *
+ * The report also persists the mirrored Git HEAD to
+ * jobs/knowledge-mirror/last-report.json: the repo-backup freshness check
+ * compares it against the S3 backup manifest's commit to tell a quiet
+ * repository (backed up, nothing new) from one whose backups stopped.
  */
+import {PutObjectCommand} from '@aws-sdk/client-s3';
+import type {KnowledgeStore} from '../docs/knowledgeStore';
 import { writeEmbeddedMetric } from '../embeddedMetrics';
+import { MIRROR_LAST_REPORT_KEY } from './repoBackupFreshness';
 
 export const MIRROR_JOB = 'knowledge-mirror';
 
@@ -28,7 +36,7 @@ export function parseMirrorHeartbeat(body: string | null | undefined): MirrorHea
   return { outcome, revision: text(revision), commit: text(commit) };
 }
 
-export function recordMirrorHeartbeat(heartbeat: MirrorHeartbeat): void {
+export async function recordMirrorHeartbeat(store: Pick<KnowledgeStore, 'bucket' | 'client'>, heartbeat: MirrorHeartbeat): Promise<void> {
   const success = heartbeat.outcome === 'success';
   writeEmbeddedMetric({
     _aws: {
@@ -41,4 +49,12 @@ export function recordMirrorHeartbeat(heartbeat: MirrorHeartbeat): void {
     revision: heartbeat.revision,
     commit: heartbeat.commit,
   });
+  // The freshness check only reads the commit; keep the whole report for
+  // operators inspecting the object.
+  await store.client.send(new PutObjectCommand({
+    Bucket: store.bucket,
+    Key: MIRROR_LAST_REPORT_KEY,
+    Body: JSON.stringify({ ...heartbeat, at: new Date().toISOString() }),
+    ContentType: 'application/json',
+  }));
 }

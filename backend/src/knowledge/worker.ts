@@ -14,6 +14,7 @@ import {join} from 'node:path';
 import {CopyObjectCommand,HeadObjectCommand,PutObjectCommand} from '@aws-sdk/client-s3';
 import {KnowledgeStore,bounded,type Publication} from '../docs/knowledgeStore';
 import {writeEmbeddedMetric} from '../embeddedMetrics';
+import {runRepoBackupFreshnessCheck} from './repoBackupFreshness';
 import {withKnowledgeJobLease} from './lease';
 
 export interface RecoverySnapshot {schemaVersion:1; revision:string; createdAt:string; publications:Publication[]; payloads:{sha:string;size:number;key:string}[];}
@@ -71,7 +72,15 @@ function metric(job:string,success:number):void {
   writeEmbeddedMetric({_aws:{Timestamp:Date.now(),CloudWatchMetrics:[{Namespace:'DataOps/Knowledge',Dimensions:[['Job']],Metrics:[{Name:'Success',Unit:'Count'},{Name:'Failure',Unit:'Count'}]}]},Job:job,Success:success,Failure:success?0:1});
 }
 export async function handler(event:{detail?:{dataopsAction?:string}}):Promise<unknown> {
-  if(event.detail?.dataopsAction!=='knowledge-backup') throw new Error('Unknown knowledge job');
+  const action=event.detail?.dataopsAction;
+  if(action==='knowledge-repo-backup-check') {
+    return runRepoBackupFreshnessCheck({
+      store:new KnowledgeStore(),
+      backupBucket:process.env.KNOWLEDGE_REPO_BACKUP_BUCKET||'',
+      backupPrefix:process.env.KNOWLEDGE_REPO_BACKUP_PREFIX||'dataops-knowledge',
+    });
+  }
+  if(action!=='knowledge-backup') throw new Error('Unknown knowledge job');
   const store=new KnowledgeStore();
   try {
     const result=await withKnowledgeJobLease(store,'knowledge-backup',async signal=>{

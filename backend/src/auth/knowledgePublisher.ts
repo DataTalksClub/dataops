@@ -17,7 +17,7 @@ import { createPublicKey, verify as verifySignature, type JsonWebKey } from 'nod
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { seedDeploymentRuntime } from '../deploymentSeeds';
-import { handleDocsRoutes, isDocsDomainEnabled, regenerateKnowledgeForTemplates } from '../docs/contentApi';
+import { docsKnowledgeStore, handleDocsRoutes, isDocsDomainEnabled, regenerateKnowledgeForTemplates } from '../docs/contentApi';
 import { listTemplates } from '../db/templates';
 import { parseMirrorHeartbeat, recordMirrorHeartbeat } from '../knowledge/mirrorHeartbeat';
 import type { LambdaEvent, LambdaResponse } from '../types';
@@ -131,7 +131,7 @@ export async function handleKnowledgePublisher(
   if (method === 'POST' && path === '/knowledge/mirror-heartbeat') {
     const heartbeat = parseMirrorHeartbeat(event.body);
     if (!heartbeat) return response(400, { error: 'outcome must be success or failure' });
-    recordMirrorHeartbeat(heartbeat);
+    await recordMirrorHeartbeat(docsKnowledgeStore(), heartbeat);
     return response(200, { recorded: heartbeat.outcome });
   }
   const allowed = (method === 'GET' && (path === '/knowledge/manifest' || path === '/knowledge/history' || path === '/knowledge/version' || path === '/knowledge/download'))

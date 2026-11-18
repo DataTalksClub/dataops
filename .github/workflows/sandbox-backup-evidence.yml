@@ -55,7 +55,7 @@ jobs:
         run: |
           set -uo pipefail
           failed=0
-          for suffix in knowledge-backup-stale knowledge-worker-failure knowledge-mirror-stale knowledge-mirror-failed recurring-cron-pass-missed recurring-cron-failure recurring-cron-errors; do
+          for suffix in knowledge-backup-stale knowledge-repo-backup-stale knowledge-worker-failure knowledge-mirror-stale knowledge-mirror-failed recurring-cron-pass-missed recurring-cron-failure recurring-cron-errors; do
             name="dataops-v1-$suffix"
             if ! aws cloudwatch describe-alarms --alarm-names "$name" \
               --query 'MetricAlarms' --output json > "$RUNNER_TEMP/$suffix.json"; then
@@ -83,21 +83,23 @@ jobs:
           done
           exit "$failed"
 
-      - name: Prove the backup freshness alarm reaches a subscriber
+      - name: Prove the backup freshness alarms reach a subscriber
         if: ${{ !cancelled() }}
         shell: bash
         run: |
           set -euo pipefail
-          alarm="$RUNNER_TEMP/knowledge-backup-stale.json"
-          # Success=1 per daily backup; alarm when the 2-day sum is <1 or missing.
-          jq -e '.[0] | .Namespace == "DataOps/Knowledge" and .MetricName == "Success"
-            and .Threshold == 1 and .ComparisonOperator == "LessThanThreshold"
-            and .TreatMissingData == "breaching"' "$alarm" >/dev/null
-          for topic in $(jq -r '.[0].AlarmActions[]' "$alarm"); do
-            confirmed=$(aws sns list-subscriptions-by-topic --topic-arn "$topic" --output json \
-              | jq '[.Subscriptions[] | select(.SubscriptionArn != "PendingConfirmation")] | length')
-            echo "$topic confirmed subscriptions: $confirmed"
-            [ "$confirmed" -ge 1 ]
+          # Success=1 per daily backup/check; alarm when the 2-day sum is <1 or missing.
+          for suffix in knowledge-backup-stale knowledge-repo-backup-stale; do
+            alarm="$RUNNER_TEMP/$suffix.json"
+            jq -e '.[0] | .Namespace == "DataOps/Knowledge" and .MetricName == "Success"
+              and .Threshold == 1 and .ComparisonOperator == "LessThanThreshold"
+              and .TreatMissingData == "breaching"' "$alarm" >/dev/null
+            for topic in $(jq -r '.[0].AlarmActions[]' "$alarm"); do
+              confirmed=$(aws sns list-subscriptions-by-topic --topic-arn "$topic" --output json \
+                | jq '[.Subscriptions[] | select(.SubscriptionArn != "PendingConfirmation")] | length')
+              echo "$suffix -> $topic confirmed subscriptions: $confirmed"
+              [ "$confirmed" -ge 1 ]
+            done
           done
 
       - name: Read actual knowledge success datapoints
