@@ -50,9 +50,12 @@ test("the bookkeeping surface has no inventory section left", () => {
   assert.doesNotMatch(markup, /data-inventory\b/);
 });
 
-test("the inventory surface owns its scan action, table host and record dialog", () => {
+test("the inventory surface owns its add action, table host and dialogs", () => {
   const markup = inventorySurfaceMarkup();
-  assert.match(markup, /data-inventory-scan/);
+  assert.match(markup, /data-inventory-add\b/);
+  assert.doesNotMatch(markup, /data-inventory-scan/);
+  assert.doesNotMatch(markup, /Scan ledger/);
   assert.match(markup, /data-inventory\b/);
   assert.match(markup, /<dialog[^>]*data-inventory-transaction-dialog/);
+  assert.match(markup, /<dialog[^>]*data-inventory-add-dialog/);
 });

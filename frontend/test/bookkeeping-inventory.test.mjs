@@ -12,12 +12,12 @@ function fakeHost() {
   };
 }
 
-const node = (dataset, row) => ({ dataset, closest: (probe) => (row && probe === "[data-inv]" ? row : null) });
+const row = (id) => ({ dataset: { inv: id }, closest: (probe) => (probe === "[data-inv]" ? { dataset: { inv: id } } : null) });
 
 const laptop = {
   id: "inv-laptop", transactionId: "tx-1", name: "Laptop", type: "computer",
   vendor: "Amazon", acquisitionDate: "2026-03-19", amount: "1813.58",
-  currency: "EUR", amountEur: "1813.58", status: "in-use",
+  currency: "EUR", amountEur: "1813.58", status: "in-use", usage: "active",
   source: {
     transactionId: "tx-1", description: "MacBook Pro 14", counterparty: "Amazon",
     date: "2026-03-19", amount: "1813.58", currency: "EUR", amountEur: "1813.58",
@@ -30,14 +30,10 @@ const headset = {
   disposals: [{ id: "d-1", kind: "sold", date: "2026-09-01", proceeds: "20.00", currency: "EUR", notes: "eBay" }],
 };
 
-function mount({ inventoryPages, putResponses = [], deletes = [] } = {}) {
+function mount({ inventoryPages, putResponses = [] } = {}) {
   const host = fakeHost();
-  const scanButton = { disabled: false, addEventListener(name, handler) { host.listeners.set(`scan:${name}`, handler); } };
   const surface = {
-    querySelector: (selector) =>
-      selector === "[data-inventory]" ? host
-        : selector === "[data-inventory-scan]" ? scanButton
-          : null,
+    querySelector: (selector) => (selector === "[data-inventory]" ? host : null),
   };
   const status = [];
   const calls = [];
@@ -47,8 +43,6 @@ function mount({ inventoryPages, putResponses = [], deletes = [] } = {}) {
     calls.push([path, options.method || "GET", options.body ? JSON.parse(options.body) : undefined]);
     if (path === "/inventory") return { items: inventoryPages[Math.min(page++, inventoryPages.length - 1)] };
     if (path.startsWith("/inventory/") && options.method === "PUT") return putResponses.shift() ?? { ...laptop, ...JSON.parse(options.body) };
-    if (path.startsWith("/inventory/") && options.method === "DELETE") { deletes.push(path); return undefined; }
-    if (path === "/inventory/import") return { dryRun: false, matched: 1, created: 1, items: [laptop] };
     throw new Error(`unexpected ${options.method || "GET"} ${path}`);
   };
   const errors = [];
@@ -61,54 +55,50 @@ function mount({ inventoryPages, putResponses = [], deletes = [] } = {}) {
     todayIsoDate: () => "2037-03-15",
     openTransaction: (id) => opened.push(id),
   });
-  // A click on a node whose closest() answers every probed selector.
-  const click = (probes) =>
-    host.listeners.get("click")({ target: { closest: (probe) => probes[probe] ?? null } });
-  const change = (dataset, value) =>
-    host.listeners.get("change")({ target: {
-      closest: (probe) => (probe === "[data-inv-disposal]" ? { dataset, value } : null),
-    } });
-  const type = (dataset, value) =>
-    host.listeners.get("input")({ target: {
-      closest: (probe) => (probe === "[data-inv-disposal]" ? { dataset, value } : null),
-    } });
-  return { view, host, calls, status, errors, opened, click, change, type, scanClick: () => host.listeners.get("scan:click")() };
+  // A target whose closest() answers every probed selector from one map.
+  const dispatch = (name, probes, extra = {}) =>
+    host.listeners.get(name)({ target: { closest: (probe) => probes[probe] ?? null, ...extra } });
+  const click = (probes) => dispatch("click", probes);
+  const probe = (selector, value) => ({ [selector]: { dataset: {}, value } });
+  const change = (selector, dataset, value, rowId) => dispatch("change", {
+    "[data-inv-year]": null,
+    [selector]: { dataset, value, closest: (p) => (p === "[data-inv]" && rowId ? row(rowId) : null) },
+  });
+  const type = (selector, dataset, value) => dispatch("input", { [selector]: { dataset, value } });
+  return { view, host, calls, status, errors, opened, click, change, type, probe };
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-test("loads the inventory and renders items with the in-use total", async () => {
+test("loads the inventory and renders items with the on-balance total", async () => {
   const { view, host } = mount({ inventoryPages: [[laptop, headset]] });
   await view.renderInventory();
   assert.match(host.innerHTML, /Laptop/);
   assert.match(host.innerHTML, /Stereo Headset/);
   assert.match(host.innerHTML, /2 items/);
-  assert.match(host.innerHTML, /in use: €1,813\.58/);
+  assert.match(host.innerHTML, /on balance: €1,813\.58/);
   assert.match(host.innerHTML, /is-disposed/);
 });
 
-test("an empty inventory explains how to fill it", async () => {
+test("an empty inventory explains that purchases land automatically", async () => {
   const { view, host } = mount({ inventoryPages: [[]] });
   await view.renderInventory();
   assert.match(host.innerHTML, /No inventory yet/);
-  assert.match(host.innerHTML, /Scan the ledger/);
+  assert.match(host.innerHTML, /land here automatically/);
 });
 
-test("scan applies the import, reports the outcome and reloads", async () => {
-  const { view, host, calls, status, scanClick } = mount({ inventoryPages: [[], [laptop]] });
+test("the table has no per-row removal affordance", async () => {
+  const { view, host } = mount({ inventoryPages: [[laptop]] });
   await view.renderInventory();
-  scanClick();
-  await flush();
-  assert.deepEqual(calls[1], ["/inventory/import", "POST", { apply: true }]);
-  assert.match(status.at(-1), /Added 1 item from the ledger\./);
-  assert.match(host.innerHTML, /Laptop/);
+  assert.doesNotMatch(host.innerHTML, /data-inv-remove/);
+  assert.doesNotMatch(host.innerHTML, /bk-inv-remove/);
 });
 
-test("each item links back to the ledger record it came from", async () => {
+test("each item links back to the invoice it came from", async () => {
   const { view, host, opened, click } = mount({ inventoryPages: [[laptop]] });
   await view.renderInventory();
-  assert.match(host.innerHTML, /↳ ledger: MacBook Pro 14/);
-  click({ "[data-inv-source]": node({ invSource: "tx-1" }) });
+  assert.match(host.innerHTML, /↳ invoice: MacBook Pro 14/);
+  click({ "[data-inv-source]": { dataset: { invSource: "tx-1" } } });
   assert.deepEqual(opened, ["tx-1"]);
 });
 
@@ -119,10 +109,10 @@ test("recording a sale sends a disposal with proceeds and derives the disposed s
       disposals: [{ id: "d-9", kind: "sold", date: "2037-03-15", proceeds: "250", currency: "EUR" }] }],
   });
   await view.renderInventory();
-  click({ "[data-inv-dispose]": node({ invDispose: laptop.id }) });
+  click({ "[data-inv-dispose]": { dataset: { invDispose: laptop.id, invKind: "sold" } } });
   assert.match(host.innerHTML, /bk-inv-dispose/);
-  type({ invDisposal: "proceeds" }, "250");
-  click({ "[data-inv-disposal-save]": node({}) });
+  type("[data-inv-disposal]", { invDisposal: "proceeds" }, "250");
+  click({ "[data-inv-disposal-save]": { dataset: {} } });
   await flush();
   assert.deepEqual(calls.at(-1), [`/inventory/${laptop.id}`, "PUT", {
     disposal: { kind: "sold", date: "2037-03-15", proceeds: "250" },
@@ -134,6 +124,25 @@ test("recording a sale sends a disposal with proceeds and derives the disposed s
   assert.match(host.innerHTML, /proceeds/);
 });
 
+test("recording a return needs no proceeds and sends the returned kind", async () => {
+  const { view, host, calls, status, click } = mount({
+    inventoryPages: [[laptop]],
+    putResponses: [{ ...laptop, status: "returned", returnedDate: "2037-03-15",
+      disposals: [{ id: "d-7", kind: "returned", date: "2037-03-15" }] }],
+  });
+  await view.renderInventory();
+  click({ "[data-inv-dispose]": { dataset: { invDispose: laptop.id, invKind: "returned" } } });
+  assert.match(host.innerHTML, /value="returned"/);
+  assert.doesNotMatch(host.innerHTML, /Proceeds/);
+  click({ "[data-inv-disposal-save]": { dataset: {} } });
+  await flush();
+  assert.deepEqual(calls.at(-1), [`/inventory/${laptop.id}`, "PUT", {
+    disposal: { kind: "returned", date: "2037-03-15" },
+  }]);
+  assert.match(status.at(-1), /Recorded the return\./);
+  assert.match(host.innerHTML, /returned · 2037-03-15/);
+});
+
 test("a decommission form has no proceeds field and sends the decommissioned kind", async () => {
   const { view, host, calls, click, change } = mount({
     inventoryPages: [[laptop]],
@@ -141,37 +150,45 @@ test("a decommission form has no proceeds field and sends the decommissioned kin
       disposals: [{ id: "d-8", kind: "decommissioned", date: "2037-03-15" }] }],
   });
   await view.renderInventory();
-  click({ "[data-inv-dispose]": node({ invDispose: laptop.id }) });
+  click({ "[data-inv-dispose]": { dataset: { invDispose: laptop.id, invKind: "sold" } } });
   assert.match(host.innerHTML, /Proceeds/);
-  change({ invDisposal: "kind" }, "decommissioned");
+  change("[data-inv-disposal]", { invDisposal: "kind" }, "decommissioned");
   assert.doesNotMatch(host.innerHTML, /Proceeds/);
-  click({ "[data-inv-disposal-save]": node({}) });
+  click({ "[data-inv-disposal-save]": { dataset: {} } });
   await flush();
   assert.deepEqual(calls.at(-1), [`/inventory/${laptop.id}`, "PUT", {
     disposal: { kind: "decommissioned", date: "2037-03-15" },
   }]);
 });
 
-test("cancel closes the dispose form without writing", async () => {
+test("cancel closes the exit form without writing", async () => {
   const { view, calls, click } = mount({ inventoryPages: [[laptop]] });
   await view.renderInventory();
-  click({ "[data-inv-dispose]": node({ invDispose: laptop.id }) });
-  click({ "[data-inv-disposal-cancel]": node({}) });
+  click({ "[data-inv-dispose]": { dataset: { invDispose: laptop.id, invKind: "sold" } } });
+  click({ "[data-inv-disposal-cancel]": { dataset: {} } });
   assert.deepEqual(calls.filter(([, method]) => method === "PUT"), []);
 });
 
-test("a sale without a date is rejected before any request", async () => {
+test("an exit without a date is rejected before any request", async () => {
   const { view, status, calls, click, type } = mount({ inventoryPages: [[laptop]] });
   await view.renderInventory();
-  click({ "[data-inv-dispose]": node({ invDispose: laptop.id }) });
-  type({ invDisposal: "date" }, "");
-  click({ "[data-inv-disposal-save]": node({}) });
+  click({ "[data-inv-dispose]": { dataset: { invDispose: laptop.id, invKind: "sold" } } });
+  type("[data-inv-disposal]", { invDisposal: "date" }, "");
+  click({ "[data-inv-disposal-save]": { dataset: {} } });
   await flush();
-  assert.match(status.at(-1), /Pick a disposal date\./);
+  assert.match(status.at(-1), /Pick a date/);
   assert.deepEqual(calls.filter(([, method]) => method === "PUT"), []);
 });
 
-test("removing the last disposal record puts the item back in use", async () => {
+test("the usage select records whether an item is actively used", async () => {
+  const { view, calls, change } = mount({ inventoryPages: [[laptop]] });
+  await view.renderInventory();
+  change("[data-inv-field]", { invField: "usage" }, "idle", laptop.id);
+  await flush();
+  assert.deepEqual(calls.at(-1), [`/inventory/${laptop.id}`, "PUT", { usage: "idle" }]);
+});
+
+test("removing the last exit record puts the item back on balance", async () => {
   const { view, host, calls, click } = mount({
     inventoryPages: [[headset]],
     putResponses: [{ ...headset, status: "in-use", disposedDate: undefined, disposals: [] }],
@@ -180,57 +197,65 @@ test("removing the last disposal record puts the item back in use", async () => 
   assert.match(host.innerHTML, /<strong>sold<\/strong> 2026-09-01/);
   assert.match(host.innerHTML, /proceeds/);
   click({
-    "[data-inv-disposal-remove]": node({ invDisposalRemove: "d-1" }, node({ inv: headset.id })),
+    "[data-inv-disposal-remove]": { dataset: { invDisposalRemove: "d-1" }, closest: (p) => (p === "[data-inv]" ? row(headset.id) : null) },
   });
   await flush();
   assert.deepEqual(calls.at(-1), [`/inventory/${headset.id}`, "PUT", { removeDisposalId: "d-1" }]);
 });
 
-test("removal confirms first and drops the row", async () => {
-  const { view, host, calls, click } = mount({ inventoryPages: [[laptop]] });
-  const originalConfirm = globalThis.confirm;
-  globalThis.confirm = () => true;
-  try {
-    await view.renderInventory();
-    click({ "[data-inv-remove]": node({ invRemove: laptop.id }) });
-    await flush();
-    assert.deepEqual(calls.at(-1), [`/inventory/${laptop.id}`, "DELETE", undefined]);
-    assert.doesNotMatch(host.innerHTML, /Laptop/);
-  } finally {
-    globalThis.confirm = originalConfirm;
-  }
+test("a picture is attached by link, shown as a thumbnail, and removable", async () => {
+  const { view, host, calls, status, click, type } = mount({
+    inventoryPages: [
+      [laptop],
+      [{ ...laptop, images: [{ url: "https://m.media-amazon.com/images/front.jpg", caption: "front" }] }],
+      [{ ...laptop, images: [{ url: "https://m.media-amazon.com/images/front.jpg", caption: "front" }, { url: "https://example.com/back.jpg" }] }],
+      [{ ...laptop, images: [{ url: "https://example.com/back.jpg" }] }],
+    ],
+  });
+  await view.renderInventory();
+  click({ "[data-inv-image-add]": { dataset: { invImageAdd: laptop.id } } });
+  assert.match(host.innerHTML, /bk-inv-image-form/);
+  // A malformed link is rejected before any request.
+  type("[data-inv-image]", { invImage: "url" }, "not-a-url");
+  click({ "[data-inv-image-save]": { dataset: {} } });
+  await flush();
+  assert.match(status.at(-1), /picture link/);
+  assert.deepEqual(calls.filter(([, method]) => method === "PUT"), []);
+
+  type("[data-inv-image]", { invImage: "url" }, "https://m.media-amazon.com/images/front.jpg");
+  type("[data-inv-image]", { invImage: "caption" }, "front");
+  click({ "[data-inv-image-save]": { dataset: {} } });
+  await flush();
+  assert.deepEqual(calls.at(-1), [`/inventory/${laptop.id}`, "PUT", {
+    addImage: { url: "https://m.media-amazon.com/images/front.jpg", caption: "front" },
+  }]);
+  assert.match(status.at(-1), /Picture attached\./);
+  await view.renderInventory();
+  assert.match(host.innerHTML, /bk-inv-thumb/);
+  assert.match(host.innerHTML, /front/);
+
+  await view.renderInventory();
+  click({ "[data-inv-image-remove]": { dataset: { invImageRemove: "https://m.media-amazon.com/images/front.jpg" }, closest: (p) => (p === "[data-inv]" ? row(laptop.id) : null) } });
+  await flush();
+  assert.deepEqual(calls.at(-1), [`/inventory/${laptop.id}`, "PUT", { removeImageUrl: "https://m.media-amazon.com/images/front.jpg" }]);
+  assert.match(status.at(-1), /Picture removed\./);
 });
 
-test("declined confirmation leaves the row in place", async () => {
-  const { view, host, calls, click } = mount({ inventoryPages: [[laptop]] });
-  const originalConfirm = globalThis.confirm;
-  globalThis.confirm = () => false;
-  try {
-    await view.renderInventory();
-    click({ "[data-inv-remove]": node({ invRemove: laptop.id }) });
-    await flush();
-    assert.deepEqual(calls.filter(([, method]) => method === "DELETE"), []);
-    assert.match(host.innerHTML, /Laptop/);
-  } finally {
-    globalThis.confirm = originalConfirm;
-  }
-});
-
-test("clicking the record opens the ledger record it came from", async () => {
+test("clicking the record opens the invoice it came from", async () => {
   const { view, click, opened } = mount({ inventoryPages: [[laptop]] });
   await view.renderInventory();
   click({ "[data-inv]": { dataset: { inv: laptop.id } } });
   assert.deepEqual(opened, [laptop.source.transactionId]);
 });
 
-test("clicks inside the note or type controls never open the ledger", async () => {
+test("clicks inside the note or type controls never open the invoice", async () => {
   const { view, click, opened } = mount({ inventoryPages: [[laptop]] });
   await view.renderInventory();
   click({ "input, select, button, a": { dataset: {} } });
   assert.deepEqual(opened, []);
 });
 
-test("a record without a ledger source is not clickable", async () => {
+test("a record without an invoice source is not clickable", async () => {
   const orphan = { ...laptop, id: "inv-orphan", source: undefined };
   const { view, host, click, opened } = mount({ inventoryPages: [[laptop, orphan]] });
   await view.renderInventory();
