@@ -15,7 +15,8 @@ test("the sidebar hangs Inventory under Bookkeeping with the deep link", () => {
   const item = index.match(/<a[^>]*data-bookkeeping-view="inventory"[^>]*>[\s\S]*?<\/a>/)?.[0] ?? "";
   assert.match(item, /href="\/bookkeeping\?view=inventory"/);
   assert.match(item, /data-workspace-view="bookkeeping"/);
-  assert.match(item, /dk-nav-item--sub/);
+  assert.match(item, /class="dk-nav-item workspace-nav-button"/);
+  assert.doesNotMatch(item, /dk-nav-item--sub/);
   assert.match(item, />Inventory<\/span>/);
 });
 
