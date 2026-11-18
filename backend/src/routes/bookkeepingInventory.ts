@@ -4,20 +4,21 @@ import type { LambdaEvent, LambdaResponse } from "../types";
 import {
   BookkeepingItemLockedError,
   deleteBookkeepingItem,
+  dismissInventorySeed,
   getBookkeepingItem,
   listBookkeepingItems,
   listTransactions,
   putBookkeepingItem,
+  sweepInventory,
   updateBookkeepingItem,
 } from "../db/bookkeeping";
 import { json, parse } from "./bookkeepingShared";
 import { realDate } from "../sponsorCrm/model";
 import {
-  DEFAULT_INVENTORY_FROM_YEAR,
   INVENTORY_DISPOSAL_KINDS,
   INVENTORY_TYPES,
+  INVENTORY_USAGES,
   deriveInventoryDisposalState,
-  deriveInventoryItems,
   inventoryItemId,
   inventoryItemSeed,
   inventorySourceRecord,
@@ -45,12 +46,30 @@ function validateInventoryEdit(input: Record<string, unknown>): string[] {
     errors.push("name");
   if (input.type !== undefined && !INVENTORY_TYPES.includes(String(input.type) as InventoryType))
     errors.push("type");
-  // Status and disposedDate follow the disposal records; editing them
+  if (input.usage !== undefined && !INVENTORY_USAGES.includes(String(input.usage) as (typeof INVENTORY_USAGES)[number]))
+    errors.push("usage");
+  // Status and exit dates follow the disposal records; editing them
   // directly is rejected so clients cannot fight the derivation.
   if (input.status !== undefined) errors.push("status");
   if (input.disposedDate !== undefined) errors.push("disposedDate");
+  if (input.returnedDate !== undefined) errors.push("returnedDate");
   if (input.notes !== undefined && input.notes !== null && (typeof input.notes !== "string" || input.notes.length > 2000))
     errors.push("notes");
+  if (input.addImage !== undefined) {
+    const image = input.addImage as Record<string, unknown>;
+    if (!image || typeof image !== "object" || Array.isArray(image))
+      errors.push("addImage");
+    else {
+      if (typeof image.url !== "string" || !/^https?:\/\/\S+$/.test(image.url) || image.url.length > 1000)
+        errors.push("addImage.url");
+      if (image.caption !== undefined && image.caption !== null
+        && (typeof image.caption !== "string" || image.caption.length > 200))
+        errors.push("addImage.caption");
+    }
+  }
+  if (input.removeImageUrl !== undefined
+    && (typeof input.removeImageUrl !== "string" || !input.removeImageUrl.trim()))
+    errors.push("removeImageUrl");
   return errors;
 }
 
@@ -112,49 +131,76 @@ export async function handleBookkeepingInventoryRoutes(
     return json(200, { items: items.map(publicInventoryItem) });
   }
 
-  if (path === "/api/bookkeeping/inventory/import" && method === "POST") {
-    const body = parse(event.body || null) || {};
-    const fromYear = Number(body.fromYear ?? DEFAULT_INVENTORY_FROM_YEAR);
-    if (!Number.isSafeInteger(fromYear) || fromYear < 2000 || fromYear > 2100)
-      return json(400, { error: "Invalid fromYear", fields: ["fromYear"] });
-    const apply = body.apply === true;
-    const [transactions, existing] = await Promise.all([
-      listTransactions(client),
-      listBookkeepingItems(client, "inventory"),
-    ]);
-    const known = new Set(
-      existing.map((item) =>
-        inventoryItemSeed(String(item.transactionId || ""), typeof item.allocationId === "string" ? item.allocationId : undefined),
-      ),
-    );
-    const candidates = deriveInventoryItems(transactions, { fromYear }).filter(
-      (candidate) => !known.has(inventoryItemSeed(candidate.transactionId, candidate.allocationId)),
-    );
-    const created: Record<string, unknown>[] = [];
-    if (apply) {
-      for (const candidate of candidates) {
-        const { item, duplicate } = await putBookkeepingItem(client, "inventory", stripUndefined({
-          id: inventoryItemId(candidate.transactionId, candidate.allocationId),
-          transactionId: candidate.transactionId,
-          allocationId: candidate.allocationId,
-          name: candidate.name,
-          type: candidate.type,
-          vendor: candidate.vendor,
-          acquisitionDate: candidate.acquisitionDate,
-          amount: candidate.amount,
-          currency: candidate.currency,
-          amountEur: candidate.amountEur,
-          status: "in-use",
-        }), inventoryItemSeed(candidate.transactionId, candidate.allocationId));
-        if (!duplicate) created.push(publicInventoryItem(item));
-      }
-    }
-    return json(apply ? 201 : 200, {
-      dryRun: !apply,
-      matched: candidates.length,
-      created: created.length,
-      items: apply ? created : candidates,
+  if (path === "/api/bookkeeping/inventory/sweep" && method === "POST") {
+    const result = await sweepInventory(client);
+    return json(201, {
+      matched: result.matched,
+      created: result.created.length,
+      items: result.created.map(publicInventoryItem),
     });
+  }
+
+  // Record an inventory item for a purchase picked from the ledger. One
+  // invoice can yield several items (one payment, two things), and every
+  // item keeps the same invoice as its source record.
+  if (path === "/api/bookkeeping/inventory/items" && method === "POST") {
+    const body = parse(event.body || null);
+    if (!body) return json(400, { error: "Invalid JSON" });
+    const transactionId = typeof body.transactionId === "string" ? body.transactionId.trim() : "";
+    if (!transactionId) return json(400, { error: "transactionId is required", fields: ["transactionId"] });
+    const transaction = await getBookkeepingItem(client, "bookkeeping", transactionId);
+    if (!transaction || transaction.voidStatus === "voided")
+      return json(404, { error: "Transaction not found", fields: ["transactionId"] });
+    const allocationId = typeof body.allocationId === "string" && body.allocationId.trim()
+      ? body.allocationId.trim()
+      : undefined;
+    const source = inventorySourceRecord({ transactionId, allocationId }, transaction);
+    if (allocationId && !source)
+      return json(400, { error: "Unknown allocation row", fields: ["allocationId"] });
+    const name = typeof body.name === "string" && body.name.trim()
+      ? body.name.trim()
+      : String(source?.description || "");
+    if (!name || name.length > 300)
+      return json(400, { error: "name is required", fields: ["name"] });
+    if (body.type !== undefined && !INVENTORY_TYPES.includes(String(body.type) as InventoryType))
+      return json(400, { error: "Invalid inventory item", fields: ["type"] });
+    if (body.usage !== undefined && !INVENTORY_USAGES.includes(String(body.usage) as (typeof INVENTORY_USAGES)[number]))
+      return json(400, { error: "Invalid inventory item", fields: ["usage"] });
+    if (body.notes !== undefined && body.notes !== null
+      && (typeof body.notes !== "string" || body.notes.length > 2000))
+      return json(400, { error: "Invalid inventory item", fields: ["notes"] });
+    if (!allocationId) {
+      // A payment without invoice rows derives one automatic transaction-level
+      // item; recording items by hand replaces it. Dismiss that seed so the
+      // automatic entry never comes back alongside the hand-recorded ones,
+      // but refuse while the automatic item still exists.
+      const existing = await listBookkeepingItems(client, "inventory");
+      const clash = existing.find((item) =>
+        String(item.transactionId || "") === transactionId && !item.allocationId && !item.manual);
+      if (clash)
+        return json(409, { error: "This invoice already has an inventory item; remove that one first to record its items separately." });
+      await dismissInventorySeed(client, inventoryItemSeed(transactionId), { transactionId });
+    }
+    const { item } = await putBookkeepingItem(client, "inventory", stripUndefined({
+      id: inventoryItemId(transactionId, allocationId ?? `manual:${randomUUID()}`),
+      transactionId,
+      allocationId,
+      manual: true,
+      name,
+      type: typeof body.type === "string" ? String(body.type) : "other",
+      vendor: String(source?.counterparty ?? ""),
+      acquisitionDate: String(source?.date ?? ""),
+      amount: source?.amount,
+      currency: source?.currency,
+      amountEur: source?.amountEur,
+      status: "in-use",
+      usage: typeof body.usage === "string" ? String(body.usage) : "active",
+      ...(body.notes !== undefined && body.notes !== null && String(body.notes).trim()
+        ? { notes: String(body.notes).trim() }
+        : {}),
+    }));
+    const [enriched] = await enrichWithSource(client, [publicInventoryItem(item)]);
+    return json(201, enriched);
   }
 
   const item = path.match(/^\/api\/bookkeeping\/inventory\/([^/]+)$/);
@@ -182,8 +228,27 @@ export async function handleBookkeepingInventoryRoutes(
       const value: Record<string, unknown> = {};
       if (body.name !== undefined) value.name = String(body.name).trim();
       if (body.type !== undefined) value.type = String(body.type);
+      if (body.usage !== undefined) value.usage = String(body.usage);
       if (body.notes !== undefined)
         value.notes = body.notes === null || !String(body.notes).trim() ? undefined : String(body.notes);
+      if (body.addImage !== undefined || body.removeImageUrl !== undefined) {
+        const existingImages = await getBookkeepingItem(client, "inventory", id);
+        if (!existingImages) return json(404, { error: "Not found" });
+        const current = (Array.isArray(existingImages.images) ? existingImages.images : [])
+          .filter((image): image is Record<string, unknown> => Boolean(image) && typeof image === "object");
+        const removeUrl = typeof body.removeImageUrl === "string" ? body.removeImageUrl : "";
+        let next = current.filter((image) => image.url !== removeUrl);
+        if (body.addImage !== undefined) {
+          if (next.length >= 8)
+            return json(409, { error: "An item keeps at most 8 pictures." });
+          const image = body.addImage as Record<string, unknown>;
+          const record: Record<string, unknown> = { url: String(image.url) };
+          if (typeof image.caption === "string" && image.caption.trim())
+            record.caption = image.caption.trim();
+          next = [...next, record];
+        }
+        value.images = next;
+      }
       if (body.disposal !== undefined || body.removeDisposalId !== undefined) {
         const existing = await getBookkeepingItem(client, "inventory", id);
         if (!existing) return json(404, { error: "Not found" });
@@ -234,9 +299,26 @@ export async function handleBookkeepingInventoryRoutes(
       }
     }
     if (method === "DELETE") {
+      let removed: Record<string, unknown> | null = null;
       try {
-        const existing = await deleteBookkeepingItem(client, "inventory", id);
-        return existing ? { statusCode: 204, headers: {}, body: "" } : json(404, { error: "Not found" });
+        removed = await deleteBookkeepingItem(client, "inventory", id);
+        if (removed) {
+          // Tombstone the seed so the sweep and later ledger writes never
+          // re-derive this item. Removal is deliberate (API or CLI only, no
+          // UI affordance), and the tombstone makes it stick.
+          const transactionId = String(removed.transactionId || "");
+          const allocationId = typeof removed.allocationId === "string" ? removed.allocationId : undefined;
+          await dismissInventorySeed(
+            client,
+            inventoryItemSeed(transactionId, allocationId),
+            {
+              transactionId,
+              ...(allocationId !== undefined ? { allocationId } : {}),
+              ...(removed.manual ? { manual: true } : {}),
+            },
+          );
+        }
+        return removed ? { statusCode: 204, headers: {}, body: "" } : json(404, { error: "Not found" });
       } catch (error) {
         if (error instanceof BookkeepingItemLockedError)
           return json(409, { error: "Inventory item changed; refresh and retry." });

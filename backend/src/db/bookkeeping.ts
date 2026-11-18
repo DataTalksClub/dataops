@@ -14,7 +14,7 @@ import { cleanItem } from "./cleanItem";
 import { TABLE_BOOKKEEPING } from "./tableNames";
 import { classifyMandatoryPayment } from "../finance/mandatoryPayments";
 import { isOwnerWithdrawalReportExempt } from "../finance/ownerPay";
-import { deriveInventoryItems, inventoryItemId, inventoryItemSeed } from "../finance/inventory";
+import { deriveInventoryItems, dismissedInventorySeedId, inventoryItemId, inventoryItemSeed } from "../finance/inventory";
 import {
   BOOKKEEPING_AUDIT_PARTITION_PREFIX,
   BOOKKEEPING_AUDIT_STORAGE_VERSION,
@@ -355,14 +355,17 @@ export async function putBookkeepingTransactionWithItems(
  * physical purchase shows up in the inventory without a manual scan. Runs
  * after the ledger write and is intentionally not atomic with it: entries are
  * keyed by transaction/allocation seed and existing entries are left
- * untouched, so manual inventory edits survive and a failed sync is repaired
- * by the next "Scan ledger".
+ * untouched, so manual inventory edits survive. Seeds the operator dismissed
+ * (removed item, or a manual split replacing the automatic entry) never come
+ * back; the monthly report sweep repairs anything else that failed.
  */
 export async function syncInventoryForTransactions(
   client: DynamoDBDocumentClient,
   transactions: readonly Record<string, unknown>[],
 ) {
   for (const candidate of deriveInventoryItems(transactions)) {
+    const seed = inventoryItemSeed(candidate.transactionId, candidate.allocationId);
+    if (await getBookkeepingItem(client, "inventoryDismissed", dismissedInventorySeedId(seed))) continue;
     const entry: Record<string, unknown> = {
       id: inventoryItemId(candidate.transactionId, candidate.allocationId),
       transactionId: candidate.transactionId,
@@ -375,14 +378,81 @@ export async function syncInventoryForTransactions(
       currency: candidate.currency,
       amountEur: candidate.amountEur,
       status: "in-use",
+      usage: "active",
     };
     await putBookkeepingItem(
       client,
       "inventory",
       Object.fromEntries(Object.entries(entry).filter(([, child]) => child !== undefined)),
-      inventoryItemSeed(candidate.transactionId, candidate.allocationId),
+      seed,
     );
   }
+}
+
+/**
+ * Catch-up sweep over the whole ledger: create inventory entries for physical
+ * purchases that have none yet. Respects dismissed seeds, so operator
+ * deletions and manual splits are never undone. Runs when the monthly
+ * report archive is generated and via POST /api/bookkeeping/inventory/sweep.
+ */
+export async function sweepInventory(
+  client: DynamoDBDocumentClient,
+): Promise<{ matched: number; created: Record<string, unknown>[] }> {
+  const [transactions, existing, dismissed] = await Promise.all([
+    listTransactions(client),
+    listBookkeepingItems(client, "inventory"),
+    listBookkeepingItems(client, "inventoryDismissed"),
+  ]);
+  const known = new Set<string>([
+    ...dismissed.map((item) => String(item.seed || "")),
+    ...existing.map((item) =>
+      inventoryItemSeed(String(item.transactionId || ""), typeof item.allocationId === "string" ? item.allocationId : undefined),
+    ),
+  ]);
+  const candidates = deriveInventoryItems(transactions).filter(
+    (candidate) => !known.has(inventoryItemSeed(candidate.transactionId, candidate.allocationId)),
+  );
+  const created: Record<string, unknown>[] = [];
+  for (const candidate of candidates) {
+    const seed = inventoryItemSeed(candidate.transactionId, candidate.allocationId);
+    const entry: Record<string, unknown> = {
+      id: inventoryItemId(candidate.transactionId, candidate.allocationId),
+      transactionId: candidate.transactionId,
+      allocationId: candidate.allocationId,
+      name: candidate.name,
+      type: candidate.type,
+      vendor: candidate.vendor,
+      acquisitionDate: candidate.acquisitionDate,
+      amount: candidate.amount,
+      currency: candidate.currency,
+      amountEur: candidate.amountEur,
+      status: "in-use",
+      usage: "active",
+    };
+    const { item, duplicate } = await putBookkeepingItem(
+      client,
+      "inventory",
+      Object.fromEntries(Object.entries(entry).filter(([, child]) => child !== undefined)),
+      seed,
+    );
+    if (!duplicate) created.push(item);
+  }
+  return { matched: candidates.length, created };
+}
+
+/** Record that a (transaction, allocation) seed must not be re-derived. */
+export async function dismissInventorySeed(
+  client: DynamoDBDocumentClient,
+  seed: string,
+  context: { transactionId: string; allocationId?: string; manual?: boolean },
+) {
+  await putBookkeepingItem(client, "inventoryDismissed", {
+    id: dismissedInventorySeedId(seed),
+    seed,
+    transactionId: context.transactionId,
+    ...(context.allocationId !== undefined ? { allocationId: context.allocationId } : {}),
+    ...(context.manual ? { manual: true } : {}),
+  }, dismissedInventorySeedId(seed));
 }
 
 async function getBookkeepingItemRaw(

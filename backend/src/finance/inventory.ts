@@ -14,12 +14,17 @@ export const INVENTORY_TYPES = [
 ] as const;
 export type InventoryType = (typeof INVENTORY_TYPES)[number];
 
-export const INVENTORY_STATUSES = ["in-use", "disposed"] as const;
+export const INVENTORY_STATUSES = ["in-use", "disposed", "returned"] as const;
 export type InventoryStatus = (typeof INVENTORY_STATUSES)[number];
 
-// A disposal is the exit record for an inventory item: sold off or
-// decommissioned (scrapped, recycled, given away without payment).
-export const INVENTORY_DISPOSAL_KINDS = ["sold", "decommissioned"] as const;
+// Whether the item is actively used day to day or sits idle: still owned,
+// still on the balance, just not in daily use.
+export const INVENTORY_USAGES = ["active", "idle"] as const;
+export type InventoryUsage = (typeof INVENTORY_USAGES)[number];
+
+// An exit record for an inventory item: sold off, decommissioned (scrapped,
+// recycled, given away without payment), or returned to the vendor.
+export const INVENTORY_DISPOSAL_KINDS = ["sold", "decommissioned", "returned"] as const;
 export type InventoryDisposalKind = (typeof INVENTORY_DISPOSAL_KINDS)[number];
 
 export type InventoryDisposal = {
@@ -82,6 +87,13 @@ export function inventoryItemSeed(transactionId: string, allocationId?: string) 
 
 export function inventoryItemId(transactionId: string, allocationId?: string) {
   return createHash("sha256").update(inventoryItemSeed(transactionId, allocationId)).digest("hex");
+}
+
+export type InventoryImage = { url: string; caption?: string };
+
+/** Id of the tombstone that keeps a dismissed (transaction, allocation) seed out of future derivations. */
+export function dismissedInventorySeedId(seed: string) {
+  return createHash("sha256").update(`inventory-dismissed:${seed}`).digest("hex");
 }
 
 type TransactionLike = {
@@ -226,21 +238,19 @@ export function inventorySourceRecord(
 }
 
 /**
- * Disposal records drive the item status: any record means disposed, and the
- * disposed date is the latest record's date. Returns the writable fields for
- * updateBookkeepingItem; `disposedDate: undefined` removes the stale stamp
- * when the last record is gone.
+ * Exit records drive the item status: the latest record by date wins, so a
+ * returned item that is later sold flips to disposed. Returns the writable
+ * fields for updateBookkeepingItem; the date fields are always present (with
+ * undefined clearing the stale stamp when the records no longer imply them).
  */
 export function deriveInventoryDisposalState(
   disposals: readonly InventoryDisposal[],
-): { disposals: InventoryDisposal[]; status: InventoryStatus; disposedDate?: string } {
-  const disposed = disposals.length > 0;
+): { disposals: InventoryDisposal[]; status: InventoryStatus; disposedDate?: string; returnedDate?: string } {
   const records = [...disposals];
-  return {
-    disposals: records,
-    status: disposed ? "disposed" : "in-use",
-    disposedDate: disposed
-      ? records.reduce((latest, record) => (record.date > latest ? record.date : latest), records[0].date)
-      : undefined,
-  };
+  if (!records.length)
+    return { disposals: records, status: "in-use", disposedDate: undefined, returnedDate: undefined };
+  const latest = records.reduce((a, b) => (b.date > a.date ? b : a), records[0]);
+  if (latest.kind === "returned")
+    return { disposals: records, status: "returned", returnedDate: latest.date, disposedDate: undefined };
+  return { disposals: records, status: "disposed", disposedDate: latest.date, returnedDate: undefined };
 }
