@@ -204,7 +204,7 @@ export const AUTOMATIONS: readonly AutomationDefinition[] = Object.freeze([
   {
     id: 'knowledge-repo-backup',
     name: 'Knowledge repository backup',
-    description: 'Zips the knowledge repository and uploads it to S3 when the commit changed since the last backup.',
+    description: 'Zips the knowledge repository and uploads it to S3 when the commit changed since the last backup; a daily freshness check pages the operator topic when repository commits stop being backed up.',
     runsIn: 'GitHub Actions, dataops-knowledge',
     system: true,
     schedule: { kind: 'cron', expression: '17 3 * * *' },

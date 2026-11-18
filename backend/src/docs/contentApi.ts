@@ -230,6 +230,11 @@ export function resetDocsRuntime(): void {
   sharedRecent = null;
 }
 
+/** The configured runtime's knowledge store, or one built from the environment. */
+export function docsKnowledgeStore(): KnowledgeStore {
+  return runtime ? runtime.store : createKnowledgeStore(knowledgeStoreConfigFromEnv());
+}
+
 interface KnowledgePlan {
   mutations: Mutation[];
   regenerated: string[];

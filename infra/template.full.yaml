@@ -89,6 +89,16 @@ Parameters:
     Type: String
     Default: arn:aws:sns:eu-west-1:817685572750:dapier-AlarmTopic-6LjEWSJwA6Ya
     Description: Shared operator alarm SNS topic (delivers via AlarmNotifyFunction to dev@dtcdev.click). Paged by the daily PITR guard, the knowledge backup/mirror alarms and store failures.
+  KnowledgeRepoBackupBucketName:
+    Type: String
+    Default: dataops-knowledge-backups-817685572750-eu-west-1
+    AllowedPattern: "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+    Description: The aws-infra knowledge-backups bucket the dataops-knowledge repository's backup workflow uploads to; read for the freshness dead-man check.
+  KnowledgeRepoBackupPrefix:
+    Type: String
+    Default: dataops-knowledge
+    AllowedPattern: "^[a-zA-Z0-9_.\\/-]+$"
+    Description: Key prefix the backup workflow uploads under (aws-infra BackupPrefix).
   DynamoPitrAlertEmail:
     Type: String
     Default: dev@dtcdev.click
@@ -1134,6 +1144,10 @@ Resources:
         - Statement:
             Effect: Allow
             Action: [s3:PutObject]
+            Resource: !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}/jobs/*
+        - Statement:
+            Effect: Allow
+            Action: [s3:PutObject]
             Resource:
               - !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}/objects/*
               - !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}/publications/*
@@ -1560,6 +1574,8 @@ Resources:
         Variables:
           KNOWLEDGE_BUCKET: !Ref KnowledgeBucketName
           KNOWLEDGE_BACKUP_BUCKET: !Ref KnowledgeBackupBucketName
+          KNOWLEDGE_REPO_BACKUP_BUCKET: !Ref KnowledgeRepoBackupBucketName
+          KNOWLEDGE_REPO_BACKUP_PREFIX: !Ref KnowledgeRepoBackupPrefix
       Policies:
         - Statement:
             Effect: Allow
@@ -1581,6 +1597,11 @@ Resources:
             Effect: Allow
             Action: [s3:PutObject]
             Resource: !Sub arn:${AWS::Partition}:s3:::${KnowledgeBucketName}/jobs/*
+        # Repo-backup freshness check reads only the latest backup manifest.
+        - Statement:
+            Effect: Allow
+            Action: [s3:GetObject]
+            Resource: !Sub arn:${AWS::Partition}:s3:::${KnowledgeRepoBackupBucketName}/${KnowledgeRepoBackupPrefix}/latest/*
       Events:
         DailyKnowledgeBackup:
           Type: Schedule
@@ -1588,6 +1609,14 @@ Resources:
             Schedule: cron(0 3 * * ? *)
             Enabled: true
             Input: '{"detail":{"dataopsAction":"knowledge-backup"}}'
+        # After the 04:00 UTC mirror (which reports the repository HEAD this
+        # check compares the backup manifest against) and the 03:17 backup.
+        DailyKnowledgeRepoBackupCheck:
+          Type: Schedule
+          Properties:
+            Schedule: cron(30 5 * * ? *)
+            Enabled: true
+            Input: '{"detail":{"dataopsAction":"knowledge-repo-backup-check"}}'
   KnowledgeWorkerFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -1613,6 +1642,28 @@ Resources:
       Namespace: DataOps/Knowledge
       MetricName: Success
       Dimensions: [{Name: Job, Value: knowledge-backup}]
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref DynamoPitrAlertTopicArn]
+      OKActions: [!Ref DynamoPitrAlertTopicArn]
+  # Repo-backup freshness: the worker reads the backup workflow's latest S3
+  # manifest daily and writes Success=1 while it contains the mirrored HEAD or
+  # landed within two days. Pages when repository commits stop being backed up
+  # (the 2026-10-02 -> 2026-11-15 scheduling outage ran 44 days unalerted); a
+  # quiet repository with a current backup stays green.
+  KnowledgeRepoBackupStaleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${AWS::StackName}-knowledge-repo-backup-stale
+      AlarmDescription: The dataops-knowledge repository backup has not captured the mirrored HEAD for two days; the backup-to-s3 workflow may have stopped running. Run history is in the dataops-knowledge Actions tab.
+      Namespace: DataOps/Knowledge
+      MetricName: Success
+      Dimensions: [{Name: Job, Value: knowledge-repo-backup}]
       Statistic: Sum
       Period: 86400
       EvaluationPeriods: 2

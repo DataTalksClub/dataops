@@ -2,17 +2,20 @@ import {randomUUID} from 'node:crypto';
 import {KnowledgeStore,checksum,type KnowledgeConfig,type Publication} from '../../src/docs/knowledgeStore';
 /** Faithful conditional-object semantics, injected at the SDK boundary; no GitHub calls. */
 export class MemoryS3 {
-  objects=new Map<string,Buffer>(); etags=new Map<string,string>();calls:{name:string;input:any}[]=[];
+  objects=new Map<string,Buffer>(); etags=new Map<string,string>();modified=new Map<string,Date>();calls:{name:string;input:any}[]=[];
   failKey='';
+  /** LastModified is fixed per object the way S3 returns it, or defaults to this stamp. */
+  now=new Date('2026-11-18T06:00:00Z');
+  lastModified(key:string):Date {return this.modified.get(key)||this.now;}
   send=async(command:any):Promise<any>=>{
     const i=command.input;const key=`${i.Bucket}/${i.Key}`;const name=command.constructor.name;this.calls.push({name,input:i});
     if(i.Key===this.failKey) throw new Error('Injected storage failure');
     const old=this.objects.get(key);const etag=this.etags.get(key);
     if(name==='GetObjectCommand') {
       if(!old) throw Object.assign(new Error('Missing object'),{name:'NoSuchKey'});
-      return {ETag:etag,Body:{transformToString:async()=>old.toString(),transformToByteArray:async()=>new Uint8Array(old)}};
+      return {ETag:etag,LastModified:this.lastModified(key),Body:{transformToString:async()=>old.toString(),transformToByteArray:async()=>new Uint8Array(old)}};
     }
-    if(name==='HeadObjectCommand') {if(!old) throw Object.assign(new Error('Missing object'),{name:'NotFound'});return{ETag:etag,ContentLength:old.length};}
+    if(name==='HeadObjectCommand') {if(!old) throw Object.assign(new Error('Missing object'),{name:'NotFound'});return{ETag:etag,LastModified:this.lastModified(key),ContentLength:old.length};}
     if(name==='PutObjectCommand' || name==='CopyObjectCommand') {
       if((i.IfNoneMatch==='*' && old) || (i.IfMatch && i.IfMatch!==etag)) throw Object.assign(new Error('Conditional conflict'),{name:'PreconditionFailed'});
       let bytes:Buffer|undefined;
@@ -20,7 +23,7 @@ export class MemoryS3 {
       else if(i.Body && typeof i.Body[Symbol.asyncIterator]==='function') {
         const chunks:Buffer[]=[];for await(const chunk of i.Body) chunks.push(Buffer.from(chunk));bytes=Buffer.concat(chunks);
       } else bytes=Buffer.from(i.Body);
-      if(!bytes) throw new Error('Missing copy source');this.objects.set(key,bytes);const next=`"${randomUUID()}"`;this.etags.set(key,next);return{ETag:next};
+      if(!bytes) throw new Error('Missing copy source');this.objects.set(key,bytes);this.modified.set(key,this.now);const next=`"${randomUUID()}"`;this.etags.set(key,next);return{ETag:next};
     }
     throw new Error(`Unexpected command ${name}`);
   };
