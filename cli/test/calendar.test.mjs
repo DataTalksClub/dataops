@@ -6,6 +6,8 @@ import { describe, test } from "node:test";
 
 const configDir = mkdtempSync(path.join(tmpdir(), "dataops-cli-cal-"));
 process.env.DATAOPS_CONFIG_DIR = configDir;
+// Fixtures use fixed November 2026 dates; pin "today" so past-date filtering stays stable.
+process.env.DATAOPS_TODAY = "2026-11-16";
 
 const { run } = await import("../src/cli.mjs");
 const { saveProfile } = await import("../src/config.mjs");
