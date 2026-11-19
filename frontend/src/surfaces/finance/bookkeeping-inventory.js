@@ -59,7 +59,11 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
     if (item.status === "returned") {
       return html`<span class="bk-inv-badge bk-inv-badge--returned">returned${item.returnedDate ? html` · ${escapeHtml(item.returnedDate)}` : ""}</span>`;
     }
-    return html`<span class="bk-inv-badge">on balance</span>
+    // One quiet inline line: the usage select (its value is the state —
+    // a returned or disposed row shows its badge instead) and the exit
+    // actions as text. Stacking all of that vertically made every row
+    // four lines tall.
+    return html`<span class="bk-inv-statusline">
       <select class="bk-inline-select bk-inv-usage" data-inv-field="usage" aria-label="Is ${escapeHtml(item.name)} actively used?">
         ${USAGES.map((usage) => html`<option value="${usage}"${usage === (item.usage || "active") ? " selected" : ""}>
           ${usage === "active" ? "actively used" : "idle"}</option>`).join("")}
@@ -67,13 +71,17 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
       <button type="button" class="dk-button dk-button--sm bk-inv-dispose" data-inv-dispose="${escapeHtml(item.id)}" data-inv-kind="returned"
         title="Record returning ${escapeHtml(item.name)} to the vendor">Return…</button>
       <button type="button" class="dk-button dk-button--sm bk-inv-dispose" data-inv-dispose="${escapeHtml(item.id)}" data-inv-kind="sold"
-        title="Record selling or decommissioning ${escapeHtml(item.name)}">Dispose…</button>`;
+        title="Record selling or decommissioning ${escapeHtml(item.name)}">Dispose…</button></span>`;
   }
 
+  // Exit records, the exit form and the pictures live INSIDE the item cell,
+  // under the provenance line — as rows of their own they would need a
+  // colspan over the fixed columns, which Chromium sizes to the one auto
+  // column instead of the span.
   function exitsMarkup(item) {
     const records = exitsOf(item);
     if (!records.length) return "";
-    return html`<tr class="bk-inv-extras"><td></td><td colspan="5" class="bk-inv-disposals">
+    return html`<span class="bk-inv-extras bk-inv-disposals">
       ${records.map((record) => html`<span class="bk-inv-disposal">
           <strong>${EXIT_LABELS[record.kind] || escapeHtml(String(record.kind))}</strong> ${escapeHtml(String(record.date))}
           ${record.proceeds ? html` · proceeds ${formatAmount(String(record.proceeds), String(record.currency || "EUR"))}` : ""}
@@ -81,7 +89,7 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
           <button type="button" class="dk-icon-button bk-inv-disposal-remove" data-inv-disposal-remove="${escapeHtml(String(record.id))}"
             title="Remove this exit record" aria-label="Remove the ${escapeHtml(String(record.kind))} record">✕</button>
         </span>`).join("")}
-    </td></tr>`;
+    </span>`;
   }
 
   function imageFormMarkup(item) {
@@ -101,7 +109,7 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
   function imagesMarkup(item) {
     const images = imagesOf(item);
     if (!images.length && imageForm?.itemId !== item.id) return "";
-    return html`<tr class="bk-inv-extras"><td></td><td colspan="5" class="bk-inv-images">
+    return html`<span class="bk-inv-extras bk-inv-images">
       ${images.map((image) => html`<span class="bk-inv-image">
           <img class="bk-inv-thumb" src="${escapeHtml(String(image.url))}" loading="lazy" referrerpolicy="no-referrer"
             alt="${escapeHtml(String(image.caption || item.name))}" />
@@ -110,13 +118,13 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
             title="Remove this picture" aria-label="Remove a picture of ${escapeHtml(item.name)}">✕</button>
         </span>`).join("")}
       ${imageFormMarkup(item)}
-    </td></tr>`;
+    </span>`;
   }
 
   function exitFormMarkup(item) {
     if (exitForm?.itemId !== item.id) return "";
     const sold = exitForm.kind === "sold";
-    return html`<tr class="bk-inv-extras"><td></td><td colspan="5" class="bk-inv-dispose">
+    return html`<span class="bk-inv-extras bk-inv-dispose">
         <label>Kind
           <select class="bk-inline-select" data-inv-disposal="kind" aria-label="Exit kind">
             ${EXIT_KINDS.map((kind) => html`<option value="${kind}"${kind === exitForm.kind ? " selected" : ""}>${EXIT_LABELS[kind]}</option>`).join("")}
@@ -128,7 +136,7 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
         <label>Note <input class="dk-input" data-inv-disposal="notes" value="${escapeHtml(exitForm.notes || "")}" placeholder="optional" aria-label="Exit note" /></label>
         <button type="button" class="dk-button dk-button--sm dk-button--primary" data-inv-disposal-save>Record</button>
         <button type="button" class="dk-button dk-button--sm dk-button--secondary" data-inv-disposal-cancel>Cancel</button>
-      </td></tr>`;
+      </span>`;
   }
 
   function rowMarkup(item) {
@@ -138,6 +146,9 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
       <td class="bk-inv-what">
         <span class="bk-who__name">${escapeHtml(item.name)}</span>
         ${metaMarkup(item)}
+        ${exitFormMarkup(item)}
+        ${exitsMarkup(item)}
+        ${imagesMarkup(item)}
       </td>
       <td class="bk-inv-type">
         <select class="bk-inline-select" data-inv-field="type" aria-label="Type of ${escapeHtml(item.name)}">
@@ -181,7 +192,7 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
         <thead>
           <tr><th>Acquired</th><th>Item</th><th>Type</th><th class="bk-col-money">Paid</th><th>Status</th><th>Note</th></tr>
         </thead>
-        <tbody>${visible.map((item) => rowMarkup(item) + exitFormMarkup(item) + exitsMarkup(item) + imagesMarkup(item)).join("")}</tbody>
+        <tbody>${visible.map((item) => rowMarkup(item)).join("")}</tbody>
       </table>`;
   }
 
@@ -332,8 +343,9 @@ export function createBookkeepingInventory({ surface, api, escapeHtml, safeActio
       return;
     }
     // The record itself opens the invoice it was derived from; clicks
-    // inside its controls (type select, note input) stay edits.
-    if (event.target.closest("input, select, button, a")) return;
+    // inside its controls (type select, note input, exit-form labels) stay
+    // edits.
+    if (event.target.closest("input, select, button, a, label")) return;
     const row = event.target.closest("[data-inv]");
     const item = items.find((candidate) => candidate.id === row?.dataset.inv);
     if (!item?.source) return;

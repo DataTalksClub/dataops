@@ -313,64 +313,93 @@ tr.bk-month__totals-row > th {
   font-size: var(--dk-text-sm);
 }
 /* Inventory rows are two lines — item name over a quiet provenance line —
-   so they size themselves instead of borrowing the single-line ledger row
-   height. The stacks sit on the cells' children: a td keeps its table-cell
-   display or the columns stop aligning. A record with a ledger source opens
-   it when clicked. */
-.bk-inv-table td { height: auto; padding-top: var(--dk-space-2); padding-bottom: var(--dk-space-2); }
+   sized by their content, not the single-line ledger row height. Controls
+   inside the cells stay compact (26px, like the inline selects) so the row
+   keeps the ledger's density. A record with a ledger source opens it when
+   clicked. */
+.bk-inv-table td { height: auto; padding-top: var(--dk-space-1); padding-bottom: var(--dk-space-1); }
+/* Fixed columns: the item column owns the leftover width and its invoice
+   link ellipsizes; auto layout let one long invoice description push the
+   status column off the viewport. Widths are px: em would resolve against
+   the 12px header font and pinch the date and money cells. */
+.bk-inv-table { table-layout: fixed; }
+.bk-inv-table th:nth-child(1),
+.bk-inv-table td:nth-child(1) { width: 104px; }
+.bk-inv-table th:nth-child(3),
+.bk-inv-table td:nth-child(3) { width: 88px; }
+.bk-inv-table th:nth-child(4),
+.bk-inv-table td:nth-child(4) { width: 88px; }
+.bk-inv-table th:nth-child(5),
+.bk-inv-table td:nth-child(5) { width: 248px; }
+.bk-inv-table th:nth-child(6),
+.bk-inv-table td:nth-child(6) { width: 148px; }
 .bk-inv-row.is-openable { cursor: pointer; }
 .bk-inv-what > * { display: block; }
 .bk-inv-what > * + * { margin-top: var(--dk-space-1); }
-.bk-inv-what { min-width: 16em; }
+/* The ledger who-cell caps the name at 60% so a vendor fits beside it; the
+   inventory stacks name over provenance, so the name may use the cell. */
+.bk-inv-what .bk-who__name { max-width: 100%; }
 .bk-inv-meta { display: flex; align-items: baseline; gap: var(--dk-space-1); min-width: 0; font-size: var(--dk-text-xs); color: var(--dk-text-secondary); }
 .bk-inv-meta-sep { color: var(--dk-text-faint); }
 .bk-inv-vendor { flex: none; font-size: var(--dk-text-xs); color: var(--dk-text-secondary); }
 .bk-inv-row.is-disposed .bk-who__name { color: var(--dk-text-secondary); text-decoration: line-through; }
 .bk-inv-disposed-date { margin-left: 0.5em; font-size: var(--dk-text-xs); color: var(--dk-text-secondary); }
-.bk-inv-note { min-width: 12em; border-color: transparent; background: transparent; }
+.bk-inv-note { width: 9em; min-width: 0; height: 26px; min-height: 0; padding: 0 var(--dk-space-1); border-color: transparent; background: transparent; font-weight: 400; }
 .bk-inv-note:hover { border-color: var(--dk-border-control-hover); }
-.bk-inv-actions { width: 2.5em; text-align: right; }
-.bk-inv-remove { color: var(--dk-text-secondary); }
-.bk-inv-remove:hover { color: var(--dk-danger-text); }
 /* Scoped under the surface and table so the plain-button rule
-   (.bookkeeping-surface button:not(…), two classes deep) cannot box this
-   provenance link into a button. */
-.bookkeeping-surface .bk-inv-table .bk-inv-source {
+   (.bookkeeping-surface button:not(…), two classes deep) cannot box the
+   provenance-line actions into buttons: they read as text and keep the
+   row to two text lines. */
+.bookkeeping-surface .bk-inv-table .bk-inv-source,
+.bookkeeping-surface .bk-inv-table .bk-inv-picture {
+  min-height: 0;
   min-width: 0;
   max-width: 100%;
   padding: 0;
   border: none;
   background: none;
-  color: var(--dk-accent-default);
   font-size: var(--dk-text-xs);
+  font-weight: 400;
   cursor: pointer;
+}
+.bookkeeping-surface .bk-inv-table .bk-inv-source {
+  color: var(--dk-accent-default);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: left;
 }
 .bookkeeping-surface .bk-inv-table .bk-inv-source:hover { color: var(--dk-accent-hover); text-decoration: underline; }
-.bk-inv-status > * { display: block; width: max-content; }
-.bk-inv-status > * + * { margin-top: var(--dk-space-1); }
+/* The status line is one quiet inline row — usage, then the exit actions
+   as text. Stacking all of it vertically made every row four lines tall. */
+.bk-inv-status { white-space: nowrap; }
+.bk-inv-statusline { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--dk-space-2); }
 .bk-inv-badge { font-size: var(--dk-text-xs); color: var(--dk-text-secondary); }
 .bk-inv-badge--disposed { color: var(--dk-danger-text); }
 .bk-inv-badge--returned { color: var(--dk-text-secondary); font-style: italic; }
 .bk-inv-usage { font-size: var(--dk-text-xs); }
 /* Dispose reads as text until hovered: the row already carries enough
    chrome (type, note, remove) without a boxed button on every line. */
-.bk-inv-status .bk-inv-dispose { padding: 0; border: none; background: none; color: var(--dk-text-secondary); }
+.bk-inv-status .bk-inv-dispose { min-height: 0; height: auto; padding: 0; border: none; background: none; color: var(--dk-text-secondary); font-size: var(--dk-text-xs); font-weight: 400; }
 .bk-inv-status .bk-inv-dispose:hover { background: none; color: var(--dk-accent-hover); text-decoration: underline; }
-.bk-inv-extras td { padding-top: 0; }
+/* The exit form, exit records and pictures stack inside the item cell
+   (as table rows of their own they would need a colspan, which Chromium's
+   fixed layout sizes to the one auto column instead of the span). Their
+   long notes must wrap inside the cell, not push under the other columns. */
+.bk-inv-extras { white-space: normal; }
 .bk-inv-disposals { display: flex; flex-wrap: wrap; gap: var(--dk-space-2); font-size: var(--dk-text-xs); color: var(--dk-text-secondary); }
-.bk-inv-disposal { display: inline-flex; align-items: center; gap: 0.35em; }
 .bk-inv-disposal strong { color: var(--dk-text-primary); font-weight: 600; }
+.bk-inv-disposal + .bk-inv-disposal { margin-left: var(--dk-space-2); }
 .bk-inv-disposal-remove { color: var(--dk-text-secondary); }
 .bk-inv-disposal-remove:hover { color: var(--dk-danger-text); }
-.bk-inv-dispose { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-3); font-size: var(--dk-text-sm); }
+.bk-inv-dispose { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-2) var(--dk-space-3); font-size: var(--dk-text-sm); }
 .bk-inv-dispose label { display: inline-flex; align-items: center; gap: var(--dk-space-2); color: var(--dk-text-secondary); }
-/* The "Add picture…" affordance reads like the provenance link next to it. */
-.bk-inv-picture { padding: 0; border: none; background: none; color: var(--dk-text-secondary); font-size: var(--dk-text-xs); cursor: pointer; }
-.bk-inv-picture:hover { color: var(--dk-accent-hover); text-decoration: underline; }
+.bk-inv-dispose .dk-input { max-width: 100%; }
+/* The "Add picture…" affordance reads like the provenance link next to it
+   (its box reset lives in the scoped provenance rule above). Unlike the
+   invoice link it never ellipsizes — it shrinks the line or wraps after it. */
+.bookkeeping-surface .bk-inv-table .bk-inv-picture { color: var(--dk-text-secondary); flex: none; white-space: nowrap; }
+.bookkeeping-surface .bk-inv-table .bk-inv-picture:hover { color: var(--dk-accent-hover); text-decoration: underline; }
 .bk-inv-images { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-2); font-size: var(--dk-text-xs); color: var(--dk-text-secondary); }
 .bk-inv-image { display: inline-flex; align-items: center; gap: var(--dk-space-1); }
 .bk-inv-thumb { height: 44px; max-width: 88px; border-radius: var(--dk-radius-sm); object-fit: cover; }
@@ -378,7 +407,7 @@ tr.bk-month__totals-row > th {
 .bk-inv-image-remove:hover { color: var(--dk-danger-text); }
 .bk-inv-image-form { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-2); }
 .bk-inv-image-form label { display: inline-flex; align-items: center; gap: var(--dk-space-1); color: var(--dk-text-secondary); }
-.bk-inv-image-form .bk-inv-image-url { width: 16em; }
+.bk-inv-image-form .bk-inv-image-url { width: 16em; max-width: 100%; }
 
 /* Add-to-inventory picker inside its own dialog. */
 .bk-add-dialog { max-width: 640px; width: calc(100vw - 2 * var(--dk-space-4)); }
@@ -399,8 +428,9 @@ tr.bk-month__totals-row > th {
 .bk-add-loading { color: var(--dk-text-secondary); font-size: var(--dk-text-sm); }
 
 @media (max-width: 820px) {
-  .bk-inv-what { min-width: 10em; }
-  .bk-inv-note { min-width: 8em; }
+  /* The fixed columns keep their desktop widths; the host scrolls instead
+     of the table pushing the status column off the phone. */
+  .bookkeeping-inventory[data-inventory] { overflow-x: auto; }
   .bk-inv-dispose { flex-direction: column; align-items: stretch; }
 }
 

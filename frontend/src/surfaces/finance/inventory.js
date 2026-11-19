@@ -20,8 +20,8 @@ export function inventorySurfaceMarkup() {
       <div class="dk-page-header__main"><h1 class="dk-page-header__title">Inventory</h1></div>
       <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-inventory-add>Add</button>
     </header>
-    <p class="finance-section-head__hint">Physical purchases from bookkeeping invoices since 2022 — computers, phones,
-      audio, furniture. New purchases land here automatically; Add records one by hand.</p>
+    <p class="finance-section-head__hint">Physical purchases from bookkeeping invoices since 2022. New purchases land here
+      automatically; Add records one by hand.</p>
     <p data-inventory-status class="dk-toast bk-status" role="status"></p>
     <div class="bookkeeping-inventory" data-inventory aria-live="polite">Loading inventory…</div>
     <!-- At the surface root: a dialog inside a hidden ancestor cannot be shown. -->
