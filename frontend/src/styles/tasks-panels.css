@@ -1104,9 +1104,13 @@ body[data-workspace-view="tasks"] .task-skip-note p {
   margin: 0;
   overflow-wrap: anywhere;
 }
-/* The Card overflow menu drops under its trigger, aligned to its end. */
+/* The Card overflow menu drops under its trigger, aligned to its end. The
+   trigger always ends the summary row, even when the row wraps onto a second
+   line, so the end-aligned menu stays inside the Card panel instead of
+   hanging past its start edge where the modal backdrop takes its clicks. */
 body[data-workspace-view="tasks"] .card-overflow {
   position: relative;
+  margin-inline-start: auto;
 }
 body[data-workspace-view="tasks"] .card-overflow-menu {
   position: absolute;
