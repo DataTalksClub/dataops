@@ -1,4 +1,27 @@
-import { appendGuestTimezoneSelector, appendTimeChoiceSave, guestSlotFieldDefinition, guestEventMetadataRow, renderPodcastQuestionsView } from "./sponsor-doc-guest-schedule.js";
+import {
+  appendGuestTimezoneSelector,
+  appendTimeChoiceSave,
+  buildSponsorDocIntroCallout,
+  guestEventMetadataRow,
+  guestSlotFieldDefinition,
+  renderPodcastQuestionsView,
+  renderSponsorDocExportCard,
+  renderSponsorDocFormActions,
+  renderSponsorDocPhaseCard,
+  renderSponsorDocStaffBar,
+  updateSponsorDocFieldCount,
+} from "./sponsor-doc-guest-schedule.js";
+import {
+  buildStrippedCodePath,
+  fetchPodcastQnaState,
+  hasPodcastHostContent,
+  isPodcastTwoTabDoc,
+  mountPodcastSchedulingContainer,
+  parseInitialPodcastRoute,
+  renderPodcastTwoTabWorkspace,
+  stripGuestPodcastQueryParams,
+  syncPodcastHistoryUrl,
+} from "./sponsor-doc-podcast.js";
 import { formatEditedTimestamp } from "../../core/dates.js";
 import { formatUserCode } from "../../dakit/device-code.js";
 import { renderSponsorDocGate } from "./sponsor-doc-gate.js";
@@ -134,6 +157,11 @@ export function createSponsorDocPage({
   let fieldErrors = {};
   let uploadedVisualName = "";
   let questionsOnly = false;
+  let activePodcastTab = "guest";
+  let podcastInternalMode = "host";
+  let podcastInternalModeTouched = false;
+  let recordingSlotExpanded = false;
+  let qnaState = { loading: false, loaded: false, questions: null, error: "" };
   let phase = "loading";
   let gateError = "";
   let feedbackMsg = "";
@@ -195,6 +223,11 @@ export function createSponsorDocPage({
           accessCode = "";
           saveStoredCode(docId, "");
           doc = null;
+          activePodcastTab = "guest";
+          podcastInternalMode = "host";
+          podcastInternalModeTouched = false;
+          recordingSlotExpanded = false;
+          qnaState = { loading: false, loaded: false, questions: null, error: "" };
           phase = "gate";
           gateError = "";
           render();
@@ -221,6 +254,25 @@ export function createSponsorDocPage({
     render();
   }
 
+  function syncPodcastUrl() {
+    if (!isPodcastTwoTabDoc(doc) || doc?.viewerRole !== "staff") return;
+    syncPodcastHistoryUrl({
+      historyRef,
+      docPathPrefix,
+      docId,
+      activeTab: activePodcastTab,
+      internalMode: podcastInternalMode,
+    });
+  }
+
+  async function loadPodcastQna() {
+    if (!doc || qnaState.loading) return;
+    qnaState = { ...qnaState, loading: true, error: "" };
+    render();
+    qnaState = await fetchPodcastQnaState({ request, doc, currentState: qnaState });
+    render();
+  }
+
   async function loadDoc() {
     phase = "loading";
     render();
@@ -231,6 +283,20 @@ export function createSponsorDocPage({
       draftContent = { ...(doc.content || {}) };
       fieldErrors = {};
       uploadedVisualName = "";
+      recordingSlotExpanded = false;
+      qnaState = { loading: false, loaded: false, questions: null, error: "" };
+      if (isPodcastTwoTabDoc(doc)) {
+        if (doc.viewerRole !== "staff") {
+          activePodcastTab = "guest";
+          podcastInternalMode = "host";
+          podcastInternalModeTouched = false;
+          questionsOnly = false;
+          stripGuestPodcastQueryParams({ locationRef, historyRef, docPathPrefix, docId });
+        } else if (activePodcastTab === "internal" && !podcastInternalModeTouched) {
+          podcastInternalMode = hasPodcastHostContent(draftContent) ? "host" : "edit";
+          podcastInternalModeTouched = true;
+        }
+      }
       if (accessCode) saveStoredCode(docId, accessCode);
       gateError = "";
       phase = "editor";
@@ -290,6 +356,7 @@ export function createSponsorDocPage({
       });
       doc = payload.doc;
       draftContent = { ...(doc.content || {}) };
+      if (timeChoiceIntent) recordingSlotExpanded = false;
       busy = false;
       if (nextStatus === "submitted") {
         feedbackMsg = "Submitted and marked ready for DataTalks.Club review.";
@@ -326,7 +393,8 @@ export function createSponsorDocPage({
       });
       doc = payload.doc;
       busy = false;
-      feedbackMsg = "Rotated access code. Previous sponsor links with the old code are now invalid.";
+      const linkRole = isSpeakerDoc(doc) ? "speaker" : isPodcastGuestDoc(doc) ? "guest" : "sponsor";
+      feedbackMsg = `Rotated access code. Previous ${linkRole} links with the old code are now invalid.`;
       feedbackTone = "warning";
       announce(feedbackMsg);
       render();
@@ -384,6 +452,8 @@ export function createSponsorDocPage({
   function renderEditor() {
     const tDef = doc.templateDefinition || { label: doc.template, fields: [], guidelines: [] };
     const isSubmitted = doc.status === "submitted";
+    const isTwoTab = isPodcastTwoTabDoc(doc);
+    const isStaff = doc.viewerRole === "staff";
     const formTitle = doc.title || (doc.template === "workshop" ? "Workshop Materials"
       : doc.template === "webinar" ? "Speaker Materials"
         : isPodcastGuestDoc(doc) ? "Guest Materials" : "Sponsorship Document");
@@ -403,17 +473,36 @@ export function createSponsorDocPage({
     const badge = el("span", badgeClass, isSubmitted ? "Submitted / Ready" : "Draft");
     badge.dataset.sponsorDocStatus = doc.status;
     titleRow.append(el("h1", "sponsor-doc-title", formTitle), badge);
-    if (isPodcastGuestDoc(doc)) {
-      const viewQBtn = actionBtn(
+    if (isTwoTab && isStaff && doc.hostContext?.sponsored === true) {
+      const sponsoredBadge = el("span", "dk-badge dk-badge--info", "Sponsored");
+      sponsoredBadge.dataset.podcastSponsoredBadge = "true";
+      titleRow.append(sponsoredBadge);
+    }
+    if (isTwoTab && isStaff) {
+      const onHostView = activePodcastTab === "internal" && podcastInternalMode === "host";
+      titleRow.append(actionBtn(
+        "dk-button dk-button--secondary dk-button--sm",
+        onHostView ? "Back to form" : "View questions",
+        "toggle-questions-view",
+        () => {
+          if (activePodcastTab === "internal" && podcastInternalMode === "host") {
+            activePodcastTab = "guest";
+          } else {
+            activePodcastTab = "internal";
+            podcastInternalMode = "host";
+            podcastInternalModeTouched = true;
+          }
+          syncPodcastUrl();
+          render();
+        },
+      ));
+    } else if (!isTwoTab && isPodcastGuestDoc(doc)) {
+      titleRow.append(actionBtn(
         "dk-button dk-button--secondary dk-button--sm",
         questionsOnly ? "Back to form" : "View questions",
         "toggle-questions-view",
-        () => {
-          questionsOnly = !questionsOnly;
-          render();
-        },
-      );
-      titleRow.append(viewQBtn);
+        () => { questionsOnly = !questionsOnly; render(); },
+      ));
     }
 
     const { metaRow, guestSchedule, guestZone } = guestEventMetadataRow({
@@ -421,110 +510,33 @@ export function createSponsorDocPage({
     });
     headWrap.append(titleRow, metaRow);
     headerCard.append(headWrap);
-    if (guestSchedule) appendGuestTimezoneSelector({
-      el, headerCard, guestZone, busy, draftContent, render,
-    });
-
-    if (doc.viewerRole === "staff") {
-      const staffBar = el("div", "sponsor-doc-staff-bar");
-      staffBar.dataset.sponsorStaffBar = "";
-      const topRow = el("div", "sponsor-doc-staff-bar__row");
-      const shareInfo = el("div", "");
-      const linkLabel = isSpeakerDoc(doc)
-        ? "Shareable speaker link (includes access code): "
-        : isPodcastGuestDoc(doc)
-          ? "Shareable guest link (includes access code): "
-          : "Shareable sponsor link (includes access code): ";
-      shareInfo.append(
-        el("strong", "", linkLabel),
-        el("code", "dk-mono", doc.shareUrl || doc.docUrl || ""),
-      );
-      topRow.append(shareInfo);
-
-      if (doc.emailDelivery) {
-        const delivery = doc.emailDelivery;
-        const delivRow = el("div", "sponsor-doc-staff-bar__delivery");
-        delivRow.dataset.sponsorEmailDelivery = delivery.state || "unknown";
-        const statusText = delivery.state === "sent"
-          ? `Auto-sent from ${delivery.from} to ${delivery.to}${delivery.sentAt ? ` at ${formatEditedTimestamp(delivery.sentAt)}` : ""}`
-          : `Auto-send (${delivery.from || "orin@datatalks.club"}): ${delivery.state}${delivery.reason ? ` (${delivery.reason})` : ""}`;
-        delivRow.append(el("span", "dk-hint", statusText));
-        topRow.append(delivRow);
-      }
-
-      const smBtn = "dk-button dk-button--secondary dk-button--sm";
-      const btnRow = el("div", "sponsor-doc-actions__buttons");
-      let taskLabel = null;
-      if (!isSpeakerDoc(doc) && !isPodcastGuestDoc(doc)) {
-        taskLabel = el("label", "sponsor-doc-task-id");
-        taskLabel.append(el("span", "dk-hint", "Owning task ID (for the sent message record)"));
-        const taskInput = el("input", "dk-input");
-        taskInput.type = "text";
-        taskInput.value = doc.emailDelivery?.taskId || "";
-        taskInput.placeholder = "DataOps task ID";
-        taskInput.disabled = busy;
-        taskInput.dataset.sponsorTaskId = "";
-        taskLabel.append(taskInput);
-      }
-      if (doc.shareUrl) {
-        btnRow.append(
-          actionBtn(smBtn, "Copy share link", "copy-share-url", () =>
-            copyText(doc.shareUrl, isSpeakerDoc(doc) ? "Copied shareable speaker link with access code." : "Copied shareable sponsor link with access code."),
-          ),
-        );
-      }
-      if (doc.emailDraft?.body) {
-        btnRow.append(
-          actionBtn(smBtn, isSpeakerDoc(doc) ? "Copy invitation email" : "Copy sponsor email", "copy-email", () =>
-            copyText(
-              `Subject: ${doc.emailDraft.subject}\n\n${doc.emailDraft.body}`,
-              isSpeakerDoc(doc) ? "Copied invitation email draft." : "Copied ready-to-send sponsor email draft.",
-            ),
-          ),
-        );
-      }
-      if (!isSpeakerDoc(doc) && !isPodcastGuestDoc(doc)) {
-        btnRow.append(
-          actionBtn(smBtn, "Send from orin@datatalks.club", "send-sponsor-email", () => sendSponsorEmailFromOrin(), busy),
-        );
-      }
-      btnRow.append(actionBtn(smBtn, "Rotate code", "rotate-code", () => rotateStaffCode(), busy));
-      if (doc.cardId) {
-        const cardLink = el("a", smBtn, "Open Card");
-        cardLink.href = `/cards?cardId=${encodeURIComponent(doc.cardId)}`;
-        btnRow.append(cardLink);
-      }
-      staffBar.append(topRow);
-      if (taskLabel) staffBar.append(taskLabel);
-      staffBar.append(btnRow);
-      headerCard.append(staffBar);
+    if (guestSchedule && !isTwoTab) {
+      appendGuestTimezoneSelector({ el, headerCard, guestZone, busy, draftContent, render });
     }
 
-    if (tDef.intro || tDef.guidelinesUrl || (Array.isArray(tDef.guidelines) && tDef.guidelines.length > 0)) {
-      const callout = el("div", "dk-callout");
-      const body = el("div", "dk-callout__body");
-      if (tDef.intro) body.append(el("p", "", tDef.intro));
-      if (tDef.guidelinesUrl) {
-        const guideP = el("p", "");
-        const guideLink = el("a", "", tDef.guidelinesLabel || "View visual placement guide →");
-        guideLink.href = tDef.guidelinesUrl;
-        guideLink.target = "_blank";
-        guideLink.rel = "noopener noreferrer";
-        guideP.append(guideLink);
-        body.append(guideP);
-      }
-      if (Array.isArray(tDef.guidelines) && tDef.guidelines.length > 0) {
-        const ul = el("ul", "sponsor-doc-guidelines");
-        for (const item of tDef.guidelines) ul.append(el("li", "", item));
-        body.append(ul);
-      }
-      callout.append(body);
-      headerCard.append(callout);
+    if (isStaff) {
+      headerCard.append(renderSponsorDocStaffBar({
+        el,
+        actionBtn,
+        doc,
+        busy,
+        isSpeaker: isSpeakerDoc(doc),
+        isPodcastGuest: isPodcastGuestDoc(doc),
+        isTwoTab,
+        copyText,
+        onSendEmail: () => sendSponsorEmailFromOrin(),
+        onRotateCode: () => rotateStaffCode(),
+      }));
+    }
+
+    if (!isTwoTab) {
+      const introCallout = buildSponsorDocIntroCallout(el, tDef);
+      if (introCallout) headerCard.append(introCallout);
     }
 
     root.append(headerCard);
 
-    if (questionsOnly && isPodcastGuestDoc(doc)) {
+    if (!isTwoTab && questionsOnly && isPodcastGuestDoc(doc)) {
       root.append(renderPodcastQuestionsView({ el, draftContent }));
       return;
     }
@@ -549,336 +561,319 @@ export function createSponsorDocPage({
     const socialFieldControls = new Map();
     const syncAutoSocialPosts = () => {
       if (!showLivePreview) return;
-      const social = generateSponsorSocialPosts(draftContent, {
-        sponsorName: doc.sponsorName,
-      });
+      const social = generateSponsorSocialPosts(draftContent, { sponsorName: doc.sponsorName });
       draftContent.linkedinPost = social.linkedinPost;
       draftContent.twitterPost = social.twitterPost;
-      for (const [key, val] of [
-        ["linkedinPost", social.linkedinPost],
-        ["twitterPost", social.twitterPost],
-      ]) {
+      for (const [key, val] of [["linkedinPost", social.linkedinPost], ["twitterPost", social.twitterPost]]) {
         const binding = socialFieldControls.get(key);
-        if (binding) {
-          binding.control.value = val;
-          binding.updateCount(val);
-        }
+        if (binding) { binding.control.value = val; binding.updateCount(val); }
       }
     };
-    if (
-      showLivePreview
-      && !String(draftContent.linkedinPost || "").trim()
-      && !String(draftContent.twitterPost || "").trim()
-    ) {
+    if (showLivePreview && !String(draftContent.linkedinPost || "").trim() && !String(draftContent.twitterPost || "").trim()) {
       syncAutoSocialPosts();
     }
     const updateLivePreview = () => {
       for (const fn of previewSyncListeners) fn();
-      renderNewsletterLivePreview({
+      renderNewsletterLivePreview({ el, previewCard, doc, tDef, draftContent, hasField, uploadedVisualName, safePreviewHref });
+    };
+    const onSourceFieldEdit = () => { syncAutoSocialPosts(); updateLivePreview(); };
+
+    const buildFormElement = ({ sectionsToRender, forceExpanded = false, internalEdit = false }) => {
+      const form = el("form", "sponsor-doc-form");
+      form.noValidate = true;
+      let timezoneMounted = !isTwoTab || !guestSchedule || internalEdit;
+
+      for (const sectionDef of sectionsToRender) {
+        const collapsible = !forceExpanded && Boolean(sectionDef.collapsible);
+        const sectionWrap = collapsible
+          ? el("details", "sponsor-doc-section sponsor-doc-details")
+          : el("div", "sponsor-doc-section");
+        if (collapsible) {
+          sectionWrap.dataset.sponsorCollapsible = sectionDef.id;
+          const filled = (sectionDef.fields || []).some((field) => String(draftContent[field.key] ?? "").trim().length > 0);
+          if (filled) sectionWrap.open = true;
+          const summary = el("summary", "sponsor-doc-details__summary");
+          if (sectionDef.title) {
+            summary.append(
+              el("span", "sponsor-doc-section__title", sectionDef.title),
+              el("span", "sponsor-doc-details__hint", "Optional — tap to expand"),
+            );
+          }
+          sectionWrap.append(summary);
+        } else if (sectionDef.title) {
+          sectionWrap.append(el("h2", "sponsor-doc-section__title", sectionDef.title));
+        }
+
+        const schedulingState = isTwoTab && !internalEdit && sectionDef.id === "scheduling"
+          ? mountPodcastSchedulingContainer({
+            el,
+            actionBtn,
+            doc,
+            guestZone,
+            sectionWrap,
+            expanded: recordingSlotExpanded,
+            onToggle: () => {
+              recordingSlotExpanded = !recordingSlotExpanded;
+              render();
+            },
+          })
+          : { collapsed: false, target: sectionWrap };
+        if (schedulingState.collapsed) {
+          timezoneMounted = true;
+          form.append(sectionWrap);
+          continue;
+        }
+        const sectionTarget = schedulingState.target;
+
+        if (sectionDef.description) sectionTarget.append(el("p", "dk-hint", sectionDef.description));
+        if (!timezoneMounted && sectionDef.id === "scheduling") {
+          appendGuestTimezoneSelector({
+            el,
+            container: sectionTarget,
+            guestZone,
+            busy,
+            draftContent,
+            render,
+            compact: isTwoTab,
+          });
+          timezoneMounted = true;
+        }
+
+        const useEmailCard = isEmailPieceSection(doc, tDef, sectionDef);
+        const fieldNodesByKey = new Map();
+        const appendFieldNode = (key, node) => {
+          if (useEmailCard) fieldNodesByKey.set(key, node);
+          else sectionTarget.append(node);
+        };
+
+        for (const fieldDef of sectionDef.fields || []) {
+          if (guestSchedule && ["guestTimezone", "proposedSlotLabel"].includes(fieldDef.key)) continue;
+          const fieldWrap = el("div", "sponsor-doc-field");
+          fieldWrap.dataset.sponsorFieldGroup = fieldDef.key;
+          if (fieldDef.required) fieldWrap.dataset.sponsorFieldRequired = "true";
+          const top = el("div", "sponsor-doc-field__top");
+          const label = el("label", "sponsor-doc-field__label", `${fieldDef.label}${fieldDef.required ? " *" : ""}`);
+          const inputId = `sponsor-field-${fieldDef.key}`;
+          label.setAttribute("for", inputId);
+
+          const maxChars = fieldDef.maxCharsHint || fieldDef.maxChars || 0;
+          const maxWords = fieldDef.maxWordsHint || 0;
+          const countEl = el("span", "sponsor-doc-field__count");
+          const currentVal = String(draftContent[fieldDef.key] ?? "");
+
+          const appendErrorIfAny = () => {
+            const errText = fieldErrors[fieldDef.key];
+            if (!errText) return null;
+            const errEl = el("p", "sponsor-doc-field__error", errText);
+            errEl.dataset.sponsorFieldError = fieldDef.key;
+            fieldWrap.append(errEl);
+            return errEl;
+          };
+
+          if (fieldDef.derived) {
+            top.append(label);
+            const value = el("p", "dk-hint", currentVal || "Unscheduled");
+            value.dataset.sponsorDerivedField = fieldDef.key;
+            fieldWrap.append(top, value);
+            sectionTarget.append(fieldWrap);
+            continue;
+          }
+
+          if (fieldDef.type === "bullets" || fieldDef.key === "bullets") {
+            appendSponsorDocBulletsField({
+              el, actionBtn, fieldWrap, fieldDef, inputId, currentVal, busy, draftContent,
+              updateLivePreview: onSourceFieldEdit, top, label, countEl,
+            });
+            appendErrorIfAny();
+            appendFieldNode(fieldDef.key, fieldWrap);
+            continue;
+          }
+
+          const isVisualField = fieldDef.key === "graphicsUrl" || Boolean(fieldDef.allowVisualUpload);
+          const updateCount = (valText) => updateSponsorDocFieldCount({
+            fieldDef,
+            countEl,
+            valText,
+            uploadedVisualName,
+            isVisualField,
+            maxChars,
+            maxWords,
+            maxXPostChars: MAX_X_POST_CHARS,
+            splitXThread: splitSponsorXThread,
+          });
+
+          updateCount(currentVal);
+          top.append(label, countEl);
+
+          if (fieldDef.type === "radio") {
+            appendSponsorDocRadioField({
+              el, fieldWrap,
+              fieldDef: guestSchedule ? guestSlotFieldDefinition(fieldDef, doc.eventMetadata, guestZone) : fieldDef,
+              inputId, currentVal, busy, draftContent, updateLivePreview, top,
+            });
+            if (fieldDef.key === "slotChoice" && guestSchedule) {
+              appendTimeChoiceSave({
+                fieldWrap, actionBtn, busy, draftContent, metadata: doc.eventMetadata, saveChanges,
+                showWarning: (message) => { feedbackMsg = message; feedbackTone = "warning"; render(); },
+              });
+            }
+            appendErrorIfAny();
+            appendFieldNode(fieldDef.key, fieldWrap);
+            continue;
+          }
+
+          if (fieldDef.type === "select") {
+            appendSponsorDocSelectField({
+              el, fieldWrap, fieldDef, inputId, currentVal, busy, draftContent, updateCount, updateLivePreview, top,
+            });
+            appendErrorIfAny();
+            appendFieldNode(fieldDef.key, fieldWrap);
+            continue;
+          }
+
+          const isMultiline = fieldDef.type === "textarea" || Boolean(fieldDef.multiline);
+          const control = isMultiline ? el("textarea", "sponsor-doc-textarea") : el("input", "dk-input");
+          if (isMultiline) control.rows = fieldDef.rows || 5;
+          else control.type = "text";
+          control.id = inputId;
+          control.dataset.sponsorField = fieldDef.key;
+          const isDataVisual = isVisualField && /^data:image\//i.test(currentVal);
+          const attachedPh = "Uploaded visual attached — or paste an https:// link to replace";
+          control.placeholder = isDataVisual ? attachedPh : (fieldDef.placeholder || "");
+          control.value = isDataVisual ? "" : currentVal;
+          control.disabled = busy;
+          if (fieldDef.required) { control.required = true; control.setAttribute("aria-required", "true"); }
+          if (fieldErrors[fieldDef.key]) control.setAttribute("aria-invalid", "true");
+          if (fieldDef.format === "url") control.type = "url";
+          fieldWrap.append(top, control);
+
+          const isSocialField = fieldDef.key === "linkedinPost" || fieldDef.key === "twitterPost";
+          if (isSocialField) socialFieldControls.set(fieldDef.key, { control, updateCount });
+
+          const syncUtmSuggestion = attachSoftUtmSuggestion({
+            el, actionBtn, fieldWrap, fieldDef, control, draftContent,
+            publicationDate: doc.publicationDate, updateCount, updateLivePreview: onSourceFieldEdit, announce,
+          });
+
+          control.addEventListener("input", () => {
+            uploadedVisualName = "";
+            draftContent[fieldDef.key] = control.value;
+            if (fieldErrors[fieldDef.key]) {
+              delete fieldErrors[fieldDef.key];
+              control.removeAttribute("aria-invalid");
+              fieldWrap.querySelector(`[data-sponsor-field-error="${fieldDef.key}"]`)?.remove?.();
+            }
+            updateCount(control.value);
+            syncUtmSuggestion();
+            if (isSocialField) updateLivePreview();
+            else onSourceFieldEdit();
+          });
+
+          if (isVisualField) {
+            mountSponsorDocVisualControls({
+              el, actionBtn, fieldWrap, fieldDef, control, docId, accessCode, request, busy,
+              draftContent, fieldErrors,
+              getUploadedVisualName: () => uploadedVisualName,
+              setUploadedVisualName: (name) => { uploadedVisualName = name; },
+              updateCount, updateLivePreview, announce,
+            });
+          }
+
+          appendErrorIfAny();
+          if (fieldDef.helpText) fieldWrap.append(el("p", "dk-hint", fieldDef.helpText));
+          appendFieldNode(fieldDef.key, fieldWrap);
+        }
+
+        if (useEmailCard) {
+          const syncEditorCta = mountNewsletterEmailPieceSection({
+            el, doc, sectionWrap, sectionDef, fieldNodesByKey, draftContent, safePreviewHref,
+          });
+          previewSyncListeners.push(syncEditorCta);
+        }
+        form.append(sectionWrap);
+      }
+
+      if (!timezoneMounted) {
+        appendGuestTimezoneSelector({
+          el,
+          container: form,
+          guestZone,
+          busy,
+          draftContent,
+          render,
+          compact: isTwoTab,
+        });
+      }
+
+      if (feedbackMsg) {
+        const fb = el("div", `dk-callout dk-callout--${feedbackTone}`);
+        fb.setAttribute("role", "status");
+        fb.dataset.sponsorFeedback = "";
+        fb.append(el("div", "dk-callout__body", feedbackMsg));
+        form.append(fb);
+      }
+
+      form.addEventListener("submit", (event) => { event.preventDefault(); saveChanges(undefined); });
+      form.append(renderSponsorDocFormActions({
         el,
-        previewCard,
+        actionBtn,
+        internalEdit,
+        busy,
+        isSubmitted,
+        saveChanges,
+      }));
+      return form;
+    };
+
+    if (isTwoTab) {
+      if (isStaff && activePodcastTab === "internal" && !podcastInternalModeTouched) {
+        podcastInternalMode = hasPodcastHostContent(draftContent) ? "host" : "edit";
+        podcastInternalModeTouched = true;
+      }
+      renderPodcastTwoTabWorkspace({
+        el,
+        actionBtn,
+        root,
         doc,
         tDef,
         draftContent,
-        hasField,
-        uploadedVisualName,
-        safePreviewHref,
+        guestZone,
+        qnaState,
+        isStaff,
+        activeTab: activePodcastTab,
+        internalMode: podcastInternalMode,
+        sections,
+        buildFormElement,
+        buildIntroCallout: (def) => buildSponsorDocIntroCallout(el, def),
+        onSelectTab: (nextTab) => {
+          activePodcastTab = nextTab === "internal" ? "internal" : "guest";
+          if (activePodcastTab === "internal" && !podcastInternalModeTouched) {
+            podcastInternalMode = hasPodcastHostContent(draftContent) ? "host" : "edit";
+            podcastInternalModeTouched = true;
+          }
+          syncPodcastUrl();
+          render();
+        },
+        onSelectMode: (mode) => {
+          podcastInternalMode = mode === "edit" ? "edit" : "host";
+          podcastInternalModeTouched = true;
+          syncPodcastUrl();
+          render();
+        },
+        onLoadQna: loadPodcastQna,
+        onEditPrep: () => {
+          podcastInternalMode = "edit";
+          podcastInternalModeTouched = true;
+          syncPodcastUrl();
+          render();
+        },
+        onCopyExport: () => copyText(doc.markdownExport, "Copied Markdown export to clipboard."),
       });
-    };
-    const onSourceFieldEdit = () => {
-      syncAutoSocialPosts();
-      updateLivePreview();
-    };
+      return;
+    }
 
     const formCard = el("div", "sponsor-doc-card sponsor-doc-form-card");
-    const form = el("form", "sponsor-doc-form");
-    form.noValidate = true;
-
-    for (const sectionDef of sections) {
-      const collapsible = Boolean(sectionDef.collapsible);
-      const sectionWrap = collapsible
-        ? el("details", "sponsor-doc-section sponsor-doc-details")
-        : el("div", "sponsor-doc-section");
-      if (collapsible) {
-        sectionWrap.dataset.sponsorCollapsible = sectionDef.id;
-        const filled = (sectionDef.fields || []).some(
-          (field) => String(draftContent[field.key] ?? "").trim().length > 0,
-        );
-        if (filled) sectionWrap.open = true;
-        const summary = el("summary", "sponsor-doc-details__summary");
-        if (sectionDef.title) {
-          summary.append(
-            el("span", "sponsor-doc-section__title", sectionDef.title),
-            el("span", "sponsor-doc-details__hint", "Optional — tap to expand"),
-          );
-        }
-        sectionWrap.append(summary);
-      } else if (sectionDef.title) {
-        sectionWrap.append(el("h2", "sponsor-doc-section__title", sectionDef.title));
-      }
-      if (sectionDef.description) sectionWrap.append(el("p", "dk-hint", sectionDef.description));
-
-      const useEmailCard = isEmailPieceSection(doc, tDef, sectionDef);
-      const fieldNodesByKey = new Map();
-      const appendFieldNode = (key, node) => {
-        if (useEmailCard) fieldNodesByKey.set(key, node);
-        else sectionWrap.append(node);
-      };
-
-      for (const fieldDef of sectionDef.fields || []) {
-        if (guestSchedule && ["guestTimezone", "proposedSlotLabel"].includes(fieldDef.key)) continue;
-        const fieldWrap = el("div", "sponsor-doc-field");
-        fieldWrap.dataset.sponsorFieldGroup = fieldDef.key;
-        if (fieldDef.required) fieldWrap.dataset.sponsorFieldRequired = "true";
-        const top = el("div", "sponsor-doc-field__top");
-        const label = el("label", "sponsor-doc-field__label", `${fieldDef.label}${fieldDef.required ? " *" : ""}`);
-        const inputId = `sponsor-field-${fieldDef.key}`;
-        label.setAttribute("for", inputId);
-
-        const maxChars = fieldDef.maxCharsHint || fieldDef.maxChars || 0;
-        const maxWords = fieldDef.maxWordsHint || 0;
-        const countEl = el("span", "sponsor-doc-field__count");
-        const currentVal = String(draftContent[fieldDef.key] ?? "");
-
-        const appendErrorIfAny = () => {
-          const errText = fieldErrors[fieldDef.key];
-          if (!errText) return null;
-          const errEl = el("p", "sponsor-doc-field__error", errText);
-          errEl.dataset.sponsorFieldError = fieldDef.key;
-          fieldWrap.append(errEl);
-          return errEl;
-        };
-
-        if (fieldDef.derived) {
-          top.append(label);
-          const value = el("p", "dk-hint", currentVal || "Unscheduled");
-          value.dataset.sponsorDerivedField = fieldDef.key;
-          fieldWrap.append(top, value);
-          sectionWrap.append(fieldWrap);
-          continue;
-        }
-
-        if (fieldDef.type === "bullets" || fieldDef.key === "bullets") {
-          appendSponsorDocBulletsField({
-            el,
-            actionBtn,
-            fieldWrap,
-            fieldDef,
-            inputId,
-            currentVal,
-            busy,
-            draftContent,
-            updateLivePreview: onSourceFieldEdit,
-            top,
-            label,
-            countEl,
-          });
-          appendErrorIfAny();
-          appendFieldNode(fieldDef.key, fieldWrap);
-          continue;
-        }
-
-        const isVisualField = fieldDef.key === "graphicsUrl" || Boolean(fieldDef.allowVisualUpload);
-        const updateCount = (valText) => {
-          if (fieldDef.key === "photoUrl") { countEl.hidden = true; countEl.textContent = ""; return; }
-          const text = String(valText || "");
-          if (isVisualField && /^data:image\//i.test(text)) {
-            countEl.textContent = uploadedVisualName ? `Uploaded (${uploadedVisualName})` : "Uploaded image";
-            countEl.classList.remove("is-over");
-            return;
-          }
-          if (fieldDef.key === "twitterPost") {
-            const tweets = splitSponsorXThread(text);
-            if (tweets.length > 1) {
-              countEl.textContent = `${tweets.length} tweets (≤ ${MAX_X_POST_CHARS} chars each)`;
-              countEl.classList.toggle("is-over", tweets.some((t) => t.length > MAX_X_POST_CHARS));
-              return;
-            }
-          }
-          const len = text.length;
-          if (maxChars > 0) {
-            countEl.textContent = `${len} / ${maxChars} chars`;
-            countEl.classList.toggle("is-over", len > maxChars);
-          } else if (maxWords > 0) {
-            const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-            countEl.textContent = `${words} / ${maxWords} words`;
-            countEl.classList.toggle("is-over", words > maxWords);
-          } else {
-            countEl.textContent = `${len} chars`;
-          }
-        };
-
-        updateCount(currentVal);
-        top.append(label, countEl);
-
-        if (fieldDef.type === "radio") {
-          appendSponsorDocRadioField({
-            el,
-            fieldWrap,
-            fieldDef: guestSchedule
-              ? guestSlotFieldDefinition(fieldDef, doc.eventMetadata, guestZone)
-              : fieldDef,
-            inputId,
-            currentVal,
-            busy,
-            draftContent,
-            updateLivePreview,
-            top,
-          });
-          if (fieldDef.key === "slotChoice" && guestSchedule) appendTimeChoiceSave({
-            fieldWrap, actionBtn, busy, draftContent, metadata: doc.eventMetadata,
-            saveChanges, showWarning: message => {
-              feedbackMsg = message;
-              feedbackTone = "warning";
-              render();
-            },
-          });
-          appendErrorIfAny();
-          appendFieldNode(fieldDef.key, fieldWrap);
-          continue;
-        }
-
-        if (fieldDef.type === "select") {
-          appendSponsorDocSelectField({
-            el,
-            fieldWrap,
-            fieldDef,
-            inputId,
-            currentVal,
-            busy,
-            draftContent,
-            updateCount,
-            updateLivePreview,
-            top,
-          });
-          appendErrorIfAny();
-          appendFieldNode(fieldDef.key, fieldWrap);
-          continue;
-        }
-
-        const isMultiline = fieldDef.type === "textarea" || Boolean(fieldDef.multiline);
-        const control = isMultiline ? el("textarea", "sponsor-doc-textarea") : el("input", "dk-input");
-        if (isMultiline) control.rows = fieldDef.rows || 5;
-        else control.type = "text";
-        control.id = inputId;
-        control.dataset.sponsorField = fieldDef.key;
-        const isDataVisual = isVisualField && /^data:image\//i.test(currentVal);
-        const attachedPh = "Uploaded visual attached — or paste an https:// link to replace";
-        control.placeholder = isDataVisual ? attachedPh : (fieldDef.placeholder || "");
-        control.value = isDataVisual ? "" : currentVal;
-        control.disabled = busy;
-        if (fieldDef.required) {
-          control.required = true;
-          control.setAttribute("aria-required", "true");
-        }
-        if (fieldErrors[fieldDef.key]) {
-          control.setAttribute("aria-invalid", "true");
-        }
-        if (fieldDef.format === "url") control.type = "url";
-        fieldWrap.append(top, control);
-
-        const isSocialField = fieldDef.key === "linkedinPost" || fieldDef.key === "twitterPost";
-        if (isSocialField) {
-          socialFieldControls.set(fieldDef.key, { control, updateCount });
-        }
-
-        const syncUtmSuggestion = attachSoftUtmSuggestion({
-          el,
-          actionBtn,
-          fieldWrap,
-          fieldDef,
-          control,
-          draftContent,
-          publicationDate: doc.publicationDate,
-          updateCount,
-          updateLivePreview: onSourceFieldEdit,
-          announce,
-        });
-
-        control.addEventListener("input", () => {
-          uploadedVisualName = "";
-          draftContent[fieldDef.key] = control.value;
-          if (fieldErrors[fieldDef.key]) {
-            delete fieldErrors[fieldDef.key];
-            control.removeAttribute("aria-invalid");
-            fieldWrap.querySelector(`[data-sponsor-field-error="${fieldDef.key}"]`)?.remove?.();
-          }
-          updateCount(control.value);
-          syncUtmSuggestion();
-          if (isSocialField) updateLivePreview();
-          else onSourceFieldEdit();
-        });
-
-        if (isVisualField) {
-          mountSponsorDocVisualControls({
-            el,
-            actionBtn,
-            fieldWrap,
-            fieldDef,
-            control,
-            docId,
-            accessCode,
-            request,
-            busy,
-            draftContent,
-            fieldErrors,
-            getUploadedVisualName: () => uploadedVisualName,
-            setUploadedVisualName: (name) => { uploadedVisualName = name; },
-            updateCount,
-            updateLivePreview,
-            announce,
-          });
-        }
-
-        appendErrorIfAny();
-        if (fieldDef.helpText) fieldWrap.append(el("p", "dk-hint", fieldDef.helpText));
-        appendFieldNode(fieldDef.key, fieldWrap);
-      }
-
-      if (useEmailCard) {
-        const syncEditorCta = mountNewsletterEmailPieceSection({
-          el,
-          doc,
-          sectionWrap,
-          sectionDef,
-          fieldNodesByKey,
-          draftContent,
-          safePreviewHref,
-        });
-        previewSyncListeners.push(syncEditorCta);
-      }
-      form.append(sectionWrap);
-    }
-
-    if (feedbackMsg) {
-      const fb = el("div", `dk-callout dk-callout--${feedbackTone}`);
-      fb.setAttribute("role", "status");
-      fb.dataset.sponsorFeedback = "";
-      fb.append(el("div", "dk-callout__body", feedbackMsg));
-      form.append(fb);
-    }
-
-    const actionsBar = el("div", "sponsor-doc-actions");
-    const leftBtns = el("div", "sponsor-doc-actions__buttons");
-    const rightBtns = el("div", "sponsor-doc-actions__buttons");
-    const draftLabel = busy ? "Saving…" : isSubmitted ? "Save changes" : "Save draft";
-    leftBtns.append(actionBtn("dk-button dk-button--secondary", draftLabel, "save-draft", () => saveChanges(undefined), busy));
-
-    if (isSubmitted) {
-      rightBtns.append(actionBtn("dk-button dk-button--secondary", "Reopen as Draft", "reopen-draft", () => saveChanges("draft"), busy));
-    } else {
-      const submitLabel = busy ? "Submitting…" : "Mark as Submitted / Ready";
-      rightBtns.append(actionBtn("dk-button dk-button--primary", submitLabel, "submit-ready", () => saveChanges("submitted"), busy));
-    }
-
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      saveChanges(undefined);
-    });
-
-    actionsBar.append(leftBtns, rightBtns);
-    form.append(actionsBar);
-    formCard.append(form);
+    formCard.append(buildFormElement({ sectionsToRender: sections }));
 
     if (previewCard) {
       updateLivePreview();
@@ -892,19 +887,11 @@ export function createSponsorDocPage({
 
     // 3. Read-only Markdown Export card
     if (doc.markdownExport) {
-      const exportCard = el("div", "sponsor-doc-card");
-      exportCard.dataset.sponsorExport = "";
-      const expTop = el("div", "sponsor-doc-title-row");
-      expTop.append(el("h2", "sponsor-doc-field__label", "Read-only Markdown export"));
-      const copyExportBtn = el("button", "dk-button dk-button--secondary dk-button--sm", "Copy Markdown");
-      copyExportBtn.type = "button";
-      copyExportBtn.dataset.sponsorAction = "copy-export";
-      copyExportBtn.addEventListener("click", () =>
-        copyText(doc.markdownExport, "Copied Markdown export to clipboard."),
-      );
-      expTop.append(copyExportBtn);
-      exportCard.append(expTop, el("pre", "sponsor-doc-export-pre", doc.markdownExport));
-      root.append(exportCard);
+      root.append(renderSponsorDocExportCard({
+        el,
+        markdownExport: doc.markdownExport,
+        onCopy: () => copyText(doc.markdownExport, "Copied Markdown export to clipboard."),
+      }));
     }
   }
 
@@ -915,23 +902,8 @@ export function createSponsorDocPage({
     root.replaceChildren();
     updateIdentityBar();
 
-    if (phase === "loading") {
-      const card = el("div", "dk-auth-card sponsor-doc-card");
-      card.append(el("p", "dk-auth-card__lede", "Loading document…"));
-      root.append(card);
-      return;
-    }
-
-    if (phase === "notfound") {
-      const card = el("div", "dk-auth-card sponsor-doc-card");
-      card.dataset.sponsorView = "notfound";
-      const head = el("header", "dk-auth-card__head");
-      head.append(
-        el("h1", "dk-auth-card__title", "Document not found"),
-        el("p", "dk-auth-card__lede", "Check that you opened the full link from your DataTalks.Club email."),
-      );
-      card.append(head);
-      root.append(card);
+    if (phase === "loading" || phase === "notfound") {
+      root.append(renderSponsorDocPhaseCard(el, phase));
       return;
     }
 
@@ -948,12 +920,16 @@ export function createSponsorDocPage({
     const extracted = extractDocId(url.pathname);
     docId = extracted.id;
     docPathPrefix = SPONSOR_DOC_PATH_PREFIXES.includes(extracted.prefix) ? extracted.prefix : "/sponsor-docs";
-    questionsOnly = url.searchParams.get("view") === "questions";
+    const route = parseInitialPodcastRoute(url);
+    questionsOnly = route.initialView === "questions";
+    activePodcastTab = route.activeTab;
+    podcastInternalMode = route.internalMode;
+    podcastInternalModeTouched = route.touched;
     const queryCode = url.searchParams.get("code");
     if (queryCode !== null) {
       accessCode = formatUserCode(queryCode);
       saveStoredCode(docId, accessCode);
-      historyRef.replaceState(null, "", `${docPathPrefix}/${encodeURIComponent(docId)}`);
+      historyRef.replaceState(null, "", buildStrippedCodePath(docPathPrefix, docId, route.initialTab, route.initialView));
     } else {
       accessCode = readStoredCode(docId);
     }

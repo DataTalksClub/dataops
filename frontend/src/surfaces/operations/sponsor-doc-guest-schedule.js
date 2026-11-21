@@ -1,7 +1,17 @@
 import { dualZoneEventTime, guestEventTimeZone } from "./sponsor-doc-event-time.js";
+import { formatEditedTimestamp } from "../../core/dates.js";
 
-export function appendGuestTimezoneSelector({ el, headerCard, guestZone, busy, draftContent, render }) {
-  const zoneLabel = el("label", "sponsor-doc-field__label", "Your time zone");
+export function appendGuestTimezoneSelector({
+  el,
+  container,
+  headerCard,
+  guestZone,
+  busy,
+  draftContent,
+  render,
+  compact = false,
+}) {
+  const target = container || headerCard;
   const zoneSelect = el("select", "dk-input");
   zoneSelect.dataset.guestTimezone = "";
   zoneSelect.setAttribute("aria-label", "Your time zone");
@@ -10,8 +20,20 @@ export function appendGuestTimezoneSelector({ el, headerCard, guestZone, busy, d
   zoneSelect.value = guestZone;
   zoneSelect.disabled = busy;
   zoneSelect.addEventListener("change", () => { draftContent.guestTimezone = zoneSelect.value; render(); });
+
+  if (compact) {
+    const row = el("div", "sponsor-doc-timezone-row");
+    const zoneLabel = el("label", "sponsor-doc-field__label", "Your time zone");
+    zoneLabel.setAttribute("for", "guest-timezone-select");
+    zoneSelect.id = "guest-timezone-select";
+    row.append(zoneLabel, zoneSelect);
+    target.append(row);
+    return;
+  }
+
+  const zoneLabel = el("label", "sponsor-doc-field__label", "Your time zone");
   zoneLabel.append(zoneSelect);
-  headerCard.append(zoneLabel, el("p", "dk-hint",
+  target.append(zoneLabel, el("p", "dk-hint",
     "Times show the Berlin schedule and your local date and time. " +
     "You can save a time choice now and complete the questionnaire later."));
 }
@@ -28,17 +50,23 @@ export function guestSlotFieldDefinition(fieldDef, metadata, guestZone) {
 }
 
 export function appendTimeChoiceSave({ fieldWrap, actionBtn, busy, draftContent, metadata, saveChanges, showWarning }) {
-  fieldWrap.append(actionBtn("dk-button dk-button--secondary", busy ? "Saving…" : "Save time choice", "save-time-choice", () => {
-    if (!draftContent.slotChoice) {
-      showWarning("Choose a time option first.");
-      return;
-    }
-    saveChanges(undefined, {
-      choice: draftContent.slotChoice,
-      proposalStartIso: metadata.startIso,
-      proposalVersion: metadata.version,
-    });
-  }, busy));
+  fieldWrap.append(actionBtn(
+    "dk-button dk-button--secondary sponsor-doc-time-save",
+    busy ? "Saving…" : "Save time choice",
+    "save-time-choice",
+    () => {
+      if (!draftContent.slotChoice) {
+        showWarning("Choose a time option first.");
+        return;
+      }
+      saveChanges(undefined, {
+        choice: draftContent.slotChoice,
+        proposalStartIso: metadata.startIso,
+        proposalVersion: metadata.version,
+      });
+    },
+    busy,
+  ));
 }
 
 export function renderPodcastQuestionsView({ el, draftContent }) {
@@ -89,4 +117,224 @@ export function guestEventMetadataRow({ el, doc, tDef, draftContent, isSpeakerDo
     editedSpan.dataset.sponsorDocLastEdited = "";
     metaRow.append(editedSpan);
     return { metaRow, guestSchedule, guestZone };
+}
+
+export function buildSponsorDocIntroCallout(el, tDef) {
+  const hasGuidelines = Array.isArray(tDef.guidelines) && tDef.guidelines.length > 0;
+  if (!tDef.intro && !tDef.guidelinesUrl && !hasGuidelines) return null;
+  const callout = el("div", "dk-callout");
+  const body = el("div", "dk-callout__body");
+  if (tDef.intro) body.append(el("p", "", tDef.intro));
+  if (tDef.guidelinesUrl) {
+    const guideP = el("p", "");
+    const guideLink = el("a", "", tDef.guidelinesLabel || "View visual placement guide →");
+    guideLink.href = tDef.guidelinesUrl;
+    guideLink.target = "_blank";
+    guideLink.rel = "noopener noreferrer";
+    guideP.append(guideLink);
+    body.append(guideP);
+  }
+  if (hasGuidelines) {
+    const ul = el("ul", "sponsor-doc-guidelines");
+    for (const item of tDef.guidelines) ul.append(el("li", "", item));
+    body.append(ul);
+  }
+  callout.append(body);
+  return callout;
+}
+
+export function renderSponsorDocStaffBar({
+  el,
+  actionBtn,
+  doc,
+  busy,
+  isSpeaker,
+  isPodcastGuest,
+  isTwoTab,
+  copyText,
+  onSendEmail,
+  onRotateCode,
+}) {
+  const staffBar = el("div", "sponsor-doc-staff-bar");
+  staffBar.dataset.sponsorStaffBar = "";
+  const topRow = el("div", "sponsor-doc-staff-bar__row");
+  const shareInfo = el("div", "");
+  const linkLabel = isSpeaker
+    ? "Shareable speaker link (includes access code): "
+    : isPodcastGuest
+      ? "Shareable guest link (includes access code): "
+      : "Shareable sponsor link (includes access code): ";
+  shareInfo.append(el("strong", "", linkLabel), el("code", "dk-mono", doc.shareUrl || doc.docUrl || ""));
+  topRow.append(shareInfo);
+
+  if (doc.emailDelivery) {
+    const delivery = doc.emailDelivery;
+    const delivRow = el("div", "sponsor-doc-staff-bar__delivery");
+    delivRow.dataset.sponsorEmailDelivery = delivery.state || "unknown";
+    const statusText = delivery.state === "sent"
+      ? `Auto-sent from ${delivery.from} to ${delivery.to}${delivery.sentAt ? ` at ${formatEditedTimestamp(delivery.sentAt)}` : ""}`
+      : `Auto-send (${delivery.from || "orin@datatalks.club"}): ${delivery.state}${delivery.reason ? ` (${delivery.reason})` : ""}`;
+    delivRow.append(el("span", "dk-hint", statusText));
+    topRow.append(delivRow);
+  }
+
+  const smBtn = "dk-button dk-button--secondary dk-button--sm";
+  const btnRow = el("div", "sponsor-doc-actions__buttons");
+  let taskLabel = null;
+  if (!isSpeaker && !isPodcastGuest) {
+    taskLabel = el("label", "sponsor-doc-task-id");
+    taskLabel.append(el("span", "dk-hint", "Owning task ID (for the sent message record)"));
+    const taskInput = el("input", "dk-input");
+    taskInput.type = "text";
+    taskInput.value = doc.emailDelivery?.taskId || "";
+    taskInput.placeholder = "DataOps task ID";
+    taskInput.disabled = busy;
+    taskInput.dataset.sponsorTaskId = "";
+    taskLabel.append(taskInput);
+  }
+  if (doc.shareUrl) {
+    const copyShareLabel = isPodcastGuest ? "Copy guest link" : "Copy share link";
+    const copyShareToast = isSpeaker
+      ? "Copied shareable speaker link with access code."
+      : isPodcastGuest
+        ? "Copied shareable guest link with access code."
+        : "Copied shareable sponsor link with access code.";
+    btnRow.append(actionBtn(smBtn, copyShareLabel, "copy-share-url", () => copyText(doc.shareUrl, copyShareToast)));
+  }
+  if (doc.emailDraft?.body) {
+    const isInviteCopy = isSpeaker || isPodcastGuest;
+    btnRow.append(actionBtn(smBtn, isInviteCopy ? "Copy invitation email" : "Copy sponsor email", "copy-email", () =>
+      copyText(
+        `Subject: ${doc.emailDraft.subject}\n\n${doc.emailDraft.body}`,
+        isInviteCopy ? "Copied invitation email draft." : "Copied ready-to-send sponsor email draft.",
+      )));
+  }
+  if (!isSpeaker && !isPodcastGuest) {
+    btnRow.append(actionBtn(smBtn, "Send from orin@datatalks.club", "send-sponsor-email", onSendEmail, busy));
+  }
+  btnRow.append(actionBtn(smBtn, "Rotate code", "rotate-code", onRotateCode, busy));
+  const cardIdForLink = doc.hostContext?.cardId || doc.cardId;
+  if (cardIdForLink) {
+    const cardLink = el("a", smBtn, "Open Card");
+    cardLink.href = `/cards?cardId=${encodeURIComponent(cardIdForLink)}`;
+    btnRow.append(cardLink);
+  }
+  staffBar.append(topRow);
+  if (taskLabel) staffBar.append(taskLabel);
+  staffBar.append(btnRow);
+  if (isTwoTab) {
+    staffBar.append(el(
+      "p",
+      "dk-hint",
+      "Guests with the share link only see the Guest intake tab. Internal prep is staff-only.",
+    ));
+  }
+  return staffBar;
+}
+
+export function renderSponsorDocExportCard({ el, markdownExport, onCopy }) {
+  const exportCard = el("div", "sponsor-doc-card");
+  exportCard.dataset.sponsorExport = "";
+  const expTop = el("div", "sponsor-doc-title-row");
+  expTop.append(el("h2", "sponsor-doc-field__label", "Read-only Markdown export"));
+  const copyExportBtn = el("button", "dk-button dk-button--secondary dk-button--sm", "Copy Markdown");
+  copyExportBtn.type = "button";
+  copyExportBtn.dataset.sponsorAction = "copy-export";
+  copyExportBtn.addEventListener("click", () => onCopy?.());
+  expTop.append(copyExportBtn);
+  exportCard.append(expTop, el("pre", "sponsor-doc-export-pre", markdownExport));
+  return exportCard;
+}
+
+export function updateSponsorDocFieldCount({
+  fieldDef,
+  countEl,
+  valText,
+  uploadedVisualName,
+  isVisualField,
+  maxChars,
+  maxWords,
+  maxXPostChars,
+  splitXThread,
+}) {
+  if (fieldDef.key === "photoUrl") {
+    countEl.hidden = true;
+    countEl.textContent = "";
+    return;
+  }
+  const text = String(valText || "");
+  if (isVisualField && /^data:image\//i.test(text)) {
+    countEl.textContent = uploadedVisualName ? `Uploaded (${uploadedVisualName})` : "Uploaded image";
+    countEl.classList.remove("is-over");
+    return;
+  }
+  if (fieldDef.key === "twitterPost") {
+    const tweets = splitXThread(text);
+    if (tweets.length > 1) {
+      countEl.textContent = `${tweets.length} tweets (≤ ${maxXPostChars} chars each)`;
+      countEl.classList.toggle("is-over", tweets.some((t) => t.length > maxXPostChars));
+      return;
+    }
+  }
+  const len = text.length;
+  if (maxChars > 0) {
+    countEl.textContent = `${len} / ${maxChars} chars`;
+    countEl.classList.toggle("is-over", len > maxChars);
+  } else if (maxWords > 0) {
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+    countEl.textContent = `${words} / ${maxWords} words`;
+    countEl.classList.toggle("is-over", words > maxWords);
+  } else {
+    countEl.textContent = `${len} chars`;
+  }
+}
+
+export function renderSponsorDocFormActions({
+  el,
+  actionBtn,
+  internalEdit,
+  busy,
+  isSubmitted,
+  saveChanges,
+}) {
+  const actionsBar = el("div", "sponsor-doc-actions");
+  const leftBtns = el("div", "sponsor-doc-actions__buttons");
+  if (internalEdit) {
+    leftBtns.append(actionBtn(
+      "dk-button dk-button--primary",
+      busy ? "Saving…" : "Save internal changes",
+      "save-draft",
+      () => saveChanges(undefined),
+      busy,
+    ));
+    actionsBar.append(leftBtns);
+    return actionsBar;
+  }
+  const rightBtns = el("div", "sponsor-doc-actions__buttons");
+  const draftLabel = busy ? "Saving…" : isSubmitted ? "Save changes" : "Save draft";
+  leftBtns.append(actionBtn("dk-button dk-button--secondary", draftLabel, "save-draft", () => saveChanges(undefined), busy));
+  if (isSubmitted) {
+    rightBtns.append(actionBtn("dk-button dk-button--secondary", "Reopen as Draft", "reopen-draft", () => saveChanges("draft"), busy));
+  } else {
+    const submitLabel = busy ? "Submitting…" : "Mark as Submitted / Ready";
+    rightBtns.append(actionBtn("dk-button dk-button--primary", submitLabel, "submit-ready", () => saveChanges("submitted"), busy));
+  }
+  actionsBar.append(leftBtns, rightBtns);
+  return actionsBar;
+}
+
+export function renderSponsorDocPhaseCard(el, phase) {
+  const card = el("div", "dk-auth-card sponsor-doc-card");
+  if (phase === "loading") {
+    card.append(el("p", "dk-auth-card__lede", "Loading document…"));
+    return card;
+  }
+  card.dataset.sponsorView = "notfound";
+  const head = el("header", "dk-auth-card__head");
+  head.append(
+    el("h1", "dk-auth-card__title", "Document not found"),
+    el("p", "dk-auth-card__lede", "Check that you opened the full link from your DataTalks.Club email."),
+  );
+  card.append(head);
+  return card;
 }

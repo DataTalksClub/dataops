@@ -8,12 +8,13 @@ import { sponsorDocKey } from '../src/db/sponsorDocs';
 
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { createCard } from '../src/db/cards';
+import { createCard, updateCard } from '../src/db/cards';
 import { createTask, getTask } from '../src/db/tasks';
 import { createPodcastEpisode } from '../src/db/podcastEpisodes';
 import { createUser } from '../src/db/users';
 import { humanBearer } from './helpers/human-bearer';
-import { getSponsorDoc, updateSponsorDoc } from '../src/db/sponsorDocs';
+import { getSponsorDoc, setSponsorDocEmailDelivery, updateSponsorDoc } from '../src/db/sponsorDocs';
+import { isAnonymousSponsorDocAsset } from '../src/routes/sponsorDocs';
 import { setSponsorDocEmailDepsForTests } from '../src/sponsorDocs/emailDelivery';
 import {
   NEWSLETTER_SPONSOR_EMAIL_TEMPLATE_ID,
@@ -1032,13 +1033,27 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.ok(staffExport.body.includes('Rehearse Tuesday'));
   });
 
-  it('keeps podcast research and host run sheets out of guest views and exports', async () => {
+  it('keeps podcast run sheet, episode brief, research, and hostContext isolated from guests while serving them to staff', async () => {
+    assert.equal(isAnonymousSponsorDocAsset('GET', '/src/surfaces/operations/sponsor-doc-podcast.js'), true);
+
     const card = await createCard(client, {
       ...templateLink(),
       title: '[Podcast] 2026-12-03 - Jane Doe',
       anchorDate: '2026-12-03',
       people: ['Jane Doe'],
     });
+    const qna = {
+      roomId: 'room-podcast-1',
+      slug: 'jane-doe-podcast',
+      url: 'https://qna.dtcdev.click/r/jane-doe-podcast',
+      presentUrl: 'https://qna.dtcdev.click/admin/rooms/room-podcast-1/present',
+      createdAt: '2026-11-21T10:00:00.000Z',
+    };
+    await updateCard(client, card.id, {
+      expectedVersion: card.version,
+      patch: { sponsored: true, qna },
+    });
+
     const episode = await createPodcastEpisode(client, {
       title: 'Shipping ML features',
       guests: [{ name: 'Jane Doe' }],
@@ -1046,43 +1061,152 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       recordingDate: '2026-12-03',
       cardId: card.id,
     });
+    const internalFields: Record<string, string> = {
+      coldOpen: 'PRIVATE-COLD-OPEN',
+      introScript: 'PRIVATE-INTRO-SCRIPT',
+      interviewQuestions: 'PRIVATE-INTERVIEW-QUESTIONS',
+      closingScript: 'PRIVATE-CLOSING-SCRIPT',
+      goal: 'PRIVATE-EPISODE-GOAL',
+      audience: 'PRIVATE-TARGET-AUDIENCE',
+      keyMessages: 'PRIVATE-KEY-MESSAGES',
+      sourceLinks: 'PRIVATE-RESEARCH-SOURCE',
+      keyInsights: 'PRIVATE-RESEARCH-FINDING',
+      openQuestions: 'PRIVATE-OPEN-QUESTIONS',
+      hostNotes: 'PRIVATE-RUN-SHEET-NOTE',
+    };
     const createRes = await staffReq('POST', '/api/sponsor-docs', {
       cardId: episode.id,
       template: 'podcast',
       content: {
         guestName: 'Jane Doe',
-        interviewQuestions: 'SHARED-INTERVIEW-QUESTIONS',
-        sourceLinks: 'PRIVATE-RESEARCH-SOURCE',
-        keyInsights: 'PRIVATE-RESEARCH-FINDING',
-        openQuestions: 'PRIVATE-OPEN-QUESTIONS',
-        hostNotes: 'PRIVATE-RUN-SHEET-NOTE',
+        introduction: 'Staff data engineer building ML platforms',
+        topicsToCover: 'Feature stores, latency budgets',
+        topicsToAvoid: 'Unannounced roadmap',
+        ...internalFields,
       },
     });
     assert.equal(createRes.statusCode, 201, createRes.body);
     const { doc } = JSON.parse(createRes.body);
-
-    const guestRes = await anonReq('GET', `/api/sponsor-docs/${doc.id}`, { codeHeader: doc.accessCode });
-    assert.equal(guestRes.statusCode, 200, guestRes.body);
-    const guestDoc = JSON.parse(guestRes.body).doc;
-    assert.equal(guestDoc.content.interviewQuestions, 'SHARED-INTERVIEW-QUESTIONS');
-    assert.equal(guestDoc.content.sourceLinks, undefined);
-    assert.equal(guestDoc.content.hostNotes, undefined);
-
-    const guestExport = await anonReq('GET', `/api/sponsor-docs/${doc.id}/export`, {
-      codeHeader: doc.accessCode,
-      query: { format: 'markdown' },
+    await setSponsorDocEmailDelivery(client, doc.id, {
+      state: 'sent',
+      from: 'orin@datatalks.club',
+      to: 'jane@example.test',
+      subject: 'Your podcast form',
     });
-    assert.equal(guestExport.statusCode, 200, guestExport.body);
-    assert.ok(guestExport.body.includes('SHARED-INTERVIEW-QUESTIONS'));
-    assert.ok(!guestExport.body.includes('PRIVATE-RESEARCH-SOURCE'));
-    assert.ok(!guestExport.body.includes('PRIVATE-RUN-SHEET-NOTE'));
+
+    for (const reqOpts of [
+      { codeHeader: doc.accessCode, query: { tab: 'internal', view: 'questions' } },
+      { query: { code: doc.accessCode, tab: 'internal', view: 'questions' } },
+    ]) {
+      const guestRes = await anonReq('GET', `/api/sponsor-docs/${doc.id}`, reqOpts);
+      assert.equal(guestRes.statusCode, 200, guestRes.body);
+      const guestDoc = JSON.parse(guestRes.body).doc;
+      assert.equal(guestDoc.viewerRole, 'sponsor');
+      assert.equal(guestDoc.content.guestName, 'Jane Doe');
+      assert.equal(guestDoc.content.topicsToCover, 'Feature stores, latency budgets');
+      assert.equal(guestDoc.templateDefinition.sections.filter((s: { internal?: boolean }) => s.internal).length, 0);
+      for (const key of Object.keys(internalFields)) {
+        assert.equal(guestDoc.content[key], undefined, `guest must not receive ${key}`);
+        assert.equal(Object.hasOwn(guestDoc.content, key), false);
+      }
+      assert.equal(guestDoc.hostContext, undefined);
+      assert.equal(guestDoc.emailDelivery, undefined);
+      assert.equal(guestDoc.accessCode, undefined);
+      assert.equal(guestDoc.shareUrl, undefined);
+      assert.equal(guestDoc.emailDraft, undefined);
+      assert.doesNotMatch(guestDoc.markdownExport, /PRIVATE-/);
+    }
+
+    for (const format of ['markdown', 'json', 'txt'] as const) {
+      const guestExport = await anonReq('GET', `/api/sponsor-docs/${doc.id}/export`, {
+        codeHeader: doc.accessCode,
+        query: { format },
+      });
+      assert.equal(guestExport.statusCode, 200, guestExport.body);
+      const exportedText = format === 'json' ? JSON.parse(guestExport.body).markdown : guestExport.body;
+      assert.ok(exportedText.includes('Feature stores, latency budgets'));
+      for (const value of Object.values(internalFields)) {
+        assert.ok(!exportedText.includes(value), `${format} export leaked ${value}`);
+      }
+    }
+
+    const { fromBuffer } = await import('yauzl');
+    const guestDocx = await anonReq('GET', `/api/sponsor-docs/${doc.id}/export`, {
+      codeHeader: doc.accessCode,
+      query: { format: 'docx' },
+    });
+    assert.equal(guestDocx.statusCode, 200, guestDocx.body);
+    const docxXml = await new Promise<string>((resolve, reject) =>
+      fromBuffer(Buffer.from(guestDocx.body, 'base64'), { lazyEntries: true }, (error, zip) => {
+        if (error || !zip) return reject(error);
+        zip.on('error', reject);
+        zip.on('entry', (entry) => {
+          if (entry.fileName !== 'word/document.xml') return zip.readEntry();
+          zip.openReadStream(entry, (streamError, stream) => {
+            if (streamError || !stream) return reject(streamError);
+            const chunks: Buffer[] = [];
+            stream.on('data', (chunk) => chunks.push(chunk));
+            stream.on('error', reject);
+            stream.on('end', () => {
+              zip.close();
+              resolve(Buffer.concat(chunks).toString('utf8'));
+            });
+          });
+        });
+        zip.readEntry();
+      }),
+    );
+    assert.ok(docxXml.includes('Feature stores, latency budgets'));
+    for (const value of Object.values(internalFields)) {
+      assert.ok(!docxXml.includes(value), `docx export leaked ${value}`);
+    }
+
+    const guestPut = await anonReq('PUT', `/api/sponsor-docs/${doc.id}`, {
+      codeHeader: doc.accessCode,
+      body: {
+        content: {
+          currentFocus: 'GUEST-UPDATE',
+          interviewQuestions: 'HIJACK',
+          coldOpen: 'HIJACK',
+          hostNotes: 'HIJACK',
+          sourceLinks: 'HIJACK',
+        },
+      },
+    });
+    assert.equal(guestPut.statusCode, 200, guestPut.body);
+    const guestPutDoc = JSON.parse(guestPut.body).doc;
+    assert.equal(guestPutDoc.content.currentFocus, 'GUEST-UPDATE');
+    assert.equal(guestPutDoc.emailDelivery, undefined);
+    assert.equal(guestPutDoc.hostContext, undefined);
+    for (const key of Object.keys(internalFields)) {
+      assert.equal(guestPutDoc.content[key], undefined);
+    }
+
+    const storedAfterGuestPut = await getSponsorDoc(client, doc.id);
+    for (const [key, value] of Object.entries(internalFields)) {
+      assert.equal(storedAfterGuestPut?.content[key], value, `guest PUT overwrote ${key}`);
+    }
 
     const staffRes = await staffReq('GET', `/api/sponsor-docs/${doc.id}`);
     assert.equal(staffRes.statusCode, 200, staffRes.body);
     const staffDoc = JSON.parse(staffRes.body).doc;
-    assert.equal(staffDoc.content.sourceLinks, 'PRIVATE-RESEARCH-SOURCE');
-    assert.equal(staffDoc.content.hostNotes, 'PRIVATE-RUN-SHEET-NOTE');
-    assert.ok(staffDoc.markdownExport.includes('PRIVATE-RESEARCH-SOURCE'));
+    assert.equal(staffDoc.viewerRole, 'staff');
+    assert.equal(staffDoc.templateDefinition.sections.length, 9);
+    const staffInternalSections = staffDoc.templateDefinition.sections.filter(
+      (s: { tab?: string; internal?: boolean }) => s.tab === 'internal' && s.internal === true,
+    );
+    assert.equal(staffInternalSections.length, 3);
+    assert.equal(staffDoc.content.currentFocus, 'GUEST-UPDATE');
+    for (const [key, value] of Object.entries(internalFields)) {
+      assert.equal(staffDoc.content[key], value);
+      assert.ok(staffDoc.markdownExport.includes(value), `staff markdownExport missing ${key}`);
+    }
+    assert.deepEqual(staffDoc.hostContext, {
+      cardId: card.id,
+      sponsored: true,
+      qna,
+    });
+    assert.equal(staffDoc.emailDelivery?.state, 'sent');
   });
 
   it('rejects switching a webinar form to the workshop type: documents stay inside the card format', async () => {

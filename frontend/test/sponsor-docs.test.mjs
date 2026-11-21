@@ -885,14 +885,34 @@ test("podcast cards hide legacy prep templates, never show Sponsorship documents
   }
 });
 
-test("podcast doc supports read-only view-questions mode and photo preview placeholder", async () => {
+test("podcast doc supports staff view-questions mode while isolating guests and showing photo preview placeholder", async () => {
   const definition = podcastTemplateDefinition();
   definition.sections[1].fields.push({ key: "photoUrl", label: "Photo", type: "text", allowVisualUpload: true });
-  const h = harness({
+
+  const guest = harness({
     href: "https://ops.example.test/podcast-docs/doc-q?code=bcdfghjklmnpqrst",
     pathname: "/podcast-docs/doc-q",
     docOverrides: {
       template: "podcast",
+      viewerRole: "sponsor",
+      markdownExport: "# Export",
+      templateDefinition: definition,
+      content: { topicsToCover: "Production reliability" },
+    },
+  });
+  await guest.controller.start();
+  assert.ok(guest.root.querySelector('[data-sponsor-photo-placeholder]'), "empty photoUrl shows preview placeholder");
+  assert.equal(guest.root.querySelector('[data-podcast-tab]'), null, "guests never see the tab bar");
+  assert.equal(guest.root.querySelector('[data-sponsor-action="toggle-questions-view"]'), null, "guests never see View questions");
+  assert.equal(guest.root.querySelector('[data-sponsor-export]'), null, "guests never see Markdown export");
+  guest.controller.destroy();
+
+  const staff = harness({
+    href: "https://ops.example.test/podcast-docs/doc-q",
+    pathname: "/podcast-docs/doc-q",
+    docOverrides: {
+      template: "podcast",
+      viewerRole: "staff",
       templateDefinition: definition,
       content: {
         interviewQuestions: "Q1: Why agents?\nQ2: How evals?",
@@ -900,16 +920,16 @@ test("podcast doc supports read-only view-questions mode and photo preview place
       },
     },
   });
-  await h.controller.start();
-  assert.ok(h.root.querySelector('[data-sponsor-photo-placeholder]'), "empty photoUrl shows preview placeholder");
-  await h.root.querySelector('[data-sponsor-action="toggle-questions-view"]').click();
+  await staff.controller.start();
+  assert.ok(staff.root.querySelector('[data-sponsor-photo-placeholder]'), "staff Guest intake shows photo placeholder");
+  await staff.root.querySelector('[data-sponsor-action="toggle-questions-view"]').click();
   await nextTicks();
-  const ro = h.root.querySelector('[data-podcast-questions-view="readonly"]');
+  const ro = staff.root.querySelector('[data-podcast-questions-view="readonly"]');
   assert.ok(ro);
   assert.match(ro.textContent, /Q1: Why agents\?/);
   assert.match(ro.textContent, /Production reliability/);
-  assert.equal(h.root.querySelector('[data-sponsor-action="submit-ready"]'), null);
-  h.controller.destroy();
+  assert.equal(staff.root.querySelector('[data-sponsor-action="submit-ready"]'), null);
+  staff.controller.destroy();
 });
 
 test("event cards filter out legacy /sponsor-docs/ cardLinks in renderCardLinksSection", async () => {

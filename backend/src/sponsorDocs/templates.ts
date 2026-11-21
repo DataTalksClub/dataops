@@ -48,6 +48,8 @@ export interface SponsorDocSectionDefinition {
   collapsible?: boolean;
   /** Staff-only: never shown to, exported for, or writable by the speaker. */
   internal?: boolean;
+  /** Which tab of a two-tab doc renders this section. */
+  tab?: 'guest' | 'internal';
   fields: SponsorDocFieldDefinition[];
 }
 
@@ -595,6 +597,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         id: 'scheduling',
         title: '1) Recording Time',
         description: 'The invite proposes one recording time (Europe/Berlin podcast windows: midday 12:30–13:30, evening 17:00–18:00). Confirm it, pick another free slot, or reply to the invite email if none fit — do not invent times here.',
+        tab: 'guest',
         fields: [
           {
             key: 'proposedSlotLabel',
@@ -622,6 +625,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         id: 'who-you-are',
         title: '2) Who You Are',
         description: 'How to introduce you on the episode.',
+        tab: 'guest',
         fields: [
           {
             key: 'guestName',
@@ -648,6 +652,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         id: 'topics',
         title: '3) Topics',
         description: 'What you would most enjoy discussing on the episode.',
+        tab: 'guest',
         fields: [
           {
             key: 'currentFocus',
@@ -674,8 +679,9 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
       },
       {
         id: 'social-links',
-        title: '4) Social Media & Profile Links',
+        title: '4) Links & Preparation Materials',
         description: 'Links to include in the episode description and show notes.',
+        tab: 'guest',
         fields: [
           {
             key: 'linkedinUrl',
@@ -712,6 +718,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         id: 'detailed-questions',
         title: '5) Episode Story & Practical Takeaways (Optional)',
         description: 'Only if you enjoy this format — pick any prompt that helps structure your takeaways or story. We will craft the final description and questions from whatever you provide.',
+        tab: 'guest',
         collapsible: true,
         fields: [
           {
@@ -740,6 +747,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
       {
         id: 'notes',
         title: '6) Additional Notes (Optional)',
+        tab: 'guest',
         collapsible: true,
         fields: [
           {
@@ -752,11 +760,26 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         ],
       },
       {
-        id: 'episode-plan',
-        title: '7) Episode Plan & Questions',
-        description: 'Prepared by the DataTalks.Club team in the same document. Guests can review or suggest edits.',
-        collapsible: true,
+        id: 'run-sheet',
+        title: '1) Run Sheet & Interview Questions',
+        description: 'Prepared flow and questions for the live recording. Staff-only: never shown to or exported for the guest.',
+        tab: 'internal',
+        internal: true,
         fields: [
+          {
+            key: 'coldOpen',
+            label: 'Cold Open (first 10 seconds)',
+            type: 'textarea',
+            rows: 2,
+            placeholder: 'Hook: vivid fact, stat, problem, or provocative question.',
+          },
+          {
+            key: 'introScript',
+            label: 'Intro Script',
+            type: 'textarea',
+            rows: 3,
+            placeholder: 'How to introduce the guest on air.',
+          },
           {
             key: 'interviewQuestions',
             label: 'Interview Questions',
@@ -764,6 +787,22 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             rows: 8,
             placeholder: 'Questions for the episode, in order.',
           },
+          {
+            key: 'closingScript',
+            label: 'Closing Script',
+            type: 'textarea',
+            rows: 3,
+            placeholder: 'Wrap-up, takeaway question, where to find the guest, outro.',
+          },
+        ],
+      },
+      {
+        id: 'episode-brief',
+        title: '2) Event Description & Episode Plan',
+        description: 'Goal, target audience, and takeaways for the episode page and announcements. Staff-only.',
+        tab: 'internal',
+        internal: true,
+        fields: [
           {
             key: 'goal',
             label: 'Episode Goal',
@@ -784,35 +823,14 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             rows: 4,
             placeholder: '3–5 takeaways the episode must land.',
           },
-          {
-            key: 'coldOpen',
-            label: 'Cold Open (first 10 seconds)',
-            type: 'textarea',
-            rows: 2,
-            placeholder: 'Hook: vivid fact, stat, problem, or provocative question.',
-          },
-          {
-            key: 'introScript',
-            label: 'Intro Script',
-            type: 'textarea',
-            rows: 3,
-            placeholder: 'How to introduce the guest on air.',
-          },
-          {
-            key: 'closingScript',
-            label: 'Closing Script',
-            type: 'textarea',
-            rows: 3,
-            placeholder: 'Wrap-up, takeaway question, where to find the guest, outro.',
-          },
         ],
       },
       {
         id: 'internal-research',
-        title: '8) Internal Research & Host Notes (Staff Only)',
-        description: 'Staff-only research and live host notes. Never shown to or exported for the guest.',
+        title: '3) Guest Research & Host Notes',
+        description: 'Source-backed research, candidate angles, and host notes. Staff-only.',
+        tab: 'internal',
         internal: true,
-        collapsible: true,
         fields: [
           {
             key: 'sourceLinks',
@@ -1349,10 +1367,10 @@ export function speakerTemplateView(def: SponsorDocTemplateDefinition): SponsorD
 }
 
 export function speakerContentView(key: SponsorDocTemplateKey, content: Record<string, string>): Record<string, string> {
-  const internalKeys = new Set(SPONSOR_DOC_TEMPLATES[key].sections
-    .filter((section) => section.internal)
+  const publicKeys = new Set(SPONSOR_DOC_TEMPLATES[key].sections
+    .filter((section) => !section.internal)
     .flatMap((section) => section.fields.map((field) => field.key)));
-  return Object.fromEntries(Object.entries(content || {}).filter(([k]) => !internalKeys.has(k)));
+  return Object.fromEntries(Object.entries(content || {}).filter(([k]) => publicKeys.has(k)));
 }
 
 export class SponsorDocValidationError extends Error {
@@ -1608,15 +1626,21 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '### Actionable First Step & Resources',
       valOrPlaceholder(c.actionableTakeaway),
     );
-    if (c.interviewQuestions?.trim() || c.goal?.trim() || c.audience?.trim() || c.keyMessages?.trim() || c.coldOpen?.trim() || c.introScript?.trim() || c.closingScript?.trim()) {
-      lines.push('', '## 6) Episode Plan & Questions');
-      if (c.goal?.trim()) lines.push('', '### Episode Goal', c.goal.trim());
-      if (c.audience?.trim()) lines.push('', `**Target Audience:** ${c.audience.trim()}`);
-      if (c.keyMessages?.trim()) lines.push('', '### Key Messages / Takeaways', c.keyMessages.trim());
+    if (c.sponsorNotes?.trim()) {
+      lines.push('', '---', '', '## Notes from the Guest', '', c.sponsorNotes.trim());
+    }
+    if (c.coldOpen?.trim() || c.introScript?.trim() || c.interviewQuestions?.trim() || c.closingScript?.trim()) {
+      lines.push('', '## Run Sheet & Interview Questions');
       if (c.coldOpen?.trim()) lines.push('', '### Cold Open', c.coldOpen.trim());
       if (c.introScript?.trim()) lines.push('', '### Intro Script', c.introScript.trim());
       if (c.interviewQuestions?.trim()) lines.push('', '### Interview Questions', c.interviewQuestions.trim());
       if (c.closingScript?.trim()) lines.push('', '### Closing Script', c.closingScript.trim());
+    }
+    if (c.goal?.trim() || c.audience?.trim() || c.keyMessages?.trim()) {
+      lines.push('', '## Event Description & Episode Plan');
+      if (c.goal?.trim()) lines.push('', '### Episode Goal', c.goal.trim());
+      if (c.audience?.trim()) lines.push('', `**Target Audience:** ${c.audience.trim()}`);
+      if (c.keyMessages?.trim()) lines.push('', '### Key Messages / Takeaways', c.keyMessages.trim());
     }
     if (c.sourceLinks?.trim() || c.keyInsights?.trim() || c.openQuestions?.trim() || c.hostNotes?.trim()) {
       lines.push('', '## Internal Research & Host Notes (Staff Only)');
@@ -1708,9 +1732,10 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
     );
   }
 
-  if (c.sponsorNotes?.trim()) {
-    const notesHeading = doc.template === 'podcast' ? '## Notes from the Guest'
-      : (doc.template === 'workshop' || doc.template === 'webinar') ? '## Notes from the Speaker' : '## Notes from Sponsor';
+  if (doc.template !== 'podcast' && c.sponsorNotes?.trim()) {
+    const notesHeading = (doc.template === 'workshop' || doc.template === 'webinar')
+      ? '## Notes from the Speaker'
+      : '## Notes from Sponsor';
     lines.push(
       '',
       '---',
