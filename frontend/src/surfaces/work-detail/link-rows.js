@@ -224,6 +224,9 @@ export function renderCardLinksSection(options) {
   const missing = [];
   let missingEditorOpen = false;
   const seenUrls = new Set();
+  const isEventCard =
+    /^(podcast|webinar|workshop)$/i.test(String(card.templateDefinitionSnapshot?.type || "").trim())
+    || (card.tags || []).some((tag) => /^(podcast|webinar|workshop)$/i.test(String(tag || "").trim()));
   for (const link of card.cardLinks) {
     const linkName = link.name || link.label || "Link";
     const rawUrl = link.url || "";
@@ -231,6 +234,9 @@ export function renderCardLinksSection(options) {
       .replace(/[\s"'\u200c\u200b]+$/, "")
       .replace(/^["']/, "")
       .trim();
+    if (isEventCard && /\/sponsor-docs\//i.test(linkUrl)) {
+      continue;
+    }
     // If a named link already displayed this exact URL, skip the duplicate raw-url item
     if (
       linkUrl &&

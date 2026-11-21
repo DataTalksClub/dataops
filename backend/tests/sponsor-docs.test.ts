@@ -274,6 +274,17 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.ok(redir);
     assert.strictEqual(redir.statusCode, 302);
     assert.strictEqual(redir.headers?.Location, `/podcast-docs/${guestCreated.doc.id}?code=${encodeURIComponent(guestCreated.doc.accessCode)}`);
+
+    // Retired legacy podcast prep doc IDs redirect to the card's canonical /podcast-docs/:id.
+    for (const legacyPath of ['/sponsor-docs/sdoc-fae3a5e82bd086bd', '/podcast-docs/sdoc-fae3a5e82bd086bd']) {
+      const retiredRedir = await redirectLegacySponsorDocPath({
+        httpMethod: 'GET',
+        path: legacyPath,
+      } as any, client);
+      assert.ok(retiredRedir, `expected redirect for ${legacyPath}`);
+      assert.strictEqual(retiredRedir.statusCode, 302);
+      assert.strictEqual(retiredRedir.headers?.Location, '/podcast-docs/sdoc-c894d8bdd8ce41e0');
+    }
   });
 
   it('gates anonymous sponsor access by access code (query or header), allows sponsor edits & submission, and lets staff edit without a code', async () => {

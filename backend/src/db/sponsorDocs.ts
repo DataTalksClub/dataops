@@ -357,8 +357,10 @@ export async function updateSponsorDoc(
   }
 
   if (nextStatus === 'submitted') validateSubmittedContent(nextTemplate, nextContent);
-  const linkType = nextTemplate !== doc.template && doc.linkType === getSponsorDocTemplate(doc.template).defaultLinkType
-    ? getSponsorDocTemplate(nextTemplate).defaultLinkType
+  const defaultLinkType = getSponsorDocTemplate(nextTemplate).defaultLinkType;
+  const linkType = (nextTemplate !== doc.template && doc.linkType === getSponsorDocTemplate(doc.template).defaultLinkType)
+    || ((nextTemplate === 'podcast' || nextTemplate === 'webinar' || nextTemplate === 'workshop') && doc.linkType === 'Sponsorship document')
+    ? defaultLinkType
     : doc.linkType;
 
   const updated: SponsorDoc = await projectDocumentEvent(client, {

@@ -911,3 +911,28 @@ test("podcast doc supports read-only view-questions mode and photo preview place
   assert.equal(h.root.querySelector('[data-sponsor-action="submit-ready"]'), null);
   h.controller.destroy();
 });
+
+test("event cards filter out legacy /sponsor-docs/ cardLinks in renderCardLinksSection", async () => {
+  const prevDoc = globalThis.document;
+  globalThis.document = new FakeDocument();
+  try {
+    const { renderCardLinksSection } = await import("../src/surfaces/work-detail/link-rows.js");
+    const section = renderCardLinksSection({
+      card: {
+        id: "card-pod-2",
+        tags: ["Podcast"],
+        cardLinks: [
+          { name: "Podcast document", url: "https://ops.dtcdev.click/podcast-docs/sdoc-canon" },
+          { name: "Guest research", url: "https://ops.dtcdev.click/sponsor-docs/sdoc-legacy-res" },
+          { name: "Host run sheet", url: "https://ops.dtcdev.click/sponsor-docs/sdoc-legacy-run" },
+        ],
+      },
+      onSaveLink: () => {},
+    });
+    assert.match(section.textContent, /Podcast document/);
+    assert.doesNotMatch(section.textContent, /Guest research/);
+    assert.doesNotMatch(section.textContent, /Host run sheet/);
+  } finally {
+    globalThis.document = prevDoc;
+  }
+});
