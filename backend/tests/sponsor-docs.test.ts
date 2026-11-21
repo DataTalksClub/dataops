@@ -1064,7 +1064,6 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     const internalFields: Record<string, string> = {
       coldOpen: 'PRIVATE-COLD-OPEN',
       introScript: 'PRIVATE-INTRO-SCRIPT',
-      interviewQuestions: 'PRIVATE-INTERVIEW-QUESTIONS',
       closingScript: 'PRIVATE-CLOSING-SCRIPT',
       goal: 'PRIVATE-EPISODE-GOAL',
       audience: 'PRIVATE-TARGET-AUDIENCE',
@@ -1082,6 +1081,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
         introduction: 'Staff data engineer building ML platforms',
         topicsToCover: 'Feature stores, latency budgets',
         topicsToAvoid: 'Unannounced roadmap',
+        interviewQuestions: 'SHARED-Q1: How do you design feature stores?',
         ...internalFields,
       },
     });
@@ -1104,7 +1104,9 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       assert.equal(guestDoc.viewerRole, 'sponsor');
       assert.equal(guestDoc.content.guestName, 'Jane Doe');
       assert.equal(guestDoc.content.topicsToCover, 'Feature stores, latency budgets');
+      assert.equal(guestDoc.content.interviewQuestions, 'SHARED-Q1: How do you design feature stores?');
       assert.equal(guestDoc.templateDefinition.sections.filter((s: { internal?: boolean }) => s.internal).length, 0);
+      assert.ok(guestDoc.templateDefinition.sections.some((s: { id: string }) => s.id === 'interview-questions'));
       for (const key of Object.keys(internalFields)) {
         assert.equal(guestDoc.content[key], undefined, `guest must not receive ${key}`);
         assert.equal(Object.hasOwn(guestDoc.content, key), false);
@@ -1114,6 +1116,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       assert.equal(guestDoc.accessCode, undefined);
       assert.equal(guestDoc.shareUrl, undefined);
       assert.equal(guestDoc.emailDraft, undefined);
+      assert.ok(guestDoc.markdownExport.includes('SHARED-Q1: How do you design feature stores?'));
       assert.doesNotMatch(guestDoc.markdownExport, /PRIVATE-/);
     }
 
@@ -1125,6 +1128,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       assert.equal(guestExport.statusCode, 200, guestExport.body);
       const exportedText = format === 'json' ? JSON.parse(guestExport.body).markdown : guestExport.body;
       assert.ok(exportedText.includes('Feature stores, latency budgets'));
+      assert.ok(exportedText.includes('SHARED-Q1: How do you design feature stores?'));
       for (const value of Object.values(internalFields)) {
         assert.ok(!exportedText.includes(value), `${format} export leaked ${value}`);
       }
@@ -1157,6 +1161,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       }),
     );
     assert.ok(docxXml.includes('Feature stores, latency budgets'));
+    assert.ok(docxXml.includes('SHARED-Q1: How do you design feature stores?'));
     for (const value of Object.values(internalFields)) {
       assert.ok(!docxXml.includes(value), `docx export leaked ${value}`);
     }
@@ -1166,8 +1171,9 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       body: {
         content: {
           currentFocus: 'GUEST-UPDATE',
-          interviewQuestions: 'HIJACK',
           coldOpen: 'HIJACK',
+          introScript: 'HIJACK',
+          closingScript: 'HIJACK',
           hostNotes: 'HIJACK',
           sourceLinks: 'HIJACK',
         },
@@ -1176,6 +1182,7 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.equal(guestPut.statusCode, 200, guestPut.body);
     const guestPutDoc = JSON.parse(guestPut.body).doc;
     assert.equal(guestPutDoc.content.currentFocus, 'GUEST-UPDATE');
+    assert.equal(guestPutDoc.content.interviewQuestions, 'SHARED-Q1: How do you design feature stores?');
     assert.equal(guestPutDoc.emailDelivery, undefined);
     assert.equal(guestPutDoc.hostContext, undefined);
     for (const key of Object.keys(internalFields)) {
@@ -1187,16 +1194,31 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       assert.equal(storedAfterGuestPut?.content[key], value, `guest PUT overwrote ${key}`);
     }
 
+    // Staff edits to interviewQuestions show up in the guest API response
+    const staffEditRes = await staffReq('PUT', `/api/sponsor-docs/${doc.id}`, {
+      content: { interviewQuestions: 'SHARED-Q1-UPDATED\nSHARED-Q2-ADDED' },
+    });
+    assert.equal(staffEditRes.statusCode, 200, staffEditRes.body);
+    const guestAfterStaffEdit = await anonReq('GET', `/api/sponsor-docs/${doc.id}`, {
+      codeHeader: doc.accessCode,
+    });
+    assert.equal(guestAfterStaffEdit.statusCode, 200, guestAfterStaffEdit.body);
+    assert.equal(
+      JSON.parse(guestAfterStaffEdit.body).doc.content.interviewQuestions,
+      'SHARED-Q1-UPDATED\nSHARED-Q2-ADDED',
+    );
+
     const staffRes = await staffReq('GET', `/api/sponsor-docs/${doc.id}`);
     assert.equal(staffRes.statusCode, 200, staffRes.body);
     const staffDoc = JSON.parse(staffRes.body).doc;
     assert.equal(staffDoc.viewerRole, 'staff');
-    assert.equal(staffDoc.templateDefinition.sections.length, 9);
+    assert.equal(staffDoc.templateDefinition.sections.length, 10);
     const staffInternalSections = staffDoc.templateDefinition.sections.filter(
       (s: { tab?: string; internal?: boolean }) => s.tab === 'internal' && s.internal === true,
     );
     assert.equal(staffInternalSections.length, 3);
     assert.equal(staffDoc.content.currentFocus, 'GUEST-UPDATE');
+    assert.equal(staffDoc.content.interviewQuestions, 'SHARED-Q1-UPDATED\nSHARED-Q2-ADDED');
     for (const [key, value] of Object.entries(internalFields)) {
       assert.equal(staffDoc.content[key], value);
       assert.ok(staffDoc.markdownExport.includes(value), `staff markdownExport missing ${key}`);

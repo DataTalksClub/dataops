@@ -760,9 +760,24 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         ],
       },
       {
+        id: 'interview-questions',
+        title: '7) Interview Questions',
+        description: 'Draft questions for our conversation — shared between you and the DataTalks.Club team. Feel free to review or suggest edits.',
+        tab: 'guest',
+        fields: [
+          {
+            key: 'interviewQuestions',
+            label: 'Interview Questions',
+            type: 'textarea',
+            rows: 8,
+            placeholder: 'Questions for the episode, in order. We will draft these with you before the recording.',
+          },
+        ],
+      },
+      {
         id: 'run-sheet',
-        title: '1) Run Sheet & Interview Questions',
-        description: 'Prepared flow and questions for the live recording. Staff-only: never shown to or exported for the guest.',
+        title: '1) Run Sheet',
+        description: 'Prepared flow and host scripts for the live recording. Staff-only: never shown to or exported for the guest.',
         tab: 'internal',
         internal: true,
         fields: [
@@ -779,13 +794,6 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             type: 'textarea',
             rows: 3,
             placeholder: 'How to introduce the guest on air.',
-          },
-          {
-            key: 'interviewQuestions',
-            label: 'Interview Questions',
-            type: 'textarea',
-            rows: 8,
-            placeholder: 'Questions for the episode, in order.',
           },
           {
             key: 'closingScript',
@@ -1629,11 +1637,13 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
     if (c.sponsorNotes?.trim()) {
       lines.push('', '---', '', '## Notes from the Guest', '', c.sponsorNotes.trim());
     }
-    if (c.coldOpen?.trim() || c.introScript?.trim() || c.interviewQuestions?.trim() || c.closingScript?.trim()) {
-      lines.push('', '## Run Sheet & Interview Questions');
+    if (c.interviewQuestions?.trim()) {
+      lines.push('', '## Interview Questions', '', c.interviewQuestions.trim());
+    }
+    if (c.coldOpen?.trim() || c.introScript?.trim() || c.closingScript?.trim()) {
+      lines.push('', '## Run Sheet');
       if (c.coldOpen?.trim()) lines.push('', '### Cold Open', c.coldOpen.trim());
       if (c.introScript?.trim()) lines.push('', '### Intro Script', c.introScript.trim());
-      if (c.interviewQuestions?.trim()) lines.push('', '### Interview Questions', c.interviewQuestions.trim());
       if (c.closingScript?.trim()) lines.push('', '### Closing Script', c.closingScript.trim());
     }
     if (c.goal?.trim() || c.audience?.trim() || c.keyMessages?.trim()) {

@@ -23,22 +23,28 @@ describe('podcast guest form (radio slot picker + topics; email stays one slot)'
       'social-links',
       'detailed-questions',
       'notes',
+      'interview-questions',
       'run-sheet',
       'episode-brief',
       'internal-research',
     ]);
-    const guestSections = template.sections.slice(0, 6);
-    const internalSections = template.sections.slice(6);
+    const guestSections = template.sections.slice(0, 7);
+    const internalSections = template.sections.slice(7);
     assert.ok(guestSections.every((section) => section.tab === 'guest' && !section.internal));
     assert.ok(internalSections.every((section) => section.tab === 'internal' && section.internal === true && !section.collapsible));
     assert.deepEqual(
       internalSections.map((section) => section.fields.map((field) => field.key)),
       [
-        ['coldOpen', 'introScript', 'interviewQuestions', 'closingScript'],
+        ['coldOpen', 'introScript', 'closingScript'],
         ['goal', 'audience', 'keyMessages'],
         ['sourceLinks', 'keyInsights', 'openQuestions', 'hostNotes'],
       ],
     );
+    const questionsSection = template.sections.find((section) => section.id === 'interview-questions');
+    assert.equal(questionsSection?.tab, 'guest');
+    assert.equal(questionsSection?.internal, undefined);
+    assert.equal(questionsSection?.collapsible, undefined);
+    assert.deepEqual(questionsSection?.fields.map((field) => field.key), ['interviewQuestions']);
     const fields = template.sections.flatMap((section) => section.fields);
     const keys = fields.map((field) => field.key);
     assert.ok(keys.includes('slotChoice'));
@@ -210,12 +216,12 @@ describe('podcast guest form (radio slot picker + topics; email stays one slot)'
     assert.ok(exported.includes('## Notes from Sponsor'));
   });
 
-  it('speakerTemplateView and speakerContentView strictly isolate podcast guest views and exports', () => {
+  it('speakerTemplateView and speakerContentView share interviewQuestions with guests and isolate internal sections', () => {
     const template = getSponsorDocTemplate('podcast');
     const speakerTemplate = speakerTemplateView(template);
     assert.deepEqual(
       speakerTemplate.sections.map((section) => section.id),
-      ['scheduling', 'who-you-are', 'topics', 'social-links', 'detailed-questions', 'notes'],
+      ['scheduling', 'who-you-are', 'topics', 'social-links', 'detailed-questions', 'notes', 'interview-questions'],
     );
     assert.ok(speakerTemplate.sections.every((section) => !section.internal && section.tab === 'guest'));
 
@@ -238,9 +244,9 @@ describe('podcast guest form (radio slot picker + topics; email stays one slot)'
       keyInsightsAndMilestones: 'Moved to streaming in 2025',
       actionableTakeaway: 'Start with idempotency',
       sponsorNotes: 'Happy to answer live questions',
+      interviewQuestions: 'SHARED-INTERVIEW-QUESTIONS',
       coldOpen: 'SECRET-COLD-OPEN',
       introScript: 'SECRET-INTRO-SCRIPT',
-      interviewQuestions: 'SECRET-INTERVIEW-QUESTIONS',
       closingScript: 'SECRET-CLOSING-SCRIPT',
       goal: 'SECRET-GOAL',
       audience: 'SECRET-AUDIENCE',
@@ -256,10 +262,10 @@ describe('podcast guest form (radio slot picker + topics; email stays one slot)'
     assert.equal(guestContent.guestName, 'Jane Doe');
     assert.equal(guestContent.topicsToCover, 'Flink, Kafka');
     assert.equal(guestContent.sponsorNotes, 'Happy to answer live questions');
+    assert.equal(guestContent.interviewQuestions, 'SHARED-INTERVIEW-QUESTIONS');
     for (const secretKey of [
       'coldOpen',
       'introScript',
-      'interviewQuestions',
       'closingScript',
       'goal',
       'audience',
@@ -285,20 +291,25 @@ describe('podcast guest form (radio slot picker + topics; email stays one slot)'
 
     const guestExport = renderSponsorDocMarkdownExport({ ...baseDoc, content: guestContent });
     assert.ok(guestExport.includes('## Notes from the Guest'));
-    assert.ok(!guestExport.includes('## Run Sheet & Interview Questions'));
+    assert.ok(guestExport.includes('## Interview Questions'));
+    assert.ok(guestExport.includes('SHARED-INTERVIEW-QUESTIONS'));
+    assert.ok(!guestExport.includes('## Run Sheet'));
     assert.ok(!guestExport.includes('## Event Description & Episode Plan'));
     assert.ok(!guestExport.includes('## Internal Research & Host Notes (Staff Only)'));
     assert.ok(!guestExport.includes('SECRET-'));
 
     const staffExport = renderSponsorDocMarkdownExport({ ...baseDoc, content: fullContent });
     const notesIdx = staffExport.indexOf('## Notes from the Guest');
-    const runSheetIdx = staffExport.indexOf('## Run Sheet & Interview Questions');
+    const questionsIdx = staffExport.indexOf('## Interview Questions');
+    const runSheetIdx = staffExport.indexOf('## Run Sheet');
     const briefIdx = staffExport.indexOf('## Event Description & Episode Plan');
     const researchIdx = staffExport.indexOf('## Internal Research & Host Notes (Staff Only)');
     assert.ok(notesIdx > 0);
-    assert.ok(runSheetIdx > notesIdx);
+    assert.ok(questionsIdx > notesIdx);
+    assert.ok(runSheetIdx > questionsIdx);
     assert.ok(briefIdx > runSheetIdx);
     assert.ok(researchIdx > briefIdx);
+    assert.ok(staffExport.includes('SHARED-INTERVIEW-QUESTIONS'));
     assert.ok(staffExport.includes('SECRET-COLD-OPEN'));
     assert.ok(staffExport.includes('SECRET-GOAL'));
     assert.ok(staffExport.includes('SECRET-HOST-NOTES'));
