@@ -166,7 +166,7 @@ test.describe("podcast guest materials form", () => {
         linkedinUrl: "https://example.test/linkedin",
         coldOpen: "SECRET_COLD_OPEN_HOOK",
         introScript: "SECRET_INTRO_SCRIPT",
-        interviewQuestions: "SECRET_Q1_ARCHITECTURE\nSECRET_Q2_TRADEOFFS",
+        interviewQuestions: "SHARED_Q1_ARCHITECTURE\nSHARED_Q2_TRADEOFFS",
         closingScript: "SECRET_CLOSING_SCRIPT",
         goal: "SECRET_EPISODE_GOAL",
         audience: "SECRET_TARGET_AUDIENCE",
@@ -178,25 +178,29 @@ test.describe("podcast guest materials form", () => {
       },
     });
 
-    // 1. Staff desktop view: sees two tabs, Host view + Edit prep & research, and saves internal changes
+    // 1. Staff desktop view: sees two tabs, shared interviewQuestions on Guest tab, Host view + Edit prep & research
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(`${server.baseURL}/podcast-docs/${doc.id}`);
     await expect(page.locator('[data-podcast-tab="guest"]')).toBeVisible();
     await expect(page.locator('[data-podcast-tab="internal"]')).toBeVisible();
     await expect(page.locator('[data-podcast-panel="guest"]')).toBeVisible();
-    await expect(page.locator("#sponsor-field-interviewQuestions")).toHaveCount(0);
+    await expect(page.locator("#sponsor-field-interviewQuestions")).toHaveValue(
+      "SHARED_Q1_ARCHITECTURE\nSHARED_Q2_TRADEOFFS",
+    );
+    await expect(page.locator("#sponsor-field-coldOpen")).toHaveCount(0);
 
     await page.locator('[data-podcast-tab="internal"]').click();
     await expect(page.locator('[data-podcast-panel="internal"]')).toBeVisible();
     await expect(page.locator('[data-podcast-questions-view="readonly"]')).toBeVisible();
     await expect(page.locator('[data-podcast-host-block="coldOpen"]')).toContainText("SECRET_COLD_OPEN_HOOK");
-    await expect(page.locator('[data-podcast-host-block="interviewQuestions"]')).toContainText("SECRET_Q1_ARCHITECTURE");
+    await expect(page.locator('[data-podcast-host-block="interviewQuestions"]')).toContainText("SHARED_Q1_ARCHITECTURE");
     await expect(page.locator('[data-podcast-host-block="topicsToAvoid"]')).toContainText("Confidential client contracts");
     await expect(page.locator('[data-podcast-host-block="hostNotes"]')).toContainText("SECRET_HOST_TIMING_NOTE");
     await expect(page.locator("[data-podcast-host-qna]")).toBeVisible();
 
     await page.locator('[data-podcast-internal-mode="edit"]').click();
-    await expect(page.locator("#sponsor-field-interviewQuestions")).toBeVisible();
+    await expect(page.locator("#sponsor-field-interviewQuestions")).toHaveCount(0);
+    await expect(page.locator("#sponsor-field-coldOpen")).toBeVisible();
     await expect(page.locator("#sponsor-field-sourceLinks")).toBeVisible();
     await page.locator("#sponsor-field-hostNotes").fill("SECRET_HOST_TIMING_NOTE_UPDATED");
     await page.locator('[data-sponsor-action="save-draft"]').click();
@@ -218,7 +222,7 @@ test.describe("podcast guest materials form", () => {
     expect(hostOverflow.scrollWidth).toBeLessThanOrEqual(hostOverflow.clientWidth);
 
     // 3. Anonymous guest browser context with valid ?code= (even requesting ?tab=internal&view=questions):
-    //    never sees tabs, never sees View questions, never receives any internal content.
+    //    sees interviewQuestions, never sees tabs, never sees View questions, never receives any internal content.
     const guestContext = await browser.newContext({
       extraHTTPHeaders: { "x-sponsor-doc-anonymous": "true" },
       viewport: { width: 390, height: 844 },
@@ -233,11 +237,13 @@ test.describe("podcast guest materials form", () => {
       await expect(guestPage.locator('[data-sponsor-action="toggle-questions-view"]')).toHaveCount(0);
       await expect(guestPage.locator("[data-sponsor-export]")).toHaveCount(0);
       await expect(guestPage.locator("#sponsor-field-guestName")).toHaveValue("Two-Tab Guest, Staff Engineer");
+      await expect(guestPage.locator("#sponsor-field-interviewQuestions")).toHaveValue(
+        "SHARED_Q1_ARCHITECTURE\nSHARED_Q2_TRADEOFFS",
+      );
       const guestDomText = await guestPage.locator("body").innerText();
       for (const secretMarker of [
         "SECRET_COLD_OPEN_HOOK",
         "SECRET_INTRO_SCRIPT",
-        "SECRET_Q1_ARCHITECTURE",
         "SECRET_CLOSING_SCRIPT",
         "SECRET_EPISODE_GOAL",
         "SECRET_CLAIM_LEDGER_INSIGHT",
@@ -261,9 +267,11 @@ test.describe("podcast guest materials form", () => {
     );
     expect(anonDocRes.status).toBe(200);
     const anonDocBody = await anonDocRes.text();
+    expect(anonDocBody).toContain("SHARED_Q1_ARCHITECTURE");
     expect(anonDocBody).not.toMatch(/SECRET_/);
     const anonDocJson = JSON.parse(anonDocBody).doc;
     expect(anonDocJson.viewerRole).toBe("sponsor");
+    expect(anonDocJson.content.interviewQuestions).toBe("SHARED_Q1_ARCHITECTURE\nSHARED_Q2_TRADEOFFS");
     expect(anonDocJson.hostContext).toBeUndefined();
     expect(anonDocJson.emailDelivery).toBeUndefined();
 
@@ -272,7 +280,9 @@ test.describe("podcast guest materials form", () => {
       { headers: { "x-sponsor-doc-anonymous": "true" } },
     );
     expect(anonExportRes.status).toBe(200);
-    expect(await anonExportRes.text()).not.toMatch(/SECRET_/);
+    const anonExportText = await anonExportRes.text();
+    expect(anonExportText).toContain("SHARED_Q1_ARCHITECTURE");
+    expect(anonExportText).not.toMatch(/SECRET_/);
   });
 
   test("confirmed podcast recording time collapses into one compact line with Change toggle", async ({

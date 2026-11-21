@@ -81,14 +81,21 @@ function fullPodcastDefinition() {
         ],
       },
       {
+        id: "interview-questions",
+        tab: "guest",
+        title: "7) Interview Questions",
+        fields: [
+          { key: "interviewQuestions", label: "Interview Questions", type: "textarea", rows: 6 },
+        ],
+      },
+      {
         id: "run-sheet",
         tab: "internal",
         internal: true,
-        title: "Run Sheet & Interview Questions",
+        title: "1) Run Sheet",
         fields: [
           { key: "coldOpen", label: "Cold Open", type: "textarea", rows: 2 },
           { key: "introScript", label: "Intro Script", type: "textarea", rows: 3 },
-          { key: "interviewQuestions", label: "Interview Questions", type: "textarea", rows: 6 },
           { key: "closingScript", label: "Closing Script", type: "textarea", rows: 3 },
         ],
       },
@@ -243,7 +250,7 @@ test("podcast helpers classify docs, split sections, check host content, and syn
   assert.deepEqual(synced, ["Podcast document tabs", "Internal view mode"]);
 });
 
-test("guest view blocks tab bar, internal sections, view-questions, markdown export, and ?tab=internal params", async () => {
+test("guest view shows interviewQuestions and blocks tab bar, internal sections, view-questions, markdown export, and ?tab=internal params", async () => {
   const h = createHarness({
     href: "https://ops.example.test/podcast-docs/sdoc-pod-1?code=bcdfghjklmnpqrst&tab=internal&view=questions",
     docOverrides: {
@@ -255,7 +262,9 @@ test("guest view blocks tab bar, internal sections, view-questions, markdown exp
       content: {
         guestName: "Julien Khaleghy",
         topicsToCover: "Distributed crawling",
-        interviewQuestions: "Should never render for guest",
+        interviewQuestions: "Q1: How does your browser fleet scale?",
+        coldOpen: "Should never render for guest",
+        hostNotes: "Private host note",
       },
     },
   });
@@ -269,8 +278,11 @@ test("guest view blocks tab bar, internal sections, view-questions, markdown exp
   assert.equal(h.root.querySelector("[data-sponsor-staff-bar]"), null);
   assert.equal(h.root.querySelector("[data-sponsor-export]"), null);
   assert.equal(h.root.querySelector("[data-podcast-sponsored-badge]"), null);
-  assert.equal(h.root.querySelector("#sponsor-field-interviewQuestions"), null);
+  assert.equal(h.root.querySelector("#sponsor-field-interviewQuestions").value, "Q1: How does your browser fleet scale?");
+  assert.equal(h.root.querySelector("#sponsor-field-coldOpen"), null);
+  assert.equal(h.root.querySelector("#sponsor-field-hostNotes"), null);
   assert.doesNotMatch(h.root.textContent, /Should never render for guest/);
+  assert.doesNotMatch(h.root.textContent, /Private host note/);
   assert.doesNotMatch(h.root.textContent, /sponsor/i);
   assert.doesNotMatch(h.identity.textContent, /sponsor/i);
 
@@ -300,35 +312,43 @@ test("staff two-tab navigation smart-defaults Host/Edit modes, preserves unsaved
   assert.ok(emptyH.root.querySelector('[data-podcast-panel="guest"] .dk-callout'));
   assert.ok(emptyH.root.querySelector('[data-podcast-panel="guest"] [data-guest-timezone]'));
 
-  // Edit a guest field without saving, then switch to Internal tab
+  // Edit guest fields (including shared interviewQuestions) without saving, then switch to Internal tab
   const guestNameInput = emptyH.root.querySelector("#sponsor-field-guestName");
   guestNameInput.value = "Ada Lovelace (Edited)";
   await guestNameInput.dispatch("input");
-
-  await emptyH.root.querySelector("#podcast-tab-internal").click();
-  assert.equal(emptyH.root.querySelector("#podcast-tab-internal").getAttribute("aria-selected"), "true");
-  assert.equal(emptyH.history.at(-1)[2], "/podcast-docs/sdoc-pod-1?tab=internal");
-  assert.match(emptyH.root.querySelector('[data-podcast-tab-notice="internal"]').textContent, /Staff only/);
-
-  // Smart-defaulted to Edit mode because no host content existed; internal sections are expanded (no <details>)
-  assert.equal(
-    emptyH.root.querySelector('[data-podcast-internal-mode="edit"]').getAttribute("aria-selected"),
-    "true",
-  );
   const questionsInput = emptyH.root.querySelector("#sponsor-field-interviewQuestions");
-  assert.ok(questionsInput);
-  assert.ok(emptyH.root.querySelector("#sponsor-field-hostNotes"), "internal-research expanded without details");
+  assert.ok(questionsInput, "interviewQuestions is editable on Guest tab");
   questionsInput.value = "1. What inspired the Analytical Engine?";
   await questionsInput.dispatch("input");
 
-  // Switch back to Guest intake -> unsaved guest edit is still there
+  await emptyH.root.querySelector("#podcast-tab-internal").click();
+  assert.equal(emptyH.root.querySelector("#podcast-tab-internal").getAttribute("aria-selected"), "true");
+  // Smart-defaults to Host view now that interviewQuestions has content; switch to Edit mode
+  assert.equal(
+    emptyH.root.querySelector('[data-podcast-internal-mode="host"]').getAttribute("aria-selected"),
+    "true",
+  );
+  await emptyH.root.querySelector('[data-podcast-internal-mode="edit"]').click();
+  assert.equal(emptyH.history.at(-1)[2], "/podcast-docs/sdoc-pod-1?tab=internal");
+  assert.match(emptyH.root.querySelector('[data-podcast-tab-notice="internal"]').textContent, /Staff only/);
+
+  // Internal sections are expanded (no <details>) and exclude interviewQuestions
+  assert.equal(emptyH.root.querySelector("#sponsor-field-interviewQuestions"), null);
+  const coldOpenInput = emptyH.root.querySelector("#sponsor-field-coldOpen");
+  assert.ok(coldOpenInput);
+  assert.ok(emptyH.root.querySelector("#sponsor-field-hostNotes"), "internal-research expanded without details");
+  coldOpenInput.value = "Hook: the first computer program.";
+  await coldOpenInput.dispatch("input");
+
+  // Switch back to Guest intake -> unsaved guest edits are still there
   await emptyH.root.querySelector("#podcast-tab-guest").click();
   assert.equal(emptyH.history.at(-1)[2], "/podcast-docs/sdoc-pod-1");
   assert.equal(emptyH.root.querySelector("#sponsor-field-guestName").value, "Ada Lovelace (Edited)");
-
-  // Switch back to Internal -> still in Edit mode and unsaved questions edit is preserved
-  await emptyH.root.querySelector("#podcast-tab-internal").click();
   assert.equal(emptyH.root.querySelector("#sponsor-field-interviewQuestions").value, "1. What inspired the Analytical Engine?");
+
+  // Switch back to Internal -> still in Edit mode and unsaved coldOpen edit is preserved
+  await emptyH.root.querySelector("#podcast-tab-internal").click();
+  assert.equal(emptyH.root.querySelector("#sponsor-field-coldOpen").value, "Hook: the first computer program.");
 
   // Save internal changes via PUT
   await findByText(emptyH.root, "Save internal changes", "button").click();
@@ -338,6 +358,7 @@ test("staff two-tab navigation smart-defaults Host/Edit modes, preserves unsaved
   const sent = JSON.parse(putCall[1].body);
   assert.equal(sent.content.guestName, "Ada Lovelace (Edited)");
   assert.equal(sent.content.interviewQuestions, "1. What inspired the Analytical Engine?");
+  assert.equal(sent.content.coldOpen, "Hook: the first computer program.");
   assert.match(emptyH.root.querySelector("[data-sponsor-feedback]").textContent, /Saved draft/);
   emptyH.controller.destroy();
 

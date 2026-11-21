@@ -266,7 +266,7 @@ function buildGuestSnapshot({ el, doc, draftContent, guestZone }) {
   return snapshot;
 }
 
-function buildRunSheetSection({ el, actionBtn, draftContent, onEditPrep }) {
+function buildRunSheetSection({ el, actionBtn, draftContent, onEditPrep, onEditQuestions }) {
   const section = el("section", "podcast-host-runsheet");
   const head = el("div", "podcast-host-runsheet__head");
   const meta = el("div", "podcast-host-runsheet__meta");
@@ -278,7 +278,7 @@ function buildRunSheetSection({ el, actionBtn, draftContent, onEditPrep }) {
     "dk-button dk-button--secondary dk-button--sm",
     "Edit questions",
     "",
-    () => onEditPrep?.(),
+    () => (onEditQuestions ? onEditQuestions() : onEditPrep?.()),
   );
   editBtn.dataset.podcastAction = "edit-questions";
   head.append(meta, editBtn);
@@ -423,12 +423,13 @@ export function renderPodcastHostView({
   qnaState,
   onLoadQna,
   onEditPrep,
+  onEditQuestions,
 }) {
   const container = el("div", "sponsor-doc-card podcast-host-view");
   container.dataset.podcastQuestionsView = "readonly";
   container.append(
     buildGuestSnapshot({ el, doc, draftContent, guestZone }),
-    buildRunSheetSection({ el, actionBtn, draftContent, onEditPrep }),
+    buildRunSheetSection({ el, actionBtn, draftContent, onEditPrep, onEditQuestions }),
     buildHostQnaSection({ el, actionBtn, doc, qnaState, onLoadQna }),
   );
   return container;
@@ -557,6 +558,7 @@ export function renderPodcastTwoTabWorkspace({
   onSelectMode,
   onLoadQna,
   onEditPrep,
+  onEditQuestions,
   onCopyExport,
 }) {
   const { guestSections, internalSections } = splitPodcastSections(sections);
@@ -613,6 +615,7 @@ export function renderPodcastTwoTabWorkspace({
       qnaState,
       onLoadQna,
       onEditPrep,
+      onEditQuestions,
     }));
   } else {
     internalPanel.append(buildFormElement({

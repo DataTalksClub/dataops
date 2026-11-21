@@ -867,6 +867,11 @@ export function createSponsorDocPage({
           syncPodcastUrl();
           render();
         },
+        onEditQuestions: () => {
+          activePodcastTab = "guest";
+          syncPodcastUrl();
+          render();
+        },
         onCopyExport: () => copyText(doc.markdownExport, "Copied Markdown export to clipboard."),
       });
       return;
