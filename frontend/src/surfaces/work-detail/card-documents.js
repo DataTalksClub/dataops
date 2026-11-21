@@ -1,4 +1,5 @@
-import { renderCardSponsorDocsSection } from './card-summary.js';
+import { opensInNewTab } from '../../core/links.js';
+import { isEventCard, renderCardSponsorDocsSection, visibleCardDocs } from './card-summary.js';
 
 const drafts = new Map();
 const workspaces = new WeakMap();
@@ -176,6 +177,163 @@ export function renderCardDocuments({ card, request, workApiUrl }) {
   section.append(heading, privacy, form, status, list);
   void load();
   return section;
+}
+
+/**
+ * Top-of-card quick bar for event cards:
+ * - Podcast: immediate `/podcast-docs/` link (AC12) + one-click live questions preview (AC19)
+ * - All event cards (podcast, webinar, workshop): optional "Sponsored" flag toggle (AC18)
+ */
+export function renderCardEventQuickBar({ card, request, workApiUrl, reload }) {
+  if (!isEventCard(card)) return null;
+  const docs = visibleCardDocs(card);
+  const podcastDoc = docs.find((d) => String(d.template || '') === 'podcast');
+  const podcastLinkFromCard = (card.cardLinks || []).find((l) => /\/podcast-docs\/[^/?#]+/.test(String(l.url || '')));
+  const podcastDocUrl = podcastDoc
+    ? `/podcast-docs/${encodeURIComponent(podcastDoc.id)}`
+    : (podcastLinkFromCard?.url || '');
+
+  const bar = document.createElement('section');
+  bar.className = 'workflow-detail-section card-event-quick-bar';
+  bar.dataset.cardEventQuickBar = '';
+
+  const row = document.createElement('div');
+  row.className = 'card-newsletter-slot__row';
+
+  if (podcastDocUrl) {
+    const docLink = document.createElement('a');
+    docLink.href = podcastDocUrl;
+    docLink.className = 'dk-button dk-button--secondary dk-button--sm';
+    docLink.dataset.cardPodcastDocTopLink = '';
+    docLink.textContent = 'Open Guest Document (/podcast-docs/)';
+    opensInNewTab(docLink);
+    row.append(docLink);
+  }
+
+  let previewPanel = null;
+  if (podcastDoc || card.qna?.url) {
+    const qBtn = document.createElement('button');
+    qBtn.type = 'button';
+    qBtn.className = 'dk-button dk-button--primary dk-button--sm';
+    qBtn.dataset.cardLiveQuestionsTrigger = '';
+    qBtn.textContent = 'Live questions preview';
+    row.append(qBtn);
+
+    previewPanel = document.createElement('div');
+    previewPanel.className = 'card-live-questions-preview';
+    previewPanel.dataset.cardLiveQuestionsPanel = '';
+    previewPanel.hidden = true;
+
+    qBtn.addEventListener('click', async () => {
+      if (!previewPanel.hidden) {
+        previewPanel.hidden = true;
+        qBtn.textContent = 'Live questions preview';
+        return;
+      }
+      qBtn.disabled = true;
+      qBtn.textContent = 'Loading questions…';
+      previewPanel.replaceChildren();
+      try {
+        const [docResult, qnaResult] = await Promise.allSettled([
+          podcastDoc ? request(workApiUrl(`/api/sponsor-docs/${encodeURIComponent(podcastDoc.id)}`)) : Promise.resolve(null),
+          card.qna?.url ? request(workApiUrl(`/api/cards/${encodeURIComponent(card.id)}/qna/questions`)) : Promise.resolve(null),
+        ]);
+        const docContent = docResult.status === 'fulfilled' ? (docResult.value?.doc?.content || {}) : {};
+        const preparedFields = [
+          ['Cold open', docContent.coldOpen],
+          ['Intro script', docContent.introScript],
+          ['Interview questions', docContent.interviewQuestions],
+          ['Topics to cover', docContent.topicsToCover],
+          ['Topics to avoid', docContent.topicsToAvoid],
+          ['Closing script', docContent.closingScript],
+        ].filter(([, val]) => String(val || '').trim());
+
+        const prepHeading = document.createElement('strong');
+        prepHeading.textContent = 'Podcast questions & run flow';
+        previewPanel.append(prepHeading);
+        if (preparedFields.length) {
+          for (const [label, val] of preparedFields) {
+            const block = document.createElement('div');
+            block.className = 'card-live-questions-block';
+            const h = document.createElement('div');
+            h.className = 'dk-hint';
+            h.textContent = label;
+            const pre = document.createElement('pre');
+            pre.className = 'card-live-questions-text';
+            pre.textContent = String(val).trim();
+            block.append(h, pre);
+            previewPanel.append(block);
+          }
+        } else {
+          const emptyPrep = document.createElement('p');
+          emptyPrep.className = 'dk-hint';
+          emptyPrep.textContent = 'No prepared questions in the podcast document yet.';
+          previewPanel.append(emptyPrep);
+        }
+
+        const qnaQuestions = qnaResult.status === 'fulfilled' && Array.isArray(qnaResult.value?.questions)
+          ? qnaResult.value.questions
+          : (Array.isArray(card.qna?.questions) ? card.qna.questions : []);
+        const qnaHeading = document.createElement('strong');
+        qnaHeading.textContent = `Audience Q&A questions (${qnaQuestions.length})`;
+        previewPanel.append(qnaHeading);
+        if (qnaQuestions.length) {
+          const list = document.createElement('ol');
+          list.className = 'card-qna__questions';
+          for (const q of qnaQuestions) {
+            const li = document.createElement('li');
+            li.textContent = `${q.text} — ${q.authorName || 'Anonymous'}${q.score > 1 ? ` (+${q.score})` : ''}${q.status === 'answered' ? ' ✓ answered' : ''}`;
+            list.append(li);
+          }
+          previewPanel.append(list);
+        } else {
+          const emptyQna = document.createElement('p');
+          emptyQna.className = 'dk-hint';
+          emptyQna.textContent = card.qna?.url ? 'No audience questions yet.' : 'No Q&A room linked to this card.';
+          previewPanel.append(emptyQna);
+        }
+
+        previewPanel.hidden = false;
+        qBtn.textContent = 'Hide live questions';
+      } catch (err) {
+        const errP = document.createElement('p');
+        errP.className = 'dk-hint';
+        errP.textContent = `Could not load questions: ${err?.message || 'request failed'}`;
+        previewPanel.append(errP);
+        previewPanel.hidden = false;
+        qBtn.textContent = 'Hide live questions';
+      } finally {
+        qBtn.disabled = false;
+      }
+    });
+  }
+
+  const sponsoredLabel = document.createElement('label');
+  sponsoredLabel.className = 'card-sponsored-toggle';
+  const sponsoredCheck = document.createElement('input');
+  sponsoredCheck.type = 'checkbox';
+  sponsoredCheck.checked = card.sponsored === true;
+  sponsoredCheck.dataset.cardSponsoredToggle = '';
+  sponsoredCheck.addEventListener('change', async () => {
+    sponsoredCheck.disabled = true;
+    try {
+      await request(workApiUrl(`/api/cards/${encodeURIComponent(card.id)}`), {
+        method: 'PUT',
+        body: JSON.stringify({ expectedVersion: card.version, sponsored: sponsoredCheck.checked }),
+      });
+      await reload?.();
+    } catch {
+      sponsoredCheck.checked = card.sponsored === true;
+    } finally {
+      sponsoredCheck.disabled = false;
+    }
+  });
+  sponsoredLabel.append(sponsoredCheck, document.createTextNode(' Sponsored'));
+  row.append(sponsoredLabel);
+
+  bar.append(row);
+  if (previewPanel) bar.append(previewPanel);
+  return bar;
 }
 
 /** Keep the Card panel's document composition in one section owner. */

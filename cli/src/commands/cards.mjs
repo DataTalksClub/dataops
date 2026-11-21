@@ -194,9 +194,12 @@ export async function show(args, io) {
   for (const task of result.tasks) {
     if (task.linkedCard) io.print(`task link: ${task.description} -> ${linkedCardLabel(task.linkedCard)} ${portalUrl(api, task.linkedCard.url)}`);
   }
+  const legacyPodcastTemplates = new Set(["podcast-episode-brief", "podcast-guest-research", "podcast-run-sheet"]);
   for (const doc of card.sponsorDocs || []) {
+    if (legacyPodcastTemplates.has(doc.template)) continue;
     const edited = doc.lastEditedAt ? `, last edited ${doc.lastEditedAt} by ${doc.lastEditedBy || "staff"}` : "";
-    io.print(`sponsor doc: ${doc.id} [${doc.status}] (${doc.template}${edited})`);
+    const kind = ["podcast", "webinar", "workshop"].includes(doc.template) ? "guest doc" : "sponsor doc";
+    io.print(`${kind}: ${doc.id} [${doc.status}] (${doc.template}${edited})`);
   }
   io.print("");
   table(

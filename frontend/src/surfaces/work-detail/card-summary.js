@@ -147,12 +147,43 @@ const DOC_KINDS = {
   podcast: { path: "podcast-docs", label: "Guest materials" },
 };
 
+const LEGACY_PODCAST_TEMPLATES = new Set([
+  "podcast-episode-brief",
+  "podcast-guest-research",
+  "podcast-run-sheet",
+]);
+
+const EVENT_CARD_TYPES = new Set(["podcast", "webinar", "workshop"]);
+
+export function isEventCard(card) {
+  const type = String(card?.templateDefinitionSnapshot?.type || card?.templateType || "").toLowerCase();
+  if (EVENT_CARD_TYPES.has(type)) return true;
+  const docs = Array.isArray(card?.sponsorDocs) ? card.sponsorDocs : [];
+  return docs.some((d) => {
+    const t = String(d?.template || "");
+    return EVENT_CARD_TYPES.has(t) || t.startsWith("podcast-");
+  });
+}
+
+export function visibleCardDocs(card) {
+  const raw = Array.isArray(card?.sponsorDocs) ? card.sponsorDocs : [];
+  const eventCard = isEventCard(card);
+  return raw.filter((doc) => {
+    const tpl = String(doc?.template || "");
+    if (LEGACY_PODCAST_TEMPLATES.has(tpl)) return false;
+    if (eventCard && tpl.startsWith("newsletter-")) return false;
+    return true;
+  });
+}
+
 function docKind(doc) {
-  return DOC_KINDS[String(doc.template || "")] || { path: "sponsor-docs", label: "Sponsor document" };
+  const tpl = String(doc.template || "");
+  if (tpl.startsWith("podcast-")) return DOC_KINDS.podcast;
+  return DOC_KINDS[tpl] || { path: "sponsor-docs", label: "Sponsor document" };
 }
 
 export function renderCardSponsorDocsSection(card) {
-  const docs = Array.isArray(card?.sponsorDocs) ? card.sponsorDocs : [];
+  const docs = visibleCardDocs(card);
   if (!docs.length) return null;
   const section = document.createElement("div");
   section.className = "task-history workflow-detail-section card-sponsor-docs-section";
@@ -445,7 +476,7 @@ export function createCardSummary(context) {
     chip.textContent = `${flag.count} ${flag.label}`;
     flagRow.append(chip);
   }
-  const sponsorDocs = Array.isArray(card.sponsorDocs) ? card.sponsorDocs : [];
+  const sponsorDocs = visibleCardDocs(card);
   for (const sdoc of sponsorDocs) {
     const chip = document.createElement("small");
     const isSubmitted = sdoc.status === "submitted";
@@ -454,6 +485,13 @@ export function createCardSummary(context) {
     const kindLabel = DOC_KINDS[String(sdoc.template || "")]?.label || "Sponsor doc";
     chip.textContent = isSubmitted ? `${kindLabel}: Submitted / Ready` : `${kindLabel}: Draft`;
     flagRow.append(chip);
+  }
+  if (card.sponsored === true) {
+    const sponsoredChip = document.createElement("small");
+    sponsoredChip.className = "workflow-card-flag is-info";
+    sponsoredChip.dataset.cardSponsoredFlag = "true";
+    sponsoredChip.textContent = "Sponsored";
+    flagRow.append(sponsoredChip);
   }
   summaryTop.append(countRow);
   if (flagRow.children.length > 0) summaryTop.append(flagRow);

@@ -94,8 +94,8 @@ function extractDocId(pathname) {
 
 /** Podcast guest form reads as guest materials everywhere, never sponsor. */
 function isPodcastGuestDoc(doc) {
-  return String(doc?.template || doc?.templateDefinition?.key || "") === "podcast"
-    || String(doc?.templateDefinition?.key || "") === "podcast";
+  const key = String(doc?.template || doc?.templateDefinition?.key || "");
+  return key === "podcast" || key.startsWith("podcast-");
 }
 
 /** Webinar and workshop forms are filled by the speaker. */
@@ -133,6 +133,7 @@ export function createSponsorDocPage({
   let draftContent = {};
   let fieldErrors = {};
   let uploadedVisualName = "";
+  let questionsOnly = false;
   let phase = "loading";
   let gateError = "";
   let feedbackMsg = "";
@@ -402,6 +403,18 @@ export function createSponsorDocPage({
     const badge = el("span", badgeClass, isSubmitted ? "Submitted / Ready" : "Draft");
     badge.dataset.sponsorDocStatus = doc.status;
     titleRow.append(el("h1", "sponsor-doc-title", formTitle), badge);
+    if (isPodcastGuestDoc(doc)) {
+      const viewQBtn = actionBtn(
+        "dk-button dk-button--secondary dk-button--sm",
+        questionsOnly ? "Back to form" : "View questions",
+        "toggle-questions-view",
+        () => {
+          questionsOnly = !questionsOnly;
+          render();
+        },
+      );
+      titleRow.append(viewQBtn);
+    }
 
     const { metaRow, guestSchedule, guestZone } = guestEventMetadataRow({
       el, doc, tDef, draftContent, isSpeakerDoc, isPodcastGuestDoc, formatEditorLabel,
@@ -418,7 +431,7 @@ export function createSponsorDocPage({
       const topRow = el("div", "sponsor-doc-staff-bar__row");
       const shareInfo = el("div", "");
       shareInfo.append(
-        el("strong", "", isSpeakerDoc(doc) ? "Shareable speaker link (includes access code): " : "Shareable sponsor link (includes access code): "),
+        el("strong", "", isSpeakerDoc(doc) ? "Shareable speaker link (includes access code): " : isPodcastGuestDoc(doc) ? "Shareable guest link (includes access code): " : "Shareable sponsor link (includes access code): "),
         el("code", "dk-mono", doc.shareUrl || doc.docUrl || ""),
       );
       topRow.append(shareInfo);
@@ -505,6 +518,38 @@ export function createSponsorDocPage({
     }
 
     root.append(headerCard);
+
+    if (questionsOnly && isPodcastGuestDoc(doc)) {
+      const qCard = el("div", "sponsor-doc-card sponsor-doc-questions-view");
+      qCard.dataset.podcastQuestionsView = "readonly";
+      const qHead = el("div", "sponsor-doc-title-row");
+      qHead.append(el("h2", "sponsor-doc-section__title", "Episode Questions (Read-only recording view)"));
+      qCard.append(qHead);
+      const qFields = [
+        ["Cold Open", draftContent.coldOpen],
+        ["Intro Script", draftContent.introScript],
+        ["Interview Questions", draftContent.interviewQuestions],
+        ["Topics to Cover", draftContent.topicsToCover],
+        ["Topics to Avoid", draftContent.topicsToAvoid],
+        ["Closing Script", draftContent.closingScript],
+      ];
+      let hasAny = false;
+      for (const [labelText, val] of qFields) {
+        const text = String(val || "").trim();
+        if (!text) continue;
+        hasAny = true;
+        const sec = el("div", "sponsor-doc-section");
+        sec.append(el("h3", "sponsor-doc-field__label", labelText));
+        const pre = el("pre", "sponsor-doc-export-pre", text);
+        sec.append(pre);
+        qCard.append(sec);
+      }
+      if (!hasAny) {
+        qCard.append(el("p", "dk-hint", "No questions or topics added to this document yet."));
+      }
+      root.append(qCard);
+      return;
+    }
 
     // 2. Editor form card + optional Live Preview pane
     const showLivePreview = isNewsletterTemplate(doc.template, tDef);
@@ -925,6 +970,7 @@ export function createSponsorDocPage({
     const extracted = extractDocId(url.pathname);
     docId = extracted.id;
     docPathPrefix = SPONSOR_DOC_PATH_PREFIXES.includes(extracted.prefix) ? extracted.prefix : "/sponsor-docs";
+    questionsOnly = url.searchParams.get("view") === "questions";
     const queryCode = url.searchParams.get("code");
     if (queryCode !== null) {
       accessCode = formatUserCode(queryCode);

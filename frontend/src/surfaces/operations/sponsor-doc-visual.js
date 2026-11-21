@@ -27,9 +27,10 @@ export function mountSponsorDocVisualControls({
   const visualControls = el("div", "sponsor-doc-visual-upload");
   visualControls.dataset.sponsorVisualControls = fieldDef.key;
 
+  const isPhotoField = fieldDef.key === "photoUrl";
   const fileInputId = `sponsor-visual-file-${fieldDef.key}`;
   const uploadClass = "dk-button dk-button--secondary dk-button--sm sponsor-doc-visual-upload__label";
-  const uploadLabel = el("label", uploadClass, "Upload visual");
+  const uploadLabel = el("label", uploadClass, isPhotoField ? "Upload photo" : "Upload visual");
   uploadLabel.setAttribute("for", fileInputId);
 
   const fileInput = el("input", "sponsor-doc-visual-upload__input");
@@ -80,7 +81,14 @@ export function mountSponsorDocVisualControls({
     const v = String(rawVal || "").trim();
     visualPreview.replaceChildren();
     if (!v) {
-      visualPreview.hidden = true;
+      if (isPhotoField) {
+        visualPreview.hidden = false;
+        const placeholder = el("p", "dk-hint sponsor-doc-photo-placeholder", "No photo yet — upload a portrait or paste an image URL to see a preview.");
+        placeholder.dataset.sponsorPhotoPlaceholder = "";
+        visualPreview.append(placeholder);
+      } else {
+        visualPreview.hidden = true;
+      }
       return;
     }
     visualPreview.hidden = false;
@@ -103,7 +111,7 @@ export function mountSponsorDocVisualControls({
     }
   }
 
-  const clearBtn = actionBtn("dk-button dk-button--secondary dk-button--sm", "Remove visual", "clear-visual", () => {
+  const clearBtn = actionBtn("dk-button dk-button--secondary dk-button--sm", isPhotoField ? "Remove photo" : "Remove visual", "clear-visual", () => {
     setUploadedVisualName("");
     draftContent[fieldDef.key] = "";
     control.value = "";
