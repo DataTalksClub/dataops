@@ -171,6 +171,7 @@
     "src/surfaces/operations/sponsor-doc-event-time.js",
     "src/surfaces/operations/sponsor-doc-gate.js",
     "src/surfaces/operations/sponsor-doc-guest-schedule.js",
+    "src/surfaces/operations/sponsor-doc-podcast.js",
     "src/surfaces/operations/sponsor-doc-radio.js",
     "src/surfaces/operations/sponsor-doc-select.js",
     "src/surfaces/operations/sponsor-docs.js",
