@@ -102,11 +102,13 @@ test.describe("podcast guest materials form", () => {
     page,
   }) => {
     test.setTimeout(60_000);
+    // Episodes release strictly in number order: the first test's S25E9 is
+    // on this same server two weeks out, so S25E8 releases the week before.
     const episode = await api("/api/podcast-episodes", {
       season: 25,
       episode: 8,
       releaseAssignmentStatus: "provisional",
-      releaseDate: releaseFriday(21),
+      releaseDate: releaseFriday(7),
       title: "Guest form alias e2e",
       guests: [{ name: "Alias Guest" }],
       status: "booked",
