@@ -453,20 +453,13 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
       cardId: card.id,
     });
 
-    // Create linked guest materials doc and episode brief doc
+    // Create linked guest materials doc (one per podcast card)
     const guestDocRes = await invoke('POST', '/api/sponsor-docs', {
       cardId: card.id,
       template: 'podcast',
     });
     assert.equal(guestDocRes.statusCode, 201, guestDocRes.body);
     const guestDoc = parse(guestDocRes).doc;
-
-    const briefDocRes = await invoke('POST', '/api/sponsor-docs', {
-      cardId: card.id,
-      template: 'podcast-episode-brief',
-    });
-    assert.equal(briefDocRes.statusCode, 201, briefDocRes.body);
-    const briefDoc = parse(briefDocRes).doc;
 
     // 1. PROPOSE on 2026-11-05 midday (12:30 Berlin)
     const proposeRes = await invoke('POST', `/api/events/${card.id}/propose`, {
@@ -524,7 +517,7 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
     assert.equal(parse(driftCardRes).code, 'event_hold_owns_date');
 
     // AC9: Linked docs reflect 2026-11-05 12:30 tentative live
-    for (const docId of [guestDoc.id, briefDoc.id]) {
+    for (const docId of [guestDoc.id]) {
       const liveDoc = parse(await invoke('GET', `/api/sponsor-docs/${docId}`)).doc;
       assert.equal(liveDoc.eventMetadata.date, '2026-11-05');
       assert.equal(liveDoc.eventMetadata.time, '12:30');
@@ -553,7 +546,7 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
     // Invite task automatically completed on approve
     assert.equal((await getTask(client, inviteTask.id))?.status, 'done');
     // Linked docs now show confirmed
-    for (const docId of [guestDoc.id, briefDoc.id]) {
+    for (const docId of [guestDoc.id]) {
       const liveDoc = parse(await invoke('GET', `/api/sponsor-docs/${docId}`)).doc;
       assert.equal(liveDoc.eventMetadata.state, 'confirmed');
       assert.match(liveDoc.eventMetadata.label, /5 Nov 2026 12:30 Europe\/Berlin \(confirmed\)/);
@@ -595,7 +588,7 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
     assert.equal(epAfterResched.recordingDate, '2026-12-01');
     assert.equal(epAfterResched.recordingTime, '12:30');
     assert.equal(epAfterResched.recordingEventStatus, 'proposed');
-    for (const docId of [guestDoc.id, briefDoc.id]) {
+    for (const docId of [guestDoc.id]) {
       const liveDoc = parse(await invoke('GET', `/api/sponsor-docs/${docId}`)).doc;
       assert.equal(liveDoc.eventMetadata.date, '2026-12-01');
       assert.equal(liveDoc.eventMetadata.state, 'tentative');
@@ -606,7 +599,7 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
     const reapproveRes = await invoke('POST', `/api/events/${card.id}/approve`, {});
     assert.equal(reapproveRes.statusCode, 200, reapproveRes.body);
     assert.equal(parse(reapproveRes).event.status, 'approved');
-    for (const docId of [guestDoc.id, briefDoc.id]) {
+    for (const docId of [guestDoc.id]) {
       const liveDoc = parse(await invoke('GET', `/api/sponsor-docs/${docId}`)).doc;
       assert.equal(liveDoc.eventMetadata.label, 'Tue, 1 Dec 2026 12:30 Europe/Berlin (confirmed)');
     }
@@ -620,7 +613,7 @@ describe('Unified Event Lifecycle Service & API (AC3, AC4, AC5, AC7, AC8, AC9)',
     for (const cal of [HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS]) {
       assert.equal(googleMock.calendars.get(cal)!.size, 0, `Google event deleted on ${cal}`);
     }
-    for (const docId of [guestDoc.id, briefDoc.id]) {
+    for (const docId of [guestDoc.id]) {
       const liveDoc = parse(await invoke('GET', `/api/sponsor-docs/${docId}`)).doc;
       assert.equal(liveDoc.eventMetadata.state, 'released');
       assert.equal(liveDoc.eventMetadata.label, 'Tue, 1 Dec 2026 12:30 Europe/Berlin (released)');

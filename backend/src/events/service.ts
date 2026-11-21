@@ -29,6 +29,7 @@ import {
   cardGuests,
   closeCardInviteTasks,
   parseCardGuests,
+  resolveGuestDocumentUrlWithCode,
   resolvePodcastCardInviteTitle,
 } from '../calendar/cardInvite';
 import { GuestInviteValidationError, isPodcastTemplateType, type GuestInvite } from '../calendar/guestInvite';
@@ -782,10 +783,11 @@ async function runTransition(
       (card.people?.length
         ? card.people.join(', ')
         : episode?.guests?.map((g) => g.name).join(', ') || current?.renderValues?.guestNames || '');
-    const documentUrl =
+    const rawDocUrl =
       input.documentUrl !== undefined
         ? input.documentUrl
         : current?.renderValues?.documentUrl || cardGuestDocument(card) || '';
+    const documentUrl = (await resolveGuestDocumentUrlWithCode(client, rawDocUrl)) || '';
 
     let time = input.time;
     let proposalDate = input.date || current?.date || card.anchorDate;
@@ -857,10 +859,11 @@ async function runTransition(
       (card.people?.length
         ? card.people.join(', ')
         : episode?.guests?.map((g) => g.name).join(', ') || '');
-    const documentUrl =
+    const rawDocUrl =
       input.documentUrl !== undefined
         ? input.documentUrl
         : current.renderValues.documentUrl || cardGuestDocument(card) || '';
+    const documentUrl = (await resolveGuestDocumentUrlWithCode(client, rawDocUrl)) || '';
     command = {
       transition: 'update',
       operationKey,

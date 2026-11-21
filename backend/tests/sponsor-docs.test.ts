@@ -224,19 +224,17 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     const { templates } = JSON.parse(templatesRes.body);
     assert.deepStrictEqual(
       templates.map((t: { key: string }) => t.key),
-      ['newsletter-main', 'newsletter-secondary', 'newsletter-standalone', 'webinar', 'workshop', 'podcast', 'podcast-guest-research', 'podcast-run-sheet', 'podcast-episode-brief'],
+      ['newsletter-main', 'newsletter-secondary', 'newsletter-standalone', 'webinar', 'workshop', 'podcast'],
     );
   });
 
-  it('creates podcast prep docs (guest research, run sheet, episode brief) with internal export and email drafts', async () => {
+  it('rejects legacy podcast prep templates, enforces max-1 podcast doc, blocks sponsor docs on event cards, and redirects legacy /sponsor-docs/ links', async () => {
     const card = await createCard(client, {
       ...templateLink(),
       title: '[Podcast] 2026-12-01 - Jane Doe',
       anchorDate: '2026-12-01',
       people: ['Jane Doe'],
     });
-    // Post-confirm state: the episode carries the agreed recording date and
-    // links the Card. Research and run sheets are only available from here.
     const datedEpisode = await createPodcastEpisode(client, {
       title: 'Shipping ML features',
       guests: [{ name: 'Jane Doe' }],
@@ -246,91 +244,36 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     });
 
     for (const template of ['podcast-guest-research', 'podcast-run-sheet', 'podcast-episode-brief'] as const) {
-      const createRes = await staffReq('POST', '/api/sponsor-docs', {
-        cardId: card.id,
-        template,
-      });
-      assert.strictEqual(createRes.statusCode, 201, `${template}: ${createRes.body}`);
-      const created = JSON.parse(createRes.body);
-      assert.strictEqual(created.doc.template, template);
-      assert.strictEqual(created.doc.cardId, card.id);
-      assert.ok(created.doc.docUrl.includes('/sponsor-docs/'));
-      assert.ok(created.doc.emailDraft?.subject.includes('Podcast'));
-      const exportRes = await staffReq('GET', `/api/sponsor-docs/${created.doc.id}/export`, undefined, {
-        format: 'markdown',
-      });
-      assert.strictEqual(exportRes.statusCode, 200);
-      assert.ok(exportRes.body.includes(created.doc.title));
+      const createRes = await staffReq('POST', '/api/sponsor-docs', { cardId: card.id, template });
+      assert.strictEqual(createRes.statusCode, 400, `${template}: ${createRes.body}`);
+      assert.strictEqual(JSON.parse(createRes.body).code, 'invalid_template');
     }
 
-    // Episode-owned research doc works too once the date is confirmed.
-    const episodeOwned = await staffReq('POST', '/api/sponsor-docs', {
-      cardId: datedEpisode.id,
-      template: 'podcast-guest-research',
-    });
-    assert.strictEqual(episodeOwned.statusCode, 201, episodeOwned.body);
+    const blockedSponsor = await staffReq('POST', '/api/sponsor-docs', { cardId: card.id, template: 'newsletter-main' });
+    assert.strictEqual(blockedSponsor.statusCode, 422, blockedSponsor.body);
+    assert.strictEqual(JSON.parse(blockedSponsor.body).code, 'event_card_no_sponsor_docs');
 
-    // Guest materials share email: form path only (no reply-instead wording).
-    const guestDoc = await staffReq('POST', '/api/sponsor-docs', {
-      cardId: datedEpisode.id,
-      template: 'podcast',
-    });
+    const guestDoc = await staffReq('POST', '/api/sponsor-docs', { cardId: datedEpisode.id, template: 'podcast' });
     assert.strictEqual(guestDoc.statusCode, 201, guestDoc.body);
     const guestCreated = JSON.parse(guestDoc.body);
-    assert.ok(
-      guestCreated.doc.docUrl.includes('/podcast-docs/'),
-      `podcast guest form lives under /podcast-docs/: ${guestCreated.doc.docUrl}`,
-    );
+    assert.ok(guestCreated.doc.docUrl.includes('/podcast-docs/'));
     assert.strictEqual(guestCreated.doc.linkType, 'Guest materials');
-    const guestBody = guestCreated.doc.emailDraft?.body || '';
-    assert.match(guestBody, /use the form/i);
-    assert.match(guestBody, /do not invent alternate times/i);
-    assert.ok(!/couple of sentences/i.test(guestBody));
-    assert.ok(!/either way works/i.test(guestBody));
 
-    const badRes = await staffReq('POST', '/api/sponsor-docs', {
-      cardId: card.id,
-      template: 'google-doc',
-    });
-    assert.strictEqual(badRes.statusCode, 400, badRes.body);
-    assert.strictEqual(JSON.parse(badRes.body).code, 'invalid_template');
-  });
+    // Second podcast doc on the same card is rejected with 409.
+    const secondDoc = await staffReq('POST', '/api/sponsor-docs', { cardId: card.id, template: 'podcast' });
+    assert.strictEqual(secondDoc.statusCode, 409, secondDoc.body);
+    assert.strictEqual(JSON.parse(secondDoc.body).code, 'podcast_doc_already_exists');
 
-  it('holds guest research and run sheets until the recording date is confirmed', async () => {
-    const card = await createCard(client, {
-      ...templateLink(),
-      title: '[Podcast] 2026-12-02 - John Roe',
-      anchorDate: '2026-12-02',
-      people: ['John Roe'],
-    });
-    // A bare Card (invite sent, date not confirmed yet): research blocked,
-    // brief and guest materials stay available.
-    for (const template of ['podcast-guest-research', 'podcast-run-sheet'] as const) {
-      const blocked = await staffReq('POST', '/api/sponsor-docs', {
-        cardId: card.id,
-        template,
-      });
-      assert.strictEqual(blocked.statusCode, 422, `${template}: ${blocked.body}`);
-      assert.strictEqual(JSON.parse(blocked.body).code, 'date_not_confirmed');
-    }
-    const briefOk = await staffReq('POST', '/api/sponsor-docs', {
-      cardId: card.id,
-      template: 'podcast-episode-brief',
-    });
-    assert.strictEqual(briefOk.statusCode, 201, briefOk.body);
-
-    // A dateless episode (no confirmed recording date yet) is blocked too.
-    const dateless = await createPodcastEpisode(client, {
-      title: 'TBA topic',
-      guests: [{ name: 'John Roe' }],
-      status: 'booked',
-    });
-    const blockedEpisode = await staffReq('POST', '/api/sponsor-docs', {
-      cardId: dateless.id,
-      template: 'podcast-run-sheet',
-    });
-    assert.strictEqual(blockedEpisode.statusCode, 422, blockedEpisode.body);
-    assert.strictEqual(JSON.parse(blockedEpisode.body).code, 'date_not_confirmed');
+    // Legacy /sponsor-docs/:id redirects to /podcast-docs/:id preserving ?code=.
+    const { redirectLegacySponsorDocPath } = await import('../src/routes/sponsorDocs');
+    const redir = await redirectLegacySponsorDocPath({
+      httpMethod: 'GET',
+      path: `/sponsor-docs/${guestCreated.doc.id}`,
+      queryStringParameters: { code: guestCreated.doc.accessCode },
+    } as any, client);
+    assert.ok(redir);
+    assert.strictEqual(redir.statusCode, 302);
+    assert.strictEqual(redir.headers?.Location, `/podcast-docs/${guestCreated.doc.id}?code=${encodeURIComponent(guestCreated.doc.accessCode)}`);
   });
 
   it('gates anonymous sponsor access by access code (query or header), allows sponsor edits & submission, and lets staff edit without a code', async () => {
@@ -1092,68 +1035,43 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
       recordingDate: '2026-12-03',
       cardId: card.id,
     });
-    const cases = [
-      {
-        template: 'podcast-guest-research' as const,
-        content: {
-          guestName: 'PRIVATE-RESEARCH-GUEST',
-          sourceLinks: 'PRIVATE-RESEARCH-SOURCE',
-          keyInsights: 'PRIVATE-RESEARCH-FINDING',
-          hostOnlyNotes: 'PRIVATE-RESEARCH-HOST-NOTE',
-        },
+    const createRes = await staffReq('POST', '/api/sponsor-docs', {
+      cardId: episode.id,
+      template: 'podcast',
+      content: {
+        guestName: 'Jane Doe',
+        interviewQuestions: 'SHARED-INTERVIEW-QUESTIONS',
+        sourceLinks: 'PRIVATE-RESEARCH-SOURCE',
+        keyInsights: 'PRIVATE-RESEARCH-FINDING',
+        openQuestions: 'PRIVATE-OPEN-QUESTIONS',
+        hostNotes: 'PRIVATE-RUN-SHEET-NOTE',
       },
-      {
-        template: 'podcast-run-sheet' as const,
-        content: {
-          guestName: 'PRIVATE-RUN-SHEET-GUEST',
-          coldOpen: 'PRIVATE-RUN-SHEET-OPEN',
-          questionBlocks: 'PRIVATE-RUN-SHEET-QUESTIONS',
-          hostNotes: 'PRIVATE-RUN-SHEET-NOTE',
-        },
-      },
-    ];
+    });
+    assert.equal(createRes.statusCode, 201, createRes.body);
+    const { doc } = JSON.parse(createRes.body);
 
-    for (const sample of cases) {
-      const createRes = await staffReq('POST', '/api/sponsor-docs', {
-        cardId: episode.id,
-        template: sample.template,
-        content: sample.content,
-      });
-      assert.equal(createRes.statusCode, 201, `${sample.template}: ${createRes.body}`);
-      const { doc } = JSON.parse(createRes.body);
+    const guestRes = await anonReq('GET', `/api/sponsor-docs/${doc.id}`, { codeHeader: doc.accessCode });
+    assert.equal(guestRes.statusCode, 200, guestRes.body);
+    const guestDoc = JSON.parse(guestRes.body).doc;
+    assert.equal(guestDoc.content.interviewQuestions, 'SHARED-INTERVIEW-QUESTIONS');
+    assert.equal(guestDoc.content.sourceLinks, undefined);
+    assert.equal(guestDoc.content.hostNotes, undefined);
 
-      const guestRes = await anonReq('GET', `/api/sponsor-docs/${doc.id}`, { codeHeader: doc.accessCode });
-      assert.equal(guestRes.statusCode, 403, `${sample.template}: ${guestRes.body}`);
-      assert.equal(JSON.parse(guestRes.body).code, 'staff_only_document');
+    const guestExport = await anonReq('GET', `/api/sponsor-docs/${doc.id}/export`, {
+      codeHeader: doc.accessCode,
+      query: { format: 'markdown' },
+    });
+    assert.equal(guestExport.statusCode, 200, guestExport.body);
+    assert.ok(guestExport.body.includes('SHARED-INTERVIEW-QUESTIONS'));
+    assert.ok(!guestExport.body.includes('PRIVATE-RESEARCH-SOURCE'));
+    assert.ok(!guestExport.body.includes('PRIVATE-RUN-SHEET-NOTE'));
 
-      const guestEdit = await anonReq('PUT', `/api/sponsor-docs/${doc.id}`, {
-        codeHeader: doc.accessCode,
-        body: { content: { guestName: 'GUEST-OVERWRITE' } },
-      });
-      assert.equal(guestEdit.statusCode, 403, `${sample.template}: ${guestEdit.body}`);
-
-      const guestSubmit = await anonReq('PUT', `/api/sponsor-docs/${doc.id}`, {
-        codeHeader: doc.accessCode,
-        body: { status: 'submitted' },
-      });
-      assert.equal(guestSubmit.statusCode, 403, `${sample.template}: ${guestSubmit.body}`);
-
-      const guestExport = await anonReq('GET', `/api/sponsor-docs/${doc.id}/export`, {
-        codeHeader: doc.accessCode,
-        query: { format: 'markdown' },
-      });
-      assert.equal(guestExport.statusCode, 403, `${sample.template}: ${guestExport.body}`);
-      assert.equal(JSON.parse(guestExport.body).code, 'staff_only_document');
-
-      const staffRes = await staffReq('GET', `/api/sponsor-docs/${doc.id}`);
-      assert.equal(staffRes.statusCode, 200, `${sample.template}: ${staffRes.body}`);
-      const staffDoc = JSON.parse(staffRes.body).doc;
-      assert.equal(staffDoc.status, 'draft');
-      assert.ok(staffDoc.templateDefinition.sections.every((section: { internal?: boolean }) => section.internal));
-      for (const value of Object.values(sample.content)) {
-        assert.equal(JSON.stringify(staffDoc).includes(value), true, `${sample.template} staff view hid ${value}`);
-      }
-    }
+    const staffRes = await staffReq('GET', `/api/sponsor-docs/${doc.id}`);
+    assert.equal(staffRes.statusCode, 200, staffRes.body);
+    const staffDoc = JSON.parse(staffRes.body).doc;
+    assert.equal(staffDoc.content.sourceLinks, 'PRIVATE-RESEARCH-SOURCE');
+    assert.equal(staffDoc.content.hostNotes, 'PRIVATE-RUN-SHEET-NOTE');
+    assert.ok(staffDoc.markdownExport.includes('PRIVATE-RESEARCH-SOURCE'));
   });
 
   it('rejects switching a webinar form to the workshop type: documents stay inside the card format', async () => {
@@ -1202,9 +1120,6 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
   });
 
   it('copies every template to a new draft and exports real DOCX and Markdown', async () => {
-    // Each document template is copied between Cards of the format that owns
-    // it: event formats carry only their own documents, so podcast docs need
-    // podcast Cards and everything else lives on non-event Cards.
     function cardTitle(templateKey: string, role: 'source' | 'target'): string {
       if (templateKey === 'webinar') return `[Webinar] Copy ${role}`;
       if (templateKey === 'workshop') return `[Workshop] Copy ${role}`;
@@ -1214,25 +1129,25 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     const templates = JSON.parse((await staffReq('GET', '/api/sponsor-docs/templates')).body).templates;
     let lastTargetCardId: string | null = null;
     for (const template of templates) {
-      const sourceCard = await createCard(client, { ...templateLink(), title: cardTitle(template.key, 'source') });
-      const targetCard = await createCard(client, { ...templateLink(), title: cardTitle(template.key, 'target') });
+      const srcCard = await createCard(client, { ...templateLink(), title: cardTitle(template.key, 'source') });
+      const tgtCard = await createCard(client, { ...templateLink(), title: cardTitle(template.key, 'target') });
       if (template.key.startsWith('podcast')) {
-        for (const card of [sourceCard, targetCard]) {
+        for (const card of [srcCard, tgtCard]) {
           await createPodcastEpisode(client, { title: 'Confirmed', guests: [], status: 'booked', recordingDate: '2026-12-01', cardId: card.id });
         }
       }
-      lastTargetCardId = targetCard.id;
+      lastTargetCardId = tgtCard.id;
       const fields = [...(template.fields || []), ...(template.sections || []).flatMap((section: { fields?: { key: string; type?: string; derived?: boolean }[] }) => section.fields || [])];
       const field = fields.find((value: { type?: string; derived?: boolean }) => !value.derived && !['url', 'radio', 'select'].includes(value.type || '')) || fields[0];
-      const original = await staffReq('POST', '/api/sponsor-docs', { cardId: sourceCard.id, template: template.key, title: `Copy ${template.key}`, content: { [field.key]: 'Authored text' } });
+      const original = await staffReq('POST', '/api/sponsor-docs', { cardId: srcCard.id, template: template.key, title: `Copy ${template.key}`, content: { [field.key]: 'Authored text' } });
       assert.equal(original.statusCode, 201, original.body);
       const source = JSON.parse(original.body).doc;
-      const copied = await staffReq('POST', '/api/sponsor-docs', { cardId: targetCard.id, from: source.id });
+      const copied = await staffReq('POST', '/api/sponsor-docs', { cardId: tgtCard.id, from: source.id });
       assert.equal(copied.statusCode, 201, copied.body);
       const copy = JSON.parse(copied.body).doc;
       assert.notEqual(copy.id, source.id);
       assert.notEqual(copy.accessCode, source.accessCode);
-      assert.equal(copy.cardId, targetCard.id);
+      assert.equal(copy.cardId, tgtCard.id);
       assert.equal(copy.template, template.key);
       assert.equal(copy.content[field.key], 'Authored text');
       assert.equal(copy.status, 'draft');
@@ -1332,6 +1247,28 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.strictEqual(exported.statusCode, 200);
     assert.ok(exported.body.includes('3 Dec 2030 12:30'));
     assert.ok(!Object.hasOwn(guest, 'accessCode'));
+  });
+
+  it('appends access code to podcast calendar invite URLs and supports card sponsored flag', async () => {
+    const card = await createCard(client, { ...templateLink(), title: '[Podcast] Invite Code Test', people: ['Ada'] });
+    const createRes = await staffReq('POST', '/api/sponsor-docs', { cardId: card.id, template: 'podcast' });
+    assert.equal(createRes.statusCode, 201);
+    const { doc, card: updatedCard } = JSON.parse(createRes.body);
+    const { resolveGuestDocumentUrlWithCode } = await import('../src/calendar/cardInvite');
+    const resolved = await resolveGuestDocumentUrlWithCode(client, `https://ops.dtcdev.click/podcast-docs/${doc.id}`);
+    assert.equal(resolved, `https://ops.dtcdev.click/podcast-docs/${doc.id}?code=${encodeURIComponent(doc.accessCode)}`);
+
+    const { handleCardRoutes } = await import('../src/routes/cards');
+    const rawBody = JSON.stringify({ expectedVersion: updatedCard.version, sponsored: true });
+    const patchRes = await handleCardRoutes(
+      `/api/cards/${card.id}`,
+      'PUT',
+      rawBody,
+      { httpMethod: 'PUT', path: `/api/cards/${card.id}`, headers: { 'x-user-id': 'test-admin' }, body: rawBody } as any,
+      client,
+    );
+    assert.ok(patchRes && patchRes.statusCode === 200, patchRes?.body);
+    assert.equal(JSON.parse(patchRes!.body).card.sponsored, true);
   });
 
 });

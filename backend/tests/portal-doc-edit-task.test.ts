@@ -109,12 +109,11 @@ describe('portal doc edits create one open Task for the owner team', () => {
     assert.strictEqual((await portalTasks(card.id)).length, 0);
   });
 
-  it('guest doc (podcast episode brief): edits raise one task naming doc, card and fields', async () => {
+  it('guest doc (podcast): edits raise one task naming doc, card and fields', async () => {
     const card = await createCard(client, { ...templateLink(), title: '[Podcast] 2026-12-01 - Jane Doe', anchorDate: '2026-12-01', people: ['Jane Doe'] });
     await createPodcastEpisode(client, { title: 'Shipping ML features', guests: [{ name: 'Jane Doe' }], status: 'booked', recordingDate: '2026-12-01', cardId: card.id });
-    const doc = await createDoc(card.id, 'podcast-episode-brief');
-    const fieldKey = Object.keys(doc.content).find((key) => doc.content[key] === '' ) as string;
-    assert.ok(fieldKey, 'brief has an editable field');
+    const doc = await createDoc(card.id, 'podcast');
+    const fieldKey = 'guestName';
 
     assert.strictEqual((await externalPut(doc.id, doc.accessCode, { [fieldKey]: 'Guest wrote this' })).statusCode, 200);
     await externalPut(doc.id, doc.accessCode, { [fieldKey]: 'Guest rewrote this' });
@@ -128,13 +127,11 @@ describe('portal doc edits create one open Task for the owner team', () => {
   });
 
   it('different docs on one card keep separate tasks', async () => {
-    const card = await createCard(client, { ...templateLink(), title: '[Podcast] 2026-12-08 - Max Roe', anchorDate: '2026-12-08', people: ['Max Roe'] });
-    await createPodcastEpisode(client, { title: 'Data contracts', guests: [{ name: 'Max Roe' }], status: 'booked', recordingDate: '2026-12-08', cardId: card.id });
-    const a = await createDoc(card.id, 'podcast-episode-brief');
-    const b = await createDoc(card.id, 'podcast');
-    const key = (d: { content: Record<string, string> }) => Object.keys(d.content).find((k) => d.content[k] === '') as string;
-    await externalPut(a.id, a.accessCode, { [key(a)]: 'x' });
-    const resB = await externalPut(b.id, b.accessCode, { [key(b)]: 'y' });
+    const card = await createCard(client, { ...templateLink(), title: '[Newsletter] (10 NOV 2026) #313 - Acme', anchorDate: '2026-11-10', sponsor: 'Acme', cardLinks: [{ name: 'Sponsorship document', url: '' }] });
+    const a = await createDoc(card.id, 'newsletter-main');
+    const b = await createDoc(card.id, 'newsletter-secondary');
+    await externalPut(a.id, a.accessCode, { subjectLine: 'x' });
+    const resB = await externalPut(b.id, b.accessCode, { title: 'y' });
     assert.strictEqual(resB.statusCode, 200, resB.body);
     assert.strictEqual((await portalTasks(card.id)).length, 2);
   });

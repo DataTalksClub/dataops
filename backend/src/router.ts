@@ -62,7 +62,7 @@ import { handleInvoiceReader } from './auth/invoiceReader';
 import { handleKnowledgePublisher } from './auth/knowledgePublisher';
 import { isScopedTokenRequestAllowed } from './auth/tokenScopes';
 import { getApiToken, projectApiToken } from './db/apiTokens';
-import { handleSponsorDocRoutes, isAnonymousSponsorDocRequest } from './routes/sponsorDocs';
+import { handleSponsorDocRoutes, isAnonymousSponsorDocRequest, redirectLegacySponsorDocPath } from './routes/sponsorDocs';
 import { handleClientErrorRoute, isClientErrorReport } from './routes/clientErrors';
 import { handleEmailTemplateRoutes } from './routes/emailTemplates';
 import { handleApiTokenRoutes } from './routes/apiTokens';
@@ -202,6 +202,9 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       const publisherResponse = await handleKnowledgePublisher(event, client);
       if (publisherResponse) return publisherResponse;
     }
+
+    const legacyDocRedirect = await redirectLegacySponsorDocPath(event, client);
+    if (legacyDocRedirect) return legacyDocRedirect;
 
     // ── Single-origin portal layer (docs domain, flag-gated) ─────
     // When the docs domain is enabled, the portal serves the frontend, the docs

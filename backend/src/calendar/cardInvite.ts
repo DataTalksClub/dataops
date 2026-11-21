@@ -22,6 +22,7 @@ import { recordTemplateTypes } from '../cards/cardTitlePattern';
 import { deleteHoldGoogleEvents, fetchGoogleEvent, findGoneGoogleEvents, mergeHoldGoogleResults, syncLumaCalendarEvents, syncSilentGoogleCopies, type HoldGoogleDeps, type HoldGoogleResult } from './holdGoogleSync';
 import { lumaUrlForEventCard } from './lumaEvents';
 import { PUBLIC_DTC_EVENTS_CALENDAR, resolveHoldGoogleCalendars } from './dapierBroker';
+import { decryptSponsorDocAccessCode, getSponsorDocWithAuthMaterial } from '../db/sponsorDocs';
 
 /** AISHL workshops are scheduled by the AISHL site event, which sends its own invite and Zoom. */
 const AISHL_TEMPLATE_TYPE = 'aishl-workshop';
@@ -77,6 +78,30 @@ export function cardGuestDocument(card: Card): string | undefined {
     || links.find(link => /^Guest materials$/i.test(link.name));
   try { return parseHoldDocumentUrl(document?.url); }
   catch { throw new CardInviteInputError('The Card guest document must be an HTTPS URL.'); }
+}
+
+/**
+ * Append `?code=...` to a `/podcast-docs/<id>` URL when the document has a
+ * decryptable access code so both the guest and Alexey can open it from the
+ * calendar invite without looking up the code.
+ */
+export async function resolveGuestDocumentUrlWithCode(
+  client: DynamoDBDocumentClient,
+  rawUrl: string | undefined,
+): Promise<string | undefined> {
+  if (!rawUrl) return rawUrl;
+  const match = /^https:\/\/[^/]+\/podcast-docs\/([^/?#]+)\/?$/.exec(rawUrl.trim());
+  if (!match) return rawUrl;
+  const docId = decodeURIComponent(match[1]);
+  try {
+    const loaded = await getSponsorDocWithAuthMaterial(client, docId);
+    if (!loaded) return rawUrl;
+    const accessCode = decryptSponsorDocAccessCode(docId, loaded.accessCodeCiphertext);
+    if (!accessCode) return rawUrl;
+    return `${rawUrl.replace(/\/$/, '')}?code=${encodeURIComponent(accessCode)}`;
+  } catch {
+    return rawUrl;
+  }
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -298,6 +323,7 @@ export async function syncCardInvite(
       const cardDocument = cardGuestDocument(card);
       documentUrl = (cardDocument && DATAOPS_GUEST_DOC.test(cardDocument) ? cardDocument : undefined)
         || parseHoldDocumentUrl(linkedHold?.documentUrl) || cardDocument;
+      documentUrl = await resolveGuestDocumentUrlWithCode(client, documentUrl);
     } catch { throw new CardInviteInputError('The guest document must be an HTTPS URL.'); }
     invite = {
       ...buildGuestInvite({

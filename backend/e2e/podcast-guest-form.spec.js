@@ -105,8 +105,8 @@ test.describe("podcast guest materials form", () => {
     // Episodes release strictly in number order: the first test's S25E9 is
     // on this same server two weeks out, so S25E8 releases the week before.
     const episode = await api("/api/podcast-episodes", {
-      season: 25,
-      episode: 8,
+      season: 26,
+      episode: 1,
       releaseAssignmentStatus: "provisional",
       releaseDate: releaseFriday(7),
       title: "Guest form alias e2e",
@@ -121,6 +121,7 @@ test.describe("podcast guest materials form", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${server.baseURL}/sponsor-docs/${doc.id}?code=${encodeURIComponent(doc.accessCode)}`);
     await expect(page.locator('[data-sponsor-view="editor"]')).toBeVisible();
+    expect(page.url()).toContain(`/podcast-docs/${doc.id}`);
     const aliasGuestRegions = page.locator(
       ".sponsor-doc-meta, .sponsor-doc-form-card, [data-sponsor-export]",
     );
