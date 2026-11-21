@@ -28,6 +28,8 @@ import {
 import { attachLinkedCards, cardBackReferences } from '../cards/taskCardLinkView';
 import { ensureEventSlotCards } from '../cards/eventSlots';
 import { buildFormatAuditReport } from '../cards/formatAudit';
+import { ensureCardQnaForDatedEvent } from '../qna/service';
+import { handleCardQnaRoute } from './cardQna';
 import { redateCardTemplateTasks } from '../cards/redateTemplateTasks';
 import {
   CardDeletionBlockedError,
@@ -368,6 +370,9 @@ async function handleCardRoutes(
     if (suffix === '' || suffix === '/') {
       return await handleCollection(method, rawBody, client, event);
     }
+
+    const qnaResponse = await handleCardQnaRoute(method, suffix, event, client);
+    if (qnaResponse) return qnaResponse;
 
     // Route: /api/cards/template-updates/:action
     const batchTemplateUpdateMatch = suffix.match(/^\/template-updates\/(preview|apply)\/?$/);
@@ -887,8 +892,9 @@ async function handleSingle(
         console.error('Standalone Markdown step sync after Card tagging failed:', failure);
       }
     }
+    const withQna = card.anchorDate && !card.qna ? await ensureCardQnaForDatedEvent(client, card) : card;
     const templateIdByType = await getTemplateIdByType(client);
-    return json(200, { card: await projectCard(new TeamDirectory(client), card, undefined, templateIdByType) });
+    return json(200, { card: await projectCard(new TeamDirectory(client), withQna, undefined, templateIdByType) });
   }
 
   if (method === 'DELETE') {
@@ -1148,7 +1154,8 @@ async function handleCardTime(method: string, id: string, rawBody: string | null
       })
       : null;
     const dated = await adoptEventDate(client, result.card, card.eventTime);
-    const projected = await projectCard(new TeamDirectory(client), dated.card, undefined, await getTemplateIdByType(client));
+    const withQna = await ensureCardQnaForDatedEvent(client, dated.card);
+    const projected = await projectCard(new TeamDirectory(client), withQna, undefined, await getTemplateIdByType(client));
     return json(result.sync.state === 'synced' ? 200 : 502, {
       ...result, card: projected, inviteCheck: verified.check, movedTasks: dated.movedTasks,
       ...(rescheduleTask ? { rescheduleTaskId: rescheduleTask.id } : {}),

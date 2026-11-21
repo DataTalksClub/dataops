@@ -1,5 +1,6 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
+import { closeCardQna } from '../qna/service';
 import { getArtifact, listArtifacts } from '../db/artifacts';
 import { getCard } from '../db/cards';
 import { listTasksByCard } from '../db/tasks';
@@ -706,4 +707,26 @@ export async function validateDoneProofOnCreate(client: DynamoDBDocumentClient, 
   }
 
   return null;
+}
+
+/** Template task id of the post-event step 'Close Q&A and save all audience questions'. */
+export const CLOSE_QNA_TASK_REF = 'close-qna-save-questions';
+
+/**
+ * Completing the close-Q&A step closes the Card's Q&A room and stores every
+ * audience question on the Card first; the Task closes only if that worked.
+ */
+export async function closeQnaOnDone(
+  client: DynamoDBDocumentClient,
+  taskData: Record<string, unknown>,
+): Promise<string | null> {
+  if (taskData.templateTaskRef !== CLOSE_QNA_TASK_REF || !isNonEmptyString(taskData.cardId)) return null;
+  const card = await getCard(client, String(taskData.cardId).trim());
+  if (!card) return null;
+  try {
+    await closeCardQna(client, card);
+    return null;
+  } catch (error) {
+    return `Cannot mark task as done: closing the Q&A and saving its questions failed (${(error as Error).message}). Retry.`;
+  }
 }

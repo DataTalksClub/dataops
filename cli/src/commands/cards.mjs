@@ -181,6 +181,8 @@ export async function show(args, io) {
     ["sponsored", card.sponsored === true ? "yes" : undefined],
     ["source docs", card.sourceDocIds],
     ["version", card.version],
+    ["Q&A link", card.qna?.url],
+    ["Q&A questions", card.qna?.questionsSavedAt ? `${card.qna.questions?.length ?? 0} saved ${card.qna.questionsSavedAt}` : card.qna ? "room open" : undefined],
   ]);
   for (const link of card.cardLinks || []) {
     io.print(`link: ${link.name || link.label} = ${link.url || "(not filled)"}`);

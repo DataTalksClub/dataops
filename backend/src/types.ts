@@ -395,6 +395,26 @@ export interface CardCalendarInvite {
   staleAt?: string;
 }
 
+export interface CardQnaQuestion {
+  questionId: string;
+  text: string;
+  authorName: string | null;
+  status: string;
+  score: number;
+  pinned: boolean;
+  createdAt: string;
+  answeredAt: string | null;
+}
+export interface CardQna {
+  roomId: string;
+  slug: string;
+  url: string;
+  presentUrl: string;
+  createdAt: string;
+  closedAt?: string;
+  questionsSavedAt?: string;
+  questions?: CardQnaQuestion[];
+}
 export interface Card {
   guestIntake?: { jobId: string; taskId: string; status: import('./events/guestIntakeStore').GuestIntakeStatus; skipEmail: boolean; recipient?: string; messageId?: string; sentAt?: string; startIso?: string; error?: string };
   id: string;
@@ -460,6 +480,12 @@ export interface Card {
     status?: 'proposed' | 'approved' | 'released';
   };
   tags?: string[];
+  /**
+   * The audience Q&A room of an event Card (podcast, webinar, workshop) on
+   * qna.dtcdev.click. `questions` is the permanent copy saved when the room
+   * was closed by the "Close Q&A and save all audience questions" step.
+   */
+  qna?: CardQna;
   /**
    * Administrative owner of the Card. Optional: existing and system-created
    * Cards without an explicit owner are honestly unassigned and are never

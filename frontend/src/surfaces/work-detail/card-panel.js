@@ -24,6 +24,7 @@ import {
   renderCardGuestInvitation,
   renderCardTemplateLink,
 } from "./card-summary.js";
+import { renderCardQna } from "./card-qna.js";
 import { renderCardEventTime, renderCardInvitesSection } from "./card-invites.js";
 import { renderWebinarMaterialsAction } from "./webinar-materials.js";
 import { renderCardReferencesSection } from "./card-references.js";
@@ -407,6 +408,8 @@ export function createCardPanel(context) {
     if (eventQuickBar) main.append(eventQuickBar);
     const invitation = renderCardGuestInvitation({ request, workApiUrl, reload: reloadCardIntent }, card);
     if (invitation) main.append(invitation);
+    const qnaSection = renderCardQna({ request, workApiUrl }, card);
+    if (qnaSection) main.append(qnaSection);
     main.append(renderCardNewsletterIssue({ request, workApiUrl, reload: reloadCardIntent }, card));
     const materialsAction = renderWebinarMaterialsAction({ request, workApiUrl, reload: reloadCardIntent }, card, state.workSnapshot.templates);
     if (materialsAction) main.append(materialsAction);
