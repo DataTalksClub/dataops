@@ -913,6 +913,7 @@ test.describe('canonical frontend capability behavior', () => {
     // episodes), so the synthetic event is a webinar Card.
     const webinarTemplate = await context.request.post('/__e2e__/template-fixtures', { data: {
       name: 'Synthetic webinar', type: 'webinar', triggerType: 'manual', references: [],
+      sourcePath: 'workflow-templates/synthetic-webinar.yaml',
       taskDefinitions: [{ refId: 'run', description: 'Run the synthetic webinar', offsetDays: 0 }],
     } });
     expect(webinarTemplate.status()).toBe(201);
