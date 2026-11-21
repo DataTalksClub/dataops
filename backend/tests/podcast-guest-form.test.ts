@@ -7,6 +7,8 @@ import {
   hydratePodcastGuestSlotOptions,
   humanizePodcastSlotChoice,
   renderSponsorDocMarkdownExport,
+  speakerContentView,
+  speakerTemplateView,
 } from '../src/sponsorDocs/templates';
 
 describe('podcast guest form (radio slot picker + topics; email stays one slot)', () => {
@@ -21,9 +23,22 @@ describe('podcast guest form (radio slot picker + topics; email stays one slot)'
       'social-links',
       'detailed-questions',
       'notes',
-      'episode-plan',
+      'run-sheet',
+      'episode-brief',
       'internal-research',
     ]);
+    const guestSections = template.sections.slice(0, 6);
+    const internalSections = template.sections.slice(6);
+    assert.ok(guestSections.every((section) => section.tab === 'guest' && !section.internal));
+    assert.ok(internalSections.every((section) => section.tab === 'internal' && section.internal === true && !section.collapsible));
+    assert.deepEqual(
+      internalSections.map((section) => section.fields.map((field) => field.key)),
+      [
+        ['coldOpen', 'introScript', 'interviewQuestions', 'closingScript'],
+        ['goal', 'audience', 'keyMessages'],
+        ['sourceLinks', 'keyInsights', 'openQuestions', 'hostNotes'],
+      ],
+    );
     const fields = template.sections.flatMap((section) => section.fields);
     const keys = fields.map((field) => field.key);
     assert.ok(keys.includes('slotChoice'));
@@ -193,5 +208,99 @@ describe('podcast guest form (radio slot picker + topics; email stays one slot)'
     });
     assert.ok(exported.includes('- **Sponsor**: Acme'));
     assert.ok(exported.includes('## Notes from Sponsor'));
+  });
+
+  it('speakerTemplateView and speakerContentView strictly isolate podcast guest views and exports', () => {
+    const template = getSponsorDocTemplate('podcast');
+    const speakerTemplate = speakerTemplateView(template);
+    assert.deepEqual(
+      speakerTemplate.sections.map((section) => section.id),
+      ['scheduling', 'who-you-are', 'topics', 'social-links', 'detailed-questions', 'notes'],
+    );
+    assert.ok(speakerTemplate.sections.every((section) => !section.internal && section.tab === 'guest'));
+
+    const fullContent: Record<string, string> = {
+      proposedSlotLabel: 'Tue 3 Nov · 12:30–13:30 Berlin',
+      slotChoice: 'confirm_proposed',
+      guestTimezone: 'Europe/Berlin',
+      guestName: 'Jane Doe',
+      introduction: 'Principal Data Engineer',
+      photoUrl: 'https://example.test/jane.jpg',
+      currentFocus: 'Streaming pipelines',
+      topicsToCover: 'Flink, Kafka',
+      topicsToAvoid: 'Internal pricing',
+      linkedinUrl: 'https://linkedin.com/in/janedoe',
+      twitterUrl: 'https://x.com/janedoe',
+      githubUrl: 'https://github.com/janedoe',
+      websiteUrl: 'https://janedoe.example',
+      preparationMaterials: 'https://janedoe.example/post',
+      hookAndPainPoint: 'Why batch breaks',
+      keyInsightsAndMilestones: 'Moved to streaming in 2025',
+      actionableTakeaway: 'Start with idempotency',
+      sponsorNotes: 'Happy to answer live questions',
+      coldOpen: 'SECRET-COLD-OPEN',
+      introScript: 'SECRET-INTRO-SCRIPT',
+      interviewQuestions: 'SECRET-INTERVIEW-QUESTIONS',
+      closingScript: 'SECRET-CLOSING-SCRIPT',
+      goal: 'SECRET-GOAL',
+      audience: 'SECRET-AUDIENCE',
+      keyMessages: 'SECRET-KEY-MESSAGES',
+      sourceLinks: 'SECRET-SOURCE-LINKS',
+      keyInsights: 'SECRET-KEY-INSIGHTS',
+      openQuestions: 'SECRET-OPEN-QUESTIONS',
+      hostNotes: 'SECRET-HOST-NOTES',
+      strayUnknownKey: 'STRAY-UNKNOWN-VALUE',
+    };
+
+    const guestContent = speakerContentView('podcast', fullContent);
+    assert.equal(guestContent.guestName, 'Jane Doe');
+    assert.equal(guestContent.topicsToCover, 'Flink, Kafka');
+    assert.equal(guestContent.sponsorNotes, 'Happy to answer live questions');
+    for (const secretKey of [
+      'coldOpen',
+      'introScript',
+      'interviewQuestions',
+      'closingScript',
+      'goal',
+      'audience',
+      'keyMessages',
+      'sourceLinks',
+      'keyInsights',
+      'openQuestions',
+      'hostNotes',
+      'strayUnknownKey',
+    ]) {
+      assert.equal(Object.hasOwn(guestContent, secretKey), false, `expected ${secretKey} to be stripped`);
+    }
+
+    const baseDoc = {
+      id: 'doc-iso',
+      title: 'Podcast — Materials from the Guest',
+      template: 'podcast' as const,
+      sponsorName: 'Jane Doe',
+      status: 'draft' as const,
+      lastEditedAt: '2026-11-21T00:00:00.000Z',
+      lastEditedBy: 'staff' as const,
+    };
+
+    const guestExport = renderSponsorDocMarkdownExport({ ...baseDoc, content: guestContent });
+    assert.ok(guestExport.includes('## Notes from the Guest'));
+    assert.ok(!guestExport.includes('## Run Sheet & Interview Questions'));
+    assert.ok(!guestExport.includes('## Event Description & Episode Plan'));
+    assert.ok(!guestExport.includes('## Internal Research & Host Notes (Staff Only)'));
+    assert.ok(!guestExport.includes('SECRET-'));
+
+    const staffExport = renderSponsorDocMarkdownExport({ ...baseDoc, content: fullContent });
+    const notesIdx = staffExport.indexOf('## Notes from the Guest');
+    const runSheetIdx = staffExport.indexOf('## Run Sheet & Interview Questions');
+    const briefIdx = staffExport.indexOf('## Event Description & Episode Plan');
+    const researchIdx = staffExport.indexOf('## Internal Research & Host Notes (Staff Only)');
+    assert.ok(notesIdx > 0);
+    assert.ok(runSheetIdx > notesIdx);
+    assert.ok(briefIdx > runSheetIdx);
+    assert.ok(researchIdx > briefIdx);
+    assert.ok(staffExport.includes('SECRET-COLD-OPEN'));
+    assert.ok(staffExport.includes('SECRET-GOAL'));
+    assert.ok(staffExport.includes('SECRET-HOST-NOTES'));
   });
 });

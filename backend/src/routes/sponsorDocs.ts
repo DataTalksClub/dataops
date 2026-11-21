@@ -318,6 +318,7 @@ export function isAnonymousSponsorDocAsset(method: string, path: string): boolea
     || path === '/src/surfaces/operations/sponsor-doc-email-card.js'
     || path === '/src/surfaces/operations/sponsor-doc-event-time.js'
     || path === '/src/surfaces/operations/sponsor-doc-guest-schedule.js'
+    || path === '/src/surfaces/operations/sponsor-doc-podcast.js'
     || path === '/src/styles/sponsor-docs.css'
     || path.startsWith('/src/dakit/')
   );
@@ -458,6 +459,30 @@ async function buildDocResponsePayload(
         // A form remains readable when the private email template is offline.
       }
     }
+    let hostContext:
+      | {
+          cardId: string | null;
+          sponsored: boolean;
+          qna: Card['qna'] | null;
+        }
+      | undefined;
+    if (doc.template === 'podcast') {
+      let ownerCard: Card | null = null;
+      try {
+        ownerCard = doc.cardId ? await getCardConsistent(client, doc.cardId) : null;
+        if (!ownerCard && doc.cardId) {
+          const ep = await getPodcastEpisode(client, doc.cardId);
+          if (ep?.cardId) ownerCard = await getCardConsistent(client, ep.cardId);
+        }
+      } catch {
+        // Keep the document readable when host context lookup fails.
+      }
+      hostContext = {
+        cardId: ownerCard?.id || null,
+        sponsored: ownerCard?.sponsored === true,
+        qna: ownerCard?.qna || null,
+      };
+    }
     return {
       ...doc,
       viewerRole: 'staff' as const,
@@ -467,12 +492,14 @@ async function buildDocResponsePayload(
       accessCode,
       emailDraft,
       markdownExport,
+      ...(hostContext ? { hostContext } : {}),
     };
   }
 
   const speakerDoc = { ...doc, content: speakerContentView(doc.template, doc.content) };
+  const { emailDelivery: _omittedEmailDelivery, ...safeSpeakerDoc } = speakerDoc;
   return {
-    ...speakerDoc,
+    ...safeSpeakerDoc,
     viewerRole: 'sponsor' as const,
     templateDefinition: speakerTemplateView(templateDefinition),
     docUrl,
