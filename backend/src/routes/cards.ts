@@ -777,6 +777,9 @@ async function handleSingle(
       'sourceDocIds', 'artifactRefs', 'intakeRefs',
       'people', 'sponsor', 'secondarySponsors', 'issueNumber', 'sponsored',
     ];
+    if (body.sponsored !== undefined && typeof body.sponsored !== 'boolean') {
+      return json(400, { error: 'sponsored must be a boolean' });
+    }
     if (body.anchorDate !== undefined && body.anchorDate !== null
       && (typeof body.anchorDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.anchorDate))) {
       return json(400, { error: 'Invalid anchorDate format, expected YYYY-MM-DD' });

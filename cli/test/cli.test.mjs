@@ -753,9 +753,8 @@ describe("newsletter doc and podcast doc commands", () => {
     const ioPrep = captureIo();
     assert.equal(
       await run(["podcast", "doc", "create", "card-pod-1", "--template", "podcast-run-sheet", "--url", "https://ops.dtcdev.click"], ioPrep),
-      0,
+      2,
     );
-    assert.equal(sent[3].template, "podcast-run-sheet");
 
     const ioBadTemplate = captureIo();
     assert.equal(
@@ -768,7 +767,7 @@ describe("newsletter doc and podcast doc commands", () => {
       await run(["newsletter", "doc", "submit", "doc-123", "--url", "https://ops.dtcdev.click"], ioSubmit),
       0,
     );
-    assert.equal(sent[4].status, "submitted");
+    assert.equal(sent[3].status, "submitted");
     assert.match(ioSubmit.text(), /Updated sponsor doc doc-123 \[submitted\]/);
 
     const ioExport = captureIo();
@@ -783,7 +782,7 @@ describe("newsletter doc and podcast doc commands", () => {
       await run(["podcast", "doc", "delete", "doc-123", "--yes", "--url", "https://ops.dtcdev.click"], ioDelete),
       0,
     );
-    assert.deepEqual(sent[5], { deleted: "doc-123" });
+    assert.deepEqual(sent[4], { deleted: "doc-123" });
     assert.match(ioDelete.text(), /Deleted sponsor doc doc-123/);
 
     globalThis.fetch = globalFetch;

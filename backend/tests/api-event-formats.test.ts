@@ -223,24 +223,33 @@ describe('Event format policy (three formats, format docs, sponsored flag)', () 
       assert.strictEqual(payload(res).code, 'doc_template_format_mismatch');
     });
 
-    it('the podcast format\'s own document templates still create', async () => {
-      for (const template of ['podcast', 'podcast-episode-brief']) {
-        const res = await req('POST', '/api/sponsor-docs', {
-          cardId: podcastCardId, template, autoSendEmail: false,
-        });
-        assert.strictEqual(res.statusCode, 201, `${template}: ${res.body}`);
-        assert.strictEqual(payload(res).doc.template, template);
-      }
+    it('the podcast format\'s own document template creates once and rejects extras', async () => {
+      const res = await req('POST', '/api/sponsor-docs', {
+        cardId: podcastCardId, template: 'podcast', autoSendEmail: false,
+      });
+      assert.strictEqual(res.statusCode, 201, res.body);
+      assert.strictEqual(payload(res).doc.template, 'podcast');
+
+      const briefRes = await req('POST', '/api/sponsor-docs', {
+        cardId: podcastCardId, template: 'podcast-episode-brief', autoSendEmail: false,
+      });
+      assert.strictEqual(briefRes.statusCode, 400);
+
+      const secondRes = await req('POST', '/api/sponsor-docs', {
+        cardId: podcastCardId, template: 'podcast', autoSendEmail: false,
+      });
+      assert.strictEqual(secondRes.statusCode, 409);
     });
 
     it('a template switch stays inside the Card\'s format', async () => {
+      const switchCard = payload(await createCard(podcastGit.id, { title: 'Switch Host Card' })).card;
       const fresh = await req('POST', '/api/sponsor-docs', {
-        cardId: podcastCardId, template: 'podcast', autoSendEmail: false,
+        cardId: switchCard.id, template: 'podcast', autoSendEmail: false,
       });
+      assert.strictEqual(fresh.statusCode, 201, fresh.body);
       const freshId = payload(fresh).doc.id;
-      const stay = await req('PUT', `/api/sponsor-docs/${freshId}`, { template: 'podcast-episode-brief' });
-      assert.strictEqual(stay.statusCode, 200);
-      assert.strictEqual(payload(stay).doc.template, 'podcast-episode-brief');
+      const legacySwitch = await req('PUT', `/api/sponsor-docs/${freshId}`, { template: 'podcast-episode-brief' });
+      assert.strictEqual(legacySwitch.statusCode, 400);
 
       const leave = await req('PUT', `/api/sponsor-docs/${freshId}`, { template: 'webinar' });
       assert.strictEqual(leave.statusCode, 422);
@@ -272,8 +281,9 @@ describe('Event format policy (three formats, format docs, sponsored flag)', () 
     });
 
     it('a created document with off-template content is rejected, not silently reshaped', async () => {
+      const offCard = payload(await createCard(podcastGit.id, { title: 'Off-template Host' })).card;
       const res = await req('POST', '/api/sponsor-docs', {
-        cardId: podcastCardId, template: 'podcast', autoSendEmail: false,
+        cardId: offCard.id, template: 'podcast', autoSendEmail: false,
         content: { guestName: 'Test Guest', freeformBanner: 'buy widgets' },
       });
       assert.strictEqual(res.statusCode, 422);
@@ -351,17 +361,7 @@ describe('Event format policy (three formats, format docs, sponsored flag)', () 
           content: PODCAST_GUEST_MATERIALS_CONTENT, status: 'submitted',
         });
         assert.strictEqual(ok.statusCode, 200, ok.body);
-      }
-      const brief = payload(await req('POST', '/api/sponsor-docs', {
-        cardId: plain.id, template: 'podcast-episode-brief', autoSendEmail: false,
-        content: EPISODE_BRIEF_REQUIRED_CONTENT,
-      })).doc;
-      const flaggedBrief = payload(await req('POST', '/api/sponsor-docs', {
-        cardId: flagged.id, template: 'podcast-episode-brief', autoSendEmail: false,
-        content: EPISODE_BRIEF_REQUIRED_CONTENT,
-      })).doc;
-      for (const doc of [brief, flaggedBrief]) {
-        const deviation = await req('PUT', `/api/sponsor-docs/${doc.id}`, {
+        const deviation = await req('PUT', `/api/sponsor-docs/${docId}`, {
           content: { offTemplateField: 'x' },
         });
         assert.strictEqual(deviation.statusCode, 422);

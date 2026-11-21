@@ -41,6 +41,34 @@ export function appendTimeChoiceSave({ fieldWrap, actionBtn, busy, draftContent,
   }, busy));
 }
 
+export function renderPodcastQuestionsView({ el, draftContent }) {
+  const qCard = el("div", "sponsor-doc-card sponsor-doc-questions-view");
+  qCard.dataset.podcastQuestionsView = "readonly";
+  const qHead = el("div", "sponsor-doc-title-row");
+  qHead.append(el("h2", "sponsor-doc-section__title", "Episode Questions (Read-only recording view)"));
+  qCard.append(qHead);
+  const qFields = [
+    ["Cold Open", draftContent.coldOpen],
+    ["Intro Script", draftContent.introScript],
+    ["Interview Questions", draftContent.interviewQuestions],
+    ["Topics to Cover", draftContent.topicsToCover],
+    ["Topics to Avoid", draftContent.topicsToAvoid],
+    ["Closing Script", draftContent.closingScript],
+  ];
+  let hasAny = false;
+  for (const [labelText, val] of qFields) {
+    const text = String(val || "").trim();
+    if (!text) continue;
+    hasAny = true;
+    const sec = el("div", "sponsor-doc-section");
+    sec.append(el("h3", "sponsor-doc-field__label", labelText));
+    sec.append(el("pre", "sponsor-doc-export-pre", text));
+    qCard.append(sec);
+  }
+  if (!hasAny) qCard.append(el("p", "dk-hint", "No questions or topics added to this document yet."));
+  return qCard;
+}
+
 export function guestEventMetadataRow({ el, doc, tDef, draftContent, isSpeakerDoc, isPodcastGuestDoc, formatEditorLabel }) {
     const metaRow = el("div", "sponsor-doc-meta");
     metaRow.append(el("span", "dk-badge", tDef.label || doc.template));

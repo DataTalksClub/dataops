@@ -1,4 +1,4 @@
-import { renderCardDocumentSections } from './card-documents.js';
+import { renderCardDocumentSections, renderCardEventQuickBar } from './card-documents.js';
 import { afterText, blockedReason, blockingPrerequisites, prerequisiteStatusLabel } from "../../core/task-dependencies.js";
 import { taskTitleParts } from "../../core/task-display.js";
 import {
@@ -403,6 +403,8 @@ export function createCardPanel(context) {
       ),
     );
     main.append(meta);
+    const eventQuickBar = renderCardEventQuickBar({ card, request, workApiUrl, reload: reloadCardIntent });
+    if (eventQuickBar) main.append(eventQuickBar);
     const invitation = renderCardGuestInvitation({ request, workApiUrl, reload: reloadCardIntent }, card);
     if (invitation) main.append(invitation);
     main.append(renderCardNewsletterIssue({ request, workApiUrl, reload: reloadCardIntent }, card));

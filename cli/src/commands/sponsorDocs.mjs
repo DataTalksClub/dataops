@@ -11,9 +11,6 @@ export const TEMPLATES = [
   "webinar",
   "workshop",
   "podcast",
-  "podcast-guest-research",
-  "podcast-run-sheet",
-  "podcast-episode-brief",
 ];
 
 /** Domains whose form the event speaker fills, one template each. */
@@ -21,9 +18,6 @@ const SPEAKER_DOMAINS = ["webinar", "workshop"];
 
 export const PODCAST_TEMPLATES = [
   "podcast",
-  "podcast-guest-research",
-  "podcast-run-sheet",
-  "podcast-episode-brief",
 ];
 
 export const newsletterDocHelp = `dataops newsletter doc - portal-hosted newsletter sponsor content documents
@@ -44,11 +38,10 @@ Usage
   dataops newsletter doc rotate-code <doc-id>
 `;
 
-export const podcastDocHelp = `dataops podcast doc - portal-hosted podcast documents (guest materials + prep docs)
+export const podcastDocHelp = `dataops podcast doc - portal-hosted podcast guest document (one per podcast card)
 
 Usage
-  dataops podcast doc create <card-id> [--template podcast|podcast-guest-research|podcast-run-sheet|podcast-episode-brief]
-      [--from DOC-ID] [--title T] [--sponsor NAME] [--date YYYY-MM-DD] [--link-type NAME] [--email]
+  dataops podcast doc create <card-id> [--from DOC-ID] [--title T] [--guest NAME] [--date YYYY-MM-DD] [--link-type NAME] [--email]
   dataops podcast doc show <doc-id>
   dataops podcast doc export <doc-id> [--format md|docx|txt] [--output PATH]
   dataops podcast doc delete <doc-id> --yes
@@ -60,14 +53,7 @@ Usage
   dataops podcast doc rotate-code <doc-id>
   dataops podcast doc templates
 
-Prep templates (default: podcast):
-  podcast                  guest-facing materials from the guest (default, optional for the guest —
-                           a short email reply works instead of filling the form)
-  podcast-guest-research   internal source-backed guest research (staff-only, after date confirm)
-  podcast-run-sheet        internal one-page host run sheet (staff-only, after date confirm)
-  podcast-episode-brief    episode planning brief (replaces Google Doc brief)
-Research and run sheets start only after the recording date is confirmed
-(dataops podcast update <episode-id> --recording-date YYYY-MM-DD).
+Each podcast card has at most one document (template: podcast) at /podcast-docs/sdoc-*.
 `;
 
 export const webinarDocHelp = `dataops webinar doc - webinar speaker materials
@@ -248,7 +234,8 @@ export async function create(args, io) {
   const title = optionalString(args, "title");
   if (title !== undefined) body.title = title;
 
-  const sponsorName = optionalString(args, SPEAKER_DOMAINS.includes(domain) ? "speaker" : "sponsor");
+  const sponsorName = optionalString(args, SPEAKER_DOMAINS.includes(domain) ? "speaker" : domain === "podcast" ? "guest" : "sponsor")
+    ?? (domain === "podcast" ? optionalString(args, "sponsor") : undefined);
   if (sponsorName !== undefined) body.sponsorName = sponsorName;
 
   const date = isoDate(optionalString(args, "date"), "date");
@@ -322,6 +309,8 @@ export async function list(args, io) {
   const payload = { ...result, docs };
   if (args.json) return payload;
 
+  const whoCol = args._domain === "podcast" ? "GUEST" : SPEAKER_DOMAINS.includes(args._domain) ? "SPEAKER" : "SPONSOR";
+  const emptyMsg = args._domain === "podcast" ? "No podcast documents found." : "No sponsor documents found.";
   table(
     io,
     docs,
@@ -330,11 +319,11 @@ export async function list(args, io) {
       ["STATUS", (doc) => doc.status],
       ["TEMPLATE", (doc) => doc.template],
       ["DATE", (doc) => doc.publicationDate || ""],
-      ["SPONSOR", (doc) => doc.sponsorName || ""],
+      [whoCol, (doc) => doc.sponsorName || ""],
       ["LAST EDITED", (doc) => (doc.lastEditedAt ? `${doc.lastEditedAt.slice(0, 16).replace("T", " ")} (${doc.lastEditedBy || "staff"})` : "never")],
       ["TITLE", (doc) => doc.title],
     ],
-    "No sponsor documents found.",
+    emptyMsg,
   );
   return payload;
 }
@@ -348,13 +337,16 @@ export async function show(args, io) {
   const payload = { ...result, doc };
   if (args.json) return payload;
 
+  const whoLabel = doc.template === "podcast" || String(doc.template || "").startsWith("podcast-")
+    ? "guest"
+    : SPEAKER_DOMAINS.includes(doc.template) ? "speaker" : "sponsor";
   fields(io, [
     ["id", doc.id],
     ["card", doc.cardId],
     ["title", doc.title],
     ["template", `${doc.template} (${doc.templateDefinition?.label || ""})`],
     ["status", doc.status === "submitted" ? "submitted (ready)" : "draft"],
-    ["sponsor", doc.sponsorName],
+    [whoLabel, doc.sponsorName],
     ["publication date", doc.publicationDate],
     ["card link slot", doc.linkType],
     ["canonical url", doc.docUrl],

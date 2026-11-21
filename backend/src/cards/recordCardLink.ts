@@ -42,8 +42,16 @@ function projected(card: Card, templateIdByType: Map<string, string>): Card {
 export async function summarizeCard(
   client: DynamoDBDocumentClient,
   card: Card,
-): Promise<CardSummary> {
+): Promise<CardSummary & { podcastDocUrl?: string }> {
   const view = projected(card, await getTemplateIdByType(client));
+  const podcastLink = (card.cardLinks || []).find((l) => /\/podcast-docs\/[^/?#]+/.test(String(l.url || '')));
+  let podcastDocUrl = podcastLink?.url ? String(podcastLink.url).trim() : undefined;
+  if (!podcastDocUrl) {
+    const { listSponsorDocSummariesByCardId } = await import('../db/sponsorDocs');
+    const docs = await listSponsorDocSummariesByCardId(client, card.id);
+    const podDoc = docs.find((d) => d.template === 'podcast');
+    if (podDoc) podcastDocUrl = `/podcast-docs/${encodeURIComponent(podDoc.id)}`;
+  }
   return {
     id: card.id,
     title: String(view.title || ''),
@@ -52,6 +60,7 @@ export async function summarizeCard(
     anchorDate: view.anchorDate || null,
     taskCount: card.taskCount,
     openTaskCount: card.openTaskCount,
+    ...(podcastDocUrl ? { podcastDocUrl } : {}),
   };
 }
 

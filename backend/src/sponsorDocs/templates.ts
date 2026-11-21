@@ -66,16 +66,24 @@ export interface SponsorDocTemplateDefinition {
   sections: SponsorDocSectionDefinition[];
 }
 
-export const SPONSOR_DOC_TEMPLATE_KEYS: readonly SponsorDocTemplateKey[] = [
+export const LEGACY_PODCAST_DOC_TEMPLATES: readonly SponsorDocTemplateKey[] = [
+  'podcast-guest-research',
+  'podcast-run-sheet',
+  'podcast-episode-brief',
+] as const;
+
+export const SPONSOR_DOC_CREATABLE_TEMPLATE_KEYS: readonly SponsorDocTemplateKey[] = [
   'newsletter-main',
   'newsletter-secondary',
   'newsletter-standalone',
   'webinar',
   'workshop',
   'podcast',
-  'podcast-guest-research',
-  'podcast-run-sheet',
-  'podcast-episode-brief',
+] as const;
+
+export const SPONSOR_DOC_TEMPLATE_KEYS: readonly SponsorDocTemplateKey[] = [
+  ...SPONSOR_DOC_CREATABLE_TEMPLATE_KEYS,
+  ...LEGACY_PODCAST_DOC_TEMPLATES,
 ] as const;
 
 const VISUAL_GUIDELINES_URL = 'https://drive.google.com/file/d/1M_jEzcb1IWJmolx9N7e08gfdbctjcLH2/view?usp=sharing';
@@ -743,6 +751,99 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
           },
         ],
       },
+      {
+        id: 'episode-plan',
+        title: '7) Episode Plan & Questions',
+        description: 'Prepared by the DataTalks.Club team in the same document. Guests can review or suggest edits.',
+        collapsible: true,
+        fields: [
+          {
+            key: 'interviewQuestions',
+            label: 'Interview Questions',
+            type: 'textarea',
+            rows: 8,
+            placeholder: 'Questions for the episode, in order.',
+          },
+          {
+            key: 'goal',
+            label: 'Episode Goal',
+            type: 'textarea',
+            rows: 3,
+            placeholder: 'What should listeners be able to do or understand after this episode?',
+          },
+          {
+            key: 'audience',
+            label: 'Target Audience',
+            type: 'text',
+            placeholder: 'e.g. Data engineers running Airflow in production',
+          },
+          {
+            key: 'keyMessages',
+            label: 'Key Messages / Takeaways',
+            type: 'textarea',
+            rows: 4,
+            placeholder: '3–5 takeaways the episode must land.',
+          },
+          {
+            key: 'coldOpen',
+            label: 'Cold Open (first 10 seconds)',
+            type: 'textarea',
+            rows: 2,
+            placeholder: 'Hook: vivid fact, stat, problem, or provocative question.',
+          },
+          {
+            key: 'introScript',
+            label: 'Intro Script',
+            type: 'textarea',
+            rows: 3,
+            placeholder: 'How to introduce the guest on air.',
+          },
+          {
+            key: 'closingScript',
+            label: 'Closing Script',
+            type: 'textarea',
+            rows: 3,
+            placeholder: 'Wrap-up, takeaway question, where to find the guest, outro.',
+          },
+        ],
+      },
+      {
+        id: 'internal-research',
+        title: '8) Internal Research & Host Notes (Staff Only)',
+        description: 'Staff-only research and live host notes. Never shown to or exported for the guest.',
+        internal: true,
+        collapsible: true,
+        fields: [
+          {
+            key: 'sourceLinks',
+            label: 'Research Sources (talks, posts, papers)',
+            type: 'textarea',
+            rows: 4,
+            placeholder: 'One link per line, with a one-line note on what each source supports.',
+          },
+          {
+            key: 'keyInsights',
+            label: 'Key Insights & Milestones (Research)',
+            type: 'textarea',
+            rows: 4,
+            placeholder: 'Source-backed findings for the host.',
+          },
+          {
+            key: 'openQuestions',
+            label: 'Open Questions / Angles to Explore',
+            type: 'textarea',
+            rows: 4,
+            placeholder: 'Candidate question angles tied to sources.',
+          },
+          {
+            key: 'hostNotes',
+            label: 'Host Notes & Follow-ups',
+            type: 'textarea',
+            rows: 4,
+            placeholder: 'Timing cues, fallback questions, internal notes.',
+          },
+        ],
+      },
     ],
   },
 
@@ -1319,14 +1420,16 @@ function formatGraphicsExportLines(rawUrl: string | undefined): string[] {
  */
 export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): string {
   const c = doc.content || {};
+  const isPodcastTemplate = doc.template === 'podcast' || doc.template.startsWith('podcast-');
+  const isSpeakerTemplate = doc.template === 'webinar' || doc.template === 'workshop';
   const lines: string[] = [
     `# ${doc.title}`,
     '',
     `- **Template**: ${SPONSOR_DOC_TEMPLATES[doc.template].label}`,
-    ...(doc.sponsorName ? [`- **${doc.template === 'webinar' || doc.template === 'workshop' ? 'Speaker' : doc.template === 'podcast' ? 'Guest' : 'Sponsor'}**: ${doc.sponsorName}`] : []),
+    ...(doc.sponsorName ? [`- **${isSpeakerTemplate ? 'Speaker' : isPodcastTemplate ? 'Guest' : 'Sponsor'}**: ${doc.sponsorName}`] : []),
     ...(doc.eventMetadata ? [`- **Event**: ${doc.eventMetadata.label}`] : doc.publicationDate ? [`- **Publication Date**: ${doc.publicationDate}`] : []),
     `- **Status**: ${doc.status === 'submitted' ? 'Submitted / Ready' : 'Draft'}`,
-    `- **Last Edited**: ${doc.lastEditedAt} (${(doc.template === 'webinar' || doc.template === 'workshop') && doc.lastEditedBy === 'sponsor' ? 'speaker' : doc.lastEditedBy})`,
+    `- **Last Edited**: ${doc.lastEditedAt} (${doc.lastEditedBy === 'sponsor' ? (isSpeakerTemplate ? 'speaker' : isPodcastTemplate ? 'guest' : 'sponsor') : doc.lastEditedBy})`,
     '',
     '---',
     '',
@@ -1505,6 +1608,23 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '### Actionable First Step & Resources',
       valOrPlaceholder(c.actionableTakeaway),
     );
+    if (c.interviewQuestions?.trim() || c.goal?.trim() || c.audience?.trim() || c.keyMessages?.trim() || c.coldOpen?.trim() || c.introScript?.trim() || c.closingScript?.trim()) {
+      lines.push('', '## 6) Episode Plan & Questions');
+      if (c.goal?.trim()) lines.push('', '### Episode Goal', c.goal.trim());
+      if (c.audience?.trim()) lines.push('', `**Target Audience:** ${c.audience.trim()}`);
+      if (c.keyMessages?.trim()) lines.push('', '### Key Messages / Takeaways', c.keyMessages.trim());
+      if (c.coldOpen?.trim()) lines.push('', '### Cold Open', c.coldOpen.trim());
+      if (c.introScript?.trim()) lines.push('', '### Intro Script', c.introScript.trim());
+      if (c.interviewQuestions?.trim()) lines.push('', '### Interview Questions', c.interviewQuestions.trim());
+      if (c.closingScript?.trim()) lines.push('', '### Closing Script', c.closingScript.trim());
+    }
+    if (c.sourceLinks?.trim() || c.keyInsights?.trim() || c.openQuestions?.trim() || c.hostNotes?.trim()) {
+      lines.push('', '## Internal Research & Host Notes (Staff Only)');
+      if (c.sourceLinks?.trim()) lines.push('', '### Research Sources', c.sourceLinks.trim());
+      if (c.keyInsights?.trim()) lines.push('', '### Key Insights & Milestones', c.keyInsights.trim());
+      if (c.openQuestions?.trim()) lines.push('', '### Open Questions / Angles', c.openQuestions.trim());
+      if (c.hostNotes?.trim()) lines.push('', '### Host Notes & Follow-ups', c.hostNotes.trim());
+    }
   } else if (doc.template === 'podcast-guest-research') {
     lines.push(
       '## 1) Guest Identity',

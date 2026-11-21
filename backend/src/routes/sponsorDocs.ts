@@ -54,6 +54,8 @@ import { FileStorageError } from '../storage';
 import { savePublicImage } from '../publicImages';
 import { extractMultipartImageBuffer, publicImagePayload } from './publicImages';
 import {
+  LEGACY_PODCAST_DOC_TEMPLATES,
+  SPONSOR_DOC_CREATABLE_TEMPLATE_KEYS,
   SPONSOR_DOC_TEMPLATES,
   SponsorDocValidationError,
   getSponsorDocTemplate,
@@ -174,7 +176,41 @@ function requestIp(event: LambdaEvent): string {
 export function sponsorDocPathForTemplate(template: string | null | undefined): string {
   if (template === 'webinar') return '/webinar-docs';
   if (template === 'workshop') return '/workshop-docs';
-  return template === 'podcast' ? '/podcast-docs' : '/sponsor-docs';
+  if (template === 'podcast' || String(template || '').startsWith('podcast-')) return '/podcast-docs';
+  return '/sponsor-docs';
+}
+
+/**
+ * Redirect legacy `/sponsor-docs/:id` requests for podcast/webinar/workshop
+ * documents to their canonical `/podcast-docs/:id` (or webinar/workshop) URL,
+ * preserving query parameters (e.g. `?code=...`).
+ */
+export async function redirectLegacySponsorDocPath(
+  event: LambdaEvent,
+  client: DynamoDBDocumentClient,
+): Promise<LambdaResponse | null> {
+  if ((event.httpMethod || 'GET').toUpperCase() !== 'GET') return null;
+  const match = /^\/sponsor-docs\/([^/?#]+)\/?$/.exec(event.path || '');
+  if (!match) return null;
+  const docId = decodeURIComponent(match[1]);
+  const loaded = await getSponsorDocWithAuthMaterial(client, docId);
+  if (!loaded) return null;
+  const canonicalPrefix = sponsorDocPathForTemplate(loaded.doc.template);
+  if (canonicalPrefix === '/sponsor-docs') return null;
+  const rawQuery = event.queryStringParameters && Object.keys(event.queryStringParameters).length > 0
+    ? `?${new URLSearchParams(
+      Object.entries(event.queryStringParameters).filter((e): e is [string, string] => typeof e[1] === 'string'),
+    ).toString()}`
+    : '';
+  return {
+    statusCode: 302,
+    headers: {
+      Location: `${canonicalPrefix}/${encodeURIComponent(docId)}${rawQuery}`,
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+    },
+    body: '',
+  };
 }
 
 export function sponsorDocPortalBaseUrl(event: LambdaEvent): string {
@@ -522,7 +558,9 @@ export async function handleSponsorDocRoutes(
     if (m === 'GET' && /^\/templates\/?$/.test(suffix)) {
       const actor = await resolveInteractiveActor(client, event, 'work-read');
       if (!actor.ok) return actor.response;
-      return json(200, { templates: Object.values(SPONSOR_DOC_TEMPLATES) });
+      return json(200, {
+        templates: SPONSOR_DOC_CREATABLE_TEMPLATE_KEYS.map((key) => SPONSOR_DOC_TEMPLATES[key]),
+      });
     }
 
     // Collection: GET /api/sponsor-docs, POST /api/sponsor-docs
@@ -619,9 +657,9 @@ export async function handleSponsorDocRoutes(
         let template: SponsorDocTemplateKey;
         if (body.template !== undefined && body.template !== null && String(body.template).trim() !== '') {
           const requested = String(body.template).trim();
-          if (!isSponsorDocTemplateKey(requested)) {
+          if (!isSponsorDocTemplateKey(requested) || LEGACY_PODCAST_DOC_TEMPLATES.includes(requested)) {
             return json(400, {
-              error: `Invalid template "${requested}". Must be one of: newsletter-main, newsletter-secondary, newsletter-standalone, webinar, podcast, podcast-guest-research, podcast-run-sheet, podcast-episode-brief`,
+              error: `Invalid template "${requested}". Must be one of: ${SPONSOR_DOC_CREATABLE_TEMPLATE_KEYS.join(', ')}`,
               code: 'invalid_template',
             });
           }
@@ -648,23 +686,13 @@ export async function handleSponsorDocRoutes(
           template = 'newsletter-main';
         }
 
-        // Guest research and host run sheets start only after the date is
-        // confirmed (a recording date on the owning episode). The guest
-        // materials doc and the episode brief stay available before confirm.
-        if (template === 'podcast-guest-research' || template === 'podcast-run-sheet') {
-          const datedOwner = existingEpisode?.recordingDate
-            ? existingEpisode
-            : existingCard
-              ? (await listPodcastEpisodes(client)).find(
-                (episode) => episode.cardId === existingCard.id && episode.recordingDate,
-              )
-              : undefined;
-          if (!datedOwner) {
-            return json(422, {
-              error: 'Guest research and run sheets start only after the date is confirmed: set the episode recording date first (dataops podcast update <episode-id> --recording-date YYYY-MM-DD).',
-              code: 'date_not_confirmed',
-            });
-          }
+        // Event cards (podcast, webinar, workshop) never create sponsor-docs.
+        const cardType = existingCard ? (cardTemplateType(existingCard, templateIdByType) || '') : '';
+        if ((existingEpisode || ['podcast', 'webinar', 'workshop'].includes(cardType)) && template.startsWith('newsletter-')) {
+          return json(422, {
+            error: 'Event cards (podcast, webinar, workshop) do not use sponsorship documents.',
+            code: 'event_card_no_sponsor_docs',
+          });
         }
 
         // An event Card carries only its format's documents: a workshop
@@ -683,6 +711,20 @@ export async function handleSponsorDocRoutes(
         const eventDocumentTemplate = getSponsorDocTemplate(template).metadataSource === 'card-event';
         if (eventDocumentTemplate && !existingCard && !existingEpisode) {
           return json(422, { error: 'Link this event document to a Card first.', code: 'event_card_required' });
+        }
+
+        // Enforce max ONE podcast document per podcast card.
+        const ownerForCheck = existingCard?.id || existingIssue?.id || existingEpisode?.id || '';
+        if (template === 'podcast' && ownerForCheck) {
+          const existingDocs = await listSponsorDocSummariesByCardId(client, ownerForCheck);
+          const existingPodcastDoc = existingDocs.find((d) => d.template === 'podcast');
+          if (existingPodcastDoc) {
+            return json(409, {
+              error: `This podcast card already has a guest document (${existingPodcastDoc.id}). Only one podcast document is allowed per card.`,
+              code: 'podcast_doc_already_exists',
+              existingDocId: existingPodcastDoc.id,
+            });
+          }
         }
 
         const publicationDate = typeof body.publicationDate === 'string' && body.publicationDate.trim()
@@ -1072,7 +1114,7 @@ export async function handleSponsorDocRoutes(
 
         const access = await resolveStaffOrSponsorAccess(client, event, 'work-write', body);
         if (access.isStaff) {
-          if (body.template !== undefined && !isSponsorDocTemplateKey(body.template)) {
+          if (body.template !== undefined && (!isSponsorDocTemplateKey(body.template) || LEGACY_PODCAST_DOC_TEMPLATES.includes(body.template))) {
             return json(400, { error: 'Unknown template', code: 'invalid_template' });
           }
           const loaded = await getSponsorDocWithAuthMaterial(client, docId);

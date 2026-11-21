@@ -60,6 +60,19 @@ function closeButton(documentRef, actions) {
 function statusSection(documentRef, episode, actions, messages) {
   const section = element(documentRef, "section", "podcast-section podcast-status-section");
   section.setAttribute("aria-label", "Status");
+  const docUrl = episode.card?.podcastDocUrl || episode.podcastDocUrl;
+  if (docUrl) {
+    const docRow = element(documentRef, "div", "podcast-guest-doc-top");
+    docRow.dataset.podcastGuestDocLink = "";
+    const docLabel = element(documentRef, "strong", "", "Guest document: ");
+    const docLink = element(documentRef, "a", "dk-link");
+    docLink.href = docUrl;
+    docLink.target = "_blank";
+    docLink.rel = "noopener noreferrer";
+    docLink.textContent = docUrl;
+    docRow.append(docLabel, docLink);
+    section.append(docRow);
+  }
   const row = element(documentRef, "div", "dk-cluster podcast-status-row");
   const code = episodeCode(episode);
   if (code) row.append(element(documentRef, "span", "dk-mono podcast-code", code));

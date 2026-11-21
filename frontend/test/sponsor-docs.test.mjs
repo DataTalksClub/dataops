@@ -828,3 +828,86 @@ test("guest brief renders uploaded photo inline immediately and shows visible er
   assert.match(brokenErr.textContent, /Could not load image/);
   h.controller.destroy();
 });
+
+test("podcast cards hide legacy prep templates, never show Sponsorship documents, and expose top link + live questions + sponsored flag", async () => {
+  const prevDoc = globalThis.document;
+  globalThis.document = new FakeDocument();
+  try {
+  const { renderCardEventQuickBar } = await import("../src/surfaces/work-detail/card-documents.js");
+  const card = {
+    id: "card-pod-1",
+    version: 3,
+    templateDefinitionSnapshot: { type: "podcast" },
+    sponsored: true,
+    qna: { url: "https://qna.dtcdev.click/r/pod1" },
+    sponsorDocs: [
+      { id: "sdoc-pod", template: "podcast", status: "draft", title: "Guest doc" },
+      { id: "sdoc-brief", template: "podcast-episode-brief", status: "submitted", title: "Brief" },
+      { id: "sdoc-res", template: "podcast-guest-research", status: "draft", title: "Research" },
+      { id: "sdoc-run", template: "podcast-run-sheet", status: "draft", title: "Run sheet" },
+    ],
+  };
+  const section = renderCardSponsorDocsSection(card);
+  assert.match(section.textContent, /Guest materials/);
+  assert.doesNotMatch(section.textContent, /Sponsorship document/i);
+  assert.equal(section.querySelectorAll("[data-sponsor-doc-id]").length, 1);
+  assert.ok(section.querySelector('[data-sponsor-doc-id="sdoc-pod"]'));
+
+  const calls = [];
+  const bar = renderCardEventQuickBar({
+    card,
+    workApiUrl: (p) => p,
+    reload: async () => {},
+    request: async (url) => {
+      calls.push(url);
+      if (url.includes("/api/sponsor-docs/")) {
+        return { doc: { content: { interviewQuestions: "1. What is FDE?" } } };
+      }
+      if (url.includes("/qna/questions")) {
+        return { questions: [{ text: "How do you test agents?", authorName: "Alex", score: 2, status: "visible" }] };
+      }
+      return {};
+    },
+  });
+  assert.ok(bar.querySelector('[data-card-podcast-doc-top-link]').href.includes("/podcast-docs/sdoc-pod"));
+  assert.equal(bar.querySelector('[data-card-sponsored-toggle]').checked, true);
+
+  await bar.querySelector('[data-card-live-questions-trigger]').click();
+  await nextTicks();
+  assert.ok(calls.some((u) => u.includes("/api/sponsor-docs/sdoc-pod")));
+  assert.ok(calls.some((u) => u.includes("/api/cards/card-pod-1/qna/questions")));
+  const panel = bar.querySelector('[data-card-live-questions-panel]');
+  assert.equal(panel.hidden, false);
+  assert.match(panel.textContent, /1\. What is FDE\?/);
+  assert.match(panel.textContent, /How do you test agents\?/);
+  } finally {
+    globalThis.document = prevDoc;
+  }
+});
+
+test("podcast doc supports read-only view-questions mode and photo preview placeholder", async () => {
+  const definition = podcastTemplateDefinition();
+  definition.sections[1].fields.push({ key: "photoUrl", label: "Photo", type: "text", allowVisualUpload: true });
+  const h = harness({
+    href: "https://ops.example.test/podcast-docs/doc-q?code=bcdfghjklmnpqrst",
+    pathname: "/podcast-docs/doc-q",
+    docOverrides: {
+      template: "podcast",
+      templateDefinition: definition,
+      content: {
+        interviewQuestions: "Q1: Why agents?\nQ2: How evals?",
+        topicsToCover: "Production reliability",
+      },
+    },
+  });
+  await h.controller.start();
+  assert.ok(h.root.querySelector('[data-sponsor-photo-placeholder]'), "empty photoUrl shows preview placeholder");
+  await h.root.querySelector('[data-sponsor-action="toggle-questions-view"]').click();
+  await nextTicks();
+  const ro = h.root.querySelector('[data-podcast-questions-view="readonly"]');
+  assert.ok(ro);
+  assert.match(ro.textContent, /Q1: Why agents\?/);
+  assert.match(ro.textContent, /Production reliability/);
+  assert.equal(h.root.querySelector('[data-sponsor-action="submit-ready"]'), null);
+  h.controller.destroy();
+});
