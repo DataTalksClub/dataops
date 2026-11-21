@@ -231,6 +231,12 @@ dataops cards show <card-id>                  # the generated Tasks
 `--title` may be left out when the Template has a `card_title` pattern; the
 Card is then named from the pattern.
 
+Events run only in the workshop, webinar and podcast formats, each served by
+its canonical Template; `--sponsored true|false` records a sponsor deal on the
+Card and changes no template or document. Newsletter cards are a separate
+recurring flow. `dataops cards format-audit` reports any Card, Template or
+sponsor document that deviates from this policy (read-only).
+
 Edit a Template (pins the effective definition new Cards use; a deploy
 refreshes the Git base but never overwrites a pin):
 

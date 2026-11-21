@@ -105,6 +105,7 @@ Disabled open tasks are skipped with history; completed and operator-skipped tas
 
 Examples
   dataops templates list
+  dataops cards format-audit          Read-only three-formats policy audit (--json for the full report)
   dataops cards create --title "Newsletter 2026-11-02" --date 2026-11-02 --template newsletter-issue
   dataops cards show 542df0a6-...
   dataops cards link 542df0a6-... "Published issue" https://example.com/issue
@@ -642,12 +643,36 @@ export async function redateTasks(args, io) {
   return result;
 }
 
+/** Read-only three-formats policy audit: which Cards, Templates and Sponsor Documents deviate. */
+export async function formatAudit(args, io) {
+  const api = apiFor(args);
+  const result = await api.get("/api/cards/format-audit");
+  if (args.json) return result;
+  table(
+    io,
+    result.findings || [],
+    [
+      ["KIND", (f) => f.kind],
+      ["ID", (f) => f.id],
+      ["STATUS", (f) => f.status],
+      ["TEMPLATE", (f) => f.template],
+      ["CARD", (f) => f.cardId || ""],
+      ["REASON", (f) => f.reason],
+      ["EXPECTED", (f) => f.expected],
+    ],
+    "No deviations: every event Card, Template and Sponsor Document matches the three-formats policy.",
+  );
+  io.print(`${result.findings?.length ?? 0} finding(s) across ${result.cardsScanned} Cards and ${result.docsScanned} Sponsor Documents.`);
+  return result;
+}
+
 export const commands = {
   invitation,
   banner,
   "dedupe-tasks": dedupeTasks,
   "redate-tasks": redateTasks,
   "event-slots": eventSlots,
+  "format-audit": formatAudit,
   time,
   list,
   show,

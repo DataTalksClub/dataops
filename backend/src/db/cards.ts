@@ -386,18 +386,27 @@ async function updateCardAdditive(
 }
 
 /**
- * List all cards by scanning for items where PK begins with "CARD#".
+ * List all cards by scanning for items where PK begins with "CARD#",
+ * following scan pages so tables beyond one megabyte are fully read.
  */
-async function listCards(client: DynamoDBDocumentClient): Promise<Card[]> {
-  const result = await client.send(
-    new ScanCommand({
-      TableName: TABLE_CARDS,
-      FilterExpression: 'begins_with(PK, :prefix)',
-      ExpressionAttributeValues: { ':prefix': 'CARD#' },
-    })
-  );
-
-  return (result.Items || []).map((item) => cleanItem(item as Record<string, unknown>) as Card);
+async function listAllCards(client: DynamoDBDocumentClient): Promise<Card[]> {
+  const cards: Card[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+  do {
+    const result = await client.send(
+      new ScanCommand({
+        TableName: TABLE_CARDS,
+        FilterExpression: 'begins_with(PK, :prefix)',
+        ExpressionAttributeValues: { ':prefix': 'CARD#' },
+        ExclusiveStartKey: exclusiveStartKey,
+      })
+    );
+    for (const item of result.Items || []) {
+      cards.push(cleanItem(item as Record<string, unknown>) as Card);
+    }
+    exclusiveStartKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (exclusiveStartKey);
+  return cards;
 }
 
 interface CardPageInput {
@@ -446,8 +455,8 @@ export {
   updateCardAdditive,
   parkCard,
   resumeCard,
-  listCards,
   listCardsPage,
+  listAllCards,
   CardVersionConflictError,
   CardNotFoundError,
   CardStatusTransitionError,

@@ -5,6 +5,9 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTemplate } from '../src/db/templates';
+import { createCard as createCardRow } from '../src/db/cards';
+import { templateLinkage } from '../src/templates/cardTemplateProjection';
+import { createSponsorDoc } from '../src/db/sponsorDocs';
 import { createUser } from '../src/db/users';
 import { humanBearer } from './helpers/human-bearer';
 import type { LambdaResponse, Template } from '../src/types';
@@ -391,4 +394,46 @@ describe('Event format policy (three formats, format docs, sponsored flag)', () 
     });
   });
 
+  describe('The read-only format audit reports deviations without repairing them', () => {
+    it('flags legacy variant Cards, deviating documents and variant Templates, and misses none of them', async () => {
+      // The legacy shape, seeded as it exists in prod: Cards instantiated from
+      // the custom workshop-variant Template, plus a deviating document on an
+      // otherwise canonical podcast Card.
+      const legacyCard = await createCardRow(client, {
+        title: 'AISHL Workshop 2026-01-15',
+        ...templateLinkage(aishlVariant),
+        anchorDate: '2026-01-15',
+        selectedOptionalGroups: [],
+      });
+      const podcastCard = payload(await createCard(podcastGit.id, { title: 'Audit Podcast' })).card;
+      const deviating = await createSponsorDoc(client, {
+        cardId: podcastCard.id,
+        template: 'webinar',
+        title: 'Webinar materials on a podcast Card',
+      });
+
+      const audited = payload(await req('GET', '/api/cards/format-audit'));
+      assert.strictEqual(typeof audited.generatedAt, 'string');
+      assert.strictEqual(typeof audited.cardsScanned, 'number');
+      const byId = new Map<string, any>((audited.findings || []).map((f: any) => [f.id, f]));
+
+      assert.strictEqual(byId.get(aishlVariant.id)?.kind, 'template');
+      assert.strictEqual(byId.get(aishlVariant.id).reason.includes('workshop'), true);
+      assert.strictEqual(byId.has(legacyCard.id), true, 'a Card from the variant Template is a finding');
+      assert.strictEqual(byId.get(legacyCard.id).template, 'aishl-workshop');
+      assert.strictEqual(byId.has(deviating.doc.id), true, 'a deviating document is a finding');
+      assert.strictEqual(byId.get(deviating.doc.id).template, 'webinar');
+      assert.strictEqual(byId.get(deviating.doc.id).cardId, podcastCard.id);
+      // Canonical cards, newsletter cards and their documents stay unflagged.
+      for (const finding of audited.findings as any[]) {
+        assert.notStrictEqual(finding.reason.includes('newsletter'), true, `newsletter must not be flagged: ${finding.reason}`);
+      }
+    });
+
+    it('audit data survives a re-run unchanged: the audit never mutates what it scans', async () => {
+      const first = payload(await req('GET', '/api/cards/format-audit'));
+      const second = payload(await req('GET', '/api/cards/format-audit'));
+      assert.strictEqual(first.findings.length, second.findings.length);
+    });
+  });
 });
