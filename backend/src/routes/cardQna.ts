@@ -1,5 +1,5 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { getCardConsistent, listCards } from '../db/cards';
+import { getCardConsistent, listAllCards } from '../db/cards';
 import { resolveInteractiveActor, workAdminForbidden } from '../identity/actor';
 import { backfillCardQna, buildCardAnnouncement, cardHasQnaEventType, closeCardQna, ensureCardQna, readCardQnaQuestions } from '../qna/service';
 import type { LambdaEvent, LambdaResponse } from '../types';
@@ -32,7 +32,7 @@ export async function handleCardQnaRoute(
   if (backfill) {
     if (method !== 'POST') return json(405, { error: 'Method not allowed' });
     if (!actor.testBypass && !actor.isAdmin) return workAdminForbidden('Backfilling Q&A rooms requires an admin');
-    return json(200, await backfillCardQna(client, await listCards(client)));
+    return json(200, await backfillCardQna(client, await listAllCards(client)));
   }
 
   const [, id, action] = match!;
