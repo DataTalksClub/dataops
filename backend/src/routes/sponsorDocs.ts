@@ -181,27 +181,77 @@ export function sponsorDocPathForTemplate(template: string | null | undefined): 
 }
 
 /**
+ * Retired legacy podcast prep doc IDs (episode-brief, run-sheet, guest-research)
+ * whose content was folded into their card's single canonical `podcast` doc.
+ */
+const LEGACY_PODCAST_DOC_REDIRECTS: Record<string, string> = {
+  'sdoc-f32e2d0cf444d425': 'sdoc-bd8460a27de69e0f',
+  'sdoc-d3d717c93b05a84a': 'sdoc-bd8460a27de69e0f',
+  'sdoc-f9eb105e3012e950': 'sdoc-bd8460a27de69e0f',
+  'sdoc-fae3a5e82bd086bd': 'sdoc-c894d8bdd8ce41e0',
+  'sdoc-8f7ca07b1e5952b2': 'sdoc-c894d8bdd8ce41e0',
+  'sdoc-733deeacbf0c82d8': 'sdoc-c894d8bdd8ce41e0',
+  'sdoc-200f61d017046c1e': 'sdoc-3c7c75fa8d78f881',
+  'sdoc-02d072778a589afe': 'sdoc-3c7c75fa8d78f881',
+  'sdoc-2eb9c9ab245386f4': 'sdoc-3c7c75fa8d78f881',
+  'sdoc-e75c1e639da13f62': 'sdoc-01bb8ebd2e1a34f3f0b705c5',
+  'sdoc-5e1d0241335b4681': 'sdoc-dd879cbb9b1917f0',
+  'sdoc-77041907581c35c4': 'sdoc-dd879cbb9b1917f0',
+  'sdoc-a58585451c05d994': 'sdoc-dd879cbb9b1917f0',
+  'sdoc-5c4365c902518892': 'sdoc-88fcb2ee31012cd1',
+  'sdoc-8242c4772ed42031': 'sdoc-88fcb2ee31012cd1',
+  'sdoc-ab6c1449b9e97ce7': 'sdoc-88fcb2ee31012cd1',
+  'sdoc-0c3846ea08efb724': 'sdoc-c8b13d5253fad7e1f628b225',
+  'sdoc-961abc2f0100fa43': 'sdoc-c8b13d5253fad7e1f628b225',
+  'sdoc-feeaf44bb31cf54b': 'sdoc-c8b13d5253fad7e1f628b225',
+  'sdoc-7b8854fadfdc25ff': 'sdoc-40fa43800c86d13b',
+  'sdoc-1ce72f3b936c143b': 'sdoc-40fa43800c86d13b',
+  'sdoc-03a28cc607f84e38': 'sdoc-40fa43800c86d13b',
+  'sdoc-83b036321c1e76af': 'sdoc-e7a941b39daa3804',
+  'sdoc-2005735767baa70c': 'sdoc-e7a941b39daa3804',
+  'sdoc-aaf40109b792a683': 'sdoc-e7a941b39daa3804',
+  'sdoc-5a2eb0a393452ef9': 'sdoc-60478c50f377c561',
+  'sdoc-96522ddf73f5db3b': 'sdoc-60478c50f377c561',
+  'sdoc-4e725d97980b9ac2': 'sdoc-60478c50f377c561',
+};
+
+/**
  * Redirect legacy `/sponsor-docs/:id` requests for podcast/webinar/workshop
  * documents to their canonical `/podcast-docs/:id` (or webinar/workshop) URL,
- * preserving query parameters (e.g. `?code=...`).
+ * and redirect retired legacy podcast prep doc IDs to their card's canonical
+ * `/podcast-docs/:id`, preserving query parameters (e.g. `?code=...`).
  */
 export async function redirectLegacySponsorDocPath(
   event: LambdaEvent,
   client: DynamoDBDocumentClient,
 ): Promise<LambdaResponse | null> {
   if ((event.httpMethod || 'GET').toUpperCase() !== 'GET') return null;
-  const match = /^\/sponsor-docs\/([^/?#]+)\/?$/.exec(event.path || '');
+  const match = /^\/(sponsor-docs|podcast-docs)\/([^/?#]+)\/?$/.exec(event.path || '');
   if (!match) return null;
-  const docId = decodeURIComponent(match[1]);
-  const loaded = await getSponsorDocWithAuthMaterial(client, docId);
-  if (!loaded) return null;
-  const canonicalPrefix = sponsorDocPathForTemplate(loaded.doc.template);
-  if (canonicalPrefix === '/sponsor-docs') return null;
+  const prefix = match[1];
+  const docId = decodeURIComponent(match[2]);
   const rawQuery = event.queryStringParameters && Object.keys(event.queryStringParameters).length > 0
     ? `?${new URLSearchParams(
       Object.entries(event.queryStringParameters).filter((e): e is [string, string] => typeof e[1] === 'string'),
     ).toString()}`
     : '';
+  const retiredTarget = LEGACY_PODCAST_DOC_REDIRECTS[docId];
+  if (retiredTarget) {
+    return {
+      statusCode: 302,
+      headers: {
+        Location: `/podcast-docs/${encodeURIComponent(retiredTarget)}${rawQuery}`,
+        'Cache-Control': 'no-store',
+        'Referrer-Policy': 'no-referrer',
+      },
+      body: '',
+    };
+  }
+  if (prefix !== 'sponsor-docs') return null;
+  const loaded = await getSponsorDocWithAuthMaterial(client, docId);
+  if (!loaded) return null;
+  const canonicalPrefix = sponsorDocPathForTemplate(loaded.doc.template);
+  if (canonicalPrefix === '/sponsor-docs') return null;
   return {
     statusCode: 302,
     headers: {
@@ -1194,8 +1244,9 @@ export async function handleSponsorDocRoutes(
         const card = await getCardConsistent(client, deleted.cardId);
         if (card && Array.isArray(card.cardLinks)) {
           const encodedId = encodeURIComponent(deleted.id);
+          const isEventCard = (card.tags || []).some((t) => /^(podcast|webinar|workshop)$/i.test(String(t || '').trim()));
           let changed = false;
-          const nextLinks = card.cardLinks.map((item) => {
+          const nextLinks = card.cardLinks.flatMap((item) => {
             const url = String(item.url || '');
             if (
               url.endsWith(`/sponsor-docs/${encodedId}`)
@@ -1205,9 +1256,9 @@ export async function handleSponsorDocRoutes(
               || url.endsWith(`/guest-docs/${encodedId}`)
             ) {
               changed = true;
-              return { ...item, url: '' };
+              return isEventCard ? [] : [{ ...item, url: '' }];
             }
-            return item;
+            return [item];
           });
           if (changed) {
             await updateCard(client, card.id, {
