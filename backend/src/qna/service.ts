@@ -25,7 +25,7 @@ export async function cardHasQnaEventType(db: DynamoDBDocumentClient, card: Card
 }
 
 function slugFor(card: Card): string {
-  const base = String(card.title || 'event').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/g, '');
+  const base = String(card.title || 'event').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 39).replace(/-+$/g, '');
   return `${base || 'event'}-${card.id.replace(/[^a-z0-9]/gi, '').slice(0, 8).toLowerCase()}`;
 }
 

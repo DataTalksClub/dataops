@@ -84,11 +84,12 @@ describe('Event card audience Q&A (qna.dtcdev.click)', () => {
   const newCard = (templateId: string, title: string) => req('POST', '/api/cards', { templateId, title, anchorDate: '2026-12-01' });
 
   it('creates one Q&A room per podcast, webinar and workshop Card, grants host admin, and fills announcement', async () => {
-    for (const [tpl, title] of [[podcast, 'Podcast One'], [webinar, 'Webinar One'], [workshop, 'Workshop One']] as const) {
+    for (const [tpl, title] of [[podcast, 'Podcast One'], [webinar, 'Webinar One With A Very Long Event Title That Exceeds Forty Eight Characters'], [workshop, 'Workshop One']] as const) {
       const res = await newCard(tpl.id, title);
       assert.strictEqual(res.statusCode, 201);
       const card = payload(res).card ?? payload(res);
       assert.match(card.qna.url, /^https:\/\/qna\.dtcdev\.click\/r\//);
+      assert.ok(card.qna.slug.length >= 3 && card.qna.slug.length <= 48, `slug ${card.qna.slug} length ${card.qna.slug.length}`);
       assert.deepStrictEqual(rooms.get(card.qna.roomId)?.admins, ['alexey@datatalks.club']);
       const read = payload(await req('GET', `/api/cards/${card.id}`)).card ?? payload(await req('GET', `/api/cards/${card.id}`));
       assert.strictEqual(read.qna.url, card.qna.url);
