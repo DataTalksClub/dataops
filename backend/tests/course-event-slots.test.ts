@@ -34,7 +34,7 @@ describe('course event slots: event Cards instead of text', () => {
     client = await getClient(await startLocal());
     await createTables(client);
     await createTemplate(client, {
-      name: 'Synthetic course event', type: 'synthetic-course-event', triggerType: 'manual',
+      name: 'Synthetic course event', type: 'synthetic-course-event', origin: 'git', triggerType: 'manual',
       cardLinkDefinitions: [{ name: 'Luma' }],
       taskDefinitions: [
         { refId: 'create-calendar-invite', description: 'Create the calendar invite', offsetDays: -7 },
@@ -42,11 +42,11 @@ describe('course event slots: event Cards instead of text', () => {
       ],
     });
     await createTemplate(client, {
-      name: 'Synthetic slot workshop', type: 'synthetic-slot-workshop', triggerType: 'manual',
+      name: 'Synthetic slot workshop', type: 'synthetic-slot-workshop', origin: 'git', triggerType: 'manual',
       taskDefinitions: [{ refId: 'run', description: 'Run the workshop', offsetDays: 0 }],
     });
     courseTemplateId = (await createTemplate(client, {
-      name: 'Synthetic course', type: 'synthetic-slot-course', triggerType: 'manual',
+      name: 'Synthetic course', type: 'synthetic-slot-course', origin: 'git', triggerType: 'manual',
       countFields: [{ id: 'workshops', label: 'Number of workshops', default: 0, min: 0, max: 5 }],
       taskDefinitions: [
         {

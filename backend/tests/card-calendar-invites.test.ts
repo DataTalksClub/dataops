@@ -303,6 +303,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
       const template = await createTemplate(client, {
         name: title,
         type: `synthetic-webinar-${Math.random().toString(36).slice(2, 8)}`,
+        origin: 'git',
         triggerType: 'manual',
         taskDefinitions: [{
           refId: 'create-calendar-invite',
@@ -454,6 +455,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
       const podcastTemplate = await createTemplate(client, {
         name: 'Podcast',
         type: 'podcast',
+        origin: 'git',
         triggerType: 'manual',
         taskDefinitions: [],
       });
@@ -503,7 +505,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
     });
 
     it('uses the podcast guest title and links an already-confirmed hold through its episode in place', async () => {
-      const template = await createTemplate(client, { name: 'Podcast', type: 'podcast', taskDefinitions: [] });
+      const template = await createTemplate(client, { name: 'Podcast', type: 'podcast', origin: 'git', taskDefinitions: [] });
       const cardResponse = await invoke('POST', '/api/cards', {
         templateId: template.id,
         title: 'Database CI/CD',

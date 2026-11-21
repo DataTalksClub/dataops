@@ -1,5 +1,5 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { listCards } from '../db/cards';
+import { listAllCards } from '../db/cards';
 import { listTemplates } from '../db/templates';
 import { listPodcastEpisodes, type PodcastEpisode } from '../db/podcastEpisodes';
 import { liveBackReferences } from '../db/taskCardLinks';
@@ -146,7 +146,7 @@ export function markCourseLaunchDuplicates(
 
 export async function projectCalendarEntities(client: DynamoDBDocumentClient, from: string, to: string): Promise<CalendarEntry[]> {
   const [cards, templates, episodes] = await Promise.all([
-    listCards(client),
+    listAllCards(client),
     listTemplates(client),
     listPodcastEpisodes(client),
   ]);

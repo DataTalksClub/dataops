@@ -51,7 +51,7 @@ async function card(type: 'podcast'|'webinar'|'workshop', extra: Record<string, 
   if (type === 'workshop') eventPolicy.zoom = { enabled: false };
   eventPolicy.guests.leadMinutes = 5;
   for (const notification of Object.values(eventPolicy.notifications)) notification.emails = [];
-  const template = await createTemplate(db, { name: type, type, eventPolicy, guestIntake: { enabled: true, emailTemplateId: `${type}.first-contact`, formTemplate: type, followUpDays: 7, ...(type === 'podcast' ? { weekdays: [1,2], firstContactTaskRefs: ['obtain-speaker-email','create-proposed-calendar-invite'] } : {}) }, taskDefinitions: type === 'podcast' ? [
+  const template = await createTemplate(db, { name: type, type, origin: 'git', eventPolicy, guestIntake: { enabled: true, emailTemplateId: `${type}.first-contact`, formTemplate: type, followUpDays: 7, ...(type === 'podcast' ? { weekdays: [1,2], firstContactTaskRefs: ['obtain-speaker-email','create-proposed-calendar-invite'] } : {}) }, taskDefinitions: type === 'podcast' ? [
     { refId: 'obtain-speaker-email', description: 'Obtain guest email', offsetDays: 0, requiredLinkName: 'Guest email', proofRequirement: { type: 'url', required: true } },
     { refId: 'create-proposed-calendar-invite', description: 'Create proposed invite', offsetDays: 0, dependsOn: ['obtain-speaker-email'], proofRequirement: { type: 'comment', required: true } },
   ] : [] });
@@ -326,6 +326,7 @@ test('first-contact Card with event hold dates Template Tasks from proposed anch
   const template = await createTemplate(db, {
     name: 'Podcast with offsets',
     type: 'podcast',
+    origin: 'git',
     eventPolicy,
     guestIntake: { enabled: true, emailTemplateId: 'podcast.first-contact', formTemplate: 'podcast', followUpDays: 7, weekdays: [1, 2] },
     taskDefinitions: [

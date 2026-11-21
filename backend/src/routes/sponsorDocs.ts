@@ -9,6 +9,7 @@ import { browserAuthOrigin } from '../auth/browserAuth';
 import { headerValue } from '../httpHeaders';
 import { normalizeCardLinks } from '../artifactLinks';
 import { cardTemplateType, hydrateStructuredCardFields } from '../cards/cardTitleStructure';
+import { eventFormatDocTemplateError } from '../cards/eventFormats';
 import { getTemplateIdByType } from '../cards/createCard';
 import { DOCX_CONTENT_TYPE, markdownToDocx } from '../docs/docxExport';
 import { getCardConsistent, updateCard } from '../db/cards';
@@ -666,6 +667,19 @@ export async function handleSponsorDocRoutes(
           }
         }
 
+        // An event Card carries only its format's documents: a workshop
+        // document cannot hang off a podcast Card, and vice versa. Newsletter
+        // Cards keep their existing slot behaviour.
+        if (existingCard) {
+          const cardFormatError = eventFormatDocTemplateError(
+            cardTemplateType(existingCard, templateIdByType),
+            template,
+          );
+          if (cardFormatError) {
+            return json(422, { error: cardFormatError, code: 'doc_template_format_mismatch' });
+          }
+        }
+
         const eventDocumentTemplate = getSponsorDocTemplate(template).metadataSource === 'card-event';
         if (eventDocumentTemplate && !existingCard && !existingEpisode) {
           return json(422, { error: 'Link this event document to a Card first.', code: 'event_card_required' });
@@ -1064,6 +1078,19 @@ export async function handleSponsorDocRoutes(
           const loaded = await getSponsorDocWithAuthMaterial(client, docId);
           if (!loaded) {
             return json(404, { error: 'Document not found', code: 'sponsor_doc_not_found' });
+          }
+          // A template switch stays inside the owning event Card's format.
+          if (body.template !== undefined && body.template !== loaded.doc.template) {
+            const ownerCard = await getCardConsistent(client, loaded.doc.cardId);
+            if (ownerCard) {
+              const cardFormatError = eventFormatDocTemplateError(
+                cardTemplateType(ownerCard, await getTemplateIdByType(client)),
+                String(body.template),
+              );
+              if (cardFormatError) {
+                return json(422, { error: cardFormatError, code: 'doc_template_format_mismatch' });
+              }
+            }
           }
           const updated = await updateSponsorDoc(client, docId, {
             template: body.template as SponsorDocTemplateKey | undefined,

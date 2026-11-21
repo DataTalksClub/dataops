@@ -60,7 +60,7 @@ describe('Card-owned invitation lifecycle', () => {
     await stopLocal();
   });
   async function card(type: string) {
-    const template = await createTemplate(db, { name: type, type, triggerType: 'manual', taskDefinitions: [
+    const template = await createTemplate(db, { name: type, type, origin: 'git', triggerType: 'manual', taskDefinitions: [
       { refId: 'create-calendar-invite', description: 'Create a calendar invite for the guests', offsetDays: 0 },
     ] });
     const result = await invoke('POST', '/api/cards', { templateId: template.id, title: `Test ${type}`, anchorDate: '2026-11-09' });
@@ -235,6 +235,7 @@ describe('Card-owned invitation lifecycle', () => {
     const template = await createTemplate(db, {
       name: 'podcast-prereqs',
       type: 'podcast-prereqs',
+      origin: 'git',
       triggerType: 'manual',
       taskDefinitions: [
         { refId: 'obtain-email', description: "Obtain speaker's email", offsetDays: -30 },

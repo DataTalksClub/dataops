@@ -115,6 +115,7 @@ describe('API — count-driven repeated tasks and task card links', () => {
     workshop = await createTemplate(client, {
       name: 'Synthetic workshop',
       type: 'workshop-synthetic',
+      origin: 'git',
       taskDefinitions: [{ refId: 'host', description: 'Host workshop', offsetDays: 0 }],
     });
     course = await createTemplate(client, {

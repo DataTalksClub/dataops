@@ -24,13 +24,15 @@ Usage
                                                 Read durable progress; completed images need review
   dataops cards show <card-id>                  The Card, its links, and its Tasks
   dataops cards create --template ID|TYPE|NAME [--date YYYY-MM-DD] [--title T]
-      [--end-date YYYY-MM-DD] [--optional-groups a,b] [--count FIELD=N,...] [--stage S] [--description D] [--owner ID] [--tags a,b]
+      [--end-date YYYY-MM-DD] [--optional-groups a,b] [--count FIELD=N,...] [--stage S] [--description D] [--owner ID] [--tags a,b] [--sponsored true|false]
       [--guest-email EMAIL] [--guest-person ID | --guest-contact ID] [--guest-name NAME] [--topic TOPIC] [--time HH:MM] [--time-zone IANA_ZONE]
       [--guest-time-zone IANA_ZONE] [--window WINDOW] [--skip-email] [--key KEY]
                                                 Podcast, webinar and workshop guest Cards send email
                                                 and a [Proposed] calendar invite automatically. Date, title, name and topic are optional.
                                                 --skip-email prepares its event and form without
                                                 contacting the guest. Reuse --key for a safe retry.
+                                                --sponsored marks the event as sponsored (a deal flag; the
+                                                format and its documents stay unchanged).
   dataops cards invitation <card-id> [--preview | --send | --retry-pre-send] [--json]
                                                 Read first-invitation status; --preview renders without sending.
                                                 --send sends email AND a [Proposed] calendar invite only
@@ -39,7 +41,7 @@ Usage
                                                 ambiguous delivery is blocked. The worker normally resumes automatically.
   dataops cards update <card-id> [--title T] [--description D] [--date D|none] [--end-date D]
       [--event-time "YYYY-MM-DD HH:MM"|none] [--duration M] [--tz IANA_ZONE]
-      [--owner ID|none] [--tags a,b] [--people PERSON_ID,PERSON_ID|none]
+      [--owner ID|none] [--tags a,b] [--people PERSON_ID,PERSON_ID|none] [--sponsored true|false]
   dataops cards update <card-id> --count FIELD=N[,FIELD=N] [--apply]
                                                 Change a count (e.g. workshops=3); preview by default
   dataops cards time <card-id> --at "YYYY-MM-DD HH:MM" [--duration 60] [--tz Europe/Berlin]
@@ -175,6 +177,7 @@ export async function show(args, io) {
       ? Object.entries(card.counts).map(([field, count]) => `${field}=${count}`).join(", ") : undefined],
     ["description", card.description],
     ["tags", card.tags],
+    ["sponsored", card.sponsored === true ? "yes" : undefined],
     ["source docs", card.sourceDocIds],
     ["version", card.version],
   ]);
@@ -269,6 +272,12 @@ export async function create(args, io) {
   const owner = optionalString(args, "owner");
   if (owner !== undefined) body.ownerId = owner;
   if (args.tags !== undefined) body.tags = csv(args.tags);
+  if (args.sponsored !== undefined) {
+    if (![true, false, "true", "false"].includes(args.sponsored)) {
+      throw new UsageError("--sponsored is a boolean flag.");
+    }
+    body.sponsored = args.sponsored === true || args.sponsored === "true";
+  }
   const result = await api.post("/api/cards", body);
   if (args.json) return result;
   io.print(`Created Card ${result.card.id} - ${result.card.title} (${result.tasks?.length ?? 0} Tasks).`);
@@ -342,6 +351,12 @@ export async function update(args, io) {
   if (owner !== undefined) body.ownerId = owner === "none" ? null : owner;
   if (args.tags !== undefined) body.tags = csv(args.tags);
   if (args.people !== undefined) body.people = args.people === "none" ? [] : csv(args.people);
+  if (args.sponsored !== undefined) {
+    if (![true, false, "true", "false"].includes(args.sponsored)) {
+      throw new UsageError("--sponsored is a boolean flag.");
+    }
+    body.sponsored = args.sponsored === true || args.sponsored === "true";
+  }
   if (!Object.keys(body).length) throw new UsageError("Nothing to change. See `dataops cards --help`.");
   return write(args, io, id, body, "Updated");
 }

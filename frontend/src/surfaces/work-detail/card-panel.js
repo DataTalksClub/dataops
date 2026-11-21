@@ -390,6 +390,7 @@ export function createCardPanel(context) {
       progress,
       resumeCardPanel,
       today,
+      updateCardSponsored,
       updateCardStage,
     });
     // The board badge replaces the legacy `[Tag]` title prefix; the detail
@@ -949,6 +950,7 @@ export function createCardPanel(context) {
     retryCardIntent,
     reviewLatestCard,
     saveCardLink,
+    updateCardSponsored,
     updateCardStage,
   } = createCardActions({
     ...context,

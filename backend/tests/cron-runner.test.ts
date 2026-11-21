@@ -6,7 +6,7 @@ import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables } from '../scripts/local-dynamodb';
 import { createCardFromTemplate, createTemplate, listTemplates, updateTemplate } from '../src/db/templates';
-import { listCards } from '../src/db/cards';
+import { listAllCards } from '../src/db/cards';
 import { listUndismissedNotifications } from '../src/db/notifications';
 import { createRecurringConfig, updateRecurringConfig } from '../src/db/recurring';
 import { deleteTask, getTask, listTasksByCard, listTasksByDate } from '../src/db/tasks';
@@ -77,7 +77,7 @@ describe('Cron runner', () => {
       ],
     });
     await runCron(client, new Date('2031-01-02T09:00:00Z'));
-    const card = (await listCards(client)).find((candidate) => candidate.templateId === template.id)!;
+    const card = (await listAllCards(client)).find((candidate) => candidate.templateId === template.id)!;
     assert.deepStrictEqual(card.selectedOptionalGroups, []);
     assert.deepStrictEqual((await listTasksByCard(client, card.id)).map((task) => task.templateTaskRef), ['core']);
     await updateTemplate(client, template.id, { triggerEnabled: false });
@@ -108,7 +108,7 @@ describe('Cron runner', () => {
     assert.strictEqual(result.recurring.generated.length, 0);
 
     // Verify the card was created
-    const cards = await listCards(client);
+    const cards = await listAllCards(client);
     const createdCard = cards.find((b) => b.id === result.created[0]);
     assert.ok(createdCard, 'Card should exist');
     assert.strictEqual(createdCard.templateId, template.id);
@@ -156,7 +156,7 @@ describe('Cron runner', () => {
     assert.strictEqual(recurringTask.source, 'recurring');
     assert.strictEqual(recurringTask.assigneeId, 'user-grace');
 
-    const cards = await listCards(client);
+    const cards = await listAllCards(client);
     const card = cards.find((item) => item.templateId === template.id && item.anchorDate === '2029-01-09');
     assert.ok(card);
     const cardTasks = await listTasksByCard(client, card.id);
@@ -197,7 +197,7 @@ describe('Cron runner', () => {
 
     const recurringTasks = (await listTasksByDate(client, '2029-01-04')).filter((task) => task.recurringConfigId === recurring.id);
     assert.strictEqual(recurringTasks.length, 1);
-    const cards = (await listCards(client)).filter((card) => card.templateId === template.id && card.anchorDate === '2029-01-04');
+    const cards = (await listAllCards(client)).filter((card) => card.templateId === template.id && card.anchorDate === '2029-01-04');
     assert.strictEqual(cards.length, 1);
     assert.strictEqual((await listTasksByCard(client, cards[0].id)).length, 1);
 
@@ -288,7 +288,7 @@ describe('Cron runner', () => {
     const monday = new Date('2029-01-08T09:00:00Z');
     const mondayPass = await runCron(client, monday);
     assert.strictEqual(mondayPass.recurring.generated.length, 1);
-    const mondayCards = (await listCards(client)).filter((card) => card.templateId === template.id);
+    const mondayCards = (await listAllCards(client)).filter((card) => card.templateId === template.id);
     assert.deepStrictEqual(mondayCards.map((card) => card.anchorDate), ['2029-01-08']);
 
     const second = await runCron(client, saturday);
@@ -296,14 +296,14 @@ describe('Cron runner', () => {
     const secondMonday = await runCron(client, monday);
     assert.strictEqual(secondMonday.recurring.generated.length, 0);
     assert.strictEqual(secondMonday.recurring.skipped, 1);
-    assert.strictEqual((await listCards(client)).filter((card) => card.templateId === template.id).length, 1);
+    assert.strictEqual((await listAllCards(client)).filter((card) => card.templateId === template.id).length, 1);
 
     await updateRecurringConfig(client, recurring.id, { enabled: false });
     await updateTemplate(client, template.id, { triggerEnabled: false });
   });
 
   describe('automatic Template Cards on weekends', () => {
-    const cardsOf = async (templateId: string) => (await listCards(client))
+    const cardsOf = async (templateId: string) => (await listAllCards(client))
       .filter((card) => card.templateId === templateId)
       .sort((a, b) => a.anchorDate!.localeCompare(b.anchorDate!));
     // 2033-01-08 is a Saturday, 2033-01-09 a Sunday, 2033-01-10 a Monday.
@@ -382,7 +382,7 @@ describe('Cron runner', () => {
       const monday = at('2026-11-02');
       await runCron(client, monday);
 
-      const firstPass = await listCards(client);
+      const firstPass = await listAllCards(client);
       const cardsOf = (templateId: string) => firstPass
         .filter((card) => card.templateId === templateId)
         .map((card) => card.anchorDate)
@@ -392,7 +392,7 @@ describe('Cron runner', () => {
       assert.deepStrictEqual(cardsOf(priorPeriod.id), ['2026-10-01', '2026-11-02']);
 
       await runCron(client, monday);
-      const secondPass = await listCards(client);
+      const secondPass = await listAllCards(client);
       for (const template of [taxReport, noCard, priorPeriod]) {
         assert.deepStrictEqual(
           secondPass
@@ -420,7 +420,7 @@ describe('Cron runner', () => {
       });
 
       await runCron(client, at('2033-01-10'));
-      const anchors = (await listCards(client))
+      const anchors = (await listAllCards(client))
         .filter((card) => card.templateId === template.id)
         .map((card) => card.anchorDate)
         .sort();
@@ -428,7 +428,7 @@ describe('Cron runner', () => {
 
       await runCron(client, at('2033-01-10'));
       assert.deepStrictEqual(
-        (await listCards(client))
+        (await listAllCards(client))
           .filter((card) => card.templateId === template.id)
           .map((card) => card.anchorDate)
           .sort(),
@@ -518,7 +518,7 @@ describe('Cron runner', () => {
 
     const wednesday = new Date('2029-01-10T09:00:00Z');
     await runCron(client, wednesday);
-    const card = (await listCards(client)).find((item) => item.templateId === template.id && item.anchorDate === '2029-01-10');
+    const card = (await listAllCards(client)).find((item) => item.templateId === template.id && item.anchorDate === '2029-01-10');
     assert.ok(card);
     const originalTasks = await listTasksByCard(client, card.id);
     assert.strictEqual(originalTasks.length, 2);
@@ -529,7 +529,7 @@ describe('Cron runner', () => {
     assert.strictEqual(recovered.templates.skipped, 1);
     assert.strictEqual(recovered.templates.recovered, 1);
 
-    const cards = (await listCards(client)).filter((item) => item.templateId === template.id && item.anchorDate === '2029-01-10');
+    const cards = (await listAllCards(client)).filter((item) => item.templateId === template.id && item.anchorDate === '2029-01-10');
     assert.strictEqual(cards.length, 1);
     const recoveredTasks = await listTasksByCard(client, card.id);
     assert.strictEqual(recoveredTasks.length, 2);
@@ -540,7 +540,7 @@ describe('Cron runner', () => {
 
   it('is idempotent -- no duplicates on second call', async () => {
     // Get current card count
-    const cardsBefore = await listCards(client);
+    const cardsBefore = await listAllCards(client);
     const countBefore = cardsBefore.length;
 
     // Run cron again on the same Monday
@@ -551,7 +551,7 @@ describe('Cron runner', () => {
     assert.ok(result.skipped >= 1, 'Should have skipped at least 1');
 
     // Card count should not increase
-    const cardsAfter = await listCards(client);
+    const cardsAfter = await listAllCards(client);
     assert.strictEqual(cardsAfter.length, countBefore);
   });
 
@@ -595,7 +595,7 @@ describe('Cron runner', () => {
     });
 
     // Get card count before
-    const cardsBefore = await listCards(client);
+    const cardsBefore = await listAllCards(client);
     const countBefore = cardsBefore.length;
 
     // Run cron on a date that would match any daily cron
@@ -604,7 +604,7 @@ describe('Cron runner', () => {
 
     // Should not have created a card for the manual template
     // (may create for other auto templates if they match this date)
-    const cardsAfter = await listCards(client);
+    const cardsAfter = await listAllCards(client);
     const newCards = cardsAfter.filter(
       (b) => !cardsBefore.find((bb) => bb.id === b.id)
     );
@@ -635,12 +635,12 @@ describe('Cron runner', () => {
       ],
     });
 
-    const cardsBefore = await listCards(client);
+    const cardsBefore = await listAllCards(client);
 
     const date = new Date('2026-04-15T09:00:00Z');
     await runCron(client, date);
 
-    const cardsAfter = await listCards(client);
+    const cardsAfter = await listAllCards(client);
     const newCards = cardsAfter.filter(
       (b) => !cardsBefore.find((bb) => bb.id === b.id)
     );
@@ -679,7 +679,7 @@ describe('Cron runner', () => {
     assert.ok(result.created.length >= 1);
 
     // Find the card for this template
-    const cards = await listCards(client);
+    const cards = await listAllCards(client);
     const card = cards.find((b) => b.templateId === template.id);
     assert.ok(card, 'Card for template should exist');
   });
@@ -699,7 +699,7 @@ describe('Cron runner', () => {
     const date = new Date('2026-06-15T09:00:00Z');
     const result = await runCron(client, date);
 
-    const cards = await listCards(client);
+    const cards = await listAllCards(client);
     const card = cards.find((b) => b.templateId === template.id);
     assert.ok(card);
     assert.strictEqual(card.anchorDate, '2026-06-15'); // Same day as cron fire
@@ -807,7 +807,7 @@ describe('Cron runner', () => {
     assert.ok(logs.some((line) => line.startsWith(
       'Cron failure notification failed: Recurring task generation failed for 2045-03-07: injected recurring failure',
     )));
-    const card = (await listCards(client)).find((candidate) => candidate.templateId === template.id);
+    const card = (await listAllCards(client)).find((candidate) => candidate.templateId === template.id);
     assert.ok(card, 'the automatic template step still ran after the failed recurring step');
     assert.ok(result.created.includes(card.id));
     const runs = await getAutomationRuns(client, ['calendar-hold-expiry']);

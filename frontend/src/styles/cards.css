@@ -379,6 +379,13 @@
   background: var(--dk-success-bg);
   color: var(--dk-success-text);
   font-weight: 550;
+}.card-sponsored-toggle {
+  cursor: pointer;
+}.card-sponsored-toggle:disabled {
+  cursor: default;
+  opacity: 0.6;
+}.workflow-card-flag.card-sponsored-toggle {
+  font-weight: 550;
 }.ops-workflow-card small {
   color: var(--dk-text-muted);
   font-size: 11px;

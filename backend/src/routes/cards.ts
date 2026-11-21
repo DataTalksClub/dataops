@@ -765,7 +765,7 @@ async function handleSingle(
     const allowedFields = [
       'title', 'description', 'anchorDate', 'endDate', 'references', 'cardLinks', 'tags', 'stage',
       'sourceDocIds', 'artifactRefs', 'intakeRefs',
-      'people', 'sponsor', 'secondarySponsors', 'issueNumber',
+      'people', 'sponsor', 'secondarySponsors', 'issueNumber', 'sponsored',
     ];
     if (body.anchorDate !== undefined && body.anchorDate !== null
       && (typeof body.anchorDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.anchorDate))) {
@@ -774,6 +774,9 @@ async function handleSingle(
     if (body.endDate !== undefined && body.endDate !== null
       && !/^\d{4}-\d{2}-\d{2}$/.test(body.endDate as string)) {
       return json(400, { error: 'Invalid endDate format, expected YYYY-MM-DD' });
+    }
+    if (body.sponsored !== undefined && typeof body.sponsored !== 'boolean') {
+      return json(400, { error: 'sponsored must be a boolean' });
     }
     const changingAnchorDate =
       body.anchorDate !== undefined &&

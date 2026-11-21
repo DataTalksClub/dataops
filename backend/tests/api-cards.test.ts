@@ -6,7 +6,7 @@ import { handler } from '../src/handler';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTables, deleteTables } from '../scripts/local-dynamodb';
-import { createCard, listCards } from '../src/db/cards';
+import { createCard, listAllCards } from '../src/db/cards';
 import { EMPTY_TEMPLATE_ID, putEmptyTemplate, templateLink } from './helpers/cardTemplate';
 import { createTemplate } from '../src/db/templates';
 import { createTask } from '../src/db/tasks';
@@ -219,7 +219,7 @@ describe('API — Cards', () => {
       const res = await invoke('POST', '/api/cards', { title: 'Template-less', anchorDate: '2026-04-02' });
       assert.strictEqual(res.statusCode, 400);
       assert.deepStrictEqual(JSON.parse(res.body), { error: 'Missing required field: templateId', code: 'template-required' });
-      assert.equal((await listCards(client)).some(({ title }) => title === 'Template-less'), false);
+      assert.equal((await listAllCards(client)).some(({ title }) => title === 'Template-less'), false);
     });
 
     it('creates a card with a template and instantiates tasks', async () => {
@@ -290,7 +290,7 @@ describe('API — Cards', () => {
       } finally {
         delete process.env.TEMPLATE_CARD_CREATE_TEST_TEMPLATE_RACE;
       }
-      assert.equal((await listCards(client)).some(({ title }) => title === 'Must not exist after race'), false);
+      assert.equal((await listAllCards(client)).some(({ title }) => title === 'Must not exist after race'), false);
     });
 
     it('returns 404 when templateId does not exist', async () => {

@@ -1,7 +1,8 @@
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { createCardFromTemplate, listTemplates, instantiateTemplate } from '../db/templates';
-import { listCards } from '../db/cards';
+import { eventFormatCardCreationError } from '../cards/eventFormats';
+import { listAllCards } from '../db/cards';
 import { createDueTaskNotifications, createNotification } from '../db/notifications';
 import { generateRecurringTasks } from '../db/recurring';
 import { emitRecurringCronMetrics } from './recurringMetrics';
@@ -151,6 +152,20 @@ async function ensureAutomaticCard(
     return { created: null, recovered: recoveredTasks.length };
   }
 
+  // The cron path obeys the event-format policy like every other creator: a
+  // non-Git Template claiming an event format never instantiates a Card.
+  const formatError = eventFormatCardCreationError(template, `${template.name} - ${formatAnchorDate(anchorDate)}`);
+  if (formatError) {
+    await createNotification(client, {
+      type: 'automation-failure',
+      message: `${template.name} run skipped for ${formatAnchorDate(anchorDate)}: ${formatError}`,
+      templateId: template.id,
+      dueAt: anchorDate,
+      metadata: { anchorDate, templateId: template.id, templateType: template.type || '' },
+    });
+    return { created: null, recovered: 0 };
+  }
+
   const cardData: Record<string, unknown> = {
     ...templateCardProjection(template),
     title: `${template.name} - ${formatAnchorDate(anchorDate)}`,
@@ -198,7 +213,7 @@ async function runCron(
   );
 
   // 2. Get all existing cards for duplicate detection
-  const allCards = await listCards(client);
+  const allCards = await listAllCards(client);
 
   const created: string[] = [];
   let skipped = 0;
