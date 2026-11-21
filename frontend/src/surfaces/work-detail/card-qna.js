@@ -62,7 +62,9 @@ export function renderCardQna({ request, workApiUrl }, card) {
       const data = await request(workApiUrl(`/api/cards/${encodeURIComponent(card.id)}/qna/questions`));
       list.replaceChildren(...data.questions.map((question) => {
         const item = document.createElement("li");
-        item.textContent = `${question.text} — ${question.authorName || "Anonymous"}${question.score > 1 ? ` (+${question.score})` : ""}${question.status === "answered" ? " ✓ answered" : ""}`;
+        const score = question.score > 1 ? ` (+${question.score})` : "";
+        const answered = question.status === "answered" ? " ✓ answered" : "";
+        item.textContent = `${question.text} — ${question.authorName || "Anonymous"}${score}${answered}`;
         return item;
       }));
       status.hidden = data.questions.length > 0;
