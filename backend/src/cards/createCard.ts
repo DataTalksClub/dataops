@@ -6,6 +6,7 @@
  * created anywhere is instantiated from a Template and gets the same
  * validation, ownership rule, Template projection, and title parsing.
  */
+import { ensureCardQnaQuietly, isQnaEventType } from '../qna/service';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { prepareGuestIntake } from '../events/guestIntakeCreate';
@@ -369,7 +370,9 @@ export async function createCardFromInput(
       body.counts as Record<string, number> | undefined,
       intake?.tasks,
     );
-    return { ok: true, card, tasks, template };
+    // Podcast, webinar and workshop Cards get their audience Q&A room now; an outage never blocks the Card.
+    const withQna = isQnaEventType(template.type) ? await ensureCardQnaQuietly(client, card) : card;
+    return { ok: true, card: withQna, tasks, template };
   } catch (error) {
     if (intake) {
       try {

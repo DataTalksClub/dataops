@@ -74,6 +74,7 @@ import {
   validateActionChannel,
   validateActionNote,
   validateCalendarInviteRequirement,
+  closeQnaOnDone,
   validateLinkedCardRequirement,
   validateDateOrTimestampValue,
   validateDoneProof,
@@ -1243,6 +1244,9 @@ export async function handleTaskRoutes(
       const proofError = await validateDoneProof(client, existing.id, existing, updates);
       if (proofError) return jsonResponse(400, { error: proofError });
 
+      const qnaError = await closeQnaOnDone(client, taskData);
+      if (qnaError) return jsonResponse(502, { error: qnaError });
+
       updates.completedAt = now;
       if (actorId) updates.completedBy = actorId;
       const resolvedEvent = makeTaskHistoryEvent('wait-resolved', existing, {
@@ -1522,6 +1526,11 @@ export async function handleTaskRoutes(
       const proofError = await validateDoneProof(client, id, existing, updates);
       if (proofError) {
         return jsonResponse(400, { error: proofError });
+      }
+
+      if (existing.status !== 'done') {
+        const qnaError = await closeQnaOnDone(client, taskData);
+        if (qnaError) return jsonResponse(502, { error: qnaError });
       }
 
       updates.completedAt = completedAt;

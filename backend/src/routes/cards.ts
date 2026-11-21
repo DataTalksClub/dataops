@@ -28,6 +28,7 @@ import {
 import { attachLinkedCards, cardBackReferences } from '../cards/taskCardLinkView';
 import { ensureEventSlotCards } from '../cards/eventSlots';
 import { buildFormatAuditReport } from '../cards/formatAudit';
+import { handleCardQnaRoute } from './cardQna';
 import { redateCardTemplateTasks } from '../cards/redateTemplateTasks';
 import {
   CardDeletionBlockedError,
@@ -368,6 +369,9 @@ async function handleCardRoutes(
     if (suffix === '' || suffix === '/') {
       return await handleCollection(method, rawBody, client, event);
     }
+
+    const qnaResponse = await handleCardQnaRoute(method, suffix, event, client);
+    if (qnaResponse) return qnaResponse;
 
     // Route: /api/cards/template-updates/:action
     const batchTemplateUpdateMatch = suffix.match(/^\/template-updates\/(preview|apply)\/?$/);
