@@ -370,8 +370,10 @@ export async function createCardFromInput(
       body.counts as Record<string, number> | undefined,
       intake?.tasks,
     );
-    // Podcast, webinar and workshop Cards get their audience Q&A room now; an outage never blocks the Card.
-    const withQna = isQnaEventType(template.type) ? await ensureCardQnaQuietly(client, card) : card;
+    // Dated podcast, webinar and workshop Cards get their audience Q&A room now; undated Cards get one once dated.
+    const withQna = isQnaEventType(template.type) && card.anchorDate
+      ? await ensureCardQnaQuietly(client, card)
+      : card;
     return { ok: true, card: withQna, tasks, template };
   } catch (error) {
     if (intake) {

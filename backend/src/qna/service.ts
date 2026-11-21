@@ -29,6 +29,11 @@ function slugFor(card: Card): string {
   return `${base || 'event'}-${card.id.replace(/[^a-z0-9]/gi, '').slice(0, 8).toLowerCase()}`;
 }
 
+/** Host account granted admin access on every DataOps-created Q&A room. */
+export function hostAdminEmail(): string {
+  return (process.env.DATAQNA_HOST_ADMIN_EMAIL || 'alexey@datatalks.club').trim().toLowerCase();
+}
+
 /** Create the Card's Q&A room once; the room's idempotency key is the Card id, so retries return the same room. */
 export async function ensureCardQna(db: DynamoDBDocumentClient, card: Card): Promise<Card> {
   if (card.qna) return card;
@@ -38,6 +43,8 @@ export async function ensureCardQna(db: DynamoDBDocumentClient, card: Card): Pro
     description: 'Ask your questions for the live event. Upvote the ones you want answered.',
     idempotencyKey: `dataops-card-${card.id}`,
   });
+  const adminEmail = hostAdminEmail();
+  if (adminEmail) await qna().addRoomAdmin(room.roomId, adminEmail);
   const created: CardQna = { roomId: room.roomId, slug: room.slug, url: room.url, presentUrl: room.presentUrl, createdAt: new Date().toISOString() };
   return updateCardAdditive(db, card, (current) => ({ qna: current.qna ?? created }));
 }
@@ -50,6 +57,13 @@ export async function ensureCardQnaQuietly(db: DynamoDBDocumentClient, card: Car
     console.warn(`Q&A room for Card ${card.id} was not created: ${(error as Error).message}`);
     return card;
   }
+}
+
+/** Auto-create the Q&A room once an event Card has a date (`anchorDate`); never blocks the caller. */
+export async function ensureCardQnaForDatedEvent(db: DynamoDBDocumentClient, card: Card): Promise<Card> {
+  if (card.qna || !card.anchorDate || card.status === 'archived' || card.stage === 'done') return card;
+  if (!(await cardHasQnaEventType(db, card))) return card;
+  return ensureCardQnaQuietly(db, card);
 }
 
 /** Close the room and keep every audience question on the Card. Idempotent: a saved Card is returned unchanged. */
@@ -86,13 +100,45 @@ export async function readCardQnaQuestions(card: Card): Promise<CardQnaQuestions
   return { roomUrl: room.url, presentUrl: room.presentUrl, state: 'open', source: 'live', savedAt: null, questions };
 }
 
+export interface CardQnaAnnouncement {
+  qnaUrl: string;
+  registrationUrl: string | null;
+  text: string;
+}
+
+/** Build the event announcement snippet with the Card's Q&A room link filled in automatically. */
+export function buildCardAnnouncement(card: Card): CardQnaAnnouncement | null {
+  const qnaUrl = card.qna?.url?.trim();
+  if (!qnaUrl) return null;
+  const regLink = (card.cardLinks || []).find((link) => {
+    const name = String(link.name || '').trim().toLowerCase();
+    return Boolean(link.url?.trim()) && (name === 'luma' || name === 'event page');
+  });
+  const registrationUrl = regLink?.url?.trim() || null;
+  const datePart = card.anchorDate ? ` on ${String(card.anchorDate).slice(0, 10)}` : '';
+  const lines = [`Join us for ${card.title || 'our upcoming event'}${datePart}!`];
+  if (registrationUrl) lines.push('', `Register here: ${registrationUrl}`);
+  lines.push(registrationUrl ? `Ask questions live: ${qnaUrl}` : `\nAsk questions live: ${qnaUrl}`);
+  return { qnaUrl, registrationUrl, text: lines.join('\n') };
+}
+
 export interface QnaBackfillResult { created: string[]; skipped: number; failed: Array<{ cardId: string; error: string }> }
 
-/** Give every not-yet-finished event Card a Q&A room. */
+/** Give every upcoming dated event Card a Q&A room. */
 export async function backfillCardQna(db: DynamoDBDocumentClient, cards: Card[]): Promise<QnaBackfillResult> {
   const result: QnaBackfillResult = { created: [], skipped: 0, failed: [] };
   for (const card of cards) {
-    if (card.qna || card.status === 'archived' || !(await cardHasQnaEventType(db, card))) { result.skipped += 1; continue; }
+    if (
+      card.qna
+      || !card.anchorDate
+      || card.status === 'archived'
+      || card.stage === 'done'
+      || card.stage === 'after-event'
+      || !(await cardHasQnaEventType(db, card))
+    ) {
+      result.skipped += 1;
+      continue;
+    }
     try {
       await ensureCardQna(db, card);
       result.created.push(card.id);

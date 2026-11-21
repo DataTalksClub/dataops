@@ -28,6 +28,7 @@ export interface QnaQuestion {
 
 export interface QnaClient {
   createRoom(input: { title: string; slug: string; description: string; idempotencyKey: string }): Promise<QnaRoom>;
+  addRoomAdmin(roomId: string, email: string): Promise<void>;
   closeRoom(roomId: string): Promise<QnaRoom>;
   listQuestions(roomId: string): Promise<QnaQuestion[]>;
 }
@@ -90,6 +91,9 @@ export function createQnaClient(
         state: 'open',
         idempotency_key: input.idempotencyKey,
       }));
+    },
+    async addRoomAdmin(roomId, email) {
+      await call('POST', `/rooms/${encodeURIComponent(roomId)}/admins`, { email });
     },
     async closeRoom(roomId) {
       return toRoom(await call('PATCH', `/rooms/${encodeURIComponent(roomId)}`, { state: 'closed' }));

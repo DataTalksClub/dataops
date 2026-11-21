@@ -21,7 +21,7 @@ describe('Event card audience Q&A (qna.dtcdev.click)', () => {
   let workshop: Template;
   let newsletter: Template;
   let closeStep: Template;
-  const rooms = new Map<string, { slug: string; state: string; key: string }>();
+  const rooms = new Map<string, { slug: string; state: string; key: string; admins: string[] }>();
   const questions: QnaQuestion[] = [
     { questionId: 'q1', text: 'What is dbt?', authorName: 'Maria', status: 'visible', score: 4, pinned: false, createdAt: '2026-12-01T18:00:00Z', answeredAt: null },
     { questionId: 'q2', text: 'Why Lambda?', authorName: null, status: 'answered', score: 1, pinned: false, createdAt: '2026-12-01T18:05:00Z', answeredAt: '2026-12-01T18:30:00Z' },
@@ -31,8 +31,12 @@ describe('Event card audience Q&A (qna.dtcdev.click)', () => {
     async createRoom(input) {
       for (const [id, r] of rooms) if (r.key === input.idempotencyKey) return { roomId: id, slug: r.slug, url: `https://qna.dtcdev.click/r/${r.slug}`, presentUrl: `https://qna.dtcdev.click/admin/rooms/${id}/present`, state: 'open' };
       const id = `room-${rooms.size + 1}`;
-      rooms.set(id, { slug: input.slug, state: 'open', key: input.idempotencyKey });
+      rooms.set(id, { slug: input.slug, state: 'open', key: input.idempotencyKey, admins: [] });
       return { roomId: id, slug: input.slug, url: `https://qna.dtcdev.click/r/${input.slug}`, presentUrl: `https://qna.dtcdev.click/admin/rooms/${id}/present`, state: 'open' };
+    },
+    async addRoomAdmin(roomId, email) {
+      const r = rooms.get(roomId)!;
+      if (!r.admins.includes(email)) r.admins.push(email);
     },
     async closeRoom(roomId) {
       if (failClose) throw new Error('Q&A service down');
@@ -79,15 +83,42 @@ describe('Event card audience Q&A (qna.dtcdev.click)', () => {
   const payload = (r: LambdaResponse): any => JSON.parse(r.body);
   const newCard = (templateId: string, title: string) => req('POST', '/api/cards', { templateId, title, anchorDate: '2026-12-01' });
 
-  it('creates one Q&A room per podcast, webinar and workshop Card and stores its URL', async () => {
+  it('creates one Q&A room per podcast, webinar and workshop Card, grants host admin, and fills announcement', async () => {
     for (const [tpl, title] of [[podcast, 'Podcast One'], [webinar, 'Webinar One'], [workshop, 'Workshop One']] as const) {
       const res = await newCard(tpl.id, title);
       assert.strictEqual(res.statusCode, 201);
       const card = payload(res).card ?? payload(res);
       assert.match(card.qna.url, /^https:\/\/qna\.dtcdev\.click\/r\//);
+      assert.deepStrictEqual(rooms.get(card.qna.roomId)?.admins, ['alexey@datatalks.club']);
       const read = payload(await req('GET', `/api/cards/${card.id}`)).card ?? payload(await req('GET', `/api/cards/${card.id}`));
       assert.strictEqual(read.qna.url, card.qna.url);
+      const ann = payload(await req('GET', `/api/cards/${card.id}/qna/announcement`));
+      assert.strictEqual(ann.qnaUrl, card.qna.url);
+      assert.ok(ann.text.includes(card.qna.url));
     }
+  });
+
+  it('waits until an undated event Card gets a date before creating its Q&A room', async () => {
+    const { createCardFromInput } = await import('../src/cards/createCard');
+    const undated = await createCardFromInput(
+      client,
+      { id: adminUserId, isAdmin: true, testBypass: false },
+      { templateId: podcast.id, title: 'Undated Podcast' },
+      { provisionalAnchorDate: '2026-12-20' },
+    );
+    assert.strictEqual(undated.ok, true, !undated.ok ? undated.response.body : '');
+    if (!undated.ok) return;
+    assert.strictEqual(undated.card.anchorDate, undefined);
+    assert.strictEqual(undated.card.qna, undefined);
+
+    const datedRes = await req('PUT', `/api/cards/${undated.card.id}`, {
+      anchorDate: '2026-12-20',
+      expectedVersion: undated.card.version,
+    });
+    assert.strictEqual(datedRes.statusCode, 200, datedRes.body);
+    const dated = payload(datedRes).card ?? payload(datedRes);
+    assert.match(dated.qna.url, /^https:\/\/qna\.dtcdev\.click\/r\//);
+    assert.deepStrictEqual(rooms.get(dated.qna.roomId)?.admins, ['alexey@datatalks.club']);
   });
 
   it('gives other formats no room', async () => {
@@ -161,9 +192,12 @@ describe('Event card audience Q&A (qna.dtcdev.click)', () => {
     }, async () => 'dq_secret');
     const room = await http.createRoom({ title: 'T', slug: 's', description: 'd', idempotencyKey: 'k' });
     assert.strictEqual(room.url, 'https://qna.dtcdev.click/r/s');
+    await http.addRoomAdmin('r1', 'alexey@datatalks.club');
     const qs = await http.listQuestions('r1');
     assert.strictEqual(qs[0].authorName, null);
     assert.strictEqual(seen[0].init.headers.authorization, 'Bearer dq_secret');
     assert.ok(seen[0].url.startsWith('https://qna.dtcdev.click/api/v1/rooms'));
+    assert.strictEqual(seen[1].url, 'https://qna.dtcdev.click/api/v1/rooms/r1/admins');
+    assert.strictEqual(seen[1].init.body, JSON.stringify({ email: 'alexey@datatalks.club' }));
   });
 });

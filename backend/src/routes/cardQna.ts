@@ -1,7 +1,7 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getCardConsistent, listCards } from '../db/cards';
 import { resolveInteractiveActor, workAdminForbidden } from '../identity/actor';
-import { backfillCardQna, cardHasQnaEventType, closeCardQna, ensureCardQna, readCardQnaQuestions } from '../qna/service';
+import { backfillCardQna, buildCardAnnouncement, cardHasQnaEventType, closeCardQna, ensureCardQna, readCardQnaQuestions } from '../qna/service';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { JSON_HEADERS } from '../http';
 
@@ -9,8 +9,9 @@ const json = (statusCode: number, body: unknown): LambdaResponse => ({ statusCod
 
 /**
  * Card Q&A routes (audience Q&A on qna.dtcdev.click):
- *   POST /api/cards/qna/backfill          admin: give every event Card a room
+ *   POST /api/cards/qna/backfill          admin: give every upcoming dated event Card a room
  *   GET  /api/cards/:id/qna/questions     stable read model: live while open, saved copy once closed
+ *   GET  /api/cards/:id/qna/announcement  announcement snippet with the Card's Q&A room link
  *   POST /api/cards/:id/qna               create the Card's room (idempotent)
  *   POST /api/cards/:id/qna/close         close the room and save every question on the Card
  */
@@ -21,7 +22,7 @@ export async function handleCardQnaRoute(
   client: DynamoDBDocumentClient,
 ): Promise<LambdaResponse | null> {
   const backfill = /^\/qna\/backfill\/?$/.test(suffix);
-  const match = suffix.match(/^\/([^/]+)\/qna(?:\/(questions|close))?\/?$/);
+  const match = suffix.match(/^\/([^/]+)\/qna(?:\/(questions|announcement|close))?\/?$/);
   if (!backfill && !match) return null;
   const read = method === 'GET';
   const resolved = await resolveInteractiveActor(client, event, read ? 'work-read' : 'work-write');
@@ -37,10 +38,10 @@ export async function handleCardQnaRoute(
   const [, id, action] = match!;
   const card = await getCardConsistent(client, id);
   if (!card) return json(404, { error: 'Card not found' });
-  if (action === 'questions') {
+  if (action === 'questions' || action === 'announcement') {
     if (!read) return json(405, { error: 'Method not allowed' });
-    const questions = await readCardQnaQuestions(card);
-    return questions ? json(200, questions) : json(404, { error: 'This Card has no Q&A room', code: 'qna_not_found' });
+    const body = action === 'announcement' ? buildCardAnnouncement(card) : await readCardQnaQuestions(card);
+    return body ? json(200, body) : json(404, { error: 'This Card has no Q&A room', code: 'qna_not_found' });
   }
   if (method !== 'POST') return json(405, { error: 'Method not allowed' });
   if (!actor.testBypass && !actor.isAdmin && !(actor.id && card.ownerId === actor.id)) {

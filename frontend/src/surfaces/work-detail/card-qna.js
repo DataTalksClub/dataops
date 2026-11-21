@@ -15,6 +15,20 @@ function linkRow(label, href) {
   return row;
 }
 
+export function buildCardQnaAnnouncement(card) {
+  const qnaUrl = card?.qna?.url?.trim();
+  if (!qnaUrl) return "";
+  const regLink = (card.cardLinks || []).find((link) => {
+    const name = String(link?.name || "").trim().toLowerCase();
+    return Boolean(link?.url?.trim()) && (name === "luma" || name === "event page");
+  });
+  const datePart = card.anchorDate ? ` on ${String(card.anchorDate).slice(0, 10)}` : "";
+  const lines = [`Join us for ${card.title || "our upcoming event"}${datePart}!`];
+  if (regLink?.url?.trim()) lines.push("", `Register here: ${regLink.url.trim()}`);
+  lines.push(regLink?.url?.trim() ? `Ask questions live: ${qnaUrl}` : `\nAsk questions live: ${qnaUrl}`);
+  return lines.join("\n");
+}
+
 export function renderCardQna({ request, workApiUrl }, card) {
   const qna = card?.qna;
   if (!qna?.url) return null;
@@ -63,5 +77,29 @@ export function renderCardQna({ request, workApiUrl }, card) {
     }
   });
   section.append(toggle, status, list);
+  const announcementText = buildCardQnaAnnouncement(card);
+  if (announcementText && !qna.questionsSavedAt) {
+    const details = document.createElement("details");
+    details.className = "card-qna__announcement";
+    details.dataset.cardQnaAnnouncement = "";
+    const summary = document.createElement("summary");
+    summary.textContent = "Announcement with Q&A link";
+    const pre = document.createElement("pre");
+    pre.textContent = announcementText;
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "btn btn-secondary";
+    copy.textContent = "Copy announcement";
+    copy.addEventListener("click", async () => {
+      try {
+        await globalThis.navigator?.clipboard?.writeText(announcementText);
+        copy.textContent = "Copied";
+      } catch {
+        copy.textContent = "Copy failed";
+      }
+    });
+    details.append(summary, pre, copy);
+    section.append(details);
+  }
   return section;
 }

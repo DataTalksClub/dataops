@@ -4,6 +4,7 @@ import { getCardConsistent } from '../db/cards';
 import { getCalendarHold, listCalendarHolds } from '../db/calendarHolds';
 import type { PodcastEpisode } from '../db/podcastEpisodes';
 import { adoptEventDate, calendarInviteUrl, closeCardInviteTasks, parseCardGuests } from './cardInvite';
+import { ensureCardQnaForDatedEvent } from '../qna/service';
 import { HOLD_ZOOM_LOCATION, HOLD_ATTENDEE_DENY_LIST } from './holds';
 import { buildGuestInvite } from './guestInvite';
 import { fetchGoogleEvent, HOLD_ORGANIZER, type HoldGoogleDeps } from './holdGoogleSync';
@@ -124,6 +125,7 @@ export async function linkConfirmedHold(
   catch (e: any) { if (['TransactionCanceledException', 'ConditionalCheckFailedException'].includes(e.name)) throw new HoldLinkError('Calendar association changed; reread all records before retrying'); throw e; }
   const linked = (await getCardConsistent(client, card.id))!;
   const dated = await adoptEventDate(client, linked, card.eventTime);
+  await ensureCardQnaForDatedEvent(client, dated.card);
   const taskClosure = await closeCardInviteTasks(client, dated.card, actorId);
   return { mode: 'apply', ...preview, card: (await getCardConsistent(client, card.id))!, taskClosure };
 }
