@@ -9,6 +9,7 @@ import {
   resetTemplateOverride,
   writeTemplateDefinition,
   EventFormatTemplateClaimError,
+  assertNoEventFormatClaim,
   TemplateDuplicateTypeError,
   TemplateEditForbiddenError,
   TemplateImmutableTypeError,
@@ -137,7 +138,10 @@ async function handleTemplateRoutes(
         const body = parseObject(rawBody);
         rejectServerOwned(body);
         const definition = normalizeTemplateDefinition(body);
-        if (isDryRun(event)) return json(200, { dryRun: true, effective: definition });
+        if (isDryRun(event)) {
+          assertNoEventFormatClaim(definition as Record<string, unknown>);
+          return json(200, { dryRun: true, effective: definition });
+        }
         const template = await createCustomTemplate(client, definition);
         invalidateTemplateTypeMap();
         if (isDocsDomainEnabled()) {

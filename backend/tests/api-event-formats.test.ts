@@ -106,7 +106,7 @@ describe('Event format policy (three formats, format docs, sponsored flag)', () 
     delete process.env.IS_LOCAL;
   });
 
-  function req(method: string, path: string, body?: unknown) {
+  function req(method: string, path: string, body?: unknown, query: Record<string, string> | null = null) {
     return handler({
       httpMethod: method,
       path,
@@ -116,7 +116,7 @@ describe('Event format policy (three formats, format docs, sponsored flag)', () 
         host: 'ops.dtcdev.click',
         'x-forwarded-proto': 'https',
       },
-      queryStringParameters: null,
+      queryStringParameters: query,
       body: body === undefined ? null : JSON.stringify(body),
     }, {}) as Promise<LambdaResponse>;
   }
@@ -148,6 +148,15 @@ describe('Event format policy (three formats, format docs, sponsored flag)', () 
         assert.match(body.error, /Sponsorship is a Card flag, not a format/);
       });
     }
+
+    it('a create dry run refuses an event-format claim exactly as the write does', async () => {
+      const res = await req('POST', '/api/templates', {
+        name: 'Sponsor Variant', type: 'sponsored-webinar', triggerType: 'manual',
+        taskDefinitions: [{ refId: 'one', description: 'Task', offsetDays: 0 }],
+      }, { dryRun: 'true' });
+      assert.strictEqual(res.statusCode, 422);
+      assert.strictEqual(payload(res).code, 'event-format-template-forbidden');
+    });
 
     it('a Custom Template outside the event formats still creates', async () => {
       const res = await req('POST', '/api/templates', {
