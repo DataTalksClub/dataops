@@ -105,8 +105,8 @@ test.describe("podcast guest materials form", () => {
     // Episodes release strictly in number order: the first test's S25E9 is
     // on this same server two weeks out, so S25E8 releases the week before.
     const episode = await api("/api/podcast-episodes", {
-      season: 26,
-      episode: 1,
+      season: 25,
+      episode: 8,
       releaseAssignmentStatus: "provisional",
       releaseDate: releaseFriday(7),
       title: "Guest form alias e2e",
@@ -138,5 +138,139 @@ test.describe("podcast guest materials form", () => {
     const anonBody = await anonGate.json();
     expect(anonBody.code).toBe("access_code_required");
     expect(anonBody.error).not.toMatch(/sponsor/i);
+  });
+
+  test("staff sees two tabs (Guest intake / Internal Team & Host) across desktop and phone; guest never sees internal data", async ({
+    browser,
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    const episode = await api("/api/podcast-episodes", {
+      season: 26,
+      episode: 2,
+      releaseAssignmentStatus: "provisional",
+      releaseDate: releaseFriday(21),
+      title: "Two-tab podcast e2e",
+      guests: [{ name: "Two-Tab Guest" }],
+      status: "booked",
+    });
+    const { doc } = await api("/api/sponsor-docs", {
+      cardId: episode.id,
+      template: "podcast",
+      content: {
+        guestName: "Two-Tab Guest, Staff Engineer",
+        introduction: "Guest public bio for intro.",
+        topicsToCover: "Distributed systems & evals",
+        topicsToAvoid: "Confidential client contracts",
+        linkedinUrl: "https://example.test/linkedin",
+        coldOpen: "SECRET_COLD_OPEN_HOOK",
+        introScript: "SECRET_INTRO_SCRIPT",
+        interviewQuestions: "SECRET_Q1_ARCHITECTURE\nSECRET_Q2_TRADEOFFS",
+        closingScript: "SECRET_CLOSING_SCRIPT",
+        goal: "SECRET_EPISODE_GOAL",
+        audience: "SECRET_TARGET_AUDIENCE",
+        keyMessages: "SECRET_KEY_MESSAGES",
+        sourceLinks: "https://example.test/secret-research-source",
+        keyInsights: "SECRET_CLAIM_LEDGER_INSIGHT",
+        openQuestions: "SECRET_OPEN_ANGLE",
+        hostNotes: "SECRET_HOST_TIMING_NOTE",
+      },
+    });
+
+    // 1. Staff desktop view: sees two tabs, Host view + Edit prep & research, and saves internal changes
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`${server.baseURL}/podcast-docs/${doc.id}`);
+    await expect(page.locator('[data-podcast-tab="guest"]')).toBeVisible();
+    await expect(page.locator('[data-podcast-tab="internal"]')).toBeVisible();
+    await expect(page.locator('[data-podcast-panel="guest"]')).toBeVisible();
+    await expect(page.locator("#sponsor-field-interviewQuestions")).toHaveCount(0);
+
+    await page.locator('[data-podcast-tab="internal"]').click();
+    await expect(page.locator('[data-podcast-panel="internal"]')).toBeVisible();
+    await expect(page.locator('[data-podcast-questions-view="readonly"]')).toBeVisible();
+    await expect(page.locator('[data-podcast-host-block="coldOpen"]')).toContainText("SECRET_COLD_OPEN_HOOK");
+    await expect(page.locator('[data-podcast-host-block="interviewQuestions"]')).toContainText("SECRET_Q1_ARCHITECTURE");
+    await expect(page.locator('[data-podcast-host-block="topicsToAvoid"]')).toContainText("Confidential client contracts");
+    await expect(page.locator('[data-podcast-host-block="hostNotes"]')).toContainText("SECRET_HOST_TIMING_NOTE");
+    await expect(page.locator("[data-podcast-host-qna]")).toBeVisible();
+
+    await page.locator('[data-podcast-internal-mode="edit"]').click();
+    await expect(page.locator("#sponsor-field-interviewQuestions")).toBeVisible();
+    await expect(page.locator("#sponsor-field-sourceLinks")).toBeVisible();
+    await page.locator("#sponsor-field-hostNotes").fill("SECRET_HOST_TIMING_NOTE_UPDATED");
+    await page.locator('[data-sponsor-action="save-draft"]').click();
+    await expect(page.locator("[data-sponsor-feedback]")).toContainText("Saved draft");
+
+    // 2. Staff phone view (390px): zero horizontal overflow on both tabs
+    await page.setViewportSize({ width: 390, height: 844 });
+    const internalOverflow = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(internalOverflow.scrollWidth).toBeLessThanOrEqual(internalOverflow.clientWidth);
+
+    await page.locator('[data-podcast-internal-mode="host"]').click();
+    const hostOverflow = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(hostOverflow.scrollWidth).toBeLessThanOrEqual(hostOverflow.clientWidth);
+
+    // 3. Anonymous guest browser context with valid ?code= (even requesting ?tab=internal&view=questions):
+    //    never sees tabs, never sees View questions, never receives any internal content.
+    const guestContext = await browser.newContext({
+      extraHTTPHeaders: { "x-sponsor-doc-anonymous": "true" },
+      viewport: { width: 390, height: 844 },
+    });
+    try {
+      const guestPage = await guestContext.newPage();
+      await guestPage.goto(
+        `${server.baseURL}/podcast-docs/${doc.id}?code=${encodeURIComponent(doc.accessCode)}&tab=internal&view=questions`,
+      );
+      await expect(guestPage.locator('[data-sponsor-view="editor"]')).toBeVisible();
+      await expect(guestPage.locator('[data-podcast-tab]')).toHaveCount(0);
+      await expect(guestPage.locator('[data-sponsor-action="toggle-questions-view"]')).toHaveCount(0);
+      await expect(guestPage.locator("[data-sponsor-export]")).toHaveCount(0);
+      await expect(guestPage.locator("#sponsor-field-guestName")).toHaveValue("Two-Tab Guest, Staff Engineer");
+      const guestDomText = await guestPage.locator("body").innerText();
+      for (const secretMarker of [
+        "SECRET_COLD_OPEN_HOOK",
+        "SECRET_INTRO_SCRIPT",
+        "SECRET_Q1_ARCHITECTURE",
+        "SECRET_CLOSING_SCRIPT",
+        "SECRET_EPISODE_GOAL",
+        "SECRET_CLAIM_LEDGER_INSIGHT",
+        "SECRET_HOST_TIMING_NOTE",
+      ]) {
+        expect(guestDomText).not.toContain(secretMarker);
+      }
+      const guestOverflow = await guestPage.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      }));
+      expect(guestOverflow.scrollWidth).toBeLessThanOrEqual(guestOverflow.clientWidth);
+    } finally {
+      await guestContext.close();
+    }
+
+    // 4. Anonymous guest API & export negative check
+    const anonDocRes = await fetch(
+      `${server.baseURL}/api/sponsor-docs/${doc.id}?code=${encodeURIComponent(doc.accessCode)}&tab=internal&view=questions`,
+      { headers: { "x-sponsor-doc-anonymous": "true" } },
+    );
+    expect(anonDocRes.status).toBe(200);
+    const anonDocBody = await anonDocRes.text();
+    expect(anonDocBody).not.toMatch(/SECRET_/);
+    const anonDocJson = JSON.parse(anonDocBody).doc;
+    expect(anonDocJson.viewerRole).toBe("sponsor");
+    expect(anonDocJson.hostContext).toBeUndefined();
+    expect(anonDocJson.emailDelivery).toBeUndefined();
+
+    const anonExportRes = await fetch(
+      `${server.baseURL}/api/sponsor-docs/${doc.id}/export?format=markdown&code=${encodeURIComponent(doc.accessCode)}`,
+      { headers: { "x-sponsor-doc-anonymous": "true" } },
+    );
+    expect(anonExportRes.status).toBe(200);
+    expect(await anonExportRes.text()).not.toMatch(/SECRET_/);
   });
 });
