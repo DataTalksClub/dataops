@@ -372,6 +372,21 @@ export function createCardActions(context) {
     );
   }
 
+  async function updateCardSponsored(cardId, sponsored) {
+    await submitCardIntent(
+      {
+        cardId,
+        kind: "sponsored",
+        label: sponsored ? "Mark the event as sponsored" : "Remove the sponsored flag",
+        payload: { sponsored },
+        pendingMessage: "Saving the sponsored flag…",
+        successMessage: "The sponsored flag is saved in the refreshed Card.",
+        errorPrefix: "Could not update the sponsored flag",
+      },
+      detail.activeCardPanelData?.card?.version,
+    );
+  }
+
   async function parkCardPanel(cardId) {
     await submitCardIntent(
       {
@@ -468,6 +483,7 @@ export function createCardActions(context) {
     reviewLatestCard,
     saveCardLink,
     submitCardIntent,
+    updateCardSponsored,
     updateCardStage,
   };
 }

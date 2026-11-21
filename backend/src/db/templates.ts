@@ -25,6 +25,7 @@ import { selectedTaskDefinitions, templateLinkage, templateTaskProjection } from
 import { cardCountValues } from '../templates/repeatedTasks';
 import { prerequisitesFirst, templateDependencyIssues } from '../templates/taskDependencyGraph';
 import { DEFINITION_FIELDS, TemplateDefinitionInvalidError, validateEffectiveDefinition } from '../templates/templateEdits';
+import { eventFormatTemplateClaimError, claimsEventCardFormat } from '../cards/eventFormats';
 import { isDict } from '../records';
 import { loadAssignmentPolicy } from './workspaceSettings';
 
@@ -69,6 +70,14 @@ export class TemplateEditForbiddenError extends Error {
     super(code);
     this.name = 'TemplateEditForbiddenError';
     this.code = code;
+  }
+}
+
+/** A Custom Template definition claims an event format; creation is refused. */
+export class EventFormatTemplateClaimError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EventFormatTemplateClaimError';
   }
 }
 
@@ -632,6 +641,11 @@ async function createCustomTemplate(
   const issues = validateEffectiveDefinition(definition);
   if (issues.length > 0) throw new TemplateDefinitionInvalidError(issues);
   const type = String(definition.type);
+  // The three event formats are served only by their canonical Git-authored
+  // Templates; a Custom Template may never claim one, exactly or as a variant
+  // slug. Sponsorship is a Card flag, not a format.
+  const formatClaim = eventFormatTemplateClaimError(type, String(definition.name || type));
+  if (formatClaim) throw new EventFormatTemplateClaimError(formatClaim);
   const existing = await listTemplates(client);
   if (existing.some((template) => template.type === type)) {
     throw new TemplateDuplicateTypeError(type);
@@ -662,6 +676,14 @@ async function writeTemplateDefinition(
   if (!raw) return null;
   checkWritePair(raw, expectedVersion, revision);
   if (definition.type !== raw.type) throw new TemplateImmutableTypeError();
+  // A Custom Template claiming an event format is frozen, not editable: its
+  // type is immutable, so no edit can legitimize it. Cleanup is deletion.
+  const rawType = String(raw.type ?? '');
+  if (raw.origin !== 'git' && claimsEventCardFormat(rawType)) {
+    throw new EventFormatTemplateClaimError(
+      eventFormatTemplateClaimError(rawType, String(raw.name || rawType)),
+    );
+  }
   const issues = validateEffectiveDefinition(definition);
   if (issues.length > 0) throw new TemplateDefinitionInvalidError(issues);
   const item = effectiveItemFromDefinition(raw, definition, {

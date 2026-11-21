@@ -5,7 +5,7 @@
  */
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { listCalendarHolds } from '../db/calendarHolds';
-import { listCards } from '../db/cards';
+import { listAllCards } from '../db/cards';
 import { listTemplates } from '../db/templates';
 import { listPodcastEpisodes, type PodcastEpisode } from '../db/podcastEpisodes';
 import { EVENT_CARD_TYPES } from '../calendar/entities';
@@ -20,7 +20,7 @@ import {
 } from './recordingSlots';
 
 export async function eventCardAnchorDates(client: DynamoDBDocumentClient): Promise<string[]> {
-  const [cards, templates] = await Promise.all([listCards(client), listTemplates(client)]);
+  const [cards, templates] = await Promise.all([listAllCards(client), listTemplates(client)]);
   const templateById = new Map(templates.map((t) => [t.id, t]));
   const dates: string[] = [];
   for (const card of cards) {

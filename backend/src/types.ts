@@ -432,6 +432,12 @@ export interface Card {
   sponsor?: string;
   /** Additional sponsors beyond the main one. */
   secondarySponsors?: string[];
+  /**
+   * Explicit sponsorship flag, set on event Cards (workshop/webinar/podcast).
+   * A deal attribute only: it never changes the Card's format, document
+   * templates, or validation.
+   */
+  sponsored?: boolean;
   /** Issue number for recurring publications, e.g. "298". */
   issueNumber?: string;
   references?: CardLink[];

@@ -8,6 +8,7 @@ import {
   listTemplates,
   resetTemplateOverride,
   writeTemplateDefinition,
+  EventFormatTemplateClaimError,
   TemplateDuplicateTypeError,
   TemplateEditForbiddenError,
   TemplateImmutableTypeError,
@@ -215,6 +216,9 @@ async function handleTemplateRoutes(
     }
     if (error instanceof TemplateDefinitionInvalidError) {
       return json(422, { error: error.message, code: 'invalid-template', issues: error.issues });
+    }
+    if (error instanceof EventFormatTemplateClaimError) {
+      return json(422, { error: error.message, code: 'event-format-template-forbidden' });
     }
     if (error instanceof TemplateImmutableTypeError) {
       return json(422, { error: 'Template type is immutable', code: 'immutable-template-type' });

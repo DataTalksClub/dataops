@@ -73,7 +73,7 @@ describe("operations calendar", () => {
     ]);
   });
   it("filters public event dates from the live availability projection", async () => {
-    const template = await createTemplate(client, { name: "Synthetic webinar", type: "webinar", taskDefinitions: [] });
+    const template = await createTemplate(client, { name: "Synthetic webinar", type: "webinar", origin: "git", sourcePath: "workflow-templates/webinar.yaml", sourceRevision: "test-sha",taskDefinitions: [] });
     const created = await invoke("POST", "/api/cards", {
       templateId: template.id,
       title: "Synthetic public event",
@@ -117,9 +117,9 @@ describe("operations calendar", () => {
     await createUserWithId(client, "calendar-operator", { name: "Calendar operator", email: "calendar-operator@example.test", role: "operator" });
     const auth = { authorization: `Bearer ${await humanBearer(client, "calendar-operator")}` };
     process.env.SKIP_AUTH = "true";
-    const webinar = await createTemplate(client, { name: "Webinar", type: "webinar", taskDefinitions: [] });
+    const webinar = await createTemplate(client, { name: "Webinar", type: "webinar", origin: "git", sourcePath: "workflow-templates/webinar.yaml", sourceRevision: "test-sha",taskDefinitions: [] });
     const newsletter = await createTemplate(client, { name: "Newsletter", type: "newsletter", taskDefinitions: [] });
-    const podcast = await createTemplate(client, { name: "Podcast", type: "podcast", taskDefinitions: [] });
+    const podcast = await createTemplate(client, { name: "Podcast", type: "podcast", origin: "git", sourcePath: "workflow-templates/podcast.yaml", sourceRevision: "test-sha",taskDefinitions: [] });
     const card = async (templateId: string, title: string, anchorDate: string, people?: string[]) =>
       parse(await invoke("POST", "/api/cards", { templateId, title, anchorDate, ...(people ? { people } : {}) })).card;
     const event = await card(webinar.id, "Synthetic GraphRAG talk", "2030-05-30", ["Ada Example"]);
@@ -348,7 +348,7 @@ describe("operations calendar", () => {
     response = await invoke("GET", "/api/calendar-items/overlays", undefined, {}, { from: "2020-01-01", to: "2020-01-31" });
     assert.deepEqual(Object.keys(parse(response).sources), ["newsletter-issues-readonly", "calendar-holds"]);
     assert.ok(!parse(response).items.some((i: any) => i.isAvailableSlot && i.provider === "owner-calendar"));
-    const template = await createTemplate(client, { name: "Workshop", type: "workshop", taskDefinitions: [] });
+    const template = await createTemplate(client, { name: "Workshop", type: "workshop", origin: "git", sourcePath: "workflow-templates/workshop.yaml", sourceRevision: "test-sha",taskDefinitions: [] });
     // Whit Monday 2030, a Berlin public holiday.
     const card = parse(await invoke("POST", "/api/cards", { templateId: template.id, title: "Dismissible synthetic", anchorDate: "2030-06-10" })).card;
     const alerts = async () => parse(await invoke("GET", "/api/calendar-items", undefined, {}, { from: "2030-06-01", to: "2030-12-31" })).alerts

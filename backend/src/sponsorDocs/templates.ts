@@ -1185,6 +1185,13 @@ export function defaultContentForTemplate(key: SponsorDocTemplateKey): Record<st
   return content;
 }
 
+/** Every content field key a document template defines, internal ones included. */
+export function sponsorDocTemplateFieldKeys(key: SponsorDocTemplateKey): Set<string> {
+  return new Set(
+    SPONSOR_DOC_TEMPLATES[key].sections.flatMap((section) => section.fields.map((field) => field.key)),
+  );
+}
+
 export function sanitizeTemplateContent(
   key: SponsorDocTemplateKey,
   raw: Record<string, unknown>,
@@ -1193,6 +1200,15 @@ export function sanitizeTemplateContent(
 ): Record<string, string> {
   const def = SPONSOR_DOC_TEMPLATES[key];
   const next: Record<string, string> = { ...(existing || defaultContentForTemplate(key)) };
+  for (const rawKey of Object.keys(raw)) {
+    if (!sponsorDocTemplateFieldKeys(key).has(rawKey)) {
+      // A save that does not follow the document template is rejected, not
+      // silently reshaped: deviating content never reaches the document.
+      throw new SponsorDocValidationError({
+        [rawKey]: `"${rawKey}" is not a field of the ${def.label} document template. Documents save only their own template's fields.`,
+      });
+    }
+  }
   for (const section of def.sections) {
     if (section.internal && options.includeInternal === false) continue;
     for (const field of section.fields) {

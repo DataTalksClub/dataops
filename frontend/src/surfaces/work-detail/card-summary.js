@@ -353,6 +353,7 @@ export function createCardSummary(context) {
     resumeCardPanel,
     state,
     today,
+    updateCardSponsored,
     updateCardStage,
     workCardIssueNumber,
     workCardSubtitle,
@@ -463,6 +464,20 @@ export function createCardSummary(context) {
     detail.activeCardMutationBusy ||
     detail.activeTaskMutationBusy ||
     detail.activeCardTemplateBusy;
+  // Sponsorship is a deal flag on the Card, never a format: toggling it
+  // changes no Template, document or validation — only this badge.
+  if (!isArchivedWorkCard(card) && typeof updateCardSponsored === "function") {
+    const sponsored = card.sponsored === true;
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = sponsored ? "workflow-card-flag is-info card-sponsored-toggle" : "quiet-button card-sponsored-toggle";
+    toggle.textContent = sponsored ? "Sponsored" : "Mark sponsored";
+    toggle.title = "Sponsorship is a deal flag on the Card; it never changes the event format or its documents";
+    toggle.disabled = mutationBusy;
+    toggle.setAttribute("aria-pressed", sponsored ? "true" : "false");
+    toggle.addEventListener("click", () => updateCardSponsored(card.id, !sponsored));
+    summaryTop.append(toggle);
+  }
   if (isParkedWorkCard?.(card)) {
     const parkedChip = document.createElement("span");
     parkedChip.className = "workflow-card-flag is-info";

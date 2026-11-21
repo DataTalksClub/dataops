@@ -9,7 +9,7 @@ import {
   CardVersionConflictError,
   createCard,
   getCard,
-  listCards,
+  listAllCards,
   parkCard,
   resumeCard,
   updateCard,
@@ -61,7 +61,7 @@ describe('Cards data layer', () => {
     const created = await createCard(client, { ...templateLink(), title: 'Fetch', anchorDate: '2026-09-02' });
     assert.equal((await getCard(client, created.id))?.title, 'Fetch');
     assert.equal(await getCard(client, 'missing'), null);
-    assert.ok((await listCards(client)).some(({ id }) => id === created.id));
+    assert.ok((await listAllCards(client)).some(({ id }) => id === created.id));
   });
 
   it('updates caller-owned fields with an exact version condition', async () => {

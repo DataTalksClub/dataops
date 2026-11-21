@@ -2,7 +2,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { ownerCalendarOverlay, berlinToday } from '../calendar/ownerCalendarOverlay';
 import { cardEventInterval } from '../calendar/cardEventTime';
 import { listCalendarHolds } from '../db/calendarHolds';
-import { listCards } from '../db/cards';
+import { listAllCards } from '../db/cards';
 import { listPodcastEpisodes } from '../db/podcastEpisodes';
 import { addDays } from '../podcast/recordingSlots';
 import type { GuestIntakeJob } from './guestIntakeStore';
@@ -20,7 +20,7 @@ export async function guestEventSlots(db: DynamoDBDocumentClient, job: GuestInta
   const [overlay, busy, holds, cards, episodes] = await Promise.all([
     ownerCalendarOverlay({ client: db, durationMinutes: policy.durationMinutes, window: 'any' }).project(from, to),
     ownerCalendarOverlay({ client: db, includeAll: true, durationMinutes: policy.durationMinutes }).project(addDays(from, -1), addDays(to, 1)),
-    listCalendarHolds(db, { activeOnly: true }), listCards(db), listPodcastEpisodes(db),
+    listCalendarHolds(db, { activeOnly: true }), listAllCards(db), listPodcastEpisodes(db),
   ]);
   if (overlay.connection.state !== 'connected' || (busy && busy.connection.state !== 'connected')) throw new Error('The authoritative owner calendar is unavailable; no time was invented');
   const overlaps = (a: number,b: number,c: number,d: number) => a < d && b > c;

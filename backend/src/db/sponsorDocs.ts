@@ -20,6 +20,7 @@ import {
   defaultContentForTemplate,
   getSponsorDocTemplate,
   sanitizeTemplateContent,
+  sponsorDocTemplateFieldKeys,
   validateSubmittedContent,
   SponsorDocValidationError,
   type SponsorDocTemplateKey,
@@ -337,7 +338,11 @@ export async function updateSponsorDoc(
   let nextContent: Record<string, string>;
   if (nextTemplate !== doc.template) {
     const carried: Record<string, unknown> = { ...loaded.doc.content, ...(input.content || {}) };
-    nextContent = sanitizeTemplateContent(nextTemplate, carried, defaultContentForTemplate(nextTemplate));
+    // Carry only fields the next template defines; non-empty values with no
+    // place in the new form are rejected below instead of silently dropped.
+    const known = sponsorDocTemplateFieldKeys(nextTemplate);
+    const carryable = Object.fromEntries(Object.entries(carried).filter(([fieldKey]) => known.has(fieldKey)));
+    nextContent = sanitizeTemplateContent(nextTemplate, carryable, defaultContentForTemplate(nextTemplate));
     const dropped = Object.entries(carried)
       .filter(([key, value]) => !Object.hasOwn(nextContent, key) && String(value ?? '').trim());
     if (dropped.length) {

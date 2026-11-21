@@ -20,6 +20,7 @@ import {
 } from '../db/templates';
 import { parseCardTitle } from './cardTitleStructure';
 import { cardFieldTitleValues, renderCardTitle } from './cardTitlePattern';
+import { eventFormatCardCreationError } from './eventFormats';
 import { templateCardProjection } from '../templates/cardTemplateProjection';
 import { countValuesError } from '../templates/repeatedTasks';
 import { json } from '../http';
@@ -116,6 +117,9 @@ export function validateCardPeople(body: Record<string, unknown>): string | null
     if (str.length === 0 || str.length > 50) {
       return 'issueNumber must not be empty or longer than 50 characters';
     }
+  }
+  if (body.sponsored !== undefined && typeof body.sponsored !== 'boolean') {
+    return 'sponsored must be a boolean';
   }
   return null;
 }
@@ -222,6 +226,10 @@ export async function createCardFromInput(
   if (!title && intake) title = intake.title;
   if (!title) return fail(400, { error: 'Missing required field: title' });
 
+  // Event formats are served only by their canonical Git-authored Templates.
+  const formatError = eventFormatCardCreationError(template, title);
+  if (formatError) return fail(422, { error: formatError, code: 'event-format-template-required' });
+
   const VALID_STAGES = ['preparation', 'announced', 'after-event'];
   if (body.stage !== undefined && !VALID_STAGES.includes(body.stage as string)) {
     return fail(400, { error: `Invalid stage value. Must be one of: ${VALID_STAGES.join(', ')}` });
@@ -287,7 +295,7 @@ export async function createCardFromInput(
   } else if (template.tags && template.tags.length > 0) {
     cardData.tags = template.tags;
   }
-  for (const field of ['artifactRefs', 'intakeRefs', 'people', 'sponsor', 'secondarySponsors', 'issueNumber']) {
+  for (const field of ['artifactRefs', 'intakeRefs', 'people', 'sponsor', 'secondarySponsors', 'issueNumber', 'sponsored']) {
     if (body[field] !== undefined) {
       cardData[field] = body[field] !== null && field === 'issueNumber' ? String(body[field]).trim() : body[field];
     }

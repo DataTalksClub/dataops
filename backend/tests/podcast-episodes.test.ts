@@ -201,6 +201,9 @@ describe("podcast episodes", () => {
     const podcastTemplate = await createTemplate(client, {
       name: "Podcast",
       type: "podcast",
+      origin: "git",
+      sourcePath: "workflow-templates/podcast.yaml",
+      sourceRevision: "test-podcast-sha",
       taskDefinitions: [
         { refId: "prep", description: "Prepare questions", offsetDays: -2 },
         { refId: "record", description: "Record", offsetDays: 0 },
@@ -299,6 +302,9 @@ describe("podcast episodes", () => {
     const template = await createTemplate(client, {
       name: "Podcast stages",
       type: "podcast",
+      origin: "git",
+      sourcePath: "workflow-templates/podcast.yaml",
+      sourceRevision: "test-podcast-sha",
       taskDefinitions: [
         { refId: "prep", description: "Prepare questions", offsetDays: -2 },
         ...EPISODE_STAGES.map((episodeStage, index) => ({
