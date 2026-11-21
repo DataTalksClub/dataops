@@ -82,6 +82,18 @@ export class EventFormatTemplateClaimError extends Error {
 }
 
 /**
+ * The three event formats are served only by their canonical Git-authored
+ * Templates; a Custom Template definition may never claim one, exactly or as a
+ * variant slug. Sponsorship is a Card flag, not a format. Shared by creation
+ * and its dry run so a dry run never approves what the write refuses.
+ */
+export function assertNoEventFormatClaim(definition: Record<string, unknown>): void {
+  const type = String(definition.type ?? '');
+  const formatClaim = eventFormatTemplateClaimError(type, String(definition.name || type));
+  if (formatClaim) throw new EventFormatTemplateClaimError(formatClaim);
+}
+
+/**
  * Atomic `type` ownership for template creation, adoption, and deletion.
  * The guard shares the Templates table so no infrastructure changes, and its
  * `TEMPLATE_TYPE#` prefix matches no existing consumer: `listTemplates` and the
@@ -641,11 +653,7 @@ async function createCustomTemplate(
   const issues = validateEffectiveDefinition(definition);
   if (issues.length > 0) throw new TemplateDefinitionInvalidError(issues);
   const type = String(definition.type);
-  // The three event formats are served only by their canonical Git-authored
-  // Templates; a Custom Template may never claim one, exactly or as a variant
-  // slug. Sponsorship is a Card flag, not a format.
-  const formatClaim = eventFormatTemplateClaimError(type, String(definition.name || type));
-  if (formatClaim) throw new EventFormatTemplateClaimError(formatClaim);
+  assertNoEventFormatClaim(definition);
   const existing = await listTemplates(client);
   if (existing.some((template) => template.type === type)) {
     throw new TemplateDuplicateTypeError(type);
