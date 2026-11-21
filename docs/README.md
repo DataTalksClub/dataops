@@ -45,6 +45,9 @@ Files that live here:
   runtime cards, tasks, reminders, proof, references, and migration-safe IDs.
 - `task-dependencies.md` - Task prerequisites: model, Template refs, enforcement
   rules, transaction guards, and limitations.
+- `three-event-formats.md` - the workshop/webinar/podcast format policy:
+  canonical Templates, format-bound documents, the `sponsored` Card flag, and
+  the read-only format audit.
 - `v1-execution-state-schema.md` - production-facing DynamoDB schema definition
   for V1 mutable execution state.
 - `v1-execution-data-safety.md` - backup, restore, and portable export format

@@ -69,6 +69,19 @@ export function eventFormatOfTag(tag: string | null | undefined): EventCardForma
 }
 
 /**
+ * The event format a variant Template-type slug claims (`aishl-workshop`
+ * names the workshop format it imitates). Canonical types and slugs without
+ * a format word claim nothing. Audit-side only: enforcement gates on exact
+ * canonical types, so Git-authored compound products keep their flows.
+ */
+export function eventFormatOfVariantType(type: string | null | undefined): EventCardFormat | null {
+  const value = String(type || '').toLowerCase();
+  if (eventFormatOfType(value)) return null;
+  const match = FORMAT_WORDS.exec(value);
+  return match ? (match[1] as EventCardFormat) : null;
+}
+
+/**
  * A Custom Template claiming an event format can never be created, and an
  * event card can never be instantiated from one: the three formats are served
  * only by their canonical Git-authored Templates.

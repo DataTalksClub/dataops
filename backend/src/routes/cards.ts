@@ -27,6 +27,7 @@ import {
 } from '../db/cards';
 import { attachLinkedCards, cardBackReferences } from '../cards/taskCardLinkView';
 import { ensureEventSlotCards } from '../cards/eventSlots';
+import { buildFormatAuditReport } from '../cards/formatAudit';
 import { redateCardTemplateTasks } from '../cards/redateTemplateTasks';
 import {
   CardDeletionBlockedError,
@@ -444,6 +445,15 @@ async function handleCardRoutes(
     const invitesMatch = suffix.match(/^\/([^/]+)\/calendar-invites\/?$/);
     if (invitesMatch) {
       return await handleCardCalendarInvites(method, invitesMatch[1], rawBody, client, event);
+    }
+
+    // Route: /api/cards/format-audit — read-only three-formats policy report
+    if (suffix === '/format-audit' || suffix === '/format-audit/') {
+      if (method !== 'GET') return json(405, { error: 'Method not allowed' });
+      const auditActor = await resolveInteractiveActor(client, event, 'work-read');
+      if (!auditActor.ok) return auditActor.response;
+      if (!auditActor.actor.isAdmin) return workAdminForbidden('The format audit requires an admin');
+      return json(200, await buildFormatAuditReport(client));
     }
 
     // Route: /api/cards/:id
