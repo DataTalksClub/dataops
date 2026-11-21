@@ -21,6 +21,8 @@ describe('podcast guest form (radio slot picker + topics; email stays one slot)'
       'social-links',
       'detailed-questions',
       'notes',
+      'episode-plan',
+      'internal-research',
     ]);
     const fields = template.sections.flatMap((section) => section.fields);
     const keys = fields.map((field) => field.key);
