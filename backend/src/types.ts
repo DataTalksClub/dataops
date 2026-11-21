@@ -430,8 +430,6 @@ export interface Card {
   people?: string[];
   /** Main sponsor of a newsletter Card. */
   sponsor?: string;
-  /** Whether an event Card is sponsored (flag only; never changes doc format). */
-  sponsored?: boolean;
   /** Additional sponsors beyond the main one. */
   secondarySponsors?: string[];
   /**
