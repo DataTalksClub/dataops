@@ -1,4 +1,4 @@
-import { appendGuestTimezoneSelector, appendTimeChoiceSave, guestSlotFieldDefinition, guestEventMetadataRow } from "./sponsor-doc-guest-schedule.js";
+import { appendGuestTimezoneSelector, appendTimeChoiceSave, guestSlotFieldDefinition, guestEventMetadataRow, renderPodcastQuestionsView } from "./sponsor-doc-guest-schedule.js";
 import { formatEditedTimestamp } from "../../core/dates.js";
 import { formatUserCode } from "../../dakit/device-code.js";
 import { renderSponsorDocGate } from "./sponsor-doc-gate.js";
@@ -430,8 +430,13 @@ export function createSponsorDocPage({
       staffBar.dataset.sponsorStaffBar = "";
       const topRow = el("div", "sponsor-doc-staff-bar__row");
       const shareInfo = el("div", "");
+      const linkLabel = isSpeakerDoc(doc)
+        ? "Shareable speaker link (includes access code): "
+        : isPodcastGuestDoc(doc)
+          ? "Shareable guest link (includes access code): "
+          : "Shareable sponsor link (includes access code): ";
       shareInfo.append(
-        el("strong", "", isSpeakerDoc(doc) ? "Shareable speaker link (includes access code): " : isPodcastGuestDoc(doc) ? "Shareable guest link (includes access code): " : "Shareable sponsor link (includes access code): "),
+        el("strong", "", linkLabel),
         el("code", "dk-mono", doc.shareUrl || doc.docUrl || ""),
       );
       topRow.append(shareInfo);
@@ -520,34 +525,7 @@ export function createSponsorDocPage({
     root.append(headerCard);
 
     if (questionsOnly && isPodcastGuestDoc(doc)) {
-      const qCard = el("div", "sponsor-doc-card sponsor-doc-questions-view");
-      qCard.dataset.podcastQuestionsView = "readonly";
-      const qHead = el("div", "sponsor-doc-title-row");
-      qHead.append(el("h2", "sponsor-doc-section__title", "Episode Questions (Read-only recording view)"));
-      qCard.append(qHead);
-      const qFields = [
-        ["Cold Open", draftContent.coldOpen],
-        ["Intro Script", draftContent.introScript],
-        ["Interview Questions", draftContent.interviewQuestions],
-        ["Topics to Cover", draftContent.topicsToCover],
-        ["Topics to Avoid", draftContent.topicsToAvoid],
-        ["Closing Script", draftContent.closingScript],
-      ];
-      let hasAny = false;
-      for (const [labelText, val] of qFields) {
-        const text = String(val || "").trim();
-        if (!text) continue;
-        hasAny = true;
-        const sec = el("div", "sponsor-doc-section");
-        sec.append(el("h3", "sponsor-doc-field__label", labelText));
-        const pre = el("pre", "sponsor-doc-export-pre", text);
-        sec.append(pre);
-        qCard.append(sec);
-      }
-      if (!hasAny) {
-        qCard.append(el("p", "dk-hint", "No questions or topics added to this document yet."));
-      }
-      root.append(qCard);
+      root.append(renderPodcastQuestionsView({ el, draftContent }));
       return;
     }
 
