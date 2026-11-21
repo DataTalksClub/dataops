@@ -3,6 +3,7 @@ import { afterEach, test } from "node:test";
 import { createSponsorDocPage } from "../src/surfaces/operations/sponsor-docs.js";
 import {
   hasPodcastHostContent,
+  isConfirmedPodcastRecording,
   isPodcastTwoTabDoc,
   renderPodcastInternalSubBar,
   renderPodcastTabBar,
@@ -579,4 +580,110 @@ test("staff header shows Sponsored badge only when sponsored, clean guest wordin
   assert.equal(badge.textContent, "Sponsored");
   assert.ok(badge.classList.contains("dk-badge"));
   sponsoredH.controller.destroy();
+});
+
+test("confirmed podcast recording collapses slot picker into one-line summary bar for both guest and staff", async () => {
+  assert.equal(isConfirmedPodcastRecording({ template: "podcast", eventMetadata: { state: "confirmed" } }), true);
+  assert.equal(isConfirmedPodcastRecording({ template: "podcast", eventMetadata: { state: "tentative" } }), false);
+  assert.equal(isConfirmedPodcastRecording({ template: "webinar", eventMetadata: { state: "confirmed" } }), false);
+
+  for (const viewerRole of ["sponsor", "staff"]) {
+    const h = createHarness({
+      href: viewerRole === "sponsor"
+        ? "https://ops.example.test/podcast-docs/sdoc-pod-1?code=bcdfghjklmnpqrst"
+        : "https://ops.example.test/podcast-docs/sdoc-pod-1",
+      docOverrides: {
+        viewerRole,
+        eventMetadata: {
+          state: "confirmed",
+          label: "Tue, 1 Dec 2026 12:30 Europe/Berlin",
+          startIso: "2026-12-01T11:30:00Z",
+          endIso: "2026-12-01T12:30:00Z",
+          durationMinutes: 60,
+          version: 2,
+        },
+        content: {
+          guestTimezone: "America/New_York",
+          guestName: "Julien Khaleghy",
+        },
+      },
+    });
+    await h.controller.start();
+
+    // Collapsed summary bar shown; full radio picker, timezone select, and save button hidden
+    const summary = h.root.querySelector('[data-podcast-recording-summary="confirmed"]');
+    assert.ok(summary, `${viewerRole}: renders confirmed summary bar`);
+    assert.match(summary.querySelector(".dk-badge--success").textContent, /Confirmed/);
+    assert.match(summary.querySelector(".podcast-recording-bar__time").textContent, /1 Dec 2026.*12:30–13:30.*Europe\/Berlin/);
+    assert.match(summary.querySelector(".podcast-recording-bar__local").textContent, /Your time:.*America\/New_York/);
+    assert.equal(h.root.querySelector('[data-sponsor-radios="slotChoice"]'), null);
+    assert.equal(h.root.querySelector("[data-guest-timezone]"), null);
+    assert.equal(h.root.querySelector('[data-sponsor-action="save-time-choice"]'), null);
+    assert.equal(h.root.querySelector('[data-podcast-slot-picker="open"]'), null);
+
+    // Click Change -> opens compact slot picker with timezone selector, radios, Save, and Cancel
+    await h.root.querySelector('[data-podcast-action="change-recording-time"]').click();
+    const picker = h.root.querySelector('[data-podcast-slot-picker="open"]');
+    assert.ok(picker, `${viewerRole}: Change opens slot picker`);
+    assert.ok(picker.querySelector(".sponsor-doc-timezone-row #guest-timezone-select[data-guest-timezone]"));
+    assert.ok(picker.querySelector('[data-sponsor-radios="slotChoice"]'));
+    assert.ok(picker.querySelector('[data-sponsor-action="save-time-choice"].sponsor-doc-time-save'));
+    assert.ok(h.root.querySelector('[data-podcast-action="cancel-recording-time"]'));
+
+    // Changing timezone inside the open picker keeps it open
+    const tz = picker.querySelector("#guest-timezone-select");
+    tz.value = "Asia/Tokyo";
+    await tz.dispatch("change");
+    assert.ok(h.root.querySelector('[data-podcast-slot-picker="open"]'), `${viewerRole}: picker stays open on timezone change`);
+    assert.match(
+      h.root.querySelector('[data-podcast-recording-summary="confirmed"] .podcast-recording-bar__local').textContent,
+      /Asia\/Tokyo/,
+    );
+
+    // Clicking Cancel collapses back to the summary bar
+    await h.root.querySelector('[data-podcast-action="cancel-recording-time"]').click();
+    assert.equal(h.root.querySelector('[data-podcast-slot-picker="open"]'), null);
+    assert.equal(h.root.querySelector('[data-sponsor-radios="slotChoice"]'), null);
+
+    // Re-open, select slot, Save time choice -> submits timeChoiceIntent and collapses picker
+    await h.root.querySelector('[data-podcast-action="change-recording-time"]').click();
+    const radios = h.root.querySelectorAll('[data-sponsor-radios="slotChoice"] input');
+    await radios[1].dispatch("change");
+    await h.root.querySelector('[data-sponsor-action="save-time-choice"]').click();
+    await nextTicks();
+
+    const putCall = h.calls.find(([, opts]) => opts.method === "PUT");
+    assert.ok(putCall);
+    const body = JSON.parse(putCall[1].body);
+    assert.deepEqual(body.timeChoiceIntent, {
+      choice: "slot:2026-12-01:midday",
+      proposalStartIso: "2026-12-01T11:30:00Z",
+      proposalVersion: 2,
+    });
+    assert.equal(h.root.querySelector('[data-podcast-slot-picker="open"]'), null, "picker collapses after saving time choice");
+    assert.ok(h.root.querySelector('[data-podcast-recording-summary="confirmed"]'));
+    h.controller.destroy();
+  }
+});
+
+test("tentative podcast recording shows compact slot picker open immediately without Change bar", async () => {
+  const h = createHarness({
+    docOverrides: {
+      eventMetadata: {
+        state: "tentative",
+        label: "Tue, 1 Dec 2026 12:30 Europe/Berlin",
+        startIso: "2026-12-01T11:30:00Z",
+        endIso: "2026-12-01T12:30:00Z",
+        durationMinutes: 60,
+        version: 1,
+      },
+    },
+  });
+  await h.controller.start();
+
+  assert.equal(h.root.querySelector('[data-podcast-recording-summary="confirmed"]'), null);
+  assert.ok(h.root.querySelector(".sponsor-doc-timezone-row #guest-timezone-select[data-guest-timezone]"));
+  assert.ok(h.root.querySelector('[data-sponsor-radios="slotChoice"]'));
+  assert.ok(h.root.querySelector('[data-sponsor-action="save-time-choice"].sponsor-doc-time-save'));
+  h.controller.destroy();
 });

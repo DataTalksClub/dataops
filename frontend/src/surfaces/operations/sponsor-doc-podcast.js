@@ -1,4 +1,8 @@
-import { dualZoneEventTime, guestEventTimeZone } from "./sponsor-doc-event-time.js";
+import {
+  dualZoneEventTime,
+  formatGuestEventTime,
+  guestEventTimeZone,
+} from "./sponsor-doc-event-time.js";
 
 const HOST_CONTENT_KEYS = [
   "interviewQuestions",
@@ -32,6 +36,88 @@ const VALID_LINK_URL_RE = /^(?:https?:\/\/|\/)/i;
 /** Check whether a document uses the canonical two-tab podcast workspace. */
 export function isPodcastTwoTabDoc(doc) {
   return doc?.template === "podcast";
+}
+
+/** Check whether a two-tab podcast document already has a confirmed recording time. */
+export function isConfirmedPodcastRecording(doc) {
+  return isPodcastTwoTabDoc(doc) && doc?.eventMetadata?.state === "confirmed";
+}
+
+/** Render compact one-line summary bar for an already-confirmed recording slot. */
+export function renderConfirmedRecordingTimeBar({
+  el,
+  actionBtn,
+  doc,
+  guestZone,
+  expanded,
+  onToggle,
+}) {
+  const bar = el("div", "podcast-recording-bar");
+  bar.dataset.podcastRecordingSummary = "confirmed";
+
+  const info = el("div", "podcast-recording-bar__info");
+  info.append(el("span", "dk-badge dk-badge--success", "Confirmed"));
+
+  const meta = doc?.eventMetadata;
+  const berlinTime = meta?.startIso
+    ? (formatGuestEventTime(meta.startIso, meta.endIso, "Europe/Berlin", meta.durationMinutes, false)
+      || meta.label
+      || "")
+    : (meta?.label || "");
+  info.append(el("span", "podcast-recording-bar__time", berlinTime));
+
+  if (meta?.startIso && guestZone && guestZone !== "Europe/Berlin") {
+    const localTime = formatGuestEventTime(
+      meta.startIso,
+      meta.endIso,
+      guestZone,
+      meta.durationMinutes,
+      false,
+    );
+    if (localTime) {
+      info.append(el("span", "podcast-recording-bar__local", `Your time: ${localTime}`));
+    }
+  }
+
+  const toggleBtn = actionBtn(
+    "dk-button dk-button--secondary dk-button--sm",
+    expanded ? "Cancel" : "Change",
+    "",
+    () => onToggle?.(),
+  );
+  toggleBtn.dataset.podcastAction = expanded ? "cancel-recording-time" : "change-recording-time";
+  bar.append(info, toggleBtn);
+  return bar;
+}
+
+/** Mount confirmed summary bar (and optional open slot picker) in scheduling section. */
+export function mountPodcastSchedulingContainer({
+  el,
+  actionBtn,
+  doc,
+  guestZone,
+  sectionWrap,
+  expanded,
+  onToggle,
+}) {
+  if (!isConfirmedPodcastRecording(doc)) {
+    return { collapsed: false, target: sectionWrap };
+  }
+  sectionWrap.append(renderConfirmedRecordingTimeBar({
+    el,
+    actionBtn,
+    doc,
+    guestZone,
+    expanded,
+    onToggle,
+  }));
+  if (!expanded) {
+    return { collapsed: true, target: sectionWrap };
+  }
+  const slotPicker = el("div", "podcast-slot-picker");
+  slotPicker.dataset.podcastSlotPicker = "open";
+  sectionWrap.append(slotPicker);
+  return { collapsed: false, target: slotPicker };
 }
 
 /** Partition template sections into Guest intake vs Internal Team & Host tabs. */

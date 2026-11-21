@@ -26,6 +26,7 @@ test.describe("podcast guest materials form", () => {
     server = await startOwnedTestServer({
       environment: {
         DTC_CACHE_ROOT: createDocsCacheRoot("podcast-guest-form"),
+        E2E_SEED_PODCAST_TEMPLATE: "1",
       },
     });
   });
@@ -272,5 +273,74 @@ test.describe("podcast guest materials form", () => {
     );
     expect(anonExportRes.status).toBe(200);
     expect(await anonExportRes.text()).not.toMatch(/SECRET_/);
+  });
+
+  test("confirmed podcast recording time collapses into one compact line with Change toggle", async ({
+    browser,
+  }) => {
+    test.setTimeout(60_000);
+    const episode = await api("/api/podcast-episodes", {
+      season: 26,
+      episode: 3,
+      releaseAssignmentStatus: "provisional",
+      releaseDate: releaseFriday(28),
+      recordingDate: "2026-12-15",
+      title: "Confirmed slot compact e2e",
+      guests: [{ name: "Confirmed Guest" }],
+      status: "booked",
+    });
+    const createdCard = await api(`/api/podcast-episodes/${episode.id}/card`, {});
+    const cardId = createdCard.card?.id || createdCard.episode?.cardId;
+    expect(cardId).toBeTruthy();
+    const timeRes = await fetch(`${server.baseURL}/api/cards/${cardId}/time`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        at: "2026-12-15 18:00",
+        guestEmails: ["confirmed-guest@example.test"],
+      }),
+    });
+    const timePayload = await timeRes.json();
+    expect(timePayload.card?.eventTime?.startIso, JSON.stringify(timePayload)).toBeTruthy();
+    const { doc } = await api("/api/sponsor-docs", {
+      cardId,
+      template: "podcast",
+      content: { guestName: "Confirmed Guest" },
+    });
+
+    const guestContext = await browser.newContext({
+      extraHTTPHeaders: { "x-sponsor-doc-anonymous": "true" },
+      viewport: { width: 1280, height: 900 },
+    });
+    try {
+      const guestPage = await guestContext.newPage();
+      await guestPage.goto(
+        `${server.baseURL}/podcast-docs/${doc.id}?code=${encodeURIComponent(doc.accessCode)}`,
+      );
+      const summary = guestPage.locator('[data-podcast-recording-summary="confirmed"]');
+      await expect(summary).toBeVisible();
+      await expect(summary).toContainText("Confirmed");
+      await expect(summary).toContainText("18:00");
+      await expect(guestPage.locator('[data-podcast-action="change-recording-time"]')).toBeVisible();
+      await expect(guestPage.locator('[data-sponsor-radios="slotChoice"]')).toHaveCount(0);
+      await expect(guestPage.locator('[data-podcast-slot-picker="open"]')).toHaveCount(0);
+
+      await guestPage.locator('[data-podcast-action="change-recording-time"]').click();
+      await expect(guestPage.locator('[data-podcast-slot-picker="open"]')).toBeVisible();
+      await expect(guestPage.locator('[data-sponsor-radios="slotChoice"]')).toBeVisible();
+
+      await guestPage.setViewportSize({ width: 390, height: 844 });
+      const expandedOverflow = await guestPage.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      }));
+      expect(expandedOverflow.scrollWidth).toBeLessThanOrEqual(expandedOverflow.clientWidth);
+
+      await guestPage.locator('[data-podcast-action="cancel-recording-time"]').click();
+      await expect(guestPage.locator('[data-podcast-slot-picker="open"]')).toHaveCount(0);
+      await expect(guestPage.locator('[data-sponsor-radios="slotChoice"]')).toHaveCount(0);
+    } finally {
+      await guestContext.close();
+    }
   });
 });

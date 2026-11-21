@@ -1,9 +1,17 @@
 import { dualZoneEventTime, guestEventTimeZone } from "./sponsor-doc-event-time.js";
 import { formatEditedTimestamp } from "../../core/dates.js";
 
-export function appendGuestTimezoneSelector({ el, container, headerCard, guestZone, busy, draftContent, render }) {
+export function appendGuestTimezoneSelector({
+  el,
+  container,
+  headerCard,
+  guestZone,
+  busy,
+  draftContent,
+  render,
+  compact = false,
+}) {
   const target = container || headerCard;
-  const zoneLabel = el("label", "sponsor-doc-field__label", "Your time zone");
   const zoneSelect = el("select", "dk-input");
   zoneSelect.dataset.guestTimezone = "";
   zoneSelect.setAttribute("aria-label", "Your time zone");
@@ -12,6 +20,18 @@ export function appendGuestTimezoneSelector({ el, container, headerCard, guestZo
   zoneSelect.value = guestZone;
   zoneSelect.disabled = busy;
   zoneSelect.addEventListener("change", () => { draftContent.guestTimezone = zoneSelect.value; render(); });
+
+  if (compact) {
+    const row = el("div", "sponsor-doc-timezone-row");
+    const zoneLabel = el("label", "sponsor-doc-field__label", "Your time zone");
+    zoneLabel.setAttribute("for", "guest-timezone-select");
+    zoneSelect.id = "guest-timezone-select";
+    row.append(zoneLabel, zoneSelect);
+    target.append(row);
+    return;
+  }
+
+  const zoneLabel = el("label", "sponsor-doc-field__label", "Your time zone");
   zoneLabel.append(zoneSelect);
   target.append(zoneLabel, el("p", "dk-hint",
     "Times show the Berlin schedule and your local date and time. " +
@@ -30,17 +50,23 @@ export function guestSlotFieldDefinition(fieldDef, metadata, guestZone) {
 }
 
 export function appendTimeChoiceSave({ fieldWrap, actionBtn, busy, draftContent, metadata, saveChanges, showWarning }) {
-  fieldWrap.append(actionBtn("dk-button dk-button--secondary", busy ? "Saving…" : "Save time choice", "save-time-choice", () => {
-    if (!draftContent.slotChoice) {
-      showWarning("Choose a time option first.");
-      return;
-    }
-    saveChanges(undefined, {
-      choice: draftContent.slotChoice,
-      proposalStartIso: metadata.startIso,
-      proposalVersion: metadata.version,
-    });
-  }, busy));
+  fieldWrap.append(actionBtn(
+    "dk-button dk-button--secondary sponsor-doc-time-save",
+    busy ? "Saving…" : "Save time choice",
+    "save-time-choice",
+    () => {
+      if (!draftContent.slotChoice) {
+        showWarning("Choose a time option first.");
+        return;
+      }
+      saveChanges(undefined, {
+        choice: draftContent.slotChoice,
+        proposalStartIso: metadata.startIso,
+        proposalVersion: metadata.version,
+      });
+    },
+    busy,
+  ));
 }
 
 export function renderPodcastQuestionsView({ el, draftContent }) {
@@ -218,4 +244,97 @@ export function renderSponsorDocExportCard({ el, markdownExport, onCopy }) {
   expTop.append(copyExportBtn);
   exportCard.append(expTop, el("pre", "sponsor-doc-export-pre", markdownExport));
   return exportCard;
+}
+
+export function updateSponsorDocFieldCount({
+  fieldDef,
+  countEl,
+  valText,
+  uploadedVisualName,
+  isVisualField,
+  maxChars,
+  maxWords,
+  maxXPostChars,
+  splitXThread,
+}) {
+  if (fieldDef.key === "photoUrl") {
+    countEl.hidden = true;
+    countEl.textContent = "";
+    return;
+  }
+  const text = String(valText || "");
+  if (isVisualField && /^data:image\//i.test(text)) {
+    countEl.textContent = uploadedVisualName ? `Uploaded (${uploadedVisualName})` : "Uploaded image";
+    countEl.classList.remove("is-over");
+    return;
+  }
+  if (fieldDef.key === "twitterPost") {
+    const tweets = splitXThread(text);
+    if (tweets.length > 1) {
+      countEl.textContent = `${tweets.length} tweets (≤ ${maxXPostChars} chars each)`;
+      countEl.classList.toggle("is-over", tweets.some((t) => t.length > maxXPostChars));
+      return;
+    }
+  }
+  const len = text.length;
+  if (maxChars > 0) {
+    countEl.textContent = `${len} / ${maxChars} chars`;
+    countEl.classList.toggle("is-over", len > maxChars);
+  } else if (maxWords > 0) {
+    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+    countEl.textContent = `${words} / ${maxWords} words`;
+    countEl.classList.toggle("is-over", words > maxWords);
+  } else {
+    countEl.textContent = `${len} chars`;
+  }
+}
+
+export function renderSponsorDocFormActions({
+  el,
+  actionBtn,
+  internalEdit,
+  busy,
+  isSubmitted,
+  saveChanges,
+}) {
+  const actionsBar = el("div", "sponsor-doc-actions");
+  const leftBtns = el("div", "sponsor-doc-actions__buttons");
+  if (internalEdit) {
+    leftBtns.append(actionBtn(
+      "dk-button dk-button--primary",
+      busy ? "Saving…" : "Save internal changes",
+      "save-draft",
+      () => saveChanges(undefined),
+      busy,
+    ));
+    actionsBar.append(leftBtns);
+    return actionsBar;
+  }
+  const rightBtns = el("div", "sponsor-doc-actions__buttons");
+  const draftLabel = busy ? "Saving…" : isSubmitted ? "Save changes" : "Save draft";
+  leftBtns.append(actionBtn("dk-button dk-button--secondary", draftLabel, "save-draft", () => saveChanges(undefined), busy));
+  if (isSubmitted) {
+    rightBtns.append(actionBtn("dk-button dk-button--secondary", "Reopen as Draft", "reopen-draft", () => saveChanges("draft"), busy));
+  } else {
+    const submitLabel = busy ? "Submitting…" : "Mark as Submitted / Ready";
+    rightBtns.append(actionBtn("dk-button dk-button--primary", submitLabel, "submit-ready", () => saveChanges("submitted"), busy));
+  }
+  actionsBar.append(leftBtns, rightBtns);
+  return actionsBar;
+}
+
+export function renderSponsorDocPhaseCard(el, phase) {
+  const card = el("div", "dk-auth-card sponsor-doc-card");
+  if (phase === "loading") {
+    card.append(el("p", "dk-auth-card__lede", "Loading document…"));
+    return card;
+  }
+  card.dataset.sponsorView = "notfound";
+  const head = el("header", "dk-auth-card__head");
+  head.append(
+    el("h1", "dk-auth-card__title", "Document not found"),
+    el("p", "dk-auth-card__lede", "Check that you opened the full link from your DataTalks.Club email."),
+  );
+  card.append(head);
+  return card;
 }

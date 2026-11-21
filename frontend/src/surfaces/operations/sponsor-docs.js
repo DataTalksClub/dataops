@@ -6,13 +6,17 @@ import {
   guestSlotFieldDefinition,
   renderPodcastQuestionsView,
   renderSponsorDocExportCard,
+  renderSponsorDocFormActions,
+  renderSponsorDocPhaseCard,
   renderSponsorDocStaffBar,
+  updateSponsorDocFieldCount,
 } from "./sponsor-doc-guest-schedule.js";
 import {
   buildStrippedCodePath,
   fetchPodcastQnaState,
   hasPodcastHostContent,
   isPodcastTwoTabDoc,
+  mountPodcastSchedulingContainer,
   parseInitialPodcastRoute,
   renderPodcastTwoTabWorkspace,
   stripGuestPodcastQueryParams,
@@ -156,6 +160,7 @@ export function createSponsorDocPage({
   let activePodcastTab = "guest";
   let podcastInternalMode = "host";
   let podcastInternalModeTouched = false;
+  let recordingSlotExpanded = false;
   let qnaState = { loading: false, loaded: false, questions: null, error: "" };
   let phase = "loading";
   let gateError = "";
@@ -221,6 +226,7 @@ export function createSponsorDocPage({
           activePodcastTab = "guest";
           podcastInternalMode = "host";
           podcastInternalModeTouched = false;
+          recordingSlotExpanded = false;
           qnaState = { loading: false, loaded: false, questions: null, error: "" };
           phase = "gate";
           gateError = "";
@@ -277,6 +283,7 @@ export function createSponsorDocPage({
       draftContent = { ...(doc.content || {}) };
       fieldErrors = {};
       uploadedVisualName = "";
+      recordingSlotExpanded = false;
       qnaState = { loading: false, loaded: false, questions: null, error: "" };
       if (isPodcastTwoTabDoc(doc)) {
         if (doc.viewerRole !== "staff") {
@@ -349,6 +356,7 @@ export function createSponsorDocPage({
       });
       doc = payload.doc;
       draftContent = { ...(doc.content || {}) };
+      if (timeChoiceIntent) recordingSlotExpanded = false;
       busy = false;
       if (nextStatus === "submitted") {
         feedbackMsg = "Submitted and marked ready for DataTalks.Club review.";
@@ -595,9 +603,39 @@ export function createSponsorDocPage({
         } else if (sectionDef.title) {
           sectionWrap.append(el("h2", "sponsor-doc-section__title", sectionDef.title));
         }
-        if (sectionDef.description) sectionWrap.append(el("p", "dk-hint", sectionDef.description));
+
+        const schedulingState = isTwoTab && !internalEdit && sectionDef.id === "scheduling"
+          ? mountPodcastSchedulingContainer({
+            el,
+            actionBtn,
+            doc,
+            guestZone,
+            sectionWrap,
+            expanded: recordingSlotExpanded,
+            onToggle: () => {
+              recordingSlotExpanded = !recordingSlotExpanded;
+              render();
+            },
+          })
+          : { collapsed: false, target: sectionWrap };
+        if (schedulingState.collapsed) {
+          timezoneMounted = true;
+          form.append(sectionWrap);
+          continue;
+        }
+        const sectionTarget = schedulingState.target;
+
+        if (sectionDef.description) sectionTarget.append(el("p", "dk-hint", sectionDef.description));
         if (!timezoneMounted && sectionDef.id === "scheduling") {
-          appendGuestTimezoneSelector({ el, container: sectionWrap, guestZone, busy, draftContent, render });
+          appendGuestTimezoneSelector({
+            el,
+            container: sectionTarget,
+            guestZone,
+            busy,
+            draftContent,
+            render,
+            compact: isTwoTab,
+          });
           timezoneMounted = true;
         }
 
@@ -605,7 +643,7 @@ export function createSponsorDocPage({
         const fieldNodesByKey = new Map();
         const appendFieldNode = (key, node) => {
           if (useEmailCard) fieldNodesByKey.set(key, node);
-          else sectionWrap.append(node);
+          else sectionTarget.append(node);
         };
 
         for (const fieldDef of sectionDef.fields || []) {
@@ -637,7 +675,7 @@ export function createSponsorDocPage({
             const value = el("p", "dk-hint", currentVal || "Unscheduled");
             value.dataset.sponsorDerivedField = fieldDef.key;
             fieldWrap.append(top, value);
-            sectionWrap.append(fieldWrap);
+            sectionTarget.append(fieldWrap);
             continue;
           }
 
@@ -652,34 +690,17 @@ export function createSponsorDocPage({
           }
 
           const isVisualField = fieldDef.key === "graphicsUrl" || Boolean(fieldDef.allowVisualUpload);
-          const updateCount = (valText) => {
-            if (fieldDef.key === "photoUrl") { countEl.hidden = true; countEl.textContent = ""; return; }
-            const text = String(valText || "");
-            if (isVisualField && /^data:image\//i.test(text)) {
-              countEl.textContent = uploadedVisualName ? `Uploaded (${uploadedVisualName})` : "Uploaded image";
-              countEl.classList.remove("is-over");
-              return;
-            }
-            if (fieldDef.key === "twitterPost") {
-              const tweets = splitSponsorXThread(text);
-              if (tweets.length > 1) {
-                countEl.textContent = `${tweets.length} tweets (≤ ${MAX_X_POST_CHARS} chars each)`;
-                countEl.classList.toggle("is-over", tweets.some((t) => t.length > MAX_X_POST_CHARS));
-                return;
-              }
-            }
-            const len = text.length;
-            if (maxChars > 0) {
-              countEl.textContent = `${len} / ${maxChars} chars`;
-              countEl.classList.toggle("is-over", len > maxChars);
-            } else if (maxWords > 0) {
-              const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-              countEl.textContent = `${words} / ${maxWords} words`;
-              countEl.classList.toggle("is-over", words > maxWords);
-            } else {
-              countEl.textContent = `${len} chars`;
-            }
-          };
+          const updateCount = (valText) => updateSponsorDocFieldCount({
+            fieldDef,
+            countEl,
+            valText,
+            uploadedVisualName,
+            isVisualField,
+            maxChars,
+            maxWords,
+            maxXPostChars: MAX_X_POST_CHARS,
+            splitXThread: splitSponsorXThread,
+          });
 
           updateCount(currentVal);
           top.append(label, countEl);
@@ -773,7 +794,15 @@ export function createSponsorDocPage({
       }
 
       if (!timezoneMounted) {
-        appendGuestTimezoneSelector({ el, container: form, guestZone, busy, draftContent, render });
+        appendGuestTimezoneSelector({
+          el,
+          container: form,
+          guestZone,
+          busy,
+          draftContent,
+          render,
+          compact: isTwoTab,
+        });
       }
 
       if (feedbackMsg) {
@@ -784,32 +813,15 @@ export function createSponsorDocPage({
         form.append(fb);
       }
 
-      const actionsBar = el("div", "sponsor-doc-actions");
-      const leftBtns = el("div", "sponsor-doc-actions__buttons");
-      if (internalEdit) {
-        leftBtns.append(actionBtn(
-          "dk-button dk-button--primary",
-          busy ? "Saving…" : "Save internal changes",
-          "save-draft",
-          () => saveChanges(undefined),
-          busy,
-        ));
-        actionsBar.append(leftBtns);
-      } else {
-        const rightBtns = el("div", "sponsor-doc-actions__buttons");
-        const draftLabel = busy ? "Saving…" : isSubmitted ? "Save changes" : "Save draft";
-        leftBtns.append(actionBtn("dk-button dk-button--secondary", draftLabel, "save-draft", () => saveChanges(undefined), busy));
-        if (isSubmitted) {
-          rightBtns.append(actionBtn("dk-button dk-button--secondary", "Reopen as Draft", "reopen-draft", () => saveChanges("draft"), busy));
-        } else {
-          const submitLabel = busy ? "Submitting…" : "Mark as Submitted / Ready";
-          rightBtns.append(actionBtn("dk-button dk-button--primary", submitLabel, "submit-ready", () => saveChanges("submitted"), busy));
-        }
-        actionsBar.append(leftBtns, rightBtns);
-      }
-
       form.addEventListener("submit", (event) => { event.preventDefault(); saveChanges(undefined); });
-      form.append(actionsBar);
+      form.append(renderSponsorDocFormActions({
+        el,
+        actionBtn,
+        internalEdit,
+        busy,
+        isSubmitted,
+        saveChanges,
+      }));
       return form;
     };
 
@@ -890,23 +902,8 @@ export function createSponsorDocPage({
     root.replaceChildren();
     updateIdentityBar();
 
-    if (phase === "loading") {
-      const card = el("div", "dk-auth-card sponsor-doc-card");
-      card.append(el("p", "dk-auth-card__lede", "Loading document…"));
-      root.append(card);
-      return;
-    }
-
-    if (phase === "notfound") {
-      const card = el("div", "dk-auth-card sponsor-doc-card");
-      card.dataset.sponsorView = "notfound";
-      const head = el("header", "dk-auth-card__head");
-      head.append(
-        el("h1", "dk-auth-card__title", "Document not found"),
-        el("p", "dk-auth-card__lede", "Check that you opened the full link from your DataTalks.Club email."),
-      );
-      card.append(head);
-      root.append(card);
+    if (phase === "loading" || phase === "notfound") {
+      root.append(renderSponsorDocPhaseCard(el, phase));
       return;
     }
 
