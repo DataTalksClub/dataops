@@ -1,3 +1,5 @@
+import { KnowledgeStore } from '../src/docs/knowledgeStore';
+import { recordValidation, requireKnowledgeValidation } from '../src/docs/knowledgeValidation';
 import { describe, it, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -10,6 +12,7 @@ import { useTestDatabase, truncateTestTables } from './helpers/db';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
   createTemplate,
+  getTemplate,
   createCardFromTemplate,
   deleteCustomTemplate,
   replaceSeedTemplate,
@@ -225,6 +228,55 @@ describe('Templates runtime editing', () => {
     assert.equal(bodyOf(renamed).code, 'immutable-template-type');
 
     assert.equal((await call('PUT', '/api/templates/missing', update)).statusCode, 404);
+  });
+
+  it('holds Template and knowledge writes until the next derived view passes the full gate', async () => {
+    const previousDocsDomain = process.env.DATAOPS_DOCS_DOMAIN;
+    const viewPath = 'content/workflow-gated-template.md';
+    const fixture = syntheticKnowledge({
+      [viewPath]: '---\nid: task-template.tasks.gated-template\ntitle: Old view\ndoc_type: task-template\nstatus: proposed\nconfidentiality: internal\n---\n# Old view\n',
+      'workflow-templates/gated-template.yaml': 'type: gated-template\nname: Name gated-template\ntrigger:\n  mode: manual\ntasks: []\n',
+    });
+    const store = new KnowledgeStore({
+      bucket: fixture.store.bucket, client: fixture.s3, offline: false,
+      validate: (target, prior, mutations, actor) => requireKnowledgeValidation(target, prior, mutations, actor, async () => {}),
+    });
+    configureDocsRuntime(store);
+    process.env.DATAOPS_DOCS_DOMAIN = 'true';
+    try {
+      const template = await createTemplate(client, authored('gated-template', TWO_TASKS));
+      const edit = { expectedVersion: template.version, revision: template.revision, definition: { ...validCustomDefinition('gated-template'), name: 'Changed name' } };
+      const pending = await call('PUT', `/api/templates/${template.id}`, edit, OPERATOR_ID);
+      assert.equal(pending.statusCode, 422, pending.body);
+      const decision = bodyOf(pending).validation;
+      assert.equal((await getTemplate(client, template.id))?.version, template.version);
+      assert.equal((await store.pin()).revision, fixture.publication.revision);
+      const runUrl = 'https://github.com/DataTalksClub/dataops-knowledge/actions/runs/123';
+      await recordValidation(store, decision.id, { status: 'failed', runUrl });
+      const rejected = await call('PUT', `/api/templates/${template.id}`, edit, OPERATOR_ID);
+      assert.equal(rejected.statusCode, 400, rejected.body);
+      assert.equal((await getTemplate(client, template.id))?.version, template.version);
+      await recordValidation(store, decision.id, { status: 'passed', runUrl });
+      const accepted = await call('PUT', `/api/templates/${template.id}`, edit, OPERATOR_ID);
+      assert.equal(accepted.statusCode, 200, accepted.body);
+      assert.equal((await getTemplate(client, template.id))?.version, template.version + 1);
+      assert.match(await store.readFile(viewPath), /Changed name/);
+      assert.match(await store.readFile(viewPath), /Template version: `2`/);
+      const pinned = (await getTemplate(client, template.id))!;
+      const reset = { expectedVersion: pinned.version, revision: pinned.revision };
+      const pendingReset = await call('POST', `/api/templates/${template.id}/reset`, reset, OPERATOR_ID);
+      assert.equal(pendingReset.statusCode, 422, pendingReset.body);
+      assert.equal((await getTemplate(client, template.id))?.pinned, true);
+      await recordValidation(store, bodyOf(pendingReset).validation.id, { status: 'passed', runUrl });
+      const acceptedReset = await call('POST', `/api/templates/${template.id}/reset`, reset, OPERATOR_ID);
+      assert.equal(acceptedReset.statusCode, 200, acceptedReset.body);
+      assert.equal((await getTemplate(client, template.id))?.pinned, false);
+      assert.match(await store.readFile(viewPath), /Template version: `3`/);
+    } finally {
+      resetDocsRuntime();
+      if (previousDocsDomain === undefined) delete process.env.DATAOPS_DOCS_DOMAIN;
+      else process.env.DATAOPS_DOCS_DOMAIN = previousDocsDomain;
+    }
   });
 
   it('regenerates the workflow view from the newly pinned Template before returning success', async () => {

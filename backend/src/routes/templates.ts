@@ -1,3 +1,4 @@
+import { KnowledgeValidationError } from '../docs/knowledgeValidation';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { invalidateTemplateTypeMap } from '../cards/createCard';
@@ -26,7 +27,7 @@ import {
 import type { LambdaEvent, LambdaResponse, Template } from '../types';
 import { json } from '../http';
 import { recordRequestError } from '../requestErrorLog';
-import { isDocsDomainEnabled, regenerateKnowledgeForTemplates } from '../docs/contentApi';
+import { isDocsDomainEnabled, regenerateKnowledgeForTemplates, validateKnowledgeForTemplates } from '../docs/contentApi';
 
 class TemplateRequestError extends Error {
   readonly statusCode: number;
@@ -142,7 +143,7 @@ async function handleTemplateRoutes(
           assertNoEventFormatClaim(definition as Record<string, unknown>);
           return json(200, { dryRun: true, effective: definition });
         }
-        const template = await createCustomTemplate(client, definition);
+        const template = await createCustomTemplate(client, definition, isDocsDomainEnabled() ? (next) => validateKnowledgeForTemplates([next], create.actor.id || 'template-create') : undefined);
         invalidateTemplateTypeMap();
         if (isDocsDomainEnabled()) {
           // Same contract as pin and reset: a Template write never leaves a
@@ -205,7 +206,7 @@ async function handleTemplateRoutes(
       }
       const lintError = resetLintResponse(current);
       if (lintError) return lintError;
-      const result = await resetTemplateOverride(client, resetMatch[1], expectedVersion, revision);
+      const result = await resetTemplateOverride(client, resetMatch[1], expectedVersion, revision, isDocsDomainEnabled() ? (next) => validateKnowledgeForTemplates([next], reset.actor.id || 'template-reset') : undefined);
       if (!result) return json(404, { error: 'Template not found' });
       if (isDocsDomainEnabled()) {
         await regenerateKnowledgeForTemplates([result.template], reset.actor.id || 'template-reset');
@@ -215,6 +216,9 @@ async function handleTemplateRoutes(
 
     return json(404, { error: 'Not found' });
   } catch (error) {
+    if (error instanceof KnowledgeValidationError) return json(error.status === 'pending' ? 422 : error.status === 'unavailable' ? 503 : 400, {
+      error: error.message, validation: { id: error.id, status: error.status, url: error.runUrl },
+    });
     if (error instanceof TemplateRequestError) {
       return json(error.statusCode, { error: error.message, code: error.code });
     }
@@ -267,6 +271,7 @@ async function handleTemplateUpdate(
   if (isDryRun(event)) return json(200, { dryRun: true, effective: definition });
   const template = await writeTemplateDefinition(
     client, id, definition as Record<string, unknown>, expectedVersion, revision,
+    isDocsDomainEnabled() ? (next) => validateKnowledgeForTemplates([next], update.actor.id || 'template-update') : undefined,
   );
   if (!template) return json(404, { error: 'Template not found' });
   if (isDocsDomainEnabled()) {

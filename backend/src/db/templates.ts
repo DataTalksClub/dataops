@@ -610,11 +610,14 @@ async function ensureTypeGuard(
   }
 }
 
+type BeforeTemplateWrite = (template: Template) => Promise<void>;
+
 /** Claim a `type` and store its template atomically; losers fail closed. */
 async function createTemplateWithGuard(
   client: DynamoDBDocumentClient,
   fields: Record<string, unknown>,
   type: string,
+  beforeWrite?: BeforeTemplateWrite,
 ): Promise<Template> {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
@@ -628,6 +631,7 @@ async function createTemplateWithGuard(
     version: 1,
   };
   const guard = { ...typeGuardKey(type), templateId: id, createdAt: now };
+  await beforeWrite?.(cleanItem(item) as Template);
   try {
     await templateTransact(client, [
       { Put: { TableName: TABLE_TEMPLATES, Item: item, ConditionExpression: 'attribute_not_exists(PK)' } },
@@ -649,6 +653,7 @@ async function createTemplateWithGuard(
 async function createCustomTemplate(
   client: DynamoDBDocumentClient,
   definition: Record<string, unknown>,
+  beforeWrite?: BeforeTemplateWrite,
 ): Promise<Template> {
   const issues = validateEffectiveDefinition(definition);
   if (issues.length > 0) throw new TemplateDefinitionInvalidError(issues);
@@ -660,10 +665,12 @@ async function createCustomTemplate(
   }
   // Claim guards for any unguarded existing rows before claiming the new type,
   // so an unguarded row can never race this creation into a duplicate effective type.
-  for (const row of existing) {
-    if (row.type) await ensureTypeGuard(client, row.type, row.id);
-  }
-  return createTemplateWithGuard(client, { ...definitionFieldsOf(definition), origin: 'custom', pinned: false }, type);
+  return createTemplateWithGuard(client, { ...definitionFieldsOf(definition), origin: 'custom', pinned: false }, type, async (template) => {
+    await beforeWrite?.(template);
+    for (const row of existing) {
+      if (row.type) await ensureTypeGuard(client, row.type, row.id);
+    }
+  });
 }
 
 /**
@@ -679,6 +686,7 @@ async function writeTemplateDefinition(
   definition: Record<string, unknown>,
   expectedVersion: number,
   revision: string,
+  beforeWrite?: BeforeTemplateWrite,
 ): Promise<Template | null> {
   const raw = await rawTemplate(client, id);
   if (!raw) return null;
@@ -697,6 +705,7 @@ async function writeTemplateDefinition(
   const item = effectiveItemFromDefinition(raw, definition, {
     pinned: raw.origin === 'git',
   });
+  await beforeWrite?.(cleanItem(item) as Template);
   await conditionalPutTemplate(client, item, expectedVersion);
   return cleanItem(item) as Template;
 }
@@ -745,6 +754,7 @@ async function resetTemplateOverride(
   id: string,
   expectedVersion: number,
   revision: string,
+  beforeWrite?: BeforeTemplateWrite,
 ): Promise<{ template: Template; applied: boolean } | null> {
   const raw = await rawTemplate(client, id);
   if (!raw) return null;
@@ -755,6 +765,7 @@ async function resetTemplateOverride(
   if (!raw.pinned) return { template: cleanItem(raw) as Template, applied: false };
   const base = raw.base as Record<string, unknown>;
   const item = effectiveItemFromDefinition(raw, base, { pinned: false });
+  await beforeWrite?.(cleanItem(item) as Template);
   await conditionalPutTemplate(client, item, expectedVersion);
   return { template: cleanItem(item) as Template, applied: true };
 }
