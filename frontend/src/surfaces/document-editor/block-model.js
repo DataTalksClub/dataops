@@ -155,7 +155,11 @@ export function parseMarkdownBlocks(markdown) {
     if (/^\s*\d+\.\s+/.test(startLine)) {
       const buf = [startLine];
       i++;
-      while (i < lines.length && lines[i].trim() && /^\s*\d+\.\s+/.test(lines[i])) {
+      while (i < lines.length) {
+        // Step markers are non-content, just like comments between blocks.
+        // Keep adjacent SOP steps in one ordered list when markers wrap them.
+        if (/^\s*<!--[\s\S]*?-->\s*$/.test(lines[i])) { i++; continue; }
+        if (!lines[i].trim() || !/^\s*\d+\.\s+/.test(lines[i])) break;
         buf.push(lines[i]);
         i++;
       }
