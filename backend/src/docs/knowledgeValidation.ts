@@ -59,15 +59,26 @@ export async function requireKnowledgeValidation(
   dispatch: (id: string) => Promise<void> = dispatchValidation,
 ): Promise<void> {
   if (publisher.getStore()) return;
-  const resolved: Candidate['mutations'] = [];
+  // Resolve operations in their actual publication order, then canonicalize
+  // the final writes. A rename can copy a source edited earlier in the batch.
+  const effective = new Map<string, string | undefined>();
+  const read = async (path: string): Promise<Buffer> => {
+    if (effective.has(path)) {
+      const base64 = effective.get(path);
+      if (base64 === undefined) throw new Error('Knowledge rename source was deleted earlier in the batch');
+      return Buffer.from(base64, 'base64');
+    }
+    return store.blobBytes(previous.entries[path]?.sha || '');
+  };
   for (const mutation of mutations) {
     let bytes: string | Uint8Array | undefined = mutation.bytes;
-    if (bytes === undefined && mutation.sourcePath) bytes = await store.blobBytes(previous.entries[mutation.sourcePath]?.sha || '');
+    if (bytes === undefined && mutation.sourcePath) bytes = await read(mutation.sourcePath);
     if (bytes === undefined && mutation.restoreRevision) bytes = await store.versionBytes(mutation.path, mutation.restoreRevision);
-    resolved.push({ path: mutation.path, ...(bytes !== undefined ? { base64: Buffer.from(bytes).toString('base64') } : {}) });
-    if (mutation.sourcePath) resolved.push({ path: mutation.sourcePath });
+    effective.set(mutation.path, bytes === undefined ? undefined : Buffer.from(bytes).toString('base64'));
+    if (mutation.sourcePath) effective.set(mutation.sourcePath, undefined);
   }
-  // Include operation order: a batch may write a path more than once.
+  const resolved = [...effective].sort(([a], [b]) => a.localeCompare(b))
+    .map(([path, base64]) => ({ path, ...(base64 !== undefined ? { base64 } : {}) }));
   const payload = { baseRevision: previous.revision, actor, entries: previous.entries, mutations: resolved };
   const id = hash(JSON.stringify(payload));
   const receipt = await optionalJson<ValidationReceipt>(store, `${prefix(id)}/result.json`);
