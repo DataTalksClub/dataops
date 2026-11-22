@@ -323,7 +323,7 @@ export class KnowledgeStore {
     catch(err) {if((err as NodeJS.ErrnoException).code!=='ENOENT') throw err;return readFileSync(await this.ensureFile(path));}
   }
   updatedAt(path:string):number { const p=this.localPath(path);return existsSync(p)?Math.floor(statSync(p).mtimeMs/1000):0; }
-  async publish(mutations:Mutation[], expectedRevision:string, actor:string, message:string):Promise<Publication> {
+  async validatePublication(mutations:Mutation[], expectedRevision:string, actor:string):Promise<Publication> {
     if(!expectedRevision || !actor) throw new KnowledgeError('Expected revision and authenticated actor are required');
     if(this.offline) throw new KnowledgeError('Local knowledge mutations require the test/local S3 store');
     const previous=await this.pin();
@@ -348,6 +348,10 @@ export class KnowledgeStore {
       }
     }
     await this.validate(this, previous, mutations, actor);
+    return previous;
+  }
+  async publish(mutations:Mutation[], expectedRevision:string, actor:string, message:string):Promise<Publication> {
+    const previous = await this.validatePublication(mutations, expectedRevision, actor);
     const entries={...previous.entries};const changes:KnowledgeChange[]=[];
     for(const mutation of mutations) {
       const path=normalizeRepoPath(mutation.path);

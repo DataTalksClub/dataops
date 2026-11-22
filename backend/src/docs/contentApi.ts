@@ -386,6 +386,13 @@ async function publishRegeneratedKnowledge(
   }
 }
 
+/** Validate the exact next derived view before changing its runtime Template. */
+export async function validateKnowledgeForTemplates(templates: Template[], actor: string): Promise<void> {
+  const rt = runtime || new DocsRuntime(createKnowledgeStore(knowledgeStoreConfigFromEnv()));
+  const plan = await prepareKnowledgePlan(rt, [], templates);
+  if (plan.mutations.length) await rt.store.validatePublication(plan.mutations, rt.store.revision, actor);
+}
+
 /** Regenerate generated KB pages after a runtime Template changes or syncs from Git. */
 export async function regenerateKnowledgeForTemplates(
   templates: Template[],
