@@ -1,3 +1,4 @@
+import { KnowledgeError, ContentRootUnavailableError } from '../docs/knowledgeStore';
 import { KnowledgeValidationError } from '../docs/knowledgeValidation';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
@@ -219,6 +220,8 @@ async function handleTemplateRoutes(
     if (error instanceof KnowledgeValidationError) return json(error.status === 'pending' ? 422 : error.status === 'unavailable' ? 503 : 400, {
       error: error.message, validation: { id: error.id, status: error.status, url: error.runUrl },
     });
+    if (error instanceof KnowledgeError) return json(400, { error: error.message });
+    if (error instanceof ContentRootUnavailableError) return json(503, { error: error.message });
     if (error instanceof TemplateRequestError) {
       return json(error.statusCode, { error: error.message, code: error.code });
     }
