@@ -246,6 +246,10 @@ describe('Templates runtime editing', () => {
     try {
       const template = await createTemplate(client, authored('gated-template', TWO_TASKS));
       const edit = { expectedVersion: template.version, revision: template.revision, definition: { ...validCustomDefinition('gated-template'), name: 'Changed name' } };
+      const invalid = await call('PUT', `/api/templates/${template.id}`, { ...edit, definition: { ...edit.definition, name: 'TBD name' } }, OPERATOR_ID);
+      assert.equal(invalid.statusCode, 400, invalid.body);
+      assert.match(bodyOf(invalid).error, /Authored-content validation failed/);
+      assert.equal((await getTemplate(client, template.id))?.version, template.version);
       const pending = await call('PUT', `/api/templates/${template.id}`, edit, OPERATOR_ID);
       assert.equal(pending.statusCode, 422, pending.body);
       const decision = bodyOf(pending).validation;
