@@ -119,8 +119,8 @@ function configureOfflineDocsStore(): void {
   }
   collect(source);
   const s3=new MemoryS3();s3.seed(files);
-  const store=new KnowledgeStore({bucket:'test-knowledge',client:s3 as any,cacheDir:source+'/s3-cache',offline:false});
-  configureOperatingModelStoreForTests(()=>new KnowledgeStore({bucket:'test-knowledge',client:s3 as any,cacheDir:source+'/s3-cache',offline:false}));
+  const store=new KnowledgeStore({bucket:'test-knowledge',client:s3 as any,cacheDir:source+'/s3-cache',offline:false,validate:async()=>{}});
+  configureOperatingModelStoreForTests(()=>new KnowledgeStore({bucket:'test-knowledge',client:s3 as any,cacheDir:source+'/s3-cache',offline:false,validate:async()=>{}}));
   configureDocsRuntime(store);
   configurePortalStore(store);
 }
