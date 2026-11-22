@@ -261,6 +261,22 @@ describe('GitHub Actions OIDC knowledge publisher', () => {
     }
   });
 
+  it('limits candidate workflow credentials to immutable reads and receipts', async () => {
+    const credential = token(claims({ workflow_ref: `${REPO}/.github/workflows/validate-candidate.yml@refs/heads/main`, event_name: 'workflow_dispatch', run_id: '123' }));
+    for (const path of ['/knowledge/publish', '/knowledge/mirror-heartbeat', '/api/templates/sync']) {
+      const denied = await request('POST', path, credential);
+      assert.equal(denied.statusCode, 403, path);
+    }
+    const id = 'c'.repeat(64);
+    s3.objects.set(`test-knowledge/jobs/knowledge-validation/${id}/request.json`, Buffer.from(JSON.stringify({ id })));
+    const read = await request('GET', `/knowledge/validation/${id}`, credential);
+    assert.equal(read.statusCode, 200);
+    const recorded = await request('POST', `/knowledge/validation/${id}`, credential, { status: 'passed', runUrl: 'https://untrusted.example/' });
+    assert.equal(recorded.statusCode, 200);
+    const receipt = JSON.parse(s3.objects.get(`test-knowledge/jobs/knowledge-validation/${id}/result.json`)!.toString());
+    assert.equal(receipt.runUrl, `https://github.com/${REPO}/actions/runs/123`);
+  });
+
   it('is disabled when the deployment names no repository', async () => {
     delete process.env.KNOWLEDGE_PUBLISHER_REPOSITORY;
     try {

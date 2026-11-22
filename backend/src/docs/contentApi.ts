@@ -1,3 +1,4 @@
+import { KnowledgeValidationError } from './knowledgeValidation';
 import { authoredContentIssues, blockingAuthoredContentIssues } from './authoredContent';
 import { templateParser } from './templatePlaceholders';
 import { dump as dumpYaml } from 'js-yaml';
@@ -470,6 +471,7 @@ export async function handleDocsRoutes(
     }
     if (err instanceof KnowledgeVersionNotFound) return jsonResponse(404,{error:err.message});
     if (err instanceof RevisionConflict) return jsonResponse(409, { error: err.message });
+    if (err instanceof KnowledgeValidationError) return jsonResponse(err.status === 'pending' ? 422 : err.status === 'unavailable' ? 503 : 400, { error: err.message, validation: { id: err.id, status: err.status, url: err.runUrl } });
     if (err instanceof KnowledgeError) return jsonResponse(400, { error: err.message });
     recordRequestError(err);
     return jsonResponse(500, { error: 'Internal server error' });

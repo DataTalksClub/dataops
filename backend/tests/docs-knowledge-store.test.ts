@@ -46,7 +46,7 @@ describe('immutable S3 knowledge publications',()=>{
   const dir=mkdtempSync(resolve('../.tmp/knowledge-test-'));
   try {
    const {store,s3,publication}=syntheticKnowledge({'content/a.md':'old','definitions/model.csv':'a,b\n1,2'},dir);
-   const second=new KnowledgeStore({bucket:store.bucket,client:s3 as any,cacheDir:dir});await second.pin();
+   const second=new KnowledgeStore({bucket:store.bucket,client:s3 as any,cacheDir:dir,validate:async()=>{}});await second.pin();
    const saved=await store.publish([{path:'content/a.md',bytes:'new'}],publication.revision,'authenticated-actor','Edit');
    await assert.rejects(()=>second.publish([{path:'content/a.md',bytes:'stale'}],publication.revision,'other','Edit'),RevisionConflict);
    assert.equal(await second.readFile('content/a.md'),'old');assert.equal(await store.readFile('content/a.md'),'new');

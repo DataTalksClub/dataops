@@ -35,5 +35,5 @@ export class MemoryS3 {
   }
 }
 export function syntheticKnowledge(files:Record<string,string|Uint8Array>,cacheDir?:string,signer?:KnowledgeConfig['signer']) {
-  const s3=new MemoryS3();const publication=s3.seed(files);const store=new KnowledgeStore({bucket:'test-knowledge',client:s3 as any,cacheDir,offline:false,signer});return{s3,store,publication};
+  const s3=new MemoryS3();const publication=s3.seed(files);const store=new KnowledgeStore({bucket:'test-knowledge',client:s3 as any,cacheDir,offline:false,signer,validate:async()=>{}});return{s3,store,publication};
 }
