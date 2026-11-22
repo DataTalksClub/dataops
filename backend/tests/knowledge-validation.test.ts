@@ -64,7 +64,21 @@ test('rename with replacement and restore candidates carry exact effective bytes
   const candidate = await validationCandidate(store, id);
   assert.deepEqual(candidate.mutations, [
     { path: 'content/new.md', base64: Buffer.from('Replacement').toString('base64') },
-    { path: 'content/old.md' },
     { path: 'content/old.md', base64: Buffer.from('Original').toString('base64') },
   ]);
+});
+
+test('candidate matches a rename of an earlier edit and canonicalizes independent write order', async () => {
+  const { store, publication } = syntheticKnowledge({ 'content/a.md': 'Old', 'content/z.md': 'Z' });
+  let id = '';
+  const mutations = [{ path: 'content/a.md', bytes: 'New' }, { path: 'content/b.md', sourcePath: 'content/a.md' }];
+  await assert.rejects(() => requireKnowledgeValidation(store, publication, mutations, 'editor', async value => { id = value; }), KnowledgeValidationError);
+  assert.deepEqual((await validationCandidate(store, id)).mutations, [
+    { path: 'content/a.md' }, { path: 'content/b.md', base64: Buffer.from('New').toString('base64') },
+  ]);
+  let first = '';
+  const writes = [{ path: 'content/a.md', bytes: 'A' }, { path: 'content/z.md', bytes: 'Z' }];
+  await assert.rejects(() => requireKnowledgeValidation(store, publication, writes, 'editor', async value => { first = value; }), KnowledgeValidationError);
+  await recordValidation(store, first, { status: 'passed', runUrl: url });
+  await requireKnowledgeValidation(store, publication, [...writes].reverse(), 'editor', async () => { throw new Error('Should reuse exact final state'); });
 });
