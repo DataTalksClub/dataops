@@ -1,3 +1,4 @@
+import { recordValidation, validationCandidate, withValidatedKnowledgePublisher } from '../docs/knowledgeValidation';
 /**
  * The knowledge repository's GitHub Actions publisher, authenticated by the
  * workflow's own GitHub OIDC token. Nothing is stored: GitHub signs a
@@ -33,7 +34,7 @@ const CLOCK_SKEW_SECONDS = 60;
 type Jwk = JsonWebKey & { kid?: string; alg?: string; use?: string };
 export interface GitHubOidcClaims {
   iss: string; aud: string | string[]; exp: number; nbf?: number; iat?: number;
-  repository: string; ref: string; sha: string; workflow_ref: string; event_name: string;
+  repository: string; ref: string; sha: string; workflow_ref: string; event_name: string; run_id?: string;
 }
 
 let jwksCache: { expiresAt: number; keys: Jwk[] } | null = null;
@@ -101,7 +102,7 @@ export async function verifyPublisherToken(token: string, now = Date.now()): Pro
   if (claims.iss !== GITHUB_OIDC_ISSUER || !audience.includes(KNOWLEDGE_PUBLISHER_AUDIENCE)) throw new Error('Invalid token claims');
   if (typeof claims.exp !== 'number' || claims.exp <= seconds - CLOCK_SKEW_SECONDS) throw new Error('Expired token');
   if (claims.nbf !== undefined && claims.nbf > seconds + CLOCK_SKEW_SECONDS) throw new Error('Token not yet valid');
-  if (claims.repository !== policy.repository || claims.ref !== policy.ref || claims.workflow_ref !== policy.workflowRef) {
+  if (claims.repository !== policy.repository || claims.ref !== policy.ref || ![policy.workflowRef, policy.workflowRef.replace('/validate.yml@', '/validate-candidate.yml@')].includes(claims.workflow_ref)) {
     throw new Error('Token is not from the knowledge publish workflow');
   }
   if (!ALLOWED_EVENTS.has(claims.event_name) || !/^[0-9a-f]{40}$/.test(claims.sha)) throw new Error('Invalid token claims');
@@ -127,7 +128,17 @@ export async function handleKnowledgePublisher(
   }
   const method = (event.httpMethod || 'GET').toUpperCase();
   const path = event.path || '/';
-  if (method === 'POST' && path === '/api/templates/sync') return syncTemplates(client, claims);
+  if (/^\/knowledge\/validation\/[a-f0-9]{64}$/.test(path)) {
+    const id = path.split('/').pop()!;
+    if (method === 'GET') return response(200, await validationCandidate(docsKnowledgeStore(), id));
+    if (method === 'POST') {
+      const body = JSON.parse(event.body || '{}');
+      await recordValidation(docsKnowledgeStore(), id, { status: body.status, runUrl: `https://github.com/${claims.repository}/actions/runs/${claims.run_id}` });
+      return response(200, { recorded: body.status });
+    }
+  }
+  if (claims.workflow_ref.includes('/validate-candidate.yml@') && !(method === 'GET' && ['/knowledge/download', '/knowledge/version'].includes(path))) return response(403, { error: 'Candidate validator may only read immutable versions and record validation results' });
+  if (method === 'POST' && path === '/api/templates/sync') return withValidatedKnowledgePublisher(() => syncTemplates(client, claims));
   if (method === 'POST' && path === '/knowledge/mirror-heartbeat') {
     const heartbeat = parseMirrorHeartbeat(event.body);
     if (!heartbeat) return response(400, { error: 'outcome must be success or failure' });
@@ -138,7 +149,7 @@ export async function handleKnowledgePublisher(
     || (method === 'POST' && path === '/knowledge/publish');
   if (!allowed) return response(403, { error: 'Knowledge publisher may only read the manifest, file history and versions, publish knowledge files, report mirror heartbeats and sync workflow templates' });
   const repo = claims.repository.split('/')[1];
-  const result = await handleDocsRoutes(event, `git:${repo}@${claims.sha.slice(0, 12)}`, `Publish ${repo} ${claims.sha}`, undefined, client);
+  const result = await withValidatedKnowledgePublisher(() => handleDocsRoutes(event, `git:${repo}@${claims.sha.slice(0, 12)}`, `Publish ${repo} ${claims.sha}`, undefined, client));
   return result || response(404, { error: 'Not found' });
 }
 

@@ -1,3 +1,4 @@
+import { requireKnowledgeValidation } from './knowledgeValidation';
 import { blockingAuthoredContentIssues } from './authoredContent';
 import { templateParser } from './templatePlaceholders';
 /** Private S3 knowledge: immutable blobs/manifests and one conditional publication pointer. */
@@ -33,6 +34,7 @@ export interface Publication {
 }
 export interface KnowledgeConfig {
   bucket?: string; cacheDir?: string; offline?: boolean; signer?: typeof getSignedUrl; client?: Pick<S3Client, 'send'>;
+  validate?: typeof requireKnowledgeValidation;
 }
 export interface Mutation { path: string; bytes?: Uint8Array|string; sourcePath?: string; restoreRevision?: string; absent?: boolean; }
 /** Normalize a repo-relative path; reject traversal and absolute paths. */
@@ -157,8 +159,10 @@ export class KnowledgeStore {
   private hydrated=false;
   private localOffline:boolean|undefined;
   private signer:typeof getSignedUrl;
+  private readonly validate: typeof requireKnowledgeValidation;
   constructor(config:KnowledgeConfig={}) {
     this.signer=config.signer||getSignedUrl;
+    this.validate=config.validate || requireKnowledgeValidation;
     this.localOffline=config.offline;
     this.bucket=config.bucket||process.env.KNOWLEDGE_BUCKET||'';
     this.client=config.client||new S3Client({});
@@ -343,6 +347,7 @@ export class KnowledgeStore {
         if (issues.length) throw new KnowledgeError(`${path}: ${issues.map(issue => issue.message).join(' ')}`);
       }
     }
+    await this.validate(this, previous, mutations, actor);
     const entries={...previous.entries};const changes:KnowledgeChange[]=[];
     for(const mutation of mutations) {
       const path=normalizeRepoPath(mutation.path);

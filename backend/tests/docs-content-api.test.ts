@@ -553,7 +553,7 @@ describe('docs search ranking, snippets and the per-publication index',()=>{
  });
  it('reuses one index across requests for a publication and rebuilds after a new one',async()=>{
   const fixture=syntheticKnowledge(files,dir);
-  const freshStore=()=>new KnowledgeStore({bucket:'test-knowledge',client:fixture.s3 as any,cacheDir:dir,offline:false});
+  const freshStore=()=>new KnowledgeStore({bucket:'test-knowledge',client:fixture.s3 as any,cacheDir:dir,offline:false,validate:async()=>{}});
   configureDocsRuntime(freshStore());
   assert.equal((await call(ev('GET','/search',{query:{q:'sponsor'}}))).body.results.length,2);
   // A second request (new runtime, new store) on the same publication must not re-read the corpus.
