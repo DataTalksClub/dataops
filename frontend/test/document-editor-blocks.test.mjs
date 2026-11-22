@@ -187,3 +187,18 @@ describe("block keyboard model", () => {
     assert.equal(serializeBlocksToMarkdown(list), "![Shot](a.png)\n\nhttps://www.youtube.com/watch?v=abc\n\nhttps://example.com");
   });
 });
+
+
+test("SOP step markers preserve one sequential numbered list in Document view", () => {
+  const marked = [
+    "<!-- sop-step-start id=1 -->", "1. First action.", "<!-- sop-step-end -->",
+    "<!-- sop-step-start id=2 -->", "2. Second action.", "<!-- sop-step-end -->",
+    "## Validation", "Verify the result.",
+  ].join("\n");
+  const blocks = parseMarkdownBlocks(marked);
+  assert.equal(blocks[0].type, "numbered");
+  assert.equal(blocks[0].raw, "1. First action.\n2. Second action.");
+  assert.equal(blocks[1].raw, "## Validation");
+  const code = parseMarkdownBlocks("```html\n<!-- sop-step-end -->\n```");
+  assert.ok(code[0].raw.includes("<!-- sop-step-end -->"));
+});
