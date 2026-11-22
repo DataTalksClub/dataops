@@ -82,3 +82,29 @@ test('candidate matches a rename of an earlier edit and canonicalizes independen
   await recordValidation(store, first, { status: 'passed', runUrl: url });
   await requireKnowledgeValidation(store, publication, [...writes].reverse(), 'editor', async () => { throw new Error('Should reuse exact final state'); });
 });
+
+test('the actual docs save route exposes pending, failed and accepted validation decisions', async () => {
+  const { configureDocsRuntime, resetDocsRuntime, handleDocsRoutes } = await import('../src/docs/contentApi');
+  const content = '---\nid: reference.example\ndoc_type: reference\nstatus: proposed\nconfidentiality: internal\n---\n# Example\n\n## References\n- Service documentation\n';
+  const { s3, publication } = syntheticKnowledge({ 'content/example.md': content });
+  const store = new KnowledgeStore({ bucket: 'test-knowledge', client: s3, offline: false, validate: (target, prior, mutations, actor) => requireKnowledgeValidation(target, prior, mutations, actor, async () => {}) });
+  configureDocsRuntime(store);
+  const event = { httpMethod: 'PUT', path: '/docs', headers: {}, queryStringParameters: { path: 'content/example.md' }, body: JSON.stringify({ content: content + '\nChanged.\n', expectedRevision: publication.revision }) };
+  try {
+    const pending = await handleDocsRoutes(event, 'editor');
+    assert.equal(pending?.statusCode, 422, pending?.body);
+    const decision = JSON.parse(pending!.body).validation;
+    assert.equal(decision.status, 'pending');
+    assert.match(JSON.parse(pending!.body).error, /has not been saved/);
+    assert.equal((await store.pin()).revision, publication.revision);
+    await recordValidation(store, decision.id, { status: 'failed', runUrl: url });
+    const rejected = await handleDocsRoutes(event, 'editor');
+    assert.equal(rejected?.statusCode, 400);
+    assert.equal((await store.pin()).revision, publication.revision);
+    await recordValidation(store, decision.id, { status: 'passed', runUrl: url });
+    const accepted = await handleDocsRoutes(event, 'editor');
+    assert.equal(accepted?.statusCode, 200, accepted?.body);
+    assert.notEqual((await store.pin()).revision, publication.revision);
+    assert.equal(await store.readFile('content/example.md'), content + '\nChanged.\n');
+  } finally { resetDocsRuntime(); }
+});
