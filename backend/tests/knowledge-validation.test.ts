@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KnowledgeStore } from '../src/docs/knowledgeStore';
-import { KnowledgeValidationError, recordValidation, requireKnowledgeValidation, validationCandidate, withValidatedKnowledgePublisher } from '../src/docs/knowledgeValidation';
+import { KnowledgeValidationError, dispatchValidation, recordValidation, requireKnowledgeValidation, validationCandidate, withValidatedKnowledgePublisher } from '../src/docs/knowledgeValidation';
 import { syntheticKnowledge } from './helpers/knowledge';
 
 const url = 'https://github.com/DataTalksClub/dataops-knowledge/actions/runs/123';
@@ -107,4 +107,19 @@ test('the actual docs save route exposes pending, failed and accepted validation
     assert.notEqual((await store.pin()).revision, publication.revision);
     assert.equal(await store.readFile('content/example.md'), content + '\nChanged.\n');
   } finally { resetDocsRuntime(); }
+});
+
+
+test('candidate dispatch uses the existing repository Contents-write grant without exposing credentials', async () => {
+  const candidate = 'd'.repeat(64);
+  await dispatchValidation(candidate, async (name) => {
+    assert.equal(name, 'dataops-v1.knowledge.github-token');
+    return 'synthetic-test-credential';
+  }, async (url, options) => {
+    assert.equal(url, 'https://api.github.com/repos/DataTalksClub/dataops-knowledge/dispatches');
+    assert.deepEqual(JSON.parse(String(options?.body)), { event_type: 'knowledge_candidate', client_payload: { candidate } });
+    assert.ok(!String(options?.body).includes('synthetic-test-credential'));
+    return new Response(null, { status: 204 });
+  });
+  await assert.rejects(() => dispatchValidation(candidate, async () => 'synthetic-test-credential', async () => new Response(null, { status: 403 })), /HTTP 403/);
 });

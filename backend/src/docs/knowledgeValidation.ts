@@ -45,11 +45,11 @@ export async function recordValidation(store: KnowledgeStore, id: string, receip
   }
   await store.client.send(new PutObjectCommand({ Bucket: store.bucket, Key: `${prefix(id)}/result.json`, Body: JSON.stringify(receipt), ContentType: 'application/json' }));
 }
-export async function dispatchValidation(id: string): Promise<void> {
-  const token = await readRuntimeSecret('dataops-v1.knowledge.github-token');
-  const response = await fetch('https://api.github.com/repos/DataTalksClub/dataops-knowledge/actions/workflows/validate-candidate.yml/dispatches', {
+export async function dispatchValidation(id: string, readSecret = readRuntimeSecret, fetcher: typeof fetch = fetch): Promise<void> {
+  const token = await readSecret('dataops-v1.knowledge.github-token');
+  const response = await fetcher('https://api.github.com/repos/DataTalksClub/dataops-knowledge/dispatches', {
     method: 'POST', headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'content-type': 'application/json' },
-    body: JSON.stringify({ ref: 'main', inputs: { candidate: id } }), signal: AbortSignal.timeout(10_000),
+    body: JSON.stringify({ event_type: 'knowledge_candidate', client_payload: { candidate: id } }), signal: AbortSignal.timeout(10_000),
   });
   // Never echo provider bodies: they can contain request data or credentials.
   if (!response.ok) throw new Error(`Knowledge validation workflow dispatch failed (HTTP ${response.status}); the active knowledge is unchanged`);
