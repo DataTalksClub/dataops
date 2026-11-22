@@ -262,7 +262,7 @@ describe('GitHub Actions OIDC knowledge publisher', () => {
   });
 
   it('limits candidate workflow credentials to immutable reads and receipts', async () => {
-    const credential = token(claims({ workflow_ref: `${REPO}/.github/workflows/validate-candidate.yml@refs/heads/main`, event_name: 'workflow_dispatch', run_id: '123' }));
+    const credential = token(claims({ workflow_ref: `${REPO}/.github/workflows/validate-candidate.yml@refs/heads/main`, event_name: 'repository_dispatch', run_id: '123' }));
     for (const path of ['/knowledge/publish', '/knowledge/mirror-heartbeat', '/api/templates/sync']) {
       const denied = await request('POST', path, credential);
       assert.equal(denied.statusCode, 403, path);

@@ -28,7 +28,7 @@ export const KNOWLEDGE_PUBLISHER_AUDIENCE = 'dataops-knowledge-publish';
 /** The workflow file in the knowledge repository allowed to publish. */
 export const KNOWLEDGE_PUBLISHER_WORKFLOW = '.github/workflows/validate.yml';
 const JWKS_URL = `${GITHUB_OIDC_ISSUER}/.well-known/jwks`;
-const ALLOWED_EVENTS = new Set(['push', 'workflow_dispatch', 'schedule']);
+const ALLOWED_EVENTS = new Set(['push', 'workflow_dispatch', 'schedule', 'repository_dispatch']);
 const CLOCK_SKEW_SECONDS = 60;
 
 type Jwk = JsonWebKey & { kid?: string; alg?: string; use?: string };
