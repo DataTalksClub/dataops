@@ -79,7 +79,7 @@ describe('portal - single-origin auth + frontend + docs wiring', () => {
       'content/00-start-here/operating-model/assets/chart.png': 'CHART',
       '_docs/operating-model/weekly-roadmap.csv': 'week,title\nW01,Foundation\n',
     });
-    const store = new KnowledgeStore({bucket:'test-knowledge',client:portalStorage as any,cacheDir,signer:async()=> 'https://example.invalid/synthetic-download'});
+    const store = new KnowledgeStore({bucket:'test-knowledge',client:portalStorage as any,cacheDir,validate:async()=>{},signer:async()=> 'https://example.invalid/synthetic-download'});
     configureDocsRuntime(store);
     configurePortalStore(store);
   });
