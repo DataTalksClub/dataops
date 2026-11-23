@@ -1117,7 +1117,7 @@ test("typing autosaves after the debounce; a failed autosave is loud and Retry s
   assert.equal(puts[0].content.headline, "Edited");
   assert.equal(status().dataset.sponsorSaveState, "error");
   assert.equal(status().getAttribute("role"), "alert");
-  assert.match(status().textContent, /NOT SAVED: Could not save: it took too long to respond/);
+  assert.match(status().textContent, /NOT SAVED: the server took too long to respond\. Your edits are still in this form; do not reload/);
   failPuts = false;
   await h.root.querySelector('[data-sponsor-action="retry-save"]').click();
   await settle();
