@@ -93,6 +93,7 @@ import { ReportSendError, sendIssueReport } from '../newsletter/reportSend';
 import { json, parseJsonObjectEvent } from '../http';
 import { handleNewsletterBlockRoutes } from './newsletterBlocks';
 import { deleteBlockSet } from '../newsletter/blocksStore';
+import { releaseRemovedSponsorBlocks } from '../newsletter/sponsorBlocks';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const KINDS = new Set<NewsletterIssueKind>(['weekly', 'standalone']);
@@ -732,6 +733,7 @@ async function updateRoute(id: string, body: Body, event: LambdaEvent, client: D
   } catch {
     return json(409, { error: 'Conflicting update' });
   }
+  await releaseRemovedSponsorBlocks(client, existing, next, { id: actor.id, name: actor.user?.name || actor.user?.email || null });
   let cardSync = 'unchanged';
   let metricsTask = 'none';
   let markdownTask = 'none';
@@ -884,6 +886,7 @@ async function writeSlotChange(
   } catch {
     return { ok: false, response: json(409, { error: 'Issue changed; reload and retry' }) };
   }
+  await releaseRemovedSponsorBlocks(client, existing, issue, { id: actorId, name: null });
   let cardSync = 'unchanged';
   try {
     const synced = await syncIssueSlotTasks(client, existing, issue, actorId);

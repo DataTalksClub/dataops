@@ -16,7 +16,7 @@
  * `mailing.services.newsletters.BLOCK_TYPES`, so content that saves here also
  * saves in Relay (whose block update is strict).
  */
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 
 export type BlockFieldKind = 'text' | 'url' | 'markdown' | 'lines' | 'html';
 
@@ -213,9 +213,10 @@ export interface BlockSyncBase {
 }
 
 export interface IssueBlock {
-  /** Stable DataOps id of the block (`rb-<relay block id>` for blocks that came from Relay). */
+  /** Stable DataOps id: `rb-<relay block id>` for blocks that came from Relay, `nb-<random>` for blocks added here. */
   id: string;
-  relayBlockId: number;
+  /** The Relay block this mirrors; null until a block added in DataOps is pushed. */
+  relayBlockId: number | null;
   position: number;
   type: string;
   data: BlockData;
@@ -227,12 +228,34 @@ export interface IssueBlock {
   base: BlockSyncBase;
 }
 
+/** A block deleted in DataOps whose Relay copy is removed on the next sync. */
+export interface DeletedBlock {
+  id: string;
+  relayBlockId: number;
+  type: string;
+  data: BlockData;
+  /** Hash both sides last agreed on; a Relay edit since then blocks the delete. */
+  baseHash: string;
+  deletedAt: string;
+  deletedByName: string | null;
+}
+
+export type SponsorSyncStatus = { at: string; ok: boolean; error?: string; docId: string; summary?: string };
+
 export interface IssueBlockSet {
   issueId: string;
   relay: { target: RelayTarget; issueKey: string };
   /** Issue-level fields as last read from Relay (shown, not edited here). */
   relayIssue: { subject: string; previewText: string; campaignStatus: string | null; updatedAt: string };
   blocks: IssueBlock[];
+  /** Blocks deleted here and still present in Relay. */
+  deleted?: DeletedBlock[];
+  /** Relay block ids in the order both sides last agreed on. */
+  orderBase?: number[];
+  /** The order was changed in DataOps since the last sync. */
+  orderDirty?: boolean;
+  /** Outcome of the last automatic sponsor-doc sync per slot. */
+  sponsorSync?: Partial<Record<'primary' | 'secondary', SponsorSyncStatus>>;
   version: number;
   lastSync: { at: string; byName: string | null; summary: string } | null;
   createdAt: string;
@@ -263,33 +286,56 @@ export interface RelayIssue {
 
 // ---------------------------------------------------------------- three-way plan
 
-export type SyncAction = 'in_sync' | 'push' | 'pull' | 'add' | 'remove' | 'conflict';
+export type SyncAction = 'in_sync' | 'push' | 'pull' | 'add' | 'remove' | 'conflict' | 'create' | 'delete';
 
 export interface SyncStep {
   action: SyncAction;
   blockId: string | null;
-  relayBlockId: number;
+  relayBlockId: number | null;
   type: string;
+  reason: string;
+}
+
+export interface OrderStep {
+  action: 'none' | 'push' | 'pull' | 'conflict';
   reason: string;
 }
 
 export interface SyncPlan {
   steps: SyncStep[];
   conflicts: SyncStep[];
+  /** Existing Relay blocks to update. */
   pushes: SyncStep[];
+  /** Blocks added in DataOps, to create in Relay. */
+  creates: SyncStep[];
+  /** Blocks deleted in DataOps, to delete in Relay. */
+  deletes: SyncStep[];
   pulls: SyncStep[];
+  order: OrderStep;
 }
+
+const sameList = (a: number[], b: number[]) => a.length === b.length && a.every((value, index) => value === b[index]);
 
 /**
  * Compare each block against its sync base. Never decides a winner when both
  * sides changed: that is a conflict, and executing a plan with conflicts is
- * refused as a whole.
+ * refused as a whole. Blocks added in DataOps are created in Relay, blocks
+ * deleted in DataOps are deleted there (unless Relay edited them since), and
+ * the block order follows whichever side changed it.
  */
-export function planSync(blocks: IssueBlock[], relay: RelayIssue): SyncPlan {
+export function planSync(
+  blocks: IssueBlock[],
+  relay: RelayIssue,
+  extras: { deleted?: DeletedBlock[]; orderBase?: number[]; orderDirty?: boolean } = {},
+): SyncPlan {
   const steps: SyncStep[] = [];
   const relayById = new Map(relay.blocks.map((block) => [block.id, block]));
   const seen = new Set<number>();
   for (const local of blocks) {
+    if (local.relayBlockId === null) {
+      steps.push({ action: 'create', blockId: local.id, relayBlockId: null, type: local.type, reason: 'added in DataOps' });
+      continue;
+    }
     const remote = relayById.get(local.relayBlockId);
     const localHash = blockHash(local.type, local.data);
     const localChanged = localHash !== local.base.hash;
@@ -319,19 +365,66 @@ export function planSync(blocks: IssueBlock[], relay: RelayIssue): SyncPlan {
       steps.push({ ...common, action: 'pull', reason: `edited in Relay by ${remote.updated_by || 'unknown'}` });
     }
   }
+  for (const gone of extras.deleted || []) {
+    const remote = relayById.get(gone.relayBlockId);
+    const common = { blockId: gone.id, relayBlockId: gone.relayBlockId, type: gone.type };
+    if (!remote) {
+      steps.push({ ...common, action: 'in_sync', reason: 'deleted in DataOps and already gone from Relay' });
+      continue;
+    }
+    seen.add(remote.id);
+    if (blockHash(remote.type, remote.data) !== gone.baseHash) {
+      steps.push({
+        ...common,
+        action: 'conflict',
+        reason: `deleted in DataOps but edited in Relay (Relay: ${remote.updated_by || 'unknown'} at ${remote.updated_at})`,
+      });
+    } else {
+      steps.push({ ...common, action: 'delete', reason: 'deleted in DataOps' });
+    }
+  }
   for (const remote of relay.blocks) {
     if (seen.has(remote.id)) continue;
     steps.push({ action: 'add', blockId: null, relayBlockId: remote.id, type: remote.type, reason: 'new in Relay' });
+  }
+
+  // Order: compare only the blocks both sides know, so adds and deletes do not count as moves.
+  const relayOrder = [...relay.blocks].sort((a, b) => a.position - b.position).map((block) => block.id);
+  const localOrder = [...blocks]
+    .sort((a, b) => a.position - b.position)
+    .map((block) => block.relayBlockId)
+    .filter((id): id is number => id !== null && relayById.has(id));
+  const base = extras.orderBase;
+  const baseKnown = base ? base.filter((id) => relayById.has(id)) : relayOrder;
+  const relayKnown = relayOrder.filter((id) => (base ? base.includes(id) : true));
+  const relayMoved = !sameList(relayKnown, baseKnown);
+  const localMoved = Boolean(extras.orderDirty);
+  const localCommon = localOrder.filter((id) => relayOrder.includes(id));
+  const relayCommon = relayOrder.filter((id) => localOrder.includes(id));
+  let order: OrderStep = { action: 'none', reason: 'same order' };
+  if (localMoved && relayMoved && !sameList(localCommon, relayCommon)) {
+    order = { action: 'conflict', reason: 'blocks were reordered in DataOps and in Relay' };
+  } else if (localMoved && !sameList(localCommon, relayCommon)) {
+    order = { action: 'push', reason: 'reordered in DataOps' };
+  } else if (relayMoved && !sameList(localCommon, relayCommon)) {
+    order = { action: 'pull', reason: 'reordered in Relay' };
+  }
+  if (order.action === 'conflict') {
+    steps.push({ action: 'conflict', blockId: null, relayBlockId: null, type: 'order', reason: order.reason });
   }
   return {
     steps,
     conflicts: steps.filter((step) => step.action === 'conflict'),
     pushes: steps.filter((step) => step.action === 'push'),
+    creates: steps.filter((step) => step.action === 'create'),
+    deletes: steps.filter((step) => step.action === 'delete'),
     pulls: steps.filter((step) => step.action === 'pull' || step.action === 'add' || step.action === 'remove'),
+    order,
   };
 }
 
 export const localBlockId = (relayBlockId: number) => `rb-${relayBlockId}`;
+export const newBlockId = () => `nb-${randomBytes(5).toString('hex')}`;
 
 /** A local block that mirrors `remote` exactly, with the sync base set to it. */
 export function blockFromRelay(remote: RelayBlock, now: string, actor: { id: string; name: string | null }, version = 1): IssueBlock {

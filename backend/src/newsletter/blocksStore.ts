@@ -12,13 +12,21 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_ARTIFACTS } from '../db/tableNames';
 import type { BlockData, IssueBlockSet } from './blocks';
 
-export type BlockRevisionOrigin = 'import' | 'edit' | 'relay-pull' | 'relay-remove';
+export type BlockRevisionOrigin =
+  | 'import'
+  | 'edit'
+  | 'add'
+  | 'move'
+  | 'delete'
+  | 'sponsor-doc'
+  | 'relay-pull'
+  | 'relay-remove';
 
 export interface BlockRevision {
   issueId: string;
   revision: number;
   blockId: string;
-  relayBlockId: number;
+  relayBlockId: number | null;
   blockType: string;
   origin: BlockRevisionOrigin;
   createdAt: string;
@@ -26,6 +34,8 @@ export interface BlockRevision {
   actorName: string | null;
   /** Who changed it in Relay, for pulled revisions (Relay's `updated_by`). */
   relayActor?: string;
+  /** Human-readable note, e.g. "moved from position 3 to 5". */
+  detail?: string;
   before: BlockData | null;
   after: BlockData | null;
 }

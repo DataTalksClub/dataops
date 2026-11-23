@@ -71,6 +71,15 @@ export interface RelayClient {
   getIssue(issueKey: string): Promise<RelayIssue>;
   getBlock(issueKey: string, blockId: number): Promise<RelayBlock>;
   putBlock(issueKey: string, blockId: number, type: string, data: Record<string, string>): Promise<RelayBlock>;
+  /** Add a block at `position` (end when omitted). */
+  postBlock(issueKey: string, type: string, data: Record<string, string>, position?: number): Promise<RelayBlock>;
+  deleteBlock(issueKey: string, blockId: number): Promise<void>;
+  /** Move a block to `position` without touching its content. */
+  moveBlock(issueKey: string, blockId: number, position: number): Promise<RelayBlock>;
+  /** Update issue-level fields (subject, preview_text). */
+  putIssueFields(issueKey: string, fields: { subject?: string; preview_text?: string }): Promise<RelayIssue>;
+  /** Relay's own block type catalogue (type keys), to prove DataOps' mirror still matches. */
+  blockTypeKeys(): Promise<string[]>;
 }
 
 export function relayBodyBytes(type: string, data: Record<string, string>): number {
@@ -139,6 +148,23 @@ export async function relayClient(target: RelayTarget): Promise<RelayClient> {
     },
     async putBlock(issueKey, blockId, type, data) {
       return (await call<{ block: RelayBlock }>('PUT', `${issuePath(issueKey)}/blocks/${blockId}`, { type, data })).block;
+    },
+    async postBlock(issueKey, type, data, position) {
+      const body = { type, data, ...(position === undefined ? {} : { position }) };
+      return (await call<{ block: RelayBlock }>('POST', `${issuePath(issueKey)}/blocks`, body)).block;
+    },
+    async deleteBlock(issueKey, blockId) {
+      await call<unknown>('DELETE', `${issuePath(issueKey)}/blocks/${blockId}`);
+    },
+    async moveBlock(issueKey, blockId, position) {
+      return (await call<{ block: RelayBlock }>('PUT', `${issuePath(issueKey)}/blocks/${blockId}`, { position })).block;
+    },
+    async putIssueFields(issueKey, fields) {
+      return (await call<{ issue: RelayIssue }>('PUT', issuePath(issueKey), fields)).issue;
+    },
+    async blockTypeKeys() {
+      const payload = await call<{ block_types: { type?: string; key?: string }[] }>('GET', '/api/newsletter-block-types');
+      return (payload.block_types || []).map((item) => String(item.type || item.key || '')).filter(Boolean);
     },
   };
 }
