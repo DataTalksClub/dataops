@@ -141,9 +141,10 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
           },
           {
             key: 'graphicsUrl',
-            label: 'Graphics (Link to cloud storage or image URL)',
+            label: 'Graphics',
             type: 'text',
-            placeholder: 'https://... (or upload your visual below)',
+            placeholder: '',
+            helpText: 'Upload the image for this block (PNG, JPG, WebP, or GIF, up to 4 MiB). It is stored on DataTalks.Club image hosting.',
             allowVisualUpload: true,
           },
           {
@@ -248,9 +249,10 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
           },
           {
             key: 'graphicsUrl',
-            label: 'Graphics (Optional — link to cloud storage or image URL)',
+            label: 'Graphics (optional)',
             type: 'text',
-            placeholder: 'https://... (or upload your visual below)',
+            placeholder: '',
+            helpText: 'Upload the image for this block (PNG, JPG, WebP, or GIF, up to 4 MiB). It is stored on DataTalks.Club image hosting.',
             allowVisualUpload: true,
           },
           {
@@ -368,9 +370,10 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
           },
           {
             key: 'graphicsUrl',
-            label: 'Graphics (Link to cloud storage or image URL)',
+            label: 'Graphics',
             type: 'text',
-            placeholder: 'https://... (or upload your visual below)',
+            placeholder: '',
+            helpText: 'Upload the image for this block (PNG, JPG, WebP, or GIF, up to 4 MiB). It is stored on DataTalks.Club image hosting.',
             allowVisualUpload: true,
           },
           {

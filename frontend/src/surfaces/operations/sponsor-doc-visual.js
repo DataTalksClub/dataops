@@ -1,6 +1,37 @@
 import { isLoadableImageSrc, mountInlineImageWithFallback } from "./sponsor-doc-email-card.js";
 
 const MAX_BRIEF_IMAGE_BYTES = 4 * 1024 * 1024;
+const UPLOAD_TIMEOUT_MS = 30000;
+const ALLOWED_IMAGE_TYPES = /^image\/(?:png|jpe?g|gif|webp)$/i;
+const ALLOWED_IMAGE_EXT = /\.(?:png|jpe?g|gif|webp)$/i;
+
+/** Fields rendered as an image (preview + Upload/Replace), never as a raw URL text box. */
+export function isImageOnlyVisualField(fieldDef) {
+  return fieldDef?.key === "graphicsUrl";
+}
+
+/** A visible reason the file cannot be uploaded, or "" when it is fine. */
+export function briefImageFileError(file) {
+  const type = String(file?.type || "");
+  const name = String(file?.name || "");
+  const typeOk = type ? ALLOWED_IMAGE_TYPES.test(type) : ALLOWED_IMAGE_EXT.test(name);
+  if (!typeOk) {
+    return `"${name || "This file"}" is ${type || "not an image"}. Upload a PNG, JPG, WebP, or GIF image.`;
+  }
+  if (typeof file?.size === "number" && file.size > MAX_BRIEF_IMAGE_BYTES) {
+    const mb = (file.size / (1024 * 1024)).toFixed(1);
+    return `"${name || "This image"}" is ${mb} MiB, over the 4 MiB limit. Upload a smaller image.`;
+  }
+  return "";
+}
+
+function withUploadTimeout(promise, ms) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Upload timed out after ${Math.round(ms / 1000)} s. Check your connection and try again.`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 /**
  * Mount visual upload controls and inline image preview (with visible error
@@ -28,23 +59,32 @@ export function mountSponsorDocVisualControls({
   visualControls.dataset.sponsorVisualControls = fieldDef.key;
 
   const isPhotoField = fieldDef.key === "photoUrl";
+  const imageOnly = isImageOnlyVisualField(fieldDef);
   const fileInputId = `sponsor-visual-file-${fieldDef.key}`;
   const uploadClass = "dk-button dk-button--secondary dk-button--sm sponsor-doc-visual-upload__label";
   const uploadLabel = el("label", uploadClass, isPhotoField ? "Upload photo" : "Upload visual");
   uploadLabel.setAttribute("for", fileInputId);
+  uploadLabel.dataset.sponsorVisualUploadLabel = fieldDef.key;
 
   const fileInput = el("input", "sponsor-doc-visual-upload__input");
   fileInput.type = "file";
   fileInput.id = fileInputId;
-  fileInput.accept = "image/png,image/jpeg,image/gif,image/webp,image/*";
+  fileInput.accept = "image/png,image/jpeg,image/gif,image/webp";
   fileInput.dataset.sponsorVisualUpload = fieldDef.key;
   fileInput.disabled = busy;
 
   const statusSpan = el("span", "sponsor-doc-visual-upload__status");
   statusSpan.dataset.sponsorVisualStatus = "";
 
-  const visualPreview = el("div", "sponsor-doc-visual-preview");
+  const visualPreview = el("div", imageOnly
+    ? "sponsor-doc-visual-preview sponsor-doc-visual-dropzone"
+    : "sponsor-doc-visual-preview");
   visualPreview.dataset.sponsorVisualPreview = fieldDef.key;
+
+  // Image-only fields keep upload errors in their own slot, so a failed
+  // replace never hides the image that is still saved.
+  const errorSlot = el("div", "sponsor-doc-visual-error-slot");
+  errorSlot.dataset.sponsorVisualErrorSlot = fieldDef.key;
 
   function reportClientUploadAlert(status, message) {
     if (typeof fetch !== "function") return;
@@ -66,24 +106,38 @@ export function mountSponsorDocVisualControls({
     }
   }
 
+  function clearUploadError() {
+    errorSlot.replaceChildren();
+    if (fieldErrors[fieldDef.key]) {
+      delete fieldErrors[fieldDef.key];
+      control.removeAttribute("aria-invalid");
+      fieldWrap.querySelector(`[data-sponsor-field-error="${fieldDef.key}"]`)?.remove?.();
+    }
+  }
+
   function showVisualError(message) {
     fieldErrors[fieldDef.key] = message;
     control.setAttribute("aria-invalid", "true");
-    visualPreview.hidden = false;
-    visualPreview.replaceChildren();
     const errBox = el("div", "sponsor-doc-visual-error", message);
     errBox.setAttribute("role", "alert");
     errBox.dataset.sponsorVisualError = fieldDef.key;
-    visualPreview.append(errBox);
+    if (imageOnly) {
+      errorSlot.replaceChildren(errBox);
+      return;
+    }
+    visualPreview.hidden = false;
+    visualPreview.replaceChildren(errBox);
   }
 
   function renderInlineVisualPreview(rawVal) {
     const v = String(rawVal || "").trim();
     visualPreview.replaceChildren();
     if (!v) {
-      if (isPhotoField) {
+      if (isPhotoField || imageOnly) {
         visualPreview.hidden = false;
-        const placeholder = el("p", "dk-hint sponsor-doc-photo-placeholder", "No photo yet — upload a portrait or paste an image URL to see a preview.");
+        const placeholder = el("p", "dk-hint sponsor-doc-photo-placeholder", imageOnly
+          ? "No image yet. Drag an image here or click Upload image (PNG, JPG, WebP, or GIF, up to 4 MiB)."
+          : "No photo yet — upload a portrait or paste an image URL to see a preview.");
         placeholder.dataset.sponsorPhotoPlaceholder = "";
         visualPreview.append(placeholder);
       } else {
@@ -104,6 +158,12 @@ export function mountSponsorDocVisualControls({
         errorDatasetKey: "sponsorVisualError",
         errorDatasetValue: fieldDef.key,
       });
+    } else if (imageOnly) {
+      const errBox = el("div", "sponsor-doc-visual-error",
+        `The saved value "${v}" is not an image. Upload the image to replace it.`);
+      errBox.setAttribute("role", "alert");
+      errBox.dataset.sponsorVisualError = fieldDef.key;
+      visualPreview.append(errBox);
     } else {
       showVisualError(
         `Image cannot be displayed: "${v}" is a filename, not a hosted image URL. Upload the image or paste a full https:// URL.`,
@@ -111,12 +171,14 @@ export function mountSponsorDocVisualControls({
     }
   }
 
-  const clearBtn = actionBtn("dk-button dk-button--secondary dk-button--sm", isPhotoField ? "Remove photo" : "Remove visual", "clear-visual", () => {
+  const removeLabel = isPhotoField ? "Remove photo" : imageOnly ? "Remove image" : "Remove visual";
+  const clearBtn = actionBtn("dk-button dk-button--secondary dk-button--sm", removeLabel, "clear-visual", () => {
     setUploadedVisualName("");
     draftContent[fieldDef.key] = "";
     control.value = "";
     control.placeholder = fieldDef.placeholder || "";
     fileInput.value = "";
+    clearUploadError();
     updateCount("");
     syncVisualControls();
     renderInlineVisualPreview("");
@@ -126,6 +188,14 @@ export function mountSponsorDocVisualControls({
   function syncVisualControls() {
     const v = String(draftContent[fieldDef.key] || "").trim();
     const name = getUploadedVisualName();
+    if (imageOnly) {
+      uploadLabel.textContent = v ? "Replace image" : "Upload image";
+      statusSpan.textContent = name
+        ? `Uploaded ${name}. Save to keep it.`
+        : v ? "" : "Drag and drop works too.";
+      clearBtn.hidden = !v;
+      return;
+    }
     if (/^data:image\//i.test(v)) {
       statusSpan.textContent = name ? `Uploaded visual: ${name}` : "Uploaded visual attached";
       clearBtn.hidden = false;
@@ -138,20 +208,20 @@ export function mountSponsorDocVisualControls({
     }
   }
 
-  fileInput.addEventListener("change", async (event) => {
-    const file = fileInput.files?.[0] || event?.target?.files?.[0] || event?.detail?.file;
+  async function uploadFile(file) {
     if (!file) return;
-    if (typeof file.size === "number" && file.size > MAX_BRIEF_IMAGE_BYTES) {
-      const msg = "This image exceeds the 4 MiB limit. Please upload a smaller image or paste an image URL.";
-      showVisualError(msg);
-      statusSpan.textContent = msg;
-      announce(msg);
-      reportClientUploadAlert(413, msg);
+    const invalid = briefImageFileError(file);
+    if (invalid) {
+      showVisualError(invalid);
+      statusSpan.textContent = "";
+      announce(invalid);
+      reportClientUploadAlert(/limit/.test(invalid) ? 413 : 415, invalid);
       fileInput.value = "";
       return;
     }
     statusSpan.textContent = "Uploading image…";
     fileInput.disabled = true;
+    visualPreview.dataset.uploading = "true";
     try {
       const formData = typeof FormData === "function" ? new FormData() : null;
       if (formData) {
@@ -163,11 +233,11 @@ export function mountSponsorDocVisualControls({
         }
       }
       const headers = accessCode ? { "x-sponsor-doc-code": accessCode } : {};
-      const payload = await request(`/api/sponsor-docs/${encodeURIComponent(docId)}/images`, {
+      const payload = await withUploadTimeout(request(`/api/sponsor-docs/${encodeURIComponent(docId)}/images`, {
         method: "POST",
         headers,
         body: formData || file,
-      });
+      }), UPLOAD_TIMEOUT_MS);
       const hostedUrl = payload?.image?.url || payload?.image?.path || "";
       if (!hostedUrl) throw new Error("Upload did not return an image URL.");
       const name = file.name || "uploaded-visual.png";
@@ -175,34 +245,54 @@ export function mountSponsorDocVisualControls({
       draftContent[fieldDef.key] = hostedUrl;
       control.value = hostedUrl;
       control.placeholder = fieldDef.placeholder || "";
-      if (fieldErrors[fieldDef.key]) {
-        delete fieldErrors[fieldDef.key];
-        control.removeAttribute("aria-invalid");
-        fieldWrap.querySelector(`[data-sponsor-field-error="${fieldDef.key}"]`)?.remove?.();
-      }
+      clearUploadError();
       updateCount(hostedUrl);
       syncVisualControls();
       renderInlineVisualPreview(hostedUrl);
       updateLivePreview();
       announce(`Uploaded visual ${name} for live preview.`);
     } catch (err) {
-      const msg = err?.message || "Could not upload image. Please try again.";
+      const msg = `Image upload failed: ${err?.message || "please try again."}`;
       showVisualError(msg);
-      statusSpan.textContent = msg;
+      statusSpan.textContent = "";
       announce(msg);
+      reportClientUploadAlert(err?.status || 0, msg);
+      syncVisualControls();
     } finally {
+      delete visualPreview.dataset.uploading;
       fileInput.disabled = busy;
       fileInput.value = "";
     }
+  }
+
+  fileInput.addEventListener("change", (event) => {
+    const file = fileInput.files?.[0] || event?.target?.files?.[0] || event?.detail?.file;
+    return uploadFile(file);
   });
 
-  control.addEventListener("input", () => {
-    syncVisualControls();
-    renderInlineVisualPreview(control.value);
-  });
+  if (imageOnly) {
+    visualPreview.addEventListener("dragover", (event) => {
+      if (busy) return;
+      event.preventDefault?.();
+      visualPreview.classList.add("is-dragover");
+    });
+    visualPreview.addEventListener("dragleave", () => visualPreview.classList.remove("is-dragover"));
+    visualPreview.addEventListener("drop", (event) => {
+      event.preventDefault?.();
+      visualPreview.classList.remove("is-dragover");
+      if (busy) return undefined;
+      return uploadFile(event?.dataTransfer?.files?.[0]);
+    });
+  } else {
+    control.addEventListener("input", () => {
+      syncVisualControls();
+      renderInlineVisualPreview(control.value);
+    });
+  }
 
   syncVisualControls();
   renderInlineVisualPreview(draftContent[fieldDef.key]);
   visualControls.append(uploadLabel, fileInput, statusSpan, clearBtn);
-  fieldWrap.append(visualControls, visualPreview);
+  if (imageOnly) fieldWrap.append(visualPreview, visualControls, errorSlot);
+  else fieldWrap.append(visualControls, visualPreview);
 }
