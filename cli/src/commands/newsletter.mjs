@@ -6,7 +6,7 @@ import { apiFor } from "../session.mjs";
 import { planNewsletterSync, readNewsletterCsv, sheetIssues } from "../newsletterSheet.mjs";
 import { rewriteVerificationUri } from "./auth.mjs";
 import { relaySync, relaySyncHelp } from "./newsletterRelay.mjs";
-import { blockEdit, blocks, blocksHelp, blocksSync, revisions } from "./newsletterBlocks.mjs";
+import { blockCommand, blockEdit, blockTypes, blocks, blocksHelp, blocksSync, revisions, sponsorSync } from "./newsletterBlocks.mjs";
 import { domainDocCommand } from "./sponsorDocs.mjs";
 import { multipart } from "./tasks.mjs";
 
@@ -84,6 +84,8 @@ Usage
   dataops newsletter blocks <issue> [--show] [--import <relay-issue-key> [--target production|dev]]
   dataops newsletter block-edit <issue> <block-id> --field <name> --value <text>
   dataops newsletter blocks-sync <issue> [--dry-run]
+  dataops newsletter block list|show|add|edit|move|delete <issue> ...   (block-types <issue> lists the types)
+  dataops newsletter sponsor-sync <issue> --slot primary|secondary [--dry-run] [--force]
   dataops newsletter revisions <issue> [--block <id>] [--diff] [--rev N]
                                   Every content block of the issue (intro, sponsor, events,
                                   recording, article...), editable here and on the issue page;
@@ -1190,6 +1192,9 @@ export const commands = {
   blocks,
   "block-edit": blockEdit,
   "blocks-sync": blocksSync,
+  block: blockCommand,
+  "block-types": blockTypes,
+  "sponsor-sync": sponsorSync,
   revisions,
   metrics,
   "pull-mailchimp": pullMailchimp,

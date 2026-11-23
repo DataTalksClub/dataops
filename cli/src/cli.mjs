@@ -303,7 +303,7 @@ export async function run(argv, io = console) {
       print(sponsorDocs.newsletterDocHelp);
       return EXIT.ok;
     }
-    if (commandName === "newsletter" && ["blocks", "block-edit", "blocks-sync", "revisions"].includes(rest[0])) {
+    if (commandName === "newsletter" && ["blocks", "block", "block-edit", "block-types", "blocks-sync", "sponsor-sync", "revisions"].includes(rest[0])) {
       print(newsletter.blocksHelp);
       return EXIT.ok;
     }
