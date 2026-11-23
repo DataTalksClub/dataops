@@ -1188,3 +1188,96 @@ a.calendar-day-timeline-title:hover {
   color: var(--dk-accent-default, inherit);
   text-decoration: underline;
 }
+
+/* Issue page: editable content blocks (operations/newsletter-blocks.js). */
+.newsletter-blocks {
+  display: grid;
+  max-width: 860px;
+  margin-top: var(--dk-space-6);
+  gap: var(--dk-space-3);
+}
+.newsletter-blocks__title {
+  margin: 0;
+  font-size: var(--dk-text-lg);
+}
+.newsletter-blocks__status:empty {
+  display: none;
+}
+.newsletter-blocks__status[data-tone="danger"] {
+  color: var(--dk-danger-text);
+}
+.newsletter-blocks__status[data-tone="success"] {
+  color: var(--dk-success-text);
+}
+.newsletter-blocks__bar,
+.newsletter-blocks__head,
+.newsletter-blocks__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--dk-space-2);
+  align-items: center;
+}
+.newsletter-blocks__list,
+.newsletter-blocks__block,
+.newsletter-blocks__import {
+  display: grid;
+  gap: var(--dk-space-3);
+}
+.newsletter-blocks__block {
+  padding: var(--dk-space-4);
+}
+.newsletter-blocks__meta {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}
+.newsletter-blocks__field {
+  display: grid;
+  gap: var(--dk-space-1);
+}
+.newsletter-blocks__plan {
+  margin: 0;
+  padding-left: var(--dk-space-5);
+  font-size: var(--dk-text-sm);
+}
+.newsletter-blocks__conflict {
+  color: var(--dk-danger-text);
+  font-weight: 600;
+}
+.newsletter-blocks__revision pre {
+  margin: var(--dk-space-1) 0;
+  padding: var(--dk-space-2);
+  border-radius: var(--dk-radius-sm);
+  font-size: var(--dk-text-sm);
+  white-space: pre-wrap;
+}
+.newsletter-blocks__before {
+  background: var(--dk-danger-bg);
+}
+.newsletter-blocks__after {
+  background: var(--dk-success-bg);
+}
+
+/* Block editor: read-only sponsor values, add panel, draggable cards. */
+.newsletter-blocks__block[draggable="true"] {
+  cursor: grab;
+}
+
+.newsletter-blocks__values {
+  display: grid;
+  gap: var(--dk-space-1);
+}
+
+.newsletter-blocks__values dt {
+  font-weight: 600;
+}
+
+.newsletter-blocks__values dd {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.newsletter-blocks__add,
+.newsletter-blocks__fields {
+  display: grid;
+  gap: var(--dk-space-3);
+}

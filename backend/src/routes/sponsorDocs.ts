@@ -57,6 +57,8 @@ import { TeamDirectory } from '../identity/directory';
 import { projectCard } from '../identity/projections';
 import { recordRequestError } from '../requestErrorLog';
 import { createNotification } from '../db/notifications';
+import { newsletterSyncForDoc, summarizeSyncResults, syncSponsorDoc } from '../newsletter/sponsorBlocks';
+import { dataImageHost } from './newsletterBlocks';
 import { FileStorageError } from '../storage';
 import { savePublicImage } from '../publicImages';
 import { extractMultipartImageBuffer, publicImagePayload } from './publicImages';
@@ -346,6 +348,7 @@ export function isAnonymousSponsorDocAsset(method: string, path: string): boolea
     || path === '/src/surfaces/operations/sponsor-doc-select.js'
     || path === '/src/surfaces/operations/sponsor-doc-radio.js'
     || path === '/src/surfaces/operations/sponsor-doc-bullets.js'
+    || path === '/src/surfaces/operations/sponsor-doc-newsletter-sync.js'
     || path === '/src/surfaces/operations/sponsor-doc-visual.js'
     || path === '/src/surfaces/operations/sponsor-doc-autosave.js'
     || path === '/src/surfaces/operations/sponsor-doc-files.js'
@@ -1399,11 +1402,12 @@ export async function handleSponsorDocRoutes(
             return json(404, { error: 'Document not found', code: 'sponsor_doc_not_found' });
           }
           const accessCode = decryptSponsorDocAccessCode(docId, loaded.accessCodeCiphertext);
+          const newsletterSync = await newsletterSyncForDoc(client, loaded.doc).catch(() => null);
           return json(200, {
-            doc: await buildDocResponsePayload(loaded.doc, event, client, {
-              viewerRole: 'staff',
-              accessCode,
-            }),
+            doc: {
+              ...(await buildDocResponsePayload(loaded.doc, event, client, { viewerRole: 'staff', accessCode })),
+              newsletterSync,
+            },
           });
         }
 
@@ -1475,11 +1479,19 @@ export async function handleSponsorDocRoutes(
             await relinkCardToDoc(client, event, updated);
           }
           const accessCode = decryptSponsorDocAccessCode(docId, loaded.accessCodeCiphertext);
+          const newsletterSync = updated && String(updated.template).startsWith('newsletter-')
+            ? summarizeSyncResults(await syncSponsorDoc(
+              client,
+              updated,
+              { id: access.staffActorId || 'staff', name: access.staffActorName || 'DataOps Staff' },
+              { hostDataImage: dataImageHost(event) },
+            ))
+            : null;
           return json(200, {
-            doc: await buildDocResponsePayload(updated!, event, client, {
-              viewerRole: 'staff',
-              accessCode,
-            }),
+            doc: {
+              ...(await buildDocResponsePayload(updated!, event, client, { viewerRole: 'staff', accessCode })),
+              newsletterSync,
+            },
           });
         }
 
@@ -1502,6 +1514,10 @@ export async function handleSponsorDocRoutes(
         }
         try { if (updated && body.timeChoiceIntent !== undefined) await recordGuestPortalTimeChoice(client, updated, body.timeChoiceIntent); }
         catch (error) { return json(422, { error: (error as Error).message, code: 'guest_time_choice_pending' }); }
+        if (updated && String(updated.template).startsWith('newsletter-')) {
+          // The sponsor's own save syncs the issue too; failures are recorded and alerted, never shown to the sponsor.
+          await syncSponsorDoc(client, updated, { id: 'sponsor-portal', name: updated.sponsorName || 'Sponsor' }, { hostDataImage: dataImageHost(event) });
+        }
         return json(200, {
           doc: await buildDocResponsePayload(updated!, event, client, { viewerRole: 'sponsor' }),
         });

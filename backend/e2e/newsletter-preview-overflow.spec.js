@@ -91,7 +91,7 @@ test('newsletter preview wraps long URLs and inline code on every tab; shareable
     await page.setExtraHTTPHeaders({});
     await page.goto(`${server.baseURL}/newsletter-issues/${issue.id}/preview`);
     await expect(page.locator('[data-preview-staff-bar]')).toBeVisible();
-    await expect(page.locator('[data-preview-tab]')).toHaveCount(5);
+    await expect(page.locator('[data-preview-tab]')).toHaveCount(6);
     for (const tab of ['issue', 'final', 'brief', 'sources', 'raw']) {
       await page.locator(`[data-preview-tab="${tab}"]`).click();
       if (tab === 'raw') {

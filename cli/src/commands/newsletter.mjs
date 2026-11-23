@@ -6,6 +6,7 @@ import { apiFor } from "../session.mjs";
 import { planNewsletterSync, readNewsletterCsv, sheetIssues } from "../newsletterSheet.mjs";
 import { rewriteVerificationUri } from "./auth.mjs";
 import { relaySync, relaySyncHelp } from "./newsletterRelay.mjs";
+import { blockCommand, blockEdit, blockTypes, blocks, blocksHelp, blocksSync, revisions, sponsorSync } from "./newsletterBlocks.mjs";
 import { domainDocCommand } from "./sponsorDocs.mjs";
 import { multipart } from "./tasks.mjs";
 
@@ -80,6 +81,16 @@ Usage
                                   sponsor document (title, kicker, body, bullets, closing,
                                   image, CTA): one per-block write, updating the existing
                                   block. Details: dataops newsletter relay-sync --help
+  dataops newsletter blocks <issue> [--show] [--import <relay-issue-key> [--target production|dev]]
+  dataops newsletter block-edit <issue> <block-id> --field <name> --value <text>
+  dataops newsletter blocks-sync <issue> [--dry-run]
+  dataops newsletter block list|show|add|edit|move|delete <issue> ...   (block-types <issue> lists the types)
+  dataops newsletter sponsor-sync <issue> --slot primary|secondary [--dry-run] [--force]
+  dataops newsletter revisions <issue> [--block <id>] [--diff] [--rev N]
+                                  Every content block of the issue (intro, sponsor, events,
+                                  recording, article...), editable here and on the issue page;
+                                  per-edit revisions with diffs; two-way Relay sync that refuses
+                                  on conflicts. Details: dataops newsletter blocks --help
   dataops newsletter image upload <issue-id> <path>
                                   Upload an image (PNG, JPEG, GIF, or WebP) to durable
                                   public hosting for the issue and print its https:// URL
@@ -1070,7 +1081,7 @@ in issue.md and the HTML preview.
 `;
 
 export { newsletterImageHelp as imageHelp };
-export { relaySyncHelp };
+export { relaySyncHelp, blocksHelp };
 
 async function imageUpload(args, io) {
   const usage = "dataops newsletter image upload <issue-id> <path>";
@@ -1178,6 +1189,13 @@ export const commands = {
   markdown,
   "final-render": finalRender,
   "relay-sync": relaySync,
+  blocks,
+  "block-edit": blockEdit,
+  "blocks-sync": blocksSync,
+  block: blockCommand,
+  "block-types": blockTypes,
+  "sponsor-sync": sponsorSync,
+  revisions,
   metrics,
   "pull-mailchimp": pullMailchimp,
   report,

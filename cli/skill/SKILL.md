@@ -289,6 +289,8 @@ Use `dataops newsletter markdown show <issue-id> [issue|sources|brief]` to read 
 `dataops newsletter markdown rotate-code <issue-id>` to rotate the preview access code.
 To put the sponsor copy into the Relay email, run `dataops newsletter relay-sync <issue-id|issue-number> --slot primary|secondary` (add `--dry-run` first). It maps the slot's sponsor document (title, kicker, body, bullets, closing, image, CTA) into the Relay issue's sponsor block with one per-block write (under the ~8 KB CloudFront WAF body limit), updating the existing block rather than adding another. The Relay issue key comes from `final-render --relay-key`, or pass `--relay-key`.
 
+Issue content blocks (intro, spotlight, courses, events, recording, article, sponsor) are edited in DataOps: `dataops newsletter block list|show|add|edit|move|delete <issue> ...`, `block-types <issue>`, `blocks-sync <issue> [--dry-run]` (two-way, per block; conflicts refuse the whole sync), `revisions <issue> [--block <id>] [--diff]` (who changed what). Adds, moves and deletes reach Relay on the next `blocks-sync`. Sponsor blocks are special: the main one is pinned first (no move/delete, nothing above it), secondary ones can move but not be deleted, and both are read-only here: edit the sponsor doc, and every doc save syncs the block (`sponsor-sync <issue> --slot primary|secondary [--dry-run] [--force]` re-runs it). Refusals print the server message and exit non-zero.
+
 Use `dataops newsletter image upload <issue-id> <path>` to upload a newsletter image (PNG, JPEG, GIF, or WebP) to durable public hosting and print its public `https://` URL for `issue.md` and the HTML preview.
 
 For a podcast episode: `dataops podcast list --status booked` (or `--season N`),
