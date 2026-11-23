@@ -347,6 +347,8 @@ export function isAnonymousSponsorDocAsset(method: string, path: string): boolea
     || path === '/src/surfaces/operations/sponsor-doc-radio.js'
     || path === '/src/surfaces/operations/sponsor-doc-bullets.js'
     || path === '/src/surfaces/operations/sponsor-doc-visual.js'
+    || path === '/src/surfaces/operations/sponsor-doc-autosave.js'
+    || path === '/src/surfaces/operations/sponsor-doc-files.js'
     || path === '/src/surfaces/operations/sponsor-doc-email-card.js'
     || path === '/src/surfaces/operations/sponsor-doc-event-time.js'
     || path === '/src/surfaces/operations/sponsor-doc-guest-schedule.js'
