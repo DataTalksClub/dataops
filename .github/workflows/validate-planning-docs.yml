@@ -52,8 +52,9 @@ permissions:
 
 jobs:
   validate-planning-docs:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: Validate planning and process docs
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, contabo]
 
     steps:
       - name: Check out repository
