@@ -180,18 +180,6 @@ export function renderSponsorDocStaffBar({
 
   const smBtn = "dk-button dk-button--secondary dk-button--sm";
   const btnRow = el("div", "sponsor-doc-actions__buttons");
-  let taskLabel = null;
-  if (!isSpeaker && !isPodcastGuest) {
-    taskLabel = el("label", "sponsor-doc-task-id");
-    taskLabel.append(el("span", "dk-hint", "Owning task ID (for the sent message record)"));
-    const taskInput = el("input", "dk-input");
-    taskInput.type = "text";
-    taskInput.value = doc.emailDelivery?.taskId || "";
-    taskInput.placeholder = "DataOps task ID";
-    taskInput.disabled = busy;
-    taskInput.dataset.sponsorTaskId = "";
-    taskLabel.append(taskInput);
-  }
   if (doc.shareUrl) {
     const copyShareLabel = isPodcastGuest ? "Copy guest link" : "Copy share link";
     const copyShareToast = isSpeaker
@@ -219,9 +207,10 @@ export function renderSponsorDocStaffBar({
     cardLink.href = `/cards?cardId=${encodeURIComponent(cardIdForLink)}`;
     btnRow.append(cardLink);
   }
-  staffBar.append(topRow);
-  if (taskLabel) staffBar.append(taskLabel);
-  staffBar.append(btnRow);
+  const staffNote = el("p", "dk-hint sponsor-doc-staff-bar__note",
+    "Staff only: people opening the share link never see this panel.");
+  staffNote.dataset.sponsorStaffOnlyNote = "";
+  staffBar.append(staffNote, topRow, btnRow);
   if (isTwoTab) {
     staffBar.append(el(
       "p",
@@ -257,7 +246,7 @@ export function updateSponsorDocFieldCount({
   maxXPostChars,
   splitXThread,
 }) {
-  if (fieldDef.key === "photoUrl") {
+  if (fieldDef.key === "photoUrl" || fieldDef.key === "graphicsUrl") {
     countEl.hidden = true;
     countEl.textContent = "";
     return;

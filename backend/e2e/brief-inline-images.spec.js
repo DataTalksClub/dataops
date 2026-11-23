@@ -126,8 +126,17 @@ test('sponsor and guest brief editors upload images durably and render them inli
   await expect(sponsorInlineImg).toBeVisible();
   await expect.poll(() => sponsorInlineImg.evaluate((el) => el.complete && el.naturalWidth > 0)).toBe(true);
 
-  // Broken image URL shows visible error, not a silent blank
-  await page.locator('#sponsor-field-graphicsUrl').fill('/api/public-images/00000000-0000-4000-8000-000000000000.png');
+  // Graphics is an image control (Upload/Replace), never a raw URL text box.
+  await expect(page.locator('#sponsor-field-graphicsUrl')).toHaveAttribute('type', 'hidden');
+  await expect(page.locator('[data-sponsor-visual-upload-label="graphicsUrl"]')).toHaveText('Replace image');
+
+  // A stored broken image URL shows a visible error, not a silent blank
+  const brokenSave = await request.put(`${server.baseURL}/api/sponsor-docs/${sponsorDoc.id}`, {
+    headers: { 'x-sponsor-doc-code': sponsorDoc.accessCode, 'x-sponsor-doc-anonymous': 'true' },
+    data: { content: { graphicsUrl: '/api/public-images/00000000-0000-4000-8000-000000000000.png' } },
+  });
+  expect(brokenSave.status(), await brokenSave.text()).toBe(200);
+  await page.reload();
   await expect(page.locator('[data-sponsor-visual-error="graphicsUrl"]')).toBeVisible();
   await expect(page.locator('[data-sponsor-visual-error="graphicsUrl"]')).toContainText('Could not load image');
 

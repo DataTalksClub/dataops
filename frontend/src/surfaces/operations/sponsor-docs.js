@@ -27,7 +27,7 @@ import { formatUserCode } from "../../dakit/device-code.js";
 import { renderSponsorDocGate } from "./sponsor-doc-gate.js";
 import { appendSponsorDocRadioField } from "./sponsor-doc-radio.js";
 import { appendSponsorDocSelectField } from "./sponsor-doc-select.js";
-import { mountSponsorDocVisualControls } from "./sponsor-doc-visual.js";
+import { isImageOnlyVisualField, mountSponsorDocVisualControls } from "./sponsor-doc-visual.js";
 import {
   appendSponsorDocBulletsField,
   parseSponsorBulletItems,
@@ -408,13 +408,13 @@ export function createSponsorDocPage({
 
   async function sendSponsorEmailFromOrin() {
     if (busy || !doc) return;
-    const taskId = String(root?.querySelector?.("[data-sponsor-task-id]")?.value || "").trim();
     busy = true;
     render();
     try {
+      // The server finds the owning email-sponsor Task from the doc's Card.
       const payload = await request(`/api/sponsor-docs/${encodeURIComponent(docId)}/send-email`, {
         method: "POST",
-        body: JSON.stringify(taskId ? { taskId } : {}),
+        body: JSON.stringify({}),
       });
       if (payload?.doc) doc = payload.doc;
       const delivery = payload?.emailDelivery || doc?.emailDelivery;
@@ -430,7 +430,7 @@ export function createSponsorDocPage({
       render();
     } catch (err) {
       busy = false;
-      feedbackMsg = err.message || "Could not send sponsor email.";
+      feedbackMsg = `Could not send sponsor email: ${err.message || "unknown error"}`;
       feedbackTone = "danger";
       render();
     }
@@ -731,10 +731,17 @@ export function createSponsorDocPage({
             continue;
           }
 
-          const isMultiline = fieldDef.type === "textarea" || Boolean(fieldDef.multiline);
+          const imageOnly = isImageOnlyVisualField(fieldDef);
+          const isMultiline = !imageOnly && (fieldDef.type === "textarea" || Boolean(fieldDef.multiline));
           const control = isMultiline ? el("textarea", "sponsor-doc-textarea") : el("input", "dk-input");
           if (isMultiline) control.rows = fieldDef.rows || 5;
-          else control.type = "text";
+          else control.type = imageOnly ? "hidden" : "text";
+          // Image fields show the image and an Upload/Replace button; the URL
+          // stays in a hidden input, never as an editable text box.
+          if (imageOnly) {
+            control.hidden = true;
+            label.setAttribute("for", `sponsor-visual-file-${fieldDef.key}`);
+          }
           control.id = inputId;
           control.dataset.sponsorField = fieldDef.key;
           const isDataVisual = isVisualField && /^data:image\//i.test(currentVal);
@@ -744,7 +751,7 @@ export function createSponsorDocPage({
           control.disabled = busy;
           if (fieldDef.required) { control.required = true; control.setAttribute("aria-required", "true"); }
           if (fieldErrors[fieldDef.key]) control.setAttribute("aria-invalid", "true");
-          if (fieldDef.format === "url") control.type = "url";
+          if (fieldDef.format === "url" && !imageOnly) control.type = "url";
           fieldWrap.append(top, control);
 
           const isSocialField = fieldDef.key === "linkedinPost" || fieldDef.key === "twitterPost";
