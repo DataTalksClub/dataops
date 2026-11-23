@@ -27,6 +27,8 @@ Usage
       [--from DOC-ID] [--title T] [--sponsor NAME] [--date YYYY-MM-DD] [--link-type NAME]
       [--recipient EMAIL] [--recipient-name NAME] [--task TASK-ID] [--email]
   dataops newsletter doc show <doc-id>
+  dataops newsletter doc history <doc-id>
+  dataops newsletter doc diff <doc-id> [--rev N]
   dataops newsletter doc export <doc-id> [--format md|docx|txt] [--output PATH]
   dataops newsletter doc delete <doc-id> --yes
   dataops newsletter doc list [--card <card-id>]
@@ -43,6 +45,8 @@ export const podcastDocHelp = `dataops podcast doc - portal-hosted podcast guest
 Usage
   dataops podcast doc create <card-id> [--from DOC-ID] [--title T] [--guest NAME] [--date YYYY-MM-DD] [--link-type NAME] [--email]
   dataops podcast doc show <doc-id>
+  dataops podcast doc history <doc-id>
+  dataops podcast doc diff <doc-id> [--rev N]
   dataops podcast doc export <doc-id> [--format md|docx|txt] [--output PATH]
   dataops podcast doc delete <doc-id> --yes
   dataops podcast doc list [--card <card-id>]
@@ -61,6 +65,8 @@ export const webinarDocHelp = `dataops webinar doc - webinar speaker materials
 Usage
   dataops webinar doc create <card-id> [--from DOC-ID] [--speaker NAME] [--date YYYY-MM-DD] [--email]
   dataops webinar doc show <doc-id>
+  dataops webinar doc history <doc-id>
+  dataops webinar doc diff <doc-id> [--rev N]
   dataops webinar doc list [--card <card-id>]
   dataops webinar doc update <doc-id> [--field KEY=VALUE ...]
   dataops webinar doc submit <doc-id>
@@ -82,6 +88,8 @@ export const workshopDocHelp = `dataops workshop doc - workshop document (speake
 Usage
   dataops workshop doc create <card-id> [--from DOC-ID] [--speaker NAME] [--date YYYY-MM-DD] [--email]
   dataops workshop doc show <doc-id>
+  dataops workshop doc history <doc-id>
+  dataops workshop doc diff <doc-id> [--rev N]
   dataops workshop doc list [--card <card-id>]
   dataops workshop doc update <doc-id> [--field KEY=VALUE ...] [--template workshop]
   dataops workshop doc submit <doc-id>
@@ -523,6 +531,158 @@ export async function templates(args, io) {
   return result;
 }
 
+function formatActor(rev) {
+  if (!rev) return "unknown";
+  const kind = rev.actorKind || "staff";
+  return rev.actorName ? `${kind} (${rev.actorName})` : kind;
+}
+
+function formatLineDiff(beforeText, afterText) {
+  const a = String(beforeText ?? "").split("\n");
+  const b = String(afterText ?? "").split("\n");
+  // Fallback to simple -/+ if very large to avoid O(N*M) memory blowup
+  if (a.length * b.length > 250000) {
+    return [
+      ...a.map((line) => `- ${line}`),
+      ...b.map((line) => `+ ${line}`),
+    ];
+  }
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Uint32Array(n + 1));
+  for (let i = m - 1; i >= 0; i -= 1) {
+    for (let j = n - 1; j >= 0; j -= 1) {
+      dp[i][j] = a[i] === b[j]
+        ? dp[i + 1][j + 1] + 1
+        : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const lines = [];
+  let i = 0;
+  let j = 0;
+  while (i < m && j < n) {
+    if (a[i] === b[j]) {
+      lines.push(`  ${a[i]}`);
+      i += 1;
+      j += 1;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      lines.push(`- ${a[i]}`);
+      i += 1;
+    } else {
+      lines.push(`+ ${b[j]}`);
+      j += 1;
+    }
+  }
+  while (i < m) {
+    lines.push(`- ${a[i]}`);
+    i += 1;
+  }
+  while (j < n) {
+    lines.push(`+ ${b[j]}`);
+    j += 1;
+  }
+  return lines;
+}
+
+export async function history(args, io) {
+  const prefix = commandPrefix(args);
+  const id = extractDocId(positional(args, 0, `${prefix} history <doc-id>`));
+  const api = apiFor(args);
+  const result = await api.get(`/api/sponsor-docs/${enc(id)}/history`);
+  if (args.json) return result;
+
+  const revisions = result.revisions || [];
+  table(
+    io,
+    revisions,
+    [
+      ["REV", (rev) => String(rev.revision)],
+      ["TIMESTAMP", (rev) => rev.createdAt ? rev.createdAt.slice(0, 19).replace("T", " ") : ""],
+      ["AUTHOR", (rev) => formatActor(rev)],
+      ["STATUS", (rev) => (rev.beforeStatus !== rev.afterStatus ? `${rev.beforeStatus} -> ${rev.afterStatus}` : rev.afterStatus || "")],
+      ["CHANGED", (rev) => (rev.changedFields?.length ? rev.changedFields.join(", ") : "(no changes)")],
+    ],
+    `No revisions recorded for ${id}.`,
+  );
+  return result;
+}
+
+export async function diff(args, io) {
+  const prefix = commandPrefix(args);
+  const id = extractDocId(positional(args, 0, `${prefix} diff <doc-id> [--rev N]`));
+  let revTarget = "latest";
+  if (args.rev !== undefined) {
+    const rawRev = String(args.rev).trim();
+    if (!/^[1-9]\d*$/.test(rawRev)) {
+      throw new UsageError(`--rev must be a positive integer, got "${args.rev}".`);
+    }
+    revTarget = rawRev;
+  }
+  const api = apiFor(args);
+  const result = await api.get(`/api/sponsor-docs/${enc(id)}/history/${enc(revTarget)}`);
+  if (args.json) return result;
+
+  const rev = result.revision;
+  io.print(`Revision ${rev.revision} of ${id} (doc version ${rev.docVersion})`);
+  io.print(`Author: ${formatActor(rev)}`);
+  io.print(`Timestamp: ${rev.createdAt}`);
+
+  const before = rev.before || {};
+  const after = rev.after || {};
+  let printedAny = false;
+
+  for (const [key, label] of [
+    ["title", "Title"],
+    ["sponsorName", "Sponsor"],
+    ["publicationDate", "Publication date"],
+    ["template", "Template"],
+    ["status", "Status"],
+  ]) {
+    const prev = before[key] ?? null;
+    const next = after[key] ?? null;
+    if (prev !== next) {
+      printedAny = true;
+      io.print("");
+      io.print(`--- ${label} (${key}) [before]`);
+      io.print(`+++ ${label} (${key}) [after]`);
+      io.print(`- ${prev ?? "(empty)"}`);
+      io.print(`+ ${next ?? "(empty)"}`);
+    }
+  }
+
+  const templateFields = (result.templateDefinition?.sections || [])
+    .flatMap((s) => s.fields || [])
+    .concat(result.templateDefinition?.fields || []);
+  const labelByKey = new Map(templateFields.map((f) => [f.key, f.label]));
+  const beforeContent = before.content || {};
+  const afterContent = after.content || {};
+  const orderedKeys = [
+    ...templateFields.map((f) => f.key),
+    ...[...new Set([...Object.keys(beforeContent), ...Object.keys(afterContent)])]
+      .filter((k) => !labelByKey.has(k)),
+  ];
+
+  for (const key of orderedKeys) {
+    const prev = String(beforeContent[key] ?? "");
+    const next = String(afterContent[key] ?? "");
+    if (prev === next) continue;
+    printedAny = true;
+    const label = labelByKey.get(key) || key;
+    io.print("");
+    io.print(`--- ${label} (${key}) [before]`);
+    io.print(`+++ ${label} (${key}) [after]`);
+    for (const line of formatLineDiff(prev, next)) {
+      io.print(line);
+    }
+  }
+
+  if (!printedAny) {
+    io.print("");
+    io.print("(No content or metadata changes in this revision.)");
+  }
+  return result;
+}
+
 export async function remove(args, io) {
   const prefix = commandPrefix(args);
   const id = extractDocId(positional(args, 0, `${prefix} delete <doc-id> --yes`));
@@ -540,6 +700,8 @@ export const commands = {
   create,
   list,
   show,
+  history,
+  diff,
   update,
   submit,
   reopen,

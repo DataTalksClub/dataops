@@ -25,11 +25,15 @@ import { getPodcastEpisode, listPodcastEpisodes, type PodcastEpisode } from '../
 import {
   checkSponsorDocRateLimit,
   clearSponsorDocRateLimit,
+  computeSponsorDocChangedFields,
   createSponsorDoc,
   decryptSponsorDocAccessCode,
   deleteSponsorDoc,
+  getLatestSponsorDocRevision,
+  getSponsorDocRevision,
   getSponsorDocWithAuthMaterial,
   listAllSponsorDocSummaries,
+  listSponsorDocRevisions,
   listSponsorDocSummariesByCardId,
   recordSponsorDocFailedAttempt,
   rotateSponsorDocAccessCode,
@@ -950,6 +954,99 @@ export async function handleSponsorDocRoutes(
       }
 
       return json(405, { error: 'Method not allowed' });
+    }
+
+    // GET /api/sponsor-docs/:id/history/:rev
+    const historyRevMatch = suffix.match(/^\/([^/]+)\/history\/([^/]+)\/?$/);
+    if (historyRevMatch) {
+      if (m !== 'GET') return json(405, { error: 'Method not allowed' });
+      const actor = await resolveInteractiveActor(client, event, 'work-read');
+      if (!actor.ok) return actor.response;
+      const docId = decodeURIComponent(historyRevMatch[1]);
+      const revParam = decodeURIComponent(historyRevMatch[2]);
+      const loaded = await getSponsorDocWithAuthMaterial(client, docId);
+      if (!loaded) {
+        return json(404, { error: 'Document not found', code: 'sponsor_doc_not_found' });
+      }
+      const doc = await projectDocumentEvent(client, loaded.doc);
+      let revisionRecord;
+      if (revParam === 'latest') {
+        revisionRecord = await getLatestSponsorDocRevision(client, docId);
+        if (!revisionRecord) {
+          return json(404, {
+            error: `No revisions recorded for document ${docId}`,
+            code: 'sponsor_doc_revision_not_found',
+          });
+        }
+      } else {
+        if (!/^[1-9]\d*$/.test(revParam)) {
+          return json(400, {
+            error: 'Revision number must be a positive integer or "latest"',
+            code: 'invalid_revision',
+          });
+        }
+        const revNum = Number(revParam);
+        revisionRecord = await getSponsorDocRevision(client, docId, revNum);
+        if (!revisionRecord) {
+          return json(404, {
+            error: `Revision ${revNum} not found for document ${docId}`,
+            code: 'sponsor_doc_revision_not_found',
+          });
+        }
+      }
+      return json(200, {
+        doc: {
+          id: doc.id,
+          cardId: doc.cardId,
+          title: doc.title,
+          template: doc.template,
+          status: doc.status,
+          version: doc.version,
+        },
+        templateDefinition: getSponsorDocTemplate(doc.template),
+        revision: {
+          ...revisionRecord,
+          changedFields: computeSponsorDocChangedFields(revisionRecord.before, revisionRecord.after),
+        },
+      });
+    }
+
+    // GET /api/sponsor-docs/:id/history
+    const historyMatch = suffix.match(/^\/([^/]+)\/history\/?$/);
+    if (historyMatch) {
+      if (m !== 'GET') return json(405, { error: 'Method not allowed' });
+      const actor = await resolveInteractiveActor(client, event, 'work-read');
+      if (!actor.ok) return actor.response;
+      const docId = decodeURIComponent(historyMatch[1]);
+      const loaded = await getSponsorDocWithAuthMaterial(client, docId);
+      if (!loaded) {
+        return json(404, { error: 'Document not found', code: 'sponsor_doc_not_found' });
+      }
+      const doc = await projectDocumentEvent(client, loaded.doc);
+      const revisions = await listSponsorDocRevisions(client, docId);
+      return json(200, {
+        doc: {
+          id: doc.id,
+          cardId: doc.cardId,
+          title: doc.title,
+          template: doc.template,
+          status: doc.status,
+          version: doc.version,
+        },
+        revisions: revisions.map((rev) => ({
+          docId: rev.docId,
+          revision: rev.revision,
+          docVersion: rev.docVersion,
+          beforeVersion: rev.beforeVersion,
+          createdAt: rev.createdAt,
+          actorKind: rev.actorKind,
+          actorUserId: rev.actorUserId,
+          actorName: rev.actorName,
+          beforeStatus: rev.before.status,
+          afterStatus: rev.after.status,
+          changedFields: computeSponsorDocChangedFields(rev.before, rev.after),
+        })),
+      });
     }
 
     // GET /api/sponsor-docs/:id/export
