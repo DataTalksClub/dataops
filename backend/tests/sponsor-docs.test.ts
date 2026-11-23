@@ -1428,4 +1428,96 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.equal(JSON.parse(patchRes!.body).card.sponsored, true);
   });
 
+  it('records revision history on both share-link and staff edits and exposes history/diff endpoints', async () => {
+    const card = await createCard(client, { ...templateLink(), title: 'Newsletter #304 Revision Test' });
+    const createRes = await staffReq('POST', '/api/sponsor-docs', {
+      cardId: card.id,
+      template: 'newsletter-main',
+      sponsorName: 'Acme Corp',
+      publicationDate: '2026-11-30',
+      autoSendEmail: false,
+    });
+    assert.strictEqual(createRes.statusCode, 201);
+    const { doc } = JSON.parse(createRes.body);
+
+    const emptyHistory = await staffReq('GET', `/api/sponsor-docs/${doc.id}/history`);
+    assert.strictEqual(emptyHistory.statusCode, 200);
+    assert.deepStrictEqual(JSON.parse(emptyHistory.body).revisions, []);
+
+    const missingLatest = await staffReq('GET', `/api/sponsor-docs/${doc.id}/history/latest`);
+    assert.strictEqual(missingLatest.statusCode, 404);
+
+    // 1. Share-link (sponsor) edit
+    const sponsorPut = await anonReq('PUT', `/api/sponsor-docs/${doc.id}`, {
+      codeHeader: doc.accessCode,
+      body: {
+        content: {
+          title: 'Sponsor Draft Headline',
+          intro: 'Line one\nLine two',
+          ctaText: 'Try Acme',
+          ctaUrl: 'https://acme.example.com',
+        },
+        status: 'submitted',
+      },
+    });
+    assert.strictEqual(sponsorPut.statusCode, 200, sponsorPut.body);
+
+    // 2. Staff/API edit (e.g. Alexey's correction)
+    const staffPut = await staffReq('PUT', `/api/sponsor-docs/${doc.id}`, {
+      content: {
+        title: 'Edited Headline by Staff',
+        intro: 'Line one\nLine two corrected',
+      },
+    });
+    assert.strictEqual(staffPut.statusCode, 200, staffPut.body);
+
+    // History lists revisions newest-first
+    const historyRes = await staffReq('GET', `/api/sponsor-docs/${doc.id}/history`);
+    assert.strictEqual(historyRes.statusCode, 200);
+    const historyBody = JSON.parse(historyRes.body);
+    assert.strictEqual(historyBody.revisions.length, 2);
+    assert.strictEqual(historyBody.revisions[0].revision, 2);
+    assert.strictEqual(historyBody.revisions[0].actorKind, 'staff');
+    assert.strictEqual(historyBody.revisions[0].actorUserId, staffUserId);
+    assert.strictEqual(historyBody.revisions[0].actorName, 'Valeriia Staff');
+    assert.deepStrictEqual(historyBody.revisions[0].changedFields.sort(), ['intro', 'title']);
+
+    assert.strictEqual(historyBody.revisions[1].revision, 1);
+    assert.strictEqual(historyBody.revisions[1].actorKind, 'sponsor');
+    assert.strictEqual(historyBody.revisions[1].actorName, 'Sponsor');
+    assert.strictEqual(historyBody.revisions[1].beforeStatus, 'draft');
+    assert.strictEqual(historyBody.revisions[1].afterStatus, 'submitted');
+
+    // Single revision diff (explicit rev 1 & latest)
+    const rev1Res = await staffReq('GET', `/api/sponsor-docs/${doc.id}/history/1`);
+    assert.strictEqual(rev1Res.statusCode, 200);
+    const rev1 = JSON.parse(rev1Res.body).revision;
+    assert.strictEqual(rev1.before.status, 'draft');
+    assert.strictEqual(rev1.after.status, 'submitted');
+    assert.strictEqual(rev1.before.content.title, '');
+    assert.strictEqual(rev1.after.content.title, 'Sponsor Draft Headline');
+
+    const latestRes = await staffReq('GET', `/api/sponsor-docs/${doc.id}/history/latest`);
+    assert.strictEqual(latestRes.statusCode, 200);
+    const latest = JSON.parse(latestRes.body).revision;
+    assert.strictEqual(latest.revision, 2);
+    assert.strictEqual(latest.before.content.title, 'Sponsor Draft Headline');
+    assert.strictEqual(latest.after.content.title, 'Edited Headline by Staff');
+    assert.strictEqual(latest.before.content.intro, 'Line one\nLine two');
+    assert.strictEqual(latest.after.content.intro, 'Line one\nLine two corrected');
+
+    // Anonymous access to history/diff is never allowed
+    const { isAnonymousSponsorDocRequest } = await import('../src/routes/sponsorDocs');
+    assert.strictEqual(isAnonymousSponsorDocRequest('GET', `/api/sponsor-docs/${doc.id}/history`), false);
+    assert.strictEqual(isAnonymousSponsorDocRequest('GET', `/api/sponsor-docs/${doc.id}/history/1`), false);
+
+    // Invalid / missing revisions fail loudly
+    const badRev = await staffReq('GET', `/api/sponsor-docs/${doc.id}/history/0`);
+    assert.strictEqual(badRev.statusCode, 400);
+    const missingRev = await staffReq('GET', `/api/sponsor-docs/${doc.id}/history/99`);
+    assert.strictEqual(missingRev.statusCode, 404);
+    const missingDoc = await staffReq('GET', '/api/sponsor-docs/sdoc-does-not-exist/history');
+    assert.strictEqual(missingDoc.statusCode, 404);
+  });
+
 });

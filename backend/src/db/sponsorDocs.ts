@@ -62,6 +62,28 @@ export interface SponsorDoc extends SponsorDocSummary {
   content: Record<string, string>;
 }
 
+export interface SponsorDocRevisionSnapshot {
+  title: string;
+  sponsorName: string | null;
+  publicationDate: string | null;
+  template: SponsorDocTemplateKey;
+  status: SponsorDocStatus;
+  content: Record<string, string>;
+}
+
+export interface SponsorDocRevision {
+  docId: string;
+  revision: number;
+  docVersion: number;
+  beforeVersion: number;
+  createdAt: string;
+  actorKind: SponsorDocActorKind;
+  actorUserId: string | null;
+  actorName: string | null;
+  before: SponsorDocRevisionSnapshot;
+  after: SponsorDocRevisionSnapshot;
+}
+
 interface StoredSponsorDoc extends SponsorDoc {
   PK: string;
   SK: string;
@@ -75,6 +97,56 @@ export function sponsorDocKey(id: string): { PK: string; SK: string } {
 
 export function cardSponsorDocIndexKey(cardId: string, id: string): { PK: string; SK: string } {
   return { PK: `CARD_SPONSOR_DOCS#${cardId}`, SK: `SPONSOR_DOC#${id}` };
+}
+
+export function sponsorDocRevisionPk(docId: string): string {
+  return `SPONSOR_DOC_REV#${docId}`;
+}
+
+export function sponsorDocRevisionKey(docId: string, revision: number): { PK: string; SK: string } {
+  return {
+    PK: sponsorDocRevisionPk(docId),
+    SK: `REV#${String(revision).padStart(8, '0')}`,
+  };
+}
+
+function snapshotForRevision(doc: SponsorDoc): SponsorDocRevisionSnapshot {
+  return {
+    title: doc.title,
+    sponsorName: doc.sponsorName,
+    publicationDate: doc.publicationDate,
+    template: doc.template,
+    status: doc.status,
+    content: { ...(doc.content || {}) },
+  };
+}
+
+export function computeSponsorDocChangedFields(
+  before: SponsorDocRevisionSnapshot,
+  after: SponsorDocRevisionSnapshot,
+): string[] {
+  const changed: string[] = [];
+  for (const key of ['title', 'sponsorName', 'publicationDate', 'template', 'status'] as const) {
+    if ((before[key] ?? null) !== (after[key] ?? null)) {
+      changed.push(key);
+    }
+  }
+  const contentKeys = new Set([
+    ...Object.keys(before.content || {}),
+    ...Object.keys(after.content || {}),
+  ]);
+  for (const key of contentKeys) {
+    if (String(before.content?.[key] ?? '') !== String(after.content?.[key] ?? '')) {
+      changed.push(key);
+    }
+  }
+  return changed;
+}
+
+function cleanSponsorDocRevision(item: Record<string, unknown> | undefined): SponsorDocRevision | null {
+  if (!item) return null;
+  const { PK: _pk, SK: _sk, ...rest } = item;
+  return rest as unknown as SponsorDocRevision;
 }
 
 export function normalizeSponsorDocCode(raw: string): string {
@@ -393,8 +465,31 @@ export async function updateSponsorDoc(
     ...stripDerivedDocumentFields(toSummary(updated)),
   };
 
+  const latestRevision = await getLatestSponsorDocRevision(client, id);
+  const nextRevision = (latestRevision?.revision || 0) + 1;
+  const revisionItem = {
+    ...sponsorDocRevisionKey(id, nextRevision),
+    docId: id,
+    revision: nextRevision,
+    docVersion: updated.version,
+    beforeVersion: doc.version || 1,
+    createdAt: now,
+    actorKind: input.actorKind,
+    actorUserId: updated.lastEditedByUserId,
+    actorName: updated.lastEditedByName,
+    before: snapshotForRevision(doc),
+    after: snapshotForRevision(updated),
+  } satisfies SponsorDocRevision & { PK: string; SK: string };
+
   await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: primaryItem }));
   await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: indexItem }));
+  await client.send(
+    new PutCommand({
+      TableName: TABLE_ARTIFACTS,
+      Item: revisionItem,
+      ConditionExpression: 'attribute_not_exists(PK)',
+    }),
+  );
 
   return updated;
 }
@@ -459,6 +554,64 @@ export async function rotateSponsorDocAccessCode(
   return { doc: updated, accessCode: generated.code };
 }
 
+export async function getLatestSponsorDocRevision(
+  client: DynamoDBDocumentClient,
+  docId: string,
+): Promise<SponsorDocRevision | null> {
+  const res = await client.send(
+    new QueryCommand({
+      TableName: TABLE_ARTIFACTS,
+      KeyConditionExpression: 'PK = :pk',
+      ExpressionAttributeValues: { ':pk': sponsorDocRevisionPk(docId) },
+      ScanIndexForward: false,
+      Limit: 1,
+      ConsistentRead: true,
+    }),
+  );
+  return cleanSponsorDocRevision((res.Items || [])[0] as Record<string, unknown> | undefined);
+}
+
+export async function getSponsorDocRevision(
+  client: DynamoDBDocumentClient,
+  docId: string,
+  revision: number,
+): Promise<SponsorDocRevision | null> {
+  const res = await client.send(
+    new GetCommand({
+      TableName: TABLE_ARTIFACTS,
+      Key: sponsorDocRevisionKey(docId, revision),
+      ConsistentRead: true,
+    }),
+  );
+  return cleanSponsorDocRevision(res.Item as Record<string, unknown> | undefined);
+}
+
+export async function listSponsorDocRevisions(
+  client: DynamoDBDocumentClient,
+  docId: string,
+): Promise<SponsorDocRevision[]> {
+  const revisions: SponsorDocRevision[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+  do {
+    const page = await client.send(
+      new QueryCommand({
+        TableName: TABLE_ARTIFACTS,
+        KeyConditionExpression: 'PK = :pk',
+        ExpressionAttributeValues: { ':pk': sponsorDocRevisionPk(docId) },
+        ScanIndexForward: false,
+        ConsistentRead: true,
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+    for (const item of page.Items || []) {
+      const cleaned = cleanSponsorDocRevision(item as Record<string, unknown>);
+      if (cleaned) revisions.push(cleaned);
+    }
+    exclusiveStartKey = page.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (exclusiveStartKey);
+  return revisions;
+}
+
 export async function deleteSponsorDoc(
   client: DynamoDBDocumentClient,
   id: string,
@@ -470,6 +623,12 @@ export async function deleteSponsorDoc(
   await client.send(
     new DeleteCommand({ TableName: TABLE_ARTIFACTS, Key: cardSponsorDocIndexKey(doc.cardId, id) }),
   );
+  const revisions = await listSponsorDocRevisions(client, id);
+  for (const rev of revisions) {
+    await client.send(
+      new DeleteCommand({ TableName: TABLE_ARTIFACTS, Key: sponsorDocRevisionKey(id, rev.revision) }),
+    );
+  }
   return doc;
 }
 

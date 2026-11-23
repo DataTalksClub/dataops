@@ -55,6 +55,8 @@ Usage
                                   or Card, link it on the Card's "Sponsorship document"
                                   field, and print the shareable link with the access code
   dataops newsletter doc show <doc-id>
+  dataops newsletter doc history <doc-id>
+  dataops newsletter doc diff <doc-id> [--rev N]
   dataops newsletter doc export <doc-id>
   dataops newsletter doc delete <doc-id> --yes
   dataops newsletter markdown set <issue-id> [issue|sources|brief] --file <path>

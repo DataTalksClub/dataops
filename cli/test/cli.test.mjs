@@ -788,6 +788,131 @@ describe("newsletter doc and podcast doc commands", () => {
     globalThis.fetch = globalFetch;
   });
 
+  test("newsletter doc history and diff print revisions, before/after diffs, and fail loudly on invalid rev", async () => {
+    saveProfile("https://ops.dtcdev.click", { token: "dops_abc", tokenId: "id-1" });
+    const fetch = fakeFetch({
+      "/api/sponsor-docs/doc-123/history": {
+        body: {
+          doc: { id: "doc-123", title: "Test Doc", template: "newsletter-main", status: "submitted", version: 3 },
+          revisions: [
+            {
+              docId: "doc-123",
+              revision: 2,
+              docVersion: 3,
+              createdAt: "2026-11-23T10:15:00.000Z",
+              actorKind: "staff",
+              actorName: "Alexey",
+              beforeStatus: "submitted",
+              afterStatus: "submitted",
+              changedFields: ["headline", "body"],
+            },
+            {
+              docId: "doc-123",
+              revision: 1,
+              docVersion: 2,
+              createdAt: "2026-11-23T09:00:00.000Z",
+              actorKind: "sponsor",
+              actorName: "Sponsor",
+              beforeStatus: "draft",
+              afterStatus: "submitted",
+              changedFields: ["status", "headline"],
+            },
+          ],
+        },
+      },
+      "/api/sponsor-docs/doc-123/history/latest": {
+        body: {
+          doc: { id: "doc-123", title: "Test Doc", template: "newsletter-main", status: "submitted", version: 3 },
+          templateDefinition: {
+            fields: [
+              { key: "headline", label: "Title" },
+              { key: "body", label: "Body" },
+            ],
+          },
+          revision: {
+            docId: "doc-123",
+            revision: 2,
+            docVersion: 3,
+            createdAt: "2026-11-23T10:15:00.000Z",
+            actorKind: "staff",
+            actorName: "Alexey",
+            before: {
+              title: "Test Doc",
+              sponsorName: "Acme",
+              publicationDate: "2026-11-30",
+              template: "newsletter-main",
+              status: "submitted",
+              content: { headline: "Old Title", body: "Line 1\nLine 2" },
+            },
+            after: {
+              title: "Test Doc",
+              sponsorName: "Acme",
+              publicationDate: "2026-11-30",
+              template: "newsletter-main",
+              status: "submitted",
+              content: { headline: "New Title", body: "Line 1\nLine 2 edited" },
+            },
+          },
+        },
+      },
+      "/api/sponsor-docs/doc-123/history/1": {
+        body: {
+          doc: { id: "doc-123", title: "Test Doc", template: "newsletter-main", status: "submitted", version: 3 },
+          templateDefinition: { fields: [{ key: "headline", label: "Title" }] },
+          revision: {
+            docId: "doc-123",
+            revision: 1,
+            docVersion: 2,
+            createdAt: "2026-11-23T09:00:00.000Z",
+            actorKind: "sponsor",
+            actorName: "Sponsor",
+            before: { status: "draft", content: { headline: "" } },
+            after: { status: "submitted", content: { headline: "Old Title" } },
+          },
+        },
+      },
+    });
+    globalThis.fetch = fetch;
+
+    const ioHistory = captureIo();
+    assert.equal(
+      await run(["newsletter", "doc", "history", "doc-123", "--url", "https://ops.dtcdev.click"], ioHistory),
+      0,
+    );
+    assert.match(ioHistory.text(), /staff \(Alexey\)/);
+    assert.match(ioHistory.text(), /headline, body/);
+    assert.match(ioHistory.text(), /draft -> submitted/);
+
+    const ioDiffLatest = captureIo();
+    assert.equal(
+      await run(["newsletter", "doc", "diff", "doc-123", "--url", "https://ops.dtcdev.click"], ioDiffLatest),
+      0,
+    );
+    assert.match(ioDiffLatest.text(), /Revision 2 of doc-123/);
+    assert.match(ioDiffLatest.text(), /Author: staff \(Alexey\)/);
+    assert.match(ioDiffLatest.text(), /- Old Title/);
+    assert.match(ioDiffLatest.text(), /\+ New Title/);
+    assert.match(ioDiffLatest.text(), /- Line 2/);
+    assert.match(ioDiffLatest.text(), /\+ Line 2 edited/);
+
+    const ioDiffRev1 = captureIo();
+    assert.equal(
+      await run(["newsletter", "doc", "diff", "doc-123", "--rev", "1", "--url", "https://ops.dtcdev.click"], ioDiffRev1),
+      0,
+    );
+    assert.match(ioDiffRev1.text(), /Revision 1 of doc-123/);
+    assert.match(ioDiffRev1.text(), /- draft/);
+    assert.match(ioDiffRev1.text(), /\+ submitted/);
+
+    const ioBadRev = captureIo();
+    assert.equal(
+      await run(["newsletter", "doc", "diff", "doc-123", "--rev", "0", "--url", "https://ops.dtcdev.click"], ioBadRev),
+      2,
+    );
+
+    globalThis.fetch = globalFetch;
+  });
+
   test("sponsor doc create --from sends the copy source and keeps domain guards", async () => {
     saveProfile("https://ops.dtcdev.click", { token: "dops_abc", tokenId: "id-1" });
     const sent = [];
