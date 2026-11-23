@@ -7,7 +7,20 @@ export const SPONSOR_DOC_AUTOSAVE_DELAY_MS = 1200;
 // (it records a booking intent), so autosave keeps its saved value.
 const EXPLICIT_SAVE_KEYS = ["slotChoice"];
 
+/**
+ * Never tell the visitor to reload after a failed save: a reload throws the
+ * unsaved edits away. Timeouts, network errors and 5xx (already reported to
+ * the server by the request layer) get a save-specific explanation.
+ */
 export function notSavedMessage(err) {
+  const status = err?.status;
+  let cause;
+  if (status === "timeout") cause = "the server took too long to respond.";
+  else if (status === "network") cause = "the connection failed.";
+  else if (typeof status === "number" && status >= 500) cause = `the server returned an error (${status}).`;
+  if (cause) {
+    return `NOT SAVED: ${cause} Your edits are still in this form; do not reload. Click Retry save, or keep editing and it retries. The DataTalks.Club team has been notified.`;
+  }
   return `NOT SAVED: ${err?.message || "Failed to save changes."} Your edits are still in this form.`;
 }
 

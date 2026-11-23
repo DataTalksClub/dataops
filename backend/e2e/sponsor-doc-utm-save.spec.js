@@ -87,7 +87,8 @@ test("a failed autosave shows a loud NOT SAVED error, reports it, and Retry save
   await page.locator("#sponsor-field-title").fill("Will fail first");
   await expect(status(page)).toHaveAttribute("data-sponsor-save-state", "error", { timeout: 10_000 });
   await expect(status(page)).toHaveAttribute("role", "alert");
-  await expect(status(page)).toContainText("NOT SAVED");
+  await expect(status(page)).toContainText("NOT SAVED: the server returned an error (500)");
+  await expect(status(page)).not.toContainText("Reload the page");
   await expect.poll(() => reports.length).toBeGreaterThan(0);
   await page.unroute("**/api/sponsor-docs/*", failPut);
   await page.locator('[data-sponsor-action="retry-save"]').click();
