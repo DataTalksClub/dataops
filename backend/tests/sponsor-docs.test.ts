@@ -14,7 +14,7 @@ import { createPodcastEpisode } from '../src/db/podcastEpisodes';
 import { createUser } from '../src/db/users';
 import { humanBearer } from './helpers/human-bearer';
 import { getSponsorDoc, setSponsorDocEmailDelivery, updateSponsorDoc } from '../src/db/sponsorDocs';
-import { isAnonymousSponsorDocAsset } from '../src/routes/sponsorDocs';
+import { isAnonymousSponsorDocAsset, resolveSponsorEmailOwningTaskId } from '../src/routes/sponsorDocs';
 import { setSponsorDocEmailDepsForTests } from '../src/sponsorDocs/emailDelivery';
 import {
   NEWSLETTER_SPONSOR_EMAIL_TEMPLATE_ID,
@@ -328,6 +328,11 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.strictEqual(sponsorView.viewerRole, 'sponsor');
     assert.strictEqual(sponsorView.accessCode, undefined, 'never echoes accessCode in sponsor payload');
     assert.strictEqual(sponsorView.shareUrl, undefined);
+    // The staff panel (share link, email draft/send record, owning task, Card
+    // link) is driven by these fields; a code holder never receives them.
+    assert.strictEqual(sponsorView.emailDraft, undefined);
+    assert.strictEqual(sponsorView.emailDelivery, undefined);
+    assert.strictEqual(sponsorView.hostContext, undefined);
 
     // 4. Anonymous PUT by sponsor with X-Sponsor-Doc-Code header (lowercase & without dashes also works)
     const compactLowerCode = code.replace(/-/g, '').toLowerCase();
@@ -919,12 +924,40 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
 
       const docId = autoSendBody.doc.id;
       const send = await staffReq('POST', `/api/sponsor-docs/${docId}/send-email`, {});
-      assert.equal(send.statusCode, 400, send.body);
-      assert.match(JSON.parse(send.body).error, /linked task is required/i);
-      assert.equal(fetchCalls, 0, 'Gmail must not be contacted before a task is linked');
+      assert.equal(send.statusCode, 422, send.body);
+      assert.match(JSON.parse(send.body).error, new RegExp(`Card ${card.id} has no email-sponsor Task`));
+      assert.equal(fetchCalls, 0, 'Gmail must not be contacted when no owning task can be resolved');
     } finally {
       setSponsorDocEmailDepsForTests({});
     }
+  });
+
+  it('resolves the owning email-sponsor Task from the Card for staff sends', async () => {
+    const card = await createCard(client, {
+      ...templateLink(),
+      title: '[Newsletter] (23 NOV 2026) #304 - Resolver',
+      anchorDate: '2026-11-23',
+      sponsor: 'Resolver',
+    });
+    await createTask(client, { description: 'Unrelated', date: '2026-11-10', cardId: card.id, templateTaskRef: 'fill-sponsored-block' });
+    const doc = { id: 'sdoc-resolver', cardId: card.id, template: 'newsletter-main' };
+    await assert.rejects(
+      resolveSponsorEmailOwningTaskId(client, doc),
+      (err: Error & { statusCode?: number }) => err.statusCode === 422 && /has no email-sponsor Task/.test(err.message),
+    );
+    await assert.rejects(
+      resolveSponsorEmailOwningTaskId(client, { ...doc, cardId: '' }),
+      (err: Error & { statusCode?: number }) => err.statusCode === 422 && /has no linked Card/.test(err.message),
+    );
+    const primary = await createTask(client, { description: 'Email sponsor', date: '2026-11-10', cardId: card.id, templateTaskRef: 'email-sponsor' });
+    const secondary = await createTask(client, { description: 'Email secondary sponsor', date: '2026-11-10', cardId: card.id, templateTaskRef: 'secondary-email-sponsor' });
+    assert.equal(await resolveSponsorEmailOwningTaskId(client, doc), primary.id);
+    assert.equal(await resolveSponsorEmailOwningTaskId(client, { ...doc, template: 'newsletter-secondary' }), secondary.id);
+    await createTask(client, { description: 'Duplicate', date: '2026-11-10', cardId: card.id, templateTaskRef: 'email-sponsor' });
+    await assert.rejects(
+      resolveSponsorEmailOwningTaskId(client, doc),
+      (err: Error & { statusCode?: number }) => err.statusCode === 422 && /has 2 email-sponsor Tasks/.test(err.message),
+    );
   });
 
   it('never sends sponsor form email to grace@datatalks.club', async () => {

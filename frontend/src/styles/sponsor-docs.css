@@ -483,6 +483,28 @@
   display: none;
 }
 
+.sponsor-doc-visual-dropzone {
+  place-items: center;
+  min-height: 8rem;
+  padding: var(--dk-space-3);
+  border: 1px dashed var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+  background-color: var(--dk-bg-muted);
+}
+
+.sponsor-doc-visual-dropzone.is-dragover {
+  border-color: var(--dk-border-strong);
+  background-color: var(--dk-accent-soft);
+}
+
+.sponsor-doc-visual-dropzone[data-uploading] {
+  opacity: 0.6;
+}
+
+.sponsor-doc-visual-error-slot:empty {
+  display: none;
+}
+
 .sponsor-doc-visual-preview__img {
   display: block;
   max-width: 100%;

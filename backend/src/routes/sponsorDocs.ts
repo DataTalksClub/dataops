@@ -13,7 +13,7 @@ import { eventFormatDocTemplateError } from '../cards/eventFormats';
 import { getTemplateIdByType } from '../cards/createCard';
 import { DOCX_CONTENT_TYPE, markdownToDocx } from '../docs/docxExport';
 import { getCardConsistent, updateCard } from '../db/cards';
-import { getTaskConsistent, TaskVersionConflictError, updateTask } from '../db/tasks';
+import { getTaskConsistent, listTasksByCardConsistent, TaskVersionConflictError, updateTask } from '../db/tasks';
 import {
   getNewsletterIssue,
   listNewsletterIssuesByCardId,
@@ -75,7 +75,7 @@ import {
   speakerTemplateView,
   type SponsorDocTemplateKey,
 } from '../sponsorDocs/templates';
-import { recordSponsorRouteAfterSend, SponsorRouteError } from '../newsletter/sponsorRoute';
+import { recordSponsorRouteAfterSend, ROUTE_SOURCE_TASK_REFS, SponsorRouteError } from '../newsletter/sponsorRoute';
 import { listNextRecordingSlots } from '../podcast/resolveRecordingSlot';
 import type { Card, LambdaEvent, LambdaResponse } from '../types';
 
@@ -86,7 +86,7 @@ const JSON_HEADERS: Record<string, string> = {
 };
 
 class SponsorEmailTaskOwnerError extends Error {
-  constructor(readonly statusCode: 400 | 404, message: string) {
+  constructor(readonly statusCode: 400 | 404 | 422, message: string) {
     super(message);
   }
 }
@@ -162,6 +162,31 @@ async function assertSponsorEmailTaskOwner(
   const task = await getTaskConsistent(client, taskId);
   if (!task) throw new SponsorEmailTaskOwnerError(404, `Task ${taskId} not found`);
   if (task.cardId !== cardId) throw new SponsorEmailTaskOwnerError(400, `Task ${taskId} is not linked to this sponsor document`);
+}
+
+/**
+ * The Task that owns a staff send's sent-message record, resolved from the
+ * document's Card: its `email-sponsor` Task (`secondary-email-sponsor` for a
+ * secondary-slot document). Never guessed: no Card, no such Task, or more
+ * than one candidate is a 422 naming what is missing.
+ */
+export async function resolveSponsorEmailOwningTaskId(
+  client: DynamoDBDocumentClient,
+  doc: Pick<SponsorDoc, 'id' | 'cardId' | 'template'>,
+): Promise<string> {
+  if (!doc.cardId) {
+    throw new SponsorEmailTaskOwnerError(422, `Sponsor document ${doc.id} has no linked Card, so the Task that owns the sent email cannot be found`);
+  }
+  const candidates = (await listTasksByCardConsistent(client, doc.cardId))
+    .filter((task) => task.templateTaskRef && ROUTE_SOURCE_TASK_REFS[task.templateTaskRef]);
+  const position = doc.template === 'newsletter-secondary' ? 'secondary' : 'primary';
+  const sameSlot = candidates.filter((task) => ROUTE_SOURCE_TASK_REFS[task.templateTaskRef as string] === position);
+  const pool = sameSlot.length ? sameSlot : candidates;
+  if (pool.length === 1) return pool[0].id;
+  if (!pool.length) {
+    throw new SponsorEmailTaskOwnerError(422, `Card ${doc.cardId} has no email-sponsor Task, so the sent email cannot be recorded. Add the Task to the Card, then send again.`);
+  }
+  throw new SponsorEmailTaskOwnerError(422, `Card ${doc.cardId} has ${pool.length} email-sponsor Tasks (${pool.map((task) => task.id).join(', ')}); cannot tell which one owns this email`);
 }
 
 function parseBody(rawBody: string | null | undefined): Record<string, unknown> | null {
@@ -1199,9 +1224,11 @@ export async function handleSponsorDocRoutes(
         : typeof body.to === 'string' && body.to.trim()
           ? body.to.trim()
           : null;
+      // An explicit taskId (CLI --task) still wins; the portal sends none and
+      // the owner comes from the document's Card.
       const taskId = typeof body.taskId === 'string' && body.taskId.trim()
         ? body.taskId.trim()
-        : loaded.doc.emailDelivery?.taskId || null;
+        : loaded.doc.emailDelivery?.taskId || await resolveSponsorEmailOwningTaskId(client, loaded.doc);
       await assertSponsorEmailTaskOwner(client, taskId, loaded.doc.cardId);
       let emailDelivery = await deliverSponsorDocEmail(client, {
         template: loaded.doc.template,
