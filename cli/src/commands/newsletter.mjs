@@ -5,6 +5,7 @@ import { berlinToday, enc, fields, integer, isoDate, optionalString, positional,
 import { apiFor } from "../session.mjs";
 import { planNewsletterSync, readNewsletterCsv, sheetIssues } from "../newsletterSheet.mjs";
 import { rewriteVerificationUri } from "./auth.mjs";
+import { relaySync, relaySyncHelp } from "./newsletterRelay.mjs";
 import { domainDocCommand } from "./sponsorDocs.mjs";
 import { multipart } from "./tasks.mjs";
 
@@ -68,6 +69,12 @@ Usage
       [--relay-key <key>] [--subject <text>] [--preview <text>] [--clear]
                                   Attach Relay's rendered email HTML or web-view URL to
                                   the issue's Final render preview tab
+  dataops newsletter relay-sync <issue-id|issue-number> [--slot primary|secondary]
+      [--relay-key <key>] [--doc <doc-id|url>] [--block-id <id>] [--dry-run]
+                                  Fill the Relay issue's sponsor block from the slot's
+                                  sponsor document (title, kicker, body, bullets, closing,
+                                  image, CTA): one per-block write, updating the existing
+                                  block. Details: dataops newsletter relay-sync --help
   dataops newsletter image upload <issue-id> <path>
                                   Upload an image (PNG, JPEG, GIF, or WebP) to durable
                                   public hosting for the issue and print its https:// URL
@@ -1046,6 +1053,7 @@ in issue.md and the HTML preview.
 `;
 
 export { newsletterImageHelp as imageHelp };
+export { relaySyncHelp };
 
 async function imageUpload(args, io) {
   const usage = "dataops newsletter image upload <issue-id> <path>";
@@ -1152,6 +1160,7 @@ export const commands = {
   image,
   markdown,
   "final-render": finalRender,
+  "relay-sync": relaySync,
   metrics,
   "pull-mailchimp": pullMailchimp,
   report,

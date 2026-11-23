@@ -303,6 +303,10 @@ export async function run(argv, io = console) {
       print(sponsorDocs.newsletterDocHelp);
       return EXIT.ok;
     }
+    if (commandName === "newsletter" && rest[0] === "relay-sync") {
+      print(newsletter.relaySyncHelp);
+      return EXIT.ok;
+    }
     if (commandName === "newsletter" && rest[0] === "image") {
       print(newsletter.imageHelp);
       return EXIT.ok;

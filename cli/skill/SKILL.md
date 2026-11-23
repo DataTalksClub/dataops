@@ -287,6 +287,8 @@ and prints the shareable HTML preview link (`/newsletter-issues/<id>/preview?cod
 Use `dataops newsletter markdown show <issue-id> [issue|sources|brief]` to read it,
 `dataops newsletter markdown preview <issue-id>` to print the shareable link, and
 `dataops newsletter markdown rotate-code <issue-id>` to rotate the preview access code.
+To put the sponsor copy into the Relay email, run `dataops newsletter relay-sync <issue-id|issue-number> --slot primary|secondary` (add `--dry-run` first). It maps the slot's sponsor document (title, kicker, body, bullets, closing, image, CTA) into the Relay issue's sponsor block with one per-block write (under the ~8 KB CloudFront WAF body limit), updating the existing block rather than adding another. The Relay issue key comes from `final-render --relay-key`, or pass `--relay-key`.
+
 Use `dataops newsletter image upload <issue-id> <path>` to upload a newsletter image (PNG, JPEG, GIF, or WebP) to durable public hosting and print its public `https://` URL for `issue.md` and the HTML preview.
 
 For a podcast episode: `dataops podcast list --status booked` (or `--season N`),
