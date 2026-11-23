@@ -191,7 +191,7 @@ export function mountSponsorDocVisualControls({
     if (imageOnly) {
       uploadLabel.textContent = v ? "Replace image" : "Upload image";
       statusSpan.textContent = name
-        ? `Uploaded ${name}. Save to keep it.`
+        ? `Uploaded ${name}.`
         : v ? "" : "Drag and drop works too.";
       clearBtn.hidden = !v;
       return;

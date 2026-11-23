@@ -335,6 +335,7 @@ export function attachSoftUtmSuggestion({
   updateCount,
   updateLivePreview,
   announce,
+  onApplied,
 }) {
   const shouldSuggest = Boolean(fieldDef.suggestNewsletterUtm)
     || fieldDef.key === "ctaUrl"
@@ -369,6 +370,9 @@ export function attachSoftUtmSuggestion({
       syncUtmSuggestion();
       updateLivePreview();
       announce?.(`Added ${DEFAULT_NEWSLETTER_UTM_SOURCE} UTM parameters to ${fieldDef.label}.`);
+      // Helper-filled values are real edits: tell the page (dirty indicator, autosave).
+      control.dispatchEvent(new Event("input", { bubbles: true }));
+      onApplied?.(fieldDef.key, nextUrl);
     },
   );
   applyBtn.dataset.sponsorUtmField = fieldDef.key;
