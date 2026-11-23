@@ -165,6 +165,7 @@
     "src/surfaces/operations/contract-sign.js",
     "src/surfaces/operations/index.js",
     "src/surfaces/operations/newsletter-preview.js",
+    "src/surfaces/operations/newsletter-blocks.js",
     "src/surfaces/operations/sponsor-doc-bullets.js",
     "src/surfaces/operations/sponsor-doc-visual.js",
     "src/surfaces/operations/sponsor-doc-email-card.js",
