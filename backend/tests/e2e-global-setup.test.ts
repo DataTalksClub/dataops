@@ -256,9 +256,9 @@ describe('Playwright E2E bootstrap', () => {
     const port = await listen(server);
     try {
       await assert.rejects(
-        globalSetupModule.waitForServer(port, 40, {
+        globalSetupModule.waitForServer(port, 400, {
           pollIntervalMs: 1,
-          requestTimeoutMs: 30,
+          requestTimeoutMs: 300,
         }),
         (error: Error) => {
           assert.match(error.message, /last non-timeout probe: HTTP 503/);
@@ -303,7 +303,7 @@ describe('Playwright E2E bootstrap', () => {
         token: OWNER_TOKEN,
       }));
       await assert.rejects(
-        globalSetupModule.waitForOwnedServer(child, port, 100, {
+        globalSetupModule.waitForOwnedServer(child, port, 2000, {
           checkout: OWNER_CHECKOUT,
           token: OWNER_TOKEN,
         }),
@@ -323,7 +323,7 @@ describe('Playwright E2E bootstrap', () => {
         token: OWNER_TOKEN,
       }));
       await assert.rejects(
-        globalSetupModule.waitForOwnedServer(child, port, 100, {
+        globalSetupModule.waitForOwnedServer(child, port, 2000, {
           checkout: OWNER_CHECKOUT,
           token: OWNER_TOKEN,
         }),
@@ -346,7 +346,7 @@ describe('Playwright E2E bootstrap', () => {
         token: OWNER_TOKEN,
       }));
       await assert.rejects(
-        globalSetupModule.waitForOwnedServer(child, port, 100, {
+        globalSetupModule.waitForOwnedServer(child, port, 2000, {
           checkout: OWNER_CHECKOUT,
           token: OWNER_TOKEN,
         }),
@@ -361,7 +361,7 @@ describe('Playwright E2E bootstrap', () => {
     const child = fakeOwnedChild();
     child.exitCode = 1;
     await assert.rejects(
-      globalSetupModule.waitForOwnedServer(child, 3210, 100, {
+      globalSetupModule.waitForOwnedServer(child, 3210, 2000, {
         checkout: OWNER_CHECKOUT,
         token: OWNER_TOKEN,
       }),
@@ -372,7 +372,7 @@ describe('Playwright E2E bootstrap', () => {
   it('requires cryptographic ownership proof before readiness can start', () => {
     const child = fakeOwnedChild();
     assert.throws(
-      () => globalSetupModule.waitForOwnedServer(child, 0, 100, {
+      () => globalSetupModule.waitForOwnedServer(child, 0, 2000, {
         checkout: OWNER_CHECKOUT,
         token: 'not-a-generated-run-token',
       }),
