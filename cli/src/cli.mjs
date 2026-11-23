@@ -303,6 +303,10 @@ export async function run(argv, io = console) {
       print(sponsorDocs.newsletterDocHelp);
       return EXIT.ok;
     }
+    if (commandName === "newsletter" && ["blocks", "block-edit", "blocks-sync", "revisions"].includes(rest[0])) {
+      print(newsletter.blocksHelp);
+      return EXIT.ok;
+    }
     if (commandName === "newsletter" && rest[0] === "relay-sync") {
       print(newsletter.relaySyncHelp);
       return EXIT.ok;

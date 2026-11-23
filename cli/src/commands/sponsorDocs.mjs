@@ -608,7 +608,7 @@ function formatActor(rev) {
   return rev.actorName ? `${kind} (${rev.actorName})` : kind;
 }
 
-function formatLineDiff(beforeText, afterText) {
+export function formatLineDiff(beforeText, afterText) {
   const a = String(beforeText ?? "").split("\n");
   const b = String(afterText ?? "").split("\n");
   // Fallback to simple -/+ if very large to avoid O(N*M) memory blowup
