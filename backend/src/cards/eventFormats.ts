@@ -25,6 +25,18 @@ export const EVENT_FORMAT_DOC_TEMPLATES: Record<EventCardFormat, readonly string
 
 const FORMAT_WORDS = new RegExp(`(?:^|-)(${EVENT_CARD_FORMATS.join('|')})(?:-|$)`, 'i');
 
+/**
+ * Distinct business-unit product Templates (e.g., AI Shipping Labs workshops)
+ * that run their own operational workflow outside DataTalks.Club's three
+ * canonical event formats.
+ */
+export const SEPARATE_BUSINESS_EVENT_TYPES = ['aishl-workshop'] as const;
+
+export function isSeparateBusinessEventType(type: string | null | undefined): boolean {
+  const value = String(type || '').toLowerCase();
+  return (SEPARATE_BUSINESS_EVENT_TYPES as readonly string[]).includes(value);
+}
+
 /** The canonical event format a Template `type` serves, if any. */
 export function eventFormatOfType(type: string | null | undefined): EventCardFormat | null {
   const value = String(type || '').toLowerCase();
@@ -35,14 +47,13 @@ export function eventFormatOfType(type: string | null | undefined): EventCardFor
 /**
  * Whether a Template `type` is an event-format variant: a slug that carries a
  * format word as a segment but is not exactly the canonical type
- * (`aishl-workshop`, `sponsored-webinar`). Git-authored Templates with their
- * own compound types (`lightning-lesson-podcast`) are distinct authored
- * products, not format variants — every caller of this predicate gates on the
- * Template's origin.
+ * (`sponsored-webinar`, `sponsored-podcast`). Git-authored Templates with their
+ * own compound types (`lightning-lesson-podcast`) and separate business-unit
+ * workflows (`aishl-workshop`) are distinct products, not DTC format variants.
  */
 export function isEventFormatVariantType(type: string | null | undefined): boolean {
   const value = String(type || '').toLowerCase();
-  if (eventFormatOfType(value)) return false;
+  if (eventFormatOfType(value) || isSeparateBusinessEventType(value)) return false;
   return FORMAT_WORDS.test(value);
 }
 
@@ -76,7 +87,7 @@ export function eventFormatOfTag(tag: string | null | undefined): EventCardForma
  */
 export function eventFormatOfVariantType(type: string | null | undefined): EventCardFormat | null {
   const value = String(type || '').toLowerCase();
-  if (eventFormatOfType(value)) return null;
+  if (eventFormatOfType(value) || isSeparateBusinessEventType(value)) return null;
   const match = FORMAT_WORDS.exec(value);
   return match ? (match[1] as EventCardFormat) : null;
 }
@@ -127,7 +138,7 @@ export function eventFormatCardCreationError(
   template: { type?: string; name?: string; origin?: string },
   resolvedTitle: string,
 ): string {
-  if (template.origin === 'git') return '';
+  if (template.origin === 'git' || isSeparateBusinessEventType(template.type)) return '';
   if (claimsEventCardFormat(template.type)) {
     return eventFormatVariantCardError(String(template.name || ''), String(template.type || ''));
   }

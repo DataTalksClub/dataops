@@ -18,6 +18,7 @@ import {
   eventFormatOfTag,
   eventFormatOfVariantType,
   claimsEventCardFormat,
+  isSeparateBusinessEventType,
 } from './eventFormats';
 import { parseCardTitle } from './cardTitleStructure';
 
@@ -42,6 +43,7 @@ export interface FormatAuditReport {
 /** The canonical event-format Template a card must be instantiated from, if the card claims a format at all. */
 function claimedCardFormat(card: Card, templateById: Map<string, Template>): EventCardFormatOf | null {
   const template = card.templateId ? templateById.get(card.templateId) : undefined;
+  if (isSeparateBusinessEventType(template?.type)) return null;
   const fromType = eventFormatOfType(template?.type) ?? eventFormatOfVariantType(template?.type);
   if (fromType) return fromType;
   const tag = parseCardTitle(String(card.title || '')).tag;
@@ -110,7 +112,7 @@ function docFindings(doc: { id: string; cardId: string; title: string; template:
   }];
 }
 
-/** Template types whose slug claims an event format without being one (`aishl-workshop`). */
+/** Template types whose slug claims a DTC event format without being one (`sponsored-webinar`). */
 function templateVariantFindings(templates: Template[]): FormatAuditFinding[] {
   const findings: FormatAuditFinding[] = [];
   for (const template of templates) {

@@ -31,7 +31,8 @@ describe('Event format policy (three formats, format docs, sponsored flag)', () 
   let webinarGit: Template;
   let workshopGit: Template;
   let newsletterGit: Template;
-  let aishlVariant: Template;
+  let aishlWorkshop: Template;
+  let sponsoredVariant: Template;
   let plainCustom: Template;
 
   const PODCAST_GUEST_MATERIALS_CONTENT = {
@@ -89,10 +90,16 @@ describe('Event format policy (three formats, format docs, sponsored flag)', () 
       sourcePath: 'workflow-templates/newsletter.yaml', sourceRevision: 'test-newsletter-sha',
       triggerType: 'manual', taskDefinitions: eventTasks,
     });
-    // The legacy shape the policy must contain: a Custom Template claiming a
-    // workshop variant, seeded directly as it exists in the live table.
-    aishlVariant = await createTemplate(client, {
+    // AISHL Workshop is a separate business-unit workflow (AI Shipping Labs),
+    // distinct from DataTalks.Club's three canonical event formats.
+    aishlWorkshop = await createTemplate(client, {
       name: 'AISHL Workshop', type: 'aishl-workshop', origin: 'custom',
+      triggerType: 'manual', taskDefinitions: eventTasks,
+    });
+    // The legacy shape the policy must contain: a Custom Template claiming a
+    // DTC workshop variant, seeded directly as it exists in legacy data.
+    sponsoredVariant = await createTemplate(client, {
+      name: 'Sponsored Workshop', type: 'sponsored-workshop', origin: 'custom',
       triggerType: 'manual', taskDefinitions: eventTasks,
     });
     plainCustom = await createTemplate(client, {
@@ -135,7 +142,7 @@ describe('Event format policy (three formats, format docs, sponsored flag)', () 
   }
 
   describe('Custom Templates never claim an event format', () => {
-    for (const type of ['sponsored-podcast', 'podcast-sponsor', 'aishl-workshop', 'workshop', 'webinar', 'podcast']) {
+    for (const type of ['sponsored-podcast', 'podcast-sponsor', 'sponsored-workshop', 'workshop', 'webinar', 'podcast']) {
       it(`POST /api/templates rejects type "${type}" with a clear error`, async () => {
         const res = await req('POST', '/api/templates', {
           name: 'Sponsor Variant', type, triggerType: 'manual',
@@ -169,10 +176,19 @@ describe('Event format policy (three formats, format docs, sponsored flag)', () 
 
   describe('Event Cards instantiate only from the canonical format Templates', () => {
     it('a Custom event-format variant Template cannot create a Card', async () => {
-      const res = await createCard(aishlVariant.id);
+      const res = await createCard(sponsoredVariant.id);
       assert.strictEqual(res.statusCode, 422);
       assert.strictEqual(payload(res).code, 'event-format-template-required');
       assert.match(payload(res).error, /only from the canonical workshop, webinar and podcast Templates/);
+    });
+
+    it('AISHL Workshop (a separate business-unit workflow) creates Cards even with custom origin', async () => {
+      const res = await createCard(aishlWorkshop.id, {
+        title: 'UX and Usability Testing for AI Applications',
+        anchorDate: '2026-12-17',
+      });
+      assert.strictEqual(res.statusCode, 201, res.body);
+      assert.strictEqual(payload(res).card.templateId, aishlWorkshop.id);
     });
 
     it('a Custom Template cannot claim an event format through the title tag', async () => {
@@ -409,11 +425,15 @@ describe('Event format policy (three formats, format docs, sponsored flag)', () 
       // the custom workshop-variant Template, plus a deviating document on an
       // otherwise canonical podcast Card.
       const legacyCard = await createCardRow(client, {
-        title: 'AISHL Workshop 2026-01-15',
-        ...templateLinkage(aishlVariant),
+        title: 'Sponsored Workshop 2026-01-15',
+        ...templateLinkage(sponsoredVariant),
         anchorDate: '2026-01-15',
         selectedOptionalGroups: [],
       });
+      const aishlCard = payload(await createCard(aishlWorkshop.id, {
+        title: 'AISHL Audit Workshop',
+        anchorDate: '2026-12-17',
+      })).card;
       const podcastCard = payload(await createCard(podcastGit.id, { title: 'Audit Podcast' })).card;
       const deviating = await createSponsorDoc(client, {
         cardId: podcastCard.id,
@@ -426,10 +446,12 @@ describe('Event format policy (three formats, format docs, sponsored flag)', () 
       assert.strictEqual(typeof audited.cardsScanned, 'number');
       const byId = new Map<string, any>((audited.findings || []).map((f: any) => [f.id, f]));
 
-      assert.strictEqual(byId.get(aishlVariant.id)?.kind, 'template');
-      assert.strictEqual(byId.get(aishlVariant.id).reason.includes('workshop'), true);
+      assert.strictEqual(byId.get(sponsoredVariant.id)?.kind, 'template');
+      assert.strictEqual(byId.get(sponsoredVariant.id).reason.includes('workshop'), true);
       assert.strictEqual(byId.has(legacyCard.id), true, 'a Card from the variant Template is a finding');
-      assert.strictEqual(byId.get(legacyCard.id).template, 'aishl-workshop');
+      assert.strictEqual(byId.get(legacyCard.id).template, 'sponsored-workshop');
+      assert.strictEqual(byId.has(aishlWorkshop.id), false, 'AISHL Workshop template is a separate business unit, not a DTC finding');
+      assert.strictEqual(byId.has(aishlCard.id), false, 'AISHL Workshop card is a separate business unit, not a DTC finding');
       assert.strictEqual(byId.has(deviating.doc.id), true, 'a deviating document is a finding');
       assert.strictEqual(byId.get(deviating.doc.id).template, 'webinar');
       assert.strictEqual(byId.get(deviating.doc.id).cardId, podcastCard.id);
