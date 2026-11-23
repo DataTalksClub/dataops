@@ -1,9 +1,11 @@
 // The per-issue page at /newsletter/<issueId>: one newsletter issue's
 // details, reached from the planner's rows and addressable as a deep link.
-// Read-only: the planner's rows and its dialog stay the editing surfaces.
+// The issue facts are read-only (the planner's rows and dialog edit them);
+// the content blocks below them are edited here (operations/newsletter-blocks.js).
 import { formatIssueDate } from "../core/dates.js";
 import { sponsorRecordPath } from "../core/sponsor-routes.js";
 import { renderPageHeaderMarkup } from "./operations-overview.js";
+import { createNewsletterBlocksSection } from "./operations/newsletter-blocks.js";
 import {
   SLOT_POSITIONS,
   cardDueLabel,
@@ -26,6 +28,8 @@ export function createNewsletterIssuePage(context) {
     todayIsoDate,
     workApiUrl,
   } = context;
+
+  const blocksSection = createNewsletterBlocksSection({ request, workApiUrl });
 
   function routeIssueId() {
     return getActiveWorkspaceRoute?.()?.params?.get("issueId") || "";
@@ -176,6 +180,8 @@ export function createNewsletterIssuePage(context) {
     status.textContent = "";
     surface.querySelector("#newsletter-issue-title").textContent = item.label || "Newsletter issue";
     body.innerHTML = readyMarkup(item);
+    // The blocks load on their own and report their own failures in place.
+    blocksSection.mount(body, item.id).catch((error) => console.error("Newsletter blocks failed to render:", error));
     return true;
   }
 

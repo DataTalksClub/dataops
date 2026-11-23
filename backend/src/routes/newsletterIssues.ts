@@ -70,6 +70,7 @@ import {
   rescheduleOpenIssueTasks,
   SLOT_POSITIONS,
   syncIssueSlotTasks,
+  reconcileIssueSlotTasks,
 } from '../newsletter/issueCard';
 import { syncStandaloneMarkdownTask } from '../newsletter/markdownTask';
 import {
@@ -90,6 +91,9 @@ import { GmailMessageRouteError, resolveGmailMessageRoute } from '../sponsorDocs
 import { applySponsorRoute, SponsorRouteError } from '../newsletter/sponsorRoute';
 import { ReportSendError, sendIssueReport } from '../newsletter/reportSend';
 import { json, parseJsonObjectEvent } from '../http';
+import { handleNewsletterBlockRoutes } from './newsletterBlocks';
+import { deleteBlockSet } from '../newsletter/blocksStore';
+import { releaseRemovedSponsorBlocks } from '../newsletter/sponsorBlocks';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const KINDS = new Set<NewsletterIssueKind>(['weekly', 'standalone']);
@@ -729,6 +733,7 @@ async function updateRoute(id: string, body: Body, event: LambdaEvent, client: D
   } catch {
     return json(409, { error: 'Conflicting update' });
   }
+  await releaseRemovedSponsorBlocks(client, existing, next, { id: actor.id, name: actor.user?.name || actor.user?.email || null });
   let cardSync = 'unchanged';
   let metricsTask = 'none';
   let markdownTask = 'none';
@@ -764,6 +769,7 @@ async function deleteRoute(id: string, body: Body, event: LambdaEvent, client: D
       body.confirmCardDeletion === true,
     );
     if (failure) return failure;
+    await deleteBlockSet(client, existing.id);
     return { statusCode: 204, headers: {}, body: '' };
   }
   try {
@@ -771,6 +777,7 @@ async function deleteRoute(id: string, body: Body, event: LambdaEvent, client: D
   } catch {
     return json(409, { error: 'Conflicting delete' });
   }
+  await deleteBlockSet(client, existing.id);
   return { statusCode: 204, headers: {}, body: '' };
 }
 
@@ -831,6 +838,25 @@ async function cardRoute(id: string, method: string, body: Body, event: LambdaEv
 }
 
 /**
+ * POST re-applies the issue's bookings to its Card's Tasks without a booking
+ * change: an own-course slot's invoice and sponsor-email Tasks are skipped
+ * (and come back when the slot is booked for a sponsor). Idempotent.
+ */
+async function syncTasksRoute(id: string, event: LambdaEvent, client: DynamoDBDocumentClient) {
+  const existing = await resolveNewsletterIssue(client, id);
+  if (!existing) return json(404, { error: 'Not found' });
+  if (!existing.cardId) return json(409, { error: 'The issue has no Card yet', code: 'issue-has-no-card' });
+  const resolved = await resolveInteractiveActor(client, event, 'work-write');
+  if (!resolved.ok) return resolved.response;
+  const cardSync = await reconcileIssueSlotTasks(client, existing, resolved.actor.id || 'system');
+  const card = await getCardConsistent(client, existing.cardId);
+  return json(200, {
+    ...(await issueView(client, existing, { cardSync }, event)),
+    excludedTemplateTasks: card?.excludedTemplateTasks || null,
+  });
+}
+
+/**
  * Apply a slot change made by booking, changing or releasing a sponsor:
  * refuse when releasing would leave completed slot Tasks unless confirmed,
  * write the issue, then bring the Card's slot Tasks and title along.
@@ -860,6 +886,7 @@ async function writeSlotChange(
   } catch {
     return { ok: false, response: json(409, { error: 'Issue changed; reload and retry' }) };
   }
+  await releaseRemovedSponsorBlocks(client, existing, issue, { id: actorId, name: null });
   let cardSync = 'unchanged';
   try {
     const synced = await syncIssueSlotTasks(client, existing, issue, actorId);
@@ -1158,6 +1185,10 @@ export async function handleNewsletterIssueRoutes(
     const body = parse(event) || {};
     return mailchimpMetricsRoute(decodeURIComponent(mailchimpMetrics[1]), body, event, client);
   }
+  const blocksRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/blocks(\/.*)?$/);
+  if (blocksRoute) {
+    return handleNewsletterBlockRoutes(decodeURIComponent(blocksRoute[1]), blocksRoute[2] || '', method, event, client);
+  }
   const imageRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/images\/?$/);
   if (imageRoute) {
     if (method !== 'POST') return json(405, { error: 'Method not allowed' });
@@ -1182,6 +1213,11 @@ export async function handleNewsletterIssueRoutes(
       event,
       client,
     );
+  }
+  const syncTasks = path.match(/^\/api\/newsletter-issues\/([^/]+)\/sync-tasks$/);
+  if (syncTasks) {
+    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+    return syncTasksRoute(decodeURIComponent(syncTasks[1]), event, client);
   }
   const card = path.match(/^\/api\/newsletter-issues\/([^/]+)\/card$/);
   if (card) {

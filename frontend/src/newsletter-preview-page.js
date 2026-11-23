@@ -17,6 +17,7 @@ async function request(path, options = {}) {
   if (!response.ok) {
     const error = new Error(data.error || "Newsletter preview request failed");
     error.status = response.status;
+    error.payload = data;
     error.code = data.code || "";
     error.retryAfter = Number(response.headers.get("retry-after")) || Number(data.retryAfterSeconds) || 60;
     throw error;

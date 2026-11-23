@@ -17,9 +17,10 @@ and identical validation.
 The platform rejects deviations instead of storing them:
 
 - A custom Template may not claim an event format — neither exactly
-  (`workshop`), nor as a variant slug (`aishl-workshop`,
+  (`workshop`), nor as a variant slug (`sponsored-workshop`,
   `sponsored-webinar`). Creating or updating such a Template fails with a
-  clear error.
+  clear error. Separate business-unit workflows outside DataTalks.Club's
+  three event formats (such as `aishl-workshop`) keep their own workflow.
 - An event Card can be created only from its format's canonical Template. A
   card creation whose Template (or `[Workshop]`-style title tag) claims an
   event format served by another Template is rejected.

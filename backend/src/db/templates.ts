@@ -1024,7 +1024,9 @@ async function instantiateTemplate(
   const card = await getCard(client, cardId);
   const groups = selectedGroups ?? card?.selectedOptionalGroups;
   const resolvedEndDate = endDate ?? card?.endDate;
-  const taskDefinitions = selectedTaskDefinitions(template, groups, cardCountValues(template, card?.counts));
+  const taskDefinitions = selectedTaskDefinitions(
+    template, groups, cardCountValues(template, card?.counts), undefined, card?.excludedTemplateTasks?.refs,
+  );
   const existingTasks = await listTasksByCard(client, cardId);
   const existingRefs = new Set(
     existingTasks
@@ -1079,8 +1081,9 @@ async function createCardFromTemplate(
 ): Promise<{ card: Card; tasks: Task[] }> {
   const resolved = await resolveTemplateConditionalValidation(client, template, anchorDate);
   const cardCounts = cardCountValues(resolved, counts);
-  const definitions = selectedTaskDefinitions(resolved, selectedGroups, cardCounts);
-  Object.assign(cardData, templateLinkage(resolved, selectedGroups || [], cardCounts));
+  const exclusion = cardData.excludedTemplateTasks as Card['excludedTemplateTasks'] | undefined;
+  const definitions = selectedTaskDefinitions(resolved, selectedGroups, cardCounts, undefined, exclusion?.refs);
+  Object.assign(cardData, templateLinkage(resolved, selectedGroups || [], cardCounts, definitions.map(({ refId }) => refId)));
   const endDate = typeof cardData.endDate === 'string' && cardData.endDate.length > 0
     ? (cardData.endDate as string)
     : undefined;

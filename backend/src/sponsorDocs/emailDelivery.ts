@@ -29,6 +29,7 @@ import {
   readDapierCredential,
 } from '../calendar/dapierBroker';
 import { listCrmRecords } from '../db/sponsorCrm';
+import type { SponsorDocBooking } from './bookingRecipient';
 import {
   KnowledgeEmailTemplateError,
   renderNewsletterSponsorEmail,
@@ -63,6 +64,12 @@ export interface SponsorDocEmailDelivery {
   sentAt?: string;
   reason?: string;
   message?: string;
+  /** The advertiser the email named when it was prepared (the booked sponsor, or the owner for an own-course slot). */
+  sponsorName?: string;
+  /** The booked organization the recipient was derived from, when known. */
+  organizationId?: string;
+  /** The slot was booked for DataTalks.Club itself when the email was prepared. */
+  ownCourse?: boolean;
 }
 
 export interface TemplatedEmailDraft {
@@ -175,10 +182,13 @@ export async function resolveSponsorDocRecipient(
     }
 
     if (targetOrgId) {
+      // Only the organization's designated primary contact: an email never
+      // goes to whichever contact of the organization happens to come first.
       const contacts = await listCrmRecords(client, 'contact');
       const eligible = contacts.find(
         (c) =>
           c.organizationId === targetOrgId
+          && c.primary === true
           && !c.archivedAt
           && c.active !== false
           && Array.isArray(c.emails)
@@ -330,12 +340,13 @@ export async function deliverRenderedEmail(
     };
   }
 
+  const cc = options.cc ?? [SPONSOR_DOC_EMAIL_CC];
   if (!options.taskId?.trim()) {
     return {
       state: 'deferred',
       from: SPONSOR_DOC_EMAIL_FROM,
       to: resolvedRecipient.to,
-      cc: [SPONSOR_DOC_EMAIL_CC],
+      ...(cc.length > 0 ? { cc } : {}),
       ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
       subject,
       reason: 'task_required',
@@ -344,7 +355,6 @@ export async function deliverRenderedEmail(
   }
 
   const to = resolvedRecipient.to;
-  const cc = options.cc ?? [SPONSOR_DOC_EMAIL_CC];
   const requiredCc = (options.requiredCc || []).map((addr) => sanitizeHeaderValue(addr).toLowerCase());
   const validateCcList = (list: string[]): string | null => {
     for (const rawAddr of list) {
@@ -697,6 +707,34 @@ export async function deliverRenderedEmail(
   );
 }
 
+/** The explicit recipient if given, else the booking contact; nobody else. */
+function resolveBookingRecipient(
+  explicitEmail: string | null | undefined,
+  explicitName: string | null | undefined,
+  booking: SponsorDocBooking,
+): { to?: string; recipientName?: string } {
+  const email = String(explicitEmail || '').trim().toLowerCase();
+  const name = String(explicitName || '').trim() || undefined;
+  if (email && EMAIL_PATTERN.test(email)) return { to: email, recipientName: name };
+  if (booking.contact) return { to: booking.contact.email, recipientName: name || booking.contact.name };
+  return { recipientName: name };
+}
+
+/**
+ * Who a sponsor document email copies: the owner on podcast emails; the
+ * sponsor-document reviewer on sponsor emails unless `ccReviewer` turns it
+ * off, and by default not on an own-course slot.
+ */
+export function sponsorDocEmailCc(
+  template: SponsorDocTemplateKey,
+  booking?: Pick<SponsorDocBooking, 'ownCourse'> | null,
+  ccReviewer?: boolean,
+): string[] {
+  if (template === 'podcast') return [OWNER_WORK_EMAIL];
+  const copyReviewer = ccReviewer ?? !booking?.ownCourse;
+  return copyReviewer ? [SPONSOR_DOC_EMAIL_CC] : [];
+}
+
 export async function renderSponsorDocEmailDraft(options: {
   template: SponsorDocTemplateKey;
   sponsorName?: string | null;
@@ -730,20 +768,38 @@ export async function deliverSponsorDocEmail(
     taskId?: string | null;
     organizationId?: string | null;
     connectionId?: string | null;
+    /**
+     * The slot's current booking (newsletter documents). When given, the
+     * recipient is the booking contact or the explicit one, never another
+     * contact of the organization.
+     */
+    booking?: SponsorDocBooking | null;
+    /** Copy the sponsor-document reviewer; defaults to on, off for own-course slots. */
+    ccReviewer?: boolean;
   },
 ): Promise<SponsorDocEmailDelivery> {
-  const resolvedRecipient = await resolveSponsorDocRecipient(client, {
-    explicitEmail: options.recipientEmail,
-    explicitName: options.recipientName,
-    organizationId: options.organizationId,
-    sponsorName: options.sponsorName,
-  });
+  const booking = options.booking || null;
+  const resolvedRecipient = booking
+    ? resolveBookingRecipient(options.recipientEmail, options.recipientName, booking)
+    : await resolveSponsorDocRecipient(client, {
+      explicitEmail: options.recipientEmail,
+      explicitName: options.recipientName,
+      organizationId: options.organizationId,
+      sponsorName: options.sponsorName,
+    });
+  const advertiser = booking?.advertiserName || options.sponsorName || null;
+  const cc = sponsorDocEmailCc(options.template, booking, options.ccReviewer);
+  const provenance = {
+    ...(advertiser ? { sponsorName: advertiser } : {}),
+    ...(booking?.organizationId ? { organizationId: booking.organizationId } : {}),
+    ...(booking?.ownCourse ? { ownCourse: true } : {}),
+  };
 
   let draft: TemplatedEmailDraft & { templateId?: string; templateRevision?: string };
   try {
     draft = await renderSponsorDocEmailDraft({
       template: options.template,
-      sponsorName: options.sponsorName,
+      sponsorName: advertiser,
       publicationDate: options.publicationDate,
       shareUrl: options.shareUrl,
       accessCode: options.accessCode,
@@ -753,8 +809,9 @@ export async function deliverSponsorDocEmail(
     return {
       state: 'deferred',
       from: SPONSOR_DOC_EMAIL_FROM,
-      ...(resolvedRecipient.to ? { to: resolvedRecipient.to, cc: [SPONSOR_DOC_EMAIL_CC] } : {}),
+      ...(resolvedRecipient.to ? { to: resolvedRecipient.to, ...(cc.length > 0 ? { cc } : {}) } : {}),
       ...(resolvedRecipient.recipientName ? { recipientName: resolvedRecipient.recipientName } : {}),
+      ...provenance,
       subject: '',
       reason: error instanceof KnowledgeEmailTemplateError ? 'knowledge_template_unavailable' : 'template_render_failed',
       message: 'The sponsor email template could not be loaded or rendered; no email was sent.',
@@ -767,13 +824,16 @@ export async function deliverSponsorDocEmail(
     recipientEmail: resolvedRecipient.to,
     recipientName: resolvedRecipient.recipientName,
     taskId: options.taskId,
-    organizationId: options.organizationId,
-    sponsorName: options.sponsorName,
+    // With a booking the recipient is already settled: no CRM fallback.
+    organizationId: booking ? null : options.organizationId,
+    sponsorName: booking ? null : options.sponsorName,
     connectionId: options.connectionId,
-    ...(isPodcast ? { cc: [OWNER_WORK_EMAIL], requiredCc: [OWNER_WORK_EMAIL] } : {}),
+    cc,
+    ...(isPodcast ? { requiredCc: [OWNER_WORK_EMAIL] } : {}),
   });
   return {
     ...delivery,
+    ...provenance,
     ...(draft.templateId ? { templateId: draft.templateId } : {}),
     ...(draft.templateRevision ? { templateRevision: draft.templateRevision } : {}),
   };

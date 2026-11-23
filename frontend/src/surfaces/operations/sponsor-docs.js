@@ -25,9 +25,11 @@ import {
 import { formatEditedTimestamp } from "../../core/dates.js";
 import { formatUserCode } from "../../dakit/device-code.js";
 import { renderSponsorDocGate } from "./sponsor-doc-gate.js";
+import { SPONSOR_DOC_AUTOSAVE_DELAY_MS, createSponsorDocAutosave, notSavedMessage, reportSaveFailure } from "./sponsor-doc-autosave.js";
 import { appendSponsorDocRadioField } from "./sponsor-doc-radio.js";
 import { appendSponsorDocSelectField } from "./sponsor-doc-select.js";
-import { mountSponsorDocVisualControls } from "./sponsor-doc-visual.js";
+import { renderNewsletterSyncNote } from "./sponsor-doc-newsletter-sync.js";
+import { isImageOnlyVisualField, mountSponsorDocVisualControls } from "./sponsor-doc-visual.js";
 import {
   appendSponsorDocBulletsField,
   parseSponsorBulletItems,
@@ -69,34 +71,7 @@ export {
 export const SPONSOR_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ23456789";
 export const SPONSOR_CODE_LENGTH = 16;
 
-function bytesToDataUrl(bytes, mimeType = "image/png") {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  }
-  const base64 = typeof globalThis.btoa === "function"
-    ? globalThis.btoa(binary)
-    : globalThis.Buffer ? globalThis.Buffer.from(bytes).toString("base64") : "";
-  return `data:${mimeType || "image/png"};base64,${base64}`;
-}
-
-export async function readVisualFileAsDataUrl(file) {
-  if (!file) return "";
-  if (typeof file.dataUrl === "string" && file.dataUrl) return file.dataUrl;
-  if (typeof file.arrayBuffer === "function") {
-    const buffer = await file.arrayBuffer();
-    return bytesToDataUrl(new Uint8Array(buffer), file.type || "image/png");
-  }
-  if (typeof globalThis.FileReader === "function") {
-    return new Promise((resolve, reject) => {
-      const reader = new globalThis.FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(new Error("Could not read image file"));
-      reader.readAsDataURL(file);
-    });
-  }
-  return "";
-}
+export { readVisualFileAsDataUrl } from "./sponsor-doc-files.js";
 
 function isNewsletterTemplate(templateKey, tDef) {
   return String(templateKey || tDef?.key || "").startsWith("newsletter-");
@@ -144,6 +119,7 @@ export function createSponsorDocPage({
   historyRef,
   storageRef = globalThis.sessionStorage,
   clipboardRef = globalThis.navigator?.clipboard,
+  autosaveDelayMs = SPONSOR_DOC_AUTOSAVE_DELAY_MS,
 }) {
   const root = documentRef.querySelector("#sponsor-doc-root");
   const identity = documentRef.querySelector("#sponsor-doc-identity");
@@ -300,7 +276,10 @@ export function createSponsorDocPage({
       if (accessCode) saveStoredCode(docId, accessCode);
       gateError = "";
       phase = "editor";
+      autosave.setSaved();
+      autosave.forgetBaseline();
       render();
+      autosave.markClean();
     } catch (err) {
       if (err.status === 404) {
         phase = "notfound";
@@ -325,7 +304,25 @@ export function createSponsorDocPage({
     }
   }
 
+  function savableContent() {
+    const derivedKeys = new Set((doc?.templateDefinition?.sections || []).flatMap(section =>
+      (section.fields || []).filter(field => field.derived).map(field => field.key)));
+    return Object.fromEntries(Object.entries(draftContent).filter(([key]) => !derivedKeys.has(key)));
+  }
+
+  const autosave = createSponsorDocAutosave({
+    el, actionBtn, root, request, announce, delayMs: autosaveDelayMs,
+    ctx: {
+      doc: () => doc, setDoc: (next) => { doc = next; }, docId: () => docId, accessCode: () => accessCode,
+      editing: () => phase === "editor" && Boolean(doc), busy: () => busy, savableContent,
+      savedLabel: () => (doc?.lastEditedAt ? formatEditorLabel(doc) : ""),
+      setFieldErrors: (fields) => { fieldErrors = { ...fields }; },
+    },
+  });
+
   async function saveChanges(nextStatus, timeChoiceIntent) {
+    if (busy || !doc) return;
+    await autosave.settle();
     if (busy || !doc) return;
     if (nextStatus === "submitted") {
       const validationErrors = validateSponsorDocDraft(doc.templateDefinition, draftContent);
@@ -344,9 +341,7 @@ export function createSponsorDocPage({
     render();
     try {
       const headers = accessCode ? { "x-sponsor-doc-code": accessCode } : {};
-      const derivedKeys = new Set((doc.templateDefinition?.sections || []).flatMap(section =>
-        (section.fields || []).filter(field => field.derived).map(field => field.key)));
-      const body = { content: Object.fromEntries(Object.entries(draftContent).filter(([key]) => !derivedKeys.has(key))) };
+      const body = { content: savableContent() };
       if (nextStatus) body.status = nextStatus;
       if (timeChoiceIntent) body.timeChoiceIntent = timeChoiceIntent;
       const payload = await request(`/api/sponsor-docs/${encodeURIComponent(docId)}`, {
@@ -358,6 +353,8 @@ export function createSponsorDocPage({
       draftContent = { ...(doc.content || {}) };
       if (timeChoiceIntent) recordingSlotExpanded = false;
       busy = false;
+      autosave.setSaved();
+      autosave.forgetBaseline();
       if (nextStatus === "submitted") {
         feedbackMsg = "Submitted and marked ready for DataTalks.Club review.";
         feedbackTone = "success";
@@ -370,13 +367,16 @@ export function createSponsorDocPage({
       }
       announce(feedbackMsg);
       render();
+      autosave.markClean();
     } catch (err) {
       busy = false;
       if (err.fields && typeof err.fields === "object") {
         fieldErrors = { ...err.fields };
       }
-      feedbackMsg = err.message || "Failed to save changes.";
+      feedbackMsg = `${notSavedMessage(err)} Try again.`;
       feedbackTone = "danger";
+      autosave.setError(notSavedMessage(err));
+      reportSaveFailure(err);
       announce(feedbackMsg);
       render();
     }
@@ -408,13 +408,13 @@ export function createSponsorDocPage({
 
   async function sendSponsorEmailFromOrin() {
     if (busy || !doc) return;
-    const taskId = String(root?.querySelector?.("[data-sponsor-task-id]")?.value || "").trim();
     busy = true;
     render();
     try {
+      // The server finds the owning email-sponsor Task from the doc's Card.
       const payload = await request(`/api/sponsor-docs/${encodeURIComponent(docId)}/send-email`, {
         method: "POST",
-        body: JSON.stringify(taskId ? { taskId } : {}),
+        body: JSON.stringify({}),
       });
       if (payload?.doc) doc = payload.doc;
       const delivery = payload?.emailDelivery || doc?.emailDelivery;
@@ -430,7 +430,7 @@ export function createSponsorDocPage({
       render();
     } catch (err) {
       busy = false;
-      feedbackMsg = err.message || "Could not send sponsor email.";
+      feedbackMsg = `Could not send sponsor email: ${err.message || "unknown error"}`;
       feedbackTone = "danger";
       render();
     }
@@ -575,6 +575,8 @@ export function createSponsorDocPage({
     const updateLivePreview = () => {
       for (const fn of previewSyncListeners) fn();
       renderNewsletterLivePreview({ el, previewCard, doc, tDef, draftContent, hasField, uploadedVisualName, safePreviewHref });
+      // Helpers (uploads, bullets, radios, selects) report edits through here.
+      autosave.schedule();
     };
     const onSourceFieldEdit = () => { syncAutoSocialPosts(); updateLivePreview(); };
 
@@ -731,10 +733,17 @@ export function createSponsorDocPage({
             continue;
           }
 
-          const isMultiline = fieldDef.type === "textarea" || Boolean(fieldDef.multiline);
+          const imageOnly = isImageOnlyVisualField(fieldDef);
+          const isMultiline = !imageOnly && (fieldDef.type === "textarea" || Boolean(fieldDef.multiline));
           const control = isMultiline ? el("textarea", "sponsor-doc-textarea") : el("input", "dk-input");
           if (isMultiline) control.rows = fieldDef.rows || 5;
-          else control.type = "text";
+          else control.type = imageOnly ? "hidden" : "text";
+          // Image fields show the image and an Upload/Replace button; the URL
+          // stays in a hidden input, never as an editable text box.
+          if (imageOnly) {
+            control.hidden = true;
+            label.setAttribute("for", `sponsor-visual-file-${fieldDef.key}`);
+          }
           control.id = inputId;
           control.dataset.sponsorField = fieldDef.key;
           const isDataVisual = isVisualField && /^data:image\//i.test(currentVal);
@@ -744,7 +753,7 @@ export function createSponsorDocPage({
           control.disabled = busy;
           if (fieldDef.required) { control.required = true; control.setAttribute("aria-required", "true"); }
           if (fieldErrors[fieldDef.key]) control.setAttribute("aria-invalid", "true");
-          if (fieldDef.format === "url") control.type = "url";
+          if (fieldDef.format === "url" && !imageOnly) control.type = "url";
           fieldWrap.append(top, control);
 
           const isSocialField = fieldDef.key === "linkedinPost" || fieldDef.key === "twitterPost";
@@ -753,6 +762,8 @@ export function createSponsorDocPage({
           const syncUtmSuggestion = attachSoftUtmSuggestion({
             el, actionBtn, fieldWrap, fieldDef, control, draftContent,
             publicationDate: doc.publicationDate, updateCount, updateLivePreview: onSourceFieldEdit, announce,
+            // A helper-filled value is a real edit: save it right away.
+            onApplied: () => autosave.schedule(0),
           });
 
           control.addEventListener("input", () => {
@@ -813,7 +824,11 @@ export function createSponsorDocPage({
         form.append(fb);
       }
 
+      const syncNote = renderNewsletterSyncNote(el, doc?.newsletterSync);
+      if (syncNote) form.append(syncNote);
+
       form.addEventListener("submit", (event) => { event.preventDefault(); saveChanges(undefined); });
+      form.append(autosave.statusNode());
       form.append(renderSponsorDocFormActions({
         el,
         actionBtn,
@@ -917,10 +932,15 @@ export function createSponsorDocPage({
       return;
     }
 
-    if (phase === "editor" && doc) renderEditor();
+    if (phase === "editor" && doc) {
+      renderEditor();
+      // Edits applied through a re-render (e.g. timezone) are saved too.
+      autosave.schedule();
+    }
   }
 
   async function start() {
+    autosave.attach(documentRef);
     const url = new URL(locationRef.href);
     const extracted = extractDocId(url.pathname);
     docId = extracted.id;
@@ -947,6 +967,7 @@ export function createSponsorDocPage({
   }
 
   function destroy() {
+    autosave.clearTimer();
     unbindCode?.();
     unbindCode = null;
   }

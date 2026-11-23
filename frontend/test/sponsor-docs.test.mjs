@@ -115,6 +115,7 @@ function harness(options = {}) {
     historyRef: { replaceState: (...args) => history.push(args) },
     storageRef,
     clipboardRef: { writeText: async (text) => copied.push(text) },
+    ...(options.autosaveDelayMs !== undefined ? { autosaveDelayMs: options.autosaveDelayMs } : {}),
     request: async (url, opts = {}) => {
       calls.push([url, opts]);
       if (options.request) return options.request(url, opts);
@@ -254,12 +255,13 @@ test("authenticated DataOps staff can view, copy share links, rotate codes, and 
   await findByText(h.root, "Copy sponsor email", "button").click();
   assert.match(h.copied.at(-1), /Subject: Subject line/);
 
-  const taskIdInput = h.root.querySelector("[data-sponsor-task-id]");
-  taskIdInput.value = "task-owner-1";
+  assert.equal(h.root.querySelector("[data-sponsor-task-id]"), null, "no manual owning-task input");
+  assert.doesNotMatch(h.root.textContent, /Owning task ID/);
+  assert.ok(h.root.querySelector("[data-sponsor-staff-only-note]"), "staff panel is labelled staff-only");
   await findByText(h.root, "Send from orin@datatalks.club", "button").click();
   await nextTicks();
   const sendCall = h.calls.find(([url]) => url.endsWith("/send-email"));
-  assert.deepEqual(JSON.parse(sendCall[1].body), { taskId: "task-owner-1" });
+  assert.deepEqual(JSON.parse(sendCall[1].body), {}, "the server resolves the owning Task from the Card");
 
   await findByText(h.root, "Copy Markdown", "button").click();
   assert.match(h.copied.at(-1), /# 2026-11-15 - Acme AI/);
@@ -954,5 +956,199 @@ test("event cards filter out legacy /sponsor-docs/ cardLinks in renderCardLinksS
     assert.doesNotMatch(section.textContent, /Host run sheet/);
   } finally {
     globalThis.document = prevDoc;
+  }
+});
+
+test("Graphics renders the image with Upload/Replace (no URL text box), rejects bad files loudly, and accepts drag-drop", async () => {
+  const existing = "https://ops.example.test/api/public-images/22222222-2222-4222-8222-222222222222.png";
+  const h = harness({
+    docOverrides: {
+      content: { headline: "H", body: "B", ctaText: "C", ctaUrl: "https://acme.example.com", graphicsUrl: existing },
+      templateDefinition: {
+        ...sampleDoc().templateDefinition,
+        sections: [{
+          id: "newsletter-placement",
+          title: "1) Newsletter Placement",
+          fields: [
+            { key: "headline", label: "Title / Headline", type: "text" },
+            { key: "graphicsUrl", label: "Graphics", type: "text", allowVisualUpload: true },
+          ],
+        }],
+      },
+    },
+  });
+  await h.controller.start();
+
+  const control = h.root.querySelector("#sponsor-field-graphicsUrl");
+  assert.equal(control.type, "hidden", "the stored URL is not an editable text box");
+  assert.equal(control.hidden, true);
+  const img = h.root.querySelector('img[data-sponsor-visual-image="graphicsUrl"]');
+  assert.ok(img, "the existing value renders as an image preview");
+  assert.equal(img.src, existing);
+  const uploadLabel = h.root.querySelector('[data-sponsor-visual-upload-label="graphicsUrl"]');
+  assert.equal(uploadLabel.textContent, "Replace image");
+
+  // Wrong type: visible alert, no upload, current image kept.
+  const fileInput = h.root.querySelector('[data-sponsor-visual-upload="graphicsUrl"]');
+  fileInput.files = [{ name: "brief.pdf", type: "application/pdf", size: 1000, arrayBuffer: async () => new ArrayBuffer(4) }];
+  await fileInput.dispatch("change");
+  await nextTicks();
+  let err = h.root.querySelector('[data-sponsor-visual-error="graphicsUrl"]');
+  assert.ok(err, "type error is visible");
+  assert.equal(err.getAttribute("role"), "alert");
+  assert.match(err.textContent, /PNG, JPG, WebP, or GIF/);
+  assert.ok(h.root.querySelector('img[data-sponsor-visual-image="graphicsUrl"]'), "current image still shown");
+  assert.equal(h.calls.filter(([url]) => url.endsWith("/images")).length, 0);
+
+  // Too large: visible alert naming the limit.
+  fileInput.files = [{ name: "huge.png", type: "image/png", size: 5 * 1024 * 1024, arrayBuffer: async () => new ArrayBuffer(4) }];
+  await fileInput.dispatch("change");
+  await nextTicks();
+  err = h.root.querySelector('[data-sponsor-visual-error="graphicsUrl"]');
+  assert.match(err.textContent, /over the 4 MiB limit/);
+  assert.equal(h.calls.filter(([url]) => url.endsWith("/images")).length, 0);
+
+  // Drag-drop a valid image: uploads to public-images and sets the field.
+  const dropzone = h.root.querySelector('[data-sponsor-visual-preview="graphicsUrl"]');
+  await dropzone.dispatch("drop", {
+    dataTransfer: { files: [{ name: "new.png", type: "image/png", size: 8, arrayBuffer: async () => new ArrayBuffer(8) }] },
+  });
+  await nextTicks();
+  assert.equal(h.calls.filter(([url]) => url.endsWith("/images")).length, 1);
+  assert.equal(h.root.querySelector('[data-sponsor-visual-error="graphicsUrl"]'), null, "errors clear after a good upload");
+  const uploaded = "https://ops.example.test/api/public-images/11111111-1111-4111-8111-111111111111.png";
+  assert.equal(h.root.querySelector('img[data-sponsor-visual-image="graphicsUrl"]').src, uploaded);
+
+  await h.root.querySelector('[data-sponsor-action="save-draft"]').click();
+  await nextTicks();
+  const putCall = h.calls.find(([, opts]) => opts.method === "PUT");
+  assert.equal(JSON.parse(putCall[1].body).content.graphicsUrl, uploaded);
+  h.controller.destroy();
+});
+
+test("Graphics upload failures surface as a visible error instead of failing silently", async () => {
+  const h = harness({
+    docOverrides: {
+      content: { headline: "H", graphicsUrl: "" },
+      templateDefinition: {
+        ...sampleDoc().templateDefinition,
+        sections: [{ id: "s", title: "S", fields: [{ key: "graphicsUrl", label: "Graphics", type: "text" }] }],
+      },
+    },
+    request: async (url, opts) => {
+      if (opts.method === "POST" && url.endsWith("/images")) {
+        throw Object.assign(new Error("Image storage is unavailable"), { status: 503 });
+      }
+      return { doc: sampleDoc({
+        content: { headline: "H", graphicsUrl: "" },
+        templateDefinition: {
+          ...sampleDoc().templateDefinition,
+          sections: [{ id: "s", title: "S", fields: [{ key: "graphicsUrl", label: "Graphics", type: "text" }] }],
+        },
+      }) };
+    },
+  });
+  await h.controller.start();
+  assert.equal(h.root.querySelector('[data-sponsor-visual-upload-label="graphicsUrl"]').textContent, "Upload image");
+  assert.ok(h.root.querySelector("[data-sponsor-photo-placeholder]"), "empty Graphics shows a drop placeholder");
+  const fileInput = h.root.querySelector('[data-sponsor-visual-upload="graphicsUrl"]');
+  fileInput.files = [{ name: "ok.png", type: "image/png", size: 8, arrayBuffer: async () => new ArrayBuffer(8) }];
+  await fileInput.dispatch("change");
+  await nextTicks();
+  const err = h.root.querySelector('[data-sponsor-visual-error="graphicsUrl"]');
+  assert.ok(err);
+  assert.match(err.textContent, /Image upload failed: Image storage is unavailable/);
+  h.controller.destroy();
+});
+
+test("sponsor share-link view never renders the internal staff panel", async () => {
+  const h = harness();
+  await h.controller.start();
+  assert.equal(h.root.querySelector("[data-sponsor-staff-bar]"), null);
+  for (const text of ["Owning task ID", "Copy share link", "Copy sponsor email", "Send from orin@", "Rotate code", "Open Card"]) {
+    assert.ok(!h.root.textContent.includes(text), `sponsor view must not show "${text}"`);
+  }
+  h.controller.destroy();
+});
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 5)).then(() => nextTicks(4));
+
+test("UTM suggest button autosaves the helper-filled ctaUrl without a Save click", async () => {
+  const h = harness({ autosaveDelayMs: 0 });
+  await h.controller.start();
+  const status = () => h.root.querySelector("[data-sponsor-save-status]");
+  assert.equal(status().dataset.sponsorSaveState, "saved", "a freshly loaded doc is not dirty and is not re-saved");
+  assert.equal(h.calls.filter(([, o]) => o.method === "PUT").length, 0);
+  const applyBtn = h.root.querySelector('[data-sponsor-action="apply-utm-suggestion"]');
+  assert.ok(applyBtn, "UTM suggestion button is offered for a ctaUrl without UTM");
+  await applyBtn.click();
+  await settle();
+  const puts = h.calls.filter(([, o]) => o.method === "PUT");
+  assert.equal(puts.length, 1, "helper-filled value is persisted automatically");
+  const body = JSON.parse(puts[0][1].body);
+  assert.match(body.content.ctaUrl, /utm_source=/);
+  assert.equal(body.status, undefined, "autosave never changes the doc status");
+  assert.equal(status().dataset.sponsorSaveState, "saved");
+  assert.match(status().textContent, /All changes saved/);
+  h.controller.destroy();
+});
+
+test("typing autosaves after the debounce; a failed autosave is loud and Retry saves", async () => {
+  let failPuts = true;
+  const puts = [];
+  const h = harness({
+    autosaveDelayMs: 0,
+    request: async (url, opts = {}) => {
+      if (opts.method === "PUT") {
+        puts.push(JSON.parse(opts.body));
+        if (failPuts) throw Object.assign(new Error("Could not save: it took too long to respond."), { status: "timeout" });
+        return { doc: { ...sampleDoc(), content: { ...sampleDoc().content, ...puts.at(-1).content } } };
+      }
+      return { doc: sampleDoc() };
+    },
+  });
+  await h.controller.start();
+  const status = () => h.root.querySelector("[data-sponsor-save-status]");
+  const input = h.root.querySelector("#sponsor-field-headline");
+  input.value = "Edited";
+  await input.dispatch("input");
+  await settle();
+  assert.equal(puts.length, 1, "edit is saved without a Save click");
+  assert.equal(puts[0].content.headline, "Edited");
+  assert.equal(status().dataset.sponsorSaveState, "error");
+  assert.equal(status().getAttribute("role"), "alert");
+  assert.match(status().textContent, /NOT SAVED: the server took too long to respond\. Your edits are still in this form; do not reload/);
+  failPuts = false;
+  await h.root.querySelector('[data-sponsor-action="retry-save"]').click();
+  await settle();
+  assert.equal(puts.length, 2);
+  assert.equal(status().dataset.sponsorSaveState, "saved");
+  h.controller.destroy();
+});
+
+test("a 4xx autosave failure is reported to the server, not only shown", async () => {
+  const reports = [];
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => { reports.push([url, JSON.parse(opts.body)]); return { ok: true }; };
+  try {
+    const h = harness({
+      autosaveDelayMs: 0,
+      request: async (url, opts = {}) => {
+        if (opts.method === "PUT") throw Object.assign(new Error("Document is locked"), { status: 409 });
+        return { doc: sampleDoc() };
+      },
+    });
+    await h.controller.start();
+    const input = h.root.querySelector("#sponsor-field-headline");
+    input.value = "Edited";
+    await input.dispatch("input");
+    await settle();
+    assert.match(h.root.querySelector("[data-sponsor-save-status]").textContent, /NOT SAVED: Document is locked/);
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0][0], "/api/client-errors");
+    assert.equal(reports[0][1].status, 409);
+    h.controller.destroy();
+  } finally {
+    globalThis.fetch = prevFetch;
   }
 });
