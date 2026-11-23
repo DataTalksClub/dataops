@@ -415,6 +415,13 @@ export interface CardQna {
   questionsSavedAt?: string;
   questions?: CardQnaQuestion[];
 }
+export interface CardTemplateTaskExclusion {
+  /** Template task refs left out of the Card. */
+  refs: string[];
+  /** Why, written as the skip reason of an excluded Task that already existed. */
+  reason: string;
+}
+
 export interface Card {
   guestIntake?: { jobId: string; taskId: string; status: import('./events/guestIntakeStore').GuestIntakeStatus; skipEmail: boolean; recipient?: string; messageId?: string; sentAt?: string; startIso?: string; error?: string };
   id: string;
@@ -441,6 +448,13 @@ export interface Card {
   selectedOptionalGroups: string[];
   /** Values of the Template's count fields (`countFields`): how many times each repeated Task exists. */
   counts?: Record<string, number>;
+  /**
+   * Template Tasks this Card leaves out even though their group is selected
+   * (an own-course newsletter slot drops the invoice and sponsor-email Tasks).
+   * Set by the record that owns the Card; a Task depending on an excluded one
+   * inherits that Task's prerequisites.
+   */
+  excludedTemplateTasks?: CardTemplateTaskExclusion;
   /**
    * Tasks on other Cards that link this Card (`Task.linkedCardId`). Written
    * with the link; a reader confirms each entry against its Task.

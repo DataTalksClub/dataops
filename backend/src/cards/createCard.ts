@@ -169,6 +169,8 @@ export async function createCardFromInput(
      * its Tasks are dated from this date until the Card's date is set.
      */
     provisionalAnchorDate?: string;
+    /** Template Tasks the owning record leaves out of this Card (`Card.excludedTemplateTasks`). */
+    excludedTemplateTasks?: Card['excludedTemplateTasks'];
   } = {},
 ): Promise<CardCreation> {
   const fail = (statusCode: number, payload: unknown): CardCreation => ({ ok: false, response: json(statusCode, payload) });
@@ -179,7 +181,7 @@ export async function createCardFromInput(
   const systemOwnedFields = [
     'version', 'expectedVersion', 'status', 'taskCount', 'openTaskCount',
     'completedAt', 'completedBy', 'activeStageBeforeCompletion', 'auditEventRefs', 'selectedOptionalGroups',
-    'linkedFrom', 'guestIntake',
+    'linkedFrom', 'guestIntake', 'excludedTemplateTasks',
   ];
   const suppliedSystemField = systemOwnedFields.find((field) => Object.hasOwn(body, field));
   if (suppliedSystemField) {
@@ -358,6 +360,9 @@ export async function createCardFromInput(
       error: 'Template anchors Tasks to the cohort END date: endDate is required',
       code: 'missing-end-date',
     });
+  }
+  if (options.excludedTemplateTasks?.refs.length) {
+    cardData.excludedTemplateTasks = structuredClone(options.excludedTemplateTasks);
   }
   try {
     const { card, tasks } = await createCardFromTemplate(

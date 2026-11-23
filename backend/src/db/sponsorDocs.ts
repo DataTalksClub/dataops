@@ -497,15 +497,14 @@ export async function updateSponsorDoc(
 export async function setSponsorDocEmailDelivery(
   client: DynamoDBDocumentClient,
   id: string,
-  emailDelivery: SponsorDocEmailDelivery,
+  emailDelivery: SponsorDocEmailDelivery | null,
 ): Promise<SponsorDoc | null> {
   const loaded = await getSponsorDocWithAuthMaterial(client, id);
   if (!loaded) return null;
   const { doc, accessCodeHash, accessCodeCiphertext } = loaded;
-  const updated: SponsorDoc = {
-    ...doc,
-    emailDelivery,
-  };
+  // `null` clears the record: the document then holds no email delivery.
+  const { emailDelivery: _previous, ...rest } = doc;
+  const updated: SponsorDoc = emailDelivery ? { ...rest, emailDelivery } : rest;
   const primaryItem: StoredSponsorDoc = {
     ...sponsorDocKey(id),
     ...updated,

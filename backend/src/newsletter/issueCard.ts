@@ -15,7 +15,7 @@
  */
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { getCardConsistent } from '../db/cards';
+import { getCardConsistent, updateCard } from '../db/cards';
 import { applyCardTemplateUpdate } from '../db/cardTemplateUpdates';
 import {
   nextNewsletterIssue,
@@ -29,7 +29,8 @@ import { getTemplate, listTemplates } from '../db/templates';
 import type { VerifiedActor } from '../identity/actor';
 import { buildCardTemplateUpdatePlan } from '../templates/cardTemplateUpdates';
 import { dateFromTemplateOffset } from '../templates/cardTemplateProjection';
-import type { Card, CardLink, LambdaResponse, Task, Template } from '../types';
+import type { Card, CardLink, CardTemplateTaskExclusion, LambdaResponse, Task, Template } from '../types';
+import { isOwnOrganization, OWN_ORGANIZATION_NAME } from '../identity/operatingIdentities';
 import { createCardFromInput } from '../cards/createCard';
 import { newsletterIssueTitleValues, renderCardTitle } from '../cards/cardTitlePattern';
 import { pushFieldsToCard } from '../cards/recordCardLink';
@@ -69,6 +70,50 @@ export function cardGroupsAfterIssueChange(
   for (const group of before) if (!after.has(group)) groups.delete(group);
   for (const group of after) if (!before.has(group)) groups.add(group);
   return [...groups].sort();
+}
+
+/**
+ * The slot Tasks an own-course booking leaves out: nobody is invoiced and no
+ * sponsor mailbox is emailed when the slot advertises our own course.
+ * The sponsorship document, copy, block and social posts stay.
+ */
+export const OWN_COURSE_EXCLUDED_TASK_REFS: Record<NewsletterSlotPosition, readonly string[]> = {
+  primary: [
+    'email-sponsor',
+    'chase-sponsor-copy',
+    'create-invoice',
+    'send-email-sponsor-publication-live',
+    'send-performance-to-sponsor',
+  ],
+  secondary: [
+    'secondary-email-sponsor',
+    'secondary-chase-sponsor-copy',
+    'secondary-create-invoice',
+    'secondary-send-email-sponsor-publication-live',
+    'secondary-send-performance-to-sponsor',
+  ],
+};
+
+export const OWN_COURSE_EXCLUSION_REASON =
+  `Own-course slot (${OWN_ORGANIZATION_NAME}): no invoice and no sponsor email`;
+
+/** True when the slot is booked for DataTalks.Club itself (one of our own courses). */
+export function isOwnCourseSlot(issue: Pick<NewsletterIssue, 'slots'>, position: NewsletterSlotPosition): boolean {
+  const slot = issue.slots[position];
+  if (!slot?.sponsor && !slot?.organizationId) return false;
+  return isOwnOrganization({ organizationId: slot.organizationId, name: slot.sponsor });
+}
+
+/** The Template Tasks the issue's Card leaves out for its own-course slots, if any. */
+export function issueTaskExclusion(issue: Pick<NewsletterIssue, 'kind' | 'slots'>): CardTemplateTaskExclusion | undefined {
+  const refs = (SLOT_POSITIONS[issue.kind] as readonly NewsletterSlotPosition[])
+    .filter((position) => isOwnCourseSlot(issue, position))
+    .flatMap((position) => OWN_COURSE_EXCLUDED_TASK_REFS[position]);
+  return refs.length ? { refs: [...refs].sort(), reason: OWN_COURSE_EXCLUSION_REASON } : undefined;
+}
+
+function sameExclusion(left?: CardTemplateTaskExclusion, right?: CardTemplateTaskExclusion): boolean {
+  return JSON.stringify(left?.refs || []) === JSON.stringify(right?.refs || []);
 }
 
 export function issueSponsor(issue: Pick<NewsletterIssue, 'slots'>, position: NewsletterSlotPosition): string | null {
@@ -174,6 +219,7 @@ export async function createIssueCard(
       ...(options.ownerId !== undefined ? { ownerId: options.ownerId } : {}),
     },
     {
+      excludedTemplateTasks: issueTaskExclusion(filled),
       companions: (card) => {
         next = nextNewsletterIssue(issue, { slots: filled.slots, cardId: card.id });
         return [replaceIssueWrite(issue, next)];
@@ -222,18 +268,46 @@ export async function syncIssueSlotTasks(
   issue: NewsletterIssue,
   actorId: string,
 ): Promise<'unchanged' | 'synced'> {
-  if (!issue.cardId || issue.kind !== 'weekly') return 'unchanged';
-  const card = await getCardConsistent(client, issue.cardId);
-  if (!card?.templateId) throw new Error(`Newsletter issue ${issue.id} Card is missing or has no Template`);
-  const current = [...(card.selectedOptionalGroups || [])].sort();
-  const groups = cardGroupsAfterIssueChange(current, previous, issue);
-  if (JSON.stringify(current) === JSON.stringify(groups)) return 'unchanged';
+  if (!issue.cardId) return 'unchanged';
+  const stored = await getCardConsistent(client, issue.cardId);
+  if (!stored?.templateId) throw new Error(`Newsletter issue ${issue.id} Card is missing or has no Template`);
+  const current = [...(stored.selectedOptionalGroups || [])].sort();
+  const groups = issue.kind === 'weekly' ? cardGroupsAfterIssueChange(current, previous, issue) : current;
+  const exclusion = issueTaskExclusion(issue);
+  const exclusionChanged = !sameExclusion(stored.excludedTemplateTasks, exclusion);
+  if (JSON.stringify(current) === JSON.stringify(groups) && !exclusionChanged) return 'unchanged';
+  // The plan reads the exclusion from the Card, so it is built from the Card
+  // as it will be; applying it writes the exclusion with the Tasks.
+  const card: Card = { ...stored, excludedTemplateTasks: exclusion };
   const template = await getTemplate(client, card.templateId);
   if (!template) throw new Error(`Template ${card.templateId} is not available`);
   const tasks = await listTasksByCardConsistent(client, card.id);
-  const plan = buildCardTemplateUpdatePlan(card, tasks, template, groups);
-  await applyCardTemplateUpdate(client, card, tasks, template, plan.preview.previewToken, actorId, groups);
+  const requestedGroups = issue.kind === 'weekly' ? groups : undefined;
+  const plan = buildCardTemplateUpdatePlan(card, tasks, template, requestedGroups);
+  if (plan.preview.state === 'current') {
+    // Nothing on the Card changes but the exclusion itself.
+    await updateCard(client, card.id, {
+      expectedVersion: stored.version,
+      patch: { excludedTemplateTasks: exclusion ?? null } as Partial<Card>,
+    });
+    return 'synced';
+  }
+  await applyCardTemplateUpdate(client, card, tasks, template, plan.preview.previewToken, actorId, requestedGroups);
   return 'synced';
+}
+
+/**
+ * Bring an existing Card's own-course exclusions in line with the issue's
+ * current bookings without a booking change, e.g. for a Card created before
+ * own-course slots dropped their invoice and sponsor-email Tasks. The slot
+ * groups stay as they are.
+ */
+export async function reconcileIssueSlotTasks(
+  client: DynamoDBDocumentClient,
+  issue: NewsletterIssue,
+  actorId: string,
+): Promise<'unchanged' | 'synced'> {
+  return syncIssueSlotTasks(client, issue, issue, actorId);
 }
 
 /**

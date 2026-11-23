@@ -196,7 +196,7 @@ function appliedExistingTask(
   if (update.action === 'skip-removed' || update.action === 'retain-completed') {
     if (update.action === 'skip-removed') {
       next.status = 'skipped';
-      next.skipReason = TEMPLATE_REMOVED_SKIP_REASON;
+      next.skipReason = update.skipReason || TEMPLATE_REMOVED_SKIP_REASON;
       next.skippedAt = now;
       next.skippedBy = actorId;
       delete next.waitingFor;

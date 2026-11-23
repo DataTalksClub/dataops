@@ -58,11 +58,40 @@ export function selectedTaskDefinitions(
   selectedGroups?: readonly string[],
   counts: Record<string, number> = cardCountValues(template),
   retained?: ReadonlyMap<string, ReadonlySet<number>>,
+  excludedRefs?: readonly string[],
 ): TaskDefinition[] {
   const selected = new Set(selectedGroups || []);
   const definitions = (template.taskDefinitions || [])
     .filter((definition) => !definition.optionalGroup || selected.has(definition.optionalGroup));
-  return expandTaskDefinitions(definitions, counts, retained);
+  return expandTaskDefinitions(withoutExcludedDefinitions(definitions, excludedRefs), counts, retained);
+}
+
+/**
+ * The definitions minus `excludedRefs`. A kept definition that depended on
+ * an excluded one depends on that one's own prerequisites instead (followed
+ * through chains of excluded definitions), so the order of the work stays.
+ */
+export function withoutExcludedDefinitions(
+  definitions: readonly TaskDefinition[],
+  excludedRefs?: readonly string[],
+): TaskDefinition[] {
+  const excluded = new Set(excludedRefs || []);
+  if (excluded.size === 0) return [...definitions];
+  const byRef = new Map(definitions.map((definition) => [definition.refId, definition]));
+  const expand = (ref: string, seen: Set<string>): string[] => {
+    if (!excluded.has(ref)) return [ref];
+    if (seen.has(ref)) return [];
+    seen.add(ref);
+    return (byRef.get(ref)?.dependsOn || []).flatMap((next) => expand(next, seen));
+  };
+  return definitions
+    .filter((definition) => !excluded.has(definition.refId))
+    .map((definition) => {
+      if (!definition.dependsOn?.some((ref) => excluded.has(ref))) return definition;
+      const dependsOn = [...new Set(definition.dependsOn.flatMap((ref) => expand(ref, new Set())))];
+      const { dependsOn: _excluded, ...rest } = definition;
+      return dependsOn.length > 0 ? { ...rest, dependsOn } : rest;
+    });
 }
 
 /** The Template's episode stage Tasks by stage, or undefined when it marks none. */
