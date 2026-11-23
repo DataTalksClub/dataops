@@ -115,6 +115,7 @@ function harness(options = {}) {
     historyRef: { replaceState: (...args) => history.push(args) },
     storageRef,
     clipboardRef: { writeText: async (text) => copied.push(text) },
+    ...(options.autosaveDelayMs !== undefined ? { autosaveDelayMs: options.autosaveDelayMs } : {}),
     request: async (url, opts = {}) => {
       calls.push([url, opts]);
       if (options.request) return options.request(url, opts);
@@ -1068,4 +1069,86 @@ test("sponsor share-link view never renders the internal staff panel", async () 
     assert.ok(!h.root.textContent.includes(text), `sponsor view must not show "${text}"`);
   }
   h.controller.destroy();
+});
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 5)).then(() => nextTicks(4));
+
+test("UTM suggest button autosaves the helper-filled ctaUrl without a Save click", async () => {
+  const h = harness({ autosaveDelayMs: 0 });
+  await h.controller.start();
+  const status = () => h.root.querySelector("[data-sponsor-save-status]");
+  assert.equal(status().dataset.sponsorSaveState, "saved", "a freshly loaded doc is not dirty and is not re-saved");
+  assert.equal(h.calls.filter(([, o]) => o.method === "PUT").length, 0);
+  const applyBtn = h.root.querySelector('[data-sponsor-action="apply-utm-suggestion"]');
+  assert.ok(applyBtn, "UTM suggestion button is offered for a ctaUrl without UTM");
+  await applyBtn.click();
+  await settle();
+  const puts = h.calls.filter(([, o]) => o.method === "PUT");
+  assert.equal(puts.length, 1, "helper-filled value is persisted automatically");
+  const body = JSON.parse(puts[0][1].body);
+  assert.match(body.content.ctaUrl, /utm_source=/);
+  assert.equal(body.status, undefined, "autosave never changes the doc status");
+  assert.equal(status().dataset.sponsorSaveState, "saved");
+  assert.match(status().textContent, /All changes saved/);
+  h.controller.destroy();
+});
+
+test("typing autosaves after the debounce; a failed autosave is loud and Retry saves", async () => {
+  let failPuts = true;
+  const puts = [];
+  const h = harness({
+    autosaveDelayMs: 0,
+    request: async (url, opts = {}) => {
+      if (opts.method === "PUT") {
+        puts.push(JSON.parse(opts.body));
+        if (failPuts) throw Object.assign(new Error("Could not save: it took too long to respond."), { status: "timeout" });
+        return { doc: { ...sampleDoc(), content: { ...sampleDoc().content, ...puts.at(-1).content } } };
+      }
+      return { doc: sampleDoc() };
+    },
+  });
+  await h.controller.start();
+  const status = () => h.root.querySelector("[data-sponsor-save-status]");
+  const input = h.root.querySelector("#sponsor-field-headline");
+  input.value = "Edited";
+  await input.dispatch("input");
+  await settle();
+  assert.equal(puts.length, 1, "edit is saved without a Save click");
+  assert.equal(puts[0].content.headline, "Edited");
+  assert.equal(status().dataset.sponsorSaveState, "error");
+  assert.equal(status().getAttribute("role"), "alert");
+  assert.match(status().textContent, /NOT SAVED: Could not save: it took too long to respond/);
+  failPuts = false;
+  await h.root.querySelector('[data-sponsor-action="retry-save"]').click();
+  await settle();
+  assert.equal(puts.length, 2);
+  assert.equal(status().dataset.sponsorSaveState, "saved");
+  h.controller.destroy();
+});
+
+test("a 4xx autosave failure is reported to the server, not only shown", async () => {
+  const reports = [];
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => { reports.push([url, JSON.parse(opts.body)]); return { ok: true }; };
+  try {
+    const h = harness({
+      autosaveDelayMs: 0,
+      request: async (url, opts = {}) => {
+        if (opts.method === "PUT") throw Object.assign(new Error("Document is locked"), { status: 409 });
+        return { doc: sampleDoc() };
+      },
+    });
+    await h.controller.start();
+    const input = h.root.querySelector("#sponsor-field-headline");
+    input.value = "Edited";
+    await input.dispatch("input");
+    await settle();
+    assert.match(h.root.querySelector("[data-sponsor-save-status]").textContent, /NOT SAVED: Document is locked/);
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0][0], "/api/client-errors");
+    assert.equal(reports[0][1].status, 409);
+    h.controller.destroy();
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
 });

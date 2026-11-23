@@ -1068,6 +1068,8 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
 
   it('keeps podcast run sheet, episode brief, research, and hostContext isolated from guests while serving them to staff', async () => {
     assert.equal(isAnonymousSponsorDocAsset('GET', '/src/surfaces/operations/sponsor-doc-podcast.js'), true);
+    assert.equal(isAnonymousSponsorDocAsset('GET', '/src/surfaces/operations/sponsor-doc-autosave.js'), true);
+    assert.equal(isAnonymousSponsorDocAsset('GET', '/src/surfaces/operations/sponsor-doc-files.js'), true);
 
     const card = await createCard(client, {
       ...templateLink(),
