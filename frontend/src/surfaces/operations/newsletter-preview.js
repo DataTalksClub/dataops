@@ -5,6 +5,7 @@ import {
   formatUserCode,
   normalizeUserCode,
 } from "../../dakit/device-code.js";
+import { createNewsletterBlocksSection } from "./newsletter-blocks.js";
 
 export const NEWSLETTER_PREVIEW_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 export const NEWSLETTER_PREVIEW_CODE_LENGTH = 16;
@@ -513,6 +514,7 @@ export function createNewsletterPreviewPage({
           { id: "brief", label: "Brief (brief.md)" },
           { id: "sources", label: "Sources (sources.md)" },
           { id: "raw", label: "Raw Markdown" },
+          { id: "blocks", label: "Blocks (edit)" },
         ]
         : []),
     ];
@@ -684,6 +686,14 @@ export function createNewsletterPreviewPage({
         canvas.append(el("p", "dk-hint", "No sources.md content recorded."));
       }
       previewCard.append(canvas);
+    } else if (activeTab === "blocks") {
+      // Full block editor: edit, add, move, delete, history, Relay sync.
+      const blocksHost = el("div", "newsletter-blocks-host");
+      blocksHost.dataset.previewCanvas = "blocks";
+      previewCard.append(blocksHost);
+      createNewsletterBlocksSection({ documentRef, request, workApiUrl: (path) => path })
+        .mount(blocksHost, issueId)
+        .catch((error) => console.error("Newsletter blocks failed to render:", error));
     } else if (activeTab === "raw") {
       for (const kind of ["issue", "brief", "sources"]) {
         const block = el("div", "sponsor-doc-field");
@@ -745,7 +755,7 @@ export function createNewsletterPreviewPage({
     const url = new URL(locationRef.href);
     issueId = extractIssueId(url.pathname);
     const queryTab = url.searchParams.get("tab");
-    if (queryTab === "final" || queryTab === "issue") {
+    if (queryTab === "final" || queryTab === "issue" || queryTab === "blocks") {
       activeTab = queryTab;
     }
     const queryCode = url.searchParams.get("code");

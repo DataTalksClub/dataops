@@ -27,6 +27,7 @@ import { formatUserCode } from "../../dakit/device-code.js";
 import { renderSponsorDocGate } from "./sponsor-doc-gate.js";
 import { appendSponsorDocRadioField } from "./sponsor-doc-radio.js";
 import { appendSponsorDocSelectField } from "./sponsor-doc-select.js";
+import { renderNewsletterSyncNote } from "./sponsor-doc-newsletter-sync.js";
 import { mountSponsorDocVisualControls } from "./sponsor-doc-visual.js";
 import {
   appendSponsorDocBulletsField,
@@ -812,6 +813,9 @@ export function createSponsorDocPage({
         fb.append(el("div", "dk-callout__body", feedbackMsg));
         form.append(fb);
       }
+
+      const syncNote = renderNewsletterSyncNote(el, doc?.newsletterSync);
+      if (syncNote) form.append(syncNote);
 
       form.addEventListener("submit", (event) => { event.preventDefault(); saveChanges(undefined); });
       form.append(renderSponsorDocFormActions({

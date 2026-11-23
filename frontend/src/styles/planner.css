@@ -1256,3 +1256,28 @@ a.calendar-day-timeline-title:hover {
 .newsletter-blocks__after {
   background: var(--dk-success-bg);
 }
+
+/* Block editor: read-only sponsor values, add panel, draggable cards. */
+.newsletter-blocks__block[draggable="true"] {
+  cursor: grab;
+}
+
+.newsletter-blocks__values {
+  display: grid;
+  gap: var(--space-1, 4px);
+}
+
+.newsletter-blocks__values dt {
+  font-weight: 600;
+}
+
+.newsletter-blocks__values dd {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.newsletter-blocks__add,
+.newsletter-blocks__fields {
+  display: grid;
+  gap: var(--space-3, 12px);
+}
