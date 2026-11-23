@@ -91,6 +91,8 @@ import { GmailMessageRouteError, resolveGmailMessageRoute } from '../sponsorDocs
 import { applySponsorRoute, SponsorRouteError } from '../newsletter/sponsorRoute';
 import { ReportSendError, sendIssueReport } from '../newsletter/reportSend';
 import { json, parseJsonObjectEvent } from '../http';
+import { handleNewsletterBlockRoutes } from './newsletterBlocks';
+import { deleteBlockSet } from '../newsletter/blocksStore';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const KINDS = new Set<NewsletterIssueKind>(['weekly', 'standalone']);
@@ -765,6 +767,7 @@ async function deleteRoute(id: string, body: Body, event: LambdaEvent, client: D
       body.confirmCardDeletion === true,
     );
     if (failure) return failure;
+    await deleteBlockSet(client, existing.id);
     return { statusCode: 204, headers: {}, body: '' };
   }
   try {
@@ -772,6 +775,7 @@ async function deleteRoute(id: string, body: Body, event: LambdaEvent, client: D
   } catch {
     return json(409, { error: 'Conflicting delete' });
   }
+  await deleteBlockSet(client, existing.id);
   return { statusCode: 204, headers: {}, body: '' };
 }
 
@@ -1177,6 +1181,10 @@ export async function handleNewsletterIssueRoutes(
     if (method !== 'POST') return json(405, { error: 'Method not allowed' });
     const body = parse(event) || {};
     return mailchimpMetricsRoute(decodeURIComponent(mailchimpMetrics[1]), body, event, client);
+  }
+  const blocksRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/blocks(\/.*)?$/);
+  if (blocksRoute) {
+    return handleNewsletterBlockRoutes(decodeURIComponent(blocksRoute[1]), blocksRoute[2] || '', method, event, client);
   }
   const imageRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/images\/?$/);
   if (imageRoute) {
