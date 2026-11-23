@@ -1,0 +1,5 @@
+# Self-hosted runner labels used by the workflows (Contabo CI host). Without this,
+# actionlint rejects `runs-on: [self-hosted, contabo]` as an unknown label.
+self-hosted-runner:
+  labels:
+    - contabo

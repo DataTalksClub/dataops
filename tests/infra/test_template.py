@@ -748,10 +748,14 @@ def test_browser_e2e_is_visible_but_cannot_block_or_queue_deployment():
     assert "cancel-in-progress: true" not in e2e_workflow
     assert "Tested commit:" in e2e_workflow
     assert "timeout-minutes: 45" in e2e_workflow
-    assert "playwright install --with-deps chromium" in e2e_workflow
-    # A single runner apt/DNS outage must not fail the job: apt retries each
-    # fetch and the whole Playwright install is retried with backoff.
-    assert 'Acquire::Retries "5"' in e2e_workflow
+    # Self-hosted Contabo runner: no sudo, so `--with-deps` (apt) cannot run. The OS
+    # libraries are installed on the host once; the job only downloads Chromium.
+    assert "runs-on: [self-hosted, contabo]" in e2e_workflow
+    assert "playwright install chromium" in e2e_workflow
+    assert "--with-deps" not in e2e_workflow
+    assert "playwright install-deps chromium" in e2e_workflow  # documented host prerequisite
+    # A transient network failure must not fail the job: the whole Playwright
+    # browser download is retried with backoff.
     assert "delays=(0 15 30 60 120)" in e2e_workflow
     assert "npm --prefix backend run test:e2e" in e2e_workflow
     assert "if: failure()" in e2e_workflow

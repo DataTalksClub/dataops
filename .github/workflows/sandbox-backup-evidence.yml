@@ -25,8 +25,8 @@ env:
 jobs:
   validate:
     name: Validate backup evidence workflow
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    if: (github.event_name == 'pull_request') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [self-hosted, contabo]
     steps:
       - uses: actions/checkout@v6
       - name: Check workflow syntax and shell
@@ -35,7 +35,7 @@ jobs:
   evidence:
     if: github.event_name == 'workflow_dispatch'
     name: Read alarm state and worker config
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, contabo]
     timeout-minutes: 10
     permissions:
       contents: read
