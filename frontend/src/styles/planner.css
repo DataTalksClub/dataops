@@ -1264,7 +1264,7 @@ a.calendar-day-timeline-title:hover {
 
 .newsletter-blocks__values {
   display: grid;
-  gap: var(--space-1, 4px);
+  gap: var(--dk-space-1);
 }
 
 .newsletter-blocks__values dt {
@@ -1279,5 +1279,5 @@ a.calendar-day-timeline-title:hover {
 .newsletter-blocks__add,
 .newsletter-blocks__fields {
   display: grid;
-  gap: var(--space-3, 12px);
+  gap: var(--dk-space-3);
 }
