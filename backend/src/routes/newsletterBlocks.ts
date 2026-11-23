@@ -32,7 +32,7 @@ import {
   type RelayTarget,
 } from '../newsletter/blocks';
 import { BlockSetVersionConflict, getBlockSet, listBlockRevisions } from '../newsletter/blocksStore';
-import { RelayError } from '../newsletter/blocksRelay';
+import { RelayError, relayClient } from '../newsletter/blocksRelay';
 import { BlocksError, editBlock, importBlocks, requireBlockSet, syncBlocks, type BlockActor } from '../newsletter/blocksSync';
 import { addBlock, deleteBlock, moveBlock } from '../newsletter/blocksOps';
 import { byPosition, pinnedIndex, sponsorSlotOf, type SponsorDocUrls } from '../newsletter/blocksLayout';
@@ -148,7 +148,17 @@ export async function handleNewsletterBlockRoutes(
     }
     if (rest === '/types') {
       if (method !== 'GET') return json(405, { error: 'Method not allowed' });
-      return json(200, { issueId: issue.id, types: blockTypesView() });
+      const types = blockTypesView();
+      if (event.queryStringParameters?.check !== 'relay') return json(200, { issueId: issue.id, types });
+      // Prove DataOps' mirror of Relay's block catalogue still matches the live one.
+      const set = await requireBlockSet(client, issue.id);
+      const live = await (await relayClient(set.relay.target)).blockTypeKeys();
+      const here = types.map((item) => item.type);
+      return json(200, {
+        issueId: issue.id,
+        types,
+        relayCheck: { target: set.relay.target, missingInRelay: here.filter((t) => !live.includes(t)), missingInDataOps: live.filter((t) => !here.includes(t)) },
+      });
     }
     if (rest === '/import') {
       if (method !== 'POST') return json(405, { error: 'Method not allowed' });

@@ -129,6 +129,10 @@ describe('Newsletter issue blocks: add, move, delete, sponsor rules, sponsor-doc
     assert.ok(types.body.types.find((t: { type: string; addable: boolean }) => t.type === 'alexey_article')?.addable);
     assert.strictEqual(types.body.types.find((t: { type: string }) => t.type === 'sponsor').addable, false);
 
+    const check = await req('GET', `${base}/types`, undefined, { check: 'relay' });
+    assert.deepStrictEqual(check.body.relayCheck.missingInRelay.includes('sponsor'), false);
+    assert.ok(check.body.relayCheck.missingInDataOps.length === 0);
+
     const added = await req('POST', base, { type: 'alexey_article', position: 4, data: { title: 'My article', cta_url: 'https://alexey.example/a' } });
     assert.strictEqual(added.status, 201, JSON.stringify(added.body));
     assert.strictEqual(added.body.block.pushState, 'new');

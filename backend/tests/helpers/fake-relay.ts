@@ -31,6 +31,7 @@ export class FakeRelay {
   }
 
   nextId = 200;
+  typeKeys = ['intro', 'sponsor', 'sponsor_secondary', 'alexey_article', 'events_list', 'recording'];
   issueEdits: { subject?: string; preview_text?: string }[] = [];
 
   private renumber(issue: { blocks: FakeBlock[] }) {
@@ -44,6 +45,7 @@ export class FakeRelay {
     this.calls.push(`${method} ${u.host}${u.pathname}`);
     this.apiKeySeen = String((init?.headers as Record<string, string>)?.authorization || '');
     const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
+    if (u.pathname === '/api/newsletter-block-types') return reply(200, { block_types: this.typeKeys.map((type) => ({ type })) });
     const match = u.pathname.match(/^\/api\/newsletter-issues\/([^/]+)(\/blocks)?(?:\/(\d+))?$/);
     const issue = match && this.issues.get(decodeURIComponent(match[1]));
     if (!issue) return reply(404, { errors: { key: 'not_found' } });
