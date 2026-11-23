@@ -47,8 +47,11 @@ import {
   deliverSponsorDocEmail,
   isAutoSendEligibleTemplate,
   renderSponsorDocEmailDraft,
+  SPONSOR_DOC_EMAIL_FROM,
+  sponsorDocEmailCc,
   type SponsorDocEmailDelivery,
 } from '../sponsorDocs/emailDelivery';
+import { resolveSponsorDocBooking, type SponsorDocBooking } from '../sponsorDocs/bookingRecipient';
 import { resolveInteractiveActor } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
 import { projectCard } from '../identity/projections';
@@ -408,6 +411,24 @@ async function relinkCardToDoc(
   });
 }
 
+/**
+ * True when an unsent email record was prepared for another booking than the
+ * slot's current one (the slot was rebooked after the record was written).
+ */
+function isStaleEmailRecord(record: SponsorDocEmailDelivery | null | undefined, booking: SponsorDocBooking | null): boolean {
+  if (!record || record.state === 'sent' || !booking) return false;
+  if (Boolean(record.ownCourse) !== booking.ownCourse) return true;
+  const advertiser = String(booking.advertiserName || '').trim();
+  if (!advertiser) return false;
+  if (record.sponsorName) return record.sponsorName !== advertiser;
+  // Records written before they named their advertiser start the subject with it.
+  return Boolean(record.subject) && !record.subject.startsWith(`${advertiser} +`);
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
 async function buildDocResponsePayload(
   doc: SponsorDoc,
   event: LambdaEvent,
@@ -449,16 +470,33 @@ async function buildDocResponsePayload(
       ? `${docUrl}?code=${encodeURIComponent(accessCode)}`
       : null;
     let emailDraft = null;
+    let emailRecordStale = false;
     if (accessCode && shareUrl) {
+      // Newsletter documents address the slot's current booking contact, so
+      // a rebooked slot never greets the previous sponsor's contact.
+      const booking = await resolveSponsorDocBooking(client, doc).catch(() => null);
+      emailRecordStale = isStaleEmailRecord(doc.emailDelivery, booking);
+      const recipient = booking
+        ? booking.contact
+        : doc.emailDelivery?.to ? { email: doc.emailDelivery.to, name: doc.emailDelivery.recipientName } : null;
       try {
-        emailDraft = await renderSponsorDocEmailDraft({
+        const rendered = await renderSponsorDocEmailDraft({
           template: doc.template,
-          sponsorName: doc.sponsorName,
-          recipientName: doc.emailDelivery?.recipientName || null,
+          sponsorName: booking?.advertiserName || doc.sponsorName,
+          recipientName: booking ? booking.contact?.name || null : doc.emailDelivery?.recipientName || null,
           publicationDate: doc.eventMetadata?.label || doc.publicationDate,
           shareUrl,
           accessCode,
         });
+        const cc = sponsorDocEmailCc(doc.template, booking);
+        emailDraft = {
+          ...rendered,
+          from: SPONSOR_DOC_EMAIL_FROM,
+          to: recipient?.email || null,
+          ...(recipient?.name ? { recipientName: recipient.name } : {}),
+          cc,
+          ...(booking ? { ownCourse: booking.ownCourse, recipientSource: booking.source } : {}),
+        };
       } catch {
         // A form remains readable when the private email template is offline.
       }
@@ -495,6 +533,7 @@ async function buildDocResponsePayload(
       shareUrl,
       accessCode,
       emailDraft,
+      ...(emailRecordStale ? { emailRecordStale: true } : {}),
       markdownExport,
       ...(hostContext ? { hostContext } : {}),
     };
@@ -863,7 +902,12 @@ export async function handleSponsorDocRoutes(
           : typeof body.to === 'string' && body.to.trim()
             ? body.to.trim()
             : null;
+        const booking = await resolveSponsorDocBooking(client, { cardId: ownerRecordId, template, sponsorName });
+        // An own-course slot's advertiser is the owner: no sponsor email is
+        // prepared unless a recipient is named explicitly.
+        const ownCourseWithoutRecipient = Boolean(booking?.ownCourse) && !explicitRecipient;
         const shouldAutoSend = body.autoSendEmail !== false
+          && !ownCourseWithoutRecipient
           && (isAutoSendEligibleTemplate(template) || Boolean(explicitRecipient));
         const taskId = typeof body.taskId === 'string' && body.taskId.trim() ? body.taskId.trim() : null;
         if (shouldAutoSend && taskId) await assertSponsorEmailTaskOwner(client, taskId, ownerRecordId);
@@ -934,6 +978,8 @@ export async function handleSponsorDocRoutes(
             recipientEmail: explicitRecipient,
             recipientName: typeof body.recipientName === 'string' ? body.recipientName : null,
             taskId,
+            booking,
+            ccReviewer: optionalBoolean(body.ccReviewer),
           });
           if (taskId) emailDelivery = { ...emailDelivery, taskId };
           const withDelivery = await setSponsorDocEmailDelivery(client, doc.id, emailDelivery);
@@ -945,6 +991,17 @@ export async function handleSponsorDocRoutes(
           }
         }
 
+        if (!emailDelivery && ownCourseWithoutRecipient && body.autoSendEmail !== false) {
+          // Reported, not stored: the document keeps no email record.
+          emailDelivery = {
+            state: 'skipped',
+            from: SPONSOR_DOC_EMAIL_FROM,
+            subject: '',
+            ownCourse: true,
+            reason: 'own_course',
+            message: 'Own-course slot (DataTalks.Club): the advertiser is Alexey, so no sponsor email was prepared or sent.',
+          };
+        }
         return json(201, {
           doc: await buildDocResponsePayload(finalDoc, event, client, { viewerRole: 'staff', accessCode }),
           card: projectedCard,
@@ -1152,6 +1209,8 @@ export async function handleSponsorDocRoutes(
         recipientEmail: explicitRecipient,
         recipientName: typeof body.recipientName === 'string' ? body.recipientName : null,
         taskId,
+        booking: await resolveSponsorDocBooking(client, loaded.doc),
+        ccReviewer: optionalBoolean(body.ccReviewer),
       });
       if (taskId) emailDelivery = { ...emailDelivery, taskId };
       let updatedDoc = (await setSponsorDocEmailDelivery(client, docId, emailDelivery)) || loaded.doc;
@@ -1163,6 +1222,68 @@ export async function handleSponsorDocRoutes(
           accessCode,
         }),
         emailDelivery,
+      });
+    }
+
+    // POST /api/sponsor-docs/:id/email-record — clear or rebuild the unsent email record
+    const emailRecordMatch = suffix.match(/^\/([^/]+)\/email-record\/?$/);
+    if (emailRecordMatch) {
+      if (m !== 'POST') return json(405, { error: 'Method not allowed' });
+      const actor = await resolveInteractiveActor(client, event, 'work-write');
+      if (!actor.ok) return actor.response;
+      const body = parseBody(event.body);
+      if (!body) return json(400, { error: 'Invalid JSON body' });
+      const action = body.action;
+      if (action !== 'clear' && action !== 'rebuild') {
+        return json(400, { error: 'action must be "clear" or "rebuild"', code: 'invalid_email_record_action' });
+      }
+      const docId = decodeURIComponent(emailRecordMatch[1]);
+      const loaded = await getSponsorDocWithAuthMaterial(client, docId);
+      if (!loaded) {
+        return json(404, { error: 'Document not found', code: 'sponsor_doc_not_found' });
+      }
+      const previous = loaded.doc.emailDelivery || null;
+      if (previous?.state === 'sent') {
+        return json(409, {
+          error: `The email was already sent (Gmail message ${previous.messageId || 'unknown'}); a sent record is evidence and stays.`,
+          code: 'email_already_sent',
+        });
+      }
+      const accessCode = decryptSponsorDocAccessCode(docId, loaded.accessCodeCiphertext);
+      let next: SponsorDocEmailDelivery | null = null;
+      if (action === 'rebuild') {
+        if (!accessCode) {
+          return json(422, { error: 'Access code is unavailable; rotate the code first.', code: 'missing_access_code' });
+        }
+        // Re-derive the recipient from the current booking and render the
+        // email without sending it: no task is passed, so nothing goes out.
+        const booking = await resolveSponsorDocBooking(client, loaded.doc);
+        const base = sponsorDocPortalBaseUrl(event);
+        const docUrl = `${base}${sponsorDocPathForTemplate(loaded.doc.template)}/${encodeURIComponent(loaded.doc.id)}`;
+        const prepared = await deliverSponsorDocEmail(client, {
+          template: loaded.doc.template,
+          sponsorName: loaded.doc.sponsorName,
+          publicationDate: loaded.doc.publicationDate,
+          shareUrl: `${docUrl}?code=${encodeURIComponent(accessCode)}`,
+          accessCode,
+          taskId: null,
+          booking,
+          ccReviewer: optionalBoolean(body.ccReviewer),
+        });
+        next = {
+          ...prepared,
+          ...(previous?.taskId ? { taskId: previous.taskId } : {}),
+          ...(prepared.reason === 'task_required'
+            ? { reason: 'not_sent', message: 'Rebuilt from the current booking; not sent. Send it with send-email.' }
+            : {}),
+        };
+      }
+      const updated = (await setSponsorDocEmailDelivery(client, docId, next)) || loaded.doc;
+      return json(200, {
+        doc: await buildDocResponsePayload(updated, event, client, { viewerRole: 'staff', accessCode }),
+        action,
+        previous,
+        emailDelivery: next,
       });
     }
 

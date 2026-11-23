@@ -70,6 +70,7 @@ import {
   rescheduleOpenIssueTasks,
   SLOT_POSITIONS,
   syncIssueSlotTasks,
+  reconcileIssueSlotTasks,
 } from '../newsletter/issueCard';
 import { syncStandaloneMarkdownTask } from '../newsletter/markdownTask';
 import {
@@ -831,6 +832,25 @@ async function cardRoute(id: string, method: string, body: Body, event: LambdaEv
 }
 
 /**
+ * POST re-applies the issue's bookings to its Card's Tasks without a booking
+ * change: an own-course slot's invoice and sponsor-email Tasks are skipped
+ * (and come back when the slot is booked for a sponsor). Idempotent.
+ */
+async function syncTasksRoute(id: string, event: LambdaEvent, client: DynamoDBDocumentClient) {
+  const existing = await resolveNewsletterIssue(client, id);
+  if (!existing) return json(404, { error: 'Not found' });
+  if (!existing.cardId) return json(409, { error: 'The issue has no Card yet', code: 'issue-has-no-card' });
+  const resolved = await resolveInteractiveActor(client, event, 'work-write');
+  if (!resolved.ok) return resolved.response;
+  const cardSync = await reconcileIssueSlotTasks(client, existing, resolved.actor.id || 'system');
+  const card = await getCardConsistent(client, existing.cardId);
+  return json(200, {
+    ...(await issueView(client, existing, { cardSync }, event)),
+    excludedTemplateTasks: card?.excludedTemplateTasks || null,
+  });
+}
+
+/**
  * Apply a slot change made by booking, changing or releasing a sponsor:
  * refuse when releasing would leave completed slot Tasks unless confirmed,
  * write the issue, then bring the Card's slot Tasks and title along.
@@ -1182,6 +1202,11 @@ export async function handleNewsletterIssueRoutes(
       event,
       client,
     );
+  }
+  const syncTasks = path.match(/^\/api\/newsletter-issues\/([^/]+)\/sync-tasks$/);
+  if (syncTasks) {
+    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+    return syncTasksRoute(decodeURIComponent(syncTasks[1]), event, client);
   }
   const card = path.match(/^\/api\/newsletter-issues\/([^/]+)\/card$/);
   if (card) {

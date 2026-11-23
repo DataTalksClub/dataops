@@ -44,6 +44,9 @@ Usage
                                   Remove the Card, keep the issue; --dry-run shows what
                                   would move to the issue and what keeps the Card
   dataops newsletter due-cards [--dry-run]     Run the daily Card creation now
+  dataops newsletter sync-tasks <issue-id>     Re-apply the issue's bookings to its Card's Tasks:
+                                  a slot booked for DataTalks.Club (our own course) gets no
+                                  invoice or sponsor-email Tasks (open ones are skipped)
   dataops newsletter sponsors                  Who a slot can be booked for (deals, organizations)
   dataops newsletter book <issue-id> <primary|secondary> (--deal <deal-id> | --organization <org-id>)
                                   Books the slot (replacing a previous sponsor); an
@@ -740,6 +743,18 @@ export async function removeCard(args, io) {
   return result;
 }
 
+export async function syncTasks(args, io) {
+  const id = positional(args, 0, "dataops newsletter sync-tasks <issue-id>");
+  const result = await apiFor(args).post(`/api/newsletter-issues/${enc(id)}/sync-tasks`, {});
+  if (args.json) return result;
+  const refs = result.excludedTemplateTasks?.refs || [];
+  io.print(`${result.cardSync === "synced" ? "Synced" : "Already in line:"} Card ${result.cardId} of ${result.label}.`);
+  io.print(refs.length
+    ? `Left out (${result.excludedTemplateTasks.reason}): ${refs.join(", ")}`
+    : "No Tasks left out: no slot is booked for DataTalks.Club.");
+  return result;
+}
+
 export async function dueCards(args, io) {
   const result = await apiFor(args).post("/api/newsletter-issues/create-due-cards", args.dryRun ? { dryRun: true } : {});
   if (args.json) return result;
@@ -1174,6 +1189,7 @@ export const commands = {
   "create-card": createCard,
   "remove-card": removeCard,
   "due-cards": dueCards,
+  "sync-tasks": syncTasks,
   sync,
   "dismiss-alert": dismissAlert,
   "card-lead-days": cardLeadDays,

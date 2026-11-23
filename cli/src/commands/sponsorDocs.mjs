@@ -25,7 +25,7 @@ export const newsletterDocHelp = `dataops newsletter doc - portal-hosted newslet
 Usage
   dataops newsletter doc create <issue-id|card-id> [--slot primary|secondary] [--standalone]
       [--from DOC-ID] [--title T] [--sponsor NAME] [--date YYYY-MM-DD] [--link-type NAME]
-      [--recipient EMAIL] [--recipient-name NAME] [--task TASK-ID] [--email]
+      [--recipient EMAIL] [--recipient-name NAME] [--task TASK-ID] [--cc-reviewer true|false] [--email]
   dataops newsletter doc show <doc-id>
   dataops newsletter doc history <doc-id>
   dataops newsletter doc diff <doc-id> [--rev N]
@@ -37,7 +37,20 @@ Usage
   dataops newsletter doc reopen <doc-id>
   dataops newsletter doc email <doc-id>
   dataops newsletter doc send-email <doc-id> [--recipient EMAIL] [--recipient-name NAME] [--task TASK-ID]
+      [--cc-reviewer true|false]
+  dataops newsletter doc email-record <doc-id> --clear | --rebuild [--cc-reviewer true|false]
   dataops newsletter doc rotate-code <doc-id>
+
+The email goes to the slot's current booking contact (the contact on the booked
+deal, else the organization's primary contact), or to --recipient; never to
+another contact of the organization. A slot booked for DataTalks.Club is one of
+our own courses: the advertiser is Alexey, no sponsor email is prepared on
+create, and Valeriia is not copied. Valeriia is copied on other sponsor emails
+unless --cc-reviewer false (or --no-cc).
+\`email\` previews the email (From/To/Cc/Subject/body) and sends nothing.
+\`email-record --clear\` removes an unsent email record (e.g. after the slot was
+rebooked); \`--rebuild\` replaces it with one prepared from the current booking,
+without sending. A sent record is evidence and is never cleared.
 `;
 
 export const podcastDocHelp = `dataops podcast doc - portal-hosted podcast guest document (one per podcast card)
@@ -263,6 +276,8 @@ export async function create(args, io) {
   if (args.autoSendEmail === false || args.autoSendEmail === "false" || args.noAutoSend === true) {
     body.autoSendEmail = false;
   }
+  const ccReviewer = ccReviewerFlag(args);
+  if (ccReviewer !== undefined) body.ccReviewer = ccReviewer;
 
   const content = parseFieldFlags(args.field);
   if (content !== undefined) body.content = content;
@@ -288,8 +303,8 @@ export async function create(args, io) {
   if (delivery) {
     if (delivery.state === "sent") {
       io.print(`Email delivery: sent from ${delivery.from} to ${delivery.to} (Gmail message ${delivery.messageId || "ok"}).`);
-    } else if (delivery.state === "deferred") {
-      io.print(`Email delivery (${delivery.from}): deferred (${delivery.reason || "deferred"}) — ${delivery.message || ""}`);
+    } else if (delivery.state === "deferred" || delivery.state === "skipped") {
+      io.print(`Email delivery (${delivery.from}): ${delivery.state} (${delivery.reason || delivery.state}) — ${delivery.message || ""}`);
     }
   }
   if (wantsEmail && doc.emailDraft) {
@@ -448,21 +463,75 @@ export async function exportMarkdown(args, io) {
   return result;
 }
 
+function ccReviewerFlag(args) {
+  if (args.noCc === true) return false;
+  if (args.ccReviewer === undefined) return undefined;
+  if (args.ccReviewer === true || args.ccReviewer === "true") return true;
+  if (args.ccReviewer === false || args.ccReviewer === "false") return false;
+  throw new UsageError("--cc-reviewer must be true or false.");
+}
+
+function describeDelivery(delivery) {
+  if (!delivery) return "none";
+  const to = delivery.to ? ` to ${delivery.to}` : "";
+  const cc = delivery.cc?.length ? ` cc ${delivery.cc.join(", ")}` : "";
+  return `${delivery.state}${delivery.reason ? ` (${delivery.reason})` : ""}${to}${cc}${delivery.subject ? ` — "${delivery.subject}"` : ""}`;
+}
+
 export async function email(args, io) {
   const prefix = commandPrefix(args);
   const id = extractDocId(positional(args, 0, `${prefix} email <doc-id>`));
   const api = apiFor(args);
   const result = await api.get(`/api/sponsor-docs/${enc(id)}`);
   const doc = normalizeDocUrls(result.doc, api.base);
-  if (args.json) return { id: doc.id, shareUrl: doc.shareUrl, accessCode: doc.accessCode, emailDraft: doc.emailDraft };
+  const preview = {
+    id: doc.id,
+    shareUrl: doc.shareUrl,
+    accessCode: doc.accessCode,
+    emailDraft: doc.emailDraft,
+    emailDelivery: doc.emailDelivery || null,
+    ...(doc.emailRecordStale ? { emailRecordStale: true } : {}),
+  };
+  if (args.json) return preview;
   if (!doc.emailDraft) {
     io.print(`Shareable link: ${doc.docUrl}`);
     return result;
   }
-  io.print(`Subject: ${doc.emailDraft.subject}`);
+  const draft = doc.emailDraft;
+  if (draft.from) io.print(`From: ${draft.from}`);
+  if ("to" in draft) {
+    io.print(`To: ${draft.to ? `${draft.recipientName ? `${draft.recipientName} ` : ""}<${draft.to}>` : "(no booking contact; pass --recipient to send-email)"}`);
+  }
+  if (Array.isArray(draft.cc)) io.print(`Cc: ${draft.cc.length ? draft.cc.join(", ") : "(none)"}`);
+  if (draft.ownCourse) io.print("Own-course slot: the advertiser is Alexey; no sponsor email is sent automatically.");
+  io.print(`Subject: ${draft.subject}`);
   io.print("");
-  io.print(doc.emailDraft.body);
-  return { id: doc.id, shareUrl: doc.shareUrl, accessCode: doc.accessCode, emailDraft: doc.emailDraft };
+  io.print(draft.body);
+  if (doc.emailRecordStale) {
+    io.print("");
+    io.print(`Stale email record from an earlier booking: ${describeDelivery(doc.emailDelivery)}`);
+    io.print(`Clear it with: ${prefix} email-record ${doc.id} --clear`);
+  }
+  return preview;
+}
+
+export async function emailRecord(args, io) {
+  const prefix = commandPrefix(args);
+  const usage = `${prefix} email-record <doc-id> --clear | --rebuild [--cc-reviewer true|false]`;
+  const id = extractDocId(positional(args, 0, usage));
+  if (Boolean(args.clear) === Boolean(args.rebuild)) throw new UsageError(`Pass exactly one of --clear or --rebuild. Usage: ${usage}`);
+  const body = { action: args.clear ? "clear" : "rebuild" };
+  const ccReviewer = ccReviewerFlag(args);
+  if (ccReviewer !== undefined) body.ccReviewer = ccReviewer;
+  const api = apiFor(args);
+  const result = await api.post(`/api/sponsor-docs/${enc(id)}/email-record`, body);
+  if (result?.doc) result.doc = normalizeDocUrls(result.doc, api.base);
+  if (args.json) return result;
+  io.print(`Previous email record: ${describeDelivery(result.previous)}`);
+  io.print(result.action === "clear"
+    ? `Cleared the email record of ${id}. Nothing was sent.`
+    : `Rebuilt the email record of ${id} from the current booking (not sent): ${describeDelivery(result.emailDelivery)}`);
+  return result;
 }
 
 export async function sendEmail(args, io) {
@@ -476,6 +545,8 @@ export async function sendEmail(args, io) {
   if (recipientName !== undefined) body.recipientName = recipientName;
   const taskId = optionalString(args, "task");
   if (taskId !== undefined) body.taskId = taskId;
+  const ccReviewer = ccReviewerFlag(args);
+  if (ccReviewer !== undefined) body.ccReviewer = ccReviewer;
 
   const result = await api.post(`/api/sponsor-docs/${enc(id)}/send-email`, body);
   if (result?.doc) {
@@ -708,6 +779,7 @@ export const commands = {
   export: exportMarkdown,
   email,
   "send-email": sendEmail,
+  "email-record": emailRecord,
   "rotate-code": rotateCode,
   templates,
   delete: remove,

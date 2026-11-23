@@ -129,6 +129,8 @@ export interface PlannedTaskUpdate {
   changedFields: string[];
   /** The update rewrites `before`'s Template ref to `taskRef` (renamed definition). */
   adoptedRef?: boolean;
+  /** Skip reason of a `skip-removed` Task the Card excludes (`Card.excludedTemplateTasks`). */
+  skipReason?: string;
 }
 
 export interface CardTemplateUpdatePlan {
@@ -350,7 +352,7 @@ export function buildCardTemplateUpdatePlan(
   // to the target counts; an instance beyond a lowered count stays while any
   // of its group's Tasks is done or links a Card.
   const retained = retainedRepeatIndexes(template.taskDefinitions || [], targetCounts, relevantTasks);
-  const definitions = selectedTaskDefinitions(template, selected, targetCounts, retained);
+  const definitions = selectedTaskDefinitions(template, selected, targetCounts, retained, card.excludedTemplateTasks?.refs);
   const targetCardSnapshot = templateCardDefinitionSnapshot(template, definitions.map(({ refId }) => refId));
   const sourceCardSnapshot = card.templateDefinitionSnapshot || null;
   const cardChanges = fieldChanges(
@@ -528,12 +530,17 @@ export function buildCardTemplateUpdatePlan(
       : current.status === 'done' || current.status === 'skipped'
         ? 'retain-completed'
         : 'skip-removed';
-    taskUpdates.push({ action, taskRef: ref, before: current, target: null, changedFields: [] });
+    const excludedReason = card.excludedTemplateTasks?.refs.includes(ref) ? card.excludedTemplateTasks.reason : undefined;
+    taskUpdates.push({
+      action, taskRef: ref, before: current, target: null, changedFields: [],
+      ...(excludedReason ? { skipReason: excludedReason } : {}),
+    });
     taskChanges.push({
       action,
       taskId: current.id,
       taskRef: ref,
       currentLabel: current.description,
+      ...(excludedReason ? { reason: excludedReason } : {}),
       changes: [],
       operatorOverrideFields: [],
     });

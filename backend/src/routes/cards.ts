@@ -713,7 +713,7 @@ async function handleSingle(
     const systemOwnedFields = [
       'status', 'taskCount', 'openTaskCount', 'completedAt', 'completedBy',
       'activeStageBeforeCompletion', 'auditEventRefs', 'selectedOptionalGroups',
-      'counts', 'linkedFrom',
+      'counts', 'linkedFrom', 'excludedTemplateTasks',
     ];
     const suppliedSystemField = systemOwnedFields.find((field) => Object.hasOwn(body, field));
     if (suppliedSystemField) {
