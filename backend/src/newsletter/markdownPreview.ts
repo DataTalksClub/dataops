@@ -93,6 +93,7 @@ export function isAnonymousNewsletterPreviewAsset(method: string, path: string):
     || path === '/src/core/guarded-fetch.js'
     || path === '/src/core/dates.js'
     || path === '/src/surfaces/operations/newsletter-preview.js'
+    || /^\/src\/surfaces\/operations\/newsletter-blocks(?:-[a-z]+)?\.js$/.test(path)
     || path === '/src/styles/newsletter-preview.css'
     || path === '/src/styles/sponsor-docs.css'
     || path.startsWith('/src/dakit/')
