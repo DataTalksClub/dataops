@@ -10,67 +10,7 @@ import { setRelayDepsForTests } from '../src/newsletter/blocksRelay';
 import { blockHash, planSync, validateBlockData, type IssueBlock, type RelayIssue } from '../src/newsletter/blocks';
 import { humanBearer } from './helpers/human-bearer';
 
-type FakeBlock = { id: number; position: number; type: string; data: Record<string, string>; updated_by: string; updated_at: string };
-
-/** An in-memory Relay newsletter API: GET issue, GET/PUT block. */
-class FakeRelay {
-  issues = new Map<string, { key: string; subject: string; campaign: { status: string } | null; blocks: FakeBlock[] }>();
-  calls: string[] = [];
-  tick = 0;
-  /** Runs right before a block GET returns (to simulate a concurrent Relay edit). */
-  beforeBlockGet: ((block: FakeBlock) => void) | null = null;
-  apiKeySeen = '';
-
-  stamp() {
-    this.tick += 1;
-    return `2026-11-23T10:00:${String(this.tick).padStart(2, '0')}+00:00`;
-  }
-
-  seed(key: string, blocks: Omit<FakeBlock, 'updated_at' | 'updated_by'>[]) {
-    this.issues.set(key, {
-      key,
-      subject: `Subject ${key}`,
-      campaign: null,
-      blocks: blocks.map((block) => ({ ...block, updated_by: 'api:dtc-newsletter', updated_at: this.stamp() })),
-    });
-  }
-
-  editInRelay(key: string, id: number, data: Record<string, string>) {
-    const block = this.issues.get(key)!.blocks.find((item) => item.id === id)!;
-    block.data = data;
-    block.updated_by = 'alexey@datatalks.club';
-    block.updated_at = this.stamp();
-  }
-
-  fetch = async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const method = init?.method || 'GET';
-    const u = new URL(String(url));
-    this.calls.push(`${method} ${u.host}${u.pathname}`);
-    this.apiKeySeen = String((init?.headers as Record<string, string>)?.authorization || '');
-    const match = u.pathname.match(/^\/api\/newsletter-issues\/([^/]+)(?:\/blocks\/(\d+))?$/);
-    const issue = match && this.issues.get(decodeURIComponent(match[1]));
-    if (!issue) return new Response(JSON.stringify({ errors: { key: 'not_found' } }), { status: 404 });
-    const payload = () => ({ ...issue, preview_text: '', updated_at: this.stamp() });
-    if (!match![2]) return new Response(JSON.stringify({ issue: payload() }), { status: 200 });
-    const block = issue.blocks.find((item) => item.id === Number(match![2]));
-    if (!block) return new Response(JSON.stringify({ errors: { block_id: 'not_found' } }), { status: 404 });
-    if (method === 'GET') {
-      this.beforeBlockGet?.(block);
-      return new Response(JSON.stringify({ block }), { status: 200 });
-    }
-    const body = JSON.parse(String(init?.body || '{}'));
-    block.type = body.type;
-    block.data = body.data;
-    block.updated_by = 'api:dtc-newsletter';
-    block.updated_at = this.stamp();
-    return new Response(JSON.stringify({ block }), { status: 200 });
-  };
-}
-
-const SECRETS: Record<string, string> = {
-  'relay-production.dtc-newsletter-api-key': 'prod-key-123',
-  'relay-dev.api-keys': JSON.stringify({ RELAY_API_KEY: 'dev-key-456', RELAY_WEBHOOK: 'x' }),
-};
+import { FakeRelay, SECRETS } from './helpers/fake-relay';
 
 describe('Newsletter issue blocks (/api/newsletter-issues/:id/blocks)', () => {
   let client: DynamoDBDocumentClient;
@@ -187,9 +127,9 @@ describe('Newsletter issue blocks (/api/newsletter-issues/:id/blocks)', () => {
     assert.strictEqual(block.version, 2);
     assert.strictEqual(block.changedSinceSync, true);
     assert.strictEqual((await req('PUT', path, { version: 1, data: { summary: 'x' } })).body.code, 'block_version_conflict');
-    const bad = await req('PUT', `/api/newsletter-issues/${id}/blocks/rb-114`, { version: 1, data: { title: 'T', cta_text: 'Go', cta_url: 'not a url', bogus: 'x' } });
+    const bad = await req('PUT', `/api/newsletter-issues/${id}/blocks/rb-115`, { version: 1, data: { events: 'a | b | not a url', bogus: 'x' } });
     assert.strictEqual(bad.status, 400);
-    assert.deepStrictEqual(bad.body.fields, { 'data.bogus': 'unknown_field', 'data.cta_url': 'invalid_url' });
+    assert.deepStrictEqual(bad.body.fields, { 'data.bogus': 'unknown_field', 'data.events.0': 'invalid_url' });
 
     const revisions = (await req('GET', `/api/newsletter-issues/${id}/blocks/revisions`, undefined, { block: '113' })).body.revisions;
     assert.deepStrictEqual(revisions.map((r: { origin: string }) => r.origin), ['import', 'edit']);
@@ -245,19 +185,19 @@ describe('Newsletter issue blocks (/api/newsletter-issues/:id/blocks)', () => {
 
   it('does not overwrite a Relay edit made between planning and pushing', async () => {
     const { id } = await imported();
-    await req('PUT', `/api/newsletter-issues/${id}/blocks/rb-114`, { version: 1, data: { title: 'New', cta_text: 'Go', cta_url: 'https://x.example/a' } });
+    await req('PUT', `/api/newsletter-issues/${id}/blocks/rb-115`, { version: 1, data: { events: 'Thu · Talk | New | https://x.example/a' } });
     relay.beforeBlockGet = (block) => {
-      block.data = { ...block.data, title: 'Concurrent Relay edit' };
+      block.data = { ...block.data, events: 'Concurrent Relay edit' };
       block.updated_at = relay.stamp();
       relay.beforeBlockGet = null;
     };
     const res = await req('POST', `/api/newsletter-issues/${id}/blocks/sync`, {});
     assert.strictEqual(res.status, 409);
     assert.match(res.body.error, /changed during the sync/);
-    assert.strictEqual(relay.issues.get('weekly-304')!.blocks[1].data.title, 'Concurrent Relay edit');
+    assert.strictEqual(relay.issues.get('weekly-304')!.blocks[2].data.events, 'Concurrent Relay edit');
     const next = await req('POST', `/api/newsletter-issues/${id}/blocks/sync`, { dryRun: true });
     assert.strictEqual(next.status, 409);
-    assert.strictEqual(next.body.conflicts[0].relayBlockId, 114);
+    assert.strictEqual(next.body.conflicts[0].relayBlockId, 115);
   });
 
   it('refuses to push into a Relay issue whose campaign left draft, and surfaces Relay failures', async () => {
