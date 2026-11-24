@@ -4,7 +4,7 @@ import { dirname as parentOf, join as pathJoin, resolve as pathResolve } from "n
 
 import { ApiError } from "../api.mjs";
 import { ConflictError, UsageError } from "../errors.mjs";
-import { apiMutation, batches, changedPaths, commitFiles, planMirror, planReconcile, recordedVersions, repositoryName, resolveCommit } from "../knowledgePublish.mjs";
+import { apiMutation, batches, changedPaths, commitFiles, planMirror, planPublish, recordedVersions, repositoryName, resolveCommit } from "../knowledgePublish.mjs";
 import { enc, fields, integer, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { copyKnowledgeDocument, exportKnowledgeDocument } from "./kb-transfer.mjs";
@@ -49,7 +49,8 @@ Usage
   dataops kb publish [--head REV] [--repo DIR] [--changed-since REV] [--dry-run]
                                                Make prod match a knowledge-repo commit; files
                                                edited in prod that Git has not seen are left
-                                               alone, and real conflicts exit 5
+                                               alone, and real conflicts exit 5. Refresh the
+                                               business-system map while preserving its live intro.
   dataops kb mirror [--head REV] [--repo DIR] [--dry-run]
                                                Bring prod's web edits into the Git working tree:
                                                prod-ahead files byte for byte, files both sides
@@ -406,9 +407,11 @@ export async function publish(args, io) {
   const diverged = [...new Set([...files.keys(), ...Object.keys(prod)])]
     .filter((file) => (prod[file]?.sha256 ?? null) !== (files.get(file)?.sha ?? null));
   const recorded = recordedVersions(repo, head, manifest.roots, diverged);
-  const plan = await planReconcile({
+  const plan = await planPublish({
     files, prod, known: (file) => recorded.get(file)?.states ?? new Set(),
+    recordedBytes: (file) => recorded.get(file)?.bytes ?? new Map(),
     page: (file, cursor) => api.get("/knowledge/history", { query: { path: file, cursor } }),
+    version: (file) => downloadKnowledgeVersion(api, file, manifest.revision),
   });
   let revision = manifest.revision;
   if (!args.dryRun && plan.mutations.length) {
@@ -431,7 +434,11 @@ export async function publish(args, io) {
     else io.print(`Nothing to publish: ${result.unchanged} file(s) already match prod.`);
   }
   if (plan.conflicts.length) {
-    const lines = plan.conflicts.map((item) => `  ${item.path} (prod ${item.prod === "absent" ? "deleted it" : "edited it"} in a way Git has not seen, and Git's copy differs from where that edit started)`);
+    const lines = plan.conflicts.map((item) => {
+      const change = item.prod === "absent" ? "deleted it" : "edited it";
+      const reason = item.reason ?? `prod ${change} in a way Git has not seen, and Git's copy differs from where that edit started`;
+      return `  ${item.path} (${reason})`;
+    });
     throw new ConflictError(
       `${plan.conflicts.length} file(s) changed both in prod and in Git; they were left untouched${args.dryRun ? "" : ", everything else was published"}:\n${lines.join("\n")}\n`
         + "Merge the prod edit into Git (copy it from the web editor or wait for the daily mirror), then push again.",
