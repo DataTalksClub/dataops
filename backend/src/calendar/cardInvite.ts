@@ -1,3 +1,4 @@
+import { assertOwnerAvailable } from './assertOwnerAvailable';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { Card, CardCalendarInvite, TaskStatus } from '../types';
 import { getCardConsistent, updateCard, updateCardAdditive } from '../db/cards';
@@ -332,6 +333,7 @@ export async function syncCardInvite(
       }, deps.calendarIds),
     };
   }
+  await assertOwnerAvailable(client, invite?.startIso || interval.startIso, interval.endIso, eventIds);
   const reserved = await updateCard(client, card.id, {
     expectedVersion: card.version,
     patch: { eventTime: pending, guestEmails: silentLumaEvent ? [] : guests },
@@ -613,8 +615,7 @@ export async function adoptEventDate(
 ): Promise<{ card: Card; movedTasks: number }> {
   if (!card.eventTime || card.eventTime.sync !== 'synced') return { card, movedTasks: 0 };
   const date = todayIn(card.eventTime.timeZone, new Date(card.eventTime.startIso));
-  const followed = !card.anchorDate || (previous && card.anchorDate === todayIn(previous.timeZone, new Date(previous.startIso)));
-  if (!followed || card.anchorDate === date) return { card, movedTasks: 0 };
+  if (card.anchorDate === date) return { card, movedTasks: 0 };
   const updated = await updateCardAdditive(client, card, () => ({ anchorDate: date }));
   const { updatedCount } = await redateCardTemplateTasks(client, { ...updated, anchorDate: date }, {
     reason: `Adopted event date ${date}`,

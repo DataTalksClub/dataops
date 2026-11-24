@@ -1,3 +1,4 @@
+import { assertOwnerAvailable, OwnerAvailabilityError } from './assertOwnerAvailable';
 /**
  * Google mirroring for calendar holds, per SOP
  * `sop.events.calendar.creating-tentative-event-on-google-calendar`.
@@ -207,6 +208,7 @@ async function syncEvents(
     if (calendars.includes('primary') || calendars.includes(HOLD_ORGANIZER)) {
       return deferred('Hold calendars must name personal calendars explicitly; primary is the Orin organizer calendar.');
     }
+    await assertOwnerAvailable(undefined, event.startIso, event.endIso, eventIds);
     // Stable opaque UID enables recovery after partial writes without leaking the hold id.
     const uid = `${createHash('sha256').update(event.eventKey).digest('hex')}@google.com`;
     const body = eventBody(event);
@@ -281,6 +283,7 @@ async function syncEvents(
     }
     return { state: 'synced', eventIds };
   } catch (error) {
+    if (error instanceof OwnerAvailabilityError) throw error;
     const reason = error instanceof Error && error.message.startsWith('Google ')
       ? error.message : 'Google Calendar sync could not complete; retry the hold after checking the Orin connection.';
     return deferred(reason);
