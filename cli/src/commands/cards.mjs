@@ -311,7 +311,7 @@ async function confirmGuestDay(args, io, body) {
   if (!fits && !isTrue(args.allowBusyDay)) {
     throw new UsageError(`The day does not fit this guest event:
 ${summary}
-Pick a free day (dataops calendar slots), or pass --allow-busy-day to override.`);
+Pick a free day (dataops calendar next-free-day or dataops calendar slots), or pass --allow-busy-day to override.`);
   }
   if (!isTrue(args.confirmDay)) {
     throw new UsageError(`Confirm the day first; this is what ${body.anchorDate} holds:

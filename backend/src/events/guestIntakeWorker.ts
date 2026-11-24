@@ -135,8 +135,9 @@ export async function processGuestIntake(db: DynamoDBDocumentClient, id: string)
 export async function resumeGuestIntakes(db: DynamoDBDocumentClient) {
   const jobs = await listResumableGuestIntakes(db);
   const outcomes: Array<{ id: string; ok: boolean }> = [];
-  // Bound each scheduled invocation; unprocessed durable rows remain for the next run.
-  for (const job of jobs.sort((a,b) => a.updatedAt.localeCompare(b.updatedAt)).slice(0, 1)) {
+  // Bound each scheduled invocation while prioritizing queued work over retries so one failed job never starves others.
+  const priority = (j: GuestIntakeJob) => (j.status === 'queued' || j.status === 'preparing' ? 0 : j.status === 'failed' ? 1 : 2);
+  for (const job of jobs.sort((a,b) => priority(a) - priority(b) || a.updatedAt.localeCompare(b.updatedAt)).slice(0, 5)) {
     try { await processGuestIntake(db, job.id); outcomes.push({ id: job.id, ok: true }); }
     catch { outcomes.push({ id: job.id, ok: false }); }
   }

@@ -31,7 +31,7 @@ export async function guestEventSlots(db: DynamoDBDocumentClient, job: GuestInta
       const interval = cardEventInterval(`${day} ${job.requestedTime || policy.windows[window]}`, policy.durationMinutes, job.requestedTime ? job.timeZone || 'Europe/Berlin' : policy.timeZone);
       const parts = berlinParts(interval.startIso);
       if ([0,6].includes(new Date(`${parts.date}T12:00:00Z`).getUTCDay())) continue;
-      if (job.policy?.weekdays?.length && !job.policy.weekdays.includes(new Date(`${parts.date}T12:00:00Z`).getUTCDay())) continue;
+      if (!job.requestedDate && job.policy?.weekdays?.length && !job.policy.weekdays.includes(new Date(`${parts.date}T12:00:00Z`).getUTCDay())) continue;
       const start = Date.parse(interval.startIso) - policy.guests.leadMinutes * 60000, end = Date.parse(interval.endIso);
       if (start <= Date.now()) continue;
       if (!job.requestedTime && job.type === 'podcast' && !overlay.items.some(i => i.isAvailableSlot && i.startDate === day && i.slot === window)) continue;

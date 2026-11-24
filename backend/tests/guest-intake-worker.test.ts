@@ -198,8 +198,6 @@ test('cards time on a guest-intake Card moves the event, the Card anchor and the
   const updated = (await getGuestIntakeJob(db, job.id))!;
   assert.equal(updated.requestedDate, after.date); assert.equal(updated.requestedTime, `${parts.hour}:${parts.minute}`);
 });
-  assert.equal(stale.statusCode, 400);
-});
 test('acceptance racing Gmail receipt bookkeeping leaves no waiting follow-up', async () => {
   const created = await card('webinar');
   onMailSend = async () => { await approveEvent(db, created.card.id, { actor: 'synthetic-guest-accept', operationKey: 'accept-during-mail-send' }); };
@@ -408,4 +406,39 @@ test('first-contact Card with event hold dates Template Tasks from proposed anch
   const eventAfter = (await getEventRecord(db, cardAfter.eventTime!.eventKey))!;
   assert.equal(eventAfter.version, eventBefore.version);
   assert.deepEqual(eventAfter.googleEventIds, eventBefore.googleEventIds);
+});
+
+test('explicit anchorDate on a free Wednesday succeeds even when podcast policy defaults weekdays to Mon/Tue', async () => {
+  // 2030-12-04 is a Wednesday; podcast guestIntake.weekdays is [1, 2] for auto-pick only.
+  const created = await card('podcast', { anchorDate: '2030-12-04', skipEmail: true });
+  await processGuestIntake(db, created.card.guestIntake.jobId);
+  const job = (await getGuestIntakeJob(db, created.card.guestIntake.jobId))!;
+  assert.equal(job.status, 'skipped');
+  assert.equal(job.selectedDate, '2030-12-04');
+  const event = (await getEventRecord(db, job.holdId!))!;
+  assert.equal(event.date, '2030-12-04');
+});
+
+test('GET /api/calendar-items/next-free-day honors all-day summit blockers and returns the nearest free day', async () => {
+  ownerEvents = [
+    { id: 'evt-summit', summary: 'AI Coding Summit Berlin', transparency: 'transparent', start: { date: '2030-12-02' }, end: { date: '2030-12-03' } },
+  ];
+  try {
+    const res = await handler({
+      httpMethod: 'GET',
+      path: '/api/calendar-items/next-free-day',
+      headers: { 'x-user-id': 'synthetic-actor' },
+      body: null,
+      queryStringParameters: { type: 'podcast', window: 'midday', from: '2030-12-02', to: '2030-12-06' },
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const body = JSON.parse(res.body);
+    assert.equal(body.found, true);
+    assert.equal(body.date, '2030-12-03');
+    assert.equal(body.window, 'midday');
+    assert.equal(body.time, '12:30');
+    assert.equal(body.durationMinutes, 60);
+  } finally {
+    ownerEvents = [];
+  }
 });

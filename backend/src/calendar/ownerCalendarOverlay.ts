@@ -357,7 +357,7 @@ export function shouldFilterOwnerCalendarEvent(
 
   // Transparent (free/non-blocking) events (unless flights/conferences/vacations)
   if (filterTransparent && context?.transparency === 'transparent') {
-    if (!/(flight|conference|vacation|trip)/i.test(s)) {
+    if (!/(flight|conference|vacation|trip|summit)/i.test(s)) {
       return true;
     }
   }
@@ -665,7 +665,7 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
       // are never projected as items. They only decide which slots are open.
       // All-day blockers (vacations, conferences, flights, etc.) close the whole day.
       const allDayBlockers = validEvents.filter(
-        (e) => e.isAllDay || e.slot === 'all-day' || (/vacation|holiday|flight|conference|trip/i.test(e.summary) && e.isSlotEvent),
+        (e) => e.isAllDay || e.slot === 'all-day' || (/vacation|holiday|flight|conference|trip|summit/i.test(e.summary) && e.isSlotEvent),
       );
 
       // Project available slots across all weekdays in the range.

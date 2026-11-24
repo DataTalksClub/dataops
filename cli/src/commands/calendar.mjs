@@ -18,6 +18,7 @@ Usage
   dataops calendar list [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--type KIND]
   dataops calendar day <date> [--duration MINUTES] [--window evening|midday|any]
   dataops calendar slots [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--all] [--duration MINUTES] [--window evening|midday|any|call]
+  dataops calendar next-free-day [--type podcast|webinar|workshop] [--window midday|evening|any] [--duration MINUTES] [--from YYYY-MM-DD] [--to YYYY-MM-DD]
   dataops calendar propose --date D --window evening|midday --duration N --title T --topic TOPIC [--guest-ref EMAIL] [--document-url URL] [--card ID] [--expires-days 7]
   dataops calendar link-hold <id> --card CARD_ID [--apply] [--expected-card-version N --expected-hold-version N --expected-episode-version N]
   dataops calendar confirm-hold <id> [--guest-ref EMAIL] [--document-url URL]
@@ -323,20 +324,22 @@ export async function day(args, io) {
   const calendarHolds = overlayItems.filter((o) => o.provider === "calendar-holds");
 
   const blockers = ownerCalendarItems.filter(
-    (e) => e.slot === "all-day" || /vacation|holiday|flight|conference|trip/i.test(e.label),
+    (e) => e.slot === "all-day" || /vacation|holiday|flight|conference|trip|summit/i.test(e.label),
   );
   const timedOwnerItems = ownerCalendarItems.filter((e) => !blockers.includes(e));
   const occupancyItems = [...timedOwnerItems, ...calendarHolds];
   const middayBusy = busyIntervalsForDay(occupancyItems, "midday");
   const eveningBusy = busyIntervalsForDay(occupancyItems, "evening");
   const publicEventBusy = events.length > 0;
-  const isMiddayAvailable = blockers.length === 0 && !publicEventBusy && isWindowFreeForDuration("midday", middayBusy, durationMinutes);
-  const isEveningAvailable = blockers.length === 0 && !publicEventBusy && isWindowFreeForDuration("evening", eveningBusy, durationMinutes);
+  const dow = new Date(`${dateIso}T12:00:00Z`).getUTCDay();
+  const isWeekend = dow === 0 || dow === 6;
+  const isMiddayAvailable = !isWeekend && blockers.length === 0 && !publicEventBusy && isWindowFreeForDuration("midday", middayBusy, durationMinutes);
+  const isEveningAvailable = !isWeekend && blockers.length === 0 && !publicEventBusy && isWindowFreeForDuration("evening", eveningBusy, durationMinutes);
   const middayEvents = timedOwnerItems.filter((e) => e.slot === "midday");
   const eveningEvents = timedOwnerItems.filter((e) => e.slot === "evening");
   const middayHolds = calendarHolds.filter((e) => e.slot === "midday");
   const eveningHolds = calendarHolds.filter((e) => e.slot === "evening");
-  const publicEventConflicts = events.map((event) => event.title);
+  const publicEventConflicts = [...(isWeekend ? ["Weekend"] : []), ...events.map((event) => event.title)];
 
   // Build unified timeline
   const timeline = [];
@@ -957,5 +960,31 @@ export async function linkHold(args, io) {
   if (args.apply && (payload.expectedCardVersion === undefined || payload.expectedHoldVersion === undefined)) throw new UsageError("Preview first, then apply with --expected-card-version and --expected-hold-version (and --expected-episode-version when present)");
   const result = await client(args).post(`/api/calendar-holds/${encodeURIComponent(id)}/link-card`, { ...payload, apply: Boolean(args.apply) });
   if (!args.json) io.print(JSON.stringify(result, null, 2));
+  return result;
+}
+
+/**
+ * Find the nearest free day honoring owner calendar blockers, holds, and events.
+ */
+export async function nextFreeDay(args, io) {
+  const window = parseSlotWindow(args.window);
+  if (window === "call") throw new UsageError("next-free-day supports --window midday, evening, or any.");
+  const type = args.type ? String(args.type).trim().toLowerCase() : undefined;
+  const durationMinutes = args.duration !== undefined
+    ? parseDurationMinutes(args.duration)
+    : type === "workshop"
+      ? 90
+      : DEFAULT_SLOT_DURATION_MINUTES;
+  const query = new URLSearchParams({ window, duration: String(durationMinutes) });
+  if (type) query.set("type", type);
+  if (args.from) query.set("from", String(args.from));
+  if (args.to) query.set("to", String(args.to));
+  const result = await client(args).get(`/api/calendar-items/next-free-day?${query}`);
+  if (args.json) return result;
+  if (result.found) {
+    io.print(`Next free day: ${result.date} (${result.window} ${result.time}, ${result.durationMinutes} min)`);
+  } else {
+    io.print(`No free day found between ${result.from} and ${result.to} (${result.window}, ${result.durationMinutes} min).`);
+  }
   return result;
 }

@@ -7,9 +7,12 @@ import { builtInHolidayGeneration,holidayMetadata,holidaySnapshot } from '../cal
 import { persistHolidayGeneration,readHolidayGeneration } from '../db/calendarHolidays';
 import { projectCalendarOverlays } from '../calendar/overlays';
 import { newsletterCalendarOverlay } from '../calendar/newsletterOverlay';
-import { berlinToday, ownerCalendarOverlay, ownerCalendarRange, fetchDapierConnections, parseDurationMinutes, parseSlotWindow, DEFAULT_CALL_DURATION_MINUTES, type SlotWindow } from '../calendar/ownerCalendarOverlay';
+import { berlinToday, eachDayOfInterval, ownerCalendarOverlay, ownerCalendarRange, fetchDapierConnections, parseDurationMinutes, parseSlotWindow, preferStartFor, DEFAULT_CALL_DURATION_MINUTES, WORKSHOP_DURATION_MINUTES, type SlotWindow } from '../calendar/ownerCalendarOverlay';
 import { calendarHoldOverlay, markDuplicateCalendarHolds, suppressHeldSlots, suppressPublicEventSlots } from '../calendar/holdOverlay';
 import { listCalendarHolds } from '../db/calendarHolds';
+import { listAllCards } from '../db/cards';
+import { addDays } from '../podcast/recordingSlots';
+import { cardEventInterval } from '../calendar/cardEventTime';
 import { json, parseJsonEvent as parse } from '../http';
 import { realDate } from '../sponsorCrm/model';
 const days=(a:string,b:string)=>(Date.parse(`${b}T00:00:00Z`)-Date.parse(`${a}T00:00:00Z`))/86400000;
@@ -24,6 +27,58 @@ export async function handleCalendarRoutes(path:string,method:string,event:Lambd
   if(method==='GET'){const settings=await getCalendarOverlaySettings(client),discovery=await fetchDapierConnections();return json(200,{settings,...discovery});}
   if(method==='PUT'){const body=parse(event);if(!body||typeof body!=='object'||Array.isArray(body))return json(400,{error:'Request body is required'});const settings=await saveCalendarOverlaySettings(client,body,actor(event));return json(200,{settings});}
   return json(405,{error:'Method not allowed'});
+ }
+ if(path==='/api/calendar-items/next-free-day'){
+  if(method!=='GET')return json(405,{error:'Method not allowed'});
+  const q=event.queryStringParameters||{};
+  const type=typeof q.type==='string'&&q.type.trim()?q.type.trim().toLowerCase():undefined;
+  const today=berlinToday();
+  const rawFrom=q.from&&realDate(q.from)?q.from:today;
+  const from=rawFrom<today?today:rawFrom;
+  const to=q.to&&realDate(q.to)?q.to:addDays(from,59);
+  if(from>to||days(from,to)>366)return json(400,{error:'Invalid or unbounded range'});
+  let durationMinutes: number; let slotWindow: SlotWindow;
+  try{
+   slotWindow=parseSlotWindow(q.window);
+   if(slotWindow==='call')return json(400,{error:"next-free-day supports window 'midday', 'evening', or 'any'"});
+   const defaultDuration=type==='workshop'?WORKSHOP_DURATION_MINUTES:undefined;
+   durationMinutes=parseDurationMinutes(q.duration,defaultDuration);
+  }catch(e:any){return json(400,{error:String(e?.message||'Invalid duration or window')});}
+  const overlay=await ownerCalendarOverlay({client,durationMinutes,window:slotWindow}).project(from,to);
+  if(overlay.connection.state!=='connected')return json(503,{error:overlay.connection.reason||'The authoritative owner calendar is unavailable'});
+  const [holds,entities,cards]=await Promise.all([
+   listCalendarHolds(client,{from,to,activeOnly:true}),
+   projectCalendarEntities(client,from,to),
+   listAllCards(client),
+  ]);
+  const withHolds=suppressHeldSlots(overlay.items,holds);
+  const freeItems=suppressPublicEventSlots(withHolds,entities.map(item=>item.date));
+  const overlaps=(a:number,b:number,c:number,d:number)=>a<d&&b>c;
+  const activeCards=cards.filter(c=>c.status!=='archived'&&c.eventTime);
+  const windowOrder:('midday'|'evening')[]=slotWindow==='any'?['midday','evening']:[slotWindow];
+  const isSlotFreeOnDay=(day:string,w:'midday'|'evening')=>{
+   if(!freeItems.some(i=>i.provider==='owner-calendar'&&i.isAvailableSlot&&i.startDate===day&&i.slot===w))return false;
+   const interval=cardEventInterval(`${day} ${preferStartFor(w,durationMinutes)}`,durationMinutes,'Europe/Berlin');
+   const start=Date.parse(interval.startIso),end=Date.parse(interval.endIso);
+   if(start<=Date.now())return false;
+   return !activeCards.some(c=>overlaps(start,end,Date.parse(c.eventTime!.startIso),Date.parse(c.eventTime!.endIso)));
+  };
+  const middayTime=preferStartFor('midday',durationMinutes),eveningTime=preferStartFor('evening',durationMinutes);
+  for(const day of eachDayOfInterval(from,to)){
+   const availableWindows=windowOrder.filter(w=>isSlotFreeOnDay(day,w));
+   if(!availableWindows.length)continue;
+   const chosen=availableWindows[0];
+   return json(200,{
+    found:true,date:day,window:chosen,time:preferStartFor(chosen,durationMinutes),durationMinutes,
+    ...(type?{type}:{}),from,to,availableWindows,
+    slots:{midday:{available:availableWindows.includes('midday'),time:middayTime},evening:{available:availableWindows.includes('evening'),time:eveningTime}},
+   });
+  }
+  return json(200,{
+   found:false,date:null,window:slotWindow,time:null,durationMinutes,
+   ...(type?{type}:{}),from,to,availableWindows:[],
+   slots:{midday:{available:false,time:middayTime},evening:{available:false,time:eveningTime}},
+  });
  }
  const r=range(event);
  if(path==='/api/calendar-items/overlays'){if(method!=='GET')return json(405,{error:'Method not allowed'});if(!r)return json(400,{error:'Invalid or unbounded range'});const q=event.queryStringParameters||{},includeAll=q.all==='true'||q.includeAll==='true'||(q.all!=='false'&&q.includeAll!=='false'&&r.from===r.to);
