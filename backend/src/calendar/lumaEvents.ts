@@ -50,3 +50,51 @@ export async function lumaUrlForEventCard(
   }
   return null;
 }
+
+const LUMA_PAGE_LIMIT = 1024 * 1024;
+const LUMA_SUBTITLE_LIMIT = 300;
+const LUMA_FETCH_USER_AGENT = 'DataOps/1.0 (DataTalks.Club operations portal)';
+
+const NAMED_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+
+/** Luma HTML-escapes its meta content (`&#x27;`, `&quot;`, `&amp;`). */
+function decodeHtmlEntities(text: string): string {
+  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, body: string) => {
+    if (!body.startsWith('#')) return NAMED_ENTITIES[body.toLowerCase()] ?? entity;
+    const code = body[1].toLowerCase() === 'x' ? parseInt(body.slice(2), 16) : Number(body.slice(1));
+    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
+  });
+}
+
+/** The decoded `content` of the first `<meta property|name="<name>">` tag, in either attribute order. */
+function metaContent(html: string, name: string): string | undefined {
+  for (const [tag] of html.matchAll(/<meta\s[^>]*>/gi)) {
+    if (/\b(?:property|name)\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1] !== name) continue;
+    const content = /\bcontent\s*=\s*"([^"]*)"/i.exec(tag)?.[1];
+    if (content !== undefined) return decodeHtmlEntities(content);
+  }
+  return undefined;
+}
+
+/**
+ * The Luma event's own subtitle: the first line of its public `og:description`
+ * (`<subtitle> - <speakers>`). Undefined when Luma gives none (a missing,
+ * non-public or changed page); the caller decides what a missing subtitle means.
+ * Never throws.
+ */
+export async function lumaEventSubtitle(lumaUrl: string, fetchImpl?: typeof fetch): Promise<string | undefined> {
+  try {
+    const response = await (fetchImpl || fetch)(lumaUrl, {
+      headers: { 'User-Agent': LUMA_FETCH_USER_AGENT, Accept: 'text/html' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) return undefined;
+    const declared = Number(response.headers.get('content-length') || 0);
+    if (declared > LUMA_PAGE_LIMIT) return undefined;
+    const raw = metaContent((await response.text()).slice(0, LUMA_PAGE_LIMIT), 'og:description')?.split(/\r?\n/)[0];
+    const subtitle = raw?.replace(/\s+/g, ' ').trim().slice(0, LUMA_SUBTITLE_LIMIT);
+    return subtitle || undefined;
+  } catch {
+    return undefined;
+  }
+}

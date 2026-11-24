@@ -45,8 +45,9 @@ Usage
   dataops cards update <card-id> --count FIELD=N[,FIELD=N] [--apply]
                                                 Change a count (e.g. workshops=3); preview by default
   dataops cards time <card-id> --at "YYYY-MM-DD HH:MM" [--duration 60] [--tz Europe/Berlin]
-      [--guests EMAIL,EMAIL] [--json]            Set the event time; Luma events sync silently to DTC
-                                                events and Alexey personal, other events invite guests
+      [--guests EMAIL,EMAIL] [--json]            Set the event time. A Luma link adds the public entry on
+                                                DTC events (no guests, no Zoom); a Luma Card without a
+                                                hold gets silent copies, other Cards invite guests
   dataops cards event-slots <card-id> [--apply] [--json]
                                                 A course's event Cards (Q&A, launch, workshops);
                                                 --apply creates and links the missing ones, undated
@@ -595,7 +596,8 @@ export async function time(args, io) {
     if (result.card.anchorDate) io.print(`Card date: ${result.card.anchorDate}${result.movedTasks ? ` (${result.movedTasks} open Tasks re-dated)` : ''}`);
     if (result.rescheduleTaskId) io.print(`Reschedule checklist Task: ${result.rescheduleTaskId}`);
     for (const invite of result.card.calendarInvites || []) {
-      io.print(`invite: ${invite.eventId} on ${calendarLabel(invite.calendar)}${invite.staleAt ? ' STALE (gone in Google)' : ''} ${invite.url || ''}`);
+      const kind = String(invite.calendar).endsWith('@group.calendar.google.com') ? 'public entry' : 'invite';
+      io.print(`${kind}: ${invite.eventId} on ${calendarLabel(invite.calendar)}${invite.staleAt ? ' STALE (gone in Google)' : ''} ${invite.url || ''}`);
     }
     if (result.taskClosure?.message) io.print(`taskClosure (${result.taskClosure.outcome}): ${result.taskClosure.message}`);
   }
