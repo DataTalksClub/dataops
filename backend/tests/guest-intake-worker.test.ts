@@ -182,6 +182,25 @@ test('a skipped invitation preview is read-only; explicit first-send reuses its 
   assert.equal((await invoke('POST', `/api/cards/${created.card.id}/guest-intake/send`, {})).statusCode, 409);
 });
 
+test('cards time on a guest-intake Card moves the event, the Card anchor and the intake job together', async () => {
+  const created = await card('webinar', { skipEmail: true });
+  await processGuestIntake(db, created.card.guestIntake.jobId);
+  const job = (await getGuestIntakeJob(db, created.card.guestIntake.jobId))!;
+  const event = (await getEventRecord(db, job.holdId!))!;
+  const moved = new Date(Date.parse(event.startIso) + 7 * 86400000);
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(moved).map(p => [p.type, p.value]));
+  const res = await invoke('POST', `/api/cards/${created.card.id}/time`, { at: `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}` });
+  assert.equal(res.statusCode, 200, res.body);
+  const after = (await getEventRecord(db, event.id))!;
+  assert.equal(after.date, `${parts.year}-${parts.month}-${parts.day}`);
+  const card2 = (await invoke('GET', `/api/cards/${created.card.id}`)).body;
+  assert.equal(JSON.parse(card2).card.anchorDate, after.date);
+  const updated = (await getGuestIntakeJob(db, job.id))!;
+  assert.equal(updated.requestedDate, after.date); assert.equal(updated.requestedTime, `${parts.hour}:${parts.minute}`);
+  // A retry may re-point an eventless job, but never one that already owns an event.
+  const stale = await invoke('POST', `/api/cards/${created.card.id}/guest-intake/retry`, { date: 'not-a-date' });
+  assert.equal(stale.statusCode, 400);
+});
 test('acceptance racing Gmail receipt bookkeeping leaves no waiting follow-up', async () => {
   const created = await card('webinar');
   onMailSend = async () => { await approveEvent(db, created.card.id, { actor: 'synthetic-guest-accept', operationKey: 'accept-during-mail-send' }); };

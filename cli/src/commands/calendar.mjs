@@ -310,7 +310,11 @@ export async function day(args, io) {
     api.get(`/api/calendar-items?from=${dateIso}&to=${dateIso}`),
   ]);
 
-  const overlayItems = overlayResult.items || [];
+  // The provider range is padded across time zones, so an adjacent day's all-day
+  // event can come back; keep only items that actually cover this date.
+  const overlayItems = (overlayResult.items || []).filter(
+    (o) => !o.startDate || (o.startDate <= dateIso && (o.endDate || o.startDate) >= dateIso),
+  );
   const events = (calendarResult.items || []).filter((item) => item.date === dateIso);
   const holidays = (calendarResult.holidays || []).filter(
     (h) => h.startDate <= dateIso && h.endDate >= dateIso,

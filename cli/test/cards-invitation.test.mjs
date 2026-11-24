@@ -37,3 +37,10 @@ test('conflicting invitation actions fail before requests', async () => {
   assert.equal(await run(['cards', 'invitation', 'synthetic-card', '--send', '--preview'], captureIo()), 2);
   assert.equal(calls.length, 0);
 });
+test('retry-pre-send can re-point a failed invitation at a new date without an event', async () => {
+  const calls = fakePortal({ 'POST /api/cards/synthetic-card/guest-intake/retry': { invitation: { status: 'queued' } } });
+  assert.equal(await run(['cards', 'invitation', 'synthetic-card', '--retry-pre-send', '--date', '2026-11-25', '--time', '12:30'], captureIo()), 0);
+  assert.deepEqual(calls.at(-1).body, { date: '2026-11-25', time: '12:30' });
+  assert.equal(await run(['cards', 'invitation', 'synthetic-card', '--retry-pre-send', '--time', '12:30'], captureIo()), 2);
+  assert.equal(calls.length, 1);
+});

@@ -181,6 +181,18 @@ describe("Calendar CLI commands", () => {
     assert.match(text, /MLOps live demonstration/);
   });
 
+  test("calendar day ignores an adjacent day's all-day blocker returned by the padded range", async () => {
+    const io = captureIo();
+    globalThis.fetch = async (url) => new Response(JSON.stringify(String(url).includes("/overlays")
+      ? { items: [{ provider: "owner-calendar", label: "AI Coding Summit Berlin", startDate: "2026-12-04", endDate: "2026-12-04", slot: "all-day" }] }
+      : { items: [], holidays: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    const code = await run(["calendar", "day", "2026-12-03", "--json"], io);
+    assert.equal(code, 0);
+    const payload = JSON.parse(io.text());
+    assert.deepEqual(payload.slots.blockers, []);
+    assert.equal(payload.slots.midday.available, true);
+  });
+
   test("calendar day --json returns structured slot availability payload", async () => {
     const io = captureIo();
 
