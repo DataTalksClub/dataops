@@ -18,6 +18,13 @@
  * frontmatter after every publish, and its output is not byte-identical to
  * the Git scripts', so a prod copy that differs is never a human edit. Git's
  * copy always replaces it (`publish`); the server then regenerates it.
+ * Derived registers (the external-link register) are the same kind of file:
+ * the knowledge repository rebuilds them from the commit's content in every
+ * reconcile and mirror snapshot, so Git never records the bytes another
+ * publisher put in prod, and treating them as authored turns every later
+ * content change into a "changed both in prod and in Git" conflict. Git's
+ * copy, rebuilt from content that already carries prod's edits once the
+ * mirror ran, always replaces prod's; the mirror never pulls them back.
  * "Absent" is a Git-recorded state only where Git deleted the path, or before
  * prod's first version of it.
  */
@@ -47,15 +54,20 @@ export function isManagedPath(file, roots) {
 const DERIVED_ID = /^id:\s*["']?(task-template\.tasks\.[a-z0-9-]+|reference\.indexes\.document-index)["']?\s*$/m;
 const GENERATED_SYSTEM_MARKER = "<!-- This system page is seeded from the audit register.";
 const SYSTEM_MAP_PATH = "content/00-start-here/business-system-map/system-overview.md";
+/** Registers the knowledge repository regenerates from content on every reconcile. */
+export const DERIVED_REGISTERS = new Set(["_docs/registers/external-link-register.csv"]);
 const SYSTEM_MAP_ID = /^id:[ \t]*["']?system\.start-here\.business-system-map["']?[ \t]*\r?$/m;
 
 /**
- * True when a Git copy is a derived document that the server regenerates:
- * a task-template workflow view, the document index, or a system overview
- * still carrying the generated-page marker.
+ * True when a Git copy is a derived document whose prod copy is never a
+ * human edit: a task-template workflow view, the document index, a system
+ * overview still carrying the generated-page marker (the server regenerates
+ * these), or a derived register (the knowledge repository regenerates it).
  */
 export function isDerivedDocument(file, bytes) {
-  if (!file.endsWith(".md") || !bytes) return false;
+  if (!bytes) return false;
+  if (DERIVED_REGISTERS.has(file)) return true;
+  if (!file.endsWith(".md")) return false;
   const text = bytes.toString("utf8");
   // A leading UTF-8 BOM is not content: normalize it before frontmatter
   // matching so BOM-prefixed generated pages classify like their plain form.
