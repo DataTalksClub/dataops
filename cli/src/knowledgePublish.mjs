@@ -46,6 +46,8 @@ export function isManagedPath(file, roots) {
 
 const DERIVED_ID = /^id:\s*["']?(task-template\.tasks\.[a-z0-9-]+|reference\.indexes\.document-index)["']?\s*$/m;
 const GENERATED_SYSTEM_MARKER = "<!-- This system page is seeded from the audit register.";
+const SYSTEM_MAP_PATH = "content/00-start-here/business-system-map/system-overview.md";
+const SYSTEM_MAP_ID = /^id:[ \t]*["']?system\.start-here\.business-system-map["']?[ \t]*\r?$/m;
 
 /**
  * True when a Git copy is a derived document that the server regenerates:
@@ -147,6 +149,79 @@ export async function planReconcile({ files, prod, known, page, concurrency = 12
     } else {
       plan.conflicts.push({ path: file, prod: prodSha ? "differs" : "absent" });
     }
+  }
+  return plan;
+}
+
+function systemMapSections(bytes) {
+  const text = bytes.toString("utf8");
+  if (!Buffer.from(text).equals(bytes)) return null;
+  const frontmatter = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n/.exec(text);
+  if (!frontmatter || !SYSTEM_MAP_ID.test(frontmatter[1]) || frontmatter[1].match(/^id:/gm).length !== 1) return null;
+  const body = text.slice(frontmatter[0].length);
+  const title = /^(?:[ \t]*\r?\n)*# [^\r\n]+\r?\n/.exec(body);
+  const boundary = [...body.matchAll(/^## Core systems[ \t]*\r?$/gm)];
+  if (!title || boundary.length !== 1 || title[0].length > boundary[0].index) return null;
+  const start = boundary[0].index;
+  return { frontmatter: frontmatter[0], title: title[0], intro: body.slice(title[0].length, start), navigation: body.slice(start) };
+}
+
+/** The live map owns the introduction. The generator owns navigation. Both can edit frontmatter. */
+export async function planPublish(options) {
+  const { files, prod, known, page, version, recordedBytes } = options;
+  const head = files.get(SYSTEM_MAP_PATH);
+  const prodSha = prod[SYSTEM_MAP_PATH]?.sha256;
+  if (!head || !prodSha || head.sha === prodSha) return planReconcile(options);
+
+  const otherFiles = new Map(files);
+  otherFiles.delete(SYSTEM_MAP_PATH);
+  const otherProd = { ...prod };
+  delete otherProd[SYSTEM_MAP_PATH];
+  const [plan, current] = await Promise.all([
+    planReconcile({ ...options, files: otherFiles, prod: otherProd }),
+    version(SYSTEM_MAP_PATH),
+  ]);
+  if (!current || sha256(current) !== prodSha) {
+    throw new Error(`${SYSTEM_MAP_PATH}: prod bytes do not match the manifest sha256`);
+  }
+  const conflict = (reason) => {
+    plan.conflicts.push({ path: SYSTEM_MAP_PATH, prod: "differs", reason });
+    return plan;
+  };
+  const incoming = systemMapSections(head.bytes);
+  const live = systemMapSections(current);
+  if (!incoming || !live) return conflict("expected the map ID and one Core systems boundary");
+
+  // The full published blob can differ from every Git blob because of its intro.
+  // Recognize Git-recorded metadata, title and navigation by exact section bytes.
+  const recorded = recordedBytes(SYSTEM_MAP_PATH);
+  const sections = [...recorded.values()].map(systemMapSections).filter(Boolean);
+  const fields = ["frontmatter", "title", "navigation"];
+  const unresolved = fields.filter((field) => incoming[field] !== live[field]
+    && !sections.some((section) => section[field] === live[field]));
+  let base;
+  if (unresolved.length) {
+    const lineage = await walkLineage(page, SYSTEM_MAP_PATH, known(SYSTEM_MAP_PATH));
+    const shared = lineage.states.find(({ sha }) => known(SYSTEM_MAP_PATH).has(sha));
+    const sharedBytes = shared && recorded.get(shared.sha);
+    base = sharedBytes && systemMapSections(sharedBytes);
+    if (!base) return conflict("no common map version with a verified section boundary");
+  }
+
+  const merged = { ...incoming, intro: live.intro };
+  for (const field of unresolved) {
+    const result = threeWayMerge({
+      ours: Buffer.from(incoming[field]), baseBytes: Buffer.from(base[field]), theirs: Buffer.from(live[field]),
+    });
+    if (result.conflicts) return conflict(`both sides changed the same ${field} lines`);
+    merged[field] = result.bytes.toString("utf8");
+  }
+  const bytes = Buffer.from(merged.frontmatter + merged.title + merged.intro + merged.navigation);
+  if (!systemMapSections(bytes)) return conflict("merged map does not have one verified section boundary");
+  if (bytes.equals(current)) plan.unchanged += 1;
+  else {
+    plan.mutations.push({ path: SYSTEM_MAP_PATH, operation: "edit", base64: bytes.toString("base64") });
+    plan.mutations.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   }
   return plan;
 }
