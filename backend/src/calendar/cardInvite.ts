@@ -293,10 +293,14 @@ export async function syncCardInvite(
     linkedHold = active[0] || null;
   }
   const eventKey = card.eventTime?.eventKey || linkedHold?.id || `card:${card.id}`;
-  const eventIds = {
+  const recordedEventIds = {
     ...(card.eventTime?.googleEventIds || {}),
     ...(linkedHold?.googleEventIds || {}),
   };
+  // The standalone public entry is recorded on the Card only, so a rerun or a
+  // move updates that same entry instead of leaving the old one behind.
+  const publicCopyIds: Record<string, string> = Object.fromEntries(Object.entries(recordedEventIds).filter(([calendar]) => calendar === PUBLIC_DTC_EVENTS_CALENDAR));
+  const eventIds = { ...recordedEventIds };
   // A legacy public-calendar attendee copy is never part of the guest invite.
   delete eventIds[PUBLIC_DTC_EVENTS_CALENDAR];
   // Podcast SOP: the confirmed invite is named for the guest, not the topic.
@@ -341,7 +345,6 @@ export async function syncCardInvite(
   // entry on the DTC events calendar plus the same content as silent
   // organizer + personal hold copies (attendee-free, no email). Each leg is
   // idempotent and recovers its partial writes on retry.
-  const publicCopyIds = { ...(eventIds[PUBLIC_DTC_EVENTS_CALENDAR] ? { [PUBLIC_DTC_EVENTS_CALENDAR]: eventIds[PUBLIC_DTC_EVENTS_CALENDAR] } : {}) };
   const personalCopyIds = Object.fromEntries(Object.entries(eventIds).filter(([calendar]) => calendar !== PUBLIC_DTC_EVENTS_CALENDAR));
   const lumaEvent = {
     eventKey,
