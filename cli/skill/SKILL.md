@@ -386,6 +386,17 @@ use:
 dataops event update CARD_ID [--title "..."] [--topic "..."] [--guest-names "Name, Name"] [--document-url URL]
 ```
 
+A Luma event Card that already has its own entries from `cards time` without
+guests (public DTC events entry and silent personal copies) can still get its
+private invitation: `event propose` keeps those entries live and untouched
+beside it. Check first without writing, then run the same command without the
+flag:
+
+```bash
+dataops event show CARD_ID                       # "invitation: none" plus the command to run
+dataops event propose CARD_ID --date YYYY-MM-DD --time HH:MM --guest-emails speaker@example.test --dry-run
+```
+
 For a Card without an event policy, supply explicit inputs:
 
 ```bash

@@ -293,16 +293,20 @@ export async function syncCardInvite(
     linkedHold = active[0] || null;
   }
   const eventKey = card.eventTime?.eventKey || linkedHold?.id || `card:${card.id}`;
+  // A listing an invitation took over keeps its own ids beside the invitation's.
+  const listing = card.eventTime?.listing;
   const recordedEventIds = {
     ...(card.eventTime?.googleEventIds || {}),
     ...(linkedHold?.googleEventIds || {}),
   };
   // The standalone public entry is recorded on the Card only, so a rerun or a
   // move updates that same entry instead of leaving the old one behind.
-  const publicCopyIds: Record<string, string> = Object.fromEntries(Object.entries(recordedEventIds).filter(([calendar]) => calendar === PUBLIC_DTC_EVENTS_CALENDAR));
+  const publicCopyIds: Record<string, string> = Object.fromEntries(Object.entries(listing?.googleEventIds || recordedEventIds).filter(([calendar]) => calendar === PUBLIC_DTC_EVENTS_CALENDAR));
   const eventIds = { ...recordedEventIds };
   // A legacy public-calendar attendee copy is never part of the guest invite.
   delete eventIds[PUBLIC_DTC_EVENTS_CALENDAR];
+  const listingCopyIds: Record<string, string> = Object.fromEntries(Object.entries(listing?.googleEventIds || {}).filter(([calendar]) => calendar !== PUBLIC_DTC_EVENTS_CALENDAR));
+  const isListingEntry = (calendar: string, eventId: string) => listing?.googleEventIds[calendar] === eventId;
   // Podcast SOP: the confirmed invite is named for the guest, not the topic.
   // A hold linked to an episode Card keeps the topic in `topic` but confirms as
   // "<Guest> at DataTalks.Club Podcast", fixed in place (same Google event ids).
@@ -319,6 +323,7 @@ export async function syncCardInvite(
   }
   const pending: NonNullable<Card['eventTime']> = {
     ...interval, eventKey, googleEventIds: eventIds, sync: 'syncing', syncStartedAt: new Date().toISOString(),
+    ...(listing ? { listing } : {}),
   };
   let documentUrl: string | undefined;
   let invite: GuestInvite | undefined;
@@ -356,27 +361,50 @@ export async function syncCardInvite(
     timeZone: interval.timeZone,
     lumaUrl: lumaUrl!,
   };
+  // A silent Card's description is its public subtitle. A guest invite
+  // Card's description holds internal scheduling notes and never goes
+  // public: its subtitle is the Luma event's own.
+  const subtitle = lumaUrl ? (silentLumaEvent ? card.description || undefined : await lumaEventSubtitle(lumaUrl, deps.fetchImpl)) : undefined;
+  const waitingForSubtitle = subtitle === undefined && !silentLumaEvent;
+  const SUBTITLE_REASON = 'The public DTC events entry needs the event subtitle, and the Luma page did not provide one. Check that the Luma event is public, then rerun.';
   /** The standalone public entry; a guest invite waits while Luma gives no subtitle. */
-  const syncPublicEntry = async (): Promise<HoldGoogleResult> => {
-    // A silent Card's description is its public subtitle. A guest invite
-    // Card's description holds internal scheduling notes and never goes
-    // public: its subtitle is the Luma event's own.
-    const subtitle = silentLumaEvent ? card.description || undefined : await lumaEventSubtitle(lumaUrl!, deps.fetchImpl);
-    return subtitle === undefined && !silentLumaEvent
-      ? { state: 'deferred', reason: 'The public DTC events entry needs the event subtitle, and the Luma page did not provide one. Check that the Luma event is public, then rerun.', eventIds: { ...publicCopyIds } }
-      : syncLumaCalendarEvents({ ...lumaEvent, subtitle }, deps, publicCopyIds);
-  };
+  const syncPublicEntry = (): Promise<HoldGoogleResult> => waitingForSubtitle
+    ? Promise.resolve({ state: 'deferred', reason: SUBTITLE_REASON, eventIds: { ...publicCopyIds } })
+    : syncLumaCalendarEvents({ ...lumaEvent, subtitle }, deps, publicCopyIds);
+  /** The listing's silent personal copies move with the Card; they wait for the same subtitle. */
+  const syncListingCopies = (): Promise<HoldGoogleResult> => waitingForSubtitle
+    ? Promise.resolve({ state: 'deferred', reason: SUBTITLE_REASON, eventIds: { ...listingCopyIds } })
+    : syncSilentGoogleCopies({ ...lumaEvent, eventKey: listing!.eventKey, subtitle }, deps, listingCopyIds);
   // One result per Google leg: the public entry first (when the Card has a
-  // Luma link), then the invitation or the silent copies.
+  // Luma link), then the listing's silent copies (beside an invitation), then
+  // the invitation or the Card's own silent copies.
   const legs: HoldGoogleResult[] = [];
+  // Only the listing's own legs: their entries follow the Luma link, so none runs without one.
+  const listingLegs: HoldGoogleResult[] = [];
   try {
-    if (lumaUrl) legs.push(await syncPublicEntry());
+    if (lumaUrl) {
+      const publicEntry = await syncPublicEntry();
+      legs.push(publicEntry);
+      if (listing) listingLegs.push(publicEntry);
+    }
+    if (listing && lumaUrl) {
+      const copies = await syncListingCopies();
+      legs.push(copies);
+      listingLegs.push(copies);
+    }
     legs.push(await (silentLumaEvent ? syncSilentGoogleCopies(lumaEvent, deps, personalCopyIds) : writeGuestInvite(invite!, eventIds, deps)));
   } catch (error) {
     if (error instanceof GuestInviteValidationError) await reportGuestInviteFailure(client, error, { cardId: card.id, actorId });
     throw error;
   }
   const sync = mergeHoldGoogleResults(...legs);
+  // Beside a listing the invitation is the last leg alone; the listing's
+  // public entry and copies keep their ids to themselves. When no listing leg
+  // ran, the ids recorded on the Card stand.
+  const invitation = listing ? legs[legs.length - 1] : sync;
+  const listingEventIds = listingLegs.length
+    ? Object.assign({}, ...listingLegs.map((leg) => leg.eventIds))
+    : { ...listing?.googleEventIds };
   // Each leg links the entries it wrote and read back, so a partial sync shows
   // exactly what is live. The Card is synced, and its invite Tasks close, only
   // when every leg is.
@@ -394,8 +422,8 @@ export async function syncCardInvite(
       const index = invites.findIndex(entry => entry.calendar === calendar && entry.eventId === eventId);
       const entry = {
         calendar, eventId, url: calendarInviteUrl(calendar, eventId), createdAt: new Date().toISOString(), createdBy: actorId,
-        // Silent copies and the public entry are named for the event.
-        ...(silentLumaEvent || calendar === PUBLIC_DTC_EVENTS_CALENDAR ? { label: card.title || 'Luma event' } : {}),
+        // Silent copies (the Card's own or its listing's) and the public entry are named for the event.
+        ...(silentLumaEvent || calendar === PUBLIC_DTC_EVENTS_CALENDAR || isListingEntry(calendar, eventId) ? { label: card.title || 'Luma event' } : {}),
       };
       if (index < 0) invites.push(entry);
       else {
@@ -406,14 +434,17 @@ export async function syncCardInvite(
     }
     return {
       calendarInvites: invites,
-      eventTime: { ...pending, googleEventIds: sync.eventIds, sync: sync.state, ...(sync.state === 'deferred' ? { reason: sync.reason } : {}) },
+      eventTime: {
+        ...pending, googleEventIds: invitation.eventIds, sync: sync.state, ...(sync.state === 'deferred' ? { reason: sync.reason } : {}),
+        ...(listing ? { listing: { ...listing, googleEventIds: listingEventIds } } : {}),
+      },
     };
   });
   let storedHold: CalendarHold | undefined;
   if (linkedHold) {
     const preservedTopic = linkedHold.topic || (podcastTitle && linkedHold.title && !isPodcastInviteTitle(linkedHold.title) ? confirmedTitle(linkedHold.title) : undefined);
     // The public entry belongs to the Card, so releasing the hold never has to touch it.
-    const inviteEventIds = Object.fromEntries(Object.entries(sync.eventIds).filter(([calendar]) => calendar !== PUBLIC_DTC_EVENTS_CALENDAR));
+    const inviteEventIds = Object.fromEntries(Object.entries(invitation.eventIds).filter(([calendar]) => calendar !== PUBLIC_DTC_EVENTS_CALENDAR));
     storedHold = {
       ...linkedHold, ...interval, cardId: card.id, title: confirmedTitle(inviteTitle), ...(preservedTopic ? { topic: preservedTopic } : {}), date: todayIn(interval.timeZone, new Date(interval.startIso)),
       googleTitle: confirmedTitle(inviteTitle), guestRef: guests[0], ...(documentUrl ? { documentUrl } : {}),
@@ -593,7 +624,10 @@ export async function unlinkCardInvite(
   const matches = (invite: CardCalendarInvite) => invite.eventId === eventId && (!calendar || invite.calendar === calendar);
   const removed = (card.calendarInvites || []).filter(matches);
   if (!removed.length) throw new CardInviteInputError(`Card ${card.id} links no invite ${eventId}${calendar ? ` on ${calendar}` : ''}`);
-  const owned = (invite: CardCalendarInvite) => card.eventTime?.googleEventIds?.[invite.calendar] === invite.eventId;
+  // The invitation and the listing beside it are both this Card's own entries from cards time.
+  const owned = (invite: CardCalendarInvite) =>
+    card.eventTime?.googleEventIds?.[invite.calendar] === invite.eventId
+    || card.eventTime?.listing?.googleEventIds?.[invite.calendar] === invite.eventId;
   if (!options.deleteEvent && removed.some(invite => owned(invite) && !invite.staleAt)) {
     throw new CardInviteConflictError(`Invite ${eventId} is this Card's own invitation from cards time; move it with: dataops cards time ${card.id} --at "YYYY-MM-DD HH:MM" (or delete it with: dataops cards invite remove ${card.id} ${eventId} --delete-event)`);
   }
@@ -608,10 +642,19 @@ export async function unlinkCardInvite(
   const updated = await updateCardAdditive(client, card, current => {
     const ownedCalendars = removed.filter(owned).map(invite => invite.calendar);
     const eventIds = { ...(current.eventTime?.googleEventIds || {}) };
-    for (const cal of ownedCalendars) delete eventIds[cal];
+    const listingIds = { ...(current.eventTime?.listing?.googleEventIds || {}) };
+    for (const cal of ownedCalendars) {
+      delete eventIds[cal];
+      delete listingIds[cal];
+    }
     return {
       calendarInvites: (current.calendarInvites || []).filter(invite => !matches(invite)),
-      ...(current.eventTime && ownedCalendars.length ? { eventTime: { ...current.eventTime, googleEventIds: eventIds } } : {}),
+      ...(current.eventTime && ownedCalendars.length ? {
+        eventTime: {
+          ...current.eventTime, googleEventIds: eventIds,
+          ...(current.eventTime.listing ? { listing: { ...current.eventTime.listing, googleEventIds: listingIds } } : {}),
+        },
+      } : {}),
     };
   });
   return { card: updated, removed };

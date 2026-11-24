@@ -63,6 +63,8 @@ import {
   completeEventOperation,
   getEventHistory,
   getEventRecord,
+  listingBesideEvent,
+  type EventListing,
 } from './store';
 
 export { EventConflictError };
@@ -105,6 +107,22 @@ export interface EventLifecycleResult {
   attendeeResponses?: Record<string, string>;
   declinedBy?: Array<{ email: string; at: string }>;
   rescheduleTaskId?: string;
+  /** A planned transition that was not committed: nothing reached the Card, Google Calendar or email. */
+  dryRun?: true;
+  /** The listing the planned transition leaves beside the invitation. */
+  listing?: EventListing | null;
+}
+
+/** A Card that resolves but holds no invitation (yet). */
+export interface EventWithoutInvitation {
+  event: null;
+  hold: null;
+  history: [];
+  card: Card;
+  episode: PodcastEpisode | null;
+  /** The Card's own attendee-free Luma entries; they stay untouched by a propose. */
+  listing: EventListing | null;
+  nextStep: string;
 }
 
 const eventKey = (id: string) => ({ PK: `CALHOLD#${id}`, SK: `CALHOLD#${id}` });
@@ -627,7 +645,9 @@ export async function reconcileEventOperation(
   if (card) {
     const updatedCard = await updateCardAdditive(client, card, (latestCard) => {
       if (op.transition === 'release') {
-        return { calendarInvites: [] };
+        // The listing beside the invitation is not the invitation: it stays linked and live.
+        const kept = new Set(Object.values(latestCard.eventTime?.listing?.googleEventIds || {}));
+        return { calendarInvites: (latestCard.calendarInvites || []).filter(invite => kept.has(invite.eventId)) };
       }
       const invites = [...(latestCard.calendarInvites || [])];
       for (const [calendar, gEventId] of Object.entries(finalEventIds)) {
@@ -678,6 +698,8 @@ export interface EventTransitionInput {
   approval?: EventCommand['approval'];
   /** Reserve silently: suppress both calendar invitations and transition emails. */
   suppressGuestNotifications?: boolean;
+  /** Plan the transition and report it; commit nothing and notify nobody. */
+  dryRun?: boolean;
   /** Bind an external guest action to the exact proposal they saw. */
   expectedEventVersion?: number;
 }
@@ -929,6 +951,17 @@ async function runTransition(
 
   const freshCard = await getCardConsistent(client, card.id);
   if (!freshCard) throw new EventNotFoundError(`Card '${card.id}' not found.`);
+  if (input.dryRun) {
+    // Everything a real run would check before its first write, including the Card slot the commit needs.
+    const listing = listingBesideEvent(freshCard, planned.id) ?? null;
+    return {
+      dryRun: true, listing,
+      event: { ...planned, history: planned.history }, history: planned.history,
+      card: freshCard, episode,
+      sync: { state: 'deferred', reason: 'Dry run: nothing was written to the Card, Google Calendar or email.', eventIds: {} },
+      emailReceipts: {},
+    };
+  }
   const freshEpisode = episode ? await getPodcastEpisode(client, episode.id) : null;
   const relatedWrites = buildEpisodeTransactionWrite(freshEpisode, planned, now);
   const checklist = transition === 'reschedule'
@@ -1006,6 +1039,7 @@ async function explicitManualTransition(client: DynamoDBDocumentClient, transiti
     if (!(error instanceof EventInputError && error.message.includes('does not declare an eventPolicy'))) throw error;
   }
   if (!current && (!input.date || !input.time || !input.guestEmails?.length)) throw new EventInputError('An unconfigured Card needs --date, --time, --duration and --guest-emails for an explicit Calendar-only blocker');
+  if (input.dryRun) throw new EventInputError('A dry run needs a Card whose Template declares an eventPolicy; this Calendar-only blocker reserves its slot when it runs.');
   let policy: EventPolicy;
   try { policy = current?.policy || manualCalendarPolicy(input.durationMinutes, input.timeZone || 'Europe/Berlin'); }
   catch (error) { throw new EventInputError((error as Error).message); }
@@ -1106,12 +1140,29 @@ export async function retryEventOperation(
   return task ? { ...result, rescheduleTaskId: task.id } : result;
 }
 
+/**
+ * The event of a Card, hold or episode. A Card that resolves but holds no
+ * invitation answers with its listing and the command that creates one,
+ * instead of a 404 that reads like a missing Card.
+ */
 export async function getEventDetail(
   client: DynamoDBDocumentClient,
   targetId: string,
-): Promise<EventLifecycleResult> {
+): Promise<EventLifecycleResult | EventWithoutInvitation> {
   const { card, event } = await resolveEventTarget(client, targetId);
-  if (!event) throw new EventNotFoundError(`No event exists for '${targetId}'.`);
+  if (!event) {
+    const time = card.eventTime;
+    const listing = time && time.eventKey === `card:${card.id}` && Object.keys(time.googleEventIds || {}).length
+      ? { eventKey: time.eventKey, googleEventIds: time.googleEventIds }
+      : null;
+    return {
+      event: null, hold: null, history: [], card,
+      episode: await findEpisodeForCard(client, card.id),
+      listing,
+      nextStep: `No private invitation exists for Card '${card.id}'${listing ? `; its ${Object.keys(listing.googleEventIds).length} attendee-free Luma entries stay untouched` : ''}. `
+        + `Create one with: dataops event propose ${card.id} --date YYYY-MM-DD --time HH:MM --guest-emails "a@b.c" (add --dry-run to check without writing).`,
+    };
+  }
   const latestOp = event.operations.at(-1);
   const rawHold = (
     await client.send(new GetCommand({ TableName: TABLE_CALENDAR, Key: eventKey(event.id), ConsistentRead: true }))

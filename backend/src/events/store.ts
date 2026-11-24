@@ -31,12 +31,41 @@ export async function getEventRecord(client: DynamoDBDocumentClient, id: string,
   return { ...record, operations, history: [], previousGoogleEventIds: [] } as unknown as EventRecord;
 }
 
-function projectedTime(event: EventRecord, sync: 'syncing' | 'synced', at: string) {
+/** The Card's own attendee-free Luma entries (`card:<cardId>`): the public DTC events entry and its silent personal copies. */
+export interface EventListing {
+  eventKey: string;
+  googleEventIds: Record<string, string>;
+}
+
+/**
+ * The listing an event leaves beside its invitation when it takes the Card's
+ * `eventTime`. A Card that only holds its own `card:<cardId>` entries — a
+ * silent Luma listing, or a plain time with no Google event — hands the slot
+ * to the event; those entries stay live and keep their ids in
+ * `eventTime.listing`, never in the event's `googleEventIds` (that would put
+ * Zoom and guests on the public calendar).
+ */
+export function listingBesideEvent(card: Card, eventId: string): EventListing | undefined {
+  const time = card.eventTime;
+  if (!time) return undefined;
+  if (time.eventKey === eventId) return time.listing;
+  if (time.eventKey !== `card:${card.id}`) {
+    throw new EventConflictError(`Card '${card.id}' is linked to calendar event '${time.eventKey}'. Run this event command on '${time.eventKey}' instead.`);
+  }
+  if (time.sync === 'syncing' && Date.now() - Date.parse(time.syncStartedAt) < 180000) {
+    throw new EventConflictError(`The calendar entries of Card '${card.id}' are syncing; retry shortly.`);
+  }
+  const listing = time.listing || { eventKey: time.eventKey, googleEventIds: time.googleEventIds };
+  return Object.keys(listing.googleEventIds).length ? listing : undefined;
+}
+
+function projectedTime(event: EventRecord, sync: 'syncing' | 'synced', at: string, listing?: EventListing) {
   return {
     eventKey: event.id, generation: event.generation, status: event.status,
     startIso: event.startIso, endIso: event.endIso, timeZone: event.timeZone,
     durationMinutes: event.durationMinutes, googleEventIds: event.googleEventIds,
     sync, syncStartedAt: at,
+    ...(listing ? { listing } : {}),
   };
 }
 
@@ -58,6 +87,7 @@ export async function commitEventTransition(
   if (next.cardId !== card.id || next.version !== expectedVersion + 1 || !operation || !history
     || operation.state !== 'pending' || operation.key !== history.operationKey) throw new Error('Invalid event transition commit');
   const { operations, history: entries, previousGoogleEventIds, ...authority } = next;
+  const listing = listingBesideEvent(card, next.id);
   const transaction: TransactionItems = [
     { Put: {
       TableName: TABLE_CALENDAR, Item: { ...eventKey(next.id), ...authority, latestOperationKey: operation.key },
@@ -69,7 +99,8 @@ export async function commitEventTransition(
       UpdateExpression: operation.transition === 'update'
         ? 'SET #title = :title, anchorDate = :date, eventTime = :time, updatedAt = :at ADD #version :one'
         : 'SET anchorDate = :date, eventTime = :time, updatedAt = :at ADD #version :one',
-      ConditionExpression: '#version = :expected AND (attribute_not_exists(eventTime.eventKey) OR eventTime.eventKey = :event)',
+      // The slot is free, already this event's, or the Card's own `card:<id>` entries (kept as the listing).
+      ConditionExpression: '#version = :expected AND (attribute_not_exists(eventTime.eventKey) OR eventTime.eventKey IN (:event, :listing))',
       ExpressionAttributeNames: {
         '#version': 'version',
         ...(operation.transition === 'update' ? { '#title': 'title' } : {}),
@@ -77,11 +108,12 @@ export async function commitEventTransition(
       ExpressionAttributeValues: {
         ...(operation.transition === 'update' ? { ':title': next.renderValues.title } : {}),
         ':date': next.date,
-        ':time': projectedTime(next, 'syncing', history.at),
+        ':time': projectedTime(next, 'syncing', history.at, listing),
         ':at': history.at,
         ':one': 1,
         ':expected': card.version,
         ':event': next.id,
+        ':listing': `card:${card.id}`,
       },
     } },
     { Put: { TableName: TABLE_CALENDAR, Item: { ...logKey(next.id, operation.key), operation, generation: next.generation, previousGoogleEventIds }, ConditionExpression: 'attribute_not_exists(PK)' } },
@@ -101,7 +133,7 @@ export async function commitEventTransition(
       createHash('sha256').update(JSON.stringify(transaction)).digest('hex').slice(0, 36),
     );
   } catch (error) {
-    if (isConditionalConflict(error)) throw new EventConflictError('Card, event or operation changed; reload before retrying');
+    if (isConditionalConflict(error)) throw new EventConflictError(`Card '${card.id}' or event '${next.id}' changed while the ${operation.transition} was prepared; reload and retry`);
     throw error;
   }
 }
@@ -141,7 +173,6 @@ export async function completeEventOperation(
     throw new EventConflictError('Event operation is not pending');
   }
   requireEventBytes(googleEventIds, 16 * 1024, 'Google event identities');
-  const next = { ...current, googleEventIds };
   try {
     await transactWrite(client, [
       { Update: {
@@ -160,10 +191,11 @@ export async function completeEventOperation(
       } },
       { Update: {
         TableName: TABLE_CARDS, Key: cardKey(current.cardId),
-        UpdateExpression: 'SET eventTime = :time, updatedAt = :now ADD #version :one',
+        // Only the synced fields change, so the rest of eventTime — the listing beside the invitation — is left as written.
+        UpdateExpression: 'SET eventTime.googleEventIds = :ids, eventTime.#sync = :synced, eventTime.syncStartedAt = :now, updatedAt = :now REMOVE eventTime.reason ADD #version :one',
         ConditionExpression: 'eventTime.eventKey = :event AND eventTime.generation = :generation',
-        ExpressionAttributeNames: { '#version': 'version' },
-        ExpressionAttributeValues: { ':time': projectedTime(next, 'synced', now), ':now': now, ':one': 1, ':event': current.id, ':generation': current.generation },
+        ExpressionAttributeNames: { '#version': 'version', '#sync': 'sync' },
+        ExpressionAttributeValues: { ':ids': googleEventIds, ':synced': 'synced', ':now': now, ':one': 1, ':event': current.id, ':generation': current.generation },
       } },
     ]);
   } catch (error) {

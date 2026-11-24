@@ -350,8 +350,11 @@ describe('Card-owned invitation lifecycle', () => {
     assert.deepEqual(moved.data.card.eventTime.googleEventIds, {});
     assert.equal(provider.events.get(HOLD_ORGANIZER)?.size || 0, eventsBefore);
 
+    // No Event record was created: the Card resolves to no invitation and no listing.
     const eventCheck = await invoke('GET', `/api/events/${c.id}`);
-    assert.equal(eventCheck.code, 404);
+    assert.equal(eventCheck.code, 200, eventCheck.raw);
+    assert.equal(eventCheck.data.event, null);
+    assert.equal(eventCheck.data.listing, null);
 
     // Clear anchorDate and eventTime
     const cleared = await invoke('PUT', `/api/cards/${c.id}`, {
