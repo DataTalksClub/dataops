@@ -423,7 +423,7 @@ export interface CardTemplateTaskExclusion {
 }
 
 export interface Card {
-  guestIntake?: { jobId: string; taskId: string; status: import('./events/guestIntakeStore').GuestIntakeStatus; skipEmail: boolean; recipient?: string; messageId?: string; sentAt?: string; startIso?: string; error?: string };
+  guestIntake?: { jobId: string; taskId: string; status: import('./events/guestIntakeStore').GuestIntakeStatus; skipEmail: boolean; recipient?: string; messageId?: string; sentAt?: string; startIso?: string; error?: string; calendarOnlySentAt?: string };
   id: string;
   /** Monotonic optimistic-concurrency token. */
   version: number;

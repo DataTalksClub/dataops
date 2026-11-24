@@ -341,11 +341,20 @@ Do not create a new Card/Task/key or send a direct email to bypass that conflict
 dataops cards invitation CARD_ID                # actual status, Task and Gmail receipt
 dataops cards invitation CARD_ID --preview      # read-only rendered email
 dataops cards invitation CARD_ID --send         # first invitation only, after skip
+dataops cards invitation CARD_ID --send-calendar --dry-run # plan only: event, attendees
+dataops cards invitation CARD_ID --send-calendar  # [Proposed] calendar invite ONLY, after skip
 dataops cards invitation CARD_ID --retry-pre-send # guarded, proven safe recovery
 ```
 
 `--send` sends both email and the proposed calendar invite, only for a previously
-skipped first invitation. The worker normally resumes eligible failures;
+skipped first invitation. When first contact already happened in an existing
+Gmail thread (the reason for `--skip-email`), use `--send-calendar` instead: it
+adds the guest plus the required attendees to the same private Zoom event and
+lets Google Calendar notify them, and never sends the first-contact email.
+After it, `--send` is refused so the guest cannot get a duplicate first-contact
+email. `dataops cards invite guests CARD_ID --guests EMAIL` on that silent hold
+takes the same calendar-only path; both accept `--dry-run`. Verify with
+`dataops cards invite list CARD_ID`. The worker normally resumes eligible failures;
 `--retry-pre-send` does not permit ambiguous delivery or resend. A queued,
 preparing, paused or failed invitation is not sent evidence: inspect its linked
 Task and actual Gmail message ID. Later correspondence stays in that email
