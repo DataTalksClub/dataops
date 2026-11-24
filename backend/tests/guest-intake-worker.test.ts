@@ -1,3 +1,4 @@
+import { withOwnerAvailability } from './helpers/owner-availability';
 import { rescheduleEvent, approveEvent } from '../src/events/service';
 import { configureTaskChecklistStore } from '../src/taskChecklist';
 import { createTaskChecklistFixture } from './helpers/task-checklist-fixture';
@@ -10,12 +11,12 @@ import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTemplate, getTemplate } from '../src/db/templates';
 import { getCardConsistent, parkCard, resumeCard } from '../src/db/cards';
 import { getTaskConsistent, updateTask, listTasksByCardConsistent } from '../src/db/tasks';
-import { getGuestIntakeJob } from '../src/events/guestIntakeStore';
+import { getGuestIntakeJob, saveGuestIntakeJob } from '../src/events/guestIntakeStore';
 import { processGuestIntake, pollGuestIntakeAcceptances } from '../src/events/guestIntakeWorker';
 import { getEventRecord } from '../src/events/store';
 import { getSponsorDocWithAuthMaterial, updateSponsorDoc, decryptSponsorDocAccessCode } from '../src/db/sponsorDocs';
 import { setCalendarHoldGoogleDepsForTests } from '../src/db/calendarHolds';
-import { setOwnerCalendarProviderClientsForTests } from '../src/calendar/ownerCalendarOverlay';
+import { setOwnerCalendarProviderClientsForTests as setOwnerCalendarClients } from '../src/calendar/ownerCalendarOverlay';
 import { saveCalendarOverlaySettings } from '../src/db/calendar';
 import { setSponsorDocEmailDepsForTests } from '../src/sponsorDocs/emailDelivery';
 import { TABLE_USERS, TABLE_ARTIFACTS, TABLE_CARDS } from '../src/db/tableNames';
@@ -55,7 +56,7 @@ async function card(type: 'podcast'|'webinar'|'workshop', extra: Record<string, 
     { refId: 'obtain-speaker-email', description: 'Obtain guest email', offsetDays: 0, requiredLinkName: 'Guest email', proofRequirement: { type: 'url', required: true } },
     { refId: 'create-proposed-calendar-invite', description: 'Create proposed invite', offsetDays: 0, dependsOn: ['obtain-speaker-email'], proofRequirement: { type: 'comment', required: true } },
   ] : [] });
-  const body = { templateId: template.id, guestEmail: 'synthetic-guest@example.test', creationKey: crypto.randomUUID(), ...extra };
+  const body = { agreedFrom: '2026-11-25', agreedTo: '2031-12-31', templateId: template.id, guestEmail: 'synthetic-guest@example.test', creationKey: crypto.randomUUID(), ...extra };
   const result = await invoke('POST', '/api/cards', body);
   assert.equal(result.statusCode, 201, result.body);
   return { card: JSON.parse(result.body).card, body };
@@ -340,7 +341,7 @@ test('first-contact Card with event hold dates Template Tasks from proposed anch
     templateId: template.id,
     guestEmail: 'synthetic-guest@example.test',
     creationKey: crypto.randomUUID(),
-    endDate: '2035-06-01',
+    endDate: '2035-06-01', agreedFrom: '2026-11-25', agreedTo: '2027-12-31',
   });
   assert.equal(createdRes.statusCode, 201, createdRes.body);
   const createdCard = JSON.parse(createdRes.body).card;
@@ -390,4 +391,36 @@ test('first-contact Card with event hold dates Template Tasks from proposed anch
   const eventAfter = (await getEventRecord(db, cardAfter.eventTime!.eventKey))!;
   assert.equal(eventAfter.version, eventBefore.version);
   assert.deepEqual(eventAfter.googleEventIds, eventBefore.googleEventIds);
+});
+
+function setOwnerCalendarProviderClientsForTests(value: Parameters<typeof setOwnerCalendarClients>[0]) { setOwnerCalendarClients({ ...value, ...(value.fetch ? { fetch: withOwnerAvailability(value.fetch) } : {}) }); }
+
+test('January agreement bounds automatic selection and rejects an earlier November request without writes', async () => {
+  const created = await card('podcast', { agreedFrom: '2031-01-01', agreedTo: '2031-01-31', skipEmail: true });
+  await processGuestIntake(db, created.card.guestIntake.jobId);
+  const job = (await getGuestIntakeJob(db, created.card.guestIntake.jobId))!;
+  assert.ok(job.selectedDate! >= '2031-01-01' && job.selectedDate! <= '2031-01-31');
+  const earlier = await card('podcast', { agreedFrom: '2031-01-01', agreedTo: '2031-01-31', skipEmail: true });
+  const queued = (await getGuestIntakeJob(db, earlier.card.guestIntake.jobId))!;
+  queued.requestedDate = '2030-11-26';
+  await saveGuestIntakeJob(db, queued);
+  const before = google.calls.length, beforeMails = mails;
+  await assert.rejects(processGuestIntake(db, queued.id), /outside the guest agreement/);
+  assert.equal(google.calls.length, before); assert.equal(mails, beforeMails);
+});
+
+test('completed invitation never replays a stale November job after its Card moves to January', async () => {
+  const created = await card('podcast', { skipEmail: true });
+  const job = (await getGuestIntakeJob(db, created.card.guestIntake.jobId))!;
+  job.requestedDate = '2030-11-26';
+  await saveGuestIntakeJob(db, job);
+  const task = (await getTaskConsistent(db, job.taskId))!;
+  await updateTask(db, task.id, { currentTask: task, expectedVersion: task.version, patch: { status: 'done' } });
+  const before = google.calls.length, beforeMails = mails;
+  await processGuestIntake(db, job.id);
+  assert.equal(google.calls.length, before); assert.equal(mails, beforeMails);
+  assert.equal((await getGuestIntakeJob(db, job.id))!.status, job.status);
+  const retry = await invoke('POST', `/api/cards/${job.cardId}/guest-intake/retry`, {});
+  assert.equal(retry.statusCode, 409, retry.body);
+  assert.match(JSON.parse(retry.body).error, /completed/);
 });

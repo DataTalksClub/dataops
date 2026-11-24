@@ -1,3 +1,4 @@
+import { withOwnerAvailability } from './helpers/owner-availability';
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert";
 import { PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
@@ -480,3 +481,5 @@ describe("podcast episodes", () => {
   });
 
 });
+
+function setOwnerCalendarProviderClientsForTests(value: Parameters<typeof setOwnerCalendarClients>[0]) { setOwnerCalendarClients({ ...value, ...(value.fetch ? { fetch: withOwnerAvailability(value.fetch) } : {}) }); }

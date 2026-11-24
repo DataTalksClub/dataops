@@ -1,7 +1,8 @@
 import { resolveGuestAcceptanceTask } from './guestIntakeCompletion';
+import { validateGuestAgreement } from './guestAgreement';
 import { makeTaskHistoryEvent } from '../routes/taskValidation';
 import { resumeGuestPortalTimeChoices } from './guestIntakePortal';
-import { claimGuestSlotAllocator, releaseAllocator } from './guestIntakeAllocator';
+import { claimGuestSlotAllocator, releaseAllocator, allocationDates } from './guestIntakeAllocator';
 export { claimGuestSlotAllocator } from './guestIntakeAllocator';
 import { type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_ARTIFACTS } from '../db/tableNames';
@@ -39,10 +40,12 @@ async function recordFailure(db: DynamoDBDocumentClient, job: GuestIntakeJob, er
 }
 export async function processGuestIntake(db: DynamoDBDocumentClient, id: string): Promise<void> {
   let job = await getGuestIntakeJob(db, id);
+  if (job && (await getTaskConsistent(db, job.taskId))?.status === 'done') return;
   if (!job || !APPROVED_GUEST_EVENT_TYPES.has(job.type) || ['sent', 'skipped', 'contact-pending', 'cancelled'].includes(job.status) || job.retryable === false) return;
   if (!await claimGuestIntakeJob(db, job)) throw new Error('Invitation is already being prepared; retry after its lease');
   job = (await getGuestIntakeJob(db, id))!;
   let allocator = false;
+  let dates: string[] = [];
   try {
     const card = await getCardConsistent(db, job.cardId);
     if (!card || card.status === 'archived') {
@@ -56,7 +59,9 @@ export async function processGuestIntake(db: DynamoDBDocumentClient, id: string)
       }
       return;
     }
+    if (card.anchorDate && job.requestedDate && card.anchorDate !== job.requestedDate) throw new Error('Invitation date differs from the Card date; reconcile the guest agreement before retrying. The old slot was not replayed.');
     if (!job.guestEmail || !job.policy?.enabled) throw new Error('Guest email and enabled event intake policy are required');
+    validateGuestAgreement(job, job.requestedDate);
     job.status = 'preparing'; delete job.error;
     await saveGuestIntakeJob(db, job); await projectJob(db, job);
     const { policy } = await resolveCardEventPolicy(db, card);
@@ -75,10 +80,14 @@ export async function processGuestIntake(db: DynamoDBDocumentClient, id: string)
     await saveGuestIntakeJob(db, job);
     let event = await getEventRecord(db, `hold_${card.id}`);
     if (!event) {
-      allocator = await claimGuestSlotAllocator(db, id);
-      if (!allocator) throw new Error('Another invitation is reserving a time; this invitation will resume automatically');
-      const slots = await guestEventSlots(db, job, policy, 1);
-      if (!slots.length) throw new Error('No available event time was found; update the scheduling preference on the invitation Task');
+      const candidates = await guestEventSlots(db, job, policy, 1);
+      if (!candidates.length) throw new Error('No available event time was found inside the guest agreement');
+      const candidate = candidates[0];
+      dates = allocationDates(new Date(Date.parse(candidate.startIso) - policy.guests.leadMinutes * 60000).toISOString(), candidate.endIso);
+      allocator = await claimGuestSlotAllocator(db, id, dates);
+      if (!allocator) throw new Error(`Another invitation is reserving ${dates.join(', ')}; retry after its short lease`);
+      // Listing is advisory: refresh the chosen interval under its date lease.
+      const slots = await guestEventSlots(db, { ...job, requestedDate: candidate.date, requestedTime: candidate.time, timeZone: 'Europe/Berlin' }, policy, 1);
       const slot = slots[0]; job.selectedDate = slot.date; job.selectedTime = slot.time; job.selectedWindow = slot.window; job.startIso = slot.startIso;
       await saveGuestIntakeJob(db, job);
       // Validate the editable copy before the first guest-facing Calendar operation.
@@ -88,6 +97,7 @@ export async function processGuestIntake(db: DynamoDBDocumentClient, id: string)
       if (result.sync.state !== 'synced') throw new Error(`Calendar invitation is pending: ${result.sync.reason || 'provider unavailable'}`);
       event = result.event;
     } else {
+      validateGuestAgreement(job, event.date);
       if (event.status !== 'proposed' && event.status !== 'approved') {
         job.status = 'cancelled'; job.retryable = false; job.error = 'Invitation cancelled because its linked event was released';
         await saveGuestIntakeJob(db, job); await projectJob(db, job); return;
@@ -107,7 +117,7 @@ export async function processGuestIntake(db: DynamoDBDocumentClient, id: string)
     }
     job.holdId = event.id; job.startIso = event.startIso;
     await saveGuestIntakeJob(db, job);
-    if (allocator) { await releaseAllocator(db, id); allocator = false; }
+    if (allocator) { await releaseAllocator(db, id, dates); allocator = false; }
     if (job.skipEmail) {
       job.status = 'skipped'; await saveGuestIntakeJob(db, job); await projectJob(db, job); return;
     }
@@ -130,7 +140,7 @@ export async function processGuestIntake(db: DynamoDBDocumentClient, id: string)
     }
     job.status = 'sent'; await saveGuestIntakeJob(db, job); await projectJob(db, job);
   } catch (error) { await recordFailure(db, job, error); throw error; }
-  finally { if (allocator) await releaseAllocator(db, id); await releaseGuestIntakeLease(db, job); }
+  finally { if (allocator) await releaseAllocator(db, id, dates); await releaseGuestIntakeLease(db, job); }
 }
 export async function resumeGuestIntakes(db: DynamoDBDocumentClient) {
   const jobs = await listResumableGuestIntakes(db);

@@ -1,3 +1,4 @@
+import { installOwnerAvailabilityFixture } from './helpers/owner-availability';
 import { after, before, afterEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { PutCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -33,6 +34,7 @@ describe('calendar invite SOP contract', () => {
   let client: DynamoDBDocumentClient;
   let checklistFixture: ReturnType<typeof createTaskChecklistFixture>;
   before(async () => {
+    installOwnerAvailabilityFixture();
     checklistFixture = createTaskChecklistFixture();
     configureTaskChecklistStore(checklistFixture.store);
     client = await getClient(await startLocal());

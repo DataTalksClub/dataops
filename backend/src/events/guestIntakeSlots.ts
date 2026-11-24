@@ -1,3 +1,4 @@
+import { validateGuestAgreement } from './guestAgreement';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { ownerCalendarOverlay, berlinToday } from '../calendar/ownerCalendarOverlay';
 import { cardEventInterval } from '../calendar/cardEventTime';
@@ -15,8 +16,10 @@ export function berlinParts(iso: string) {
 }
 export interface GuestEventSlot { date: string; time: string; window: string; startIso: string; endIso: string; label: string }
 export async function guestEventSlots(db: DynamoDBDocumentClient, job: GuestIntakeJob, policy: EventPolicy, count = 8): Promise<GuestEventSlot[]> {
-  const from = job.requestedDate || addDays(berlinToday(), job.policy?.minimumNoticeDays || 0);
-  const to = job.requestedDate || addDays(from, 59);
+  if (job.policy?.enabled) validateGuestAgreement(job, job.requestedDate);
+  const earliest = addDays(berlinToday(), job.policy?.minimumNoticeDays || 0);
+  const from = job.requestedDate || (job.agreedFrom && job.agreedFrom > earliest ? job.agreedFrom : earliest);
+  const to = job.requestedDate || job.agreedTo || addDays(from, 59);
   const [overlay, busy, holds, cards, episodes] = await Promise.all([
     ownerCalendarOverlay({ client: db, durationMinutes: policy.durationMinutes, window: 'any' }).project(from, to),
     ownerCalendarOverlay({ client: db, includeAll: true, durationMinutes: policy.durationMinutes }).project(addDays(from, -1), addDays(to, 1)),

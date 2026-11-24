@@ -26,9 +26,10 @@ Usage
   dataops cards create --template ID|TYPE|NAME [--date YYYY-MM-DD] [--title T]
       [--end-date YYYY-MM-DD] [--optional-groups a,b] [--count FIELD=N,...] [--stage S] [--description D] [--owner ID] [--tags a,b] [--sponsored true|false]
       [--guest-email EMAIL] [--guest-person ID | --guest-contact ID] [--guest-name NAME] [--topic TOPIC] [--time HH:MM] [--time-zone IANA_ZONE]
-      [--guest-time-zone IANA_ZONE] [--window WINDOW] [--skip-email] [--key KEY]
+      [--guest-time-zone IANA_ZONE] [--window WINDOW] [--agreed-from DATE --agreed-to DATE] [--skip-email] [--key KEY]
                                                 Podcast, webinar and workshop guest Cards send email
-                                                and a [Proposed] calendar invite automatically. Date, title, name and topic are optional.
+                                                and a [Proposed] calendar invite automatically. Record the guest agreement with --agreed-from/--agreed-to.
+                                                No booking is made without that date/window.
                                                 --skip-email prepares its event and form without
                                                 contacting the guest. Reuse --key for a safe retry.
                                                 --sponsored marks the event as sponsored (a deal flag; the
@@ -263,6 +264,8 @@ export async function create(args, io) {
   }
   const window = optionalString(args, "window");
   if (window !== undefined) body.window = window;
+  if (args.agreedFrom !== undefined) body.agreedFrom = isoDate(args.agreedFrom, 'agreed-from');
+  if (args.agreedTo !== undefined) body.agreedTo = isoDate(args.agreedTo, 'agreed-to');
   const endDate = optionalString(args, "endDate");
   if (endDate !== undefined) body.endDate = isoDate(endDate, "end-date");
   const title = optionalString(args, "title");
@@ -609,8 +612,11 @@ export async function invitation(args, io) {
   for (const flag of modes) if (args[flag] !== true && args[flag] !== "true") throw new UsageError("Invitation action options are boolean flags.");
   const api = apiFor(args);
   const route = `/api/cards/${enc(id)}/guest-intake`;
-  const result = args.send === true || args.send === "true" ? await api.post(`${route}/send`, {})
-    : args.retryPreSend === true || args.retryPreSend === "true" ? await api.post(`${route}/retry`, {})
+  const scheduling = {};
+  for (const flag of ['agreedFrom', 'agreedTo']) if (args[flag] !== undefined) scheduling[flag] = isoDate(args[flag], flag);
+  if (Object.keys(scheduling).length && !modes.some(mode => mode === 'send' || mode === 'retryPreSend')) throw new UsageError('Agreement dates require --send or --retry-pre-send.');
+  const result = args.send === true || args.send === "true" ? await api.post(`${route}/send`, scheduling)
+    : args.retryPreSend === true || args.retryPreSend === "true" ? await api.post(`${route}/retry`, scheduling)
     : await api.get(route, args.preview === true || args.preview === "true" ? { query: { preview: "1" } } : undefined);
   if (args.json) return result;
   const receipt = result.invitation || result.job || result.card?.guestIntake || result;

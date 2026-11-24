@@ -1,3 +1,4 @@
+import { installOwnerAvailabilityFixture } from './helpers/owner-availability';
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -65,6 +66,7 @@ async function podcastCard(title = 'Podcast conversation with Julien Khaleghy') 
 
 describe('shared podcast guest-invite builder (Hub intake 0d56721e)', () => {
   before(async () => {
+    installOwnerAvailabilityFixture();
     checklist = createTaskChecklistFixture();
     configureTaskChecklistStore(checklist.store);
     const port = await startLocal();

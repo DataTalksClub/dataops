@@ -6,6 +6,7 @@ import { getGuestIntakeJob } from './guestIntakeStore';
 import { guestEventSlots } from './guestIntakeSlots';
 import { resolveCardEventPolicy, approveEvent, rescheduleEvent, retryEventOperation } from './service';
 import { getEventRecord } from './store';
+import { formatBerlinDate } from '../calendar/ownerCalendarOverlay';
 import { claimGuestSlotAllocator, releaseAllocator } from './guestIntakeAllocator';
 import { PutCommand, ScanCommand, UpdateCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { getSponsorDocWithAuthMaterial } from '../db/sponsorDocs';
@@ -85,6 +86,7 @@ export async function processGuestChoice(db: DynamoDBDocumentClient, item: Recor
   } catch (error) { if ((error as Error).name === 'ConditionalCheckFailedException') return; throw error; }
   let allocator = false;
   const owner = `choice-${token}`;
+  const dates = [item.choice?.match(/^slot:(\d{4}-\d{2}-\d{2}):/)?.[1] || formatBerlinDate(item.intent.proposalStartIso)];
   const finish = async (status: string, error?: string) => {
     try {
       await db.send(new UpdateCommand({ TableName: TABLE_ARTIFACTS, Key: choiceKey(item.docId),
@@ -104,7 +106,7 @@ export async function processGuestChoice(db: DynamoDBDocumentClient, item: Recor
   };
   try {
     await assertCurrent();
-    allocator = await claimGuestSlotAllocator(db, owner);
+    allocator = await claimGuestSlotAllocator(db, owner, dates);
     if (!allocator) throw new Error('A time is being reserved; try shortly');
     const loaded = (await getSponsorDocWithAuthMaterial(db, item.docId))!;
     await applyGuestPortalTimeChoice(db, { ...loaded.doc, version: item.version }, item.intent, assertCurrent);
@@ -120,7 +122,7 @@ export async function processGuestChoice(db: DynamoDBDocumentClient, item: Recor
       if (task) await updateTask(db, task.id, { currentTask: task, expectedVersion: task.version, patch: { comment: `Guest time choice needs attention: ${message}` }, actorId: 'guest-portal', triggerKind: 'guest-time-choice-failed' });
       throw error;
     } else { await finish('pending', message); throw error; }
-  } finally { if (allocator) await releaseAllocator(db, owner); }
+  } finally { if (allocator) await releaseAllocator(db, owner, dates); }
 }
 
 /** Persist explicit guest-origin intent before provider calls; ordinary bio saves never enter here. */

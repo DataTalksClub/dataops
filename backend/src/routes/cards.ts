@@ -1,3 +1,5 @@
+import { validateGuestAgreement } from '../events/guestAgreement';
+import { berlinParts } from '../events/guestIntakeSlots';
 import { getSponsorDocWithAuthMaterial, decryptSponsorDocAccessCode } from '../db/sponsorDocs';
 import { GuestInviteValidationError } from '../calendar/guestInvite';
 import { getEventRecord } from '../events/store';
@@ -415,10 +417,18 @@ async function handleCardRoutes(
       if (action === 'retry') {
         const task = await getTaskConsistent(client, job.taskId);
         const prior = task?.podcastFirstContact;
+        if (task?.status === 'done') return json(409, { error: 'Invitation Task is completed; existing delivery must not be replayed' });
         if (job.status !== 'failed' || job.retryable !== true || (prior && prior.state !== 'sent' && !provenPreSendFailure(prior.delivery))) return json(409, { error: 'Only a proven safe preparation or pre-send failure can be retried; reconcile uncertain delivery first' });
       }
+      const scheduling = parseObject(rawBody);
+      const agreedFrom = scheduling.agreedFrom ?? job.agreedFrom;
+      const agreedTo = scheduling.agreedTo ?? job.agreedTo;
+      const requestedDate = card.anchorDate || job.requestedDate;
+      try { validateGuestAgreement({ agreedFrom: agreedFrom as string, agreedTo: agreedTo as string }, requestedDate); }
+      catch (error) { return json(422, { error: (error as Error).message }); }
+      if ((job.leaseUntil || 0) > Date.now()) return json(409, { error: 'Invitation worker is active; retry after its lease' });
       const skipEmail = action === 'send' ? false : job.skipEmail;
-      await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { ...guestIntakeKey(job.id), ...job, status: 'queued', skipEmail, updatedAt: new Date().toISOString() },
+      await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { ...guestIntakeKey(job.id), ...job, agreedFrom, agreedTo, requestedDate, ...(card.eventTime ? { requestedTime: berlinParts(card.eventTime.startIso).time, timeZone: 'Europe/Berlin' } : {}), status: 'queued', skipEmail, updatedAt: new Date().toISOString() },
         ConditionExpression: '#s = :prior AND updatedAt = :updated', ExpressionAttributeNames: { '#s': 'status' }, ExpressionAttributeValues: { ':prior': job.status, ':updated': job.updatedAt } }));
       const updated = await updateCardAdditive(client, card, c => ({ guestIntake: { ...c.guestIntake!, status: 'queued', skipEmail } }));
       return json(202, { card: updated, invitation: { status: 'queued', recipient: job.guestEmail, taskId: job.taskId } });

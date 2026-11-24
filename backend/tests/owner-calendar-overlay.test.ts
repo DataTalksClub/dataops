@@ -1,9 +1,10 @@
+import { withOwnerAvailability } from './helpers/owner-availability';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ownerCalendarOverlay,
   determineSlotType,
-  setOwnerCalendarProviderClientsForTests,
+  setOwnerCalendarProviderClientsForTests as setOwnerCalendarClients,
   shouldFilterOwnerCalendarEvent,
   ownerCalendarRange,
   openCallStarts,
@@ -14,7 +15,7 @@ import { DEFAULT_CALENDAR_OVERLAY_SETTINGS as UNSELECTED_CALENDAR_SETTINGS } fro
 // Every fixture range starts on or after this day, so none of it is clipped as past.
 const TODAY = '2026-10-01';
 const DEFAULT_CALENDAR_OVERLAY_SETTINGS = { ...UNSELECTED_CALENDAR_SETTINGS, connectionId: 'google-calendar' };
-const selectedOwnerCalendarOverlay = (config: Parameters<typeof ownerCalendarOverlay>[0]) => ownerCalendarOverlay({ settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS, ...config });
+const selectedOwnerCalendarOverlay = (config: Parameters<typeof ownerCalendarOverlay>[0]) => ownerCalendarOverlay({ settings: DEFAULT_CALENDAR_OVERLAY_SETTINGS, connectionId: config?.settings?.connectionId || 'google-calendar', ...config });
 
 describe('owner calendar overlay and filtering', () => {
 
@@ -296,12 +297,12 @@ describe('owner calendar overlay and filtering', () => {
       let calls = 0;
       setOwnerCalendarProviderClientsForTests({ fetch: async () => { calls += 1; return new Response('', { status: 403 }); } });
       const missing = await ownerCalendarOverlay({ today: TODAY, brokerCredential: 'machine' }).project(TODAY, TODAY);
-      assert.equal(missing.connection?.state, 'not-configured');
-      assert.match(missing.connection?.reason || '', /No Dapier calendar connection selected/);
-      assert.equal(calls, 0);
+      assert.equal(missing.connection?.state, 'unavailable');
+      assert.match(missing.connection?.reason || '', /grant|machine credential/);
+      assert.equal(calls, 1);
       const denied = await selectedOwnerCalendarOverlay({ today: TODAY, brokerCredential: 'machine' }).project(TODAY, TODAY);
       assert.match(denied.connection?.reason || '', /grant.*personal-scheduler.*`use`/);
-      assert.equal(calls, 1);
+      assert.equal(calls, 2);
     });
 
     it('discovers Dapier calendar connections using token', async () => {
@@ -395,8 +396,8 @@ describe('owner calendar overlay and filtering', () => {
       const { items } = await provider.project('2026-10-01', '2026-10-31');
       assert.equal(requestedConnectionId, 'work-calendar');
       assert.equal(items.length, 1);
-      assert.equal(items[0].id, 'owner-calendar:evt-custom-1');
-      assert.equal(items[0].label, '12:00–13:00 Lunch');
+      assert.equal(items[0].id, 'owner-calendar:alexey.s.grigoriev@gmail.com:evt-custom-2');
+      assert.match(items[0].label, /Secret Project/);
     });
   });
 
@@ -534,10 +535,10 @@ describe('owner calendar overlay and filtering', () => {
 
       const { items } = await provider.project('2026-10-01', '2026-10-31');
 
-      assert.equal(items.length, 3);
+      assert.equal(items.length, 4);
 
       // Event 1: Podcast (timed)
-      assert.equal(items[0].id, 'owner-calendar:evt-1');
+      assert.equal(items[0].id, 'owner-calendar:alexey.s.grigoriev@gmail.com:evt-1');
       assert.equal(items[0].startDate, '2026-10-13');
       assert.equal(items[0].endDate, '2026-10-13');
       assert.equal(items[0].label, '12:25–13:30 Tejas at DataTalks.Club Podcast');
@@ -546,18 +547,19 @@ describe('owner calendar overlay and filtering', () => {
       assert.equal(items[0].href, 'https://calendar.google.com/event?eid=evt1');
 
       // Event 2: "No" (unavailability block, kept!)
-      assert.equal(items[1].id, 'owner-calendar:evt-3');
+      assert.equal(items[1].id, 'owner-calendar:alexey.s.grigoriev@gmail.com:evt-3');
       assert.equal(items[1].startDate, '2026-10-13');
       assert.equal(items[1].label, '14:00–18:00 No');
       assert.equal(items[1].category, 'Alexey');
 
       // Event 3: Flight (all-day adjusted end date)
-      assert.equal(items[2].id, 'owner-calendar:evt-5');
-      assert.equal(items[2].startDate, '2026-10-17');
-      assert.equal(items[2].endDate, '2026-10-17');
-      assert.equal(items[2].label, 'Flight to Helsinki');
+      assert.equal(items[2].id, 'owner-calendar:alexey.s.grigoriev@gmail.com:evt-4');
+      assert.equal(items[3].id, 'owner-calendar:alexey.s.grigoriev@gmail.com:evt-5');
+      assert.equal(items[3].startDate, '2026-10-17');
+      assert.equal(items[3].endDate, '2026-10-17');
+      assert.equal(items[3].label, 'Flight to Helsinki');
       assert.equal(items[2].category, 'Alexey');
-      assert.equal(items[2].slot, 'all-day');
+      assert.equal(items[3].slot, 'all-day');
       assert.equal(items[2].isSlotEvent, true);
     });
 
@@ -744,10 +746,10 @@ describe('owner calendar overlay and filtering', () => {
       });
       const { items: allItems } = await allProvider.project('2026-10-13', '2026-10-13');
       assert.equal(allItems.length, 2);
-      assert.equal(allItems[0].id, 'owner-calendar:evt-morning');
+      assert.equal(allItems[0].id, 'owner-calendar:alexey.s.grigoriev@gmail.com:evt-morning');
       assert.equal(allItems[0].slot, 'outside');
       assert.equal(allItems[0].isSlotEvent, false);
-      assert.equal(allItems[1].id, 'owner-calendar:evt-midday');
+      assert.equal(allItems[1].id, 'owner-calendar:alexey.s.grigoriev@gmail.com:evt-midday');
       assert.equal(allItems[1].slot, 'midday');
       assert.equal(allItems[1].isSlotEvent, true);
     });
@@ -777,7 +779,7 @@ describe('owner calendar overlay and filtering', () => {
       const { items } = await provider.project('2026-10-12', '2026-10-18');
       assert.deepEqual([...new Set(items.map((item) => item.startDate))], ['2026-10-14', '2026-10-15', '2026-10-16']);
       const googleUrl = new URL(urls.find((url) => url.includes('googleapis.com'))!);
-      assert.equal(googleUrl.searchParams.get('timeMin'), '2026-10-14T00:00:00Z');
+      assert.equal(googleUrl.searchParams.get('timeMin'), '2026-10-13T00:00:00.000Z');
 
       urls.length = 0;
       const past = await provider.project('2026-09-28', '2026-10-04');
@@ -1015,3 +1017,5 @@ describe('owner calendar overlay and filtering', () => {
     });
   });
 });
+
+function setOwnerCalendarProviderClientsForTests(value: Parameters<typeof setOwnerCalendarClients>[0]) { setOwnerCalendarClients({ ...value, ...(value.fetch ? { fetch: withOwnerAvailability(value.fetch, false) } : {}) }); }

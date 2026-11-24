@@ -1,3 +1,4 @@
+import { installOwnerAvailabilityFixture } from './helpers/owner-availability';
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert';
 import { createHash } from 'node:crypto';
@@ -43,6 +44,7 @@ let client: DynamoDBDocumentClient;
 
 describe('Card calendar invites (unlink + stale check + invite-task done-gate + confirm-hold auto-link)', () => {
   before(async () => {
+    installOwnerAvailabilityFixture();
     const port = await startLocal();
     client = await getClient(port);
     await createTables(client);
@@ -107,6 +109,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
       assert.deepStrictEqual(parse(list).invites.map((i: any) => i.eventId), ['evt-a']);
       const google = holdGoogleProvider();
       google.events.set(DTC, new Map([['manual-event', { id: 'manual-event', status: 'confirmed' }]]));
+      installOwnerAvailabilityFixture();
       setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
       try {
         const add = await invoke('POST', `/api/cards/${card.id}/calendar-invites`, {
@@ -146,6 +149,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
         { eventId: 'kept', calendar: DTC },
       ]);
       const google = holdGoogleProvider();
+      installOwnerAvailabilityFixture();
       setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
       try {
         const removed = await invoke('DELETE', `/api/cards/${card.id}/calendar-invites`, { eventId: 'gone-dtc' });
@@ -195,6 +199,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
       google.events.set(DTC, new Map([['live-dtc', { id: 'live-dtc' }]]));
       google.events.set('orin@datatalks.club', new Map([['live-org', { id: 'live-org' }]]));
       await linkInvites(card.id, [{ eventId: 'live-org', calendar: 'orin@datatalks.club' }], ownedTime(card.id, { 'orin@datatalks.club': 'live-org' }));
+      installOwnerAvailabilityFixture();
       setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
       try {
         const refused = await invoke('DELETE', `/api/cards/${card.id}/calendar-invites`, { eventId: 'live-org' });
@@ -217,6 +222,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
       for (const calendar of [DTC, PERSONAL]) google.events.set(calendar, new Map([['same-id', { id: 'same-id' }]]));
       await linkInvites(card.id, [DTC, PERSONAL].map(calendar => ({ calendar, eventId: 'same-id' })),
         ownedTime(card.id, { [DTC]: 'same-id', [PERSONAL]: 'same-id' }));
+      installOwnerAvailabilityFixture();
       setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
       try {
         const res = await invoke('DELETE', `/api/cards/${card.id}/calendar-invites`, {
@@ -240,6 +246,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
       const google = holdGoogleProvider();
       google.state.failCalendar = DTC;
       await linkInvites(card.id, [{ eventId: 'x', calendar: DTC }]);
+      installOwnerAvailabilityFixture();
       setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
       try {
         const res = await invoke('DELETE', `/api/cards/${card.id}/calendar-invites`, { eventId: 'x', deleteEvent: true });
@@ -259,6 +266,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
       const current = (await getCardConsistent(client, card.id))!;
       await updateCard(client, card.id, { expectedVersion: current.version, patch: { templateId: template.id } });
       const google = holdGoogleProvider();
+      installOwnerAvailabilityFixture();
       setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
       try {
         const res = await invoke('POST', `/api/cards/${card.id}/time`, { at: '2026-11-09 14:30', guestEmails: ['guest@example.test'] });
@@ -282,6 +290,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
         { eventId: 'cancelled', calendar: DTC },
         { eventId: 'deleted', calendar: PERSONAL },
       ]);
+      installOwnerAvailabilityFixture();
       setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
       try {
         const verified = await invoke('GET', `/api/cards/${card.id}/calendar-invites`, undefined, { verify: '1' });
@@ -408,6 +417,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
     it('links the confirmed Google invite to the card automatically', async () => {
       const card = await createCard('Auto-link card');
       const google = holdGoogleProvider();
+      installOwnerAvailabilityFixture();
       setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
       try {
         const created = parse(await invoke('POST', '/api/calendar-holds', {
@@ -473,6 +483,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
       });
       assert.strictEqual(createdEpisode.statusCode, 201, createdEpisode.body);
       const google = holdGoogleProvider();
+      installOwnerAvailabilityFixture();
       setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
       try {
         const created = parse(await invoke('POST', '/api/calendar-holds', {
@@ -515,6 +526,7 @@ describe('Card calendar invites (unlink + stale check + invite-task done-gate + 
       const card = parse(cardResponse).card;
 
       const google = holdGoogleProvider();
+      installOwnerAvailabilityFixture();
       setCalendarHoldGoogleDepsForTests({ credential: 'test-machine', fetchImpl: google.fetchImpl });
       try {
         const created = parse(await invoke('POST', '/api/calendar-holds', {

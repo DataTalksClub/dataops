@@ -3,7 +3,7 @@ import { after, before, test } from 'node:test';
 import { UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { startLocal, createTables, stopLocal } from '../scripts/local-dynamodb';
-import { claimGuestSlotAllocator } from '../src/events/guestIntakeWorker';
+import { claimGuestSlotAllocator, releaseAllocator } from '../src/events/guestIntakeAllocator';
 import { prepareGuestIntake } from '../src/events/guestIntakeCreate';
 import { saveGuestIntakeJob } from '../src/events/guestIntakeStore';
 import { createCard } from '../src/db/cards';
@@ -16,13 +16,14 @@ after(stopLocal);
 const template = { id: 'synthetic-template', type: 'podcast', name: 'Podcast', guestIntake: { enabled: true, emailTemplateId: 'podcast.first-contact', formTemplate: 'podcast', followUpDays: 7 } } as Template;
 
 test('two concurrent guest Card jobs cannot enter slot read/reservation together', async () => {
-  const results = await Promise.all(['job-one', 'job-two'].map(id => claimGuestSlotAllocator(db, id)));
+  const results = await Promise.all(['job-one', 'job-two'].map(id => claimGuestSlotAllocator(db, id, ['2030-12-02'])));
   assert.equal(results.filter(Boolean).length, 1);
   const winner = results[0] ? 'job-one' : 'job-two';
   const loser = results[0] ? 'job-two' : 'job-one';
-  assert.equal(await claimGuestSlotAllocator(db, loser), false, 'loser cannot select the same available slot while winner reserves it');
-  await db.send(new UpdateCommand({ TableName: TABLE_ARTIFACTS, Key: { PK: 'GUESTINTAKEALLOCATOR', SK: 'GUESTINTAKEALLOCATOR' }, UpdateExpression: 'SET leaseUntil = :zero', ConditionExpression: 'ownerId = :winner', ExpressionAttributeValues: { ':zero': 0, ':winner': winner } }));
-  assert.equal(await claimGuestSlotAllocator(db, loser), true, 'next job may refresh authoritative availability only after prior durable proposal');
+  assert.equal(await claimGuestSlotAllocator(db, loser, ['2030-12-02']), false, 'loser cannot select the same available slot while winner reserves it');
+  assert.equal(await claimGuestSlotAllocator(db, 'unrelated-card', ['2030-12-03']), true, 'an old Card cannot lock unrelated dates');
+  await releaseAllocator(db, winner, ['2030-12-02']);
+  assert.equal(await claimGuestSlotAllocator(db, loser, ['2030-12-02']), true, 'next job may refresh authoritative availability only after prior durable proposal');
 });
 
 test('email alone creates enabled guest intake; unapproved and disabled types do not', async () => {
