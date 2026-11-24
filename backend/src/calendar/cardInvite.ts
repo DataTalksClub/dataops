@@ -20,7 +20,7 @@ import { confirmedTitle, isPodcastInviteTitle, parseHoldDocumentUrl, podcastInvi
 import { listPodcastEpisodes, type PodcastEpisode } from '../db/podcastEpisodes';
 import { recordTemplateTypes } from '../cards/cardTitlePattern';
 import { deleteHoldGoogleEvents, fetchGoogleEvent, findGoneGoogleEvents, mergeHoldGoogleResults, syncLumaCalendarEvents, syncSilentGoogleCopies, type HoldGoogleDeps, type HoldGoogleResult } from './holdGoogleSync';
-import { lumaUrlForEventCard } from './lumaEvents';
+import { lumaEventSubtitle, lumaUrlForEventCard } from './lumaEvents';
 import { PUBLIC_DTC_EVENTS_CALENDAR, resolveHoldGoogleCalendars } from './dapierBroker';
 import { decryptSponsorDocAccessCode, getSponsorDocWithAuthMaterial } from '../db/sponsorDocs';
 
@@ -340,58 +340,68 @@ export async function syncCardInvite(
     expectedVersion: card.version,
     patch: { eventTime: pending, guestEmails: silentLumaEvent ? [] : guests },
   });
-  // A silent Luma event (a course cohort Q&A or Launch and every other
-  // Luma-linked Card) gets the full SOP calendar set: the standalone public
-  // entry on the DTC events calendar plus the same content as silent
-  // organizer + personal hold copies (attendee-free, no email). Each leg is
-  // idempotent and recovers its partial writes on retry.
+  // Every Luma-linked Card owns one standalone public entry on the DTC events
+  // calendar beside its guest invite or silent copies (SOP
+  // `sop.events.luma.creating-events-on-google-calendar`): attendee-free,
+  // Zoom-free, at the real event time. A silent Luma event (a course cohort
+  // Q&A or Launch) adds the same content as silent organizer + personal hold
+  // copies. Each leg is idempotent and recovers its partial writes on retry;
+  // the hold itself carries the invitation only, never the public entry.
   const personalCopyIds = Object.fromEntries(Object.entries(eventIds).filter(([calendar]) => calendar !== PUBLIC_DTC_EVENTS_CALENDAR));
   const lumaEvent = {
     eventKey,
     summary: card.title || 'DataTalks.Club event',
-    subtitle: card.description || undefined,
     startIso: interval.startIso,
     endIso: interval.endIso,
     timeZone: interval.timeZone,
     lumaUrl: lumaUrl!,
   };
-  let sync: HoldGoogleResult;
+  /** The standalone public entry; a guest invite waits while Luma gives no subtitle. */
+  const syncPublicEntry = async (): Promise<HoldGoogleResult> => {
+    // A silent Card's description is its public subtitle. A guest invite
+    // Card's description holds internal scheduling notes and never goes
+    // public: its subtitle is the Luma event's own.
+    const subtitle = silentLumaEvent ? card.description || undefined : await lumaEventSubtitle(lumaUrl!, deps.fetchImpl);
+    return subtitle === undefined && !silentLumaEvent
+      ? { state: 'deferred', reason: 'The public DTC events entry needs the event subtitle, and the Luma page did not provide one. Check that the Luma event is public, then rerun.', eventIds: { ...publicCopyIds } }
+      : syncLumaCalendarEvents({ ...lumaEvent, subtitle }, deps, publicCopyIds);
+  };
+  // One result per Google leg: the public entry first (when the Card has a
+  // Luma link), then the invitation or the silent copies.
+  const legs: HoldGoogleResult[] = [];
   try {
-    sync = silentLumaEvent
-      ? mergeHoldGoogleResults(
-          await syncLumaCalendarEvents(lumaEvent, deps, publicCopyIds),
-          await syncSilentGoogleCopies(lumaEvent, deps, personalCopyIds),
-        )
-      : await writeGuestInvite(invite!, eventIds, deps);
+    if (lumaUrl) legs.push(await syncPublicEntry());
+    legs.push(await (silentLumaEvent ? syncSilentGoogleCopies(lumaEvent, deps, personalCopyIds) : writeGuestInvite(invite!, eventIds, deps)));
   } catch (error) {
     if (error instanceof GuestInviteValidationError) await reportGuestInviteFailure(client, error, { cardId: card.id, actorId });
     throw error;
   }
+  const sync = mergeHoldGoogleResults(...legs);
+  // Each leg links the entries it wrote and read back, so a partial sync shows
+  // exactly what is live. The Card is synced, and its invite Tasks close, only
+  // when every leg is.
+  const linkedEventIds = legs.filter((leg) => leg.state === 'synced').flatMap((leg) => Object.entries(leg.eventIds));
+  const publicEntryLive = Boolean(lumaUrl) && legs[0].state === 'synced';
   const updated = await updateCardAdditive(client, reserved, current => {
     const invites = [...(current.calendarInvites || [])];
-    if (sync.state === 'synced') {
-      // Silent Luma events link every calendar copy they own (public entry,
-      // organizer and personal copies); guest invites never link the public
-      // calendar — its standalone entries are never invite copies.
-      const linkedEventIds = Object.entries(sync.eventIds).filter(([calendar]) =>
-        silentLumaEvent || calendar !== PUBLIC_DTC_EVENTS_CALENDAR);
-      if (silentLumaEvent && sync.state === 'synced') {
-        for (let index = invites.length - 1; index >= 0; index--) {
-          if (invites[index].calendar === PUBLIC_DTC_EVENTS_CALENDAR) invites.splice(index, 1);
-        }
+    if (publicEntryLive) {
+      // Exactly one DTC events row: the standalone entry the public leg owns.
+      for (let index = invites.length - 1; index >= 0; index--) {
+        if (invites[index].calendar === PUBLIC_DTC_EVENTS_CALENDAR) invites.splice(index, 1);
       }
-      for (const [calendar, eventId] of linkedEventIds) {
-        const index = invites.findIndex(entry => entry.calendar === calendar && entry.eventId === eventId);
-        const entry = {
-          calendar, eventId, url: calendarInviteUrl(calendar, eventId), createdAt: new Date().toISOString(), createdBy: actorId,
-          ...(silentLumaEvent ? { label: card.title || 'Luma event' } : {}),
-        };
-        if (index < 0) invites.push(entry);
-        else {
-          const refreshed = { ...invites[index] };
-          delete refreshed.staleAt;
-          invites[index] = { ...refreshed, ...entry };
-        }
+    }
+    for (const [calendar, eventId] of linkedEventIds) {
+      const index = invites.findIndex(entry => entry.calendar === calendar && entry.eventId === eventId);
+      const entry = {
+        calendar, eventId, url: calendarInviteUrl(calendar, eventId), createdAt: new Date().toISOString(), createdBy: actorId,
+        // Silent copies and the public entry are named for the event.
+        ...(silentLumaEvent || calendar === PUBLIC_DTC_EVENTS_CALENDAR ? { label: card.title || 'Luma event' } : {}),
+      };
+      if (index < 0) invites.push(entry);
+      else {
+        const refreshed = { ...invites[index] };
+        delete refreshed.staleAt;
+        invites[index] = { ...refreshed, ...entry };
       }
     }
     return {
@@ -402,11 +412,13 @@ export async function syncCardInvite(
   let storedHold: CalendarHold | undefined;
   if (linkedHold) {
     const preservedTopic = linkedHold.topic || (podcastTitle && linkedHold.title && !isPodcastInviteTitle(linkedHold.title) ? confirmedTitle(linkedHold.title) : undefined);
+    // The public entry belongs to the Card, so releasing the hold never has to touch it.
+    const inviteEventIds = Object.fromEntries(Object.entries(sync.eventIds).filter(([calendar]) => calendar !== PUBLIC_DTC_EVENTS_CALENDAR));
     storedHold = {
       ...linkedHold, ...interval, cardId: card.id, title: confirmedTitle(inviteTitle), ...(preservedTopic ? { topic: preservedTopic } : {}), date: todayIn(interval.timeZone, new Date(interval.startIso)),
       googleTitle: confirmedTitle(inviteTitle), guestRef: guests[0], ...(documentUrl ? { documentUrl } : {}),
       status: 'confirmed', confirmedAt: linkedHold.confirmedAt || new Date().toISOString(),
-      googleEventIds: sync.eventIds, googleSync: { state: sync.state, ...(sync.state === 'deferred' ? { reason: sync.reason } : {}) },
+      googleEventIds: inviteEventIds, googleSync: { state: sync.state, ...(sync.state === 'deferred' ? { reason: sync.reason } : {}) },
       updatedAt: new Date().toISOString(), version: linkedHold.version + 1,
     };
     await putCalendarHold(client, storedHold);
