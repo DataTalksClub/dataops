@@ -22,10 +22,17 @@ For an attendee-free reservation with no guest email, use
 --no-guest-notifications to suppress invitations and transition emails.
 --expires-days N renews the proposal expiry from now (1–365 days).
 
+A Card that already holds its own Luma entries (a public DTC events entry and
+silent personal copies, made by "cards time" without guests) can still get its
+private invitation: propose keeps those entries live and untouched beside it.
+--dry-run plans the transition and prints what it would do, without writing to
+the Card, Google Calendar or email.
+
 Usage
   dataops event propose <card|hold|episode> --date YYYY-MM-DD [--time HH:MM | --window NAME]
       [--title T] [--topic TOPIC] [--guest-names "Name, Name"]
       [--guest-emails "a@b.c,d@e.f"] [--document-url URL] [--duration MINUTES] [--time-zone IANA]
+      [--no-guest-notifications] [--expires-days N] [--dry-run]
   dataops event approve <card|hold|episode> [--guest-emails "a@b.c"] [--document-url URL]
   dataops event reschedule <card|hold|episode> --date YYYY-MM-DD [--time HH:MM | --window NAME]
       [--title T] [--topic TOPIC] [--guest-names "Name, Name"]
@@ -108,9 +115,11 @@ function buildTransitionPayload(args, { requireDate = false } = {}) {
   const guestEmails = parseGuestEmailsFlag(args);
   const documentUrl = optionalString(args, "documentUrl") ?? optionalString(args, "document-url");
   const operationKey = optionalString(args, "operationKey") ?? optionalString(args, "operation-key");
+  if (args.dryRun !== undefined && args.dryRun !== true) throw new UsageError("--dry-run is a boolean flag.");
 
   return {
     ...holdReservationOptions(args),
+    ...(args.dryRun === true ? { dryRun: true } : {}),
     ...(duration !== undefined ? { durationMinutes: duration } : {}),
     ...(timeZone ? { timeZone } : {}),
     ...(date !== undefined ? { date } : {}),
@@ -138,6 +147,25 @@ function printLifecycleSummary(io, actionLabel, result) {
   if (result.rescheduleTaskId) io.print(`Reschedule checklist Task: ${result.rescheduleTaskId}`);
 }
 
+/** A planned transition: what the real run would write and notify, and what it would leave alone. */
+function printDryRun(io, actionLabel, result) {
+  const ev = result.event || {};
+  const planned = (ev.operations || []).at(-1)?.desired || {};
+  printLifecycleSummary(io, `Dry run — would ${actionLabel.toLowerCase()}`, { ...result, sync: { state: "synced" } });
+  io.print("Nothing was written to the Card, Google Calendar or email.");
+  io.print(`Invitation window: ${planned.startIso} .. ${planned.endIso} (${planned.timeZone})${planned.location ? ` at ${planned.location}` : ""}`);
+  io.print(`Attendees: ${(planned.attendees || []).join(", ") || "none"}`);
+  io.print(`Google calendar updates: ${planned.sendUpdates === "all" ? "invitations are sent" : "silent"}`);
+  io.print(`Emails: ${(planned.emails || []).length}`);
+  const listing = result.listing;
+  if (listing) {
+    io.print(`Kept live and untouched beside the invitation (${listing.eventKey}):`);
+    for (const [calendar, eventId] of Object.entries(listing.googleEventIds || {})) io.print(`  ${calendar}: ${eventId}`);
+  } else {
+    io.print("Kept live and untouched beside the invitation: none");
+  }
+}
+
 export async function propose(args, io) {
   const target = resolveTarget(
     args,
@@ -146,7 +174,8 @@ export async function propose(args, io) {
   const payload = buildTransitionPayload(args, { requireDate: true });
   const result = await apiFor(args).post(`/api/events/${enc(target)}/propose`, payload);
   if (args.json) return result;
-  printLifecycleSummary(io, "Proposed", result);
+  if (result.dryRun) printDryRun(io, "Propose", result);
+  else printLifecycleSummary(io, "Proposed", result);
   return result;
 }
 
@@ -221,7 +250,17 @@ export async function show(args, io) {
   const target = resolveTarget(args, "dataops event show <card|hold|episode>");
   const result = await apiFor(args).get(`/api/events/${enc(target)}`);
   if (args.json) return result;
-  const ev = result.event || {};
+  if (!result.event) {
+    const listing = result.listing;
+    fields(io, [
+      ["cardId", result.card?.id],
+      ["invitation", "none"],
+      ["listing", listing ? `${Object.keys(listing.googleEventIds || {}).length} attendee-free entries (${listing.eventKey})` : "none"],
+      ["next step", result.nextStep],
+    ]);
+    return result;
+  }
+  const ev = result.event;
   const hold = result.hold || {};
   fields(io, [
     ["id", ev.id],

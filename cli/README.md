@@ -103,6 +103,30 @@ first-contact email is never sent; `dataops cards invitation CARD_ID --send-cale
 does the same. Add `--dry-run` to see the planned attendees without changing anything. Use `cards invite list`
 and the calendar readback to verify the invitation afterward.
 
+## Create the private invitation after the Luma entries
+
+`cards time` without guests gives a Luma event Card its own attendee-free
+entries: the public DTC events entry and silent personal copies. A private Zoom
+invitation can still be added afterwards; those entries stay live and untouched
+beside it and are never converted into the invitation.
+
+```bash
+dataops event show CARD_ID --json                                    # no invitation yet: lists the entries and the command
+dataops event propose CARD_ID --date 2026-12-01 --time 17:00 \
+  --guest-emails 'speaker@example.test' --document-url https://luma.com/your-event --dry-run
+dataops event propose CARD_ID --date 2026-12-01 --time 17:00 \
+  --guest-emails 'speaker@example.test' --document-url https://luma.com/your-event
+dataops event approve CARD_ID                                        # sends the confirmed invitation
+```
+
+`--dry-run` runs every check the real propose runs and prints the invitation it
+would make (window, Zoom room, attendees, notifications) and the entries it
+would leave alone, without writing to the Card, Google Calendar or email. A
+refusal is a `409 event_conflict` (exit code 5) whose message names the cause,
+such as an active event on the Card. Re-timing the Card afterwards with
+`cards time` moves the invitation and the Luma entries together; `event release`
+cancels the invitation only.
+
 ## Reconcile duplicate ledger rows
 
 Voiding and restoring a ledger row are admin-only, require a period and reason,

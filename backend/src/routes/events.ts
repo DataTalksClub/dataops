@@ -19,19 +19,22 @@ import {
   toCalendarHoldView,
   updateEvent,
   type EventLifecycleResult,
+  type EventWithoutInvitation,
 } from '../events/service';
 import { json, parseJsonObjectBodyOrEmpty as parseBody } from '../http';
 
 async function formatEventResponse(
   client: DynamoDBDocumentClient,
-  result: EventLifecycleResult,
+  result: EventLifecycleResult | EventWithoutInvitation,
 ) {
   const directory = new TeamDirectory(client);
   const templateIdByType = await getTemplateIdByType(client);
   const projectedCard = await projectCard(directory, result.card, undefined, templateIdByType);
+  if (result.event === null) return { ...result, card: projectedCard };
   return {
     event: result.event,
     hold: toCalendarHoldView(result),
+    ...(result.dryRun ? { dryRun: true, listing: result.listing ?? null } : {}),
     history: result.history,
     card: projectedCard,
     episode: result.episode,
@@ -57,8 +60,10 @@ function parseTransitionInput(body: Record<string, any>, actorId: string) {
         ? [body.guestRef.trim()]
         : undefined;
   if (body.suppressGuestNotifications !== undefined && typeof body.suppressGuestNotifications !== 'boolean') throw new EventInputError('suppressGuestNotifications must be a boolean');
+  if (body.dryRun !== undefined && typeof body.dryRun !== 'boolean') throw new EventInputError('dryRun must be a boolean');
   return {
     ...(body.suppressGuestNotifications === true ? { suppressGuestNotifications: true } : {}),
+    ...(body.dryRun === true ? { dryRun: true } : {}),
     ...(body.expiresDays !== undefined ? { expiresDays: body.expiresDays } : {}),
     ...(body.durationMinutes !== undefined ? { durationMinutes: Number(body.durationMinutes) } : {}),
     ...(typeof body.timeZone === 'string' ? { timeZone: body.timeZone } : {}),
@@ -164,7 +169,7 @@ export async function handleEventRoutes(
       } else {
         result = await releaseEvent(client, targetId, parseTransitionInput(body, actorId));
       }
-      const status = action === 'propose' ? 201 : 200;
+      const status = action === 'propose' && result.event !== null && !result.dryRun ? 201 : 200;
       return json(status, await formatEventResponse(client, result));
     }
 
