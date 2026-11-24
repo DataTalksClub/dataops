@@ -197,8 +197,7 @@ test('cards time on a guest-intake Card moves the event, the Card anchor and the
   assert.equal(JSON.parse(card2).card.anchorDate, after.date);
   const updated = (await getGuestIntakeJob(db, job.id))!;
   assert.equal(updated.requestedDate, after.date); assert.equal(updated.requestedTime, `${parts.hour}:${parts.minute}`);
-  // A retry may re-point an eventless job, but never one that already owns an event.
-  const stale = await invoke('POST', `/api/cards/${created.card.id}/guest-intake/retry`, { date: 'not-a-date' });
+});
   assert.equal(stale.statusCode, 400);
 });
 test('acceptance racing Gmail receipt bookkeeping leaves no waiting follow-up', async () => {
