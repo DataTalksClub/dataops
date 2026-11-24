@@ -3,6 +3,7 @@ import { berlinParts } from '../events/guestIntakeSlots';
 import { getSponsorDocWithAuthMaterial, decryptSponsorDocAccessCode } from '../db/sponsorDocs';
 import { GuestInviteValidationError } from '../calendar/guestInvite';
 import { getEventRecord } from '../events/store';
+import { rescheduleEvent, EventInputError, EventConflictError } from '../events/service';
 import { loadGuestFirstContact } from '../events/guestFirstContact';
 import { provenPreSendFailure } from '../events/guestFirstContactDelivery';
 import { getTaskConsistent } from '../db/tasks';
@@ -423,14 +424,27 @@ async function handleCardRoutes(
       const scheduling = parseObject(rawBody);
       const agreedFrom = scheduling.agreedFrom ?? job.agreedFrom;
       const agreedTo = scheduling.agreedTo ?? job.agreedTo;
-      const requestedDate = card.anchorDate || job.requestedDate;
+      const requestedDate = scheduling.date as string | undefined || card.anchorDate || job.requestedDate;
       try { validateGuestAgreement({ agreedFrom: agreedFrom as string, agreedTo: agreedTo as string }, requestedDate); }
       catch (error) { return json(422, { error: (error as Error).message }); }
       if ((job.leaseUntil || 0) > Date.now()) return json(409, { error: 'Invitation worker is active; retry after its lease' });
       const skipEmail = action === 'send' ? false : job.skipEmail;
-      await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { ...guestIntakeKey(job.id), ...job, agreedFrom, agreedTo, requestedDate, ...(card.eventTime ? { requestedTime: berlinParts(card.eventTime.startIso).time, timeZone: 'Europe/Berlin' } : {}), status: 'queued', skipEmail, updatedAt: new Date().toISOString() },
+      // A retry may move the requested slot, so a date the policy rejected is never replayed forever.
+      let retarget: { requestedDate?: string; requestedTime?: string } = {};
+      if (action === 'retry' && rawBody?.trim()) {
+        let body: Record<string, unknown>;
+        try { body = JSON.parse(rawBody); } catch { return json(400, { error: 'Invalid JSON body' }); }
+        if (body.date !== undefined || body.time !== undefined) {
+          if (typeof body.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) return json(400, { error: 'date must be YYYY-MM-DD' });
+          if (body.time !== undefined && (typeof body.time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.time))) return json(400, { error: 'time must be HH:MM' });
+          if (job.holdId) return json(409, { error: 'This invitation already owns an event; move it with cards time instead' });
+          retarget = { requestedDate: body.date, requestedTime: body.time };
+        }
+      }
+      await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { ...guestIntakeKey(job.id), ...job, agreedFrom, agreedTo, requestedDate, ...(card.eventTime ? { requestedTime: berlinParts(card.eventTime.startIso).time, timeZone: 'Europe/Berlin' } : {}), ...retarget, status: 'queued', skipEmail, updatedAt: new Date().toISOString() },
+
         ConditionExpression: '#s = :prior AND updatedAt = :updated', ExpressionAttributeNames: { '#s': 'status' }, ExpressionAttributeValues: { ':prior': job.status, ':updated': job.updatedAt } }));
-      const updated = await updateCardAdditive(client, card, c => ({ guestIntake: { ...c.guestIntake!, status: 'queued', skipEmail } }));
+      const updated = await updateCardAdditive(client, card, c => ({ ...(requestedDate ? { anchorDate: requestedDate } : {}), guestIntake: { ...c.guestIntake!, status: 'queued', skipEmail } }));
       return json(202, { card: updated, invitation: { status: 'queued', recipient: job.guestEmail, taskId: job.taskId } });
     }
 
@@ -1136,6 +1150,30 @@ async function handleCardTime(method: string, id: string, rawBody: string | null
     }
   } catch (error) {
     return json(400, { error: error instanceof Error ? error.message : 'Invalid event time' });
+  }
+  // A Card whose first invitation owns an Event record moves through the Event lifecycle, so the event,
+  // the Card anchor and the intake job never drift apart (the Card-invite path knows nothing of the Event).
+  const linkedEvent = await getEventRecord(client, `hold_${card.id}`);
+  if (linkedEvent && (linkedEvent.status === 'proposed' || linkedEvent.status === 'approved')) {
+    try {
+      const local = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: interval.timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+        .formatToParts(new Date(interval.startIso)).map(p => [p.type, p.value]));
+      const moved = await rescheduleEvent(client, card.id, { date: `${local.year}-${local.month}-${local.day}`, time: `${local.hour}:${local.minute}`, timeZone: interval.timeZone,
+        durationMinutes: interval.durationMinutes, ...(guests.length ? { guestEmails: guests } : {}), actor: resolved.actor.id });
+      const job = card.guestIntake ? await getGuestIntakeJob(client, card.guestIntake.jobId) : null;
+      // Keep the intake job on the same slot so retry never replays the superseded date.
+      if (job && job.status !== 'sent') {
+        await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { ...guestIntakeKey(job.id), ...job, requestedDate: `${local.year}-${local.month}-${local.day}`, requestedTime: `${local.hour}:${local.minute}`,
+          timeZone: interval.timeZone, startIso: moved.event.startIso, updatedAt: new Date().toISOString() } }));
+      }
+      const fresh = await getCardConsistent(client, card.id);
+      return json(moved.sync.state === 'synced' ? 200 : 502, { ...moved, card: await projectCard(new TeamDirectory(client), fresh || moved.card, undefined, await getTemplateIdByType(client)),
+        movedTasks: 0, ...(moved.sync.state === 'deferred' ? { error: moved.sync.reason } : {}) });
+    } catch (error) {
+      if (error instanceof EventInputError) return json(422, { error: error.message });
+      if (error instanceof EventConflictError) return json(409, { error: error.message });
+      throw error;
+    }
   }
   const rescheduling = Boolean(
     card.eventTime?.startIso

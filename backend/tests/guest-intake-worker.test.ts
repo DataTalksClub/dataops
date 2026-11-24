@@ -183,6 +183,22 @@ test('a skipped invitation preview is read-only; explicit first-send reuses its 
   assert.equal((await invoke('POST', `/api/cards/${created.card.id}/guest-intake/send`, {})).statusCode, 409);
 });
 
+test('cards time on a guest-intake Card moves the event, the Card anchor and the intake job together', async () => {
+  const created = await card('webinar', { skipEmail: true });
+  await processGuestIntake(db, created.card.guestIntake.jobId);
+  const job = (await getGuestIntakeJob(db, created.card.guestIntake.jobId))!;
+  const event = (await getEventRecord(db, job.holdId!))!;
+  const moved = new Date(Date.parse(event.startIso) + 7 * 86400000);
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(moved).map(p => [p.type, p.value]));
+  const res = await invoke('POST', `/api/cards/${created.card.id}/time`, { at: `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}` });
+  assert.equal(res.statusCode, 200, res.body);
+  const after = (await getEventRecord(db, event.id))!;
+  assert.equal(after.date, `${parts.year}-${parts.month}-${parts.day}`);
+  const card2 = (await invoke('GET', `/api/cards/${created.card.id}`)).body;
+  assert.equal(JSON.parse(card2).card.anchorDate, after.date);
+  const updated = (await getGuestIntakeJob(db, job.id))!;
+  assert.equal(updated.requestedDate, after.date); assert.equal(updated.requestedTime, `${parts.hour}:${parts.minute}`);
+});
 test('acceptance racing Gmail receipt bookkeeping leaves no waiting follow-up', async () => {
   const created = await card('webinar');
   onMailSend = async () => { await approveEvent(db, created.card.id, { actor: 'synthetic-guest-accept', operationKey: 'accept-during-mail-send' }); };
@@ -423,4 +439,39 @@ test('completed invitation never replays a stale November job after its Card mov
   const retry = await invoke('POST', `/api/cards/${job.cardId}/guest-intake/retry`, {});
   assert.equal(retry.statusCode, 409, retry.body);
   assert.match(JSON.parse(retry.body).error, /completed/);
+});
+
+test('explicit anchorDate on a free Wednesday succeeds even when podcast policy defaults weekdays to Mon/Tue', async () => {
+  // 2030-12-04 is a Wednesday; podcast guestIntake.weekdays is [1, 2] for auto-pick only.
+  const created = await card('podcast', { anchorDate: '2030-12-04', skipEmail: true });
+  await processGuestIntake(db, created.card.guestIntake.jobId);
+  const job = (await getGuestIntakeJob(db, created.card.guestIntake.jobId))!;
+  assert.equal(job.status, 'skipped');
+  assert.equal(job.selectedDate, '2030-12-04');
+  const event = (await getEventRecord(db, job.holdId!))!;
+  assert.equal(event.date, '2030-12-04');
+});
+
+test('GET /api/calendar-items/next-free-day honors all-day summit blockers and returns the nearest free day', async () => {
+  ownerEvents = [
+    { id: 'evt-summit', summary: 'AI Coding Summit Berlin', transparency: 'transparent', start: { date: '2030-12-02' }, end: { date: '2030-12-03' } },
+  ];
+  try {
+    const res = await handler({
+      httpMethod: 'GET',
+      path: '/api/calendar-items/next-free-day',
+      headers: { 'x-user-id': 'synthetic-actor' },
+      body: null,
+      queryStringParameters: { type: 'podcast', window: 'midday', from: '2030-12-02', to: '2030-12-06' },
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const body = JSON.parse(res.body);
+    assert.equal(body.found, true);
+    assert.equal(body.date, '2030-12-03');
+    assert.equal(body.window, 'midday');
+    assert.equal(body.time, '12:30');
+    assert.equal(body.durationMinutes, 60);
+  } finally {
+    ownerEvents = [];
+  }
 });

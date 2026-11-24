@@ -117,6 +117,7 @@ export const FAMILIES = {
       list: calendar.list,
       day: calendar.day,
       slots: calendar.slots,
+      "next-free-day": calendar.nextFreeDay,
       propose: calendar.propose,
       "confirm-hold": calendar.confirmHold,
       "link-hold": calendar.linkHold,
