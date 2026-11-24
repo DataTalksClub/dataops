@@ -65,6 +65,33 @@ describe("derived documents", () => {
   });
 });
 
+describe("derived registers", () => {
+  const REGISTER = "_docs/registers/external-link-register.csv";
+
+  test("only the regenerated external-link register is derived, not authored register seeds", () => {
+    assert.equal(isDerivedDocument(REGISTER, Buffer.from("source_type,path\n")), true);
+    assert.equal(isDerivedDocument("_docs/registers/system-register.csv", Buffer.from("system_id,title\n")), false);
+    assert.equal(isDerivedDocument("content/a/external-link-register.csv", Buffer.from("source_type,path\n")), false);
+  });
+
+  // Run 45417215713: an out-of-band publish put a register copy Git never
+  // recorded into prod; the mirror then folded its rows into Git's content and
+  // regenerated the register in the same commit, so every later publish
+  // reported the register as changed on both sides.
+  test("publishes Git's regenerated register over a prod copy Git never recorded", async () => {
+    const files = new Map([[REGISTER, { bytes: Buffer.from("rows a b c\n"), sha: h("rows a b c\n") }]]);
+    const prod = prodOf({ [REGISTER]: "rows a b\n" });
+    const asked = [];
+    const plan = await planReconcile({
+      files, prod, known: () => states("rows a\n", "rows a c\n", "rows a b c\n"),
+      page: async (file) => { asked.push(file); return { versions: [{ sha256: h("rows a b\n") }, { sha256: h("rows a\n") }], cursor: null }; },
+    });
+    assert.deepEqual(plan.mutations.map((m) => [m.path, m.operation]), [[REGISTER, "edit"]]);
+    assert.deepEqual(plan.conflicts, []);
+    assert.deepEqual(asked, []);
+  });
+});
+
 describe("three-way classification", () => {
   test("publishes over a Git-recorded prod state, leaves prod-ahead edits, flags both-sides changes", () => {
     const known = states("v1", "v2");

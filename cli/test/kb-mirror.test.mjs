@@ -106,6 +106,21 @@ describe("mirror planning", () => {
     ]);
   });
 
+  test("never pulls a derived register back into Git; the repository regenerates it", async () => {
+    const register = "_docs/registers/external-link-register.csv";
+    const files = fileOf({ [register]: "git rows\n" });
+    const prod = prodOf({ [register]: "other publisher rows\n" });
+    const plan = await planMirror({
+      files, prod,
+      known: () => states("base rows\n", "git rows\n"),
+      page: async () => ({ versions: [version("other publisher rows\n"), version("base rows\n")], cursor: null }),
+      version: async () => Buffer.from("other publisher rows\n"),
+      recordedBytes: () => new Map([[h("base rows\n"), Buffer.from("base rows\n")]]),
+    });
+    assert.deepEqual(plan.writes, []);
+    assert.deepEqual(plan.conflicts, []);
+  });
+
   test("gives prod's copy back when Git deleted the file after the shared base", async () => {
     const files = new Map();
     const prod = prodOf({ "content/revived.md": "prod content" });
