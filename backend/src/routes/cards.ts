@@ -11,6 +11,7 @@ import { cardEventInterval } from '../calendar/cardEventTime';
 import { adoptCardInvite, adoptEventDate, CardInviteConflictError, CardInviteGoogleError, CardInviteInputError, cardGuests, cardHasHoldInvite, parseCardGuests, syncCardInvite, unlinkCardInvite, verifyCardInvites } from '../calendar/cardInvite';
 import { lumaUrlForEventCard } from '../calendar/lumaEvents';
 import { addPrivateInviteGuests, HOLD_ORGANIZER } from '../calendar/holdGoogleSync';
+import { sendCalendarOnlyInvitation, CalendarOnlyInviteError } from '../events/guestIntakeCalendarOnly';
 import { calendarInviteDeps } from './calendarHolds';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
@@ -390,6 +391,28 @@ async function handleCardRoutes(
       );
     }
 
+    const calendarOnlyMatch = suffix.match(/^\/([^/]+)\/guest-intake\/send-calendar\/?$/);
+    if (calendarOnlyMatch) {
+      if (method !== 'POST') return json(405, { error: 'Method not allowed' });
+      const actor = await resolveInteractiveActor(client, event, 'work-write');
+      if (!actor.ok) return actor.response;
+      const card = await getCardConsistent(client, calendarOnlyMatch[1]);
+      if (!card) return json(404, { error: 'Card not found' });
+      if (!mayAdministerCard(actor.actor, card)) return workAdminForbidden('Sending this invitation requires the Card owner or an admin');
+      let body: { dryRun?: unknown; guestEmails?: unknown };
+      try { body = JSON.parse(rawBody || '{}'); } catch { return json(400, { error: 'Invalid JSON body' }); }
+      if (body.dryRun !== undefined && typeof body.dryRun !== 'boolean') return json(400, { error: 'dryRun must be boolean' });
+      let extraGuests: string[] = [];
+      try { if (body.guestEmails !== undefined) extraGuests = parseCardGuests(body.guestEmails); }
+      catch (error) { return json(400, { error: error instanceof Error ? error.message : 'Invalid guests' }); }
+      try {
+        return json(200, await sendCalendarOnlyInvitation(client, card.id, { actor: actor.actor.id, extraGuests, dryRun: body.dryRun === true }));
+      } catch (error) {
+        if (error instanceof CalendarOnlyInviteError) return json(error.status, { error: error.message });
+        throw error;
+      }
+    }
+
     const firstInviteMatch = suffix.match(/^\/([^/]+)\/guest-intake(?:\/(send|retry))?\/?$/);
     if (firstInviteMatch) {
       const action = firstInviteMatch[2];
@@ -412,6 +435,7 @@ async function handleCardRoutes(
       }
       if (!mayAdministerCard(actor.actor, card)) return workAdminForbidden('Sending this invitation requires the Card owner or an admin');
       if (action === 'send' && (job.status !== 'skipped' || !job.skipEmail)) return json(409, { error: 'Only a skipped initial invitation can be sent here; existing delivery attempts must be reconciled' });
+      if (action === 'send' && job.calendarOnly) return json(409, { error: `The [Proposed] calendar invitation was already sent on ${job.calendarOnly.sentAt} without the first-contact email because first contact happened outside DataOps; refusing to send a duplicate first-contact email. Continue in the existing email thread.` });
       if (action === 'retry') {
         const task = await getTaskConsistent(client, job.taskId);
         const prior = task?.podcastFirstContact;
@@ -999,12 +1023,31 @@ async function handleCardCalendarInvites(
     if (!mayAdministerCard(actor.actor, card)) return workAdminForbidden('Administering this Card requires its owner or an admin');
     if (card.eventTime?.sync === 'syncing') return json(409, { error: 'The Card invitation is syncing; retry after it completes.' });
     let guests: string[];
-    try { guests = parseCardGuests(JSON.parse(rawBody || '{}').guestEmails); }
+    let dryRun: unknown;
+    try { const parsed = JSON.parse(rawBody || '{}'); dryRun = parsed.dryRun; guests = parseCardGuests(parsed.guestEmails); }
     catch (error) { return json(400, { error: error instanceof Error ? error.message : 'Invalid guests' }); }
+    if (dryRun !== undefined && typeof dryRun !== 'boolean') return json(400, { error: 'dryRun must be boolean' });
     const eventId = card.eventTime?.googleEventIds?.[HOLD_ORGANIZER];
     if (!eventId || !card.calendarInvites?.some(invite => invite.eventId === eventId && invite.calendar === HOLD_ORGANIZER && !invite.staleAt)) {
       return json(409, { error: 'The Card has no owned private organizer invitation. Create the private invitation before adding guests.' });
     }
+    // A --skip-email Card owns a silent proposed hold (no attendees, calendar=none):
+    // invite through the calendar-only path, which adds the guest and required
+    // attendees and notifies via Google Calendar without the first-contact email.
+    const intake = card.guestIntake?.status === 'skipped' && card.guestIntake.skipEmail ? await getGuestIntakeJob(client, card.guestIntake.jobId) : null;
+    const silentHold = intake?.holdId ? await getEventRecord(client, intake.holdId) : null;
+    if (intake && silentHold?.status === 'proposed' && silentHold.policy.guests.proposal !== true) {
+      try {
+        const result = await sendCalendarOnlyInvitation(client, card.id, { actor: actor.actor.id, extraGuests: guests, dryRun: dryRun === true });
+        if (!result.dryRun) await updateCardAdditive(client, (await getCardConsistent(client, card.id))!, current => ({ guestEmails: [...new Set([...(current.guestEmails || []), ...guests])] }));
+        const before = new Set(silentHold.guestEmails || []);
+        return json(200, { ...result, added: result.guests.filter(g => !before.has(g)), viaCalendarOnlyInvitation: true });
+      } catch (error) {
+        if (error instanceof CalendarOnlyInviteError) return json(error.status, { error: error.message });
+        throw error;
+      }
+    }
+    if (dryRun === true) return json(200, { dryRun: true, eventId, calendar: HOLD_ORGANIZER, guests, note: 'Guests would be added to the existing private invitation; nothing was changed.' });
     try {
       const result = await addPrivateInviteGuests(card.eventTime!.eventKey, eventId, guests, await calendarInviteDeps({}, client));
       await updateCardAdditive(client, card, current => ({ guestEmails: [...new Set([...(current.guestEmails || []), ...guests])] }));

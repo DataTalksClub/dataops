@@ -33,10 +33,14 @@ Usage
                                                 contacting the guest. Reuse --key for a safe retry.
                                                 --sponsored marks the event as sponsored (a deal flag; the
                                                 format and its documents stay unchanged).
-  dataops cards invitation <card-id> [--preview | --send | --retry-pre-send] [--json]
+  dataops cards invitation <card-id> [--preview | --send | --send-calendar [--guests EMAIL,EMAIL] [--dry-run] | --retry-pre-send] [--json]
                                                 Read first-invitation status; --preview renders without sending.
                                                 --send sends email AND a [Proposed] calendar invite only
                                                 for a previously skipped first invitation; never a resend.
+                                                --send-calendar sends ONLY the [Proposed] calendar invite
+                                                (guest + required attendees, Zoom, Google notifies) after
+                                                --skip-email, when first contact is in an existing email
+                                                thread; it then blocks --send. --dry-run shows the plan.
                                                 --retry-pre-send resumes only a proven safe pre-send failure;
                                                 ambiguous delivery is blocked. The worker normally resumes automatically.
   dataops cards update <card-id> [--title T] [--description D] [--date D|none] [--end-date D]
@@ -59,9 +63,11 @@ Usage
   dataops cards invite add <card-id> <event-id> --calendar CAL [--label LABEL] [--json]
                                                 Adopt an existing Google event without editing it
   dataops cards invite list <card-id> [--json]  The Card's invites, checked in Google (gone = stale)
-  dataops cards invite guests <card-id> --guests EMAIL,EMAIL [--json]
+  dataops cards invite guests <card-id> --guests EMAIL,EMAIL [--dry-run] [--json]
                                                 Add guests to its existing private Zoom invitation;
-                                                preserve attendees and notify via Google Calendar
+                                                preserve attendees and notify via Google Calendar.
+                                                On a silent --skip-email hold this is the calendar-only
+                                                invitation (no first-contact email). --dry-run changes nothing.
   dataops cards invite remove <card-id> <event-id> [--calendar CAL] [--delete-event] [--json]
                                                 Unlink an invite from the Card; with --delete-event also
                                                 deletes the Google event (no guest notification)
@@ -496,15 +502,19 @@ function printCountPreview(io, preview) {
 
 export async function invite(args, io) {
   const usage = "dataops cards invite add <card-id> <event-id> --calendar CAL [--label LABEL]\n"
-    + "  dataops cards invite guests <card-id> --guests EMAIL,EMAIL\n"
+    + "  dataops cards invite guests <card-id> --guests EMAIL,EMAIL [--dry-run]\n"
     + "  dataops cards invite list <card-id>\n"
     + "  dataops cards invite remove <card-id> <event-id> [--calendar CAL] [--delete-event]";
   const action = positional(args, 0, usage);
   if (action === "guests") {
     const id = positional(args, 1, usage);
     const guestEmails = csv(required(args, "guests", "guests"));
-    const result = await apiFor(args).patch(`/api/cards/${enc(id)}/calendar-invites`, { guestEmails });
-    if (!args.json) io.print(`Added ${result.added.length} guest(s) to private invite ${result.eventId}; existing attendees and event details retained.`);
+    const dryRun = flag(args, "dryRun");
+    const result = await apiFor(args).patch(`/api/cards/${enc(id)}/calendar-invites`, { guestEmails, ...(dryRun ? { dryRun: true } : {}) });
+    if (args.json) return result;
+    if (result.viaCalendarOnlyInvitation) printCalendarOnly(result, io);
+    else if (result.dryRun) io.print(`Dry run: would add ${result.guests.join(", ")} to private invite ${result.eventId}; nothing changed.`);
+    else io.print(`Added ${result.added.length} guest(s) to private invite ${result.eventId}; existing attendees and event details retained.`);
     return result;
   }
   if (action === "add") {
@@ -605,12 +615,19 @@ export async function time(args, io) {
 }
 
 export async function invitation(args, io) {
-  const id = positional(args, 0, "dataops cards invitation <card-id> [--preview | --send | --retry-pre-send]");
-  const modes = ["preview", "send", "retryPreSend"].filter(flag => args[flag] !== undefined && args[flag] !== false && args[flag] !== "false");
-  if (modes.length > 1) throw new UsageError("Choose only one of --preview, --send or --retry-pre-send.");
+  const id = positional(args, 0, "dataops cards invitation <card-id> [--preview | --send | --send-calendar [--guests EMAIL,EMAIL] [--dry-run] | --retry-pre-send]");
+  const modes = ["preview", "send", "sendCalendar", "retryPreSend"].filter(flag => args[flag] !== undefined && args[flag] !== false && args[flag] !== "false");
+  if (modes.length > 1) throw new UsageError("Choose only one of --preview, --send, --send-calendar or --retry-pre-send.");
   for (const flag of modes) if (args[flag] !== true && args[flag] !== "true") throw new UsageError("Invitation action options are boolean flags.");
+  if (!modes.includes("sendCalendar") && (args.dryRun !== undefined || args.guests !== undefined)) throw new UsageError("--dry-run and --guests apply only to --send-calendar.");
   const api = apiFor(args);
   const route = `/api/cards/${enc(id)}/guest-intake`;
+  if (modes.includes("sendCalendar")) {
+    const dryRun = flag(args, "dryRun");
+    const result = await api.post(`${route}/send-calendar`, { ...(dryRun ? { dryRun: true } : {}), ...(args.guests !== undefined ? { guestEmails: csv(args.guests) } : {}) });
+    if (!args.json) printCalendarOnly(result, io);
+    return result;
+  }
   const result = args.send === true || args.send === "true" ? await api.post(`${route}/send`, {})
     : args.retryPreSend === true || args.retryPreSend === "true" ? await api.post(`${route}/retry`, {})
     : await api.get(route, args.preview === true || args.preview === "true" ? { query: { preview: "1" } } : undefined);
@@ -628,6 +645,23 @@ export async function invitation(args, io) {
     io.print(preview.body);
   } else if (modes.includes("preview")) io.print(JSON.stringify(preview || result, null, 2));
   return result;
+}
+
+function flag(args, name) {
+  const value = args[name];
+  if (value === undefined || value === false || value === "false") return false;
+  if (value === true || value === "true") return true;
+  throw new UsageError(`--${name.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)} is a boolean flag.`);
+}
+
+function printCalendarOnly(result, io) {
+  const head = result.dryRun ? "Dry run (nothing sent): would send" : result.sent ? "Sent" : "Already sent";
+  io.print(`${head} the [Proposed] calendar invitation only; first-contact email: not sent.`);
+  io.print(`Event: ${result.eventId || result.holdId} on ${result.calendar} at ${result.startIso}`);
+  io.print(`Guests: ${result.guests.join(", ")}`);
+  io.print(`Attendees${result.dryRun ? " (planned)" : ""}: ${result.attendees.join(", ")}`);
+  if (result.location) io.print(`Location: ${result.location}`);
+  if (!result.dryRun) io.print("The first-contact email is now blocked for this Card (dataops cards invitation --send refuses).");
 }
 
 /** Re-date open Template Tasks to anchorDate + templateOffsetDays without touching any calendar hold. */

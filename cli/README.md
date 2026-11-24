@@ -96,7 +96,11 @@ This adds attendees to the Card's existing private Zoom invitation and sends
 Google Calendar updates. Existing attendees, responses, time and meeting details
 are retained. Repeating the command does not send another update when everyone
 is already invited. Public listings and silent Luma calendar entries are rejected;
-the command does not create or convert calendar events. Use `cards invite list`
+the command does not create or convert calendar events. On a guest Card created
+with `--skip-email`, the silent proposed hold is sent as the `[Proposed]` calendar
+invitation only (guest plus required attendees, Zoom, Google notification) and the
+first-contact email is never sent; `dataops cards invitation CARD_ID --send-calendar`
+does the same. Add `--dry-run` to see the planned attendees without changing anything. Use `cards invite list`
 and the calendar readback to verify the invitation afterward.
 
 ## Reconcile duplicate ledger rows

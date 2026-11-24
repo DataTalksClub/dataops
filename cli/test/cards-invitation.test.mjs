@@ -37,3 +37,32 @@ test('conflicting invitation actions fail before requests', async () => {
   assert.equal(await run(['cards', 'invitation', 'synthetic-card', '--send', '--preview'], captureIo()), 2);
   assert.equal(calls.length, 0);
 });
+test('--send-calendar posts only to the calendar-only route; --dry-run is a plan and email is never sent', async () => {
+  const plan = { dryRun: true, sent: false, emailSent: false, alreadyNotified: false, cardId: 'synthetic-card', invitationId: 'job', holdId: 'hold_synthetic-card', eventId: 'evt', calendar: 'orin@datatalks.club', startIso: '2030-01-01T18:00:00.000Z', guests: ['guest@example.test'], requiredAttendees: ['internal@example.invalid'], attendees: ['guest@example.test', 'internal@example.invalid'] };
+  const calls = fakePortal({ 'POST /api/cards/synthetic-card/guest-intake/send-calendar': ({ body }) => ({ ...plan, dryRun: body.dryRun === true, sent: body.dryRun !== true }) });
+  const dry = captureIo();
+  assert.equal(await run(['cards', 'invitation', 'synthetic-card', '--send-calendar', '--dry-run'], dry), 0);
+  assert.deepEqual(calls.at(-1).body, { dryRun: true });
+  assert.match(dry.text(), /Dry run \(nothing sent\)/);
+  assert.match(dry.text(), /first-contact email: not sent/);
+  assert.match(dry.text(), /internal@example\.invalid/);
+  const sent = captureIo();
+  assert.equal(await run(['cards', 'invitation', 'synthetic-card', '--send-calendar', '--guests', 'cohost@example.test'], sent), 0);
+  assert.deepEqual(calls.at(-1).body, { guestEmails: ['cohost@example.test'] });
+  assert.match(sent.text(), /^Sent the \[Proposed\] calendar invitation only/m);
+  assert.match(sent.text(), /--send refuses/);
+  assert.ok(calls.every(call => !call.route.endsWith('/guest-intake/send')));
+});
+test('--send-calendar cannot combine with --send; --dry-run needs --send-calendar', async () => {
+  const calls = fakePortal({});
+  assert.equal(await run(['cards', 'invitation', 'synthetic-card', '--send', '--send-calendar'], captureIo()), 2);
+  assert.equal(await run(['cards', 'invitation', 'synthetic-card', '--send', '--dry-run'], captureIo()), 2);
+  assert.equal(calls.length, 0);
+});
+test('invite guests --dry-run forwards dryRun and prints the calendar-only plan on a silent hold', async () => {
+  const calls = fakePortal({ 'PATCH /api/cards/synthetic-card/calendar-invites': ({ body }) => ({ viaCalendarOnlyInvitation: true, dryRun: body.dryRun === true, sent: false, emailSent: false, holdId: 'hold', eventId: 'evt', calendar: 'orin@datatalks.club', startIso: '2030-01-01T18:00:00.000Z', guests: ['guest@example.test'], attendees: ['guest@example.test', 'internal@example.invalid'], added: ['guest@example.test'] }) });
+  const io = captureIo();
+  assert.equal(await run(['cards', 'invite', 'guests', 'synthetic-card', '--guests', 'guest@example.test', '--dry-run'], io), 0);
+  assert.deepEqual(calls.at(-1).body, { guestEmails: ['guest@example.test'], dryRun: true });
+  assert.match(io.text(), /Dry run \(nothing sent\)/);
+});
