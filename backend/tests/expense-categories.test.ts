@@ -1,7 +1,5 @@
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { handler } from "../src/handler";
 import { createTables, startLocal, stopLocal } from "../scripts/local-dynamodb";
 import { getClient } from "../src/db/client";
@@ -26,8 +24,8 @@ const invoke = (method: string, path: string, body?: unknown) =>
 
 describe("expense category vocabulary", () => {
   it("matches the frontend canonical expense category list", async () => {
-    const frontendPath = path.resolve(import.meta.dirname, "../../frontend/src/surfaces/finance/expense-categories.js");
-    const mod = await import(frontendPath);
+    const frontendUrl = new URL("../../frontend/src/surfaces/finance/expense-categories.js", import.meta.url);
+    const mod = await import(frontendUrl.href);
     assert.deepEqual([...mod.CANONICAL_EXPENSE_CATEGORIES], [...CANONICAL_EXPENSE_CATEGORIES]);
     assert.deepEqual([...mod.SPECIAL_NON_OPERATING_EXPENSE_CATEGORIES], [...SPECIAL_NON_OPERATING_EXPENSE_CATEGORIES]);
   });

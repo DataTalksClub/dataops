@@ -654,7 +654,7 @@ test.describe('canonical frontend capability behavior', () => {
     const counterparty = unique('Synthetic vendor');
     const created = await context.request.post('/api/bookkeeping/transactions', { data: {
       transactionDate: '2026-08-12', counterparty, description: 'Synthetic browser evidence', amount: '18.50', currency: 'EUR',
-      category: 'testing', entryType: 'expense', statementRef: 'synthetic-reference',
+      category: 'Business Software', entryType: 'expense', statementRef: 'synthetic-reference',
     } });
     expect(created.status()).toBe(201);
     const transaction = await json(created);
@@ -733,7 +733,7 @@ test.describe('canonical frontend capability behavior', () => {
     } });
     expect(paired.status()).toBe(200);
     const booked = await context.request.post('/api/reconcile/months/2026-08/ledger', { data: {
-      bankKey: tools.bank.key, category: 'testing', description: 'Synthetic tools service',
+      bankKey: tools.bank.key, category: 'Business Software', description: 'Synthetic tools service',
     } });
     expect(booked.status()).toBe(201);
     const toolsTransaction = (await json(booked)).transaction;
