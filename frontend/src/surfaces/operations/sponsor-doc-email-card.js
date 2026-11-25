@@ -287,6 +287,9 @@ export function isEmailPieceSection(doc, tDef, sectionDef) {
   return secId === "placement" || secId === "main" || secId.includes("placement");
 }
 
+const HEADLINE_MAX_LENGTH = 80;
+const HEADLINE_URL_LIKE = /(?:\b[a-z][a-z0-9+.-]*:\/\/|\bwww\.|\S\.[a-z]{2,}\/)/i;
+
 export function validateSponsorDocDraft(tDef, draftContent) {
   const sections = Array.isArray(tDef?.sections) && tDef.sections.length > 0
     ? tDef.sections
@@ -310,6 +313,13 @@ export function validateSponsorDocDraft(tDef, draftContent) {
     }
     if (field.required && !raw) {
       errors[field.key] = `${field.label} is required.`;
+      continue;
+    }
+    if (raw && field.format === "headline") {
+      // Mirrors backend/src/guestHeadline.ts: one short plain line, never a link.
+      if (/[\r\n]/.test(raw)) errors[field.key] = `${field.label} must be a single line.`;
+      else if (raw.length > HEADLINE_MAX_LENGTH) errors[field.key] = `${field.label} must be at most ${HEADLINE_MAX_LENGTH} characters.`;
+      else if (HEADLINE_URL_LIKE.test(raw)) errors[field.key] = `${field.label} must be plain text, not a link.`;
       continue;
     }
     if (raw && field.format === "url") {

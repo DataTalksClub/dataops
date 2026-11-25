@@ -1015,14 +1015,23 @@ describe('Sponsor Content Docs API (/api/sponsor-docs)', () => {
     assert.equal(draft.statusCode, 200, draft.body);
     const invalid = await save({ status: 'submitted' });
     assert.equal(invalid.statusCode, 422, invalid.body);
-    assert.deepEqual(Object.keys(JSON.parse(invalid.body).fields), ['outline', 'bio']);
+    assert.deepEqual(Object.keys(JSON.parse(invalid.body).fields), ['outline', 'jobTitle', 'company', 'bio']);
     assert.equal((await getSponsorDoc(client, doc.id))?.status, 'draft');
-    const content = { outline: '- Design\n- Build\n- Monitor', bio: 'A data engineer.', summary: 'Practical lessons', linkedinUrl: 'https://example.test/linkedin', githubUrl: 'https://example.test/github', websiteUrl: 'https://example.test/site' };
+    const linkTitle = await save({ content: { outline: '- Design\n- Build\n- Monitor', bio: 'A data engineer.', jobTitle: 'https://example.test/me', company: 'x'.repeat(81) }, status: 'submitted' });
+    assert.equal(linkTitle.statusCode, 422, linkTitle.body);
+    assert.deepEqual(JSON.parse(linkTitle.body).fields, {
+      jobTitle: 'Job title must be plain text, not a link.',
+      company: 'Company must be at most 80 characters.',
+    });
+    const content = { jobTitle: '  AI Engineer ', company: 'Booking.com', outline: '- Design\n- Build\n- Monitor', bio: 'A data engineer.', summary: 'Practical lessons', linkedinUrl: 'https://example.test/linkedin', githubUrl: 'https://example.test/github', websiteUrl: 'https://example.test/site' };
     const submitted = await save({ content, status: 'submitted' });
     assert.equal(submitted.statusCode, 200, submitted.body);
     const saved = JSON.parse(submitted.body).doc;
     assert.equal(saved.content.talkTitle, 'Data pipelines');
     assert.equal(saved.content.bio, content.bio);
+    assert.equal(saved.content.jobTitle, 'AI Engineer', 'stored trimmed');
+    assert.equal(saved.content.company, 'Booking.com', 'a company name with a domain is not a link');
+    assert.ok(saved.markdownExport.includes('**Website headline:** AI Engineer at Booking.com'));
     assert.equal(saved.status, 'submitted');
     assert.equal(saved.accessCode, undefined);
     assert.ok(saved.markdownExport.includes(content.summary));

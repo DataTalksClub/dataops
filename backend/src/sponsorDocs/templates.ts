@@ -1,9 +1,18 @@
 import { isOrdinaryRecordingDay } from '../podcast/recordingSlots';
 import { PODCAST_DOCS_URL } from '../podcast/firstContact';
 import { GUEST_PHOTO_REQUIREMENT } from '../guestPhoto';
+import { COMPANY_HELP, GUEST_HEADLINE_MAX_LENGTH, guestHeadline, guestHeadlineProblem, JOB_TITLE_HELP } from '../guestHeadline';
 
 /** Shown under every guest form's photo field: the event picture needs a large portrait. */
 const GUEST_PHOTO_HELP = `${GUEST_PHOTO_REQUIREMENT} Uploads up to 4 MB; for a larger file, share a link to the original.`;
+
+/** Every guest form asks for the website headline ("AI Engineer at IBM") as two required fields. */
+function guestHeadlineFields(): SponsorDocFieldDefinition[] {
+  return [
+    { key: 'jobTitle', label: 'Job title', type: 'text', required: true, format: 'headline', maxCharsHint: GUEST_HEADLINE_MAX_LENGTH, placeholder: 'e.g. AI Engineer', helpText: JOB_TITLE_HELP },
+    { key: 'company', label: 'Company', type: 'text', required: true, format: 'headline', maxCharsHint: GUEST_HEADLINE_MAX_LENGTH, placeholder: 'e.g. IBM', helpText: COMPANY_HELP },
+  ];
+}
 
 export type SponsorDocTemplateKey =
   | 'newsletter-main'
@@ -30,7 +39,8 @@ export interface SponsorDocFieldDefinition {
   placeholder: string;
   required?: boolean;
   derived?: 'event-title' | 'event-datetime';
-  format?: 'url';
+  /** `url`: a full http(s) link. `headline`: a short plain single line (job title, company), never a link. */
+  format?: 'url' | 'headline';
   helpText?: string;
   maxCharsHint?: number;
   maxWordsHint?: number;
@@ -486,7 +496,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
     label: 'Webinar — Speaker Materials',
     shortLabel: 'Webinar',
     defaultLinkType: 'Speaker materials',
-    intro: 'Confirm or change the proposed webinar time, then share your talk materials so we can prepare the event description. Talk title, 3–4 outline bullets, and speaker bio are required to submit. Summary, links, and notes are optional. You can save a draft and return using the same link.',
+    intro: 'Confirm or change the proposed webinar time, then share your talk materials so we can prepare the event description. Talk title, 3–4 outline bullets, your job title and company, and speaker bio are required to submit. Summary, links, and notes are optional. You can save a draft and return using the same link.',
     sections: [
       guestEventSchedulingSection(),
       {
@@ -502,6 +512,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         id: 'speaker',
         title: '2) About You',
         fields: [
+          ...guestHeadlineFields(),
           { key: 'photoUrl', label: 'Photo', type: 'text', placeholder: 'Upload a portrait or paste a photo URL', allowVisualUpload: true, maxCharsHint: 300000, helpText: GUEST_PHOTO_HELP },
           { key: 'preparationMaterials', label: 'Materials to help us prepare', type: 'textarea', rows: 3, placeholder: 'Relevant blog posts, talks, repositories, or other materials (optional)' },
           { key: 'bio', label: 'Speaker bio', type: 'textarea', rows: 4, required: true, placeholder: 'How should we introduce you in the event description?' },
@@ -534,7 +545,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
     label: 'Workshop — Speaker Materials',
     shortLabel: 'Workshop',
     defaultLinkType: 'Workshop document',
-    intro: 'Confirm or change the proposed workshop time, then share your workshop materials so we can prepare the event page. Workshop title, description, 3–6 outline bullets, and speaker bio are required to submit. Everything else is optional. You can save a draft and return using the same link.',
+    intro: 'Confirm or change the proposed workshop time, then share your workshop materials so we can prepare the event page. Workshop title, description, 3–6 outline bullets, your job title and company, and speaker bio are required to submit. Everything else is optional. You can save a draft and return using the same link.',
     sections: [
       guestEventSchedulingSection(),
       {
@@ -554,6 +565,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         id: 'speaker',
         title: '2) About You',
         fields: [
+          ...guestHeadlineFields(),
           { key: 'photoUrl', label: 'Photo', type: 'text', placeholder: 'Upload a portrait or paste a photo URL', allowVisualUpload: true, maxCharsHint: 300000, helpText: GUEST_PHOTO_HELP },
           { key: 'preparationMaterials', label: 'Materials to help us prepare', type: 'textarea', rows: 3, placeholder: 'Relevant blog posts, talks, repositories, or other materials (optional)' },
           { key: 'bio', label: 'Speaker bio', type: 'textarea', rows: 4, required: true, placeholder: 'How should we introduce you on the event page?' },
@@ -596,7 +608,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
     label: 'Podcast — Materials from the Guest',
     shortLabel: 'Podcast',
     defaultLinkType: 'Guest materials',
-    intro: 'This is a live conversation with Alexey, with no slides to prepare. We agree on the topic and questions beforehand, meet on Zoom, and broadcast to YouTube. The audience can ask questions during the conversation. Afterwards, we publish the audio episode, transcript and show notes. Use this form to choose your recording time and share your bio, photo, profile links and preparation materials.',
+    intro: 'This is a live conversation with Alexey, with no slides to prepare. We agree on the topic and questions beforehand, meet on Zoom, and broadcast to YouTube. The audience can ask questions during the conversation. Afterwards, we publish the audio episode, transcript and show notes. Use this form to choose your recording time and share your job title and company (required: we show them next to your photo), bio, photo, profile links and preparation materials.',
     guidelinesUrl: PODCAST_DOCS_URL,
     guidelinesLabel: 'How the podcast works',
     sections: [
@@ -636,10 +648,11 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         fields: [
           {
             key: 'guestName',
-            label: 'Guest Name & Role / Company',
+            label: 'Your name',
             type: 'text',
-            placeholder: 'e.g. Jane Doe, VP of Data Engineering at Acme',
+            placeholder: 'e.g. Jane Doe',
           },
+          ...guestHeadlineFields(),
           {
             key: 'introduction',
             label: 'How would you like us to introduce you? (Bio)',
@@ -1367,6 +1380,8 @@ export function sanitizeTemplateContent(
             });
           }
           next[field.key] = trimmed;
+        } else if (field.format === 'headline') {
+          next[field.key] = str.trim().slice(0, 20000);
         } else {
           next[field.key] = str.slice(0, 20000);
         }
@@ -1407,6 +1422,10 @@ export function validateSubmittedContent(key: SponsorDocTemplateKey, content: Re
       if (bullets.length < (field.minItems || 1) || bullets.length > (field.maxItems || Infinity)) {
         errors[field.key] = `${field.label} must contain ${field.minItems}–${field.maxItems} non-empty bullets.`;
       }
+    }
+    if (value && field.format === 'headline') {
+      const problem = guestHeadlineProblem(field.label, content[field.key] || '');
+      if (problem) errors[field.key] = problem;
     }
     if (value && field.format === 'url') {
       try {
@@ -1563,6 +1582,7 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '## Talk title', '', valOrPlaceholder(c.talkTitle), '',
       '## Subtitle / short summary', '', valOrPlaceholder(c.summary), '',
       '## Outline', '', valOrPlaceholder(c.outline), '',
+      '## Speaker', '', `**Job title:** ${valOrPlaceholder(c.jobTitle)}`, `**Company:** ${valOrPlaceholder(c.company)}`, `**Website headline:** ${valOrPlaceholder(guestHeadline(c.jobTitle, c.company))}`, '',
       '## Speaker bio', '', valOrPlaceholder(c.bio), '',
       '## Links for the event description', '',
       `- LinkedIn: ${valOrPlaceholder(c.linkedinUrl)}`,
@@ -1579,6 +1599,7 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '## Outline', '', valOrPlaceholder(c.outline), '',
       '## Prerequisites', '', valOrPlaceholder(c.prerequisites), '',
       '## What attendees take away', '', valOrPlaceholder(c.takeaway), '',
+      '## Speaker', '', `**Job title:** ${valOrPlaceholder(c.jobTitle)}`, `**Company:** ${valOrPlaceholder(c.company)}`, `**Website headline:** ${valOrPlaceholder(guestHeadline(c.jobTitle, c.company))}`, '',
       '## Speaker bio', '', valOrPlaceholder(c.bio), '',
       '## Links for the event page', '',
       `- LinkedIn: ${valOrPlaceholder(c.linkedinUrl)}`,
@@ -1603,6 +1624,9 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '## 2) Guest',
       '',
       `**Guest:** ${valOrPlaceholder(c.guestName)}`,
+      `**Job title:** ${valOrPlaceholder(c.jobTitle)}`,
+      `**Company:** ${valOrPlaceholder(c.company)}`,
+      `**Website headline:** ${valOrPlaceholder(guestHeadline(c.jobTitle, c.company))}`,
       '',
       '### Introduction / Bio',
       valOrPlaceholder(c.introduction),
@@ -1807,7 +1831,7 @@ export function renderSponsorEmailDraft(options: {
         'Please share your talk materials for your DataTalks.Club webinar using this form:', '',
         options.shareUrl,
         `(Access code if prompted: ${options.accessCode})`, '',
-        'Add your talk title, 3–4 outline bullets, and speaker bio. A subtitle or short summary and profile links are optional.',
+        'Add your talk title, 3–4 outline bullets, your job title and company, and speaker bio. A subtitle or short summary and profile links are optional.',
         'You can save a draft and return using the same link. When ready, mark it as Submitted / Ready so we can prepare the event description.', '',
         'Thank you!',
       ].join('\n'),
@@ -1821,7 +1845,7 @@ export function renderSponsorEmailDraft(options: {
         'Please share the materials for your DataTalks.Club workshop using this form:', '',
         options.shareUrl,
         `(Access code if prompted: ${options.accessCode})`, '',
-        'Add the workshop title, description, 3–6 outline bullets, and your bio. Subtitle, prerequisites, takeaways, and profile links are optional.',
+        'Add the workshop title, description, 3–6 outline bullets, your job title and company, and your bio. Subtitle, prerequisites, takeaways, and profile links are optional.',
         'You can save a draft and return using the same link. When ready, mark it as Submitted / Ready so we can prepare the event page.', '',
         'Thank you!',
       ].join('\n'),

@@ -37,6 +37,8 @@ describe('Event format policy (three formats, format docs, sponsored flag)', () 
 
   const PODCAST_GUEST_MATERIALS_CONTENT = {
     guestName: 'Test Guest',
+    jobTitle: 'Data Engineer',
+    company: 'Example Corp',
     introduction: 'A short introduction.',
     currentFocus: 'Current work.',
     topicsToCover: 'Topic one\nTopic two',

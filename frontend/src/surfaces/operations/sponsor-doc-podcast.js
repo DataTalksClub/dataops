@@ -225,6 +225,12 @@ function buildGuestSnapshot({ el, doc, draftContent, guestZone }) {
   if (guestName) {
     body.append(el("h3", "podcast-host-snapshot__name", guestName));
   }
+  const jobTitle = String(draftContent?.jobTitle || "").trim();
+  const company = String(draftContent?.company || "").trim();
+  const headline = jobTitle && company ? `${jobTitle} at ${company}` : jobTitle || company;
+  if (headline) {
+    body.append(el("p", "podcast-host-snapshot__headline", headline));
+  }
 
   const zone = guestZone || guestEventTimeZone(
     draftContent?.guestTimezone || doc?.eventMetadata?.guestTimezone,
@@ -258,7 +264,7 @@ function buildGuestSnapshot({ el, doc, draftContent, guestZone }) {
     body.append(linksWrap);
   }
 
-  if (!guestName && !recordingTime && !bio && links.length === 0) {
+  if (!guestName && !headline && !recordingTime && !bio && links.length === 0) {
     body.append(el("p", "dk-hint", "Guest profile details have not been filled in yet."));
   }
 
