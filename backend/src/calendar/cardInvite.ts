@@ -342,7 +342,7 @@ export async function syncCardInvite(
       }, deps.calendarIds),
     };
   }
-  await assertOwnerAvailable(client, invite?.startIso || interval.startIso, interval.endIso, eventIds);
+  await assertOwnerAvailable(client, invite?.startIso || interval.startIso, interval.endIso, { ...eventIds, ...listingCopyIds, ...publicCopyIds });
   const reserved = await updateCard(client, card.id, {
     expectedVersion: card.version,
     patch: { eventTime: pending, guestEmails: silentLumaEvent ? [] : guests },

@@ -1197,7 +1197,8 @@ async function handleCardTime(method: string, id: string, rawBody: string | null
   // A Card whose first invitation owns an Event record moves through the Event lifecycle, so the event,
   // the Card anchor and the intake job never drift apart (the Card-invite path knows nothing of the Event).
   const linkedEvent = await getEventRecord(client, `hold_${card.id}`);
-  if (linkedEvent && (linkedEvent.status === 'proposed' || linkedEvent.status === 'approved')) {
+  // A Card that also owns a public listing keeps the Card-invite path, which moves the listing legs with the invitation.
+  if (linkedEvent && !card.eventTime?.listing && (linkedEvent.status === 'proposed' || linkedEvent.status === 'approved')) {
     try {
       const local = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: interval.timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
         .formatToParts(new Date(interval.startIso)).map(p => [p.type, p.value]));
