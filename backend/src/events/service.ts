@@ -34,7 +34,7 @@ import {
 } from '../calendar/cardInvite';
 import { GuestInviteValidationError, isPodcastTemplateType, type GuestInvite } from '../calendar/guestInvite';
 import { reportGuestInviteFailure, writeGuestInvite } from '../calendar/guestInviteSync';
-import { podcastInviteTitle } from '../calendar/holds';
+import { isPodcastInviteTitle, podcastInviteTitle } from '../calendar/holds';
 import { resolveHoldGoogleCalendars } from '../calendar/dapierBroker';
 import {
   createHoldGoogleEvents,
@@ -747,8 +747,10 @@ async function runTransition(
     ? {
       eventType: template.type,
       // Explicit operator input wins over stored episode/card guests, which may hold the stale spelling being corrected.
+      // A --title only overrides when it is itself canonical ("<Guest> at DataTalks.Club Podcast");
+      // any other --title (a topic, "Podcast conversation with …") is the Card title, never the invite title.
       guestTitle: (input.guestNames?.trim() ? podcastInviteTitle(input.guestNames.trim()) : '')
-        || (input.title?.trim() ? input.title.trim() : '')
+        || (isPodcastInviteTitle(input.title || '') ? input.title!.trim() : '')
         || await resolvePodcastCardInviteTitle(client, card, template, episode)
         || podcastInviteTitle(current?.renderValues?.guestNames || '') || undefined,
     }
