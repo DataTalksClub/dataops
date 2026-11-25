@@ -24,12 +24,12 @@ test("sponsors signals sends the Berlin window, source and cursor and prints cov
   const out = [];
   const io = { log: (value) => out.push(String(value)), error() {} };
   try {
-    assert.equal(await run(["sponsors", "signals", "--from", "2026-11-16", "--before", "2026-11-23", "--source", "paid", "--limit", "20", "--cursor", "c1", "--json"], io), 0);
+    assert.equal(await run(["sponsors", "signals", "--from", "2026-11-16", "--before", "2026-11-23", "--source", "conference", "--limit", "20", "--cursor", "c1", "--json"], io), 0);
     const { url, method } = urls[0];
     assert.equal(method, "GET");
     const query = new URL(url).searchParams;
     assert.equal(new URL(url).pathname, "/api/sponsor-crm/signals");
-    assert.deepEqual(Object.fromEntries(query), { from: "2026-11-16", before: "2026-11-23", source: "paid", limit: "20", cursor: "c1" });
+    assert.deepEqual(Object.fromEntries(query), { from: "2026-11-16", before: "2026-11-23", source: "conference", limit: "20", cursor: "c1" });
     assert.equal(JSON.parse(out.join("")).nextCursor, "c2");
     assert.notEqual(await run(["sponsors", "signals", "--from", "2026-11-16", "--json"], io), 0);
   } finally {

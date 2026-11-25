@@ -70,7 +70,12 @@ describe('sponsor signals read path', () => {
     await putNote(client, orgId, 'note-dup', '2026-11-12T12:00:00.000Z', 'Outbound signal (source=paid): Linked Co promoted a guide. Evidence: https://ads.fixture-letter.org/landing/');
     await putNote(client, orgId, 'note-distinct', '2026-11-12T13:00:00.000Z', 'Outbound signal (source=social): Linked Co posted. Evidence: https://social.fixture-letter.org/post/1');
     await putNote(client, orgId, 'note-keyed', '2026-11-11T13:00:00.000Z', 'Linked Co sponsored a livestream', 'outbound-signal:influencer:stream-1');
+    await putNote(client, orgId, 'note-conference', '2026-11-11T14:00:00.000Z', 'Outbound signal (source=conference): Linked Co sponsored the event. Evidence: https://events.example/sponsors');
+    await putNote(client, orgId, 'note-conference-keyed', '2026-11-11T15:00:00.000Z', 'Linked Co appeared on the exhibitor list.', 'conference:https://events.example/exhibitors');
+    await putNote(client, orgId, 'note-funding', '2026-11-17T16:00:00.000Z', 'Funding signal: Linked Co raised capital. Evidence: https://news.example/capital Observed: 2026-11-10 Europe/Berlin.');
+    await putNote(client, orgId, 'note-funding-keyed', '2026-11-11T17:00:00.000Z', 'Linked Co completed a round.', 'funding:https://news.example/round');
     await putNote(client, orgId, 'note-ordinary', '2026-11-12T14:00:00.000Z', 'Follow-up status: newsletter paid collab, silent');
+    await putNote(client, orgId, 'note-ordinary-keyed', '2026-11-12T14:30:00.000Z', 'Follow-up note.', 'follow-up:https://news.example/other');
     await putNote(client, orgId, 'note-bad-source', '2026-11-12T15:00:00.000Z', 'Outbound signal (source=podcast): odd. Evidence: https://x.example/y');
   });
   after(async () => {
@@ -102,12 +107,31 @@ describe('sponsor signals read path', () => {
 
   it('filters by normalized source and returns every source without a filter', async () => {
     const all = (await signals(window)).body;
-    assert.deepStrictEqual(Object.keys(all.coverage.bySource).sort(), ['influencer', 'newsletter', 'paid', 'social', 'unknown']);
+    assert.deepStrictEqual(Object.keys(all.coverage.bySource).sort(), ['conference', 'funding', 'influencer', 'newsletter', 'paid', 'social', 'unknown']);
     const paid = (await signals({ ...window, source: 'paid' })).body;
     assert.ok(paid.items.length > 0 && paid.items.every((item: any) => item.source === 'paid'));
     const influencer = (await signals({ ...window, source: 'influencer' })).body;
     assert.deepStrictEqual(influencer.items.map((item: any) => item.nativeId).sort(), [ids.influencer, 'note-keyed'].sort());
     assert.strictEqual((await signals({ ...window, source: 'podcast' })).status, 400);
+  });
+
+  it('selects documented conference and funding notes by marker or source key', async () => {
+    const conference = (await signals({ ...window, source: 'conference' })).body;
+    assert.deepStrictEqual(conference.items.map((item: any) => [item.nativeId, item.placement.url]), [
+      ['note-conference', 'https://events.example/sponsors'],
+      ['note-conference-keyed', 'https://events.example/exhibitors'],
+    ]);
+    const funding = (await signals({ ...window, source: 'funding' })).body;
+    assert.deepStrictEqual(funding.items.map((item: any) => [item.nativeId, item.placement.url]), [
+      ['note-funding', 'https://news.example/capital'],
+      ['note-funding-keyed', 'https://news.example/round'],
+    ]);
+    assert.ok([...conference.items, ...funding.items].every((item) => item.missing.length === 0));
+    assert.strictEqual(funding.items[0].observedDay, '2026-11-10');
+    assert.strictEqual(funding.items[0].observedAtBasis, 'note.observedDate');
+    assert.strictEqual(funding.items[1].observedAtBasis, 'note.createdAt');
+    const following = (await signals({ from: '2026-11-17', before: '2026-11-24', source: 'funding' })).body;
+    assert.ok(!following.items.some((item: any) => item.nativeId === 'note-funding'));
   });
 
   it('keeps linked and unlinked leads and does not guess a company', async () => {
@@ -141,6 +165,7 @@ describe('sponsor signals read path', () => {
     const { body } = await signals(window);
     const noteIds = body.items.filter((item: any) => item.nativeType === 'note').map((item: any) => item.nativeId);
     assert.ok(!noteIds.includes('note-ordinary'));
+    assert.ok(!noteIds.includes('note-ordinary-keyed'));
     const keyed = body.items.find((item: any) => item.nativeId === 'note-keyed');
     assert.strictEqual(keyed.source, 'influencer');
     assert.ok(keyed.missing.includes('evidence'));
