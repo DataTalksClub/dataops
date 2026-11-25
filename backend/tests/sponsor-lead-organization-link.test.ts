@@ -3,7 +3,7 @@ import assert from 'node:assert';
 
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { createOrganizationAtomic, getCrmRecord, listCrmRecords } from '../src/db/sponsorCrm';
+import { createOrganizationAtomic, getCrmRecord, listCrmRecords, updateCrmRecord } from '../src/db/sponsorCrm';
 import { handler } from '../src/handler';
 import { matchLeadOrganization } from '../src/sponsorCrm/leadOrganizationLink';
 import { resetSponsorLeadIntakeStateForTests } from '../src/routes/sponsorLeads';
@@ -99,10 +99,58 @@ describe('sponsor lead company linking', () => {
     assert.strictEqual((await getCrmRecord(client, 'lead', first[1].id))?.organizationId, undefined);
     assert.strictEqual((await getCrmRecord(client, 'lead', first[2].id))?.organizationId, undefined);
     assert.notStrictEqual(pulsarA.id, '');
+    const linked = await getCrmRecord(client, 'lead', first[0].id);
+    assert.strictEqual(linked?.status, 'new');
+    assert.deepStrictEqual(linked?.newsletter, NEWSLETTER);
 
     const again = JSON.parse((await link({ apply: true })).body);
     assert.strictEqual(again.linked, 0);
     assert.strictEqual((await getCrmRecord(client, 'organization', quasar.id))?.sightings.length, 1);
     assert.strictEqual((await link({ bogus: 1 })).statusCode, 400);
+  });
+
+  it('a re-delivered message keeps a link somebody made and links an older lead once its company exists', async () => {
+    const client = await getClient();
+    const deliver = (messageId: string, name: string, url: string) => intake(messageId, [{ name, url }]);
+    // Delivered before a matching company existed: all three stay unlinked.
+    const chosen = JSON.parse((await deliver('link-4', 'Vega Tools', 'https://vega.example.test/offer')).body).leads[0];
+    const late = JSON.parse((await deliver('link-5', 'Kite Analytics', 'https://kite.example.test')).body).leads[0];
+    const twin = JSON.parse((await deliver('link-6', 'Twin Analytics', 'https://track.mailer.example.test/c/twin')).body).leads[0];
+    for (const lead of [chosen, late, twin]) assert.strictEqual(lead.organizationId, undefined);
+
+    const operatorPick = (await createOrganizationAtomic(client, { displayName: 'Vega Partners' }, 't')).item;
+    await updateCrmRecord(client, 'lead', (await getCrmRecord(client, 'lead', chosen.id))!, { organizationId: operatorPick.id });
+    const obvious = (await createOrganizationAtomic(client, { displayName: 'Vega Tools', domain: 'vega.example.test' }, 't')).item;
+    const twins = [
+      (await createOrganizationAtomic(client, { displayName: 'Twin Analytics', domain: 'twin-a.example.test' }, 't')).item,
+      (await createOrganizationAtomic(client, { displayName: 'twin  analytics', domain: 'twin-b.example.test' }, 't')).item,
+    ];
+
+    // Neither the reconcile route nor a retry moves a link somebody already made,
+    // and two same-named companies stay a review item on every path.
+    assert.strictEqual(JSON.parse((await link({ apply: true })).body).linked, 0);
+    const retried = JSON.parse((await deliver('link-4', 'Vega Tools', 'https://vega.example.test/offer')).body).leads[0];
+    assert.strictEqual(retried.outcome, 'duplicate');
+    assert.strictEqual(retried.organizationId, operatorPick.id);
+    assert.strictEqual((await getCrmRecord(client, 'lead', chosen.id))?.organizationId, operatorPick.id);
+    assert.deepStrictEqual((await getCrmRecord(client, 'organization', obvious.id))?.sightings ?? [], []);
+    assert.strictEqual(JSON.parse((await deliver('link-6', 'Twin Analytics', 'https://track.mailer.example.test/c/twin')).body).leads[0].organizationId, undefined);
+    assert.strictEqual((await getCrmRecord(client, 'lead', twin.id))?.organizationId, undefined);
+    for (const item of twins) assert.deepStrictEqual((await getCrmRecord(client, 'organization', item.id))?.sightings ?? [], []);
+
+    // The lead that arrived without its company links on the retry, exactly once.
+    const kite = (await createOrganizationAtomic(client, { displayName: 'Kite Analytics', domain: 'kite.example.test' }, 't')).item;
+    const linkedDelivery = JSON.parse((await deliver('link-5', 'Kite Analytics', 'https://kite.example.test')).body).leads[0];
+    assert.strictEqual(linkedDelivery.outcome, 'duplicate');
+    assert.strictEqual(linkedDelivery.organizationId, kite.id);
+    assert.strictEqual(JSON.parse((await deliver('link-5', 'Kite Analytics', 'https://kite.example.test')).body).leads[0].organizationId, kite.id);
+    const stored = await getCrmRecord(client, 'lead', late.id);
+    assert.strictEqual(stored?.organizationId, kite.id);
+    assert.strictEqual(stored?.status, 'new');
+    assert.strictEqual(stored?.messageId, 'link-5');
+    assert.deepStrictEqual(stored?.newsletter, NEWSLETTER);
+    const sightings = (await getCrmRecord(client, 'organization', kite.id))?.sightings as Array<{ leadId: string; newsletter: string; url: string }>;
+    assert.deepStrictEqual(sightings.map((item) => [item.leadId, item.newsletter, item.url]), [[late.id, NEWSLETTER.name, 'https://kite.example.test']]);
+    assert.strictEqual((await listCrmRecords(client, 'deal')).length, 0);
   });
 });

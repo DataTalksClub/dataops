@@ -4,7 +4,7 @@ import { run } from "../src/cli.mjs";
 import { mkdtemp, writeFile, unlink, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { attachInvoice, attachPaymentEvidence, receivePayment, correctPayment, approveSettlement, reverseSettlement, clearProposalClassification, recordThankYou, list, create, remove } from "../src/commands/sponsors.mjs";
+import { attachInvoice, attachPaymentEvidence, receivePayment, correctPayment, approveSettlement, reverseSettlement, clearProposalClassification, recordThankYou, list, create, remove, linkLeads } from "../src/commands/sponsors.mjs";
 
 test("deal deletion previews by default and applies only with an explicit flag", async () => {
   const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
@@ -165,6 +165,42 @@ test("sponsor listing exhausts pages and reports explicit truncation", async () 
     assert.equal(result.items.length, 255); assert.equal(result.complete, true); assert.equal(result.nextCursor, null);
     result = await list({ ...args, limit: "120" }, {});
     assert.equal(result.items.length, 120); assert.equal(result.complete, false); assert.equal(result.nextCursor, "120");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
+  }
+});
+
+test("sponsors link-leads previews by default, applies only with an explicit flag, and lists what needs review", async () => {
+  const originalFetch = globalThis.fetch;
+  const oldToken = process.env.DATAOPS_TOKEN;
+  process.env.DATAOPS_TOKEN = "sanitized-test-token";
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    const body = JSON.parse(options.body);
+    calls.push({ url, ...options, body });
+    return new Response(JSON.stringify({ dryRun: body.apply !== true, scanned: 39, alreadyLinked: 4, linked: 12, ambiguous: 6, unmatched: 16, failed: 1,
+      examples: { linked: [{ leadId: "lead-1", sponsor: "Orbit Data", organizationId: "org-1", organization: "Orbit Data", by: "domain" }],
+        ambiguous: [{ leadId: "lead-2", sponsor: "Pulsar", reason: "several companies share this name", candidates: [] }] } }));
+  };
+  const lines = [], args = { _: ["link-leads"], url: "https://portal.example.test", token: "test" };
+  try {
+    const preview = await linkLeads(args, { print: (line) => lines.push(line) });
+    assert.equal(preview.dryRun, true);
+    assert.deepEqual(calls[0].body, { apply: false });
+    assert.deepEqual(lines, ["Preview: 12 linked, 6 ambiguous, 16 unmatched, 4 already linked, 1 failed (of 39).",
+      "  linked  Orbit Data -> Orbit Data (domain)", "  review  Pulsar: several companies share this name"]);
+    lines.length = 0;
+    const applied = await linkLeads({ ...args, apply: true }, { print: (line) => lines.push(line) });
+    assert.equal(applied.dryRun, false);
+    assert.deepEqual(calls[1].body, { apply: true });
+    assert.match(lines[0], /^Applied: 12 linked, 6 ambiguous, 16 unmatched, 4 already linked, 1 failed \(of 39\)\.$/);
+    lines.length = 0;
+    await linkLeads({ ...args, json: true }, { print: (line) => lines.push(line) });
+    assert.deepEqual(lines, []);
+    await linkLeads({ ...args, yes: true }, { print() {} });
+    assert.deepEqual(calls[3].body, { apply: true });
+    assert.ok(calls.every((call) => call.method === "POST" && call.url.endsWith("/api/sponsor-crm/leads/link-organizations")));
   } finally {
     globalThis.fetch = originalFetch;
     if (oldToken === undefined) delete process.env.DATAOPS_TOKEN; else process.env.DATAOPS_TOKEN = oldToken;
