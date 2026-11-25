@@ -39,7 +39,7 @@ function surfaceHarness(request, route) {
 
 describe("marketing navigation and routes", () => {
   test("index.html places Marketing nav group between Operations and Knowledge with one item", () => {
-    const html = fs.readFileSync(path.resolve("index.html"), "utf8");
+    const html = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
     const opsIdx = html.indexOf('<h2 class="dk-nav-group__label">Operations</h2>');
     const mktIdx = html.indexOf('<h2 class="dk-nav-group__label">Marketing</h2>');
     const knowIdx = html.indexOf('<h2 class="dk-nav-group__label">Knowledge</h2>');
