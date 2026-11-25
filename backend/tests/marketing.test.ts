@@ -286,6 +286,16 @@ describe("marketing contract", () => {
     });
     assert.equal(scheduled.status, 200, JSON.stringify(scheduled));
     assert.ok(scheduled.body.taskId);
+    const scheduledTask = await getTask(c, scheduled.body.taskId);
+    assert.deepEqual(scheduledTask?.proofRequirement, {
+      type: "comment",
+      required: true,
+    });
+    assert.equal(
+      scheduledTask?.link,
+      undefined,
+      "A planned target is not publish proof",
+    );
     const retry = await request("POST", `/steps/${s.id}/schedule`, {
       version: 1,
       mode: "task",
@@ -406,7 +416,10 @@ describe("marketing contract", () => {
         description: refId,
         offsetDays: i - 3,
         ...(i ? { dependsOn: [refs[i - 1]] } : {}),
-        proof: refId === "publish" ? "url" : "comment",
+        proof: {
+          type: refId === "publish" ? "url" : "comment",
+          required: true,
+        },
       })),
     });
     const made = await request("POST", "/plans/test-plan/steps", {

@@ -22,6 +22,7 @@ import { scanAcademySignups } from "../academyLeads/service";
 import { listNewsletterIssues } from "../db/newsletterIssues";
 import { berlinToday } from "../calendar/ownerCalendarOverlay";
 import { TeamDirectory } from "../identity/directory";
+import type { Task } from "../types";
 import type { VerifiedActor } from "../identity/actor";
 import {
   MarketingError,
@@ -44,6 +45,7 @@ export const stepTags = (s: Step, p: Plan) => [
 export const stepDescription = (s: Step) =>
   [
     s.brief || "",
+    s.targetUrl ? `Target URL: ${s.targetUrl}` : "",
     `Done when: ${s.doneCriteria}`,
     s.primaryKeyword ? `Primary keyword: ${s.primaryKeyword}` : "",
   ]
@@ -149,12 +151,10 @@ export async function pushStepFacts(
         expectedVersion: task.version,
         currentTask: task,
         patch: {
-          description: s.title,
+          description: [s.title, stepDescription(s)].join("\n\n"),
           date: s.publishDate,
           assigneeId: s.ownerId,
           tags: stepTags(s, p),
-          comment: stepDescription(s),
-          link: s.targetUrl || null,
         },
         actorId,
       });
@@ -240,28 +240,30 @@ export async function scheduleStep(
     if (b.dryRun) return preview();
     const id = randomUUID();
     const now = new Date().toISOString();
+    const task: Task = {
+      id,
+      description: [s.title, stepDescription(s)].join("\n\n"),
+      date: b.publishDate,
+      assigneeId: changes.ownerId,
+      status: "todo",
+      subject: { type: "marketing-step", id: `${s.planId}:${s.id}` },
+      proofRequirement: {
+        type: s.kind === "outreach" ? "comment" : "url",
+        required: true,
+      },
+      ...(s.targetUrl
+        ? { materials: [{ url: s.targetUrl, label: "Target URL" }] }
+        : {}),
+      tags: stepTags(s, p),
+      createdBy: actor.id,
+      version: 1,
+      taskHistory: [],
+      createdAt: now,
+      updatedAt: now,
+    };
     return saveStep(c, s, { ...changes, taskId: id, publishTaskId: id }, [
-      putNew(
-        TABLE_TASKS,
-        { PK: `TASK#${id}`, SK: `TASK#${id}` },
-        {
-          id,
-          description: s.title,
-          date: b.publishDate,
-          assigneeId: changes.ownerId,
-          status: "todo",
-          subject: { type: "marketing-step", id: `${s.planId}:${s.id}` },
-          proofRequirement: s.kind === "outreach" ? "comment" : "url",
-          comment: stepDescription(s),
-          ...(s.targetUrl ? { link: s.targetUrl } : {}),
-          tags: stepTags(s, p),
-          createdBy: actor.id,
-          version: 1,
-          taskHistory: [],
-          createdAt: now,
-          updatedAt: now,
-        },
-      ).item,
+      putNew(TABLE_TASKS, { PK: `TASK#${id}`, SK: `TASK#${id}` }, { ...task })
+        .item,
     ]);
   }
   const type =
