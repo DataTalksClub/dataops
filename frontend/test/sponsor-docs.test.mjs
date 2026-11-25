@@ -130,7 +130,7 @@ function harness(options = {}) {
         }
       }
 
-      if (opts.method === "POST" && url.endsWith("/images")) {
+      if (opts.method === "POST" && /\/images(?:\?|$)/.test(url)) {
         return {
           image: {
             id: "11111111-1111-4111-8111-111111111111.png",
@@ -829,6 +829,61 @@ test("guest brief renders uploaded photo inline immediately and shows visible er
   assert.ok(brokenErr, "Broken image shows visible error");
   assert.match(brokenErr.textContent, /Could not load image/);
   h.controller.destroy();
+});
+
+test("guest photo upload states the 800 px rule, asks the server to enforce it, and shows its rejection as a request to the guest", async () => {
+  const reports = [];
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => { reports.push([url, JSON.parse(opts.body)]); return { ok: true }; };
+  const tooSmall = "Thanks! The photo is a bit too small for our event picture. Could you upload a larger one, at least 800 × 800 pixels? A square headshot works best. (This one is 128 × 128.)";
+  const doc = {
+    viewerRole: "guest",
+    template: "podcast",
+    templateDefinition: {
+      key: "podcast",
+      label: "Podcast Guest Brief",
+      sections: [{ id: "guest", title: "Guest profile", fields: [{ key: "photoUrl", label: "Photo", type: "text", allowVisualUpload: true }] }],
+    },
+    content: { photoUrl: "" },
+  };
+  try {
+    const h = harness({
+      href: "https://ops.example.test/podcast-docs/doc-abc?code=bcdfghjklmnpqrst",
+      pathname: "/podcast-docs/doc-abc",
+      docOverrides: doc,
+      request: async (url, opts = {}) => {
+        if (opts.method === "POST" && /\/images/.test(url)) {
+          throw Object.assign(new Error(tooSmall), { status: 400, code: "guest_photo_too_small" });
+        }
+        return { doc: sampleDoc(doc) };
+      },
+    });
+    await h.controller.start();
+    const fileInput = h.root.querySelector('[data-sponsor-visual-upload="photoUrl"]');
+    assert.equal(fileInput.accept, "image/png,image/jpeg,image/webp");
+    assert.match(h.root.querySelector("[data-sponsor-visual-status]").textContent, /at least 800 × 800 px/);
+
+    // A GIF never reaches the server.
+    fileInput.files = [{ name: "me.gif", type: "image/gif", size: 10, arrayBuffer: async () => new ArrayBuffer(4) }];
+    await fileInput.dispatch("change");
+    await nextTicks();
+    assert.match(h.root.querySelector('[data-sponsor-visual-error="photoUrl"]').textContent, /JPG, PNG or WebP/);
+    assert.equal(h.calls.filter(([url]) => /\/images/.test(url)).length, 0);
+    const reportsBefore = reports.length;
+
+    fileInput.files = [{ name: "me.png", type: "image/png", size: 10, arrayBuffer: async () => new ArrayBuffer(8) }];
+    await fileInput.dispatch("change");
+    await nextTicks();
+    const uploads = h.calls.filter(([url]) => /\/images/.test(url));
+    assert.equal(uploads.length, 1);
+    assert.match(uploads[0][0], /\/images\?field=photoUrl$/);
+    const err = h.root.querySelector('[data-sponsor-visual-error="photoUrl"]');
+    assert.equal(err.textContent, tooSmall, "the guest sees the request verbatim, not an upload failure");
+    assert.equal(reports.length, reportsBefore, "a too-small photo is not reported as a client error");
+    h.controller.destroy();
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
 });
 
 test("podcast cards hide legacy prep templates, never show Sponsorship documents, and expose top link + live questions + sponsored flag", async () => {

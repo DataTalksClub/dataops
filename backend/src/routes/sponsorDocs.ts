@@ -60,6 +60,7 @@ import { createNotification } from '../db/notifications';
 import { newsletterSyncForDoc, summarizeSyncResults, syncSponsorDoc } from '../newsletter/sponsorBlocks';
 import { dataImageHost } from './newsletterBlocks';
 import { FileStorageError } from '../storage';
+import { assertGuestPhotoBytes, assertHostedGuestPhoto, GuestPhotoError } from '../guestPhoto';
 import { savePublicImage } from '../publicImages';
 import { extractMultipartImageBuffer, publicImagePayload } from './publicImages';
 import {
@@ -198,6 +199,25 @@ function parseBody(rawBody: string | null | undefined): Record<string, unknown> 
     return parsed as Record<string, unknown>;
   } catch {
     return null;
+  }
+}
+
+/** Guest event forms carry a `photoUrl` portrait field held to the guest photo rule. */
+function templateHasGuestPhoto(template: string): boolean {
+  if (!isSponsorDocTemplateKey(template)) return false;
+  return getSponsorDocTemplate(template).sections.some((section) => section.fields.some((field) => field.key === 'photoUrl'));
+}
+
+/** A guest form save that points the photo at a newly hosted image must meet the guest photo rule. */
+async function assertChangedGuestPhoto(template: string, before: Record<string, string> | undefined, content: unknown): Promise<void> {
+  if (!content || typeof content !== 'object' || !Object.hasOwn(content, 'photoUrl') || !templateHasGuestPhoto(template)) return;
+  const next = String((content as Record<string, unknown>).photoUrl ?? '').trim();
+  if (!next || next === String(before?.photoUrl ?? '').trim()) return;
+  try {
+    await assertHostedGuestPhoto(next);
+  } catch (err) {
+    if (err instanceof GuestPhotoError) throw new SponsorDocValidationError({ photoUrl: err.message });
+    throw err;
   }
 }
 
@@ -1345,12 +1365,14 @@ export async function handleSponsorDocRoutes(
       const docId = decodeURIComponent(imagesMatch[1]);
       const access = await resolveStaffOrSponsorAccess(client, event, 'work-write');
       let docTitle = docId;
+      let docTemplate = '';
       if (access.isStaff) {
         const loaded = await getSponsorDocWithAuthMaterial(client, docId);
         if (!loaded) {
           return json(404, { error: 'Document not found', code: 'sponsor_doc_not_found' });
         }
         docTitle = loaded.doc.title || docId;
+        docTemplate = loaded.doc.template;
       } else {
         const verified = await verifyExternalCodeForDoc(
           client,
@@ -1360,12 +1382,21 @@ export async function handleSponsorDocRoutes(
         );
         if (!verified.ok) return verified.response;
         docTitle = verified.doc.title || docId;
+        docTemplate = verified.doc.template;
       }
+      // `?field=photoUrl` marks the guest form's photo upload: it must meet the event picture size.
+      const guestPhoto = event.queryStringParameters?.field === 'photoUrl' && templateHasGuestPhoto(docTemplate);
       try {
         const buffer = extractMultipartImageBuffer(event);
+        if (guestPhoto) assertGuestPhotoBytes(buffer);
         const saved = await savePublicImage(buffer);
         return json(201, { image: publicImagePayload(saved, event) });
       } catch (err: unknown) {
+        if (err instanceof GuestPhotoError) {
+          // A guest's photo that is too small is their input to fix, not a failed upload to alert on.
+          console.log(JSON.stringify({ event: 'guest_photo_rejected', docId, code: err.code }));
+          throw err;
+        }
         if (err instanceof FileStorageError) {
           console.error(JSON.stringify({
             event: 'sponsor_image_upload_failed',
@@ -1462,6 +1493,7 @@ export async function handleSponsorDocRoutes(
               }
             }
           }
+          await assertChangedGuestPhoto(String(body.template ?? loaded.doc.template), loaded.doc.content, body.content);
           const updated = await updateSponsorDoc(client, docId, {
             template: body.template as SponsorDocTemplateKey | undefined,
             title: typeof body.title === 'string' ? body.title : undefined,
@@ -1503,6 +1535,7 @@ export async function handleSponsorDocRoutes(
         );
         if (!verified.ok) return verified.response;
 
+        await assertChangedGuestPhoto(verified.doc.template, verified.doc.content, body.content);
         const updated = await updateSponsorDoc(client, docId, {
           content: body.content as Record<string, unknown> | undefined,
           status: body.status as SponsorDocStatus | undefined,
