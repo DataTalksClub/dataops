@@ -3,13 +3,13 @@ import { listCrmRecords, type CrmRecord } from '../db/sponsorCrm';
 import { StoragePaginationError } from '../db/boundedPagination';
 import { cursorBinding } from '../crmWorkspace/cursor';
 import { queryTargetNotes } from '../crmWorkspace/notes';
-import { addDays, isCalendarDate, todayIn } from '../relativeDates';
+import { addDays, civilToUtc, isCalendarDate, todayIn } from '../relativeDates';
 import { isSignalSource, leadSignalSource, SIGNAL_SOURCES, type SignalSource } from './signalSource';
 
 /**
  * Read-only weekly selection of outbound sponsor signals: where a potential
- * sponsor was seen promoting itself (newsletter issues, paid placements,
- * social, influencers). It creates no prospect, deal or message.
+ * sponsor was seen promoting itself, exhibiting, or announcing funding.
+ * It creates no prospect, deal or message.
  *
  * Candidates are (1) sourced leads and (2) organization notes explicitly
  * marked as outbound sightings. Ordinary notes are never candidates.
@@ -21,11 +21,13 @@ export const MAX_NOTE_ORGANIZATIONS = 2000;
 const NOTE_CONCURRENCY = 8;
 
 /** `Outbound signal (source=paid): <summary>. Evidence: <text or url>` */
-const NOTE_PREFIX = /^\s*Outbound signal \(source=([a-z]+)\):\s*([\s\S]*)$/;
-/** Idempotency keys of marked notes: `outbound-signal:<source>:<native key>`. */
-const NOTE_KEY_PREFIX = /^outbound-signal:([a-z]+):/;
+const NOTE_PREFIX = /^\s*Outbound signal \(source=([a-z]+)\):\s*([\s\S]*)$/i;
+const FUNDING_NOTE_PREFIX = /^\s*Funding signal:\s*([\s\S]*)$/i;
+/** The marker is optional for the source-specific keys documented in the CRM SOPs. */
+const NOTE_KEY_PREFIX = /^(outbound-signal:)?([a-z]+):(.+)$/i;
 const EVIDENCE = /\bEvidence:\s*([\s\S]*)$/;
-const URL_IN_TEXT = /https:\/\/[^\s<>"')\]]+/;
+const NOTE_OBSERVED_DAY = /\bObserved:\s*(\d{4}-\d{2}-\d{2})\b/i;
+const URL_IN_TEXT = /https?:\/\/[^\s<>"')\]]+/i;
 
 export interface SignalQuery { from: string; before: string; source: SignalSource | null; limit: number; cursor: string | null }
 
@@ -106,14 +108,22 @@ function leadSignal(lead: CrmRecord): Signal {
 export function noteSignal(note: Record<string, unknown>, organization: CrmRecord): Signal | null {
   const body = str(note.body);
   const bodyMatch = NOTE_PREFIX.exec(body);
+  const fundingMatch = FUNDING_NOTE_PREFIX.exec(body);
   const keyMatch = NOTE_KEY_PREFIX.exec(str(note.sourceKey));
-  const claimed = bodyMatch?.[1] ?? keyMatch?.[1];
+  const keySource = keyMatch?.[2].toLowerCase();
+  const keyIsMarked = Boolean(keyMatch?.[1]) || isSignalSource(keySource);
+  const claimed = bodyMatch?.[1].toLowerCase() ?? (fundingMatch ? 'funding' : undefined)
+    ?? (keyIsMarked ? keySource : undefined);
   if (!claimed) return null;
   const source = isSignalSource(claimed) ? claimed : null;
-  const rest = bodyMatch ? bodyMatch[2] : body;
-  const evidenceText = EVIDENCE.exec(rest)?.[1]?.trim() || '';
-  const url = URL_IN_TEXT.exec(evidenceText)?.[0].replace(/[.,;]+$/, '') || null;
-  const observedAt = str(note.createdAt);
+  const rest = bodyMatch?.[2] ?? fundingMatch?.[1] ?? body;
+  const keyUrl = keyIsMarked ? URL_IN_TEXT.exec(keyMatch?.[3] || '')?.[0] : undefined;
+  const evidenceText = EVIDENCE.exec(rest)?.[1]?.trim() || keyUrl || '';
+  const url = (URL_IN_TEXT.exec(evidenceText)?.[0] || keyUrl)?.replace(/[.,;]+$/, '') || null;
+  const recordedDay = NOTE_OBSERVED_DAY.exec(rest)?.[1];
+  const observedDay = isCalendarDate(recordedDay) ? recordedDay : null;
+  const observedAt = observedDay ? civilToUtc(observedDay, '00:00:00', SIGNALS_TIMEZONE) : str(note.createdAt);
+  const day = observedDay || berlinDayOf(observedAt);
   const missing = [
     ...(source ? [] : [`source (unsupported "${claimed}")`]),
     ...(evidenceText ? [] : ['evidence']),
@@ -121,13 +131,13 @@ export function noteSignal(note: Record<string, unknown>, organization: CrmRecor
   ];
   return {
     id: `note:${str(note.id)}`, nativeType: 'note', nativeId: str(note.id), source,
-    observedAt, observedAtBasis: 'note.createdAt', observedDay: berlinDayOf(observedAt),
+    observedAt, observedAtBasis: observedDay ? 'note.observedDate' : 'note.createdAt', observedDay: day,
     company: { displayName: str(organization.displayName) || str(organization.name) || null, organizationId: organization.id, linked: true, linkedBy: 'note' },
-    placement: { newsletter: null, subject: null, messageId: null, url, summary: (bodyMatch ? rest.replace(EVIDENCE, '').trim() : body) || null },
+    placement: { newsletter: null, subject: null, messageId: null, url, summary: rest.replace(EVIDENCE, '').trim() || null },
     evidence: [{ kind: 'note', id: str(note.id), text: evidenceText, url }],
     leadStatus: null,
     missing,
-    mergeKey: url && source ? `${source}|${berlinDayOf(observedAt)}|${normalizeEvidenceUrl(url)}` : '',
+    mergeKey: url && source ? `${source}|${day}|${normalizeEvidenceUrl(url)}` : '',
   };
 }
 
@@ -229,11 +239,11 @@ export async function selectSignals(client: DynamoDBDocumentClient, query: Signa
         source: query.source, supportedSources: SIGNAL_SOURCES,
         sources: {
           leads: { read: leads.length, complete: true, note: 'all leads, linked or not; source defaults to newsletter only for newsletter-intake leads' },
-          notes: { organizationsTotal: organizations.length, organizationsRead: noteOrganizations.length, notesScanned, markedSignalNotes: marked, complete: notesComplete, marker: 'Outbound signal (source=<source>): … Evidence: … or note sourceKey outbound-signal:<source>:<key>; only organization notes' },
+          notes: { organizationsTotal: organizations.length, organizationsRead: noteOrganizations.length, notesScanned, markedSignalNotes: marked, complete: notesComplete, marker: 'Outbound signal (source=<source>): … Evidence: …, Funding signal: … Evidence: …, or an explicit outbound-signal:<source>:<key> or known <source>:<key> note key; only organization notes' },
         },
         matched: selected.length, returned: items.length, mergedDuplicates: merged, bySource,
         withMissingMetadata: selected.filter((signal) => signal.missing.length).length,
-        observedAt: 'lead.observedAt, else newsletter.receivedAt, else lead.createdAt; notes use note.createdAt (the note does not store the sighting time)',
+        observedAt: 'lead.observedAt, else newsletter.receivedAt, else lead.createdAt; notes use the explicit Observed date at Berlin midnight when present, else note.createdAt',
       },
     },
   };

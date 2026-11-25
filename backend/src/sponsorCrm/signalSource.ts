@@ -3,7 +3,7 @@
  * `source` when an operator recorded it; leads extracted from newsletter
  * intake carry none and are, by construction, newsletter sightings.
  */
-export const SIGNAL_SOURCES = ['newsletter', 'social', 'influencer', 'paid'] as const;
+export const SIGNAL_SOURCES = ['newsletter', 'social', 'influencer', 'paid', 'conference', 'funding'] as const;
 export type SignalSource = (typeof SIGNAL_SOURCES)[number];
 
 export function isSignalSource(value: unknown): value is SignalSource {

@@ -51,10 +51,10 @@ Usage
       newsletter issue slots stay booked without a deliverable link.
   dataops sponsors messages <organization-id>          Communications with an organization
   dataops sponsors history <deal-id>                   A deal's change history
-  dataops sponsors signals --from YYYY-MM-DD --before YYYY-MM-DD [--source newsletter|social|influencer|paid] [--limit N] [--cursor C] [--json]
+  dataops sponsors signals --from YYYY-MM-DD --before YYYY-MM-DD [--source newsletter|social|influencer|paid|conference|funding] [--limit N] [--cursor C] [--json]
       Read-only outbound sponsor signals seen in the window (Europe/Berlin days; from inclusive,
       before exclusive, max 93 days): newsletter-intake and other sourced leads (linked or unlinked
-      to a company) plus organization notes marked "Outbound signal (source=…): … Evidence: …".
+      to a company) plus organization notes marked as outbound or funding signals.
       One page of up to --limit rows (default 50); pass nextCursor back as --cursor. Output carries
       coverage (sources read, complete, merged duplicates, missing metadata). Creates nothing.
   dataops sponsors cold [--days N] [--remind]          Orgs/contacts with no contact for N days (defaults per relationship stage)
