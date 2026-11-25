@@ -394,7 +394,9 @@ function accountCellMarkup(account, accountDoc, e) {
 
 function sponsorDealLink(entry, counterparty, e) {
   if (!entry.sponsorDealId) return "";
-  return html`<a class="bk-who__deal" href="${e(sponsorRecordPath("deal", entry.sponsorDealId))}" data-deal-link aria-label="Open sponsor deal for ${e(counterparty)}" title="Open sponsor deal">Deal</a>`;
+  return html`<a class="bk-who__deal"
+    href="${e(sponsorRecordPath("deal", entry.sponsorDealId))}" data-deal-link
+    aria-label="Open sponsor deal for ${e(counterparty)}" title="Open sponsor deal">Deal</a>`;
 }
 
 export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, vocab, selectedId, financeEntry, statementLinks = new Map(), e }) {
@@ -417,7 +419,8 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
   const accountDoc = statementLinks instanceof Map ? statementLinks.get(String(entry.id || "")) : null;
   const dealLink = sponsorDealLink(entry, counterparty, e);
   const draftStatus = isDraft
-    ? html`<span class="dk-badge dk-badge--warning bk-draft-status" title="Unverified invoice draft — click to open invoice review">${icon.pending}<span>Pending review</span></span>`
+    ? html`<span class="dk-badge dk-badge--warning bk-draft-status"
+        title="Unverified invoice draft — click to open invoice review">${icon.pending}<span>Pending review</span></span>`
     : "";
   const whoAnchor = isDraft
     ? html`<a class="bk-who" href="?view=invoices" data-open-invoice-review="${e(entry.invoiceDraftId)}"
