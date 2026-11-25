@@ -258,25 +258,12 @@ export function createMarketingSurface(context) {
       setRouteTitle("Marketing · Weekly Review");
       const week = query?.get?.("week") || "";
       try {
-        const [reviewResult, capacityResult] = await Promise.allSettled([
-          request(workApiUrl("/api/marketing/review", week ? { week } : {})),
-          request(workApiUrl("/api/marketing/capacity", { weeks: 2 })),
-        ]);
+        const review = await request(workApiUrl("/api/marketing/review", week ? { week } : {}));
         if (mine !== generation) return;
-        if (reviewResult.status === "rejected") {
-          body.innerHTML = weeklyReviewMarkup(
-            null,
-            null,
-            formatApiError(reviewResult.reason, "Could not load weekly review."),
-          );
-          return;
-        }
-        const capacity = capacityResult.status === "fulfilled" ? capacityResult.value : null;
-        body.innerHTML = weeklyReviewMarkup(reviewResult.value, capacity);
+        body.innerHTML = weeklyReviewMarkup(review);
       } catch (error) {
         if (mine !== generation) return;
         body.innerHTML = weeklyReviewMarkup(
-          null,
           null,
           formatApiError(error, "Could not load weekly review."),
         );
@@ -334,149 +321,155 @@ export function createMarketingSurface(context) {
         return;
       }
 
-      const decisionBtn = event.target.closest?.("[data-mkt-decision]");
-      if (decisionBtn) {
-        const planId = decisionBtn.getAttribute("data-plan-id");
-        const goalRef = decisionBtn.getAttribute("data-goal-ref");
-        if (planId) {
-          request(workApiUrl(`/api/marketing/plans/${encodeURIComponent(planId)}/notes`), {
-            method: "POST",
-            body: JSON.stringify({
-              text: `Review decision: ignore ${goalRef || "goal"} for 2 weeks.`,
-              ref: "review",
-            }),
-          })
-            .then(() => loadCurrentRoute())
-            .catch(() => {});
-        }
-      }
     });
 
     surface.addEventListener("submit", async (event) => {
       const form = event.target;
-      if (form.matches?.("[data-mkt-new-plan-form]")) {
-        event.preventDefault();
-        const data = new FormData(form);
-        const tagsRaw = String(data.get("tags") || "");
-        const tags = tagsRaw
-          .split(",")
-          .map((t) => t.trim())
-          .filter(Boolean);
-        await request(workApiUrl("/api/marketing/plans"), {
-          method: "POST",
-          body: JSON.stringify({
-            id: String(data.get("id") || "").trim(),
-            title: String(data.get("title") || "").trim(),
-            objective: String(data.get("objective") || "").trim() || undefined,
-            startDate: String(data.get("startDate") || "").trim() || undefined,
-            endDate: String(data.get("endDate") || "").trim() || undefined,
-            tags,
-          }),
-        });
-        form.closest("dialog")?.close?.();
-        await loadCurrentRoute();
-        return;
-      }
-
-      if (form.matches?.("[data-mkt-add-step-form]") && currentPlan) {
-        event.preventDefault();
-        const data = new FormData(form);
-        await request(
-          workApiUrl(`/api/marketing/plans/${encodeURIComponent(currentPlan.id)}/steps`),
-          {
+      event.preventDefault();
+      if (form.dataset?.pending) return;
+      if (form.dataset) form.dataset.pending = "true";
+      surface.querySelector("[data-mkt-write-error]")?.remove();
+      try {
+        if (form.matches?.("[data-mkt-new-plan-form]")) {
+          event.preventDefault();
+          const data = new FormData(form);
+          const tagsRaw = String(data.get("tags") || "");
+          const tags = tagsRaw
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean);
+          await request(workApiUrl("/api/marketing/plans"), {
             method: "POST",
             body: JSON.stringify({
+              id: String(data.get("id") || "").trim(),
               title: String(data.get("title") || "").trim(),
-              kind: String(data.get("kind") || "content"),
-              size: String(data.get("size") || "S"),
-              targetUrl: String(data.get("targetUrl") || "").trim() || undefined,
-              primaryKeyword: String(data.get("primaryKeyword") || "").trim() || undefined,
-              doneCriteria: String(data.get("doneCriteria") || "").trim(),
-              brief: String(data.get("brief") || "").trim() || undefined,
+              objective: String(data.get("objective") || "").trim() || undefined,
+              startDate: String(data.get("startDate") || "").trim() || undefined,
+              endDate: String(data.get("endDate") || "").trim() || undefined,
+              tags,
             }),
-          },
-        );
-        form.closest("dialog")?.close?.();
-        await loadCurrentRoute();
-        return;
-      }
+          });
+          form.closest("dialog")?.close?.();
+          await loadCurrentRoute();
+          return;
+        }
 
-      if (form.matches?.("[data-mkt-note-form]") && currentPlan) {
-        event.preventDefault();
-        const data = new FormData(form);
-        const text = String(data.get("text") || "").trim();
-        if (!text) return;
-        const ref = String(data.get("ref") || "").trim() || undefined;
-        await request(
-          workApiUrl(`/api/marketing/plans/${encodeURIComponent(currentPlan.id)}/notes`),
-          {
-            method: "POST",
-            body: JSON.stringify({ text, ref }),
-          },
-        );
-        await loadCurrentRoute();
-        return;
-      }
+        if (form.matches?.("[data-mkt-add-step-form]") && currentPlan) {
+          event.preventDefault();
+          const data = new FormData(form);
+          await request(
+            workApiUrl(`/api/marketing/plans/${encodeURIComponent(currentPlan.id)}/steps`),
+            {
+              method: "POST",
+              body: JSON.stringify({
+                version: currentPlan.version,
+                title: String(data.get("title") || "").trim(),
+                targetType: String(data.get("targetType") || "new"),
+                kind: String(data.get("kind") || "content"),
+                size: String(data.get("size") || "S"),
+                targetUrl: String(data.get("targetUrl") || "").trim() || undefined,
+                primaryKeyword: String(data.get("primaryKeyword") || "").trim() || undefined,
+                doneCriteria: String(data.get("doneCriteria") || "").trim(),
+                brief: String(data.get("brief") || "").trim() || undefined,
+              }),
+            },
+          );
+          form.closest("dialog")?.close?.();
+          await loadCurrentRoute();
+          return;
+        }
 
-      if (form.matches?.("[data-mkt-schedule-form]") && currentStep) {
-        event.preventDefault();
-        const data = new FormData(form);
-        await request(
-          workApiUrl(`/api/marketing/steps/${encodeURIComponent(currentStep.id)}/schedule`),
-          {
-            method: "POST",
-            body: JSON.stringify({
-              publishDate: String(data.get("publishDate") || ""),
-              mode: String(data.get("mode") || "card"),
-            }),
-          },
-        );
-        await loadCurrentRoute();
-        return;
-      }
+        if (form.matches?.("[data-mkt-note-form]") && currentPlan) {
+          event.preventDefault();
+          const data = new FormData(form);
+          const text = String(data.get("text") || "").trim();
+          if (!text) return;
+          const ref = String(data.get("ref") || "").trim() || undefined;
+          await request(
+            workApiUrl(`/api/marketing/plans/${encodeURIComponent(currentPlan.id)}/notes`),
+            {
+              method: "POST",
+              body: JSON.stringify({ text, ref, version: currentPlan.version }),
+            },
+          );
+          await loadCurrentRoute();
+          return;
+        }
 
-      if (form.matches?.("[data-mkt-live-form]") && currentStep) {
-        event.preventDefault();
-        const data = new FormData(form);
-        await request(
-          workApiUrl(`/api/marketing/steps/${encodeURIComponent(currentStep.id)}/live`),
-          {
-            method: "POST",
-            body: JSON.stringify({
-              url: String(data.get("url") || "").trim() || undefined,
-              date: String(data.get("date") || "").trim() || undefined,
-            }),
-          },
-        );
-        await loadCurrentRoute();
-        return;
-      }
+        if (form.matches?.("[data-mkt-schedule-form]") && currentStep) {
+          event.preventDefault();
+          const data = new FormData(form);
+          await request(
+            workApiUrl(`/api/marketing/steps/${encodeURIComponent(currentStep.id)}/schedule`),
+            {
+              method: "POST",
+              body: JSON.stringify({
+                version: currentStep.version,
+                ...Object.fromEntries(["template", "assignee", "linkCardId", "publishTaskId", "campaignRowId"]
+                  .map((key) => [key, String(data.get(key) || "").trim() || undefined])),
+                publishDate: String(data.get("publishDate") || ""),
+                mode: String(data.get("mode") || "card"),
+              }),
+            },
+          );
+          await loadCurrentRoute();
+          return;
+        }
 
-      if (form.matches?.("[data-mkt-drop-form]") && currentStep) {
-        event.preventDefault();
-        const data = new FormData(form);
-        await request(
-          workApiUrl(`/api/marketing/steps/${encodeURIComponent(currentStep.id)}/drop`),
-          {
-            method: "POST",
-            body: JSON.stringify({
-              reason: String(data.get("reason") || "").trim(),
-            }),
-          },
-        );
-        await loadCurrentRoute();
-        return;
-      }
+        if (form.matches?.("[data-mkt-live-form]") && currentStep) {
+          event.preventDefault();
+          const data = new FormData(form);
+          await request(
+            workApiUrl(`/api/marketing/steps/${encodeURIComponent(currentStep.id)}/live`),
+            {
+              method: "POST",
+              body: JSON.stringify({
+                version: currentStep.version,
+                url: String(data.get("url") || "").trim() || undefined,
+                date: String(data.get("date") || "").trim() || undefined,
+              }),
+            },
+          );
+          await loadCurrentRoute();
+          return;
+        }
 
-      if (form.matches?.("[data-mkt-utm-form]") && currentStep) {
-        event.preventDefault();
-        const data = new FormData(form);
-        const source = String(data.get("source") || "linkedin");
-        const payload = await request(
-          workApiUrl(`/api/marketing/steps/${encodeURIComponent(currentStep.id)}/utm`, { source }),
-        );
-        currentUtmResult = payload?.url || payload?.utmUrl || "";
-        await loadCurrentRoute();
+        if (form.matches?.("[data-mkt-drop-form]") && currentStep) {
+          event.preventDefault();
+          const data = new FormData(form);
+          await request(
+            workApiUrl(`/api/marketing/steps/${encodeURIComponent(currentStep.id)}/drop`),
+            {
+              method: "POST",
+              body: JSON.stringify({
+                version: currentStep.version,
+                reason: String(data.get("reason") || "").trim(),
+              }),
+            },
+          );
+          await loadCurrentRoute();
+          return;
+        }
+
+        if (form.matches?.("[data-mkt-utm-form]") && currentStep) {
+          event.preventDefault();
+          const data = new FormData(form);
+          const source = String(data.get("source") || "linkedin");
+          const payload = await request(
+            workApiUrl(`/api/marketing/steps/${encodeURIComponent(currentStep.id)}/utm`, { source }),
+          );
+          currentUtmResult = payload.url;
+          await loadCurrentRoute();
+        }
+      } catch (error) {
+        const notice = doc.createElement("div");
+        notice.className = "dk-callout dk-callout--warning";
+        notice.setAttribute("role", "alert");
+        notice.setAttribute("data-mkt-write-error", "");
+        notice.textContent = formatApiError(error, "Could not save. Please retry.");
+        (form.closest?.("dialog") || body).append(notice);
+      } finally {
+        if (form.dataset) delete form.dataset.pending;
       }
     });
 

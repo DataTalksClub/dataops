@@ -1,5 +1,5 @@
 import { escapeHtml } from "../../core/html.js";
-import { formatNumber, html } from "./shared.js";
+import { formatNumber, html, snapshotRange } from "./shared.js";
 
 function niceMax(value) {
   if (value <= 0) return 1;
@@ -20,7 +20,8 @@ function compactValue(value) {
 
 function sortedSnapshots(snapshots) {
   return [...(snapshots || [])]
-    .filter((s) => s && s.periodEnd !== undefined && s.value !== undefined && s.value !== null)
+    .filter((s) => s && s.period && Number.isFinite(s.value))
+    .map((s) => ({ ...s, periodEnd: snapshotRange(s).to }))
     .sort((a, b) => String(a.periodEnd).localeCompare(String(b.periodEnd)));
 }
 

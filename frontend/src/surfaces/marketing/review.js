@@ -1,21 +1,31 @@
 import { escapeHtml } from "../../core/html.js";
-import { formatDelta, formatNumber, html, marketingTabsMarkup, statusBadge } from "./shared.js";
+import { formatDelta, formatNumber, html, marketingTabsMarkup, statusBadge, snapshotRange } from "./shared.js";
 
 // Alexey's weekly review capacity is constant 2 (warns, does not block).
 export const ALEXEY_WEEKLY_REVIEW_LIMIT = 2;
 
-export function weeklyReviewMarkup(review, capacity = null, loadError = "") {
+export function weeklyReviewMarkup(review, loadError = "") {
   const week = review?.week || "Current week";
-  const range = review?.weekStart && review?.weekEnd ? ` (${review.weekStart} to ${review.weekEnd})` : "";
+  const range = review?.from && review?.to ? ` (${review.from} to ${review.to})` : "";
   const dataAsOf = review?.dataAsOf ? `Data as of ${review.dataAsOf}` : "";
 
-  const missing = Array.isArray(review?.missingData)
-    ? review.missingData
-    : Array.isArray(review?.missing)
-      ? review.missing
-      : [];
+  const missing = review?.missing || [];
+  const goals = (review?.plans || []).flatMap((plan) => (plan.goals || []).map((goal) => {
+    const snapshots = [...(goal.snapshots || [])]
+      .sort((a, b) => snapshotRange(a).to.localeCompare(snapshotRange(b).to));
+    const prior = snapshots.slice(0, -1);
+    const last = prior.at(-1);
+    const selected = goal.window === "rolling28" && last
+      ? prior.filter((row) => +new Date(snapshotRange(last).to)
+        - +new Date(snapshotRange(row).to) < 28 * 86400000) : prior.slice(-1);
+    const previous = selected.length ? selected.reduce((sum, row) => sum + row.value, 0)
+      / (goal.window === "rolling28" && last.unit !== "count" ? selected.length : 1) : null;
+    return { ...goal, planId: plan.id, planTitle: plan.title, goalTitle: goal.title,
+      previousValue: previous, currentValue: goal.value,
+      delta: previous != null && goal.value != null ? goal.value - previous : null };
+  }));
 
-  const goalRows = (review?.goals || [])
+  const goalRows = goals
     .map((row) => {
       const planHref = `/marketing/plans/${encodeURIComponent(row.planId || "")}`;
       const goalHref = `/marketing/plans/${encodeURIComponent(row.planId || "")}/goals/${encodeURIComponent(row.ref || row.goalRef || "")}`;
@@ -30,14 +40,11 @@ export function weeklyReviewMarkup(review, capacity = null, loadError = "") {
     })
     .join("");
 
-  const shipped = review?.shippedLastWeek || review?.shipped || [];
-  const due = review?.dueThisWeek || review?.due || [];
+  const shipped = review?.shipped || [];
+  const due = review?.due || [];
   const overdue = review?.overdue || [];
-  const decisions = review?.needsDecision || review?.decisions || [];
-
-  const capData = capacity || review?.capacity || null;
-  const alexeyReviews = capData?.alexeyReviews ?? capData?.reviewsCount ?? null;
-  const overLimit = alexeyReviews !== null && Number(alexeyReviews) > ALEXEY_WEEKLY_REVIEW_LIMIT;
+  const capacityRows = review?.capacity?.items || [];
+  const overLimit = capacityRows.some((row) => row.reviews > ALEXEY_WEEKLY_REVIEW_LIMIT);
 
   const renderWorkList = (items, emptyText) =>
     items.length
@@ -110,39 +117,19 @@ export function weeklyReviewMarkup(review, capacity = null, loadError = "") {
       </div>
     </section>
 
-    ${decisions.length
-      ? html`<section class="mkt-section" aria-labelledby="mkt-decisions-heading">
-          <header class="dk-section-header">
-            <h2 id="mkt-decisions-heading" class="dk-section-header__title">Needs a Decision</h2>
-          </header>
-          <ul class="mkt-notes-list">${decisions
-            .map(
-              (d) => html`<li class="mkt-decision-item">
-                <div>
-                  <strong>${escapeHtml(d.goalTitle || d.title || d.goalRef || "")}</strong>
-                  ${d.reason ? html` <span class="dk-badge dk-badge--danger">${escapeHtml(d.reason)}</span>` : ""}
-                  ${d.proposal ? html`<p class="mkt-muted">${escapeHtml(d.proposal)}</p>` : ""}
-                </div>
-                ${d.planId
-                  ? html`<div class="mkt-decision-actions">
-                      <button
-                        type="button"
-                        class="dk-button dk-button--secondary dk-button--sm"
-                        data-mkt-decision="ignore"
-                        data-plan-id="${escapeHtml(d.planId)}"
-                        data-goal-ref="${escapeHtml(d.goalRef || "")}"
-                      >Ignore 2 weeks</button>
-                    </div>`
-                  : ""}
-              </li>`,
-            )
-            .join("")}</ul>
-        </section>`
-      : ""}
+    ${goals.some((g) => g.status === "off-track") ? html`<section class="mkt-section">
+      <h3>Needs a decision</h3>
+      <ul class="mkt-work-list">${goals.filter((g) => g.status === "off-track").map((g) => html`<li>
+        <a class="mkt-link" href="/marketing/plans/${encodeURIComponent(g.planId)}/goals/${encodeURIComponent(g.ref)}" data-mkt-nav>${escapeHtml(g.goalTitle)}</a>
+        <span class="mkt-muted">Review the goal and record the decision in the plan notes.</span>
+      </li>`).join("")}</ul>
+    </section>` : ""}
 
-    ${alexeyReviews !== null
-      ? html`<p class="mkt-capacity-line${overLimit ? " is-over-limit" : ""}">
-          Alexey reviews next week: <strong>${escapeHtml(String(alexeyReviews))}</strong> (weekly limit ${ALEXEY_WEEKLY_REVIEW_LIMIT}${overLimit ? " — over capacity" : ""})
-        </p>`
-      : ""}`;
+    ${capacityRows.length ? html`<p class="mkt-capacity-line${overLimit ? " is-over-limit" : ""}">
+      ${capacityRows.map((row) => html`<span>${escapeHtml(row.week)}: ${escapeHtml(row.small)} S + ${escapeHtml(row.large)} L;
+        Alexey reviews: <strong>${escapeHtml(row.reviews)}</strong>
+        (weekly limit ${ALEXEY_WEEKLY_REVIEW_LIMIT}${row.reviews > ALEXEY_WEEKLY_REVIEW_LIMIT ? " — over capacity" : ""})</span>`).join(" · ")}
+    </p>` : ""}
+    ${review?.idle?.length ? html`<p class="mkt-muted">No work scheduled in the next two weeks: ${review.idle.map((id) => escapeHtml(id)).join(", ")}</p>` : ""}
+    ${review?.stale?.length ? html`<section class="mkt-section"><h3>Planned for more than six weeks</h3>${renderWorkList(review.stale, "None")}</section>` : ""}`;
 }

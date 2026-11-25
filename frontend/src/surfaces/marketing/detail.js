@@ -1,11 +1,11 @@
 import { escapeHtml } from "../../core/html.js";
 import { goalChartMarkup } from "./charts.js";
-import { formatNumber, html, statusBadge } from "./shared.js";
+import { formatNumber, html, statusBadge, snapshotRange } from "./shared.js";
 
 export function goalDetailMarkup(plan, goal, snapshots = [], publishedSteps = []) {
   const planId = plan?.id || goal?.planId || "";
   const planTitle = plan?.title || planId;
-  const rows = [...(snapshots || [])]
+  const rows = (snapshots || []).map((s) => ({ ...s, periodStart: snapshotRange(s).from, periodEnd: snapshotRange(s).to }))
     .sort((a, b) => String(b.periodEnd || "").localeCompare(String(a.periodEnd || "")))
     .map((s) => {
       const period = s.periodStart && s.periodStart !== s.periodEnd
@@ -49,6 +49,7 @@ export function goalDetailMarkup(plan, goal, snapshots = [], publishedSteps = []
       </div>
     </header>
 
+    ${goal?.calibrationRequired ? html`<p class="dk-callout" role="status">Baseline and target need calibration after measurement.</p>` : ""}
     <section class="mkt-section" aria-labelledby="mkt-goal-chart-heading">
       <h2 id="mkt-goal-chart-heading" class="dk-section-header__title">Series</h2>
       ${goalChartMarkup(snapshots, goal, publishedSteps)}
@@ -174,24 +175,35 @@ export function stepDetailMarkup(step, plan = null, utmResult = null) {
         ${step.dropped ? html`<div><dt>Dropped</dt><dd>${escapeHtml(step.dropped.reason || "Dropped")} (${escapeHtml(step.dropped.at || "")})</dd></div>` : ""}
       </dl>
 
-      ${status === "planned" && !step.dropped
+      ${status === "planned" && step.kind !== "technical" && !step.dropped
         ? html`<form class="mkt-inline-form" data-mkt-schedule-form>
             <label>Publish date <input type="date" class="dk-input" name="publishDate" value="${escapeHtml(step.publishDate || "")}" required></label>
             <label>Mode
               <select class="dk-select" name="mode">
-                <option value="card">card</option>
-                <option value="task">task</option>
-                <option value="link">link</option>
+                ${step.kind === "social"
+                  ? html`<option value="link">Link campaign row</option>`
+                  : ["card", "task", "link"].map((mode) => html`<option value="${mode}"${
+                    mode === (["newsletter", "podcast"].includes(step.kind) ? "link"
+                      : ["content", "refresh"].includes(step.kind) ? "card" : "task") ? " selected" : ""
+                  }>${mode}</option>`).join("")}
               </select>
             </label>
+            ${step.kind === "social"
+              ? html`<label>Campaign calendar row <input class="dk-input" name="campaignRowId" required></label>`
+              : html`<details><summary>Execution options</summary>
+                  <label>Template <input class="dk-input" name="template"></label>
+                  <label>Assignee <input class="dk-input" name="assignee"></label>
+                  <label>Existing card (link mode) <input class="dk-input" name="linkCardId"></label>
+                  <label>Publish task (link mode) <input class="dk-input" name="publishTaskId"></label>
+                </details>`}
             <button type="submit" class="dk-button dk-button--primary dk-button--sm">Schedule</button>
           </form>`
         : ""}
 
       ${step.kind === "technical" && status !== "published" && status !== "done" && !step.dropped
         ? html`<form class="mkt-inline-form" data-mkt-live-form>
-            <input type="url" class="dk-input mkt-inline-form__grow" name="url" placeholder="Live URL" value="${escapeHtml(step.targetUrl || "")}">
-            <input type="date" class="dk-input" name="date">
+            <input type="url" class="dk-input mkt-inline-form__grow" name="url" aria-label="Live URL" placeholder="Live URL" required value="${escapeHtml(step.targetUrl || "")}">
+            <input type="date" class="dk-input" name="date" aria-label="Live date" required>
             <button type="submit" class="dk-button dk-button--primary dk-button--sm">Mark live</button>
           </form>`
         : ""}

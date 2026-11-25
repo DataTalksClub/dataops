@@ -7,6 +7,7 @@ import {
   marketingTabsMarkup,
   seriesKeyForGoal,
   snapshotAgeLabel,
+  snapshotRange,
   statusBadge,
 } from "./shared.js";
 
@@ -24,7 +25,8 @@ export function planListMarkup(plans, today = berlinToday(), loadError = "") {
         : html`<span class="mkt-muted">No goals yet</span>`;
       const dueCount = plan.stepsDueThisWeek ?? plan.dueThisWeekCount;
       const dueLabel = dueCount !== undefined && dueCount !== null ? String(dueCount) : "–";
-      const lastSnap = plan.lastSnapshotAt || plan.lastSnapshotDate;
+      const lastSnap = goals.flatMap((g) => g.snapshots || [])
+        .map((s) => snapshotRange(s).to).sort().at(-1);
       const horizon = [plan.startDate, plan.endDate].filter(Boolean).join(" – ") || "–";
       return html`<tr>
         <td><a class="mkt-link" href="/marketing/plans/${encodeURIComponent(plan.id)}" data-mkt-nav>${escapeHtml(plan.title || plan.id)}</a></td>
@@ -97,7 +99,7 @@ export function planDetailMarkup(plan, steps = [], goalSeriesMap = new Map(), ac
   const goalRows = goals
     .map((g) => {
       const series = g.snapshots || g.series || goalSeriesMap.get(seriesKeyForGoal(g)) || [];
-      const latestVal = g.latestValue ?? (series.length ? series[series.length - 1].value : null);
+      const latestVal = g.value;
       const unit = g.unit || (series.length ? series[series.length - 1].unit : "");
       const targetStr = g.target
         ? `${formatNumber(g.target.value, unit)}${g.target.date ? ` by ${g.target.date}` : ""}`
@@ -273,6 +275,9 @@ function addStepDialogMarkup() {
         </label>
       </div>
       <label class="mkt-field">Target URL <input class="dk-input" type="url" name="targetUrl" placeholder="https://datatalks.club/academy/"></label>
+      <label class="mkt-field">Target type <select class="dk-select" name="targetType">
+        <option value="new">New page</option><option value="refresh">Refresh existing page</option>
+      </select></label>
       <label class="mkt-field">Primary keyword <input class="dk-input" name="primaryKeyword" maxlength="100"></label>
       <label class="mkt-field">Done criteria <input class="dk-input" name="doneCriteria" required maxlength="500" placeholder="Published and indexed"></label>
       <label class="mkt-field">Brief <textarea class="dk-input" name="brief" rows="3" maxlength="4000"></textarea></label>

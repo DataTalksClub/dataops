@@ -86,60 +86,31 @@ export function statusBadge(status, kind = "goal") {
   return html`<span class="dk-badge ${tone}">${escapeHtml(label)}</span>`;
 }
 
-export function normalizePlansPayload(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.plans)) return payload.plans;
-  if (Array.isArray(payload?.items)) return payload.items;
-  return [];
-}
+// Marketing reads use collection { items } envelopes and bare detail records.
+export const normalizePlansPayload = (payload) => payload.items;
+export const normalizePlanPayload = (payload) => payload;
+export const normalizeStepsPayload = (payload) => payload.items;
+export const normalizeStepPayload = (payload) => payload;
+export const normalizeGoalPayload = (payload) => ({
+  goal: payload, snapshots: payload.snapshots,
+});
+export const normalizeSnapshotsPayload = (payload) => payload.items;
 
-export function normalizePlanPayload(payload) {
-  if (!payload) return null;
-  if (payload.plan) {
-    return {
-      ...payload.plan,
-      steps: payload.steps ?? payload.plan.steps,
-      goals: payload.goals ?? payload.plan.goals ?? [],
-      notesLog: payload.notesLog ?? payload.plan.notesLog ?? [],
-    };
+export function snapshotRange(snapshot) {
+  const period = snapshot.period;
+  if (/^\d{4}-W\d{2}$/.test(period)) {
+    const start = new Date(Date.UTC(Number(period.slice(0, 4)), 0, 4));
+    start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7)
+      + (Number(period.slice(6)) - 1) * 7);
+    return { from: start.toISOString().slice(0, 10),
+      to: new Date(+start + 6 * 86400000).toISOString().slice(0, 10) };
   }
-  return payload;
-}
-
-export function normalizeStepsPayload(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.steps)) return payload.steps;
-  if (Array.isArray(payload?.items)) return payload.items;
-  return [];
-}
-
-export function normalizeStepPayload(payload) {
-  if (!payload) return null;
-  return payload.step || payload;
-}
-
-export function normalizeGoalPayload(payload) {
-  if (!payload) return null;
-  if (payload.goal) {
-    return {
-      goal: payload.goal,
-      plan: payload.plan || null,
-      snapshots: payload.snapshots || payload.series || [],
-    };
+  if (/^\d{4}-\d{2}$/.test(period)) {
+    return { from: `${period}-01`,
+      to: new Date(Date.UTC(Number(period.slice(0, 4)), Number(period.slice(5)), 0))
+        .toISOString().slice(0, 10) };
   }
-  return {
-    goal: payload,
-    plan: null,
-    snapshots: payload.snapshots || payload.series || [],
-  };
-}
-
-export function normalizeSnapshotsPayload(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.snapshots)) return payload.snapshots;
-  if (Array.isArray(payload?.items)) return payload.items;
-  if (Array.isArray(payload?.series)) return payload.series;
-  return [];
+  return { from: period, to: period };
 }
 
 export function seriesKeyForGoal(goal) {
