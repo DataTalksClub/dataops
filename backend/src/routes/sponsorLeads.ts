@@ -4,6 +4,7 @@ import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { createCrmRecord, deterministicCrmId, getCrmRecord, listCrmRecords, updateCrmRecord, type CrmRecord } from '../db/sponsorCrm';
 import { convertLead } from '../sponsorCrm/convertLead';
 import { leadWantsOrganization, linkLeadToOrganization, matchLeadOrganization, reconcileLeadOrganizations } from '../sponsorCrm/leadOrganizationLink';
+import { isSignalSource, leadSignalSource, SIGNAL_SOURCES, type SignalSource } from '../sponsorCrm/signalSource';
 import { recordInboxIssue } from '../sponsorCrm/newsletterIssues';
 import { TABLE_SPONSOR_CRM } from '../db/tableNames';
 import type { LambdaEvent, LambdaResponse } from '../types';
@@ -465,6 +466,7 @@ export interface LeadListFilters {
   limit: number;
   cursor: { at: string; id: string } | null;
   status: string;
+  source: SignalSource | '';
   newsletter: string;
   sponsor: string;
   search: string;
@@ -497,6 +499,8 @@ export function parseLeadListQuery(query: Record<string, string | undefined>): L
   }
   const status = query.status || '';
   if (status && !LEAD_STATUSES.has(status)) return 'Invalid status filter';
+  const source = query.source || query.promotionSource || '';
+  if (source && !isSignalSource(source)) return `Invalid source: one of ${SIGNAL_SOURCES.join(', ')}`;
   for (const name of ['newsletter', 'sponsor', 'search'] as const) {
     if ((query[name] || '').length > 200) return `Invalid ${name} filter`;
   }
@@ -506,6 +510,7 @@ export function parseLeadListQuery(query: Record<string, string | undefined>): L
     limit,
     cursor,
     status,
+    source: source as SignalSource | '',
     newsletter: query.newsletter || '',
     sponsor: query.sponsor ? normalizeLeadName(query.sponsor) : '',
     search: (query.search || '').trim().toLowerCase(),
@@ -556,6 +561,7 @@ export function leadListPage(all: CrmRecord[], filters: LeadListFilters): Record
     .sort((a, b) => a.localeCompare(b));
   const matches = all.filter((item) => {
     if (filters.status && item.status !== filters.status) return false;
+    if (filters.source && leadSignalSource(item) !== filters.source) return false;
     if (filters.newsletter && leadNewsletter(item).name !== filters.newsletter) return false;
     if (filters.sponsor && leadSponsorKey(item) !== filters.sponsor) return false;
     if (!filters.search) return true;

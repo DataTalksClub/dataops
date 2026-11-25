@@ -51,6 +51,12 @@ Usage
       newsletter issue slots stay booked without a deliverable link.
   dataops sponsors messages <organization-id>          Communications with an organization
   dataops sponsors history <deal-id>                   A deal's change history
+  dataops sponsors signals --from YYYY-MM-DD --before YYYY-MM-DD [--source newsletter|social|influencer|paid] [--limit N] [--cursor C] [--json]
+      Read-only outbound sponsor signals seen in the window (Europe/Berlin days; from inclusive,
+      before exclusive, max 93 days): newsletter-intake and other sourced leads (linked or unlinked
+      to a company) plus organization notes marked "Outbound signal (source=…): … Evidence: …".
+      One page of up to --limit rows (default 50); pass nextCursor back as --cursor. Output carries
+      coverage (sources read, complete, merged duplicates, missing metadata). Creates nothing.
   dataops sponsors cold [--days N] [--remind]          Orgs/contacts with no contact for N days (defaults per relationship stage)
   dataops sponsors touch <organization|contact> <id> --channel email [--note TEXT] [--date YYYY-MM-DD]
       Log an outreach and update lastOutbound, so the contact stops counting as cold
@@ -199,6 +205,22 @@ export async function linkLeads(args, io) {
     for (const item of result.examples.linked) io.print(`  linked  ${item.sponsor} -> ${item.organization} (${item.by})`);
     for (const item of result.examples.ambiguous) io.print(`  review  ${item.sponsor}: ${item.reason}`);
   }
+  return result;
+}
+
+/** One bounded page of outbound sponsor signals; the server reports coverage. */
+export async function signals(args, io) {
+  if (!args.from || !args.before) throw new UsageError("dataops sponsors signals needs --from YYYY-MM-DD and --before YYYY-MM-DD (Europe/Berlin; before exclusive)");
+  const result = await apiFor(args).get("/api/sponsor-crm/signals", { query: {
+    from: args.from, before: args.before, source: args.source, limit: integer(args.limit, "limit"), cursor: args.cursor,
+  } });
+  if (args.json) return result;
+  table(io, result.items, [
+    ["DAY", (item) => item.observedDay], ["SOURCE", (item) => item.source || "unknown"],
+    ["COMPANY", (item) => item.company.displayName || ""], ["ORG", (item) => item.company.organizationId || "unlinked"],
+    ["EVIDENCE", (item) => item.placement.url || item.placement.newsletter || ""],
+  ], "No signals in this window.");
+  io.print(`${result.coverage.returned} of ${result.coverage.matched} signals; ${result.complete ? "complete" : result.nextCursor ? `more: --cursor ${result.nextCursor}` : "INCOMPLETE source coverage"}`);
   return result;
 }
 
@@ -888,4 +910,4 @@ export async function readiness(args, io) {
   return result;
 }
 
-export const commands = { readiness, "classify-finance": classifyFinance, "record-invoice": recordInvoice, "correct-invoice": correctInvoice, "add-evidence": addEvidence, "set-waiting": setWaiting, "payment-mail": paymentMail, pipeline, "link-leads": linkLeads, contact, list, show, create, update, delete: remove, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification, "record-thank-you": recordThankYou, contract };
+export const commands = { readiness, "classify-finance": classifyFinance, "record-invoice": recordInvoice, "correct-invoice": correctInvoice, "add-evidence": addEvidence, "set-waiting": setWaiting, "payment-mail": paymentMail, pipeline, "link-leads": linkLeads, signals, contact, list, show, create, update, delete: remove, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification, "record-thank-you": recordThankYou, contract };
