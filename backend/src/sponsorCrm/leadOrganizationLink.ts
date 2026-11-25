@@ -90,9 +90,19 @@ export async function linkLeadToOrganization(
   return { lead: next, organization: current };
 }
 
+// Dapier's newsletter intake is the one origin this covers: its leads arrive
+// unreviewed, many per issue, each carrying the sponsor's own name and url.
+// A sighting somebody filed by hand (portal) or imported from the old tracker
+// is somebody's lead already, so attaching it to a company is a review
+// decision there, not intake bookkeeping.
+const NEWSLETTER_INTAKE_SOURCE = 'leads-intake';
+
 export interface LeadLinkReport {
   dryRun: boolean;
+  /** Dapier newsletter intake leads read; every count below refers to these. */
   scanned: number;
+  /** Leads from other origins, left untouched. */
+  otherSources: number;
   alreadyLinked: number;
   dismissed: number;
   linked: number;
@@ -108,17 +118,19 @@ export interface LeadLinkReport {
 const EXAMPLE_LIMIT = 50;
 
 /**
- * Link every open lead that has one clear match; leads somebody dismissed are
- * counted and skipped. Idempotent: linked leads are skipped, so reruns only
- * touch what is still open. With dryRun nothing is written. Reads
+ * Link every open Dapier newsletter intake lead that has one clear match.
+ * Leads of other origins are counted and left alone; leads somebody dismissed
+ * are counted and skipped. Idempotent: linked leads are skipped, so reruns
+ * only touch what is still open. With dryRun nothing is written. Reads
  * organizations once; one lead failing never stops the rest.
  */
 export async function reconcileLeadOrganizations(
   client: DynamoDBDocumentClient,
   options: { apply: boolean; actorId: string },
 ): Promise<LeadLinkReport> {
-  const [leads, organizations] = await Promise.all([listCrmRecords(client, 'lead'), listCrmRecords(client, 'organization')]);
-  const report: LeadLinkReport = { dryRun: !options.apply, scanned: leads.length, alreadyLinked: 0, dismissed: 0, linked: 0, ambiguous: 0, unmatched: 0, failed: 0, examples: { linked: [], ambiguous: [] } };
+  const [all, organizations] = await Promise.all([listCrmRecords(client, 'lead'), listCrmRecords(client, 'organization')]);
+  const leads = all.filter((lead) => lead.sourceType === NEWSLETTER_INTAKE_SOURCE);
+  const report: LeadLinkReport = { dryRun: !options.apply, scanned: leads.length, otherSources: all.length - leads.length, alreadyLinked: 0, dismissed: 0, linked: 0, ambiguous: 0, unmatched: 0, failed: 0, examples: { linked: [], ambiguous: [] } };
   const byId = new Map(organizations.map((item) => [item.id, item]));
   for (const lead of leads) {
     if (lead.organizationId) { report.alreadyLinked += 1; continue; }

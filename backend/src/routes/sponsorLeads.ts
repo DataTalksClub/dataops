@@ -591,7 +591,8 @@ export async function handleSponsorLeadRoutes(path: string, method: string, even
   if (!match) return response(404, { error: 'Not found' });
   const id = match[1];
 
-  // Link unlinked leads that have one clear company match. Dry run unless apply:true.
+  // Link unlinked Dapier newsletter intake leads that have one clear company
+  // match; leads of other origins are left alone. Dry run unless apply:true.
   if (method === 'POST' && id === 'link-organizations') {
     const body = event.body ? parseBody(event) : {};
     if (!body) return response(400, { error: 'Invalid JSON' });

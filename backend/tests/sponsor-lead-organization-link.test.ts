@@ -3,7 +3,7 @@ import assert from 'node:assert';
 
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
-import { createOrganizationAtomic, getCrmRecord, listCrmRecords, updateCrmRecord } from '../src/db/sponsorCrm';
+import { createCrmRecord, createOrganizationAtomic, getCrmRecord, listCrmRecords, updateCrmRecord } from '../src/db/sponsorCrm';
 import { handler } from '../src/handler';
 import { matchLeadOrganization } from '../src/sponsorCrm/leadOrganizationLink';
 import { resetSponsorLeadIntakeStateForTests } from '../src/routes/sponsorLeads';
@@ -121,6 +121,79 @@ describe('sponsor lead company linking', () => {
     assert.strictEqual((await getCrmRecord(client, 'lead', dismissed.id))?.status, 'ignored');
     assert.strictEqual((await getCrmRecord(client, 'organization', quasar.id))?.sightings.length, 1);
     assert.strictEqual((await link({ bogus: 1 })).statusCode, 400);
+  });
+
+  it('reconciles Dapier newsletter intake leads only: leads of other origins stay exactly as they were', async () => {
+    const client = await getClient();
+    const lead = (id: string) => getCrmRecord(client, 'lead', id);
+    const counts = (report: Record<string, number>) => [report.scanned, report.otherSources, report.linked, report.dismissed, report.ambiguous, report.unmatched, report.alreadyLinked, report.failed];
+    // The table is shared with the tests above, so every count is read as a change from before this test's leads existed.
+    const baseline = counts(JSON.parse((await link()).body));
+
+    // Dapier's intake, delivered before any matching company existed: in scope.
+    const [fresh, triaged, dismissed] = JSON.parse((await intake('link-8', [
+      { name: 'Northwind', url: 'https://northwind.example.test/offer' },
+      { name: 'Solace', url: 'https://solace.example.test' },
+      { name: 'In-House Promo', url: 'https://promo.example.test' },
+    ])).body).leads;
+    for (const item of [fresh, triaged, dismissed]) assert.strictEqual(item.organizationId, undefined);
+    await updateCrmRecord(client, 'lead', (await lead(triaged.id))!, { status: 'triaged', statusReason: 'intro call booked' });
+    await updateCrmRecord(client, 'lead', (await lead(dismissed.id))!, { status: 'ignored', statusReason: 'house ad' });
+    // A sighting filed by hand through the portal and one imported from the old tracker: out of scope.
+    const sighting = await handler({ httpMethod: 'POST', path: '/api/sponsor-crm/leads', headers: {}, body: JSON.stringify({ source: 'newsletter', url: 'https://northwind.example.test/pricing', summary: 'Seen in a digest', observedAt: '2026-11-20T10:00:00Z' }) }, {});
+    assert.strictEqual(sighting.statusCode, 201, sighting.body);
+    const imported = (await createCrmRecord(client, 'lead', {
+      messageId: 'import-lead:Northwind',
+      newsletter: { name: 'imported', sender: 'import@example.invalid', subject: 'Northwind', receivedAt: '2026-11-01T10:00:00Z' },
+      sponsor: { name: 'Northwind', url: 'https://northwind.example.test/webinar', blurb: '', context: '', normalizedName: 'northwind', normalizedUrl: 'https://northwind.example.test/webinar' },
+      status: 'triaged', statusReason: 'waiting for reply', active: true, sourceType: 'import', sourceKey: 'import-lead:Northwind',
+    })).item;
+    const others = await Promise.all([JSON.parse(sighting.body).id, imported.id].map(async (id: string) => (await lead(id))!));
+    assert.deepStrictEqual(others.map((item) => item.sourceType), ['portal', 'import']);
+
+    const orgs = [
+      (await createOrganizationAtomic(client, { displayName: 'Northwind', domain: 'northwind.example.test' }, 't')).item,
+      (await createOrganizationAtomic(client, { displayName: 'Solace', domain: 'solace.example.test' }, 't')).item,
+      (await createOrganizationAtomic(client, { displayName: 'In-House Promo', domain: 'promo.example.test' }, 't')).item,
+    ];
+    const [northwind, solace, promo] = orgs;
+    // Matching alone would link the other origins too: only their origin keeps them out.
+    const wouldLink = [...others, (await lead(dismissed.id))!];
+    for (const item of wouldLink) assert.strictEqual(matchLeadOrganization(item, orgs).kind, 'linked');
+
+    const preview = JSON.parse((await link()).body);
+    assert.deepStrictEqual(counts(preview).map((value, index) => value - baseline[index]), [3, 2, 2, 1, 0, 0, 0, 0]);
+    const linkedIds = preview.examples.linked.map((item: { leadId: string }) => item.leadId);
+    for (const item of [fresh, triaged]) assert.ok(linkedIds.includes(item.id));
+    for (const item of others) assert.ok(!linkedIds.includes(item.id));
+    // A preview writes nothing.
+    assert.strictEqual((await lead(fresh.id))?.organizationId, undefined);
+    for (const org of orgs) assert.deepStrictEqual((await getCrmRecord(client, 'organization', org.id))?.sightings ?? [], []);
+    assert.deepStrictEqual(await Promise.all(others.map((item) => lead(item.id))), others);
+
+    const applied = JSON.parse((await link({ apply: true })).body);
+    assert.strictEqual(applied.dryRun, false);
+    assert.deepStrictEqual(counts(applied).map((value, index) => value - baseline[index]), [3, 2, 2, 1, 0, 0, 0, 0]);
+    // In scope: linked, with the prior status, reason and message evidence intact.
+    assert.deepStrictEqual(
+      await Promise.all([fresh, triaged, dismissed].map(async (item: { id: string }) => {
+        const stored = await lead(item.id);
+        return [stored?.organizationId, stored?.status, stored?.statusReason, stored?.messageId, stored?.newsletter];
+      })),
+      [[northwind.id, 'new', undefined, 'link-8', NEWSLETTER], [solace.id, 'triaged', 'intro call booked', 'link-8', NEWSLETTER], [undefined, 'ignored', 'house ad', 'link-8', NEWSLETTER]],
+    );
+    const northwindSightings = (await getCrmRecord(client, 'organization', northwind.id))?.sightings as Array<{ leadId: string }>;
+    assert.deepStrictEqual(northwindSightings.map((item) => item.leadId), [fresh.id]);
+    assert.deepStrictEqual((await getCrmRecord(client, 'organization', promo.id))?.sightings ?? [], []);
+    assert.strictEqual((await listCrmRecords(client, 'deal')).length, 0);
+    // Other origins: the same status, reason, evidence and version after the preview and the apply.
+    assert.deepStrictEqual(await Promise.all(others.map((item) => lead(item.id))), others);
+    assert.deepStrictEqual(others.map((item) => [item.status, item.statusReason, item.organizationId]), [['new', undefined, undefined], ['triaged', 'waiting for reply', undefined]]);
+
+    // A rerun links nothing more and still leaves the other origins alone.
+    const again = JSON.parse((await link({ apply: true })).body);
+    assert.deepStrictEqual(counts(again).map((value, index) => value - counts(preview)[index]), [0, 0, -2, 0, 0, 0, 2, 0]);
+    assert.deepStrictEqual(await Promise.all(others.map((item) => lead(item.id))), others);
   });
 
   it('a re-delivered message keeps a link somebody made and links an older lead once its company exists', async () => {
