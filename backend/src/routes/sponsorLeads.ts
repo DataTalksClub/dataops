@@ -3,7 +3,7 @@ import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 
 import { createCrmRecord, deterministicCrmId, getCrmRecord, listCrmRecords, updateCrmRecord, type CrmRecord } from '../db/sponsorCrm';
 import { convertLead } from '../sponsorCrm/convertLead';
-import { linkLeadToOrganization, matchLeadOrganization, reconcileLeadOrganizations } from '../sponsorCrm/leadOrganizationLink';
+import { leadWantsOrganization, linkLeadToOrganization, matchLeadOrganization, reconcileLeadOrganizations } from '../sponsorCrm/leadOrganizationLink';
 import { recordInboxIssue } from '../sponsorCrm/newsletterIssues';
 import { TABLE_SPONSOR_CRM } from '../db/tableNames';
 import type { LambdaEvent, LambdaResponse } from '../types';
@@ -387,12 +387,13 @@ export async function handleSponsorLeadIntake(event: LambdaEvent, client: Dynamo
       const index = sourceIndices[position];
       try {
         const stored = await storeLead(client, leadValue(messageId, newsletter, sponsor, 'leads-intake'));
-        // Linking is best effort: a failure leaves the lead for the reconcile route.
+        // Linking is best effort: a failure leaves the lead for the reconcile
+        // route. A lead somebody dismissed is left alone, on retries too.
         let organizationId: string | undefined;
         try {
           const lead = await getCrmRecord(client, 'lead', stored.id);
           if (lead?.organizationId) organizationId = String(lead.organizationId);
-          else if (lead) {
+          else if (lead && leadWantsOrganization(lead)) {
             organizations ??= await listCrmRecords(client, 'organization');
             const match = matchLeadOrganization(lead, organizations);
             if (match.kind === 'linked') {

@@ -5,12 +5,14 @@ import { registrableDomain } from './model';
 // Deterministic company linking for newsletter sponsor leads. A lead links to
 // a CRM organization only on unique evidence:
 //   - the sponsor URL's host is the organization's own domain (domains are
-//     unique per organization), or
+//     unique per organization) and the sponsor name still reads as that
+//     company, or
 //   - the sponsor name equals exactly one active organization's display name
 //     after whitespace/case normalization.
 // When both signals exist they must agree. Anything else (several name
 // matches, domain and name pointing at different companies, product or brand
-// variants) is left unlinked for review. Never creates organizations or deals.
+// variants, a link hosted on somebody else's platform) is left unlinked for
+// review. Never creates organizations or deals.
 
 export type LeadLinkOutcome =
   | { kind: 'linked'; organization: CrmRecord; by: 'domain' | 'name' | 'domain+name' }
@@ -19,6 +21,21 @@ export type LeadLinkOutcome =
 
 function normalizeName(value: unknown): string {
   return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+// One company under several names: "AWS re:Invent" is AWS and "Hex" is Hex
+// Technologies. Letters and digits only, so punctuation, capitalization and
+// a domain suffix in the sponsor name do not matter.
+function sameBrand(sponsorName: string, organizationName: unknown): boolean {
+  const brand = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const sponsor = brand(sponsorName);
+  const organization = brand(String(organizationName ?? ''));
+  return sponsor.length >= 3 && organization.length >= 3 && (sponsor.includes(organization) || organization.includes(sponsor));
+}
+
+/** Open work only: a lead somebody dismissed keeps companies untouched. */
+export function leadWantsOrganization(lead: CrmRecord): boolean {
+  return !lead.organizationId && lead.status !== 'ignored';
 }
 
 function senderDomain(lead: CrmRecord): string | null {
@@ -42,7 +59,9 @@ export function matchLeadOrganization(lead: CrmRecord, organizations: CrmRecord[
     if (byName.length === 1 && byName[0].id === byDomain.id) return { kind: 'linked', organization: byDomain, by: 'domain+name' };
     return { kind: 'ambiguous', reason: 'domain and name point at different companies', candidates: [byDomain, ...byName.filter((item) => item.id !== byDomain.id)] };
   }
-  if (byDomain) return { kind: 'linked', organization: byDomain, by: 'domain' };
+  // A link can live on a platform the sponsor does not own (a course on
+  // maven.com), so a lone domain still needs the name to read as that company.
+  if (byDomain && sameBrand(String(sponsor.name || ''), byDomain.displayName)) return { kind: 'linked', organization: byDomain, by: 'domain' };
   if (byName.length === 1) return { kind: 'linked', organization: byName[0], by: 'name' };
   if (byName.length > 1) return { kind: 'ambiguous', reason: 'several companies share this name', candidates: byName };
   return { kind: 'none' };
@@ -75,6 +94,7 @@ export interface LeadLinkReport {
   dryRun: boolean;
   scanned: number;
   alreadyLinked: number;
+  dismissed: number;
   linked: number;
   ambiguous: number;
   unmatched: number;
@@ -88,19 +108,21 @@ export interface LeadLinkReport {
 const EXAMPLE_LIMIT = 50;
 
 /**
- * Link every unlinked lead that has one clear match. Idempotent: linked leads
- * are skipped, so reruns only touch what is still open. With dryRun nothing is
- * written. Reads organizations once; one lead failing never stops the rest.
+ * Link every open lead that has one clear match; leads somebody dismissed are
+ * counted and skipped. Idempotent: linked leads are skipped, so reruns only
+ * touch what is still open. With dryRun nothing is written. Reads
+ * organizations once; one lead failing never stops the rest.
  */
 export async function reconcileLeadOrganizations(
   client: DynamoDBDocumentClient,
   options: { apply: boolean; actorId: string },
 ): Promise<LeadLinkReport> {
   const [leads, organizations] = await Promise.all([listCrmRecords(client, 'lead'), listCrmRecords(client, 'organization')]);
-  const report: LeadLinkReport = { dryRun: !options.apply, scanned: leads.length, alreadyLinked: 0, linked: 0, ambiguous: 0, unmatched: 0, failed: 0, examples: { linked: [], ambiguous: [] } };
+  const report: LeadLinkReport = { dryRun: !options.apply, scanned: leads.length, alreadyLinked: 0, dismissed: 0, linked: 0, ambiguous: 0, unmatched: 0, failed: 0, examples: { linked: [], ambiguous: [] } };
   const byId = new Map(organizations.map((item) => [item.id, item]));
   for (const lead of leads) {
     if (lead.organizationId) { report.alreadyLinked += 1; continue; }
+    if (!leadWantsOrganization(lead)) { report.dismissed += 1; continue; }
     const outcome = matchLeadOrganization(lead, [...byId.values()]);
     const sponsorName = String(((lead.sponsor || {}) as Record<string, unknown>).name || '');
     if (outcome.kind === 'none') { report.unmatched += 1; continue; }

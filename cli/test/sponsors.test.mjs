@@ -179,7 +179,7 @@ test("sponsors link-leads previews by default, applies only with an explicit fla
   globalThis.fetch = async (url, options) => {
     const body = JSON.parse(options.body);
     calls.push({ url, ...options, body });
-    return new Response(JSON.stringify({ dryRun: body.apply !== true, scanned: 39, alreadyLinked: 4, linked: 12, ambiguous: 6, unmatched: 16, failed: 1,
+    return new Response(JSON.stringify({ dryRun: body.apply !== true, scanned: 40, alreadyLinked: 4, dismissed: 1, linked: 12, ambiguous: 6, unmatched: 16, failed: 1,
       examples: { linked: [{ leadId: "lead-1", sponsor: "Orbit Data", organizationId: "org-1", organization: "Orbit Data", by: "domain" }],
         ambiguous: [{ leadId: "lead-2", sponsor: "Pulsar", reason: "several companies share this name", candidates: [] }] } }));
   };
@@ -188,13 +188,13 @@ test("sponsors link-leads previews by default, applies only with an explicit fla
     const preview = await linkLeads(args, { print: (line) => lines.push(line) });
     assert.equal(preview.dryRun, true);
     assert.deepEqual(calls[0].body, { apply: false });
-    assert.deepEqual(lines, ["Preview: 12 linked, 6 ambiguous, 16 unmatched, 4 already linked, 1 failed (of 39).",
+    assert.deepEqual(lines, ["Preview: 12 linked, 6 ambiguous, 16 unmatched, 4 already linked, 1 dismissed, 1 failed (of 40).",
       "  linked  Orbit Data -> Orbit Data (domain)", "  review  Pulsar: several companies share this name"]);
     lines.length = 0;
     const applied = await linkLeads({ ...args, apply: true }, { print: (line) => lines.push(line) });
     assert.equal(applied.dryRun, false);
     assert.deepEqual(calls[1].body, { apply: true });
-    assert.match(lines[0], /^Applied: 12 linked, 6 ambiguous, 16 unmatched, 4 already linked, 1 failed \(of 39\)\.$/);
+    assert.match(lines[0], /^Applied: 12 linked, 6 ambiguous, 16 unmatched, 4 already linked, 1 dismissed, 1 failed \(of 40\)\.$/);
     lines.length = 0;
     await linkLeads({ ...args, json: true }, { print: (line) => lines.push(line) });
     assert.deepEqual(lines, []);

@@ -39,8 +39,9 @@ Usage
       optional organizationId links a known company. Never creates a deal:
       a deal only exists once a sale closes.
   dataops sponsors link-leads [--apply]
-      Link unlinked sponsor leads to CRM companies on a unique domain or exact-name match.
-      Preview by default; ambiguous leads stay unlinked and are listed. Never creates companies or deals.
+      Link unlinked sponsor leads to CRM companies on a unique domain (when the sponsor name
+      still reads as that company) or exact-name match. Preview by default; ambiguous leads
+      stay unlinked and are listed; dismissed (ignored) leads are skipped. Never creates companies or deals.
   dataops sponsors update <kind> <id> --data '{...}'
   dataops sponsors update leads <id> --data '{"status":"ignored","version":N}' [--reason TEXT]
   dataops sponsors delete deals <id> --with-deliverables [--yes|--apply] [--expected-version N]
@@ -193,7 +194,7 @@ export async function list(args, io) {
 export async function linkLeads(args, io) {
   const result = await apiFor(args).post('/api/sponsor-crm/leads/link-organizations', { apply: args.apply === true || args.yes === true });
   if (!args.json) {
-    io.print(`${result.dryRun ? 'Preview' : 'Applied'}: ${result.linked} linked, ${result.ambiguous} ambiguous, ${result.unmatched} unmatched, ${result.alreadyLinked} already linked, ${result.failed} failed (of ${result.scanned}).`);
+    io.print(`${result.dryRun ? 'Preview' : 'Applied'}: ${result.linked} linked, ${result.ambiguous} ambiguous, ${result.unmatched} unmatched, ${result.alreadyLinked} already linked, ${result.dismissed} dismissed, ${result.failed} failed (of ${result.scanned}).`);
     for (const item of result.examples.linked) io.print(`  linked  ${item.sponsor} -> ${item.organization} (${item.by})`);
     for (const item of result.examples.ambiguous) io.print(`  review  ${item.sponsor}: ${item.reason}`);
   }

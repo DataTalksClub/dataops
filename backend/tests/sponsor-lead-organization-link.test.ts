@@ -64,15 +64,22 @@ describe('sponsor lead company linking', () => {
     assert.strictEqual((await listCrmRecords(client, 'deal')).length, 0);
   });
 
-  it('does not match on the publisher domain, duplicate names or conflicting evidence', () => {
+  it("does not match on the publisher domain, duplicate names, conflicting evidence or somebody else's platform", () => {
     const org = (id: string, displayName: string, domain?: string) => ({ id, displayName, ...(domain ? { domain } : {}), version: 1 }) as never;
     const lead = (name: string, url: string) => ({ id: 'l', newsletter: NEWSLETTER, sponsor: { name, url } }) as never;
-    const orgs = [org('a', 'Twin'), org('b', 'Twin'), org('c', 'Publisher', 'publisher.example.test'), org('d', 'Alpha', 'alpha.example.test'), org('e', 'Beta'), { ...org('f', 'Gone', 'gone.example.test'), archivedAt: 'x' } as never];
+    const orgs = [org('a', 'Twin'), org('b', 'Twin'), org('c', 'Publisher', 'publisher.example.test'), org('d', 'Alpha', 'alpha.example.test'), org('e', 'Beta'), org('m', 'Maven', 'maven.com'), org('h', 'Hex Technologies', 'hex.tech'), { ...org('f', 'Gone', 'gone.example.test'), archivedAt: 'x' } as never];
     assert.strictEqual(matchLeadOrganization(lead('Twin', ''), orgs).kind, 'ambiguous');
     assert.strictEqual(matchLeadOrganization(lead('Something', 'https://publisher.example.test/x'), orgs).kind, 'none');
     assert.strictEqual(matchLeadOrganization(lead('Beta', 'https://alpha.example.test'), orgs).kind, 'ambiguous');
     assert.strictEqual(matchLeadOrganization(lead('Gone', 'https://gone.example.test'), orgs).kind, 'none');
     assert.strictEqual(matchLeadOrganization(lead('Alpha', 'https://alpha.example.test'), orgs).kind, 'linked');
+    // A link hosted on a platform is not that platform's sponsorship: the
+    // sponsor's name still has to read as the domain's company.
+    assert.strictEqual(matchLeadOrganization(lead('Applied LLMs', 'https://maven.com/courses/applied-llms'), orgs).kind, 'none');
+    assert.strictEqual(matchLeadOrganization(lead('', 'https://hex.tech'), orgs).kind, 'none');
+    const hex = matchLeadOrganization(lead('Hex', 'https://hex.tech'), orgs);
+    assert.ok(hex.kind === 'linked' && hex.by === 'domain');
+    assert.ok(matchLeadOrganization(lead('AWS re:Invent', 'https://aws.amazon.com/'), [org('aws', 'AWS', 'aws.amazon.com')]).kind === 'linked');
   });
 
   it('reconciles existing unlinked leads: dry run first, then apply, idempotent, preserving linked ones', async () => {
@@ -82,6 +89,9 @@ describe('sponsor lead company linking', () => {
       { name: 'Pulsar', url: 'https://pulsar.example.test' },
       { name: 'Quasar Product', url: 'https://quasar-product.example.test' },
     ])).body).leads;
+    // A lead somebody dismissed keeps its company untouched even once the company exists.
+    const dismissed = JSON.parse((await intake('link-3', [{ name: 'Quasar Labs', url: 'https://quasar.example.test/webinar' }])).body).leads[0];
+    await updateCrmRecord(client, 'lead', (await getCrmRecord(client, 'lead', dismissed.id))!, { status: 'ignored', statusReason: 'house ad' });
     const quasar = (await createOrganizationAtomic(client, { displayName: 'Quasar Labs', domain: 'quasar.example.test' }, 't')).item;
     const pulsarA = (await createOrganizationAtomic(client, { displayName: 'Pulsar' }, 't')).item;
     await createOrganizationAtomic(client, { displayName: 'pulsar' }, 't');
@@ -89,6 +99,7 @@ describe('sponsor lead company linking', () => {
     const preview = JSON.parse((await link()).body);
     assert.strictEqual(preview.dryRun, true);
     assert.ok(preview.linked >= 1 && preview.ambiguous >= 1);
+    assert.strictEqual(preview.dismissed, 1);
     assert.strictEqual((await getCrmRecord(client, 'lead', first[0].id))?.organizationId, undefined);
 
     const applied = JSON.parse((await link({ apply: true })).body);
@@ -105,6 +116,9 @@ describe('sponsor lead company linking', () => {
 
     const again = JSON.parse((await link({ apply: true })).body);
     assert.strictEqual(again.linked, 0);
+    assert.strictEqual(again.dismissed, 1);
+    assert.strictEqual((await getCrmRecord(client, 'lead', dismissed.id))?.organizationId, undefined);
+    assert.strictEqual((await getCrmRecord(client, 'lead', dismissed.id))?.status, 'ignored');
     assert.strictEqual((await getCrmRecord(client, 'organization', quasar.id))?.sightings.length, 1);
     assert.strictEqual((await link({ bogus: 1 })).statusCode, 400);
   });
@@ -116,19 +130,25 @@ describe('sponsor lead company linking', () => {
     const chosen = JSON.parse((await deliver('link-4', 'Vega Tools', 'https://vega.example.test/offer')).body).leads[0];
     const late = JSON.parse((await deliver('link-5', 'Kite Analytics', 'https://kite.example.test')).body).leads[0];
     const twin = JSON.parse((await deliver('link-6', 'Twin Analytics', 'https://track.mailer.example.test/c/twin')).body).leads[0];
-    for (const lead of [chosen, late, twin]) assert.strictEqual(lead.organizationId, undefined);
+    const houseAd = JSON.parse((await deliver('link-7', 'House Ad', 'https://house-ad.example.test')).body).leads[0];
+    await updateCrmRecord(client, 'lead', (await getCrmRecord(client, 'lead', houseAd.id))!, { status: 'ignored', statusReason: 'house ad' });
+    for (const lead of [chosen, late, twin, houseAd]) assert.strictEqual(lead.organizationId, undefined);
 
     const operatorPick = (await createOrganizationAtomic(client, { displayName: 'Vega Partners' }, 't')).item;
     await updateCrmRecord(client, 'lead', (await getCrmRecord(client, 'lead', chosen.id))!, { organizationId: operatorPick.id });
     const obvious = (await createOrganizationAtomic(client, { displayName: 'Vega Tools', domain: 'vega.example.test' }, 't')).item;
+    const houseAdCompany = (await createOrganizationAtomic(client, { displayName: 'House Ad', domain: 'house-ad.example.test' }, 't')).item;
     const twins = [
       (await createOrganizationAtomic(client, { displayName: 'Twin Analytics', domain: 'twin-a.example.test' }, 't')).item,
       (await createOrganizationAtomic(client, { displayName: 'twin  analytics', domain: 'twin-b.example.test' }, 't')).item,
     ];
 
-    // Neither the reconcile route nor a retry moves a link somebody already made,
-    // and two same-named companies stay a review item on every path.
-    assert.strictEqual(JSON.parse((await link({ apply: true })).body).linked, 0);
+    // Neither the reconcile route nor a retry moves a link somebody already made
+    // or touches a dismissed lead, and two same-named companies stay a review
+    // item on every path.
+    const reconciled = JSON.parse((await link({ apply: true })).body);
+    assert.strictEqual(reconciled.linked, 0);
+    assert.ok(reconciled.dismissed >= 1);
     const retried = JSON.parse((await deliver('link-4', 'Vega Tools', 'https://vega.example.test/offer')).body).leads[0];
     assert.strictEqual(retried.outcome, 'duplicate');
     assert.strictEqual(retried.organizationId, operatorPick.id);
@@ -137,6 +157,9 @@ describe('sponsor lead company linking', () => {
     assert.strictEqual(JSON.parse((await deliver('link-6', 'Twin Analytics', 'https://track.mailer.example.test/c/twin')).body).leads[0].organizationId, undefined);
     assert.strictEqual((await getCrmRecord(client, 'lead', twin.id))?.organizationId, undefined);
     for (const item of twins) assert.deepStrictEqual((await getCrmRecord(client, 'organization', item.id))?.sightings ?? [], []);
+    assert.strictEqual(JSON.parse((await deliver('link-7', 'House Ad', 'https://house-ad.example.test')).body).leads[0].organizationId, undefined);
+    assert.strictEqual((await getCrmRecord(client, 'lead', houseAd.id))?.status, 'ignored');
+    assert.deepStrictEqual((await getCrmRecord(client, 'organization', houseAdCompany.id))?.sightings ?? [], []);
 
     // The lead that arrived without its company links on the retry, exactly once.
     const kite = (await createOrganizationAtomic(client, { displayName: 'Kite Analytics', domain: 'kite.example.test' }, 't')).item;
