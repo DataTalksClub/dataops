@@ -10,6 +10,7 @@ import {
 } from './sharedIssuer';
 import { handleInvoiceRoutes } from '../routes/invoices';
 import { handleSponsorCrmRoutes } from '../routes/sponsorCrm';
+import { handleDealAttachmentRoutes } from '../routes/dealAttachments';
 import { handleCrmWorkspaceRoutes } from '../routes/crmWorkspace';
 import { handleSponsorLeadRoutes } from '../routes/sponsorLeads';
 import { handleSponsorNewsletterRoutes } from '../routes/sponsorNewsletters';
@@ -64,6 +65,10 @@ async function handleSponsorRoute(
   }
   if (isSponsorCommunicationRoute(reqPath)) {
     return await handleSponsorCommunicationRoutes(reqPath, method, event, client);
+  }
+  if (/^\/api\/sponsor-crm\/deals\/[^/]+\/attachments(\/|$)/.test(reqPath)) {
+    const attachment = await handleDealAttachmentRoutes(reqPath, method, event, client);
+    if (attachment) return attachment;
   }
   const finance = await handleSponsorFinanceRoutes(reqPath, method, event, client);
   if (finance) return finance;

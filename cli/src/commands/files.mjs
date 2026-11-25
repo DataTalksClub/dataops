@@ -82,7 +82,7 @@ export async function filesUpload(args, io) {
  * error message, so this fetch is deliberately bare and its errors are
  * URL-free.
  */
-async function fetchObjectBytes(downloadUrl, baseUrl) {
+export async function fetchObjectBytes(downloadUrl, baseUrl) {
   let target;
   try {
     target = new URL(downloadUrl, baseUrl);
@@ -109,7 +109,7 @@ async function fetchObjectBytes(downloadUrl, baseUrl) {
  * written, so an expired, truncated, or tampered transfer never produces a
  * corrupt output file.
  */
-function verifyTransferredBytes(file, bytes) {
+export function verifyTransferredBytes(file, bytes) {
   if (Number.isSafeInteger(file.sizeBytes) && file.sizeBytes !== bytes.length) {
     throw new Error(`File storage returned ${bytes.length} bytes but ${file.sizeBytes} were expected.`);
   }

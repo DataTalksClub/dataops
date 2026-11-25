@@ -1,8 +1,13 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { basename } from "node:path";
+
 import { UsageError } from "../errors.mjs";
 import { enc, integer, isoDate, optionalString, positional, table, jsonData } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { runLookup, runSetWait } from "../crmLookup.mjs";
 import { resolveCompanyId, resolveDealId, resolvePersonId } from "../shortIds.mjs";
+import { multipart } from "./tasks.mjs";
+import { fetchObjectBytes, verifyTransferredBytes } from "./files.mjs";
 
 export const summary = "CRM workspace: company/people directories, activity, notes, touches, saved views";
 
@@ -24,6 +29,16 @@ Usage
   dataops crm followups [--due] [--overdue]
   dataops crm deals list [--search Q] [--company ID] [--status open|agreed|lost]
       [--active true|false] [--limit N] [--cursor C]
+  dataops crm deals attach <deal-id> <file> [--note TEXT]
+      Upload a private document (e.g. signed PDF) to a deal (4 MiB max; audited)
+  dataops crm deals attachments <deal-id>
+      List private attachments on a deal
+  dataops crm deals attachment-download <deal-id> <attachment-id> [--output PATH]
+      Download a deal attachment via a short-lived signed URL (verifies size + checksum; audited)
+  dataops crm deals attachment-delete <deal-id> <attachment-id>
+      Delete a deal attachment from private storage (audited)
+  dataops crm deals attachment-audit <deal-id>
+      Show the upload/download/delete audit trail for a deal's attachments
   dataops crm pipeline list [--saved-view ID] [--view actionable|active|unscheduled|closed|all|early|overdue|reply]
       [--stage STAGE] [--owner ID] [--search Q] [--sort next-action|recent] [--limit N] [--cursor C]
       [--next-action-from YYYY-MM-DD] [--next-action-before YYYY-MM-DD]  Inclusive bounds
@@ -394,6 +409,82 @@ export async function dealDelete(args, io) {
   return result;
 }
 
+export async function dealAttach(args, io) {
+  const usage = "dataops crm deals attach <deal-id> <file> [--note TEXT]";
+  const api = apiFor(args);
+  const id = await resolveDealId(api, positional(args, 0, usage));
+  const filePath = positional(args, 1, usage);
+  if (!existsSync(filePath)) throw new UsageError(`File not found: ${filePath}`);
+  const note = optionalString(args, "note");
+  const { body, contentType } = multipart(
+    note ? { note } : {},
+    { name: basename(filePath), bytes: readFileSync(filePath) },
+  );
+  const result = await api.post(`/api/sponsor-crm/deals/${enc(id)}/attachments`, undefined, { rawBody: body, contentType });
+  const att = result?.attachment || result;
+  if (!args.json) io.print(`Attached ${att?.filename || basename(filePath)} (${att?.id || ""}) to deal ${id}.`);
+  return result;
+}
+
+export async function dealAttachments(args, io) {
+  const api = apiFor(args);
+  const id = await resolveDealId(api, positional(args, 0, "dataops crm deals attachments <deal-id>"));
+  const result = await api.get(`/api/sponsor-crm/deals/${enc(id)}/attachments`);
+  const items = Array.isArray(result?.items) ? result.items : [];
+  if (args.json) return result;
+  table(io, items, [
+    ["ID", (item) => item.id || ""],
+    ["NAME", (item) => item.filename || ""],
+    ["SIZE", (item) => String(item.sizeBytes ?? "")],
+    ["UPLOADED", (item) => String(item.createdAt || "").slice(0, 10)],
+    ["NOTE", (item) => item.note || ""],
+  ], "No attachments.");
+  return result;
+}
+
+export async function dealAttachmentDownload(args, io) {
+  const usage = "dataops crm deals attachment-download <deal-id> <attachment-id> [--output PATH]";
+  const api = apiFor(args);
+  const id = await resolveDealId(api, positional(args, 0, usage));
+  const attachmentId = positional(args, 1, usage);
+  const link = await api.get(`/api/sponsor-crm/deals/${enc(id)}/attachments/${enc(attachmentId)}/download`);
+  if (!link?.downloadUrl) throw new UsageError("The API did not return a download link for this attachment.");
+  const output = optionalString(args, "output") || (link.filename ? basename(String(link.filename).replace(/\\/g, "/")) : "");
+  if (!output) throw new UsageError("--output is required: the attachment has no stored filename.");
+  const bytes = await fetchObjectBytes(link.downloadUrl, api.base);
+  verifyTransferredBytes(link, bytes);
+  writeFileSync(output, bytes);
+  const result = { dealId: id, attachmentId, path: output, bytes: bytes.length };
+  if (!args.json) io.print(`Saved ${output} (${bytes.length} bytes).`);
+  return result;
+}
+
+export async function dealAttachmentDelete(args, io) {
+  const usage = "dataops crm deals attachment-delete <deal-id> <attachment-id>";
+  const api = apiFor(args);
+  const id = await resolveDealId(api, positional(args, 0, usage));
+  const attachmentId = positional(args, 1, usage);
+  await api.delete(`/api/sponsor-crm/deals/${enc(id)}/attachments/${enc(attachmentId)}`);
+  if (!args.json) io.print(`Deleted attachment ${attachmentId} from deal ${id}.`);
+  return { status: "deleted", dealId: id, attachmentId };
+}
+
+export async function dealAttachmentAudit(args, io) {
+  const api = apiFor(args);
+  const id = await resolveDealId(api, positional(args, 0, "dataops crm deals attachment-audit <deal-id>"));
+  const result = await api.get(`/api/sponsor-crm/deals/${enc(id)}/attachments/audit`);
+  const items = Array.isArray(result?.items) ? result.items : [];
+  if (args.json) return result;
+  table(io, items, [
+    ["AT", (item) => String(item.at || "").slice(0, 19)],
+    ["ACTION", (item) => item.action || ""],
+    ["ACTOR", (item) => item.actorId || ""],
+    ["ATTACHMENT", (item) => item.attachmentId || ""],
+    ["NAME", (item) => item.filename || ""],
+  ], "No attachment audit events.");
+  return result;
+}
+
 export async function dealsList(args, io) {
   const api = apiFor(args);
   const query = queryArgs(args);
@@ -750,10 +841,26 @@ export const commands = {
       followup: personFollowup,
     },
     "dataops crm person <show|create|update|archive|unarchive|delete|dnc|followup> [...]"),
-  deals: (args, io) => dispatch(args, io, { list: dealsList }, "dataops crm deals list [...]"),
+  deals: (args, io) => dispatch(args, io,
+    {
+      list: dealsList,
+      attach: dealAttach,
+      attachments: dealAttachments,
+      "attachment-download": dealAttachmentDownload,
+      "attachment-delete": dealAttachmentDelete,
+      "attachment-audit": dealAttachmentAudit,
+    },
+    "dataops crm deals <list|attach|attachments|attachment-download|attachment-delete|attachment-audit> [...]"),
   deal: (args, io) => dispatch(args, io,
-    { show: dealShow, create: dealCreate, update: dealUpdate, archive: dealArchive, unarchive: dealUnarchive, delete: dealDelete },
-    "dataops crm deal <show|create|update|archive|unarchive|delete> [...]"),
+    {
+      show: dealShow, create: dealCreate, update: dealUpdate, archive: dealArchive, unarchive: dealUnarchive, delete: dealDelete,
+      attach: dealAttach,
+      attachments: dealAttachments,
+      "attachment-download": dealAttachmentDownload,
+      "attachment-delete": dealAttachmentDelete,
+      "attachment-audit": dealAttachmentAudit,
+    },
+    "dataops crm deal <show|create|update|archive|unarchive|delete|attach|attachments|attachment-download|attachment-delete|attachment-audit> [...]"),
   pipeline: (args, io) => dispatch(args, io, { list: pipelineList }, "dataops crm pipeline list [...]"),
   followups,
   archive,

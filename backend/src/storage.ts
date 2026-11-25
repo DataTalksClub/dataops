@@ -6,6 +6,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { FileRecord } from './types';
 
 export const MAX_TASK_FILE_BYTES = 4 * 1024 * 1024;
+export const MAX_DEAL_ATTACHMENT_BYTES = MAX_TASK_FILE_BYTES;
 export const DOWNLOAD_URL_SECONDS = 300;
 type FileLocation = Pick<FileRecord, 'storagePath' | 'storageProvider' | 'storageUri'>;
 export type StoredFile = FileLocation & { storageProvider: 's3' | 'local-dev'; storageUri: string };
@@ -201,4 +202,115 @@ export async function createFileDownloadAuthorization(file: FileRecord): Promise
     throw new FileStorageError('File storage provider is unavailable', 409, 'file_storage_unavailable');
   }
   return { url: localDownloadUrl(file.id), expiresIn: DOWNLOAD_URL_SECONDS };
+}
+
+function dealAttachmentS3Key(file: FileLocation): string {
+  const key = file.storagePath;
+  if (!key.startsWith('crm-deals/') || key.split('/').some(part => !part || part === '.' || part === '..')
+      || file.storageUri !== `s3://${bucket()}/${key}`) {
+    throw new FileStorageError('Attachment does not belong to the configured deal storage', 409, 'file_storage_mismatch');
+  }
+  return key;
+}
+
+export async function saveDealAttachment(
+  dealId: string,
+  filename: string,
+  data: Buffer,
+  contentType: string,
+): Promise<StoredFile> {
+  validateFilename(filename);
+  if (data.length > MAX_DEAL_ATTACHMENT_BYTES) {
+    throw new FileStorageError('File exceeds the 4 MiB upload limit', 413, 'file_too_large');
+  }
+  const key = `crm-deals/${encodeURIComponent(dealId)}/${randomUUID()}/${encodeURIComponent(filename)}`;
+  const provider = process.env.DATAOPS_FILE_STORAGE_PROVIDER;
+  if (provider && provider !== 's3' && provider !== 'local-dev') {
+    throw new FileStorageError('Unsupported DATAOPS_FILE_STORAGE_PROVIDER', 503, 'file_storage_unavailable');
+  }
+  if (provider === 's3' || process.env.TASK_FILES_BUCKET) {
+    const name = bucket();
+    await client().send(new PutObjectCommand({ Bucket: name, Key: key, Body: data, ContentType: contentType, IfNoneMatch: '*' }));
+    return { storageProvider: 's3', storagePath: key, storageUri: `s3://${name}/${key}` };
+  }
+  if (!isLocalFilesystemStorageAllowed()) {
+    throw new FileStorageError('TASK_FILES_BUCKET is not configured; local filesystem file storage is disabled', 503, 'file_storage_unavailable');
+  }
+  const target = localPath(key);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, data, { flag: 'wx' });
+  return { storageProvider: 'local-dev', storagePath: key, storageUri: `local-dev://${key}` };
+}
+
+export async function readDealAttachment(file: FileLocation): Promise<Buffer> {
+  if (file.storageProvider === 's3') {
+    try {
+      const result = await client().send(new GetObjectCommand({ Bucket: bucket(), Key: dealAttachmentS3Key(file) }));
+      if (!result.Body) throw new FileStorageError('Stored file has no content', 404, 'file_not_found');
+      return Buffer.from(await result.Body.transformToByteArray());
+    } catch (error) {
+      if ((error as { name?: string }).name === 'NoSuchKey') throw new FileStorageError('Stored file not found', 404, 'file_not_found');
+      throw error;
+    }
+  }
+  if (file.storageProvider !== 'local-dev' || !isLocalFilesystemStorageAllowed()) {
+    throw new FileStorageError('File storage provider is unavailable', 409, 'file_storage_unavailable');
+  }
+  try { return await fs.readFile(localPath(file.storagePath)); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new FileStorageError('Stored file not found', 404, 'file_not_found');
+    throw error;
+  }
+}
+
+export async function removeDealAttachment(file: FileLocation): Promise<void> {
+  if (file.storageProvider === 's3') {
+    await client().send(new DeleteObjectCommand({ Bucket: bucket(), Key: dealAttachmentS3Key(file) }));
+    return;
+  }
+  if (file.storageProvider !== 'local-dev' || !isLocalFilesystemStorageAllowed()) {
+    throw new FileStorageError('File storage provider is unavailable', 409, 'file_storage_unavailable');
+  }
+  await fs.rm(localPath(file.storagePath), { force: true });
+}
+
+function localDealAttachmentMac(dealId: string, attachmentId: string, expires: number): string {
+  return createHmac('sha256', localKey()).update(`deal-attachment:${dealId}:${attachmentId}:${expires}`).digest('hex');
+}
+
+export function localDealAttachmentDownloadUrl(dealId: string, attachmentId: string, atMs: number = Date.now()): string {
+  const expires = Math.floor(atMs / 1000) + DOWNLOAD_URL_SECONDS;
+  return `/api/sponsor-crm/deals/${encodeURIComponent(dealId)}/attachments/${encodeURIComponent(attachmentId)}/content?expires=${expires}&mac=${localDealAttachmentMac(dealId, attachmentId, expires)}`;
+}
+
+export function verifyLocalDealAttachmentDownloadLink(
+  dealId: string,
+  attachmentId: string,
+  expires: unknown,
+  mac: unknown,
+): boolean {
+  const seconds = Number(expires);
+  if (!Number.isSafeInteger(seconds) || seconds * 1000 <= Date.now() || typeof mac !== 'string') return false;
+  const expected = Buffer.from(localDealAttachmentMac(dealId, attachmentId, seconds), 'hex');
+  const provided = Buffer.from(mac, 'hex');
+  return expected.length === provided.length && timingSafeEqual(expected, provided);
+}
+
+export async function createDealAttachmentDownloadAuthorization(
+  dealId: string,
+  attachment: FileLocation & { id: string; filename: string; contentType?: string },
+): Promise<FileDownloadAuthorization> {
+  if (attachment.storageProvider === 's3') {
+    const url = await signDownloadUrl(client(), new GetObjectCommand({
+      Bucket: bucket(),
+      Key: dealAttachmentS3Key(attachment),
+      ResponseContentType: attachment.contentType || getMimeType(attachment.filename),
+      ResponseContentDisposition: contentDispositionFor(attachment.filename),
+    }), { expiresIn: DOWNLOAD_URL_SECONDS });
+    return { url, expiresIn: DOWNLOAD_URL_SECONDS };
+  }
+  if (attachment.storageProvider !== 'local-dev' || !isLocalFilesystemStorageAllowed()) {
+    throw new FileStorageError('File storage provider is unavailable', 409, 'file_storage_unavailable');
+  }
+  return { url: localDealAttachmentDownloadUrl(dealId, attachment.id), expiresIn: DOWNLOAD_URL_SECONDS };
 }

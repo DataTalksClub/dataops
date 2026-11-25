@@ -324,6 +324,44 @@ export function peopleListMarkup({ items, total, canEdit }, context = {}) {
     ${canEdit ? html`<button type="button" data-add-person>Add person</button>` : ""}`;
 }
 
+export function formatAttachmentSize(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value < 0) return "";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function dealAttachmentsMarkup(deal) {
+  const attachments = Array.isArray(deal?.attachments) ? deal.attachments : [];
+  return html`<section class="crm-deal-attachments" data-deal-attachments="${escape(deal.id)}" aria-label="Deal attachments">
+    <div class="crm-deal-attachments-head">
+      <strong>Attachments (${escape(String(attachments.length))})</strong>
+    </div>
+    ${attachments.length
+      ? html`<ul class="crm-deal-attachment-list">
+          ${attachments.map((att) => {
+            const size = formatAttachmentSize(att.sizeBytes);
+            const uploaded = att.createdAt ? formatBerlinDate(att.createdAt) : "";
+            const meta = [size, uploaded, att.note || ""].filter(Boolean).join(" · ");
+            return html`<li class="crm-deal-attachment-row" data-attachment-id="${escape(att.id)}">
+              <span><strong>${escape(att.filename || "Attachment")}</strong>${meta ? html` <small>${escape(meta)}</small>` : ""}</span>
+              <span class="row-actions">
+                <button type="button" data-download-attachment="${escape(att.id)}" data-attachment-deal="${escape(deal.id)}">Download</button>
+                <button type="button" data-delete-attachment="${escape(att.id)}" data-attachment-deal="${escape(deal.id)}">Remove</button>
+              </span>
+            </li>`;
+          }).join("")}
+        </ul>`
+      : html`<p class="crm-deal-meta">No attachments yet.</p>`}
+    <div class="row-actions">
+      <input type="file" data-attach-file-input="${escape(deal.id)}" aria-label="Attach document to deal">
+      <button type="button" data-attach-file-submit="${escape(deal.id)}">Upload</button>
+    </div>
+    <p role="alert" data-attachment-error="${escape(deal.id)}"></p>
+  </section>`;
+}
+
 export function dealsListMarkup({ deals, selectedDealId, canAdd = false }, context = {}) {
   const canEditDeal = typeof context?.onEditDeal === "function";
   const canDeleteDeal = typeof context?.onDeleteDeal === "function";
@@ -351,6 +389,7 @@ export function dealsListMarkup({ deals, selectedDealId, canAdd = false }, conte
             ${canEditDeal ? html`<button type="button" data-edit-deal="${escape(deal.id)}">Edit deal</button>` : ""}
             ${canDeleteDeal ? html`<button type="button" data-delete-deal="${escape(deal.id)}">Delete deal</button>` : ""}
           </div>
+          ${dealAttachmentsMarkup(deal)}
         </article></li>`;
       })
       .join("")}
