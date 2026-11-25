@@ -105,6 +105,16 @@ validate ambiguous/nonexistent DST wall times using the existing IANA resolver.
 Expose lifecycle, datetime, generation, sync status and history in API responses.
 Add equivalent event routes and an operation retry/read surface.
 
+A Card may hold its own attendee-free Luma entries before it has an invitation
+(`cards time` without guests writes a public DTC events entry and silent personal
+copies under `eventTime.eventKey = card:<id>`). `event propose` then takes the
+Card's `eventTime` for the invitation and keeps those entries beside it in
+`eventTime.listing`: they stay live and separately linked, never become the
+invitation's `googleEventIds`, and `cards time` moves them together with it.
+`event show` on a Card without an invitation answers with that listing and the
+propose command instead of a 404. `dryRun: true` plans a transition up to the
+first write and returns the plan with the listing it would leave alone.
+
 Retain only the aliases explicitly requested by the intake: calendar
 propose/confirm-hold/release-hold and podcast reschedule translate arguments and
 call the same service. They contain no lifecycle implementation. The episode

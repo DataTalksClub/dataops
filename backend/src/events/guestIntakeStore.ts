@@ -10,6 +10,8 @@ export interface GuestIntakeJob {
   requestedDate?: string; requestedTime?: string; timeZone?: string; guestTimezone?: string; requestedWindow?: string; policy?: GuestIntakePolicy;
   holdId?: string; docId?: string; selectedDate?: string; selectedTime?: string; selectedWindow?: string;
   messageId?: string; sentAt?: string; startIso?: string; error?: string; lastReportedError?: string; retryable?: boolean; leaseUntil?: number;
+  /** Set when only the [Proposed] calendar invitation was sent after --skip-email; blocks the first-contact email. */
+  calendarOnly?: { sentAt: string; operationKey: string; guests: string[]; actor: string };
   createdAt: string; updatedAt: string;
 }
 export const guestIntakeKey = (id: string) => ({ PK: `GUESTINTAKE#${id}`, SK: `GUESTINTAKE#${id}` });

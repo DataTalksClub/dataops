@@ -61,7 +61,7 @@ subcommands, flags, and examples.
 | `cards` | `list`, `show` (with Tasks), `create --template`, `update`, `stage`, `link`, `park` / `resume`, `template-update` |
 | `templates` | `list`, `show`, `create`, `update`, `reset`, `delete`, `sync` (see Template editing below) |
 | `kb` | knowledge base: `search`, `related <task|card>`, `show`, `tree`, `ls`, `resolve`, `backlinks`, `history`, `write`, `publish` |
-| `newsletter` | issues and their sponsor slots: `list`, `show`, `create`, `update`, `delete`, `dismiss-alert` |
+| `newsletter` | Relay issue planning, sponsor slots and render evidence: `list`, `show`, `create`, `update`, `final-render` |
 | `podcast` | episodes: `list`, `show`, `create`, `update`, `create-card`, `delete` |
 | `speakers` | website speaker/author profiles: `list`, `show`, `create`, `update` |
 | `books` | Book of the Week entries: `list`, `show`, `create`, `update` |
@@ -96,8 +96,36 @@ This adds attendees to the Card's existing private Zoom invitation and sends
 Google Calendar updates. Existing attendees, responses, time and meeting details
 are retained. Repeating the command does not send another update when everyone
 is already invited. Public listings and silent Luma calendar entries are rejected;
-the command does not create or convert calendar events. Use `cards invite list`
+the command does not create or convert calendar events. On a guest Card created
+with `--skip-email`, the silent proposed hold is sent as the `[Proposed]` calendar
+invitation only (guest plus required attendees, Zoom, Google notification) and the
+first-contact email is never sent; `dataops cards invitation CARD_ID --send-calendar`
+does the same. Add `--dry-run` to see the planned attendees without changing anything. Use `cards invite list`
 and the calendar readback to verify the invitation afterward.
+
+## Create the private invitation after the Luma entries
+
+`cards time` without guests gives a Luma event Card its own attendee-free
+entries: the public DTC events entry and silent personal copies. A private Zoom
+invitation can still be added afterwards; those entries stay live and untouched
+beside it and are never converted into the invitation.
+
+```bash
+dataops event show CARD_ID --json                                    # no invitation yet: lists the entries and the command
+dataops event propose CARD_ID --date 2026-12-01 --time 17:00 \
+  --guest-emails 'speaker@example.test' --document-url https://luma.com/your-event --dry-run
+dataops event propose CARD_ID --date 2026-12-01 --time 17:00 \
+  --guest-emails 'speaker@example.test' --document-url https://luma.com/your-event
+dataops event approve CARD_ID                                        # sends the confirmed invitation
+```
+
+`--dry-run` runs every check the real propose runs and prints the invitation it
+would make (window, Zoom room, attendees, notifications) and the entries it
+would leave alone, without writing to the Card, Google Calendar or email. A
+refusal is a `409 event_conflict` (exit code 5) whose message names the cause,
+such as an active event on the Card. Re-timing the Card afterwards with
+`cards time` moves the invitation and the Luma entries together; `event release`
+cancels the invitation only.
 
 ## Reconcile duplicate ledger rows
 

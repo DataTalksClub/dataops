@@ -2,14 +2,23 @@ import assert from 'node:assert/strict';
 import { PUBLIC_DTC_EVENTS_CALENDAR } from '../../src/calendar/dapierBroker';
 import { HOLD_ORGANIZER } from '../../src/calendar/holdGoogleSync';
 
+/** The subtitle the fake Luma event page carries for every event (`<subtitle> - <speakers>`). */
+export const LUMA_SUBTITLE = 'Public subtitle - Guest Speaker';
+const LUMA_PAGE = `<html><head><meta property="og:title" content="Event · Luma">`
+  + `<meta property="og:description" content="${LUMA_SUBTITLE}&#10;Opening of the Luma description&hellip;"></head></html>`;
+
 export function holdGoogleProvider() {
   const events = new Map<string, Map<string, any>>();
   const calls: Array<{ url: URL; method: string; body?: any }> = [];
   let sequence = 0;
-  const state = { account: HOLD_ORGANIZER, failCalendar: '', loseInviteResponse: false };
+  const state = { account: HOLD_ORGANIZER, failCalendar: '', loseInviteResponse: false, lumaStatus: 200 };
   const fetchImpl = (async (input: any, init: any = {}) => {
     const url = new URL(String(input));
     const method = init.method || 'GET';
+    // A guest invite Card's public subtitle comes from its Luma event page. That read is not a Google call.
+    if (/^(luma\.com|lu\.ma)$/.test(url.hostname)) {
+      return new Response(state.lumaStatus === 200 ? LUMA_PAGE : 'not found', { status: state.lumaStatus });
+    }
     const body = init.body ? JSON.parse(init.body) : undefined;
     calls.push({ url, method, body });
     if (url.pathname === '/api/agent/token') return Response.json({ access_token: 'test-google' });

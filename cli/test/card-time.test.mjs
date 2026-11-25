@@ -47,6 +47,27 @@ test('cards time human output prints invite result and task-closure outcome', as
   assert.match(text, /invite: evt-1/);
   assert.match(text, /taskClosure \(blocked\): Invite task "Create a calendar invite for guest speaker"/);
 });
+test('cards time labels the public DTC events entry apart from the guest invitation', async () => {
+  fakePortal({
+    'POST /api/cards/test/time': {
+      card: {
+        id: 'test',
+        eventTime: { startIso: '2026-12-01T16:00:00.000Z', endIso: '2026-12-01T17:00:00.000Z', timeZone: 'Europe/Berlin' },
+        calendarInvites: [
+          { eventId: 'public-1', calendar: 'f8qidjnq0jhscp8809k1eghs60@group.calendar.google.com', label: 'From Ad-Hoc SQL to AI Agents' },
+          { eventId: 'private-1', calendar: 'orin@datatalks.club' },
+        ],
+      },
+      invite: { outcome: 'sent', state: 'synced' },
+      taskClosure: { outcome: 'closed', message: 'Closed invite task.', tasks: [] },
+    },
+  });
+  const io = captureIo();
+  assert.equal(await run(['cards', 'time', 'test', '--at', '2026-12-01 17:00'], io), 0);
+  const text = io.text();
+  assert.match(text, /public entry: public-1 on DTC events/);
+  assert.match(text, /invite: private-1 on orin@datatalks\.club/);
+});
 test('cards time requires --at before requesting API', async () => {
   const calls = fakePortal({});
   const io = captureIo();

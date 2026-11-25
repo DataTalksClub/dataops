@@ -14,6 +14,11 @@ export const summary = "Plan newsletter issues, their sponsor slots, and their C
 
 export const help = `dataops newsletter - newsletter issues (the web Planning > Newsletter view)
 
+Build and review current issues in Relay. Read the owning Task and its live
+SOP for the workflow. For weekly assembly, open
+  dataops kb show sop.newsletter.assemble-the-weekly-newsletter-in-dataops
+DataOps tracks the issue, sponsor slots, source links and delivery evidence.
+
 An issue is one email. A weekly issue has an issue number and two sponsor
 slots, primary and secondary; a stand-alone issue has one. A slot is booked
 when it names a sponsor and open otherwise. Booking a slot for a sponsor from
@@ -63,14 +68,6 @@ Usage
   dataops newsletter doc diff <doc-id> [--rev N]
   dataops newsletter doc export <doc-id>
   dataops newsletter doc delete <doc-id> --yes
-  dataops newsletter markdown set <issue-id> [issue|sources|brief] --file <path>
-  dataops newsletter markdown set <issue-id> [--issue-file <path>] [--sources-file <path>] [--brief-file <path>]
-                                  Store the Newsletter Markdown package (issue.md, sources.md,
-                                  brief.md) on the issue in DataOps, link the HTML preview on
-                                  the Card, and print the shareable preview link (?code=)
-  dataops newsletter markdown show <issue-id> [issue|sources|brief]
-  dataops newsletter markdown preview <issue-id>
-  dataops newsletter markdown rotate-code <issue-id>
   dataops newsletter final-render <issue-id> [--html-file <path>] [--web-view-url <url>]
       [--relay-key <key>] [--subject <text>] [--preview <text>] [--clear]
                                   Attach Relay's rendered email HTML or web-view URL to
@@ -99,9 +96,8 @@ Usage
       [--open-rate PCT] [--click-rate PCT]
       [--linkedin-impressions N] [--linkedin-clicks N] [--linkedin-reactions N] [--linkedin-ctr PCT] [--linkedin-post URL|none]
       [--x-impressions N] [--x-clicks N] [--x-reactions N] [--x-ctr PCT] [--x-post URL|none]
-      [--pull-mailchimp [--campaign ID] [--primary-url URL] [--secondary-url URL] [--dry-run]]
       [--clear]
-                                  Show, set, or pull from Mailchimp the issue metrics and
+                                  Show or set the issue metrics and
                                   per-slot (primary / secondary) link + LinkedIn + X metrics.
                                   With no metric flags it shows the current values.
   dataops newsletter report <issue-id> [primary|secondary] [--contact NAME] [--send]
@@ -121,7 +117,7 @@ Usage
                                   start. The header row is found below the tab's banner
                                   row. Creates missing issues (past ones get no Card); past
                                   issues take the sheet's date, number, document links, and
-                                  Mailchimp/LinkedIn/X stats; upcoming ones only get what
+                                  recorded delivery and social metrics. Upcoming issues get what
                                   they lack, differences are listed. Sponsor names and
                                   company links already in DataOps are never overwritten or
                                   cleared: sync fills what is missing and reports the rest.
@@ -884,7 +880,7 @@ export const doc = domainDocCommand("newsletter");
 
 const MARKDOWN_KINDS = ["issue", "sources", "brief"];
 
-export const newsletterMarkdownHelp = `dataops newsletter markdown - store and preview Newsletter Markdown packages in DataOps
+export const newsletterMarkdownHelp = `dataops newsletter markdown - maintain historical newsletter packages
 
 Newsletter Markdown packages (issue.md, sources.md, brief.md) live directly on the
 newsletter issue in DataOps and are never committed to Git.
@@ -1070,7 +1066,7 @@ export async function markdown(args, io) {
   return fn({ ...args, _: rest }, io);
 }
 
-export const newsletterImageHelp = `dataops newsletter image - upload durable public images for Newsletter Markdown
+export const newsletterImageHelp = `dataops newsletter image - upload durable public images for a newsletter issue
 
 Usage
   dataops newsletter image upload <issue-id> <path>

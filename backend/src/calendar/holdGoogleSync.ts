@@ -351,6 +351,8 @@ export function mergeHoldGoogleResults(...results: HoldGoogleResult[]): HoldGoog
  * Public event copy rules. This path writes one standalone event owned by the
  * public calendar, without attendees or conference data. Existing manual SOP
  * entries are adopted by matching title, time and Luma URL before insertion.
+ * A recorded entry id is updated in place, so a rerun or a move never leaves
+ * the previous entry behind.
  */
 export async function syncLumaCalendarEvents(
   event: LumaCalendarEvent,
@@ -400,6 +402,9 @@ export async function syncLumaCalendarEvents(
   if (PRIVATE_DETAIL_PATTERN.test(body.description)) {
     return deferred('Public calendar entry contains private meeting or document details.');
   }
+  // Attendees or private meeting details never belong on a public entry.
+  const unsafe = (event: any) => Boolean(event && (event.attendees?.length || event.conferenceData
+    || /zoom\.us|ops\.dtcdev\.click/i.test(`${event.description || ''}\n${event.location || ''}`)));
   try {
     let current: any;
     if (eventIds[PUBLIC_DTC_EVENTS_CALENDAR]) {
@@ -407,7 +412,10 @@ export async function syncLumaCalendarEvents(
       catch (error) {
         if (!(error instanceof Error) || !/HTTP (404|410)/.test(error.message)) throw error;
       }
-      if (current?.status === 'cancelled') current = undefined;
+      // Gone, cancelled, or not a standalone entry: a recorded id may point at
+      // a legacy attendee copy of the guest invite, which is never reused or
+      // edited, so the entry below is matched or created as if none was recorded.
+      if (current?.status === 'cancelled' || unsafe(current)) current = undefined;
     }
     if (!current) {
       const found = await request(`${url}?timeMin=${encodeURIComponent(event.startIso)}&timeMax=${encodeURIComponent(event.endIso)}&singleEvents=true&maxResults=250`);
@@ -420,7 +428,7 @@ export async function syncLumaCalendarEvents(
       if (matches.length > 1) return deferred('Multiple matching public Luma entries exist; reconcile them before syncing.');
       current = matches[0];
     }
-    if (current?.attendees?.length || current?.conferenceData || /zoom\.us|ops\.dtcdev\.click/i.test(`${current?.description || ''}\n${current?.location || ''}`)) {
+    if (unsafe(current)) {
       return deferred('The public calendar event has attendees or private meeting details; it was left untouched.');
     }
     const saved = current?.id

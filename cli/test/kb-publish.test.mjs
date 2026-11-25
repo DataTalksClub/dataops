@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, test } from "node:test";
@@ -62,6 +62,33 @@ describe("derived documents", () => {
     const plan = await planReconcile({ files, prod, known: () => states("git v1", "git v2"), page });
     assert.deepEqual(plan.mutations.map((m) => [m.path, m.operation]), [["content/view.md", "edit"]]);
     assert.deepEqual(plan.conflicts.map((c) => c.path), ["content/human.md"]);
+  });
+});
+
+describe("derived registers", () => {
+  const REGISTER = "_docs/registers/external-link-register.csv";
+
+  test("only the regenerated external-link register is derived, not authored register seeds", () => {
+    assert.equal(isDerivedDocument(REGISTER, Buffer.from("source_type,path\n")), true);
+    assert.equal(isDerivedDocument("_docs/registers/system-register.csv", Buffer.from("system_id,title\n")), false);
+    assert.equal(isDerivedDocument("content/a/external-link-register.csv", Buffer.from("source_type,path\n")), false);
+  });
+
+  // Run 45417215713: an out-of-band publish put a register copy Git never
+  // recorded into prod; the mirror then folded its rows into Git's content and
+  // regenerated the register in the same commit, so every later publish
+  // reported the register as changed on both sides.
+  test("publishes Git's regenerated register over a prod copy Git never recorded", async () => {
+    const files = new Map([[REGISTER, { bytes: Buffer.from("rows a b c\n"), sha: h("rows a b c\n") }]]);
+    const prod = prodOf({ [REGISTER]: "rows a b\n" });
+    const asked = [];
+    const plan = await planReconcile({
+      files, prod, known: () => states("rows a\n", "rows a c\n", "rows a b c\n"),
+      page: async (file) => { asked.push(file); return { versions: [{ sha256: h("rows a b\n") }, { sha256: h("rows a\n") }], cursor: null }; },
+    });
+    assert.deepEqual(plan.mutations.map((m) => [m.path, m.operation]), [[REGISTER, "edit"]]);
+    assert.deepEqual(plan.conflicts, []);
+    assert.deepEqual(asked, []);
   });
 });
 
@@ -248,6 +275,10 @@ describe("kb publish from a Git checkout", () => {
         versions: (history[query.path] || []).map((body) => ({ sha256: h(body), deleted: body === null })),
         cursor: null,
       }),
+      "GET /knowledge/download": ({ query }) => ({
+        url: `https://portal.test/storage?path=${encodeURIComponent(query.path)}`,
+      }),
+      "GET /storage": ({ query }) => new Response(prodFiles[query.path] ?? ""),
       "POST /knowledge/publish": ({ body }) => {
         if (body.expectedRevision !== current) return { status: 409, body: { error: "Knowledge changed" } };
         current = `${current}+`;
@@ -255,6 +286,78 @@ describe("kb publish from a Git checkout", () => {
       },
     });
   }
+
+  const mapPath = "content/00-start-here/business-system-map/system-overview.md";
+  function systemMap({ title = "Business system map", heading = "Business system map", intro = "Original introduction.", related = "old-system", row = "Old row" } = {}) {
+    return [
+      "---", "id: system.start-here.business-system-map", "doc_type: system-overview",
+      `title: ${title}`, "related_docs:", `- ${related}`, "---", "", `# ${heading}`,
+      "", intro, "", "## Core systems", "", `- ${row}`, "",
+    ].join("\n");
+  }
+
+  test("refreshes generated map navigation while preserving the owner introduction across a mirror round trip", async () => {
+    const base = systemMap();
+    const intro = "The owner's current explanation.";
+    const edited = systemMap({ intro });
+    const firstNavigation = { related: "new-system", row: "New row" };
+    const refreshed = systemMap({ intro, ...firstNavigation });
+    write(mapPath, base);
+    commit("base generated map");
+    write(mapPath, systemMap(firstNavigation));
+    commit("first navigation refresh");
+
+    const args = ["kb", "publish", "--repo", repo, "--json"];
+    const firstCalls = portal({ [mapPath]: edited }, { [mapPath]: [edited, base] });
+    const preview = captureIo();
+    assert.equal(await run([...args, "--dry-run"], preview), 0);
+    assert.deepEqual(preview.json().published, [{ path: mapPath, operation: "edit" }]);
+    assert.equal(firstCalls.some((call) => call.method === "POST"), false);
+    const publish = captureIo();
+    assert.equal(await run(args, publish), 0);
+    assert.deepEqual(publish.json().published, preview.json().published);
+    const firstMutation = firstCalls.find((call) => call.method === "POST").body.mutations[0];
+    assert.equal(Buffer.from(firstMutation.base64, "base64").toString(), refreshed);
+
+    const repeatedCalls = portal({ [mapPath]: refreshed });
+    assert.equal(await run(args, captureIo()), 0);
+    assert.equal(repeatedCalls.some((call) => call.method === "POST"), false);
+
+    portal({ [mapPath]: refreshed }, { [mapPath]: [refreshed, edited, base] });
+    assert.equal(await run(["kb", "mirror", "--repo", repo], captureIo()), 0);
+    assert.equal(readFileSync(path.join(repo, mapPath), "utf8"), refreshed);
+    commit("mirror records the published map");
+
+    const secondNavigation = { related: "next-system", row: "Next row" };
+    write(mapPath, systemMap(secondNavigation));
+    commit("generator refreshes navigation and emits its standard introduction");
+    const afterMirror = portal({ [mapPath]: refreshed }, { [mapPath]: [refreshed] });
+    assert.equal(await run(args, captureIo()), 0);
+    const secondMutation = afterMirror.find((call) => call.method === "POST").body.mutations[0];
+    assert.equal(Buffer.from(secondMutation.base64, "base64").toString(), systemMap({ intro, ...secondNavigation }));
+  });
+
+  test("keeps map metadata and navigation conflicts visible, and rejects an ambiguous boundary", async () => {
+    const cases = [
+      [systemMap({ title: "Operator title" }), systemMap({ title: "Generator title" }), /frontmatter/],
+      [systemMap({ heading: "Operator title" }), systemMap({ heading: "Generator title" }), /same title lines/],
+      [systemMap({ row: "Operator row" }), systemMap({ row: "Generator row" }), /navigation/],
+      [systemMap({ intro: "Owner introduction." }), systemMap().replace("## Core systems", "## Systems"), /boundary/],
+    ];
+    const base = systemMap();
+    write(mapPath, base);
+    const baseline = commit("base generated map");
+    for (const [live, generated, reason] of cases) {
+      git("checkout", "-q", "--detach", baseline);
+      write(mapPath, generated);
+      commit("competing edit");
+      const calls = portal({ [mapPath]: live }, { [mapPath]: [live, base] });
+      const io = captureIo();
+      assert.equal(await run(["kb", "publish", "--repo", repo], io), 5);
+      assert.match(io.errors.join("\n"), reason);
+      assert.equal(calls.some((call) => call.method === "POST"), false);
+    }
+  });
 
   test("repairs files Git restored to an older version, with exact bytes and the commit in the message", async () => {
     write("content/sop.md", "good");

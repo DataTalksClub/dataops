@@ -29,6 +29,7 @@ import { handleFinanceRoutes } from './routes/finance';
 import { handleReconcileRoutes } from './routes/reconcile';
 import { handleViesRoutes } from './routes/vies';
 import { handleSponsorCrmRoutes } from './routes/sponsorCrm';
+import { handleDealAttachmentRoutes } from './routes/dealAttachments';
 import { handleCrmWorkspaceRoutes } from './routes/crmWorkspace';
 import { handleSponsorLeadIntake, handleSponsorLeadRoutes } from './routes/sponsorLeads';
 import { handleSponsorNewsletterRoutes } from './routes/sponsorNewsletters';
@@ -103,6 +104,7 @@ function isAuthExempt(method: string, path: string): boolean {
   // local-dev storage, which production cannot create, so the link is the
   // credential and bearer middleware has nothing to add.
   if (method === 'GET' && /^\/api\/files\/[^/]+\/content$/.test(path)) return true;
+  if (method === 'GET' && /^\/api\/sponsor-crm\/deals\/[^/]+\/attachments\/[^/]+\/content$/.test(path)) return true;
   return false;
 }
 
@@ -654,6 +656,10 @@ async function handleSponsorRoute(
   }
   if (isSponsorCommunicationRoute(reqPath)) {
     return await handleSponsorCommunicationRoutes(reqPath, method, event, client);
+  }
+  if (/^\/api\/sponsor-crm\/deals\/[^/]+\/attachments(\/|$)/.test(reqPath)) {
+    const attachment = await handleDealAttachmentRoutes(reqPath, method, event, client);
+    if (attachment) return attachment;
   }
   const finance = await handleSponsorFinanceRoutes(reqPath, method, event, client);
   if (finance) return finance;

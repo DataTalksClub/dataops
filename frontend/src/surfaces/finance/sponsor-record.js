@@ -678,6 +678,71 @@ export function createSponsorRecord(context) {
         selectDeal(pick.dataset.selectDeal);
         return;
       }
+      const downloadAttachment = event.target.closest("[data-download-attachment]");
+      if (downloadAttachment) {
+        const dealId = downloadAttachment.dataset.attachmentDeal;
+        const attachmentId = downloadAttachment.dataset.downloadAttachment;
+        if (!dealId || !attachmentId) return;
+        await fail(async () => {
+          const payload = await api(
+            `/deals/${encodeURIComponent(dealId)}/attachments/${encodeURIComponent(attachmentId)}/download`,
+          );
+          if (!payload?.downloadUrl) return;
+          const origin = globalThis.window?.location?.origin || "https://dataops.local";
+          const target = new URL(payload.downloadUrl, origin).toString();
+          if (typeof context.openDownloadUrl === "function") context.openDownloadUrl(target, payload);
+          else globalThis.window?.open?.(target, "_blank", "noopener");
+        }, "Could not prepare attachment download");
+        return;
+      }
+      const attachSubmit = event.target.closest("[data-attach-file-submit]");
+      if (attachSubmit) {
+        const dealId = attachSubmit.dataset.attachFileSubmit;
+        const dealsPanel = panel("deals");
+        const input = dealsPanel?.querySelector(`[data-attach-file-input="${dealId}"]`);
+        const errEl = dealsPanel?.querySelector(`[data-attachment-error="${dealId}"]`);
+        const file = input?.files?.[0];
+        if (!file) {
+          if (errEl) errEl.textContent = "Choose a file to upload.";
+          return;
+        }
+        if (errEl) errEl.textContent = "";
+        const mine = token;
+        await fail(async () => {
+          const form = new FormData();
+          form.append("file", file, file.name);
+          const created = await api(`/deals/${encodeURIComponent(dealId)}/attachments`, {
+            method: "POST",
+            body: form,
+          });
+          if (!current(mine) || !record) return;
+          const deal = (record.deals || []).find((item) => item.id === dealId);
+          if (deal && created?.attachment) {
+            deal.attachments = [created.attachment, ...(deal.attachments || [])];
+            paintDeals(panel("deals"));
+          }
+        }, "Could not upload attachment");
+        return;
+      }
+      const deleteAttachment = event.target.closest("[data-delete-attachment]");
+      if (deleteAttachment) {
+        const dealId = deleteAttachment.dataset.attachmentDeal;
+        const attachmentId = deleteAttachment.dataset.deleteAttachment;
+        if (!dealId || !attachmentId) return;
+        const mine = token;
+        await fail(async () => {
+          await api(`/deals/${encodeURIComponent(dealId)}/attachments/${encodeURIComponent(attachmentId)}`, {
+            method: "DELETE",
+          });
+          if (!current(mine) || !record) return;
+          const deal = (record.deals || []).find((item) => item.id === dealId);
+          if (deal) {
+            deal.attachments = (deal.attachments || []).filter((item) => item.id !== attachmentId);
+            paintDeals(panel("deals"));
+          }
+        }, "Could not delete attachment");
+        return;
+      }
       const deleteDeal = event.target.closest("[data-delete-deal]");
       if (deleteDeal && typeof context.onDeleteDeal === "function") {
         const deal = (record?.deals || []).find((item) => item.id === deleteDeal.dataset.deleteDeal);

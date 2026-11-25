@@ -706,6 +706,18 @@ describe("agent guide", () => {
     assert.match(io.text(), /leave it for another agent/);
   });
 
+  test("guides active newsletter production through Relay", async () => {
+    for (const argv of [["agent-guide"], ["newsletter", "--help"]]) {
+      const io = captureIo();
+      assert.equal(await run(argv, io), 0);
+      const output = io.text();
+      assert.match(output, /Build and review.*in Relay/);
+      assert.match(output, /dataops kb show sop\.newsletter\.assemble-the-weekly-newsletter-in-dataops/);
+      assert.match(output, /dataops newsletter final-render/);
+      assert.doesNotMatch(output, /mailchimp|newsletter markdown|(?:issue|sources|brief)\.md/i);
+    }
+  });
+
   test("the shipped guide puts the attached SOP first and uses creation-driven guest intake", async () => {
     const io = captureIo();
     assert.equal(await run(["agent-guide"], io), 0);

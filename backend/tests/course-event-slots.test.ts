@@ -299,7 +299,6 @@ describe('course event slots: event Cards instead of text', () => {
       dtcEvent.status = 'cancelled';
       const verifiedStale = await invoke('GET', `/api/cards/${qaCardId}/calendar-invites`, undefined, { verify: '1' });
       assert.ok(parsed(verifiedStale).invites.find((invite: any) => invite.eventId === dtcEventId).staleAt);
-      dtcEvent.status = 'confirmed';
 
       const moved = await invoke('POST', `/api/cards/${qaCardId}/time`, { at: '2026-11-11 17:00' });
       assert.equal(moved.statusCode, 200, moved.body);
@@ -311,6 +310,17 @@ describe('course event slots: event Cards instead of text', () => {
       assert.equal(google.events.get(HOLD_ORGANIZER)!.size, 3, 'moving updates the organizer copy in place instead of duplicating');
       assert.equal(google.events.get(DEFAULT_HOLD_GOOGLE_CALENDARS[0])!.size, 3, 'moving updates the personal copy in place instead of duplicating');
       assert.ok(google.calls.filter((call) => call.method === 'PATCH').every((call) => call.url.searchParams.get('sendUpdates') === 'none'));
+
+      // A live public entry moves with its Card: the same entry, none left behind at the old time.
+      const liveDtcEventId = parsed(moved).card.eventTime.googleEventIds[PUBLIC_DTC_EVENTS_CALENDAR];
+      assert.notEqual(liveDtcEventId, dtcEventId);
+      const movedAgain = await invoke('POST', `/api/cards/${qaCardId}/time`, { at: '2026-11-12 18:00' });
+      assert.equal(movedAgain.statusCode, 200, movedAgain.body);
+      assert.equal(parsed(movedAgain).card.eventTime.googleEventIds[PUBLIC_DTC_EVENTS_CALENDAR], liveDtcEventId);
+      assert.deepEqual(parsed(movedAgain).card.calendarInvites.map((invite: any) => invite.calendar).sort(),
+        [PUBLIC_DTC_EVENTS_CALENDAR, HOLD_ORGANIZER, ...DEFAULT_HOLD_GOOGLE_CALENDARS].sort());
+      assert.equal(google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.get(liveDtcEventId).start.dateTime, '2026-11-12T17:00:00.000Z');
+      assert.equal(google.events.get(PUBLIC_DTC_EVENTS_CALENDAR)!.size, 4, 'moving updates the public entry in place instead of leaving the old one behind');
 
       courseTasks = await listTasksByCard(client, created.card.id);
       const latestPrepare = courseTasks.find((task) => task.templateTaskRef === 'prepare-events')!;

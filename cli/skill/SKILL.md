@@ -78,7 +78,7 @@ dataops whoami                           # confirm identity and role before writ
 ## Required resources: only take Tasks you can do
 
 Many Tasks need an account or access you may not have: YouTube, Luma, Meetup,
-Mailchimp, the DataTalks.Club mailbox, Slack, LinkedIn, the website repo, the
+Relay, the DataTalks.Club mailbox, Slack, LinkedIn, the website repo, the
 bank. A Task lists them in `requires` (`dataops tasks show` prints it, `--json`
 has `requires`); `dataops resources list` gives every id.
 
@@ -89,7 +89,7 @@ export DATAOPS_CAPABILITIES=youtube,google-docs,website   # what you can log in 
 dataops tasks list --mine                     # filtered by DATAOPS_CAPABILITIES
 dataops tasks list --can-do youtube,luma      # or say it per command
 dataops tasks list --can-do all               # ignore DATAOPS_CAPABILITIES
-dataops tasks list --status todo --requires mailchimp   # who needs Mailchimp access
+dataops tasks list --status todo --requires youtube   # Tasks that need YouTube access
 ```
 
 A Task can depend on other Tasks of its Card (`dependsOn`; `dataops tasks show`
@@ -278,20 +278,19 @@ only after the recording date is confirmed
 (`dataops podcast update <episode-id> --recording-date YYYY-MM-DD`); the episode
 brief is available before confirm.
 
-For a newsletter issue's Markdown package (`issue.md`, `sources.md`, `brief.md`):
-store it in DataOps on the newsletter issue â€” never commit it to Git:
-`dataops newsletter markdown set <issue-id> --issue-file issue.md --sources-file sources.md --brief-file brief.md`
-(or one file at a time with `dataops newsletter markdown set <issue-id> [issue|sources|brief] --file <path>`).
-It automatically populates the `"Newsletter Markdown"` link on the issue and its Card
-and prints the shareable HTML preview link (`/newsletter-issues/<id>/preview?code=XXXX-XXXX-XXXX-XXXX`).
-Use `dataops newsletter markdown show <issue-id> [issue|sources|brief]` to read it,
-`dataops newsletter markdown preview <issue-id>` to print the shareable link, and
-`dataops newsletter markdown rotate-code <issue-id>` to rotate the preview access code.
-To put the sponsor copy into the Relay email, run `dataops newsletter relay-sync <issue-id|issue-number> --slot primary|secondary` (add `--dry-run` first). It maps the slot's sponsor document (title, kicker, body, bullets, closing, image, CTA) into the Relay issue's sponsor block with one per-block write (under the ~8 KB CloudFront WAF body limit), updating the existing block rather than adding another. The Relay issue key comes from `final-render --relay-key`, or pass `--relay-key`.
+For current newsletter production, read the issue's Task and its live SOP.
+For weekly assembly, open
+`dataops kb show sop.newsletter.assemble-the-weekly-newsletter-in-dataops`.
+Build and review the issue in Relay, then attach its rendered email with
+`dataops newsletter final-render <issue-id> --relay-key <key> --web-view-url <url>`.
+Record the source links and delivery evidence on the DataOps issue and Task.
 
-Issue content blocks (intro, spotlight, courses, events, recording, article, sponsor) are edited in DataOps: `dataops newsletter block list|show|add|edit|move|delete <issue> ...`, `block-types <issue>`, `blocks-sync <issue> [--dry-run]` (two-way, per block; conflicts refuse the whole sync), `revisions <issue> [--block <id>] [--diff]` (who changed what). Adds, moves and deletes reach Relay on the next `blocks-sync`. Sponsor blocks are special: the main one is pinned first (no move/delete, nothing above it), secondary ones can move but not be deleted, and both are read-only here: edit the sponsor doc, and every doc save syncs the block (`sponsor-sync <issue> --slot primary|secondary [--dry-run] [--force]` re-runs it). Refusals print the server message and exit non-zero.
-
-Use `dataops newsletter image upload <issue-id> <path>` to upload a newsletter image (PNG, JPEG, GIF, or WebP) to durable public hosting and print its public `https://` URL for `issue.md` and the HTML preview.
+For sponsored slots, edit the slot's sponsor document and follow the live
+SOP for sponsor block synchronization. Preview the mapping of that document
+to the existing Relay block with
+`dataops newsletter relay-sync <issue-id|issue-number> --slot primary|secondary --dry-run`.
+`dataops newsletter image upload <issue-id> <path>` returns a durable public
+image URL for the sponsor document or Relay issue.
 
 For a podcast episode: `dataops podcast list --status booked` (or `--season N`),
 `dataops podcast create --guests "Name[:slug]" --title "..." --recording-date YYYY-MM-DD`,
@@ -342,6 +341,8 @@ Do not create a new Card/Task/key or send a direct email to bypass that conflict
 dataops cards invitation CARD_ID                # actual status, Task and Gmail receipt
 dataops cards invitation CARD_ID --preview      # read-only rendered email
 dataops cards invitation CARD_ID --send         # first invitation only, after skip
+dataops cards invitation CARD_ID --send-calendar --dry-run # plan only: event, attendees
+dataops cards invitation CARD_ID --send-calendar  # [Proposed] calendar invite ONLY, after skip
 dataops cards invitation CARD_ID --retry-pre-send # guarded, proven safe recovery
 dataops cards invitation CARD_ID --retry-pre-send --date D [--time HH:MM] # failed before any event: retry on a new slot
 ```
@@ -361,7 +362,14 @@ creating anything, use `dataops calendar day D --json` (`slots.midday.available`
 that actually cover that date.
 
 `--send` sends both email and the proposed calendar invite, only for a previously
-skipped first invitation. The worker normally resumes eligible failures;
+skipped first invitation. When first contact already happened in an existing
+Gmail thread (the reason for `--skip-email`), use `--send-calendar` instead: it
+adds the guest plus the required attendees to the same private Zoom event and
+lets Google Calendar notify them, and never sends the first-contact email.
+After it, `--send` is refused so the guest cannot get a duplicate first-contact
+email. `dataops cards invite guests CARD_ID --guests EMAIL` on that silent hold
+takes the same calendar-only path; both accept `--dry-run`. Verify with
+`dataops cards invite list CARD_ID`. The worker normally resumes eligible failures;
 `--retry-pre-send` does not permit ambiguous delivery or resend. A queued,
 preparing, paused or failed invitation is not sent evidence: inspect its linked
 Task and actual Gmail message ID. Later correspondence stays in that email
@@ -391,6 +399,17 @@ use:
 
 ```bash
 dataops event update CARD_ID [--title "..."] [--topic "..."] [--guest-names "Name, Name"] [--document-url URL]
+```
+
+A Luma event Card that already has its own entries from `cards time` without
+guests (public DTC events entry and silent personal copies) can still get its
+private invitation: `event propose` keeps those entries live and untouched
+beside it. Check first without writing, then run the same command without the
+flag:
+
+```bash
+dataops event show CARD_ID                       # "invitation: none" plus the command to run
+dataops event propose CARD_ID --date YYYY-MM-DD --time HH:MM --guest-emails speaker@example.test --dry-run
 ```
 
 For a Card without an event policy, supply explicit inputs:

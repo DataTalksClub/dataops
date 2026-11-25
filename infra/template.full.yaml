@@ -1282,6 +1282,10 @@ Resources:
         - Statement:
             Effect: Allow
             Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+            Resource: !Sub ${TaskFilesBucket.Arn}/crm-deals/*
+        - Statement:
+            Effect: Allow
+            Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
             Resource: !Sub ${TaskFilesBucket.Arn}/public-images/*
         - Statement:
             Effect: Allow

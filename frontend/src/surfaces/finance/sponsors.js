@@ -129,11 +129,11 @@ export function createSponsorCrmSurface(context) {
     setRouteTitle("CRM");
     const api = (path, options = {}) =>
         request(workApiUrl(`/api/sponsor-crm${path}`), {
+          ...options,
           headers: {
-            "content-type": "application/json",
+            ...(typeof FormData !== "undefined" && options.body instanceof FormData ? {} : { "content-type": "application/json" }),
             ...(options.headers || {}),
           },
-          ...options,
         }),
       message = surface.querySelector("[data-crm-message]");
     const ownerDirectory = createSponsorOwnerDirectory({ request, workApiUrl, escapeHtml });

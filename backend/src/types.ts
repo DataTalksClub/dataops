@@ -423,7 +423,7 @@ export interface CardTemplateTaskExclusion {
 }
 
 export interface Card {
-  guestIntake?: { jobId: string; taskId: string; status: import('./events/guestIntakeStore').GuestIntakeStatus; skipEmail: boolean; recipient?: string; messageId?: string; sentAt?: string; startIso?: string; error?: string };
+  guestIntake?: { jobId: string; taskId: string; status: import('./events/guestIntakeStore').GuestIntakeStatus; skipEmail: boolean; recipient?: string; messageId?: string; sentAt?: string; startIso?: string; error?: string; calendarOnlySentAt?: string };
   id: string;
   /** Monotonic optimistic-concurrency token. */
   version: number;
@@ -492,6 +492,13 @@ export interface Card {
     reason?: string;
     generation?: number;
     status?: 'proposed' | 'approved' | 'released';
+    /**
+     * The Card's own attendee-free Luma entries (its `card:<id>` public DTC
+     * events entry and silent personal copies), kept live and linked beside
+     * the invitation once an event takes the Card's eventTime. A Card without
+     * an invitation keeps those ids in `googleEventIds`.
+     */
+    listing?: { eventKey: string; googleEventIds: Record<string, string> };
   };
   tags?: string[];
   /**
