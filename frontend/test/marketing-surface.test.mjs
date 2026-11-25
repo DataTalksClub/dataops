@@ -312,4 +312,151 @@ describe("marketing surface controller", () => {
     assert.match(bodyHtml, /mkt-sparkline/);
     assert.equal(calls.length, 3);
   });
+
+  test("renders goal detail, step detail, and weekly review routes", async () => {
+    const { root: goalRoot, titles: goalTitles, surface: goalSurface } = surfaceHarness(
+      async (url) => {
+        if (url.includes("/goals/")) {
+          return {
+            goal: {
+              ref: "nonbrand",
+              title: "Non-brand impr.",
+              metricKey: "gsc_nonbrand_impressions",
+              scope: "prefix:/academy/",
+              source: "gsc",
+              target: { value: 100, date: "2027-02-28" },
+            },
+            snapshots: [{ periodEnd: "2026-11-23", value: 41, unit: "count" }],
+          };
+        }
+        if (url.startsWith("/api/marketing/steps")) {
+          return { steps: [{ id: "s-1", title: "Published step", status: "published", publishedAt: "2026-11-20" }] };
+        }
+        return { plan: { id: "academy-visibility", title: "Academy Visibility" } };
+      },
+      { path: "/marketing/plans/academy-visibility/goals/nonbrand", params: new URLSearchParams({ planId: "academy-visibility", goalRef: "nonbrand" }) },
+    );
+    await goalSurface.renderMarketingSurface();
+    await nextTicks();
+    assert.ok(goalTitles.includes("Marketing · Non-brand impr."));
+    assert.match(goalRoot.children[0].children[0].innerHTML, /mkt-chart/);
+
+    const { root: stepRoot, titles: stepTitles, surface: stepSurface } = surfaceHarness(
+      async (url) => {
+        if (url.startsWith("/api/marketing/steps/")) {
+          return {
+            step: {
+              id: "s-1a2b3c4d",
+              planId: "academy-visibility",
+              title: "Refresh guide",
+              kind: "refresh",
+              doneCriteria: "Indexed",
+              status: "planned",
+              targetUrl: "https://datatalks.club/academy/",
+            },
+          };
+        }
+        return { plan: { id: "academy-visibility", title: "Academy Visibility" } };
+      },
+      { path: "/marketing/steps/s-1a2b3c4d", params: new URLSearchParams({ stepId: "s-1a2b3c4d" }) },
+    );
+    await stepSurface.renderMarketingSurface();
+    await nextTicks();
+    assert.ok(stepTitles.includes("Marketing · Refresh guide"));
+    assert.match(stepRoot.children[0].children[0].innerHTML, /Refresh guide/);
+
+    const { root: reviewRoot, titles: reviewTitles, surface: reviewSurface } = surfaceHarness(
+      async (url) => {
+        if (url.startsWith("/api/marketing/review")) {
+          return {
+            week: "2026-W49",
+            goals: [],
+            shippedLastWeek: [],
+            dueThisWeek: [],
+            overdue: [],
+          };
+        }
+        return { alexeyReviews: 2 };
+      },
+      { path: "/marketing/review", params: new URLSearchParams() },
+    );
+    await reviewSurface.renderMarketingSurface();
+    await nextTicks();
+    assert.ok(reviewTitles.includes("Marketing · Weekly Review"));
+    assert.match(reviewRoot.children[0].children[0].innerHTML, /Weekly Marketing Review · 2026-W49/);
+  });
+
+  test("handles click interactions and form submissions on marketing surface", async () => {
+    const requests = [];
+    const { root, navigations, surface } = surfaceHarness(
+      async (url, opts) => {
+        requests.push([url, opts?.method || "GET"]);
+        if (url === "/api/marketing/plans" && !opts?.method) {
+          return { plans: [{ id: "academy-visibility", title: "Academy Visibility", status: "active", goals: [] }] };
+        }
+        if (url === "/api/marketing/plans/academy-visibility") {
+          return {
+            plan: { id: "academy-visibility", title: "Academy Visibility", status: "active", goals: [] },
+            steps: [{ id: "s-1", title: "Step 1", kind: "content", size: "S", status: "planned" }],
+          };
+        }
+        return {};
+      },
+      { path: "/marketing/plans/academy-visibility", params: new URLSearchParams({ planId: "academy-visibility" }) },
+    );
+    await surface.renderMarketingSurface();
+    await nextTicks();
+
+    const section = root.children[0];
+    // Click nav link
+    let prevented = false;
+    await section.dispatch("click", {
+      button: 0,
+      target: { closest: (sel) => (sel === "a[data-mkt-nav]" ? { getAttribute: () => "/marketing/review" } : null) },
+      preventDefault: () => { prevented = true; },
+    });
+    assert.equal(prevented, true);
+    assert.deepEqual(navigations, ["/marketing/review"]);
+
+    // Click step tab
+    await section.dispatch("click", {
+      button: 0,
+      target: { closest: (sel) => (sel === "[data-mkt-step-tab]" ? { getAttribute: () => "planned" } : null) },
+    });
+
+    // Submit note, new-plan, and add-step forms
+    const originalFormData = globalThis.FormData;
+    globalThis.FormData = class {
+      constructor(form) { this.data = form._data; }
+      get(k) { return this.data[k]; }
+    };
+    try {
+      await section.dispatch("submit", {
+        target: {
+          matches: (sel) => sel === "[data-mkt-note-form]",
+          _data: { text: "Checked GSC", ref: "t390u" },
+        },
+      });
+      await section.dispatch("submit", {
+        target: {
+          matches: (sel) => sel === "[data-mkt-new-plan-form]",
+          closest: () => ({ close: () => {} }),
+          _data: { id: "new-plan", title: "New Plan", tags: "seo, academy", objective: "Grow", startDate: "2026-12-01", endDate: "2027-02-28" },
+        },
+      });
+      await section.dispatch("submit", {
+        target: {
+          matches: (sel) => sel === "[data-mkt-add-step-form]",
+          closest: () => ({ close: () => {} }),
+          _data: { title: "New Step", kind: "content", size: "S", doneCriteria: "Live", targetUrl: "https://datatalks.club/", primaryKeyword: "kw", brief: "Brief" },
+        },
+      });
+      await nextTicks();
+      assert.ok(requests.some(([u, m]) => u.includes("/notes") && m === "POST"));
+      assert.ok(requests.some(([u, m]) => u === "/api/marketing/plans" && m === "POST"));
+      assert.ok(requests.some(([u, m]) => u.includes("/steps") && m === "POST"));
+    } finally {
+      globalThis.FormData = originalFormData;
+    }
+  });
 });
