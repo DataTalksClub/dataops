@@ -9,7 +9,7 @@ import { cashDate, entryDirection, formatAmount, ledgerDate, monthLabel, monthOf
 import { bookkeepingVendorPresentation } from "./bookkeeping-vendors.js";
 
 // Query parameters the bookkeeping route keeps in the URL.
-export const LEDGER_PARAMS = ["month", "q", "account", "dir", "category", "needs", "tx", "view"];
+export const LEDGER_PARAMS = ["month", "q", "account", "dir", "category", "tx", "view"];
 export const SECONDARY_VIEWS = ["files", "package", "invoices", "tuition"];
 
 // The classification columns: "Type" is stored as `subtype`, "Category" as
@@ -157,14 +157,12 @@ export function invoiceSourceDocuments(entry) {
 // URL state -> filters. Unknown values fall back to "show everything".
 export function filtersFromParams(params) {
   const get = (name) => String(params?.get?.(name) || "").trim();
-  const needs = get("needs");
   const dir = get("dir");
   return {
     q: get("q"),
     account: get("account"),
     dir: ["expense", "income"].includes(dir) ? dir : "",
     category: get("category"),
-    needs: ["category", "receipt"].includes(needs) ? needs : "",
   };
 }
 
@@ -213,14 +211,12 @@ export function bankOnlyEntryFromMonthRow(row) {
   };
 }
 
-export function filterEntries(entries, filters, { hasEvidence = () => true, accountNameOf = resolveAccountName } = {}) {
+export function filterEntries(entries, filters, { accountNameOf = resolveAccountName } = {}) {
   const query = filters.q.toLowerCase();
   return entries.filter((entry) => {
     if (filters.account && accountNameOf(entry) !== filters.account) return false;
     if (filters.dir && entryDirection(entry) !== filters.dir) return false;
     if (filters.category && String(entry.category || "").trim() !== filters.category) return false;
-    if (filters.needs === "category" && !needsCategory(entry)) return false;
-    if (filters.needs === "receipt" && hasEvidence(entry.id)) return false;
     if (query) {
       const presentation = bookkeepingVendorPresentation(entry);
       const haystack = [
@@ -245,13 +241,9 @@ export function displayRowCount(entries = []) {
   }, 0);
 }
 
-// The cash date is the recorded payment date, falling back to the source
-// transaction's booking date when no payment date is available.
-const GENERATED_SPONSOR_DESCRIPTION = /^Sponsor payment for deal(?:\s+\S+)?$/i;
-
 export function readableTransactionDescription(entry) {
   const raw = String(entry?.description || "").trim();
-  if (entry?.sponsorDealId && GENERATED_SPONSOR_DESCRIPTION.test(raw)) {
+  if (entry?.sponsorDealId && raw === `Sponsor payment for deal ${entry.sponsorDealId}`) {
     return "Sponsor payment";
   }
   return raw;
@@ -260,13 +252,15 @@ export function readableTransactionDescription(entry) {
 export function pendingInvoiceEntry(invoice) {
   if (!invoice || invoice.status !== "pending") return null;
   const fields = invoice.fields || {};
+  const receivedDate = cashDate({ transactionDate: invoice.createdAt });
   return {
     id: `invoice-draft:${invoice.id}`,
     invoiceDraftId: invoice.id,
     pendingInvoiceDraft: true,
     invoiceStatus: invoice.status,
-    transactionDate: fields.transactionDate || "",
+    transactionDate: fields.transactionDate || receivedDate,
     paidDate: fields.paidDate || "",
+    useReceivedDate: !fields.transactionDate && !fields.paidDate && Boolean(receivedDate),
     counterparty: fields.counterparty || "Unidentified provider",
     description: fields.description || "",
     amount: fields.amount || "",
@@ -335,7 +329,8 @@ export function vatTitle(entry, text) {
 // The cash date is primary; the source transaction date remains in the record.
 function dateCell(entry, e) {
   const date = cashDate(entry);
-  return html`<time datetime="${e(date)}">${e(ledgerDate(date))}</time>`;
+  if (!date) return "—";
+  return html`<time datetime="${e(date)}"${entry.useReceivedDate ? ' title="Invoice received date"' : ""}>${e(ledgerDate(date))}</time>`;
 }
 
 function selectMarkup({ id, field, label, value, options, e }) {
@@ -397,6 +392,11 @@ function accountCellMarkup(account, accountDoc, e) {
   return html`<span class="bk-cell-icon bk-cell-icon--empty" aria-label="No account" title="No account">—</span>`;
 }
 
+function sponsorDealLink(entry, counterparty, e) {
+  if (!entry.sponsorDealId) return "";
+  return html`<a class="bk-who__deal" href="${e(sponsorRecordPath("deal", entry.sponsorDealId))}" data-deal-link aria-label="Open sponsor deal for ${e(counterparty)}" title="Open sponsor deal">Deal</a>`;
+}
+
 export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, vocab, selectedId, financeEntry, statementLinks = new Map(), e }) {
   const isDraft = Boolean(entry.pendingInvoiceDraft);
   const direction = entryDirection(entry);
@@ -415,9 +415,7 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
   const hasInvoiceAttached = invoiceDocuments.length > 0 || invoiceEvidence === true;
   const account = resolveAccountName(entry, statementLinks);
   const accountDoc = statementLinks instanceof Map ? statementLinks.get(String(entry.id || "")) : null;
-  const dealLink = !isDraft && entry.sponsorDealId
-    ? html`<a class="bk-who__deal" href="${e(sponsorRecordPath("deal", entry.sponsorDealId))}" data-deal-link aria-label="Open sponsor deal for ${e(counterparty)}" title="Open sponsor deal">Deal</a>`
-    : "";
+  const dealLink = sponsorDealLink(entry, counterparty, e);
   const draftStatus = isDraft
     ? html`<span class="dk-badge dk-badge--warning bk-draft-status" title="Unverified invoice draft — click to open invoice review">${icon.pending}<span>Pending review</span></span>`
     : "";
@@ -502,15 +500,16 @@ function allocationChildMarkup(entry, allocation, { getAllocationDocument = () =
   const accountName = resolveAccountName(entry, statementLinks);
   const statementLink = statementLinks instanceof Map ? statementLinks.get(String(entry.id || "")) : null;
   const pdfAction = invoiceCellMarkup(document ? [document] : [], false, e, entry.id);
+  const counterparty = allocation.counterparty || entry.counterparty || "";
+  const dealLink = sponsorDealLink(entry, counterparty, e);
+  const paymentLink = html`<a class="bk-who" href="?tx=${encodeURIComponent(entry.id)}" data-open-tx="${e(entry.id)}"
+          aria-label="Open original payment for ${e(counterparty || "invoice")}">
+          <span class="bk-who__name">${e(counterparty)}</span>
+          <span class="bk-who__what" title="${e(allocation.description || "")}">${e(allocation.description || "")}</span>
+        </a>`;
   return html`<tr class="bk-row bk-row--allocation-child" data-allocation-parent="${e(entry.id)}" data-allocation-document="${e(allocation.documentId || "")}">
       <td class="bk-col-date">${dateCell(child, e)}</td>
-      <td class="bk-col-who">
-        <a class="bk-who" href="?tx=${encodeURIComponent(entry.id)}" data-open-tx="${e(entry.id)}"
-          aria-label="Open original payment for ${e(allocation.counterparty || "invoice")}">
-          <span class="bk-who__name">${e(allocation.counterparty || entry.counterparty || "")}</span>
-          <span class="bk-who__what" title="${e(allocation.description || "")}">${e(allocation.description || "")}</span>
-        </a>
-      </td>
+      <td class="bk-col-who">${dealLink ? html`<div class="bk-who-cell">${paymentLink}${dealLink}</div>` : paymentLink}</td>
       <td class="bk-col-money bk-col-eur${net === null ? " is-unconverted" : ""}"${net !== null && originalText ? ` title="Original ${e(originalText)}"` : ""}>${net === null
         ? html`<span class="bk-unconverted" title="No EUR value recorded for this invoice allocation">${e(originalText || "EUR?")}</span>`
         : e(signedAmount(net, "EUR"))}</td>
