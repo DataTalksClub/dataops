@@ -404,7 +404,7 @@ export async function handleMarketingRoutes(
         const { version: _, ...changes } = b;
         const next = { ...s, ...changes };
         validateStep(next, p);
-        const saved = await db.saveStep(c, s, changes);
+        const saved = await db.saveStep(c, s, next);
         await service.pushStepFacts(c, saved, p, actor.id);
         return json(200, await service.projectStep(c, saved));
       }
@@ -454,9 +454,25 @@ export async function handleMarketingRoutes(
         "Use the top-level plan version",
       );
       const previous = await db.getPlan(c, b.plan.id);
+      for (const goal of b.goals || []) {
+        requireThat(
+          goal && typeof goal === "object" && !Array.isArray(goal),
+          "Goal must be an object",
+        );
+        allowed(goal, goalFields);
+        requireThat(goal.version === undefined, "Goals use the plan version");
+      }
       const candidate = makePlan({ ...b.plan, goals: b.goals || [] }, actor.id);
       const steps = (b.steps || []).map((input: Dict) => {
+        requireThat(
+          input && typeof input === "object" && !Array.isArray(input),
+          "Step must be an object",
+        );
         allowed(input, [...stepFields, "id"]);
+        requireThat(
+          input.version === undefined,
+          "Step version is system-owned during import",
+        );
         requireThat(
           typeof input.key === "string" && /^[a-z0-9-]{1,80}$/.test(input.key),
           "Import steps require a key",

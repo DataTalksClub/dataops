@@ -445,7 +445,7 @@ describe("marketing contract", () => {
       version: 2,
       title: "Updated synthetic title",
       brief: "Updated brief",
-      targetUrl: "https://example.com/updated",
+      targetUrl: "https://EXAMPLE.com/updated?discard=yes#fragment",
       tags: ["updated"],
       publishDate: "2026-12-10",
     });
