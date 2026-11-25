@@ -149,7 +149,10 @@ export function createMarketingSurface(context) {
         body.innerHTML = planDetailMarkup(plan, steps, seriesMap, activeStepTab);
       } catch (error) {
         if (mine !== generation) return;
-        body.innerHTML = html`<div class="dk-callout dk-callout--warning" role="status">${escapeHtml(formatApiError(error, "Could not load plan."))} <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-mkt-retry>Retry</button></div>`;
+        body.innerHTML = html`<div class="dk-callout dk-callout--warning" role="status">
+          ${escapeHtml(formatApiError(error, "Could not load plan."))}
+          <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-mkt-retry>Retry</button>
+        </div>`;
       }
     }
 
@@ -209,7 +212,10 @@ export function createMarketingSurface(context) {
         body.innerHTML = goalDetailMarkup(plan, goal, snapshots, publishedSteps);
       } catch (error) {
         if (mine !== generation) return;
-        body.innerHTML = html`<div class="dk-callout dk-callout--warning" role="status">${escapeHtml(formatApiError(error, "Could not load goal."))} <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-mkt-retry>Retry</button></div>`;
+        body.innerHTML = html`<div class="dk-callout dk-callout--warning" role="status">
+          ${escapeHtml(formatApiError(error, "Could not load goal."))}
+          <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-mkt-retry>Retry</button>
+        </div>`;
       }
     }
 
@@ -241,7 +247,10 @@ export function createMarketingSurface(context) {
         body.innerHTML = stepDetailMarkup(step, plan, currentUtmResult);
       } catch (error) {
         if (mine !== generation) return;
-        body.innerHTML = html`<div class="dk-callout dk-callout--warning" role="status">${escapeHtml(formatApiError(error, "Could not load step."))} <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-mkt-retry>Retry</button></div>`;
+        body.innerHTML = html`<div class="dk-callout dk-callout--warning" role="status">
+          ${escapeHtml(formatApiError(error, "Could not load step."))}
+          <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-mkt-retry>Retry</button>
+        </div>`;
       }
     }
 

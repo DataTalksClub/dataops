@@ -47,7 +47,12 @@ export function planListMarkup(plans, today = berlinToday(), loadError = "") {
         <button type="button" class="dk-button dk-button--primary dk-button--sm" data-mkt-open-new-plan>+ New plan</button>
       </div>
     </header>
-    ${loadError ? html`<div class="dk-callout dk-callout--warning" role="status">${escapeHtml(loadError)} <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-mkt-retry>Retry</button></div>` : ""}
+    ${loadError
+      ? html`<div class="dk-callout dk-callout--warning" role="status">
+          ${escapeHtml(loadError)}
+          <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-mkt-retry>Retry</button>
+        </div>`
+      : ""}
     ${rows
       ? html`<div class="mkt-table-wrap"><table class="dk-table mkt-table">
           <thead>
@@ -147,7 +152,7 @@ export function planDetailMarkup(plan, steps = [], goalSeriesMap = new Map(), ac
 
   return html`<header class="dk-page-header">
       <div class="dk-page-header__main">
-        <p class="mkt-breadcrumb"><a href="/marketing" data-mkt-nav>Marketing</a> /</p>
+        <p class="mkt-trail"><a href="/marketing" data-mkt-nav>Marketing</a> /</p>
         <h1 class="dk-page-header__title">${escapeHtml(plan.title || plan.id)} ${statusBadge(plan.status || "draft", "plan")}</h1>
         <p class="mkt-meta">
           ${plan.ownerId ? html`<span>Owner: <strong>${escapeHtml(plan.ownerId)}</strong></span>` : ""}
@@ -155,7 +160,11 @@ export function planDetailMarkup(plan, steps = [], goalSeriesMap = new Map(), ac
           ${tags.length ? html`<span>Tags: ${tags.map((t) => html`<span class="dk-badge">${escapeHtml(t)}</span>`).join(" ")}</span>` : ""}
         </p>
         ${plan.objective ? html`<p class="mkt-objective">${escapeHtml(plan.objective)}</p>` : ""}
-        ${sources.length ? html`<p class="mkt-meta">Sources: ${sources.map((s) => html`<a class="mkt-link" href="${escapeHtml(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.name || s.url)}</a>`).join(" · ")}</p>` : ""}
+        ${sources.length
+          ? html`<p class="mkt-meta">Sources: ${sources
+              .map((s) => html`<a class="mkt-link" href="${escapeHtml(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.name || s.url)}</a>`)
+              .join(" · ")}</p>`
+          : ""}
       </div>
     </header>
 

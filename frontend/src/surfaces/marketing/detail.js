@@ -28,7 +28,7 @@ export function goalDetailMarkup(plan, goal, snapshots = [], publishedSteps = []
 
   return html`<header class="dk-page-header">
       <div class="dk-page-header__main">
-        <p class="mkt-breadcrumb">
+        <p class="mkt-trail">
           <a href="/marketing" data-mkt-nav>Marketing</a> /
           ${planId ? html`<a href="/marketing/plans/${encodeURIComponent(planId)}" data-mkt-nav>${escapeHtml(planTitle)}</a> /` : ""}
         </p>
@@ -40,7 +40,10 @@ export function goalDetailMarkup(plan, goal, snapshots = [], publishedSteps = []
           ${goal?.window ? html`<span>Window: ${escapeHtml(goal.window)}</span>` : ""}
         </p>
         <p class="mkt-meta">
-          ${goal?.baseline ? html`<span>Baseline: <strong>${escapeHtml(formatNumber(goal.baseline.value))}</strong> (${escapeHtml(goal.baseline.date || "")}${goal.baseline.note ? `, ${escapeHtml(goal.baseline.note)}` : ""})</span>` : ""}
+          ${goal?.baseline
+            ? html`<span>Baseline: <strong>${escapeHtml(formatNumber(goal.baseline.value))}</strong>
+                (${escapeHtml(goal.baseline.date || "")}${goal.baseline.note ? `, ${escapeHtml(goal.baseline.note)}` : ""})</span>`
+            : ""}
           ${goal?.target ? html`<span>Target: <strong>${escapeHtml(formatNumber(goal.target.value))}</strong> by ${escapeHtml(goal.target.date || "")}</span>` : ""}
         </p>
       </div>
@@ -99,7 +102,7 @@ export function stepDetailMarkup(step, plan = null, utmResult = null) {
 
   return html`<header class="dk-page-header">
       <div class="dk-page-header__main">
-        <p class="mkt-breadcrumb">
+        <p class="mkt-trail">
           <a href="/marketing" data-mkt-nav>Marketing</a> /
           ${planId ? html`<a href="/marketing/plans/${encodeURIComponent(planId)}" data-mkt-nav>${escapeHtml(planTitle)}</a> /` : ""}
         </p>
@@ -121,7 +124,10 @@ export function stepDetailMarkup(step, plan = null, utmResult = null) {
       <dl class="mkt-dl">
         <div>
           <dt>Target URL</dt>
-          <dd>${step.targetUrl ? html`<a class="mkt-link" href="${escapeHtml(step.targetUrl)}" target="_blank" rel="noopener">${escapeHtml(step.targetUrl)}</a>` : "–"}${step.targetType ? html` <span class="dk-badge">${escapeHtml(step.targetType)}</span>` : ""}</dd>
+          <dd>${step.targetUrl
+            ? html`<a class="mkt-link" href="${escapeHtml(step.targetUrl)}" target="_blank" rel="noopener">
+                ${escapeHtml(step.targetUrl)}</a>`
+            : "–"}${step.targetType ? html` <span class="dk-badge">${escapeHtml(step.targetType)}</span>` : ""}</dd>
         </div>
         <div>
           <dt>Primary keyword</dt>
@@ -133,12 +139,23 @@ export function stepDetailMarkup(step, plan = null, utmResult = null) {
         </div>
         <div>
           <dt>Target goals</dt>
-          <dd>${goalRefs.length ? goalRefs.map((ref) => html`<a class="dk-badge mkt-link" href="/marketing/plans/${encodeURIComponent(planId)}/goals/${encodeURIComponent(ref)}" data-mkt-nav>${escapeHtml(ref)}</a>`).join(" ") : "–"}</dd>
+          <dd>${goalRefs.length
+            ? goalRefs
+                .map((ref) => {
+                  const href = `/marketing/plans/${encodeURIComponent(planId)}/goals/${encodeURIComponent(ref)}`;
+                  return html`<a class="dk-badge mkt-link" href="${href}" data-mkt-nav>${escapeHtml(ref)}</a>`;
+                })
+                .join(" ")
+            : "–"}</dd>
         </div>
         ${prompts.length ? html`<div><dt>AEO prompts</dt><dd>${prompts.map((p) => html`<span class="dk-badge">${escapeHtml(p)}</span>`).join(" ")}</dd></div>` : ""}
       </dl>
       ${step.brief ? html`<div class="mkt-brief-body"><pre class="mkt-pre">${escapeHtml(step.brief)}</pre></div>` : ""}
-      ${links.length ? html`<ul class="mkt-links-list">${links.map((l) => html`<li><a class="mkt-link" href="${escapeHtml(l.url)}" target="_blank" rel="noopener">${escapeHtml(l.name || l.url)}</a></li>`).join("")}</ul>` : ""}
+      ${links.length
+        ? html`<ul class="mkt-links-list">${links
+            .map((l) => html`<li><a class="mkt-link" href="${escapeHtml(l.url)}" target="_blank" rel="noopener">${escapeHtml(l.name || l.url)}</a></li>`)
+            .join("")}</ul>`
+        : ""}
     </section>
 
     <section class="mkt-section" aria-labelledby="mkt-step-work-heading">
@@ -148,7 +165,10 @@ export function stepDetailMarkup(step, plan = null, utmResult = null) {
       <dl class="mkt-dl">
         <div><dt>Publish date</dt><dd>${escapeHtml(step.publishDate || "Not scheduled")}</dd></div>
         ${step.publishedAt ? html`<div><dt>Published at</dt><dd>${escapeHtml(step.publishedAt)}</dd></div>` : ""}
-        ${step.publishedUrl ? html`<div><dt>Published URL</dt><dd><a class="mkt-link" href="${escapeHtml(step.publishedUrl)}" target="_blank" rel="noopener">${escapeHtml(step.publishedUrl)}</a></dd></div>` : ""}
+        ${step.publishedUrl
+          ? html`<div><dt>Published URL</dt><dd><a class="mkt-link" href="${escapeHtml(step.publishedUrl)}" target="_blank" rel="noopener">
+              ${escapeHtml(step.publishedUrl)}</a></dd></div>`
+          : ""}
         ${step.cardId ? html`<div><dt>Card</dt><dd><a class="mkt-link" href="/cards?cardId=${encodeURIComponent(step.cardId)}">${escapeHtml(step.cardId)}</a></dd></div>` : ""}
         ${step.taskId ? html`<div><dt>Task</dt><dd><a class="mkt-link" href="/tasks?taskId=${encodeURIComponent(step.taskId)}">${escapeHtml(step.taskId)}</a></dd></div>` : ""}
         ${step.dropped ? html`<div><dt>Dropped</dt><dd>${escapeHtml(step.dropped.reason || "Dropped")} (${escapeHtml(step.dropped.at || "")})</dd></div>` : ""}

@@ -17,18 +17,18 @@
   margin-top: var(--dk-space-2);
 }
 
-.mkt-breadcrumb {
+.mkt-trail {
   margin: 0 0 var(--dk-space-1);
   color: var(--dk-text-muted);
   font-size: var(--dk-text-sm);
 }
 
-.mkt-breadcrumb a {
+.mkt-trail a {
   color: var(--dk-text-muted);
   text-decoration: none;
 }
 
-.mkt-breadcrumb a:hover {
+.mkt-trail a:hover {
   color: var(--dk-text-primary);
   text-decoration: underline;
 }

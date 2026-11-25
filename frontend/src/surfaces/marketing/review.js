@@ -65,10 +65,17 @@ export function weeklyReviewMarkup(review, capacity = null, loadError = "") {
           ${dataAsOf ? html`<p class="mkt-muted">${escapeHtml(dataAsOf)}</p>` : ""}
         </div>
       </header>
-      ${loadError ? html`<div class="dk-callout dk-callout--warning" role="status">${escapeHtml(loadError)} <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-mkt-retry>Retry</button></div>` : ""}
+      ${loadError
+        ? html`<div class="dk-callout dk-callout--warning" role="status">
+            ${escapeHtml(loadError)}
+            <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-mkt-retry>Retry</button>
+          </div>`
+        : ""}
       ${missing.length
         ? html`<div class="dk-callout dk-callout--warning" role="status">
-            <strong>Missing data:</strong> ${missing.map((m) => escapeHtml(typeof m === "string" ? m : `${m.metricKey || m.metric} (${m.source || m.reason || "missing"})`)).join("; ")}
+            <strong>Missing data:</strong> ${missing
+              .map((m) => escapeHtml(typeof m === "string" ? m : `${m.metricKey || m.metric} (${m.source || m.reason || "missing"})`))
+              .join("; ")}
           </div>`
         : ""}
       ${goalRows
@@ -118,7 +125,13 @@ export function weeklyReviewMarkup(review, capacity = null, loadError = "") {
                 </div>
                 ${d.planId
                   ? html`<div class="mkt-decision-actions">
-                      <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-mkt-decision="ignore" data-plan-id="${escapeHtml(d.planId)}" data-goal-ref="${escapeHtml(d.goalRef || "")}">Ignore 2 weeks</button>
+                      <button
+                        type="button"
+                        class="dk-button dk-button--secondary dk-button--sm"
+                        data-mkt-decision="ignore"
+                        data-plan-id="${escapeHtml(d.planId)}"
+                        data-goal-ref="${escapeHtml(d.goalRef || "")}"
+                      >Ignore 2 weeks</button>
                     </div>`
                   : ""}
               </li>`,

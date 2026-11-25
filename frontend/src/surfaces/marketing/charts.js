@@ -165,10 +165,20 @@ export function goalChartMarkup(snapshots, goal, publishedSteps = []) {
   return html`<figure class="mkt-chart">
     <figcaption class="mkt-chart__caption">
       <span class="mkt-legend"><span class="mkt-legend__dot"></span>Actual</span>
-      ${Number.isFinite(targetVal) ? html`<span class="mkt-legend"><span class="mkt-legend__line mkt-legend__line--target"></span>Target (${escapeHtml(formatNumber(targetVal, unit))})</span>` : ""}
-      ${Number.isFinite(baselineVal) ? html`<span class="mkt-legend"><span class="mkt-legend__line mkt-legend__line--baseline"></span>Baseline (${escapeHtml(formatNumber(baselineVal, unit))})</span>` : ""}
+      ${Number.isFinite(targetVal)
+        ? html`<span class="mkt-legend"><span class="mkt-legend__line mkt-legend__line--target"></span>
+            Target (${escapeHtml(formatNumber(targetVal, unit))})</span>`
+        : ""}
+      ${Number.isFinite(baselineVal)
+        ? html`<span class="mkt-legend"><span class="mkt-legend__line mkt-legend__line--baseline"></span>
+            Baseline (${escapeHtml(formatNumber(baselineVal, unit))})</span>`
+        : ""}
       ${stepMarkers ? html`<span class="mkt-legend"><span class="mkt-legend__marker"></span>Step published</span>` : ""}
     </figcaption>
-    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(goal?.title || "Goal")} trend chart">${grid}${baselineLine}${targetLine}${stepMarkers}${points.length > 1 ? html`<polyline class="mkt-chart__line" points="${polyPoints}"/>` : ""}${marks}</svg>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(goal?.title || "Goal")} trend chart">
+      ${grid}${baselineLine}${targetLine}${stepMarkers}
+      ${points.length > 1 ? html`<polyline class="mkt-chart__line" points="${polyPoints}"/>` : ""}
+      ${marks}
+    </svg>
   </figure>`;
 }
