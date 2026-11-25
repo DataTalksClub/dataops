@@ -617,26 +617,57 @@ function paidTotal(projection: FinanceProjection): bigint {
  * Record the correction of an issued invoice. The corrected invoice itself is
  * issued in Finom's UI (no Finom API): this mutation is the tracking side. It
  * requires a reason, replaces the recorded invoice metadata exactly like
- * issueInvoice does, and optionally supersedes the linked invoice PDF with the
- * corrected document in the same transaction - the original document stays in
- * bookkeeping for audit, only the deal's link and claim move. Blocked while
- * the finance is void or nothing was issued yet.
+ * issueInvoice does, optionally supersedes the linked invoice PDF with the
+ * corrected document in the same transaction, and optionally corrects the
+ * nominal amountDue on an unpaid invoice with no linked receipts or settlement
+ * when tied to either a validated replacement PDF or the exact identity of the
+ * already linked invoice PDF. The original document stays in bookkeeping for
+ * audit; blocked while the finance is void or nothing was issued yet.
  */
 export async function correctInvoice(
   client: DynamoDBDocumentClient,
   input: {
     actorId: string; dealId: string; dealVersion: number; expectedVersion: number; idempotencyKey: string;
     reason: string; invoiceNumber?: string; issuedOn: string; dueOn: string; sentOn?: string;
+    amountDue?: unknown;
     sourceId?: string; identityToken?: string;
+    expectedDocumentId?: unknown; expectedDocumentIdentityToken?: unknown;
   },
 ) {
   if (!boundedText(input.reason, 500)) throw Object.assign(new Error('A correction reason is required'), { statusCode: 400 });
   validateIssue(input);
+  let nextAmountDue: string | undefined;
+  let nextAmountScaled: bigint | undefined;
+  if (input.amountDue !== undefined) {
+    try {
+      nextAmountScaled = scaledMoney(input.amountDue);
+      nextAmountDue = String(input.amountDue);
+    } catch {
+      throw Object.assign(new Error('Invalid invoice amount due'), { statusCode: 400 });
+    }
+  }
+  const hasReplacementDoc = input.sourceId !== undefined || input.identityToken !== undefined;
+  const hasExpectedDoc = input.expectedDocumentId !== undefined || input.expectedDocumentIdentityToken !== undefined;
+  if (hasReplacementDoc && hasExpectedDoc) {
+    throw Object.assign(new Error('Provide either a replacement invoice document or the existing linked invoice identity, not both'), { statusCode: 400 });
+  }
+  if (hasReplacementDoc && (!OPAQUE.test(String(input.sourceId)) || typeof input.identityToken !== 'string' || !input.identityToken)) {
+    throw Object.assign(new Error('Invalid corrected invoice document'), { statusCode: 400 });
+  }
+  if (hasExpectedDoc && (
+    typeof input.expectedDocumentId !== 'string' || !OPAQUE.test(input.expectedDocumentId)
+    || typeof input.expectedDocumentIdentityToken !== 'string' || !input.expectedDocumentIdentityToken
+  )) {
+    throw Object.assign(new Error('Invalid linked invoice document identity'), { statusCode: 400 });
+  }
   const reason = input.reason.trim();
   const request = {
     reason, dealVersion: input.dealVersion, expectedVersion: input.expectedVersion,
     invoiceNumber: input.invoiceNumber, issuedOn: input.issuedOn, dueOn: input.dueOn, sentOn: input.sentOn,
+    amountDue: nextAmountDue,
     sourceId: input.sourceId, identityToken: input.identityToken,
+    expectedDocumentId: hasExpectedDoc ? String(input.expectedDocumentId) : undefined,
+    expectedDocumentIdentityToken: hasExpectedDoc ? String(input.expectedDocumentIdentityToken) : undefined,
   };
   const replay = await replayMutation(client, {
     actorId: input.actorId, operation: 'correct-invoice', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
@@ -647,34 +678,73 @@ export async function correctInvoice(
   if (!state.issuedOn) {
     throw Object.assign(new Error('Record the issued invoice with dataops sponsors record-invoice before correcting it'), { statusCode: 422 });
   }
-  let source: Record<string, unknown> | undefined;
-  if (input.sourceId !== undefined || input.identityToken !== undefined) {
-    if (!OPAQUE.test(String(input.sourceId)) || typeof input.identityToken !== 'string' || !input.identityToken) {
-      throw Object.assign(new Error('Invalid corrected invoice document'), { statusCode: 400 });
+  const currentAmountScaled = state.amountDue ? scaledMoney(state.amountDue) : undefined;
+  const amountChanged = nextAmountScaled !== undefined && (currentAmountScaled === undefined || nextAmountScaled !== currentAmountScaled);
+  if (amountChanged) {
+    if (state.paymentLinkIds.length > 0 || (state.recordedPaymentIds?.length || 0) > 0 || state.settlementAdjustment) {
+      throw Object.assign(new Error('Cannot correct invoice amount when payments or settlement adjustments exist'), { statusCode: 422 });
     }
-    if (state.invoiceLinkId && state.invoiceLinkId.endsWith(`#${input.sourceId}`)) {
+    if (state.taxAmount !== undefined && scaledMoney(state.taxAmount, true) > nextAmountScaled!) {
+      throw Object.assign(new Error('Corrected amountDue must not be less than recorded taxAmount'), { statusCode: 422 });
+    }
+    if (!hasReplacementDoc && !hasExpectedDoc) {
+      throw Object.assign(new Error('Correcting invoice amount requires either a replacement invoice document or the exact linked invoice document identity'), { statusCode: 422 });
+    }
+  }
+  const previousLink = state.invoiceLinkId;
+  const previousSourceId = previousLink ? previousLink.split('#').at(-1)! : undefined;
+  let source: Record<string, unknown> | undefined;
+  if (hasReplacementDoc) {
+    if (previousLink && previousLink.endsWith(`#${input.sourceId}`)) {
       throw Object.assign(new Error('The corrected invoice document must differ from the linked original'), { statusCode: 422 });
     }
     source = await sourceItem(client, 'document', input.sourceId!);
     if (!source || invoiceIdentity(source) !== input.identityToken) throw safeConflict();
+  }
+  let verifiedExistingSource: Record<string, unknown> | undefined;
+  if (hasExpectedDoc) {
+    const expectedDocId = String(input.expectedDocumentId);
+    const expectedIdentity = String(input.expectedDocumentIdentityToken);
+    if (!previousLink || !previousSourceId || previousSourceId !== expectedDocId) throw safeConflict();
+    const [existingSource, existingLinkRes, existingClaimRes] = await Promise.all([
+      sourceItem(client, 'document', previousSourceId),
+      client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: singleton(previousLink), ConsistentRead: true })),
+      client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: singleton(claimKey('document', previousSourceId)), ConsistentRead: true })),
+    ]);
+    const existingLink = existingLinkRes.Item;
+    const existingClaim = existingClaimRes.Item;
+    let currentIdentity = '';
+    try { currentIdentity = existingSource ? invoiceIdentity(existingSource) : ''; } catch { throw safeConflict(); }
+    if (
+      !existingSource || !existingLink || !existingClaim
+      || currentIdentity !== expectedIdentity
+      || existingLink.recordType !== 'sponsor-finance-link' || existingLink.kind !== 'document'
+      || existingLink.dealId !== input.dealId || existingLink.id !== previousLink
+      || existingLink.sourceId !== previousSourceId || existingLink.identityToken !== expectedIdentity
+      || existingClaim.recordType !== 'sponsor-finance-claim' || existingClaim.kind !== 'document'
+      || existingClaim.dealId !== input.dealId || existingClaim.linkId !== previousLink
+      || existingClaim.sourceId !== previousSourceId || existingClaim.identityToken !== expectedIdentity
+    ) throw safeConflict();
+    verifiedExistingSource = existingSource;
   }
   const previous = {
     invoiceNumber: state.invoiceNumber ?? null,
     issuedOn: state.issuedOn ?? null,
     dueOn: state.dueOn ?? null,
     sentOn: state.sentOn ?? null,
+    ...(amountChanged ? { amountDue: state.amountDue ?? null } : {}),
   };
   const after = {
     invoiceNumber: input.invoiceNumber ?? null,
     issuedOn: input.issuedOn,
     dueOn: input.dueOn,
     sentOn: input.sentOn ?? null,
+    ...(amountChanged ? { amountDue: nextAmountDue! } : {}),
   };
   const changed = Object.fromEntries(
     (Object.keys(after) as (keyof typeof after)[]).filter((key) => previous[key] !== after[key])
       .map((key) => [key, { before: previous[key], after: after[key] }]),
   );
-  const previousSourceId = state.invoiceLinkId ? state.invoiceLinkId.split('#').at(-1)! : undefined;
   if (input.sourceId === undefined && Object.keys(changed).length === 0) {
     throw Object.assign(new Error('Correction matches the recorded invoice; nothing to correct'), { statusCode: 422 });
   }
@@ -685,16 +755,16 @@ export async function correctInvoice(
       kind: 'document' as const, sourceId: input.sourceId, identityToken: input.identityToken!, actorId: input.actorId,
       financeVersion: state.version + 1, createdAt: now }
     : undefined;
-  const previousLink = state.invoiceLinkId;
   return executeMutation(client, {
     actorId: input.actorId, operation: 'correct-invoice', dealId: input.dealId, idempotencyKey: input.idempotencyKey, request,
     financeVersion: state.version + 1, recordId: state.id,
-    ...(link ? { linkId: link.id, sourceId: link.sourceId } : {}),
+    ...(link ? { linkId: link.id, sourceId: link.sourceId } : verifiedExistingSource ? { linkId: previousLink, sourceId: previousSourceId } : {}),
     eventCode: 'invoice-corrected',
     details: {
       reason,
       changed,
       ...(previousSourceId && link ? { replacedDocument: { previousSourceId, sourceId: link.sourceId } } : {}),
+      ...(verifiedExistingSource ? { verifiedDocument: { sourceId: previousSourceId, identityToken: String(input.expectedDocumentIdentityToken) } } : {}),
     },
     transactItems: [
       adminCheck(input.actorId), dealCheck(input.dealId, input.dealVersion),
@@ -702,6 +772,34 @@ export async function correctInvoice(
         TableName: TABLE_BOOKKEEPING, Key: singleton(sourceKey('document', input.sourceId!)),
         ...identityCondition('document', source),
       } }] : []),
+      ...(verifiedExistingSource ? [
+        {
+          ConditionCheck: {
+            TableName: TABLE_BOOKKEEPING, Key: singleton(sourceKey('document', previousSourceId!)),
+            ...identityCondition('document', verifiedExistingSource),
+          },
+        },
+        {
+          ConditionCheck: {
+            TableName: TABLE_SPONSOR_CRM, Key: singleton(previousLink!),
+            ConditionExpression: 'recordType = :linkType AND kind = :docKind AND dealId = :booking AND id = :link AND sourceId = :source AND identityToken = :identity',
+            ExpressionAttributeValues: {
+              ':linkType': 'sponsor-finance-link', ':docKind': 'document', ':booking': input.dealId,
+              ':link': previousLink!, ':source': previousSourceId!, ':identity': String(input.expectedDocumentIdentityToken),
+            },
+          },
+        },
+        {
+          ConditionCheck: {
+            TableName: TABLE_BOOKKEEPING, Key: singleton(claimKey('document', previousSourceId!)),
+            ConditionExpression: 'recordType = :claimType AND kind = :docKind AND dealId = :booking AND linkId = :link AND sourceId = :source AND identityToken = :identity',
+            ExpressionAttributeValues: {
+              ':claimType': 'sponsor-finance-claim', ':docKind': 'document', ':booking': input.dealId,
+              ':link': previousLink!, ':source': previousSourceId!, ':identity': String(input.expectedDocumentIdentityToken),
+            },
+          },
+        },
+      ] : []),
       ...(previousLink && link ? [
         {
           Delete: {
@@ -735,13 +833,15 @@ export async function correctInvoice(
       {
         Update: {
           TableName: TABLE_SPONSOR_CRM, Key: singleton(financeKey(input.dealId)),
-          UpdateExpression: `SET ${input.invoiceNumber ? 'invoiceNumber = :number, ' : ''}issuedOn = :issued, dueOn = :due, ${input.sentOn ? 'sentOn = :sent, ' : ''}invoiceCorrection = :correction${link ? ', invoiceLinkId = :link' : ''}, updatedAt = :now, actorId = :actor, #version = #version + :one${[
+          UpdateExpression: `SET ${input.invoiceNumber ? 'invoiceNumber = :number, ' : ''}${amountChanged ? 'amountDue = :amountDue, ' : ''}issuedOn = :issued, dueOn = :due, ${input.sentOn ? 'sentOn = :sent, ' : ''}invoiceCorrection = :correction${link ? ', invoiceLinkId = :link' : ''}, updatedAt = :now, actorId = :actor, #version = #version + :one${[
             ...(input.invoiceNumber ? [] : ['invoiceNumber']), ...(input.sentOn ? [] : ['sentOn']),
           ].map((name, index) => `${index ? ',' : ' REMOVE'} ${name}`).join('')}`,
-          ConditionExpression: `#version = :version AND invoiceRequirement = :required AND attribute_not_exists(voidedAt)${previousLink ? ' AND invoiceLinkId = :priorLink' : ' AND attribute_not_exists(invoiceLinkId)'}`,
+          ConditionExpression: `#version = :version AND invoiceRequirement = :required AND attribute_not_exists(voidedAt)${previousLink ? ' AND invoiceLinkId = :priorLink' : ' AND attribute_not_exists(invoiceLinkId)'}${amountChanged ? ' AND (attribute_not_exists(paymentLinkIds) OR size(paymentLinkIds) = :zero) AND (attribute_not_exists(recordedPaymentIds) OR size(recordedPaymentIds) = :zero) AND attribute_not_exists(settlementAdjustment)' : ''}`,
           ExpressionAttributeNames: { '#version': 'version' },
           ExpressionAttributeValues: {
-            ...(input.invoiceNumber ? { ':number': input.invoiceNumber } : {}), ':issued': input.issuedOn, ':due': input.dueOn,
+            ...(input.invoiceNumber ? { ':number': input.invoiceNumber } : {}),
+            ...(amountChanged ? { ':amountDue': nextAmountDue!, ':zero': 0 } : {}),
+            ':issued': input.issuedOn, ':due': input.dueOn,
             ...(input.sentOn ? { ':sent': input.sentOn } : {}),
             ':correction': { at: now, reason }, ':now': now, ':actor': input.actorId, ':one': 1, ':version': state.version,
             ':required': 'required', ...(link ? { ':link': link.id } : {}), ...(previousLink ? { ':priorLink': previousLink } : {}),
@@ -1791,7 +1891,12 @@ export async function projectFinance(
         || String(source.id) !== sourceIds[index]
       ) coherent = false;
       if (kind === 'document' && source) {
-        invoice = { id: String(source.id), label: `Invoice ${String(source.id).slice(0, 8)}`, uploadedAt: String(source.createdAt) };
+        invoice = {
+          id: String(source.id),
+          label: `Invoice ${String(source.id).slice(0, 8)}`,
+          uploadedAt: String(source.createdAt),
+          ...(identity ? { identityToken: identity } : {}),
+        };
       } else if (kind === 'transaction' && source) {
         if (source.currency !== state.currency) coherent = false;
         const amount = String(source.amount);
