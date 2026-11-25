@@ -60,24 +60,6 @@
 .bk-filters__search { flex: 1 1 160px; min-width: 120px; max-width: 320px; }
 .bk-filters .dk-select { flex: 0 1 auto; width: auto; min-width: 0; max-width: 160px; }
 @media (min-width: 821px) { .bk-filters { flex-wrap: nowrap; } .bk-filters > *, .bk-filters__more > * { flex-shrink: 0; } .bk-filters .bk-filters__search { flex-shrink: 1; } }
-.bookkeeping-surface .bk-filters .bk-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--dk-space-1);
-  min-height: var(--dk-size-control-sm);
-  padding: 0 var(--dk-space-3);
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-full);
-  background: var(--dk-bg-surface);
-  color: var(--dk-text-primary);
-  font-size: var(--dk-text-sm);
-  font-weight: var(--dk-weight-medium);
-}
-.bookkeeping-surface .bk-filters .bk-toggle[aria-pressed="true"] {
-  background: var(--dk-accent-soft);
-  color: var(--dk-accent-default);
-}
-.bk-toggle .dk-mono:empty { display: none; }
 .bk-filters__count { color: var(--dk-text-muted); font-family: var(--dk-font-mono); font-size: var(--dk-text-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bk-filters__actions { display: inline-flex; align-items: center; gap: var(--dk-space-2); margin-left: auto; flex: none; }
 .bookkeeping-surface .bk-filters__actions [data-bookkeeping-add] {
@@ -205,7 +187,7 @@ tr.bk-month__totals-row > th {
   flex: none;
   display: inline-flex;
   align-items: center;
-  padding: 1px var(--dk-space-2);
+  padding: 0 var(--dk-space-2);
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-full);
   color: var(--dk-text-link);
@@ -215,7 +197,7 @@ tr.bk-month__totals-row > th {
   text-decoration: none;
   white-space: nowrap;
 }
-.bk-who__deal:hover { border-color: var(--dk-accent-default); background: var(--dk-accent-soft); color: var(--dk-text-link-hover); text-decoration: none; }
+.bk-who__deal:hover { background: var(--dk-accent-soft); color: var(--dk-text-link-hover); text-decoration: none; }
 .bk-who__deal:focus-visible { outline: 2px solid var(--dk-focus-ring); outline-offset: 1px; }
 .bk-draft-status { flex: none; display: inline-flex; align-items: center; gap: var(--dk-space-1); white-space: nowrap; }
 .bk-draft-status svg { width: 12px; height: 12px; flex: none; }
