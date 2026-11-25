@@ -210,3 +210,18 @@ test("ordinary tasks list forwards marketing brief filters to the shared task AP
   assert.equal(calls[0].query.primary_keyword, "keyword");
   assert.equal(calls[0].query.done_criteria, "proof");
 });
+
+test("YAML imports preserve unquoted civil dates as API date strings", async () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "dataops-marketing-yaml-"));
+  const file = path.join(folder, "plan.yaml");
+  writeFileSync(
+    file,
+    "plan:\n  id: yaml-plan\n  title: YAML plan\n  startDate: 2026-12-01\n  endDate: 2027-02-28\ngoals: []\nsteps: []\n",
+  );
+  const calls = fakePortal({
+    "POST /api/marketing/import": ({ body }) => body,
+  });
+  await marketing.importPlan({ _: [], file, dryRun: true, json: true }, io);
+  assert.equal(calls[0].body.plan.startDate, "2026-12-01");
+  assert.equal(calls[0].body.plan.endDate, "2027-02-28");
+});

@@ -311,7 +311,9 @@ export const metrics = nested(async (action, a, io) => {
 });
 export async function importPlan(a, io) {
   const file = required(a, "file", "file");
-  const input = yaml.load(readFileSync(file, "utf8"));
+  const input = yaml.load(readFileSync(file, "utf8"), {
+    schema: yaml.JSON_SCHEMA,
+  });
   if (!input || typeof input !== "object")
     throw new UsageError("Import file must contain plan, goals and steps.");
   const result = await apiFor(a).post(`${root}/import`, {
