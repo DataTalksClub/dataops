@@ -360,8 +360,13 @@ preparing, paused or failed invitation is not sent evidence: inspect its linked
 Task and actual Gmail message ID. Later correspondence stays in that email
 thread through the authorized mailbox integration.
 
-The questionnaire collects bio, photo, profiles and preparation materials after
-first contact, with Berlin and guest-local times. Guest photos feed the event
+The questionnaire collects job title, company, bio, photo, profiles and
+preparation materials after first contact, with Berlin and guest-local times.
+Job title and company are required to submit (plain text, at most 80
+characters each, no links): the website shows every guest as photo + name +
+"<job title> at <company>" (e.g. "AI Engineer at IBM"), and the guest form
+export prints that as **Website headline**. Never derive it from the bio; if a
+guest has not filled it in, ask them for it. Guest photos feed the event
 picture, so ask for one up front at least 800 px on the shorter side (square
 headshot, one face, no text or logos; JPG, PNG or WebP under 10 MB). The form and
 `speakers create/update --photo-url` refuse a DataOps-hosted photo below 800 px;
@@ -416,7 +421,8 @@ intake or send a first-contact email. Later changes reuse that saved policy.
 is not public event publication.
 
 For website content: `dataops speakers list` (speaker/author profiles for
-`_people` pages; `--name/--slug/--bio/--photo-url/--github/--twitter/--linkedin/--website`),
+`_people` pages; `--name/--slug/--job-title/--company/--bio/--photo-url/--github/--twitter/--linkedin/--website`;
+`--job-title` and `--company` are required on create, and `list` flags profiles missing them),
 `dataops books list` (Book of the Week entries for `_books` pages;
 `--title/--authors/--description/--start-date/--end-date/--cover-url/--link "Text=URL"`),
 and `dataops events list [--course COURSE] [--date YYYY-MM-DD|YYYY-MM|YYYY]`
@@ -424,6 +430,10 @@ and `dataops events list [--course COURSE] [--date YYYY-MM-DD|YYYY-MM|YYYY]`
 `dataops events show <id-or-slug>`, `dataops events create --title ... --date YYYY-MM-DD --course ... --luma-url ... --speakers "..." --recording-url ... --description "..."`,
 and `dataops events import <folder>`).
 The website script generates the pages from these registers plus the episode register.
+Upcoming website event pages get their speakers through the website's own CLI
+(`dtc events speakers create --short SLUG --name NAME --title "<job title> at <company>" ...`,
+see the website's event-cli runbook): copy the guest form's **Website headline**
+into `--title` verbatim.
 
 For cohort campaign calendars and social post rows per cohort Card:
 `dataops campaigns list --card <card-id> [--channel CH] [--status ST] [--phase PH] [--owner OWN] [--format FMT] [--json]`
