@@ -25,6 +25,10 @@ export type Person = {
   name: string;
   /** The website `_people` short id; doubles as the filename. */
   slug: string;
+  /** Current role, e.g. "AI Engineer". With `company` it forms the website headline. */
+  jobTitle?: string;
+  /** Current employer, e.g. "IBM". */
+  company?: string;
   bio?: string | null;
   bioShort?: string | null;
   photoUrl?: string | null;

@@ -24,6 +24,8 @@ describe("people and books registers", () => {
     const created = await invoke("POST", "/api/people", {
       name: "Ada Example",
       slug: "adaexample",
+      jobTitle: "AI Engineer",
+      company: "Example Corp",
       bioShort: "A synthetic speaker.",
       bio: "A synthetic speaker bio.",
       photoUrl: "https://example.com/ada.jpg",
@@ -39,14 +41,28 @@ describe("people and books registers", () => {
     const listed = data(await invoke("GET", "/api/people"));
     assert.equal(listed.items.length, 1);
 
-    const clash = await invoke("POST", "/api/people", { name: "Ada Clone", slug: "adaexample" });
+    const clash = await invoke("POST", "/api/people", { name: "Ada Clone", slug: "adaexample", jobTitle: "Engineer", company: "Example Corp" });
     assert.equal(clash.statusCode, 409);
+
+    assert.equal(read.jobTitle, "AI Engineer");
+    assert.equal(read.company, "Example Corp");
+    const noTitle = await invoke("POST", "/api/people", { name: "No Title", slug: "notitle", company: "Example Corp" });
+    assert.equal(noTitle.statusCode, 400);
+    assert.equal(data(noTitle).error, "Job title is required.");
+    const linkCompany = await invoke("POST", "/api/people", {
+      name: "Link Company", slug: "linkcompany", jobTitle: "Engineer", company: "https://example.com",
+    });
+    assert.equal(data(linkCompany).error, "Company must be plain text, not a link.");
+    const clearTitle = await invoke("PUT", `/api/people/${read.id}`, { version: 1, jobTitle: null });
+    assert.equal(clearTitle.statusCode, 400, "a job title once given cannot be cleared");
 
     const bad = await invoke("POST", "/api/people", { name: "No Slug" });
     assert.equal(bad.statusCode, 400);
     const badLink = await invoke("POST", "/api/people", {
       name: "Bad Link",
       slug: "badlink",
+      jobTitle: "Engineer",
+      company: "Example Corp",
       links: { myspace: "https://example.com" },
     });
     assert.equal(badLink.statusCode, 400);
