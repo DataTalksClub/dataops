@@ -12,6 +12,7 @@ import { createHash } from "crypto";
 import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { TABLE_BOOKKEEPING } from "../db/tableNames";
+import { validateExpenseCategoryAssignment } from "../finance/expenseCategories";
 import {
   BookkeepingItemLockedError,
   createDocumentLink,
@@ -996,6 +997,14 @@ export async function createLedgerFromBank(
     return { transaction, duplicate: true, paired: true, ...(link ? { link } : {}) };
   }
   const amount = Number(bank.amount);
+  if (input.category !== undefined) {
+    const categoryCheck = validateExpenseCategoryAssignment({
+      category: input.category,
+      entryType: amount < 0 ? "expense" : "income",
+      allowEmpty: true,
+    });
+    if (!categoryCheck.ok) throw badRequest(categoryCheck.error);
+  }
   const { item, duplicate } = await putBookkeepingItem(client, "bookkeeping", {
     transactionDate: bank.date,
     paidDate: bank.date,

@@ -9,6 +9,7 @@ import { BlankConversionError, pdfText, type InvoiceHints } from './extract';
 import { extractFinancePdf } from './financeExtraction';
 import { isInvoiceIntakeRoute } from './intakeRoute';
 import { BLANK_CONVERSION_ISSUE, missingEvidence, type Invoice, type InvoiceFields } from './model';
+import { InvalidExpenseCategoryError, validateExpenseCategoryAssignment } from '../finance/expenseCategories';
 import { createInvoice, getInvoice, listInvoices, saveInvoice, claimInvoice, reserveSheetRow, approveInvoice } from './store';
 import { officialProviders, publicationConfig, marker, sheetValues, type Providers } from './providers';
 import type { IntakeHistoryEvent, IntakeItem } from '../types';
@@ -151,8 +152,18 @@ export async function readiness() {
   return {ready:checks.every(x=>x.ready),checks};
 }
 function identity(record:Invoice) {const f=record.fields;return sha(`${f.counterparty?.toLowerCase().trim()}\n${f.accountContext?.toLowerCase().trim()}\n${f.invoiceNumber?.toLowerCase().trim()}`);}
+function assertValidInvoiceExpenseCategory(record: Invoice) {
+  if (record.fields.category === undefined) return;
+  const check = validateExpenseCategoryAssignment({
+    category: record.fields.category,
+    entryType: record.extraction.direction,
+    allowEmpty: true,
+  });
+  if (!check.ok) throw new InvalidExpenseCategoryError(check.error);
+}
 export async function verifyInvoice(client:DynamoDBDocumentClient,record:Invoice,actor:string):Promise<Invoice> {
   if(record.status==='rejected') throw new Error('rejected-invoice');
+  assertValidInvoiceExpenseCategory(record);
   if(missingEvidence(record.fields).length) throw new Error('payment-or-invoice-evidence-required');
   // Explicit authenticated verification attests actual reviewed values. PDF
   // extraction alone never supplies this attestation or a bank conversion.
@@ -161,6 +172,7 @@ export async function verifyInvoice(client:DynamoDBDocumentClient,record:Invoice
 }
 export async function confirmInvoice(client:DynamoDBDocumentClient,record:Invoice,actor:string,automatically=false):Promise<Invoice> {
   if(record.status==='rejected') throw new Error('rejected-invoice');
+  assertValidInvoiceExpenseCategory(record);
   if(record.status==='pending') {
     if(missingEvidence(record.fields).length) throw new Error('payment-or-invoice-evidence-required');
     const duplicateIdentity=identity(record);
@@ -174,6 +186,7 @@ export async function confirmInvoice(client:DynamoDBDocumentClient,record:Invoic
 function rowEqual(actual:string[],expected:string[],headers:string[]) {return expected.every((cell,index)=>['Price, $','Price, EUR','Count'].includes(headers[index]) && cell ? actual[index] !== '' && Number(actual[index])===Number(cell) : String(actual[index] || '')===cell) && actual.slice(expected.length).every(x=>!x);}
 export async function publishInvoice(client:DynamoDBDocumentClient,record:Invoice,actor:string):Promise<Invoice> {
   if(record.status!=='confirmed' || record.confirmedRevision!==record.revision || missingEvidence(record.fields).length) throw new Error('current-review-confirmation-required');
+  assertValidInvoiceExpenseCategory(record);
   const owner=randomUUID();record=await claimInvoice(client,record,owner);
   async function checkpoint(next:Invoice) {record=await saveInvoice(client,next,record,owner);}
   let sourceBytes:Buffer;

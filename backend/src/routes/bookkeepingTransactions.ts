@@ -31,6 +31,11 @@ import {
   validateAndNormalizeAllocations,
   type AllocationDocumentContext,
 } from "../bookkeepingAllocations";
+import {
+  CANONICAL_EXPENSE_CATEGORIES,
+  SPECIAL_NON_OPERATING_EXPENSE_CATEGORIES,
+  validateExpenseCategoryAssignment,
+} from "../finance/expenseCategories";
 
 const CURRENCY = /^[A-Z]{3}$/;
 const MAX_AUDIT_REASON_BYTES = 2 * 1024;
@@ -559,6 +564,12 @@ export async function handleBookkeepingTransactionRoutes(
   event: LambdaEvent,
   client: DynamoDBDocumentClient,
 ): Promise<LambdaResponse | null> {
+  if (path === "/api/bookkeeping/categories" && method === "GET") {
+    return json(200, {
+      categories: CANONICAL_EXPENSE_CATEGORIES,
+      specialCategories: SPECIAL_NON_OPERATING_EXPENSE_CATEGORIES,
+    });
+  }
   const allocMatch = path.match(/^\/api\/bookkeeping\/transactions\/([^/]+)\/allocations$/);
   if (allocMatch) {
     const transactionId = decodeURIComponent(allocMatch[1]);
@@ -777,6 +788,17 @@ export async function handleBookkeepingTransactionRoutes(
       const errors = validateTransaction(value);
       if (errors.length)
         return json(400, { error: "Validation failed", fields: errors });
+      if (body.category !== undefined) {
+        const categoryCheck = validateExpenseCategoryAssignment({
+          category: body.category,
+          entryType: value.entryType,
+          previousCategory: previous?.category,
+          allowEmpty: true,
+        });
+        if (!categoryCheck.ok) {
+          return json(400, { error: categoryCheck.error, fields: ["category"] });
+        }
+      }
 
       let allocationsChanged = false;
       let allocationWriteItems: BookkeepingTransactItem[] = [];
