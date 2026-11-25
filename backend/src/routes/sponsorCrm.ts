@@ -33,6 +33,7 @@ import { importCrmSnapshot } from '../sponsorCrm/importSnapshot';
 import { listColdEntries, remindColdEntries, touchTarget, TOUCH_CHANNELS } from '../sponsorCrm/coldContacts';
 import { dealMoneyFacts } from '../sponsorFinance/ledger';
 import { dealHasSignedContract, listContracts } from '../db/sponsorContracts';
+import { listDealAttachments, publicDealAttachment } from '../db/dealAttachments';
 import {
   CHANNELS,
   NEWSLETTER_CHANNELS,
@@ -258,16 +259,18 @@ async function decorateDeals(client: DynamoDBDocumentClient, deals: CrmRecord[],
     listCrmRecords(client, 'deal'),
     listCrmRecords(client, 'deliverable'),
   ]);
-  const [facts, tasksByDeal] = await Promise.all([
+  const [facts, tasksByDeal, attachmentLists] = await Promise.all([
     dealMoneyFacts(client, today, { organizations, deals: allDeals, deliverables }),
     listOpenDealTasks(client),
+    Promise.all(deals.map((deal) => listDealAttachments(client, String(deal.id)))),
   ]);
   const contractsByDeal = new Map((await listContracts(client)).map((contract) => [String(contract.dealId), contract]));
-  return deals.map((deal) => {
+  return deals.map((deal, index) => {
     const kids = deliverables.filter((item) => item.dealId === deal.id && !item.archivedAt);
     const money = facts.get(deal.id);
     return publicDeal(deal, {
       contract: contractsByDeal.has(String(deal.id)) ? { id: contractsByDeal.get(String(deal.id))!.id, status: contractsByDeal.get(String(deal.id))!.status } : null,
+      attachments: (attachmentLists[index] || []).map(publicDealAttachment),
       money: deriveMoney(money), fulfillment: deriveFulfillment(kids), deliverables: kids,
       openTasks: (tasksByDeal.get(deal.id) || []).map(publicDealTask),
       ...(money ? { finance: publicMoney(money) } : {}),

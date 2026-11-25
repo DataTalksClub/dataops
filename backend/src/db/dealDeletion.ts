@@ -60,7 +60,8 @@ function blockers(owned: Dict[], allowDeliverables = false): string[] {
 
 function isFinanceAuditRow(row: Dict): boolean {
   return String(row.PK).startsWith('SPONSOR_FINANCE_HISTORY#') ||
-    String(row.PK).startsWith('SPONSOR_FINANCE_RECEIPT#');
+    String(row.PK).startsWith('SPONSOR_FINANCE_RECEIPT#') ||
+    String(row.PK).startsWith('DEAL_ATTACHMENT_AUDIT#');
 }
 
 function financeArchiveRecord(row: Dict, dealId: string, detachedAt: string) {
