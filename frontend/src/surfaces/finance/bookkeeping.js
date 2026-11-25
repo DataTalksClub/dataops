@@ -297,12 +297,12 @@ export function createBookkeepingSurface(context) {
         e: escapeHtml,
       };
       const ownerSection = ownerWithdrawalsMarkup(sourceRows, lens, ledgerOptions);
-      const shown = filterEntries(scoped, filters, { hasEvidence, accountNameOf: (entry) => resolveAccountName(entry, statementLinks) });
+      const shown = filterEntries(scoped, filters, { accountNameOf: (entry) => resolveAccountName(entry, statementLinks) });
       surface.querySelector("[data-shown-count]").textContent =
         `${displayRowCount(shown)} of ${displayRowCount(scoped)}`;
       const active = ["account", "dir", "category"].filter((name) => filters[name]).length;
       surface.querySelector("[data-active-filters]").textContent = active ? String(active) : "";
-      const filtered = Boolean(filters.q || filters.account || filters.dir || filters.category || filters.needs);
+      const filtered = Boolean(filters.q || filters.account || filters.dir || filters.category);
       if (!shown.length) {
         const latest = [...entries].map((e) => String(e.transactionDate || "")).sort().pop();
         ledger.innerHTML = emptyLedgerMarkup({
@@ -580,15 +580,6 @@ export function createBookkeepingSurface(context) {
     function applyInvoiceItems(items) {
       invoiceDrafts = (Array.isArray(items) ? items : []).filter((item) => item.status === "pending");
       surface.querySelector("[data-invoices-meta]").textContent = invoiceDrafts.length ? `${invoiceDrafts.length} to review` : "";
-    }
-    async function refreshInvoiceCount() {
-      try {
-        const result = await api("/invoices");
-        applyInvoiceItems(result.items || []);
-        renderLedger();
-      } catch {
-        // The count is a hint; the view itself reports load failures.
-      }
     }
 
     const transactionModal = createBookkeepingTransactionModal({
@@ -932,10 +923,13 @@ export function createBookkeepingSurface(context) {
 
     // ---- load ------------------------------------------------------------------
     try {
-      const result = await api("/transactions");
-      entries = result.items || [];
+      const [transactions, invoices] = await Promise.allSettled([api("/transactions"), api("/invoices")]);
+      if (transactions.status === "rejected") throw transactions.reason;
+      entries = transactions.value.items || [];
+      if (invoices.status === "fulfilled") applyInvoiceItems(invoices.value.items || []);
+      else status.textContent = "Could not load forwarded invoices. Reopen Bookkeeping to retry.";
       defaultLens = latestActivityMonth(
-        entries,
+        [...entries, ...activePendingDraftEntries()],
         String(todayIsoDate?.() || new Date().toISOString()).slice(0, 7),
       );
       if (!lens) lens = defaultLens;
@@ -954,7 +948,6 @@ export function createBookkeepingSurface(context) {
       void loadStatementLinks();
       if (selectedId) openTransaction(selectedId);
       if (view === "package") await renderVat();
-      refreshInvoiceCount();
     } catch (error) {
       ledger.textContent = `Could not load bookkeeping: ${error.message}`;
       surface.querySelector(".bookkeeping-documents").textContent =

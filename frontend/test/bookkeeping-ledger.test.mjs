@@ -72,11 +72,9 @@ test("dropdown vocabularies dedupe spelling variants and keep the common spellin
 
 test("filters come from the URL and compose", () => {
   const filters = filtersFromParams(new URLSearchParams("q=taxi&account=Card&dir=sideways&needs=category"));
-  assert.deepEqual(filters, { q: "taxi", account: "Card", dir: "", category: "", needs: "category" });
+  assert.deepEqual(filters, { q: "taxi", account: "Card", dir: "", category: "" });
   assert.deepEqual(filterEntries(rows, filters).map((e) => e.id), ["c"]);
-  const receipts = filterEntries(rows, { ...filtersFromParams(new URLSearchParams()), needs: "receipt" }, { hasEvidence: (id) => id === "a" });
-  assert.deepEqual(receipts.map((e) => e.id), ["b", "c", "d"]);
-  assert.deepEqual(filterEntries(rows, { ...filters, q: "", account: "", needs: "", dir: "income" }).map((e) => e.id), ["b"]);
+  assert.deepEqual(filterEntries(rows, { ...filters, q: "", account: "", dir: "income" }).map((e) => e.id), ["b"]);
   assert.equal(inLens(rows[2], "2026-08"), true);
   assert.equal(inLens(rows[2], "2026"), true);
   assert.equal(inLens(rows[2], "2026-09"), false);
@@ -825,4 +823,14 @@ test("pending invoice drafts render in their month with Pending review status an
   assert.match(markup, /Contabo GmbH/);
   assert.match(markup, /data-view-document="invoice:inv-pending-1"/);
   assert.doesNotMatch(markup, /data-id="invoice-draft:inv-pending-1"/, "draft rows have no inline classification select");
+});
+
+test("drafts without a document date stay visible in their intake month", () => {
+  const draft = pendingInvoiceEntry({
+    id: "undated-draft",
+    status: "pending",
+    createdAt: "2026-11-25T10:00:00.000Z",
+  });
+  assert.ok(inLens(draft, "2026-11"));
+  assert.match(ledgerRowMarkup(draft, { vocab: {}, e: escapeHtml }), /datetime="2026-11-25" title="Invoice received date"/);
 });
