@@ -1,4 +1,5 @@
 import { financeSectionHead } from "./shared.js";
+import { CANONICAL_EXPENSE_CATEGORIES } from "./expense-categories.js";
 
 const fields = [
   ["transactionDate", "Date sent", "date"],
@@ -195,8 +196,20 @@ export function invoiceDetailMarkup(record, escapeHtml) {
           name,
           label,
           type = "text",
-        ]) => `<label>${label}<input name="${name}" type="${type}" ${type === "number" ? 'step="any"' : ""} value="${e(record.fields?.[name])}" />
-    </label>`,
+        ]) => {
+          if (name === "category" && record.extraction?.direction !== "income") {
+            const current = String(record.fields?.category ?? "").trim();
+            const options = current && !CANONICAL_EXPENSE_CATEGORIES.includes(current)
+              ? [...CANONICAL_EXPENSE_CATEGORIES, current]
+              : CANONICAL_EXPENSE_CATEGORIES;
+            return `<label>${label}<select name="category">
+    <option value=""${current ? "" : " selected"}>Select category…</option>
+    ${options.map((option) => `<option value="${e(option)}"${option === current ? " selected" : ""}>${e(option)}</option>`).join("")}
+    </select></label>`;
+          }
+          return `<label>${label}<input name="${name}" type="${type}" ${type === "number" ? 'step="any"' : ""} value="${e(record.fields?.[name])}" />
+    </label>`;
+        },
       )
       .join("")}
     <label>Reverse charge<select name="reverseCharge">

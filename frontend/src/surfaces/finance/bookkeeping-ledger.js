@@ -7,6 +7,7 @@ import { sponsorRecordPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
 import { cashDate, entryDirection, formatAmount, ledgerDate, monthLabel, monthOf } from "./bookkeeping-format.js";
 import { bookkeepingVendorPresentation } from "./bookkeeping-vendors.js";
+import { CANONICAL_EXPENSE_CATEGORIES } from "./expense-categories.js";
 
 // Query parameters the bookkeeping route keeps in the URL.
 export const LEDGER_PARAMS = ["month", "q", "account", "dir", "category", "needs", "tx", "view"];
@@ -385,7 +386,9 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
       <td class="bk-col-vat"${vat ? ` title="${e(vatTitle(financeEntry, vat))}"` : ""}>${e(vat || "—")}</td>
       ${CLASSIFICATION_FIELDS.map(({ field, label }) => html`<td class="bk-col-class bk-col-${field}">${selectMarkup({
         id: entry.id, field, label: `${label} for ${entry.counterparty || "transaction"}`,
-        value: entry[field], options: vocab[field] || [], e,
+        value: entry[field],
+        options: field === "category" && direction !== "income" ? CANONICAL_EXPENSE_CATEGORIES : (vocab[field] || []),
+        e,
       })}</td>`).join("")}
       <td class="bk-col-flag">${invoiceCellMarkup(invoiceDocuments, hasInvoiceAttached, e, entry.id)}</td>
       <td class="bk-col-account">${accountCellMarkup(account, accountDoc, e)}</td>

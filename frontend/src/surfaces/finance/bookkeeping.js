@@ -1,4 +1,5 @@
 import { createTuitionLoader } from "./tuition.js";
+import { CANONICAL_EXPENSE_CATEGORIES } from "./expense-categories.js";
 import { mountBookkeepingNavigation } from "./bookkeeping-navigation.js";
 import { bookkeepingSurfaceMarkup } from "./bookkeeping-markup.js";
 import {
@@ -247,8 +248,9 @@ export function createBookkeepingSurface(context) {
     function renderFilterOptions() {
       const options = [...entries, ...bankOnlyEntries];
       vocab = Object.fromEntries(CLASSIFICATION_FIELDS.map(({ field }) => [field, vocabulary(options, field)]));
+      const filterCategories = [...new Set([...CANONICAL_EXPENSE_CATEGORIES, ...vocab.category])].sort((a, b) => a.localeCompare(b));
       optionList(surface.querySelector('[data-filter="account"]'), accountsOf(options, statementLinks), "All accounts", filters.account);
-      optionList(surface.querySelector('[data-filter="category"]'), vocab.category, "All categories", filters.category);
+      optionList(surface.querySelector('[data-filter="category"]'), filterCategories, "All categories", filters.category);
       surface.querySelector('[data-filter="dir"]').value = filters.dir;
       const search = surface.querySelector('[data-filter="q"]');
       if (search.value !== filters.q) search.value = filters.q;

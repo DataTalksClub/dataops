@@ -1,4 +1,5 @@
 import { canonicalBookkeepingCounterparty } from "./bookkeepingVendors";
+import { validateExpenseCategoryAssignment } from "./finance/expenseCategories";
 
 export interface BookkeepingInvoiceAllocation {
   id: string;
@@ -381,6 +382,16 @@ export function validateAndNormalizeAllocations(
       ? String(item.vatCurrency || parentCurrency).trim().toUpperCase()
       : undefined;
 
+    if (item.category !== undefined) {
+      const categoryCheck = validateExpenseCategoryAssignment({
+        category: item.category,
+        entryType: transaction.entryType,
+        allowEmpty: true,
+      });
+      if (!categoryCheck.ok) {
+        throw new AllocationValidationError(categoryCheck.error, 400);
+      }
+    }
     const category = String(item.category ?? parentCategory).trim() || undefined;
     const subtype = String(item.subtype ?? parentSubtype).trim() || undefined;
     const transactionDate =

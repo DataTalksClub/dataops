@@ -20,7 +20,7 @@ const valid={transactionDate:'2026-07-01',counterparty:'Synthetic Vendor',descri
 describe('bookkeeping API',()=>{
   let client:DynamoDBDocumentClient;
   before(async()=>{const port=await startLocal();client=await getClient(port);await createTables(client);}); after(stopLocal);
-  it('round-trips decimal strings and dates through CRUD',async()=>{let r=await invoke('POST','/api/bookkeeping/transactions',valid);assert.equal(r.statusCode,201);const created=JSON.parse(r.body);assert.equal(created.amount,'10.25');assert.match(created.id,/./);r=await invoke('GET','/api/bookkeeping/transactions');assert.ok(JSON.parse(r.body).items.some((item:any)=>item.id===created.id));r=await invoke('PUT',`/api/bookkeeping/transactions/${created.id}`,{paidDate:'2026-07-02',category:'software'});assert.equal(JSON.parse(r.body).paidDate,'2026-07-02');});
+  it('round-trips decimal strings and dates through CRUD',async()=>{let r=await invoke('POST','/api/bookkeeping/transactions',valid);assert.equal(r.statusCode,201);const created=JSON.parse(r.body);assert.equal(created.amount,'10.25');assert.match(created.id,/./);r=await invoke('GET','/api/bookkeeping/transactions');assert.ok(JSON.parse(r.body).items.some((item:any)=>item.id===created.id));r=await invoke('PUT',`/api/bookkeeping/transactions/${created.id}`,{paidDate:'2026-07-02',category:'Business Software'});assert.equal(JSON.parse(r.body).paidDate,'2026-07-02');});
   it('rejects unaudited hard deletion of ledger rows',async()=>{const created=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',valid)).body);const response=await invoke('DELETE',`/api/bookkeeping/transactions/${created.id}`);assert.equal(response.statusCode,405);assert.ok(JSON.parse(response.body).error.includes('void-ledger'));assert.ok(JSON.parse((await invoke('GET','/api/bookkeeping/transactions')).body).items.some((item:any)=>item.id===created.id));});
   it('persists canonical vendor labels while preserving the raw bank counterparty',async()=>{
     const created=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,counterparty:'Aws Emea SARL'})).body);
@@ -58,12 +58,12 @@ describe('bookkeeping API',()=>{
   });
   it('stores a rate source and an audit entry for existing-row corrections',async()=>{
     const created=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',valid)).body);
-    const response=await invoke('PUT',`/api/bookkeeping/transactions/${created.id}`,{category:'Work-related',subtype:'Subscription',amountEur:'9.25',rateSource:'ECB 23 Oct 2026'}, {'x-user-id':'synthetic-operator'});
+    const response=await invoke('PUT',`/api/bookkeeping/transactions/${created.id}`,{category:'Business Software',subtype:'Subscription',amountEur:'9.25',rateSource:'ECB 23 Oct 2026'}, {'x-user-id':'synthetic-operator'});
     assert.equal(response.statusCode,200);
     const updated=JSON.parse(response.body);
-    assert.equal(updated.category,'Work-related');assert.equal(updated.subtype,'Subscription');
+    assert.equal(updated.category,'Business Software');assert.equal(updated.subtype,'Subscription');
     assert.equal(updated.amountEur,'9.25');assert.equal(updated.rateSource,'ECB 23 Oct 2026');
-    assert.deepEqual(updated.audit.at(-1),{action:'updated',actor:'synthetic-operator',at:updated.audit.at(-1).at,changes:{category:{from:null,to:'Work-related'},subtype:{from:null,to:'Subscription'},amountEur:{from:null,to:'9.25'},rateSource:{from:null,to:'ECB 23 Oct 2026'}}});
+    assert.deepEqual(updated.audit.at(-1),{action:'updated',actor:'synthetic-operator',at:updated.audit.at(-1).at,changes:{category:{from:null,to:'Business Software'},subtype:{from:null,to:'Subscription'},amountEur:{from:null,to:'9.25'},rateSource:{from:null,to:'ECB 23 Oct 2026'}}});
     assert.ok(Number.isFinite(Date.parse(updated.audit.at(-1).at)));
   });
   it('validates and persists taxYearAttribution on a tax refund transaction without mutating other fields',async()=>{
@@ -207,7 +207,7 @@ describe('bookkeeping API',()=>{
     const docOther=(await putBookkeepingItem(client,'document',{documentType:'invoice',status:'active',originalFilename:'synthetic-invoice-other.pdf',contentType:'application/pdf',byteSize:100,sha256:createHash('sha256').update('synthetic-invoice-other').digest('hex'),s3Key:'documents/synthetic-invoice-other.pdf'})).item;
 
     const paymentDate='2025-04-15';
-    const payment=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:paymentDate,paidDate:paymentDate,counterparty:'Synthetic Bundle Settlement',description:'Combined synthetic payment',amount:'123.00',currency:'EUR',entryType:'expense',category:'Tools'})).body);
+    const payment=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:paymentDate,paidDate:paymentDate,counterparty:'Synthetic Bundle Settlement',description:'Combined synthetic payment',amount:'123.00',currency:'EUR',entryType:'expense',category:'Business Software'})).body);
     const otherTx=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2025-04-16',counterparty:'Synthetic Other Vendor',description:'Other synthetic service',amount:'50.00',currency:'EUR',entryType:'expense'})).body);
     await invoke('POST','/api/bookkeeping/links',{documentId:docOther.id,transactionId:otherTx.id,coverageType:'evidence'});
     const manualLink=JSON.parse((await invoke('POST','/api/bookkeeping/links',{documentId:docA.id,transactionId:payment.id,coverageType:'evidence'})).body);
