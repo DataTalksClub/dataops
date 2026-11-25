@@ -1072,7 +1072,7 @@ export async function receivePayment(
   const source = {
     id, transactionDate: input.receivedOn, paidDate: input.receivedOn,
     amount: input.amount, currency: input.currency, counterparty: input.counterparty.trim(),
-    description: `Sponsor payment for deal ${input.dealId}`, statementRef: input.reference.trim(),
+    description: 'Sponsor payment', statementRef: input.reference.trim(),
     entryType: 'income', category: input.category || '', sourceType: 'sponsor-receipt', sourceKey: input.reference.trim(),
     ...(input.amountEur !== undefined ? { amountEur: input.amountEur } : {}),
     createdAt: now, updatedAt: now,
