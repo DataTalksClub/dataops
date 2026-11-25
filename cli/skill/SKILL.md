@@ -361,7 +361,12 @@ Task and actual Gmail message ID. Later correspondence stays in that email
 thread through the authorized mailbox integration.
 
 The questionnaire collects bio, photo, profiles and preparation materials after
-first contact, with Berlin and guest-local times. Explicit **Save time choice**
+first contact, with Berlin and guest-local times. Guest photos feed the event
+picture, so ask for one up front at least 800 px on the shorter side (square
+headshot, one face, no text or logos; JPG, PNG or WebP under 10 MB). The form and
+`speakers create/update --photo-url` refuse a DataOps-hosted photo below 800 px;
+a photo linked from elsewhere (LinkedIn thumbnails are 100-200 px) is not measured,
+so check it before using it. Explicit **Save time choice**
 accepts a current proposal or available alternative without completed materials;
 ordinary draft/bio saves do not confirm a time. Calendar acceptance also counts.
 Keep the same event and Zoom link; the standard guest join lead is separate from
