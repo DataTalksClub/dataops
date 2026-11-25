@@ -29,6 +29,7 @@ export interface SponsorDocFieldDefinition {
   format?: 'url';
   helpText?: string;
   maxCharsHint?: number;
+  maxChars?: number;
   maxWordsHint?: number;
   rows?: number;
   minItems?: number;
@@ -92,6 +93,34 @@ const VISUAL_GUIDELINES_URL = 'https://drive.google.com/file/d/1M_jEzcb1IWJmolx9
 
 function guestTimezoneField(): SponsorDocFieldDefinition {
   return { key: 'guestTimezone', label: 'Your time zone', type: 'text', placeholder: 'For example, Asia/Kolkata', helpText: 'An IANA time zone used to show the event in your local time.' };
+}
+function podcastGuestIdentityFields(): SponsorDocFieldDefinition[] {
+  return [
+    {
+      key: 'guestName',
+      label: 'Name',
+      type: 'text',
+      placeholder: 'e.g. Jordan Taylor',
+      maxCharsHint: 120,
+      maxChars: 120,
+    },
+    {
+      key: 'guestRole',
+      label: 'Role',
+      type: 'text',
+      placeholder: 'e.g. Forward Deployed Engineer',
+      maxCharsHint: 120,
+      maxChars: 120,
+    },
+    {
+      key: 'guestCompany',
+      label: 'Company',
+      type: 'text',
+      placeholder: 'e.g. Eliza',
+      maxCharsHint: 120,
+      maxChars: 120,
+    },
+  ];
 }
 function guestEventSchedulingSection(): SponsorDocSectionDefinition {
   return { id: 'scheduling', title: 'Event time', description: 'Confirm the proposed time or choose another available slot. You can save your time choice before completing the materials.', fields: [
@@ -630,12 +659,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         description: 'How to introduce you on the episode.',
         tab: 'guest',
         fields: [
-          {
-            key: 'guestName',
-            label: 'Guest Name & Role / Company',
-            type: 'text',
-            placeholder: 'e.g. Jane Doe, VP of Data Engineering at Acme',
-          },
+          ...podcastGuestIdentityFields(),
           {
             key: 'introduction',
             label: 'How would you like us to introduce you? (Bio)',
@@ -891,12 +915,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         description: 'Who the guest is and why they are a good fit.',
         internal: true,
         fields: [
-          {
-            key: 'guestName',
-            label: 'Guest Name & Role / Company',
-            type: 'text',
-            placeholder: 'e.g. Jane Doe, VP of Data Engineering at Acme',
-          },
+          ...podcastGuestIdentityFields(),
           {
             key: 'bio',
             label: 'Bio (confirmed with sources)',
@@ -1019,12 +1038,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             type: 'text',
             placeholder: 'e.g. Shipping ML features without the platform team',
           },
-          {
-            key: 'guestName',
-            label: 'Guest Name & Role / Company',
-            type: 'text',
-            placeholder: 'e.g. Jane Doe, VP of Data Engineering at Acme',
-          },
+          ...podcastGuestIdentityFields(),
           {
             key: 'recordingDate',
             derived: 'event-datetime',
@@ -1112,12 +1126,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             type: 'text',
             placeholder: 'e.g. Shipping ML features without the platform team',
           },
-          {
-            key: 'guestName',
-            label: 'Guest Name & Role / Company',
-            type: 'text',
-            placeholder: 'e.g. Jane Doe, VP of Data Engineering at Acme',
-          },
+          ...podcastGuestIdentityFields(),
           {
             key: 'recordingDate',
             derived: 'event-datetime',
@@ -1404,6 +1413,9 @@ export function validateSubmittedContent(key: SponsorDocTemplateKey, content: Re
         errors[field.key] = `${field.label} must contain ${field.minItems}–${field.maxItems} non-empty bullets.`;
       }
     }
+    if (value && field.maxChars && value.length > field.maxChars) {
+      errors[field.key] = `${field.label} must be at most ${field.maxChars} characters.`;
+    }
     if (value && field.format === 'url') {
       try {
         const url = new URL(value);
@@ -1432,6 +1444,14 @@ export interface SponsorDocExportInput {
 function valOrPlaceholder(value: string | undefined, placeholder = '_[Not provided]_'): string {
   const trimmed = (value || '').trim();
   return trimmed.length > 0 ? trimmed : placeholder;
+}
+
+function formatGuestIdentityExportLines(c: Record<string, string>): string[] {
+  return [
+    `**Name:** ${valOrPlaceholder(c.guestName)}`,
+    `**Role:** ${valOrPlaceholder(c.guestRole)}`,
+    `**Company:** ${valOrPlaceholder(c.guestCompany)}`,
+  ];
 }
 
 function formatGraphicsExportLines(rawUrl: string | undefined): string[] {
@@ -1598,7 +1618,7 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
       '',
       '## 2) Guest',
       '',
-      `**Guest:** ${valOrPlaceholder(c.guestName)}`,
+      ...formatGuestIdentityExportLines(c),
       '',
       '### Introduction / Bio',
       valOrPlaceholder(c.introduction),
@@ -1666,7 +1686,7 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
     lines.push(
       '## 1) Guest Identity',
       '',
-      `**Guest:** ${valOrPlaceholder(c.guestName)}`,
+      ...formatGuestIdentityExportLines(c),
       '',
       '### Bio',
       valOrPlaceholder(c.bio),
@@ -1699,7 +1719,7 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
     );
   } else if (doc.template === 'podcast-run-sheet') {
     lines.push(
-      `**Guest:** ${valOrPlaceholder(c.guestName)}`,
+      ...formatGuestIdentityExportLines(c),
       `**Recording:** ${valOrPlaceholder(c.recordingDate)} (${valOrPlaceholder(c.durationMinutes, '_[duration]_')} min)`,
       '',
       '## Cold Open',
@@ -1719,7 +1739,7 @@ export function renderSponsorDocMarkdownExport(doc: SponsorDocExportInput): stri
     );
   } else {
     lines.push(
-      `**Guest:** ${valOrPlaceholder(c.guestName)}`,
+      ...formatGuestIdentityExportLines(c),
       `**Recording:** ${valOrPlaceholder(c.recordingDate)}`,
       '',
       '## Goal',

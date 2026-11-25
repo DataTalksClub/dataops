@@ -194,7 +194,9 @@ describe('podcast guest form (radio slot picker + topics; email stays one slot)'
     assert.ok(exported.includes('Wed 4 Nov · 12:30–13:30 Berlin'));
     assert.ok(exported.includes('Tuesday, November 3 at 12:30 CET'));
     assert.ok(exported.includes('LLM evals, data pipelines'));
-    assert.ok(exported.includes('**Guest:** Sofiia'));
+    assert.ok(exported.includes('**Name:** Sofiia'));
+    assert.ok(exported.includes('**Role:** _[Not provided]_'));
+    assert.ok(exported.includes('**Company:** _[Not provided]_'));
     assert.ok(!exported.includes('**Sponsor**'));
     assert.ok(exported.includes('## Notes from the Guest'));
     assert.ok(!exported.includes('Sponsor / Guest'));

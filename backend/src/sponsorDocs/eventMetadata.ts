@@ -198,7 +198,7 @@ export async function projectDocumentEvent<
   }
   return {
     ...doc,
-    title: `${metadata.title} · ${metadata.label}`,
+    title: metadata.title,
     publicationDate: null,
     eventMetadata: metadata,
     ...(content ? { content } : {}),

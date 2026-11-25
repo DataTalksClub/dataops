@@ -47,7 +47,8 @@ test('every event document reads the live hold after move/approve/release withou
       assert.equal(live.eventMetadata!.endIso, hold.endIso);
       assert.equal(live.eventMetadata!.durationMinutes, 60);
       assert.equal(live.eventMetadata!.state, stage === 'move' ? 'tentative' : stage === 'approve' ? 'confirmed' : 'released');
-      assert.match(live.title, /3 Dec 2030 12:30 Europe\/Berlin/);
+      assert.equal(live.title, 'Synthetic event');
+      assert.match(live.eventMetadata!.label, /3 Dec 2030 12:30 Europe\/Berlin/);
       assert.ok(!live.title.includes('1999'));
       const markdown = renderSponsorDocMarkdownExport(live);
       assert.ok(markdown.includes(live.eventMetadata!.label));
@@ -80,7 +81,9 @@ test('staff/guest edits reject derived fields and code rotation never persists r
   assert.equal(stored.content.goal, 'New authored goal');
   assert.equal(Object.hasOwn(stored.content, 'recordingDate'), false);
   assert.equal(Object.hasOwn(stored, 'title'), false);
-  assert.ok((await getSponsorDoc(client, doc.id))!.title.includes('2030-12-03'));
+  const liveAfterRotate = (await getSponsorDoc(client, doc.id))!;
+  assert.equal(liveAfterRotate.title, 'Synthetic topic');
+  assert.ok(liveAfterRotate.eventMetadata!.label.includes('2030-12-03'));
 });
 
 test('any document template linked to an event Card uses its event authority', async () => {
@@ -180,7 +183,7 @@ test('unified EventRecord transitions (propose/reschedule/approve/release) and e
     assert.equal(live.eventMetadata!.date, '2026-12-01');
     assert.equal(live.eventMetadata!.state, 'tentative');
     assert.equal(live.eventMetadata!.label, 'Tue, 1 Dec 2026 12:30 Europe/Berlin (tentative)');
-    assert.ok(live.title.includes('Tue, 1 Dec 2026 12:30 Europe/Berlin (tentative)'));
+    assert.equal(live.title, 'Ian Whitestone - Agentic Data');
   }
 
   // 3. Approve on 2026-12-01 12:30 -> confirmed
