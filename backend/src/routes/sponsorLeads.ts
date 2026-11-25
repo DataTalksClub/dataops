@@ -3,6 +3,7 @@ import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 
 import { createCrmRecord, deterministicCrmId, getCrmRecord, listCrmRecords, updateCrmRecord, type CrmRecord } from '../db/sponsorCrm';
 import { convertLead } from '../sponsorCrm/convertLead';
+import { linkLeadToOrganization, matchLeadOrganization, reconcileLeadOrganizations } from '../sponsorCrm/leadOrganizationLink';
 import { recordInboxIssue } from '../sponsorCrm/newsletterIssues';
 import { TABLE_SPONSOR_CRM } from '../db/tableNames';
 import type { LambdaEvent, LambdaResponse } from '../types';
@@ -376,7 +377,8 @@ export async function handleSponsorLeadIntake(event: LambdaEvent, client: Dynamo
   // Responses carry only the request index and the stored id: intake content
   // (names, urls, blurbs) is never echoed back, matching the email-document
   // intake privacy posture. Dapier reconciles by index.
-  const leads: Array<{ index: number; id: string; outcome: 'created' | 'duplicate' }> = [];
+  const leads: Array<{ index: number; id: string; outcome: 'created' | 'duplicate'; organizationId?: string }> = [];
+  let organizations: CrmRecord[] | null = null;
   const failures: Array<{ index: number; code: string }> = [];
   let issue: { id: string; outcome: string };
   try {
@@ -385,7 +387,24 @@ export async function handleSponsorLeadIntake(event: LambdaEvent, client: Dynamo
       const index = sourceIndices[position];
       try {
         const stored = await storeLead(client, leadValue(messageId, newsletter, sponsor, 'leads-intake'));
-        leads.push({ index, id: stored.id, outcome: stored.outcome });
+        // Linking is best effort: a failure leaves the lead for the reconcile route.
+        let organizationId: string | undefined;
+        try {
+          const lead = await getCrmRecord(client, 'lead', stored.id);
+          if (lead?.organizationId) organizationId = String(lead.organizationId);
+          else if (lead) {
+            organizations ??= await listCrmRecords(client, 'organization');
+            const match = matchLeadOrganization(lead, organizations);
+            if (match.kind === 'linked') {
+              const done = await linkLeadToOrganization(client, lead, match.organization, 'leads-intake');
+              organizations = organizations.map((item) => (item.id === done.organization.id ? done.organization : item));
+              organizationId = done.organization.id;
+            }
+          }
+        } catch (error) {
+          recordRequestError(error);
+        }
+        leads.push({ index, id: stored.id, outcome: stored.outcome, ...(organizationId ? { organizationId } : {}) });
       } catch (error) {
         if ((error as { statusCode?: number })?.statusCode === 409) {
           failures.push({ index, code: 'idempotency-conflict' });
@@ -570,6 +589,17 @@ export async function handleSponsorLeadRoutes(path: string, method: string, even
   const match = path.match(/^\/api\/sponsor-crm\/leads(?:\/([^/]+))?$/);
   if (!match) return response(404, { error: 'Not found' });
   const id = match[1];
+
+  // Link unlinked leads that have one clear company match. Dry run unless apply:true.
+  if (method === 'POST' && id === 'link-organizations') {
+    const body = event.body ? parseBody(event) : {};
+    if (!body) return response(400, { error: 'Invalid JSON' });
+    const unknown = Object.keys(body).find((key) => key !== 'apply');
+    if (unknown) return response(400, { error: `Unknown field: ${unknown}` });
+    if (body.apply !== undefined && typeof body.apply !== 'boolean') return response(400, { error: 'apply must be true or false' });
+    const actorId = Object.entries(event.headers || {}).find(([key]) => key.toLowerCase() === 'x-user-id')?.[1] || 'authenticated-operator';
+    return response(200, await reconcileLeadOrganizations(client, { apply: body.apply === true, actorId }));
+  }
 
   if (method === 'GET' && !id) {
     const query = event.queryStringParameters || {};

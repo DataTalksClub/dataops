@@ -38,6 +38,9 @@ Usage
       Record one outbound lead sighting. source: newsletter|social|influencer|paid;
       optional organizationId links a known company. Never creates a deal:
       a deal only exists once a sale closes.
+  dataops sponsors link-leads [--apply]
+      Link unlinked sponsor leads to CRM companies on a unique domain or exact-name match.
+      Preview by default; ambiguous leads stay unlinked and are listed. Never creates companies or deals.
   dataops sponsors update <kind> <id> --data '{...}'
   dataops sponsors update leads <id> --data '{"status":"ignored","version":N}' [--reason TEXT]
   dataops sponsors delete deals <id> --with-deliverables [--yes|--apply] [--expected-version N]
@@ -184,6 +187,16 @@ export async function list(args, io) {
     ["STATUS", (item) => item.status || item.stage || ""],
     ["NAME", label],
   ], `No ${kind}.`);
+  return result;
+}
+
+export async function linkLeads(args, io) {
+  const result = await apiFor(args).post('/api/sponsor-crm/leads/link-organizations', { apply: args.apply === true || args.yes === true });
+  if (!args.json) {
+    io.print(`${result.dryRun ? 'Preview' : 'Applied'}: ${result.linked} linked, ${result.ambiguous} ambiguous, ${result.unmatched} unmatched, ${result.alreadyLinked} already linked, ${result.failed} failed (of ${result.scanned}).`);
+    for (const item of result.examples.linked) io.print(`  linked  ${item.sponsor} -> ${item.organization} (${item.by})`);
+    for (const item of result.examples.ambiguous) io.print(`  review  ${item.sponsor}: ${item.reason}`);
+  }
   return result;
 }
 
@@ -873,4 +886,4 @@ export async function readiness(args, io) {
   return result;
 }
 
-export const commands = { readiness, "classify-finance": classifyFinance, "record-invoice": recordInvoice, "correct-invoice": correctInvoice, "add-evidence": addEvidence, "set-waiting": setWaiting, "payment-mail": paymentMail, pipeline, contact, list, show, create, update, delete: remove, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification, "record-thank-you": recordThankYou, contract };
+export const commands = { readiness, "classify-finance": classifyFinance, "record-invoice": recordInvoice, "correct-invoice": correctInvoice, "add-evidence": addEvidence, "set-waiting": setWaiting, "payment-mail": paymentMail, pipeline, "link-leads": linkLeads, contact, list, show, create, update, delete: remove, messages, history, finance, cold, touch, "follow-up": followUp, "link-payment": linkPayment, "attach-invoice": attachInvoice, "receive-payment": receivePayment, "correct-payment": correctPayment, "attach-payment-evidence": attachPaymentEvidence, "approve-settlement": approveSettlement, "reverse-settlement": reverseSettlement, "clear-proposal-classification": clearProposalClassification, "record-thank-you": recordThankYou, contract };
