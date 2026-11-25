@@ -42,28 +42,28 @@ export function bookkeepingSurfaceMarkup() {
             <option value="income">Income</option>
           </select>
           <select class="dk-select" data-filter="category" aria-label="Category"><option value="">All categories</option></select>
-          <button type="button" class="bk-toggle" data-needs="category" aria-pressed="false">Needs category <span class="dk-mono" data-needs-count="category"></span></button>
-          <button type="button" class="bk-toggle" data-needs="receipt" aria-pressed="false">No receipt <span class="dk-mono" data-needs-count="receipt"></span></button>
-          <span class="bk-filters__count" data-shown-count aria-live="polite"></span>
         </div>
-        ${globalThis.dakitCollection.createButtonMarkup({ label: "Add transaction", attributes: "data-bookkeeping-add" })}
-        <details class="bk-more" data-more>
-          <summary class="dk-icon-button" aria-label="More bookkeeping actions" title="More actions">
-            <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
-              <circle cx="3" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="13" cy="8" r="1.4"/>
-            </svg>
-          </summary>
-          <div class="dk-menu bk-more__menu" role="menu">
-            <button type="button" class="dk-menu__item" role="menuitem" data-export-report-csv>Export accountant CSV</button>
-            <button type="button" class="dk-menu__item" role="menuitem" data-copy-report>Copy accountant table</button>
-            <button type="button" class="dk-menu__item" role="menuitem" data-export-full-csv>Export all fields (CSV)</button>
-            <hr class="bk-more__rule" />
-            <button type="button" class="dk-menu__item" role="menuitem" data-view-link="files">Files &amp; statements <span class="bk-more__meta" data-files-meta></span></button>
-            <button type="button" class="dk-menu__item" role="menuitem" data-view-link="package">Accountant package &amp; VAT</button>
-            <button type="button" class="dk-menu__item" role="menuitem" data-view-link="tuition">Tuition agreements &amp; installments</button>
-            <button type="button" class="dk-menu__item" role="menuitem" data-view-link="invoices">Forwarded invoices <span class="bk-more__meta" data-invoices-meta></span></button>
-          </div>
-        </details>
+        <div class="bk-filters__actions">
+          <span class="bk-filters__count" data-shown-count aria-live="polite"></span>
+          ${globalThis.dakitCollection.createButtonMarkup({ label: "Add transaction", attributes: "data-bookkeeping-add" })}
+          <details class="bk-more" data-more>
+            <summary class="dk-icon-button" aria-label="More bookkeeping actions" title="More actions">
+              <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
+                <circle cx="3" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="13" cy="8" r="1.4"/>
+              </svg>
+            </summary>
+            <div class="dk-menu bk-more__menu" role="menu">
+              <button type="button" class="dk-menu__item" role="menuitem" data-export-report-csv>Export accountant CSV</button>
+              <button type="button" class="dk-menu__item" role="menuitem" data-copy-report>Copy accountant table</button>
+              <button type="button" class="dk-menu__item" role="menuitem" data-export-full-csv>Export all fields (CSV)</button>
+              <hr class="bk-more__rule" />
+              <button type="button" class="dk-menu__item" role="menuitem" data-view-link="files">Files &amp; statements <span class="bk-more__meta" data-files-meta></span></button>
+              <button type="button" class="dk-menu__item" role="menuitem" data-view-link="package">Accountant package &amp; VAT</button>
+              <button type="button" class="dk-menu__item" role="menuitem" data-view-link="tuition">Tuition agreements &amp; installments</button>
+              <button type="button" class="dk-menu__item" role="menuitem" data-view-link="invoices">Forwarded invoices <span class="bk-more__meta" data-invoices-meta></span></button>
+            </div>
+          </details>
+        </div>
       </div>
       <div class="bookkeeping-ledger" aria-live="polite">Loading transactions…</div>
     </div>

@@ -20,6 +20,8 @@ import {
   needsCategory,
   netValue,
   originalValue,
+  pendingInvoiceEntry,
+  readableTransactionDescription,
   suggestionsMarkup,
   vatPresentation,
   vocabulary,
@@ -745,4 +747,82 @@ test("bookkeeping finance monthTotals reads the finance summary month the totals
   assert.equal(finance.monthTotals("2025-01"), null, "a year that never loaded has no month totals");
   assert.equal(finance.monthTotals(""), null, "undated groups have no finance month");
   assert.equal(loads, 1, "the lens year is the only summary load");
+});
+
+test("sponsor-linked rows show a separate clickable deal link and readable What text", () => {
+  const placeholderRow = {
+    id: "receipt-1",
+    transactionDate: "2026-11-18",
+    paidDate: "2026-11-18",
+    counterparty: "OMANE LLC",
+    description: "Sponsor payment for deal deal-abc123",
+    sponsorDealId: "deal-abc123",
+    entryType: "income",
+    amount: "1070",
+    currency: "USD",
+    amountEur: "990.00",
+    subtype: "Sponsorship",
+    category: "Sponsorship",
+  };
+  const customRow = {
+    ...placeholderRow,
+    id: "receipt-2",
+    counterparty: "Bruin Data",
+    description: "Data Engineering Zoomcamp 2026 Module Sponsorship",
+    sponsorDealId: "deal-bruin",
+  };
+
+  assert.equal(readableTransactionDescription(placeholderRow), "Sponsor payment");
+  assert.equal(readableTransactionDescription(customRow), "Data Engineering Zoomcamp 2026 Module Sponsorship");
+
+  const placeholderHtml = ledgerRowMarkup(placeholderRow, { hasEvidence: () => true, vocab: {}, selectedId: "", e: escapeHtml });
+  assert.match(placeholderHtml, /href="\/sponsors\/deals\/deal-abc123" data-deal-link/);
+  assert.match(placeholderHtml, />Deal<\/a>/);
+  assert.match(placeholderHtml, />Sponsor payment<\/span>/);
+  assert.doesNotMatch(placeholderHtml, /Sponsor payment for deal deal-abc123/);
+
+  const customHtml = ledgerRowMarkup(customRow, { hasEvidence: () => true, vocab: {}, selectedId: "", e: escapeHtml });
+  assert.match(customHtml, /href="\/sponsors\/deals\/deal-bruin" data-deal-link/);
+  assert.match(customHtml, />Data Engineering Zoomcamp 2026 Module Sponsorship<\/span>/);
+});
+
+test("pending invoice drafts render in their month with Pending review status and never alter totals", () => {
+  const draft = pendingInvoiceEntry({
+    id: "inv-pending-1",
+    status: "pending",
+    source: { artifactId: "art-1" },
+    fields: {
+      transactionDate: "2026-11-23",
+      counterparty: "Contabo GmbH",
+      description: "Cloud VPS Plus 2 hosting",
+      amount: "8.57",
+      currency: "EUR",
+    },
+  });
+  const posted = {
+    id: "tx-posted-1",
+    transactionDate: "2026-11-10",
+    paidDate: "2026-11-10",
+    counterparty: "Posted Vendor",
+    description: "Posted service",
+    entryType: "expense",
+    amount: "100.00",
+    currency: "EUR",
+    subtype: "Operations",
+    category: "Software",
+  };
+
+  const groups = groupByMonth([posted, draft]);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].month, "2026-11");
+  assert.equal(groups[0].moneyOut, -100, "pending draft amount stays out of month totals");
+  assert.equal(groups[0].unconverted, 0);
+
+  const markup = ledgerTableMarkup({ groups, hasEvidence: () => false, vocab: {}, selectedId: "", e: escapeHtml });
+  assert.match(markup, /data-pending-invoice="inv-pending-1"/);
+  assert.match(markup, /data-open-invoice-review="inv-pending-1"/);
+  assert.match(markup, /Pending review/);
+  assert.match(markup, /Contabo GmbH/);
+  assert.match(markup, /data-view-document="invoice:inv-pending-1"/);
+  assert.doesNotMatch(markup, /data-id="invoice-draft:inv-pending-1"/, "draft rows have no inline classification select");
 });

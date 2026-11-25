@@ -573,6 +573,66 @@ describe("Finance surface boundary", () => {
     assert.ok(requests.some(({ url }) => requestPath(url) === "/api/reconcile/months/2026-08"));
   });
 
+  test("removes Needs category and No receipt chips while keeping Add transaction, Forwarded invoices, and automatic pending drafts", async () => {
+    const { document, finance } = createHarness({
+      request: async (url) => {
+        const path = requestPath(url);
+        if (path === "/api/bookkeeping/transactions") {
+          return {
+            items: [{
+              id: "tx-nov-1",
+              transactionDate: "2026-11-11",
+              paidDate: "2026-11-11",
+              counterparty: "Rasa Technologies Inc.",
+              description: "Sponsor payment for deal deal-rasa",
+              sponsorDealId: "deal-rasa",
+              entryType: "income",
+              amount: "1200",
+              currency: "EUR",
+              subtype: "Sponsorship",
+              category: "Sponsorship",
+            }],
+          };
+        }
+        if (path === "/api/bookkeeping/invoices") {
+          return {
+            items: [{
+              id: "draft-nov-1",
+              status: "pending",
+              fields: {
+                transactionDate: "2026-11-23",
+                counterparty: "Contabo GmbH",
+                description: "Cloud VPS Plus 2 hosting",
+                amount: "8.57",
+                currency: "EUR",
+              },
+            }],
+          };
+        }
+        if (["/api/bookkeeping/documents", "/api/bookkeeping/links",
+          "/api/bookkeeping/accounts", "/api/bookkeeping/reports"].includes(path))
+          return { items: [] };
+        if (path === "/api/reconcile/months/2026-11") return { rows: [] };
+        if (path === "/api/finance/summary") return { entries: [], months: [{ month: "2026-11", moneyIn: 1200, moneyOut: 0 }], totals: {} };
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    });
+
+    await finance.renderBookkeepingSurface();
+    await settle();
+    const surfaceHtml = document.surface.innerHTML;
+    assert.doesNotMatch(surfaceHtml, /Needs category|No receipt|data-needs=/);
+    assert.match(surfaceHtml, /data-bookkeeping-add/);
+    assert.match(surfaceHtml, /data-view-link="invoices"[\s\S]*Forwarded invoices/);
+
+    const ledgerHtml = document.surface.querySelector(".bookkeeping-ledger").innerHTML;
+    assert.match(ledgerHtml, /href="\/sponsors\/deals\/deal-rasa" data-deal-link/);
+    assert.match(ledgerHtml, />Sponsor payment<\/span>/);
+    assert.match(ledgerHtml, /data-pending-invoice="draft-nov-1"/);
+    assert.match(ledgerHtml, /Pending review/);
+    assert.match(ledgerHtml, /Contabo GmbH/);
+  });
+
   test("the inventory surface mounts standalone and fetches its items", async () => {
     const { document: doc, finance, requests, routeTitles } = createHarness({
       request: async (url) => {
