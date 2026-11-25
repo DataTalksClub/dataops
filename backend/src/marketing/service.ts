@@ -327,7 +327,7 @@ export function accumulateAcademyVisits(
     if (!r) continue;
     const match =
       kind === "site" ||
-      (kind === "track" && r.track === scope) ||
+      (kind === "track" && (scope === "all" || r.track === scope)) ||
       (kind === "page" && r.page === scope) ||
       (kind === "prefix" && r.page.startsWith(scope)) ||
       (kind === "utm_content" && r.utm_content === scope) ||

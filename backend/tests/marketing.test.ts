@@ -721,6 +721,12 @@ it("derives Academy visits from existing PV counters, excluding test traffic and
     { pk: "SIGNUP#redacted", sk: "not a pageview", count: 99 },
   ];
   assert.equal(
+    accumulateAcademyVisits(rows, "track:all", "2026-11-23", "2026-11-29").get(
+      "2026-W48",
+    ),
+    10,
+  );
+  assert.equal(
     accumulateAcademyVisits(rows, "site", "2026-11-23", "2026-11-29").get(
       "2026-W48",
     ),
