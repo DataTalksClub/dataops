@@ -4,6 +4,10 @@ const MAX_BRIEF_IMAGE_BYTES = 4 * 1024 * 1024;
 const UPLOAD_TIMEOUT_MS = 30000;
 const ALLOWED_IMAGE_TYPES = /^image\/(?:png|jpe?g|gif|webp)$/i;
 const ALLOWED_IMAGE_EXT = /\.(?:png|jpe?g|gif|webp)$/i;
+const ALLOWED_PHOTO_TYPES = /^image\/(?:png|jpe?g|webp)$/i;
+const ALLOWED_PHOTO_EXT = /\.(?:png|jpe?g|webp)$/i;
+/** The guest photo rule the server enforces; shown before the guest picks a file. */
+export const GUEST_PHOTO_UPLOAD_HINT = "JPG, PNG or WebP, at least 800 × 800 px. A square headshot works best.";
 
 /** Fields rendered as an image (preview + Upload/Replace), never as a raw URL text box. */
 export function isImageOnlyVisualField(fieldDef) {
@@ -11,12 +15,16 @@ export function isImageOnlyVisualField(fieldDef) {
 }
 
 /** A visible reason the file cannot be uploaded, or "" when it is fine. */
-export function briefImageFileError(file) {
+export function briefImageFileError(file, { photo = false } = {}) {
   const type = String(file?.type || "");
   const name = String(file?.name || "");
-  const typeOk = type ? ALLOWED_IMAGE_TYPES.test(type) : ALLOWED_IMAGE_EXT.test(name);
+  const typeOk = photo
+    ? (type ? ALLOWED_PHOTO_TYPES.test(type) : ALLOWED_PHOTO_EXT.test(name))
+    : (type ? ALLOWED_IMAGE_TYPES.test(type) : ALLOWED_IMAGE_EXT.test(name));
   if (!typeOk) {
-    return `"${name || "This file"}" is ${type || "not an image"}. Upload a PNG, JPG, WebP, or GIF image.`;
+    return photo
+      ? `"${name || "This file"}" is ${type || "not an image"}. Upload the photo as a JPG, PNG or WebP image.`
+      : `"${name || "This file"}" is ${type || "not an image"}. Upload a PNG, JPG, WebP, or GIF image.`;
   }
   if (typeof file?.size === "number" && file.size > MAX_BRIEF_IMAGE_BYTES) {
     const mb = (file.size / (1024 * 1024)).toFixed(1);
@@ -69,7 +77,7 @@ export function mountSponsorDocVisualControls({
   const fileInput = el("input", "sponsor-doc-visual-upload__input");
   fileInput.type = "file";
   fileInput.id = fileInputId;
-  fileInput.accept = "image/png,image/jpeg,image/gif,image/webp";
+  fileInput.accept = isPhotoField ? "image/png,image/jpeg,image/webp" : "image/png,image/jpeg,image/gif,image/webp";
   fileInput.dataset.sponsorVisualUpload = fieldDef.key;
   fileInput.disabled = busy;
 
@@ -137,7 +145,7 @@ export function mountSponsorDocVisualControls({
         visualPreview.hidden = false;
         const placeholder = el("p", "dk-hint sponsor-doc-photo-placeholder", imageOnly
           ? "No image yet. Drag an image here or click Upload image (PNG, JPG, WebP, or GIF, up to 4 MiB)."
-          : "No photo yet — upload a portrait or paste an image URL to see a preview.");
+          : "No photo yet — upload a portrait at least 800 × 800 px, or paste a link to one, to see a preview.");
         placeholder.dataset.sponsorPhotoPlaceholder = "";
         visualPreview.append(placeholder);
       } else {
@@ -203,14 +211,14 @@ export function mountSponsorDocVisualControls({
       statusSpan.textContent = name ? `Uploaded visual: ${name}` : "Using linked image URL";
       clearBtn.hidden = false;
     } else {
-      statusSpan.textContent = "Upload PNG, JPG, WebP, or GIF to preview right away";
+      statusSpan.textContent = isPhotoField ? GUEST_PHOTO_UPLOAD_HINT : "Upload PNG, JPG, WebP, or GIF to preview right away";
       clearBtn.hidden = true;
     }
   }
 
   async function uploadFile(file) {
     if (!file) return;
-    const invalid = briefImageFileError(file);
+    const invalid = briefImageFileError(file, { photo: isPhotoField });
     if (invalid) {
       showVisualError(invalid);
       statusSpan.textContent = "";
@@ -233,7 +241,9 @@ export function mountSponsorDocVisualControls({
         }
       }
       const headers = accessCode ? { "x-sponsor-doc-code": accessCode } : {};
-      const payload = await withUploadTimeout(request(`/api/sponsor-docs/${encodeURIComponent(docId)}/images`, {
+      // The photo field asks the server to hold the upload to the guest photo rule.
+      const uploadPath = `/api/sponsor-docs/${encodeURIComponent(docId)}/images${isPhotoField ? "?field=photoUrl" : ""}`;
+      const payload = await withUploadTimeout(request(uploadPath, {
         method: "POST",
         headers,
         body: formData || file,
@@ -252,11 +262,15 @@ export function mountSponsorDocVisualControls({
       updateLivePreview();
       announce(`Uploaded visual ${name} for live preview.`);
     } catch (err) {
-      const msg = `Image upload failed: ${err?.message || "please try again."}`;
+      // A photo the guest needs to replace is a request to them, not an upload failure.
+      const guestPhotoRule = /^guest_photo_/.test(String(err?.code || ""));
+      const msg = guestPhotoRule && err?.message
+        ? err.message
+        : `Image upload failed: ${err?.message || "please try again."}`;
       showVisualError(msg);
       statusSpan.textContent = "";
       announce(msg);
-      reportClientUploadAlert(err?.status || 0, msg);
+      if (!guestPhotoRule) reportClientUploadAlert(err?.status || 0, msg);
       syncVisualControls();
     } finally {
       delete visualPreview.dataset.uploading;
