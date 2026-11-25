@@ -9,7 +9,7 @@ import { cashDate, entryDirection, formatAmount, ledgerDate, monthLabel, monthOf
 import { bookkeepingVendorPresentation } from "./bookkeeping-vendors.js";
 
 // Query parameters the bookkeeping route keeps in the URL.
-export const LEDGER_PARAMS = ["month", "q", "account", "dir", "category", "needs", "tx", "view"];
+export const LEDGER_PARAMS = ["month", "q", "account", "dir", "category", "tx", "view"];
 export const SECONDARY_VIEWS = ["files", "package", "invoices", "tuition"];
 
 // The classification columns: "Type" is stored as `subtype`, "Category" as
@@ -157,14 +157,12 @@ export function invoiceSourceDocuments(entry) {
 // URL state -> filters. Unknown values fall back to "show everything".
 export function filtersFromParams(params) {
   const get = (name) => String(params?.get?.(name) || "").trim();
-  const needs = get("needs");
   const dir = get("dir");
   return {
     q: get("q"),
     account: get("account"),
     dir: ["expense", "income"].includes(dir) ? dir : "",
     category: get("category"),
-    needs: ["category", "receipt"].includes(needs) ? needs : "",
   };
 }
 
@@ -213,14 +211,12 @@ export function bankOnlyEntryFromMonthRow(row) {
   };
 }
 
-export function filterEntries(entries, filters, { hasEvidence = () => true, accountNameOf = resolveAccountName } = {}) {
+export function filterEntries(entries, filters, { accountNameOf = resolveAccountName } = {}) {
   const query = filters.q.toLowerCase();
   return entries.filter((entry) => {
     if (filters.account && accountNameOf(entry) !== filters.account) return false;
     if (filters.dir && entryDirection(entry) !== filters.dir) return false;
     if (filters.category && String(entry.category || "").trim() !== filters.category) return false;
-    if (filters.needs === "category" && !needsCategory(entry)) return false;
-    if (filters.needs === "receipt" && hasEvidence(entry.id)) return false;
     if (query) {
       const presentation = bookkeepingVendorPresentation(entry);
       const haystack = [
@@ -245,6 +241,44 @@ export function displayRowCount(entries = []) {
   }, 0);
 }
 
+export function readableTransactionDescription(entry) {
+  const raw = String(entry?.description || "").trim();
+  if (entry?.sponsorDealId && raw === `Sponsor payment for deal ${entry.sponsorDealId}`) {
+    return "Sponsor payment";
+  }
+  return raw;
+}
+
+export function pendingInvoiceEntry(invoice) {
+  if (!invoice || invoice.status !== "pending") return null;
+  const fields = invoice.fields || {};
+  const receivedDate = cashDate({ transactionDate: invoice.createdAt });
+  return {
+    id: `invoice-draft:${invoice.id}`,
+    invoiceDraftId: invoice.id,
+    pendingInvoiceDraft: true,
+    invoiceStatus: invoice.status,
+    transactionDate: fields.transactionDate || receivedDate,
+    paidDate: fields.paidDate || "",
+    useReceivedDate: !fields.transactionDate && !fields.paidDate && Boolean(receivedDate),
+    counterparty: fields.counterparty || "Unidentified provider",
+    description: fields.description || "",
+    amount: fields.amount || "",
+    currency: fields.currency || "EUR",
+    amountEur: fields.amountEur,
+    vatAmount: fields.vatAmount,
+    vatEur: fields.vatAmountEur,
+    reverseCharge: fields.reverseCharge,
+    entryType: "expense",
+    subtype: fields.subtype || "",
+    category: fields.category || "",
+    statementRef: fields.statementRef || "",
+    invoiceNumber: fields.invoiceNumber || "",
+    documentArtifactId: invoice.source?.artifactId || "",
+    invoiceId: invoice.id,
+  };
+}
+
 // Months newest first; inside a month the sheet's order (oldest first).
 export function groupByMonth(entries) {
   const groups = new Map();
@@ -258,6 +292,7 @@ export function groupByMonth(entries) {
       const sorted = [...rows].sort(byDateAsc);
       let moneyIn = 0, moneyOut = 0, unconverted = 0;
       for (const entry of sorted) {
+        if (entry.pendingInvoiceDraft) continue;
         const value = eurValue(entry);
         if (value === null) unconverted += 1;
         else if (value >= 0) moneyIn += value;
@@ -294,7 +329,8 @@ export function vatTitle(entry, text) {
 // The cash date is primary; the source transaction date remains in the record.
 function dateCell(entry, e) {
   const date = cashDate(entry);
-  return html`<time datetime="${e(date)}">${e(ledgerDate(date))}</time>`;
+  if (!date) return "—";
+  return html`<time datetime="${e(date)}"${entry.useReceivedDate ? ' title="Invoice received date"' : ""}>${e(ledgerDate(date))}</time>`;
 }
 
 function selectMarkup({ id, field, label, value, options, e }) {
@@ -320,6 +356,9 @@ const icon = {
   missing: '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">'
     + '<path d="M4 1.5h5.5L13 5v9.5H4z" stroke-linejoin="round" stroke-dasharray="2 1.6"/>'
     + '<path d="M6.5 9.5h3" stroke-linecap="round"/></svg>',
+  pending: '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">'
+    + '<circle cx="8" cy="8" r="6"/>'
+    + '<path d="M8 4.8V8l2.2 1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 
 // Invoice cell: always one control on the same axis. Attached -> one PDF icon
@@ -353,40 +392,60 @@ function accountCellMarkup(account, accountDoc, e) {
   return html`<span class="bk-cell-icon bk-cell-icon--empty" aria-label="No account" title="No account">—</span>`;
 }
 
+function sponsorDealLink(entry, counterparty, e) {
+  if (!entry.sponsorDealId) return "";
+  return html`<a class="bk-who__deal"
+    href="${e(sponsorRecordPath("deal", entry.sponsorDealId))}" data-deal-link
+    aria-label="Open sponsor deal for ${e(counterparty)}" title="Open sponsor deal">Deal</a>`;
+}
+
 export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, vocab, selectedId, financeEntry, statementLinks = new Map(), e }) {
+  const isDraft = Boolean(entry.pendingInvoiceDraft);
   const direction = entryDirection(entry);
   const net = netValue(entry, financeEntry);
   const original = originalValue(entry);
   const originalText = original === null ? "" : signedAmount(original, entry.currency);
   const missingEur = net === null;
-  const flagged = needsCategory(entry);
+  const flagged = !isDraft && needsCategory(entry);
   const presentation = bookkeepingVendorPresentation(entry);
   const counterparty = String(entry.counterparty || "").trim() || presentation.canonicalCounterparty;
-  const description = String(entry.description || "").trim() || presentation.description;
+  const description = readableTransactionDescription(entry) || presentation.description;
   const showDescription = Boolean(description);
-  const vat = vatPresentation(financeEntry);
-  const invoiceEvidence = hasInvoice(entry.id);
+  const vat = vatPresentation(isDraft ? entry : financeEntry);
+  const invoiceEvidence = isDraft ? invoiceSourceDocuments(entry) : hasInvoice(entry.id);
   const invoiceDocuments = Array.isArray(invoiceEvidence) ? invoiceEvidence : [];
   const hasInvoiceAttached = invoiceDocuments.length > 0 || invoiceEvidence === true;
   const account = resolveAccountName(entry, statementLinks);
   const accountDoc = statementLinks instanceof Map ? statementLinks.get(String(entry.id || "")) : null;
-  return html`<tr class="bk-row${flagged ? " is-uncategorised" : ""}${direction === "income" ? " is-income" : ""}"
-      data-tx="${e(entry.id)}"${entry.id === selectedId ? ' aria-selected="true"' : ""}>
+  const dealLink = sponsorDealLink(entry, counterparty, e);
+  const draftStatus = isDraft
+    ? html`<span class="dk-badge dk-badge--warning bk-draft-status"
+        title="Unverified invoice draft — click to open invoice review">${icon.pending}<span>Pending review</span></span>`
+    : "";
+  const whoAnchor = isDraft
+    ? html`<a class="bk-who" href="?view=invoices" data-open-invoice-review="${e(entry.invoiceDraftId)}"
+        aria-label="Review pending invoice draft from ${e(counterparty)}"><span class="bk-who__name">${e(counterparty)}</span
+        >${showDescription ? html`<span class="bk-who__what" title="${e(description)}">${e(description)}</span>` : ""}</a>`
+    : html`<a class="bk-who" href="?tx=${encodeURIComponent(entry.id)}" data-open-tx="${e(entry.id)}"
+        ><span class="bk-who__name">${e(counterparty)}</span
+        >${showDescription ? html`<span class="bk-who__what" title="${e(description)}">${e(description)}</span>` : ""}</a>`;
+  const whoCell = dealLink || draftStatus
+    ? html`<div class="bk-who-cell">${whoAnchor}${draftStatus}${dealLink}</div>`
+    : whoAnchor;
+  return html`<tr class="bk-row${isDraft ? " bk-row--pending-draft" : ""}${flagged ? " is-uncategorised" : ""}${direction === "income" ? " is-income" : ""}"
+      ${isDraft ? `data-pending-invoice="${e(entry.invoiceDraftId)}"` : `data-tx="${e(entry.id)}"`}${!isDraft && entry.id === selectedId ? ' aria-selected="true"' : ""}>
       <td class="bk-col-date">${dateCell(entry, e)}</td>
-      <td class="bk-col-who">
-        <a class="bk-who" href="?tx=${encodeURIComponent(entry.id)}" data-open-tx="${e(entry.id)}"
-          ><span class="bk-who__name">${e(counterparty)}</span
-          >${showDescription ? html`<span class="bk-who__what" title="${e(description)}">${e(description)}</span>` : ""}</a
-        >
-      </td>
+      <td class="bk-col-who">${whoCell}</td>
       <td class="bk-col-money bk-col-eur${missingEur ? " is-unconverted" : ""}"${!missingEur && originalText ? ` title="Original ${e(originalText)}"` : ""}>${missingEur
         ? html`<span class="bk-unconverted" title="No EUR value recorded yet — convert it before the report">${e(originalText || "EUR?")}</span>`
         : e(signedAmount(net, "EUR"))}</td>
-      <td class="bk-col-vat"${vat ? ` title="${e(vatTitle(financeEntry, vat))}"` : ""}>${e(vat || "—")}</td>
-      ${CLASSIFICATION_FIELDS.map(({ field, label }) => html`<td class="bk-col-class bk-col-${field}">${selectMarkup({
-        id: entry.id, field, label: `${label} for ${entry.counterparty || "transaction"}`,
-        value: entry[field], options: vocab[field] || [], e,
-      })}</td>`).join("")}
+      <td class="bk-col-vat"${vat ? ` title="${e(vatTitle(isDraft ? entry : financeEntry, vat))}"` : ""}>${e(vat || "—")}</td>
+      ${CLASSIFICATION_FIELDS.map(({ field, label }) => isDraft
+        ? html`<td class="bk-col-class bk-col-${field}">${e(entry[field] || "—")}</td>`
+        : html`<td class="bk-col-class bk-col-${field}">${selectMarkup({
+            id: entry.id, field, label: `${label} for ${entry.counterparty || "transaction"}`,
+            value: entry[field], options: vocab[field] || [], e,
+          })}</td>`).join("")}
       <td class="bk-col-flag">${invoiceCellMarkup(invoiceDocuments, hasInvoiceAttached, e, entry.id)}</td>
       <td class="bk-col-account">${accountCellMarkup(account, accountDoc, e)}</td>
     </tr>`;
@@ -444,15 +503,16 @@ function allocationChildMarkup(entry, allocation, { getAllocationDocument = () =
   const accountName = resolveAccountName(entry, statementLinks);
   const statementLink = statementLinks instanceof Map ? statementLinks.get(String(entry.id || "")) : null;
   const pdfAction = invoiceCellMarkup(document ? [document] : [], false, e, entry.id);
+  const counterparty = allocation.counterparty || entry.counterparty || "";
+  const dealLink = sponsorDealLink(entry, counterparty, e);
+  const paymentLink = html`<a class="bk-who" href="?tx=${encodeURIComponent(entry.id)}" data-open-tx="${e(entry.id)}"
+          aria-label="Open original payment for ${e(counterparty || "invoice")}">
+          <span class="bk-who__name">${e(counterparty)}</span>
+          <span class="bk-who__what" title="${e(allocation.description || "")}">${e(allocation.description || "")}</span>
+        </a>`;
   return html`<tr class="bk-row bk-row--allocation-child" data-allocation-parent="${e(entry.id)}" data-allocation-document="${e(allocation.documentId || "")}">
       <td class="bk-col-date">${dateCell(child, e)}</td>
-      <td class="bk-col-who">
-        <a class="bk-who" href="?tx=${encodeURIComponent(entry.id)}" data-open-tx="${e(entry.id)}"
-          aria-label="Open original payment for ${e(allocation.counterparty || "invoice")}">
-          <span class="bk-who__name">${e(allocation.counterparty || entry.counterparty || "")}</span>
-          <span class="bk-who__what" title="${e(allocation.description || "")}">${e(allocation.description || "")}</span>
-        </a>
-      </td>
+      <td class="bk-col-who">${dealLink ? html`<div class="bk-who-cell">${paymentLink}${dealLink}</div>` : paymentLink}</td>
       <td class="bk-col-money bk-col-eur${net === null ? " is-unconverted" : ""}"${net !== null && originalText ? ` title="Original ${e(originalText)}"` : ""}>${net === null
         ? html`<span class="bk-unconverted" title="No EUR value recorded for this invoice allocation">${e(originalText || "EUR?")}</span>`
         : e(signedAmount(net, "EUR"))}</td>

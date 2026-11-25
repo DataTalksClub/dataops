@@ -60,7 +60,7 @@ test.describe("production portal bookkeeping", () => {
     const detail = page.locator("#bookkeeping-transaction-dialog");
     await expect(detail).toBeVisible();
     await expect(detail).toContainText("Synthetic Portal Vendor");
-    await expect(detail).toContainText("Synthetic browser evidence");
+    await expect(detail.locator("[name=description]")).toHaveValue("Synthetic browser evidence");
     await page.keyboard.press("Escape");
     const updated = await context.request.put(`/api/bookkeeping/transactions/${transactionId}`, {
       data: { category: "synthetic-testing", counterparty: "Saved Portal Vendor", description: "Saved operator description" },
@@ -78,7 +78,7 @@ test.describe("production portal bookkeeping", () => {
     await expect(savedRow.getByRole("button", { name: "View synthetic-upload.pdf", exact: true })).toHaveCount(1);
     await savedRow.locator(".bk-col-date").click();
     await expect(detail).toContainText("Saved Portal Vendor");
-    await expect(detail).toContainText("Saved operator description");
+    await expect(detail.locator("[name=description]")).toHaveValue("Saved operator description");
     await expect(detail.getByRole("button", { name: /Open invoice/ })).toHaveCount(1);
     await page.keyboard.press("Escape");
     const linksResponse = await context.request.get(

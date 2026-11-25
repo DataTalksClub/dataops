@@ -226,3 +226,26 @@ test("dynamic values are escaped before being inserted into the markup", () => {
   assert.match(markup, /data-view-document="invoice&quot; onclick=&quot;alert\(1\)"/);
   assert.doesNotMatch(markup, /data-view-document="invoice" onclick="alert\(1\)"/);
 });
+
+test("sponsor-linked transaction summary shows clickable deal link, readable What, and editable What form", () => {
+  const markup = bookkeepingTransactionSummaryMarkup({
+    transaction: {
+      id: "receipt-1",
+      entryType: "income",
+      counterparty: "OMANE LLC",
+      description: "Sponsor payment for deal deal-123",
+      sponsorDealId: "deal-123",
+      transactionDate: "2026-11-18",
+      amount: "1070",
+      currency: "USD",
+    },
+    editableWhat: true,
+    escape: escapeHtml,
+    formatAmount: amount,
+  });
+
+  assert.match(markup, /Sponsor deal<\/dt><dd><a class="bk-transaction-deal-link" href="\/sponsors\/deals\/deal-123">Open sponsor deal<\/a><\/dd>/);
+  assert.match(markup, /data-what-form/);
+  assert.match(markup, /name="description" value="Sponsor payment"/);
+  assert.doesNotMatch(markup, /Sponsor payment for deal deal-123/);
+});
