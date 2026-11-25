@@ -14,6 +14,7 @@ export const help = `dataops marketing - plans, work and measured results
   plans note <plan> --version N --text TEXT [--ref REQUEST]
   goals add <plan> --version N --ref REF --title TITLE --metric KEY --scope S --source SRC
       --baseline VALUE@DATE --baseline-note NOTE --target VALUE@DATE [--window week|rolling28]
+      Use --baseline deferred --target deferred until measurement and review.
   goals show <plan> <ref> [--from DATE --to DATE]
   goals update <plan> <ref> --version N [same fields]
   goals remove <plan> <ref> --version N
@@ -99,8 +100,12 @@ function goalBody(a) {
     window: "window",
   });
   if (a.baseline !== undefined)
-    b.baseline = { ...point(a.baseline), note: a.baselineNote || "" };
-  if (a.target !== undefined) b.target = point(a.target);
+    b.baseline =
+      a.baseline === "deferred"
+        ? null
+        : { ...point(a.baseline), note: a.baselineNote || "" };
+  if (a.target !== undefined)
+    b.target = a.target === "deferred" ? null : point(a.target);
   return b;
 }
 function stepBody(a) {

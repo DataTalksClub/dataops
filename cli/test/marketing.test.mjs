@@ -7,6 +7,25 @@ import { isolateConfig, fakePortal } from "./helpers.mjs";
 isolateConfig();
 const marketing = await import("../src/commands/marketing.mjs");
 const io = { print() {} };
+test("marketing CLI explicitly defers and later calibrates goals through the API", async () => {
+  fakePortal({
+    "POST /api/marketing/plans/deferred-plan/goals": ({ body }) => body,
+    "PATCH /api/marketing/plans/deferred-plan/goals/search-clicks": ({ body }) => body,
+  });
+  const deferred = await marketing.goals({
+    _: ["add", "deferred-plan"], version: "1", ref: "search-clicks",
+    baseline: "deferred", target: "deferred",
+  }, io);
+  assert.equal(deferred.baseline, null);
+  assert.equal(deferred.target, null);
+  const measured = await marketing.goals({
+    _: ["update", "deferred-plan", "search-clicks"], version: "2",
+    baseline: "5@2026-11-25", baselineNote: "First measurement",
+    target: "10@2027-01-01",
+  }, io);
+  assert.equal(measured.baseline.value, 5);
+  assert.equal(measured.target.value, 10);
+});
 test("marketing CLI calls the shared API with explicit versions and canonical fields", async () => {
   const calls = fakePortal({
     "POST /api/marketing/plans": ({ body }) => ({ ...body, version: 1 }),

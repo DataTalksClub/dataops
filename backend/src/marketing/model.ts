@@ -10,8 +10,8 @@ export interface Goal extends Dict {
   metricKey: string;
   scope: string;
   source: string;
-  baseline: { value: number; date: string; note: string };
-  target: { value: number; date: string };
+  baseline: { value: number; date: string; note: string } | null;
+  target: { value: number; date: string } | null;
   window: "week" | "rolling28";
 }
 export interface Plan extends Dict {
@@ -90,6 +90,13 @@ export function validateGoal(g: Goal) {
   requireThat(slug(g.ref) && text(g.title, 300), "Invalid goal ref or title");
   validSeries(g);
   requireThat(["week", "rolling28"].includes(g.window), "Invalid goal window");
+  if (g.baseline === null || g.target === null) {
+    requireThat(
+      g.baseline === null && g.target === null,
+      "Defer both baseline and target until measurement and review",
+    );
+    return;
+  }
   for (const k of ["baseline", "target"])
     requireThat(
       g[k] && Number.isFinite(g[k].value) && realDate(g[k].date),
@@ -311,7 +318,14 @@ export function goalProgress(
     +now - +new Date(periodRange(last.period).to + "T23:59:59Z") >
       threshold * 86400000
   )
-    return { status: "no-data", latest: last || null, value: null };
+    return {
+      status: "no-data",
+      latest: last || null,
+      value: null,
+      ...(goal.baseline === null || goal.target === null
+        ? { expected: null, calibrationRequired: true }
+        : {}),
+    };
   const evaluate = (rows: Snapshot[], at: Date) => {
     const latest = rows.at(-1)!;
     const selected =
@@ -326,6 +340,13 @@ export function goalProgress(
     const value =
       selected.reduce((n, s) => n + s.value, 0) /
       (goal.window === "rolling28" && m.unit !== "count" ? selected.length : 1);
+    if (goal.baseline === null || goal.target === null)
+      return {
+        value,
+        expected: null,
+        status: "no-data",
+        calibrationRequired: true,
+      };
     const fraction = Math.max(
       0,
       Math.min(

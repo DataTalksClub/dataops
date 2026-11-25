@@ -23,6 +23,7 @@ import {
 } from "../src/db/marketing";
 import {
   goalProgress,
+  validateGoal,
   periodRange,
   type Snapshot,
   type Goal,
@@ -601,7 +602,7 @@ describe("marketing contract", () => {
   it("imports canonical plans idempotently by stable step key and validates before mutating", async () => {
     const input = {
       plan: { id: "import-test", title: "Synthetic import" },
-      goals: [],
+      goals: [{ ...goal, baseline: null, target: null }],
       steps: [
         {
           key: "outreach-one",
@@ -613,6 +614,12 @@ describe("marketing contract", () => {
     };
     const first = await request("POST", "/import", input);
     assert.equal(first.status, 200, JSON.stringify(first));
+    const deferred = (
+      await request("GET", "/plans/import-test/goals/search-clicks")
+    ).body;
+    assert.equal(deferred.baseline, null);
+    assert.equal(deferred.target, null);
+    assert.equal(deferred.calibrationRequired, true);
     const second = await request("POST", "/import", {
       ...input,
       version: first.body.plan.version,
@@ -634,7 +641,40 @@ describe("marketing contract", () => {
       (await request("GET", "/plans/import-test")).body.version,
       second.body.plan.version,
     );
+    const calibrated = await request(
+      "PATCH", "/plans/import-test/goals/search-clicks",
+      {
+        version: second.body.plan.version,
+        baseline: goal.baseline,
+        target: goal.target,
+      },
+    );
+    assert.equal(calibrated.status, 200, JSON.stringify(calibrated));
+    assert.deepEqual(calibrated.body.goals[0].baseline, goal.baseline);
+    assert.deepEqual(calibrated.body.goals[0].target, goal.target);
   });
+});
+
+it("defers unmeasured goals without inventing a baseline, target or progress", () => {
+  const deferred = { ...goal, baseline: null, target: null };
+  validateGoal(deferred);
+  assert.equal(goalProgress(deferred, []).calibrationRequired, true);
+  const progress = goalProgress(
+    deferred, [{ ...snapshot, period: "2026-W48" }], new Date("2026-11-25"),
+  );
+  assert.equal(progress.status, "no-data");
+  assert.equal(progress.value, 10);
+  assert.equal(progress.expected, null);
+  assert.equal(progress.calibrationRequired, true);
+  assert.throws(() => validateGoal({ ...goal, baseline: null }), /Defer both/);
+  assert.throws(
+    () => validateGoal({ ...goal, baseline: undefined } as any), /Invalid baseline/,
+  );
+  validateGoal(goal);
+  assert.notEqual(
+    goalProgress(goal, [{ ...snapshot, period: "2026-W48" }], new Date("2026-11-25")).status,
+    "no-data",
+  );
 });
 
 it("uses weekly versus monthly staleness from the metric period, supports rolling values and lower-is-better", () => {
