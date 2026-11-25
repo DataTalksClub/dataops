@@ -2,6 +2,7 @@ import {
   appendGuestTimezoneSelector,
   appendTimeChoiceSave,
   buildSponsorDocIntroCallout,
+  buildSponsorDocStatusRow,
   guestEventMetadataRow,
   guestSlotFieldDefinition,
   renderPodcastQuestionsView,
@@ -497,39 +498,7 @@ export function createSponsorDocPage({
       ));
     }
 
-    const statusRow = el("div", "sponsor-doc-status-row");
-    const docChip = el("span", "sponsor-doc-status-chip");
-    const badgeClass = isSubmitted ? "dk-badge dk-badge--success" : "dk-badge";
-    const badge = el("span", badgeClass, isSubmitted ? "Submitted / Ready" : "Draft");
-    badge.dataset.sponsorDocStatus = doc.status;
-    docChip.append(el("span", "sponsor-doc-status-chip__label", "Document"), badge);
-    statusRow.append(docChip);
-
-    if (doc.eventMetadata?.state) {
-      const eventState = doc.eventMetadata.state;
-      const eventLabels = {
-        confirmed: "Confirmed",
-        tentative: "Tentative",
-        unscheduled: "Unscheduled",
-        released: "Released",
-      };
-      const eventBadgeClass = eventState === "confirmed"
-        ? "dk-badge dk-badge--success"
-        : eventState === "tentative"
-          ? "dk-badge dk-badge--warning"
-          : "dk-badge";
-      const eventChip = el("span", "sponsor-doc-status-chip");
-      const eventBadge = el("span", eventBadgeClass, eventLabels[eventState] || eventState);
-      eventBadge.dataset.sponsorEventStatus = eventState;
-      eventChip.append(el("span", "sponsor-doc-status-chip__label", "Event"), eventBadge);
-      statusRow.append(eventChip);
-    }
-
-    if (isTwoTab && isStaff && doc.hostContext?.sponsored === true) {
-      const sponsoredBadge = el("span", "dk-badge dk-badge--info", "Sponsored");
-      sponsoredBadge.dataset.podcastSponsoredBadge = "true";
-      statusRow.append(sponsoredBadge);
-    }
+    const statusRow = buildSponsorDocStatusRow({ el, doc, isSubmitted, isTwoTab, isStaff });
 
     const { metaRow, secondaryRow, guestSchedule, guestZone } = guestEventMetadataRow({
       el, doc, tDef, draftContent, isSpeakerDoc, isPodcastGuestDoc, formatEditorLabel,
