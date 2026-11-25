@@ -34,6 +34,7 @@ const TABLE_CALENDAR = tableName('DATAOPS_CALENDAR_TABLE', 'calendar');
 const TABLE_PODCAST_EPISODES = tableName('DATAOPS_PODCAST_EPISODES_TABLE', 'podcast-episodes');
 const TABLE_SECRETS = tableName('DATAOPS_SECRETS_TABLE', 'secrets');
 const TABLE_PEOPLE = tableName('DATAOPS_PEOPLE_TABLE', 'people');
+const TABLE_MARKETING = tableName('DATAOPS_MARKETING_TABLE', 'marketing');
 const TABLE_BOOKS = tableName('DATAOPS_BOOKS_TABLE', 'books');
 
 const DATAOPS_TABLES = Object.freeze([
@@ -55,6 +56,7 @@ const DATAOPS_TABLES = Object.freeze([
   TABLE_SECRETS,
   TABLE_PEOPLE,
   TABLE_BOOKS,
+  TABLE_MARKETING,
 ]);
 
 export {
@@ -76,5 +78,6 @@ export {
   TABLE_SECRETS,
   TABLE_PEOPLE,
   TABLE_BOOKS,
+  TABLE_MARKETING,
   DATAOPS_TABLES,
 };
