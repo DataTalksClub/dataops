@@ -53,6 +53,23 @@ function buildLargePng(width, height) {
   ]);
 }
 
+/** A flat grey PNG: large enough for the guest photo rule, small on the wire. */
+function buildFlatPng(width, height) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 0;
+  const raw = Buffer.alloc((1 + width) * height, 0x80);
+  for (let y = 0; y < height; y++) raw[y * (1 + width)] = 0;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', deflateSync(raw)),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
 let server;
 test.use({ screenshot: 'off', trace: 'off', video: 'off' });
 
@@ -173,10 +190,18 @@ test('sponsor and guest brief editors upload images durably and render them inli
   await page.goto(`${server.baseURL}/webinar-docs/${guestDoc.id}?code=${encodeURIComponent(guestDoc.accessCode)}`);
   await expect(page.locator('[data-sponsor-view="editor"]')).toBeVisible();
 
+  // A thumbnail is refused with a request the guest can act on.
+  await page.locator('[data-sponsor-visual-upload="photoUrl"]').setInputFiles({
+    name: 'guest-thumbnail.png',
+    mimeType: 'image/png',
+    buffer: VALID_PNG,
+  });
+  await expect(page.locator('[data-sponsor-visual-error="photoUrl"]')).toContainText('at least 800 × 800 pixels');
+
   await page.locator('[data-sponsor-visual-upload="photoUrl"]').setInputFiles({
     name: 'guest-portrait.png',
     mimeType: 'image/png',
-    buffer: VALID_PNG,
+    buffer: buildFlatPng(800, 800),
   });
 
   const guestInlineImg = page.locator('img[data-sponsor-visual-image="photoUrl"]');
