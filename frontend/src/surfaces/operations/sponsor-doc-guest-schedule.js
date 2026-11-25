@@ -98,25 +98,32 @@ export function renderPodcastQuestionsView({ el, draftContent }) {
 }
 
 export function guestEventMetadataRow({ el, doc, tDef, draftContent, isSpeakerDoc, isPodcastGuestDoc, formatEditorLabel }) {
-    const metaRow = el("div", "sponsor-doc-meta");
-    metaRow.append(el("span", "dk-badge", tDef.label || doc.template));
-    const guestSchedule = ["podcast", "webinar", "workshop"].includes(doc.template) && doc.eventMetadata?.startIso;
-    const guestZone = guestEventTimeZone(draftContent.guestTimezone || doc.eventMetadata?.guestTimezone);
-    if (guestSchedule && !draftContent.guestTimezone) draftContent.guestTimezone = guestZone;
-    if (doc.eventMetadata) {
-      const eventLabel = el("span", "", guestSchedule
-        ? dualZoneEventTime(doc.eventMetadata.startIso, doc.eventMetadata.endIso, guestZone, doc.eventMetadata.durationMinutes)
-        : doc.eventMetadata.label);
+  const metaRow = el("div", "sponsor-doc-meta");
+  const guestSchedule = ["podcast", "webinar", "workshop"].includes(doc.template) && doc.eventMetadata?.startIso;
+  const guestZone = guestEventTimeZone(draftContent.guestTimezone || doc.eventMetadata?.guestTimezone);
+  if (guestSchedule && !draftContent.guestTimezone) draftContent.guestTimezone = guestZone;
+  if (doc.eventMetadata) {
+    const eventText = guestSchedule
+      ? dualZoneEventTime(doc.eventMetadata.startIso, doc.eventMetadata.endIso, guestZone, doc.eventMetadata.durationMinutes)
+      : doc.eventMetadata.label;
+    if (eventText) {
+      const eventLabel = el("span", "sponsor-doc-event-time", eventText);
       eventLabel.dataset.sponsorDocEvent = "";
-      eventLabel.style.whiteSpace = "pre-line";
       metaRow.append(eventLabel);
     }
-    if (doc.publicationDate) metaRow.append(el("span", "", `Publication date: ${doc.publicationDate}`));
-    if (doc.sponsorName) metaRow.append(el("span", "", `${isSpeakerDoc(doc) ? "Speaker" : isPodcastGuestDoc(doc) ? "Guest" : "Sponsor"}: ${doc.sponsorName}`));
-    const editedSpan = el("span", "", formatEditorLabel(doc));
-    editedSpan.dataset.sponsorDocLastEdited = "";
-    metaRow.append(editedSpan);
-    return { metaRow, guestSchedule, guestZone };
+  }
+  if (doc.publicationDate) metaRow.append(el("span", "", `Publication date: ${doc.publicationDate}`));
+  if (doc.sponsorName) metaRow.append(el("span", "", `${isSpeakerDoc(doc) ? "Speaker" : isPodcastGuestDoc(doc) ? "Guest" : "Sponsor"}: ${doc.sponsorName}`));
+
+  const secondaryRow = el("div", "sponsor-doc-meta sponsor-doc-meta--secondary");
+  const typeLabel = el("span", "sponsor-doc-type", tDef.label || doc.template);
+  const sep = el("span", "sponsor-doc-meta__sep", "·");
+  sep.setAttribute("aria-hidden", "true");
+  const editedSpan = el("span", "", formatEditorLabel(doc));
+  editedSpan.dataset.sponsorDocLastEdited = "";
+  secondaryRow.append(typeLabel, sep, editedSpan);
+
+  return { metaRow, secondaryRow, guestSchedule, guestZone };
 }
 
 export function buildSponsorDocIntroCallout(el, tDef) {

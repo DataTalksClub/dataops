@@ -145,10 +145,11 @@ describe("formatIssueDate", () => {
 });
 
 describe("formatUtcMinute / formatEditedTimestamp", () => {
-  test("cuts a timestamp to the minute as stored", () => {
+  test("cuts a timestamp to the minute as stored and formats edited timestamps in Europe/Berlin", () => {
     assert.equal(formatUtcMinute("2026-05-10T09:30:45.123Z"), "2026-05-10 09:30");
     assert.equal(formatUtcMinute("2026-05-10"), "2026-05-10");
-    assert.equal(formatEditedTimestamp("2026-05-10T09:30:45.123Z"), "2026-05-10 09:30 UTC");
+    assert.equal(formatEditedTimestamp("2026-05-10T09:30:45.123Z"), "10 May 2026, 11:30 CEST (Europe/Berlin)");
+    assert.equal(formatEditedTimestamp("2026-11-25T07:52:00.000Z"), "25 Nov 2026, 08:52 CET (Europe/Berlin)");
   });
 
   test("an absent timestamp is empty", () => {
@@ -157,11 +158,9 @@ describe("formatUtcMinute / formatEditedTimestamp", () => {
     assert.equal(formatEditedTimestamp(undefined), "");
   });
 
-  test("matches both removed edited-timestamp copies on every input class", () => {
-    for (const value of INPUTS) {
-      assert.equal(formatEditedTimestamp(value), replaced.previewEditedTimestamp(value), String(value));
-      assert.equal(formatEditedTimestamp(value), replaced.sponsorDocEditedTimestamp(value), String(value));
-    }
+  test("falls back to UTC minute when timestamp is date-only or unparseable", () => {
+    assert.equal(formatEditedTimestamp("2026-05-10"), "2026-05-10 UTC");
+    assert.equal(formatEditedTimestamp("not-a-date"), "not-a-date UTC");
   });
 
   test("matches the inline card-summary slice on every input class", () => {

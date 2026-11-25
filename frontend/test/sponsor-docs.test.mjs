@@ -190,7 +190,7 @@ test("sponsor link with ?code= strips code from URL, opens straight into editor,
   await nextTicks();
 
   assert.match(h.root.textContent, /Saved draft/);
-  assert.match(h.root.textContent, /Last edited 2026-10-17 20:30 UTC by sponsor/);
+  assert.match(h.root.textContent, /Last edited 17 Oct 2026, 22:30 CEST \(Europe\/Berlin\) by sponsor/);
 
   const submitBtn = h.root.querySelector('[data-sponsor-action="submit-ready"]');
   await submitBtn.click();

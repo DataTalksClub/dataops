@@ -469,15 +469,7 @@ export function createSponsorDocPage({
 
     const headWrap = el("div", "sponsor-doc-head");
     const titleRow = el("div", "sponsor-doc-title-row");
-    const badgeClass = isSubmitted ? "dk-badge dk-badge--success" : "dk-badge";
-    const badge = el("span", badgeClass, isSubmitted ? "Submitted / Ready" : "Draft");
-    badge.dataset.sponsorDocStatus = doc.status;
-    titleRow.append(el("h1", "sponsor-doc-title", formTitle), badge);
-    if (isTwoTab && isStaff && doc.hostContext?.sponsored === true) {
-      const sponsoredBadge = el("span", "dk-badge dk-badge--info", "Sponsored");
-      sponsoredBadge.dataset.podcastSponsoredBadge = "true";
-      titleRow.append(sponsoredBadge);
-    }
+    titleRow.append(el("h1", "sponsor-doc-title", formTitle));
     if (isTwoTab && isStaff) {
       const onHostView = activePodcastTab === "internal" && podcastInternalMode === "host";
       titleRow.append(actionBtn(
@@ -505,10 +497,46 @@ export function createSponsorDocPage({
       ));
     }
 
-    const { metaRow, guestSchedule, guestZone } = guestEventMetadataRow({
+    const statusRow = el("div", "sponsor-doc-status-row");
+    const docChip = el("span", "sponsor-doc-status-chip");
+    const badgeClass = isSubmitted ? "dk-badge dk-badge--success" : "dk-badge";
+    const badge = el("span", badgeClass, isSubmitted ? "Submitted / Ready" : "Draft");
+    badge.dataset.sponsorDocStatus = doc.status;
+    docChip.append(el("span", "sponsor-doc-status-chip__label", "Document"), badge);
+    statusRow.append(docChip);
+
+    if (doc.eventMetadata?.state) {
+      const eventState = doc.eventMetadata.state;
+      const eventLabels = {
+        confirmed: "Confirmed",
+        tentative: "Tentative",
+        unscheduled: "Unscheduled",
+        released: "Released",
+      };
+      const eventBadgeClass = eventState === "confirmed"
+        ? "dk-badge dk-badge--success"
+        : eventState === "tentative"
+          ? "dk-badge dk-badge--warning"
+          : "dk-badge";
+      const eventChip = el("span", "sponsor-doc-status-chip");
+      const eventBadge = el("span", eventBadgeClass, eventLabels[eventState] || eventState);
+      eventBadge.dataset.sponsorEventStatus = eventState;
+      eventChip.append(el("span", "sponsor-doc-status-chip__label", "Event"), eventBadge);
+      statusRow.append(eventChip);
+    }
+
+    if (isTwoTab && isStaff && doc.hostContext?.sponsored === true) {
+      const sponsoredBadge = el("span", "dk-badge dk-badge--info", "Sponsored");
+      sponsoredBadge.dataset.podcastSponsoredBadge = "true";
+      statusRow.append(sponsoredBadge);
+    }
+
+    const { metaRow, secondaryRow, guestSchedule, guestZone } = guestEventMetadataRow({
       el, doc, tDef, draftContent, isSpeakerDoc, isPodcastGuestDoc, formatEditorLabel,
     });
-    headWrap.append(titleRow, metaRow);
+    headWrap.append(titleRow, statusRow);
+    if (metaRow.childNodes.length > 0) headWrap.append(metaRow);
+    headWrap.append(secondaryRow);
     headerCard.append(headWrap);
     if (guestSchedule && !isTwoTab) {
       appendGuestTimezoneSelector({ el, headerCard, guestZone, busy, draftContent, render });
