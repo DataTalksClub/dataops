@@ -110,16 +110,9 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     await expect(page.locator('.runtime-template-row-open')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Start card', exact: true })).toHaveCount(0);
     if (width > 1000) {
-      // The surface renders once from the initial state and again once identity
-      // and card facts arrive, replacing both panes. toContainText also passes
-      // on the first render, so compare a pair of panes that is laid out rather
-      // than whichever pane exists between the two renders.
-      const list = page.locator('.runtime-template-inspector .dk-split__list');
-      await expect.poll(async () => {
-        const listBox = await list.boundingBox();
-        const emptyBox = await empty.boundingBox();
-        return Boolean(listBox && emptyBox) && emptyBox.x >= listBox.x + listBox.width;
-      }, { message: 'the empty pane sits to the right of the template list' }).toBe(true);
+      const listBox = await page.locator('.runtime-template-inspector .dk-split__list').boundingBox();
+      const emptyBox = await empty.boundingBox();
+      expect(emptyBox.x).toBeGreaterThanOrEqual(listBox.x + listBox.width);
     }
     await page.screenshot({ path: path.join(out, `templates-${width}x${height}.png`) });
     await page.locator('.runtime-template-row').first().click();
