@@ -824,11 +824,13 @@ test.describe('canonical frontend capability behavior', () => {
     expect(operatorMutation.status()).toBe(403);
 
     await page.goto(`/sponsors/deals/${updatedBooking.id}`);
-    await expect(page.locator('[data-crm-detail]')).toContainText(`Synthetic Sponsor ${id}`);
-    // Deal selection resolves on the Deals tab; the header deal status and
-    // the archive host stay empty until then.
-    await page.locator('[data-record-tab="deals"]').click();
+    // The exact deal link is that deal's page: the deal is the title (its
+    // product when untitled) with its stage in the header before any tab is
+    // opened, the company is the context and Back names the list it returns to.
+    await expect(page.locator('[data-record-title]')).toHaveText('One-off');
+    await expect(page.locator('[data-crm-detail] [data-record-company]').first()).toContainText(`Synthetic Sponsor ${id}`);
     await expect(page.locator('[data-crm-detail] [data-status="agreed"]').first()).toHaveText('Agreed');
+    await expect(page.locator('[data-record-back]')).toHaveText('Back to Pipeline');
     // Final record design surfaces the D company summary (notes included) in
     // the Overview Company summary section; finance stays classified/denied
     // for operators (proven above), not note-redacted.

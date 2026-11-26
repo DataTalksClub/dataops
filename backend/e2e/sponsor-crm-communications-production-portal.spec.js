@@ -315,10 +315,13 @@ test.describe('production sponsor CRM communications portal', () => {
       await page.getByRole('link', { name: 'CRM' }).click();
       await expect(page.locator('[data-crm-bookings]')).toContainText('Synthetic Sponsor');
       await page.locator('[data-crm-bookings] [data-open-deal]').first().click();
-      await expect(page.locator('[data-record-title]')).toContainText('Synthetic Sponsor');
+      // A deal opened from a Pipeline row is that deal's page (its product
+      // when untitled); the company is the context and Back names the list.
+      await expect(page.locator('[data-record-title]')).toHaveText('One-off');
+      await expect(page.locator('[data-crm-detail] [data-record-company]').first()).toContainText('Synthetic Sponsor');
       await expect(page.locator('[data-record-tabs][role="tablist"]')).toBeVisible();
-      // Deal selection resolves on the Deals tab; the Activity archive
-      // disclosure stays empty until a deal is selected.
+      // The deal is selected as the page opens, so the Activity archive is
+      // already its own; the Deals tab still lists the company's deals.
       await page.locator('[data-record-tab="deals"]').click();
       await expect(page.locator('[data-record-panel="deals"]')).not.toContainText('Loading deals');
     };
@@ -404,7 +407,8 @@ test.describe('production sponsor CRM communications portal', () => {
     await operatorPage.getByRole('link', { name: 'CRM' }).click();
     await expect(operatorPage.locator('[data-crm-bookings]')).toContainText('Synthetic Sponsor');
     await operatorPage.locator('[data-crm-bookings] [data-open-deal]').first().click();
-    await expect(operatorPage.locator('[data-record-title]')).toContainText('Synthetic Sponsor');
+    await expect(operatorPage.locator('[data-record-title]')).toHaveText('One-off');
+    await expect(operatorPage.locator('[data-crm-detail] [data-record-company]').first()).toContainText('Synthetic Sponsor');
     await operatorPage.locator('[data-record-tab="deals"]').click();
     await expect(operatorPage.locator('[data-record-panel="deals"]')).not.toContainText('Loading deals');
     const reopenedArchive = await openArchive(operatorPage);
@@ -492,7 +496,8 @@ test.describe('production sponsor CRM communications portal', () => {
     await adminPage.getByRole('link', { name: 'CRM' }).click();
     await expect(adminPage.locator('[data-crm-bookings]')).toContainText('Synthetic Sponsor');
     await adminPage.locator('[data-crm-bookings] [data-open-deal]').first().click();
-    await expect(adminPage.locator('[data-record-title]')).toContainText('Synthetic Sponsor');
+    await expect(adminPage.locator('[data-record-title]')).toHaveText('One-off');
+    await expect(adminPage.locator('[data-crm-detail] [data-record-company]').first()).toContainText('Synthetic Sponsor');
     await adminPage.locator('[data-record-tab="deals"]').click();
     await expect(adminPage.locator('[data-record-panel="deals"]')).not.toContainText('Loading deals');
     const rereadArchive = await openArchive(adminPage);

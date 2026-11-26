@@ -1,4 +1,5 @@
-import { BlankConversionError, extractInvoiceText, finomCustomer, normalizePdfText, pdfText, type InvoiceHints } from './extract';
+import { BlankConversionError, catalogProvider, extractInvoiceText, finomCustomer, normalizePdfText, normalizeSubject, pdfText, type InvoiceHints } from './extract';
+import { cleanDescription, groundedInDocument, lineItemDescription } from './description';
 import { extractWithLlm, needsPdfInput, type LlmExtraction, type LlmResult } from './llm';
 import { date, validCurrency, type Invoice, type InvoiceFields } from './model';
 import { loadEcbRates } from '../finance/rates';
@@ -98,6 +99,27 @@ export function validateFinanceFacts(f: Facts, expectedPeriod?: string): string[
   for(const key of f.uncertainFields) issues.push(`uncertain:${key}`);
   return issues;
 }
+/**
+ * One ledger description per document, best evidence first: the reader's phrase
+ * or the template's, then the first printed line item, then the provider
+ * catalog or forwarded subject. Generic, ungrounded or contradicted values are
+ * dropped (null) and the draft is flagged rather than given a guess.
+ */
+function resolveDescription(facts:Facts,text:string,base:ReturnType<typeof extractInvoiceText>,hints:InvoiceHints|undefined,issues:string[]):string|null {
+  const context={counterparty:facts.counterparty,invoiceNumber:facts.invoiceNumber};
+  let description=cleanDescription(facts.description,context);
+  if(description && !groundedInDocument(description,text)) {issues.push('uncertain:description');description=undefined;}
+  description??=lineItemDescription(text);
+  const fallback=cleanDescription(base.fields.description,context);
+  if(!description && fallback) {
+    const fromSubject=base.extraction.evidence.includes('description from the email subject');
+    const subjectProvider=hints?.subject||hints?.sender?catalogProvider(`${normalizeSubject(hints.subject)}\n${hints.sender||''}`)?.name:undefined;
+    const documentProvider=facts.counterparty?catalogProvider(facts.counterparty)?.name:undefined;
+    if(fromSubject && subjectProvider && documentProvider && subjectProvider!==documentProvider) issues.push('contradiction:description');
+    else description=fallback;
+  }
+  return description??null;
+}
 export type FinanceExtraction = { fields:InvoiceFields; extraction:Invoice['extraction']; facts:Facts; usage?:LlmResult['usage']; model?:string };
 export async function extractFinanceText(raw:string, options:{pdf?:Buffer; hints?:InvoiceHints; expectedPeriod?:string; llm?:(input:{text:string;pdf?:Buffer;forcePdf?:boolean;hints?:InvoiceHints})=>Promise<LlmResult>} = {}):Promise<FinanceExtraction> {
   const text=normalizePdfText(raw);
@@ -164,6 +186,8 @@ export async function extractFinanceText(raw:string, options:{pdf?:Buffer; hints
   if(facts.docType==='credit_note') facts.direction=customerCreditNote?'income':'expense';
   issues.push(...validateFinanceFacts(facts,options.expectedPeriod));
   if(facts.invoiceNumber) facts.invoiceNumber=facts.invoiceNumber.replace(/[\u0000\u2010-\u2014\u2212]/g,'-').replace(/\s*-\s*/g,'-');
+  facts.description=resolveDescription(facts,text,base,options.hints,issues);
+  if(facts.description===null && facts.docType!=='other') issues.push('missing:description');
   const fields:InvoiceFields={...base.fields};
   const mapping={counterparty:'counterparty',invoiceNumber:'invoiceNumber',date:'transactionDate',currency:'currency',net:'netAmount',vat:'vatAmount',gross:'amount',vatRate:'vatRate',description:'description'} as const;
   // Unknown facts clear earlier heuristic guesses rather than laundering them.
@@ -174,7 +198,7 @@ export async function extractFinanceText(raw:string, options:{pdf?:Buffer; hints
   if(facts.vat!==null && facts.currency) fields.vatCurrency=facts.currency;
   if(facts.docType==='credit_note' && !customerCreditNote) fields.subtype='Refund';
   else if(customerCreditNote) delete fields.subtype;
-  return {fields,facts,extraction:{method,evidence:[...base.extraction.evidence,`finance:${method}`],issues:[...new Set(issues)],documentType:facts.docType,direction:facts.direction,needsReview:issues.length>0,...(facts.paymentChannel?{paymentChannel:facts.paymentChannel}:{}),...(creditCandidates?{candidates:creditCandidates}:{})},...(result?{usage:result.usage,model:result.model}:{})};
+  return {fields,facts,extraction:{method,evidence:[...base.extraction.evidence,`finance:${method}`],issues:[...new Set(issues)],documentType:facts.docType,direction:facts.direction,needsReview:issues.some(issue=>!issue.endsWith(':description')),...(facts.paymentChannel?{paymentChannel:facts.paymentChannel}:{}),...(creditCandidates?{candidates:creditCandidates}:{})},...(result?{usage:result.usage,model:result.model}:{})};
 }
 /** Indicative conversion is separate from the actual EUR bank payment. */
 export async function convertExtractedFinance(result:FinanceExtraction):Promise<FinanceExtraction> {

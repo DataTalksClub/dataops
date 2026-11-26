@@ -126,6 +126,10 @@ export function createSponsorDirectoryPages({
   let returnContext = null;
   let openRecordRef = null;
   const listPath = (fallbackView) => returnContext?.path || sponsorsPath(fallbackView);
+  // Back says where it goes: the origin list captured above, never a vague
+  // "Back" or the CRM root.
+  const RETURN_LABELS = { pipeline: "Back to Pipeline", companies: "Back to Companies", people: "Back to People" };
+  const getReturnLabel = () => RETURN_LABELS[returnContext?.view] || "Back to CRM";
   function listScrollTarget(view) {
     const inner = surface.querySelector("[data-crm-list-scroll]");
     const layout = surface.querySelector(".crm-layout");
@@ -914,6 +918,7 @@ export function createSponsorDirectoryPages({
     capturePipelineCurrent,
     noteTabTransition,
     listPath,
+    getReturnLabel,
     captureReturnContext,
   };
 }
