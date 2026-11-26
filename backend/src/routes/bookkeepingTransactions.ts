@@ -33,7 +33,6 @@ import {
 } from "../bookkeepingAllocations";
 import {
   CANONICAL_EXPENSE_CATEGORIES,
-  SPECIAL_NON_OPERATING_EXPENSE_CATEGORIES,
   validateExpenseCategoryAssignment,
 } from "../finance/expenseCategories";
 
@@ -567,7 +566,6 @@ export async function handleBookkeepingTransactionRoutes(
   if (path === "/api/bookkeeping/categories" && method === "GET") {
     return json(200, {
       categories: CANONICAL_EXPENSE_CATEGORIES,
-      specialCategories: SPECIAL_NON_OPERATING_EXPENSE_CATEGORIES,
     });
   }
   const allocMatch = path.match(/^\/api\/bookkeeping\/transactions\/([^/]+)\/allocations$/);
@@ -788,11 +786,10 @@ export async function handleBookkeepingTransactionRoutes(
       const errors = validateTransaction(value);
       if (errors.length)
         return json(400, { error: "Validation failed", fields: errors });
-      if (body.category !== undefined) {
+      {
         const categoryCheck = validateExpenseCategoryAssignment({
-          category: body.category,
+          category: value.category,
           entryType: value.entryType,
-          previousCategory: previous?.category,
           allowEmpty: true,
         });
         if (!categoryCheck.ok) {

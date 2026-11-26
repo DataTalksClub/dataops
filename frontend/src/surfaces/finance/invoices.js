@@ -199,9 +199,7 @@ export function invoiceDetailMarkup(record, escapeHtml) {
         ]) => {
           if (name === "category" && record.extraction?.direction !== "income") {
             const current = String(record.fields?.category ?? "").trim();
-            const options = current && !CANONICAL_EXPENSE_CATEGORIES.includes(current)
-              ? [...CANONICAL_EXPENSE_CATEGORIES, current]
-              : CANONICAL_EXPENSE_CATEGORIES;
+            const options = CANONICAL_EXPENSE_CATEGORIES;
             return `<label>${label}<select name="category">
     <option value=""${current ? "" : " selected"}>Select category…</option>
     ${options.map((option) => `<option value="${e(option)}"${option === current ? " selected" : ""}>${e(option)}</option>`).join("")}

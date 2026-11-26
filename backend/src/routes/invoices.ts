@@ -37,8 +37,8 @@ export async function handleInvoiceRoutes(path:string,method:string,event:Lambda
       if(body.verified!==undefined && typeof body.verified!=='boolean')return json(400,{error:'verified must be a boolean'});
       const errors=validateFields(body.fields);if(errors.length)return json(400,{error:'Invalid fields',fields:errors});
       const incomingFields=body.fields as Record<string, unknown>;
-      if(incomingFields.category!==undefined){
-        const categoryCheck=validateExpenseCategoryAssignment({category:incomingFields.category,entryType:record.extraction.direction,previousCategory:record.fields.category,allowEmpty:true});
+      {
+        const categoryCheck=validateExpenseCategoryAssignment({category:incomingFields.category === undefined ? record.fields.category : incomingFields.category,entryType:record.extraction.direction,allowEmpty:true});
         if(!categoryCheck.ok)return json(400,{error:categoryCheck.error,fields:['category']});
       }
       const next=structuredClone(record);next.fields={...next.fields,...body.fields as object};

@@ -1,12 +1,12 @@
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { handler } from "../src/handler";
+import { validateAndNormalizeAllocations } from "../src/bookkeepingAllocations";
 import { createTables, startLocal, stopLocal } from "../scripts/local-dynamodb";
 import { getClient } from "../src/db/client";
 import { putBookkeepingItem } from "../src/db/bookkeeping";
 import {
   CANONICAL_EXPENSE_CATEGORIES,
-  SPECIAL_NON_OPERATING_EXPENSE_CATEGORIES,
   validateExpenseCategoryAssignment,
 } from "../src/finance/expenseCategories";
 
@@ -27,7 +27,6 @@ describe("expense category vocabulary", () => {
     const frontendUrl = new URL("../../frontend/src/surfaces/finance/expense-categories.js", import.meta.url);
     const mod = await import(frontendUrl.href);
     assert.deepEqual([...mod.CANONICAL_EXPENSE_CATEGORIES], [...CANONICAL_EXPENSE_CATEGORIES]);
-    assert.deepEqual([...mod.SPECIAL_NON_OPERATING_EXPENSE_CATEGORIES], [...SPECIAL_NON_OPERATING_EXPENSE_CATEGORIES]);
   });
 
   it("accepts canonical expense categories and rejects non-canonical ones with a clear message", () => {
@@ -44,15 +43,25 @@ describe("expense category vocabulary", () => {
     }
   });
 
-  it("preserves income categories and special VAT/tax/health/owner-pay categories", () => {
+  it("preserves income categories but rejects out-of-SOP special expense categories", () => {
     const income = validateExpenseCategoryAssignment({ category: "Sponsorship", entryType: "income" });
     assert.deepEqual(income, { ok: true, category: "Sponsorship" });
 
-    for (const special of SPECIAL_NON_OPERATING_EXPENSE_CATEGORIES) {
+    for (const special of ["VAT", "Owner pay", "Owner withdrawal"]) {
       const res = validateExpenseCategoryAssignment({ category: special, entryType: "expense" });
-      assert.deepEqual(res, { ok: true, category: special });
+      assert.equal(res.ok, false, special);
     }
   });
+  it("rejects legacy parent categories in allocation writes, including when child categories are canonical", () => {
+    for (const category of [undefined, "AI Tools"]) {
+      assert.throws(() => validateAndNormalizeAllocations({
+        transaction: { amount: "20.00", currency: "EUR", entryType: "expense", category: "Work-related" },
+        rawAllocations: [{ documentId: "synthetic-invoice", amount: "20.00", category }],
+        documentsById: new Map([["synthetic-invoice", { id: "synthetic-invoice", status: "active", documentType: "invoice" }]]),
+      }), /Invalid expense category "Work-related"/);
+    }
+  });
+
 });
 
 describe("bookkeeping expense category enforcement API", () => {
@@ -64,12 +73,12 @@ describe("bookkeeping expense category enforcement API", () => {
   });
   after(stopLocal);
 
-  it("returns canonical and special expense categories from GET /api/bookkeeping/categories", async () => {
+  it("returns only canonical expense categories from GET /api/bookkeeping/categories", async () => {
     const res = await invoke("GET", "/api/bookkeeping/categories");
     assert.equal(res.statusCode, 200);
     const body = JSON.parse(res.body);
     assert.deepEqual(body.categories, CANONICAL_EXPENSE_CATEGORIES);
-    assert.deepEqual(body.specialCategories, SPECIAL_NON_OPERATING_EXPENSE_CATEGORIES);
+    assert.deepEqual(Object.keys(body), ["categories"]);
   });
 
   it("rejects non-canonical expense categories on POST and PUT /api/bookkeeping/transactions", async () => {
@@ -106,7 +115,7 @@ describe("bookkeeping expense category enforcement API", () => {
     assert.match(JSON.parse(badPut.body).error, /Invalid expense category "Unknown Bucket"/);
   });
 
-  it("allows unrelated edits to legacy rows with non-canonical categories without losing evidence", async () => {
+  it("rejects unchanged non-canonical categories on unrelated and explicit edits", async () => {
     const legacy = (
       await putBookkeepingItem(client, "bookkeeping", {
         transactionDate: "2024-05-10",
@@ -123,10 +132,47 @@ describe("bookkeeping expense category enforcement API", () => {
       amountEur: "46.50",
       rateSource: "ECB 10 May 2024",
     });
-    assert.equal(editRes.statusCode, 200);
-    const updated = JSON.parse(editRes.body);
-    assert.equal(updated.category, "Work-related");
-    assert.equal(updated.amountEur, "46.50");
+    assert.equal(editRes.statusCode, 400);
+    const unchangedCategory = await invoke("PUT", `/api/bookkeeping/transactions/${legacy.id}`, {
+      category: "Work-related",
+    });
+    assert.equal(unchangedCategory.statusCode, 400);
+    const stored = JSON.parse((await invoke("GET", `/api/bookkeeping/transactions/${legacy.id}`)).body);
+    assert.equal(stored.category, "Work-related");
+    assert.equal(stored.amountEur, undefined, "rejected updates must not mutate the row");
+    const repaired = await invoke("PUT", `/api/bookkeeping/transactions/${legacy.id}`, { category: "Business Software" });
+    assert.equal(repaired.statusCode, 200);
+  });
+
+  it("rejects special categories rather than creating out-of-SOP expenses", async () => {
+    for (const category of ["VAT", "Owner pay", "Owner withdrawal"]) {
+      const response = await invoke("POST", "/api/bookkeeping/transactions", {
+        transactionDate: "2026-10-06", counterparty: "Synthetic Vendor", description: "Synthetic expense",
+        amount: "10.00", currency: "EUR", entryType: "expense", category,
+      });
+      assert.equal(response.statusCode, 400, category);
+    }
+  });
+
+  it("rejects unchanged legacy invoice categories, including omitted category on unrelated edits", async () => {
+    const draftId = "b".repeat(64);
+    await putBookkeepingItem(client, "invoice", {
+      id: draftId, revision: 1, status: "pending",
+      fields: { counterparty: "Synthetic Vendor", description: "Synthetic legacy expense", amount: "20.00", currency: "EUR", category: "Work-related" },
+      extraction: { method: "manual", evidence: [], issues: [], direction: "expense" },
+      source: { intakeItemIds: [], artifactId: "synthetic-artifact", checksum: "synthetic-checksum" },
+      destinations: { dropbox: { state: "pending", operationId: "synthetic-op-a" }, sheets: { state: "pending", operationId: "synthetic-op-b" } },
+      audit: [],
+    }, `invoice-draft#${draftId}`);
+    for (const fields of [{ category: "Work-related" }, { description: "Unrelated edit" }]) {
+      const response = await invoke("PUT", `/api/bookkeeping/invoices/${draftId}`, { revision: 1, fields });
+      assert.equal(response.statusCode, 400);
+    }
+    const stored = JSON.parse((await invoke("GET", `/api/bookkeeping/invoices/${draftId}`)).body);
+    assert.equal(stored.revision, 1);
+    assert.equal(stored.fields.description, "Synthetic legacy expense");
+    const repaired = await invoke("PUT", `/api/bookkeeping/invoices/${draftId}`, { revision: 1, fields: { category: "Business Software" } });
+    assert.equal(repaired.statusCode, 200);
   });
 
   it("allows income categories on income transactions", async () => {

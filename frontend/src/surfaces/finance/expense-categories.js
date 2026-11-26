@@ -25,9 +25,3 @@ export const CANONICAL_EXPENSE_CATEGORIES = Object.freeze([
   "Video recording",
   "Web Hosting & Domains",
 ]);
-
-export const SPECIAL_NON_OPERATING_EXPENSE_CATEGORIES = Object.freeze([
-  "VAT",
-  "Owner pay",
-  "Owner withdrawal",
-]);

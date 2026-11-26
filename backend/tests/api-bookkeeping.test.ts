@@ -33,7 +33,7 @@ describe('bookkeeping API',()=>{
   it('classifies tax and health-insurance rows on the backend in every transaction view',async()=>{
     const tk=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-16',paidDate:'2026-10-16',counterparty:'Techniker Krankenkasse',description:'Health insurance',amount:'1179.36',entryType:'expense'})).body);
     const tax=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-15',paidDate:'2026-10-15',counterparty:'Finanzamt Example',description:'Income tax payment',amount:'500.00',entryType:'expense'})).body);
-    const vat=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-28',counterparty:'Finanzamt',description:'UMS.ST 2026',category:'VAT',amount:'50.00',entryType:'expense'})).body);
+    const vat=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-28',counterparty:'Finanzamt',description:'UMS.ST 2026',category:'Taxes',amount:'50.00',entryType:'expense'})).body);
     const plain=JSON.parse((await invoke('POST','/api/bookkeeping/transactions',{...valid,transactionDate:'2026-10-05',counterparty:'Synthetic Cloud Vendor',description:'Synthetic compute',amount:'20.00',entryType:'expense'})).body);
     assert.equal(tk.line,'health-insurance');assert.equal(tax.line,'taxes');assert.equal(vat.line,'vat');assert.equal(plain.line,'operating');
     const listed=JSON.parse((await invoke('GET','/api/bookkeeping/transactions')).body).items;
