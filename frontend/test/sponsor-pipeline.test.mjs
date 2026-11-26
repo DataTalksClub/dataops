@@ -29,6 +29,17 @@ test("funnel totals are server-wide rather than page counts and include closed/l
   assert.match(markup, /data-pipeline-status="agreed" aria-pressed="true"/);
 });
 
+test("chips show the deals the current view lists, and say when it hides some", async () => {
+  const { pipelineChipCount, pipelineMatchSummary } = await import("../src/surfaces/finance/sponsor-pipeline.js");
+  const counts = { invoiced: 18, agreed: 2 }, viewCounts = { invoiced: 5, agreed: 2 };
+  assert.equal(pipelineChipCount(counts, viewCounts, "invoiced"), "5 of 18");
+  assert.equal(pipelineChipCount(counts, viewCounts, "agreed"), "2");
+  assert.equal(pipelineChipCount(counts, undefined, "invoiced"), "18");
+  assert.match(renderSponsorPipelineFilters({ counts, viewCounts, selected: "", escapeHtml }), /Invoiced <strong>5 of 18/);
+  assert.equal(pipelineMatchSummary({ total: 6, totalDeals: 78 }), "6 matching deals · 78 deals in total");
+  assert.equal(pipelineMatchSummary({ total: 1, totalDeals: 1 }), "1 matching deal");
+});
+
 test("Sponsors creates ride on their collections, never the page header", async () => {
   const { sponsorSurfaceMarkup } = await import("../src/surfaces/finance/sponsor-layout.js");
   const markup = sponsorSurfaceMarkup((value) => value);
@@ -39,7 +50,7 @@ test("Sponsors creates ride on their collections, never the page header", async 
   assert.match(markup, /crm-list-head">[\s\S]*?data-crm-list-heading>Pipeline<\/h2>\s*<button[^>]*data-dk-create[^>]*data-add-deal/);
   assert.match(markup, /dk-collection-header__trail">[\s\S]*?data-booking-count[\s\S]*?data-evaluate-communications\s+aria-label="Refresh suggestions"/);
   // Stage totals and scope note are grouped in one summary; search & primary controls sit in the toolbar.
-  assert.match(markup, /data-crm-pipeline-summary[\s\S]*?data-crm-pipeline[\s\S]*?crm-funnel-scope/);
+  assert.match(markup, /data-crm-pipeline-summary[\s\S]*?data-crm-pipeline/);
   assert.match(markup, /crm-pipeline-toolbar[\s\S]*?data-crm-search[\s\S]*?data-pipeline-view[\s\S]*?crm-filter-disclosure[\s\S]*?data-crm-status/);
   // Add company follows the Companies title.
   assert.match(markup, /Companies<\/h3>\s*<button[^>]*data-dk-create[^>]*data-add-org/);

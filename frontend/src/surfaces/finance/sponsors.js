@@ -318,7 +318,6 @@ export function createSponsorCrmSurface(context) {
       const pipelineSummary = surface.querySelector("[data-crm-pipeline-summary]");
       if (pipelineSummary) pipelineSummary.hidden = view !== "pipeline";
       surface.querySelector("[data-crm-pipeline]").hidden = view !== "pipeline";
-      surface.querySelector(".crm-funnel-scope").hidden = view !== "pipeline";
       surface.querySelector(".crm-funnel-controls").hidden = view !== "pipeline";
       surface.querySelector(".crm-filter-disclosure").hidden = view !== "pipeline";
       const heading = surface.querySelector("[data-crm-list-heading]");

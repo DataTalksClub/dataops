@@ -43,7 +43,6 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = coreEsc
     ${renderCrmNav(crmNavModel(initialTab), { escapeHtml })}
     <section class="crm-pipeline-summary" data-crm-pipeline-summary aria-label="Pipeline stage totals">
       <nav class="crm-pipeline" data-crm-pipeline aria-label="Deal pipeline"></nav>
-      <p class="crm-funnel-scope">Stage totals reflect search and company; owner, date, view and stage filter the list below.</p>
     </section>
     <details class="crm-alerts">
       <summary data-crm-alert-summary>Sponsor alerts</summary>
