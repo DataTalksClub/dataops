@@ -58,5 +58,28 @@
     "text": "Credit note\nCredit note number CN-0001-CN-01\nDate: 2026-10-05\nExample Cloud, Inc.\nUnused time on Cloud VPS plan\nCredited total EUR 25.00",
     "reader": { "docType": "credit_note", "counterparty": "Example Cloud, Inc.", "invoiceNumber": "CN-0001-CN-01", "date": "2026-10-05", "currency": "EUR", "net": "25.00", "vat": "0.00", "gross": "25.00", "vatRate": "0", "description": "Unused time on Cloud VPS plan", "confidence": "high" },
     "expected": { "description": "Unused time on Cloud VPS plan" }
+  },
+  {
+    "id": "catalog-default-contradicts-document-template",
+    "note": "The provider catalog guesses 'Dedicated server' for every Hetzner invoice. The document prints a storage box, so the guess is dropped and review is asked for the description instead of a plausible wrong line.",
+    "text": "Hetzner Online GmbH\nInvoice no.: 123456789\nInvoice date: 01/10/2026\nStorage Box 100 TB, October 2026\nTax code Tax rate\nA1 19 %\nTotal € 100.00 € 19.00 € 119.00",
+    "hints": { "subject": "Invoice from Hetzner", "sender": "billing@example.test" },
+    "reader": "unused",
+    "expected": { "description": null, "method": "template:hetzner", "needsReview": false, "issues": ["uncertain:description", "missing:description"] }
+  },
+  {
+    "id": "catalog-default-contradicts-document-reader-null",
+    "note": "Reader path, reader returned no description: the same catalog guess must not come back through the fallback tier.",
+    "text": "Invoice\nInvoice number 8811\nInvoice date: 2026-10-05\nHetzner Online GmbH\nDomain registration example.test, 1 year\nTotal 10.00 EUR",
+    "reader": { "counterparty": "Hetzner Online GmbH", "invoiceNumber": "8811", "date": "2026-10-05", "currency": "EUR", "net": "8.40", "vat": "1.60", "gross": "10.00", "vatRate": "19", "description": null, "confidence": "high" },
+    "expected": { "description": null, "issues": ["uncertain:description", "missing:description"] }
+  },
+  {
+    "id": "catalog-default-printed-in-document",
+    "note": "The catalog phrase is kept only when the document itself prints what it says.",
+    "text": "Hetzner Online GmbH\nInvoice no.: 123456790\nInvoice date: 01/10/2026\nDedicated Server EX44, October 2026\nTax code Tax rate\nA1 19 %\nTotal € 100.00 € 19.00 € 119.00",
+    "hints": { "subject": "Invoice from Hetzner", "sender": "billing@example.test" },
+    "reader": "unused",
+    "expected": { "description": "Dedicated server", "method": "template:hetzner", "needsReview": false }
   }
 ]
