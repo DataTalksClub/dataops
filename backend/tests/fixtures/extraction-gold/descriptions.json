@@ -99,8 +99,8 @@
   },
   {
     "id": "overview-table-names-the-services",
-    "note": "Synthetic twin of a Hetzner invoice (draft 6291b3da) whose overview table prints one service per line. The description names those services, as the operator typed by hand, instead of the catalog's guess.",
-    "text": "\nHetzner Online GmbH\nInvoice no.: 123456791\nInvoice date: 01/11/2026\nInvoice 123456791\nOverview\nService   Period   Total (excl. VAT)   Tax   Total\nDedicated Server   10/28   € 100.00   € 19.00 A1   € 119.00\nStorage   11/01   € 10.08   € 1.92 A1   € 12.00\nTotal   € 110.08   € 20.92   € 131.00\nTax code   Tax rate   Total (excl. VAT)   Taxable   Tax   Total\nA1   19 %   € 110.08   € 110.08   € 20.92   € 131.00",
+    "note": "Synthetic twin of a Hetzner invoice (draft 6291b3da) whose overview table prints one service per line. The issuer line makes the template facts carry the catalog guess 'Dedicated server', which one printed word would ground; the description must still name the services, as the operator typed by hand.",
+    "text": "Hetzner Online GmbH\nMusterweg 1, 12345 Musterstadt\nInvoice no.: 123456791\nInvoice date: 01/11/2026\nInvoice 123456791\nOverview\nService   Period   Total (excl. VAT)   Tax   Total\nDedicated Server   10/28   € 100.00   € 19.00 A1   € 119.00\nStorage   11/01   € 10.08   € 1.92 A1   € 12.00\nTotal   € 110.08   € 20.92   € 131.00\nTax code   Tax rate   Total (excl. VAT)   Taxable   Tax   Total\nA1   19 %   € 110.08   € 110.08   € 20.92   € 131.00",
     "hints": { "subject": "Invoice from Hetzner", "sender": "billing@example.test" },
     "reader": "unused",
     "expected": { "description": "Dedicated Server and Storage", "method": "template:hetzner", "needsReview": false }
@@ -108,9 +108,16 @@
   {
     "id": "overview-table-single-service",
     "note": "A storage-only Hetzner invoice: the overview prints one service, so the description is that service and not the catalog's 'Dedicated server' guess.",
-    "text": "\nHetzner Online GmbH\nInvoice no.: 123456792\nInvoice date: 01/11/2026\nInvoice 123456792\nOverview\nService   Period   Total (excl. VAT)   Tax   Total\nStorage   11/01   € 10.08   € 1.92 A1   € 12.00\nTotal   € 10.08   € 1.92   € 12.00\nTax code   Tax rate   Total (excl. VAT)   Taxable   Tax   Total\nA1   19 %   € 10.08   € 10.08   € 1.92   € 12.00",
+    "text": "Hetzner Online GmbH\nInvoice no.: 123456792\nInvoice date: 01/11/2026\nInvoice 123456792\nOverview\nService   Period   Total (excl. VAT)   Tax   Total\nStorage   11/01   € 10.08   € 1.92 A1   € 12.00\nTotal   € 10.08   € 1.92   € 12.00\nTax code   Tax rate   Total (excl. VAT)   Taxable   Tax   Total\nA1   19 %   € 10.08   € 10.08   € 1.92   € 12.00",
     "hints": { "subject": "Invoice from Hetzner", "sender": "billing@example.test" },
     "reader": "unused",
     "expected": { "description": "Storage", "method": "template:hetzner", "needsReview": false }
+  },
+  {
+    "id": "catalog-default-printed-in-aws-invoice",
+    "note": "AWS is the provider whose catalog phrase is a fair summary of the bill: the template facts carry it and the document prints it, so the last tier keeps it. The per-service list is not turned into a description.",
+    "text": "VAT Invoice\nAmazon Web Services EMEA SARL\nVAT Invoice Number: EUINDE26-124\nVAT Invoice Date: October 1, 2026\nTOTAL AMOUNT USD 119.00\nTOTAL VAT USD 19.00\nInvoice Summary\nAWS Service Charges USD 119.00\nAmazon Elastic Compute Cloud USD 100.00\nCharges USD 100.00\nVAT USD 19.00\nNet Charges (After Credits/Discounts, excl. Tax) USD 100.00\nVAT - 19% USD 19.00",
+    "reader": "unused",
+    "expected": { "description": "Cloud services", "method": "template:aws", "needsReview": false }
   }
 ]
