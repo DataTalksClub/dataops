@@ -33,6 +33,16 @@ export function selectAccountantReportRows(transactions: AccountantReportEntry[]
   return accountantReportRowsForPeriod(transactions, period).filter(isAccountantReportRowIncluded);
 }
 
+/**
+ * The rows already-selected payments contribute to the accountant package: a
+ * payment with invoice allocations as its reportable children in saved order,
+ * any other payment as itself. The portal snapshot counts its payments this
+ * way and its archive lists them this way, so both show the same rows.
+ */
+export function includedAccountantReportRows(transactions: AccountantReportEntry[]) {
+  return accountantReportRows(transactions).filter(isAccountantReportRowIncluded);
+}
+
 function accountantCurrency(entry: AccountantReportEntry) {
   return String(entry.currency || "EUR").trim().toUpperCase();
 }

@@ -8,7 +8,6 @@ import {
   addDocumentReportReference,
   deleteBookkeepingItem,
   getBookkeepingItem,
-  isReportExemptTransaction,
   listBookkeepingItems,
   markGenerationCleanupRequired,
   markReportGenerated,
@@ -19,8 +18,14 @@ import {
 } from "../db/bookkeeping";
 import { preflightOrganizations } from '../vies/service';
 import { assertAccountantPaymentReady, MonthGateError } from "../reconcile/monthService";
-import { accountantCashDate } from "../finance/accountantReport";
-import { projectTransactionAllocations, readTransactionAllocations } from "../bookkeepingAllocations";
+import {
+  accountantCashDate,
+  accountantReportRows,
+  includedAccountantReportRows,
+  isAccountantReportRowIncluded,
+  unconvertedAccountantReportRows,
+} from "../finance/accountantReport";
+import { readTransactionAllocations } from "../bookkeepingAllocations";
 import { businessAccountRequiresStatement } from "../finance/businessAccounts";
 import {
   headDocumentObject,
@@ -107,18 +112,11 @@ export async function handleBookkeepingReportRoutes(
       });
     const monthTransactions = ledger
       .filter((t) => accountantCashDate(t).startsWith(month) && !omitted.has(String(t.id)));
-    // Classify each reportable child of an allocated payment on its own.
-    const projected = monthTransactions.flatMap((t) => {
-      const children = projectTransactionAllocations(t);
-      return children.length ? children : [t];
-    });
-    const excludedTransactions = projected.filter(isReportExemptTransaction);
-    const transactions = projected.filter((t) => !isReportExemptTransaction(t));
-    const unconverted = transactions.filter(
-      (t) =>
-        String(t.currency || "EUR").toUpperCase() !== "EUR" &&
-        !String(t.amountEur ?? "").trim(),
-    );
+    // Each reportable child of an allocated payment is classified on its own.
+    const projected = accountantReportRows(monthTransactions);
+    const excludedTransactions = projected.filter((t) => !isAccountantReportRowIncluded(t));
+    const transactions = projected.filter(isAccountantReportRowIncluded);
+    const unconverted = unconvertedAccountantReportRows(transactions);
     if (unconverted.length)
       return json(409, {
         error: `${unconverted.length} transaction(s) have no EUR value; convert them before preparing the package`,
@@ -163,6 +161,7 @@ export async function handleBookkeepingReportRoutes(
         linkedIds.has(d.id) ||
         (selectedPrivate.has(d.id) && !excludedLinkedIds.has(String(d.id))),
     );
+    const includedDocIds = new Set(includedDocs.map((d) => String(d.id)));
     const reportId = createHash("sha256").update(`report#${month}`).digest("hex");
     const guarded: string[] = [];
     let report: BookkeepingItem;
@@ -207,11 +206,14 @@ export async function handleBookkeepingReportRoutes(
       report,
       vatPreflight: await vatPreflightSummary(client),
       warnings: {
+        // An allocated child is evidenced by its own allocation document; a
+        // parent-level link is not attributable to it.
         missingEvidence: transactions.filter(
-          (t) =>
-            !links.some(
-              (l) => l.transactionId === t.id && l.coverageType === "evidence",
-            ),
+          (t) => t.allocationDocumentId
+            ? !includedDocIds.has(String(t.allocationDocumentId))
+            : !links.some(
+                (l) => l.transactionId === t.id && l.coverageType === "evidence",
+              ),
         ).length,
       },
     });
@@ -272,46 +274,62 @@ export async function handleBookkeepingReportRoutes(
       if (error instanceof MonthGateError) return json(409, { reportPeriod: month, error: error.message, blockers: error.blockers });
       throw error;
     }
-    // Generating the pack is the monthly bookkeeping landmark: catch the
-    // inventory up on every physical purchase seen since the last run.
-    const inventorySweep = await sweepInventory(client);
-    if (report.archiveDocumentId) {
-      const doc = await getBookkeepingItem(
-        client,
-        "document",
-        String(report.archiveDocumentId),
-      );
-      if (doc) {
-        const url = await signUrl(
-          s3,
-          new GetObjectCommand({
-            Bucket: bookkeepingDocumentsBucket(),
-            Key: String(doc.s3Key),
-          }),
-          { expiresIn: 300 },
-        );
-        return json(200, { reportPeriod: month, downloadUrl: url, expiresIn: 300, duplicate: true, inventoryItemsAdded: inventorySweep.created.length, vatPreflight: await vatPreflightSummary(client) });
-      }
-    }
     const transactionIds = Array.isArray(report.transactionIds)
         ? report.transactionIds.map(String)
         : [],
       documentIds = Array.isArray(report.documentIds)
         ? report.documentIds.map(String)
         : [];
+    // An archived report is a historical record and is served as stored. One
+    // still to be generated lists the payments its snapshot selected as the
+    // rows the snapshot counted: an allocated payment as its reportable
+    // children, never as the parent total.
+    const cachedArchive = report.archiveDocumentId
+      ? await getBookkeepingItem(client, "document", String(report.archiveDocumentId))
+      : undefined;
+    const payments = cachedArchive ? [] : (await Promise.all(
+        transactionIds.map((id) => getBookkeepingItem(client, "bookkeeping", id)),
+      )).filter(Boolean) as Record<string, unknown>[];
+    const transactions = includedAccountantReportRows(payments);
+    if (!cachedArchive) {
+      const parentOf = (t: Record<string, unknown>) => String(t.sourceTransactionId || t.id);
+      const staleTransactionIds = payments
+        .filter((payment) => !transactions.some((row) => parentOf(row) === String(payment.id)))
+        .map((payment) => String(payment.id));
+      if (staleTransactionIds.length)
+        return json(409, {
+          reportPeriod: month,
+          error: `${staleTransactionIds.length} payment(s) in this package no longer have a reportable invoice allocation; delete the package and prepare the month again`,
+          staleTransactionIds,
+        });
+      const unconverted = unconvertedAccountantReportRows(transactions);
+      if (unconverted.length)
+        return json(409, {
+          reportPeriod: month,
+          error: `${unconverted.length} transaction(s) have no EUR value; convert them before preparing the package`,
+          unconvertedTransactionIds: [...new Set(unconverted.map(parentOf))],
+        });
+    }
+    // Generating the pack is the monthly bookkeeping landmark: catch the
+    // inventory up on every physical purchase seen since the last run.
+    const inventorySweep = await sweepInventory(client);
+    if (cachedArchive) {
+      const url = await signUrl(
+        s3,
+        new GetObjectCommand({
+          Bucket: bookkeepingDocumentsBucket(),
+          Key: String(cachedArchive.s3Key),
+        }),
+        { expiresIn: 300 },
+      );
+      return json(200, { reportPeriod: month, downloadUrl: url, expiresIn: 300, duplicate: true, inventoryItemsAdded: inventorySweep.created.length, vatPreflight: await vatPreflightSummary(client) });
+    }
     const maxFiles = Number(process.env.BOOKKEEPING_ARCHIVE_MAX_FILES || 500),
       maxBytes = Number(
       process.env.BOOKKEEPING_ARCHIVE_MAX_BYTES || 50 * 1024 * 1024,
       );
     if (documentIds.length + 1 > maxFiles)
       return json(413, { error: "Archive file limit exceeded" });
-    const transactions = (
-      await Promise.all(
-        transactionIds.map((id) =>
-          getBookkeepingItem(client, "bookkeeping", id),
-        ),
-      )
-    ).filter(Boolean) as Record<string, unknown>[];
     const columns = [
       "transactionDate",
       "paidDate",
