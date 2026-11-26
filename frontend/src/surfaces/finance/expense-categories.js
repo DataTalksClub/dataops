@@ -25,3 +25,7 @@ export const CANONICAL_EXPENSE_CATEGORIES = Object.freeze([
   "Video recording",
   "Web Hosting & Domains",
 ]);
+
+export function expenseCategoryFilterOptions(categories) {
+  return [...new Set([...CANONICAL_EXPENSE_CATEGORIES, ...categories])].sort((a, b) => a.localeCompare(b));
+}
