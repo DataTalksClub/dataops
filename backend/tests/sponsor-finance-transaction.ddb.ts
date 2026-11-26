@@ -1439,6 +1439,68 @@ describe('sponsor finance production DynamoDB transactions', () => {
     assert.equal((await projectFinance(client, seeded.dealId, 'admin')).paid, '35');
   });
 
+  it('validates receipt correction categories against the linked ledger direction', async () => {
+    for (const entryType of ['expense', 'income']) {
+      const label = `receipt-category-${entryType}`;
+      const seeded = await bootstrapPayable(label, '100');
+      const source = {
+        ...payment(label, '40'), entryType, category: entryType === 'expense' ? 'Bank fees' : 'Sponsorship',
+        sourceType: 'statement', statementRef: `synthetic-bank:${label}`,
+      };
+      await put(client, TABLE_BOOKKEEPING, source);
+      const linked = await linkPayment(client, {
+        actorId: adminId, dealId: seeded.dealId, dealVersion: 1, expectedVersion: seeded.version,
+        sourceId: source.id, identityToken: paymentIdentity(source), idempotencyKey: idem(`${label}-link`),
+      });
+      assert.equal((await projectFinance(client, seeded.dealId, 'admin')).reconciliationStatus, 'coherent');
+      const correction = {
+        actorId: adminId, dealId: seeded.dealId, dealVersion: 1, expectedVersion: linked.financeVersion,
+        sourceId: source.id, receivedOn: source.paidDate, amount: source.amount, currency: source.currency,
+        reference: source.statementRef, idempotencyKey: idem(`${label}-correct`),
+      };
+      if (entryType === 'expense') {
+        const before = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: key('BOOKKEEPING', source.id) }))).Item!;
+        const historyBefore = await listFinanceHistory(client, seeded.dealId);
+        await assert.rejects(
+          () => correctReceipt(client, { ...correction, category: 'Work-related' }),
+          (error: Error & { statusCode?: number }) => error.statusCode === 400 && /Invalid expense category/.test(error.message),
+        );
+        const after = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: key('BOOKKEEPING', source.id) }))).Item!;
+        assert.deepEqual(after, before, 'rejected category changes neither the expense nor its claim identity');
+        assert.equal((await getFinanceState(client, seeded.dealId))!.version, linked.financeVersion);
+        assert.deepEqual(await listFinanceHistory(client, seeded.dealId), historyBefore);
+      }
+      const category = entryType === 'expense' ? 'Infrastructure' : 'Sponsor income';
+      const corrected = await correctReceipt(client, { ...correction, category });
+      const saved = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: key('BOOKKEEPING', source.id) }))).Item!;
+      assert.equal(saved.entryType, entryType);
+      assert.equal(saved.category, category);
+      assert.equal(saved.amount, source.amount);
+      const claim = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: { PK: claimKey('transaction', source.id), SK: claimKey('transaction', source.id) } }))).Item!;
+      assert.equal(claim.identityToken, paymentIdentity(saved));
+      assert.equal((await projectFinance(client, seeded.dealId, 'admin')).reconciliationStatus, 'coherent');
+      assert.equal(corrected.financeVersion, linked.financeVersion + 1);
+    }
+  });
+
+  it('rejects a receipt correction that retains an omitted legacy expense category', async () => {
+    const seeded = await bootstrapPayable('legacy-receipt-category', '100');
+    const source = { ...payment('legacy-receipt-category', '40'), entryType: 'expense', category: 'Work-related', statementRef: 'synthetic-legacy-bank-row' };
+    await put(client, TABLE_BOOKKEEPING, source);
+    const linked = await linkPayment(client, {
+      actorId: adminId, dealId: seeded.dealId, dealVersion: 1, expectedVersion: seeded.version,
+      sourceId: source.id, identityToken: paymentIdentity(source), idempotencyKey: idem('legacy-category-link'),
+    });
+    const before = (await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: key('BOOKKEEPING', source.id) }))).Item!;
+    await assert.rejects(() => correctReceipt(client, {
+      actorId: adminId, dealId: seeded.dealId, dealVersion: 1, expectedVersion: linked.financeVersion,
+      sourceId: source.id, receivedOn: source.paidDate, amount: '35', currency: source.currency,
+      reference: source.statementRef, idempotencyKey: idem('legacy-category-correct'),
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 400 && /Invalid expense category/.test(error.message));
+    assert.deepEqual((await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: key('BOOKKEEPING', source.id) }))).Item, before);
+    assert.equal((await getFinanceState(client, seeded.dealId))!.version, linked.financeVersion);
+  });
+
   it('updates conversion metadata through the owner-aware canonical sponsor receipt route', async () => {
     process.env.SPONSOR_FINANCE_ENABLED = 'true';
     const seeded = await bootstrapPayable('receipt-conversion-route', '100', 'USD');

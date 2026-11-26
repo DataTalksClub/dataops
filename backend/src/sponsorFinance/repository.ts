@@ -10,6 +10,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { settlementBalance, validateSettlementAdjustment } from './settlementAdjustment';
 import { documentLinkItem } from '../db/bookkeeping';
+import { validateExpenseCategoryAssignment } from '../finance/expenseCategories';
 import { cleanItem as clean } from '../db/cleanItem';
 import { finomPaidTaskActions } from './finomPaidTask';
 import { TABLE_BOOKKEEPING, TABLE_SPONSOR_CRM, TABLE_USERS } from '../db/tableNames';
@@ -1212,6 +1213,12 @@ export async function correctReceipt(
   if (source.sourceType === 'sponsor-receipt' && input.reference.trim() !== source.statementRef) {
     throw Object.assign(new Error('The bank/account transaction identity is immutable; correct the amount or date using its original reference'), { statusCode: 400 });
   }
+  const categoryCheck = validateExpenseCategoryAssignment({
+    category: input.category === undefined ? source.category : input.category,
+    entryType: source.entryType,
+    allowEmpty: true,
+  });
+  if (!categoryCheck.ok) throw Object.assign(new Error(categoryCheck.error), { statusCode: 400 });
   const priorIdentity = paymentIdentity(source), now = nowIso();
   const updated = { ...source, amount: input.amount, currency: input.currency, paidDate: input.receivedOn, transactionDate: input.receivedOn,
     ...(input.category !== undefined ? { category: input.category } : {}),
