@@ -18,7 +18,7 @@ import { executeEpisodeDeletion } from '../src/podcast/episodeDeletion';
 import { getPodcastEpisode } from '../src/db/podcastEpisodes';
 import { EPISODE_STAGES, statusFromCard } from "../src/podcast/cardStatus";
 import { addDays, isoWeekday, takenRecordingDates } from "../src/podcast/recordingSlots";
-import { berlinToday, setOwnerCalendarProviderClientsForTests } from "../src/calendar/ownerCalendarOverlay";
+import { berlinToday, setOwnerCalendarProviderClientsForTests as setOwnerCalendarClients } from "../src/calendar/ownerCalendarOverlay";
 import { saveCalendarOverlaySettings } from "../src/db/calendar";
 import { loadRecordingOccupancy } from "../src/podcast/resolveRecordingSlot";
 
