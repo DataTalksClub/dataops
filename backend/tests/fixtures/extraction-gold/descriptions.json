@@ -81,5 +81,12 @@
     "hints": { "subject": "Invoice from Hetzner", "sender": "billing@example.test" },
     "reader": "unused",
     "expected": { "description": "Dedicated server", "method": "template:hetzner", "needsReview": false }
+  },
+  {
+    "id": "stripe-table-period-dash-printed-as-null",
+    "note": "Synthetic twin of a real Stripe-layout receipt: the font prints the billed-period dash as a NUL glyph before a month name, which the invoice-number normalizer turns into spaces. The line item must still carry its period.",
+    "text": "Receipt\nInvoice number EXAMPLE-0002 \u0000 0001\nDate paid November 12, 2026\nAnthropic, PBC\nBill to\nSynthetic Customer GmbH\nDescription Qty Unit price Tax Amount\nUltra plan\nNov 12 \u0000 Dec 12, 2026\n1 €180.00 0% €180.00\nSubtotal €180.00\nTotal €180.00\nAmount paid €180.00",
+    "reader": "unused",
+    "expected": { "description": "Ultra plan, Nov 12 - Dec 12, 2026", "method": "template:stripe", "needsReview": false }
   }
 ]
