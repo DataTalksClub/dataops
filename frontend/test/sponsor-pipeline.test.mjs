@@ -138,7 +138,7 @@ test("narrow CRM tabs keep the folded alerts bar full width instead of shrinking
 });
 
 test('pipeline rows show a missing primary contact only where it is actionable', () => {
-  const ctx = { escapeHtml: (v) => String(v), humanSponsorDate: (v) => v, ownerName: () => 'Owner' };
+  const ctx = { escapeHtml, humanSponsorDate: (v) => v, ownerName: () => 'Owner' };
   const early = renderSponsorPipelineList({ items: [{ id: 'a', organizationName: 'A', stage: 'open' }], ...ctx });
   assert.doesNotMatch(early, /No primary contact/);
   const agreed = renderSponsorPipelineList({ items: [{ id: 'b', organizationName: 'B', stage: 'agreed' }], ...ctx });
