@@ -1889,4 +1889,224 @@ describe('sponsor finance production DynamoDB transactions', () => {
     }), (error: Error & { statusCode?: number }) => error.statusCode === 409);
   });
 
+  it('corrects nominal amountDue on an already-linked verified replacement invoice without duplicate upload, preserves state, and rejects unsafe states', async () => {
+    const dealId = 'booking-invoice-amount-correction';
+    await put(client, TABLE_SPONSOR_CRM, {
+      ...key('DEAL', dealId), id: dealId, version: 1, status: 'agreed', active: true,
+      organizationId: 'organization-invoice-amount-correction',
+    });
+    const base = { actorId: adminId, dealId, dealVersion: 1 };
+    let version = (await classifyFinance(client, {
+      ...base, idempotencyKey: idem('amt-corr-classify'),
+      body: { invoiceRequirement: 'required', amountDue: '500', currency: 'EUR', taxMode: 'added', taxAmount: '50' },
+    })).financeVersion;
+    version = (await updateFollowThrough(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-evidence'),
+      body: { evidence: [{ kind: 'email', ref: 'synthetic-thread-1', label: 'Synthetic invoice thread' }] },
+    })).financeVersion;
+    version = (await issueInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-issue'),
+      invoiceNumber: 'SYN/2026/42', issuedOn: '2026-09-01', dueOn: '2026-10-01', sentOn: '2026-09-02',
+    })).financeVersion;
+
+    const original = {
+      ...key('DOCUMENT', 'amt-corr-original'), id: 'amt-corr-original',
+      documentType: 'invoice', status: 'active', sha256: '1'.repeat(64),
+      objectVersionId: 'ver-amt-original', verifiedByteSize: 800, byteSize: 800,
+      s3Key: 'documents/amt-corr-original',
+      createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
+    };
+    const replacement = {
+      ...key('DOCUMENT', 'amt-corr-replacement'), id: 'amt-corr-replacement',
+      documentType: 'invoice', status: 'active', sha256: '2'.repeat(64),
+      objectVersionId: 'ver-amt-replacement', verifiedByteSize: 900, byteSize: 900,
+      s3Key: 'documents/amt-corr-replacement',
+      createdAt: '2026-09-03T00:00:00.000Z', updatedAt: '2026-09-03T00:00:00.000Z',
+    };
+    const replacementTwo = {
+      ...key('DOCUMENT', 'amt-corr-replacement-2'), id: 'amt-corr-replacement-2',
+      documentType: 'invoice', status: 'active', sha256: '3'.repeat(64),
+      objectVersionId: 'ver-amt-replacement-2', verifiedByteSize: 950, byteSize: 950,
+      s3Key: 'documents/amt-corr-replacement-2',
+      createdAt: '2026-09-05T00:00:00.000Z', updatedAt: '2026-09-05T00:00:00.000Z',
+    };
+    await Promise.all([
+      put(client, TABLE_BOOKKEEPING, original),
+      put(client, TABLE_BOOKKEEPING, replacement),
+      put(client, TABLE_BOOKKEEPING, replacementTwo),
+    ]);
+
+    version = (await linkInvoice(client, {
+      ...base, expectedVersion: version, sourceId: original.id, identityToken: invoiceIdentity(original),
+      idempotencyKey: idem('amt-corr-link-orig'),
+    })).financeVersion;
+
+    // Supersede with replacement PDF first (simulating replacement PDF already linked before amount update).
+    version = (await correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-link-repl'),
+      reason: 'Replacement PDF linked first',
+      invoiceNumber: 'SYN/2026/42-R', issuedOn: '2026-09-03', dueOn: '2026-10-03', sentOn: '2026-09-03',
+      sourceId: replacement.id, identityToken: invoiceIdentity(replacement),
+    })).financeVersion;
+
+    // Guard retained: classifyFinance must still reject nominal amount changes once an invoice is linked.
+    await assert.rejects(() => classifyFinance(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-classify-blocked'),
+      body: { invoiceRequirement: 'required', amountDue: '450', currency: 'EUR', taxMode: 'added', taxAmount: '50' },
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 409);
+
+    const beforeProj = await projectFinance(client, dealId, 'admin');
+    assert.equal(beforeProj.invoice!.id, replacement.id);
+    assert.equal(beforeProj.invoice!.identityToken, invoiceIdentity(replacement));
+
+    // Reject malformed/nonpositive amounts.
+    for (const badAmount of ['0', '0.00', '-10', '+10', '010', '10.12345', '', null, 450]) {
+      await assert.rejects(() => correctInvoice(client, {
+        ...base, expectedVersion: version, idempotencyKey: idem(`amt-corr-bad-${String(badAmount)}`),
+        reason: 'Bad amount', invoiceNumber: 'SYN/2026/42-R', issuedOn: '2026-09-03', dueOn: '2026-10-03', sentOn: '2026-09-03',
+        amountDue: badAmount, expectedDocumentId: replacement.id, expectedDocumentIdentityToken: invoiceIdentity(replacement),
+      }), (error: Error & { statusCode?: number }) => error.statusCode === 400);
+    }
+
+    // Reject amount change without either replacement doc or existing linked document identity.
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-no-doc-id'),
+      reason: 'Missing document identity', invoiceNumber: 'SYN/2026/42-R', issuedOn: '2026-09-03', dueOn: '2026-10-03', sentOn: '2026-09-03',
+      amountDue: '450',
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 422);
+
+    // Reject supplying both replacement document and existing document identity.
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-both-docs'),
+      reason: 'Ambiguous doc identity', invoiceNumber: 'SYN/2026/42-R', issuedOn: '2026-09-03', dueOn: '2026-10-03', sentOn: '2026-09-03',
+      amountDue: '450', sourceId: replacementTwo.id, identityToken: invoiceIdentity(replacementTwo),
+      expectedDocumentId: replacement.id, expectedDocumentIdentityToken: invoiceIdentity(replacement),
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 400);
+
+    // Reject stale/conflicting existing document ID or identity token.
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-wrong-doc'),
+      reason: 'Wrong linked doc', invoiceNumber: 'SYN/2026/42-R', issuedOn: '2026-09-03', dueOn: '2026-10-03', sentOn: '2026-09-03',
+      amountDue: '450', expectedDocumentId: original.id, expectedDocumentIdentityToken: invoiceIdentity(original),
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 409);
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-stale-token'),
+      reason: 'Stale identity token', invoiceNumber: 'SYN/2026/42-R', issuedOn: '2026-09-03', dueOn: '2026-10-03', sentOn: '2026-09-03',
+      amountDue: '450', expectedDocumentId: replacement.id, expectedDocumentIdentityToken: 'stale-token-digest',
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 409);
+
+    // Reject amount less than recorded taxAmount.
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-below-tax'),
+      reason: 'Below tax', invoiceNumber: 'SYN/2026/42-R', issuedOn: '2026-09-03', dueOn: '2026-10-03', sentOn: '2026-09-03',
+      amountDue: '40', expectedDocumentId: replacement.id, expectedDocumentIdentityToken: invoiceIdentity(replacement),
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 422);
+
+    // Reject numerically unchanged amount with no other change.
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-noop'),
+      reason: 'Same numeric amount', invoiceNumber: 'SYN/2026/42-R', issuedOn: '2026-09-03', dueOn: '2026-10-03', sentOn: '2026-09-03',
+      amountDue: '500.00', expectedDocumentId: replacement.id, expectedDocumentIdentityToken: invoiceIdentity(replacement),
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 422);
+
+    // Succeed: amount-only correction on the already-linked verified replacement invoice.
+    const amountOnlyInput = {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-apply'),
+      reason: 'Align nominal amount with linked replacement PDF',
+      invoiceNumber: 'SYN/2026/42-R', issuedOn: '2026-09-03', dueOn: '2026-10-03', sentOn: '2026-09-03',
+      amountDue: '450', expectedDocumentId: replacement.id, expectedDocumentIdentityToken: invoiceIdentity(replacement),
+    };
+    version = (await correctInvoice(client, amountOnlyInput)).financeVersion;
+    assert.equal((await correctInvoice(client, amountOnlyInput)).outcome, 'replayed');
+    await assert.rejects(() => correctInvoice(client, { ...amountOnlyInput, amountDue: '440' }),
+      (error: Error & { statusCode?: number }) => error.statusCode === 409);
+
+    const afterAmountOnly = await getFinanceState(client, dealId);
+    assert.equal(afterAmountOnly!.amountDue, '450');
+    assert.equal(afterAmountOnly!.currency, 'EUR');
+    assert.equal(afterAmountOnly!.taxMode, 'added');
+    assert.equal(afterAmountOnly!.taxAmount, '50');
+    assert.equal(afterAmountOnly!.invoiceNumber, 'SYN/2026/42-R');
+    assert.equal(afterAmountOnly!.issuedOn, '2026-09-03');
+    assert.equal(afterAmountOnly!.dueOn, '2026-10-03');
+    assert.equal(afterAmountOnly!.sentOn, '2026-09-03');
+    assert.deepEqual(afterAmountOnly!.evidence, [{ kind: 'email', ref: 'synthetic-thread-1', label: 'Synthetic invoice thread' }]);
+    assert.equal(afterAmountOnly!.invoiceLinkId, linkKey(dealId, 'document', replacement.id));
+
+    // Original bookkeeping document and prior history are preserved.
+    const origDoc = await client.send(new GetCommand({ TableName: TABLE_BOOKKEEPING, Key: key('DOCUMENT', original.id) }));
+    assert.equal(origDoc.Item!.id, original.id);
+    const historyAfterAmount = await listFinanceHistory(client, dealId);
+    const amountEvent = historyAfterAmount.find((item) => item.eventCode === 'invoice-corrected'
+      && item.details?.reason === 'Align nominal amount with linked replacement PDF')!;
+    assert.deepEqual(amountEvent.details.changed, { amountDue: { before: '500', after: '450' } });
+    assert.deepEqual(amountEvent.details.verifiedDocument, { sourceId: replacement.id, identityToken: invoiceIdentity(replacement) });
+    assert.equal(amountEvent.details.replacedDocument, undefined);
+    assert.equal(amountEvent.sourceId, replacement.id);
+    assert.ok(historyAfterAmount.some((item) => item.details?.reason === 'Replacement PDF linked first'));
+
+    const projAfterAmount = await projectFinance(client, dealId, 'admin');
+    assert.equal(projAfterAmount.finance!.amountDue, '450');
+    assert.equal(projAfterAmount.outstanding, '450');
+    assert.equal(projAfterAmount.reconciliationStatus, 'coherent');
+
+    // Succeed: amount correction together with a new validated replacement PDF in one transaction.
+    version = (await correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-with-new-pdf'),
+      reason: 'Second replacement PDF with revised total',
+      invoiceNumber: 'SYN/2026/42-R2', issuedOn: '2026-09-05', dueOn: '2026-10-05', sentOn: '2026-09-05',
+      amountDue: '425', sourceId: replacementTwo.id, identityToken: invoiceIdentity(replacementTwo),
+    })).financeVersion;
+    const projAfterSecond = await projectFinance(client, dealId, 'admin');
+    assert.equal(projAfterSecond.finance!.amountDue, '425');
+    assert.equal(projAfterSecond.invoice!.id, replacementTwo.id);
+    assert.equal(projAfterSecond.reconciliationStatus, 'coherent');
+
+    // Unsafe payment state: recorded payment blocks amount correction.
+    const recorded = await recordPayment(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-rec-pay'),
+      receivedOn: '2026-09-06', amount: '100', currency: 'EUR', method: 'bank-report', reference: 'synthetic-ref-1',
+    });
+    version = recorded.financeVersion;
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-blocked-recorded'),
+      reason: 'Should fail with recorded payment',
+      invoiceNumber: 'SYN/2026/42-R2', issuedOn: '2026-09-05', dueOn: '2026-10-05', sentOn: '2026-09-05',
+      amountDue: '400', expectedDocumentId: replacementTwo.id, expectedDocumentIdentityToken: invoiceIdentity(replacementTwo),
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 422);
+
+    // Unsafe payment state: linked ledger receipt blocks amount correction (after removing recorded payment).
+    const recordedId = recorded.recordId.split('#').at(-1)!;
+    version = (await deleteRecordedPayment(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-del-rec'), paymentId: recordedId,
+    })).financeVersion;
+    version = (await receivePayment(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-ledger-pay'),
+      receivedOn: '2026-09-06', amount: '100', currency: 'EUR', counterparty: 'Synthetic Sponsor', reference: 'synthetic-bank:acct:tx-amt-1',
+    })).financeVersion;
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-blocked-ledger'),
+      reason: 'Should fail with ledger receipt',
+      invoiceNumber: 'SYN/2026/42-R2', issuedOn: '2026-09-05', dueOn: '2026-10-05', sentOn: '2026-09-05',
+      amountDue: '400', expectedDocumentId: replacementTwo.id, expectedDocumentIdentityToken: invoiceIdentity(replacementTwo),
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 422);
+
+    // Unsafe payment state: settlement adjustment also blocks amount correction.
+    version = (await recordSettlementAdjustment(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-settle'),
+      body: {
+        amount: '325', currency: 'EUR', reason: 'Synthetic approved settlement',
+        approvedBy: 'Synthetic Owner', approvedOn: '2026-09-07',
+        evidence: [{ kind: 'email', ref: 'synthetic-approval-1', label: 'Approval' }],
+      },
+    })).financeVersion;
+    await assert.rejects(() => correctInvoice(client, {
+      ...base, expectedVersion: version, idempotencyKey: idem('amt-corr-blocked-settlement'),
+      reason: 'Should fail with settlement',
+      invoiceNumber: 'SYN/2026/42-R2', issuedOn: '2026-09-05', dueOn: '2026-10-05', sentOn: '2026-09-05',
+      amountDue: '400', expectedDocumentId: replacementTwo.id, expectedDocumentIdentityToken: invoiceIdentity(replacementTwo),
+    }), (error: Error & { statusCode?: number }) => error.statusCode === 422);
+    assert.equal((await getFinanceState(client, dealId))!.amountDue, '425');
+  });
+
 });

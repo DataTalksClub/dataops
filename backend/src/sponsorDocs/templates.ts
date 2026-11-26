@@ -1,5 +1,9 @@
 import { isOrdinaryRecordingDay } from '../podcast/recordingSlots';
 import { PODCAST_DOCS_URL } from '../podcast/firstContact';
+import { GUEST_PHOTO_REQUIREMENT } from '../guestPhoto';
+
+/** Shown under every guest form's photo field: the event picture needs a large portrait. */
+const GUEST_PHOTO_HELP = `${GUEST_PHOTO_REQUIREMENT} Uploads up to 4 MB; for a larger file, share a link to the original.`;
 
 export type SponsorDocTemplateKey =
   | 'newsletter-main'
@@ -527,7 +531,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         id: 'speaker',
         title: '2) About You',
         fields: [
-          { key: 'photoUrl', label: 'Photo', type: 'text', placeholder: 'Upload a portrait or paste a photo URL', allowVisualUpload: true, maxCharsHint: 300000, helpText: 'For larger photos, share a link.' },
+          { key: 'photoUrl', label: 'Photo', type: 'text', placeholder: 'Upload a portrait or paste a photo URL', allowVisualUpload: true, maxCharsHint: 300000, helpText: GUEST_PHOTO_HELP },
           { key: 'preparationMaterials', label: 'Materials to help us prepare', type: 'textarea', rows: 3, placeholder: 'Relevant blog posts, talks, repositories, or other materials (optional)' },
           { key: 'bio', label: 'Speaker bio', type: 'textarea', rows: 4, required: true, placeholder: 'How should we introduce you in the event description?' },
         ],
@@ -579,7 +583,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
         id: 'speaker',
         title: '2) About You',
         fields: [
-          { key: 'photoUrl', label: 'Photo', type: 'text', placeholder: 'Upload a portrait or paste a photo URL', allowVisualUpload: true, maxCharsHint: 300000, helpText: 'For larger photos, share a link.' },
+          { key: 'photoUrl', label: 'Photo', type: 'text', placeholder: 'Upload a portrait or paste a photo URL', allowVisualUpload: true, maxCharsHint: 300000, helpText: GUEST_PHOTO_HELP },
           { key: 'preparationMaterials', label: 'Materials to help us prepare', type: 'textarea', rows: 3, placeholder: 'Relevant blog posts, talks, repositories, or other materials (optional)' },
           { key: 'bio', label: 'Speaker bio', type: 'textarea', rows: 4, required: true, placeholder: 'How should we introduce you on the event page?' },
         ],
@@ -670,7 +674,7 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
           {
             key: 'photoUrl', label: 'Photo', type: 'text',
             placeholder: 'Upload a portrait or paste a photo URL',
-            helpText: 'A portrait for the episode page and event image. For larger photos, share a link.',
+            helpText: `A portrait for the episode page and event picture. ${GUEST_PHOTO_HELP}`,
             allowVisualUpload: true, maxCharsHint: 300000,
           },
         ],

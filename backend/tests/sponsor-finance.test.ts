@@ -498,4 +498,92 @@ describe('sponsor finance contracts', () => {
     assert.equal(recorded.status, 'recorded');
     assert.equal(recorded.recordedEvidence?.ref, 'thread:thank-you-draft');
   });
+
+  it('enforces admin authorization and amount validation on POST /finance/invoice-correction', async () => {
+    const previous = process.env.SPONSOR_FINANCE_ENABLED;
+    process.env.SPONSOR_FINANCE_ENABLED = 'true';
+    const doc = {
+      id: 'doc-linked-1', documentType: 'invoice', status: 'active', sha256: 'a'.repeat(64),
+      objectVersionId: 'ver-1', verifiedByteSize: 800, createdAt: '2026-10-01T00:00:00.000Z',
+    };
+    const identity = invoiceIdentity(doc);
+    const linkId = 'SPONSOR_FINANCE_LINK#synthetic-deal#document#doc-linked-1';
+    const state = {
+      id: 'synthetic-deal', recordType: 'sponsor-finance', dealId: 'synthetic-deal', version: 2,
+      invoiceRequirement: 'required', amountDue: '500', currency: 'EUR', taxMode: 'not-applicable',
+      issuedOn: '2026-10-01', dueOn: '2026-10-31', invoiceLinkId: linkId,
+      paymentLinkIds: [], recordedPaymentIds: [],
+    };
+    const link = {
+      id: linkId, recordType: 'sponsor-finance-link', dealId: 'synthetic-deal', kind: 'document',
+      sourceId: doc.id, identityToken: identity,
+    };
+    const claim = {
+      recordType: 'sponsor-finance-claim', dealId: 'synthetic-deal', kind: 'document',
+      linkId, sourceId: doc.id, identityToken: identity,
+    };
+    const deal = { id: 'synthetic-deal', active: true, status: 'agreed', version: 1 };
+    const writes: any[] = [];
+    const makeClient = (role: string) => {
+      let currentState = { ...state };
+      return {
+        send: async (command: { constructor: { name: string }; input: any }) => {
+          const name = command.constructor.name;
+          if (name === 'GetCommand') {
+            const pk = command.input.Key.PK;
+            if (pk.startsWith('USER#')) return { Item: { id: 'actor-1', role } };
+            if (pk === 'SPONSOR_FINANCE#synthetic-deal') return { Item: currentState };
+            if (pk === `DOCUMENT#${doc.id}`) return { Item: doc };
+            if (pk === linkId) return { Item: link };
+            if (pk === `SPONSOR_FINANCE_CLAIM#document#${doc.id}`) return { Item: claim };
+            if (pk === 'DEAL#synthetic-deal') return { Item: deal };
+            return {};
+          }
+          if (name === 'TransactWriteCommand') {
+            writes.push(command.input);
+            currentState = { ...currentState, version: 3, amountDue: '450' };
+            return {};
+          }
+          if (name === 'TransactGetCommand') {
+            return { Responses: [{ Item: currentState }, { Item: deal }, { Item: link }, { Item: claim }, { Item: doc }] };
+          }
+          if (name === 'QueryCommand' || name === 'ScanCommand') return { Items: [], ScannedCount: 0 };
+          assert.fail(`Unexpected command: ${name}`);
+        },
+      };
+    };
+    const path = '/api/sponsor-crm/deals/synthetic-deal/finance/invoice-correction';
+    const validBody = {
+      dealVersion: 1, expectedVersion: 2, reason: 'Align amount to verified replacement invoice',
+      issuedOn: '2026-10-01', dueOn: '2026-10-31', amountDue: '450',
+      expectedDocumentId: doc.id, expectedDocumentIdentityToken: identity,
+    };
+    try {
+      const forbidden = await handleSponsorFinanceRoutes(path, 'POST', {
+        headers: { 'x-user-id': 'operator-1', 'idempotency-key': 'synthetic-auth-key-0123456789' },
+        body: JSON.stringify(validBody),
+      }, makeClient('operator') as never);
+      assert.equal(forbidden?.statusCode, 403);
+
+      for (const badAmount of ['', null, '0', '-10', 450]) {
+        const bad = await handleSponsorFinanceRoutes(path, 'POST', {
+          headers: { 'x-user-id': 'admin-1', 'idempotency-key': 'synthetic-bad-amt-0123456789' },
+          body: JSON.stringify({ ...validBody, amountDue: badAmount }),
+        }, makeClient('admin') as never);
+        assert.equal(bad?.statusCode, 400);
+      }
+
+      const ok = await handleSponsorFinanceRoutes(path, 'POST', {
+        headers: { 'x-user-id': 'admin-1', 'idempotency-key': 'synthetic-ok-amt-0123456789' },
+        body: JSON.stringify(validBody),
+      }, makeClient('admin') as never);
+      assert.equal(ok?.statusCode, 200, ok?.body);
+      assert.equal(writes.length, 1);
+      const update = writes[0].TransactItems.find((item: any) => item.Update?.Key?.PK === 'SPONSOR_FINANCE#synthetic-deal').Update;
+      assert.equal(update.ExpressionAttributeValues[':amountDue'], '450');
+    } finally {
+      if (previous === undefined) delete process.env.SPONSOR_FINANCE_ENABLED;
+      else process.env.SPONSOR_FINANCE_ENABLED = previous;
+    }
+  });
 });

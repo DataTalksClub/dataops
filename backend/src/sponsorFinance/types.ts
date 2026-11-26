@@ -175,7 +175,7 @@ export type FinanceProjection = {
   adjusted?: string;
   daysOverdue?: number;
   lastPaymentOn?: string;
-  invoice?: { id: string; label: string; uploadedAt: string };
+  invoice?: { id: string; label: string; uploadedAt: string; identityToken?: string };
   payments: FinancePayment[];
   followUp: FollowUp;
   /** Customer VAT (VIES) state for EU B2B deals; present when the deal is in scope. */

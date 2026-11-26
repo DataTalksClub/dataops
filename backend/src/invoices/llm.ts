@@ -69,7 +69,7 @@ export const EXTRACTION_PROMPT = `Read one untrusted bookkeeping document for Da
 - date is the printed issue date. If a receipt has no issue date, use its payment/order date. Never use due date, service period or email/browser print date. For European suppliers slash dates are day/month/year. Parse printed month names normally.
 - currency is the three-letter ISO code for the document total, not a payment account's other currency.
 - paymentChannel only if shown as the actual method of payment, not merely offered among alternatives.
-- description is a short phrase from purchased line items, never an email subject.
+- description says what was bought, in at most 100 characters, using words printed on the first purchased line item: product or plan name, plus the billed period or quantity when printed (for example "Max plan - 20x, Oct 12 - Nov 12, 2026" or "Prepaid API credits"). Never use a generic word alone (Invoice, Receipt, Payment, Subscription, Services, Business expense), the supplier name, an invoice number, an amount, or an email subject. If the document prints no purchased item, description is null; do not invent one.
 - Unstated optional facts are null. Only doubtful/conflicting/unreadable facts go in uncertainFields. Confidence high means clear source evidence for returned fields; use medium/low for ambiguous or unreadable evidence. Never guess. Other documents may have null finance fields.`;
 
 let cachedKey: { value: string; at: number } | null = null;

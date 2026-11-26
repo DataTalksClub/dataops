@@ -30,6 +30,7 @@ import { handleViesRoutes } from './routes/vies';
 import { handleSponsorCrmRoutes } from './routes/sponsorCrm';
 import { handleDealAttachmentRoutes } from './routes/dealAttachments';
 import { handleCrmWorkspaceRoutes } from './routes/crmWorkspace';
+import { handleSponsorSignalsRoute } from './routes/sponsorSignals';
 import { handleSponsorLeadIntake, handleSponsorLeadRoutes } from './routes/sponsorLeads';
 import { handleSponsorNewsletterRoutes } from './routes/sponsorNewsletters';
 import { handleSponsorFinanceRoutes } from './routes/sponsorFinance';
@@ -642,6 +643,10 @@ async function handleSponsorRoute(
   event: LambdaEvent,
   client: DynamoDBDocumentClient,
 ): Promise<LambdaResponse> {
+  if (reqPath === '/api/sponsor-crm/signals') {
+    if (method !== 'GET') return jsonResponse(405, { error: 'Method not allowed' });
+    return await handleSponsorSignalsRoute(event, client);
+  }
   if (reqPath === '/api/sponsor-crm/leads' || reqPath.startsWith('/api/sponsor-crm/leads/')) {
     return await handleSponsorLeadRoutes(reqPath, method, event, client);
   }

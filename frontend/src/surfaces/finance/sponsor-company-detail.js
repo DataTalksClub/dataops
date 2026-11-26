@@ -50,6 +50,8 @@ export function createSponsorCompanyDetail({
   onReviewDraft,
   onEditCompany,
   onAddDeal,
+  getReturnLabel,
+  openLinkedRecord,
 }) {
   const record = createSponsorRecord({
     api,
@@ -71,6 +73,9 @@ export function createSponsorCompanyDetail({
     openCompanyRecord: openCompanyRecord || (async (organizationId) => {
       await reopenCompanyDetail({ id: organizationId });
     }),
+    // A deal page's links to its company and to the company's other deals go
+    // through E, which records the URL and keeps the list origin for Back.
+    openLinkedRecord,
     openContactEditor,
     ownerName,
     loadArchive: loadArchive || defaultLoadArchive,
@@ -198,9 +203,10 @@ export function createSponsorCompanyDetail({
     const dealId = typeof highlightedDeal === "string"
       ? highlightedDeal
       : highlightedDeal?.id || null;
+    const returnLabel = typeof getReturnLabel === "function" ? getReturnLabel() : "CRM";
     await record.openCompany(organization.id, {
       dealId,
-      returnLabel: "CRM",
+      returnLabel,
       isCurrent,
     });
     if (sponsorCommunications) sponsorCommunications.selectedBookingId = dealId;

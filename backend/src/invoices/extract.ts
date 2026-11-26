@@ -52,7 +52,7 @@ const PROVIDER_RULES: Array<{ match: RegExp; name: string; description?: string 
   { match: /super\s?grok|\bx[.\s]?ai\b/i, name: 'xAI' },
   { match: /\bx\s?corp\b|x\s+internet/i, name: 'X Corp' },
 ];
-const catalogProvider = (value: string) => PROVIDER_RULES.find(rule => rule.match.test(value));
+export const catalogProvider = (value: string) => PROVIDER_RULES.find(rule => rule.match.test(value));
 export function normalizeSubject(value: unknown): string {
   return String(value || '')
     .replace(/^(?:(?:fwd?|re)\s*:\s*)+/gi, '')

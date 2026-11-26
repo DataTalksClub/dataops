@@ -261,8 +261,11 @@ export async function handleSponsorFinanceRoutes(
         issuedOn: String(body.issuedOn || ''),
         dueOn: String(body.dueOn || ''),
         ...(body.sentOn !== undefined && body.sentOn !== '' ? { sentOn: String(body.sentOn) } : {}),
+        ...(body.amountDue !== undefined ? { amountDue: body.amountDue } : {}),
         ...(body.sourceId !== undefined && body.sourceId !== '' ? { sourceId: String(body.sourceId) } : {}),
         ...(body.identityToken !== undefined && body.identityToken !== '' ? { identityToken: String(body.identityToken) } : {}),
+        ...(body.expectedDocumentId !== undefined ? { expectedDocumentId: body.expectedDocumentId } : {}),
+        ...(body.expectedDocumentIdentityToken !== undefined ? { expectedDocumentIdentityToken: body.expectedDocumentIdentityToken } : {}),
       });
       return json(200, { result, projection: await project() });
     }

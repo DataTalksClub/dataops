@@ -17,6 +17,7 @@ import {
 } from "../db/people";
 import { json, parseJsonObjectEventOrEmpty as parse } from "../http";
 import { resolveInteractiveActor } from "../identity/actor";
+import { assertHostedGuestPhoto, GuestPhotoError } from "../guestPhoto";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,199}$/;
@@ -57,6 +58,18 @@ function validate(body: Record<string, any>): string {
     }
   }
   return "";
+}
+
+/** A photo hosted by DataOps must be large enough for the event picture; returns the reason when not. */
+async function photoProblem(photoUrl: unknown, previous: unknown): Promise<string> {
+  if (typeof photoUrl !== "string" || photoUrl === previous) return "";
+  try {
+    await assertHostedGuestPhoto(photoUrl);
+    return "";
+  } catch (error) {
+    if (error instanceof GuestPhotoError) return error.message;
+    throw error;
+  }
 }
 
 /** Another person already holds this website slug. Duplicates are refused, never merged. */
@@ -103,6 +116,8 @@ export async function handlePeopleRoutes(
     const candidate = { ...body } as Record<string, any>;
     const error = validate(candidate);
     if (error) return json(400, { error });
+    const photoError = await photoProblem(candidate.photoUrl, undefined);
+    if (photoError) return json(400, { error: photoError });
     const duplicate = duplicateOf(candidate, await listPeople(client), null);
     if (duplicate) return json(409, { error: duplicate });
     const created = await createPerson(client, candidate as Parameters<typeof createPerson>[1]);
@@ -126,6 +141,8 @@ export async function handlePeopleRoutes(
     );
     const error = validate(merged);
     if (error) return json(400, { error });
+    const photoError = await photoProblem(merged.photoUrl, existing.photoUrl);
+    if (photoError) return json(400, { error: photoError });
     const duplicate = duplicateOf(merged, await listPeople(client), id);
     if (duplicate) return json(409, { error: duplicate });
     let next: Person;
