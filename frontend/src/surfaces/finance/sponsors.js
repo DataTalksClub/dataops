@@ -315,8 +315,9 @@ export function createSponsorCrmSurface(context) {
       surface.querySelector(".crm-layout").hidden = PAGE_VIEWS.has(view);
       // Pipeline fills the content area; the other views scroll the page.
       surface.classList.toggle("dk-fill", !surface.querySelector(".crm-layout").hidden);
+      const pipelineSummary = surface.querySelector("[data-crm-pipeline-summary]");
+      if (pipelineSummary) pipelineSummary.hidden = view !== "pipeline";
       surface.querySelector("[data-crm-pipeline]").hidden = view !== "pipeline";
-      surface.querySelector(".crm-funnel-scope").hidden = view !== "pipeline";
       surface.querySelector(".crm-funnel-controls").hidden = view !== "pipeline";
       surface.querySelector(".crm-filter-disclosure").hidden = view !== "pipeline";
       const heading = surface.querySelector("[data-crm-list-heading]");
@@ -597,9 +598,10 @@ export function createSponsorCrmSurface(context) {
     surface.querySelector("[data-crm-pipeline]").addEventListener("click", (event) => {
       const button = event.target.closest("[data-pipeline-status]");
       if (!button) return;
-      surface.querySelector("[data-crm-status]").value =
-        button.getAttribute("data-pipeline-status") || "";
-      surface.querySelector("[data-pipeline-view]").value = "all";
+      const status = button.getAttribute("data-pipeline-status") || "";
+      const isPressed = button.getAttribute("aria-pressed") === "true";
+      surface.querySelector("[data-crm-status]").value = isPressed ? "" : status;
+      if (!isPressed) surface.querySelector("[data-pipeline-view]").value = "all";
       setView("pipeline");
       pipelineControlsChanged(() => safe(() => runPipelineLoad(), "Could not load pipeline"));
       recordRoute(sponsorsPath("pipeline"));

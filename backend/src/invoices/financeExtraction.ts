@@ -1,5 +1,5 @@
 import { BlankConversionError, catalogProvider, extractInvoiceText, finomCustomer, normalizePdfText, normalizeSubject, pdfText, type InvoiceHints } from './extract';
-import { cleanDescription, groundedInDocument, lineItemDescription } from './description';
+import { cleanDescription, groundedInDocument, lineItemDescription, serviceOverviewDescription } from './description';
 import { extractWithLlm, needsPdfInput, type LlmExtraction, type LlmResult } from './llm';
 import { date, validCurrency, type Invoice, type InvoiceFields } from './model';
 import { loadEcbRates } from '../finance/rates';
@@ -101,22 +101,41 @@ export function validateFinanceFacts(f: Facts, expectedPeriod?: string): string[
 }
 /**
  * One ledger description per document, best evidence first: the reader's phrase
- * or the template's, then the first printed line item, then the provider
- * catalog or forwarded subject. Generic, ungrounded or contradicted values are
- * dropped (null) and the draft is flagged rather than given a guess.
+ * or the template's, then the first printed line item, then the services named
+ * in an overview table, then the provider catalog or forwarded subject.
+ * Generic, ungrounded or contradicted values are dropped (null) and the draft
+ * is flagged rather than given a guess.
  */
-function resolveDescription(facts:Facts,text:string,base:ReturnType<typeof extractInvoiceText>,hints:InvoiceHints|undefined,issues:string[]):string|null {
+function resolveDescription(facts:Facts,text:string,raw:string,base:ReturnType<typeof extractInvoiceText>,hints:InvoiceHints|undefined,issues:string[]):string|null {
   const context={counterparty:facts.counterparty,invoiceNumber:facts.invoiceNumber};
+  // A provider-catalog default describes the vendor, not this purchase. The
+  // template facts copy it from the deterministic pass, so it can arrive here
+  // looking like a document phrase; wherever it comes from it is not one. The
+  // printed line item or overview services win, and the last tier re-admits it
+  // only when the document prints it.
+  const catalogDefaults=[facts.counterparty,hints?.subject,hints?.sender].flatMap(value=>value?[catalogProvider(value)?.description]:[]);
+  const isCatalogDefault=(value:string)=>catalogDefaults.some(guess=>guess?.toLowerCase()===value.toLowerCase());
   let description=cleanDescription(facts.description,context);
-  if(description && !groundedInDocument(description,text)) {issues.push('uncertain:description');description=undefined;}
-  description??=lineItemDescription(text);
+  if(description && isCatalogDefault(description)) description=undefined;
+  else if(description && !groundedInDocument(description,text)) {issues.push('uncertain:description');description=undefined;}
+  // The line item is read from the raw text: some fonts print the billed-period
+  // dash as a NUL glyph, which the invoice-number normalizer turns into spaces
+  // before a month name.
+  description??=lineItemDescription(raw);
+  description??=serviceOverviewDescription(raw,context);
   const fallback=cleanDescription(base.fields.description,context);
   if(!description && fallback) {
     const fromSubject=base.extraction.evidence.includes('description from the email subject');
-    const subjectProvider=hints?.subject||hints?.sender?catalogProvider(`${normalizeSubject(hints.subject)}\n${hints.sender||''}`)?.name:undefined;
-    const documentProvider=facts.counterparty?catalogProvider(facts.counterparty)?.name:undefined;
-    if(fromSubject && subjectProvider && documentProvider && subjectProvider!==documentProvider) issues.push('contradiction:description');
-    else description=fallback;
+    // A provider-catalog default describes the vendor, not this purchase: it
+    // is kept only when the document prints it. The forwarded subject is the
+    // sender's own words, so it stands unless it names another provider.
+    if(!fromSubject && !groundedInDocument(fallback,text)) issues.push('uncertain:description');
+    else {
+      const subjectProvider=hints?.subject||hints?.sender?catalogProvider(`${normalizeSubject(hints.subject)}\n${hints.sender||''}`)?.name:undefined;
+      const documentProvider=facts.counterparty?catalogProvider(facts.counterparty)?.name:undefined;
+      if(fromSubject && subjectProvider && documentProvider && subjectProvider!==documentProvider) issues.push('contradiction:description');
+      else description=fallback;
+    }
   }
   return description??null;
 }
@@ -186,7 +205,7 @@ export async function extractFinanceText(raw:string, options:{pdf?:Buffer; hints
   if(facts.docType==='credit_note') facts.direction=customerCreditNote?'income':'expense';
   issues.push(...validateFinanceFacts(facts,options.expectedPeriod));
   if(facts.invoiceNumber) facts.invoiceNumber=facts.invoiceNumber.replace(/[\u0000\u2010-\u2014\u2212]/g,'-').replace(/\s*-\s*/g,'-');
-  facts.description=resolveDescription(facts,text,base,options.hints,issues);
+  facts.description=resolveDescription(facts,text,raw,base,options.hints,issues);
   if(facts.description===null && facts.docType!=='other') issues.push('missing:description');
   const fields:InvoiceFields={...base.fields};
   const mapping={counterparty:'counterparty',invoiceNumber:'invoiceNumber',date:'transactionDate',currency:'currency',net:'netAmount',vat:'vatAmount',gross:'amount',vatRate:'vatRate',description:'description'} as const;

@@ -50,7 +50,7 @@ test('description eval: a real PDF goes through pdfText and the same production 
 });
 
 test('cleanDescription rejects generic, vendor-only and number-only values',()=>{
-  for(const value of ['Business expense','Invoice','receipt','Payment','Subscription','Invoice INV-123','Receipt from Anthropic','Sponsor payment for deal abc','','--','12345']) assert.equal(cleanDescription(value),undefined,value);
+  for(const value of ['Business expense','Invoice','receipt','Payment','Subscription','Invoice INV-123','Receipt from Anthropic','Sponsor payment for deal abc','Rechnung 2026-001','Rechnungsnummer 2026-001','Rechnungsnr. 2026-001','Quittung #12','Zahlung','Facture 2026-001','','--','12345']) assert.equal(cleanDescription(value),undefined,value);
   assert.equal(cleanDescription('Anthropic, PBC',{counterparty:'Anthropic, PBC'}),undefined);
   assert.equal(cleanDescription('Max plan - 20x'),'Max plan - 20x');
   assert.equal(cleanDescription('x'.repeat(300))?.length,120);

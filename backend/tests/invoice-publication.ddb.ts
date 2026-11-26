@@ -10,7 +10,7 @@ import { createTables } from '../scripts/local-dynamodb';
 import { TABLE_ARTIFACTS, TABLE_INTAKE, TABLE_BOOKKEEPING } from '../src/db/tableNames';
 import { getIntakeItem } from '../src/db/intake';
 import { processInvoiceIntake, setInvoiceServiceForTests, confirmInvoice, publishInvoice } from '../src/invoices/service';
-import { createInvoice, getInvoice, approveInvoice, saveInvoice } from '../src/invoices/store';
+import { createInvoice, getInvoice, approveInvoice, saveInvoice, invoiceKey } from '../src/invoices/store';
 import { publicInvoice, type Invoice } from '../src/invoices/model';
 import { handleInvoiceRoutes } from '../src/routes/invoices';
 import type { Providers } from '../src/invoices/providers';
@@ -76,7 +76,14 @@ test('verification cannot bypass missing payment evidence, source integrity or a
 });
 test('simultaneous verified requests use the atomic revision and identity claim',async()=>{
   const {record}=await stage('auto-concurrent');const count=writes;const event={headers:{'x-user-id':'operator'},body:JSON.stringify({revision:record.revision})};
-  const responses=await Promise.all([handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}/verify`,'POST',event,client,true),handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}/verify`,'POST',event,client,true)]);
+  // The race is real only while both requests read the same pending draft: a
+  // route read served after the other request already published would replay
+  // idempotently (200) instead of contending. Each request's read of the
+  // draft waits for the other's to finish, so both observe it pending.
+  const draftKey=invoiceKey(record.id).PK;const reads:Promise<unknown>[]=[];let release!:(value:unknown)=>void,fail!:(reason:unknown)=>void;
+  const bothRead=new Promise((resolve,reject)=>{release=resolve;fail=reject;});
+  const racingClient={send:async(command:any)=>{const sent=client.send(command);if(!(command instanceof GetCommand)||command.input.Key?.PK!==draftKey)return sent;reads.push(sent);if(reads.length===2)Promise.all(reads).then(release,fail);return bothRead.then(()=>sent);}} as unknown as DynamoDBDocumentClient;
+  const responses=await Promise.all([handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}/verify`,'POST',event,racingClient,true),handleInvoiceRoutes(`/api/bookkeeping/invoices/${record.id}/verify`,'POST',event,racingClient,true)]);
   assert.equal(responses.filter(result=>result.statusCode===200).length,1);assert.equal(responses.filter(result=>result.statusCode===409).length,1);assert.equal(writes,count+2);
 });
 
