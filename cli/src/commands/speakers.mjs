@@ -18,6 +18,10 @@ Usage
 A profile holds only public facts: name, bio, photo and social links.
 Private contact details never live here. The website script resolves
 speaker names to profile slugs from this register.
+
+The photo feeds the event picture: at least 800 px on the shorter side,
+square-ish, one face, no text or logos, JPG/PNG/WebP. A photo hosted by
+DataOps below 800 px is refused; a link elsewhere is not measured.
 `;
 
 const LINK_FLAGS = [

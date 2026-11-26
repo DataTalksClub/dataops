@@ -3,12 +3,20 @@
    same dakit roles as the calendar. Loaded after the legacy finance sheets,
    so the few overrides below win on order at equal specificity. */
 
+/* Remove the scroll container's top padding on Bookkeeping so sticky table
+   headers lock flush at the top edge of .dk-main with no gap for rows to
+   peek through above them; .bookkeeping-surface restores the visual inset. */
+.dk-main.page-shell:has(.bookkeeping-surface:not([hidden])) {
+  padding-top: 0;
+}
+
 .bookkeeping-surface.bookkeeping-surface {
   display: flex;
   flex-direction: column;
   gap: var(--dk-space-3);
   max-width: none;
   min-height: 0;
+  padding-top: var(--dk-space-6);
 }
 .bookkeeping-surface [hidden] { display: none; }
 
@@ -24,7 +32,17 @@
 
 /* ⋯ menu */
 .bk-more { position: relative; }
-.bookkeeping-surface .bk-more > summary { display: inline-flex; min-height: 0; list-style: none; cursor: pointer; }
+.bookkeeping-surface .bk-more > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--dk-size-control-sm);
+  height: var(--dk-size-control-sm);
+  min-height: var(--dk-size-control-sm);
+  padding: 0;
+  list-style: none;
+  cursor: pointer;
+}
 .bookkeeping-surface .bk-more > summary::before,
 .bookkeeping-surface .bk-more > summary::-webkit-details-marker { display: none; }
 .bk-more > summary svg { width: 16px; height: 16px; }
@@ -50,25 +68,16 @@
 .bk-filters__search { flex: 1 1 160px; min-width: 120px; max-width: 320px; }
 .bk-filters .dk-select { flex: 0 1 auto; width: auto; min-width: 0; max-width: 160px; }
 @media (min-width: 821px) { .bk-filters { flex-wrap: nowrap; } .bk-filters > *, .bk-filters__more > * { flex-shrink: 0; } .bk-filters .bk-filters__search { flex-shrink: 1; } }
-.bookkeeping-surface .bk-filters .bk-toggle {
+.bk-filters__count { color: var(--dk-text-muted); font-family: var(--dk-font-mono); font-size: var(--dk-text-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bk-filters__actions { display: inline-flex; align-items: center; gap: var(--dk-space-2); margin-left: auto; flex: none; }
+.bookkeeping-surface .bk-filters__actions [data-bookkeeping-add] {
   display: inline-flex;
   align-items: center;
-  gap: var(--dk-space-1);
+  height: var(--dk-size-control-sm);
   min-height: var(--dk-size-control-sm);
   padding: 0 var(--dk-space-3);
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-full);
-  background: var(--dk-bg-surface);
-  color: var(--dk-text-primary);
   font-size: var(--dk-text-sm);
-  font-weight: var(--dk-weight-medium);
 }
-.bookkeeping-surface .bk-filters .bk-toggle[aria-pressed="true"] {
-  background: var(--dk-accent-soft);
-  color: var(--dk-accent-default);
-}
-.bk-toggle .dk-mono:empty { display: none; }
-.bk-filters__count { margin-left: auto; color: var(--dk-text-muted); font-family: var(--dk-font-mono); font-size: var(--dk-text-sm); font-variant-numeric: tabular-nums; }
 
 
 /* ---- the table -------------------------------------------------------- */
@@ -177,10 +186,31 @@ tr.bk-month__totals-row > th {
 .bk-date__paid { display: block; color: var(--dk-text-faint); font-size: var(--dk-text-xs); line-height: 1; }
 /* The counterparty column takes what is left and truncates. */
 .bk-col-who { width: 100%; max-width: 0; overflow: hidden; }
-.bk-who { display: flex; align-items: baseline; gap: var(--dk-space-2); min-width: 0; color: inherit; text-decoration: none; }
+.bk-who-cell { display: flex; align-items: center; gap: var(--dk-space-2); min-width: 0; }
+.bk-who { display: flex; flex: 1 1 auto; align-items: baseline; gap: var(--dk-space-2); min-width: 0; color: inherit; text-decoration: none; }
 .bk-who:focus-visible { outline: 2px solid var(--dk-focus-ring); outline-offset: 2px; border-radius: var(--dk-radius-sm); }
 .bk-who__name { flex: none; max-width: 60%; overflow: hidden; color: var(--dk-text-heading); font-weight: var(--dk-weight-medium); text-overflow: ellipsis; }
 .bk-who__what { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--dk-text-muted); text-overflow: ellipsis; }
+.bk-who__deal {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--dk-space-2);
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-full);
+  color: var(--dk-text-link);
+  font-size: var(--dk-text-xs);
+  font-weight: var(--dk-weight-medium);
+  line-height: 1.4;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.bk-who__deal:hover { background: var(--dk-accent-soft); color: var(--dk-text-link-hover); text-decoration: none; }
+.bk-who__deal:focus-visible { outline: 2px solid var(--dk-focus-ring); outline-offset: 1px; }
+.bk-draft-status { flex: none; display: inline-flex; align-items: center; gap: var(--dk-space-1); white-space: nowrap; }
+.bk-draft-status svg { width: 12px; height: 12px; flex: none; }
+.bk-row--pending-draft td { background: var(--dk-bg-muted); }
+.bk-row--pending-draft:hover td { background: var(--dk-bg-hover); }
 .bk-col-money { width: 7.5em; overflow: hidden; font-variant-numeric: tabular-nums; text-align: right; }
 .bk-table th.bk-col-money { text-align: right; }
 /* VAT can squeeze: the amount keeps an ellipsis instead of forcing the table
@@ -198,6 +228,12 @@ tr.bk-month__totals-row > th {
 .bk-col-flag .dk-icon-button:hover,
 .bk-col-account .dk-icon-button:hover { color: var(--dk-text-primary); }
 .bk-col-class { padding-left: var(--dk-space-1); padding-right: var(--dk-space-1); overflow: hidden; }
+/* Inline selects add their own --dk-space-1 left padding; set the cell's
+   left padding to --dk-space-1 so cell + select = --dk-space-2, aligning
+   text/dashes across regular/deal rows, pending-invoice rows, and headers. */
+.bookkeeping-surface .bk-table td.bk-col-class:has(.bk-inline-select) {
+  padding-left: var(--dk-space-1);
+}
 .bookkeeping-surface .bk-col-subtype .bk-inline-select { width: 8.5em; }
 .bookkeeping-surface .bk-col-category .bk-inline-select { width: 10.5em; }
 .bk-flag { display: inline-flex; color: var(--dk-text-faint); }
@@ -234,7 +270,7 @@ tr.bk-month__totals-row > th {
   min-height: 0;
   height: 26px;
   padding: 0 var(--dk-space-1);
-  border: 1px solid transparent;
+  border: 0;
   border-radius: var(--dk-radius-sm);
   background: transparent;
   color: var(--dk-text-primary);
@@ -245,7 +281,7 @@ tr.bk-month__totals-row > th {
   cursor: pointer;
 }
 .bookkeeping-surface .bk-inline-select:hover,
-.bookkeeping-surface .bk-inline-select:focus-visible { border-color: var(--dk-border-control-hover); background: var(--dk-bg-surface); }
+.bookkeeping-surface .bk-inline-select:focus-visible { box-shadow: inset 0 0 0 1px var(--dk-border-control-hover); background: var(--dk-bg-surface); }
 .bookkeeping-surface .bk-inline-select:focus-visible { outline: 2px solid var(--dk-focus-ring); outline-offset: 0; }
 .bookkeeping-surface .bk-inline-select:disabled { opacity: 0.6; }
 
@@ -256,6 +292,7 @@ tr.bk-month__totals-row > th {
 
 /* ---- phone: compact rows, details full screen --------------------------- */
 @media (max-width: 820px) {
+  .bookkeeping-surface.bookkeeping-surface { padding-top: var(--dk-space-4); }
   /* One header row: the period navigator names the page on a phone (the
      topbar already says Bookkeeping), the title stays for assistive tech. */
   .bk-header.dk-page-header { flex-wrap: nowrap; gap: var(--dk-space-2); }
@@ -270,7 +307,8 @@ tr.bk-month__totals-row > th {
   .bk-filters__more { display: none; }
   .bk-filters[data-open] .bk-filters__more { display: flex; flex-wrap: wrap; gap: var(--dk-space-2); order: 3; flex-basis: 100%; }
   .bk-filters__more .dk-select { flex: 1 1 28%; min-width: 0; max-width: none; }
-  .bk-filters__count { margin-left: 0; }
+  .bk-filters__actions { margin-left: auto; }
+  .bk-filters__count { font-size: var(--dk-text-xs); }
   /* Add transaction keeps its name for assistive tech but shows only "+". */
   .bk-filters [data-bookkeeping-add],
   .bk-filters .bk-more { flex: none; }
@@ -301,7 +339,10 @@ tr.bk-month__totals-row > th {
 @media (max-width: 820px), (pointer: coarse) {
   .bookkeeping-surface .bk-filters .dk-input,
   .bookkeeping-surface .bk-filters .dk-select,
-  .bookkeeping-surface .bk-filters .bk-toggle { min-height: var(--dk-size-touch); height: var(--dk-size-touch); }
+  .bookkeeping-surface .bk-filters .bk-toggle,
+  .bookkeeping-surface .bk-filters__actions [data-bookkeeping-add],
+  .bookkeeping-surface .bk-more > summary { min-height: var(--dk-size-touch); height: var(--dk-size-touch); }
+  .bookkeeping-surface .bk-more > summary { width: var(--dk-size-touch); }
   .bk-who { min-height: var(--dk-size-touch); justify-content: center; }
   .bookkeeping-surface .bk-inline-select { height: var(--dk-size-touch); }
 }
@@ -502,7 +543,13 @@ a.bk-cell-icon:focus-visible { outline: 2px solid var(--dk-focus-ring); outline-
 .bk-transaction-summary__vendor { margin: 0; color: var(--dk-text-heading); font-size: var(--dk-text-lg); font-weight: var(--dk-weight-semibold); }
 .bk-transaction-summary__amount { margin: var(--dk-space-1) 0 0; color: var(--dk-text-heading); font-size: 1.5rem; font-weight: var(--dk-weight-semibold); font-variant-numeric: tabular-nums; }
 .bk-transaction-summary__what { margin: var(--dk-space-1) 0 var(--dk-space-3); color: var(--dk-text-muted); }
-.bk-transaction-summary__what span { color: var(--dk-text-faint); font-size: var(--dk-text-xs); text-transform: uppercase; letter-spacing: 0.04em; margin-right: var(--dk-space-1); }
+.bk-transaction-summary__what span,
+.bk-transaction-what-label span { color: var(--dk-text-faint); font-size: var(--dk-text-xs); text-transform: uppercase; letter-spacing: 0.04em; margin-right: var(--dk-space-1); }
+.bk-transaction-what-form { display: flex; align-items: center; gap: var(--dk-space-2); margin: var(--dk-space-2) 0 var(--dk-space-3); }
+.bk-transaction-what-label { display: flex; flex: 1 1 auto; align-items: center; gap: var(--dk-space-2); min-width: 0; }
+.bk-transaction-what-label .dk-input { flex: 1 1 auto; min-width: 0; }
+.bk-transaction-deal-link { color: var(--dk-text-link); font-weight: var(--dk-weight-medium); text-decoration: none; }
+.bk-transaction-deal-link:hover { color: var(--dk-text-link-hover); text-decoration: underline; }
 .bk-transaction-summary__facts,
 .bk-transaction-statement__facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--dk-space-3) var(--dk-space-4); margin: 0; }
 .bk-transaction-field { min-width: 0; }

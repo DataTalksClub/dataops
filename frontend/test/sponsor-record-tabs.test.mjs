@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createArchiveLoader, createSponsorRecord } from "../src/surfaces/finance/sponsor-record.js";
+import { createArchiveLoader } from "../src/surfaces/finance/sponsor-record-archive.js";
+import { createSponsorRecord } from "../src/surfaces/finance/sponsor-record.js";
 import { createSponsorFinance } from "../src/surfaces/finance/sponsor-finance.js";
+import { renderSponsorPipelineList } from "../src/surfaces/finance/sponsor-pipeline.js";
 import {
   archiveDisclosureMarkup,
   dealsListMarkup,
+  dealHeaderMarkup,
+  dealNextAction,
+  dealTitle,
   emptyMarkup,
   errorMarkup,
   nextTaskMarkup,
@@ -185,22 +190,27 @@ test("deals tab selects the deal and finance loads lazily per deal", async () =>
       "GET /activity/organization/c1?limit=3": preview,
       "GET /deals?organizationId=c1&limit=50": deals,
     },
+    context: { onAddDeal: async () => {} },
   });
   const panels = seedPanels(host);
-  await record.openCompany("c1", { dealId: "d0" });
+  // A company record selects in place: the page stays the company's.
+  await record.openCompany("c1");
   await record.switchTab("deals");
-  assert.equal(record.getSelectedDealId(), "d0", "explicit deep-link selection is preserved");
-  await host.dispatch("click", { closestPatch: { "[data-select-deal]": { dataset: { selectDeal: "d1" } } } });
-  assert.equal(record.getSelectedDealId(), "d1");
+  assert.equal(record.getSelectedDealId(), "d1", "no explicit selection falls back to the first deal that is not lost");
+  assert.match(panels.deals.innerHTML, /data-add-deal/, "the list offers Add deal");
+  await host.dispatch("click", { closestPatch: { "[data-select-deal]": { dataset: { selectDeal: "d0" } } } });
+  assert.equal(record.getSelectedDealId(), "d0");
+  assert.match(host.innerHTML, /data-record-title[^>]*>Acme &lt;Co&gt;</, "a company record keeps the company as its title");
   assert.match(panels.deals.innerHTML, /aria-current="true"/);
+  assert.match(panels.deals.innerHTML, /data-add-deal/, "a selection keeps Add deal offered");
   await record.switchTab("finance");
-  assert.deepEqual(financed, ["d1"], "canonical loadFinance runs once per selected deal");
+  assert.deepEqual(financed, ["d0"], "canonical loadFinance runs once per selected deal");
   assert.match(panels.finance.innerHTML, /data-booking-panel="finance"/, "finance tab hosts the canonical hook");
-  assert.equal(calls.filter(({ path }) => path.startsWith("/deals")).length, 1);
+  assert.equal(calls.filter(({ path }) => path.startsWith("/deals?")).length, 1);
   // Revisiting without a deal change never refetches finance.
   await record.switchTab("overview");
   await record.switchTab("finance");
-  assert.deepEqual(financed, ["d1"]);
+  assert.deepEqual(financed, ["d0"]);
 });
 
 test("finance without deals stays an honest empty state", async () => {
@@ -1127,4 +1137,273 @@ test("archive and restore actions render only when wired", async () => {
   await plain.record.openCompany("c1");
   assert.doesNotMatch(plain.host.innerHTML, /data-archive-company/);
   assert.doesNotMatch(plain.host.innerHTML, /data-restore-company/);
+});
+
+
+// ── Deal-first record: /sponsors/deals/:id is that deal's page ──────────────
+
+const task = {
+  id: "t9",
+  description: "Check invoice DEMO-48 is paid by its 15 Nov due date",
+  date: "2026-11-16",
+  status: "todo",
+  assigneeId: "op1",
+};
+
+const deal = {
+  id: "d1",
+  organizationId: "c1",
+  status: "open",
+  productKind: "one-off",
+  title: "Autumn newsletters, invoice DEMO-48",
+  amountEur: 1200,
+  money: "invoiced",
+  openTasks: [task],
+  finance: {
+    invoiceState: "issued", paymentState: "not-paid", timingState: "on-time",
+    invoiceNumber: "DEMO-48", dueOn: "2026-11-15",
+  },
+};
+
+/** The same deal as the Pipeline row the operator clicked. */
+const pipelineRow = {
+  id: "d1",
+  organizationId: "c1",
+  organizationName: "Acme <Co>",
+  title: deal.title,
+  status: "open",
+  stage: "invoiced",
+  money: "invoiced",
+  fulfillment: "none",
+  amountEur: 1200,
+  primaryContact: { id: "p1", name: "Ada", email: "ada@acme.example", role: "CTO" },
+  lastContacted: "2026-11-10T10:00:00Z",
+  replyReview: false,
+  nextTask: { ...task, deferred: false },
+};
+
+const dealActivity = {
+  targetType: "deal",
+  targetId: "d1",
+  items: [
+    { ts: "2026-11-01T12:00:00Z", source: "history", id: "h1", actor: "op", text: "Record created", provenance: { action: "created" } },
+  ],
+  total: 1,
+  nextCursor: null,
+  sources: { history: 1 },
+  relatedWork: [
+    { taskId: "t9", status: "todo", date: "2026-11-16", effectiveDate: "2026-11-16", eligible: true, deferred: false, description: task.description, assigneeId: "op1", href: "/sponsors/deals/d1", scope: "direct" },
+  ],
+  tasksScope: "open",
+  reads: {},
+};
+
+function dealHarness({ routes, context: extra = {} } = {}) {
+  return recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /deals/d1": deal,
+      "GET /activity/deal/d1?limit=3": dealActivity,
+      "GET /pipeline?view=all&organizationId=c1&limit=100": { items: [pipelineRow], nextCursor: null },
+      ...routes,
+    },
+    context: { ownerName: (id) => ({ op1: "Ada Owner" })[id] || "", ...extra },
+  });
+}
+
+const stripTags = (markup) => markup.replace(/<[^>]+>/g, "\n").split("\n").map((part) => part.trim()).filter(Boolean);
+
+test("an exact deal link is that deal's page, not its company's Overview", async () => {
+  const { host, calls, record } = dealHarness();
+  const panels = seedPanels(host);
+  await record.openCompany("c1", { dealId: "d1", returnLabel: "Back to Pipeline" });
+  const page = host.innerHTML;
+  assert.match(page, /data-record-back>Back to Pipeline</, "Back names the list it returns to");
+  assert.match(page, /data-record-title[^>]*>Autumn newsletters, invoice DEMO-48</, "the deal is the page title");
+  assert.match(page, /data-record-company[^>]*>Acme &lt;Co&gt;</, "the company is the context, escaped");
+  assert.match(page, /data-status="invoiced"[^>]*>Invoiced</, "the Pipeline stage");
+  assert.match(page, /data-status="value">€1,200</, "the value the row shows");
+  assert.match(page, /aria-label="Deal record sections"/);
+  assert.match(page, /id="record-tab-overview"[^>]*aria-selected="true"/, "the deal's Overview opens first");
+  assert.match(page, /data-open-task="t9"/, "the next action's Task opens from the header");
+  assert.doesNotMatch(page, /data-toggle-company-dnc|data-edit-company|data-archive-company|data-delete-company/, "no company actions on a deal page");
+  assert.doesNotMatch(page, /id="record-tab-deals"[^>]*aria-selected="true"/, "the company's deal list is not the landing tab");
+  assert.ok(host.querySelector("[data-record-title]").focused, "title takes keyboard focus");
+
+  const overview = panels.overview.innerHTML;
+  assert.match(overview, /Next action/);
+  assert.match(overview, /Check invoice DEMO-48 is paid by its 15 Nov due date/, "the row's next action text");
+  assert.match(overview, /16 Nov/, "the row's next action date");
+  assert.match(overview, /Ada Owner/, "a readable owner");
+  assert.match(overview, /Deal details/);
+  assert.match(overview, /Invoice DEMO-48/);
+  assert.match(overview, /due 15 Nov/);
+  assert.match(overview, /Primary contact[\s\S]*Ada · CTO · ada@acme\.example/);
+  assert.match(overview, /data-record-company[^>]*>View company record</, "the company record is one click away");
+  assert.match(overview, /Record created/, "recent activity is the deal's own");
+
+  const paths = calls.map(({ path }) => path);
+  assert.deepEqual([...paths].slice(0, 2).sort(), ["/deals/d1", "/directory/companies/c1"], "the deal is read by ID beside the company");
+  assert.ok(paths.includes("/activity/deal/d1?limit=3"), "the overview reads the deal's activity");
+  assert.ok(!paths.some((path) => path.startsWith("/activity/organization/")), "the company timeline, with its sighting history, is never read for a deal page");
+  assert.ok(!paths.some((path) => path.startsWith("/deals?")), "the company's deal list waits for its tab");
+});
+
+test("the deal page's next action is the Pipeline row's text and date", () => {
+  const humanSponsorDate = (value) => {
+    const iso = String(value || "").slice(0, 10);
+    const parsed = new Date(`${iso}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) return value || "";
+    return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(parsed);
+  };
+  /** The row's action cell: its action line, then the small lines under it. */
+  const rowAction = (item) => {
+    const table = renderSponsorPipelineList({ items: [item], escapeHtml, humanSponsorDate, ownerName: () => "" });
+    const cells = [...table.matchAll(/<td>([\s\S]*?)<\/td>/g)].map((match) => match[1]);
+    return stripTags(cells[2]);
+  };
+  const headerAction = (item) => {
+    const header = dealHeaderMarkup({ deal, company, row: item, returnLabel: "Back to Pipeline" }, { ...context, ownerName: () => "Ada Owner" });
+    const line = header.match(/<span data-deal-next-action>([\s\S]*?)<\/span>/)[1];
+    return stripTags(line).join(" ").replace("Next action:", "").trim();
+  };
+  const cases = [
+    ["a due task", { ...pipelineRow }, "Check invoice DEMO-48 is paid by its 15 Nov due date", "16 Nov"],
+    ["a deferred task", { ...pipelineRow, nextTask: { ...task, deferred: true } }, "Deferred: Check invoice DEMO-48 is paid by its 15 Nov due date", "16 Nov"],
+    ["a newer inbound to review", { ...pipelineRow, replyReview: true, inboundAt: "2026-11-10T09:00:00Z", nextTask: { ...task, deferred: true } }, "Review newer inbound (inferred)", "Inbound 10 Nov"],
+    ["no open task", { ...pipelineRow, nextTask: null }, "No open task", ""],
+  ];
+  for (const [name, item, action, when] of cases) {
+    const row = rowAction(item);
+    assert.equal(row[0], action, `${name}: the row's action line`);
+    assert.equal(row[1] || "", when, `${name}: the row's date line`);
+    const header = headerAction(item);
+    assert.ok(header.startsWith(action), `${name}: the page leads with the row's action`);
+    if (when) assert.ok(header.includes(when), `${name}: and its date`);
+  }
+  // The deferred task behind a review stays reachable, dated, never dropped.
+  const review = dealNextAction({ ...pipelineRow, replyReview: true, inboundAt: "2026-11-10T09:00:00Z", nextTask: { ...task, deferred: true } });
+  assert.equal(review.taskId, null);
+  assert.equal(review.deferredTask.id, "t9");
+});
+
+test("Activity on a deal page is the deal's own", async () => {
+  const { host, calls, record } = dealHarness({
+    routes: { "GET /activity/deal/d1?limit=30": { ...dealActivity, items: [] } },
+  });
+  seedPanels(host);
+  await record.openCompany("c1", { dealId: "d1", returnLabel: "Back to Pipeline" });
+  await record.switchTab("activity");
+  assert.ok(calls.some(({ path }) => path === "/activity/deal/d1?limit=30"), "the tab reads the deal's timeline");
+  assert.ok(!calls.some(({ path }) => path.startsWith("/activity/organization/c1?limit=30")), "never the company's");
+});
+
+test("the company link and sibling deals open in place through E", async () => {
+  const linked = [];
+  const { host, record } = dealHarness({
+    context: { openLinkedRecord: (kind, id) => linked.push([kind, id]) },
+    routes: {
+      "GET /deals?organizationId=c1&limit=50": {
+        items: [deal, { id: "d2", organizationId: "c1", status: "open", productKind: "package", title: "Spring newsletter" }],
+        nextCursor: null,
+      },
+    },
+  });
+  const panels = seedPanels(host);
+  await record.openCompany("c1", { dealId: "d1", returnLabel: "Back to Pipeline" });
+  await host.dispatch("click", { closestPatch: { "[data-record-company]": new FakeNode("button") } });
+  assert.deepEqual(linked, [["company", "c1"]], "the company link opens the company record");
+  await record.switchTab("deals");
+  assert.match(panels.deals.innerHTML, /Deals from Acme &lt;Co&gt;/, "the list says whose deals these are");
+  assert.match(panels.deals.innerHTML, /Spring newsletter/, "sibling deals carry their titles");
+  assert.match(panels.deals.innerHTML, />This deal</);
+  assert.match(panels.deals.innerHTML, />Open deal</);
+  await host.dispatch("click", { closestPatch: { "[data-select-deal]": { dataset: { selectDeal: "d2" } } } });
+  assert.deepEqual(linked, [["company", "c1"], ["deal", "d2"]], "another deal reopens the record on that deal");
+  assert.equal(record.getSelectedDealId(), "d1", "the open record never half-switches deals");
+  await host.dispatch("click", { closestPatch: { "[data-select-deal]": { dataset: { selectDeal: "d1" } } } });
+  assert.equal(linked.length, 2, "the open deal's own button does nothing");
+});
+
+test("a deal that cannot load keeps Back and never shows another deal", async () => {
+  for (const [name, dealId, byId, message] of [
+    ["missing", "gone", httpError(404, "Not found"), /not found/i],
+    ["wrong-company", "stray", { id: "stray", organizationId: "other", status: "open" }, /does not belong/],
+    ["unreadable", "flaky", httpError(503, "boom"), /could not be loaded/i],
+  ]) {
+    const financed = [];
+    const { host, record } = recordHarness({
+      routes: { "GET /directory/companies/c1": company, [`GET /deals/${dealId}`]: byId },
+      context: { loadFinance: async (selected) => financed.push(selected.id) },
+    });
+    const panels = seedPanels(host);
+    await record.openCompany("c1", { dealId, returnLabel: "Back to Pipeline" });
+    assert.equal(record.getSelectedDealId(), dealId, `${name}: the requested ID is preserved, never replaced`);
+    assert.match(host.innerHTML, /data-record-back>Back to Pipeline</, `${name}: the page keeps its way back`);
+    assert.doesNotMatch(host.innerHTML, /crm-deal-head/, `${name}: no deal header without the deal`);
+    assert.match(panels.overview.innerHTML, message, `${name}: the failure is the page's first content`);
+    assert.doesNotMatch(panels.overview.innerHTML, /Next action|Recent activity|View company record/, `${name}: nothing claims a deal that is not loaded`);
+    await record.switchTab("finance");
+    assert.deepEqual(financed, [], `${name}: no unrelated finance loads`);
+  }
+});
+
+test("without its Pipeline row a deal page shows the deal from its own record", async () => {
+  const { host, calls, record } = dealHarness({
+    routes: { "GET /pipeline?view=all&organizationId=c1&limit=100": httpError(503, "pipeline down") },
+    context: { ownerName: () => "" },
+  });
+  seedPanels(host);
+  await record.openCompany("c1", { dealId: "d1", returnLabel: "Back to Pipeline" });
+  const page = host.innerHTML;
+  assert.match(page, /data-status="open"/, "the deal's own status stands in for the stage");
+  assert.match(page, /data-deal-next-action>[\s\S]*Check invoice DEMO-48 is paid by its 15 Nov due date · 16 Nov/, "its first open Task stands in for the row's action");
+  assert.match(page, /Unavailable assignee/, "an unknown owner is never a raw ID");
+  assert.equal(calls.filter(({ path }) => path.startsWith("/pipeline?")).length, 1, "the Pipeline is read once");
+});
+
+test("deal cards name the deal and keep the product beside the amount", () => {
+  const markup = dealsListMarkup({
+    deals: [
+      { ...deal, contract: { id: "k1", status: "signed" } },
+      { id: "d2", organizationId: "c1", status: "open", productKind: "package" },
+    ],
+    selectedDealId: "d1",
+    open: true,
+    heading: "Deals from Acme",
+  }, context);
+  assert.match(markup, /<h3 class="crm-deals-heading">Deals from Acme</);
+  assert.match(markup, /<strong>Autumn newsletters, invoice DEMO-48<\/strong>/);
+  assert.match(markup, /One-off · €1,200 · Check invoice DEMO-48 is paid by its 15 Nov due date · 16 Nov/);
+  assert.match(markup, /contract: signed/);
+  assert.match(markup, /<strong>Package<\/strong>/, "an untitled deal is named by its product");
+  assert.equal(dealTitle({ productKind: "one-off" }), "One-off");
+  assert.equal(dealTitle({ title: "<b>", productKind: "package" }), "<b>", "the raw title is the caller's to escape");
+  const escaped = dealTitle({ title: "<b>" }, context);
+  assert.notEqual(escaped, undefined);
+  assert.doesNotMatch(dealHeaderMarkup({ deal: { ...deal, title: "<script>" }, company, returnLabel: "Back" }, context), /<script>/);
+});
+
+test("Mark Do-Not-Contact persists and repaints the reopened company header", async () => {
+  let stored = { ...company };
+  const { host, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": () => stored,
+      "GET /activity/organization/c1?limit=3": preview,
+      "POST /organizations/c1/dnc": ({ body }) => {
+        stored = { ...stored, doNotContact: body.doNotContact, version: stored.version + 1 };
+        return stored;
+      },
+    },
+  });
+  seedPanels(host);
+  await record.openCompany("c1");
+  globalThis.window = { prompt: () => "asked us to stop" };
+  try {
+    await host.dispatch("click", { closestPatch: { "[data-toggle-company-dnc]": new FakeNode("button") } });
+  } finally {
+    delete globalThis.window;
+  }
+  assert.equal(record.getCompany().doNotContact, true, "the reopened record shows the stored flag");
+  assert.match(host.innerHTML, /Remove DNC/, "the header follows the stored state");
 });

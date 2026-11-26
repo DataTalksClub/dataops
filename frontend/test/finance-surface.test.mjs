@@ -573,6 +573,66 @@ describe("Finance surface boundary", () => {
     assert.ok(requests.some(({ url }) => requestPath(url) === "/api/reconcile/months/2026-08"));
   });
 
+  test("removes Needs category and No receipt chips while keeping Add transaction, Forwarded invoices, and automatic pending drafts", async () => {
+    const { document, finance } = createHarness({
+      request: async (url) => {
+        const path = requestPath(url);
+        if (path === "/api/bookkeeping/transactions") {
+          return {
+            items: [{
+              id: "tx-nov-1",
+              transactionDate: "2026-11-11",
+              paidDate: "2026-11-11",
+              counterparty: "Rasa Technologies Inc.",
+              description: "Sponsor payment for deal deal-rasa",
+              sponsorDealId: "deal-rasa",
+              entryType: "income",
+              amount: "1200",
+              currency: "EUR",
+              subtype: "Sponsorship",
+              category: "Sponsorship",
+            }],
+          };
+        }
+        if (path === "/api/bookkeeping/invoices") {
+          return {
+            items: [{
+              id: "draft-nov-1",
+              status: "pending",
+              fields: {
+                transactionDate: "2026-11-23",
+                counterparty: "Contabo GmbH",
+                description: "Cloud VPS Plus 2 hosting",
+                amount: "8.57",
+                currency: "EUR",
+              },
+            }],
+          };
+        }
+        if (["/api/bookkeeping/documents", "/api/bookkeeping/links",
+          "/api/bookkeeping/accounts", "/api/bookkeeping/reports"].includes(path))
+          return { items: [] };
+        if (path === "/api/reconcile/months/2026-11") return { rows: [] };
+        if (path === "/api/finance/summary") return { entries: [], months: [{ month: "2026-11", moneyIn: 1200, moneyOut: 0 }], totals: {} };
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    });
+
+    await finance.renderBookkeepingSurface();
+    await settle();
+    const surfaceHtml = document.surface.innerHTML;
+    assert.doesNotMatch(surfaceHtml, /Needs category|No receipt|data-needs=/);
+    assert.match(surfaceHtml, /data-bookkeeping-add/);
+    assert.match(surfaceHtml, /data-view-link="invoices"[\s\S]*Forwarded invoices/);
+
+    const ledgerHtml = document.surface.querySelector(".bookkeeping-ledger").innerHTML;
+    assert.match(ledgerHtml, /href="\/sponsors\/deals\/deal-rasa" data-deal-link/);
+    assert.match(ledgerHtml, />Sponsor payment<\/span>/);
+    assert.match(ledgerHtml, /data-pending-invoice="draft-nov-1"/);
+    assert.match(ledgerHtml, /Pending review/);
+    assert.match(ledgerHtml, /Contabo GmbH/);
+  });
+
   test("the inventory surface mounts standalone and fetches its items", async () => {
     const { document: doc, finance, requests, routeTitles } = createHarness({
       request: async (url) => {
@@ -882,8 +942,23 @@ describe("Finance surface boundary", () => {
       organizationId: "org-1",
       primaryContactId: "contact-1",
       status: "agreed",
+      productKind: "one-off",
       version: 3,
     };
+    const syntheticActivity = (targetType) => ({
+      targetType,
+      targetId: targetType === "deal" ? booking.id : "org-1",
+      items: [
+        { ts: "2026-01-12T23:30:00Z", source: "mail", id: "m1", actor: null, text: "Synthetic <reply> from the sponsor", provenance: { direction: "inbound", link: "direct" } },
+        { ts: "2026-01-12T23:45:00Z", source: "touch", id: "t1", actor: "operator-1", text: "Synthetic response logged", provenance: {} },
+      ],
+      total: 2,
+      nextCursor: null,
+      sources: { mail: 1, touch: 1 },
+      relatedWork: [],
+      tasksScope: "open",
+      reads: {},
+    });
     const seenPaths = [];
     const { document, finance } = createHarness({
       route: {
@@ -915,21 +990,7 @@ describe("Finance surface boundary", () => {
         if (path.endsWith("/history")) return { items: [] };
         if (path.endsWith("/directory/companies/org-1"))
           return { id: "org-1", displayName: "Safe Sponsor", relationship: "talking", notes: "", version: 3 };
-        if (path.includes("/activity/organization/org-1"))
-          return {
-            targetType: "organization",
-            targetId: "org-1",
-            items: [
-              { ts: "2026-01-12T23:30:00Z", source: "mail", id: "m1", actor: null, text: "Synthetic <reply> from the sponsor", provenance: { direction: "inbound", link: "direct" } },
-              { ts: "2026-01-12T23:45:00Z", source: "touch", id: "t1", actor: "operator-1", text: "Synthetic response logged", provenance: {} },
-            ],
-            total: 2,
-            nextCursor: null,
-            sources: { mail: 1, touch: 1 },
-            relatedWork: [],
-            tasksScope: "open",
-            reads: {},
-          };
+        if (path.includes("/activity/deal/booking-1")) return syntheticActivity("deal");
         if (path.includes("/deals/booking-1/communications"))
           return {
             items: [
@@ -980,15 +1041,20 @@ describe("Finance surface boundary", () => {
     // communications or finance loads.
     const record = document.surface.querySelector("[data-crm-record]").innerHTML;
     assert.doesNotMatch(record, /class="booking-kind"/);
-    assert.match(record, /data-status="talking">\s*Talking/);
+    // An exact deal link is that deal's page: the deal leads and its company
+    // is the context and the way up to the company record.
+    assert.match(record, /data-record-title[^>]*>One-off</);
+    assert.match(record, /Deal for\s*<button[^>]*data-record-company[^>]*>Safe Sponsor</);
+    assert.doesNotMatch(record, /data-status="talking"/, "company chips stay on the company record");
     assert.match(record, /role="tablist"/);
     assert.match(record, /data-record-tab="finance"/);
     assert.ok(!seenPaths.some((path) => path.includes("/messages")), "no eager filed-mail load");
     assert.ok(!seenPaths.some((path) => path.includes("/deals/booking-1/communications")), "no eager communications load");
     assert.ok(!seenPaths.some((path) => path.endsWith("/history")), "no eager history load");
     assert.ok(!seenPaths.some((path) => path.includes("organizationId=org-1")), "no eager deals load");
-    // Overview shows the bounded activity preview with escaped snippets and
-    // no private payloads or full bodies.
+    assert.ok(!seenPaths.some((path) => path.includes("/activity/organization/")), "a deal page never reads the company timeline");
+    // Overview shows the deal's bounded activity preview with escaped
+    // snippets and no private payloads or full bodies.
     const overview = document.surface.querySelector("[data-crm-record]").querySelector('[data-record-panel="overview"]').innerHTML;
     assert.match(overview, /Synthetic &lt;reply&gt; from the sponsor/);
     assert.doesNotMatch(overview, /DO NOT RENDER/);
@@ -1956,7 +2022,10 @@ describe("CRM directory controllers", () => {
     });
     await finance.renderSponsorCrmSurface();
     await settle();
-    const pipelineCalls = () => requests.filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/pipeline").length;
+    // The list loads only; opening a deal reads its own Pipeline row for the
+    // page header (view=all, organizationId, limit=100), which is not a refresh.
+    const pipelineCalls = () => requests.filter((entry) => requestPath(entry.url) === "/api/sponsor-crm/pipeline"
+      && !entry.url.includes("limit=100")).length;
     assert.equal(pipelineCalls(), 1, "pipeline loads once before the save");
     const form = document.surface.querySelector("[data-deal-dialog]").querySelector("form");
     form.formEntries = [

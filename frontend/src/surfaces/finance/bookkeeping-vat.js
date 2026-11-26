@@ -48,6 +48,7 @@ function mandatoryLabel(entry) {
 export function monthlyLedgerEntries(entries, lens, financeEntriesById) {
   if (!/^\d{4}-\d{2}$/.test(lens)) return entries;
   return entries.filter((entry) => {
+    if (entry.pendingInvoiceDraft) return true;
     if (monthOf(entry) === lens && isTaxHealthEntry(entry)) return false;
     const mandatory = financeEntriesById.get(String(entry.id));
     const taxHealth = mandatory?.month === lens && isTaxHealthEntry(mandatory);
@@ -58,7 +59,7 @@ export function monthlyLedgerEntries(entries, lens, financeEntriesById) {
 
 export function ownerWithdrawalEntries(entries, lens) {
   if (!/^\d{4}-\d{2}$/.test(lens)) return [];
-  return (entries || []).filter((entry) => monthOf(entry) === lens && isOwnerWithdrawalEntry(entry));
+  return (entries || []).filter((entry) => !entry.pendingInvoiceDraft && monthOf(entry) === lens && isOwnerWithdrawalEntry(entry));
 }
 
 export function ownerWithdrawalsMarkup(entries, lens, ledgerOptions) {

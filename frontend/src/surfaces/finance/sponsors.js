@@ -402,6 +402,11 @@ export function createSponsorCrmSurface(context) {
       ownerName: (id) => ownerDirectory.name(id),
       // F adopts this in its close path (E bridge removed: F delegates Back).
       closeRecord: () => directoryPages.closeRecord(),
+      // Back names the list it returns to (Pipeline, Companies, People).
+      getReturnLabel: () => directoryPages.getReturnLabel(),
+      // A deal page's company link and its sibling deals open in place, with
+      // the URL recorded and the list origin kept for Back.
+      openLinkedRecord: (kind, id) => directoryPages.openRecord(kind, id, undefined, { keepContext: true }),
       // List refresh after record Archive/Restore/edits stays E-owned: F calls
       // this after mutating the company; Back also refreshes via closeRecord.
       onRecordChanged: () => {

@@ -68,17 +68,17 @@ test("reopenDealDetail forwards the isCurrent predicate to the record open", asy
     organization,
     routes: {
       "GET /directory/companies/c1": organization,
-      "GET /activity/organization/c1?limit=3": preview,
+      "GET /deals/d9": { id: "d9", organizationId: "c1", status: "open", productKind: "one-off", title: "Spring newsletter" },
     },
   });
   const host = surface.querySelector("[data-crm-record]");
   let current = false;
   await detail.reopenDealDetail({ id: "d9", organizationId: "c1" }, { isCurrent: () => current });
-  assert.match(host.innerHTML, /Loading company/, "stale deal open paints nothing");
-  assert.doesNotMatch(host.innerHTML, /Acme/);
+  assert.match(host.innerHTML, /Loading deal/, "stale deal open paints nothing");
+  assert.doesNotMatch(host.innerHTML, /Spring newsletter/);
   current = true;
   await detail.reopenDealDetail({ id: "d9", organizationId: "c1" }, { isCurrent: () => current });
-  assert.match(host.innerHTML, /Acme/, "live deal open renders");
+  assert.match(host.innerHTML, /Spring newsletter/, "live deal open renders the deal");
 });
 
 test("migration archives and restores through the record header", async () => {
@@ -254,3 +254,47 @@ test("record header renders Edit company when onEditCompany is provided and pass
   assert.equal(editedCompanies[0].notes, "Existing notes");
 });
 
+test("reopenDealDetail opens the deal's own page under a return label naming the list", async () => {
+  const { surface, detail } = migrationHarness({
+    organization,
+    context: { getReturnLabel: () => "Back to Pipeline" },
+    routes: {
+      "GET /directory/companies/c1": organization,
+      "GET /deals/d1": { id: "d1", organizationId: "c1", status: "open", productKind: "one-off", title: "Spring newsletter" },
+      "GET /activity/deal/d1?limit=3": {
+        targetType: "deal", targetId: "d1", items: [], total: 0, nextCursor: null, sources: {}, relatedWork: [], tasksScope: "open", reads: {},
+      },
+    },
+  });
+  // The record paints into the [data-crm-record] mount root it resolves itself.
+  const rendered = surface.querySelector("[data-crm-record]");
+  await detail.reopenDealDetail({ id: "d1", organizationId: "c1" });
+  assert.match(rendered.innerHTML, /data-record-back>Back to Pipeline</);
+  assert.match(rendered.innerHTML, /data-record-title[^>]*>Spring newsletter</, "the deal is the page title");
+  assert.match(rendered.innerHTML, /id="record-tab-overview"[^>]*aria-selected="true"/, "the deal's Overview opens first");
+  assert.match(rendered.innerHTML, /aria-label="Deal record sections"/);
+  assert.doesNotMatch(
+    rendered.innerHTML,
+    /data-toggle-company-dnc|data-edit-company|data-archive-company|data-delete-company/,
+    "company actions stay on the company record",
+  );
+});
+
+test("reopenCompanyDetail stays the company record with the same return label", async () => {
+  const { surface, detail } = migrationHarness({
+    organization,
+    context: { getReturnLabel: () => "Back to Companies", onEditCompany: () => {} },
+    routes: {
+      "GET /directory/companies/c1": organization,
+      "GET /activity/organization/c1?limit=3": preview,
+    },
+  });
+  // The record paints into the [data-crm-record] mount root it resolves itself.
+  const rendered = surface.querySelector("[data-crm-record]");
+  await detail.reopenCompanyDetail(organization);
+  assert.match(rendered.innerHTML, /data-record-back>Back to Companies</);
+  assert.match(rendered.innerHTML, /data-record-title[^>]*>Acme</, "the company stays the company record's title");
+  assert.match(rendered.innerHTML, /aria-label="Company record sections"/);
+  assert.match(rendered.innerHTML, /data-edit-company/, "company actions stay on the company record");
+  assert.doesNotMatch(rendered.innerHTML, /Deal for/, "no deal kicker on a company record");
+});
