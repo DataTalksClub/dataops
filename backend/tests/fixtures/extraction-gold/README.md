@@ -28,3 +28,13 @@ Fields (all optional unless noted):
 | `expected.descriptionFrom` | `document`: must not come from the email subject |
 | `expected.paymentChannel` | `card`, `paypal`, `bank-transfer`, `direct-debit` or `platform` |
 | `traps` | Values the extractor must **not** return, with why |
+| `note` | Why the case exists and which real draft it was modelled on |
+| `hints` | Forwarded email `subject` and `sender` handed to the extractor |
+| `reader` | `unused` (the layout must take a template path) or the recorded reader answer |
+| `expected.description` | The description to store, or `null` when it must stay empty |
+| `expected.method` | Extraction method that must be recorded |
+| `expected.needsReview` | Whether a description issue may hold the draft for review |
+| `expected.issues` | Extraction issues that must be recorded |
+
+`descriptions.json` runs each case through `extractFinanceText` with the
+recorded `reader` answer standing in for the model call.

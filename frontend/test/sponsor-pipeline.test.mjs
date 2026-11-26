@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import { pipelineControlsFromFilters, renderSponsorPipelineList, renderSponsorPipelineFilters } from "../src/surfaces/finance/sponsor-pipeline.js";
 import { escapeHtml } from "../src/core/html.js";
 
@@ -37,6 +38,9 @@ test("Sponsors creates ride on their collections, never the page header", async 
   // Add deal follows the Pipeline list title; Refresh suggestions trails.
   assert.match(markup, /crm-list-head">[\s\S]*?data-crm-list-heading>Pipeline<\/h2>\s*<button[^>]*data-dk-create[^>]*data-add-deal/);
   assert.match(markup, /dk-collection-header__trail">[\s\S]*?data-booking-count[\s\S]*?data-evaluate-communications\s+aria-label="Refresh suggestions"/);
+  // Stage totals and scope note are grouped in one summary; search & primary controls sit in the toolbar.
+  assert.match(markup, /data-crm-pipeline-summary[\s\S]*?data-crm-pipeline[\s\S]*?crm-funnel-scope/);
+  assert.match(markup, /crm-pipeline-toolbar[\s\S]*?data-crm-search[\s\S]*?data-pipeline-view[\s\S]*?crm-filter-disclosure[\s\S]*?data-crm-status/);
   // Add company follows the Companies title.
   assert.match(markup, /Companies<\/h3>\s*<button[^>]*data-dk-create[^>]*data-add-org/);
 });
@@ -112,4 +116,12 @@ test("saved-view sorts map onto pipeline controls without changing the list endp
     { view: "overdue", stage: "", search: "", owner: "", sort: "next-action",
       nextActionFrom: "2026-10-01", nextActionBefore: "2026-10-17" },
   );
+});
+
+test("narrow CRM tabs keep the folded alerts bar full width instead of shrinking to its label", () => {
+  const css = readFileSync(new URL("../src/styles/responsive.css", import.meta.url), "utf8");
+  const rule = css.match(/\.sponsor-crm-surface > \.crm-alerts \{([^}]*)\}/);
+  assert.ok(rule, "responsive.css must style the direct .crm-alerts child of the CRM surface");
+  assert.match(rule[1], /flex:\s*1 1 100%/);
+  assert.match(rule[1], /min-width:\s*0/);
 });

@@ -351,7 +351,8 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await expect(page.locator(".crm-alerts")).not.toHaveAttribute("open", "");
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-pipeline-light.png") });
     await page.locator('[data-crm-bookings] [data-open-deal]').first().click();
-    await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
+    await expect(page.locator("[data-record-title]")).toHaveText("One-off");
+    await expect(page.locator(".crm-deal-head [data-record-company]")).toHaveText("Example Learning Lab");
     await expect(page.locator('[data-record-tabs][role="tablist"]')).toContainText("Finance");
     // Finance evidence loads on its tab.
     await page.locator('[data-record-tab="finance"]').click();
@@ -372,13 +373,15 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await archiveHost.locator("[data-record-archive] > summary").click();
     await expect(archiveHost).toContainText("Archived draft v2");
     await expect(page.locator(".crm-master")).toBeHidden();
-    await expect(page.locator(".crm-card[aria-current=true]")).toHaveCSS("border-left-width", "1px");
+    await expect(page).toHaveURL(/\/sponsors\/deals\/booking-example$/);
+    await expect(page.locator("[data-record-back]")).toHaveText("Back to Pipeline");
     await expectPalette(page, false);
     await expectNoPageOverflow(page, 1440);
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-desktop-light.png") });
 
     await setTheme(page, true);
-    await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
+    await expect(page.locator("[data-record-title]")).toHaveText("One-off");
+    await expect(page.locator(".crm-deal-head [data-record-company]")).toHaveText("Example Learning Lab");
     await expectPalette(page, true);
     await expect(page.locator("[data-crm-detail] .dk-split__title")).toHaveCSS(
       "color",
@@ -428,7 +431,8 @@ test.describe("Bookkeeping and Sponsors design prototype", () => {
     await expectNoPageOverflow(page, 390);
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-mobile-dark.png") });
     await setTheme(page, false);
-    await expect(page.getByRole("heading", { name: "Example Learning Lab" })).toBeVisible();
+    await expect(page.locator("[data-record-title]")).toHaveText("One-off");
+    await expect(page.locator(".crm-deal-head [data-record-company]")).toHaveText("Example Learning Lab");
     await expectPalette(page, false);
     await page.screenshot({ path: path.join(SCREENSHOTS, "sponsors-mobile-light.png") });
 

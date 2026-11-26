@@ -76,7 +76,14 @@ export function createSponsorPipelineView({ api, surface, escapeHtml, humanSpons
     surface.querySelector('[data-crm-pipeline]').innerHTML = renderSponsorPipelineFilters({
       counts: result.counts, selected: surface.querySelector('[data-crm-status]').value, escapeHtml,
     });
-    surface.querySelector('[data-booking-count]').textContent = `${result.total} matching deals`;
+    surface.querySelector('[data-booking-count]').textContent = `${result.total} ${result.total === 1 ? 'matching deal' : 'matching deals'}`;
+    const badge = surface.querySelector('[data-crm-filter-badge]');
+    if (badge) {
+      const activeFilters = ['[data-crm-status]', '[data-pipeline-owner]', '[data-pipeline-from]', '[data-pipeline-to]']
+        .filter((sel) => surface.querySelector(sel)?.value).length;
+      badge.textContent = activeFilters ? String(activeFilters) : '';
+      badge.hidden = !activeFilters;
+    }
     root.innerHTML = renderSponsorPipelineList({ items: result.items, escapeHtml, humanSponsorDate, ownerName }) + html`<nav class="crm-funnel-pages" aria-label="Pipeline pages">
       <button data-pipeline-prev ${previous.length ? '' : 'disabled'}>Previous</button>
       <span>${result.total ? Number(cursor || 0) + 1 : 0}–${Number(cursor || 0) + result.items.length} of ${result.total}</span>
