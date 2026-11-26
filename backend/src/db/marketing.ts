@@ -9,6 +9,7 @@ import {
   compact,
   putNew,
   putAtVersion,
+  deleteAtVersion,
   type TransactionItem,
 } from "./plannedWrite";
 import { transactWrite } from "./transactWrite";
@@ -16,12 +17,20 @@ import {
   MarketingError,
   requireThat,
   validateSnapshot,
+  validateTrackedSite,
+  validateBacklinkPair,
+  validateBacklinkCheck,
+  normalizeDomain,
+  backlinkPairId,
   metric,
   periodRange,
   type Dict,
   type Plan,
   type Step,
   type Snapshot,
+  type TrackedSite,
+  type BacklinkPair,
+  type BacklinkCheck,
 } from "../marketing/model";
 
 const table = TABLE_MARKETING;
@@ -31,10 +40,16 @@ export const stepKey = (s: Pick<Step, "planId" | "id">) => ({
   SK: `STEP#${s.id}`,
 });
 export const seriesKey = (
-  s: Pick<Snapshot, "metricKey" | "scope" | "source">,
+  s: Pick<Snapshot, "metricKey" | "scope" | "source" | "metricVersion">,
 ) =>
   `SERIES.${createHash("sha256")
-    .update(JSON.stringify([s.metricKey, s.scope, s.source]))
+    .update(
+      JSON.stringify(
+        s.metricVersion
+          ? [s.metricKey, s.scope, s.source, s.metricVersion]
+          : [s.metricKey, s.scope, s.source],
+      ),
+    )
     .digest("base64url")}`;
 export const snapshotKey = (s: Snapshot) => ({
   PK: seriesKey(s),
@@ -231,7 +246,12 @@ export async function pushSnapshots(
     const same =
       old &&
       old.value === input.value &&
-      !!old.provisional === !!input.provisional;
+      !!old.provisional === !!input.provisional &&
+      (old.observedAt || undefined) === (input.observedAt || undefined) &&
+      (old.evidenceUrl || undefined) === (input.evidenceUrl || undefined) &&
+      (old.provider || undefined) === (input.provider || undefined) &&
+      (old.metricVersion || undefined) === (input.metricVersion || undefined) &&
+      JSON.stringify(old.details || null) === JSON.stringify(input.details || null);
     if (old && !same && !options.replace && !old.provisional)
       throw new MarketingError(
         `Snapshot exists with a different value: ${input.metricKey} ${input.period}`,
@@ -256,6 +276,10 @@ export async function pushSnapshots(
                     pushedBy: old.pushedBy,
                     note: old.note,
                     provisional: !!old.provisional,
+                    ...(old.observedAt ? { observedAt: old.observedAt } : {}),
+                    ...(old.evidenceUrl ? { evidenceUrl: old.evidenceUrl } : {}),
+                    ...(old.provider ? { provider: old.provider } : {}),
+                    ...(old.metricVersion ? { metricVersion: old.metricVersion } : {}),
                   },
                 ],
               }
@@ -325,4 +349,198 @@ export async function pushSnapshots(
     unchanged,
     dryRun: !!options.dryRun,
   };
+}
+
+export const siteKey = (domain: string) => ({
+  PK: "SITES",
+  SK: `SITE#${normalizeDomain(domain)}`,
+});
+export const getTrackedSite = async (c: DynamoDBDocumentClient, domain: string) =>
+  clean<TrackedSite>(await getMarketingRow(c, siteKey(domain)));
+export const listTrackedSites = (c: DynamoDBDocumentClient) =>
+  query<TrackedSite>(c, "SITES", "SITE#");
+export async function createTrackedSite(
+  c: DynamoDBDocumentClient,
+  site: TrackedSite,
+) {
+  validateTrackedSite(site);
+  await transactWrite(c, [
+    putNew(table, siteKey(site.domain), row(site, siteKey(site.domain))).item,
+  ]);
+  return site;
+}
+export async function saveTrackedSite(
+  c: DynamoDBDocumentClient,
+  old: TrackedSite,
+  changes: Dict,
+  actorId: string,
+) {
+  const next: TrackedSite = {
+    ...old,
+    ...changes,
+    domain: old.domain,
+    version: old.version + 1,
+    createdAt: old.createdAt,
+    updatedAt: new Date().toISOString(),
+    updatedBy: actorId,
+  };
+  validateTrackedSite(next);
+  await transactWrite(c, [
+    putAtVersion(table, siteKey(old.domain), row(next, siteKey(old.domain)), old.version).item,
+  ]);
+  return next;
+}
+export async function deleteTrackedSite(
+  c: DynamoDBDocumentClient,
+  old: TrackedSite,
+) {
+  await transactWrite(c, [deleteAtVersion(table, siteKey(old.domain), old.version).item]);
+}
+
+export const backlinkKey = (id: string) => ({ PK: "BACKLINKS", SK: `PAIR#${id}` });
+export const getBacklinkPair = async (c: DynamoDBDocumentClient, id: string) =>
+  clean<BacklinkPair>(await getMarketingRow(c, backlinkKey(id)));
+export const listBacklinkPairs = (c: DynamoDBDocumentClient) =>
+  query<BacklinkPair>(c, "BACKLINKS", "PAIR#");
+
+export async function upsertBacklinkPairs(
+  c: DynamoDBDocumentClient,
+  inputs: Array<{
+    sourceUrl: string;
+    targetUrl: string;
+    outreachState: string;
+    owner?: string;
+    notes?: string;
+  }>,
+  actorId: string,
+  options: { updateExisting?: boolean } = {},
+): Promise<{
+  items: BacklinkPair[];
+  inserted: number;
+  updated: number;
+  unchanged: number;
+}> {
+  requireThat(
+    Array.isArray(inputs) && inputs.length > 0 && inputs.length <= 200,
+    "Provide 1 to 200 backlink pairs",
+  );
+  // Deduplicate within the incoming batch by exact (sourceUrl, targetUrl) pair.
+  const deduped = new Map<string, BacklinkPair>();
+  for (const input of inputs) {
+    requireThat(
+      input && typeof input === "object" && !Array.isArray(input),
+      "Backlink pair must be an object",
+    );
+    const now = new Date().toISOString();
+    const candidate: BacklinkPair = {
+      id: backlinkPairId(input.sourceUrl, input.targetUrl),
+      sourceUrl: input.sourceUrl,
+      targetUrl: input.targetUrl,
+      outreachState: (input.outreachState || "not_contacted") as BacklinkPair["outreachState"],
+      ...(input.owner ? { owner: input.owner } : {}),
+      ...(input.notes ? { notes: input.notes } : {}),
+      latestCheck: null,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: actorId,
+      updatedBy: actorId,
+    };
+    validateBacklinkPair(candidate);
+    if (!deduped.has(candidate.id)) {
+      deduped.set(candidate.id, candidate);
+    }
+  }
+
+  const items: BacklinkPair[] = [];
+  let inserted = 0;
+  let updated = 0;
+  let unchanged = 0;
+
+  for (const candidate of deduped.values()) {
+    const existing = await getBacklinkPair(c, candidate.id);
+    if (!existing) {
+      await transactWrite(c, [
+        putNew(table, backlinkKey(candidate.id), row(candidate, backlinkKey(candidate.id))).item,
+      ]);
+      items.push(candidate);
+      inserted++;
+    } else if (
+      options.updateExisting &&
+      (existing.outreachState !== candidate.outreachState ||
+        (existing.owner || undefined) !== (candidate.owner || undefined) ||
+        (existing.notes || undefined) !== (candidate.notes || undefined))
+    ) {
+      const saved = await saveBacklinkPair(
+        c,
+        existing,
+        {
+          outreachState: candidate.outreachState,
+          ...(candidate.owner !== undefined ? { owner: candidate.owner } : {}),
+          ...(candidate.notes !== undefined ? { notes: candidate.notes } : {}),
+        },
+        actorId,
+      );
+      items.push(saved);
+      updated++;
+    } else {
+      items.push(existing);
+      unchanged++;
+    }
+  }
+  return { items, inserted, updated, unchanged };
+}
+
+export async function saveBacklinkPair(
+  c: DynamoDBDocumentClient,
+  old: BacklinkPair,
+  changes: Dict,
+  actorId: string,
+) {
+  const next: BacklinkPair = {
+    ...old,
+    ...changes,
+    id: old.id,
+    sourceUrl: old.sourceUrl,
+    targetUrl: old.targetUrl,
+    version: old.version + 1,
+    createdAt: old.createdAt,
+    updatedAt: new Date().toISOString(),
+    updatedBy: actorId,
+  };
+  validateBacklinkPair(next);
+  await transactWrite(c, [
+    putAtVersion(table, backlinkKey(old.id), row(next, backlinkKey(old.id)), old.version).item,
+  ]);
+  return next;
+}
+
+export async function deleteBacklinkPair(
+  c: DynamoDBDocumentClient,
+  old: BacklinkPair,
+) {
+  await transactWrite(c, [deleteAtVersion(table, backlinkKey(old.id), old.version).item]);
+}
+
+export async function recordBacklinkCheck(
+  c: DynamoDBDocumentClient,
+  old: BacklinkPair,
+  check: BacklinkCheck,
+  actorId: string,
+) {
+  validateBacklinkCheck(check);
+  const next: BacklinkPair = {
+    ...old,
+    latestCheck: check,
+    version: old.version + 1,
+    createdAt: old.createdAt,
+    updatedAt: new Date().toISOString(),
+    updatedBy: actorId,
+  };
+  const checkKey = { PK: `BACKLINK#${old.id}`, SK: `CHECK#${check.checkedAt}` };
+  await transactWrite(c, [
+    putAtVersion(table, backlinkKey(old.id), row(next, backlinkKey(old.id)), old.version).item,
+    putNew(table, checkKey, row({ ...check, pairId: old.id, checkedBy: actorId }, checkKey)).item,
+  ]);
+  return next;
 }

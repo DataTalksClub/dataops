@@ -1,9 +1,65 @@
+import { createHash } from "crypto";
+import { isIP } from "node:net";
 import vocabulary from "./metrics.json";
 import { realDate } from "../sponsorCrm/model";
 
 export { vocabulary };
 export const WEEKLY_LIMIT = 2;
 export type Dict = Record<string, any>;
+export const BACKLINK_OUTREACH_STATES = [
+  "not_contacted",
+  "no_contact",
+  "draft_provided",
+  "publisher_contacted",
+  "alexey_sent",
+  "orin_sent",
+  "added_confirmed",
+  "already_present",
+  "reciprocal_link",
+] as const;
+export type BacklinkOutreachState = (typeof BACKLINK_OUTREACH_STATES)[number];
+export const BACKLINK_BUCKETS = [
+  "added_follow",
+  "added_qualified",
+  "absent",
+  "unavailable",
+] as const;
+export type BacklinkBucket = (typeof BACKLINK_BUCKETS)[number];
+export interface TrackedSite extends Dict {
+  domain: string;
+  label?: string;
+  notes?: string;
+  active: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+  updatedBy?: string;
+}
+export interface BacklinkCheck extends Dict {
+  checkedAt: string;
+  bucket: BacklinkBucket;
+  httpStatus: number | null;
+  finalUrl: string | null;
+  matchedHref: string | null;
+  matchedRel: string[];
+  matchCount: number;
+  reason: string;
+}
+export interface BacklinkPair extends Dict {
+  id: string;
+  sourceUrl: string;
+  targetUrl: string;
+  outreachState: BacklinkOutreachState;
+  owner?: string;
+  notes?: string;
+  latestCheck: BacklinkCheck | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+  updatedBy?: string;
+}
 export interface Goal extends Dict {
   ref: string;
   title: string;
@@ -47,6 +103,11 @@ export interface Snapshot extends Dict {
   period: string;
   value: number;
   unit: string;
+  observedAt?: string;
+  evidenceUrl?: string;
+  provider?: string;
+  metricVersion?: string;
+  details?: Record<string, string | number | boolean | null>;
   version: number;
 }
 export class MarketingError extends Error {
@@ -255,6 +316,216 @@ export function periodRange(period: string): { from: string; to: string } {
     to: new Date(+start + (days - 1) * 86400000).toISOString().slice(0, 10),
   };
 }
+export function normalizeDomain(value: unknown): string {
+  requireThat(typeof value === "string" && !!value.trim(), "domain is required");
+  const cleaned = value.trim().toLowerCase().replace(/\.$/, "");
+  requireThat(
+    cleaned.length <= 253 &&
+      /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(
+        cleaned,
+      ),
+    `Invalid domain: ${value}`,
+  );
+  requireThat(
+    !cleaned.endsWith(".localhost") &&
+      !cleaned.endsWith(".local") &&
+      !cleaned.endsWith(".internal") &&
+      !cleaned.endsWith(".home.arpa"),
+    `Non-public domain rejected: ${cleaned}`,
+  );
+  return cleaned;
+}
+
+export function normalizePublicHttpUrl(value: unknown): string {
+  requireThat(
+    typeof value === "string" && !!value.trim() && value.trim().length <= 2048,
+    "URL must be a non-empty string up to 2048 characters",
+  );
+  let u: URL;
+  try {
+    u = new URL(value.trim());
+  } catch {
+    throw new MarketingError(`Invalid URL: ${value}`);
+  }
+  requireThat(
+    u.protocol === "http:" || u.protocol === "https:",
+    "Only public http(s) URLs are allowed",
+  );
+  requireThat(
+    !u.username && !u.password,
+    "Credentials in URL are not allowed",
+  );
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  requireThat(
+    host &&
+      host !== "localhost" &&
+      !host.endsWith(".localhost") &&
+      !host.endsWith(".local") &&
+      !host.endsWith(".internal") &&
+      !host.endsWith(".home.arpa"),
+    `Non-public host rejected: ${host}`,
+  );
+  if (isIP(host)) {
+    const isV4 = isIP(host) === 4;
+    if (isV4) {
+      const [a, b, c] = host.split(".").map(Number);
+      const nonPublic =
+        a === 0 ||
+        a === 10 ||
+        a === 127 ||
+        (a === 100 && b >= 64 && b <= 127) ||
+        (a === 169 && b === 254) ||
+        (a === 172 && b >= 16 && b <= 31) ||
+        (a === 192 && b === 0 && (c === 0 || c === 2)) ||
+        (a === 192 && b === 168) ||
+        (a === 198 && (b === 18 || b === 19)) ||
+        (a === 198 && b === 51 && c === 100) ||
+        (a === 203 && b === 0 && c === 113) ||
+        a >= 224;
+      requireThat(!nonPublic, `Non-public IP target rejected: ${host}`);
+    } else {
+      const lower = host.toLowerCase();
+      const first = parseInt(lower.split(":")[0] || "0", 16);
+      const nonPublic =
+        lower === "::" ||
+        lower === "::1" ||
+        lower.startsWith("::ffff:") ||
+        (first & 0xfe00) === 0xfc00 ||
+        (first & 0xffc0) === 0xfe80 ||
+        (first & 0xff00) === 0xff00 ||
+        lower.startsWith("2001:db8:");
+      requireThat(!nonPublic, `Non-public IPv6 target rejected: ${host}`);
+    }
+  } else {
+    requireThat(host.includes("."), `Non-public single-label host rejected: ${host}`);
+  }
+  return u.href;
+}
+
+export function backlinkPairId(sourceUrl: string, targetUrl: string): string {
+  const s = normalizePublicHttpUrl(sourceUrl);
+  const t = normalizePublicHttpUrl(targetUrl);
+  return `bl-${createHash("sha256")
+    .update(JSON.stringify([s, t]))
+    .digest("hex")
+    .slice(0, 12)}`;
+}
+
+export function validateTrackedSite(site: TrackedSite) {
+  requireThat(site && typeof site === "object" && !Array.isArray(site), "Site must be an object");
+  site.domain = normalizeDomain(site.domain);
+  requireThat(
+    site.label === undefined || (typeof site.label === "string" && site.label.length <= 200),
+    "Invalid site label",
+  );
+  requireThat(
+    site.notes === undefined || (typeof site.notes === "string" && site.notes.length <= 1000),
+    "Invalid site notes",
+  );
+  requireThat(typeof site.active === "boolean", "Site active must be boolean");
+}
+
+export function validateBacklinkCheck(check: BacklinkCheck) {
+  requireThat(
+    check && typeof check === "object" && !Array.isArray(check),
+    "Check must be an object",
+  );
+  requireThat(
+    typeof check.checkedAt === "string" && !Number.isNaN(Date.parse(check.checkedAt)),
+    "checkedAt must be a valid ISO timestamp",
+  );
+  requireThat(
+    (BACKLINK_BUCKETS as readonly string[]).includes(check.bucket),
+    `Invalid backlink bucket: ${check.bucket}`,
+  );
+  requireThat(
+    check.httpStatus === null ||
+      (Number.isInteger(check.httpStatus) && check.httpStatus >= 100 && check.httpStatus <= 599),
+    "Invalid httpStatus",
+  );
+  requireThat(
+    check.finalUrl === null ||
+      (typeof check.finalUrl === "string" && check.finalUrl.length <= 2048),
+    "Invalid finalUrl",
+  );
+  requireThat(
+    check.matchedHref === null ||
+      (typeof check.matchedHref === "string" && check.matchedHref.length <= 2048),
+    "Invalid matchedHref",
+  );
+  requireThat(
+    Array.isArray(check.matchedRel) &&
+      check.matchedRel.length <= 20 &&
+      check.matchedRel.every((r) => typeof r === "string" && r.length <= 64),
+    "Invalid matchedRel",
+  );
+  requireThat(
+    Number.isInteger(check.matchCount) && check.matchCount >= 0,
+    "Invalid matchCount",
+  );
+  requireThat(
+    typeof check.reason === "string" && check.reason.length <= 500,
+    "Invalid check reason",
+  );
+}
+
+export function validateBacklinkPair(pair: BacklinkPair) {
+  requireThat(
+    pair && typeof pair === "object" && !Array.isArray(pair),
+    "Backlink pair must be an object",
+  );
+  pair.sourceUrl = normalizePublicHttpUrl(pair.sourceUrl);
+  pair.targetUrl = normalizePublicHttpUrl(pair.targetUrl);
+  pair.id = backlinkPairId(pair.sourceUrl, pair.targetUrl);
+  requireThat(
+    (BACKLINK_OUTREACH_STATES as readonly string[]).includes(pair.outreachState),
+    `Invalid outreachState: ${pair.outreachState}`,
+  );
+  requireThat(
+    pair.owner === undefined || (typeof pair.owner === "string" && pair.owner.length <= 128),
+    "Invalid owner",
+  );
+  requireThat(
+    pair.notes === undefined || (typeof pair.notes === "string" && pair.notes.length <= 1000),
+    "Invalid notes",
+  );
+  if (pair.latestCheck !== null && pair.latestCheck !== undefined) {
+    validateBacklinkCheck(pair.latestCheck);
+  } else {
+    pair.latestCheck = null;
+  }
+}
+
+export function groupBacklinks(pairs: BacklinkPair[]) {
+  const groups: Record<BacklinkBucket | "unchecked", BacklinkPair[]> = {
+    added_follow: [],
+    added_qualified: [],
+    absent: [],
+    unavailable: [],
+    unchecked: [],
+  };
+  for (const pair of pairs) {
+    const bucket = pair.latestCheck?.bucket || "unchecked";
+    groups[bucket].push(pair);
+  }
+  const sortPairs = (a: BacklinkPair, b: BacklinkPair) =>
+    a.sourceUrl.localeCompare(b.sourceUrl) || a.targetUrl.localeCompare(b.targetUrl);
+  for (const key of Object.keys(groups) as Array<keyof typeof groups>) {
+    groups[key].sort(sortPairs);
+  }
+  return {
+    summary: {
+      total: pairs.length,
+      added_follow: groups.added_follow.length,
+      added_qualified: groups.added_qualified.length,
+      absent: groups.absent.length,
+      unavailable: groups.unavailable.length,
+      unchecked: groups.unchecked.length,
+    },
+    groups,
+  };
+}
+
 export function validateSnapshot(s: Snapshot) {
   requireThat(
     s && typeof s === "object" && !Array.isArray(s),
@@ -270,12 +541,20 @@ export function validateSnapshot(s: Snapshot) {
     "artifactId",
     "note",
     "provisional",
+    "observedAt",
+    "evidenceUrl",
+    "provider",
+    "metricVersion",
+    "details",
   ];
   requireThat(
     Object.keys(s).every((k) => fields.includes(k)),
     "Unknown snapshot field",
   );
   const m = validSeries(s);
+  if (s.scope.startsWith("domain:")) {
+    s.scope = `domain:${normalizeDomain(s.scope.slice("domain:".length))}`;
+  }
   requireThat(s.source !== "dataops", "dataops series are derived, not pushed");
   periodRange(s.period);
   requireThat(
@@ -287,6 +566,10 @@ export function validateSnapshot(s: Snapshot) {
   requireThat(
     s.unit === m.unit && Number.isFinite(s.value) && s.value >= 0,
     "Invalid value or unit",
+  );
+  requireThat(
+    m.unit !== "score" || s.value <= 100,
+    "Score must be between 0 and 100",
   );
   requireThat(
     m.unit !== "share" || s.value <= 1,
@@ -301,6 +584,60 @@ export function validateSnapshot(s: Snapshot) {
     "Invalid provisional",
   );
   requireThat(!s.note || text(s.note, 4000), "Invalid note");
+  if (s.observedAt !== undefined) {
+    requireThat(
+      typeof s.observedAt === "string" &&
+        !Number.isNaN(Date.parse(s.observedAt)) &&
+        s.observedAt.length <= 64,
+      "Invalid observedAt timestamp",
+    );
+  }
+  if (s.evidenceUrl !== undefined) {
+    s.evidenceUrl = normalizePublicHttpUrl(s.evidenceUrl);
+  }
+  if (s.provider !== undefined) {
+    requireThat(text(s.provider, 64), "Invalid provider");
+    s.provider = s.provider.trim().toLowerCase();
+  }
+  if (m.key === "domain_rating" && s.provider !== undefined) {
+    requireThat(
+      s.provider === "ahrefs",
+      "domain_rating is Ahrefs-only; do not mix other authority providers",
+    );
+  }
+  if (m.key === "moz_da" && s.provider !== undefined) {
+    requireThat(
+      s.provider === "moz",
+      "moz_da is Moz-only; do not mix other authority providers",
+    );
+  }
+  if (m.key === "seranking_da" && s.provider !== undefined) {
+    requireThat(
+      s.provider === "seranking",
+      "seranking_da is SE Ranking-only; do not mix other authority providers",
+    );
+  }
+  if (s.metricVersion !== undefined) {
+    requireThat(text(s.metricVersion, 64), "Invalid metricVersion");
+    s.metricVersion = s.metricVersion.trim();
+  }
+  if (s.details !== undefined) {
+    requireThat(
+      s.details &&
+        typeof s.details === "object" &&
+        !Array.isArray(s.details) &&
+        Object.keys(s.details).length <= 12 &&
+        Object.entries(s.details).every(
+          ([k, v]) =>
+            text(k, 64) &&
+            (v === null ||
+              typeof v === "boolean" ||
+              (typeof v === "number" && Number.isFinite(v)) ||
+              (typeof v === "string" && v.length <= 200)),
+        ),
+      "Invalid snapshot details",
+    );
+  }
 }
 export function goalProgress(
   goal: Goal,

@@ -243,6 +243,21 @@
       "brandFilter": false
     },
     {
+      "key": "seranking_da",
+      "unit": "score",
+      "sources": [
+        "treg-seranking",
+        "manual"
+      ],
+      "scopes": [
+        "domain:"
+      ],
+      "period": "month",
+      "direction": "up",
+      "label": "SE Ranking DA",
+      "brandFilter": false
+    },
+    {
       "key": "linking_domains_academy",
       "unit": "count",
       "sources": [

@@ -1,5 +1,6 @@
 import { escapeHtml } from "../../core/html.js";
 import { goalDetailMarkup, stepDetailMarkup } from "./detail.js";
+import { metricsSurfaceMarkup } from "./metrics.js";
 import { planDetailMarkup, planListMarkup } from "./plans.js";
 import { weeklyReviewMarkup } from "./review.js";
 import {
@@ -82,6 +83,8 @@ export function createMarketingSurface(context) {
     let activeStepTab = "all";
     let currentStep = null;
     let currentUtmResult = "";
+    let currentBacklinks = [];
+    let currentMetricsStatus = "";
 
     async function fetchSeriesForGoal(goal) {
       if (!goal?.metricKey || !goal?.scope) return [];
@@ -287,8 +290,52 @@ export function createMarketingSurface(context) {
       }
     }
 
+    async function loadMetricsView(statusMessage = currentMetricsStatus) {
+      setRouteTitle("Marketing · Site Metrics & Links");
+      try {
+        const [sitesResult, backlinksResult] = await Promise.allSettled([
+          request(workApiUrl("/api/marketing/sites")),
+          request(workApiUrl("/api/marketing/backlinks")),
+        ]);
+        if (mine !== generation) return;
+        const sitesPayload =
+          sitesResult.status === "fulfilled"
+            ? sitesResult.value
+            : { items: [], ahrefsConfigured: false };
+        const backlinksPayload =
+          backlinksResult.status === "fulfilled"
+            ? backlinksResult.value
+            : { items: [], summary: {}, groups: {} };
+        currentBacklinks = Array.isArray(backlinksPayload.items) ? backlinksPayload.items : [];
+        const errors = [];
+        if (sitesResult.status === "rejected") {
+          errors.push(formatApiError(sitesResult.reason, "Could not load tracked websites."));
+        }
+        if (backlinksResult.status === "rejected") {
+          errors.push(formatApiError(backlinksResult.reason, "Could not load backlink audit."));
+        }
+        body.innerHTML = metricsSurfaceMarkup(
+          sitesPayload,
+          backlinksPayload,
+          statusMessage,
+          errors.join(" "),
+          today,
+        );
+      } catch (error) {
+        if (mine !== generation) return;
+        body.innerHTML = metricsSurfaceMarkup(
+          { items: [], ahrefsConfigured: false },
+          { items: [], summary: {}, groups: {} },
+          "",
+          formatApiError(error, "Could not load marketing metrics."),
+          today,
+        );
+      }
+    }
+
     async function loadCurrentRoute() {
       if (path === "/marketing/review") return loadWeeklyReview();
+      if (path === "/marketing/metrics") return loadMetricsView();
       const planId = query?.get?.("planId") || params.planId;
       const goalRef = query?.get?.("goalRef") || params.goalRef;
       const stepId = query?.get?.("stepId") || params.stepId;
@@ -325,6 +372,124 @@ export function createMarketingSurface(context) {
 
       if (event.target.closest?.("[data-mkt-open-add-step]")) {
         surface.querySelector("[data-mkt-add-step-dialog]")?.showModal?.();
+        return;
+      }
+
+      if (event.target.closest?.("[data-mkt-open-add-site]")) {
+        surface.querySelector("[data-mkt-add-site-dialog]")?.showModal?.();
+        return;
+      }
+
+      if (event.target.closest?.("[data-mkt-open-record-authority]")) {
+        surface.querySelector("[data-mkt-record-authority-dialog]")?.showModal?.();
+        return;
+      }
+
+      if (event.target.closest?.("[data-mkt-open-add-backlink]")) {
+        surface.querySelector("[data-mkt-add-backlink-dialog]")?.showModal?.();
+        return;
+      }
+
+      const removeSiteBtn = event.target.closest?.("[data-mkt-remove-site]");
+      if (removeSiteBtn) {
+        const domain = removeSiteBtn.getAttribute("data-mkt-remove-site");
+        const ver = Number(removeSiteBtn.getAttribute("data-mkt-version") || "1");
+        request(workApiUrl(`/api/marketing/sites/${encodeURIComponent(domain)}`, { version: ver }), {
+          method: "DELETE",
+        })
+          .then(() => {
+            currentMetricsStatus = `Removed tracked site ${domain}.`;
+            return loadMetricsView();
+          })
+          .catch((error) => {
+            currentMetricsStatus = formatApiError(error, "Could not remove site.");
+            return loadMetricsView();
+          });
+        return;
+      }
+
+      const refreshDrBtn = event.target.closest?.("[data-mkt-refresh-dr]");
+      if (refreshDrBtn) {
+        const domain = refreshDrBtn.getAttribute("data-mkt-refresh-dr");
+        request(
+          workApiUrl(`/api/marketing/sites/${encodeURIComponent(domain)}/refresh-authority`),
+          { method: "POST", body: JSON.stringify({}) },
+        )
+          .then((res) => {
+            currentMetricsStatus =
+              res?.status === "ok"
+                ? `Updated Ahrefs DR for ${domain}: ${res.snapshot?.value}/100.`
+                : `${domain}: ${res?.reason || "Ahrefs refresh unavailable."}`;
+            return loadMetricsView();
+          })
+          .catch((error) => {
+            currentMetricsStatus = formatApiError(error, "Could not refresh authority.");
+            return loadMetricsView();
+          });
+        return;
+      }
+
+      const checkOneBtn = event.target.closest?.("[data-mkt-check-backlink]");
+      if (checkOneBtn) {
+        const pairId = checkOneBtn.getAttribute("data-mkt-check-backlink");
+        request(workApiUrl("/api/marketing/backlinks/check"), {
+          method: "POST",
+          body: JSON.stringify({ ids: [pairId] }),
+        })
+          .then(() => {
+            currentMetricsStatus = `Checked link pair ${pairId}.`;
+            return loadMetricsView();
+          })
+          .catch((error) => {
+            currentMetricsStatus = formatApiError(error, "Could not check link pair.");
+            return loadMetricsView();
+          });
+        return;
+      }
+
+      const removeBacklinkBtn = event.target.closest?.("[data-mkt-remove-backlink]");
+      if (removeBacklinkBtn) {
+        const pairId = removeBacklinkBtn.getAttribute("data-mkt-remove-backlink");
+        const ver = Number(removeBacklinkBtn.getAttribute("data-mkt-version") || "1");
+        request(
+          workApiUrl(`/api/marketing/backlinks/${encodeURIComponent(pairId)}`, { version: ver }),
+          { method: "DELETE" },
+        )
+          .then(() => {
+            currentMetricsStatus = `Removed link pair ${pairId}.`;
+            return loadMetricsView();
+          })
+          .catch((error) => {
+            currentMetricsStatus = formatApiError(error, "Could not remove link pair.");
+            return loadMetricsView();
+          });
+        return;
+      }
+
+      if (event.target.closest?.("[data-mkt-run-backlink-audit]")) {
+        const ids = currentBacklinks.map((item) => item.id);
+        if (!ids.length) {
+          currentMetricsStatus = "No backlink pairs registered to check.";
+          loadMetricsView();
+          return;
+        }
+        (async () => {
+          try {
+            let checked = 0;
+            for (let i = 0; i < ids.length; i += 10) {
+              const slice = ids.slice(i, i + 10);
+              const res = await request(workApiUrl("/api/marketing/backlinks/check"), {
+                method: "POST",
+                body: JSON.stringify({ ids: slice }),
+              });
+              checked += res?.checked || slice.length;
+            }
+            currentMetricsStatus = `Backlink audit finished (${checked} pairs checked).`;
+          } catch (error) {
+            currentMetricsStatus = formatApiError(error, "Backlink audit failed.");
+          }
+          await loadMetricsView();
+        })();
         return;
       }
 
@@ -465,6 +630,79 @@ export function createMarketingSurface(context) {
             },
           );
           await loadCurrentRoute();
+          return;
+        }
+
+        if (form.matches?.("[data-mkt-add-site-form]")) {
+          const data = new FormData(form);
+          await request(workApiUrl("/api/marketing/sites"), {
+            method: "POST",
+            body: JSON.stringify({
+              domain: String(data.get("domain") || "").trim(),
+              label: String(data.get("label") || "").trim() || undefined,
+              notes: String(data.get("notes") || "").trim() || undefined,
+            }),
+          });
+          form.closest("dialog")?.close?.();
+          currentMetricsStatus = `Added tracked site ${String(data.get("domain") || "").trim()}.`;
+          await loadMetricsView();
+          return;
+        }
+
+        if (form.matches?.("[data-mkt-record-authority-form]")) {
+          const data = new FormData(form);
+          const domain = String(data.get("domain") || "").trim().toLowerCase();
+          const metricKey = String(data.get("metricKey") || "domain_rating");
+          const provider =
+            metricKey === "domain_rating"
+              ? "ahrefs"
+              : metricKey === "moz_da"
+                ? "moz"
+                : metricKey === "seranking_da"
+                  ? "seranking"
+                  : undefined;
+          await request(workApiUrl("/api/marketing/metrics"), {
+            method: "POST",
+            body: JSON.stringify({
+              metricKey,
+              scope: `domain:${domain}`,
+              source: String(data.get("source") || "manual"),
+              period: String(data.get("period") || today),
+              value: Number(data.get("value")),
+              observedAt: new Date().toISOString(),
+              ...(provider ? { provider } : {}),
+              ...(String(data.get("metricVersion") || "").trim()
+                ? { metricVersion: String(data.get("metricVersion")).trim() }
+                : {}),
+              ...(String(data.get("evidenceUrl") || "").trim()
+                ? { evidenceUrl: String(data.get("evidenceUrl")).trim() }
+                : {}),
+              ...(String(data.get("note") || "").trim()
+                ? { note: String(data.get("note")).trim() }
+                : {}),
+            }),
+          });
+          form.closest("dialog")?.close?.();
+          currentMetricsStatus = `Recorded ${metricKey} for ${domain}.`;
+          await loadMetricsView();
+          return;
+        }
+
+        if (form.matches?.("[data-mkt-add-backlink-form]")) {
+          const data = new FormData(form);
+          await request(workApiUrl("/api/marketing/backlinks"), {
+            method: "POST",
+            body: JSON.stringify({
+              sourceUrl: String(data.get("sourceUrl") || "").trim(),
+              targetUrl: String(data.get("targetUrl") || "").trim(),
+              outreachState: String(data.get("outreachState") || "not_contacted"),
+              owner: String(data.get("owner") || "").trim() || undefined,
+              notes: String(data.get("notes") || "").trim() || undefined,
+            }),
+          });
+          form.closest("dialog")?.close?.();
+          currentMetricsStatus = "Registered backlink pair.";
+          await loadMetricsView();
           return;
         }
 

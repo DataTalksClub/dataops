@@ -244,3 +244,65 @@ test("YAML imports preserve unquoted civil dates as API date strings", async () 
   assert.equal(calls[0].body.plan.startDate, "2026-12-01");
   assert.equal(calls[0].body.plan.endDate, "2027-02-28");
 });
+
+test("marketing CLI manages tracked sites, authority evidence and backlink audit seed/check", async () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "dataops-marketing-bl-"));
+  const seedFile = path.join(folder, "seed.txt");
+  writeFileSync(
+    seedFile,
+    [
+      "0=https://example.org/",
+      "1=https://example.org/blog/guide.html",
+      "0 alexey_sent https://partner.example/article",
+      "1 orin_sent https://partner.example/article",
+    ].join("\n"),
+  );
+  const calls = fakePortal({
+    "GET /api/marketing/sites": { items: [{ domain: "example.org", authority: [] }], ahrefsConfigured: false },
+    "POST /api/marketing/sites": ({ body }) => ({ ...body, version: 1 }),
+    "POST /api/marketing/sites/example.org/refresh-authority": { status: "unavailable", reason: "No token" },
+    "POST /api/marketing/metrics": ({ body }) => body,
+    "POST /api/marketing/backlinks": ({ body }) => ({ inserted: body.items.length, items: body.items }),
+    "GET /api/marketing/backlinks": {
+      items: [{ id: "bl-1" }, { id: "bl-2" }],
+      summary: { total: 2, added_follow: 1, added_qualified: 0, absent: 1, unavailable: 0, unchecked: 0 },
+      groups: {},
+    },
+    "POST /api/marketing/backlinks/check": ({ body }) => ({
+      checked: body.ids.length,
+      summary: { total: 2, added_follow: 1, added_qualified: 0, absent: 1, unavailable: 0, unchecked: 0 },
+      groups: {},
+    }),
+  });
+
+  await marketing.sites({ _: ["add"], domain: "example.org", label: "Example", json: true }, io);
+  await marketing.sites({ _: ["refresh-authority", "example.org"], json: true }, io);
+  await marketing.metrics(
+    {
+      _: ["push"],
+      metric: "domain_rating",
+      scope: "domain:example.org",
+      source: "ahrefs-free",
+      date: "2026-11-26",
+      value: "57",
+      observedAt: "2026-11-26T10:00:00Z",
+      evidenceUrl: "https://ahrefs.com/website-authority-checker/?input=example.org",
+      provider: "ahrefs",
+      metricVersion: "unexposed",
+      json: true,
+    },
+    io,
+  );
+  await marketing.backlinks({ _: ["import"], file: seedFile, json: true }, io);
+  await marketing.backlinks({ _: ["check"], chunkSize: "1", json: true }, io);
+
+  const metricPush = calls.find((c) => c.route === "/api/marketing/metrics");
+  assert.equal(metricPush.body.provider, "ahrefs");
+  assert.equal(metricPush.body.metricVersion, "unexposed");
+  const blImport = calls.find((c) => c.route === "/api/marketing/backlinks" && c.method === "POST");
+  assert.equal(blImport.body.items.length, 2);
+  assert.equal(blImport.body.items[0].owner, "alexey");
+  assert.equal(blImport.body.items[1].owner, "orin");
+  const checkCalls = calls.filter((c) => c.route === "/api/marketing/backlinks/check");
+  assert.equal(checkCalls.length, 2);
+});

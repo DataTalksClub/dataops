@@ -164,6 +164,7 @@
     "src/surfaces/marketing/charts.js",
     "src/surfaces/marketing/detail.js",
     "src/surfaces/marketing/index.js",
+    "src/surfaces/marketing/metrics.js",
     "src/surfaces/marketing/plans.js",
     "src/surfaces/marketing/review.js",
     "src/surfaces/marketing/shared.js",

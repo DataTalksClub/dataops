@@ -120,6 +120,7 @@ export function seriesKeyForGoal(goal) {
 export function marketingTabsMarkup(activeTab) {
   return html`<nav class="dk-tabs mkt-tabs" aria-label="Marketing sections">
     <a class="dk-tab" href="/marketing" data-mkt-nav${activeTab === "plans" ? ' aria-current="page"' : ""}>Plans</a>
+    <a class="dk-tab" href="/marketing/metrics" data-mkt-nav${activeTab === "metrics" ? ' aria-current="page"' : ""}>Site Metrics &amp; Links</a>
     <a class="dk-tab" href="/marketing/review" data-mkt-nav${activeTab === "review" ? ' aria-current="page"' : ""}>Weekly Review</a>
   </nav>`;
 }

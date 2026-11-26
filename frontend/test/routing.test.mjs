@@ -81,6 +81,7 @@ describe("canonical workspace routing", () => {
       "/marketing/plans/:planId/goals/:goalRef",
       "/marketing/steps/:stepId",
       "/marketing/review",
+      "/marketing/metrics",
       "/processes",
       "/admin",
       "/users",

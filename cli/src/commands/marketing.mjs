@@ -29,10 +29,22 @@ export const help = `dataops marketing - plans, work and measured results
   steps live <step> --version N --url URL --date DATE
   steps drop <step> --version N --reason TEXT
   metrics keys
-  metrics push --metric KEY --scope S --source SRC (--period YYYY-Www | --date YYYY-MM-DD) --value N [--unit UNIT] [--note TEXT]
+  metrics push --metric KEY --scope S --source SRC (--period YYYY-Www | --date YYYY-MM-DD) --value N
+      [--unit UNIT --note TEXT --observed-at ISO --evidence-url URL --provider P --metric-version V]
   metrics push --file PATH [--replace --dry-run]
-  metrics list [--metric KEY --scope S --source SRC --from DATE --to DATE]
+  metrics list [--metric KEY --scope S --source SRC --metric-version V --from DATE --to DATE]
   metrics missing
+  sites list
+  sites add --domain DOMAIN [--label LABEL --notes TEXT]
+  sites update <domain> --version N [--label LABEL --notes TEXT --active true|false]
+  sites remove <domain> --version N
+  sites refresh-authority <domain>
+  backlinks list [--bucket B --state S --source URL --target URL]
+  backlinks add --source URL --target URL [--state STATE --owner OWNER --notes TEXT]
+  backlinks import --file PATH [--update-existing]
+  backlinks update <id> --version N [--state STATE --owner OWNER --notes TEXT]
+  backlinks remove <id> --version N
+  backlinks check [--id ID] [--chunk-size 10]
   utm <step> --source SRC [--placement footer]
   review [--week YYYY-Www]
   capacity [--weeks 6]
@@ -282,6 +294,7 @@ export const metrics = nested(async (action, a, io) => {
         metric: "metricKey",
         scope: "scope",
         source: "source",
+        metricVersion: "metricVersion",
         from: "from",
         to: "to",
       }),
@@ -304,6 +317,10 @@ export const metrics = nested(async (action, a, io) => {
           unit: "unit",
           note: "note",
           artifactId: "artifactId",
+          observedAt: "observedAt",
+          evidenceUrl: "evidenceUrl",
+          provider: "provider",
+          metricVersion: "metricVersion",
         }),
         ...(a.date ? { period: required(a, "date", "date") } : {}),
         value: Number(required(a, "value", "value")),
@@ -311,6 +328,151 @@ export const metrics = nested(async (action, a, io) => {
         ...options,
       });
   } else throw new UsageError("Use marketing metrics keys|push|list|missing.");
+  return output(a, io, result);
+});
+
+export function parseBacklinkSeedText(raw) {
+  const trimmed = String(raw || "").trim();
+  if (!trimmed) throw new UsageError("Backlink seed file is empty.");
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    const parsed = JSON.parse(trimmed);
+    const items = Array.isArray(parsed) ? parsed : parsed.items;
+    if (!Array.isArray(items) || !items.length) {
+      throw new UsageError("JSON seed must contain a non-empty array or { items: [...] }.");
+    }
+    return items;
+  }
+  const targets = new Map();
+  const items = [];
+  for (const rawLine of trimmed.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const defMatch = /^(\d+)=(https?:\/\/\S+)$/.exec(line);
+    if (defMatch) {
+      targets.set(defMatch[1], defMatch[2]);
+      continue;
+    }
+    const rowMatch = /^(\d+)\s+([a-z0-9_]+)\s+(https?:\/\/\S+)$/.exec(line);
+    if (rowMatch) {
+      const targetUrl = targets.get(rowMatch[1]);
+      if (!targetUrl) {
+        throw new UsageError(`Unknown target index ${rowMatch[1]} in seed line: ${line}`);
+      }
+      const outreachState = rowMatch[2];
+      const owner =
+        outreachState === "alexey_sent"
+          ? "alexey"
+          : outreachState === "orin_sent"
+            ? "orin"
+            : undefined;
+      items.push({
+        sourceUrl: rowMatch[3],
+        targetUrl,
+        outreachState,
+        ...(owner ? { owner } : {}),
+      });
+      continue;
+    }
+    throw new UsageError(`Unrecognized backlink seed line: ${line}`);
+  }
+  if (!items.length) throw new UsageError("No backlink pairs found in seed file.");
+  return items;
+}
+
+export const sites = nested(async (action, a, io) => {
+  const api = apiFor(a);
+  let result;
+  if (action === "list") result = await api.get(`${root}/sites`);
+  else if (action === "add")
+    result = await api.post(`${root}/sites`, {
+      domain: required(a, "domain", "domain"),
+      ...pick(a, { label: "label", notes: "notes" }),
+      ...(a.active !== undefined ? { active: a.active !== "false" && a.active !== false } : {}),
+    });
+  else {
+    const domain = enc(at(a));
+    if (action === "update")
+      result = await api.patch(`${root}/sites/${domain}`, {
+        ...pick(a, { label: "label", notes: "notes" }),
+        ...(a.active !== undefined ? { active: a.active !== "false" && a.active !== false } : {}),
+        version: version(a),
+      });
+    else if (action === "remove")
+      result = await api.delete(`${root}/sites/${domain}`, {
+        query: { version: version(a) },
+      });
+    else if (action === "refresh-authority")
+      result = await api.post(`${root}/sites/${domain}/refresh-authority`, {});
+    else
+      throw new UsageError(
+        "Use marketing sites list|add|update|remove|refresh-authority.",
+      );
+  }
+  return output(a, io, result);
+});
+
+export const backlinks = nested(async (action, a, io) => {
+  const api = apiFor(a);
+  let result;
+  if (action === "list")
+    result = await api.get(`${root}/backlinks`, {
+      query: pick(a, {
+        bucket: "bucket",
+        state: "outreachState",
+        source: "sourceUrl",
+        target: "targetUrl",
+      }),
+    });
+  else if (action === "add")
+    result = await api.post(`${root}/backlinks`, {
+      sourceUrl: required(a, "source", "source"),
+      targetUrl: required(a, "target", "target"),
+      outreachState: a.state || "not_contacted",
+      ...pick(a, { owner: "owner", notes: "notes" }),
+    });
+  else if (action === "import") {
+    const items = parseBacklinkSeedText(readFileSync(required(a, "file", "file"), "utf8"));
+    result = await api.post(`${root}/backlinks`, {
+      items,
+      ...(a.updateExisting ? { updateExisting: true } : {}),
+    });
+  } else if (action === "check") {
+    const chunkSize = Math.max(1, Math.min(40, Number(a.chunkSize || 10)));
+    if (a.id) {
+      const ids = list(a.id);
+      result = await api.post(`${root}/backlinks/check`, { ids });
+    } else {
+      const current = await api.get(`${root}/backlinks`);
+      const allIds = (current.items || []).map((item) => item.id);
+      if (!allIds.length) {
+        result = { checked: 0, summary: current.summary, groups: current.groups };
+      } else {
+        let checked = 0;
+        let last = null;
+        for (let i = 0; i < allIds.length; i += chunkSize) {
+          const slice = allIds.slice(i, i + chunkSize);
+          last = await api.post(`${root}/backlinks/check`, { ids: slice });
+          checked += last.checked || 0;
+        }
+        result = { checked, summary: last.summary, groups: last.groups };
+      }
+    }
+  } else {
+    const id = enc(at(a));
+    if (action === "update")
+      result = await api.patch(`${root}/backlinks/${id}`, {
+        ...pick(a, { state: "outreachState", owner: "owner", notes: "notes" }),
+        version: version(a),
+      });
+    else if (action === "remove")
+      result = await api.delete(`${root}/backlinks/${id}`, {
+        query: { version: version(a) },
+      });
+    else
+      throw new UsageError(
+        "Use marketing backlinks list|add|import|update|remove|check.",
+      );
+  }
   return output(a, io, result);
 });
 export async function importPlan(a, io) {
@@ -347,6 +509,8 @@ export const commands = {
   goals,
   steps,
   metrics,
+  sites,
+  backlinks,
   import: importPlan,
   utm: async (a, io) =>
     output(

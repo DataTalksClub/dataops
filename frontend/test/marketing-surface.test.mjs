@@ -297,4 +297,161 @@ describe("marketing API contract and rendering", () => {
     assert.ok(prevented);
     assert.deepEqual(h.navigations, ["/marketing/review"]);
   });
+
+  test("site metrics and backlink audit route renders authority without mixing providers and sorts link buckets", async () => {
+    const writes = [];
+    const sitesPayload = {
+      ahrefsConfigured: false,
+      items: [
+        {
+          domain: "example.org",
+          label: "Main site",
+          version: 1,
+          authority: [
+            {
+              metricKey: "domain_rating",
+              source: "ahrefs-free",
+              provider: "ahrefs",
+              metricVersion: "unexposed",
+              unit: "score",
+              delta: 2,
+              latest: {
+                value: 57,
+                unit: "score",
+                source: "ahrefs-free",
+                period: "2026-11-26",
+                observedAt: "2026-11-26T10:00:00Z",
+                metricVersion: "unexposed",
+                evidenceUrl: "https://ahrefs.com/website-authority-checker/?input=example.org",
+              },
+            },
+          ],
+        },
+        {
+          domain: "sub.example.org",
+          label: "Secondary site",
+          version: 1,
+          authority: [],
+        },
+      ],
+    };
+    const backlinksPayload = {
+      items: [
+        {
+          id: "bl-1",
+          sourceUrl: "https://partner.example/a",
+          targetUrl: "https://example.org/",
+          outreachState: "alexey_sent",
+          owner: "alexey",
+          version: 1,
+          latestCheck: {
+            checkedAt: "2026-11-26T12:00:00Z",
+            bucket: "added_follow",
+            httpStatus: 200,
+            finalUrl: "https://partner.example/a",
+            matchedHref: "https://example.org/",
+            matchedRel: [],
+            matchCount: 1,
+            reason: "Link present (follow)",
+          },
+        },
+        {
+          id: "bl-2",
+          sourceUrl: "https://partner.example/b",
+          targetUrl: "https://example.org/",
+          outreachState: "orin_sent",
+          owner: "orin",
+          version: 1,
+          latestCheck: {
+            checkedAt: "2026-11-26T12:00:00Z",
+            bucket: "unavailable",
+            httpStatus: 403,
+            finalUrl: "https://partner.example/b",
+            matchedHref: null,
+            matchedRel: [],
+            matchCount: 0,
+            reason: "HTTP 403",
+          },
+        },
+      ],
+      summary: { total: 2, added_follow: 1, added_qualified: 0, absent: 0, unavailable: 1, unchecked: 0 },
+      groups: {
+        added_follow: [
+          {
+            id: "bl-1",
+            sourceUrl: "https://partner.example/a",
+            targetUrl: "https://example.org/",
+            outreachState: "alexey_sent",
+            owner: "alexey",
+            version: 1,
+            latestCheck: {
+              checkedAt: "2026-11-26T12:00:00Z",
+              bucket: "added_follow",
+              httpStatus: 200,
+              finalUrl: "https://partner.example/a",
+              matchedHref: "https://example.org/",
+              matchedRel: [],
+              matchCount: 1,
+              reason: "Link present (follow)",
+            },
+          },
+        ],
+        added_qualified: [],
+        absent: [],
+        unavailable: [
+          {
+            id: "bl-2",
+            sourceUrl: "https://partner.example/b",
+            targetUrl: "https://example.org/",
+            outreachState: "orin_sent",
+            owner: "orin",
+            version: 1,
+            latestCheck: {
+              checkedAt: "2026-11-26T12:00:00Z",
+              bucket: "unavailable",
+              httpStatus: 403,
+              finalUrl: "https://partner.example/b",
+              matchedHref: null,
+              matchedRel: [],
+              matchCount: 0,
+              reason: "HTTP 403",
+            },
+          },
+        ],
+        unchecked: [],
+      },
+    };
+    const h = surfaceHarness(async (url, options) => {
+      if (options?.method) {
+        writes.push([url, options.method, options.body ? JSON.parse(options.body) : null]);
+        return {};
+      }
+      if (url === "/api/marketing/sites") return sitesPayload;
+      if (url === "/api/marketing/backlinks") return backlinksPayload;
+      return {};
+    }, route("/marketing/metrics"));
+    await h.surface.renderMarketingSurface();
+    const htmlOut = page(h.root);
+    assert.match(htmlOut, /<strong>57\/100<\/strong>/);
+    assert.match(htmlOut, /No DR snapshot yet/);
+    assert.match(htmlOut, /Added \(follow\)/);
+    assert.match(htmlOut, /Unavailable/);
+    assert.match(htmlOut, /alexey_sent \(alexey\)/);
+
+    await submit(h.root, "[data-mkt-add-site-form]", { domain: "blog.example.org", label: "Blog" });
+    await submit(h.root, "[data-mkt-record-authority-form]", {
+      domain: "example.org",
+      metricKey: "domain_rating",
+      source: "ahrefs-free",
+      period: "2026-12-03",
+      value: "58",
+      metricVersion: "unexposed",
+      evidenceUrl: "https://ahrefs.com/website-authority-checker/?input=example.org",
+    });
+    assert.equal(writes[0][0], "/api/marketing/sites");
+    assert.equal(writes[0][2].domain, "blog.example.org");
+    assert.equal(writes[1][0], "/api/marketing/metrics");
+    assert.equal(writes[1][2].provider, "ahrefs");
+    assert.equal(writes[1][2].value, 58);
+  });
 });

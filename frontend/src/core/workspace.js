@@ -108,6 +108,7 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/marketing/plans/:planId/goals/:goalRef": { view: "marketing", tasksSection: "queue", params: [] },
   "/marketing/steps/:stepId": { view: "marketing", tasksSection: "queue", params: [] },
   "/marketing/review": { view: "marketing", tasksSection: "queue", params: ["week"] },
+  "/marketing/metrics": { view: "marketing", tasksSection: "queue", params: [] },
   "/processes": {
     view: "docs",
     tasksSection: "queue",
